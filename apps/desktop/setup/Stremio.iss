@@ -163,11 +163,11 @@ Name: "assoctorrent"; Description: "Associate {#MyAppName} with .torrent files"
 
 [Files]
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
-Source: "{#MyAppExeLocation}"; DestDir: "{app}"; Flags: ignoreversion sign
-Source: "{#SourcePath}..\libmpv-2.dll"; DestDir: "{app}"; Flags: ignoreversion sign
-Source: "{#SourcePath}..\bin\ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion sign
-Source: "{#SourcePath}..\bin\ffprobe.exe"; DestDir: "{app}"; Flags: ignoreversion sign
-Source: "{#SourcePath}..\bin\stremio-runtime.exe"; DestDir: "{app}"; Flags: ignoreversion sign
+Source: "{#MyAppExeLocation}"; DestDir: "{app}"; Flags: ignoreversion signonce
+Source: "{#SourcePath}..\libmpv-2.dll"; DestDir: "{app}"; Flags: ignoreversion signonce
+Source: "{#SourcePath}..\bin\ffmpeg.exe"; DestDir: "{app}"; Flags: ignoreversion signonce
+Source: "{#SourcePath}..\bin\ffprobe.exe"; DestDir: "{app}"; Flags: ignoreversion signonce
+Source: "{#SourcePath}..\bin\stremio-runtime.exe"; DestDir: "{app}"; Flags: ignoreversion signonce
 Source: "{#SourcePath}..\server.js"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
