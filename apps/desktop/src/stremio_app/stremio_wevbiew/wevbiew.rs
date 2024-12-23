@@ -124,7 +124,7 @@ impl PartialUi for WebView {
                             Ok(())
                         }).expect("Cannot add full screen element changed");
 
-                        webview.add_navigation_completed(move |wv, _| {
+                        webview.add_content_loading(move |wv, _| {
                             wv.execute_script(r##"
                             try{console.log('Shell JS injected');if(window.self === window.top) {
                                 window.qt={webChannelTransport:{send:window.chrome.webview.postMessage}};
@@ -133,7 +133,7 @@ impl PartialUi for WebView {
                                 }}catch(e){}
                             "##, |_| Ok(())).expect("Cannot add script to webview");
                             Ok(())
-                        }).expect("Cannot add navigation completed");
+                        }).expect("Cannot add content loading");
 
                         WebView::resize_to_window_bounds(Some(&controller), Some(hwnd));
                         controller.put_is_visible(true).ok();
