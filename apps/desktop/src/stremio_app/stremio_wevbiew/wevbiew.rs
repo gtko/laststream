@@ -105,13 +105,6 @@ impl PartialUi for WebView {
                                 tx_web.clone().send(ipc::RPCResponse::response_message(Some(json!(["app-error", format!("Cannot load WEB UI at '{}'", &endpoint)])))).ok();
                         };
                     }
-                        webview.execute_script(r##"
-                        try{console.log('Shell JS injected');if(window.self === window.top) {
-                            window.qt={webChannelTransport:{send:window.chrome.webview.postMessage}};
-                            window.chrome.webview.addEventListener('message',ev=>window.qt.webChannelTransport.onmessage(ev));
-                            window.onload=()=>{try{initShellComm();}catch(e){window.chrome.webview.postMessage('{"id":1,"args":["app-error","'+e.message+'"]}')}};
-                            }}catch(e){}
-                        "##, |_| Ok(())).expect("Cannot add script to webview");
                         webview.add_web_message_received(move |_w, msg| {
                             let msg = msg.try_get_web_message_as_string()?;
                             tx_web.send(msg).ok();
@@ -130,6 +123,17 @@ impl PartialUi for WebView {
                             }
                             Ok(())
                         }).expect("Cannot add full screen element changed");
+
+                        webview.add_navigation_completed(move |wv, _| {
+                            wv.execute_script(r##"
+                            try{console.log('Shell JS injected');if(window.self === window.top) {
+                                window.qt={webChannelTransport:{send:window.chrome.webview.postMessage}};
+                                window.chrome.webview.addEventListener('message',ev=>window.qt.webChannelTransport.onmessage(ev));
+                                window.onload=()=>{try{initShellComm();}catch(e){window.chrome.webview.postMessage('{"id":1,"args":["app-error","'+e.message+'"]}')}};
+                                }}catch(e){}
+                            "##, |_| Ok(())).expect("Cannot add script to webview");
+                            Ok(())
+                        }).expect("Cannot add navigation completed");
 
                         WebView::resize_to_window_bounds(Some(&controller), Some(hwnd));
                         controller.put_is_visible(true).ok();
