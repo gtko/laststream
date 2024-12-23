@@ -125,7 +125,7 @@ impl PartialUi for WebView {
                             Ok(())
                         }).expect("Cannot add D&D handler");
                         webview.add_contains_full_screen_element_changed(move |wv| {
-                            if let Ok(visibility) = wv.get_contains_full_screen_element() { 
+                            if let Ok(visibility) = wv.get_contains_full_screen_element() {
                                 tx_fs.send(ipc::RPCResponse::response_message(Some(json!(["win-set-visibility" , {"fullscreen": visibility}])))).ok();
                             }
                             Ok(())

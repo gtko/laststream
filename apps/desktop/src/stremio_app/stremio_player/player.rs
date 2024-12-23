@@ -170,7 +170,10 @@ fn create_message_thread(
                     a2 = format!(r#""{arg2}""#);
                     a3 = format!(r#""{arg3}""#);
                     a4 = format!(r#""{arg4}""#);
-                    (name, vec![a1.as_ref(), a2.as_ref(), a3.as_ref(), a4.as_ref()])
+                    (
+                        name,
+                        vec![a1.as_ref(), a2.as_ref(), a3.as_ref(), a4.as_ref()],
+                    )
                 }
                 CmdVal::Quadruple(name, arg1, arg2, arg3) => {
                     a1 = format!(r#""{arg1}""#);
@@ -178,11 +181,11 @@ fn create_message_thread(
                     a3 = format!(r#""{arg3}""#);
                     (name, vec![a1.as_ref(), a2.as_ref(), a3.as_ref()])
                 }
-                CmdVal::Tripple(name, arg1, arg2   ) => {
+                CmdVal::Tripple(name, arg1, arg2) => {
                     a1 = format!(r#""{arg1}""#);
                     a2 = format!(r#""{arg2}""#);
                     (name, vec![a1.as_ref(), a2.as_ref()])
-            },
+                }
                 CmdVal::Double(name, arg1) => {
                     a1 = format!(r#""{arg1}""#);
                     (name, vec![a1.as_ref()])
