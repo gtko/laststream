@@ -231,12 +231,20 @@ stringable!(MpvCmd);
 pub enum CmdVal {
     Single((MpvCmd,)),
     Double(MpvCmd, String),
+    Tripple(MpvCmd, String, String),
+    Quadruple(MpvCmd, String, String, String),
+    Quintuple(MpvCmd, String, String, String, String),
 }
 impl From<CmdVal> for Vec<String> {
     fn from(cmd: CmdVal) -> Vec<String> {
         match cmd {
             CmdVal::Single(cmd) => vec![cmd.0.to_string()],
             CmdVal::Double(cmd, arg) => vec![cmd.to_string(), arg],
+            CmdVal::Tripple(cmd, arg1, arg2) => vec![cmd.to_string(), arg1, arg2],
+            CmdVal::Quadruple(cmd, arg1, arg2, arg3) => vec![cmd.to_string(), arg1, arg2, arg3],
+            CmdVal::Quintuple(cmd, arg1, arg2, arg3, arg4) => {
+                vec![cmd.to_string(), arg1, arg2, arg3, arg4]
+            }
         }
     }
 }
