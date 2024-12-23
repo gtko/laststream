@@ -79,16 +79,16 @@ function parseTagArgument(value) {
 }
 
 function usage() {
-    log(`Usage: ${basename(process.argv[1])} [options]`);
-    log("Options:");
+    console.log(`Usage: ${basename(process.argv[1])} [options]`);
+    console.log("Options:");
     Object.keys(supportedArguments).forEach((key) => {
-        log(
+        console.log(
             `  --${key.replace(/_/g, "-")}${typeof supportedArguments[key].default !== "undefined"
                 ? " [default: " + supportedArguments[key].default.toString() + "]"
                 : ""
             }`
         );
-        log(`    ${supportedArguments[key].description}`);
+        console.log(`    ${supportedArguments[key].description}`);
     });
 }
 
