@@ -58,6 +58,7 @@ impl PartialUi for WebView {
         let (tx, rx) = flume::unbounded();
         let tx_drag_drop = tx.clone();
         let (tx_web, rx_web) = flume::unbounded();
+        let tx_fs = tx_web.clone();
         data.channel = RefCell::new(Some((tx, rx_web)));
 
         let parent = parent.expect("No parent window").into();
@@ -123,6 +124,12 @@ impl PartialUi for WebView {
                             }
                             Ok(())
                         }).expect("Cannot add D&D handler");
+                        webview.add_contains_full_screen_element_changed(move |wv| {
+                            if let Ok(visibility) = wv.get_contains_full_screen_element() { 
+                                tx_fs.send(ipc::RPCResponse::response_message(Some(json!(["win-set-visibility" , {"fullscreen": visibility}])))).ok();
+                            }
+                            Ok(())
+                        }).expect("Cannot add full screen element changed");
 
                         WebView::resize_to_window_bounds(Some(&controller), Some(hwnd));
                         controller.put_is_visible(true).ok();
