@@ -1,9 +1,10 @@
 use std::{cmp, mem};
 use winapi::shared::windef::HWND;
 use winapi::um::winuser::{
-    GetForegroundWindow, GetSystemMetrics, GetWindowLongA, GetWindowRect, IsIconic, IsZoomed,
-    SetForegroundWindow, SetWindowLongA, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, HWND_NOTOPMOST,
-    HWND_TOPMOST, SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WS_CAPTION,
+    GetForegroundWindow, GetMonitorInfoA, GetSystemMetrics, GetWindowLongA, GetWindowRect,
+    IsIconic, IsZoomed, MonitorFromWindow, SetForegroundWindow, SetWindowLongA, SetWindowPos,
+    GWL_EXSTYLE, GWL_STYLE, HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WS_CAPTION,
     WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE, WS_EX_TOPMOST, WS_EX_WINDOWEDGE,
     WS_THICKFRAME,
 };
@@ -91,6 +92,14 @@ impl WindowStyle {
                 self.size = ((rect.right - rect.left), (rect.bottom - rect.top));
                 self.style = GetWindowLongA(hwnd, GWL_STYLE);
                 self.ex_style = GetWindowLongA(hwnd, GWL_EXSTYLE);
+
+                let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                let mut monitor_info: MONITORINFO = mem::zeroed();
+                monitor_info.cbSize = mem::size_of_val(&monitor_info) as u32;
+                if GetMonitorInfoA(monitor, &mut monitor_info) == 0 {
+                    println!("GetMonitorInfoA failed");
+                    return;
+                }
                 SetWindowLongA(
                     hwnd,
                     GWL_STYLE,
@@ -108,10 +117,10 @@ impl WindowStyle {
                 SetWindowPos(
                     hwnd,
                     HWND_NOTOPMOST,
-                    0,
-                    0,
-                    GetSystemMetrics(SM_CXSCREEN),
-                    GetSystemMetrics(SM_CYSCREEN),
+                    monitor_info.rcMonitor.left,
+                    monitor_info.rcMonitor.top,
+                    monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+                    monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
                     SWP_FRAMECHANGED,
                 );
             }
