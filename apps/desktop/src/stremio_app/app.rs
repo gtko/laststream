@@ -174,11 +174,13 @@ impl MainWindow {
         }); // thread
 
         if let Ok(mut listener) = PipeServer::bind(socket_path) {
+            let focus_sender = self.focus_notice.sender();
             thread::spawn(move || loop {
                 if let Ok(mut stream) = listener.accept() {
                     let mut buf = vec![];
                     stream.read_to_end(&mut buf).ok();
                     if let Ok(s) = str::from_utf8(&buf) {
+                        focus_sender.notice();
                         // ['open-media', url]
                         web_tx_arg.send(RPCResponse::open_media(s.to_string())).ok();
                         println!("{}", s);
