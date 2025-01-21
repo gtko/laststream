@@ -27,6 +27,8 @@ use crate::stremio_app::{
     PipeServer,
 };
 
+use super::stremio_server::StremioServer;
+
 #[derive(Default, NwgUi)]
 pub struct MainWindow {
     pub command: String,
@@ -50,11 +52,13 @@ pub struct MainWindow {
     #[nwg_events((tray, MousePressLeftUp): [Self::on_show], (tray_exit, OnMenuItemSelected): [nwg::stop_thread_dispatch()], (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide], (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost]) ]
     pub tray: SystemTray,
     #[nwg_partial(parent: window)]
-    pub webview: WebView,
+    pub splash_screen: SplashImage,
+    #[nwg_partial(parent: window)]
+    pub server: StremioServer,
     #[nwg_partial(parent: window)]
     pub player: Player,
     #[nwg_partial(parent: window)]
-    pub splash_screen: SplashImage,
+    pub webview: WebView,
     #[nwg_control]
     #[nwg_events(OnNotice: [Self::on_toggle_fullscreen_notice] )]
     pub toggle_fullscreen_notice: nwg::Notice,

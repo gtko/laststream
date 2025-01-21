@@ -11,3 +11,6 @@ pub const UPDATE_ENDPOINT: [&str; 3] = [
     "https://www.stremio.com/updater/check?product=stremio-shell-ng",
     "https://www.stremio.net/updater/check?product=stremio-shell-ng",
 ];
+pub const STREMIO_SERVER_DEV_MODE: &str = "STREMIO_SERVER_DEV_MODE";
+pub const SRV_BUFFER_SIZE: usize = 1024;
+pub const SRV_LOG_SIZE: usize = 20;

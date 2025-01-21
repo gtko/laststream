@@ -9,8 +9,7 @@ use clap::Parser;
 use native_windows_gui::{self as nwg, NativeUi};
 mod stremio_app;
 use crate::stremio_app::{
-    constants::{DEV_ENDPOINT, IPC_PATH, STA_ENDPOINT, WEB_ENDPOINT},
-    stremio_server::StremioServer,
+    constants::{DEV_ENDPOINT, IPC_PATH, STA_ENDPOINT, STREMIO_SERVER_DEV_MODE, WEB_ENDPOINT},
     MainWindow, PipeClient,
 };
 
@@ -75,9 +74,10 @@ fn main() {
     }
     // END IPC
 
-    if !opt.development {
-        StremioServer::new();
-    }
+    std::env::set_var(
+        STREMIO_SERVER_DEV_MODE,
+        if opt.development { "true" } else { "false" },
+    );
 
     let webui_url = if opt.development && opt.webui_url == WEB_ENDPOINT {
         DEV_ENDPOINT.to_string()
