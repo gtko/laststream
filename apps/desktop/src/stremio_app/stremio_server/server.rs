@@ -89,7 +89,7 @@ impl StremioServer {
                             if on > buffer.len() {
                                 continue;
                             }
-                            std::io::stdout().write(&buffer).ok();
+                            std::io::stdout().write_all(&buffer).ok();
                             let string_data = String::from_utf8_lossy(&buffer[..on]);
                             {
                                 let lines = &mut *out_lines.lock().unwrap();
@@ -132,7 +132,7 @@ impl StremioServer {
                             if en > buffer.len() {
                                 continue;
                             }
-                            std::io::stderr().write(&buffer).ok();
+                            std::io::stderr().write_all(&buffer).ok();
                             let string_data = String::from_utf8_lossy(&buffer[..en]);
                             // eprint!("{:?}", &buffer);
                             {
@@ -187,7 +187,7 @@ impl PartialUi for StremioServer {
             data.development = true;
         }
 
-        data.parent = parent.unwrap().into().clone();
+        data.parent = parent.expect("No parent window").into();
 
         nwg::Notice::builder()
             .parent(data.parent)
