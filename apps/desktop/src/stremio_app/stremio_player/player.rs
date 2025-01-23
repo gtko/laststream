@@ -67,14 +67,6 @@ fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
             };
         }
         set_property!("wid", window_handle as i64);
-        // initializer.set_property("vo", "gpu").expect("unable to set vo");
-        // win, opengl: works but least performancy, 10-15% CPU
-        // winvk, vulkan: works as good as d3d11
-        // d3d11, d1d11: works great
-        // dxinterop, auto: works, slightly more cpu use than d3d11
-        // default (auto) seems to be d3d11 (vo/gpu/d3d11)
-        set_property!("gpu-context", "angle");
-        set_property!("gpu-api", "auto");
         set_property!("title", "Stremio");
         set_property!("terminal", "yes");
         set_property!("msg-level", "all=no,cplayer=debug");
