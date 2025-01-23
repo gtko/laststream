@@ -311,9 +311,7 @@ impl MainWindow {
         data.set_min_size(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
     }
     fn on_paint(&self) {
-        if self.splash_screen.visible() {
-            self.splash_screen.resize(self.window.size());
-        } else {
+        if !self.splash_screen.visible() {
             self.webview.fit_to_window(self.window.handle.hwnd());
         }
     }
