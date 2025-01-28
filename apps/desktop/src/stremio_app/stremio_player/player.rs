@@ -70,7 +70,10 @@ fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
         set_property!("title", "Stremio");
         set_property!("audio-client-name", "Stremio");
         set_property!("terminal", "yes");
+        #[cfg(debug_assertions)]
         set_property!("msg-level", "all=no,cplayer=debug");
+        #[cfg(not(debug_assertions))]
+        set_property!("msg-level", "all=no");
         set_property!("quiet", "yes");
         set_property!("hwdec", "auto");
         Ok(())
