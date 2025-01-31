@@ -10,8 +10,7 @@ use std::{
     process::{self, Command},
     str,
     sync::{Arc, Mutex},
-    thread,
-    time::{self, Duration},
+    thread, time,
 };
 use url::Url;
 use winapi::um::{winbase::CREATE_BREAKAWAY_FROM_JOB, winuser::WS_EX_TOPMOST};
@@ -151,10 +150,17 @@ impl MainWindow {
         let force_update = self.force_update;
         let release_candidate = self.release_candidate;
         let autoupdater_setup_file = self.autoupdater_setup_file.clone();
-        let mut last_update_check = time::Instant::now();
 
-        thread::spawn(move || loop {
-            let check_for_update = || {
+        thread::spawn(move || {
+            loop {
+                if let Ok(msg) = updater_rx.recv() {
+                    if msg == "check_for_update" {
+                        break;
+                    }
+                }
+            }
+
+            loop {
                 let current_version = env!("CARGO_PKG_VERSION")
                     .parse()
                     .expect("Should always be valid");
@@ -183,21 +189,9 @@ impl MainWindow {
                     Ok(None) => println!("No new updates found"),
                     Err(e) => eprintln!("Failed to fetch updates: {e}"),
                 }
-            };
 
-            updater_rx.try_iter().for_each(|message| {
-                if message.as_str() == "check_for_update" {
-                    check_for_update();
-                }
-            });
-
-            let now = time::Instant::now();
-            if now > (last_update_check + time::Duration::from_secs(UPDATE_INTERVAL)) {
-                last_update_check = now;
-                check_for_update();
+                thread::sleep(time::Duration::from_secs(UPDATE_INTERVAL));
             }
-
-            thread::sleep(Duration::from_millis(10));
         }); // thread
 
         if let Ok(mut listener) = PipeServer::bind(socket_path) {
