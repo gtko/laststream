@@ -133,6 +133,10 @@ impl MainWindow {
         let web_tx_arg = web_tx.clone();
         let web_tx_upd = web_tx.clone();
         let web_rx = web_rx.clone();
+
+        let (updater_tx, updater_rx) = flume::unbounded::<String>();
+        let updater_tx_web = updater_tx.clone();
+
         let command_clone = self.command.clone();
 
         // Single application IPC
@@ -146,35 +150,48 @@ impl MainWindow {
         let force_update = self.force_update;
         let release_candidate = self.release_candidate;
         let autoupdater_setup_file = self.autoupdater_setup_file.clone();
-        thread::spawn(move || loop {
-            let current_version = env!("CARGO_PKG_VERSION")
-                .parse()
-                .expect("Should always be valid");
-            let updater_endpoint = if let Some(ref endpoint) = autoupdater_endpoint {
-                endpoint.clone()
-            } else {
-                let mut rng = rand::thread_rng();
-                let index = rng.gen_range(0..UPDATE_ENDPOINT.len());
-                let mut url = Url::parse(UPDATE_ENDPOINT[index]).unwrap();
-                if release_candidate {
-                    url.query_pairs_mut().append_pair("rc", "true");
-                }
-                url
-            };
-            let updater = updater::Updater::new(current_version, &updater_endpoint, force_update);
 
-            match updater.autoupdate() {
-                Ok(Some(update)) => {
-                    println!("New version ready to install v{}", update.version);
-                    let mut autoupdater_setup_file = autoupdater_setup_file.lock().unwrap();
-                    *autoupdater_setup_file = Some(update.file.clone());
-                    web_tx_upd.send(RPCResponse::update_available()).ok();
+        thread::spawn(move || {
+            loop {
+                if let Ok(msg) = updater_rx.recv() {
+                    if msg == "check_for_update" {
+                        break;
+                    }
                 }
-                Ok(None) => println!("No new updates found"),
-                Err(e) => eprintln!("Failed to fetch updates: {e}"),
             }
 
-            thread::sleep(time::Duration::from_secs(UPDATE_INTERVAL));
+            loop {
+                let current_version = env!("CARGO_PKG_VERSION")
+                    .parse()
+                    .expect("Should always be valid");
+
+                let updater_endpoint = if let Some(ref endpoint) = autoupdater_endpoint {
+                    endpoint.clone()
+                } else {
+                    let mut rng = rand::thread_rng();
+                    let index = rng.gen_range(0..UPDATE_ENDPOINT.len());
+                    let mut url = Url::parse(UPDATE_ENDPOINT[index]).unwrap();
+                    if release_candidate {
+                        url.query_pairs_mut().append_pair("rc", "true");
+                    }
+                    url
+                };
+
+                let updater =
+                    updater::Updater::new(current_version, &updater_endpoint, force_update);
+                match updater.autoupdate() {
+                    Ok(Some(update)) => {
+                        println!("New version ready to install v{}", update.version);
+                        let mut autoupdater_setup_file = autoupdater_setup_file.lock().unwrap();
+                        *autoupdater_setup_file = Some(update.file.clone());
+                        web_tx_upd.send(RPCResponse::update_available()).ok();
+                    }
+                    Ok(None) => println!("No new updates found"),
+                    Err(e) => eprintln!("Failed to fetch updates: {e}"),
+                }
+
+                thread::sleep(time::Duration::from_secs(UPDATE_INTERVAL));
+            }
         }); // thread
 
         if let Ok(mut listener) = PipeServer::bind(socket_path) {
@@ -224,6 +241,10 @@ impl MainWindow {
                         web_tx_web
                             .send(RPCResponse::visibility_change(true, 1, false))
                             .ok();
+                        updater_tx_web
+                            .send("check_for_update".to_owned())
+                            .expect("Failed to send value to updater channel");
+
                         let command_ref = command_clone.clone();
                         if !command_ref.is_empty() {
                             web_tx_web.send(RPCResponse::open_media(command_ref)).ok();
