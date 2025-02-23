@@ -139,18 +139,19 @@ impl PartialUi for WebView {
                             }catch(e){}
 
                             window.open = (url) => {
-                                if (typeof url === 'string' && URL.canParse(url)) 
+                                if (typeof url === 'string' && URL.canParse(url))  {
+                                    try {
+                                        const message = {
+                                            id: 1,
+                                            args: ['open-external', url],
+                                        };
+
+                                        window.chrome.webview.postMessage(JSON.stringify(message));
+                                    } catch(e) {
+                                        console.error('Failed to post message');
+                                    }
+                                } else {
                                     return console.error('Not a valid URL string');
-
-                                try {
-                                    const message = {
-                                        id: 1,
-                                        args: ['open-external', url],
-                                    };
-
-                                    window.chrome.webview.postMessage(JSON.stringify(message));
-                                } catch(e) {
-                                    console.error('Failed to post message');
                                 }
                             };
 
