@@ -74,19 +74,25 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-    fn transmit_window_full_screen_change(&self, full_screen: bool, prevent_close: bool) {
-        let web_channel = self.webview.channel.borrow();
-        let (web_tx, _) = web_channel
-            .as_ref()
-            .expect("Cannont obtain communication channel for the Web UI");
-        let web_tx_app = web_tx.clone();
-        web_tx_app
-            .send(RPCResponse::visibility_change(
-                self.window.visible(),
-                prevent_close as u32,
-                full_screen,
-            ))
-            .ok();
+    fn transmit_window_visibility_change(&self) {
+        if let (Ok(web_channel), Ok(style)) = (
+            self.webview.channel.try_borrow(),
+            self.saved_window_style.try_borrow(),
+        ) {
+            let (web_tx, _) = web_channel
+                .as_ref()
+                .expect("Cannont obtain communication channel for the Web UI");
+            let web_tx_app = web_tx.clone();
+            web_tx_app
+                .send(RPCResponse::visibility_change(
+                    self.window.visible(),
+                    style.full_screen as u32,
+                    style.full_screen,
+                ))
+                .ok();
+        } else {
+            eprintln!("Cannot obtain communication channel or window style");
+        }
     }
     fn transmit_window_state_change(&self) {
         if let (Some(hwnd), Ok(web_channel), Ok(style)) = (
@@ -344,7 +350,7 @@ impl MainWindow {
                 self.tray
                     .tray_topmost
                     .set_checked((saved_style.ex_style as u32 & WS_EX_TOPMOST) == WS_EX_TOPMOST);
-                self.transmit_window_full_screen_change(saved_style.full_screen, true);
+                self.transmit_window_visibility_change();
             }
         }
     }
@@ -382,12 +388,14 @@ impl MainWindow {
         }
         self.tray.tray_show_hide.set_checked(self.window.visible());
         self.transmit_window_state_change();
+        self.transmit_window_visibility_change();
     }
     fn on_show_hide(&self) {
         if self.window.visible() {
             self.window.set_visible(false);
             self.tray.tray_show_hide.set_checked(self.window.visible());
             self.transmit_window_state_change();
+            self.transmit_window_visibility_change();
         } else {
             self.on_show();
         }
@@ -398,6 +406,6 @@ impl MainWindow {
         }
         self.window.set_visible(false);
         self.tray.tray_show_hide.set_checked(self.window.visible());
-        self.transmit_window_full_screen_change(false, false);
+        self.transmit_window_visibility_change();
     }
 }
