@@ -159,6 +159,7 @@ pub enum FpProp {
     Mute,
     Volume,
     Duration,
+    SubDelay,
     SubScale,
     CacheBufferingState,
     SubPos,
