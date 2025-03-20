@@ -58,6 +58,7 @@ SignedUninstaller=yes
 [Code]
 function InitializeSetup: Boolean;
 begin
+  Dependency_AddVC2015To2022
   Dependency_AddWebView2;
   Result := True;
 end;
