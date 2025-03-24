@@ -58,7 +58,6 @@ SignedUninstaller=yes
 [Code]
 function InitializeSetup: Boolean;
 begin
-  Dependency_AddVC2015To2022
   Dependency_AddWebView2;
   Result := True;
 end;
@@ -178,6 +177,7 @@ Source: "{#SourcePath}..\bin\avutil-56.dll"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#SourcePath}..\bin\postproc-55.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}..\bin\swresample-3.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}..\bin\swscale-5.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}..\bin\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 
 [Registry]
