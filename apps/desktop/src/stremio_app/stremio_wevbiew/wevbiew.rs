@@ -101,6 +101,15 @@ impl PartialUi for WebView {
                     settings.put_are_host_objects_allowed(false).ok();
                     settings.put_are_default_script_dialogs_enabled(false).ok();
 
+                    // Handle window.open and href
+                    webview.add_new_window_requested(move |_webview, event| {
+                        if let Ok(uri) = event.get_uri() {
+                            open::that(uri)?;
+                        }
+
+                        Ok(())
+                    })?;
+
                     if let Some(endpoint) = endpoint.get() {
                         if webview
                             .navigate(endpoint.as_str()).is_err() {
@@ -137,23 +146,6 @@ impl PartialUi for WebView {
                                     }
                                     })
                             }catch(e){}
-
-                            window.open = (url) => {
-                                if (typeof url === 'string' && URL.canParse(url))  {
-                                    try {
-                                        const message = {
-                                            id: 1,
-                                            args: ['open-external', url],
-                                        };
-
-                                        window.chrome.webview.postMessage(JSON.stringify(message));
-                                    } catch(e) {
-                                        console.error('Failed to post message');
-                                    }
-                                } else {
-                                    return console.error('Not a valid URL string');
-                                }
-                            };
 
                             try{console.log('Shell JS injected');if(window.self === window.top) {
                                 window.qt={webChannelTransport:{send:window.chrome.webview.postMessage}};
