@@ -9,10 +9,13 @@ use std::mem;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use url::Url;
 use urlencoding::decode;
 use webview2::Controller;
 use winapi::shared::windef::HWND;
 use winapi::um::winuser::{GetClientRect, VK_F7, WM_SETFOCUS};
+
+use super::constants::{WARNING_URL, WHITELISTED_HOSTS};
 
 #[derive(Default)]
 pub struct WebView {
@@ -104,7 +107,21 @@ impl PartialUi for WebView {
                     // Handle window.open and href
                     webview.add_new_window_requested(move |_webview, event| {
                         if let Ok(uri) = event.get_uri() {
-                            open::that(uri)?;
+                            if let Ok(url) = Url::parse(&uri) {
+                                let is_whitelisted = url.host().is_some_and(|host| {
+                                    WHITELISTED_HOSTS.iter().any(|whitelisted_host| host.to_string().ends_with(whitelisted_host))
+                                });
+
+                                let final_url = if is_whitelisted {
+                                    url.to_string()
+                                } else {
+                                    format!("{}{}", WARNING_URL, urlencoding::encode(url.as_ref()))
+                                };
+
+                                if let Err(e) = open::that(final_url) {
+                                    eprintln!("Failed to open URL: {}", e);
+                                }
+                            }
                         }
 
                         Ok(())
