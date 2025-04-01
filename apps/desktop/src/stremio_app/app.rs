@@ -46,10 +46,22 @@ pub struct MainWindow {
     #[nwg_resource(source_embed: Some(&data.embed), source_embed_str: Some("MAINICON"))]
     pub window_icon: nwg::Icon,
     #[nwg_control(icon: Some(&data.window_icon), title: APP_NAME, flags: "MAIN_WINDOW")]
-    #[nwg_events( OnWindowClose: [Self::on_quit(SELF, EVT_DATA)], OnInit: [Self::on_init], OnPaint: [Self::on_paint], OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)], OnWindowMinimize: [Self::transmit_window_state_change], OnWindowMaximize: [Self::transmit_window_state_change] )]
+    #[nwg_events(
+        OnWindowClose: [Self::on_quit(SELF, EVT_DATA)],
+        OnInit: [Self::on_init],
+        OnPaint: [Self::on_paint],
+        OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)],
+        OnWindowMinimize: [Self::transmit_window_state_change],
+        OnWindowMaximize: [Self::transmit_window_state_change],
+    )]
     pub window: nwg::Window,
     #[nwg_partial(parent: window)]
-    #[nwg_events((tray, MousePressLeftUp): [Self::on_show], (tray_exit, OnMenuItemSelected): [nwg::stop_thread_dispatch()], (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide], (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost]) ]
+    #[nwg_events(
+        (tray, MousePressLeftUp): [Self::on_show],
+        (tray_exit, OnMenuItemSelected): [nwg::stop_thread_dispatch()],
+        (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide],
+        (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost],
+    )]
     pub tray: SystemTray,
     #[nwg_partial(parent: window)]
     pub splash_screen: SplashImage,
@@ -341,6 +353,7 @@ impl MainWindow {
         if !self.splash_screen.visible() {
             self.webview.fit_to_window(self.window.handle.hwnd());
         }
+        self.transmit_window_state_change();
     }
     fn on_toggle_fullscreen_notice(&self) {
         if let Some(hwnd) = self.window.handle.hwnd() {
