@@ -350,9 +350,9 @@ impl MainWindow {
                 self.tray
                     .tray_topmost
                     .set_checked((saved_style.ex_style as u32 & WS_EX_TOPMOST) == WS_EX_TOPMOST);
-                self.transmit_window_visibility_change();
             }
         }
+        self.transmit_window_visibility_change();
     }
     fn on_hide_splash_notice(&self) {
         self.splash_screen.hide();
