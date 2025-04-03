@@ -13,10 +13,7 @@ use std::{
     thread, time,
 };
 use url::Url;
-use winapi::um::{
-    winbase::CREATE_BREAKAWAY_FROM_JOB,
-    winuser::{WM_SETFOCUS, WS_EX_TOPMOST},
-};
+use winapi::um::{winbase::CREATE_BREAKAWAY_FROM_JOB, winuser::WS_EX_TOPMOST};
 
 use crate::stremio_app::{
     constants::{APP_NAME, UPDATE_ENDPOINT, UPDATE_INTERVAL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH},
@@ -56,6 +53,7 @@ pub struct MainWindow {
         OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)],
         OnWindowMinimize: [Self::transmit_window_state_change],
         OnWindowMaximize: [Self::transmit_window_state_change],
+        OnWindowFocus: [Self::transmit_window_state_change],
     )]
     pub window: nwg::Window,
     #[nwg_partial(parent: window)]
@@ -137,8 +135,6 @@ impl MainWindow {
 
         self.window.set_visible(!self.start_hidden);
         self.tray.tray_show_hide.set_checked(!self.start_hidden);
-
-        self.handle_on_win_focus();
 
         let player_channel = self.player.channel.borrow();
         let (player_tx, player_rx) = player_channel
@@ -349,32 +345,6 @@ impl MainWindow {
                 }
             } // recv
         }); // thread
-    }
-    fn handle_on_win_focus(&self) {
-        if let (Some(hwnd), Ok(web_channel), Ok(style)) = (
-            self.window.handle.hwnd(),
-            self.webview.channel.try_borrow(),
-            self.saved_window_style.try_borrow(),
-        ) {
-            let state = style.clone().get_window_state(hwnd);
-            drop(style);
-            let (web_tx, _) = web_channel
-                .as_ref()
-                .expect("Cannont obtain communication channel for the Web UI");
-            let web_tx_app = web_tx.clone();
-
-            let handler_id = 0x10001;
-            let handle = self.window.handle;
-            nwg::bind_raw_event_handler(&handle, handler_id, move |_hwnd, msg, _w, _l| {
-                if msg == WM_SETFOCUS {
-                    web_tx_app.send(RPCResponse::state_change(state)).ok();
-                }
-                None
-            })
-            .ok();
-        } else {
-            eprintln!("Cannot obtain window handle or communication channel");
-        }
     }
     fn on_min_max(&self, data: &nwg::EventData) {
         let data = data.on_min_max();
