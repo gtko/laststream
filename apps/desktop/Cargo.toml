@@ -44,5 +44,6 @@ url = { version = "2", features = ["serde"] }
 [build-dependencies]
 winres = "0.1"
 chrono = "0.4.22"
+zip-extract = "0.4"
 [dev-dependencies]
 serde_test = "1.0.*"

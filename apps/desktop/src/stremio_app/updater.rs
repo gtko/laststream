@@ -82,7 +82,7 @@ impl Updater {
                 self.next_version
             ));
         }
-        println!("Found update v{}", version);
+        println!("Found update v{version}");
 
         let file_name = std::path::Path::new(installer.url.path())
             .file_name()

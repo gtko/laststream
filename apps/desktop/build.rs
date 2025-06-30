@@ -1,5 +1,5 @@
 use chrono::{Datelike, Local};
-use std::env;
+use std::{env, io::Cursor, path::PathBuf};
 
 extern crate winres;
 fn main() {
@@ -32,4 +32,12 @@ fn main() {
     res.set_icon_with_id("images/stremio.ico", "MAINICON");
     res.append_rc_content(r##"SPLASHIMAGE IMAGE "images/stremio.png""##);
     res.compile().unwrap();
+
+    //extract libmpv-2
+    println!("cargo:rerun-if-changed=libmpv-2.zip");
+    {
+        let archive: Vec<u8> = include_bytes!("libmpv-2.zip").to_vec();
+        let target_dir = PathBuf::from(".");
+        zip_extract::extract(Cursor::new(archive), &target_dir, true).ok();
+    }
 }
