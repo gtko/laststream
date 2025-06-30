@@ -119,7 +119,7 @@ impl PartialUi for WebView {
                                 };
 
                                 if let Err(e) = open::that(final_url) {
-                                    eprintln!("Failed to open URL: {}", e);
+                                    eprintln!("Failed to open URL: {e}");
                                 }
                             }
                         }
@@ -198,7 +198,7 @@ impl PartialUi for WebView {
             nwg::modal_fatal_message(
                 parent,
                 "Failed to Create WebView2 Environment",
-                &format!("{}", e),
+                &format!("{e}"),
             );
         }
 
