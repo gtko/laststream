@@ -177,7 +177,7 @@ Source: "{#SourcePath}..\bin\avutil-56.dll"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#SourcePath}..\bin\postproc-55.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}..\bin\swresample-3.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}..\bin\swscale-5.dll"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourcePath}..\bin\vcruntime140_1.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}..\bin\vcruntime140.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 
 [Registry]
