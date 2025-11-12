@@ -22,6 +22,8 @@ struct Opt {
         help = "Start the app only in system tray and keep the window hidden"
     )]
     start_hidden: bool,
+    #[clap(long, help = "Do not show the splash image")]
+    no_splash: bool,
     #[clap(long, help = "Enable dev tools when pressing F12")]
     dev_tools: bool,
     #[clap(long, help = "Disable the server and load the WebUI from localhost")]
@@ -92,6 +94,7 @@ fn main() {
         command,
         commands_path: Some(commands_path),
         webui_url,
+        no_splash: opt.no_splash,
         dev_tools: opt.development || opt.dev_tools,
         start_hidden: opt.start_hidden,
         autoupdater_endpoint: opt.autoupdater_endpoint,

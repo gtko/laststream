@@ -168,6 +168,8 @@ impl PartialUi for WebView {
                                 window.qt={webChannelTransport:{send:window.chrome.webview.postMessage}};
                                 window.chrome.webview.addEventListener('message',ev=>window.qt.webChannelTransport.onmessage(ev));
                                 }}catch(e){}
+                            window.addEventListener("load", function() {if(initShellComm) try { initShellComm() } catch(e) {}}, false)
+                            
                             "##, |_| Ok(())).expect("Cannot add script to webview");
                             Ok(())
                         }).expect("Cannot add content loading");
