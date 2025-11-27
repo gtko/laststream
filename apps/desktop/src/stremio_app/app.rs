@@ -194,6 +194,7 @@ impl MainWindow {
                     let mut rng = rand::thread_rng();
                     let index = rng.gen_range(0..UPDATE_ENDPOINT.len());
                     let mut url = Url::parse(UPDATE_ENDPOINT[index]).unwrap();
+                    url.query_pairs_mut().append_pair("arch", env!("ARCH"));
                     if release_candidate {
                         url.query_pairs_mut().append_pair("rc", "true");
                     }

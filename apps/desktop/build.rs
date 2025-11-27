@@ -35,11 +35,12 @@ fn main() {
 
     //extract libmpv-2
     let target = std::env::var("TARGET").unwrap();
-    let (archive, flags) = match target.as_str() {
-        "x86_64-pc-windows-msvc" => ("libmpv-2_x64.zip", "/LIBPATH:.\\mpv-x64"),
-        "aarch64-pc-windows-msvc" => ("libmpv-2_arm64.zip", "/LIBPATH:.\\mpv-arm64"),
+    let (arch, archive, flags) = match target.as_str() {
+        "x86_64-pc-windows-msvc" => ("x64", "libmpv-2_x64.zip", "/LIBPATH:.\\mpv-x64"),
+        "aarch64-pc-windows-msvc" => ("arm64", "libmpv-2_arm64.zip", "/LIBPATH:.\\mpv-arm64"),
         _ => panic!("Unsupported target {}", target),
     };
+    println!("cargo:rustc-env=ARCH={}", arch);
     println!("cargo:rustc-link-arg={}", flags);
     println!("cargo:rerun-if-changed={}", archive);
     {
