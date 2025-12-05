@@ -1,4 +1,0 @@
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-args=/LIBPATH:.\\mpv-x64"]
-[target.aarch64-pc-windows-msvc]
-rustflags = ["-C", "link-args=/LIBPATH:.\\mpv-arm64"]

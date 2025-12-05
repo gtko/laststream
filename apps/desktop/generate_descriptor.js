@@ -21,6 +21,10 @@ const DOWNLOAD_ENDPOINT = "https://dl.strem.io/stremio-shell-ng/";
 const OS_EXT = {
     ".exe": "windows",
 };
+const ARCH = [
+    "x64",
+    "arm64",
+];
 const VERSION_REGEX = /^v(\d+\.\d+\.\d+).*$/;
 
 const supportedArguments = Object.freeze({
@@ -99,7 +103,7 @@ const parseArguments = () => {
         return acc;
     }, {});
     try {
-        for (let i = 2; i < process.argv.length; i++) {
+        for (let i = 2;i < process.argv.length;i++) {
             const arg = process.argv[i];
             if (arg.startsWith("--")) {
                 // Stop processing arguments after --
@@ -146,6 +150,7 @@ const s3Cp = (src, dest) => s3Cmd(`cp --acl public-read ${src} ${dest}`);
 
 // Downloads a file from S3 and returns a hash of it
 const s3Hash = (path) => {
+    log("Downloading ", path)
     return new Promise((resolve, reject) => {
         const hash = createHash("sha256");
         https
@@ -167,12 +172,17 @@ const parseS3Listing = (tag) => (line) => {
         ) || {}
     ).groups;
     if (!path) return;
-    const os = OS_EXT[posix.extname(path.name)];
+    const ext = posix.extname(path.name);
+    const os = OS_EXT[ext];
+    const fn = posix.basename(path.name, ext)
     if (!os) return;
+    const arch = ARCH.find(s => fn.endsWith('_' + s))
     return {
         name: path.name,
         url: `${DOWNLOAD_ENDPOINT + tag}/${path.name}`,
         os,
+        arch,
+        tag,
         date: new Date(path.date),
     };
 };
@@ -184,6 +194,12 @@ const getFilesForTag = async (tag) =>
             return (listing || "").split("\n").map(parseS3Listing(tag));
         })
     ).filter((file) => file);
+
+const groupBy = (prop, groups, item) => {
+    Array.isArray(groups[item[prop]]) ? groups[item[prop]].push(item) : groups[item[prop]] = [item]
+    return groups
+}
+
 
 const calculateFileChecksums = async (files) =>
     Promise.all(
@@ -197,6 +213,50 @@ const calculateFileChecksums = async (files) =>
         })
     );
 
+const uploadDescriptor = async (descriptor, release, force, dry_run) => {
+    const suffix = descriptor.arch ? '_' + descriptor.arch : ''
+    const desc_name = descriptor.tag + suffix + ".json";
+    const s3_rc_desc_path = S3_VERSIONS_RC_PATH + desc_name;
+    const s3_dest_path = release
+        ? S3_VERSIONS_PATH + desc_name
+        : s3_rc_desc_path;
+    const rc_uploaded = await s3Ls(s3_dest_path).then((listing) => !!listing)
+    if (!force && rc_uploaded) {
+        log(`${descriptor.arch || 'noarch'} ${args.release ? "" : "RC "}escriptor for tag ${descriptor.tag} already exists. Skipping upload.`)
+        return
+    }
+    if (
+        release &&
+        !force &&
+        rc_uploaded
+    ) {
+        log(
+            "Descriptor for tag",
+            tag,
+            "already exists in the RC folder. Moving it to the releases folder"
+        );
+        if (!dry_run) await s3Cp(s3_rc_desc_path, s3_dest_path);
+        log("Done");
+        return;
+    }
+
+    const descriptor_path = `${tmpdir()}/${desc_name}`;
+    const descriptor_text = JSON.stringify(descriptor, null, 2) + "\n";
+    log("Writting descriptor to", descriptor_path);
+    if (dry_run) log(descriptor_text)
+    else fs.writeFileSync(descriptor_path, descriptor_text);
+
+    log(`Uploading ${descriptor.arch || 'noarch'} ${release ? "" : "RC "}descriptor to S3`);
+    try {
+        if (!dry_run) await s3Cp(descriptor_path, s3_dest_path);
+    } finally {
+        // Clean up the temporary file even if the upload fails
+        log("Cleaning up", descriptor_path);
+        if (!dry_run) fs.unlinkSync(descriptor_path);
+    }
+    log("Done uploading", descriptor_path, "to", s3_dest_path);
+};
+
 // Generates the descriptor for a given tag
 // If no tag is provided, it will get the latest tag
 // An example descriptor:
@@ -208,92 +268,58 @@ const calculateFileChecksums = async (files) =>
 //     "files": [
 //       {
 //         "name": "StremioSetup.exe",
-//         "url": "https://s3-eu-west-1.amazonaws.com/stremio-artifacts/stremio-shell-ng/v0.1.0-new-setup/StremioSetup.exe",
+//         "url": "https://s3-eu-west-1.amazonaws.com/stremio-artifacts/stremio-shell-ng/v0.1.0-new-setup/Stremio.exe",
 //         "checksum": "0ff94905df4d94233d14f48ed68e31664a478a29204be4c7867c2389929c6ac3",
-//         "os": "windows"
+//         "os": "macos"
 //       }
 //     ]
 //   }
 
-const generateDescriptor = async (args) => {
+const generateDescriptors = async (args) => {
     let tag = args.tag;
     if (!tag) {
         log("Obtaining the latest tag");
         tag = await s3Ls(S3_BUCKET_PATH).then((listing) => {
-            // get the first line, remove the DIR prefix, and get the basename
+            // get the last line, remove the DIR prefix, and get the basename
             // which is the tag
-            const first_path = listing.replace(/^\s+\w+\s+/gm, '').split('\n').find(line => line.match(VERSION_REGEX));
-            return posix.basename(first_path);
+            const ver_path = listing.replace(/^\s+\w+\s+/gm, '').split('\n').reverse().find(line => line.match(VERSION_REGEX));
+            return posix.basename(ver_path);
         });
-    }
-    const desc_name = tag + ".json";
-    const s3_rc_desc_path = S3_VERSIONS_RC_PATH + desc_name;
-    const s3_dest_path = args.release
-        ? S3_VERSIONS_PATH + desc_name
-        : s3_rc_desc_path;
-    if (!args.force && await s3Ls(s3_dest_path).then((listing) => !!listing)) {
-        throw new Error(
-            `${args.release ? "" : "RC "}Descriptor for tag ${tag} already exists`
-        );
-    }
-    if (
-        args.release &&
-        !args.force &&
-        (await s3Ls(s3_rc_desc_path).then((listing) => !!listing))
-    ) {
-        log(
-            "Descriptor for tag",
-            tag,
-            "already exists in the RC folder. Moving it to the releases folder"
-        );
-        if (!args.dry_run) await s3Cp(s3_rc_desc_path, s3_dest_path);
-        log("Done");
-        return;
     }
 
     log("Getting files for tag", tag);
     if (!tag) throw new Error("No tag found");
     const version = (tag.match(VERSION_REGEX) || [])[1];
     if (!version) throw new Error("No valid version found");
-    const file_listing = await getFilesForTag(tag);
-    // We need at least one file to extract the release date
-    if (!file_listing.length) throw new Error("No files found");
-    if (args.wait_all && file_listing.length < Object.keys(OS_EXT).length) {
-        log(
-            `Not all files are uploaded yet. Rerun this script after ${Object.keys(OS_EXT).length - file_listing.length
-            } more are uploaded`
-        );
-        return;
-    }
-    const files = await calculateFileChecksums(file_listing);
-    const descriptor = {
-        version,
-        tag,
-        released: file_listing[0].date.toISOString(),
-        files,
-    };
-    const descriptor_text = JSON.stringify(descriptor, null, 2) + "\n";
-    if (args.dry_run) {
-        process.stdout.write(descriptor_text);
-        return;
-    }
+    const arch_listing = (await getFilesForTag(tag)).reduce(groupBy.bind(null, 'arch'), {});
+    (await Promise.all(Object.keys(arch_listing).map(async arch => {
+        const file_listing = arch_listing[arch]
+        // We need at least one file to extract the release date
+        if (!file_listing.length) throw new Error("No files found");
 
-    const descriptor_path = `${tmpdir()}/${desc_name}`;
-    log("Writting descriptor to", descriptor_path);
-    fs.writeFileSync(descriptor_path, descriptor_text);
-
-    log(`Uploading ${args.release ? "" : "RC "}descriptor to S3`);
-    try {
-        await s3Cp(descriptor_path, s3_dest_path);
-    } finally {
-        // Clean up the temporary file even if the upload fails
-        log("Cleaning up");
-        fs.unlinkSync(descriptor_path);
-    }
-    log("Done");
+        const files = await calculateFileChecksums(file_listing);
+        const descriptor = {
+            version,
+            tag,
+            released: file_listing[0].date.toISOString(),
+            arch: file_listing[0].arch,
+            files: files.map(f => ({
+                url: f.url,
+                checksum: f.checksum,
+                os: f.os,
+                date: f.date.toISOString(),
+            })),
+        };
+        uploadDescriptor(descriptor, args.release, args.force, args.dry_run);
+        if (descriptor.arch == 'x64') {
+            descriptor.arch = '';
+            uploadDescriptor(descriptor, args.release, args.force, args.dry_run);
+        }
+        return descriptor
+    })));
 };
 
-generateDescriptor(args).catch((err) => {
+generateDescriptors(args).catch((err) => {
     console.error(err.message);
     process.exit(1);
 });
