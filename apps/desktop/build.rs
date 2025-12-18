@@ -42,10 +42,7 @@ fn main() {
     };
     println!("cargo:rustc-env=ARCH={}", arch);
     println!("cargo:rustc-link-arg={}", flags);
-    println!("cargo:rerun-if-changed={}", archive);
-    {
-        let archive = fs::read(archive).unwrap();
-        let target_dir = PathBuf::from(".");
-        zip_extract::extract(Cursor::new(archive), &target_dir, true).ok();
-    }
+    let archive = fs::read(archive).unwrap();
+    let target_dir = PathBuf::from(".");
+    zip_extract::extract(Cursor::new(archive), &target_dir, true).ok();
 }
