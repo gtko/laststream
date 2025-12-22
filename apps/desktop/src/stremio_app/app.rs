@@ -248,10 +248,10 @@ impl MainWindow {
         let hide_splash_sender = self.hide_splash_notice.sender();
         let focus_sender = self.focus_notice.sender();
         let autoupdater_setup_mutex = self.autoupdater_setup_file.clone();
-        
+
         let discord_rpc: Arc<Mutex<Option<DiscordRpc>>> = Arc::new(Mutex::new(None));
         let discord_rpc_clone = discord_rpc.clone();
-        
+
         thread::spawn(move || loop {
             if let Some(msg) = web_rx
                 .recv()
@@ -373,13 +373,17 @@ impl MainWindow {
                     Some("discord-set-activity") => {
                         if let Some(params) = msg.get_params() {
                             let state = params.get("state").and_then(|v| v.as_str()).unwrap_or("");
-                            let details = params.get("details").and_then(|v| v.as_str()).unwrap_or("");
+                            let details =
+                                params.get("details").and_then(|v| v.as_str()).unwrap_or("");
                             let image = params.get("image").and_then(|v| v.as_str());
-                            let start_timestamp = params.get("startTimestamp").and_then(|v| v.as_i64());
-                            
+                            let start_timestamp =
+                                params.get("startTimestamp").and_then(|v| v.as_i64());
+
                             let discord_guard = discord_rpc_clone.lock().unwrap();
                             if let Some(ref discord) = *discord_guard {
-                                if let Err(e) = discord.set_activity(state, details, image, start_timestamp) {
+                                if let Err(e) =
+                                    discord.set_activity(state, details, image, start_timestamp)
+                                {
                                     eprintln!("Discord set activity error: {}", e);
                                 }
                             }
