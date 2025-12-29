@@ -29,8 +29,7 @@ impl DiscordRpc {
             return Ok(());
         }
 
-        let mut client = DiscordIpcClient::new(DISCORD_APP_ID)
-            .map_err(|e| format!("Failed to create Discord client: {}", e))?;
+        let mut client = DiscordIpcClient::new(DISCORD_APP_ID);
 
         client
             .connect()
