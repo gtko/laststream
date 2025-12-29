@@ -54,13 +54,6 @@ impl DiscordRpc {
         Ok(())
     }
 
-    pub fn is_connected(&self) -> bool {
-        self.client
-            .lock()
-            .map(|guard| guard.is_some())
-            .unwrap_or(false)
-    }
-
     pub fn set_activity(
         &self,
         state: &str,
