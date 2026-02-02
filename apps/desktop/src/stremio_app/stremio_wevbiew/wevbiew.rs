@@ -15,7 +15,7 @@ use webview2::Controller;
 use winapi::shared::windef::HWND;
 use winapi::um::winuser::{GetClientRect, VK_F7, WM_SETFOCUS};
 
-use super::constants::{WARNING_URL, WHITELISTED_HOSTS};
+use super::constants::{SERVER_IPC_KEY, WARNING_URL, WHITELISTED_HOSTS};
 
 #[derive(Default)]
 pub struct WebView {
@@ -153,6 +153,12 @@ impl PartialUi for WebView {
                         }).expect("Cannot add full screen element changed");
 
                         webview.add_content_loading(move |wv, _| {
+                            wv.execute_script(format!(
+                                    "window.stremio_server_ipc_key='{}'",
+                                    std::env::var(SERVER_IPC_KEY).unwrap_or_default()
+                            ), |_| Ok(())
+                            ).expect("Cannot add SERVER_IPC_KEY to webview");
+
                             wv.execute_script(r##"
                             try{
                                 /* Disable context menus */
