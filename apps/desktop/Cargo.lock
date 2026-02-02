@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "stremio-shell-ng"
-version = "5.0.16"
+version = "5.0.17"
 dependencies = [
  "anyhow",
  "bitflags 2.4.2",
@@ -1621,6 +1621,7 @@ dependencies = [
  "sha2",
  "url",
  "urlencoding",
+ "uuid",
  "webview2",
  "webview2-sys",
  "whoami",
@@ -1963,6 +1964,17 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+
+[[package]]
+name = "uuid"
+version = "1.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
+dependencies = [
+ "getrandom 0.3.3",
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "vcpkg"
