@@ -11,7 +11,7 @@ jobs:
     - name: disable git eol translation
       run: git config --global core.autocrlf false
     - name: checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Check version
       run: node stremiover.js check
     - name: Stable with rustfmt and clippy
