@@ -14,7 +14,13 @@ use url::Url;
 use urlencoding::decode;
 use webview2::Controller;
 use winapi::shared::windef::HWND;
-use winapi::um::winuser::{GetClientRect, VK_F7, WM_SETFOCUS};
+use winapi::um::winuser::{GetClientRect, VK_F7, WM_APPCOMMAND, WM_SETFOCUS};
+
+const APPCOMMAND_MEDIA_NEXTTRACK: u32 = 11;
+const APPCOMMAND_MEDIA_PREVIOUSTRACK: u32 = 12;
+const APPCOMMAND_MEDIA_PLAY_PAUSE: u32 = 14;
+const APPCOMMAND_MEDIA_PLAY: u32 = 46;
+const APPCOMMAND_MEDIA_PAUSE: u32 = 47;
 
 use super::constants::{WARNING_URL, WHITELISTED_HOSTS};
 
@@ -61,6 +67,7 @@ impl PartialUi for WebView {
         println!("Building WebView");
         let (tx, rx) = flume::unbounded();
         let tx_drag_drop = tx.clone();
+        let tx_media = tx.clone();
         let (tx_web, rx_web) = flume::unbounded();
         let tx_fs = tx_web.clone();
         data.channel = RefCell::new(Some((tx, rx_web)));
@@ -224,13 +231,27 @@ impl PartialUi for WebView {
         // handler ids equal or smaller than 0xFFFF are reserved by NWG
         let handler_id = 0x10000;
         let controller_clone = data.controller.clone();
-        nwg::bind_raw_event_handler(&parent, handler_id, move |_hwnd, msg, _w, _l| {
+        nwg::bind_raw_event_handler(&parent, handler_id, move |_hwnd, msg, _w, l| {
             if msg == WM_SETFOCUS {
                 controller_clone.get().and_then(|controller| {
                     controller
                         .move_focus(webview2::MoveFocusReason::Programmatic)
                         .ok()
                 });
+            } else if msg == WM_APPCOMMAND {
+                let cmd = ((l >> 16) & 0xFFF) as u32;
+                let action = match cmd {
+                    APPCOMMAND_MEDIA_PLAY_PAUSE | APPCOMMAND_MEDIA_PLAY | APPCOMMAND_MEDIA_PAUSE => {
+                        Some("play-pause")
+                    }
+                    APPCOMMAND_MEDIA_NEXTTRACK => Some("next-track"),
+                    APPCOMMAND_MEDIA_PREVIOUSTRACK => Some("previous-track"),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    tx_media.send(ipc::RPCResponse::media_key(action)).ok();
+                    return Some(1);
+                }
             }
             None
         })
