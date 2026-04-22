@@ -895,18 +895,18 @@ checksum = "7fc7aa29613bd6a620df431842069224d8bc9011086b1db4c0e0cd47fa03ec9a"
 
 [[package]]
 name = "libmpv2"
-version = "4.0.0"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7befa1412ea58aeed5f36da1ad795f15bc6aefd554455f5134f1d4f7b6522e7f"
+checksum = "3e0c3802b4bb1a18adbf5659b078ce24cb8e16c79ff695557f4e10af2a44722a"
 dependencies = [
  "libmpv2-sys",
 ]
 
 [[package]]
 name = "libmpv2-sys"
-version = "4.0.0"
+version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42124ba90561beede41d5e6ef64eef63fc1395cf83217e3dd1157294f7dcdb56"
+checksum = "edb32cabe7176b7d270b0dca6ff418b75187ae8d3854423e3d06fbff376841e4"
 
 [[package]]
 name = "libz-rs-sys"
@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "stremio-shell-ng"
-version = "5.0.15"
+version = "5.0.20"
 dependencies = [
  "anyhow",
  "bitflags 2.4.2",
@@ -1648,6 +1648,7 @@ dependencies = [
  "sha2",
  "url",
  "urlencoding",
+ "uuid",
  "webview2",
  "webview2-sys",
  "whoami",
@@ -1993,11 +1994,13 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "uuid"
-version = "0.8.2"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
 dependencies = [
- "getrandom 0.2.12",
+ "getrandom 0.3.3",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]

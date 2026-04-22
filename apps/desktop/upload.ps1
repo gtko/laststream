@@ -1,3 +1,8 @@
 $tag = $(git describe --abbrev=0)
-aws s3 cp --acl public-read ".\StremioSetup-v$((get-item .\StremioSetup*.exe).VersionInfo.ProductVersion.Trim()).exe" s3://stremio-artifacts/stremio-shell-ng/$tag/
+
+foreach ($installer in (get-item .\StremioSetup*.exe)) {
+    if ($tag.StartsWith("v$($installer.VersionInfo.ProductVersion.Trim())")) {
+        aws s3 cp --acl public-read "$installer" s3://stremio-artifacts/stremio-shell-ng/$tag/
+    }
+}
 node ./generate_descriptor.js --tag=$tag
