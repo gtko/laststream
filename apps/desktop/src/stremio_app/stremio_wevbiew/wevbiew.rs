@@ -241,9 +241,9 @@ impl PartialUi for WebView {
             } else if msg == WM_APPCOMMAND {
                 let cmd = ((l >> 16) & 0xFFF) as u32;
                 let action = match cmd {
-                    APPCOMMAND_MEDIA_PLAY_PAUSE | APPCOMMAND_MEDIA_PLAY | APPCOMMAND_MEDIA_PAUSE => {
-                        Some("play-pause")
-                    }
+                    APPCOMMAND_MEDIA_PLAY_PAUSE
+                    | APPCOMMAND_MEDIA_PLAY
+                    | APPCOMMAND_MEDIA_PAUSE => Some("play-pause"),
                     APPCOMMAND_MEDIA_NEXTTRACK => Some("next-track"),
                     APPCOMMAND_MEDIA_PREVIOUSTRACK => Some("previous-track"),
                     _ => None,
