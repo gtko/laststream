@@ -154,6 +154,7 @@ pub enum BoolProp {
     PausedForCache,
     Seeking,
     EofReached,
+    Keepaspect,
 }
 stringable!(BoolProp);
 // Int
@@ -181,6 +182,7 @@ pub enum FpProp {
     DemuxerCacheTime,
     SubPos,
     Speed,
+    Panscan,
 }
 stringable!(FpProp);
 // Str
