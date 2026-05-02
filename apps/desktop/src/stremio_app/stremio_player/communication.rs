@@ -203,6 +203,7 @@ pub enum StrProp {
     SubBorderColor,
     SubColor,
     TrackList,
+    Vf,
     VideoParams,
     Vo,
 }
