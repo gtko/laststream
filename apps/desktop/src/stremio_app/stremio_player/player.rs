@@ -1,9 +1,10 @@
 use crate::stremio_app::ipc;
 use crate::stremio_app::RPCResponse;
 use flume::{Receiver, Sender};
-use libmpv2::{events::Event, events::EventContext, Format, Mpv, SetData};
+use libmpv2::{events::Event, Format, Mpv, SetData};
 use native_windows_gui::{self as nwg, PartialUi};
 use std::{
+    ptr::NonNull,
     sync::Arc,
     thread::{self, JoinHandle},
 };
@@ -17,6 +18,18 @@ use crate::stremio_app::stremio_player::{
 struct ObserveProperty {
     name: String,
     format: Format,
+}
+
+// Wakes up the event thread blocked in `mpv_wait_event` on the sub-client.
+// `mpv_wakeup` is documented as safe to call from any thread.
+#[derive(Clone, Copy)]
+struct EventClientWakeup(NonNull<libmpv2_sys::mpv_handle>);
+unsafe impl Send for EventClientWakeup {}
+unsafe impl Sync for EventClientWakeup {}
+impl EventClientWakeup {
+    fn wake_up(&self) {
+        unsafe { libmpv2_sys::mpv_wakeup(self.0.as_ptr()) }
+    }
 }
 
 #[derive(Default)]
@@ -43,21 +56,26 @@ impl PartialUi for Player {
         let (observe_property_sender, observe_property_receiver) = flume::unbounded();
         data.channel = ipc::Channel::new(Some((in_msg_sender, rpc_response_receiver)));
 
-        let mpv = create_shareable_mpv(window_handle);
+        let mpv = Arc::new(create_mpv(window_handle));
+        let mpv_event_client = mpv
+            .create_client(None)
+            .expect("cannot create MPV event client");
+        let event_wakeup = EventClientWakeup(mpv_event_client.ctx);
 
         let _event_thread = create_event_thread(
-            Arc::clone(&mpv),
+            mpv_event_client,
             observe_property_receiver,
             rpc_response_sender,
         );
-        let _message_thread = create_message_thread(mpv, observe_property_sender, in_msg_receiver);
+        let _message_thread =
+            create_message_thread(mpv, event_wakeup, observe_property_sender, in_msg_receiver);
         // @TODO implement a mechanism to stop threads on `Player` drop if needed
 
         Ok(())
     }
 }
 
-fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
+fn create_mpv(window_handle: HWND) -> Mpv {
     let mpv = Mpv::with_initializer(|initializer| {
         macro_rules! set_property {
             ($name:literal, $value:expr) => {
@@ -79,17 +97,16 @@ fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
         // set_property!("vo", "gpu-next,");
         Ok(())
     });
-    Arc::new(mpv.expect("cannot build MPV"))
+    mpv.expect("cannot build MPV")
 }
 
 fn create_event_thread(
-    mpv: Arc<Mpv>,
+    mut mpv_event_client: Mpv,
     observe_property_receiver: Receiver<ObserveProperty>,
     rpc_response_sender: Sender<String>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        let mut event_context = EventContext::new(mpv.ctx);
-        event_context
+        mpv_event_client
             .disable_deprecated_events()
             .expect("failed to disable deprecated MPV events");
 
@@ -97,13 +114,13 @@ fn create_event_thread(
 
         loop {
             for ObserveProperty { name, format } in observe_property_receiver.drain() {
-                event_context
+                mpv_event_client
                     .observe_property(&name, format, 0)
                     .expect("failed to observer MPV property");
             }
 
             // -1.0 means to block and wait for an event.
-            let event = match event_context.wait_event(-1.) {
+            let event = match mpv_event_client.wait_event(-1.) {
                 Some(Ok(event)) => event,
                 Some(Err(error)) => {
                     eprintln!("Event errored: {error:?}");
@@ -141,6 +158,7 @@ fn create_event_thread(
 
 fn create_message_thread(
     mpv: Arc<Mpv>,
+    event_wakeup: EventClientWakeup,
     observe_property_sender: Sender<ObserveProperty>,
     in_msg_receiver: Receiver<String>,
 ) -> JoinHandle<()> {
@@ -151,7 +169,7 @@ fn create_message_thread(
             observe_property_sender
                 .send(ObserveProperty { name, format })
                 .expect("cannot send ObserveProperty");
-            mpv.wake_up();
+            event_wakeup.wake_up();
         };
 
         let send_command = |cmd: CmdVal| {
@@ -250,15 +268,4 @@ fn create_message_thread(
             }
         }
     })
-}
-
-trait MpvExt {
-    fn wake_up(&self);
-}
-
-impl MpvExt for Mpv {
-    // @TODO create a PR to the `libmpv` crate and then remove `libmpv-sys` from Cargo.toml?
-    fn wake_up(&self) {
-        unsafe { libmpv2_sys::mpv_wakeup(self.ctx.as_ptr()) }
-    }
 }
