@@ -4,7 +4,6 @@ use flume::{Receiver, Sender};
 use libmpv2::{events::Event, Format, Mpv, SetData};
 use native_windows_gui::{self as nwg, PartialUi};
 use std::{
-    ptr::NonNull,
     sync::Arc,
     thread::{self, JoinHandle},
 };
@@ -18,18 +17,6 @@ use crate::stremio_app::stremio_player::{
 struct ObserveProperty {
     name: String,
     format: Format,
-}
-
-// Wakes up the event thread blocked in `mpv_wait_event` on the sub-client.
-// `mpv_wakeup` is documented as safe to call from any thread.
-#[derive(Clone, Copy)]
-struct EventClientWakeup(NonNull<libmpv2_sys::mpv_handle>);
-unsafe impl Send for EventClientWakeup {}
-unsafe impl Sync for EventClientWakeup {}
-impl EventClientWakeup {
-    fn wake_up(&self) {
-        unsafe { libmpv2_sys::mpv_wakeup(self.0.as_ptr()) }
-    }
 }
 
 #[derive(Default)]
@@ -60,15 +47,13 @@ impl PartialUi for Player {
         let mpv_event_client = mpv
             .create_client(None)
             .expect("cannot create MPV event client");
-        let event_wakeup = EventClientWakeup(mpv_event_client.ctx);
 
         let _event_thread = create_event_thread(
             mpv_event_client,
             observe_property_receiver,
             rpc_response_sender,
         );
-        let _message_thread =
-            create_message_thread(mpv, event_wakeup, observe_property_sender, in_msg_receiver);
+        let _message_thread = create_message_thread(mpv, observe_property_sender, in_msg_receiver);
         // @TODO implement a mechanism to stop threads on `Player` drop if needed
 
         Ok(())
@@ -119,8 +104,7 @@ fn create_event_thread(
                     .expect("failed to observer MPV property");
             }
 
-            // -1.0 means to block and wait for an event.
-            let event = match mpv_event_client.wait_event(-1.) {
+            let event = match mpv_event_client.wait_event(0.1) {
                 Some(Ok(event)) => event,
                 Some(Err(error)) => {
                     eprintln!("Event errored: {error:?}");
@@ -149,16 +133,18 @@ fn create_event_thread(
                 _ => continue,
             };
 
-            rpc_response_sender
-                .send(RPCResponse::response_message(player_response.to_value()))
-                .expect("failed to send RPCResponse");
+            if let Err(error) =
+                rpc_response_sender.send(RPCResponse::response_message(player_response.to_value()))
+            {
+                eprintln!("failed to send RPCResponse: {error}");
+                break;
+            }
         }
     })
 }
 
 fn create_message_thread(
     mpv: Arc<Mpv>,
-    event_wakeup: EventClientWakeup,
     observe_property_sender: Sender<ObserveProperty>,
     in_msg_receiver: Receiver<String>,
 ) -> JoinHandle<()> {
@@ -166,10 +152,9 @@ fn create_message_thread(
         // -- Helpers --
 
         let observe_property = |name: String, format: Format| {
-            observe_property_sender
-                .send(ObserveProperty { name, format })
-                .expect("cannot send ObserveProperty");
-            event_wakeup.wake_up();
+            if let Err(error) = observe_property_sender.send(ObserveProperty { name, format }) {
+                eprintln!("cannot send ObserveProperty: {error}");
+            }
         };
 
         let send_command = |cmd: CmdVal| {
