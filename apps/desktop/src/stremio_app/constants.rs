@@ -15,3 +15,12 @@ pub const STREMIO_SERVER_DEV_MODE: &str = "STREMIO_SERVER_DEV_MODE";
 pub const SRV_BUFFER_SIZE: usize = 1024;
 pub const SERVER_IPC_KEY: &str = "SERVER_IPC_KEY";
 pub const SRV_LOG_SIZE: usize = 20;
+
+pub fn web_endpoint_with_streaming_server(server_url: &str) -> String {
+    let server_url = server_url.trim_end_matches('/');
+    let streaming_server_url =
+        url::form_urlencoded::byte_serialize(server_url.as_bytes()).collect::<String>();
+    let web_endpoint = WEB_ENDPOINT.trim_end_matches('/');
+
+    format!("{web_endpoint}/#/?streamingServerUrl={streaming_server_url}")
+}
