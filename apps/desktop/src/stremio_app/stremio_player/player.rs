@@ -19,6 +19,28 @@ struct ObserveProperty {
     format: Format,
 }
 
+fn with_gpu_next_fallback(vo: String) -> String {
+    let mut outputs = vo
+        .split(',')
+        .filter(|output| !output.is_empty())
+        .map(String::from)
+        .collect::<Vec<String>>();
+
+    let has_gpu_next = outputs.iter().any(|output| output == "gpu-next");
+    let has_gpu = outputs.iter().any(|output| output == "gpu");
+
+    if outputs.is_empty() {
+        outputs.push("gpu-next".to_string());
+        outputs.push("gpu".to_string());
+    } else if has_gpu_next && !has_gpu {
+        outputs.push("gpu".to_string());
+    } else if has_gpu && !has_gpu_next {
+        outputs.push("gpu-next".to_string());
+    }
+
+    format!("{},", outputs.join(","))
+}
+
 #[derive(Default)]
 pub struct Player {
     pub channel: ipc::Channel,
@@ -76,7 +98,19 @@ fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
         set_property!("msg-level", "all=no");
         set_property!("quiet", "yes");
         set_property!("hwdec", "auto");
-        // set_property!("vo", "gpu-next,");
+        // gpu-next: libplacebo VO with modern HDR tone-mapping; gpu, is the fallback.
+        set_property!("vo", "gpu-next,gpu,");
+        for (name, value) in [
+            ("tone-mapping", "bt.2390"),
+            ("dither-depth", "auto"),
+            ("deband", "yes"),
+            ("scale", "spline36"),
+            ("cscale", "spline36"),
+        ] {
+            if let Err(error) = initializer.set_property(name, value) {
+                eprintln!("mpv: cannot set {name}={value}: {error:?}");
+            }
+        }
         Ok(())
     });
     Arc::new(mpv.expect("cannot build MPV"))
@@ -230,12 +264,7 @@ fn create_message_thread(
                 }
                 InMsg(InMsgFn::MpvSetProp, InMsgArgs::StProp(name, PropVal::Str(value))) => {
                     let value = if name.to_string() == "vo" {
-                        let mut value = value;
-                        if !value.is_empty() && !value.ends_with(',') {
-                            value.push(',');
-                        }
-                        value.push_str("gpu-next,");
-                        value
+                        with_gpu_next_fallback(value)
                     } else {
                         value
                     };
