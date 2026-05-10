@@ -85,10 +85,14 @@ impl StremioServer {
                         let http_endpoint = String::new();
                         loop {
                             let mut buffer = [0; SRV_BUFFER_SIZE];
-                            let on = stdout.read(&mut buffer[..]).unwrap_or(!0);
-                            if on > buffer.len() {
-                                continue;
-                            }
+                            let on = match stdout.read(&mut buffer[..]) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(err) => {
+                                    eprintln!("server stdout read error: {err}");
+                                    break;
+                                }
+                            };
                             std::io::stdout().write_all(&buffer).ok();
                             let string_data = String::from_utf8_lossy(&buffer[..on]);
                             {
@@ -116,10 +120,6 @@ impl StremioServer {
                                     .collect::<Vec<&str>>()
                                     .join("\n");
                             };
-                            if on == 0 {
-                                // Server terminated
-                                break;
-                            }
                         }
                     });
 
@@ -128,10 +128,14 @@ impl StremioServer {
                     let err_thread = thread::spawn(move || {
                         let mut buffer = [0; SRV_BUFFER_SIZE];
                         loop {
-                            let en = stderr.read(&mut buffer[..]).unwrap_or(!0);
-                            if en > buffer.len() {
-                                continue;
-                            }
+                            let en = match stderr.read(&mut buffer[..]) {
+                                Ok(0) => break,
+                                Ok(n) => n,
+                                Err(err) => {
+                                    eprintln!("server stderr read error: {err}");
+                                    break;
+                                }
+                            };
                             std::io::stderr().write_all(&buffer).ok();
                             let string_data = String::from_utf8_lossy(&buffer[..en]);
                             // eprint!("{:?}", &buffer);
@@ -148,10 +152,6 @@ impl StremioServer {
                                     .collect::<Vec<&str>>()
                                     .join("\n");
                             };
-                            if en == 0 {
-                                // Server terminated
-                                break;
-                            }
                         }
                     });
                     out_thread.join().ok();
