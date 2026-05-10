@@ -88,8 +88,15 @@ fn main() {
     commands_path.push_str(&username());
     let socket_path = Path::new(&commands_path);
     if let Ok(mut stream) = PipeClient::connect(socket_path) {
-        stream.write_all(command.as_bytes()).ok();
-        exit(0);
+        let forwarded = stream
+            .write_all(command.as_bytes())
+            .and_then(|_| stream.flush())
+            .is_ok();
+        drop(stream);
+        if forwarded {
+            exit(0);
+        }
+        eprintln!("Failed to forward command to existing Stremio instance; launching new instance");
     }
     // END IPC
 
