@@ -32,40 +32,6 @@ use crate::stremio_app::{
 
 use super::stremio_server::StremioServer;
 
-fn webui_url_with_streaming_server(webui_url: &str) -> String {
-    if webui_url.trim_end_matches('/') != WEB_ENDPOINT.trim_end_matches('/') {
-        return webui_url.to_string();
-    }
-
-    find_streaming_server_url()
-        .map(|server_url| web_endpoint_with_streaming_server(&server_url))
-        .unwrap_or_else(|| webui_url.to_string())
-}
-
-fn find_streaming_server_url() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(time::Duration::from_millis(500))
-        .build()
-        .ok()?;
-
-    (11470..=11474).find_map(|port| {
-        let server_url = format!("http://127.0.0.1:{port}");
-        let settings_url = format!("{server_url}/settings");
-        let response = client.get(settings_url).send().ok()?;
-
-        if !response.status().is_success() {
-            return None;
-        }
-
-        let body = response.text().ok()?;
-        if body.contains("\"baseUrl\"") && body.contains("\"values\"") {
-            Some(server_url)
-        } else {
-            None
-        }
-    })
-}
-
 #[derive(Default, NwgUi)]
 pub struct MainWindow {
     pub command: String,
@@ -163,10 +129,16 @@ impl MainWindow {
         }
     }
     fn on_init(&self) {
-        self.webview
-            .endpoint
-            .set(webui_url_with_streaming_server(&self.webui_url))
-            .ok();
+        let webui_url =
+            if self.webui_url.trim_end_matches('/') == WEB_ENDPOINT.trim_end_matches('/') {
+                self.server
+                    .server_url()
+                    .map(|server_url| web_endpoint_with_streaming_server(&server_url))
+                    .unwrap_or_else(|| self.webui_url.clone())
+            } else {
+                self.webui_url.clone()
+            };
+        self.webview.endpoint.set(webui_url).ok();
         self.webview.dev_tools.set(self.dev_tools).ok();
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
