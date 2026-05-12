@@ -71,8 +71,12 @@ impl WindowStyle {
         self.pos = ((monitor_w - self.size.0) / 2, (monitor_h - self.size.1) / 2);
         self.show_window_at(hwnd, HWND_NOTOPMOST);
     }
-    pub fn toggle_full_screen(&mut self, hwnd: HWND) {
-        if self.full_screen {
+    pub fn set_full_screen(&mut self, hwnd: HWND, full_screen: bool) {
+        if self.full_screen == full_screen {
+            return;
+        }
+
+        if !full_screen {
             let topmost = if self.ex_style as u32 & WS_EX_TOPMOST == WS_EX_TOPMOST {
                 HWND_TOPMOST
             } else {

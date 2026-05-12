@@ -41,6 +41,7 @@ pub struct MainWindow {
     pub force_update: bool,
     pub release_candidate: bool,
     pub autoupdater_setup_file: Arc<Mutex<Option<PathBuf>>>,
+    pub requested_fullscreen: Arc<Mutex<Option<bool>>>,
     pub saved_window_style: RefCell<WindowStyle>,
     #[nwg_resource]
     pub embed: nwg::EmbedResource,
@@ -247,6 +248,7 @@ impl MainWindow {
         let hide_splash_sender = self.hide_splash_notice.sender();
         let focus_sender = self.focus_notice.sender();
         let autoupdater_setup_mutex = self.autoupdater_setup_file.clone();
+        let requested_fullscreen = self.requested_fullscreen.clone();
         thread::spawn(move || loop {
             if let Some(msg) = web_rx
                 .recv()
@@ -258,7 +260,16 @@ impl MainWindow {
                     None if msg.is_handshake() => {
                         web_tx_web.send(RPCResponse::get_handshake()).ok();
                     }
-                    Some("win-set-visibility") => toggle_fullscreen_sender.notice(),
+                    Some("win-set-visibility") => {
+                        if let Some(fullscreen) = msg
+                            .get_params()
+                            .and_then(|params| params.get("fullscreen"))
+                            .and_then(|value| value.as_bool())
+                        {
+                            *requested_fullscreen.lock().unwrap() = Some(fullscreen);
+                            toggle_fullscreen_sender.notice();
+                        }
+                    }
                     Some("quit") => quit_sender.notice(),
                     Some("app-ready") => {
                         hide_splash_sender.notice();
@@ -409,7 +420,13 @@ impl MainWindow {
     fn on_toggle_fullscreen_notice(&self) {
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
-                saved_style.toggle_full_screen(hwnd);
+                let target = self
+                    .requested_fullscreen
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap_or(!saved_style.full_screen);
+                saved_style.set_full_screen(hwnd, target);
                 self.tray.tray_topmost.set_enabled(!saved_style.full_screen);
                 self.tray
                     .tray_topmost
