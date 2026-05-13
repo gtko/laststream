@@ -1,13 +1,26 @@
 use std::{cmp, mem};
+use winapi::ctypes::c_void;
+use winapi::shared::minwindef::DWORD;
 use winapi::shared::windef::HWND;
+use winapi::um::dwmapi::DwmSetWindowAttribute;
 use winapi::um::winuser::{
     GetForegroundWindow, GetMonitorInfoA, GetSystemMetrics, GetWindowLongA, GetWindowRect,
-    IsIconic, IsZoomed, MonitorFromWindow, SetForegroundWindow, SetWindowLongA, SetWindowPos,
-    GWL_EXSTYLE, GWL_STYLE, HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE, WS_CAPTION,
-    WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE, WS_EX_TOPMOST, WS_EX_WINDOWEDGE,
-    WS_THICKFRAME,
+    IsIconic, IsZoomed, MonitorFromWindow, SetForegroundWindow, SetWindowLongA, SetWindowPlacement,
+    SetWindowPos, GWL_EXSTYLE, GWL_STYLE, HWND_NOTOPMOST, HWND_TOPMOST, MONITORINFO,
+    MONITOR_DEFAULTTONEAREST, SM_CXSCREEN, SM_CYSCREEN, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
+    WINDOWPLACEMENT, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE,
+    WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_THICKFRAME,
 };
+
+const DWMWA_CAPTION_COLOR: DWORD = 35;
+const DWMWA_TEXT_COLOR: DWORD = 36;
+const STREMIO_CAPTION_COLOR: DWORD = colorref(0x15, 0x12, 0x2b);
+const WHITE_TEXT_COLOR: DWORD = colorref(0xff, 0xff, 0xff);
+
+const fn colorref(red: DWORD, green: DWORD, blue: DWORD) -> DWORD {
+    red | (green << 8) | (blue << 16)
+}
+
 // https://doc.qt.io/qt-5/qt.html#WindowState-enum
 bitflags! {
     struct WindowState: u8 {
@@ -70,6 +83,35 @@ impl WindowStyle {
         );
         self.pos = ((monitor_w - self.size.0) / 2, (monitor_h - self.size.1) / 2);
         self.show_window_at(hwnd, HWND_NOTOPMOST);
+    }
+    pub fn restore_window_placement(&mut self, hwnd: HWND, placement: WINDOWPLACEMENT) {
+        self.pos = (
+            placement.rcNormalPosition.left,
+            placement.rcNormalPosition.top,
+        );
+        self.size = (
+            placement.rcNormalPosition.right - placement.rcNormalPosition.left,
+            placement.rcNormalPosition.bottom - placement.rcNormalPosition.top,
+        );
+        unsafe {
+            SetWindowPlacement(hwnd, &placement);
+        }
+    }
+    pub fn set_title_bar_color(&self, hwnd: HWND) {
+        unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CAPTION_COLOR,
+                &STREMIO_CAPTION_COLOR as *const _ as *const c_void,
+                mem::size_of_val(&STREMIO_CAPTION_COLOR) as DWORD,
+            );
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_TEXT_COLOR,
+                &WHITE_TEXT_COLOR as *const _ as *const c_void,
+                mem::size_of_val(&WHITE_TEXT_COLOR) as DWORD,
+            );
+        }
     }
     pub fn set_full_screen(&mut self, hwnd: HWND, full_screen: bool) {
         if self.full_screen == full_screen {

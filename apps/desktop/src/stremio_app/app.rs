@@ -24,6 +24,7 @@ use crate::stremio_app::{
     systray::SystemTray,
     updater,
     window_helper::WindowStyle,
+    window_settings::WindowSettings,
     PipeServer,
 };
 
@@ -54,14 +55,15 @@ pub struct MainWindow {
         OnPaint: [Self::on_paint],
         OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)],
         OnWindowMinimize: [Self::transmit_window_state_change],
-        OnWindowMaximize: [Self::transmit_window_state_change],
+        OnWindowMaximize: [Self::on_window_state_changed],
         OnWindowFocus: [Self::transmit_window_state_change],
+        OnResizeEnd: [Self::save_window_settings],
     )]
     pub window: nwg::Window,
     #[nwg_partial(parent: window)]
     #[nwg_events(
         (tray, MousePressLeftUp): [Self::on_show],
-        (tray_exit, OnMenuItemSelected): [nwg::stop_thread_dispatch()],
+        (tray_exit, OnMenuItemSelected): [Self::on_exit],
         (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide],
         (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost],
     )]
@@ -131,7 +133,13 @@ impl MainWindow {
         self.webview.dev_tools.set(self.dev_tools).ok();
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
-                saved_style.center_window(hwnd, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+                saved_style.set_title_bar_color(hwnd);
+                if let Some(window_settings) = WindowSettings::load() {
+                    saved_style
+                        .restore_window_placement(hwnd, window_settings.to_window_placement());
+                } else {
+                    saved_style.center_window(hwnd, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+                }
             }
         }
 
@@ -417,6 +425,25 @@ impl MainWindow {
             self.webview.fit_to_window(self.window.handle.hwnd());
         }
     }
+    fn on_window_state_changed(&self) {
+        self.save_window_settings();
+        self.transmit_window_state_change();
+    }
+    fn save_window_settings(&self) {
+        if self
+            .saved_window_style
+            .try_borrow()
+            .map(|style| style.full_screen)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Err(err) = WindowSettings::save(hwnd) {
+                eprintln!("Cannot save window settings: {err}");
+            }
+        }
+    }
     fn on_toggle_fullscreen_notice(&self) {
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
@@ -485,8 +512,13 @@ impl MainWindow {
         if let nwg::EventData::OnWindowClose(data) = data {
             data.close(false);
         }
+        self.save_window_settings();
         self.window.set_visible(false);
         self.tray.tray_show_hide.set_checked(self.window.visible());
         self.transmit_window_visibility_change();
+    }
+    fn on_exit(&self) {
+        self.save_window_settings();
+        nwg::stop_thread_dispatch();
     }
 }
