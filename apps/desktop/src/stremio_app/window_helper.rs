@@ -108,8 +108,12 @@ impl WindowStyle {
             );
         }
     }
-    pub fn toggle_full_screen(&mut self, hwnd: HWND) {
-        if self.full_screen {
+    pub fn set_full_screen(&mut self, hwnd: HWND, full_screen: bool) {
+        if self.full_screen == full_screen {
+            return;
+        }
+
+        if !full_screen {
             let topmost = if self.ex_style as u32 & WS_EX_TOPMOST == WS_EX_TOPMOST {
                 HWND_TOPMOST
             } else {
