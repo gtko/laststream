@@ -14,7 +14,7 @@ use winapi::um::winuser::{
 
 const DWMWA_CAPTION_COLOR: DWORD = 35;
 const DWMWA_TEXT_COLOR: DWORD = 36;
-const STREMIO_CAPTION_COLOR: DWORD = 0x003e171a;
+const STREMIO_CAPTION_COLOR: DWORD = 0x002b1215;
 const WHITE_TEXT_COLOR: DWORD = 0x00ffffff;
 // https://doc.qt.io/qt-5/qt.html#WindowState-enum
 bitflags! {
