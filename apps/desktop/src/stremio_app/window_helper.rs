@@ -14,8 +14,13 @@ use winapi::um::winuser::{
 
 const DWMWA_CAPTION_COLOR: DWORD = 35;
 const DWMWA_TEXT_COLOR: DWORD = 36;
-const STREMIO_CAPTION_COLOR: DWORD = 0x002b1215;
-const WHITE_TEXT_COLOR: DWORD = 0x00ffffff;
+const STREMIO_CAPTION_COLOR: DWORD = colorref(0x15, 0x12, 0x2b);
+const WHITE_TEXT_COLOR: DWORD = colorref(0xff, 0xff, 0xff);
+
+const fn colorref(red: DWORD, green: DWORD, blue: DWORD) -> DWORD {
+    red | (green << 8) | (blue << 16)
+}
+
 // https://doc.qt.io/qt-5/qt.html#WindowState-enum
 bitflags! {
     struct WindowState: u8 {
