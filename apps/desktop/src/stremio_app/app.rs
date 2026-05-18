@@ -340,17 +340,15 @@ impl MainWindow {
                             }
                         }
                     }
-                    Some("discord-connect") => {
-                        match discord_rpc.connect() {
-                            Ok(()) => {
-                                web_tx_web.send(RPCResponse::discord_status(true)).ok();
-                            }
-                            Err(e) => {
-                                eprintln!("Discord connect error: {}", e);
-                                web_tx_web.send(RPCResponse::discord_status(false)).ok();
-                            }
+                    Some("discord-connect") => match discord_rpc.connect() {
+                        Ok(()) => {
+                            web_tx_web.send(RPCResponse::discord_status(true)).ok();
                         }
-                    }
+                        Err(e) => {
+                            eprintln!("Discord connect error: {}", e);
+                            web_tx_web.send(RPCResponse::discord_status(false)).ok();
+                        }
+                    },
                     Some("discord-disconnect") => {
                         if let Err(e) = discord_rpc.disconnect() {
                             eprintln!("Discord disconnect error: {}", e);
