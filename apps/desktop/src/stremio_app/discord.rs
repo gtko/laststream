@@ -1,12 +1,12 @@
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 const DISCORD_APP_ID: &str = "1452620752263319665";
 
 /// Discord Rich Presence for Stremio
 /// Handles connection to Discord and activity updates
 pub struct DiscordRpc {
-    client: Arc<Mutex<Option<DiscordIpcClient>>>,
+    client: Mutex<Option<DiscordIpcClient>>,
 }
 
 impl Default for DiscordRpc {
@@ -18,7 +18,7 @@ impl Default for DiscordRpc {
 impl DiscordRpc {
     pub fn new() -> Self {
         Self {
-            client: Arc::new(Mutex::new(None)),
+            client: Mutex::new(None),
         }
     }
 

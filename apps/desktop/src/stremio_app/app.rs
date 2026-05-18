@@ -249,8 +249,7 @@ impl MainWindow {
         let focus_sender = self.focus_notice.sender();
         let autoupdater_setup_mutex = self.autoupdater_setup_file.clone();
 
-        let discord_rpc: Arc<Mutex<Option<DiscordRpc>>> = Arc::new(Mutex::new(None));
-        let discord_rpc_clone = discord_rpc.clone();
+        let discord_rpc = DiscordRpc::new();
 
         thread::spawn(move || loop {
             if let Some(msg) = web_rx
@@ -342,32 +341,20 @@ impl MainWindow {
                         }
                     }
                     Some("discord-connect") => {
-                        let mut discord_guard = discord_rpc_clone.lock().unwrap();
-                        if discord_guard.is_none() {
-                            let discord = DiscordRpc::new();
-                            match discord.connect() {
-                                Ok(()) => {
-                                    *discord_guard = Some(discord);
-                                    web_tx_web.send(RPCResponse::discord_status(true)).ok();
-                                }
-                                Err(e) => {
-                                    eprintln!("Discord connect error: {}", e);
-                                    web_tx_web.send(RPCResponse::discord_status(false)).ok();
-                                }
+                        match discord_rpc.connect() {
+                            Ok(()) => {
+                                web_tx_web.send(RPCResponse::discord_status(true)).ok();
                             }
-                        } else {
-                            // Already connected
-                            web_tx_web.send(RPCResponse::discord_status(true)).ok();
+                            Err(e) => {
+                                eprintln!("Discord connect error: {}", e);
+                                web_tx_web.send(RPCResponse::discord_status(false)).ok();
+                            }
                         }
                     }
                     Some("discord-disconnect") => {
-                        let mut discord_guard = discord_rpc_clone.lock().unwrap();
-                        if let Some(ref discord) = *discord_guard {
-                            if let Err(e) = discord.disconnect() {
-                                eprintln!("Discord disconnect error: {}", e);
-                            }
+                        if let Err(e) = discord_rpc.disconnect() {
+                            eprintln!("Discord disconnect error: {}", e);
                         }
-                        *discord_guard = None;
                         web_tx_web.send(RPCResponse::discord_status(false)).ok();
                     }
                     Some("discord-set-activity") => {
@@ -379,22 +366,16 @@ impl MainWindow {
                             let start_timestamp =
                                 params.get("startTimestamp").and_then(|v| v.as_i64());
 
-                            let discord_guard = discord_rpc_clone.lock().unwrap();
-                            if let Some(ref discord) = *discord_guard {
-                                if let Err(e) =
-                                    discord.set_activity(state, details, image, start_timestamp)
-                                {
-                                    eprintln!("Discord set activity error: {}", e);
-                                }
+                            if let Err(e) =
+                                discord_rpc.set_activity(state, details, image, start_timestamp)
+                            {
+                                eprintln!("Discord set activity error: {}", e);
                             }
                         }
                     }
                     Some("discord-clear-activity") => {
-                        let discord_guard = discord_rpc_clone.lock().unwrap();
-                        if let Some(ref discord) = *discord_guard {
-                            if let Err(e) = discord.clear_activity() {
-                                eprintln!("Discord clear activity error: {}", e);
-                            }
+                        if let Err(e) = discord_rpc.clear_activity() {
+                            eprintln!("Discord clear activity error: {}", e);
                         }
                     }
                     Some(player_command) if player_command.starts_with("mpv-") => {
