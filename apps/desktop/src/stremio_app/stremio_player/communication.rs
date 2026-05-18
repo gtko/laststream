@@ -191,7 +191,7 @@ stringable!(FpProp);
 pub enum StrProp {
     FfmpegVersion,
     Hwdec,
-    InputDefaltBindings,
+    InputDefaultBindings,
     InputVoKeyboard,
     Metadata,
     MpvVersion,
