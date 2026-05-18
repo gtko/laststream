@@ -1,6 +1,6 @@
 [package]
 name = "stremio-shell-ng"
-version = "5.0.20"
+version = "5.0.21"
 edition = "2018"
 
 [dependencies]
@@ -14,6 +14,7 @@ native-windows-gui = { git = "https://github.com/Stremio/native-windows-gui", fe
 ] }
 native-windows-derive = "1"
 winapi = { version = "0.3.9", features = [
+    "dwmapi",
     "libloaderapi",
     "handleapi",
     "jobapi2",

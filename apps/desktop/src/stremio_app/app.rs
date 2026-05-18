@@ -24,6 +24,7 @@ use crate::stremio_app::{
     systray::SystemTray,
     updater,
     window_helper::WindowStyle,
+    window_settings::WindowSettings,
     PipeServer,
 };
 
@@ -42,6 +43,7 @@ pub struct MainWindow {
     pub force_update: bool,
     pub release_candidate: bool,
     pub autoupdater_setup_file: Arc<Mutex<Option<PathBuf>>>,
+    pub requested_fullscreen: Arc<Mutex<Option<bool>>>,
     pub saved_window_style: RefCell<WindowStyle>,
     #[nwg_resource]
     pub embed: nwg::EmbedResource,
@@ -54,14 +56,15 @@ pub struct MainWindow {
         OnPaint: [Self::on_paint],
         OnMinMaxInfo: [Self::on_min_max(SELF, EVT_DATA)],
         OnWindowMinimize: [Self::transmit_window_state_change],
-        OnWindowMaximize: [Self::transmit_window_state_change],
+        OnWindowMaximize: [Self::on_window_state_changed],
         OnWindowFocus: [Self::transmit_window_state_change],
+        OnResizeEnd: [Self::save_window_settings],
     )]
     pub window: nwg::Window,
     #[nwg_partial(parent: window)]
     #[nwg_events(
         (tray, MousePressLeftUp): [Self::on_show],
-        (tray_exit, OnMenuItemSelected): [nwg::stop_thread_dispatch()],
+        (tray_exit, OnMenuItemSelected): [Self::on_exit],
         (tray_show_hide, OnMenuItemSelected): [Self::on_show_hide],
         (tray_topmost, OnMenuItemSelected): [Self::on_toggle_topmost],
     )]
@@ -131,7 +134,13 @@ impl MainWindow {
         self.webview.dev_tools.set(self.dev_tools).ok();
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
-                saved_style.center_window(hwnd, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+                saved_style.set_title_bar_color(hwnd);
+                if let Some(window_settings) = WindowSettings::load() {
+                    saved_style
+                        .restore_window_placement(hwnd, window_settings.to_window_placement());
+                } else {
+                    saved_style.center_window(hwnd, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+                }
             }
         }
 
@@ -250,6 +259,7 @@ impl MainWindow {
         let autoupdater_setup_mutex = self.autoupdater_setup_file.clone();
 
         let discord_rpc = DiscordRpc::new();
+        let requested_fullscreen = self.requested_fullscreen.clone();
 
         thread::spawn(move || loop {
             if let Some(msg) = web_rx
@@ -262,7 +272,16 @@ impl MainWindow {
                     None if msg.is_handshake() => {
                         web_tx_web.send(RPCResponse::get_handshake()).ok();
                     }
-                    Some("win-set-visibility") => toggle_fullscreen_sender.notice(),
+                    Some("win-set-visibility") => {
+                        if let Some(fullscreen) = msg
+                            .get_params()
+                            .and_then(|params| params.get("fullscreen"))
+                            .and_then(|value| value.as_bool())
+                        {
+                            *requested_fullscreen.lock().unwrap() = Some(fullscreen);
+                            toggle_fullscreen_sender.notice();
+                        }
+                    }
                     Some("quit") => quit_sender.notice(),
                     Some("app-ready") => {
                         hide_splash_sender.notice();
@@ -299,6 +318,52 @@ impl MainWindow {
                                 || arg_lc.starts_with("ipfs://")
                             {
                                 open::that(arg).ok();
+                            }
+                        }
+                    }
+                    Some("play-external") => {
+                        if let Some(arg) = msg.get_params() {
+                            let arg = arg.as_str().unwrap_or("");
+                            let arg_lc = arg.to_lowercase();
+                            const ALLOWED_SCHEMES: &[&str] = &["mpv://", "vlc://", "potplayer://"];
+                            let allowed = ALLOWED_SCHEMES.iter().any(|s| arg_lc.starts_with(s));
+                            if !arg.is_empty() && allowed {
+                                if let Some(stream_url) =
+                                    arg_lc.starts_with("mpv://").then(|| &arg[6..])
+                                {
+                                    // `--` ends mpv's option parsing; the stream URL can't smuggle flags.
+                                    let mpv_paths: Vec<String> = vec![
+                                        std::env::var("ProgramFiles")
+                                            .ok()
+                                            .map(|v| format!("{v}\\mpv\\mpv.exe")),
+                                        std::env::var("ProgramFiles(x86)")
+                                            .ok()
+                                            .map(|v| format!("{v}\\mpv\\mpv.exe")),
+                                        std::env::var("LOCALAPPDATA")
+                                            .ok()
+                                            .map(|v| format!("{v}\\Programs\\mpv\\mpv.exe")),
+                                        std::env::var("LOCALAPPDATA")
+                                            .ok()
+                                            .map(|v| format!("{v}\\mpv\\mpv.exe")),
+                                        Some("mpv.exe".to_string()),
+                                    ]
+                                    .into_iter()
+                                    .flatten()
+                                    .collect();
+                                    for path in &mpv_paths {
+                                        if Command::new(path)
+                                            .arg("--")
+                                            .arg(stream_url)
+                                            .creation_flags(CREATE_BREAKAWAY_FROM_JOB)
+                                            .spawn()
+                                            .is_ok()
+                                        {
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    open::that(arg).ok();
+                                }
                             }
                         }
                     }
@@ -400,10 +465,35 @@ impl MainWindow {
             self.webview.fit_to_window(self.window.handle.hwnd());
         }
     }
+    fn on_window_state_changed(&self) {
+        self.save_window_settings();
+        self.transmit_window_state_change();
+    }
+    fn save_window_settings(&self) {
+        if self
+            .saved_window_style
+            .try_borrow()
+            .map(|style| style.full_screen)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        if let Some(hwnd) = self.window.handle.hwnd() {
+            if let Err(err) = WindowSettings::save(hwnd) {
+                eprintln!("Cannot save window settings: {err}");
+            }
+        }
+    }
     fn on_toggle_fullscreen_notice(&self) {
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {
-                saved_style.toggle_full_screen(hwnd);
+                let target = self
+                    .requested_fullscreen
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap_or(!saved_style.full_screen);
+                saved_style.set_full_screen(hwnd, target);
                 self.tray.tray_topmost.set_enabled(!saved_style.full_screen);
                 self.tray
                     .tray_topmost
@@ -462,8 +552,13 @@ impl MainWindow {
         if let nwg::EventData::OnWindowClose(data) = data {
             data.close(false);
         }
+        self.save_window_settings();
         self.window.set_visible(false);
         self.tray.tray_show_hide.set_checked(self.window.visible());
         self.transmit_window_visibility_change();
+    }
+    fn on_exit(&self) {
+        self.save_window_settings();
+        nwg::stop_thread_dispatch();
     }
 }
