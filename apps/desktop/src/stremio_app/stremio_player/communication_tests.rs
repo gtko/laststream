@@ -96,6 +96,32 @@ fn ended_tokens() {
         &PlayerEnded::from_end_reason(mpv_end_file_reason::Quit),
         &tokens,
     );
+    let eof_tokens: [Token; 4] = [
+        Token::Struct {
+            name: "PlayerEnded",
+            len: 1,
+        },
+        Token::Str("reason"),
+        Token::Str("eof"),
+        Token::StructEnd,
+    ];
+    assert_tokens(
+        &PlayerEnded::from_end_reason(mpv_end_file_reason::Eof),
+        &eof_tokens,
+    );
+    let stop_tokens: [Token; 4] = [
+        Token::Struct {
+            name: "PlayerEnded",
+            len: 1,
+        },
+        Token::Str("reason"),
+        Token::Str("stop"),
+        Token::StructEnd,
+    ];
+    assert_tokens(
+        &PlayerEnded::from_end_reason(mpv_end_file_reason::Stop),
+        &stop_tokens,
+    );
 }
 
 #[test]

@@ -56,6 +56,9 @@ pub struct PlayerEnded {
 impl PlayerEnded {
     fn string_from_end_reason(data: EndFileReason) -> String {
         match data {
+            mpv_end_file_reason::Eof => "eof".to_string(),
+            mpv_end_file_reason::Stop => "stop".to_string(),
+            mpv_end_file_reason::Redirect => "redirect".to_string(),
             mpv_end_file_reason::Error => "error".to_string(),
             mpv_end_file_reason::Quit => "quit".to_string(),
             _ => "other".to_string(),
