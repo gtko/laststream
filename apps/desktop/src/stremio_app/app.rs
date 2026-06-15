@@ -425,8 +425,7 @@ impl MainWindow {
                             let image = params.get("image").and_then(|v| v.as_str());
                             let start_timestamp =
                                 params.get("startTimestamp").and_then(|v| v.as_i64());
-                            let end_timestamp =
-                                params.get("endTimestamp").and_then(|v| v.as_i64());
+                            let end_timestamp = params.get("endTimestamp").and_then(|v| v.as_i64());
 
                             if let Err(e) = discord_rpc.set_activity(
                                 state,
