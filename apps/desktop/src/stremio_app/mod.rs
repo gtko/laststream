@@ -1,5 +1,6 @@
 pub mod app;
 pub use app::MainWindow;
+pub mod discord;
 pub mod ipc;
 pub mod stremio_player;
 pub mod stremio_server;
