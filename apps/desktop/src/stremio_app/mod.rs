@@ -1,5 +1,6 @@
 pub mod app;
 pub use app::MainWindow;
+pub mod discord;
 pub mod ipc;
 pub mod stremio_player;
 pub mod stremio_server;
@@ -9,6 +10,7 @@ pub mod named_pipe;
 pub mod splash;
 pub mod systray;
 pub mod window_helper;
+pub mod window_settings;
 pub use named_pipe::{PipeClient, PipeServer};
 pub mod constants;
 pub mod updater;
