@@ -104,6 +104,11 @@ fn create_mpv(window_handle: HWND) -> Mpv {
         // gpu-next: libplacebo VO with modern HDR tone-mapping; gpu, is the fallback.
         set_property!("vo", "gpu-next,gpu,");
         for (name, value) in [
+            ("gpu-context", "d3d11"),
+            ("d3d11-output-format", "auto"),
+            ("d3d11-output-csp", "auto"),
+            ("target-colorspace-hint", "auto"),
+            ("target-colorspace-hint-mode", "target"),
             ("tone-mapping", "bt.2390"),
             ("dither-depth", "auto"),
             ("deband", "yes"),
