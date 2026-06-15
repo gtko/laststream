@@ -4,10 +4,28 @@ use flume::{Receiver, Sender};
 use libmpv2::{events::Event, Format, Mpv, SetData};
 use native_windows_gui::{self as nwg, PartialUi};
 use std::{
+    mem, ptr,
     sync::Arc,
     thread::{self, JoinHandle},
+    time::Duration,
 };
-use winapi::shared::windef::HWND;
+use winapi::shared::{
+    minwindef::{DWORD, UINT},
+    windef::{HMONITOR, HWND},
+    winerror::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},
+};
+use winapi::um::{
+    wingdi::{
+        DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+        DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO,
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
+    },
+    winnt::LONG,
+    winuser::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
+    },
+};
 
 use crate::stremio_app::stremio_player::{
     CmdVal, InMsg, InMsgArgs, InMsgFn, PlayerEnded, PlayerEvent, PlayerProprChange, PlayerResponse,
@@ -17,6 +35,24 @@ use crate::stremio_app::stremio_player::{
 struct ObserveProperty {
     name: String,
     format: Format,
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn GetDisplayConfigBufferSizes(
+        flags: UINT,
+        num_path_array_elements: *mut UINT,
+        num_mode_info_array_elements: *mut UINT,
+    ) -> LONG;
+    fn QueryDisplayConfig(
+        flags: UINT,
+        num_path_array_elements: *mut UINT,
+        path_array: *mut DISPLAYCONFIG_PATH_INFO,
+        num_mode_info_array_elements: *mut UINT,
+        mode_info_array: *mut DISPLAYCONFIG_MODE_INFO,
+        current_topology_id: *mut u32,
+    ) -> LONG;
+    fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
 }
 
 fn with_gpu_next_fallback(vo: String) -> String {
@@ -39,6 +75,19 @@ fn with_gpu_next_fallback(vo: String) -> String {
     }
 
     format!("{},", outputs.join(","))
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DisplayOutputMode {
+    Hdr,
+    Sdr,
+    Auto,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct DisplayOutputState {
+    monitor: isize,
+    mode: DisplayOutputMode,
 }
 
 #[derive(Default)]
@@ -75,6 +124,8 @@ impl PartialUi for Player {
             observe_property_receiver,
             rpc_response_sender,
         );
+        let _display_thread =
+            create_display_output_thread(Arc::clone(&mpv), window_handle as isize);
         let _message_thread = create_message_thread(mpv, observe_property_sender, in_msg_receiver);
         // @TODO implement a mechanism to stop threads on `Player` drop if needed
 
@@ -122,6 +173,163 @@ fn create_mpv(window_handle: HWND) -> Mpv {
         Ok(())
     });
     mpv.expect("cannot build MPV")
+}
+
+fn create_display_output_thread(mpv: Arc<Mpv>, window_handle: isize) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut last_state = None;
+
+        loop {
+            let state = current_display_output_state(window_handle as HWND);
+            if last_state != Some(state) {
+                apply_display_output_mode(&mpv, state.mode);
+                last_state = Some(state);
+            }
+            thread::sleep(Duration::from_millis(500));
+        }
+    })
+}
+
+fn current_display_output_state(window_handle: HWND) -> DisplayOutputState {
+    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
+    let mode = match monitor_advanced_color_enabled(monitor) {
+        Some(true) => DisplayOutputMode::Hdr,
+        Some(false) => DisplayOutputMode::Sdr,
+        None => DisplayOutputMode::Auto,
+    };
+
+    DisplayOutputState {
+        monitor: monitor as isize,
+        mode,
+    }
+}
+
+fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode) {
+    let properties = match mode {
+        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
+            ("d3d11-output-csp", "auto"),
+            ("target-colorspace-hint", "auto"),
+            ("target-trc", "auto"),
+            ("target-prim", "auto"),
+        ],
+        DisplayOutputMode::Sdr => [
+            ("d3d11-output-csp", "srgb"),
+            ("target-colorspace-hint", "yes"),
+            ("target-trc", "srgb"),
+            ("target-prim", "bt.709"),
+        ],
+    };
+
+    for (name, value) in properties {
+        if let Err(error) = mpv.set_property(name, value) {
+            eprintln!("mpv: cannot set {name}={value}: {error:?}");
+        }
+    }
+}
+
+fn monitor_advanced_color_enabled(monitor: HMONITOR) -> Option<bool> {
+    if monitor.is_null() {
+        return None;
+    }
+
+    let device_name = monitor_device_name(monitor)?;
+    for path in active_display_paths()? {
+        let Some(source_name) = display_source_name(&path) else {
+            continue;
+        };
+        if source_name.viewGdiDeviceName != device_name {
+            continue;
+        }
+
+        return display_advanced_color_enabled(&path);
+    }
+
+    None
+}
+
+fn monitor_device_name(monitor: HMONITOR) -> Option<[u16; 32]> {
+    let mut monitor_info: MONITORINFOEXW = unsafe { mem::zeroed() };
+    monitor_info.cbSize = mem::size_of::<MONITORINFOEXW>() as DWORD;
+
+    let result =
+        unsafe { GetMonitorInfoW(monitor, &mut monitor_info as *mut _ as *mut MONITORINFO) };
+    if result == 0 {
+        None
+    } else {
+        Some(monitor_info.szDevice)
+    }
+}
+
+fn active_display_paths() -> Option<Vec<DISPLAYCONFIG_PATH_INFO>> {
+    for _ in 0..3 {
+        let mut path_count = 0;
+        let mut mode_count = 0;
+        let buffer_status = unsafe {
+            GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut path_count, &mut mode_count)
+        };
+        if buffer_status != ERROR_SUCCESS as LONG {
+            return None;
+        }
+
+        let mut paths =
+            vec![unsafe { mem::zeroed::<DISPLAYCONFIG_PATH_INFO>() }; path_count as usize];
+        let mut modes =
+            vec![unsafe { mem::zeroed::<DISPLAYCONFIG_MODE_INFO>() }; mode_count as usize];
+        let query_status = unsafe {
+            QueryDisplayConfig(
+                QDC_ONLY_ACTIVE_PATHS,
+                &mut path_count,
+                paths.as_mut_ptr(),
+                &mut mode_count,
+                modes.as_mut_ptr(),
+                ptr::null_mut(),
+            )
+        };
+
+        if query_status == ERROR_SUCCESS as LONG {
+            paths.truncate(path_count as usize);
+            return Some(paths);
+        }
+        if query_status != ERROR_INSUFFICIENT_BUFFER as LONG {
+            return None;
+        }
+    }
+
+    None
+}
+
+fn display_source_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<DISPLAYCONFIG_SOURCE_DEVICE_NAME> {
+    let mut source_name: DISPLAYCONFIG_SOURCE_DEVICE_NAME = unsafe { mem::zeroed() };
+    source_name.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
+        _type: DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME,
+        size: mem::size_of::<DISPLAYCONFIG_SOURCE_DEVICE_NAME>() as u32,
+        adapterId: path.sourceInfo.adapterId,
+        id: path.sourceInfo.id,
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo(&mut source_name.header) };
+    if status == ERROR_SUCCESS as LONG {
+        Some(source_name)
+    } else {
+        None
+    }
+}
+
+fn display_advanced_color_enabled(path: &DISPLAYCONFIG_PATH_INFO) -> Option<bool> {
+    let mut color_info: DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO = unsafe { mem::zeroed() };
+    color_info.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
+        _type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
+        size: mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
+        adapterId: path.targetInfo.adapterId,
+        id: path.targetInfo.id,
+    };
+
+    let status = unsafe { DisplayConfigGetDeviceInfo(&mut color_info.header) };
+    if status == ERROR_SUCCESS as LONG {
+        Some(color_info.advancedColorEnabled() != 0)
+    } else {
+        None
+    }
 }
 
 fn create_event_thread(
