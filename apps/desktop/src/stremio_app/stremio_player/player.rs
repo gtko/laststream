@@ -1,7 +1,7 @@
 use crate::stremio_app::ipc;
 use crate::stremio_app::RPCResponse;
 use flume::{Receiver, Sender};
-use libmpv2::{events::Event, events::EventContext, Format, Mpv, SetData};
+use libmpv2::{events::Event, Format, Mpv, SetData};
 use native_windows_gui::{self as nwg, PartialUi};
 use std::{
     sync::Arc,
@@ -43,10 +43,13 @@ impl PartialUi for Player {
         let (observe_property_sender, observe_property_receiver) = flume::unbounded();
         data.channel = ipc::Channel::new(Some((in_msg_sender, rpc_response_receiver)));
 
-        let mpv = create_shareable_mpv(window_handle);
+        let mpv = Arc::new(create_mpv(window_handle));
+        let mpv_event_client = mpv
+            .create_client(None)
+            .expect("cannot create MPV event client");
 
         let _event_thread = create_event_thread(
-            Arc::clone(&mpv),
+            mpv_event_client,
             observe_property_receiver,
             rpc_response_sender,
         );
@@ -57,7 +60,7 @@ impl PartialUi for Player {
     }
 }
 
-fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
+fn create_mpv(window_handle: HWND) -> Mpv {
     let mpv = Mpv::with_initializer(|initializer| {
         macro_rules! set_property {
             ($name:literal, $value:expr) => {
@@ -79,17 +82,16 @@ fn create_shareable_mpv(window_handle: HWND) -> Arc<Mpv> {
         // set_property!("vo", "gpu-next,");
         Ok(())
     });
-    Arc::new(mpv.expect("cannot build MPV"))
+    mpv.expect("cannot build MPV")
 }
 
 fn create_event_thread(
-    mpv: Arc<Mpv>,
+    mut mpv_event_client: Mpv,
     observe_property_receiver: Receiver<ObserveProperty>,
     rpc_response_sender: Sender<String>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
-        let mut event_context = EventContext::new(mpv.ctx);
-        event_context
+        mpv_event_client
             .disable_deprecated_events()
             .expect("failed to disable deprecated MPV events");
 
@@ -97,13 +99,12 @@ fn create_event_thread(
 
         loop {
             for ObserveProperty { name, format } in observe_property_receiver.drain() {
-                event_context
+                mpv_event_client
                     .observe_property(&name, format, 0)
                     .expect("failed to observer MPV property");
             }
 
-            // -1.0 means to block and wait for an event.
-            let event = match event_context.wait_event(-1.) {
+            let event = match mpv_event_client.wait_event(0.1) {
                 Some(Ok(event)) => event,
                 Some(Err(error)) => {
                     eprintln!("Event errored: {error:?}");
@@ -132,9 +133,12 @@ fn create_event_thread(
                 _ => continue,
             };
 
-            rpc_response_sender
-                .send(RPCResponse::response_message(player_response.to_value()))
-                .expect("failed to send RPCResponse");
+            if let Err(error) =
+                rpc_response_sender.send(RPCResponse::response_message(player_response.to_value()))
+            {
+                eprintln!("failed to send RPCResponse: {error}");
+                break;
+            }
         }
     })
 }
@@ -148,47 +152,18 @@ fn create_message_thread(
         // -- Helpers --
 
         let observe_property = |name: String, format: Format| {
-            observe_property_sender
-                .send(ObserveProperty { name, format })
-                .expect("cannot send ObserveProperty");
-            mpv.wake_up();
+            if let Err(error) = observe_property_sender.send(ObserveProperty { name, format }) {
+                eprintln!("cannot send ObserveProperty: {error}");
+            }
         };
 
         let send_command = |cmd: CmdVal| {
-            let a1;
-            let a2;
-            let a3;
-            let a4;
-            let (name, args) = match cmd {
-                CmdVal::Quintuple(name, arg1, arg2, arg3, arg4) => {
-                    a1 = format!(r#""{arg1}""#);
-                    a2 = format!(r#""{arg2}""#);
-                    a3 = format!(r#""{arg3}""#);
-                    a4 = format!(r#""{arg4}""#);
-                    (
-                        name,
-                        vec![a1.as_ref(), a2.as_ref(), a3.as_ref(), a4.as_ref()],
-                    )
+            let parts: Vec<String> = cmd.into();
+            if let Some((name, args)) = parts.split_first() {
+                let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+                if let Err(error) = mpv.command(name, &args) {
+                    eprintln!("failed to execute MPV command: '{error:#}'")
                 }
-                CmdVal::Quadruple(name, arg1, arg2, arg3) => {
-                    a1 = format!(r#""{arg1}""#);
-                    a2 = format!(r#""{arg2}""#);
-                    a3 = format!(r#""{arg3}""#);
-                    (name, vec![a1.as_ref(), a2.as_ref(), a3.as_ref()])
-                }
-                CmdVal::Tripple(name, arg1, arg2) => {
-                    a1 = format!(r#""{arg1}""#);
-                    a2 = format!(r#""{arg2}""#);
-                    (name, vec![a1.as_ref(), a2.as_ref()])
-                }
-                CmdVal::Double(name, arg1) => {
-                    a1 = format!(r#""{arg1}""#);
-                    (name, vec![a1.as_ref()])
-                }
-                CmdVal::Single((name,)) => (name, vec![]),
-            };
-            if let Err(error) = mpv.command(&name.to_string(), &args) {
-                eprintln!("failed to execute MPV command: '{error:#}'")
             }
         };
 
@@ -250,15 +225,4 @@ fn create_message_thread(
             }
         }
     })
-}
-
-trait MpvExt {
-    fn wake_up(&self);
-}
-
-impl MpvExt for Mpv {
-    // @TODO create a PR to the `libmpv` crate and then remove `libmpv-sys` from Cargo.toml?
-    fn wake_up(&self) {
-        unsafe { libmpv2_sys::mpv_wakeup(self.ctx.as_ptr()) }
-    }
 }
