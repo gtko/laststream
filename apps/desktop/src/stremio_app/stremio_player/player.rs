@@ -5,7 +5,10 @@ use libmpv2::{events::Event, Format, Mpv, SetData};
 use native_windows_gui::{self as nwg, PartialUi};
 use std::{
     mem, ptr,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -81,13 +84,6 @@ fn with_gpu_next_fallback(vo: String) -> String {
 enum DisplayOutputMode {
     Hdr,
     Sdr,
-    Auto,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-struct DisplayOutputState {
-    monitor: isize,
-    mode: DisplayOutputMode,
 }
 
 #[derive(Default)]
@@ -124,9 +120,19 @@ impl PartialUi for Player {
             observe_property_receiver,
             rpc_response_sender,
         );
-        let _display_thread =
-            create_display_output_thread(Arc::clone(&mpv), window_handle as isize);
-        let _message_thread = create_message_thread(mpv, observe_property_sender, in_msg_receiver);
+        let gpu_video_processing = Arc::new(AtomicBool::new(false));
+        let _display_thread = create_display_output_thread(
+            Arc::clone(&mpv),
+            window_handle as isize,
+            Arc::clone(&gpu_video_processing),
+        );
+        let _message_thread = create_message_thread(
+            mpv,
+            window_handle as isize,
+            gpu_video_processing,
+            observe_property_sender,
+            in_msg_receiver,
+        );
         // @TODO implement a mechanism to stop threads on `Player` drop if needed
 
         Ok(())
@@ -175,38 +181,44 @@ fn create_mpv(window_handle: HWND) -> Mpv {
     mpv.expect("cannot build MPV")
 }
 
-fn create_display_output_thread(mpv: Arc<Mpv>, window_handle: isize) -> JoinHandle<()> {
+fn create_display_output_thread(
+    mpv: Arc<Mpv>,
+    window_handle: isize,
+    gpu_video_processing: Arc<AtomicBool>,
+) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut last_state = None;
 
         loop {
-            let state = current_display_output_state(window_handle as HWND);
-            if last_state != Some(state) {
-                apply_display_output_mode(&mpv, state.mode);
-                last_state = Some(state);
+            let mode = current_display_output_mode(window_handle as HWND);
+            let gpu = gpu_video_processing.load(Ordering::Relaxed);
+            if last_state != Some((mode, gpu)) {
+                apply_display_output_mode(&mpv, mode, gpu);
+                last_state = Some((mode, gpu));
             }
             thread::sleep(Duration::from_millis(500));
         }
     })
 }
 
-fn current_display_output_state(window_handle: HWND) -> DisplayOutputState {
+fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
     let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
-    let mode = match monitor_advanced_color_enabled(monitor) {
-        Some(true) => DisplayOutputMode::Hdr,
+    match monitor_advanced_color_enabled(monitor) {
         Some(false) => DisplayOutputMode::Sdr,
-        None => DisplayOutputMode::Auto,
-    };
-
-    DisplayOutputState {
-        monitor: monitor as isize,
-        mode,
+        _ => DisplayOutputMode::Hdr,
     }
 }
 
-fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode) {
-    let properties = match mode {
-        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
+fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode, gpu_video_processing: bool) {
+    // Target colorspace follows the display so native HDR still passes through; the RTX
+    // HDR filter is the opt-in part and only makes sense on an HDR display.
+    let vf = if gpu_video_processing && mode == DisplayOutputMode::Hdr {
+        "d3d11vpp=scaling-mode=nvidia:format=x2bgr10:nvidia-true-hdr"
+    } else {
+        ""
+    };
+    let color = match mode {
+        DisplayOutputMode::Hdr => [
             ("d3d11-output-csp", "auto"),
             ("target-colorspace-hint", "auto"),
             ("target-trc", "auto"),
@@ -220,7 +232,7 @@ fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode) {
         ],
     };
 
-    for (name, value) in properties {
+    for (name, value) in std::iter::once(("vf", vf)).chain(color) {
         if let Err(error) = mpv.set_property(name, value) {
             eprintln!("mpv: cannot set {name}={value}: {error:?}");
         }
@@ -392,6 +404,8 @@ fn create_event_thread(
 
 fn create_message_thread(
     mpv: Arc<Mpv>,
+    window_handle: isize,
+    gpu_video_processing: Arc<AtomicBool>,
     observe_property_sender: Sender<ObserveProperty>,
     in_msg_receiver: Receiver<String>,
 ) -> JoinHandle<()> {
@@ -451,12 +465,24 @@ fn create_message_thread(
                     set_property(name, value, &mpv);
                 }
                 InMsg(InMsgFn::MpvSetProp, InMsgArgs::StProp(name, PropVal::Str(value))) => {
-                    let value = if name.to_string() == "vo" {
+                    let is_vo = name.to_string() == "vo";
+                    let value = if is_vo {
                         with_gpu_next_fallback(value)
                     } else {
                         value
                     };
                     set_property(name, value, &mpv);
+                    // vo reinit reverts color props to defaults; re-assert for the current display.
+                    if is_vo {
+                        apply_display_output_mode(
+                            &mpv,
+                            current_display_output_mode(window_handle as HWND),
+                            gpu_video_processing.load(Ordering::Relaxed),
+                        );
+                    }
+                }
+                InMsg(InMsgFn::SetGpuVideoProcessing, InMsgArgs::Flag(enabled)) => {
+                    gpu_video_processing.store(enabled, Ordering::Relaxed);
                 }
                 InMsg(InMsgFn::MpvCommand, InMsgArgs::Cmd(cmd)) => {
                     send_command(cmd);

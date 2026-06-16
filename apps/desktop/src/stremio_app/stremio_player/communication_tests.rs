@@ -140,6 +140,22 @@ fn set_propr_tokens() {
 }
 
 #[test]
+fn set_gpu_video_processing_tokens() {
+    assert_tokens(
+        &InMsg(InMsgFn::SetGpuVideoProcessing, InMsgArgs::Flag(true)),
+        &[
+            Token::TupleStruct {
+                name: "InMsg",
+                len: 2,
+            },
+            Token::Str("set-gpu-video-processing"),
+            Token::Bool(true),
+            Token::TupleStructEnd,
+        ],
+    );
+}
+
+#[test]
 fn command_stop_tokens() {
     assert_tokens(
         &InMsg(

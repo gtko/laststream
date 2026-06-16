@@ -142,6 +142,7 @@ pub enum InMsgFn {
     MpvSetProp,
     MpvCommand,
     MpvObserveProp,
+    SetGpuVideoProcessing,
 }
 stringable!(InMsgFn);
 // Bool
@@ -275,6 +276,7 @@ pub enum InMsgArgs {
     StProp(PropKey, PropVal),
     Cmd(CmdVal),
     ObProp(PropKey),
+    Flag(bool),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
