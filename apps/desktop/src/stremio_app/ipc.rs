@@ -72,7 +72,7 @@ impl RPCResponse {
                         ],
                         vec![
                             "".to_string(),
-                            "gpuVideoProcessingSupported".to_string(),
+                            "gpuVideoProcessing".to_string(),
                             "".to_string(),
                             gpu_video_processing::gpu_video_processing_supported().to_string(),
                         ],

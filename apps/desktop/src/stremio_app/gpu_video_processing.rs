@@ -142,6 +142,8 @@ unsafe fn detect_gpu_video_processing_supported_inner() -> bool {
         return false;
     };
 
+    // Keep this aligned with mpv/video/filter/vf_d3d11vpp.c; it also supports
+    // Intel VSR, so this probe can extend when shell enables that scaling mode.
     nvidia_rtx_super_resolution_supported(&video_context, &video_processor)
         || nvidia_true_hdr_supported(&video_context, &video_processor)
 }
