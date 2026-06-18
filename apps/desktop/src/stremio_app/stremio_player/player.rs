@@ -19,10 +19,9 @@ use winapi::shared::{
 };
 use winapi::um::{
     wingdi::{
-        DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
         DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME, DISPLAYCONFIG_DEVICE_INFO_HEADER,
-        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO, DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO,
-        DISPLAYCONFIG_SOURCE_DEVICE_NAME, QDC_ONLY_ACTIVE_PATHS,
+        DISPLAYCONFIG_MODE_INFO, DISPLAYCONFIG_PATH_INFO, DISPLAYCONFIG_SOURCE_DEVICE_NAME,
+        QDC_ONLY_ACTIVE_PATHS,
     },
     winnt::LONG,
     winuser::{
@@ -58,6 +57,18 @@ extern "system" {
     fn DisplayConfigGetDeviceInfo(request_packet: *mut DISPLAYCONFIG_DEVICE_INFO_HEADER) -> LONG;
 }
 
+const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2: u32 = 15;
+const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR: u32 = 2;
+
+#[repr(C)]
+struct DisplayconfigGetAdvancedColorInfo2 {
+    header: DISPLAYCONFIG_DEVICE_INFO_HEADER,
+    value: u32,
+    color_encoding: u32,
+    bits_per_color_channel: u32,
+    active_color_mode: u32,
+}
+
 fn with_gpu_next_fallback(vo: String) -> String {
     let mut outputs = vo
         .split(',')
@@ -84,6 +95,13 @@ fn with_gpu_next_fallback(vo: String) -> String {
 enum DisplayOutputMode {
     Hdr,
     Sdr,
+    Auto,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct DisplayOutputState {
+    mode: DisplayOutputMode,
+    scale_percent: u32,
 }
 
 #[derive(Default)]
@@ -190,35 +208,83 @@ fn create_display_output_thread(
         let mut last_state = None;
 
         loop {
-            let mode = current_display_output_mode(window_handle as HWND);
+            let state = current_display_output_state(&mpv, window_handle as HWND);
             let gpu = gpu_video_processing.load(Ordering::Relaxed);
-            if last_state != Some((mode, gpu)) {
-                apply_display_output_mode(&mpv, mode, gpu);
-                last_state = Some((mode, gpu));
+            if last_state != Some((state, gpu)) {
+                apply_display_output_mode(&mpv, state, gpu);
+                last_state = Some((state, gpu));
             }
             thread::sleep(Duration::from_millis(500));
         }
     })
 }
 
-fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
-    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
-    match monitor_advanced_color_enabled(monitor) {
-        Some(false) => DisplayOutputMode::Sdr,
-        _ => DisplayOutputMode::Hdr,
+fn current_display_output_state(mpv: &Mpv, window_handle: HWND) -> DisplayOutputState {
+    DisplayOutputState {
+        mode: current_display_output_mode(window_handle),
+        scale_percent: current_video_filter_scale(mpv, window_handle),
     }
 }
 
-fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode, gpu_video_processing: bool) {
+fn current_display_output_mode(window_handle: HWND) -> DisplayOutputMode {
+    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
+    match monitor_hdr_active(monitor) {
+        Some(true) => DisplayOutputMode::Hdr,
+        Some(false) => DisplayOutputMode::Sdr,
+        None => DisplayOutputMode::Auto,
+    }
+}
+
+fn current_video_filter_scale(mpv: &Mpv, window_handle: HWND) -> u32 {
+    let Some(video_height) = current_video_height(mpv) else {
+        return 100;
+    };
+    let Some(display_height) = current_monitor_height(window_handle) else {
+        return 100;
+    };
+    if video_height <= 0.0 || display_height <= video_height {
+        return 100;
+    }
+
+    ((display_height / video_height).min(4.0) * 100.0).round() as u32
+}
+
+fn current_video_height(mpv: &Mpv) -> Option<f64> {
+    let video_params = mpv.get_property::<String>("video-params").ok()?;
+    let video_params = serde_json::from_str::<serde_json::Value>(&video_params).ok()?;
+    video_params.get("h").and_then(serde_json::Value::as_f64)
+}
+
+fn current_monitor_height(window_handle: HWND) -> Option<f64> {
+    let monitor = unsafe { MonitorFromWindow(window_handle, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+
+    let mut monitor_info: MONITORINFO = unsafe { mem::zeroed() };
+    monitor_info.cbSize = mem::size_of::<MONITORINFO>() as DWORD;
+    if unsafe { GetMonitorInfoW(monitor, &mut monitor_info) } == 0 {
+        return None;
+    }
+
+    Some((monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top) as f64)
+}
+
+fn apply_display_output_mode(mpv: &Mpv, state: DisplayOutputState, gpu_video_processing: bool) {
     // Target colorspace follows the display so native HDR still passes through; the RTX
     // HDR filter is the opt-in part and only makes sense on an HDR display.
-    let vf = if gpu_video_processing && mode == DisplayOutputMode::Hdr {
-        "d3d11vpp=scaling-mode=nvidia:format=x2bgr10:nvidia-true-hdr"
+    let vf = if gpu_video_processing {
+        let scale = state.scale_percent as f64 / 100.0;
+        let mut vf = format!("d3d11vpp=scaling-mode=nvidia:scale={scale:.2}");
+        if state.mode == DisplayOutputMode::Hdr {
+            vf.push_str(":format=x2bgr10:nvidia-true-hdr");
+        }
+        vf
     } else {
-        ""
+        String::new()
     };
-    let color = match mode {
-        DisplayOutputMode::Hdr => [
+    let color = match state.mode {
+        DisplayOutputMode::Hdr | DisplayOutputMode::Auto => [
             ("d3d11-output-csp", "auto"),
             ("target-colorspace-hint", "auto"),
             ("target-trc", "auto"),
@@ -232,14 +298,14 @@ fn apply_display_output_mode(mpv: &Mpv, mode: DisplayOutputMode, gpu_video_proce
         ],
     };
 
-    for (name, value) in std::iter::once(("vf", vf)).chain(color) {
+    for (name, value) in std::iter::once(("vf", vf.as_str())).chain(color) {
         if let Err(error) = mpv.set_property(name, value) {
             eprintln!("mpv: cannot set {name}={value}: {error:?}");
         }
     }
 }
 
-fn monitor_advanced_color_enabled(monitor: HMONITOR) -> Option<bool> {
+fn monitor_hdr_active(monitor: HMONITOR) -> Option<bool> {
     if monitor.is_null() {
         return None;
     }
@@ -253,7 +319,7 @@ fn monitor_advanced_color_enabled(monitor: HMONITOR) -> Option<bool> {
             continue;
         }
 
-        return display_advanced_color_enabled(&path);
+        return display_hdr_active(&path);
     }
 
     None
@@ -327,18 +393,18 @@ fn display_source_name(path: &DISPLAYCONFIG_PATH_INFO) -> Option<DISPLAYCONFIG_S
     }
 }
 
-fn display_advanced_color_enabled(path: &DISPLAYCONFIG_PATH_INFO) -> Option<bool> {
-    let mut color_info: DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO = unsafe { mem::zeroed() };
+fn display_hdr_active(path: &DISPLAYCONFIG_PATH_INFO) -> Option<bool> {
+    let mut color_info: DisplayconfigGetAdvancedColorInfo2 = unsafe { mem::zeroed() };
     color_info.header = DISPLAYCONFIG_DEVICE_INFO_HEADER {
-        _type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO,
-        size: mem::size_of::<DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO>() as u32,
+        _type: DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2,
+        size: mem::size_of::<DisplayconfigGetAdvancedColorInfo2>() as u32,
         adapterId: path.targetInfo.adapterId,
         id: path.targetInfo.id,
     };
 
     let status = unsafe { DisplayConfigGetDeviceInfo(&mut color_info.header) };
     if status == ERROR_SUCCESS as LONG {
-        Some(color_info.advancedColorEnabled() != 0)
+        Some(color_info.active_color_mode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR)
     } else {
         None
     }
@@ -476,13 +542,18 @@ fn create_message_thread(
                     if is_vo {
                         apply_display_output_mode(
                             &mpv,
-                            current_display_output_mode(window_handle as HWND),
+                            current_display_output_state(&mpv, window_handle as HWND),
                             gpu_video_processing.load(Ordering::Relaxed),
                         );
                     }
                 }
-                InMsg(InMsgFn::SetGpuVideoProcessing, InMsgArgs::Flag(enabled)) => {
+                InMsg(InMsgFn::MpvSetGpuVideoProcessing, InMsgArgs::Flag(enabled)) => {
                     gpu_video_processing.store(enabled, Ordering::Relaxed);
+                    apply_display_output_mode(
+                        &mpv,
+                        current_display_output_state(&mpv, window_handle as HWND),
+                        enabled,
+                    );
                 }
                 InMsg(InMsgFn::MpvCommand, InMsgArgs::Cmd(cmd)) => {
                     send_command(cmd);

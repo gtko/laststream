@@ -142,7 +142,7 @@ pub enum InMsgFn {
     MpvSetProp,
     MpvCommand,
     MpvObserveProp,
-    SetGpuVideoProcessing,
+    MpvSetGpuVideoProcessing,
 }
 stringable!(InMsgFn);
 // Bool
