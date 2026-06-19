@@ -16,7 +16,10 @@ use url::Url;
 use winapi::um::{winbase::CREATE_BREAKAWAY_FROM_JOB, winuser::WS_EX_TOPMOST};
 
 use crate::stremio_app::{
-    constants::{APP_NAME, UPDATE_ENDPOINT, UPDATE_INTERVAL, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH},
+    constants::{
+        web_endpoint_with_streaming_server, APP_NAME, UPDATE_ENDPOINT, UPDATE_INTERVAL,
+        WEB_ENDPOINT, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH,
+    },
     ipc::{RPCRequest, RPCResponse},
     splash::SplashImage,
     stremio_player::Player,
@@ -130,7 +133,16 @@ impl MainWindow {
         }
     }
     fn on_init(&self) {
-        self.webview.endpoint.set(self.webui_url.clone()).ok();
+        let webui_url =
+            if self.webui_url.trim_end_matches('/') == WEB_ENDPOINT.trim_end_matches('/') {
+                self.server
+                    .server_url()
+                    .map(|server_url| web_endpoint_with_streaming_server(&server_url))
+                    .unwrap_or_else(|| self.webui_url.clone())
+            } else {
+                self.webui_url.clone()
+            };
+        self.webview.endpoint.set(webui_url).ok();
         self.webview.dev_tools.set(self.dev_tools).ok();
         if let Some(hwnd) = self.window.handle.hwnd() {
             if let Ok(mut saved_style) = self.saved_window_style.try_borrow_mut() {

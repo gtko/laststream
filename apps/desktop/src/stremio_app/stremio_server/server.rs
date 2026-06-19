@@ -27,12 +27,17 @@ pub struct StremioServer {
     parent: nwg::ControlHandle,
     crash_notice: nwg::Notice,
     logs: Arc<Mutex<String>>,
+    server_url: Arc<Mutex<Option<String>>>,
 }
 
 impl StremioServer {
-    pub fn start(&self) {
+    pub fn server_url(&self) -> Option<String> {
+        self.server_url.lock().ok().and_then(|url| url.clone())
+    }
+
+    pub fn start(&self) -> Option<String> {
         if self.development {
-            return;
+            return None;
         }
         let (tx, rx) = flume::unbounded();
         let logs = self.logs.clone();
@@ -173,8 +178,12 @@ impl StremioServer {
             sender.notice();
         });
 
-        // Wait for the server to start
-        rx.recv().unwrap();
+        // Wait for the server to start and keep the exact endpoint printed by server.js.
+        let server_url = rx.recv().unwrap();
+        if let Ok(mut stored_url) = self.server_url.lock() {
+            *stored_url = Some(server_url.clone());
+        }
+        Some(server_url)
     }
 }
 
@@ -193,7 +202,7 @@ impl PartialUi for StremioServer {
             .parent(data.parent)
             .build(&mut data.crash_notice)
             .ok();
-        data.start();
+        let _ = data.start();
         println!("Stremio server started");
         Ok(())
     }
@@ -210,7 +219,7 @@ impl PartialUi for StremioServer {
                 "Stremio server crash log",
                 self.logs.lock().unwrap().deref(),
             );
-            self.start();
+            let _ = self.start();
         }
     }
 }
