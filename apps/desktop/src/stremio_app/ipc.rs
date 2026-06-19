@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 use std::cell::RefCell;
 
+use crate::stremio_app::gpu_video_processing;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub type Channel = RefCell<Option<(flume::Sender<String>, flume::Receiver<String>)>>;
@@ -67,6 +69,12 @@ impl RPCResponse {
                             "shellVersion".to_string(),
                             "".to_string(),
                             VERSION.to_string(),
+                        ],
+                        vec![
+                            "".to_string(),
+                            "gpuVideoProcessing".to_string(),
+                            "".to_string(),
+                            gpu_video_processing::gpu_video_processing_supported().to_string(),
                         ],
                     ],
                     signals: vec![],
