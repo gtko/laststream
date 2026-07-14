@@ -165,7 +165,7 @@ impl StremioServer {
                 Err(err) => {
                     nwg::error_message(
                         "Stremio server",
-                        format!("Cannot execute stremio-runtime: {}", &err).as_str(),
+                        format!("Cannot execute stremio-runtime: {}", err).as_str(),
                     );
                 }
             };
