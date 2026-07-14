@@ -61,7 +61,7 @@ impl Updater {
     pub fn autoupdate(&self) -> Result<Option<Update>, anyhow::Error> {
         // Check for updates
         println!("Fetching updates for v{}", self.current_version);
-        println!("Using updater endpoint {}", &self.endpoint);
+        println!("Using updater endpoint {}", self.endpoint);
         let update_response =
             reqwest::blocking::get(self.endpoint.clone())?.json::<UpdateResponse>()?;
         let update_descriptor =

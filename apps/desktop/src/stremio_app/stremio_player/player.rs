@@ -506,7 +506,7 @@ fn create_message_thread(
             let in_msg: InMsg = match serde_json::from_str(&msg) {
                 Ok(in_msg) => in_msg,
                 Err(error) => {
-                    eprintln!("cannot parse InMsg:{:?} {error:#}", &msg);
+                    eprintln!("cannot parse InMsg:{:?} {error:#}", msg);
                     continue;
                 }
             };
