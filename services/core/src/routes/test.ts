@@ -1,12 +1,27 @@
 import type { Express } from 'express';
+import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError, parseConfig } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
+import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
+import { createLtContext, LtError } from '../lt/context.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
-import { maskSecrets, type SourceTestResult } from '../sources/http.js';
+import { isRecord, maskSecrets, SourceError, type SourceTestResult } from '../sources/http.js';
 import { testTorznab } from '../sources/torznab.js';
 import { testUpstream } from '../sources/upstream.js';
 
 export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid';
+
+/**
+ * Résultat du test d'une clé de service (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Jamais la clé. `note` est une
+ * information non sensible (ex. version d'API TheTVDB retenue), absente le plus souvent.
+ */
+export interface ServiceCheck {
+  name: string;
+  type: ServiceField;
+  ok: boolean;
+  error?: string;
+  note?: string;
+}
 
 /** Résultat du test d'une source. `error` est absent quand la source répond. */
 export interface SourceCheck {
@@ -31,7 +46,22 @@ export function scrubSecrets(message: string, secrets: readonly string[]): strin
 function secretsOf(config: Config): string[] {
   const secrets = config.sources.flatMap((source) => (source.type === 'torznab' ? [source.apiKey] : []));
   if (config.debrid !== undefined) secrets.push(config.debrid.apiKey);
+  const { openrouterModel: _model, ...keys } = config.services;
+  secrets.push(...Object.values(keys).filter((value): value is string => typeof value === 'string'));
   return secrets;
+}
+
+/** Sonde d'un service : succès, ou échec avec un message sûr (code d'erreur, jamais clé ni URL). */
+async function probeService(probe: ServiceProbe, secrets: readonly string[]): Promise<ServiceCheck> {
+  try {
+    const note = await probe.probe();
+    const check: ServiceCheck = { name: probe.name, type: probe.type, ok: true };
+    if (note !== undefined) check.note = note;
+    return check;
+  } catch (err) {
+    const message = err instanceof LtError || err instanceof SourceError ? err.message : UNEXPECTED_ERROR;
+    return { name: probe.name, type: probe.type, ok: false, error: scrubSecrets(message, secrets) };
+  }
 }
 
 /** Exécute un test de source sans jamais lever : toute exception devient un échec générique. */
@@ -54,12 +84,26 @@ async function settle(
 
 type Parsed = { config: Config } | { issues: readonly string[] };
 
+/**
+ * Configuration du corps. Accepte l'objet de configuration brut (configurateur), `{ config: objet }`, ou
+ * `{ config: chaîne }` : chaîne chiffrée, ou JSON brut en base64url si LASTADDON_ALLOW_PLAIN=1 (règle des routes).
+ * Sans cette distinction, `{ config: {...} }` était lu comme une configuration vide.
+ */
+function configOfBody(input: unknown, deps: AppDeps): Config {
+  if (!isRecord(input) || !('config' in input)) return parseConfig(input);
+  const { config } = input;
+  if (typeof config === 'string') return decodeConfig(config, deps.secret, { allowPlain: deps.allowPlain });
+  if (isRecord(config)) return parseConfig(config);
+  throw new ConfigValidationError(['config: chaîne encodée ou objet attendu']);
+}
+
 /** Valide le corps : les issues ne contiennent que des chemins et messages, jamais les valeurs saisies. */
-function parseBody(input: unknown): Parsed {
+function parseBody(input: unknown, deps: AppDeps): Parsed {
   try {
-    return { config: parseConfig(input) };
+    return { config: configOfBody(input, deps) };
   } catch (err) {
     if (err instanceof ConfigValidationError) return { issues: err.issues };
+    if (err instanceof ConfigDecodeError) return { issues: [`config: ${err.message}`] };
     throw err;
   }
 }
@@ -70,7 +114,7 @@ function parseBody(input: unknown): Parsed {
  */
 export function registerTestRoutes(app: Express, deps: AppDeps): void {
   app.post('/config/test', async (req, res) => {
-    const parsed = parseBody(req.body);
+    const parsed = parseBody(req.body, deps);
     if ('issues' in parsed) {
       res.status(400).json({ error: 'invalid_config', issues: parsed.issues });
       return;
@@ -104,7 +148,9 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
           ];
 
     const sources = await Promise.all([...sourceChecks, ...debridCheck]);
+    const ltContext = createLtContext(deps);
+    const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ sources });
+    res.json({ sources, services });
   });
 }

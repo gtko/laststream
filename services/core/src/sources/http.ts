@@ -1,5 +1,7 @@
+import type { LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
+import { Agent, type Dispatcher } from 'undici';
 import { isPublicMode } from '../config/runtime-env.js';
 import { isNonPublicAddress } from './ip.js';
 
@@ -26,6 +28,14 @@ export class SourceError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'SourceError';
+  }
+}
+
+/** Cible refusée (adresse privée, nom local, hôte non public). Message sans URL. */
+export class UnsafeTargetError extends SourceError {
+  constructor() {
+    super('adresse non publique refusée');
+    this.name = 'UnsafeTargetError';
   }
 }
 
@@ -127,6 +137,7 @@ export async function checkOutboundUrl(
   raw: string,
   publicMode: boolean,
   lookupHost: HostLookup = resolveHost,
+  dnsAtConnect = false,
 ): Promise<URL> {
   let url: URL;
   try {
@@ -140,6 +151,8 @@ export async function checkOutboundUrl(
   if (!publicMode) return url;
 
   const host = url.hostname.replace(/^\[|\]$/g, '');
+  // Hôte nommé : la résolution et son contrôle sont faits à la connexion (agent épinglé), sur la même réponse DNS.
+  if (dnsAtConnect && isIP(host) === 0) return url;
   let addresses: readonly string[];
   if (isIP(host) !== 0) {
     addresses = [host];
@@ -159,20 +172,76 @@ export async function checkOutboundUrl(
 /** Résolution DNS d'un hôte : toutes les adresses renvoyées. */
 export type HostLookup = (hostname: string) => Promise<readonly string[]>;
 
-async function resolveHost(hostname: string): Promise<string[]> {
+/** Résolution DNS réelle d'un hôte : toutes les adresses renvoyées. */
+export async function resolveHost(hostname: string): Promise<string[]> {
   const records = await lookup(hostname, { all: true, verbatim: true });
   return records.map((record) => record.address);
 }
 
-/** Lit le corps en texte en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
-export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
-  const tooLarge = new SourceError(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
+/**
+ * Lookup épinglé pour la connexion (connect.lookup de l'agent). L'hôte est résolu une seule fois, au moment de la
+ * connexion ; si une seule adresse n'est pas publique, la connexion échoue (UnsafeTargetError) ; sinon seules les
+ * adresses vérifiées sont renvoyées. Le contrôle et la connexion portent donc sur la même réponse DNS : un
+ * rebinding entre les deux est impossible, et chaque saut de redirection est revérifié.
+ */
+export function pinnedLookup(resolve: HostLookup = resolveHost): LookupFunction {
+  return (hostname, options, callback) => {
+    resolve(hostname).then(
+      (addresses) => {
+        if (addresses.length === 0 || addresses.some((address) => isNonPublicAddress(address))) {
+          callback(new UnsafeTargetError(), '', 4);
+          return;
+        }
+        const records: LookupAddress[] = addresses.map((address) => ({ address, family: isIP(address) === 6 ? 6 : 4 }));
+        const [first] = records;
+        if (options.all === true || first === undefined) {
+          callback(null, records);
+          return;
+        }
+        callback(null, first.address, first.family);
+      },
+      (err: unknown) => callback(err instanceof Error ? err : new SourceError('hôte non résolu'), '', 4),
+    );
+  };
+}
+
+/** Agent undici dont la résolution DNS est épinglée à la connexion (voir pinnedLookup). */
+export function createPinnedAgent(resolve: HostLookup = resolveHost): Agent {
+  return new Agent({ connect: { lookup: pinnedLookup(resolve) } });
+}
+
+let defaultAgent: Agent | undefined;
+
+/** Agent épinglé partagé, pour les appels sans agent injecté (mode public ou garde active). */
+function defaultPinnedAgent(): Agent {
+  defaultAgent ??= createPinnedAgent();
+  return defaultAgent;
+}
+
+/** Vrai si l'erreur, ou une de ses causes (fetch → socket → lookup), est une cible refusée. */
+function isUnsafeTarget(err: unknown, depth = 0): boolean {
+  if (err instanceof UnsafeTargetError) return true;
+  if (depth >= 6 || typeof err !== 'object' || err === null) return false;
+  if (err instanceof AggregateError && err.errors.some((inner: unknown) => isUnsafeTarget(inner, depth + 1))) return true;
+  return isUnsafeTarget((err as { cause?: unknown }).cause, depth + 1);
+}
+
+/** Corps refusé parce qu'il dépasse le plafond. Sous-classe de SourceError : message sans contenu. */
+export class SourceTooLargeError extends SourceError {
+  constructor(maxBytes: number) {
+    super(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
+    this.name = 'SourceTooLargeError';
+  }
+}
+
+/** Lit le corps en octets en s'arrêtant dès que `maxBytes` est dépassé (SourceTooLargeError sans contenu). */
+export async function readBytesLimited(response: Response, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'));
   if (response.headers.get('content-length') !== null && declared > maxBytes) {
     await discardBody(response);
-    throw tooLarge;
+    throw new SourceTooLargeError(maxBytes);
   }
-  if (response.body === null) return '';
+  if (response.body === null) return new Uint8Array(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -182,11 +251,38 @@ export async function readBodyLimited(response: Response, maxBytes: number): Pro
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      throw tooLarge;
+      throw new SourceTooLargeError(maxBytes);
     }
     chunks.push(value);
   }
-  return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
+  return Buffer.concat(chunks);
+}
+
+/** Lit le corps en texte UTF-8 en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
+export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
+  return new TextDecoder('utf-8').decode(await readBytesLimited(response, maxBytes));
+}
+
+/**
+ * Contrôle supplémentaire d'une URL, appelé avant chaque requête (URL initiale et chaque redirection).
+ * Doit lever une SourceError si la cible est refusée.
+ */
+export type UrlGuard = (url: URL) => Promise<void>;
+
+/** Options de lecture du corps : plafond d'octets et contrôle d'URL par saut. */
+export interface BodyOptions {
+  maxBytes?: number;
+  guard?: UrlGuard;
+  /** Agent de connexion (DNS épinglé). Sans lui, le mode public utilise l'agent épinglé partagé. */
+  dispatcher?: Dispatcher;
+}
+
+/** Réponse dont le corps a été lu en octets. `url` est l'adresse finale, après redirections. */
+export interface BytesResult {
+  status: number;
+  ok: boolean;
+  url: string;
+  bytes: Uint8Array;
 }
 
 async function discardBody(response: Response): Promise<void> {
@@ -194,29 +290,37 @@ async function discardBody(response: Response): Promise<void> {
 }
 
 /**
- * Requête avec délai couvrant l'en-tête ET la lecture complète du corps.
+ * Requête avec délai couvrant l'en-tête ET la lecture complète du corps, renvoyée en octets.
  * Sécurité : schéma http(s) seul ; redirections gérées à la main (redirect: 'manual'), au plus
- * MAX_REDIRECTS, chaque saut revalidé (voir checkOutboundUrl) ; corps limité à MAX_BODY_BYTES.
- * Les erreurs réseau ou de délai sont renvoyées sous forme de SourceError sans URL.
+ * MAX_REDIRECTS, chaque saut revalidé (checkOutboundUrl puis `guard` si fourni) ; corps limité à
+ * `body.maxBytes` (défaut MAX_BODY_BYTES). Les erreurs sont des SourceError sans URL.
  */
-export async function fetchText(
+export async function fetchBytes(
   fetchFn: FetchFn,
   url: string,
   init: RequestInit = {},
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<TextResult> {
+  body: BodyOptions = {},
+): Promise<BytesResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const publicMode = isPublicMode();
+    // DNS contrôlé à la connexion (agent épinglé) : mode public ou garde active. Chaque saut repasse par là.
+    const dispatcher = body.dispatcher ?? (publicMode || body.guard !== undefined ? defaultPinnedAgent() : undefined);
     let target = url;
     for (let redirects = 0; ; redirects++) {
-      await checkOutboundUrl(target, publicMode);
-      const response = await fetchFn(target, { ...init, redirect: 'manual', signal: controller.signal });
+      // Avec agent épinglé : IP littérales contrôlées ici, noms résolus et contrôlés à la connexion.
+      await checkOutboundUrl(target, publicMode || dispatcher !== undefined, resolveHost, true);
+      if (body.guard !== undefined) await body.guard(new URL(target));
+      const request: RequestInit = { ...init, redirect: 'manual', signal: controller.signal };
+      // Le dispatcher (undici) n'est pas dans le type RequestInit global : ajouté à l'exécution seulement.
+      if (dispatcher !== undefined) Object.assign(request, { dispatcher });
+      const response = await fetchFn(target, request);
       const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
       if (location === null) {
-        const text = await readBodyLimited(response, MAX_BODY_BYTES);
-        return { status: response.status, ok: response.ok, text };
+        const bytes = await readBytesLimited(response, body.maxBytes ?? MAX_BODY_BYTES);
+        return { status: response.status, ok: response.ok, url: target, bytes };
       }
       await discardBody(response);
       if (redirects >= MAX_REDIRECTS) {
@@ -226,10 +330,22 @@ export async function fetchText(
     }
   } catch (err) {
     if (err instanceof SourceError) throw err;
+    if (isUnsafeTarget(err)) throw new UnsafeTargetError();
     throw transportError(err, timeoutMs);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Comme fetchBytes, avec le corps décodé en UTF-8 (plafond MAX_BODY_BYTES par défaut). */
+export async function fetchText(
+  fetchFn: FetchFn,
+  url: string,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<TextResult> {
+  const result = await fetchBytes(fetchFn, url, init, timeoutMs);
+  return { status: result.status, ok: result.ok, text: new TextDecoder('utf-8').decode(result.bytes) };
 }
 
 function resolveLocation(location: string, base: string): string {

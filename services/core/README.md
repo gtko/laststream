@@ -74,7 +74,8 @@ Les clés API (sources Torznab, debrid) sont contenues dans la configuration. Le
 | GET | `/:config/stream/:type/:id.json` | Liste de streams Stremio pour un film ou un épisode |
 | GET | `/:config/play/:infoHash/:fileIdx?` | Lecture débridée d'un torrent : redirection `302` vers le lien AllDebrid |
 | GET | `/config/schema` | JSON Schema de la configuration |
-| POST | `/config/encode` | Valide une configuration JSON et renvoie `{"config":"..."}` (chiffrée) |
+| POST | `/config/encode` | Valide une configuration JSON et renvoie `{"config":"..."}` (chiffrée). Forme `{previous, config}` pour ne pas ressaisir les clés |
+| POST | `/config/decode` | Déchiffre `{"config":"..."}` pour le configurateur : chaque secret est remplacé par `{"set":true,"last4":"…xxxx"}`, jamais par sa valeur |
 | POST | `/config/test` | Teste chaque source d'une configuration (JSON brut, non chiffré) |
 
 Toutes les routes renvoient `Access-Control-Allow-Origin: *`.
@@ -119,7 +120,11 @@ Corps : une configuration JSON brute (non chiffrée). Chaque source et le compte
 
 ### `POST /config/encode`
 
-Corps : une configuration JSON. Réponse : `{"config":"<chaîne chiffrée>"}`. Un corps invalide renvoie `400` avec la liste des chemins fautifs.
+Corps : une configuration JSON, ou `{"previous":"<chaîne chiffrée>","config":{...}}`. Dans la seconde forme, chaque secret vide, absent ou masqué (`{"set":true}` ou `"…xxxx"`) garde la valeur de `previous`. Une section `services` absente garde tous ses secrets ; un objet `debrid` absent retire le debrid. Réponse : `{"config":"<chaîne chiffrée>"}`. Un corps invalide renvoie `400` avec la liste des chemins fautifs.
+
+### `POST /config/decode`
+
+Corps : `{"config":"<chaîne chiffrée>"}`. Réponse : la configuration déchiffrée, avec `services.*` (dont `tvdbPin`), `debrid.apiKey` et `sources[].apiKey` remplacés par leur masque. Jamais de valeur secrète, `Cache-Control: no-store`.
 
 ## Format de la configuration
 
