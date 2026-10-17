@@ -1,0 +1,66 @@
+/* Port du prototype (voir tools/port-prototype.mjs). */
+import { userStore } from '../data/userStore';
+import { register, toItem } from './catalog.js';
+import { detailEl } from './dom.js';
+import { teardownFiche } from './fiche.js';
+import { row, topBar } from './fragments.js';
+import { state } from './state.js';
+import { observeTiles, posterCard } from './tiles.js';
+
+// Bibliothèque : toutes les lectures/écritures passent par userStore (adaptateur local aujourd'hui, API lastAddon ensuite).
+export const inLib = (key) => userStore.inLibrary(key);
+export function toggleLib(it) {
+  const known = state.byKey.get(it.type + ':' + it.id);
+  return userStore.toggleLibrary({
+    id: it.id, type: it.type, title: it.name, poster: it.posterPath || '', year: (known && known.year) || it.year || '',
+  });
+}
+export function libItems() {
+  return userStore.getLibrary().map((x) => {
+    const raw = { id: x.id, poster_path: x.poster };
+    raw[x.type === 'tv' ? 'name' : 'title'] = x.title;
+    const it = register(toItem(raw, x.type));
+    it.added = x.addedAt || 0;
+    return it;
+  });
+}
+export function renderLibrary() {
+  const slot = document.getElementById('lib-slot');
+  if (!slot) return;
+  const items = libItems().sort((a, b) => b.added - a.added);
+  if (!items.length) { slot.innerHTML = ''; return; }
+  slot.innerHTML = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">Ma bibliothèque ' +
+    '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.map((it) => posterCard(it)).join('')) + '</section>';
+}
+
+export function renderLibraryPage() {
+  const box = detailEl.querySelector('#lib-grid');
+  if (!box) return;
+  const v = state.libView;
+  let items = libItems();
+  if (v.type !== 'all') items = items.filter((it) => it.type === v.type);
+  items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, 'fr') : (a, b) => b.added - a.added);
+  box.innerHTML = items.length
+    ? items.map((it) => posterCard(it)).join('')
+    : '<p class="row-msg">' + (userStore.getLibrary().length ? 'Aucun titre dans ce filtre.' : 'Ta bibliothèque est vide. Ajoute des films et séries depuis leur fiche (bouton marque-page) ou avec un clic droit / appui long sur une affiche.') + '</p>';
+  detailEl.querySelectorAll('[data-libf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libf === v.type)));
+  detailEl.querySelectorAll('[data-libs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libs === v.sort)));
+  observeTiles(box);
+}
+
+export function showLibrary() {
+  teardownFiche();
+  state.kind = 'library';
+  document.title = 'Bibliothèque · Laststream';
+  detailEl.innerHTML = topBar(false) +
+    '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
+    '<h1 class="svc-title" id="svc-title" tabindex="-1">Bibliothèque</h1><p class="svc-eyebrow">Tes films et séries Laststream</p>' +
+    '<div class="lib-controls"><div class="pills" data-nav role="group" aria-label="Filtrer">' +
+    '<button type="button" class="pill" data-libf="all">Tout</button><button type="button" class="pill" data-libf="movie">Films</button><button type="button" class="pill" data-libf="tv">Séries</button></div>' +
+    '<div class="pills" data-nav role="group" aria-label="Trier">' +
+    '<button type="button" class="pill" data-libs="date">Derniers ajouts</button><button type="button" class="pill" data-libs="title">Titre A→Z</button></div></div></div></header>' +
+    '<div class="lib-grid" id="lib-grid" data-nav></div></article>';
+  renderLibraryPage();
+  const h1 = detailEl.querySelector('#svc-title');
+  if (h1) h1.focus({ preventScroll: true });
+}

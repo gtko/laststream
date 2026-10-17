@@ -1,0 +1,26 @@
+/* Port du prototype (voir tools/port-prototype.mjs). */
+
+
+export const state = {
+  status: 'loading', // loading | ready | error
+  data: null,
+  details: new Map(), // clé -> détail léger (mise en avant)
+  byKey: new Map(), // clé -> élément canonique
+  ai: { status: 'idle', items: [] },
+  dwell: { timer: null, el: null },
+  preview: null,
+  lastFocus: null,
+  inDetail: false,
+  homeScroll: 0,
+  depth: 0, // 1 si la fiche a été ouverte depuis l'accueil (history.back() y revient)
+  token: 0, // jeton de rendu de la fiche
+  ficheKey: '',
+  libView: { type: 'all', sort: 'date' },
+  scrolls: new Map(), curHash: '', popping: false, restoreY: null, pp: null,
+  top10: new Map(), // clé -> rang dans les tendances du jour
+  upcoming: null,
+  svcIO: null, // observateur des rangées de la page service
+  ctxMenu: null, // menu contextuel ouvert
+  dragRow: null, // rangée en cours de glisser
+  suppressClick: false,
+};

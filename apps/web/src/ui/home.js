@@ -1,0 +1,295 @@
+/* Port du prototype (voir tools/port-prototype.mjs). */
+import { isConfigured } from '../data/config';
+import { recommend, tmdb } from '../data/lt';
+import { getRegion } from '../data/prefs';
+import { userStore } from '../data/userStore';
+import { detailOf, getDetail, listOf, register, toItem } from './catalog.js';
+import { DEMO_HISTORY, DEMO_LIKED, DEMO_PROGRESS, IMG, TABS } from './constants.js';
+import { addDays, isFuture, todayStr } from './dates.js';
+import { app } from './dom.js';
+import { brand, heroEmpty, infoBtn, row, section, titleEl, trailerBtn } from './fragments.js';
+import { ICON } from './icons.js';
+import { renderLibrary } from './library.js';
+import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
+import { metaHTML, ratingList } from './ratings.js';
+import { renderServices } from './services.js';
+import { state } from './state.js';
+import { continueCard, observeTiles, posterCard, topCard, upCard } from './tiles.js';
+import { renderLive } from './tv.js';
+import { cut, esc } from './util.js';
+
+export async function loadHome() {
+  const settled = await Promise.allSettled([
+    tmdb('trending/all/day'),
+    tmdb('trending/all/week'),
+    tmdb('movie/popular'),
+    tmdb('tv/popular'),
+    tmdb('discover/movie', { with_genres: '28', sort_by: 'popularity.desc' }),
+    tmdb('discover/movie', { with_genres: '35', sort_by: 'popularity.desc' }),
+  ]);
+  const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
+  const day = listOf(val(0));
+  const week = listOf(val(1));
+  const films = listOf(val(2), 'movie');
+  const series = listOf(val(3), 'tv');
+  const action = listOf(val(4), 'movie');
+  const comedy = listOf(val(5), 'movie');
+  if ([day, week, films, series, action, comedy].every((l) => l === null)) throw new Error('catalogue indisponible');
+
+  // Mise en avant : premier titre de la semaine ayant un fond et un détail chargeable.
+  const candidates = (week || []).filter((it) => it.backdropPath).slice(0, 3);
+  await Promise.all(candidates.map(getDetail));
+  const hero = candidates.find((it) => state.details.has(it.key)) || null;
+
+  state.top10 = new Map(cut(day, 10) ? cut(day, 10).map((it, i) => [it.key, i + 1]) : []);
+  const all = [...(hero ? [hero] : []), ...(day || []), ...(week || []), ...(films || []), ...(series || []), ...(action || []), ...(comedy || [])];
+  all.forEach(register);
+  return {
+    hero,
+    rows: {
+      continue: week ? week.slice(5, 10) : null, // « Reprendre » : titres réels, progression factice
+      top: cut(day, 10),
+      films: cut(films, 20),
+      series: cut(series, 20),
+      action: cut(action, 20),
+      comedy: cut(comedy, 20),
+    },
+  };
+}
+
+export async function loadAI() {
+  if (state.ai.status === 'loading' || state.ai.status === 'ready') return;
+  state.ai = { status: 'loading', items: [] };
+  renderAI();
+  try {
+    const seed = recoSeed();
+    const json = await recommend(seed.history, seed.liked);
+    const items = (json.items || [])
+      .map((raw) => {
+        const it = toItem(raw);
+        it.reason = raw.reason_fr || '';
+        return register(it);
+      })
+      .filter((it) => it.poster);
+    state.ai = { status: 'ready', items, demo: seed.demo };
+  } catch (_) {
+    state.ai = { status: 'error', items: [] };
+  }
+  renderAI();
+}
+
+export async function load() {
+  state.status = 'loading';
+  renderHome();
+  try {
+    state.data = await loadHome();
+    state.status = 'ready';
+  } catch (err) {
+    console.error('[laststream] catalogue indisponible');
+    state.status = 'error';
+  }
+  renderHome();
+  if (state.status === 'ready') loadAI();
+}
+// ---------- Rangée « Prochainement » ----------
+export async function loadUpcoming() {
+  if (state.upcoming) return state.upcoming;
+  const today = todayStr();
+  const tomorrow = addDays(today, 1);
+  const [mu, md, td, ota] = await Promise.allSettled([
+    tmdb('movie/upcoming'),
+    tmdb('discover/movie', { 'primary_release_date.gte': tomorrow, sort_by: 'popularity.desc' }),
+    tmdb('discover/tv', { 'first_air_date.gte': tomorrow, sort_by: 'popularity.desc' }),
+    tmdb('tv/on_the_air'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' && r.value && r.value.results ? r.value.results : []);
+  const out = new Map();
+  const add = (raw, type, date, label) => {
+    if (!raw.poster_path || !date || !isFuture(date)) return;
+    const c = register(toItem(raw, type));
+    if (out.has(c.key)) return;
+    c.upDate = date;
+    c.upLabel = label || '';
+    out.set(c.key, c);
+  };
+  val(mu).concat(val(md)).forEach((r) => add(r, 'movie', r.release_date));
+  val(td).forEach((r) => add(r, 'tv', r.first_air_date));
+  // Nouvelles saisons : séries en cours dont le prochain épisode est le 1er d'une saison à venir.
+  const airing = val(ota).filter((r) => r.poster_path).slice(0, 12);
+  const details = await Promise.allSettled(airing.map((r) => tmdb('tv/' + r.id)));
+  details.forEach((d, i) => {
+    if (d.status !== 'fulfilled') return;
+    const n = d.value.next_episode_to_air;
+    if (n && n.episode_number === 1 && n.season_number >= 2) add(airing[i], 'tv', n.air_date, 'Saison ' + n.season_number);
+  });
+  state.upcoming = Array.from(out.values()).sort((a, b) => String(a.upDate).localeCompare(String(b.upDate))).slice(0, 20);
+  return state.upcoming;
+}
+
+export async function renderUpcoming() {
+  try {
+    const list = await loadUpcoming();
+    const slot = document.getElementById('up-slot');
+    if (!slot || !list.length || state.status !== 'ready') return;
+    slot.innerHTML = '<section class="row-section" id="prochainement" aria-labelledby="h-prochainement"><h2 class="row-title" id="h-prochainement">Prochainement</h2>' +
+      row(list.map(upCard).join('')) + '</section>';
+    observeTiles(slot);
+  } catch (_) { /* rangée absente */ }
+}
+
+export function aiCard(it) {
+  return '<button type="button" class="card poster ai-card" data-open="' + esc(it.key) + '" aria-label="' + esc(it.name) + ' : ' + esc(it.reason) + '">' +
+    '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
+    (it.poster ? '<img src="' + esc(it.poster) + '" alt="" decoding="async">' : '') +
+    '<span class="card-fallback">' + esc(it.name) + '</span></span>' +
+    '<span class="card-title" aria-hidden="true">' + esc(it.name) + '</span>' +
+    '<span class="card-reason clamp-3" aria-hidden="true">' + esc(it.reason) + '</span></button>';
+}
+
+// ---------- Recommandations IA ----------
+export function aiSkeleton() {
+  return '<section class="row-section" aria-busy="true"><h2 class="row-title">Recommandé pour toi par l’IA</h2>' +
+    '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(5) + '</div></section>';
+}
+
+export function renderAI() {
+  const slot = document.getElementById('ai-slot');
+  if (!slot) return;
+  const ai = state.ai;
+  if (ai.status === 'error' || (ai.status === 'ready' && !ai.items.length)) {
+    slot.innerHTML = '';
+    return;
+  }
+  if (ai.status !== 'ready') {
+    slot.innerHTML = aiSkeleton();
+    return;
+  }
+  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA' + (ai.demo ? ' <span class="demo-tag">démo</span>' : '') + '</h2>' +
+    row(ai.items.map(aiCard).join('')) + '</section>';
+}
+
+// ---------- Accueil (style A · Cinéma) ----------
+export function headerA() {
+  return '<header class="topbar">' + brand() +
+    '<nav class="nav" aria-label="Principale">' +
+    '<a href="#/" data-noop class="is-current" aria-current="page">Accueil</a>' +
+    '<a href="#films" data-scroll="films">Films</a>' +
+    '<a href="#series" data-scroll="series">Séries</a>' +
+    '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
+    '<a href="#/services" data-svcs>Services</a>' +
+    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#" data-noop>Stats</a></nav>' +
+    '<div class="top-actions"><button type="button" class="icon-btn" aria-label="Rechercher">' + ICON.search + '</button>' +
+    '<button type="button" class="avatar" data-settings aria-label="Profil ' + esc(userStore.currentProfile().name) + ' et réglages">' + esc(initialOf()) + '</button></div></header>';
+}
+
+export function heroA(it) {
+  if (!it) return heroEmpty();
+  const d = detailOf(it);
+  return '<section class="hero" aria-label="À la une">' +
+    '<div class="hero-bg" data-media="' + esc(it.key) + '">' +
+    '<img src="' + esc(IMG('w1280', it.backdropPath)) + '" alt="" data-fb="' + esc(it.backdrop) + '" fetchpriority="high" decoding="async"></div>' +
+    '<div class="scrim" aria-hidden="true"></div>' +
+    '<div class="hero-content">' +
+    '<span class="eyebrow">Tendance cette semaine</span>' +
+    titleEl(it, d, 'hero-title') +
+    '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
+    '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0) + '</ul>' +
+    (d.providers && d.providers.length
+      ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
+        '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
+    '<p class="clamp-3 hero-desc">' + esc(d.overview) + '</p>' +
+    '<div class="hero-actions">' + trailerBtn(it, d) + infoBtn(it) + '</div></div></section>';
+}
+
+export function viewA(d) {
+  const r = d.rows;
+  return '<main id="main" class="page-a">' + headerA() + heroA(d.hero) +
+    '<div class="rows">' +
+    continueSection(r) +
+    '<div id="lib-slot"></div>' +
+    '<div id="ai-slot"></div>' +
+    section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
+    '<div id="up-slot"></div>' +
+    '<div id="live-slot"></div>' +
+    section('films', 'Films populaires', r.films, (l) => row(l.map((it) => posterCard(it)).join(''))) +
+    section('series', 'Séries populaires', r.series, (l) => row(l.map((it) => posterCard(it)).join(''))) +
+    section('action', 'Action', r.action, (l) => row(l.map((it) => posterCard(it)).join(''))) +
+    section('comedy', 'Comédie', r.comedy, (l) => row(l.map((it) => posterCard(it)).join(''))) +
+    '<div id="svc-slot"></div>' +
+    '</div></main>';
+}
+
+export function tabbar() {
+  const items = TABS.map(([label, icon, current]) =>
+    '<a href="' + tabHref(label) + '"' + tabData(label) + ' class="tab' + (current ? ' is-current' : '') + '"' + (current ? ' aria-current="page"' : '') + '>' +
+    (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
+    '<span class="tab-label">' + label + '</span></a>').join('');
+  return '<nav class="tabbar" aria-label="Navigation principale">' + items + '</nav>';
+}
+
+export const footer = () =>
+  '<footer class="foot"><p>Données films et séries : TMDb. Ce produit utilise l’API TMDb mais n’est ni approuvé ni certifié par TMDb. ' +
+  'Notes : MDBList. Recommandations : OpenRouter (démo).</p></footer>';
+
+export function skeletonView() {
+  const cards = '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div>';
+  return '<main id="main" class="sk-page"><p class="sr-only" role="status">Chargement du catalogue…</p>' +
+    '<div class="sk sk-hero"></div><div class="rows"><div class="sk sk-line"></div>' + cards +
+    '<div class="sk sk-line short"></div>' + cards + '</div></main>';
+}
+
+export function errorView() {
+  return '<main id="main" class="state-page">' + brand() +
+    '<div class="state" role="alert"><p>' + (isConfigured()
+      ? 'Impossible de charger le catalogue. Vérifie la connexion à lastAddon, puis réessaie.'
+      : 'lastAddon n’est pas configuré. Renseigne son adresse dans les réglages.') + '</p>' +
+    '<button type="button" class="btn btn-primary" data-retry>Réessayer</button>' +
+    '<button type="button" class="btn btn-ghost" data-settings>Réglages</button></div></main>';
+}
+
+export function renderHome() {
+  stopPreview();
+  cancelDwell();
+  app.setAttribute('aria-busy', String(state.status === 'loading'));
+  if (state.status === 'loading') {
+    app.innerHTML = skeletonView();
+    return;
+  }
+  if (state.status === 'error') {
+    app.innerHTML = errorView();
+    return;
+  }
+  app.innerHTML = viewA(state.data) + footer() + tabbar();
+  renderAI();
+  renderServices();
+  renderUpcoming();
+  renderLibrary();
+  renderLive();
+  observeTiles(app);
+  setupPreviews();
+}
+export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
+export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : '#/');
+export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : ' data-noop');
+
+/** Historique envoyé à /recommend : la bibliothèque si elle existe, sinon l'historique de démonstration. */
+export function recoSeed() {
+  const lib = userStore.getLibrary().filter((e) => e.title).sort((a, b) => b.addedAt - a.addedAt).slice(0, 10);
+  if (!lib.length) return { history: DEMO_HISTORY, liked: DEMO_LIKED, demo: true };
+  const history = lib.map((e) => ({ title: e.title, year: Number(e.year) || null, type: e.type }));
+  return { history, liked: history.slice(0, 3), demo: false };
+}
+
+/** « Reprendre la lecture » : progression réelle (userStore) ou, à défaut, la rangée de démonstration. */
+export function continueSection(r) {
+  const real = userStore.continueWatching(10);
+  if (real.length) {
+    const items = real.map((p) => {
+      const raw = { id: p.id, poster_path: p.poster, backdrop_path: p.backdrop || '' };
+      raw[p.type === 'tv' ? 'name' : 'title'] = p.title;
+      return { it: register(toItem(raw, p.type)), pct: Math.round((p.position / p.duration) * 100) };
+    });
+    return section('reprendre', 'Reprendre la lecture', items, (l) => row(l.map((x) => continueCard(x.it, x.pct)).join('')));
+  }
+  return section('reprendre', 'Reprendre la lecture', cut(r.continue, 4), (l) => row(l.map((it, i) => continueCard(it, DEMO_PROGRESS[i])).join('')), 'démo');
+}
