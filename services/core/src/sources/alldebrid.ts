@@ -3,17 +3,28 @@
  *
  * Règles de sécurité : la clé API ne part que dans l'en-tête Authorization. Aucune erreur
  * ne contient la clé, la configuration ni les URL retournées : seuls des codes génériques sortent.
+ *
+ * Contrôle « cache » : la documentation ne décrit aucun endpoint de disponibilité instantanée. Le contrôle ajoute
+ * donc le magnet au compte (POST /v4/magnet/upload). Seuls les magnets créés par ce contrôle, c'est-à-dire absents
+ * de la liste du compte lue juste avant l'envoi, peuvent être supprimés. Un magnet déjà présent (téléchargement de
+ * l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé.
  */
 
 const API_BASE = 'https://api.alldebrid.com';
 const DEFAULT_TIMEOUT_MS = 10_000;
-const DEFAULT_CACHE_TTL_MS = 600_000;
+const DEFAULT_POSITIVE_TTL_MS = 6 * 60 * 60 * 1_000;
+const DEFAULT_NEGATIVE_TTL_MS = 30 * 60 * 1_000;
+const BATCH_FAILURE_TTL_MS = 30_000;
+const DEFAULT_BACKOFF_MS = 30_000;
+const MAX_BACKOFF_MS = 600_000;
 const CHECK_BATCH_SIZE = 20;
 const CHECK_CONCURRENCY = 3;
+const DELETE_CONCURRENCY = 3;
 const POLL_ATTEMPTS = 8;
 const POLL_INTERVAL_MS = 1_500;
 const RESOLVE_TTL_MS = 3_600_000;
 const MAX_CACHE_ENTRIES = 5_000;
+const MAX_NAME_LENGTH = 512;
 const MAGNET_STATUS_READY = 4;
 const MAGNET_STATUS_ERROR_FROM = 5;
 const HASH_PATTERN = /^[0-9a-f]{40}$/;
@@ -35,8 +46,10 @@ export interface AllDebridClientOptions {
   fetch?: typeof fetch;
   /** Délai maximal par requête HTTP. */
   timeoutMs?: number;
-  /** TTL du cache de disponibilité ; le TTL négatif vaut un dixième de cette valeur. */
+  /** TTL d'un hash reconnu prêt (défaut 6 h). */
   cacheTtlMs?: number;
+  /** TTL d'un hash non prêt (défaut 30 min). */
+  negativeCacheTtlMs?: number;
   /** Horloge injectable (tests). */
   now?: () => number;
 }
@@ -50,6 +63,10 @@ export interface ApiKeyCheck {
 export interface ResolveOptions {
   season?: number;
   episode?: number;
+  /** Nom de fichier attendu (behaviorHints.filename de Stremio). */
+  filename?: string;
+  /** Taille attendue du fichier vidéo, en octets (behaviorHints.videoSize de Stremio). */
+  size?: number;
   /** Délai entre deux interrogations de statut (tests). */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -58,6 +75,15 @@ export interface ResolvedLink {
   url: string;
   filename: string;
   size: number;
+}
+
+/** Critères de choix du fichier. L'index Stremio n'est utilisé qu'avec une taille concordante. */
+interface Selection {
+  fileIdx?: number;
+  filename?: string;
+  size?: number;
+  season?: number;
+  episode?: number;
 }
 
 interface CacheEntry<T> {
@@ -103,6 +129,20 @@ function idToString(id: unknown): string | null {
   return null;
 }
 
+function safeIndex(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function positiveSize(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+function cleanName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= MAX_NAME_LENGTH ? trimmed : undefined;
+}
+
 function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -129,6 +169,24 @@ function pruneExpired<T>(cache: Map<string, CacheEntry<T>>, now: number): void {
   }
 }
 
+function liveValue<T>(cache: Map<string, CacheEntry<T>>, key: string, now: number): T | undefined {
+  const entry = cache.get(key);
+  return entry !== undefined && entry.expiresAt > now ? entry.value : undefined;
+}
+
+/** Délai de recul après HTTP 429/503 : Retry-After (secondes ou date HTTP), sinon 30 s ; plafonné. */
+function backoffMs(retryAfter: string | null, now: number): number {
+  const value = retryAfter?.trim() ?? '';
+  let ms = DEFAULT_BACKOFF_MS;
+  if (/^\d{1,7}$/.test(value)) {
+    ms = Number(value) * 1_000;
+  } else {
+    const date = Date.parse(value);
+    if (!Number.isNaN(date)) ms = date - now;
+  }
+  return Math.min(Math.max(ms, 0), MAX_BACKOFF_MS);
+}
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -153,6 +211,12 @@ function isVideo(name: string): boolean {
   return dot > 0 && VIDEO_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
+/** Nom sans dossier, en minuscules, sans extension vidéo : sert à comparer un nom attendu à un fichier. */
+function stemOf(name: string): string {
+  const base = (name.split(/[\\/]/).pop() ?? name).trim().toLowerCase();
+  return isVideo(base) ? base.slice(0, base.lastIndexOf('.')) : base;
+}
+
 /** Reconnaît SxxExx (S01E02, S1E2) et NxNN (1x02), sans faux positif sur S11E02 pour S01E02. */
 function matchesEpisode(name: string, season: number, episode: number): boolean {
   const patterns = [
@@ -166,18 +230,40 @@ function largest(files: readonly FlatFile[]): FlatFile {
   return files.reduce((best, file) => (file.size > best.size ? file : best));
 }
 
-function pickFile(files: readonly FlatFile[], fileIdx: number | undefined, season?: number, episode?: number): FlatFile {
+/**
+ * Choisit le fichier vidéo. Ordre : nom attendu, taille attendue, épisode demandé, index Stremio
+ * (seulement si sa taille correspond à la taille attendue), puis le plus gros fichier vidéo.
+ * L'index Stremio ne désigne pas forcément le même fichier dans la liste aplatie d'AllDebrid.
+ */
+function pickFile(files: readonly FlatFile[], sel: Selection): FlatFile {
   if (files.length === 0) throw new AllDebridError('no_file', 'aucun fichier');
-  if (fileIdx !== undefined && Number.isSafeInteger(fileIdx) && fileIdx >= 0 && fileIdx < files.length) {
-    return files[fileIdx];
-  }
   const videos = files.filter((file) => isVideo(file.name));
   if (videos.length === 0) throw new AllDebridError('no_file', 'aucun fichier vidéo');
+  const { fileIdx, filename, size, season, episode } = sel;
+
+  if (filename !== undefined) {
+    const wanted = stemOf(filename);
+    const named = videos.filter((file) => stemOf(file.name) === wanted);
+    if (named.length > 0) return largest(named);
+  }
+
+  let candidates = videos;
+  if (size !== undefined) {
+    const sized = videos.filter((file) => file.size === size);
+    if (sized.length === 1) return sized[0];
+    if (sized.length > 1) candidates = sized;
+  }
+
   if (season !== undefined && episode !== undefined) {
-    const matches = videos.filter((file) => matchesEpisode(file.name, season, episode));
+    const matches = candidates.filter((file) => matchesEpisode(file.name, season, episode));
     if (matches.length > 0) return largest(matches);
   }
-  return largest(videos);
+
+  if (fileIdx !== undefined && size !== undefined && fileIdx < files.length) {
+    const indexed = files[fileIdx];
+    if (isVideo(indexed.name) && indexed.size === size) return indexed;
+  }
+  return largest(candidates);
 }
 
 function isHttpUrl(value: string): boolean {
@@ -195,6 +281,10 @@ function firstRecord(value: unknown): Record<string, unknown> | undefined {
   return list.find(isRecord);
 }
 
+function selectionKey(hash: string, sel: Selection): string {
+  return JSON.stringify([hash, sel.fileIdx ?? null, sel.filename ?? null, sel.size ?? null, sel.season ?? null, sel.episode ?? null]);
+}
+
 export class AllDebridClient {
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
@@ -202,8 +292,21 @@ export class AllDebridClient {
   private readonly positiveTtlMs: number;
   private readonly negativeTtlMs: number;
   private readonly now: () => number;
+  /** Résultats de contrôle par hash (true = prêt, false = non prêt). */
   private readonly checkCache = new Map<string, CacheEntry<boolean>>();
+  /** Hashes d'un lot en erreur ou absents de la réponse : inconnus pendant BATCH_FAILURE_TTL_MS. */
+  private readonly failCache = new Map<string, CacheEntry<boolean>>();
   private readonly resolveCache = new Map<string, CacheEntry<ResolvedLink>>();
+  /** Contrôle en cours par hash : une résolution attend sa fin avant d'envoyer le même magnet. */
+  private readonly checking = new Map<string, Promise<void>>();
+  /** Préparation partagée par hash (upload, attente, liste des fichiers). */
+  private readonly preparing = new Map<string, Promise<FlatFile[]>>();
+  /** Résolutions en cours, par clé de sélection. */
+  private readonly resolving = new Map<string, Promise<ResolvedLink>>();
+  /** Résolutions en cours par hash : tant que le compteur est positif, rien n'est supprimé pour ce hash. */
+  private readonly activeResolves = new Map<string, number>();
+  /** Fin du délai de recul après HTTP 429 ou 503. */
+  private backoffUntil = 0;
 
   constructor(apiKey: string, opts: AllDebridClientOptions = {}) {
     if (apiKey.length === 0) {
@@ -212,9 +315,8 @@ export class AllDebridClient {
     this.apiKey = apiKey;
     this.fetchImpl = opts.fetch ?? ((input, init) => fetch(input, init));
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const cacheTtlMs = opts.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
-    this.positiveTtlMs = cacheTtlMs;
-    this.negativeTtlMs = Math.floor(cacheTtlMs / 10);
+    this.positiveTtlMs = opts.cacheTtlMs ?? DEFAULT_POSITIVE_TTL_MS;
+    this.negativeTtlMs = opts.negativeCacheTtlMs ?? DEFAULT_NEGATIVE_TTL_MS;
     this.now = opts.now ?? (() => Date.now());
   }
 
@@ -230,8 +332,8 @@ export class AllDebridClient {
   }
 
   /**
-   * Indique pour chaque hash s'il est déjà en cache AllDebrid (ready).
-   * Les hashes d'un lot en erreur sont absents de la Map (inconnu). Ne lève jamais.
+   * Indique pour chaque hash s'il est prêt chez AllDebrid. Absent de la Map = inconnu (lot en erreur,
+   * hash en cours de résolution, délai de recul après 429/503). Ne lève jamais.
    * Les clés de la Map sont les hashes en minuscules.
    */
   async checkCached(hashes: readonly string[]): Promise<Map<string, boolean>> {
@@ -239,61 +341,121 @@ export class AllDebridClient {
     const unique = [...new Set(hashes.map(normalizeHash).filter((hash): hash is string => hash !== null))];
     const now = this.now();
     const missing: string[] = [];
+    const waited: string[] = [];
+    const waits: Promise<void>[] = [];
     for (const hash of unique) {
-      const entry = this.checkCache.get(hash);
-      if (entry !== undefined && entry.expiresAt > now) {
-        result.set(hash, entry.value);
-      } else {
-        missing.push(hash);
+      // Magnet utilisé par une résolution en cours : aucun contrôle pour ce hash.
+      if (this.activeResolves.has(hash)) continue;
+      const known = liveValue(this.checkCache, hash, now);
+      if (known !== undefined) {
+        result.set(hash, known);
+      } else if (liveValue(this.failCache, hash, now) === undefined) {
+        const inFlight = this.checking.get(hash);
+        if (inFlight !== undefined) {
+          waited.push(hash);
+          waits.push(inFlight);
+        } else {
+          missing.push(hash);
+        }
       }
     }
 
+    // Les contrôles sont enregistrés avant tout await : un appel concurrent attend au lieu de relancer l'upload.
+    const finish = new Map<string, () => void>();
+    for (const hash of missing) {
+      this.checking.set(
+        hash,
+        new Promise<void>((resolve) => {
+          finish.set(hash, () => resolve());
+        }),
+      );
+    }
+
     await runLimited(chunk(missing, CHECK_BATCH_SIZE), CHECK_CONCURRENCY, async (batch) => {
-      const found = await this.checkBatch(batch);
-      const at = this.now();
-      for (const [hash, cached] of found) {
-        pruneExpired(this.checkCache, at);
-        this.checkCache.set(hash, { value: cached, expiresAt: at + (cached ? this.positiveTtlMs : this.negativeTtlMs) });
-        result.set(hash, cached);
+      try {
+        const found = await this.checkBatch(batch);
+        const at = this.now();
+        for (const hash of batch) {
+          const cached = found.get(hash);
+          if (cached === undefined) {
+            pruneExpired(this.failCache, at);
+            this.failCache.set(hash, { value: true, expiresAt: at + BATCH_FAILURE_TTL_MS });
+            continue;
+          }
+          pruneExpired(this.checkCache, at);
+          this.checkCache.set(hash, { value: cached, expiresAt: at + (cached ? this.positiveTtlMs : this.negativeTtlMs) });
+          result.set(hash, cached);
+        }
+      } finally {
+        for (const hash of batch) {
+          this.checking.delete(hash);
+          finish.get(hash)?.();
+        }
       }
     });
+
+    await Promise.all(waits);
+    const later = this.now();
+    for (const hash of waited) {
+      const value = liveValue(this.checkCache, hash, later);
+      if (value !== undefined) result.set(hash, value);
+    }
     return result;
   }
 
   /**
-   * Résout un hash en lien de téléchargement direct.
+   * Résout un hash en lien de téléchargement direct. Les résolutions concurrentes d'un même hash partagent
+   * l'upload et l'attente ; chaque appel choisit ensuite son fichier.
    * Lève AllDebridError : `not_ready` si le magnet n'est pas prêt après les interrogations,
    * `no_file` si aucun fichier vidéo, `magnet_failed` en cas d'erreur côté AllDebrid.
    */
   async resolve(infoHash: string, fileIdx?: number, opts: ResolveOptions = {}): Promise<ResolvedLink> {
     const hash = normalizeHash(infoHash);
     if (hash === null) throw new AllDebridError('invalid_hash', 'hash invalide');
-    const season = Number.isSafeInteger(opts.season) && (opts.season ?? -1) >= 0 ? opts.season : undefined;
-    const episode = Number.isSafeInteger(opts.episode) && (opts.episode ?? -1) >= 0 ? opts.episode : undefined;
-
-    const key =
-      fileIdx !== undefined ? `${hash}#${fileIdx}` : `${hash}#${season ?? '-'}x${episode ?? '-'}`;
-    const now = this.now();
+    const sel: Selection = {
+      fileIdx: safeIndex(fileIdx),
+      filename: cleanName(opts.filename),
+      size: positiveSize(opts.size),
+      season: safeIndex(opts.season),
+      episode: safeIndex(opts.episode),
+    };
+    const key = selectionKey(hash, sel);
     const cached = this.resolveCache.get(key);
-    if (cached !== undefined && cached.expiresAt > now) return cached.value;
+    if (cached !== undefined && cached.expiresAt > this.now()) return cached.value;
+    const pending = this.resolving.get(key);
+    if (pending !== undefined) return pending;
 
-    const value = await this.resolveUncached(hash, fileIdx, season, episode, opts.sleep ?? defaultSleep);
-    pruneExpired(this.resolveCache, now);
-    this.resolveCache.set(key, { value, expiresAt: now + RESOLVE_TTL_MS });
-    return value;
+    const sleep = opts.sleep ?? defaultSleep;
+    this.markActive(hash, 1);
+    const run = (async (): Promise<ResolvedLink> => {
+      try {
+        const value = await this.resolveUncached(hash, sel, sleep);
+        const at = this.now();
+        pruneExpired(this.resolveCache, at);
+        this.resolveCache.set(key, { value, expiresAt: at + RESOLVE_TTL_MS });
+        return value;
+      } finally {
+        this.resolving.delete(key);
+        this.markActive(hash, -1);
+      }
+    })();
+    this.resolving.set(key, run);
+    return run;
+  }
+
+  private markActive(hash: string, delta: 1 | -1): void {
+    const count = (this.activeResolves.get(hash) ?? 0) + delta;
+    if (count > 0) this.activeResolves.set(hash, count);
+    else this.activeResolves.delete(hash);
   }
 
   private async resolveUncached(
     hash: string,
-    fileIdx: number | undefined,
-    season: number | undefined,
-    episode: number | undefined,
+    sel: Selection,
     sleep: (ms: number) => Promise<void>,
   ): Promise<ResolvedLink> {
-    const magnet = await this.uploadMagnet(hash);
-    if (!magnet.ready) await this.waitReady(magnet.id, sleep);
-    const files = await this.listFiles(magnet.id);
-    const file = pickFile(files, fileIdx, season, episode);
+    const files = await this.prepareFiles(hash, sleep);
+    const file = pickFile(files, sel);
 
     const data = await this.request('POST', '/v4/link/unlock', new URLSearchParams([['link', file.link]]));
     // Lien différé : pas encore disponible côté AllDebrid, on demande un nouvel essai.
@@ -308,7 +470,26 @@ export class AllDebridClient {
     };
   }
 
+  /** Upload, attente éventuelle et liste des fichiers, partagés par les résolutions concurrentes du hash. */
+  private prepareFiles(hash: string, sleep: (ms: number) => Promise<void>): Promise<FlatFile[]> {
+    const pending = this.preparing.get(hash);
+    if (pending !== undefined) return pending;
+    const run = (async (): Promise<FlatFile[]> => {
+      await this.checking.get(hash);
+      const magnet = await this.uploadMagnet(hash);
+      if (!magnet.ready) await this.waitReady(magnet.id, sleep);
+      return this.listFiles(magnet.id);
+    })();
+    this.preparing.set(hash, run);
+    const forget = (): void => {
+      this.preparing.delete(hash);
+    };
+    run.then(forget, forget);
+    return run;
+  }
+
   private async request(method: 'GET' | 'POST', path: string, form?: URLSearchParams): Promise<Record<string, unknown>> {
+    if (this.now() < this.backoffUntil) throw new AllDebridError('rate_limited', 'rate limited');
     let res: Response;
     try {
       res = await this.fetchImpl(`${API_BASE}${path}`, {
@@ -323,6 +504,8 @@ export class AllDebridClient {
         : new AllDebridError('network', 'AllDebrid : réseau indisponible');
     }
     if (res.status === 429 || res.status === 503) {
+      // Recul global : aucune nouvelle requête avant la fin du délai, sans boucle de nouvel essai.
+      this.backoffUntil = this.now() + backoffMs(res.headers.get('retry-after'), this.now());
       throw new AllDebridError('rate_limited', 'rate limited');
     }
 
@@ -341,9 +524,20 @@ export class AllDebridClient {
     return body.data;
   }
 
-  /** Lot de hashes : POST /v4/magnet/upload, suppression des magnets non prêts. Ne lève jamais. */
+  /**
+   * Lot de hashes : liste des magnets du compte, puis upload, puis suppression des seuls magnets créés
+   * par cet upload qui ne sont pas prêts. Renvoie une Map vide en cas d'échec. Ne lève jamais.
+   */
   private async checkBatch(batch: readonly string[]): Promise<Map<string, boolean>> {
     const found = new Map<string, boolean>();
+    let existing: Set<string>;
+    try {
+      existing = await this.listMagnetIds();
+    } catch {
+      // Sans liste de référence, rien n'est envoyé : un magnet déjà présent ne peut pas être distingué.
+      return found;
+    }
+
     let entries: unknown[];
     try {
       const form = new URLSearchParams(batch.map((hash): [string, string] => ['magnets[]', hash]));
@@ -353,20 +547,39 @@ export class AllDebridClient {
       return found;
     }
 
+    const removable: { hash: string; id: string }[] = [];
     for (const entry of entries) {
       if (!isRecord(entry) || hasValue(entry.error)) continue;
       const hash = typeof entry.hash === 'string' ? entry.hash.toLowerCase() : '';
       if (!batch.includes(hash) || typeof entry.ready !== 'boolean') continue;
       found.set(hash, entry.ready);
-      if (!entry.ready) await this.removeMagnet(entry.id);
+      // L'upload renvoie l'id existant si le magnet est déjà dans le compte : seul un id absent de la liste est à nous.
+      const id = idToString(entry.id);
+      if (!entry.ready && id !== null && !existing.has(id)) removable.push({ hash, id });
     }
+
+    await runLimited(removable, DELETE_CONCURRENCY, async ({ hash, id }) => {
+      if (this.activeResolves.has(hash)) return;
+      await this.removeMagnet(id);
+    });
     return found;
   }
 
+  /** Identifiants des magnets déjà présents dans le compte (POST /v4.1/magnet/status sans id). Lève si la liste est invalide. */
+  private async listMagnetIds(): Promise<Set<string>> {
+    const data = await this.request('POST', '/v4.1/magnet/status');
+    if (!Array.isArray(data.magnets)) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
+    const ids = new Set<string>();
+    for (const entry of data.magnets) {
+      const id = isRecord(entry) ? idToString(entry.id) : null;
+      if (id === null) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
+      ids.add(id);
+    }
+    return ids;
+  }
+
   /** Suppression best effort d'un magnet ajouté pour un simple contrôle. */
-  private async removeMagnet(id: unknown): Promise<void> {
-    const magnetId = idToString(id);
-    if (magnetId === null) return;
+  private async removeMagnet(magnetId: string): Promise<void> {
     try {
       await this.request('POST', '/v4/magnet/delete', new URLSearchParams([['id', magnetId]]));
     } catch {

@@ -32,7 +32,25 @@ describe('formatStreams : formes d URL', () => {
 
   it('ajoute le fileIdx au chemin et les saisons/épisodes en query', () => {
     const [stream] = format([cand({ parsed: { infoHash: HASH, fileIdx: 2 } })], { season: 1, episode: 4 });
-    expect(stream?.url).toBe(`https://addon.example.com/TOKEN/play/${HASH}/2?s=1&e=4`);
+    expect(stream?.url).toBe(
+      `https://addon.example.com/TOKEN/play/${HASH}/2?s=1&e=4&filename=Movie.2024.1080p.WEB-DL.DDP5.1.HEVC`,
+    );
+  });
+
+  it('transmet le nom et la taille attendus avec un fileIdx (vérification de l index dans un pack)', () => {
+    const [stream] = format(
+      [cand({ parsed: { infoHash: HASH, fileIdx: 2 }, raw: { filename: 'Show.S01E02.mkv', sizeBytes: 1234 } })],
+      { season: 1, episode: 2 },
+    );
+    expect(stream?.url).toBe(`https://addon.example.com/TOKEN/play/${HASH}/2?s=1&e=2&filename=Show.S01E02.mkv&size=1234`);
+  });
+
+  it('n ajoute ni nom ni taille à une URL sans fileIdx', () => {
+    const [stream] = format(
+      [cand({ parsed: { infoHash: HASH }, raw: { filename: 'Show.S01E02.mkv', sizeBytes: 1234 } })],
+      { season: 1, episode: 2 },
+    );
+    expect(stream?.url).toBe(`https://addon.example.com/TOKEN/play/${HASH}?s=1&e=2`);
   });
 
   it('passe en P2P (infoHash, fileIdx, sources, sans url) quand le débrideur est absent', () => {

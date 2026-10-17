@@ -169,6 +169,8 @@ function alldebridRoute(pathname: string, form: URLSearchParams | undefined): Re
     return jsonResponse({ status: 'success', data: { magnets } });
   }
   if (pathname === '/v4/magnet/delete') return jsonResponse({ status: 'success', data: {} });
+  // Compte vide : aucun magnet préexistant, donc les magnets non prêts du contrôle peuvent être supprimés.
+  if (pathname === '/v4.1/magnet/status') return jsonResponse({ status: 'success', data: { magnets: [] } });
   return jsonResponse({ status: 'error', error: { code: 'NOT_FOUND', message: 'x' } }, 404);
 }
 

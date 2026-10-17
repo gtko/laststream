@@ -86,7 +86,7 @@ Toutes les routes renvoient `Access-Control-Allow-Origin: *`.
 
 ### `GET /:config/play/:infoHash/:fileIdx?`
 
-Paramètres optionnels `?s=S&e=E` pour un épisode (durée et sélection du fichier vidéo). Réponses :
+Paramètres optionnels `?s=S&e=E` pour un épisode (durée et sélection du fichier vidéo), `?filename=NOM&size=OCTETS` pour le nom et la taille attendus du fichier (ajoutés par le moteur avec un index de fichier). Le fichier est choisi par nom attendu, puis taille attendue, puis épisode, et l'index n'est retenu que si sa taille correspond. Réponses :
 
 | Statut | Cas |
 | --- | --- |
@@ -233,11 +233,14 @@ Pour une requête de streams, le pipeline est le suivant :
 
 L'état « en cache » est déterminé par un contrôle sans téléchargement :
 
-1. Les 25 premiers infoHash du classement (sans URL directe, sans doublon) sont envoyés par lots de 20 à `POST /v4/magnet/upload`.
+La documentation AllDebrid ne décrit aucun endpoint de disponibilité instantanée : le contrôle passe donc par l'ajout du magnet au compte.
+
+1. Les 8 premiers infoHash du classement (sans URL directe, sans doublon) sont envoyés par lots de 20 à `POST /v4/magnet/upload`, après lecture de la liste des magnets du compte (`POST /v4.1/magnet/status` sans id).
 2. Un magnet dont la réponse est `ready` est en cache : il est marqué `cached`.
-3. Un magnet non prêt est supprimé aussitôt (`POST /v4/magnet/delete`). Il est alors considéré comme non caché.
-4. Une erreur ou un hash absent de la réponse vaut « non caché ». Une erreur n'interrompt jamais la requête.
-5. Le résultat est mis en cache par client : 10 minutes pour un hash caché, 1 minute pour un hash non caché.
+3. Un magnet non prêt n'est supprimé (`POST /v4/magnet/delete`, 3 à la fois) que si son id était absent de la liste lue juste avant l'envoi. Un magnet déjà présent (téléchargement en cours de l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé. Il est considéré comme non caché.
+4. Une erreur, une liste de compte illisible, ou un hash absent de la réponse vaut « non caché » (et n'est pas renouvelé pendant 30 s). Une erreur n'interrompt jamais la requête.
+5. Le résultat est mis en cache par client : 6 heures pour un hash caché, 30 minutes pour un hash non caché.
+6. Après HTTP 429 ou 503, aucun appel à AllDebrid n'est fait pendant le délai indiqué par `Retry-After` (30 s par défaut, plafonné à 10 minutes) ; les contrôles renvoient « inconnu » sans nouvel essai.
 
 Les magnets prêts restent dans le compte AllDebrid. Un hash déjà en cache n'y est pas téléchargé, mais il apparaît dans la liste des torrents du compte.
 

@@ -16,7 +16,7 @@ export interface FormatOptions {
 /** Cible de livraison d'un stream : URL amont, lecture débridée, ou P2P (infoHash). */
 type Target =
   | { kind: 'direct'; url: string }
-  | { kind: 'debrid'; infoHash: string; fileIdx: number | undefined }
+  | { kind: 'debrid'; infoHash: string; fileIdx: number | undefined; filename: string | undefined; size: number | undefined }
   | { kind: 'p2p'; infoHash: string; fileIdx: number | undefined };
 
 const GIB = 1024 ** 3;
@@ -36,16 +36,26 @@ function targetOf(item: Ranked, hasDebrid: boolean): Target | undefined {
   // Ni URL ni infoHash : stream inutilisable, on l'écarte.
   if (infoHash === undefined) return undefined;
   const fileIdx = fileIdxOf(item);
-  return hasDebrid ? { kind: 'debrid', infoHash, fileIdx } : { kind: 'p2p', infoHash, fileIdx };
+  if (!hasDebrid) return { kind: 'p2p', infoHash, fileIdx };
+  const filename = item.raw.filename || item.raw.title || undefined;
+  return { kind: 'debrid', infoHash, fileIdx, filename, size: sizeOf(item) };
 }
 
-function playUrl(opts: FormatOptions, infoHash: string, fileIdx: number | undefined): string {
+/**
+ * URL de lecture débridée. Le nom et la taille attendus ne sont ajoutés qu'avec un index de fichier :
+ * ils servent alors à vérifier cet index dans les packs (sans index, le choix du fichier n'en dépend pas).
+ */
+function playUrl(opts: FormatOptions, target: Extract<Target, { kind: 'debrid' }>): string {
   const base = opts.playBaseUrl.replace(/\/+$/, '');
-  const file = fileIdx === undefined ? '' : `/${fileIdx}`;
-  const path = `${base}/${encodeURIComponent(opts.configToken)}/play/${encodeURIComponent(infoHash)}${file}`;
+  const file = target.fileIdx === undefined ? '' : `/${target.fileIdx}`;
+  const path = `${base}/${encodeURIComponent(opts.configToken)}/play/${encodeURIComponent(target.infoHash)}${file}`;
   const query = new URLSearchParams();
   if (opts.season !== undefined) query.set('s', String(opts.season));
   if (opts.episode !== undefined) query.set('e', String(opts.episode));
+  if (target.fileIdx !== undefined) {
+    if (target.filename !== undefined && target.filename.length <= 512) query.set('filename', target.filename);
+    if (target.size !== undefined && Number.isSafeInteger(target.size)) query.set('size', String(target.size));
+  }
   const qs = query.toString();
   return qs.length > 0 ? `${path}?${qs}` : path;
 }
@@ -156,7 +166,7 @@ function formatOne(item: Ranked, opts: FormatOptions): StremioStream | undefined
   if (target.kind === 'direct') {
     stream.url = target.url;
   } else if (target.kind === 'debrid') {
-    stream.url = playUrl(opts, target.infoHash, target.fileIdx);
+    stream.url = playUrl(opts, target);
   } else {
     stream.infoHash = target.infoHash;
     if (target.fileIdx !== undefined) stream.fileIdx = target.fileIdx;
