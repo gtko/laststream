@@ -2,13 +2,35 @@ import { gunzipSync } from 'node:zlib';
 import { isRecord } from '../sources/http.js';
 import { LtError, ltDownload, ltRequest, recordAt, type LtContext, TTL } from './context.js';
 import { parseSafeUrl } from './guard.js';
+import {
+  buildCatalog,
+  CATEGORY_BY_ID,
+  normName,
+  SOURCE_IDS,
+  selectChannels,
+  tvgEpgId,
+  type FastEntry,
+  type IptvOrgRaw,
+  type M3uEntry,
+  type TvCatalog,
+  type TvChannel,
+  type TvFacets,
+  type TvQuery,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+} from './tv-catalog.js';
 
 /**
- * TV en direct, sources légales uniquement : chaînes gratuites FR (iptv-org), chaînes FAST (Pluto TV,
- * Samsung TV Plus via i.mjh.nz) et playlist de l'utilisateur (importée à la demande, jamais stockée).
+ * TV en direct, sources légales uniquement : chaînes gratuites Free-TV (playlist maîtresse), catalogue iptv-org
+ * (API JSON : chaînes, flux, feeds, logos, pays, langues, liste de blocage), chaînes FAST (Pluto TV, Samsung TV Plus
+ * via i.mjh.nz) et playlist de l'utilisateur (importée à la demande, jamais stockée).
  */
+const IPTV_API = 'https://iptv-org.github.io/api/';
+/** Fichiers iptv-org lus (une requête chacun). */
+const IPTV_FILES = ['channels', 'streams', 'feeds', 'logos', 'countries', 'languages', 'blocklist'] as const;
+
 const TV_SOURCES = {
-  m3u: 'https://iptv-org.github.io/iptv/countries/fr.m3u',
+  freetv: 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
   pluto: 'https://i.mjh.nz/PlutoTV/.channels.json',
   samsung: 'https://i.mjh.nz/SamsungTVPlus/.channels.json',
   epg: [
@@ -21,24 +43,11 @@ const TV_SOURCES = {
 
 const TV_HEADERS = { 'user-agent': 'Mozilla/5.0 Laststream', accept: '*/*' };
 const MAX_SOURCE_BYTES = 16 * 1024 * 1024;
+const MAX_IPTVORG_BYTES = 32 * 1024 * 1024;
 const MAX_EPG_BYTES = 32 * 1024 * 1024;
 const MAX_EPG_OUTPUT_BYTES = 256 * 1024 * 1024;
 const MAX_PLAYLIST_BYTES = 6 * 1024 * 1024;
 const MAX_HLS_BYTES = 2 * 1024 * 1024;
-const FLAKY_LABEL = 'iptv-org (peut ne pas fonctionner)';
-
-export interface TvChannel {
-  id: string;
-  name: string;
-  logo: string;
-  group: string;
-  cat: string;
-  source: string;
-  fast: boolean;
-  url: string;
-  epgId: string;
-  flaky: boolean;
-}
 
 interface Programme {
   start: number;
@@ -51,15 +60,10 @@ interface Programme {
 
 export interface TvStats {
   counts: Record<string, number>;
+  reliability: Record<string, number>;
   total: number;
   epgCoverage: number;
   epgStats: { url: string; programmes: number; ok: boolean }[];
-}
-
-/** Listes de chaînes (cache 6 h). */
-interface TvLists {
-  channels: TvChannel[];
-  counts: Record<string, number>;
 }
 
 /** Programmes EPG (cache 3 h) et état de chaque source. */
@@ -71,35 +75,7 @@ interface TvEpgData {
 /** EPG indisponible : les chaînes restent servies, sans programmes. */
 const NO_EPG: TvEpgData = { epg: new Map(), epgStats: [] };
 
-interface M3uEntry {
-  attrs: Record<string, string>;
-  name: string;
-  url: string;
-}
-
-const stripAccents = (value: string): string => value.normalize('NFD').replace(/[̀-ͯ]/g, '');
-
-/** Retire la marque d'ordre des octets (BOM, U+FEFF) en tête de texte. */
 const stripBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
-
-const normName = (name: string): string =>
-  stripAccents(name.toLowerCase())
-    .replace(/\[[^\]]*\]|\([^)]*\)/g, ' ')
-    .replace(/\bhd\b|\bfhd\b|\buhd\b|\b4k\b/g, ' ')
-    .replace(/\+/g, 'plus')
-    .replace(/[^a-z0-9]/g, '');
-
-/** Catégorie affichée à partir du groupe de la playlist. */
-function tvCategory(group: string): string {
-  const g = stripAccents(group.toLowerCase());
-  if (/sport/.test(g)) return 'Sport';
-  if (/news|actualit|info/.test(g)) return 'Info';
-  if (/kids|jeunesse|animation|anime|enfant|famil/.test(g)) return 'Jeunesse';
-  if (/music|musique/.test(g)) return 'Musique';
-  if (/document|voyage|nature|science|culture|education|outdoor|cuisine|gastronomie/.test(g)) return 'Documentaires';
-  if (/movie|cinema|film|serie|crime|mystere|binge|policier/.test(g)) return 'Cinéma';
-  return 'Divertissement';
-}
 
 export function parseM3U(text: string): M3uEntry[] {
   const out: M3uEntry[] = [];
@@ -124,70 +100,23 @@ export function parseM3U(text: string): M3uEntry[] {
   return out;
 }
 
-const tvgToEpg = (id: string | undefined): string => String(id ?? '').replace(/@.*$/, '');
-
-/** Playlist iptv-org : chaînes adultes exclues, URL non publique exclue. */
-function fromIptvOrg(text: string): TvChannel[] {
-  const list: TvChannel[] = [];
-  for (const entry of parseM3U(text)) {
-    const group = entry.attrs['group-title'] ?? '';
-    if (/xxx|adult/i.test(group) || /xxx|adult/i.test(entry.name)) continue;
-    if (parseSafeUrl(entry.url) === null) continue;
-    const flaky = /\[(geo-blocked|not 24\/7)\]/i.test(entry.name);
-    const name = entry.name
-      .replace(/\[[^\]]*\]/g, '')
-      .replace(/\s*\((\d{3,4}p|\d+k)\)\s*/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const epgId = tvgToEpg(entry.attrs['tvg-id']);
-    list.push({
-      id: 'fr:' + (epgId || normName(name)),
-      name,
-      logo: entry.attrs['tvg-logo'] ?? '',
-      group: group.split(';')[0] || 'Général',
-      cat: tvCategory(group),
-      source: 'iptv-org',
-      fast: false,
-      url: entry.url,
-      epgId,
-      flaky,
-    });
-  }
-  return list;
-}
-
-/** Chaînes FAST (format i.mjh.nz) d'une région. `slug` contient {id} pour l'URL de lecture. */
-function fromMjh(json: unknown, region: string, prefix: string, slug: string, source: string): TvChannel[] {
-  const channels = recordAt(json, 'regions', region, 'channels');
+/** Chaînes FAST (format i.mjh.nz, région française). `slug` contient {id} pour l'URL de lecture. */
+function fromMjh(json: unknown, source: 'pluto' | 'samsung', prefix: string, slug: string): FastEntry[] {
+  const channels = recordAt(json, 'regions', 'fr', 'channels');
   return Object.keys(channels).map((id) => {
     const info = recordAt(channels, id);
-    const group = typeof info.group === 'string' && info.group !== '' ? info.group : 'FAST';
     return {
-      id: prefix + ':' + id,
+      key: prefix + ':' + id,
+      epgId: id,
       name: typeof info.name === 'string' && info.name !== '' ? info.name : id,
       logo: typeof info.logo === 'string' ? info.logo : '',
-      group,
-      cat: tvCategory(group),
+      group: typeof info.group === 'string' && info.group !== '' ? info.group : 'FAST',
       source,
-      fast: true,
       url: slug.replace('{id}', id),
-      epgId: id,
-      flaky: false,
+      country: 'FR',
+      languages: ['fra'],
     };
   });
-}
-
-/** Une seule chaîne par nom normalisé : la source la plus fiable l'emporte (iptv-org, puis Pluto, puis Samsung). */
-function dedupeChannels(all: TvChannel[]): TvChannel[] {
-  const rank = (c: TvChannel): number => (c.flaky ? 10 : 0) + (c.source === 'iptv-org' ? 0 : c.source === 'pluto' ? 1 : 2);
-  const best = new Map<string, TvChannel>();
-  for (const channel of all) {
-    const key = normName(channel.name);
-    if (!key) continue;
-    const current = best.get(key);
-    if (current === undefined || rank(channel) < rank(current)) best.set(key, channel);
-  }
-  return Array.from(best.values());
 }
 
 /** Décodage des entités XML et des sections CDATA. */
@@ -255,41 +184,68 @@ function tvGet(ctx: LtContext, url: string, timeoutMs: number, maxBytes: number)
   return ltDownload(ctx, url, { headers: TV_HEADERS }, timeoutMs, { maxBytes });
 }
 
+function parseJson(buffer: Buffer): unknown {
+  try {
+    return JSON.parse(buffer.toString('utf8')) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Listes de chaînes (iptv-org, Pluto, Samsung). Si aucune source ne répond, rien n'est mis en cache :
- * l'erreur 502 part au client et la prochaine requête réessaie.
+ * Catalogue TV : toutes les sources en parallèle. Une source en échec est absente (catalogue partiel, gardé moins
+ * longtemps). Si Free-TV, iptv-org et les deux FAST échouent tous : 502, rien n'est mis en cache.
  */
-async function buildLists(ctx: LtContext): Promise<TvLists> {
-  const [m3u, pluto, samsung] = await Promise.allSettled([
-    tvGet(ctx, TV_SOURCES.m3u, 30000, MAX_SOURCE_BYTES),
+async function buildCatalogFromSources(ctx: LtContext): Promise<TvCatalog> {
+  const [freetv, pluto, samsung, ...iptv] = await Promise.allSettled([
+    tvGet(ctx, TV_SOURCES.freetv, 60000, MAX_SOURCE_BYTES),
     tvGet(ctx, TV_SOURCES.pluto, 60000, MAX_SOURCE_BYTES),
     tvGet(ctx, TV_SOURCES.samsung, 60000, MAX_SOURCE_BYTES),
+    ...IPTV_FILES.map((file) => tvGet(ctx, `${IPTV_API}${file}.json`, 120000, MAX_IPTVORG_BYTES)),
   ]);
-  if ([m3u, pluto, samsung].every((result) => result.status === 'rejected')) throw new LtError(502, 'tv_unavailable');
-  const value = (result: PromiseSettledResult<Buffer>): Buffer | null =>
-    result.status === 'fulfilled' ? result.value : null;
+  const json = (result: PromiseSettledResult<Buffer>): unknown => (result.status === 'fulfilled' ? parseJson(result.value) : undefined);
+  const iptvJson = new Map(IPTV_FILES.map((file, i) => [file, json(iptv[i])]));
+  const iptvRaw: IptvOrgRaw | null =
+    Array.isArray(iptvJson.get('channels')) && Array.isArray(iptvJson.get('streams'))
+      ? {
+          channels: iptvJson.get('channels'),
+          streams: iptvJson.get('streams'),
+          feeds: iptvJson.get('feeds'),
+          logos: iptvJson.get('logos'),
+          countries: iptvJson.get('countries'),
+          languages: iptvJson.get('languages'),
+          blocklist: iptvJson.get('blocklist'),
+        }
+      : null;
+  const freetvEntries = freetv.status === 'fulfilled' ? parseM3U(freetv.value.toString('utf8')) : null;
+  const plutoJson = json(pluto);
+  const samsungJson = json(samsung);
+  const fast: FastEntry[] = [
+    ...(plutoJson === undefined ? [] : fromMjh(plutoJson, 'pluto', 'plu', 'https://jmp2.uk/plu-{id}.m3u8')),
+    ...(samsungJson === undefined ? [] : fromMjh(samsungJson, 'samsung', 'stv', 'https://jmp2.uk/stvp-{id}')),
+  ];
+  const plutoOk = plutoJson !== undefined;
+  const samsungOk = samsungJson !== undefined;
+  if (freetvEntries === null && iptvRaw === null && !plutoOk && !samsungOk) throw new LtError(502, 'tv_unavailable');
+  return buildCatalog({
+    freetv: freetvEntries,
+    iptv: iptvRaw,
+    fast,
+    partial: freetvEntries === null || iptvRaw === null || !plutoOk || !samsungOk,
+  });
+}
 
-  const counts: Record<string, number> = { 'iptv-org': 0, [FLAKY_LABEL]: 0, pluto: 0, samsung: 0 };
-  const all: TvChannel[] = [];
-  const m3uBuffer = value(m3u);
-  if (m3uBuffer !== null) {
-    const list = fromIptvOrg(m3uBuffer.toString('utf8'));
-    for (const channel of list) counts[channel.flaky ? FLAKY_LABEL : 'iptv-org'] += 1;
-    all.push(...list);
-  }
-  const plutoBuffer = value(pluto);
-  if (plutoBuffer !== null) {
-    const list = fromMjh(parseJson(plutoBuffer), 'fr', 'plu', 'https://jmp2.uk/plu-{id}.m3u8', 'pluto');
-    counts.pluto = list.length;
-    all.push(...list);
-  }
-  const samsungBuffer = value(samsung);
-  if (samsungBuffer !== null) {
-    const list = fromMjh(parseJson(samsungBuffer), 'fr', 'stv', 'https://jmp2.uk/stvp-{id}', 'samsung');
-    counts.samsung = list.length;
-    all.push(...list);
-  }
-  return { channels: dedupeChannels(all), counts };
+function loadCatalog(ctx: LtContext): Promise<TvCatalog> {
+  return ctx.state.cache.get(
+    'tv:catalog',
+    (catalog: TvCatalog) => (catalog.partial ? TTL.tvPartial : TTL.tvChannels),
+    () => buildCatalogFromSources(ctx),
+  );
+}
+
+/** EPG : en cas d'échec, les chaînes restent disponibles sans programmes. */
+function loadEpg(ctx: LtContext): Promise<TvEpgData> {
+  return ctx.state.cache.get('tv:epg', TTL.tvEpg, () => buildEpg(ctx)).catch(() => NO_EPG);
 }
 
 /**
@@ -316,46 +272,73 @@ async function buildEpg(ctx: LtContext): Promise<TvEpgData> {
   return { epg, epgStats };
 }
 
-function parseJson(buffer: Buffer): unknown {
-  try {
-    return JSON.parse(buffer.toString('utf8')) as unknown;
-  } catch {
-    return null;
-  }
+/** Chaînes filtrées et paginées (catalogue en cache 12 h ; filtres et page calculés à chaque requête). */
+export async function tvChannels(ctx: LtContext, query: TvQuery): Promise<{ total: number; items: TvChannel[] }> {
+  return selectChannels(await loadCatalog(ctx), query);
 }
 
-function loadLists(ctx: LtContext): Promise<TvLists> {
-  return ctx.state.cache.get('tv:lists', TTL.tvChannels, () => buildLists(ctx));
-}
-
-/** EPG : en cas d'échec, les chaînes restent disponibles sans programmes. */
-function loadEpg(ctx: LtContext): Promise<TvEpgData> {
-  return ctx.state.cache.get('tv:epg', TTL.tvEpg, () => buildEpg(ctx)).catch(() => NO_EPG);
-}
-
-/** Chaînes publiques : mêmes champs que le prototype, booléens normalisés. */
-function publicChannel(c: TvChannel): TvChannel {
-  return { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: c.flaky };
-}
-
-export async function tvChannels(ctx: LtContext): Promise<TvChannel[]> {
-  return (await loadLists(ctx)).channels.map(publicChannel);
+/** Compteurs par pays, langue, catégorie et source (filtres de l'interface). */
+export async function tvFacets(ctx: LtContext): Promise<TvFacets> {
+  return (await loadCatalog(ctx)).facets;
 }
 
 export async function tvStats(ctx: LtContext): Promise<TvStats> {
-  const [lists, epg] = await Promise.all([loadLists(ctx), loadEpg(ctx)]);
-  const withEpg = lists.channels.filter((c) => c.epgId !== '' && epg.epg.has(c.epgId)).length;
+  const [catalog, epg] = await Promise.all([loadCatalog(ctx), loadEpg(ctx)]);
+  const withEpg = catalog.channels.filter((c) => c.epgId !== '' && epg.epg.has(c.epgId)).length;
   return {
-    counts: lists.counts,
-    total: lists.channels.length,
-    epgCoverage: lists.channels.length ? Math.round((withEpg / lists.channels.length) * 100) : 0,
+    counts: { ...catalog.counts },
+    reliability: { ...catalog.reliability },
+    total: catalog.channels.length,
+    epgCoverage: catalog.channels.length ? Math.round((withEpg / catalog.channels.length) * 100) : 0,
     epgStats: epg.epgStats,
   };
 }
 
+/** Valide les paramètres de /tv/channels. Toute valeur hors format : 400 bad_request. */
+export function parseTvQuery(raw: Record<string, string>): TvQuery {
+  const bad = (): never => {
+    throw new LtError(400, 'bad_request');
+  };
+  const query: TvQuery = {};
+  const country = (raw.country ?? '').trim();
+  if (country !== '') {
+    if (!/^[a-z]{2}$/i.test(country)) bad();
+    query.country = country.toUpperCase();
+  }
+  const language = (raw.language ?? '').trim().toLowerCase();
+  if (language !== '') {
+    if (!/^[a-z]{3}$/.test(language)) bad();
+    query.language = language;
+  }
+  const category = (raw.category ?? '').trim();
+  if (category !== '') {
+    if (!CATEGORY_BY_ID.has(category)) bad();
+    query.category = category;
+  }
+  const source = (raw.source ?? '').trim();
+  if (source !== '') {
+    if (!(SOURCE_IDS as readonly string[]).includes(source)) bad();
+    query.source = source;
+  }
+  const q = (raw.q ?? '').trim();
+  if (q !== '') query.q = q.slice(0, 100);
+  if (raw.page !== undefined) {
+    const page = Number(raw.page);
+    if (!Number.isInteger(page) || page < 1 || page > 100000) bad();
+    query.page = page;
+  }
+  if (raw.limit !== undefined) {
+    const limit = Number(raw.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LIMIT) bad();
+    query.limit = limit;
+  }
+  if (query.page !== undefined && query.limit === undefined) query.limit = DEFAULT_LIMIT;
+  return query;
+}
+
 /** Programmes des chaînes demandées (`ids`, jusqu'à 60) sur une fenêtre de 8 h au plus. */
 export async function tvEpg(ctx: LtContext, query: Record<string, string>): Promise<unknown[]> {
-  const [lists, epg] = await Promise.all([loadLists(ctx), loadEpg(ctx)]);
+  const [catalog, epg] = await Promise.all([loadCatalog(ctx), loadEpg(ctx)]);
   const now = Math.floor(Date.now() / 1000);
   const toSec = (value: string | undefined, fallback: number): number => {
     if (value === undefined || value === '') return fallback;
@@ -367,7 +350,7 @@ export async function tvEpg(ctx: LtContext, query: Record<string, string>): Prom
   const from = toSec(query.from, now - 3600);
   const to = Math.min(toSec(query.to, from + 6 * 3600), from + 8 * 3600);
   const ids = (query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 60);
-  const epgIdOf = new Map(lists.channels.map((c) => [c.id, c.epgId]));
+  const epgIdOf = new Map(catalog.channels.map((c) => [c.id, c.epgId]));
   const out: unknown[] = [];
   for (const id of ids) {
     // Accepte un id de chaîne ou un id EPG (playlists utilisateur).
@@ -382,6 +365,22 @@ export async function tvEpg(ctx: LtContext, query: Record<string, string>): Prom
   return out;
 }
 
+/** Chaîne d'une playlist utilisateur : aucune métadonnée de catalogue, qualité ni flux de repli. */
+const userChannel = (entry: Pick<TvChannel, 'id' | 'name' | 'logo' | 'group' | 'url' | 'epgId'>): TvChannel => ({
+  ...entry,
+  cat: 'Ma playlist',
+  source: 'user',
+  fast: false,
+  flaky: false,
+  country: '',
+  countryName: '',
+  languages: [],
+  categories: [],
+  quality: '',
+  reliability: 'high',
+  alternatives: [],
+});
+
 /** Import d'une playlist M3U (URL) ou d'un compte Xtream. Rien n'est stocké. */
 export async function tvImport(ctx: LtContext, body: Record<string, unknown>): Promise<{ channels: TvChannel[]; count: number }> {
   let list: TvChannel[];
@@ -395,18 +394,16 @@ export async function tvImport(ctx: LtContext, body: Record<string, unknown>): P
     list = parseM3U(buffer.toString('utf8'))
       .filter((entry) => parseSafeUrl(entry.url) !== null)
       .slice(0, 3000)
-      .map((entry, i) => ({
-        id: 'usr:' + i + ':' + normName(entry.name).slice(0, 24),
-        name: entry.name.replace(/\s+/g, ' ').trim(),
-        logo: entry.attrs['tvg-logo'] ?? '',
-        group: entry.attrs['group-title'] || 'Ma playlist',
-        cat: 'Ma playlist',
-        source: 'user',
-        fast: false,
-        url: entry.url,
-        epgId: tvgToEpg(entry.attrs['tvg-id']),
-        flaky: false,
-      }));
+      .map((entry, i) =>
+        userChannel({
+          id: 'usr:' + i + ':' + normName(entry.name).slice(0, 24),
+          name: entry.name.replace(/\s+/g, ' ').trim(),
+          logo: entry.attrs['tvg-logo'] ?? '',
+          group: entry.attrs['group-title'] || 'Ma playlist',
+          url: entry.url,
+          epgId: tvgEpgId(entry.attrs['tvg-id']),
+        }),
+      );
   } else if (body.type === 'xtream') {
     let server = typeof body.server === 'string' ? body.server.trim() : '';
     if (server !== '' && !/^https?:\/\//i.test(server)) server = 'http://' + server;
@@ -441,20 +438,16 @@ export async function tvImport(ctx: LtContext, body: Record<string, unknown>): P
     list = streamsJson
       .filter(isRecord)
       .slice(0, 3000)
-      .map((s): TvChannel => {
+      .map((s) => {
         const streamId = String(s.stream_id ?? '');
-        return {
+        return userChannel({
           id: 'usr:' + streamId,
           name: String(s.name || streamId).trim(),
           logo: typeof s.stream_icon === 'string' ? s.stream_icon : '',
           group: names.get(String(s.category_id)) || 'Ma playlist',
-          cat: 'Ma playlist',
-          source: 'user',
-          fast: false,
           url: `${base}/live/${encodeURIComponent(user)}/${encodeURIComponent(pass)}/${encodeURIComponent(streamId)}.m3u8`,
           epgId: typeof s.epg_channel_id === 'string' ? s.epg_channel_id : '',
-          flaky: false,
-        };
+        });
       });
   } else {
     throw new LtError(400, 'bad_request');

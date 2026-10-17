@@ -30,7 +30,8 @@ export const TTL = {
   tvdb: 12 * 3600e3, // saisons TVDB
   aiRecommend: 30 * 60e3, // recommandations (par charge utile)
   aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
-  tvChannels: 6 * 3600e3, // listes de chaînes
+  tvChannels: 12 * 3600e3, // catalogue TV (sources amont)
+  tvPartial: 15 * 60e3, // catalogue incomplet (une source a échoué) : nouvel essai plus tôt
   tvEpg: 3 * 3600e3, // programmes EPG
   skip: 7 * 24 * 3600e3, // segments intro/recap/crédits trouvés
   skipEmpty: 6 * 3600e3, // aucun segment trouvé (à revérifier plus tôt)
