@@ -132,17 +132,17 @@ describe('interface portée', () => {
     const c = { id: 'z', url: 'https://x/z.m3u8', sig: 's', alternatives: [{ url: 'https://x/z2.m3u8', sig: 's2' }] };
     tv.playToken = 7;
     tv.attempt = 0;
-    perrEl.hidden = true;
+    perrEl!.hidden = true;
     failover(c, 7);
     await settle(100);
     expect(tv.attempt).toBe(1);
-    expect(perrEl.hidden).toBe(false); // les deux flux ont échoué (jsdom ne lit pas de HLS)
+    expect(perrEl!.hidden).toBe(false); // les deux flux ont échoué (jsdom ne lit pas de HLS)
     const solo = { id: 'y', url: 'https://x/y.m3u8', sig: 's', alternatives: [] };
     tv.attempt = 0;
-    perrEl.hidden = true;
+    perrEl!.hidden = true;
     failover(solo, 7);
     expect(tv.attempt).toBe(0);
-    expect(perrEl.hidden).toBe(false);
+    expect(perrEl!.hidden).toBe(false);
   });
 
   it('affiche la bibliothèque vide', async () => {
