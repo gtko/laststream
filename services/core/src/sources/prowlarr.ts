@@ -23,6 +23,14 @@ import {
   type FetchFn,
   type HttpOptions,
 } from './http.js';
+import {
+  MAX_PARALLEL_QUERIES,
+  mapBounded,
+  mergeRequestResults,
+  releaseAliases,
+  type Candidate,
+} from './query-merge.js';
+import { buildQueries, filterByYear, variantsFor, type TitleVariants } from './query-titles.js';
 
 /** Source Prowlarr : un point d'entrée qui interroge plusieurs indexeurs torrent. */
 export interface ProwlarrSource {
@@ -37,6 +45,8 @@ export interface ProwlarrSource {
 
 export interface ProwlarrSearchOptions extends HttpOptions {
   titleInfo?: TitleInfo;
+  /** Titres et année : une requête texte par variante (prime sur titleInfo). */
+  titles?: TitleVariants;
   /** Budget global de la recherche (découverte + requêtes), en millisecondes. */
   budgetMs?: number;
   health?: IndexerHealth;
@@ -127,19 +137,6 @@ function idCapable(indexer: IndexerInfo, ref: ContentRef): boolean {
   return ref.type === 'movie' ? indexer.movieImdb : indexer.tvImdb && indexer.supportsSeason;
 }
 
-function pad2(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-/** Requête texte de repli : « Titre Année » pour un film, « Titre S01E02 » pour un épisode. */
-function textQuery(ref: ContentRef, info: TitleInfo): string | undefined {
-  const title = info.title.trim().slice(0, 200);
-  if (title === '') return undefined;
-  if (ref.type === 'movie') return info.year !== undefined ? `${title} ${info.year}` : title;
-  if (ref.season === undefined || ref.episode === undefined) return title;
-  return `${title} S${pad2(ref.season)}E${pad2(ref.episode)}`;
-}
-
 /** Paramètres communs à une requête : type, indexeurs restreints, catégories. */
 function baseParams(ref: ContentRef, indexers: IndexerInfo[], categories: readonly number[]): URLSearchParams {
   const params = new URLSearchParams();
@@ -151,17 +148,17 @@ function baseParams(ref: ContentRef, indexers: IndexerInfo[], categories: readon
 
 /**
  * Regroupe les indexeurs par capacité : ceux qui acceptent l'identifiant IMDb reçoivent une requête par id,
- * les autres une requête texte (si un titre est connu). Un indexeur ne figure que dans un groupe.
+ * les autres une requête texte par variante de titre (si des titres sont connus). Un indexeur ne figure que dans
+ * un groupe.
  */
 function planSearches(
   indexers: IndexerInfo[],
   ref: ContentRef,
   categories: readonly number[],
-  titleInfo: TitleInfo | undefined,
+  queries: readonly string[],
 ): PlannedSearch[] {
   const byId = indexers.filter((indexer) => idCapable(indexer, ref));
   const byText = indexers.filter((indexer) => !idCapable(indexer, ref));
-  const query = titleInfo === undefined ? undefined : textQuery(ref, titleInfo);
   const plans: PlannedSearch[] = [];
 
   if (byId.length > 0) {
@@ -173,10 +170,12 @@ function planSearches(
     }
     plans.push({ indexers: byId, params });
   }
-  if (byText.length > 0 && query !== undefined) {
-    const params = baseParams(ref, byText, categories);
-    params.set('query', query);
-    plans.push({ indexers: byText, params });
+  if (byText.length > 0) {
+    for (const query of queries) {
+      const params = baseParams(ref, byText, categories);
+      params.set('query', query);
+      plans.push({ indexers: byText, params });
+    }
   }
   return plans;
 }
@@ -192,15 +191,32 @@ function categoriesFor(source: ProwlarrSource, ref: ContentRef): readonly number
   return ref.type === 'movie' ? MOVIE_CATEGORIES : SERIES_CATEGORIES;
 }
 
-/** Base32 ou hex accepté ; magnet ou infoHash obligatoire, sinon le release est ignoré. */
+/** URL http(s) valide, sinon undefined. La valeur n'est jamais recopiée dans un message d'erreur. */
+function httpUrlOf(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Base32 ou hex accepté. Un release retient son infoHash ou son magnet. Sans l'un ni l'autre, un lien .torrent
+ * HTTP(S) (downloadUrl) et son guid sont gardés en mémoire seulement, pour lecture par torrent/enrich.ts.
+ * Sinon le release est ignoré.
+ */
 function toRawStream(raw: Record<string, unknown>, indexerName: string): RawStream | undefined {
   const protocol = optionalString(raw.protocol);
   if (protocol !== undefined && protocol.toLowerCase() !== 'torrent') return undefined;
 
-  // downloadUrl n'est retenu que s'il est un magnet : un lien .torrent passe par Prowlarr et porte sa clé.
-  const magnet = [optionalString(raw.magnetUrl), optionalString(raw.downloadUrl)].find(isMagnet);
+  // downloadUrl magnet : retenu comme magnet. Un lien .torrent HTTP porte souvent la clé de l'indexeur : voir plus bas.
+  const downloadUrl = optionalString(raw.downloadUrl);
+  const magnet = [optionalString(raw.magnetUrl), downloadUrl].find(isMagnet);
   const infoHash = normalizeInfoHash(raw.infoHash) ?? infoHashFromMagnet(magnet);
-  if (infoHash === undefined && magnet === undefined) return undefined;
+  const torrentUrl = infoHash === undefined && magnet === undefined ? httpUrlOf(downloadUrl) : undefined;
+  if (infoHash === undefined && magnet === undefined && torrentUrl === undefined) return undefined;
 
   const stream: RawStream = { sourceName: indexerName, sourceKind: 'torznab', name: indexerName, indexers: [indexerName] };
   const title = optionalString(raw.title);
@@ -214,6 +230,12 @@ function toRawStream(raw: Record<string, unknown>, indexerName: string): RawStre
   if (seeders !== undefined) stream.seeders = Math.floor(seeders);
   if (infoHash !== undefined) stream.infoHash = infoHash;
   if (magnet !== undefined) stream.magnet = magnet;
+  if (torrentUrl !== undefined) {
+    // Secret (passkey possible) : en mémoire seulement, jamais dans une réponse. Voir RawStream.downloadUrl.
+    stream.downloadUrl = torrentUrl;
+    const guid = optionalString(raw.guid);
+    if (guid !== undefined) stream.guid = guid;
+  }
   return stream;
 }
 
@@ -224,7 +246,8 @@ function indexerNameOf(raw: Record<string, unknown>, names: ReadonlyMap<string, 
 
 /**
  * Recherche Prowlarr (GET /api/v1/search) sur les indexeurs torrent retenus.
- * Les indexeurs sont regroupés par capacité (id IMDb ou texte) ; chaque groupe est une requête. Un groupe en échec
+ * Les indexeurs sont regroupés par capacité (id IMDb ou texte) ; chaque groupe est une requête, et chaque variante de
+ * titre ajoute une requête texte. Un groupe en échec
  * n'empêche pas les autres (santé mise à jour par indexeur). Budget global : chaque requête ne dépasse pas le temps
  * restant. Lève une SourceError sûre seulement si la découverte échoue ou si tous les groupes échouent.
  */
@@ -246,16 +269,13 @@ export async function searchProwlarr(
 
   try {
     const discovered = await listIndexers(source, fetchFn, timeLeft());
-    const plans = planSearches(
-      selectIndexers(discovered, source.indexerIds),
-      ref,
-      categoriesFor(source, ref),
-      opts.titleInfo,
-    );
+    const variants = variantsFor(opts);
+    const queries = variants === undefined ? [] : buildQueries(variants, ref);
+    const plans = planSearches(selectIndexers(discovered, source.indexerIds), ref, categoriesFor(source, ref), queries);
     if (plans.length === 0) return [];
 
     const names = new Map(discovered.map((indexer) => [String(indexer.id), indexer.name]));
-    const run = async (plan: PlannedSearch): Promise<RawStream[]> => {
+    const run = async (plan: PlannedSearch): Promise<Candidate[]> => {
       const started = Date.now();
       try {
         const url = endpointUrl(source.baseUrl, '/api/v1/search', plan.params);
@@ -267,7 +287,7 @@ export async function searchProwlarr(
         for (const indexer of plan.indexers) health.record(source.name, indexer.id, { ok: true, latencyMs });
         return body.filter(isRecord).flatMap((raw) => {
           const stream = toRawStream(raw, indexerNameOf(raw, names, source.name));
-          return stream === undefined ? [] : [stream];
+          return stream === undefined ? [] : [{ stream, aliases: releaseAliases(stream.guid, stream.downloadUrl) }];
         });
       } catch (err) {
         const error = describeFailure(err, source.apiKey);
@@ -277,10 +297,12 @@ export async function searchProwlarr(
       }
     };
 
-    const settled = await Promise.allSettled(plans.map(run));
+    // Requêtes en parallèle (concurrence bornée, budget commun) ; résultats fusionnés sans doublon, filtrés sur l'année.
+    const settled = await mapBounded(plans, MAX_PARALLEL_QUERIES, run);
     const rejected = settled.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
     if (rejected.length === settled.length) throw rejected[0]?.reason;
-    return settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? outcome.value : []));
+    const batches = settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []));
+    return filterByYear(mergeRequestResults(batches), ref, variants);
   } catch (err) {
     throw sourceFailure(source.name, err);
   }

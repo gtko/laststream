@@ -46,6 +46,7 @@ describe('configuration v2 : défauts', () => {
       bannedWords: [],
       preferredWords: [],
       directVerifiedOnly: false,
+      includeHosterLinks: true,
     });
     expect(config.filters.maxPerResolution).toBeUndefined();
     expect(config.audio).toEqual({
@@ -244,6 +245,7 @@ describe('configuration v2 : JSON schema et libellés FR', () => {
     expect(filters.bannedWords?.title).toBe('Mots interdits');
     expect(filters.preferredWords?.title).toBe('Mots préférés');
     expect(filters.directVerifiedOnly?.title).toBe('Liens directs vérifiés uniquement');
+    expect(filters.includeHosterLinks).toMatchObject({ title: 'Inclure les liens directs (hébergeurs)', default: true });
 
     const audio = properties.audio?.properties ?? {};
     expect(audio.multichannel).toMatchObject({ title: 'Multicanal', default: 'none' });

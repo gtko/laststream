@@ -10,6 +10,7 @@
  * l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé.
  */
 
+import { randomBytes } from 'node:crypto';
 import { MAX_BODY_BYTES, readBodyLimited } from './http.js';
 
 const API_BASE = 'https://api.alldebrid.com';
@@ -54,6 +55,18 @@ export interface AllDebridClientOptions {
   negativeCacheTtlMs?: number;
   /** Horloge injectable (tests). */
   now?: () => number;
+  /**
+   * Appelé quand une résolution porte sur un pack (plusieurs fichiers) : liste aplatie des fichiers, idx = position
+   * dans cette liste. Une exception levée par le rappel n'interrompt pas la résolution.
+   */
+  onFiles?: (infoHash: string, files: DebridFileInfo[]) => void;
+}
+
+/** Fichier d'un magnet tel que listé par AllDebrid : position, nom et taille en octets. */
+export interface DebridFileInfo {
+  idx: number;
+  name: string;
+  size: number;
 }
 
 export interface ApiKeyCheck {
@@ -287,6 +300,45 @@ function selectionKey(hash: string, sel: Selection): string {
   return JSON.stringify([hash, sel.fileIdx ?? null, sel.filename ?? null, sel.size ?? null, sel.season ?? null, sel.episode ?? null]);
 }
 
+/** Nom d'envoi d'un fichier .torrent quand l'appelant n'en fournit pas (le nom réel vient du .torrent). */
+const TORRENT_UPLOAD_NAME = 'lastaddon.torrent';
+const MAX_FILENAME_LENGTH = 255;
+
+/** Corps multipart/form-data déjà encodé, avec son Content-Type (boundary comprise). */
+interface MultipartBody {
+  body: Buffer;
+  contentType: string;
+}
+
+/** Origine d'une préparation : le magnet du hash (défaut) ou le fichier .torrent (torrent privé, octets fournis). */
+type PrepareSource = { kind: 'magnet' } | { kind: 'file'; bytes: Buffer };
+const MAGNET_SOURCE: PrepareSource = { kind: 'magnet' };
+
+/**
+ * Corps multipart/form-data écrit à la main pour un seul champ fichier `files[]`. Boundary aléatoire (128 bits) ;
+ * le nom est assaini (guillemets, antislash et sauts de ligne remplacés) pour rester dans l'en-tête Content-Disposition.
+ */
+function multipartFile(filename: string, bytes: Buffer): MultipartBody {
+  const boundary = `----lastaddon${randomBytes(16).toString('hex')}`;
+  const safeName = filename.replace(/["\\\r\n]/g, '_').slice(0, MAX_FILENAME_LENGTH) || TORRENT_UPLOAD_NAME;
+  const head = Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="files[]"; filename="${safeName}"\r\n` +
+      'Content-Type: application/x-bittorrent\r\n\r\n',
+    'utf8',
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  return { body: Buffer.concat([head, bytes, tail]), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/** Corps d'une requête : formulaire urlencodé, ou multipart déjà encodé avec son Content-Type. */
+function bodyOf(form: URLSearchParams | MultipartBody | undefined): {
+  body: URLSearchParams | Buffer | undefined;
+  contentType: string | undefined;
+} {
+  if (form === undefined || form instanceof URLSearchParams) return { body: form, contentType: undefined };
+  return { body: form.body, contentType: form.contentType };
+}
+
 export class AllDebridClient {
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
@@ -294,6 +346,7 @@ export class AllDebridClient {
   private readonly positiveTtlMs: number;
   private readonly negativeTtlMs: number;
   private readonly now: () => number;
+  private readonly onFiles: ((infoHash: string, files: DebridFileInfo[]) => void) | undefined;
   /** Résultats de contrôle par hash (true = prêt, false = non prêt). */
   private readonly checkCache = new Map<string, CacheEntry<boolean>>();
   /** Hashes d'un lot en erreur ou absents de la réponse : inconnus pendant BATCH_FAILURE_TTL_MS. */
@@ -320,6 +373,7 @@ export class AllDebridClient {
     this.positiveTtlMs = opts.cacheTtlMs ?? DEFAULT_POSITIVE_TTL_MS;
     this.negativeTtlMs = opts.negativeCacheTtlMs ?? DEFAULT_NEGATIVE_TTL_MS;
     this.now = opts.now ?? (() => Date.now());
+    this.onFiles = opts.onFiles;
   }
 
   /** Vérifie la clé via GET /v4/user. Ne lève jamais : renvoie ok=false avec un code générique. */
@@ -414,6 +468,32 @@ export class AllDebridClient {
   async resolve(infoHash: string, fileIdx?: number, opts: ResolveOptions = {}): Promise<ResolvedLink> {
     const hash = normalizeHash(infoHash);
     if (hash === null) throw new AllDebridError('invalid_hash', 'hash invalide');
+    return this.resolveSelected(hash, fileIdx, opts, MAGNET_SOURCE);
+  }
+
+  /**
+   * Comme resolve(), pour un torrent privé dont on fournit le fichier .torrent (octets) : le fichier est envoyé à
+   * AllDebrid au lieu du magnet, qui n'a pas la passkey. Choix du fichier, déblocage et cache sont ceux de resolve()
+   * (cache et dédoublonnage séparés du magnet). Lève les mêmes erreurs, plus invalid_torrent si les octets sont vides.
+   */
+  async resolveTorrentFile(
+    bytes: Buffer,
+    infoHash: string,
+    fileIdx?: number,
+    opts: ResolveOptions = {},
+  ): Promise<ResolvedLink> {
+    const hash = normalizeHash(infoHash);
+    if (hash === null) throw new AllDebridError('invalid_hash', 'hash invalide');
+    if (bytes.byteLength === 0) throw new AllDebridError('invalid_torrent', 'torrent vide');
+    return this.resolveSelected(hash, fileIdx, opts, { kind: 'file', bytes: Buffer.from(bytes) });
+  }
+
+  private async resolveSelected(
+    hash: string,
+    fileIdx: number | undefined,
+    opts: ResolveOptions,
+    source: PrepareSource,
+  ): Promise<ResolvedLink> {
     const sel: Selection = {
       fileIdx: safeIndex(fileIdx),
       filename: cleanName(opts.filename),
@@ -421,7 +501,7 @@ export class AllDebridClient {
       season: safeIndex(opts.season),
       episode: safeIndex(opts.episode),
     };
-    const key = selectionKey(hash, sel);
+    const key = `${source.kind === 'file' ? 'file:' : ''}${selectionKey(hash, sel)}`;
     const cached = this.resolveCache.get(key);
     if (cached !== undefined && cached.expiresAt > this.now()) return cached.value;
     const pending = this.resolving.get(key);
@@ -431,7 +511,7 @@ export class AllDebridClient {
     this.markActive(hash, 1);
     const run = (async (): Promise<ResolvedLink> => {
       try {
-        const value = await this.resolveUncached(hash, sel, sleep);
+        const value = await this.resolveUncached(hash, sel, sleep, source);
         const at = this.now();
         pruneExpired(this.resolveCache, at);
         this.resolveCache.set(key, { value, expiresAt: at + RESOLVE_TTL_MS });
@@ -455,8 +535,10 @@ export class AllDebridClient {
     hash: string,
     sel: Selection,
     sleep: (ms: number) => Promise<void>,
+    source: PrepareSource,
   ): Promise<ResolvedLink> {
-    const files = await this.prepareFiles(hash, sleep);
+    const files = await this.prepareFiles(hash, sleep, source);
+    if (files.length > 1) this.notifyFiles(hash, files);
     const file = pickFile(files, sel);
 
     const data = await this.request('POST', '/v4/link/unlock', new URLSearchParams([['link', file.link]]));
@@ -472,33 +554,69 @@ export class AllDebridClient {
     };
   }
 
+  /** Transmet la liste d'un pack au rappel onFiles. Une erreur du rappel est ignorée : elle ne doit pas casser la résolution. */
+  private notifyFiles(hash: string, files: readonly FlatFile[]): void {
+    if (this.onFiles === undefined) return;
+    try {
+      this.onFiles(
+        hash,
+        files.map((file, idx) => ({ idx, name: file.name, size: file.size })),
+      );
+    } catch {
+      // Sans effet sur la résolution.
+    }
+  }
+
   /** Upload, attente éventuelle et liste des fichiers, partagés par les résolutions concurrentes du hash. */
-  private prepareFiles(hash: string, sleep: (ms: number) => Promise<void>): Promise<FlatFile[]> {
-    const pending = this.preparing.get(hash);
+  private prepareFiles(
+    hash: string,
+    sleep: (ms: number) => Promise<void>,
+    source: PrepareSource = MAGNET_SOURCE,
+  ): Promise<FlatFile[]> {
+    // Clé distincte pour le fichier .torrent : un upload de fichier ne partage pas la préparation du magnet.
+    const slot = source.kind === 'file' ? `file:${hash}` : hash;
+    const pending = this.preparing.get(slot);
     if (pending !== undefined) return pending;
     const run = (async (): Promise<FlatFile[]> => {
       await this.checking.get(hash);
-      const magnet = await this.uploadMagnet(hash);
-      if (!magnet.ready) await this.waitReady(magnet.id, sleep);
-      return this.listFiles(magnet.id);
+      const added = source.kind === 'file' ? await this.uploadTorrentFile(source.bytes) : await this.uploadMagnet(hash);
+      if (!added.ready) await this.waitReady(added.id, sleep);
+      return this.listFiles(added.id);
     })();
-    this.preparing.set(hash, run);
+    this.preparing.set(slot, run);
     const forget = (): void => {
-      this.preparing.delete(hash);
+      this.preparing.delete(slot);
     };
     run.then(forget, forget);
     return run;
   }
 
-  private async request(method: 'GET' | 'POST', path: string, form?: URLSearchParams): Promise<Record<string, unknown>> {
+  /**
+   * Appel brut de l'API (chemin /v4/…) avec les mêmes erreurs, le même recul 429/503 et la même clé que les autres appels.
+   * Réservé aux modules compagnons (hébergeurs) : même sécurité que request().
+   */
+  call(method: 'GET' | 'POST', path: string, form?: URLSearchParams): Promise<Record<string, unknown>> {
+    return this.request(method, path, form);
+  }
+
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    form?: URLSearchParams | MultipartBody,
+  ): Promise<Record<string, unknown>> {
     if (this.now() < this.backoffUntil) throw new AllDebridError('rate_limited', 'rate limited');
+    const payload = bodyOf(form);
     let res: Response;
     try {
       // Pas de redirection suivie (une 3xx arrive en réponse invalide) ; corps borné à MAX_BODY_BYTES.
       res = await this.fetchImpl(`${API_BASE}${path}`, {
         method,
-        headers: { Authorization: `Bearer ${this.apiKey}`, Accept: 'application/json' },
-        body: form,
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          Accept: 'application/json',
+          ...(payload.contentType === undefined ? {} : { 'Content-Type': payload.contentType }),
+        },
+        body: payload.body,
         redirect: 'manual',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -600,6 +718,23 @@ export class AllDebridClient {
     const id = idToString(entry.id);
     if (id === null) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
     return { id, ready: entry.ready === true };
+  }
+
+  /**
+   * Ajoute un fichier .torrent au compte (POST /v4/magnet/upload/file, multipart, champ `files[]`). Sert aux torrents
+   * privés, dont le fichier porte la passkey. Renvoie l'id, l'état prêt et le hash du magnet créé ou déjà présent.
+   * Lève AllDebridError ; le message ne contient ni les octets ni la clé.
+   */
+  async uploadTorrentFile(bytes: Buffer, filename?: string): Promise<{ id: string; ready: boolean; hash: string }> {
+    const data = await this.request('POST', '/v4/magnet/upload/file', multipartFile(filename ?? TORRENT_UPLOAD_NAME, bytes));
+    const entries = Array.isArray(data.magnets) ? data.magnets : [];
+    const entry = entries.find(isRecord);
+    if (entry === undefined) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
+    if (hasValue(entry.error)) throw new AllDebridError(apiErrorCode(entry.error), 'AllDebrid : torrent refusé');
+    const id = idToString(entry.id);
+    const hash = typeof entry.hash === 'string' ? normalizeHash(entry.hash) : null;
+    if (id === null || hash === null) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
+    return { id, ready: entry.ready === true, hash };
   }
 
   private async waitReady(id: string, sleep: (ms: number) => Promise<void>): Promise<void> {

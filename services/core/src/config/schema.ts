@@ -144,6 +144,10 @@ const FiltersSchema = z
       title: 'Liens directs vérifiés uniquement',
       description: 'Ne garde que les liens directs dont la disponibilité a été vérifiée.',
     }),
+    includeHosterLinks: z.boolean().default(true).meta({
+      title: 'Inclure les liens directs (hébergeurs)',
+      description: 'Garde les liens des hébergeurs débridés par AllDebrid (ex. 1fichier), vérifiés avant affichage.',
+    }),
   })
   .meta({ title: 'Filtres', description: 'Critères de sélection des flux.' })
   .prefault({});

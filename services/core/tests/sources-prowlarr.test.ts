@@ -280,20 +280,42 @@ describe('searchProwlarr : mapping des résultats', () => {
     expect(streams[0]?.magnet).toBeUndefined();
   });
 
-  it('downloadUrl HTTP (lien .torrent proxifié, porteur de clé) n’est jamais retenu ; un downloadUrl magnet l’est', async () => {
+  it('downloadUrl HTTP (lien .torrent proxifié) : gardé sans infoHash, en mémoire seulement ; un downloadUrl magnet devient magnet', async () => {
     const proxied = `https://prowlarr.example.com/1/download?apikey=${KEY}&link=abc`;
     const { fetch } = routes((url) => {
       if (url.searchParams.get('query') !== null) return jsonResponse([]);
       return jsonResponse([
-        { title: 'Proxifie', indexer: 'Alpha', protocol: 'torrent', downloadUrl: proxied },
+        { title: 'Proxifie', indexer: 'Alpha', protocol: 'torrent', downloadUrl: proxied, guid: 'g-1' },
         { title: 'Magnet', indexer: 'Alpha', protocol: 'torrent', downloadUrl: MAGNET },
       ]);
     });
 
     const streams = await searchProwlarr(SOURCE, MOVIE, { fetch });
 
-    expect(streams.map((s) => s.title)).toEqual(['Magnet']);
-    expect(JSON.stringify(streams)).not.toContain(KEY);
+    expect(streams.map((s) => s.title)).toEqual(['Proxifie', 'Magnet']);
+    expect(streams[0]).toMatchObject({ sourceName: 'Alpha', downloadUrl: proxied, guid: 'g-1' });
+    expect(streams[0]?.infoHash).toBeUndefined();
+    expect(streams[0]?.magnet).toBeUndefined();
+    expect(streams[1]?.magnet).toBe(MAGNET);
+    expect(streams[1]?.downloadUrl).toBeUndefined();
+  });
+
+  it('downloadUrl HTTP : ignoré si un infoHash existe ou si le schéma n’est pas http(s) ; sans guid, le lien reste sans guid', async () => {
+    const { fetch } = routes((url) => {
+      if (url.searchParams.get('query') !== null) return jsonResponse([]);
+      return jsonResponse([
+        { title: 'Avec hash', indexer: 'Alpha', protocol: 'torrent', infoHash: HASH, downloadUrl: `https://p.example.com/x?apikey=${KEY}` },
+        { title: 'Ftp', indexer: 'Alpha', protocol: 'torrent', downloadUrl: 'ftp://p.example.com/x.torrent' },
+        { title: 'Sans guid', indexer: 'Alpha', protocol: 'torrent', downloadUrl: 'https://p.example.com/y.torrent' },
+      ]);
+    });
+
+    const streams = await searchProwlarr(SOURCE, MOVIE, { fetch });
+
+    expect(streams.map((s) => s.title)).toEqual(['Avec hash', 'Sans guid']);
+    expect(streams[0]?.downloadUrl).toBeUndefined();
+    expect(streams[1]?.downloadUrl).toBe('https://p.example.com/y.torrent');
+    expect(streams[1]?.guid).toBeUndefined();
   });
 
   it('indexeur absent du release : le nom connu à partir de indexerId sert de sourceName', async () => {

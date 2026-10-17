@@ -155,7 +155,7 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     expect(await res.json()).toEqual({ error: 'no_debrid' });
   });
 
-  it('répond 503 not_ready avec Retry-After: 5', async () => {
+  it('répond 503 avec Retry-After: 5 quand le magnet n\'est pas prêt (page d\'échec, JSON si demandé)', async () => {
     const notReady = makeFactory({
       resolve: async () => {
         throw new AllDebridError('not_ready', 'not_ready');
@@ -163,16 +163,29 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     });
     const running = await start({ secret: SECRET, allowPlain: false, alldebridFactory: notReady.factory });
     try {
-      const res = await play(running.baseUrl, `/${debridConfig()}/play/${HASH}`);
-      expect(res.status).toBe(503);
-      expect(res.headers.get('retry-after')).toBe('5');
-      expect(await res.json()).toEqual({ error: 'not_ready' });
+      const json = await fetch(`${running.baseUrl}/${debridConfig()}/play/${HASH}`, {
+        redirect: 'manual',
+        headers: { Accept: 'application/json' },
+      });
+      expect(json.status).toBe(503);
+      expect(json.headers.get('retry-after')).toBe('5');
+      expect(json.headers.get('cache-control')).toBe('no-store');
+      expect(await json.json()).toEqual({
+        error: 'play_failed',
+        reason: 'host_unavailable',
+        message: expect.stringContaining('Hébergeur indisponible'),
+      });
+
+      const html = await play(running.baseUrl, `/${debridConfig()}/play/${HASH}`);
+      expect(html.status).toBe(503);
+      expect(html.headers.get('content-type')).toContain('text/html');
+      expect(await html.text()).toContain('Hébergeur indisponible');
     } finally {
       await running.close();
     }
   });
 
-  it('répond 502 debrid_error sans détail ni clé pour une erreur API', async () => {
+  it('répond 401 invalid_key sans détail ni clé pour une erreur API', async () => {
     const failing = makeFactory({
       resolve: async () => {
         throw new AllDebridError('AUTH_BAD_APIKEY', `refusé ${API_KEY}`);
@@ -180,10 +193,17 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     });
     const running = await start({ secret: SECRET, allowPlain: false, alldebridFactory: failing.factory });
     try {
-      const res = await play(running.baseUrl, `/${debridConfig()}/play/${HASH}`);
-      expect(res.status).toBe(502);
+      const res = await fetch(`${running.baseUrl}/${debridConfig()}/play/${HASH}`, {
+        redirect: 'manual',
+        headers: { Accept: 'application/json' },
+      });
+      expect(res.status).toBe(401);
       const text = await res.text();
-      expect(JSON.parse(text)).toEqual({ error: 'debrid_error' });
+      expect(JSON.parse(text)).toEqual({
+        error: 'play_failed',
+        reason: 'invalid_key',
+        message: expect.any(String),
+      });
       expect(text).not.toContain(API_KEY);
       expect(text).not.toContain('AUTH_BAD_APIKEY');
     } finally {
@@ -191,7 +211,7 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     }
   });
 
-  it('répond 502 pour une erreur inattendue sans fuite de la clé', async () => {
+  it('répond 500 unknown pour une erreur inattendue sans fuite de la clé', async () => {
     const broken = makeFactory({
       resolve: async () => {
         throw new TypeError(`échec ${API_KEY}`);
@@ -200,8 +220,10 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     const running = await start({ secret: SECRET, allowPlain: false, alldebridFactory: broken.factory });
     try {
       const res = await play(running.baseUrl, `/${debridConfig()}/play/${HASH}`);
-      expect(res.status).toBe(502);
-      expect(await res.text()).not.toContain(API_KEY);
+      expect(res.status).toBe(500);
+      const text = await res.text();
+      expect(text).toContain('Erreur inconnue');
+      expect(text).not.toContain(API_KEY);
     } finally {
       await running.close();
     }

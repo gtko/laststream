@@ -833,3 +833,193 @@ describe('AllDebridClient (garde réseau : redirections et taille du corps)', ()
     expect(JSON.stringify(result)).not.toContain(API_KEY);
   });
 });
+
+describe('AllDebridClient.uploadTorrentFile (multipart)', () => {
+  const TORRENT = Buffer.from('d4:infod6:lengthi3e4:name3:abcee', 'latin1');
+  const HASH_FILE = hashOf(42);
+
+  interface Sent {
+    url: string;
+    method: string;
+    contentType: string | null;
+    body: Buffer | undefined;
+    auth: string | null;
+  }
+
+  /** fetch simulé qui garde le corps brut (multipart) ; `reply` reçoit le chemin et donne la réponse. */
+  function sentFetch(reply: (path: string) => Reply): { fetch: typeof fetch; sent: Sent[] } {
+    const sent: Sent[] = [];
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      const headers = new Headers(init?.headers);
+      sent.push({
+        url: url.toString(),
+        method: init?.method ?? 'GET',
+        contentType: headers.get('content-type'),
+        body: init?.body instanceof Uint8Array ? Buffer.from(init.body) : undefined,
+        auth: headers.get('authorization'),
+      });
+      const found = reply(url.pathname);
+      return new Response(JSON.stringify(found.body), {
+        status: found.status ?? 200,
+        headers: { 'content-type': 'application/json', ...found.headers },
+      });
+    };
+    return { fetch: fetchImpl as unknown as typeof fetch, sent };
+  }
+
+  it('POST /v4/magnet/upload/file en multipart/form-data : boundary, champ files[], octets exacts', async () => {
+    const { fetch, sent } = sentFetch(() => ok({ magnets: [{ id: 77, ready: true, hash: HASH_FILE, name: 'x' }] }));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    const result = await client.uploadTorrentFile(TORRENT, 'film.torrent');
+
+    expect(result).toEqual({ id: '77', ready: true, hash: HASH_FILE });
+    const call = sent[0];
+    expect(call?.method).toBe('POST');
+    expect(call?.url).toMatch(/\/v4\/magnet\/upload\/file$/);
+    const match = /^multipart\/form-data; boundary=(----lastaddon[0-9a-f]{32})$/.exec(call?.contentType ?? '');
+    expect(match).not.toBeNull();
+    const boundary = match?.[1] ?? '';
+    const body = call?.body ?? Buffer.alloc(0);
+    const head = `--${boundary}\r\nContent-Disposition: form-data; name="files[]"; filename="film.torrent"\r\nContent-Type: application/x-bittorrent\r\n\r\n`;
+    expect(body.subarray(0, head.length).toString('latin1')).toBe(head);
+    expect(body.subarray(head.length, head.length + TORRENT.length)).toEqual(TORRENT);
+    expect(body.subarray(head.length + TORRENT.length).toString('latin1')).toBe(`\r\n--${boundary}--\r\n`);
+    expect(call?.auth).toBe(`Bearer ${API_KEY}`);
+    expect(call?.url).not.toContain(API_KEY);
+  });
+
+  it('boundary aléatoire : deux envois n’ont pas la même boundary', async () => {
+    const { fetch, sent } = sentFetch(() => ok({ magnets: [{ id: 1, ready: false, hash: HASH_FILE }] }));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    await client.uploadTorrentFile(TORRENT);
+    await client.uploadTorrentFile(TORRENT);
+
+    expect(sent[0]?.contentType).toMatch(/^multipart\/form-data; boundary=/);
+    expect(sent[0]?.contentType).not.toBe(sent[1]?.contentType);
+  });
+
+  it('nom de fichier assaini (guillemets, antislash, sauts de ligne) ; sans nom : lastaddon.torrent', async () => {
+    const { fetch, sent } = sentFetch(() => ok({ magnets: [{ id: 1, ready: true, hash: HASH_FILE }] }));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    await client.uploadTorrentFile(TORRENT, 'a"b\\c\r\nd.torrent');
+    await client.uploadTorrentFile(TORRENT);
+
+    expect(sent[0]?.body?.toString('latin1')).toContain('filename="a_b_c__d.torrent"');
+    expect(sent[1]?.body?.toString('latin1')).toContain('filename="lastaddon.torrent"');
+  });
+
+  it('erreur API : code générique, ni octets ni clé dans l’erreur', async () => {
+    const { fetch } = sentFetch(() => apiError('AUTH_BAD_APIKEY', 401));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    const error = await client.uploadTorrentFile(TORRENT).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AllDebridError);
+    expect((error as AllDebridError).code).toBe('AUTH_BAD_APIKEY');
+    expect(JSON.stringify(error)).not.toContain(API_KEY);
+  });
+
+  it('réponse sans hash valide : invalid_response', async () => {
+    const { fetch } = sentFetch(() => ok({ magnets: [{ id: 1, ready: true, hash: 'pas-un-hash' }] }));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    const error = await client.uploadTorrentFile(TORRENT).catch((e: unknown) => e);
+
+    expect((error as AllDebridError).code).toBe('invalid_response');
+  });
+});
+
+describe('AllDebridClient.resolveTorrentFile (torrent privé)', () => {
+  const TORRENT = Buffer.from('d4:infod6:lengthi3e4:name3:abcee', 'latin1');
+  const HASH_FILE = hashOf(42);
+
+  function routedFetch(routes: (path: string, body: Buffer | undefined) => Reply) {
+    const sent: { path: string; body: Buffer | undefined }[] = [];
+    const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+      const body = init?.body instanceof Uint8Array ? Buffer.from(init.body) : undefined;
+      sent.push({ path, body });
+      const found = routes(path, body);
+      return new Response(JSON.stringify(found.body), {
+        status: found.status ?? 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    return { fetch: fetchImpl as unknown as typeof fetch, sent };
+  }
+
+  it('envoie le fichier (jamais le magnet), attend le statut prêt, choisit le fichier et déverrouille', async () => {
+    const files = [
+      { n: 'readme.txt', s: 10, l: 'https://dl.example/readme' },
+      { n: 'Film.2024.mkv', s: 5000, l: 'https://dl.example/film' },
+    ];
+    let statusCalls = 0;
+    const { fetch, sent } = routedFetch((path) => {
+      switch (path) {
+        case '/v4/magnet/upload/file':
+          return ok({ magnets: [{ id: 77, ready: false, hash: HASH_FILE }] });
+        case '/v4.1/magnet/status':
+          statusCalls += 1;
+          return ok({ magnets: { id: 77, statusCode: statusCalls >= 2 ? 4 : 1 } });
+        case '/v4/magnet/files':
+          return ok({ magnets: [{ id: 77, files }] });
+        case '/v4/link/unlock':
+          return ok({ link: 'https://dl.example/unlocked.mkv', filename: 'Film.2024.mkv', filesize: 5000 });
+        default:
+          return apiError('UNEXPECTED', 404);
+      }
+    });
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    const link = await client.resolveTorrentFile(TORRENT, HASH_FILE, undefined, { sleep: noSleep, size: 5000 });
+
+    expect(link.url).toBe('https://dl.example/unlocked.mkv');
+    expect(statusCalls).toBe(2);
+    const paths = sent.map((call) => call.path);
+    expect(paths).toContain('/v4/magnet/upload/file');
+    expect(paths).not.toContain('/v4/magnet/upload');
+    const uploaded = sent.find((call) => call.path === '/v4/magnet/upload/file')?.body ?? Buffer.alloc(0);
+    expect(uploaded.indexOf(TORRENT)).toBeGreaterThan(0);
+    expect(sent.some((call) => (call.body?.toString('latin1') ?? '').includes(API_KEY))).toBe(false);
+  });
+
+  it('octets vides refusés (invalid_torrent) sans aucun appel réseau', async () => {
+    const { fetch, sent } = routedFetch(() => ok({}));
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    const error = await client.resolveTorrentFile(Buffer.alloc(0), HASH_FILE).catch((e: unknown) => e);
+
+    expect((error as AllDebridError).code).toBe('invalid_torrent');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('même hash par fichier puis par magnet : deux préparations distinctes, aucun partage', async () => {
+    const files = [{ n: 'Film.mkv', s: 5000, l: 'https://dl.example/film' }];
+    const { fetch, sent } = routedFetch((path) => {
+      switch (path) {
+        case '/v4/magnet/upload/file':
+          return ok({ magnets: [{ id: 77, ready: true, hash: HASH_FILE }] });
+        case '/v4/magnet/upload':
+          return ok({ magnets: [uploadEntry(HASH_FILE, true, 88)] });
+        case '/v4/magnet/files':
+          return ok({ magnets: [{ id: 77, files }] });
+        case '/v4/link/unlock':
+          return ok({ link: 'https://dl.example/u.mkv' });
+        default:
+          return apiError('UNEXPECTED', 404);
+      }
+    });
+    const client = new AllDebridClient(API_KEY, { fetch });
+
+    await client.resolveTorrentFile(TORRENT, HASH_FILE);
+    await client.resolve(HASH_FILE);
+
+    const paths = sent.map((call) => call.path);
+    expect(paths.filter((path) => path === '/v4/magnet/upload/file')).toHaveLength(1);
+    expect(paths.filter((path) => path === '/v4/magnet/upload')).toHaveLength(1);
+  });
+});

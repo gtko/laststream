@@ -42,6 +42,23 @@ export interface RawStream {
   sources?: string[];
   /** Indexeurs ayant renvoyé ce flux (Prowlarr, Jackett). Fusionné par infoHash dans collectStreams. */
   indexers?: string[];
+  /**
+   * Lien de téléchargement du .torrent (proxifié par Prowlarr, parfois avec une passkey ou une clé API).
+   * SECRET : gardé en mémoire seulement. Ne jamais le recopier dans une réponse Stremio, un journal ou un message
+   * d'erreur (les sorties construisent leurs champs un à un ; utiliser scrubUrl pour tout texte).
+   * Lu par resolveInfoHashes (torrent/enrich.ts). Pour une copie privée, la lecture à la demande rejoue
+   * fetchTorrent(downloadUrl, { guid }) (octets gardés en cache) puis resolveTorrentFile, car un magnet n'a pas la passkey.
+   */
+  downloadUrl?: string;
+  /** Identifiant du release chez l'indexeur (Torznab guid). Clé de cache du .torrent ; jamais exposé. */
+  guid?: string;
+  /**
+   * Torrent privé (info.private = 1), connu après lecture du .torrent. Une copie privée doit être résolue
+   * à partir de ses octets (fichier .torrent), jamais à partir d'un magnet reconstruit sans passkey.
+   */
+  privateTorrent?: boolean;
+  /** Fichiers d'un pack, après lecture du .torrent : idx = position dans le .torrent, name = chemin relatif. */
+  packFiles?: { idx: number; name: string; size: number }[];
 }
 
 export interface StremioStream {

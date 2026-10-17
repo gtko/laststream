@@ -23,6 +23,8 @@ export interface Candidate {
   copiesCount?: number;
   /** Vrai si la disponibilité d'un lien direct a été vérifiée. */
   directVerified?: boolean;
+  /** Nom de l'hébergeur débridé (ex. « 1fichier »), pour l'affichage « Lien direct · 1fichier ». */
+  hoster?: string;
 }
 
 /** Candidat classé : `score` composite (plus haut = meilleur), `tier` = rang de résolution. */

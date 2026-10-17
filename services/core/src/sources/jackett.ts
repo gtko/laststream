@@ -8,6 +8,7 @@ import {
   parseJson,
   type IndexerInfo,
   type IndexerPrivacy,
+  type TitleInfo,
 } from './indexers.js';
 import {
   SourceError,
@@ -18,6 +19,7 @@ import {
   type FetchFn,
   type HttpOptions,
 } from './http.js';
+import type { TitleVariants } from './query-titles.js';
 import { searchTorznab } from './torznab.js';
 
 /** Source Jackett : résultats Torznab de tous les indexeurs (`all`) ou d'une liste d'indexeurs. */
@@ -30,6 +32,10 @@ export interface JackettSource {
 
 export interface JackettSearchOptions extends HttpOptions {
   health?: IndexerHealth;
+  /** Requêtes texte en plus de la recherche par id (chaque cible). */
+  titles?: TitleVariants;
+  titleInfo?: TitleInfo;
+  budgetMs?: number;
 }
 
 const ALL = 'all';
@@ -126,7 +132,14 @@ export async function searchJackett(
       const streams = await searchTorznab(
         { name: source.name, baseUrl: torznabUrl(source.baseUrl, target), apiKey: source.apiKey },
         ref,
-        { fetch: fetchFn, timeoutMs, tagIndexers: true },
+        {
+          fetch: fetchFn,
+          timeoutMs,
+          tagIndexers: true,
+          titles: opts.titles,
+          titleInfo: opts.titleInfo,
+          budgetMs: opts.budgetMs,
+        },
       );
       health.record(source.name, target, { ok: true, latencyMs: Date.now() - started });
       return streams;

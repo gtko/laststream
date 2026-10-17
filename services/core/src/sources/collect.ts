@@ -6,6 +6,7 @@ import type { TitleInfo } from './indexers.js';
 import { searchProwlarr } from './prowlarr.js';
 import { fetchUpstream } from './upstream.js';
 import { searchTorznab } from './torznab.js';
+import type { TitleVariants } from './query-titles.js';
 
 /** Erreur isolée d'une source : son nom et un message sûr (sans URL ni clé). */
 export interface SourceErrorEntry {
@@ -21,6 +22,8 @@ export interface CollectResult {
 /** Options de collecte : fetch injectable, titre pour la recherche texte Prowlarr, budget Prowlarr. */
 export interface CollectOptions extends HttpOptions {
   titleInfo?: TitleInfo;
+  /** Titres et année (getTitleVariants) : requêtes texte Prowlarr, Jackett et Torznab. Prime sur titleInfo. */
+  titles?: TitleVariants;
   budgetMs?: number;
 }
 

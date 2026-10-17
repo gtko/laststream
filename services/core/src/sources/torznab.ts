@@ -11,6 +11,16 @@ import {
   type HttpOptions,
   type SourceTestResult,
 } from './http.js';
+import type { TitleInfo } from './indexers.js';
+import {
+  MAX_PARALLEL_QUERIES,
+  SEARCH_BUDGET_MS,
+  mapBounded,
+  mergeRequestResults,
+  releaseAliases,
+  type Candidate,
+} from './query-merge.js';
+import { buildQueries, filterByYear, variantsFor, type TitleVariants } from './query-titles.js';
 
 /** Indexeur Torznab (Jackett, Prowlarr ou compatible). */
 export interface TorznabSource {
@@ -168,14 +178,50 @@ function toRawStream(item: XmlRecord, sourceName: string, tagIndexer: boolean): 
   return stream;
 }
 
-/** Options de searchTorznab. `tagIndexers` : chaque flux porte le nom de son indexeur (Jackett agrégé). */
-export interface TorznabSearchOptions extends HttpOptions {
-  tagIndexers?: boolean;
+/** Requête texte Torznab : t=movie ou t=tvsearch avec `q` (sans identifiant), catégories de la source. */
+function textParams(source: TorznabSource, ref: ContentRef, query: string): Record<string, string> {
+  const params: Record<string, string> = { t: ref.type === 'movie' ? 'movie' : 'tvsearch', q: query };
+  if (source.categories && source.categories.length > 0) params.cat = source.categories.join(',');
+  params.apikey = source.apiKey;
+  return params;
+}
+
+/** Une requête Torznab : items convertis en flux, avec leurs alias (guid, lien de téléchargement sans secret). */
+async function fetchCandidates(
+  fetchFn: FetchFn,
+  source: TorznabSource,
+  params: Record<string, string>,
+  timeoutMs: number,
+  tagIndexers: boolean,
+): Promise<Candidate[]> {
+  const doc = await requestTorznab(fetchFn, apiUrl(source.baseUrl, params), source.apiKey, timeoutMs);
+  if (doc.rss === undefined) throw new SourceError('réponse Torznab inattendue');
+  const channel = asArray(isRecord(doc.rss) ? doc.rss.channel : undefined).find(isRecord);
+  if (!channel) return [];
+  return asArray(channel.item)
+    .filter(isRecord)
+    .flatMap((item) => {
+      const stream = toRawStream(item, source.name, tagIndexers);
+      return stream ? [{ stream, aliases: releaseAliases(text(item.guid), text(item.link)) }] : [];
+    });
 }
 
 /**
- * Recherche Torznab pour un film (t=movie) ou un épisode (t=tvsearch) via l'identifiant IMDb.
- * Lève une SourceError sûre (sans URL ni clé) en cas d'erreur HTTP, de XML invalide ou de délai dépassé.
+ * Options de searchTorznab. `tagIndexers` : chaque flux porte le nom de son indexeur (Jackett agrégé).
+ * `titles` (ou `titleInfo`) : requêtes texte en plus de la recherche par id ; `budgetMs` borne ces requêtes.
+ */
+export interface TorznabSearchOptions extends HttpOptions {
+  tagIndexers?: boolean;
+  titles?: TitleVariants;
+  titleInfo?: TitleInfo;
+  budgetMs?: number;
+}
+
+/**
+ * Recherche Torznab pour un film (t=movie) ou un épisode (t=tvsearch) via l'identifiant IMDb. Si des titres sont
+ * connus, une requête texte part aussi par requête (en parallèle, budget borné) ; les résultats sont fusionnés sans
+ * doublon et, pour un film, filtrés sur l'année. Sans titre, seule la requête par id part.
+ * Lève une SourceError sûre (sans URL ni clé) si toutes les requêtes échouent (la requête par id en premier).
  */
 export async function searchTorznab(
   source: TorznabSource,
@@ -183,18 +229,28 @@ export async function searchTorznab(
   opts: TorznabSearchOptions = {},
 ): Promise<RawStream[]> {
   const { fetchFn, timeoutMs } = resolveOptions(opts);
+  const tagIndexers = opts.tagIndexers === true;
   try {
-    const url = apiUrl(source.baseUrl, searchParams(source, ref));
-    const doc = await requestTorznab(fetchFn, url, source.apiKey, timeoutMs);
-    if (doc.rss === undefined) throw new SourceError('réponse Torznab inattendue');
-    const channel = asArray(isRecord(doc.rss) ? doc.rss.channel : undefined).find(isRecord);
-    if (!channel) return [];
-    return asArray(channel.item)
-      .filter(isRecord)
-      .flatMap((item) => {
-        const stream = toRawStream(item, source.name, opts.tagIndexers === true);
-        return stream ? [stream] : [];
-      });
+    const variants = variantsFor(opts);
+    const queries = variants === undefined ? [] : buildQueries(variants, ref);
+    const plans: { params: Record<string, string>; text: boolean }[] = [
+      { params: searchParams(source, ref), text: false },
+      ...queries.map((query) => ({ params: textParams(source, ref, query), text: true })),
+    ];
+    const deadline = Date.now() + (opts.budgetMs ?? SEARCH_BUDGET_MS);
+    const settled = await mapBounded(plans, MAX_PARALLEL_QUERIES, async (plan) => {
+      if (!plan.text) return fetchCandidates(fetchFn, source, plan.params, timeoutMs, tagIndexers);
+      const left = Math.ceil(deadline - Date.now());
+      if (left <= 0) return undefined; // budget épuisé : cette requête texte est ignorée
+      return fetchCandidates(fetchFn, source, plan.params, Math.min(timeoutMs, left), tagIndexers);
+    });
+    const ran = settled.filter((outcome) => outcome.status === 'rejected' || outcome.value !== undefined);
+    const failed = ran.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+    if (failed.length > 0 && failed.length === ran.length) throw failed[0]?.reason;
+    const batches = settled.flatMap((outcome) =>
+      outcome.status === 'fulfilled' && outcome.value !== undefined ? [outcome.value] : [],
+    );
+    return filterByYear(mergeRequestResults(batches), ref, variants);
   } catch (err) {
     throw sourceFailure(source.name, err);
   }
