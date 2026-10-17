@@ -36,6 +36,11 @@ export interface ProgressEntry {
 export interface Profile {
   id: string;
   name: string;
+  /** Champs du compte lastAddon (absents en mode local). */
+  avatarColor?: string;
+  isKid?: boolean;
+  kidMaxAge?: number | null;
+  hasPin?: boolean;
 }
 
 export interface UserStore {
@@ -48,6 +53,8 @@ export interface UserStore {
 
   getProgress(key: string, season?: number, episode?: number): ProgressEntry | null;
   setProgress(entry: Omit<ProgressEntry, 'updatedAt'>): void;
+  /** Charge la progression d'un titre depuis le serveur avant lecture (adaptateur serveur ; sans effet en local). */
+  loadProgress?(key: string): Promise<void>;
   /** Titres entamés (2 % à 95 %), le plus récent d'abord, un par titre. */
   continueWatching(limit?: number): ProgressEntry[];
 
