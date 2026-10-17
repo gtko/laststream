@@ -1,5 +1,13 @@
 import type { Lang, ParsedRelease, RawStream, Resolution, SourceKind } from '../types.js';
 
+/** Piste audio vérifiée par sonde (après lecture réelle du flux). */
+export interface VerifiedAudio {
+  lang: string;
+  codec: string;
+  channels: string;
+  atmos: boolean;
+}
+
 /** Candidat : un stream amont déjà parsé, prêt pour le moteur (le moteur ne parse jamais). */
 export interface Candidate {
   raw: RawStream;
@@ -7,12 +15,36 @@ export interface Candidate {
   cached?: boolean;
   /** Vrai si le candidat est une langue autre que les préférées, retenu faute de résultat dans ces langues. */
   languageFallback?: boolean;
+  /** Langues audio vérifiées par sonde. Absent : candidat non sondé. */
+  verifiedLanguages?: string[];
+  /** Pistes audio vérifiées par sonde. */
+  verifiedAudio?: VerifiedAudio[];
+  /** Nombre de copies connues chez l'amont (information, aucun filtre ne s'appuie dessus à ce jour). */
+  copiesCount?: number;
+  /** Vrai si la disponibilité d'un lien direct a été vérifiée. */
+  directVerified?: boolean;
 }
 
 /** Candidat classé : `score` composite (plus haut = meilleur), `tier` = rang de résolution. */
 export interface Ranked extends Candidate {
   score: number;
   tier: number;
+}
+
+/**
+ * Métadonnées du contenu (film ou épisode), issues de TMDB et de Cinemeta. Tous les champs sont facultatifs :
+ * absent = inconnu.
+ */
+export interface ContentMeta {
+  /** Durée réelle en secondes. */
+  runtimeSeconds?: number;
+  /**
+   * Âge minimum FR : 0 = tous publics, 10, 12, 16 ou 18. `'none'` = aucune classification connue (traitée comme
+   * inconnue). undefined = inconnu.
+   */
+  certificationFr?: number | 'none';
+  /** Date de sortie ISO (AAAA-MM-JJ) du film ou de l'épisode. */
+  releaseDate?: string;
 }
 
 /** Rang des résolutions (plus grand = meilleur). `unknown` est le plus bas. */
@@ -63,12 +95,69 @@ export function isDirect(c: Candidate): boolean {
   return typeof c.raw.url === 'string' && c.raw.url.length > 0;
 }
 
-/** Langues effectives : `multi` compte comme `fr` + `original`. */
-export function effectiveLanguages(parsed: ParsedRelease): Set<Lang> {
-  const langs = new Set<Lang>(parsed.languages);
+const KNOWN_LANGS: ReadonlySet<string> = new Set<Lang>(['fr', 'en', 'es', 'de', 'it', 'multi', 'original']);
+
+/** Ensemble de langues : valeurs inconnues ignorées, `multi` compte comme `fr` + `original`. */
+export function expandLanguages(values: Iterable<string>): Set<Lang> {
+  const langs = new Set<Lang>();
+  for (const value of values) {
+    if (KNOWN_LANGS.has(value)) langs.add(value as Lang);
+  }
   if (langs.has('multi')) {
     langs.add('fr');
     langs.add('original');
   }
   return langs;
+}
+
+/** Langues effectives : `multi` compte comme `fr` + `original`. */
+export function effectiveLanguages(parsed: ParsedRelease): Set<Lang> {
+  return expandLanguages(parsed.languages);
+}
+
+/**
+ * Langues retenues pour le classement et le filtre de langue. Avec `verifiedOnly`, seules les langues vérifiées
+ * par sonde comptent ; sans sonde, aucune langue.
+ */
+export function languagesFor(c: Candidate, verifiedOnly: boolean): Set<Lang> {
+  return verifiedOnly ? expandLanguages(c.verifiedLanguages ?? []) : effectiveLanguages(c.parsed);
+}
+
+/** Textes du stream où chercher un nom : titre, fichier, nom amont. */
+export function rawNameTexts(c: Candidate): string[] {
+  return [c.raw.title, c.raw.filename, c.raw.name].filter((text): text is string => typeof text === 'string');
+}
+
+/** Textes de recherche de mots : nom du stream et groupe de release. */
+export function nameTexts(c: Candidate): string[] {
+  const group = c.parsed.group;
+  return group === undefined ? rawNameTexts(c) : [...rawNameTexts(c), group];
+}
+
+const REGEX_SPECIALS = /[.*+?^${}()|[\]\\]/g;
+
+/**
+ * Motif d'un mot entier, insensible à la casse. Les séparateurs (espace, point, tiret, tiret bas) du mot sont
+ * interchangeables dans le texte : « Dual Audio » trouve « Dual.Audio ».
+ */
+export function wordPattern(word: string): RegExp {
+  const trimmed = word.trim();
+  const parts = trimmed.split(/[\s._-]+/u).filter((part) => part.length > 0);
+  const body =
+    parts.length > 0
+      ? parts.map((part) => part.replace(REGEX_SPECIALS, '\\$&')).join('[\\s._-]+')
+      : trimmed.replace(REGEX_SPECIALS, '\\$&');
+  if (body.length === 0) return /(?!)/u;
+  return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, 'iu');
+}
+
+/** Motifs de mots entiers, une entrée par mot. */
+export function compileWords(words: readonly string[]): RegExp[] {
+  return words.map(wordPattern);
+}
+
+/** Vrai si un des motifs trouve un mot entier dans le nom du stream (groupe inclus). */
+export function matchesAnyWord(c: Candidate, patterns: readonly RegExp[]): boolean {
+  if (patterns.length === 0) return false;
+  return nameTexts(c).some((text) => patterns.some((pattern) => pattern.test(text)));
 }

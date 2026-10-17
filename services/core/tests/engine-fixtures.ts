@@ -37,11 +37,15 @@ export interface CandidateOptions {
   parsed?: Partial<ParsedRelease>;
   raw?: Partial<RawStream>;
   cached?: boolean;
+  verifiedLanguages?: string[];
+  directVerified?: boolean;
 }
 
 export function cand(options: CandidateOptions = {}): Candidate {
   const candidate: Candidate = { raw: raw(options.raw), parsed: parsed(options.parsed) };
   if (options.cached !== undefined) candidate.cached = options.cached;
+  if (options.verifiedLanguages !== undefined) candidate.verifiedLanguages = options.verifiedLanguages;
+  if (options.directVerified !== undefined) candidate.directVerified = options.directVerified;
   return candidate;
 }
 
