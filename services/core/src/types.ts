@@ -40,6 +40,8 @@ export interface RawStream {
   magnet?: string;
   behaviorHints?: Record<string, unknown>;
   sources?: string[];
+  /** Indexeurs ayant renvoyé ce flux (Prowlarr, Jackett). Fusionné par infoHash dans collectStreams. */
+  indexers?: string[];
 }
 
 export interface StremioStream {

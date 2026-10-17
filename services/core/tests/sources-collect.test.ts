@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseConfig } from '../src/config/schema.js';
-import { collectStreams } from '../src/sources/collect.js';
+import { collectStreams, mergeIndexerCopies } from '../src/sources/collect.js';
 import type { FetchFn } from '../src/sources/http.js';
 import type { ContentRef } from '../src/types.js';
 
@@ -161,5 +161,119 @@ describe('collectStreams', () => {
     await collectStreams(config, MOVIE, { fetch });
 
     expect(maxInFlight).toBe(2);
+  });
+});
+
+describe('collectStreams : Prowlarr et Jackett', () => {
+  const PR_KEY = 'PR-COLLECT-KEY-5';
+  const JK_KEY = 'JK-COLLECT-KEY-6';
+  const HASH = 'abcdef0123456789abcdef0123456789abcdef01';
+  const PROWLARR_RELEASE = {
+    title: 'Film Prowlarr',
+    indexer: 'Alpha',
+    indexerId: 1,
+    protocol: 'torrent',
+    infoHash: HASH,
+    seeders: 5,
+  };
+
+  /** Routeur : indexeurs et recherche Prowlarr, recherche Jackett agrégée. */
+  function routeAll(options: { prowlarr: unknown[] | 'fail'; jackett: string | 'fail' }) {
+    return mockFetch(async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname === '/api/v1/indexer') {
+        return jsonResponse([
+          { id: 1, name: 'Alpha', protocol: 'torrent', enable: true, capabilities: { movieSearchParams: ['q', 'imdbId'] } },
+        ]);
+      }
+      if (parsed.pathname === '/api/v1/search') {
+        if (options.prowlarr === 'fail') return new Response('down', { status: 503 });
+        return jsonResponse(parsed.searchParams.get('query') !== null ? [] : options.prowlarr);
+      }
+      if (parsed.pathname.endsWith('/results/torznab/api')) {
+        if (options.jackett === 'fail') return new Response('down', { status: 500 });
+        return xmlResponse(options.jackett);
+      }
+      throw new Error(`URL inattendue (test) ${url}`);
+    });
+  }
+
+  it('dispatch : prowlarr et jackett interrogés, chacun avec ses erreurs isolées', async () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'prowlarr', name: 'PR', baseUrl: 'https://pr.example.com', apiKey: PR_KEY },
+        { type: 'jackett', name: 'JK', baseUrl: 'http://127.0.0.1:9117', apiKey: JK_KEY },
+      ],
+    });
+    const { fetch } = routeAll({ prowlarr: 'fail', jackett: '<rss version="2.0"><channel/></rss>' });
+
+    const result = await collectStreams(config, MOVIE, { fetch });
+
+    expect(result.streams).toEqual([]);
+    expect(result.errors).toEqual([{ source: 'PR', error: 'Source "PR" : HTTP 503' }]);
+  });
+
+  it('même infoHash chez deux indexeurs (Prowlarr + Jackett) : un seul flux, indexers = noms fusionnés', async () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'prowlarr', name: 'PR', baseUrl: 'https://pr.example.com', apiKey: PR_KEY },
+        { type: 'jackett', name: 'JK', baseUrl: 'http://127.0.0.1:9117', apiKey: JK_KEY, indexers: 'all' },
+      ],
+    });
+    const jackettFeed = `<?xml version="1.0"?>
+<rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
+  <item><title>Film Jackett</title><link>magnet:?xt=urn:btih:${HASH}</link><jackettindexer id="beta">Beta</jackettindexer></item>
+</channel></rss>`;
+    const { fetch } = routeAll({ prowlarr: [PROWLARR_RELEASE], jackett: jackettFeed });
+
+    const result = await collectStreams(config, MOVIE, { fetch });
+
+    expect(result.errors).toEqual([]);
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]).toMatchObject({ sourceName: 'Alpha', infoHash: HASH, indexers: ['Alpha', 'Beta'] });
+  });
+
+  it('les clés Prowlarr et Jackett ne sortent jamais dans les erreurs', async () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'prowlarr', name: 'PR', baseUrl: 'https://pr.example.com', apiKey: PR_KEY },
+        { type: 'jackett', name: 'JK', baseUrl: 'http://127.0.0.1:9117', apiKey: JK_KEY },
+      ],
+    });
+    const { fetch } = mockFetch(async (url) => {
+      throw new TypeError(`connexion refusée vers ${url}`);
+    });
+
+    const result = await collectStreams(config, MOVIE, { fetch });
+    const serialized = JSON.stringify(result.errors);
+
+    expect(result.errors).toHaveLength(2);
+    expect(serialized).not.toContain(PR_KEY);
+    expect(serialized).not.toContain(JK_KEY);
+    expect(serialized).not.toContain('pr.example.com');
+  });
+});
+
+describe('mergeIndexerCopies', () => {
+  const HASH = 'abcdef0123456789abcdef0123456789abcdef01';
+  const base = { sourceKind: 'torznab' as const, sourceName: 'X', name: 'X' };
+
+  it('fusionne les copies par infoHash (insensible à la casse), garde la première place et l’union des indexeurs', () => {
+    const merged = mergeIndexerCopies([
+      { ...base, sourceName: 'A', infoHash: HASH.toUpperCase(), title: 'Premier', indexers: ['A'] },
+      { ...base, sourceName: 'B', infoHash: 'f'.repeat(40), title: 'Autre', indexers: ['B'] },
+      { ...base, sourceName: 'B', infoHash: HASH, title: 'Copie', indexers: ['B', 'A'] },
+    ]);
+
+    expect(merged.map((s) => s.title)).toEqual(['Premier', 'Autre']);
+    expect(merged[0]?.indexers).toEqual(['A', 'B']);
+  });
+
+  it('ne touche pas aux flux sans indexers (upstream, torznab sans étiquette) ni sans infoHash', () => {
+    const plain = { ...base, infoHash: HASH };
+    const noHash = { ...base, indexers: ['A'], magnet: 'magnet:?xt=urn:btih:x' };
+    const merged = mergeIndexerCopies([plain, plain, noHash, noHash]);
+    expect(merged).toHaveLength(4);
+    expect(merged[0]).toEqual(plain);
   });
 });

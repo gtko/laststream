@@ -141,8 +141,9 @@ function parseCount(value: unknown): number | undefined {
 /**
  * Convertit un <item> RSS en RawStream.
  * Les items sans infoHash ni magnet sont ignorés (renvoie undefined).
+ * `tagIndexer` (Jackett agrégé) : le flux porte le nom de son indexeur (<jackettindexer>, à défaut la source).
  */
-function toRawStream(item: XmlRecord, sourceName: string): RawStream | undefined {
+function toRawStream(item: XmlRecord, sourceName: string, tagIndexer: boolean): RawStream | undefined {
   const attrs = torznabAttrs(item);
   const enclosure = asArray(item.enclosure).find(isRecord);
   const title = text(item.title);
@@ -150,7 +151,10 @@ function toRawStream(item: XmlRecord, sourceName: string): RawStream | undefined
   const infoHash = normalizeInfoHash(attrs.get('infohash')) ?? infoHashFromMagnet(magnet);
   if (infoHash === undefined && magnet === undefined) return undefined;
 
-  const stream: RawStream = { sourceName, sourceKind: 'torznab', name: sourceName };
+  const indexer = tagIndexer ? (text(asArray(item.jackettindexer)[0]) ?? sourceName) : undefined;
+  const label = indexer ?? sourceName;
+  const stream: RawStream = { sourceName: label, sourceKind: 'torznab', name: label };
+  if (indexer !== undefined) stream.indexers = [indexer];
   if (title !== undefined) {
     stream.title = title;
     stream.filename = title;
@@ -164,6 +168,11 @@ function toRawStream(item: XmlRecord, sourceName: string): RawStream | undefined
   return stream;
 }
 
+/** Options de searchTorznab. `tagIndexers` : chaque flux porte le nom de son indexeur (Jackett agrégé). */
+export interface TorznabSearchOptions extends HttpOptions {
+  tagIndexers?: boolean;
+}
+
 /**
  * Recherche Torznab pour un film (t=movie) ou un épisode (t=tvsearch) via l'identifiant IMDb.
  * Lève une SourceError sûre (sans URL ni clé) en cas d'erreur HTTP, de XML invalide ou de délai dépassé.
@@ -171,7 +180,7 @@ function toRawStream(item: XmlRecord, sourceName: string): RawStream | undefined
 export async function searchTorznab(
   source: TorznabSource,
   ref: ContentRef,
-  opts: HttpOptions = {},
+  opts: TorznabSearchOptions = {},
 ): Promise<RawStream[]> {
   const { fetchFn, timeoutMs } = resolveOptions(opts);
   try {
@@ -183,7 +192,7 @@ export async function searchTorznab(
     return asArray(channel.item)
       .filter(isRecord)
       .flatMap((item) => {
-        const stream = toRawStream(item, source.name);
+        const stream = toRawStream(item, source.name, opts.tagIndexers === true);
         return stream ? [stream] : [];
       });
   } catch (err) {

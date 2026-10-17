@@ -4,11 +4,22 @@ import type { AppDeps } from '../deps.js';
 import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
 import { createLtContext, LtError } from '../lt/context.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
+import { defaultIndexerHealth, type HealthStatus } from '../sources/indexer-health.js';
+import { discoverJackettIndexers } from '../sources/jackett.js';
+import type { IndexerInfo } from '../sources/indexers.js';
 import { maskSecrets, SourceError, type SourceTestResult } from '../sources/http.js';
+import { discoverProwlarrIndexers } from '../sources/prowlarr.js';
 import { testTorznab } from '../sources/torznab.js';
 import { testUpstream } from '../sources/upstream.js';
 
-export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid';
+export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid' | 'prowlarr' | 'jackett';
+
+/** Statut d'un indexeur (Prowlarr, Jackett) : issu de la santé en mémoire, jamais de clé ni d'URL. */
+export interface IndexerCheck {
+  id: string;
+  name: string;
+  status: HealthStatus | 'unknown';
+}
 
 /** Résultat du test d'une clé de service (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Jamais la clé. */
 export interface ServiceCheck {
@@ -18,13 +29,16 @@ export interface ServiceCheck {
   error?: string;
 }
 
-/** Résultat du test d'une source. `error` est absent quand la source répond. */
+/** Résultat du test d'une source. `error` est absent quand la source répond. `indexers` : Prowlarr et Jackett. */
 export interface SourceCheck {
   name: string;
   type: SourceCheckType;
   ok: boolean;
   error?: string;
+  indexers?: IndexerCheck[];
 }
+
+type SourceConfig = Config['sources'][number];
 
 const ALLDEBRID_NAME = 'AllDebrid';
 const UNEXPECTED_ERROR = 'erreur inattendue';
@@ -39,7 +53,9 @@ export function scrubSecrets(message: string, secrets: readonly string[]): strin
 
 /** Clés API présentes dans la configuration : elles ne doivent jamais sortir dans une réponse. */
 function secretsOf(config: Config): string[] {
-  const secrets = config.sources.flatMap((source) => (source.type === 'torznab' ? [source.apiKey] : []));
+  const secrets = config.sources.flatMap((source) =>
+    source.type === 'upstream' ? [] : [source.apiKey],
+  );
   if (config.debrid !== undefined) secrets.push(config.debrid.apiKey);
   const { openrouterModel: _model, ...keys } = config.services;
   secrets.push(...Object.values(keys).filter((value): value is string => typeof value === 'string'));
@@ -75,6 +91,47 @@ async function settle(
   return check;
 }
 
+/** Statut courant d'un indexeur d'après la santé en mémoire ; « unknown » s'il n'a jamais été interrogé. */
+function indexerStatus(source: string, indexerId: number | string): HealthStatus | 'unknown' {
+  return defaultIndexerHealth.get(source, indexerId)?.status ?? 'unknown';
+}
+
+/** Découverte des indexeurs d'une source Prowlarr ou Jackett : succès avec statuts, ou échec sûr. */
+async function settleIndexers(
+  name: string,
+  type: 'prowlarr' | 'jackett',
+  discover: () => Promise<IndexerInfo[]>,
+  secrets: readonly string[],
+): Promise<SourceCheck> {
+  let indexers: IndexerInfo[];
+  try {
+    indexers = await discover();
+  } catch (err) {
+    const message = err instanceof SourceError ? err.message : UNEXPECTED_ERROR;
+    return { name, type, ok: false, error: scrubSecrets(message, secrets) };
+  }
+  const statuses = indexers.map((indexer) => ({
+    id: String(indexer.id),
+    name: indexer.name,
+    status: indexerStatus(name, indexer.id),
+  }));
+  return { name, type, ok: true, indexers: statuses };
+}
+
+/** Teste une source selon son type. Ne lève jamais. */
+function checkSource(source: SourceConfig, fetchOpts: { fetch?: typeof fetch }, secrets: readonly string[]): Promise<SourceCheck> {
+  switch (source.type) {
+    case 'upstream':
+      return settle(source.name, 'upstream', () => testUpstream(source, fetchOpts), secrets);
+    case 'torznab':
+      return settle(source.name, 'torznab', () => testTorznab(source, fetchOpts), secrets);
+    case 'prowlarr':
+      return settleIndexers(source.name, 'prowlarr', () => discoverProwlarrIndexers(source, fetchOpts), secrets);
+    case 'jackett':
+      return settleIndexers(source.name, 'jackett', () => discoverJackettIndexers(source, fetchOpts), secrets);
+  }
+}
+
 type Parsed = { config: Config } | { issues: readonly string[] };
 
 /** Valide le corps : les issues ne contiennent que des chemins et messages, jamais les valeurs saisies. */
@@ -102,11 +159,7 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
     const secrets = secretsOf(config);
     const fetchOpts = { fetch: deps.fetch };
 
-    const sourceChecks = config.sources.map((source) =>
-      source.type === 'upstream'
-        ? settle(source.name, 'upstream', () => testUpstream(source, fetchOpts), secrets)
-        : settle(source.name, 'torznab', () => testTorznab(source, fetchOpts), secrets),
-    );
+    const sourceChecks = config.sources.map((source) => checkSource(source, fetchOpts, secrets));
     const apiKey = config.debrid?.apiKey;
     const debridCheck =
       apiKey === undefined
