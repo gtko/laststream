@@ -4,7 +4,7 @@ import { recommend, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { userStore } from '../data/userStore';
 import { detailOf, getDetail, listOf, register, toItem } from './catalog.js';
-import { DEMO_HISTORY, DEMO_LIKED, DEMO_PROGRESS, IMG, TABS } from './constants.js';
+import { IMG, TABS } from './constants.js';
 import { addDays, isFuture, todayStr } from './dates.js';
 import { app } from './dom.js';
 import { brand, heroEmpty, infoBtn, row, section, titleEl, trailerBtn } from './fragments.js';
@@ -47,7 +47,7 @@ export async function loadHome() {
   return {
     hero,
     rows: {
-      continue: week ? week.slice(5, 10) : null, // « Reprendre » : titres réels, progression factice
+      start: week ? week.filter((it) => it.poster).slice(0, 20) : null, // « Pour bien commencer » : tendances, sans IA
       top: cut(day, 10),
       films: cut(films, 20),
       series: cut(series, 20),
@@ -63,6 +63,12 @@ export async function loadAI() {
   renderAI();
   try {
     const seed = recoSeed();
+    if (!seed) {
+      // Aucun signal (ni bibliothèque ni progression) : pas d'appel IA.
+      state.ai = { status: 'none', items: [] };
+      renderAI();
+      return;
+    }
     const json = await recommend(seed.history, seed.liked);
     const items = (json.items || [])
       .map((raw) => {
@@ -71,7 +77,7 @@ export async function loadAI() {
         return register(it);
       })
       .filter((it) => it.poster);
-    state.ai = { status: 'ready', items, demo: seed.demo };
+    state.ai = { status: 'ready', items };
   } catch (_) {
     state.ai = { status: 'error', items: [] };
   }
@@ -156,6 +162,14 @@ export function renderAI() {
   const slot = document.getElementById('ai-slot');
   if (!slot) return;
   const ai = state.ai;
+  if (ai.status === 'none') {
+    const start = state.data && state.data.rows.start;
+    slot.innerHTML = start && start.length
+      ? section('commencer', 'Pour bien commencer', start, (l) => row(l.map((it) => posterCard(it)).join('')))
+      : '';
+    observeTiles(slot);
+    return;
+  }
   if (ai.status === 'error' || (ai.status === 'ready' && !ai.items.length)) {
     slot.innerHTML = '';
     return;
@@ -164,7 +178,7 @@ export function renderAI() {
     slot.innerHTML = aiSkeleton();
     return;
   }
-  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA' + (ai.demo ? ' <span class="demo-tag">démo</span>' : '') + '</h2>' +
+  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA</h2>' +
     row(ai.items.map(aiCard).join('')) + '</section>';
 }
 
@@ -205,7 +219,7 @@ export function viewA(d) {
   const r = d.rows;
   return '<main id="main" class="page-a">' + headerA() + heroA(d.hero) +
     '<div class="rows">' +
-    continueSection(r) +
+    '<div id="cont-slot">' + continueSection() + '</div>' +
     '<div id="lib-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
@@ -229,7 +243,7 @@ export function tabbar() {
 
 export const footer = () =>
   '<footer class="foot"><p>Données films et séries : TMDb. Ce produit utilise l’API TMDb mais n’est ni approuvé ni certifié par TMDb. ' +
-  'Notes : MDBList. Recommandations : OpenRouter (démo).</p></footer>';
+  'Notes : MDBList. Recommandations : OpenRouter.</p></footer>';
 
 export function skeletonView() {
   const cards = '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div>';
@@ -272,24 +286,41 @@ export const initialOf = () => (userStore.currentProfile().name || '?').slice(0,
 export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : '#/');
 export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : ' data-noop');
 
-/** Historique envoyé à /recommend : la bibliothèque si elle existe, sinon l'historique de démonstration. */
+/**
+ * Signaux envoyés à /recommend : bibliothèque et titres entamés, du plus récent au plus ancien.
+ * Null s'il n'y en a aucun : la rangée « Pour bien commencer » remplace alors l'IA.
+ */
 export function recoSeed() {
-  const lib = userStore.getLibrary().filter((e) => e.title).sort((a, b) => b.addedAt - a.addedAt).slice(0, 10);
-  if (!lib.length) return { history: DEMO_HISTORY, liked: DEMO_LIKED, demo: true };
-  const history = lib.map((e) => ({ title: e.title, year: Number(e.year) || null, type: e.type }));
-  return { history, liked: history.slice(0, 3), demo: false };
+  const seen = new Set();
+  const history = [];
+  const add = (e) => {
+    const k = e.type + ':' + e.id;
+    if (!e.title || seen.has(k)) return;
+    seen.add(k);
+    history.push({ title: e.title, year: Number(e.year) || null, type: e.type });
+  };
+  userStore.continueWatching(10).forEach(add);
+  userStore.getLibrary().sort((a, b) => b.addedAt - a.addedAt).forEach(add);
+  if (!history.length) return null;
+  return { history: history.slice(0, 10), liked: history.slice(0, 3) };
 }
 
-/** « Reprendre la lecture » : progression réelle (userStore) ou, à défaut, la rangée de démonstration. */
-export function continueSection(r) {
+/** « Reprendre la lecture » : uniquement la progression réelle ; rien tant qu'il n'y en a pas. */
+export function continueSection() {
   const real = userStore.continueWatching(10);
-  if (real.length) {
-    const items = real.map((p) => {
-      const raw = { id: p.id, poster_path: p.poster, backdrop_path: p.backdrop || '' };
-      raw[p.type === 'tv' ? 'name' : 'title'] = p.title;
-      return { it: register(toItem(raw, p.type)), pct: Math.round((p.position / p.duration) * 100) };
-    });
-    return section('reprendre', 'Reprendre la lecture', items, (l) => row(l.map((x) => continueCard(x.it, x.pct)).join('')));
-  }
-  return section('reprendre', 'Reprendre la lecture', cut(r.continue, 4), (l) => row(l.map((it, i) => continueCard(it, DEMO_PROGRESS[i])).join('')), 'démo');
+  if (!real.length) return '';
+  const items = real.map((p) => {
+    const raw = { id: p.id, poster_path: p.poster, backdrop_path: p.backdrop || '' };
+    raw[p.type === 'tv' ? 'name' : 'title'] = p.title;
+    return { it: register(toItem(raw, p.type)), pct: Math.round((p.position / p.duration) * 100) };
+  });
+  return section('reprendre', 'Reprendre la lecture', items, (l) => row(l.map((x) => continueCard(x.it, x.pct)).join('')));
+}
+
+/** Rafraîchit « Reprendre la lecture » au retour sur l'accueil. */
+export function renderContinue() {
+  const slot = document.getElementById('cont-slot');
+  if (!slot) return;
+  slot.innerHTML = continueSection();
+  observeTiles(slot);
 }

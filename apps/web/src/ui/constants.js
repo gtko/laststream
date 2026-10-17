@@ -6,17 +6,6 @@ export const DWELL_MS = 4000; // accueil : aperçu après 4 s sur la mise en ava
 export const FICHE_IDLE_MS = 3000; // fiche : bande-annonce après 3 s
 export const REDUCE = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 export const STILL = new URLSearchParams(location.search).has('still');
-// DÉMO : progressions factices pour « Reprendre la lecture » (aucun historique réel).
-export const DEMO_PROGRESS = [62, 45, 80, 20, 30];
-// DÉMO : historique factice (titres réels) envoyé à /api/recommend. Pas d'historique utilisateur.
-export const DEMO_HISTORY = [
-  { title: 'Dune', year: 2021, type: 'movie' },
-  { title: 'Severance', year: 2022, type: 'tv' },
-  { title: 'Blade Runner 2049', year: 2017, type: 'movie' },
-  { title: 'The Bear', year: 2022, type: 'tv' },
-  { title: 'Arrival', year: 2016, type: 'movie' },
-];
-export const DEMO_LIKED = [DEMO_HISTORY[0], DEMO_HISTORY[1]];
 export const TABS = [
   ['Accueil', 'home', true],
   ['Découvrir', 'compass', false],

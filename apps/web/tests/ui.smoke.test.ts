@@ -30,7 +30,15 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (u.pathname.includes('/lt/mdblist/')) return json({ ratings: { imdb: 7.9 } });
   if (u.pathname.endsWith('/lt/recommend')) return json({ items: [] });
   if (u.pathname.endsWith('/lt/why')) return json({ text: 'Parce que.' });
-  if (u.pathname.endsWith('/lt/tv/channels')) return json([]);
+  if (u.pathname.endsWith('/lt/tv/facets')) return json({ countries: [{ id: 'FR', name: 'France', count: 3 }, { id: 'CH', count: 1 }], languages: { fr: 3, de: 1 }, categories: [{ id: 'news', label: 'Info', count: 2 }, { id: 'sport', label: 'Sport', count: 1 }] });
+  if (u.pathname.endsWith('/lt/tv/channels')) {
+    return json([
+      { id: 'a', name: 'Chaîne A', logo: '', group: '', cat: '', source: 'free-tv', fast: false, url: 'https://x/a.m3u8', sig: 's1', epgId: '', flaky: false, country: 'FR', languages: [{ code: 'fr', name: 'Français' }], categories: [{ id: 'news', label: 'Info' }], reliability: 'high', alternatives: [{ url: 'https://x/a2.m3u8', sig: 's2' }] },
+      { id: 'b', name: 'Chaîne B', logo: '', group: '', cat: '', source: 'iptv-org', fast: false, url: 'https://x/b.m3u8', sig: 's3', epgId: '', flaky: false, country: 'FR', languages: [{ code: 'fr', name: 'Français' }], categories: [{ id: 'sport', label: 'Sport' }], reliability: 'low' },
+      { id: 'c', name: 'Kanal C', logo: '', group: '', cat: '', source: 'iptv-org', fast: false, url: 'https://x/c.m3u8', sig: 's4', epgId: '', flaky: false, country: 'DE', languages: [{ code: 'de', name: 'Allemand' }], categories: [] },
+    ]);
+  }
+  if (u.pathname.endsWith('/lt/tv/epg')) return json([]);
   void init;
   return json({ error: 'not_found' }, 404);
 }
@@ -92,6 +100,49 @@ describe('interface portée', () => {
     expect(key.value).toBe('');
     expect(page.querySelector('[data-set-theme="teal"]')).not.toBeNull();
     expect((page.querySelector('select[data-set-pref="region"]') as HTMLSelectElement).value).toBe('FR');
+  });
+
+  it('n’affiche aucune donnée de démonstration', () => {
+    const app = document.getElementById('app')!;
+    expect(app.querySelector('#reprendre')).toBeNull();
+    expect(app.textContent).not.toMatch(/d[ée]mo/i);
+    expect(app.querySelector('#commencer')).not.toBeNull(); // « Pour bien commencer » : aucun signal, donc pas d'IA
+    expect(app.querySelector('#ai')).toBeNull();
+    expect(calls.some((c) => c.includes('/lt/recommend'))).toBe(false);
+  });
+
+  it('TV en direct : filtres pays/langue, facettes, fiabilité', async () => {
+    location.hash = '#/tv-live';
+    await settle(400);
+    const page = document.querySelector('#detail .tv-page')!;
+    expect(page).not.toBeNull();
+    const form = page.querySelector('#tv-filters') as HTMLFormElement;
+    expect((form.elements.namedItem('country') as HTMLSelectElement).value.toUpperCase()).toBe('FR');
+    expect((form.elements.namedItem('language') as HTMLSelectElement).value).toBe('fr');
+    expect((form.elements.namedItem('reliable') as HTMLInputElement).checked).toBe(true);
+    expect(calls.some((c) => c.includes('/lt/tv/channels?') && c.includes('country=FR') && c.includes('language=fr'))).toBe(true);
+    const names = Array.from(page.querySelectorAll('.epg-name')).map((n) => n.textContent);
+    expect(names).toEqual(['Chaîne A']); // B peu fiable et C allemande sont masquées
+    expect(page.querySelector('[data-tvcat="news"]')).not.toBeNull();
+  });
+
+  it('lecteur TV : essaie les alternatives avant d’afficher l’erreur', async () => {
+    const { tv, perrEl } = await import('../src/ui/tv.js');
+    const { failover } = await import('../src/ui/player.js');
+    const c = { id: 'z', url: 'https://x/z.m3u8', sig: 's', alternatives: [{ url: 'https://x/z2.m3u8', sig: 's2' }] };
+    tv.playToken = 7;
+    tv.attempt = 0;
+    perrEl.hidden = true;
+    failover(c, 7);
+    await settle(100);
+    expect(tv.attempt).toBe(1);
+    expect(perrEl.hidden).toBe(false); // les deux flux ont échoué (jsdom ne lit pas de HLS)
+    const solo = { id: 'y', url: 'https://x/y.m3u8', sig: 's', alternatives: [] };
+    tv.attempt = 0;
+    perrEl.hidden = true;
+    failover(solo, 7);
+    expect(tv.attempt).toBe(0);
+    expect(perrEl.hidden).toBe(false);
   });
 
   it('affiche la bibliothèque vide', async () => {

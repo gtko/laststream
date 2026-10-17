@@ -32,7 +32,7 @@ export function section(id, title, list, render, tag) {
     ? '<p class="row-msg" role="status">Cette rangée n’a pas pu être chargée.</p>'
     : list.length ? render(list) : '<p class="row-msg">Aucun contenu pour le moment.</p>';
   return '<section class="row-section" id="' + id + '" aria-labelledby="h-' + id + '">' +
-    '<h2 class="row-title" id="h-' + id + '">' + esc(title) + (tag ? ' <span class="demo-tag">' + tag + '</span>' : '') + '</h2>' +
+    '<h2 class="row-title" id="h-' + id + '">' + esc(title) + '</h2>' +
     body + '</section>';
 }
 export const row = (inner) => '<div class="row">' + inner + '</div>';

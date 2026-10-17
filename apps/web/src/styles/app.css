@@ -58,3 +58,11 @@
 .vplayer .f-round { font-size: 28px; line-height: 1; }
 .vplayer-title { font-family: var(--ff-title); font-weight: 700; font-size: 18px; }
 .vplayer .player-error { z-index: 4; }
+
+/* ---------- TV en direct : barre de filtres ---------- */
+.tv-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 0 var(--gutter) 18px; }
+.tv-filters .tv-field { min-width: 150px; }
+.tv-filters .tvf-search { flex: 1 1 200px; max-width: 320px; }
+.tv-filters select { max-width: 240px; }
+.tvf-rel { min-height: 44px; }
+@media (max-width: 640px) { .tv-filters { padding: 0 16px 14px; } .tv-filters .tv-field { flex: 1 1 140px; } }

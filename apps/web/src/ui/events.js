@@ -19,7 +19,7 @@ import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { playFrom } from './sources-ui.js';
 import { state } from './state.js';
-import { allChannels, appendRows, bannerEl, getFavs, playerEl, refreshCats, renderEpgGrid, showProg, tv, tvTest } from './tv.js';
+import { allChannels, bannerEl, moreRows, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 document.addEventListener('click', (e) => {
@@ -72,12 +72,7 @@ document.addEventListener('click', (e) => {
   const tfav = t.closest('[data-tvfav]');
   if (tfav) {
     e.preventDefault();
-    const favs = getFavs();
-    const id = tfav.dataset.tvfav;
-    const i = favs.indexOf(id);
-    if (i >= 0) favs.splice(i, 1); else favs.push(id);
-    store('ls_tv_fav', favs);
-    const on = i < 0;
+    const on = toggleFav(tfav.dataset.tvfav);
     tfav.setAttribute('aria-pressed', String(on));
     tfav.innerHTML = on ? ICON.starOn : ICON.star;
     refreshCats();
@@ -85,8 +80,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   const tcat = t.closest('[data-tvcat]');
-  if (tcat) { e.preventDefault(); tv.cat = tcat.dataset.tvcat; refreshCats(); renderEpgGrid(); const nb = detailEl.querySelector('[data-tvcat="' + tv.cat + '"]'); if (nb) nb.focus({ preventScroll: true }); return; }
-  if (t.closest('[data-tvflaky]')) { e.preventDefault(); tv.showFlaky = !tv.showFlaky; refreshCats(); renderEpgGrid(); return; }
+  if (tcat) { e.preventDefault(); setCategory(tcat.dataset.tvcat); return; }
   const tset = t.closest('[data-tvsettings]');
   if (tset) {
     e.preventDefault();
@@ -107,7 +101,7 @@ document.addEventListener('click', (e) => {
   }
   const tprog = t.closest('[data-tvprog]');
   if (tprog) { e.preventDefault(); const [cid, st] = tprog.dataset.tvprog.split('|'); showProg(cid, st); return; }
-  if (t.closest('[data-tvmore]')) { e.preventDefault(); appendRows(); return; }
+  if (t.closest('[data-tvmore]')) { e.preventDefault(); moreRows(); return; }
   const hcl = t.closest('[data-hclib]');
   if (hcl) {
     e.preventDefault();
@@ -181,7 +175,7 @@ document.addEventListener('click', (e) => {
       b.setAttribute('aria-pressed', String(on));
       b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span>';
     });
-    toast(on ? 'On te rappellera la sortie (démo)' : 'Rappel retiré');
+    toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     return;
   }
   const play = t.closest('[data-play]');
@@ -220,7 +214,7 @@ document.addEventListener('click', (e) => {
     rk.setAttribute('aria-pressed', String(on));
     rk.innerHTML = on ? ICON.check : ICON.bell;
     rk.dataset.tip = on ? 'Rappel activé' : 'Me rappeler';
-    toast(on ? 'On te rappellera la sortie (démo)' : 'Rappel retiré');
+    toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     return;
   }
   const cx = t.closest('[data-ctx]');

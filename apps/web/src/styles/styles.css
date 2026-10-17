@@ -95,11 +95,6 @@ body.modal-open { overflow: hidden; }
   background: rgba(255, 255, 255, 0.14); font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap;
 }
 .cert { font-weight: 600; }
-.demo-tag {
-  font-family: var(--ff-body); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; padding: 3px 7px; border-radius: 6px; background: var(--line-2); color: var(--dim);
-  vertical-align: middle;
-}
 
 /* ---------- Titre et logo du hero ---------- */
 .hero-title {
@@ -769,7 +764,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .ctxmenu svg { width: 20px; height: 20px; }
 
 /* ---------- TV en direct : rangée d'accueil ---------- */
-#live-slot:empty, #lib-slot:empty { display: none; }
+#live-slot:empty, #lib-slot:empty, #cont-slot:empty { display: none; }
 .live-tile {
   position: relative; flex: 0 0 320px; width: 320px; min-height: 176px; padding: 14px 16px 18px; border-radius: 14px; text-align: left; overflow: hidden;
   display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line-2); transition: transform 0.2s;

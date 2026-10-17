@@ -1,16 +1,20 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { tvChannels, tvEpg, tvImport } from '../data/lt';
+import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
+import { getRegion } from '../data/prefs';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
-import { esc, store } from './util.js';
+import { esc, names, store } from './util.js';
 
 export const tv = {
-  channels: null, loading: null, user: [], epg: new Map(), epgReq: new Set(), w0: 0,
-  cat: 'Toutes', showFlaky: false, list: [], shown: 0, homeList: [], play: null,
-  hls: null, hlsPromise: null, bannerTimer: null, stallTimer: null, playToken: 0, info: false, opener: null, io: null,
+  user: [], epg: new Map(), epgReq: new Set(), w0: 0,
+  cat: 'Toutes', list: [], shown: 0, homeList: [], play: null,
+  hls: null, hlsPromise: null, bannerTimer: null, stallTimer: null, playToken: 0, attempt: 0, info: false, opener: null, io: null,
+  // Catalogue : chaînes déjà chargées (par id), page courante du filtre, facettes, filtres.
+  byId: new Map(), pageList: [], page: 0, hasMore: false, fetching: false, total: null,
+  facets: null, catFacets: null, filters: null, qTimer: null,
 };
 export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
 export const PX_MIN = 160 / 30; // 30 min = 160 px
@@ -21,7 +25,48 @@ export const videoEl = document.getElementById('player-video');
 export const bannerEl = document.getElementById('player-banner');
 export const perrEl = document.getElementById('player-error');
 export const getFavs = () => store('ls_tv_fav') || [];
-export const allChannels = () => (tv.channels || []).concat(tv.user);
+export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user);
+const FAV_SNAP_KEY = 'ls_tv_favch';
+const FILTERS_KEY = 'ls_tv_filters';
+const PAGE_LIMIT = 60;
+const SPECIAL_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
+export const favSnaps = () => store(FAV_SNAP_KEY) || {};
+export { FAV_SNAP_KEY };
+
+/** Filtres par défaut : pays de la région choisie, français, chaînes fiables. */
+export const defaultFilters = () => ({ country: getRegion().code, language: 'fr', source: '', q: '', reliable: true });
+
+export function initFilters() {
+  if (!tv.filters) tv.filters = Object.assign(defaultFilters(), store(FILTERS_KEY) || {});
+  return tv.filters;
+}
+export const saveFilters = () => store(FILTERS_KEY, tv.filters);
+
+/** Chaîne du catalogue étendu ou de l'ancien format : champs absents tolérés. */
+export function normChannel(c) {
+  const cats = Array.isArray(c.categories) ? c.categories : [];
+  const low = c.reliability === 'low' || (c.reliability == null && !!c.flaky);
+  return Object.assign({}, c, {
+    cat: c.cat || (cats[0] && (cats[0].label || cats[0].id)) || '',
+    lowRel: low,
+    flaky: low,
+    alternatives: Array.isArray(c.alternatives) ? c.alternatives.filter((a) => a && a.url) : [],
+  });
+}
+
+/** Un filtre n'écarte une chaîne que si elle porte le champ concerné (ancien serveur : rien n'est écarté). */
+export function matchesFilters(c, f, cat) {
+  if (f.country && c.country && String(c.country).toUpperCase() !== String(f.country).toUpperCase()) return false;
+  if (f.language && Array.isArray(c.languages) && c.languages.length && !c.languages.some((l) => l.code === f.language)) return false;
+  if (f.source && c.source && c.source !== 'user' && c.source !== f.source) return false;
+  if (f.q && !String(c.name || '').toLowerCase().includes(f.q.toLowerCase())) return false;
+  if (f.reliable && c.lowRel) return false;
+  if (cat && !SPECIAL_CATS.includes(cat)) {
+    if (Array.isArray(c.categories) && c.categories.length) return c.categories.some((k) => k.id === cat || k.label === cat);
+    return !c.cat || c.cat === cat;
+  }
+  return true;
+}
 export const epgKey = (c) => (c.source === 'user' ? c.epgId || '' : c.id);
 export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
@@ -41,16 +86,74 @@ export function loadUserPlaylist() {
   return tvImport(cfg).then((j) => { tv.user = j.channels || []; }).catch(() => { tv.user = []; });
 }
 
-export function loadTvChannels() {
-  if (!tv.loading) {
-    tv.loading = (async () => {
-      tv.channels = await tvChannels();
-      await loadUserPlaylist();
-      return tv.channels;
-    })();
-    tv.loading.catch(() => { tv.loading = null; });
+export async function loadTvChannels() {
+  // Rangée d'accueil : pays + langue de l'utilisateur, chaînes fiables seulement.
+  const f = initFilters();
+  const r = await fetchChannels({ country: f.country, language: f.language, limit: 120, page: 1 }, { country: f.country, language: f.language, reliable: true }, 'Toutes');
+  return r.channels;
+}
+
+/** Une page de chaînes (serveur paginé) ou toute la liste (ancien serveur : filtrée ici, découpée à l'affichage). */
+export async function fetchChannels(params, filters, cat) {
+  const q = {};
+  Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) q[k] = v; });
+  const res = await tvChannels(q);
+  const raw = Array.isArray(res) ? res : (res && (res.channels || res.items)) || [];
+  const limit = Number(params.limit) || PAGE_LIMIT;
+  const all = raw.map(normChannel);
+  all.forEach((c) => tv.byId.set(c.id, c));
+  const total = !Array.isArray(res) && res && typeof res.total === 'number' ? res.total : null;
+  const legacy = raw.length > limit; // le serveur a ignoré country, limit et page
+  const channels = all.filter((c) => matchesFilters(c, filters, cat));
+  const hasMore = !legacy && (total != null ? (Number(params.page) || 1) * limit < total : raw.length >= limit);
+  return { channels, hasMore, total, legacy };
+}
+
+function serverParams(page) {
+  const f = initFilters();
+  return { country: f.country, language: f.language, source: f.source, q: f.q, page, limit: PAGE_LIMIT, category: SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat };
+}
+
+export async function loadChannelsPage(reset) {
+  if (reset) { tv.page = 0; tv.pageList = []; tv.hasMore = false; tv.total = null; }
+  if (tv.cat === 'Favoris' || tv.cat === 'Ma playlist') return;
+  if (tv.fetching) return;
+  tv.fetching = true;
+  try {
+    const r = await fetchChannels(serverParams(tv.page + 1), initFilters(), tv.cat);
+    tv.page += 1;
+    const seen = new Set(tv.pageList.map((c) => c.id));
+    r.channels.forEach((c) => { if (!seen.has(c.id)) tv.pageList.push(c); });
+    tv.hasMore = r.hasMore;
+    tv.total = r.total;
+  } finally {
+    tv.fetching = false;
   }
-  return tv.loading;
+}
+
+function normFacet(x, labelOf) {
+  if (!x) return [];
+  const arr = Array.isArray(x)
+    ? x.map((e) => ({ id: String(e.id != null ? e.id : e.code != null ? e.code : e.value != null ? e.value : ''), label: e.label || e.name || '', count: Number(e.count != null ? e.count : e.n) || 0 }))
+    : Object.entries(x).map(([k, v]) => (typeof v === 'number' ? { id: k, label: '', count: v } : { id: k, label: (v && (v.label || v.name)) || '', count: Number(v && v.count) || 0 }));
+  return arr.filter((e) => e.id).map((e) => Object.assign(e, { label: e.label || labelOf(e.id) })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
+}
+
+export function normFacets(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const f = {
+    countries: normFacet(raw.countries || raw.country, (id) => names('region', id.toUpperCase())),
+    languages: normFacet(raw.languages || raw.language, (id) => names('language', id)),
+    categories: normFacet(raw.categories || raw.category, (id) => id),
+    sources: normFacet(raw.sources || raw.source, (id) => id),
+  };
+  return f.countries.length || f.languages.length || f.categories.length || f.sources.length ? f : null;
+}
+
+export async function loadFacets() {
+  const f = initFilters();
+  tv.facets = normFacets(await tvFacets());
+  tv.catFacets = normFacets(await tvFacets({ country: f.country, language: f.language })) || tv.facets;
 }
 
 export async function ensureEpg(chs) {
@@ -90,10 +193,11 @@ export function liveTile(c, nn, now) {
 export async function renderLive() {
   try {
     if (state.status !== 'ready' || !document.getElementById('live-slot')) return;
-    const chs = (await loadTvChannels()).filter((c) => !c.flaky);
+    const chs = await loadTvChannels();
     const pool = chs.filter((c) => !c.fast).slice(0, 24).concat(chs.filter((c) => c.fast).slice(0, 12));
     await ensureEpg(pool);
     const now = Math.floor(Date.now() / 1000);
+    // Seulement les chaînes dont le guide indique un programme en cours.
     const live = pool.map((c) => ({ c, nn: nowNext(c, now) })).filter((x) => x.nn.cur);
     const pick = live.filter((x) => !x.c.fast).slice(0, 8).concat(live.filter((x) => x.c.fast).slice(0, 4));
     const slot = document.getElementById('live-slot');
@@ -104,32 +208,63 @@ export async function renderLive() {
   } catch (_) { /* rangée absente */ }
 }
 
-// Page #/tv-live
 export function tvFilter() {
   const favs = getFavs();
-  let l = allChannels().filter((c) => (c.flaky ? tv.showFlaky : true));
   const cat = tv.cat;
-  if (cat === 'Favoris') l = l.filter((c) => favs.includes(c.id));
-  else if (cat === 'FAST') l = l.filter((c) => c.fast);
-  else if (cat === 'Ma playlist') l = l.filter((c) => c.source === 'user');
-  else if (cat !== 'Toutes') l = l.filter((c) => c.source !== 'user' && c.cat === cat);
-  if (cat === 'Toutes') l = l.slice().sort((a, b) => (favs.includes(b.id) ? 1 : 0) - (favs.includes(a.id) ? 1 : 0));
-  return l;
+  let l;
+  if (cat === 'Favoris') {
+    const snaps = favSnaps();
+    l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]))).filter(Boolean);
+  } else if (cat === 'Ma playlist') {
+    l = tv.user.slice();
+  } else {
+    l = tv.pageList.filter((c) => matchesFilters(c, initFilters(), cat));
+  }
+  // Favoris d'abord, sans changer l'ordre du catalogue ensuite.
+  return l.map((c, i) => ({ c, i })).sort((a, b) => (favs.includes(b.c.id) ? 1 : 0) - (favs.includes(a.c.id) ? 1 : 0) || a.i - b.i).map((x) => x.c);
 }
 
 export function catCount(cat) {
-  const prev = tv.cat;
-  tv.cat = cat;
-  const n = tvFilter().length;
-  tv.cat = prev;
-  return n;
+  if (cat === 'Favoris') return getFavs().length;
+  if (cat === 'Ma playlist') return tv.user.length;
+  const fx = tv.catFacets && tv.catFacets.categories.find((k) => k.id === cat || k.label === cat);
+  if (fx) return fx.count;
+  if (cat === 'Toutes') return tv.total != null ? tv.total : '';
+  return tv.catFacets ? '' : tv.pageList.filter((c) => c.cat === cat).length;
 }
 
 export function catsHTML() {
-  const flaky = allChannels().filter((c) => c.flaky).length;
-  return TV_CATS.map((c) => '<div data-nav><button type="button" class="tv-cat" data-tvcat="' + esc(c) + '" aria-pressed="' + (c === tv.cat) + '">' + esc(c) +
-    ' <span>' + catCount(c) + '</span></button></div>').join('') +
-    (flaky ? '<div data-nav><button type="button" class="tv-cat tv-flaky" data-tvflaky aria-pressed="' + tv.showFlaky + '">Chaînes instables <span>' + flaky + '</span></button></div>' : '');
+  const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.map((k) => ({ id: k.id, label: k.label })) : null;
+  const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: c }))
+    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c)).map((c) => ({ id: c, label: c })))
+    .concat([{ id: 'Ma playlist', label: 'Ma playlist' }]);
+  return list.map((c) => {
+    const n = catCount(c.id);
+    return '<div data-nav><button type="button" class="tv-cat" data-tvcat="' + esc(c.id) + '" aria-pressed="' + (c.id === tv.cat) + '">' + esc(c.label) +
+      (n === '' ? '' : ' <span>' + n + '</span>') + '</button></div>';
+  }).join('');
+}
+
+const optHTML = (list, cur, allLabel) => '<option value="">' + esc(allLabel) + '</option>' + list.map((o) =>
+  '<option value="' + esc(o.id) + '"' + (o.id.toLowerCase() === String(cur || '').toLowerCase() ? ' selected' : '') + '>' + esc(o.label) + (o.count ? ' (' + o.count + ')' : '') + '</option>').join('');
+
+/** Barre de filtres : pays, langue, catégorie, source, recherche et « Fiable ». */
+export function filtersHTML() {
+  const f = initFilters();
+  const fx = tv.facets;
+  const withCur = (list, cur, label) => (cur && !list.some((o) => o.id.toLowerCase() === cur.toLowerCase()) ? [{ id: cur, label, count: 0 }].concat(list) : list);
+  const countries = fx ? fx.countries.map((o) => Object.assign({}, o, { label: o.label + ' · ' + o.id.toUpperCase() })) : [];
+  const cList = withCur(countries, f.country, names('region', f.country) + ' · ' + f.country);
+  const lList = withCur(fx ? fx.languages : [], f.language, names('language', f.language));
+  const catList = (tv.catFacets && tv.catFacets.categories) || [];
+  const srcList = fx ? fx.sources : [];
+  return '<form id="tv-filters" class="tv-filters" role="search" aria-label="Filtrer les chaînes">' +
+    '<label class="tv-field">Pays<select name="country">' + optHTML(cList, f.country, 'Tous les pays') + '</select></label>' +
+    '<label class="tv-field">Langue<select name="language">' + optHTML(lList, f.language, 'Toutes les langues') + '</select></label>' +
+    (catList.length ? '<label class="tv-field">Catégorie<select name="category">' + optHTML(catList, SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat, 'Toutes les catégories') + '</select></label>' : '') +
+    (srcList.length ? '<label class="tv-field">Source<select name="source">' + optHTML(srcList, f.source, 'Toutes les sources') + '</select></label>' : '') +
+    '<label class="tv-field tvf-search">Recherche<input type="search" name="q" value="' + esc(f.q) + '" placeholder="Nom de la chaîne" autocomplete="off"></label>' +
+    '<label class="set-check tvf-rel"><input type="checkbox" name="reliable"' + (f.reliable ? ' checked' : '') + '> <span>Fiable</span></label></form>';
 }
 
 export function settingsHTML() {
@@ -156,7 +291,7 @@ export function tvPageHTML() {
     '<h1 class="svc-title" id="tv-title" tabindex="-1">TV en direct</h1></div><div class="tv-head-actions" data-nav>' +
     (last ? '<button type="button" class="btn btn-primary" data-tvplay="' + esc(last.id) + '">' + ICON.play + '<span>Reprendre la dernière chaîne</span></button>' : '') +
     '<button type="button" class="btn btn-ghost" data-tvsettings aria-expanded="false">' + ICON.gear + '<span>Ma playlist</span></button></div></header>' +
-    '<div class="tv-body"><nav class="tv-cats" id="tv-cats" aria-label="Catégories">' + catsHTML() + '</nav><div class="tv-main">' +
+    filtersHTML() + '<div class="tv-body"><nav class="tv-cats" id="tv-cats" aria-label="Catégories">' + catsHTML() + '</nav><div class="tv-main">' +
     '<div id="tv-settings" class="tv-settings glass" hidden>' + settingsHTML() + '</div>' +
     '<div class="tv-detail glass" id="tv-detail" aria-live="polite"><p class="tv-detail-hint">Sélectionne un programme pour voir le détail. Entrée lance la chaîne.</p></div>' +
     '<div class="epg" id="epg"></div></div></div></article>';
@@ -204,6 +339,19 @@ export function fillEpgRow(c) {
     '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
 }
 
+export async function moreRows() {
+  if (tv.shown < tv.list.length) { appendRows(); return; }
+  if (!tv.hasMore || tv.fetching) return;
+  const token = state.token;
+  const more = detailEl.querySelector('#epg-more');
+  if (more) more.innerHTML = '<p class="row-msg">Chargement…</p>';
+  try { await loadChannelsPage(false); } catch (_) { /* la liste reste telle quelle */ }
+  if (token !== state.token) return;
+  tv.list = tvFilter();
+  refreshCats();
+  appendRows();
+}
+
 export function appendRows() {
   const box = detailEl.querySelector('#epg-rows');
   const more = detailEl.querySelector('#epg-more');
@@ -214,11 +362,11 @@ export function appendRows() {
   const token = state.token;
   ensureEpg(batch).then(() => { if (token === state.token) batch.forEach(fillEpgRow); });
   if (more) {
-    if (tv.shown < tv.list.length) {
-      more.innerHTML = '<button type="button" class="btn btn-ghost" data-tvmore>Afficher plus de chaînes (' + (tv.list.length - tv.shown) + ')</button>';
+    if (tv.shown < tv.list.length || tv.hasMore) {
+      more.innerHTML = '<button type="button" class="btn btn-ghost" data-tvmore>Afficher plus de chaînes' + (tv.shown < tv.list.length ? ' (' + (tv.list.length - tv.shown) + ')' : '') + '</button>';
       if (tv.io) tv.io.disconnect();
       if ('IntersectionObserver' in window) {
-        tv.io = new IntersectionObserver((en) => { if (en[0].isIntersecting) { tv.io.disconnect(); appendRows(); } }, { rootMargin: '200px' });
+        tv.io = new IntersectionObserver((en) => { if (en[0].isIntersecting) { tv.io.disconnect(); moreRows(); } }, { rootMargin: '200px' });
         tv.io.observe(more);
       }
     } else {
@@ -234,7 +382,7 @@ export function renderEpgGrid() {
   tv.shown = 0;
   if (tv.io) tv.io.disconnect();
   if (!tv.list.length) {
-    epg.innerHTML = '<p class="row-msg">' + (tv.cat === 'Favoris' ? 'Aucun favori pour le moment : clique sur l’étoile d’une chaîne.' : tv.cat === 'Ma playlist' ? 'Aucune chaîne : ajoute une playlist avec le bouton « Ma playlist ».' : 'Aucune chaîne dans cette catégorie.') + '</p>';
+    epg.innerHTML = '<p class="row-msg">' + (tv.cat === 'Favoris' ? 'Aucun favori pour le moment : clique sur l’étoile d’une chaîne.' : tv.cat === 'Ma playlist' ? 'Aucune chaîne : ajoute une playlist avec le bouton « Ma playlist ».' : 'Aucune chaîne pour ces filtres : élargis le pays, la langue ou la recherche.') + '</p>';
     return;
   }
   epg.innerHTML = epgShell();
@@ -252,7 +400,10 @@ export async function showTvLive() {
   state.kind = 'tvlive';
   document.title = 'TV en direct · Laststream';
   detailEl.innerHTML = topBar(false) + '<article class="svc-page is-loading" aria-busy="true" tabindex="-1"><header class="svc-head"><span class="sk sk-title"></span></header></article>';
-  try { await loadTvChannels(); } catch (_) {
+  try {
+    initFilters();
+    await Promise.all([loadChannelsPage(true), loadFacets().catch(() => {}), loadUserPlaylist()]);
+  } catch (_) {
     if (token === state.token) detailEl.innerHTML = svcError('La TV en direct n’a pas pu être chargée.');
     return;
   }
@@ -303,3 +454,64 @@ export async function tvTest(save) {
     msg.textContent = 'Playlist inaccessible ou refusée. Vérifie l’adresse et tes identifiants.';
   }
 }
+
+/** Choix d'une catégorie (navigation latérale ou liste déroulante) : nouvelle requête au serveur. */
+export async function setCategory(cat) {
+  tv.cat = cat || 'Toutes';
+  await reloadList();
+  const nb = detailEl.querySelector('[data-tvcat="' + tv.cat.replace(/"/g, '\\"') + '"]');
+  if (nb) nb.focus({ preventScroll: true });
+}
+
+/** Ajoute ou retire une chaîne des favoris ; garde un instantané pour l'afficher hors du filtre courant. */
+export function toggleFav(id) {
+  const favs = getFavs();
+  const i = favs.indexOf(id);
+  const snaps = favSnaps();
+  if (i >= 0) { favs.splice(i, 1); delete snaps[id]; } else {
+    favs.push(id);
+    const c = tv.byId.get(id) || tv.user.find((x) => x.id === id);
+    if (c) snaps[id] = c;
+  }
+  store('ls_tv_fav', favs);
+  store(FAV_SNAP_KEY, snaps);
+  return i < 0;
+}
+
+export async function reloadList() {
+  const token = state.token;
+  const epg = detailEl.querySelector('#epg');
+  if (epg) epg.innerHTML = '<p class="row-msg" role="status">Chargement des chaînes…</p>';
+  try { await loadChannelsPage(true); } catch (_) {
+    if (epg && token === state.token) epg.innerHTML = '<p class="row-msg" role="alert">Les chaînes n’ont pas pu être chargées.</p>';
+    return;
+  }
+  if (token !== state.token) return;
+  refreshCats();
+  renderEpgGrid();
+}
+
+function applyFilterField(t) {
+  const f = initFilters();
+  if (t.name === 'category') { setCategory(t.value); return; }
+  if (t.name === 'reliable') f.reliable = t.checked;
+  else if (t.name === 'q') f.q = t.value.trim();
+  else f[t.name] = t.value;
+  saveFilters();
+  loadFacets().then(() => { if (state.kind === 'tvlive') refreshCats(); }).catch(() => {});
+  reloadList();
+}
+
+detailEl.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t instanceof HTMLElement && t.closest('#tv-filters') && t.name && t.name !== 'q') applyFilterField(t);
+});
+detailEl.addEventListener('input', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || t.name !== 'q' || !t.closest('#tv-filters')) return;
+  clearTimeout(tv.qTimer);
+  tv.qTimer = setTimeout(() => applyFilterField(t), 300);
+});
+detailEl.addEventListener('submit', (e) => {
+  if (e.target && e.target.id === 'tv-filters') e.preventDefault();
+});

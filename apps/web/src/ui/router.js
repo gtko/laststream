@@ -2,6 +2,7 @@
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
 import { closeHover } from './hover.js';
+import { renderContinue } from './home.js';
 import { renderLibrary, showLibrary } from './library.js';
 import { closeModal } from './modal.js';
 import { showPerson } from './person.js';
@@ -88,6 +89,7 @@ export function route() {
     window.scrollTo(0, state.homeScroll);
     setupPreviews();
     renderLibrary();
+    renderContinue();
     renderLive();
     const t = state.lastFocus;
     state.lastFocus = null;

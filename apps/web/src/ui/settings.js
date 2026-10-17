@@ -384,6 +384,7 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'skip-next') setSkipPref('nextEpisode', t.checked);
   else if (p === 'region') {
     setRegion(t.value);
+    try { localStorage.removeItem('ls_tv_filters'); } catch (_) { /* ignoré */ }
     clearCache();
     toast('Région mise à jour : rechargement…');
     setTimeout(() => location.reload(), 600);

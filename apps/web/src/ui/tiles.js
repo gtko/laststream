@@ -45,7 +45,7 @@ export function tileCard(it, o) {
   if (upDate) label.push('Prochainement, le ' + fmtDate(upDate) + (it.upLabel ? ' (' + it.upLabel + ')' : ''));
   else if (rank) label.push('Top 10 cette semaine, numéro ' + rank);
   else if (fresh) label.push(fresh);
-  if (o.pct != null) label.push(o.pct + ' % vu (démo)');
+  if (o.pct != null) label.push(o.pct + ' % vu');
   if (o.sub) label.push(o.sub);
   else if (!upDate && score) label.push('note ' + score);
 
@@ -85,7 +85,7 @@ export function topCard(it, n) {
     '<span class="rib-top" aria-hidden="true"><b>TOP</b><i>' + n + '</i><em>cette semaine</em></span></span></button>';
 }
 
-// DÉMO : « Reprendre la lecture » montre de vrais titres (carte à logo) avec une progression factice.
+// « Reprendre la lecture » : carte à logo avec la progression réelle.
 export function continueCard(it, pct) {
   const d = detailOf(it);
   const rem = d.minutes ? Math.round(d.minutes * (1 - pct / 100)) : 0;

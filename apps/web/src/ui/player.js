@@ -49,39 +49,61 @@ export function playFail(token) {
   if (b) b.focus();
 }
 
+const sourcesOf = (c) => [{ url: c.url, sig: c.sig }].concat(c.alternatives || []);
+const isDirectFile = (u) => /\.(mp4|webm|mkv|ts)(\?|$)/i.test(u);
+
 export function startStream() {
   const c = curChannel();
   if (!c) return;
   const token = ++tv.playToken;
-  destroyStream();
-  perrEl.hidden = true;
-  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig });
+  tv.attempt = 0;
+  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [] });
   updateBanner();
   showBanner();
   ensureEpg([c]).then(() => { if (token === tv.playToken) { updateBanner(); } });
+  tryStream(c, token);
+}
+
+/** Échec d'un flux : essaie les alternatives de la chaîne avant d'afficher « Cette chaîne ne répond pas ». */
+export function failover(c, token) {
+  if (token !== tv.playToken) return;
+  clearTimeout(tv.stallTimer);
+  if (tv.attempt + 1 < sourcesOf(c).length) {
+    tv.attempt += 1;
+    tryStream(c, token);
+    return;
+  }
+  playFail(token);
+}
+
+function tryStream(c, token) {
+  destroyStream();
+  perrEl.hidden = true;
+  const cur = sourcesOf(c)[tv.attempt];
+  const fail = () => failover(c, token);
   videoEl.onplaying = () => { clearTimeout(tv.stallTimer); perrEl.hidden = true; };
-  videoEl.onerror = () => playFail(token);
-  tv.stallTimer = setTimeout(() => playFail(token), 20000);
-  const proxied = c.sig ? tvHlsUrl(c) : '';
-  if (!proxied && !/\.(mp4|webm|mkv|ts)(\?|$)/i.test(c.url)) {
-    playFail(token);
-  } else if (/\.(mp4|webm|mkv|ts)(\?|$)/i.test(c.url)) {
-    videoEl.src = c.url;
+  videoEl.onerror = fail;
+  tv.stallTimer = setTimeout(fail, 20000);
+  const proxied = cur.sig ? tvHlsUrl(cur) : '';
+  if (isDirectFile(cur.url)) {
+    videoEl.src = cur.url;
     videoEl.play().catch(() => {});
+  } else if (!proxied) {
+    fail();
   } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
     videoEl.src = proxied;
     videoEl.play().catch(() => {});
   } else {
     loadHls().then((H) => {
-      if (token !== tv.playToken) return;
-      if (!H || !H.isSupported()) { playFail(token); return; }
+      if (token !== tv.playToken || tv.attempt !== sourcesOf(c).indexOf(cur)) return;
+      if (!H || !H.isSupported()) { fail(); return; }
       const h = new H({ maxBufferLength: 20 });
       tv.hls = h;
-      h.on(H.Events.ERROR, (_e, d) => { if (d && d.fatal) playFail(token); });
+      h.on(H.Events.ERROR, (_e, d) => { if (d && d.fatal) fail(); });
       h.on(H.Events.MANIFEST_PARSED, () => { videoEl.play().catch(() => {}); });
       h.loadSource(proxied);
       h.attachMedia(videoEl);
-    }).catch(() => playFail(token));
+    }).catch(fail);
   }
 }
 

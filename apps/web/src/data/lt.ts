@@ -51,13 +51,36 @@ export interface TvChannel {
   sig: string | null;
   epgId: string;
   flaky: boolean;
+  /** Catalogue étendu (Free-TV / iptv-org) : tous les champs sont facultatifs. */
+  country?: string;
+  countryName?: string;
+  languages?: Array<{ code: string; name: string }>;
+  categories?: Array<{ id: string; label: string }>;
+  quality?: string;
+  reliability?: 'high' | 'low';
+  alternatives?: Array<{ url: string; sig: string | null }>;
+}
+
+export interface TvChannelQuery {
+  country?: string;
+  language?: string;
+  category?: string;
+  source?: string;
+  q?: string;
+  page?: number;
+  limit?: number;
 }
 
 export type TvImportRequest =
   | { type: 'm3u'; url: string }
   | { type: 'xtream'; server: string; username: string; password: string };
 
-export const tvChannels = () => api<TvChannel[]>('tv/channels');
+/** Liste (tableau) ou page `{channels, total}` selon la version du serveur. */
+export const tvChannels = (query: TvChannelQuery = {}) =>
+  api<TvChannel[] | { channels?: TvChannel[]; items?: TvChannel[]; total?: number }>('tv/channels', { ...query });
+/** Compteurs par pays, langue, catégorie et source ; null si le serveur ne les expose pas. */
+export const tvFacets = (query: Pick<TvChannelQuery, 'country' | 'language'> = {}) =>
+  api<any>('tv/facets', { ...query }).catch(() => null);
 export const tvEpg = (ids: string[], from: number, to: number) => api<any[]>('tv/epg', { ids: ids.join(','), from, to });
 export const tvImport = (cfg: TvImportRequest) => postLt<{ count: number; channels: TvChannel[] }>('tv/import', cfg);
 
