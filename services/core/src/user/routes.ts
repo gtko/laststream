@@ -354,7 +354,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
   });
 
   /**
-   * Déverrouillage par PIN : jeton de profil (10 minutes), lié à la session et à la version du PIN. Cinq échecs
+   * Déverrouillage par PIN : jeton de profil (30 jours), lié à la session et à la version du PIN. Cinq échecs
    * bloquent le profil 15 minutes : pendant le blocage, le PIN n'est même pas vérifié (429 pin_locked).
    */
   router.post('/profiles/:id/unlock', async (req, res) => {
@@ -379,6 +379,15 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     const lockedNow = users.pinLockedUntil(profile.id, nowIso());
     if (lockedNow !== null) throw pinLocked(lockedNow);
     throw new UserApiError(403, 'invalid_pin');
+  });
+
+  /**
+   * Verrouillage explicite, appelé par le client au changement de profil. Sans effet côté serveur : le jeton reste
+   * valable jusqu'à déconnexion, changement de PIN ou expiration. Le profil doit appartenir au compte.
+   */
+  router.post('/profiles/:id/lock', (req, res) => {
+    scopeOf(db(), req, deps.secret, false);
+    res.status(204).end();
   });
 
   // Bibliothèque

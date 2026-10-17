@@ -14,8 +14,11 @@ const SCRYPT_P = 1;
 const SCRYPT_MAX_MEM = 64 * 1024 * 1024;
 const SCRYPT_PREFIX = 'scrypt';
 
-/** Jeton de profil (déverrouillage PIN) : valide 10 minutes. */
-export const PROFILE_TOKEN_TTL_MS = 10 * 60_000;
+/**
+ * Jeton de profil (déverrouillage PIN) : valide 30 jours, comme un profil resté déverrouillé sur un appareil. Il
+ * cesse de valoir à la déconnexion, au changement de PIN, ou au changement de session.
+ */
+export const PROFILE_TOKEN_TTL_MS = 30 * 24 * 3600_000;
 const PROFILE_TOKEN_PURPOSE = 'profile-unlock';
 
 function scryptAsync(secret: string, salt: Buffer, n: number, r: number, p: number): Promise<Buffer> {

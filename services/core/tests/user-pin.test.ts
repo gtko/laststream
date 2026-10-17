@@ -199,12 +199,22 @@ describe('PIN : jeton lié à la session et à la version du PIN', () => {
     expect((await unlock('3333')).status).toBe(200);
   });
 
-  it('jeton expiré après 10 minutes', async () => {
+  it('jeton valable 30 jours, expiré ensuite', async () => {
     setClock(T0);
     const pinToken = await unlockToken();
-    setClock(T0 + 10 * 60_000 + 1000);
+    setClock(T0 + 10 * 60_000);
+    expect((await request(app, 'GET', `/user/profiles/${protectedId}/library`, { token, headers: { 'x-profile-token': pinToken } })).status).toBe(200);
+    setClock(T0 + 29 * 86_400_000);
+    expect((await request(app, 'GET', `/user/profiles/${protectedId}/library`, { token, headers: { 'x-profile-token': pinToken } })).status).toBe(200);
+    setClock(T0 + 30 * 86_400_000 + 1000);
     const res = await request<ErrorBody>(app, 'GET', `/user/profiles/${protectedId}/library`, { token, headers: { 'x-profile-token': pinToken } });
     expect(res.body).toEqual({ error: 'pin_required' });
+  });
+
+  it('verrouillage explicite : 204 pour un profil du compte, 404 pour un profil inconnu, 401 sans session', async () => {
+    expect((await request(app, 'POST', `/user/profiles/${protectedId}/lock`, { token })).status).toBe(204);
+    expect((await request(app, 'POST', `/user/profiles/${protectedId}/lock`)).status).toBe(401);
+    expect((await request(app, 'POST', '/user/profiles/inconnu/lock', { token })).status).toBe(404);
   });
 
   it('retirer le PIN lève la protection des routes de données', async () => {

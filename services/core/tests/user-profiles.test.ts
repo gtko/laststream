@@ -126,7 +126,7 @@ describe('profils : modification et suppression', () => {
     expect(del.status).toBe(403);
   });
 
-  it('déverrouillage : mauvais PIN 403, profil sans PIN 409, bon PIN : jeton de 10 minutes', async () => {
+  it('déverrouillage : mauvais PIN 403, profil sans PIN 409, bon PIN : jeton de 30 jours', async () => {
     const protectedProfile = (await createProfile({ name: 'Protégé', pin: '1111' })).body as ProfileBody;
     const open = (await createProfile({ name: 'Libre' })).body as ProfileBody;
     const wrong = await unlock(protectedProfile.id, '0000');
@@ -135,9 +135,9 @@ describe('profils : modification et suppression', () => {
     expect((await unlock(open.id, '1111')).status).toBe(409);
     const ok = await unlock(protectedProfile.id, '1111');
     expect(ok.status).toBe(200);
-    const minutes = (Date.parse((ok.body as UnlockBody).expiresAt) - Date.now()) / 60_000;
-    expect(minutes).toBeGreaterThan(9.9);
-    expect(minutes).toBeLessThan(10.1);
+    const days = (Date.parse((ok.body as UnlockBody).expiresAt) - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(29.9);
+    expect(days).toBeLessThan(30.1);
   });
 
   it('jeton de déverrouillage : permet la modification, lié à ce profil, et expire', async () => {
@@ -161,7 +161,7 @@ describe('profils : modification et suppression', () => {
     expect(edited.body.name).toBe('Renommé');
 
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.now() + 11 * 60_000);
+    vi.setSystemTime(Date.now() + 31 * 86_400_000);
     const expired = await request<ErrorBody>(app, 'DELETE', `/user/profiles/${protectedProfile.id}`, {
       token: alice,
       headers: { 'x-profile-token': token.token },
