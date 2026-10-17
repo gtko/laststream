@@ -1,8 +1,10 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { encodeConfig } from './config/codec.js';
+import { decodeConfig, encodeConfig } from './config/codec.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { allowedOrigins } from './config/runtime-env.js';
 import type { AppDeps } from './deps.js';
+import { catalogEntries } from './lt/catalog.js';
+import { registerLtRoutes } from './lt/router.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
@@ -30,6 +32,18 @@ const OPEN_CORS_PATHS: readonly RegExp[] = [
 ];
 /** Endpoints de configuration (/config/*) : origines restreintes et limite de débit. */
 const CONFIG_PATH = /^\/config(?:\/|$)/;
+/** Routes lt et catalogues (proxys publics par configuration) : GET ouvert à toute origine. */
+const OPEN_LT_PATHS: readonly RegExp[] = [/^\/[^/]+\/lt\/.+$/, /^\/[^/]+\/catalog\/.+$/];
+/** Routes lt en POST : origines restreintes et limite de débit, comme /config/*. */
+const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
+
+/** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
+function isOpenPath(req: Request): boolean {
+  if (OPEN_CORS_PATHS.some((pattern) => pattern.test(req.path))) return true;
+  if (!OPEN_LT_PATHS.some((pattern) => pattern.test(req.path))) return false;
+  if (req.method === 'GET') return true;
+  return req.method === 'OPTIONS' && req.get('access-control-request-method') === 'GET';
+}
 const CONFIG_RATE_LIMIT = 30;
 const CONFIG_RATE_WINDOW_MS = 60_000;
 const RATE_TABLE_PRUNE_SIZE = 10_000;
@@ -40,11 +54,11 @@ const RATE_TABLE_PRUNE_SIZE = 10_000;
  */
 function corsMiddleware(origins: readonly string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (OPEN_CORS_PATHS.some((pattern) => pattern.test(req.path))) {
+    if (isOpenPath(req)) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(req.path)) {
+    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path)) {
       const origin = req.get('origin');
       res.vary('Origin');
       if (origin !== undefined && origins.includes(origin)) {
@@ -82,10 +96,10 @@ export function createRateLimiter(limit: number, windowMs: number, now: () => nu
   };
 }
 
-/** Limite /config/* à CONFIG_RATE_LIMIT requêtes par minute et par IP (les préflights OPTIONS ne comptent pas). */
-function configRateLimit(limiter: ReturnType<typeof createRateLimiter>) {
+/** Limite les requêtes qui satisfont `applies` à CONFIG_RATE_LIMIT par minute et par IP (préflights OPTIONS exclus). */
+function rateLimit(applies: (req: Request) => boolean, limiter: ReturnType<typeof createRateLimiter>) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!CONFIG_PATH.test(req.path) || req.method === 'OPTIONS') {
+    if (!applies(req) || req.method === 'OPTIONS') {
       next();
       return;
     }
@@ -110,11 +124,29 @@ function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFun
   res.status(500).json({ error: 'internal_error' });
 }
 
+/**
+ * Manifest d'une configuration. Les catalogues Stremio ne sont annoncés que si le jeton TMDB est configuré ;
+ * une configuration illisible renvoie le manifest de base (comportement inchangé).
+ */
+function hasTmdbToken(deps: AppDeps, encoded: string): boolean {
+  try {
+    return decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain }).services.tmdbToken !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+function manifestFor(deps: AppDeps, encoded: string) {
+  if (!hasTmdbToken(deps, encoded)) return MANIFEST;
+  return { ...MANIFEST, resources: ['stream', 'catalog'], catalogs: catalogEntries() };
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
   app.use(corsMiddleware(allowedOrigins()));
-  app.use(configRateLimit(createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => {
@@ -125,8 +157,8 @@ export function createApp(deps: AppDeps): Express {
     res.json(MANIFEST);
   });
 
-  app.get('/:config/manifest.json', (_req, res) => {
-    res.json(MANIFEST);
+  app.get('/:config/manifest.json', (req, res) => {
+    res.json(manifestFor(deps, req.params.config));
   });
 
   app.get('/config/schema', (_req, res) => {
@@ -148,6 +180,7 @@ export function createApp(deps: AppDeps): Express {
   registerStreamRoutes(app, deps);
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
+  registerLtRoutes(app, deps);
 
   app.use(errorHandler);
   return app;

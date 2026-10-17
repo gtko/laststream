@@ -30,7 +30,47 @@ const TorznabSourceSchema = z.object({
   categories: z.array(z.number().int().positive()).optional(),
 });
 
+/** Clé de service facultative : libellé et description affichés dans /config/schema. */
+const serviceKey = (title: string, description: string) =>
+  z.string().trim().min(1).max(500).meta({ title, description }).optional();
+
+/**
+ * Clés des services de données (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Toutes facultatives :
+ * une route qui en a besoin répond 404 `service_not_configured` si sa clé manque.
+ */
+const ServicesSchema = z
+  .object({
+    tmdbToken: serviceKey(
+      'Jeton TMDB (lecture v4)',
+      'Jeton de lecture TMDB (API v4, en-tête Bearer). Requis pour les catalogues, /lt/tmdb et les recommandations.',
+    ),
+    tmdbApiKey: serviceKey('Clé API TMDB (v3)', 'Clé API TMDB v3 facultative, testée par POST /config/test.'),
+    mdblistApiKey: serviceKey('Clé MDBList', 'Clé API MDBList : notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'),
+    tvdbApiKey: serviceKey('Clé TheTVDB', 'Clé API TheTVDB v4 : saisons et prochain épisode des séries.'),
+    openrouterApiKey: serviceKey(
+      'Clé OpenRouter',
+      'Clé OpenRouter : recommandations IA et textes « Pourquoi tu vas aimer » (facturés par OpenRouter).',
+    ),
+    openrouterModel: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .default('openai/gpt-4o-mini')
+      .meta({
+        title: 'Modèle OpenRouter',
+        description: 'Identifiant du modèle OpenRouter utilisé pour les recommandations et les textes.',
+      }),
+    fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative, testée par POST /config/test.'),
+  })
+  .meta({
+    title: 'Services',
+    description: 'Clés des services de données. Facultatives : une clé absente désactive les routes qui en dépendent.',
+  })
+  .prefault({});
+
 export const ConfigSchema = z.object({
+  services: ServicesSchema,
   languages: z
     .object({
       preferred: z.array(LangSchema).default(['fr', 'multi']),

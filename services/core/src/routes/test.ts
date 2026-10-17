@@ -1,12 +1,22 @@
 import type { Express } from 'express';
 import { type Config, ConfigValidationError, parseConfig } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
+import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
+import { createLtContext, LtError } from '../lt/context.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
-import { maskSecrets, type SourceTestResult } from '../sources/http.js';
+import { maskSecrets, SourceError, type SourceTestResult } from '../sources/http.js';
 import { testTorznab } from '../sources/torznab.js';
 import { testUpstream } from '../sources/upstream.js';
 
 export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid';
+
+/** Résultat du test d'une clé de service (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Jamais la clé. */
+export interface ServiceCheck {
+  name: string;
+  type: ServiceField;
+  ok: boolean;
+  error?: string;
+}
 
 /** Résultat du test d'une source. `error` est absent quand la source répond. */
 export interface SourceCheck {
@@ -31,7 +41,20 @@ export function scrubSecrets(message: string, secrets: readonly string[]): strin
 function secretsOf(config: Config): string[] {
   const secrets = config.sources.flatMap((source) => (source.type === 'torznab' ? [source.apiKey] : []));
   if (config.debrid !== undefined) secrets.push(config.debrid.apiKey);
+  const { openrouterModel: _model, ...keys } = config.services;
+  secrets.push(...Object.values(keys).filter((value): value is string => typeof value === 'string'));
   return secrets;
+}
+
+/** Sonde d'un service : succès, ou échec avec un message sûr (code d'erreur, jamais clé ni URL). */
+async function probeService(probe: ServiceProbe, secrets: readonly string[]): Promise<ServiceCheck> {
+  try {
+    await probe.probe();
+    return { name: probe.name, type: probe.type, ok: true };
+  } catch (err) {
+    const message = err instanceof LtError || err instanceof SourceError ? err.message : UNEXPECTED_ERROR;
+    return { name: probe.name, type: probe.type, ok: false, error: scrubSecrets(message, secrets) };
+  }
 }
 
 /** Exécute un test de source sans jamais lever : toute exception devient un échec générique. */
@@ -104,7 +127,9 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
           ];
 
     const sources = await Promise.all([...sourceChecks, ...debridCheck]);
+    const ltContext = createLtContext(deps);
+    const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ sources });
+    res.json({ sources, services });
   });
 }

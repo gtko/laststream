@@ -10,4 +10,6 @@ export interface AppDeps {
   alldebridFactory?: (apiKey: string) => Pick<AllDebridClient, 'resolve' | 'checkCached' | 'checkApiKey'>;
   /** fetch injecté pour le client AllDebrid réel (tests). Par défaut : fetch global. */
   fetch?: typeof fetch;
+  /** Résolution DNS injectée pour les gardes d'URL lt (tests). Par défaut : résolution système. */
+  lookupHost?: (hostname: string) => Promise<readonly string[]>;
 }

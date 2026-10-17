@@ -159,20 +159,28 @@ export async function checkOutboundUrl(
 /** Résolution DNS d'un hôte : toutes les adresses renvoyées. */
 export type HostLookup = (hostname: string) => Promise<readonly string[]>;
 
-async function resolveHost(hostname: string): Promise<string[]> {
+/** Résolution DNS réelle d'un hôte : toutes les adresses renvoyées. */
+export async function resolveHost(hostname: string): Promise<string[]> {
   const records = await lookup(hostname, { all: true, verbatim: true });
   return records.map((record) => record.address);
 }
 
-/** Lit le corps en texte en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
-export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
-  const tooLarge = new SourceError(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
+/** Corps refusé parce qu'il dépasse le plafond. Sous-classe de SourceError : message sans contenu. */
+export class SourceTooLargeError extends SourceError {
+  constructor(maxBytes: number) {
+    super(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
+    this.name = 'SourceTooLargeError';
+  }
+}
+
+/** Lit le corps en octets en s'arrêtant dès que `maxBytes` est dépassé (SourceTooLargeError sans contenu). */
+export async function readBytesLimited(response: Response, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'));
   if (response.headers.get('content-length') !== null && declared > maxBytes) {
     await discardBody(response);
-    throw tooLarge;
+    throw new SourceTooLargeError(maxBytes);
   }
-  if (response.body === null) return '';
+  if (response.body === null) return new Uint8Array(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -182,11 +190,36 @@ export async function readBodyLimited(response: Response, maxBytes: number): Pro
     total += value.byteLength;
     if (total > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      throw tooLarge;
+      throw new SourceTooLargeError(maxBytes);
     }
     chunks.push(value);
   }
-  return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
+  return Buffer.concat(chunks);
+}
+
+/** Lit le corps en texte UTF-8 en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
+export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
+  return new TextDecoder('utf-8').decode(await readBytesLimited(response, maxBytes));
+}
+
+/**
+ * Contrôle supplémentaire d'une URL, appelé avant chaque requête (URL initiale et chaque redirection).
+ * Doit lever une SourceError si la cible est refusée.
+ */
+export type UrlGuard = (url: URL) => Promise<void>;
+
+/** Options de lecture du corps : plafond d'octets et contrôle d'URL par saut. */
+export interface BodyOptions {
+  maxBytes?: number;
+  guard?: UrlGuard;
+}
+
+/** Réponse dont le corps a été lu en octets. `url` est l'adresse finale, après redirections. */
+export interface BytesResult {
+  status: number;
+  ok: boolean;
+  url: string;
+  bytes: Uint8Array;
 }
 
 async function discardBody(response: Response): Promise<void> {
@@ -194,17 +227,18 @@ async function discardBody(response: Response): Promise<void> {
 }
 
 /**
- * Requête avec délai couvrant l'en-tête ET la lecture complète du corps.
+ * Requête avec délai couvrant l'en-tête ET la lecture complète du corps, renvoyée en octets.
  * Sécurité : schéma http(s) seul ; redirections gérées à la main (redirect: 'manual'), au plus
- * MAX_REDIRECTS, chaque saut revalidé (voir checkOutboundUrl) ; corps limité à MAX_BODY_BYTES.
- * Les erreurs réseau ou de délai sont renvoyées sous forme de SourceError sans URL.
+ * MAX_REDIRECTS, chaque saut revalidé (checkOutboundUrl puis `guard` si fourni) ; corps limité à
+ * `body.maxBytes` (défaut MAX_BODY_BYTES). Les erreurs sont des SourceError sans URL.
  */
-export async function fetchText(
+export async function fetchBytes(
   fetchFn: FetchFn,
   url: string,
   init: RequestInit = {},
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
-): Promise<TextResult> {
+  body: BodyOptions = {},
+): Promise<BytesResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -212,11 +246,12 @@ export async function fetchText(
     let target = url;
     for (let redirects = 0; ; redirects++) {
       await checkOutboundUrl(target, publicMode);
+      if (body.guard !== undefined) await body.guard(new URL(target));
       const response = await fetchFn(target, { ...init, redirect: 'manual', signal: controller.signal });
       const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
       if (location === null) {
-        const text = await readBodyLimited(response, MAX_BODY_BYTES);
-        return { status: response.status, ok: response.ok, text };
+        const bytes = await readBytesLimited(response, body.maxBytes ?? MAX_BODY_BYTES);
+        return { status: response.status, ok: response.ok, url: target, bytes };
       }
       await discardBody(response);
       if (redirects >= MAX_REDIRECTS) {
@@ -230,6 +265,17 @@ export async function fetchText(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Comme fetchBytes, avec le corps décodé en UTF-8 (plafond MAX_BODY_BYTES par défaut). */
+export async function fetchText(
+  fetchFn: FetchFn,
+  url: string,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<TextResult> {
+  const result = await fetchBytes(fetchFn, url, init, timeoutMs);
+  return { status: result.status, ok: result.ok, text: new TextDecoder('utf-8').decode(result.bytes) };
 }
 
 function resolveLocation(location: string, base: string): string {
