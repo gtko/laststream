@@ -8,8 +8,10 @@
  *   Un code inconnu s'affiche en majuscules (« PT ») à la place du drapeau ou du nom.
  * - Préfixe AD (Détaillé) : « [AD⚡] » si débridé et en cache, « [AD⏳] » si débridé sans cache.
  *   Aucun préfixe pour un flux direct ou P2P.
- * - Copies : segment « 🔎 N copies » seulement à partir de 2. Un exemplaire unique n'a pas de segment
- *   (règle « pas de segment si copies <= 1 » du brief, prioritaire sur « 1 copie » singulier).
+ * - Copies : segment 🔎 « Tracker A | Tracker B · 3 copies » (Détaillé). Le nombre de copies n'apparaît qu'à partir
+ *   de 2 (un exemplaire unique n'a pas de segment, règle « pas de segment si copies <= 1 » du brief) ; les
+ *   indexeurs, s'ils sont connus, sont listés même pour un exemplaire unique.
+ * - Hébergeur débridé : « Lien direct · 1fichier » (Détaillé, Compact, Direct), à la place de « Direct ».
  * - Seeders : affichés pour les flux P2P uniquement, au singulier pour 0 et 1 (usage français).
  * - Texte libre (source, groupe, codec, filename…) : balises HTML retirées, caractères de contrôle et
  *   retours ligne remplacés par un espace, espaces multiples réduits. Le filename est en plus tronqué à 140 caractères.
@@ -38,6 +40,10 @@ export interface StreamView {
   debrid?: boolean;
   seeders?: number;
   fallbackLanguage?: boolean;
+  /** Indexeurs ayant renvoyé une copie (toutes les copies du groupe) : « 🔎 Tracker A | Tracker B ». */
+  indexers?: string[];
+  /** Hébergeur d'un lien direct débridé (ex. « 1fichier ») : « Lien direct · 1fichier ». */
+  hoster?: string;
 }
 
 export type TemplateId = 'direct' | 'netflix' | 'compact' | 'detaille';
@@ -144,6 +150,24 @@ function copiesText(copies: number): string | undefined {
   return Number.isSafeInteger(copies) && copies >= 2 ? `${copies} copies` : undefined;
 }
 
+/** Indexeurs distincts, nettoyés, dans l'ordre d'arrivée. */
+function indexerNames(view: StreamView): string[] {
+  const names = (view.indexers ?? []).map(cleanText).filter((name): name is string => name !== undefined);
+  return [...new Set(names)];
+}
+
+/** Segment 🔎 : indexeurs (« A | B ») puis nombre de copies (à partir de 2), séparés par « · ». */
+function sourcesText(view: StreamView): string | undefined {
+  const names = indexerNames(view);
+  return join([names.length > 0 ? names.join(' | ') : undefined, copiesText(view.copies)], DOT);
+}
+
+/** « Lien direct · 1fichier » pour un lien d'hébergeur débridé ; undefined sinon. */
+function hosterLabelOf(view: StreamView): string | undefined {
+  const hoster = cleanText(view.hoster);
+  return hoster === undefined ? undefined : `Lien direct · ${hoster}`;
+}
+
 /** « 1 seeder » pour 0 et 1, « N seeders » au-delà. */
 function seedersText(seeders: number | undefined): string | undefined {
   if (seeders === undefined || !Number.isSafeInteger(seeders) || seeders < 0) return undefined;
@@ -208,7 +232,7 @@ function shortSourceOf(view: StreamView): string | undefined {
 
 /** Statut du flux en description compacte. */
 function compactStatus(view: StreamView): string {
-  if (view.direct === true) return 'Direct';
+  if (view.direct === true) return hosterLabelOf(view) ?? 'Direct';
   if (view.debrid === true) return view.cached === true ? 'AllDebrid (en cache)' : 'AllDebrid (pas en cache)';
   const seeders = seedersText(view.seeders);
   return seeders === undefined ? 'P2P' : `P2P (${seeders})`;
@@ -226,11 +250,11 @@ function detaille(view: StreamView): Rendered {
       join([withEmoji(EMOJI.signal, bitrateText(view.bitrateMbps)), flagsText(langs, ' ')], ' '),
       withEmoji(EMOJI.disk, sizeFr(view.sizeBytes)),
       isP2P(view) ? withEmoji(EMOJI.seed, seedersText(view.seeders)) : undefined,
-      withEmoji(EMOJI.count, copiesText(view.copies)),
+      withEmoji(EMOJI.count, sourcesText(view)),
     ],
     BULLET,
   );
-  const line2 = join([withEmoji(EMOJI.audio, tech), cleanText(view.group)], BULLET);
+  const line2 = join([hosterLabelOf(view), withEmoji(EMOJI.audio, tech), cleanText(view.group)], BULLET);
   const line3 = withEmoji(EMOJI.file, filenameOf(view));
   return {
     name: join([adTag(view), addonOf(view), resolutionOf(view)], ' '),
@@ -270,7 +294,7 @@ function direct(view: StreamView): Rendered {
   return {
     name: addonOf(view),
     description: join(
-      [fallbackOf(view), resolutionOf(view), sourceOf(view), sizeFr(view.sizeBytes), cleanText(view.group)],
+      [fallbackOf(view), hosterLabelOf(view), resolutionOf(view), sourceOf(view), sizeFr(view.sizeBytes), cleanText(view.group)],
       DOT,
     ),
   };

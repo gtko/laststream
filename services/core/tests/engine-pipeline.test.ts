@@ -14,7 +14,7 @@ describe('runEngine : filtre, déduplication, classement, formatage', () => {
         cand({ parsed: { resolution: '1080p', infoHash: 'd'.repeat(40) }, raw: { title: 'fhd-cached' }, cached: true }),
       ],
       config,
-      { playBaseUrl: 'https://addon.example.com', configToken: 'TOKEN', hasDebrid: false },
+      { playBaseUrl: 'https://addon.example.com', configToken: 'TOKEN', secret: 'pipeline-test-secret', hasDebrid: false },
     );
     expect(streams.map((s) => s.infoHash)).toEqual(['d'.repeat(40), 'c'.repeat(40)]);
   });

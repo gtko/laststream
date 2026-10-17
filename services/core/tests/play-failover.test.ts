@@ -193,16 +193,50 @@ describe('resolveWithFailover', () => {
     expect(calls).toEqual([keyOf(URL_DOWN), keyOf(URL_OK)]);
   });
 
-  it('considère une copie torrent comme hôte alldebrid et renvoie host_unavailable si ce service est down', async () => {
+  it('une copie torrent n a pas d hôte : jamais sautée pour l hôte alldebrid, même marqué down', async () => {
     const { resolve, calls } = resolverWith({ [HASH_A]: LINK });
+    const hostsQueried: string[] = [];
     const result = await resolveWithFailover({
       copies: [TORRENT_A],
       resolve,
-      isHostDown: (host) => host === 'alldebrid',
+      isHostDown: (host) => {
+        hostsQueried.push(host);
+        return host === 'alldebrid';
+      },
       markHostDown: () => undefined,
     });
-    expect(result).toEqual({ ok: false, reason: 'host_unavailable', attempts: [{ index: 0, outcome: 'host_down' }] });
-    expect(calls).toEqual([]);
+    expect(result).toEqual({ ok: true, link: LINK, attempts: [{ index: 0, outcome: 'ok' }] });
+    expect(calls).toEqual([HASH_A]);
+    expect(hostsQueried).toEqual([]);
+  });
+
+  it('host_unavailable sur une copie torrent ne marque aucun hôte', async () => {
+    const { resolve } = resolverWith({ [HASH_A]: coded('host_unavailable'), [HASH_B]: LINK });
+    const marked: string[] = [];
+    const result = await resolveWithFailover({
+      copies: [TORRENT_A, TORRENT_B],
+      resolve,
+      isHostDown: () => false,
+      markHostDown: (host) => {
+        marked.push(host);
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(marked).toEqual([]);
+  });
+
+  it('no_copy est propre à la copie : la copie suivante est essayée', async () => {
+    const { resolve, calls } = resolverWith({ [HASH_A]: coded('no_copy'), [HASH_B]: LINK });
+    const result = await resolveWithFailover({ copies: [TORRENT_A, TORRENT_B], resolve, ...noHostDown });
+    expect(result).toEqual({
+      ok: true,
+      link: LINK,
+      attempts: [
+        { index: 0, outcome: 'no_copy' },
+        { index: 1, outcome: 'ok' },
+      ],
+    });
+    expect(calls).toEqual([HASH_A, HASH_B]);
   });
 
   it('renvoie aborted quand l appelant annule pendant la tentative', async () => {

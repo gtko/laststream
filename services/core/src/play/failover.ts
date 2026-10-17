@@ -1,6 +1,10 @@
+import { hostFromUrl } from './hosts.js';
 import type { PlayCopy } from './token.js';
 
-/** Codes d'erreur d'un résolveur : portés par la propriété `code` de l'erreur qu'il jette. */
+/**
+ * Codes d'erreur d'un résolveur : portés par la propriété `code` de l'erreur qu'il jette.
+ * `no_copy` : la copie n'a pas de source utilisable (torrent privé absent du cache) ; la copie suivante est essayée.
+ */
 export const RESOLVE_ERROR_CODES = [
   'not_cached',
   'dead_link',
@@ -11,6 +15,7 @@ export const RESOLVE_ERROR_CODES = [
   'quota',
   'not_ready',
   'unsupported',
+  'no_copy',
   'unknown',
 ] as const;
 
@@ -57,11 +62,11 @@ export interface FailoverOptions {
 type AttemptResult = { kind: 'ok'; link: ResolvedLink } | { kind: 'failed'; reason: AttemptFailure };
 
 const DEFAULT_BUDGET_MS = 12_000;
-const ALLDEBRID_HOST = 'alldebrid';
 /** Erreurs globales (clé, abonnement, quota) : aucune autre copie ne réussira, on s'arrête tout de suite. */
 const GLOBAL_CODES: ReadonlySet<AttemptFailure> = new Set<AttemptFailure>(['invalid_key', 'subscription_expired', 'quota']);
 
-function isResolveErrorCode(value: string): value is ResolveErrorCode {
+/** Vrai si la valeur est un code d'erreur de résolveur connu. */
+export function isResolveErrorCode(value: string): value is ResolveErrorCode {
   return (RESOLVE_ERROR_CODES as readonly string[]).includes(value);
 }
 
@@ -69,14 +74,13 @@ function isGlobalCode(reason: AttemptFailure): reason is 'invalid_key' | 'subscr
   return GLOBAL_CODES.has(reason);
 }
 
-/** Hôte d'une copie : celui de l'URL, ou `alldebrid` pour une copie torrent. Undefined si l'URL est invalide. */
+/**
+ * Hôte d'une copie : celui de son URL (hébergeur ou lien direct). Une copie torrent n'a pas d'hôte : elle n'est
+ * jamais sautée pour une panne, et une panne de sa résolution ne marque aucun hôte. Undefined si l'URL est invalide.
+ */
 function hostOf(copy: PlayCopy): string | undefined {
-  if (copy.url === undefined) return ALLDEBRID_HOST;
-  try {
-    return new URL(copy.url).hostname.toLowerCase();
-  } catch {
-    return undefined;
-  }
+  if (copy.url === undefined) return undefined;
+  return hostFromUrl(copy.url);
 }
 
 function classifyError(error: unknown): ResolveErrorCode {
@@ -126,9 +130,10 @@ async function attemptOnce(
 
 /**
  * Essaie les copies dans l'ordre jusqu'à obtenir un lien. Passe à la suivante sur une erreur propre à la copie
- * (not_cached, dead_link, host_unavailable, file_not_found, not_ready, unsupported, unknown) ; s'arrête tout de suite
- * sur une erreur globale (invalid_key, subscription_expired, quota). Saute les copies dont l'hôte est marqué down
- * (`markHostDown` est appelé sur host_unavailable). Le budget total est respecté : chaque tentative reçoit le temps restant.
+ * (not_cached, dead_link, host_unavailable, file_not_found, not_ready, unsupported, no_copy, unknown) ; s'arrête tout
+ * de suite sur une erreur globale (invalid_key, subscription_expired, quota). Saute les copies dont l'hôte d'URL est
+ * marqué down. `markHostDown` est appelé sur host_unavailable, uniquement pour l'hôte de l'URL de la copie : une copie
+ * torrent ne marque rien. Le budget total est respecté : chaque tentative reçoit le temps restant.
  * Ne lève jamais : le résultat décrit la suite de tentatives.
  */
 export async function resolveWithFailover(options: FailoverOptions): Promise<FailoverResult> {

@@ -2,18 +2,18 @@ import { createHash } from 'node:crypto';
 import type { Express, Request } from 'express';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
-import type { AppDeps } from '../deps.js';
+import type { AppDeps, DebridClient } from '../deps.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams } from '../pipeline.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
+import { HosterClient } from '../sources/hosters.js';
+import { defaultPlayState } from '../play/state.js';
 import type { ContentRef } from '../types.js';
 
 const MOVIE_ID = /^tt\d{1,12}$/;
 const SERIES_ID = /^(tt\d{1,12}):(\d{1,4}):(\d{1,4})$/;
 const CACHE_CONTROL = 'max-age=60';
 const HOST_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
-
-type DebridClient = Pick<AllDebridClient, 'resolve' | 'checkCached' | 'checkApiKey'>;
 
 /**
  * Identifiant Stremio → ContentRef. Film : `tt1234567`. Épisode : `tt1234567:S:E`.
@@ -67,9 +67,13 @@ export function publicBaseUrl(req: Request): string {
 export function registerStreamRoutes(app: Express, deps: AppDeps): void {
   // Clients debrid mis en cache par empreinte de clé : le cache de disponibilité survit entre requêtes.
   const clients = new Map<string, DebridClient>();
+  // Clients des hébergeurs (liens AllDebrid) : un par clé, construit sur le client debrid de cette clé.
+  const hosterClients = new Map<string, HosterClient>();
+
+  const keyOf = (apiKey: string): string => createHash('sha256').update(apiKey, 'utf8').digest('hex');
 
   const debridFor = (apiKey: string): DebridClient => {
-    const cacheKey = createHash('sha256').update(apiKey, 'utf8').digest('hex');
+    const cacheKey = keyOf(apiKey);
     let client = clients.get(cacheKey);
     if (client === undefined) {
       client = deps.alldebridFactory
@@ -78,6 +82,16 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
       clients.set(cacheKey, client);
     }
     return client;
+  };
+
+  const hostersFor = (apiKey: string): HosterClient => {
+    const cacheKey = keyOf(apiKey);
+    let hosters = hosterClients.get(cacheKey);
+    if (hosters === undefined) {
+      hosters = new HosterClient(debridFor(apiKey));
+      hosterClients.set(cacheKey, hosters);
+    }
+    return hosters;
   };
 
   app.get('/:config/stream/:type/:id.json', async (req, res) => {
@@ -100,11 +114,17 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
       return;
     }
 
+    const apiKey = config.debrid?.apiKey;
     const result = await getStreams(config, ref, {
       playBaseUrl: publicBaseUrl(req),
       configToken: encoded,
+      secret: deps.secret,
       fetch: deps.fetch,
-      debrid: config.debrid === undefined ? undefined : debridFor(config.debrid.apiKey),
+      debrid: apiKey === undefined ? undefined : debridFor(apiKey),
+      hosters: apiKey === undefined ? undefined : hostersFor(apiKey),
+      hostHealth: defaultPlayState.hostHealth,
+      torrentCache: defaultPlayState.torrentCache,
+      packStore: defaultPlayState.packStore,
     });
     res.json({ streams: result.streams });
   });

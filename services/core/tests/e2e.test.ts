@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createApp } from '../src/app.js';
 import { decodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
+import { decodeCopiesToken } from '../src/play/token.js';
 
 /*
  * Parcours complet : configuration (plain ou chiffrée), agrégation, filtre, dédoublonnage, tri,
@@ -237,6 +238,19 @@ const SERIES_DEBRID_CONFIG = { sources: [UPSTREAM_SOURCE], debrid: DEBRID };
 /** Clé ou URL affichée pour identifier un stream dans les assertions d'ordre. */
 const idOf = (stream: StreamOut): string => stream.url ?? stream.infoHash ?? '?';
 
+const PLAY_PREFIX = '/play/c/';
+
+/** Copies portées par le jeton d'une URL /play/c/ (décodé avec le secret du test). Undefined pour une autre URL. */
+function copiesOf(stream: StreamOut): ReturnType<typeof decodeCopiesToken> {
+  const at = stream.url?.indexOf(PLAY_PREFIX) ?? -1;
+  if (at < 0 || stream.url === undefined) return null;
+  return decodeCopiesToken(stream.url.slice(at + PLAY_PREFIX.length), SECRET);
+}
+
+/** Hash de la première copie d'un stream lu par /play/c/, sinon son URL : sert aux assertions d'ordre. */
+const playedKey = (stream: StreamOut): string =>
+  copiesOf(stream)?.copies[0]?.infoHash ?? idOf(stream);
+
 let main: Running;
 
 beforeAll(async () => {
@@ -294,13 +308,16 @@ describe('agrégation : filtre, dédoublonnage et tri', () => {
 });
 
 describe('forme des streams Stremio', () => {
-  it("stream P2P : name, description sans emoji, bingeGroup et infoHash sans url", async () => {
+  it('stream P2P : nom, description détaillée (débit réel, langue annoncée, seeders), bingeGroup et infoHash sans url', async () => {
     const { streams } = await streamsFor(plain(PLAIN_CONFIG), 'tt1234567');
     const vff = streams[0];
 
-    expect(vff?.name).toBe('lastAddon\n1080p');
-    expect(vff?.description).toBe('1080p · WEB-DL · AVC\nVFF · 5.1 DDP\n4,2 Go · P2P · 120 seeders · Upstream');
-    expect(vff?.description ?? '').not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(vff?.name).toBe('lastAddon 1080p');
+    // Débit réel : 4,2 Go sur 120 min, soit environ 5 Mb/s ; la langue VFF est annoncée, pas vérifiée (« ? »).
+    expect(vff?.description).toBe(
+      'WEB-DL • 📶 5 Mb/s 🇫🇷? • 💾 4,2 Go • 🌱 120 seeders\n🎧 AVC • 5.1 DDP • GRP\n🗂️ Film.2024.VFF.1080p.WEB-DL.DDP5.1.H264-GRP',
+    );
+    expect(vff?.laststream).toMatchObject({ bitrateMbps: 5, copies: 1, verifiedLanguages: [], indexers: [] });
     expect(vff?.behaviorHints?.bingeGroup).toBe('lastaddon|1080p|vff|WEB-DL');
     expect(vff?.infoHash).toBe(H.vff);
     expect(vff?.url).toBeUndefined();
@@ -331,9 +348,12 @@ describe('debrid AllDebrid (cache simulé)', () => {
     const token = plain(DEBRID_CONFIG);
 
     const vff = streams.find((s) => s.laststream?.cached === true);
-    expect(vff?.url).toBe(`${main.baseUrl}/${token}/play/${H.vff}`);
-    expect(vff?.description).toContain('Cache');
-    expect(streams.find((s) => s.url?.includes(`/play/${H.remux}`))?.laststream?.cached).toBe(false);
+    expect(vff?.url?.startsWith(`${main.baseUrl}/${token}/play/c/`)).toBe(true);
+    expect(copiesOf(vff ?? {})?.copies).toEqual([{ infoHash: H.vff }]);
+    expect(vff?.name).toBe('[AD⚡] lastAddon 1080p');
+    const remux = streams.find((s) => copiesOf(s)?.copies[0]?.infoHash === H.remux);
+    expect(remux?.laststream?.cached).toBe(false);
+    expect(remux?.name).toBe('[AD⏳] lastAddon 4K');
     expect(streams.find((s) => s.url === CDN_URL)).toBeDefined();
 
     // Le CAM est exclu avant l'interrogation : son hash n'est jamais envoyé au débrideur.
@@ -351,15 +371,17 @@ describe('debrid AllDebrid (cache simulé)', () => {
     const { streams } = await streamsFor(plain(DEBRID_ONLY_CACHED), 'tt1234567');
     const token = plain(DEBRID_ONLY_CACHED);
 
-    expect(streams.map(idOf)).toEqual([`${main.baseUrl}/${token}/play/${H.vff}`, `${main.baseUrl}/${token}/play/${H.multiSmall}`, CDN_URL]);
+    expect(streams.map(playedKey)).toEqual([H.vff, H.multiSmall, CDN_URL]);
+    expect(streams.slice(0, 2).every((s) => s.url?.startsWith(`${main.baseUrl}/${token}/play/c/`))).toBe(true);
   });
 
-  it('série : identifiant tt:S:E, query ?s=&e= sur /play et durée de l’épisode', async () => {
+  it('série : identifiant tt:S:E, jeton portant saison et épisode, durée de l’épisode', async () => {
     const token = plain(SERIES_DEBRID_CONFIG);
     const { streams } = await streamsFor(token, 'tt7654321%3A1%3A2', 'series');
 
     expect(streams).toHaveLength(1);
-    expect(streams[0]?.url).toBe(`${main.baseUrl}/${token}/play/${H.series}?s=1&e=2`);
+    expect(streams[0]?.url?.startsWith(`${main.baseUrl}/${token}/play/c/`)).toBe(true);
+    expect(copiesOf(streams[0] ?? {})).toMatchObject({ copies: [{ infoHash: H.series }], season: 1, episode: 2 });
     expect(streams[0]?.laststream?.estBitrateKbps).toBe(Math.round((1.5 * GB * 8) / 3120 / 1000));
     expect(requests.some((r) => r.url.endsWith('/stream/series/tt7654321%3A1%3A2.json'))).toBe(true);
   });
@@ -372,9 +394,9 @@ describe('debrid AllDebrid (cache simulé)', () => {
       'X-Forwarded-Host': 'evil.example.test',
     });
 
-    expect(streams.find((s) => s.laststream?.cached === true)?.url).toBe(
-      `https://addon.example.test/${token}/play/${H.vff}`,
-    );
+    const url = streams.find((s) => s.laststream?.cached === true)?.url ?? '';
+    expect(url.startsWith(`https://addon.example.test/${token}/play/c/`)).toBe(true);
+    expect(copiesOf({ url })?.copies).toEqual([{ infoHash: H.vff }]);
   });
 
   it('avec LASTADDON_TRUST_PROXY=1, X-Forwarded-Proto et X-Forwarded-Host sont respectés', async () => {
@@ -386,9 +408,9 @@ describe('debrid AllDebrid (cache simulé)', () => {
       'X-Forwarded-Host': 'public.example.test',
     });
 
-    expect(streams.find((s) => s.laststream?.cached === true)?.url).toBe(
-      `https://public.example.test/${token}/play/${H.vff}`,
-    );
+    const url = streams.find((s) => s.laststream?.cached === true)?.url ?? '';
+    expect(url.startsWith(`https://public.example.test/${token}/play/c/`)).toBe(true);
+    expect(copiesOf({ url })?.copies).toEqual([{ infoHash: H.vff }]);
   });
 
   it('sans LASTADDON_TRUST_PROXY, X-Forwarded-* sont ignorés (hôte de la requête)', async () => {
@@ -480,7 +502,7 @@ describe('POST /config/test et chiffrement', () => {
     expect(decodeConfig(token, SECRET, { allowPlain: false }).debrid?.apiKey).toBe(AD_KEY);
 
     const { streams } = await streamsFor(token, 'tt1234567');
-    expect(streams.map(idOf)).toContain(`${main.baseUrl}/${token}/play/${H.vff}`);
+    expect(streams.map(playedKey)).toContain(H.vff);
     expect(streams.map(idOf)).toContain(CDN_URL);
   });
 });

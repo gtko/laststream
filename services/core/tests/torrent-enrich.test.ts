@@ -209,6 +209,7 @@ describe('garde-fou : downloadUrl ne sort jamais', () => {
     const streams = formatStreams([ranked(cand({ raw: enriched }))], {
       playBaseUrl: 'https://addon.example.com',
       configToken: 'TOKEN-CONFIG',
+      secret: 'torrent-enrich-test-secret',
       maxResults: 10,
       hasDebrid: false,
     });
@@ -226,6 +227,7 @@ describe('garde-fou : downloadUrl ne sort jamais', () => {
     const streams = formatStreams([ranked(cand({ raw: torrentStream(9) }))], {
       playBaseUrl: 'https://addon.example.com',
       configToken: 'TOKEN-CONFIG',
+      secret: 'torrent-enrich-test-secret',
       maxResults: 10,
       hasDebrid: false,
     });

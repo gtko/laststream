@@ -2,13 +2,21 @@ import { createHash } from 'node:crypto';
 import type { Express, Response } from 'express';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
-import type { AppDeps } from '../deps.js';
+import type { AppDeps, DebridClient } from '../deps.js';
 import { AllDebridClient, AllDebridError } from '../sources/alldebrid.js';
-import { type FailoverReason, type ResolveErrorCode, type ResolvedLink, resolveWithFailover } from '../play/failover.js';
+import { HosterClient } from '../sources/hosters.js';
+import {
+  type FailoverReason,
+  type ResolveErrorCode,
+  type ResolvedLink,
+  isResolveErrorCode,
+  resolveWithFailover,
+} from '../play/failover.js';
 import { type PlayFailureReason, renderFailure } from '../play/errors.js';
 import { hostFromUrl } from '../play/hosts.js';
 import { defaultPlayState, type PlayState } from '../play/state.js';
 import { type PlayCopy, decodeCopiesToken } from '../play/token.js';
+import type { TorrentCache } from '../torrent/fetch-torrent.js';
 
 const INFO_HASH_PATTERN = /^[0-9a-f]{40}$/i;
 const FILE_IDX_PATTERN = /^\d{1,6}$/;
@@ -16,8 +24,6 @@ const EPISODE_PART_PATTERN = /^\d{1,4}$/;
 const SIZE_PATTERN = /^\d{1,15}$/;
 const FILENAME_MAX_LENGTH = 512;
 const RETRY_AFTER_SECONDS = 5;
-
-type DebridClient = Pick<AllDebridClient, 'resolve' | 'checkCached' | 'checkApiKey'>;
 
 /**
  * Codes d'erreur de l'API AllDebrid vers les codes du failover (documentation AllDebrid, codes connus).
@@ -48,8 +54,8 @@ const RENDERED_REASON: Readonly<Record<FailoverReason, PlayFailureReason>> = {
   quota: 'quota',
   not_ready: 'not_cached',
   unsupported: 'unsupported_format',
-  unknown: 'unknown',
   no_copy: 'no_copy',
+  unknown: 'unknown',
   timeout: 'timeout',
   aborted: 'unknown',
 };
@@ -83,6 +89,23 @@ function reasonOfError(err: unknown): ResolveErrorCode {
   return API_CODE_REASONS.get(err.code) ?? 'unknown';
 }
 
+/** Code du failover pour une erreur du HosterClient : il rend déjà des codes du failover, sans URL ni clé. */
+function reasonOfHosterError(err: unknown): ResolveErrorCode {
+  if (!(err instanceof AllDebridError)) return 'unknown';
+  return isResolveErrorCode(err.code) ? err.code : 'unknown';
+}
+
+/**
+ * Octets d'un .torrent privé, relus par guid. Undefined si le guid est absent, si le cache ne le connaît plus
+ * (expiré, évincé), si l'entrée n'a pas d'octets, ou si son hash ne correspond pas à celui de la copie.
+ */
+function privateTorrentBytes(cache: TorrentCache, guid: string | undefined, infoHash: string): Buffer | undefined {
+  if (guid === undefined) return undefined;
+  const cached = cache.get(guid);
+  if (cached?.kind !== 'torrent' || !cached.private || cached.bytes === undefined) return undefined;
+  return cached.infoHash.toLowerCase() === infoHash.toLowerCase() ? cached.bytes : undefined;
+}
+
 /** Lit la configuration chiffrée (ou JSON brut si allowPlain). Undefined si elle est illisible. */
 function readConfig(deps: AppDeps, encoded: string): Config | undefined {
   try {
@@ -94,8 +117,8 @@ function readConfig(deps: AppDeps, encoded: string): Config | undefined {
 }
 
 /** Réponse d'échec : page HTML ou JSON selon Accept, sans clé ni URL. Le statut vient de la table des raisons. */
-function sendFailure(res: Response, reason: FailoverReason, accept: string | undefined): void {
-  const failure = renderFailure(RENDERED_REASON[reason], { accept });
+function sendFailure(res: Response, reason: PlayFailureReason, accept: string | undefined): void {
+  const failure = renderFailure(reason, { accept });
   res.status(failure.status);
   res.setHeader('Content-Type', failure.contentType);
   res.send(failure.body);
@@ -105,11 +128,15 @@ function sendFailure(res: Response, reason: FailoverReason, accept: string | und
  * Lecture d'un stream. Deux formes :
  * - GET /:config/play/:infoHash{/:fileIdx} (legacy, ?s=&e=&filename=&size= en query) ;
  * - GET /:config/play/c/:token : jeton signé de copies ordonnées, essayées une à une (failover, budget play.budgetMs).
+ *   Avant toute résolution : sortie future (not_released) et limite d'âge (age_limit) sont contrôlées.
+ *   Une copie `kind: 'hoster'` est débridée via AllDebrid ; une copie `privateTorrent` envoie ses octets (cache par guid).
  * Succès : 302 vers le lien. Erreurs : pages ou JSON génériques, sans clé ni configuration ni URL.
  */
 export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState = defaultPlayState): void {
   // Clients mis en cache par empreinte de clé API : la clé brute n'est jamais une clé de Map.
   const clients = new Map<string, DebridClient>();
+  // Un HosterClient par client AllDebrid : son catalogue d'hébergeurs est gardé 12 h.
+  const hosterClients = new WeakMap<DebridClient, HosterClient>();
 
   const clientFor = (apiKey: string): DebridClient => {
     const cacheKey = createHash('sha256').update(apiKey, 'utf8').digest('hex');
@@ -126,6 +153,15 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
       clients.set(cacheKey, client);
     }
     return client;
+  };
+
+  const hosterFor = (client: DebridClient): HosterClient => {
+    let hoster = hosterClients.get(client);
+    if (hoster === undefined) {
+      hoster = new HosterClient(client);
+      hosterClients.set(client, hoster);
+    }
+    return hoster;
   };
 
   // Déclarée avant la route legacy : /:config/play/c/:token ne doit pas être lue comme un hash.
@@ -145,24 +181,52 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
       return;
     }
 
-    const debrid = config.debrid;
-    // Sans debrid, les copies torrent sont inutilisables ; les copies directes restent valables.
-    const copies = decoded.copies.filter((copy) => copy.url !== undefined || debrid !== undefined);
+    // Contrôles avant toute résolution : un contenu non sorti ou hors limite d'âge ne consomme aucun appel au debrid.
+    if (decoded.releasedAt !== undefined && Date.parse(decoded.releasedAt) > Date.now()) {
+      sendFailure(res, 'not_released', accept);
+      return;
+    }
+    const ageLimit = config.filters.ageLimit;
+    if (typeof ageLimit === 'number' && decoded.ageFr !== undefined && decoded.ageFr > ageLimit) {
+      sendFailure(res, 'age_limit', accept);
+      return;
+    }
 
-    const resolveCopy = async (copy: PlayCopy): Promise<ResolvedLink> => {
+    const debrid = config.debrid;
+    // Sans debrid, les copies torrent et les liens d'hébergeur sont inutilisables ; les liens directs restent valables.
+    const copies = decoded.copies.filter(
+      (copy) => debrid !== undefined || (copy.url !== undefined && copy.kind !== 'hoster'),
+    );
+
+    const resolveCopy = async (copy: PlayCopy, signal: AbortSignal): Promise<ResolvedLink> => {
+      if (copy.kind === 'hoster') {
+        if (debrid === undefined || copy.url === undefined) throw copyError('unknown');
+        try {
+          const link = await hosterFor(clientFor(debrid.apiKey)).unlock(copy.url, { signal });
+          return { url: link.url, filename: link.filename, size: link.size };
+        } catch (err) {
+          throw copyError(reasonOfHosterError(err));
+        }
+      }
       if (copy.url !== undefined) {
         if (hostFromUrl(copy.url) === undefined) throw copyError('unknown');
         return { url: copy.url, filename: copy.filename, size: copy.size };
       }
-      if (debrid === undefined || copy.infoHash === undefined) throw copyError('unknown');
+      const { infoHash } = copy;
+      if (debrid === undefined || infoHash === undefined) throw copyError('unknown');
       const client = clientFor(debrid.apiKey);
+      let bytes: Buffer | undefined;
+      if (copy.privateTorrent === true) {
+        bytes = privateTorrentBytes(state.torrentCache, copy.guid, infoHash);
+        // Octets absents du cache : cette copie n'a pas de source, la suivante est essayée.
+        if (bytes === undefined) throw copyError('no_copy');
+      }
+      const options = { season: decoded.season, episode: decoded.episode, filename: copy.filename, size: copy.size };
       try {
-        const link = await client.resolve(copy.infoHash, copy.fileIdx, {
-          season: decoded.season,
-          episode: decoded.episode,
-          filename: copy.filename,
-          size: copy.size,
-        });
+        const link =
+          bytes === undefined
+            ? await client.resolve(infoHash, copy.fileIdx, options)
+            : await client.resolveTorrentFile(bytes, infoHash, copy.fileIdx, options);
         return { url: link.url, filename: link.filename, size: link.size };
       } catch (err) {
         // Le failover ne reconnaît que ses propres codes : les codes AllDebrid sont traduits ici.
@@ -181,7 +245,7 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
     });
 
     if (!result.ok) {
-      sendFailure(res, result.reason, accept);
+      sendFailure(res, RENDERED_REASON[result.reason], accept);
       return;
     }
     const location = hostFromUrl(result.link.url) === undefined ? undefined : new URL(result.link.url).href;
@@ -240,7 +304,7 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
         sendFailure(res, 'host_unavailable', req.get('accept'));
         return;
       }
-      sendFailure(res, reasonOfError(err), req.get('accept'));
+      sendFailure(res, RENDERED_REASON[reasonOfError(err)], req.get('accept'));
     }
   });
 }

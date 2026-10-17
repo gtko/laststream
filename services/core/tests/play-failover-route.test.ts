@@ -7,9 +7,10 @@ import type { AppDeps } from '../src/deps.js';
 import { HostHealth } from '../src/play/hosts.js';
 import { PackStore } from '../src/play/packs.js';
 import type { PlayState } from '../src/play/state.js';
-import { type PlayCopy, encodeCopiesToken } from '../src/play/token.js';
+import { type EncodeCopiesOptions, type PlayCopy, encodeCopiesToken } from '../src/play/token.js';
 import { registerPlayRoutes } from '../src/routes/play.js';
 import { AllDebridClient, AllDebridError, type ResolvedLink } from '../src/sources/alldebrid.js';
+import { TorrentCache } from '../src/torrent/fetch-torrent.js';
 
 const SECRET = 'play-failover-route-secret';
 const API_KEY = 'AD-FAILOVER-KEY-SECRETE-456';
@@ -18,30 +19,86 @@ const HASH_B = 'b'.repeat(40);
 const LINK_A = 'https://dl.alldebrid.example/a.mkv?token=TA';
 const LINK_B = 'https://dl.alldebrid.example/b.mkv?token=TB';
 const DIRECT = 'https://direct.example.org/film.mkv';
+const HOSTER_URL = 'https://1fichier.example/x7Qa';
+const HOSTER_OTHER = 'https://1fichier.example/k2Pz';
+const HOSTER_LINK = 'https://dl.1fichier.example/file/abc.mkv?token=TH';
+const GUID = 'release-guid-42';
+const PRIVATE_BYTES = Buffer.from('d8:announce20:https://tracker.example/e');
+const FUTURE = '2999-01-01';
+const PAST = '2000-01-01';
 
 /** Issue simulée d'une résolution : lien, code d'erreur AllDebrid, ou attente infinie (dépassement du budget). */
 type Outcome = { link: string } | { code: string } | 'hang';
 
-/** Client AllDebrid factice : une issue par hash, appels journalisés dans l'ordre. */
-function fakeDebrid(outcomes: Record<string, Outcome>): { factory: NonNullable<AppDeps['alldebridFactory']>; calls: string[] } {
+interface FakeOutcomes {
+  /** Issue de resolve (magnet), par hash. */
+  resolve?: Record<string, Outcome>;
+  /** Réponse de /v4/link/unlock, par lien d'hébergeur. Un code est un code AllDebrid brut (ex. LINK_DOWN). */
+  unlock?: Record<string, Outcome>;
+  /** Issue de resolveTorrentFile (torrent privé), par hash. */
+  torrentFile?: Record<string, Outcome>;
+}
+
+interface FakeDebrid {
+  factory: NonNullable<AppDeps['alldebridFactory']>;
+  /** Hashes passés à resolve (magnet), dans l'ordre. */
+  calls: string[];
+  /** Liens passés à /v4/link/unlock, dans l'ordre. */
+  unlocks: string[];
+  /** Torrents privés envoyés à resolveTorrentFile : hash, index demandé et octets reçus. */
+  torrentFiles: { infoHash: string; fileIdx: number | undefined; bytes: Buffer }[];
+}
+
+const linkOk = (url: string): ResolvedLink => ({ url, filename: 'film.mkv', size: 10 });
+
+/** Issue d'un appel simulé : lien, erreur AllDebrid (code brut), ou attente infinie. */
+function settle(outcome: Outcome | undefined, label: string): Promise<ResolvedLink> {
+  if (outcome === undefined) return Promise.reject(new Error(`${label} inattendu`));
+  if (outcome === 'hang') return new Promise<ResolvedLink>(() => undefined);
+  if ('code' in outcome) return Promise.reject(new AllDebridError(outcome.code, `AllDebrid : ${outcome.code}`));
+  return Promise.resolve(linkOk(outcome.link));
+}
+
+/** Client AllDebrid factice : une issue par hash et par lien, appels journalisés dans l'ordre. */
+function fakeDebrid(outcomes: Record<string, Outcome>, more: FakeOutcomes = {}): FakeDebrid {
   const calls: string[] = [];
+  const unlocks: string[] = [];
+  const torrentFiles: FakeDebrid['torrentFiles'] = [];
   const factory: NonNullable<AppDeps['alldebridFactory']> = () => ({
     resolve: async (infoHash: string): Promise<ResolvedLink> => {
       calls.push(infoHash);
-      const outcome = outcomes[infoHash];
-      if (outcome === undefined) throw new Error('hash inattendu');
-      if (outcome === 'hang') return new Promise<ResolvedLink>(() => undefined);
-      if ('code' in outcome) throw new AllDebridError(outcome.code, `AllDebrid : ${outcome.code}`);
-      return { url: outcome.link, filename: 'film.mkv', size: 10 };
+      return settle(outcomes[infoHash], infoHash);
+    },
+    resolveTorrentFile: async (bytes: Buffer, infoHash: string, fileIdx?: number): Promise<ResolvedLink> => {
+      torrentFiles.push({ infoHash, fileIdx, bytes: Buffer.from(bytes) });
+      return settle(more.torrentFile?.[infoHash], infoHash);
+    },
+    // Appel brut utilisé par le HosterClient : seul /v4/link/unlock est attendu ici.
+    call: async (_method: 'GET' | 'POST', path: string, form?: URLSearchParams): Promise<Record<string, unknown>> => {
+      if (path !== '/v4/link/unlock') throw new AllDebridError('unexpected', 'appel inattendu');
+      const link = form?.get('link') ?? '';
+      unlocks.push(link);
+      const outcome = await settle(more.unlock?.[link], 'unlock');
+      return { link: outcome.url, filename: outcome.filename, filesize: outcome.size };
     },
     checkCached: async () => new Map<string, boolean>(),
     checkApiKey: async () => ({ ok: true, premium: true }),
   });
-  return { factory, calls };
+  return { factory, calls, unlocks, torrentFiles };
 }
 
-/** État neuf par test : aucune marque d'hébergeur ni pack ne fuit d'un test à l'autre. */
-const freshState = (): PlayState => ({ packStore: new PackStore(), hostHealth: new HostHealth() });
+/** État neuf par test : aucune marque d'hébergeur, pack ni torrent ne fuit d'un test à l'autre. */
+const freshState = (): PlayState => ({
+  packStore: new PackStore(),
+  hostHealth: new HostHealth(),
+  torrentCache: new TorrentCache(),
+});
+
+const depsWith = (factory: NonNullable<AppDeps['alldebridFactory']>): AppDeps => ({
+  secret: SECRET,
+  allowPlain: false,
+  alldebridFactory: factory,
+});
 
 /** Lance l'application minimale (la seule route /play) le temps de `run`, puis la ferme. */
 async function withServer<T>(deps: AppDeps, state: PlayState, run: (baseUrl: string) => Promise<T>): Promise<T> {
@@ -71,16 +128,24 @@ const debridConfig = (budgetMs?: number): string =>
     SECRET,
   );
 
-/** Chemin de lecture pour une liste ordonnée de copies. */
-const tokenPath = (copies: PlayCopy[], config: string = debridConfig()): string =>
-  `/${config}/play/c/${encodeCopiesToken(copies, { secret: SECRET })}`;
+/** Chemin de lecture pour une liste ordonnée de copies, avec des champs de jeton optionnels (date, âge, saison). */
+const tokenPath = (copies: PlayCopy[], config: string = debridConfig(), extra: Omit<EncodeCopiesOptions, 'secret'> = {}): string =>
+  `/${config}/play/c/${encodeCopiesToken(copies, { secret: SECRET, ...extra })}`;
 
 const torrent = (infoHash: string): PlayCopy => ({ infoHash, fileIdx: 0 });
+const hoster = (url: string): PlayCopy => ({ url, kind: 'hoster', filename: 'film.mkv' });
+const privateCopy = (infoHash: string, guid: string | undefined = GUID): PlayCopy => ({
+  infoHash,
+  fileIdx: 1,
+  guid,
+  privateTorrent: true,
+  filename: 'film.mkv',
+});
 
 describe('GET /:config/play/c/:token (failover)', () => {
   it('copie 1 non cachée puis copie 2 OK : 302 vers le lien de la copie 2, Cache-Control no-store', async () => {
     const { factory, calls } = fakeDebrid({ [HASH_A]: { code: 'not_ready' }, [HASH_B]: { link: LINK_B } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A), torrent(HASH_B)]));
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe(LINK_B);
@@ -91,7 +156,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('une copie directe (url) est renvoyée telle quelle après un échec torrent', async () => {
     const { factory, calls } = fakeDebrid({ [HASH_A]: { code: 'LINK_DOWN' } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A), { url: DIRECT }]));
       expect(res.status).toBe(302);
       expect(res.headers.get('location')).toBe(DIRECT);
@@ -101,7 +166,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('toutes les copies échouent : page HTML en français, ou JSON si Accept le demande', async () => {
     const { factory } = fakeDebrid({ [HASH_A]: { code: 'LINK_DOWN' }, [HASH_B]: { code: 'not_ready' } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const path = tokenPath([torrent(HASH_A), torrent(HASH_B)]);
 
       const html = await get(base, path);
@@ -125,7 +190,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('dernière erreur dead_link : 410 avec la page « Lien mort »', async () => {
     const { factory } = fakeDebrid({ [HASH_A]: { code: 'LINK_DOWN' }, [HASH_B]: { code: 'LINK_DOWN' } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A), torrent(HASH_B)]));
       expect(res.status).toBe(410);
       expect(await res.text()).toContain('Lien mort');
@@ -134,7 +199,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('AUTH_BAD_APIKEY (invalid_key) arrête la tentative tout de suite : la copie suivante n\'est pas appelée', async () => {
     const { factory, calls } = fakeDebrid({ [HASH_A]: { code: 'AUTH_BAD_APIKEY' }, [HASH_B]: { link: LINK_B } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A), torrent(HASH_B)]), 'application/json');
       expect(res.status).toBe(401);
       const body = await res.text();
@@ -146,29 +211,9 @@ describe('GET /:config/play/c/:token (failover)', () => {
     expect(calls).toEqual([HASH_A]);
   });
 
-  it('host_unavailable marque l\'hôte pour 1 h : les copies torrent suivantes sont sautées, une copie directe reste utilisable', async () => {
-    const { factory, calls } = fakeDebrid({
-      [HASH_A]: { code: 'LINK_HOST_UNAVAILABLE' },
-      [HASH_B]: { link: LINK_B },
-    });
-    const state = freshState();
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, state, async (base) => {
-      const first = await get(base, tokenPath([torrent(HASH_A), torrent(HASH_B)]));
-      expect(first.status).toBe(503);
-      expect(await first.text()).toContain('Hébergeur indisponible');
-      expect(state.hostHealth.isDown('alldebrid')).toBe(true);
-
-      const second = await get(base, tokenPath([torrent(HASH_B), { url: DIRECT }]));
-      expect(second.status).toBe(302);
-      expect(second.headers.get('location')).toBe(DIRECT);
-    });
-    // HASH_B n'est jamais appelé : son hôte (alldebrid) est marqué en panne après le premier échec.
-    expect(calls).toEqual([HASH_A]);
-  });
-
   it('budget dépassé : 504 timeout', async () => {
     const { factory } = fakeDebrid({ [HASH_A]: 'hang' });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A)], debridConfig(1000)), 'application/json');
       expect(res.status).toBe(504);
       expect(JSON.parse(await res.text())).toMatchObject({ reason: 'timeout' });
@@ -177,7 +222,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('jeton altéré ou signé avec une autre clé : 400 invalid_token, sans appel au debrid', async () => {
     const { factory, calls } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const valid = encodeCopiesToken([torrent(HASH_A)], { secret: SECRET });
       const last = valid.at(-1);
       const altered = `${valid.slice(0, -1)}${last === 'A' ? 'B' : 'A'}`;
@@ -196,7 +241,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('configuration illisible : 400 invalid_config', async () => {
     const { factory } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([torrent(HASH_A)], 'abcdef'));
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: 'invalid_config' });
@@ -205,7 +250,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
 
   it('copie directe au schéma non http(s) : jamais de Location', async () => {
     const { factory } = fakeDebrid({});
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const res = await get(base, tokenPath([{ url: 'javascript:alert(1)' }]));
       expect(res.status).toBe(500);
       expect(res.headers.get('location')).toBeNull();
@@ -215,7 +260,7 @@ describe('GET /:config/play/c/:token (failover)', () => {
   it('sans debrid : les copies torrent sont écartées, la copie directe reste utilisable', async () => {
     const { factory, calls } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
     const noDebrid = encodeConfig({}, SECRET);
-    await withServer({ secret: SECRET, allowPlain: false, alldebridFactory: factory }, freshState(), async (base) => {
+    await withServer(depsWith(factory), freshState(), async (base) => {
       const direct = await get(base, tokenPath([torrent(HASH_A), { url: DIRECT }], noDebrid));
       expect(direct.status).toBe(302);
       expect(direct.headers.get('location')).toBe(DIRECT);
@@ -270,6 +315,205 @@ describe('GET /:config/play/c/:token (failover)', () => {
       { idx: 0, name: 'Show.S01E01.mkv', size: 100 },
       { idx: 1, name: 'Show.S01E02.mkv', size: 200 },
     ]);
+  });
+});
+
+describe('GET /:config/play/c/:token : contrôles avant toute résolution', () => {
+  it('date de sortie future : 404 « Épisode non sorti », aucun appel au debrid, même pour une copie directe', async () => {
+    const { factory, calls, unlocks } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([torrent(HASH_A), { url: DIRECT }], debridConfig(), { releasedAt: FUTURE }), 'application/json');
+      expect(res.status).toBe(404);
+      expect(JSON.parse(await res.text())).toMatchObject({ reason: 'not_released' });
+      expect(res.headers.get('location')).toBeNull();
+    });
+    expect(calls).toEqual([]);
+    expect(unlocks).toEqual([]);
+  });
+
+  it('date de sortie passée : la lecture suit son cours', async () => {
+    const { factory, calls } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([torrent(HASH_A)], debridConfig(), { releasedAt: PAST }));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(LINK_A);
+    });
+    expect(calls).toEqual([HASH_A]);
+  });
+
+  it('limite d âge : 403 si la certification dépasse ageLimit, lecture permise sinon ou sans certification connue', async () => {
+    const { factory, calls } = fakeDebrid({ [HASH_A]: { link: LINK_A } });
+    const limited = encodeConfig({ debrid: { service: 'alldebrid', apiKey: API_KEY }, filters: { ageLimit: 12 } }, SECRET);
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const refused = await get(base, tokenPath([torrent(HASH_A)], limited, { ageFr: 16 }), 'application/json');
+      expect(refused.status).toBe(403);
+      expect(JSON.parse(await refused.text())).toMatchObject({ reason: 'age_limit' });
+
+      const allowed = await get(base, tokenPath([torrent(HASH_A)], limited, { ageFr: 12 }));
+      expect(allowed.status).toBe(302);
+
+      const unknownAge = await get(base, tokenPath([torrent(HASH_A)], limited));
+      expect(unknownAge.status).toBe(302);
+
+      // Sans limite (« none », défaut), la certification n'est pas contrôlée.
+      const noLimit = await get(base, tokenPath([torrent(HASH_A)], debridConfig(), { ageFr: 18 }));
+      expect(noLimit.status).toBe(302);
+    });
+    expect(calls).toEqual([HASH_A, HASH_A, HASH_A]);
+  });
+});
+
+describe('copies hébergeur (kind hoster) : débridage via AllDebrid', () => {
+  it('débride le lien par /v4/link/unlock et renvoie 302 vers le lien débridé, sans appel magnet', async () => {
+    const { factory, calls, unlocks } = fakeDebrid({}, { unlock: { [HOSTER_URL]: { link: HOSTER_LINK } } });
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([hoster(HOSTER_URL)]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(HOSTER_LINK);
+    });
+    expect(unlocks).toEqual([HOSTER_URL]);
+    expect(calls).toEqual([]);
+  });
+
+  it('une URL sans kind hoster reste un lien direct : 302 sans débridage', async () => {
+    const { factory, unlocks } = fakeDebrid({});
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([{ url: HOSTER_URL }]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(HOSTER_URL);
+    });
+    expect(unlocks).toEqual([]);
+  });
+
+  it('sans debrid, la copie hébergeur est écartée : jamais de redirection vers le lien brut', async () => {
+    const { factory, unlocks } = fakeDebrid({});
+    const noDebrid = encodeConfig({}, SECRET);
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([hoster(HOSTER_URL)], noDebrid), 'application/json');
+      expect(res.status).toBe(404);
+      expect(JSON.parse(await res.text())).toMatchObject({ reason: 'no_copy' });
+      expect(res.headers.get('location')).toBeNull();
+    });
+    expect(unlocks).toEqual([]);
+  });
+
+  it('un débridage en erreur (LINK_DOWN) passe à la copie suivante', async () => {
+    const { factory, unlocks } = fakeDebrid({}, { unlock: { [HOSTER_URL]: { code: 'LINK_DOWN' } } });
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([hoster(HOSTER_URL), { url: DIRECT }]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(DIRECT);
+    });
+    expect(unlocks).toEqual([HOSTER_URL]);
+  });
+});
+
+describe('torrents privés (privateTorrent + guid) : octets relus dans le cache', () => {
+  it('les octets du cache partent à resolveTorrentFile (pas le magnet), avec l index demandé : 302', async () => {
+    const { factory, calls, torrentFiles } = fakeDebrid({}, { torrentFile: { [HASH_A]: { link: LINK_A } } });
+    const state = freshState();
+    state.torrentCache.set(GUID, { kind: 'torrent', infoHash: HASH_A, files: [], private: true, bytes: PRIVATE_BYTES });
+    await withServer(depsWith(factory), state, async (base) => {
+      const res = await get(base, tokenPath([privateCopy(HASH_A)]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(LINK_A);
+    });
+    expect(calls).toEqual([]);
+    expect(torrentFiles).toEqual([{ infoHash: HASH_A, fileIdx: 1, bytes: PRIVATE_BYTES }]);
+  });
+
+  it('octets absents du cache : la copie est « no_copy » et la copie suivante est essayée', async () => {
+    const { factory, calls, torrentFiles } = fakeDebrid({ [HASH_B]: { link: LINK_B } });
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([privateCopy(HASH_A), torrent(HASH_B)]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(LINK_B);
+    });
+    expect(torrentFiles).toEqual([]);
+    expect(calls).toEqual([HASH_B]);
+  });
+
+  it('cache manquant sans autre copie : 404 « Aucune copie disponible » (no_copy), aucun appel au debrid', async () => {
+    const { factory, calls, torrentFiles } = fakeDebrid({});
+    await withServer(depsWith(factory), freshState(), async (base) => {
+      const res = await get(base, tokenPath([privateCopy(HASH_A)]), 'application/json');
+      expect(res.status).toBe(404);
+      expect(JSON.parse(await res.text())).toMatchObject({ reason: 'no_copy' });
+    });
+    expect(calls).toEqual([]);
+    expect(torrentFiles).toEqual([]);
+  });
+
+  it('entrée du cache d un autre hash, ou sans octets (torrent public) : traitée comme absente', async () => {
+    const { factory, torrentFiles } = fakeDebrid({});
+    const state = freshState();
+    state.torrentCache.set(GUID, { kind: 'torrent', infoHash: HASH_B, files: [], private: true, bytes: PRIVATE_BYTES });
+    await withServer(depsWith(factory), state, async (base) => {
+      const wrongHash = await get(base, tokenPath([privateCopy(HASH_A)]), 'application/json');
+      expect(wrongHash.status).toBe(404);
+      expect(JSON.parse(await wrongHash.text())).toMatchObject({ reason: 'no_copy' });
+    });
+    const publicState = freshState();
+    publicState.torrentCache.set(GUID, { kind: 'torrent', infoHash: HASH_A, files: [], private: false });
+    await withServer(depsWith(factory), publicState, async (base) => {
+      const publicRes = await get(base, tokenPath([privateCopy(HASH_A)]), 'application/json');
+      expect(JSON.parse(await publicRes.text())).toMatchObject({ reason: 'no_copy' });
+    });
+    expect(torrentFiles).toEqual([]);
+  });
+
+  it('une erreur AllDebrid sur resolveTorrentFile suit le même chemin que resolve (LINK_DOWN : copie suivante)', async () => {
+    const { factory, torrentFiles } = fakeDebrid({}, { torrentFile: { [HASH_A]: { code: 'LINK_DOWN' } } });
+    const state = freshState();
+    state.torrentCache.set(GUID, { kind: 'torrent', infoHash: HASH_A, files: [], private: true, bytes: PRIVATE_BYTES });
+    await withServer(depsWith(factory), state, async (base) => {
+      const res = await get(base, tokenPath([privateCopy(HASH_A), { url: DIRECT }]));
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe(DIRECT);
+    });
+    expect(torrentFiles).toHaveLength(1);
+  });
+});
+
+describe('host_unavailable : seul l hôte réel du lien est marqué', () => {
+  it('une copie torrent en host_unavailable ne marque pas alldebrid et n empêche pas les torrents suivants', async () => {
+    const { factory, calls } = fakeDebrid({ [HASH_A]: { code: 'LINK_HOST_UNAVAILABLE' }, [HASH_B]: { link: LINK_B } });
+    const state = freshState();
+    await withServer(depsWith(factory), state, async (base) => {
+      const first = await get(base, tokenPath([torrent(HASH_A), torrent(HASH_B)]));
+      expect(first.status).toBe(302);
+      expect(first.headers.get('location')).toBe(LINK_B);
+      expect(state.hostHealth.isDown('alldebrid')).toBe(false);
+
+      const second = await get(base, tokenPath([torrent(HASH_B)]));
+      expect(second.status).toBe(302);
+    });
+    expect(calls).toEqual([HASH_A, HASH_B, HASH_B]);
+  });
+
+  it('une copie hébergeur en host_unavailable marque son hôte pour 1 h : ses autres liens sont sautés, un lien direct reste utilisable', async () => {
+    const { factory, unlocks } = fakeDebrid({}, { unlock: { [HOSTER_URL]: { code: 'LINK_HOST_UNAVAILABLE' }, [HOSTER_OTHER]: { link: HOSTER_LINK } } });
+    const state = freshState();
+    await withServer(depsWith(factory), state, async (base) => {
+      const first = await get(base, tokenPath([hoster(HOSTER_URL), { url: DIRECT }]));
+      expect(first.status).toBe(302);
+      expect(first.headers.get('location')).toBe(DIRECT);
+      expect(state.hostHealth.isDown('1fichier.example')).toBe(true);
+      expect(state.hostHealth.isDown('alldebrid')).toBe(false);
+
+      const second = await get(base, tokenPath([hoster(HOSTER_OTHER), { url: DIRECT }]));
+      expect(second.status).toBe(302);
+      expect(second.headers.get('location')).toBe(DIRECT);
+
+      const onlyHoster = await get(base, tokenPath([hoster(HOSTER_OTHER)]), 'application/json');
+      expect(onlyHoster.status).toBe(503);
+      const body = await onlyHoster.text();
+      expect(JSON.parse(body)).toMatchObject({ reason: 'host_unavailable' });
+      expect(body).not.toContain(HOSTER_OTHER);
+      expect(body).not.toContain(API_KEY);
+    });
+    // Le lien de l'hôte en panne n'est débridé qu'une fois ; le second hébergeur est sauté sans appel.
+    expect(unlocks).toEqual([HOSTER_URL]);
   });
 });
 

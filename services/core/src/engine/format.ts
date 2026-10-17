@@ -1,77 +1,196 @@
-import type { ParsedRelease, Resolution, StremioStream } from '../types.js';
-import { fileIdxOf, infoHashOf, type Ranked, seedersOf, sizeOf } from './types.js';
+import { encodeCopiesToken, type PlayCopy } from '../play/token.js';
+import type { ParsedRelease, StremioStream } from '../types.js';
+import { bitrateMbps } from './filter.js';
+import { renderTemplate, type StreamView, type TemplateId } from './templates.js';
+import { fileIdxOf, infoHashOf, isDirect, type Ranked, seedersOf, sizeOf } from './types.js';
+
+/** Copie jouable d'un groupe : un hash (+ fichier), ou un lien d'hébergeur à débrider. */
+export interface PlayableCopy {
+  infoHash?: string;
+  fileIdx?: number;
+  /** Lien d'hébergeur (avec `hoster`) : jamais une URL directe ordinaire ni un downloadUrl. */
+  url?: string;
+  filename?: string;
+  size?: number;
+  /** Nom de l'hébergeur débridé quand `url` est un lien d'hébergeur. */
+  hoster?: string;
+  /** Torrent privé : guid du release (clé du cache serveur des octets .torrent). Jamais une URL ni une passkey. */
+  guid?: string;
+  privateTorrent?: boolean;
+  cached?: boolean;
+}
+
+/** Candidat classé prêt à formater : `copies` (groupe) et `indexers` (toutes les copies) sont facultatifs. */
+export interface FormatItem extends Ranked {
+  copies?: PlayableCopy[];
+  indexers?: string[];
+}
 
 export interface FormatOptions {
   /** Base publique du endpoint de lecture (ex. https://addon.example.com). */
   playBaseUrl: string;
   configToken: string;
+  /** Secret de signature des jetons de lecture. Ne jamais journaliser. */
+  secret: string;
+  /** Gabarit d'affichage (défaut : détaillé). */
+  template?: TemplateId;
+  /** Durée réelle du contenu en secondes : débit réel = taille / durée. */
   runtimeSeconds?: number;
+  /** Âge minimum FR de la certification du contenu, si connu. */
+  certificationFr?: number;
+  /** Date de sortie ISO du contenu (AAAA-MM-JJ), portée par le jeton. */
+  releaseDate?: string;
   maxResults: number;
-  /** Vrai si le débrideur est configuré : les infoHash passent alors par /play. */
+  /** Vrai si le débrideur est configuré : les torrents et les liens d'hébergeur passent alors par /play. */
   hasDebrid: boolean;
   season?: number;
   episode?: number;
 }
 
-/** Cible de livraison d'un stream : URL amont, lecture débridée, ou P2P (infoHash). */
+/** Cible de livraison : URL directe, lecture débridée (jeton de copies), ou P2P (infoHash). */
 type Target =
   | { kind: 'direct'; url: string }
-  | { kind: 'debrid'; infoHash: string; fileIdx: number | undefined; filename: string | undefined; size: number | undefined }
+  | { kind: 'play'; url: string; direct: boolean }
   | { kind: 'p2p'; infoHash: string; fileIdx: number | undefined };
 
-const GIB = 1024 ** 3;
-const MIB = 1024 ** 2;
-const NAME_PREFIX = 'lastAddon';
 const UPSTREAM_HINT_KEYS = ['proxyHeaders', 'headers'] as const;
 /** HEVC/AV1 et audio DTS/TrueHD ne sont pas lus par les navigateurs ; les REMUX sont des conteneurs lourds. */
 const NOT_WEB_READY_AUDIO = /dts|truehd/i;
+const RESOLUTION_LABEL: Record<ParsedRelease['resolution'], string> = {
+  '2160p': '4K',
+  '1080p': '1080p',
+  '720p': '720p',
+  '480p': '480p',
+  SD: 'SD',
+  unknown: '?',
+};
 
 const present = (value: string | undefined): value is string => typeof value === 'string' && value.length > 0;
-const joinParts = (parts: (string | undefined)[]): string => parts.filter(present).join(' · ');
 
-function targetOf(item: Ranked, hasDebrid: boolean): Target | undefined {
-  const url = item.raw.url;
-  if (url !== undefined && url.length > 0) return { kind: 'direct', url };
-  const infoHash = infoHashOf(item);
-  // Ni URL ni infoHash : stream inutilisable, on l'écarte.
-  if (infoHash === undefined) return undefined;
+/** Copies d'un candidat non groupé : la copie unique du candidat lui-même. */
+function ownCopy(item: FormatItem): PlayableCopy {
+  const hash = infoHashOf(item);
+  const copy: PlayableCopy = {};
+  if (hash !== undefined) copy.infoHash = hash;
   const fileIdx = fileIdxOf(item);
-  if (!hasDebrid) return { kind: 'p2p', infoHash, fileIdx };
-  const filename = item.raw.filename || item.raw.title || undefined;
-  return { kind: 'debrid', infoHash, fileIdx, filename, size: sizeOf(item) };
-}
-
-/**
- * URL de lecture débridée. Le nom et la taille attendus ne sont ajoutés qu'avec un index de fichier :
- * ils servent alors à vérifier cet index dans les packs (sans index, le choix du fichier n'en dépend pas).
- */
-function playUrl(opts: FormatOptions, target: Extract<Target, { kind: 'debrid' }>): string {
-  const base = opts.playBaseUrl.replace(/\/+$/, '');
-  const file = target.fileIdx === undefined ? '' : `/${target.fileIdx}`;
-  const path = `${base}/${encodeURIComponent(opts.configToken)}/play/${encodeURIComponent(target.infoHash)}${file}`;
-  const query = new URLSearchParams();
-  if (opts.season !== undefined) query.set('s', String(opts.season));
-  if (opts.episode !== undefined) query.set('e', String(opts.episode));
-  if (target.fileIdx !== undefined) {
-    if (target.filename !== undefined && target.filename.length <= 512) query.set('filename', target.filename);
-    if (target.size !== undefined && Number.isSafeInteger(target.size)) query.set('size', String(target.size));
+  if (fileIdx !== undefined) copy.fileIdx = fileIdx;
+  if (item.hoster !== undefined && isDirect(item)) {
+    copy.url = item.raw.url;
+    copy.hoster = item.hoster;
   }
-  const qs = query.toString();
-  return qs.length > 0 ? `${path}?${qs}` : path;
-}
-
-/** Taille au format français : « 4,2 Go » ou « 850 Mo ». */
-function formatSizeFr(bytes: number | undefined): string | undefined {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return undefined;
-  if (bytes >= GIB) return `${(bytes / GIB).toFixed(1).replace('.', ',')} Go`;
-  return `${Math.round(bytes / MIB)} Mo`;
+  const filename = item.raw.filename || item.raw.title || undefined;
+  if (filename !== undefined) copy.filename = filename;
+  const size = sizeOf(item);
+  if (size !== undefined) copy.size = size;
+  return copy;
 }
 
 /**
- * Libellé de langue et code de binge group.
- * Ordre : variante FR explicite, MULTi, VF (fr sans variante), VOSTFR (sous-titres seuls), VO.
- * Le code est la variante en minuscule, sinon `multi`, `fr`, `vostfr` ou `vo`.
+ * Copies portables dans le jeton, dans l'ordre reçu (le pipeline range les copies cachées d'abord) :
+ * les hashes et les liens d'hébergeur. Un lien direct ordinaire n'entre pas dans le jeton. Sans doublon.
  */
+function playableCopies(item: FormatItem): PlayableCopy[] {
+  const source = item.copies !== undefined && item.copies.length > 0 ? item.copies : [ownCopy(item)];
+  const seen = new Set<string>();
+  const out: PlayableCopy[] = [];
+  for (const copy of source) {
+    const hoster = copy.url !== undefined && copy.hoster !== undefined;
+    if (copy.infoHash === undefined && !hoster) continue;
+    const key = hoster ? `url:${copy.url}` : `hash:${copy.infoHash?.toLowerCase()}:${copy.fileIdx ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(copy);
+  }
+  return out;
+}
+
+/** Forme du jeton pour une copie. Un fichier attendu (nom, taille) n'est porté qu'avec un index de fichier. */
+function toPlayCopy(copy: PlayableCopy): PlayCopy {
+  const out: PlayCopy = {};
+  if (copy.infoHash !== undefined) out.infoHash = copy.infoHash;
+  if (copy.fileIdx !== undefined) out.fileIdx = copy.fileIdx;
+  if (copy.url !== undefined && copy.hoster !== undefined) {
+    out.url = copy.url;
+    out.kind = 'hoster';
+  }
+  if (copy.fileIdx !== undefined) {
+    if (copy.filename !== undefined && copy.filename.length <= 512) out.filename = copy.filename;
+    if (copy.size !== undefined && Number.isSafeInteger(copy.size)) out.size = copy.size;
+  }
+  if (copy.privateTorrent === true && copy.infoHash !== undefined && copy.guid !== undefined) {
+    out.guid = copy.guid;
+    out.privateTorrent = true;
+  }
+  return out;
+}
+
+/** Cible d'un candidat. Undefined si le candidat n'est livrable ni en direct, ni en P2P, ni par le débrideur. */
+function targetOf(item: FormatItem, opts: FormatOptions): Target | undefined {
+  const url = item.raw.url;
+  // Un lien direct reste direct, sauf lien d'hébergeur débridé (lecture via AllDebrid).
+  if (url !== undefined && url.length > 0 && (item.hoster === undefined || !opts.hasDebrid)) {
+    return { kind: 'direct', url };
+  }
+  if (!opts.hasDebrid) {
+    const infoHash = infoHashOf(item);
+    return infoHash === undefined ? undefined : { kind: 'p2p', infoHash, fileIdx: fileIdxOf(item) };
+  }
+  const copies = playableCopies(item).map(toPlayCopy);
+  if (copies.length === 0) return undefined;
+  const token = encodeCopiesToken(copies, {
+    secret: opts.secret,
+    season: opts.season,
+    episode: opts.episode,
+    releasedAt: opts.releaseDate,
+    ageFr: opts.certificationFr,
+  });
+  const base = opts.playBaseUrl.replace(/\/+$/, '');
+  const playUrl = `${base}/${encodeURIComponent(opts.configToken)}/play/c/${encodeURIComponent(token)}`;
+  // Lien d'hébergeur : statut « lien direct » ; un torrent débridé reste un flux AllDebrid.
+  return { kind: 'play', url: playUrl, direct: item.hoster !== undefined };
+}
+
+/** Langue audio : annoncée par le nom de release, vérifiée si la sonde l'a confirmée. */
+function languagesOf(item: FormatItem): StreamView['languages'] {
+  const verified = new Set(item.verifiedLanguages ?? []);
+  const codes = [...new Set<string>([...item.parsed.languages, ...verified])];
+  return codes.map((code) => ({ code, verified: verified.has(code) }));
+}
+
+/** Préférence du canal et des formats audio, en texte court : « 5.1 DDP ». Undefined si rien. */
+function audioLabelOf(item: FormatItem): string | undefined {
+  const label = [item.parsed.channels, ...item.parsed.audio].filter(present).join(' ');
+  return label.length > 0 ? label : undefined;
+}
+
+/** Libellé de vue d'un candidat : tout ce que le gabarit affiche, sans logique d'affichage. */
+function viewOf(item: FormatItem, opts: FormatOptions, target: Target, copyCount: number): StreamView {
+  const { parsed } = item;
+  const size = sizeOf(item);
+  const view: StreamView = {
+    resolutionLabel: RESOLUTION_LABEL[parsed.resolution],
+    source: parsed.source === 'unknown' ? '' : parsed.source,
+    hdr: parsed.hdr,
+    languages: languagesOf(item),
+    copies: copyCount,
+    videoCodec: parsed.codec === 'unknown' ? undefined : parsed.codec,
+    audioLabel: audioLabelOf(item),
+    group: parsed.group,
+    filename: item.raw.filename || item.raw.title || undefined,
+    cached: item.cached === true,
+    direct: target.kind === 'direct' || (target.kind === 'play' && target.direct),
+    debrid: target.kind === 'play' && !target.direct,
+    seeders: seedersOf(item),
+    fallbackLanguage: item.languageFallback === true,
+    indexers: item.indexers ?? [],
+    hoster: item.hoster,
+  };
+  view.sizeBytes = size;
+  view.bitrateMbps = bitrateMbps(size, opts.runtimeSeconds);
+  return view;
+}
+
+/** Libellé de langue et code de binge group. */
 function languageInfo(parsed: ParsedRelease): { label: string; code: string } {
   if (parsed.frVariant !== undefined) return { label: parsed.frVariant, code: parsed.frVariant.toLowerCase() };
   if (parsed.multi || parsed.languages.includes('multi')) return { label: 'MULTi', code: 'multi' };
@@ -95,33 +214,7 @@ function estimateBitrateKbps(bytes: number | undefined, runtimeSeconds: number |
   return Math.round((bytes * 8) / runtimeSeconds / 1000);
 }
 
-/** Préfixe de la première ligne d'un stream retenu faute de langue préférée. */
-const FALLBACK_PREFIX = 'Autre langue';
-
-function buildDescription(item: Ranked, target: Target): string {
-  const { parsed } = item;
-  const resolutionKnown: Resolution | undefined = parsed.resolution === 'unknown' ? undefined : parsed.resolution;
-  const specs = joinParts([
-    resolutionKnown,
-    parsed.source === 'unknown' ? undefined : parsed.source,
-    parsed.codec === 'unknown' ? undefined : parsed.codec,
-    ...parsed.hdr,
-  ]);
-  const line1 = item.languageFallback === true ? joinParts([FALLBACK_PREFIX, specs]) : specs;
-  const audio = [parsed.channels, ...parsed.audio].filter(present).join(' ');
-  const line2 = joinParts([languageInfo(parsed).label, audio]);
-  const seeders = seedersOf(item);
-  const line3 = joinParts([
-    formatSizeFr(sizeOf(item)),
-    target.kind === 'debrid' ? 'AllDebrid' : undefined,
-    target.kind === 'p2p' ? (seeders === undefined ? 'P2P' : `P2P · ${seeders} seeders`) : undefined,
-    item.cached === true ? 'Cache' : undefined,
-    item.raw.sourceName,
-  ]);
-  return [line1, line2, line3].filter(present).join('\n');
-}
-
-function behaviorHintsOf(item: Ranked, target: Target): Record<string, unknown> {
+function behaviorHintsOf(item: FormatItem, target: Target): Record<string, unknown> {
   const { parsed } = item;
   const hints: Record<string, unknown> = {};
   const filename = item.raw.filename || item.raw.title;
@@ -141,37 +234,54 @@ function behaviorHintsOf(item: Ranked, target: Target): Record<string, unknown> 
   return hints;
 }
 
-function formatOne(item: Ranked, opts: FormatOptions): StremioStream | undefined {
-  const target = targetOf(item, opts.hasDebrid);
-  if (target === undefined) return undefined;
+/** Objet `laststream` : données structurées pour les clients. Jamais d'URL (ni guid, ni downloadUrl) ici. */
+function laststreamOf(item: FormatItem, opts: FormatOptions, copyCount: number, bitrate: number | undefined): Record<string, unknown> {
   const { parsed } = item;
   const size = sizeOf(item);
+  return {
+    resolution: parsed.resolution,
+    height: parsed.height,
+    source: parsed.source,
+    codec: parsed.codec,
+    hdr: parsed.hdr,
+    languages: parsed.languages,
+    frVariant: parsed.frVariant,
+    sizeBytes: size,
+    cached: item.cached === true,
+    seeders: seedersOf(item),
+    score: item.score,
+    estBitrateKbps: estimateBitrateKbps(size, opts.runtimeSeconds),
+    bitrateMbps: bitrate === undefined ? null : Math.round(bitrate * 10) / 10,
+    copies: copyCount,
+    verifiedLanguages: item.verifiedLanguages ?? [],
+    certification: opts.certificationFr ?? null,
+    indexers: item.indexers ?? [],
+    ...(item.languageFallback === true ? { languageFallback: true } : {}),
+  };
+}
 
+function formatOne(item: FormatItem, opts: FormatOptions): StremioStream | undefined {
+  let target: Target | undefined;
+  try {
+    target = targetOf(item, opts);
+  } catch {
+    // Jeton impossible (aucune copie utilisable ne tient) : le flux est écarté, jamais de jeton partiel.
+    return undefined;
+  }
+  if (target === undefined) return undefined;
+
+  const copyCount = Math.max(item.copies?.length ?? 0, 1);
+  const view = viewOf(item, opts, target, copyCount);
+  const rendered = renderTemplate(opts.template ?? 'detaille', view);
   const stream: StremioStream = {
-    name: `${NAME_PREFIX}\n${parsed.resolution === 'unknown' ? '?' : parsed.resolution}`,
-    description: buildDescription(item, target),
+    name: rendered.name,
+    description: rendered.description,
     behaviorHints: behaviorHintsOf(item, target),
-    laststream: {
-      resolution: parsed.resolution,
-      height: parsed.height,
-      source: parsed.source,
-      codec: parsed.codec,
-      hdr: parsed.hdr,
-      languages: parsed.languages,
-      frVariant: parsed.frVariant,
-      sizeBytes: size,
-      cached: item.cached === true,
-      seeders: seedersOf(item),
-      score: item.score,
-      estBitrateKbps: estimateBitrateKbps(size, opts.runtimeSeconds),
-      ...(item.languageFallback === true ? { languageFallback: true } : {}),
-    },
+    laststream: laststreamOf(item, opts, copyCount, view.bitrateMbps),
   };
 
-  if (target.kind === 'direct') {
+  if (target.kind === 'direct' || target.kind === 'play') {
     stream.url = target.url;
-  } else if (target.kind === 'debrid') {
-    stream.url = playUrl(opts, target);
   } else {
     stream.infoHash = target.infoHash;
     if (target.fileIdx !== undefined) stream.fileIdx = target.fileIdx;
@@ -181,9 +291,9 @@ function formatOne(item: Ranked, opts: FormatOptions): StremioStream | undefined
 }
 
 /** Transforme les candidats classés en streams Stremio, tronqués à `maxResults`. */
-export function formatStreams(ranked: Ranked[], opts: FormatOptions): StremioStream[] {
+export function formatStreams(items: readonly FormatItem[], opts: FormatOptions): StremioStream[] {
   const streams: StremioStream[] = [];
-  for (const item of ranked) {
+  for (const item of items) {
     if (streams.length >= opts.maxResults) break;
     const stream = formatOne(item, opts);
     if (stream) streams.push(stream);

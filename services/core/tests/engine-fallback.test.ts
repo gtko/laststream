@@ -21,7 +21,7 @@ function en(title: string, parsed: Partial<ParsedRelease> = {}): Candidate {
   });
 }
 
-const FMT = { playBaseUrl: 'https://addon.example.test', configToken: 'tok', hasDebrid: false };
+const FMT = { playBaseUrl: 'https://addon.example.test', configToken: 'tok', secret: 'fallback-test-secret', hasDebrid: false };
 
 describe('languages.fallbackToOthers : repli sur les autres langues', () => {
   it('(a) seulement des résultats anglais, repli activé : streams anglais renvoyés et marqués', () => {
@@ -33,7 +33,9 @@ describe('languages.fallbackToOthers : repli sur les autres langues', () => {
     const streams = runEngine([en('en.one')], config, FMT);
     expect(streams).toHaveLength(1);
     expect(streams[0]?.laststream).toMatchObject({ languageFallback: true, languages: ['en'] });
-    expect(streams[0]?.description?.split('\n')[0]).toBe('Autre langue · 1080p · WEB-DL · HEVC');
+    // Gabarit détaillé : la marque « Autre langue » ouvre la première ligne ; la langue annoncée reste suffixée de « ? ».
+    expect(streams[0]?.name).toBe('lastAddon 1080p');
+    expect(streams[0]?.description?.split('\n')[0]).toBe('Autre langue • WEB-DL • 🇬🇧?');
   });
 
   it('(b) repli désactivé : liste vide', () => {

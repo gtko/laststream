@@ -34,6 +34,12 @@ function makeFactory(impl: { resolve: ResolveImpl }): {
         calls.push({ infoHash, fileIdx, opts });
         return impl.resolve(infoHash, fileIdx, opts);
       },
+      resolveTorrentFile: async () => {
+        throw new AllDebridError('unknown', 'non attendu dans ce test');
+      },
+      call: async () => {
+        throw new AllDebridError('unknown', 'non attendu dans ce test');
+      },
       checkCached: async () => new Map<string, boolean>(),
       checkApiKey: async () => ({ ok: true, premium: true }),
     };
