@@ -8,12 +8,24 @@ import { AllDebridClient, AllDebridError } from '../sources/alldebrid.js';
 const INFO_HASH_PATTERN = /^[0-9a-f]{40}$/i;
 const FILE_IDX_PATTERN = /^\d{1,6}$/;
 const EPISODE_PART_PATTERN = /^\d{1,4}$/;
+const SIZE_PATTERN = /^\d{1,15}$/;
+const FILENAME_MAX_LENGTH = 512;
 const RETRY_AFTER_SECONDS = 5;
 
 type DebridClient = Pick<AllDebridClient, 'resolve' | 'checkCached' | 'checkApiKey'>;
 
 function episodePart(value: unknown): number | undefined {
   return typeof value === 'string' && EPISODE_PART_PATTERN.test(value) ? Number(value) : undefined;
+}
+
+/** Nom de fichier attendu (query ?filename=) ; ignoré s'il est vide ou trop long. */
+function queryFilename(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 && value.length <= FILENAME_MAX_LENGTH ? value : undefined;
+}
+
+/** Taille attendue en octets (query ?size=) ; ignorée si elle n'est pas un entier décimal. */
+function querySize(value: unknown): number | undefined {
+  return typeof value === 'string' && SIZE_PATTERN.test(value) ? Number(value) : undefined;
 }
 
 /**
@@ -72,7 +84,12 @@ export function registerPlayRoutes(app: Express, deps: AppDeps): void {
       const link = await client.resolve(
         infoHash,
         rawFileIdx === undefined ? undefined : Number(rawFileIdx),
-        { season: episodePart(req.query.s), episode: episodePart(req.query.e) },
+        {
+          season: episodePart(req.query.s),
+          episode: episodePart(req.query.e),
+          filename: queryFilename(req.query.filename),
+          size: querySize(req.query.size),
+        },
       );
       res.setHeader('Location', new URL(link.url).href);
       res.status(302).end();

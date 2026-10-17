@@ -10,8 +10,8 @@ import type { AllDebridClient } from './sources/alldebrid.js';
 import { collectStreams, type SourceErrorEntry } from './sources/collect.js';
 import type { ContentRef, StremioStream } from './types.js';
 
-/** Nombre maximal d'infoHash interrogés auprès du débrideur pour le statut « cache ». */
-const CACHE_CHECK_LIMIT = 25;
+/** Nombre maximal d'infoHash interrogés auprès du débrideur pour le statut « cache » (les N premiers après classement). */
+const CACHE_CHECK_LIMIT = 8;
 
 export interface PipelineContext {
   /** Base publique du endpoint de lecture (ex. https://addon.example.com). */

@@ -110,6 +110,16 @@ describe('GET /:config/play/:infoHash/:fileIdx? (factory injectée)', () => {
     expect(calls.at(-1)?.opts).toEqual({ season: undefined, episode: undefined });
   });
 
+  it('transmet le nom et la taille attendus (?filename=&size=) et ignore les valeurs mal formées', async () => {
+    calls.length = 0;
+    await play(main.baseUrl, `/${debridConfig()}/play/${HASH}/1?s=1&e=2&filename=${encodeURIComponent('Show.S01E02.mkv')}&size=1234`);
+    expect(calls.at(-1)?.opts).toEqual({ season: 1, episode: 2, filename: 'Show.S01E02.mkv', size: 1234 });
+
+    calls.length = 0;
+    await play(main.baseUrl, `/${debridConfig()}/play/${HASH}/1?size=12abc&filename=`);
+    expect(calls.at(-1)?.opts).toEqual({ season: undefined, episode: undefined, filename: undefined, size: undefined });
+  });
+
   it('répond 400 à un hash invalide sans appeler le debrid', async () => {
     calls.length = 0;
     const short = await play(main.baseUrl, `/${debridConfig()}/play/${'b'.repeat(39)}`);

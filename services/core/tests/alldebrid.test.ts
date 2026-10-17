@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AllDebridClient, AllDebridError } from '../src/sources/alldebrid.js';
 
 const API_KEY = 'AD-TEST-KEY-NE-PAS-FUITER';
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 
 interface Call {
   method: string;
@@ -13,6 +15,7 @@ interface Call {
 interface Reply {
   status?: number;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 type Responder = (call: Call) => Reply | Promise<Reply>;
@@ -32,7 +35,7 @@ function fakeAllDebrid(responder: Responder): { fetch: typeof fetch; calls: Call
     const reply = await responder(call);
     return new Response(JSON.stringify(reply.body), {
       status: reply.status ?? 200,
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...reply.headers },
     });
   };
   return { fetch: fetchImpl as unknown as typeof fetch, calls };
@@ -59,7 +62,7 @@ function uploadEntry(hash: string, ready: boolean, id: number): Record<string, u
 
 function makeClient(
   responder: Responder,
-  opts: { cacheTtlMs?: number; now?: () => number } = {},
+  opts: { cacheTtlMs?: number; negativeCacheTtlMs?: number; now?: () => number } = {},
 ): { client: AllDebridClient; calls: Call[] } {
   const fake = fakeAllDebrid(responder);
   const client = new AllDebridClient(API_KEY, { fetch: fake.fetch, ...opts });
@@ -67,6 +70,15 @@ function makeClient(
 }
 
 const noSleep = async (): Promise<void> => {};
+
+/** Répondeur du contrôle « cache » : liste du compte (`account`), upload fourni, suppression acquittée. */
+function checkRoutes(upload: Responder, account: Record<string, unknown>[] = []): Responder {
+  return (call) => {
+    if (call.path === '/v4/magnet/upload') return upload(call);
+    if (call.path === '/v4.1/magnet/status') return ok({ magnets: account });
+    return ok({ message: 'ok' });
+  };
+}
 
 describe('AllDebridClient.checkApiKey', () => {
   it('renvoie ok et premium avec le Bearer sur GET /v4/user', async () => {
@@ -102,17 +114,12 @@ describe('AllDebridClient.checkApiKey', () => {
 });
 
 describe('AllDebridClient.checkCached', () => {
-  it('renvoie ready true/false et supprime les magnets non prêts ajoutés', async () => {
+  it('renvoie ready true/false et supprime seulement les magnets non prêts créés par le contrôle', async () => {
     const readyHash = hashOf(1);
     const pendingHash = hashOf(2);
-    const { client, calls } = makeClient((call) => {
-      if (call.path === '/v4/magnet/upload') {
-        return ok({
-          magnets: [uploadEntry(readyHash, true, 11), uploadEntry(pendingHash, false, 12)],
-        });
-      }
-      return ok({});
-    });
+    const { client, calls } = makeClient(
+      checkRoutes(() => ok({ magnets: [uploadEntry(readyHash, true, 11), uploadEntry(pendingHash, false, 12)] })),
+    );
     const result = await client.checkCached([readyHash, pendingHash]);
     expect(result.get(readyHash)).toBe(true);
     expect(result.get(pendingHash)).toBe(false);
@@ -121,13 +128,37 @@ describe('AllDebridClient.checkCached', () => {
     expect(deletions[0]?.form.get('id')).toBe('12');
   });
 
+  it('ne supprime jamais un magnet déjà présent dans le compte (l upload renvoie son id existant)', async () => {
+    const hash = hashOf(21);
+    const { client, calls } = makeClient(
+      checkRoutes(() => ok({ magnets: [uploadEntry(hash, false, 55)] }), [{ id: 55, statusCode: 1 }]),
+    );
+    const result = await client.checkCached([hash]);
+    expect(result.get(hash)).toBe(false);
+    expect(countCalls(calls, '/v4/magnet/delete')).toBe(0);
+  });
+
+  it('n envoie aucun magnet si la liste du compte est indisponible ou invalide', async () => {
+    const hashes = [hashOf(31), hashOf(32)];
+    const failing = makeClient((call) => (call.path === '/v4.1/magnet/status' ? apiError('MAINTENANCE', 500) : ok({})));
+    expect((await failing.client.checkCached(hashes)).size).toBe(0);
+    expect(countCalls(failing.calls, '/v4/magnet/upload')).toBe(0);
+
+    const malformed = makeClient((call) =>
+      call.path === '/v4.1/magnet/status' ? ok({ magnets: [{ statusCode: 1 }] }) : ok({}),
+    );
+    expect((await malformed.client.checkCached(hashes)).size).toBe(0);
+    expect(countCalls(malformed.calls, '/v4/magnet/upload')).toBe(0);
+  });
+
   it('envoie les hashes en lots de 20 maximum', async () => {
     const hashes = Array.from({ length: 45 }, (_, i) => hashOf(i + 1));
-    const { client, calls } = makeClient((call) => {
-      if (call.path !== '/v4/magnet/upload') return ok({});
-      const sent = call.form.getAll('magnets[]');
-      return ok({ magnets: sent.map((h, i) => uploadEntry(h, true, i)) });
-    });
+    const { client, calls } = makeClient(
+      checkRoutes((call) => {
+        const sent = call.form.getAll('magnets[]');
+        return ok({ magnets: sent.map((h, i) => uploadEntry(h, true, i + 1)) });
+      }),
+    );
     const result = await client.checkCached(hashes);
     const uploads = calls.filter((c) => c.path === '/v4/magnet/upload');
     expect(uploads.map((c) => c.form.getAll('magnets[]').length).sort((a, b) => a - b)).toEqual([5, 20, 20]);
@@ -136,9 +167,7 @@ describe('AllDebridClient.checkCached', () => {
 
   it('ignore les hashes invalides et les doublons', async () => {
     const valid = hashOf(7);
-    const { client, calls } = makeClient((call) =>
-      call.path === '/v4/magnet/upload' ? ok({ magnets: [uploadEntry(valid, true, 1)] }) : ok({}),
-    );
+    const { client, calls } = makeClient(checkRoutes(() => ok({ magnets: [uploadEntry(valid, true, 1)] })));
     const result = await client.checkCached([valid, valid.toUpperCase(), 'pas-un-hash', '']);
     expect(result.size).toBe(1);
     const sent = calls.flatMap((c) => c.form.getAll('magnets[]'));
@@ -148,10 +177,10 @@ describe('AllDebridClient.checkCached', () => {
   it('réutilise le cache pendant le TTL positif et interroge à nouveau après expiration', async () => {
     let clock = 1_000;
     const hash = hashOf(3);
-    const { client, calls } = makeClient(
-      () => ok({ magnets: [uploadEntry(hash, true, 1)] }),
-      { cacheTtlMs: 600_000, now: () => clock },
-    );
+    const { client, calls } = makeClient(checkRoutes(() => ok({ magnets: [uploadEntry(hash, true, 1)] })), {
+      cacheTtlMs: 600_000,
+      now: () => clock,
+    });
     await client.checkCached([hash]);
     clock += 300_000;
     const second = await client.checkCached([hash]);
@@ -162,13 +191,44 @@ describe('AllDebridClient.checkCached', () => {
     expect(countCalls(calls, '/v4/magnet/upload')).toBe(2);
   });
 
+  it('utilise par défaut un TTL positif de 6 h', async () => {
+    let clock = 0;
+    const hash = hashOf(8);
+    const { client, calls } = makeClient(checkRoutes(() => ok({ magnets: [uploadEntry(hash, true, 1)] })), {
+      now: () => clock,
+    });
+    await client.checkCached([hash]);
+    clock = 6 * HOUR - 1;
+    await client.checkCached([hash]);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+    clock = 6 * HOUR + 1;
+    await client.checkCached([hash]);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(2);
+  });
+
+  it('utilise par défaut un TTL négatif de 30 min pour un hash non prêt', async () => {
+    let clock = 0;
+    const hash = hashOf(9);
+    const { client, calls } = makeClient(checkRoutes(() => ok({ magnets: [uploadEntry(hash, false, 9)] })), {
+      now: () => clock,
+    });
+    await client.checkCached([hash]);
+    clock = 30 * MINUTE - 1;
+    await client.checkCached([hash]);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+    clock = 30 * MINUTE + 1;
+    await client.checkCached([hash]);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(2);
+  });
+
   it('utilise un TTL négatif plus court que le TTL positif', async () => {
     let clock = 0;
     const hash = hashOf(4);
-    const { client, calls } = makeClient(
-      () => ok({ magnets: [uploadEntry(hash, false, 9)] }),
-      { cacheTtlMs: 100_000, now: () => clock },
-    );
+    const { client, calls } = makeClient(checkRoutes(() => ok({ magnets: [uploadEntry(hash, false, 9)] })), {
+      cacheTtlMs: 100_000,
+      negativeCacheTtlMs: 10_000,
+      now: () => clock,
+    });
     await client.checkCached([hash]);
     clock += 9_999;
     await client.checkCached([hash]);
@@ -180,20 +240,42 @@ describe('AllDebridClient.checkCached', () => {
 
   it('considère inconnu (absent de la Map) un lot en erreur, sans lever', async () => {
     const hashes = Array.from({ length: 25 }, (_, i) => hashOf(i + 1));
-    const { client } = makeClient((call) => {
-      const sent = call.form.getAll('magnets[]');
-      if (sent.includes(hashOf(1))) return { status: 503, body: { status: 'error', error: { code: 'X' } } };
-      return ok({ magnets: sent.map((h) => uploadEntry(h, true, 1)) });
-    });
+    const { client } = makeClient(
+      checkRoutes((call) => {
+        const sent = call.form.getAll('magnets[]');
+        if (sent.includes(hashOf(1))) return apiError('X', 500);
+        return ok({ magnets: sent.map((h) => uploadEntry(h, true, 1)) });
+      }),
+    );
     const result = await client.checkCached(hashes);
     expect(result.has(hashOf(1))).toBe(false);
     expect(result.get(hashOf(25))).toBe(true);
     expect(result.size).toBe(5);
   });
 
+  it('ne relance pas un hash en échec de lot pendant 30 s', async () => {
+    let clock = 0;
+    const hash = hashOf(33);
+    let failing = true;
+    const { client, calls } = makeClient(
+      checkRoutes(() => (failing ? apiError('MAGNET_NO_SERVER', 500) : ok({ magnets: [uploadEntry(hash, true, 1)] }))),
+      { now: () => clock },
+    );
+    expect((await client.checkCached([hash])).has(hash)).toBe(false);
+    failing = false;
+    clock = 29_999;
+    expect((await client.checkCached([hash])).has(hash)).toBe(false);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+    clock = 30_001;
+    expect((await client.checkCached([hash])).get(hash)).toBe(true);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(2);
+  });
+
   it('ignore les entrées magnet en erreur (inconnu)', async () => {
     const hash = hashOf(5);
-    const { client } = makeClient(() => ok({ magnets: [{ magnet: 'x', hash, error: { code: 'MAGNET_INVALID_URI' } }] }));
+    const { client } = makeClient(
+      checkRoutes(() => ok({ magnets: [{ magnet: 'x', hash, error: { code: 'MAGNET_INVALID_URI' } }] })),
+    );
     const result = await client.checkCached([hash]);
     expect(result.has(hash)).toBe(false);
   });
@@ -202,17 +284,180 @@ describe('AllDebridClient.checkCached', () => {
     const hashes = Array.from({ length: 100 }, (_, i) => hashOf(i + 1));
     let inFlight = 0;
     let maxInFlight = 0;
-    const { client } = makeClient(async (call) => {
-      if (call.path !== '/v4/magnet/upload') return ok({});
+    const { client } = makeClient(
+      checkRoutes(async (call) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return ok({ magnets: call.form.getAll('magnets[]').map((h) => uploadEntry(h, true, 1)) });
+      }),
+    );
+    const result = await client.checkCached(hashes);
+    expect(result.size).toBe(100);
+    expect(maxInFlight).toBe(3);
+  });
+
+  it('supprime les magnets créés par le contrôle au plus 3 à la fois', async () => {
+    const hashes = Array.from({ length: 10 }, (_, i) => hashOf(100 + i));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const routes = checkRoutes((call) => ok({ magnets: call.form.getAll('magnets[]').map((h, i) => uploadEntry(h, false, 200 + i)) }));
+    const { client, calls } = makeClient(async (call) => {
+      if (call.path !== '/v4/magnet/delete') return routes(call);
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
       inFlight -= 1;
-      return ok({ magnets: call.form.getAll('magnets[]').map((h) => uploadEntry(h, true, 1)) });
+      return ok({ message: 'ok' });
     });
     const result = await client.checkCached(hashes);
-    expect(result.size).toBe(100);
+    expect(result.size).toBe(10);
+    expect(countCalls(calls, '/v4/magnet/delete')).toBe(10);
     expect(maxInFlight).toBe(3);
+  });
+
+  it('un contrôle concurrent pour le même hash partage l upload', async () => {
+    const hash = hashOf(10);
+    const { client, calls } = makeClient(
+      checkRoutes(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return ok({ magnets: [uploadEntry(hash, true, 1)] });
+      }),
+    );
+    const [first, second] = await Promise.all([client.checkCached([hash]), client.checkCached([hash])]);
+    expect(first.get(hash)).toBe(true);
+    expect(second.get(hash)).toBe(true);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+  });
+
+  it('HTTP 429 : aucun nouvel essai en boucle, recul selon Retry-After puis reprise', async () => {
+    let clock = 0;
+    const hash = hashOf(34);
+    let limited = true;
+    const { client, calls } = makeClient(
+      checkRoutes(() =>
+        limited ? { status: 429, body: {}, headers: { 'retry-after': '45' } } : ok({ magnets: [uploadEntry(hash, true, 1)] }),
+      ),
+      { now: () => clock },
+    );
+    expect((await client.checkCached([hash])).size).toBe(0);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+
+    const before = calls.length;
+    clock = 10_000;
+    expect((await client.checkCached([hashOf(35)])).size).toBe(0);
+    expect(calls.length).toBe(before);
+
+    limited = false;
+    clock = 45_001;
+    expect((await client.checkCached([hash])).get(hash)).toBe(true);
+  });
+
+  it.each([429, 503])('HTTP %i sans Retry-After : recul de 30 s', async (status) => {
+    let clock = 0;
+    const hash = hashOf(36);
+    let limited = true;
+    const { client, calls } = makeClient(
+      checkRoutes(() => (limited ? { status, body: {} } : ok({ magnets: [uploadEntry(hash, true, 1)] }))),
+      { now: () => clock },
+    );
+    await client.checkCached([hash]);
+    const before = calls.length;
+    clock = 29_999;
+    await client.checkCached([hashOf(37)]);
+    expect(calls.length).toBe(before);
+
+    limited = false;
+    clock = 30_001;
+    expect((await client.checkCached([hash])).get(hash)).toBe(true);
+  });
+
+  it('ne supprime pas un magnet d une résolution en cours et n envoie rien pour ce hash', async () => {
+    const hash = hashOf(40);
+    let released = false;
+    let releasePoll: () => void = () => {};
+    const polling = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+    let signalPolling: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      signalPolling = resolve;
+    });
+    const { client, calls } = makeClient((call) => {
+      switch (call.path) {
+        case '/v4/magnet/upload':
+          return ok({ magnets: [uploadEntry(hash, false, 77)] });
+        case '/v4.1/magnet/status':
+          return ok({ magnets: { id: 77, statusCode: released ? 4 : 1 } });
+        case '/v4/magnet/files':
+          return ok({ magnets: [{ id: 77, files: [{ n: 'movie.mkv', s: 5000, l: 'locked' }] }] });
+        case '/v4/link/unlock':
+          return ok({ link: 'https://dl.alldebrid.example/movie.mkv', filename: 'movie.mkv', filesize: 5000 });
+        default:
+          return ok({ message: 'ok' });
+      }
+    });
+    const pending = client.resolve(hash, undefined, {
+      sleep: async () => {
+        signalPolling();
+        await polling;
+      },
+    });
+    await started;
+
+    const during = await client.checkCached([hash]);
+    expect(during.has(hash)).toBe(false);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+    expect(countCalls(calls, '/v4/magnet/delete')).toBe(0);
+
+    released = true;
+    releasePoll();
+    const link = await pending;
+    expect(link.url).toBe('https://dl.alldebrid.example/movie.mkv');
+    expect(countCalls(calls, '/v4/magnet/delete')).toBe(0);
+  });
+
+  it('un contrôle déjà en cours ne supprime pas le magnet d une résolution lancée pendant ce contrôle', async () => {
+    const hash = hashOf(41);
+    let uploads = 0;
+    let releaseCheck: () => void = () => {};
+    const checkGate = new Promise<void>((resolve) => {
+      releaseCheck = resolve;
+    });
+    let signalCheck: () => void = () => {};
+    const checkStarted = new Promise<void>((resolve) => {
+      signalCheck = resolve;
+    });
+    const { client, calls } = makeClient((call) => {
+      switch (call.path) {
+        case '/v4/magnet/upload':
+          uploads += 1;
+          if (uploads === 1) {
+            signalCheck();
+            return checkGate.then(() => ok({ magnets: [uploadEntry(hash, false, 88)] }));
+          }
+          return ok({ magnets: [uploadEntry(hash, true, 88)] });
+        case '/v4.1/magnet/status':
+          return call.form.has('id') ? ok({ magnets: { id: 88, statusCode: 4 } }) : ok({ magnets: [] });
+        case '/v4/magnet/files':
+          return ok({ magnets: [{ id: 88, files: [{ n: 'movie.mkv', s: 5000, l: 'locked' }] }] });
+        case '/v4/link/unlock':
+          return ok({ link: 'https://dl.alldebrid.example/movie.mkv', filename: 'movie.mkv', filesize: 5000 });
+        default:
+          return ok({ message: 'ok' });
+      }
+    });
+    const checking = client.checkCached([hash]);
+    await checkStarted;
+    const resolving = client.resolve(hash, undefined, { sleep: noSleep });
+    releaseCheck();
+
+    const [checkResult, link] = await Promise.all([checking, resolving]);
+    expect(checkResult.get(hash)).toBe(false);
+    expect(countCalls(calls, '/v4/magnet/delete')).toBe(0);
+    expect(link.url).toBe('https://dl.alldebrid.example/movie.mkv');
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(2);
   });
 });
 
@@ -312,14 +557,34 @@ describe('AllDebridClient.resolve', () => {
     expect(result.url).toContain(MOVIE_LINK);
   });
 
-  it('choisit le fichier par index valide', async () => {
+  it('choisit le fichier dont la taille correspond à la taille attendue', async () => {
+    const files = [
+      { n: 'small.mkv', s: 100, l: 'link-small' },
+      { n: 'big.mkv', s: 9000, l: 'link-big' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 0, { size: 100, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('link-small');
+  });
+
+  it('ignore l index Stremio quand la taille attendue ne correspond pas', async () => {
+    const files = [
+      { n: 'small.mkv', s: 100, l: 'link-small' },
+      { n: 'big.mkv', s: 9000, l: 'link-big' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 0, { size: 9000, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('link-big');
+  });
+
+  it('ignore l index sans nom ni taille attendus et prend le plus gros fichier vidéo', async () => {
     const files = [
       { n: 'small.mkv', s: 100, l: 'link-small' },
       { n: 'big.mkv', s: 9000, l: 'link-big' },
     ];
     const { client, calls } = makeClient(standardRoutes(files));
     await client.resolve(HASH, 0, { sleep: noSleep });
-    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('link-small');
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('link-big');
   });
 
   it('revient au plus gros fichier vidéo si l\'index est hors bornes', async () => {
@@ -375,12 +640,76 @@ describe('AllDebridClient.resolve', () => {
       { n: 'ep2.mkv', s: 30, l: 'root-ep2' },
     ];
     const { client, calls } = makeClient(standardRoutes(files));
-    // Ordre aplati : 0 readme.txt, 1 ep1.mkv, 2 bonus.mp4, 3 ep2.mkv
-    await client.resolve(HASH, 2, { sleep: noSleep });
+    // Ordre aplati : 0 readme.txt, 1 ep1.mkv, 2 bonus.mp4, 3 ep2.mkv ; l'index n'est suivi que si la taille concorde.
+    await client.resolve(HASH, 2, { size: 20, sleep: noSleep });
     expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('nested-bonus');
 
-    await client.resolve(HASH, 3, { sleep: noSleep });
+    await client.resolve(hashOf(44), 3, { size: 30, sleep: noSleep });
     expect(calls.filter((c) => c.path === '/v4/link/unlock').at(-1)?.form.get('link')).toBe('root-ep2');
+  });
+
+  it('pack : le nom attendu prime sur un index et une taille qui désignent un autre épisode', async () => {
+    const files = [
+      { n: 'Pack/Show.S01E01.1080p.mkv', s: 500, l: 'e1' },
+      { n: 'Pack/Show.S01E02.1080p.mkv', s: 400, l: 'e2' },
+      { n: 'Pack/Show.S01E03.1080p.mkv', s: 900, l: 'e3' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 2, { filename: 'Show.S01E02.1080p.mkv', size: 900, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('e2');
+  });
+
+  it('pack : le nom attendu accepte une extension absente ou une casse différente', async () => {
+    const files = [
+      { n: 'Pack/Show.S01E01.1080p.mkv', s: 500, l: 'e1' },
+      { n: 'Pack/Show.S01E02.1080p.mkv', s: 400, l: 'e2' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, undefined, { filename: 'show.s01e01.1080p', sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('e1');
+  });
+
+  it('pack : la taille attendue désigne le fichier quand l index pointe ailleurs', async () => {
+    const files = [
+      { n: 'Pack/Show.S01E01.1080p.mkv', s: 500, l: 'e1' },
+      { n: 'Pack/Show.S01E02.1080p.mkv', s: 400, l: 'e2' },
+      { n: 'Pack/Show.S01E03.1080p.mkv', s: 900, l: 'e3' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 2, { size: 400, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('e2');
+  });
+
+  it('pack : l épisode demandé prime sur un index sans correspondance', async () => {
+    const files = [
+      { n: 'Show.S01E01.1080p.mkv', s: 900, l: 'e1' },
+      { n: 'Show.S01E02.1080p.mkv', s: 400, l: 'e2' },
+      { n: 'Show.S01E03.1080p.mkv', s: 500, l: 'e3' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 0, { season: 1, episode: 3, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('e3');
+  });
+
+  it('pack : sans nom, taille ni épisode, l index est ignoré et le plus gros fichier vidéo gagne', async () => {
+    const files = [
+      { n: 'Show.S01E01.1080p.mkv', s: 900, l: 'e1' },
+      { n: 'Show.S01E02.1080p.mkv', s: 400, l: 'e2' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 1, { sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('e1');
+  });
+
+  it('pack : l index départage deux fichiers de même taille', async () => {
+    const files = [
+      { n: 'a.mkv', s: 400, l: 'a-link' },
+      { n: 'b.mkv', s: 400, l: 'b-link' },
+      { n: 'c.mkv', s: 100, l: 'c-link' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    await client.resolve(HASH, 1, { size: 400, sleep: noSleep });
+    expect(calls.find((c) => c.path === '/v4/link/unlock')?.form.get('link')).toBe('b-link');
   });
 
   it('lève no_file quand aucun fichier vidéo n\'existe', async () => {
@@ -404,6 +733,24 @@ describe('AllDebridClient.resolve', () => {
     const uploadsBefore = countCalls(calls, '/v4/magnet/upload');
     await client.resolve(HASH, undefined, { sleep: noSleep });
     expect(countCalls(calls, '/v4/magnet/upload')).toBe(uploadsBefore);
+  });
+
+  it('dédoublonne les résolutions concurrentes d un même hash : un seul upload, un lien par sélection', async () => {
+    const files = [
+      { n: 'small.mkv', s: 100, l: 'link-small' },
+      { n: 'big.mkv', s: 9000, l: 'link-big' },
+    ];
+    const { client, calls } = makeClient(standardRoutes(files));
+    const [small, big] = await Promise.all([
+      client.resolve(HASH, 0, { size: 100, sleep: noSleep }),
+      client.resolve(HASH, 1, { size: 9000, sleep: noSleep }),
+    ]);
+    expect(countCalls(calls, '/v4/magnet/upload')).toBe(1);
+    expect(calls.filter((c) => c.path === '/v4/link/unlock').map((c) => c.form.get('link'))).toEqual(
+      expect.arrayContaining(['link-small', 'link-big']),
+    );
+    expect(small.url).toContain(MOVIE_LINK);
+    expect(big.url).toContain(MOVIE_LINK);
   });
 
   it('rejette un hash invalide sans appel réseau', async () => {
