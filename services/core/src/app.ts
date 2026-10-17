@@ -10,6 +10,10 @@ import { isRecord } from './sources/http.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
+import { registerUserRoutes } from './user/routes.js';
+import { createRateLimiter } from './rate-limit.js';
+
+export { createRateLimiter };
 
 export const MANIFEST = {
   id: 'com.laststream.lastaddon',
@@ -38,6 +42,10 @@ const CONFIG_PATH = /^\/config(?:\/|$)/;
 const OPEN_LT_PATHS: readonly RegExp[] = [/^\/[^/]+\/lt\/.+$/, /^\/[^/]+\/catalog\/.+$/];
 /** Routes lt en POST : origines restreintes et limite de débit, comme /config/*. */
 const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
+/** Données utilisateur (/user/*) : origines restreintes, limite de débit comme /config/*, jamais en cache. */
+const USER_PATH = /^\/user(?:\/|$)/;
+const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token';
 
 /** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
 function isOpenPath(req: Request): boolean {
@@ -51,7 +59,6 @@ const CONFIG_RATE_WINDOW_MS = 60_000;
 /** GET lt et catalogues : 120 requêtes par minute et par IP. */
 const READ_RATE_LIMIT = 120;
 const READ_RATE_WINDOW_MS = 60_000;
-const RATE_TABLE_PRUNE_SIZE = 10_000;
 
 /**
  * CORS : `*` uniquement sur les routes manifest et stream (GET). Sur /config/*, seule une origine
@@ -63,13 +70,18 @@ function corsMiddleware(origins: readonly string[]) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path)) {
+    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path) || USER_PATH.test(req.path)) {
       const origin = req.get('origin');
       res.vary('Origin');
       if (origin !== undefined && origins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (USER_PATH.test(req.path)) {
+          res.setHeader('Access-Control-Allow-Methods', USER_METHODS);
+          res.setHeader('Access-Control-Allow-Headers', USER_HEADERS);
+        } else {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        }
       }
     }
     if (req.method === 'OPTIONS') {
@@ -77,27 +89,6 @@ function corsMiddleware(origins: readonly string[]) {
       return;
     }
     next();
-  };
-}
-
-/** Compteur à fenêtre fixe par clé (en mémoire, par processus). Renvoie false une fois la limite atteinte. */
-export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now) {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  return (key: string): { allowed: boolean; retryAfterSec: number } => {
-    const current = now();
-    if (windows.size > RATE_TABLE_PRUNE_SIZE) {
-      for (const [existing, window] of windows) {
-        if (window.resetAt <= current) windows.delete(existing);
-      }
-    }
-    let window = windows.get(key);
-    if (window === undefined || window.resetAt <= current) {
-      window = { count: 0, resetAt: current + windowMs };
-      windows.set(key, window);
-    }
-    window.count += 1;
-    const retryAfterSec = Math.max(1, Math.ceil((window.resetAt - current) / 1000));
-    return { allowed: window.count <= limit, retryAfterSec };
   };
 }
 
@@ -172,6 +163,15 @@ function encodeInput(body: unknown, deps: AppDeps): unknown {
   return mergeSecrets(patch, previous);
 }
 
+/** Fermetures des ressources propres à une application (base des données utilisateur), par application. */
+const closers = new WeakMap<Express, () => void>();
+
+/** Libère les ressources d'une application créée par createApp (tests, arrêt propre). */
+export function closeApp(app: Express): void {
+  closers.get(app)?.();
+  closers.delete(app);
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -234,6 +234,7 @@ export function createApp(deps: AppDeps): Express {
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps);
+  closers.set(app, registerUserRoutes(app, deps));
 
   app.use(errorHandler);
   return app;

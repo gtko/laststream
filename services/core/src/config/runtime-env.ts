@@ -3,6 +3,17 @@
  * testables avec vi.stubEnv.
  */
 
+/** LASTADDON_ALLOW_SIGNUP=1 : inscription ouverte (sinon seul le premier compte peut être créé sur /user/register). */
+export function isSignupAllowed(): boolean {
+  return process.env.LASTADDON_ALLOW_SIGNUP === '1';
+}
+
+/** LASTADDON_BOOTSTRAP_TOKEN : exigé (en-tête X-Bootstrap-Token) pour créer le premier compte. Absent ou vide : non exigé. */
+export function bootstrapToken(): string | undefined {
+  const raw = process.env.LASTADDON_BOOTSTRAP_TOKEN?.trim();
+  return raw ? raw : undefined;
+}
+
 /** Origines CORS autorisées sur /config/* quand LASTADDON_ALLOWED_ORIGINS est absent ou vide. */
 export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = ['http://localhost:8089', 'http://localhost:8080'];
 
