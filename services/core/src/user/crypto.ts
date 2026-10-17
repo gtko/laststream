@@ -3,7 +3,7 @@ import { createHash, createHmac, randomBytes, scrypt as scryptCallback, timingSa
 /**
  * Primitives des données utilisateur. Mots de passe et PIN : scrypt (sel de 16 octets, paramètres stockés avec
  * le hash). Jetons de session : 32 octets aléatoires, seule leur empreinte SHA-256 est stockée. Jetons de profil
- * (déverrouillage PIN) : HMAC signé avec la clé serveur, sans état en base.
+ * (déverrouillage PIN) : HMAC signé avec la clé serveur, liés à la session et à la version du PIN.
  */
 
 const SCRYPT_KEY_LENGTH = 64;
@@ -49,12 +49,19 @@ export async function verifySecret(secret: string, stored: string): Promise<bool
   return timingSafeEqual(actual, expected);
 }
 
+/** Comparaison de chaînes à temps constant (les deux côtés sont hachés pour des longueurs égales). */
+export function safeEqual(a: string, b: string): boolean {
+  const left = createHash('sha256').update(a, 'utf8').digest();
+  const right = createHash('sha256').update(b, 'utf8').digest();
+  return timingSafeEqual(left, right) && a.length === b.length;
+}
+
 /** Jeton de session : 32 octets aléatoires, encodés en base64url (43 caractères). */
 export function generateSessionToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
-/** Empreinte SHA-256 (hex) d'un jeton de session : seule valeur stockée en base. */
+/** Empreinte SHA-256 (hex) d'un jeton de session : seule valeur stockée en base, et identifiant de session. */
 export function hashSessionToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
@@ -64,34 +71,35 @@ function profileTokenKey(secret: string): Buffer {
   return createHmac('sha256', secret).update(PROFILE_TOKEN_PURPOSE).digest();
 }
 
-interface ProfileTokenPayload {
-  purpose: typeof PROFILE_TOKEN_PURPOSE;
+/** Ce à quoi un jeton de profil est lié : compte, profil, session (empreinte) et version du PIN. */
+export interface ProfileTokenClaims {
   accountId: string;
   profileId: string;
+  sessionHash: string;
+  pinVersion: number;
+}
+
+interface ProfileTokenPayload extends ProfileTokenClaims {
+  purpose: typeof PROFILE_TOKEN_PURPOSE;
   exp: number;
 }
 
-/** Jeton court (charge utile JSON + HMAC) prouvant un déverrouillage PIN pour un profil donné. */
-export function signProfileToken(accountId: string, profileId: string, now: number, secret: string): { token: string; expiresAt: string } {
-  const payload: ProfileTokenPayload = {
-    purpose: PROFILE_TOKEN_PURPOSE,
-    accountId,
-    profileId,
-    exp: now + PROFILE_TOKEN_TTL_MS,
-  };
+/** Jeton court (charge utile JSON + HMAC). Invalide dès que la session ou la version du PIN change. */
+export function signProfileToken(claims: ProfileTokenClaims, now: number, secret: string): { token: string; expiresAt: string } {
+  const payload: ProfileTokenPayload = { purpose: PROFILE_TOKEN_PURPOSE, ...claims, exp: now + PROFILE_TOKEN_TTL_MS };
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   const signature = createHmac('sha256', profileTokenKey(secret)).update(body).digest('base64url');
   return { token: `${body}.${signature}`, expiresAt: new Date(payload.exp).toISOString() };
 }
 
-/** Vrai si le jeton est authentique, non expiré, et lié à ce compte et à ce profil. */
-export function verifyProfileToken(token: string, accountId: string, profileId: string, now: number, secret: string): boolean {
+/** Vrai si le jeton est authentique, non expiré, et lié à exactement ces claims (compte, profil, session, PIN). */
+export function verifyProfileToken(token: string, expected: ProfileTokenClaims, now: number, secret: string): boolean {
   const dot = token.indexOf('.');
   if (dot <= 0 || dot !== token.lastIndexOf('.')) return false;
   const body = token.slice(0, dot);
   const signature = Buffer.from(token.slice(dot + 1), 'base64url');
-  const expected = createHmac('sha256', profileTokenKey(secret)).update(body).digest();
-  if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) return false;
+  const expectedSignature = createHmac('sha256', profileTokenKey(secret)).update(body).digest();
+  if (signature.length !== expectedSignature.length || !timingSafeEqual(signature, expectedSignature)) return false;
   let payload: unknown;
   try {
     payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as unknown;
@@ -102,8 +110,10 @@ export function verifyProfileToken(token: string, accountId: string, profileId: 
   const claims = payload as Partial<ProfileTokenPayload>;
   return (
     claims.purpose === PROFILE_TOKEN_PURPOSE &&
-    claims.accountId === accountId &&
-    claims.profileId === profileId &&
+    claims.accountId === expected.accountId &&
+    claims.profileId === expected.profileId &&
+    claims.sessionHash === expected.sessionHash &&
+    claims.pinVersion === expected.pinVersion &&
     typeof claims.exp === 'number' &&
     claims.exp > now
   );

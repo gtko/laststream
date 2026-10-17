@@ -6,13 +6,16 @@ export class UserApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly issues: string[] | undefined;
+  /** Secondes avant nouvelle tentative (en-tête Retry-After), si pertinent. */
+  readonly retryAfterSec: number | undefined;
 
-  constructor(status: number, code: string, issues?: string[]) {
+  constructor(status: number, code: string, issues?: string[], retryAfterSec?: number) {
     super(code);
     this.name = 'UserApiError';
     this.status = status;
     this.code = code;
     this.issues = issues;
+    this.retryAfterSec = retryAfterSec;
   }
 }
 
@@ -75,6 +78,10 @@ export const updateProfileSchema = z.object({
 });
 
 export const pinSchema = z.object({ pin: PIN });
+
+export const passwordChangeSchema = z.object({ current: z.string().min(1).max(256), next: PASSWORD });
+
+export const deleteAccountSchema = z.object({ password: z.string().min(1).max(256) });
 
 export const librarySortSchema = z.object({
   type: MEDIA_TYPE.optional(),

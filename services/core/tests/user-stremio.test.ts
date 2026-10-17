@@ -117,7 +117,7 @@ describe('import Stremio', () => {
   it('importe bibliothèque et progression, résout les identifiants TMDB, et renvoie les compteurs', async () => {
     const res = await importStremio(importBody({ config: tokenFor({ tmdbToken: KEYS.tmdbToken }) }));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ library: 4, progress: 2, skipped: 2, tmdbResolved: 3 });
+    expect(res.body).toEqual({ library: 4, progress: 2, skipped: 2, tmdbResolved: 3, truncated: false });
 
     const library = await request<{ items: { title: string; tmdbId: number | null; imdbId: string | null }[] }>(
       app,
@@ -169,7 +169,7 @@ describe('import Stremio', () => {
 
   it('sans configuration TMDB : identifiants IMDb seuls, aucun appel TMDB', async () => {
     const res = await importStremio(importBody());
-    expect(res.body).toEqual({ library: 4, progress: 2, skipped: 2, tmdbResolved: 0 });
+    expect(res.body).toEqual({ library: 4, progress: 2, skipped: 2, tmdbResolved: 0, truncated: false });
     expect(upstream.callsTo(`${TMDB}/find/tt0133093`)).toHaveLength(0);
     const library = await request<{ items: { tmdbId: number | null; imdbId: string | null }[] }>(app, 'GET', `/user/profiles/${profile}/library`, { token });
     expect(library.body.items.every((item) => item.tmdbId === null)).toBe(true);
@@ -207,6 +207,24 @@ describe('import Stremio', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'invalid_config' });
     expect(upstream.calls).toHaveLength(0);
+  });
+
+  it('bibliothèque plus grande que 5000 entrées : seules les 5000 premières sont importées, truncated = true', async () => {
+    const huge = Array.from({ length: 5001 }, (_, index) => ({
+      _id: `tt${String(1_000_000 + index)}`,
+      type: 'movie',
+      name: `Film ${index}`,
+      state: {},
+    }));
+    const bigUpstream = mockUpstream({
+      [`${STREMIO}/login`]: () => json({ result: { authKey: AUTH_KEY } }),
+      [`${STREMIO}/datastoreGet`]: () => json({ result: huge }),
+    });
+    await app.close();
+    await start(bigUpstream.fetch);
+    const res = await importStremio(importBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ library: 5000, progress: 0, skipped: 1, tmdbResolved: 0, truncated: true });
   });
 
   it('identifiants Stremio jamais stockés ni journalisés', async () => {

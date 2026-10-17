@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { isSignupAllowed } from '../config/runtime-env.js';
+import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { createLtContext, type LtContext } from '../lt/context.js';
+import { createRateLimiter } from '../rate-limit.js';
 import { isRecord } from '../sources/http.js';
 import { openUserDb, userDbPath } from './db.js';
 import {
   generateSessionToken,
   hashSecret,
   hashSessionToken,
+  safeEqual,
   signProfileToken,
   verifyProfileToken,
   verifySecret,
@@ -21,20 +23,22 @@ import {
   type Account,
   type KidMaxAge,
   type MediaType,
-  type Profile,
+  type ProfileEditableFields,
   type ProfileFields,
   type ProfileRecord,
-  type ProgressItem,
+  publicProfile,
   titleRef,
   UserStore,
 } from './store.js';
 import {
   createProfileSchema,
   credentialsSchema,
+  deleteAccountSchema,
   librarySortSchema,
   libraryWriteSchema,
   mediaTypeSchema,
   parseWith,
+  passwordChangeSchema,
   pinSchema,
   progressWriteSchema,
   stremioImportSchema,
@@ -47,9 +51,24 @@ import {
 /** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
 export const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
 const DEFAULT_KID_MAX_AGE: KidMaxAge = 12;
+/** Blocage du PIN : après 5 tentatives échouées, 15 minutes sans vérification. */
+export const PIN_MAX_FAILURES = 5;
+export const PIN_LOCK_MS = 15 * 60_000;
+const LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10 } as const;
 const SETTING_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const MAX_SETTINGS_PER_WRITE = 100;
 const MAX_SETTING_BYTES = 4096;
+
+/** Routes sensibles (identifiants, PIN, import) : limite serrée par IP. */
+const SENSITIVE_ROUTES: readonly { method: string; path: RegExp }[] = [
+  { method: 'POST', path: /^\/register$/ },
+  { method: 'POST', path: /^\/login$/ },
+  { method: 'POST', path: /^\/password$/ },
+  { method: 'DELETE', path: /^\/account$/ },
+  { method: 'POST', path: /^\/profiles\/[^/]+\/unlock$/ },
+  { method: 'POST', path: /^\/profiles\/[^/]+\/import\/stremio$/ },
+];
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -58,12 +77,20 @@ function bearerToken(req: Request): string | undefined {
   return match?.[1];
 }
 
+interface Session {
+  /** Empreinte du jeton de session : identifie la session (stockée en base). */
+  tokenHash: string;
+  account: Account;
+}
+
 /** Session valide de la requête (jeton Bearer), ou 401. */
-function sessionOf(store: UserStore, req: Request): { token: string; account: Account } {
+function sessionOf(store: UserStore, req: Request): Session {
   const token = bearerToken(req);
-  const account = token === undefined ? undefined : store.accountForSession(hashSessionToken(token), nowIso());
-  if (token === undefined || account === undefined) throw new UserApiError(401, 'unauthorized');
-  return { token, account };
+  if (token === undefined) throw new UserApiError(401, 'unauthorized');
+  const tokenHash = hashSessionToken(token);
+  const account = store.accountForSession(tokenHash, nowIso());
+  if (account === undefined) throw new UserApiError(401, 'unauthorized');
+  return { tokenHash, account };
 }
 
 function profileOf(store: UserStore, account: Account, req: Request): ProfileRecord {
@@ -72,21 +99,38 @@ function profileOf(store: UserStore, account: Account, req: Request): ProfileRec
   return profile;
 }
 
-/** Profil avec PIN : modification et suppression exigent un déverrouillage récent (jeton de profil). */
-function requireUnlockedIfProtected(req: Request, profile: ProfileRecord, accountId: string, secret: string): void {
-  if (!profile.hasPin) return;
-  const token = req.get('x-profile-token');
-  if (token === undefined || !verifyProfileToken(token, accountId, profile.id, Date.now(), secret)) {
-    throw new UserApiError(403, 'pin_required');
+interface Scope extends Session {
+  profile: ProfileRecord;
+}
+
+/**
+ * Session et profil de la requête. Si `unlock` et que le profil a un PIN, un jeton de profil valide est exigé
+ * (en-tête X-Profile-Token) : lié à cette session et à la version courante du PIN, sinon 403 pin_required.
+ */
+function scopeOf(store: UserStore, req: Request, secret: string, unlock: boolean): Scope {
+  const session = sessionOf(store, req);
+  const profile = profileOf(store, session.account, req);
+  if (unlock && profile.hasPin) {
+    const token = req.get('x-profile-token');
+    const valid =
+      token !== undefined &&
+      verifyProfileToken(
+        token,
+        { accountId: session.account.id, profileId: profile.id, sessionHash: session.tokenHash, pinVersion: profile.pinVersion },
+        Date.now(),
+        secret,
+      );
+    if (!valid) throw new UserApiError(403, 'pin_required');
   }
+  return { ...session, profile };
 }
 
-function toPublicProfile(record: ProfileRecord): Profile {
-  const { accountId: _accountId, pinHash: _pinHash, ...profile } = record;
-  return profile;
+function pinLocked(lockedUntil: string): UserApiError {
+  const retryAfterSec = Math.max(1, Math.ceil((Date.parse(lockedUntil) - Date.now()) / 1000));
+  return new UserApiError(429, 'pin_locked', undefined, retryAfterSec);
 }
 
-function toProgressDto(item: ProgressItem) {
+function toProgressDto(item: { type: MediaType; tmdbId: number | null; imdbId: string | null; season: number; episode: number; positionSec: number; durationSec: number; updatedAt: string; finished: boolean }) {
   const series = item.type === 'series';
   return {
     type: item.type,
@@ -133,7 +177,7 @@ function tmdbTokenOf(encoded: string, secret: string, allowPlain: boolean): stri
 
 /**
  * API des données utilisateur, montée sous /user. La base SQLite s'ouvre au premier appel (pas au démarrage) :
- * une application sans routes /user n'écrit jamais de fichier.
+ * une application sans routes /user n'écrit jamais de fichier. Renvoie la fermeture de la base.
  */
 export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
   let store: UserStore | undefined;
@@ -142,10 +186,27 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     return store;
   };
   const ctx: LtContext = createLtContext(deps);
+  const limits = { ...DEFAULT_LIMITS, ...deps.userRateLimits };
+  const limiters = {
+    read: createRateLimiter(limits.read, LIMIT_WINDOW_MS),
+    write: createRateLimiter(limits.write, LIMIT_WINDOW_MS),
+    sensitive: createRateLimiter(limits.sensitive, LIMIT_WINDOW_MS),
+  };
+  const loginByUsername = createRateLimiter(limits.loginPerUsername, LIMIT_WINDOW_MS);
 
   const router = express.Router();
   router.use((_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
+  // Limites par IP : lectures, écritures, routes sensibles (préflights OPTIONS exclus).
+  router.use((req, _res, next) => {
+    if (req.method === 'OPTIONS') return next();
+    const sensitive = SENSITIVE_ROUTES.some((route) => route.method === req.method && route.path.test(req.path));
+    const kind = sensitive ? 'sensitive' : req.method === 'GET' || req.method === 'HEAD' ? 'read' : 'write';
+    const verdict = limiters[kind](req.ip ?? 'inconnu');
+    if (!verdict.allowed) return next(new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec));
     next();
   });
 
@@ -155,7 +216,13 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     const body = parseWith(credentialsSchema, req.body);
     const users = db();
     const allowSignup = isSignupAllowed();
-    if (!allowSignup && users.countAccounts() > 0) throw new UserApiError(403, 'signup_disabled');
+    const isFirst = users.countAccounts() === 0;
+    if (!isFirst && !allowSignup) throw new UserApiError(403, 'signup_disabled');
+    // Premier compte : jeton d'amorçage exigé si LASTADDON_BOOTSTRAP_TOKEN est défini.
+    const required = bootstrapToken();
+    if (isFirst && required !== undefined && !safeEqual(req.get('x-bootstrap-token') ?? '', required)) {
+      throw new UserApiError(403, 'bootstrap_token_invalid');
+    }
     const passwordHash = await hashSecret(body.password);
     const result = users.createAccount({ username: body.username, passwordHash, allowSignup, now: nowIso() });
     if (!result.ok) throw new UserApiError(result.reason === 'username_taken' ? 409 : 403, result.reason);
@@ -164,17 +231,17 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.post('/login', async (req, res) => {
     const body = parseWith(credentialsSchema, req.body);
+    const byUser = loginByUsername(body.username);
+    if (!byUser.allowed) throw new UserApiError(429, 'rate_limited', undefined, byUser.retryAfterSec);
     const users = db();
     const record = users.findAccountRecord(body.username);
     // Même coût de calcul que pour un compte existant : le délai ne révèle pas si le nom existe.
     if (record === undefined) await hashSecret(body.password);
     const valid = record !== undefined && (await verifySecret(body.password, record.passwordHash));
     if (record === undefined || !valid) throw new UserApiError(401, 'invalid_credentials');
-    const now = nowIso();
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    users.deleteExpiredSessions(record.id, now);
-    users.createSession(record.id, hashSessionToken(token), now, expiresAt);
+    users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt);
     res.json({ token, expiresAt });
   });
 
@@ -184,15 +251,20 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     const token = generateSessionToken();
     const now = nowIso();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    const rotated = users.rotateSession(hashSessionToken(session.token), hashSessionToken(token), session.account.id, now, expiresAt);
+    const rotated = users.rotateSession(session.tokenHash, hashSessionToken(token), session.account.id, now, expiresAt);
     if (!rotated) throw new UserApiError(401, 'unauthorized');
     res.json({ token, expiresAt });
   });
 
   router.post('/logout', (req, res) => {
     const users = db();
-    const session = sessionOf(users, req);
-    users.deleteSession(hashSessionToken(session.token));
+    users.deleteSession(sessionOf(users, req).tokenHash);
+    res.status(204).end();
+  });
+
+  router.post('/logout-all', (req, res) => {
+    const users = db();
+    users.deleteAllSessions(sessionOf(users, req).account.id);
     res.status(204).end();
   });
 
@@ -200,11 +272,37 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     res.json({ account: sessionOf(db(), req).account });
   });
 
+  /** Change le mot de passe ; révoque les autres sessions. Le mot de passe actuel est exigé. */
+  router.post('/password', async (req, res) => {
+    const users = db();
+    const session = sessionOf(users, req);
+    const body = parseWith(passwordChangeSchema, req.body);
+    const record = users.accountRecordById(session.account.id);
+    if (record === undefined || !(await verifySecret(body.current, record.passwordHash))) {
+      throw new UserApiError(403, 'invalid_password');
+    }
+    users.changePassword(session.account.id, await hashSecret(body.next), session.tokenHash);
+    res.status(204).end();
+  });
+
+  /** Supprime le compte et toutes ses données. Le mot de passe est exigé. */
+  router.delete('/account', async (req, res) => {
+    const users = db();
+    const session = sessionOf(users, req);
+    const body = parseWith(deleteAccountSchema, req.body);
+    const record = users.accountRecordById(session.account.id);
+    if (record === undefined || !(await verifySecret(body.password, record.passwordHash))) {
+      throw new UserApiError(403, 'invalid_password');
+    }
+    users.deleteAccount(session.account.id);
+    res.status(204).end();
+  });
+
   // Profils
 
   router.get('/profiles', (req, res) => {
     const { account } = sessionOf(db(), req);
-    res.json({ profiles: db().listProfiles(account.id).map(toPublicProfile) });
+    res.json({ profiles: db().listProfiles(account.id).map(publicProfile) });
   });
 
   router.post('/profiles', async (req, res) => {
@@ -223,66 +321,78 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     db().insertProfile(account.id, profileId, fields, nowIso());
     const created = db().findProfile(account.id, profileId);
     if (created === undefined) throw new Error('profil introuvable après création');
-    res.status(201).json(toPublicProfile(created));
+    res.status(201).json(publicProfile(created));
   });
 
   router.patch('/profiles/:id', async (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
-    requireUnlockedIfProtected(req, profile, account.id, deps.secret);
+    const { account, profile } = scopeOf(users, req, deps.secret, true);
     const patch = parseWith(updateProfileSchema, req.body);
     const isKid = patch.isKid ?? profile.isKid;
-    let pinHash = profile.pinHash;
-    if (patch.pin !== undefined) pinHash = patch.pin === null ? null : await hashSecret(patch.pin);
-    const fields: ProfileFields = {
+    const fields: ProfileEditableFields = {
       name: patch.name ?? profile.name,
       avatarColor: patch.avatarColor ?? profile.avatarColor,
       isKid,
       kidMaxAge: isKid ? (patch.kidMaxAge ?? profile.kidMaxAge ?? DEFAULT_KID_MAX_AGE) : null,
-      pinHash,
       allowedCatalogs: patch.allowedCatalogs ?? profile.allowedCatalogs,
     };
-    users.updateProfile(account.id, profile.id, fields);
+    const newPinHash = patch.pin === undefined ? undefined : patch.pin === null ? null : await hashSecret(patch.pin);
+    users.transaction(() => {
+      users.updateProfile(account.id, profile.id, fields);
+      if (newPinHash !== undefined) users.setPin(account.id, profile.id, newPinHash);
+    });
     const updated = users.findProfile(account.id, profile.id);
     if (updated === undefined) throw new Error('profil introuvable après mise à jour');
-    res.json(toPublicProfile(updated));
+    res.json(publicProfile(updated));
   });
 
   router.delete('/profiles/:id', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
-    requireUnlockedIfProtected(req, profile, account.id, deps.secret);
+    const { account, profile } = scopeOf(users, req, deps.secret, true);
     users.deleteProfile(account.id, profile.id);
     res.status(204).end();
   });
 
-  /** Déverrouillage par PIN : jeton court (10 minutes) lié à ce profil, requis pour modifier ou supprimer un profil protégé. */
+  /**
+   * Déverrouillage par PIN : jeton de profil (10 minutes), lié à la session et à la version du PIN. Cinq échecs
+   * bloquent le profil 15 minutes : pendant le blocage, le PIN n'est même pas vérifié (429 pin_locked).
+   */
   router.post('/profiles/:id/unlock', async (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { account, profile, tokenHash } = scopeOf(users, req, deps.secret, false);
     const { pin } = parseWith(pinSchema, req.body);
-    if (profile.pinHash === null) throw new UserApiError(409, 'pin_not_set');
-    if (!(await verifySecret(pin, profile.pinHash))) throw new UserApiError(403, 'invalid_pin');
-    res.json(signProfileToken(account.id, profile.id, Date.now(), deps.secret));
+    const pinHash = profile.pinHash;
+    if (pinHash === null) throw new UserApiError(409, 'pin_not_set');
+    const blockedUntil = users.reservePinAttempt(
+      profile.id,
+      nowIso(),
+      new Date(Date.now() + PIN_LOCK_MS).toISOString(),
+      PIN_MAX_FAILURES,
+    );
+    if (blockedUntil !== null) throw pinLocked(blockedUntil);
+    if (await verifySecret(pin, pinHash)) {
+      users.resetPinAttempts(profile.id);
+      const claims = { accountId: account.id, profileId: profile.id, sessionHash: tokenHash, pinVersion: profile.pinVersion };
+      res.json(signProfileToken(claims, Date.now(), deps.secret));
+      return;
+    }
+    const lockedNow = users.pinLockedUntil(profile.id, nowIso());
+    if (lockedNow !== null) throw pinLocked(lockedNow);
+    throw new UserApiError(403, 'invalid_pin');
   });
 
   // Bibliothèque
 
   router.get('/profiles/:id/library', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const query = parseWith(librarySortSchema, req.query);
     res.json({ items: users.listLibrary(profile.id, query.type, query.sort) });
   });
 
   router.put('/profiles/:id/library/:type/:itemId', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
     const itemId = parseWith(titleIdParam, req.params.itemId);
     const body = parseWith(libraryWriteSchema, req.body);
@@ -301,8 +411,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.delete('/profiles/:id/library/:type/:itemId', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
     const itemId = parseWith(titleIdParam, req.params.itemId);
     const key = titleKey(itemId, undefined);
@@ -314,8 +423,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.put('/profiles/:id/progress', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const normalized = normalizeProgress(parseWith(progressWriteSchema, req.body));
     users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso() });
     const saved = users.progressEpisode(
@@ -331,8 +439,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.get('/profiles/:id/continue', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const items = continueWatching(users.latestProgressPerTitle(profile.id), (type, ref, season, episode) =>
       users.progressEpisode(profile.id, type, ref, season, episode),
     );
@@ -341,8 +448,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.get('/profiles/:id/progress/:type/:tmdbId', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
     const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
     const items = users.progressForTitle(profile.id, type, `tmdb:${tmdbId}`);
@@ -353,15 +459,13 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.get('/profiles/:id/settings', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     res.json({ settings: users.listSettings(profile.id) });
   });
 
   router.put('/profiles/:id/settings', (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     users.writeSettings(profile.id, settingsEntries(req.body));
     res.json({ settings: users.listSettings(profile.id) });
   });
@@ -370,8 +474,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
 
   router.post('/profiles/:id/import/stremio', async (req, res) => {
     const users = db();
-    const { account } = sessionOf(users, req);
-    const profile = profileOf(users, account, req);
+    const { profile } = scopeOf(users, req, deps.secret, true);
     const body = parseWith(stremioImportSchema, req.body);
     const tmdbToken = body.config === undefined ? undefined : tmdbTokenOf(body.config, deps.secret, deps.allowPlain);
     try {
@@ -396,6 +499,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
   router.use((_req, _res, next) => next(new UserApiError(404, 'not_found')));
   router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     if (err instanceof UserApiError) {
+      if (err.retryAfterSec !== undefined) res.setHeader('Retry-After', String(err.retryAfterSec));
       res.status(err.status).json(err.issues === undefined ? { error: err.code } : { error: err.code, issues: err.issues });
       return;
     }

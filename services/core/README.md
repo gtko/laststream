@@ -57,7 +57,10 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_PUBLIC_URL` | aucun | Base publique du serveur (ex. `https://addon.example.com`), utilisée pour construire les URL de lecture `/play`. Validée au démarrage : URL absolue en `http` ou `https` uniquement, sinon le serveur refuse de démarrer. Obligatoire si `LASTADDON_PUBLIC=1`. Sans elle, la base est le protocole et l'hôte de la requête (hors mode public). |
 | `LASTADDON_TRUST_PROXY` | `0` | Mettre `1` seulement derrière un reverse proxy de confiance : `X-Forwarded-Proto` et `X-Forwarded-Host` servent alors à construire les liens de lecture. Sans cela, ces en-têtes sont ignorés. |
 | `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL saisies dans les sources (upstream, Torznab) ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
-| `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*`. Les routes manifest et stream restent ouvertes (`*`). |
+| `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*` et `/user/*`. Les routes manifest et stream restent ouvertes (`*`). |
+| `LASTADDON_DATA_DIR` | `./data` | Dossier de la base SQLite des données utilisateur (`laststream.db`). Relatif à la racine du projet. Voir « Données utilisateur ». |
+| `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription sur `/user/register`. Sinon seul le premier compte peut être créé. |
+| `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
 **Important :** si `LASTADDON_SECRET` change, toutes les configurations déjà chiffrées (et donc toutes les URL de manifest installées) deviennent invalides. Sauvegardez cette valeur. Ne la committez jamais : `.env` est dans `.gitignore`.
@@ -254,6 +257,24 @@ La documentation AllDebrid ne décrit aucun endpoint de disponibilité instantan
 Les magnets prêts restent dans le compte AllDebrid. Un hash déjà en cache n'y est pas téléchargé, mais il apparaît dans la liste des torrents du compte.
 
 Lorsque `onlyCached` est vrai, seuls les streams cachés et les URL directes sont gardés. **Sans debrid configuré**, aucun stream P2P n'est cachable : seules les URL directes restent.
+
+## Données utilisateur (`/user/*`)
+
+lastAddon peut stocker pour chaque utilisateur sa bibliothèque, sa progression, ses profils et ses réglages (base SQLite, module `node:sqlite`, Node 22.13 ou plus récent).
+
+**Emplacement.** La base est `data/laststream.db` à la racine du projet, ou `LASTADDON_DATA_DIR/laststream.db` si la variable est définie (chemin relatif à la racine du projet). Le dossier est créé à la première requête sur `/user`. Sous Linux et macOS, le fichier est en `0600`. Sous Windows, ces droits POSIX n'existent pas : protégez le dossier par ses ACL. Pour une sauvegarde à chaud, utilisez `sqlite3 laststream.db ".backup sauvegarde.db"` plutôt que de copier le fichier pendant l'écriture.
+
+**Premier compte (risque à connaître).** Le premier compte créé devient propriétaire. Si `LASTADDON_BOOTSTRAP_TOKEN` est défini, il faut l'en-tête `X-Bootstrap-Token` avec cette valeur pour créer ce premier compte. Sans cette variable, quiconque atteint le serveur avant vous peut créer ce compte. Pour un usage local mono-utilisateur, ce risque est acceptable. Pour un serveur exposé sur Internet, définissez `LASTADDON_BOOTSTRAP_TOKEN`.
+
+**Inscription.** Les comptes suivants ne sont créés que si `LASTADDON_ALLOW_SIGNUP=1`. Un nom déjà pris renvoie `409 username_taken`, ce qui révèle qu'il existe. Ce choix est assumé : `/user/register` est limité à 10 requêtes par minute et par IP.
+
+**Sessions.** Un jeton de 256 bits, valable 180 jours, renouvelé par `POST /user/refresh` (l'ancien jeton cesse de valoir). Un compte garde au plus 20 sessions : la plus ancienne est supprimée au-delà. `POST /user/logout-all` ferme toutes les sessions. `POST /user/password` change le mot de passe et ferme les autres sessions. `DELETE /user/account` supprime le compte et toutes ses données, après confirmation du mot de passe.
+
+**Profils protégés par PIN.** Le PIN fait 4 chiffres. Après 5 échecs, le profil est bloqué 15 minutes (`429 pin_locked`, en-tête `Retry-After`) et le PIN n'est même pas vérifié pendant ce blocage. Le déverrouillage (`POST /user/profiles/:id/unlock`) renvoie un jeton valable 10 minutes, lié à la session et à la version du PIN : il est refusé après une déconnexion ou un changement de PIN. Toutes les routes de données d'un profil protégé (bibliothèque, progression, réglages, import) exigent ce jeton dans l'en-tête `X-Profile-Token`.
+
+**Limites de débit** (en mémoire, par processus, par IP et par minute) : lectures 300, écritures 120, routes sensibles 10 (`/register`, `/login`, `/password`, `DELETE /account`, `/unlock`, import Stremio). `/login` est aussi limité à 10 tentatives par minute et par nom d'utilisateur.
+
+**Import Stremio.** `POST /user/profiles/:id/import/stremio` lit la bibliothèque d'un compte Stremio (au plus 5000 entrées). Les identifiants Stremio servent une seule fois, ne sont ni stockés ni journalisés.
 
 ## Sécurité
 

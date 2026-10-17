@@ -14,6 +14,6 @@ export interface AppDeps {
   lookupHost?: (hostname: string) => Promise<readonly string[]>;
   /** Base SQLite des données utilisateur (':memory:' pour les tests). Par défaut : LASTADDON_DATA_DIR/laststream.db. */
   userDbPath?: string;
-  /** Requêtes /user/* par minute et par IP. Par défaut : 30, comme /config/*. */
-  userRateLimit?: number;
+  /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur. */
+  userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>;
 }

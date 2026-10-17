@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -104,19 +104,60 @@ describe('primitives cryptographiques', () => {
     expect(hashSessionToken(token)).toBe(hashSessionToken(token));
   });
 
-  it('jeton de profil : valide pour le bon compte et le bon profil, expire, refusé si altéré', () => {
+  it('jeton de profil : valide pour exactement ses claims, expire, refusé si altéré', () => {
     const now = Date.parse('2025-01-01T00:00:00.000Z');
-    const { token } = signProfileToken('acc-1', 'prof-1', now, SECRET);
-    expect(verifyProfileToken(token, 'acc-1', 'prof-1', now, SECRET)).toBe(true);
-    expect(verifyProfileToken(token, 'acc-1', 'prof-2', now, SECRET)).toBe(false);
-    expect(verifyProfileToken(token, 'acc-2', 'prof-1', now, SECRET)).toBe(false);
-    expect(verifyProfileToken(token, 'acc-1', 'prof-1', now + PROFILE_TOKEN_TTL_MS, SECRET)).toBe(false);
-    expect(verifyProfileToken(token, 'acc-1', 'prof-1', now, 'autre-secret-avec-plus-de-trente-deux-car')).toBe(false);
+    const claims = { accountId: 'acc-1', profileId: 'prof-1', sessionHash: 'sess-1', pinVersion: 0 };
+    const { token } = signProfileToken(claims, now, SECRET);
+    expect(verifyProfileToken(token, claims, now, SECRET)).toBe(true);
+    expect(verifyProfileToken(token, { ...claims, profileId: 'prof-2' }, now, SECRET)).toBe(false);
+    expect(verifyProfileToken(token, { ...claims, accountId: 'acc-2' }, now, SECRET)).toBe(false);
+    expect(verifyProfileToken(token, { ...claims, sessionHash: 'autre-session' }, now, SECRET)).toBe(false);
+    expect(verifyProfileToken(token, { ...claims, pinVersion: 1 }, now, SECRET)).toBe(false);
+    expect(verifyProfileToken(token, claims, now + PROFILE_TOKEN_TTL_MS, SECRET)).toBe(false);
+    expect(verifyProfileToken(token, claims, now, 'autre-secret-avec-plus-de-trente-deux-car')).toBe(false);
     const [body, signature] = token.split('.') as [string, string];
-    const forged = Buffer.from(JSON.stringify({ purpose: 'profile-unlock', accountId: 'acc-1', profileId: 'prof-1', exp: now + 1e9 })).toString('base64url');
-    expect(verifyProfileToken(`${forged}.${signature}`, 'acc-1', 'prof-1', now, SECRET)).toBe(false);
-    expect(verifyProfileToken(`${body}.`, 'acc-1', 'prof-1', now, SECRET)).toBe(false);
-    expect(verifyProfileToken('pas-un-jeton', 'acc-1', 'prof-1', now, SECRET)).toBe(false);
+    const forged = Buffer.from(
+      JSON.stringify({ purpose: 'profile-unlock', ...claims, exp: now + 1e9 }),
+    ).toString('base64url');
+    expect(verifyProfileToken(`${forged}.${signature}`, claims, now, SECRET)).toBe(false);
+    expect(verifyProfileToken(`${body}.`, claims, now, SECRET)).toBe(false);
+    expect(verifyProfileToken('pas-un-jeton', claims, now, SECRET)).toBe(false);
+  });
+
+  it('migration v2 appliquée à une base v1 existante : données conservées, colonnes PIN ajoutées', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lastaddon-v2-'));
+    const file = join(dir, 'laststream.db');
+    try {
+      const old = new DatabaseSync(file);
+      migrate(old, MIGRATIONS.slice(0, 1));
+      old.prepare("INSERT INTO accounts (id, username, password_hash, is_owner, created_at) VALUES ('a1', 'alice', 'h', 1, 't')").run();
+      old.prepare("INSERT INTO profiles (id, account_id, name, avatar_color, created_at) VALUES ('p1', 'a1', 'Greg', '#000000', 't')").run();
+      old.close();
+
+      const upgraded = openUserDb(file);
+      try {
+        expect(upgraded.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(2);
+        const row = upgraded.prepare('SELECT name, pin_failures, pin_locked_until, pin_version FROM profiles').get();
+        expect(row).toEqual({ name: 'Greg', pin_failures: 0, pin_locked_until: null, pin_version: 0 });
+      } finally {
+        upgraded.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fichier de base : droits 0600 sous POSIX (sans effet sous Windows)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lastaddon-mode-'));
+    const file = join(dir, 'laststream.db');
+    try {
+      openUserDb(file).close();
+      if (process.platform !== 'win32') {
+        expect(statSync(file).mode & 0o777).toBe(0o600);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

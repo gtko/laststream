@@ -6,6 +6,9 @@ export const KID_MAX_AGES = [10, 12, 16, 18] as const;
 export type KidMaxAge = (typeof KID_MAX_AGES)[number];
 export type LibrarySort = 'added' | 'title';
 
+/** Sessions simultanées par compte : au-delà, la plus ancienne est supprimée. */
+export const MAX_SESSIONS_PER_ACCOUNT = 20;
+
 /** Référence d'un titre : `tmdb:<id>` si l'identifiant TMDB est connu, sinon `imdb:<tt…>`. */
 export function titleRef(tmdbId: number | null, imdbId: string | null): string {
   if (tmdbId !== null) return `tmdb:${tmdbId}`;
@@ -20,7 +23,11 @@ export interface Account {
   createdAt: string;
 }
 
-/** Profil tel que vu par le client : jamais le hash du PIN. */
+export interface AccountRecord extends Account {
+  passwordHash: string;
+}
+
+/** Profil tel que vu par le client : aucun secret, aucun compteur de PIN. */
 export interface Profile {
   id: string;
   name: string;
@@ -32,10 +39,13 @@ export interface Profile {
   createdAt: string;
 }
 
-/** Profil avec son hash de PIN, usage serveur uniquement. */
+/** Profil avec ses champs internes (hash du PIN, compteurs de tentatives, version du PIN) : usage serveur uniquement. */
 export interface ProfileRecord extends Profile {
   accountId: string;
   pinHash: string | null;
+  pinVersion: number;
+  pinFailures: number;
+  pinLockedUntil: string | null;
 }
 
 export interface ProfileFields {
@@ -46,6 +56,8 @@ export interface ProfileFields {
   pinHash: string | null;
   allowedCatalogs: string[];
 }
+
+export type ProfileEditableFields = Omit<ProfileFields, 'pinHash'>;
 
 export interface LibraryItem {
   type: MediaType;
@@ -111,6 +123,9 @@ interface ProfileRow {
   is_kid: number;
   kid_max_age: number | null;
   pin_hash: string | null;
+  pin_version: number;
+  pin_failures: number;
+  pin_locked_until: string | null;
   allowed_catalogs: string;
   created_at: string;
 }
@@ -143,15 +158,9 @@ interface SettingRow {
   value: string;
 }
 
-export interface AccountRecord extends Account {
-  passwordHash: string;
-}
+export type CreateAccountResult = { ok: true; account: Account } | { ok: false; reason: 'signup_disabled' | 'username_taken' };
 
-export type CreateAccountResult =
-  | { ok: true; account: Account }
-  | { ok: false; reason: 'signup_disabled' | 'username_taken' };
-
-function toAccount(row: Omit<AccountRow, "password_hash">): Account {
+function toAccount(row: Omit<AccountRow, 'password_hash'>): Account {
   return { id: row.id, username: row.username, isOwner: row.is_owner === 1, createdAt: row.created_at };
 }
 
@@ -174,8 +183,25 @@ function toProfileRecord(row: ProfileRow): ProfileRecord {
     kidMaxAge: row.kid_max_age === null ? null : (row.kid_max_age as KidMaxAge),
     hasPin: row.pin_hash !== null,
     pinHash: row.pin_hash,
+    pinVersion: row.pin_version,
+    pinFailures: row.pin_failures,
+    pinLockedUntil: row.pin_locked_until,
     allowedCatalogs: parseCatalogs(row.allowed_catalogs),
     createdAt: row.created_at,
+  };
+}
+
+/** Champs publics d'un profil (liste explicite : aucun champ interne ne sort du serveur). */
+export function publicProfile(record: ProfileRecord): Profile {
+  return {
+    id: record.id,
+    name: record.name,
+    avatarColor: record.avatarColor,
+    isKid: record.isKid,
+    kidMaxAge: record.kidMaxAge,
+    hasPin: record.hasPin,
+    allowedCatalogs: record.allowedCatalogs,
+    createdAt: record.createdAt,
   };
 }
 
@@ -213,11 +239,6 @@ function toProgressItem(row: ProgressRow): ProgressItem {
 export class UserStore {
   constructor(private readonly db: DatabaseSync) {}
 
-  /** Ferme la base (fichier libéré). Ne plus utiliser le store ensuite. */
-  close(): void {
-    this.db.close();
-  }
-
   transaction<T>(work: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -228,6 +249,11 @@ export class UserStore {
       this.db.exec('ROLLBACK');
       throw err;
     }
+  }
+
+  /** Ferme la base (fichier libéré). Ne plus utiliser le store ensuite. */
+  close(): void {
+    this.db.close();
   }
 
   // Comptes
@@ -241,6 +267,14 @@ export class UserStore {
     const row = this.db
       .prepare('SELECT id, username, password_hash, is_owner, created_at FROM accounts WHERE username = ?')
       .get(username) as AccountRow | undefined;
+    if (row === undefined) return undefined;
+    return { ...toAccount(row), passwordHash: row.password_hash };
+  }
+
+  accountRecordById(accountId: string): AccountRecord | undefined {
+    const row = this.db
+      .prepare('SELECT id, username, password_hash, is_owner, created_at FROM accounts WHERE id = ?')
+      .get(accountId) as AccountRow | undefined;
     if (row === undefined) return undefined;
     return { ...toAccount(row), passwordHash: row.password_hash };
   }
@@ -267,9 +301,39 @@ export class UserStore {
     });
   }
 
+  /** Change le mot de passe et révoque toutes les sessions sauf celle qui le change (`keepHash`). */
+  changePassword(accountId: string, passwordHash: string, keepHash: string): void {
+    this.transaction(() => {
+      this.db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(passwordHash, accountId);
+      this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND token_hash <> ?').run(accountId, keepHash);
+    });
+  }
+
+  /** Supprime le compte et, en cascade, sessions, profils, bibliothèques, progressions et réglages. */
+  deleteAccount(accountId: string): void {
+    this.db.prepare('DELETE FROM accounts WHERE id = ?').run(accountId);
+  }
+
   // Sessions
 
-  createSession(accountId: string, tokenHash: string, createdAt: string, expiresAt: string): void {
+  /**
+   * Ouvre une session. Les sessions expirées sont purgées et le compte garde au plus MAX_SESSIONS_PER_ACCOUNT
+   * sessions : la plus ancienne (ordre d'insertion) est supprimée au-delà.
+   */
+  startSession(accountId: string, tokenHash: string, now: string, expiresAt: string): void {
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
+      this.createSession(accountId, tokenHash, now, expiresAt);
+      this.db
+        .prepare(
+          `DELETE FROM sessions WHERE account_id = ? AND rowid NOT IN (
+             SELECT rowid FROM sessions WHERE account_id = ? ORDER BY rowid DESC LIMIT ?)`,
+        )
+        .run(accountId, accountId, MAX_SESSIONS_PER_ACCOUNT);
+    });
+  }
+
+  private createSession(accountId: string, tokenHash: string, createdAt: string, expiresAt: string): void {
     this.db
       .prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
       .run(tokenHash, accountId, createdAt, expiresAt);
@@ -283,7 +347,7 @@ export class UserStore {
          FROM sessions s JOIN accounts a ON a.id = s.account_id
          WHERE s.token_hash = ? AND s.expires_at > ?`,
       )
-      .get(tokenHash, now) as Omit<AccountRow, "password_hash"> | undefined;
+      .get(tokenHash, now) as Omit<AccountRow, 'password_hash'> | undefined;
     return row === undefined ? undefined : toAccount(row);
   }
 
@@ -291,8 +355,13 @@ export class UserStore {
     this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(tokenHash);
   }
 
-  deleteExpiredSessions(accountId: string, now: string): void {
-    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
+  /** Révoque toutes les autres sessions du compte (celle de `keepHash` reste ouverte). */
+  deleteOtherSessions(accountId: string, keepHash: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND token_hash <> ?').run(accountId, keepHash);
+  }
+
+  deleteAllSessions(accountId: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
   }
 
   /** Rotation : remplace une session valide par une nouvelle. False si l'ancienne n'était plus valide. */
@@ -342,10 +411,11 @@ export class UserStore {
       );
   }
 
-  updateProfile(accountId: string, profileId: string, fields: ProfileFields): void {
+  /** Champs modifiables hors PIN (le PIN passe par setPin). */
+  updateProfile(accountId: string, profileId: string, fields: ProfileEditableFields): void {
     this.db
       .prepare(
-        `UPDATE profiles SET name = ?, avatar_color = ?, is_kid = ?, kid_max_age = ?, pin_hash = ?, allowed_catalogs = ?
+        `UPDATE profiles SET name = ?, avatar_color = ?, is_kid = ?, kid_max_age = ?, allowed_catalogs = ?
          WHERE id = ? AND account_id = ?`,
       )
       .run(
@@ -353,11 +423,58 @@ export class UserStore {
         fields.avatarColor,
         fields.isKid ? 1 : 0,
         fields.kidMaxAge,
-        fields.pinHash,
         JSON.stringify(fields.allowedCatalogs),
         profileId,
         accountId,
       );
+  }
+
+  /**
+   * Pose ou retire le PIN. Incrémente la version du PIN (les jetons de profil émis avant deviennent invalides) et
+   * remet à zéro les tentatives et le blocage.
+   */
+  setPin(accountId: string, profileId: string, pinHash: string | null): void {
+    this.db
+      .prepare(
+        `UPDATE profiles SET pin_hash = ?, pin_version = pin_version + 1, pin_failures = 0, pin_locked_until = NULL
+         WHERE id = ? AND account_id = ?`,
+      )
+      .run(pinHash, profileId, accountId);
+  }
+
+  /**
+   * Réserve une tentative de PIN, avant toute vérification. Renvoie l'échéance du blocage si le profil est bloqué
+   * (rien n'est alors compté ni vérifié). Sinon compte la tentative ; à `maxFailures`, bloque jusqu'à `lockedUntil`.
+   */
+  reservePinAttempt(profileId: string, now: string, lockedUntil: string, maxFailures: number): string | null {
+    return this.transaction(() => {
+      const row = this.db
+        .prepare('SELECT pin_failures, pin_locked_until FROM profiles WHERE id = ?')
+        .get(profileId) as { pin_failures: number; pin_locked_until: string | null } | undefined;
+      if (row === undefined) return null;
+      if (row.pin_locked_until !== null && row.pin_locked_until > now) return row.pin_locked_until;
+      const failures = row.pin_failures + 1;
+      if (failures >= maxFailures) {
+        this.db.prepare('UPDATE profiles SET pin_failures = 0, pin_locked_until = ? WHERE id = ?').run(lockedUntil, profileId);
+      } else {
+        this.db.prepare('UPDATE profiles SET pin_failures = ? WHERE id = ?').run(failures, profileId);
+      }
+      return null;
+    });
+  }
+
+  /** Échéance du blocage du PIN si elle est dans le futur, sinon null. */
+  pinLockedUntil(profileId: string, now: string): string | null {
+    const row = this.db.prepare('SELECT pin_locked_until FROM profiles WHERE id = ?').get(profileId) as
+      | { pin_locked_until: string | null }
+      | undefined;
+    if (row === undefined || row.pin_locked_until === null || row.pin_locked_until <= now) return null;
+    return row.pin_locked_until;
+  }
+
+  /** Déverrouillage réussi : compteur et blocage remis à zéro. */
+  resetPinAttempts(profileId: string): void {
+    this.db.prepare('UPDATE profiles SET pin_failures = 0, pin_locked_until = NULL WHERE id = ?').run(profileId);
   }
 
   deleteProfile(accountId: string, profileId: string): boolean {

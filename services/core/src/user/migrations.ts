@@ -82,6 +82,15 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: 'verrouillage PIN : tentatives, blocage temporaire, version du PIN',
+    sql: `
+      ALTER TABLE profiles ADD COLUMN pin_failures INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE profiles ADD COLUMN pin_locked_until TEXT;
+      ALTER TABLE profiles ADD COLUMN pin_version INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
 
 /**

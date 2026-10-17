@@ -15,6 +15,8 @@ const TMDB_CONCURRENCY = 5;
 const IMDB_ID = /^tt\d{1,10}$/;
 /** video_id Stremio d'un épisode : « tt0944947:1:3 ». */
 const SERIES_VIDEO_ID = /^(tt\d{1,10}):(\d{1,4}):(\d{1,4})$/;
+/** Nombre maximal d'entrées traitées par import ; au-delà, les entrées sont ignorées et signalées (truncated). */
+export const MAX_IMPORT_ITEMS = 5000;
 /** Statuts amont qui signifient des identifiants refusés (et non un service indisponible). */
 const AUTH_REJECTED_CODES: ReadonlySet<string> = new Set(['upstream_400', 'upstream_401', 'upstream_403']);
 
@@ -58,6 +60,8 @@ export interface StremioImportResult {
   progress: number;
   skipped: number;
   tmdbResolved: number;
+  /** Vrai si la bibliothèque dépassait MAX_IMPORT_ITEMS (les entrées en trop sont comptées dans skipped). */
+  truncated: boolean;
 }
 
 async function stremioCall(ctx: LtContext, method: string, payload: Record<string, unknown>): Promise<unknown> {
@@ -217,8 +221,11 @@ export interface StremioImportInput {
 
 /** Import complet : connexion, lecture, résolution TMDB (si possible), puis écriture en une transaction. */
 export async function importStremioLibrary(input: StremioImportInput): Promise<StremioImportResult> {
-  const items = await fetchStremioLibrary(input.ctx, input.email, input.password);
+  const received = await fetchStremioLibrary(input.ctx, input.email, input.password);
+  const truncated = received.length > MAX_IMPORT_ITEMS;
+  const items = truncated ? received.slice(0, MAX_IMPORT_ITEMS) : received;
   const mapped = mapStremioLibrary(items, input.now);
+  if (truncated) mapped.skipped += received.length - MAX_IMPORT_ITEMS;
   const titles = [...mapped.library, ...mapped.progress];
   const tmdbIds = input.tmdbToken === undefined ? new Map<string, number>() : await resolveTmdbIds(input.ctx, input.tmdbToken, titles);
   const tmdbFor = (type: MediaType, imdbId: string): number | null => tmdbIds.get(`${type}:${imdbId}`) ?? null;
@@ -256,5 +263,6 @@ export async function importStremioLibrary(input: StremioImportInput): Promise<S
     progress: mapped.progress.length,
     skipped: mapped.skipped,
     tmdbResolved: tmdbIds.size,
+    truncated,
   };
 }

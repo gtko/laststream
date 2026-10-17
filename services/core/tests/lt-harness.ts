@@ -101,8 +101,8 @@ export async function startApp(options: {
   allowPlain?: boolean;
   /** Base des données utilisateur : ':memory:' par défaut (jamais de fichier dans le projet pendant les tests). */
   userDbPath?: string;
-  /** Limite /user/* par minute : élevée par défaut, pour que les tests fonctionnels ne soient pas bridés. */
-  userRateLimit?: number;
+  /** Limites /user/* par minute : élevées par défaut, pour que les tests fonctionnels ne soient pas bridés. */
+  userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>;
 }): Promise<RunningApp> {
   const app = createApp({
     secret: SECRET,
@@ -110,7 +110,7 @@ export async function startApp(options: {
     fetch: options.fetch,
     lookupHost: options.lookupHost,
     userDbPath: options.userDbPath ?? ':memory:',
-    userRateLimit: options.userRateLimit ?? 10_000,
+    userRateLimits: options.userRateLimits ?? { read: 10_000, write: 10_000, sensitive: 10_000, loginPerUsername: 10_000 },
   });
   const server: Server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
