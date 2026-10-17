@@ -95,8 +95,17 @@ export interface RunningApp {
 }
 
 /** Démarre l'application sur un port libre. */
-export async function startApp(options: { fetch?: typeof fetch; lookupHost?: (h: string) => Promise<readonly string[]> }): Promise<RunningApp> {
-  const app = createApp({ secret: SECRET, allowPlain: false, fetch: options.fetch, lookupHost: options.lookupHost });
+export async function startApp(options: {
+  fetch?: typeof fetch;
+  lookupHost?: (h: string) => Promise<readonly string[]>;
+  allowPlain?: boolean;
+}): Promise<RunningApp> {
+  const app = createApp({
+    secret: SECRET,
+    allowPlain: options.allowPlain ?? false,
+    fetch: options.fetch,
+    lookupHost: options.lookupHost,
+  });
   const server: Server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;

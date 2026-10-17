@@ -192,10 +192,17 @@ export function serviceKey(config: Config, name: ServiceName): string {
   return value;
 }
 
-/** État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API). */
+/** Version de l'API TheTVDB qui accepte une clé : v4 (clé personnelle) ou v3 (clé legacy). */
+export type TvdbVersion = 'v4' | 'v3';
+
+/**
+ * État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API et du PIN), version
+ * TVDB retenue par clé (évite un essai v4 voué à l'échec à chaque requête).
+ */
 export interface LtState {
   cache: TtlCache;
   tvdbSessions: Map<string, { token: string; exp: number }>;
+  tvdbVersions: Map<string, { version: TvdbVersion; exp: number }>;
 }
 
 /**
@@ -212,7 +219,7 @@ export interface LtContext {
 
 export function createLtContext(deps: AppDeps): LtContext {
   return {
-    state: { cache: new TtlCache(), tvdbSessions: new Map() },
+    state: { cache: new TtlCache(), tvdbSessions: new Map(), tvdbVersions: new Map() },
     fetch: deps.fetch ?? globalThis.fetch,
     guard: createPublicGuard(),
     dispatcher: createPinnedAgent(deps.lookupHost),

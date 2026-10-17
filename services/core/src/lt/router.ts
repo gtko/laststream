@@ -79,8 +79,9 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
   });
 
   lt.get('/tvdb/series/:id', async (req, res) => {
-    const apiKey = serviceKey(configOf(req), 'tvdb');
-    const body = await tvdbSeries(ctx, apiKey, req.params.id).catch((err: unknown): never => {
+    const config = configOf(req);
+    const apiKey = serviceKey(config, 'tvdb');
+    const body = await tvdbSeries(ctx, apiKey, req.params.id, config.services.tvdbPin).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
       console.warn(`[lt][tvdb] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'tvdb_unavailable');

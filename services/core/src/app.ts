@@ -1,10 +1,12 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { decodeConfig, encodeConfig } from './config/codec.js';
+import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { allowedOrigins, isTrustProxy } from './config/runtime-env.js';
+import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { catalogEntries } from './lt/catalog.js';
 import { registerLtRoutes } from './lt/router.js';
+import { isRecord } from './sources/http.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
@@ -146,6 +148,30 @@ function manifestFor(deps: AppDeps, encoded: string) {
   return { ...MANIFEST, resources: ['stream', 'catalog'], catalogs: catalogEntries() };
 }
 
+/** Problèmes de configuration à renvoyer (chemins et messages, jamais de valeur saisie), ou undefined. */
+function configIssues(err: unknown): string[] | undefined {
+  if (err instanceof ConfigValidationError) return [...err.issues];
+  if (err instanceof ConfigDecodeError) return [`config: ${err.message}`];
+  return undefined;
+}
+
+/**
+ * Entrée de POST /config/encode. Forme directe : la configuration elle-même (inchangée). Forme `{ previous, config }` :
+ * `previous` (chiffrée) est déchiffrée ici et ses secrets sont gardés là où `config` les laisse vides, absents ou
+ * masqués. Sans `config`, la configuration précédente est reconduite telle quelle.
+ */
+function encodeInput(body: unknown, deps: AppDeps): unknown {
+  if (!isRecord(body) || !('previous' in body || 'config' in body)) return body;
+  if (body.previous !== undefined && typeof body.previous !== 'string') {
+    throw new ConfigValidationError(['previous: chaîne encodée attendue']);
+  }
+  if (body.config !== undefined && !isRecord(body.config)) throw new ConfigValidationError(['config: objet attendu']);
+  const previous =
+    typeof body.previous === 'string' ? decodeConfig(body.previous, deps.secret, { allowPlain: deps.allowPlain }) : undefined;
+  const patch = isRecord(body.config) ? body.config : { ...previous };
+  return mergeSecrets(patch, previous);
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -175,10 +201,29 @@ export function createApp(deps: AppDeps): Express {
 
   app.post('/config/encode', (req, res, next) => {
     try {
-      res.json({ config: encodeConfig(req.body, deps.secret) });
+      res.json({ config: encodeConfig(encodeInput(req.body, deps), deps.secret) });
     } catch (err) {
-      if (err instanceof ConfigValidationError) {
-        res.status(400).json({ error: 'invalid_config', issues: err.issues });
+      const issues = configIssues(err);
+      if (issues !== undefined) {
+        res.status(400).json({ error: 'invalid_config', issues });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // Déchiffre une configuration pour le configurateur : secrets remplacés par un masque, jamais de valeur.
+  app.post('/config/decode', (req, res, next) => {
+    try {
+      const encoded = isRecord(req.body) ? req.body.config : undefined;
+      if (typeof encoded !== 'string') throw new ConfigValidationError(['config: chaîne encodée attendue']);
+      const config = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(maskConfig(config));
+    } catch (err) {
+      const issues = configIssues(err);
+      if (issues !== undefined) {
+        res.status(400).json({ error: 'invalid_config', issues });
         return;
       }
       next(err);
