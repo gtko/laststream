@@ -211,21 +211,23 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(CACHE_MAX_BYTES).toBe(100 * 1024 * 1024);
   });
 
-  it('textes « pourquoi » : une seule requête IA par identifiant de titre, quel que soit le résumé fourni', async () => {
+  it('textes « pourquoi » : une seule requête IA par identifiant TMDB et langue, les champs texte du client sont ignorés', async () => {
     let calls = 0;
     const aiUpstream = mockUpstream({
       'https://openrouter.ai/api/v1/chat/completions': () => {
         calls += 1;
         return json({ choices: [{ message: { content: 'Texte par identifiant.' } }] });
       },
+      'https://api.themoviedb.org/3/movie/438631': () => json({ title: 'Dune', release_date: '2021-09-15', overview: 'Résumé TMDB', genres: [] }),
+      'https://api.themoviedb.org/3/movie/1': () => json({ title: 'Autre', release_date: '1999-01-01', overview: '', genres: [] }),
     });
     const aiApp = await startApp({ fetch: aiUpstream.fetch, lookupHost: fakeLookup() });
     try {
       const path = `${aiApp.baseUrl}/${fullToken()}/lt/why`;
-      await fetch(path, postJson({ id: 438631, type: 'movie', title: 'Dune', year: 2021, overview: 'Résumé A' }));
-      await fetch(path, postJson({ id: 438631, type: 'movie', title: 'Dune', year: 2021, overview: 'Résumé B' }));
+      await fetch(path, postJson({ type: 'movie', tmdbId: 438631, overview: 'Résumé A' }));
+      await fetch(path, postJson({ type: 'movie', tmdbId: 438631, overview: 'Résumé B' }));
       expect(calls).toBe(1);
-      await fetch(path, postJson({ id: 1, type: 'movie', title: 'Autre', year: 1999 }));
+      await fetch(path, postJson({ type: 'movie', tmdbId: 1 }));
       expect(calls).toBe(2);
     } finally {
       await aiApp.close();
@@ -249,10 +251,11 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     const aiUpstream = mockUpstream({
       'https://openrouter.ai/api/v1/chat/completions': () =>
         json({ choices: [{ message: { content: `<img src=x onerror=alert(1)>Film ${BEL}culte` } }] }),
+      'https://api.themoviedb.org/3/movie/438631': () => json({ title: 'Dune', release_date: '2021-09-15', overview: '', genres: [] }),
     });
     const aiApp = await startApp({ fetch: aiUpstream.fetch, lookupHost: fakeLookup() });
     try {
-      const res = await fetch(`${aiApp.baseUrl}/${fullToken()}/lt/why`, postJson({ title: 'Dune' }));
+      const res = await fetch(`${aiApp.baseUrl}/${fullToken()}/lt/why`, postJson({ type: 'movie', tmdbId: 438631 }));
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ text: 'Film culte' });
     } finally {

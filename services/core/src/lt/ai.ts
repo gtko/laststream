@@ -22,6 +22,11 @@ const PERSON_SYSTEM =
   'de cette personnalité du cinéma ou des séries à partir des titres fournis. Sans formule de politesse, sans guillemets, sans markdown, ' +
   'sans inventer de faits précis (dates, prix) que tu ne peux pas déduire des titres.';
 
+/** Langue par défaut des textes « pourquoi » (contenu TMDB et réponse IA). */
+const DEFAULT_LANGUAGE = 'fr-FR';
+/** Code de langue BCP 47 simple, par exemple fr ou fr-FR. */
+const LANGUAGE = /^[a-z]{2}(-[A-Z]{2})?$/;
+
 /** Clé OpenRouter et modèle (défaut openai/gpt-4o-mini) d'une configuration. */
 interface AiSettings {
   key: string;
@@ -84,18 +89,80 @@ function cleanText(raw: string, max: number): string {
   return text;
 }
 
-/** Valeur texte d'un champ du corps (chaîne ou nombre), sinon chaîne vide. */
-function textOf(value: unknown): string {
-  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+/** Texte d'un champ TMDB : chaîne nettoyée et tronquée, sinon vide. */
+function tmdbText(value: unknown, max: number): string {
+  return typeof value === 'string' ? plainText(value).slice(0, max) : '';
 }
 
 /**
- * Clé de cache d'un texte « pourquoi » : l'identifiant du titre ou de la personne quand il est fourni, sinon une
- * empreinte du libellé. Partagée entre utilisateurs.
+ * Référence TMDB d'un texte « pourquoi » : seuls `tmdbId` et `language` sont lus. Tout autre champ du corps (titre,
+ * année, synopsis, genres, nom, etc.) est ignoré : le serveur reconstruit le contenu depuis TMDB.
  */
-function textKey(prefix: string, id: unknown, label: unknown[]): string {
-  const ident = textOf(id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
-  return ident !== '' ? `${prefix}:${ident}` : `${prefix}:${digest(label)}`;
+function tmdbRef(body: Record<string, unknown>): { id: string; lang: string } {
+  const id = typeof body.tmdbId === 'number' || typeof body.tmdbId === 'string' ? String(body.tmdbId) : '';
+  if (!/^\d{1,9}$/.test(id)) throw new LtError(400, 'bad_request');
+  const lang = body.language === undefined ? DEFAULT_LANGUAGE : body.language;
+  if (typeof lang !== 'string' || !LANGUAGE.test(lang)) throw new LtError(400, 'bad_request');
+  return { id, lang };
+}
+
+/** Lecture TMDB d'un titre ou d'une personne. Une 404 amont devient 404 not_found (jamais mise en cache là). */
+async function tmdbLookup(ctx: LtContext, token: string, sub: string, lang: string): Promise<unknown> {
+  try {
+    return await tmdbGet(ctx, token, sub, { language: lang });
+  } catch (err) {
+    if (err instanceof LtError && err.code === 'upstream_404') throw new LtError(404, 'not_found');
+    throw err;
+  }
+}
+
+interface TitleFacts {
+  title: string;
+  year: string;
+  overview: string;
+  genres: string;
+}
+
+/** Titre, année, synopsis et genres d'un film ou d'une série, dans la langue demandée. */
+async function titleFacts(ctx: LtContext, token: string, kind: 'movie' | 'tv', id: string, lang: string): Promise<TitleFacts> {
+  const json = await tmdbLookup(ctx, token, `${kind}/${id}`, lang);
+  const data = isRecord(json) ? json : {};
+  const title = tmdbText(kind === 'tv' ? data.name : data.title, 120);
+  if (title === '') throw new LtError(404, 'not_found');
+  const date = tmdbText(kind === 'tv' ? data.first_air_date : data.release_date, 10);
+  const genres = (Array.isArray(data.genres) ? data.genres.filter(isRecord) : [])
+    .slice(0, 6)
+    .map((genre) => tmdbText(genre.name, 40))
+    .filter((name) => name !== '');
+  return {
+    title,
+    year: /^\d{4}/.exec(date)?.[0] ?? '',
+    overview: tmdbText(data.overview, 900),
+    genres: genres.join(', '),
+  };
+}
+
+interface PersonFacts {
+  name: string;
+  known: string[];
+}
+
+const popularityOf = (credit: Record<string, unknown>): number => (typeof credit.popularity === 'number' ? credit.popularity : 0);
+
+/** Nom d'une personne et jusqu'à 8 titres connus (les plus populaires d'abord, sans doublon), depuis TMDB. */
+async function personFacts(ctx: LtContext, token: string, id: string, lang: string): Promise<PersonFacts> {
+  const person = await tmdbLookup(ctx, token, `person/${id}`, lang);
+  const name = tmdbText(isRecord(person) ? person.name : undefined, 100);
+  if (name === '') throw new LtError(404, 'not_found');
+  const credits = await tmdbLookup(ctx, token, `person/${id}/combined_credits`, lang);
+  const cast = isRecord(credits) && Array.isArray(credits.cast) ? credits.cast.filter(isRecord) : [];
+  const known: string[] = [];
+  for (const credit of [...cast].sort((a, b) => popularityOf(b) - popularityOf(a))) {
+    const label = tmdbText(credit.title ?? credit.name, 80);
+    if (label !== '' && !known.includes(label)) known.push(label);
+    if (known.length === 8) break;
+  }
+  return { name, known };
 }
 
 export interface HistoryItem {
@@ -186,7 +253,7 @@ async function resolveTitle(ctx: LtContext, token: string, item: Suggestion): Pr
   }
 }
 
-/** Recommandations : OpenRouter propose 10 titres, TMDB les résout. Exige OpenRouter et TMDB. */
+/** Recommandations : OpenRouter propose 10 titres, TMDB les résout. Exige OpenRouter et TMDB. Cache 30 min par charge utile. */
 export async function recommend(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<unknown> {
   const ai = aiSettings(config);
   const token = serviceKey(config, 'tmdb');
@@ -208,19 +275,19 @@ export async function recommend(ctx: LtContext, config: Config, body: Record<str
   });
 }
 
-/** « Pourquoi tu vas aimer » : 2 à 3 phrases en français pour un titre. */
+/**
+ * « Pourquoi tu vas aimer » : 2 à 3 phrases en français pour un titre. Corps accepté : `type` (movie ou tv), `tmdbId`,
+ * `language` (défaut fr-FR). Titre, année, synopsis et genres viennent de TMDB. Cache partagé de 7 jours par
+ * `${type}:${tmdbId}:${language}`, seulement en cas de réponse réussie.
+ */
 export async function why(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<{ text: string }> {
   const ai = aiSettings(config);
-  const title = textOf(body.title).trim().slice(0, 120);
-  if (title === '') throw new LtError(400, 'bad_request');
-  const year = textOf(body.year).replace(/\D/g, '').slice(0, 4);
-  const overview = textOf(body.overview).trim().slice(0, 900);
-  const genres = (Array.isArray(body.genres) ? body.genres : [])
-    .slice(0, 6)
-    .map((g: unknown) => String(g).slice(0, 40))
-    .join(', ');
-  const kind = body.type === 'tv' ? 'tv' : 'movie';
-  return ctx.state.cache.get(textKey(`why:${kind}`, body.id, [title, year]), TTL.aiText, async () => {
+  const kind = body.type === 'tv' ? 'tv' : body.type === 'movie' ? 'movie' : null;
+  if (kind === null) throw new LtError(400, 'bad_request');
+  const { id, lang } = tmdbRef(body);
+  const token = serviceKey(config, 'tmdb');
+  return ctx.state.cache.get(`why:${kind}:${id}:${lang}`, TTL.aiText, async () => {
+    const facts = await titleFacts(ctx, token, kind, id, lang);
     const raw = await complete(ctx, ai, {
       temperature: 0.6,
       max_tokens: 220,
@@ -228,7 +295,7 @@ export async function why(ctx: LtContext, config: Config, body: Record<string, u
         { role: 'system', content: WHY_SYSTEM },
         {
           role: 'user',
-          content: `Titre : ${title}${year ? ' (' + year + ')' : ''}\nGenres : ${genres || 'inconnus'}\nSynopsis : ${overview || 'non fourni'}`,
+          content: `Titre : ${facts.title}${facts.year ? ' (' + facts.year + ')' : ''}\nGenres : ${facts.genres || 'inconnus'}\nSynopsis : ${facts.overview || 'non fourni'}`,
         },
       ],
     });
@@ -236,22 +303,22 @@ export async function why(ctx: LtContext, config: Config, body: Record<string, u
   });
 }
 
-/** « En deux mots » sur une personne, à partir de quelques titres connus. */
+/**
+ * « En deux mots » sur une personne. Corps accepté : `tmdbId`, `language` (défaut fr-FR). Nom et titres connus
+ * viennent de TMDB. Cache partagé de 7 jours par `person:${tmdbId}:${language}`.
+ */
 export async function personWhy(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<{ text: string }> {
   const ai = aiSettings(config);
-  const name = textOf(body.name).trim().slice(0, 100);
-  if (name === '') throw new LtError(400, 'bad_request');
-  const known = (Array.isArray(body.knownFor) ? body.knownFor : [])
-    .slice(0, 8)
-    .map((t: unknown) => String(t).slice(0, 80))
-    .filter(Boolean);
-  return ctx.state.cache.get(textKey('pwhy:person', body.id, [name]), TTL.aiText, async () => {
+  const { id, lang } = tmdbRef(body);
+  const token = serviceKey(config, 'tmdb');
+  return ctx.state.cache.get(`pwhy:person:${id}:${lang}`, TTL.aiText, async () => {
+    const facts = await personFacts(ctx, token, id, lang);
     const raw = await complete(ctx, ai, {
       temperature: 0.6,
       max_tokens: 200,
       messages: [
         { role: 'system', content: PERSON_SYSTEM },
-        { role: 'user', content: 'Personne : ' + name + '\nTitres connus : ' + (known.join(', ') || 'non fournis') },
+        { role: 'user', content: 'Personne : ' + facts.name + '\nTitres connus : ' + (facts.known.join(', ') || 'non fournis') },
       ],
     });
     return { text: cleanText(raw, 500) };
