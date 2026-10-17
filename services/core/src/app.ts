@@ -1,7 +1,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { decodeConfig, encodeConfig } from './config/codec.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
-import { allowedOrigins } from './config/runtime-env.js';
+import { allowedOrigins, isTrustProxy } from './config/runtime-env.js';
 import type { AppDeps } from './deps.js';
 import { catalogEntries } from './lt/catalog.js';
 import { registerLtRoutes } from './lt/router.js';
@@ -46,6 +46,9 @@ function isOpenPath(req: Request): boolean {
 }
 const CONFIG_RATE_LIMIT = 30;
 const CONFIG_RATE_WINDOW_MS = 60_000;
+/** GET lt et catalogues : 120 requêtes par minute et par IP. */
+const READ_RATE_LIMIT = 120;
+const READ_RATE_WINDOW_MS = 60_000;
 const RATE_TABLE_PRUNE_SIZE = 10_000;
 
 /**
@@ -106,6 +109,7 @@ function rateLimit(applies: (req: Request) => boolean, limiter: ReturnType<typeo
     const verdict = limiter(req.ip ?? 'inconnu');
     if (!verdict.allowed) {
       res.setHeader('Retry-After', String(verdict.retryAfterSec));
+      res.setHeader('Cache-Control', 'no-store');
       res.status(429).json({ error: 'rate_limited' });
       return;
     }
@@ -115,6 +119,7 @@ function rateLimit(applies: (req: Request) => boolean, limiter: ReturnType<typeo
 
 /** Erreur du parseur JSON (400) ou payload trop gros (413) : réponse générique, sans contenu. */
 function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+  res.setHeader('Cache-Control', 'no-store');
   const status = typeof err === 'object' && err !== null && 'status' in err ? (err as { status: unknown }).status : undefined;
   if (typeof status === 'number' && status >= 400 && status < 500) {
     res.status(status).json({ error: 'bad_request' });
@@ -144,9 +149,12 @@ function manifestFor(deps: AppDeps, encoded: string) {
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
+  // Derrière un reverse proxy de confiance uniquement : le débit se mesure alors sur la vraie IP du client.
+  if (isTrustProxy()) app.set('trust proxy', 1);
   app.use(corsMiddleware(allowedOrigins()));
   app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(READ_RATE_LIMIT, READ_RATE_WINDOW_MS)));
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => {

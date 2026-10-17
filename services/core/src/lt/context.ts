@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
+import type { Dispatcher } from 'undici';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import {
   type BodyOptions,
   type BytesResult,
+  createPinnedAgent,
   fetchBytes,
   type FetchFn,
   isRecord,
@@ -14,19 +16,34 @@ import {
   type UrlGuard,
 } from '../sources/http.js';
 import { UnsafeTargetError, createPublicGuard } from './guard.js';
+import { createUrlSigner, type UrlSigner } from './signing.js';
 
-/** Durées de vie du cache, identiques au prototype. */
+/**
+ * Durées de vie du cache. Les métadonnées publiques sont partagées entre tous les utilisateurs (économie de
+ * requêtes amont) ; seules les recommandations dépendent de la charge utile de la requête.
+ */
 export const TTL = {
-  tmdb: 10 * 60e3,
-  mdb: 30 * 60e3,
-  tvdb: 60 * 60e3,
-  ai: 30 * 60e3,
-  tv: 6 * 3600e3,
+  tmdb: 6 * 3600e3, // détails et listes
+  tmdbFast: 3 * 3600e3, // tendances et populaires
+  tmdbWatch: 12 * 3600e3, // fournisseurs de streaming
+  mdb: 24 * 3600e3, // notes MDBList
+  tvdb: 12 * 3600e3, // saisons TVDB
+  aiRecommend: 30 * 60e3, // recommandations (par charge utile)
+  aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
+  tvChannels: 6 * 3600e3, // listes de chaînes
+  tvEpg: 3 * 3600e3, // programmes EPG
 } as const;
+
+/** Délai de cache négatif : une 404 amont est mémorisée brièvement ; aucune autre erreur n'est mise en cache. */
+export const NEGATIVE_TTL_MS = 60e3;
 
 /** Délai par défaut des appels vers les services (ms). */
 export const SERVICE_TIMEOUT_MS = 12000;
-const CACHE_PRUNE_SIZE = 5000;
+/** Plafond du cache : nombre d'entrées, et taille totale approchée (octets). */
+export const CACHE_MAX_ENTRIES = 10_000;
+export const CACHE_MAX_BYTES = 100 * 1024 * 1024;
+/** Taille comptée pour une entrée négative (erreur mémorisée). */
+const NEGATIVE_BYTES = 256;
 
 /** Erreur HTTP de la couche lt : statut, code stable, et service concerné si pertinent. Jamais de clé. */
 export class LtError extends Error {
@@ -43,38 +60,118 @@ export class LtError extends Error {
   }
 }
 
-/** Cache mémoire à durée fixe ; les requêtes identiques en cours sont dédoublonnées (comme le prototype). */
+/** Empreinte SHA-256 (hex) d'une valeur JSON : sert de clé de cache, jamais de clé secrète en clair. */
+export function digest(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+/**
+ * Empreinte courte d'une clé API. Ne sert jamais aux clés de cache (partagées) : seulement à indexer les sessions
+ * d'authentification TVDB, qui sont propres à une clé.
+ */
+export function keyDigest(key: string): string {
+  return digest(key).slice(0, 16);
+}
+
+/** Taille approchée d'une valeur de cache en octets (JSON ; les Map sont sérialisées comme des objets). */
+function approximateBytes(value: unknown): number {
+  const json = JSON.stringify(value, (_key, item: unknown) => (item instanceof Map ? Object.fromEntries(item) : item)) as
+    | string
+    | undefined;
+  return Buffer.byteLength(json ?? '', 'utf8');
+}
+
+/** Erreur amont 404 : la seule erreur mise en cache, brièvement (cache négatif). */
+function isNegative(err: unknown): boolean {
+  return err instanceof LtError && err.code === 'upstream_404';
+}
+
+interface CacheEntry {
+  exp: number;
+  bytes: number;
+  value?: unknown;
+  failure?: unknown;
+}
+
+/**
+ * Cache mémoire à durée fixe, borné en entrées et en octets. Éviction LRU : une lecture déplace l'entrée en fin de
+ * file, les plus anciennes partent les premières (les expirées d'abord). Les requêtes identiques en cours sont
+ * dédoublonnées. Les erreurs ne sont pas mises en cache, sauf une 404 amont (cache négatif de NEGATIVE_TTL_MS).
+ * Une valeur plus grosse que le plafond total n'est pas gardée.
+ */
 export class TtlCache {
-  private readonly values = new Map<string, { exp: number; value: unknown }>();
+  private readonly values = new Map<string, CacheEntry>();
   private readonly pending = new Map<string, Promise<unknown>>();
+  private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  private totalBytes = 0;
+
+  constructor(maxEntries = CACHE_MAX_ENTRIES, maxBytes = CACHE_MAX_BYTES) {
+    this.maxEntries = maxEntries;
+    this.maxBytes = maxBytes;
+  }
+
+  get size(): number {
+    return this.values.size;
+  }
+
+  get bytes(): number {
+    return this.totalBytes;
+  }
 
   get<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
     const hit = this.values.get(key);
-    if (hit !== undefined && hit.exp > Date.now()) return Promise.resolve(hit.value as T);
+    if (hit !== undefined && hit.exp > Date.now()) {
+      this.values.delete(key);
+      this.values.set(key, hit); // LRU : la dernière consultation passe en fin de file
+      return hit.failure !== undefined ? Promise.reject(hit.failure) : Promise.resolve(hit.value as T);
+    }
+    if (hit !== undefined) this.remove(key);
     const inflight = this.pending.get(key);
     if (inflight !== undefined) return inflight as Promise<T>;
     const promise = load()
-      .then((value) => {
-        if (this.values.size >= CACHE_PRUNE_SIZE) this.prune();
-        this.values.set(key, { exp: Date.now() + ttlMs, value });
-        return value;
-      })
+      .then(
+        (value) => {
+          this.store(key, { value }, approximateBytes(value), ttlMs);
+          return value;
+        },
+        (err: unknown) => {
+          if (isNegative(err)) this.store(key, { failure: err }, NEGATIVE_BYTES, NEGATIVE_TTL_MS);
+          throw err;
+        },
+      )
       .finally(() => this.pending.delete(key));
     this.pending.set(key, promise);
     return promise;
   }
 
-  private prune(): void {
+  private store(key: string, payload: { value?: unknown; failure?: unknown }, bytes: number, ttlMs: number): void {
+    this.remove(key);
+    if (bytes > this.maxBytes) return;
+    this.values.set(key, { ...payload, exp: Date.now() + ttlMs, bytes });
+    this.totalBytes += bytes;
+    this.evict();
+  }
+
+  private evict(): void {
+    if (this.values.size <= this.maxEntries && this.totalBytes <= this.maxBytes) return;
     const now = Date.now();
     for (const [key, entry] of this.values) {
-      if (entry.exp <= now) this.values.delete(key);
+      if (entry.exp <= now) this.remove(key);
+    }
+    while (this.values.size > this.maxEntries || this.totalBytes > this.maxBytes) {
+      const oldest = this.values.keys().next();
+      if (oldest.done) break;
+      this.remove(oldest.value);
     }
   }
-}
 
-/** Empreinte SHA-256 (hex) d'une valeur JSON : sert de clé de cache, jamais de clé secrète en clair. */
-export function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  private remove(key: string): void {
+    const entry = this.values.get(key);
+    if (entry === undefined) return;
+    this.values.delete(key);
+    this.totalBytes -= entry.bytes;
+  }
 }
 
 /** Services de données et champ de configuration correspondant. */
@@ -95,25 +192,31 @@ export function serviceKey(config: Config, name: ServiceName): string {
   return value;
 }
 
-/** État par application : cache, sessions TVDB (clé = empreinte de la clé API), hôtes HLS autorisés. */
+/** État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API). */
 export interface LtState {
   cache: TtlCache;
   tvdbSessions: Map<string, { token: string; exp: number }>;
-  tvHosts: Set<string>;
 }
 
-/** Contexte des routes lt : état, fetch injectable et garde d'URL. */
+/**
+ * Contexte des routes lt : état, fetch injectable, garde d'URL (littérale), agent épinglé (DNS contrôlé à la
+ * connexion) et signeur des URL du proxy HLS.
+ */
 export interface LtContext {
   state: LtState;
   fetch: FetchFn;
   guard: UrlGuard;
+  dispatcher: Dispatcher;
+  signer: UrlSigner;
 }
 
 export function createLtContext(deps: AppDeps): LtContext {
   return {
-    state: { cache: new TtlCache(), tvdbSessions: new Map(), tvHosts: new Set() },
+    state: { cache: new TtlCache(), tvdbSessions: new Map() },
     fetch: deps.fetch ?? globalThis.fetch,
-    guard: createPublicGuard(deps.lookupHost),
+    guard: createPublicGuard(),
+    dispatcher: createPinnedAgent(deps.lookupHost),
+    signer: createUrlSigner(deps.secret),
   };
 }
 
@@ -137,7 +240,7 @@ function transportFailure(err: unknown): unknown {
   return err;
 }
 
-/** Requête sortante via le helper HTTP commun (délai, plafond de corps, redirections contrôlées). */
+/** Requête sortante via le helper HTTP commun (délai, plafond de corps, redirections contrôlées, DNS épinglé). */
 export async function ltRequest(
   ctx: LtContext,
   url: string,
@@ -146,7 +249,7 @@ export async function ltRequest(
   body: BodyOptions = {},
 ): Promise<BytesResult> {
   try {
-    return await fetchBytes(ctx.fetch, url, init, timeoutMs, body);
+    return await fetchBytes(ctx.fetch, url, init, timeoutMs, { dispatcher: ctx.dispatcher, ...body });
   } catch (err) {
     throw transportFailure(err);
   }

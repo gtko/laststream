@@ -1,6 +1,6 @@
 import { isRecord } from '../sources/http.js';
-import { recordAt, TTL, type LtContext } from './context.js';
-import { tmdbGet } from './providers.js';
+import { recordAt, type LtContext } from './context.js';
+import { tmdbGet, tmdbTtl } from './providers.js';
 
 /**
  * Catalogues Stremio alimentés par TMDB. Chaque entrée renvoie des métas identifiées par l'id IMDb (tt…),
@@ -102,7 +102,7 @@ function toMeta(item: TmdbItem, imdbId: string): StremioMeta | null {
  */
 export async function catalogMetas(ctx: LtContext, token: string, def: CatalogDef, skip: number): Promise<StremioMeta[]> {
   const page = Math.floor(skip / PAGE_SIZE) + 1;
-  return ctx.state.cache.get(`catalog:${def.id}:${page}`, TTL.tmdb, async () => {
+  return ctx.state.cache.get(`catalog:${def.id}:${page}`, tmdbTtl(def.path), async () => {
     const json = await tmdbGet(ctx, token, def.path, { page: String(page) });
     const results: Record<string, unknown>[] = isRecord(json) && Array.isArray(json.results) ? json.results.filter(isRecord) : [];
     const items = itemsOf(def, results);

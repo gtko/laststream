@@ -1,7 +1,6 @@
 import { describe, expect, it, afterAll, beforeAll } from 'vitest';
 import { configJsonSchema, ConfigValidationError, parseConfig } from '../src/config/schema.js';
 import { isLiteralSafe, parseSafeUrl, createPublicGuard, UnsafeTargetError } from '../src/lt/guard.js';
-import { SourceError } from '../src/sources/http.js';
 import { fakeLookup, json, KEYS, mockUpstream, postJson, startApp, tokenFor, type RunningApp, type MockUpstream } from './lt-harness.js';
 
 describe('schéma de configuration : services', () => {
@@ -178,14 +177,9 @@ describe('garde d URL (adresses privées et noms locaux)', () => {
     expect(isLiteralSafe(new URL('http://8.8.8.8/x'))).toBe(true);
   });
 
-  it('DNS : adresse privée refusée, hôte non résolu signalé sans URL', async () => {
-    const privateGuard = createPublicGuard(async () => ['192.168.1.9']);
-    await expect(privateGuard(new URL('https://cdn.example.com/a'))).rejects.toBeInstanceOf(UnsafeTargetError);
-    const broken = createPublicGuard(async () => {
-      throw new Error('ENOTFOUND cdn.example.com');
-    });
-    const error = await broken(new URL('https://cdn.example.com/a')).catch((err: unknown) => err);
-    expect(error).toBeInstanceOf(SourceError);
-    expect((error as Error).message).toBe('hôte non résolu');
+  it('garde : contrôle littéral seulement, sans résolution DNS (contrôlée à la connexion, voir sources-pinned)', async () => {
+    const guard = createPublicGuard();
+    await expect(guard(new URL('https://cdn.example.com/a'))).resolves.toBeUndefined();
+    await expect(guard(new URL('http://192.168.1.9/a'))).rejects.toBeInstanceOf(UnsafeTargetError);
   });
 });

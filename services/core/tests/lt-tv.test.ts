@@ -1,6 +1,7 @@
 import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fakeLookup, fullToken, json, mockUpstream, postJson, startApp, text, type MockUpstream, type RunningApp } from './lt-harness.js';
+import { createUrlSigner } from '../src/lt/signing.js';
+import { fakeLookup, fullToken, json, mockUpstream, postJson, SECRET, startApp, text, tokenFor, type MockUpstream, type RunningApp } from './lt-harness.js';
 
 const M3U_FR = 'https://iptv-org.github.io/iptv/countries/fr.m3u';
 const PLUTO = 'https://i.mjh.nz/PlutoTV/.channels.json';
@@ -84,6 +85,10 @@ afterAll(async () => {
 });
 
 const get = (path: string): Promise<Response> => fetch(`${app.baseUrl}/${token}/lt/${path}`);
+const signer = createUrlSigner(SECRET);
+/** Requête du proxy HLS signée pour la configuration de test. */
+const hlsPath = (url: string, sig: string | null = signer.sign(token, url)): string =>
+  `tv/hls?u=${encodeURIComponent(url)}${sig === null ? '' : `&s=${sig}`}`;
 
 describe('lt/tv/channels', () => {
   it('liste les chaînes gratuites FR et FAST, sans chaîne adulte ; catégories dérivées du groupe', async () => {
@@ -146,41 +151,53 @@ describe('lt/tv/epg', () => {
 });
 
 describe('lt/tv/hls', () => {
-  it('refuse un hôte absent de la liste autorisée : 403 host_not_allowed', async () => {
-    const res = await get(`tv/hls?u=${encodeURIComponent('https://unknown.example.org/x.m3u8')}`);
+  it('sans signature : 403 invalid_signature, sans appel amont', async () => {
+    const before = upstream.calls.length;
+    const res = await get(hlsPath('https://stream.tf1.example/tf1.m3u8', null));
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'host_not_allowed' });
+    expect(await res.json()).toEqual({ error: 'invalid_signature' });
+    expect(upstream.calls.length).toBe(before);
   });
 
-  it('refuse une adresse privée littérale : 400 bad_url, sans appel amont', async () => {
+  it('signature d une autre URL ou d une autre configuration : 403 invalid_signature', async () => {
+    const other = signer.sign(token, 'https://stream.tf1.example/notplaylist.m3u8');
+    expect((await get(hlsPath('https://stream.tf1.example/tf1.m3u8', other))).status).toBe(403);
+    const foreign = signer.sign(tokenFor({}), 'https://stream.tf1.example/tf1.m3u8');
+    expect((await get(hlsPath('https://stream.tf1.example/tf1.m3u8', foreign))).status).toBe(403);
+  });
+
+  it('refuse une adresse privée littérale : 400 bad_url, sans appel amont, même avec une signature', async () => {
     const before = upstream.calls.length;
-    const res = await get(`tv/hls?u=${encodeURIComponent('http://192.168.1.10/x.m3u8')}`);
+    const res = await get(hlsPath('http://192.168.1.10/x.m3u8'));
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'bad_url' });
     expect(upstream.calls.length).toBe(before);
   });
 
-  it('refuse un hôte autorisé dont le DNS pointe vers une adresse privée : 403', async () => {
-    const res = await get(`tv/hls?u=${encodeURIComponent('https://rebind.example.fr/sport.m3u8')}`);
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'host_not_allowed' });
-  });
-
-  it('réécrit les variantes et médias via le proxy, garde les segments en URL directes', async () => {
-    const res = await get(`tv/hls?u=${encodeURIComponent('https://stream.tf1.example/tf1.m3u8')}`);
+  it('réécrit les variantes et médias via le proxy signé, garde les segments en URL directes', async () => {
+    const res = await get(hlsPath('https://stream.tf1.example/tf1.m3u8'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
-    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('cache-control')).toBe('private, max-age=300');
     const body = await res.text();
-    const proxied = `/${token}/lt/tv/hls?u=${encodeURIComponent('https://stream.tf1.example/variant/index.m3u8')}`;
-    expect(body).toContain(proxied);
-    expect(body).toContain(`URI="/${token}/lt/tv/hls?u=${encodeURIComponent('https://stream.tf1.example/audio/fr.m3u8')}"`);
+    const variant = 'https://stream.tf1.example/variant/index.m3u8';
+    const audio = 'https://stream.tf1.example/audio/fr.m3u8';
+    expect(body).toContain(`/${token}/lt/tv/hls?u=${encodeURIComponent(variant)}&s=${signer.sign(token, variant)}`);
+    expect(body).toContain(`URI="/${token}/lt/tv/hls?u=${encodeURIComponent(audio)}&s=${signer.sign(token, audio)}"`);
   });
 
   it('réponse qui n est pas une playlist : 415 not_a_playlist', async () => {
-    const res = await get(`tv/hls?u=${encodeURIComponent('https://stream.tf1.example/notplaylist.m3u8')}`);
+    const res = await get(hlsPath('https://stream.tf1.example/notplaylist.m3u8'));
     expect(res.status).toBe(415);
     expect(await res.json()).toEqual({ error: 'not_a_playlist' });
+  });
+
+  it('les chaînes portent la signature à présenter au proxy', async () => {
+    const channels = (await (await get('tv/channels')).json()) as { url: string; sig: string | null }[];
+    const tf1 = channels.find((c) => c.url === 'https://stream.tf1.example/tf1.m3u8');
+    expect(tf1?.sig).toBe(signer.sign(token, 'https://stream.tf1.example/tf1.m3u8'));
+    const res = await get(hlsPath(tf1?.url ?? '', tf1?.sig ?? null));
+    expect(res.status).toBe(200);
   });
 });
 
@@ -200,13 +217,19 @@ describe('lt/tv/import', () => {
       source: 'user',
       url: 'https://cdn.lists.example.org/c1.m3u8',
       epgId: 'Canal1.fr',
+      sig: signer.sign(token, 'https://cdn.lists.example.org/c1.m3u8'),
     });
   });
 
-  it('un hôte importé devient autorisé pour le proxy HLS', async () => {
-    const res = await get(`tv/hls?u=${encodeURIComponent('https://cdn.lists.example.org/c1.m3u8')}`);
+  it('une entrée importée est lisible par le proxy avec sa signature, pas sans', async () => {
+    const imported = (await (await post({ type: 'm3u', url: 'https://lists.example.org/p.m3u' })).json()) as {
+      channels: { url: string; sig: string }[];
+    };
+    const entry = imported.channels[0];
+    const res = await get(hlsPath(entry?.url ?? '', entry?.sig ?? null));
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('https://cdn.lists.example.org/seg.ts');
+    expect((await get(hlsPath(entry?.url ?? '', null))).status).toBe(403);
   });
 
   it('URL M3U privée ou invalide : 400 bad_url', async () => {
@@ -214,12 +237,6 @@ describe('lt/tv/import', () => {
     const res = await post({ type: 'm3u', url: 'pas une url' });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'bad_url' });
-  });
-
-  it('URL dont le DNS est privé : 403 host_not_allowed', async () => {
-    const res = await post({ type: 'm3u', url: 'https://evil.example.org/p.m3u' });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'host_not_allowed' });
   });
 
   it('importe un compte Xtream (flux live, groupes, identifiants dans l URL du flux)', async () => {

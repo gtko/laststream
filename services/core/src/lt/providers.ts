@@ -1,12 +1,54 @@
 import { isRecord } from '../sources/http.js';
-import { digest, getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
+import { getJson, keyDigest, LtError, type LtContext, recordAt, TTL } from './context.js';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/';
 /** Chemins TMDB autorisés (liste blanche du prototype). */
 const TMDB_PATH = /^(trending|movie|tv|discover|search|collection|watch|person)(\/[a-z0-9_-]+)*$/;
+/** Paramètres TMDB acceptés depuis l'extérieur. Tout autre paramètre est ignoré. */
+const TMDB_PUBLIC_PARAMS: ReadonlySet<string> = new Set([
+  'language',
+  'region',
+  'page',
+  'query',
+  'sort_by',
+  'with_genres',
+  'with_watch_providers',
+  'watch_region',
+  'with_watch_monetization_types',
+  'append_to_response',
+  'include_image_language',
+  'primary_release_date.gte',
+  'primary_release_date.lte',
+  'first_air_date.gte',
+  'first_air_date.lte',
+  'air_date.gte',
+  'air_date.lte',
+  'vote_count.gte',
+  'with_original_language',
+  'include_adult',
+]);
+
+/** Ne garde que les paramètres TMDB en liste blanche ; include_adult n'est accepté qu'à `false`. */
+export function tmdbPublicParams(query: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(query).filter(([key, value]) => TMDB_PUBLIC_PARAMS.has(key) && (key !== 'include_adult' || value === 'false')),
+  );
+}
 
 /**
- * GET TMDB (API v4, jeton Bearer). Langue fr-FR et région FR par défaut. Le jeton n'entre jamais dans la clé de cache.
+ * Durée de vie du cache TMDB selon le chemin : fournisseurs de streaming 12 h, tendances et populaires 3 h, le reste
+ * (détails, listes, à venir) 6 h.
+ */
+export function tmdbTtl(sub: string): number {
+  const segments = sub.split('/');
+  if (segments.includes('watch')) return TTL.tmdbWatch;
+  if (segments.includes('trending') || segments.includes('popular')) return TTL.tmdbFast;
+  return TTL.tmdb;
+}
+
+/**
+ * GET TMDB (API v4, jeton Bearer). Langue fr-FR et région FR par défaut. Cache partagé entre utilisateurs
+ * (métadonnées publiques) : ni le jeton ni son empreinte n'entrent dans la clé.
  */
 export async function tmdbGet(
   ctx: LtContext,
@@ -20,7 +62,7 @@ export async function tmdbGet(
   if (!query.has('language')) query.set('language', 'fr-FR');
   if (!query.has('region')) query.set('region', 'FR');
   query.forEach((value, key) => url.searchParams.set(key, value));
-  return ctx.state.cache.get('tmdb:' + url.pathname + url.search, TTL.tmdb, () =>
+  return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), () =>
     getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }),
   );
 }
@@ -84,7 +126,7 @@ const TVDB_SESSION_MS = 20 * 24 * 3600e3;
 
 /** Jeton TVDB, mis en cache par clé API (empreinte). Une nouvelle connexion si `force`. */
 async function tvdbToken(ctx: LtContext, apiKey: string, force: boolean): Promise<string> {
-  const sessionKey = digest(apiKey);
+  const sessionKey = keyDigest(apiKey);
   const session = ctx.state.tvdbSessions.get(sessionKey);
   if (!force && session !== undefined && session.exp > Date.now()) return session.token;
   const json = await getJson(ctx, `${TVDB_BASE}/login`, {
@@ -111,7 +153,7 @@ export async function tvdbSeries(ctx: LtContext, apiKey: string, id: string): Pr
       json = await fetchExtended(await tvdbToken(ctx, apiKey, false));
     } catch (err) {
       if (!(err instanceof LtError) || err.code !== 'upstream_401') throw err;
-      ctx.state.tvdbSessions.delete(digest(apiKey)); // jeton expiré : une seule nouvelle connexion
+      ctx.state.tvdbSessions.delete(keyDigest(apiKey)); // jeton expiré : une seule nouvelle connexion
       json = await fetchExtended(await tvdbToken(ctx, apiKey, true));
     }
     const data = recordAt(json, 'data');

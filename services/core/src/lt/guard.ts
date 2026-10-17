@@ -1,14 +1,8 @@
 import { isIP } from 'node:net';
 import { isNonPublicAddress } from '../sources/ip.js';
-import { type HostLookup, resolveHost, SourceError, type UrlGuard } from '../sources/http.js';
+import { UnsafeTargetError, type UrlGuard } from '../sources/http.js';
 
-/** Cible refusée (adresse privée, nom local, hôte non public). Message sans URL. */
-export class UnsafeTargetError extends SourceError {
-  constructor() {
-    super('adresse non publique refusée');
-    this.name = 'UnsafeTargetError';
-  }
-}
+export { UnsafeTargetError };
 
 const LOCAL_NAME = /(^|\.)(localhost|local|internal)$/;
 
@@ -42,23 +36,12 @@ export function parseSafeUrl(raw: string | null | undefined): URL | null {
 }
 
 /**
- * Garde pour les URL d'origine utilisateur (import de playlist, proxy HLS) : contrôle littéral puis
- * résolution DNS ; toutes les adresses doivent être publiques. Appliquée à chaque saut de redirection.
- * `lookup` est injectable (tests).
+ * Garde appliquée à chaque saut (URL initiale et redirections) : contrôle littéral uniquement. Le DNS n'est pas
+ * résolu ici : il est résolu et contrôlé à la connexion par l'agent épinglé (pinnedLookup), sur la même réponse
+ * que celle utilisée pour la connexion. Un contrôle DNS préalable laisserait une fenêtre de rebinding.
  */
-export function createPublicGuard(lookup: HostLookup = resolveHost): UrlGuard {
+export function createPublicGuard(): UrlGuard {
   return async (url) => {
     if (!isLiteralSafe(url)) throw new UnsafeTargetError();
-    const host = bareHost(url);
-    if (isIP(host) !== 0) return;
-    let addresses: readonly string[];
-    try {
-      addresses = await lookup(host);
-    } catch {
-      throw new SourceError('hôte non résolu');
-    }
-    if (addresses.length === 0 || addresses.some((address) => isNonPublicAddress(address))) {
-      throw new UnsafeTargetError();
-    }
   };
 }

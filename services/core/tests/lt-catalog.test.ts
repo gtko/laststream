@@ -67,7 +67,7 @@ describe('catalog Stremio', () => {
     const res = await catalog('movie/lastaddon-trending.json');
     expect(res.status).toBe(200);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
-    expect(res.headers.get('cache-control')).toBe('max-age=300');
+    expect(res.headers.get('cache-control')).toBe('private, max-age=300');
     expect(await res.json()).toEqual({ metas: [MATRIX, GOT] });
   });
 

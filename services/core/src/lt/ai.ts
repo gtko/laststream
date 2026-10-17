@@ -60,9 +60,26 @@ async function complete(ctx: LtContext, ai: AiSettings, payload: Record<string, 
   return messageContent(json);
 }
 
-/** Texte nettoyé du markdown, tronqué. Vide : 502 ai_bad_format. */
+/**
+ * Texte brut sûr pour l'affichage : balises HTML retirées (répétées jusqu'à stabilité), tabulations et retours à la
+ * ligne ramenés à des espaces, caractères de contrôle supprimés, espaces réduits.
+ */
+export function plainText(raw: string): string {
+  let text = raw;
+  for (let previous = ''; previous !== text; ) {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, '');
+  }
+  const printable = [...text.replace(/[\t\r\n]+/g, ' ')].filter((char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return !(code < 0x20 || (code >= 0x7f && code <= 0x9f) || (code >= 0x200b && code <= 0x200f) || code === 0x2028 || code === 0x2029 || code === 0xfeff);
+  });
+  return printable.join('').replace(/\s+/g, ' ').trim();
+}
+
+/** Texte nettoyé du markdown et en texte brut, tronqué. Vide : 502 ai_bad_format. */
 function cleanText(raw: string, max: number): string {
-  const text = raw.replace(/[*_#`]/g, '').trim().slice(0, max);
+  const text = plainText(raw.replace(/[*_#`]/g, '')).slice(0, max);
   if (text === '') throw new LtError(502, 'ai_bad_format');
   return text;
 }
@@ -70,6 +87,15 @@ function cleanText(raw: string, max: number): string {
 /** Valeur texte d'un champ du corps (chaîne ou nombre), sinon chaîne vide. */
 function textOf(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+/**
+ * Clé de cache d'un texte « pourquoi » : l'identifiant du titre ou de la personne quand il est fourni, sinon une
+ * empreinte du libellé. Partagée entre utilisateurs.
+ */
+function textKey(prefix: string, id: unknown, label: unknown[]): string {
+  const ident = textOf(id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+  return ident !== '' ? `${prefix}:${ident}` : `${prefix}:${digest(label)}`;
 }
 
 export interface HistoryItem {
@@ -134,10 +160,10 @@ async function askModel(ctx: LtContext, ai: AiSettings, history: HistoryItem[], 
     .map((x): Suggestion => {
       const year = x.year;
       return {
-        title: (typeof x.title === 'string' ? x.title : '').trim().slice(0, 120),
+        title: plainText(typeof x.title === 'string' ? x.title : '').slice(0, 120),
         year: typeof year === 'number' && Number.isInteger(year) ? year : null,
         type: x.type === 'tv' ? 'tv' : 'movie',
-        reason: (typeof x.reason_fr === 'string' ? x.reason_fr : '').slice(0, 160),
+        reason: plainText(typeof x.reason_fr === 'string' ? x.reason_fr : '').slice(0, 160),
       };
     })
     .filter((x) => x.title !== '')
@@ -166,7 +192,7 @@ export async function recommend(ctx: LtContext, config: Config, body: Record<str
   const token = serviceKey(config, 'tmdb');
   const history = sanitizeList(body.history);
   const liked = sanitizeList(body.liked);
-  return ctx.state.cache.get(`ai:${digest({ history, liked, model: ai.model })}`, TTL.ai, async () => {
+  return ctx.state.cache.get(`ai:${digest({ history, liked, model: ai.model })}`, TTL.aiRecommend, async () => {
     const suggestions = await askModel(ctx, ai, history, liked);
     const resolved = await Promise.all(suggestions.slice(0, 10).map((item) => resolveTitle(ctx, token, item)));
     const seen = new Set<string>();
@@ -193,7 +219,8 @@ export async function why(ctx: LtContext, config: Config, body: Record<string, u
     .slice(0, 6)
     .map((g: unknown) => String(g).slice(0, 40))
     .join(', ');
-  return ctx.state.cache.get(`why:${digest([title, year, overview, genres])}`, TTL.ai, async () => {
+  const kind = body.type === 'tv' ? 'tv' : 'movie';
+  return ctx.state.cache.get(textKey(`why:${kind}`, body.id, [title, year]), TTL.aiText, async () => {
     const raw = await complete(ctx, ai, {
       temperature: 0.6,
       max_tokens: 220,
@@ -218,7 +245,7 @@ export async function personWhy(ctx: LtContext, config: Config, body: Record<str
     .slice(0, 8)
     .map((t: unknown) => String(t).slice(0, 80))
     .filter(Boolean);
-  return ctx.state.cache.get(`pwhy:${digest([name, known])}`, TTL.ai, async () => {
+  return ctx.state.cache.get(textKey('pwhy:person', body.id, [name]), TTL.aiText, async () => {
     const raw = await complete(ctx, ai, {
       temperature: 0.6,
       max_tokens: 200,

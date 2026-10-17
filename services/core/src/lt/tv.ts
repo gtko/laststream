@@ -25,7 +25,6 @@ const MAX_EPG_BYTES = 32 * 1024 * 1024;
 const MAX_EPG_OUTPUT_BYTES = 256 * 1024 * 1024;
 const MAX_PLAYLIST_BYTES = 6 * 1024 * 1024;
 const MAX_HLS_BYTES = 2 * 1024 * 1024;
-const MAX_HLS_HOSTS = 5000;
 const FLAKY_LABEL = 'iptv-org (peut ne pas fonctionner)';
 
 export interface TvChannel {
@@ -57,11 +56,20 @@ export interface TvStats {
   epgStats: { url: string; programmes: number; ok: boolean }[];
 }
 
-interface TvData {
+/** Listes de chaînes (cache 6 h). */
+interface TvLists {
   channels: TvChannel[];
-  epg: Map<string, Programme[]>;
-  stats: TvStats;
+  counts: Record<string, number>;
 }
+
+/** Programmes EPG (cache 3 h) et état de chaque source. */
+interface TvEpgData {
+  epg: Map<string, Programme[]>;
+  epgStats: TvStats['epgStats'];
+}
+
+/** EPG indisponible : les chaînes restent servies, sans programmes. */
+const NO_EPG: TvEpgData = { epg: new Map(), epgStats: [] };
 
 interface M3uEntry {
   attrs: Record<string, string>;
@@ -70,6 +78,9 @@ interface M3uEntry {
 }
 
 const stripAccents = (value: string): string => value.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** Retire la marque d'ordre des octets (BOM, U+FEFF) en tête de texte. */
+const stripBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 
 const normName = (name: string): string =>
   stripAccents(name.toLowerCase())
@@ -90,19 +101,10 @@ function tvCategory(group: string): string {
   return 'Divertissement';
 }
 
-/** Hôte d'une URL, ou undefined si elle n'est pas valide. */
-function hostOf(url: string): string | undefined {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return undefined;
-  }
-}
-
 export function parseM3U(text: string): M3uEntry[] {
   const out: M3uEntry[] = [];
   let current: { attrs: Record<string, string>; name: string } | null = null;
-  for (const raw of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+  for (const raw of stripBom(text).split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
     if (line.startsWith('#EXTINF')) {
@@ -253,13 +255,17 @@ function tvGet(ctx: LtContext, url: string, timeoutMs: number, maxBytes: number)
   return ltDownload(ctx, url, { headers: TV_HEADERS }, timeoutMs, { maxBytes });
 }
 
-/** Charge les chaînes et l'EPG (fenêtre -6 h / +30 h, une source par chaîne). Mis en cache 6 h. */
-async function buildTv(ctx: LtContext): Promise<TvData> {
+/**
+ * Listes de chaînes (iptv-org, Pluto, Samsung). Si aucune source ne répond, rien n'est mis en cache :
+ * l'erreur 502 part au client et la prochaine requête réessaie.
+ */
+async function buildLists(ctx: LtContext): Promise<TvLists> {
   const [m3u, pluto, samsung] = await Promise.allSettled([
     tvGet(ctx, TV_SOURCES.m3u, 30000, MAX_SOURCE_BYTES),
     tvGet(ctx, TV_SOURCES.pluto, 60000, MAX_SOURCE_BYTES),
     tvGet(ctx, TV_SOURCES.samsung, 60000, MAX_SOURCE_BYTES),
   ]);
+  if ([m3u, pluto, samsung].every((result) => result.status === 'rejected')) throw new LtError(502, 'tv_unavailable');
   const value = (result: PromiseSettledResult<Buffer>): Buffer | null =>
     result.status === 'fulfilled' ? result.value : null;
 
@@ -283,12 +289,14 @@ async function buildTv(ctx: LtContext): Promise<TvData> {
     counts.samsung = list.length;
     all.push(...list);
   }
-  const channels = dedupeChannels(all);
-  for (const channel of channels) {
-    const host = hostOf(channel.url);
-    if (host !== undefined) ctx.state.tvHosts.add(host);
-  }
+  return { channels: dedupeChannels(all), counts };
+}
 
+/**
+ * Programmes EPG (fenêtre -6 h / +30 h, une source par chaîne). Si toutes les sources échouent, rien n'est mis en
+ * cache (erreur non mémorisée).
+ */
+async function buildEpg(ctx: LtContext): Promise<TvEpgData> {
   const now = Math.floor(Date.now() / 1000);
   const epg = new Map<string, Programme[]>();
   const epgStats: TvStats['epgStats'] = [];
@@ -303,18 +311,9 @@ async function buildTv(ctx: LtContext): Promise<TvData> {
       epgStats.push({ url: label, programmes: 0, ok: false });
     }
   }
+  if (epgStats.every((source) => !source.ok)) throw new LtError(502, 'tv_unavailable');
   for (const list of epg.values()) list.sort((a, b) => a.start - b.start);
-  const withEpg = channels.filter((c) => c.epgId !== '' && epg.has(c.epgId)).length;
-  return {
-    channels,
-    epg,
-    stats: {
-      counts,
-      total: channels.length,
-      epgCoverage: channels.length ? Math.round((withEpg / channels.length) * 100) : 0,
-      epgStats,
-    },
-  };
+  return { epg, epgStats };
 }
 
 function parseJson(buffer: Buffer): unknown {
@@ -325,8 +324,13 @@ function parseJson(buffer: Buffer): unknown {
   }
 }
 
-function loadTv(ctx: LtContext): Promise<TvData> {
-  return ctx.state.cache.get('tv:data', TTL.tv, () => buildTv(ctx));
+function loadLists(ctx: LtContext): Promise<TvLists> {
+  return ctx.state.cache.get('tv:lists', TTL.tvChannels, () => buildLists(ctx));
+}
+
+/** EPG : en cas d'échec, les chaînes restent disponibles sans programmes. */
+function loadEpg(ctx: LtContext): Promise<TvEpgData> {
+  return ctx.state.cache.get('tv:epg', TTL.tvEpg, () => buildEpg(ctx)).catch(() => NO_EPG);
 }
 
 /** Chaînes publiques : mêmes champs que le prototype, booléens normalisés. */
@@ -335,16 +339,23 @@ function publicChannel(c: TvChannel): TvChannel {
 }
 
 export async function tvChannels(ctx: LtContext): Promise<TvChannel[]> {
-  return (await loadTv(ctx)).channels.map(publicChannel);
+  return (await loadLists(ctx)).channels.map(publicChannel);
 }
 
 export async function tvStats(ctx: LtContext): Promise<TvStats> {
-  return (await loadTv(ctx)).stats;
+  const [lists, epg] = await Promise.all([loadLists(ctx), loadEpg(ctx)]);
+  const withEpg = lists.channels.filter((c) => c.epgId !== '' && epg.epg.has(c.epgId)).length;
+  return {
+    counts: lists.counts,
+    total: lists.channels.length,
+    epgCoverage: lists.channels.length ? Math.round((withEpg / lists.channels.length) * 100) : 0,
+    epgStats: epg.epgStats,
+  };
 }
 
 /** Programmes des chaînes demandées (`ids`, jusqu'à 60) sur une fenêtre de 8 h au plus. */
 export async function tvEpg(ctx: LtContext, query: Record<string, string>): Promise<unknown[]> {
-  const data = await loadTv(ctx);
+  const [lists, epg] = await Promise.all([loadLists(ctx), loadEpg(ctx)]);
   const now = Math.floor(Date.now() / 1000);
   const toSec = (value: string | undefined, fallback: number): number => {
     if (value === undefined || value === '') return fallback;
@@ -356,12 +367,12 @@ export async function tvEpg(ctx: LtContext, query: Record<string, string>): Prom
   const from = toSec(query.from, now - 3600);
   const to = Math.min(toSec(query.to, from + 6 * 3600), from + 8 * 3600);
   const ids = (query.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 60);
-  const epgIdOf = new Map(data.channels.map((c) => [c.id, c.epgId]));
+  const epgIdOf = new Map(lists.channels.map((c) => [c.id, c.epgId]));
   const out: unknown[] = [];
   for (const id of ids) {
     // Accepte un id de chaîne ou un id EPG (playlists utilisateur).
     const epgId = epgIdOf.get(id) ?? id;
-    const list = data.epg.get(epgId);
+    const list = epg.epg.get(epgId);
     if (list === undefined) continue;
     for (const p of list) {
       if (p.stop <= from || p.start >= to) continue;
@@ -448,18 +459,28 @@ export async function tvImport(ctx: LtContext, body: Record<string, unknown>): P
   } else {
     throw new LtError(400, 'bad_request');
   }
-  for (const channel of list) {
-    const host = hostOf(channel.url);
-    if (host !== undefined && ctx.state.tvHosts.size < MAX_HLS_HOSTS) ctx.state.tvHosts.add(host);
-  }
   return { channels: list, count: list.length };
 }
 
 /**
- * Réécrit une playlist HLS : sous-playlists et clés/médias passent par le proxy (`proxyPrefix` + URL encodée),
- * les segments restent des URL directes. Les hôtes découverts rejoignent la liste autorisée.
+ * Signature d'une URL de flux pour une configuration (`sig` des chaînes et de l'import). Null si l'URL n'est pas
+ * publique. La clé de signature ne quitte jamais le serveur.
  */
-function hlsRewrite(ctx: LtContext, text: string, baseUrl: string, proxyPrefix: string): string {
+export function signTvUrl(ctx: LtContext, scope: string, rawUrl: string): string | null {
+  const url = parseSafeUrl(rawUrl);
+  return url === null ? null : ctx.signer.sign(scope, url.toString());
+}
+
+/** Chemin du proxy HLS pour une URL absolue, avec sa signature pour la configuration `scope`. */
+function hlsProxyPath(ctx: LtContext, scope: string, absolute: string): string {
+  return `/${scope}/lt/tv/hls?u=${encodeURIComponent(absolute)}&s=${ctx.signer.sign(scope, absolute)}`;
+}
+
+/**
+ * Réécrit une playlist HLS : sous-playlists et médias passent par le proxy signé ; les segments et clés restent des
+ * URL directes (le proxy ne relaie que des playlists).
+ */
+function hlsRewrite(ctx: LtContext, scope: string, text: string, baseUrl: string): string {
   const abs = (value: string): string | null => {
     try {
       return new URL(value, baseUrl).toString();
@@ -469,10 +490,7 @@ function hlsRewrite(ctx: LtContext, text: string, baseUrl: string, proxyPrefix: 
   };
   const viaProxy = (value: string): string => {
     const absolute = abs(value);
-    if (absolute === null) return value;
-    const host = hostOf(absolute);
-    if (host !== undefined && ctx.state.tvHosts.size < MAX_HLS_HOSTS) ctx.state.tvHosts.add(host);
-    return proxyPrefix + encodeURIComponent(absolute);
+    return absolute === null ? value : hlsProxyPath(ctx, scope, absolute);
   };
   const isPlaylist = (value: string): boolean => /\.m3u8?(\?|#|$)/i.test(value);
   let nextIsVariant = false;
@@ -500,20 +518,20 @@ function hlsRewrite(ctx: LtContext, text: string, baseUrl: string, proxyPrefix: 
 }
 
 /**
- * Proxy HLS : uniquement des playlists d'hôtes connus (liste issue des playlists chargées), jamais d'IP privée.
+ * Proxy HLS. Seule une URL signée pour cette configuration est acceptée (403 sinon) : l'autorisation tient à la
+ * signature, pas à une liste d'hôtes. L'hôte est résolu et contrôlé à la connexion, à chaque saut.
  * Renvoie le texte réécrit ; les erreurs sont des LtError.
  */
-export async function tvHls(ctx: LtContext, rawUrl: string | null, proxyPrefix: string): Promise<string> {
+export async function tvHls(ctx: LtContext, scope: string, rawUrl: string | null, sig: string | null): Promise<string> {
   const url = parseSafeUrl(rawUrl);
   if (url === null) throw new LtError(400, 'bad_url');
-  await loadTv(ctx).catch(() => null); // alimente la liste d'hôtes autorisés
-  if (!ctx.state.tvHosts.has(url.hostname)) throw new LtError(403, 'host_not_allowed');
+  if (!ctx.signer.verify(scope, url.toString(), sig)) throw new LtError(403, 'invalid_signature');
   const res = await ltRequest(ctx, url.toString(), { headers: TV_HEADERS }, 15000, {
     maxBytes: MAX_HLS_BYTES,
     guard: ctx.guard,
   });
   if (!res.ok) throw new LtError(502, `upstream_${res.status}`);
-  const text = new TextDecoder('utf-8').decode(res.bytes).replace(/^\uFEFF/, '');
+  const text = stripBom(new TextDecoder('utf-8').decode(res.bytes));
   if (!/^\s*#EXTM3U/.test(text)) throw new LtError(415, 'not_a_playlist');
-  return hlsRewrite(ctx, text, res.url, proxyPrefix);
+  return hlsRewrite(ctx, scope, text, res.url);
 }
