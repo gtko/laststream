@@ -135,7 +135,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
     configOf(req);
     const query = queryOf(req);
     const text = await tvHls(ctx, tokenOf(req), query.u ?? null, query.s ?? null);
-    cacheable(res);
+    // Playlist en direct : elle change à chaque segment, le lecteur doit la relire sans cache.
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(text);
   });

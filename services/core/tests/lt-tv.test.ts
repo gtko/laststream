@@ -178,7 +178,7 @@ describe('lt/tv/hls', () => {
     const res = await get(hlsPath('https://stream.tf1.example/tf1.m3u8'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/vnd.apple.mpegurl');
-    expect(res.headers.get('cache-control')).toBe('private, max-age=300');
+    expect(res.headers.get('cache-control')).toBe('no-store') // playlist en direct : jamais en cache;
     const body = await res.text();
     const variant = 'https://stream.tf1.example/variant/index.m3u8';
     const audio = 'https://stream.tf1.example/audio/fr.m3u8';
