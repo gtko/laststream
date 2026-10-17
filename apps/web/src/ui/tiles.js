@@ -1,7 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { detailOf, pickLogo } from './catalog.js';
+import { certification, detailOf, pickLogo } from './catalog.js';
 import { IMG } from './constants.js';
 import { countdown, dayDiff, fmtShort, todayStr } from './dates.js';
 import { getRemind } from './fiche.js';
@@ -55,7 +55,7 @@ export function tileCard(it, o) {
   const badge = fresh ? '<span class="t-badge" aria-hidden="true">' + esc(fresh) + '</span>' : '';
   const dateBar = upDate
     ? '<span class="t-date" aria-hidden="true"><strong>' + esc((it.upLabel ? it.upLabel + ' · ' : '') + 'Le ' + fmtShort(upDate)) + '</strong><span>' + esc(countdown(upDate)) + '</span></span>' : '';
-  const lazy = land || it.type === 'tv';
+  const lazy = land || it.type === 'tv' || isKidProfile();
 
   const cls = 'card tile' + (land ? ' tile-land' : '') + (variant === 'logo' ? ' tile-logo' : '') + (upDate ? ' is-upcoming' : '') + (o.current ? ' is-current' : '') + (o.alwaysMeta ? ' meta-on' : '');
   const media =
@@ -77,7 +77,7 @@ export function tileCard(it, o) {
 export const posterCard = (it, o) => tileCard(it, o);
 
 export function topCard(it, n) {
-  return '<button type="button" class="top-item" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '" aria-label="' + n + '. ' + esc(it.name) + ', Top 10 cette semaine">' +
+  return '<button type="button" class="top-item" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '"' + (isKidProfile() ? ' data-lazy' : '') + ' aria-label="' + n + '. ' + esc(it.name) + ', Top 10 cette semaine">' +
     '<span class="rank" aria-hidden="true">' + n + '</span>' +
     '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
     (it.poster ? '<img src="' + esc(it.poster) + '" alt="" decoding="async">' : '') +
@@ -93,6 +93,9 @@ export function continueCard(it, pct) {
 }
 
 // Chargement paresseux (tuiles visibles seulement) : fournisseur FR ou chaîne, logo du titre, fraîcheur.
+import { isKidProfile, kidMaxAge } from '../data/auth';
+import { kidAllows } from '../data/kid';
+
 export function enrich(it, needLogo) {
   const ck = it.key + (needLogo ? '#l' : '');
   if (!enrichCache.has(ck)) {
@@ -100,7 +103,7 @@ export function enrich(it, needLogo) {
       enrichQueue.push(async () => {
         try {
           const raw = await tmdb(it.type + '/' + it.id, {
-            append_to_response: 'watch/providers' + (needLogo ? ',images' : ''),
+            append_to_response: 'watch/providers' + (needLogo ? ',images' : '') + (isKidProfile() ? (it.type === 'tv' ? ',content_ratings' : ',release_dates') : ''),
             include_image_language: 'fr,en,null',
           });
           const fr = (raw['watch/providers'] && raw['watch/providers'].results && raw['watch/providers'].results[getRegion().code]) || {};
@@ -114,18 +117,22 @@ export function enrich(it, needLogo) {
             seasonNum: last ? last.season_number : 0,
             seasonDate: last ? last.air_date : '',
             epDate: (raw.last_episode_to_air && raw.last_episode_to_air.air_date) || '',
+            cert: certification(raw, it.type),
           });
           if (needLogo) info.logo = pickLogo(raw.images && raw.images.logos, 'w300');
           infoStore.set(it.key, info);
           applyEnrich(it.key);
-        } catch (_) { /* tuile laissée telle quelle */ }
+        } catch (_) {
+          // Profil enfant : sans classification vérifiée, la tuile est retirée.
+          if (isKidProfile()) removeTiles(it.key);
+        }
         resolve();
       });
       pumpEnrich();
     });
     enrichCache.set(ck, job);
   }
-  return enrichCache.get(ck);
+  return enrichCache.get(ck).then(() => applyEnrich(it.key));
 }
 
 export function pumpEnrich() {
@@ -136,10 +143,19 @@ export function pumpEnrich() {
   }
 }
 
+/** Retire du DOM toutes les tuiles d'un titre (profil enfant). */
+export function removeTiles(key) {
+  document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => (el.closest('.up-item') || el).remove());
+}
+
 export function applyEnrich(key) {
   const info = infoStore.get(key);
   const it = state.byKey.get(key);
   if (!info || !it) return;
+  if (isKidProfile()) {
+    if (!kidAllows(info.cert, kidMaxAge())) { removeTiles(key); return; }
+    document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => { el.dataset.kid = 'ok'; });
+  }
   document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => {
     const prov = el.querySelector('.t-prov');
     if (prov && info.provider && !prov.firstChild) {

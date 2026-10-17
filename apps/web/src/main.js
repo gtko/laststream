@@ -3,7 +3,9 @@
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';
+import { initAuth, isKidProfile } from './data/auth';
 import { applyTheme, readTheme } from './data/theme';
+import { runAuthFlow } from './ui/auth-ui.js';
 import { app, detailEl } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
@@ -15,7 +17,10 @@ import './ui/hover.js';
 import './ui/settings.js';
 import './ui/sources-ui.js';
 
-applyTheme(readTheme());
+await initAuth();
+await runAuthFlow();
+if (isKidProfile()) document.body.classList.add('kid-mode');
+applyTheme(readTheme()); // après la synchronisation des préférences du profil
 state.curHash = location.hash || '';
 if (parseRoute()) {
   // Ouverture directe d'une page : l'accueil se charge en arrière-plan.

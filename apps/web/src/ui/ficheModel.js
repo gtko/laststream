@@ -55,6 +55,7 @@ export function buildModel(type, id, raw, en) {
     videos,
     genres: (raw.genres || []).map((g) => g.name),
     minutes: runtime,
+    certRaw: certification(raw, type),
     cert: certLabel(certification(raw, type)),
     seasons: (raw.seasons || []).filter((s) => s.season_number > 0).length
       ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || []),

@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile, kidMaxAge } from '../data/auth';
+import { kidAllows } from '../data/kid';
 import { getSeen } from './util.js';
 import { clearAmbient } from './heroVideo.js';
 import { getRegion } from '../data/prefs';
@@ -292,6 +294,7 @@ export async function showFiche(type, id) {
   let m;
   try {
     m = await fetchFull(type, id);
+    if (isKidProfile() && !kidAllows(m.certRaw, kidMaxAge())) throw new Error('profil enfant');
   } catch (_) {
     if (token !== state.token) return;
     detailEl.innerHTML = ficheError(type, id);

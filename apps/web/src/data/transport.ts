@@ -40,7 +40,11 @@ function writeSession(key: string, entry: CacheEntry): void {
  * Valeur en cache si elle n'a pas expiré (mémoire puis sessionStorage), sinon exécute `load`.
  * Les requêtes identiques en vol sont partagées. Les erreurs ne sont jamais mises en cache.
  */
+/** Les playlists HLS en direct changent à chaque seconde : jamais mises en cache ni partagées. */
+export const isUncacheable = (key: string): boolean => /\/lt\/tv\/hls(\?|$)/.test(key);
+
 export function cachedRequest<T>(key: string, load: () => Promise<T>, ttlMs: number = DEFAULT_TTL_MS): Promise<T> {
+  if (isUncacheable(key)) return new Promise<T>((resolve) => resolve(load()));
   const entry = memory.get(key) ?? readSession(key);
   if (entry && entry.expiresAt > Date.now()) {
     memory.set(key, entry);

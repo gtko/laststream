@@ -18,6 +18,7 @@ export const curChannel = () => (tv.play ? tv.play.list[tv.play.idx] : null);
 
 export function destroyStream() {
   clearTimeout(tv.stallTimer);
+  clearInterval(tv.watchTimer);
   if (tv.hls) { try { tv.hls.destroy(); } catch (_) { /* déjà détruit */ } tv.hls = null; }
   videoEl.removeAttribute('src');
   try { videoEl.load(); } catch (_) { /* ignoré */ }
@@ -76,6 +77,22 @@ export function failover(c, token) {
   playFail(token);
 }
 
+/**
+ * Veille la lecture d'un direct : si l'image n'avance plus pendant ~16 s, relance le chargement (hls.js : startLoad,
+ * natif : rechargement de la source), puis bascule sur l'alternative suivante si ça ne repart pas.
+ */
+function watchLive(fail, restart) {
+  clearInterval(tv.watchTimer);
+  let last = -1;
+  let strikes = 0;
+  tv.watchTimer = setInterval(() => {
+    if (videoEl.paused || videoEl.ended || videoEl.seeking) { strikes = 0; return; }
+    if (videoEl.currentTime === last) strikes += 1; else { strikes = 0; last = videoEl.currentTime; }
+    if (strikes === 2) restart();
+    else if (strikes >= 4) { clearInterval(tv.watchTimer); fail(); }
+  }, 8000);
+}
+
 function tryStream(c, token) {
   destroyStream();
   perrEl.hidden = true;
@@ -84,26 +101,54 @@ function tryStream(c, token) {
   videoEl.onplaying = () => { clearTimeout(tv.stallTimer); perrEl.hidden = true; };
   videoEl.onerror = fail;
   tv.stallTimer = setTimeout(fail, 20000);
+  // Les playlists HLS sont lues directement (hls.js ou le lecteur natif) : jamais via le cache JSON du client.
   const proxied = cur.sig ? tvHlsUrl(cur) : '';
+  const native = (src) => {
+    videoEl.src = src;
+    videoEl.play().catch(() => {});
+    watchLive(fail, () => { const t = videoEl.src; videoEl.src = t; videoEl.load(); videoEl.play().catch(() => {}); });
+  };
   if (isDirectFile(cur.url)) {
     videoEl.src = cur.url;
     videoEl.play().catch(() => {});
   } else if (!proxied) {
     fail();
-  } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-    videoEl.src = proxied;
-    videoEl.play().catch(() => {});
   } else {
     loadHls().then((H) => {
       if (token !== tv.playToken || tv.attempt !== sourcesOf(c).indexOf(cur)) return;
-      if (!H || !H.isSupported()) { fail(); return; }
-      const h = new H({ maxBufferLength: 20 });
-      tv.hls = h;
-      h.on(H.Events.ERROR, (_e, d) => { if (d && d.fatal) fail(); });
-      h.on(H.Events.MANIFEST_PARSED, () => { videoEl.play().catch(() => {}); });
-      h.loadSource(proxied);
-      h.attachMedia(videoEl);
-    }).catch(fail);
+      if (H && H.isSupported()) {
+        const h = new H({
+          lowLatencyMode: false,
+          liveSyncDurationCount: 3,
+          liveMaxLatencyDurationCount: 10,
+          manifestLoadingMaxRetry: 4,
+          levelLoadingMaxRetry: 6,
+          fragLoadingMaxRetry: 6,
+          maxBufferLength: 20,
+        });
+        tv.hls = h;
+        let net = 0;
+        let media = 0;
+        h.on(H.Events.FRAG_LOADED, () => { net = 0; media = 0; });
+        h.on(H.Events.ERROR, (_e, d) => {
+          if (!d || !d.fatal) return;
+          if (d.type === H.ErrorTypes.NETWORK_ERROR && net++ < 3) h.startLoad();
+          else if (d.type === H.ErrorTypes.MEDIA_ERROR && media++ < 2) h.recoverMediaError();
+          else fail();
+        });
+        h.on(H.Events.MANIFEST_PARSED, () => { videoEl.play().catch(() => {}); });
+        h.loadSource(proxied);
+        h.attachMedia(videoEl);
+        watchLive(fail, () => { try { h.startLoad(); } catch (_) { /* ignoré */ } });
+      } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+        native(proxied); // Safari / iOS : HLS natif
+      } else {
+        fail();
+      }
+    }).catch(() => {
+      if (token === tv.playToken && videoEl.canPlayType('application/vnd.apple.mpegurl')) native(proxied);
+      else fail();
+    });
   }
 }
 

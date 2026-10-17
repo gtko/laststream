@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
+import { isKidProfile } from '../data/auth';
 import { getRegion } from '../data/prefs';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
@@ -192,7 +193,7 @@ export function liveTile(c, nn, now) {
 
 export async function renderLive() {
   try {
-    if (state.status !== 'ready' || !document.getElementById('live-slot')) return;
+    if (state.status !== 'ready' || !document.getElementById('live-slot') || isKidProfile()) return;
     const chs = await loadTvChannels();
     const pool = chs.filter((c) => !c.fast).slice(0, 24).concat(chs.filter((c) => c.fast).slice(0, 12));
     await ensureEpg(pool);

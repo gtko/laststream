@@ -52,6 +52,14 @@ describe('transport', () => {
     expect(await cachedRequest('e', load)).toBe(1);
   });
 
+  it('ne met jamais en cache les playlists HLS en direct', async () => {
+    const load = vi.fn(async () => 'pl');
+    const key = 'http://x/CFG/lt/tv/hls?u=a&s=b';
+    await cachedRequest(key, load);
+    await cachedRequest(key, load);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it('limite à 6 requêtes en vol', async () => {
     let peak = 0;
     const release: Array<() => void> = [];

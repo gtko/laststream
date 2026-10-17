@@ -1,5 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile, kidMaxAge } from '../data/auth';
 import { isConfigured } from '../data/config';
+import { kidAllows } from '../data/kid';
 import { recommend, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { userStore } from '../data/userStore';
@@ -37,9 +39,10 @@ export async function loadHome() {
   if ([day, week, films, series, action, comedy].every((l) => l === null)) throw new Error('catalogue indisponible');
 
   // Mise en avant : premier titre de la semaine ayant un fond et un détail chargeable.
-  const candidates = (week || []).filter((it) => it.backdropPath).slice(0, 3);
+  const kid = isKidProfile();
+  const candidates = (week || []).filter((it) => it.backdropPath).slice(0, kid ? 10 : 3);
   await Promise.all(candidates.map(getDetail));
-  const hero = candidates.find((it) => state.details.has(it.key)) || null;
+  const hero = candidates.find((it) => state.details.has(it.key) && (!kid || kidAllows(state.details.get(it.key).cert, kidMaxAge()))) || null;
 
   state.top10 = new Map(cut(day, 10) ? cut(day, 10).map((it, i) => [it.key, i + 1]) : []);
   const all = [...(hero ? [hero] : []), ...(day || []), ...(week || []), ...(films || []), ...(series || []), ...(action || []), ...(comedy || [])];
@@ -59,6 +62,7 @@ export async function loadHome() {
 
 export async function loadAI() {
   if (state.ai.status === 'loading' || state.ai.status === 'ready') return;
+  if (isKidProfile()) { state.ai = { status: 'none', items: [] }; renderAI(); return; } // pas d'IA sur un profil enfant
   state.ai = { status: 'loading', items: [] };
   renderAI();
   try {
@@ -193,7 +197,7 @@ export function headerA() {
     '<a href="#/services" data-svcs>Services</a>' +
     '<a href="#/library" data-libnav>Bibliothèque</a><a href="#" data-noop>Stats</a></nav>' +
     '<div class="top-actions"><button type="button" class="icon-btn" aria-label="Rechercher">' + ICON.search + '</button>' +
-    '<button type="button" class="avatar" data-settings aria-label="Profil ' + esc(userStore.currentProfile().name) + ' et réglages">' + esc(initialOf()) + '</button></div></header>';
+    '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
 }
 
 export function heroA(it) {
@@ -282,6 +286,7 @@ export function renderHome() {
   observeTiles(app);
   setupPreviews();
 }
+export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
 export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : '#/');
 export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : ' data-noop');

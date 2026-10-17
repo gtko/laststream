@@ -9,6 +9,8 @@ import {
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { userStore } from '../data/userStore';
+import { auth, importFromStremio, isServerMode, pushPrefs, signOut } from '../data/auth';
+import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
@@ -159,11 +161,33 @@ function dataSection() {
     '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-clear>Vider le cache</button></div></section>';
 }
 
+function accountSection() {
+  if (!isServerMode()) {
+    return '<section class="set-sec glass" aria-labelledby="set-ac-h"><h2 class="f-sub" id="set-ac-h">Compte</h2>' +
+      '<p class="set-hint">' + (auth.status === 'offline'
+        ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
+        : 'Sans compte, la bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
+      '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button></div></section>';
+  }
+  const p = auth.profile;
+  return '<section class="set-sec glass" aria-labelledby="set-ac-h"><h2 class="f-sub" id="set-ac-h">Compte et profils</h2>' +
+    '<p class="set-hint">Connecté : <strong>' + esc(auth.username) + '</strong> · profil actif : <strong>' + esc(p.name) + '</strong>' + (p.isKid ? ' (enfant)' : '') + '.</p>' +
+    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-switch>Changer de profil</button>' +
+    '<button type="button" class="btn btn-ghost" data-set-logout>Se déconnecter</button></div></section>' +
+    '<section class="set-sec glass" aria-labelledby="set-st-h"><h2 class="f-sub" id="set-st-h">Importer ma bibliothèque Stremio</h2>' +
+    '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
+    '<form id="set-stremio" class="tv-form set-form" autocomplete="off">' +
+    field('E-mail Stremio', '<input type="email" name="email" required autocomplete="off">') +
+    field('Mot de passe Stremio', '<input type="password" name="password" required autocomplete="off">') +
+    '<p class="tv-form-msg" id="set-st-msg" role="status"></p>' +
+    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Importer</button></div></form></section>';
+}
+
 function pageHTML() {
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">Réglages</h1><p class="svc-eyebrow">lastAddon, lecture, apparence et région</p></div></header>' +
-    '<div class="set-body">' + lastAddonSection() + playbackSection() + appearanceSection() + regionSection() + dataSection() + '</div></article>';
+    '<div class="set-body">' + accountSection() + lastAddonSection() + playbackSection() + appearanceSection() + regionSection() + dataSection() + '</div></article>';
 }
 
 function rerender() {
@@ -349,6 +373,7 @@ detailEl.addEventListener('click', async (e) => {
     const theme = id === CUSTOM_THEME_ID ? resolveTheme(CUSTOM_THEME_ID, isHexColor(cur.accent) ? cur.accent : '#ff5a36') : resolveTheme(id, null);
     saveTheme(theme);
     applyTheme(theme);
+    pushPrefs();
     detailEl.querySelectorAll('[data-set-theme]').forEach((b) => b.setAttribute('aria-pressed', String(b === th)));
     const color = detailEl.querySelector('[data-set-color]');
     if (color) { color.disabled = theme.id !== CUSTOM_THEME_ID; color.value = theme.accent.toLowerCase(); }
@@ -365,6 +390,9 @@ detailEl.addEventListener('click', async (e) => {
     if (msg) msg.textContent = kbps ? 'Débit mesuré : ' + (kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s (gardé 24 h).' : 'Mesure impossible : vérifie ta connexion.';
     return;
   }
+  if (t.closest('[data-set-login]')) { e.preventDefault(); openLogin(); return; }
+  if (t.closest('[data-set-switch]')) { e.preventDefault(); openPicker(); return; }
+  if (t.closest('[data-set-logout]')) { e.preventDefault(); await signOut(); location.hash = '#/'; location.reload(); return; }
   if (t.closest('[data-set-clear]')) {
     e.preventDefault();
     clearCache();
@@ -377,6 +405,7 @@ detailEl.addEventListener('change', (e) => {
   if (!(t instanceof HTMLElement) || !t.closest('.set-page')) return;
   const p = t.dataset.setPref;
   if (!p) return;
+  setTimeout(pushPrefs, 0);
   if (p === 'autoplay') setAutoplay(t.checked);
   else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
   else if (p === 'skip-intro') setSkipPref('intro', t.checked);
@@ -400,6 +429,26 @@ detailEl.addEventListener('input', (e) => {
   }
 });
 
-detailEl.addEventListener('submit', (e) => {
+detailEl.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'set-stremio') {
+    e.preventDefault();
+    const f = e.target.elements;
+    const msg = detailEl.querySelector('#set-st-msg');
+    const btn = e.target.querySelector('[type=submit]');
+    btn.disabled = true;
+    msg.textContent = 'Import en cours (peut prendre un moment)…';
+    try {
+      const res = await importFromStremio(f.email.value.trim(), f.password.value, getConfig());
+      f.password.value = '';
+      const n = ['imported', 'added', 'count', 'library'].map((k) => res[k]).find((v) => typeof v === 'number');
+      msg.textContent = n != null ? n + ' titre(s) importé(s).' : 'Import terminé.';
+      toast('Bibliothèque Stremio importée');
+    } catch (err) {
+      msg.textContent = errorText(err);
+    } finally {
+      btn.disabled = false;
+    }
+    return;
+  }
   if (e.target && e.target.id === 'set-la') { e.preventDefault(); save(e.target); }
 });

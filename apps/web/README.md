@@ -10,6 +10,8 @@ npm run dev        # serveur de développement sur http://localhost:8080
 npm run build      # vérification des types, lint, puis build dans dist/
 npm run preview    # sert dist/ sur http://localhost:8080 (écoute sur 0.0.0.0)
 npm test           # vitest : couche données/transport + test de fumée de l'interface (jsdom)
+                   # LASTADDON_USER_TEST_URL=http://localhost:7099 npm test : ajoute le test d'intégration de l'API utilisateur
+                   # (serveur lastAddon isolé : LASTADDON_ALLOW_SIGNUP=1 LASTADDON_DATA_DIR=<tmp> PORT=7099)
 ```
 
 Prérequis : Node 20 ou plus, et un lastAddon joignable (par défaut `http://localhost:7000`).
@@ -48,9 +50,19 @@ tools/port-prototype.mjs  script ponctuel ayant découpé app.js du prototype en
 tests/                  vitest
 ```
 
+### Comptes, profils et mode enfant
+
+Au démarrage, `src/data/auth.ts` détecte l'API `/user` de lastAddon (`GET {base}/user/me`). Sans session : écran de connexion / création de compte (jeton d'amorçage facultatif pour le premier compte), avec « Continuer sans compte ». Avec session : choix du profil façon Netflix (avatars colorés, badge « Enfant », clavier PIN, « Gérer les profils »). Le jeton de profil (30 jours) part en `X-Profile-Token`. La bibliothèque locale rejoint le premier profil ouvert, une seule fois par compte ; les préférences (thème, région, lecture, sauts) suivent le profil via `/settings`. L'import Stremio est dans Réglages.
+
+Profil enfant : pas de Réglages ni de TV en direct, pas d'IA ; chaque tuile est vérifiée avec la classification TMDB de la région (`src/data/kid.ts`) et retirée si elle dépasse l'âge du profil ou si elle est inconnue ; quitter le profil demande le PIN d'un profil adulte. Si le serveur est absent ou injoignable, l'adaptateur local (localStorage) prend le relais.
+
 ### Données utilisateur
 
-Toute lecture et écriture de la bibliothèque, de la progression, de « Reprendre la lecture » et des épisodes vus passe par `src/data/userStore.ts`. L'implémentation actuelle est locale. **TODO** : écrire un adaptateur pour l'API utilisateur de lastAddon (comptes, profils, bibliothèque, progression, import Stremio) et l'installer avec `setUserStore(adapter)` au démarrage.
+Toute lecture et écriture de la bibliothèque, de la progression, de « Reprendre la lecture » et des épisodes vus passe par `src/data/userStore.ts`. Deux adaptateurs : `LocalUserStore` (localStorage, repli hors ligne) et `ServerUserStore` (API utilisateur de lastAddon, cache hydraté à l'ouverture du profil, écritures optimistes), installé par `auth.ts` avec `setUserStore()`. Le « vu » par épisode reste local.
+
+### TV en direct
+
+Catalogue Free-TV / iptv-org via `/lt/tv/channels` (pays, langue, catégorie, source, recherche, pagination) et `/lt/tv/facets` pour les compteurs ; filtres par défaut : pays de la région, français, chaînes fiables. Tolérant : un ancien serveur (liste complète sans champs étendus) fonctionne, filtré côté client. Si un flux échoue, les `alternatives` de la chaîne sont essayées avant « Cette chaîne ne répond pas ». Les playlists HLS ne passent jamais par le cache JSON (hls.js les lit directement, avec reprise sur erreur réseau ou média).
 
 ### Lecture
 

@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile } from '../data/auth';
+import { leaveKidProfile } from './auth-ui.js';
 import { userStore } from '../data/userStore';
 import { IMG, REDUCE } from './constants.js';
 import { closeCtx } from './ctxmenu.js';
@@ -232,7 +234,7 @@ document.addEventListener('click', (e) => {
   }
   if (state.ctxMenu) closeCtx();
   const setB = t.closest('[data-settings]');
-    if (setB) { e.preventDefault(); go('#/settings', setB); return; }
+    if (setB) { e.preventDefault(); if (isKidProfile()) leaveKidProfile(); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');
   if (libNav) { e.preventDefault(); go('#/library', libNav); return; }
   const tvNav = t.closest('[data-tvlive]');

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile } from '../data/auth';
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
 import { closeHover } from './hover.js';
@@ -42,6 +43,13 @@ export function applyRestore() {
   setTimeout(() => window.scrollTo(0, y), 500);
 }
 export function parseRoute() {
+  const r = parseRouteRaw();
+  // Profil enfant : ni réglages ni TV en direct.
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'tvlive')) return null;
+  return r;
+}
+
+function parseRouteRaw() {
   const h = location.hash || '';
   let r = /^#\/(movie|tv)\/(\d{1,9})$/.exec(h);
   if (r) return { kind: 'fiche', type: r[1], id: r[2] };
