@@ -143,7 +143,7 @@ describe('parseLanguages : sous-titres français', () => {
   });
 
   it('FRENCH.VOSTFR : audio fr conservé, original retiré', () => {
-    expect(parseLanguages('Movie.2018.FRENCH.VOSTFR.1080p')).toEqual({
+    expect(parseLanguages('Movie.FRENCH.VOSTFR.1080p')).toEqual({
       languages: ['fr'],
       frVariant: 'FRENCH',
       multi: false,
@@ -254,7 +254,7 @@ describe('parseLanguages : autres langues', () => {
 
   it('ordre stable et pas de doublons', () => {
     expect(parseLanguages('Movie.ITA.ENG.GER.1080p').languages).toEqual(['en', 'de', 'it']);
-    expect(parseLanguages('Film.2019.FRENCH.VF.Français.1080p').languages).toEqual(['fr']);
+    expect(parseLanguages('Film.FRENCH.VF.Français.1080p').languages).toEqual(['fr']);
   });
 });
 
@@ -357,8 +357,36 @@ describe('parseLanguages : mots français génériques après le titre', () => {
   });
 });
 
-describe('parseLanguages : limite connue de la coupe au titre', () => {
-  it('sans année, FRENCH placé avant la résolution est lu comme partie du titre', () => {
-    expect(parseLanguages('Movie.FRENCH.1080p').languages).toEqual(['original']);
+describe('parseLanguages : règles de balise FRENCH (après titre, marqueur proche, majuscules)', () => {
+  it('Movie.FRENCH.1080p sans année : fr, variante FRENCH', () => {
+    expect(parseLanguages('Movie.FRENCH.1080p')).toMatchObject({ languages: ['fr'], frVariant: 'FRENCH' });
+  });
+
+  it('Titre.FRENCH.720p.WEB sans année : fr', () => {
+    expect(parseLanguages('Titre.FRENCH.720p.WEB').languages).toEqual(['fr']);
+  });
+
+  it('french en minuscules suivi d une source (règle b) : fr', () => {
+    expect(parseLanguages('Titre.french.720p.WEB').languages).toEqual(['fr']);
+  });
+
+  it('vf suivi d une résolution (règle b) : fr', () => {
+    expect(parseLanguages('Movie.vf.1080p').frVariant).toBe('FRENCH');
+  });
+
+  it('french après un SxxEyy (règle a) : fr', () => {
+    expect(parseLanguages('Serie.S01E02.french.720p').languages).toEqual(['fr']);
+  });
+
+  it('The.French.Dispatch.2021.HDTV : non FR (ni après le titre, ni marqueur proche, ni majuscules)', () => {
+    expect(parseLanguages('The.French.Dispatch.2021.HDTV').languages).toEqual(['original']);
+  });
+
+  it('French.Kiss.1995.1080p : non FR', () => {
+    expect(parseLanguages('French.Kiss.1995.1080p').languages).toEqual(['original']);
+  });
+
+  it('limite connue de la règle b : résolution dans les 2 jetons suivants sans année, The.French.Dispatch.1080p.WEB reste FR', () => {
+    expect(parseLanguages('The.French.Dispatch.1080p.WEB').languages).toEqual(['fr']);
   });
 });

@@ -31,11 +31,17 @@ const VFQ_RE = /\b(?:vfq|vfqc|vf quebec|vf qc)\b/;
 const VF2_RE = /\bvf2\b/;
 const TRUEFRENCH_RE = /\b(?:truefrench|true french)\b/;
 
-// Tokens français génériques : évalués uniquement après le titre (voir afterTitle).
-const GENERIC_FRENCH_RE = /\b(?:french|francais|vf|fr)\b/;
-// Fin du titre : première année, SxxEyy, résolution ou 4K. Un titre qui commence par ce marqueur
-// (ex. "1917") n'est pas coupé.
-const TITLE_END_RE = /\b(?:19|20)\d{2}\b|\bs\d{1,2}e\d{1,2}\b|\b\d{3,4}p\b|\b(?:2160p|4k)\b/;
+// Jetons français génériques (texte normalisé, un jeton par mot).
+const GENERIC_FRENCH_TOKEN_RE = /^(?:french|francais|vf|fr)$/;
+// Fin du titre : première année, SxxEyy, résolution ou 4K.
+const TITLE_END_TOKEN_RE = /^(?:(?:19|20)\d{2}|s\d{1,2}e\d{1,2}|\d{3,4}p|2160p|4k)$/;
+// Marqueurs de release : résolution, source, codec, saison/épisode.
+const RELEASE_MARKER_TOKEN_RE = /^(?:\d{3,4}p|2160p|4k|web|webrip|bluray|blu|bdrip|brrip|hdtv|hdrip|dvdrip|x26[45]|h26[45]|hevc|avc|s\d{1,2}(?:e\d{1,3})?)$/;
+// FRENCH en majuscules, jeton autonome dans le texte brut (casse conservée).
+const UPPER_FRENCH_RE = /(?<![\p{L}\p{N}])FRENCH(?![\p{L}\p{N}])/u;
+// Mentions de sous-titres dans le texte brut, retirées avant la règle FRENCH en majuscules (même motif que VOSTFR_RE / SUBFRENCH_RE).
+const SUBTITLE_RAW_RE =
+  /(?<![\p{L}\p{N}])(?:vostfr|vo[\s._-]+stfr|vost[\s._-]+fr|subfrench|sub[\s._-]+french|stfr)(?![\p{L}\p{N}])/giu;
 
 const MULTI_RE = /\bmulti\b/;
 const DUAL_RE = /\bdual\b/;
@@ -57,13 +63,22 @@ function normalize(text: string): string {
 }
 
 /**
- * Partie du nom située après le titre : à partir du premier marqueur de fin de titre (année, SxxEyy,
- * résolution), si ce marqueur n'est pas en position 0. Sinon, le texte entier.
- * Empêche "The French Dispatch 2021" de donner un audio français.
+ * Un jeton français générique est une balise de langue si :
+ * (a) il est après le titre (coupe au premier marqueur de fin de titre, en position > 0 ; sinon tout le texte) ;
+ * (b) un marqueur de release (résolution, source, codec, saison/épisode) suit dans les 2 jetons suivants ;
+ * (c) il s'écrit FRENCH en majuscules, comme jeton autonome du texte brut.
+ * "The.French.Dispatch.2021" et "French.Kiss.1995" ne sont donc pas FR.
  */
-function afterTitle(s: string): string {
-  const match = TITLE_END_RE.exec(s);
-  return match && match.index > 0 ? s.slice(match.index) : s;
+function hasGenericFrench(s: string, raw: string): boolean {
+  const tokens = s.split(' ').filter((token) => token !== '');
+  const titleEnd = tokens.findIndex((token) => TITLE_END_TOKEN_RE.test(token));
+  const cut = titleEnd > 0 ? titleEnd : 0;
+  const tagged = tokens.some((token, index) => {
+    if (!GENERIC_FRENCH_TOKEN_RE.test(token)) return false;
+    if (index >= cut) return true;
+    return tokens.slice(index + 1, index + 3).some((next) => RELEASE_MARKER_TOKEN_RE.test(next));
+  });
+  return tagged || UPPER_FRENCH_RE.test(raw);
 }
 
 /**
@@ -92,7 +107,7 @@ export function parseLanguages(text: string): LanguageInfo {
   const vfq = VFQ_RE.test(s);
   const vf2 = VF2_RE.test(s);
   const truefrench = TRUEFRENCH_RE.test(s);
-  const french = GENERIC_FRENCH_RE.test(afterTitle(s));
+  const french = hasGenericFrench(s, text.replace(SUBTITLE_RAW_RE, ' '));
   const multiTag = MULTI_RE.test(s);
   const dual = DUAL_RE.test(s);
 
