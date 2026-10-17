@@ -5,7 +5,8 @@ import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
 import { parseSkipTarget, skipSegments } from './skip.js';
-import { signTvUrl, tvChannels, tvEpg, tvHls, tvImport, tvStats, type TvChannel } from './tv.js';
+import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
+import type { TvAlternative, TvChannel } from './tv-catalog.js';
 
 /** Réponses d'erreur et POST : jamais en cache. */
 const NO_STORE = 'no-store';
@@ -28,9 +29,18 @@ function cacheable(res: Response): void {
   res.setHeader('Cache-Control', PRIVATE_CACHE);
 }
 
-/** Chaînes annotées de leur signature pour la configuration `scope` (le proxy HLS la vérifie). */
-function signedChannels(ctx: LtContext, scope: string, channels: TvChannel[]): (TvChannel & { sig: string | null })[] {
-  return channels.map((channel) => ({ ...channel, sig: signTvUrl(ctx, scope, channel.url) }));
+/** Chaîne et ses solutions de repli, chacune annotée de sa signature pour la configuration `scope` (le proxy HLS la vérifie). */
+type SignedChannel = Omit<TvChannel, 'alternatives'> & {
+  sig: string | null;
+  alternatives: (TvAlternative & { sig: string | null })[];
+};
+
+function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedChannel {
+  return {
+    ...channel,
+    sig: signTvUrl(ctx, scope, channel.url),
+    alternatives: channel.alternatives.map((alt) => ({ ...alt, sig: signTvUrl(ctx, scope, alt.url) })),
+  };
 }
 
 /**
@@ -117,9 +127,25 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
   });
 
   // TV : valide la configuration de l'URL ; aucune clé de service requise.
+  // Filtres : country, language, category, source, q. Pagination : page, limit (sans les deux : tout le catalogue).
+  // Sans limit ni page : tableau. Sinon : enveloppe { total, page, limit, channels }.
   lt.get('/tv/channels', async (req, res) => {
     configOf(req);
-    const body = signedChannels(ctx, tokenOf(req), await tvChannels(ctx));
+    const scope = tokenOf(req);
+    const query = parseTvQuery(queryOf(req));
+    const page = await tvChannels(ctx, query);
+    const channels = page.items.map((channel) => signChannel(ctx, scope, channel));
+    cacheable(res);
+    if (query.limit === undefined) {
+      res.json(channels);
+      return;
+    }
+    res.json({ total: page.total, page: query.page ?? 1, limit: query.limit, channels });
+  });
+
+  lt.get('/tv/facets', async (req, res) => {
+    configOf(req);
+    const body = await tvFacets(ctx);
     cacheable(res);
     res.json(body);
   });
@@ -135,7 +161,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
     configOf(req);
     const query = queryOf(req);
     const text = await tvHls(ctx, tokenOf(req), query.u ?? null, query.s ?? null);
-    // Playlist en direct : elle change à chaque segment, le lecteur doit la relire sans cache.
+    // Playlist en direct : elle change à chaque segment, le lecteur doit la relire sans cache (no-store, cf. fef31bf).
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.send(text);
   });
@@ -150,7 +176,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
   lt.post('/tv/import', async (req, res) => {
     configOf(req);
     const imported = await tvImport(ctx, bodyOf(req));
-    res.json({ count: imported.count, channels: signedChannels(ctx, tokenOf(req), imported.channels) });
+    res.json({ count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(req), channel)) });
   });
 
   lt.use((_req, _res, next) => next(new LtError(404, 'not_found')));
