@@ -10,6 +10,7 @@ import { isRecord } from './sources/http.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
+import { registerUserRoutes } from './user/routes.js';
 
 export const MANIFEST = {
   id: 'com.laststream.lastaddon',
@@ -38,6 +39,10 @@ const CONFIG_PATH = /^\/config(?:\/|$)/;
 const OPEN_LT_PATHS: readonly RegExp[] = [/^\/[^/]+\/lt\/.+$/, /^\/[^/]+\/catalog\/.+$/];
 /** Routes lt en POST : origines restreintes et limite de débit, comme /config/*. */
 const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
+/** Données utilisateur (/user/*) : origines restreintes, limite de débit comme /config/*, jamais en cache. */
+const USER_PATH = /^\/user(?:\/|$)/;
+const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token';
 
 /** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
 function isOpenPath(req: Request): boolean {
@@ -63,13 +68,18 @@ function corsMiddleware(origins: readonly string[]) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path)) {
+    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path) || USER_PATH.test(req.path)) {
       const origin = req.get('origin');
       res.vary('Origin');
       if (origin !== undefined && origins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (USER_PATH.test(req.path)) {
+          res.setHeader('Access-Control-Allow-Methods', USER_METHODS);
+          res.setHeader('Access-Control-Allow-Headers', USER_HEADERS);
+        } else {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        }
       }
     }
     if (req.method === 'OPTIONS') {
@@ -172,6 +182,15 @@ function encodeInput(body: unknown, deps: AppDeps): unknown {
   return mergeSecrets(patch, previous);
 }
 
+/** Fermetures des ressources propres à une application (base des données utilisateur), par application. */
+const closers = new WeakMap<Express, () => void>();
+
+/** Libère les ressources d'une application créée par createApp (tests, arrêt propre). */
+export function closeApp(app: Express): void {
+  closers.get(app)?.();
+  closers.delete(app);
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -179,6 +198,9 @@ export function createApp(deps: AppDeps): Express {
   if (isTrustProxy()) app.set('trust proxy', 1);
   app.use(corsMiddleware(allowedOrigins()));
   app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use(
+    rateLimit((req) => USER_PATH.test(req.path), createRateLimiter(deps.userRateLimit ?? CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)),
+  );
   app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(READ_RATE_LIMIT, READ_RATE_WINDOW_MS)));
   app.use(express.json({ limit: '64kb' }));
@@ -234,6 +256,7 @@ export function createApp(deps: AppDeps): Express {
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps);
+  closers.set(app, registerUserRoutes(app, deps));
 
   app.use(errorHandler);
   return app;

@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { createApp } from '../src/app.js';
+import { closeApp, createApp } from '../src/app.js';
 import { encodeConfig } from '../src/config/codec.js';
 import type { ConfigInput } from '../src/config/schema.js';
 
@@ -99,12 +99,18 @@ export async function startApp(options: {
   fetch?: typeof fetch;
   lookupHost?: (h: string) => Promise<readonly string[]>;
   allowPlain?: boolean;
+  /** Base des données utilisateur : ':memory:' par défaut (jamais de fichier dans le projet pendant les tests). */
+  userDbPath?: string;
+  /** Limite /user/* par minute : élevée par défaut, pour que les tests fonctionnels ne soient pas bridés. */
+  userRateLimit?: number;
 }): Promise<RunningApp> {
   const app = createApp({
     secret: SECRET,
     allowPlain: options.allowPlain ?? false,
     fetch: options.fetch,
     lookupHost: options.lookupHost,
+    userDbPath: options.userDbPath ?? ':memory:',
+    userRateLimit: options.userRateLimit ?? 10_000,
   });
   const server: Server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
@@ -114,7 +120,11 @@ export async function startApp(options: {
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.closeAllConnections();
-        server.close((err) => (err ? reject(err) : resolve()));
+        server.close((err) => {
+          closeApp(app);
+          if (err) reject(err);
+          else resolve();
+        });
       }),
   };
 }

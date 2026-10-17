@@ -12,4 +12,8 @@ export interface AppDeps {
   fetch?: typeof fetch;
   /** Résolution DNS injectée pour les gardes d'URL lt (tests). Par défaut : résolution système. */
   lookupHost?: (hostname: string) => Promise<readonly string[]>;
+  /** Base SQLite des données utilisateur (':memory:' pour les tests). Par défaut : LASTADDON_DATA_DIR/laststream.db. */
+  userDbPath?: string;
+  /** Requêtes /user/* par minute et par IP. Par défaut : 30, comme /config/*. */
+  userRateLimit?: number;
 }
