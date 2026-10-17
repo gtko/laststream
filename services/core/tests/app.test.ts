@@ -100,21 +100,22 @@ describe('POST /config/encode', () => {
   });
 });
 
-describe('stubs des lots suivants', () => {
-  it('GET /:config/stream/:type/:id.json renvoie une liste vide', async () => {
+describe("routes de streams, test et lecture (validation d'entrée)", () => {
+  it('GET /:config/stream/:type/:id.json répond 400 à une configuration invalide', async () => {
     const res = await fetch(`${baseUrl}/abcdef/stream/movie/tt1234567.json`);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ streams: [] });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_config' });
   });
 
-  it('POST /config/test renvoie aucune source', async () => {
+  it('POST /config/test répond 400 sans configuration', async () => {
     const res = await fetch(`${baseUrl}/config/test`, { method: 'POST' });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ sources: [] });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('invalid_config');
   });
 
-  it('GET /:config/play/:infoHash répond 501', async () => {
+  it('GET /:config/play/:infoHash répond 400 à un hash invalide', async () => {
     const res = await fetch(`${baseUrl}/abcdef/play/0123456789abcdef`);
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_hash' });
   });
 });

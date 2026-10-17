@@ -1,8 +1,6 @@
 # lastAddon
 
-Addon Stremio agrégateur de streams pour Laststream. Il interroge plusieurs sources (upstreams HTTP et indexeurs Torznab), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, tailles, tags exclus) et les renvoie à Stremio.
-
-Ce dépôt contient le **lot 1** : le socle du serveur, la validation et le chiffrement de la configuration, les endpoints d'administration et les stubs des endpoints de streams (voir [Endpoints](#endpoints)).
+Addon Stremio agrégateur de streams pour Laststream. Il interroge en parallèle plusieurs sources (addons Stremio amont et indexeurs Torznab), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, tailles, tags exclus), supprime les doublons, les classe, puis les renvoie à Stremio. Avec AllDebrid, il indique quels torrents sont déjà en cache et débride la lecture à la demande.
 
 ## Prérequis
 
@@ -56,26 +54,69 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | --- | --- | --- |
 | `LASTADDON_SECRET` | généré | Clé de chiffrement des configurations (AES-256-GCM). Si elle est absente, une valeur aléatoire de 32 octets est générée au premier démarrage et enregistrée dans `.env`. |
 | `LASTADDON_ALLOW_PLAIN` | `0` | Mettre `1` pour accepter les configurations en JSON brut encodé en base64url, sans chiffrement. Déconseillé. |
+| `LASTADDON_PUBLIC_URL` | aucun | Base publique du serveur (ex. `https://addon.example.com`), utilisée pour construire les URL de lecture `/play`. Si elle est absente, le protocole et l'hôte de la requête servent de base, en respectant `X-Forwarded-Proto` et `X-Forwarded-Host` (valeurs validées). Recommandée derrière un reverse proxy. |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
 **Important :** si `LASTADDON_SECRET` change, toutes les configurations déjà chiffrées (et donc toutes les URL de manifest installées) deviennent invalides. Sauvegardez cette valeur. Ne la committez jamais : `.env` est dans `.gitignore`.
 
-Les clés API (sources, debrid) sont contenues dans la configuration. Le serveur ne les journalise jamais.
+Les clés API (sources Torznab, debrid) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur d'indexeur.
 
 ## Endpoints
 
-| Méthode | Chemin | Description | Statut |
-| --- | --- | --- | --- |
-| GET | `/health` | Santé du serveur : `{"ok":true}` | Actif |
-| GET | `/manifest.json` | Manifest Stremio générique | Actif |
-| GET | `/:config/manifest.json` | Manifest Stremio pour une configuration chiffrée | Actif |
-| GET | `/config/schema` | JSON Schema de la configuration | Actif |
-| POST | `/config/encode` | Valide une configuration JSON et renvoie `{"config":"..."}` | Actif |
-| GET | `/:config/stream/:type/:id.json` | Liste de streams Stremio | Stub : renvoie `{"streams":[]}` |
-| POST | `/config/test` | Test des sources d'une configuration | Stub : renvoie `{"sources":[]}` |
-| GET | `/:config/play/:infoHash/:fileIdx?` | Lecture d'un stream via debrid | Stub : répond `501` |
+| Méthode | Chemin | Description |
+| --- | --- | --- |
+| GET | `/health` | Santé du serveur : `{"ok":true}` |
+| GET | `/manifest.json` | Manifest Stremio générique (non bloquant, sans configuration) |
+| GET | `/:config/manifest.json` | Manifest Stremio pour une configuration chiffrée |
+| GET | `/:config/stream/:type/:id.json` | Liste de streams Stremio pour un film ou un épisode |
+| GET | `/:config/play/:infoHash/:fileIdx?` | Lecture débridée d'un torrent : redirection `302` vers le lien AllDebrid |
+| GET | `/config/schema` | JSON Schema de la configuration |
+| POST | `/config/encode` | Valide une configuration JSON et renvoie `{"config":"..."}` (chiffrée) |
+| POST | `/config/test` | Teste chaque source d'une configuration (JSON brut, non chiffré) |
 
-Toutes les routes renvoient `Access-Control-Allow-Origin: *`. Les erreurs de validation renvoient `400` avec la liste des chemins invalides, sans écho des valeurs saisies.
+Toutes les routes renvoient `Access-Control-Allow-Origin: *`.
+
+### `GET /:config/stream/:type/:id.json`
+
+- `:type` : `movie` ou `series`. Tout autre type renvoie `{"streams":[]}`.
+- `:id` : `tt1234567` pour un film, `tt1234567:S:E` pour un épisode (Stremio encode les deux-points en `%3A`). Un identifiant hors de ce format renvoie `{"streams":[]}`.
+- Réponse `200` : `{"streams":[...]}`, avec `Cache-Control: max-age=60`.
+- Configuration illisible ou invalide : `400` `{"error":"invalid_config"}`, sans détail sur son contenu.
+- Une source en erreur n'empêche jamais les autres de répondre : son erreur n'est pas renvoyée à Stremio.
+
+### `GET /:config/play/:infoHash/:fileIdx?`
+
+Paramètres optionnels `?s=S&e=E` pour un épisode (durée et sélection du fichier vidéo). Réponses :
+
+| Statut | Cas |
+| --- | --- |
+| `302` | Lien AllDebrid prêt : `Location` pointe vers le fichier débridé |
+| `400` | Hash ou index de fichier invalide, ou configuration invalide |
+| `404` | Configuration sans debrid |
+| `503` | Torrent pas encore prêt chez AllDebrid (`Retry-After: 5`) |
+| `502` | Erreur AllDebrid |
+
+Cette réponse n'est jamais mise en cache (`Cache-Control: no-store`).
+
+### `POST /config/test`
+
+Corps : une configuration JSON brute (non chiffrée). Chaque source et le compte AllDebrid sont testés en parallèle.
+
+```json
+{
+  "sources": [
+    { "name": "Mon addon", "type": "upstream", "ok": true },
+    { "name": "Indexeur", "type": "torznab", "ok": false, "error": "Source \"Indexeur\" : erreur Torznab : ..." },
+    { "name": "AllDebrid", "type": "alldebrid", "ok": true }
+  ]
+}
+```
+
+`error` est absent quand `ok` vaut `true`. Un corps invalide renvoie `400` `{"error":"invalid_config","issues":[...]}`, qui ne contient que des chemins et des messages, jamais les valeurs saisies.
+
+### `POST /config/encode`
+
+Corps : une configuration JSON. Réponse : `{"config":"<chaîne chiffrée>"}`. Un corps invalide renvoie `400` avec la liste des chemins fautifs.
 
 ## Format de la configuration
 
@@ -83,22 +124,22 @@ La configuration est un objet JSON. Tous les champs sont optionnels : les valeur
 
 | Champ | Type | Défaut | Description |
 | --- | --- | --- | --- |
-| `languages.preferred` | tableau de `fr`, `en`, `es`, `de`, `it`, `multi`, `original` | `["fr","multi"]` | Langues préférées |
-| `languages.acceptVostfr` | booléen | `true` | Accepter les VOSTFR |
-| `resolutions.allowed` | tableau de `2160p`, `1080p`, `720p`, `480p`, `SD` | toutes | Résolutions autorisées |
+| `languages.preferred` | tableau de `fr`, `en`, `es`, `de`, `it`, `multi`, `original` | `["fr","multi"]` | Langues préférées, de la plus à la moins souhaitée |
+| `languages.acceptVostfr` | booléen | `true` | Accepter les VOSTFR (sous-titres français seuls) |
+| `resolutions.allowed` | tableau de `2160p`, `1080p`, `720p`, `480p`, `SD` | toutes | Résolutions autorisées (les streams de résolution inconnue sont gardés) |
 | `resolutions.max` | résolution | aucun | Résolution maximale |
-| `excludedTags` | tableau de chaînes | `["CAM","TS","SCR"]` | Tags de qualité exclus |
+| `excludedTags` | tableau de chaînes | `["CAM","TS","SCR"]` | Tags de qualité exclus (correspondance par mot entier) |
 | `size.minGb` / `size.maxGb` | nombre positif | aucun | Taille globale min / max (Go) |
 | `size.perResolution` | objet `résolution -> {minGb?, maxGb?}` | aucun | Bornes de taille par résolution |
 | `maxResults` | entier entre 1 et 500 | `30` | Nombre maximal de streams renvoyés |
 | `sources` | tableau de sources (voir ci-dessous) | `[]` | Sources à interroger |
 | `debrid` | `{"service":"alldebrid","apiKey":"..."}` | aucun | Service debrid optionnel |
-| `onlyCached` | booléen | `false` | Ne garder que les torrents déjà en cache debrid |
+| `onlyCached` | booléen | `false` | Ne garder que les torrents déjà en cache debrid et les URL directes |
 
 Chaque source est discriminée par son champ `type` :
 
-- `{"type":"upstream","name":"...","url":"https://..."}` : addon Stremio ou API HTTP en amont.
-- `{"type":"torznab","name":"...","baseUrl":"https://...","apiKey":"...","categories":[2000]}` : indexeur Torznab (`categories` est optionnel).
+- `{"type":"upstream","name":"...","url":"https://..."}` : addon Stremio ou API HTTP en amont. L'URL peut être la base de l'addon ou celle de son `manifest.json`.
+- `{"type":"torznab","name":"...","baseUrl":"https://...","apiKey":"...","categories":[2000]}` : indexeur Torznab (Jackett, Prowlarr ou compatible). `categories` est optionnel.
 
 Les URL doivent être en `http` ou `https`.
 
@@ -147,25 +188,135 @@ node -p "Buffer.from(require('fs').readFileSync('config.json','utf8')).toString(
 
 Sans cette variable, seules les configurations chiffrées par `/config/encode` sont acceptées.
 
+## Format des streams
+
+Chaque stream renvoyé suit le format Stremio, avec un champ `laststream` propre à lastAddon.
+
+- `name` : `lastAddon` suivi d'un saut de ligne et de la résolution (`?` si elle est inconnue).
+- `description` : trois lignes, sans emoji, par exemple :
+
+  ```
+  1080p · WEB-DL · AVC · HDR10
+  VFF · 5.1 DDP
+  4,2 Go · AllDebrid · Cache · Mon addon
+  ```
+
+  Ligne 1 : résolution, source, codec, HDR. Ligne 2 : variante de langue (`VFF`, `VFQ`, `TRUEFRENCH`, `MULTi`, `VF`, `VOSTFR`, `VO`) et audio. Ligne 3 : taille en Go ou Mo, mode de livraison (`AllDebrid` ou `P2P · N seeders`), `Cache` si le torrent est déjà en cache, nom de la source.
+- `url` : pour une URL directe amont, l'URL d'origine. Avec AllDebrid, l'URL `/:config/play/:infoHash[/:fileIdx]`. Absent en P2P.
+- `infoHash` et `fileIdx` (et `sources`) : présents en P2P, sans debrid.
+- `behaviorHints` : `filename`, `videoSize` (octets), `bingeGroup` (`lastaddon|<résolution>|<langue>|<source>`), `notWebReady` (HEVC, AV1, REMUX ou audio DTS/TrueHD).
+- `laststream` :
+
+| Champ | Contenu |
+| --- | --- |
+| `resolution`, `height` | Résolution (`1080p`, ...) et hauteur en pixels |
+| `source`, `codec`, `hdr` | Source (`WEB-DL`, `REMUX`, ...), codec (`HEVC`, `AVC`, `AV1`), formats HDR |
+| `languages`, `frVariant` | Langues détectées et variante française éventuelle |
+| `sizeBytes`, `seeders` | Taille en octets et nombre de seeders, si connus |
+| `cached` | `true` si le torrent est en cache debrid |
+| `score` | Score de classement (entier, plus haut = meilleur) |
+| `estBitrateKbps` | Débit moyen estimé en kb/s : taille × 8 ÷ durée. `null` si la durée ou la taille est inconnue. La durée vient de Cinemeta (épisode si connu, sinon film ou série). |
+
+## Fonctionnement
+
+Pour une requête de streams, le pipeline est le suivant :
+
+1. **Collecte** : toutes les sources sont interrogées en parallèle. Une source en erreur est ignorée ; les autres résultats sont conservés.
+2. **Parsing** : le nom, le nom de fichier et la description de chaque stream sont analysés (résolution, source, codec, HDR, audio, langues, variante FR, taille, seeders, infoHash). Les champs structurés fournis par la source (taille, seeders, infoHash, index de fichier) l'emportent sur ceux extraits du texte.
+3. **Filtre** : résolution, tags exclus, bornes de taille, langues. Une VO sans sous-titres ni langue préférée est écartée.
+4. **Déduplication** : deux streams sont fusionnés s'ils ont le même infoHash (et le même index de fichier), ou le même nom normalisé et une taille égale au Mo près. Le meilleur représentant est gardé : cache, puis seeders, puis URL directe.
+5. **Cache debrid** (si `debrid` est configuré) : voir la section suivante.
+6. **Classement** : par langue, puis résolution, puis source, puis HDR, puis cache. À égalité, la plus petite taille gagne, puis le plus grand nombre de seeders. La langue la plus préférée passe avant les autres ; une variante FR exacte (`VFF`, `TRUEFRENCH`, `VF2`, `FRENCH`) passe devant un `MULTi` du même rang.
+7. **Formatage** : les streams sont tronqués à `maxResults`.
+
+### Méthode de cache-check AllDebrid
+
+L'état « en cache » est déterminé par un contrôle sans téléchargement :
+
+1. Les 25 premiers infoHash du classement (sans URL directe, sans doublon) sont envoyés par lots de 20 à `POST /v4/magnet/upload`.
+2. Un magnet dont la réponse est `ready` est en cache : il est marqué `cached`.
+3. Un magnet non prêt est supprimé aussitôt (`POST /v4/magnet/delete`). Il est alors considéré comme non caché.
+4. Une erreur ou un hash absent de la réponse vaut « non caché ». Une erreur n'interrompt jamais la requête.
+5. Le résultat est mis en cache par client : 10 minutes pour un hash caché, 1 minute pour un hash non caché.
+
+Les magnets prêts restent dans le compte AllDebrid. Un hash déjà en cache n'y est pas téléchargé, mais il apparaît dans la liste des torrents du compte.
+
+Lorsque `onlyCached` est vrai, seuls les streams cachés et les URL directes sont gardés. **Sans debrid configuré**, aucun stream P2P n'est cachable : seules les URL directes restent.
+
+## Tests
+
+```bash
+npm test
+```
+
+Hors smoke test (ci-dessous), les tests n'effectuent aucun appel réseau : les sources, Cinemeta et AllDebrid sont simulés par un `fetch` injecté dans les dépendances. Les clés de test sont factices.
+
+| Fichier | Couverture |
+| --- | --- |
+| `tests/config.test.ts` | Schéma, défauts, chiffrement |
+| `tests/app.test.ts` | Endpoints HTTP, validation d'entrée |
+| `tests/parse-*.test.ts` | Parseurs (vidéo, taille, seeders, langues) et intégration `parseRelease` / `parseRawStream` |
+| `tests/sources-*.test.ts`, `tests/alldebrid.test.ts` | Sources amont, Torznab, client AllDebrid |
+| `tests/engine-*.test.ts` | Filtre, déduplication, classement, formatage, Cinemeta |
+| `tests/play.test.ts` | Endpoint de lecture |
+| `tests/e2e.test.ts` | Parcours complet sur un serveur réel : agrégation, cache debrid, série, config chiffrée, journalisation |
+
+### Smoke test live (optionnel)
+
+`tests/live.test.ts` interroge de vrais services. Il est ignoré si les variables ne sont pas définies :
+
+- `ALLDEBRID_API_KEY` : vérifie la clé et le cache-check sur le hash public de Big Buck Bunny (`dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`).
+- `TORZNAB_URL` et `TORZNAB_KEY` : vérifie que l'indexeur répond à `t=caps`.
+
+```bash
+# bash
+ALLDEBRID_API_KEY=... TORZNAB_URL=https://... TORZNAB_KEY=... npm test -- tests/live.test.ts
+```
+
+```powershell
+# PowerShell
+$env:ALLDEBRID_API_KEY = "..."; $env:TORZNAB_URL = "https://..."; $env:TORZNAB_KEY = "..."
+npm test -- tests/live.test.ts
+```
+
+Le test n'affiche ni la clé ni les réponses brutes. Il ajoute un magnet au compte AllDebrid pendant le contrôle.
+
 ## Structure du projet
 
 ```
 src/
   server.ts          point d'entrée (démarre si exécuté directement)
   app.ts             createApp() : routes, CORS, gestion d'erreurs
-  deps.ts            dépendances injectées (secret, allowPlain)
-  types.ts           types partagés
+  deps.ts            dépendances injectées (secret, allowPlain, fetch, client AllDebrid)
+  pipeline.ts        getStreams() : collecte, parsing, filtre, dédoublonnage, cache, classement, formatage
+  types.ts           types partagés (RawStream, ParsedRelease, StremioStream, ContentRef)
   config/
     schema.ts        schéma zod, défauts, parseConfig, JSON Schema
     codec.ts         chiffrement AES-256-GCM de la configuration
     secret.ts        lecture de LASTADDON_SECRET et du .env
+  parse/
+    index.ts         parseRelease, parseRawStream
+    video.ts         résolution, source, codec, HDR, audio, canaux, groupe
+    language.ts      langues, variante FR, sous-titres
+    meta.ts          taille, seeders, infoHash, saison et épisode
+  sources/
+    collect.ts       interrogation parallèle des sources, erreurs isolées
+    upstream.ts      addons Stremio amont
+    torznab.ts       indexeurs Torznab
+    alldebrid.ts     client AllDebrid (cache-check, résolution, clé API)
+    http.ts          fetch avec délai, masquage des URL et des secrets
+  engine/
+    filter.ts        filtre
+    dedupe.ts        déduplication
+    score.ts         classement et sélection pour le cache-check
+    format.ts        formatage des streams Stremio
+    cinemeta.ts      durées (Cinemeta, avec cache)
+    types.ts         candidats et rangs
   routes/
-    stream.ts        stub GET /:config/stream/:type/:id.json
-    test.ts          stub POST /config/test
-    play.ts          stub GET /:config/play/:infoHash/:fileIdx?
-tests/
-  config.test.ts     schéma et codec
-  app.test.ts        endpoints HTTP
+    stream.ts        GET /:config/stream/:type/:id.json
+    test.ts          POST /config/test
+    play.ts          GET /:config/play/:infoHash/:fileIdx?
+tests/               voir la section Tests
 ```
 
 ## Licence
