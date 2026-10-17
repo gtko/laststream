@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { Lang, Resolution } from '../types.js';
+import type { Lang, Resolution, SourceKind } from '../types.js';
+import { applyPreset } from './presets.js';
 
 // Valeurs autorisées pour les langues et résolutions configurables.
 const LangSchema = z.enum(['fr', 'en', 'es', 'de', 'it', 'multi', 'original'] as const satisfies readonly Lang[]);
@@ -13,6 +14,194 @@ const SizeRangeSchema = z
   .refine((range) => range.minGb === undefined || range.maxGb === undefined || range.minGb <= range.maxGb, {
     message: 'minGb must be <= maxGb',
   });
+
+/* ---------- Préréglage, filtres, audio, tri, affichage, lecture ---------- */
+
+/** Préréglages nommés proposés par le configurateur. */
+export const PRESET_VALUES = ['essentiel', 'zen', 'cinephile', 'nomade'] as const;
+export type Preset = (typeof PRESET_VALUES)[number];
+
+/** Qualités de source configurables (valeurs de SourceKind). */
+export const QUALITY_VALUES = [
+  'REMUX',
+  'BluRay',
+  'WEB-DL',
+  'WEBRip',
+  'HDTV',
+  'DVDRip',
+  'CAM',
+  'TS',
+  'SCR',
+  'unknown',
+] as const satisfies readonly SourceKind[];
+export type Quality = (typeof QUALITY_VALUES)[number];
+
+/** Qualités autorisées par défaut : tout sauf CAM, TS et SCR. */
+export const DEFAULT_QUALITIES = [
+  'REMUX',
+  'BluRay',
+  'WEB-DL',
+  'WEBRip',
+  'HDTV',
+  'DVDRip',
+  'unknown',
+] as const satisfies readonly Quality[];
+
+// Garde-fou à la compilation : toute nouvelle valeur de SourceKind doit être ajoutée à QUALITY_VALUES.
+type MissingQuality = Exclude<SourceKind, Quality>;
+const _qualitiesCoverSourceKinds: [MissingQuality] extends [never] ? true : never = true;
+
+export const AGE_LIMIT_VALUES = ['none', 10, 12, 16, 18] as const;
+export type AgeLimit = (typeof AGE_LIMIT_VALUES)[number];
+
+export const MULTICHANNEL_VALUES = ['none', 'prefer5_1', 'require5_1', 'prefer7_1', 'require7_1'] as const;
+export type Multichannel = (typeof MULTICHANNEL_VALUES)[number];
+
+export const ATMOS_VALUES = ['none', 'prefer', 'require'] as const;
+export type Atmos = (typeof ATMOS_VALUES)[number];
+
+export const UNSUPPORTED_FORMAT_VALUES = ['DTS-HD', 'TrueHD', 'EAC3', 'Atmos'] as const;
+export type UnsupportedFormat = (typeof UNSUPPORTED_FORMAT_VALUES)[number];
+
+export const UNSUPPORTED_MODE_VALUES = ['exclude', 'deprioritize'] as const;
+export type UnsupportedMode = (typeof UNSUPPORTED_MODE_VALUES)[number];
+
+export const SORT_VALUES = ['default', 'heaviest', 'lightest'] as const;
+export type Sort = (typeof SORT_VALUES)[number];
+
+export const DISPLAY_TEMPLATE_VALUES = ['direct', 'netflix', 'compact', 'detaille'] as const;
+export type DisplayTemplate = (typeof DISPLAY_TEMPLATE_VALUES)[number];
+
+const PresetSchema = z
+  .enum(PRESET_VALUES)
+  .meta({
+    title: 'Préréglage',
+    description: "Préréglage de départ (essentiel, zen, cinéphile ou nomade). Absent : options réglées une à une.",
+  })
+  .optional();
+
+const AgeLimitSchema = z.union([z.literal('none'), z.literal(10), z.literal(12), z.literal(16), z.literal(18)]);
+
+const QualitySchema = z.enum(QUALITY_VALUES);
+
+const WordSchema = z.string().trim().min(1).max(100);
+
+const BitrateSchema = z
+  .object({
+    minMbps: z
+      .number()
+      .nonnegative()
+      .meta({ title: 'Débit minimum (Mbit/s)', description: 'Débit minimum du flux. Vide : pas de minimum.' })
+      .optional(),
+    maxMbps: z
+      .number()
+      .nonnegative()
+      .meta({ title: 'Débit maximum (Mbit/s)', description: 'Débit maximum du flux. Vide : pas de maximum.' })
+      .optional(),
+  })
+  .refine((range) => range.minMbps === undefined || range.maxMbps === undefined || range.minMbps <= range.maxMbps, {
+    message: 'minMbps must be <= maxMbps',
+  })
+  .meta({ title: 'Débit (Mbit/s)', description: 'Plage de débit acceptée pour les flux, en Mbit/s.' })
+  .prefault({});
+
+const FiltersSchema = z
+  .object({
+    ageLimit: AgeLimitSchema.default('none').meta({
+      title: "Limite d'âge",
+      description: "Limite d'âge des contenus (10, 12, 16 ou 18 ans). « Aucune » désactive le filtre.",
+    }),
+    hideUnreleased: z.boolean().default(true).meta({
+      title: 'Masquer les contenus non sortis',
+      description: 'Masque les films et épisodes qui ne sont pas encore sortis.',
+    }),
+    qualities: z.array(QualitySchema).default([...DEFAULT_QUALITIES]).meta({
+      title: 'Qualités autorisées',
+      description:
+        'Sources acceptées : REMUX, BluRay, WEB-DL, WEBRip, HDTV, DVDRip et qualité inconnue. CAM, TS et SCR sont exclues par défaut.',
+    }),
+    bitrate: BitrateSchema,
+    maxPerResolution: z
+      .partialRecord(ResolutionSchema, z.number().int().min(1))
+      .meta({
+        title: 'Maximum par résolution',
+        description: 'Nombre maximum de flux conservés pour chaque résolution. Vide : pas de limite.',
+      })
+      .optional(),
+    allow3d: z.boolean().default(false).meta({
+      title: 'Autoriser la 3D',
+      description: 'Garde les flux 3D. Désactivé par défaut.',
+    }),
+    bannedWords: z.array(WordSchema).default([]).meta({
+      title: 'Mots interdits',
+      description: 'Les flux dont le nom contient un de ces mots sont retirés.',
+    }),
+    preferredWords: z.array(WordSchema).default([]).meta({
+      title: 'Mots préférés',
+      description: 'Les flux dont le nom contient un de ces mots remontent dans le classement.',
+    }),
+    directVerifiedOnly: z.boolean().default(false).meta({
+      title: 'Liens directs vérifiés uniquement',
+      description: 'Ne garde que les liens directs dont la disponibilité a été vérifiée.',
+    }),
+  })
+  .meta({ title: 'Filtres', description: 'Critères de sélection des flux.' })
+  .prefault({});
+
+const AudioSchema = z
+  .object({
+    multichannel: z.enum(MULTICHANNEL_VALUES).default('none').meta({
+      title: 'Multicanal',
+      description: 'Préférence de canaux audio : aucune, 5.1 ou 7.1, préférée ou exigée.',
+    }),
+    atmos: z.enum(ATMOS_VALUES).default('none').meta({
+      title: 'Dolby Atmos',
+      description: 'Aucune préférence, Atmos préféré ou Atmos exigé.',
+    }),
+    unsupportedFormats: z.array(z.enum(UNSUPPORTED_FORMAT_VALUES)).default([]).meta({
+      title: 'Formats audio non supportés',
+      description: 'Formats que le lecteur ne gère pas : DTS-HD, TrueHD, EAC3, Atmos.',
+    }),
+    unsupportedMode: z.enum(UNSUPPORTED_MODE_VALUES).default('deprioritize').meta({
+      title: 'Traitement des formats non supportés',
+      description: 'Exclure les flux concernés, ou les reléguer en fin de liste.',
+    }),
+    verifiedLanguagesOnly: z.boolean().default(false).meta({
+      title: 'Seulement les langues vérifiées',
+      description: "Ne garde que les flux dont la langue audio a été vérifiée.",
+    }),
+    probeTopN: z.number().int().min(0).max(20).default(5).meta({
+      title: 'Nombre de flux sondés',
+      description: "Nombre de meilleurs flux dont l'audio est analysé. 0 désactive la sonde.",
+    }),
+  })
+  .meta({ title: 'Audio', description: 'Préférences de pistes audio.' })
+  .prefault({});
+
+const SortSchema = z.enum(SORT_VALUES).default('default').meta({
+  title: 'Tri des flux',
+  description: "Ordre d'affichage : par défaut, le plus lourd d'abord, ou le plus léger d'abord.",
+});
+
+const DisplaySchema = z
+  .object({
+    template: z.enum(DISPLAY_TEMPLATE_VALUES).default('detaille').meta({
+      title: "Modèle d'affichage",
+      description: 'Présentation des flux : direct, netflix, compact ou détaillé.',
+    }),
+  })
+  .meta({ title: 'Affichage', description: 'Présentation des flux dans Stremio.' })
+  .prefault({});
+
+const PlaySchema = z
+  .object({
+    budgetMs: z.number().int().min(1000).max(60000).default(12000).meta({
+      title: 'Délai de résolution (ms)',
+      description: "Temps maximum accordé à la résolution d'un lien de lecture, en millisecondes (1 000 à 60 000).",
+    }),
+  })
+  .meta({ title: 'Lecture', description: 'Réglages de résolution des liens de lecture.' })
+  .prefault({});
 
 const HttpUrlSchema = z.url({ protocol: /^https?$/ });
 
@@ -29,6 +218,31 @@ const TorznabSourceSchema = z.object({
   apiKey: z.string().min(1).max(500),
   categories: z.array(z.number().int().positive()).optional(),
 });
+
+/** Prowlarr : un point d'entrée, plusieurs indexeurs. `indexerIds` vide ou absent : tous les indexeurs torrent activés. */
+export const ProwlarrSourceSchema = z.object({
+  type: z.literal('prowlarr'),
+  name: z.string().trim().min(1).max(100),
+  baseUrl: HttpUrlSchema,
+  apiKey: z.string().min(1).max(500),
+  indexerIds: z.array(z.number().int().positive()).max(200).optional(),
+  categories: z.array(z.number().int().positive()).optional(),
+});
+
+/** Identifiant d'indexeur Jackett : lettres, chiffres, point, tiret, souligné. */
+const JackettIndexerIdSchema = z.string().trim().regex(/^[A-Za-z0-9_.-]{1,100}$/);
+
+/** Jackett : `indexers` vaut 'all' (agrégation Jackett) ou la liste des identifiants à interroger. */
+export const JackettSourceSchema = z.object({
+  type: z.literal('jackett'),
+  name: z.string().trim().min(1).max(100),
+  baseUrl: HttpUrlSchema,
+  apiKey: z.string().min(1).max(500),
+  indexers: z.union([z.literal('all'), z.array(JackettIndexerIdSchema).max(200)]).default('all'),
+});
+
+/** Corps de POST /config/indexers : une source Prowlarr ou Jackett. */
+export const IndexerSourceSchema = z.discriminatedUnion('type', [ProwlarrSourceSchema, JackettSourceSchema]);
 
 /** Clé de service facultative : libellé et description affichés dans /config/schema. */
 const serviceKey = (title: string, description: string) =>
@@ -99,7 +313,16 @@ export const ConfigSchema = z.object({
     })
     .prefault({}),
   maxResults: z.number().int().min(1).max(500).default(30),
-  sources: z.array(z.discriminatedUnion('type', [UpstreamSourceSchema, TorznabSourceSchema])).default([]),
+  sources: z
+    .array(
+      z.discriminatedUnion('type', [
+        UpstreamSourceSchema,
+        TorznabSourceSchema,
+        ProwlarrSourceSchema,
+        JackettSourceSchema,
+      ]),
+    )
+    .default([]),
   debrid: z
     .object({
       service: z.literal('alldebrid'),
@@ -107,6 +330,12 @@ export const ConfigSchema = z.object({
     })
     .optional(),
   onlyCached: z.boolean().default(false),
+  preset: PresetSchema,
+  filters: FiltersSchema,
+  audio: AudioSchema,
+  sort: SortSchema,
+  display: DisplaySchema,
+  play: PlaySchema,
 });
 
 export type Config = z.output<typeof ConfigSchema>;
@@ -123,9 +352,9 @@ export class ConfigValidationError extends Error {
   }
 }
 
-/** Valide une configuration brute et renvoie l'objet avec les défauts appliqués. */
+/** Valide une configuration brute et renvoie l'objet avec les défauts appliqués (préréglage inclus). */
 export function parseConfig(input: unknown): Config {
-  const result = ConfigSchema.safeParse(input);
+  const result = ConfigSchema.safeParse(applyPreset(input));
   if (!result.success) {
     const issues = result.error.issues.map((issue) => {
       const path = issue.path.map(String).join('.') || '(racine)';

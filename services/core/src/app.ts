@@ -1,5 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { decodeConfig, encodeConfig } from './config/codec.js';
+import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { allowedOrigins, isTrustProxy } from './config/runtime-env.js';
 import type { AppDeps } from './deps.js';
@@ -170,7 +171,7 @@ export function createApp(deps: AppDeps): Express {
   });
 
   app.get('/config/schema', (_req, res) => {
-    res.json(configJsonSchema());
+    res.json({ ...configJsonSchema(), presets: presetCatalog() });
   });
 
   app.post('/config/encode', (req, res, next) => {
