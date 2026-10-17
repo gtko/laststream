@@ -10,6 +10,8 @@ export const SERVICE_SECRET_FIELDS = [
   'tvdbPin',
   'openrouterApiKey',
   'fanartApiKey',
+  'introdbApiKey',
+  'animeskipClientId',
 ] as const;
 
 /** Longueur minimale d'un secret pour que le masque en montre les quatre derniers caractères. */

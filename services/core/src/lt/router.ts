@@ -4,6 +4,7 @@ import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
+import { parseSkipTarget, skipSegments } from './skip.js';
 import { signTvUrl, tvChannels, tvEpg, tvHls, tvImport, tvStats, type TvChannel } from './tv.js';
 
 /** Réponses d'erreur et POST : jamais en cache. */
@@ -85,6 +86,19 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
       if (err instanceof LtError && err.status === 404) throw err;
       console.warn(`[lt][tvdb] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'tvdb_unavailable');
+    });
+    cacheable(res);
+    res.json(body);
+  });
+
+  // Segments de saut (intro, reprise, générique). Cible validée ; clés IntroDB et Anime Skip facultatives.
+  lt.get('/skip/:type/:imdbId/:season/:episode', async (req, res) => {
+    const config = configOf(req);
+    const target = parseSkipTarget(req.params.type, req.params.imdbId, req.params.season, req.params.episode);
+    const body = await skipSegments(ctx, config.services, target).catch((err: unknown): never => {
+      if (err instanceof LtError && err.status === 404) throw err;
+      console.warn(`[lt][skip] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
+      throw new LtError(503, 'skip_unavailable');
     });
     cacheable(res);
     res.json(body);

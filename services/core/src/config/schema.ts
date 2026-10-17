@@ -69,6 +69,14 @@ const ServicesSchema = z
         description: 'Identifiant du modèle OpenRouter utilisé pour les recommandations et les textes.',
       }),
     fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative, testée par POST /config/test.'),
+    introdbApiKey: serviceKey(
+      'Clé IntroDB (introdb.app)',
+      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible).',
+    ),
+    animeskipClientId: serviceKey(
+      'Client ID Anime Skip (anime-skip.com)',
+      'Identifiant client Anime Skip facultatif : repères de saut pour les séries d’animation.',
+    ),
   })
   .meta({
     title: 'Services',

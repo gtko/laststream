@@ -32,6 +32,8 @@ export const TTL = {
   aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
   tvChannels: 6 * 3600e3, // listes de chaînes
   tvEpg: 3 * 3600e3, // programmes EPG
+  skip: 7 * 24 * 3600e3, // segments intro/recap/crédits trouvés
+  skipEmpty: 6 * 3600e3, // aucun segment trouvé (à revérifier plus tôt)
 } as const;
 
 /** Délai de cache négatif : une 404 amont est mémorisée brièvement ; aucune autre erreur n'est mise en cache. */
@@ -119,7 +121,8 @@ export class TtlCache {
     return this.totalBytes;
   }
 
-  get<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  /** Durée fixe, ou fonction de la valeur chargée (ex. plus courte pour un résultat vide). */
+  get<T>(key: string, ttlMs: number | ((value: T) => number), load: () => Promise<T>): Promise<T> {
     const hit = this.values.get(key);
     if (hit !== undefined && hit.exp > Date.now()) {
       this.values.delete(key);
@@ -132,7 +135,7 @@ export class TtlCache {
     const promise = load()
       .then(
         (value) => {
-          this.store(key, { value }, approximateBytes(value), ttlMs);
+          this.store(key, { value }, approximateBytes(value), typeof ttlMs === 'number' ? ttlMs : ttlMs(value));
           return value;
         },
         (err: unknown) => {
