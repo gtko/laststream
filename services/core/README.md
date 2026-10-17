@@ -52,9 +52,12 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 
 | Variable | Défaut | Rôle |
 | --- | --- | --- |
-| `LASTADDON_SECRET` | généré | Clé de chiffrement des configurations (AES-256-GCM). Si elle est absente, une valeur aléatoire de 32 octets est générée au premier démarrage et enregistrée dans `.env`. |
+| `LASTADDON_SECRET` | généré | Clé de chiffrement des configurations (AES-256-GCM). **Au moins 32 caractères** : sinon le serveur refuse de démarrer. Si elle est absente, 32 octets aléatoires (base64url) sont générés au premier démarrage et enregistrés dans `.env` à la racine du projet. |
 | `LASTADDON_ALLOW_PLAIN` | `0` | Mettre `1` pour accepter les configurations en JSON brut encodé en base64url, sans chiffrement. Déconseillé. |
-| `LASTADDON_PUBLIC_URL` | aucun | Base publique du serveur (ex. `https://addon.example.com`), utilisée pour construire les URL de lecture `/play`. Si elle est absente, le protocole et l'hôte de la requête servent de base, en respectant `X-Forwarded-Proto` et `X-Forwarded-Host` (valeurs validées). Recommandée derrière un reverse proxy. |
+| `LASTADDON_PUBLIC_URL` | aucun | Base publique du serveur (ex. `https://addon.example.com`), utilisée pour construire les URL de lecture `/play`. Validée au démarrage : URL absolue en `http` ou `https` uniquement, sinon le serveur refuse de démarrer. Obligatoire si `LASTADDON_PUBLIC=1`. Sans elle, la base est le protocole et l'hôte de la requête (hors mode public). |
+| `LASTADDON_TRUST_PROXY` | `0` | Mettre `1` seulement derrière un reverse proxy de confiance : `X-Forwarded-Proto` et `X-Forwarded-Host` servent alors à construire les liens de lecture. Sans cela, ces en-têtes sont ignorés. |
+| `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL saisies dans les sources (upstream, Torznab) ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
+| `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*`. Les routes manifest et stream restent ouvertes (`*`). |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
 **Important :** si `LASTADDON_SECRET` change, toutes les configurations déjà chiffrées (et donc toutes les URL de manifest installées) deviennent invalides. Sauvegardez cette valeur. Ne la committez jamais : `.env` est dans `.gitignore`.
@@ -126,6 +129,7 @@ La configuration est un objet JSON. Tous les champs sont optionnels : les valeur
 | --- | --- | --- | --- |
 | `languages.preferred` | tableau de `fr`, `en`, `es`, `de`, `it`, `multi`, `original` | `["fr","multi"]` | Langues préférées, de la plus à la moins souhaitée |
 | `languages.acceptVostfr` | booléen | `true` | Accepter les VOSTFR (sous-titres français seuls) |
+| `languages.fallbackToOthers` | booléen | `true` | Afficher les autres langues s'il n'y a rien dans ma langue. Si aucun stream ne correspond aux langues préférées, les streams des autres langues sont renvoyés (mêmes filtres de qualité, taille et tags exclus), avec le préfixe « Autre langue · » sur la première ligne de description et `laststream.languageFallback: true`. Si au moins un stream est dans une langue préférée, le comportement est strict. |
 | `resolutions.allowed` | tableau de `2160p`, `1080p`, `720p`, `480p`, `SD` | toutes | Résolutions autorisées (les streams de résolution inconnue sont gardés) |
 | `resolutions.max` | résolution | aucun | Résolution maximale |
 | `excludedTags` | tableau de chaînes | `["CAM","TS","SCR"]` | Tags de qualité exclus (correspondance par mot entier) |
@@ -149,7 +153,7 @@ Fichier `config.json` :
 
 ```json
 {
-  "languages": { "preferred": ["fr", "multi"], "acceptVostfr": true },
+  "languages": { "preferred": ["fr", "multi"], "acceptVostfr": true, "fallbackToOthers": true },
   "resolutions": { "allowed": ["1080p", "720p"], "max": "1080p" },
   "excludedTags": ["CAM", "TS", "SCR"],
   "size": { "minGb": 0.5, "maxGb": 30, "perResolution": { "1080p": { "maxGb": 15 } } },
@@ -242,6 +246,19 @@ L'état « en cache » est déterminé par un contrôle sans téléchargement :
 Les magnets prêts restent dans le compte AllDebrid. Un hash déjà en cache n'y est pas téléchargé, mais il apparaît dans la liste des torrents du compte.
 
 Lorsque `onlyCached` est vrai, seuls les streams cachés et les URL directes sont gardés. **Sans debrid configuré**, aucun stream P2P n'est cachable : seules les URL directes restent.
+
+## Sécurité
+
+**Risque SSRF.** Les URL des sources (addons amont, indexeurs Torznab) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
+
+- schémas `http` et `https` uniquement ;
+- redirections gérées à la main (`redirect: manual`) : au plus 3, chaque saut est revalidé ;
+- corps de réponse limité à 2 Mo, lecture interrompue au-delà ;
+- délai maximal par requête (8 s par défaut).
+
+**Mode public (`LASTADDON_PUBLIC=1`).** Pour un serveur exposé sur Internet, l'hôte de chaque URL est résolu (DNS) et la requête est refusée si une adresse est privée, de boucle locale, lien local, CGNAT (100.64/10), ULA (fc00::/7) ou autre plage non publique, en IPv4 comme en IPv6. Limite connue : la résolution est vérifiée avant la connexion, sans l'épingler ; un DNS qui change sa réponse entre les deux (DNS rebinding) n'est pas couvert. Un pare-feu sortant reste recommandé.
+
+**Autres protections.** Les endpoints `/config/*` acceptent le CORS uniquement pour `LASTADDON_ALLOWED_ORIGINS` et sont limités à 30 requêtes par minute et par IP (compteur en mémoire, par processus). Les messages d'erreur masquent les clés API sous leurs formes brute, URL-encodée et base64.
 
 ## Tests
 

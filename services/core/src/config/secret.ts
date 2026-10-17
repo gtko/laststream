@@ -1,13 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const SECRET_KEY = 'LASTADDON_SECRET';
 const ALLOW_PLAIN_KEY = 'LASTADDON_ALLOW_PLAIN';
 
-/** Chemin du fichier .env local (racine du répertoire courant). */
+/** Longueur minimale de LASTADDON_SECRET (caractères, après trim). */
+export const MIN_SECRET_LENGTH = 32;
+
+/** Chemin du fichier .env à la racine du projet (relatif à ce module, pas au répertoire courant). */
 export function envFilePath(): string {
-  return resolve(process.cwd(), '.env');
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  return resolve(moduleDir, '..', '..', '.env');
 }
 
 /** Parse le contenu d'un fichier .env (KEY=VALUE, commentaires #, guillemets simples ou doubles). */
@@ -42,21 +47,31 @@ export function loadEnvFile(): void {
   }
 }
 
-/**
- * Renvoie la clé de chiffrement des configurations.
- * Ordre : variable LASTADDON_SECRET, puis .env local, sinon génération aléatoire enregistrée dans .env.
- * La valeur n'est jamais écrite sur la sortie standard.
- */
-export function getSecret(): string {
-  const fromEnv = process.env[SECRET_KEY]?.trim();
-  if (fromEnv) return fromEnv;
+/** Vérifie la longueur minimale. Le message ne contient jamais la valeur. */
+export function assertSecretStrength(secret: string): string {
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `${SECRET_KEY} trop court : ${MIN_SECRET_LENGTH} caractères minimum (longueur actuelle : ${secret.length}). ` +
+        'Supprimez la variable pour générer une clé aléatoire, ou utilisez 32 octets aléatoires en base64url.',
+    );
+  }
+  return secret;
+}
 
-  const path = envFilePath();
+/**
+ * Renvoie la clé de chiffrement des configurations (au moins MIN_SECRET_LENGTH caractères, sinon erreur).
+ * Ordre : variable LASTADDON_SECRET, puis .env du projet, sinon génération aléatoire (32 octets, base64url)
+ * enregistrée dans .env. La valeur n'est jamais écrite sur la sortie standard.
+ */
+export function getSecret(path: string = envFilePath()): string {
+  const fromEnv = process.env[SECRET_KEY]?.trim();
+  if (fromEnv) return assertSecretStrength(fromEnv);
+
   const fileValues = existsSync(path) ? parseEnvFile(readFileSync(path, 'utf8')) : {};
   const fromFile = fileValues[SECRET_KEY]?.trim();
-  if (fromFile) return fromFile;
+  if (fromFile) return assertSecretStrength(fromFile);
 
-  const generated = randomBytes(32).toString('hex');
+  const generated = randomBytes(32).toString('base64url');
   writeSecretToEnvFile(path, generated);
   console.warn(`${SECRET_KEY} absent : une clé aléatoire a été générée et enregistrée dans ${path}.`);
   return generated;

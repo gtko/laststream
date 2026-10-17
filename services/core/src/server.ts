@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
+import { isPublicMode, assertStartupEnv } from './config/runtime-env.js';
 import { getSecret, isPlainAllowed, loadEnvFile } from './config/secret.js';
 
 const DEFAULT_PORT = 7000;
@@ -26,10 +27,23 @@ function isDirectRun(): boolean {
 
 export function start(): void {
   loadEnvFile();
-  const port = resolvePort(process.env.PORT);
-  const app = createApp({ secret: getSecret(), allowPlain: isPlainAllowed() });
+  let port: number;
+  let secret: string;
+  try {
+    port = resolvePort(process.env.PORT);
+    assertStartupEnv();
+    secret = getSecret();
+  } catch (err) {
+    // Refus de démarrer : message explicite, sans valeur de configuration ni secret.
+    console.error(err instanceof Error ? err.message : 'configuration invalide');
+    process.exit(1);
+  }
+  const app = createApp({ secret, allowPlain: isPlainAllowed() });
   if (isPlainAllowed()) {
     console.warn('LASTADDON_ALLOW_PLAIN=1 : configurations en JSON brut acceptées (non chiffrées).');
+  }
+  if (isPublicMode()) {
+    console.warn('LASTADDON_PUBLIC=1 : mode public actif (adresses privées refusées pour les URL des sources).');
   }
   const server = app.listen(port, () => {
     console.log(`lastAddon en écoute sur http://localhost:${port}`);

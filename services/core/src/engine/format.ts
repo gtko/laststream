@@ -85,15 +85,19 @@ function estimateBitrateKbps(bytes: number | undefined, runtimeSeconds: number |
   return Math.round((bytes * 8) / runtimeSeconds / 1000);
 }
 
+/** Préfixe de la première ligne d'un stream retenu faute de langue préférée. */
+const FALLBACK_PREFIX = 'Autre langue';
+
 function buildDescription(item: Ranked, target: Target): string {
   const { parsed } = item;
   const resolutionKnown: Resolution | undefined = parsed.resolution === 'unknown' ? undefined : parsed.resolution;
-  const line1 = joinParts([
+  const specs = joinParts([
     resolutionKnown,
     parsed.source === 'unknown' ? undefined : parsed.source,
     parsed.codec === 'unknown' ? undefined : parsed.codec,
     ...parsed.hdr,
   ]);
+  const line1 = item.languageFallback === true ? joinParts([FALLBACK_PREFIX, specs]) : specs;
   const audio = [parsed.channels, ...parsed.audio].filter(present).join(' ');
   const line2 = joinParts([languageInfo(parsed).label, audio]);
   const seeders = seedersOf(item);
@@ -150,6 +154,7 @@ function formatOne(item: Ranked, opts: FormatOptions): StremioStream | undefined
       seeders: seedersOf(item),
       score: item.score,
       estBitrateKbps: estimateBitrateKbps(size, opts.runtimeSeconds),
+      ...(item.languageFallback === true ? { languageFallback: true } : {}),
     },
   };
 

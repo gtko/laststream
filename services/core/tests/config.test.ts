@@ -11,7 +11,7 @@ const SAMPLE = {
 describe('parseConfig (schéma)', () => {
   it('applique les défauts sur une configuration vide', () => {
     const config = parseConfig({});
-    expect(config.languages).toEqual({ preferred: ['fr', 'multi'], acceptVostfr: true });
+    expect(config.languages).toEqual({ preferred: ['fr', 'multi'], acceptVostfr: true, fallbackToOthers: true });
     expect(config.resolutions.allowed).toEqual(['2160p', '1080p', '720p', '480p', 'SD']);
     expect(config.resolutions.max).toBeUndefined();
     expect(config.excludedTags).toEqual(['CAM', 'TS', 'SCR']);

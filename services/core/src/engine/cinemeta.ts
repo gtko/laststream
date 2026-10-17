@@ -1,3 +1,4 @@
+import { fetchText } from '../sources/http.js';
 import type { ContentRef } from '../types.js';
 
 const CINEMETA_META_URL = 'https://v3-cinemeta.strem.io/meta';
@@ -63,20 +64,17 @@ function summarize(json: unknown): MetaRuntimes | undefined {
 }
 
 async function fetchMeta(ref: ContentRef, fetchFn: typeof fetch, timeoutMs: number): Promise<unknown> {
-  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // La course garantit le délai même si fetch ignore le signal.
+  // La course garantit le délai ; fetchText applique aussi son propre délai (AbortController).
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error('timeout'));
-    }, timeoutMs);
+    timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
   });
   const request = (async (): Promise<unknown> => {
     const url = `${CINEMETA_META_URL}/${ref.type}/${encodeURIComponent(ref.imdbId)}.json`;
-    const response = await fetchFn(url, { signal: controller.signal });
+    // Passe par fetchText : redirections revalidées et corps borné (2 Mo).
+    const response = await fetchText(fetchFn, url, {}, timeoutMs);
     if (!response.ok) return undefined;
-    return response.json();
+    return JSON.parse(response.text);
   })();
   try {
     return await Promise.race([request, timeout]);

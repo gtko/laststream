@@ -5,6 +5,8 @@ export interface Candidate {
   raw: RawStream;
   parsed: ParsedRelease;
   cached?: boolean;
+  /** Vrai si le candidat est une langue autre que les préférées, retenu faute de résultat dans ces langues. */
+  languageFallback?: boolean;
 }
 
 /** Candidat classé : `score` composite (plus haut = meilleur), `tier` = rang de résolution. */

@@ -143,7 +143,7 @@ describe('parseLanguages : sous-titres français', () => {
   });
 
   it('FRENCH.VOSTFR : audio fr conservé, original retiré', () => {
-    expect(parseLanguages('Movie.FRENCH.VOSTFR.1080p')).toEqual({
+    expect(parseLanguages('Movie.2018.FRENCH.VOSTFR.1080p')).toEqual({
       languages: ['fr'],
       frVariant: 'FRENCH',
       multi: false,
@@ -254,7 +254,7 @@ describe('parseLanguages : autres langues', () => {
 
   it('ordre stable et pas de doublons', () => {
     expect(parseLanguages('Movie.ITA.ENG.GER.1080p').languages).toEqual(['en', 'de', 'it']);
-    expect(parseLanguages('Film.FRENCH.VF.Français.1080p').languages).toEqual(['fr']);
+    expect(parseLanguages('Film.2019.FRENCH.VF.Français.1080p').languages).toEqual(['fr']);
   });
 });
 
@@ -314,5 +314,51 @@ describe('parseLanguages : cas limites', () => {
 
   it('une sortie sans variante ne contient pas de clé frVariant', () => {
     expect('frVariant' in parseLanguages('Movie.ENG.1080p')).toBe(false);
+  });
+});
+
+describe('parseLanguages : mots français génériques après le titre', () => {
+  it('The.French.Dispatch : le mot French du titre ne donne pas fr', () => {
+    expect(parseLanguages('The.French.Dispatch.2021.1080p.WEB-DL')).toEqual({
+      languages: ['original'],
+      multi: false,
+      subsFr: false,
+    });
+  });
+
+  it('The.French.Connection.1971.MULTI : multi', () => {
+    const info = parseLanguages('The.French.Connection.1971.MULTI.1080p');
+    expect(info.multi).toBe(true);
+    expect(info.languages).toContain('multi');
+  });
+
+  it('The French Kiss et Frenchie (titres) : pas de fr', () => {
+    expect(parseLanguages('The French Kiss 1995 720p').languages).toEqual(['original']);
+    expect(parseLanguages('Frenchie.2020.1080p').languages).toEqual(['original']);
+  });
+
+  it('Film.2021.FRENCH.1080p : fr avec la variante FRENCH', () => {
+    expect(parseLanguages('Film.2021.FRENCH.1080p')).toEqual({
+      languages: ['fr'],
+      frVariant: 'FRENCH',
+      multi: false,
+      subsFr: false,
+    });
+  });
+
+  it('un titre commençant par une année (1917) reste évalué en entier', () => {
+    expect(parseLanguages('1917.FRENCH.1080p').frVariant).toBe('FRENCH');
+  });
+
+  it('les jetons spécifiques (TRUEFRENCH, VFF, VOSTFR) restent évalués sur tout le texte', () => {
+    expect(parseLanguages('The.French.Dispatch.TRUEFRENCH.1080p').frVariant).toBe('TRUEFRENCH');
+    expect(parseLanguages('Frenchie.VFF.1080p').frVariant).toBe('VFF');
+    expect(parseLanguages('The.Movie.2019.VOSTFR.1080p').subsFr).toBe(true);
+  });
+});
+
+describe('parseLanguages : limite connue de la coupe au titre', () => {
+  it('sans année, FRENCH placé avant la résolution est lu comme partie du titre', () => {
+    expect(parseLanguages('Movie.FRENCH.1080p').languages).toEqual(['original']);
   });
 });

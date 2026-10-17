@@ -1,3 +1,8 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import { isPublicMode } from '../config/runtime-env.js';
+import { isNonPublicAddress } from './ip.js';
+
 /** Fonction fetch injectable (défaut : fetch global, résolu à chaque appel). */
 export type FetchFn = typeof fetch;
 
@@ -38,6 +43,36 @@ export function redactUrl(url: string): string {
     .replace(/(\/config\/)[^/?#]+/gi, '$1***');
 }
 
+/** Longueur minimale d'un secret masqué. Un secret plus court n'est jamais masqué (il abîmerait le message). */
+export const MIN_MASKED_SECRET_LENGTH = 6;
+const GENERIC_ERROR = 'erreur inattendue';
+
+/** Formes sous lesquelles un secret peut apparaître dans un message : brute, URL-encodée, base64, base64url. */
+function secretVariants(secret: string): string[] {
+  const bytes = Buffer.from(secret, 'utf8');
+  const variants = new Set([secret, encodeURIComponent(secret), bytes.toString('base64'), bytes.toString('base64url')]);
+  return [...variants].filter((variant) => variant.length > 0).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Masque (***) chaque secret et ses formes encodées dans un message d'erreur.
+ * Un secret de moins de MIN_MASKED_SECRET_LENGTH caractères n'est pas masqué : si le message le contient
+ * (sous une de ses formes), le message entier est remplacé par un message générique, pour ne jamais l'afficher.
+ */
+export function maskSecrets(message: string, secrets: readonly string[]): string {
+  let text = message;
+  for (const secret of secrets) {
+    if (secret.length === 0) continue;
+    const variants = secretVariants(secret);
+    if (secret.length < MIN_MASKED_SECRET_LENGTH) {
+      if (variants.some((variant) => message.includes(variant))) return GENERIC_ERROR;
+      continue;
+    }
+    for (const variant of variants) text = text.split(variant).join('***');
+  }
+  return text;
+}
+
 /** Vérifie qu'une valeur est un objet simple (non null, non tableau). */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -76,8 +111,92 @@ export interface TextResult {
   text: string;
 }
 
+/** Nombre maximal de redirections suivies (chaque saut est revalidé). */
+export const MAX_REDIRECTS = 3;
+/** Taille maximale du corps d'une réponse lue, en octets. Au-delà, la lecture est interrompue. */
+export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
+
+/**
+ * Vérifie une URL avant envoi : schéma http(s) uniquement. En mode public (LASTADDON_PUBLIC=1), l'hôte
+ * est résolu (DNS) et chaque adresse doit être publique ; une IP littérale est vérifiée sans DNS.
+ * Les erreurs ne contiennent jamais l'URL ni l'hôte.
+ */
+export async function checkOutboundUrl(
+  raw: string,
+  publicMode: boolean,
+  lookupHost: HostLookup = resolveHost,
+): Promise<URL> {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new SourceError('URL invalide');
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new SourceError('schéma non autorisé (http ou https attendu)');
+  }
+  if (!publicMode) return url;
+
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  let addresses: readonly string[];
+  if (isIP(host) !== 0) {
+    addresses = [host];
+  } else {
+    try {
+      addresses = await lookupHost(host);
+    } catch {
+      throw new SourceError('hôte non résolu');
+    }
+  }
+  if (addresses.length === 0 || addresses.some((address) => isNonPublicAddress(address))) {
+    throw new SourceError('adresse non publique refusée (mode public)');
+  }
+  return url;
+}
+
+/** Résolution DNS d'un hôte : toutes les adresses renvoyées. */
+export type HostLookup = (hostname: string) => Promise<readonly string[]>;
+
+async function resolveHost(hostname: string): Promise<string[]> {
+  const records = await lookup(hostname, { all: true, verbatim: true });
+  return records.map((record) => record.address);
+}
+
+/** Lit le corps en texte en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
+async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
+  const tooLarge = new SourceError(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
+  const declared = Number(response.headers.get('content-length'));
+  if (response.headers.get('content-length') !== null && declared > maxBytes) {
+    await discardBody(response);
+    throw tooLarge;
+  }
+  if (response.body === null) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder('utf-8').decode(Buffer.concat(chunks));
+}
+
+async function discardBody(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => undefined);
+}
+
 /**
  * Requête avec délai couvrant l'en-tête ET la lecture complète du corps.
+ * Sécurité : schéma http(s) seul ; redirections gérées à la main (redirect: 'manual'), au plus
+ * MAX_REDIRECTS, chaque saut revalidé (voir checkOutboundUrl) ; corps limité à MAX_BODY_BYTES.
  * Les erreurs réseau ou de délai sont renvoyées sous forme de SourceError sans URL.
  */
 export async function fetchText(
@@ -89,13 +208,35 @@ export async function fetchText(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchFn(url, { ...init, signal: controller.signal });
-    const text = await response.text();
-    return { status: response.status, ok: response.ok, text };
+    const publicMode = isPublicMode();
+    let target = url;
+    for (let redirects = 0; ; redirects++) {
+      await checkOutboundUrl(target, publicMode);
+      const response = await fetchFn(target, { ...init, redirect: 'manual', signal: controller.signal });
+      const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
+      if (location === null) {
+        const text = await readBodyLimited(response, MAX_BODY_BYTES);
+        return { status: response.status, ok: response.ok, text };
+      }
+      await discardBody(response);
+      if (redirects >= MAX_REDIRECTS) {
+        throw new SourceError(`trop de redirections (plus de ${MAX_REDIRECTS})`);
+      }
+      target = resolveLocation(location, target);
+    }
   } catch (err) {
+    if (err instanceof SourceError) throw err;
     throw transportError(err, timeoutMs);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function resolveLocation(location: string, base: string): string {
+  try {
+    return new URL(location, base).href;
+  } catch {
+    throw new SourceError('redirection invalide');
   }
 }
 

@@ -108,7 +108,7 @@ describe('filterCandidates : langues', () => {
   });
 
   it('exclut une VO sans sous-titres FR quand des langues sont exigées', () => {
-    const config = cfg({ languages: { preferred: ['fr', 'multi'], acceptVostfr: true } });
+    const config = cfg({ languages: { preferred: ['fr', 'multi'], acceptVostfr: true, fallbackToOthers: false } });
     const result = filterCandidates(
       [cand({ parsed: { languages: ['en'], subsFr: false, frVariant: undefined }, raw: { title: 'vo' } })],
       config,
@@ -122,7 +122,7 @@ describe('filterCandidates : langues', () => {
       raw: { title: 'vostfr' },
     });
     expect(titles(filterCandidates([vostfr], cfg({ languages: { acceptVostfr: true } })))).toEqual(['vostfr']);
-    expect(filterCandidates([vostfr], cfg({ languages: { acceptVostfr: false } }))).toEqual([]);
+    expect(filterCandidates([vostfr], cfg({ languages: { acceptVostfr: false, fallbackToOthers: false } }))).toEqual([]);
   });
 
   it('ne filtre pas sur la langue si la liste preferred est vide', () => {

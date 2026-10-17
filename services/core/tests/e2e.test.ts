@@ -375,8 +375,9 @@ describe('debrid AllDebrid (cache simulé)', () => {
     );
   });
 
-  it('sans LASTADDON_PUBLIC_URL, X-Forwarded-Proto et X-Forwarded-Host sont respectés', async () => {
+  it('avec LASTADDON_TRUST_PROXY=1, X-Forwarded-Proto et X-Forwarded-Host sont respectés', async () => {
     vi.stubEnv('LASTADDON_PUBLIC_URL', '');
+    vi.stubEnv('LASTADDON_TRUST_PROXY', '1');
     const token = plain(DEBRID_CONFIG);
     const { streams } = await streamsFor(token, 'tt1234567', 'movie', {
       'X-Forwarded-Proto': 'https',
@@ -386,6 +387,20 @@ describe('debrid AllDebrid (cache simulé)', () => {
     expect(streams.find((s) => s.laststream?.cached === true)?.url).toBe(
       `https://public.example.test/${token}/play/${H.vff}`,
     );
+  });
+
+  it('sans LASTADDON_TRUST_PROXY, X-Forwarded-* sont ignorés (hôte de la requête)', async () => {
+    vi.stubEnv('LASTADDON_PUBLIC_URL', '');
+    vi.stubEnv('LASTADDON_TRUST_PROXY', '');
+    const token = plain(DEBRID_CONFIG);
+    const { streams } = await streamsFor(token, 'tt1234567', 'movie', {
+      'X-Forwarded-Proto': 'https',
+      'X-Forwarded-Host': 'public.example.test',
+    });
+
+    const url = streams.find((s) => s.laststream?.cached === true)?.url ?? '';
+    expect(url).not.toContain('public.example.test');
+    expect(url.startsWith('http://')).toBe(true);
   });
 });
 

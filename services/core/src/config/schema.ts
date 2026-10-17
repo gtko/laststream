@@ -35,6 +35,10 @@ export const ConfigSchema = z.object({
     .object({
       preferred: z.array(LangSchema).default(['fr', 'multi']),
       acceptVostfr: z.boolean().default(true),
+      fallbackToOthers: z
+        .boolean()
+        .default(true)
+        .describe("Afficher les autres langues s'il n'y a rien dans ma langue"),
     })
     .prefault({}),
   resolutions: z

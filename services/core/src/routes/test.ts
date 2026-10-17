@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import { type Config, ConfigValidationError, parseConfig } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
-import type { SourceTestResult } from '../sources/http.js';
+import { maskSecrets, type SourceTestResult } from '../sources/http.js';
 import { testTorznab } from '../sources/torznab.js';
 import { testUpstream } from '../sources/upstream.js';
 
@@ -19,9 +19,12 @@ export interface SourceCheck {
 const ALLDEBRID_NAME = 'AllDebrid';
 const UNEXPECTED_ERROR = 'erreur inattendue';
 
-/** Retire de `message` toute occurrence des secrets fournis (remplacés par ***). */
+/**
+ * Retire de `message` les secrets fournis (et leurs formes URL-encodée et base64), remplacés par ***.
+ * Secrets de moins de 6 caractères : jamais masqués, mais le message générique remplace celui qui les contient.
+ */
 export function scrubSecrets(message: string, secrets: readonly string[]): string {
-  return secrets.reduce((text, secret) => (secret.length > 0 ? text.split(secret).join('***') : text), message);
+  return maskSecrets(message, secrets);
 }
 
 /** Clés API présentes dans la configuration : elles ne doivent jamais sortir dans une réponse. */

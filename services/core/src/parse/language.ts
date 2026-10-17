@@ -30,7 +30,12 @@ const VFF_RE = /\b(?:vff|vf france)\b/;
 const VFQ_RE = /\b(?:vfq|vfqc|vf quebec|vf qc)\b/;
 const VF2_RE = /\bvf2\b/;
 const TRUEFRENCH_RE = /\b(?:truefrench|true french)\b/;
-const FRENCH_RE = /\b(?:french|francais|vf|fr)\b/;
+
+// Tokens français génériques : évalués uniquement après le titre (voir afterTitle).
+const GENERIC_FRENCH_RE = /\b(?:french|francais|vf|fr)\b/;
+// Fin du titre : première année, SxxEyy, résolution ou 4K. Un titre qui commence par ce marqueur
+// (ex. "1917") n'est pas coupé.
+const TITLE_END_RE = /\b(?:19|20)\d{2}\b|\bs\d{1,2}e\d{1,2}\b|\b\d{3,4}p\b|\b(?:2160p|4k)\b/;
 
 const MULTI_RE = /\bmulti\b/;
 const DUAL_RE = /\bdual\b/;
@@ -49,6 +54,16 @@ function normalize(text: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+/**
+ * Partie du nom située après le titre : à partir du premier marqueur de fin de titre (année, SxxEyy,
+ * résolution), si ce marqueur n'est pas en position 0. Sinon, le texte entier.
+ * Empêche "The French Dispatch 2021" de donner un audio français.
+ */
+function afterTitle(s: string): string {
+  const match = TITLE_END_RE.exec(s);
+  return match && match.index > 0 ? s.slice(match.index) : s;
 }
 
 /**
@@ -77,7 +92,7 @@ export function parseLanguages(text: string): LanguageInfo {
   const vfq = VFQ_RE.test(s);
   const vf2 = VF2_RE.test(s);
   const truefrench = TRUEFRENCH_RE.test(s);
-  const french = FRENCH_RE.test(s);
+  const french = GENERIC_FRENCH_RE.test(afterTitle(s));
   const multiTag = MULTI_RE.test(s);
   const dual = DUAL_RE.test(s);
 

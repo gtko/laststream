@@ -4,6 +4,7 @@ import {
   SourceError,
   fetchText,
   isRecord,
+  maskSecrets,
   resolveOptions,
   sourceFailure,
   type FetchFn,
@@ -58,10 +59,9 @@ function searchParams(source: TorznabSource, ref: ContentRef): Record<string, st
   return params;
 }
 
-/** Retire la clé API d'un message venant de l'indexeur et le tronque. */
+/** Retire la clé API d'un message venant de l'indexeur (brute, URL-encodée, base64) et le tronque. */
 function scrubMessage(message: string, apiKey: string): string {
-  const clean = apiKey ? message.split(apiKey).join('***') : message;
-  return clean.slice(0, MAX_ERROR_LENGTH);
+  return maskSecrets(message, [apiKey]).slice(0, MAX_ERROR_LENGTH);
 }
 
 function describeError(node: unknown, apiKey: string): string {

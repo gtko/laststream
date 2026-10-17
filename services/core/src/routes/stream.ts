@@ -3,6 +3,7 @@ import type { Express, Request } from 'express';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
+import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams } from '../pipeline.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
 import type { ContentRef } from '../types.js';
@@ -36,17 +37,24 @@ function firstToken(value: string | undefined): string | undefined {
 }
 
 /**
- * Base publique des liens de lecture. LASTADDON_PUBLIC_URL, si défini, prime toujours.
- * Sinon : protocole et hôte de la requête, en tenant compte de X-Forwarded-Proto / X-Forwarded-Host
- * (valeurs validées : protocole http(s), hôte au format nom ou IP avec port optionnel).
+ * Base publique des liens de lecture.
+ * - LASTADDON_PUBLIC_URL, si défini (validé au démarrage), prime toujours.
+ * - Sinon, en mode public (LASTADDON_PUBLIC=1) : erreur, la base doit être configurée (voir assertStartupEnv).
+ * - Sinon : protocole et hôte de la requête. X-Forwarded-Proto / X-Forwarded-Host ne sont lus que si
+ *   LASTADDON_TRUST_PROXY=1 ; valeurs validées (protocole http(s), hôte au format nom ou IP avec port).
  */
 export function publicBaseUrl(req: Request): string {
-  const configured = process.env.LASTADDON_PUBLIC_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
+  const configured = configuredPublicUrl();
+  if (configured !== undefined) return configured;
+  if (isPublicMode()) {
+    throw new Error('LASTADDON_PUBLIC=1 exige LASTADDON_PUBLIC_URL');
+  }
 
-  const forwardedProto = firstToken(req.get('x-forwarded-proto'))?.toLowerCase();
+  const trustProxy = isTrustProxy();
+  const forwardedProto = trustProxy ? firstToken(req.get('x-forwarded-proto'))?.toLowerCase() : undefined;
   const scheme = forwardedProto === 'http' || forwardedProto === 'https' ? forwardedProto : req.protocol;
-  const host = [firstToken(req.get('x-forwarded-host')), req.get('host')].find(
+  const hostCandidates = [trustProxy ? firstToken(req.get('x-forwarded-host')) : undefined, req.get('host')];
+  const host = hostCandidates.find(
     (candidate): candidate is string => candidate !== undefined && HOST_PATTERN.test(candidate),
   );
   return `${scheme}://${host ?? 'localhost'}`;

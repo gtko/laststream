@@ -1,6 +1,7 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { encodeConfig } from './config/codec.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
+import { allowedOrigins } from './config/runtime-env.js';
 import type { AppDeps } from './deps.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
@@ -21,15 +22,81 @@ export const MANIFEST = {
   },
 } as const;
 
-function cors(req: Request, res: Response, next: NextFunction): void {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') {
-    res.status(204).end();
-    return;
-  }
-  next();
+/** Routes publiques lues par Stremio : CORS ouvert (`*`). */
+const OPEN_CORS_PATHS: readonly RegExp[] = [
+  /^\/manifest\.json$/,
+  /^\/[^/]+\/manifest\.json$/,
+  /^\/[^/]+\/stream\/[^/]+\/[^/]+$/,
+];
+/** Endpoints de configuration (/config/*) : origines restreintes et limite de débit. */
+const CONFIG_PATH = /^\/config(?:\/|$)/;
+const CONFIG_RATE_LIMIT = 30;
+const CONFIG_RATE_WINDOW_MS = 60_000;
+const RATE_TABLE_PRUNE_SIZE = 10_000;
+
+/**
+ * CORS : `*` uniquement sur les routes manifest et stream (GET). Sur /config/*, seule une origine
+ * présente dans `origins` reçoit Access-Control-Allow-Origin. Les autres routes n'ont pas d'en-tête CORS.
+ */
+function corsMiddleware(origins: readonly string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (OPEN_CORS_PATHS.some((pattern) => pattern.test(req.path))) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    } else if (CONFIG_PATH.test(req.path)) {
+      const origin = req.get('origin');
+      res.vary('Origin');
+      if (origin !== undefined && origins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      }
+    }
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  };
+}
+
+/** Compteur à fenêtre fixe par clé (en mémoire, par processus). Renvoie false une fois la limite atteinte. */
+export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now) {
+  const windows = new Map<string, { count: number; resetAt: number }>();
+  return (key: string): { allowed: boolean; retryAfterSec: number } => {
+    const current = now();
+    if (windows.size > RATE_TABLE_PRUNE_SIZE) {
+      for (const [existing, window] of windows) {
+        if (window.resetAt <= current) windows.delete(existing);
+      }
+    }
+    let window = windows.get(key);
+    if (window === undefined || window.resetAt <= current) {
+      window = { count: 0, resetAt: current + windowMs };
+      windows.set(key, window);
+    }
+    window.count += 1;
+    const retryAfterSec = Math.max(1, Math.ceil((window.resetAt - current) / 1000));
+    return { allowed: window.count <= limit, retryAfterSec };
+  };
+}
+
+/** Limite /config/* à CONFIG_RATE_LIMIT requêtes par minute et par IP (les préflights OPTIONS ne comptent pas). */
+function configRateLimit(limiter: ReturnType<typeof createRateLimiter>) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!CONFIG_PATH.test(req.path) || req.method === 'OPTIONS') {
+      next();
+      return;
+    }
+    const verdict = limiter(req.ip ?? 'inconnu');
+    if (!verdict.allowed) {
+      res.setHeader('Retry-After', String(verdict.retryAfterSec));
+      res.status(429).json({ error: 'rate_limited' });
+      return;
+    }
+    next();
+  };
 }
 
 /** Erreur du parseur JSON (400) ou payload trop gros (413) : réponse générique, sans contenu. */
@@ -46,7 +113,8 @@ function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFun
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(cors);
+  app.use(corsMiddleware(allowedOrigins()));
+  app.use(configRateLimit(createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => {
