@@ -1,0 +1,77 @@
+import { LastAddonError } from './errors';
+import { requireBase } from './config';
+import { cachedRequest, requestJson } from './transport';
+
+/** Schéma JSON de la configuration (GET {base}/config/schema), mis en cache. */
+export function getSchema(base: string = requireBase()): Promise<any> {
+  return cachedRequest(`schema ${base}`, () => requestJson<any>(`${base}/config/schema`));
+}
+
+/**
+ * Chiffre une configuration (POST {base}/config/encode). Avec `previous` (chaîne déjà enregistrée), le serveur garde
+ * les secrets que `config` laisse vides ou masqués : les clés n'ont pas à être ressaisies.
+ */
+export async function encodeConfig(config: Record<string, unknown>, previous?: string, base: string = requireBase()): Promise<string> {
+  const body = previous ? { previous, config } : config;
+  const res = await requestJson<{ config?: unknown }>(`${base}/config/encode`, { method: 'POST', body });
+  if (typeof res.config !== 'string') throw new LastAddonError('invalid_response', 'Réponse d’encodage invalide.');
+  return res.config;
+}
+
+/** Secret masqué renvoyé par /config/decode : jamais la valeur. */
+export interface SecretMask {
+  set: true;
+  last4?: string;
+}
+
+/** Configuration enregistrée, secrets masqués ({set, last4}). Null si le serveur ne la décode pas. */
+export async function decodeConfig(encoded: string, base: string = requireBase()): Promise<Record<string, any> | null> {
+  try {
+    const res = await requestJson<unknown>(`${base}/config/decode`, { method: 'POST', body: { config: encoded } });
+    return typeof res === 'object' && res !== null && !Array.isArray(res) ? (res as Record<string, any>) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface CheckResult {
+  name: string;
+  type: string;
+  ok: boolean;
+  error?: string;
+  note?: string;
+}
+
+export interface TestResponse {
+  sources: CheckResult[];
+  services: CheckResult[];
+}
+
+/** Teste les sources, le compte debrid et les clés de service d'une configuration chiffrée (POST /config/test). */
+export async function testConfig(encoded: string, base: string = requireBase()): Promise<TestResponse> {
+  const res = await requestJson<Partial<TestResponse>>(`${base}/config/test`, { method: 'POST', body: { config: encoded } });
+  return { sources: res.sources ?? [], services: res.services ?? [] };
+}
+
+/** Vrai si la valeur est un masque de secret ({set:true}). */
+export const isMask = (v: unknown): v is SecretMask =>
+  typeof v === 'object' && v !== null && (v as { set?: unknown }).set === true;
+
+/**
+ * Corps de POST /config/encode construit depuis le formulaire. Un champ secret vide est omis : avec `previous`,
+ * le serveur garde alors la valeur précédente.
+ */
+export function pruneEmpty<T>(value: T): T | undefined {
+  if (Array.isArray(value)) return value.map((v) => pruneEmpty(v)).filter((v) => v !== undefined) as unknown as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const p = pruneEmpty(v);
+      if (p !== undefined) out[k] = p;
+    }
+    return out as T;
+  }
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  if (typeof value === 'number' && Number.isNaN(value)) return undefined;
+  return value;
+}

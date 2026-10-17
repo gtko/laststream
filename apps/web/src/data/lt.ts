@@ -1,0 +1,81 @@
+import { ltUrl, requireBase, type QueryValue } from './config';
+import { getRegion } from './prefs';
+import { cachedRequest, requestJson } from './transport';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** Les réponses TMDB / MDBList / TVDB gardent la forme du prototype : volontairement non typées ici. */
+export type Json = any;
+
+export type Params = Record<string, QueryValue>;
+
+/** GET {base}/{config}/lt/<path> avec cache client (5 min mini) et au plus 6 requêtes en vol. */
+export function api<T = Json>(path: string, params?: Params): Promise<T> {
+  const url = ltUrl(path, params);
+  return cachedRequest<T>(url, () => requestJson<T>(url));
+}
+
+/** Route TMDB (liste blanche côté serveur). `region` suit le réglage de l'utilisateur (France par défaut). */
+export function tmdb<T = Json>(path: string, params: Params = {}): Promise<T> {
+  return api<T>('tmdb/' + path, { region: getRegion().code, ...params });
+}
+
+export function postLt<T = Json>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(ltUrl(path), { method: 'POST', body });
+}
+
+export interface HistoryEntry {
+  title: string;
+  year?: number | null;
+  type: 'movie' | 'tv';
+}
+
+export const mdblist = (type: string, id: string | number) => api('mdblist/' + type + '/' + id);
+export const tvdbSeries = (id: string | number) => api('tvdb/series/' + id);
+export const recommend = (history: HistoryEntry[], liked: HistoryEntry[]) => postLt('recommend', { history, liked });
+export const why = (type: 'movie' | 'tv', tmdbId: number | string, language = 'fr-FR') =>
+  postLt<{ text: string }>('why', { type, tmdbId: Number(tmdbId), language });
+export const personWhy = (tmdbId: number | string, language = 'fr-FR') =>
+  postLt<{ text: string }>('person-why', { tmdbId: Number(tmdbId), language });
+
+// ---- TV en direct ----
+export interface TvChannel {
+  id: string;
+  name: string;
+  logo: string;
+  group: string;
+  cat: string;
+  source: string;
+  fast: boolean;
+  url: string;
+  /** Signature du proxy HLS (paramètre `s`) renvoyée avec chaque chaîne. */
+  sig: string | null;
+  epgId: string;
+  flaky: boolean;
+}
+
+export type TvImportRequest =
+  | { type: 'm3u'; url: string }
+  | { type: 'xtream'; server: string; username: string; password: string };
+
+export const tvChannels = () => api<TvChannel[]>('tv/channels');
+export const tvEpg = (ids: string[], from: number, to: number) => api<any[]>('tv/epg', { ids: ids.join(','), from, to });
+export const tvImport = (cfg: TvImportRequest) => postLt<{ count: number; channels: TvChannel[] }>('tv/import', cfg);
+
+/** URL du proxy HLS pour une chaîne, avec la signature telle que renvoyée dans l'entrée de chaîne. */
+export function tvHlsUrl(channel: Pick<TvChannel, 'url' | 'sig'>): string {
+  return ltUrl('tv/hls', { u: channel.url, s: channel.sig });
+}
+
+/** Segments de saut (intro, récap, générique) d'un épisode. */
+export const skipSegments = (type: 'movie' | 'series', imdbId: string, season: number, episode: number) =>
+  api('skip/' + type + '/' + imdbId + '/' + season + '/' + episode);
+
+/** Vrai quand la base lastAddon est joignable (route /health de l'addon, hors configuration). */
+export async function pingAddon(): Promise<boolean> {
+  try {
+    await requestJson(requireBase() + '/health');
+    return true;
+  } catch {
+    return false;
+  }
+}
