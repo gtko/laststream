@@ -165,7 +165,7 @@ async function resolveHost(hostname: string): Promise<string[]> {
 }
 
 /** Lit le corps en texte en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
-async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
+export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
   const tooLarge = new SourceError(`réponse trop volumineuse (plus de ${maxBytes / (1024 * 1024)} Mo)`);
   const declared = Number(response.headers.get('content-length'));
   if (response.headers.get('content-length') !== null && declared > maxBytes) {

@@ -10,6 +10,8 @@
  * l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé.
  */
 
+import { MAX_BODY_BYTES, readBodyLimited } from './http.js';
+
 const API_BASE = 'https://api.alldebrid.com';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_POSITIVE_TTL_MS = 6 * 60 * 60 * 1_000;
@@ -492,10 +494,12 @@ export class AllDebridClient {
     if (this.now() < this.backoffUntil) throw new AllDebridError('rate_limited', 'rate limited');
     let res: Response;
     try {
+      // Pas de redirection suivie (une 3xx arrive en réponse invalide) ; corps borné à MAX_BODY_BYTES.
       res = await this.fetchImpl(`${API_BASE}${path}`, {
         method,
         headers: { Authorization: `Bearer ${this.apiKey}`, Accept: 'application/json' },
         body: form,
+        redirect: 'manual',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (err) {
@@ -511,7 +515,7 @@ export class AllDebridClient {
 
     let body: unknown;
     try {
-      body = await res.json();
+      body = JSON.parse(await readBodyLimited(res, MAX_BODY_BYTES));
     } catch {
       throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
     }

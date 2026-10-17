@@ -802,3 +802,34 @@ describe('AllDebridClient (sécurité)', () => {
     expect(JSON.stringify(error)).not.toContain(API_KEY);
   });
 });
+
+describe('AllDebridClient (garde réseau : redirections et taille du corps)', () => {
+  const okBody = JSON.stringify({ status: 'success', data: { user: { isPremium: false } } });
+
+  it('la requête part avec redirect manual', async () => {
+    const fetchImpl = vi.fn(async () => new Response(okBody, { status: 200 }));
+    const client = new AllDebridClient(API_KEY, { fetch: fetchImpl as unknown as typeof fetch });
+    await client.checkApiKey();
+    expect((fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1]?.redirect).toBe('manual');
+  });
+
+  it('une redirection n est pas suivie : réponse invalide après un seul appel', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 302, headers: { location: 'http://10.0.0.5/x' } }));
+    const client = new AllDebridClient(API_KEY, { fetch: fetchImpl as unknown as typeof fetch });
+    expect(await client.checkApiKey()).toEqual({ ok: false, error: 'invalid_response' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('corps au-delà de 2 Mo : réponse invalide, lecture interrompue', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+    });
+    const fetchImpl = vi.fn(async () => new Response(stream, { status: 200 }));
+    const client = new AllDebridClient(API_KEY, { fetch: fetchImpl as unknown as typeof fetch });
+    const result = await client.checkApiKey();
+    expect(result).toEqual({ ok: false, error: 'invalid_response' });
+    expect(JSON.stringify(result)).not.toContain(API_KEY);
+  });
+});
