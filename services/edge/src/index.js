@@ -270,6 +270,27 @@ export default {
     const { pathname } = new URL(request.url);
     if (pathname === REGISTER_PATH) return register(request, env);
     // Coupé : lire les fichiers AllDebrid depuis des IP Cloudflare a fait suspendre le compte. Réactivable par RANGE_ENABLED=1.
+    // APK Android (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
+    if (/^\/app\/android\/laststream-\d{10}\.apk$/.test(pathname) && env.APP_FILES) {
+      if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
+      const obj = await env.APP_FILES.get('android/' + pathname.split('/').pop(), { range: request.headers });
+      if (!obj) return json(404, { error: 'not_found' });
+      const headers = new Headers();
+      obj.writeHttpMetadata(headers);
+      headers.set('content-type', 'application/vnd.android.package-archive');
+      headers.set('etag', obj.httpEtag);
+      headers.set('accept-ranges', 'bytes');
+      headers.set('cache-control', 'public, max-age=86400, immutable');
+      if (obj.range && request.headers.has('range')) {
+        const r = obj.range;
+        const start = 'offset' in r ? r.offset : obj.size - r.suffix;
+        const len = 'length' in r && r.length !== undefined ? r.length : obj.size - start;
+        headers.set('content-range', `bytes ${start}-${start + len - 1}/${obj.size}`);
+        return new Response(request.method === 'HEAD' ? null : obj.body, { status: 206, headers });
+      }
+      headers.set('content-length', String(obj.size));
+      return new Response(request.method === 'HEAD' ? null : obj.body, { status: 200, headers });
+    }
     if (pathname === RANGE_PATH) {
       if (env.RANGE_ENABLED !== '1') return json(410, { error: 'range_disabled', message: 'Relais de miniatures désactivé.' });
       return handleRange(request, env);
