@@ -1,102 +1,94 @@
-/* Recherche (#/search) : barre en pilule, état vide, meilleur résultat, filtres et grille de posters.
- * Réutilise les jetons et composants de styles.css (cartes, pills, cast-row, row, eyebrow, btn, link-btn, sk).
- * Breakpoint mobile : 640px. La grille passe à deux colonnes dès 360px. */
+/* Recherche (#/search) : champ dans la barre du haut (topnav.js), puis résultats compacts : meilleur résultat en bandeau,
+ * filtres, grilles de jaquettes Films / Séries, rangée Personnalités. Le wrapper .s-a du haut de page fournit
+ * --topbar-h et --gutter aux barres (mêmes jetons que l'accueil). Réutilise les classes de styles.css (card, pills, cast-row, row, btn, sk). */
 
-.search-page { max-width: 2400px; margin: 0 auto; }
-.search-head { display: flex; flex-direction: column; gap: 18px; padding: 96px var(--gutter) 0; }
-.search-title {
-  margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: clamp(30px, 4.5vw, 56px);
-  line-height: 1; letter-spacing: -0.03em; outline: none;
-}
-.search-form { width: 100%; max-width: 880px; }
+.search-root { min-height: 100vh; }
+.search-page { min-width: 0; max-width: 2400px; margin: 0 auto; }
 
-/* Barre : pilule de 60 px, fond un ton plus clair que la page, anneau accent au focus. */
+/* Champ dans la barre du haut : hauteur normale (44 px), largeur bornée. */
+.search-topbar .search-form { flex: none; width: clamp(200px, 24vw, 340px); }
 .search-bar {
-  position: relative; display: flex; align-items: center; gap: 12px;
-  height: 60px; padding: 0 10px 0 22px; border-radius: 999px;
+  position: relative; display: flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 6px 0 14px; border-radius: 999px;
   background: #1f1b2a; border: 1px solid var(--line-2);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); }
 .search-ico { flex: none; display: inline-flex; color: var(--dim); }
-.search-ico svg { width: 22px; height: 22px; }
+.search-ico svg { width: 18px; height: 18px; }
 .search-input {
   flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none;
-  background: transparent; color: var(--text); font: inherit; font-family: var(--ff-body); font-size: 18px; font-weight: 500;
+  background: transparent; color: var(--text); font: inherit; font-family: var(--ff-body); font-size: 15px; font-weight: 500;
   -webkit-appearance: none; appearance: none;
 }
 .search-input::placeholder { color: var(--dim); opacity: 1; }
 .search-input::-webkit-search-cancel-button, .search-input::-webkit-search-decoration { -webkit-appearance: none; display: none; }
 .search-clear {
-  flex: none; width: 42px; height: 42px; border-radius: 50%;
+  flex: none; width: 32px; height: 32px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255, 255, 255, 0.1); color: var(--text); transition: background-color 0.2s;
 }
 .search-clear[hidden] { display: none; }
 .search-clear:hover { background: rgba(255, 255, 255, 0.2); }
 .search-clear:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.search-clear svg { width: 18px; height: 18px; }
+.search-clear svg { width: 14px; height: 14px; }
 
-.search-body { display: flex; flex-direction: column; gap: 40px; padding: 28px var(--gutter) 96px; min-width: 0; }
-.srch-top { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.search-body {
+  display: flex; flex-direction: column; gap: 20px; min-width: 0;
+  padding: calc(var(--topbar-h, 76px) + 20px) var(--gutter) 96px;
+}
+.srch-top { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.srch-filters .pill { min-height: 36px; padding: 0 14px; font-size: 14px; }
 .srch-n {
   display: inline-block; min-width: 1.6em; margin-left: 2px; padding: 0 6px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.12); font-size: 12px; line-height: 1.6; text-align: center;
 }
 .pill[aria-pressed="true"] .srch-n { background: rgba(12, 11, 17, 0.15); }
 
-/* Meilleur résultat : carte 16:9, titre, méta, synopsis, bouton. */
+/* Meilleur résultat : bandeau compact (vignette 16:9, titre, méta, synopsis sur deux lignes, bouton). */
 .srch-best {
-  position: relative; isolation: isolate; display: flex; align-items: flex-end;
-  width: 100%; max-width: 1280px; aspect-ratio: 16 / 9; max-height: 74vh;
-  border-radius: 18px; overflow: hidden; background: linear-gradient(160deg, #2b2440, #15121d);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; gap: 16px; width: 100%; max-width: 720px; min-width: 0;
+  padding: 10px; border-radius: 14px; background: var(--surface);
 }
-.srch-best-media { position: absolute; inset: 0; z-index: -2; }
-.srch-best-media img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
-.srch-best-shade {
-  position: absolute; inset: 0; z-index: -1;
-  background:
-    linear-gradient(0deg, var(--bg) 0%, rgba(12, 11, 17, 0.78) 36%, rgba(12, 11, 17, 0) 78%),
-    linear-gradient(90deg, rgba(12, 11, 17, 0.78) 0%, rgba(12, 11, 17, 0) 62%);
-}
-.srch-best-info {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0;
-  max-width: min(680px, 100%); padding: clamp(18px, 3.4vw, 48px);
-}
+.srch-best-media { flex: none; width: 200px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.srch-best-media img { width: 100%; height: 100%; object-fit: cover; }
+.srch-best-info { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .srch-best-title {
-  margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: clamp(28px, 4.2vw, 60px);
-  line-height: 1.02; letter-spacing: -0.03em; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); overflow-wrap: anywhere;
+  margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: 20px; line-height: 1.15;
+  letter-spacing: -0.02em; overflow-wrap: anywhere;
 }
-.srch-best-info .meta { font-size: 15px; }
+.srch-best-info .meta { font-size: 13px; }
 .srch-best-desc {
-  max-width: 620px; margin: 0; font-size: 16px; line-height: 1.55; color: var(--soft);
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  margin: 0; font-size: 14px; line-height: 1.45; color: var(--soft);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.srch-best-btn { margin-top: 6px; }
+.srch-best-btn { margin-top: 4px; min-height: 36px; padding: 0 14px; font-size: 14px; }
 
-/* Sections : titres, grille de posters, rangées. */
-.srch-media { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.srch-media[hidden] { display: none; }
-.srch-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
-  gap: 30px 18px; align-items: start; min-width: 0;
+/* Groupes : Films, Séries, puis Personnalités. Grille dense de jaquettes. */
+.srch-groups { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+.srch-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.srch-group > .row-title { margin: 0; }
+.search-root .srch-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 22px 12px; align-items: start; min-width: 0;
 }
-.srch-grid .card { width: 100%; flex: none; }
-.srch-grid .row-msg { grid-column: 1 / -1; }
-.srch-grid .sk-card { flex: none; width: 100%; height: auto; aspect-ratio: 2 / 3; }
+.search-root .srch-grid .card,
+.search-root .srch-grid .sk-card { width: 100%; flex: none; }
+.search-root .srch-grid .sk-card { height: auto; aspect-ratio: 2 / 3; }
+.search-root .srch-grid .row-msg { grid-column: 1 / -1; }
+.srch-people { margin: 0; }
 .srch-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .srch-sec-head .link-btn { margin-left: 0; font-size: 14px; }
 .srch-recent .pills { padding-bottom: 4px; }
 .srch-trend .row { padding-bottom: 14px; }
 
 /* Squelettes du chargement. */
-.srch-skel { display: flex; flex-direction: column; gap: 24px; }
-.srch-skel-best { display: block; width: 100%; max-width: 1280px; aspect-ratio: 16 / 9; border-radius: 18px; }
-.srch-skel-pill { display: block; width: 360px; max-width: 100%; height: 42px; border-radius: 999px; }
+.srch-skel { display: flex; flex-direction: column; gap: 20px; }
+.srch-skel-best { display: block; width: 100%; max-width: 720px; height: 112px; border-radius: 14px; }
+.srch-skel-pill { display: block; width: 300px; max-width: 100%; height: 36px; border-radius: 999px; }
 
 /* Aucun résultat, erreur. */
-.srch-none { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 560px; padding: 40px 0 24px; }
+.srch-none { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; max-width: 560px; padding: 24px 0; }
 .srch-none-ico {
   display: inline-flex; align-items: center; justify-content: center; width: 72px; height: 72px; margin-bottom: 6px;
   border-radius: 50%; background: var(--surface); color: var(--dim);
@@ -105,21 +97,19 @@
 .srch-none-title { margin: 0; font-family: var(--ff-title); font-weight: 700; font-size: clamp(20px, 2.4vw, 26px); line-height: 1.2; overflow-wrap: anywhere; }
 .srch-none-hint { margin: 0; font-size: 16px; line-height: 1.5; color: var(--muted); }
 
-/* Mobile : barre et grille adaptées, meilleur résultat vertical (image puis texte). */
+/* Tablette et mobile : la barre basse (tabbar) remplace la navigation ; la barre du haut garde logo, champ, profil. */
+@media (max-width: 760px) {
+  .search-root .search-body { padding-bottom: 110px; }
+}
 @media (max-width: 640px) {
-  .search-head { gap: 14px; padding: 84px var(--gutter) 0; }
-  .search-title { font-size: 32px; }
-  .search-bar { height: 56px; padding-left: 18px; }
+  .search-topbar .wordmark { display: none; }
+  .search-topbar .top-actions { flex: 1 1 auto; min-width: 0; }
+  .search-topbar .search-form { flex: 1 1 auto; width: auto; min-width: 0; }
   .search-input { font-size: 16px; }
-  .search-body { gap: 32px; padding-bottom: 96px; }
-  .srch-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 22px 12px; }
-  .srch-best {
-    display: flex; flex-direction: column; align-items: stretch; aspect-ratio: auto; max-height: none;
-    background: var(--surface); border-radius: 14px; box-shadow: none;
-  }
-  .srch-best-media { position: relative; inset: auto; z-index: 0; aspect-ratio: 16 / 9; }
-  .srch-best-shade { display: none; }
-  .srch-best-info { max-width: none; gap: 10px; padding: 16px 16px 20px; }
-  .srch-best-title { font-size: 28px; }
-  .srch-best-btn { width: 100%; }
+  .search-body { gap: 18px; }
+  .search-root .srch-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 18px 10px; }
+  .srch-best { gap: 12px; padding: 8px; }
+  .srch-best-media { width: 128px; }
+  .srch-best-title { font-size: 17px; }
+  .srch-best-desc { display: none; }
 }
