@@ -1,0 +1,48 @@
+import { DEFAULT_BASE, getSettings, saveSettings } from './config';
+
+/*
+ * Synchronisation de la config lastAddon chiffrée avec le compte (réglages du profil, clé `lastaddonConfig`).
+ * La chaîne est chiffrée côté serveur : elle ne contient aucun secret en clair.
+ */
+
+export const CONFIG_SETTING_KEY = 'lastaddonConfig';
+const MAX_VALUE_BYTES = 4096;
+
+/** Valeur à envoyer au profil, ou null si la config est vide ou trop volumineuse pour le serveur. */
+export function configForAccount(config: string): string | null {
+  const c = config.trim();
+  if (!c) return null;
+  return new TextEncoder().encode(c).length <= MAX_VALUE_BYTES ? c : null;
+}
+
+/** Vrai si la page est servie par lastAddon lui-même (GET /health sur l'origine courante). */
+export async function servedByLastAddon(timeoutMs = 2500): Promise<boolean> {
+  if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return false;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${location.origin}/health`, { signal: ctrl.signal, cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * À la connexion : si aucune config locale, reprend celle du compte (base = origine courante quand la page
+ * est servie par lastAddon). Renvoie 'pulled' si la config locale a été remplie, 'push' si le compte n'a
+ * rien et qu'une config locale peut être envoyée, sinon 'none'.
+ */
+export async function reconcileConfig(
+  accountSettings: Record<string, unknown>,
+): Promise<'pulled' | 'push' | 'none'> {
+  const remote = accountSettings[CONFIG_SETTING_KEY];
+  const local = getSettings();
+  if (local.config) return typeof remote === 'string' && remote ? 'none' : configForAccount(local.config) ? 'push' : 'none';
+  if (typeof remote !== 'string' || !remote.trim()) return 'none';
+  const base = (await servedByLastAddon()) ? location.origin : local.base || DEFAULT_BASE;
+  saveSettings({ base, config: remote });
+  return 'pulled';
+}

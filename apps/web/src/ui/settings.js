@@ -10,7 +10,7 @@ import {
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { userStore } from '../data/userStore';
-import { auth, importFromStremio, isServerMode, pushPrefs, signOut } from '../data/auth';
+import { auth, importFromStremio, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -303,6 +303,7 @@ async function save(form) {
   try {
     const { base, config } = await encodeFromForm(form);
     saveSettings({ base, config });
+    pushConfig(config);
     clearCache();
     ed.cfg = (await decodeConfig(config, base)) || ed.cfg;
     initSources(ed.cfg.sources);
