@@ -12,6 +12,7 @@ import './styles/social.css';
 import './styles/player.css';
 import './styles/player-ui.css';
 import './styles/player-panels.css';
+import './styles/tv-panels.css';
 import './styles/player-loading.css';
 import './styles/player-mini.css';
 import './styles/badges.css';

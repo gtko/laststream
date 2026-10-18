@@ -1,11 +1,11 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvHlsUrl } from '../data/lt';
 import { getBoxReach } from '../data/tvBox';
-import { channelNumber } from '../data/tvRank';
 import { LI } from '../player/icons.js';
 import { stopPreview } from './preview.js';
 import { exitExternalFullscreen, externalControls, externalKind, externalSample, startExternal, stopExternal } from './tvExternal.js';
-import { bannerEl, ensureEpg, epgKey, fmtHM, nowNext, perrEl, playerEl, setChannelDown, statusEl, tv, videoEl } from './tv.js';
+import { bannerEl, ensureEpg, epgKey, fmtHM, getFavs, logoHTML, nowNext, perrEl, playableChannels, playerEl, setChannelDown, statusEl, toggleFav, tv, videoEl } from './tv.js';
+import { focusTracks, mountChannelsPanel, renderTracksPanel, tracksKey } from './tvPanels.js';
 import { pillView, reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, statusView } from './tvStatus.js';
 import {
   IdleUi, UI_IDLE_MS, hlsAudioOptions, hlsLevelOptions, hlsSubtitleOptions, hlsTech, htmlAudioList, htmlAudioOptions,
@@ -154,8 +154,7 @@ export function updateBanner() {
   const now = Math.floor(Date.now() / 1000);
   const nn = nowNext(c, now);
   const pct = nn.cur ? Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100))) : 0;
-  const logo = '<span class="pb-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>';
-  setHtml(bannerEl, logo + '<span class="pb-text">' +
+  setHtml(bannerEl, logoHTML(c, 'pb-logo') + '<span class="pb-text">' +
     (nn.cur ? '<span class="pb-now"><strong>En cours</strong> ' + esc(nn.cur.title) + ' · ' + fmtHM(nn.cur.start) + ' – ' + fmtHM(nn.cur.stop) + '</span><span class="progress pb-prog" aria-hidden="true"><span style="width:' + pct + '%"></span></span>' : '<span class="pb-now">Programme non communiqué</span>') +
     (nn.next ? '<span class="pb-next">Ensuite : ' + esc(nn.next.title) + ' · ' + fmtHM(nn.next.start) + '</span>' : '') + '</span>');
 }
@@ -188,6 +187,7 @@ function watchStatus() {
     if (tv.status.phase === 'live') recovered();
     updateBanner();
     if (tv.info) renderInfo();
+    if (panel === 'tracks') renderPanel(); // pistes annoncées après le début de la lecture
   }, 1000);
 }
 
@@ -356,7 +356,7 @@ function tryStream(c, token) {
 /** Ouvre ou ferme le panneau d'infos (bouton i, touche I, re-clic). Il remplace les autres panneaux. */
 export function toggleInfo(on) {
   tv.info = on == null ? !tv.info : !!on;
-  if (tv.info) { panel = null; panelEl.hidden = true; }
+  if (tv.info) dropPanel();
   infoEl.hidden = !tv.info;
   setAttr('[data-pinfo]', 'aria-pressed', String(tv.info));
   if (tv.info) renderInfo();
@@ -367,7 +367,7 @@ function renderInfo() {
   const c = curChannel();
   if (!c || !tv.info) return;
   const m = infoModel(c, tv.epg.get(epgKey(c)) || [], Math.floor(Date.now() / 1000), ctl().tech());
-  const logo = '<span class="pi-logo">' + (m.logo ? '<img src="' + esc(m.logo) + '" alt="">' : '<b>' + esc(m.name.slice(0, 3)) + '</b>') + '</span>';
+  const logo = logoHTML(c, 'pi-logo');
   const now = m.now
     ? '<div class="pi-now"><p class="pi-k">En cours · ' + fmtHM(m.now.start) + ' – ' + fmtHM(m.now.stop) + ' · ' + m.now.left + ' min restantes</p>' +
       '<h3 class="pi-title">' + esc(m.now.title) + '</h3>' +
@@ -385,61 +385,110 @@ function renderInfo() {
     now + next + tech);
 }
 
-// ---------- Panneaux de choix (pistes, qualité, chaînes) ----------
+// ---------- Panneaux (audio et sous-titres, chaînes) ----------
 
-function panelContent(name) {
-  if (name === 'audio') return { title: 'Piste audio', kind: 'audio', items: ctl().audio() };
-  if (name === 'sub') return { title: 'Sous-titres', kind: 'sub', items: ctl().subs() };
-  if (name === 'quality') return { title: 'Qualité', kind: 'quality', items: ctl().levels() };
-  const list = tv.play ? tv.play.list : [];
-  return {
-    title: 'Chaînes',
-    kind: 'chan',
-    items: list.map((ch, i) => ({ id: String(i), n: channelNumber(ch) ? String(channelNumber(ch)) : '', label: ch.name || '', selected: i === tv.play.idx })),
-  };
+let chanPanel = null;
+let panelCol = 'audio';
+let panelOpener = null;
+
+/** Chaînes proposées : tout le catalogue en cours, puis celles du contexte d'ouverture qui n'en font pas partie. */
+function chanSource() {
+  const cur = tv.play ? tv.play.list : [];
+  const all = playableChannels();
+  const ids = new Set(all.map((c) => c.id));
+  return all.concat(cur.filter((c) => !ids.has(c.id)));
 }
 
 function renderPanel() {
-  if (!panel) { panelEl.hidden = true; return; }
-  const { title, kind, items } = panelContent(panel);
-  panelEl.innerHTML = '<div class="pp-head"><h2>' + esc(title) + '</h2><button type="button" class="lp-btn" data-pclose-panel aria-label="Fermer">&times;</button></div>' +
-    '<ul class="pp-list">' + items.map((o) => '<li><button type="button" class="pp-item" data-pitem="' + kind + '" data-pid="' + esc(o.id) + '" aria-pressed="' + (o.selected ? 'true' : 'false') + '">' +
-      (o.n ? '<span class="pp-n">' + esc(o.n) + '</span>' : '') + '<span>' + esc(o.label) + '</span></button></li>').join('') + '</ul>';
-  panelEl.hidden = false;
-  const cur = panelEl.querySelector('[aria-pressed="true"]');
-  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  if (panel !== 'tracks') return;
+  const c = ctl();
+  panelEl.className = 'player-panel pn-tracks';
+  panelEl.setAttribute('aria-label', 'Audio et sous-titres');
+  renderTracksPanel(panelEl, { audio: c.audio(), subs: c.subs(), levels: c.levels(), channelName: (curChannel() || {}).name || '' });
+}
+
+/** Ferme le panneau sans toucher au focus ni à l'interface (changement d'écran, ouverture des infos). */
+function dropPanel() {
+  panel = null;
+  if (chanPanel) { chanPanel.dispose(); chanPanel = null; }
+  panelEl.hidden = true;
+  panelEl.innerHTML = '';
+  panelEl.dataset.html = '';
+  playerEl.classList.remove('has-panel');
 }
 
 function openPanel(name) {
-  if (panel === name) { closePanel(); return; }
-  panel = name;
+  const kind = name === 'list' ? 'list' : 'tracks';
+  const col = name === 'list' ? '' : name === 'sub' ? 'sub' : name === 'quality' ? 'quality' : 'audio';
+  if (panel === kind && (kind === 'list' || panelCol === col)) { closePanel(); return; }
+  const reopen = panel === kind;
+  if (!reopen) {
+    dropPanel();
+    panelOpener = document.activeElement instanceof HTMLElement && playerEl.contains(document.activeElement) ? document.activeElement : null;
+  }
+  panel = kind;
+  panelCol = col;
   tv.info = false;
   infoEl.hidden = true;
   setAttr('[data-pinfo]', 'aria-pressed', 'false');
-  renderPanel();
+  panelEl.hidden = false;
+  playerEl.classList.add('has-panel');
+  if (kind === 'tracks') {
+    renderPanel();
+    focusTracks(panelEl, col);
+  } else {
+    panelEl.className = 'player-panel pn-chan';
+    panelEl.setAttribute('aria-label', 'Chaînes');
+    chanPanel = mountChannelsPanel(panelEl, {
+      channels: chanSource,
+      currentId: () => (curChannel() || {}).id,
+      favs: getFavs,
+      toggleFav,
+      logoHTML,
+      nowNext,
+      ensureEpg,
+      onPick: pickChannel,
+    });
+    chanPanel.focusCurrent();
+  }
   refreshBar();
   wakeUi();
 }
 
 function closePanel() {
-  panel = null;
-  panelEl.hidden = true;
+  const back = panelOpener;
+  panelOpener = null;
+  dropPanel();
+  if (back && back.isConnected && !back.hidden) back.focus({ preventScroll: true });
+  refreshBar();
+  wakeUi();
+}
+
+/** Zappe vers une chaîne choisie dans le panneau ; hors de la liste de zapping, le zapping porte désormais sur tout le catalogue. */
+function pickChannel(c) {
+  if (!tv.play) return;
+  let idx = tv.play.list.findIndex((x) => x.id === c.id);
+  if (idx < 0) {
+    tv.play.list = chanSource();
+    idx = tv.play.list.findIndex((x) => x.id === c.id);
+  }
+  panelOpener = null;
+  dropPanel();
+  if (idx >= 0) { tv.play.idx = idx; startStream(); }
+  const cb = playerEl.querySelector('[data-plist]');
+  if (cb && !cb.hidden) cb.focus({ preventScroll: true });
+  refreshBar();
   wakeUi();
 }
 
 function pickItem(b) {
   const kind = b.dataset.pitem;
   const id = b.dataset.pid;
-  if (kind === 'chan') {
-    closePanel();
-    if (tv.play) { tv.play.idx = Number(id); startStream(); }
-    return;
-  }
   const c = ctl();
   if (kind === 'audio') c.setAudio(id);
   else if (kind === 'sub') c.setSub(id);
   else if (kind === 'quality') c.setLevel(id);
-  closePanel();
+  renderPanel();
   refreshBar();
 }
 
@@ -508,9 +557,8 @@ export function openPlayer(c, list, opener) {
   tv.opener = opener || document.activeElement;
   stopPreview();
   tv.info = false;
-  panel = null;
+  dropPanel();
   infoEl.hidden = true;
-  panelEl.hidden = true;
   playerEl.hidden = false;
   document.body.classList.add('modal-open');
   startStream();
@@ -527,9 +575,9 @@ export function closePlayer(silent) {
   clearTimeout(idleTimer);
   idleTimer = 0;
   tv.info = false;
-  panel = null;
+  dropPanel();
+  panelOpener = null;
   infoEl.hidden = true;
-  panelEl.hidden = true;
   playerEl.hidden = true;
   playerEl.classList.remove('is-idle');
   setStatus({ type: 'stop' });
@@ -552,6 +600,11 @@ export function playerKey(e) {
   if (playerEl.hidden) return false;
   const act = tvKeyAction(e.key);
   wakeUi();
+  // Panneau ouvert et focus dedans : la saisie, les flèches et Entrée lui appartiennent (pas de zapping ni de raccourcis).
+  if (panel && e.target instanceof Element && panelEl.contains(e.target)) {
+    const r = panel === 'list' ? (chanPanel ? chanPanel.key(e) : null) : (tracksKey(panelEl, e) ? true : (e.key === 'Enter' || e.key === ' ' ? false : null));
+    if (r !== null && r !== undefined) return r;
+  }
   if (!act) return false; // flèches gauche et droite, Tab : navigation entre boutons
   if (act === 'escape') {
     if (panel) closePanel();
@@ -601,6 +654,10 @@ playerEl.addEventListener('input', (e) => {
   if (!(t instanceof HTMLInputElement) || !t.matches('[data-pvol]')) return;
   wakeUi();
   ctl().setVolume(Number(t.value) / 100);
+});
+playerEl.addEventListener('pointerdown', (e) => {
+  // Clic ou toucher en dehors du panneau (et de ses boutons d'ouverture) : il se ferme.
+  if (panel && e.target instanceof Element && !e.target.closest('#player-panel, [data-ptrack], [data-plist], [data-pinfo]')) closePanel();
 });
 playerEl.addEventListener('pointermove', () => wakeUi());
 playerEl.addEventListener('pointerdown', () => wakeUi());
