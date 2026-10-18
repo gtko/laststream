@@ -195,6 +195,16 @@ async function relay(request, env) {
   }
 
   const headers = upstreamHeaders(request, url.host, env);
+
+  // Watch party : la connexion WebSocket du salon passe telle quelle vers lastaddon-core (pas de réessai ni de repli).
+  if ((request.headers.get('upgrade') || '').toLowerCase() === 'websocket') {
+    if (!/^\/party\/[^/]+\/ws$/.test(url.pathname) || env.CORE === undefined) {
+      return json(426, { error: 'upgrade_required', message: 'WebSocket réservé aux salons de watch party.' });
+    }
+    headers.set('upgrade', 'websocket');
+    return env.CORE.fetch(new Request(request.url, { method: 'GET', headers }));
+  }
+
   const hasBody = request.body !== null && request.method !== 'GET' && request.method !== 'HEAD';
   const idempotent = !hasBody;
 
