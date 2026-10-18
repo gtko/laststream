@@ -16,6 +16,8 @@ import type { ContentRef } from '../src/types.js';
 const SOURCE: ProwlarrSource = { name: 'Prowlarr', baseUrl: 'https://prowlarr.example.com', apiKey: 'SPEED-KEY-1234' };
 const MOVIE: ContentRef = { type: 'movie', id: 'tt1234567', imdbId: 'tt1234567' };
 const EPISODE: ContentRef = { type: 'series', id: 'tt0903747:4:4', imdbId: 'tt0903747', season: 4, episode: 4 };
+/** Politique « débrideur obligatoire » : les tests de pipeline configurent une clé AllDebrid factice (sinon aucun torrent n'est livré). */
+const DEBRID = { service: 'alldebrid', apiKey: 'cle-factice-tests' };
 const FAST_HASH = 'a'.repeat(40);
 const SLOW_HASH = 'b'.repeat(40);
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -226,7 +228,7 @@ describe('pipeline : packs, partiel, provenances', () => {
   it('pack de saison de 60 Go sous un plafond de 10 Go : gardé avec une taille estimée par épisode', async () => {
     const release = pack('Fast', 1, FAST_HASH, 'Breaking.Bad.S04.MULTI.VFF.1080p.WEB.x264-GRP', 60 * 1024 ** 3);
     const { fetch } = world(() => json([release]));
-    const config = parseConfig({ size: { maxGb: 10 }, sources: [{ type: 'prowlarr', name: 'Prowlarr', baseUrl: SOURCE.baseUrl, apiKey: SOURCE.apiKey }] });
+    const config = parseConfig({ debrid: DEBRID, size: { maxGb: 10 }, sources: [{ type: 'prowlarr', name: 'Prowlarr', baseUrl: SOURCE.baseUrl, apiKey: SOURCE.apiKey }] });
 
     const result = await getStreams(config, EPISODE, ctxFor(fetch, { cache: false, wait: 'full' }));
 
@@ -242,7 +244,7 @@ describe('pipeline : packs, partiel, provenances', () => {
     const { fetch } = world((url) =>
       url.searchParams.get('indexerIds') === '2' ? sleep(200).then(() => json([slow])) : json([fast]),
     );
-    const config = parseConfig({ sources: [{ type: 'prowlarr', name: 'Prowlarr', baseUrl: SOURCE.baseUrl, apiKey: SOURCE.apiKey }] });
+    const config = parseConfig({ debrid: DEBRID, sources: [{ type: 'prowlarr', name: 'Prowlarr', baseUrl: SOURCE.baseUrl, apiKey: SOURCE.apiKey }] });
     const cache = new LruCache<PipelineResult>({ max: 10, ttlMs: 60_000 });
     const ctx = ctxFor(fetch, { cache, softMs: 50 });
 
@@ -276,7 +278,7 @@ describe('pipeline : packs, partiel, provenances', () => {
       }
       return (prowlarr.fetch as typeof globalThis.fetch)(input, init);
     }) as unknown as FetchFn;
-    const config = parseConfig({ sources: [{ type: 'upstream', name: 'Lumio', url: 'https://lumio.example.com/TOKEN/manifest.json' }] });
+    const config = parseConfig({ debrid: DEBRID, sources: [{ type: 'upstream', name: 'Lumio', url: 'https://lumio.example.com/TOKEN/manifest.json' }] });
 
     const result = await getStreams(config, MOVIE, ctxFor(fetch, { cache: false, wait: 'full', localProwlarr: async () => LOCAL }));
 

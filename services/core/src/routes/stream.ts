@@ -18,6 +18,8 @@ const SERIES_ID = /^(tt\d{1,12}):(\d{1,4}):(\d{1,4})$/;
 const CACHE_CONTROL = 'max-age=60';
 /** Résultat partiel (indexeurs lents en cours) : jamais mis en cache par le client, il doit être rechargé. */
 const PARTIAL_CACHE_CONTROL = 'no-store';
+/** Politique « débrideur obligatoire » : sans clé AllDebrid, aucun torrent n'est livré (jamais de P2P). */
+export const NO_DEBRID_NOTICE = 'Configure AllDebrid : les sources torrent ne sont lues que via un débrideur.';
 const HOST_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
 
 /**
@@ -64,6 +66,8 @@ export function publicBaseUrl(req: Request): string {
   );
   return `${scheme}://${host ?? 'localhost'}`;
 }
+
+const noticeOf = (config: Config): { notice?: string } => (config.debrid === undefined ? { notice: NO_DEBRID_NOTICE } : {});
 
 /**
  * Route Stremio : GET /:config/stream/:type/:id.json.
@@ -153,10 +157,10 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
     issuedUrls.noteStreams(result.streams);
     if (result.partial === true) {
       res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
-      res.json({ streams: result.streams, partial: true, pending: result.pending ?? [] });
+      res.json({ streams: result.streams, partial: true, pending: result.pending ?? [], ...noticeOf(config) });
       return;
     }
-    res.json({ streams: result.streams });
+    res.json({ streams: result.streams, ...noticeOf(config) });
   });
 
   /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */

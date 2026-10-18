@@ -7,7 +7,7 @@ import { decodeCopiesToken } from '../src/play/token.js';
 import type { FetchFn } from '../src/sources/http.js';
 import { TorrentCache } from '../src/torrent/fetch-torrent.js';
 import type { ContentRef } from '../src/types.js';
-import { cfg, GB } from './engine-fixtures.js';
+import { cfg as baseCfg, GB } from './engine-fixtures.js';
 import { monoTorrent } from './torrent-fixtures.js';
 
 /*
@@ -22,6 +22,9 @@ const UPSTREAM = { type: 'upstream', name: 'Upstream', url: 'https://upstream.te
 const PROWLARR = { type: 'prowlarr', name: 'Prowlarr', baseUrl: 'https://prowlarr.test', apiKey: 'PR-PIPELINE-KEY-1234' };
 /** Trois hashes valides (40 hexadécimaux). A a le plus de seeders, puis B, puis C. */
 const H = { a: '1'.repeat(40), b: '2'.repeat(40), c: '3'.repeat(40) };
+
+/** Politique « débrideur obligatoire » : sans clé AllDebrid, aucun torrent n'est livré. Les tests en configurent donc une par défaut. */
+const cfg = (input: Record<string, unknown> = {}) => baseCfg({ debrid: DEBRID, ...input });
 
 type Route = (url: URL, init?: RequestInit) => Response | undefined;
 
@@ -99,6 +102,9 @@ function copiesOfUrl(url: string | undefined): ReturnType<typeof decodeCopiesTok
   return decodeCopiesToken(url.slice(at + marker.length), SECRET);
 }
 
+/** infoHash de la copie de tête d'un stream : lu dans le jeton /play/c/ (un stream ne porte jamais d'infoHash à lire en P2P). */
+const hashOf = (stream: { url?: string } | undefined): string | undefined => copiesOfUrl(stream?.url)?.copies[0]?.infoHash;
+
 /** Trois copies d'un même release (même titre, hashes différents) : A (50 seeders), B (20), C (5). */
 const THREE_COPIES = [
   { name: 'Upstream', title: 'Film.2024.VFF.1080p.WEB-DL.H264-GRP', infoHash: H.a, description: '👤 50' },
@@ -112,7 +118,7 @@ describe('pipeline v2 : groupement, copies et statut cache', () => {
     const result = await getStreams(cfg({ sources: [UPSTREAM] }), movie('tt7100001'), ctxFor(fetch));
 
     expect(result.streams).toHaveLength(1);
-    expect(result.streams[0]?.infoHash).toBe(H.a);
+    expect(hashOf(result.streams[0])).toBe(H.a);
     expect(result.streams[0]?.laststream).toMatchObject({ copies: 3 });
     expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 Upstream · 3 copies');
   });
@@ -219,7 +225,7 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
       ctxFor(fetch),
     );
     expect(result.streams).toHaveLength(1);
-    expect(result.streams[0]?.infoHash).toBe(H.b);
+    expect(hashOf(result.streams[0])).toBe(H.b);
     expect(result.streams[0]?.laststream).toMatchObject({ bitrateMbps: 23.9 });
   });
 });
@@ -327,7 +333,7 @@ describe('pipeline v2 : torrent privé et sécurité des sorties', () => {
 
     const expected = parseTorrent(new Uint8Array(PRIVATE_TORRENT)).infoHash;
     expect(result.streams).toHaveLength(1);
-    expect(result.streams[0]?.infoHash).toBe(expected);
+    expect(hashOf(result.streams[0])).toBe(expected);
     expect(torrentCache.get('guid-42')).toMatchObject({ kind: 'torrent', infoHash: expected, private: true });
   });
 
@@ -404,7 +410,7 @@ describe('pipeline v2 : groupes de copies', () => {
     const result = await getStreams(cfg({ sources: [UPSTREAM] }), movie('tt7100004'), ctxFor(fetch));
 
     expect(result.streams).toHaveLength(1);
-    expect(result.streams[0]?.infoHash).toBe(H.a);
+    expect(hashOf(result.streams[0])).toBe(H.a);
     expect(result.streams[0]?.laststream).toMatchObject({ copies: 2 });
     expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 Upstream · 2 copies');
   });
@@ -502,7 +508,7 @@ describe('pipeline v2 : série en numérotation absolue (anime) sans remappage',
 
     const result = await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctxFor(fetch));
 
-    expect(result.streams.map((stream) => stream.infoHash)).toEqual([H.a]);
+    expect(result.streams.map(hashOf)).toEqual([H.a]);
   });
 });
 
@@ -528,7 +534,7 @@ describe('pipeline v2 : série au titre strict (Star Trek 1966, toutes origines)
 
     const result = await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctxFor(fetch));
 
-    expect(result.streams.map((stream) => stream.infoHash).sort()).toEqual([H4, H5].sort());
+    expect(result.streams.map(hashOf).sort()).toEqual([H4, H5].sort());
   });
 });
 
@@ -566,6 +572,6 @@ describe('pipeline v2 : alias TMDB d’une série (titre alternatif romaji)', ()
 
     const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), ref, ctxFor(fetch));
 
-    expect(result.streams.map((stream) => stream.infoHash)).toEqual([H.a]);
+    expect(result.streams.map(hashOf)).toEqual([H.a]);
   });
 });

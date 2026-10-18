@@ -55,6 +55,7 @@ interface StreamOut {
 
 interface StreamsBody {
   streams: StreamOut[];
+  notice?: string;
 }
 
 interface Recorded {
@@ -289,50 +290,64 @@ function uploadsSent(): string[] {
 /* ---------- Tests ---------- */
 
 describe('agrégation : filtre, dédoublonnage et tri', () => {
-  it('exclut le CAM, fusionne le doublon Torznab et trie langue > résolution > source > taille', async () => {
-    const { streams } = await streamsFor(plain(PLAIN_CONFIG), 'tt1234567');
+  it('sans débrideur : aucun torrent livré (jamais d infoHash), seul le lien HTTP direct reste, avec un message clair', async () => {
+    const body = await streamsFor(plain(PLAIN_CONFIG), 'tt1234567');
 
-    expect(streams.map(idOf)).toEqual([H.vff, H.remux, H.multiSmall, H.multiBig, CDN_URL]);
-    expect(streams.filter((s) => s.infoHash === H.vff)).toHaveLength(1);
-    expect(streams.some((s) => s.infoHash === H.cam)).toBe(false);
+    expect(body.streams.map(idOf)).toEqual([CDN_URL]);
+    expect(body.streams.some((s) => s.infoHash !== undefined)).toBe(false);
+    expect(body.notice).toContain('Configure AllDebrid');
+    // Rien n'est envoyé à un débrideur sans clé.
+    expect(uploadsSent()).toHaveLength(0);
+  });
+
+  it('avec AllDebrid : exclut le CAM, fusionne le doublon Torznab, caché d abord puis langue > résolution > source > taille', async () => {
+    const { streams, notice } = await streamsFor(plain(DEBRID_CONFIG), 'tt1234567');
+
+    expect(notice).toBeUndefined();
+    expect(streams.map(playedKey)).toEqual([H.vff, H.multiSmall, H.remux, H.multiBig, CDN_URL]);
+    expect(streams.filter((s) => playedKey(s) === H.vff)).toHaveLength(1);
+    expect(streams.some((s) => playedKey(s) === H.cam)).toBe(false);
+    // Jamais d'infoHash à lire en direct : chaque torrent passe par une URL /play.
+    expect(streams.every((s) => s.infoHash === undefined)).toBe(true);
+    expect(streams.slice(0, 2).every((s) => s.laststream?.cached === true)).toBe(true);
   });
 
   it('renvoie les streams des sources saines quand une source est en erreur', async () => {
     const broken = plain({
       sources: [{ type: 'upstream', name: 'Cassé', url: BROKEN_URL }, TZ_SOURCE],
+      debrid: DEBRID,
     });
     const { streams } = await streamsFor(broken, 'tt1234567');
 
-    expect(streams.map(idOf)).toEqual([H.vff, H.multiBig]);
+    expect(streams.map(playedKey)).toEqual([H.vff, H.multiBig]);
   });
 });
 
 describe('forme des streams Stremio', () => {
-  it('stream P2P : nom, description détaillée (débit réel, langue annoncée, seeders), bingeGroup et infoHash sans url', async () => {
-    const { streams } = await streamsFor(plain(PLAIN_CONFIG), 'tt1234567');
+  it('stream débridé : nom, description détaillée (débit réel, langue annoncée, seeders), bingeGroup, URL /play sans infoHash', async () => {
+    const { streams } = await streamsFor(plain(DEBRID_CONFIG), 'tt1234567');
     const vff = streams[0];
 
-    expect(vff?.name).toBe('lastAddon 1080p');
+    expect(vff?.name).toBe('[AD⚡] lastAddon 1080p');
     // Débit réel : 4,2 Go sur 120 min, soit environ 5 Mb/s ; la langue VFF est annoncée, pas vérifiée (« ? »).
-    expect(vff?.description).toBe(
-      'WEB-DL • 📶 5 Mb/s 🇫🇷? • 💾 4,2 Go • 🌱 120 seeders • 🔎 Upstream\n🎧 AVC • 5.1 DDP • GRP\n🗂️ Film.2024.VFF.1080p.WEB-DL.DDP5.1.H264-GRP',
-    );
+    expect(vff?.description).toContain('📶 5 Mb/s 🇫🇷?');
+    expect(vff?.description).toContain('4,2 Go');
     expect(vff?.laststream).toMatchObject({ bitrateMbps: 5, copies: 1, verifiedLanguages: [], indexers: [], origins: [{ kind: 'addon', name: 'Upstream' }] });
     expect(vff?.behaviorHints?.bingeGroup).toBe('lastaddon|1080p|vff|WEB-DL');
-    expect(vff?.infoHash).toBe(H.vff);
-    expect(vff?.url).toBeUndefined();
+    expect(vff?.url).toContain('/play/c/');
+    expect(vff?.infoHash).toBeUndefined();
     expect(vff?.fileIdx).toBeUndefined();
   });
 
   it('le champ laststream porte estBitrateKbps quand la durée Cinemeta est connue, null sinon', async () => {
-    const { streams } = await streamsFor(plain(PLAIN_CONFIG), 'tt1234567');
+    const { streams } = await streamsFor(plain(DEBRID_CONFIG), 'tt1234567');
     const vff = streams[0]?.laststream;
     // 4,2 Go sur 120 min : environ 5 Mb/s.
     expect(vff?.estBitrateKbps).toBeGreaterThan(4900);
     expect(vff?.estBitrateKbps).toBeLessThan(5100);
-    expect(vff).toMatchObject({ resolution: '1080p', source: 'WEB-DL', frVariant: 'VFF', seeders: 120, cached: false });
+    expect(vff).toMatchObject({ resolution: '1080p', source: 'WEB-DL', frVariant: 'VFF', seeders: 120, cached: true });
 
-    const unknown = await streamsFor(plain(PLAIN_CONFIG), 'tt7000001');
+    const unknown = await streamsFor(plain(DEBRID_CONFIG), 'tt7000001');
     expect(unknown.streams.every((s) => s.laststream?.estBitrateKbps === null)).toBe(true);
   });
 
@@ -344,8 +359,10 @@ describe('forme des streams Stremio', () => {
 
 describe('debrid AllDebrid (cache simulé)', () => {
   it('fait passer chaque stream hashé par /play, marque le cache et interroge un seul lot', async () => {
-    const { streams } = await streamsFor(plain(DEBRID_CONFIG), 'tt1234567');
-    const token = plain(DEBRID_CONFIG);
+    // Clé propre à ce test : le cache de disponibilité est par clé, les tests précédents ont déjà interrogé celle de DEBRID_CONFIG.
+    const fresh = { ...DEBRID_CONFIG, debrid: { service: 'alldebrid', apiKey: `${AD_KEY}-lot` } };
+    const { streams } = await streamsFor(plain(fresh), 'tt1234567');
+    const token = plain(fresh);
 
     const vff = streams.find((s) => s.laststream?.cached === true);
     expect(vff?.url?.startsWith(`${main.baseUrl}/${token}/play/c/`)).toBe(true);
@@ -363,7 +380,7 @@ describe('debrid AllDebrid (cache simulé)', () => {
 
     // Second appel : le cache du client évite toute nouvelle interrogation.
     requests.length = 0;
-    await streamsFor(plain(DEBRID_CONFIG), 'tt1234567');
+    await streamsFor(plain(fresh), 'tt1234567');
     expect(uploadsSent()).toHaveLength(0);
   });
 

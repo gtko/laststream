@@ -301,7 +301,7 @@ describe('pipeline : repli sur le Prowlarr local', () => {
   it('configuration sans source : interroge le Prowlarr local détecté', async () => {
     const { fetch, mock } = fakeFetch(prowlarrHandler);
     const provider = vi.fn(async () => LOCAL);
-    const result = await getStreams(parseConfig({}), MOVIE, movieCtx(fetch, { localProwlarr: provider }));
+    const result = await getStreams(parseConfig({ debrid: { service: 'alldebrid', apiKey: 'cle-factice-tests' } }), MOVIE, movieCtx(fetch, { localProwlarr: provider }));
 
     expect(provider).toHaveBeenCalledTimes(1);
     expect(mock.mock.calls.some(([input]) => String(input).startsWith(`${BASE}/api/v1/search`))).toBe(true);
@@ -388,7 +388,7 @@ describe('routes : statut sans fuite de clé', () => {
     const mocked = fakeFetch(prowlarrHandler);
     const app = await startApp({ fetch: mocked.fetch, localProwlarr: async () => LOCAL });
     try {
-      const token = encodeConfig({}, SECRET);
+      const token = encodeConfig({ debrid: { service: 'alldebrid', apiKey: 'cle-factice-tests' } }, SECRET);
       const res = await fetch(`${app.baseUrl}/${token}/stream/movie/tt1234567.json`);
       const text = await res.text();
       expect(res.status).toBe(200);

@@ -85,17 +85,34 @@ describe('formatStreams : formes d URL', () => {
     expect(direct?.url).toBe('https://cdn.example.com/v.mkv');
   });
 
-  it('passe en P2P (infoHash, fileIdx, sources, sans url) quand le débrideur est absent', () => {
-    const [stream] = format(
-      [cand({ parsed: { infoHash: HASH, fileIdx: 3 }, raw: { sources: ['tracker:udp://t.example.com:80'] } })],
+  it('sans débrideur : un torrent n est jamais livré (ni infoHash, ni url) ; un lien HTTP direct reste', () => {
+    const streams = format(
+      [
+        cand({ parsed: { infoHash: HASH, fileIdx: 3 }, raw: { sources: ['tracker:udp://t.example.com:80'] } }),
+        cand({ raw: { sourceKind: 'upstream', url: 'https://cdn.example.com/v.mkv' } }),
+      ],
       { hasDebrid: false },
     );
-    expect(stream).toMatchObject({
-      infoHash: HASH,
-      fileIdx: 3,
-      sources: ['tracker:udp://t.example.com:80'],
-    });
-    expect(stream?.url).toBeUndefined();
+    expect(streams).toHaveLength(1);
+    expect(streams[0]?.url).toBe('https://cdn.example.com/v.mkv');
+    expect(JSON.stringify(streams)).not.toContain('infoHash');
+  });
+
+  it('avec débrideur : aucun stream ne porte d infoHash, fileIdx ni trackers (tout passe par /play)', () => {
+    const streams = format([cand({ parsed: { infoHash: HASH, fileIdx: 3 }, raw: { sources: ['tracker:udp://t.example.com:80'] } })]);
+    expect(streams[0]?.url?.startsWith(PREFIX)).toBe(true);
+    expect(streams[0]?.infoHash).toBeUndefined();
+    expect(streams[0]?.fileIdx).toBeUndefined();
+    expect(streams[0]?.sources).toBeUndefined();
+  });
+
+  it('classe les torrents en cache AllDebrid d abord, l ordre du classement étant conservé à statut égal', () => {
+    const streams = format([
+      cand({ parsed: { infoHash: HASH }, raw: { title: 'a' } }),
+      cand({ parsed: { infoHash: OTHER }, raw: { title: 'b' }, cached: true }),
+      cand({ parsed: { infoHash: 'ef'.repeat(20) }, raw: { title: 'c' } }),
+    ]);
+    expect(streams.map((s) => decodeCopiesToken(tokenOf(s.url), SECRET)?.copies[0]?.infoHash)).toEqual([OTHER, HASH, 'ef'.repeat(20)]);
   });
 
   it('écarte un stream sans URL ni infoHash', () => {
@@ -104,16 +121,15 @@ describe('formatStreams : formes d URL', () => {
 });
 
 describe('formatStreams : name et description', () => {
-  it('nomme le stream avec la résolution, ? si inconnue (P2P : pas de préfixe AD)', () => {
+  it('nomme le stream avec la résolution, ? si inconnue', () => {
     const streams = format(
       [
         cand({ parsed: { resolution: '1080p', infoHash: HASH } }),
         cand({ parsed: { resolution: 'unknown', infoHash: HASH } }),
         cand({ parsed: { resolution: 'SD', infoHash: HASH } }),
       ],
-      { hasDebrid: false },
     );
-    expect(streams.map((s) => s.name)).toEqual(['lastAddon 1080p', 'lastAddon ?', 'lastAddon SD']);
+    expect(streams.map((s) => s.name)).toEqual(['[AD⏳] lastAddon 1080p', '[AD⏳] lastAddon ?', '[AD⏳] lastAddon SD']);
   });
 
   it('préfixe [AD⚡] pour un débridé en cache, [AD⏳] sans cache', () => {
@@ -165,11 +181,11 @@ describe('formatStreams : name et description', () => {
       copies: [{ infoHash: HASH }, { infoHash: OTHER }, { infoHash: 'ef'.repeat(20) }],
       indexers: ['Tracker A', 'Tracker B'],
     };
-    const [stream] = formatStreams([item], { ...BASE, hasDebrid: false });
+    const [stream] = formatStreams([item], { ...BASE });
     expect(stream?.description?.split('\n')[0]).toContain('🔎 Tracker A · Tracker B · 3 copies');
   });
 
-  it('P2P : les seeders apparaissent dans la description', () => {
+  it('un débridé n affiche pas de seeders (le P2P n existe plus)', () => {
     const [stream] = format(
       [
         cand({
@@ -190,9 +206,8 @@ describe('formatStreams : name et description', () => {
           raw: { sourceName: 'Indexeur' },
         }),
       ],
-      { hasDebrid: false },
     );
-    expect(stream?.description?.split('\n')[0]).toBe('🌐? • 💾 850 Mo • 🌱 120 seeders');
+    expect(stream?.description?.split('\n')[0]).toBe('🌐? • 💾 850 Mo');
   });
 });
 

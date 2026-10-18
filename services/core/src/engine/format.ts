@@ -50,11 +50,13 @@ export interface FormatOptions {
   episode?: number;
 }
 
-/** Cible de livraison : URL directe, lecture débridée (jeton de copies), ou P2P (infoHash). */
+/**
+ * Cible de livraison : URL directe ou lecture débridée (jeton de copies, résolu par /play via AllDebrid).
+ * Jamais de P2P : un stream renvoyé ne porte jamais d'infoHash à lire en direct (politique « débrideur obligatoire »).
+ */
 type Target =
   | { kind: 'direct'; url: string }
-  | { kind: 'play'; url: string; direct: boolean }
-  | { kind: 'p2p'; infoHash: string; fileIdx: number | undefined };
+  | { kind: 'play'; url: string; direct: boolean };
 
 const UPSTREAM_HINT_KEYS = ['proxyHeaders', 'headers'] as const;
 /** HEVC/AV1 et audio DTS/TrueHD ne sont pas lus par les navigateurs ; les REMUX sont des conteneurs lourds. */
@@ -134,10 +136,8 @@ function targetOf(item: FormatItem, opts: FormatOptions): Target | undefined {
   if (url !== undefined && url.length > 0 && (item.hoster === undefined || !opts.hasDebrid)) {
     return { kind: 'direct', url };
   }
-  if (!opts.hasDebrid) {
-    const infoHash = infoHashOf(item);
-    return infoHash === undefined ? undefined : { kind: 'p2p', infoHash, fileIdx: fileIdxOf(item) };
-  }
+  // Sans débrideur : un torrent n'est pas livrable (jamais en P2P), seuls les liens HTTP directs restent.
+  if (!opts.hasDebrid) return undefined;
   const copies = playableCopies(item).map(toPlayCopy);
   if (copies.length === 0) return undefined;
   const token = encodeCopiesToken(copies, {
@@ -289,20 +289,19 @@ function formatOne(item: FormatItem, opts: FormatOptions): StremioStream | undef
     laststream: laststreamOf(item, opts, copyCount, view.bitrateMbps),
   };
 
-  if (target.kind === 'direct' || target.kind === 'play') {
-    stream.url = target.url;
-  } else {
-    stream.infoHash = target.infoHash;
-    if (target.fileIdx !== undefined) stream.fileIdx = target.fileIdx;
-    if (item.raw.sources) stream.sources = item.raw.sources;
-  }
+  stream.url = target.url;
   return stream;
 }
 
 /** Transforme les candidats classés en streams Stremio, tronqués à `maxResults`. */
 export function formatStreams(items: readonly FormatItem[], opts: FormatOptions): StremioStream[] {
   const streams: StremioStream[] = [];
-  for (const item of items) {
+  // « En cache AllDebrid » d'abord (tri stable : l'ordre du classement est conservé à statut égal).
+  const ordered = items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => Number(b.item.cached === true) - Number(a.item.cached === true) || a.index - b.index)
+    .map(({ item }) => item);
+  for (const item of ordered) {
     if (streams.length >= opts.maxResults) break;
     const stream = formatOne(item, opts);
     if (stream) streams.push(stream);

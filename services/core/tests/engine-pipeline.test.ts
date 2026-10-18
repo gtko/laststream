@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runEngine } from '../src/engine/index.js';
+import { decodeCopiesToken } from '../src/play/token.js';
 import { cand, cfg } from './engine-fixtures.js';
 
 describe('runEngine : filtre, déduplication, classement, formatage', () => {
@@ -14,8 +15,10 @@ describe('runEngine : filtre, déduplication, classement, formatage', () => {
         cand({ parsed: { resolution: '1080p', infoHash: 'd'.repeat(40) }, raw: { title: 'fhd-cached' }, cached: true }),
       ],
       config,
-      { playBaseUrl: 'https://addon.example.com', configToken: 'TOKEN', secret: 'pipeline-test-secret', hasDebrid: false },
+      { playBaseUrl: 'https://addon.example.com', configToken: 'TOKEN', secret: 'pipeline-test-secret', hasDebrid: true },
     );
-    expect(streams.map((s) => s.infoHash)).toEqual(['d'.repeat(40), 'c'.repeat(40)]);
+    const hashes = streams.map((s) => decodeCopiesToken(decodeURIComponent(s.url?.split('/play/c/')[1] ?? ''), 'pipeline-test-secret')?.copies[0]?.infoHash);
+    expect(hashes).toEqual(['d'.repeat(40), 'c'.repeat(40)]);
+    expect(streams.every((s) => s.infoHash === undefined)).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ import { cand, cfg, titles } from './engine-fixtures.js';
 
 const HASH = 'a'.repeat(40);
 
-/** Candidat français (VFF) avec infoHash : livrable en P2P. */
+/** Candidat français (VFF) avec infoHash : livrable via le débrideur. */
 function fr(title: string, parsed: Partial<ParsedRelease> = {}): Candidate {
   return cand({ parsed: { languages: ['fr'], frVariant: 'VFF', ...parsed }, raw: { title, infoHash: HASH } });
 }
@@ -21,7 +21,7 @@ function en(title: string, parsed: Partial<ParsedRelease> = {}): Candidate {
   });
 }
 
-const FMT = { playBaseUrl: 'https://addon.example.test', configToken: 'tok', secret: 'fallback-test-secret', hasDebrid: false };
+const FMT = { playBaseUrl: 'https://addon.example.test', configToken: 'tok', secret: 'fallback-test-secret', hasDebrid: true };
 
 describe('languages.fallbackToOthers : repli sur les autres langues', () => {
   it('(a) seulement des résultats anglais, repli activé : streams anglais renvoyés et marqués', () => {
@@ -34,7 +34,7 @@ describe('languages.fallbackToOthers : repli sur les autres langues', () => {
     expect(streams).toHaveLength(1);
     expect(streams[0]?.laststream).toMatchObject({ languageFallback: true, languages: ['en'] });
     // Gabarit détaillé : la marque « Autre langue » ouvre la première ligne ; la langue annoncée reste suffixée de « ? ».
-    expect(streams[0]?.name).toBe('lastAddon 1080p');
+    expect(streams[0]?.name).toBe('[AD⏳] lastAddon 1080p');
     expect(streams[0]?.description?.split('\n')[0]).toBe('Autre langue • WEB-DL • 🇬🇧?');
   });
 

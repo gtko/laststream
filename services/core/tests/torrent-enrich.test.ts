@@ -229,11 +229,14 @@ describe('garde-fou : downloadUrl ne sort jamais', () => {
       configToken: 'TOKEN-CONFIG',
       secret: 'torrent-enrich-test-secret',
       maxResults: 10,
-      hasDebrid: false,
+      hasDebrid: true,
     });
     const json = JSON.stringify(streams);
 
-    expect(json).toContain(String(enriched?.infoHash));
+    // L'infoHash ne sort plus en clair : il voyage dans le jeton signé de l'URL /play (pas de P2P).
+    expect(streams).toHaveLength(1);
+    expect(streams[0]?.infoHash).toBeUndefined();
+    expect(streams[0]?.url).toContain('/TOKEN-CONFIG/play/c/');
     expect(json).not.toContain(SECRET);
     expect(json).not.toContain('apikey');
     expect(json).not.toContain('indexeur.example.com');
