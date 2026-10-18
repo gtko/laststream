@@ -237,4 +237,15 @@ describe('profils : avatar illustré (dicebear:<style>:<graine>)', () => {
       expect((await createProfile({ name: 'X', avatar })).status, avatar).toBe(400);
     }
   });
+  it('accepte les avatars Héros hero:<famille>:<graine> et refuse les familles inconnues', async () => {
+    const main = (await createProfile({ name: 'Principal', avatar: 'hero:vilains:Abc_123-x' })).body as ProfileBody & { avatar: string | null };
+    expect(main.avatar).toBe('hero:vilains:Abc_123-x');
+    for (const family of ['heros', 'scifi', 'fantasy']) {
+      const res = await request<ProfileBody & { avatar: string | null }>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { avatar: `hero:${family}:Aegis-2` } });
+      expect(res.body.avatar).toBe(`hero:${family}:Aegis-2`);
+    }
+    for (const avatar of ['hero:inconnue:abc', 'hero:Heros:abc', 'hero:heros:', 'hero:heros:a b', 'hero:heros:' + 'a'.repeat(41), 'hero:heros:é', 'heros:heros:abc', 'hero::abc']) {
+      expect((await createProfile({ name: 'X', avatar })).status, avatar).toBe(400);
+    }
+  });
 });
