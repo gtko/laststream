@@ -1,6 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { isKidProfile, kidSection } from '../data/auth';
 import { showBrowse } from './kids.js';
+import { showAiBrowse } from './recs-ui.js';
 import { showSearch } from './search.js';
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
@@ -33,7 +34,7 @@ export function showView(r) {
   else if (r.kind === 'services') showServices();
   else if (r.kind === 'library') showLibrary();
   else if (r.kind === 'settings') showSettings();
-  else if (r.kind === 'browse') showBrowse(r.id);
+  else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
   else if (r.kind === 'search') showSearch();
   else if (r.kind === 'person') showPerson(r.id);
   else if (r.kind === 'tvlive') showTvLive();
@@ -50,7 +51,7 @@ export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
   if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')))) return null;
-  if (r && r.kind === 'browse' && !isKidProfile()) return null;
+  if (r && r.kind === 'browse' && (r.id === 'ai') === isKidProfile()) return null; // « ai » : adultes ; les autres : profils enfants
   return r;
 }
 

@@ -11,6 +11,7 @@ const ITEMS = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 const calls: string[] = [];
+const recCalls: string[] = [];
 
 function mockFetch(url: string, init?: RequestInit): Response {
   calls.push(url);
@@ -28,7 +29,10 @@ function mockFetch(url: string, init?: RequestInit): Response {
     });
   }
   if (u.pathname.includes('/lt/mdblist/')) return json({ ratings: { imdb: 7.9 } });
-  if (u.pathname.endsWith('/lt/recommend')) return json({ items: [] });
+  if (u.pathname.endsWith('/lt/recommend')) {
+    recCalls.push(String(init?.body));
+    return json({ items: Array.from({ length: 55 }, (_, i) => ({ id: 900 + i, media_type: i % 3 ? 'movie' : 'tv', title: 'Reco ' + i, name: 'Reco ' + i, poster_path: '/r' + i + '.jpg', reason_fr: 'Raison ' + i, release_date: '2024-05-05', first_air_date: '2024-05-05' })) });
+  }
   if (u.pathname.endsWith('/lt/why')) return json({ text: 'Parce que.' });
   if (u.pathname.endsWith('/lt/tv/facets')) return json({ countries: [{ id: 'FR', name: 'France', count: 3 }, { id: 'CH', count: 1 }], languages: { fr: 3, de: 1 }, categories: [{ id: 'news', label: 'Info', count: 2 }, { id: 'sport', label: 'Sport', count: 1 }] });
   if (u.pathname.endsWith('/lt/tv/channels')) {
@@ -66,6 +70,10 @@ describe('interface portée', () => {
     expect(app.querySelectorAll('.row-section').length).toBeGreaterThan(3);
     expect(calls.some((c) => c.startsWith('http://localhost:7000/CFG_abc-123/lt/tmdb/trending/all/day'))).toBe(true);
     expect(calls.every((c) => !c.includes('/api/'))).toBe(true);
+    // Aucun signal (ni bibliothèque ni progression) : « Pour bien commencer », sans appel IA.
+    expect(app.querySelector('#commencer')).not.toBeNull();
+    expect(app.querySelector('#ai')).toBeNull();
+    expect(recCalls).toHaveLength(0);
   });
 
   it('mise en avant : carrousel des tendances, pastilles, flèches et clavier', async () => {
@@ -118,6 +126,44 @@ describe('interface portée', () => {
     expect(JSON.parse(localStorage.getItem('laststream.library') || '[]')).toHaveLength(1);
   });
 
+  it('IA : une seule liste de 50+ titres par jour, réutilisée ensuite', async () => {
+    const { loadAI } = await import('../src/ui/home.js');
+    const { state } = await import('../src/ui/state.js');
+    state.ai = { status: 'idle', items: [] };
+    await loadAI();
+    expect(recCalls).toHaveLength(1);
+    const body = JSON.parse(recCalls[0]);
+    expect(body.count).toBe(50);
+    expect(body.exclude).toEqual(expect.arrayContaining([expect.objectContaining({ tmdbId: expect.any(Number) })]));
+    expect(state.ai.items.length).toBeGreaterThanOrEqual(50);
+    expect(document.querySelectorAll('#ai .ai-card').length).toBe(20); // la rangée en montre ~20
+    expect(document.querySelector('#ai [data-browse="ai"]')).not.toBeNull();
+    // Même jour : aucun nouvel appel, même après un changement de bibliothèque.
+    localStorage.setItem('laststream.library', '[]');
+    state.ai = { status: 'idle', items: [] };
+    await loadAI();
+    expect(recCalls).toHaveLength(1);
+    expect(state.ai.items.length).toBeGreaterThanOrEqual(50);
+    // Le lendemain : nouvel appel.
+    const key = Object.keys(localStorage).find((k) => k.startsWith('laststream.aiRecs.'))!;
+    const rec = JSON.parse(localStorage.getItem(key)!);
+    rec.date = '2000-01-01';
+    localStorage.setItem(key, JSON.stringify(rec));
+    localStorage.setItem('laststream.library', JSON.stringify([{ id: 5, type: 'movie', title: 'X', poster: '/x', addedAt: 1 }]));
+    state.ai = { status: 'idle', items: [] };
+    await loadAI();
+    expect(recCalls).toHaveLength(2);
+    // Page « Tout voir ».
+    location.hash = '#/browse/ai';
+    await settle(200);
+    expect(document.querySelectorAll('#detail #ai-grid .ai-card').length).toBeGreaterThanOrEqual(50);
+    expect(document.querySelector('#detail #ai-grid .card-reason')!.textContent).toMatch(/^Raison/);
+    (document.querySelector('#detail [data-aif="tv"]') as HTMLElement).click();
+    expect(document.querySelectorAll('#detail #ai-grid .ai-card').length).toBeLessThan(55);
+    location.hash = '#/';
+    await settle(100);
+  });
+
   it('utilise la région France par défaut', () => {
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });
@@ -156,9 +202,6 @@ describe('interface portée', () => {
     const app = document.getElementById('app')!;
     expect(app.querySelector('#reprendre')).toBeNull();
     expect(app.textContent).not.toMatch(/d[ée]mo/i);
-    expect(app.querySelector('#commencer')).not.toBeNull(); // « Pour bien commencer » : aucun signal, donc pas d'IA
-    expect(app.querySelector('#ai')).toBeNull();
-    expect(calls.some((c) => c.includes('/lt/recommend'))).toBe(false);
   });
 
   it('TV en direct : filtres pays/langue, facettes, fiabilité', async () => {

@@ -31,7 +31,15 @@ export interface HistoryEntry {
 
 export const mdblist = (type: string, id: string | number) => api('mdblist/' + type + '/' + id);
 export const tvdbSeries = (id: string | number) => api('tvdb/series/' + id);
-export const recommend = (history: HistoryEntry[], liked: HistoryEntry[]) => postLt('recommend', { history, liked });
+export interface RecommendOptions {
+  /** Nombre de titres demandés. */
+  count?: number;
+  /** Titres à exclure (vus, en bibliothèque, notés). */
+  exclude?: Array<{ type: 'movie' | 'tv'; tmdbId: number }>;
+  ratings?: Array<{ title: string; year: number | null; type: 'movie' | 'tv'; rating: number }>;
+}
+export const recommend = (history: HistoryEntry[], liked: HistoryEntry[], opts: RecommendOptions = {}) =>
+  postLt('recommend', { history, liked, ...opts });
 export const why = (type: 'movie' | 'tv', tmdbId: number | string, language = 'fr-FR') =>
   postLt<{ text: string }>('why', { type, tmdbId: Number(tmdbId), language });
 export const personWhy = (tmdbId: number | string, language = 'fr-FR') =>

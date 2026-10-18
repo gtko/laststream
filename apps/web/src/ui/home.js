@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { isKidProfile } from '../data/auth';
@@ -59,12 +60,33 @@ export async function loadHome() {
   };
 }
 
+/** Remplit state.ai depuis une liste compacte (tous les titres ; la rangée d'accueil en montre une partie). */
+function useRecs(recs) {
+  const items = recs.items.map((r) => {
+    const it = toItem(rawOf(r));
+    it.reason = r.r;
+    return register(it);
+  });
+  state.ai = { status: 'ready', items, date: recs.date };
+}
+
+/**
+ * Recommandations : une seule liste par jour. Réutilisée tant que la date n'a pas changé (aucun appel IA,
+ * même si la bibliothèque ou les notes bougent) ; sinon un seul appel à /lt/recommend avec 50 titres.
+ */
 export async function loadAI() {
   if (state.ai.status === 'loading' || state.ai.status === 'ready') return;
   if (isKidProfile()) { state.ai = { status: 'none', items: [] }; renderAI(); return; } // pas d'IA sur un profil enfant
   state.ai = { status: 'loading', items: [] };
   renderAI();
+  let stored = null;
   try {
+    stored = await readRecs();
+    if (stored && stored.date === todayLocal() && stored.items.length) {
+      useRecs(stored);
+      renderAI();
+      return;
+    }
     const seed = recoSeed();
     if (!seed) {
       // Aucun signal (ni bibliothèque ni progression) : pas d'appel IA.
@@ -72,17 +94,15 @@ export async function loadAI() {
       renderAI();
       return;
     }
-    const json = await recommend(seed.history, seed.liked);
-    const items = (json.items || [])
-      .map((raw) => {
-        const it = toItem(raw);
-        it.reason = raw.reason_fr || '';
-        return register(it);
-      })
-      .filter((it) => it.poster);
-    state.ai = { status: 'ready', items };
+    const json = await recommend(seed.history, seed.liked, { count: RECS_COUNT, exclude: excludeList(), ratings: seed.ratings });
+    const fresh = { date: todayLocal(), items: compactItems(json.items || []) };
+    if (!fresh.items.length) throw new Error('liste vide');
+    await saveRecs(fresh);
+    useRecs(fresh);
   } catch (_) {
-    state.ai = { status: 'error', items: [] };
+    // Échec : la dernière liste connue (même ancienne) vaut mieux qu'une rangée vide.
+    if (stored && stored.items.length) useRecs(stored);
+    else state.ai = { status: 'error', items: [] };
   }
   renderAI();
 }
@@ -181,8 +201,9 @@ export function renderAI() {
     slot.innerHTML = aiSkeleton();
     return;
   }
-  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA</h2>' +
-    row(ai.items.map(aiCard).join('')) + '</section>';
+  slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA ' +
+    '<a class="row-link" href="#/browse/ai" data-browse="ai">Tout voir</a></h2>' +
+    row(ai.items.slice(0, HOME_ROW_COUNT).map(aiCard).join('')) + '</section>';
 }
 
 // ---------- Accueil (style A · Cinéma) ----------
@@ -290,7 +311,7 @@ export function recoSeed() {
   userStore.continueWatching(10).forEach(add);
   userStore.getLibrary().sort((a, b) => b.addedAt - a.addedAt).forEach(add);
   if (!history.length) return null;
-  return { history: history.slice(0, 10), liked: history.slice(0, 3) };
+  return { history: history.slice(0, 10), liked: history.slice(0, 3), ratings: [] };
 }
 
 /** « Reprendre la lecture » : uniquement la progression réelle ; rien tant qu'il n'y en a pas. */

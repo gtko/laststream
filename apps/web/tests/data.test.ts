@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT } from
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { compactItems, packRecs, todayLocal, unpackRecs } from '../src/data/recs';
 import { pickTrailerKey, sortVideos } from '../src/data/trailers';
 import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
 import { LocalUserStore, LIBRARY_KEY } from '../src/data/userStore';
@@ -130,6 +131,31 @@ describe('bandes-annonces : langue préférée', () => {
   it('classe la rangée Bonus par type puis par langue', () => {
     const list = [v({ key: 'a', iso_639_1: 'en', type: 'Teaser' }), v({ key: 'b', type: 'Teaser' }), v({ key: 'c', iso_639_1: 'en' })];
     expect(sortVideos(list, (x) => (x.type === 'Trailer' ? 0 : 1), fr).map((x) => x.key)).toEqual(['c', 'b', 'a']);
+  });
+});
+
+describe('recommandations du jour', () => {
+  it('découpe la liste en morceaux de moins de 4 Ko et la recompose', () => {
+    const items = Array.from({ length: 60 }, (_, i) => ({ i, t: 'm' as const, n: 'Titre ' + i, p: '/p' + i + '.jpg', y: '2024', r: 'Parce que '.repeat(12) }));
+    const packed = packRecs({ date: '2026-10-18', items });
+    const chunks = Object.entries(packed).filter(([k, v]) => /^aiRecs\d+$/.test(k) && v);
+    expect(chunks.length).toBeGreaterThan(1);
+    chunks.forEach(([, v]) => expect(JSON.stringify(v).length).toBeLessThan(4096));
+    expect(unpackRecs(packed)).toEqual({ date: '2026-10-18', items });
+    expect(unpackRecs({})).toBeNull();
+  });
+  it('compacte la réponse de l’IA sans doublon ni titre sans affiche', () => {
+    const out = compactItems([
+      { id: 1, media_type: 'movie', title: 'A', poster_path: '/a', reason_fr: 'r' },
+      { id: 1, media_type: 'movie', title: 'A', poster_path: '/a' },
+      { id: 2, media_type: 'tv', name: 'B', poster_path: null },
+      { id: 1, media_type: 'tv', name: 'C', poster_path: '/c', first_air_date: '2020-02-02' },
+    ]);
+    expect(out.map((x) => x.n)).toEqual(['A', 'C']);
+    expect(out[1].y).toBe('2020');
+  });
+  it('donne le jour local', () => {
+    expect(todayLocal(new Date(2026, 9, 18, 23, 59))).toBe('2026-10-18');
   });
 });
 

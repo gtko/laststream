@@ -184,3 +184,8 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .toast-action { color: var(--accent); font-weight: 800; padding: 6px 4px; }
 .toast-action:hover { text-decoration: underline; }
 .toast.has-action:not(.is-on) { pointer-events: none; }
+
+/* ---------- Page des recommandations IA ---------- */
+.ai-grid { align-items: start; }
+.ai-full .card-reason { display: block; margin-top: 6px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+.ai-full { width: 100%; flex: 1 1 auto; }
