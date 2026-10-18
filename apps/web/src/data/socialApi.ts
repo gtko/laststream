@@ -42,6 +42,7 @@ export interface Watching {
 export interface FriendDto {
   username: string;
   avatarColor: string;
+  avatar?: string;
   status: FriendStatus;
   since: string;
   watching?: Watching | null;
@@ -49,6 +50,7 @@ export interface FriendDto {
 export interface FriendRequestDto {
   username: string;
   avatarColor: string;
+  avatar?: string;
   requestedAt: string;
 }
 export interface FriendsDto {
@@ -152,6 +154,7 @@ export interface Fingerprint {
 export interface PartyParticipant {
   username: string;
   avatarColor?: string;
+  avatar?: string;
   host?: boolean;
   muted?: boolean;
   joinedAt?: string;

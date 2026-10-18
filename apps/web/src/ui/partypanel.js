@@ -7,6 +7,7 @@ import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
+import { avatarAttrs } from './avatar-art.js';
 
 let rootEl = null;
 let panel = null;
@@ -19,7 +20,7 @@ let chatDraft = '';
 /** Lien d'un salon (ouvre la page de connexion au salon). */
 export const roomLink = (id) => shareBase().replace(/\/+$/, '') + '/#/party/' + encodeURIComponent(id);
 
-const dot = (color) => '<span class="wp-dot" style="background:' + esc(color || '#94a3b8') + '" aria-hidden="true"></span>';
+const dot = (color, art) => '<span class="wp-dot"' + avatarAttrs(art, color) + ' aria-hidden="true"></span>';
 
 export function participantsHTML(list, you, youHost) {
   return list.map((p) => {
@@ -29,7 +30,7 @@ export function participantsHTML(list, you, youHost) {
         '<button type="button" class="wp-mini" data-wp-host="' + esc(p.username) + '" title="Céder le rôle d’hôte">Hôte</button>' +
         '<button type="button" class="wp-mini wp-danger" data-wp-kick="' + esc(p.username) + '">Exclure</button></span>'
       : '';
-    return '<li class="wp-user">' + dot(p.avatarColor) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
+    return '<li class="wp-user">' + dot(p.avatarColor, p.avatar) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
       (p.host ? '<em class="wp-badge">Hôte</em>' : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">Muet</em>' : '') + tools + '</li>';
   }).join('');
 }

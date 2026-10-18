@@ -34,7 +34,7 @@ export function libraryFromDto(items: LibraryItemDto[]): LibraryEntry[] {
 }
 
 export function profileFromDto(p: ProfileDto): Profile {
-  return { id: p.id, name: p.name, avatarColor: p.avatarColor, isKid: p.isKid, kidMaxAge: p.kidMaxAge, hasPin: p.hasPin, allowedCatalogs: p.allowedCatalogs, isAdminProfile: p.isAdminProfile === true, isMainProfile: p.isMainProfile };
+  return { id: p.id, name: p.name, avatarColor: p.avatarColor, avatar: p.avatar ?? null, isKid: p.isKid, kidMaxAge: p.kidMaxAge, hasPin: p.hasPin, allowedCatalogs: p.allowedCatalogs, isAdminProfile: p.isAdminProfile === true, isMainProfile: p.isMainProfile };
 }
 
 export class ServerUserStore implements UserStore {

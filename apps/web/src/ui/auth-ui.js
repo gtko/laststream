@@ -7,6 +7,8 @@ import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
 import { checkInvite } from '../data/socialApi';
 import { KID_AGES, UserApiError } from '../data/userApi';
+import { AVATAR_TABS, avatarCredits, LICENSE_LABEL, LICENSE_URL, parseAvatar, randomSeed, tabTiles } from '../data/avatars';
+import { avatarAttrs } from './avatar-art.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
@@ -175,7 +177,7 @@ let manage = false;
 
 function profileTile(p) {
   return '<button type="button" class="pf" data-pf="' + esc(p.id) + '" aria-label="' + esc(p.name + (p.isKid ? ', profil enfant' : '') + (p.hasPin ? ', verrouillé' : '') + (manage ? ', modifier' : '')) + '">' +
-    '<span class="pf-av" style="background:' + esc(p.avatarColor || COLORS[0]) + '">' + esc(initialOfName(p.name)) +
+    '<span class="pf-av"' + avatarAttrs(p.avatar, p.avatarColor || COLORS[0]) + '>' + esc(initialOfName(p.name)) +
     (p.hasPin ? '<span class="pf-lock" aria-hidden="true">' + ICON.lock + '</span>' : '') +
     (manage ? '<span class="pf-edit" aria-hidden="true">' + ICON.pencil + '</span>' : '') + '</span>' +
     '<span class="pf-name">' + esc(p.name) + '</span>' + (p.isKid ? '<em class="pf-kid">Enfant</em>' : '') + '</button>';
@@ -308,6 +310,70 @@ function editProfile(p) {
   open(p);
 }
 
+/** Crédits des illustrations (CC BY 4.0 et licences à attribution) : liste des illustrateurs et licences. */
+export function creditsHTML() {
+  return '<ul class="av-credits">' + avatarCredits().map((c) =>
+    '<li><strong>' + esc(c.creator) + '</strong> : ' + esc(c.styles.join(', ')) + ' ; licence <a href="' + esc(LICENSE_URL[c.license]) + '" target="_blank" rel="noopener noreferrer">' + esc(LICENSE_LABEL[c.license]) + '</a>. ' +
+    c.sources.map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">source</a>').join(' ') + '</li>').join('') +
+    '</ul><p class="av-credits">Avatars générés avec <a href="https://www.dicebear.com" target="_blank" rel="noopener noreferrer">DiceBear</a> (MIT), en local sur ton appareil.</p>';
+}
+
+function avatarPickerHTML() {
+  return '<fieldset class="pf-picker-avatars"><legend>Avatar</legend>' +
+    '<div class="av-tabs pills" role="tablist" aria-label="Familles d’avatars">' + AVATAR_TABS.map((t) =>
+      '<button type="button" class="pill" role="tab" data-av-tab="' + t.id + '" aria-pressed="false">' + esc(t.label) + '</button>').join('') + '</div>' +
+    '<div class="av-tools"><input class="set-input" type="search" name="avsearch" maxlength="40" placeholder="Un prénom pour essayer…" aria-label="Chercher un avatar à partir d’un mot" autocomplete="off">' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-av-random>Au hasard</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-av-none>Initiale</button></div>' +
+    '<div class="av-grid" data-av-grid role="group" aria-label="Avatars"></div>' +
+    '<button type="button" class="btn btn-ghost btn-sm av-more" data-av-more>Voir plus</button>' +
+    '<details><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></fieldset>';
+}
+
+/** Sélecteur d'avatars du formulaire : onglets par famille, recherche / au hasard, grille paginée (rendu à la demande). */
+function avatarPicker(node, cur) {
+  const PAGE = 48;
+  const parsed = parseAvatar(cur.avatar);
+  const state = { avatar: parsed ? cur.avatar : null, tab: cur.isKid ? 'enfants' : parsed ? parsed.style.family : 'personnages', word: '', shown: PAGE, touched: !!parsed };
+  const grid = node.querySelector('[data-av-grid]');
+  const more = node.querySelector('[data-av-more]');
+  const render = () => {
+    const tiles = tabTiles(state.tab, state.word);
+    grid.innerHTML = tiles.slice(0, state.shown).map((t) =>
+      '<button type="button" class="av-tile"' + avatarAttrs(t.value, '#94a3b8') + ' data-av-pick="' + esc(t.value) + '" aria-pressed="' + (state.avatar === t.value) + '" aria-label="' + esc(t.style.label + ', ' + t.seed) + '"></button>').join('');
+    more.hidden = state.shown >= tiles.length;
+    node.querySelectorAll('[data-av-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.avTab === state.tab)));
+  };
+  node.addEventListener('click', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    if (!t) return;
+    const tab = t.closest('[data-av-tab]');
+    if (tab) { state.tab = tab.dataset.avTab; state.shown = PAGE; state.touched = true; render(); return; }
+    const pick = t.closest('[data-av-pick]');
+    if (pick) { state.avatar = pick.dataset.avPick; render(); return; }
+    if (t.closest('[data-av-none]')) { state.avatar = null; render(); return; }
+    if (t.closest('[data-av-more]')) { state.shown += PAGE; render(); return; }
+    if (t.closest('[data-av-random]')) {
+      state.word = randomSeed();
+      node.querySelector('input[name="avsearch"]').value = state.word;
+      state.shown = PAGE;
+      render();
+    }
+  });
+  node.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.name === 'avsearch') e.preventDefault(); });
+  node.addEventListener('input', (e) => {
+    if (e.target.name !== 'avsearch') return;
+    state.word = e.target.value;
+    state.shown = PAGE;
+    render();
+  });
+  render();
+  return {
+    value: () => state.avatar,
+    kidChanged: (isKid) => { if (!state.touched) { state.tab = isKid ? 'enfants' : 'personnages'; state.shown = PAGE; render(); } },
+  };
+}
+
 function profileEditor(p) {
   const isNew = !p;
   const cur = p || { name: '', avatarColor: COLORS[0], isKid: false, kidMaxAge: 12, hasPin: false };
@@ -315,6 +381,7 @@ function profileEditor(p) {
   node.className = 'pin-back';
   node.innerHTML = '<form class="pin pf-editor" role="dialog" aria-modal="true" aria-labelledby="pfe-title"><h2 id="pfe-title" class="pin-title">' + (isNew ? 'Nouveau profil' : 'Modifier le profil') + '</h2>' +
     '<label class="tv-field">Nom<input type="text" name="name" maxlength="40" required value="' + esc(cur.name) + '"></label>' +
+    avatarPickerHTML() +
     '<div class="pf-colors" role="radiogroup" aria-label="Couleur">' + COLORS.map((c) =>
       '<label class="pf-color" style="background:' + c + '"><input type="radio" name="color" value="' + c + '"' + (c.toLowerCase() === String(cur.avatarColor).toLowerCase() ? ' checked' : '') + '><span class="sr-only">' + c + '</span></label>').join('') + '</div>' +
     '<label class="set-check"><input type="checkbox" name="kid"' + (cur.isKid ? ' checked' : '') + '> <span>Profil enfant</span></label>' +
@@ -334,9 +401,11 @@ function profileEditor(p) {
   const msg = node.querySelector('#pfe-msg');
   const close = () => node.remove();
   form.elements.name.focus();
+  const av = avatarPicker(node, cur);
   form.addEventListener('change', (e) => {
     if (e.target.name === 'kid') {
       node.querySelector('[data-kidage]').hidden = !e.target.checked;
+      av.kidChanged(e.target.checked);
       node.querySelector('[data-parental]').hidden = !(e.target.checked && needsParentalCode({ isKid: true }));
     }
   });
@@ -360,6 +429,7 @@ function profileEditor(p) {
       const isDefault = chosen.length === KID_SECTIONS.length - 1 && !chosen.includes('tv');
       input.allowedCatalogs = isDefault ? [] : chosen;
     }
+    if (av.value() !== (cur.avatar || null)) input.avatar = av.value();
     const pin = f.pin.value.trim();
     if (pin && !/^\d{4}$/.test(pin)) { msg.textContent = 'Le code PIN compte 4 chiffres.'; return; }
     const parental = f.parental ? f.parental.value.trim() : '';

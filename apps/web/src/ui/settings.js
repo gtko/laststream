@@ -14,7 +14,7 @@ import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveThe
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
-import { errorText, openLogin, openPicker } from './auth-ui.js';
+import { creditsHTML, errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import {
@@ -79,7 +79,7 @@ function accountPanel() {
   return card('Compte et profils',
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span><button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>') +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() + invitesCard() + data +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() + invitesCard() + data + card('Crédits des avatars', creditsHTML()) +
     card('Importer ma bibliothèque Stremio',
       '<form id="set-stremio" class="set-form" autocomplete="off">' +
       '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +

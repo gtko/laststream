@@ -37,6 +37,8 @@ export interface ProfileDto {
   id: string;
   name: string;
   avatarColor: string;
+  /** Avatar illustré (dicebear:<style>:<graine>), absent ou null : initiale sur la couleur. */
+  avatar?: string | null;
   isKid: boolean;
   kidMaxAge: KidMaxAge | null;
   hasPin: boolean;
@@ -51,6 +53,8 @@ export interface ProfileDto {
 export interface ProfileInput {
   name: string;
   avatarColor?: string;
+  /** dicebear:<style>:<graine> ; null retire l'avatar illustré. */
+  avatar?: string | null;
   isKid?: boolean;
   kidMaxAge?: KidMaxAge;
   pin?: string | null;

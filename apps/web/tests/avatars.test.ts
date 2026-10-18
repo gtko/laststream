@@ -1,0 +1,225 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  ALLOWED_LICENSES, AVATAR_PATTERN, AVATAR_STYLES, avatarCount, avatarCredits, cleanSeed, formatAvatar, parseAvatar, stylesForTab,
+  tabTiles, usableStyles, type AvatarLicense,
+} from '../src/data/avatars';
+import { avatarAttrs, avatarUri, hydrateAvatars, resetAvatarCache } from '../src/ui/avatar-art.js';
+import { SETTINGS_STORAGE_KEY, reloadSettings } from '../src/data/config';
+import { reloadSession } from '../src/data/session';
+import type { Profile } from '../src/data/userStore';
+
+const DICEBEAR = join(__dirname, '..', 'node_modules', '@dicebear');
+
+/** Licence de l'illustration déclarée dans le LICENSE du paquet @dicebear/<style>. */
+function packageLicense(id: string): AvatarLicense | 'autre' {
+  const text = readFileSync(join(DICEBEAR, id, 'LICENSE'), 'utf8');
+  const line = /License: (.*)/.exec(text)?.[1] ?? '';
+  if (/^CC0 1\.0/.test(line)) return 'cc0';
+  if (/^CC BY 4\.0/.test(line)) return 'cc-by';
+  if (/^Free for personal and commercial use/.test(line)) return 'libre';
+  return 'autre';
+}
+
+describe('format et validation', () => {
+  it('accepte dicebear:<style>:<graine> et rejette le reste', () => {
+    expect(AVATAR_PATTERN.test('dicebear:lorelei:Abc_1-x')).toBe(true);
+    for (const bad of ['', 'lorelei:abc', 'dicebear:Lorelei:abc', 'dicebear:lorelei:a b', 'dicebear:lorelei:', 'dicebear:lorelei:' + 'a'.repeat(41), 'https://x/y.svg', '<svg>', 'dicebear::abc']) {
+      expect(AVATAR_PATTERN.test(bad), bad).toBe(false);
+    }
+    expect(parseAvatar(formatAvatar('thumbs', 'Mimi'))).toMatchObject({ seed: 'Mimi', style: { id: 'thumbs' } });
+    expect(parseAvatar('dicebear:inconnu:abc')).toBeNull();
+    expect(parseAvatar(null)).toBeNull();
+    expect(parseAvatar(42)).toBeNull();
+  });
+
+  it('cleanSeed : sans accents ni espaces, 40 caractères au plus', () => {
+    expect(cleanSeed('Élodie Dupont !')).toBe('Elodie-Dupont');
+    expect(cleanSeed('a'.repeat(80))).toHaveLength(40);
+    expect(cleanSeed('***')).toBe('');
+  });
+});
+
+describe('licences filtrées', () => {
+  it('chaque style proposé déclare la licence réellement indiquée dans son paquet, et elle est autorisée', () => {
+    for (const st of AVATAR_STYLES) {
+      expect(packageLicense(st.id), st.id).toBe(st.license);
+      expect(ALLOWED_LICENSES, st.id).toContain(st.license);
+    }
+    expect(usableStyles()).toHaveLength(AVATAR_STYLES.length);
+  });
+
+  it('aucun style dont la licence n’est pas autorisée n’est proposé', () => {
+    const offered = new Set(AVATAR_STYLES.map((s) => s.id));
+    for (const dir of readdirSync(DICEBEAR)) {
+      if (dir === 'core' || dir === 'collection') continue;
+      const kind = (() => { try { return packageLicense(dir); } catch { return 'autre'; } })();
+      if (kind === 'autre') expect(offered.has(dir), dir).toBe(false);
+    }
+    expect(offered.has('initials')).toBe(false);
+    expect(offered.has('icons')).toBe(false);
+  });
+
+  it('les crédits couvrent chaque style avec illustrateur et licence', () => {
+    const credits = avatarCredits();
+    const listed = credits.flatMap((c) => c.styles).length;
+    expect(listed).toBe(AVATAR_STYLES.length);
+    expect(credits.some((c) => c.license === 'cc-by' && c.creator === 'Lisa Wischofsky')).toBe(true);
+    expect(credits.every((c) => c.creator && c.sources.length > 0)).toBe(true);
+  });
+});
+
+describe('catalogue', () => {
+  it('plus de 300 avatars, onglets non vides, graines déterministes', () => {
+    expect(avatarCount()).toBeGreaterThanOrEqual(300);
+    for (const tab of ['enfants', 'personnages', 'illustres', 'robots', 'fun'] as const) {
+      expect(stylesForTab(tab).length, tab).toBeGreaterThan(0);
+      expect(tabTiles(tab).map((t) => t.value)).toEqual(tabTiles(tab).map((t) => t.value));
+    }
+    const tiles = tabTiles('robots', 'Zélie');
+    expect(tiles[0].seed).toBe('Zelie');
+    expect(new Set(tiles.map((t) => t.value)).size).toBe(tiles.length);
+    expect(stylesForTab('enfants').every((s) => s.kid)).toBe(true);
+  });
+});
+
+describe('génération locale', () => {
+  beforeEach(() => resetAvatarCache());
+
+  it('déterministe : même graine, même SVG ; autre graine, autre SVG ; aucune requête réseau', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const a = await avatarUri('dicebear:thumbs:Mimi');
+    resetAvatarCache();
+    const b = await avatarUri('dicebear:thumbs:Mimi');
+    const c = await avatarUri('dicebear:thumbs:Luna');
+    vi.unstubAllGlobals();
+    expect(a).toMatch(/^data:image\/svg\+xml/);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    const svg = decodeURIComponent(a.split(',')[1]);
+    expect(svg.startsWith('<svg')).toBe(true);
+    // Aucune ressource externe (les URL des métadonnées de licence ne sont que du texte).
+    expect(svg).not.toMatch(/(?:href|src)=["']https?:/);
+    expect(svg).not.toContain('<image');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('chaque famille génère un SVG', async () => {
+    for (const st of [AVATAR_STYLES[0], ...AVATAR_STYLES.filter((s) => ['bottts', 'fun-emoji', 'croodles'].includes(s.id))]) {
+      expect(await avatarUri(formatAvatar(st.id, 'Test')), st.id).toMatch(/^data:image\/svg\+xml/);
+    }
+  });
+
+  it('valeur invalide ou style inconnu : rien (repli sur l’initiale)', async () => {
+    expect(await avatarUri('dicebear:inconnu:abc')).toBe('');
+    expect(await avatarUri('n’importe quoi')).toBe('');
+  });
+});
+
+describe('rendu de repli', () => {
+  beforeEach(() => resetAvatarCache());
+
+  it('sans avatar valide : seulement la couleur, aucun attribut d’illustration', () => {
+    expect(avatarAttrs(null, '#ff5a36')).toBe(' style="background:#ff5a36"');
+    expect(avatarAttrs('dicebear:inconnu:x', '#ff5a36')).not.toContain('data-avatar');
+    expect(avatarAttrs(undefined, '')).toContain('#94a3b8');
+  });
+
+  it('avatar valide non chargé : couleur de repli + data-avatar ; hydratation pose l’illustration', async () => {
+    document.body.innerHTML = '<span id="x" class="pf-av"' + avatarAttrs('dicebear:thumbs:Mimi', '#7b5bf5') + '>M</span><span id="y"' + avatarAttrs('dicebear:thumbs:Mimi', '#7b5bf5') + '>M</span>';
+    const x = document.getElementById('x') as HTMLElement;
+    expect(x.dataset.avatar).toBe('dicebear:thumbs:Mimi');
+    expect(x.dataset.art).toBeUndefined();
+    expect(x.style.background).toContain('rgb(123, 91, 245)');
+    await hydrateAvatars(document);
+    expect(x.dataset.art).toBe('1');
+    expect(x.style.backgroundImage).toContain('data:image/svg+xml');
+    // Second rendu : l'illustration est déjà en cache, posée dès le HTML.
+    expect(avatarAttrs('dicebear:thumbs:Mimi', '#7b5bf5')).toContain('data-art="1"');
+  });
+});
+
+describe('éditeur de profil : sélecteur d’avatars', () => {
+  const BASE = 'http://srv.test';
+  const bodies: string[] = [];
+  const profile = (id: string, extra: Partial<Profile> = {}): Profile =>
+    ({ id, name: id, avatarColor: '#ff5a36', isKid: false, kidMaxAge: 12, hasPin: false, allowedCatalogs: [], isMainProfile: false, ...extra }) as Profile;
+  const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: BASE, config: 'X' }));
+    reloadSettings();
+    reloadSession();
+    bodies.length = 0;
+    document.querySelectorAll('.pin-back').forEach((n) => n.remove());
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url).replace(BASE, '');
+      if (init?.method === 'POST' && u === '/user/profiles') {
+        bodies.push(String(init.body));
+        return new Response(JSON.stringify({ id: 'new' }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      if (u === '/user/profiles') return new Response(JSON.stringify({ profiles: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response('{}', { status: 404 });
+    }));
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  async function openEditor() {
+    const a = await import('../src/data/auth');
+    const ui = await import('../src/ui/auth-ui.js');
+    a.auth.profiles = [profile('gtko', { isMainProfile: true })];
+    a.auth.profile = a.auth.profiles[0];
+    a.auth.status = 'ready';
+    ui.openPicker();
+    (document.querySelector('[data-pf-manage]') as HTMLElement).click();
+    (document.querySelector('[data-pf-add]') as HTMLElement).click();
+    await tick();
+    return document.querySelector('.pf-editor') as HTMLFormElement;
+  }
+
+  it('onglets par famille, grille paginée, choix d’un avatar envoyé au serveur avec la couleur de repli', async () => {
+    const form = await openEditor();
+    expect(form).not.toBeNull();
+    const tabs = Array.from(form.querySelectorAll('[data-av-tab]')).map((b) => (b as HTMLElement).dataset.avTab);
+    expect(tabs).toEqual(['enfants', 'personnages', 'illustres', 'robots', 'fun']);
+    // Paginé : 48 tuiles d'abord, « Voir plus » en ajoute.
+    expect(form.querySelectorAll('.av-tile').length).toBe(48);
+    (form.querySelector('[data-av-more]') as HTMLElement).click();
+    expect(form.querySelectorAll('.av-tile').length).toBeGreaterThan(48);
+    (form.querySelector('[data-av-tab="robots"]') as HTMLElement).click();
+    const first = form.querySelector('.av-tile') as HTMLElement;
+    expect(first.dataset.avPick).toMatch(/^dicebear:(bottts|bottts-neutral|pixel-art|pixel-art-neutral):/);
+    first.click();
+    expect((form.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick).toBe(first.dataset.avPick);
+    // Recherche : le mot devient la première graine ; « Au hasard » en tire une.
+    const search = form.querySelector('input[name="avsearch"]') as HTMLInputElement;
+    search.value = 'Zélie';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/:Zelie$/);
+    (form.querySelector('[data-av-random]') as HTMLElement).click();
+    expect(search.value).toMatch(/^[a-z2-9]{8}$/);
+    // Enregistrement.
+    (form.querySelector('.av-tile') as HTMLElement).click();
+    const chosen = (form.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick;
+    (form.elements.namedItem('name') as HTMLInputElement).value = 'Nina';
+    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    await tick();
+    const sent = JSON.parse(bodies[0]);
+    expect(sent.avatar).toBe(chosen);
+    expect(sent.avatarColor).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(sent.name).toBe('Nina');
+  });
+
+  it('crédits dans l’éditeur et profil enfant : onglet Enfants d’abord', async () => {
+    const form = await openEditor();
+    expect(form.querySelector('details')!.textContent).toContain('Lisa Wischofsky');
+    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('personnages');
+    const kid = form.elements.namedItem('kid') as HTMLInputElement;
+    kid.checked = true;
+    kid.dispatchEvent(new Event('change', { bubbles: true }));
+    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('enfants');
+  });
+});

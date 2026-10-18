@@ -479,3 +479,18 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .upd-go:disabled { opacity: 0.6; }
 .upd-x { width: 36px; height: 36px; border-radius: 50%; font-size: 22px; line-height: 1; color: var(--muted); }
 .upd-x:hover { color: var(--text); }
+
+/* Avatars illustrés (DiceBear) : l'illustration remplace l'initiale ; la couleur du profil reste le repli. */
+[data-avatar][data-art] { background-size: cover; background-position: center; background-repeat: no-repeat; font-size: 0; color: transparent; text-shadow: none; }
+.wp-dot[data-avatar] { width: 20px; height: 20px; }
+.pf-picker-avatars { display: grid; gap: 10px; }
+.av-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.av-tools input { flex: 1 1 140px; min-width: 0; }
+.av-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 8px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.av-tile { position: relative; aspect-ratio: 1; border-radius: 16px; border: 3px solid transparent; padding: 0; background-color: var(--surface); background-size: cover; background-position: center; cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
+.av-tile:hover, .av-tile:focus-visible { transform: scale(1.06); border-color: var(--text); }
+.av-tile[aria-pressed="true"] { border-color: var(--accent); }
+.av-more, .av-credit-link { justify-self: start; }
+.av-credits { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.av-credits li { margin: 2px 0; }

@@ -17,6 +17,7 @@ import { playDirect } from './sources-ui.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { esc } from './util.js';
+import { avatarAttrs } from './avatar-art.js';
 
 const POLL_MS = 30_000;
 let data = null;
@@ -24,7 +25,7 @@ let loadError = false;
 let poll = null;
 let pollToken = 0;
 
-const avatar = (name, color) => '<span class="soc-av" style="background:' + esc(color || '#94a3b8') + '" aria-hidden="true">' + esc((name || '?').slice(0, 1).toUpperCase()) + '</span>';
+const avatar = (name, color, art) => '<span class="soc-av"' + avatarAttrs(art, color) + ' aria-hidden="true">' + esc((name || '?').slice(0, 1).toUpperCase()) + '</span>';
 
 function unavailable(title) {
   return topBar(false) + '<article class="svc-page soc-page"><header class="svc-head svc-head-plain"><div class="svc-head-t"><h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header>' +
@@ -34,7 +35,7 @@ function unavailable(title) {
 // ---------- Page « Amis » ----------
 export function friendRowHTML(f) {
   const live = f.status === 'watching';
-  return '<li class="soc-row" data-friend="' + esc(f.username) + '">' + avatar(f.username, f.avatarColor) +
+  return '<li class="soc-row" data-friend="' + esc(f.username) + '">' + avatar(f.username, f.avatarColor, f.avatar) +
     '<div class="soc-main"><a class="soc-name" href="#/friend/' + encodeURIComponent(f.username) + '" data-go>' + esc(f.username) + '</a>' +
     '<span class="soc-presence is-' + f.status + '">' + (f.status === 'offline' ? '' : '<i aria-hidden="true"></i>') + esc(presenceLabel(f)) + '</span></div>' +
     '<div class="soc-acts"><a class="btn btn-ghost btn-sm" href="#/friend/' + encodeURIComponent(f.username) + '" data-go>Bibliothèque</a>' +
@@ -43,7 +44,7 @@ export function friendRowHTML(f) {
 }
 
 function requestRowHTML(r, incoming) {
-  return '<li class="soc-row" data-friend="' + esc(r.username) + '">' + avatar(r.username, r.avatarColor) +
+  return '<li class="soc-row" data-friend="' + esc(r.username) + '">' + avatar(r.username, r.avatarColor, r.avatar) +
     '<div class="soc-main"><span class="soc-name">' + esc(r.username) + '</span><span class="soc-presence">' + (incoming ? 'veut devenir ton ami' : 'demande envoyée') + '</span></div>' +
     '<div class="soc-acts">' + (incoming
       ? '<button type="button" class="btn btn-primary btn-sm" data-fr-accept="' + esc(r.username) + '">Accepter</button><button type="button" class="btn btn-ghost btn-sm" data-fr-decline="' + esc(r.username) + '">Refuser</button>'

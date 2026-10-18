@@ -2,6 +2,7 @@
  * Le rendu est fonctionnel : les appelants passent les indicateurs (enfant, amis, propriétaire, serveur). */
 import { isKidProfile, signOut } from '../data/auth';
 import { userStore } from '../data/userStore';
+import { avatarAttrs } from './avatar-art.js';
 import { leaveKidProfile, openPicker } from './auth-ui.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
@@ -40,7 +41,7 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   const current = userStore.currentProfile();
   const name = current.name || '?';
   const initial = name.slice(0, 1).toUpperCase();
-  const bg = current.avatarColor ? ' style="background:' + esc(current.avatarColor) + '"' : '';
+  const bg = current.avatarColor || current.avatar ? avatarAttrs(current.avatar, current.avatarColor) : '';
   const items = [
     social ? menuLink('#/friends', ' data-go', 'users', 'Amis') : '',
     kid ? '' : '<a href="#" data-noop>' + ICON.stats + '<span>Statistiques</span></a>',

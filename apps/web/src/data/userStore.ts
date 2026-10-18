@@ -42,6 +42,8 @@ export interface Profile {
   name: string;
   /** Champs du compte lastAddon (absents en mode local). */
   avatarColor?: string;
+  /** Avatar illustré (dicebear:<style>:<graine>), sinon initiale sur avatarColor. */
+  avatar?: string | null;
   isKid?: boolean;
   kidMaxAge?: number | null;
   hasPin?: boolean;
