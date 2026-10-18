@@ -15,7 +15,7 @@ describe('parseConfig (schéma)', () => {
     expect(config.resolutions.allowed).toEqual(['2160p', '1080p', '720p', '480p', 'SD']);
     expect(config.resolutions.max).toBeUndefined();
     expect(config.excludedTags).toEqual(['CAM', 'TS', 'SCR']);
-    expect(config.maxResults).toBe(30);
+    expect(config.maxResults).toBe(60);
     expect(config.sources).toEqual([]);
     expect(config.onlyCached).toBe(false);
     expect(config.debrid).toBeUndefined();
@@ -86,7 +86,7 @@ describe('codec (chiffrement des configurations)', () => {
     expect(encoded).not.toContain('API-KEY-XYZ');
     const decoded = decodeConfig(encoded, SECRET, { allowPlain: false });
     expect(decoded.sources[0]).toMatchObject({ type: 'torznab', apiKey: 'API-KEY-XYZ' });
-    expect(decoded.maxResults).toBe(30);
+    expect(decoded.maxResults).toBe(60);
   });
 
   it('produit un chiffré différent à chaque encodage (IV aléatoire)', () => {

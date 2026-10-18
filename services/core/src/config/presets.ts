@@ -21,7 +21,7 @@ export const PRESETS: Record<Preset, PresetDefinition> = {
     values: {
       resolutions: { allowed: ['2160p', '1080p'] },
       languages: { preferred: ['fr', 'multi'] },
-      maxResults: 30,
+      maxResults: 60,
       sort: 'default',
     },
   },

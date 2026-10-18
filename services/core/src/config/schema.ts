@@ -345,7 +345,7 @@ export const ConfigSchema = z.object({
       message: 'minGb must be <= maxGb',
     })
     .prefault({}),
-  maxResults: z.number().int().min(1).max(500).default(30),
+  maxResults: z.number().int().min(1).max(500).default(60),
   sources: z
     .array(
       z.discriminatedUnion('type', [
