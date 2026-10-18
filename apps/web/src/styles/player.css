@@ -230,6 +230,7 @@ body.lp-open .toast { z-index: 900; }
 .s-orig { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .s-o { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); font-size: 12px; font-weight: 700; color: var(--soft); }
 .s-o-more { padding-left: 8px; }
+.s-dev { font-size: 11px; font-style: italic; color: var(--soft); opacity: 0.75; }
 .s-olg { width: 14px; height: 14px; border-radius: 4px; object-fit: cover; flex: none; }
 .s-oic { width: 13px; height: 13px; flex: none; color: var(--dim); }
 .s-chip .s-olg, .s-chip .s-oic { margin-right: 2px; }
