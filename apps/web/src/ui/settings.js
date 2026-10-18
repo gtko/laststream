@@ -16,6 +16,7 @@ import { userStore } from '../data/userStore';
 import { auth, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
+import { invitesCard, refreshInvites } from './invites.js';
 import {
   CATEGORIES, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
@@ -78,7 +79,7 @@ function accountPanel() {
   return card('Compte et profils',
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span><button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>') +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + data +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + invitesCard() + data +
     card('Importer ma bibliothèque Stremio',
       '<form id="set-stremio" class="set-form" autocomplete="off">' +
       '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
@@ -327,6 +328,7 @@ export async function showSettings() {
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
+  if (isServerMode()) refreshInvites();
   loadConfig();
 }
 

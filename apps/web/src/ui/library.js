@@ -11,6 +11,7 @@ import { row, topBar } from './fragments.js';
 import { state } from './state.js';
 import { fillMissingPosters } from './posters.js';
 import { observeTiles, posterCard } from './tiles.js';
+import { loadVisibility, sharingAvailable, shareControlsHTML, visButtonHTML } from './libshare.js';
 
 // Bibliothèque : toutes les lectures/écritures passent par userStore (adaptateur local aujourd'hui, API lastAddon ensuite).
 export const inLib = (key) => userStore.inLibrary(key);
@@ -58,7 +59,10 @@ export function renderLibraryPage(restore) {
     host: box,
     key: location.hash + '|' + v.type + '|' + v.sort,
     restore: !!restore,
-    load: async (page) => ({ html: items.slice((page - 1) * PAGE, page * PAGE).map((it) => posterCard(it)).join(''), done: page * PAGE >= items.length }),
+    load: async (page) => ({
+      html: items.slice((page - 1) * PAGE, page * PAGE).map((it) => (sharingAvailable() ? '<div class="lib-cell">' + posterCard(it) + visButtonHTML(it.key) + '</div>' : posterCard(it))).join(''),
+      done: page * PAGE >= items.length,
+    }),
     after: (host) => {
       observeTiles(host);
       fillMissingPosters(items.slice(0, Math.max(PAGE, host.querySelectorAll('[data-tile]').length)));
@@ -78,9 +82,12 @@ export function showLibrary() {
     '<div class="lib-controls"><div class="pills" data-nav role="group" aria-label="Filtrer">' +
     '<button type="button" class="pill" data-libf="all">Tout</button><button type="button" class="pill" data-libf="movie">Films</button><button type="button" class="pill" data-libf="tv">Séries</button></div>' +
     '<div class="pills" data-nav role="group" aria-label="Trier">' +
-    '<button type="button" class="pill" data-libs="date">Derniers ajouts</button><button type="button" class="pill" data-libs="title">Titre A→Z</button></div></div></div></header>' +
+    '<button type="button" class="pill" data-libs="date">Derniers ajouts</button><button type="button" class="pill" data-libs="title">Titre A→Z</button></div>' +
+    shareControlsHTML() + '</div></div></header>' +
     '<div class="lib-grid" id="lib-grid" data-nav></div></article>';
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
+  // La visibilité de chaque titre se lit sur le compte ; les affiches se redessinent à son arrivée.
+  if (sharingAvailable()) loadVisibility().then((ok) => { if (ok && state.kind === 'library') renderLibraryPage(); });
   renderLibraryPage(state.restoreY != null).then(() => applyRestore());
 }

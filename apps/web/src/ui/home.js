@@ -8,7 +8,7 @@ import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs,
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
-import { isKidProfile } from '../data/auth';
+import { isKidProfile, isServerMode } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { recommend, tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
@@ -239,6 +239,10 @@ export function renderAI() {
     row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
+/** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant. */
+export const socialEnabled = () => isServerMode() && !isKidProfile();
+export const socialNav = () => (socialEnabled() ? '<a href="#/friends" data-go>Amis</a><a href="#/parties" data-go>Watch parties</a>' : '');
+
 // ---------- Accueil (style A · Cinéma) ----------
 export function headerA() {
   return '<header class="topbar">' + brand() +
@@ -251,7 +255,7 @@ export function headerA() {
     '<a href="#/collections" data-go>Collections</a>' +
     '<a href="#/discover" data-go>Découvrir</a>' +
     '<a href="#/services" data-svcs>Services</a>' +
-    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a><a href="#" data-noop>Stats</a></nav>' +
+    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a>' + socialNav() + '<a href="#" data-noop>Stats</a></nav>' +
     '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
     '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
 }
@@ -277,7 +281,9 @@ export function viewA(d) {
 }
 
 export function tabbar() {
-  const items = TABS.map(([label, icon, current]) =>
+  // Sur mobile, l'onglet « Stats » (pas encore disponible) laisse sa place à « Amis » dès qu'un compte est connecté.
+  const tabs = socialEnabled() ? TABS.map((t) => (t[0] === 'Stats' ? ['Amis', 'users', false] : t)) : TABS;
+  const items = tabs.map(([label, icon, current]) =>
     '<a href="' + tabHref(label) + '"' + tabData(label) + ' class="tab' + (current ? ' is-current' : '') + '"' + (current ? ' aria-current="page"' : '') + '>' +
     (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
     '<span class="tab-label">' + label + '</span></a>').join('');
@@ -339,8 +345,8 @@ export function renderHome() {
 }
 export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
-export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : '#/');
-export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : ' data-noop');
+export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Amis' ? '#/friends' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : '#/');
+export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Amis' ? ' data-go' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : ' data-noop');
 
 /**
  * Signaux envoyés à /recommend : bibliothèque et titres entamés, du plus récent au plus ancien.

@@ -50,7 +50,11 @@ export interface ProfileInput {
   allowedCatalogs?: string[];
 }
 
+export type Visibility = 'private' | 'friends';
+
 export interface LibraryItemDto {
+  /** Partage : `private` par défaut. */
+  visibility?: Visibility;
   type: MediaKind;
   tmdbId: number | null;
   imdbId: string | null;
@@ -94,9 +98,11 @@ interface CallOptions {
   anonymous?: boolean;
   bootstrapToken?: string;
   timeoutMs?: number;
+  /** Préfixe de l'API (défaut `/user`) ; `/party` pour les salons. */
+  prefix?: string;
 }
 
-async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
+export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   let body: string | undefined;
   if (o.body !== undefined) {
@@ -114,7 +120,7 @@ async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
   const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 10_000);
   let res: Response;
   try {
-    res = await fetch(requireBase() + '/user' + path, { method: o.method ?? 'GET', headers, body, signal: controller.signal });
+    res = await fetch(requireBase() + (o.prefix ?? '/user') + path, { method: o.method ?? 'GET', headers, body, signal: controller.signal });
   } catch {
     throw new UserApiError(0, 'network');
   } finally {
@@ -142,8 +148,8 @@ async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
 }
 
 // ---- Comptes ----
-export const register = (username: string, password: string, bootstrapToken?: string) =>
-  call<{ account: AccountDto }>('/register', { method: 'POST', body: { username, password }, anonymous: true, bootstrapToken });
+export const register = (username: string, password: string, bootstrapToken?: string, invite?: string) =>
+  call<{ account: AccountDto }>('/register', { method: 'POST', body: { username, password, ...(invite ? { invite } : {}) }, anonymous: true, bootstrapToken });
 export const login = (username: string, password: string) =>
   call<{ token: string; expiresAt: string }>('/login', { method: 'POST', body: { username, password }, anonymous: true });
 export const refresh = () => call<{ token: string; expiresAt: string }>('/refresh', { method: 'POST' });

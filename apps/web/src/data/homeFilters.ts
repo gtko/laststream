@@ -94,6 +94,33 @@ export function setFiltersPusher(fn: Pusher | null): void {
   pusher = fn;
 }
 
+// ---------- Stockage serveur des titres masqués (API /user/profiles/:id/hidden) ----------
+/**
+ * Titres masqués côté serveur, par profil (jusqu'à 20 000, paginés). Quand il est branché et chargé pour le profil actif,
+ * la liste vit en mémoire (ensemble de filtrage de l'accueil) et chaque changement part vers l'API ; les anciens réglages
+ * `homeHidden*` ne sont plus écrits (le serveur les importe au premier accès).
+ */
+export interface HiddenBackend {
+  /** Toute la liste, de la plus ancienne entrée à la plus récente. */
+  load(profileId: string): Promise<HiddenEntry[]>;
+  put(profileId: string, entries: HiddenEntry[]): Promise<boolean>;
+  remove(profileId: string, keys: string[]): Promise<boolean>;
+}
+/** Plafond serveur de titres masqués par profil. */
+export const SERVER_HIDDEN_MAX = 20_000;
+/** Taille d'un envoi vers l'API (500 au plus par appel). */
+export const SERVER_BATCH = 500;
+let hiddenBackend: HiddenBackend | null = null;
+/** Profil dont la liste serveur est chargée en mémoire (sinon : stockage par morceaux dans les réglages, comme avant). */
+let serverReady: string | null = null;
+export function setHiddenBackend(b: HiddenBackend | null): void {
+  hiddenBackend = b;
+  serverReady = null;
+  cache = null;
+}
+/** Vrai quand les titres masqués du profil actif viennent de l'API. */
+export const hiddenOnServer = (): boolean => hiddenBackend !== null && serverReady !== null && serverReady === profileId();
+
 const encoder = new TextEncoder();
 /** Taille UTF-8 d'une valeur sérialisée en JSON (un titre japonais pèse 3 octets par caractère). */
 export const byteSize = (value: unknown): number => encoder.encode(JSON.stringify(value) ?? 'null').length;
@@ -162,7 +189,7 @@ function readLocal(id: string): HomeFilters {
 
 function writeLocal(id: string, f: HomeFilters): void {
   try {
-    storage()?.setItem(HOME_FILTERS_KEY_PREFIX + id, JSON.stringify(f));
+    storage()?.setItem(HOME_FILTERS_KEY_PREFIX + id, JSON.stringify(serverReady === id ? { ...f, hidden: [] } : f));
   } catch {
     // Stockage indisponible : les filtres valent pour la session.
   }
@@ -180,6 +207,8 @@ export function currentFilters(): HomeFilters {
 /** Réinitialise l'état mémoire : cache, envois en attente et état connu du compte (tests, déconnexion). */
 export function resetFiltersCache(): void {
   cache = null;
+  serverReady = null;
+  hiddenBackend = null;
   pendingTimers.forEach((t) => clearTimeout(t));
   pendingTimers.clear();
   pendingState.clear();
@@ -199,7 +228,7 @@ const jsonOf = (v: unknown): string => JSON.stringify(v) ?? 'null';
  * part à null pour être effacé côté compte.
  */
 export function changedSettings(id: string, f: HomeFilters): Record<string, unknown> {
-  const packed = packFilters(f);
+  const packed = packFilters(f, serverReady !== id);
   const known = accountKeys.get(id);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(packed)) {
@@ -247,6 +276,74 @@ function save(id: string, f: HomeFilters): void {
   notifyHomeChange();
 }
 
+// ---------- Envois vers l'API des titres masqués ----------
+const batches = <T>(items: readonly T[]): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += SERVER_BATCH) out.push(items.slice(i, i + SERVER_BATCH));
+  return out;
+};
+
+let serverRetryMs = 4000;
+/** Délai avant la nouvelle tentative d'un envoi échoué (réglable pour les tests). */
+export function setServerRetryDelay(ms: number): void {
+  serverRetryMs = ms;
+}
+
+/** Envois en série (l'ordre des masquages et réaffichages compte) ; un échec est retenté une fois. */
+let serverQueue: Promise<unknown> = Promise.resolve();
+function enqueue(task: () => Promise<boolean>): void {
+  const run = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        if (await task()) return;
+      } catch { /* retenté ci-dessous */ }
+      if (attempt === 0) await new Promise((r) => setTimeout(r, serverRetryMs));
+    }
+    console.warn('[laststream] titres masqués : l’envoi au compte a échoué.');
+  };
+  serverQueue = serverQueue.then(run, run);
+}
+/** Attend la fin des envois en cours (tests, fermeture). */
+export const hiddenIdle = (): Promise<unknown> => serverQueue;
+
+function serverPut(id: string, entries: readonly HiddenEntry[]): void {
+  const backend = hiddenBackend;
+  if (!backend) return;
+  for (const part of batches(entries)) enqueue(() => backend.put(id, part));
+}
+
+function serverRemove(id: string, keys: readonly string[]): void {
+  const backend = hiddenBackend;
+  if (!backend) return;
+  for (const part of batches(keys)) enqueue(() => backend.remove(id, part));
+}
+
+/**
+ * Charge (paginé) les titres masqués du profil depuis l'API : ensemble en mémoire pour l'accueil. Les titres masqués
+ * encore gardés dans ce navigateur par une ancienne version sont envoyés au compte, puis retirés du stockage local.
+ * Renvoie faux si l'API est injoignable (le stockage par réglages reste alors utilisé).
+ */
+export async function loadServerHidden(id: string): Promise<boolean> {
+  const backend = hiddenBackend;
+  if (!backend) return false;
+  let remote: HiddenEntry[];
+  try {
+    remote = await backend.load(id);
+  } catch {
+    return false;
+  }
+  const local = readLocal(id);
+  const have = new Set(remote.map((h) => h.key));
+  const extra = local.hidden.filter((h) => !have.has(h.key));
+  const all = [...remote, ...extra].sort((a, b) => a.addedAt - b.addedAt);
+  serverReady = id;
+  cache = { id, f: { ...local, hidden: all } };
+  writeLocal(id, cache.f); // sans masqués : la liste vit sur le compte
+  if (extra.length) serverPut(id, extra);
+  notifyHomeChange();
+  return true;
+}
+
 // ---------- Actions ----------
 /** Ne plus proposer un titre sur l'accueil. Faux si la liste ne tient plus dans les morceaux du compte. */
 export function hideTitle(entry: { key: string; title: string; poster?: string }): boolean {
@@ -256,6 +353,12 @@ export function hideTitle(entry: { key: string; title: string; poster?: string }
   if (!KEY_RE.test(entry.key)) return false;
   const hiddenEntry: HiddenEntry = { key: entry.key, title: entry.title.slice(0, TITLE_MAX), poster: (entry.poster ?? '').slice(0, POSTER_MAX), addedAt: Date.now() };
   const next = { ...f, hidden: [...f.hidden, hiddenEntry] };
+  if (hiddenOnServer()) {
+    if (next.hidden.length > SERVER_HIDDEN_MAX) return false;
+    save(id, next);
+    serverPut(id, [hiddenEntry]);
+    return true;
+  }
   if (!fitsCapacity(next)) return false;
   save(id, next);
   return true;
@@ -275,7 +378,10 @@ export function unhideTitles(keys: Iterable<string>): HiddenEntry[] {
   const f = currentFilters();
   const want = new Set(keys);
   const removed = f.hidden.filter((h) => want.has(h.key));
-  if (removed.length) save(profileId(), { ...f, hidden: f.hidden.filter((h) => !want.has(h.key)) });
+  if (removed.length) {
+    save(profileId(), { ...f, hidden: f.hidden.filter((h) => !want.has(h.key)) });
+    if (hiddenOnServer()) serverRemove(profileId(), removed.map((h) => h.key));
+  }
   return removed;
 }
 
@@ -286,6 +392,12 @@ export function restoreHidden(entries: readonly HiddenEntry[]): boolean {
   const back = entries.filter((h) => KEY_RE.test(h.key) && !have.has(h.key));
   if (!back.length) return true;
   const next = { ...f, hidden: [...f.hidden, ...back].sort((a, b) => a.addedAt - b.addedAt) };
+  if (hiddenOnServer()) {
+    if (next.hidden.length > SERVER_HIDDEN_MAX) return false;
+    save(profileId(), next);
+    serverPut(profileId(), back);
+    return true;
+  }
   if (!fitsCapacity(next)) return false;
   save(profileId(), next);
   return true;
@@ -363,9 +475,9 @@ function readChunks(settings: Record<string, unknown>, name: string): unknown[] 
 }
 
 /** Réglages envoyés au profil (PUT partiel : les autres clés du profil sont conservées). */
-export function packFilters(f: HomeFilters): Record<string, unknown> {
+export function packFilters(f: HomeFilters, withHidden = true): Record<string, unknown> {
   const out: Record<string, unknown> = { homeGenres: f.genres };
-  putChunks(out, 'homeHidden', f.hidden);
+  if (withHidden) putChunks(out, 'homeHidden', f.hidden);
   putChunks(out, 'homeCompleted', f.completed);
   return out;
 }
@@ -419,13 +531,17 @@ export function mergeFilters(a: HomeFilters, b: HomeFilters): HomeFilters {
  * est renvoyée au compte si elle diffère de ce qu'il détient. Renvoie vrai si les filtres locaux ont changé.
  */
 export function applyAccountFilters(id: string, settings: Record<string, unknown>): boolean {
-  const local = readLocal(id);
-  const remote = unpackFilters(settings);
-  const merged = remote ? mergeFilters(local, remote) : local;
+  const onServer = serverReady === id;
+  // Liste sur le compte : seuls les genres bannis et les séries vues passent par les réglages ; les masqués viennent de l'API.
+  const keepHidden = onServer && cache?.id === id ? cache.f.hidden : [];
+  const local = onServer ? { ...readLocal(id), hidden: keepHidden } : readLocal(id);
+  const remoteRaw = unpackFilters(settings);
+  const remote = onServer && remoteRaw ? { ...remoteRaw, hidden: keepHidden } : remoteRaw;
+  const merged = remote && onServer ? { ...mergeFilters({ ...local, hidden: [] }, { ...remote, hidden: [] }), hidden: keepHidden } : remote ? mergeFilters(local, remote) : local;
   const changed = !sameFilters(merged, local);
   cache = { id, f: merged };
   writeLocal(id, merged);
-  if (remote) accountKeys.set(id, Object.fromEntries(Object.entries(packFilters(remote)).map(([k, v]) => [k, jsonOf(v)])));
+  if (remote) accountKeys.set(id, Object.fromEntries(Object.entries(packFilters(remote, !onServer)).map(([k, v]) => [k, jsonOf(v)])));
   else accountKeys.delete(id);
   if (pusher && hasAny(merged) && (!remote || !sameFilters(merged, remote))) send(id, changedSettings(id, merged));
   if (changed) notifyHomeChange();

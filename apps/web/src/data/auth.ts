@@ -1,5 +1,7 @@
 import { getConfig, isConfigured } from './config';
-import { applyAccountFilters, setFiltersPusher } from './homeFilters';
+import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
+import { apiHiddenBackend } from './hiddenApi';
+import { startPresence, stopPresence } from './presence';
 import { CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
@@ -22,6 +24,8 @@ export type AuthStatus = 'local' | 'offline' | 'needs-login' | 'needs-profile' |
 export const auth = {
   status: 'local' as AuthStatus,
   username: '',
+  /** Propriétaire du serveur (peut régler les quotas d'invitation). */
+  isOwner: false,
   profiles: [] as Profile[],
   profile: null as Profile | null,
 };
@@ -41,6 +45,8 @@ export const isKidProfile = (): boolean => kidMaxAge() !== null;
 function useLocal(status: AuthStatus): AuthStatus {
   setUserStore(new LocalUserStore());
   store = null;
+  setHiddenBackend(null);
+  stopPresence();
   auth.profile = null;
   auth.profiles = [];
   auth.status = status;
@@ -56,6 +62,7 @@ export async function initAuth(): Promise<AuthStatus> {
   try {
     const { account } = await api.me(4000);
     auth.username = account.username;
+    auth.isOwner = !!account.isAdmin;
   } catch (err) {
     if (err instanceof UserApiError && err.status === 401) {
       if (getSession()) clearSession();
@@ -105,7 +112,9 @@ async function activate(profile: Profile): Promise<void> {
   auth.profile = profile;
   auth.status = 'ready';
   setActiveProfile(profile.id);
+  setHiddenBackend(apiHiddenBackend);
   await syncPrefsIn(profile.id);
+  startPresence(profile.id, !!profile.isKid);
   emit();
 }
 
@@ -131,6 +140,9 @@ async function migrateLocalLibrary(target: ServerUserStore, profileId: string): 
 }
 
 async function syncPrefsIn(profileId: string): Promise<void> {
+  // Titres masqués d'abord : le premier accès fait importer les anciens morceaux `homeHidden*` par le serveur, qui les
+  // retire des réglages lus juste après.
+  await loadServerHidden(profileId);
   try {
     const { settings } = await api.getSettings(profileId);
     if (Object.keys(settings).length) applyPrefs(settings);
@@ -173,8 +185,8 @@ export async function signIn(username: string, password: string): Promise<AuthSt
   return loadProfiles();
 }
 
-export async function signUp(username: string, password: string, bootstrapToken?: string): Promise<AuthStatus> {
-  await api.register(username, password, bootstrapToken || undefined);
+export async function signUp(username: string, password: string, bootstrapToken?: string, invite?: string): Promise<AuthStatus> {
+  await api.register(username, password, bootstrapToken || undefined, invite || undefined);
   return signIn(username, password);
 }
 

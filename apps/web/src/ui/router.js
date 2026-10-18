@@ -1,6 +1,8 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { showCalendar } from './calendar.js';
 import { showHidden } from './hidden.js';
+import { showFriendLibrary, showFriends } from './friends.js';
+import { showParties, showParty } from './parties.js';
 import { isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
 import { showAiBrowse } from './recs-ui.js';
@@ -43,6 +45,10 @@ export function showView(r) {
   else if (r.kind === 'discover') showDiscover();
   else if (r.kind === 'library') showLibrary();
   else if (r.kind === 'hidden') showHidden();
+  else if (r.kind === 'friends') showFriends();
+  else if (r.kind === 'friend') showFriendLibrary(r.id);
+  else if (r.kind === 'parties') showParties();
+  else if (r.kind === 'party') showParty(r.id);
   else if (r.kind === 'settings') showSettings();
   else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
   else if (r.kind === 'search') showSearch();
@@ -62,8 +68,8 @@ export function applyRestore() {
 }
 export function parseRoute() {
   const r = parseRouteRaw();
-  // Profil enfant : ni réglages ni TV en direct.
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
+  // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -84,6 +90,12 @@ function parseRouteRaw() {
   if (h === '#/discover') return { kind: 'discover' };
   if (h === '#/library') return { kind: 'library' };
   if (h === '#/hidden') return { kind: 'hidden' };
+  if (h === '#/friends') return { kind: 'friends' };
+  r = /^#\/friend\/([a-z0-9_.-]{3,32})$/.exec(h);
+  if (r) return { kind: 'friend', id: r[1] };
+  if (h === '#/parties') return { kind: 'parties' };
+  r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
+  if (r) return { kind: 'party', id: r[1] };
   if (h === '#/settings') return { kind: 'settings' };
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
   if (r) return { kind: 'browse', id: r[1] };
