@@ -121,7 +121,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   });
 
   // Segments de saut (intro, reprise, générique) : services externes, puis communauté, puis déduction de saison.
-  // Cible validée ; clés IntroDB et Anime Skip facultatives.
+  // Cible validée ; clés IntroDB, SkipDB et Anime Skip facultatives.
   lt.get('/skip/:type/:imdbId/:season/:episode', async (req, res) => {
     const config = configOf(req);
     const target = parseSkipTarget(req.params.type, req.params.imdbId, req.params.season, req.params.episode);
@@ -134,7 +134,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
     res.json(body);
   });
 
-  // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clé IntroDB facultative.
+  // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clés IntroDB et SkipDB facultatives.
   lt.post('/skip/submit', async (req, res) => {
     res.json(await community.submit(configOf(req).services, bodyOf(req)));
   });
