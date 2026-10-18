@@ -16,6 +16,7 @@ import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { showService, showServices } from './services.js';
 import { showSettings } from './settings.js';
 import { state } from './state.js';
+import { showShow, showShowsPage, renderTvRows } from './shows.js';
 import { renderLive, showTvLive } from './tv.js';
 
 export function go(url, opener) {
@@ -40,6 +41,8 @@ export function showView(r) {
   else if (r.kind === 'calendar') showCalendar();
   else if (r.kind === 'person') showPerson(r.id);
   else if (r.kind === 'tvlive') showTvLive();
+  else if (r.kind === 'shows') showShowsPage();
+  else if (r.kind === 'show') showShow(r.id);
   else showFiche(r.type, r.id);
 }
 export function applyRestore() {
@@ -52,7 +55,7 @@ export function applyRestore() {
 export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
-  if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -72,6 +75,9 @@ function parseRouteRaw() {
   if (r) return { kind: 'browse', id: r[1] };
   if (h === '#/search') return { kind: 'search' };
   if (h === '#/calendar') return { kind: 'calendar' };
+  if (h === '#/emissions') return { kind: 'shows' };
+  r = /^#\/emission\/(\d{1,9})$/.exec(h);
+  if (r) return { kind: 'show', id: r[1] };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;
 }
 
@@ -111,6 +117,7 @@ export function route() {
     renderLibrary();
     renderContinue();
     renderLive();
+    renderTvRows();
     const t = state.lastFocus;
     state.lastFocus = null;
     if (t && t.isConnected && t.focus) t.focus({ preventScroll: true });

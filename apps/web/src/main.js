@@ -1,5 +1,5 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
- * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/library, #/tv-live, #/settings.
+ * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/library, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings.
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';

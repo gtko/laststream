@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { langCode3, nationalEntry, normText, rankChannels, sameLang } from '../src/data/tvRank';
 
-const c = (name: string, extra: Record<string, unknown> = {}) => ({ id: 'fr:' + name.replace(/\W/g, '') + '.fr', name, epgId: name.replace(/\W/g, '') + '.fr', cat: 'Autre', source: 'iptvorg', fast: false, flaky: false, ...extra });
+type Ch = { id: string; name: string; epgId: string; cat: string; source: string; fast: boolean; flaky: boolean; num?: number | null; categories?: Array<{ id: string }> };
+const c = (name: string, extra: Partial<Ch> = {}): Ch => ({ id: 'fr:' + name.replace(/\W/g, '') + '.fr', name, epgId: name.replace(/\W/g, '') + '.fr', cat: 'Autre', source: 'iptvorg', fast: false, flaky: false, ...extra });
 
 describe('classement des chaînes', () => {
   it('normalise accents, casse et ponctuation', () => {

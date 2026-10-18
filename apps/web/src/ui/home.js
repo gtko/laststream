@@ -23,6 +23,7 @@ import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { renderServices } from './services.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
+import { renderTvRows } from './shows.js';
 import { renderLive } from './tv.js';
 import { cut, esc } from './util.js';
 
@@ -218,6 +219,7 @@ export function headerA() {
     '<a href="#films" data-scroll="films">Films</a>' +
     '<a href="#series" data-scroll="series">Séries</a>' +
     '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
+    '<a href="#/emissions" data-showsnav>Émissions TV</a>' +
     '<a href="#/services" data-svcs>Services</a>' +
     '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a><a href="#" data-noop>Stats</a></nav>' +
     '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
@@ -234,6 +236,8 @@ export function viewA(d) {
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
     '<div id="up-slot"></div>' +
     '<div id="live-slot"></div>' +
+    '<div id="tonight-slot"></div>' +
+    '<div id="shows-slot"></div>' +
     '<div id="reg-slot"></div>' +
     '<div id="svc-slot"></div>' +
     '<div id="lib-slot"></div>' +
@@ -287,7 +291,7 @@ export function renderHome() {
   renderAI();
   renderUpcoming();
   renderLive();
-  if (!state.data.kids) renderFollowRow();
+  if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
   setupPreviews();
   if (state.data.kids) {
