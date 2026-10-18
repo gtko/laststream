@@ -35,7 +35,7 @@ describe('scrubUrl : adresses', () => {
   });
 
   it('URL hors de l’application : seul l’hôte est gardé', () => {
-    expect(scrubUrl(`https://addon.example/${CFG}/manifest.json?k=1`, APP)).toBe('https://addon.example');
+    expect(scrubUrl(`https://addon.example/${CFG}/manifest.json?k=1`, APP)).toBe('[host]');
     expect(scrubUrl('https://image.tmdb.org/t/p/w500/abc.jpg', APP)).toBe('https://image.tmdb.org');
   });
 
@@ -63,6 +63,27 @@ describe('scrubUrl : adresses', () => {
     expect(scrubUrl('blob:https://app.example/1234', APP)).toBeNull();
   });
 
+  it('adresse littérale IPv4 ou IPv6 : [ip]', () => {
+    expect(scrubUrl('https://192.168.1.10:8096/Items?api_key=1', APP)).toBe('[ip]');
+    expect(scrubUrl('http://[::1]:3000/x', APP)).toBe('[ip]');
+  });
+
+  it('localhost et *.local : [host]', () => {
+    expect(scrubUrl('http://localhost:8080/x', APP)).toBe('[host]');
+    expect(scrubUrl('http://nas.local/x', APP)).toBe('[host]');
+  });
+
+  it('hôte hors liste blanche : [host] ; hôte autorisé ou workers.dev du projet : hôte seul', () => {
+    expect(scrubUrl('https://torrentio.strem.fun/providers=yts/manifest.json', APP)).toBe('[host]');
+    expect(scrubUrl('https://api.mdblist.com/x', APP)).toBe('https://api.mdblist.com');
+    expect(scrubUrl('https://laststream.gtux-prog.workers.dev/api/x?k=1', APP)).toBe('https://laststream.gtux-prog.workers.dev');
+  });
+
+  it('stremio:// et stremio: réduits à l’hôte', () => {
+    expect(scrubUrl('stremio://torrentio.strem.fun/providers=yts/manifest.json', APP)).toBe('[host]');
+    expect(scrubUrl('stremio:addon.example/cfg', APP)).toBe('[host]');
+  });
+
   it('adresse relative : résolue sur l’application, query retirée', () => {
     expect(scrubUrl('/api/x?apikey=1', APP)).toBe('https://app.example/api/x');
   });
@@ -71,7 +92,7 @@ describe('scrubUrl : adresses', () => {
 describe('scrubText : texte libre', () => {
   it('réécrit les URL d’un message et garde la ponctuation finale', () => {
     expect(scrubText('Échec de chargement de https://addon.example/abc/manifest.json?key=1.', APP))
-      .toBe('Échec de chargement de https://addon.example.');
+      .toBe('Échec de chargement de [host].');
   });
 
   it('URL de débrideur dans un message : remplacée', () => {
@@ -85,6 +106,27 @@ describe('scrubText : texte libre', () => {
   it('clés secrètes masquées (forme clé=valeur, clé: valeur et JSON)', () => {
     expect(scrubText('token=abc123 password: hunter2', APP)).toBe('token=[retiré] password: [retiré]');
     expect(scrubText('{"apikey":"K123"}', APP)).toBe('{"apikey":"[retiré]"}');
+  });
+
+  it('URL jusqu’au premier espace : une clé derrière « | » ne fuit pas', () => {
+    expect(scrubText('Échec https://torrentio.strem.fun/providers=yts|realdebrid=KEY123/manifest.json ok', APP)).toBe('Échec [url retirée] ok');
+    expect(scrubText('Échec https://torrentio.strem.fun/providers=yts|x=1/manifest.json ok', APP)).toBe('Échec [host] ok');
+  });
+
+  it('clés de débrideur en texte libre masquées (realdebrid, torbox, premiumize, alldebrid, debridoptions)', () => {
+    const out = scrubText('realdebrid=KEY1 torbox=KEY2 premiumize=KEY3 alldebrid=KEY4 debridoptions=nodownloadlinks&x=1', APP);
+    expect(out).not.toMatch(/KEY[1-4]/);
+    expect(out).toContain('debridoptions=[retiré]&x=1');
+  });
+
+  it('segment de chemin de plus de 40 caractères masqué, 40 exactement gardé', () => {
+    expect(scrubText(`chemin /${'a'.repeat(50)} fin`, APP)).toBe('chemin /[config] fin');
+    expect(scrubText(`chemin /${'b'.repeat(40)} fin`, APP)).toBe(`chemin /${'b'.repeat(40)} fin`);
+  });
+
+  it('stremio:// dans un message réduit à l’hôte, configuration comprise', () => {
+    const cfg = 'SECRETCFG' + 'x'.repeat(60);
+    expect(scrubText(`ajout stremio://addon.example/${cfg}/manifest.json fini`, APP)).toBe('ajout [host] fini');
   });
 
   it('texte sans donnée sensible : inchangé', () => {
@@ -111,7 +153,7 @@ describe('scrubBreadcrumb : fils d’Ariane', () => {
       category: 'fetch',
       data: { url: `https://addon.example/${CFG}/manifest.json?k=1`, method: 'GET', status_code: 200, request_body_size: 0 },
     }), APP);
-    expect(out?.data).toEqual({ host: 'addon.example', status_code: 200 });
+    expect(out?.data).toEqual({ host: '[host]', status_code: 200 });
   });
 
   it('fetch tiers avec un message : le message est filtré aussi', () => {
@@ -120,8 +162,8 @@ describe('scrubBreadcrumb : fils d’Ariane', () => {
       message: `GET https://addon.example/${CFG}/x?k=1 échoué`,
       data: { url: 'https://addon.example/x?k=1', status_code: 500 },
     }), APP);
-    expect(out?.message).toBe('GET https://addon.example échoué');
-    expect(out?.data).toEqual({ host: 'addon.example', status_code: 500 });
+    expect(out?.message).toBe('GET [host] échoué');
+    expect(out?.data).toEqual({ host: '[host]', status_code: 500 });
   });
 
   it('xhr vers un débrideur : hôte et statut seulement, jamais le chemin', () => {
@@ -129,7 +171,7 @@ describe('scrubBreadcrumb : fils d’Ariane', () => {
       category: 'xhr',
       data: { url: 'https://api.torbox.app/v1/api/torrents?apikey=K', method: 'POST', status_code: 401 },
     }), APP);
-    expect(out?.data).toEqual({ host: 'api.torbox.app', status_code: 401 });
+    expect(out?.data).toEqual({ host: '[host]', status_code: 401 });
   });
 
   it('fetch vers l’application : URL sans query, méthode gardée', () => {
@@ -152,17 +194,11 @@ describe('scrubBreadcrumb : fils d’Ariane', () => {
     expect(out?.data).toEqual({ from: 'https://app.example/#/tv-live', to: 'https://app.example/#/movie/tt1' });
   });
 
-  it('message de console : URL réécrite', () => {
-    const out = scrubBreadcrumb(crumb({ category: 'console', message: 'Erreur https://addon.example/x?apikey=1' }), APP);
-    expect(out?.message).toBe('Erreur https://addon.example');
-  });
-
-  it('arguments de console : chaînes filtrées', () => {
-    const out = scrubBreadcrumb(crumb({
-      category: 'console',
-      data: { arguments: ['https://cdn.example/a.mp4?sig=1', 'ok'] },
-    }), APP);
-    expect(out?.data).toEqual({ arguments: ['[url retirée]', 'ok'] });
+  it('console, clics et saisies : écartés (breadcrumbs désactivés côté client)', () => {
+    expect(scrubBreadcrumb(crumb({ category: 'console', message: 'Erreur https://addon.example/x?apikey=1' }), APP)).toBeNull();
+    expect(scrubBreadcrumb(crumb({ category: 'console', data: { arguments: ['ok'] } }), APP)).toBeNull();
+    expect(scrubBreadcrumb(crumb({ category: 'ui.click', message: 'button#play' }), APP)).toBeNull();
+    expect(scrubBreadcrumb(crumb({ category: 'ui.input', message: 'input#password' }), APP)).toBeNull();
   });
 });
 
@@ -218,12 +254,12 @@ describe('scrubEvent : événements', () => {
       ] } }] },
     }), APP);
     expect(out).not.toBeNull();
-    expect(out?.message).toBe('Échec https://addon.example');
+    expect(out?.message).toBe('Échec [host]');
     expect(out?.request?.url).toBe('https://app.example/#/reset/[jeton]');
     expect(out?.request).not.toHaveProperty('cookies');
     expect(out?.request).not.toHaveProperty('query_string');
     expect(out?.user).toEqual({ id: 'acc-1' });
-    expect(out?.extra).toEqual({ cfg: 'https://addon.example' });
+    expect(out?.extra).toEqual({ cfg: '[host]' });
     expect(out?.exception?.values?.[0]?.value).toBe('Failed: [url retirée]');
     expect(out?.exception?.values?.[0]?.stacktrace?.frames?.[0]?.filename).toBe('https://app.example/assets/index-1.js');
     const json = JSON.stringify(out);

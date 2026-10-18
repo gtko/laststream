@@ -2,10 +2,12 @@
  * d'Ariane). Fonctions pures, testées : rien de ce qui identifie un compte, un addon, une clé de débrideur ou un flux
  * ne doit sortir de l'appareil.
  *  - URL : query string retirée ; segment de chemin de plus de 40 caractères (config d'addon en base64/JSON) remplacé
- *    par [config] ; URL hors de l'application réduite à son origine (hôte) ; débrideurs, magnet: et flux complets
- *    (.m3u8, .mkv, .mp4) supprimés ; jeton de réinitialisation (#/reset/…) masqué.
- *  - Texte libre : URL réécrites comme ci-dessus, magnets retirés, apikey / token / password… masqués.
- *  - Fil d'Ariane fetch/xhr vers un hôte tiers : seulement l'hôte et le statut.
+ *    par [config] ; hors de l'application, seul l'hôte est gardé s'il est autorisé, sinon [host] (adresse littérale :
+ *    [ip]) ; stremio: traité comme une URL ; débrideurs, magnet: et flux complets (.m3u8, .mkv, .mp4) supprimés ;
+ *    jeton de réinitialisation (#/reset/…) masqué.
+ *  - Texte libre : URL réécrites comme ci-dessus, magnets retirés, clés de débrideur et apikey / token / password…
+ *    masqués, segments de chemin de plus de 40 caractères remplacés.
+ *  - Fil d'Ariane fetch/xhr vers un hôte tiers : seulement l'hôte et le statut. Clics, saisies et console écartés.
  *  - Écartés : bruit du navigateur (ResizeObserver), annulations (AbortError), lecture média attendue (source absente,
  *    lecture interrompue ou bloquée par le navigateur), erreurs venant d'extensions navigateur. */
 import type { Breadcrumb, ErrorEvent, Exception } from '@sentry/browser';
@@ -16,9 +18,25 @@ export const MAX_SEGMENT = 40;
 const DEBRID = /alldebrid|real-?debrid|torbox|premiumize/i;
 const MEDIA_FILE = /\.(m3u8|mkv|mp4)$/i;
 const MAGNET = /magnet:\?[^\s"'<>]*/gi;
-const URL_IN_TEXT = /https?:\/\/[^\s"'<>()[\]{}|\\^`]+/gi;
+/** URL (et stremio:) jusqu'au premier espace ou guillemet : une clé après « | » ne doit pas fuir. */
+const URL_IN_TEXT = /(?:https?:\/\/|stremio:)[^\s"'<>]+/gi;
+/** Clés de débrideur en texte libre (hors d'une URL) : valeur masquée jusqu'au séparateur (&, /, |, espace). */
+const DEBRID_PARAM = /\b((?:all|real)-?debrid\w*|torbox|premiumize|debridoptions)(\s*=\s*)[^\s&"',;}|/]+/gi;
+const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
 const SECRET = /(["']?\b(?:apikey|api_key|token|password|passwd|secret)\b["']?\s*[=:]\s*["']?)[^\s&"',;}]+/gi;
 const EXTENSION = /^(?:chrome|moz|safari|safari-web|ms-browser|edge)-extension:\/\//i;
+/** Seuls ces hôtes sont gardés (hôte seul) hors de l'application ; les workers.dev du projet aussi. */
+const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
+  'api.themoviedb.org',
+  'image.tmdb.org',
+  'api4.thetvdb.com',
+  'api.mdblist.com',
+  'v3-cinemeta.strem.io',
+]);
+const PROJECT_WORKERS_DEV = /\.gtux-prog\.workers\.dev$/;
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+/** Catégories de fil d'Ariane écartées : clics, saisies et console. */
+const NO_BREADCRUMB: ReadonlySet<string> = new Set(['ui.click', 'ui.input', 'console']);
 
 /** Erreurs à ne pas envoyer (vérifiées sur le message et les types d'exception). */
 const NOISE: readonly RegExp[] = [
@@ -45,6 +63,20 @@ function scrubHash(hash: string): string {
   return scrubPath(hash.replace(/\?.*$/, ''));
 }
 
+/** Adresse littérale IPv4 ou IPv6 (le nom d'hôte d'une URL IPv6 est entre crochets). */
+const isIpLiteral = (host: string): boolean => IPV4.test(host) || host.startsWith('[');
+/** localhost et les noms *.local (réseau local). */
+const isLocalName = (host: string): boolean => host === 'localhost' || host.endsWith('.local');
+
+/** Hors de l'application : [ip] pour une adresse littérale, hôte seul s'il est autorisé, sinon [host]. */
+function reduceHost(url: URL): string {
+  const host = url.hostname.toLowerCase();
+  if (isIpLiteral(host)) return '[ip]';
+  if (!host || isLocalName(host)) return '[host]';
+  if (ALLOWED_HOSTS.has(host) || PROJECT_WORKERS_DEV.test(host)) return `${url.protocol}//${url.host}`;
+  return '[host]';
+}
+
 /** Adresse absolue ou relative à l'application → forme sûre ; null si elle ne doit jamais être envoyée. */
 export function scrubUrl(raw: string, appOrigin: string = currentOrigin()): string | null {
   const value = raw.trim();
@@ -55,22 +87,28 @@ export function scrubUrl(raw: string, appOrigin: string = currentOrigin()): stri
   } catch (_) {
     return null;
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'stremio:') return null;
   if (MEDIA_FILE.test(url.pathname)) return null;
-  // Hors de l'application (addon, TMDB, serveur perso) : seul l'hôte est gardé.
-  if (url.origin !== appOrigin) return url.origin;
-  return `${url.origin}${scrubPath(url.pathname)}${scrubHash(url.hash)}`;
+  const host = url.hostname.toLowerCase();
+  // Application elle-même (hors adresse locale) : chemin et route gardés, segments de configuration masqués.
+  if (url.origin === appOrigin && !isIpLiteral(host) && !isLocalName(host)) {
+    return `${url.origin}${scrubPath(url.pathname)}${scrubHash(url.hash)}`;
+  }
+  // Hors de l'application (addon, TMDB, serveur perso) : hôte seul, et seulement s'il est autorisé.
+  return reduceHost(url);
 }
 
-/** Texte libre (message, valeur de donnée) : URL réécrites, magnets retirés, clés secrètes masquées. */
+/** Texte libre (message, valeur de donnée) : URL réécrites, magnets retirés, clés secrètes et de débrideur masquées. */
 export function scrubText(text: string, appOrigin: string = currentOrigin()): string {
   return text
     .replace(MAGNET, '[magnet retiré]')
     .replace(URL_IN_TEXT, (match) => {
-      const trailing = /[.,;:!?]*$/.exec(match)?.[0] ?? '';
+      const trailing = /[.,;:!?)\]}]*$/.exec(match)?.[0] ?? '';
       const core = match.slice(0, match.length - trailing.length);
       return (scrubUrl(core, appOrigin) ?? '[url retirée]') + trailing;
     })
+    .replace(DEBRID_PARAM, '$1$2[retiré]')
+    .replace(LONG_SEGMENT_IN_TEXT, '/[config]')
     .replace(SECRET, '$1[retiré]');
 }
 
@@ -118,6 +156,8 @@ export function scrubEvent(event: ErrorEvent, appOrigin: string = currentOrigin(
 
 /** Fil d'Ariane nettoyé en place ; null s'il doit être écarté. */
 export function scrubBreadcrumb(crumb: Breadcrumb, appOrigin: string = currentOrigin()): Breadcrumb | null {
+  // Clics, saisies et console : écartés (breadcrumbs désactivés côté client, voir sentry.ts).
+  if (NO_BREADCRUMB.has(crumb.category ?? '')) return null;
   const scrub = (s: string): string => scrubText(s, appOrigin);
   const data = crumb.data ?? {};
   if (crumb.category === 'fetch' || crumb.category === 'xhr') {
@@ -128,9 +168,9 @@ export function scrubBreadcrumb(crumb: Breadcrumb, appOrigin: string = currentOr
     } catch (_) {
       return null;
     }
-    // Hôte tiers : seulement l'hôte et le statut de la réponse. Sinon : URL réduite, le reste gardé.
+    // Hôte tiers : seulement l'hôte (ou [host]) et le statut de la réponse. Sinon : URL réduite, le reste gardé.
     crumb.data = url.origin !== appOrigin
-      ? { host: url.host, status_code: data.status_code }
+      ? { host: reduceHost(url), status_code: data.status_code }
       : { ...data, url: scrubUrl(url.href, appOrigin) ?? '[url retirée]' };
   }
   if (crumb.category === 'navigation' && crumb.data) {

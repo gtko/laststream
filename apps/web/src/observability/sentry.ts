@@ -2,7 +2,7 @@
  * Actif seulement si VITE_SENTRY_DSN est défini au build (`.env.production`), jamais en développement ni en tests.
  * Pas de traces de performance, pas de Session Replay, pas de données personnelles. Chaque événement et fil d'Ariane
  * passe par le filtre de confidentialité de ./scrub. Compte : identifiant seulement, jamais pseudo ni e-mail. */
-import { init, type BrowserOptions } from '@sentry/browser';
+import { breadcrumbsIntegration, init, type BrowserOptions } from '@sentry/browser';
 import { auth, isKidProfile } from '../data/auth';
 import { isAndroidApp } from '../data/config';
 import { isShellEnvironment } from '../player/shell';
@@ -35,6 +35,12 @@ export function buildSentryOptions(dsn: string, environment: SentryEnvironment, 
       stackFrameVariables: false,
     },
     maxBreadcrumbs: 50,
+    // Fils d'Ariane : navigation, fetch et xhr seulement. Clics et saisies (dom) et console (intégration « Console »,
+    // distincte de Breadcrumbs dans Sentry 11) ne sont jamais enregistrés.
+    integrations: (defaults) => [
+      ...defaults.filter((integration) => integration.name !== 'Breadcrumbs' && integration.name !== 'Console'),
+      breadcrumbsIntegration({ dom: false }),
+    ],
     beforeSend(event) {
       event.tags = { ...event.tags, profileKind: isKidProfile() ? 'enfant' : 'principal' };
       if (auth.accountId) event.user = { id: auth.accountId };

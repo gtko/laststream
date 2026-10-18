@@ -248,7 +248,8 @@ export async function signIn(username: string, password: string): Promise<AuthSt
   setSession(res.token, res.expiresAt, name);
   auth.username = name;
   // /login ne renvoie pas l'identifiant de compte : on le lit comme au démarrage (supervision seulement, sans attendre).
-  api.me(4000).then(({ account }) => { auth.accountId = account.id; }).catch(() => undefined);
+  // Ignorée si la session a changé entre-temps (déconnexion ou autre compte) : jamais le compte d'un autre.
+  api.me(4000).then(({ account }) => { if (auth.username === name) auth.accountId = account.id; }).catch(() => undefined);
   setLocalMode(false);
   // Un autre compte ne réutilise jamais la config locale (URL d'addons, clés) d'un compte précédent.
   claimLocalConfig(name, wasLocal);

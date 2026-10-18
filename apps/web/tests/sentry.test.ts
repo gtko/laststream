@@ -56,7 +56,17 @@ describe('options Sentry', () => {
     const out = beforeBreadcrumb(
       { category: 'xhr', data: { url: 'https://api.alldebrid.com/v4/x?apikey=K', status_code: 403 } } as unknown as Breadcrumb,
     );
-    expect(out?.data).toEqual({ host: 'api.alldebrid.com', status_code: 403 });
+    expect(out?.data).toEqual({ host: '[host]', status_code: 403 });
+  });
+
+  it('fils d’Ariane : intégration Console retirée, Breadcrumbs reconfiguré une seule fois', () => {
+    const defaults = getDefaultIntegrations({});
+    expect(defaults.map((i) => i.name)).toContain('Console');
+    type Integrations = ReturnType<typeof getDefaultIntegrations>;
+    const build = opts.integrations as (list: Integrations) => Integrations;
+    const names = build(defaults).map((i) => i.name);
+    expect(names).not.toContain('Console');
+    expect(names.filter((name) => name === 'Breadcrumbs')).toHaveLength(1);
   });
 });
 
