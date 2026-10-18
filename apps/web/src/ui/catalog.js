@@ -85,7 +85,48 @@ export function seriesNote(raw) {
   return aired && dayDiff(aired.air_date) >= -120 ? 'S' + aired.season_number + ' disponible' : '';
 }
 
-export async function fetchDetail(item) {
+// Notes MDBList : à part du détail TMDB, car chaque appel compte dans le quota quotidien partagé.
+const ratingsPending = new Map(); // clé -> requête MDBList en cours (partagée entre appelants)
+const ratingsDone = new Map(); // clé -> { notes, until } : notes gardées jusqu'à `until` (ms ; Infinity : toute la session)
+
+/** Délai avant un nouvel essai après « unavailable » : `retryAfter` en secondes (une heure à défaut). */
+function retryMs(retryAfter) {
+  const s = Number(retryAfter);
+  return (Number.isFinite(s) && s > 0 ? s : 3600) * 1000;
+}
+
+/** Notes MDBList d'un titre : une seule requête à la fois, et aucun nouvel essai avant `retryAfter` si le quota est épuisé. */
+export function ratingsOf(item, imdbId) {
+  const hit = ratingsDone.get(item.key);
+  if (hit && Date.now() < hit.until) return Promise.resolve(hit.notes);
+  if (!ratingsPending.has(item.key)) {
+    const p = api('mdblist/' + item.type + '/' + (imdbId || item.id)).then(
+      (json) => {
+        // Quota épuisé : 200 avec `unavailable` (TMDB seul, sans erreur).
+        if (json && json.unavailable) ratingsDone.set(item.key, { notes: {}, until: Date.now() + retryMs(json.retryAfter) });
+        else ratingsDone.set(item.key, { notes: (json && json.ratings) || {}, until: Infinity });
+      },
+      () => {
+        // Échec réseau ou amont : pas de puce, pas de nouvel essai pendant la session (comme avant).
+        ratingsDone.set(item.key, { notes: {}, until: Infinity });
+      },
+    ).then(() => {
+      ratingsPending.delete(item.key);
+      return ratingsDone.get(item.key).notes;
+    });
+    ratingsPending.set(item.key, p);
+  }
+  return ratingsPending.get(item.key);
+}
+
+/** Ajoute les notes à un détail déjà chargé (le détail TMDB n'est pas redemandé). */
+const withRatings = (item, d) => ratingsOf(item, d.imdbId).then((notes) => {
+  d.ratings = notes;
+  return d;
+});
+
+/** `ratings` : appelle aussi MDBList ; sinon `ratings` reste vide. */
+export async function fetchDetail(item, { ratings = false } = {}) {
   const append = item.type === 'tv' ? 'videos,images,external_ids,content_ratings' : 'videos,images,external_ids,release_dates,watch/providers';
   const raw = await tmdb(item.type + '/' + item.id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
   let overview = raw.overview || '';
@@ -95,10 +136,7 @@ export async function fetchDetail(item) {
     } catch (_) { /* repli silencieux */ }
   }
   const imdbId = raw.imdb_id || (raw.external_ids && raw.external_ids.imdb_id) || '';
-  let ratings = {};
-  try {
-    ratings = (await api('mdblist/' + item.type + '/' + (imdbId || item.id))).ratings || {};
-  } catch (_) { /* notes indisponibles : on n'affiche pas de puce */ }
+  const notes = ratings ? await ratingsOf(item, imdbId) : {};
   let providers = [];
   try {
     providers = (await fetchProviders(item.type, item.id)).flatrate.slice(0, 3);
@@ -119,7 +157,8 @@ export async function fetchDetail(item) {
     note: item.type === 'tv' ? seriesNote(raw) : '',
     released: item.type === 'tv' ? releasedByDate(raw.first_air_date, todayStr()) : availOf(raw).available,
     cinemaSince: item.type === 'movie' ? availOf(raw).cinemaSince : null,
-    ratings,
+    ratings: notes,
+    imdbId,
     vote: fmtNum(raw.vote_average, 1),
   };
 }
@@ -136,9 +175,13 @@ export async function videosOf(raw, type, id) {
   return completeVideos(list, type, id, trailerLang(), (path, params) => tmdb(path, params));
 }
 
-export function getDetail(item) {
+/**
+ * Détail d'un titre, mis en cache. `ratings: true` ajoute les notes MDBList (à demander seulement là où elles sont
+ * affichées). Un détail déjà en cache n'est pas redemandé à TMDB : seules les notes manquantes sont chargées.
+ */
+export function getDetail(item, { ratings = false } = {}) {
   if (!detailPromises.has(item.key)) {
-    const p = fetchDetail(item)
+    const p = fetchDetail(item, { ratings })
       .then((d) => {
         state.details.set(item.key, d);
         return d;
@@ -149,5 +192,6 @@ export function getDetail(item) {
       });
     detailPromises.set(item.key, p);
   }
-  return detailPromises.get(item.key);
+  const base = detailPromises.get(item.key);
+  return ratings ? base.then((d) => (d ? withRatings(item, d) : null)) : base;
 }

@@ -97,7 +97,7 @@ export function openHover(tile) {
   requestAnimationFrame(() => el.classList.add('is-on'));
   state.ficheName = it.name; // nom affiché dans le tiroir « Sources »
 
-  getDetail(it).then((d) => {
+  getDetail(it, { ratings: true }).then((d) => {
     if (token !== hv.token || !hv.el || !d) return;
     const title = hv.el.querySelector('.hc-title');
     if (d.logo && title) title.innerHTML = '<img class="hc-logo logo-img" src="' + esc(d.logo) + '" alt="' + esc(it.name) + '" data-logo="' + esc(it.name) + '">';

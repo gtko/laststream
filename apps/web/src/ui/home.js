@@ -5,7 +5,7 @@ import { continueCardHTML, hydrateContinue } from './continue.js';
 import { renderFollowRow } from './calendar.js';
 import { starsText } from './rate.js';
 import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
-import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
+import { HERO_MAX, heroCarousel, initHero, rateSlide, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
 import { auth, canAdmin, isKidProfile, isServerMode } from '../data/auth';
@@ -333,6 +333,7 @@ export function renderHome() {
   observeTiles(app);
   setupPreviews();
   if (state.data.kids) {
+    rateSlide(d.hero); // mise en avant simple (profil enfant) : ses notes à l'affichage
     renderLibrary();
     startRegistry({ seen: d.hero ? [d.hero.key] : [] });
   } else {
