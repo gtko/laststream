@@ -427,7 +427,7 @@ export function createPlayerUI(h) {
           : '';
         el.innerHTML = '<span class="lp-next-still">' + (card.still ? '<img src="' + esc(card.still) + '" alt="">' : '') + ring + '</span>' +
           '<div class="lp-next-body"><p class="lp-next-k">Épisode suivant</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
-          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next">' + LI.next + 'Lire maintenant</button><button type="button" class="btn btn-ghost" data-act="next-dismiss">Regarder le générique</button></div></div>';
+          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="Lire maintenant l’épisode suivant">' + LI.next + 'Lire maintenant</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="Regarder le générique">Générique</button></div></div>';
       }
       el.hidden = false;
     },
