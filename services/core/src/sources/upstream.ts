@@ -74,7 +74,7 @@ function encodeStreamId(id: string): string {
 }
 
 /** URL GET `{base}/stream/{type}/{id}.json` ; la query string de la source est conservée. */
-function streamUrl(sourceUrl: string, ref: ContentRef): string {
+export function upstreamStreamUrl(sourceUrl: string, ref: ContentRef): string {
   const url = parseSourceUrl(sourceUrl);
   url.pathname = `${addonPath(url)}/stream/${ref.type}/${encodeStreamId(ref.id)}.json`;
   url.hash = '';
@@ -86,6 +86,17 @@ function manifestUrl(sourceUrl: string): string {
   url.pathname = `${addonPath(url)}/manifest.json`;
   url.hash = '';
   return url.toString();
+}
+
+/** Statuts typiques d'un blocage d'IP de serveur ou d'une panne passagère : 403, 429, 5xx. */
+function isBlockingStatus(status: number): boolean {
+  return status === 403 || status === 429 || status >= 500;
+}
+
+/** Page HTML de vérification Cloudflare (ou équivalent) au lieu du JSON de l'addon. */
+export function looksLikeChallenge(text: string): boolean {
+  const head = text.slice(0, 4096);
+  return /^\s*</.test(head) && /just a moment|cf-chl|cf-browser-verification|attention required|challenge-platform|cloudflare/i.test(head);
 }
 
 function parseJson(text: string): unknown {
@@ -169,11 +180,12 @@ export async function fetchUpstream(
   try {
     const res = await fetchText(
       fetchFn,
-      streamUrl(source.url, ref),
+      upstreamStreamUrl(source.url, ref),
       { headers: { Accept: 'application/json' } },
       timeoutMs,
     );
-    if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
+    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingStatus(res.status));
+    if (looksLikeChallenge(res.text)) throw new SourceError('page de vérification reçue', true);
     const body = parseJson(res.text);
     if (!isRecord(body) || !Array.isArray(body.streams)) {
       throw new SourceError('réponse inattendue (champ streams absent)');

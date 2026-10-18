@@ -23,9 +23,13 @@ export interface SourceTestResult {
 
 /** Erreur dont le message est sûr : jamais d'URL complète, de clé API ni de contenu de configuration. */
 export class SourceError extends Error {
-  constructor(message: string) {
+  /** Source probablement bloquée pour l'IP du serveur (403, 429, 5xx, page de vérification, délai) : l'appareil peut retenter. */
+  readonly blocked: boolean;
+
+  constructor(message: string, blocked = false) {
     super(message);
     this.name = 'SourceError';
+    this.blocked = blocked;
   }
 }
 
@@ -326,11 +330,11 @@ function resolveLocation(location: string, base: string): string {
  */
 export function sourceFailure(label: string, err: unknown): SourceError {
   const detail = err instanceof SourceError ? err.message : 'erreur inattendue';
-  return new SourceError(`Source "${label}" : ${detail}`);
+  return new SourceError(`Source "${label}" : ${detail}`, err instanceof SourceError && err.blocked);
 }
 
 function transportError(err: unknown, timeoutMs: number): SourceError {
-  if (isAbortError(err)) return new SourceError(`délai dépassé (${timeoutMs} ms)`);
+  if (isAbortError(err)) return new SourceError(`délai dépassé (${timeoutMs} ms)`, true);
   const code = networkErrorCode(err);
   return new SourceError(code ? `erreur réseau (${code})` : 'erreur réseau');
 }

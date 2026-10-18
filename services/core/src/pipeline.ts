@@ -16,6 +16,7 @@ import type { HostHealth } from './play/hosts.js';
 import type { PackStore } from './play/packs.js';
 import { parseRawStream } from './parse/index.js';
 import { type ReleaseScope, scopeCovers } from './parse/scope.js';
+import type { DeviceFetchEntry } from './sources/device-fetch.js';
 import { type CollectResult, collectStreams, mergeIndexerCopies, type SourceErrorEntry } from './sources/collect.js';
 import type { HosterClient } from './sources/hosters.js';
 import type { TitleInfo } from './sources/indexers.js';
@@ -121,6 +122,8 @@ export interface PipelineResult {
   partial?: boolean;
   /** Noms des indexeurs encore en cours (avec `partial`). */
   pending?: string[];
+  /** Addons amont bloqués pour le serveur, à interroger depuis l'appareil (URL /stream, éventuellement avec la clé de débrideur de l'utilisateur). */
+  deviceFetch?: DeviceFetchEntry[];
 }
 
 /** Calcul d'un résultat, et sa suite en arrière-plan quand il est partiel. */
@@ -773,6 +776,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   });
   lap('i.format');
   const result: PipelineResult = { streams: formatted, errors: collected.errors };
+  if (collected.deviceFetch !== undefined) result.deviceFetch = collected.deviceFetch;
   const pending = collected.pending ?? [];
   if (pending.length > 0) {
     result.partial = true;

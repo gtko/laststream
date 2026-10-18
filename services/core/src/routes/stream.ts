@@ -10,6 +10,7 @@ import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runti
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import { AllDebridClient, serverSideDebridBlocked } from '../sources/alldebrid.js';
 import { HosterClient } from '../sources/hosters.js';
+import type { DeviceFetchEntry } from '../sources/device-fetch.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
 import { issuedUrls } from '../play/issued.js';
 import { defaultPlayState } from '../play/state.js';
@@ -87,6 +88,14 @@ const noticeOf = (config: Config): { notice?: string; debrid?: 'client'; onlyCac
     : config.debrid === undefined
       ? { notice: NO_DEBRID_NOTICE }
       : {};
+
+/** Addons bloqués pour le serveur : l'appareil les interroge lui-même (champ absent quand il n'y en a pas). */
+const deviceOf = (c: Ctx, result: { deviceFetch?: DeviceFetchEntry[] }): { deviceFetch?: DeviceFetchEntry[] } => {
+  if (result.deviceFetch === undefined || result.deviceFetch.length === 0) return {};
+  // Les URL peuvent porter la clé de débrideur de l'utilisateur : jamais mises en cache.
+  c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
+  return { deviceFetch: result.deviceFetch };
+};
 
 /**
  * Route Stremio : GET /:config/stream/:type/:id.json.
@@ -179,9 +188,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     platform().scheduler.background(issuedUrls().noteStreams(result.streams));
     if (result.partial === true) {
       c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
-      return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...noticeOf(config) });
+      return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...deviceOf(c, result), ...noticeOf(config) });
     }
-    return sendJson(c, { streams: result.streams, ...noticeOf(config) });
+    return sendJson(c, { streams: result.streams, ...deviceOf(c, result), ...noticeOf(config) });
   });
 
   /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */
