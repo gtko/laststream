@@ -63,10 +63,31 @@ export interface UserStore {
   isSeen(episodeKey: string): boolean;
   toggleSeen(episodeKey: string): boolean;
 
+  /** « Vu » d'un film (`movie:550`) ou d'un épisode (`tv:1399`, saison, épisode). */
+  isWatched(key: string, season?: number, episode?: number): boolean;
+  /** Épisodes vus d'une série. */
+  watchedEpisodes(key: string): WatchedRef[];
+  /**
+   * Marque films / épisodes comme vus ou non vus. Le cache change tout de suite (affichage optimiste) ;
+   * la promesse vaut false si le serveur a refusé, le cache est alors revenu à l'état précédent.
+   */
+  setWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): Promise<boolean>;
+  /** Charge l'état « vu » d'un titre depuis le serveur avant affichage (adaptateur serveur ; sans effet en local). */
+  loadWatched?(key: string): Promise<void>;
+
   getProfiles(): Profile[];
   currentProfile(): Profile;
   setProfile(id: string): void;
 }
+
+export interface WatchedRef {
+  season: number;
+  episode: number;
+}
+
+/** Clé de stockage d'un « vu » : le film seul, ou titre + saison + épisode. */
+export const watchedKey = (key: string, season?: number, episode?: number): string =>
+  season != null && episode != null ? `${key}:${season}:${episode}` : key;
 
 export const LIBRARY_KEY = 'laststream.library';
 export const PROGRESS_KEY = 'laststream.progress';
@@ -199,6 +220,29 @@ export class LocalUserStore implements UserStore {
     else list.push(episodeKey);
     writeJson(this.ls, SEEN_KEY, list);
     return i < 0;
+  }
+
+  isWatched(key: string, season?: number, episode?: number): boolean {
+    return this.getSeen().includes(watchedKey(key, season, episode));
+  }
+
+  watchedEpisodes(key: string): WatchedRef[] {
+    const pre = key + ':';
+    return this.getSeen().filter((k) => k.startsWith(pre)).map((k) => k.slice(pre.length).split(':').map(Number))
+      .filter((p) => p.length === 2 && p.every(Number.isFinite)).map(([season, episode]) => ({ season, episode }));
+  }
+
+  /** Remplace les « vus » d'un titre (utilisé par l'adaptateur serveur pour appliquer ou annuler un changement). */
+  applyWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): void {
+    const set = new Set(this.getSeen());
+    const keys = episodes ? episodes.map((e) => watchedKey(key, e.season, e.episode)) : [key];
+    keys.forEach((k) => (watched ? set.add(k) : set.delete(k)));
+    writeJson(this.ls, SEEN_KEY, [...set]);
+  }
+
+  async setWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): Promise<boolean> {
+    this.applyWatched(key, episodes, watched);
+    return true;
   }
 
   getProfiles(): Profile[] {

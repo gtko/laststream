@@ -151,3 +151,19 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .f-why.is-open .f-why-text { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .f-why-hint { align-self: flex-start; font-size: 12px; font-weight: 700; color: var(--accent); }
 .f-why:not([data-clamped="true"]) .f-why-hint, .f-why.is-open .f-why-hint { display: none; }
+
+/* ---------- « Vu » : épisodes, saison, série, films ---------- */
+.btn-sm { min-height: 38px; padding: 8px 16px; font-size: 14px; }
+.ep-menu-wrap { position: relative; }
+.ep-more { min-width: 44px; padding: 8px 12px; letter-spacing: 0.12em; }
+.ep-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 270px; padding: 6px; border-radius: 14px; display: flex; flex-direction: column; background: rgba(23, 21, 31, 0.96); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5); }
+.ep-menu[hidden] { display: none; }
+.ep-menu button { min-height: 44px; padding: 0 14px; border-radius: 10px; text-align: left; font-size: 14px; font-weight: 600; color: var(--soft); }
+.ep-menu button:hover, .ep-menu button:focus-visible { background: rgba(255, 255, 255, 0.1); color: var(--text); outline: none; }
+.ep-upto { position: absolute; top: 12px; left: 10px; z-index: 2; padding: 6px 11px; border-radius: 999px; background: rgba(12, 11, 17, 0.78); border: 1px solid rgba(255, 255, 255, 0.3); font-size: 12px; font-weight: 700; opacity: 0; transition: opacity 0.15s; }
+.ep:hover .ep-upto, .ep:focus-within .ep-upto { opacity: 1; }
+@media (hover: none) { .ep-upto { opacity: 1; } }
+.ep.is-seen .ep-still img { opacity: 0.45; filter: saturate(0.7); }
+.ep.is-seen .ep-still::after { content: ""; position: absolute; inset: 0; background: rgba(12, 11, 17, 0.25); pointer-events: none; }
+.t-watched { position: absolute; top: 8px; right: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+.t-watched svg { width: 15px; height: 15px; }

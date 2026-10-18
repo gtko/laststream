@@ -1,10 +1,10 @@
 import { tmdb } from './lt';
 import {
-  deleteLibrary, getContinue, getLibrary, getTitleProgress, putLibrary, putProgress,
+  deleteLibrary, getContinue, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
   type ContinueDto, type LibraryItemDto, type MediaKind, type ProfileDto,
 } from './userApi';
-import type { LibraryEntry, Profile, ProgressEntry, UserStore } from './userStore';
-import { LocalUserStore, progressKey } from './userStore';
+import type { LibraryEntry, Profile, ProgressEntry, UserStore, WatchedRef } from './userStore';
+import { LocalUserStore, progressKey, watchedKey } from './userStore';
 
 /* Adaptateur de l'API utilisateur de lastAddon : lectures synchrones depuis un cache hydraté à la connexion,
  * écritures optimistes envoyées en arrière-plan. Le stockage local reste le repli hors ligne (voir auth). */
@@ -149,6 +149,54 @@ export class ServerUserStore implements UserStore {
   }
   toggleSeen(k: string): boolean {
     return this.local.toggleSeen(k);
+  }
+
+  // ---- Vu (film / épisodes) : serveur si disponible, sinon repli local ----
+  private watchedApi = true;
+
+  isWatched(key: string, season?: number, episode?: number): boolean {
+    return this.local.isWatched(key, season, episode);
+  }
+  watchedEpisodes(key: string): WatchedRef[] {
+    return this.local.watchedEpisodes(key);
+  }
+  async loadWatched(key: string): Promise<void> {
+    if (!this.watchedApi) return;
+    const [type, id] = key.split(':');
+    try {
+      const res = await getWatched(this.active.id, type === 'tv' ? 'series' : 'movie', Number(id));
+      if (type === 'tv') {
+        const before = this.local.watchedEpisodes(key);
+        if (before.length) this.local.applyWatched(key, before, false);
+        const done = (res.episodes ?? []).filter((e) => e.finished !== false);
+        if (done.length) this.local.applyWatched(key, done.map((e) => ({ season: e.season, episode: e.episode })), true);
+      } else {
+        this.local.applyWatched(key, null, !!res.movie);
+      }
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) this.watchedApi = false; // serveur sans cette route
+    }
+  }
+  async setWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): Promise<boolean> {
+    const refs = episodes ?? [];
+    const keys = episodes ? refs.map((e) => watchedKey(key, e.season, e.episode)) : [key];
+    const before = keys.filter((k) => this.local.getSeen().includes(k));
+    this.local.applyWatched(key, episodes, watched); // affichage optimiste
+    if (!this.watchedApi) return true;
+    const [type, id] = key.split(':');
+    try {
+      await putWatched(this.active.id, { type: kindOf(type as 'movie' | 'tv'), tmdbId: Number(id), episodes: episodes ?? undefined, watched });
+      return true;
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) { this.watchedApi = false; return true; }
+      // Refus ou réseau coupé : retour à l'état précédent.
+      const was = new Set(before);
+      keys.forEach((k) => {
+        const e = episodes ? refs[keys.indexOf(k)] : null;
+        this.local.applyWatched(key, e ? [e] : null, was.has(k));
+      });
+      return false;
+    }
   }
 
   // ---- Profils ----

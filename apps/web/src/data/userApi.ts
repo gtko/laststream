@@ -160,6 +160,20 @@ export const unlockProfile = (id: string, pin: string) =>
   call<{ token: string; expiresAt: string }>('/profiles/' + encodeURIComponent(id) + '/unlock', { method: 'POST', body: { pin } });
 export const lockProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id) + '/lock', { method: 'POST' });
 
+// ---- « Vu » (films et épisodes) ----
+export interface WatchedEpisode {
+  season: number;
+  episode: number;
+}
+export interface WatchedDto {
+  movie?: boolean;
+  episodes?: Array<WatchedEpisode & { finished?: boolean; positionSec?: number; durationSec?: number }>;
+}
+export const putWatched = (id: string, body: { type: MediaKind; tmdbId: number; imdbId?: string; episodes?: WatchedEpisode[]; watched: boolean }) =>
+  call<void>('/profiles/' + encodeURIComponent(id) + '/watched', { method: 'PUT', body, profileId: id });
+export const getWatched = (id: string, type: MediaKind, tmdbId: number) =>
+  call<WatchedDto>('/profiles/' + encodeURIComponent(id) + '/watched/' + type + '/' + tmdbId, { profileId: id });
+
 // ---- Bibliothèque, progression, réglages d'un profil ----
 const P = (id: string) => '/profiles/' + encodeURIComponent(id);
 export const getLibrary = (id: string) => call<{ items: LibraryItemDto[] }>(P(id) + '/library', { profileId: id });

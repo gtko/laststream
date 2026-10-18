@@ -1,6 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { userStore } from '../data/userStore';
+import { refreshWatchedUI } from './watched.js';
 import { setupWhy } from './why.js';
-import { getSeen } from './util.js';
 import { api, tmdb, why } from '../data/lt';
 import { register, toItem } from './catalog.js';
 import { IMG } from './constants.js';
@@ -91,7 +92,6 @@ export async function loadSeason(m, n, token) {
     return;
   }
   if (token !== state.token) return;
-  const seen = getSeen();
   const today = new Date().toISOString().slice(0, 10);
   const eps = data.episodes || [];
   list.removeAttribute('aria-busy');
@@ -102,7 +102,7 @@ export async function loadSeason(m, n, token) {
   list.innerHTML = eps.map((e) => {
     const code = 'É' + e.episode_number;
     const sk = m.key + ':' + n + ':' + e.episode_number;
-    const done = seen.includes(sk);
+    const done = userStore.isWatched(m.key, n, e.episode_number);
     const future = e.air_date && e.air_date > today;
     const still = IMG('w500', e.still_path);
     const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
@@ -114,9 +114,12 @@ export async function loadSeason(m, n, token) {
       '<span class="ep-meta">' + esc(meta) + (future ? ' · Bientôt' : '') + '</span>' +
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +
       (future ? ''
-        : '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? 'Marquer comme non vu : ' : 'Marquer comme vu : ') + code) + '">' + ICON.check + '</button>') +
+        : '<button type="button" class="ep-upto" data-upto="' + n + ':' + e.episode_number + '" aria-label="' + esc('Marquer comme vu jusqu’à ' + code) + '">Vu jusqu’ici</button>' +
+          '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? 'Marquer comme non vu : ' : 'Marquer comme vu : ') + code) + '">' + ICON.check + '</button>') +
       '</li>';
   }).join('');
+  state.seasonEps = { n, eps };
+  refreshWatchedUI();
   const nxt = markNext(m);
   list.scrollLeft = nxt ? Math.max(0, nxt.offsetLeft - 8) : 0;
 }

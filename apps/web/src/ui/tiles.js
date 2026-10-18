@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { userStore } from '../data/userStore';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { certification, detailOf, pickLogo } from './catalog.js';
@@ -64,6 +65,7 @@ export function tileCard(it, o) {
     '<span class="card-fallback">' + esc(it.name) + '</span>' + ribbon + badge + dateBar +
     (land ? '<span class="t-shade" aria-hidden="true"></span><span class="t-titlewrap"><span class="t-title">' + esc(it.name) + '</span></span><span class="t-prov"></span>' : '') +
     '<span class="t-meta" aria-hidden="true">' + esc(metaTxt) + '</span>' +
+    (it.type === 'movie' && userStore.isWatched(it.key) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +
     (o.pct != null ? '<span class="progress" aria-hidden="true"><span style="width:' + o.pct + '%"></span></span>' : '') +
     '</span>';
   return '<button type="button" class="' + cls + '" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '" data-variant="' + variant + '"' +

@@ -1,7 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { userStore } from '../data/userStore';
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
-import { getSeen } from './util.js';
 import { clearAmbient } from './heroVideo.js';
 import { getRegion } from '../data/prefs';
 import { IMG, REDUCE } from './constants.js';
@@ -67,23 +67,20 @@ export function tabsFor(m) {
 // Prochain épisode à regarder, d'après les épisodes marqués « vus » (localStorage).
 export function nextToWatch(m) {
   if (m.type !== 'tv' || !m.seasons.length) return null;
-  const pre = m.key + ':';
-  let best = null;
-  getSeen().forEach((k) => {
-    if (k.indexOf(pre) !== 0) return;
-    const p = k.slice(pre.length).split(':');
-    const s = Number(p[0]);
-    const e = Number(p[1]);
-    if (!best || s > best.s || (s === best.s && e > best.e)) best = { s, e };
-  });
-  if (!best) return { s: m.seasons[0].season_number, e: 1, resume: false };
-  const idx = m.seasons.findIndex((x) => x.season_number === best.s);
-  const cur = m.seasons[idx];
-  if (cur && cur.episode_count && best.e >= cur.episode_count) {
-    const nx = m.seasons[idx + 1];
-    return nx ? { s: nx.season_number, e: 1, resume: true } : { s: best.s, e: best.e, resume: true };
+  const seasons = m.seasons.filter((s) => s.season_number > 0);
+  const list = seasons.length ? seasons : m.seasons;
+  const seen = new Set(userStore.watchedEpisodes(m.key).map((x) => x.season + ':' + x.episode));
+  const today = new Date().toISOString().slice(0, 10);
+  let last = null;
+  for (const s of list) {
+    if (s.air_date && s.air_date > today) continue; // saison pas encore diffusée
+    for (let e = 1; e <= (s.episode_count || 0); e++) {
+      last = { s: s.season_number, e };
+      if (!seen.has(s.season_number + ':' + e)) return { s: s.season_number, e, resume: seen.size > 0 };
+    }
   }
-  return { s: best.s, e: best.e + 1, resume: true };
+  if (!seen.size) return { s: list[0].season_number, e: 1, resume: false };
+  return last ? { s: last.s, e: last.e, resume: true } : { s: list[0].season_number, e: 1, resume: false };
 }
 
 export function playText(m) {
@@ -150,6 +147,12 @@ export const libBtn = (m) => {
     '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>';
 };
 
+const watchBtn = (m) => {
+  const on = userStore.isWatched(m.key);
+  return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-watch-movie aria-pressed="' + on + '" data-tip="' + (on ? 'Vu (cliquer pour retirer)' : 'Marquer comme vu') +
+    '" aria-label="' + (on ? 'Marqué comme vu (retirer)' : 'Marquer comme vu') + '">' + ICON.check + '</button>';
+};
+
 export function ficheHTML(m) {
   const tabs = tabsFor(m);
   const seasonN = (nextToWatch(m) || {}).s;
@@ -174,6 +177,7 @@ export function ficheHTML(m) {
       ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '" data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
       : '') +
     libBtn(m) +
+    (m.type === 'movie' ? watchBtn(m) : '') +
     '</div></div>';
 
   const panels = [];
@@ -182,6 +186,10 @@ export function ficheHTML(m) {
       '<div class="f-eps-head"><div class="pills" data-nav role="group" aria-label="Saison">' + m.seasons.map((s) =>
         '<button type="button" class="pill" data-season="' + s.season_number + '" aria-pressed="' + (s.season_number === seasonN) + '">' +
         esc(s.season_number === 0 ? 'Bonus' : 'Saison ' + s.season_number) + '</button>').join('') + '</div>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>Marquer la saison comme vue</button>' +
+      '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
+      '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +
+      '<button type="button" role="menuitem" data-series-watch="0">Marquer toute la série comme non vue</button></span></span>' +
       '<p class="f-next" id="f-next"></p></div>' +
       '<ol class="row eps" id="f-eplist" data-nav aria-live="polite"><li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li></ol>'));
   }
@@ -293,7 +301,7 @@ export async function showFiche(type, id) {
   if (shell) shell.focus({ preventScroll: true });
   let m;
   try {
-    m = await fetchFull(type, id);
+    [m] = await Promise.all([fetchFull(type, id), Promise.resolve(userStore.loadWatched && userStore.loadWatched(key)).catch(() => undefined)]);
     if (isKidProfile() && !kidAllows(m.certRaw, kidMaxAge())) throw new Error('profil enfant');
   } catch (_) {
     if (token !== state.token) return;

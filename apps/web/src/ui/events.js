@@ -1,12 +1,12 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { toggleEpisode } from './watched.js';
 import { browseMore } from './kids.js';
 import { isKidProfile } from '../data/auth';
 import { leaveKidProfile } from './auth-ui.js';
-import { userStore } from '../data/userStore';
 import { IMG, REDUCE } from './constants.js';
 import { closeCtx } from './ctxmenu.js';
 import { detailEl, modal, modalClose, toast } from './dom.js';
-import { getRemind, markNext, scrollToSection, showFiche, updatePlayLabel } from './fiche.js';
+import { getRemind, scrollToSection, showFiche } from './fiche.js';
 import { fetchFull } from './ficheModel.js';
 import { loadSeason } from './ficheSections.js';
 import { heroVideoSync, toggleHeroSound } from './heroVideo.js';
@@ -277,13 +277,7 @@ document.addEventListener('click', (e) => {
   const sn = t.closest('[data-seen]');
   if (sn) {
     e.preventDefault();
-      const on = userStore.toggleSeen(sn.dataset.seen);
-    sn.setAttribute('aria-pressed', String(on));
-    const li = sn.closest('.ep');
-    li.classList.toggle('is-seen', on);
-    const bar = li.querySelector('.ep-bar > span');
-    if (bar) bar.style.width = on ? '100%' : '0%';
-    if (state.model) { updatePlayLabel(state.model); markNext(state.model); }
+      toggleEpisode(sn);
     return;
   }
   const sr = t.closest('[data-season-retry]');

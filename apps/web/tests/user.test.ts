@@ -129,3 +129,62 @@ describe.skipIf(!REAL)('API utilisateur lastAddon (serveur réel)', () => {
 });
 
 vi.setConfig({ testTimeout: 30000 });
+
+describe('« vu » : stockage local et serveur', () => {
+  it('marque films et épisodes en local', async () => {
+    localStorage.clear();
+    const { LocalUserStore } = await import('../src/data/userStore');
+    const s = new LocalUserStore();
+    expect(await s.setWatched('movie:550', null, true)).toBe(true);
+    expect(s.isWatched('movie:550')).toBe(true);
+    await s.setWatched('tv:1', [{ season: 1, episode: 1 }, { season: 1, episode: 2 }], true);
+    expect(s.watchedEpisodes('tv:1')).toEqual([{ season: 1, episode: 1 }, { season: 1, episode: 2 }]);
+    expect(s.isWatched('tv:1', 1, 2)).toBe(true);
+    await s.setWatched('tv:1', [{ season: 1, episode: 2 }], false);
+    expect(s.isWatched('tv:1', 1, 2)).toBe(false);
+    expect(s.isWatched('tv:1', 1, 1)).toBe(true);
+  });
+
+  async function serverStore(handler: (url: string, init?: RequestInit) => Response) {
+    localStorage.clear();
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'x' }));
+    reloadSettings();
+    setSession('T'.repeat(30), new Date(Date.now() + 1e9).toISOString(), 'greg');
+    vi.stubGlobal('fetch', vi.fn(async (u: string, i?: RequestInit) => handler(String(u), i)));
+    const { ServerUserStore } = await import('../src/data/serverUserStore');
+    return new ServerUserStore([{ id: 'p', name: 'Greg' }], { id: 'p', name: 'Greg' });
+  }
+
+  it('envoie le changement au serveur, et le garde en cas de succès', async () => {
+    const sent: unknown[] = [];
+    const s = await serverStore((_u, init) => { sent.push(JSON.parse(String(init?.body))); return new Response(null, { status: 204 }); });
+    const p = s.setWatched('tv:1399', [{ season: 1, episode: 1 }], true);
+    expect(s.isWatched('tv:1399', 1, 1)).toBe(true); // optimiste, avant la réponse
+    expect(await p).toBe(true);
+    expect(sent[0]).toEqual({ type: 'series', tmdbId: 1399, episodes: [{ season: 1, episode: 1 }], watched: true });
+  });
+
+  it('annule le changement si le serveur refuse', async () => {
+    const s = await serverStore(() => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }));
+    expect(await s.setWatched('movie:550', null, true)).toBe(false);
+    expect(s.isWatched('movie:550')).toBe(false);
+    await s.setWatched('tv:1', [{ season: 1, episode: 1 }], true).then((ok) => expect(ok).toBe(false));
+    expect(s.isWatched('tv:1', 1, 1)).toBe(false);
+  });
+
+  it('garde le local si la route n’existe pas (404)', async () => {
+    let calls = 0;
+    const s = await serverStore(() => { calls += 1; return new Response(JSON.stringify({ error: 'not_found' }), { status: 404 }); });
+    expect(await s.setWatched('movie:7', null, true)).toBe(true);
+    expect(s.isWatched('movie:7')).toBe(true);
+    await s.setWatched('movie:8', null, true);
+    expect(calls).toBe(1); // la route n'est plus appelée ensuite
+  });
+
+  it('recharge l’état d’une série depuis le serveur', async () => {
+    const s = await serverStore(() => new Response(JSON.stringify({ episodes: [{ season: 1, episode: 3, finished: true }, { season: 1, episode: 4, finished: false }] }), { status: 200 }));
+    await s.setWatched('tv:9', [{ season: 1, episode: 1 }], true).catch(() => undefined);
+    await s.loadWatched('tv:9');
+    expect(s.watchedEpisodes('tv:9')).toEqual([{ season: 1, episode: 3 }]);
+  });
+});
