@@ -163,3 +163,51 @@ describe('TV en direct', () => {
     resetShell();
   });
 });
+
+describe('TV en direct : serveur sans proxy HLS (Workers, sig nul)', () => {
+  // Le flux principal exige le relais (pas de CORS) ; le flux de repli est lisible directement.
+  const noProxy = () => ch('fr:Direct.fr', 'Direct', {
+    sig: null,
+    direct: false,
+    alternatives: [{ url: 'https://libre.example/direct.m3u8', source: 'iptvorg', quality: '', reliability: 'high', sig: null, direct: true }],
+  });
+
+  it('demande au serveur de filtrer les chaînes qui exigent le relais (page web)', async () => {
+    const tvMod = await import('../src/ui/tv.js');
+    calls.length = 0;
+    await tvMod.fetchChannels({ country: 'FR', page: 1, limit: 60 }, { country: 'FR', reliable: false }, 'Toutes');
+    expect(calls.filter((c) => c.includes('/lt/tv/channels?')).every((c) => c.includes('direct=1'))).toBe(true);
+  });
+
+  it('page web : hls.js lit directement l’URL du flux lisible, en écartant celui qui exige le relais', async () => {
+    const { openPlayer, closePlayer } = await import('../src/ui/player.js');
+    const { normChannel } = await import('../src/ui/tv.js');
+    hlsLoads.length = 0;
+    const c = normChannel(noProxy());
+    openPlayer(c, [c], null);
+    await settle(300);
+    expect(hlsLoads).toContain('https://libre.example/direct.m3u8');
+    expect(hlsLoads.some((u) => u.includes('/lt/tv/hls'))).toBe(false);
+    expect(hlsLoads).not.toContain('https://up.example/fr:Direct.fr.m3u8');
+    closePlayer(true);
+  });
+
+  it('application Android (libVLC) : le flux relayé est lu directement, sans CORS à satisfaire', async () => {
+    const opened: Array<{ url: string; title: string }> = [];
+    const plugin = {
+      open: vi.fn(async (o: { url: string; title: string }) => { opened.push(o); }),
+      addListener: vi.fn(async () => ({ remove: () => undefined })),
+      close: vi.fn(async () => undefined),
+    };
+    (globalThis as unknown as { Capacitor: unknown }).Capacitor = { isNativePlatform: () => true, Plugins: { LaststreamPlayer: plugin } };
+    const { openPlayer, closePlayer } = await import('../src/ui/player.js');
+    const { normChannel } = await import('../src/ui/tv.js');
+    const c = normChannel(noProxy());
+    openPlayer(c, [c], null);
+    await settle(200);
+    expect(opened).toHaveLength(1);
+    expect(opened[0].url).toBe('https://up.example/fr:Direct.fr.m3u8'); // flux principal conservé, même marqué « exige le relais »
+    closePlayer(true);
+    delete (globalThis as unknown as { Capacitor?: unknown }).Capacitor;
+  });
+});
