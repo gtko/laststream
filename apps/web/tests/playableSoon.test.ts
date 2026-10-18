@@ -117,11 +117,13 @@ const mountPanel = (): HTMLElement => {
 };
 
 describe('panneau Épisodes : rangée cliquable', () => {
-  it('épisode dans les 14 jours : bouton actif et badge « déjà en ligne ? »', () => {
+  it('épisode dans les 14 jours : bouton actif, pastille « À venir · date », « déjà en ligne ? » dans l’infobulle', () => {
     const host = mountPanel();
     const btn = host.querySelector('.lp-ep-row[data-ep="1"] button.lp-ep') as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
-    expect(host.querySelector('.lp-ep-row[data-ep="1"] .lp-ep-soon')?.textContent).toMatch(/^Diffusion TV le \d{1,2} \S+\.? · déjà en ligne \?$/);
+    const pill = host.querySelector('.lp-ep-row[data-ep="1"] .lp-ep-soon') as HTMLElement;
+    expect(pill.textContent).toMatch(/^À venir · \d{1,2} \S+\.?$/);
+    expect(pill.title).toMatch(/^Diffusion TV le .+ · peut-être déjà en ligne$/);
     expect(host.querySelector('.lp-ep-row[data-ep="1"]')!.classList.contains('is-soon')).toBe(false);
   });
   it('épisode au-delà de 14 jours : désactivé, badge « Bientôt »', () => {

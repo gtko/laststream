@@ -5,6 +5,7 @@ import { playableSoon } from '../player/episodes';
 import { dayDiff, fmtShort, todayStr } from './dates.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
+import './epStill.js'; // repli des vignettes cassées (voir epStill.js)
 
 const IMG = (size, p) => (p ? 'https://image.tmdb.org/t/p/' + size + p : '');
 
@@ -45,9 +46,9 @@ export function soonInnerHTML(o) {
     ? '<img class="logo-img soon-logo is-big" src="' + esc(o.logo) + '" alt="' + esc(o.name || '') + '" data-logo="' + esc(o.name || '') + '" loading="lazy">'
     : '<span class="soon-series">' + esc(o.name || '') + '</span>';
   return '<span class="soon' + (o.still ? ' has-still' : '') + (blurred ? ' is-blur' : '') + (inset ? ' has-poster' : '') + '">' +
-    '<span class="soon-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>' +
+    '<span class="soon-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy" decoding="async" data-still>' : '') + '</span>' +
     '<span class="soon-grad" aria-hidden="true"></span>' +
-    (inset ? '<img class="soon-poster" src="' + esc(inset) + '" alt="" loading="lazy" decoding="async">' : '') +
+    (inset ? '<img class="soon-poster" src="' + esc(inset) + '" alt="" loading="lazy" decoding="async" data-still>' : '') +
     '<span class="soon-date" aria-hidden="true"><b>' + day + '</b><i>' + esc(mon) + '</i></span>' +
     '<span class="soon-count' + (avail ? ' is-avail' : '') + '">' + esc(avail ? playableBadge(o.airDate) : countdownText(o.airDate, o.time)) + '</span>' +
     '<span class="soon-body">' + mark +
