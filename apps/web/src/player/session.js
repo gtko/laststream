@@ -26,7 +26,7 @@ import { keyToAction, stepVolume } from './keys';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
-import { connectShell, setShellFullscreen } from './shell';
+import { backStep, connectShell, setShellFullscreen, setShellPip, startShellDrag } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
 import {
   createTorrent, embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
@@ -57,6 +57,7 @@ let P = null; // session courante (null : lecteur fermé)
 let tickTimer = null;
 let shell = null; // transport de la coque Windows (null dans un navigateur)
 let shellFullscreen = false;
+let shellPip = false; // image dans l'image de la coque (petite fenêtre au premier plan)
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
 const storeSet = (k, v) => { try { globalThis.localStorage.setItem(k, v); } catch (_) { /* ignoré */ } };
@@ -119,6 +120,13 @@ function ensureUI() {
   ui.video.autoPictureInPicture = storeGet(AUTOPIP_KEY) === '1';
   ui.setPipAvailable(html.supportsPip());
   document.addEventListener('keydown', onKey, true);
+  // Image dans l'image : pas de barre de titre, on déplace la fenêtre en glissant sur la vidéo (hors boutons et barre de lecture).
+  ui.root.addEventListener('mousedown', (e) => {
+    if (!shell || !shellPip || e.button !== 0) return;
+    if (e.target instanceof Element && e.target.closest('button, input, [data-seek]')) return;
+    e.preventDefault();
+    startShellDrag(shell);
+  }, true);
   document.addEventListener('fullscreenchange', () => { if (P) refreshUI(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && P) saveProgress(true); });
   window.addEventListener('pagehide', () => { if (P) saveProgress(true); });
@@ -136,6 +144,13 @@ function bindShell() {
       else if (action === 'previous-track') seekTo(0);
     });
     t.on('win-visibility-changed', (v) => { if (v && typeof v.isFullscreen === 'boolean') { shellFullscreen = v.isFullscreen; if (P) refreshUI(); } });
+    t.on('win-pip-changed', (v) => {
+      if (!v || typeof v.pip !== 'boolean') return;
+      shellPip = v.pip;
+      if (shellPip) shellFullscreen = false;
+      if (ui) ui.root.classList.toggle('is-pip', shellPip);
+      if (P) refreshUI();
+    });
     t.on('win-set-visibility', (v) => { if (v && typeof v.fullscreen === 'boolean') { shellFullscreen = v.fullscreen; if (P) refreshUI(); } });
   });
 }
@@ -995,6 +1010,8 @@ async function toggleFullscreen() {
 }
 
 async function togglePip() {
+  // Coque Windows : mpv est sous la page, donc c'est la fenêtre entière qui devient une petite fenêtre au premier plan.
+  if (shell && P && P.engine.kind === 'mpv') { setShellPip(shell, !shellPip); return; }
   if (!P || !P.view || !P.engine.supportsPip()) { ui.toast('Image dans l’image indisponible ici'); return; }
   try { await P.engine.togglePip(); } catch (_) { ui.toast('Image dans l’image refusée par le navigateur'); }
 }
@@ -1290,9 +1307,13 @@ function onKey(e) {
     case 'panel': ui.togglePanel(action.name); break;
     case 'next': onAction('next'); break;
     case 'back':
-      if (ui.panel) ui.closePanel();
-      else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else closePlayer();
+      switch (backStep({ panelOpen: !!ui.panel, shellFullscreen: !!shell && shellFullscreen, docFullscreen: !!document.fullscreenElement, shellPip: !!shell && shellPip })) {
+        case 'panel': ui.closePanel(); break;
+        case 'shell-pip': togglePip(); break;
+        case 'shell-fullscreen': toggleFullscreen(); break;
+        case 'doc-fullscreen': document.exitFullscreen().catch(() => {}); break;
+        default: closePlayer();
+      }
       break;
     default: break;
   }
@@ -1320,6 +1341,9 @@ async function teardown(silent) {
 
 export function closePlayer() {
   if (!P) return;
+  // Fenêtre de la coque restée en plein écran : on la rend à sa taille normale en quittant le lecteur.
+  if (shell && shellFullscreen) { shellFullscreen = false; setShellFullscreen(shell, false); }
+  if (shell && shellPip) setShellPip(shell, false);
   const p = P;
   const watched = p.watchedMarked;
   const key = p.req.key;

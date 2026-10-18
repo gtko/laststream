@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MpvEngine } from '../src/player/engines.js';
 import {
-  announceShellReady, connectShell, createWebviewTransport, decodeMessage, encodeInvoke, isShellEnvironment, resetShell, setShellFullscreen,
+  announceShellReady, backStep, connectShell, createWebviewTransport, decodeMessage, encodeInvoke, isShellEnvironment, resetShell, setShellFullscreen, setShellPip, startShellDrag,
   type ShellWindow,
 } from '../src/player/shell';
 import { analyzeUrl, isPrivateHost, REPOLL_EVERY_MS, REPOLL_MAX, shouldRepoll, validAnalyzeDuration } from '../src/player/skip';
@@ -99,6 +99,17 @@ describe('coque WebView2 : transport', () => {
     expect(m.sent[m.sent.length - 1]).toEqual({ id: 0, type: 6, args: ['win-set-visibility', { fullscreen: true }] });
   });
 
+  it('image dans l’image : la coque réduit la fenêtre, le glissement la déplace', async () => {
+    const m = mockWebview();
+    const p = connectShell({ chrome: { webview: m.webview } });
+    m.receive(HANDSHAKE);
+    const t = (await p)!;
+    setShellPip(t, true);
+    expect(m.sent[m.sent.length - 1]).toEqual({ id: 0, type: 6, args: ['win-set-pip', { pip: true }] });
+    startShellDrag(t);
+    expect(m.sent[m.sent.length - 1]).toEqual({ id: 0, type: 6, args: ['win-drag'] });
+  });
+
   it('app-ready : envoyé une seule fois, jamais hors coque', async () => {
     const m = mockWebview();
     const win: ShellWindow = { chrome: { webview: m.webview } };
@@ -109,6 +120,15 @@ describe('coque WebView2 : transport', () => {
     expect(m.sent.filter((x) => (x as { args?: string[] }).args?.[0] === 'app-ready')).toHaveLength(1);
     resetShell();
     expect(await announceShellReady({})).toBe(false);
+  });
+});
+
+describe('Échap / Retour dans le lecteur', () => {
+  it('ferme d’abord le panneau, puis quitte le plein écran, puis ferme le lecteur', () => {
+    expect(backStep({ panelOpen: true, shellFullscreen: true, docFullscreen: false })).toBe('panel');
+    expect(backStep({ panelOpen: false, shellFullscreen: true, docFullscreen: false })).toBe('shell-fullscreen');
+    expect(backStep({ panelOpen: false, shellFullscreen: false, docFullscreen: true })).toBe('doc-fullscreen');
+    expect(backStep({ panelOpen: false, shellFullscreen: false, docFullscreen: false })).toBe('close');
   });
 });
 
@@ -145,6 +165,17 @@ describe('mpv par la coque', () => {
     expect(container.style.background).toBe('transparent');
     engine.destroy();
     expect(container.style.background).toBe('');
+  });
+
+  it('piste audio : `aid` est envoyé comme nombre et le panneau suit le changement', () => {
+    const { sent, handlers, engine } = setup();
+    handlers.get('mpv-prop-change')!({ name: 'mpv-version', data: 'mpv 0.39.0' });
+    engine.live = true;
+    handlers.get('mpv-prop-change')!({ name: 'track-list', data: [{ id: 1, type: 'audio', lang: 'eng', selected: true }, { id: 2, type: 'audio', lang: 'fre', selected: false }] });
+    engine.setAudioTrack('2');
+    expect(sent.filter(([e]) => e === 'mpv-set-prop').pop()).toEqual(['mpv-set-prop', ['aid', 2]]);
+    handlers.get('mpv-prop-change')!({ name: 'aid', data: 2 });
+    expect(engine.audioTracks().map((t) => [t.id, t.selected])).toEqual([['1', false], ['2', true]]);
   });
 
   it('état : position, durée, pause, volume (0 à 100 → 0 à 1), pistes', () => {

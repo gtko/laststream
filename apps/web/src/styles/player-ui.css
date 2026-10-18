@@ -102,3 +102,20 @@
 .lp-mark { position: absolute; top: 0; bottom: 0; border-radius: 2px; mix-blend-mode: normal; opacity: 1; background: rgba(255, 255, 255, 0.55); }
 .lp-mark-intro, .lp-mark-recap, .lp-mark-preview { background: rgba(255, 255, 255, 0.7); }
 .lp-mark-credits, .lp-mark-postcredits { background: rgba(255, 255, 255, 0.4); }
+
+/* Image dans l'image de la coque Windows : petite fenêtre, contrôles réduits au strict nécessaire. */
+.lp.is-pip .lp-heading,
+.lp.is-pip .lp-top-r > :not([data-role="pip"]),
+.lp.is-pip .lp-center,
+.lp.is-pip .lp-grp-r,
+.lp.is-pip .lp-vol,
+.lp.is-pip .lp-time,
+.lp.is-pip .lp-row [data-act="back10"],
+.lp.is-pip .lp-row [data-act="fwd10"],
+.lp.is-pip .lp-next,
+.lp.is-pip .lp-endrow,
+.lp.is-pip .lp-skip,
+.lp.is-pip .lp-skipno,
+.lp.is-pip .lp-panel { display: none !important; }
+.lp.is-pip { cursor: move; }
+.lp.is-pip button, .lp.is-pip .lp-seek { cursor: pointer; }

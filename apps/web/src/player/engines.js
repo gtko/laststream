@@ -244,7 +244,13 @@ export class MpvEngine extends Emitter {
     if (!this.live) return;
     this.p[a.name] = a.data;
     if (a.name === 'track-list') { this.emit('tracks'); }
-    if (a.name === 'aid' || a.name === 'sid') this.emit('tracks');
+    if (a.name === 'aid' || a.name === 'sid') {
+      // mpv ne ré-émet pas `track-list` quand la piste change : on aligne les indicateurs `selected` pour que le panneau suive.
+      const type = a.name === 'aid' ? 'audio' : 'sub';
+      const list = this.p['track-list'];
+      if (Array.isArray(list)) this.p['track-list'] = list.map((t) => (t.type === type ? { ...t, selected: Number(a.data) === t.id } : t));
+      this.emit('tracks');
+    }
     if (a.name === 'duration' && a.data > 0 && !this.loaded) { this.loaded = true; this.emit('ready'); }
     const now = Date.now();
     if (a.name !== 'time-pos' || now - this.lastEmit > 250) { this.lastEmit = now; this.emit('state'); }
@@ -314,7 +320,7 @@ export class MpvEngine extends Emitter {
   subtitleTracks() { return mpvSubtitleTracks(this.p['track-list'] || []); }
   setSubtitleTrack(id) { this.ipc.send('mpv-set-prop', ['sid', id === null ? 'no' : Number(id)]); }
   nativeCues() { return []; }
-  supportsPip() { return false; }
+  supportsPip() { return true; } // image dans l'image gérée par la coque (fenêtre réduite), voir session.togglePip
   togglePip() { return Promise.resolve(); }
 }
 

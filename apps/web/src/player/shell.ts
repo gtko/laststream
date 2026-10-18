@@ -185,6 +185,25 @@ export function setShellFullscreen(t: ShellTransport, fullscreen: boolean): void
   t.send('win-set-visibility', { fullscreen });
 }
 
+/** Image dans l'image de la coque : petite fenêtre sans bordure, toujours au premier plan (la coque répond `win-pip-changed`). */
+export function setShellPip(t: ShellTransport, pip: boolean): void {
+  t.send('win-set-pip', { pip });
+}
+
+/** Début d'un déplacement de la fenêtre (image dans l'image, sans barre de titre). */
+export function startShellDrag(t: ShellTransport): void {
+  t.send('win-drag');
+}
+
+/** Ce que fait « Retour » / Échap dans le lecteur : ferme le panneau, quitte le plein écran (coque ou page), sinon ferme le lecteur. */
+export function backStep(ctx: { panelOpen: boolean; shellFullscreen: boolean; docFullscreen: boolean; shellPip?: boolean }): 'panel' | 'shell-pip' | 'shell-fullscreen' | 'doc-fullscreen' | 'close' {
+  if (ctx.panelOpen) return 'panel';
+  if (ctx.shellPip) return 'shell-pip';
+  if (ctx.shellFullscreen) return 'shell-fullscreen';
+  if (ctx.docFullscreen) return 'doc-fullscreen';
+  return 'close';
+}
+
 /** Ouvre une adresse web dans le navigateur du système (http, https, ftp… filtrés par la coque). */
 export function openExternal(t: ShellTransport, url: string): void {
   t.send('open-external', url);
