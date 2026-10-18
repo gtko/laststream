@@ -6,9 +6,9 @@ import { refreshWatchedUI } from './watched.js';
 import { setupWhy } from './why.js';
 import { api, tmdb, why } from '../data/lt';
 import { register, toItem } from './catalog.js';
-import { IMG } from './constants.js';
+import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } from './epFocus.js';
 import { detailEl } from './dom.js';
-import { markNext, ratingsHTML } from './fiche.js';
+import { markNext, nextToWatch, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
@@ -118,7 +118,7 @@ export async function loadSeason(m, n, token) {
     const future = e.air_date && e.air_date > today;
     // Diffusion dans les 14 prochains jours : « peut-être déjà en ligne », lisible ; au-delà, carte « Bientôt ».
     const soonPlayable = future && playableSoon(e.air_date, today);
-    const still = IMG('w500', e.still_path);
+    const img = episodeImage(e.still_path, m.backdropPath);
     const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
     if (future && !soonPlayable) {
       const real = !isPlaceholderTitle(e.name);
@@ -134,7 +134,8 @@ export async function loadSeason(m, n, token) {
     const resumeAria = rs && !done ? ', reprise à ' + rs.label : '';
     return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '"' + (soonPlayable ? ' data-air="' + esc(e.air_date) + '"' : '') + '>' +
       '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number) + resumeAria) + '">' +
-      '<span class="ep-still' + (still ? '' : ' no-img') + '">' + (still ? '<img src="' + esc(still) + '" alt="" loading="lazy" decoding="async">' : '') +
+      '<span class="ep-still' + (img.fallback ? ' is-fb' : '') + '">' + (img.src ? '<img src="' + esc(img.src) + '" alt="" loading="lazy" decoding="async">' : '') +
+      (img.fallback ? '<span class="ep-num" aria-hidden="true">' + esc(code) + '</span>' : '') +
       (rs ? resumePillHTML(rs.label) : '') +
       '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : rs ? Math.round(rs.ratio * 100) : 0) + '%"></span></span></span>' +
       '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +
@@ -147,6 +148,10 @@ export async function loadSeason(m, n, token) {
   }).join('');
   state.seasonEps = { n, eps };
   refreshWatchedUI();
-  const nxt = markNext(m);
-  list.scrollLeft = nxt ? Math.max(0, nxt.offsetLeft - 8) : 0;
+  markNext(m);
+  // Saison de l’épisode à regarder : la carte (en cours, sinon prochain non vu, sinon dernier diffusé) est centrée, sans animation.
+  const at = inProgressRef(m.key) || nextToWatch(m);
+  const target = at && at.s === n ? focusEpisode(eps, { today, isSeen: (ep) => userStore.isWatched(m.key, n, ep), inProgress: (ep) => hasResume(m.key, n, ep) }) : null;
+  const card = target != null ? list.querySelector('.ep[data-ep="' + n + ':' + target + '"]') : null;
+  if (card) scrollToCard(list, card); else list.scrollLeft = 0;
 }

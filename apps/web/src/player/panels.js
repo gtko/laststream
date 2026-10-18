@@ -92,7 +92,9 @@ export function episodesHtml(d) {
     const open = ep.aired || !!ep.playable;
     const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
     const soonBadge = ep.aired ? '' : open ? 'Diffusion TV le ' + fmtShort(ep.airDate) + ' · déjà en ligne ?' : 'Bientôt';
-    const still = '<span class="lp-ep-still">' + (ep.still ? '<img src="' + esc(ep.still) + '" alt="" loading="lazy" decoding="async">' : '') +
+    const fb = !ep.still; // repli : fond de la série assombri + numéro (jamais de vignette vide)
+    const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' + (ep.still || (fb && d.backdrop) ? '<img src="' + esc(ep.still || d.backdrop) + '" alt="" loading="lazy" decoding="async">' : '') +
+      (fb ? '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' : '') +
       (on ? '<span class="lp-ep-now">En cours</span>' : '') +
       (soonBadge ? '<span class="lp-ep-soon">' + esc(soonBadge) + '</span>' : '') +
       (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
