@@ -1,5 +1,6 @@
 import type { DurableObjectNamespace, KVNamespace } from '@cloudflare/workers-types';
 import type { EnvLike, RuntimeEnv } from '../types.js';
+import type { PartyRoom } from './party-room.js';
 import type { UserStoreDO } from './user-store-do.js';
 
 /** Binding de service (Workers Assets) : seule la méthode fetch sert, avec les types Request/Response de l'application. */
@@ -16,6 +17,8 @@ export interface RateLimitBinding {
 export interface WorkerEnv {
   /** Durable Object des données utilisateur. */
   USER_STORE: DurableObjectNamespace<UserStoreDO>;
+  /** Durable Objects des salons de visionnage (un par salon). */
+  PARTY_ROOM: DurableObjectNamespace<PartyRoom>;
   /** KV des caches persistants (statut AllDebrid, packs, URL émises, état de lecture). */
   CACHE: KVNamespace;
   /** Interface web (Workers Assets). */

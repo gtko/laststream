@@ -1,4 +1,5 @@
 import type { SkipSegmentStore } from './skip-segments.js';
+import type { SocialStore } from './social-store.js';
 import type { UserStore } from './store.js';
 
 /**
@@ -21,10 +22,14 @@ export type UserRepo = AsyncRepo<Omit<UserStore, 'transaction' | 'close'>>;
 /** Segments de saut communautaires et détectés, empreintes de saison. */
 export type SkipRepo = AsyncRepo<Omit<SkipSegmentStore, 'close'>>;
 
-/** Accès aux deux dépôts, ouverts au premier besoin. */
+/** Parrainage, amis, présence, bibliothèque partagée, titres masqués, annuaire des salons. */
+export type SocialRepo = AsyncRepo<SocialStore>;
+
+/** Accès aux dépôts, ouverts au premier besoin. */
 export interface UserBackend {
   users(): UserRepo;
   skips(): SkipRepo;
+  social(): SocialRepo;
   /** Libère les ressources (fichier fermé). Sans effet pour un Durable Object ; idempotent. */
   close(): void;
 }

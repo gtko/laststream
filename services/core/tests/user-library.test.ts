@@ -88,6 +88,7 @@ describe('bibliothèque', () => {
         title: 'Matrix',
         poster: 'https://img.example/m.jpg',
         addedAt: expect.any(String),
+        visibility: 'private',
       },
     ]);
   });

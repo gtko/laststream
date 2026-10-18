@@ -1,4 +1,5 @@
 import { safeEqual } from '../user/crypto.js';
+import type { SocialStore } from '../user/social-store.js';
 import type { SqlDb } from '../user/sql.js';
 import {
   type MigratedTable,
@@ -18,9 +19,11 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 export type AdminOperation =
   | { action: 'counts' }
   | { action: 'begin'; force: boolean }
-  | { action: 'insert'; table: MigratedTable; columns: string[]; rows: WireValue[][] };
+  | { action: 'insert'; table: MigratedTable; columns: string[]; rows: WireValue[][] }
+  | { action: 'createInvite' }
+  | { action: 'deleteInvite'; code: string };
 
-export async function runAdminOperation(db: SqlDb, operation: AdminOperation): Promise<unknown> {
+export async function runAdminOperation(db: SqlDb, operation: AdminOperation, social: SocialStore): Promise<unknown> {
   switch (operation.action) {
     case 'counts':
       return { tables: await digestAll(db) };
@@ -32,6 +35,10 @@ export async function runAdminOperation(db: SqlDb, operation: AdminOperation): P
       return { ok: true };
     case 'insert':
       return { inserted: insertBatch(db, operation.table, operation.columns, operation.rows) };
+    case 'createInvite':
+      return { code: social.createSystemInvite(new Date().toISOString()).code };
+    case 'deleteInvite':
+      return { deleted: social.deleteSystemInvite(operation.code) };
   }
 }
 
@@ -40,6 +47,8 @@ const json = (status: number, body: unknown): Response =>
 
 function parseOperation(method: string, path: string, body: unknown): AdminOperation | undefined {
   if (method === 'GET' && path === 'counts') return { action: 'counts' };
+  if (method === 'POST' && path === 'invite') return { action: 'createInvite' };
+  if (method === 'DELETE' && path.startsWith('invite/') && path.length > 'invite/'.length) return { action: 'deleteInvite', code: decodeURIComponent(path.slice('invite/'.length)) };
   if (method !== 'POST' || path !== 'import' || typeof body !== 'object' || body === null) return undefined;
   const input = body as Record<string, unknown>;
   if (input.action === 'begin') return { action: 'begin', force: input.force === true };
@@ -57,7 +66,8 @@ function parseOperation(method: string, path: string, body: unknown): AdminOpera
 }
 
 /**
- * Route d'administration : GET /__admin/counts (nombre de lignes et SHA-256 par table) et POST /__admin/import
+ * Route d'administration : POST /__admin/invite (invitation « système » sans parrain, pour un compte de test) et
+ * DELETE /__admin/invite/<code> (nettoyage) ; GET /__admin/counts (nombre de lignes et SHA-256 par table) et POST /__admin/import
  * ({action:'begin', force?} puis {action:'insert', table, columns, rows}). Authentifiée par l'en-tête `x-admin-secret`
  * (secret ADMIN_SECRET) ; 404 si le secret n'est pas posé. Pour la fermer après usage : `wrangler secret delete ADMIN_SECRET`.
  */
@@ -70,7 +80,7 @@ export async function handleAdmin(
   if (!safeEqual(request.headers.get('x-admin-secret') ?? '', secret)) return json(401, { error: 'unauthorized' });
   const path = new URL(request.url).pathname.slice(ADMIN_PREFIX.length);
   let body: unknown;
-  if (request.method === 'POST') {
+  if (request.method === 'POST' && path !== 'invite') {
     const text = await request.text();
     if (text.length > MAX_BODY_BYTES) return json(413, { error: 'payload_too_large' });
     try {

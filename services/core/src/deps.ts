@@ -1,7 +1,7 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
 import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { ThumbOptions } from './lt/thumbs/index.js';
-import type { UiAssets, UserBackend } from './platform/index.js';
+import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
@@ -26,6 +26,8 @@ export interface AppDeps {
   userDbPath?: string;
   /** Dépôts de données utilisateur et de segments de saut. Par défaut : ceux de la plateforme (createUserBackend). */
   userBackend?: UserBackend;
+  /** Salons de visionnage (Workers : Durable Objects). Par défaut : celui de la plateforme ; absent, /party répond 501. */
+  party?: PartyBackend;
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   /**

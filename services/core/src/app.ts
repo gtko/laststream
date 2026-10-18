@@ -19,6 +19,7 @@ import { registerIndexerRoutes } from './routes/indexers.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
+import { registerPartyRoutes } from './party/routes.js';
 import { registerUserRoutes } from './user/routes.js';
 import { registerStreamingProxy } from './streaming-proxy.js';
 import { registerUiRoutes } from './ui.js';
@@ -58,6 +59,8 @@ const OPEN_LT_PATHS: readonly RegExp[] = [/^\/[^/]+\/lt\/.+$/, /^\/[^/]+\/catalo
 const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
 /** Données utilisateur (/user/*) : origines restreintes, limite de débit comme /config/*, jamais en cache. */
 const USER_PATH = /^\/user(?:\/|$)/;
+/** Salons de visionnage (/party/*) : mêmes règles d'origine et d'en-têtes que /user. */
+const PARTY_PATH = /^\/party(?:\/|$)/;
 const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
 const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token';
 
@@ -92,12 +95,12 @@ function corsMiddleware(origins: readonly string[]): MiddlewareHandler<AppEnv> {
       c.header('Access-Control-Allow-Origin', '*');
       c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
       c.header('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(path) || LT_WRITE_PATH.test(path) || USER_PATH.test(path)) {
+    } else if (CONFIG_PATH.test(path) || LT_WRITE_PATH.test(path) || USER_PATH.test(path) || PARTY_PATH.test(path)) {
       const origin = c.req.header('origin');
       c.header('Vary', 'Origin', { append: true });
       if (origin !== undefined && origins.includes(origin)) {
         c.header('Access-Control-Allow-Origin', origin);
-        if (USER_PATH.test(path)) {
+        if (USER_PATH.test(path) || PARTY_PATH.test(path)) {
           c.header('Access-Control-Allow-Methods', USER_METHODS);
           c.header('Access-Control-Allow-Headers', USER_HEADERS);
         } else {
@@ -245,6 +248,7 @@ export function createApp(deps: AppDeps): App {
   registerLtRoutes(app, deps, backend);
   registerIndexerRoutes(app, deps);
   registerUserRoutes(app, deps, backend);
+  registerPartyRoutes(app, deps, backend, deps.party ?? platform().createPartyBackend?.());
   closers.set(app, () => {
     closeLtRoutes(app);
     backend.close();

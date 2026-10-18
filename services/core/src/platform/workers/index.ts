@@ -4,11 +4,13 @@ import { workersHttpClient } from './http-client.js';
 import { createWorkersKvCache } from './kv-cache.js';
 import { workersScheduler } from './scheduler.js';
 import { createWorkersUiAssets } from './ui-assets.js';
+import { createDurableObjectPartyBackend } from './party-backend.js';
 import { createDurableObjectUserBackend } from './user-backend.js';
 
 export { runInRequest } from './scheduler.js';
 export { type WorkerEnv, workersRuntimeEnv } from './env.js';
 export { UserStoreDO } from './user-store-do.js';
+export { PartyRoom } from './party-room.js';
 
 /** Sous Workers : ni ffmpeg ni détection de segments ni proxy HLS ; miniatures par WebCodecs côté client (relais de plages). */
 export const workersCapabilities: Capabilities = { thumbs: false, rangeThumbs: true, skipDetect: false, tvHls: false, sharedState: true };
@@ -22,6 +24,7 @@ export function createWorkersPlatform(env: WorkerEnv): Platform {
     capabilities: workersCapabilities,
     createKvCache: (namespace) => createWorkersKvCache(env.CACHE, namespace),
     createUserBackend: () => createDurableObjectUserBackend(env.USER_STORE),
+    createPartyBackend: () => createDurableObjectPartyBackend(env.PARTY_ROOM),
     uiAssets: createWorkersUiAssets(env.ASSETS),
   };
 }

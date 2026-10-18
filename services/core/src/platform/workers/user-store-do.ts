@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
 import { migrate } from '../../user/migrations.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
+import { SocialStore } from '../../user/social-store.js';
 import type { SqlDb } from '../../user/sql.js';
 import { UserStore } from '../../user/store.js';
 import { durableObjectSql } from './sql.js';
@@ -16,6 +17,7 @@ function callableNames(prototype: object): Set<string> {
 
 const USER_METHODS = callableNames(UserStore.prototype);
 const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
+const SOCIAL_METHODS = callableNames(SocialStore.prototype);
 
 function dispatch(target: object, allowed: ReadonlySet<string>, method: string, args: unknown[]): unknown {
   if (!allowed.has(method)) throw new Error(`méthode inconnue : ${method}`);
@@ -31,6 +33,7 @@ function dispatch(target: object, allowed: ReadonlySet<string>, method: string, 
 export class UserStoreDO extends DurableObject {
   private readonly users: UserStore;
   private readonly skips: SkipSegmentStore;
+  private readonly socialStore: SocialStore;
   private readonly db: SqlDb;
 
   constructor(ctx: DurableObjectState, env: unknown) {
@@ -44,6 +47,7 @@ export class UserStoreDO extends DurableObject {
     });
     this.users = new UserStore(db);
     this.skips = new SkipSegmentStore(db);
+    this.socialStore = new SocialStore(db);
   }
 
   /** Appelle une méthode de UserStore. */
@@ -56,8 +60,13 @@ export class UserStoreDO extends DurableObject {
     return dispatch(this.skips, SKIP_METHODS, method, args);
   }
 
+  /** Appelle une méthode de SocialStore (parrainage, amis, présence, masqués, annuaire des salons). */
+  social(method: string, args: unknown[]): unknown {
+    return dispatch(this.socialStore, SOCIAL_METHODS, method, args);
+  }
+
   /** Migration des données (route /__admin/, protégée par ADMIN_SECRET côté Worker) : voir admin/routes.ts. */
   admin(operation: AdminOperation): Promise<unknown> {
-    return runAdminOperation(this.db, operation);
+    return runAdminOperation(this.db, operation, this.socialStore);
   }
 }

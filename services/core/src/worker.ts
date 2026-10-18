@@ -5,10 +5,11 @@ import { createApp } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
-import { setPlatform } from './platform/index.js';
+import { platform, setPlatform } from './platform/index.js';
+import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { createWorkersPlatform, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
-export { UserStoreDO } from './platform/workers/index.js';
+export { PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
 /** Application construite au premier appel de l'isolat : les liaisons `env` sont les mêmes pour toutes les requêtes. */
 let app: App | undefined;
@@ -47,6 +48,12 @@ export default {
     try {
       const handler = appFor(env);
       const clientIp = request.headers.get('cf-connecting-ip') ?? undefined;
+      // WebSocket d'un salon : traitée avant l'application (une réponse 101 ne traverse aucun middleware).
+      if (PARTY_WS_PATH.test(new URL(request.url).pathname)) {
+        const secret = secretFromEnv();
+        if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
+        return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp });
+      }
       return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp }, ctx)));
     } catch (err) {
       // Configuration absente ou invalide : message générique, jamais de valeur.

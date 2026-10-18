@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
 export type MediaType = 'movie' | 'series';
@@ -66,6 +67,8 @@ export interface LibraryItem {
   title: string;
   poster: string | null;
   addedAt: string;
+  /** Qui peut voir ce titre : « private » (défaut) ou « friends » (amis du compte). */
+  visibility: 'private' | 'friends';
 }
 
 export interface LibraryWrite {
@@ -224,6 +227,7 @@ interface LibraryRow {
   title: string;
   poster: string | null;
   added_at: string;
+  visibility: 'private' | 'friends';
 }
 
 interface ProgressRow {
@@ -244,7 +248,7 @@ interface SettingRow {
   value: string;
 }
 
-export type CreateAccountResult = { ok: true; account: Account } | { ok: false; reason: 'signup_disabled' | 'username_taken' };
+export type CreateAccountResult = { ok: true; account: Account } | { ok: false; reason: 'signup_disabled' | 'username_taken' | 'invite_invalid' };
 
 function toAccount(row: Omit<AccountRow, 'password_hash'>): Account {
   return { id: row.id, username: row.username, isOwner: row.is_owner === 1, createdAt: row.created_at };
@@ -299,6 +303,7 @@ function toLibraryItem(row: LibraryRow): LibraryItem {
     title: row.title,
     poster: row.poster,
     addedAt: row.added_at,
+    visibility: row.visibility,
   };
 }
 
@@ -361,11 +366,23 @@ export class UserStore {
    * Crée un compte. Le contrôle des droits (inscription ouverte ou premier compte) et l'unicité du nom sont faits
    * dans la même transaction que l'insertion : deux inscriptions simultanées ne peuvent pas créer deux « premiers » comptes.
    */
-  createAccount(input: { username: string; passwordHash: string; allowSignup: boolean; now: string }): CreateAccountResult {
+  createAccount(input: {
+    username: string;
+    passwordHash: string;
+    allowSignup: boolean;
+    /** Code d'un lien de parrainage : consommé dans la même transaction, le filleul devient ami du parrain. */
+    inviteCode?: string;
+    now: string;
+  }): CreateAccountResult {
     return this.transaction((): CreateAccountResult => {
       const isFirst = this.countAccounts() === 0;
-      if (!isFirst && !input.allowSignup) return { ok: false, reason: 'signup_disabled' };
+      const invite = !isFirst && input.inviteCode !== undefined;
+      if (!isFirst && !invite && !input.allowSignup) return { ok: false, reason: 'signup_disabled' };
       if (this.findAccountRecord(input.username) !== undefined) return { ok: false, reason: 'username_taken' };
+      if (invite && input.inviteCode !== undefined) {
+        const row = this.db.prepare('SELECT used_at FROM invites WHERE code = ?').get(input.inviteCode) as { used_at: string | null } | undefined;
+        if (row === undefined || row.used_at !== null) return { ok: false, reason: 'invite_invalid' };
+      }
       const account: Account = {
         id: randomUUID(),
         username: input.username,
@@ -375,6 +392,9 @@ export class UserStore {
       this.db
         .prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(account.id, account.username, input.passwordHash, isFirst ? 1 : 0, account.createdAt);
+      if (invite && input.inviteCode !== undefined && !redeemInvite(this.db, input.inviteCode, account.id, input.now).ok) {
+        throw new Error('lien de parrainage consommé en cours d\'inscription'); // annule la transaction (inatteignable : synchrone)
+      }
       return { ok: true, account };
     });
   }
@@ -585,7 +605,7 @@ export class UserStore {
     const params: string[] = type === undefined ? [profileId] : [profileId, type];
     const rows = this.db
       .prepare(
-        `SELECT type, title_ref, tmdb_id, imdb_id, title, poster, added_at FROM library_items
+        `SELECT type, title_ref, tmdb_id, imdb_id, title, poster, added_at, visibility FROM library_items
          WHERE profile_id = ? AND removed = 0 ${typeClause} ORDER BY ${order}`,
       )
       .all(...params) as unknown as LibraryRow[];

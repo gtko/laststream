@@ -16,26 +16,26 @@ import {
   hashSessionToken,
   safeEqual,
   signProfileToken,
-  verifyProfileToken,
   verifySecret,
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
+import { nowIso, scopeOf, sessionOf } from './session.js';
+import { registerSocialRoutes } from './social-routes.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
 import {
-  type Account,
   type FollowType,
   type KidMaxAge,
   type MediaType,
   type ProfileEditableFields,
   type ProfileFields,
-  type ProfileRecord,
   publicProfile,
   titleRef,
 } from './store.js';
 import {
   createProfileSchema,
   credentialsSchema,
+  registerSchema,
   deleteAccountSchema,
   followTypeSchema,
   followWriteSchema,
@@ -82,61 +82,6 @@ const SENSITIVE_ROUTES: readonly { method: string; path: RegExp }[] = [
 
 /** Point de montage de l'API utilisateur. */
 const USER_MOUNT = '/user';
-
-const nowIso = (): string => new Date().toISOString();
-
-function bearerToken(c: Ctx): string | undefined {
-  const match = /^bearer\s+([A-Za-z0-9_-]{20,128})$/i.exec(c.req.header('authorization') ?? '');
-  return match?.[1];
-}
-
-interface Session {
-  /** Empreinte du jeton de session : identifie la session (stockée en base). */
-  tokenHash: string;
-  account: Account;
-}
-
-/** Session valide de la requête (jeton Bearer), ou 401. */
-async function sessionOf(store: UserRepo, c: Ctx): Promise<Session> {
-  const token = bearerToken(c);
-  if (token === undefined) throw new UserApiError(401, 'unauthorized');
-  const tokenHash = hashSessionToken(token);
-  const account = await store.accountForSession(tokenHash, nowIso());
-  if (account === undefined) throw new UserApiError(401, 'unauthorized');
-  return { tokenHash, account };
-}
-
-async function profileOf(store: UserRepo, account: Account, c: Ctx): Promise<ProfileRecord> {
-  const profile = await store.findProfile(account.id, String(c.req.param('id')));
-  if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
-  return profile;
-}
-
-interface Scope extends Session {
-  profile: ProfileRecord;
-}
-
-/**
- * Session et profil de la requête. Si `unlock` et que le profil a un PIN, un jeton de profil valide est exigé
- * (en-tête X-Profile-Token) : lié à cette session et à la version courante du PIN, sinon 403 pin_required.
- */
-async function scopeOf(store: UserRepo, c: Ctx, secret: string, unlock: boolean): Promise<Scope> {
-  const session = await sessionOf(store, c);
-  const profile = await profileOf(store, session.account, c);
-  if (unlock && profile.hasPin) {
-    const token = c.req.header('x-profile-token');
-    const valid =
-      token !== undefined &&
-      verifyProfileToken(
-        token,
-        { accountId: session.account.id, profileId: profile.id, sessionHash: session.tokenHash, pinVersion: profile.pinVersion },
-        Date.now(),
-        secret,
-      );
-    if (!valid) throw new UserApiError(403, 'pin_required');
-  }
-  return { ...session, profile };
-}
 
 function pinLocked(lockedUntil: string): UserApiError {
   const retryAfterSec = Math.max(1, Math.ceil((Date.parse(lockedUntil) - Date.now()) / 1000));
@@ -189,7 +134,7 @@ function tmdbTokenOf(encoded: string, secret: string, allowPlain: boolean): stri
 }
 
 /** Erreurs de l'API utilisateur : `{ error: code }` (+ `issues`), Retry-After pour les limites. Les autres erreurs vont à l'application. */
-const userErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
+export const userErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
   if (err instanceof UserApiError) {
     if (err.retryAfterSec !== undefined) c.header('Retry-After', String(err.retryAfterSec));
     return sendJson(c, err.issues === undefined ? { error: err.code } : { error: err.code, issues: err.issues }, err.status as 400);
@@ -246,18 +191,19 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   // Comptes et sessions
 
   router.post('/register', async (c) => {
-    const body = parseWith(credentialsSchema, c.get('body'));
+    const body = parseWith(registerSchema, c.get('body'));
     const users = db();
     const allowSignup = isSignupAllowed();
-    const isFirst = await users.countAccounts() === 0;
-    if (!isFirst && !allowSignup) throw new UserApiError(403, 'signup_disabled');
+    const isFirst = (await users.countAccounts()) === 0;
+    // Inscription par lien de parrainage uniquement (LASTADDON_ALLOW_SIGNUP=1 : inscription ouverte, réservée aux serveurs perso).
+    if (!isFirst && !allowSignup && body.invite === undefined) throw new UserApiError(403, 'signup_disabled');
     // Premier compte : jeton d'amorçage exigé si LASTADDON_BOOTSTRAP_TOKEN est défini.
     const required = bootstrapToken();
     if (isFirst && required !== undefined && !safeEqual(c.req.header('x-bootstrap-token') ?? '', required)) {
       throw new UserApiError(403, 'bootstrap_token_invalid');
     }
     const passwordHash = await hashSecret(body.password);
-    const result = await users.createAccount({ username: body.username, passwordHash, allowSignup, now: nowIso() });
+    const result = await users.createAccount({ username: body.username, passwordHash, allowSignup, inviteCode: body.invite, now: nowIso() });
     if (!result.ok) throw new UserApiError(result.reason === 'username_taken' ? 409 : 403, result.reason);
     return sendJson(c, { account: result.account }, 201);
   });
@@ -666,6 +612,8 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
       throw err;
     }
   });
+
+  registerSocialRoutes(router, deps, backend);
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');

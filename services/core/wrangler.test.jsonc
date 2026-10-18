@@ -4,8 +4,16 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
-  "durable_objects": { "bindings": [{ "name": "USER_STORE", "class_name": "UserStoreDO" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "USER_STORE", "class_name": "UserStoreDO" },
+      { "name": "PARTY_ROOM", "class_name": "PartyRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] }
+  ],
   "kv_namespaces": [{ "binding": "CACHE" }],
   "assets": { "directory": "./tests-workers/ui", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
   "ratelimits": [

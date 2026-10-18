@@ -6,9 +6,11 @@
 
 import type { AutoDetectOptions, AutoDetector } from '../lt/detect/index.js';
 import type { ThumbOptions, ThumbService } from '../lt/thumbs/index.js';
+import type { PartyBackend } from '../party/backend.js';
 import type { SkipRepo, UserBackend } from '../user/repo.js';
 
 export type { UserBackend } from '../user/repo.js';
+export type { PartyBackend } from '../party/backend.js';
 
 /** Variables d'environnement vues comme un simple dictionnaire (valeurs non définies = absentes). */
 export type EnvLike = Readonly<Record<string, string | undefined>>;
@@ -135,6 +137,8 @@ export interface Platform {
    * Workers : Durable Object SQLite).
    */
   createUserBackend(options?: { path?: string }): UserBackend;
+  /** Salons de visionnage en temps réel (Workers : Durable Object PartyRoom). Absent sur Node : les routes /party répondent 501. */
+  createPartyBackend?(): PartyBackend;
   /**
    * Services locaux liés à la machine (ffmpeg : miniatures, détection des segments de saut). Absent sur Workers, où
    * les capacités `thumbs` et `skipDetect` sont fausses.

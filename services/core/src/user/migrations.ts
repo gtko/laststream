@@ -192,6 +192,81 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 7,
+    name: 'fonctions sociales : parrainage, amis, présence, visibilité de la bibliothèque, titres masqués, index des salons',
+    sql: `
+      ALTER TABLE accounts ADD COLUMN invite_quota INTEGER NOT NULL DEFAULT 4 CHECK (invite_quota >= 0);
+
+      -- Liens de parrainage. inviter_id NULL : invitation « système » créée par l'administration (aucune amitié à l'inscription).
+      -- Un lien utilisé garde used_at même si le compte du filleul est supprimé (used_by passe alors à NULL).
+      CREATE TABLE invites (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        inviter_id TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        sent_at TEXT,
+        used_by TEXT REFERENCES accounts(id) ON DELETE SET NULL,
+        used_at TEXT
+      );
+      CREATE INDEX invites_inviter ON invites(inviter_id);
+
+      -- Amitiés : une ligne par paire, ids ordonnés (low_id < high_id). requested_by = celui qui a demandé.
+      CREATE TABLE friendships (
+        low_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        high_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted')),
+        created_at TEXT NOT NULL,
+        accepted_at TEXT,
+        PRIMARY KEY (low_id, high_id),
+        CHECK (low_id < high_id)
+      );
+      CREATE INDEX friendships_high ON friendships(high_id);
+
+      -- Présence : dernier battement de cœur, titre en cours (JSON) et mode invisible.
+      CREATE TABLE presence (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT,
+        seen_at TEXT NOT NULL,
+        watching TEXT,
+        invisible INTEGER NOT NULL DEFAULT 0 CHECK (invisible IN (0, 1))
+      );
+
+      ALTER TABLE library_items ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private' CHECK (visibility IN ('private', 'friends'));
+      CREATE INDEX library_items_visibility ON library_items(profile_id, visibility) WHERE visibility = 'friends';
+
+      -- Titres masqués de l'accueil : clé « movie:550 » / « tv:1399 » (même clé que le client).
+      CREATE TABLE hidden_titles (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, key)
+      );
+      CREATE INDEX hidden_titles_order ON hidden_titles(profile_id, added_at DESC, key DESC);
+      -- Profils dont les anciens morceaux de réglages (homeHidden0..11) ont déjà été importés.
+      CREATE TABLE hidden_import (
+        profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+        imported_at TEXT NOT NULL
+      );
+
+      -- Index des salons de visionnage (le temps réel vit dans le Durable Object PartyRoom ; ici : annuaire).
+      CREATE TABLE party_rooms (
+        id TEXT PRIMARY KEY,
+        host_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        visibility TEXT NOT NULL CHECK (visibility IN ('private', 'public')),
+        title TEXT NOT NULL,
+        poster TEXT,
+        language TEXT,
+        media_type TEXT NOT NULL CHECK (media_type IN ('movie', 'series')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX party_rooms_public ON party_rooms(visibility, created_at DESC, id);
+      CREATE INDEX party_rooms_host ON party_rooms(host_id);
+    `,
+  },
 ];
 
 /**
