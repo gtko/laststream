@@ -31,7 +31,8 @@ function itemHtml(v, opts) {
   if (v.codec) l1.push('<span class="s-codec">' + esc(v.codec) + '</span>');
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
   const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
-    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="Le serveur de streaming convertit le flux (HEVC, DTS, REMUX…)">Conversion</span>' : '';
+    : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
+    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="La vidéo est copiée, seul l’audio est converti">Conversion audio</span>' : '';
 
   const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? 'Langue vérifiée dans le fichier' : 'Langue annoncée par le nom de la release') + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
   const l2 = (v.audio ? '<span class="s-audio">' + esc(v.audio) + '</span>' : '') + langs;
@@ -81,6 +82,8 @@ function render() {
     '</div>';
 
   let body = '';
+  // Sources essayées sans succès (lenteur, erreur) : une ligne par source avec la raison.
+  if (s.notice.length) body += '<div class="s-fail" role="alert"><b>Sources essayées sans succès</b><ul>' + s.notice.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
   // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
   if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
   else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
@@ -118,7 +121,7 @@ export async function openSourcePicker(request, opener, opts) {
   if (session && session.stop) session.stop();
   const token = Symbol('picker');
   const host = opts.host || modalBody;
-  session = { token, host, pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
+  session = { token, host, notice: opts.notice || [], pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
   const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;

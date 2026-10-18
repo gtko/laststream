@@ -103,9 +103,12 @@ export interface RecommendOptions {
 
 const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1080p': 2, '720p': 1, SD: 0, other: 0 };
 
-/** Rang d'une source dans le navigateur : sa résolution, moins un cran si elle exige une conversion. */
+/**
+ * Rang d'une source dans le navigateur : sa résolution, moins un cran pour une conversion audio seule (la vidéo est copiée),
+ * et trois crans pour un réencodage vidéo (lent, gourmand : un 4K HEVC ne passe pas devant un 1080p lisible).
+ */
 export function webRank(v: SourceView): number {
-  return TIER[v.group] - (v.web === 'convert' ? 1 : 0);
+  return TIER[v.group] - (v.web !== 'convert' ? 0 : v.convert === 'video' ? 3 : 1);
 }
 
 /**
@@ -128,7 +131,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
       const pool = withLang.length ? withLang : [...fitting].sort(webOrder);
       const view = pool[0];
       const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
-      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.web === 'convert' ? ' · avec conversion' : '') };
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') };
     }
   } else {
     const streams = playable.map((v) => v.stream);

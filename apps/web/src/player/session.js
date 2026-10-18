@@ -14,13 +14,14 @@ import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
-import { chooseEngine } from './engine';
+import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine } from './engines.js';
 import { filterEpisodes, firstUnseen, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
-import { StallWatch, failoverOrder } from './failover';
+import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
+import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
-import { fileKey, getMemory, getSubSync, remember, setSubSync } from './memory';
+import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { connectShell, setShellFullscreen } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
@@ -32,6 +33,7 @@ import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, wr
 import { RATE_CHOICES, findSync, rateChoice, suggestRate, syncTrusted } from './subsync';
 import { parseProbe, pickDefaultAudio, pickDefaultSubtitle, pickRememberedSubtitle } from './tracks';
 import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
+import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
 import { thumbsAllowed } from './thumbs';
 import { createPlayerUI } from './ui.js';
@@ -172,6 +174,8 @@ async function initSession(request, views, view, opts = {}) {
     logo: (model && model.logo) || '', overview: (model && model.overview) || meta.overview || '',
   };
   document.body.classList.add('modal-open', 'lp-open');
+  P.phase = nextPhase('ready', 'open');
+  ui.setPhase(P.phase);
   ui.root.classList.toggle('is-searching', !view);
   ui.root.classList.remove('is-mpv');
   ui.video.hidden = false;
@@ -318,7 +322,16 @@ const nextRef = () => (P && P.req.type === 'tv' && P.cur.season != null ? nextEp
 
 // ---------- Chargement d'une source ----------
 
-async function resolveMedia(view) {
+const abortError = () => new Error('annulé');
+
+/** Écarte les sources mémorisées comme lentes ou en échec pour ce titre (24 h), sauf s'il n'en reste aucune. */
+function withoutBad(p, views) {
+  const bad = badSources(badKey(p));
+  const good = views.filter((v) => !bad.has(sourceKey(v)));
+  return good.length ? good : views;
+}
+
+async function resolveMedia(view, signal) {
   const s = view.stream;
   const up = await serverAlive();
   const base = serverBase();
@@ -330,10 +343,69 @@ async function resolveMedia(view) {
   }
   if (typeof s.infoHash === 'string') {
     if (!up) throw new Error('Le serveur de streaming est indisponible : il est nécessaire pour lire un torrent.');
-    const t = await createTorrent({ infoHash: s.infoHash, fileIdx: s.fileIdx, sources: Array.isArray(s.sources) ? s.sources : [], season: P.req.season, episode: P.req.episode }, base);
+    const t = await createTorrent({ infoHash: s.infoHash, fileIdx: s.fileIdx, sources: Array.isArray(s.sources) ? s.sources : [], season: P.req.season, episode: P.req.episode }, base, signal);
     return { url: t.url, torrent: true, up, base };
   }
   throw new Error('Cette source n’a ni lien ni identifiant de torrent.');
+}
+
+/** Clé « titre + épisode » des sources lentes ou en échec (mémorisées 24 h). */
+const badKey = (p) => p.req.key + ':' + (p.cur.season ?? '') + ':' + (p.cur.episode ?? '');
+const describeView = (v) => [v.quality, v.sourceType, v.langs.map((l) => l.label).join('/'), v.provider].filter(Boolean).join(' · ') || 'Source';
+
+/**
+ * Préparation d'une source, interruptible : lien (lastAddon /play, torrent), sonde du fichier, choix du moteur et, pour le
+ * transcodage, création de la session HLS (premier appel de la playlist, qui démarre le travail du serveur).
+ * `direct` : même source mais en lecture directe, pour démarrer vite quand seule la piste audio demande le transcodage.
+ */
+async function prepareView(p, cand, signal) {
+  const { view, direct } = cand;
+  const shell = await connectShell();
+  if (signal.aborted) throw abortError();
+  const media = await resolveMedia(view, signal);
+  if (signal.aborted) throw abortError();
+  let probe = p.hint && p.hint.url === media.url ? p.hint.probe : null;
+  if (!shell && media.up && !probe) probe = await fetchProbe(media.url, media.base, signal);
+  if (signal.aborted) throw abortError();
+  let choice = chooseEngine({
+    torrent: media.torrent, shell: !!shell, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
+    name: view.filename || media.url, forceTranscoding: p.forceHls && !direct,
+    preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
+  });
+  if (!direct && choice.engine === 'hls') {
+    // Démarrage rapide possible : la vidéo passe telle quelle dans le navigateur, seul l'audio demande le transcodage.
+    p.hint = { url: media.url, probe, fastDirect: !p.forceHls && directVideoOk(probe, getCaps()) };
+  }
+  if (direct) choice = { engine: 'direct', viaServer: media.torrent, label: 'lecture directe (démarrage rapide)', reason: 'La vidéo est lisible telle quelle ; piste audio du fichier par défaut.' };
+  const conversion = choice.engine === 'hls' ? probeConversion(probe, getCaps(), p.forceHls) : 'none';
+  let hlsUrl = null;
+  let hlsId = '';
+  if (choice.engine === 'hls') {
+    hlsId = newSessionId();
+    hlsUrl = hlsMasterUrl(media.base, hlsId, media.url, getCaps(), p.forceHls);
+    // Création de la session HLS côté serveur : c'est ici que le serveur remuxe ou réencode, donc ici que l'attente se joue.
+    const res = await fetch(hlsUrl, { signal });
+    if (!res.ok) throw new Error('le serveur de streaming a refusé la session (' + res.status + ')');
+    await res.text();
+  }
+  console.debug('[player] session', { source: describeView(view), engine: choice.engine, conversion, direct: !!direct, hls: hlsUrl ? hlsId : null });
+  return { shell, media, probe, choice, conversion, hlsUrl, hlsId, direct: !!direct };
+}
+
+/** Prochain candidat de la course : lecture directe de la même source, sinon la meilleure autre (langue, cache, lecture directe). */
+function nextCandidate(p, tried) {
+  const first = tried[0];
+  if (p.hint && p.hint.fastDirect && !tried.some((c) => c.direct)) return { view: first.view, direct: true };
+  const bad = new Set(badSources(badKey(p)).keys());
+  const skip = new Set([...p.tried, ...tried.map((c) => c.view.index)]);
+  const v = pickRaceCandidate(p.ranked, first.view, skip, bad, sourceKey);
+  return v ? { view: v, direct: false } : null;
+}
+
+function recordRace(p, win) {
+  const key = badKey(p);
+  win.lost.forEach((f) => markBad(key, sourceKey(f.candidate.view), 'trop lente à démarrer'));
+  win.failures.forEach((f) => markBad(key, sourceKey(f.candidate.view), f.message));
 }
 
 async function playView(view, startAt) {
@@ -342,6 +414,7 @@ async function playView(view, startAt) {
   const token = p.token;
   const playId = (p.playId = (p.playId || 0) + 1);
   const stale = () => !P || P.token !== token || P.playId !== playId;
+  if (p.race) { p.race.cancel(); p.race = null; }
   p.view = view;
   p.tried.add(view.index);
   p.attempts += 1;
@@ -349,6 +422,7 @@ async function playView(view, startAt) {
   p.failing = false;
   p.autoNexting = false;
   p.analyzed = false;
+  p.hint = null;
   p.startAt = startAt || 0;
   const s = p.subs;
   Object.assign(s, { selectedId: null, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
@@ -358,56 +432,80 @@ async function playView(view, startAt) {
   if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
-  const base = loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : '') + ' — démarrage…' });
-  ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', base);
+  p.phase = nextPhase(p.phase, 'open');
+  ui.setPhase(p.phase);
+  const line = (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : '');
+  ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', loaderExtra(2, { source: line(view) }));
+  // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
+  // par candidat, 25 s ou 3 échecs au total).
+  const race = raceCandidates({
+    first: { view, direct: false },
+    next: (tried) => nextCandidate(p, tried),
+    run: (cand, signal) => prepareView(p, cand, signal),
+    onProgress: ({ attempt, max, slow, candidate }) => {
+      if (stale() || !slow) return;
+      p.view = candidate.view;
+      const msg = 'Ça prend du temps… ' + (candidate.direct ? 'essai en lecture directe' : 'essai d’une autre source') + ' (' + attempt + '/' + max + ')';
+      ui.setLoading(p.meta.title || 'Lecture', msg, loaderExtra(2, { source: line(candidate.view), slow: true }));
+    },
+  });
+  p.race = race;
+  let win;
   try {
-    const shell = await connectShell();
-    if (stale()) return;
-    const media = await resolveMedia(view);
-    if (stale()) return;
-    p.mediaUrl = media.url;
-    p.torrent = media.torrent;
-    let probe = null;
-    if (!shell && media.up) {
-      ui.setLoading(p.meta.title || 'Lecture', media.torrent ? 'Connexion au torrent…' : 'Analyse du fichier…', base);
-      probe = await fetchProbe(media.url, media.base);
-      if (stale()) return;
-    }
-    p.probe = probe;
-    p.probeTracks = parseProbe(probe);
-    const choice = chooseEngine({
-      torrent: media.torrent, shell: !!shell, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
-      name: view.filename || media.url, forceTranscoding: p.forceHls,
-      preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
-    });
-    p.choice = choice;
-    ui.setLoading(p.meta.title || 'Lecture', 'Moteur : ' + choice.label + '…', base);
-    p.startedAt = Date.now();
-    p.watch = new StallWatch(p.startedAt);
-    ui.root.classList.toggle('is-mpv', choice.engine === 'mpv');
-    if (choice.engine === 'mpv') {
-      if (!mpv) { mpv = new MpvEngine(shell, ui.root); bindEngine(mpv); }
-      p.engine = mpv;
-      ui.video.hidden = true;
-      await mpv.load({ url: media.url, startAt });
-    } else {
-      p.engine = html;
-      ui.video.hidden = false;
-      const hlsUrl = choice.engine === 'hls' ? hlsMasterUrl(media.base, newSessionId(), media.url, getCaps(), p.forceHls) : null;
-      p.hlsQuery = choice.engine === 'hls' ? hlsQuery(media.url, getCaps(), p.forceHls) : '';
-      p.hlsId = hlsUrl ? hlsUrl.split('/hlsv2/')[1].split('/')[0] : '';
-      p.mediaBase = media.base;
-      await html.load({ url: hlsUrl || media.url, hls: !!hlsUrl, startAt });
-    }
-    if (stale()) return;
-    ui.setPipAvailable(p.engine.supportsPip());
-    ui.setSeries(p.req.type === 'tv', !!nextRef());
-    if (p.notice) { ui.toast(p.notice, 6000); p.notice = ''; }
-    refreshUI();
+    win = await race.promise;
+  } catch (err) {
+    if (stale() || (err && err.kind === 'cancelled')) return;
+    p.race = null;
+    const failures = (err && err.failures) || [];
+    failures.forEach((f) => markBad(badKey(p), sourceKey(f.candidate.view), f.message));
+    p.view = null;
+    showSourcesPanel(failures.map((f) => describeView(f.candidate.view) + (f.candidate.direct ? ' (lecture directe)' : '') + ' : ' + f.message));
+    return;
+  }
+  if (stale()) return;
+  p.race = null;
+  recordRace(p, win);
+  p.view = win.candidate.view;
+  p.tried.add(p.view.index);
+  try {
+    await startPlan(p, win.value, startAt, stale, win.candidate);
   } catch (err) {
     if (stale()) return;
     failover(err && err.message ? err.message : 'Impossible de lancer la lecture');
   }
+}
+
+/** Charge la source préparée dans le moteur choisi. */
+async function startPlan(p, plan, startAt, stale, cand) {
+  const { shell, media, probe, choice } = plan;
+  p.mediaUrl = media.url;
+  p.torrent = media.torrent;
+  p.probe = probe;
+  p.probeTracks = parseProbe(probe);
+  p.choice = choice;
+  p.conversion = plan.conversion;
+  p.startedAt = Date.now();
+  p.watch = new StallWatch(p.startedAt);
+  ui.root.classList.toggle('is-mpv', choice.engine === 'mpv');
+  if (choice.engine === 'mpv') {
+    if (!mpv) { mpv = new MpvEngine(shell, ui.root); bindEngine(mpv); }
+    p.engine = mpv;
+    ui.video.hidden = true;
+    await mpv.load({ url: media.url, startAt });
+  } else {
+    p.engine = html;
+    ui.video.hidden = false;
+    p.hlsQuery = plan.hlsUrl ? hlsQuery(media.url, getCaps(), p.forceHls) : '';
+    p.hlsId = plan.hlsId;
+    p.mediaBase = media.base;
+    await html.load({ url: plan.hlsUrl || media.url, hls: !!plan.hlsUrl, startAt });
+  }
+  if (stale()) return;
+  ui.setPipAvailable(p.engine.supportsPip());
+  ui.setSeries(p.req.type === 'tv', !!nextRef());
+  if (cand && cand.direct) ui.toast('Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
+  if (p.notice) { ui.toast(p.notice, 6000); p.notice = ''; }
+  refreshUI();
 }
 
 /** Repli automatique : copie équivalente d'abord, puis source suivante. */
@@ -433,7 +531,6 @@ function failover(reason) {
 
 function onReady() {
   if (!P) return;
-  ui.setLoading(null);
   if (!P.defaultsDone) setTimeout(() => P && applyDefaultTracks(true), 700);
 }
 
@@ -668,7 +765,6 @@ function tick() {
     if (verdict === 'stalled') failover('La lecture est bloquée depuis plus de 15 s');
     else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
   }
-  if (st.time > 0 && !st.buffering) ui.setLoading(null);
   if (s.sync.state === 'collecting') {
     const secs = s.sync.probe.seconds();
     if (secs >= AUTOSYNC_TARGET) finishAutoSync(); else ui.refreshPanel();
@@ -729,6 +825,12 @@ function maybeRepoll(st) {
 function refreshUI(st) {
   if (!P || !P.engine || !P.view) return;
   const s = st || P.engine.state();
+  // Première image prête : le chargeur s'efface en fondu, puis les contrôles apparaissent (et se masquent seuls après 3 s).
+  if (P.phase === 'loading' && !P.resumeTimer && !ui.panel && !P.failing && shouldBeReady(s)) {
+    P.phase = nextPhase(P.phase, 'media');
+    ui.setLoading(null);
+    ui.setPhase(P.phase);
+  }
   ui.update(shell ? { ...s, fullscreen: shellFullscreen } : s, chapterMarks(P.segments, s.duration));
 }
 
@@ -795,14 +897,14 @@ async function togglePip() {
 }
 
 /** Sélecteur de sources dans un panneau du lecteur : recherche initiale sans résultat, lecture automatique désactivée, changement de source. */
-function showSourcesPanel() {
+function showSourcesPanel(reasons = []) {
   const p = P;
   if (!p) return;
   ui.setLoading(null);
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
   openSourcePicker(p.req, null, {
-    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null,
+    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons,
     onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
       ui.closePanel(true);
@@ -858,6 +960,12 @@ function onAction(act, data) {
   if (!P) return;
   if (act === 'close') { closePlayer(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
+  if (act === 'choose-myself') {
+    if (P.race) { P.race.cancel(); P.race = null; }
+    P.view = null;
+    showSourcesPanel();
+    return;
+  }
   if (!P.view) return; // recherche en cours : seuls « Annuler » et le choix de source sont possibles
   const st = P.engine.state();
   const s = P.subs;
@@ -1026,6 +1134,7 @@ function panelData(name) {
     const [title, sub] = headingFor(p);
     const rows = [
       ['Moteur', p.choice ? p.choice.label : '…'],
+      ['Conversion', p.choice && p.choice.engine === 'hls' ? CONVERSION_LABEL[p.conversion || 'unknown'] : 'Aucune (lecture directe)'],
       ['Qualité', [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
       ['Audio', v.audio || 'Inconnu'],
       ['Taille', [v.sizeLabel, v.bitrateLabel, v.durationLabel && '≈ ' + v.durationLabel].filter(Boolean).join(' · ') || 'Inconnue'],
@@ -1148,7 +1257,7 @@ export async function playBest(request, opener, opts = {}) {
   ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
-  let rec = recommendFor(loaded.views, bw);
+  let rec = recommendFor(withoutBad(p, loaded.views), bw);
   // Réponse partielle : on part tout de suite si la meilleure source disponible est une bonne correspondance (cache, langue
   // préférée, 1080p ou mieux) ; sinon on attend le reste de la recherche, 20 s au plus.
   let cur = loaded;
@@ -1164,13 +1273,13 @@ export async function playBest(request, opener, opts = {}) {
       p.views = next.views;
       p.pending = next.pending;
       p.ranked = [...next.views];
-      rec = recommendFor(next.views, bw);
+      rec = recommendFor(withoutBad(p, next.views), bw);
     }
   }
   loaded.views = cur.views;
   loaded.pending = cur.pending;
   if (!rec) { showSourcesPanel(); return; }
-  ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') + ' — démarrage…' }));
+  ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') }));
   await continueWith(rec.view, { resume: p.resumeMode, notice: rec.languageFallback ? rec.reason : '' });
 }
 

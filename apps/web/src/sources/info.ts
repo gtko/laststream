@@ -1,6 +1,6 @@
 import { copiesOf, formatBitrate, formatSize, getQualityGroupKey, languageLabel, type QualityGroupKey } from '../data/sources';
 import type { MediaCaps } from '../player/server';
-import { webPlayback, type WebPlayback } from './direct';
+import { conversionOf, webPlayback, type WebPlayback } from './direct';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
 
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
@@ -53,6 +53,8 @@ export interface SourceView {
   score: number;
   /** Lecture directe dans le navigateur, conversion nécessaire, ou inconnu (renseigné par `withWebPlayback`). */
   web: WebPlayback;
+  /** Nature de la conversion quand `web` vaut `convert` : audio seulement (léger) ou vidéo (réencodage lent). */
+  convert: 'audio' | 'video' | null;
 }
 
 const QUALITY_BADGE: Record<Resolution, string> = {
@@ -235,6 +237,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,
     web: 'unknown',
+    convert: null,
   };
 }
 
@@ -251,5 +254,9 @@ export function copySignature(v: SourceView): string {
 
 /** Renseigne `web` d'après les capacités réelles du navigateur ; `null` (coque Windows) : inconnu partout. */
 export function withWebPlayback(views: readonly SourceView[], caps: MediaCaps | null): SourceView[] {
-  return views.map((v) => ({ ...v, web: caps ? webPlayback(v.stream, v.info, caps) : 'unknown' }));
+  return views.map((v) => {
+    if (!caps) return { ...v, web: 'unknown' as const, convert: null };
+    const c = conversionOf(v.stream, v.info, caps);
+    return { ...v, web: webPlayback(v.stream, v.info, caps), convert: c === 'audio' || c === 'video' ? c : null };
+  });
 }

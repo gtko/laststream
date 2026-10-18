@@ -102,7 +102,8 @@ export function detectCaps(canPlayType: (mime: string) => string, opts: { chromi
   const ok = (mime: string): boolean => !!canPlayType(mime);
   const videoCodecs: string[] = [];
   if (opts.chromium || ok('video/mp4; codecs="avc1.42E01E"')) videoCodecs.push('h264');
-  if (ok('video/mp4; codecs="hev1.1.6.L150.B0"')) videoCodecs.push('h265', 'hevc');
+  // HEVC : Chrome / Edge l'annoncent quand le matériel le décode (hvc1 ou hev1 selon le fichier).
+  if (['hvc1.1.6.L93.B0', 'hev1.1.6.L93.B0', 'hvc1.1.6.L120.B0', 'hev1.1.6.L150.B0'].some((c) => ok('video/mp4; codecs="' + c + '"'))) videoCodecs.push('h265', 'hevc');
   if (ok('video/mp4; codecs="vp9"') || ok('video/webm; codecs="vp9"')) videoCodecs.push('vp9');
   if (ok('video/mp4; codecs="vp8"') || ok('video/webm; codecs="vp8"')) videoCodecs.push('vp8');
   if (ok('video/mp4; codecs="av01.0.05M.08"')) videoCodecs.push('av1');
@@ -118,4 +119,36 @@ export function detectCaps(canPlayType: (mime: string) => string, opts: { chromi
   const formats = ['mp4'];
   if (opts.chromium) formats.push('matroska,webm', 'webm');
   return { formats, videoCodecs: [...new Set(videoCodecs)], audioCodecs: [...new Set(audioCodecs)], maxAudioChannels: opts.maxChannels };
+}
+
+export type ConversionKind = 'none' | 'audio' | 'video' | 'unknown';
+
+/**
+ * Travail du serveur de streaming pour une session HLS (selon les paramètres `videoCodecs` / `audioCodecs` / `maxAudioChannels`) :
+ * `none` copie tout (remux), `audio` copie la vidéo et convertit l'audio, `video` réencode la vidéo, `unknown` sans sonde.
+ */
+export function probeConversion(probe: Probe | null, caps: MediaCaps, forced = false): ConversionKind {
+  if (forced) return 'video';
+  if (!probe) return 'unknown';
+  const videoBad = probe.streams.some((s) => s.track === 'video' && !inList(caps.videoCodecs, s.codec));
+  if (videoBad) return 'video';
+  const audioBad = probe.streams.some((s) => s.track === 'audio' && !((s.channels ?? 2) <= caps.maxAudioChannels && inList(caps.audioCodecs, s.codec)));
+  return audioBad ? 'audio' : 'none';
+}
+
+export const CONVERSION_LABEL: Record<ConversionKind, string> = {
+  none: 'Remux seul (aucune conversion)', audio: 'Conversion audio seulement', video: 'Conversion vidéo (réencodage)', unknown: 'Inconnue',
+};
+
+/**
+ * La vidéo passe telle quelle dans le navigateur (conteneur et codec vidéo pris en charge, au moins une piste audio lisible) :
+ * seule la piste audio ou les sous-titres demandent alors le transcodage. Sert au démarrage rapide.
+ */
+export function directVideoOk(probe: Probe | null, caps: MediaCaps): boolean {
+  if (!probe) return false;
+  const formatOk = caps.formats.some((f) => (probe.format?.name ?? '').includes(f));
+  const videos = probe.streams.filter((s) => s.track === 'video');
+  const audios = probe.streams.filter((s) => s.track === 'audio');
+  const audioOk = audios.length === 0 || audios.some((s) => (s.channels ?? 2) <= caps.maxAudioChannels && inList(caps.audioCodecs, s.codec));
+  return formatOk && videos.length > 0 && videos.every((s) => inList(caps.videoCodecs, s.codec)) && audioOk;
 }

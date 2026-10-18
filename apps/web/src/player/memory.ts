@@ -76,3 +76,49 @@ export function setSubSync(file: string, subKey: string, sync: SubSync): void {
   for (const old of keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES))) delete all[old];
   try { globalThis.localStorage?.setItem(SYNC_KEY, JSON.stringify(all)); } catch { /* quota */ }
 }
+
+// ---------- Sources lentes ou en échec, par titre (24 h) ----------
+
+export const BAD_KEY = 'laststream.player.badsources';
+export const BAD_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface BadEntry { reason: string; at: number }
+
+function readBad(): Record<string, Record<string, BadEntry>> {
+  try {
+    const raw = globalThis.localStorage?.getItem(BAD_KEY);
+    const v = raw ? (JSON.parse(raw) as unknown) : null;
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, Record<string, BadEntry>>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Identité d'une source : torrent (infoHash) ou lien sans paramètres (les jetons changent d'une fois à l'autre). */
+export function sourceKey(v: { stream: { url?: unknown; infoHash?: unknown } }): string {
+  const s = v.stream;
+  if (typeof s.infoHash === 'string' && s.infoHash) return 'h:' + s.infoHash.toLowerCase();
+  if (typeof s.url === 'string') {
+    try { const u = new URL(s.url); return 'u:' + u.origin + u.pathname; } catch { return 'u:' + s.url; }
+  }
+  return 'x:?';
+}
+
+export function markBad(title: string, source: string, reason: string, now = Date.now()): void {
+  const all = readBad();
+  const t = { ...(all[title] ?? {}) };
+  t[source] = { reason, at: now };
+  all[title] = t;
+  // On ne garde que les 100 derniers titres.
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete all[k];
+  try { globalThis.localStorage?.setItem(BAD_KEY, JSON.stringify(all)); } catch { /* quota */ }
+}
+
+/** Sources à éviter pour ce titre (moins de 24 h) : clé → raison. */
+export function badSources(title: string, now = Date.now()): Map<string, string> {
+  const out = new Map<string, string>();
+  const t = readBad()[title] ?? {};
+  for (const [k, e] of Object.entries(t)) if (e && now - e.at < BAD_TTL_MS) out.set(k, e.reason);
+  return out;
+}

@@ -11,10 +11,11 @@ export function browserCaps(): MediaCaps {
   const v = document.createElement('video');
   const ms = (globalThis as { MediaSource?: { isTypeSupported?: (m: string) => boolean } }).MediaSource;
   const chromium = !!(globalThis as { chrome?: unknown }).chrome;
+  // Canaux réellement disponibles sur la sortie audio (2 en stéréo, 6 sur un ampli 5.1) ; Firefox sait toujours mixer 5.1.
   let channels = 2;
   if (/firefox/i.test(navigator.userAgent)) channels = 6;
-  else if (!chromium) {
-    try { channels = new AudioContext().destination.maxChannelCount || 2; } catch { channels = 2; }
+  else {
+    try { channels = Math.max(2, new AudioContext().destination.maxChannelCount || 2); } catch { channels = 2; }
   }
   const support = (mime: string): string => (ms?.isTypeSupported?.(mime) ? 'probably' : v.canPlayType(mime));
   cached = detectCaps(support, { chromium, maxChannels: channels });
