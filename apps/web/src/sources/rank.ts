@@ -15,12 +15,14 @@ export interface SourceFilters {
   langs: ReadonlySet<LangFilter>;
   cachedOnly: boolean;
   hdrOnly: boolean;
+  /** Noms d'origine retenus (vide : toutes). */
+  origins: ReadonlySet<string>;
 }
 
-export const NO_FILTERS: SourceFilters = { resolutions: new Set(), langs: new Set(), cachedOnly: false, hdrOnly: false };
+export const NO_FILTERS: SourceFilters = { resolutions: new Set(), langs: new Set(), cachedOnly: false, hdrOnly: false, origins: new Set() };
 
 export function filtersActive(f: SourceFilters): boolean {
-  return f.resolutions.size > 0 || f.langs.size > 0 || f.cachedOnly || f.hdrOnly;
+  return f.resolutions.size > 0 || f.langs.size > 0 || f.cachedOnly || f.hdrOnly || f.origins.size > 0;
 }
 
 function matchesLangFilter(v: SourceView, l: LangFilter): boolean {
@@ -36,6 +38,7 @@ export function applyFilters(views: readonly SourceView[], f: SourceFilters): So
     if (f.langs.size && ![...f.langs].some((l) => matchesLangFilter(v, l))) return false;
     if (f.cachedOnly && v.status !== 'cached') return false;
     if (f.hdrOnly && v.hdr.length === 0) return false;
+    if (f.origins.size && !v.origins.some((o) => f.origins.has(o.name))) return false;
     return true;
   });
 }
@@ -160,4 +163,18 @@ export function describePending(pending: readonly string[]): string {
   const shown = pending.slice(0, 2).join(', ');
   const more = pending.length - 2;
   return 'Recherche encore sur ' + shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '…';
+}
+
+/** Nombre de sources par origine, de la plus fournie à la moins fournie. */
+export function countOrigins(views: readonly SourceView[]): Array<{ name: string; count: number; logo?: string }> {
+  const map = new Map<string, { name: string; count: number; logo?: string }>();
+  for (const v of views) {
+    for (const o of v.origins) {
+      const e = map.get(o.name) ?? { name: o.name, count: 0, logo: o.logo };
+      e.count += 1;
+      if (!e.logo && o.logo) e.logo = o.logo;
+      map.set(o.name, e);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }

@@ -12,6 +12,7 @@ import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
+import { originSummary } from '../sources/info';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
@@ -74,7 +75,7 @@ function headingFor(p) {
   return [p.meta.title || p.req.name || '', seLabel(p.cur) + (ep && ep.name ? ' « ' + ep.name + ' »' : '')];
 }
 
-const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider || (v.status === 'p2p' ? 'P2P' : '')].filter(Boolean).join(' · ');
+const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider || (v.status === 'p2p' ? 'P2P' : ''), originSummary(v.origins, 1)].filter(Boolean).join(' · ');
 
 // ---------- Création de l'interface (une seule fois) ----------
 function ensureUI() {
@@ -1136,6 +1137,7 @@ function panelData(name) {
       ['Moteur', p.choice ? p.choice.label : '…'],
       ['Conversion', p.choice && p.choice.engine === 'hls' ? CONVERSION_LABEL[p.conversion || 'unknown'] : 'Aucune (lecture directe)'],
       ['Qualité', [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
+      ['Origine', v.origins.map((o) => o.name).join(', ') || 'Inconnue'],
       ['Audio', v.audio || 'Inconnu'],
       ['Taille', [v.sizeLabel, v.bitrateLabel, v.durationLabel && '≈ ' + v.durationLabel].filter(Boolean).join(' · ') || 'Inconnue'],
       ['Statut', v.statusLabel],
