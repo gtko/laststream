@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvHlsUrl } from '../data/lt';
+import { getBoxReach } from '../data/tvBox';
 import { channelNumber } from '../data/tvRank';
 import { LI } from '../player/icons.js';
 import { stopPreview } from './preview.js';
@@ -212,8 +213,15 @@ export function playFail(token, reason, c) {
  * (mpv et libVLC n'ont pas besoin de CORS et les gardent). Si rien ne reste, on tente tout de même la liste complète.
  */
 const sourcesOf = (c) => {
-  const all = [{ url: c.url, sig: c.sig, direct: c.direct }].concat(c.alternatives || []);
-  if (externalKind()) return all;
+  const app = !!externalKind();
+  // Version de la box (playlist de l'utilisateur) : source préférée dans l'app, sauf box injoignable (hors du réseau local) ;
+  // dans un navigateur, seulement un flux https d'une playlist publique. Une chaîne propre à la box n'a pas d'autre flux.
+  const b = c.box;
+  const boxReady = !!b && (app ? !(b.local && getBoxReach(b.list) === false) : /^https:\/\//i.test(b.url) && !b.local);
+  const boxSrc = boxReady ? [{ url: b.url, sig: null, direct: true }] : [];
+  const own = c.boxOnly ? [] : [{ url: c.url, sig: c.sig, direct: c.direct }].concat(c.alternatives || []);
+  const all = boxSrc.concat(own);
+  if (app) return all;
   const usable = all.filter((s) => s.sig || s.direct !== false);
   return usable.length ? usable : all;
 };
@@ -224,7 +232,7 @@ export function startStream() {
   if (!c) return;
   const token = ++tv.playToken;
   tv.attempt = 0;
-  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [] });
+  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [], box: c.box, boxOnly: !!c.boxOnly, num: c.num });
   updateBanner();
   wakeUi();
   if (tv.info) renderInfo();
@@ -270,6 +278,8 @@ function tryStream(c, token) {
   const cur = sourcesOf(c)[idx];
   // `r` : clé de REASONS, ou une erreur mpv / du plugin natif (interprétée par reasonOfExternal).
   const fail = (r) => failover(c, token, typeof r === 'string' ? r : reasonOfExternal(r));
+  // Chaîne d'une playlist illisible ici (navigateur, ou box hors du réseau local) : explication plutôt qu'une tentative vaine.
+  if (!cur) { fail('box'); return; }
   const web = !externalKind();
   videoEl.onplaying = () => { clearTimeout(tv.stallTimer); perrEl.hidden = true; };
   videoEl.onerror = () => {

@@ -255,5 +255,10 @@ export const putSettings = (id: string, settings: Record<string, unknown>) =>
 export const getAccountConfig = (profileId: string) => call<{ config: string | null }>('/account/config', { headers: { 'x-profile-id': profileId } });
 export const putAccountConfig = (mainProfileId: string, config: string | null) =>
   call<{ config: string | null }>('/account/config', { method: 'PUT', body: { config }, profileId: mainProfileId, headers: { 'x-profile-id': mainProfileId } });
+/** Sources TV (playlists M3U, guides XMLTV) du compte : chiffrées côté serveur, rendues en clair à ce compte seulement (no-store). Lecture par tout profil, écriture par le principal. Le serveur ne télécharge jamais les playlists. */
+export interface TvSourceWire { id: string; name: string; kind: 'url' | 'freebox'; url: string; guideUrl: string; enabled: boolean }
+export const getTvSources = (profileId: string) => call<{ lists: TvSourceWire[] | null }>('/account/tv-sources', { headers: { 'x-profile-id': profileId } });
+export const putTvSources = (mainProfileId: string, lists: TvSourceWire[]) =>
+  call<{ ok: boolean }>('/account/tv-sources', { method: 'PUT', body: { lists }, profileId: mainProfileId, headers: { 'x-profile-id': mainProfileId } });
 export const importStremio = (id: string, email: string, password: string, config?: string) =>
   call<Record<string, unknown>>(P(id) + '/import/stremio', { method: 'POST', body: { email, password, config }, profileId: id, timeoutMs: 120_000 });

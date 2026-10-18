@@ -22,7 +22,7 @@ import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
 import { openPartyDialog } from './partylaunch.js';
 import { state } from './state.js';
-import { allChannels, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
+import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 document.addEventListener('click', (e) => {
@@ -64,6 +64,8 @@ document.addEventListener('click', (e) => {
     const last = store('ls_tv_last');
     const c = allChannels().find((x) => x.id === id) || (last && last.id === id ? last : null);
     if (!c) return;
+    // Chaîne d'une playlist illisible ici (navigateur, ou box hors du réseau local) : on explique pourquoi.
+    if (boxLocked(c)) { toast(boxStatus(c).note); return; }
     const list = tp.dataset.tvctx === 'home' ? tv.homeList : tp.closest('.tv-page') ? tv.list : [c];
     openPlayer(c, list, tp);
     return;

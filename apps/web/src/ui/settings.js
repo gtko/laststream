@@ -16,6 +16,7 @@ import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { creditsHTML, errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
+import { tvPanelHTML } from './settings-tv.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
@@ -202,6 +203,7 @@ const PANEL_DESC = {
   playback: 'Lancement des sources, connexion et enchaînement des épisodes.',
   audio: 'Langues de l’audio et des sous-titres, appliquées au début de chaque lecture sur ce profil.',
   home: 'Ce qui est proposé, ou non, sur l’accueil de ce profil.',
+  tv: 'Chaînes de ta box et playlists M3U, lues par cet appareil.',
 };
 
 let activeCat = 'account';
@@ -209,7 +211,7 @@ let lockUntil = 0;
 
 function categories() {
   const main = isMainProfile() && !isKidProfile();
-  return CATEGORIES.filter((c) => (c.id !== 'home' || !isKidProfile()) && (main || (c.id !== 'server' && c.id !== 'sources')));
+  return CATEGORIES.filter((c) => ((c.id !== 'home' && c.id !== 'tv') || !isKidProfile()) && (main || (c.id !== 'server' && c.id !== 'sources')));
 }
 
 function pageHTML() {
@@ -223,6 +225,7 @@ function pageHTML() {
     panelHTML(cat('playback'), PANEL_DESC.playback, playbackPanel()),
     panelHTML(cat('audio'), PANEL_DESC.audio, audioPanel()),
     cat('home') ? panelHTML(cat('home'), PANEL_DESC.home, homePanelHTML()) : '',
+    cat('tv') ? panelHTML(cat('tv'), PANEL_DESC.tv, tvPanelHTML()) : '',
     cat('server') ? serverFormHTML(cats) : '',
   ].join('');
   return topBar(false) +

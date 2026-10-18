@@ -11,6 +11,7 @@ import {
   clearSession, dropProfileToken, getSession, isLocalMode, saveProfileToken, setActiveProfile, setLocalMode,
   setSession, validProfileToken,
 } from './session';
+import { dropSyncedLists, pushTvSources, reconcileTvSources, refreshAll, setTvSourcesPusher } from './tvSources';
 import * as api from './userApi';
 import { authEvents, UserApiError, type ProfileDto, type ProfileInput } from './userApi';
 import { LocalUserStore, setUserStore, type Profile } from './userStore';
@@ -197,7 +198,21 @@ async function syncPrefsIn(profileId: string): Promise<void> {
     const verdict = await reconcileConfig(config ? { [CONFIG_SETTING_KEY]: config } : {});
     if (verdict === 'push' && isMainProfile()) pushConfig(getConfig());
   } catch { /* Config locale conservée. */ }
+  try {
+    // Playlists TV du compte (chiffrées côté serveur, rendues en clair à ce compte seulement) : tout profil les lit, le principal les écrit.
+    // L'appareil télécharge lui-même playlists et guides ; le serveur ne les lit jamais.
+    const { lists } = await api.getTvSources(profileId);
+    const verdict = reconcileTvSources(lists);
+    if (verdict === 'push' && isMainProfile()) pushTvSources();
+    void refreshAll();
+  } catch { /* Playlists locales conservées. */ }
 }
+
+// Playlists TV synchronisées : le profil principal les envoie au compte à chaque modification (hors mode serveur, rien).
+setTvSourcesPusher((wire) => {
+  if (!isServerMode() || !auth.profile || !isMainProfile()) return;
+  api.putTvSources(auth.profile.id, wire).catch(() => undefined);
+});
 
 /** Envoie la config lastAddon chiffrée au compte, depuis le profil principal actif (sans effet hors mode serveur ; erreurs ignorées). */
 export function pushConfig(config: string): void {
@@ -245,6 +260,7 @@ export async function signOut(silent = false): Promise<void> {
   clearSession();
   clearElevation();
   clearLocalAccountData();
+  dropSyncedLists();
   managerId = null;
   auth.isOwner = false;
   auth.username = '';
