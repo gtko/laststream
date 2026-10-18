@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { renderFollowRow } from './calendar.js';
+import { starsText } from './rate.js';
 import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
@@ -50,10 +52,16 @@ export async function loadHome() {
 }
 
 /** Remplit state.ai depuis une liste compacte (tous les titres ; la rangée d'accueil en montre une partie). */
+/** « Parce que tu as noté X ★★★★★ » quand la raison de l'IA cite un titre que tu as noté. */
+function ratedReason(text) {
+  const hit = userStore.getRatings().find((r) => r.title && r.title.length > 2 && text.toLowerCase().includes(r.title.toLowerCase()));
+  return hit ? 'Parce que tu as noté ' + hit.title + ' ' + starsText(hit.rating) : text;
+}
+
 function useRecs(recs) {
   const items = recs.items.map((r) => {
     const c = register(toItem(rawOf(r)));
-    c.reason = r.r; // affichée seulement dans l'aperçu au survol
+    c.reason = ratedReason(r.r); // affichée seulement dans l'aperçu au survol
     return c;
   });
   state.ai = { status: 'ready', items, date: recs.date };
@@ -196,7 +204,7 @@ export function headerA() {
     '<a href="#series" data-scroll="series">Séries</a>' +
     '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
     '<a href="#/services" data-svcs>Services</a>' +
-    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#" data-noop>Stats</a></nav>' +
+    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a><a href="#" data-noop>Stats</a></nav>' +
     '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
     '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
 }
@@ -263,6 +271,7 @@ export function renderHome() {
   renderAI();
   renderUpcoming();
   renderLive();
+  if (!state.data.kids) renderFollowRow();
   observeTiles(app);
   setupPreviews();
   if (state.data.kids) {
@@ -294,8 +303,10 @@ export function recoSeed() {
   };
   userStore.continueWatching(10).forEach(add);
   userStore.getLibrary().sort((a, b) => b.addedAt - a.addedAt).forEach(add);
+  userStore.getRatings().forEach((r) => add({ ...r, type: r.type }));
   if (!history.length) return null;
-  return { history: history.slice(0, 10), liked: history.slice(0, 3), ratings: [] };
+  const ratings = userStore.getRatings().slice(0, 100).map((r) => ({ title: r.title, year: Number(r.year) || null, type: r.type, rating: r.rating })).filter((r) => r.title);
+  return { history: history.slice(0, 10), liked: history.slice(0, 3), ratings };
 }
 
 /** « Reprendre la lecture » : uniquement la progression réelle ; rien tant qu'il n'y en a pas. */

@@ -17,6 +17,9 @@ import './ui/rows.js';
 import './ui/ctxmenu.js';
 import './ui/hover.js';
 import './ui/settings.js';
+import './ui/follows.js';
+import './ui/rate.js';
+import './ui/calendar.js';
 import './ui/sources-ui.js';
 
 await initAuth();

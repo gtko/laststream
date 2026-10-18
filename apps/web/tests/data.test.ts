@@ -4,6 +4,8 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, reque
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
+import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
 import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, PROBES } from '../src/data/rows';
 import { compactItems, packRecs, todayLocal, unpackRecs } from '../src/data/recs';
 import { pickTrailerKey, sortVideos } from '../src/data/trailers';
@@ -202,6 +204,37 @@ describe('registre des rangées', () => {
     a.commit('movie:1');
     expect(a.canShow('movie:1')).toBe(false);
     expect(a.canShow('movie:2')).toBe(true);
+  });
+});
+
+describe('nouveaux épisodes et calendrier', () => {
+  const seasons = [{ season_number: 0, episode_count: 3 }, { season_number: 1, episode_count: 10 }, { season_number: 2, episode_count: 8 }];
+  it('compte les épisodes diffusés après le dernier vu', () => {
+    expect(newEpisodeCount(seasons, { season_number: 2, episode_number: 5 }, [{ season: 1, episode: 10 }])).toBe(5);
+    expect(newEpisodeCount(seasons, { season_number: 2, episode_number: 5 }, [{ season: 2, episode: 5 }])).toBe(0);
+    expect(newEpisodeCount(seasons, { season_number: 2, episode_number: 5 }, [{ season: 1, episode: 3 }, { season: 2, episode: 1 }])).toBe(4);
+    expect(newEpisodeCount(seasons, { season_number: 2, episode_number: 5 }, [])).toBe(0);
+    expect(newEpisodeCount(seasons, { season_number: 2, episode_number: 5 }, [], true)).toBe(15);
+    expect(newEpisodeCount(seasons, null, [{ season: 1, episode: 1 }])).toBe(0);
+    expect(episodeIndex(seasons, 2, 1)).toBe(11);
+  });
+  it('construit la grille du mois (semaines du lundi)', () => {
+    const weeks = monthGrid(2026, 10); // 1er octobre 2026 : jeudi
+    expect(weeks).toHaveLength(5);
+    expect(weeks[0][0]).toEqual({ date: '2026-09-28', inMonth: false });
+    expect(weeks[0][3]).toEqual({ date: '2026-10-01', inMonth: true });
+    expect(weeks[4][6].date).toBe('2026-11-01');
+    expect(weeks.every((w) => w.length === 7)).toBe(true);
+  });
+  it('sépare cinéma et streaming, et regroupe les épisodes du jour', () => {
+    const rel = movieReleases([{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-10-20T00:00:00.000Z' }, { type: 4, release_date: '2027-01-10T00:00:00.000Z' }, { type: 3, release_date: '2026-10-22T00:00:00.000Z' }] }], 'FR');
+    expect(rel).toEqual([{ date: '2026-10-20', label: 'Au cinéma' }, { date: '2027-01-10', label: 'En streaming' }]);
+    expect(movieReleases([], 'FR', '2026-12-25')).toEqual([{ date: '2026-12-25', label: 'Au cinéma' }]);
+    const ev = (n: number) => ({ date: '2026-10-20', kind: 'episode' as const, key: 'tv:1', title: 'S', poster: '', label: 'S2 É' + n });
+    const merged = mergeEpisodes([ev(5), ev(6), ev(7)]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].label).toBe('S2 É5–É7');
+    expect(groupByDate(merged).get('2026-10-20')).toHaveLength(1);
   });
 });
 

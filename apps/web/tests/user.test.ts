@@ -207,3 +207,48 @@ describe('« Reprendre la lecture » : retrait sans perdre la progression', () =
     expect(s.continueWatching()).toHaveLength(1);
   });
 });
+
+describe('suivis et notes', () => {
+  it('suivre et noter en local, par demi-étoile', async () => {
+    localStorage.clear();
+    const { LocalUserStore } = await import('../src/data/userStore');
+    const s = new LocalUserStore();
+    await s.setFollow({ type: 'tv', id: 1399, title: 'GoT', poster: '/g.jpg' }, true);
+    await s.setFollow({ type: 'person', id: 6193, title: 'Leonardo DiCaprio', poster: '' }, true);
+    expect(s.isFollowing('tv:1399')).toBe(true);
+    expect(s.getFollows('person').map((f) => f.id)).toEqual([6193]);
+    await s.setFollow({ type: 'tv', id: 1399, title: 'GoT', poster: '' }, false);
+    expect(s.isFollowing('tv:1399')).toBe(false);
+    expect(await s.setRating({ type: 'movie', id: 550, title: 'Fight Club', year: '1999' }, 4.5)).toBe(true);
+    expect(s.getRating('movie:550')).toBe(4.5);
+    expect(await s.setRating({ type: 'movie', id: 550, title: 'Fight Club', year: '1999' }, 4.3)).toBe(false); // pas une demi-étoile
+    expect(s.getRating('movie:550')).toBe(4.5);
+    await s.setRating({ type: 'movie', id: 550, title: 'Fight Club', year: '1999' }, null);
+    expect(s.getRating('movie:550')).toBeNull();
+  });
+
+  it('serveur : suivi annulé si refus, local conservé sans la route', async () => {
+    localStorage.clear();
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'x' }));
+    reloadSettings();
+    setSession('T'.repeat(30), new Date(Date.now() + 1e9).toISOString(), 'greg');
+    const { ServerUserStore } = await import('../src/data/serverUserStore');
+    const mk = () => new ServerUserStore([{ id: 'p', name: 'Greg' }], { id: 'p', name: 'Greg' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"boom"}', { status: 500 })));
+    const a = mk();
+    expect(await a.setFollow({ type: 'movie', id: 7, title: 'X', poster: '' }, true)).toBe(false);
+    expect(a.isFollowing('movie:7')).toBe(false);
+    expect(await a.setRating({ type: 'movie', id: 7, title: 'X', year: '' }, 3)).toBe(false);
+    expect(a.getRating('movie:7')).toBeNull();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"not_found"}', { status: 404 })));
+    const b = mk();
+    expect(await b.setFollow({ type: 'tv', id: 8, title: 'Y', poster: '' }, true)).toBe(true);
+    expect(b.isFollowing('tv:8')).toBe(true);
+    const sent: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { sent.push((init?.method ?? 'GET') + ' ' + url); return new Response(null, { status: 204 }); }));
+    const c = mk();
+    await c.setFollow({ type: 'tv', id: 9, title: 'Z', poster: '/z.jpg' }, true);
+    await c.setRating({ type: 'tv', id: 9, title: 'Z', year: '2020' }, 5);
+    expect(sent).toEqual(['PUT http://localhost:7000/user/profiles/p/follows/series/9', 'PUT http://localhost:7000/user/profiles/p/ratings/series/9']);
+  });
+});

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { followBtn } from './follows.js';
 import { setupWhy } from './why.js';
 import { isKidProfile } from '../data/auth';
 import { kidGenreOk } from '../data/kid';
@@ -199,6 +200,7 @@ export async function showPerson(id) {
     '<div class="pp-info"><h1 class="pp-name" id="pp-title" tabindex="-1">' + esc(raw.name) + '</h1>' +
     (roles ? '<p class="pp-roles">' + esc(roles) + '</p>' : '') +
     (life ? '<p class="pp-life">' + esc(life) + (raw.place_of_birth ? ' · ' + esc(raw.place_of_birth) : '') + '</p>' : raw.place_of_birth ? '<p class="pp-life">' + esc(raw.place_of_birth) + '</p>' : '') +
+    '<div class="pp-follow" data-nav>' + followBtn('person:' + raw.id, 'btn btn-ghost', ' data-fname="' + esc(raw.name) + '" data-fphoto="' + esc(raw.profile_path || '') + '"') + '</div>' +
     (ppLinks(ext) ? '<div class="pp-links" data-nav>' + ppLinks(ext) + '</div>' : '') +
     (bio ? '<div class="pp-bio-wrap"><p class="pp-bio' + (bio.length > 380 ? ' is-clamped' : '') + '" id="pp-bio">' + esc(bio) + '</p>' +
       (bio.length > 380 ? '<button type="button" class="link-btn" data-bio aria-expanded="false" aria-controls="pp-bio">Lire la suite</button>' : '') + '</div>' : '') +

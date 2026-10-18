@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { followBtn } from './follows.js';
+import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
@@ -178,7 +180,8 @@ export function ficheHTML(m) {
       : '') +
     libBtn(m) +
     (m.type === 'movie' ? watchBtn(m) : '') +
-    '</div></div>';
+    followBtn(m.key, 'btn-round') +
+    '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
 
   const panels = [];
   if (tabs.includes('eps')) {
@@ -190,6 +193,7 @@ export function ficheHTML(m) {
       '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
       '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +
       '<button type="button" role="menuitem" data-series-watch="0">Marquer toute la série comme non vue</button></span></span>' +
+      '<span class="f-newcount" id="f-newcount" hidden></span>' +
       '<p class="f-next" id="f-next"></p></div>' +
       '<ol class="row eps" id="f-eplist" data-nav aria-live="polite"><li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li></ol>'));
   }

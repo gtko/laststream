@@ -51,7 +51,7 @@ function ratedSources() {
   return list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map((r) => ({ key: r.type + ':' + r.id, type: r.type, id: r.id, title: r.title }));
 }
 
-const followedPeople = () => (userStore.getFollows ? userStore.getFollows('person') : []);
+const followedPeople = () => (userStore.getFollows ? userStore.getFollows('person').map((p) => ({ id: p.id, name: p.title })) : []);
 
 // ---------- Récupération ----------
 const toItems = (json, forced) => {

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { showCalendar } from './calendar.js';
 import { isKidProfile, kidSection } from '../data/auth';
 import { browseAllowed, showBrowse } from './registry.js';
 import { showAiBrowse } from './recs-ui.js';
@@ -36,6 +37,7 @@ export function showView(r) {
   else if (r.kind === 'settings') showSettings();
   else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
   else if (r.kind === 'search') showSearch();
+  else if (r.kind === 'calendar') showCalendar();
   else if (r.kind === 'person') showPerson(r.id);
   else if (r.kind === 'tvlive') showTvLive();
   else showFiche(r.type, r.id);
@@ -50,7 +52,7 @@ export function applyRestore() {
 export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
-  if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')))) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -69,6 +71,7 @@ function parseRouteRaw() {
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
   if (r) return { kind: 'browse', id: r[1] };
   if (h === '#/search') return { kind: 'search' };
+  if (h === '#/calendar') return { kind: 'calendar' };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;
 }
 

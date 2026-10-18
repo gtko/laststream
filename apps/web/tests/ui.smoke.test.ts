@@ -176,6 +176,53 @@ describe('interface portée', () => {
     expect(JSON.parse(localStorage.getItem('laststream.library')!)[0].poster).toBe('/p.jpg');
   });
 
+  it('fiche : Suivre, Marquer comme vu, puis noter par demi-étoile (après visionnage seulement)', async () => {
+    localStorage.removeItem('laststream.follows');
+    localStorage.removeItem('laststream.ratings');
+    localStorage.removeItem('ls_seen');
+    location.hash = '#/movie/100';
+    await settle(300);
+    const detail = document.getElementById('detail')!;
+    const follow = detail.querySelector('[data-follow="movie:100"]') as HTMLElement;
+    expect(follow.getAttribute('aria-pressed')).toBe('false');
+    follow.click();
+    expect(follow.getAttribute('aria-pressed')).toBe('true');
+    expect(JSON.parse(localStorage.getItem('laststream.follows')!)[0]).toMatchObject({ id: 100, type: 'movie' });
+    // Pas encore vu : la note est désactivée.
+    expect(detail.querySelector('#f-rate button[disabled]')).not.toBeNull();
+    (detail.querySelector('[data-watch-movie]') as HTMLElement).click();
+    await settle(50);
+    expect(detail.querySelector('[data-watch-movie]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(detail.querySelector('#f-rate .stars')).not.toBeNull();
+    expect(document.querySelector('.rate-pop')).not.toBeNull(); // « Tu as aimé ? »
+    (detail.querySelector('#f-rate [data-rate="4.5"]') as HTMLElement).click();
+    expect(JSON.parse(localStorage.getItem('laststream.ratings')!)[0]).toMatchObject({ id: 100, rating: 4.5 });
+    expect(detail.querySelectorAll('#f-rate .star.is-full').length).toBe(4);
+    expect(detail.querySelectorAll('#f-rate .star.is-half').length).toBe(1);
+  });
+
+  it('calendrier : état vide puis grille du mois avec filtres', async () => {
+    document.querySelector('.rate-pop')?.remove();
+    localStorage.removeItem('laststream.follows');
+    location.hash = '#/calendar';
+    await settle(200);
+    expect(document.querySelector('#detail .cal-wrap .row-msg')!.textContent).toMatch(/ne suis encore rien/);
+    localStorage.setItem('laststream.follows', JSON.stringify([{ type: 'movie', id: 100, title: 'Film 0', poster: '/p.jpg', addedAt: 1 }]));
+    location.hash = '#/';
+    await settle(50);
+    location.hash = '#/calendar';
+    await settle(300);
+    expect(document.querySelectorAll('#detail .cal-day').length).toBeGreaterThanOrEqual(28);
+    expect(document.querySelector('#detail #cal-title')!.textContent!.length).toBeGreaterThan(5);
+    expect(document.querySelectorAll('#detail [data-calkind]')).toHaveLength(3);
+    (document.querySelector('#detail [data-calmode="agenda"]') as HTMLElement).click();
+    await settle(50);
+    expect(document.querySelector('#detail .cal-agenda, #detail .cal-wrap .row-msg')).not.toBeNull();
+    (document.querySelector('#detail [data-caltoday]') as HTMLElement).click();
+    location.hash = '#/';
+    await settle(50);
+  });
+
   it('utilise la région France par défaut', () => {
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });

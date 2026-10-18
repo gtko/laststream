@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { paintTileRatings } from './rate.js';
 import { isKidProfile } from '../data/auth';
 import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
@@ -50,6 +51,7 @@ export function renderLibraryPage() {
   detailEl.querySelectorAll('[data-libs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libs === v.sort)));
   observeTiles(box);
   fillMissingPosters(items);
+  paintTileRatings(document);
 }
 
 export function showLibrary() {

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { newEpisodeCount } from '../data/episodes';
 import { userStore } from '../data/userStore';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
@@ -24,8 +25,6 @@ export function freshText(it, info) {
   if (info) {
     const s = age(info.seasonDate);
     if (info.seasonNum > 1 && s >= 0 && s < 14) return 'Nouvelle saison';
-    const e = age(info.epDate);
-    if (e >= 0 && e < 7) return 'Nouvel épisode';
   }
   return '';
 }
@@ -122,6 +121,8 @@ export function enrich(it, needLogo) {
             seasonDate: last ? last.air_date : '',
             epDate: (raw.last_episode_to_air && raw.last_episode_to_air.air_date) || '',
             cert: certification(raw, it.type),
+            seasons: (raw.seasons || []).map((s) => ({ season_number: s.season_number, episode_count: s.episode_count })),
+            lastAired: raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
             genreIds: (raw.genres || []).map((g) => g.id),
           });
           if (needLogo) info.logo = pickLogo(raw.images && raw.images.logos, 'w300');
@@ -153,6 +154,36 @@ export function removeTiles(key) {
   document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => (el.closest('.up-item') || el).remove());
 }
 
+/** Badge « +N » (épisodes diffusés depuis le dernier vu) pour les séries suivies ou entamées, « Sorti » pour un film suivi. */
+export function paintNewBadge(el, it, info) {
+  const media = el.querySelector('.card-media');
+  if (!media || !it) return;
+  let text = '';
+  let label = '';
+  if (it.type === 'tv' && info && info.seasons) {
+    const watched = userStore.watchedEpisodes(it.key);
+    if (userStore.isFollowing(it.key) || watched.length) {
+      const n = newEpisodeCount(info.seasons, info.lastAired, watched);
+      if (n > 0) { text = '+' + n; label = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes'; }
+    }
+  } else if (it.type === 'movie' && userStore.isFollowing(it.key) && !userStore.isWatched(it.key)) {
+    const age = it.date ? -dayDiff(it.date) : NaN;
+    if (age >= 0 && age <= 45) { text = 'Sorti'; label = 'Nouveau film sorti'; }
+  }
+  let badge = media.querySelector('.t-new');
+  if (!text) { if (badge) badge.remove(); return; }
+  if (!badge) { media.insertAdjacentHTML('beforeend', '<span class="t-new" role="img"></span>'); badge = media.querySelector('.t-new'); }
+  badge.textContent = text;
+  badge.setAttribute('aria-label', label);
+}
+
+export function refreshNewBadges() {
+  document.querySelectorAll('[data-tile]').forEach((el) => {
+    const it = state.byKey.get(el.dataset.tile);
+    if (it) paintNewBadge(el, it, infoStore.get(el.dataset.tile));
+  });
+}
+
 export function applyEnrich(key) {
   const info = infoStore.get(key);
   const it = state.byKey.get(key);
@@ -162,6 +193,7 @@ export function applyEnrich(key) {
     document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => { el.dataset.kid = 'ok'; });
   }
   document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => {
+    paintNewBadge(el, it, info);
     const prov = el.querySelector('.t-prov');
     if (prov && info.provider && !prov.firstChild) {
       prov.innerHTML = '<img src="' + esc(info.provider.logo) + '" alt="" title="' + esc(info.provider.name) + '" width="26" height="26">';

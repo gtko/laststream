@@ -66,6 +66,7 @@ export function buildModel(type, id, raw, en) {
     next: raw.next_episode_to_air
       ? { airDate: raw.next_episode_to_air.air_date || '', code: 'S' + raw.next_episode_to_air.season_number + ' · É' + raw.next_episode_to_air.episode_number, name: raw.next_episode_to_air.name || '' }
       : null,
+    lastAired: raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
     tvdbId: (raw.external_ids && raw.external_ids.tvdb_id) || null,
     imdbId: raw.imdb_id || (raw.external_ids && raw.external_ids.imdb_id) || '',
     vote: raw.vote_average || 0,

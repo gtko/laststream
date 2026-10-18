@@ -21,8 +21,7 @@ const LONG_PRESS_MS = 500;
 let pressTimer = null;
 
 /** Autres modules (suivis, notes…) ajoutent leurs entrées : (cible) => [{ id, label, icon, run }]. */
-const extras = [];
-export const registerCtxItems = (fn) => extras.push(fn);
+const extrasOf = () => state.ctxExtras || [];
 
 export function closeCtx(restoreFocus) {
   const m = state.ctxMenu;
@@ -121,7 +120,7 @@ function titleItems(t) {
     id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
     run: () => { const now = toggleLib({ type, id: it.id, name: it.name, posterPath: it.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); },
   });
-  extras.forEach((fn) => fn(t).forEach((x) => items.push(x)));
+  extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (type === 'movie') {
     const seen = userStore.isWatched(t.key);
     items.push({ id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(t.key, null, !seen) });
@@ -159,7 +158,7 @@ function channelItems(t) {
 
 function personItems(t) {
   const items = [{ id: 'person', label: 'Voir la fiche', icon: ICON.info, run: () => go('#/person/' + t.id, t.el) }];
-  extras.forEach((fn) => fn(t).forEach((x) => items.push(x)));
+  extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   return items;
 }
 

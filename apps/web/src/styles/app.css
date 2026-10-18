@@ -173,7 +173,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .ctxmenu { min-width: 280px; max-width: min(360px, calc(100vw - 16px)); }
 .ctxmenu button { min-height: 44px; }
 .ctxmenu button svg { flex: none; width: 20px; height: 20px; color: var(--muted); }
-.t-more { position: absolute; top: 8px; left: 8px; z-index: 3; min-width: 34px; height: 24px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; background: rgba(12, 11, 17, 0.78); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; color: var(--text); opacity: 0; transition: opacity 0.15s; cursor: pointer; }
+.t-more { position: absolute; top: 8px; right: 8px; z-index: 3; min-width: 34px; height: 24px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; background: rgba(12, 11, 17, 0.78); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; color: var(--text); opacity: 0; transition: opacity 0.15s; cursor: pointer; }
 .card:hover .t-more, .card:focus-visible .t-more, .top-item:hover .t-more { opacity: 1; }
 @media (hover: none) { .t-more { display: none; } }
 .t-remove { position: absolute; top: 8px; right: 8px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(12, 11, 17, 0.82); border: 1px solid rgba(255, 255, 255, 0.3); opacity: 0; transition: opacity 0.15s, background-color 0.15s; cursor: pointer; }
@@ -199,3 +199,76 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .s-a .hero, .s-a .hero-slide { width: 100%; max-width: none; margin: 0; border: 0; border-radius: 0; outline: 0; }
 .s-a .hero-bg, .s-a .scrim { left: 0; right: 0; width: 100%; border: 0; }
 .s-a .hero-bg > img { display: block; min-width: 100%; border: 0; }
+
+/* ---------- Badges « +N », suivis, notes ---------- */
+.t-new { position: absolute; top: 8px; left: 8px; z-index: 2; min-width: 34px; height: 28px; padding: 0 10px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--on-accent); font-family: var(--ff-title); font-weight: 800; font-size: 15px; line-height: 1; letter-spacing: 0.01em; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45); }
+.card-media:has(.t-new) .t-badge { top: 44px; }
+.card:hover .t-watched { opacity: 0; }
+.f-newcount { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-family: var(--ff-title); font-weight: 800; font-size: 13px; }
+.f-newcount[hidden] { display: none; }
+.pp-follow { margin: 4px 0 6px; }
+.hc-btn.is-on[data-follow], .btn-round.is-on[data-follow] { color: var(--accent); }
+.f-rate { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 4px; }
+.f-rate-label { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
+.f-rate-value { font-size: 14px; color: var(--muted); }
+.stars { display: inline-flex; gap: 2px; }
+.star { position: relative; width: 30px; height: 30px; display: inline-block; }
+.star svg { width: 30px; height: 30px; display: block; }
+.star-bg { position: absolute; inset: 0; color: rgba(255, 255, 255, 0.28); }
+.star-bg svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.star-fg { position: absolute; inset: 0; color: var(--accent); clip-path: inset(0 100% 0 0); transition: clip-path 0.12s; pointer-events: none; }
+.star-fg svg { fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.star.is-full .star-fg { clip-path: inset(0); }
+.star.is-half .star-fg { clip-path: inset(0 50% 0 0); }
+.star .half { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 1; }
+.star .half.l { left: 0; }
+.star .half.r { right: 0; }
+.star .half:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+.rate-pop { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 350; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 16px; padding: 14px 20px; border-radius: 18px; background: rgba(23, 21, 31, 0.95); max-width: calc(100vw - 24px); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55); }
+.rate-q { font-weight: 700; font-size: 15px; }
+.t-rating { position: absolute; left: 8px; bottom: 34px; z-index: 2; padding: 3px 9px; border-radius: 999px; background: rgba(12, 11, 17, 0.82); font-size: 12px; font-weight: 800; color: var(--accent); }
+
+/* ---------- Calendrier ---------- */
+.cal-wrap { padding: 8px var(--gutter) 96px; display: flex; flex-direction: column; gap: 18px; }
+.cal-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 26px; }
+.cal-nav { display: flex; align-items: center; gap: 10px; }
+.cal-title { font-family: var(--ff-title); font-size: 24px; font-weight: 800; min-width: 190px; text-align: center; text-transform: capitalize; }
+.cal-grid { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface); }
+.cal-dow, .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-dow span { padding: 10px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line); }
+.cal-day { min-height: 124px; padding: 8px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cal-week .cal-day:last-child { border-right: 0; }
+.cal-day.is-out { background: rgba(0, 0, 0, 0.22); }
+.cal-day.is-out .cal-num { opacity: 0.45; }
+.cal-day.is-past:not(.is-recent) { opacity: 0.6; }
+.cal-day.is-recent { filter: saturate(0.5); }
+.cal-day.is-today { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); box-shadow: inset 0 0 0 2px var(--accent); }
+.cal-num { font-size: 13px; font-weight: 700; color: var(--muted); }
+.cal-day.is-today .cal-num { color: var(--accent); }
+.cal-evs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cal-ev { display: flex; align-items: center; gap: 8px; text-align: left; width: 100%; min-width: 0; padding: 3px; border-radius: 8px; }
+.cal-ev:hover, .cal-ev:focus-visible { background: rgba(255, 255, 255, 0.1); outline: none; }
+.cal-th { position: relative; flex: none; width: 28px; height: 40px; border-radius: 5px; overflow: hidden; background: linear-gradient(160deg, #2b2440, #15121d); display: grid; place-items: center; font-size: 11px; }
+.cal-th img { width: 100%; height: 100%; object-fit: cover; }
+.cal-tx { min-width: 0; display: flex; flex-direction: column; }
+.cal-tx strong { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-tx em { font-style: normal; font-size: 11px; color: var(--accent); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-ev.is-seen { opacity: 0.55; }
+.cal-check { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(12, 11, 17, 0.55); color: var(--text); }
+.cal-check svg { width: 16px; height: 16px; }
+.cal-more { font-size: 11px; color: var(--dim); padding-left: 3px; }
+.cal-agenda { display: flex; flex-direction: column; gap: 22px; }
+.cal-agenda-day h3 { font-family: var(--ff-title); font-size: 16px; font-weight: 700; margin-bottom: 8px; text-transform: capitalize; }
+.cal-agenda-day.is-past { opacity: 0.6; }
+.cal-now { margin-left: 8px; padding: 2px 9px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; text-transform: none; }
+.cal-agenda-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.cal-agenda-list .cal-th { width: 40px; height: 58px; }
+.cal-agenda-list .cal-tx strong { font-size: 14px; }
+.cal-agenda-list .cal-tx em { font-size: 12px; }
+@media (max-width: 800px) {
+  .cal-wrap { padding: 8px 12px 110px; }
+  .cal-day { min-height: 76px; padding: 4px; }
+  .cal-tx { display: none; }
+  .cal-th { width: 100%; height: 34px; }
+  .cal-title { min-width: 0; font-size: 20px; }
+}

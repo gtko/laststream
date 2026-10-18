@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { followBtn } from './follows.js';
 import { certLabel, getDetail } from './catalog.js';
 import { REDUCE, STILL } from './constants.js';
 import { modal } from './dom.js';
@@ -78,6 +79,7 @@ export function openHover(tile) {
     '<div class="hc-actions">' +
     '<button type="button" class="hc-btn hc-play" data-play data-tip="Lecture" aria-label="Lecture">' + ICON.play + '</button>' +
     '<button type="button" class="hc-btn' + (on ? ' is-on' : '') + '" data-hclib="' + esc(key) + '" aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') + '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>' +
+    followBtn(key, 'hc-btn') +
     '<button type="button" class="hc-btn hc-sound" data-hcvid hidden data-tip="Bande-annonce avec son" aria-label="Bande-annonce avec son">' + ICON.sound + '</button>' +
     '<button type="button" class="hc-btn hc-more" data-open="' + esc(key) + '" data-tip="Plus d’infos" aria-label="Plus d’infos">' + ICON.chev + '</button></div></div>';
   document.body.appendChild(el);

@@ -1,4 +1,7 @@
 /* « Vu » : épisodes, saisons, série entière et films. Affichage optimiste, retour arrière si le serveur refuse. */
+import { newEpisodeCount } from '../data/episodes';
+import { refreshRatingUI, showRatePrompt } from './rate.js';
+import { refreshNewBadges } from './tiles.js';
 import { userStore } from '../data/userStore';
 import { markNext, updatePlayLabel } from './fiche.js';
 import { tmdb } from '../data/lt';
@@ -25,6 +28,8 @@ export async function mark(key, refs, watched) {
   if (!ok) {
     refreshWatchedUI();
     toast('Enregistrement impossible : modification annulée');
+  } else if (watched && key.startsWith('movie:')) {
+    showRatePrompt(key); // « Tu as aimé ? »
   }
   return ok;
 }
@@ -55,6 +60,12 @@ export function refreshWatchedUI() {
     }
     updatePlayLabel(m);
     markNext(m);
+    const nc = detailEl.querySelector('#f-newcount');
+    if (nc) {
+      const n = newEpisodeCount(m.seasons || [], m.lastAired, userStore.watchedEpisodes(m.key).map((x) => ({ season: x.season, episode: x.episode })));
+      nc.hidden = !n;
+      nc.textContent = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes';
+    }
   }
   if (m && m.type === 'movie') {
     const b = detailEl.querySelector('[data-watch-movie]');
@@ -66,6 +77,8 @@ export function refreshWatchedUI() {
       b.setAttribute('aria-label', on ? 'Marqué comme vu (retirer)' : 'Marquer comme vu');
     }
   }
+  refreshRatingUI();
+  refreshNewBadges();
   document.querySelectorAll('[data-tile^="movie:"]').forEach((el) => {
     const on = userStore.isWatched(el.dataset.tile);
     const media = el.querySelector('.card-media');

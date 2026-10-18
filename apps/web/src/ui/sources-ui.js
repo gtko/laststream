@@ -1,4 +1,5 @@
 /* « Lecture » : tiroir Sources (streams lastAddon triés par score, groupés par qualité) et lecteur plein écran basique. */
+import { showRatePrompt } from './rate.js';
 import { isConfigured } from '../data/config';
 import {
   copiesOf, fetchStreams, formatBitrate, formatSize, groupByQuality, imdbIdOf, languageLabel,
@@ -133,6 +134,7 @@ function openVideo(url, from) {
     if (saved && saved.duration && saved.position / saved.duration > 0.02 && saved.position / saved.duration < 0.95) v.currentTime = saved.position;
   };
   v.ontimeupdate = () => saveProgress(false);
+  v.onended = () => { saveProgress(true); if (req) setTimeout(() => showRatePrompt(req.key), 600); };
   v.onpause = () => saveProgress(true);
   v.onerror = () => {
     const err = document.getElementById('vplayer-error');

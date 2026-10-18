@@ -226,6 +226,8 @@ document.addEventListener('click', (e) => {
   if (t.closest('[data-browse-more]')) { e.preventDefault(); browseMore(); return; }
   const srch = t.closest('[data-search]');
   if (srch) { e.preventDefault(); go('#/search', srch); return; }
+  const calB = t.closest('[data-calnav]');
+  if (calB) { e.preventDefault(); go('#/calendar', calB); return; }
   const setB = t.closest('[data-settings]');
     if (setB) { e.preventDefault(); if (isKidProfile()) leaveKidProfile(); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');

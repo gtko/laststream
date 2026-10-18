@@ -24,3 +24,8 @@ export const state = {
   dragRow: null, // rangée en cours de glisser
   suppressClick: false,
 };
+
+/** Autres modules (suivis, notes…) ajoutent leurs entrées au menu contextuel : (cible) => [{ id, label, icon, run }]. Dans state.js (feuille) pour rester utilisable pendant le chargement des modules. */
+export function registerCtxItems(fn) {
+  (state.ctxExtras || (state.ctxExtras = [])).push(fn);
+}
