@@ -295,10 +295,12 @@ describe('limite de débit des lectures lt et catalogue', () => {
   let app: RunningApp;
 
   beforeAll(async () => {
+    process.env.LASTADDON_READ_RATE_LIMIT = '120';
     app = await startApp({ lookupHost: fakeLookup() });
   });
 
   afterAll(async () => {
+    delete process.env.LASTADDON_READ_RATE_LIMIT;
     await app.close();
   });
 
