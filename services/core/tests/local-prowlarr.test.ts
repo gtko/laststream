@@ -263,7 +263,7 @@ describe('statut public et sources effectives', () => {
       { type: 'upstream', name: 'A', url: 'https://a.example.com' },
       { type: 'upstream', name: 'B', url: 'https://b.example.com' },
     ];
-    const names = (input: unknown): string[] => effectiveSources(parseConfig(input), LOCAL).map((source) => source.name);
+    const names = (input: Record<string, unknown>): string[] => effectiveSources(parseConfig(input), LOCAL).map((source) => source.name);
     expect(names({ sources, localProwlarr: { position: 0 } })).toEqual(['Prowlarr local', 'A', 'B']);
     expect(names({ sources, localProwlarr: { position: 1 } })).toEqual(['A', 'Prowlarr local', 'B']);
     expect(names({ sources, localProwlarr: { position: 99 } })).toEqual(['A', 'B', 'Prowlarr local']);
