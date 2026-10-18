@@ -5,6 +5,7 @@ import { originalUrl, queryParams, sendBody, sendEmpty, sendJson } from '../http
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
+import { platform, sharedKvCache } from '../platform/index.js';
 import { AllDebridClient, AllDebridError } from '../sources/alldebrid.js';
 import { HosterClient } from '../sources/hosters.js';
 import {
@@ -102,9 +103,9 @@ function reasonOfHosterError(err: unknown): ResolveErrorCode {
  * Octets d'un .torrent privé, relus par guid. Undefined si le guid est absent, si le cache ne le connaît plus
  * (expiré, évincé), si l'entrée n'a pas d'octets, ou si son hash ne correspond pas à celui de la copie.
  */
-function privateTorrentBytes(cache: TorrentCache, guid: string | undefined, infoHash: string): Buffer | undefined {
+async function privateTorrentBytes(cache: TorrentCache, guid: string | undefined, infoHash: string): Promise<Buffer | undefined> {
   if (guid === undefined) return undefined;
-  const cached = cache.get(guid);
+  const cached = await cache.load(guid);
   if (cached?.kind !== 'torrent' || !cached.private || cached.bytes === undefined) return undefined;
   return cached.infoHash.toLowerCase() === infoHash.toLowerCase() ? cached.bytes : undefined;
 }
@@ -133,7 +134,7 @@ function sendFailure(c: Ctx, reason: PlayFailureReason, accept: string | undefin
  *   Une copie `kind: 'hoster'` est débridée via AllDebrid ; une copie `privateTorrent` envoie ses octets (cache par guid).
  * Succès : 302 vers le lien. Erreurs : pages ou JSON génériques, sans clé ni configuration ni URL.
  */
-export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = defaultPlayState): void {
+export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = defaultPlayState()): void {
   // Clients mis en cache par empreinte de clé API : la clé brute n'est jamais une clé de Map.
   const clients = new Map<string, DebridClient>();
   // Un HosterClient par client AllDebrid : son catalogue d'hébergeurs est gardé 12 h.
@@ -147,6 +148,7 @@ export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = d
         ? deps.alldebridFactory(apiKey)
         : new AllDebridClient(apiKey, {
             fetch: deps.fetch,
+            kv: sharedKvCache('alldebrid'),
             onFiles: (infoHash, files) => {
               state.packStore.learn(infoHash, files);
             },
@@ -214,7 +216,7 @@ export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = d
       const client = clientFor(debrid.apiKey);
       let bytes: Buffer | undefined;
       if (copy.privateTorrent === true) {
-        bytes = privateTorrentBytes(state.torrentCache, copy.guid, infoHash);
+        bytes = await privateTorrentBytes(state.torrentCache, copy.guid, infoHash);
         // Octets absents du cache : cette copie n'a pas de source, la suivante est essayée.
         if (bytes === undefined) throw copyError('no_copy');
       }
@@ -230,6 +232,9 @@ export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = d
         throw copyError(reasonOfError(err));
       }
     };
+
+    // Hébergeurs signalés en panne par d'autres instances (cache partagé), avant les contrôles synchrones du failover.
+    await state.hostHealth.warm(copies.flatMap((copy) => (copy.url === undefined ? [] : [hostFromUrl(copy.url) ?? ''])));
 
     const result = await resolveWithFailover({
       copies,
@@ -248,7 +253,7 @@ export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = d
     if (location === undefined) {
       return sendFailure(c, 'unknown', accept);
     }
-    issuedUrls.noteResolved(originalUrl(c), location);
+    platform().scheduler.background(issuedUrls().noteResolved(originalUrl(c), location));
     c.header('Location', location);
     return sendEmpty(c, 302);
   });
@@ -288,7 +293,7 @@ export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = d
           size: querySize(query.size),
         },
       );
-      issuedUrls.noteResolved(originalUrl(c), new URL(link.url).href);
+      platform().scheduler.background(issuedUrls().noteResolved(originalUrl(c), new URL(link.url).href));
       c.header('Location', new URL(link.url).href);
       return sendEmpty(c, 302);
     } catch (err) {

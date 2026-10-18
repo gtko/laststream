@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'dist-bundle/**', 'node_modules/**', 'coverage/**'],
+    ignores: ['dist/**', 'dist-bundle/**', 'node_modules/**', 'coverage/**', 'worker-ui/**', '.wrangler/**', '.claude/**'],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,

@@ -44,7 +44,9 @@ curl http://localhost:7000/health
 | `npm start` | Lance `dist/server.js` |
 | `npm test` | Tests unitaires et d'intégration (vitest) |
 | `npm run lint` | ESLint (configuration flat, typescript-eslint) |
-| `npm run typecheck` | Vérification des types de `src/` et `tests/` |
+| `npm run typecheck` | Vérification des types de `src/`, `tests/` et `tests-workers/` |
+| `npm run test:workers` | Tests dans le runtime Workers (workerd) : stores sur le Durable Object, routes `/user` (voir « Cloudflare Workers ») |
+| `npm run deploy:worker` | Copie le build de l'interface dans `worker-ui/` puis `wrangler deploy` (Worker `lastaddon-core`) |
 | `npm run bundle` | Bundle mono-fichier `dist-bundle/lastaddon.cjs` (voir « Distribution ») |
 
 ## Variables d'environnement
@@ -666,6 +668,24 @@ node dist-bundle\lastaddon.cjs --port 7000
 
 Si `LASTADDON_SECRET` est absent, une clé est générée dans le fichier `.env` au premier démarrage. Si ce fichier change d'emplacement, les configurations déjà chiffrées ne se déchiffrent plus : conservez le fichier `.env` avec les données.
 
+## Cloudflare Workers
+
+Le même code tourne sur Node et sur Cloudflare Workers (`src/worker.ts`, configuration `wrangler.jsonc`, Worker `lastaddon-core`). Seule la plateforme change (`src/platform/node/` ou `src/platform/workers/`) :
+
+| Besoin | Node | Workers |
+| --- | --- | --- |
+| Variables | `process.env` | variables et secrets du Worker (`RANGE_SECRET` lu comme `LASTADDON_RANGE_SECRET`, `EDGE_SECRET` comme `LASTADDON_EDGE_SECRET`) |
+| Données utilisateur | SQLite local (`node:sqlite`) | Durable Object SQLite `UserStoreDO` (objet global « users », appelé en RPC) |
+| Caches partagés | mémoire du processus | KV (`CACHE`) : statuts et liens AllDebrid, fichiers des packs, URL émises, .torrent privés, hébergeurs en panne |
+| Tâches d'arrière-plan | timers | `ctx.waitUntil` |
+| Interface web | dossier (`LASTADDON_UI_DIR`) | Workers Assets (`worker-ui/`, build de laststream-app) |
+| IP du client | socket | `CF-Connecting-IP` |
+| ffmpeg (miniatures serveur, détection des segments de saut), proxy HLS TV | oui | non ; miniatures par relais de plages (WebCodecs côté client) |
+
+**Stockage.** `UserStore` et `SkipSegmentStore` sont synchrones et ne dépendent que de `SqlDb` (`src/user/sql.ts`) : `node:sqlite` sous Node, le SQLite du Durable Object sous Workers (transactions par `transactionSync`). Le code applicatif n'appelle que les dépôts asynchrones `UserRepo` / `SkipRepo` (`src/user/repo.ts`), fournis par `platform().createUserBackend()`. Limite : un seul Durable Object traite toutes les requêtes une à la fois (quelques centaines par seconde, 10 Go) ; au-delà, partitionner par compte. Les limites de débit restent en mémoire, par isolat.
+
+**Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `RANGE_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
+
 ## Sécurité
 
 **Risque SSRF.** Les URL des sources (addons amont, indexeurs Torznab, Prowlarr, Jackett) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
@@ -731,7 +751,8 @@ src/
   streaming-proxy.ts relais same-origin /_ss/* vers le serveur de streaming local
   app.ts             createApp() : application Hono (routes, CORS, limites de débit, gestion d'erreurs)
   http/              socle Hono commun : types d'application, corps JSON (64 ko), ETag, 404/500, IP du client
-  platform/          interfaces d'hôte : RuntimeEnv, KvCache, HttpClient, Scheduler, Capabilities, UiAssets (+ platform/node/)
+  worker.ts          point d'entrée Cloudflare Workers (installe la plateforme Workers, sert createApp())
+  platform/          interfaces d'hôte : RuntimeEnv, KvCache, HttpClient, Scheduler, Capabilities, UiAssets, UserBackend (+ node/, workers/)
   deps.ts            dépendances injectées (secret, allowPlain, fetch, client AllDebrid)
   pipeline.ts        getStreams() : orchestration du pipeline (métadonnées, collecte, groupement, cache, sonde, formatage)
   types.ts           types partagés (RawStream, ParsedRelease, StremioStream, ContentRef)

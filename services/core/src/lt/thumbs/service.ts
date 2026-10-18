@@ -106,7 +106,7 @@ export class ThumbService {
   constructor(options: ThumbOptions = {}) {
     this.ffmpeg = options.ffmpeg === undefined ? ffmpegFromEnv() : options.ffmpeg;
     this.cache = new ThumbCache(options.cacheDir ?? join(dirname(userDbPath()), 'thumbs'), options.maxCacheBytes ?? DEFAULT_CACHE_BYTES);
-    this.issued = options.issued ?? issuedUrls;
+    this.issued = options.issued ?? issuedUrls();
     this.extraLocal = options.allowLocal;
     this.concurrency = Math.min(2, Math.max(1, options.concurrency ?? 2));
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -124,7 +124,7 @@ export class ThumbService {
   /** Enregistre une source (si autorisée) et renvoie sa clé ; null si elle est refusée. */
   async register(rawUrl: unknown, rawDuration?: unknown, start?: unknown): Promise<Registration | null> {
     if (this.ffmpeg === null || this.closed) return null;
-    const resolved = resolveThumbSource(rawUrl, this.issued, this.extraLocal);
+    const resolved = await resolveThumbSource(rawUrl, this.issued, this.extraLocal);
     if (resolved === null) return null;
     const duration =
       typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0 && rawDuration <= MAX_DURATION ? rawDuration : undefined;

@@ -5,6 +5,7 @@ import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
 import { isEdgeRequest } from '../config/edge.js';
+import { platform, sharedKvCache } from '../platform/index.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
@@ -94,7 +95,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     if (client === undefined) {
       client = deps.alldebridFactory
         ? deps.alldebridFactory(apiKey)
-        : new AllDebridClient(apiKey, { fetch: deps.fetch });
+        : new AllDebridClient(apiKey, { fetch: deps.fetch, kv: sharedKvCache('alldebrid') });
       clients.set(cacheKey, client);
     }
     return client;
@@ -122,6 +123,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     }
   };
 
+  // État partagé de lecture (packs, hébergeurs en panne, torrents) : créé ici, la plateforme étant installée.
+  const playState = defaultPlayState();
+
   const contextOf = (c: Ctx, config: Config, wait: PipelineContext['wait']): PipelineContext => {
     const apiKey = config.debrid?.apiKey;
     return {
@@ -131,9 +135,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
       fetch: deps.fetch,
       debrid: apiKey === undefined ? undefined : debridFor(apiKey),
       hosters: apiKey === undefined ? undefined : hostersFor(apiKey),
-      hostHealth: defaultPlayState.hostHealth,
-      torrentCache: defaultPlayState.torrentCache,
-      packStore: defaultPlayState.packStore,
+      hostHealth: playState.hostHealth,
+      torrentCache: playState.torrentCache,
+      packStore: playState.packStore,
       localProwlarr: deps.localProwlarr,
       wait,
     };
@@ -157,7 +161,8 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
       for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
     }
     const result = await getStreams(config, ref, contextOf(c, config, queryParams(c).wait === 'full' ? 'full' : 'soft'));
-    issuedUrls.noteStreams(result.streams);
+    // Registre des URL émises (miniatures) : écrit après la réponse, sans la retarder.
+    platform().scheduler.background(issuedUrls().noteStreams(result.streams));
     if (result.partial === true) {
       c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
       return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...noticeOf(config) });

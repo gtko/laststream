@@ -82,11 +82,11 @@ export interface PipelineContext {
   /** Hébergeurs AllDebrid (contrôle des liens d'hébergeur). Absent : aucun lien d'hébergeur n'est identifié. */
   hosters?: Pick<HosterClient, 'getHosts' | 'hosterFor' | 'linkInfos'>;
   /** Hébergeurs signalés en panne : leurs liens sont écartés sans contrôle. */
-  hostHealth?: Pick<HostHealth, 'isDown'>;
+  hostHealth?: Pick<HostHealth, 'isDown'> & { warm?: HostHealth['warm'] };
   /** Cache partagé des .torrent (octets des torrents privés, par guid). Absent : cache du module fetch-torrent. */
   torrentCache?: TorrentCache;
   /** Fichiers des packs déjà vus : apprentissage depuis les .torrent lus, et recherche d'un épisode. */
-  packStore?: Pick<PackStore, 'learn' | 'findEpisode'>;
+  packStore?: Pick<PackStore, 'learn' | 'findEpisode'> & { warm?: PackStore['warm'] };
   /** Cache des résultats (LRU, 5 min, 200 entrées). Absent : cache partagé. `false` : désactivé. */
   cache?: LruCache<PipelineResult> | false;
   /** Sonde média injectable (tests). Défaut : sonde réelle, avec le fetch du contexte. */
@@ -739,6 +739,8 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   debugStage(ref, 'h.final', { sonde: probed.length, apresFiltre2: verified.length, final: finalRanked.length });
 
   // d) pack learning, puis formatage (un torrent privé sans copie jouable n'est pas livré).
+  // Fichiers de packs appris par d'autres instances (cache partagé) avant la recherche d'épisode, synchrone.
+  await ctx.packStore?.warm?.(finalRanked.flatMap((item) => [...item.copies.flatMap((copy) => (copy.infoHash === undefined ? [] : [copy.infoHash])), ...(infoHashOf(item) === undefined ? [] : [infoHashOf(item) as string])]));
   const learned = applyLearnedFiles(finalRanked, ref, ctx.packStore);
   const items = learned.flatMap((item) => {
     const formatItem = toFormatItem(item, sources, hosters);

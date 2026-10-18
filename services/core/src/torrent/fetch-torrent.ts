@@ -1,3 +1,4 @@
+import type { KvCache } from '../platform/types.js';
 import { infoHashFromMagnet, isMagnet } from '../sources/indexers.js';
 import {
   type BytesResult,
@@ -49,6 +50,11 @@ export interface TorrentCacheOptions {
   maxEntries?: number;
   /** Horloge injectable (tests). */
   now?: () => number;
+  /**
+   * Cache persistant partagé entre instances (Workers). `load` y lit en cas d'absence en mémoire, `save` y écrit : un
+   * .torrent privé lu à l'affichage des flux par une instance reste lisible par /play servi par une autre.
+   */
+  kv?: KvCache;
 }
 
 interface CacheEntry {
@@ -65,8 +71,10 @@ export class TorrentCache {
   private readonly ttlMs: number;
   private readonly maxEntries: number;
   private readonly now: () => number;
+  private readonly kv: KvCache | undefined;
 
   constructor(opts: TorrentCacheOptions = {}) {
+    this.kv = opts.kv;
     this.ttlMs = opts.ttlMs ?? TORRENT_CACHE_TTL_MS;
     this.maxEntries = opts.maxEntries ?? TORRENT_CACHE_MAX_ENTRIES;
     this.now = opts.now ?? (() => Date.now());
@@ -101,6 +109,46 @@ export class TorrentCache {
   get size(): number {
     return this.entries.size;
   }
+
+  /** Comme `get`, avec le cache partagé en second niveau (absent en mémoire). Une panne du cache est ignorée. */
+  async load(key: string): Promise<FetchedTorrent | undefined> {
+    const local = this.get(key);
+    if (local !== undefined || this.kv === undefined) return local;
+    try {
+      const raw = await this.kv.get(`torrent:${key}`);
+      const stored = raw === undefined ? undefined : parseStored(raw);
+      if (stored !== undefined) this.set(key, stored);
+      return stored;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Comme `set`, avec écriture dans le cache partagé (mêmes règles : octets des seuls torrents privés). */
+  async save(key: string, value: FetchedTorrent): Promise<void> {
+    this.set(key, value);
+    if (this.kv === undefined) return;
+    await this.kv.set(`torrent:${key}`, serializeStored(withoutPublicBytes(value)), Math.ceil(this.ttlMs / 1000)).catch(() => undefined);
+  }
+}
+
+/** Torrent sérialisé en JSON (octets en base64). */
+function serializeStored(value: FetchedTorrent): string {
+  if (value.kind === 'magnet') return JSON.stringify(value);
+  const { bytes, ...rest } = value;
+  return JSON.stringify(bytes === undefined ? rest : { ...rest, bytes: bytes.toString('base64') });
+}
+
+/** Torrent relu du cache partagé, ou undefined si le contenu est illisible. */
+function parseStored(raw: string): FetchedTorrent | undefined {
+  const value = JSON.parse(raw) as Record<string, unknown>;
+  if (typeof value !== 'object' || value === null || typeof value.infoHash !== 'string') return undefined;
+  if (value.kind === 'magnet') {
+    return typeof value.magnet === 'string' ? { kind: 'magnet', infoHash: value.infoHash, magnet: value.magnet } : undefined;
+  }
+  if (value.kind !== 'torrent' || !Array.isArray(value.files) || typeof value.private !== 'boolean') return undefined;
+  const bytes = typeof value.bytes === 'string' ? Buffer.from(value.bytes, 'base64') : undefined;
+  return { kind: 'torrent', infoHash: value.infoHash, files: value.files as TorrentFile[], private: value.private, ...(bytes === undefined ? {} : { bytes }) };
 }
 
 function withoutPublicBytes(value: FetchedTorrent): FetchedTorrent {
@@ -200,12 +248,12 @@ export async function fetchTorrent(downloadUrl: string, opts: FetchTorrentOption
   const cache = opts.cache ?? sharedCache;
   const key = opts.guid;
   if (key !== undefined) {
-    const cached = cache.get(key);
+    const cached = await cache.load(key);
     if (cached !== undefined) return cached;
   }
   try {
     const fetched = await download(downloadUrl, opts);
-    if (key !== undefined) cache.set(key, fetched);
+    if (key !== undefined) await cache.save(key, fetched);
     return fetched;
   } catch (err) {
     throw safeError(err);

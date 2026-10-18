@@ -104,7 +104,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   const thumbs: ThumbPort = capabilities.thumbs ? (platform().localMedia?.createThumbs(deps.thumbs) ?? DISABLED_THUMBS) : DISABLED_THUMBS;
   // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
   const range = capabilities.rangeThumbs ? rangeProxyOf(deps) : null;
-  const rangeIssued = deps.thumbs?.issued ?? issuedUrls;
+  const rangeIssued = (): ReturnType<typeof issuedUrls> => deps.thumbs?.issued ?? issuedUrls();
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';
   const configOf = (c: Ctx) => decodeFor(deps, tokenOf(c));
@@ -230,7 +230,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     configOf(c);
     if (range === null) throw new LtError(501, 'range_disabled');
     const body = bodyOf(c);
-    const source = resolveThumbSource(body.url, rangeIssued, deps.thumbs?.allowLocal);
+    const source = await resolveThumbSource(body.url, rangeIssued(), deps.thumbs?.allowLocal);
     if (source === null || source.target.protocol !== 'https:') throw new LtError(400, 'invalid_source');
     const url = source.target.href;
     const { token, exp } = await signRangeToken(range.secret, url);

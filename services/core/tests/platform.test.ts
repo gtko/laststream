@@ -32,7 +32,7 @@ describe('plateforme Node : variables d\'exécution', () => {
     setPlatform(replacement);
     expect(platform().capabilities.tvHls).toBe(false);
     setPlatform(original);
-    expect(platform().capabilities).toEqual({ thumbs: true, skipDetect: true, tvHls: true });
+    expect(platform().capabilities).toEqual({ thumbs: true, rangeThumbs: true, skipDetect: true, tvHls: true, sharedState: false });
   });
 });
 

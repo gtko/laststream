@@ -8,7 +8,7 @@ export interface HosterStepOptions {
   /** Nombre maximal de liens d'hébergeur contrôlés (les premiers de la liste reçue). Défaut 8. */
   topN?: number;
   /** Hôtes marqués en panne : leurs candidats sont écartés sans contrôle. */
-  hostHealth?: Pick<HostHealth, 'isDown'>;
+  hostHealth?: Pick<HostHealth, 'isDown'> & { warm?: HostHealth['warm'] };
   /** Budget total de l'étape, en millisecondes. Défaut 5 000. Dépassé : liste reçue inchangée. */
   budgetMs?: number;
 }
@@ -44,6 +44,9 @@ async function enrich(cands: Candidate[], opts: HosterStepOptions, topN: number)
   } catch {
     return cands;
   }
+
+  // Hébergeurs signalés en panne par d'autres instances (cache partagé), avant les contrôles synchrones ci-dessous.
+  await hostHealth?.warm?.(cands.flatMap((cand) => (cand.raw.url === undefined ? [] : [hostFromUrl(cand.raw.url) ?? ''])));
 
   const dropped = new Set<number>();
   const toCheck: HosterCandidate[] = [];

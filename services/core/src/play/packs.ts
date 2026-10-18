@@ -1,4 +1,5 @@
 import { LruCache } from '../cache/lru.js';
+import type { KvCache } from '../platform/types.js';
 import { parseEpisode } from '../parse/meta.js';
 
 /** Fichier d'un torrent (pack) : index dans le torrent, nom tel que fourni par la source, taille en octets. */
@@ -13,6 +14,10 @@ export interface PackStoreOptions {
   max?: number;
   ttlMs?: number;
   now?: () => number;
+  /** Cache persistant partagé (Workers) : `learn` y écrit, `warm` le relit avant les recherches d'épisode. */
+  kv?: KvCache;
+  /** Rattache une écriture au cycle de vie de la requête (Scheduler.background). Défaut : écriture non attendue. */
+  background?: (work: Promise<unknown>) => void;
 }
 
 /** Un torrent mémorisé dans un instantané JSON. `remainingMs` : durée de vie restante au moment du export. */
@@ -73,8 +78,14 @@ const baseName = (name: string): string => name.split(/[\\/]/).pop() ?? name;
  */
 export class PackStore {
   private readonly cache: LruCache<PackFile[]>;
+  private readonly kv: KvCache | undefined;
+  private readonly ttlMs: number;
+  private readonly background: (work: Promise<unknown>) => void;
 
   constructor(opts: PackStoreOptions = {}) {
+    this.kv = opts.kv;
+    this.ttlMs = opts.ttlMs ?? DEFAULT_TTL_MS;
+    this.background = opts.background ?? ((work) => void work.catch(() => undefined));
     this.cache = new LruCache<PackFile[]>({
       max: opts.max ?? DEFAULT_MAX,
       ttlMs: opts.ttlMs ?? DEFAULT_TTL_MS,
@@ -92,7 +103,33 @@ export class PackStore {
     const clean = cleanFiles(files);
     if (clean.length === 0) return false;
     this.cache.set(hash, clean);
+    if (this.kv !== undefined) {
+      this.background(this.kv.set(`pack:${hash}`, JSON.stringify(clean), Math.ceil(this.ttlMs / 1000)).catch(() => undefined));
+    }
     return true;
+  }
+
+  /**
+   * Recharge depuis le cache partagé les fichiers de ces torrents appris par d'autres instances. À appeler avant
+   * `get` / `findEpisode` (qui restent synchrones). Sans cache partagé, ne fait rien ; une panne du cache est ignorée.
+   */
+  async warm(infoHashes: readonly string[]): Promise<void> {
+    const kv = this.kv;
+    if (kv === undefined) return;
+    const hashes = [...new Set(infoHashes.map(normalizeInfoHash).filter((hash): hash is string => hash !== undefined))];
+    await Promise.all(
+      hashes.map(async (hash) => {
+        if (this.cache.get(hash) !== undefined) return;
+        try {
+          const raw = await kv.get(`pack:${hash}`);
+          if (raw === undefined) return;
+          const files = cleanFiles(JSON.parse(raw) as unknown[]);
+          if (files.length > 0) this.cache.set(hash, files);
+        } catch {
+          // Entrée illisible ou cache indisponible : traité comme absent.
+        }
+      }),
+    );
   }
 
   /** Fichiers connus du torrent, triés par index (copie). Undefined si inconnu ou expiré. */

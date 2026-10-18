@@ -10,7 +10,8 @@
  * l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé.
  */
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import type { KvCache } from '../platform/types.js';
 import { MAX_BODY_BYTES, readBodyLimited } from './http.js';
 
 const API_BASE = 'https://api.alldebrid.com';
@@ -60,6 +61,12 @@ export interface AllDebridClientOptions {
    * dans cette liste. Une exception levée par le rappel n'interrompt pas la résolution.
    */
   onFiles?: (infoHash: string, files: DebridFileInfo[]) => void;
+  /**
+   * Cache persistant partagé entre instances (KV sous Workers) : statuts « prêt » des hashes et liens résolus. Lu en cas
+   * d'absence en mémoire, écrit à chaque résultat. Les clés sont propres à la clé API (empreinte), jamais la clé elle-même.
+   * Absent : mémoire du processus seulement (Node).
+   */
+  kv?: KvCache;
 }
 
 /** Fichier d'un magnet tel que listé par AllDebrid : position, nom et taille en octets. */
@@ -349,6 +356,9 @@ export class AllDebridClient {
   private readonly negativeTtlMs: number;
   private readonly now: () => number;
   private readonly onFiles: ((infoHash: string, files: DebridFileInfo[]) => void) | undefined;
+  private readonly kv: KvCache | undefined;
+  /** Empreinte de la clé API : sépare les entrées du cache persistant par compte. */
+  private readonly keyId: string;
   /** Résultats de contrôle par hash (true = prêt, false = non prêt). */
   private readonly checkCache = new Map<string, CacheEntry<boolean>>();
   /** Hashes d'un lot en erreur ou absents de la réponse : inconnus pendant BATCH_FAILURE_TTL_MS. */
@@ -376,6 +386,8 @@ export class AllDebridClient {
     this.negativeTtlMs = opts.negativeCacheTtlMs ?? DEFAULT_NEGATIVE_TTL_MS;
     this.now = opts.now ?? (() => Date.now());
     this.onFiles = opts.onFiles;
+    this.kv = opts.kv;
+    this.keyId = createHash('sha256').update(apiKey, 'utf8').digest('hex').slice(0, 16);
   }
 
   /** Vérifie la clé via GET /v4/user. Ne lève jamais : renvoie ok=false avec un code générique. */
@@ -398,9 +410,10 @@ export class AllDebridClient {
     const result = new Map<string, boolean>();
     const unique = [...new Set(hashes.map(normalizeHash).filter((hash): hash is string => hash !== null))];
     const now = this.now();
-    const missing: string[] = [];
+    let missing: string[] = [];
     const waited: string[] = [];
     const waits: Promise<void>[] = [];
+    const writes: Promise<unknown>[] = [];
     for (const hash of unique) {
       // Magnet utilisé par une résolution en cours : aucun contrôle pour ce hash.
       if (this.activeResolves.has(hash)) continue;
@@ -429,6 +442,9 @@ export class AllDebridClient {
       );
     }
 
+    // Cache persistant : un statut connu d'une autre instance évite l'envoi du magnet.
+    missing = await this.restoreChecks(missing, result, finish);
+
     await runLimited(chunk(missing, CHECK_BATCH_SIZE), CHECK_CONCURRENCY, async (batch) => {
       try {
         const found = await this.checkBatch(batch);
@@ -441,7 +457,9 @@ export class AllDebridClient {
             continue;
           }
           pruneExpired(this.checkCache, at);
-          this.checkCache.set(hash, { value: cached, expiresAt: at + (cached ? this.positiveTtlMs : this.negativeTtlMs) });
+          const ttlMs = cached ? this.positiveTtlMs : this.negativeTtlMs;
+          this.checkCache.set(hash, { value: cached, expiresAt: at + ttlMs });
+          if (this.kv !== undefined) writes.push(this.kv.set(this.checkKey(hash), cached ? '1' : '0', Math.ceil(ttlMs / 1000)).catch(() => undefined));
           result.set(hash, cached);
         }
       } finally {
@@ -453,6 +471,7 @@ export class AllDebridClient {
     });
 
     await Promise.all(waits);
+    await Promise.all(writes);
     const later = this.now();
     for (const hash of waited) {
       const value = liveValue(this.checkCache, hash, later);
@@ -513,10 +532,18 @@ export class AllDebridClient {
     this.markActive(hash, 1);
     const run = (async (): Promise<ResolvedLink> => {
       try {
+        const stored = await this.readResolved(key);
+        if (stored !== undefined) {
+          const at = this.now();
+          pruneExpired(this.resolveCache, at);
+          this.resolveCache.set(key, { value: stored, expiresAt: at + RESOLVE_TTL_MS });
+          return stored;
+        }
         const value = await this.resolveUncached(hash, sel, sleep, source);
         const at = this.now();
         pruneExpired(this.resolveCache, at);
         this.resolveCache.set(key, { value, expiresAt: at + RESOLVE_TTL_MS });
+        await this.writeResolved(key, value);
         return value;
       } finally {
         this.resolving.delete(key);
@@ -525,6 +552,59 @@ export class AllDebridClient {
     })();
     this.resolving.set(key, run);
     return run;
+  }
+
+  private checkKey(hash: string): string {
+    return `chk:${this.keyId}:${hash}`;
+  }
+
+  private resolveKey(selection: string): string {
+    return `res:${this.keyId}:${createHash('sha256').update(selection).digest('hex')}`;
+  }
+
+  /**
+   * Statuts connus du cache persistant pour des hashes à contrôler : ceux qui y figurent sont rendus (et gardés en
+   * mémoire), les autres restent à contrôler. Une panne du cache ne bloque rien.
+   */
+  private async restoreChecks(hashes: string[], result: Map<string, boolean>, finish: Map<string, () => void>): Promise<string[]> {
+    if (this.kv === undefined || hashes.length === 0) return hashes;
+    const kv = this.kv;
+    const stored = await Promise.all(hashes.map((hash) => kv.get(this.checkKey(hash)).catch(() => undefined)));
+    const left: string[] = [];
+    hashes.forEach((hash, index) => {
+      const status = stored[index];
+      if (status !== '1' && status !== '0') {
+        left.push(hash);
+        return;
+      }
+      const cached = status === '1';
+      const at = this.now();
+      pruneExpired(this.checkCache, at);
+      this.checkCache.set(hash, { value: cached, expiresAt: at + (cached ? this.positiveTtlMs : this.negativeTtlMs) });
+      result.set(hash, cached);
+      this.checking.delete(hash);
+      finish.get(hash)?.();
+    });
+    return left;
+  }
+
+  /** Lien résolu par une autre instance (cache persistant), ou undefined. Un contenu illisible est ignoré. */
+  private async readResolved(selection: string): Promise<ResolvedLink | undefined> {
+    if (this.kv === undefined) return undefined;
+    try {
+      const raw = await this.kv.get(this.resolveKey(selection));
+      if (raw === undefined) return undefined;
+      const value: unknown = JSON.parse(raw);
+      if (!isRecord(value) || typeof value.url !== 'string' || typeof value.filename !== 'string' || typeof value.size !== 'number') return undefined;
+      return { url: value.url, filename: value.filename, size: value.size };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async writeResolved(selection: string, value: ResolvedLink): Promise<void> {
+    if (this.kv === undefined) return;
+    await this.kv.set(this.resolveKey(selection), JSON.stringify(value), Math.ceil(RESOLVE_TTL_MS / 1000)).catch(() => undefined);
   }
 
   private markActive(hash: string, delta: 1 | -1): void {

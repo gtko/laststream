@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { IssuedUrls } from '../src/play/issued.js';
 import { ThumbCache } from '../src/lt/thumbs/cache.js';
 import { ffmpegFromEnv, ThumbService, type Runner } from '../src/lt/thumbs/service.js';
@@ -51,24 +51,26 @@ describe('miniatures : tranches de 30 s', () => {
 
 describe('miniatures : sources autorisées', () => {
   const issued = new IssuedUrls();
-  issued.note('https://cdn.example.com/video.mkv?token=abc');
-  issued.note('https://10.0.0.5/private.mkv');
-  issued.noteResolved('/CFG/play/c/TOK', 'https://dl.debrid.example/f/abc.mkv');
+  beforeAll(async () => {
+    await issued.note('https://cdn.example.com/video.mkv?token=abc');
+    await issued.note('https://10.0.0.5/private.mkv');
+    await issued.noteResolved('/CFG/play/c/TOK', 'https://dl.debrid.example/f/abc.mkv');
+  });
 
   const ok = (raw: unknown) => resolveThumbSource(raw, issued);
 
-  it('accepte le serveur de streaming local (localhost ramené à 127.0.0.1)', () => {
-    expect(ok('http://127.0.0.1:11470/abc/0/stream')?.target.href).toBe('http://127.0.0.1:11470/abc/0/stream');
-    expect(ok('http://localhost:11470/abc/0')?.target.href).toBe('http://127.0.0.1:11470/abc/0');
+  it('accepte le serveur de streaming local (localhost ramené à 127.0.0.1)', async () => {
+    expect((await ok('http://127.0.0.1:11470/abc/0/stream'))?.target.href).toBe('http://127.0.0.1:11470/abc/0/stream');
+    expect((await ok('http://localhost:11470/abc/0'))?.target.href).toBe('http://127.0.0.1:11470/abc/0');
   });
 
-  it('accepte une URL émise par lastAddon, et le lien débridé derrière une URL /play résolue', () => {
-    expect(ok('https://cdn.example.com/video.mkv?token=abc')).not.toBeNull();
-    const play = ok('http://192.168.1.20:7000/CFG/play/c/TOK');
+  it('accepte une URL émise par lastAddon, et le lien débridé derrière une URL /play résolue', async () => {
+    expect(await ok('https://cdn.example.com/video.mkv?token=abc')).not.toBeNull();
+    const play = await ok('http://192.168.1.20:7000/CFG/play/c/TOK');
     expect(play?.target.href).toBe('https://dl.debrid.example/f/abc.mkv');
   });
 
-  it('refuse tout le reste', () => {
+  it('refuse tout le reste', async () => {
     for (const raw of [
       'file:///C:/Windows/win.ini',
       'ftp://example.com/a.mkv',
@@ -87,23 +89,23 @@ describe('miniatures : sources autorisées', () => {
       undefined,
       `http://127.0.0.1:11470/${'a'.repeat(5000)}`,
     ]) {
-      expect(ok(raw), String(raw).slice(0, 60)).toBeNull();
+      expect(await ok(raw), String(raw).slice(0, 60)).toBeNull();
     }
   });
 
-  it('une origine locale ajoutée par injection n\'ouvre que cette origine', () => {
+  it('une origine locale ajoutée par injection n\'ouvre que cette origine', async () => {
     const extra = (u: URL): boolean => u.hostname === '127.0.0.1' && u.port === '45678';
-    expect(resolveThumbSource('http://127.0.0.1:45678/x.mp4', issued, extra)).not.toBeNull();
-    expect(resolveThumbSource('http://127.0.0.1:45679/x.mp4', issued, extra)).toBeNull();
+    expect(await resolveThumbSource('http://127.0.0.1:45678/x.mp4', issued, extra)).not.toBeNull();
+    expect(await resolveThumbSource('http://127.0.0.1:45679/x.mp4', issued, extra)).toBeNull();
   });
 
-  it('le registre expire ses entrées', () => {
+  it('le registre expire ses entrées', async () => {
     let now = 0;
     const reg = new IssuedUrls(() => now, 1000);
-    reg.note('https://cdn.example.com/a.mkv');
-    expect(reg.has('https://cdn.example.com/a.mkv')).toBe(true);
+    await reg.note('https://cdn.example.com/a.mkv');
+    expect(await reg.has('https://cdn.example.com/a.mkv')).toBe(true);
     now = 1001;
-    expect(reg.has('https://cdn.example.com/a.mkv')).toBe(false);
+    expect(await reg.has('https://cdn.example.com/a.mkv')).toBe(false);
   });
 });
 

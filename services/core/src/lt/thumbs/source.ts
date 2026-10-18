@@ -20,7 +20,7 @@ export interface ThumbSource {
  * Pas d'identifiants dans l'URL, pas de schéma autre que http(s), pas d'adresse privée (hors serveur local).
  * `extraLocal` (tests, injection) ajoute des origines locales autorisées sans relâcher la règle par défaut.
  */
-export function resolveThumbSource(raw: unknown, issued: IssuedUrls, extraLocal?: LocalUrlPolicy): ThumbSource | null {
+export async function resolveThumbSource(raw: unknown, issued: IssuedUrls, extraLocal?: LocalUrlPolicy): Promise<ThumbSource | null> {
   if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_URL_LENGTH) return null;
   let url: URL;
   try {
@@ -41,11 +41,11 @@ export function resolveThumbSource(raw: unknown, issued: IssuedUrls, extraLocal?
   if (local(url)) return { target: url, submitted };
 
   const allowed = (candidate: URL): boolean => local(candidate) || isLiteralSafe(candidate);
-  const resolved = issued.resolvedFor(submitted);
+  const resolved = await issued.resolvedFor(submitted);
   if (resolved !== undefined) {
     const target = new URL(resolved);
     if (allowed(target)) return { target, submitted };
   }
-  if (issued.has(submitted) && allowed(url)) return { target: url, submitted };
+  if ((await issued.has(submitted)) && allowed(url)) return { target: url, submitted };
   return null;
 }

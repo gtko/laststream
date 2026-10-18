@@ -39,7 +39,7 @@ describe('POST /lt/range-source', () => {
 
   it('émet un jeton pour un lien émis, refuse le reste', async () => {
     const issued = new IssuedUrls();
-    issued.note(URL_OK);
+    await issued.note(URL_OK);
     app = await startApp({ thumbs: { ffmpeg: null, issued }, rangeProxy: { secret: SECRET, base: 'https://edge.example' } });
     const health = (await (await fetch(`${app.baseUrl}/${fullToken()}/lt/health`)).json()) as { capabilities: { rangeThumbs: boolean } };
     expect(health.capabilities.rangeThumbs).toBe(true);

@@ -1,10 +1,16 @@
+import type { KvCache } from '../platform/types.js';
+
 /** Durée par défaut pendant laquelle un hébergeur reste marqué indisponible, en millisecondes (1 h). */
 export const DEFAULT_HOST_DOWN_MS = 3_600_000;
 
-/** Options de HostHealth : durée d'indisponibilité et horloge injectable. */
+/** Options de HostHealth : durée d'indisponibilité, horloge injectable, cache partagé entre instances. */
 export interface HostHealthOptions {
   downMs?: number;
   now?: () => number;
+  /** Cache persistant partagé (Workers). Les marques y sont écrites ; `warm` les relit avant les contrôles. */
+  kv?: KvCache;
+  /** Rattache une écriture au cycle de vie de la requête (Scheduler.background). Défaut : écriture non attendue. */
+  background?: (work: Promise<unknown>) => void;
 }
 
 /**
@@ -39,8 +45,12 @@ export class HostHealth {
   private readonly downMs: number;
   private readonly now: () => number;
   private readonly downUntil = new Map<string, number>();
+  private readonly kv: KvCache | undefined;
+  private readonly background: (work: Promise<unknown>) => void;
 
   constructor(opts: HostHealthOptions = {}) {
+    this.kv = opts.kv;
+    this.background = opts.background ?? ((work) => void work.catch(() => undefined));
     const downMs = opts.downMs ?? DEFAULT_HOST_DOWN_MS;
     if (!(downMs > 0)) throw new RangeError('downMs doit être > 0');
     this.downMs = downMs;
@@ -51,7 +61,28 @@ export class HostHealth {
   markDown(host: string): void {
     const key = normalizeHost(host);
     if (key === undefined) return;
-    this.downUntil.set(key, this.now() + this.downMs);
+    const until = this.now() + this.downMs;
+    this.downUntil.set(key, until);
+    if (this.kv !== undefined) {
+      this.background(this.kv.set(`down:${key}`, String(until), Math.ceil(this.downMs / 1000)).catch(() => undefined));
+    }
+  }
+
+  /**
+   * Recharge depuis le cache partagé les marques posées par d'autres instances pour ces hôtes. À appeler avant les
+   * contrôles `isDown` (qui restent synchrones). Sans cache partagé, ne fait rien ; une panne du cache est ignorée.
+   */
+  async warm(hosts: readonly string[]): Promise<void> {
+    const kv = this.kv;
+    if (kv === undefined) return;
+    const keys = [...new Set(hosts.map(normalizeHost).filter((host): host is string => host !== undefined))];
+    await Promise.all(
+      keys.map(async (key) => {
+        if (this.downUntil.has(key)) return;
+        const until = Number(await kv.get(`down:${key}`).catch(() => undefined));
+        if (Number.isFinite(until) && until > this.now()) this.downUntil.set(key, until);
+      }),
+    );
   }
 
   /** Vrai si l'hôte est marqué indisponible à cet instant. Retire la marque une fois échue. */
