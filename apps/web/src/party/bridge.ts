@@ -119,7 +119,7 @@ class PartyBridge {
 
   isActive(): boolean { return this.client !== null && this.client.status !== 'closed'; }
   isHost(): boolean { return !!this.client?.isHost; }
-  /** Un invité ne pilote pas la lecture : ses commandes de lecture sont ignorées (seul l'hôte pilote). */
+  /** Un invité ne change pas d'épisode (seul l'hôte passe à l'épisode suivant) ; la pause, la reprise et les sauts sont partagés. */
   guestLocked(): boolean { return this.isActive() && !this.isHost(); }
 
   /** Le salon peut-il être créé depuis ce profil (compte serveur, connecté) ? */
@@ -136,6 +136,8 @@ class PartyBridge {
     const body = roomBodyOf(a, vis, profileId, getLangPrefs().audio === 'original' ? 'fr' : getLangPrefs().audio);
     const { room } = await createParty(body);
     await this.connect(room.id, profileId);
+    // La lecture en cours de l'hôte fait foi pour le salon neuf.
+    this.controller?.arm();
     return room;
   }
 
@@ -231,6 +233,8 @@ class PartyBridge {
     if (!c || !c.room) return;
     this.controller?.reset();
     if (c.isHost) {
+      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure.
+      this.controller?.arm();
       const m = c.room.media;
       const s = a.cur.season ?? null;
       const e = a.cur.episode ?? null;

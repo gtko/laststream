@@ -300,9 +300,13 @@ export class PartyClient {
   }
 
   requestSync(): boolean { return this.raw({ t: 'sync' }); }
-  /** Commande de lecture de l'hôte : `play`, `pause`, `seek`, ou `sync` (rapport périodique de position). */
+  /**
+   * Commande de lecture : `play`, `pause`, `seek` (lecture partagée, tout participant) ou `sync` (rapport de position de
+   * l'hôte, horloge de référence).
+   */
   control(action: 'play' | 'pause' | 'seek' | 'sync', pos: number): boolean {
-    return this.isHost && this.raw({ t: 'ctl', action, pos: Math.max(0, Math.round(pos * 1000) / 1000) });
+    if (action === 'sync' && !this.isHost) return false;
+    return this.raw({ t: 'ctl', action, pos: Math.max(0, Math.round(pos * 1000) / 1000) });
   }
   changeEpisode(season: number, episode: number, fingerprint?: Fingerprint): boolean {
     return this.isHost && this.raw({ t: 'episode', season, episode, ...(fingerprint ? { fingerprint } : {}) });

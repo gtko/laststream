@@ -1340,22 +1340,22 @@ function markWatched() {
 
 // ---------- Actions ----------
 
-/** Salon : seul l'hôte pilote ; un invité qui essaie est prévenu. */
+/** Salon : seul l'hôte change d'épisode ; un invité qui essaie est prévenu. La lecture (pause, reprise, saut) est partagée. */
 function guestBlocked() {
   if (!partyBridge.guestLocked()) return false;
-  ui.toast('Seul l’hôte du salon pilote la lecture', 1800);
+  ui.toast('Seul l’hôte du salon change d’épisode', 1800);
   return true;
 }
 
 function seekTo(t) {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   P.engine.seek(t);
   P.watch.reset(Date.now());
   P.skipped = null;
 }
 
 function seekBy(d) {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
   seekTo(to);
@@ -1364,7 +1364,7 @@ function seekBy(d) {
 }
 
 function togglePlay() {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   if (st.paused) P.engine.play(); else { P.engine.pause(); saveProgress(true); }
 }
