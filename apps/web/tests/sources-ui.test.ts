@@ -68,17 +68,19 @@ describe('manifest', () => {
 });
 
 describe('cartes de sources', () => {
-  it('Sources : seulement les addons Stremio ; les débrideurs sont dans « Avancé », replié, avec l’avertissement', () => {
+  it('Sources : seulement les addons Stremio et « Préférences de lecture » (qualité maximale) ; plus de débrideurs', () => {
     expect(document.querySelector('[data-set-addsrc="torznab"]')).toBeNull();
     expect(document.querySelector('[data-set-addsrc="upstream"]')!.textContent).toContain('addon Stremio');
-    const adv = document.querySelector('#detail details.set-adv') as HTMLDetailsElement;
-    expect(adv).not.toBeNull();
-    expect(adv.open).toBe(false);
-    expect(adv.querySelector('summary')!.textContent).toBe('Avancé');
-    expect(adv.textContent).toContain('Tes addons (Lumio…) débrident déjà eux-mêmes');
-    expect(adv.textContent).toContain('une même clé utilisée à deux endroits peut faire suspendre ton compte');
-    expect(adv.querySelector('#set-debrid')).not.toBeNull();
-    expect(document.querySelector('#detail')!.textContent).not.toMatch(/Prowlarr local|indexeurs/i);
+    const titles = Array.from(document.querySelectorAll('#set-p-sources h3')).map((h) => h.textContent);
+    expect(titles).toEqual(['Addons Stremio', 'Préférences de lecture']);
+    const max = document.querySelector('#set-p-sources select[name="resMax"]') as HTMLSelectElement;
+    expect(Array.from(max.options).map((o) => o.textContent)).toEqual(['Aucune limite', '4K', '1080p', '720p']);
+    const panel = document.querySelector('#set-p-sources')!.cloneNode(true) as HTMLElement;
+    panel.querySelectorAll('.src-card').forEach((c) => c.remove()); // sources existantes de la configuration
+    const text = panel.textContent!;
+    expect(text).not.toMatch(/Prowlarr|indexeur|AllDebrid|TorBox|Real-Debrid|Débridage|Résolutions|Tailles/i);
+    expect(document.querySelector('#detail details.set-adv, #set-debrid, [name="onlyCached"], [name="minGb"], [name="maxResults"]')).toBeNull();
+    expect(document.querySelector('#set-h-sources')!.textContent).toBe('Sources');
   });
 
   it('affiche des cartes compactes avec logo, nom du manifest, version, types et état', () => {

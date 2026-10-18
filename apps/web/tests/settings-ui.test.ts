@@ -68,13 +68,11 @@ describe('interrupteurs', () => {
   });
 
   it('un clic sur la ligne bascule l’interrupteur, et le formulaire lit aria-checked', () => {
-    const row = page().querySelector('[data-sw-row] [name="onlyCached"]')!.closest('[data-sw-row]') as HTMLElement;
+    const row = page().querySelector('[data-sw-row] [data-set-pref="skip-recap"]')!.closest('[data-sw-row]') as HTMLElement;
     const sw = row.querySelector('[role="switch"]') as HTMLElement;
-    expect(sw.getAttribute('aria-checked')).toBe('false');
+    const before = sw.getAttribute('aria-checked');
     click(row.querySelector('.set-row-t'));
-    expect(sw.getAttribute('aria-checked')).toBe('true');
-    const form = page().querySelector('#set-la') as HTMLFormElement;
-    expect(form.elements.namedItem('onlyCached')).toBe(sw);
+    expect(sw.getAttribute('aria-checked')).toBe(before === 'true' ? 'false' : 'true');
   });
 });
 

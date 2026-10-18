@@ -63,13 +63,6 @@ export function card(title, body, opts) {
     '<div class="set-card-b">' + body + '</div></div>';
 }
 
-/** Section « Avancé » repliée : débrideurs de l'appareil, à n'utiliser que si on sait ce qu'on fait. */
-export function advancedHTML(body) {
-  return '<details class="set-adv"><summary class="set-adv-s">Avancé</summary>' +
-    '<p class="set-adv-n">Facultatif. Tes addons (Lumio…) débrident déjà eux-mêmes. N’ajoute une clé ici que si tu sais ce que tu fais : une même clé utilisée à deux endroits peut faire suspendre ton compte.</p>' +
-    body + '</details>';
-}
-
 let uid = 0;
 const nextId = () => 'set-r' + (++uid);
 

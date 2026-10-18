@@ -39,6 +39,9 @@ import './ui/sources-ui.js';
 import { announceShellReady } from './player/shell';
 import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
+import { wipeDeviceDebrid } from './sources/debridWipe';
+
+wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
 
 // App Windows (ou toute page servie par lastAddon lui-même) : serveur = origine de la page, quel que soit le port
 // choisi au démarrage, sauf si l'utilisateur a choisi un serveur perso. Déclaré avant la résolution du serveur.

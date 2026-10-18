@@ -1,4 +1,4 @@
-/* Page #/settings : lastAddon (schéma, clés, langues, sources, debrid), lecture, apparence, région. */
+/* Page #/settings : lastAddon (schéma, clés, addons Stremio), lecture, apparence, région. */
 import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
 import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
 import { testServer } from '../data/serverTest';
@@ -16,10 +16,9 @@ import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
-import { bindDebrid, debridCardHTML } from './settings-debrid.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import {
-  CATEGORIES, advancedHTML, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
+  CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -27,10 +26,6 @@ import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { state } from './state.js';
 
-bindDebrid();
-
-const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['multi', 'Multi'], ['original', 'Version originale']];
-const RESOLUTIONS = ['2160p', '1080p', '720p', '480p', 'SD'];
 const SERVICE_FALLBACK = {
   tmdbToken: ['Jeton TMDB (lecture v4)', 'Catalogues, fiches et recommandations.'],
   mdblistApiKey: ['Clé MDBList', 'Notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'],
@@ -53,14 +48,6 @@ function serviceDefs() {
   const props = ed.schema && ed.schema.properties && ed.schema.properties.services && ed.schema.properties.services.properties;
   if (props) return Object.entries(props).map(([k, v]) => [k, v.title || k, v.description || '']);
   return Object.entries(SERVICE_FALLBACK).map(([k, [t, d]]) => [k, t, d]);
-}
-
-function enumOf(path, fallback) {
-  try {
-    const s = ed.schema.properties;
-    const node = path.reduce((n, k) => n.properties[k], { properties: s });
-    return node.items ? node.items.enum : node.enum;
-  } catch (_) { return fallback; }
 }
 
 const stackInput = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input class="set-input" id="' + id + '" ' + attrs + '>', { stack: true });
@@ -179,31 +166,15 @@ function serverPanelInner() {
 
 function sourcesPanelInner() {
   const c = ed.cfg || {};
-  const langs = c.languages || {};
-  const pref = langs.preferred || ['fr', 'multi'];
   const res = c.resolutions || {};
-  const allowed = res.allowed || RESOLUTIONS;
-  const size = c.size || {};
-  const resList = enumOf(['resolutions', 'allowed'], RESOLUTIONS) || RESOLUTIONS;
-  const debrid = c.debrid;
-  const num = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" ' + attrs + '>');
-  return card('Langues', rowHTML('Langues préférées', 'Les sources dans ces langues passent en premier.', () => chipsHTML('Langues préférées', LANGS.map(([v, l]) => chipHTML(l, pref.includes(v), 'data-set-toggle name="lang.' + v + '"')).join('')), { stack: true }) +
-    switchRow('Accepter la VOSTFR', '', langs.acceptVostfr !== false, 'name="acceptVostfr"') +
-    switchRow('Autres langues en dernier recours', 'Affiche les autres langues s’il n’y a rien dans ma langue.', langs.fallbackToOthers !== false, 'name="fallbackToOthers"')) +
-    card('Résolutions', rowHTML('Résolutions acceptées', '', () => chipsHTML('Résolutions acceptées', resList.map((v) => chipHTML(v, allowed.includes(v), 'data-set-toggle name="res.' + v + '"')).join('')), { stack: true }) +
-      fieldRow('Résolution maximale', '', (id) => '<select class="set-input" id="' + id + '" name="resMax"><option value="">Aucune limite</option>' +
-        resList.map((v) => '<option value="' + v + '"' + (res.max === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>')) +
-    card('Tailles et résultats',
-      num('Taille minimale', 'En Go.', 'min="0" step="0.1" name="minGb" value="' + esc(size.minGb != null ? size.minGb : '') + '"') +
-      num('Taille maximale', 'En Go.', 'min="0.1" step="0.1" name="maxGb" value="' + esc(size.maxGb != null ? size.maxGb : '') + '"') +
-      num('Nombre de résultats', '', 'min="1" max="500" name="maxResults" value="' + esc(c.maxResults != null ? c.maxResults : 30) + '"')) +
-    card('Sources', sourcesHTML() +
-      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon Stremio</button>' +
-        '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
-      '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Les addons Stremio interrogés pour trouver des sources. Ils débrident eux-mêmes : la clé de ton débrideur se règle dans l’addon.' }) +
-    advancedHTML(debridCardHTML() + card('Débridage',
-      switchRow('Seulement les sources en cache', 'Masque les sources que le débrideur doit d’abord télécharger (statut connu seulement).', !!c.onlyCached, 'name="onlyCached"') +
-      (debrid ? switchRow('Retirer la clé enregistrée sur le serveur', 'Une ancienne clé AllDebrid est encore dans ta configuration chiffrée ; elle n’est plus utilisée pour lire. Active puis enregistre pour l’effacer.', false, 'name="debridClear"') : '')));
+  const maxChoices = [['', 'Aucune limite'], ['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p']];
+  return card('Addons Stremio', sourcesHTML() +
+    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon Stremio</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
+    '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Les addons interrogés pour trouver des sources. Ils débrident eux-mêmes : la clé de ton débrideur se règle dans l’addon.' }) +
+    card('Préférences de lecture',
+      fieldRow('Qualité maximale', 'Les sources au-dessus de cette qualité sont masquées.', (id) => '<select class="set-input" id="' + id + '" name="resMax">' +
+        maxChoices.map(([v, l]) => '<option value="' + v + '"' + ((res.max || '') === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'));
 }
 
 function serverFormHTML(cats) {
@@ -211,7 +182,7 @@ function serverFormHTML(cats) {
   const cat = (id) => cats.find((c) => c.id === id);
   return '<form id="set-la" class="set-form" autocomplete="off">' +
     panelHTML(cat('server'), 'Adresse du serveur et clés des services.', serverPanelInner()) +
-    panelHTML(cat('sources'), 'Langues, résolutions, tailles et addons Stremio.', sourcesPanelInner()) +
+    panelHTML(cat('sources'), 'Tes extensions Stremio, dans l’ordre où elles sont interrogées.', sourcesPanelInner()) +
     '<div class="set-savebar"><div class="set-savebar-t">' + msgP('set-la-msg', status) +
     '<p class="set-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p></div>' +
     '<button type="submit" class="btn btn-primary">Enregistrer</button></div></form>';
@@ -294,6 +265,20 @@ function rerender() {
   window.scrollTo(0, scroll);
 }
 
+/** Efface la clé de débrideur résiduelle de la configuration serveur (jamais affichée), sans toucher au reste. */
+async function dropServerDebridKey(decoded, enc, base) {
+  try {
+    const clean = { ...decoded };
+    delete clean.debrid;
+    delete clean.onlyCached;
+    const config = await encodeConfig(clean, enc, base);
+    saveSettings({ base, config });
+    pushConfig(config);
+    clearCache();
+    ed.cfg = (await decodeConfig(config, base)) || clean;
+  } catch (_) { /* repli : elle sera retirée au prochain enregistrement */ }
+}
+
 async function loadConfig() {
   const token = ++ed.token;
   ed.loading = true;
@@ -307,6 +292,7 @@ async function loadConfig() {
     const decoded = enc ? await decodeConfig(enc, base) : null;
     if (token !== ed.token) return;
     ed.cfg = decoded || {};
+    if (decoded && decoded.debrid) await dropServerDebridKey(decoded, enc, base);
     initSources(ed.cfg.sources);
     ed.loaded = !!decoded;
     if (enc && !decoded) ed.error = 'Impossible de lire la configuration enregistrée (serveur injoignable ou clé de chiffrement différente).';
@@ -346,21 +332,24 @@ function buildConfig(form) {
     if (v) cfg.services[k] = v;
     else if (k === 'openrouterModel') delete cfg.services[k];
   });
-  cfg.languages = cfg.languages || {};
-  cfg.languages.preferred = LANGS.map(([v]) => v).filter((v) => f['lang.' + v] && isOn(f['lang.' + v]));
-  cfg.languages.acceptVostfr = isOn(f.acceptVostfr);
-  cfg.languages.fallbackToOthers = isOn(f.fallbackToOthers);
-  const resList = enumOf(['resolutions', 'allowed'], RESOLUTIONS) || RESOLUTIONS;
+  // Langues : dérivées de la langue audio principale (« Audio et sous-titres »). VF/MULTI d'abord si le français est choisi,
+  // VOSTFR accepté si les sous-titres sont activés, les autres langues toujours en dernier recours.
+  const lp = getLangPrefs();
+  const main = ['fr', 'en', 'es', 'de', 'it'].includes(lp.audio) ? lp.audio : 'original';
+  cfg.languages = { preferred: [main, 'multi'], acceptVostfr: !!lp.subsOn, fallbackToOthers: true };
+  // Résolution maximale seule réglable ; tailles et nombre de résultats : valeurs par défaut du serveur.
   cfg.resolutions = cfg.resolutions || {};
-  cfg.resolutions.allowed = resList.filter((v) => f['res.' + v] && isOn(f['res.' + v]));
-  if (f.resMax.value) cfg.resolutions.max = f.resMax.value; else delete cfg.resolutions.max;
-  cfg.size = cfg.size || {};
-  ['minGb', 'maxGb'].forEach((k) => { if (f[k].value !== '') cfg.size[k] = Number(f[k].value); else delete cfg.size[k]; });
-  if (f.maxResults.value !== '') cfg.maxResults = Number(f.maxResults.value);
+  delete cfg.resolutions.allowed;
+  if (f.resMax && f.resMax.value) cfg.resolutions.max = f.resMax.value; else delete cfg.resolutions.max;
+  delete cfg.size;
+  delete cfg.maxResults;
   cfg.sources = serializeSources();
   cfg.onlyCached = isOn(f.onlyCached);
   // Les clés des débrideurs restent sur l'appareil (réglages ci-dessus) : la configuration serveur ne reçoit plus de clé.
   if (f.debridClear && isOn(f.debridClear)) delete cfg.debrid;
+  // Plus de débrideur dans Laststream : les addons débrident eux-mêmes.
+  delete cfg.onlyCached;
+  delete cfg.debrid;
   return cfg;
 }
 
