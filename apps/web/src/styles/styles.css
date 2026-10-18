@@ -427,6 +427,9 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .f-posters { display: flex; gap: 20px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; scrollbar-width: thin; scrollbar-color: #3a3646 transparent; }
 .f-posters .card { width: 200px; flex: 0 0 200px; transition: transform 0.2s; }
 .card:hover, .card:focus-visible { transform: scale(1.05); }
+/* Bords de rangée : le zoom part du bord intérieur, la carte n'est plus rognée par la marge ni collée au bord. */
+.row > .card:first-child, .row > :first-child > .card { transform-origin: left center; }
+.row > .card:last-child, .row > :last-child > .card { transform-origin: right center; }
 .card:focus-visible { outline: none; z-index: 2; }
 .card:hover .card-media, .card:focus-visible .card-media { outline: 3px solid var(--accent); outline-offset: -3px; }
 .card.is-current .card-media { outline: 3px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: -3px; }
