@@ -118,6 +118,8 @@ export function switchServer(next: { mode: ServerMode; custom?: string }, config
   saveSettings({ mode: next.mode, custom, base, config: config ?? '' });
   clearCache();
   signOut(true).catch(() => undefined);
+  // La déconnexion vide la config locale ; celle du nouveau serveur, choisie ici, est remise en place.
+  saveSettings({ config: config ?? '' });
   relaunch();
   return true;
 }

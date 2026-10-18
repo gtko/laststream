@@ -172,10 +172,17 @@ export const me = (timeoutMs?: number) => call<{ account: AccountDto }>('/me', {
 
 // ---- Profils ----
 export const listProfiles = () => call<{ profiles: ProfileDto[] }>('/profiles');
-export const createProfile = (p: ProfileInput) => call<ProfileDto>('/profiles', { method: 'POST', body: p });
-export const updateProfile = (id: string, patch: Partial<ProfileInput>) =>
-  call<ProfileDto>('/profiles/' + encodeURIComponent(id), { method: 'PATCH', body: patch, profileId: id });
-export const deleteProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id), { method: 'DELETE', profileId: id });
+/**
+ * Gestion des profils : réservée au profil principal, qui s'annonce par X-Profile-Id (`actor`) avec son jeton de PIN.
+ * Sans acteur (compte sans profil : le premier profil), aucun en-tête.
+ */
+const asActor = (actor?: string): Pick<CallOptions, 'profileId' | 'headers'> =>
+  actor ? { profileId: actor, headers: { 'x-profile-id': actor } } : {};
+export const createProfile = (p: ProfileInput, actor?: string) => call<ProfileDto>('/profiles', { method: 'POST', body: p, ...asActor(actor) });
+export const updateProfile = (id: string, patch: Partial<ProfileInput>, actor: string = id) =>
+  call<ProfileDto>('/profiles/' + encodeURIComponent(id), { method: 'PATCH', body: patch, ...asActor(actor) });
+export const deleteProfile = (id: string, actor?: string) =>
+  call<void>('/profiles/' + encodeURIComponent(id), { method: 'DELETE', ...asActor(actor) });
 export const unlockProfile = (id: string, pin: string) =>
   call<{ token: string; expiresAt: string }>('/profiles/' + encodeURIComponent(id) + '/unlock', { method: 'POST', body: { pin } });
 export const lockProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id) + '/lock', { method: 'POST' });

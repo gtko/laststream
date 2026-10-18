@@ -1,7 +1,7 @@
 /* Comptes : écran de connexion, choix du profil (façon Netflix), clavier PIN, gestion des profils, mode enfant. */
 import {
-  adultsWithPin, auth, chooseProfile, continueWithoutAccount, hasValidToken, removeProfile,
-  saveProfile, signIn, signOut, signUp, unlock,
+  auth, canManageProfiles, chooseProfile, continueWithoutAccount, grantManager, hasValidToken, parentalProfile,
+  removeProfile, saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
@@ -181,13 +181,21 @@ function profileTile(p) {
     '<span class="pf-name">' + esc(p.name) + '</span>' + (p.isKid ? '<em class="pf-kid">Enfant</em>' : '') + '</button>';
 }
 
+/**
+ * Seul le profil principal gère les profils : « Gérer les profils » et « Ajouter un profil » sont masqués pour les autres.
+ * Sans profil actif (connexion), le bouton reste proposé et demande le code du profil principal.
+ */
+const mayManage = () => canManageProfiles();
+const offerManage = () => mayManage() || !auth.profile;
+
 function pickerHTML(note) {
+  if (manage && !mayManage()) manage = false;
   return '<div class="auth-card auth-wide"><div class="auth-brand">' + brand() + '</div>' +
     '<h1 class="auth-title">' + (manage ? 'Gérer les profils' : 'Qui regarde ?') + '</h1>' +
     '<div class="pf-grid" role="list">' + auth.profiles.map(profileTile).join('') +
-    '<button type="button" class="pf pf-add" data-pf-add aria-label="Ajouter un profil"><span class="pf-av">+</span><span class="pf-name">Ajouter un profil</span></button></div>' +
+    (mayManage() ? '<button type="button" class="pf pf-add" data-pf-add aria-label="Ajouter un profil"><span class="pf-av">+</span><span class="pf-name">Ajouter un profil</span></button>' : '') + '</div>' +
     '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(note || '') + '</p>' +
-    '<div class="tv-form-actions auth-actions"><button type="button" class="btn btn-ghost" data-pf-manage aria-pressed="' + manage + '">' + (manage ? 'Terminé' : 'Gérer les profils') + '</button>' +
+    '<div class="tv-form-actions auth-actions">' + (offerManage() ? '<button type="button" class="btn btn-ghost" data-pf-manage aria-pressed="' + manage + '">' + (manage ? 'Terminé' : 'Gérer les profils') + '</button>' : '') +
     '<button type="button" class="btn btn-ghost" data-auth-signout>Se déconnecter</button>' +
     (resolveFlow ? '' : '<button type="button" class="btn btn-ghost" data-auth-close>Fermer</button>') + '</div></div>';
 }
@@ -291,6 +299,7 @@ export function pinPad({ title, profile = null, choices = null, onOk, onCancel =
 
 // ---------- Édition d'un profil ----------
 function editProfile(p) {
+  if (!mayManage()) return;
   const open = (profile) => profileEditor(profile);
   if (p && p.hasPin && !hasValidToken(p.id)) {
     pinPad({ title: 'Code de ' + p.name, profile: p, onOk: async () => { hidePad(); open(p); } });
@@ -313,6 +322,8 @@ function profileEditor(p) {
       '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
     '<fieldset class="pf-sections"><legend>Rubriques autorisées</legend>' + KID_SECTIONS.map(([id, label]) =>
       '<label class="set-check"><input type="checkbox" name="sec" value="' + id + '"' + (sectionAllowed(cur.allowedCatalogs, id) ? ' checked' : '') + '> <span>' + esc(label) + '</span></label>').join('') + '</fieldset></div>' +
+    '<div data-parental' + (needsParentalCode(cur) ? '' : ' hidden') + '><p class="set-hint">Un profil enfant se quitte avec un code parental : celui du profil principal. Choisis-le maintenant (4 chiffres).</p>' +
+    '<label class="tv-field">Code parental (4 chiffres)<input type="password" name="parental" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off"></label></div>' +
     '<label class="tv-field">Code PIN (4 chiffres)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" placeholder="' + (cur.hasPin ? 'Laisser vide pour garder' : 'Aucun') + '"></label>' +
     (cur.hasPin ? '<label class="set-check"><input type="checkbox" name="nopin"> <span>Retirer le code PIN</span></label>' : '') +
     '<p class="pin-msg" id="pfe-msg" role="alert"></p>' +
@@ -324,7 +335,10 @@ function profileEditor(p) {
   const close = () => node.remove();
   form.elements.name.focus();
   form.addEventListener('change', (e) => {
-    if (e.target.name === 'kid') node.querySelector('[data-kidage]').hidden = !e.target.checked;
+    if (e.target.name === 'kid') {
+      node.querySelector('[data-kidage]').hidden = !e.target.checked;
+      node.querySelector('[data-parental]').hidden = !(e.target.checked && needsParentalCode({ isKid: true }));
+    }
   });
   node.addEventListener('click', async (e) => {
     const t = e.target instanceof Element ? e.target : null;
@@ -348,9 +362,14 @@ function profileEditor(p) {
     }
     const pin = f.pin.value.trim();
     if (pin && !/^\d{4}$/.test(pin)) { msg.textContent = 'Le code PIN compte 4 chiffres.'; return; }
+    const parental = f.parental ? f.parental.value.trim() : '';
+    const mustSetParental = input.isKid && needsParentalCode({ isKid: true });
+    if (mustSetParental && !/^\d{4}$/.test(parental)) { msg.textContent = 'Choisis un code parental à 4 chiffres : il protège la sortie du profil enfant.'; return; }
     if (pin) input.pin = pin;
     else if (f.nopin && f.nopin.checked) input.pin = null;
     try {
+      // Pas encore de code parental : le profil principal en reçoit un avant que l'enfant soit créé ou modifié.
+      if (mustSetParental) await saveProfile(parentalProfile().id, { pin: parental });
       await saveProfile(isNew ? null : cur.id, input);
       close();
       manage = true;
@@ -361,12 +380,22 @@ function profileEditor(p) {
   });
 }
 
+/** Un profil enfant sans code parental défini : le profil principal doit en choisir un (modifier le principal lui-même exclu). */
+function needsParentalCode(profile) {
+  const m = parentalProfile();
+  return !!profile.isKid && !!m && !m.hasPin;
+}
+
 // ---------- Quitter un profil enfant ----------
-/** Depuis un profil enfant : le PIN d'un profil adulte est exigé (s'il existe) avant de changer de profil. */
+/**
+ * Depuis un profil enfant : changer de profil, ouvrir « Qui regarde ? », se déconnecter ou accéder aux réglages exige le
+ * code parental (PIN du profil principal, vérifié par le serveur : 5 essais puis blocage de 5 minutes). Rien n'est
+ * gardé en clair. Sans code défini, le principal est invité à en choisir un (réglages) et l'écran s'ouvre.
+ */
 export function leaveKidProfile() {
-  const adults = adultsWithPin();
-  if (!adults.length) { openPicker(); return; }
-  pinPad({ title: 'Code d’un profil adulte', choices: adults, onOk: async () => { hidePad(); openPicker(); } });
+  const main = parentalProfile();
+  if (!main || !main.hasPin) { openPicker(); return; }
+  pinPad({ title: 'Code parental', profile: main, onOk: async () => { grantManager(main.id); hidePad(); openPicker(); } });
 }
 
 // ---------- Orchestration ----------
@@ -410,7 +439,16 @@ document.addEventListener('click', async (e) => {
   if (pf) { pick(pf.dataset.pf); return; }
   if (t.closest('[data-auth-close]')) { hide(); return; }
   if (t.closest('[data-pf-add]')) { editProfile(null); return; }
-  if (t.closest('[data-pf-manage]')) { manage = !manage; show(pickerHTML()); }
+  if (t.closest('[data-pf-manage]')) {
+    if (manage) { manage = false; show(pickerHTML()); return; }
+    if (mayManage()) { manage = true; show(pickerHTML()); return; }
+    // Aucun profil actif : le profil principal se reconnaît par son code.
+    const main = parentalProfile() || auth.profiles.find((p) => p.isMainProfile);
+    if (!main) return;
+    const grant = () => { grantManager(main.id); hidePad(); manage = true; show(pickerHTML()); };
+    if (main.hasPin) pinPad({ title: 'Code du profil principal', profile: main, onOk: async () => grant() });
+    else grant();
+  }
 });
 
 document.addEventListener('submit', (e) => {

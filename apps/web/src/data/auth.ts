@@ -3,7 +3,7 @@ import { clearElevation } from './adminApi';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
 import { startPresence, stopPresence } from './presence';
-import { CONFIG_SETTING_KEY, configForAccount, ensureDefaultConfig, reconcileConfig } from './configSync';
+import { claimLocalConfig, clearLocalAccountData, CONFIG_SETTING_KEY, configForAccount, ensureDefaultConfig, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
 import { ServerUserStore, profileFromDto } from './serverUserStore';
@@ -51,6 +51,29 @@ export const isOwner = (): boolean => auth.isOwner;
 export const isMainProfile = (): boolean => !isServerMode() || auth.profile?.isMainProfile !== false;
 /** Profil administrateur du serveur : le seul à voir et ouvrir l'administration (pas le conjoint, pas les enfants). */
 export const isAdminProfile = (): boolean => auth.profile?.isAdminProfile === true;
+/**
+ * Profil principal adulte du compte : son PIN sert de code parental (quitter un profil enfant, gérer les profils).
+ * Null hors mode serveur ou si le serveur n'annonce rien.
+ */
+export const parentalProfile = (): Profile | null => auth.profiles.find((p) => p.isMainProfile === true && !p.isKid) ?? null;
+/** Profil enfant actif ET code parental défini : en sortir exige ce code. */
+export const parentalLockActive = (): boolean => isKidProfile() && parentalProfile()?.hasPin === true;
+/** Il existe un profil enfant mais le principal n'a pas de code parental (à définir). */
+export const parentalCodeMissing = (): boolean => !!parentalProfile() && parentalProfile()?.hasPin !== true && auth.profiles.some((p) => p.isKid);
+
+/** Profil principal reconnu par son code dans l'écran « Qui regarde ? » (aucun profil actif, ou sortie d'un profil enfant). */
+let managerId: string | null = null;
+export const grantManager = (id: string | null): void => { managerId = id; };
+/** Gérer les profils (créer, modifier, supprimer) : profil principal adulte actif, ou principal reconnu par son code. */
+export const canManageProfiles = (): boolean =>
+  auth.profiles.length === 0 || managerId !== null || (isServerMode() && !isKidProfile() && isMainProfile());
+/** Profil qui agit pour la gestion (en-tête X-Profile-Id), ou undefined pour le tout premier profil. */
+const managerActor = (): string | undefined => {
+  if (managerId) return managerId;
+  if (isServerMode() && !isKidProfile() && auth.profile) return auth.profile.id;
+  return undefined;
+};
+
 /** Accès à la console #/admin : propriétaire, session serveur active, profil adulte désigné administrateur. */
 export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidProfile() && isAdminProfile();
 
@@ -76,6 +99,8 @@ export async function initAuth(): Promise<AuthStatus> {
     const { account } = await api.me(4000);
     auth.username = account.username;
     auth.isOwner = account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner);
+    // Session restaurée : la config locale n'est gardée que si elle appartient à ce compte.
+    claimLocalConfig(account.username, true);
   } catch (err) {
     if (err instanceof UserApiError && err.status === 401) {
       if (getSession()) clearSession();
@@ -128,6 +153,9 @@ async function activate(profile: Profile): Promise<void> {
   setHiddenBackend(apiHiddenBackend);
   await syncPrefsIn(profile.id);
   startPresence(profile.id, !!profile.isKid);
+  managerId = null;
+  // Profil enfant : les jetons des profils adultes sont retirés, sortir de ce profil redemande le code parental.
+  if (profile.isKid) auth.profiles.forEach((p) => { if (p.id !== profile.id) dropProfileToken(p.id); });
   emit();
 }
 
@@ -198,9 +226,13 @@ export function pushPrefs(): void {
 // ---- Actions de l'interface ----
 export async function signIn(username: string, password: string): Promise<AuthStatus> {
   const res = await api.login(username, password);
-  setSession(res.token, res.expiresAt, username.trim().toLowerCase());
-  auth.username = username.trim().toLowerCase();
+  const name = username.trim().toLowerCase();
+  const wasLocal = isLocalMode();
+  setSession(res.token, res.expiresAt, name);
+  auth.username = name;
   setLocalMode(false);
+  // Un autre compte ne réutilise jamais la config locale (URL d'addons, clés) d'un compte précédent.
+  claimLocalConfig(name, wasLocal);
   return loadProfiles();
 }
 
@@ -213,6 +245,8 @@ export async function signOut(silent = false): Promise<void> {
   if (!silent) await api.logout().catch(() => undefined);
   clearSession();
   clearElevation();
+  clearLocalAccountData();
+  managerId = null;
   auth.isOwner = false;
   auth.username = '';
   useLocal('needs-login');
@@ -240,9 +274,10 @@ export async function unlock(id: string, pin: string): Promise<void> {
 export const hasValidToken = (id: string): boolean => validProfileToken(id) !== undefined;
 
 export async function saveProfile(id: string | null, input: Partial<ProfileInput>): Promise<ProfileDto> {
+  const actor = managerActor();
   const dto = id
-    ? await api.updateProfile(id, input)
-    : await api.createProfile(input as ProfileInput);
+    ? await api.updateProfile(id, input, actor)
+    : await api.createProfile(input as ProfileInput, actor);
   const { profiles } = await api.listProfiles();
   auth.profiles = profiles.map(profileFromDto);
   if (auth.profile) auth.profile = auth.profiles.find((p) => p.id === auth.profile!.id) ?? auth.profile;
@@ -251,15 +286,15 @@ export async function saveProfile(id: string | null, input: Partial<ProfileInput
 }
 
 export async function removeProfile(id: string): Promise<void> {
-  await api.deleteProfile(id);
+  await api.deleteProfile(id, managerActor());
   dropProfileToken(id);
   const { profiles } = await api.listProfiles();
   auth.profiles = profiles.map(profileFromDto);
   emit();
 }
 
-/** Quitter un profil enfant exige le PIN d'un profil adulte (s'il en existe un). */
-export const adultsWithPin = (): Profile[] => auth.profiles.filter((p) => !p.isKid && p.hasPin);
+/** Code parental : le PIN du profil principal (vérifié par le serveur, 5 essais puis blocage de 5 minutes). */
+export const adultsWithPin = (): Profile[] => { const m = parentalProfile(); return m && m.hasPin ? [m] : []; };
 
 export async function importFromStremio(email: string, password: string, config: string): Promise<Record<string, unknown>> {
   if (!auth.profile) throw new UserApiError(0, 'no_profile');

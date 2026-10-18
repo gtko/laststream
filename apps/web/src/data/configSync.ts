@@ -7,6 +7,10 @@ import { encodeConfig } from './configApi';
  */
 
 export const CONFIG_SETTING_KEY = 'lastaddonConfig';
+/** Compte (nom d'utilisateur) à qui appartient la config lastAddon gardée dans ce navigateur. */
+export const CONFIG_OWNER_KEY = 'laststream.configOwner';
+/** Caches locaux liés à un compte (filtres d'accueil, recommandations) : effacés à la déconnexion. */
+const ACCOUNT_CACHE_PREFIXES = ['laststream.homeFilters.', 'laststream.aiRecs.'];
 const MAX_VALUE_BYTES = 4096;
 
 /** Valeur à envoyer au profil, ou null si la config est vide ou trop volumineuse pour le serveur. */
@@ -80,4 +84,43 @@ export async function reconcileConfig(
     : (await servedByLastAddon()) ? location.origin : local.base || (isAndroidApp() ? PUBLIC_BASE : DEFAULT_BASE);
   saveSettings({ base, config: remote });
   return 'pulled';
+}
+
+export function getConfigOwner(): string {
+  try { return globalThis.localStorage?.getItem(CONFIG_OWNER_KEY) ?? ''; } catch { return ''; }
+}
+
+function setConfigOwner(username: string): void {
+  try {
+    if (username) globalThis.localStorage?.setItem(CONFIG_OWNER_KEY, username);
+    else globalThis.localStorage?.removeItem(CONFIG_OWNER_KEY);
+  } catch { /* stockage indisponible */ }
+}
+
+/**
+ * Déconnexion : la config locale (URL d'addons, donc clés de débrideur) est effacée avec les caches du compte ; l'adresse
+ * du serveur reste. La reconnexion du même compte la récupère depuis le serveur.
+ */
+export function clearLocalAccountData(): void {
+  saveSettings({ config: '' });
+  setConfigOwner('');
+  try {
+    const s = globalThis.localStorage;
+    if (!s) return;
+    for (let i = s.length - 1; i >= 0; i -= 1) {
+      const k = s.key(i);
+      if (k && ACCOUNT_CACHE_PREFIXES.some((p) => k.startsWith(p))) s.removeItem(k);
+    }
+  } catch { /* stockage indisponible */ }
+}
+
+/**
+ * Connexion de `username` : la config locale n'est conservée que si elle appartient à ce compte. Sans propriétaire
+ * mémorisé, elle n'est reprise qu'en mode « sans compte » (`wasLocal`), où elle est celle de l'utilisateur. Sinon elle
+ * est vidée : le compte prend sa config sur le serveur, ou démarre avec la config par défaut.
+ */
+export function claimLocalConfig(username: string, wasLocal = false): void {
+  const owner = getConfigOwner();
+  if (owner !== username && !(owner === '' && wasLocal)) saveSettings({ config: '' });
+  setConfigOwner(username);
 }
