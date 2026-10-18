@@ -175,6 +175,7 @@ document.addEventListener('keydown', (e) => {
 /** Série entière : tous les épisodes diffusés (saison 0 exclue). */
 export async function markSeries(m, watched) {
   const refs = await seriesAired(m);
+  if (!refs.length) throw new Error('aucun épisode diffusé connu pour cette série');
   const ok = await mark(m.key, refs, watched);
   if (ok && watched) setSeriesCompleted(m.key, true); // « vue en entier » : la série sort de l'accueil
   return ok;
