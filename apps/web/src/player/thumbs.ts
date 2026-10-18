@@ -70,7 +70,8 @@ export function shouldSeek(s: SeekState): boolean {
 
 export interface ThumbContext {
   enabled: boolean;
-  shell: boolean;
+  /** Une source d'aperçu existe pour le moteur et le format courants (voir `thumbSource`). */
+  hasSource: boolean;
   duration: number;
   /** Débit connu en kb/s (null : inconnu). */
   bandwidthKbps: number | null;
@@ -79,7 +80,7 @@ export interface ThumbContext {
 }
 
 export function thumbsAllowed(c: ThumbContext): boolean {
-  if (!c.enabled || c.shell || !(c.duration > 30)) return false;
+  if (!c.enabled || !c.hasSource || !(c.duration > 30)) return false;
   if (c.bandwidthKbps !== null && c.bandwidthKbps < MIN_BANDWIDTH_KBPS) return false;
   return !c.torrentBuffering;
 }
@@ -88,4 +89,35 @@ export function thumbsAllowed(c: ThumbContext): boolean {
 export function clampTooltip(center: number, barWidth: number, tipWidth: number): number {
   const half = tipWidth / 2;
   return Math.min(Math.max(center, half), Math.max(half, barWidth - half));
+}
+
+/** Largeur demandée au serveur pour la session HLS réservée aux aperçus (légère : une image 240x135 suffit). */
+export const THUMB_HLS_WIDTH = 320;
+/** Après ce nombre d'échecs de lecture, on renonce aux aperçus pour la source courante (repli silencieux). */
+export const MAX_THUMB_FAILURES = 3;
+
+export type ThumbSource = { mode: 'direct' } | { mode: 'hls'; forceTranscoding: boolean; maxWidth: number } | { mode: 'none' };
+
+export interface ThumbSourceInput {
+  /** Moteur de lecture choisi : 'direct' | 'hls' | 'mpv' | 'native'. */
+  engine: string | null | undefined;
+  hasMedia: boolean;
+  /** Serveur de streaming joignable (nécessaire pour toute session HLS). */
+  serverUp: boolean;
+  forceHls?: boolean;
+}
+
+/**
+ * D'où viennent les images d'aperçu selon le moteur :
+ * - lecture directe : le fichier lui-même (le navigateur sait le lire) ;
+ * - HLS : une seconde session du serveur, basse résolution ;
+ * - mpv : le fichier n'est souvent pas décodable par la WebView (MKV/HEVC/AV1/DTS) → session HLS transcodée basse résolution ;
+ * - natif (Android) ou serveur absent : aucun aperçu (l'option est alors masquée).
+ */
+export function thumbSource(i: ThumbSourceInput): ThumbSource {
+  if (!i.hasMedia) return { mode: 'none' };
+  if (i.engine === 'direct') return { mode: 'direct' };
+  if (i.engine === 'hls') return i.serverUp ? { mode: 'hls', forceTranscoding: !!i.forceHls, maxWidth: THUMB_HLS_WIDTH } : { mode: 'none' };
+  if (i.engine === 'mpv') return i.serverUp ? { mode: 'hls', forceTranscoding: true, maxWidth: THUMB_HLS_WIDTH } : { mode: 'none' };
+  return { mode: 'none' };
 }

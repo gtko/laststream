@@ -133,17 +133,18 @@ export async function fetchProbe(mediaURL: string, base = serverBase(), signal?:
 
 // ---------- HLS ----------
 
-export function hlsQuery(mediaURL: string, caps: Pick<MediaCaps, 'videoCodecs' | 'audioCodecs' | 'maxAudioChannels'>, forceTranscoding = false): string {
+export function hlsQuery(mediaURL: string, caps: Pick<MediaCaps, 'videoCodecs' | 'audioCodecs' | 'maxAudioChannels'>, forceTranscoding = false, maxWidth = 0): string {
   const q = new URLSearchParams([['mediaURL', mediaURL]]);
   if (forceTranscoding) q.set('forceTranscoding', '1');
+  if (maxWidth > 0) q.set('maxWidth', String(Math.round(maxWidth)));
   caps.videoCodecs.forEach((c) => q.append('videoCodecs', c));
   caps.audioCodecs.forEach((c) => q.append('audioCodecs', c));
   q.set('maxAudioChannels', String(caps.maxAudioChannels));
   return q.toString();
 }
 
-export function hlsMasterUrl(base: string, id: string, mediaURL: string, caps: Pick<MediaCaps, 'videoCodecs' | 'audioCodecs' | 'maxAudioChannels'>, forceTranscoding = false): string {
-  return join(base, '/hlsv2/' + encodeURIComponent(id) + '/master.m3u8?' + hlsQuery(mediaURL, caps, forceTranscoding));
+export function hlsMasterUrl(base: string, id: string, mediaURL: string, caps: Pick<MediaCaps, 'videoCodecs' | 'audioCodecs' | 'maxAudioChannels'>, forceTranscoding = false, maxWidth = 0): string {
+  return join(base, '/hlsv2/' + encodeURIComponent(id) + '/master.m3u8?' + hlsQuery(mediaURL, caps, forceTranscoding, maxWidth));
 }
 
 export function newSessionId(): string {

@@ -1,7 +1,7 @@
 /* Aperçu d'image au survol de la barre : une vidéo secondaire muette, sur la même source, est déplacée à l'instant survolé
  * (cadence limitée, pointeur au repos) et dessinée dans un canevas ; les images sont gardées par seau de 10 s.
  * Affichage seulement : on ne lit jamais les pixels, un canevas « teinté » ne gêne donc pas. Ne bloque jamais la lecture. */
-import { BUCKET_SECONDS, FrameCache, REST_MS, bucketOf, bucketTime, shouldSeek } from './thumbs';
+import { BUCKET_SECONDS, FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek } from './thumbs';
 
 const W = 240;
 const H = 135;
@@ -25,6 +25,8 @@ export class Thumbs {
     this.timer = null;
     this.ready = false;
     this.gen = 0;
+    this.failures = 0;
+    this.dead = false; // trop d'échecs sur cette source : plus d'aperçu, sans bruit
   }
 
   /** Nouvelle source (changement de source ou d'épisode) : on repart de zéro. */
@@ -33,6 +35,8 @@ export class Thumbs {
     this.cache.clear();
     this.teardownVideo();
     this.gen += 1;
+    this.failures = 0;
+    this.dead = false;
   }
 
   teardownVideo() {
@@ -50,7 +54,7 @@ export class Thumbs {
 
   /** Le pointeur est en `t` (secondes) : montre l'image la plus proche tout de suite, puis demande la bonne au repos. */
   request(t, now = Date.now()) {
-    if (!this.ctx || !this.opts.allowed()) { this.hideCanvas(); return false; }
+    if (!this.ctx || this.dead || !this.opts.allowed()) { this.hideCanvas(); return false; }
     const bucket = bucketOf(t);
     if (!this.target || this.target.bucket !== bucket) this.lastMoveAt = now;
     this.target = { t, bucket };
@@ -79,7 +83,7 @@ export class Thumbs {
 
   async tick() {
     const tg = this.target;
-    if (!tg || !this.opts.allowed()) return;
+    if (!tg || this.dead || !this.opts.allowed()) return;
     const now = Date.now();
     if (!shouldSeek({ now, bucket: tg.bucket, lastMoveAt: this.lastMoveAt, lastSeekAt: this.lastSeekAt, pendingBucket: this.pending, cached: this.cache.has(tg.bucket) })) {
       // Trop tôt : on réessaie dès que la cadence le permet.
@@ -108,7 +112,7 @@ export class Thumbs {
     document.body.appendChild(v);
     this.video = v;
     v.addEventListener('seeked', () => this.onSeeked());
-    v.addEventListener('error', () => { this.pending = null; });
+    v.addEventListener('error', () => { this.pending = null; this.fail(); });
     if (src.hls) {
       try {
         const H = (await import('hls.js')).default;
@@ -116,6 +120,7 @@ export class Thumbs {
         if (!H.isSupported()) { v.remove(); this.video = null; return false; }
         const h = new H({ maxBufferLength: 2, maxMaxBufferLength: 4, startLevel: 0, capLevelToPlayerSize: true, enableWorker: true, subtitleDisplay: false });
         this.hls = h;
+        h.on(H.Events.ERROR, (_e, d) => { if (d && d.fatal) { this.pending = null; this.fail(true); } });
         h.on(H.Events.MANIFEST_PARSED, () => { try { h.audioTrack = -1; } catch (_) { /* pas d'audio à charger */ } });
         h.loadSource(src.url);
         h.attachMedia(v);
@@ -125,6 +130,17 @@ export class Thumbs {
     }
     this.ready = true;
     return true;
+  }
+
+  /** Échec de lecture de la vidéo d'aperçu : après quelques essais on abandonne cette source et on masque la vignette. */
+  fail(fatal = false) {
+    this.failures = fatal ? MAX_THUMB_FAILURES : this.failures + 1;
+    if (this.failures >= MAX_THUMB_FAILURES) {
+      this.dead = true;
+      clearTimeout(this.timer);
+      this.hideCanvas();
+      this.teardownVideo();
+    }
   }
 
   onSeeked() {

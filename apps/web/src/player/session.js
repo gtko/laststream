@@ -43,7 +43,7 @@ import { langFromTitle, normalizeLang, parseProbe } from './tracks';
 import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
-import { thumbsAllowed } from './thumbs';
+import { thumbsAllowed, thumbSource } from './thumbs';
 import { createPlayerUI } from './ui.js';
 import { knownBandwidthKbps } from '../sources/load';
 
@@ -92,6 +92,10 @@ function headingFor(p) {
 const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider || (v.status === 'p2p' ? 'P2P' : ''), originSummary(v.origins, 1)].filter(Boolean).join(' · ');
 
 // ---------- Création de l'interface (une seule fois) ----------
+function thumbSourceOf(p) {
+  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls) });
+}
+
 function ensureUI() {
   if (ui) return;
   ui = createPlayerUI({
@@ -112,17 +116,18 @@ function ensureUI() {
   });
   miniState.onChange(applyMini);
   thumbs = new Thumbs(ui.thumbCanvas, {
-    allowed: () => !!P && !!P.view && P.engine.kind !== 'mpv' && thumbsAllowed({
-      enabled: storeGet(THUMBS_KEY) !== '0', shell: P.engine.kind === 'mpv', duration: P.engine.state().duration,
+    allowed: () => !!P && !!P.view && thumbsAllowed({
+      enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(P).mode !== 'none', duration: P.engine.state().duration,
       bandwidthKbps: knownBandwidthKbps(), torrentBuffering: !!P.torrent && P.engine.state().buffering,
     }),
     duration: () => (P ? P.engine.state().duration : 0),
-    // Vidéo d'aperçu sur la même source : lien direct, ou une seconde session HLS du serveur (pour ne pas gêner la lecture).
+    // Vidéo d'aperçu : lien direct, ou seconde session HLS basse résolution du serveur (jamais celle de la lecture).
     source: async () => {
       const p = P;
-      if (!p || !p.mediaUrl || !p.choice || p.choice.engine === 'mpv') return null;
-      if (p.choice.engine === 'hls') return { url: hlsMasterUrl(p.mediaBase || serverBase(), newSessionId(), p.mediaUrl, getCaps(), p.forceHls), hls: true };
-      return { url: p.mediaUrl, hls: false };
+      const src = thumbSourceOf(p);
+      if (src.mode === 'direct') return { url: p.mediaUrl, hls: false };
+      if (src.mode === 'hls') return { url: hlsMasterUrl(p.mediaBase || serverBase(), newSessionId(), p.mediaUrl, getCaps(), src.forceTranscoding, src.maxWidth), hls: true };
+      return null;
     },
   });
   html = new HtmlEngine(ui.video);
@@ -653,6 +658,8 @@ async function playView(view, startAt) {
 async function startPlan(p, plan, startAt, stale, cand) {
   const { shell, media, probe, choice } = plan;
   p.mediaUrl = media.url;
+  p.mediaBase = media.base;
+  p.mediaUp = !!media.up;
   p.torrent = media.torrent;
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
@@ -1434,7 +1441,7 @@ function panelData(name) {
     if (web) rows.push(['Lecture', web]);
     if (p.choice) rows.push(['Moteur', p.choice.label]);
     return {
-      rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
+      rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', thumbsAvailable: thumbSourceOf(p).mode !== 'none', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
       canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
     };
   }
