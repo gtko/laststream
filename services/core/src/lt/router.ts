@@ -10,7 +10,10 @@ import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './provide
 import { createAutoDetector, MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
+import { issuedUrls } from '../play/issued.js';
 import { ThumbService } from './thumbs/index.js';
+import { signRangeToken } from './thumbs/range-token.js';
+import { resolveThumbSource } from './thumbs/source.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
 import type { TvAlternative, TvChannel } from './tv-catalog.js';
 
@@ -20,6 +23,14 @@ const NO_STORE = 'no-store';
 const PRIVATE_CACHE = 'private, max-age=300';
 /** Attente maximale d'une miniature demandée avant de répondre 202 (une image prend ~1 s, délai ffmpeg 8 s). */
 const THUMB_WAIT_MS = 9000;
+
+/** Secret et base du relais de plages : option explicite (`null` désactive), sinon variables d'environnement. */
+function rangeProxyOf(deps: AppDeps): { secret: string; base: string } | null {
+  if (deps.rangeProxy !== undefined) return deps.rangeProxy;
+  const secret = process.env.LASTADDON_RANGE_SECRET?.trim() ?? '';
+  const base = (process.env.LASTADDON_RANGE_BASE ?? '').trim().replace(/\/+$/, '');
+  return secret !== '' && /^https:\/\//.test(base) ? { secret, base } : null;
+}
 
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
 export function ltErrorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
@@ -68,6 +79,9 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   const community = createSkipCommunity(ctx, openStore, detector);
   // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide.
   const thumbs = new ThumbService(deps.thumbs);
+  // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
+  const range = rangeProxyOf(deps);
+  const rangeIssued = deps.thumbs?.issued ?? issuedUrls;
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (req: Request): string => String((req.params as Record<string, unknown>).config);
   const configOf = (req: Request) => decodeFor(deps, tokenOf(req));
@@ -90,7 +104,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
         openrouter: services.openrouterApiKey !== undefined,
         fanart: services.fanartApiKey !== undefined,
       },
-      capabilities: { thumbs: thumbs.enabled },
+      capabilities: { thumbs: thumbs.enabled, rangeThumbs: range !== null },
     });
   });
 
@@ -187,6 +201,19 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
     const registration = await thumbs.register(body.url, body.duration, body.start);
     if (registration === null) throw new LtError(400, 'invalid_source');
     res.json(registration);
+  });
+
+  // Source de miniatures décodées côté client (WebCodecs) : même liste d'URL autorisées que /thumbs, mais seules les
+  // adresses https publiques (liens débridés) sont acceptées ; la réponse porte le lien lu, un jeton de relais et la base du Worker.
+  lt.post('/range-source', async (req, res) => {
+    configOf(req);
+    if (range === null) throw new LtError(501, 'range_disabled');
+    const body = bodyOf(req);
+    const source = resolveThumbSource(body.url, rangeIssued, deps.thumbs?.allowLocal);
+    if (source === null || source.target.protocol !== 'https:') throw new LtError(400, 'invalid_source');
+    const url = source.target.href;
+    const { token, exp } = await signRangeToken(range.secret, url);
+    res.json({ url, token, exp, base: range.base });
   });
 
   lt.get('/thumbs/:key/:index.webp', async (req, res) => {

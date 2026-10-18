@@ -34,6 +34,12 @@ export interface AppDeps {
   skipDetect?: AutoDetectOptions;
   /** Miniatures de la barre (ffmpeg, cache, origines locales autorisées en plus) : réglages de test. */
   thumbs?: ThumbOptions;
+  /**
+   * Relais de plages Cloudflare pour les miniatures décodées côté client (WebCodecs) : secret HMAC partagé avec le Worker
+   * (LASTADDON_RANGE_SECRET) et base publique du Worker (LASTADDON_RANGE_BASE). Absent : variables d'environnement ;
+   * sans secret, la fonctionnalité est désactivée.
+   */
+  rangeProxy?: { secret: string; base: string } | null;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
   uiDir?: string;
   /** Origines ajoutées au CORS quand l'interface est servie par ce serveur (même site). */
