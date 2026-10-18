@@ -239,15 +239,19 @@ describe('segments de saut', () => {
 
   it('carte épisode suivant dès le générique, compte à rebours selon le réglage', () => {
     expect(nextEpisodeCard(segs, 2000, 2600, true, true).show).toBe(false);
-    expect(nextEpisodeCard(segs, 2400, 2600, true, true)).toEqual({ show: true, countdown: 10, ratio: 1 });
-    expect(nextEpisodeCard(segs, 2406.5, 2600, true, true)).toEqual({ show: true, countdown: 4, ratio: 0.4 });
-    expect(nextEpisodeCard(segs, 2420, 2600, true, true).countdown).toBe(0);
+    // Proposée dès le générique, compte à rebours seulement dans les 10 dernières secondes.
+    expect(nextEpisodeCard(segs, 2400, 2600, true, true)).toEqual({ show: true, countdown: null, ratio: 0 });
+    expect(nextEpisodeCard(segs, 2589, 2600, true, true).countdown).toBe(null);
+    expect(nextEpisodeCard(segs, 2590, 2600, true, true)).toEqual({ show: true, countdown: 10, ratio: 1 });
+    expect(nextEpisodeCard(segs, 2596.5, 2600, true, true)).toEqual({ show: true, countdown: 4, ratio: 0.4 });
+    expect(nextEpisodeCard(segs, 2600, 2600, true, true).countdown).toBe(0);
     expect(nextEpisodeCard(segs, 2410, 2600, true, false)).toEqual({ show: true, countdown: null, ratio: 0 });
     expect(nextEpisodeCard(segs, 2410, 2600, false, true).show).toBe(false);
     // Scène post-générique : la carte s'affiche mais le compte à rebours attend la fin de la scène.
     const withPost = [...segs, { kind: 'postcredits' as const, start: 2500, end: 2560 }];
     expect(nextEpisodeCard(withPost, 2450, 2600, true, true)).toEqual({ show: true, countdown: null, ratio: 0 });
-    expect(nextEpisodeCard(withPost, 2562, 2600, true, true).countdown).toBe(8);
+    expect(nextEpisodeCard(withPost, 2562, 2600, true, true).countdown).toBe(null);
+    expect(nextEpisodeCard(withPost, 2592, 2600, true, true).countdown).toBe(8);
     expect(movieEndRow(segs, 2399, 2600)).toBe(false);
     expect(movieEndRow(segs, 2401, 2600)).toBe(true);
     expect(creditsStart([], 3000)).toBe(2975);

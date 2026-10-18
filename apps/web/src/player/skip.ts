@@ -81,8 +81,8 @@ export function countdownStart(segments: readonly SkipSegment[], duration: numbe
 }
 
 /**
- * Carte « épisode suivant » : affichée dès le générique ; le compte à rebours (10 s) n'existe que si le saut automatique
- * est activé, et attend la fin de la scène post-générique quand il y en a une.
+ * Carte « épisode suivant » : proposée dès le générique ; le compte à rebours (10 s) n'existe que si le saut automatique
+ * est activé, ne démarre que dans les 10 dernières secondes et attend la fin de la scène post-générique quand il y en a une.
  */
 export function nextEpisodeCard(segments: readonly SkipSegment[], t: number, duration: number, hasNext: boolean, auto: boolean): NextCardState {
   const hidden: NextCardState = { show: false, countdown: null, ratio: 0 };
@@ -92,7 +92,7 @@ export function nextEpisodeCard(segments: readonly SkipSegment[], t: number, dur
   // Jamais pendant une intro ou un récap.
   if (segments.some((s) => (s.kind === 'intro' || s.kind === 'recap') && t >= s.start && t < s.end)) return hidden;
   if (!auto) return { show: true, countdown: null, ratio: 0 };
-  const from = countdownStart(segments, duration) ?? start;
+  const from = Math.max(countdownStart(segments, duration) ?? start, duration - NEXT_COUNTDOWN);
   if (t < from) return { show: true, countdown: null, ratio: 0 };
   const countdown = Math.max(0, NEXT_COUNTDOWN - Math.floor(t - from));
   return { show: true, countdown, ratio: countdown / NEXT_COUNTDOWN };
