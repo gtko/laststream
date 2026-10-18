@@ -13,6 +13,7 @@ import { IMG } from './constants.js';
 import { countdown, dayDiff, fmtShort, todayStr } from './dates.js';
 import { getRemind } from './fiche.js';
 import { ICON } from './icons.js';
+import { progressResume, resumePillHTML } from './resume.js';
 import { state } from './state.js';
 import { esc, fmtDate, fmtMin, fmtNum, typeLabel } from './util.js';
 
@@ -51,6 +52,9 @@ export function tileCard(it, o) {
   else if (rank) label.push('Top 10 cette semaine, numéro ' + rank);
   else if (fresh) label.push(fresh);
   if (o.pct != null) label.push(o.pct + ' % vu');
+  // Film entamé (affiche seulement) : pastille et barre de reprise. Masquées en CSS une fois le film vu.
+  const rs = !land && it.type === 'movie' && o.pct == null ? progressResume(userStore.getProgress(it.key)) : null;
+  if (rs && !userStore.isWatched(it.key)) label.push('reprise ' + rs.label);
   if (o.sub) label.push(o.sub);
   else if (!upDate && score) label.push('note ' + score);
 
@@ -73,7 +77,9 @@ export function tileCard(it, o) {
     '<span class="t-more" aria-hidden="true" title="Plus d’options">•••</span>' +
     (o.removable ? '<span class="t-remove" data-continue-remove="' + esc(it.key) + '" aria-hidden="true" title="Retirer de Reprendre la lecture">' + ICON.close + '</span>' : '') +
     (it.type === 'movie' && userStore.isWatched(it.key) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +
-    (o.pct != null ? '<span class="progress" aria-hidden="true"><span style="width:' + o.pct + '%"></span></span>' : '') +
+    (rs ? resumePillHTML(rs.label) : '') +
+    (o.pct != null ? '<span class="progress" aria-hidden="true"><span style="width:' + o.pct + '%"></span></span>'
+      : rs ? '<span class="progress resume-progress" aria-hidden="true"><span style="width:' + Math.round(rs.ratio * 100) + '%"></span></span>' : '') +
     '</span>';
   return '<button type="button" class="' + cls + '" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '" data-variant="' + variant + '"' +
     (lazy ? ' data-lazy' : '') + (!upDate && !rank ? ' data-plain="1"' : '') + (fresh ? ' data-badge="1"' : '') +

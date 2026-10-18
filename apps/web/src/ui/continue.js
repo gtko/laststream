@@ -6,6 +6,7 @@ import { getDetail, register, toItem } from './catalog.js';
 import { IMG } from './constants.js';
 import { dayDiff } from './dates.js';
 import { ICON } from './icons.js';
+import { progressResume } from './resume.js';
 import { playDirect } from './sources-ui.js';
 import { esc, fmtMin } from './util.js';
 
@@ -18,12 +19,14 @@ export function continueCardHTML(p) {
   const next = p.suggested ? 'self' : p.finished ? 'after' : '';
   const pct = next || !p.duration ? 0 : Math.max(0, Math.min(100, Math.round((p.position / p.duration) * 100)));
   const left = !next && p.duration ? Math.max(1, Math.round((p.duration - p.position) / 60)) : 0;
+  const rs = next ? null : progressResume(p); // timecode + pourcentage, absents hors de la plage affichée
+  const restTxt = left ? 'reste ' + (left >= 60 ? fmtMin(left) : left + ' min') : '';
   const code = p.type === 'tv' && p.season != null ? 'S' + p.season + ' · É' + p.episode : '';
   const src = IMG('w780', p.backdrop) || IMG('w500', p.poster);
   const info = next ? 'À suivre' + (code ? ' : ' + code : '') : (code || (left ? '' : 'Film'));
   return '<button type="button" class="card tile tile-land cont-card" data-tile="' + esc(it.key) + '" data-resume="' + esc(it.key) + '" data-next="' + next + '"' +
     ' data-season="' + (p.season != null ? p.season : '') + '" data-episode="' + (p.episode != null ? p.episode : '') + '" data-variant="logo"' +
-    ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
+    ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (rs ? ', reprise à ' + rs.label : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img class="cont-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
     fallbackHTML({ name: p.title, type: p.type }) +
@@ -32,7 +35,7 @@ export function continueCardHTML(p) {
     '<span class="cont-play" aria-hidden="true">' + ICON.play + '</span>' +
     '<span class="cont-info"><span class="cont-name">' + esc(p.title) + '</span>' +
     '<span class="cont-code">' + esc(info) + '</span>' +
-    '<span class="cont-left">' + (left ? esc('reste ' + (left >= 60 ? fmtMin(left) : left + ' min')) : '') + '</span></span>' +
+    '<span class="cont-left">' + esc([rs ? rs.label : '', restTxt].filter(Boolean).join(' · ')) + '</span></span>' +
     '<span class="t-more" aria-hidden="true" title="Plus d’options">•••</span>' +
     '<span class="t-remove" data-continue-remove="' + esc(it.key) + '" aria-hidden="true" title="Retirer de Reprendre la lecture">' + ICON.close + '</span>' +
     '<span class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></span></span></button>';

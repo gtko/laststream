@@ -8,6 +8,7 @@ import { notifyHomeChange, setSeriesCompleted } from '../data/homeFilters';
 import { markNext, updatePlayLabel } from './fiche.js';
 import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
+import { progressResume } from './resume.js';
 import { state } from './state.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -46,7 +47,8 @@ export function refreshWatchedUI() {
       const on = userStore.isWatched(m.key, s, e);
       li.classList.toggle('is-seen', on);
       const bar = li.querySelector('.ep-bar > span');
-      if (bar) bar.style.width = on ? '100%' : '0%';
+      const rs = on ? null : progressResume(userStore.getProgress(m.key, s, e));
+      if (bar) bar.style.width = on ? '100%' : (rs ? Math.round(rs.ratio * 100) : 0) + '%';
       const b = li.querySelector('.ep-seen');
       if (b) {
         b.setAttribute('aria-pressed', String(on));

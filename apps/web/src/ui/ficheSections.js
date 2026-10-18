@@ -12,6 +12,7 @@ import { markNext, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
+import { progressResume, resumePillHTML } from './resume.js';
 import { esc, fmtDate, fmtMin } from './util.js';
 
 // ---------- Fiche : sections chargées après coup ----------
@@ -117,10 +118,14 @@ export async function loadSeason(m, n, token) {
         '<span class="ep-meta">' + esc('Le ' + fmtDate(e.air_date) + ' · Bientôt' + (e.runtime ? ' · ' + fmtMin(e.runtime) : '')) + '</span>' +
         (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</div>' + soonBell(m.key) + '</li>';
     }
+    // Reprise : pastille et barre d’après la progression ; un épisode vu garde son état « vu » (pastille masquée en CSS).
+    const rs = progressResume(userStore.getProgress(m.key, n, e.episode_number));
+    const resumeAria = rs && !done ? ', reprise à ' + rs.label : '';
     return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '">' +
-      '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number)) + '">' +
+      '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number) + resumeAria) + '">' +
       '<span class="ep-still' + (still ? '' : ' no-img') + '">' + (still ? '<img src="' + esc(still) + '" alt="" loading="lazy" decoding="async">' : '') +
-      '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : 0) + '%"></span></span></span>' +
+      (rs ? resumePillHTML(rs.label) : '') +
+      '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : rs ? Math.round(rs.ratio * 100) : 0) + '%"></span></span></span>' +
       '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +
       '<span class="ep-meta">' + esc(meta) + (future ? ' · Bientôt' : '') + '</span>' +
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +

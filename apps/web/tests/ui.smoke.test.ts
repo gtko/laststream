@@ -362,9 +362,9 @@ describe('interface portée', () => {
     expect(cards).toHaveLength(3);
     const by = (k: string) => cards.find((c) => c.dataset.resume === k)!;
     expect(by('tv:101').querySelector('.cont-code')!.textContent).toBe('S1 · É4');
-    expect(by('tv:101').querySelector('.cont-left')!.textContent).toBe('reste 30 min');
+    expect(by('tv:101').querySelector('.cont-left')!.textContent).toBe('10:00 · 25 % · reste 30 min'); // timecode et pourcentage, puis temps restant
     expect(by('tv:101').querySelector('.progress span')!.getAttribute('style')).toContain('25%');
-    expect(by('movie:100').querySelector('.cont-left')!.textContent).toBe('reste 83 min'.replace('83 min', '1 h 23'));
+    expect(by('movie:100').querySelector('.cont-left')!.textContent).toBe('16:40 · 17 % · reste 1 h 23');
     expect(by('movie:100').querySelector('.cont-img')!.getAttribute('src')).toContain('/w780/b100.jpg');
     // Épisode terminé : le suivant est proposé.
     expect(by('tv:103').querySelector('.cont-code')!.textContent).toMatch(/^À suivre : S\d+ · É\d+/);
