@@ -11,6 +11,8 @@ export interface EpisodeInfo {
   aired: boolean;
   /** Lisible : diffusé, ou diffusion dans les 14 prochains jours (« peut-être déjà en ligne », la recherche de sources décide). */
   playable: boolean;
+  /** Identifiant de flux `<imdb>:<saison>:<épisode>` selon la numérotation du serveur ; absent si l'IMDb est inconnu. */
+  streamId?: string;
 }
 
 export interface SeasonInfo {
@@ -74,7 +76,7 @@ export function normalizeCanonical(resp: unknown, today: string = isoDay(new Dat
   if (!r || !Array.isArray(r.episodes) || !r.episodes.length) return null;
   const episodes = new Map<number, EpisodeInfo[]>();
   for (const raw of r.episodes) {
-    const e = raw as { season?: unknown; episode?: unknown; name?: unknown; overview?: unknown; airDate?: unknown; runtime?: unknown; still?: unknown } | null;
+    const e = raw as { season?: unknown; episode?: unknown; name?: unknown; overview?: unknown; airDate?: unknown; runtime?: unknown; still?: unknown; streamId?: unknown } | null;
     if (!e || typeof e.season !== 'number' || typeof e.episode !== 'number' || e.season < 1) continue;
     const airDate = typeof e.airDate === 'string' ? e.airDate : '';
     const list = episodes.get(e.season) ?? [];
@@ -82,6 +84,7 @@ export function normalizeCanonical(resp: unknown, today: string = isoDay(new Dat
       episode: e.episode, name: typeof e.name === 'string' ? e.name : '', runtime: typeof e.runtime === 'number' ? e.runtime : null,
       overview: typeof e.overview === 'string' ? e.overview : '', still: typeof e.still === 'string' ? e.still : '', airDate,
       aired: isAired(airDate, today), playable: isPlayable(airDate, today),
+      ...(typeof e.streamId === 'string' && e.streamId !== '' ? { streamId: e.streamId } : {}),
     });
     episodes.set(e.season, list);
   }

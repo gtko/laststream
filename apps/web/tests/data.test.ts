@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addonUrl, isConfigured, ltUrl, reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, requestJson } from '../src/data/transport';
 import { getRegion, setRegion } from '../src/data/prefs';
-import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
+import { episodeStreamId, groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
-import { canonSummary, normalizeCanon, tmdbShape } from '../src/data/series';
+import { canonSummary, normalizeCanon, pickAiredEpisode, tmdbShape } from '../src/data/series';
 import { hasProviders, movieAvailability } from '../src/data/released';
 import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
 import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
@@ -359,10 +359,49 @@ describe('région', () => {
   });
 });
 
+describe('structure canonique : streamId et épisode diffusé un jour donné', () => {
+  const canon = normalizeCanon({
+    source: 'tvdb',
+    seasons: [
+      { number: 0, name: 'Spéciaux', episodes: [{ number: 1, airDate: '2026-10-19', streamId: 'tt29694831:0:1' }] },
+      {
+        number: 2,
+        name: 'Saison 2',
+        episodes: [
+          { number: 205, airDate: '2026-10-18', streamId: 'tt29694831:2:205' },
+          { number: 206, airDate: '2026-10-19', streamId: 'tt29694831:2:206' },
+          { number: 207, airDate: '2026-10-20', streamId: '' },
+        ],
+      },
+      { number: 3, name: 'Saison 3', episodes: [{ number: 1, airDate: '2026-11-02' }, { number: 2, airDate: '2026-11-02' }] },
+    ],
+  });
+
+  it('normalizeCanon garde le streamId du serveur, absent ou vide sinon', () => {
+    const s2 = canon!.seasons.find((s) => s.number === 2)!;
+    expect(s2.episodes.map((e) => e.streamId)).toEqual(['tt29694831:2:205', 'tt29694831:2:206', undefined]);
+    expect('streamId' in s2.episodes[2]!).toBe(false);
+  });
+
+  it('pickAiredEpisode : S2E206 pour le 2026-10-19 (spéciaux exclus), null si aucun ou ambigu', () => {
+    expect(pickAiredEpisode(canon!, '2026-10-19')).toMatchObject({ season: 2, episode: 206, streamId: 'tt29694831:2:206' });
+    expect(pickAiredEpisode(canon!, '2026-10-30')).toBeNull();
+    expect(pickAiredEpisode(canon!, '2026-11-02')).toBeNull();
+    expect(pickAiredEpisode(canon!, '')).toBeNull();
+  });
+});
+
 describe('sources', () => {
   it('construit les identifiants Stremio', () => {
     expect(stremioId('tt1')).toBe('tt1');
     expect(stremioId('tt1', 2, 5)).toBe('tt1:2:5');
+  });
+
+  it('identifiant d’épisode : streamId de la structure canonique en priorité, sinon saison et épisode demandés', () => {
+    expect(episodeStreamId('tt29694831', 2, 206, 'tt29694831:2:206')).toBe('tt29694831:2:206');
+    expect(episodeStreamId('tt1', 2, 5, 'tt1:3:9')).toBe('tt1:3:9');
+    expect(episodeStreamId('tt29694831', 2, 206, null)).toBe('tt29694831:2:206');
+    expect(episodeStreamId('tt29694831', 2, 206)).toBe('tt29694831:2:206');
   });
 
   it('trie par score et groupe par qualité', () => {

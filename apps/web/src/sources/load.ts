@@ -21,6 +21,8 @@ export interface SourceRequest {
   /** Clé de titre : `movie:550` / `tv:1399`. */
   key: string;
   imdb?: string;
+  /** Identifiant de flux de l'épisode selon la structure canonique (`<imdb>:<saison>:<épisode>`) ; sinon calculé. */
+  streamId?: string | null;
 }
 
 export interface LoadedSources {
@@ -99,7 +101,7 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   if (!imdb) throw new Error('no-imdb');
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
-  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk });
+  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: req.streamId });
   const device = startDeviceFetch(requestKey(req), res.deviceFetch ?? []);
   // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
   const all = device ? mergeDeviceStreams(res.streams, device.streams) : res.streams;
@@ -172,7 +174,7 @@ export async function pollSources(req: SourceRequest, current: LoadedSources): P
   const serverPending = current.serverPending ?? current.pending;
   // Le serveur n'a plus rien en attente : seul le repli de l'appareil peut encore faire avancer la liste.
   if (!serverPending.length) return current;
-  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny() });
+  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny(), streamId: req.streamId });
   if (!status) return device?.pending.length ? current : { ...current, pending: [] };
   if (statusChanged({ count: current.serverCount ?? current.views.length, pending: serverPending }, status)) return refresh();
   return current;

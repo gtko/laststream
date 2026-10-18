@@ -18,6 +18,8 @@ export interface CanonEpisode {
   runtime?: number;
   /** Chemin TMDB (/abc.jpg) ou URL complète. */
   still: string;
+  /** Identifiant de flux `<imdb>:<saison>:<épisode>` avec la numérotation du serveur, absent si inconnu. */
+  streamId?: string;
 }
 
 export interface CanonSeason {
@@ -39,6 +41,8 @@ const pick = (o: Raw, ...keys: string[]): any => {
 };
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
 const day = (v: unknown): string => (typeof v === 'string' ? v.slice(0, 10) : '');
+/** `{ streamId }` quand le serveur en fournit un (texte non vide), sinon rien. */
+const streamIdOf = (v: unknown): { streamId?: string } => (typeof v === 'string' && v !== '' ? { streamId: v } : {});
 
 /** Lit la réponse du serveur (noms de champs tolérés : snake_case ou camelCase). Null si elle est inexploitable. */
 export function normalizeCanon(raw: unknown): Canon | null {
@@ -63,6 +67,7 @@ export function normalizeCanon(raw: unknown): Canon | null {
         airDate: day(pick(e, 'airDate', 'air_date', 'aired')),
         runtime: num(pick(e, 'runtime', 'length')),
         still: String(pick(e, 'still', 'still_path', 'stillPath', 'image', 'thumbnail') ?? ''),
+        ...streamIdOf(pick(e, 'streamId', 'stream_id')),
       });
     }
     episodes.sort((a, b) => a.episode - b.episode);
@@ -129,6 +134,22 @@ export function fetchCanon(tmdbId: string | number, language = 'fr-FR'): Promise
     cache.set(key, p);
   }
   return cache.get(key)!;
+}
+
+/**
+ * Épisode canonique diffusé le jour donné (AAAA-MM-JJ), hors spéciaux : saison, épisode et identifiant de flux.
+ * Null si aucun épisode ou plusieurs ce jour-là (ambigu).
+ */
+export function pickAiredEpisode(c: Canon, airDate: string): CanonEpisode | null {
+  if (!airDate) return null;
+  const hits = c.seasons.filter((s) => s.number > 0).flatMap((s) => s.episodes).filter((e) => e.airDate === airDate);
+  return hits.length === 1 ? (hits[0] ?? null) : null;
+}
+
+/** Épisode canonique diffusé le jour donné ; null si la structure est indisponible ou l'épisode ambigu. */
+export async function canonAiredOn(tmdbId: string | number, airDate: string): Promise<CanonEpisode | null> {
+  const c = await fetchCanon(tmdbId);
+  return c ? pickAiredEpisode(c, airDate) : null;
 }
 
 export const clearCanonCache = (): void => cache.clear();

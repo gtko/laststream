@@ -54,6 +54,21 @@ describe('normalizeCanonical : indicateurs diffusé / lisible', () => {
   });
 });
 
+describe('normalizeCanonical : identifiant de flux du serveur', () => {
+  it('garde streamId quand il est fourni, absent sinon (la lecture retombe sur tt:saison:épisode)', () => {
+    const eps = normalizeCanonical({
+      seasons: [{ number: 2, episodeCount: 2 }],
+      episodes: [
+        { season: 2, episode: 206, name: 'S2E206', airDate: plus(1), streamId: 'tt29694831:2:206' },
+        { season: 2, episode: 207, name: 'S2E207', airDate: plus(8) },
+      ],
+    }, TODAY)!.episodes.get(2)!;
+    expect(eps[0]!.streamId).toBe('tt29694831:2:206');
+    expect(eps[0]!.playable).toBe(true);
+    expect('streamId' in eps[1]!).toBe(false);
+  });
+});
+
 describe('firstUnseen : prend les épisodes lisibles', () => {
   const eps = new Map<number, EpisodeInfo[]>([[1, [
     { episode: 1, name: '', runtime: null, overview: '', still: '', airDate: plus(-7), aired: true, playable: true },

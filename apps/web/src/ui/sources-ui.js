@@ -1,5 +1,6 @@
 /* « Lecture » : branche les boutons de l'interface sur le sélecteur de sources (src/sources) et le lecteur (src/player). */
 import { getAutoplay } from '../data/prefs';
+import { canonAiredOn } from '../data/series';
 import { closePlayer, playBest } from '../player/session.js';
 import { prefetchSources } from '../sources/load';
 import { nextToWatch } from './fiche.js';
@@ -48,12 +49,21 @@ export function playFrom(btn) {
  * Carte ou ligne d'un épisode bientôt diffusé (calendrier, suivis, fiche) : data-play-key = clé du titre,
  * data-play-season / data-play-episode, data-name, data-air (date de diffusion). Lance la recherche de sources de cet épisode.
  */
-function playAiringEpisode(btn) {
+async function playAiringEpisode(btn) {
   const key = btn.dataset.playKey;
   const [type, id] = key.split(':');
   const it = state.byKey.get(key);
-  const request = { type, id: String(id), name: btn.dataset.name || (it && it.name) || '', season: Number(btn.dataset.playSeason), episode: Number(btn.dataset.playEpisode), key };
-  playBest(request, btn, btn.dataset.air ? { notYetAired: btn.dataset.air } : {});
+  const air = btn.dataset.air || '';
+  // Numérotation de la structure canonique (TVDB ou groupe TMDB, comme la liste des épisodes) : l'épisode diffusé ce
+  // jour-là fixe la saison, l'épisode et l'identifiant de flux. Sans correspondance, les numéros du bouton sont gardés.
+  const canon = type === 'tv' && air ? await canonAiredOn(id, air).catch(() => null) : null;
+  const request = {
+    type, id: String(id), name: btn.dataset.name || (it && it.name) || '', key,
+    season: canon ? canon.season : Number(btn.dataset.playSeason),
+    episode: canon ? canon.episode : Number(btn.dataset.playEpisode),
+    streamId: canon && canon.streamId ? canon.streamId : null,
+  };
+  playBest(request, btn, air ? { notYetAired: air } : {});
 }
 
 /** Sélecteur de sources, ouvert dans le lecteur : choisir une source lance la lecture. */

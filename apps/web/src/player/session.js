@@ -8,7 +8,7 @@ import { ltUrl } from '../data/config';
 import { pushPrefs } from '../data/auth';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
-import { imdbIdOf, measureBandwidthKbps, stremioId } from '../data/sources';
+import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { POLL_EVERY_MS, POLL_MAX_MS, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
 import { describePending, isGoodMatch } from '../sources/rank';
@@ -1004,7 +1004,7 @@ async function ensureExternalSubs(auto, force) {
   try {
     let params = null;
     if (p.mediaUrl && (await serverAlive())) params = await fetchOpenSubParams(p.mediaUrl);
-    const id = p.imdb ? (p.req.type === 'tv' ? stremioId(p.imdb, p.req.season ?? 1, p.req.episode ?? 1) : p.imdb) : '';
+    const id = p.imdb ? (p.req.type === 'tv' ? episodeStreamId(p.imdb, p.req.season, p.req.episode, p.req.streamId) : p.imdb) : '';
     if (!id) return;
     const type = p.req.type === 'tv' ? 'series' : 'movie';
     const addon = isConfigured() ? addonUrl('subtitles/' + type + '/' + id + '.json') : null;
@@ -1419,7 +1419,9 @@ function playEpisode(season, episode) {
   if (!p || guestBlocked()) return Promise.resolve();
   ui.closePanel(true);
   const info = (p.episodes.get(season) || []).find((e) => e.episode === episode);
-  return playBest({ ...p.req, season, episode, imdb: p.imdb }, p.opener, { resume: 'none', notYetAired: info && !info.aired ? info.airDate : '' });
+  // Identifiant de flux de la structure canonique : même numérotation que l'épisode affiché (progression « vu » inchangée).
+  const streamId = (info && info.streamId) || null;
+  return playBest({ ...p.req, season, episode, imdb: p.imdb, streamId }, p.opener, { resume: 'none', notYetAired: info && !info.aired ? info.airDate : '' });
 }
 
 /** Message quand un épisode pas encore diffusé n'a aucune source (la recherche décide de la lecture). */
