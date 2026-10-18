@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { closeApp, createApp } from '../src/app.js';
 import { encodeConfig } from '../src/config/codec.js';
+import type { AppDeps } from '../src/deps.js';
 import type { ConfigInput } from '../src/config/schema.js';
 import type { LocalProwlarr } from '../src/sources/local-prowlarr.js';
 
@@ -106,6 +107,8 @@ export async function startApp(options: {
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>;
   /** Prowlarr local simulé (absent : aucun Prowlarr local). */
   localProwlarr?: () => Promise<LocalProwlarr | null>;
+  /** Détection automatique des segments de saut (binaires, URL locales autorisées, budget). */
+  skipDetect?: AppDeps['skipDetect'];
 }): Promise<RunningApp> {
   const app = createApp({
     secret: SECRET,
@@ -115,6 +118,7 @@ export async function startApp(options: {
     userDbPath: options.userDbPath ?? ':memory:',
     userRateLimits: options.userRateLimits ?? { read: 10_000, write: 10_000, sensitive: 10_000, loginPerUsername: 10_000 },
     localProwlarr: options.localProwlarr,
+    skipDetect: options.skipDetect,
   });
   const server: Server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));

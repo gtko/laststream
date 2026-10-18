@@ -4,8 +4,8 @@ import type { DatabaseSync } from 'node:sqlite';
 export const COMMUNITY_KINDS = ['intro', 'recap', 'credits', 'postcredits'] as const;
 export type CommunityKind = (typeof COMMUNITY_KINDS)[number];
 
-/** Une proposition masquée dès que ses votes négatifs dépassent ses votes positifs. */
-const VISIBLE = 'votes_down <= votes_up';
+/** Une proposition masquée dès que ses votes négatifs dépassent ses votes positifs ; les segments détectés (auto) n'ont pas de votes. */
+const VISIBLE = "votes_down <= votes_up AND source <> 'auto'";
 /** Chevauchement minimal (intersection / union) pour qu'un vote négatif vise une proposition existante. */
 const DISPUTE_OVERLAP = 0.5;
 
@@ -28,6 +28,28 @@ export interface CommunitySegment {
   end: number;
   /** Confiance lissée : (votes pour + 1) / (votes pour + votes contre + 2). */
   confidence: number;
+}
+
+
+/** Types de segments détectés automatiquement (le store communautaire n'a pas « preview »). */
+export type AutoKind = CommunityKind | 'preview';
+/** Méthode de détection : chapitres du conteneur, empreinte audio entre épisodes, noir et silence de fin. */
+export type AutoMethod = 'chapters' | 'fingerprint' | 'blackdetect';
+
+/** Segment détecté automatiquement, avec sa confiance. */
+export interface AutoSegment {
+  kind: AutoKind;
+  start: number;
+  end: number;
+  confidence: number;
+  method: AutoMethod;
+}
+
+/** Empreinte de référence d'une saison (intro ou générique) : points uint32 d'une méthode donnée. */
+export interface SeasonFingerprint {
+  kind: 'intro' | 'credits';
+  method: string;
+  points: Uint32Array;
 }
 
 /** Médiane d'une liste non vide de nombres (moyenne des deux centres si le nombre est pair). */
@@ -131,6 +153,74 @@ export class SkipSegmentStore {
         confidence: (group.up + 1) / (group.up + group.down + 2),
       }))
       .sort((a, b) => a.start - b.start);
+  }
+
+
+  /**
+   * Enregistre un segment détecté. Une ligne auto existante du même type est remplacée seulement si la nouvelle
+   * confiance est au moins égale ; retourne vrai si le segment est enregistré.
+   */
+  saveAuto(imdbId: string, season: number, episode: number, duration: number, segment: AutoSegment, nowIso: string): boolean {
+    const existing = this.db
+      .prepare("SELECT id, confidence FROM skip_segments WHERE imdb_id = ? AND season = ? AND episode = ? AND kind = ? AND source = 'auto'")
+      .all(imdbId, season, episode, segment.kind);
+    if (existing.some((row) => Number(row.confidence ?? 0) > segment.confidence)) return false;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const drop = this.db.prepare('DELETE FROM skip_segments WHERE id = ?');
+      for (const row of existing) drop.run(row.id);
+      this.db
+        .prepare(
+          `INSERT INTO skip_segments (imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at, confidence, method)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'auto', ?, ?, ?)`,
+        )
+        .run(imdbId, season, episode, segment.kind, segment.start, segment.end, duration, nowIso, segment.confidence, segment.method);
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return true;
+  }
+
+  /** Segments détectés automatiquement pour un épisode. */
+  autoSegmentsFor(imdbId: string, season: number, episode: number): AutoSegment[] {
+    return this.db
+      .prepare(
+        `SELECT kind, "start", "end", confidence, method FROM skip_segments
+         WHERE imdb_id = ? AND season = ? AND episode = ? AND source = 'auto' ORDER BY "start"`,
+      )
+      .all(imdbId, season, episode)
+      .map((row) => ({
+        kind: String(row.kind) as AutoKind,
+        start: Number(row.start),
+        end: Number(row.end),
+        confidence: Number(row.confidence ?? 0),
+        method: String(row.method ?? 'fingerprint') as AutoMethod,
+      }));
+  }
+
+  /** Enregistre (ou remplace) l'empreinte de référence d'une saison. */
+  saveFingerprint(imdbId: string, season: number, fingerprint: SeasonFingerprint, nowIso: string): void {
+    const bytes = new Uint8Array(fingerprint.points.buffer, fingerprint.points.byteOffset, fingerprint.points.byteLength);
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO skip_fingerprints (imdb_id, season, kind, method, fp, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(imdbId, season, fingerprint.kind, fingerprint.method, bytes, nowIso);
+  }
+
+  /** Empreintes de référence d'une saison pour une méthode. */
+  fingerprintsFor(imdbId: string, season: number, method: string): SeasonFingerprint[] {
+    return this.db
+      .prepare('SELECT kind, method, fp FROM skip_fingerprints WHERE imdb_id = ? AND season = ? AND method = ?')
+      .all(imdbId, season, method)
+      .flatMap((row) => {
+        const blob = row.fp;
+        if (!(blob instanceof Uint8Array) || blob.byteLength % 4 !== 0) return [];
+        const copy = new Uint8Array(blob);
+        return [{ kind: String(row.kind) as 'intro' | 'credits', method: String(row.method), points: new Uint32Array(copy.buffer) }];
+      });
   }
 
   /** Durée de l'épisode la plus récemment proposée, ou undefined. */

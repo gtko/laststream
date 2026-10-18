@@ -1,6 +1,7 @@
 import type { Config } from '../config/schema.js';
 import { isRecord } from '../sources/http.js';
-import { type CommunityKind, type CommunitySegment, type Proposal, type SkipSegmentStore } from '../user/skip-segments.js';
+import { type AutoSegment, type CommunityKind, type CommunitySegment, type Proposal, type SkipSegmentStore } from '../user/skip-segments.js';
+import type { AutoDetector } from './detect/index.js';
 import { seriesEpisodes, type SeriesEpisode } from './episodes.js';
 import { LtError, type LtContext, ltRequest, TTL } from './context.js';
 import { INTRODB_BASE, parseSkipTarget, type SkipResponse, type SkipSegment, skipSegments, type SkipTarget } from './skip.js';
@@ -102,6 +103,28 @@ function communityToSegment(segment: CommunitySegment): SkipSegment {
   return { kind: segment.kind, start: segment.start, end: segment.end, source: 'community', confidence: segment.confidence };
 }
 
+/** Segment détecté localement mis au format de réponse. */
+function autoToSegment(segment: AutoSegment): SkipSegment {
+  return { kind: segment.kind, start: segment.start, end: segment.end, source: 'auto', confidence: segment.confidence, method: segment.method };
+}
+
+/**
+ * Segments des couches dans l'ordre de priorité : une couche n'apporte que les types absents des précédentes, et
+ * jamais un segment qui en chevauche un déjà retenu.
+ */
+function layered(layers: readonly SkipSegment[][]): SkipSegment[] {
+  const chosen: SkipSegment[] = [];
+  for (const layer of layers) {
+    const taken = new Set(chosen.map((segment) => segment.kind));
+    for (const segment of layer) {
+      if (taken.has(segment.kind)) continue;
+      if (chosen.some((other) => segment.start < other.end && other.start < segment.end)) continue;
+      chosen.push(segment);
+    }
+  }
+  return chosen.sort((a, b) => a.start - b.start);
+}
+
 function inferredSegment(kind: 'intro' | 'credits', span: { start: number; end: number }): SkipSegment {
   return { kind, start: span.start, end: span.end, source: 'inferred', inferred: true, confidence: INFERRED_CONFIDENCE };
 }
@@ -119,7 +142,7 @@ async function tmdbIdOf(ctx: LtContext, token: string, imdbId: string): Promise<
  * Segments communautaires et déduits. Le store s'ouvre au premier besoin ; `openStore` fournit la base utilisateur.
  * Les propositions incrémentent un compteur par saison : la déduction (cache 7 j) est recalculée après tout ajout.
  */
-export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegmentStore): SkipCommunity {
+export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegmentStore, detector?: AutoDetector): SkipCommunity {
   let store: SkipSegmentStore | undefined;
   const db = (): SkipSegmentStore => {
     store ??= openStore();
@@ -243,13 +266,21 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
 
   async function resolve(services: Services, target: SkipTarget): Promise<SkipResponse> {
     const external = await skipSegments(ctx, services, target);
-    if (external.segments.length > 0) return external;
-    const withLength = (segments: SkipSegment[]): SkipResponse =>
-      external.episodeLength === undefined ? { segments } : { segments, episodeLength: external.episodeLength };
-    const own = db().segmentsFor(target.imdbId, target.season, target.episode);
-    if (own.length > 0) return withLength(own.map(communityToSegment));
-    if (target.type === 'movie') return withLength([]);
-    return withLength(await inferSeason(services, target, external.episodeLength));
+    const community = db().segmentsFor(target.imdbId, target.season, target.episode).map(communityToSegment);
+    const auto = db()
+      .autoSegmentsFor(target.imdbId, target.season, target.episode)
+      .sort((a, b) => b.confidence - a.confidence)
+      .map(autoToSegment);
+    const lacks = (layers: SkipSegment[][]): boolean =>
+      target.type === 'series' &&
+      (['intro', 'credits'] as const).some((kind) => !layers.some((layer) => layer.some((segment) => segment.kind === kind)));
+    // Priorité : services externes > communauté > détection locale (chapitres 0,95, empreinte 0,8) > déduction de saison (0,5).
+    const layers = [external.segments, community, auto];
+    const inferred = lacks(layers) ? await inferSeason(services, target, external.episodeLength) : [];
+    const response: SkipResponse = { segments: layered([...layers, inferred]) };
+    if (external.episodeLength !== undefined) response.episodeLength = external.episodeLength;
+    if (detector?.analyzing(target) === true) response.analyzing = true;
+    return response;
   }
 
   async function submit(services: Services, body: Record<string, unknown>): Promise<{ applied: number }> {

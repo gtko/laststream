@@ -1,4 +1,5 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
+import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
@@ -28,4 +29,6 @@ export interface AppDeps {
    * Sa clé ne doit jamais sortir vers les clients ni dans les journaux.
    */
   localProwlarr?: LocalProwlarrProvider;
+  /** Détection automatique des segments de saut (binaires ffmpeg, URL locales autorisées, budget) : réglages de test. */
+  skipDetect?: AutoDetectOptions;
 }

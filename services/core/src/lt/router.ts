@@ -7,6 +7,7 @@ import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
+import { createAutoDetector, MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
@@ -54,7 +55,14 @@ function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedC
 export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   const ctx: LtContext = createLtContext(deps);
   // Base utilisateur ouverte au premier besoin (store communautaire des segments de saut).
-  const community = createSkipCommunity(ctx, () => new SkipSegmentStore(openUserDb(deps.userDbPath ?? userDbPath())));
+  let store: SkipSegmentStore | undefined;
+  const openStore = (): SkipSegmentStore => (store ??= new SkipSegmentStore(openUserDb(deps.userDbPath ?? userDbPath())));
+  // Détection automatique locale (chapitres, empreinte audio) : file en arrière-plan, jamais bloquante pour le GET.
+  const detector = createAutoDetector(openStore, {
+    disabled: process.env.LASTADDON_SKIP_DETECT === '0',
+    ...deps.skipDetect,
+  });
+  const community = createSkipCommunity(ctx, openStore, detector);
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (req: Request): string => String((req.params as Record<string, unknown>).config);
   const configOf = (req: Request) => decodeFor(deps, tokenOf(req));
@@ -130,8 +138,33 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
       console.warn(`[lt][skip] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'skip_unavailable');
     });
-    cacheable(res);
+    // Une détection en cours change la réponse bientôt : pas de cache.
+    if (body.analyzing !== true) cacheable(res);
     res.json(body);
+  });
+
+  // Le lecteur rapporte l'URL réellement lue pour un épisode : la détection locale l'analyse en arrière-plan.
+  // Corps : { type, imdbId, season, episode, mediaUrl, duration }. L'URL n'est jamais journalisée ni stockée.
+  lt.post('/skip/analyze', async (req, res) => {
+    configOf(req);
+    const body = bodyOf(req);
+    const { type, imdbId, season, episode, mediaUrl, duration } = body;
+    const invalid = (): never => {
+      throw new LtError(400, 'invalid_analyze');
+    };
+    if (typeof type !== 'string' || typeof imdbId !== 'string') return invalid();
+    if (typeof season !== 'number' || typeof episode !== 'number' || !Number.isInteger(season) || !Number.isInteger(episode)) return invalid();
+    if (typeof duration !== 'number' || !(duration >= MIN_REPORT_DURATION && duration <= MAX_REPORT_DURATION)) return invalid();
+    let target;
+    try {
+      target = parseSkipTarget(type, imdbId, String(season), String(episode));
+    } catch {
+      return invalid();
+    }
+    const url = validateMediaUrl(mediaUrl, deps.skipDetect?.allowLocal);
+    if (url === null) return invalid();
+    const result = await detector.report({ target, url, duration });
+    res.status(202).json({ queued: result.queued, ...(result.reason === undefined ? {} : { reason: result.reason }) });
   });
 
   // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clé IntroDB facultative.
@@ -225,5 +258,8 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   catalog.get('/:type/:id/:extra.json', (req, res) => sendCatalog(req, res, req.params.extra));
   catalog.use(ltErrorHandler);
   app.use('/:config/catalog', catalog);
-  return () => community.close();
+  return () => {
+    void detector.close();
+    community.close();
+  };
 }

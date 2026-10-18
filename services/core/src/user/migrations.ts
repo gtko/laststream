@@ -155,6 +155,43 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX skip_segments_episode ON skip_segments (imdb_id, season, episode, kind);
     `,
   },
+  {
+    version: 6,
+    name: 'segments de saut détectés automatiquement (chapitres, empreinte audio) et empreintes par saison',
+    sql: `
+      CREATE TABLE skip_segments_v6 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'recap', 'credits', 'postcredits', 'preview')),
+        "start" REAL NOT NULL CHECK ("start" >= 0),
+        "end" REAL NOT NULL CHECK ("end" > "start"),
+        duration REAL NOT NULL CHECK (duration > 0),
+        votes_up INTEGER NOT NULL DEFAULT 0 CHECK (votes_up >= 0),
+        votes_down INTEGER NOT NULL DEFAULT 0 CHECK (votes_down >= 0),
+        source TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('user', 'inferred', 'auto')),
+        created_at TEXT NOT NULL,
+        confidence REAL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+        method TEXT
+      );
+      INSERT INTO skip_segments_v6 (id, imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at)
+        SELECT id, imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at FROM skip_segments;
+      DROP TABLE skip_segments;
+      ALTER TABLE skip_segments_v6 RENAME TO skip_segments;
+      CREATE INDEX skip_segments_episode ON skip_segments (imdb_id, season, episode, kind);
+
+      CREATE TABLE skip_fingerprints (
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'credits')),
+        method TEXT NOT NULL,
+        fp BLOB NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (imdb_id, season, kind, method)
+      );
+    `,
+  },
 ];
 
 /**

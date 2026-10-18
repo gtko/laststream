@@ -6,8 +6,8 @@ import { getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
 export type SkipKind = 'intro' | 'recap' | 'credits' | 'postcredits' | 'preview';
 /** Source d'un segment venu d'un service externe. */
 export type SkipSource = 'introdb' | 'aniskip' | 'animeskip';
-/** Origine d'un segment : service externe, store communautaire local, ou déduction à partir de la saison. */
-export type SkipOrigin = SkipSource | 'community' | 'inferred';
+/** Origine d'un segment : service externe, store communautaire local, détection automatique locale, ou déduction à partir de la saison. */
+export type SkipOrigin = SkipSource | 'community' | 'auto' | 'inferred';
 
 export interface SkipSegment {
   kind: SkipKind;
@@ -17,16 +17,21 @@ export interface SkipSegment {
   source: SkipOrigin;
   /** Sources concordantes (présent seulement si au moins deux sources ont fusionné sur ce segment). */
   sources?: SkipSource[];
-  /** Confiance : rapportée par la source (IntroDB), lissée par les votes (communauté), 0,5 (déduit). */
+  /** Confiance : rapportée par la source (IntroDB), lissée par les votes (communauté), 0,95 (chapitres), 0,8 (empreinte audio), 0,5 (déduit). */
+
   confidence?: number;
   /** Vrai pour un segment déduit des autres épisodes de la saison. */
   inferred?: true;
+  /** Méthode d'une détection locale (source « auto ») : chapitres du conteneur, empreinte audio, noir et silence de fin. */
+  method?: 'chapters' | 'fingerprint' | 'blackdetect';
 }
 
 export interface SkipResponse {
   segments: SkipSegment[];
   /** Durée de l'épisode en secondes, si AniSkip la connaît. */
   episodeLength?: number;
+  /** Vrai si une détection locale de cet épisode est en attente ou en cours : à relire plus tard. */
+  analyzing?: true;
 }
 
 /** Cible validée : un film (saison et épisode à 0) ou un épisode de série (saison et épisode à partir de 1). */
