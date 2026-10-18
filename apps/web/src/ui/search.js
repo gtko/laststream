@@ -31,6 +31,7 @@ let seq = 0; // jeton de la dernière recherche lancée : une réponse plus anci
 let session = null; // { q, token, media, people, raw, seen, next, total, done, best, filter, shown }
 
 export function showSearch() {
+  clearTimeout(timer);
   teardownFiche();
   stopInfinite();
   seq += 1;
@@ -67,6 +68,8 @@ const fetchPage = (q, page) => tmdb('search/multi', { query: q, include_adult: '
 
 /** Lance une recherche ; une requête identique à la requête affichée ne refait rien. */
 async function run(raw) {
+  // Débounce arrivé après avoir quitté la page : ne touche pas à la page courante.
+  if (state.kind !== 'search') return;
   const q = String(raw || '').trim();
   if (session && session.q === q && q.length >= 2) return;
   const my = ++seq;
@@ -208,7 +211,7 @@ function personHtml(p) {
   const name = p.name || 'Sans nom';
   const known = (p.known_for || []).map((k) => k.title || k.name).filter(Boolean).slice(0, 2);
   const photo = IMG('w185', p.profile_path);
-  const ini = name.split(' ').map((w) => w[0] || '').slice(0, 2).join('');
+  const ini = name.split(' ').map((w) => Array.from(w)[0] || '').slice(0, 2).join('');
   return '<li><a class="cast" href="#/person/' + esc(p.id) + '" data-person="' + esc(p.id) + '"' +
     ' aria-label="' + esc(name) + (known.length ? ', connu pour ' + esc(known.join(', ')) : '') + '">' +
     '<span class="cast-ph' + (photo ? '' : ' no-img') + '">' + (photo ? '<img src="' + esc(photo) + '" alt="" loading="lazy" decoding="async">' : '') +
@@ -252,7 +255,7 @@ function paintSession(s) {
 function paintLoading() {
   const body = bodyEl();
   if (!body) return;
-  body.innerHTML ='<div class="srch-skel" aria-hidden="true"><span class="sk srch-skel-best"></span><span class="sk srch-skel-pill"></span>' +
+  body.innerHTML = '<div class="srch-skel" aria-hidden="true"><span class="sk srch-skel-best"></span><span class="sk srch-skel-pill"></span>' +
     '<div class="srch-grid">' + Array.from({ length: 12 }, () => '<span class="sk sk-card"></span>').join('') + '</div></div>';
   setStatus('Recherche en cours');
 }
