@@ -3,7 +3,7 @@
 import { getBase, isAndroidApp } from '../data/config';
 import { isMask, testSource } from '../data/configApi';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
-import { analyzeAddonUrl, classifyStreams } from '../data/addonSafety';
+import { checkKey, classifyStreams, isDue, readCheck, writeCheck } from '../data/addonSafety';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -14,7 +14,7 @@ const TYPE_FR = { movie: 'Films', series: 'Séries', anime: 'Animés', tv: 'TV',
 
 let list = [];
 const info = new Map();
-const safety = new Map(); // verdict « sûr / clé de débrideur / inconnu » par source, après « Rendre mes addons sûrs »
+const safety = new Map(); // verdict « torrents seulement » par source (id de session), issu du diagnostic quotidien
 let seq = 0;
 
 // ---------- Manifest ----------
@@ -109,7 +109,8 @@ export function initSources(sources) {
   list = (sources || []).map(toModel);
   info.clear();
   safety.clear();
-  list.forEach((s, i) => { if (s.type === 'upstream' && s.url) setTimeout(() => loadInfo(s), 150 * i); });
+  // À l'ouverture de la page : manifest, puis diagnostic « torrents seulement » (au plus une fois par jour et par addon).
+  list.forEach((s, i) => { if (s.type === 'upstream' && s.url) setTimeout(() => { void loadInfo(s); void checkDaily(s); }, 150 * i); });
 }
 
 export function addSource(type) {
@@ -231,9 +232,7 @@ function cardHTML(s, pos) {
 }
 
 export function sourcesHTML() {
-  return '<div class="src-safe-bar"><button type="button" class="btn btn-ghost btn-sm" data-set-safe>Rendre mes addons sûrs</button>' +
-    '<p class="set-hint" id="src-safe-sum" aria-live="polite">Vérifie que tes addons débrident eux-mêmes et renvoient des sources lisibles.</p></div>' +
-    '<div id="set-sources" class="src-list" role="list" aria-label="Sources, par ordre de priorité">' +
+  return '<div id="set-sources" class="src-list" role="list" aria-label="Sources, par ordre de priorité">' +
     (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Ajoute tes extensions Stremio pour voir des sources.</p>') + '</div>' +
     '<p class="set-hint src-order-hint">L’ordre est la priorité : la source 1 passe en premier.</p><p class="sr-only" id="src-live" aria-live="polite"></p>';
 }
@@ -357,8 +356,7 @@ function openConfigure(card, s) {
   if (page) void openOutside(page);
 }
 
-// ---------- Sécurité des addons ----------
-const SAFE_LABEL = { self: 'Débride lui-même (mode recommandé)', torrents: 'Ne renvoie que des torrents : aucune source lisible sans débrideur', unknown: 'Inconnu' };
+// ---------- Addons « torrents seulement » ----------
 const TEST_STREAM = '/stream/movie/tt0133093.json'; // Matrix : un flux de test suffit pour savoir ce que renvoie l’addon
 
 /** Flux de test de l’addon, lu depuis l’app. Ne contacte jamais le débrideur : seul l’addon répond. */
@@ -379,54 +377,36 @@ async function probeStreams(manifest) {
   }
 }
 
-function reasonOf(verdict, a) {
-  if (verdict === 'self') return a.usesDebrid ? 'ta clé est dans l’addon, qui appelle lui-même le débrideur.' : 'l’addon renvoie des liens lisibles.';
-  if (verdict === 'torrents') return 'configure ton débrideur dans l’addon (bouton Configurer).';
-  return 'pas de réponse lisible depuis l’app (CORS, hors ligne, ou aucun flux pour ce test).';
-}
-
-/** Vérifie un addon : adresse d’abord (sans réseau), puis flux de test si l’adresse ne montre pas de clé. */
-async function checkSafety(s, note = '') {
+/** Diagnostic en arrière-plan, à l’ouverture de la page : au plus une fois par jour et par addon (horodatage local). */
+async function checkDaily(s) {
   const manifest = normalizeManifestUrl(s.url);
-  if (!manifest) {
-    safety.set(s.id, { verdict: 'unknown', reason: 'adresse vide.', note });
-  } else {
-    const a = analyzeAddonUrl(manifest);
-    const verdict = a.usesDebrid ? 'self' : await probeStreams(manifest);
-    safety.set(s.id, { verdict, reason: reasonOf(verdict, a), note });
-  }
-  paintSafety(s.id);
+  if (!manifest) return;
+  const key = checkKey(manifest);
+  const prev = readCheck(key);
+  const now = Date.now();
+  if (!isDue(prev, now)) { setVerdict(s.id, prev.verdict); return; }
+  // Horodatage posé avant le test : une autre ouverture pendant le test ne le relance pas.
+  writeCheck(key, { at: now, verdict: prev ? prev.verdict : 'unknown' });
+  const verdict = await probeStreams(manifest);
+  writeCheck(key, { at: now, verdict });
+  setVerdict(s.id, verdict);
 }
 
-function summaryText() {
-  const verdicts = list.filter((s) => s.type === 'upstream').map((s) => (safety.get(s.id) || {}).verdict);
-  const n = (v) => verdicts.filter((x) => x === v).length;
-  return 'Résultat : ' + n('self') + ' débride(nt) eux-mêmes · ' + n('torrents') + ' torrents seulement · ' + n('unknown') + ' inconnu(s).';
+function setVerdict(id, verdict) {
+  safety.set(id, verdict);
+  paintSafety(id);
 }
 
-/** « Rendre mes addons sûrs » : vérifie tous les addons amont en parallèle. */
-async function runSafetyCheck() {
-  syncFromDom();
-  const todo = list.filter((s) => s.type === 'upstream');
-  const sum = detailEl.querySelector('#src-safe-sum');
-  if (!todo.length) { if (sum) sum.textContent = 'Aucun addon amont à vérifier.'; return; }
-  if (sum) sum.textContent = 'Vérification de ' + todo.length + ' addon(s)…';
-  await Promise.all(todo.map((s) => checkSafety(s)));
-  if (sum) sum.textContent = summaryText();
+/** Avertissement d’un addon « torrents seulement » : seul message affiché, avec « Configurer ». */
+function safetyHTML() {
+  return '<p class="src-safety-line">Ne renvoie que des torrents : aucune source lisible</p>' +
+    '<div class="src-cfg-actions"><button type="button" class="btn btn-ghost btn-sm" data-safe-config>Configurer</button></div>';
 }
 
-function safetyHTML(st) {
-  const btn = (attr, label) => '<button type="button" class="btn btn-ghost btn-sm" ' + attr + '>' + esc(label) + '</button>';
-  let html = '<p class="src-safety-line"><strong>' + esc(SAFE_LABEL[st.verdict]) + '</strong> · ' + esc(st.reason) + '</p>';
-  if (st.verdict === 'torrents') html += '<div class="src-cfg-actions">' + btn('data-safe-config', 'Configurer') + '</div>';
-  if (st.note) html += '<p class="set-hint">' + esc(st.note) + '</p>';
-  return html;
-}
-
-/** Ligne de verdict d’un addon (masquée tant qu’il n’a pas été vérifié). */
+/** Ligne d’avertissement d’un addon : masquée tant que tout va bien (rien n’est affiché). */
 function safetyRow(id) {
-  const st = safety.get(id);
-  return '<div class="src-safety' + (st ? ' is-' + st.verdict : '') + '"' + (st ? '' : ' hidden') + '>' + (st ? safetyHTML(st) : '') + '</div>';
+  const torrents = safety.get(id) === 'torrents';
+  return '<div class="src-safety"' + (torrents ? '' : ' hidden') + '>' + (torrents ? safetyHTML() : '') + '</div>';
 }
 
 function paintSafety(id) {
@@ -459,7 +439,6 @@ detailEl.addEventListener('click', (e) => {
   if (!t || !t.closest('.set-page')) return;
   const add = t.closest('[data-set-addsrc]');
   if (add) { e.preventDefault(); e.stopImmediatePropagation(); addSource(add.dataset.setAddsrc); return; }
-  if (t.closest('[data-set-safe]')) { e.preventDefault(); void runSafetyCheck(); return; }
   const card = t.closest('.src-card');
   if (!t.closest('.ep-menu-wrap')) closeMenus();
   if (!card) return;
