@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ui src/player src/sources src/main.js"
+    "lint": "eslint src/ui src/player src/sources src/main.js",
+    "relay:e2e": "node scripts/relay-e2e/two-pages.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.6.9",
