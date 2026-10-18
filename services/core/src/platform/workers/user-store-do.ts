@@ -1,7 +1,9 @@
 import type { DurableObjectState } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
+import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
 import { migrate } from '../../user/migrations.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
+import type { SqlDb } from '../../user/sql.js';
 import { UserStore } from '../../user/store.js';
 import { durableObjectSql } from './sql.js';
 
@@ -29,10 +31,12 @@ function dispatch(target: object, allowed: ReadonlySet<string>, method: string, 
 export class UserStoreDO extends DurableObject {
   private readonly users: UserStore;
   private readonly skips: SkipSegmentStore;
+  private readonly db: SqlDb;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env as never);
     const db = durableObjectSql(ctx.storage);
+    this.db = db;
     // Migrations avant toute requête.
     void ctx.blockConcurrencyWhile(() => {
       migrate(db);
@@ -50,5 +54,10 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SkipSegmentStore. */
   skip(method: string, args: unknown[]): unknown {
     return dispatch(this.skips, SKIP_METHODS, method, args);
+  }
+
+  /** Migration des données (route /__admin/, protégée par ADMIN_SECRET côté Worker) : voir admin/routes.ts. */
+  admin(operation: AdminOperation): Promise<unknown> {
+    return runAdminOperation(this.db, operation);
   }
 }

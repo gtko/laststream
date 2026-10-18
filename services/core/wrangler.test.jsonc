@@ -8,10 +8,15 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] }],
   "kv_namespaces": [{ "binding": "CACHE" }],
   "assets": { "directory": "./tests-workers/ui", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
+  "ratelimits": [
+    { "name": "AUTH_LIMITER_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
+  ],
   "vars": {
     // Valeurs de test, jamais des secrets réels.
     "LASTADDON_SECRET": "lt-test-secret-with-more-than-32-chars",
     "RANGE_SECRET": "range-test-secret-0123456789",
+    "ADMIN_SECRET": "admin-test-secret-with-more-than-32-chars",
     "LASTADDON_PUBLIC": "1",
     "LASTADDON_PUBLIC_URL": "https://lastaddon-test.example.com",
     "LASTADDON_RANGE_BASE": "https://relay.example.com"

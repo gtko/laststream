@@ -233,8 +233,12 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const verdict = limiters[kind](ip);
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     if (c.req.method === 'POST' && (path === '/login' || path === '/register')) {
-      const auth = authByIp(ip);
-      if (!auth.allowed) throw new UserApiError(429, 'rate_limited', undefined, auth.retryAfterSec);
+      if (deps.authLimiter === undefined) {
+        const auth = authByIp(ip);
+        if (!auth.allowed) throw new UserApiError(429, 'rate_limited', undefined, auth.retryAfterSec);
+      } else if (!(await deps.authLimiter.byIp(ip))) {
+        throw new UserApiError(429, 'rate_limited', undefined, deps.authLimiter.retryAfterSec);
+      }
     }
     await next();
   });
@@ -260,8 +264,12 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
 
   router.post('/login', async (c) => {
     const body = parseWith(credentialsSchema, c.get('body'));
-    const byUser = loginByUsername(body.username);
-    if (!byUser.allowed) throw new UserApiError(429, 'rate_limited', undefined, byUser.retryAfterSec);
+    if (deps.authLimiter === undefined) {
+      const byUser = loginByUsername(body.username);
+      if (!byUser.allowed) throw new UserApiError(429, 'rate_limited', undefined, byUser.retryAfterSec);
+    } else if (!(await deps.authLimiter.byUsername(body.username.toLowerCase()))) {
+      throw new UserApiError(429, 'rate_limited', undefined, deps.authLimiter.retryAfterSec);
+    }
     const users = db();
     const record = await users.findAccountRecord(body.username);
     // Même coût de calcul que pour un compte existant : le délai ne révèle pas si le nom existe.

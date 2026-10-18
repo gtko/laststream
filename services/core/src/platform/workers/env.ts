@@ -7,6 +7,11 @@ export interface AssetsFetcher {
   fetch(request: Request): Promise<Response>;
 }
 
+/** Binding Rate Limiting de Workers (période de 10 ou 60 secondes seulement). */
+export interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 /** Liaisons du Worker lastaddon-core (voir wrangler.jsonc) : variables, secrets et ressources. */
 export interface WorkerEnv {
   /** Durable Object des données utilisateur. */
@@ -15,6 +20,9 @@ export interface WorkerEnv {
   CACHE: KVNamespace;
   /** Interface web (Workers Assets). */
   ASSETS: AssetsFetcher;
+  /** Limite de connexion/inscription par IP et par nom d'utilisateur (absentes : compteurs en mémoire). */
+  AUTH_LIMITER_IP?: RateLimitBinding;
+  AUTH_LIMITER_USER?: RateLimitBinding;
   /** Autres liaisons : variables (chaînes) et secrets. */
   [name: string]: unknown;
 }

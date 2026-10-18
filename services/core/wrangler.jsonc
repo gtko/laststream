@@ -20,6 +20,13 @@
   // Caches persistants partagés entre instances : statut AllDebrid, packs, URL émises, torrents privés, hébergeurs.
   "kv_namespaces": [{ "binding": "CACHE", "id": "ec421766c5b74c5cac6f3cd76d4f7adf" }],
 
+  // Limites de connexion/inscription (binding Rate Limiting, partagé par emplacement). La période ne peut valoir que 10 ou 60 s :
+  // 10 tentatives par minute et par IP (AUTH_LIMITER_IP) et par nom d'utilisateur (AUTH_LIMITER_USER).
+  "ratelimits": [
+    { "name": "AUTH_LIMITER_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
+  ],
+
   // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
   // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.
   "assets": {
@@ -40,5 +47,6 @@
     "LASTADDON_ALLOWED_ORIGINS": "https://lastaddon-core.gtux-prog.workers.dev,https://laststream.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
   }
   // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, RANGE_SECRET, EDGE_SECRET,
+  // ADMIN_SECRET (route /__admin/ de migration des données ; `wrangler secret delete ADMIN_SECRET` la ferme),
   // et LASTADDON_BOOTSTRAP_TOKEN si le premier compte doit être protégé.
 }

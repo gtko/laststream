@@ -29,6 +29,11 @@ export interface AppDeps {
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   /**
+   * Limiteur de connexion et d'inscription partagé entre instances (Workers : binding Rate Limiting). Remplace les compteurs
+   * en mémoire de /user/login et /user/register. `true` = tentative autorisée.
+   */
+  authLimiter?: { byIp(ip: string): Promise<boolean>; byUsername(username: string): Promise<boolean>; retryAfterSec: number };
+  /**
    * Prowlarr local détecté (absent : aucun, ce qui désactive la détection). Le serveur l'initialise au démarrage.
    * Sa clé ne doit jamais sortir vers les clients ni dans les journaux.
    */

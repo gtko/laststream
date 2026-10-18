@@ -11,3 +11,18 @@ describe('Worker lastaddon-core (entrée src/worker.ts)', () => {
     expect(env).toBeDefined();
   });
 });
+
+describe('limite de connexion (binding Rate Limiting)', () => {
+  it('10 tentatives par IP puis 429 avec Retry-After', async () => {
+    const attempt = () =>
+      worker.fetch('https://core.test/user/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'cf-connecting-ip': '198.51.100.9' },
+        body: JSON.stringify({ username: `inconnu${Math.random().toString(36).slice(2, 8)}`, password: 'mauvais-mot-de-passe' }),
+      });
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i += 1) statuses.push((await attempt()).status);
+    expect(statuses.slice(0, 10).every((status) => status === 401)).toBe(true);
+    expect(statuses[11]).toBe(429);
+  });
+});
