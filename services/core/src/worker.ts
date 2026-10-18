@@ -6,7 +6,8 @@ import { createApp, MANIFEST } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
-import { beforeBreadcrumbFilter, beforeSendFilter, beforeSendTransactionFilter } from './observability/scrub.js';
+import { workerSentryOptions } from './observability/options.js';
+import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter } from './observability/report.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
@@ -52,6 +53,8 @@ setUnhandledErrorReporter((error) => Sentry.captureException(error));
 
 const worker = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+    // Origine du Worker pour la supervision : ses propres URL gardent leur chemin épuré, les autres sont réduites à l'hôte.
+    setWorkerOrigin(new URL(request.url).origin);
     if (new URL(request.url).pathname.startsWith(ADMIN_PREFIX)) {
       const secret = typeof env.ADMIN_SECRET === 'string' ? env.ADMIN_SECRET : undefined;
       return handleAdmin(request, secret, (operation) => env.USER_STORE.getByName(USER_STORE_NAME).admin(operation));
@@ -86,14 +89,6 @@ const worker = {
  * Sentry (`@sentry/cloudflare`) : actif seulement si le secret SENTRY_DSN est posé ; données épurées (observability/scrub.ts).
  */
 export default Sentry.withSentry(
-  (env: WorkerEnv) => ({
-    dsn: env.SENTRY_DSN,
-    environment: 'production',
-    release: `lastaddon-core@${MANIFEST.version}`,
-    tracesSampleRate: 0.05,
-    beforeSend: beforeSendFilter,
-    beforeSendTransaction: beforeSendTransactionFilter,
-    beforeBreadcrumb: beforeBreadcrumbFilter,
-  }),
+  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, `lastaddon-core@${MANIFEST.version}`),
   worker,
 );

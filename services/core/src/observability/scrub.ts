@@ -12,9 +12,21 @@ const DEBRID_URL = '[debrid-url]';
 const MAGNET = '[magnet]';
 /** Profondeur maximale parcourue dans les contextes et données libres (protection contre les cycles). */
 const MAX_DEPTH = 8;
-/** Au-delà de cette longueur, un segment de chemin en base64url ou JSON encodé est une configuration d'addon. */
+/** Au-delà de cette longueur, un segment de chemin est une configuration d'addon (base64url, JSON…), quel que soit son charset. */
 const CONFIG_SEGMENT_MIN_LENGTH = 40;
-const CONFIG_CHARSET = /^[A-Za-z0-9\-_.~%+=*!'()]+$/;
+/** Hôtes gardés en origine seule hors du Worker : métadonnées, visuels, sous-titres et listes de notes. */
+const HOST_ALLOWLIST: ReadonlySet<string> = new Set([
+  'api.themoviedb.org',
+  'image.tmdb.org',
+  'api4.thetvdb.com',
+  'api.mdblist.com',
+  'v3-cinemeta.strem.io',
+]);
+/** Les workers.dev du projet (compte gtux-prog) sont gardés en origine seule. */
+const PROJECT_WORKERS_DEV = /\.gtux-prog\.workers\.dev$/;
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+/** Origine publique du Worker, posée à chaque requête (worker.ts) : ses propres URL gardent leur chemin épuré. */
+let workerOrigin: string | undefined;
 
 /** En-têtes supprimés : authentification, cookies, profil, adresses IP. */
 const DROPPED_HEADER = /^(authorization|proxy-authorization|cookie|set-cookie|x-profile-id|cf-connecting-ip|x-forwarded-for|x-real-ip|true-client-ip)$/i;
@@ -34,11 +46,15 @@ const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/gi;
 const MAGNET_IN_TEXT = /magnet:[^\s"'<>]*/gi;
 const CREDENTIAL_PARAM = /(apikey|api[_-]?key|access[_-]?token|token|secret|password)=[^&\s"'<>;,]*/gi;
 const BEARER = /\bBearer\s+[^\s"'<>,;]+/gi;
-const LONG_SEGMENT_IN_TEXT = /\/[A-Za-z0-9\-_.~%+=*!'()]{41,}/g;
+const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
+
+/** Enregistre l'origine du Worker qui traite la requête courante (undefined : aucune requête). */
+export function setWorkerOrigin(origin: string | undefined): void {
+  workerOrigin = origin;
+}
 
 function isConfigSegment(segment: string): boolean {
-  if (segment.length <= CONFIG_SEGMENT_MIN_LENGTH) return false;
-  return CONFIG_CHARSET.test(segment) || segment.startsWith('{');
+  return segment.length > CONFIG_SEGMENT_MIN_LENGTH;
 }
 
 function scrubPath(pathname: string): string {
@@ -48,19 +64,39 @@ function scrubPath(pathname: string): string {
     .join('/');
 }
 
+/** Adresse littérale IPv4 ou IPv6 (le nom d'hôte d'une URL IPv6 est entre crochets). */
+const isIpLiteral = (host: string): boolean => IPV4.test(host) || host.startsWith('[');
+/** localhost et les noms *.local (réseau local). */
+const isLocalName = (host: string): boolean => host === 'localhost' || host.endsWith('.local');
+
+/** Hors du Worker : [ip] pour une adresse littérale, origine seule si l'hôte est autorisé, sinon [host]. */
+function reduceHost(url: URL): string {
+  const host = url.hostname.toLowerCase();
+  if (isIpLiteral(host)) return '[ip]';
+  if (!host || isLocalName(host)) return '[host]';
+  if (HOST_ALLOWLIST.has(host) || PROJECT_WORKERS_DEV.test(host)) return url.origin;
+  return '[host]';
+}
+
 /** URL réduite à origine + chemin : sans identifiant, sans chaîne de requête, sans fragment, segments de config masqués. */
 export function scrubUrl(raw: string): string {
   if (DEBRID_HOST.test(raw)) return DEBRID_URL;
   let url: URL;
   try {
-    url = new URL(raw);
+    // « //hôte/chemin » (relative au schéma) est lue comme une URL https.
+    url = new URL(raw.startsWith('//') ? `https:${raw}` : raw);
   } catch {
     // Chemin relatif ou valeur non analysable : on coupe la requête et le fragment.
     return scrubPath(raw.split(/[?#]/, 1)[0] ?? '');
   }
   if (url.protocol === 'magnet:') return MAGNET;
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return REDACTED;
-  return `${url.origin}${scrubPath(url.pathname)}`;
+  const host = url.hostname.toLowerCase();
+  // Le Worker lui-même (hors adresse locale) : chemin épuré. Toute autre origine : hôte seul.
+  if (url.origin === workerOrigin && !isIpLiteral(host) && !isLocalName(host)) {
+    return `${url.origin}${scrubPath(url.pathname)}`;
+  }
+  return reduceHost(url);
 }
 
 /** Texte libre (message, description, valeur) : URL réduites, magnet, clés d'API, jetons, chemins de configuration. */

@@ -1,5 +1,5 @@
 import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/cloudflare';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   beforeBreadcrumbFilter,
   beforeSendFilter,
@@ -8,6 +8,7 @@ import {
   scrubHeaders,
   scrubText,
   scrubUrl,
+  setWorkerOrigin,
 } from '../src/observability/scrub.js';
 
 // Valeurs factices : aucune n'est un vrai identifiant, une vraie configuration ni un vrai lien débridé.
@@ -23,6 +24,10 @@ function expectNoLeak(serialized: string): void {
   }
 }
 
+// Le Worker est servi depuis HOST dans ces tests : ses propres URL gardent leur chemin épuré, les autres sont réduites.
+beforeEach(() => setWorkerOrigin(HOST));
+afterEach(() => setWorkerOrigin(undefined));
+
 describe('scrubUrl : origine et chemin seulement', () => {
   it('supprime la chaîne de requête entière', () => {
     expect(scrubUrl(`${HOST}/stream/movie/tt1.json?apikey=${SECRET}&x=1`)).toBe(`${HOST}/stream/movie/tt1.json`);
@@ -32,8 +37,8 @@ describe('scrubUrl : origine et chemin seulement', () => {
     expect(scrubUrl(`${HOST}/${CONFIG}/stream/series/tt1:1:2.json`)).toBe(`${HOST}/[config]/stream/series/tt1:1:2.json`);
   });
 
-  it('garde les segments courts et l\'origine (sans identifiants ni fragment)', () => {
-    expect(scrubUrl('https://user:pass@addon.example.test:8443/manifest.json#frag')).toBe('https://addon.example.test:8443/manifest.json');
+  it('hôte autorisé : origine seule, sans identifiants, chemin ni fragment', () => {
+    expect(scrubUrl('https://user:pass@api.themoviedb.org:8443/3/movie/550#frag')).toBe('https://api.themoviedb.org:8443');
   });
 
   it('remplace tout lien de débrideur', () => {
@@ -53,6 +58,44 @@ describe('scrubUrl : origine et chemin seulement', () => {
 
   it('refuse les schémas autres que http(s)', () => {
     expect(scrubUrl('ftp://addon.example.test/file')).toBe('[redacted]');
+  });
+});
+
+describe('scrubUrl : hôtes hors du Worker', () => {
+  it('hôte non autorisé : [host], sans chemin', () => {
+    expect(scrubUrl('https://torrentio.strem.fun/providers=yts/manifest.json')).toBe('[host]');
+    expect(scrubUrl('https://other.example.test/stream/x.json')).toBe('[host]');
+  });
+
+  it('hôtes autorisés et workers.dev du projet : origine seule', () => {
+    expect(scrubUrl('https://image.tmdb.org/t/p/w500/abc.jpg')).toBe('https://image.tmdb.org');
+    expect(scrubUrl('https://v3-cinemeta.strem.io/meta/movie/tt1.json')).toBe('https://v3-cinemeta.strem.io');
+    expect(scrubUrl('https://lastaddon-core.gtux-prog.workers.dev/stream/x')).toBe('https://lastaddon-core.gtux-prog.workers.dev');
+  });
+
+  it('adresse IPv4 ou IPv6 littérale : [ip]', () => {
+    expect(scrubUrl('http://192.168.0.5:8096/Items')).toBe('[ip]');
+    expect(scrubUrl('http://[fd00::1]:8080/x')).toBe('[ip]');
+  });
+
+  it('localhost et *.local : [host]', () => {
+    expect(scrubUrl('http://localhost:3000/x')).toBe('[host]');
+    expect(scrubUrl('http://nas.local/x')).toBe('[host]');
+  });
+
+  it('sans origine de Worker enregistrée : aucune URL absolue ne garde son chemin', () => {
+    setWorkerOrigin(undefined);
+    expect(scrubUrl(`${HOST}/stream/movie/tt1.json`)).toBe('[host]');
+  });
+
+  it('URL relative au schéma (« //hôte ») : traitée comme une URL https', () => {
+    expect(scrubUrl('//torrentio.strem.fun/x')).toBe('[host]');
+  });
+
+  it('segment de plus de 40 caractères masqué quel que soit son charset', () => {
+    const odd = 'x,'.repeat(25); // 50 caractères avec des virgules : hors du jeu base64url
+    expect(scrubUrl(`${HOST}/${odd}/manifest.json`)).toBe(`${HOST}/[config]/manifest.json`);
+    expect(scrubText(`GET /${odd}/y`)).toBe('GET /[config]/y');
   });
 });
 
@@ -209,8 +252,8 @@ describe('beforeSendTransactionFilter : traces', () => {
     expect(out.transaction).toBe('GET /[config]/stream/movie/tt1.json');
     expect(out.request).toEqual({ url: `${HOST}/[config]/manifest.json` });
     expect(out.spans?.[0]).toMatchObject({
-      description: 'GET https://api.tmdb.example.test/3/find',
-      data: { url: 'https://api.tmdb.example.test/3/find' },
+      description: 'GET [host]',
+      data: { url: '[host]' },
     });
     expect(out.spans?.[0]?.data).not.toHaveProperty('http.query');
     expect(out.spans?.[0]?.data).not.toHaveProperty('http.request.header.authorization');
