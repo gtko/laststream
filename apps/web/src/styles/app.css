@@ -395,11 +395,24 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 /* ---------- TV : numéro de chaîne, émissions, « Ce soir à la TV » ---------- */
 .ch-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--soft); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; vertical-align: 1px; }
 .show-card { cursor: pointer; }
-.show-card .card-media { aspect-ratio: 2 / 3; }
-.show-card .card-media img { width: 100%; height: 100%; object-fit: cover; }
-.show-card .t-badge.show-live { background: #E50914; color: #fff; }
-.tonight-card .card-media img.tn-logo { object-fit: contain; padding: 18%; background: #fff; }
-.tonight-card.is-epg .card-media img:not(.tn-logo) { object-fit: cover; }
+.show-card .t-badge.show-live { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+/* Rangées d'émissions : la piste laisse la place au zoom du survol et du focus, la 1re carte n'est plus rognée à gauche ni en haut. */
+#emissions .row, #ce-soir .row { margin-top: -8px; margin-bottom: -8px; margin-left: -12px; padding-top: 12px; padding-bottom: 20px; padding-left: 12px; }
+/* « Ce soir à la TV » : cartes paysage 16:9 (gabarit de « Reprendre la lecture ») */
+.tonight-card .tp-title, .tonight-card .tp-sub { display: none; } /* sans image : le titre est en surimpression */
+.tonight-card .t-badge.show-live { top: 10px; left: auto; right: 10px; }
+.tn-chan { position: absolute; top: 10px; left: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: calc(100% - 20px); height: 26px; padding: 0 8px 0 4px; border-radius: 8px; background: rgba(12, 11, 17, 0.72); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.tn-chan .ch-num { margin-right: 0; }
+.tn-logo { display: block; width: auto; max-width: 64px; height: 18px; padding: 2px 4px; border-radius: 5px; background: #fff; object-fit: contain; }
+.tn-name { min-width: 0; font-size: 12px; font-weight: 800; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tn-info { position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 3; display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.7); }
+.tn-when { display: flex; align-items: baseline; gap: 8px; }
+.tn-time { font-family: var(--ff-title); font-weight: 800; font-size: 28px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text); }
+.tn-dur { font-size: 12px; font-weight: 700; color: var(--soft); }
+.tn-title { font-family: var(--ff-title); font-weight: 700; font-size: 16px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tn-sub { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tonight-card.is-live .tn-time { color: var(--accent); }
+@media (max-width: 640px) { .tn-time { font-size: 24px; } .tn-title { font-size: 15px; } }
 .shows-h { padding: 8px var(--gutter) 0; }
 .show-airs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 980px; }
 .show-air { display: grid; grid-template-columns: minmax(150px, 220px) minmax(160px, 1fr) 2fr auto; align-items: center; gap: 8px 16px; padding: 12px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }

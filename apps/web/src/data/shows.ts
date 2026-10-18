@@ -28,6 +28,8 @@ export interface Airing {
   title: string;
   desc: string;
   icon: string;
+  /** Genre au guide (« Divertissement », « Film »…) ; chaîne vide si absent. */
+  category: string;
 }
 
 export interface SeedShow {
@@ -130,7 +132,7 @@ export function airingsFor(
   programs.forEach((p) => {
     if (p.stop <= now || !titleMatches(p.title, show.name, show.aliases)) return;
     const channel = channelOf(p);
-    if (channel) out.push({ channel, start: p.start, stop: p.stop, title: p.title, desc: p.desc ?? '', icon: p.icon ?? '' });
+    if (channel) out.push({ channel, start: p.start, stop: p.stop, title: p.title, desc: p.desc ?? '', icon: p.icon ?? '', category: p.category ?? '' });
   });
   return out.sort((a, b) => a.start - b.start || (a.channel.num ?? 99) - (b.channel.num ?? 99));
 }
@@ -177,7 +179,7 @@ export function primeTime(
     const overlap = Math.min(p.stop, to) - Math.max(p.start, from);
     if (overlap < 20 * 60) return;
     const cur = best.get(channel.epgId);
-    if (!cur || overlap > cur.overlap) best.set(channel.epgId, { a: { channel, start: p.start, stop: p.stop, title: p.title, desc: p.desc ?? '', icon: p.icon ?? '' }, overlap });
+    if (!cur || overlap > cur.overlap) best.set(channel.epgId, { a: { channel, start: p.start, stop: p.stop, title: p.title, desc: p.desc ?? '', icon: p.icon ?? '', category: p.category ?? '' }, overlap });
   });
   return [...best.values()].map((x) => x.a).sort((a, b) => (a.channel.num ?? 99) - (b.channel.num ?? 99) || a.start - b.start);
 }

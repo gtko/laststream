@@ -175,10 +175,10 @@ describe('émissions TV (interface)', () => {
     expect(byId('1002').querySelector('.card-meta')!.textContent).toMatch(/^Prime Video · épisode le /);
     const tonight = Array.from(app.querySelectorAll('#ce-soir .show-card'));
     expect(tonight.length).toBeGreaterThanOrEqual(3);
-    // Top Chef (M6) retrouvé sur TMDB : affiche et lien vers l'émission ; les autres restent liés à la chaîne.
+    // Top Chef (M6) retrouvé sur TMDB : fond paysage (backdrop) et lien vers l'émission ; les autres restent liés à la chaîne.
     const topChef = tonight.find((c) => c.getAttribute('data-showopen') === '1003')!;
     expect(topChef).toBeTruthy();
-    expect(topChef.querySelector('img')!.getAttribute('src')).toContain('/tc.jpg');
+    expect(topChef.querySelector('img')!.getAttribute('src')).toContain('/tcb.jpg');
     expect(tonight.find((c) => c.getAttribute('data-showwatch') === 'fr:TF1.fr')).toBeTruthy();
     const nums = Array.from(app.querySelectorAll('#ce-soir .ch-num')).map((n) => Number(n.textContent));
     expect(nums.slice(0, 3)).toEqual([1, 2, 3]); // ordre officiel des chaînes
