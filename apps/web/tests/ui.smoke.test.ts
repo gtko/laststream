@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-const ITEMS = Array.from({ length: 12 }, (_, i) => ({
+const ITEMS = Array.from({ length: 40 }, (_, i) => ({
   id: 100 + i, media_type: i % 2 ? 'tv' : 'movie', title: 'Film ' + i, name: 'Série ' + i,
   poster_path: '/p' + i + '.jpg', backdrop_path: '/b' + i + '.jpg', release_date: '2025-01-01', first_air_date: '2025-01-01',
   vote_average: 7.4, vote_count: 500, genre_ids: [28], overview: 'Un synopsis.',
@@ -136,7 +136,7 @@ describe('interface portée', () => {
     expect(body.count).toBe(50);
     expect(body.exclude).toEqual(expect.arrayContaining([expect.objectContaining({ tmdbId: expect.any(Number) })]));
     expect(state.ai.items.length).toBeGreaterThanOrEqual(50);
-    expect(document.querySelectorAll('#ai .ai-card').length).toBe(20); // la rangée en montre ~20
+    expect(document.querySelectorAll('#ai [data-tile]').length).toBe(20); // la rangée en montre ~20
     expect(document.querySelector('#ai [data-browse="ai"]')).not.toBeNull();
     // Même jour : aucun nouvel appel, même après un changement de bibliothèque.
     localStorage.setItem('laststream.library', '[]');
@@ -156,10 +156,10 @@ describe('interface portée', () => {
     // Page « Tout voir ».
     location.hash = '#/browse/ai';
     await settle(200);
-    expect(document.querySelectorAll('#detail #ai-grid .ai-card').length).toBeGreaterThanOrEqual(50);
-    expect(document.querySelector('#detail #ai-grid .card-reason')!.textContent).toMatch(/^Raison/);
+    expect(document.querySelectorAll('#detail #ai-grid [data-tile]').length).toBeGreaterThanOrEqual(50);
+    expect(document.querySelector('#detail #ai-grid .card-reason')).toBeNull(); // la raison n'est montrée qu'au survol
     (document.querySelector('#detail [data-aif="tv"]') as HTMLElement).click();
-    expect(document.querySelectorAll('#detail #ai-grid .ai-card').length).toBeLessThan(55);
+    expect(document.querySelectorAll('#detail #ai-grid [data-tile]').length).toBeLessThan(55);
     location.hash = '#/';
     await settle(100);
   });

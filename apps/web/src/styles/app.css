@@ -187,5 +187,9 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 
 /* ---------- Page des recommandations IA ---------- */
 .ai-grid { align-items: start; }
-.ai-full .card-reason { display: block; margin-top: 6px; font-size: 13px; line-height: 1.45; color: var(--muted); }
-.ai-full { width: 100%; flex: 1 1 auto; }
+
+.hc-reason { margin: 2px 0 0; font-size: 12px; line-height: 1.4; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---------- Accueil long : rangées chargées au fil du défilement ---------- */
+.reg-sentinel { height: 1px; margin-top: -40px; }
+#reg-slot { display: contents; }

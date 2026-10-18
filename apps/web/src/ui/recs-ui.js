@@ -1,27 +1,17 @@
-/* Page « Recommandé pour toi » (#/browse/ai) : toute la liste du jour, raison sous chaque affiche, filtres Films / Séries. */
+/* Page « Recommandé pour toi » (#/browse/ai) : toute la liste du jour, filtres Films / Séries (la raison n'apparaît que dans l'aperçu au survol). */
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { state } from './state.js';
-import { observeTiles } from './tiles.js';
-import { esc } from './util.js';
+import { observeTiles, posterCard } from './tiles.js';
 
 let filter = 'all';
-
-function cardHTML(it) {
-  return '<button type="button" class="card poster ai-card ai-full" data-open="' + esc(it.key) + '" data-tile="' + esc(it.key) + '" aria-label="' + esc(it.name + (it.reason ? ' : ' + it.reason : '')) + '">' +
-    '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
-    (it.poster ? '<img src="' + esc(it.poster) + '" alt="" loading="lazy" decoding="async">' : '') +
-    '<span class="card-fallback">' + esc(it.name) + '</span></span>' +
-    '<span class="card-title" aria-hidden="true">' + esc(it.name) + '</span>' +
-    '<span class="card-reason" aria-hidden="true">' + esc(it.reason) + '</span></button>';
-}
 
 function renderGrid() {
   const box = detailEl.querySelector('#ai-grid');
   if (!box) return;
   const items = (state.ai.items || []).filter((it) => filter === 'all' || it.type === filter);
-  box.innerHTML = items.length ? items.map(cardHTML).join('') : '<p class="row-msg">Aucune recommandation pour le moment.</p>';
+  box.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Aucune recommandation pour le moment.</p>';
   detailEl.querySelectorAll('[data-aif]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.aif === filter)));
   observeTiles(box);
 }

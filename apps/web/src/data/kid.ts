@@ -40,11 +40,11 @@ export const kidGenreOk = (ids: readonly number[] | null | undefined): boolean =
  */
 const CERT_LTE: Record<string, Array<[number, string]>> = {
   // [âge maximal du profil, certification TMDB]
-  FR: [[10, '10'], [12, '12'], [16, '16'], [18, '18']],
-  CH: [[10, '10'], [12, '12'], [16, '16'], [18, '18']],
-  BE: [[10, '9'], [12, '12'], [16, '16'], [18, '16']],
-  LU: [[10, '6'], [12, '12'], [16, '16'], [18, '18']],
-  CA: [[10, 'PG'], [12, 'PG'], [16, '14A'], [18, '18A']],
+  FR: [[0, 'U'], [10, '10'], [12, '12'], [16, '16'], [18, '18']],
+  CH: [[0, '0'], [10, '10'], [12, '12'], [16, '16'], [18, '18']],
+  BE: [[0, 'AL'], [10, '9'], [12, '12'], [16, '16'], [18, '16']],
+  LU: [[0, '0'], [10, '6'], [12, '12'], [16, '16'], [18, '18']],
+  CA: [[0, 'G'], [10, 'PG'], [12, 'PG'], [16, '14A'], [18, '18A']],
 };
 
 export function certLteFor(region: string, maxAge: number): string | null {

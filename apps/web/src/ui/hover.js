@@ -74,7 +74,7 @@ export function openHover(tile) {
   el.innerHTML =
     '<div class="hc-media">' + (src ? '<img src="' + esc(src) + '" alt="" decoding="async">' : '') + '<div class="hc-video"></div></div>' +
     '<div class="hc-body"><div class="hc-title"><span class="hc-name">' + esc(it.name) + '</span></div>' +
-    '<ul class="rates hc-rates"></ul><p class="hc-meta">' + esc([it.year, it.type === 'tv' ? 'Série' : 'Film'].filter(Boolean).join(' · ')) + '</p>' +
+    '<ul class="rates hc-rates"></ul>' + (it.reason ? '<p class="hc-reason">' + esc(it.reason) + '</p>' : '') + '<p class="hc-meta">' + esc([it.year, it.type === 'tv' ? 'Série' : 'Film'].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="hc-actions">' +
     '<button type="button" class="hc-btn hc-play" data-play data-tip="Lecture" aria-label="Lecture">' + ICON.play + '</button>' +
     '<button type="button" class="hc-btn' + (on ? ' is-on' : '') + '" data-hclib="' + esc(key) + '" aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') + '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>' +

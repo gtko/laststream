@@ -1,6 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { toggleEpisode } from './watched.js';
-import { browseMore } from './kids.js';
+import { browseMore } from './registry.js';
 import { isKidProfile } from '../data/auth';
 import { leaveKidProfile } from './auth-ui.js';
 import { IMG, REDUCE } from './constants.js';

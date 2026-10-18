@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT } from
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, PROBES } from '../src/data/rows';
 import { compactItems, packRecs, todayLocal, unpackRecs } from '../src/data/recs';
 import { pickTrailerKey, sortVideos } from '../src/data/trailers';
 import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
@@ -156,6 +157,39 @@ describe('recommandations du jour', () => {
   });
   it('donne le jour local', () => {
     expect(todayLocal(new Date(2026, 9, 18, 23, 59))).toBe('2026-10-18');
+  });
+});
+
+describe('registre des rangées', () => {
+  it('a des identifiants uniques et des sondes pour chaque paramètre à vérifier', () => {
+    const ids = [...ADULT_ROWS, ...KID_ROWS].map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    [...ADULT_ROWS, ...KID_ROWS].forEach((r) => (r.needs ?? []).forEach((p) => expect(PROBES[p]).toBeDefined()));
+    expect(ADULT_ROWS.length).toBeGreaterThanOrEqual(45);
+    expect(KID_ROWS.length).toBeGreaterThanOrEqual(20);
+  });
+  it('applique saisons et rubriques autorisées', () => {
+    const oct = makeCtx('FR', null, new Date(2026, 9, 18));
+    const dec = makeCtx('FR', null, new Date(2026, 11, 3));
+    expect(activeRows(oct, false, () => true).some((r) => r.id === 'halloween')).toBe(true);
+    expect(activeRows(dec, false, () => true).some((r) => r.id === 'halloween')).toBe(false);
+    expect(activeRows(dec, false, () => true).some((r) => r.id === 'noel')).toBe(true);
+    const kid = makeCtx('FR', 10, new Date(2026, 5, 3));
+    expect(activeRows(kid, true, () => true).every((r) => r.kid)).toBe(true);
+    expect(activeRows(kid, true, (s) => s !== 'disney').some((r) => r.id === 'pixar')).toBe(false);
+  });
+  it('construit la base enfant : certification du pays et genres jeunesse', () => {
+    const p = kidBase(makeCtx('FR', 10), 'movie');
+    expect(p).toMatchObject({ certification_country: 'FR', 'certification.lte': '10', with_genres: '16|10751' });
+    expect(kidBase(makeCtx('FR', 10), 'tv', '10762', 0)['certification.lte']).toBe('U');
+  });
+  it('limite à deux apparitions par titre', () => {
+    const a = new Appearances();
+    a.commit('movie:1');
+    expect(a.canShow('movie:1')).toBe(true);
+    a.commit('movie:1');
+    expect(a.canShow('movie:1')).toBe(false);
+    expect(a.canShow('movie:2')).toBe(true);
   });
 });
 

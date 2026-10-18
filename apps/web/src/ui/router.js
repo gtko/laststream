@@ -1,6 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { isKidProfile, kidSection } from '../data/auth';
-import { showBrowse } from './kids.js';
+import { browseAllowed, showBrowse } from './registry.js';
 import { showAiBrowse } from './recs-ui.js';
 import { showSearch } from './search.js';
 import { app, detailEl } from './dom.js';
@@ -51,7 +51,7 @@ export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
   if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')))) return null;
-  if (r && r.kind === 'browse' && (r.id === 'ai') === isKidProfile()) return null; // « ai » : adultes ; les autres : profils enfants
+  if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
 

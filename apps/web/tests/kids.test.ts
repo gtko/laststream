@@ -12,10 +12,19 @@ const DETAILS: Record<string, { cert: string; genres: number[]; trailer?: boolea
   '101': { cert: '16', genres: [16] },
   '102': { cert: '10', genres: [28] },
 };
-const results = ['100', '101', '102'].map((id) => ({
-  id: Number(id), title: 'Titre ' + id, name: 'Titre ' + id, poster_path: '/p' + id + '.jpg', backdrop_path: '/b' + id + '.jpg',
-  genre_ids: DETAILS[id].genres, vote_average: 7, release_date: '2025-01-01', first_air_date: '2025-01-01', overview: 'Un synopsis.',
-}));
+const detailOf = (id: string) => DETAILS[id] ?? { cert: '10', genres: [16] };
+const mk = (id: number) => {
+  const d = detailOf(String(id));
+  return { id, title: 'Titre ' + id, name: 'Titre ' + id, poster_path: '/p' + id + '.jpg', backdrop_path: '/b' + id + '.jpg', genre_ids: d.genres, vote_average: 7, release_date: '2025-01-01', first_air_date: '2025-01-01', overview: 'Un synopsis.' };
+};
+/** Chaque requête renvoie ses propres titres (pas de doublons entre rangées) ; « Films en famille » contient 100, 101 et 102. */
+function resultsFor(url: string) {
+  const h = Array.from(url).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) % 9973, 7);
+  const base = 1000 + (h % 90) * 100;
+  const ids = Array.from({ length: 40 }, (_, i) => base + i);
+  if (url.includes('/discover/movie') && url.includes('with_genres=10751') && !url.includes('with_companies')) ids.splice(0, 3, 100, 101, 102);
+  return ids.map(mk);
+}
 
 function mockFetch(url: string, init?: RequestInit): Response {
   calls.push(url);
@@ -28,7 +37,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (u.pathname.endsWith('/settings')) return json({ settings: init?.method === 'PUT' ? {} : { region: 'FR' } });
   const m = /\/lt\/tmdb\/(movie|tv)\/(\d+)$/.exec(u.pathname);
   if (m) {
-    const d = DETAILS[m[2]] ?? DETAILS['102'];
+    const d = detailOf(m[2]);
     return json({
       id: Number(m[2]), title: 'Titre ' + m[2], name: 'Titre ' + m[2], overview: 'Un synopsis.', genres: d.genres.map((id) => ({ id })),
       poster_path: '/p.jpg', backdrop_path: '/b.jpg', images: { logos: [] }, external_ids: {},
@@ -37,10 +46,14 @@ function mockFetch(url: string, init?: RequestInit): Response {
       content_ratings: { results: [{ iso_3166_1: 'FR', rating: d.cert }] }, 'watch/providers': { results: {} }, runtime: 90,
     });
   }
-  if (u.pathname.includes('/lt/tmdb/discover/')) return json({ results });
+  if (u.pathname.includes('/lt/tmdb/discover/')) {
+    // Un serveur qui applique le filtre : une valeur impossible ne renvoie rien.
+    if (['999999999', 'ZZ', '11'].some((v) => Array.from(u.searchParams.values()).includes(v))) return json({ results: [] });
+    return json({ results: resultsFor(url) });
+  }
   if (u.pathname.includes('/lt/tmdb/watch/providers/')) return json({ results: [{ provider_id: 337, provider_name: 'Disney Plus', logo_path: '/d.png', display_priority: 1 }] });
   if (u.pathname.includes('/lt/mdblist/')) return json({ ratings: {} });
-  if (u.pathname.includes('/lt/tmdb/')) return json({ results });
+  if (u.pathname.includes('/lt/tmdb/')) return json({ results: resultsFor(url) });
   return json({ error: 'not_found' }, 404);
 }
 
@@ -61,29 +74,31 @@ describe('accueil du profil enfant', () => {
     expect(document.body.classList.contains('kid-mode')).toBe(true);
     const app = document.getElementById('app')!;
     expect(app.querySelector('.kid-hello')!.textContent).toBe('Salut Léo !');
-    ['dessins', 'famille', 'series', 'disney', 'anime', 'nouveautes'].forEach((id) => expect(app.querySelector('#' + id)).not.toBeNull());
+    ['dessins', 'famille', 'jeunesse-series', 'nouveautes', 'disney', 'pixar'].forEach((id) => expect(app.querySelector('#' + id)).not.toBeNull());
     expect(app.querySelector('#top10')).toBeNull();
     expect(app.querySelector('#ai')).toBeNull();
     expect(app.querySelector('.nav [data-tvlive]')).toBeNull(); // TV jeunesse désactivée par défaut
   });
 
   it('demande à TMDB la certification du pays et les genres jeunesse', () => {
-    const disc = calls.filter((c) => c.includes('/lt/tmdb/discover/movie') && c.includes('with_companies'));
-    expect(disc.length).toBeGreaterThan(0);
-    const q = new URL(disc[0]).searchParams;
+    const fam = calls.find((c) => c.includes('/lt/tmdb/discover/movie') && c.includes('with_genres=10751'))!;
+    const q = new URL(fam).searchParams;
     expect(q.get('certification_country')).toBe('FR');
     expect(q.get('certification.lte')).toBe('10');
-    expect(q.get('with_genres')).toBe('16|10751');
     expect(q.get('region')).toBe('FR');
-    const tvq = new URL(calls.find((c) => c.includes('/lt/tmdb/discover/tv') && c.includes('with_original_language=ja'))!).searchParams;
-    expect(tvq.get('with_genres')).toBe('16');
+    const comp = calls.filter((c) => c.includes('with_companies=2') && !c.includes('999999999'));
+    expect(comp.length).toBeGreaterThan(0);
+    expect(new URL(comp[0]).searchParams.get('certification.lte')).toBe('10');
+    const anime = new URL(calls.find((c) => c.includes('/lt/tmdb/discover/tv') && c.includes('with_original_language=ja'))!).searchParams;
+    expect(anime.get('with_genres')).toBe('16');
   });
 
   it('ne garde que les titres autorisés (classification et genre) et un héros avec bande-annonce', () => {
     const app = document.getElementById('app')!;
     const keys = Array.from(app.querySelectorAll('#famille [data-tile]')).map((e) => (e as HTMLElement).dataset.tile);
     expect(keys.length).toBeGreaterThan(0);
-    expect(keys.every((k) => k!.endsWith(':100'))).toBe(true); // 101 (classé 16) et 102 (action) retirés
+    expect(keys.some((k) => k!.endsWith(':101') || k!.endsWith(':102'))).toBe(false); // 101 (classé 16) et 102 (action) retirés
+    expect(keys.some((k) => k!.endsWith(':100'))).toBe(true);
     expect(app.querySelector('#famille [data-tile][data-kid="ok"]')).not.toBeNull();
     const hero = app.querySelector('.hero')!;
     expect(hero.querySelector('[data-trailer]')).not.toBeNull();

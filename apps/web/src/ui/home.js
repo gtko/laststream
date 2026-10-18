@@ -2,6 +2,7 @@
 import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
+import { startRegistry, stopRegistry } from './registry.js';
 import { isKidProfile } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { recommend, tmdb } from '../data/lt';
@@ -24,19 +25,11 @@ export async function loadHome() {
   const settled = await Promise.allSettled([
     tmdb('trending/all/day'),
     tmdb('trending/all/week'),
-    tmdb('movie/popular'),
-    tmdb('tv/popular'),
-    tmdb('discover/movie', { with_genres: '28', sort_by: 'popularity.desc' }),
-    tmdb('discover/movie', { with_genres: '35', sort_by: 'popularity.desc' }),
   ]);
   const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
   const day = listOf(val(0));
   const week = listOf(val(1));
-  const films = listOf(val(2), 'movie');
-  const series = listOf(val(3), 'tv');
-  const action = listOf(val(4), 'movie');
-  const comedy = listOf(val(5), 'movie');
-  if ([day, week, films, series, action, comedy].every((l) => l === null)) throw new Error('catalogue indisponible');
+  if ([day, week].every((l) => l === null)) throw new Error('catalogue indisponible');
 
   // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
   const heroes = (week || []).map((it, i) => Object.assign(it, { heroRank: i + 1 })).filter((it) => it.backdropPath).slice(0, HERO_MAX);
@@ -44,7 +37,7 @@ export async function loadHome() {
   const hero = heroes[0] || null;
 
   state.top10 = new Map(cut(day, 10) ? cut(day, 10).map((it, i) => [it.key, i + 1]) : []);
-  const all = [...heroes, ...(day || []), ...(week || []), ...(films || []), ...(series || []), ...(action || []), ...(comedy || [])];
+  const all = [...heroes, ...(day || []), ...(week || [])];
   all.forEach(register);
   return {
     hero,
@@ -52,10 +45,6 @@ export async function loadHome() {
     rows: {
       start: week ? week.filter((it) => it.poster).slice(0, 20) : null, // « Pour bien commencer » : tendances, sans IA
       top: cut(day, 10),
-      films: cut(films, 20),
-      series: cut(series, 20),
-      action: cut(action, 20),
-      comedy: cut(comedy, 20),
     },
   };
 }
@@ -63,9 +52,9 @@ export async function loadHome() {
 /** Remplit state.ai depuis une liste compacte (tous les titres ; la rangée d'accueil en montre une partie). */
 function useRecs(recs) {
   const items = recs.items.map((r) => {
-    const it = toItem(rawOf(r));
-    it.reason = r.r;
-    return register(it);
+    const c = register(toItem(rawOf(r)));
+    c.reason = r.r; // affichée seulement dans l'aperçu au survol
+    return c;
   });
   state.ai = { status: 'ready', items, date: recs.date };
 }
@@ -166,14 +155,6 @@ export async function renderUpcoming() {
   } catch (_) { /* rangée absente */ }
 }
 
-export function aiCard(it) {
-  return '<button type="button" class="card poster ai-card" data-open="' + esc(it.key) + '" aria-label="' + esc(it.name) + ' : ' + esc(it.reason) + '">' +
-    '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
-    (it.poster ? '<img src="' + esc(it.poster) + '" alt="" decoding="async">' : '') +
-    '<span class="card-fallback">' + esc(it.name) + '</span></span>' +
-    '<span class="card-title" aria-hidden="true">' + esc(it.name) + '</span>' +
-    '<span class="card-reason clamp-3" aria-hidden="true">' + esc(it.reason) + '</span></button>';
-}
 
 // ---------- Recommandations IA ----------
 export function aiSkeleton() {
@@ -203,7 +184,7 @@ export function renderAI() {
   }
   slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA ' +
     '<a class="row-link" href="#/browse/ai" data-browse="ai">Tout voir</a></h2>' +
-    row(ai.items.slice(0, HOME_ROW_COUNT).map(aiCard).join('')) + '</section>';
+    row(ai.items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
 // ---------- Accueil (style A · Cinéma) ----------
@@ -230,10 +211,7 @@ export function viewA(d) {
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
     '<div id="up-slot"></div>' +
     '<div id="live-slot"></div>' +
-    section('films', 'Films populaires', r.films, (l) => row(l.map((it) => posterCard(it)).join(''))) +
-    section('series', 'Séries populaires', r.series, (l) => row(l.map((it) => posterCard(it)).join(''))) +
-    section('action', 'Action', r.action, (l) => row(l.map((it) => posterCard(it)).join(''))) +
-    section('comedy', 'Comédie', r.comedy, (l) => row(l.map((it) => posterCard(it)).join(''))) +
+    '<div id="reg-slot"></div>' +
     '<div id="svc-slot"></div>' +
     '<div id="lib-slot"></div>' +
     '</div></main>';
@@ -269,6 +247,7 @@ export function errorView() {
 
 export function renderHome() {
   stopHero();
+  stopRegistry();
   stopPreview();
   cancelDwell();
   app.setAttribute('aria-busy', String(state.status === 'loading'));
@@ -282,13 +261,18 @@ export function renderHome() {
   }
   app.innerHTML = (state.data.kids ? viewKids(state.data) : viewA(state.data)) + footer() + tabbar();
   renderAI();
-  renderServices();
   renderUpcoming();
-  renderLibrary();
   renderLive();
   observeTiles(app);
   setupPreviews();
-  if (!state.data.kids) initHero(state.data.heroes);
+  if (state.data.kids) {
+    renderLibrary();
+    startRegistry({ seen: state.data.hero ? [state.data.hero.key] : [] });
+  } else {
+    initHero(state.data.heroes);
+    // Services de streaming puis Ma bibliothèque terminent la page, une fois les rangées chargées.
+    startRegistry({ seen: state.data.heroes.map((x) => x.key), onDone: () => { renderServices(); renderLibrary(); } });
+  }
 }
 export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
