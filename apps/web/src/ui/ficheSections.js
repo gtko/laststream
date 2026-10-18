@@ -1,6 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { seasonEpisodes } from './seasons.js';
-import { countdownText, isPlaceholderTitle, soonBell, soonInnerHTML } from './soon.js';
+import { countdownText, isPlaceholderTitle, isSoonPlayable, playableBadge, soonBell, soonInnerHTML } from './soon.js';
 import { userStore } from '../data/userStore';
 import { refreshWatchedUI } from './watched.js';
 import { setupWhy } from './why.js';
@@ -77,6 +77,14 @@ export async function fillNext(m, token) {
   const today = new Date().toISOString().slice(0, 10);
   if (date < today) return;
   const label = m.next ? m.next.code + (m.next.name ? ' « ' + m.next.name + ' »' : '') : '';
+  // Diffusion dans les 14 prochains jours : la ligne lance la recherche de sources de cet épisode.
+  const nums = m.next && m.next.airDate === date ? m.next : null;
+  if (nums && nums.season != null && isSoonPlayable(date)) {
+    slot.innerHTML = 'Prochain épisode : <button type="button" class="link-btn" data-play data-play-key="' + esc(m.key) + '" data-name="' + esc(m.name || '') +
+      '" data-play-season="' + esc(nums.season) + '" data-play-episode="' + esc(nums.episode) + '" data-air="' + esc(date) + '">' +
+      (label ? '<strong>' + esc(label) + '</strong> · ' : '') + esc(playableBadge(date)) + '</button>';
+    return;
+  }
   slot.innerHTML = 'Prochain épisode : ' + (label ? '<strong>' + esc(label) + '</strong> ' : '') + 'le ' + esc(fmtDate(date));
 }
 

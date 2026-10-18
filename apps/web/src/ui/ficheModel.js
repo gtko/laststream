@@ -70,9 +70,9 @@ export function buildModel(type, id, raw, en, canon) {
     nEpisodes: sum ? sum.nEpisodes : raw.number_of_episodes || 0,
     status: STATUS_FR[raw.status] || raw.status || '',
     next: sum
-      ? (sum.next ? { airDate: sum.next.airDate, code: 'S' + sum.next.season + ' · É' + sum.next.episode, name: sum.next.name } : null)
+      ? (sum.next ? { airDate: sum.next.airDate, code: 'S' + sum.next.season + ' · É' + sum.next.episode, name: sum.next.name, season: sum.next.season, episode: sum.next.episode } : null)
       : raw.next_episode_to_air
-      ? { airDate: raw.next_episode_to_air.air_date || '', code: 'S' + raw.next_episode_to_air.season_number + ' · É' + raw.next_episode_to_air.episode_number, name: raw.next_episode_to_air.name || '' }
+      ? { airDate: raw.next_episode_to_air.air_date || '', code: 'S' + raw.next_episode_to_air.season_number + ' · É' + raw.next_episode_to_air.episode_number, name: raw.next_episode_to_air.name || '', season: raw.next_episode_to_air.season_number, episode: raw.next_episode_to_air.episode_number }
       : null,
     lastAired: sum ? sum.lastAired : raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
     tvdbId: (raw.external_ids && raw.external_ids.tvdb_id) || null,

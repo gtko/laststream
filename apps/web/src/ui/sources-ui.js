@@ -35,6 +35,7 @@ function requestFrom(btn) {
 }
 
 export function playFrom(btn) {
+  if (btn.dataset.playKey) { playAiringEpisode(btn); return; }
   const request = requestFrom(btn);
   if (!request) return;
   // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).
@@ -43,14 +44,26 @@ export function playFrom(btn) {
   playBest(request, btn, air ? { notYetAired: air } : {});
 }
 
+/**
+ * Carte ou ligne d'un épisode bientôt diffusé (calendrier, suivis, fiche) : data-play-key = clé du titre,
+ * data-play-season / data-play-episode, data-name, data-air (date de diffusion). Lance la recherche de sources de cet épisode.
+ */
+function playAiringEpisode(btn) {
+  const key = btn.dataset.playKey;
+  const [type, id] = key.split(':');
+  const it = state.byKey.get(key);
+  const request = { type, id: String(id), name: btn.dataset.name || (it && it.name) || '', season: Number(btn.dataset.playSeason), episode: Number(btn.dataset.playEpisode), key };
+  playBest(request, btn, btn.dataset.air ? { notYetAired: btn.dataset.air } : {});
+}
+
 /** Sélecteur de sources, ouvert dans le lecteur : choisir une source lance la lecture. */
 export function openSources(request, opener) {
   return playBest(request, opener, { picker: true });
 }
 
-/** Reprise directe (carte « Reprendre la lecture ») : meilleure source, position enregistrée. */
-export function playDirect(request, opener) {
-  return playBest(request, opener, { resume: 'auto' });
+/** Reprise directe (carte « Reprendre la lecture ») : meilleure source, position enregistrée. `extra` : options de playBest. */
+export function playDirect(request, opener, extra = {}) {
+  return playBest(request, opener, { resume: 'auto', ...extra });
 }
 
 export const closeVideo = closePlayer;

@@ -7,6 +7,7 @@ import { IMG } from './constants.js';
 import { dayDiff } from './dates.js';
 import { ICON } from './icons.js';
 import { progressResume } from './resume.js';
+import { isSoonPlayable, playableBadge } from './soon.js';
 import { playDirect } from './sources-ui.js';
 import { esc, fmtMin } from './util.js';
 
@@ -95,6 +96,12 @@ async function hydrateCard(card) {
     if (!ep || !card.isConnected) return;
     const code = 'S' + season + ' · É' + episode + (placeholder(ep.name) ? '' : ' · ' + ep.name);
     card.querySelector('.cont-code').textContent = card.dataset.next ? 'À suivre : ' + code : code;
+    // Épisode diffusé dans les 14 prochains jours : lisible, la lecture lance la recherche de sources (data-air).
+    if (card.dataset.next && isSoonPlayable(ep.air_date)) {
+      card.dataset.air = ep.air_date;
+      const left = card.querySelector('.cont-left');
+      if (left) left.textContent = playableBadge(ep.air_date);
+    }
     if (ep.still_path) {
       const img = card.querySelector('.cont-img');
       if (img) img.src = IMG('w780', ep.still_path);
@@ -126,7 +133,8 @@ export async function resumeCard(card) {
   const it = (await import('./state.js')).state.byKey.get(key);
   const season = card.dataset.season !== '' ? Number(card.dataset.season) : null;
   const episode = card.dataset.episode !== '' ? Number(card.dataset.episode) : null;
-  await playDirect({ type, id, name: (it && it.name) || (entry && entry.title) || '', season: type === 'tv' ? season : null, episode: type === 'tv' ? episode : null, key }, card);
+  await playDirect({ type, id, name: (it && it.name) || (entry && entry.title) || '', season: type === 'tv' ? season : null, episode: type === 'tv' ? episode : null, key }, card,
+    card.dataset.air ? { notYetAired: card.dataset.air } : {});
 }
 
 document.addEventListener('click', (e) => {

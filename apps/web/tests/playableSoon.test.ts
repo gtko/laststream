@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { autoNextEpisode, firstUnseen, isPlayable, normalizeCanonical, playableSoon, type EpisodeInfo } from '../src/player/episodes';
 import { episodesHtml } from '../src/player/panels';
 import { toNativeEpisodes } from '../src/player/native';
@@ -130,5 +130,43 @@ describe('natif : épisode lisible transmis comme diffusé', () => {
     ]]]);
     const out = toNativeEpisodes([{ season: 1, count: 2 }], loaded, { season: 1, episode: 1 }, () => ({ watched: false, progress: 0 }))!;
     expect(out.items.map((e) => e.aired)).toEqual([true, false]);
+  });
+});
+
+describe('cartes « Bientôt » : lecture dans la fenêtre, fiche au-delà', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 18, 12)); });
+  afterEach(() => { vi.useRealTimers(); });
+  const item = (airDate: string) => ({ airDate, season: 3, episode: 206, name: 'Plus belle la vie, encore plus belle', epTitle: '' });
+
+  it('diffusion dans 5 jours : la carte lance la recherche de sources et affiche le badge', async () => {
+    const { soonItemHTML } = await import('../src/ui/soon.js');
+    const host = document.createElement('div');
+    host.innerHTML = soonItemHTML(item('2026-10-23'), 'tv:101');
+    const btn = host.querySelector('.soon-card') as HTMLElement;
+    expect(btn.hasAttribute('data-play')).toBe(true);
+    expect(btn.getAttribute('data-play-key')).toBe('tv:101');
+    expect(btn.getAttribute('data-play-season')).toBe('3');
+    expect(btn.getAttribute('data-play-episode')).toBe('206');
+    expect(btn.getAttribute('data-air')).toBe('2026-10-23');
+    expect(btn.hasAttribute('data-open')).toBe(false);
+    expect(host.querySelector('.soon-count')!.textContent).toBe('Diffusion TV le 23 oct. · déjà en ligne ?');
+  });
+
+  it('diffusion dans 20 jours : la carte ouvre la fiche, compte à rebours inchangé', async () => {
+    const { soonItemHTML } = await import('../src/ui/soon.js');
+    const host = document.createElement('div');
+    host.innerHTML = soonItemHTML(item('2026-11-07'), 'tv:101');
+    const btn = host.querySelector('.soon-card') as HTMLElement;
+    expect(btn.getAttribute('data-open')).toBe('tv:101');
+    expect(btn.hasAttribute('data-play')).toBe(false);
+    expect(host.querySelector('.soon-count')!.textContent).toBe('Dans 20 jours');
+  });
+
+  it('sans date : la carte ouvre la fiche comme avant', async () => {
+    const { soonItemHTML } = await import('../src/ui/soon.js');
+    const host = document.createElement('div');
+    host.innerHTML = soonItemHTML(item(''), 'tv:101');
+    expect((host.querySelector('.soon-card') as HTMLElement).getAttribute('data-open')).toBe('tv:101');
+    expect(host.querySelector('[data-play]')).toBeNull();
   });
 });
