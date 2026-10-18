@@ -21,13 +21,22 @@ async function sign(url, { secret = SECRET, ttl = 6 * 3600, nowMs = Date.now() }
   return `${exp}.${btoa(bin).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`;
 }
 
-const env = { RANGE_SECRET: SECRET };
+const env = { RANGE_SECRET: SECRET, RANGE_ENABLED: '1' };
 const ask = async (query, { origin = ORIGIN, method = 'GET', e = env } = {}) => {
   const q = new URLSearchParams(query);
   const headers = origin === null ? {} : { origin };
   return worker.fetch(new Request(`https://laststream.example/__laststream/range?${q}`, { method, headers }), e);
 };
 const good = async (over = {}) => ({ u: URL_OK, s: '0', e: '99', t: await sign(over.u ?? URL_OK), ...over });
+
+describe('relais de plages : coupé par défaut', () => {
+  it('sans RANGE_ENABLED=1 : 410, aucun appel amont', async () => {
+    globalThis.fetch = async () => assert.fail('aucun appel amont attendu');
+    const r = await ask(await good(), { e: { RANGE_SECRET: SECRET } });
+    assert.equal(r.status, 410);
+    assert.equal((await r.json()).error, 'range_disabled');
+  });
+});
 
 describe('relais de plages : refus', () => {
   it('sans jeton ou avec un jeton invalide (401)', async () => {
@@ -64,7 +73,7 @@ describe('relais de plages : refus', () => {
     globalThis.fetch = async () => assert.fail('aucun appel amont attendu');
     assert.equal((await ask(await good(), { origin: 'https://evil.example' })).status, 403);
     assert.equal((await ask(await good(), { method: 'POST' })).status, 405);
-    assert.equal((await ask(await good(), { e: {} })).status, 503);
+    assert.equal((await ask(await good(), { e: { RANGE_ENABLED: '1' } })).status, 503);
   });
 });
 

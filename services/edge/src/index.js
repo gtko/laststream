@@ -265,19 +265,33 @@ async function relay(request, env) {
   return unavailable(request, { error: 'upstream_unreachable', message: 'Le serveur est injoignable pour le moment.', detail }, '15');
 }
 
+/** Fichiers publiés dans R2 : chemin public strict -> clé, type, nom de téléchargement. */
+function appFile(pathname) {
+  const name = pathname.split('/').pop();
+  if (/^\/app\/android\/laststream-\d{10}\.apk$/.test(pathname)) {
+    return { key: 'android/' + name, type: 'application/vnd.android.package-archive' };
+  }
+  if (/^\/app\/windows\/Laststream-Setup-\d+\.\d+\.\d+\.exe$/.test(pathname)) {
+    return { key: 'windows/' + name, type: 'application/vnd.microsoft.portable-executable', attachment: true, name };
+  }
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === REGISTER_PATH) return register(request, env);
     // Coupé : lire les fichiers AllDebrid depuis des IP Cloudflare a fait suspendre le compte. Réactivable par RANGE_ENABLED=1.
-    // APK Android (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
-    if (/^\/app\/android\/laststream-\d{10}\.apk$/.test(pathname) && env.APP_FILES) {
+    // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
+    const file = env.APP_FILES && appFile(pathname);
+    if (file) {
       if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
-      const obj = await env.APP_FILES.get('android/' + pathname.split('/').pop(), { range: request.headers });
+      const obj = await env.APP_FILES.get(file.key, { range: request.headers });
       if (!obj) return json(404, { error: 'not_found' });
       const headers = new Headers();
       obj.writeHttpMetadata(headers);
-      headers.set('content-type', 'application/vnd.android.package-archive');
+      headers.set('content-type', file.type);
+      if (file.attachment) headers.set('content-disposition', `attachment; filename="${file.name}"`);
       headers.set('etag', obj.httpEtag);
       headers.set('accept-ranges', 'bytes');
       headers.set('cache-control', 'public, max-age=86400, immutable');
