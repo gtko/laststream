@@ -3,8 +3,7 @@ import { canonSummary } from '../data/series';
 import { canonical } from './seasons.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { getVideoLang } from '../data/prefs';
-import { sortVideos } from '../data/trailers';
+import { sortVideos, trailerLang } from '../data/trailers';
 import { availOf, certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
 import { names } from './util.js';
@@ -34,7 +33,7 @@ export function buildModel(type, id, raw, en, canon) {
   const crew = (raw.credits && raw.credits.crew) || [];
   const uniq = (list) => Array.from(new Set(list));
   const videos = sortVideos(((raw.videos && raw.videos.results) || [])
-    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], getVideoLang())
+    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], trailerLang())
     .slice(0, 14)
     .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0] }));
   const recs = ((raw.recommendations && raw.recommendations.results) || []);
