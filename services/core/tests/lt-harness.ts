@@ -109,6 +109,8 @@ export async function startApp(options: {
   localProwlarr?: () => Promise<LocalProwlarr | null>;
   /** Détection automatique des segments de saut (binaires, URL locales autorisées, budget). */
   skipDetect?: AppDeps['skipDetect'];
+  /** Miniatures de la barre (ffmpeg, cache, origines locales de test). */
+  thumbs?: AppDeps['thumbs'];
 }): Promise<RunningApp> {
   const app = createApp({
     secret: SECRET,
@@ -119,6 +121,7 @@ export async function startApp(options: {
     userRateLimits: options.userRateLimits ?? { read: 10_000, write: 10_000, sensitive: 10_000, loginPerUsername: 10_000 },
     localProwlarr: options.localProwlarr,
     skipDetect: options.skipDetect,
+    thumbs: options.thumbs ?? { ffmpeg: null },
   });
   const server: Server = app.listen(0);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));

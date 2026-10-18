@@ -1,5 +1,6 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
 import type { AutoDetectOptions } from './lt/detect/index.js';
+import type { ThumbOptions } from './lt/thumbs/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
@@ -31,6 +32,8 @@ export interface AppDeps {
   localProwlarr?: LocalProwlarrProvider;
   /** Détection automatique des segments de saut (binaires ffmpeg, URL locales autorisées, budget) : réglages de test. */
   skipDetect?: AutoDetectOptions;
+  /** Miniatures de la barre (ffmpeg, cache, origines locales autorisées en plus) : réglages de test. */
+  thumbs?: ThumbOptions;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
   uiDir?: string;
   /** Origines ajoutées au CORS quand l'interface est servie par ce serveur (même site). */

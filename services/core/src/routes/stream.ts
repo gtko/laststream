@@ -8,6 +8,7 @@ import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.
 import { AllDebridClient } from '../sources/alldebrid.js';
 import { HosterClient } from '../sources/hosters.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
+import { issuedUrls } from '../play/issued.js';
 import { defaultPlayState } from '../play/state.js';
 import type { ContentRef } from '../types.js';
 
@@ -148,6 +149,7 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
       for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
     }
     const result = await getStreams(config, ref, contextOf(req, config, req.query.wait === 'full' ? 'full' : 'soft'));
+    issuedUrls.noteStreams(result.streams);
     if (result.partial === true) {
       res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
       res.json({ streams: result.streams, partial: true, pending: result.pending ?? [] });

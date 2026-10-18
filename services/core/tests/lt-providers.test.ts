@@ -107,6 +107,7 @@ describe('lt/health', () => {
     expect(JSON.parse(body)).toEqual({
       ok: true,
       configured: { tmdb: true, mdblist: false, tvdb: false, openrouter: false, fanart: true },
+      capabilities: { thumbs: false },
     });
     expect(body).not.toContain(KEYS.tmdbToken);
   });

@@ -14,6 +14,7 @@ import {
 } from '../play/failover.js';
 import { type PlayFailureReason, renderFailure } from '../play/errors.js';
 import { hostFromUrl } from '../play/hosts.js';
+import { issuedUrls } from '../play/issued.js';
 import { defaultPlayState, type PlayState } from '../play/state.js';
 import { type PlayCopy, decodeCopiesToken } from '../play/token.js';
 import type { TorrentCache } from '../torrent/fetch-torrent.js';
@@ -253,6 +254,7 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
       sendFailure(res, 'unknown', accept);
       return;
     }
+    issuedUrls.noteResolved(req.originalUrl, location);
     res.setHeader('Location', location);
     res.status(302).end();
   });
@@ -295,6 +297,7 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
           size: querySize(req.query.size),
         },
       );
+      issuedUrls.noteResolved(req.originalUrl, new URL(link.url).href);
       res.setHeader('Location', new URL(link.url).href);
       res.status(302).end();
     } catch (err) {

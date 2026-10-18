@@ -10,6 +10,7 @@ import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './provide
 import { createAutoDetector, MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
+import { ThumbService } from './thumbs/index.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
 import type { TvAlternative, TvChannel } from './tv-catalog.js';
 
@@ -17,6 +18,8 @@ import type { TvAlternative, TvChannel } from './tv-catalog.js';
 const NO_STORE = 'no-store';
 /** Réponses GET réussies : cache privé (propre à l'utilisateur), 5 minutes. */
 const PRIVATE_CACHE = 'private, max-age=300';
+/** Attente maximale d'une miniature demandée avant de répondre 202 (une image prend ~1 s, délai ffmpeg 8 s). */
+const THUMB_WAIT_MS = 9000;
 
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
 export function ltErrorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
@@ -63,6 +66,8 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
     ...deps.skipDetect,
   });
   const community = createSkipCommunity(ctx, openStore, detector);
+  // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide.
+  const thumbs = new ThumbService(deps.thumbs);
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (req: Request): string => String((req.params as Record<string, unknown>).config);
   const configOf = (req: Request) => decodeFor(deps, tokenOf(req));
@@ -85,6 +90,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
         openrouter: services.openrouterApiKey !== undefined,
         fanart: services.fanartApiKey !== undefined,
       },
+      capabilities: { thumbs: thumbs.enabled },
     });
   });
 
@@ -170,6 +176,35 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clés IntroDB et SkipDB facultatives.
   lt.post('/skip/submit', async (req, res) => {
     res.json(await community.submit(configOf(req).services, bodyOf(req)));
+  });
+
+  // Miniatures de la barre : on enregistre une source autorisée (serveur de streaming local ou lien émis par lastAddon),
+  // puis on lit les images par tranche de 30 s. 501 si ffmpeg est absent ; 400 si la source est refusée.
+  lt.post('/thumbs', async (req, res) => {
+    configOf(req);
+    if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
+    const body = bodyOf(req);
+    const registration = await thumbs.register(body.url, body.duration, body.start);
+    if (registration === null) throw new LtError(400, 'invalid_source');
+    res.json(registration);
+  });
+
+  lt.get('/thumbs/:key/:index.webp', async (req, res) => {
+    configOf(req);
+    if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
+    const key = String(req.params.key);
+    const raw = String(req.params.index);
+    if (!/^[0-9a-f]{40}$/.test(key) || !/^\d{1,4}$/.test(raw)) throw new LtError(404, 'not_found');
+    const frame = await thumbs.frame(key, Number(raw), THUMB_WAIT_MS);
+    if (frame.status === 'unknown') throw new LtError(404, 'unknown_source');
+    if (frame.status === 'missing') throw new LtError(404, 'not_found');
+    if (frame.status === 'pending') {
+      res.status(202).json({ pending: true });
+      return;
+    }
+    res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(frame.data);
   });
 
   lt.post('/recommend', async (req, res) => {
@@ -260,6 +295,7 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   app.use('/:config/catalog', catalog);
   return () => {
     void detector.close();
+    void thumbs.close();
     community.close();
   };
 }
