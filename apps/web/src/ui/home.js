@@ -12,6 +12,8 @@ import { isKidProfile } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { recommend, tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
+import { keepVisible } from '../data/homeFilters';
+import { ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
 import { getDetail, listOf, register, toItem } from './catalog.js';
 import { TABS } from './constants.js';
 import { addDays, isFuture, todayStr } from './dates.js';
@@ -27,6 +29,29 @@ import { renderTvRows } from './shows.js';
 import { renderLive } from './tv.js';
 import { cut, esc } from './util.js';
 
+/**
+ * Complète une liste visible (`first`) avec les pages suivantes de `path` jusqu'à `want` titres retenus par `ok`.
+ * Au plus ROW_PAGES_MAX pages : une liste dont les titres sont déjà vus reste courte plutôt que de charger sans fin.
+ */
+async function visibleMore(first, path, want, ok = () => true) {
+  const out = [...first];
+  const have = new Set(out.map((it) => it.key));
+  for (let page = 2; page <= ROW_PAGES_MAX && out.length < want; page++) {
+    const raw = ((listOf(await tmdb(path, { page }).catch(() => null)) || [])).filter((it) => isReleasedItem(it) && ok(it) && !have.has(it.key));
+    if (!raw.length) break;
+    raw.forEach((it) => have.add(it.key));
+    keepVisible(await filterAvailable(raw)).forEach((it) => out.push(it));
+  }
+  return out.slice(0, want);
+}
+
+/** Données de l'accueil filtrées au moment du rendu (un titre vu ou masqué depuis le chargement disparaît). */
+function visibleHome(d) {
+  if (d.kids) return d;
+  const rowOf = (list) => (list == null ? list : keepVisible(list)); // null = rangée non chargée : on le garde
+  return { ...d, heroes: keepVisible(d.heroes), rows: { ...d.rows, start: rowOf(d.rows.start), top: rowOf(d.rows.top) } };
+}
+
 export async function loadHome() {
   const settled = await Promise.allSettled([
     tmdb('trending/all/day'),
@@ -35,13 +60,14 @@ export async function loadHome() {
     tmdb('trending/tv/week'),
   ]);
   const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
-  const day = await filterAvailable((listOf(val(0)) || []).filter(isReleasedItem));
-  const week = await filterAvailable((listOf(val(1)) || []).filter(isReleasedItem));
+  // Titres déjà vus, masqués ou aux genres bannis retirés (keepVisible) ; le Top 10 et « Pour bien commencer » sont complétés.
+  const day = await visibleMore(keepVisible(await filterAvailable((listOf(val(0)) || []).filter(isReleasedItem))), 'trending/all/day', TOP_COUNT);
+  const week = keepVisible(await filterAvailable((listOf(val(1)) || []).filter(isReleasedItem)));
   if ([0, 1, 2, 3].every((i) => settled[i].status === 'rejected')) throw new Error('catalogue indisponible');
 
   // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
-  const films = (await filterAvailable((listOf(val(2), 'movie') || []).filter(isReleasedItem))).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' }));
-  const series = (listOf(val(3), 'tv') || []).filter(isReleasedItem).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' }));
+  const films = keepVisible((await filterAvailable((listOf(val(2), 'movie') || []).filter(isReleasedItem))).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' })));
+  const series = keepVisible((listOf(val(3), 'tv') || []).filter(isReleasedItem).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' })));
   const heroes = [];
   const taken = new Set();
   for (let i = 0; i < Math.max(films.length, series.length) && heroes.length < HERO_MAX; i++) {
@@ -60,7 +86,7 @@ export async function loadHome() {
     hero,
     heroes,
     rows: {
-      start: week ? week.filter((it) => it.poster).slice(0, 20) : null, // « Pour bien commencer » : tendances, sans IA
+      start: week ? await visibleMore(week.filter((it) => it.poster), 'trending/all/week', 20, (it) => !!it.poster) : null, // « Pour bien commencer » : tendances, sans IA
       top: cut(day, 10),
     },
   };
@@ -170,7 +196,7 @@ export async function loadUpcoming() {
 
 export async function renderUpcoming() {
   try {
-    const list = await loadUpcoming();
+    const list = keepVisible(await loadUpcoming());
     const slot = document.getElementById('up-slot');
     if (!slot || !list.length || state.status !== 'ready') return;
     slot.innerHTML = '<section class="row-section" id="prochainement" aria-labelledby="h-prochainement"><h2 class="row-title" id="h-prochainement">Prochainement</h2>' +
@@ -191,14 +217,15 @@ export function renderAI() {
   if (!slot) return;
   const ai = state.ai;
   if (ai.status === 'none') {
-    const start = state.data && state.data.rows.start;
+    const start = state.data && keepVisible(state.data.rows.start);
     slot.innerHTML = start && start.length
       ? section('commencer', 'Pour bien commencer', start, (l) => row(l.map((it) => posterCard(it)).join('')))
       : '';
     observeTiles(slot);
     return;
   }
-  if (ai.status === 'error' || (ai.status === 'ready' && !ai.items.length)) {
+  const items = ai.status === 'ready' ? keepVisible(ai.items) : [];
+  if (ai.status === 'error' || (ai.status === 'ready' && !items.length)) {
     slot.innerHTML = '';
     return;
   }
@@ -208,7 +235,7 @@ export function renderAI() {
   }
   slot.innerHTML = '<section class="row-section" id="ai" aria-labelledby="h-ai"><h2 class="row-title" id="h-ai">Recommandé pour toi par l’IA ' +
     '<a class="row-link" href="#/browse/ai" data-browse="ai">Tout voir</a></h2>' +
-    row(ai.items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
+    row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
 // ---------- Accueil (style A · Cinéma) ----------
@@ -286,7 +313,8 @@ export function renderHome() {
     app.innerHTML = errorView();
     return;
   }
-  app.innerHTML = (state.data.kids ? viewKids(state.data) : viewA(state.data)) + footer() + tabbar();
+  const d = visibleHome(state.data);
+  app.innerHTML = (d.kids ? viewKids(d) : viewA(d)) + footer() + tabbar();
   hydrateContinue(document.getElementById('cont-slot'));
   renderAI();
   renderUpcoming();
@@ -298,9 +326,9 @@ export function renderHome() {
     renderLibrary();
     startRegistry({ seen: state.data.hero ? [state.data.hero.key] : [] });
   } else {
-    initHero(state.data.heroes);
+    initHero(d.heroes);
     // Services de streaming puis Ma bibliothèque terminent la page, une fois les rangées chargées.
-    startRegistry({ seen: state.data.heroes.map((x) => x.key), onDone: () => { renderServices(); renderLibrary(); } });
+    startRegistry({ seen: d.heroes.map((x) => x.key), onDone: () => { renderServices(); renderLibrary(); } });
   }
 }
 export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };

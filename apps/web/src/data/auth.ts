@@ -1,4 +1,5 @@
 import { getConfig, isConfigured } from './config';
+import { applyAccountFilters, setFiltersPusher } from './homeFilters';
 import { CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
@@ -134,6 +135,7 @@ async function syncPrefsIn(profileId: string): Promise<void> {
     const { settings } = await api.getSettings(profileId);
     if (Object.keys(settings).length) applyPrefs(settings);
     else await api.putSettings(profileId, snapshotPrefs());
+    applyAccountFilters(profileId, settings); // titres masqués, genres bannis, séries vues en entier (par profil)
     const verdict = await reconcileConfig(settings);
     if (verdict === 'push') pushConfig(getConfig());
   } catch { /* Réglages locaux conservés. */ }
@@ -146,6 +148,11 @@ export function pushConfig(config: string): void {
   if (!value) return;
   api.putSettings(auth.profile.id, { [CONFIG_SETTING_KEY]: value }).catch(() => undefined);
 }
+
+// Filtres d'accueil par profil : chaque changement part vers les réglages du profil (hors mode serveur, rien).
+setFiltersPusher((profileId, settings) => {
+  if (isServerMode()) api.putSettings(profileId, settings).catch(() => undefined);
+});
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
 /** Envoie les préférences locales au profil actif (anti-rebond). Sans effet hors mode serveur. */

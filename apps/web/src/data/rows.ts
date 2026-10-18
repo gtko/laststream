@@ -226,3 +226,45 @@ export class Appearances {
     return this.counts.get(key) ?? 0;
   }
 }
+
+/** Nombre de titres du Top 10 (numérotés 1 à 10, sans trou même quand le filtre en retire). */
+export const TOP_COUNT = 10;
+/** Pages de la source lues au plus pour compléter une rangée dont le filtre a retiré des titres. */
+export const ROW_PAGES_MAX = 3;
+
+/** Une page de rangée : `raw` titres reçus de la source (0 : fin de la source), `items` titres retenus. */
+export interface RowPage<T> {
+  title: string;
+  raw: number;
+  items: T[];
+}
+
+/**
+ * Remplit une rangée jusqu'à `want` titres en lisant les pages suivantes quand le filtre en a retiré (au plus `maxPages`).
+ * `load` renvoie null si la rangée n'existe pas ; `accept` filtre chaque lot (disponibilité, répétitions…).
+ */
+export async function fillRow<T extends { key: string }>(
+  load: (page: number) => Promise<RowPage<T> | null>,
+  want: number,
+  accept: (fresh: T[]) => Promise<T[]>,
+  maxPages = ROW_PAGES_MAX,
+): Promise<{ title: string; items: T[] } | null> {
+  const out: T[] = [];
+  const seen = new Set<string>();
+  let title = '';
+  for (let page = 1; page <= maxPages && out.length < want; page++) {
+    const res = await load(page);
+    if (!res) return page === 1 ? null : { title, items: out.slice(0, want) };
+    if (page === 1) title = res.title;
+    const fresh = res.items.filter((it) => !seen.has(it.key));
+    fresh.forEach((it) => seen.add(it.key));
+    out.push(...(await accept(fresh)));
+    if (res.raw === 0) break;
+  }
+  return { title, items: out.slice(0, want) };
+}
+
+/** Rang (1 à 10) de chaque titre d'un Top 10 : le rang suit l'ordre d'affichage après filtrage. */
+export function rankTop<T>(items: readonly T[]): Array<{ item: T; rank: number }> {
+  return items.slice(0, TOP_COUNT).map((item, i) => ({ item, rank: i + 1 }));
+}

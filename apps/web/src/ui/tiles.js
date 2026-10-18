@@ -5,6 +5,7 @@ import { fillMissingPosters } from './posters.js';
 import { fallbackHTML } from './typo.js';
 import { newEpisodeCount } from '../data/episodes';
 import { userStore } from '../data/userStore';
+import { keepVisible, onHomeChange } from '../data/homeFilters';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { certification, detailOf, pickLogo } from './catalog.js';
@@ -160,6 +161,21 @@ export function removeTiles(key) {
 }
 
 /** Badge « +N » (épisodes diffusés depuis le dernier vu) pour les séries suivies ou entamées, « Sorti » pour un film suivi. */
+// Zones de l'accueil qui ne suivent pas les filtres « déjà vu » : reprendre, suivis, bibliothèque, calendrier, TV en direct.
+const OUT_OF_HOME = '#cont-slot,#follow-slot,#lib-slot,#tonight-slot,#live-slot,#shows-slot';
+
+/** Retire de l'accueil les tuiles devenues vues, masquées ou aux genres bannis, sans rechargement. */
+export function pruneHomeTiles() {
+  document.querySelectorAll('#app [data-tile]').forEach((el) => {
+    const key = el.dataset.tile || '';
+    if (!/^(movie|tv):\d+$/.test(key) || el.closest(OUT_OF_HOME)) return;
+    const [type, id] = key.split(':');
+    const it = state.byKey.get(key) || { key, type, id: Number(id) };
+    if (!keepVisible([it]).length) (el.closest('.up-item') || el).remove();
+  });
+}
+onHomeChange(pruneHomeTiles);
+
 export function paintNewBadge(el, it, info) {
   const media = el.querySelector('.card-media');
   if (!media || !it) return;

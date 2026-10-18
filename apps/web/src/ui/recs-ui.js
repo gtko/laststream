@@ -1,4 +1,5 @@
 /* Page « Recommandé pour toi » (#/browse/ai) : toute la liste du jour, filtres Films / Séries (la raison n'apparaît que dans l'aperçu au survol). */
+import { keepVisible } from '../data/homeFilters';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
@@ -10,7 +11,7 @@ let filter = 'all';
 function renderGrid() {
   const box = detailEl.querySelector('#ai-grid');
   if (!box) return;
-  const items = (state.ai.items || []).filter((it) => filter === 'all' || it.type === filter);
+  const items = keepVisible(state.ai.items || []).filter((it) => filter === 'all' || it.type === filter);
   box.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Aucune recommandation pour le moment.</p>';
   detailEl.querySelectorAll('[data-aif]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.aif === filter)));
   observeTiles(box);
@@ -21,7 +22,7 @@ export function showAiBrowse() {
   state.kind = 'browse';
   filter = 'all';
   document.title = 'Recommandé pour toi · Laststream';
-  const n = (state.ai.items || []).length;
+  const n = keepVisible(state.ai.items || []).length;
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">Recommandé pour toi par l’IA</h1>' +

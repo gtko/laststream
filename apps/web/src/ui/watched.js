@@ -4,6 +4,7 @@ import { newEpisodeCount } from '../data/episodes';
 import { refreshRatingUI, showRatePrompt } from './rate.js';
 import { refreshNewBadges } from './tiles.js';
 import { userStore } from '../data/userStore';
+import { notifyHomeChange, setSeriesCompleted } from '../data/homeFilters';
 import { markNext, updatePlayLabel } from './fiche.js';
 import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
@@ -28,6 +29,8 @@ export async function mark(key, refs, watched) {
   if (!ok) {
     refreshWatchedUI();
     toast('Enregistrement impossible : modification annulée');
+  } else if (!watched && key.startsWith('tv:')) {
+    setSeriesCompleted(key, false); // un épisode non vu : la série n'est plus vue en entier
   } else if (watched && key.startsWith('movie:')) {
     showRatePrompt(key); // « Tu as aimé ? »
   }
@@ -79,6 +82,7 @@ export function refreshWatchedUI() {
   }
   refreshRatingUI();
   refreshNewBadges();
+  notifyHomeChange(); // l'accueil retire les titres devenus vus
   document.querySelectorAll('[data-tile^="movie:"]').forEach((el) => {
     const on = userStore.isWatched(el.dataset.tile);
     const media = el.querySelector('.card-media');
@@ -169,7 +173,9 @@ document.addEventListener('keydown', (e) => {
 /** Série entière : tous les épisodes diffusés (saison 0 exclue). */
 export async function markSeries(m, watched) {
   const refs = await seriesAired(m);
-  return mark(m.key, refs, watched);
+  const ok = await mark(m.key, refs, watched);
+  if (ok && watched) setSeriesCompleted(m.key, true); // « vue en entier » : la série sort de l'accueil
+  return ok;
 }
 
 /** Bascule d'un épisode (bouton coche d'une carte). */

@@ -1,5 +1,6 @@
 /* Mise en avant de l'accueil : carrousel des tendances de la semaine (fondu enchaîné, pastilles numérotées, flèches, clavier). */
 import { userStore } from '../data/userStore';
+import { keepVisible, onHomeChange } from '../data/homeFilters';
 import { playTitle } from './ctxmenu.js';
 import { getRegion } from '../data/prefs';
 import { detailOf, getDetail } from './catalog.js';
@@ -160,6 +161,14 @@ export function initHero(items) {
 }
 
 export const currentHeroItem = () => hero.items[hero.i] || null;
+
+/** Retire de la mise en avant les titres devenus vus, masqués ou aux genres bannis (sans rechargement). */
+export function dropHiddenSlides() {
+  if (!hero.el) return;
+  const visible = new Set(keepVisible(hero.items).map((x) => x.key));
+  hero.items.filter((x) => !visible.has(x.key)).forEach((x) => dropSlide(x.key));
+}
+onHomeChange(dropHiddenSlides);
 
 document.addEventListener('pointerover', (e) => {
   if (!hero.el || e.pointerType !== 'mouse') return;

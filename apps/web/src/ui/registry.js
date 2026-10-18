@@ -8,7 +8,8 @@ import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { activeRows, Appearances, passesQuality, pickSeed, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById } from '../data/rows';
+import { keepVisible } from '../data/homeFilters';
+import { activeRows, Appearances, fillRow, passesQuality, pickSeed, rankTop, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById, TOP_COUNT } from '../data/rows';
 import { userStore } from '../data/userStore';
 import { listOf, register } from './catalog.js';
 import { detailEl } from './dom.js';
@@ -162,8 +163,18 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
   return null;
 }
 
+/**
+ * Rangée telle qu'affichée sur l'accueil et dans « Tout voir » : titres déjà vus, masqués ou aux genres bannis retirés
+ * (keepVisible). `raw` compte les titres de la page avant ce retrait : 0 signale la fin de la source.
+ */
+export async function resolveHomeRow(def, page = 1, ctx) {
+  const res = await resolveRow(def, page, ctx);
+  if (!res) return null;
+  return { title: res.title, raw: res.items.length, items: keepVisible(res.items) };
+}
+
 // ---------- Accueil : chargement progressif ----------
-const reg = { token: 0, queue: [], prevKeys: new Set(), loaded: 0, lastRow: null, appear: new Appearances(), sentinel: null, io: null, busy: false, ctx: null, onDone: null, done: false, onScroll: null };
+const reg ={ token: 0, queue: [], prevKeys: new Set(), loaded: 0, lastRow: null, appear: new Appearances(), sentinel: null, io: null, busy: false, ctx: null, onDone: null, done: false, onScroll: null };
 
 export function stopRegistry() {
   reg.token++;
@@ -185,7 +196,7 @@ const near = () => {
 function renderDef(def, title, items) {
   const link = def.noBrowse ? '' : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">Tout voir</a>';
   let html;
-  if (def.kind === 'top10') html = row(items.slice(0, 10).map((it, i) => topCard(it, i + 1)).join(''));
+  if (def.kind === 'top10') html = row(rankTop(items).map(({ item, rank }) => topCard(item, rank)).join(''));
   else if (def.kind === 'landscape') html = row(items.map((it) => tileCard(it, { variant: 'land' })).join(''));
   else if (def.kind === 'logoCard') html = row(items.map((it) => tileCard(it, { variant: 'logo' })).join(''));
   else html = row(items.map((it) => posterCard(it)).join(''));
@@ -198,9 +209,14 @@ async function loadNext() {
   if (!def) return;
   try {
     if (!(await rowAvailable(def))) return;
-    const res = await resolveRow(def, 1, reg.ctx);
+    // Les titres retirés par le filtre (déjà vus, masqués, genres bannis) sont remplacés par ceux des pages suivantes.
+    const res = await fillRow(
+      async (page) => (token === reg.token ? resolveHomeRow(def, page, reg.ctx) : null),
+      def.kind === 'top10' ? TOP_COUNT : ROW_MAX,
+      (fresh) => filterAvailable(fresh.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key)), { cinema: def.cinema }),
+    );
     if (token !== reg.token || !res) return;
-    const items = (await filterAvailable(res.items.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key)), { cinema: def.cinema })).slice(0, def.kind === 'top10' ? 10 : ROW_MAX);
+    const items = res.items;
     if (items.length < (def.minItems || MIN_ITEMS)) return;
     items.forEach((it) => reg.appear.commit(it.key));
     reg.prevKeys = new Set(items.map((it) => it.key));
@@ -293,9 +309,9 @@ export async function showBrowse(id) {
       // Une page entièrement filtrée (déjà vue, indisponible) ne doit pas arrêter la liste : on enchaîne jusqu'à 4 pages.
       const have = new Set(Array.from(box.querySelectorAll('[data-tile]')).map((e) => e.dataset.tile));
       for (let p = page, tries = 0; tries < 4; p += 1, tries += 1) {
-        const res = await resolveRow(def, p, ctx);
+        const res = await resolveHomeRow(def, p, ctx);
         if (token !== state.token) return { html: '', done: true };
-        if (!res || !res.items.length) return { html: '', done: true, };
+        if (!res || res.raw === 0) return { html: '', done: true, };
         if (page === 1 && tries === 0 && h1) h1.textContent = res.title;
         const items = (await filterAvailable(res.items.filter((it) => !have.has(it.key)), { cinema: def.cinema }));
         if (items.length) return { html: items.map(card).join(''), done: false, advance: p - page + 1 };

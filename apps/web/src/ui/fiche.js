@@ -3,6 +3,7 @@ import { stopInfinite } from './infinite.js';
 import { followBtn } from './follows.js';
 import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
+import { isHiddenKey } from '../data/homeFilters';
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
 import { clearAmbient } from './heroVideo.js';
@@ -151,6 +152,13 @@ export const libBtn = (m) => {
     '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>';
 };
 
+/** « Ne plus proposer » : bouton discret, retire le titre de l'accueil (réglable depuis les réglages du profil). */
+const hideBtn = (m) => {
+  const hidden = isHiddenKey(m.key);
+  return '<button type="button" class="btn btn-ghost btn-sm home-hide" data-hide-title aria-pressed="' + hidden + '">' +
+    (hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer sur l’accueil') + '</button>';
+};
+
 const watchBtn = (m) => {
   const on = userStore.isWatched(m.key);
   return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-watch-movie aria-pressed="' + on + '" data-tip="' + (on ? 'Vu (cliquer pour retirer)' : 'Marquer comme vu') +
@@ -186,6 +194,7 @@ export function ficheHTML(m) {
     (m.cinemaSince
       ? '<button type="button" class="btn-round" data-sources-open data-tip="Voir les sources" aria-label="Voir les sources">' + ICON.list + '</button>' // sur demande seulement : aucune vérification automatique
       : followBtn(m.key, 'btn-round')) +
+    hideBtn(m) +
     '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
 
   const panels = [];

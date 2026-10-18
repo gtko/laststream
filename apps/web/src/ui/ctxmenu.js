@@ -2,6 +2,8 @@
  * Ouverture : clic droit, appui long (500 ms), bouton « … » des tuiles, Maj+F10 / touche Menu.
  * Hors de nos éléments, le menu natif du navigateur reste disponible (sélection de texte, champs de saisie). */
 import { userStore } from '../data/userStore';
+import { isHiddenKey } from '../data/homeFilters';
+import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
 import { toast } from './dom.js';
@@ -128,6 +130,8 @@ function titleItems(t) {
     const any = userStore.watchedEpisodes(t.key).length > 0;
     items.push({ id: 'seen', label: any ? 'Marquer la série comme non vue' : 'Marquer la série comme vue', icon: ICON.check, run: () => toggleSeriesWatched(t.key) });
   }
+  const hidden = isHiddenKey(t.key);
+  items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: () => toggleHidden(t.key, it.name, it.posterPath) });
   if (t.inContinue || resume) {
     items.push({ id: 'restart', label: 'Recommencer depuis le début', icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
     items.push({ id: 'remove', label: 'Retirer de « Reprendre la lecture »', icon: ICON.close, run: () => removeFromContinue(t.key) });

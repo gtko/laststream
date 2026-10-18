@@ -21,6 +21,8 @@ export interface RecItem {
   p: string;
   y: string;
   r: string;
+  /** Genres TMDB (absent sur les listes enregistrées avant cette version). */
+  g?: number[];
 }
 
 export interface DailyRecs {
@@ -51,6 +53,7 @@ export function compactItems(items: unknown[]): RecItem[] {
       p: String(raw.poster_path),
       y: String(raw.release_date || raw.first_air_date || '').slice(0, 4),
       r: String(raw.reason_fr || '').slice(0, 160),
+      ...(genres(raw.genre_ids).length ? { g: genres(raw.genre_ids) } : {}),
     });
   }
   return out;
@@ -62,7 +65,13 @@ export function rawOf(it: RecItem): Record<string, unknown> {
   return {
     id: it.i, media_type: tv ? 'tv' : 'movie', [tv ? 'name' : 'title']: it.n, poster_path: it.p,
     [tv ? 'first_air_date' : 'release_date']: it.y ? it.y + '-01-01' : '', reason_fr: it.r,
+    genre_ids: it.g ?? [],
   };
+}
+
+/** Identifiants de genres entiers, sans doublon. */
+function genres(v: unknown): number[] {
+  return Array.isArray(v) ? [...new Set(v.filter((g): g is number => Number.isInteger(g)))] : [];
 }
 
 /** Découpe en valeurs de réglages de moins de 4 Ko. */

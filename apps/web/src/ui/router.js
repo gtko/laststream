@@ -8,6 +8,7 @@ import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
 import { closeHover } from './hover.js';
 import { renderContinue } from './home.js';
+import { notifyHomeChange } from '../data/homeFilters';
 import { renderLibrary, showLibrary } from './library.js';
 import { closeModal } from './modal.js';
 import { showPerson } from './person.js';
@@ -116,6 +117,7 @@ export function route() {
     setupPreviews();
     renderLibrary();
     renderContinue();
+    notifyHomeChange(); // un titre vu dans le lecteur ou la fiche sort des rangées de l'accueil
     renderLive();
     renderTvRows();
     const t = state.lastFocus;

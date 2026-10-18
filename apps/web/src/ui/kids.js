@@ -6,7 +6,7 @@ import { makeCtx, rowById } from '../data/rows';
 import { userStore } from '../data/userStore';
 import { getDetail } from './catalog.js';
 import { heroA } from './hero.js';
-import { resolveRow } from './registry.js';
+import { resolveHomeRow } from './registry.js';
 import { avatarStyle, continueSection, initialOf } from './home.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
@@ -23,7 +23,7 @@ async function pickKidHero(pool) {
 export async function loadKidsHome() {
   const ctx = makeCtx(getRegion().code, kidMaxAge());
   const ids = ['famille', 'dessins', 'nouveautes'].filter((id) => kidSection(rowById(id).section));
-  const settled = await Promise.allSettled(ids.map((id) => resolveRow(rowById(id), 1, ctx)));
+  const settled = await Promise.allSettled(ids.map((id) => resolveHomeRow(rowById(id), 1, ctx)));
   if (ids.length && settled.every((s) => s.status === 'rejected')) throw new Error('catalogue indisponible');
   const pool = [];
   settled.forEach((s) => { if (s.status === 'fulfilled' && s.value) s.value.items.slice(0, 4).forEach((it) => pool.push(it)); });

@@ -13,6 +13,7 @@ import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveThe
 import { userStore } from '../data/userStore';
 import { auth, importFromStremio, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
+import { homeSettingsHTML } from './homeprefs.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
@@ -180,7 +181,7 @@ function pageHTML() {
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">Réglages</h1><p class="svc-eyebrow">lastAddon, lecture, apparence et région</p></div></header>' +
-    '<div class="set-body">' + accountSection() + lastAddonSection() + playbackSection() + appearanceSection() + regionSection() + dataSection() + '</div></article>';
+    '<div class="set-body">' + accountSection() + lastAddonSection() + playbackSection() + appearanceSection() + regionSection() + homeSettingsHTML() + dataSection() + '</div></article>';
 }
 
 function rerender() {
