@@ -50,7 +50,7 @@ async function account(prefix: string, options: { kid?: boolean } = {}): Promise
   const profile = await api<{ id: string }>('POST', '/user/profiles', { token, body: { name, avatarColor: '#aa5500' } });
   const result: Account & { kidProfile?: string } = { name, token, profile: profile.body.id };
   if (options.kid === true) {
-    const kid = await api<{ id: string }>('POST', '/user/profiles', { token, body: { name: 'petit', isKid: true } });
+    const kid = await api<{ id: string }>('POST', '/user/profiles', { token, headers: { 'x-profile-id': profile.body.id }, body: { name: 'petit', isKid: true } });
     result.kidProfile = kid.body.id;
   }
   await api('DELETE', `/__admin/invite/${invite.body.code}`, { headers: { 'x-admin-secret': ADMIN } });
