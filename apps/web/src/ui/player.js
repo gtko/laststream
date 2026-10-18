@@ -1,8 +1,9 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvHlsUrl } from '../data/lt';
 import { stopPreview } from './preview.js';
-import { externalKind, startExternal, stopExternal } from './tvExternal.js';
-import { bannerEl, ensureEpg, fmtHM, nowNext, perrEl, playerEl, tv, videoEl } from './tv.js';
+import { externalKind, externalSample, startExternal, stopExternal } from './tvExternal.js';
+import { bannerEl, ensureEpg, fmtHM, nowNext, perrEl, playerEl, setChannelDown, statusEl, tv, videoEl } from './tv.js';
+import { reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, statusView } from './tvStatus.js';
 import { esc, store } from './util.js';
 
 // ---------- Lecteur plein écran ----------
@@ -44,9 +45,44 @@ export function updateBanner() {
     (nn.next ? '<span class="pb-next">Ensuite : ' + esc(nn.next.title) + ' · ' + fmtHM(nn.next.start) + '</span>' : '') + '</span>';
 }
 
-export function playFail(token) {
+/** Met à jour le signal d'état du lecteur (pastille en haut) à partir d'un événement de tvStatus.js. */
+function setStatus(ev) {
+  tv.status = reduceTvStatus(tv.status, ev);
+  renderTvStatus(statusEl, statusView(tv.status));
+}
+
+/** Chaîne qui repart après un échec de cette session : elle n'est plus grisée. */
+function recovered() {
+  const ch = curChannel();
+  if (ch && ch.id && tv.failed.has(ch.id)) setChannelDown(ch.id, false);
+}
+
+/** Échantillon de lecture pour le signal : lecteur externe si actif, sinon la vidéo de la page. */
+function playbackSample() {
+  if (externalKind()) return externalSample() || { time: 0, hasVideo: false, paused: true };
+  return { time: videoEl.currentTime || 0, hasVideo: videoEl.videoWidth > 0, paused: videoEl.paused };
+}
+
+/** Échantillonnage du signal chaque seconde pendant la lecture (la logique d'état est dans tvStatus.js). */
+function watchStatus() {
+  clearInterval(tv.statusTimer);
+  tv.statusTimer = setInterval(() => {
+    if (playerEl.hidden) return;
+    setStatus(Object.assign({ type: 'sample', now: Date.now() }, playbackSample()));
+    if (tv.status.phase === 'live') recovered();
+  }, 1000);
+}
+
+/** Échec définitif d'une chaîne (plus aucune source) : message, raison, chaîne grisée pour la session. */
+export function playFail(token, reason, c) {
   if (token !== tv.playToken) return;
   clearTimeout(tv.stallTimer);
+  const ch = c || curChannel();
+  if (ch && ch.id) setChannelDown(ch.id, true);
+  setStatus({ type: 'fail', reason });
+  const why = statusView(tv.status).reason;
+  const r = perrEl.querySelector('.player-reason');
+  if (r) r.textContent = why;
   perrEl.hidden = false;
   const b = perrEl.querySelector('[data-pnext]');
   if (b) b.focus();
@@ -74,11 +110,12 @@ export function startStream() {
   updateBanner();
   showBanner();
   ensureEpg([c]).then(() => { if (token === tv.playToken) { updateBanner(); } });
+  watchStatus();
   tryStream(c, token);
 }
 
-/** Échec d'un flux : essaie les alternatives de la chaîne avant d'afficher « Cette chaîne ne répond pas ». */
-export function failover(c, token) {
+/** Échec d'un flux (`reason` : clé de REASONS) : essaie les alternatives de la chaîne avant d'afficher « Chaîne indisponible ». */
+export function failover(c, token, reason) {
   if (token !== tv.playToken) return;
   clearTimeout(tv.stallTimer);
   if (tv.attempt + 1 < sourcesOf(c).length) {
@@ -86,7 +123,7 @@ export function failover(c, token) {
     tryStream(c, token);
     return;
   }
-  playFail(token);
+  playFail(token, reason, c);
 }
 
 /**
@@ -101,20 +138,26 @@ function watchLive(fail, restart) {
     if (videoEl.paused || videoEl.ended || videoEl.seeking) { strikes = 0; return; }
     if (videoEl.currentTime === last) strikes += 1; else { strikes = 0; last = videoEl.currentTime; }
     if (strikes === 2) restart();
-    else if (strikes >= 4) { clearInterval(tv.watchTimer); fail(); }
+    else if (strikes >= 4) { clearInterval(tv.watchTimer); fail('network'); }
   }, 8000);
 }
 
 function tryStream(c, token) {
   destroyStream();
   perrEl.hidden = true;
+  setStatus({ type: 'connect' });
   // Index de la source tentée : sourcesOf() renvoie de nouveaux objets à chaque appel, on ne peut pas comparer par identité.
   const idx = tv.attempt;
   const cur = sourcesOf(c)[idx];
-  const fail = () => failover(c, token);
+  // `r` : clé de REASONS, ou une erreur mpv / du plugin natif (interprétée par reasonOfExternal).
+  const fail = (r) => failover(c, token, typeof r === 'string' ? r : reasonOfExternal(r));
+  const web = !externalKind();
   videoEl.onplaying = () => { clearTimeout(tv.stallTimer); perrEl.hidden = true; };
-  videoEl.onerror = fail;
-  tv.stallTimer = setTimeout(fail, 20000);
+  videoEl.onerror = () => {
+    const code = videoEl.error ? videoEl.error.code : 0;
+    fail(code === 2 ? 'network' : code === 3 || code === 4 ? 'format' : 'read');
+  };
+  tv.stallTimer = setTimeout(() => fail('network'), 20000);
   // Les playlists HLS sont lues directement (hls.js ou le lecteur natif) : jamais via le cache JSON du client.
   // Sans signature (serveur sans proxy HLS) : l'URL du flux elle-même, lue directement.
   const proxied = cur.sig ? tvHlsUrl(cur) : cur.url;
@@ -155,7 +198,7 @@ function tryStream(c, token) {
           if (!d || !d.fatal) return;
           if (d.type === H.ErrorTypes.NETWORK_ERROR && net++ < 3) h.startLoad();
           else if (d.type === H.ErrorTypes.MEDIA_ERROR && media++ < 2) h.recoverMediaError();
-          else fail();
+          else fail(reasonOfHls(d, H.ErrorTypes, web));
         });
         h.on(H.Events.MANIFEST_PARSED, () => { videoEl.play().catch(() => {}); });
         h.loadSource(proxied);
@@ -164,11 +207,11 @@ function tryStream(c, token) {
       } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
         native(proxied); // Safari / iOS : HLS natif
       } else {
-        fail();
+        fail('format'); // hls.js absent et pas de HLS natif : le flux ne peut pas être lu dans cette page
       }
     }).catch(() => {
       if (token === tv.playToken && videoEl.canPlayType('application/vnd.apple.mpegurl')) native(proxied);
-      else fail();
+      else fail('network');
     });
   }
   };
@@ -195,6 +238,8 @@ export function closePlayer(silent) {
   if (playerEl.hidden) return;
   tv.playToken++;
   destroyStream();
+  clearInterval(tv.statusTimer);
+  setStatus({ type: 'stop' });
   clearTimeout(tv.bannerTimer);
   playerEl.hidden = true;
   perrEl.hidden = true;
