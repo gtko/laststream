@@ -35,12 +35,15 @@ describe('synchronisation de la config avec le compte', () => {
     expect(getSettings().base).not.toBe(location.origin);
   });
 
-  it('ne remplace pas une config locale et propose de l’envoyer si le compte n’en a pas', async () => {
+  it('le compte fait foi : une config locale différente est remplacée ; sans config au compte, la locale est proposée', async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'LOCAL' }));
     reloadSettings();
-    expect(await reconcileConfig({ lastaddonConfig: 'AUTRE' })).toBe('none');
-    expect(getSettings().config).toBe('LOCAL');
     expect(await reconcileConfig({})).toBe('push');
+    expect(getSettings().config).toBe('LOCAL');
+    expect(await reconcileConfig({ lastaddonConfig: 'AUTRE' })).toBe('pulled');
+    expect(getSettings().config).toBe('AUTRE');
+    expect(getSettings().base).toBe('http://localhost:7000');
+    expect(await reconcileConfig({ lastaddonConfig: 'AUTRE' })).toBe('none');
   });
 });
 

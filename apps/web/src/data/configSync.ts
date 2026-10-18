@@ -37,7 +37,7 @@ export async function servedByLastAddon(timeoutMs = 2500): Promise<boolean> {
 }
 
 /**
- * À la connexion : si aucune config locale, reprend celle du compte (base = origine courante quand la page
+ * À la connexion : la config du compte fait foi (remplace une config locale différente) ; sans config locale, la reprend (base = origine courante quand la page
  * est servie par lastAddon). Renvoie 'pulled' si la config locale a été remplie, 'push' si le compte n'a
  * rien et qu'une config locale peut être envoyée, sinon 'none'.
  */
@@ -46,7 +46,14 @@ export async function reconcileConfig(
 ): Promise<'pulled' | 'push' | 'none'> {
   const remote = accountSettings[CONFIG_SETTING_KEY];
   const local = getSettings();
-  if (local.config) return typeof remote === 'string' && remote ? 'none' : configForAccount(local.config) ? 'push' : 'none';
+  if (local.config) {
+    if (typeof remote !== 'string' || !remote.trim()) return configForAccount(local.config) ? 'push' : 'none';
+    // Le compte fait foi (chaque enregistrement y est envoyé) : une config locale différente, périmée ou incomplète,
+    // est remplacée par celle du compte.
+    if (remote.trim() === local.config.trim()) return 'none';
+    saveSettings({ config: remote.trim() });
+    return 'pulled';
+  }
   if (typeof remote !== 'string' || !remote.trim()) return 'none';
   // Serveur perso choisi : son adresse. Sinon origine de la page servie par lastAddon, puis serveur Laststream sur Android.
   const base = local.mode === 'custom' && local.custom
