@@ -153,10 +153,12 @@ export const libBtn = (m) => {
 };
 
 /** « Ne plus proposer » : bouton discret, retire le titre de l'accueil (réglable depuis les réglages du profil). */
+// Bouton à bascule : libellé fixe, état porté par aria-pressed (« Réafficher » quand le titre est masqué).
 const hideBtn = (m) => {
+  if (isKidProfile()) return '';
   const hidden = isHiddenKey(m.key);
-  return '<button type="button" class="btn btn-ghost btn-sm home-hide" data-hide-title aria-pressed="' + hidden + '">' +
-    (hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer sur l’accueil') + '</button>';
+  return '<button type="button" class="btn btn-ghost btn-sm home-hide' + (hidden ? ' is-on' : '') + '" data-hide-title aria-pressed="' + hidden + '">' +
+    'Ne plus proposer sur l’accueil</button>';
 };
 
 const watchBtn = (m) => {

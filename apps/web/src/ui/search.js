@@ -17,7 +17,8 @@ import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { esc, plural } from './util.js';
-import { kindOf, rankResults, resultKey, titleMatch } from './searchRank.js';
+import { kindOf, rankResults, resultKey, splitBanned, titleMatch } from './searchRank.js';
+import { isBannedGenre } from '../data/homeFilters';
 
 const DEBOUNCE_MS = 300;
 const RECENT_MAX = 8;
@@ -77,7 +78,7 @@ async function run(raw) {
   session = null;
   state.searchQ = q;
   if (q.length < 2) { paintEmpty(my); return; }
-  const s = { q, token: my, media: [], people: [], raw: new Map(), seen: new Set(), next: 3, total: 1, done: false, best: null, filter: 'all', shown: false };
+  const s = { q, token: my, media: [], held: [], people: [], raw: new Map(), seen: new Set(), next: 3, total: 1, done: false, best: null, filter: 'all', shown: false };
   session = s;
   paintLoading();
   let a;
@@ -94,6 +95,7 @@ async function run(raw) {
   const first = [...(a.results || []), ...(s.total > 1 ? b.results || [] : [])];
   s.media = await ingest(s, first, true);
   if (!isLive(s)) return;
+  releaseBanned(s);
   s.best = pickBest(s);
   saveRecent(q);
   if (s.done && !s.media.length && !s.people.length) { paintNone(s); return; }
@@ -115,13 +117,24 @@ async function ingest(s, raws, first) {
   const ranked = rankResults(fresh, s.q, { today: todayStr() });
   if (first) s.people = kid ? [] : ranked.filter((r) => kindOf(r) === 'person').slice(0, PEOPLE_MAX);
   const media = filterResults(ranked, kid);
-  return filterAvailable(media.map((r) => register(toItem(r, r.media_type))));
+  const { keep, banned } = splitBanned(await filterAvailable(media.map((r) => register(toItem(r, r.media_type)))), (it) => isBannedGenre(it));
+  s.held.push(...banned); // genres bannis : en fin de liste, ajoutés quand la dernière page est reçue
+  return keep;
+}
+
+/** Ajoute en fin de liste les résultats de genre banni, une fois la liste complète. Renvoie ceux ajoutés. */
+function releaseBanned(s) {
+  if (!s.done || !s.held.length) return [];
+  const tail = s.held;
+  s.held = [];
+  s.media.push(...tail);
+  return tail;
 }
 
 /** Meilleur résultat : premier titre classé, avec affiche large, si son titre commence exactement par la requête. */
 function pickBest(s) {
   const first = s.media[0];
-  if (!first || !first.backdropPath) return null;
+  if (!first || !first.backdropPath || isBannedGenre(first)) return null; // jamais un genre banni
   const raw = s.raw.get(first.key);
   return raw && titleMatch(raw, s.q) >= BEST_MIN_SCORE ? first : null;
 }
@@ -144,10 +157,11 @@ async function loadMore(s) {
   if (!isLive(s)) return { html: '', done: true };
   s.media.push(...items);
   s.done = s.next > s.total;
+  const tail = releaseBanned(s);
   if (s.done && !s.media.length && !s.people.length) { paintNone(s); return { html: '', done: true }; }
   updateCounts(s);
   if (s.done) setStatus(statusText(s));
-  const add = items.filter((it) => visibleInGrid(s, it));
+  const add = [...items, ...tail].filter((it) => visibleInGrid(s, it));
   const html = add.length ? add.map((it) => posterCard(it)).join('') : (s.done && !gridItems(s).length ? emptyMsg(s) : '');
   return { html, done: s.done };
 }
@@ -296,7 +310,8 @@ async function loadTrending(my) {
   try {
     const json = await tmdb('trending/all/week');
     if (my !== seq || state.kind !== 'search' || !row.isConnected) return;
-    const items = await filterAvailable(filterResults(json.results, isKidProfile()).map((r) => register(toItem(r, r.media_type))));
+    // Tendances : les genres bannis sont retirés (et non rangés en fin de liste).
+    const items = await filterAvailable(filterResults(json.results, isKidProfile()).filter((r) => !isBannedGenre({ genreIds: r.genre_ids })).map((r) => register(toItem(r, r.media_type))));
     if (my !== seq || state.kind !== 'search' || !row.isConnected) return;
     row.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Rien à afficher pour le moment.</p>';
     observeTiles(row);

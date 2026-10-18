@@ -47,7 +47,7 @@ async function visibleMore(first, path, want, ok = () => true) {
 
 /** Données de l'accueil filtrées au moment du rendu (un titre vu ou masqué depuis le chargement disparaît). */
 function visibleHome(d) {
-  if (d.kids) return d;
+  if (d.kids) return { ...d, hero: d.hero ? (keepVisible([d.hero])[0] ?? null) : null };
   const rowOf = (list) => (list == null ? list : keepVisible(list)); // null = rangée non chargée : on le garde
   return { ...d, heroes: keepVisible(d.heroes), rows: { ...d.rows, start: rowOf(d.rows.start), top: rowOf(d.rows.top) } };
 }
@@ -324,7 +324,7 @@ export function renderHome() {
   setupPreviews();
   if (state.data.kids) {
     renderLibrary();
-    startRegistry({ seen: state.data.hero ? [state.data.hero.key] : [] });
+    startRegistry({ seen: d.hero ? [d.hero.key] : [] });
   } else {
     initHero(d.heroes);
     // Services de streaming puis Ma bibliothèque terminent la page, une fois les rangées chargées.

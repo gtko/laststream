@@ -1,0 +1,57 @@
+/* Réglages de l'accueil par profil (ui/homeprefs.js) : puces de genres et grille des titres masqués. */
+
+/* Genres : des puces de l'app (classe .pill), qui reviennent à la ligne sans défilement horizontal. */
+.home-genres { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.home-genre { position: relative; cursor: pointer; }
+/* Case native masquée visuellement mais restée au clavier (focus, espace) et lue par les lecteurs d'écran. */
+.home-genre-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.home-genre:has(.home-genre-input:checked) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+.home-genre:has(.home-genre-input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* Titres masqués : grille de petites affiches avec le bouton « Réafficher ». */
+.home-hidden-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 16px;
+}
+.home-hidden-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.home-hidden-item img,
+.home-hidden-noimg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  height: auto;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--line-2);
+}
+.home-hidden-title {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--soft);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.home-hidden-item .btn { width: 100%; justify-content: center; }
+.home-empty { margin: 0; }
+
+@media (max-width: 600px) {
+  .home-hidden-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; }
+}

@@ -4,7 +4,9 @@ import { userStore } from './userStore';
 /*
  * Filtres d'accueil propres à chaque profil : titres « Ne plus proposer », genres bannis, séries marquées vues en entier.
  * Stockés par profil sur ce navigateur et synchronisés avec le compte (réglages du profil, clés `home…`, découpées en
- * morceaux de moins de 4 Ko comme les recommandations). Un seul point de filtrage pour l'accueil : `keepVisible`.
+ * morceaux de moins de 3500 octets UTF-8). Au login, les filtres locaux et ceux du compte sont fusionnés, puis l'union
+ * est renvoyée au compte. Les envois sont groupés (600 ms) et ne contiennent que les clés qui changent.
+ * Un seul point de filtrage pour l'accueil : `keepVisible`.
  */
 
 export interface HiddenEntry {
@@ -61,12 +63,14 @@ export const GENRE_OPTIONS: ReadonlyArray<{ label: string; ids: number[] }> = [
 ];
 
 export const HOME_FILTERS_KEY_PREFIX = 'laststream.homeFilters.';
-/** Nombre maximal de titres masqués par profil (tient dans les morceaux de réglages). */
-export const MAX_HIDDEN = 150;
+/** Morceaux par liste dans les réglages du compte. */
+export const MAX_CHUNKS = 12;
+/** Taille maximale d'un morceau, en octets UTF-8 (marge sous la limite de 4 Ko par valeur). */
+export const CHUNK_MAX_BYTES = 3500;
+/** Délai d'anti-rebond avant l'envoi au compte : seul le dernier état compte. */
+export const SYNC_DELAY_MS = 600;
 const TITLE_MAX = 60;
 const POSTER_MAX = 40;
-const CHUNK_BYTES = 3300;
-const MAX_CHUNKS = 12;
 const KEY_RE = /^(movie|tv):\d+$/;
 
 export const EMPTY_FILTERS: HomeFilters = { hidden: [], genres: [], completed: [] };
@@ -83,10 +87,42 @@ export function notifyHomeChange(): void {
 }
 
 // ---------- Envoi au compte (branché par auth.ts) ----------
-type Pusher = (profileId: string, settings: Record<string, unknown>) => void;
+/** Envoie des réglages au profil ; renvoie faux (ou une promesse fausse) si le compte a refusé. */
+export type Pusher = (profileId: string, settings: Record<string, unknown>) => Promise<boolean> | boolean | void;
 let pusher: Pusher | null = null;
 export function setFiltersPusher(fn: Pusher | null): void {
   pusher = fn;
+}
+
+const encoder = new TextEncoder();
+/** Taille UTF-8 d'une valeur sérialisée en JSON (un titre japonais pèse 3 octets par caractère). */
+export const byteSize = (value: unknown): number => encoder.encode(JSON.stringify(value) ?? 'null').length;
+
+/** Découpe en morceaux de moins de CHUNK_MAX_BYTES octets, sans limite de nombre. */
+export function chunkItems(items: readonly unknown[]): unknown[][] {
+  const out: unknown[][] = [];
+  let cur: unknown[] = [];
+  for (const it of items) {
+    if (cur.length && byteSize([...cur, it]) > CHUNK_MAX_BYTES) {
+      out.push(cur);
+      cur = [];
+    }
+    cur.push(it);
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+/** Vrai si la liste tient dans les morceaux disponibles. */
+export const fitsChunks = (items: readonly unknown[]): boolean => chunkItems(items).length <= MAX_CHUNKS;
+
+/** Morceaux à envoyer : au-delà de MAX_CHUNKS, le surplus n'est pas envoyé et un avertissement est écrit dans la console. */
+function splitChunks(items: readonly unknown[], name: string): unknown[][] {
+  const parts = chunkItems(items);
+  if (parts.length > MAX_CHUNKS) {
+    console.warn(`[laststream] réglages de l’accueil : « ${name} » tient en ${parts.length} morceaux (${MAX_CHUNKS} au plus) ; le surplus n’est pas envoyé au compte.`);
+  }
+  return parts.slice(0, MAX_CHUNKS);
 }
 
 // ---------- Lecture / écriture par profil ----------
@@ -109,7 +145,7 @@ const isHiddenEntry = (x: unknown): x is HiddenEntry => {
 /** Filtres valides, sans doublon ; les entrées abîmées sont ignorées. */
 export function normalizeFilters(raw: unknown): HomeFilters {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-  const hidden = Array.isArray(r.hidden) ? r.hidden.filter(isHiddenEntry).slice(0, MAX_HIDDEN) : [];
+  const hidden = Array.isArray(r.hidden) ? r.hidden.filter(isHiddenEntry) : [];
   const genres = Array.isArray(r.genres) ? [...new Set(r.genres.filter((g): g is number => Number.isInteger(g)))] : [];
   const completed = Array.isArray(r.completed) ? [...new Set(r.completed.filter((k): k is string => typeof k === 'string' && /^tv:\d+$/.test(k)))] : [];
   return { hidden, genres, completed };
@@ -141,29 +177,92 @@ export function currentFilters(): HomeFilters {
   return cache.f;
 }
 
-/** Oublie le cache mémoire après une modification directe du stockage (tests, réinitialisation). */
+/** Réinitialise l'état mémoire : cache, envois en attente et état connu du compte (tests, déconnexion). */
 export function resetFiltersCache(): void {
   cache = null;
+  pendingTimers.forEach((t) => clearTimeout(t));
+  pendingTimers.clear();
+  pendingState.clear();
+  accountKeys.clear();
+}
+
+// ---------- Envoi groupé : anti-rebond, clés modifiées seulement ----------
+const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingState = new Map<string, HomeFilters>();
+/** Clé de réglage -> JSON de ce que le compte détient (ou a reçu). Absent : état du compte inconnu. */
+const accountKeys = new Map<string, Record<string, string>>();
+
+const jsonOf = (v: unknown): string => JSON.stringify(v) ?? 'null';
+
+/**
+ * Réglages qui diffèrent de ce que le compte détient déjà (tous, si son état n'est pas connu). Un morceau devenu inutile
+ * part à null pour être effacé côté compte.
+ */
+export function changedSettings(id: string, f: HomeFilters): Record<string, unknown> {
+  const packed = packFilters(f);
+  const known = accountKeys.get(id);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(packed)) {
+    if (!known || known[k] !== jsonOf(v)) out[k] = v;
+  }
+  accountKeys.set(id, Object.fromEntries(Object.entries(packed).map(([k, v]) => [k, jsonOf(v)])));
+  return out;
+}
+
+function send(id: string, settings: Record<string, unknown>): void {
+  if (!pusher || !Object.keys(settings).length) return;
+  Promise.resolve(pusher(id, settings)).then(
+    (ok) => { if (ok === false) accountKeys.delete(id); }, // refus : le prochain envoi repartira de zéro
+    () => { accountKeys.delete(id); },
+  );
+}
+
+function schedule(id: string, f: HomeFilters): void {
+  pendingState.set(id, f);
+  const t = pendingTimers.get(id);
+  if (t) clearTimeout(t);
+  pendingTimers.set(id, setTimeout(() => flushSync(id), SYNC_DELAY_MS));
+}
+
+/** Envoie tout de suite les réglages en attente (de tous les profils, ou d'un seul). */
+export function flushSync(id?: string): void {
+  for (const pid of id ? [id] : [...pendingState.keys()]) {
+    const t = pendingTimers.get(pid);
+    if (t) clearTimeout(t);
+    pendingTimers.delete(pid);
+    const f = pendingState.get(pid);
+    pendingState.delete(pid);
+    if (f && pusher) send(pid, changedSettings(pid, f));
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => flushSync());
 }
 
 function save(id: string, f: HomeFilters): void {
   cache = { id, f };
   writeLocal(id, f);
-  if (pusher) pusher(id, packFilters(f));
+  schedule(id, f);
   notifyHomeChange();
 }
 
 // ---------- Actions ----------
-/** Ne plus proposer un titre sur l'accueil. Faux si la liste est pleine. */
+/** Ne plus proposer un titre sur l'accueil. Faux si la liste ne tient plus dans les morceaux du compte. */
 export function hideTitle(entry: { key: string; title: string; poster?: string }): boolean {
   const id = profileId();
   const f = currentFilters();
   if (f.hidden.some((h) => h.key === entry.key)) return true;
-  if (f.hidden.length >= MAX_HIDDEN || !KEY_RE.test(entry.key)) return false;
+  if (!KEY_RE.test(entry.key)) return false;
   const hiddenEntry: HiddenEntry = { key: entry.key, title: entry.title.slice(0, TITLE_MAX), poster: (entry.poster ?? '').slice(0, POSTER_MAX), addedAt: Date.now() };
-  save(id, { ...f, hidden: [...f.hidden, hiddenEntry] });
+  const next = { ...f, hidden: [...f.hidden, hiddenEntry] };
+  if (!fitsCapacity(next)) return false;
+  save(id, next);
   return true;
 }
+
+/** Vrai si les filtres tiennent dans les morceaux du compte. */
+export const fitsCapacity = (f: HomeFilters): boolean => fitsChunks(f.hidden) && fitsChunks(f.completed);
 
 /** Réaffiche un titre masqué. Renvoie l'entrée retirée (pour l'annulation), ou null. */
 export function unhideTitle(key: string): HiddenEntry | null {
@@ -222,23 +321,8 @@ export function keepVisible<T extends HomeItemLike>(items: readonly T[] | null |
 }
 
 // ---------- Réglages du profil (sérialisation) ----------
-/** Découpe en morceaux dont la forme JSON tient sous CHUNK_BYTES. */
-function splitChunks(items: readonly unknown[]): unknown[][] {
-  const out: unknown[][] = [];
-  let cur: unknown[] = [];
-  for (const it of items) {
-    if (cur.length && JSON.stringify([...cur, it]).length > CHUNK_BYTES) {
-      out.push(cur);
-      cur = [];
-    }
-    cur.push(it);
-  }
-  if (cur.length) out.push(cur);
-  return out.slice(0, MAX_CHUNKS);
-}
-
 function putChunks(out: Record<string, unknown>, name: string, items: readonly unknown[]): void {
-  const parts = splitChunks(items);
+  const parts = splitChunks(items, name);
   out[name] = parts.length;
   for (let k = 0; k < MAX_CHUNKS; k++) out[name + k] = parts[k] ?? null; // null efface les anciens morceaux
 }
@@ -275,19 +359,51 @@ export function unpackFilters(settings: Record<string, unknown> | null | undefin
 
 const hasAny = (f: HomeFilters): boolean => f.hidden.length > 0 || f.genres.length > 0 || f.completed.length > 0;
 
+const canonical = (f: HomeFilters): string => jsonOf({
+  h: [...f.hidden].sort((a, b) => a.key.localeCompare(b.key)),
+  g: [...f.genres].sort((a, b) => a - b),
+  c: [...f.completed].sort(),
+});
+
+/** Vrai si deux jeux de filtres sont identiques (sans tenir compte de l'ordre). */
+export const sameFilters = (a: HomeFilters, b: HomeFilters): boolean => canonical(a) === canonical(b);
+
 /**
- * À la connexion à un profil : les filtres du compte priment ; sans filtres sur le compte, ceux de ce navigateur
- * sont envoyés. Renvoie vrai si les filtres locaux ont été remplacés.
+ * Union de deux jeux de filtres (locaux et compte) : titres masqués (le plus récent gagne pour un même titre), genres bannis
+ * et séries vues en entier réunis. Si les titres masqués ne tiennent plus dans les morceaux, les plus anciens sont écartés
+ * avec un avertissement dans la console.
+ */
+export function mergeFilters(a: HomeFilters, b: HomeFilters): HomeFilters {
+  const byKey = new Map<string, HiddenEntry>();
+  for (const h of [...a.hidden, ...b.hidden]) {
+    const cur = byKey.get(h.key);
+    if (!cur || h.addedAt > cur.addedAt) byKey.set(h.key, h);
+  }
+  let hidden = [...byKey.values()].sort((x, y) => x.addedAt - y.addedAt || x.key.localeCompare(y.key));
+  const before = hidden.length;
+  while (hidden.length && !fitsChunks(hidden)) hidden = hidden.slice(1);
+  if (hidden.length < before) console.warn(`[laststream] ${before - hidden.length} titre(s) masqué(s) les plus anciens écartés à la fusion : capacité du compte atteinte.`);
+  return {
+    hidden,
+    genres: [...new Set([...a.genres, ...b.genres])].sort((x, y) => x - y),
+    completed: [...new Set([...a.completed, ...b.completed])].sort(),
+  };
+}
+
+/**
+ * À la connexion à un profil : les filtres locaux et ceux du compte sont fusionnés (union), enregistrés ici, puis l'union
+ * est renvoyée au compte si elle diffère de ce qu'il détient. Renvoie vrai si les filtres locaux ont changé.
  */
 export function applyAccountFilters(id: string, settings: Record<string, unknown>): boolean {
-  const remote = unpackFilters(settings);
-  if (remote) {
-    cache = { id, f: remote };
-    writeLocal(id, remote);
-    notifyHomeChange();
-    return true;
-  }
   const local = readLocal(id);
-  if (hasAny(local) && pusher) pusher(id, packFilters(local));
-  return false;
+  const remote = unpackFilters(settings);
+  const merged = remote ? mergeFilters(local, remote) : local;
+  const changed = !sameFilters(merged, local);
+  cache = { id, f: merged };
+  writeLocal(id, merged);
+  if (remote) accountKeys.set(id, Object.fromEntries(Object.entries(packFilters(remote)).map(([k, v]) => [k, jsonOf(v)])));
+  else accountKeys.delete(id);
+  if (pusher && hasAny(merged) && (!remote || !sameFilters(merged, remote))) send(id, changedSettings(id, merged));
+  if (changed) notifyHomeChange();
+  return changed;
 }

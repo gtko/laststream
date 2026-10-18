@@ -151,7 +151,8 @@ export function pushConfig(config: string): void {
 
 // Filtres d'accueil par profil : chaque changement part vers les réglages du profil (hors mode serveur, rien).
 setFiltersPusher((profileId, settings) => {
-  if (isServerMode()) api.putSettings(profileId, settings).catch(() => undefined);
+  if (!isServerMode()) return false;
+  return api.putSettings(profileId, settings).then(() => true, () => false);
 });
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;

@@ -174,7 +174,21 @@ export async function resolveHomeRow(def, page = 1, ctx) {
 }
 
 // ---------- Accueil : chargement progressif ----------
-const reg ={ token: 0, queue: [], prevKeys: new Set(), loaded: 0, lastRow: null, appear: new Appearances(), sentinel: null, io: null, busy: false, ctx: null, onDone: null, done: false, onScroll: null };
+const reg = {
+  token: 0,
+  queue: [],
+  prevKeys: new Set(),
+  loaded: 0,
+  lastRow: null,
+  appear: new Appearances(),
+  sentinel: null,
+  io: null,
+  busy: false,
+  ctx: null,
+  onDone: null,
+  done: false,
+  onScroll: null,
+};
 
 export function stopRegistry() {
   reg.token++;

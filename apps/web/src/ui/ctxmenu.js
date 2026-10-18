@@ -3,6 +3,7 @@
  * Hors de nos éléments, le menu natif du navigateur reste disponible (sélection de texte, champs de saisie). */
 import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
+import { isKidProfile } from '../data/auth';
 import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
@@ -130,8 +131,10 @@ function titleItems(t) {
     const any = userStore.watchedEpisodes(t.key).length > 0;
     items.push({ id: 'seen', label: any ? 'Marquer la série comme non vue' : 'Marquer la série comme vue', icon: ICON.check, run: () => toggleSeriesWatched(t.key) });
   }
-  const hidden = isHiddenKey(t.key);
-  items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: () => toggleHidden(t.key, it.name, it.posterPath) });
+  if (!isKidProfile()) { // profil enfant : pas de « Ne plus proposer » (accueil déjà filtré)
+    const hidden = isHiddenKey(t.key);
+    items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: () => toggleHidden(t.key, it.name, it.posterPath) });
+  }
   if (t.inContinue || resume) {
     items.push({ id: 'restart', label: 'Recommencer depuis le début', icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
     items.push({ id: 'remove', label: 'Retirer de « Reprendre la lecture »', icon: ICON.close, run: () => removeFromContinue(t.key) });

@@ -90,3 +90,17 @@ export function rankResults(results, query, opts) {
   const byScore = (a, b) => (b.s - a.s) || (a.i - b.i);
   return [...media.sort(byScore), ...people.sort(byScore)].map((e) => e.r);
 }
+
+/**
+ * Résultats de genre banni : ils passent après les autres, chaque groupe gardant l'ordre du classement. Ainsi le premier
+ * résultat est un genre banni seulement si tous les résultats le sont.
+ * @param {object[]} list       résultats déjà classés
+ * @param {(r: object) => boolean} isBanned  vrai si le résultat porte un genre banni
+ * @returns {{keep: object[], banned: object[]}}
+ */
+export function splitBanned(list, isBanned) {
+  const keep = [];
+  const banned = [];
+  for (const r of list || []) (isBanned(r) ? banned : keep).push(r);
+  return { keep, banned };
+}

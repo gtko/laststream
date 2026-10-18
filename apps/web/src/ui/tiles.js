@@ -173,8 +173,21 @@ export function pruneHomeTiles() {
     const it = state.byKey.get(key) || { key, type, id: Number(id) };
     if (!keepVisible([it]).length) (el.closest('.up-item') || el).remove();
   });
+  renumberTop();
 }
 onHomeChange(pruneHomeTiles);
+
+/** Après le retrait d'une tuile du Top 10, les rangs repartent de 1 jusqu'à n, sans trou. */
+function renumberTop() {
+  document.querySelectorAll('#app .row').forEach((row) => {
+    Array.from(row.children).filter((el) => el.classList.contains('top-item')).forEach((el, i) => {
+      const n = i + 1;
+      const title = (state.byKey.get(el.dataset.tile || '') || {}).name || '';
+      el.querySelectorAll('.rank, .rib-top i').forEach((x) => { x.textContent = String(n); });
+      el.setAttribute('aria-label', n + '. ' + title + ', Top 10 cette semaine');
+    });
+  });
+}
 
 export function paintNewBadge(el, it, info) {
   const media = el.querySelector('.card-media');

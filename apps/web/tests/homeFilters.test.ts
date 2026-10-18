@@ -1,13 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  applyAccountFilters, bannedGenreIds, EMPTY_FILTERS, GENRE_OPTIONS, HOME_FILTERS_KEY_PREFIX, hideTitle, homeVisibility,
-  isBannedGenre, isHiddenKey, keepVisible, MAX_HIDDEN, normalizeFilters, packFilters, resetFiltersCache, setFiltersPusher,
-  setGenreBanned, setSeriesCompleted, unhideTitle, unpackFilters, type HiddenEntry, type HomeFilters,
+  applyAccountFilters, bannedGenreIds, byteSize, CHUNK_MAX_BYTES, chunkItems, EMPTY_FILTERS, flushSync, GENRE_OPTIONS,
+  HOME_FILTERS_KEY_PREFIX, hideTitle, homeVisibility, isBannedGenre, isHiddenKey, keepVisible, MAX_CHUNKS, mergeFilters,
+  normalizeFilters, packFilters, resetFiltersCache, SYNC_DELAY_MS, setFiltersPusher, setGenreBanned, setSeriesCompleted,
+  unhideTitle, unpackFilters, type HiddenEntry, type HomeFilters,
 } from '../src/data/homeFilters';
 import { PROFILES_KEY, userStore } from '../src/data/userStore';
 import type { SeenStore } from '../src/data/seen';
 
 const DEFAULT_KEY = HOME_FILTERS_KEY_PREFIX + 'default';
+
+/** Titre japonais de 60 caractères (180 octets UTF-8) : le cas qui fait déborder un découpage en caractères. */
+const JP_TITLE = '日'.repeat(60);
+const jp = (i: number): HiddenEntry => ({ key: `movie:${100000 + i}`, title: JP_TITLE, poster: '/' + 'p'.repeat(39), addedAt: 1700000000000 + i });
 
 describe('filtre combiné de l’accueil (vu, masqué, genre banni)', () => {
   const seen = new Set(['movie:1']);
@@ -45,9 +50,13 @@ describe('filtre combiné de l’accueil (vu, masqué, genre banni)', () => {
 
 describe('filtres du profil (stockage, actions, filtre central)', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     localStorage.clear();
     resetFiltersCache();
     setFiltersPusher(null);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('masque et réaffiche un titre, retiré de keepVisible', () => {
@@ -85,6 +94,7 @@ describe('filtres du profil (stockage, actions, filtre central)', () => {
     localStorage.setItem(PROFILES_KEY, JSON.stringify([{ id: 'default', name: 'A' }, { id: 'autre', name: 'B' }]));
     userStore.setProfile('default');
     hideTitle({ key: 'movie:50', title: 'Sur default', poster: '' });
+    flushSync();
     expect(JSON.parse(localStorage.getItem(DEFAULT_KEY)!).hidden).toHaveLength(1);
     userStore.setProfile('autre');
     expect(isHiddenKey('movie:50')).toBe(false);
@@ -92,34 +102,94 @@ describe('filtres du profil (stockage, actions, filtre central)', () => {
     expect(isHiddenKey('movie:50')).toBe(true);
   });
 
-  it('refuse un titre masqué au-delà de la capacité', () => {
-    const many: HiddenEntry[] = Array.from({ length: MAX_HIDDEN }, (_, i) => ({ key: `movie:${i + 100}`, title: 't', poster: '', addedAt: i }));
-    localStorage.setItem(DEFAULT_KEY, JSON.stringify({ hidden: many, genres: [], completed: [] }));
-    resetFiltersCache();
+  it('refuse un titre masqué quand la liste ne tient plus dans les morceaux du compte', () => {
+    let added = 0;
+    for (let i = 0; i < 500; i++) {
+      if (!hideTitle({ key: `movie:${100000 + i}`, title: JP_TITLE, poster: '/' + 'p'.repeat(39) })) break;
+      added++;
+    }
+    expect(added).toBeGreaterThan(100);
+    expect(added).toBeLessThan(200);
     expect(hideTitle({ key: 'movie:999999', title: 'x', poster: '' })).toBe(false);
+    expect(packFilters(currentStored()).homeHidden).toBeLessThanOrEqual(MAX_CHUNKS);
   });
 
-  it('envoie les réglages au compte à chaque changement, avec le profil concerné', () => {
+  it('envoie les réglages au compte après le délai d’anti-rebond, avec le dernier état seulement', () => {
     const pusher = vi.fn();
     setFiltersPusher(pusher);
+    hideTitle({ key: 'movie:1', title: 'A', poster: '' });
+    hideTitle({ key: 'movie:2', title: 'B', poster: '' });
     setGenreBanned([16], true);
-    expect(pusher).toHaveBeenCalledWith('default', expect.objectContaining({ homeGenres: [16] }));
+    expect(pusher).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(SYNC_DELAY_MS);
+    expect(pusher).toHaveBeenCalledTimes(1);
+    const [id, settings] = pusher.mock.calls[0];
+    expect(id).toBe('default');
+    expect(unpackFilters(settings as Record<string, unknown>)).toEqual({ hidden: expect.any(Array), genres: [16], completed: [] });
+    expect((unpackFilters(settings as Record<string, unknown>)?.hidden ?? []).map((h) => h.key)).toEqual(['movie:1', 'movie:2']);
   });
 
-  it('à la connexion, les réglages du compte priment ; sans réglages sur le compte, les locaux partent', () => {
+  it('n’envoie que les clés modifiées, et null pour les morceaux devenus inutiles', () => {
+    const pusher = vi.fn();
+    setFiltersPusher(pusher);
+    for (let i = 0; i < 40; i++) hideTitle(jp(i));
+    flushSync();
+    const first = pusher.mock.calls[0][1] as Record<string, unknown>;
+    expect(first.homeHidden).toBeGreaterThan(1);
+
+    setGenreBanned([35], true);
+    flushSync();
+    expect(Object.keys(pusher.mock.calls[1][1] as object)).toEqual(['homeGenres']);
+
+    for (let i = 1; i < 40; i++) unhideTitle(jp(i).key);
+    flushSync();
+    const shrink = pusher.mock.calls[2][1] as Record<string, unknown>;
+    expect(shrink.homeHidden).toBe(1);
+    expect(shrink.homeHidden1).toBeNull();
+    expect(shrink).not.toHaveProperty('homeGenres');
+  });
+
+  it('au login, fusionne les filtres locaux et ceux du compte, puis renvoie l’union', () => {
+    hideTitle({ key: 'movie:60', title: 'Local', poster: '' });
+    setGenreBanned([27], true);
+    flushSync();
+    const pusher = vi.fn();
+    setFiltersPusher(pusher);
+    const remote = packFilters({ hidden: [{ key: 'movie:70', title: 'Compte', poster: '', addedAt: 1 }], genres: [35], completed: ['tv:9'] });
+    expect(applyAccountFilters('default', remote)).toBe(true);
+    expect(isHiddenKey('movie:60')).toBe(true);
+    expect(isHiddenKey('movie:70')).toBe(true);
+    expect(bannedGenreIds()).toEqual(new Set([27, 35]));
+    expect(currentStored().completed).toEqual(['tv:9']);
+    // L'union part au compte : seules les clés qui diffèrent de son état (titres et genres) sont envoyées.
+    expect(pusher).toHaveBeenCalledTimes(1);
+    const sent = pusher.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(sent)).not.toContain('homeCompleted');
+    expect(sent.homeGenres).toEqual([27, 35]);
+  });
+
+  it('au login, n’envoie rien si le compte a déjà l’union', () => {
+    hideTitle({ key: 'movie:80', title: 'Même', poster: '' });
+    const pusher = vi.fn();
+    setFiltersPusher(pusher);
+    const remote = packFilters(currentStored());
+    expect(applyAccountFilters('default', remote)).toBe(false);
+    expect(pusher).not.toHaveBeenCalled();
+  });
+
+  it('sans réglages sur le compte, les filtres locaux partent vers le compte', () => {
     hideTitle({ key: 'movie:60', title: 'Local', poster: '' });
     const pusher = vi.fn();
     setFiltersPusher(pusher);
     expect(applyAccountFilters('default', {})).toBe(false);
     expect(pusher).toHaveBeenCalledWith('default', expect.objectContaining({ homeHidden: 1 }));
-
-    const remote = packFilters({ hidden: [{ key: 'movie:70', title: 'Compte', poster: '', addedAt: 1 }], genres: [35], completed: [] });
-    expect(applyAccountFilters('default', remote)).toBe(true);
-    expect(isHiddenKey('movie:60')).toBe(false);
-    expect(isHiddenKey('movie:70')).toBe(true);
-    expect(bannedGenreIds().has(35)).toBe(true);
   });
 });
+
+/** Filtres actuellement stockés pour le profil par défaut. */
+function currentStored(): HomeFilters {
+  return normalizeFilters(JSON.parse(localStorage.getItem(DEFAULT_KEY) ?? 'null'));
+}
 
 describe('sérialisation des réglages du profil', () => {
   const entry = (i: number): HiddenEntry => ({ key: `movie:${i}`, title: 'T'.repeat(60), poster: '/' + 'p'.repeat(38), addedAt: 1700000000000 + i });
@@ -130,22 +200,31 @@ describe('sérialisation des réglages du profil', () => {
     expect(unpackFilters(wire)).toEqual(f);
   });
 
-  it('découpe les longues listes en morceaux de moins de 4 Ko', () => {
-    const f: HomeFilters = { hidden: Array.from({ length: MAX_HIDDEN }, (_, i) => entry(i)), genres: [], completed: [] };
-    const out = packFilters(f);
-    const chunks = Object.keys(out).filter((k) => /^homeHidden\d$/.test(k));
-    expect(chunks.length).toBeGreaterThan(1);
-    for (const k of chunks) expect(JSON.stringify(out[k]).length).toBeLessThanOrEqual(4096);
-    expect(unpackFilters(JSON.parse(JSON.stringify(out)))?.hidden).toHaveLength(MAX_HIDDEN);
+  it('découpe des titres japonais en morceaux de moins de 3500 octets UTF-8', () => {
+    const items = Array.from({ length: 60 }, (_, i) => jp(i));
+    const parts = chunkItems(items);
+    expect(parts.length).toBeGreaterThan(1);
+    for (const p of parts) expect(byteSize(p)).toBeLessThanOrEqual(CHUNK_MAX_BYTES);
+    expect(parts.flat()).toEqual(items);
+    const wire = JSON.parse(JSON.stringify(packFilters({ hidden: items, genres: [], completed: [] })));
+    expect(unpackFilters(wire)?.hidden).toEqual(items);
+  });
+
+  it('avertit dans la console quand une liste dépasse 12 morceaux, au lieu de tronquer en silence', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const out = packFilters({ hidden: Array.from({ length: 300 }, (_, i) => jp(i)), genres: [], completed: [] });
+    expect(warn).toHaveBeenCalled();
+    expect(out.homeHidden).toBe(MAX_CHUNKS);
+    warn.mockRestore();
   });
 
   it('efface les anciens morceaux quand la liste raccourcit', () => {
-    const big = packFilters({ hidden: Array.from({ length: 60 }, (_, i) => entry(i)), genres: [], completed: [] });
-    const small = packFilters({ hidden: [entry(1)], genres: [], completed: [] });
+    const big = packFilters({ hidden: Array.from({ length: 60 }, (_, i) => jp(i)), genres: [], completed: [] });
+    const small = packFilters({ hidden: [jp(1)], genres: [], completed: [] });
     const merged = { ...big, ...small };
     expect(merged.homeHidden).toBe(1);
     expect(merged.homeHidden1).toBeNull();
-    expect(unpackFilters(merged)?.hidden).toEqual([entry(1)]);
+    expect(unpackFilters(merged)?.hidden).toEqual([jp(1)]);
   });
 
   it('renvoie null sans aucune clé de filtre, des filtres vides avec des clés vides', () => {
@@ -162,5 +241,24 @@ describe('sérialisation des réglages du profil', () => {
     expect(n.hidden.map((h) => h.key)).toEqual(['movie:2']);
     expect(n.genres).toEqual([28]);
     expect(n.completed).toEqual(['tv:3']);
+  });
+
+  it('fusion : le titre le plus récent gagne, les genres et séries sont réunis', () => {
+    const a: HomeFilters = { hidden: [{ key: 'movie:1', title: 'ancien', poster: '', addedAt: 1 }], genres: [18], completed: ['tv:1'] };
+    const b: HomeFilters = { hidden: [{ key: 'movie:1', title: 'récent', poster: '', addedAt: 5 }, entry(2)], genres: [18, 53], completed: ['tv:2'] };
+    const m = mergeFilters(a, b);
+    expect(m.hidden.find((h) => h.key === 'movie:1')?.title).toBe('récent');
+    expect(m.hidden).toHaveLength(2);
+    expect(m.genres).toEqual([18, 53]);
+    expect(m.completed).toEqual(['tv:1', 'tv:2']);
+  });
+
+  it('fusion au-delà de la capacité : les plus anciens sont écartés avec un avertissement', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const m = mergeFilters({ hidden: Array.from({ length: 300 }, (_, i) => jp(i)), genres: [], completed: [] }, EMPTY_FILTERS);
+    expect(warn).toHaveBeenCalled();
+    expect(chunkItems(m.hidden).length).toBeLessThanOrEqual(MAX_CHUNKS);
+    expect(m.hidden[m.hidden.length - 1].key).toBe(jp(299).key);
+    warn.mockRestore();
   });
 });
