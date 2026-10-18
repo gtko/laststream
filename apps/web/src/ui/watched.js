@@ -153,6 +153,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && detailEl.querySelector('.ep-menu:not([hidden])')) { e.stopPropagation(); closeMenu(); }
 }, true);
 
+/** Série entière : tous les épisodes diffusés (saison 0 exclue). */
+export async function markSeries(m, watched) {
+  const refs = await seriesAired(m);
+  return mark(m.key, refs, watched);
+}
+
 /** Bascule d'un épisode (bouton coche d'une carte). */
 export function toggleEpisode(btn) {
   const m = state.model;

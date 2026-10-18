@@ -56,8 +56,11 @@ export interface UserStore {
   setProgress(entry: Omit<ProgressEntry, 'updatedAt'>): void;
   /** Charge la progression d'un titre depuis le serveur avant lecture (adaptateur serveur ; sans effet en local). */
   loadProgress?(key: string): Promise<void>;
-  /** Titres entamés (2 % à 95 %), le plus récent d'abord, un par titre. */
+  /** Titres entamés (2 % à 95 %), le plus récent d'abord, un par titre ; les titres retirés par l'utilisateur sont exclus. */
   continueWatching(limit?: number): ProgressEntry[];
+  /** Retire un titre de « Reprendre la lecture » sans perdre la progression. Faux en cas d'échec (rien n'a changé). */
+  hideContinue(key: string): Promise<boolean>;
+  showContinue(key: string): Promise<void>;
 
   getSeen(): string[];
   isSeen(episodeKey: string): boolean;
@@ -89,6 +92,7 @@ export interface WatchedRef {
 export const watchedKey = (key: string, season?: number, episode?: number): string =>
   season != null && episode != null ? `${key}:${season}:${episode}` : key;
 
+export const CONTINUE_HIDDEN_KEY = 'laststream.continue.hidden';
 export const LIBRARY_KEY = 'laststream.library';
 export const PROGRESS_KEY = 'laststream.progress';
 export const SEEN_KEY = 'ls_seen';
@@ -190,12 +194,34 @@ export class LocalUserStore implements UserStore {
     const map = this.progressMap();
     map[progressKey(entry.key, entry.season, entry.episode)] = { ...entry, updatedAt: Date.now() };
     writeJson(this.ls, PROGRESS_KEY, map);
+    this.unhide(entry.key); // une nouvelle lecture réaffiche le titre
+  }
+
+  hiddenKeys(): string[] {
+    const raw = readJson<unknown>(this.ls, CONTINUE_HIDDEN_KEY, []);
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+  }
+
+  private unhide(key: string): void {
+    const list = this.hiddenKeys();
+    if (list.includes(key)) writeJson(this.ls, CONTINUE_HIDDEN_KEY, list.filter((k) => k !== key));
+  }
+
+  async hideContinue(key: string): Promise<boolean> {
+    const list = this.hiddenKeys();
+    if (!list.includes(key)) writeJson(this.ls, CONTINUE_HIDDEN_KEY, [...list, key]);
+    return true;
+  }
+
+  async showContinue(key: string): Promise<void> {
+    this.unhide(key);
   }
 
   continueWatching(limit = 20): ProgressEntry[] {
     const latest = new Map<string, ProgressEntry>();
+    const hidden = new Set(this.hiddenKeys());
     Object.values(this.progressMap()).forEach((p) => {
-      if (!p || !p.duration || p.duration <= 0) return;
+      if (!p || !p.duration || p.duration <= 0 || hidden.has(p.key)) return;
       const ratio = p.position / p.duration;
       if (ratio < 0.02 || ratio > 0.95) return;
       const cur = latest.get(p.key);

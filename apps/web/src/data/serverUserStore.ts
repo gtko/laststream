@@ -1,6 +1,6 @@
 import { tmdb } from './lt';
 import {
-  deleteLibrary, getContinue, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
+  deleteContinue, deleteLibrary, getContinue, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
   type ContinueDto, type LibraryItemDto, type MediaKind, type ProfileDto,
 } from './userApi';
 import type { LibraryEntry, Profile, ProgressEntry, UserStore, WatchedRef } from './userStore';
@@ -138,6 +138,32 @@ export class ServerUserStore implements UserStore {
   }
   continueWatching(limit = 20): ProgressEntry[] {
     return this.cont.slice(0, limit);
+  }
+  private continueApi = true;
+  private hidden: ProgressEntry[] = [];
+  async hideContinue(key: string): Promise<boolean> {
+    const entry = this.cont.find((c) => c.key === key);
+    if (!entry) return true;
+    this.cont = this.cont.filter((c) => c.key !== key); // optimiste
+    this.hidden.push(entry);
+    if (!this.continueApi) return true;
+    const [type, id] = key.split(':');
+    try {
+      await deleteContinue(this.active.id, kindOf(type as 'movie' | 'tv'), Number(id));
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) { this.continueApi = false; return true; } // serveur sans cette route : masqué localement
+      this.cont.unshift(entry);
+      this.hidden = this.hidden.filter((h) => h !== entry);
+      return false;
+    }
+    return true;
+  }
+  async showContinue(key: string): Promise<void> {
+    const entry = this.hidden.find((h) => h.key === key);
+    if (!entry) return;
+    this.hidden = this.hidden.filter((h) => h !== entry);
+    this.cont.unshift(entry);
+    // Côté serveur, le titre revient dès la prochaine lecture (la suppression ne touche pas la progression).
   }
 
   // ---- Épisodes vus (local) ----

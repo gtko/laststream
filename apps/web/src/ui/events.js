@@ -220,19 +220,6 @@ document.addEventListener('click', (e) => {
     toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     return;
   }
-  const cx = t.closest('[data-ctx]');
-  if (cx) {
-    e.preventDefault();
-    const key = state.ctxMenu && state.ctxMenu.dataset.key;
-    const it = key && state.byKey.get(key);
-    closeCtx();
-    if (!it) return;
-    if (cx.dataset.ctx === 'open') { go('#/' + it.type + '/' + it.id, null); return; }
-    const on = toggleLib({ type: it.type, id: it.id, name: it.name, posterPath: it.posterPath });
-    toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
-    renderLibrary();
-    return;
-  }
   if (state.ctxMenu) closeCtx();
   const brw = t.closest('[data-browse]');
   if (brw) { e.preventDefault(); go('#/browse/' + brw.dataset.browse, brw); return; }

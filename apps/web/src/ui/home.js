@@ -204,7 +204,7 @@ export function viewA(d) {
   return '<main id="main" class="page-a">' + headerA() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
-    '<div id="lib-slot"></div>' +
+    '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
     '<div id="up-slot"></div>' +
@@ -214,6 +214,7 @@ export function viewA(d) {
     section('action', 'Action', r.action, (l) => row(l.map((it) => posterCard(it)).join(''))) +
     section('comedy', 'Comédie', r.comedy, (l) => row(l.map((it) => posterCard(it)).join(''))) +
     '<div id="svc-slot"></div>' +
+    '<div id="lib-slot"></div>' +
     '</div></main>';
 }
 

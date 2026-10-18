@@ -188,3 +188,22 @@ describe('« vu » : stockage local et serveur', () => {
     expect(s.watchedEpisodes('tv:9')).toEqual([{ season: 1, episode: 3 }]);
   });
 });
+
+describe('« Reprendre la lecture » : retrait sans perdre la progression', () => {
+  it('masque un titre puis le rétablit ; une nouvelle lecture le réaffiche', async () => {
+    localStorage.clear();
+    const { LocalUserStore } = await import('../src/data/userStore');
+    const s = new LocalUserStore();
+    const p = { key: 'movie:1', type: 'movie' as const, id: 1, title: 'A', poster: '', position: 600, duration: 6000 };
+    s.setProgress(p);
+    expect(s.continueWatching().map((x) => x.key)).toEqual(['movie:1']);
+    expect(await s.hideContinue('movie:1')).toBe(true);
+    expect(s.continueWatching()).toEqual([]);
+    expect(s.getProgress('movie:1')?.position).toBe(600); // progression conservée
+    await s.showContinue('movie:1');
+    expect(s.continueWatching()).toHaveLength(1);
+    await s.hideContinue('movie:1');
+    s.setProgress({ ...p, position: 900 });
+    expect(s.continueWatching()).toHaveLength(1);
+  });
+});

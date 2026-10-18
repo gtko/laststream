@@ -182,6 +182,8 @@ export const putLibrary = (id: string, type: MediaKind, tmdbId: number, body: { 
 export const deleteLibrary = (id: string, type: MediaKind, tmdbId: number) =>
   call<void>(`${P(id)}/library/${type}/${tmdbId}`, { method: 'DELETE', profileId: id });
 export const putProgress = (id: string, p: ProgressWrite) => call<unknown>(P(id) + '/progress', { method: 'PUT', body: p, profileId: id });
+export const deleteContinue = (id: string, type: MediaKind, tmdbId: number) =>
+  call<void>(`${'/profiles/' + encodeURIComponent(id)}/continue/${type}/${tmdbId}`, { method: 'DELETE', profileId: id });
 export const getContinue = (id: string) => call<{ items: ContinueDto[] }>(P(id) + '/continue', { profileId: id });
 export const getTitleProgress = (id: string, type: MediaKind, tmdbId: number) =>
   call<{ items: Array<{ season: number | null; episode: number | null; positionSec: number; durationSec: number; finished: boolean }> }>(`${P(id)}/progress/${type}/${tmdbId}`, { profileId: id });

@@ -771,7 +771,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .ctxmenu svg { width: 20px; height: 20px; }
 
 /* ---------- TV en direct : rangée d'accueil ---------- */
-#live-slot:empty, #lib-slot:empty, #cont-slot:empty { display: none; }
+#live-slot:empty, #lib-slot:empty, #cont-slot:empty, #follow-slot:empty { display: none; }
 .live-tile {
   position: relative; flex: 0 0 320px; width: 320px; min-height: 176px; padding: 14px 16px 18px; border-radius: 14px; text-align: left; overflow: hidden;
   display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line-2); transition: transform 0.2s;

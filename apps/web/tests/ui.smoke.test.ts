@@ -89,6 +89,35 @@ describe('interface portée', () => {
     expect(hero.querySelector('.hero-dot.is-current')!.textContent).toBe('3');
   });
 
+  it('menu contextuel : clic droit sur une tuile, clavier, et menu natif ailleurs', async () => {
+    location.hash = '#/';
+    await settle(200);
+    const tile = document.querySelector('#app #films [data-tile]') as HTMLElement;
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 50, clientY: 60 });
+    tile.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    const menu = document.querySelector('.ctxmenu') as HTMLElement;
+    expect(menu).not.toBeNull();
+    const labels = Array.from(menu.querySelectorAll('button')).map((b) => b.textContent);
+    expect(labels).toEqual(expect.arrayContaining(['Lecture', 'Plus d’infos', 'Bande-annonce', 'Ajouter à ma bibliothèque']));
+    expect(labels.some((l) => /vu|vue/.test(l!))).toBe(true);
+    expect(document.activeElement).toBe(menu.querySelector('button'));
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(menu.querySelectorAll('button')[1]);
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(document.activeElement).toBe(menu.querySelector('button'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+    const plain = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    (document.querySelector('#app .foot p') as HTMLElement).dispatchEvent(plain);
+    expect(plain.defaultPrevented).toBe(false); // menu natif conservé hors des éléments
+    // Ajout à la bibliothèque depuis le menu.
+    tile.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    (document.querySelector('.ctxmenu [data-ctx="lib"]') as HTMLElement).click();
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('laststream.library') || '[]')).toHaveLength(1);
+  });
+
   it('utilise la région France par défaut', () => {
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });
