@@ -3,7 +3,7 @@ import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../da
 import { DEFAULT_BASE, getBase, getConfig, isConfigured, normalizeBase, saveSettings } from '../data/config';
 import { clearCache } from '../data/transport';
 import {
-  BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, REGIONS,
+  BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
   setAutoplay, setBandwidthSetting, setRegion, setSkipPref,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
@@ -151,7 +151,8 @@ function regionSection() {
   const r = getRegion();
   return '<section class="set-sec glass" aria-labelledby="set-rg-h"><h2 class="f-sub" id="set-rg-h">Région</h2>' +
     '<p class="set-hint">Disponibilités en streaming, classification par âge et sorties selon le pays.</p>' +
-    field('Pays', '<select data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') + '</section>';
+    field('Pays', '<select data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
+    field('Langue des bandes-annonces et des synopsis', '<select data-set-pref="videolang"><option value="auto"' + (getVideoLangSetting() === 'auto' ? ' selected' : '') + '>Automatique (selon la région)</option>' + VIDEO_LANGS.map(([c, l]) => '<option value="' + c + '"' + (getVideoLangSetting() === c ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>', 'Les vidéos dans cette langue passent en premier, puis l’anglais.') + '</section>';
 }
 
 function dataSection() {
@@ -411,7 +412,12 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'skip-intro') setSkipPref('intro', t.checked);
   else if (p === 'skip-recap') setSkipPref('recap', t.checked);
   else if (p === 'skip-next') setSkipPref('nextEpisode', t.checked);
-  else if (p === 'region') {
+  else if (p === 'videolang') {
+    setVideoLang(t.value);
+    clearCache();
+    toast('Langue mise à jour : rechargement…');
+    setTimeout(() => location.reload(), 600);
+  } else if (p === 'region') {
     setRegion(t.value);
     try { localStorage.removeItem('ls_tv_filters'); } catch (_) { /* ignoré */ }
     clearCache();

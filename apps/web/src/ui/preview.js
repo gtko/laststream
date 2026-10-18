@@ -115,5 +115,5 @@ export function setupPreviews() {
   dwellIO = null;
   if (REDUCE || STILL || !('IntersectionObserver' in window)) return;
   dwellIO = new IntersectionObserver(onDwell, { threshold: [0, 0.5] });
-  app.querySelectorAll('[data-media]').forEach((el) => dwellIO.observe(el));
+  app.querySelectorAll('.hero-slide.is-current [data-media], [data-media]:not(.hero-slide *)').forEach((el) => dwellIO.observe(el));
 }

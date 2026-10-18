@@ -1,20 +1,18 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
-import { isKidProfile, kidMaxAge } from '../data/auth';
+import { isKidProfile } from '../data/auth';
 import { isConfigured } from '../data/config';
-import { kidAllows } from '../data/kid';
 import { recommend, tmdb } from '../data/lt';
-import { getRegion } from '../data/prefs';
 import { userStore } from '../data/userStore';
-import { detailOf, getDetail, listOf, register, toItem } from './catalog.js';
-import { IMG, TABS } from './constants.js';
+import { getDetail, listOf, register, toItem } from './catalog.js';
+import { TABS } from './constants.js';
 import { addDays, isFuture, todayStr } from './dates.js';
 import { app } from './dom.js';
-import { brand, heroEmpty, infoBtn, row, section, titleEl, trailerBtn } from './fragments.js';
+import { brand, row, section } from './fragments.js';
 import { ICON } from './icons.js';
 import { renderLibrary } from './library.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
-import { metaHTML, ratingList } from './ratings.js';
 import { renderServices } from './services.js';
 import { state } from './state.js';
 import { continueCard, observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -39,17 +37,17 @@ export async function loadHome() {
   const comedy = listOf(val(5), 'movie');
   if ([day, week, films, series, action, comedy].every((l) => l === null)) throw new Error('catalogue indisponible');
 
-  // Mise en avant : premier titre de la semaine ayant un fond et un détail chargeable.
-  const kid = isKidProfile();
-  const candidates = (week || []).filter((it) => it.backdropPath).slice(0, kid ? 10 : 3);
-  await Promise.all(candidates.map(getDetail));
-  const hero = candidates.find((it) => state.details.has(it.key) && (!kid || kidAllows(state.details.get(it.key).cert, kidMaxAge()))) || null;
+  // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
+  const heroes = (week || []).map((it, i) => Object.assign(it, { heroRank: i + 1 })).filter((it) => it.backdropPath).slice(0, HERO_MAX);
+  await Promise.all(heroes.slice(0, 2).map(getDetail)); // le reste arrive pendant l'affichage (initHero)
+  const hero = heroes[0] || null;
 
   state.top10 = new Map(cut(day, 10) ? cut(day, 10).map((it, i) => [it.key, i + 1]) : []);
-  const all = [...(hero ? [hero] : []), ...(day || []), ...(week || []), ...(films || []), ...(series || []), ...(action || []), ...(comedy || [])];
+  const all = [...heroes, ...(day || []), ...(week || []), ...(films || []), ...(series || []), ...(action || []), ...(comedy || [])];
   all.forEach(register);
   return {
     hero,
+    heroes,
     rows: {
       start: week ? week.filter((it) => it.poster).slice(0, 20) : null, // « Pour bien commencer » : tendances, sans IA
       top: cut(day, 10),
@@ -201,28 +199,9 @@ export function headerA() {
     '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
 }
 
-export function heroA(it, eyebrow) {
-  if (!it) return heroEmpty();
-  const d = detailOf(it);
-  return '<section class="hero" aria-label="À la une">' +
-    '<div class="hero-bg" data-media="' + esc(it.key) + '">' +
-    '<img src="' + esc(IMG('w1280', it.backdropPath)) + '" alt="" data-fb="' + esc(it.backdrop) + '" fetchpriority="high" decoding="async"></div>' +
-    '<div class="scrim" aria-hidden="true"></div>' +
-    '<div class="hero-content">' +
-    '<span class="eyebrow">' + esc(eyebrow || 'Tendance cette semaine') + '</span>' +
-    titleEl(it, d, 'hero-title') +
-    '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
-    '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0) + '</ul>' +
-    (d.providers && d.providers.length
-      ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
-        '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
-    '<p class="clamp-3 hero-desc">' + esc(d.overview) + '</p>' +
-    '<div class="hero-actions">' + trailerBtn(it, d) + infoBtn(it) + '</div></div></section>';
-}
-
 export function viewA(d) {
   const r = d.rows;
-  return '<main id="main" class="page-a">' + headerA() + heroA(d.hero) +
+  return '<main id="main" class="page-a">' + headerA() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
     '<div id="lib-slot"></div>' +
@@ -267,6 +246,7 @@ export function errorView() {
 }
 
 export function renderHome() {
+  stopHero();
   stopPreview();
   cancelDwell();
   app.setAttribute('aria-busy', String(state.status === 'loading'));
@@ -286,6 +266,7 @@ export function renderHome() {
   renderLive();
   observeTiles(app);
   setupPreviews();
+  if (!state.data.kids) initHero(state.data.heroes);
 }
 export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();

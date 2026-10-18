@@ -1,7 +1,9 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { certLabel, certification, pickLogo, pickTrailer, register, toItem, videosOf } from './catalog.js';
+import { getVideoLang } from '../data/prefs';
+import { sortVideos } from '../data/trailers';
+import { certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
 import { names } from './util.js';
 
@@ -28,9 +30,8 @@ export function buildModel(type, id, raw, en) {
   const isTv = type === 'tv';
   const crew = (raw.credits && raw.credits.crew) || [];
   const uniq = (list) => Array.from(new Set(list));
-  const videos = ((raw.videos && raw.videos.results) || [])
-    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type])
-    .sort((a, b) => VIDEO_TYPE[a.type][1] - VIDEO_TYPE[b.type][1] || (a.iso_639_1 === 'fr' ? 0 : 1) - (b.iso_639_1 === 'fr' ? 0 : 1))
+  const videos = sortVideos(((raw.videos && raw.videos.results) || [])
+    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], getVideoLang())
     .slice(0, 14)
     .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0] }));
   const recs = ((raw.recommendations && raw.recommendations.results) || []);
@@ -91,7 +92,7 @@ export function fetchFull(type, id) {
   if (!fullCache.has(key)) {
     const append = (type === 'tv' ? 'videos,images,credits,external_ids,content_ratings' : 'videos,images,credits,external_ids,release_dates') + ',recommendations,similar';
     const p = (async () => {
-      const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null' });
+      const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
       raw.videos = { results: await videosOf(raw, type, id) };
       let en = null;
       if (!raw.overview || !raw.tagline) {

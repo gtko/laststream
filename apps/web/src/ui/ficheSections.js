@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { setupWhy } from './why.js';
 import { getSeen } from './util.js';
 import { api, tmdb, why } from '../data/lt';
 import { register, toItem } from './catalog.js';
@@ -30,6 +31,7 @@ export async function fillWhy(m, token) {
     if (token !== state.token || !j.text) return;
     detailEl.querySelector('#f-why-text').textContent = j.text;
     detailEl.querySelector('#f-why').hidden = false;
+    setupWhy(detailEl.querySelector('#f-why'));
   } catch (_) { /* section masquée en cas d'erreur */ }
 }
 

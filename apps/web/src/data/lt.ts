@@ -1,5 +1,5 @@
 import { ltUrl, requireBase, type QueryValue } from './config';
-import { getRegion } from './prefs';
+import { getRegion, getVideoLang } from './prefs';
 import { cachedRequest, requestJson } from './transport';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -16,7 +16,7 @@ export function api<T = Json>(path: string, params?: Params): Promise<T> {
 
 /** Route TMDB (liste blanche côté serveur). `region` suit le réglage de l'utilisateur (France par défaut). */
 export function tmdb<T = Json>(path: string, params: Params = {}): Promise<T> {
-  return api<T>('tmdb/' + path, { region: getRegion().code, ...params });
+  return api<T>('tmdb/' + path, { region: getRegion().code, language: getVideoLang().tag, ...params });
 }
 
 export function postLt<T = Json>(path: string, body: unknown): Promise<T> {

@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { getVideoLang } from '../data/prefs';
+import { pickTrailerKey } from '../data/trailers';
 import { api, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
@@ -47,12 +49,7 @@ export function pickLogo(logos, size) {
 }
 
 export function pickTrailer(videos) {
-  const yt = (videos || []).filter((v) => v.site === 'YouTube' && v.key);
-  const trailers = yt.filter((v) => v.type === 'Trailer');
-  const pool = (trailers.length ? trailers : yt.filter((v) => v.type === 'Teaser')).slice();
-  const score = (v) => (v.iso_639_1 === 'fr' ? 0 : v.iso_639_1 === 'en' ? 1 : 2) + (v.official ? -0.5 : 0);
-  pool.sort((a, b) => score(a) - score(b));
-  return pool[0] ? pool[0].key : '';
+  return pickTrailerKey(videos, getVideoLang());
 }
 
 export function certification(raw, type) {
@@ -69,7 +66,7 @@ export const certLabel = (c) => (!c ? '' : /^(U|TP|0)$/i.test(c) ? 'Tous publics
 // Détail léger d'un titre de l'accueil : TMDB (fr-FR, repli en-US pour le synopsis) + notes MDBList.
 export async function fetchDetail(item) {
   const append = item.type === 'tv' ? 'videos,images,external_ids,content_ratings' : 'videos,images,external_ids,release_dates';
-  const raw = await tmdb(item.type + '/' + item.id, { append_to_response: append, include_image_language: 'fr,en,null' });
+  const raw = await tmdb(item.type + '/' + item.id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
   let overview = raw.overview || '';
   if (!overview) {
     try {
@@ -103,7 +100,10 @@ export async function fetchDetail(item) {
   };
 }
 
-/** Bandes-annonces : la liste blanche du serveur n'accepte pas include_video_language, repli en-US si rien en français. */
+/** Langues demandées pour les vidéos : la langue choisie, l'anglais, puis les vidéos sans langue. */
+export const videoLanguages = () => getVideoLang().lang + ',en,null';
+
+/** Repli : si aucune bande-annonce n'est ressortie, une dernière requête en anglais. */
 export async function videosOf(raw, type, id) {
   const list = (raw.videos && raw.videos.results) || [];
   if (pickTrailer(list)) return list;

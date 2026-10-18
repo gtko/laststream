@@ -70,3 +70,35 @@ export function getRegion(): Region {
 export const setRegion = (code: string): void => {
   if (REGIONS.some((r) => r.code === code)) write(REGION_STORAGE_KEY, code);
 };
+
+// ---- Langue des bandes-annonces et des textes TMDB ----
+export const VIDEO_LANG_KEY = 'laststream.videolang';
+export const VIDEO_LANGS: ReadonlyArray<readonly [string, string]> = [
+  ['fr', 'Français'], ['en', 'English'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'],
+];
+export interface VideoLang {
+  /** Code ISO 639-1 (fr). */
+  lang: string;
+  /** Étiquette TMDB `language` (fr-FR, fr-CA…). */
+  tag: string;
+  /** Pays de la variante régionale recherchée (FR, CA…). */
+  country: string;
+}
+
+/** Langue choisie dans les réglages ; « automatique » = langue de la région (FR, BE, LU, CH, CA : français). */
+export function getVideoLang(): VideoLang {
+  const region = getRegion().code;
+  const chosen = read(VIDEO_LANG_KEY);
+  const lang = VIDEO_LANGS.some(([c]) => c === chosen) ? (chosen as string) : 'fr';
+  const country = lang === 'fr' ? (region === 'CA' ? 'CA' : 'FR') : ({ en: 'US', es: 'ES', de: 'DE', it: 'IT' } as Record<string, string>)[lang];
+  return { lang, tag: `${lang}-${country}`, country };
+}
+export const setVideoLang = (code: string): void => {
+  if (code === 'auto') {
+    try { globalThis.localStorage?.removeItem(VIDEO_LANG_KEY); } catch { /* ignoré */ }
+  } else if (VIDEO_LANGS.some(([c]) => c === code)) write(VIDEO_LANG_KEY, code);
+};
+export const getVideoLangSetting = (): string => {
+  const v = read(VIDEO_LANG_KEY);
+  return VIDEO_LANGS.some(([c]) => c === v) ? (v as string) : 'auto';
+};

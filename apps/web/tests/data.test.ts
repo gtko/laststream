@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT } from
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { pickTrailerKey, sortVideos } from '../src/data/trailers';
 import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
 import { LocalUserStore, LIBRARY_KEY } from '../src/data/userStore';
 import { onAccent, readTheme, resolveTheme } from '../src/data/theme';
@@ -104,6 +105,31 @@ describe('profil enfant : certification et genres', () => {
     expect(sectionAllowed([], 'tv')).toBe(false);
     expect(sectionAllowed(['tv', 'dessins'], 'tv')).toBe(true);
     expect(sectionAllowed(['dessins'], 'famille')).toBe(false);
+  });
+});
+
+describe('bandes-annonces : langue préférée', () => {
+  const fr = { lang: 'fr', tag: 'fr-FR', country: 'FR' };
+  const v = (o: Record<string, unknown>) => ({ site: 'YouTube', key: String(o.key), type: 'Trailer', official: true, iso_639_1: 'fr', iso_3166_1: 'FR', published_at: '2024-01-01T00:00:00Z', size: 1080, ...o });
+  it('suit l’ordre : même langue bande-annonce, teaser, autre, anglais, reste', () => {
+    expect(pickTrailerKey([v({ key: 'en', iso_639_1: 'en' }), v({ key: 'frTeaser', type: 'Teaser' }), v({ key: 'frClip', type: 'Clip' })], fr)).toBe('frTeaser');
+    expect(pickTrailerKey([v({ key: 'en', iso_639_1: 'en' }), v({ key: 'de', iso_639_1: 'de' })], fr)).toBe('en');
+    expect(pickTrailerKey([v({ key: 'enT', iso_639_1: 'en', type: 'Teaser' }), v({ key: 'de', iso_639_1: 'de' })], fr)).toBe('enT');
+    expect(pickTrailerKey([v({ key: 'de', iso_639_1: 'de' })], fr)).toBe('de');
+    expect(pickTrailerKey([], fr)).toBe('');
+  });
+  it('départage : région, official, plus récent, 1080', () => {
+    const ca = v({ key: 'ca', iso_3166_1: 'CA' });
+    const frFr = v({ key: 'frFR' });
+    expect(pickTrailerKey([ca, frFr], fr)).toBe('frFR');
+    expect(pickTrailerKey([ca, frFr], { lang: 'fr', tag: 'fr-CA', country: 'CA' })).toBe('ca');
+    expect(pickTrailerKey([v({ key: 'a', official: false }), v({ key: 'b' })], fr)).toBe('b');
+    expect(pickTrailerKey([v({ key: 'old' }), v({ key: 'new', published_at: '2025-06-01T00:00:00Z' })], fr)).toBe('new');
+    expect(pickTrailerKey([v({ key: 'sd', size: 720 }), v({ key: 'hd' })], fr)).toBe('hd');
+  });
+  it('classe la rangée Bonus par type puis par langue', () => {
+    const list = [v({ key: 'a', iso_639_1: 'en', type: 'Teaser' }), v({ key: 'b', type: 'Teaser' }), v({ key: 'c', iso_639_1: 'en' })];
+    expect(sortVideos(list, (x) => (x.type === 'Trailer' ? 0 : 1), fr).map((x) => x.key)).toEqual(['c', 'b', 'a']);
   });
 });
 

@@ -68,6 +68,27 @@ describe('interface portée', () => {
     expect(calls.every((c) => !c.includes('/api/'))).toBe(true);
   });
 
+  it('mise en avant : carrousel des tendances, pastilles, flèches et clavier', async () => {
+    const hero = document.querySelector('#app .hero-carousel') as HTMLElement;
+    expect(hero).not.toBeNull();
+    const slides = hero.querySelectorAll('.hero-slide');
+    expect(slides.length).toBeGreaterThanOrEqual(6);
+    expect(slides.length).toBeLessThanOrEqual(8);
+    expect(slides[0].querySelector('.eyebrow')!.textContent).toBe('Tendance n°1 cette semaine');
+    expect(slides[2].querySelector('.eyebrow')!.textContent).toBe('Tendance n°3 cette semaine');
+    expect(hero.querySelectorAll('.hero-slide.is-current')).toHaveLength(1);
+    expect(slides[1].hasAttribute('inert')).toBe(true);
+    (hero.querySelector('[data-hero-go="2"]') as HTMLElement).click();
+    expect(slides[2].classList.contains('is-current')).toBe(true);
+    expect(slides[2].hasAttribute('inert')).toBe(false);
+    (hero.querySelector('[data-hero-step="1"]') as HTMLElement).click();
+    expect(slides[3].classList.contains('is-current')).toBe(true);
+    hero.focus();
+    hero.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(slides[2].classList.contains('is-current')).toBe(true);
+    expect(hero.querySelector('.hero-dot.is-current')!.textContent).toBe('3');
+  });
+
   it('utilise la région France par défaut', () => {
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });

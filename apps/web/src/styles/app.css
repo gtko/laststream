@@ -126,3 +126,28 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .page-kids .row-link { margin-left: auto; }
 .pf-sections { border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .pf-sections legend { padding: 0 6px; font-size: 13px; font-weight: 700; color: var(--dim); }
+
+/* ---------- Carrousel de la mise en avant ---------- */
+.hero-carousel { outline: none; }
+.hero-carousel:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+.hero-dots { position: absolute; right: var(--gutter); bottom: 28px; z-index: 3; display: flex; gap: 8px; }
+.hero-dot { min-width: 34px; height: 34px; padding: 0 8px; border-radius: 999px; font-size: 13px; font-weight: 700; color: var(--muted); background: rgba(12, 11, 17, 0.6); border: 1px solid rgba(255, 255, 255, 0.18); transition: background-color 0.2s, color 0.2s; }
+.hero-dot:hover { color: var(--text); border-color: var(--muted); }
+.hero-dot.is-current { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.hero-arrow { position: absolute; top: 50%; z-index: 3; width: 48px; height: 48px; margin-top: -24px; border-radius: 50%; display: grid; place-items: center; background: rgba(12, 11, 17, 0.55); border: 1px solid rgba(255, 255, 255, 0.2); opacity: 0; transition: opacity 0.2s, background-color 0.2s; }
+.hero-arrow.prev { left: 14px; }
+.hero-arrow.next { right: 14px; }
+.hero-arrow:hover, .hero-arrow:focus-visible { background: rgba(12, 11, 17, 0.85); }
+.hero-carousel:hover .hero-arrow, .hero-carousel:focus-within .hero-arrow { opacity: 1; }
+@media (hover: none) { .hero-arrow { display: none; } }
+@media (max-width: 1023px) { .hero-dots { right: var(--gutter); bottom: 22px; } .hero-arrow { display: none; } }
+@media (max-width: 640px) { .hero-dots { left: 16px; right: 16px; bottom: 18px; justify-content: center; } .hero-dot { min-width: 30px; height: 30px; } }
+
+/* ---------- Cartes « Pourquoi tu vas aimer » : déploiement vers le haut ---------- */
+.f-why.is-live { position: relative; padding: 0; gap: 0; cursor: default; }
+.f-why.is-live:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.f-why-inner { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 12px 16px; border-radius: 14px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; transition: max-height 0.32s ease, background-color 0.2s; }
+.f-why.is-open .f-why-inner { background: rgba(23, 21, 31, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.12); margin: -1px; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35); }
+.f-why.is-open .f-why-text { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.f-why-hint { align-self: flex-start; font-size: 12px; font-weight: 700; color: var(--accent); }
+.f-why:not([data-clamped="true"]) .f-why-hint, .f-why.is-open .f-why-hint { display: none; }

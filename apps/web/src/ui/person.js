@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { setupWhy } from './why.js';
 import { isKidProfile } from '../data/auth';
 import { kidGenreOk } from '../data/kid';
 import { personWhy, tmdb } from '../data/lt';
@@ -230,6 +231,7 @@ export async function showPerson(id) {
       if (token !== state.token || !j.text) return;
       detailEl.querySelector('#pp-why-text').textContent = j.text;
       detailEl.querySelector('#pp-why').hidden = false;
+      setupWhy(detailEl.querySelector('#pp-why'));
     }).catch(() => { /* carte masquée */ });
   }
 }
