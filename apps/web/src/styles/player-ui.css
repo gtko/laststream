@@ -44,17 +44,17 @@
 .lp-pause-ep { margin: 0; font-family: var(--ff-title); font-weight: 700; font-size: 20px; }
 .lp-pause-syn { margin: 0; font-size: 17px; line-height: 1.55; color: var(--soft); display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
 
-.lp-next { flex-direction: row; align-items: stretch; width: min(520px, calc(100% - 40px)); padding: 0; overflow: hidden; gap: 0; }
-.lp-next-still { position: relative; flex: none; width: 168px; background: var(--surface-2) center / cover; display: grid; place-items: center; min-height: 112px; }
+.lp-next { flex-direction: row; align-items: center; width: min(580px, calc(100% - 40px)); padding: 12px; overflow: hidden; gap: 14px; }
+.lp-next-still { position: relative; flex: none; width: 240px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--surface-2) center / cover; display: grid; place-items: center; }
 .lp-next-still img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .lp-ring { position: relative; z-index: 1; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: rgba(12, 11, 17, 0.72); }
 .lp-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .lp-ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 3; }
 .lp-ring-fg { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
 .lp-ring b { font-size: 16px; font-weight: 800; }
-.lp-next-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
-.lp-next-actions .btn { min-height: 40px; padding: 0 14px; font-size: 14px; }
-@media (max-width: 560px) { .lp-next-still { width: 110px; } }
+.lp-next-body { padding: 2px 2px 2px 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; flex: 1; }
+.lp-next-actions .btn { min-height: 40px; padding: 0 14px; font-size: 14px; white-space: nowrap; }
+@media (max-width: 560px) { .lp-next { padding: 10px; gap: 12px; } .lp-next-still { width: 140px; } }
 .lp-endrow { position: absolute; right: clamp(20px, 4vw, 64px); bottom: 132px; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 16px; background: rgba(23, 21, 31, 0.94); border: 1px solid var(--line-2); }
 .lp-endrow[hidden] { display: none; }
 .lp-endrow div { display: flex; flex-wrap: wrap; gap: 8px; }
