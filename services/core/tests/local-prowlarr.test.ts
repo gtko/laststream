@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeConfig } from '../src/config/codec.js';
-import { configJsonSchema, parseConfig } from '../src/config/schema.js';
+import { configJsonSchema, parseConfig as parseConfigBase } from '../src/config/schema.js';
 import { getStreams, type PipelineContext } from '../src/pipeline.js';
 import type { FetchFn } from '../src/sources/http.js';
 import {
@@ -19,6 +19,13 @@ import {
 import { clearProwlarrDiscoveryCache } from '../src/sources/prowlarr.js';
 import type { ContentRef } from '../src/types.js';
 import { json, SECRET, startApp } from './lt-harness.js';
+
+// Anciennes sources torrent (indexeurs, Prowlarr) : réactivées pour ces tests seulement (désactivées par défaut).
+process.env.LASTADDON_LEGACY_INDEXERS = '1';
+
+// Le Prowlarr local est désactivé par défaut : ces tests couvrent l'ancien mode, qui l'active explicitement.
+const parseConfig = (input: Record<string, unknown> = {}) =>
+  parseConfigBase({ autoProwlarr: true, ...input, localProwlarr: { enabled: true, ...(input.localProwlarr as object | undefined) } });
 
 /* Prowlarr local : détection (env, config.xml, cache, mode public), sources effectives, pipeline et routes.
  * Aucun réseau : fetch et lecture de fichiers sont simulés. La clé de test n'apparaît jamais dans une réponse. */
@@ -280,10 +287,10 @@ describe('statut public et sources effectives', () => {
     expect(effectiveSources(auto, null)).toEqual([]);
   });
 
-  it('le champ autoProwlarr est dans le schéma, libellé en français, défaut true', () => {
+  it('le champ autoProwlarr est dans le schéma, libellé en français, désactivé par défaut', () => {
     const schema = configJsonSchema() as { properties: Record<string, { title?: string; default?: unknown }> };
-    expect(schema.properties.autoProwlarr?.title).toBe('Utiliser le Prowlarr local détecté');
-    expect(schema.properties.autoProwlarr?.default).toBe(true);
+    expect(schema.properties.autoProwlarr?.title).toBe('Utiliser le Prowlarr local détecté (obsolète)');
+    expect(schema.properties.autoProwlarr?.default).toBe(false);
   });
 });
 
@@ -388,7 +395,7 @@ describe('routes : statut sans fuite de clé', () => {
     const mocked = fakeFetch(prowlarrHandler);
     const app = await startApp({ fetch: mocked.fetch, localProwlarr: async () => LOCAL });
     try {
-      const token = encodeConfig({ debrid: { service: 'alldebrid', apiKey: 'cle-factice-tests' } }, SECRET);
+      const token = encodeConfig({ autoProwlarr: true, localProwlarr: { enabled: true }, debrid: { service: 'alldebrid', apiKey: 'cle-factice-tests' } }, SECRET);
       const res = await fetch(`${app.baseUrl}/${token}/stream/movie/tt1234567.json`);
       const text = await res.text();
       expect(res.status).toBe(200);

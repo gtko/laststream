@@ -10,6 +10,9 @@ import type { ContentRef } from '../src/types.js';
 import { cfg as baseCfg, GB } from './engine-fixtures.js';
 import { monoTorrent } from './torrent-fixtures.js';
 
+// Anciennes sources torrent (indexeurs, Prowlarr) : réactivées pour ces tests seulement (désactivées par défaut).
+process.env.LASTADDON_LEGACY_INDEXERS = '1';
+
 /*
  * Pipeline v2 de bout en bout, sans réseau : sources, Cinemeta, TMDB, débrideur, hébergeurs, sonde et .torrent
  * sont simulés. Chaque test utilise des identifiants IMDb distincts (les caches de métadonnées sont en mémoire).

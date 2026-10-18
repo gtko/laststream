@@ -1,6 +1,6 @@
 # lastAddon
 
-Addon Stremio agrégateur de streams pour Laststream. Il interroge en parallèle plusieurs sources (addons Stremio amont, indexeurs Torznab, Prowlarr et Jackett), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, qualités, tailles, débit, formats audio, limite d'âge), regroupe les copies d'une même release, les classe, puis les renvoie à Stremio. Avec AllDebrid, il indique quels torrents sont déjà en cache, débride la lecture à la demande en passant à la copie suivante en cas d'échec, et peut proposer les liens d'hébergeurs débridés.
+Addon Stremio agrégateur de streams pour Laststream. Il interroge en parallèle les addons Stremio amont configurés par l'utilisateur (leur seule source : ils débrident eux-mêmes, la clé du débrideur est dans l'addon, par exemple Lumio), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, qualités, tailles, débit, formats audio, limite d'âge), regroupe les copies d'une même release, les classe, puis les renvoie à Stremio. Avec AllDebrid, il indique quels torrents sont déjà en cache, débride la lecture à la demande en passant à la copie suivante en cas d'échec, et peut proposer les liens d'hébergeurs débridés.
 
 ## Prérequis
 
@@ -69,7 +69,8 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_ENV_FILE` | `.env` à la racine du projet | Emplacement du fichier `.env` (secret). Chemin absolu conseillé pour une application packagée. Voir « Distribution ». |
 | `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription libre (serveur perso). Sinon seul le premier compte s'inscrit sans lien ; les suivants exigent un lien de parrainage (voir [docs/social.md](docs/social.md)). |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
-| `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public) | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
+| `LASTADDON_LEGACY_INDEXERS` | `0` | Mettre `1` pour réactiver les anciennes sources torrent : Torznab, Prowlarr, Jackett, détection du Prowlarr local et routes `/config/indexers`. Désactivé par défaut (voir « Anciennes sources torrent »). Réservé au mode serveur perso. |
+| `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public), seulement avec `LASTADDON_LEGACY_INDEXERS=1` | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
 | `LASTADDON_PROWLARR_URL` | `http://localhost:9696` | Base du Prowlarr local à interroger. Remplace l'adresse par défaut. |
 | `LASTADDON_PROWLARR_KEY` | aucun | Clé API du Prowlarr local. Prioritaire sur le fichier de configuration. Lue une seule fois au démarrage, jamais renvoyée ni journalisée. |
 | `LASTADDON_PROWLARR_CONFIG_PATH` | `C:\ProgramData\Prowlarr\config.xml` (Windows), `~/.config/Prowlarr/config.xml` (Linux) | Fichier `config.xml` de Prowlarr, dont la balise `<ApiKey>` sert de clé si `LASTADDON_PROWLARR_KEY` est absente. |
@@ -79,7 +80,11 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 
 Les clés API (sources Torznab, Prowlarr, Jackett, debrid, services) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur d'indexeur. La clé du Prowlarr local n'est pas dans la configuration : elle n'apparaît dans aucune réponse, ni dans `/config/*`, ni dans les erreurs.
 
-### Prowlarr local
+### Anciennes sources torrent (désactivées)
+
+Les seules sources de Laststream sont les addons Stremio amont (`type: "upstream"`). Les sources `torznab`, `prowlarr` et `jackett`, le Prowlarr local détecté (`autoProwlarr` et `localProwlarr`, faux par défaut) et les routes `/config/indexers` restent dans le code mais sont **inactifs** : une configuration qui en contient les accepte, sans jamais les interroger, tant que `LASTADDON_LEGACY_INDEXERS=1` n'est pas défini. Le débridage dans Laststream est une option avancée : il faut une clé `debrid` dans la configuration (mode serveur) ; en mode client (`LASTADDON_DEBRID_SERVER_SIDE=0`), les torrents sans lien ne sont livrés que si l'appareil ajoute `?torrents=1` à la requête `/stream` (il a alors sa propre clé). Sans cela, un résultat sans URL lisible (infoHash seul) n'est jamais renvoyé. Les sections « Prowlarr local » et « Prowlarr et Jackett » ci-dessous décrivent ce mode hérité.
+
+### Prowlarr local (mode hérité)
 
 Détection automatique, sans rien saisir : si la configuration n'a aucune source, le serveur utilise un Prowlarr installé sur la même machine (par défaut `http://localhost:9696`). La clé API est lue dans `LASTADDON_PROWLARR_KEY`, sinon dans le `config.xml` de Prowlarr. L'instance est validée par un appel à `GET /api/v1/indexer` (délai 3 s), et le résultat est mis en cache 60 secondes. Les sources explicites ne sont jamais remplacées. Pour désactiver ce repli pour une configuration donnée, réglez « Utiliser le Prowlarr local détecté » sur faux (`autoProwlarr: false`).
 
@@ -353,7 +358,7 @@ Plusieurs sources peuvent renvoyer la même release. Le moteur les regroupe en u
 - **Jeton de lecture** : les flux torrent et les liens d'hébergeurs débridés portent leurs copies dans un jeton `/play/c/:token`. Le jeton est signé (HMAC, clé dérivée de `LASTADDON_SECRET`) mais **pas chiffré** : son contenu est lisible par qui détient l'URL. Il ne contient ni clé API, ni passkey, ni configuration. Huit copies au plus par jeton (64 au décodage), 4 Ko au plus. Un lien direct ordinaire n'entre pas dans le jeton : il reste une URL directe.
 - **Basculement** : à la lecture, les copies sont essayées une à une dans l'ordre, dans le budget `play.budgetMs` (12 s par défaut). Chaque tentative reçoit le temps restant. Une erreur propre à la copie passe à la suivante ; une erreur globale (clé, abonnement, quota) ou le dépassement du budget arrête tout. Un hébergeur signalé indisponible est marqué en panne pendant 1 h, et ses copies sont sautées.
 - **Contrôles avant débridage** : une date de sortie future renvoie `not_released` ; une certification connue au-dessus de la limite d'âge de la configuration renvoie `age_limit`. Aucun appel au debrid n'est fait dans ces cas.
-- **Sans debrid** : les copies torrent et les liens d'hébergeurs sont ignorés. Seuls les liens directs restent lisibles.
+- **Sans debrid** (défaut) : les copies torrent et les liens d'hébergeurs sont ignorés, sans message d'erreur. Seuls les liens directs restent lisibles.
 - **Torrents privés** : un .torrent privé est mis en cache par guid de release (6 h). Au débridage, ses octets sont envoyés à AllDebrid comme fichier (`POST /v4/magnet/upload/file`), jamais comme magnet public. Si les octets ne sont plus en cache, la copie vaut `no_copy`. Limite actuelle : un torrent privé sans guid n'est pas mis en cache et est résolu par son infoHash (voir « Torrents sans infoHash et torrents privés »).
 
 Raisons d'échec de `/play/c`, avec leur statut HTTP et leur titre affiché (texte en français, fixe, sans donnée de la requête) :
@@ -415,7 +420,7 @@ AllDebrid débride aussi les liens des hébergeurs qu'il prend en charge. Cette 
 - **Option « Inclure les liens directs (hébergeurs) »** (`filters.includeHosterLinks`, vraie par défaut) : quand elle est fausse, les liens d'hébergeur sont retirés avant le groupement. Les liens directs ordinaires (hors catalogue AllDebrid) restent des liens directs.
 - Dans l'affichage, un lien d'hébergeur s'affiche « Lien direct · <hébergeur> », avec le nom fourni par AllDebrid.
 
-### Prowlarr et Jackett
+### Prowlarr et Jackett (mode hérité)
 
 - **Types de source** : `prowlarr` (une instance, plusieurs indexeurs) et `jackett` (une instance, tous les indexeurs configurés ou une liste). Les indexeurs Torznab isolés restent pris en charge (`torznab`).
 - **Découverte** : `POST /config/indexers` avec la source en JSON brut (non chiffré) renvoie les indexeurs disponibles :

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LruCache } from '../src/cache/lru.js';
-import { parseConfig } from '../src/config/schema.js';
+import { parseConfig as parseConfigBase } from '../src/config/schema.js';
 import { packEpisodeCount, getStreams, getStreamsStatus, type PipelineContext, type PipelineResult } from '../src/pipeline.js';
 import { releaseScope, repairMojibake, scopeCovers } from '../src/parse/scope.js';
 import { collectStreams, clearUpstreamTasks } from '../src/sources/collect.js';
@@ -9,6 +9,13 @@ import { IndexerHealth } from '../src/sources/indexer-health.js';
 import type { LocalProwlarr } from '../src/sources/local-prowlarr.js';
 import { clearProwlarrDiscoveryCache, searchProwlarrDetailed, type ProwlarrSource } from '../src/sources/prowlarr.js';
 import type { ContentRef } from '../src/types.js';
+
+// Anciennes sources torrent (indexeurs, Prowlarr) : réactivées pour ces tests seulement (désactivées par défaut).
+process.env.LASTADDON_LEGACY_INDEXERS = '1';
+
+// Le Prowlarr local est désactivé par défaut : ces tests couvrent l'ancien mode, qui l'active explicitement.
+const parseConfig = (input: Record<string, unknown> = {}) =>
+  parseConfigBase({ autoProwlarr: true, ...input, localProwlarr: { enabled: true, ...(input.localProwlarr as object | undefined) } });
 
 /* Vitesse des sources : recherche par indexeur à échéance douce, indexeurs lents en arrière-plan, packs de série,
  * provenances. Aucun réseau : fetch simulé, délais courts. */

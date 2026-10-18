@@ -7,6 +7,9 @@ import type { AppDeps } from '../src/deps.js';
 import { decodeCopiesToken } from '../src/play/token.js';
 import { serveApp } from './serve.js';
 
+// Anciennes sources torrent (indexeurs, Prowlarr) : réactivées pour ces tests seulement (désactivées par défaut).
+process.env.LASTADDON_LEGACY_INDEXERS = '1';
+
 /*
  * Parcours complet : configuration (plain ou chiffrée), agrégation, filtre, dédoublonnage, tri,
  * cache debrid et formatage. Toutes les sources externes (upstream, Torznab, Cinemeta, AllDebrid)
@@ -296,7 +299,7 @@ describe('agrégation : filtre, dédoublonnage et tri', () => {
 
     expect(body.streams.map(idOf)).toEqual([CDN_URL]);
     expect(body.streams.some((s) => s.infoHash !== undefined)).toBe(false);
-    expect(body.notice).toContain('Configure AllDebrid');
+    expect(body.notice).toBeUndefined();
     // Rien n'est envoyé à un débrideur sans clé.
     expect(uploadsSent()).toHaveLength(0);
   });

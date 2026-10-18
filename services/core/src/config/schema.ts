@@ -361,14 +361,14 @@ export const ConfigSchema = z.object({
       description:
         "Sources interrogées. L'ordre est la priorité : la première est prioritaire (départage des scores égaux, et copie lue en premier parmi les releases identiques). Une source désactivée est ignorée.",
     }),
-  autoProwlarr: z.boolean().default(true).meta({
-    title: 'Utiliser le Prowlarr local détecté',
+  autoProwlarr: z.boolean().default(false).meta({
+    title: 'Utiliser le Prowlarr local détecté (obsolète)',
     description:
       "Ajoute le Prowlarr installé sur cette machine aux sources configurées (sauf s'il y figure déjà), interrogé en parallèle.",
   }),
   localProwlarr: z
     .object({
-      enabled: z.boolean().default(true),
+      enabled: z.boolean().default(false),
       position: z.number().int().min(0).max(1000).optional(),
     })
     .prefault({})

@@ -64,8 +64,8 @@ interface Out {
   behaviorHints?: Record<string, unknown>;
   laststream?: { client?: { copies: Record<string, unknown>[]; season?: number; episode?: number } };
 }
-async function streamsFor(config: Record<string, unknown>, type: string, id: string): Promise<{ streams: Out[]; notice?: string; debrid?: string; onlyCached?: boolean }> {
-  const res = await fetch(`${baseUrl}/${plain(config)}/stream/${type}/${id}.json`);
+async function streamsFor(config: Record<string, unknown>, type: string, id: string, torrents = true): Promise<{ streams: Out[]; notice?: string; debrid?: string; onlyCached?: boolean }> {
+  const res = await fetch(`${baseUrl}/${plain(config)}/stream/${type}/${id}.json${torrents ? '?torrents=1' : ''}`);
   expect(res.status).toBe(200);
   return (await res.json()) as { streams: Out[] };
 }
@@ -115,5 +115,12 @@ describe('mode client : aucun appel AllDebrid depuis le serveur', () => {
     expect(stream?.laststream?.client).toMatchObject({ season: 1, episode: 2 });
     expect(stream?.url).toBeUndefined();
     expect(hosts.filter((h) => h.includes('alldebrid'))).toEqual([]);
+  });
+
+  it('sans ?torrents=1 (aucun débrideur déclaré par l appareil) : aucun torrent sans lien n est livré', async () => {
+    const body = await streamsFor({ sources: SOURCES }, 'movie', 'tt1234567', false);
+    expect(body.streams.filter((s) => s.infoHash !== undefined)).toEqual([]);
+    expect(body.streams.map((s) => s.url)).toEqual([CDN_URL]);
+    expect(body.notice).toBeUndefined();
   });
 });

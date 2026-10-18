@@ -21,6 +21,7 @@ import { type CollectResult, collectStreams, mergeIndexerCopies, type SourceErro
 import type { HosterClient } from './sources/hosters.js';
 import type { TitleInfo } from './sources/indexers.js';
 import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
+import { legacyIndexersEnabled } from './config/runtime-env.js';
 import { PROWLARR_BUDGET_MS, PROWLARR_SOFT_MS } from './sources/prowlarr.js';
 import { getTitleVariants, nameMatchesTitles, releaseYearFits, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
@@ -86,6 +87,8 @@ export interface PipelineContext {
    * Le filtre « seulement en cache » est alors laissé à l'appareil.
    */
   debridMode?: 'server' | 'client';
+  /** Mode client : l'appareil a un débrideur (option avancée) et demande aussi les torrents sans lien. Sinon, aucun n'est livré. */
+  deliverTorrents?: boolean;
   /** Hébergeurs AllDebrid (contrôle des liens d'hébergeur). Absent : aucun lien d'hébergeur n'est identifié. */
   hosters?: Pick<HosterClient, 'getHosts' | 'hosterFor' | 'linkInfos'>;
   /** Hébergeurs signalés en panne : leurs liens sont écartés sans contrôle. */
@@ -483,7 +486,7 @@ function withoutLanguageFallback(item: Scored): Scored {
 
 /** Clé de cache : hash de la configuration et de l'identifiant (sans config en clair). */
 function resultCacheKey(config: Config, ref: ContentRef, ctx: PipelineContext): string {
-  const id = [ref.type, ref.id, ref.season ?? '', ref.episode ?? '', ctx.playBaseUrl, ctx.configToken, ctx.secret, ctx.debridMode ?? 'server'].join('|');
+  const id = [ref.type, ref.id, ref.season ?? '', ref.episode ?? '', ctx.playBaseUrl, ctx.configToken, ctx.secret, ctx.debridMode ?? 'server', ctx.deliverTorrents === true ? 'torrents' : ''].join('|');
   return hashConfigKey(config, id);
 }
 
@@ -492,6 +495,8 @@ function resultCacheKey(config: Config, ref: ContentRef, ctx: PipelineContext): 
  * fournisseur est appelé à chaque requête (détection mise en cache) ; son échec n'empêche jamais la requête.
  */
 async function sourcesOf(config: Config, ctx: PipelineContext): Promise<Config['sources']> {
+  // Seuls les addons Stremio amont sont interrogés, sauf LASTADDON_LEGACY_INDEXERS=1 (indexeurs, Prowlarr local).
+  if (!legacyIndexersEnabled()) return config.sources.filter((source) => source.type === 'upstream');
   if (!config.autoProwlarr || !config.localProwlarr.enabled || ctx.localProwlarr === undefined) return config.sources;
   const provider = ctx.localProwlarr;
   const local = await settle(() => provider(), null);
@@ -769,8 +774,9 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     certificationFr: typeof meta.certificationFr === 'number' ? meta.certificationFr : undefined,
     releaseDate: meta.releaseDate,
     maxResults: config.maxResults,
-    hasDebrid: config.debrid !== undefined,
-    clientDebrid: ctx.debridMode === 'client',
+    // Mode client : les torrents sans lien ne sont livrés que si l'appareil a déclaré un débrideur.
+    hasDebrid: config.debrid !== undefined && !(ctx.debridMode === 'client' && ctx.deliverTorrents !== true),
+    clientDebrid: ctx.debridMode === 'client' && ctx.deliverTorrents === true,
     season: ref.season,
     episode: ref.episode,
   });

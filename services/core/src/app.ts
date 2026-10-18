@@ -3,7 +3,7 @@ import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { edgeTrust } from './config/edge.js';
-import { allowedOrigins, configuredStreamingServer, isTrustProxy } from './config/runtime-env.js';
+import { allowedOrigins, configuredStreamingServer, isTrustProxy, legacyIndexersEnabled } from './config/runtime-env.js';
 import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { type App, type AppEnv, type Ctx, newApp } from './http/app-env.js';
@@ -256,7 +256,8 @@ export function createApp(deps: AppDeps): App {
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps, backend);
-  registerIndexerRoutes(app, deps);
+  // Routes de gestion des indexeurs : seulement avec LASTADDON_LEGACY_INDEXERS=1 (les addons Stremio sont l'unique source par défaut).
+  if (legacyIndexersEnabled()) registerIndexerRoutes(app, deps);
   registerUserRoutes(app, deps, backend, maintenance);
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
