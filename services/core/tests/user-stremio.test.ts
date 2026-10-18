@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeLookup, json, KEYS, mockUpstream, type MockUpstream, type RunningApp, startApp, tokenFor } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 const STREMIO = 'https://api.strem.io/api';
 const TMDB = 'https://api.themoviedb.org/3';
@@ -79,7 +79,7 @@ async function start(fetchImpl: typeof fetch): Promise<void> {
   app = await startApp({ fetch: fetchImpl, lookupHost: fakeLookup(), userDbPath: file });
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');
-  profile = (await request<{ id: string }>(app, 'POST', '/user/profiles', { token, body: { name: 'Greg' } })).body.id;
+  profile = (await createProfileVia(app, token, { name: 'Greg' })).body.id;
 }
 
 beforeEach(async () => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { bootstrapOwner, type Member } from './social-harness.js';
-import { type ErrorBody, request } from './user-harness.js';
+import { type ErrorBody, request, createProfileVia } from './user-harness.js';
 
 interface HiddenPage {
   items: { key: string; title: string; poster: string; addedAt: number }[];
@@ -110,7 +110,7 @@ describe('titres masqués (table par profil)', () => {
   });
 
   it('l’import ne touche qu’au profil demandé ; un profil sans ancien morceau démarre vide', async () => {
-    const other = await request<{ id: string }>(app, 'POST', '/user/profiles', { token: alice.token, body: { name: 'autre' } });
+    const other = await createProfileVia(app, alice.token, { name: 'autre' });
     await request(app, 'PUT', `/user/profiles/${alice.profile}/settings`, { token: alice.token, body: { homeHidden: 1, homeHidden0: entries(1, 3) } });
     expect((await request<HiddenPage>(app, 'GET', `/user/profiles/${other.body.id}/hidden`, { token: alice.token })).body.total).toBe(0);
     expect((await page()).body.total).toBe(3);

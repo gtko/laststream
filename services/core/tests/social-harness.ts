@@ -1,5 +1,5 @@
 import type { RunningApp } from './lt-harness.js';
-import { type AccountBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type AccountBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 export interface InviteBody {
   quota: number;
@@ -22,7 +22,7 @@ export async function bootstrapOwner(app: RunningApp, username = 'alice'): Promi
 
 async function withProfile(app: RunningApp, username: string): Promise<Member> {
   const token = await loginAs(app, username);
-  const profile = await request<{ id: string }>(app, 'POST', '/user/profiles', { token, body: { name: username } });
+  const profile = await createProfileVia(app, token, { name: username });
   return { username, token, profile: profile.body.id };
 }
 
@@ -38,6 +38,6 @@ export async function inviteAndRegister(app: RunningApp, inviter: Member, userna
 
 /** Crée un profil enfant pour le membre. */
 export async function addKidProfile(app: RunningApp, member: Member, name = 'petit'): Promise<string> {
-  const res = await request<{ id: string }>(app, 'POST', '/user/profiles', { token: member.token, body: { name, isKid: true } });
+  const res = await createProfileVia(app, member.token, { name, isKid: true });
   return res.body.id;
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 interface ProfileBody {
   id: string;
@@ -48,7 +48,7 @@ beforeEach(async () => {
   app = await startApp({});
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');
-  profile = ((await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Greg' } })).body).id;
+  profile = ((await createProfileVia(app, token, { name: 'Greg' })).body).id;
 });
 
 afterEach(async () => {
@@ -230,7 +230,7 @@ describe('continuer à regarder', () => {
 
   it('progression isolée par profil', async () => {
     await putProgress({ type: 'movie', tmdbId: 603, positionSec: 10, durationSec: 100 });
-    const other = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Autre' } })).body;
+    const other = (await createProfileVia(app, token, { name: 'Autre' })).body;
     const res = await request<ContinueBody>(app, 'GET', `/user/profiles/${other.id}/continue`, { token });
     expect(res.body.items).toEqual([]);
   });

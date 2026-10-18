@@ -82,7 +82,7 @@ describe('/admin : contrôle d\'accès', () => {
   });
 
   it("profil administrateur : un autre profil adulte du même compte (conjoint) est refusé, comme l'absence d'en-tête", async () => {
-    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'jessica' } });
+    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, headers: { 'x-profile-id': rig.owner.profile }, body: { name: 'jessica' } });
     const denied = await rig.call<{ error: string }>('GET', '/admin/accounts', { headers: { 'x-profile-id': jessica.body.id } });
     expect(denied.status).toBe(403);
     expect(denied.body.error).toBe('admin_profile_required');
@@ -111,7 +111,7 @@ describe('/admin : contrôle d\'accès', () => {
   });
 
   it('profil principal : seul à écrire la configuration (sources, extensions, clés) ; isMainProfile annoncé', async () => {
-    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'jessica2' } });
+    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, headers: { 'x-profile-id': rig.owner.profile }, body: { name: 'jessica2' } });
     const put = (profile: string) => request(rig.app, 'PUT', `/user/profiles/${profile}/settings`, { token: rig.owner.token, body: { lastaddonConfig: 'CHIFFRE' } });
     expect((await put(jessica.body.id)).status).toBe(403);
     expect(((await put(jessica.body.id)).body as { error: string }).error).toBe('main_profile_required');
@@ -131,7 +131,7 @@ describe('/admin : contrôle d\'accès', () => {
   });
 
   it('profil adulte protégé par PIN : jeton de déverrouillage exigé', async () => {
-    const created = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'verrou', pin: '1234' } });
+    const created = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, headers: { 'x-profile-id': rig.owner.profile }, body: { name: 'verrou', pin: '1234' } });
     const profileId = created.body.id;
     await rig.backend.admin().setAdminProfileId(profileId);
     const locked = await rig.call<{ error: string }>('GET', '/admin/accounts', { headers: { 'x-profile-id': profileId } });

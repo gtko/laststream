@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { addKidProfile, bootstrapOwner, inviteAndRegister, type Member } from './social-harness.js';
-import { type ErrorBody, request } from './user-harness.js';
+import { type ErrorBody, request, createProfileVia } from './user-harness.js';
 
 interface LibraryBody {
   items: { type: string; tmdbId: number | null; title: string; visibility: string }[];
@@ -104,7 +104,7 @@ describe('visibilité de la bibliothèque', () => {
   });
 
   it('un titre présent dans deux profils n’apparaît qu’une fois ; les profils enfants ne partagent rien', async () => {
-    const second = await request<{ id: string }>(app, 'POST', '/user/profiles', { token: alice.token, body: { name: 'second' } });
+    const second = await createProfileVia(app, alice.token, { name: 'second' });
     await put(alice, 'movie', 1, 'Matrix');
     await put(alice, 'movie', 1, 'Matrix', second.body.id);
     await visibility(alice, 'movie', 1, 'friends');

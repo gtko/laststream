@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, mockUpstream, startApp } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 interface ProfileBody {
   id: string;
@@ -18,7 +18,7 @@ interface UnlockBody {
 
 const PIN = '1111';
 const WRONG = '0000';
-const LOCK_MS = 15 * 60_000;
+const LOCK_MS = 5 * 60_000;
 
 let app: RunningApp;
 let token: string;
@@ -30,8 +30,9 @@ beforeEach(async () => {
   app = await startApp({ fetch: mockUpstream({}).fetch });
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');
-  protectedId = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Protégé', pin: PIN } })).body.id;
-  openId = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Libre' } })).body.id;
+  // Le premier profil (sans PIN) est le principal : c'est lui qui crée les suivants.
+  openId = (await createProfileVia(app, token, { name: 'Libre' })).body.id;
+  protectedId = (await createProfileVia(app, token, { name: 'Protégé', pin: PIN })).body.id;
 });
 
 afterEach(async () => {
@@ -80,7 +81,7 @@ function dataCalls(id: string): { name: string; method: string; path: string; bo
 }
 
 describe('PIN : blocage après 5 échecs', () => {
-  it('quatre échecs : 403 invalid_pin ; le cinquième bloque 15 minutes (429 pin_locked, Retry-After)', async () => {
+  it('quatre échecs : 403 invalid_pin ; le cinquième bloque 5 minutes (429 pin_locked, Retry-After)', async () => {
     setClock(T0);
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const res = await unlock(WRONG);
@@ -90,14 +91,14 @@ describe('PIN : blocage après 5 échecs', () => {
     const fifth = await unlock(WRONG);
     expect(fifth.status).toBe(429);
     expect(fifth.body).toEqual({ error: 'pin_locked' });
-    expect(Number(fifth.headers.get('retry-after'))).toBeGreaterThan(890);
-    expect(Number(fifth.headers.get('retry-after'))).toBeLessThanOrEqual(900);
+    expect(Number(fifth.headers.get('retry-after'))).toBeGreaterThan(290);
+    expect(Number(fifth.headers.get('retry-after'))).toBeLessThanOrEqual(300);
   });
 
   it('pendant le blocage, même le bon PIN est refusé sans vérification (429), et rien n est recompté', async () => {
     setClock(T0);
     for (let attempt = 0; attempt < 5; attempt += 1) await unlock(WRONG);
-    setClock(T0 + 5 * 60_000);
+    setClock(T0 + 4 * 60_000);
     expect((await unlock(PIN)).status).toBe(429);
     expect((await unlock(WRONG)).status).toBe(429);
     // Après le blocage, une nouvelle série repart de zéro : un échec donne 403, pas 429.
@@ -125,7 +126,7 @@ describe('PIN : blocage après 5 échecs', () => {
   it('le blocage est propre au profil : l autre profil reste déverrouillable par son propre code', async () => {
     setClock(T0);
     for (let attempt = 0; attempt < 5; attempt += 1) await unlock(WRONG);
-    const other = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${openId}`, { token, body: { pin: '2222' } });
+    const other = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${openId}`, { token, headers: { 'x-profile-id': openId }, body: { pin: '2222' } });
     expect(other.status).toBe(200);
     expect((await unlock('2222', openId)).status).toBe(200);
   });
@@ -160,7 +161,7 @@ describe('PIN : toutes les routes de données exigent le jeton de profil', () =>
   });
 
   it('jeton d un autre profil protégé : refusé', async () => {
-    const otherId = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Autre', pin: '2222' } })).body.id;
+    const otherId = (await createProfileVia(app, token, { name: 'Autre', pin: '2222' })).body.id;
     const otherToken = (await unlock('2222', otherId)).body as UnlockBody;
     const res = await request<ErrorBody>(app, 'GET', `/user/profiles/${protectedId}/library`, {
       token,
@@ -176,7 +177,7 @@ describe('PIN : jeton lié à la session et à la version du PIN', () => {
     const otherSession = await loginAs(app, 'alice');
     const res = await request<ErrorBody>(app, 'GET', `/user/profiles/${protectedId}/library`, {
       token: otherSession,
-      headers: { 'x-profile-token': pinToken },
+      headers: { 'x-profile-token': pinToken, 'x-profile-id': protectedId },
     });
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: 'pin_required' });
@@ -195,13 +196,13 @@ describe('PIN : jeton lié à la session et à la version du PIN', () => {
     const oldToken = await unlockToken();
     const change = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${protectedId}`, {
       token,
-      headers: { 'x-profile-token': oldToken },
+      headers: { 'x-profile-token': oldToken, 'x-profile-id': protectedId },
       body: { pin: '3333' },
     });
     expect(change.status).toBe(200);
     const stale = await request<ErrorBody>(app, 'GET', `/user/profiles/${protectedId}/library`, {
       token,
-      headers: { 'x-profile-token': oldToken },
+      headers: { 'x-profile-token': oldToken, 'x-profile-id': protectedId },
     });
     expect(stale.body).toEqual({ error: 'pin_required' });
     expect((await unlock(PIN)).status).toBe(403);
@@ -230,7 +231,7 @@ describe('PIN : jeton lié à la session et à la version du PIN', () => {
     const pinToken = await unlockToken();
     const removed = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${protectedId}`, {
       token,
-      headers: { 'x-profile-token': pinToken },
+      headers: { 'x-profile-token': pinToken, 'x-profile-id': protectedId },
       body: { pin: null },
     });
     expect(removed.body.hasPin).toBe(false);
@@ -240,7 +241,7 @@ describe('PIN : jeton lié à la session et à la version du PIN', () => {
 
 describe('GET /user/profiles : champs d affichage, sans secret', () => {
   it('expose hasPin, isKid et kidMaxAge ; aucun hash ni compteur', async () => {
-    await request(app, 'POST', '/user/profiles', { token, body: { name: 'Enfant', isKid: true, kidMaxAge: 10 } });
+    await createProfileVia(app, token, { name: 'Enfant', isKid: true, kidMaxAge: 10 });
     const res = await request<{ profiles: Record<string, unknown>[] }>(app, 'GET', '/user/profiles', { token });
     const byName = Object.fromEntries(res.body.profiles.map((profile) => [profile.name, profile]));
     expect(byName['Protégé']).toMatchObject({ hasPin: true, isKid: false, kidMaxAge: null });

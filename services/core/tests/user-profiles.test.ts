@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { createProfileVia, type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
 
 interface ProfileBody {
   id: string;
@@ -38,8 +38,13 @@ afterEach(async () => {
   await app.close();
 });
 
-async function createProfile(body: Record<string, unknown>, token = alice) {
-  return request<ProfileBody | ErrorBody>(app, 'POST', '/user/profiles', { token, body });
+async function createProfile(body: Record<string, unknown>, token = alice, mainToken?: string) {
+  return createProfileVia<ProfileBody | ErrorBody>(app, token, body, mainToken);
+}
+
+/** Appel de gestion fait depuis le profil actor (X-Profile-Id) avec, éventuellement, son jeton de PIN. */
+function asProfile(actor: string, pinToken?: string, token = alice) {
+  return { token, headers: { 'x-profile-id': actor, ...(pinToken ? { 'x-profile-token': pinToken } : {}) } };
 }
 
 async function unlock(profileId: string, pin: string, token = alice) {
@@ -72,6 +77,7 @@ describe('profils : création et lecture', () => {
   });
 
   it('PIN à 4 chiffres : profil marqué hasPin, PIN invalide refusé', async () => {
+    await createProfile({ name: 'Principal' });
     const res = await createProfile({ name: 'Protégé', pin: '4321' });
     expect((res.body as ProfileBody).hasPin).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('4321');
@@ -100,39 +106,91 @@ describe('profils : création et lecture', () => {
   });
 });
 
-describe('profils : modification et suppression', () => {
-  it('PATCH modifie les champs fournis et repasse isKid à false : âge maximum remis à null', async () => {
+describe('profils : modification et suppression (profil principal seulement)', () => {
+  let main: ProfileBody;
+  beforeEach(async () => {
+    main = (await createProfile({ name: 'Principal' })).body as ProfileBody;
+  });
+
+  it('PATCH depuis le principal : modifie les champs fournis ; isKid à false remet l âge maximum à null', async () => {
     const profile = (await createProfile({ name: 'Enfant', isKid: true, kidMaxAge: 10 })).body as ProfileBody;
     const res = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${profile.id}`, {
-      token: alice,
+      ...asProfile(main.id),
       body: { name: 'Petit', isKid: false, allowedCatalogs: ['films'] },
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ name: 'Petit', isKid: false, kidMaxAge: null, allowedCatalogs: ['films'] });
   });
 
-  it('PATCH sur le profil d un autre compte : 404', async () => {
-    const profile = (await createProfile({ name: 'Alice' })).body as ProfileBody;
-    const res = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${profile.id}`, { token: bob, body: { name: 'Piraté' } });
+  it('profil d un autre compte : 404 (même sans en-tête et depuis un autre principal)', async () => {
+    const res = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${main.id}`, { token: bob, body: { name: 'Piraté' } });
     expect(res.status).toBe(404);
+    const bobMain = (await createProfile({ name: 'Bob' }, bob)).body as ProfileBody;
+    const cross = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(bobMain.id, undefined, bob), body: { name: 'Piraté' } });
+    expect(cross.status).toBe(404);
   });
 
-  it('profil protégé par PIN : modification sans jeton de déverrouillage refusée (403 pin_required)', async () => {
-    const profile = (await createProfile({ name: 'Protégé', pin: '1111' })).body as ProfileBody;
-    const patch = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${profile.id}`, { token: alice, body: { name: 'Autre' } });
-    const del = await request<ErrorBody>(app, 'DELETE', `/user/profiles/${profile.id}`, { token: alice });
-    expect(patch.status).toBe(403);
-    expect(patch.body).toEqual({ error: 'pin_required' });
-    expect(del.status).toBe(403);
+  it('création, modification et suppression : 403 main_profile_required pour un profil secondaire adulte ou enfant', async () => {
+    const jessica = (await createProfile({ name: 'Jessica' })).body as ProfileBody;
+    const kid = (await createProfile({ name: 'Theo', isKid: true })).body as ProfileBody;
+    for (const actor of [jessica.id, kid.id]) {
+      const create = await request<ErrorBody>(app, 'POST', '/user/profiles', { ...asProfile(actor), body: { name: 'Intrus' } });
+      const patch = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(actor), body: { name: 'Renommé' } });
+      const avatar = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${actor}`, { ...asProfile(actor), body: { avatarColor: '#ff0000' } });
+      const del = await request<ErrorBody>(app, 'DELETE', `/user/profiles/${jessica.id}`, asProfile(actor));
+      for (const res of [create, patch, avatar, del]) {
+        expect(res.status).toBe(403);
+        expect(res.body).toEqual({ error: 'main_profile_required' });
+      }
+    }
+    // Sans X-Profile-Id, ou avec un profil inexistant : refusé aussi.
+    expect((await request(app, 'POST', '/user/profiles', { token: alice, body: { name: 'Intrus' } })).status).toBe(403);
+    expect((await request(app, 'DELETE', `/user/profiles/${jessica.id}`, asProfile('inconnu'))).status).toBe(403);
+    const list = await request<{ profiles: ProfileBody[] }>(app, 'GET', '/user/profiles', { token: alice });
+    expect(list.body.profiles.map((p) => p.name)).toEqual(['Principal', 'Jessica', 'Theo']);
+  });
+
+  it('sans session : 401 sur la création, la modification et la suppression', async () => {
+    expect((await request(app, 'POST', '/user/profiles', { body: { name: 'X' } })).status).toBe(401);
+    expect((await request(app, 'PATCH', `/user/profiles/${main.id}`, { body: { name: 'X' } })).status).toBe(401);
+    expect((await request(app, 'DELETE', `/user/profiles/${main.id}`)).status).toBe(401);
+  });
+
+  it('un adulte change son propre code PIN seul (jeton de son profil exigé) ; un enfant ne le peut pas', async () => {
+    const jessica = (await createProfile({ name: 'Jessica', pin: '1111' })).body as ProfileBody;
+    const kid = (await createProfile({ name: 'Theo', isKid: true })).body as ProfileBody;
+    const noToken = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${jessica.id}`, { ...asProfile(jessica.id), body: { pin: '2222' } });
+    expect(noToken.body).toEqual({ error: 'pin_required' });
+    const token = ((await unlock(jessica.id, '1111')).body as UnlockBody).token;
+    const ok = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${jessica.id}`, { ...asProfile(jessica.id, token), body: { pin: '2222' } });
+    expect(ok.status).toBe(200);
+    const mixed = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${jessica.id}`, { ...asProfile(jessica.id, token), body: { pin: '3333', name: 'X' } });
+    expect(mixed.body).toEqual({ error: 'main_profile_required' });
+    const kidPin = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${kid.id}`, { ...asProfile(kid.id), body: { pin: '3333' } });
+    expect(kidPin.body).toEqual({ error: 'main_profile_required' });
+  });
+
+  it('principal protégé par PIN : sans son jeton, la gestion est refusée (403 pin_required) ; avec, elle passe', async () => {
+    const other = (await createProfile({ name: 'Autre' })).body as ProfileBody;
+    const set = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { pin: '1111' } });
+    expect(set.status).toBe(200);
+    const denied = await createProfile({ name: 'Nouveau' });
+    expect(denied.status).toBe(403);
+    expect(denied.body).toEqual({ error: 'pin_required' });
+    const token = ((await unlock(main.id, '1111')).body as UnlockBody).token;
+    expect((await createProfile({ name: 'Nouveau' }, alice, token)).status).toBe(201);
+    expect((await request(app, 'DELETE', `/user/profiles/${other.id}`, asProfile(main.id, token))).status).toBe(204);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 31 * 86_400_000);
+    expect((await request(app, 'DELETE', `/user/profiles/${main.id}`, asProfile(main.id, token))).status).toBe(403);
   });
 
   it('déverrouillage : mauvais PIN 403, profil sans PIN 409, bon PIN : jeton de 30 jours', async () => {
     const protectedProfile = (await createProfile({ name: 'Protégé', pin: '1111' })).body as ProfileBody;
-    const open = (await createProfile({ name: 'Libre' })).body as ProfileBody;
     const wrong = await unlock(protectedProfile.id, '0000');
     expect(wrong.status).toBe(403);
     expect(wrong.body).toEqual({ error: 'invalid_pin' });
-    expect((await unlock(open.id, '1111')).status).toBe(409);
+    expect((await unlock(main.id, '1111')).status).toBe(409);
     const ok = await unlock(protectedProfile.id, '1111');
     expect(ok.status).toBe(200);
     const days = (Date.parse((ok.body as UnlockBody).expiresAt) - Date.now()) / 86_400_000;
@@ -140,61 +198,18 @@ describe('profils : modification et suppression', () => {
     expect(days).toBeLessThan(30.1);
   });
 
-  it('jeton de déverrouillage : permet la modification, lié à ce profil, et expire', async () => {
-    const protectedProfile = (await createProfile({ name: 'Protégé', pin: '1111' })).body as ProfileBody;
-    const other = (await createProfile({ name: 'Autre', pin: '2222' })).body as ProfileBody;
-    const token = (await unlock(protectedProfile.id, '1111')).body as UnlockBody;
-
-    const onOther = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${other.id}`, {
-      token: alice,
-      headers: { 'x-profile-token': token.token },
-      body: { name: 'Détourné' },
-    });
-    expect(onOther.status).toBe(403);
-
-    const edited = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${protectedProfile.id}`, {
-      token: alice,
-      headers: { 'x-profile-token': token.token },
-      body: { name: 'Renommé' },
-    });
-    expect(edited.status).toBe(200);
-    expect(edited.body.name).toBe('Renommé');
-
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(Date.now() + 31 * 86_400_000);
-    const expired = await request<ErrorBody>(app, 'DELETE', `/user/profiles/${protectedProfile.id}`, {
-      token: alice,
-      headers: { 'x-profile-token': token.token },
-    });
-    expect(expired.status).toBe(403);
-  });
-
-  it('retirer le PIN exige le déverrouillage, puis le profil n est plus protégé', async () => {
-    const profile = (await createProfile({ name: 'Protégé', pin: '1111' })).body as ProfileBody;
-    const token = (await unlock(profile.id, '1111')).body as UnlockBody;
-    const res = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${profile.id}`, {
-      token: alice,
-      headers: { 'x-profile-token': token.token },
-      body: { pin: null },
-    });
-    expect(res.body.hasPin).toBe(false);
-    const free = await request<ProfileBody>(app, 'PATCH', `/user/profiles/${profile.id}`, { token: alice, body: { name: 'Libre' } });
-    expect(free.status).toBe(200);
-  });
-
   it('suppression : 204, puis le profil est introuvable', async () => {
     const profile = (await createProfile({ name: 'Temporaire' })).body as ProfileBody;
-    const del = await request(app, 'DELETE', `/user/profiles/${profile.id}`, { token: alice });
+    const del = await request(app, 'DELETE', `/user/profiles/${profile.id}`, asProfile(main.id));
     expect(del.status).toBe(204);
     const after = await request<ErrorBody>(app, 'GET', `/user/profiles/${profile.id}/settings`, { token: alice });
     expect(after.status).toBe(404);
     const list = await request<{ profiles: ProfileBody[] }>(app, 'GET', '/user/profiles', { token: alice });
-    expect(list.body.profiles).toHaveLength(0);
+    expect(list.body.profiles).toHaveLength(1);
   });
 
   it('corps invalide : 400 avec chemins de champs seulement', async () => {
-    const profile = (await createProfile({ name: 'Nom' })).body as ProfileBody;
-    const res = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${profile.id}`, { token: alice, body: { name: '', kidMaxAge: 99 } });
+    const res = await request<ErrorBody>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { name: '', kidMaxAge: 99 } });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('invalid_body');
     expect(res.body.issues?.some((issue) => issue.startsWith('name:'))).toBe(true);

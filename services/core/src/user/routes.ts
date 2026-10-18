@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type MaintenanceGate, maintenanceResponse } from '../admin/maintenance.js';
 import type { ErrorHandler } from 'hono';
-import { type App, type AppEnv, newApp } from '../http/app-env.js';
+import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
 import { errorHandler } from '../http/common.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';
@@ -21,7 +21,7 @@ import {
   verifySecret,
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
-import { nowIso, scopeOf, sessionOf } from './session.js';
+import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session.js';
 import { registerSocialRoutes } from './social-routes.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
@@ -62,9 +62,9 @@ import {
 /** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
 export const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
 const DEFAULT_KID_MAX_AGE: KidMaxAge = 12;
-/** Blocage du PIN : après 5 tentatives échouées, 15 minutes sans vérification. */
+/** Blocage du PIN : après 5 tentatives échouées, 5 minutes sans vérification. */
 export const PIN_MAX_FAILURES = 5;
-export const PIN_LOCK_MS = 15 * 60_000;
+export const PIN_LOCK_MS = 5 * 60_000;
 const LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10, authPerIp: 10 } as const;
 /** Connexion et inscription : tentatives par IP sur une fenêtre longue (freine la force brute). */
@@ -327,8 +327,25 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendJson(c, { profiles });
   });
 
+  /**
+   * Gestion des profils (création, modification, suppression) : réservée au profil principal du compte. La requête doit
+   * porter X-Profile-Id = profil principal (et son jeton de PIN s'il en a un). Seule exception : un compte sans aucun
+   * profil peut créer le premier (qui devient le principal).
+   */
+  async function managerOf(users: UserRepo, c: Ctx, allowFirst: boolean) {
+    const session = await sessionOf(users, c);
+    if (allowFirst && (await users.listProfiles(session.account.id)).length === 0) return session;
+    const mainId = await backend.admin().mainProfileId(session.account.id);
+    const actorId = c.req.header('x-profile-id');
+    if (mainId === null || actorId === undefined || actorId !== mainId) throw new UserApiError(403, 'main_profile_required');
+    const actor = await users.findProfile(session.account.id, actorId);
+    if (actor === undefined) throw new UserApiError(403, 'main_profile_required');
+    assertUnlocked(c, session, actor, deps.secret);
+    return session;
+  }
+
   router.post('/profiles', async (c) => {
-    const { account } = await sessionOf(db(), c);
+    const { account } = await managerOf(db(), c, true);
     const body = parseWith(createProfileSchema, c.get('body'));
     const isKid = body.isKid;
     const fields: ProfileFields = {
@@ -348,8 +365,16 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
 
   router.patch('/profiles/:id', async (c) => {
     const users = db();
-    const { account, profile } = await scopeOf(users, c, deps.secret, true);
-    const patch = parseWith(updateProfileSchema, c.get('body'));
+    const rawBody = c.get('body');
+    const keys = rawBody !== null && typeof rawBody === 'object' ? Object.keys(rawBody) : [];
+    const session = await sessionOf(users, c);
+    const profile = await profileOf(users, session.account, c);
+    const account = session.account;
+    // Exception : un profil adulte change son propre code PIN (jeton de son profil exigé) ; le reste passe par le principal.
+    const ownPinOnly = !profile.isKid && keys.length === 1 && keys[0] === 'pin' && c.req.header('x-profile-id') === profile.id;
+    if (ownPinOnly) assertUnlocked(c, session, profile, deps.secret);
+    else await managerOf(users, c, false);
+    const patch = parseWith(updateProfileSchema, rawBody);
     const isKid = patch.isKid ?? profile.isKid;
     const fields: ProfileEditableFields = {
       name: patch.name ?? profile.name,
@@ -367,14 +392,15 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
 
   router.delete('/profiles/:id', async (c) => {
     const users = db();
-    const { account, profile } = await scopeOf(users, c, deps.secret, true);
-    await users.deleteProfile(account.id, profile.id);
+    const session = await managerOf(users, c, false);
+    const profile = await profileOf(users, session.account, c);
+    await users.deleteProfile(session.account.id, profile.id);
     return sendEmpty(c, 204);
   });
 
   /**
    * Déverrouillage par PIN : jeton de profil (30 jours), lié à la session et à la version du PIN. Cinq échecs
-   * bloquent le profil 15 minutes : pendant le blocage, le PIN n'est même pas vérifié (429 pin_locked).
+   * bloquent le profil 5 minutes : pendant le blocage, le PIN n'est même pas vérifié (429 pin_locked).
    */
   router.post('/profiles/:id/unlock', async (c) => {
     const users = db();

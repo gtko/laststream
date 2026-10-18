@@ -51,3 +51,20 @@ export async function loginAs(app: RunningApp, username: string, password: strin
   if (res.status !== 200) throw new Error(`connexion de test refusée (${res.status})`);
   return res.body.token;
 }
+
+/**
+ * Crée un profil comme le fait l'app : le premier est libre, les suivants passent par le profil principal
+ * (X-Profile-Id), dont le jeton de PIN peut être fourni.
+ */
+export async function createProfileVia<T = { id: string }>(
+  app: RunningApp,
+  token: string,
+  body: Record<string, unknown>,
+  mainToken?: string,
+): Promise<Reply<T>> {
+  const list = await request<{ profiles: Array<{ id: string; isMainProfile: boolean }> }>(app, 'GET', '/user/profiles', { token });
+  const main = list.body.profiles.find((p) => p.isMainProfile);
+  const headers: Record<string, string> = main ? { 'x-profile-id': main.id } : {};
+  if (main && mainToken) headers['x-profile-token'] = mainToken;
+  return request<T>(app, 'POST', '/user/profiles', { token, body, headers });
+}

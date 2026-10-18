@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 interface SettingsBody {
   settings: Record<string, unknown>;
@@ -14,7 +14,7 @@ beforeEach(async () => {
   app = await startApp({});
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');
-  profile = (await request<{ id: string }>(app, 'POST', '/user/profiles', { token, body: { name: 'Greg' } })).body.id;
+  profile = (await createProfileVia(app, token, { name: 'Greg' })).body.id;
 });
 
 afterEach(async () => {
@@ -40,7 +40,7 @@ describe('réglages par profil', () => {
   });
 
   it('réglages isolés entre profils', async () => {
-    const other = (await request<{ id: string }>(app, 'POST', '/user/profiles', { token, body: { name: 'Autre' } })).body.id;
+    const other = (await createProfileVia(app, token, { name: 'Autre' })).body.id;
     await request(app, 'PUT', settingsPath(), { token, body: { theme: 'dark' } });
     const res = await request<SettingsBody>(app, 'GET', settingsPath(other), { token });
     expect(res.body.settings).toEqual({});

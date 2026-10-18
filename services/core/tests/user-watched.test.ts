@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
-import { type ErrorBody, loginAs, PASSWORD, request } from './user-harness.js';
+import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
 interface ProfileBody {
   id: string;
@@ -43,7 +43,7 @@ async function boot(userRateLimits?: Partial<{ read: number; write: number; sens
   app = await startApp({ userRateLimits });
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');
-  profile = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Greg' } })).body.id;
+  profile = (await createProfileVia(app, token, { name: 'Greg' })).body.id;
 }
 
 beforeEach(async () => {
@@ -202,7 +202,7 @@ describe('vu : validation et limites', () => {
 
 describe('profil protégé par PIN', () => {
   it('vus, suivis, notes et masquage exigent le jeton de profil (403 pin_required sans lui)', async () => {
-    const protectedId = (await request<ProfileBody>(app, 'POST', '/user/profiles', { token, body: { name: 'Protégé', pin: '1111' } })).body.id;
+    const protectedId = (await createProfileVia(app, token, { name: 'Protégé', pin: '1111' })).body.id;
     const unlock = await request<UnlockBody>(app, 'POST', `/user/profiles/${protectedId}/unlock`, { token, body: { pin: '1111' } });
     const pinToken = unlock.body.token;
     const path = `/user/profiles/${protectedId}`;
