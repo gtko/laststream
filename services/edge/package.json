@@ -1,0 +1,11 @@
+{
+  "name": "laststream-edge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker Cloudflare à adresse fixe qui relaie vers le lastAddon (tunnel rapide cloudflared)",
+  "scripts": {
+    "test": "node --test test/",
+    "deploy": "wrangler deploy"
+  }
+}
