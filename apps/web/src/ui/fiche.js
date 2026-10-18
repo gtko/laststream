@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { stopInfinite } from './infinite.js';
 import { followBtn } from './follows.js';
 import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
@@ -268,6 +269,7 @@ export function scrollToSection(name) {
   if (el) el.scrollIntoView({ behavior: REDUCE ? 'auto' : 'smooth', block: 'start' });
 }
 export function teardownFiche() {
+  stopInfinite();
   clearAmbient();
   if (state.svcIO) state.svcIO.disconnect();
   state.svcIO = null;

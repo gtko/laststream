@@ -388,3 +388,13 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
   .src-edit { padding-left: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .src-dot.is-load { animation: none; } }
+
+/* ---------- Défilement infini ---------- */
+.inf { padding: 8px var(--gutter) 40px; text-align: center; min-height: 24px; }
+.inf-more { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.inf-more:focus { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: inline-block; padding: 10px 22px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 800; }
+.inf-end { margin: 0; font-size: 13px; color: var(--dim); }
+.inf-end[hidden] { display: none; }
+.lib-grid .sk-grid, .sk-grid { width: 100%; height: auto; aspect-ratio: 2 / 3; flex: none; }
+.epg-sk { height: 64px; display: flex; align-items: center; padding: 0 12px; }
+.epg-sk .sk-line { width: 260px; margin: 0; }

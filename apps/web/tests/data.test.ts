@@ -7,7 +7,7 @@ import { getLaststream } from '../src/data/stream';
 import { hasProviders, movieAvailability } from '../src/data/released';
 import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
 import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
-import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, PROBES } from '../src/data/rows';
+import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, passesQuality, pickSeed, PROBES, rowById } from '../src/data/rows';
 import { compactItems, packRecs, todayLocal, unpackRecs } from '../src/data/recs';
 import { pickTrailerKey, sortVideos } from '../src/data/trailers';
 import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
@@ -172,6 +172,31 @@ describe('recommandations du jour', () => {
   });
   it('donne le jour local', () => {
     expect(todayLocal(new Date(2026, 9, 18, 23, 59))).toBe('2026-10-18');
+  });
+});
+
+describe('qualité des rangées et graines', () => {
+  it('écarte actualités, talk-shows, téléréalité et titres trop peu votés', () => {
+    expect(passesQuality({ type: 'tv', genreIds: [10763], votes: 5000 })).toBe(false); // Tagesschau
+    expect(passesQuality({ type: 'tv', genreIds: [10767, 35], votes: 900 })).toBe(false); // talk-show
+    expect(passesQuality({ type: 'tv', genreIds: [10764], votes: 900 })).toBe(false);
+    expect(passesQuality({ type: 'tv', genreIds: [18], votes: 99 })).toBe(false);
+    expect(passesQuality({ type: 'tv', genreIds: [18], votes: 100 })).toBe(true);
+    expect(passesQuality({ type: 'movie', genreIds: [28], votes: 199 })).toBe(false);
+    expect(passesQuality({ type: 'movie', genreIds: [28], votes: 200 })).toBe(true);
+    expect(passesQuality({ type: 'movie', genreIds: [28] })).toBe(true); // nombre de votes inconnu
+  });
+  it('envoie la disponibilité du pays et l’exclusion des genres bruit dans les requêtes génériques', () => {
+    const ctx = makeCtx('CH', null, new Date(2026, 9, 18));
+    const series = rowById('series')!.fetch as { k: 'discover'; params: (c: typeof ctx) => Record<string, string> };
+    expect(series.params(ctx)).toMatchObject({ watch_region: 'CH', with_watch_monetization_types: 'flatrate|free|ads|rent|buy', without_genres: '10763,10767,10764', 'vote_count.gte': '100' });
+    const films = rowById('films')!.fetch as { k: 'discover'; params: (c: typeof ctx) => Record<string, string> };
+    expect(films.params(ctx)).toMatchObject({ watch_region: 'CH', 'vote_count.gte': '200' });
+  });
+  it('une graine ne pilote qu’une rangée : on prend la suivante', () => {
+    const used = new Set<string>(['tv:1']);
+    expect(pickSeed([{ key: 'tv:1' }, { key: 'movie:2' }, { key: 'tv:3' }], used)).toEqual({ key: 'movie:2' });
+    expect(pickSeed([{ key: 'tv:1' }], used)).toBeUndefined();
   });
 });
 

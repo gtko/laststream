@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { infiniteList } from './infinite.js';
+import { applyRestore } from './router.js';
 import { paintTileRatings } from './rate.js';
 import { isKidProfile } from '../data/auth';
 import { userStore } from '../data/userStore';
@@ -37,21 +39,33 @@ export function renderLibrary() {
   fillMissingPosters(items.slice(0, 30));
 }
 
-export function renderLibraryPage() {
+export function renderLibraryPage(restore) {
   const box = detailEl.querySelector('#lib-grid');
   if (!box) return;
   const v = state.libView;
   let items = libItems();
   if (v.type !== 'all') items = items.filter((it) => it.type === v.type);
   items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, 'fr') : (a, b) => b.added - a.added);
-  box.innerHTML = items.length
-    ? items.map((it) => posterCard(it)).join('')
-    : '<p class="row-msg">' + (userStore.getLibrary().length ? 'Aucun titre dans ce filtre.' : 'Ta bibliothèque est vide. Ajoute des films et séries depuis leur fiche (bouton marque-page) ou avec un clic droit / appui long sur une affiche.') + '</p>';
   detailEl.querySelectorAll('[data-libf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libf === v.type)));
   detailEl.querySelectorAll('[data-libs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libs === v.sort)));
-  observeTiles(box);
-  fillMissingPosters(items);
-  paintTileRatings(document);
+  box.innerHTML = '';
+  if (!items.length) {
+    box.innerHTML = '<p class="row-msg">' + (userStore.getLibrary().length ? 'Aucun titre dans ce filtre.' : 'Ta bibliothèque est vide. Ajoute des films et séries depuis leur fiche (bouton marque-page) ou avec un clic droit / appui long sur une affiche.') + '</p>';
+    return Promise.resolve();
+  }
+  const PAGE = 60;
+  const list = infiniteList({
+    host: box,
+    key: location.hash + '|' + v.type + '|' + v.sort,
+    restore: !!restore,
+    load: async (page) => ({ html: items.slice((page - 1) * PAGE, page * PAGE).map((it) => posterCard(it)).join(''), done: page * PAGE >= items.length }),
+    after: (host) => {
+      observeTiles(host);
+      fillMissingPosters(items.slice(0, Math.max(PAGE, host.querySelectorAll('[data-tile]').length)));
+      paintTileRatings(document);
+    },
+  });
+  return list.ready;
 }
 
 export function showLibrary() {
@@ -66,7 +80,7 @@ export function showLibrary() {
     '<div class="pills" data-nav role="group" aria-label="Trier">' +
     '<button type="button" class="pill" data-libs="date">Derniers ajouts</button><button type="button" class="pill" data-libs="title">Titre A→Z</button></div></div></div></header>' +
     '<div class="lib-grid" id="lib-grid" data-nav></div></article>';
-  renderLibraryPage();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
+  renderLibraryPage(state.restoreY != null).then(() => applyRestore());
 }

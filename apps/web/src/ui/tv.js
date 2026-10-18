@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { infiniteList } from './infinite.js';
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
 import { isKidProfile, kidSection } from '../data/auth';
 import { getRegion } from '../data/prefs';
@@ -347,54 +348,36 @@ export function fillEpgRow(c) {
     '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
 }
 
-export async function moreRows() {
-  if (tv.shown < tv.list.length) { appendRows(); return; }
-  if (!tv.hasMore || tv.fetching) return;
-  const token = state.token;
-  const more = detailEl.querySelector('#epg-more');
-  if (more) more.innerHTML = '<p class="row-msg">Chargement…</p>';
-  try { await loadChannelsPage(false); } catch (_) { /* la liste reste telle quelle */ }
-  if (token !== state.token) return;
-  tv.list = tvFilter();
-  refreshCats();
-  appendRows();
-}
-
-export function appendRows() {
-  const box = detailEl.querySelector('#epg-rows');
-  const more = detailEl.querySelector('#epg-more');
-  if (!box) return;
-  const batch = tv.list.slice(tv.shown, tv.shown + 40);
-  tv.shown += batch.length;
-  box.insertAdjacentHTML('beforeend', batch.map(epgRowHTML).join(''));
-  const token = state.token;
-  ensureEpg(batch).then(() => { if (token === state.token) batch.forEach(fillEpgRow); });
-  if (more) {
-    if (tv.shown < tv.list.length || tv.hasMore) {
-      more.innerHTML = '<button type="button" class="btn btn-ghost" data-tvmore>Afficher plus de chaînes' + (tv.shown < tv.list.length ? ' (' + (tv.list.length - tv.shown) + ')' : '') + '</button>';
-      if (tv.io) tv.io.disconnect();
-      if ('IntersectionObserver' in window) {
-        tv.io = new IntersectionObserver((en) => { if (en[0].isIntersecting) { tv.io.disconnect(); moreRows(); } }, { rootMargin: '200px' });
-        tv.io.observe(more);
-      }
-    } else {
-      more.innerHTML = '';
-    }
-  }
-}
-
 export function renderEpgGrid() {
   const epg = detailEl.querySelector('#epg');
   if (!epg) return;
   tv.list = tvFilter();
   tv.shown = 0;
-  if (tv.io) tv.io.disconnect();
   if (!tv.list.length) {
     epg.innerHTML = '<p class="row-msg">' + (tv.cat === 'Favoris' ? 'Aucun favori pour le moment : clique sur l’étoile d’une chaîne.' : tv.cat === 'Ma playlist' ? 'Aucune chaîne : ajoute une playlist avec le bouton « Ma playlist ».' : 'Aucune chaîne pour ces filtres : élargis le pays, la langue ou la recherche.') + '</p>';
     return;
   }
   epg.innerHTML = epgShell();
-  appendRows();
+  const token = state.token;
+  infiniteList({
+    host: epg.querySelector('#epg-rows'),
+    anchor: epg.querySelector('.epg-scroll'),
+    skeleton: '<div class="epg-row epg-sk" aria-hidden="true"><div class="sk sk-line"></div></div>',
+    skeletons: 3,
+    load: async () => {
+      // Liste locale d'abord ; quand elle est épuisée, page suivante du catalogue côté serveur.
+      if (tv.shown >= tv.list.length && tv.hasMore) {
+        try { await loadChannelsPage(false); } catch (_) { /* la liste reste telle quelle */ }
+        if (token !== state.token) return { html: '', done: true };
+        tv.list = tvFilter();
+        refreshCats();
+      }
+      const batch = tv.list.slice(tv.shown, tv.shown + 40);
+      tv.shown += batch.length;
+      ensureEpg(batch).then(() => { if (token === state.token) batch.forEach(fillEpgRow); });
+      return { html: batch.map(epgRowHTML).join(''), done: tv.shown >= tv.list.length && !tv.hasMore };
+    },
+  });
 }
 
 export function refreshCats() {

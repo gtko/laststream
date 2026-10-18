@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { infiniteList } from './infinite.js';
 import { followBtn } from './follows.js';
 import { setupWhy } from './why.js';
 import { isKidProfile } from '../data/auth';
@@ -127,9 +128,7 @@ export function renderFilmography() {
   const pp = state.pp;
   if (!box || !pp) return;
   const l = filmoRows(pp);
-  const shown = l.slice(0, pp.limit);
-  box.innerHTML = shown.length
-    ? shown.map((e) => {
+  const row = (e) => {
       const role = e.kinds.has('Acteur') && e.char ? e.char : Array.from(e.jobs).slice(0, 2).join(', ') || Array.from(e.kinds).join(', ');
       return '<li><button type="button" class="pp-li" data-open="' + esc(e.it.key) + '" aria-label="' + esc(e.it.name + (e.it.year ? ', ' + e.it.year : '') + (role ? ', ' + role : '')) + '">' +
         '<span class="pp-y">' + esc(e.date ? e.date.slice(0, 4) : '—') + '</span>' +
@@ -137,12 +136,18 @@ export function renderFilmography() {
         '<span class="pp-t"><strong>' + esc(e.it.name) + '</strong><em>' + esc(e.it.type === 'tv' ? 'Série' : 'Film') + '</em></span>' +
         '<span class="pp-r">' + esc(role) + '</span>' +
         '<span class="pp-n">' + (e.rating > 0 ? '★ ' + esc(fmtNum(e.rating, 1)) : '') + '</span></button></li>';
-    }).join('')
-    : '<li class="row-msg">Aucun crédit dans ce filtre.</li>';
-  const more = detailEl.querySelector('#pp-more');
-  if (more) more.innerHTML = l.length > shown.length ? '<button type="button" class="btn btn-ghost" data-ppmore>Afficher plus (' + (l.length - shown.length) + ')</button>' : '';
+  };
+  box.innerHTML = '';
   detailEl.querySelectorAll('[data-ppf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.ppf === pp.filter)));
   detailEl.querySelectorAll('[data-pps]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pps === pp.sort)));
+  if (!l.length) { box.innerHTML = '<li class="row-msg">Aucun crédit dans ce filtre.</li>'; return; }
+  const PAGE = 80;
+  infiniteList({
+    host: box,
+    skeleton: '<li class="sk sk-line" aria-hidden="true"></li>',
+    skeletons: 3,
+    load: async (page) => ({ html: l.slice((page - 1) * PAGE, page * PAGE).map(row).join(''), done: page * PAGE >= l.length }),
+  });
 }
 
 export async function showPerson(id) {
@@ -220,7 +225,7 @@ export async function showPerson(id) {
     '<section class="pp-film" id="pp-film" aria-labelledby="h-pp-film"><h2 class="row-title" id="h-pp-film">Filmographie complète</h2>' +
     '<div class="pp-controls"><div class="pills" data-nav role="group" aria-label="Filtrer">' + chips.map(([k, l]) => '<button type="button" class="pill" data-ppf="' + esc(k) + '" aria-pressed="' + (k === 'all') + '">' + esc(l) + '</button>').join('') + '</div>' +
     '<div class="pills" data-nav role="group" aria-label="Trier"><button type="button" class="pill" data-pps="recent" aria-pressed="true">Récent</button><button type="button" class="pill" data-pps="pop" aria-pressed="false">Populaire</button><button type="button" class="pill" data-pps="rating" aria-pressed="false">Note</button></div></div>' +
-    '<ul class="pp-list" id="pp-list" data-nav></ul><div id="pp-more" class="epg-more"></div></section></article>';
+    '<ul class="pp-list" id="pp-list" data-nav></ul></section></article>';
   document.title = raw.name + ' · Laststream';
   const h1 = detailEl.querySelector('#pp-title');
   if (h1) h1.focus({ preventScroll: true });

@@ -1,11 +1,14 @@
 /* Accueil « long » : rangées définies dans src/data/rows.ts, chargées à la demande (2 rangées d'avance),
  * sans doublon excessif, avec « Tout voir » paginé (#/browse/:rowId). */
+import { infiniteList } from './infinite.js';
+import { applyRestore } from './router.js';
+import { closeHover } from './hover.js';
 import { filterAvailable } from './avail.js';
 import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { activeRows, Appearances, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById } from '../data/rows';
+import { activeRows, Appearances, passesQuality, pickSeed, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById } from '../data/rows';
 import { userStore } from '../data/userStore';
 import { listOf, register } from './catalog.js';
 import { detailEl } from './dom.js';
@@ -39,6 +42,19 @@ export async function rowAvailable(def) {
 }
 
 // ---------- Sources personnalisées ----------
+// Une graine ne pilote qu'une seule rangée personnalisée (« Parce que tu as regardé / aimé X »).
+const seeds = new Map(); // identifiant de rangée -> graine
+const usedSeeds = new Set();
+
+function seedFor(def, candidates) {
+  if (seeds.has(def.id)) return seeds.get(def.id);
+  const pick = pickSeed(candidates, usedSeeds);
+  if (!pick) return null;
+  seeds.set(def.id, pick);
+  usedSeeds.add(pick.key);
+  return pick;
+}
+
 function watchedSources() {
   const seen = new Set();
   const out = [];
@@ -59,7 +75,7 @@ const followedPeople = () => (userStore.getFollows ? userStore.getFollows('perso
 // Seuls les titres déjà sortis (hors rangées « Bientôt » : def.upcoming).
 const toItems = (json, forced, upcoming) => {
   const l = listOf(json, forced);
-  return l ? l.filter((it) => (it.poster || it.backdropPath) && (upcoming || isReleasedItem(it))).map(register) : [];
+  return l ? l.filter((it) => (it.poster || it.backdropPath) && (upcoming || (isReleasedItem(it) && passesQuality(it)))).map(register) : [];
 };
 
 function interleave(a, b) {
@@ -115,9 +131,23 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
     return { title: def.title, items: await one(f.type) };
   }
   if (f.k === 'because') {
-    const src = (f.source === 'watched' ? watchedSources() : ratedSources())[f.index];
+    const src = seedFor(def, f.source === 'watched' ? watchedSources() : ratedSources());
     if (!src) return null;
-    const items = toItems(await tmdb(src.type + '/' + src.id + '/recommendations', pg), src.type).filter((it) => it.key !== src.key);
+    let items;
+    if (f.source === 'watched') {
+      // Recommandations de TMDB pour ce que tu as regardé.
+      items = toItems(await tmdb(src.type + '/' + src.id + '/recommendations', pg), src.type);
+    } else {
+      // Titres aimés : « similaires » mêlés à une découverte par genres, pour ne pas répéter la rangée précédente.
+      const detail = await tmdb(src.type + '/' + src.id).catch(() => null);
+      const genres = ((detail && detail.genres) || []).slice(0, 2).map((g) => g.id).join(',');
+      const [sim, disc] = await Promise.allSettled([
+        tmdb(src.type + '/' + src.id + '/similar', pg),
+        genres ? tmdb('discover/' + src.type, { ...releasedParams(src.type), with_genres: genres, sort_by: 'vote_average.desc', 'vote_count.gte': src.type === 'tv' ? '300' : '1000', ...pg }) : Promise.reject(new Error('genres')),
+      ]);
+      items = interleave(sim.status === 'fulfilled' ? toItems(sim.value, src.type) : [], disc.status === 'fulfilled' ? toItems(disc.value, src.type) : []);
+    }
+    items = items.filter((it) => it.key !== src.key);
     return { title: (f.source === 'watched' ? 'Parce que tu as regardé ' : 'Parce que tu as aimé ') + src.title, items };
   }
   if (f.k === 'person') {
@@ -133,7 +163,7 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
 }
 
 // ---------- Accueil : chargement progressif ----------
-const reg = { token: 0, queue: [], appear: new Appearances(), sentinel: null, io: null, busy: false, ctx: null, onDone: null, done: false, onScroll: null };
+const reg = { token: 0, queue: [], prevKeys: new Set(), loaded: 0, lastRow: null, appear: new Appearances(), sentinel: null, io: null, busy: false, ctx: null, onDone: null, done: false, onScroll: null };
 
 export function stopRegistry() {
   reg.token++;
@@ -145,7 +175,12 @@ export function stopRegistry() {
   reg.sentinel = null;
 }
 
-const near = () => !reg.sentinel || reg.sentinel.getBoundingClientRect().top < window.innerHeight + AHEAD_PX;
+const near = () => {
+  if (!reg.sentinel) return true;
+  // Sans mise en page (page masquée, environnement de test) les rangées n'ont aucune hauteur : on s'arrête après 6 rangées.
+  if (reg.lastRow && reg.lastRow.getBoundingClientRect().height === 0 && reg.loaded >= 6) return false;
+  return reg.sentinel.getBoundingClientRect().top < window.innerHeight + AHEAD_PX;
+};
 
 function renderDef(def, title, items) {
   const link = def.noBrowse ? '' : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">Tout voir</a>';
@@ -165,14 +200,18 @@ async function loadNext() {
     if (!(await rowAvailable(def))) return;
     const res = await resolveRow(def, 1, reg.ctx);
     if (token !== reg.token || !res) return;
-    const items = (await filterAvailable(res.items.filter((it) => reg.appear.canShow(it.key)), { cinema: def.cinema })).slice(0, def.kind === 'top10' ? 10 : ROW_MAX);
+    const items = (await filterAvailable(res.items.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key)), { cinema: def.cinema })).slice(0, def.kind === 'top10' ? 10 : ROW_MAX);
     if (items.length < (def.minItems || MIN_ITEMS)) return;
     items.forEach((it) => reg.appear.commit(it.key));
+    reg.prevKeys = new Set(items.map((it) => it.key));
     const holder = document.createElement('div');
     holder.innerHTML = renderDef(def, res.title, items);
     const el = holder.firstElementChild;
     reg.sentinel.parentNode.insertBefore(el, reg.sentinel);
     observeTiles(el);
+    reg.loaded += 1;
+    reg.lastRow = el;
+    closeHover(); // une aperçu ouvert ne doit pas rester figé au-dessus d'une mise en page qui bouge
   } catch (_) { /* rangée absente */ }
 }
 
@@ -200,6 +239,11 @@ export function startRegistry(opts = {}) {
   const kid = isKidProfile();
   reg.ctx = makeCtx(getRegion().code, kidMaxAge());
   reg.queue = activeRows(reg.ctx, kid, kidSection).slice();
+  reg.prevKeys = new Set();
+  reg.loaded = 0;
+  reg.lastRow = null;
+  seeds.clear();
+  usedSeeds.clear();
   reg.appear = new Appearances();
   reg.done = false;
   reg.onDone = opts.onDone || null;
@@ -217,41 +261,12 @@ export function startRegistry(opts = {}) {
 }
 
 // ---------- « Tout voir » ----------
-const browse = { def: null, page: 0, done: false, busy: false, ctx: null };
 
 export const browseAllowed = (id) => {
   const def = rowById(id);
   if (!def) return false;
   return isKidProfile() ? !!def.kid && (!def.section || kidSection(def.section)) : !def.kid;
 };
-
-async function fillBrowse(token) {
-  const box = detailEl.querySelector('#browse-grid');
-  const more = detailEl.querySelector('#browse-more');
-  if (!box || browse.busy) return;
-  browse.busy = true;
-  try {
-    browse.page += 1;
-    const res = await resolveRow(browse.def, browse.page, browse.ctx);
-    if (token !== state.token) return;
-    const have = new Set(Array.from(box.querySelectorAll('[data-tile]')).map((e) => e.dataset.tile));
-    const items = (await filterAvailable(((res && res.items) || []).filter((it) => !have.has(it.key)), { cinema: browse.def.cinema }));
-    if (!items.length) browse.done = true;
-    if (browse.page === 1) {
-      const h1 = detailEl.querySelector('#svc-title');
-      if (h1 && res) h1.textContent = res.title;
-      if (!items.length) box.innerHTML = '<p class="row-msg">Rien à voir ici pour le moment.</p>';
-    }
-    box.insertAdjacentHTML('beforeend', items.map((it) => (browse.def.kind === 'landscape' ? tileCard(it, { variant: 'land' }) : posterCard(it))).join(''));
-    observeTiles(box);
-  } catch (_) {
-    if (token === state.token) box.insertAdjacentHTML('beforeend', '<p class="row-msg" role="status">Impossible de charger la suite.</p>');
-    browse.done = true;
-  } finally {
-    browse.busy = false;
-  }
-  if (more && token === state.token) more.innerHTML = browse.done || browse.page >= 10 ? '' : '<button type="button" class="btn btn-ghost" data-browse-more>Afficher plus</button>';
-}
 
 export async function showBrowse(id) {
   teardownFiche();
@@ -262,15 +277,34 @@ export async function showBrowse(id) {
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(title) + '</h1></div></header>' +
-    '<div class="lib-grid" id="browse-grid" data-nav></div><div class="epg-more" id="browse-more"></div></article>';
+    '<div class="lib-grid" id="browse-grid" data-nav></div></article>';
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
-  if (!def) { detailEl.querySelector('#browse-grid').innerHTML = '<p class="row-msg">Cette section n’est pas disponible.</p>'; return; }
-  Object.assign(browse, { def, page: 0, done: false, busy: false, ctx: makeCtx(getRegion().code, kidMaxAge()) });
-  fillBrowse(state.token);
+  const box = detailEl.querySelector('#browse-grid');
+  if (!def) { box.innerHTML = '<p class="row-msg">Cette section n’est pas disponible.</p>'; return; }
+  const ctx = makeCtx(getRegion().code, kidMaxAge());
+  const token = state.token;
+  const card = (it) => (def.kind === 'landscape' ? tileCard(it, { variant: 'land' }) : posterCard(it));
+  const list = infiniteList({
+    host: box,
+    key: location.hash,
+    restore: state.restoreY != null,
+    load: async (page) => {
+      // Une page entièrement filtrée (déjà vue, indisponible) ne doit pas arrêter la liste : on enchaîne jusqu'à 4 pages.
+      const have = new Set(Array.from(box.querySelectorAll('[data-tile]')).map((e) => e.dataset.tile));
+      for (let p = page, tries = 0; tries < 4; p += 1, tries += 1) {
+        const res = await resolveRow(def, p, ctx);
+        if (token !== state.token) return { html: '', done: true };
+        if (!res || !res.items.length) return { html: '', done: true, };
+        if (page === 1 && tries === 0 && h1) h1.textContent = res.title;
+        const items = (await filterAvailable(res.items.filter((it) => !have.has(it.key)), { cinema: def.cinema }));
+        if (items.length) return { html: items.map(card).join(''), done: false, advance: p - page + 1 };
+      }
+      return { html: '', done: true };
+    },
+    after: (host) => observeTiles(host),
+  });
+  await list.ready;
+  if (!box.children.length) box.innerHTML = '<p class="row-msg">Rien à voir ici pour le moment.</p>';
+  applyRestore();
 }
-
-export function browseMore() {
-  if (browse.def && !browse.done) fillBrowse(state.token);
-}
-
