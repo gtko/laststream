@@ -60,6 +60,13 @@ Profil enfant : accueil et « Tout voir » dédiés (`src/ui/kids.js`) alimenté
 
 Toute lecture et écriture de la bibliothèque, de la progression, de « Reprendre la lecture » et des épisodes vus passe par `src/data/userStore.ts`. Deux adaptateurs : `LocalUserStore` (localStorage, repli hors ligne) et `ServerUserStore` (API utilisateur de lastAddon, cache hydraté à l'ouverture du profil, écritures optimistes), installé par `auth.ts` avec `setUserStore()`. Le « vu » par épisode reste local.
 
+### Accueil, suivis et notes
+
+- **Accueil long** : après les rangées fixes (carrousel des tendances, Reprendre, suivis de la semaine, IA, Top 10, Prochainement, En direct), les rangées viennent du registre `src/data/rows.ts` (plus de 45 adultes, 20 enfants), chargées à la demande (`src/ui/registry.js`), avec au plus deux apparitions par titre, un minimum de 8 titres et « Tout voir » paginé (`#/browse/:id`). Les rangées qui exigent des paramètres TMDB hors liste blanche (`with_keywords`, `with_companies`, `vote_average.gte`…) n'apparaissent que si lastAddon les applique (sonde automatique).
+- **IA** : une liste de 50 titres par jour et par profil (réglages du profil `aiRecs*`, repli local), exclusions = vus + bibliothèque + notés ; la raison n'apparaît que dans l'aperçu au survol.
+- **Vu**, **Suivre** (films, séries, personnes), **notes** par demi-étoile, **calendrier** (`#/calendar`), badge « +N » : les routes serveur correspondantes (`/watched`, `/follows`, `/ratings`, `DELETE /continue`) sont optionnelles ; sur une 404 l'application garde l'état en local. Toute modification est affichée tout de suite et annulée si le serveur la refuse.
+- **Menu contextuel** unifié : clic droit, appui long, bouton « … », Maj+F10.
+
 ### TV en direct
 
 Catalogue Free-TV / iptv-org via `/lt/tv/channels` (pays, langue, catégorie, source, recherche, pagination) et `/lt/tv/facets` pour les compteurs ; filtres par défaut : pays de la région, français, chaînes fiables. Tolérant : un ancien serveur (liste complète sans champs étendus) fonctionne, filtré côté client. Si un flux échoue, les `alternatives` de la chaîne sont essayées avant « Cette chaîne ne répond pas ». Les playlists HLS ne passent jamais par le cache JSON (hls.js les lit directement, avec reprise sur erreur réseau ou média).
