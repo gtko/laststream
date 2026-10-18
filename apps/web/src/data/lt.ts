@@ -66,7 +66,12 @@ export interface TvChannel {
   categories?: Array<{ id: string; label: string }>;
   quality?: string;
   reliability?: 'high' | 'low';
-  alternatives?: Array<{ url: string; sig: string | null }>;
+  alternatives?: Array<{ url: string; sig: string | null; direct?: boolean }>;
+  /**
+   * Flux lisible sans relais depuis une page web (https et CORS). `false` : exige le relais HLS, que le serveur n'a pas
+   * toujours (Workers) ; absent : inconnu. Écarté des pages web sans proxy, conservé pour mpv et libVLC.
+   */
+  direct?: boolean;
 }
 
 export interface TvChannelQuery {
@@ -75,6 +80,8 @@ export interface TvChannelQuery {
   category?: string;
   source?: string;
   q?: string;
+  /** 1 : écarte les chaînes dont aucun flux n'est lisible directement dans une page web. */
+  direct?: 1;
   page?: number;
   limit?: number;
 }

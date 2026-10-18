@@ -52,7 +52,17 @@ export function playFail(token) {
   if (b) b.focus();
 }
 
-const sourcesOf = (c) => [{ url: c.url, sig: c.sig }].concat(c.alternatives || []);
+/**
+ * Flux d'une chaîne, dans l'ordre d'essai. Quand le serveur n'a pas de proxy HLS (Workers : `sig` nul), le lecteur lit
+ * l'URL du flux directement ; dans une page web, les flux marqués `direct === false` (http, sans CORS) sont alors écartés
+ * (mpv et libVLC n'ont pas besoin de CORS et les gardent). Si rien ne reste, on tente tout de même la liste complète.
+ */
+const sourcesOf = (c) => {
+  const all = [{ url: c.url, sig: c.sig, direct: c.direct }].concat(c.alternatives || []);
+  if (externalKind()) return all;
+  const usable = all.filter((s) => s.sig || s.direct !== false);
+  return usable.length ? usable : all;
+};
 const isDirectFile = (u) => /\.(mp4|webm|mkv|ts)(\?|$)/i.test(u);
 
 export function startStream() {
@@ -106,15 +116,16 @@ function tryStream(c, token) {
   videoEl.onerror = fail;
   tv.stallTimer = setTimeout(fail, 20000);
   // Les playlists HLS sont lues directement (hls.js ou le lecteur natif) : jamais via le cache JSON du client.
-  const proxied = cur.sig ? tvHlsUrl(cur) : '';
+  // Sans signature (serveur sans proxy HLS) : l'URL du flux elle-même, lue directement.
+  const proxied = cur.sig ? tvHlsUrl(cur) : cur.url;
   const native = (src) => {
     videoEl.src = src;
     videoEl.play().catch(() => {});
     watchLive(fail, () => { const t = videoEl.src; videoEl.src = t; videoEl.load(); videoEl.play().catch(() => {}); });
   };
-  // Coque Windows (mpv) et application Android (lecteur natif) : on leur passe l'URL du proxy HLS signée.
+  // Coque Windows (mpv) et application Android (lecteur natif) : l'URL du proxy HLS signée, ou le flux lui-même sans proxy.
   const kind = externalKind();
-  const external = kind ? (proxied || (isDirectFile(cur.url) ? cur.url : '')) : '';
+  const external = kind ? proxied : '';
   const viaPage = () => {
     if (token !== tv.playToken || tv.attempt !== idx) return;
     pageStream();
@@ -123,8 +134,6 @@ function tryStream(c, token) {
   if (isDirectFile(cur.url)) {
     videoEl.src = cur.url;
     videoEl.play().catch(() => {});
-  } else if (!proxied) {
-    fail();
   } else {
     loadHls().then((H) => {
       if (token !== tv.playToken || tv.attempt !== idx) return;

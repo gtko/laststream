@@ -7,6 +7,7 @@ import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
+import { externalKind } from './tvExternal.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
@@ -110,6 +111,8 @@ export async function loadTvChannels() {
 export async function fetchChannels(params, filters, cat) {
   const q = {};
   Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) q[k] = v; });
+  // Page web : les chaînes qui exigent le relais HLS (absent sur Workers) sont filtrées côté serveur ; mpv et libVLC les gardent.
+  if (!externalKind()) q.direct = 1;
   let res;
   try {
     res = await tvChannels(q);
