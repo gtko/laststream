@@ -313,8 +313,8 @@ function editProfile(p) {
 /** Crédits des illustrations (CC BY 4.0 et licences à attribution) : liste des illustrateurs et licences. */
 export function creditsHTML() {
   return '<ul class="av-credits">' + avatarCredits().map((c) =>
-    '<li><strong>' + esc(c.creator) + '</strong> : ' + esc(c.styles.join(', ')) + ' ; licence <a href="' + esc(LICENSE_URL[c.license]) + '" target="_blank" rel="noopener noreferrer">' + esc(LICENSE_LABEL[c.license]) + '</a>. ' +
-    c.sources.map((u) => '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">source</a>').join(' ') + '</li>').join('') +
+    '<li><strong>' + esc(c.creator) + '</strong> : ' + c.styles.map((st) => '<a href="' + esc(st.source) + '" target="_blank" rel="noopener noreferrer">' + esc(st.label) + '</a>').join(', ') +
+    ' · <a href="' + esc(LICENSE_URL[c.license]) + '" target="_blank" rel="noopener noreferrer">' + esc(LICENSE_LABEL[c.license]) + '</a></li>').join('') +
     '</ul><p class="av-credits">Avatars générés avec <a href="https://www.dicebear.com" target="_blank" rel="noopener noreferrer">DiceBear</a> (MIT), en local sur ton appareil.</p>';
 }
 
@@ -327,7 +327,7 @@ function avatarPickerHTML() {
     '<button type="button" class="btn btn-ghost btn-sm" data-av-none>Initiale</button></div>' +
     '<div class="av-grid" data-av-grid role="group" aria-label="Avatars"></div>' +
     '<button type="button" class="btn btn-ghost btn-sm av-more" data-av-more>Voir plus</button>' +
-    '<details><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></fieldset>';
+    '<details class="av-credits-more"><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></fieldset>';
 }
 
 /** Sélecteur d'avatars du formulaire : onglets par famille, recherche / au hasard, grille paginée (rendu à la demande). */

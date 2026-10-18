@@ -136,8 +136,17 @@ export function parseAvatar(value: unknown): ParsedAvatar | null {
   return style ? { style, seed } : null;
 }
 
+/**
+ * Retirés du sélecteur : formes abstraites, illisibles en petit (une tuile ne montre qu’un motif). Un avatar déjà choisi
+ * avec un de ces styles reste reconnu (parseAvatar) : seul le choix proposé change.
+ */
+export const RETIRED_STYLE_IDS: readonly string[] = ['shapes', 'glass', 'rings', 'identicon'];
+
+/** Styles proposés dans le sélecteur : licence autorisée et non retirés. */
+export const pickerStyles = (): AvatarStyle[] => usableStyles().filter((st) => !RETIRED_STYLE_IDS.includes(st.id));
+
 export function stylesForTab(tab: AvatarTab): AvatarStyle[] {
-  const all = usableStyles();
+  const all = pickerStyles();
   return tab === 'enfants' ? all.filter((st) => st.kid) : all.filter((st) => st.family === tab);
 }
 
@@ -157,17 +166,19 @@ export function tabTiles(tab: AvatarTab, word = ''): AvatarTile[] {
 }
 
 /** Nombre d'avatars proposés au total (tous onglets confondus, sans doublon). */
-export const avatarCount = (): number => usableStyles().length * DEFAULT_SEEDS.length;
+export const avatarCount = (): number => pickerStyles().length * DEFAULT_SEEDS.length;
 
-/** Crédits à afficher : un par illustrateur et licence, avec les styles concernés (CC BY et licences à attribution). */
-export interface AvatarCredit { creator: string; license: AvatarLicense; styles: string[]; sources: string[] }
+/**
+ * Crédits à afficher : un par illustrateur et licence, avec chaque style proposé et sa page source (une seule ligne par
+ * auteur). Les styles CC0 ne demandent pas d’attribution mais restent listés pour l’information.
+ */
+export interface AvatarCredit { creator: string; license: AvatarLicense; styles: { label: string; source: string }[] }
 export function avatarCredits(): AvatarCredit[] {
   const map = new Map<string, AvatarCredit>();
-  for (const st of usableStyles()) {
+  for (const st of pickerStyles()) {
     const key = st.creator + '|' + st.license;
-    const cur = map.get(key) ?? { creator: st.creator, license: st.license, styles: [], sources: [] };
-    cur.styles.push(st.label);
-    if (!cur.sources.includes(st.source)) cur.sources.push(st.source);
+    const cur = map.get(key) ?? { creator: st.creator, license: st.license, styles: [] };
+    cur.styles.push({ label: st.label, source: st.source });
     map.set(key, cur);
   }
   return [...map.values()].sort((a, b) => a.creator.localeCompare(b.creator, 'fr'));

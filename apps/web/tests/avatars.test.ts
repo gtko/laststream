@@ -2,10 +2,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ALLOWED_LICENSES, AVATAR_PATTERN, AVATAR_STYLES, avatarCount, avatarCredits, cleanSeed, formatAvatar, parseAvatar, stylesForTab,
-  tabTiles, usableStyles, type AvatarLicense,
+  ALLOWED_LICENSES, AVATAR_PATTERN, AVATAR_STYLES, avatarCount, avatarCredits, cleanSeed, formatAvatar, parseAvatar, pickerStyles,
+  RETIRED_STYLE_IDS, stylesForTab, tabTiles, usableStyles, type AvatarLicense,
 } from '../src/data/avatars';
-import { avatarAttrs, avatarUri, hydrateAvatars, resetAvatarCache } from '../src/ui/avatar-art.js';
+import { AVATAR_SCALE, avatarAttrs, avatarUri, hydrateAvatars, resetAvatarCache } from '../src/ui/avatar-art.js';
 import { SETTINGS_STORAGE_KEY, reloadSettings } from '../src/data/config';
 import { reloadSession } from '../src/data/session';
 import type { Profile } from '../src/data/userStore';
@@ -61,12 +61,12 @@ describe('licences filtrées', () => {
     expect(offered.has('icons')).toBe(false);
   });
 
-  it('les crédits couvrent chaque style avec illustrateur et licence', () => {
+  it('les crédits couvrent chaque style proposé avec illustrateur, licence et page source', () => {
     const credits = avatarCredits();
     const listed = credits.flatMap((c) => c.styles).length;
-    expect(listed).toBe(AVATAR_STYLES.length);
+    expect(listed).toBe(pickerStyles().length);
     expect(credits.some((c) => c.license === 'cc-by' && c.creator === 'Lisa Wischofsky')).toBe(true);
-    expect(credits.every((c) => c.creator && c.sources.length > 0)).toBe(true);
+    expect(credits.every((c) => c.creator && c.styles.every((st) => st.label && st.source.startsWith('https://')))).toBe(true);
   });
 });
 
@@ -81,6 +81,50 @@ describe('catalogue', () => {
     expect(tiles[0].seed).toBe('Zelie');
     expect(new Set(tiles.map((t) => t.value)).size).toBe(tiles.length);
     expect(stylesForTab('enfants').every((s) => s.kid)).toBe(true);
+  });
+
+  it('onglet Fun : seulement des figures ; les styles abstraits sont retirés du choix mais restent reconnus', () => {
+    expect(stylesForTab('fun').map((s) => s.id).sort()).toEqual(['fun-emoji', 'thumbs']);
+    expect([...RETIRED_STYLE_IDS].sort()).toEqual(['glass', 'identicon', 'rings', 'shapes']);
+    for (const id of RETIRED_STYLE_IDS) {
+      expect(pickerStyles().some((s) => s.id === id), id).toBe(false);
+      expect(parseAvatar(formatAvatar(id, 'Mimi')), id).not.toBeNull();
+    }
+    expect(avatarCount()).toBe(pickerStyles().length * 16);
+  });
+});
+
+describe('rendu : illustration entière dans la tuile', () => {
+  beforeEach(() => resetAvatarCache());
+  const decode = (uri: string) => decodeURIComponent(uri.slice(uri.indexOf(',') + 1));
+  const parse = (svg: string) => new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+
+  it.each(AVATAR_STYLES.map((s) => s.id))('%s : viewBox carré, SVG à 100 %, figure mise à l’échelle sans agrandissement', async (id) => {
+    const svg = decode(await avatarUri(formatAvatar(id, 'Mimi')));
+    const root = parse(svg);
+    expect(root.localName).toBe('svg');
+    const [minX, minY, w, h] = (root.getAttribute('viewBox') ?? '').split(/\s+/).map(Number);
+    expect(w, 'viewBox carré').toBeGreaterThan(0);
+    expect(h).toBe(w);
+    expect(minX).toBe(0);
+    expect(minY).toBe(0);
+    expect(root.getAttribute('width')).toBe('100%');
+    expect(root.getAttribute('height')).toBe('100%');
+    // Le wrapper de centrage porte l'échelle commune : au plus 100 %, jamais d'agrandissement.
+    const wrapper = root.querySelector(`g[transform*="scale(${AVATAR_SCALE / 100})"]`);
+    expect(wrapper, 'wrapper de centrage').not.toBeNull();
+    const scale = Number(/scale\(([\d.]+)\)/.exec(wrapper!.getAttribute('transform') ?? '')?.[1]);
+    expect(scale).toBeLessThanOrEqual(1);
+    expect(scale).toBeGreaterThanOrEqual(0.5);
+    expect(wrapper!.getAttribute('transform')).toMatch(/^translate\([\d.-]+ [\d.-]+\) scale\(/);
+  });
+
+  it('les SVG ne contiennent aucune balise externe ni largeur fixe en pixels', async () => {
+    for (const st of AVATAR_STYLES) {
+      const svg = decode(await avatarUri(formatAvatar(st.id, 'Luna')));
+      expect(svg, st.id).not.toMatch(/<image|(?:href|src)=["']https?:/);
+      expect(svg, st.id).not.toMatch(/<svg[^>]*\swidth="\d+"/);
+    }
   });
 });
 
@@ -221,5 +265,17 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
     kid.checked = true;
     kid.dispatchEvent(new Event('change', { bubbles: true }));
     expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('enfants');
+  });
+
+  it('crédits repliés par défaut, une ligne par auteur, sans « source source »', async () => {
+    const form = await openEditor();
+    const details = form.querySelector('.pf-picker-avatars details.av-credits-more') as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')!.textContent).toBe('Crédits des illustrations');
+    const ui = await import('../src/ui/auth-ui.js');
+    const html = ui.creditsHTML();
+    expect(html).not.toContain('>source<');
+    expect((html.match(/<li>/g) ?? []).length).toBe(avatarCredits().length);
   });
 });
