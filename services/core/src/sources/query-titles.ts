@@ -16,6 +16,9 @@ export interface TitleVariants {
   /** Dédupliqués : titre original, anglais, français, puis titre de repli. */
   titles: string[];
   year?: number;
+  /** Titre français et titre anglais (TMDB), quand ils sont connus : ils passent en tête des requêtes de film. */
+  fr?: string;
+  en?: string;
 }
 
 interface CacheEntry {
@@ -43,6 +46,15 @@ export interface TitleVariantsOptions {
 interface TmdbTitles extends TitleVariants {
   /** Faux si un appel TMDB a échoué : le résultat n'est alors pas mis en cache. */
   complete: boolean;
+}
+
+/** Copie des champs de titres renseignés (sans l'indicateur interne de complétude). */
+function variantsOnly(found: TmdbTitles): TitleVariants {
+  const out: TitleVariants = { titles: found.titles };
+  if (found.year !== undefined) out.year = found.year;
+  if (found.fr !== undefined) out.fr = found.fr;
+  if (found.en !== undefined) out.en = found.en;
+  return out;
 }
 
 /** Texte nettoyé (espaces réduits, borné), ou undefined si vide. */
@@ -134,14 +146,24 @@ async function fetchTmdbTitles(ref: ContentRef, token: string, fetchFn: FetchFn,
     cleanTitle(fr?.[titleKey]),
   ]);
   const year = yearOf(en?.[dateKey]) ?? yearOf(fr?.[dateKey]);
-  return { titles, year, complete: en !== undefined && fr !== undefined };
+  return {
+    titles,
+    year,
+    fr: cleanTitle(fr?.[titleKey]),
+    en: cleanTitle(en?.[titleKey]),
+    complete: en !== undefined && fr !== undefined,
+  };
 }
 
 /** Ajoute le titre de repli (dédupliqué) et l'année de repli si TMDB n'en donne pas. */
 function finish(found: TitleVariants, fallback: TitleInfo | undefined): TitleVariants {
   const titles = unique([...found.titles, cleanTitle(fallback?.title)]);
+  const out: TitleVariants = { titles };
   const year = found.year ?? fallback?.year;
-  return year === undefined ? { titles } : { titles, year };
+  if (year !== undefined) out.year = year;
+  if (found.fr !== undefined) out.fr = found.fr;
+  if (found.en !== undefined) out.en = found.en;
+  return out;
 }
 
 function readCache(cache: TitleCache, key: string, now: number): TitleVariants | undefined {
@@ -180,7 +202,7 @@ export async function getTitleVariants(ref: ContentRef, opts: TitleVariantsOptio
 
     const found = await fetchTmdbTitles(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     if (found.complete && found.titles.length > 0) {
-      storeEntry(cache, key, { titles: found.titles, year: found.year }, now());
+      storeEntry(cache, key, variantsOnly(found), now());
     }
     return finish(found, fallback);
   } catch {
@@ -200,31 +222,71 @@ function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-/** Suffixes selon le contenu : année (film) ; SxxExx, « Saison N » et « SNN » (pack) pour une série. */
-function suffixesFor(ref: ContentRef, year: number | undefined): string[] {
-  if (ref.type === 'movie') return [year === undefined ? '' : ` ${year}`];
+/** Suffixes d'un épisode de série : SxxEyy, « Saison N » et « SNN » (pack) ; saison seule : « Saison N » et « SNN ». */
+function seriesSuffixes(ref: ContentRef): string[] {
   const { season, episode } = ref;
   if (season === undefined) return [''];
   if (episode === undefined) return [` Saison ${season}`, ` S${pad2(season)}`];
   return [` S${pad2(season)}E${pad2(episode)}`, ` Saison ${season}`, ` S${pad2(season)}`];
 }
 
-/** Transformations appliquées à chaque titre, dans l'ordre de priorité : tel quel, sans accents, sans ponctuation. */
+/** Transformations appliquées à chaque titre, dans l'ordre de priorité : tel quel, sans accents, sans accents ni ponctuation, sans ponctuation. */
 const FOLDS: readonly ((text: string) => string)[] = [
   (text) => text,
   stripAccents,
-  stripPunctuation,
   (text) => stripPunctuation(stripAccents(text)),
+  stripPunctuation,
 ];
 
+/** Titre et langue d'une variante. */
+interface TitleEntry {
+  text: string;
+  lang: 'fr' | 'en' | 'other';
+}
+
+/** Titres nettoyés et dédupliqués : français d'abord, puis anglais, puis les autres (ordre TMDB). */
+function orderedEntries(variants: TitleVariants): TitleEntry[] {
+  const entries: TitleEntry[] = [];
+  const seen = new Set<string>();
+  const add = (text: string | undefined, lang: TitleEntry['lang']): void => {
+    if (text === undefined) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ text, lang });
+  };
+  add(cleanTitle(variants.fr), 'fr');
+  add(cleanTitle(variants.en), 'en');
+  for (const title of variants.titles) add(cleanTitle(title), 'other');
+  return entries;
+}
+
 /**
- * Requêtes texte, dédupliquées et plafonnées à MAX_QUERIES. Ordre : d'abord les titres tels quels (original,
- * anglais, français), puis sans accents, puis sans ponctuation.
+ * Requêtes de film : chaque titre sans année et avec l'année (si elle est connue). Ordre : titre français sans année
+ * puis avec, titre anglais avec année puis sans, autres titres sans puis avec. Les transformations (accents,
+ * ponctuation) ne viennent qu'après le bloc précédent.
  */
-export function buildQueries(variants: TitleVariants, ref: ContentRef): string[] {
+function movieQueries(variants: TitleVariants): string[] {
+  const year = variants.year;
+  const queries: string[] = [];
+  for (const fold of FOLDS) {
+    for (const { text, lang } of orderedEntries(variants)) {
+      const base = cleanTitle(fold(text));
+      if (base === undefined) continue;
+      const withYear = year === undefined ? undefined : `${base} ${year}`;
+      const pair = lang === 'en' ? [withYear, base] : [base, withYear];
+      for (const query of pair) {
+        if (query !== undefined) queries.push(query);
+      }
+    }
+  }
+  return queries;
+}
+
+/** Requêtes d'épisode ou de saison : titres (tels quels, puis transformés) suffixés par SxxEyy, « Saison N » ou « SNN ». */
+function seriesQueries(variants: TitleVariants, ref: ContentRef): string[] {
   const bases = unique(variants.titles.map(cleanTitle));
-  if (bases.length === 0) return [];
-  const suffixes = suffixesFor(ref, variants.year);
+  const suffixes = seriesSuffixes(ref);
   const queries: string[] = [];
   for (const fold of FOLDS) {
     for (const suffix of suffixes) {
@@ -234,6 +296,16 @@ export function buildQueries(variants: TitleVariants, ref: ContentRef): string[]
       }
     }
   }
+  return queries;
+}
+
+/**
+ * Requêtes texte, dédupliquées et plafonnées à MAX_QUERIES. Film : chaque titre avec et sans année (titre français
+ * sans année d'abord). Série : suffixes d'épisode ou de saison. Dans les deux cas, les titres tels quels passent
+ * avant les variantes sans accents ni ponctuation.
+ */
+export function buildQueries(variants: TitleVariants, ref: ContentRef): string[] {
+  const queries = ref.type === 'movie' ? movieQueries(variants) : seriesQueries(variants, ref);
   return unique(queries.map(cleanTitle)).slice(0, MAX_QUERIES);
 }
 

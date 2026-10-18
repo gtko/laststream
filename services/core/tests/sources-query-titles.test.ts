@@ -61,7 +61,12 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
 
     const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new Map() });
 
-    expect(variants).toEqual({ titles: ['Dune: Part Two', 'Dune : Deuxième Partie'], year: 2024 });
+    expect(variants).toEqual({
+      titles: ['Dune: Part Two', 'Dune : Deuxième Partie'],
+      year: 2024,
+      fr: 'Dune : Deuxième Partie',
+      en: 'Dune: Part Two',
+    });
     const urls = mock.mock.calls.map((call) => String(call[0]));
     expect(urls).toContain(`${API}/movie/693134?language=en-US`);
     expect(urls).toContain(`${API}/movie/693134?language=fr-FR`);
@@ -75,7 +80,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
 
     const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
 
-    expect(variants).toEqual({ titles: ['Severance'], year: 2022 });
+    expect(variants).toEqual({ titles: ['Severance'], year: 2022, fr: 'Severance', en: 'Severance' });
   });
 
   it('sans jeton : aucun appel TMDB, repli sur fallbackTitle', async () => {
@@ -158,16 +163,30 @@ describe('getTitleVariants : cache de 7 jours (horloge injectée)', () => {
 });
 
 describe('buildQueries', () => {
-  it('film : titres tels quels, puis sans accents, sans ponctuation, sans accents ni ponctuation ; année ajoutée', () => {
-    const queries = buildQueries({ titles: ['Dune: Part Two', 'Dune : Deuxième Partie'], year: 2024 }, MOVIE);
+  it('film : titre français sans année puis avec, titre anglais avec puis sans, puis accents, puis accents et ponctuation', () => {
+    const queries = buildQueries(
+      { titles: ['Dune: Part Two', 'Dune : Deuxième Partie'], year: 2024, fr: 'Dune : Deuxième Partie', en: 'Dune: Part Two' },
+      MOVIE,
+    );
 
     expect(queries).toEqual([
-      'Dune: Part Two 2024',
+      'Dune : Deuxième Partie',
       'Dune : Deuxième Partie 2024',
+      'Dune: Part Two 2024',
+      'Dune: Part Two',
+      'Dune : Deuxieme Partie',
       'Dune : Deuxieme Partie 2024',
-      'Dune Part Two 2024',
-      'Dune Deuxième Partie 2024',
+      'Dune Deuxieme Partie',
       'Dune Deuxieme Partie 2024',
+    ]);
+  });
+
+  it('film sans langue connue : chaque titre sans année puis avec, dans l’ordre reçu', () => {
+    expect(buildQueries({ titles: ['Dune', 'Dune Part Two'], year: 2024 }, MOVIE)).toEqual([
+      'Dune',
+      'Dune 2024',
+      'Dune Part Two',
+      'Dune Part Two 2024',
     ]);
   });
 
@@ -201,9 +220,7 @@ describe('buildQueries', () => {
   it('plafonne à 8 requêtes, dans l’ordre de priorité (titres tels quels d’abord)', () => {
     const queries = buildQueries({ titles: ['A: B', 'C-D', 'E F', 'G’H', 'I.J'], year: 2024 }, MOVIE);
 
-    expect(queries).toHaveLength(8);
-    expect(queries.slice(0, 5)).toEqual(['A: B 2024', 'C-D 2024', 'E F 2024', 'G’H 2024', 'I.J 2024']);
-    expect(queries[5]).toBe('A B 2024');
+    expect(queries).toEqual(['A: B', 'A: B 2024', 'C-D', 'C-D 2024', 'E F', 'E F 2024', 'G’H', 'G’H 2024']);
   });
 
   it('aucun titre exploitable : aucune requête', () => {

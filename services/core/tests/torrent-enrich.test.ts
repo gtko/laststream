@@ -83,6 +83,23 @@ describe('resolveInfoHashes : sélection (topN)', () => {
 });
 
 describe('resolveInfoHashes : parallélisme borné', () => {
+  it('budget dépassé : les lectures terminées sont gardées, la lecture lente est abandonnée sans bloquer', async () => {
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/2.torrent')) return new Promise<Response>(() => undefined);
+      return torrentResponse(monoTorrent());
+    }) as unknown as FetchFn;
+    const streams = [torrentStream(1), torrentStream(2)];
+
+    const started = Date.now();
+    const out = await resolveInfoHashes(streams, { fetch, topN: 2, cache: new TorrentCache(), budgetMs: 100 });
+
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(out[0]?.infoHash).toBe(MONO_HASH);
+    expect(out[1]?.infoHash).toBeUndefined();
+    expect(out[1]?.downloadUrl).toBeDefined();
+  });
+
   it(`au plus ${ENRICH_CONCURRENCY} lectures simultanées`, async () => {
     let inFlight = 0;
     let maxInFlight = 0;
@@ -93,9 +110,10 @@ describe('resolveInfoHashes : parallélisme borné', () => {
       inFlight -= 1;
       return torrentResponse(monoTorrent());
     }) as unknown as FetchFn;
-    const streams = Array.from({ length: 6 }, (_, i) => torrentStream(i + 1));
+    const count = ENRICH_CONCURRENCY + 4;
+    const streams = Array.from({ length: count }, (_, i) => torrentStream(i + 1));
 
-    const out = await resolveInfoHashes(streams, { fetch, topN: 6, cache: new TorrentCache() });
+    const out = await resolveInfoHashes(streams, { fetch, topN: count, cache: new TorrentCache() });
 
     expect(maxInFlight).toBe(ENRICH_CONCURRENCY);
     expect(out.every((stream) => stream.infoHash === MONO_HASH)).toBe(true);

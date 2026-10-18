@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IndexerHealth } from '../src/sources/indexer-health.js';
 import type { FetchFn } from '../src/sources/http.js';
-import { discoverProwlarrIndexers, searchProwlarr, type ProwlarrSource } from '../src/sources/prowlarr.js';
+import { MAX_PARALLEL_QUERIES } from '../src/sources/query-merge.js';
+import {
+  clearProwlarrDiscoveryCache,
+  discoverProwlarrIndexers,
+  PROWLARR_DISCOVERY_TTL_MS,
+  searchProwlarr,
+  type ProwlarrSource,
+} from '../src/sources/prowlarr.js';
 import type { ContentRef } from '../src/types.js';
 
 const MOVIE: ContentRef = { type: 'movie', id: 'tt1234567', imdbId: 'tt1234567' };
@@ -10,6 +17,8 @@ const KEY = 'PR-SECRET-KEY-4242';
 const SOURCE: ProwlarrSource = { name: 'Prowlarr', baseUrl: 'https://prowlarr.example.com', apiKey: KEY };
 const HASH = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
 const HASH_LOWER = HASH.toLowerCase();
+
+beforeEach(() => clearProwlarrDiscoveryCache());
 const MAGNET = `magnet:?xt=urn:btih:${HASH}&dn=Film`;
 
 /** Indexeurs Prowlarr bruts : Alpha accepte l'IMDb pour films et séries, Beta seulement la recherche texte. */
@@ -145,21 +154,25 @@ describe('discoverProwlarrIndexers', () => {
 });
 
 describe('searchProwlarr : regroupement par capacité', () => {
-  it('film : Alpha (id IMDb) en requête par id, Beta (texte) en requête « Titre Année » avec les catégories 2000', async () => {
+  it('film : Alpha (id IMDb) en requête par id, Beta (texte) en requêtes « Titre » et « Titre Année » avec les catégories 2000', async () => {
     const { fetch, mock } = routes(() => jsonResponse([]));
 
     await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film', year: 2024 } });
 
     const searches = searchCalls(mock);
-    expect(searches).toHaveLength(2);
+    expect(searches).toHaveLength(3);
     const byId = searches.find((url) => url.searchParams.has('imdbId'));
     const byText = searches.find((url) => url.searchParams.has('query'));
+    expect(searches.filter((url) => url.searchParams.has('query')).map((url) => url.searchParams.get('query'))).toEqual([
+      'Film',
+      'Film 2024',
+    ]);
     expect(byId?.searchParams.get('type')).toBe('movie');
     expect(byId?.searchParams.get('imdbId')).toBe('1234567');
     expect(byId?.searchParams.getAll('indexerIds')).toEqual(['1']);
     expect(byId?.searchParams.getAll('categories')).toEqual(['2000']);
     expect(byId?.searchParams.has('query')).toBe(false);
-    expect(byText?.searchParams.get('query')).toBe('Film 2024');
+    expect(byText?.searchParams.get('query')).toBe('Film');
     expect(byText?.searchParams.getAll('indexerIds')).toEqual(['2']);
     expect(byText?.searchParams.has('imdbId')).toBe(false);
   });
@@ -372,6 +385,89 @@ describe('searchProwlarr : isolation, santé et budget', () => {
 
     expect(err.message).toBe('Source "Prowlarr" : délai dépassé (60 ms)');
     expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('liste des indexeurs gardée 10 min : deux recherches ne font qu une découverte', async () => {
+    const { fetch, mock } = mockFetch((url) =>
+      url.pathname === '/api/v1/indexer' ? jsonResponse([INDEXERS[2]]) : jsonResponse([]),
+    );
+
+    await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } });
+    await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } });
+
+    const discoveries = mock.mock.calls.filter(([input]) => String(input).includes('/api/v1/indexer'));
+    expect(discoveries).toHaveLength(1);
+  });
+
+  it('découverte en échec : non mise en cache, la recherche suivante redécouvre', async () => {
+    let fail = true;
+    const { fetch, mock } = mockFetch((url) => {
+      if (url.pathname !== '/api/v1/indexer') return jsonResponse([]);
+      return fail ? new Response('boom', { status: 503 }) : jsonResponse([INDEXERS[2]]);
+    });
+
+    await expect(searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } })).rejects.toThrow('HTTP 503');
+    fail = false;
+    await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } });
+
+    const discoveries = mock.mock.calls.filter(([input]) => String(input).includes('/api/v1/indexer'));
+    expect(discoveries).toHaveLength(2);
+  });
+
+  it('au-delà de 10 min, la liste des indexeurs est redécouverte', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-18T10:00:00Z'));
+      const { fetch, mock } = mockFetch((url) =>
+        url.pathname === '/api/v1/indexer' ? jsonResponse([INDEXERS[2]]) : jsonResponse([]),
+      );
+      await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } });
+      vi.setSystemTime(new Date(Date.now() + PROWLARR_DISCOVERY_TTL_MS + 1));
+      await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film' } });
+
+      const discoveries = mock.mock.calls.filter(([input]) => String(input).includes('/api/v1/indexer'));
+      expect(discoveries).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('budget dépassé : les requêtes terminées gardent leurs résultats, les autres sont abandonnées', async () => {
+    const { fetch } = mockFetch((url, init) => {
+      if (url.pathname === '/api/v1/indexer') return jsonResponse([INDEXERS[1]]);
+      if (url.searchParams.get('query') === 'Film') {
+        return jsonResponse([{ title: 'Film.2024.1080p', infoHash: HASH, indexerId: 2, indexer: 'Beta' }]);
+      }
+      return hangingFetch(url, init);
+    });
+
+    const streams = await searchProwlarr(SOURCE, MOVIE, {
+      fetch,
+      budgetMs: 80,
+      titles: { titles: ['Film', 'Autre film'] },
+    });
+
+    expect(streams).toHaveLength(1);
+    expect(streams[0]).toMatchObject({ title: 'Film.2024.1080p', infoHash: HASH_LOWER });
+  });
+
+  it('au plus MAX_PARALLEL_QUERIES requêtes simultanées par recherche', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const { fetch, mock } = mockFetch(async (url) => {
+      if (url.pathname !== '/api/v1/search') return jsonResponse([INDEXERS[1]]);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+      return jsonResponse([]);
+    });
+
+    await searchProwlarr(SOURCE, MOVIE, { fetch, titles: { titles: ['A', 'B', 'C', 'D'], year: 2024 } });
+
+    const sent = searchCalls(mock).length;
+    expect(sent).toBeGreaterThan(MAX_PARALLEL_QUERIES);
+    expect(peak).toBe(MAX_PARALLEL_QUERIES);
   });
 
   it('aucun indexeur activé : résultat vide sans requête de recherche', async () => {

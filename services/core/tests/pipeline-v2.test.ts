@@ -274,7 +274,8 @@ describe('pipeline v2 : liens d hébergeur', () => {
 const PRIVATE_TORRENT = monoTorrent({ name: 'Film.Private.2024.1080p.WEB-DL.H264-PRV.mkv', length: 3, private: true });
 const PASSKEY_URL = 'https://tracker.test/dl/42?passkey=PASSKEY-XYZ';
 
-function prowlarrRoutes(): Route[] {
+/** Routes Prowlarr pour un release privé ; `release` remplace des champs du résultat (ex. `{ guid: undefined }`). */
+function prowlarrRoutes(release: Record<string, unknown> = {}): Route[] {
   return [
     (url) =>
       url.hostname === 'prowlarr.test' && url.pathname === '/api/v1/indexer'
@@ -300,6 +301,7 @@ function prowlarrRoutes(): Route[] {
               seeders: 9,
               indexerId: 1,
               protocol: 'torrent',
+              ...release,
             },
           ])
         : undefined,
@@ -383,5 +385,99 @@ describe('pipeline v2 : cache LRU des résultats', () => {
     const first = await getStreams(config, movie('tt7100041'), ctxFor(fetch, { cache: lru }));
     expect(first.errors).toHaveLength(1);
     expect(lru.size).toBe(0);
+  });
+});
+
+/** Route qui ne répond jamais (la réponse n'arrive pas : seule une limite externe peut rendre la main). */
+const HANGING_HOST = 'slow.test';
+const HANG: Route = (url) =>
+  url.hostname === HANGING_HOST ? (new Promise<never>(() => undefined) as unknown as Response) : undefined;
+
+describe('pipeline v2 : groupes de copies', () => {
+  it('deux infoHash pour la même release (même nom normalisé) : une seule ligne, copies = 2', async () => {
+    const { fetch } = routedFetch([CINEMETA, upstreamWith(THREE_COPIES.slice(0, 2))]);
+    const result = await getStreams(cfg({ sources: [UPSTREAM] }), movie('tt7100004'), ctxFor(fetch));
+
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]?.infoHash).toBe(H.a);
+    expect(result.streams[0]?.laststream).toMatchObject({ copies: 2 });
+    expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 2 copies');
+  });
+});
+
+describe('pipeline v2 : garde-fou torrent privé (jamais de magnet public)', () => {
+  it('torrent privé sans guid : aucune copie jouable, aucun flux, le hash n apparaît nulle part, AllDebrid non sollicité', async () => {
+    const { fetch } = routedFetch(prowlarrRoutes({ guid: undefined }));
+    const resolved: string[] = [];
+    const debrid = {
+      checkCached: async () => new Map<string, boolean>(),
+      resolve: async (hash: string) => {
+        resolved.push(hash);
+        return { url: 'https://cdn.test/private.mkv', filename: 'private.mkv', size: 1 };
+      },
+    };
+    const result = await getStreams(
+      cfg({ sources: [PROWLARR], debrid: DEBRID }),
+      movie('tt7100050'),
+      ctxFor(fetch, { torrentCache: new TorrentCache(), debrid }),
+    );
+
+    const privateHash = parseTorrent(new Uint8Array(PRIVATE_TORRENT)).infoHash;
+    expect(result.streams).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain(privateHash);
+    expect(resolved).toEqual([]);
+  });
+
+  it('torrent privé sans guid et copie publique du même release : seule la copie publique est jouable', async () => {
+    const publicCopy = {
+      name: 'Upstream',
+      title: 'Film.Private.2024.1080p.WEB-DL.H264-PRV',
+      infoHash: H.a,
+      description: '👤 5',
+    };
+    const { fetch } = routedFetch([...prowlarrRoutes({ guid: undefined }), upstreamWith([publicCopy])]);
+    const result = await getStreams(
+      cfg({ sources: [PROWLARR, UPSTREAM], debrid: DEBRID }),
+      movie('tt7100051'),
+      ctxFor(fetch, { torrentCache: new TorrentCache(), debrid: fakeDebrid(new Set()) }),
+    );
+
+    const privateHash = parseTorrent(new Uint8Array(PRIVATE_TORRENT)).infoHash;
+    expect(result.streams).toHaveLength(1);
+    expect(copiesOfUrl(result.streams[0]?.url)?.copies).toEqual([{ infoHash: H.a }]);
+    expect(JSON.stringify(result)).not.toContain(privateHash);
+  });
+});
+
+describe('pipeline v2 : budgets par étape', () => {
+  it('cache AllDebrid qui ne répond pas : le budget rend la main, flux sans statut cache', async () => {
+    const { fetch } = routedFetch([CINEMETA, upstreamWith(THREE_COPIES)]);
+    const hanging = {
+      checkCached: () => new Promise<Map<string, boolean>>(() => undefined),
+      resolve: async () => ({ url: 'https://cdn.test/x.mkv', filename: 'x.mkv', size: 1 }),
+    };
+    const started = Date.now();
+    const result = await getStreams(
+      cfg({ sources: [UPSTREAM], debrid: DEBRID }),
+      movie('tt7100005'),
+      ctxFor(fetch, { debrid: hanging, budgetsMs: { cache: 50 } }),
+    );
+
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]?.laststream?.cached).not.toBe(true);
+    expect(result.streams[0]?.laststream).toMatchObject({ copies: 3 });
+  });
+
+  it('source qui ne répond pas : abandonnée au budget, les autres sources gardent leurs résultats', async () => {
+    const { fetch } = routedFetch([CINEMETA, upstreamWith(THREE_COPIES), HANG]);
+    const config = cfg({ sources: [{ type: 'upstream', name: 'Lente', url: `https://${HANGING_HOST}` }, UPSTREAM] });
+    const started = Date.now();
+    const result = await getStreams(config, movie('tt7100006'), ctxFor(fetch, { budgetsMs: { sources: 150 } }));
+
+    expect(Date.now() - started).toBeLessThan(1500);
+    expect(result.streams).toHaveLength(1);
+    expect(result.streams[0]?.laststream).toMatchObject({ copies: 3 });
+    expect(result.errors).toEqual([{ source: 'Lente', error: 'Source "Lente" : délai dépassé (150 ms)' }]);
   });
 });

@@ -29,6 +29,9 @@ export interface CollectOptions extends HttpOptions {
 
 type SourceConfig = Config['sources'][number];
 
+/** Marge entre le budget interne d'une source et la limite externe de la collecte, en millisecondes. */
+const SOURCE_MARGIN_MS = 500;
+
 function searchSource(source: SourceConfig, ref: ContentRef, opts: CollectOptions): Promise<RawStream[]> {
   switch (source.type) {
     case 'upstream':
@@ -69,12 +72,29 @@ export function mergeIndexerCopies(streams: RawStream[]): RawStream[] {
 }
 
 /**
+ * Résultat d'une source au plus tard après `budgetMs` : au-delà, erreur sûre « délai dépassé » (sans URL). Sans budget,
+ * le résultat est renvoyé tel quel. La source n'est pas annulée : son résultat tardif est ignoré.
+ */
+function bounded(work: Promise<RawStream[]>, name: string, budgetMs: number | undefined): Promise<RawStream[]> {
+  if (budgetMs === undefined) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new SourceError(`Source "${name}" : délai dépassé (${budgetMs} ms)`)), budgetMs);
+  });
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Interroge toutes les sources de la configuration en parallèle.
  * Une source en échec n'empêche pas les autres : son erreur est listée dans `errors`.
  * Les streams sont renvoyés dans l'ordre des sources de la configuration, copies d'indexeurs fusionnées par infoHash.
  */
 export async function collectStreams(config: Config, ref: ContentRef, opts: CollectOptions = {}): Promise<CollectResult> {
-  const runs = config.sources.map((source) => searchSource(source, ref, opts));
+  // Chaque source borne sa propre recherche un peu avant le budget de la collecte : elle rend ses résultats partiels
+  // à temps, au lieu d'être coupée par la limite externe (qui ne garde rien de la source).
+  const inner: CollectOptions =
+    opts.budgetMs === undefined ? opts : { ...opts, budgetMs: Math.max(0, opts.budgetMs - SOURCE_MARGIN_MS) };
+  const runs = config.sources.map((source) => bounded(searchSource(source, ref, inner), source.name, opts.budgetMs));
   const settled = await Promise.allSettled(runs);
 
   const streams: RawStream[] = [];

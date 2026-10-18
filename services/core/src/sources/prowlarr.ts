@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ContentRef, RawStream } from '../types.js';
 import { defaultIndexerHealth, type IndexerHealth } from './indexer-health.js';
 import {
@@ -52,8 +53,41 @@ export interface ProwlarrSearchOptions extends HttpOptions {
   health?: IndexerHealth;
 }
 
-/** Budget global par défaut d'une recherche Prowlarr, en millisecondes. */
-export const PROWLARR_BUDGET_MS = 12_000;
+/** Budget global par défaut d'une recherche Prowlarr (découverte et requêtes), en millisecondes. */
+export const PROWLARR_BUDGET_MS = 8_000;
+/** Durée de vie, en mémoire, de la liste des indexeurs d'une source : 10 minutes. */
+export const PROWLARR_DISCOVERY_TTL_MS = 10 * 60 * 1_000;
+
+interface DiscoveryEntry {
+  expiresAt: number;
+  indexers: IndexerInfo[];
+}
+
+/** Indexeurs découverts, par source (URL et empreinte SHA-256 de la clé : jamais la clé). Réussites seulement. */
+const discoveryCache = new Map<string, DiscoveryEntry>();
+
+/** Vide le cache de découverte (tests, ou indexeurs modifiés à chaud). */
+export function clearProwlarrDiscoveryCache(): void {
+  discoveryCache.clear();
+}
+
+function discoveryKey(source: ProwlarrSource): string {
+  return `${source.baseUrl}\u0000${createHash('sha256').update(source.apiKey).digest('hex')}`;
+}
+
+/** Indexeurs de la source depuis le cache, sinon découverte puis mise en cache. Un échec n'est jamais mis en cache. */
+async function discoverCached(source: ProwlarrSource, fetchFn: FetchFn, timeoutMs: number): Promise<IndexerInfo[]> {
+  const key = discoveryKey(source);
+  const now = Date.now();
+  const hit = discoveryCache.get(key);
+  if (hit !== undefined && hit.expiresAt > now) return hit.indexers;
+  const indexers = await listIndexers(source, fetchFn, timeoutMs);
+  for (const [stored, entry] of discoveryCache) {
+    if (entry.expiresAt <= now) discoveryCache.delete(stored);
+  }
+  discoveryCache.set(key, { expiresAt: now + PROWLARR_DISCOVERY_TTL_MS, indexers });
+  return indexers;
+}
 
 const MOVIE_CATEGORIES: readonly number[] = [2000];
 const SERIES_CATEGORIES: readonly number[] = [5000];
@@ -247,9 +281,10 @@ function indexerNameOf(raw: Record<string, unknown>, names: ReadonlyMap<string, 
 /**
  * Recherche Prowlarr (GET /api/v1/search) sur les indexeurs torrent retenus.
  * Les indexeurs sont regroupés par capacité (id IMDb ou texte) ; chaque groupe est une requête, et chaque variante de
- * titre ajoute une requête texte. Un groupe en échec
- * n'empêche pas les autres (santé mise à jour par indexeur). Budget global : chaque requête ne dépasse pas le temps
- * restant. Lève une SourceError sûre seulement si la découverte échoue ou si tous les groupes échouent.
+ * titre ajoute une requête texte. Au plus MAX_PARALLEL_QUERIES requêtes à la fois. Un groupe en échec n'empêche pas les
+ * autres (santé mise à jour par indexeur). Budget global : chaque requête ne dépasse pas le temps restant, et une
+ * requête qui n'a pas pu partir avant l'échéance est écartée sans pénalité. La liste des indexeurs vient du cache
+ * (10 min). Lève une SourceError sûre seulement si la découverte échoue ou si tous les groupes échouent.
  */
 export async function searchProwlarr(
   source: ProwlarrSource,
@@ -268,7 +303,7 @@ export async function searchProwlarr(
   };
 
   try {
-    const discovered = await listIndexers(source, fetchFn, timeLeft());
+    const discovered = await discoverCached(source, fetchFn, timeLeft());
     const variants = variantsFor(opts);
     const queries = variants === undefined ? [] : buildQueries(variants, ref);
     const plans = planSearches(selectIndexers(discovered, source.indexerIds), ref, categoriesFor(source, ref), queries);
@@ -276,6 +311,8 @@ export async function searchProwlarr(
 
     const names = new Map(discovered.map((indexer) => [String(indexer.id), indexer.name]));
     const run = async (plan: PlannedSearch): Promise<Candidate[]> => {
+      // Budget épuisé avant l'envoi : la requête n'part pas, et l'indexeur n'est pas pénalisé dans la santé.
+      if (deadline <= Date.now()) throw new SourceError(`délai dépassé (${budgetMs} ms)`);
       const started = Date.now();
       try {
         const url = endpointUrl(source.baseUrl, '/api/v1/search', plan.params);
@@ -297,7 +334,8 @@ export async function searchProwlarr(
       }
     };
 
-    // Requêtes en parallèle (concurrence bornée, budget commun) ; résultats fusionnés sans doublon, filtrés sur l'année.
+    // Requêtes en parallèle, au plus MAX_PARALLEL_QUERIES à la fois (mesuré : au-delà, chaque requête ralentit
+    // nettement côté Prowlarr) ; résultats fusionnés sans doublon, filtrés sur l'année.
     const settled = await mapBounded(plans, MAX_PARALLEL_QUERIES, run);
     const rejected = settled.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
     if (rejected.length === settled.length) throw rejected[0]?.reason;

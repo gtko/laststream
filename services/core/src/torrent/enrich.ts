@@ -1,9 +1,12 @@
 import type { RawStream } from '../types.js';
 import type { FetchFn } from '../sources/http.js';
-import { fetchTorrent, type FetchedTorrent, type TorrentCache } from './fetch-torrent.js';
+import { fetchTorrent, TORRENT_FETCH_TIMEOUT_MS, type FetchedTorrent, type TorrentCache } from './fetch-torrent.js';
 
-/** Nombre maximal de .torrent lus en parallèle. */
-export const ENRICH_CONCURRENCY = 3;
+/**
+ * Nombre maximal de .torrent lus en parallèle : le pipeline lit au plus RESOLVE_TOP_N (12) flux, tous ensemble, pour
+ * tenir le budget de l'étape (une file d'attente ferait dépasser le budget sans gain).
+ */
+export const ENRICH_CONCURRENCY = 12;
 
 export interface EnrichOptions {
   /** fetch injecté (tests). Par défaut : fetch global. */
@@ -14,6 +17,12 @@ export interface EnrichOptions {
   guidOf?: (stream: RawStream) => string | undefined;
   timeoutMs?: number;
   cache?: TorrentCache;
+  /**
+   * Budget de l'étape, en millisecondes. Chaque lecture est coupée à l'échéance (son délai ne dépasse jamais le temps
+   * restant) : les lectures terminées sont renvoyées, les autres sont abandonnées (leur flux reste tel quel). Aucun
+   * travail ne reste en arrière-plan.
+   */
+  budgetMs?: number;
 }
 
 interface Candidate {
@@ -65,13 +74,18 @@ export async function resolveInfoHashes(streams: RawStream[], opts: EnrichOption
   });
 
   const out = [...streams];
-  await runLimited(candidates.slice(0, limit), ENRICH_CONCURRENCY, async (candidate) => {
+  const deadline = opts.budgetMs === undefined ? undefined : Date.now() + opts.budgetMs;
+  const work = runLimited(candidates.slice(0, limit), ENRICH_CONCURRENCY, async (candidate) => {
     const stream = streams[candidate.index];
     if (stream === undefined) return;
+    // Hors budget, la lecture n'est pas lancée ; sinon son délai ne dépasse pas le temps restant.
+    const left = deadline === undefined ? undefined : deadline - Date.now();
+    if (left !== undefined && left <= 0) return;
+    const requested = opts.timeoutMs ?? TORRENT_FETCH_TIMEOUT_MS;
     try {
       const fetched = await fetchTorrent(candidate.url, {
         fetch: opts.fetch,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: left === undefined ? opts.timeoutMs : Math.min(requested, left),
         cache: opts.cache,
         guid: candidate.guid,
       });
@@ -80,5 +94,24 @@ export async function resolveInfoHashes(streams: RawStream[], opts: EnrichOption
       // Échec isolé : le flux reste sans infoHash et les autres sont traités normalement.
     }
   });
-  return out;
+  if (deadline === undefined) {
+    await work;
+    return out;
+  }
+  await withinBudget(work, deadline - Date.now());
+  // Instantané : une lecture non terminée écrirait encore dans `out`, pas dans le résultat rendu.
+  return [...out];
+}
+
+/** Attend `work` au plus `budgetMs` millisecondes, puis rend la main sans annuler `work`. Ne rejette jamais. */
+async function withinBudget(work: Promise<void>, budgetMs: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, budgetMs);
+  });
+  try {
+    await Promise.race([work.catch(() => undefined), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

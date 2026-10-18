@@ -50,13 +50,12 @@ describe('searchTorznab : requêtes texte en plus de la requête par id', () => 
     const streams = await searchTorznab(SOURCE, MOVIE, { fetch, titles: TITLES });
 
     const urls = mock.mock.calls.map((call) => new URL(String(call[0])));
-    expect(urls).toHaveLength(2);
+    expect(urls).toHaveLength(3);
     const byId = urls.find((url) => url.searchParams.has('imdbid'));
-    const byText = urls.find((url) => url.searchParams.has('q'));
+    const byTexts = urls.filter((url) => url.searchParams.has('q'));
     expect(byId?.searchParams.get('t')).toBe('movie');
-    expect(byText?.searchParams.get('t')).toBe('movie');
-    expect(byText?.searchParams.get('q')).toBe('Dune Part Two 2024');
-    expect(byText?.searchParams.has('imdbid')).toBe(false);
+    expect(byTexts.map((url) => url.searchParams.get('q'))).toEqual(['Dune Part Two', 'Dune Part Two 2024']);
+    expect(byTexts.every((url) => url.searchParams.get('t') === 'movie' && !url.searchParams.has('imdbid'))).toBe(true);
     expect(streams).toHaveLength(1);
     expect(streams[0]).toMatchObject({ infoHash: HASH_A.toLowerCase(), title: DUNE.title });
   });

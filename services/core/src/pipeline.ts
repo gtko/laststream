@@ -29,6 +29,21 @@ const CACHE_CHECK_LIMIT = 8;
 const HOSTER_TOP_N = 8;
 const TITLE_TIMEOUT_MS = 3_000;
 const META_TIMEOUT_MS = 4_000;
+
+/**
+ * Budgets des étapes, en millisecondes. Une étape qui dépasse son budget est abandonnée : ses résultats partiels
+ * sont gardés, et la requête ne reste pas bloquée (sources : collecte bornée ; torrents : lectures terminées ;
+ * cache AllDebrid et hébergeurs : étape ignorée ; sonde : candidats déjà sondés).
+ */
+export interface StageBudgets {
+  sources: number;
+  torrents: number;
+  cache: number;
+  hosters: number;
+  probe: number;
+}
+const STAGE_BUDGET_MS: StageBudgets = { sources: 8_000, torrents: 3_000, cache: 2_000, hosters: 2_000, probe: 3_000 };
+
 /** Durée de vie du cache des résultats : 5 minutes, 200 entrées. */
 const RESULT_TTL_MS = 5 * 60 * 1_000;
 const RESULT_CACHE_MAX = 200;
@@ -63,6 +78,10 @@ export interface PipelineContext {
   cache?: LruCache<PipelineResult> | false;
   /** Sonde média injectable (tests). Défaut : sonde réelle, avec le fetch du contexte. */
   probe?: typeof probeMedia;
+  /** Durée de chaque étape, en ms (script de vérification live). Absent : aucune mesure, aucun journal. */
+  stageTimer?: (stage: string, ms: number) => void;
+  /** Budgets des étapes (tests). Défaut : STAGE_BUDGET_MS. */
+  budgetsMs?: Partial<StageBudgets>;
 }
 
 export interface PipelineResult {
@@ -207,24 +226,29 @@ function indexSources(candidates: Candidate[]): Map<string, SourceInfo> {
   return index;
 }
 
-/** Copie jouable : hash (guid seulement pour un torrent privé, sans URL), ou lien d'hébergeur débridé. */
+/**
+ * Copie jouable : hash (guid seulement pour un torrent privé), ou lien d'hébergeur débridé. Garde-fou : un torrent
+ * privé n'est jamais envoyé en magnet public. Sans guid exploitable, la copie est écartée (undefined).
+ */
 function playableCopyOf(
   copy: CopyRef,
   sources: Map<string, SourceInfo>,
   hosters: PipelineContext['hosters'],
-): PlayableCopy {
+): PlayableCopy | undefined {
   const out: PlayableCopy = {};
   if (copy.infoHash !== undefined) {
+    const info = sources.get(hashKey(copy.infoHash));
+    // Le guid sert de clé de cache serveur : jamais un lien contenant un secret.
+    const guid = info?.guid !== undefined && scrubUrl(info.guid) === info.guid ? info.guid : undefined;
+    if (info?.privateTorrent === true) {
+      if (guid === undefined) return undefined;
+      out.guid = guid;
+      out.privateTorrent = true;
+    }
     out.infoHash = copy.infoHash;
     if (copy.fileIdx !== undefined) out.fileIdx = copy.fileIdx;
     if (copy.filename !== undefined) out.filename = copy.filename;
     if (copy.size !== undefined) out.size = copy.size;
-    const info = sources.get(hashKey(copy.infoHash));
-    // Le guid sert de clé de cache serveur : jamais un lien contenant un secret.
-    if (info?.privateTorrent === true && info.guid !== undefined && scrubUrl(info.guid) === info.guid) {
-      out.guid = info.guid;
-      out.privateTorrent = true;
-    }
   } else if (copy.url !== undefined) {
     const hoster = hosters?.hosterFor(copy.url)?.name;
     if (hoster !== undefined) {
@@ -236,13 +260,27 @@ function playableCopyOf(
   return out;
 }
 
-/** Groupe classé → élément de formatage : copies jouables (cachées d'abord), indexeurs de toutes les copies. */
+/** Vrai si le candidat (ou son infoHash) désigne un torrent privé. */
+function isPrivateItem(item: Scored, sources: Map<string, SourceInfo>): boolean {
+  if (item.raw.privateTorrent === true) return true;
+  const hash = infoHashOf(item);
+  return hash !== undefined && sources.get(hashKey(hash))?.privateTorrent === true;
+}
+
+/**
+ * Groupe classé → élément de formatage : copies jouables (cachées d'abord), indexeurs de toutes les copies.
+ * Undefined si un torrent privé n'a aucune copie jouable : il n'est alors pas livré du tout.
+ */
 function toFormatItem(
   item: Scored,
   sources: Map<string, SourceInfo>,
   hosters: PipelineContext['hosters'],
-): FormatItem {
-  const copies = item.copies.map((copy) => playableCopyOf(copy, sources, hosters));
+): FormatItem | undefined {
+  const copies = item.copies.flatMap((copy) => {
+    const playable = playableCopyOf(copy, sources, hosters);
+    return playable === undefined ? [] : [playable];
+  });
+  if (copies.length === 0 && isPrivateItem(item, sources)) return undefined;
   const cachedFirst = [...copies].sort((a, b) => Number(b.cached === true) - Number(a.cached === true));
   const indexers = new Set<string>(item.raw.indexers ?? []);
   for (const copy of item.copies) {
@@ -304,26 +342,66 @@ export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineC
   return result;
 }
 
+/** Chronomètre d'étapes : chaque `lap` signale le temps écoulé depuis le lap précédent (sans effet sans stageTimer). */
+function stageClock(timer: PipelineContext['stageTimer']): (stage: string) => void {
+  let last = Date.now();
+  return (stage) => {
+    const now = Date.now();
+    timer?.(stage, now - last);
+    last = now;
+  };
+}
+
+/** Résout `work` au plus tard après `ms` millisecondes ; à l'échéance, `fallback`. `work` n'est pas annulée. */
+function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer));
+}
+
 async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<PipelineResult> {
   const fetchFn = ctx.fetch;
   const tmdbToken = config.services.tmdbToken;
+  const budget: StageBudgets = { ...STAGE_BUDGET_MS, ...ctx.budgetsMs };
+  const lap = stageClock(ctx.stageTimer);
+  const hosters = config.debrid !== undefined ? ctx.hosters : undefined;
+  // Catalogue d'hébergeurs (gardé 12 h, requête partagée) : demandé dès le départ, en parallèle des sources.
+  const hostsCatalog = hosters === undefined ? undefined : settle(() => hosters.getHosts(), undefined);
 
-  // a) durée, métadonnées TMDB et titres en parallèle. Une lecture en échec laisse sa valeur inconnue.
-  const [runtime, contentMeta, titles] = await Promise.all([
+  // a) titres d'abord (la recherche en dépend) ; collecte ensuite, pendant que la fiche et la durée se chargent.
+  const titles = await settle(
+    () => getTitleVariants(ref, { tmdbToken, fetch: fetchFn, timeoutMs: TITLE_TIMEOUT_MS }),
+    NO_TITLES,
+  );
+  lap('a.titres');
+  const collecting = settle(
+    () => collectStreams(config, ref, { fetch: fetchFn, titles, budgetMs: budget.sources }),
+    EMPTY_COLLECT,
+  );
+  const metaLoading = Promise.all([
     settle(() => getRuntimeSeconds(ref, { fetch: fetchFn }), undefined),
     settle(() => getContentMeta(ref, { tmdbToken, fetch: fetchFn, timeoutMs: META_TIMEOUT_MS }), {} as ContentMeta),
-    settle(() => getTitleVariants(ref, { tmdbToken, fetch: fetchFn, timeoutMs: TITLE_TIMEOUT_MS }), NO_TITLES),
   ]);
+  const collected = await collecting;
+  lap('b.sources');
+  const [runtime, contentMeta] = await metaLoading;
   const meta: ContentMeta = { ...contentMeta };
   if (meta.runtimeSeconds === undefined && runtime !== undefined) meta.runtimeSeconds = runtime;
 
-  const collected = await settle(() => collectStreams(config, ref, { fetch: fetchFn, titles }), EMPTY_COLLECT);
-
-  // b) lecture des .torrent sans infoHash ; fusion des copies d'indexeurs par infoHash une fois les hashes connus.
+  // b) lecture des .torrent sans infoHash (budget propre) ; fusion des copies d'indexeurs par infoHash ensuite.
   const read = await settle(
-    () => resolveInfoHashes(collected.streams, { fetch: fetchFn, topN: RESOLVE_TOP_N, cache: ctx.torrentCache }),
+    () =>
+      resolveInfoHashes(collected.streams, {
+        fetch: fetchFn,
+        topN: RESOLVE_TOP_N,
+        cache: ctx.torrentCache,
+        budgetMs: budget.torrents,
+      }),
     collected.streams,
   );
+  lap('c.torrents');
   const streams = mergeIndexerCopies(read);
   if (ctx.packStore !== undefined) {
     for (const raw of streams) {
@@ -336,32 +414,41 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   // c) parsing, premier filtre, groupement des copies.
   const candidates: Candidate[] = streams.map((raw) => ({ raw, parsed: parseRawStream(raw) }));
   const sources = indexSources(candidates);
-  const hosters = config.debrid !== undefined ? ctx.hosters : undefined;
   let pool = candidates;
   if (hosters !== undefined && !config.filters.includeHosterLinks) {
     // Liens d'hébergeur exclus : identifiés par le catalogue AllDebrid, retirés avant le groupement.
-    await settle(() => hosters.getHosts(), undefined);
+    if (hostsCatalog !== undefined) await within(hostsCatalog, budget.hosters, undefined);
     pool = candidates.filter((c) => c.raw.url === undefined || hosters.hosterFor(c.raw.url) === undefined);
   }
   const firstPass = await settle(() => filterCandidates(pool, firstPassConfig(config), meta), []);
   let groups: Grouped[] = await settle(() => groupCopies(firstPass), []);
+  lap('d.filtre1');
 
-  // Statut « cache » AllDebrid, par copie.
+  // Statut « cache » AllDebrid, par copie (budget propre : à l'échéance, groupes inchangés).
   const debrid = ctx.debrid;
   if (config.debrid !== undefined && debrid !== undefined && groups.length > 0) {
-    groups = await settle(() => markCached(groups, config, debrid), groups);
+    const before = groups;
+    groups = await within(settle(() => markCached(before, config, debrid), before), budget.cache, before);
   }
+  lap('e.cache');
 
-  // Liens d'hébergeur : contrôle des liens vivants, nom d'hébergeur, liens morts écartés.
+  // Liens d'hébergeur : contrôle des liens vivants, nom d'hébergeur, liens morts écartés (budget propre).
   if (hosters !== undefined && config.filters.includeHosterLinks) {
     const checked = await settle(
-      () => enrichHosterLinks(groups, { client: hosters, hostHealth: ctx.hostHealth, topN: HOSTER_TOP_N }),
+      () =>
+        enrichHosterLinks(groups, {
+          client: hosters,
+          hostHealth: ctx.hostHealth,
+          topN: HOSTER_TOP_N,
+          budgetMs: budget.hosters,
+        }),
       groups,
     );
     groups = withCopies(checked);
   }
+  lap('f.hebergeurs');
 
-  // Classement, limite par résolution, sonde audio des meilleurs, second filtre, second classement.
+  // Classement, limite par résolution, sonde audio des meilleurs (budget propre), second filtre, second classement.
   const ranked = limitPerResolution(rankWithCopies(groups, config), config);
   const probed = withCopies(
     await settle(
@@ -373,17 +460,23 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
           episode: ref.episode,
           fetch: fetchFn,
           probe: ctx.probe,
+          budgetMs: budget.probe,
         }),
       ranked,
     ),
   );
+  lap('g.sonde');
   const unflagged = probed.map(withoutLanguageFallback);
   const verified = withCopies(await settle(() => filterCandidates(unflagged, config, meta), unflagged));
   const finalRanked = limitPerResolution(rankWithCopies(verified, config), config);
+  lap('h.filtre2');
 
-  // d) pack learning, puis formatage.
+  // d) pack learning, puis formatage (un torrent privé sans copie jouable n'est pas livré).
   const learned = applyLearnedFiles(finalRanked, ref, ctx.packStore);
-  const items = learned.map((item) => toFormatItem(item, sources, hosters));
+  const items = learned.flatMap((item) => {
+    const formatItem = toFormatItem(item, sources, hosters);
+    return formatItem === undefined ? [] : [formatItem];
+  });
   const formatted = formatStreams(items, {
     playBaseUrl: ctx.playBaseUrl,
     configToken: ctx.configToken,
@@ -397,5 +490,6 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     season: ref.season,
     episode: ref.episode,
   });
+  lap('i.format');
   return { streams: formatted, errors: collected.errors };
 }

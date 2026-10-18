@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FetchFn } from '../src/sources/http.js';
-import { searchProwlarr, type ProwlarrSource } from '../src/sources/prowlarr.js';
+import { clearProwlarrDiscoveryCache, searchProwlarr, type ProwlarrSource } from '../src/sources/prowlarr.js';
 import type { ContentRef } from '../src/types.js';
 
 const MOVIE: ContentRef = { type: 'movie', id: 'tt15239678', imdbId: 'tt15239678' };
@@ -10,6 +10,8 @@ const HASH_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const HASH_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const HASH_C = 'cccccccccccccccccccccccccccccccccccccccc';
 const TITLES = { titles: ['Dune Part Two', 'Dune Deuxième Partie'], year: 2024 };
+
+beforeEach(() => clearProwlarrDiscoveryCache());
 
 /** Indexeur qui ne répond qu'à la recherche texte (pas d'identifiant IMDb). */
 function textOnly(id: number, name: string) {
@@ -83,8 +85,11 @@ describe('searchProwlarr : requêtes texte par variante de titre', () => {
     const streams = await searchProwlarr(SOURCE, MOVIE, { fetch, titles: TITLES });
 
     expect(searches().map(query)).toEqual([
+      'Dune Part Two',
       'Dune Part Two 2024',
+      'Dune Deuxième Partie',
       'Dune Deuxième Partie 2024',
+      'Dune Deuxieme Partie',
       'Dune Deuxieme Partie 2024',
     ]);
     expect(maxInFlight).toBeGreaterThanOrEqual(2);
@@ -136,11 +141,11 @@ describe('searchProwlarr : requêtes texte par variante de titre', () => {
     expect(streams[0]?.guid).toBe('guid-x');
   });
 
-  it('titleInfo reste accepté (rétrocompatibilité) : requête « Titre Année » unique pour un titre sans variante', async () => {
+  it('titleInfo reste accepté (rétrocompatibilité) : requêtes « Titre » puis « Titre Année » pour un titre sans variante', async () => {
     const { fetch, searches } = prowlarr([textOnly(2, 'Beta')], () => jsonResponse([]));
 
     await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film', year: 2024 } });
 
-    expect(searches().map(query)).toEqual(['Film 2024']);
+    expect(searches().map(query)).toEqual(['Film', 'Film 2024']);
   });
 });
