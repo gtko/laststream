@@ -234,14 +234,14 @@ export function sourcesHTML() {
   return '<div class="src-safe-bar"><button type="button" class="btn btn-ghost btn-sm" data-set-safe>Rendre mes addons sûrs</button>' +
     '<p class="set-hint" id="src-safe-sum" aria-live="polite">Vérifie que tes addons débrident eux-mêmes et renvoient des sources lisibles.</p></div>' +
     '<div id="set-sources" class="src-list" role="list" aria-label="Sources, par ordre de priorité">' +
-    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon Stremio.</p>') + '</div>' +
+    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Ajoute tes extensions Stremio pour voir des sources.</p>') + '</div>' +
     '<p class="set-hint src-order-hint">L’ordre est la priorité : la source 1 passe en premier.</p><p class="sr-only" id="src-live" aria-live="polite"></p>';
 }
 
 function renderSources() {
   const box = detailEl.querySelector('#set-sources');
   if (!box) return;
-  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon Stremio.</p>';
+  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Ajoute tes extensions Stremio pour voir des sources.</p>';
 }
 
 /** Met à jour une carte en place (pastille, nom, logo) sans toucher aux champs en cours de saisie. */

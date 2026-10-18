@@ -21,7 +21,7 @@ const $ =<T extends Element = HTMLElement>(sel: string) => document.querySelecto
 const $$ = (sel: string) => Array.from(document.querySelectorAll<HTMLElement>(sel));
 const labels = (sel: string) => $$(sel).map((el) => (el.textContent ?? '').trim());
 
-const ADULT = { id: 'p1', name: 'Greg', avatarColor: '', isKid: false, kidMaxAge: null, hasPin: false, allowedCatalogs: [], createdAt: '2026-01-01T00:00:00Z' };
+const ADULT = { id: 'p1', name: 'Greg', avatarColor: '', isKid: false, kidMaxAge: null, hasPin: false, allowedCatalogs: [], isAdminProfile: true, createdAt: '2026-01-01T00:00:00Z' };
 const KID = { id: 'k1', name: 'Léo', avatarColor: '#19c3a6', isKid: true, kidMaxAge: 10, hasPin: false, allowedCatalogs: [], createdAt: '2026-01-01T00:00:00Z' };
 
 /** Session serveur simulée : profil actif et indicateur propriétaire. Sans profil : mode local. */
@@ -143,6 +143,12 @@ describe('menu du profil', () => {
     const items = labels('#nav-profile a, #nav-profile button');
     expect(items).toEqual(expect.arrayContaining(['Amis', 'Statistiques', 'Réglages', 'Administration', 'Changer de profil', 'Se déconnecter']));
     expect($('#nav-profile').textContent).toContain(userStore.currentProfile().name);
+  });
+
+  it('compte propriétaire mais autre profil adulte (conjoint) : pas d’Administration', () => {
+    setAccount({ ...ADULT, id: 'p2', name: 'Jessica', isAdminProfile: false }, true);
+    mount(headerA());
+    expect(labels('#nav-profile a, #nav-profile button')).not.toContain('Administration');
   });
 
   it('compte non propriétaire : pas d’Administration', () => {

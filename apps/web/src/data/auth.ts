@@ -1,9 +1,9 @@
-import { getConfig, isConfigured } from './config';
+import { getBase, getConfig } from './config';
 import { clearElevation } from './adminApi';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
 import { startPresence, stopPresence } from './presence';
-import { CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
+import { CONFIG_SETTING_KEY, configForAccount, ensureDefaultConfig, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
 import { ServerUserStore, profileFromDto } from './serverUserStore';
@@ -44,8 +44,10 @@ export const kidSection = (id: string): boolean => !isKidProfile() || sectionAll
 export const isKidProfile = (): boolean => kidMaxAge() !== null;
 /** Le compte connecté est le propriétaire du serveur (role === 'owner'). */
 export const isOwner = (): boolean => auth.isOwner;
-/** Accès à la console #/admin : propriétaire, session serveur active et profil non enfant. */
-export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidProfile();
+/** Profil administrateur du serveur : le seul à voir et ouvrir l'administration (pas le conjoint, pas les enfants). */
+export const isAdminProfile = (): boolean => auth.profile?.isAdminProfile === true;
+/** Accès à la console #/admin : propriétaire, session serveur active, profil adulte désigné administrateur. */
+export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidProfile() && isAdminProfile();
 
 function useLocal(status: AuthStatus): AuthStatus {
   setUserStore(new LocalUserStore());
@@ -62,7 +64,8 @@ function useLocal(status: AuthStatus): AuthStatus {
 /** Détecte l'API utilisateur et restaure la session. À appeler une fois au démarrage, avant le premier rendu. */
 export async function initAuth(): Promise<AuthStatus> {
   authEvents.onUnauthorized = () => { void signOut(true); };
-  if (!isConfigured()) return useLocal('local');
+  // Seule l'adresse du serveur est nécessaire à la connexion (la config est générée ensuite pour un compte neuf).
+  if (!getBase()) return useLocal('local');
   if (isLocalMode() && !getSession()) return useLocal('local');
   try {
     const { account } = await api.me(4000);
@@ -207,6 +210,7 @@ export async function signOut(silent = false): Promise<void> {
 export function continueWithoutAccount(): void {
   setLocalMode(true);
   useLocal('local');
+  void ensureDefaultConfig();
 }
 
 /** Ouvre un profil. Lève UserApiError('pin_required') s'il est verrouillé et qu'aucun jeton ne le déverrouille. */

@@ -15,10 +15,10 @@ beforeAll(async () => {
   ({ auth } = await import('../src/data/auth'));
 });
 
-const as = (o: { owner: boolean; kid: boolean; status?: string }) => {
+const as = (o: { owner: boolean; kid: boolean; status?: string; admin?: boolean }) => {
   auth.status = o.status ?? 'ready';
   auth.isOwner = o.owner;
-  auth.profile = { id: 'p1', name: 'Greg', isKid: o.kid, kidMaxAge: o.kid ? 10 : null, hasPin: false, allowedCatalogs: [] };
+  auth.profile = { id: 'p1', name: 'Greg', isKid: o.kid, kidMaxAge: o.kid ? 10 : null, hasPin: false, allowedCatalogs: [], isAdminProfile: o.admin ?? true };
   location.hash = '#/admin';
 };
 
@@ -34,6 +34,11 @@ describe('garde #/admin', () => {
   });
   it('propriétaire sur un profil enfant : redirigé', () => {
     as({ owner: true, kid: true });
+    expect(parseRoute()).toBeNull();
+    expect(location.hash).toBe('');
+  });
+  it('propriétaire sur un autre profil adulte (conjoint) : redirigé, lien Administration masqué', () => {
+    as({ owner: true, kid: false, admin: false });
     expect(parseRoute()).toBeNull();
     expect(location.hash).toBe('');
   });

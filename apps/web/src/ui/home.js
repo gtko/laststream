@@ -8,7 +8,7 @@ import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs,
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
-import { auth, isKidProfile, isServerMode } from '../data/auth';
+import { auth, canAdmin, isKidProfile, isServerMode } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { recommend, tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
@@ -254,7 +254,7 @@ export function headerA() {
     '<a href="#/tv-live" data-tvlive class="nav-wide">Direct</a>' +
     '<a href="#/library" data-libnav class="nav-wide">Ma liste</a>' +
     exploreMenuHTML() + '</nav>' +
-    topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: auth.isOwner }) + '</header>';
+    topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: canAdmin() }) + '</header>';
 }
 
 export function viewA(d) {

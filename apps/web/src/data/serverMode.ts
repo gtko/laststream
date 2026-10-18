@@ -94,6 +94,10 @@ export async function prepareServer(): Promise<boolean> {
   // Premier lancement sur Android : le serveur Laststream doit répondre, sinon l'écran de saisie s'affiche.
   if (ctx.native && next === PUBLIC_BASE && s.base === '' && !(await probeHealth(PUBLIC_BASE, PUBLIC_PROBE_MS))) return false;
   if (next !== s.base) saveSettings({ base: next });
+  // Navigateur vierge hors lastAddon : si le serveur public répond, on s'y connecte (écran de connexion, pas « non configuré »).
+  if (!ctx.native && !ctx.servedOrigin && next === '' && (await probeHealth(PUBLIC_BASE, PUBLIC_PROBE_MS))) {
+    saveSettings({ mode: 'public', base: PUBLIC_BASE });
+  }
   return true;
 }
 

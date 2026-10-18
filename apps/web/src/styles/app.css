@@ -51,7 +51,8 @@
 .tv-filters .tvf-search { flex: 1 1 200px; max-width: 320px; }
 .tv-filters select { max-width: 240px; }
 .tvf-rel { min-height: 44px; }
-@media (max-width: 640px) { .tv-filters { padding: 0 16px 14px; } .tv-filters .tv-field { flex: 1 1 140px; } }
+@media (max-width: 640px) { .tv-filters { padding: 0 16px 14px; } .tv-filters .tv-field { flex: 1 1 160px; min-width: min(160px, 100%); } .tv-filters select { width: 100%; max-width: none; } }
+.tv-filters select { text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
 
 /* ---------- Comptes : connexion, profils, clavier PIN ---------- */
 .auth { position: fixed; inset: 0; z-index: 700; overflow-y: auto; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 32px 16px; }
@@ -62,6 +63,11 @@
 .auth-title { font-family: var(--ff-title); font-size: 34px; font-weight: 800; }
 .auth-form { width: 100%; max-width: none; }
 .auth-actions { justify-content: center; margin-top: 8px; }
+.auth-actions { align-items: stretch; }
+.auth-actions .btn { min-height: 44px; box-sizing: border-box; line-height: 1.2; }
+/* Éditeur de profil : Enregistrer, Annuler et Supprimer restent sur la même ligne, à largeur égale. */
+.tv-form-actions:has([data-pfe-delete]) { flex-wrap: nowrap; }
+.tv-form-actions:has([data-pfe-delete]) .btn { flex: 1 1 0; min-width: 0; padding-inline: 10px; white-space: nowrap; justify-content: center; }
 .pf-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 32px; margin: 12px 0; }
 .pf { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 132px; color: var(--muted); font-weight: 700; }
 .pf-av { position: relative; width: 112px; height: 112px; border-radius: 22px; display: grid; place-items: center; font-family: var(--ff-title); font-size: 46px; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); border: 3px solid transparent; transition: transform 0.15s, border-color 0.15s; }

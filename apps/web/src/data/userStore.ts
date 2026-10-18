@@ -46,6 +46,8 @@ export interface Profile {
   kidMaxAge?: number | null;
   hasPin?: boolean;
   allowedCatalogs?: string[];
+  /** Profil administrateur du serveur (annoncé au compte propriétaire seulement). */
+  isAdminProfile?: boolean;
 }
 
 export interface UserStore {

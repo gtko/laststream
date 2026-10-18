@@ -40,6 +40,8 @@ export interface ProfileDto {
   kidMaxAge: KidMaxAge | null;
   hasPin: boolean;
   allowedCatalogs: string[];
+  /** Profil administrateur du serveur (seul à accéder à l'administration ; annoncé au propriétaire). */
+  isAdminProfile?: boolean;
   createdAt: string;
 }
 

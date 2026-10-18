@@ -167,13 +167,13 @@ describe('pages servies par lastAddon et web : comportement inchangé', () => {
     expect(getSettings().base).toBe(NAS);
   });
 
-  it('web hors lastAddon sans adresse : rien de forcé, pas d’écran', async () => {
+  it('web hors lastAddon sans adresse, serveur public muet : rien de forcé, pas d’écran', async () => {
     cap.native = false;
     const f = stubFetch(() => down());
     await ensureServerSetup();
     expect(document.querySelector('#srv-setup')).toBeNull();
     expect(getSettings().base).toBe('');
-    expect(f).not.toHaveBeenCalled();
+    expect(calls(f)).toEqual([PUBLIC_BASE + '/health']);
   });
 });
 
@@ -211,5 +211,22 @@ describe('synchronisation de la config avec le compte', () => {
     seed({ mode: 'custom', custom: LAN, base: '', config: '' });
     expect(await reconcileConfig({ lastaddonConfig: 'CHIFFRE' })).toBe('pulled');
     expect(getSettings()).toMatchObject({ base: LAN, config: 'CHIFFRE' });
+  });
+});
+
+describe('première visite dans un navigateur vierge (hors lastAddon)', () => {
+  beforeEach(() => { cap.native = false; setServedOrigin(null); localStorage.clear(); reloadSettings(); });
+  afterEach(() => { cap.native = true; vi.unstubAllGlobals(); });
+
+  it('le serveur public répond : il devient le serveur (écran de connexion, pas « non configuré »)', async () => {
+    stubFetch(() => health());
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings().base).toBe(PUBLIC_BASE);
+  });
+
+  it('le serveur public ne répond pas : rien n’est enregistré', async () => {
+    stubFetch(down);
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings().base).toBe('');
   });
 });

@@ -1,4 +1,5 @@
-import { DEFAULT_BASE, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings } from './config';
+import { DEFAULT_BASE, getBase, getConfig, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings } from './config';
+import { encodeConfig } from './configApi';
 
 /*
  * Synchronisation de la config lastAddon chiffrée avec le compte (réglages du profil, clé `lastaddonConfig`).
@@ -37,6 +38,21 @@ export async function servedByLastAddon(timeoutMs = 2500): Promise<boolean> {
 }
 
 /**
+ * Compte neuf (ou navigateur vierge) : génère la config par défaut (langue fr, aucun addon ; les clés de services
+ * viennent du serveur) en chiffrant une config vide côté serveur. Renvoie true si une config locale existe ensuite.
+ */
+export async function ensureDefaultConfig(): Promise<boolean> {
+  if (getConfig()) return true;
+  if (!getBase()) return false;
+  try {
+    saveSettings({ config: await encodeConfig({}) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * À la connexion : la config du compte fait foi (remplace une config locale différente) ; sans config locale, la reprend (base = origine courante quand la page
  * est servie par lastAddon). Renvoie 'pulled' si la config locale a été remplie, 'push' si le compte n'a
  * rien et qu'une config locale peut être envoyée, sinon 'none'.
@@ -54,7 +70,10 @@ export async function reconcileConfig(
     saveSettings({ config: remote.trim() });
     return 'pulled';
   }
-  if (typeof remote !== 'string' || !remote.trim()) return 'none';
+  if (typeof remote !== 'string' || !remote.trim()) {
+    // Ni config locale ni config de compte : compte neuf, on génère la config par défaut et on l'envoie au compte.
+    return (await ensureDefaultConfig()) && configForAccount(getConfig()) ? 'push' : 'none';
+  }
   // Serveur perso choisi : son adresse. Sinon origine de la page servie par lastAddon, puis serveur Laststream sur Android.
   const base = local.mode === 'custom' && local.custom
     ? local.custom

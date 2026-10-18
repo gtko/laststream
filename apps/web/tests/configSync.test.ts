@@ -35,6 +35,25 @@ describe('synchronisation de la config avec le compte', () => {
     expect(getSettings().base).not.toBe(location.origin);
   });
 
+  it('compte neuf (ni config locale ni config au compte) : génère la config par défaut via /config/encode et la propose au compte', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'https://srv.example', config: '' }));
+    reloadSettings();
+    const f = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ config: 'DEFAUT' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', f);
+    expect(await reconcileConfig({})).toBe('push');
+    expect(getSettings().config).toBe('DEFAUT');
+    expect(String(f.mock.calls[0][0])).toBe('https://srv.example/config/encode');
+    expect(JSON.parse(String(f.mock.calls[0][1]?.body))).toEqual({});
+  });
+
+  it('compte neuf, serveur injoignable : rien n’est inventé', async () => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'https://srv.example', config: '' }));
+    reloadSettings();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    expect(await reconcileConfig({})).toBe('none');
+    expect(getSettings().config).toBe('');
+  });
+
   it('le compte fait foi : une config locale différente est remplacée ; sans config au compte, la locale est proposée', async () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'LOCAL' }));
     reloadSettings();
