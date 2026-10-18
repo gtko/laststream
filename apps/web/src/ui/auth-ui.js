@@ -319,7 +319,7 @@ export function creditsHTML() {
 }
 
 function avatarPickerHTML() {
-  return '<fieldset class="pf-picker-avatars"><legend>Avatar</legend>' +
+  return '<section class="pf-picker-avatars" aria-labelledby="pfe-av-title"><h3 class="pf-section-title" id="pfe-av-title">Avatar</h3>' +
     '<div class="av-tabs pills" role="tablist" aria-label="Familles d’avatars">' + AVATAR_TABS.map((t) =>
       '<button type="button" class="pill" role="tab" data-av-tab="' + t.id + '" aria-pressed="false">' + esc(t.label) + '</button>').join('') + '</div>' +
     '<div class="av-subs pills" role="group" aria-label="Types de héros" data-av-subs>' + HERO_FAMILIES.map((f) =>
@@ -329,11 +329,14 @@ function avatarPickerHTML() {
     '<button type="button" class="btn btn-ghost btn-sm" data-av-none>Initiale</button></div>' +
     '<div class="av-grid" data-av-grid role="group" aria-label="Avatars"></div>' +
     '<button type="button" class="btn btn-ghost btn-sm av-more" data-av-more>Voir plus</button>' +
-    '<details class="av-credits-more"><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></fieldset>';
+    '<details class="av-credits-more"><summary>Crédits des illustrations</summary>' + creditsHTML() + '</details></section>';
 }
 
-/** Sélecteur d'avatars du formulaire : onglets par famille, recherche / au hasard, grille paginée (rendu à la demande). */
-function avatarPicker(node, cur) {
+/**
+ * Sélecteur d'avatars du formulaire : onglets par famille, recherche / au hasard, grille paginée (rendu à la demande).
+ * `onPick(avatar)` est appelé à chaque choix (vignette ou « Initiale »).
+ */
+function avatarPicker(node, cur, onPick = () => {}) {
   const PAGE = 48;
   const parsed = parseAvatar(cur.avatar);
   const hero = parseHero(cur.avatar);
@@ -358,8 +361,8 @@ function avatarPicker(node, cur) {
     const sub = t.closest('[data-av-sub]');
     if (sub) { state.sub = sub.dataset.avSub; state.shown = PAGE; render(); return; }
     const pick = t.closest('[data-av-pick]');
-    if (pick) { state.avatar = pick.dataset.avPick; render(); return; }
-    if (t.closest('[data-av-none]')) { state.avatar = null; render(); return; }
+    if (pick) { state.avatar = pick.dataset.avPick; render(); onPick(state.avatar); return; }
+    if (t.closest('[data-av-none]')) { state.avatar = null; render(); onPick(null); return; }
     if (t.closest('[data-av-more]')) { state.shown += PAGE; render(); return; }
     if (t.closest('[data-av-random]')) {
       state.word = randomSeed();
@@ -386,12 +389,17 @@ function profileEditor(p) {
   const isNew = !p;
   const cur = p || { name: '', avatarColor: COLORS[0], isKid: false, kidMaxAge: 12, hasPin: false };
   const node = document.createElement('div');
-  node.className = 'pin-back';
-  node.innerHTML = '<form class="pin pf-editor" role="dialog" aria-modal="true" aria-labelledby="pfe-title"><h2 id="pfe-title" class="pin-title">' + (isNew ? 'Nouveau profil' : 'Modifier le profil') + '</h2>' +
+  node.className = 'pin-back pf-back';
+  // Fenêtre : en-tête fixe (titre, fermer), corps défilant (aperçu + options à gauche, avatars à droite), pied fixe.
+  node.innerHTML = '<form class="pf-modal pf-editor" role="dialog" aria-modal="true" aria-labelledby="pfe-title">' +
+    '<header class="pf-head"><h2 id="pfe-title" class="pf-title">' + (isNew ? 'Nouveau profil' : 'Modifier le profil') + '</h2>' +
+    '<button type="button" class="pf-x" data-pfe-cancel aria-label="Fermer" title="Fermer">' + ICON.close + '</button></header>' +
+    '<div class="pf-body"><div class="pf-cols">' +
+    '<div class="pf-side">' +
+    '<div class="pf-preview-box"><div data-pfe-preview></div><p class="pf-preview-name" data-pfe-preview-name></p></div>' +
     '<label class="tv-field">Nom<input type="text" name="name" maxlength="40" required value="' + esc(cur.name) + '"></label>' +
-    avatarPickerHTML() +
-    '<div class="pf-colors" role="radiogroup" aria-label="Couleur">' + COLORS.map((c) =>
-      '<label class="pf-color" style="background:' + c + '"><input type="radio" name="color" value="' + c + '"' + (c.toLowerCase() === String(cur.avatarColor).toLowerCase() ? ' checked' : '') + '><span class="sr-only">' + c + '</span></label>').join('') + '</div>' +
+    '<div class="pf-group"><span class="pf-label" id="pfe-color-label">Couleur</span><div class="pf-colors" role="radiogroup" aria-labelledby="pfe-color-label">' + COLORS.map((c) =>
+      '<label class="pf-color" style="background:' + c + '"><input type="radio" name="color" value="' + c + '"' + (c.toLowerCase() === String(cur.avatarColor).toLowerCase() ? ' checked' : '') + '><span class="sr-only">' + c + '</span></label>').join('') + '</div></div>' +
     '<label class="set-check"><input type="checkbox" name="kid"' + (cur.isKid ? ' checked' : '') + '> <span>Profil enfant</span></label>' +
     '<div data-kidage' + (cur.isKid ? '' : ' hidden') + '><label class="tv-field">Âge maximal<select name="age">' + KID_AGES.map((a) =>
       '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
@@ -401,16 +409,32 @@ function profileEditor(p) {
     '<label class="tv-field">Code parental (4 chiffres)<input type="password" name="parental" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off"></label></div>' +
     '<label class="tv-field">Code PIN (4 chiffres)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" placeholder="' + (cur.hasPin ? 'Laisser vide pour garder' : 'Aucun') + '"></label>' +
     (cur.hasPin ? '<label class="set-check"><input type="checkbox" name="nopin"> <span>Retirer le code PIN</span></label>' : '') +
-    '<p class="pin-msg" id="pfe-msg" role="alert"></p>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Enregistrer</button><button type="button" class="btn btn-ghost" data-pfe-cancel>Annuler</button>' +
-    (isNew ? '' : '<button type="button" class="btn btn-ghost" data-pfe-delete>Supprimer</button>') + '</div></form>';
+    '</div>' +
+    '<div class="pf-main">' + avatarPickerHTML() + '</div>' +
+    '</div></div>' +
+    '<footer class="pf-foot"><p class="pin-msg pf-msg" id="pfe-msg" role="alert"></p>' +
+    '<div class="pf-actions">' + (isNew ? '' : '<button type="button" class="btn btn-ghost pf-del" data-pfe-delete>Supprimer</button>') +
+    '<button type="button" class="btn btn-ghost" data-pfe-cancel>Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div></footer>' +
+    '</form>';
   document.body.appendChild(node);
   const form = node.querySelector('form');
   const msg = node.querySelector('#pfe-msg');
   const close = () => node.remove();
+  // Aperçu en direct : avatar choisi (ou initiale), couleur et nom.
+  const paintPreview = (avatar) => {
+    const color = (form.querySelector('input[name="color"]:checked') || {}).value || COLORS[0];
+    const name = form.elements.name.value.trim();
+    node.querySelector('[data-pfe-preview]').innerHTML = '<span class="pf-av pf-av-lg"' + avatarAttrs(avatar, color) + '>' + esc(initialOfName(name)) + '</span>';
+    node.querySelector('[data-pfe-preview-name]').textContent = name || 'Nouveau profil';
+  };
   form.elements.name.focus();
-  const av = avatarPicker(node, cur);
+  const av = avatarPicker(node, cur, paintPreview);
+  paintPreview(av.value());
+  form.addEventListener('input', (e) => {
+    if (e.target.name === 'name') paintPreview(av.value());
+  });
   form.addEventListener('change', (e) => {
+    if (e.target.name === 'color') paintPreview(av.value());
     if (e.target.name === 'kid') {
       node.querySelector('[data-kidage]').hidden = !e.target.checked;
       av.kidChanged(e.target.checked);
