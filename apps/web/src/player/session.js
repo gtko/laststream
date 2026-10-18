@@ -25,7 +25,7 @@ import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
-import { NativePlayer, isNativePlayer, toNativeSegments, toNativeSubtitles } from './native';
+import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
 import { connectShell, setShellFullscreen } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
 import {
@@ -152,6 +152,9 @@ function bindEngine(e) {
   e.on('closed', () => { if (P && P.engine === e) closePlayer(); });
   e.on('next', () => { if (P && P.engine === e) onAction('next'); });
   e.on('trackChanged', (d) => { if (P && P.engine === e) onNativeTrack(d); });
+  e.on('selectSource', (d) => { if (P && P.engine === e) onNativeSource(d); });
+  e.on('selectEpisode', (d) => { if (P && P.engine === e) playEpisode(Number(d.season), Number(d.episode)); });
+  e.on('loadSeason', (d) => { if (P && P.engine === e) ensureEpisodes(Number(d.season)).then(syncNative); });
 }
 
 /** Choix de piste fait dans le panneau du lecteur natif : mémorisé par titre, comme dans le lecteur web. */
@@ -159,6 +162,50 @@ function onNativeTrack(d) {
   if (!P || !d) return;
   if (d.kind === 'audio' && d.lang) remember(P.req.key, { audio: d.lang });
   if (d.kind === 'sub') remember(P.req.key, { sub: d.lang && d.lang !== 'off' ? d.lang : 'off' });
+}
+
+/** Source choisie dans le panneau natif : même bascule que le sélecteur web, à la position courante. */
+function onNativeSource(d) {
+  const p = P;
+  if (!p || !d) return;
+  const v = p.views.find((x) => String(x.index) === String(d.id));
+  if (!v) return;
+  if (p.view && v.index === p.view.index) return;
+  p.attempts = 0;
+  p.tried = new Set();
+  playView(v, Number(d.position) > 5 ? Number(d.position) : 0);
+}
+
+/** Listes des panneaux « Sources » et « Épisodes » du lecteur natif, tirées de la session. */
+function nativeLists() {
+  const p = P;
+  const sources = toNativeSources(p.views, p.view ? p.view.index : null, (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : ''), (v) => originSummary(v.origins, 2));
+  const episodes = p.req.type === 'tv' && p.cur.season != null
+    ? toNativeEpisodes(p.seasons, p.episodes, p.cur, (sn, ep) => {
+      const pr = userStore.getProgress(p.req.key, sn, ep);
+      return { watched: userStore.isWatched(p.req.key, sn, ep), progress: pr && pr.duration ? pr.position / pr.duration : 0 };
+    })
+    : null;
+  return { sources, episodes };
+}
+
+/** Sources trouvées après le démarrage : le panneau natif se complète. */
+async function pollMoreSources(p) {
+  const token = p.token;
+  let cur = p.loaded;
+  for (let i = 0; cur && cur.pending && cur.pending.length && i < 8; i += 1) {
+    await new Promise((r) => setTimeout(r, POLL_EVERY_MS));
+    if (!P || P.token !== token) return;
+    const next = await pollSources(p.req, cur).catch(() => cur);
+    if (!P || P.token !== token) return;
+    if (next !== cur) {
+      cur = next;
+      p.views = next.views;
+      p.pending = next.pending;
+      p.ranked = [...next.views];
+      syncNative();
+    }
+  }
 }
 
 /** Options d'ouverture du lecteur natif : titre, reprise, langues, segments de saut et épisode suivant. */
@@ -174,6 +221,7 @@ function nativeOptions() {
     preferredSubLang: mem.sub || preferredLang() || '',
     subMode: mem.sub ? 'always' : p.subs.style.mode,
     skipSegments: toNativeSegments(p.segments),
+    ...nativeLists(),
     nextEpisode: nx ? { title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: (info && info.still) || '' } : null,
   };
 }
@@ -183,7 +231,7 @@ function syncNative() {
   const p = P;
   if (!p || !p.engine || p.engine.kind !== 'native') return;
   const o = nativeOptions();
-  p.engine.update({ skipSegments: o.skipSegments, nextEpisode: o.nextEpisode, title: o.title, subtitle: o.subtitle });
+  p.engine.update({ skipSegments: o.skipSegments, nextEpisode: o.nextEpisode, title: o.title, subtitle: o.subtitle, sources: o.sources, episodes: o.episodes });
 }
 
 // ---------- Ouverture ----------
@@ -346,6 +394,7 @@ async function ensureEpisodes(season, reveal) {
   ui.setHeading(...headingFor(p));
   updatePauseScreen();
   ui.refreshPanel();
+  syncNative();
   if (reveal) ui.revealEpisode(s === p.cur.season ? p.cur.episode : 0);
 }
 
@@ -473,7 +522,7 @@ async function playView(view, startAt) {
   stopAutoSync();
   if (thumbs) thumbs.reset();
   p.torrent = false;
-  if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
+  if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
   p.phase = nextPhase(p.phase, 'open');
@@ -536,6 +585,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
     p.engine = nativeEng;
     ui.video.hidden = true;
     await nativeEng.load({ url: media.url, startAt, open: nativeOptions() });
+    pollMoreSources(p);
   } else if (choice.engine === 'mpv') {
     if (!mpv) { mpv = new MpvEngine(shell, ui.root); bindEngine(mpv); }
     p.engine = mpv;
@@ -953,6 +1003,7 @@ async function togglePip() {
 function showSourcesPanel(reasons = []) {
   const p = P;
   if (!p) return;
+  if (nativeEng && p.engine === nativeEng) nativeEng.closeNow(); // le panneau web passe par-dessus : l'activité native se ferme
   ui.setLoading(null);
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
@@ -1257,7 +1308,7 @@ async function teardown(silent) {
   clearTimeout(p.resumeTimer);
   stopAutoSync();
   if (thumbs) thumbs.reset();
-  try { p.engine.destroy(); } catch (_) { /* ignoré */ }
+  try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
   if (!silent) {
@@ -1306,6 +1357,7 @@ export async function playBest(request, opener, opts = {}) {
   p.imdb = loaded.imdb;
   p.views = loaded.views;
   p.pending = loaded.pending;
+  p.loaded = loaded;
   p.ranked = [...loaded.views];
   if (opts.picker || (!getAutoplay() && !opts.force)) { showSourcesPanel(); return; }
   ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
@@ -1326,6 +1378,7 @@ export async function playBest(request, opener, opts = {}) {
       cur = next;
       p.views = next.views;
       p.pending = next.pending;
+      p.loaded = next;
       p.ranked = [...next.views];
       rec = recommendFor(withoutBad(p, next.views), bw);
     }

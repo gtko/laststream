@@ -106,6 +106,39 @@ class PlayerActivityInstrumentedTest {
         waitFor("progression après recréation", 15_000) { pos(s) >= after + 2.0 }
     }
 
+    private fun findText(v: android.view.View, text: String): android.widget.TextView? {
+        if (v is android.widget.TextView && v.text.toString() == text) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findText(v.getChildAt(i), text)?.let { return it }
+        return null
+    }
+
+    @Test fun sourcesPanelSwitchesMedia() {
+        val s = launch(fileUrl())
+        waitFor("pos >= 2", 40_000) { pos(s) >= 2.0 }
+        val src = listOf(SourceItem("a", "1080p · VFF", "local", true, "1080p"), SourceItem("b", "720p · VO", "http", false, "720p"))
+        val events = java.util.concurrent.CopyOnWriteArrayList<org.json.JSONObject>()
+        PlayerHub.listener = { ev, d -> if (ev == "selectSource") events.add(d) }
+        try {
+            s.onActivity { it.setSources(src); it.openPanel("sources") }
+            waitFor("ligne de la source b", 5_000) { s.read { act -> findText(act.window.decorView, "720p · VO") != null } }
+            // Appui sur la ligne : l'activité émet selectSource {id, position}.
+            s.onActivity { act -> var v: android.view.View = findText(act.window.decorView, "720p · VO")!!
+                while (!v.isClickable) v = v.parent as android.view.View
+                v.performClick() }
+            waitFor("évènement selectSource", 5_000) { events.isNotEmpty() }
+            assertEquals("b", events[0].getString("id"))
+            val at = events[0].getDouble("position")
+            println("[PROOF] selectSource id=${events[0].getString("id")} position=$at")
+            // Le JS répond par open() : le média est remplacé, l'activité reste ouverte.
+            s.onActivity { it.load(OpenRequest(url = httpUrl(), title = "Test", startPosition = at, preferredAudioLang = "fr", sources = src.map { x -> x.copy(current = x.id == "b") })) }
+            waitFor("lecture de la nouvelle source", 40_000) { !paused(s) && pos(s) >= at - 1.0 && pos(s) > 0.5 }
+            val cur = s.read { act -> val f = PlayerActivity::class.java.getDeclaredField("sources"); f.isAccessible = true; (f.get(act) as List<*>).filterIsInstance<SourceItem>().first { it.current }.id }
+            assertEquals("b", cur)
+            waitFor("progression", 15_000) { pos(s) >= at + 1.0 }
+            println("[PROOF] media switched, pos=${pos(s)}")
+        } finally { PlayerHub.listener = null }
+    }
+
     @Test fun enterPipDoesNotCrashAndKeepsPlaying() {
         val s = launch(fileUrl())
         waitFor("pos >= 2", 40_000) { pos(s) >= 2.0 }

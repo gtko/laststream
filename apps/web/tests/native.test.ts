@@ -129,3 +129,52 @@ describe('NativeEngine', () => {
     expect(plugin.setRate).toHaveBeenCalledWith({ rate: 1.5 });
   });
 });
+
+describe('panneaux Sources et Épisodes du lecteur natif', () => {
+  it('sources : groupes, libellé, détail, courante', async () => {
+    const { toNativeSources } = await import('../src/player/native');
+    const views = [
+      { index: 0, group: '2160p', sizeLabel: '40 Go', bitrateLabel: '60 Mb/s', playable: true },
+      { index: 1, group: '1080p', sizeLabel: '', bitrateLabel: '', playable: true },
+      { index: 2, group: 'other', playable: false },
+    ];
+    const out = toNativeSources(views, 1, (v) => 'src' + v.index, () => 'AllDebrid');
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ id: '0', label: 'src0', detail: '40 Go · 60 Mb/s · AllDebrid', current: false, group: '4K' });
+    expect(out[1]).toMatchObject({ id: '1', detail: 'AllDebrid', current: true, group: '1080p' });
+  });
+
+  it('épisodes : saisons, courant, progression ; null pour un film', async () => {
+    const { toNativeEpisodes } = await import('../src/player/native');
+    expect(toNativeEpisodes([], new Map(), { season: null, episode: null }, () => ({ watched: false, progress: 0 }))).toBeNull();
+    const loaded = new Map([[2, [{ episode: 1, name: 'A', runtime: 40, still: 'http://i/1.jpg', aired: true }, { episode: 2, name: 'B', aired: false }]]]);
+    const out = toNativeEpisodes([{ season: 1, count: 8 }, { season: 2, count: 8 }], loaded, { season: 2, episode: 1 }, (_s, e) => ({ watched: e === 2, progress: 0.25 }))!;
+    expect(out.seasons.map((s) => s.name)).toEqual(['Saison 1', 'Saison 2']);
+    expect(out.currentSeason).toBe(2);
+    expect(out.items[0]).toMatchObject({ season: 2, episode: 1, title: 'A', durationMin: 40, current: true, aired: true, progress: 0.25 });
+    expect(out.items[1]).toMatchObject({ current: false, aired: false, watched: true });
+  });
+
+  it('NativeEngine : selectSource, selectEpisode, loadSeason ; closed passe même détaché', async () => {
+    const handlers = new Map<string, (d: unknown) => void>();
+    const plugin = {
+      addListener: vi.fn(async (ev: string, fn: (d: unknown) => void) => { handlers.set(ev, fn); return { remove: async () => {} }; }),
+      open: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    };
+    const e = new NativeEngine(plugin);
+    const got: unknown[] = [];
+    (['selectSource', 'selectEpisode', 'loadSeason', 'closed'] as const).forEach((ev) => e.on(ev, (d: unknown) => got.push([ev, d])));
+    await e.load({ url: 'u', startAt: 0, open: {} });
+    handlers.get('selectSource')?.({ id: '3', position: 12 });
+    handlers.get('selectEpisode')?.({ season: 1, episode: 4 });
+    handlers.get('loadSeason')?.({ season: 2 });
+    e.detach();
+    handlers.get('selectSource')?.({ id: '9', position: 1 });
+    handlers.get('closed')?.({ position: 77 });
+    expect(got).toEqual([
+      ['selectSource', { id: '3', position: 12 }], ['selectEpisode', { season: 1, episode: 4 }], ['loadSeason', { season: 2 }], ['closed', { position: 77 }],
+    ]);
+    expect(e.state().time).toBe(77);
+    expect(plugin.close).not.toHaveBeenCalled();
+  });
+});

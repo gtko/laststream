@@ -133,4 +133,24 @@ class PlayerLogicTest {
         assertEquals("Français (forcés)", PlayerLogic.trackLabel("fr", "Track 3 - [French] (forced)"))
         assertEquals("Klingon", PlayerLogic.trackLabel("", "Piste 4 - Klingon"))
     }
+
+    @Test fun groupsSourcesInOrder() {
+        val l = listOf(
+            SourceItem("1", "a", "", false, "2160p"), SourceItem("2", "b", "", true, "1080p"),
+            SourceItem("3", "c", "", false, "1080p"), SourceItem("4", "d", "", false, ""),
+        )
+        val g = PlayerLogic.groupSources(l)
+        assertEquals(listOf("2160p", "1080p", "Sources"), g.map { it.first })
+        assertEquals(2, g[1].second.size)
+    }
+
+    @Test fun episodeHelpers() {
+        val e = EpisodeItem(1, 5, "", null, 42, false, 0.0, false, true)
+        assertEquals("É5 · Épisode 5", PlayerLogic.episodeTitle(e))
+        assertEquals("42 min", PlayerLogic.episodeMeta(e))
+        assertEquals("", PlayerLogic.episodeMeta(e.copy(durationMin = 0)))
+        val d = EpisodesData(listOf(SeasonInfo(1, "S1")), 1, listOf(e, e.copy(season = 2), e.copy(episode = 2)))
+        assertEquals(listOf(2, 5), PlayerLogic.episodesOf(d, 1).map { it.episode })
+        assertEquals(0, PlayerLogic.episodesOf(null, 1).size)
+    }
 }

@@ -60,6 +60,8 @@ class LaststreamPlayerPlugin : Plugin() {
         val d = call.data
         ui(call) { a ->
             if (d.has("skipSegments")) a.setSegments(OpenRequest.parseSegments(d.optJSONArray("skipSegments")))
+            if (d.has("sources")) a.setSources(OpenRequest.parseSources(d.optJSONArray("sources")))
+            if (d.has("episodes")) a.setEpisodes(OpenRequest.parseEpisodes(d.optJSONObject("episodes")))
             if (d.has("nextEpisode")) a.setNextEpisode(OpenRequest.parseNext(d.optJSONObject("nextEpisode")))
             if (d.has("title") || d.has("subtitle")) a.setHeading(d.optString("title", ""), d.optString("subtitle", ""))
         }

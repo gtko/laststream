@@ -18,6 +18,23 @@ export interface NativeOpenOptions {
   skipSegments?: Array<{ kind: string; start: number; end: number; inferred?: boolean; confidence?: number }>;
   nextEpisode?: { title: string; still?: string } | null;
   headers?: Record<string, string>;
+  /** Panneau « Sources » du lecteur natif. */
+  sources?: NativeSource[];
+  /** Panneau « Épisodes » (séries seulement). */
+  episodes?: NativeEpisodes | null;
+}
+
+export interface NativeSource { id: string; label: string; detail: string; current: boolean; group?: string }
+
+export interface NativeEpisode {
+  season: number; episode: number; title: string; still?: string; durationMin?: number;
+  watched: boolean; progress: number; current: boolean; aired: boolean;
+}
+
+export interface NativeEpisodes {
+  seasons: Array<{ number: number; name: string }>;
+  currentSeason: number;
+  items: NativeEpisode[];
 }
 
 export interface NativeTrack { id: number; label: string; lang: string; selected: boolean }
@@ -30,12 +47,15 @@ export interface NativeEvents {
   closed: { position: number; duration: number };
   error: { code: string; position?: number };
   nextEpisode: { position: number; duration: number };
+  selectSource: { id: string; position: number };
+  selectEpisode: { season: number; episode: number };
+  loadSeason: { season: number };
   trackChanged: { kind: 'audio' | 'sub'; id: number; lang: string; label: string };
 }
 
 export interface LaststreamPlayerPlugin {
   open(options: NativeOpenOptions): Promise<void>;
-  update(options: { skipSegments?: NativeOpenOptions['skipSegments']; nextEpisode?: NativeOpenOptions['nextEpisode']; title?: string; subtitle?: string }): Promise<void>;
+  update(options: { skipSegments?: NativeOpenOptions['skipSegments']; nextEpisode?: NativeOpenOptions['nextEpisode']; title?: string; subtitle?: string; sources?: NativeSource[]; episodes?: NativeEpisodes | null }): Promise<void>;
   addSubtitles(options: { subtitles: NonNullable<NativeOpenOptions['subtitles']> }): Promise<void>;
   play(): Promise<void>;
   pause(): Promise<void>;
@@ -101,4 +121,48 @@ export async function nativeFetch(url: string, init: RequestInit = {}, timeoutMs
   const r = await CapacitorHttp.request({ url, method: (init.method ?? 'GET').toUpperCase(), headers, data, connectTimeout: timeoutMs, readTimeout: timeoutMs, responseType: 'text' });
   const text = typeof r.data === 'string' ? r.data : JSON.stringify(r.data ?? null);
   return new Response(text, { status: r.status, headers: { 'content-type': 'application/json' } });
+}
+
+const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+
+interface SourceLike {
+  index: number; group: string; playable?: boolean; sizeLabel?: string; bitrateLabel?: string;
+}
+
+/** Sources du lecteur natif : libellé et détail déjà composés par la session (`line`, `origins`), groupés par qualité. */
+export function toNativeSources<V extends SourceLike>(views: readonly V[], currentIndex: number | null, line: (v: V) => string, origins: (v: V) => string): NativeSource[] {
+  return views.filter((v) => v.playable !== false).map((v) => ({
+    id: String(v.index),
+    label: line(v),
+    detail: [v.sizeLabel, v.bitrateLabel, origins(v)].filter(Boolean).join(' · '),
+    current: v.index === currentIndex,
+    group: GROUP_LABEL[v.group] ?? 'Autres',
+  }));
+}
+
+interface EpisodeLike { episode: number; name?: string; runtime?: number | null; still?: string; aired?: boolean }
+
+/** Épisodes du lecteur natif : toutes les saisons déjà chargées ; la saison affichée au démarrage est celle de l'épisode courant. */
+export function toNativeEpisodes(
+  seasons: ReadonlyArray<{ season: number; count: number }>,
+  loaded: ReadonlyMap<number, readonly EpisodeLike[]>,
+  cur: { season: number | null | undefined; episode: number | null | undefined },
+  state: (season: number, episode: number) => { watched: boolean; progress: number },
+): NativeEpisodes | null {
+  if (!seasons.length && !loaded.size) return null;
+  const items: NativeEpisode[] = [];
+  loaded.forEach((list, season) => {
+    list.forEach((e) => {
+      const st = state(season, e.episode);
+      items.push({
+        season, episode: e.episode, title: e.name || '', still: e.still || undefined, durationMin: e.runtime || 0,
+        watched: st.watched, progress: st.progress, current: season === cur.season && e.episode === cur.episode, aired: e.aired !== false,
+      });
+    });
+  });
+  return {
+    seasons: seasons.map((s) => ({ number: s.season, name: 'Saison ' + s.season })),
+    currentSeason: cur.season ?? seasons[0]?.season ?? 1,
+    items,
+  };
 }

@@ -17,6 +17,18 @@ data class NextEpisodeInfo(val title: String, val still: String?)
 /** Piste audio ou sous-titres exposée par libVLC (`id` -1 : « Désactivé »). */
 data class TrackInfo(val id: Int, val name: String, val lang: String, val selected: Boolean = false)
 
+/** Source de lecture proposée dans le panneau « Sources » (libellé et détail composés côté JS). */
+data class SourceItem(val id: String, val label: String, val detail: String, val current: Boolean, val group: String = "")
+
+data class SeasonInfo(val number: Int, val name: String)
+
+data class EpisodeItem(
+    val season: Int, val episode: Int, val title: String, val still: String?, val durationMin: Int,
+    val watched: Boolean, val progress: Double, val current: Boolean, val aired: Boolean,
+)
+
+data class EpisodesData(val seasons: List<SeasonInfo>, val currentSeason: Int, val items: List<EpisodeItem>)
+
 enum class AspectMode(val label: String, val vlc: String?) {
     BEST("Ajusté", null), FILL("Remplir", "fill"), R16_9("16:9", "16:9"), R4_3("4:3", "4:3"), R21_9("21:9", "21:9");
 
@@ -140,6 +152,24 @@ object PlayerLogic {
         if (mode == "auto" && normalizeLang(audioLang) == want) return mine.firstOrNull { isForced(it) }
         return mine.firstOrNull { !isForced(it) } ?: mine.firstOrNull()
     }
+
+    /** Sources regroupées par qualité en gardant l'ordre reçu ; groupe vide : « Sources ». */
+    fun groupSources(items: List<SourceItem>): List<Pair<String, List<SourceItem>>> {
+        val out = ArrayList<Pair<String, MutableList<SourceItem>>>()
+        for (it in items) {
+            val g = it.group.ifBlank { "Sources" }
+            val last = out.lastOrNull()
+            if (last != null && last.first == g) last.second.add(it) else out.add(g to mutableListOf(it))
+        }
+        return out
+    }
+
+    fun episodesOf(d: EpisodesData?, season: Int): List<EpisodeItem> = d?.items?.filter { it.season == season }?.sortedBy { it.episode } ?: emptyList()
+
+    /** « É5 · Titre » ; « Épisode 5 » sans titre. */
+    fun episodeTitle(e: EpisodeItem): String = "É${e.episode} · " + e.title.ifBlank { "Épisode ${e.episode}" }
+
+    fun episodeMeta(e: EpisodeItem): String = if (e.durationMin > 0) "${e.durationMin} min" else ""
 
     private val SKIPPABLE = setOf("intro", "recap", "preview")
 

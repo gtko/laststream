@@ -329,7 +329,11 @@ export class NativeEngine extends Emitter {
     on('tracks', (d) => { this.audio = d.audio || []; this.subs = d.subs || []; this.emit('tracks'); });
     on('ended', (d) => { this.setState(d); this.emit('ended'); });
     on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
-    on('closed', (d) => { this.setState(d); this.emit('closed', d); });
+    // La fermeture par l'utilisateur est toujours transmise, même si la session prépare déjà une autre source.
+    plugin.addListener('closed', (d) => { this.setState(d || {}); this.emit('closed', d); }).catch(() => {});
+    on('selectSource', (d) => this.emit('selectSource', d));
+    on('selectEpisode', (d) => this.emit('selectEpisode', d));
+    on('loadSeason', (d) => this.emit('loadSeason', d));
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
   }
@@ -359,6 +363,12 @@ export class NativeEngine extends Emitter {
     this.live = false;
     clearTimeout(this.closeTimer);
     this.closeTimer = setTimeout(() => { this.plugin.close().catch(() => {}); }, 700);
+  }
+
+  /** La session prépare une autre source ou un autre épisode : l'activité reste ouverte (en attente), sans évènements. */
+  detach() {
+    this.live = false;
+    clearTimeout(this.closeTimer);
   }
 
   closeNow() {

@@ -115,6 +115,12 @@ class PlayerActivity : AppCompatActivity() {
     private var lastDur = 0.0
     private var audioFocusHeld = false
     private var resumeOnStart = false
+    private var sources: List<SourceItem> = emptyList()
+    private var episodes: EpisodesData? = null
+    private var panelSeason = 0
+    private lateinit var sourcesButton: LinearLayout
+    private lateinit var episodesButton: LinearLayout
+    private val images = ImageLoader()
 
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
@@ -169,7 +175,7 @@ class PlayerActivity : AppCompatActivity() {
     /** Position courante gardée dans la requête en attente : une activité recréée reprend là où elle était. */
     private fun rememberPosition() {
         val r = req ?: return
-        req = r.copy(startPosition = lastPos, skipSegments = segments, nextEpisode = nextEpisode)
+        req = r.copy(startPosition = lastPos, skipSegments = segments, nextEpisode = nextEpisode, sources = sources, episodes = episodes)
         PlayerHub.pending = req
     }
 
@@ -362,6 +368,10 @@ class PlayerActivity : AppCompatActivity() {
         row.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         nextButton = kit.textButton(R.drawable.ic_next, "Épisode suivant") { requestNextEpisode() }.apply { visibility = View.GONE }
         row.addView(nextButton)
+        episodesButton = kit.textButton(R.drawable.ic_tracks, "Épisodes") { openPanel("episodes") }.apply { visibility = View.GONE }
+        sourcesButton = kit.textButton(R.drawable.ic_skip, "Sources") { openPanel("sources") }.apply { visibility = View.GONE }
+        row.addView(episodesButton)
+        row.addView(sourcesButton)
         row.addView(kit.textButton(R.drawable.ic_tracks, "Audio et sous-titres") { openPanel("tracks") })
         box.addView(row, LinearLayout.LayoutParams(-1, -2))
         controls.addView(box, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
@@ -475,9 +485,11 @@ class PlayerActivity : AppCompatActivity() {
         val name = panelName ?: return
         panelBody.removeAllViews()
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(kit.dp(22), kit.dp(18), kit.dp(10), kit.dp(8)) }
-        head.addView(kit.text(if (name == "tracks") "Audio et sous-titres" else "Réglages", 21f, Tokens.TEXT, 800, sora = true), LinearLayout.LayoutParams(0, -2, 1f))
+        head.addView(kit.text(when (name) { "tracks" -> "Audio et sous-titres"; "sources" -> "Sources"; "episodes" -> "Épisodes"; else -> "Réglages" }, 21f, Tokens.TEXT, 800, sora = true), LinearLayout.LayoutParams(0, -2, 1f))
         head.addView(kit.iconButton(R.drawable.ic_close, "Fermer", 44, 22) { closePanel() })
         panelBody.addView(head)
+        if (name == "sources") { buildSourcesPanel(); return }
+        if (name == "episodes") { buildEpisodesPanel(); return }
         val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         if (name == "tracks") {
             val audioRows = if (audioTracks.isEmpty()) listOf(Row("Une seule piste", true) {}) else audioTracks.map { t -> Row(t.name, t.selected) { selectAudio(t.id, true) } }
@@ -493,6 +505,114 @@ class PlayerActivity : AppCompatActivity() {
             cols.addView(scroll(column("Format de l’image", aspectRows)), LinearLayout.LayoutParams(0, -2, 1f))
         }
         panelBody.addView(cols, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    fun setSources(list: List<SourceItem>) {
+        sources = list
+        sourcesButton.visibility = if (list.size > 0) View.VISIBLE else View.GONE
+        if (panelName == "sources") refreshPanel()
+    }
+
+    fun setEpisodes(d: EpisodesData?) {
+        val changedCurrent = d?.currentSeason != episodes?.currentSeason
+        episodes = d
+        episodesButton.visibility = if (d != null) View.VISIBLE else View.GONE
+        if (d != null && (panelSeason == 0 || changedCurrent)) panelSeason = d.currentSeason
+        if (panelName == "episodes") refreshPanel()
+    }
+
+    private fun switching(msg: String) {
+        closePanel()
+        showSpinner(msg)
+        if (::player.isInitialized) player.pause()
+    }
+
+    private fun buildSourcesPanel() {
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(16)) }
+        if (sources.isEmpty()) col.addView(kit.text("Recherche des sources…", 15f, Tokens.DIM, 600).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), 0) })
+        PlayerLogic.groupSources(sources).forEach { (group, items) ->
+            col.addView(kit.text(group.uppercase(), 12f, Tokens.DIM, 800).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), kit.dp(8)) })
+            items.forEach { s ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    isFocusable = true
+                    isClickable = true
+                    minimumHeight = kit.dp(56)
+                    setPadding(kit.dp(22), kit.dp(8), kit.dp(14), kit.dp(8))
+                    background = kit.focusBackground(8f)
+                    tag = if (s.current) "selected" else null
+                    setOnClickListener {
+                        if (s.current) { closePanel(); return@setOnClickListener }
+                        switching("Changement de source…")
+                        emitEvent("selectSource", JSObject().put("id", s.id).put("position", lastPos))
+                    }
+                }
+                val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                texts.addView(kit.text(s.label, 15f, if (s.current) Tokens.ACCENT else Tokens.TEXT, if (s.current) 800 else 700))
+                if (s.detail.isNotEmpty()) texts.addView(kit.text(s.detail, 13f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+                row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+                if (s.current) row.addView(kit.icon(R.drawable.ic_check, 20, Tokens.ACCENT))
+                col.addView(row, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+        panelBody.addView(scroll(col), LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun buildEpisodesPanel() {
+        val d = episodes
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (d == null) { panelBody.addView(wrap); return }
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(kit.dp(14), 0, kit.dp(14), kit.dp(8)) }
+        d.seasons.forEach { s ->
+            val on = s.number == panelSeason
+            val b = kit.textButton(null, s.name) {
+                panelSeason = s.number
+                if (PlayerLogic.episodesOf(d, s.number).isEmpty()) emitEvent("loadSeason", JSObject().put("season", s.number))
+                refreshPanel()
+            }
+            (b.getChildAt(0) as TextView).setTextColor(if (on) Tokens.ACCENT else Tokens.TEXT)
+            (b.getChildAt(0) as TextView).typeface = kit.body(if (on) 800 else 600)
+            if (on) b.tag = "season"
+            tabs.addView(b)
+        }
+        if (d.seasons.size > 1) panelBody.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) })
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, kit.dp(16)) }
+        val eps = PlayerLogic.episodesOf(d, panelSeason)
+        if (eps.isEmpty()) list.addView(kit.text("Chargement…", 15f, Tokens.DIM, 600).apply { setPadding(kit.dp(22), kit.dp(14), kit.dp(22), 0) })
+        eps.forEach { e ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = e.aired
+                isClickable = e.aired
+                alpha = if (e.aired) 1f else 0.5f
+                setPadding(kit.dp(22), kit.dp(8), kit.dp(14), kit.dp(8))
+                background = kit.focusBackground(8f)
+                tag = if (e.current) "selected" else null
+                setOnClickListener {
+                    if (e.current) { closePanel(); return@setOnClickListener }
+                    switching("Changement d’épisode…")
+                    emitEvent("selectEpisode", JSObject().put("season", e.season).put("episode", e.episode))
+                }
+            }
+            val still = FrameLayout(this).apply { background = kit.round(0xFF1D1520.toInt(), 8f); clipToOutline = true }
+            val img = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+            still.addView(img, FrameLayout.LayoutParams(-1, -1))
+            e.still?.let { images.load(it, img) }
+            if (e.progress > 0 && !e.watched) {
+                still.addView(View(this).apply { setBackgroundColor(Tokens.ACCENT) }, FrameLayout.LayoutParams((kit.dp(120) * e.progress).toInt().coerceAtLeast(kit.dp(2)), kit.dp(3), Gravity.BOTTOM or Gravity.START))
+            }
+            row.addView(still, LinearLayout.LayoutParams(kit.dp(120), kit.dp(68)))
+            val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(14), 0, kit.dp(8), 0) }
+            texts.addView(kit.text(PlayerLogic.episodeTitle(e), 15f, if (e.current) Tokens.ACCENT else Tokens.TEXT, if (e.current) 800 else 700).apply { maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+            val meta = listOf(PlayerLogic.episodeMeta(e), if (e.current) "En cours" else if (!e.aired) "Bientôt" else "").filter { it.isNotEmpty() }.joinToString(" · ")
+            if (meta.isNotEmpty()) texts.addView(kit.text(meta, 13f, Tokens.DIM, 600).apply { setPadding(0, kit.dp(3), 0, 0) })
+            row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+            if (e.watched) row.addView(kit.icon(R.drawable.ic_check, 20, Tokens.ACCENT))
+            list.addView(row, LinearLayout.LayoutParams(-1, -2))
+        }
+        panelBody.addView(scroll(list), LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
     private fun scroll(v: View) = ScrollView(this).apply { isFillViewport = true; addView(v) }
@@ -521,6 +641,8 @@ class PlayerActivity : AppCompatActivity() {
         lastDur = 0.0
         setHeading(r.title, r.subtitle)
         setNextEpisode(r.nextEpisode)
+        setSources(r.sources)
+        setEpisodes(r.episodes)
         nextCard.visibility = View.GONE
         skipButton.visibility = View.GONE
         showSpinner("")

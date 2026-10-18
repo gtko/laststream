@@ -35,4 +35,28 @@ class OpenRequestTest {
         assertEquals(0, r.skipSegments.size)
         assertNull(r.nextEpisode)
     }
+
+    @Test fun parsesSourcesAndEpisodes() {
+        val o = JSONObject(
+            """{"url":"u","sources":[{"id":3,"label":"1080p · VFF ⚡","detail":"2 Go","current":true,"group":"1080p"},{"id":"x","label":""},{"label":"sans id"}],
+            "episodes":{"seasons":[{"number":1,"name":"Saison 1"},{"number":2}],"currentSeason":2,
+            "items":[{"season":2,"episode":1,"title":"A","still":"http://i/1.jpg","durationMin":42,"watched":true,"progress":0.5,"current":false,"aired":true},
+                     {"season":2,"episode":2,"title":"B","current":true},{"episode":3}]}}""",
+        )
+        val r = OpenRequest.fromJson(o)!!
+        assertEquals(1, r.sources.size)
+        assertEquals("3", r.sources[0].id)
+        assertEquals(true, r.sources[0].current)
+        val e = r.episodes!!
+        assertEquals(2, e.currentSeason)
+        assertEquals("Saison 2", e.seasons[1].name)
+        assertEquals(2, e.items.size)
+        assertEquals(0.5, e.items[0].progress, 0.0)
+        assertEquals(true, e.items[1].aired)
+    }
+
+    @Test fun noEpisodesForMovies() {
+        assertNull(OpenRequest.fromJson(JSONObject("""{"url":"u"}"""))!!.episodes)
+        assertNull(OpenRequest.parseEpisodes(JSONObject("""{"seasons":[],"items":[]}""")))
+    }
 }
