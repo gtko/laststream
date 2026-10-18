@@ -245,21 +245,23 @@ describe('watch party sur Workers', () => {
     g.peer.close();
   });
 
-  it('contrôle réservé à l’hôte, synchronisation par horloge serveur et correction de dérive', async () => {
+  it('lecture partagée : play, pause et seek de tout participant diffusés à tous ; rapport de position réservé à l’hôte', async () => {
     const host = await account('host');
     const guest = await account('guest');
     const room = (await createRoom(host)).body.room;
     const h = await join(host, room.id);
     const g = await join(guest, room.id);
 
-    g.peer.send({ t: 'ctl', action: 'play', pos: 5 });
-    expect((await g.peer.type('error')).code).toBe('not_host');
-
-    h.peer.send({ t: 'ctl', action: 'play', pos: 10 });
+    // L'invité met la lecture en marche : l'hôte et l'invité reçoivent le même état, daté par l'invité.
+    g.peer.send({ t: 'ctl', action: 'play', pos: 10 });
     const onHost = await h.peer.type('state');
     const onGuest = await g.peer.type('state');
-    expect(onGuest).toMatchObject({ state: { playing: true, pos: 10, rev: 1 }, by: host.name });
+    expect(onGuest).toMatchObject({ state: { playing: true, pos: 10, rev: 1 }, by: guest.name });
     expect(onHost.state).toEqual(onGuest.state);
+
+    // Le rapport de position périodique reste réservé à l'hôte.
+    g.peer.send({ t: 'ctl', action: 'sync', pos: 11 });
+    expect((await g.peer.type('error')).code).toBe('not_host');
 
     // Horloge : ping / pong, décalage estimé, position attendue après un délai.
     const t0 = Date.now();
@@ -285,10 +287,14 @@ describe('watch party sur Workers', () => {
     h.peer.send({ t: 'ctl', action: 'pause', pos: 305 });
     expect((await g.peer.type('state')).state).toMatchObject({ pos: 305, playing: false, rev: 3 });
 
+    // Une reprise par l'invité arrive à l'hôte (l'autre sens).
+    g.peer.send({ t: 'ctl', action: 'play', pos: 305 });
+    expect(await h.peer.next((m) => m.t === 'state' && m.state.rev === 4)).toMatchObject({ state: { playing: true, pos: 305, rev: 4 }, by: guest.name });
+
     // Un arrivant tardif récupère l'état courant.
     const late = await account('late');
     const l = await join(late, room.id);
-    expect(l.welcome.state).toMatchObject({ pos: 305, playing: false, rev: 3 });
+    expect(l.welcome.state).toMatchObject({ pos: 305, playing: true, rev: 4 });
     for (const p of [h.peer, g.peer, l.peer]) p.close();
   });
 
@@ -441,8 +447,13 @@ describe('watch party sur Workers', () => {
     const g = await join(guest, room.id);
     h.peer.send({ t: 'transfer', user: guest.name });
     expect(await g.peer.type('host')).toEqual({ t: 'host', user: guest.name });
-    h.peer.send({ t: 'ctl', action: 'play', pos: 1 });
+    // L'ancien hôte garde la lecture partagée (pause), mais plus le rapport de position.
+    h.peer.send({ t: 'ctl', action: 'pause', pos: 1 });
+    expect((await g.peer.type('state')).by).toBe(host.name);
+    expect((await h.peer.type('state')).by).toBe(host.name);
+    h.peer.send({ t: 'ctl', action: 'sync', pos: 1 });
     expect((await h.peer.type('error')).code).toBe('not_host');
+    // Le nouvel hôte reprend la lecture : l'ancien hôte la reçoit.
     g.peer.send({ t: 'ctl', action: 'play', pos: 1 });
     expect((await h.peer.type('state')).by).toBe(guest.name);
     g.peer.send({ t: 'end' });
