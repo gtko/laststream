@@ -28,3 +28,10 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+// androidx.test récent tire kotlin-stdlib 1.8.x : on aligne jdk7/jdk8 (fusionnés dans la stdlib depuis 1.8) pour éviter les classes en double.
+allprojects {
+    configurations.configureEach {
+        resolutionStrategy.force 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22', 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22'
+    }
+}

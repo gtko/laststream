@@ -11,7 +11,11 @@ android {
         versionCode 1
         versionName "1.0.0"
         // libVLC pèse une centaine de Mo par architecture : seuls les téléphones, tablettes et boîtiers Android TV ARM sont ciblés.
-        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            // Tests instrumentés sur émulateur x86_64 : ./gradlew connectedDebugAndroidTest -PwithX86
+            if (project.hasProperty('withX86')) abiFilters 'x86_64'
+        }
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -51,6 +55,7 @@ dependencies {
     testImplementation 'org.json:json:20240303'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    androidTestImplementation 'androidx.test:rules:1.6.1'
     implementation project(':capacitor-cordova-android-plugins')
 }
 
