@@ -5,7 +5,7 @@ import { REDUCE, STILL } from './constants.js';
 import { modal } from './dom.js';
 import { ICON } from './icons.js';
 import { inLib } from './library.js';
-import { ambientSrc, postYT } from './preview.js';
+import { ambientSrc, postYT, whenPlaying } from './preview.js';
 import { compactRates } from './ratings.js';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
@@ -64,7 +64,7 @@ export function openHover(tile) {
   hv.anchor = tile.getBoundingClientRect();
   const anchor = tile.querySelector('.card-media, .up-media') || tile;
   const rect = anchor.getBoundingClientRect();
-  const w = Math.round(Math.max(300, Math.min(480, rect.width * 1.5)));
+  const w = Math.round(Math.max(360, Math.min(620, rect.width * 1.9)));
   const el = document.createElement('div');
   el.id = 'hovercard';
   el.className = 'hc';
@@ -110,7 +110,8 @@ export function openHover(tile) {
           if (token !== hv.token) return;
           postYT(fr, 'mute');
           postYT(fr, 'playVideo');
-          setTimeout(() => { if (token === hv.token) vbox.classList.add('is-on'); }, 350);
+          // Affichée seulement une fois la lecture lancée et les surimpressions YouTube (titre, boutons) disparues.
+          whenPlaying(fr, () => { if (token === hv.token) vbox.classList.add('is-on'); });
         }, { once: true });
       }
     }

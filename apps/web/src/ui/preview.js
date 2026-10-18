@@ -13,12 +13,37 @@ export function postYT(iframe, func, args) {
   }
 }
 
+/**
+ * Appelle `cb` quand la vidéo YouTube joue vraiment depuis `delayMs` (état 1 de l'API IFrame), une seule fois :
+ * au démarrage et pendant le chargement, YouTube superpose titre, chaîne et boutons qu'on ne veut pas montrer.
+ * Repli : `fallbackMs` après le chargement si l'iframe ne renvoie aucun état. Renvoie une fonction d'annulation.
+ */
+export function whenPlaying(iframe, cb, delayMs = 2600, fallbackMs = 6000) {
+  let done = false;
+  let timer = 0;
+  const fire = () => { if (!done) { done = true; cleanup(); cb(); } };
+  const onMsg = (e) => {
+    if (e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
+    let d;
+    try { d = JSON.parse(e.data); } catch (_) { return; }
+    const st = d && d.info && d.info.playerState;
+    if (st === 1 && !timer) timer = setTimeout(fire, delayMs);
+    else if (st !== undefined && st !== 1 && timer) { clearTimeout(timer); timer = 0; }
+  };
+  const fallback = setTimeout(fire, fallbackMs);
+  const cleanup = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); clearTimeout(fallback); };
+  window.addEventListener('message', onMsg);
+  // Abonnement aux événements de l'API IFrame (infoDelivery.playerState).
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  return () => { done = true; cleanup(); };
+}
+
 export function ytSrc(key, extra) {
   return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(key) + '?' + extra;
 }
 export const ambientSrc = (key) =>
   ytSrc(key, 'autoplay=1&mute=1&controls=0&loop=1&playlist=' + encodeURIComponent(key) +
-    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
+    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&cc_load_policy=0&fs=0&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
 
 export function fitPreview(p) {
   const w0 = p.media.offsetWidth;

@@ -988,7 +988,8 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .hc-media > img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hc-video { position: absolute; inset: 0; opacity: 0; transition: opacity 0.8s ease; background: #000; pointer-events: none; }
 .hc-video.is-on { opacity: 1; }
-.hc-video iframe { position: absolute; border: 0; left: -6%; top: -6%; width: 112%; height: 112%; pointer-events: none; }
+/* Recadrage large : bandeau titre en haut et logo YouTube en bas hors champ. */
+.hc-video iframe { position: absolute; border: 0; left: -20%; top: -20%; width: 140%; height: 140%; pointer-events: none; }
 .hc-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
 .hc-name { font-family: var(--ff-title); font-weight: 800; font-size: 18px; line-height: 1.15; }
 .hc-logo { height: auto; width: auto; max-width: 70%; max-height: 44px; object-fit: contain; object-position: left center; }
