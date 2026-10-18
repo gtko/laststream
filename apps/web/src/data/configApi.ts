@@ -75,3 +75,29 @@ export function pruneEmpty<T>(value: T): T | undefined {
   if (typeof value === 'number' && Number.isNaN(value)) return undefined;
   return value;
 }
+
+export interface SourceProbe {
+  ok: boolean;
+  error?: string;
+  name?: string;
+  logo?: string;
+  version?: string;
+  description?: string;
+  types?: string[];
+}
+
+/** Teste une seule source via lastAddon (repli quand le navigateur ne peut pas lire le manifest : CORS). */
+export async function testSource(source: Record<string, unknown>, base: string = requireBase()): Promise<SourceProbe> {
+  const res = await requestJson<any>(`${base}/config/test`, { method: 'POST', body: { config: { sources: [source] } } });
+  const r = res?.sources?.[0] ?? {};
+  const m = r.manifest && typeof r.manifest === 'object' ? r.manifest : r;
+  return {
+    ok: !!r.ok,
+    error: typeof r.error === 'string' ? r.error : undefined,
+    name: typeof m.name === 'string' && m.name !== source.name ? m.name : undefined,
+    logo: typeof (m.logo ?? m.icon) === 'string' ? (m.logo ?? m.icon) : undefined,
+    version: typeof m.version === 'string' ? m.version : undefined,
+    description: typeof m.description === 'string' ? m.description : undefined,
+    types: Array.isArray(m.types) ? m.types : undefined,
+  };
+}

@@ -111,7 +111,7 @@ function untilHere(m, s, e) {
 }
 
 function closeMenu() {
-  detailEl.querySelectorAll('.ep-menu').forEach((x) => { x.hidden = true; });
+  detailEl.querySelectorAll('.f-eps-head .ep-menu').forEach((x) => { x.hidden = true; });
   detailEl.querySelectorAll('[data-eps-menu]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
@@ -130,7 +130,7 @@ document.addEventListener('click', async (e) => {
     if (open) { const first = menu.querySelector('button'); if (first) first.focus(); }
     return;
   }
-  if (!t.closest('.ep-menu')) closeMenu();
+  if (!t.closest('.f-eps-head .ep-menu')) closeMenu();
   if (!m) return;
   if (t.closest('[data-season-watch]')) {
     e.preventDefault();
@@ -163,7 +163,7 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && detailEl.querySelector('.ep-menu:not([hidden])')) { e.stopPropagation(); closeMenu(); }
+  if (e.key === 'Escape' && detailEl.querySelector('.f-eps-head .ep-menu:not([hidden])')) { e.stopPropagation(); closeMenu(); }
 }, true);
 
 /** Série entière : tous les épisodes diffusés (saison 0 exclue). */

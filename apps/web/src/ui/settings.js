@@ -1,4 +1,5 @@
 /* Page #/settings : lastAddon (schéma, clés, langues, sources, debrid), lecture, apparence, région. */
+import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
 import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
 import { DEFAULT_BASE, getBase, getConfig, isConfigured, normalizeBase, saveSettings } from '../data/config';
 import { clearCache } from '../data/transport';
@@ -59,18 +60,6 @@ function field(label, inner, hint) {
   return '<label class="tv-field">' + esc(label) + inner + (hint ? '<span class="set-hint">' + esc(hint) + '</span>' : '') + '</label>';
 }
 
-function sourceRow(s, i) {
-  const t = s.type === 'torznab';
-  return '<div class="set-source" data-srci="' + i + '"><div class="set-source-head"><strong>' + (t ? 'Torznab' : 'Addon amont') + '</strong>' +
-    '<button type="button" class="link-btn" data-set-delsrc="' + i + '">Retirer</button></div>' +
-    field('Nom', '<input type="text" data-sf="name" value="' + esc(s.name || '') + '">') +
-    (t
-      ? field('URL Torznab (baseUrl)', '<input type="url" data-sf="baseUrl" value="' + esc(s.baseUrl || '') + '" placeholder="https://indexeur.exemple/api">') +
-        field('Clé API', '<input type="password" autocomplete="off" data-sf="apiKey" placeholder="' + esc(secretPlaceholder(s.apiKey)) + '">', 'Laisse vide pour garder la clé enregistrée.')
-      : field('URL de l’addon amont', '<input type="url" data-sf="url" value="' + esc(s.url || '') + '" placeholder="https://addon.exemple/manifest.json">')) +
-    '<div class="set-tests" data-tests-src="' + esc(s.name || '') + '"></div></div>';
-}
-
 function lastAddonSection() {
   const c = ed.cfg || {};
   const sv = c.services || {};
@@ -107,7 +96,7 @@ function lastAddonSection() {
     field('Taille minimale (Go)', '<input type="number" min="0" step="0.1" name="minGb" value="' + esc(size.minGb != null ? size.minGb : '') + '">') +
     field('Taille maximale (Go)', '<input type="number" min="0.1" step="0.1" name="maxGb" value="' + esc(size.maxGb != null ? size.maxGb : '') + '">') +
     field('Nombre de résultats', '<input type="number" min="1" max="500" name="maxResults" value="' + esc(c.maxResults != null ? c.maxResults : 30) + '">') + '</div></div>' +
-    '<div class="set-block"><h3 class="set-h3">Sources</h3><div id="set-sources">' + (c.sources || []).map(sourceRow).join('') + '</div>' +
+    '<div class="set-block"><h3 class="set-h3">Sources</h3>' + sourcesHTML() +
     '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-addsrc="upstream">Ajouter un addon amont</button>' +
     '<button type="button" class="btn btn-ghost" data-set-addsrc="torznab">Ajouter un Torznab</button>' +
     '<button type="button" class="btn btn-ghost" data-set-test="sources">Tester les sources</button></div>' +
@@ -210,6 +199,7 @@ async function loadConfig() {
     const decoded = enc ? await decodeConfig(enc, base) : null;
     if (token !== ed.token) return;
     ed.cfg = decoded || {};
+    initSources(ed.cfg.sources);
     ed.loaded = !!decoded;
     if (enc && !decoded) ed.error = 'Impossible de lire la configuration enregistrée (serveur injoignable ou clé de chiffrement différente).';
   } catch (_) {
@@ -227,6 +217,7 @@ export async function showSettings() {
   ed.loaded = false;
   ed.cfg = null;
   ed.schema = null;
+  initSources([]);
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
@@ -234,20 +225,6 @@ export async function showSettings() {
 }
 
 // ---------- Lecture du formulaire ----------
-function readSourcesInto(cfg, form) {
-  const rows = Array.from(form.querySelectorAll('.set-source'));
-  cfg.sources = rows.map((row) => {
-    const i = Number(row.dataset.srci);
-    const src = Object.assign({}, (ed.cfg.sources || [])[i]);
-    row.querySelectorAll('[data-sf]').forEach((inp) => {
-      const f = inp.dataset.sf;
-      const v = inp.value.trim();
-      if (f === 'apiKey') { if (v) src.apiKey = v; } else src[f] = v;
-    });
-    return src;
-  });
-}
-
 function buildConfig(form) {
   const cfg = JSON.parse(JSON.stringify(ed.cfg || {}));
   const f = form.elements;
@@ -270,7 +247,7 @@ function buildConfig(form) {
   cfg.size = cfg.size || {};
   ['minGb', 'maxGb'].forEach((k) => { if (f[k].value !== '') cfg.size[k] = Number(f[k].value); else delete cfg.size[k]; });
   if (f.maxResults.value !== '') cfg.maxResults = Number(f.maxResults.value);
-  readSourcesInto(cfg, form);
+  cfg.sources = serializeSources();
   cfg.onlyCached = f.onlyCached.checked;
   if (f.debridOn.checked) {
     const key = f.debridKey.value.trim();
@@ -312,7 +289,7 @@ async function runTest(kind, btn) {
     const res = await testConfig(config, base);
     if (kind === 'services') showTests('services', res.services);
     else if (kind === 'debrid') showTests('debrid', res.sources.filter((s) => s.type === 'alldebrid'));
-    else showTests('sources', res.sources.filter((s) => s.type !== 'alldebrid'));
+    else { const src = res.sources.filter((x) => x.type !== 'alldebrid'); showTests('sources', src); applyTestResults(src); }
   } catch (err) {
     if (box) box.innerHTML = '<p class="set-test is-ko">' + esc(issuesText(err) || 'Test impossible : vérifie l’adresse et la configuration.') + '</p>';
   } finally {
@@ -328,6 +305,7 @@ async function save(form) {
     saveSettings({ base, config });
     clearCache();
     ed.cfg = (await decodeConfig(config, base)) || ed.cfg;
+    initSources(ed.cfg.sources);
     ed.loaded = true;
     ed.error = '';
     rerender();
@@ -345,27 +323,6 @@ detailEl.addEventListener('click', async (e) => {
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
   const test = t.closest('[data-set-test]');
   if (test) { e.preventDefault(); runTest(test.dataset.setTest, test); return; }
-  const add = t.closest('[data-set-addsrc]');
-  if (add) {
-    e.preventDefault();
-    const form = detailEl.querySelector('#set-la');
-    const cfg = buildConfig(form);
-    cfg.sources = cfg.sources || [];
-    cfg.sources.push(add.dataset.setAddsrc === 'torznab' ? { type: 'torznab', name: 'Torznab', baseUrl: '' } : { type: 'upstream', name: 'Addon amont', url: '' });
-    ed.cfg = Object.assign({}, ed.cfg, { sources: cfg.sources });
-    rerender();
-    return;
-  }
-  const del = t.closest('[data-set-delsrc]');
-  if (del) {
-    e.preventDefault();
-    const form = detailEl.querySelector('#set-la');
-    const cfg = buildConfig(form);
-    cfg.sources.splice(Number(del.dataset.setDelsrc), 1);
-    ed.cfg = Object.assign({}, ed.cfg, { sources: cfg.sources });
-    rerender();
-    return;
-  }
   const th = t.closest('[data-set-theme]');
   if (th) {
     e.preventDefault();
