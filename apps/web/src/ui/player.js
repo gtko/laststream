@@ -1,9 +1,15 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvHlsUrl } from '../data/lt';
+import { channelNumber } from '../data/tvRank';
+import { LI } from '../player/icons.js';
 import { stopPreview } from './preview.js';
-import { externalKind, externalSample, startExternal, stopExternal } from './tvExternal.js';
-import { bannerEl, ensureEpg, fmtHM, nowNext, perrEl, playerEl, setChannelDown, statusEl, tv, videoEl } from './tv.js';
-import { reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, statusView } from './tvStatus.js';
+import { exitExternalFullscreen, externalControls, externalKind, externalSample, startExternal, stopExternal } from './tvExternal.js';
+import { bannerEl, ensureEpg, epgKey, fmtHM, nowNext, perrEl, playerEl, setChannelDown, statusEl, tv, videoEl } from './tv.js';
+import { pillView, reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, statusView } from './tvStatus.js';
+import {
+  IdleUi, UI_IDLE_MS, hlsAudioOptions, hlsLevelOptions, hlsSubtitleOptions, hlsTech, htmlAudioList, htmlAudioOptions,
+  htmlTextList, htmlTextOptions, infoModel, liveBadge, tvKeyAction,
+} from './tvControls.js';
 import { esc, store } from './util.js';
 
 // ---------- Lecteur plein écran ----------
@@ -18,6 +24,91 @@ export function loadHls() {
 
 export const curChannel = () => (tv.play ? tv.play.list[tv.play.idx] : null);
 
+// Icônes de la barre : mêmes glyphes que le lecteur des films (src/player/icons.js) ; chevrons et CC propres au direct.
+const stroke = (d, w = 2) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + w + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
+const CC_ICON = stroke('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16 10.5a2 2 0 1 0 0 3"/>');
+const ICON = { play: LI.play, pause: LI.pause, vol: LI.vol, mute: LI.mute, full: LI.full, fullExit: LI.fullExit };
+
+const $ = (sel) => playerEl.querySelector(sel);
+const infoEl = $('#player-info');
+const panelEl = $('#player-panel');
+const chnameEl = $('#player-chname');
+const liveEl = $('#player-live');
+
+/** Masquage automatique de l'interface (en-tête, cartouche, barre) ; `panel` : panneau ouvert (audio, sous-titres, chaînes…). */
+const idle = new IdleUi(UI_IDLE_MS);
+let idleTimer = 0;
+let panel = null;
+
+const setIcon = (sel, svg) => { const b = $(sel); if (b && b.innerHTML !== svg) b.innerHTML = svg; };
+const setHidden = (sel, hidden) => { const b = $(sel); if (b) b.hidden = !!hidden; };
+const setAttr = (sel, name, value) => { const b = $(sel); if (b) b.setAttribute(name, value); };
+const ignore = (r) => { if (r && typeof r.catch === 'function') r.catch(() => {}); };
+
+function mountIcons() {
+  setIcon('[data-pprev]', stroke('<path d="M6 15l6-6 6 6"/>', 2.4));
+  setIcon('[data-pnext]', stroke('<path d="M6 9l6 6 6-6"/>', 2.4));
+  setIcon('[data-ptrack="audio"]', LI.tracks);
+  setIcon('[data-ptrack="sub"]', CC_ICON);
+  setIcon('[data-ptrack="quality"]', LI.gear);
+  setIcon('[data-ppip]', LI.pip);
+  setIcon('[data-plist]', LI.list);
+}
+mountIcons();
+
+/**
+ * Commandes de la lecture, quelle que soit la sortie : lecteur externe (mpv, plugin natif) si actif, sinon la balise vidéo
+ * de la page (hls.js ou lecture native). Même forme dans les deux cas (tvExternal.js : externalControls).
+ */
+function ctl() {
+  const ext = externalControls();
+  if (ext) return ext;
+  const h = () => tv.hls;
+  return {
+    kind: 'web',
+    paused: () => videoEl.paused,
+    togglePause() { if (videoEl.paused) ignore(videoEl.play()); else videoEl.pause(); },
+    canVolume: true,
+    muted: () => videoEl.muted,
+    setMuted(m) { videoEl.muted = !!m; },
+    volume: () => videoEl.volume,
+    setVolume(v) { videoEl.volume = Math.min(1, Math.max(0, v)); if (videoEl.volume > 0) videoEl.muted = false; },
+    canFullscreen: !!document.fullscreenEnabled && typeof playerEl.requestFullscreen === 'function',
+    fullscreen: () => document.fullscreenElement === playerEl,
+    setFullscreen(on) {
+      if (on) ignore(playerEl.requestFullscreen());
+      else if (document.fullscreenElement) ignore(document.exitFullscreen());
+    },
+    canPip: !!document.pictureInPictureEnabled && typeof videoEl.requestPictureInPicture === 'function',
+    pip: () => document.pictureInPictureElement === videoEl,
+    setPip(on) { ignore(on ? videoEl.requestPictureInPicture() : document.exitPictureInPicture()); },
+    audio: () => (h() ? hlsAudioOptions(h()) : htmlAudioOptions(videoEl.audioTracks)),
+    setAudio(id) {
+      if (h()) { h().audioTrack = Number(id); return; }
+      htmlAudioList(videoEl.audioTracks).forEach((t, i) => { t.enabled = i === Number(id); });
+    },
+    subs: () => (h() ? hlsSubtitleOptions(h()) : htmlTextOptions(videoEl.textTracks)),
+    setSub(id) {
+      const n = Number(id);
+      if (h()) { h().subtitleTrack = n; h().subtitleDisplay = n >= 0; return; }
+      htmlTextList(videoEl.textTracks).forEach((t, i) => { t.mode = i === n ? 'showing' : 'disabled'; });
+    },
+    levels: () => (h() ? hlsLevelOptions(h()) : []),
+    setLevel(id) { if (h()) h().currentLevel = Number(id); }, // -1 : Auto
+    tech() {
+      const t = h() ? hlsTech(h()) : {};
+      if (videoEl.videoWidth) { t.width = videoEl.videoWidth; t.height = videoEl.videoHeight; }
+      return t;
+    },
+  };
+}
+
+/** Sortie du plein écran (page ou coque) : appelé avant de fermer le lecteur. */
+function leaveFullscreen() {
+  exitExternalFullscreen();
+  if (document.fullscreenElement) ignore(document.exitFullscreen());
+}
+
 export function destroyStream() {
   clearTimeout(tv.stallTimer);
   clearInterval(tv.watchTimer);
@@ -27,10 +118,33 @@ export function destroyStream() {
   try { videoEl.load(); } catch (_) { /* ignoré */ }
 }
 
-export function showBanner(sticky) {
-  bannerEl.classList.add('is-on');
-  clearTimeout(tv.bannerTimer);
-  if (!tv.info && !sticky) tv.bannerTimer = setTimeout(() => bannerEl.classList.remove('is-on'), 4000);
+/** Verrouillé : l'interface reste visible tant qu'un panneau est ouvert, que la lecture est en pause ou qu'un échec est affiché. */
+const locked = () => tv.info || !!panel || !perrEl.hidden || ctl().paused();
+
+function setIdleClass() {
+  idle.lock(locked());
+  playerEl.classList.toggle('is-idle', !idle.visible(Date.now()));
+}
+
+/** Met l'interface à jour et programme le masquage au prochain délai d'inactivité (un seul minuteur à la fois). */
+function armIdle() {
+  setIdleClass();
+  const at = idle.deadline();
+  if (idleTimer || at == null || at <= Date.now()) return;
+  idleTimer = setTimeout(() => { idleTimer = 0; armIdle(); }, at - Date.now() + 1);
+}
+
+/** Activité (souris, toucher, touche) : l'interface revient pour UI_IDLE_MS. */
+export function wakeUi() {
+  idle.wake(Date.now());
+  armIdle();
+}
+
+/** Réécrit `el` seulement si son contenu change : le focus clavier et le défilement survivent aux rafraîchissements. */
+function setHtml(el, html) {
+  if (el.dataset.html === html) return;
+  el.dataset.html = html;
+  el.innerHTML = html;
 }
 
 export function updateBanner() {
@@ -39,16 +153,17 @@ export function updateBanner() {
   const now = Math.floor(Date.now() / 1000);
   const nn = nowNext(c, now);
   const pct = nn.cur ? Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100))) : 0;
-  bannerEl.innerHTML = '<span class="pb-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
-    '<span class="pb-text"><span class="pb-ch">' + esc(c.name) + '</span>' +
+  const logo = '<span class="pb-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>';
+  setHtml(bannerEl, logo + '<span class="pb-text">' +
     (nn.cur ? '<span class="pb-now"><strong>En cours</strong> ' + esc(nn.cur.title) + ' · ' + fmtHM(nn.cur.start) + ' – ' + fmtHM(nn.cur.stop) + '</span><span class="progress pb-prog" aria-hidden="true"><span style="width:' + pct + '%"></span></span>' : '<span class="pb-now">Programme non communiqué</span>') +
-    (nn.next ? '<span class="pb-next">Ensuite : ' + esc(nn.next.title) + ' · ' + fmtHM(nn.next.start) + '</span>' : '') + '</span>';
+    (nn.next ? '<span class="pb-next">Ensuite : ' + esc(nn.next.title) + ' · ' + fmtHM(nn.next.start) + '</span>' : '') + '</span>');
 }
 
-/** Met à jour le signal d'état du lecteur (pastille en haut) à partir d'un événement de tvStatus.js. */
+/** Met à jour le signal d'état du lecteur (pastille en haut, badge DIRECT dans la barre) à partir d'un événement de tvStatus.js. */
 function setStatus(ev) {
   tv.status = reduceTvStatus(tv.status, ev);
-  renderTvStatus(statusEl, statusView(tv.status));
+  renderTvStatus(statusEl, pillView(tv.status));
+  refreshBar();
 }
 
 /** Chaîne qui repart après un échec de cette session : elle n'est plus grisée. */
@@ -70,6 +185,8 @@ function watchStatus() {
     if (playerEl.hidden) return;
     setStatus(Object.assign({ type: 'sample', now: Date.now() }, playbackSample()));
     if (tv.status.phase === 'live') recovered();
+    updateBanner();
+    if (tv.info) renderInfo();
   }, 1000);
 }
 
@@ -86,6 +203,7 @@ export function playFail(token, reason, c) {
   perrEl.hidden = false;
   const b = perrEl.querySelector('[data-pnext]');
   if (b) b.focus();
+  wakeUi();
 }
 
 /**
@@ -108,7 +226,8 @@ export function startStream() {
   tv.attempt = 0;
   store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [] });
   updateBanner();
-  showBanner();
+  wakeUi();
+  if (tv.info) renderInfo();
   ensureEpg([c]).then(() => { if (token === tv.playToken) { updateBanner(); } });
   watchStatus();
   tryStream(c, token);
@@ -222,11 +341,166 @@ function tryStream(c, token) {
   }).catch(() => viaPage());
 }
 
+// ---------- Panneau « Infos » ----------
+
+/** Ouvre ou ferme le panneau d'infos (bouton i, touche I, re-clic). Il remplace les autres panneaux. */
+export function toggleInfo(on) {
+  tv.info = on == null ? !tv.info : !!on;
+  if (tv.info) { panel = null; panelEl.hidden = true; }
+  infoEl.hidden = !tv.info;
+  setAttr('[data-pinfo]', 'aria-pressed', String(tv.info));
+  if (tv.info) renderInfo();
+  wakeUi();
+}
+
+function renderInfo() {
+  const c = curChannel();
+  if (!c || !tv.info) return;
+  const m = infoModel(c, tv.epg.get(epgKey(c)) || [], Math.floor(Date.now() / 1000), ctl().tech());
+  const logo = '<span class="pi-logo">' + (m.logo ? '<img src="' + esc(m.logo) + '" alt="">' : '<b>' + esc(m.name.slice(0, 3)) + '</b>') + '</span>';
+  const now = m.now
+    ? '<div class="pi-now"><p class="pi-k">En cours · ' + fmtHM(m.now.start) + ' – ' + fmtHM(m.now.stop) + ' · ' + m.now.left + ' min restantes</p>' +
+      '<h3 class="pi-title">' + esc(m.now.title) + '</h3>' +
+      '<span class="progress" aria-hidden="true"><span style="width:' + m.now.pct + '%"></span></span>' +
+      (m.now.desc ? '<p class="pi-desc">' + esc(m.now.desc) + '</p>' : '') + '</div>'
+    : '<div class="pi-now"><p class="pi-k">Programme</p><p class="pi-title">Programme non communiqué</p></div>';
+  const next = m.next.length
+    ? '<div class="pi-next"><p class="pi-k">Ensuite</p><ol>' + m.next.map((p) => '<li><span class="pi-h">' + fmtHM(p.start) + '</span><span>' + esc(p.title) + '</span></li>').join('') + '</ol></div>'
+    : '';
+  const tech = m.tech.length
+    ? '<dl class="pi-tech">' + m.tech.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl>'
+    : '';
+  setHtml(infoEl, '<div class="pi-head">' + logo + '<div><p class="pi-num">' + (m.number ? 'Chaîne ' + esc(m.number) : 'Chaîne') + '</p>' +
+    '<h2 class="pi-name">' + esc(m.name) + '</h2></div><button type="button" class="lp-btn" data-pinfo-close aria-label="Fermer les infos">&times;</button></div>' +
+    now + next + tech);
+}
+
+// ---------- Panneaux de choix (pistes, qualité, chaînes) ----------
+
+function panelContent(name) {
+  if (name === 'audio') return { title: 'Piste audio', kind: 'audio', items: ctl().audio() };
+  if (name === 'sub') return { title: 'Sous-titres', kind: 'sub', items: ctl().subs() };
+  if (name === 'quality') return { title: 'Qualité', kind: 'quality', items: ctl().levels() };
+  const list = tv.play ? tv.play.list : [];
+  return {
+    title: 'Chaînes',
+    kind: 'chan',
+    items: list.map((ch, i) => ({ id: String(i), n: channelNumber(ch) ? String(channelNumber(ch)) : '', label: ch.name || '', selected: i === tv.play.idx })),
+  };
+}
+
+function renderPanel() {
+  if (!panel) { panelEl.hidden = true; return; }
+  const { title, kind, items } = panelContent(panel);
+  panelEl.innerHTML = '<div class="pp-head"><h2>' + esc(title) + '</h2><button type="button" class="lp-btn" data-pclose-panel aria-label="Fermer">&times;</button></div>' +
+    '<ul class="pp-list">' + items.map((o) => '<li><button type="button" class="pp-item" data-pitem="' + kind + '" data-pid="' + esc(o.id) + '" aria-pressed="' + (o.selected ? 'true' : 'false') + '">' +
+      (o.n ? '<span class="pp-n">' + esc(o.n) + '</span>' : '') + '<span>' + esc(o.label) + '</span></button></li>').join('') + '</ul>';
+  panelEl.hidden = false;
+  const cur = panelEl.querySelector('[aria-pressed="true"]');
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+}
+
+function openPanel(name) {
+  if (panel === name) { closePanel(); return; }
+  panel = name;
+  tv.info = false;
+  infoEl.hidden = true;
+  setAttr('[data-pinfo]', 'aria-pressed', 'false');
+  renderPanel();
+  refreshBar();
+  wakeUi();
+}
+
+function closePanel() {
+  panel = null;
+  panelEl.hidden = true;
+  wakeUi();
+}
+
+function pickItem(b) {
+  const kind = b.dataset.pitem;
+  const id = b.dataset.pid;
+  if (kind === 'chan') {
+    closePanel();
+    if (tv.play) { tv.play.idx = Number(id); startStream(); }
+    return;
+  }
+  const c = ctl();
+  if (kind === 'audio') c.setAudio(id);
+  else if (kind === 'sub') c.setSub(id);
+  else if (kind === 'quality') c.setLevel(id);
+  closePanel();
+  refreshBar();
+}
+
+// ---------- Barre de contrôle ----------
+
+/** Met la barre à jour : icônes selon l'état, boutons présents seulement si la sortie sait les servir, badge DIRECT. */
+function refreshBar() {
+  if (playerEl.hidden) return;
+  const c = ctl();
+  const paused = c.paused();
+  setIcon('[data-pplay]', paused ? ICON.play : ICON.pause);
+  setAttr('[data-pplay]', 'aria-label', paused ? 'Lecture' : 'Pause');
+
+  const muted = c.muted() || c.volume() === 0;
+  setHidden('.lp-vol', !c.canVolume);
+  setIcon('[data-pmute]', muted ? ICON.mute : ICON.vol);
+  setAttr('[data-pmute]', 'aria-label', muted ? 'Activer le son' : 'Couper le son');
+  const slider = $('[data-pvol]');
+  if (slider && document.activeElement !== slider) slider.value = String(Math.round(c.volume() * 100));
+
+  setHidden('[data-ptrack="audio"]', c.audio().length < 2);
+  setHidden('[data-ptrack="sub"]', c.subs().length < 1);
+  setHidden('[data-ptrack="quality"]', c.levels().length < 2);
+  setHidden('[data-ppip]', !c.canPip);
+  setAttr('[data-ppip]', 'aria-pressed', String(!!c.pip()));
+  setHidden('[data-pfull]', !c.canFullscreen);
+  const fs = c.fullscreen();
+  setIcon('[data-pfull]', fs ? ICON.fullExit : ICON.full);
+  setAttr('[data-pfull]', 'aria-label', fs ? 'Quitter le plein écran' : 'Plein écran');
+
+  const ch = curChannel();
+  chnameEl.textContent = ch ? ch.name : '';
+  liveEl.hidden = !liveBadge(tv.status, paused);
+  armIdle();
+}
+
+function togglePause() {
+  ctl().togglePause();
+  refreshBar();
+}
+
+function toggleMute() {
+  const c = ctl();
+  if (!c.canVolume) return;
+  c.setMuted(!c.muted());
+  refreshBar();
+}
+
+function toggleFullscreen() {
+  const c = ctl();
+  if (c.canFullscreen) c.setFullscreen(!c.fullscreen());
+  refreshBar();
+}
+
+function togglePip() {
+  const c = ctl();
+  if (c.canPip) c.setPip(!c.pip());
+  refreshBar();
+}
+
+// ---------- Ouverture, fermeture, zapping ----------
+
 export function openPlayer(c, list, opener) {
   const l = list && list.some((x) => x.id === c.id) ? list : [c];
   tv.play = { list: l, idx: l.findIndex((x) => x.id === c.id) };
   tv.opener = opener || document.activeElement;
   stopPreview();
+  tv.info = false;
+  panel = null;
+  infoEl.hidden = true;
+  panelEl.hidden = true;
   playerEl.hidden = false;
   document.body.classList.add('modal-open');
   startStream();
@@ -236,12 +510,19 @@ export function openPlayer(c, list, opener) {
 
 export function closePlayer(silent) {
   if (playerEl.hidden) return;
+  leaveFullscreen();
   tv.playToken++;
   destroyStream();
   clearInterval(tv.statusTimer);
-  setStatus({ type: 'stop' });
-  clearTimeout(tv.bannerTimer);
+  clearTimeout(idleTimer);
+  idleTimer = 0;
+  tv.info = false;
+  panel = null;
+  infoEl.hidden = true;
+  panelEl.hidden = true;
   playerEl.hidden = true;
+  playerEl.classList.remove('is-idle');
+  setStatus({ type: 'stop' });
   perrEl.hidden = true;
   document.body.classList.remove('modal-open');
   const t = tv.opener;
@@ -256,20 +537,62 @@ export function zap(delta) {
   startStream();
 }
 
+/** Clavier du lecteur (appelé par events.js avant la navigation). Renvoie true si la touche est traitée. */
 export function playerKey(e) {
   if (playerEl.hidden) return false;
-  const k = e.key;
-  if (k === 'Escape' || k === 'Backspace') { closePlayer(); return true; }
-  if (k === 'ArrowUp' || k === 'PageUp' || k === 'ChannelUp') { zap(-1); return true; }
-  if (k === 'ArrowDown' || k === 'PageDown' || k === 'ChannelDown') { zap(1); return true; }
-  if (k === 'i' || k === 'I') {
-    tv.info = !tv.info;
-    if (tv.info) { updateBanner(); showBanner(true); } else { bannerEl.classList.remove('is-on'); }
+  const act = tvKeyAction(e.key);
+  wakeUi();
+  if (!act) return false; // flèches gauche et droite, Tab : navigation entre boutons
+  if (act === 'escape') {
+    if (panel) closePanel();
+    else if (tv.info) toggleInfo(false);
+    else if (ctl().fullscreen()) toggleFullscreen();
+    else closePlayer();
     return true;
   }
-  if (k === ' ') { if (videoEl.paused) videoEl.play().catch(() => {}); else videoEl.pause(); return true; }
-  if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Tab') return false; // navigation entre boutons
-  showBanner();
-  return false;
+  if (act === 'prev') zap(-1);
+  else if (act === 'next') zap(1);
+  else if (act === 'info') toggleInfo();
+  else if (act === 'toggle') togglePause();
+  else if (act === 'mute') toggleMute();
+  else if (act === 'fullscreen') toggleFullscreen();
+  return true;
 }
-playerEl.addEventListener('mousemove', () => { updateBanner(); showBanner(); });
+
+const CLICKS = [
+  ['[data-pclose]', () => closePlayer()],
+  ['[data-pnext]', () => zap(1)],
+  ['[data-pprev]', () => zap(-1)],
+  ['[data-pinfo]', () => toggleInfo()],
+  ['[data-pinfo-close]', () => toggleInfo(false)],
+  ['[data-pplay]', () => togglePause()],
+  ['[data-pmute]', () => toggleMute()],
+  ['[data-pfull]', () => toggleFullscreen()],
+  ['[data-ppip]', () => togglePip()],
+  ['[data-ptrack]', (b) => openPanel(b.dataset.ptrack)],
+  ['[data-plist]', () => openPanel('list')],
+  ['[data-pclose-panel]', () => closePanel()],
+  ['[data-pitem]', (b) => pickItem(b)],
+];
+
+playerEl.addEventListener('click', (e) => {
+  if (!(e.target instanceof Element)) return;
+  for (const [sel, run] of CLICKS) {
+    const b = e.target.closest(sel);
+    if (!b) continue;
+    e.preventDefault();
+    wakeUi();
+    run(b);
+    return;
+  }
+});
+playerEl.addEventListener('input', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || !t.matches('[data-pvol]')) return;
+  wakeUi();
+  ctl().setVolume(Number(t.value) / 100);
+});
+playerEl.addEventListener('pointermove', () => wakeUi());
+playerEl.addEventListener('pointerdown', () => wakeUi());
+playerEl.addEventListener('focusin', () => wakeUi());
+document.addEventListener('fullscreenchange', () => refreshBar());

@@ -15,14 +15,14 @@ import { ICON } from './icons.js';
 import { renderLibrary, renderLibraryPage, toggleLib } from './library.js';
 import { closeModal, focusables, openModal, openTrailer, openVideo } from './modal.js';
 import { renderFilmography } from './person.js';
-import { closePlayer, openPlayer, playerKey, showBanner, updateBanner, zap } from './player.js';
+import { openPlayer, playerKey } from './player.js';
 import { cancelDwell, postYT, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
 import { openPartyDialog } from './partylaunch.js';
 import { state } from './state.js';
-import { allChannels, bannerEl, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
+import { allChannels, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 document.addEventListener('click', (e) => {
@@ -68,10 +68,6 @@ document.addEventListener('click', (e) => {
     openPlayer(c, list, tp);
     return;
   }
-  if (t.closest('[data-pclose]')) { e.preventDefault(); closePlayer(); return; }
-  if (t.closest('[data-pnext]')) { e.preventDefault(); zap(1); return; }
-  if (t.closest('[data-pprev]')) { e.preventDefault(); zap(-1); return; }
-  if (t.closest('[data-pinfo]')) { e.preventDefault(); tv.info = !tv.info; updateBanner(); if (tv.info) showBanner(true); else bannerEl.classList.remove('is-on'); return; }
   const tfav = t.closest('[data-tvfav]');
   if (tfav) {
     e.preventDefault();

@@ -62,6 +62,15 @@ export function statusView(state) {
   }
 }
 
+/**
+ * Ce qui s'affiche dans la pastille du haut : seulement l'attente, le son seul et l'échec. « En direct » n'y figure pas
+ * (le badge DIRECT est dans la barre de contrôle), pour ne pas encombrer l'image pendant une lecture normale.
+ */
+export function pillView(state) {
+  const v = statusView(state);
+  return v.tone === 'live' ? { tone: '', text: '', reason: '', hidden: true } : v;
+}
+
 /** Raison d'un échec de lecteur externe (mpv : erreur texte ; natif : code). Renvoie une clé de REASONS. */
 export function reasonOfExternal(err) {
   const msg = typeof err === 'string' ? err : String((err && (err.message || err.code)) || '');
