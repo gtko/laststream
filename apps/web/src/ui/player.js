@@ -1,6 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvHlsUrl } from '../data/lt';
 import { stopPreview } from './preview.js';
+import { externalKind, startExternal, stopExternal } from './tvExternal.js';
 import { bannerEl, ensureEpg, fmtHM, nowNext, perrEl, playerEl, tv, videoEl } from './tv.js';
 import { esc, store } from './util.js';
 
@@ -19,6 +20,7 @@ export const curChannel = () => (tv.play ? tv.play.list[tv.play.idx] : null);
 export function destroyStream() {
   clearTimeout(tv.stallTimer);
   clearInterval(tv.watchTimer);
+  stopExternal();
   if (tv.hls) { try { tv.hls.destroy(); } catch (_) { /* déjà détruit */ } tv.hls = null; }
   videoEl.removeAttribute('src');
   try { videoEl.load(); } catch (_) { /* ignoré */ }
@@ -96,7 +98,9 @@ function watchLive(fail, restart) {
 function tryStream(c, token) {
   destroyStream();
   perrEl.hidden = true;
-  const cur = sourcesOf(c)[tv.attempt];
+  // Index de la source tentée : sourcesOf() renvoie de nouveaux objets à chaque appel, on ne peut pas comparer par identité.
+  const idx = tv.attempt;
+  const cur = sourcesOf(c)[idx];
   const fail = () => failover(c, token);
   videoEl.onplaying = () => { clearTimeout(tv.stallTimer); perrEl.hidden = true; };
   videoEl.onerror = fail;
@@ -108,6 +112,14 @@ function tryStream(c, token) {
     videoEl.play().catch(() => {});
     watchLive(fail, () => { const t = videoEl.src; videoEl.src = t; videoEl.load(); videoEl.play().catch(() => {}); });
   };
+  // Coque Windows (mpv) et application Android (lecteur natif) : on leur passe l'URL du proxy HLS signée.
+  const kind = externalKind();
+  const external = kind ? (proxied || (isDirectFile(cur.url) ? cur.url : '')) : '';
+  const viaPage = () => {
+    if (token !== tv.playToken || tv.attempt !== idx) return;
+    pageStream();
+  };
+  const pageStream = () => {
   if (isDirectFile(cur.url)) {
     videoEl.src = cur.url;
     videoEl.play().catch(() => {});
@@ -115,7 +127,7 @@ function tryStream(c, token) {
     fail();
   } else {
     loadHls().then((H) => {
-      if (token !== tv.playToken || tv.attempt !== sourcesOf(c).indexOf(cur)) return;
+      if (token !== tv.playToken || tv.attempt !== idx) return;
       if (H && H.isSupported()) {
         const h = new H({
           lowLatencyMode: false,
@@ -150,6 +162,12 @@ function tryStream(c, token) {
       else fail();
     });
   }
+  };
+  if (!external) { pageStream(); return; }
+  startExternal(kind, external, { title: c.name, container: playerEl, onError: fail, onClosed: () => closePlayer() }).then((ok) => {
+    if (token !== tv.playToken || tv.attempt !== idx) { if (playerEl.hidden) stopExternal(); return; }
+    if (ok) clearTimeout(tv.stallTimer); else viaPage();
+  }).catch(() => viaPage());
 }
 
 export function openPlayer(c, list, opener) {

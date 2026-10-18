@@ -2,7 +2,8 @@
 import { infiniteList } from './infinite.js';
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
 import { isKidProfile, kidSection } from '../data/auth';
-import { getRegion } from '../data/prefs';
+import { getRegion, getVideoLang } from '../data/prefs';
+import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
@@ -30,16 +31,20 @@ export const getFavs = () => store('ls_tv_fav') || [];
 export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user);
 const FAV_SNAP_KEY = 'ls_tv_favch';
 const FILTERS_KEY = 'ls_tv_filters';
-const PAGE_LIMIT = 60;
+const PAGE_LIMIT = 500; // maximum accepté par le serveur : la liste est classée ici, il faut donc tout le catalogue du pays
 const SPECIAL_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
 export const favSnaps = () => store(FAV_SNAP_KEY) || {};
 export { FAV_SNAP_KEY };
 
 /** Filtres par défaut : pays de la région choisie, français, chaînes fiables. */
-export const defaultFilters = () => ({ country: getRegion().code, language: 'fr', source: '', q: '', reliable: true });
+export const defaultFilters = () => ({ country: getRegion().code, language: langCode3(getVideoLang().lang) || 'fra', source: '', q: '', reliable: true });
 
 export function initFilters() {
-  if (!tv.filters) tv.filters = Object.assign(defaultFilters(), store(FILTERS_KEY) || {});
+  if (!tv.filters) {
+    tv.filters = Object.assign(defaultFilters(), store(FILTERS_KEY) || {});
+    // Le serveur filtre en ISO 639-3 (« fra ») : un ancien réglage « fr » provoquerait une erreur 400.
+    tv.filters.language = langCode3(tv.filters.language);
+  }
   return tv.filters;
 }
 export const saveFilters = () => store(FILTERS_KEY, tv.filters);
@@ -65,7 +70,7 @@ const isKidCat = (k) => /^(kids?|animation|children|jeunesse|enfants?)$/i.test(k
 export function matchesFilters(c, f, cat) {
   if (isKidProfile() && !isKidChannel(c)) return false;
   if (f.country && c.country && String(c.country).toUpperCase() !== String(f.country).toUpperCase()) return false;
-  if (f.language && Array.isArray(c.languages) && c.languages.length && !c.languages.some((l) => l.code === f.language)) return false;
+  if (f.language && Array.isArray(c.languages) && c.languages.length && !c.languages.some((l) => sameLang(l.code, f.language))) return false;
   if (f.source && c.source && c.source !== 'user' && c.source !== f.source) return false;
   if (f.q && !String(c.name || '').toLowerCase().includes(f.q.toLowerCase())) return false;
   if (f.reliable && c.lowRel) return false;
@@ -97,15 +102,23 @@ export function loadUserPlaylist() {
 export async function loadTvChannels() {
   // Rangée d'accueil : pays + langue de l'utilisateur, chaînes fiables seulement.
   const f = initFilters();
-  const r = await fetchChannels({ country: f.country, language: f.language, limit: 120, page: 1 }, { country: f.country, language: f.language, reliable: true }, 'Toutes');
-  return r.channels;
+  const r = await fetchChannels({ country: f.country, language: langCode3(f.language), page: 1, limit: PAGE_LIMIT }, { country: f.country, language: f.language, reliable: true }, 'Toutes');
+  return rankChannels(r.channels, f.country);
 }
 
 /** Une page de chaînes (serveur paginé) ou toute la liste (ancien serveur : filtrée ici, découpée à l'affichage). */
 export async function fetchChannels(params, filters, cat) {
   const q = {};
   Object.entries(params).forEach(([k, v]) => { if (v !== '' && v != null) q[k] = v; });
-  const res = await tvChannels(q);
+  let res;
+  try {
+    res = await tvChannels(q);
+  } catch (e) {
+    // Filtre de langue refusé par le serveur : on le retire (il reste appliqué ici, chaîne par chaîne).
+    if (!(q.language && e && e.status === 400)) throw e;
+    delete q.language;
+    res = await tvChannels(q);
+  }
   const raw = Array.isArray(res) ? res : (res && (res.channels || res.items)) || [];
   const limit = Number(params.limit) || PAGE_LIMIT;
   const all = raw.map(normChannel);
@@ -119,7 +132,7 @@ export async function fetchChannels(params, filters, cat) {
 
 function serverParams(page) {
   const f = initFilters();
-  return { country: f.country, language: f.language, source: f.source, q: f.q, page, limit: PAGE_LIMIT, category: SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat };
+  return { country: f.country, language: langCode3(f.language), source: f.source, q: f.q, page, limit: PAGE_LIMIT, category: SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat };
 }
 
 export async function loadChannelsPage(reset) {
@@ -131,7 +144,7 @@ export async function loadChannelsPage(reset) {
     const r = await fetchChannels(serverParams(tv.page + 1), initFilters(), tv.cat);
     tv.page += 1;
     const seen = new Set(tv.pageList.map((c) => c.id));
-    r.channels.forEach((c) => { if (!seen.has(c.id)) tv.pageList.push(c); });
+    rankChannels(r.channels, initFilters().country).forEach((c) => { if (!seen.has(c.id)) tv.pageList.push(c); });
     tv.hasMore = r.hasMore;
     tv.total = r.total;
   } finally {
@@ -161,7 +174,7 @@ export function normFacets(raw) {
 export async function loadFacets() {
   const f = initFilters();
   tv.facets = normFacets(await tvFacets());
-  tv.catFacets = normFacets(await tvFacets({ country: f.country, language: f.language })) || tv.facets;
+  tv.catFacets = normFacets(await tvFacets({ country: f.country, language: langCode3(f.language) })) || tv.facets;
 }
 
 export async function ensureEpg(chs) {
@@ -188,11 +201,12 @@ export function nowNext(c, now) {
 }
 
 // Rangée d'accueil « En direct maintenant »
+export const numHTML = (c) => (channelNumber(c) ? '<b class="ch-num" aria-hidden="true">' + channelNumber(c) + '</b> ' : '');
 export function liveTile(c, nn, now) {
   const pct = Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100)));
-  return '<button type="button" class="live-tile" data-tvplay="' + esc(c.id) + '" data-tvctx="home" aria-label="' + esc(c.name + ', en direct : ' + nn.cur.title + (nn.next ? ', ensuite : ' + nn.next.title : '')) + '">' +
+  return '<button type="button" class="live-tile" data-tvplay="' + esc(c.id) + '" data-tvctx="home" aria-label="' + esc((channelNumber(c) ? 'Chaîne ' + channelNumber(c) + ', ' : '') + c.name + ', en direct : ' + nn.cur.title + (nn.next ? ', ensuite : ' + nn.next.title : '')) + '">' +
     '<span class="lt-top"><span class="lt-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
-    '<span class="lt-name">' + esc(c.name) + '</span><span class="lt-live" aria-hidden="true">En direct</span></span>' +
+    '<span class="lt-name">' + numHTML(c) + esc(c.name) + '</span><span class="lt-live" aria-hidden="true">En direct</span></span>' +
     '<span class="lt-title" aria-hidden="true">' + esc(nn.cur.title) + '</span>' +
     '<span class="lt-next" aria-hidden="true">' + (nn.next ? 'Ensuite : ' + esc(nn.next.title) : '&nbsp;') + '</span>' +
     '<span class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></span></button>';
@@ -254,22 +268,25 @@ export function catsHTML() {
   }).join('');
 }
 
-const optHTML = (list, cur, allLabel) => '<option value="">' + esc(allLabel) + '</option>' + list.map((o) =>
-  '<option value="' + esc(o.id) + '"' + (o.id.toLowerCase() === String(cur || '').toLowerCase() ? ' selected' : '') + '>' + esc(o.label) + (o.count ? ' (' + o.count + ')' : '') + '</option>').join('');
+const optHTML = (list, cur, allLabel, same) => '<option value="">' + esc(allLabel) + '</option>' + list.map((o) =>
+  '<option value="' + esc(o.id) + '"' + ((same || ((a, b) => a.toLowerCase() === b.toLowerCase()))(o.id, String(cur || '')) ? ' selected' : '') + '>' + esc(o.label) + (o.count ? ' (' + o.count + ')' : '') + '</option>').join('');
 
 /** Barre de filtres : pays, langue, catégorie, source, recherche et « Fiable ». */
 export function filtersHTML() {
   const f = initFilters();
   const fx = tv.facets;
-  const withCur = (list, cur, label) => (cur && !list.some((o) => o.id.toLowerCase() === cur.toLowerCase()) ? [{ id: cur, label, count: 0 }].concat(list) : list);
+  const withCur = (list, cur, label, same) => {
+    const eq = same || ((a, b) => a.toLowerCase() === b.toLowerCase());
+    return cur && !list.some((o) => eq(o.id, cur)) ? [{ id: cur, label, count: 0 }].concat(list) : list;
+  };
   const countries = fx ? fx.countries.map((o) => Object.assign({}, o, { label: o.label + ' · ' + o.id.toUpperCase() })) : [];
   const cList = withCur(countries, f.country, names('region', f.country) + ' · ' + f.country);
-  const lList = withCur(fx ? fx.languages : [], f.language, names('language', f.language));
+  const lList = withCur(fx ? fx.languages : [], f.language, names('language', f.language), sameLang);
   const catList = (tv.catFacets && tv.catFacets.categories) || [];
   const srcList = fx ? fx.sources : [];
   return '<form id="tv-filters" class="tv-filters" role="search" aria-label="Filtrer les chaînes">' +
     '<label class="tv-field">Pays<select name="country">' + optHTML(cList, f.country, 'Tous les pays') + '</select></label>' +
-    '<label class="tv-field">Langue<select name="language">' + optHTML(lList, f.language, 'Toutes les langues') + '</select></label>' +
+    '<label class="tv-field">Langue<select name="language">' + optHTML(lList, f.language, 'Toutes les langues', sameLang) + '</select></label>' +
     (catList.length ? '<label class="tv-field">Catégorie<select name="category">' + optHTML(catList, SPECIAL_CATS.includes(tv.cat) ? '' : tv.cat, 'Toutes les catégories') + '</select></label>' : '') +
     (srcList.length ? '<label class="tv-field">Source<select name="source">' + optHTML(srcList, f.source, 'Toutes les sources') + '</select></label>' : '') +
     '<label class="tv-field tvf-search">Recherche<input type="search" name="q" value="' + esc(f.q) + '" placeholder="Nom de la chaîne" autocomplete="off"></label>' +
@@ -323,7 +340,7 @@ export function epgRowHTML(c) {
   return '<div class="epg-row" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
     '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
     '<span class="epg-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
-    '<span class="epg-name">' + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + '</span></button>' +
+    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + '</span></button>' +
     '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
     '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">Chargement…</span></div></div>';
 }
@@ -487,6 +504,7 @@ function applyFilterField(t) {
   if (t.name === 'category') { setCategory(t.value); return; }
   if (t.name === 'reliable') f.reliable = t.checked;
   else if (t.name === 'q') f.q = t.value.trim();
+  else if (t.name === 'language') f.language = langCode3(t.value);
   else f[t.name] = t.value;
   saveFilters();
   loadFacets().then(() => { if (state.kind === 'tvlive') refreshCats(); }).catch(() => {});
