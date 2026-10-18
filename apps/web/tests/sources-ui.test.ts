@@ -8,6 +8,11 @@ const posts: Array<{ url: string; body: unknown }> = [];
 function mockFetch(url: string, init?: RequestInit): Response {
   const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
   const u = new URL(url);
+  // Sécurité : flux de test (Matrix) selon l’addon ; à traiter avant les manifests.
+  if (u.pathname.includes('/stream/movie/')) {
+    if (u.hostname === 'configurable.example' || u.hostname === 'torrentio.example') return json({ streams: [{ infoHash: 'a'.repeat(40), title: 'Matrix' }] });
+    if (u.hostname === 'opaque.example') return json({ streams: [{ url: 'https://opaque.example/resolve/abc', title: 'Matrix' }] });
+  }
   if (u.hostname === 'addon.example') {
     return json({ name: 'Mon Addon', version: '2.1.0', description: 'Des sources en français', logo: 'https://addon.example/logo.png', types: ['movie', 'series'], resources: ['catalog', { name: 'stream' }] });
   }
@@ -16,6 +21,8 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (u.hostname === 'configurable.example') {
     return json({ name: 'Addon configurable', version: '1.0.0', logo: 'https://configurable.example/logo.png', types: ['movie'], resources: ['catalog', 'stream'], behaviorHints: { configurable: true } });
   }
+  if (u.hostname === 'torrentio.example') return json({ name: 'Torrentio', version: '0.1.0', resources: ['stream'], types: ['movie'] });
+  if (u.hostname === 'opaque.example') return json({ name: 'Opaque', version: '1.0.0', resources: ['stream'], types: ['movie'] });
   if (u.pathname === '/config/schema') return json({ properties: {} });
   if (u.pathname === '/config/decode') {
     return json({
@@ -132,6 +139,69 @@ describe('cartes de sources', () => {
     (cards()[3].querySelector('[data-src-menu]') as HTMLElement).click();
     (cards()[3].querySelector('[data-src-remove]') as HTMLElement).click();
     expect(cards()).toHaveLength(3);
+  });
+});
+
+describe('rendre mes addons sûrs', () => {
+  const cards = () => Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
+  const addUpstream = (url: string) => {
+    (document.querySelector('[data-set-addsrc="upstream"]') as HTMLElement).click();
+    const input = cards()[cards().length - 1].querySelector('[data-sf="url"]') as HTMLInputElement;
+    input.value = url;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const KEY = 'ABCDEFGH12345678';
+
+  it('classe chaque addon (sûr, clé de débrideur, inconnu), masque la clé et propose la correction', async () => {
+    const before = cards().length; // 3 : aucune carte de test
+    addUpstream('https://configurable.example/cfg123/manifest.json'); // sûr : infoHash
+    addUpstream(`https://torrentio.example/alldebrid=${KEY}|sort=qualitysize/manifest.json`); // clé dans l’adresse
+    addUpstream('https://opaque.example/3f2b8c1e-aaaa-4bbb-8ccc-1234567890ab/manifest.json'); // config chez l’addon, débrideur
+    await settle(300);
+    expect(cards()).toHaveLength(before + 3);
+    const [sure, keyed, opaque] = [cards()[3], cards()[4], cards()[5]];
+
+    (document.querySelector('[data-set-safe]') as HTMLElement).click();
+    await settle(400);
+    expect(sure.querySelector('.src-safety')!.classList.contains('is-safe')).toBe(true);
+    expect(keyed.querySelector('.src-safety')!.classList.contains('is-debrid')).toBe(true);
+    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Utilise ta clé de débrideur');
+    expect(keyed.querySelector('.src-safety')!.textContent).toContain('ABCD…5678');
+    expect(keyed.querySelector('.src-safety')!.textContent).not.toContain(KEY);
+    expect(keyed.querySelector('[data-safe-fix]')).not.toBeNull();
+    expect(keyed.querySelector('[data-safe-config]')).toBeNull();
+    expect(opaque.querySelector('.src-safety')!.classList.contains('is-debrid')).toBe(true);
+    expect(opaque.querySelector('[data-safe-fix]')).toBeNull(); // rien à réécrire : on passe par la page de l’addon
+    expect(opaque.querySelector('[data-safe-config]')).not.toBeNull();
+    expect(sure.querySelector('[data-safe-config]')).toBeNull();
+    expect(document.getElementById('src-safe-sum')!.textContent).toContain('1 sûr(s)');
+    expect(document.getElementById('src-safe-sum')!.textContent).toContain('2 inconnu(s)');
+
+    // Corriger : aperçu sans clé, puis application (champ mis à jour, addon relu et re-testé).
+    (keyed.querySelector('[data-safe-fix]') as HTMLElement).click();
+    const preview = keyed.querySelector('.src-safety-preview')!;
+    expect(preview.textContent).toContain('ABCD…5678');
+    expect(preview.textContent).not.toContain(KEY);
+    (keyed.querySelector('[data-safe-apply]') as HTMLElement).click();
+    await settle(400);
+    const fixedUrl = keyed.querySelector('[data-sf="url"]') as HTMLInputElement;
+    expect(fixedUrl.value).toBe('https://torrentio.example/sort=qualitysize/manifest.json');
+    expect(keyed.querySelector('.src-safety')!.classList.contains('is-safe')).toBe(true);
+    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Correction appliquée');
+
+    // Configurer : ouvre la page de l’addon hors de l’app et affiche l’aide de collage.
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    (opaque.querySelector('[data-safe-config]') as HTMLElement).click();
+    expect(open).toHaveBeenCalledWith('https://opaque.example/3f2b8c1e-aaaa-4bbb-8ccc-1234567890ab/configure', '_blank', 'noopener');
+    expect((opaque.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
+    open.mockRestore();
+
+    // Nettoyage : retirer les trois cartes de test.
+    for (let i = cards().length - 1; i >= before; i -= 1) {
+      (cards()[i].querySelector('[data-src-menu]') as HTMLElement).click();
+      (cards()[i].querySelector('[data-src-remove]') as HTMLElement).click();
+    }
+    expect(cards()).toHaveLength(before);
   });
 });
 
