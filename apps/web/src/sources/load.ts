@@ -1,7 +1,9 @@
 import { getLangPrefs, LANG_VO } from '../data/langPrefs';
 import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
-import type { Lang } from '../data/stream';
+import type { DeviceTarget } from '../data/sources';
+import type { Lang, Stream } from '../data/stream';
+import { fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
 import { browserCaps, inShell } from '../player/caps';
 import { applyVerdicts, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { CHECK_TOP_N, debrid } from './debridClient';
@@ -28,6 +30,11 @@ export interface LoadedSources {
   pending: string[];
   /** Message du serveur (ex. « Configure AllDebrid ») quand les torrents sont masqués faute de débrideur. */
   notice?: string;
+  /** Avancement du repli « via l'appareil » à la construction de cette liste (voir `pollSources`). */
+  deviceVersion?: number;
+  /** Part du serveur : nombre de flux reçus et sources encore en attente (le reste vient de l'appareil). */
+  serverCount?: number;
+  serverPending?: string[];
 }
 
 const CACHE_MS = 90_000;
@@ -59,17 +66,52 @@ export async function annotateClientViews(views: SourceView[], opts: { onlyCache
   return opts.onlyCached ? annotated.filter((v) => !v.client || all.get((v.stream.infoHash ?? '').toLowerCase())?.cached !== false) : annotated;
 }
 
+/** Repli « via l'appareil » d'une recherche : flux déjà reçus des addons que le serveur n'a pas pu joindre, et ceux encore attendus. */
+interface DeviceState {
+  at: number;
+  streams: Stream[];
+  pending: string[];
+  /** Augmente à chaque addon terminé : signale à `pollSources` qu'il y a du nouveau. */
+  version: number;
+}
+const deviceStates = new Map<string, DeviceState>();
+
+/** Lance (une seule fois par recherche) l'interrogation, depuis l'appareil, des addons listés par le serveur. */
+function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = Date.now()): DeviceState | null {
+  const known = deviceStates.get(key);
+  if (known && now - known.at < CACHE_MS) return known;
+  if (!targets.length) return null;
+  const state: DeviceState = { at: now, streams: [], pending: targets.map((t) => t.addonId), version: 0 };
+  deviceStates.set(key, state);
+  void fetchDeviceStreams(targets, {
+    onAddon: (target, streams) => {
+      state.streams = mergeDeviceStreams(state.streams, streams);
+      const i = state.pending.indexOf(target.addonId);
+      if (i >= 0) state.pending.splice(i, 1);
+      state.version += 1;
+    },
+  });
+  return state;
+}
+
 async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk });
+  const device = startDeviceFetch(requestKey(req), res.deviceFetch ?? []);
   // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
-  const streams = sortStreams(playableStreams(res.streams, clientOk));
+  const all = device ? mergeDeviceStreams(res.streams, device.streams) : res.streams;
+  const streams = sortStreams(playableStreams(all, clientOk));
   let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps());
   if (clientOk) views = await annotateClientViews(views, { onlyCached: res.onlyCached });
-  return { imdb, views, pending: res.pending, notice: res.notice };
+  return {
+    imdb, views,
+    pending: [...res.pending, ...(device?.pending ?? [])],
+    notice: res.notice,
+    ...(device ? { deviceVersion: device.version, serverCount: res.streams.length, serverPending: res.pending } : {}),
+  };
 }
 
 /**
@@ -94,7 +136,7 @@ export function prefetchSources(req: SourceRequest): void {
   loadSources(req).catch(() => undefined);
 }
 
-export function clearSourceCache(): void { inflight.clear(); }
+export function clearSourceCache(): void { inflight.clear(); deviceStates.clear(); }
 
 /** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */
 export async function refreshSources(req: SourceRequest): Promise<LoadedSources> {
@@ -117,15 +159,22 @@ export const POLL_MAX_MS = 20_000;
  */
 export async function pollSources(req: SourceRequest, current: LoadedSources): Promise<LoadedSources> {
   if (!current.pending.length) return current;
-  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny() });
-  if (!status) return { ...current, pending: [] };
-  if (statusChanged({ count: current.views.length, pending: current.pending }, status)) {
+  const refresh = async (): Promise<LoadedSources> => {
     try {
       return await refreshSources({ ...req, imdb: current.imdb });
     } catch {
       return current;
     }
-  }
+  };
+  // Des addons joints depuis l'appareil ont répondu depuis la dernière liste : on la recompose sans interroger le serveur.
+  const device = deviceStates.get(requestKey(req));
+  if (device && device.version !== (current.deviceVersion ?? 0)) return refresh();
+  const serverPending = current.serverPending ?? current.pending;
+  // Le serveur n'a plus rien en attente : seul le repli de l'appareil peut encore faire avancer la liste.
+  if (!serverPending.length) return current;
+  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny() });
+  if (!status) return device?.pending.length ? current : { ...current, pending: [] };
+  if (statusChanged({ count: current.serverCount ?? current.views.length, pending: serverPending }, status)) return refresh();
   return current;
 }
 

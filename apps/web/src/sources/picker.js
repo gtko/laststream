@@ -56,6 +56,7 @@ function itemHtml(v, opts) {
   if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' / ' + v.peers + ' peers' : ''));
   if (v.copies > 1) l3.push(v.copies + ' copies');
   if (v.origins.length) l3.push('<span class="s-orig" title="' + esc(v.origins.map((o) => o.name).join(', ')) + '">' + v.origins.slice(0, 2).map((o) => '<span class="s-o">' + originIcon(o) + esc(o.name) + '</span>').join('') + (v.origins.length > 2 ? '<span class="s-o s-o-more">+' + (v.origins.length - 2) + '</span>' : '') + '</span>');
+  if (v.viaDevice) l3.push('<span class="s-dev" title="Trouvée par cet appareil : l’addon refusait le serveur">via ton appareil</span>');
 
   const l4 = v.filename
     ? '<code class="s-file" title="' + esc(v.filename) + '">' + esc(truncName(v.filename)) + '</code>' + (v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '')

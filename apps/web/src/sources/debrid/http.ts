@@ -128,7 +128,10 @@ const utf8ToB64 = (text: string): string => {
   return btoa(bin);
 };
 
-export function shellHttp(getShell: () => Promise<ShellTransport | null> = () => connectShell()): HttpFn {
+/** Commande IPC dédiée aux addons Stremio (URL `https://…/stream/<type>/<id>.json` ou `/manifest.json`, sans query), distincte de `native-http` réservée aux débrideurs. */
+export const NATIVE_ADDON_COMMAND = 'native-addon-http';
+
+export function shellHttp(getShell: () => Promise<ShellTransport | null> = () => connectShell(), command: 'native-http' | typeof NATIVE_ADDON_COMMAND = 'native-http'): HttpFn {
   return async (req) => {
     const t = await getShell();
     if (!t) throw new DebridError('network', 'transient');
@@ -141,7 +144,8 @@ export function shellHttp(getShell: () => Promise<ShellTransport | null> = () =>
       if (req.signal?.aborted) { onAbort(); return; }
       req.signal?.addEventListener('abort', onAbort, { once: true });
       ch.pending.set(id, (r) => { clearTimeout(timer); req.signal?.removeEventListener('abort', onAbort); resolve(r); });
-      t.send('native-http', { requestId: id, url: req.url, method: req.method ?? 'GET', headers: req.headers ?? {}, bodyBase64: req.body === undefined ? undefined : utf8ToB64(req.body), timeoutMs });
+      if (command === NATIVE_ADDON_COMMAND) t.send(command, { requestId: id, url: req.url, method: 'GET', headers: { Accept: req.headers?.Accept ?? 'application/json' } });
+      else t.send(command, { requestId: id, url: req.url, method: req.method ?? 'GET', headers: req.headers ?? {}, bodyBase64: req.body === undefined ? undefined : utf8ToB64(req.body), timeoutMs });
     });
     if (reply.error) throw new DebridError(reply.error === 'host_not_allowed' ? 'host_not_allowed' : reply.error, reply.error === 'host_not_allowed' ? 'unsupported' : 'transient');
     return { status: reply.status ?? 0, headers: lowerKeys(reply.headers ?? {}), body: b64ToBytes(reply.bodyBase64 ?? '') };

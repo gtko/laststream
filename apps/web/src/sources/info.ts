@@ -58,6 +58,8 @@ export interface SourceView {
   playable: boolean;
   /** Torrent livré sans lien (`behaviorHints.lastDebrid = "client"`) : débridé sur l'appareil par debridClient. */
   client: boolean;
+  /** Source trouvée par l'appareil lui-même (addon que lastAddon n'a pas pu joindre) : affichée « via ton appareil ». */
+  viaDevice: boolean;
   /** Fournisseurs qui l'ont en cache (renseigné par `applyVerdicts`), dans l'ordre de priorité. */
   debridBy: string[];
   /** Indice « lecture navigateur incertaine » (HEVC, REMUX, DTS/TrueHD). */
@@ -338,6 +340,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     provider,
     playable: hasHttpUrl(stream) || client,
     client,
+    viaDevice: stream.viaDevice === true,
     debridBy: [],
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,

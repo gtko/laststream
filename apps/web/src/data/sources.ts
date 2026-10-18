@@ -50,6 +50,30 @@ export interface StreamsResult {
   clientDebrid?: boolean;
   /** Réglage « seulement les sources en cache » de la configuration : appliqué sur l'appareil quand le statut est connu. */
   onlyCached?: boolean;
+  /** Addons que lastAddon n'a pas pu joindre (IP serveur bloquée) : l'appareil les interroge lui-même. */
+  deviceFetch?: DeviceTarget[];
+}
+
+/** Addon à interroger depuis l'appareil : son URL /stream pour ce titre (peut porter la clé de débrideur de l'utilisateur : jamais journalisée, jamais mise en cache). */
+export interface DeviceTarget {
+  addonId: string;
+  url: string;
+}
+
+/** Entrées valides de `deviceFetch` : nom et URL http(s) ; le reste est ignoré. */
+export function parseDeviceTargets(raw: unknown): DeviceTarget[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: DeviceTarget[] = [];
+  for (const e of raw as Array<Record<string, unknown> | null>) {
+    const url = typeof e?.url === 'string' ? e.url : '';
+    const addonId = typeof e?.addonId === 'string' ? e.addonId.trim() : '';
+    if (!addonId || !/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    try { new URL(url); } catch { continue; }
+    seen.add(url);
+    out.push({ addonId, url });
+  }
+  return out;
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
@@ -58,9 +82,11 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean } = {}): Promise<StreamsResult> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
-  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown; deviceFetch?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
   const notice = typeof res?.notice === 'string' && res.notice ? res.notice : undefined;
+  const deviceFetch = parseDeviceTargets(res?.deviceFetch);
   return {
+    ...(deviceFetch.length ? { deviceFetch } : {}),
     streams: Array.isArray(res?.streams) ? res.streams : [],
     pending: strings(res?.pending),
     ...(notice ? { notice } : {}),
