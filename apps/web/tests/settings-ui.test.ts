@@ -31,7 +31,7 @@ beforeAll(async () => {
 describe('navigation latérale', () => {
   it('liste les catégories et active la première', () => {
     const items = Array.from(page().querySelectorAll('[data-set-cat]')) as HTMLElement[];
-    expect(items.map((i) => i.dataset.setCat)).toEqual(['account', 'appearance', 'region', 'playback', 'audio', 'home', 'server', 'sources']);
+    expect(items.map((i) => i.dataset.setCat)).toEqual(['account', 'appearance', 'region', 'playback', 'audio', 'home', 'tv', 'server', 'sources']);
     expect(items.filter((i) => i.getAttribute('aria-current') === 'true').map((i) => i.dataset.setCat)).toEqual(['account']);
     expect(page().querySelector('#set-p-sources')).not.toBeNull();
   });

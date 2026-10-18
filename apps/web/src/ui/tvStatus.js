@@ -11,6 +11,7 @@ export const REASONS = {
   refused: 'Flux refusé (accès ou CORS)',
   format: 'Format non pris en charge',
   read: 'Erreur de lecture',
+  box: 'Chaîne de ta box : disponible sur le réseau de la box',
 };
 
 export const LABELS = {

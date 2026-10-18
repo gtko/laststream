@@ -1,6 +1,9 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { infiniteList } from './infinite.js';
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
+import { boxAccess, boxCat, boxGroups, boxOnlyChannels, getBoxQuality, getBoxReach, mergeBox } from '../data/tvBox';
+import { activeBoxChannels, BOX_CHANGED, refreshAll } from '../data/tvSources';
+import { hasLocalGuide, localProgs } from '../data/tvXmltv';
 import { isKidProfile, kidSection } from '../data/auth';
 import { getRegion, getVideoLang } from '../data/prefs';
 import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank';
@@ -22,6 +25,8 @@ export const tv = {
   // Catalogue : chaînes déjà chargées (par id), page courante du filtre, facettes, filtres.
   byId: new Map(), pageList: [], page: 0, hasMore: false, fetching: false, total: null,
   facets: null, catFacets: null, filters: null, qTimer: null,
+  // Playlists de l'utilisateur (box, IPTV) : chaînes absentes du catalogue chargé, et leurs catégories.
+  boxOnly: [], boxCats: [],
 };
 export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
 export const PX_MIN = 160 / 30; // 30 min = 160 px
@@ -33,11 +38,37 @@ export const bannerEl = document.getElementById('player-banner');
 export const perrEl = document.getElementById('player-error');
 export const statusEl = document.getElementById('player-status');
 export const getFavs = () => store('ls_tv_fav') || [];
-export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user);
+export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user, tv.boxOnly);
+
+/**
+ * Rapproche les playlists actives du catalogue chargé : les chaînes qui y figurent reçoivent la version box comme source
+ * préférée (`c.box`), les autres deviennent des chaînes « Box » (`tv.boxOnly`). Appelé à chaque page de catalogue et à chaque
+ * changement de playlist.
+ */
+export function syncBox() {
+  const box = activeBoxChannels();
+  const q = getBoxQuality();
+  const catalog = Array.from(tv.byId.values());
+  catalog.forEach((c) => { delete c.box; });
+  const matched = box.length ? mergeBox(catalog, box, q) : new Set();
+  tv.boxOnly = box.length ? boxOnlyChannels(box, matched, q) : [];
+  tv.boxCats = boxGroups(box).map(boxCat);
+  SPECIAL_CATS.length = BASE_CATS.length;
+  if (box.length) SPECIAL_CATS.push('Ma box', ...tv.boxCats);
+}
+
+/** Chaîne uniquement présente dans une playlist et illisible ici (navigateur, hors du réseau de la box) : { ok, note }. */
+export function boxStatus(c) {
+  if (!c || !c.boxOnly || !c.box) return { ok: true, note: '' };
+  return boxAccess(!!externalKind(), getBoxReach(c.box.list), c.box);
+}
+export const boxLocked = (c) => !boxStatus(c).ok;
 const FAV_SNAP_KEY = 'ls_tv_favch';
 const FILTERS_KEY = 'ls_tv_filters';
 const PAGE_LIMIT = 500; // maximum accepté par le serveur : la liste est classée ici, il faut donc tout le catalogue du pays
-const SPECIAL_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
+const BASE_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
+// Catégories locales : s'y ajoutent « Ma box » et les group-title des playlists de l'utilisateur (voir syncBox).
+const SPECIAL_CATS = BASE_CATS.slice();
 export const favSnaps = () => store(FAV_SNAP_KEY) || {};
 export { FAV_SNAP_KEY };
 
@@ -76,7 +107,7 @@ export function matchesFilters(c, f, cat) {
   if (isKidProfile() && !isKidChannel(c)) return false;
   if (f.country && c.country && String(c.country).toUpperCase() !== String(f.country).toUpperCase()) return false;
   if (f.language && Array.isArray(c.languages) && c.languages.length && !c.languages.some((l) => sameLang(l.code, f.language))) return false;
-  if (f.source && c.source && c.source !== 'user' && c.source !== f.source) return false;
+  if (f.source && c.source && c.source !== 'user' && c.source !== 'box' && c.source !== f.source) return false;
   if (f.q && !String(c.name || '').toLowerCase().includes(f.q.toLowerCase())) return false;
   if (f.reliable && c.lowRel) return false;
   if (cat && !SPECIAL_CATS.includes(cat)) {
@@ -85,7 +116,8 @@ export function matchesFilters(c, f, cat) {
   }
   return true;
 }
-export const epgKey = (c) => (c.source === 'user' ? c.epgId || '' : c.id);
+// Chaîne de playlist : guide local (XMLTV de l'utilisateur, clé = id de la chaîne) sinon identifiant de guide du catalogue.
+export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.id);
 export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 export function tvWindow() {
@@ -130,6 +162,7 @@ export async function fetchChannels(params, filters, cat) {
   const limit = Number(params.limit) || PAGE_LIMIT;
   const all = raw.map(normChannel);
   all.forEach((c) => tv.byId.set(c.id, c));
+  syncBox();
   const total = !Array.isArray(res) && res && typeof res.total === 'number' ? res.total : null;
   const legacy = raw.length > limit; // le serveur a ignoré country, limit et page
   const channels = all.filter((c) => matchesFilters(c, filters, cat));
@@ -144,7 +177,7 @@ function serverParams(page) {
 
 export async function loadChannelsPage(reset) {
   if (reset) { tv.page = 0; tv.pageList = []; tv.hasMore = false; tv.total = null; }
-  if (tv.cat === 'Favoris' || tv.cat === 'Ma playlist') return;
+  if (SPECIAL_CATS.includes(tv.cat) && tv.cat !== 'Toutes') return;
   if (tv.fetching) return;
   tv.fetching = true;
   try {
@@ -186,8 +219,14 @@ export async function loadFacets() {
 
 export async function ensureEpg(chs) {
   const w0 = tvWindow();
-  const keys = Array.from(new Set(chs.map(epgKey).filter((k) => k && !tv.epgReq.has(k))));
-  keys.forEach((k) => tv.epgReq.add(k));
+  const all = Array.from(new Set(chs.map(epgKey).filter((k) => k && !tv.epgReq.has(k))));
+  all.forEach((k) => tv.epgReq.add(k));
+  // Guide XMLTV de l'utilisateur : lu sur l'appareil, jamais demandé au serveur.
+  const keys = all.filter((k) => {
+    if (!hasLocalGuide(k)) return true;
+    tv.epg.set(k, localProgs(k, w0, w0 + EPG_H * 3600));
+    return false;
+  });
   const jobs = [];
   for (let i = 0; i < keys.length; i += 40) {
     const part = keys.slice(i, i + 40);
@@ -222,6 +261,7 @@ export function liveTile(c, nn, now) {
 export async function renderLive() {
   try {
     if (state.status !== 'ready' || !document.getElementById('live-slot') || (isKidProfile() && !kidSection('tv'))) return;
+    refreshAll(); // actualisation quotidienne des playlists au lancement
     const chs = await loadTvChannels();
     const pool = chs.filter((c) => !c.fast).slice(0, 24).concat(chs.filter((c) => c.fast).slice(0, 12));
     await ensureEpg(pool);
@@ -246,8 +286,16 @@ export function tvFilter() {
     l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]))).filter(Boolean);
   } else if (cat === 'Ma playlist') {
     l = tv.user.slice();
+  } else if (cat === 'Ma box' || tv.boxCats.includes(cat)) {
+    // Toutes les chaînes des playlists : celles rapprochées du catalogue (une seule fois par chaîne de la box), puis les autres.
+    const seen = new Set();
+    const merged = Array.from(tv.byId.values()).filter((c) => c.box && !seen.has(c.box.id) && seen.add(c.box.id));
+    l = merged.concat(tv.boxOnly).filter((c) => cat === 'Ma box' || (c.boxOnly ? c.cat === cat : false))
+      .sort((a, b) => ((a.box.num || 1e9) - (b.box.num || 1e9)));
   } else {
     l = tv.pageList.filter((c) => matchesFilters(c, initFilters(), cat));
+    // Chaînes des playlists absentes du catalogue : après la dernière page du catalogue.
+    if (cat === 'Toutes' && !tv.hasMore && !tv.fetching) l = l.concat(tv.boxOnly.filter((c) => matchesFilters(c, initFilters(), cat)));
   }
   // Favoris d'abord, sans changer l'ordre du catalogue ensuite.
   return l.map((c, i) => ({ c, i })).sort((a, b) => (favs.includes(b.c.id) ? 1 : 0) - (favs.includes(a.c.id) ? 1 : 0) || a.i - b.i).map((x) => x.c);
@@ -256,6 +304,8 @@ export function tvFilter() {
 export function catCount(cat) {
   if (cat === 'Favoris') return getFavs().length;
   if (cat === 'Ma playlist') return tv.user.length;
+  if (cat === 'Ma box') return activeBoxChannels().length;
+  if (tv.boxCats.includes(cat)) return tv.boxOnly.filter((c) => c.cat === cat).length;
   const fx = tv.catFacets && tv.catFacets.categories.find((k) => k.id === cat || k.label === cat);
   if (fx) return fx.count;
   if (cat === 'Toutes') return tv.total != null ? tv.total : '';
@@ -267,6 +317,7 @@ export function catsHTML() {
   const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.filter((k) => !kid || isKidCat(k)).map((k) => ({ id: k.id, label: k.label })) : null;
   const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: c }))
     .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
+    .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: 'Ma box' }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
     .concat(kid ? [] : [{ id: 'Ma playlist', label: 'Ma playlist' }]);
   return list.map((c) => {
     const n = catCount(c.id);
@@ -352,10 +403,10 @@ export function setChannelDown(id, down) {
 
 export function epgRowHTML(c) {
   const fav = getFavs().includes(c.id);
-  return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
+  return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + (boxLocked(c) ? ' is-box-off' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
     '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
     '<span class="epg-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
-    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + '</span></button>' +
+    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">Box</em>' : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
     '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
     '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">Chargement…</span></div></div>';
 }
@@ -426,6 +477,7 @@ export async function showTvLive() {
   try {
     initFilters();
     await Promise.all([loadChannelsPage(true), loadFacets().catch(() => {}), loadUserPlaylist()]);
+    refreshAll(); // playlists de l'utilisateur : test de la box, actualisation du jour (évènement BOX_CHANGED ensuite)
   } catch (_) {
     if (token === state.token) detailEl.innerHTML = svcError('La TV en direct n’a pas pu être chargée.');
     return;
@@ -538,4 +590,12 @@ detailEl.addEventListener('input', (e) => {
 });
 detailEl.addEventListener('submit', (e) => {
   if (e.target && e.target.id === 'tv-filters') e.preventDefault();
+});
+
+// Playlists de l'utilisateur modifiées ou actualisées (réglages, lancement, connexion) : on rapproche à nouveau du catalogue.
+window.addEventListener(BOX_CHANGED, () => {
+  syncBox();
+  if (state.kind !== 'tvlive') return;
+  refreshCats();
+  renderEpgGrid();
 });

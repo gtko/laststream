@@ -39,6 +39,7 @@ export const CATEGORIES = [
   { id: 'playback', label: 'Lecture', icon: 'play' },
   { id: 'audio', label: 'Audio et sous-titres', icon: 'subtitles' },
   { id: 'home', label: 'Accueil et recommandations', icon: 'home' },
+  { id: 'tv', label: 'TV en direct', icon: 'tv' },
   { id: 'server', label: 'Serveur lastAddon', icon: 'server' },
   { id: 'sources', label: 'Sources', icon: 'layers' },
 ];
