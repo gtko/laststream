@@ -4,7 +4,7 @@ import { followBtn } from './follows.js';
 import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
-import { isKidProfile, kidMaxAge } from '../data/auth';
+import { isKidProfile, isServerMode, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
 import { clearAmbient } from './heroVideo.js';
 import { getRegion } from '../data/prefs';
@@ -146,6 +146,10 @@ export function ficheSkeleton(it) {
 export const fsec = (name, title, inner) =>
   '<section class="f-sec" id="f-p-' + name + '" aria-labelledby="f-p-' + name + '-h"><h2 class="f-sec-title" id="f-p-' + name + '-h">' + title + '</h2>' + inner + '</section>';
 
+/** « Watch party » : compte connecté, titre sorti (les profils enfants ne créent que des salons privés, dans la boîte de dialogue). */
+const partyBtn = (m) => (isServerMode() && !isUnreleased(m) && !m.cinemaSince
+  ? '<button type="button" class="btn-round" data-wparty data-tip="Regarder en watch party" aria-label="Regarder en watch party">' + ICON.users + '</button>' : '');
+
 export const libBtn = (m) => {
   const on = inLib(m.key);
   return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-lib aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') +
@@ -192,6 +196,7 @@ export function ficheHTML(m) {
       ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '" data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
       : '') +
     libBtn(m) +
+    partyBtn(m) +
     (m.type === 'movie' ? watchBtn(m) : '') +
     (m.cinemaSince
       ? '<button type="button" class="btn-round" data-sources-open data-tip="Voir les sources" aria-label="Voir les sources">' + ICON.list + '</button>' // sur demande seulement : aucune vérification automatique

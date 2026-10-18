@@ -30,7 +30,7 @@ function skeleton() {
     '<div class="lp-top">' +
       btn('close', LI.back, 'Retour (Échap)', ' data-role="back"', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
       btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
@@ -270,6 +270,8 @@ export function createPlayerUI(h) {
     /** Reprend la géométrie du mini-lecteur (moteur mpv choisi ou quitté pendant la réduction). */
     relayoutMini() { mini.relayout(); },
     isMini: () => mini.active,
+    /** « Watch party » : compte connecté seulement (la visibilité des salons publics se règle dans le panneau). */
+    setPartyAvailable(ok) { q('[data-role="party"]').hidden = !ok; },
     /** Le bouton « Réduire » n'existe pas partout (lecteur natif Android : le PiP système suffit). */
     setMiniAvailable(ok) {
       q('[data-role="mini"]').hidden = !ok;

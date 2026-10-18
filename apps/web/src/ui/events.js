@@ -20,6 +20,7 @@ import { cancelDwell, postYT, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
+import { openPartyDialog } from './partylaunch.js';
 import { state } from './state.js';
 import { allChannels, bannerEl, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
@@ -185,6 +186,8 @@ document.addEventListener('click', (e) => {
     openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen);
     return;
   }
+  const wparty = t.closest('[data-wparty]');
+  if (wparty) { e.preventDefault(); openPartyDialog(wparty); return; }
   const play = t.closest('[data-play]');
   if (play) { e.preventDefault(); playFrom(play); return; }
   const vid = t.closest('[data-vid]');

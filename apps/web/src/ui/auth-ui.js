@@ -4,6 +4,8 @@ import {
   saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
+import { normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
+import { checkInvite } from '../data/socialApi';
 import { KID_AGES, UserApiError } from '../data/userApi';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
@@ -49,7 +51,8 @@ export function errorText(err) {
     case 'network': return 'lastAddon est injoignable.';
     case 'invalid_credentials': return 'Nom d’utilisateur ou mot de passe incorrect.';
     case 'username_taken': return 'Ce nom d’utilisateur est déjà pris.';
-    case 'signup_disabled': return 'Les inscriptions sont fermées sur ce serveur.';
+    case 'signup_disabled': return 'Inscription sur invitation : demande un lien de parrainage à un ami déjà inscrit.';
+    case 'invite_invalid': return 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué.';
     case 'bootstrap_token_invalid': return 'Jeton d’amorçage invalide.';
     case 'invalid_body': return 'Nom : 3 à 32 caractères (a-z, 0-9, _ . -). Mot de passe : 8 caractères minimum.';
     case 'invalid_pin': return 'Code incorrect.';
@@ -62,28 +65,89 @@ export function errorText(err) {
 }
 
 // ---------- Connexion / création de compte ----------
+/** Lien de parrainage : `?invite=<code>` ou `#/join/<code>` dans l'adresse, sinon code saisi à la main. */
+const invite = { code: '', status: 'none', inviter: '', first: false };
+let inviteToken = 0;
+
+/** Vérifie le code auprès du serveur (sans session) : « invité par … » ou lien invalide. */
+export async function checkInviteCode(raw) {
+  const code = normalizeInviteCode(raw);
+  const token = ++inviteToken;
+  invite.code = code;
+  invite.inviter = '';
+  if (!code) { invite.status = raw && raw.trim() ? 'invalid' : 'none'; return invite.status; }
+  invite.status = 'checking';
+  try {
+    const res = await checkInvite(code);
+    if (token !== inviteToken) return invite.status;
+    invite.status = res.valid ? 'valid' : 'invalid';
+    invite.inviter = res.valid && res.inviter ? res.inviter : '';
+  } catch {
+    if (token === inviteToken) invite.status = 'unknown'; // serveur injoignable : le code sera vérifié à l'inscription
+  }
+  return invite.status;
+}
+
 let mode = 'login';
+
+/** Lit le code d'invitation de l'adresse de la page (au démarrage) : l'inscription s'ouvre alors directement. */
+export function readInviteFromLocation() {
+  const code = parseInviteCode(location.search, location.hash);
+  invite.first = false;
+  invite.inviter = '';
+  invite.code = code;
+  invite.status = code ? 'checking' : 'none';
+  mode = code ? 'register' : 'login';
+}
+readInviteFromLocation();
+
+function forgetInviteInUrl() {
+  const rest = withoutInvite(location.search, location.hash);
+  try { history.replaceState(null, '', location.pathname + rest.search + rest.hash); } catch (_) { /* adresse inchangée */ }
+}
+
+function inviteBlockHTML() {
+  const st = invite.status;
+  const field = '<form class="tv-form auth-invite" data-invite-form><label class="tv-field">Code ou lien d’invitation<input type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(st === 'invalid' ? '' : invite.code) + '"></label>' +
+    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Valider le code</button></div></form>';
+  if (st === 'valid') return '<p class="auth-invite-ok" role="status">' + (invite.inviter ? 'Invité par <strong>' + esc(invite.inviter) + '</strong>' : 'Lien d’invitation valide') + '</p>';
+  if (st === 'checking') return '<p class="tv-form-msg" role="status">Vérification du lien…</p>';
+  if (st === 'unknown') return '<p class="auth-invite-ok" role="status">Lien d’invitation enregistré (vérifié à l’inscription).</p>';
+  return '<h2 class="auth-sub">Inscription sur invitation</h2>' +
+    '<p class="tv-form-note">' + (st === 'invalid'
+      ? 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.'
+      : 'Les comptes se créent avec un lien de parrainage : demande-le à un ami déjà inscrit, ou saisis ici le code reçu.') + '</p>' +
+    field + '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>';
+}
 
 function loginHTML(msg) {
   const reg = mode === 'register';
+  const showForm = !reg || invite.status === 'valid' || invite.status === 'unknown' || invite.first;
   return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' +
     '<h1 class="auth-title">' + (reg ? 'Créer un compte' : 'Connexion') + '</h1>' +
     '<div class="pills" role="group" aria-label="Mode"><button type="button" class="pill" data-auth-mode="login" aria-pressed="' + !reg + '">Connexion</button>' +
     '<button type="button" class="pill" data-auth-mode="register" aria-pressed="' + reg + '">Créer un compte</button></div>' +
-    '<form id="auth-form" class="tv-form auth-form" autocomplete="on">' +
-    '<label class="tv-field">Nom d’utilisateur<input type="text" name="username" autocomplete="username" autocapitalize="none" required value=""></label>' +
-    '<label class="tv-field">Mot de passe<input type="password" name="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '" required></label>' +
-    (reg ? '<label class="tv-field">Jeton d’amorçage (premier compte, si le serveur l’exige)<input type="password" name="bootstrap" autocomplete="off"></label>' : '') +
-    '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">' + (reg ? 'Créer le compte' : 'Se connecter') + '</button>' +
-    '<button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>' +
-    '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés. Sans compte, tout reste dans ce navigateur.</p></form></div>';
+    (reg && !invite.first ? inviteBlockHTML() : '') +
+    (showForm ? '<form id="auth-form" class="tv-form auth-form" autocomplete="on">' +
+      '<label class="tv-field">Nom d’utilisateur<input type="text" name="username" autocomplete="username" autocapitalize="none" required value=""></label>' +
+      '<label class="tv-field">Mot de passe<input type="password" name="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '" required></label>' +
+      (reg && invite.first ? '<label class="tv-field">Jeton d’amorçage (premier compte, si le serveur l’exige)<input type="password" name="bootstrap" autocomplete="off"></label>' : '') +
+      '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
+      '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">' + (reg ? 'Créer le compte' : 'Se connecter') + '</button>' +
+      '<button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>' +
+      '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés. Sans compte, tout reste dans ce navigateur.</p></form>'
+      : '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
+        '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>') +
+    '</div>';
 }
 
 function showLogin(msg) {
   show(loginHTML(msg));
-  const u = el().querySelector('input[name="username"]');
+  const u = el().querySelector('input[name="username"]') || el().querySelector('input[name="code"]');
   if (u) u.focus();
+  if (mode === 'register' && invite.status === 'checking') {
+    checkInviteCode(invite.code).then(() => { if (!root.hidden && mode === 'register') showLogin(); });
+  }
 }
 
 async function submitLogin(form) {
@@ -93,11 +157,15 @@ async function submitLogin(form) {
   btn.disabled = true;
   if (msg) msg.textContent = '';
   try {
-    if (mode === 'register') await signUp(f.username.value, f.password.value, f.bootstrap && f.bootstrap.value);
-    else await signIn(f.username.value, f.password.value);
+    if (mode === 'register') {
+      await signUp(f.username.value, f.password.value, f.bootstrap && f.bootstrap.value, invite.first ? '' : invite.code);
+      forgetInviteInUrl();
+      invite.code = ''; invite.status = 'none';
+    } else await signIn(f.username.value, f.password.value);
     route();
   } catch (err) {
     btn.disabled = false;
+    if (err instanceof UserApiError && err.code === 'invite_invalid') { invite.status = 'invalid'; invite.first = false; showLogin(errorText(err)); return; }
     if (msg) msg.textContent = errorText(err);
   }
 }
@@ -330,7 +398,8 @@ document.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || !t.closest('#auth')) return;
   const m = t.closest('[data-auth-mode]');
-  if (m) { mode = m.dataset.authMode; showLogin(); return; }
+  if (m) { mode = m.dataset.authMode; invite.first = false; showLogin(); return; }
+  if (t.closest('[data-invite-first]')) { invite.first = true; showLogin(); return; }
   if (t.closest('[data-auth-local]')) {
     continueWithoutAccount();
     if (resolveFlow) { hide(); const r = resolveFlow; resolveFlow = null; r(); } else { hide(); location.reload(); }
@@ -345,6 +414,12 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('submit', (e) => {
-  if (e.target && e.target.id === 'auth-form') { e.preventDefault(); submitLogin(e.target); }
+  if (e.target && e.target.id === 'auth-form') { e.preventDefault(); submitLogin(e.target); return; }
+  if (e.target && e.target.matches && e.target.matches('[data-invite-form]')) {
+    e.preventDefault();
+    const raw = e.target.elements.code.value;
+    invite.status = 'checking';
+    checkInviteCode(raw).then(() => showLogin());
+  }
 });
 

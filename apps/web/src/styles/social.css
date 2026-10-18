@@ -1,0 +1,126 @@
+/* Fonctions sociales : parrainage, amis, bibliothèque partagée, watch parties (liste, page d'un salon, panneau du lecteur). */
+
+/* ---------- Inscription par invitation ---------- */
+.auth-sub { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 700; }
+.auth-invite-ok { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line-2); color: var(--soft); font-size: 14px; }
+.auth-invite-ok strong { color: var(--accent); }
+.auth-invite { max-width: 440px; }
+
+/* ---------- Tableau « Mes invitations » ---------- */
+.inv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.inv-row { display: grid; grid-template-columns: minmax(110px, auto) minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.inv-state { font-size: 13px; font-weight: 700; color: var(--muted); }
+.inv-state em { font-style: normal; font-weight: 500; color: var(--soft); }
+.inv-row.is-free .inv-state { color: #19c3a6; }
+.inv-row.is-sent .inv-state { color: #f5b700; }
+.inv-row.is-used .inv-state { color: var(--dim); }
+.inv-link { min-width: 0; width: 100%; text-overflow: ellipsis; font-size: 13px; }
+.inv-link.is-used { color: var(--dim); font-size: 13px; }
+.inv-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.inv-quota { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.inv-quota-f { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 720px) {
+  .inv-row { grid-template-columns: 1fr; }
+  .inv-btns { justify-content: flex-start; }
+}
+
+/* ---------- Pages Amis / Watch parties ---------- */
+.soc-body { padding: 8px var(--gutter) 96px; display: flex; flex-direction: column; gap: 28px; max-width: 980px; }
+.soc-tools { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.soc-add-f { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.soc-add-f input { flex: 1 1 220px; min-width: 0; }
+.soc-sec { display: flex; flex-direction: column; gap: 10px; }
+.soc-sec .row-title { margin: 0; }
+.soc-sec .row-title em { font-style: normal; font-size: 14px; color: var(--dim); margin-left: 6px; }
+.soc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.soc-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.soc-av { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: var(--on-accent); font-family: var(--ff-title); }
+.soc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.soc-name { font-weight: 700; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.soc-name:hover { color: var(--accent); }
+.soc-presence { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.soc-presence i { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex: none; }
+.soc-presence.is-watching { color: var(--soft); }
+.soc-presence.is-watching i { background: var(--accent); }
+.soc-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+@media (max-width: 720px) {
+  .soc-body { padding-left: 16px; padding-right: 16px; }
+  .soc-row { flex-wrap: wrap; }
+  .soc-acts { width: 100%; justify-content: flex-start; }
+}
+
+/* Bibliothèque d'un ami et partage de la sienne */
+.soc-grid { padding-top: 8px; }
+.soc-tile, .lib-cell { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.soc-tile .card, .lib-cell .card { width: 100%; }
+.soc-tile-acts { display: flex; flex-direction: column; gap: 6px; }
+.soc-tile-acts .btn { width: 100%; justify-content: center; }
+.lib-vis { position: absolute; top: 8px; right: 8px; z-index: 3; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; border: 0; cursor: pointer; background: rgba(12, 11, 17, 0.72); color: var(--soft); backdrop-filter: blur(6px); }
+.lib-vis svg { width: 18px; height: 18px; }
+.lib-vis.is-on { background: var(--accent); color: var(--on-accent); }
+.lib-vis:hover, .lib-vis:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.lib-share-note { margin: 0; font-size: 13px; color: var(--dim); }
+
+/* ---------- Salons ---------- */
+.wp-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.wp-card { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.wp-poster { flex: none; width: 62px; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--line-2); }
+.wp-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.wp-t { font-family: var(--ff-title); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-m { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-more { margin-top: 14px; }
+.wp-big { max-width: 640px; align-items: flex-start; padding: 16px; }
+.wp-big .wp-poster { width: 110px; }
+.wp-big .wp-t { white-space: normal; font-size: 20px; }
+.wp-fs { border: 0; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.wp-fs legend { font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; padding: 0; }
+.wp-opt { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--soft); cursor: pointer; }
+.wp-opt b { display: block; color: var(--text); }
+.wp-dlg-t { margin: 0 0 8px; font-family: var(--ff-title); }
+
+/* ---------- Panneau du lecteur ---------- */
+.lp-party { position: absolute; top: 0; right: 0; bottom: 0; z-index: 7; width: min(360px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 18px 16px 14px; overflow-y: auto; background: rgba(12, 11, 17, 0.94); border-left: 1px solid var(--line-2); color: var(--text); backdrop-filter: blur(10px); }
+.lp-party[hidden] { display: none; }
+.lp.is-mini .lp-party, .lp.is-mini .lp-party-floats { display: none; }
+.wp-close { position: absolute; top: 8px; right: 10px; width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: var(--soft); font-size: 24px; cursor: pointer; }
+.wp-close:hover { background: var(--line-2); }
+.wp-head { display: flex; align-items: center; gap: 8px; padding-right: 30px; }
+.wp-title { margin: 0; font-family: var(--ff-title); font-size: 17px; line-height: 1.2; padding-right: 30px; }
+.wp-head .wp-title { padding-right: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-vis, .wp-badge { font-size: 11px; font-weight: 700; font-style: normal; padding: 2px 8px; border-radius: 999px; background: var(--line-2); color: var(--soft); white-space: nowrap; }
+.wp-badge { background: var(--accent); color: var(--on-accent); }
+.wp-badge-muted { background: #7b5bf5; color: #fff; }
+.wp-note { margin: 0; font-size: 13px; color: var(--dim); line-height: 1.45; }
+.wp-status { margin: 0; padding: 6px 10px; border-radius: 8px; background: #3a2a10; color: #f5b700; font-size: 13px; }
+.wp-msg { margin: 0; font-size: 13px; color: #f5b700; }
+.wp-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.wp-sub { margin: 6px 0 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.wp-users { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.wp-user { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.wp-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.wp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-tools { display: flex; gap: 4px; width: 100%; padding-left: 18px; }
+.wp-mini { border: 1px solid var(--line-2); background: var(--surface); color: var(--soft); border-radius: 8px; font-size: 12px; padding: 3px 8px; cursor: pointer; }
+.wp-mini:hover { border-color: var(--accent); color: var(--text); }
+.wp-danger { color: #ff7a7a; }
+.wp-chat { flex: 1; min-height: 120px; max-height: 38vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px; background: var(--surface); }
+.wp-line { margin: 0; font-size: 14px; line-height: 1.4; word-break: break-word; }
+.wp-line b { color: var(--accent); }
+.wp-line.is-mine b { color: var(--soft); }
+.wp-flag { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 12px; opacity: 0; }
+.wp-line:hover .wp-flag, .wp-flag:focus-visible { opacity: 1; }
+.wp-empty { margin: 0; font-size: 13px; color: var(--dim); }
+.wp-send { display: flex; gap: 6px; }
+.wp-send input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; }
+.wp-react { display: flex; flex-wrap: wrap; gap: 4px; }
+.wp-react button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); font-size: 20px; cursor: pointer; }
+.wp-react button:hover { border-color: var(--accent); transform: translateY(-2px); }
+.wp-form { display: flex; flex-direction: column; gap: 10px; }
+.lp-party-floats { position: absolute; left: 0; right: 0; bottom: 90px; height: 0; z-index: 8; pointer-events: none; }
+.wp-float { position: absolute; bottom: 0; font-size: 34px; animation: wp-rise 3.2s ease-out forwards; }
+@keyframes wp-rise { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-260px); opacity: 0; } }
+@media (max-width: 720px) {
+  .lp-party { width: 100%; top: auto; height: 62%; border-left: 0; border-top: 1px solid var(--line-2); }
+}
+@media (prefers-reduced-motion: reduce) { .wp-float { animation-duration: 1.2s; } }

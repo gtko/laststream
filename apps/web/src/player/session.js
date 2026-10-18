@@ -48,6 +48,9 @@ import { thumbsAllowed, thumbSource } from './thumbs';
 import { ThumbFeed, serverHasThumbs, serverHasRangeThumbs } from './thumbfeed';
 import { makeLocalFeed, webCodecsAvailable, IdbThumbStore } from '../thumbs';
 import { createPlayerUI } from './ui.js';
+import { partyBridge } from '../party/bridge';
+import { setWatching } from '../data/presence';
+import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
@@ -196,6 +199,15 @@ function refreshAddonThumbs() {
   ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); rangeThumbs = serverHasRangeThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
 }
 
+/** Titre en cours de lecture, tel que le salon (watch party) le voit : identité, source choisie, moteur. Jamais de lien. */
+function partyAdapter(p = P) {
+  if (!p) return null;
+  return {
+    req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
+    ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer),
+  };
+}
+
 function ensureUI() {
   if (ui) return;
   ui = createPlayerUI({
@@ -221,6 +233,7 @@ function ensureUI() {
     miniLayout: onMiniLayout,
   });
   miniState.onChange(applyMini);
+  mountPartyPanel(ui.root, { adapter: () => partyAdapter() });
   thumbs = new Thumbs(ui.thumbCanvas, {
     allowed: () => thumbsAllowedNow(),
     duration: () => (P ? P.engine.state().duration : 0),
@@ -461,6 +474,10 @@ async function initSession(request, views, view, opts = {}) {
   ui.setCue('', P.subs.style);
   ui.show();
   ui.focusFirst();
+  ui.setPartyAvailable(partyBridge.available());
+  if (request.id && Number.isFinite(Number(request.id))) {
+    setWatching({ type: request.type === 'tv' ? 'series' : 'movie', tmdbId: Number(request.id), title: request.name || '', ...(request.type === 'tv' && request.season != null ? { season: request.season, episode: request.episode } : {}) });
+  }
   clearInterval(tickTimer);
   tickTimer = setInterval(tick, 100);
   loadSideData(token);
@@ -796,6 +813,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   if (cand && cand.direct) ui.toast('Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
   if (p.notice) { ui.toast(p.notice, 6000); p.notice = ''; }
   refreshUI();
+  partyBridge.viewReady(partyAdapter(p));
 }
 
 /** Repli automatique : copie équivalente d'abord, puis source suivante. */
@@ -1146,6 +1164,7 @@ function onEnded() {
   if (!p || p.finished) return;
   saveProgress(true);
   markWatched();
+  if (partyBridge.guestLocked()) return; // en salon, c'est l'hôte qui passe à l'épisode suivant
   const nx = nextRef();
   if (nx && getSkipPref('nextEpisode')) { playEpisode(nx.season, nx.episode); return; }
   p.finished = true;
@@ -1162,6 +1181,7 @@ function tick() {
   if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
+  partyBridge.tick(partyAdapter(p));
   // Sous-titres (100 ms).
   const s = p.subs;
   let cues = s.cues;
@@ -1202,7 +1222,7 @@ function tick() {
       const info = ep && ep.find((e) => e.episode === nx.episode);
       if (!mini) ui.setNextCard({ title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: info ? info.still : '', countdown: card.countdown, ratio: card.ratio });
       if (!ep) ensureEpisodes(nx.season);
-      if (card.countdown === 0 && !p.autoNexting) { p.autoNexting = true; playEpisode(nx.season, nx.episode); }
+      if (card.countdown === 0 && !p.autoNexting && !partyBridge.guestLocked()) { p.autoNexting = true; playEpisode(nx.season, nx.episode); }
     } else ui.setNextCard(null);
     ui.setEndRow(!mini && p.req.type === 'movie' && !p.endDismissed && movieEndRow(p.segments, st.time, st.duration));
     if (!st.paused) saveProgress(false, st);
@@ -1277,15 +1297,22 @@ function markWatched() {
 
 // ---------- Actions ----------
 
+/** Salon : seul l'hôte pilote ; un invité qui essaie est prévenu. */
+function guestBlocked() {
+  if (!partyBridge.guestLocked()) return false;
+  ui.toast('Seul l’hôte du salon pilote la lecture', 1800);
+  return true;
+}
+
 function seekTo(t) {
-  if (!P || !P.view) return;
+  if (!P || !P.view || guestBlocked()) return;
   P.engine.seek(t);
   P.watch.reset(Date.now());
   P.skipped = null;
 }
 
 function seekBy(d) {
-  if (!P || !P.view) return;
+  if (!P || !P.view || guestBlocked()) return;
   const st = P.engine.state();
   const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
   seekTo(to);
@@ -1294,7 +1321,7 @@ function seekBy(d) {
 }
 
 function togglePlay() {
-  if (!P || !P.view) return;
+  if (!P || !P.view || guestBlocked()) return;
   const st = P.engine.state();
   if (st.paused) P.engine.play(); else { P.engine.pause(); saveProgress(true); }
 }
@@ -1346,7 +1373,7 @@ function showSourcesPanel(reasons = []) {
 /** Épisode d'une série : même ouverture immédiate que « Lecture », sans reprise proposée. */
 function playEpisode(season, episode) {
   const p = P;
-  if (!p) return Promise.resolve();
+  if (!p || guestBlocked()) return Promise.resolve();
   ui.closePanel(true);
   return playBest({ ...p.req, season, episode, imdb: p.imdb }, p.opener, { resume: 'none' });
 }
@@ -1382,6 +1409,7 @@ function onAction(act, data) {
   if (act === 'close') { closePlayer(); return; }
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
+  if (act === 'party') { togglePartyPanel(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
@@ -1650,7 +1678,9 @@ async function teardown(silent) {
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
+  partyBridge.sessionClosed(silent);
   if (!silent) {
+    setWatching(null);
     if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (_) { /* ignoré */ } }
     ui.hide();
     document.body.classList.remove('modal-open', 'lp-open');
@@ -1705,12 +1735,19 @@ export async function playBest(request, opener, opts = {}) {
   ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
-  let rec = recommendFor(withoutBad(p, loaded.views), bw);
+  // Salon : la version de l'hôte (empreinte) passe avant la « meilleure » source ; chacun lit avec SA source.
+  const recommend = (views) => {
+    const usable = withoutBad(p, views);
+    const same = opts.prefer ? opts.prefer(usable) : null;
+    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw);
+  };
+  const good = (r) => !!r && (r.party === true || isGoodMatch(r));
+  let rec = recommend(loaded.views);
   // Réponse partielle : on part tout de suite si la meilleure source disponible est une bonne correspondance (cache, langue
   // préférée, 1080p ou mieux) ; sinon on attend le reste de la recherche, 20 s au plus.
   let cur = loaded;
   const t0 = Date.now();
-  while (cur.pending.length && !isGoodMatch(rec) && Date.now() - t0 < POLL_MAX_MS) {
+  while (cur.pending.length && !good(rec) && Date.now() - t0 < POLL_MAX_MS) {
     ui.setLoading(p.meta.title || 'Lecture', describePending(cur.pending), loaderExtra(0));
     await new Promise((r) => setTimeout(r, POLL_EVERY_MS));
     if (!alive()) return;
@@ -1722,7 +1759,7 @@ export async function playBest(request, opener, opts = {}) {
       p.pending = next.pending;
       p.loaded = next;
       p.ranked = [...next.views];
-      rec = recommendFor(withoutBad(p, next.views), bw);
+      rec = recommend(next.views);
     }
   }
   loaded.views = cur.views;
@@ -1736,5 +1773,9 @@ export async function playBest(request, opener, opts = {}) {
 export function playSource(request, views, view, opener, opts = {}) {
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
+
+// Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
+partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
+partyBridge.adapter = () => partyAdapter();
 
 export { formatClock };
