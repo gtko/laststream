@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LruCache } from '../src/cache/lru.js';
 import { parseTorrent } from '../src/torrent/bencode.js';
 import { getStreams, type PipelineContext, type PipelineResult } from '../src/pipeline.js';
 import type { MediaProbe } from '../src/media/probe.js';
 import { decodeCopiesToken } from '../src/play/token.js';
 import type { FetchFn } from '../src/sources/http.js';
+import { clearUpstreamTasks } from '../src/sources/collect.js';
 import { TorrentCache } from '../src/torrent/fetch-torrent.js';
 import type { ContentRef } from '../src/types.js';
 import { cfg as baseCfg, GB } from './engine-fixtures.js';
@@ -576,5 +577,57 @@ describe('pipeline v2 : alias TMDB d’une série (titre alternatif romaji)', ()
     const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), ref, ctxFor(fetch));
 
     expect(result.streams.map(hashOf)).toEqual([H.a]);
+  });
+});
+
+describe('pipeline v2 : épisode diffusé aujourd’hui (minuit à Paris, pas UTC)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('épisode daté d’aujourd’hui à Paris (23 h 03 UTC la veille) : l’addon est interrogé et sa source renvoyée', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T23:03:00Z'));
+    const tmdb: Route = (url) => {
+      if (url.hostname !== 'api.themoviedb.org') return undefined;
+      if (url.pathname === '/3/find/tt9900777') return json({ tv_results: [{ id: 9777 }] });
+      if (url.pathname === '/3/tv/9777/season/3/episode/206') return json({ runtime: 47, air_date: '2026-10-19' });
+      if (url.pathname === '/3/tv/9777') return json({ name: 'Plus belle la vie', content_ratings: { results: [] } });
+      return json({}, 404);
+    };
+    const { fetch, calls } = routedFetch([
+      CINEMETA,
+      tmdb,
+      upstreamWith([{ name: 'Upstream', title: 'Plus.belle.la.vie.S03E206.1080p.WEB-DL', infoHash: H.a, description: '👤 50' }]),
+    ]);
+    const ref: ContentRef = { type: 'series', id: 'tt9900777:3:206', imdbId: 'tt9900777', season: 3, episode: 206 };
+
+    const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), ref, ctxFor(fetch));
+
+    expect(calls.some((url) => url.includes('upstream.test'))).toBe(true);
+    expect(result.streams.map(hashOf)).toEqual([H.a]);
+  });
+});
+
+describe('pipeline v2 : réponse vide d’un addon gardée au plus 60 s', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    clearUpstreamTasks();
+  });
+
+  it('film sans flux : la requête suivante, 61 s plus tard, interroge à nouveau l’addon', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z'));
+    const { fetch, calls } = routedFetch([CINEMETA, upstreamWith([])]);
+    const ctx = ctxFor(fetch, { cache: new LruCache<PipelineResult>({ max: 10, ttlMs: 5 * 60 * 1_000 }) });
+    const ref: ContentRef = { type: 'movie', id: 'tt9900888', imdbId: 'tt9900888' };
+    const upstreamCalls = () => calls.filter((url) => url.includes('upstream.test')).length;
+
+    await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctx);
+    const first = upstreamCalls();
+    vi.setSystemTime(new Date('2026-10-18T10:01:01Z'));
+    await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctx);
+
+    expect(upstreamCalls()).toBeGreaterThan(first);
   });
 });
