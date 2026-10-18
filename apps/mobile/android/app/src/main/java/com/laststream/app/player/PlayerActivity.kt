@@ -128,7 +128,11 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    companion object { const val PIP_ACTION = "com.laststream.app.PIP_TOGGLE" }
+    companion object {
+        const val PIP_ACTION = "com.laststream.app.PIP_TOGGLE"
+        /** Libération libVLC de l'activité précédente : la suivante l'attend avant de créer sa propre instance (décodeur matériel, sortie audio). */
+        @Volatile private var releasing: Thread? = null
+    }
 
     // ---------- Cycle de vie ----------
 
@@ -141,6 +145,7 @@ class PlayerActivity : AppCompatActivity() {
         buildUi()
         enterImmersive()
         val args = arrayListOf("--audio-time-stretch", "--no-sub-autodetect-file", "--network-caching=3000", "--file-caching=3000", "--avcodec-skiploopfilter=0")
+        try { releasing?.join(3000) } catch (_: InterruptedException) { }
         vlc = LibVLC(this, args)
         player = MediaPlayer(vlc)
         player.attachViews(videoLayout, null, true, false)
@@ -190,7 +195,7 @@ class PlayerActivity : AppCompatActivity() {
         val v = if (::vlc.isInitialized) vlc else null
         // Fil principal : plus d'évènements ni de surface. Seule la libération (bloquante) passe en arrière-plan.
         try { p?.setEventListener(null); p?.detachViews() } catch (_: Exception) { }
-        thread(name = "vlc-release") {
+        releasing = thread(name = "vlc-release") {
             try { p?.stop(); p?.release(); v?.release() } catch (_: Exception) { }
         }
         super.onDestroy()
