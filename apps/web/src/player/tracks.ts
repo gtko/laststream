@@ -24,6 +24,29 @@ export function normalizeLang(raw: string | undefined | null): string {
   return /^[a-z]{2}$/.test(base) ? base : base.length === 3 ? '' : base;
 }
 
+const stripAccents = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Langue déduite d'un titre de piste (« Français VFF », « English 5.1 », « VOSTFR »…). */
+const TITLE_LANGS: Array<[RegExp, string]> = [
+  [/\b(vff|vfq|vfi|vf|vostfr|truefrench|french|francais|fre|fra)\b/, 'fr'],
+  [/\b(english|anglais|eng|vo)\b/, 'en'],
+  [/\b(japanese|japonais|jpn|jap)\b/, 'ja'],
+  [/\b(spanish|espagnol|espanol|castellano|spa)\b/, 'es'],
+  [/\b(german|allemand|deutsch|ger|deu)\b/, 'de'],
+  [/\b(italian|italien|italiano|ita)\b/, 'it'],
+];
+
+export function langFromTitle(title: string | undefined | null): string {
+  const t = stripAccents(title ?? '');
+  for (const [re, code] of TITLE_LANGS) if (re.test(t)) return code;
+  return '';
+}
+
+/** Langue d'une piste : balise de langue, sinon indice dans le titre. */
+export function trackLang(lang: string | undefined | null, title?: string | null): string {
+  return normalizeLang(lang) || langFromTitle(title);
+}
+
 export function langName(code: string): string {
   const c = normalizeLang(code);
   return LANG_NAMES[c] ?? (c ? c.toUpperCase() : 'Inconnue');
@@ -72,10 +95,12 @@ export interface SubtitleTrack {
 }
 
 export function audioTrackLabel(t: { lang: string; title?: string; codec?: string; channels?: number }): string {
-  const parts = [t.lang ? langName(t.lang) : t.title || 'Piste audio'];
-  if (t.title && t.lang && !t.title.toLowerCase().includes(langName(t.lang).toLowerCase())) parts[0] += ' (' + t.title + ')';
+  const ln = t.lang ? langName(t.lang) : '';
+  const title = (t.title ?? '').trim();
+  // Le titre du fichier (« Français VFF ») est plus précis que le nom de langue seul.
+  const base = title && ln ? (stripAccents(title).includes(stripAccents(ln)) ? title : ln + ' (' + title + ')') : ln || title || 'Piste audio';
   const tech = [codecLabel(t.codec), channelsLabel(t.channels)].filter(Boolean).join(' ');
-  return tech ? parts[0] + ' · ' + tech : parts[0];
+  return tech ? base + ' · ' + tech : base;
 }
 
 const IMAGE_SUBS = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'pgssub', 'dvdsub']);
@@ -95,11 +120,11 @@ export function parseProbe(probe: Probe | null): ProbeTracks {
   if (!probe) return empty;
   const video = probe.streams.find((s) => s.track === 'video');
   const audio = probe.streams.filter((s) => s.track === 'audio').map((s: ProbeStream, i) => {
-    const lang = normalizeLang(s.lang ?? s.language);
+    const lang = trackLang(s.lang ?? s.language, s.title ?? s.label);
     return { id: 'a' + (s.id ?? i), lang, codec: (s.codec ?? '').toLowerCase(), channels: s.channels ?? 0, selected: false, label: audioTrackLabel({ lang, title: s.title ?? s.label, codec: s.codec, channels: s.channels }) };
   });
   const subtitles = probe.streams.filter((s) => s.track === 'subtitle').map((s: ProbeStream, i): SubtitleTrack => {
-    const lang = normalizeLang(s.lang ?? s.language);
+    const lang = trackLang(s.lang ?? s.language, s.title ?? s.label);
     const codec = (s.codec ?? '').toLowerCase();
     const forced = s.forced === true || /forc/i.test(s.title ?? s.label ?? '');
     return {
@@ -145,4 +170,13 @@ export function pickDefaultSubtitle(tracks: readonly SubtitleTrack[], preferredL
   // Hors « forcés » d'abord : une piste complète vaut mieux qu'une piste qui ne traduit que les passages étrangers.
   const full = mine.find(({ t }) => !t.forced);
   return (full ?? mine[0]).i;
+}
+
+/** Sous-titres mémorisés pour le titre : `off`, ou première piste complète dans la langue mémorisée (-1 si absente). */
+export function pickRememberedSubtitle(tracks: readonly SubtitleTrack[], code: string): number {
+  if (code === 'off') return -1;
+  const lang = normalizeLang(code);
+  const mine = tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.renderable && t.lang === lang);
+  const full = mine.find(({ t }) => !t.forced);
+  return (full ?? mine[0])?.i ?? -1;
 }

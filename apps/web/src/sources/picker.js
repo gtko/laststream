@@ -27,6 +27,8 @@ function itemHtml(v, opts) {
   v.hdr.forEach((c) => l1.push('<span class="s-hdr s-hdr-' + c.replace('+', 'p') + '">' + esc(c) + '</span>'));
   if (v.codec) l1.push('<span class="s-codec">' + esc(v.codec) + '</span>');
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
+  const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
+    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="Le serveur de streaming convertit le flux (HEVC, DTS, REMUX…)">Conversion</span>' : '';
 
   const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? 'Langue vérifiée dans le fichier' : 'Langue annoncée par le nom de la release') + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
   const l2 = (v.audio ? '<span class="s-audio">' + esc(v.audio) + '</span>' : '') + langs;
@@ -48,7 +50,7 @@ function itemHtml(v, opts) {
   return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable ? '' : ' disabled') + '>' +
     (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
     (opts.current ? '<span class="s-cur">En cours de lecture</span>' : '') +
-    '<span class="s-l1">' + l1.join('') + st + warn + '</span>' +
+    '<span class="s-l1">' + l1.join('') + web + st + warn + '</span>' +
     (l2 ? '<span class="s-l2">' + l2 + '</span>' : '') +
     (l3.length ? '<span class="s-l3">' + l3.join('<i aria-hidden="true">·</i>') + '</span>' : '') +
     (l4 ? '<span class="s-l4">' + l4 + '</span>' : '') +

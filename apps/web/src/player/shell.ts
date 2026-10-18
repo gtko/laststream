@@ -1,4 +1,4 @@
-import { normalizeLang, audioTrackLabel, codecLabel, langName, type AudioTrack, type SubtitleTrack } from './tracks';
+import { trackLang, audioTrackLabel, codecLabel, langName, type AudioTrack, type SubtitleTrack } from './tracks';
 import { setShellServerAddress } from './server';
 
 /* Coque Windows (Qt + mpv) : détection du transport et conversion des données mpv.
@@ -87,14 +87,14 @@ const IMAGE = new Set(['pgs', 'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle
 
 export function mpvAudioTracks(list: readonly MpvTrack[]): AudioTrack[] {
   return list.filter((t) => t.type === 'audio').map((t) => {
-    const lang = normalizeLang(t.lang);
+    const lang = trackLang(t.lang, t.title);
     return { id: String(t.id), lang, codec: (t.codec ?? '').toLowerCase(), channels: t['audio-channels'] ?? 0, selected: !!t.selected, label: audioTrackLabel({ lang, title: t.title, codec: t.codec, channels: t['audio-channels'] }) };
   });
 }
 
 export function mpvSubtitleTracks(list: readonly MpvTrack[]): SubtitleTrack[] {
   return list.filter((t) => t.type === 'sub').map((t): SubtitleTrack => {
-    const lang = normalizeLang(t.lang);
+    const lang = trackLang(t.lang, t.title);
     const codec = (t.codec ?? '').toLowerCase();
     return {
       id: String(t.id), lang, codec, forced: !!t.forced, origin: 'embedded', renderable: true, engineId: t.id, selected: !!t.selected,

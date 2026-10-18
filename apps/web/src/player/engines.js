@@ -2,7 +2,7 @@
  *   on(event, fn), load({ url, hls, startAt }), play(), pause(), seek(s), setVolume(0..1), setMuted(b), setRate(r),
  *   state(), audioTracks(), setAudioTrack(id), subtitleTracks(), setSubtitleTrack(id|null), nativeCues(), destroy()
  * Événements : state, ended, error, tracks, ready, buffering. */
-import { audioTrackLabel, normalizeLang, langName } from './tracks';
+import { audioTrackLabel, langName, trackLang } from './tracks';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
 
 class Emitter {
@@ -76,9 +76,16 @@ export class HtmlEngine extends Emitter {
         fragLoadingMaxRetry: 5,
         subtitleDisplay: false,
         enableWebVTT: true,
+        // Le chargement ne démarre qu'après le choix de la piste audio : sinon la piste par défaut du fichier (souvent la VO)
+        // est transcodée pour rien avant de basculer.
+        autoStartLoad: false,
       });
       this.hls = h;
-      h.on(H.Events.MANIFEST_PARSED, () => { safePlay(v); this.emit('tracks'); });
+      h.on(H.Events.MANIFEST_PARSED, () => {
+        this.emit('tracks'); // la session choisit la piste audio (`hls.audioTrack`) avant la première requête
+        h.startLoad(startAt > 0 ? startAt : -1);
+        safePlay(v);
+      });
       h.on(H.Events.AUDIO_TRACKS_UPDATED, () => this.emit('tracks'));
       h.on(H.Events.AUDIO_TRACK_SWITCHED, () => this.emit('tracks'));
       h.on(H.Events.SUBTITLE_TRACKS_UPDATED, () => this.emit('tracks'));
@@ -141,7 +148,7 @@ export class HtmlEngine extends Emitter {
   audioTracks() {
     if (this.hls && this.hls.audioTracks && this.hls.audioTracks.length) {
       return this.hls.audioTracks.map((t, i) => {
-        const lang = normalizeLang(t.lang || t.language);
+        const lang = trackLang(t.lang || t.language, t.name);
         const ch = parseInt(t.channels, 10) || 0;
         return { id: String(i), lang, codec: String(t.audioCodec || '').toLowerCase(), channels: ch, selected: i === this.hls.audioTrack, label: audioTrackLabel({ lang, title: t.name, codec: t.audioCodec, channels: ch }) };
       });
@@ -150,7 +157,7 @@ export class HtmlEngine extends Emitter {
     if (al && al.length) {
       return Array.from({ length: al.length }, (_, i) => {
         const t = al[i];
-        const lang = normalizeLang(t.language);
+        const lang = trackLang(t.language, t.label);
         return { id: String(i), lang, codec: '', channels: 0, selected: !!t.enabled, label: audioTrackLabel({ lang, title: t.label }) };
       });
     }
@@ -168,7 +175,7 @@ export class HtmlEngine extends Emitter {
   subtitleTracks() {
     if (!this.hls || !this.hls.subtitleTracks) return [];
     return this.hls.subtitleTracks.map((t, i) => {
-      const lang = normalizeLang(t.lang);
+      const lang = trackLang(t.lang, t.name);
       return { id: 'h' + i, lang, codec: 'webvtt', forced: !!t.forced, origin: 'embedded', renderable: true, engineId: i, selected: i === this.hlsSubIndex, label: (lang ? langName(lang) : t.name || 'Sous-titres') + (t.forced ? ' (forcés)' : '') };
     });
   }
@@ -190,7 +197,8 @@ export class HtmlEngine extends Emitter {
       const t = tracks[i];
       if ((t.kind === 'subtitles' || t.kind === 'captions') && t.mode !== 'disabled') {
         if (t.mode === 'showing') t.mode = 'hidden';
-        return t.cues ? Array.from(t.cues).map((c) => ({ start: c.startTime, end: c.endTime, text: c.text })) : [];
+        // hls.js ajoute les cues segment par segment, pas forcément dans l'ordre : la recherche dichotomique exige un tri.
+        return t.cues ? Array.from(t.cues).map((c) => ({ start: c.startTime, end: c.endTime, text: c.text })).sort((x, y) => x.start - y.start) : [];
       }
     }
     return [];

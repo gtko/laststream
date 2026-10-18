@@ -16,6 +16,7 @@ import { chooseEngine, detectCaps } from './engine';
 import { HtmlEngine, MpvEngine } from './engines.js';
 import { fetchExternalSubtitles } from './extsubs';
 import { StallWatch, failoverOrder } from './failover';
+import { getMemory, remember } from './memory';
 import { keyToAction, stepVolume } from './keys';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { connectShell } from './shell';
@@ -25,7 +26,7 @@ import {
   serverAlive, serverBase, subtitlesVttUrl,
 } from './server';
 import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, stepOffset, writeSubStyle } from './subs';
-import { parseProbe, pickDefaultAudio, pickDefaultSubtitle } from './tracks';
+import { parseProbe, pickDefaultAudio, pickDefaultSubtitle, pickRememberedSubtitle } from './tracks';
 import { createPlayerUI } from './ui.js';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
@@ -40,6 +41,12 @@ let caps = null;
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
 const storeSet = (k, v) => { try { globalThis.localStorage.setItem(k, v); } catch (_) { /* ignoré */ } };
+
+/** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
+function audioPreference() {
+  const mem = P ? getMemory(P.req.key) : {};
+  return [mem.audio, preferredLang()].filter(Boolean);
+}
 
 function getCaps() {
   if (!caps) {
@@ -224,8 +231,8 @@ const nextRef = () => (P && P.req.type === 'tv' && P.cur.season != null ? nextEp
 
 async function resolveMedia(view) {
   const s = view.stream;
+  const up = await serverAlive();
   const base = serverBase();
-  const up = await serverAlive(base);
   const hints = s.behaviorHints || {};
   if (typeof s.url === 'string' && /^https?:\/\//i.test(s.url)) {
     const ph = hints.proxyHeaders;
@@ -280,6 +287,7 @@ async function playView(view, startAt) {
     const choice = chooseEngine({
       torrent: media.torrent, shell: !!shell, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
       name: view.filename || media.url, forceTranscoding: p.forceHls,
+      preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
     });
     p.choice = choice;
     ui.setLoading(p.meta.title || 'Lecture', 'Moteur : ' + choice.label + '…', lx);
@@ -361,7 +369,7 @@ function applyDefaultTracks(force) {
   const subs = allSubtitleTracks();
   if (!audio.length && !subs.length && !force) return;
   p.defaultsDone = true;
-  const pref = [preferredLang()];
+  const pref = audioPreference();
   let audioLang = audio.length ? '' : (p.view.hasFrench ? 'fr' : '');
   if (audio.length) {
     const i = pickDefaultAudio(audio, pref);
@@ -372,7 +380,8 @@ function applyDefaultTracks(force) {
   }
   p.audioLang = audioLang;
   const style = p.subs.style;
-  const idx = pickDefaultSubtitle(subs, pref[0], audioLang, style.mode);
+  const mem = getMemory(p.req.key);
+  const idx = mem.sub ? pickRememberedSubtitle(subs, mem.sub) : pickDefaultSubtitle(subs, preferredLang(), audioLang, style.mode);
   if (idx >= 0) selectSubtitle(subs[idx].id, true);
   ensureExternalSubs(true);
 }
@@ -396,7 +405,8 @@ async function ensureExternalSubs(auto) {
     p.subs.external = list;
     p.subs.loadedFor = view.index;
     if (auto && p.subs.selectedId === null && p.defaultsDone) {
-      const idx = pickDefaultSubtitle(allSubtitleTracks(), preferredLang(), p.audioLang || '', p.subs.style.mode);
+      const mem = getMemory(p.req.key);
+      const idx = mem.sub ? pickRememberedSubtitle(allSubtitleTracks(), mem.sub) : pickDefaultSubtitle(allSubtitleTracks(), preferredLang(), p.audioLang || '', p.subs.style.mode);
       if (idx >= 0) selectSubtitle(allSubtitleTracks()[idx].id, true);
     }
   } finally {
@@ -425,8 +435,9 @@ async function selectSubtitle(id, quiet) {
   } else {
     p.engine.setSubtitleTrack(null);
     try {
+      const up = await serverAlive();
       const base = serverBase();
-      const via = (await serverAlive(base)) && track.origin === 'external' ? subtitlesVttUrl(base, track.url) : track.url;
+      const via = up && track.origin === 'external' ? subtitlesVttUrl(base, track.url) : track.url;
       let text = '';
       try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
       if (P === p && s.selectedId === id) s.cues = parseSubtitles(text, track.url);
@@ -634,9 +645,14 @@ function onAction(act, data) {
     case 'resume': chooseResume(true); break;
     case 'restart': chooseResume(false); break;
     case 'retry': { const v = P.view; P.tried = new Set(); P.attempts = 0; playView(v, st.time > 5 ? st.time : 0); break; }
-    case 'audio': P.engine.setAudioTrack(data.id); P.watch.reset(Date.now()); setTimeout(() => ui.refreshPanel(), 200); ui.toast('Audio : ' + ((P.engine.audioTracks().find((t) => t.id === data.id) || {}).label || '')); break;
+    case 'audio': { const t = P.engine.audioTracks().find((x) => x.id === data.id); if (t && t.lang) remember(P.req.key, { audio: t.lang }); P.engine.setAudioTrack(data.id); } P.watch.reset(Date.now()); setTimeout(() => ui.refreshPanel(), 200); ui.toast('Audio : ' + ((P.engine.audioTracks().find((t) => t.id === data.id) || {}).label || '')); break;
     case 'force-hls': P.forceHls = true; ui.closePanel(true); ui.toast('Passage en transcodage…'); P.tried = new Set(); playView(P.view, st.time > 5 ? st.time : 0); break;
-    case 'sub': selectSubtitle(data.id || null); break;
+    case 'sub': {
+      const t = data.id ? allSubtitleTracks().find((x) => x.id === data.id) : null;
+      remember(P.req.key, { sub: t ? t.lang || 'off' : 'off' });
+      selectSubtitle(data.id || null);
+      break;
+    }
     case 'suboffset': P.subs.offset = stepOffset(P.subs.offset, Number(data.by)); ui.refreshPanel(); break;
     case 'substyle': updateStyle({ [data.key]: data.val }); break;
     case 'substep': { const cur = P.subs.style; updateStyle({ [data.key]: cur[data.key] + Number(data.by) }); break; }

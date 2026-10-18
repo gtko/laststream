@@ -1,4 +1,6 @@
 import { copiesOf, formatBitrate, formatSize, getQualityGroupKey, languageLabel, type QualityGroupKey } from '../data/sources';
+import type { MediaCaps } from '../player/server';
+import { webPlayback, type WebPlayback } from './direct';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
 
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
@@ -49,6 +51,8 @@ export interface SourceView {
   /** Indice « lecture navigateur incertaine » (HEVC, REMUX, DTS/TrueHD). */
   notWebReady: boolean;
   score: number;
+  /** Lecture directe dans le navigateur, conversion nécessaire, ou inconnu (renseigné par `withWebPlayback`). */
+  web: WebPlayback;
 }
 
 const QUALITY_BADGE: Record<Resolution, string> = {
@@ -230,6 +234,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     isTorrent: torrentOnly,
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,
+    web: 'unknown',
   };
 }
 
@@ -242,4 +247,9 @@ export function copySignature(v: SourceView): string {
   const i = v.info;
   if (!i) return 'x:' + v.index;
   return [i.resolution, i.source, i.codec, [...i.languages].sort().join('+')].join('|');
+}
+
+/** Renseigne `web` d'après les capacités réelles du navigateur ; `null` (coque Windows) : inconnu partout. */
+export function withWebPlayback(views: readonly SourceView[], caps: MediaCaps | null): SourceView[] {
+  return views.map((v) => ({ ...v, web: caps ? webPlayback(v.stream, v.info, caps) : 'unknown' }));
 }

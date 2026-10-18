@@ -1,4 +1,4 @@
-import { BANDWIDTH_HEADROOM, pickAutoplay, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
+import { BANDWIDTH_HEADROOM, matchesLanguage, pickAutoplay, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
 import type { Lang } from '../data/stream';
 import type { SourceView } from './info';
 
@@ -96,20 +96,49 @@ export function recommendationReason(v: SourceView, bwKbps: number | null, prefe
   return 'Meilleure ' + lang + (fit || ' disponible') + tail;
 }
 
+export interface RecommendOptions {
+  /** Navigateur : préfère les sources qui se lisent sans conversion (inutile dans la coque Windows, où mpv lit tout). */
+  preferDirect?: boolean;
+}
+
+const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1080p': 2, '720p': 1, SD: 0, other: 0 };
+
+/** Rang d'une source dans le navigateur : sa résolution, moins un cran si elle exige une conversion. */
+export function webRank(v: SourceView): number {
+  return TIER[v.group] - (v.web === 'convert' ? 1 : 0);
+}
+
 /**
  * Source recommandée parmi les lisibles : meilleure qui tient dans 80 % du débit, dans la langue préférée si possible.
- * Si aucune ne tient, la moins lourde est proposée avec un avertissement.
+ * Dans le navigateur (`preferDirect`), à langue égale la lecture directe passe avant la conversion : un 4K HEVC REMUX ne
+ * l'emporte pas sur un 1080p lisible directement. Si aucune ne tient, la moins lourde est proposée avec un avertissement.
  */
-export function recommend(views: readonly SourceView[], bwKbps: number | null, preferred: Lang = 'fr'): Recommendation | null {
+export function recommend(views: readonly SourceView[], bwKbps: number | null, preferred: Lang = 'fr', opts: RecommendOptions = {}): Recommendation | null {
   const playable = views.filter((v) => v.playable);
   if (!playable.length) return null;
-  const streams = playable.map((v) => v.stream);
-  const pick = pickAutoplay(streams, bwKbps, preferred);
-  if (pick) {
-    const view = playable[streams.indexOf(pick.stream)];
-    return { view, languageFallback: pick.languageFallback, reason: recommendationReason(view, bwKbps, preferred, pick.languageFallback ? pick.fallbackReason ?? 'no-vf' : false) };
+  const budget = bwKbps === null || !Number.isFinite(bwKbps) ? Infinity : Math.max(0, bwKbps) * BANDWIDTH_HEADROOM;
+  const fits = (v: SourceView): boolean => v.bitrateKbps === null || v.bitrateKbps <= budget;
+  const langOk = (v: SourceView): boolean => !!v.info && matchesLanguage(v.info, preferred);
+  if (opts.preferDirect) {
+    const fitting = playable.filter((v) => v.info && fits(v));
+    if (fitting.length) {
+      const webOrder = (a: SourceView, b: SourceView): number =>
+        webRank(b) - webRank(a) || (b.web === 'direct' ? 1 : 0) - (a.web === 'direct' ? 1 : 0) || b.score - a.score || a.index - b.index;
+      const withLang = fitting.filter(langOk).sort(webOrder);
+      const pool = withLang.length ? withLang : [...fitting].sort(webOrder);
+      const view = pool[0];
+      const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.web === 'convert' ? ' · avec conversion' : '') };
+    }
+  } else {
+    const streams = playable.map((v) => v.stream);
+    const pick = pickAutoplay(streams, bwKbps, preferred);
+    if (pick) {
+      const view = playable[streams.indexOf(pick.stream)];
+      return { view, languageFallback: pick.languageFallback, reason: recommendationReason(view, bwKbps, preferred, pick.languageFallback ? pick.fallbackReason ?? 'no-vf' : false) };
+    }
   }
   const lightest = [...playable].sort((a, b) => (a.bitrateKbps ?? Infinity) - (b.bitrateKbps ?? Infinity) || b.score - a.score)[0];
-  const budget = bwKbps ? Math.round((bwKbps * BANDWIDTH_HEADROOM) / 1000) : 0;
-  return { view: lightest, languageFallback: !lightest.hasFrench, reason: 'Aucune source ne tient dans ta connexion' + (budget ? ' (' + budget + ' Mb/s utiles)' : '') + ' : la moins lourde est proposée' };
+  const usable = budget === Infinity ? 0 : Math.round(budget / 1000);
+  return { view: lightest, languageFallback: !lightest.hasFrench, reason: 'Aucune source ne tient dans ta connexion' + (usable ? ' (' + usable + ' Mb/s utiles)' : '') + ' : la moins lourde est proposée' };
 }

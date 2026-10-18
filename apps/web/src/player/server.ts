@@ -10,10 +10,38 @@ export function setShellServerAddress(addr: string): void {
   shellAddress = typeof addr === 'string' ? addr : '';
 }
 
-export function serverBase(): string {
+/** Chemin du relais same-origin vers le serveur de streaming (voir vite.config.ts). */
+export const PROXY_PATH = '/_ss';
+
+function customBase(): string {
   let custom = '';
   try { custom = globalThis.localStorage?.getItem(SERVER_STORAGE_KEY) ?? ''; } catch { /* stockage indisponible */ }
-  return (custom || shellAddress || DEFAULT_SERVER).replace(/\/+$/, '');
+  return (custom || shellAddress).replace(/\/+$/, '');
+}
+
+/**
+ * Le serveur de streaming n'ajoute les en-têtes CORS que pour strem.io, stremio.com et sa propre origine : depuis une
+ * autre origine (localhost:8080, adresse du réseau local…), le navigateur refuse sondage, playlists HLS et sous-titres.
+ */
+export function corsFriendlyOrigin(origin: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1):11470$/.test(origin) || /^https:\/\/([a-z0-9-]+\.)*(strem\.io|stremio\.com)$/.test(origin);
+}
+
+/** Adresses à essayer, dans l'ordre : réglage ou coque, direct si l'origine est admise, relais same-origin, direct. */
+export function serverCandidates(origin = globalThis.location?.origin ?? ''): string[] {
+  const out: string[] = [];
+  const add = (b: string): void => { if (b && !out.includes(b)) out.push(b); };
+  add(customBase());
+  const proxy = /^https?:/.test(origin) ? origin + PROXY_PATH : '';
+  if (corsFriendlyOrigin(origin)) { add(DEFAULT_SERVER); add(proxy); } else { add(proxy); add(DEFAULT_SERVER); }
+  return out;
+}
+
+let resolved = '';
+
+/** Adresse retenue par le dernier sondage (sinon le réglage, la coque ou l'adresse par défaut). */
+export function serverBase(): string {
+  return resolved || customBase() || DEFAULT_SERVER;
 }
 
 const join = (base: string, path: string): string => base.replace(/\/+$/, '') + path;
@@ -35,18 +63,22 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
   }
 }
 
-let aliveCache: { base: string; at: number; ok: boolean } | null = null;
-export function resetServerCache(): void { aliveCache = null; }
+let aliveCache: { at: number; ok: boolean } | null = null;
+export function resetServerCache(): void { aliveCache = null; resolved = ''; }
 
-/** Le serveur répond-il ? (réponse mise en cache 30 s) */
-export async function serverAlive(base = serverBase(), now = Date.now()): Promise<boolean> {
-  if (aliveCache && aliveCache.base === base && now - aliveCache.at < 30_000) return aliveCache.ok;
+/** Le serveur répond-il ? Teste les adresses candidates et retient la première qui répond (résultat gardé 30 s). */
+export async function serverAlive(now = Date.now()): Promise<boolean> {
+  if (aliveCache && now - aliveCache.at < 30_000) return aliveCache.ok;
   let ok = false;
-  try {
-    await getJson(join(base, '/settings'), 2500);
-    ok = true;
-  } catch { /* injoignable */ }
-  aliveCache = { base, at: now, ok };
+  for (const base of serverCandidates()) {
+    try {
+      await getJson(join(base, '/settings'), 2500);
+      resolved = base;
+      ok = true;
+      break;
+    } catch { /* adresse suivante */ }
+  }
+  aliveCache = { at: now, ok };
   return ok;
 }
 

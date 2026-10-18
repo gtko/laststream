@@ -1,4 +1,5 @@
 import type { MediaCaps, Probe } from './server';
+import { trackLang } from './tracks';
 
 /* Choix du moteur de lecture : mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
  * Logique pure (capacités du navigateur injectées), testée. */
@@ -26,6 +27,15 @@ export interface EngineInput {
   /** Nom de fichier ou URL, pour l'extension quand il n'y a pas de probe. */
   name: string;
   forceTranscoding?: boolean;
+  /** Langue audio souhaitée (code à deux lettres). */
+  preferredLang?: string;
+  /** `video.audioTracks` existe : le navigateur peut changer de piste en lecture directe. */
+  audioTracksSupported?: boolean;
+}
+
+export interface PlayOptions {
+  preferredLang?: string;
+  audioTracksSupported?: boolean;
 }
 
 /** Équivalences de noms de codecs (ffprobe → capacités du navigateur). */
@@ -39,17 +49,27 @@ const inList = (list: readonly string[], codec: string | undefined): boolean => 
  * Le navigateur peut-il lire ce fichier tel quel ? Même règle que stremio-video : format conteneur et codecs
  * pris en charge, pas de sous-titres embarqués, et au plus une piste audio lisible (HTML5 ne change pas de piste).
  */
-export function canPlayProbe(probe: Probe, caps: MediaCaps): boolean {
+export function canPlayProbe(probe: Probe, caps: MediaCaps, opts: PlayOptions = {}): boolean {
   const format = probe.format?.name ?? '';
   const formatOk = caps.formats.some((f) => format.includes(f));
+  const audioOk = (s: { channels?: number; codec?: string }): boolean => (s.channels ?? 2) <= caps.maxAudioChannels && inList(caps.audioCodecs, s.codec);
   const streamsOk = probe.streams.every((s) => {
-    if (s.track === 'audio') return (s.channels ?? 2) <= caps.maxAudioChannels && inList(caps.audioCodecs, s.codec);
+    if (s.track === 'audio') return audioOk(s);
     if (s.track === 'video') return inList(caps.videoCodecs, s.codec);
     return true;
   });
   const hasSubs = probe.streams.some((s) => s.track === 'subtitle');
-  const playableAudio = probe.streams.filter((s) => s.track === 'audio' && inList(caps.audioCodecs, s.codec));
-  return formatOk && streamsOk && !hasSubs && playableAudio.length < 2;
+  const audios = probe.streams.filter((s) => s.track === 'audio');
+  const playableAudio = audios.filter((s) => inList(caps.audioCodecs, s.codec));
+  // Sans API de pistes audio, HTML5 ne peut pas changer de langue : plusieurs pistes lisibles imposent le HLS.
+  if (!opts.audioTracksSupported && playableAudio.length >= 2) return false;
+  // Une piste dans la langue souhaitée, qui n'est pas celle par défaut du fichier : seule la lecture directe avec
+  // `audioTracks` (ou le transcodage) permet de l'atteindre.
+  if (audios.length >= 2 && opts.preferredLang) {
+    const want = audios.findIndex((s) => trackLang(s.language ?? s.lang, s.title) === opts.preferredLang);
+    if (want > 0 && !(opts.audioTracksSupported && audioOk(audios[want]))) return false;
+  }
+  return formatOk && streamsOk && !hasSubs;
 }
 
 /** Sans probe : extension du fichier + indice de l'addon. */
@@ -63,7 +83,7 @@ export function chooseEngine(i: EngineInput): EngineChoice {
   if (i.shell) {
     return { engine: 'mpv', viaServer: i.torrent, label: 'mpv (application Windows)' + (i.torrent ? ' · torrent' : ''), reason: 'Coque Windows détectée : mpv lit tous les formats.' };
   }
-  const playable = i.forceTranscoding ? false : i.probe ? canPlayProbe(i.probe, i.caps) : guessWebPlayable(i.name, i.notWebReady);
+  const playable = i.forceTranscoding ? false : i.probe ? canPlayProbe(i.probe, i.caps, { preferredLang: i.preferredLang, audioTracksSupported: i.audioTracksSupported }) : guessWebPlayable(i.name, i.notWebReady);
   if (playable || !i.serverUp) {
     const t = i.torrent ? 'Torrent · ' : '';
     return {
@@ -94,6 +114,7 @@ export function detectCaps(canPlayType: (mime: string) => string, opts: { chromi
   a('eac3', 'audio/mp4; codecs="ec-3"');
   a('vorbis', 'audio/mp4; codecs="vorbis"');
   a('opus', 'audio/mp4; codecs="opus"');
+  a('flac', 'audio/mp4; codecs="flac"');
   const formats = ['mp4'];
   if (opts.chromium) formats.push('matroska,webm', 'webm');
   return { formats, videoCodecs: [...new Set(videoCodecs)], audioCodecs: [...new Set(audioCodecs)], maxAudioChannels: opts.maxChannels };
