@@ -167,6 +167,21 @@ describe('mpv par la coque', () => {
     expect(container.style.background).toBe('');
   });
 
+  it('muet : l’état suit le clic tout de suite (icône du bouton son)', () => {
+    const { sent, engine } = setup();
+    let states = 0;
+    engine.on('state', () => { states += 1; });
+    engine.setMuted(true);
+    expect(engine.state().muted).toBe(true);
+    expect(sent).toContainEqual(['mpv-set-prop', ['mute', 'yes']]);
+    engine.setMuted(false);
+    expect(engine.state().muted).toBe(false);
+    engine.setMuted(true);
+    engine.setVolume(0.5);
+    expect(engine.state()).toMatchObject({ muted: false, volume: 0.5 });
+    expect(states).toBe(4);
+  });
+
   it('piste audio : `aid` est envoyé comme nombre et le panneau suit le changement', () => {
     const { sent, handlers, engine } = setup();
     handlers.get('mpv-prop-change')!({ name: 'mpv-version', data: 'mpv 0.39.0' });

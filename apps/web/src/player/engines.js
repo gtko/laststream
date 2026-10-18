@@ -293,8 +293,9 @@ export class MpvEngine extends Emitter {
   play() { this.ipc.send('mpv-set-prop', ['pause', false]); }
   pause() { this.ipc.send('mpv-set-prop', ['pause', true]); }
   seek(t) { this.p['time-pos'] = Math.max(0, t); this.ipc.send('mpv-set-prop', ['time-pos', Math.max(0, t)]); }
-  setVolume(v) { this.ipc.send('mpv-set-prop', ['mute', 'no']); this.ipc.send('mpv-set-prop', ['volume', Math.round(v * 100)]); }
-  setMuted(m) { this.ipc.send('mpv-set-prop', ['mute', m ? 'yes' : 'no']); }
+  // Mise à jour immédiate de l'état : l'icône suit le clic sans attendre (ni dépendre de) l'écho de mpv.
+  setVolume(v) { this.ipc.send('mpv-set-prop', ['mute', 'no']); this.ipc.send('mpv-set-prop', ['volume', Math.round(v * 100)]); this.p.mute = false; this.p.volume = Math.round(v * 100); this.emit('state'); }
+  setMuted(m) { this.ipc.send('mpv-set-prop', ['mute', m ? 'yes' : 'no']); this.p.mute = !!m; this.emit('state'); }
   setRate(r) { this.ipc.send('mpv-set-prop', ['speed', r]); }
 
   state() {
@@ -309,7 +310,7 @@ export class MpvEngine extends Emitter {
       buffering: !!p['paused-for-cache'],
       buffered: cache ? [[0, cache]] : [],
       volume: (p.volume || 0) / 100,
-      muted: p.mute === true || p.mute === 'yes',
+      muted: p.mute === true || p.mute === 'yes' || p.mute === 1,
       rate: p.speed || 1,
       pip: false,
     };
