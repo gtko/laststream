@@ -1,5 +1,6 @@
 /* Badges des formats (vidéo, HDR, audio, canaux) et pastille d'adéquation au débit, pour le sélecteur de sources.
- * Badges maison : libellés, couleurs et pictogrammes originaux, aucun logo de marque. Une valeur inconnue reste un texte
+ * Logos officiels (Wikimedia Commons, dans public/badges/, sources et marques dans SOURCES.md) pour les formats qui en
+ * ont un ; sinon badges maison : libellés, couleurs et pictogrammes originaux. Une valeur inconnue reste un texte
  * neutre (mêmes classes qu'avant). Fonctions pures, testées. */
 
 /** Données d'une source : libellés (picker) ou valeurs brutes lastAddon (h264, x265, DDP, DTS:X…). */
@@ -93,8 +94,34 @@ export const escapeHtml = (s: string): string => String(s).replace(/[&<>"']/g, (
 
 const match = (rules: readonly Rule[], text: string): Rule | null => rules.find((r) => r.re.test(text)) ?? null;
 
+/**
+ * Logos officiels publiés dans public/badges/ (fichiers, licences et marques : public/badges/SOURCES.md). `mono` : logo noir
+ * sur fond transparent, éclairci en CSS (.bdg-mono). Les formats absents d'ici gardent le badge maison.
+ */
+const LOGOS: Record<string, { file: string; mono?: boolean }> = {
+  dv: { file: 'dolby-vision.svg', mono: true },
+  atmos: { file: 'dolby-atmos.svg', mono: true },
+  dd: { file: 'dolby-digital.svg', mono: true },
+  ddp: { file: 'dolby-digital-plus.svg', mono: true },
+  truehd: { file: 'dolby-truehd.svg', mono: true },
+  dtshdma: { file: 'dts-hd-ma.svg' },
+  dts: { file: 'dts.svg' },
+  hdr10: { file: 'hdr10.svg', mono: true },
+  hdr10p: { file: 'hdr10plus.svg', mono: true },
+  av1: { file: 'av1.svg' },
+  avc: { file: 'avc.svg' },
+  opus: { file: 'opus.svg' },
+  aac: { file: 'aac.svg' },
+};
+
 function chip(rule: Pick<Rule, 'id' | 'label' | 'name'>): string {
-  return '<span class="bdg bdg-' + rule.id + '" role="img" aria-label="' + escapeHtml(rule.name) + '" title="' + escapeHtml(rule.name) + '">' +
+  const aria = ' role="img" aria-label="' + escapeHtml(rule.name) + '" title="' + escapeHtml(rule.name) + '"';
+  const logo = LOGOS[rule.id];
+  if (logo) {
+    return '<span class="bdg bdg-' + rule.id + ' bdg-logo' + (logo.mono ? ' bdg-mono' : '') + '"' + aria + '>' +
+      '<img class="bdg-img" src="/badges/' + logo.file + '" alt="" decoding="async"></span>';
+  }
+  return '<span class="bdg bdg-' + rule.id + '"' + aria + '>' +
     (ICONS[rule.id] ?? '') + '<span class="bdg-t" aria-hidden="true">' + escapeHtml(rule.label) + '</span></span>';
 }
 
