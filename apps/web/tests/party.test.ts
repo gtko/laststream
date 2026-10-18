@@ -1,4 +1,4 @@
-// Watch party : synchronisation (fonctions pures), client de protocole (messages, reconnexion), contrôleur (l'hôte seul pilote),
+// Watch party : synchronisation (fonctions pures), client de protocole (messages, reconnexion), contrôleur (lecture partagée),
 // choix de la version par empreinte, profils enfants.
 import { describe, expect, it, vi } from 'vitest';
 import { PartyClient, BACKOFF_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
@@ -173,25 +173,25 @@ describe('client du salon', () => {
     expect(client.you).toEqual({ username: 'bob', host: true, muted: true });
   });
 
-  it('seul l’hôte envoie ctl / episode / kick / mute ; tous peuvent écrire, réagir et signaler', async () => {
+  it('lecture partagée : tous envoient play, pause, seek ; seuls l’hôte envoie sync, episode, kick, mute ; tous écrivent, réagissent et signalent', async () => {
     const { client, sockets, flush } = setup();
     client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
     const before = sockets[0].sent.length;
-    expect(client.control('play', 10)).toBe(false);
+    expect(client.control('play', 10)).toBe(true);
+    expect(client.control('sync', 10)).toBe(false);
     expect(client.changeEpisode(1, 2)).toBe(false);
     expect(client.kick('alice')).toBe(false);
     expect(client.mute('alice', true)).toBe(false);
-    expect(sockets[0].sent.length).toBe(before);
     expect(client.sendChat('  salut  ')).toBe(true);
     expect(client.sendChat('   ')).toBe(false);
     expect(client.react('👍')).toBe(true);
     expect(client.report('m1', 'spam')).toBe(true);
-    expect(sockets[0].sent.slice(before)).toEqual([{ t: 'chat', text: 'salut' }, { t: 'react', emoji: '👍' }, { t: 'report', messageId: 'm1', reason: 'spam' }]);
+    expect(sockets[0].sent.slice(before)).toEqual([{ t: 'ctl', action: 'play', pos: 10 }, { t: 'chat', text: 'salut' }, { t: 'react', emoji: '👍' }, { t: 'report', messageId: 'm1', reason: 'spam' }]);
     sockets[0].recv({ t: 'host', user: 'bob' });
-    expect(client.control('seek', 61.23456)).toBe(true);
+    expect(client.control('sync', 61.23456)).toBe(true);
     expect(client.changeEpisode(1, 3, { fileName: 'x.mkv' })).toBe(true);
     expect(client.kick('alice')).toBe(true);
-    expect(sockets[0].sent.slice(-3)).toEqual([{ t: 'ctl', action: 'seek', pos: 61.235 }, { t: 'episode', season: 1, episode: 3, fingerprint: { fileName: 'x.mkv' } }, { t: 'kick', user: 'alice' }]);
+    expect(sockets[0].sent.slice(-3)).toEqual([{ t: 'ctl', action: 'sync', pos: 61.235 }, { t: 'episode', season: 1, episode: 3, fingerprint: { fileName: 'x.mkv' } }, { t: 'kick', user: 'alice' }]);
   });
 
   it('reconnexion automatique avec reprise : nouveau ticket, welcome, état et chat refaits', async () => {
@@ -313,7 +313,12 @@ async function room(host: boolean, state = { playing: false, pos: 0, at: 0 }) {
   return { ...s, ctl, setNow: (n: number) => { now = n; }, getNow: () => now, sent: () => s.sockets[0].sent.filter((m) => m.t === 'ctl' || m.t === 'episode') };
 }
 
-describe('contrôleur : l’hôte pilote', () => {
+/** Le salon diffuse un état (écho de la commande d'un participant, ou changement d'un autre), daté de maintenant. */
+function broadcast(r: { sockets: FakeSocket[]; getNow: () => number }, state: { playing: boolean; pos: number; rev: number }, by = 'alice'): void {
+  r.sockets[0].recv({ t: 'state', state: { ...state, at: r.getNow() }, serverTime: r.getNow(), by });
+}
+
+describe('contrôleur : l’hôte envoie aussi le rapport de position', () => {
   it('envoie play, pause, seek puis des rapports de position toutes les ~5 s', async () => {
     const r = await room(true);
     const p = new FakePlayer();
@@ -322,20 +327,34 @@ describe('contrôleur : l’hôte pilote', () => {
     expect(r.sent()).toEqual([]);
     p.paused_ = false; p.t = 3; r.setNow(100_100); r.ctl.tick(p);
     expect(r.sent().at(-1)).toMatchObject({ action: 'play', pos: 3 });
+    broadcast(r, { playing: true, pos: 3, rev: 1 }); // écho du salon
     p.t = 8; r.setNow(100_100 + HOST_SYNC_EVERY_MS + 100); r.ctl.tick(p);
     expect(r.sent().at(-1)).toMatchObject({ action: 'sync' });
     p.t = 600; r.setNow(r.getNow() + 100); r.ctl.tick(p); // grand saut vers l'avant
     expect(r.sent().at(-1)).toMatchObject({ action: 'seek', pos: 600 });
+    broadcast(r, { playing: true, pos: 600, rev: 2 });
     p.paused_ = true; r.setNow(r.getNow() + 100); r.ctl.tick(p);
     expect(r.sent().at(-1)).toMatchObject({ action: 'pause', pos: 600 });
   });
 
-  it('aligne le salon sur le lecteur de l’hôte dès la première mesure', async () => {
+  it('au démarrage du lecteur, le salon s’aligne sur l’hôte dès la première mesure', async () => {
     const r = await room(true, { playing: false, pos: 0, at: 0 });
     const p = new FakePlayer();
     p.paused_ = false; p.t = 42;
+    r.ctl.arm(); // lancement (ou création du salon)
     r.ctl.tick(p);
     expect(r.sent()).toEqual([{ t: 'ctl', action: 'play', pos: 42 }]);
+  });
+
+  it('reconnexion de l’hôte : l’état du salon fait foi, la pause d’un invité n’est pas défaite', async () => {
+    const r = await room(true, { playing: false, pos: 40, at: 100_000 }); // un invité a mis en pause
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 40; // le lecteur local de l'hôte tourne encore
+    r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toEqual(['pause']);
+    r.setNow(100_600); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
   });
 
   it('un lecteur pas prêt ou en chargement ne déclenche rien', async () => {
@@ -344,20 +363,88 @@ describe('contrôleur : l’hôte pilote', () => {
     p.isReady = false;
     r.ctl.tick(p);
     p.isReady = true; p.paused_ = false; p.t = 5;
-    r.ctl.tick(p); // première mesure
+    r.ctl.arm();
+    r.ctl.tick(p); // première mesure : envoie la lecture
+    broadcast(r, { playing: true, pos: 5, rev: 1 });
     p.buf = true; p.t = 5; r.setNow(r.getNow() + 3000); r.ctl.tick(p);
     expect(r.sent().filter((m) => m.action === 'seek')).toEqual([]);
   });
+
+  it('pause reçue d’un invité : le lecteur de l’hôte se met en pause et se cale, sans rien renvoyer', async () => {
+    const r = await room(true, { playing: true, pos: 50, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 50;
+    r.ctl.tick(p);
+    broadcast(r, { playing: false, pos: 52, rev: 1 }, 'bob');
+    r.setNow(100_600); r.ctl.tick(p);
+    expect(p.calls).toEqual(['pause', 'seek:52.0']);
+    r.setNow(101_200); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+  });
 });
 
-describe('contrôleur : l’invité suit, sans jamais piloter', () => {
-  it('n’envoie aucune commande de lecture, même si son lecteur bouge', async () => {
+describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il applique', () => {
+  it('action locale : la pause part au salon une fois ; le suivi ne la défait pas avant l’écho, et l’écho ne renvoie rien', async () => {
     const r = await room(false, { playing: true, pos: 100, at: 100_000 });
     const p = new FakePlayer();
-    p.paused_ = false; p.t = 0;
-    r.ctl.tick(p);
-    p.paused_ = true; p.t = 500; r.setNow(r.getNow() + 2000); r.ctl.tick(p);
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p); // en phase avec le salon : rien
     expect(r.sent()).toEqual([]);
+    p.paused_ = true; r.setNow(100_100); r.ctl.tick(p); // l'invité met en pause
+    expect(r.sent()).toEqual([{ t: 'ctl', action: 'pause', pos: 100 }]);
+    r.setNow(100_600); r.ctl.tick(p); // écho pas encore reçu : rien n'est défait
+    expect(p.calls).toEqual([]);
+    broadcast(r, { playing: false, pos: 100, rev: 1 }, 'bob'); // écho du salon
+    r.setNow(101_200); r.ctl.tick(p);
+    expect(p.calls).toEqual([]);
+    expect(r.sent()).toHaveLength(1);
+  });
+
+  it('message reçu : la pause du salon est appliquée au lecteur (pause appelée) et n’est pas renvoyée', async () => {
+    const r = await room(false, { playing: true, pos: 100, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p);
+    broadcast(r, { playing: false, pos: 100, rev: 1 }, 'alice');
+    r.setNow(100_600); r.ctl.tick(p);
+    expect(p.calls).toEqual(['pause']);
+    expect(p.paused_).toBe(true);
+    r.setNow(101_200); r.ctl.tick(p);
+    r.setNow(102_000); r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    expect(p.calls).toEqual(['pause']);
+  });
+
+  it('saut local envoyé au salon ; saut reçu appliqué au lecteur (seek appelé) sans être renvoyé', async () => {
+    const r = await room(false, { playing: true, pos: 100, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p);
+    p.t = 400; r.setNow(100_100); r.ctl.tick(p); // l'invité saute en avant pendant la lecture
+    expect(r.sent()).toEqual([{ t: 'ctl', action: 'seek', pos: 400 }]);
+    broadcast(r, { playing: true, pos: 400, rev: 1 }, 'bob');
+    r.setNow(100_500); r.ctl.tick(p); // au bon endroit : rien à faire
+    expect(r.sent()).toHaveLength(1);
+    expect(p.calls).toEqual([]);
+    r.setNow(101_200);
+    broadcast(r, { playing: true, pos: 20, rev: 2 }, 'alice'); // saut de l'hôte reçu
+    r.ctl.tick(p);
+    expect(p.calls).toEqual(['seek:20.0']);
+    r.setNow(101_800); r.ctl.tick(p);
+    expect(r.sent()).toHaveLength(1);
+  });
+
+  it('sauts rapprochés (touche maintenue) : envois espacés d’au moins 500 ms, la dernière position part', async () => {
+    const r = await room(false, { playing: true, pos: 100, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p);
+    p.t = 200; r.setNow(100_100); r.ctl.tick(p); // premier saut : envoyé tout de suite
+    p.t = 300; r.setNow(100_200); r.ctl.tick(p); // suivants : retenus
+    p.t = 400; r.setNow(100_300); r.ctl.tick(p);
+    expect(r.sent()).toEqual([{ t: 'ctl', action: 'seek', pos: 200 }]);
+    p.t = 500; r.setNow(100_600); r.ctl.tick(p); // 500 ms après le premier envoi : la position la plus récente part
+    expect(r.sent()).toEqual([{ t: 'ctl', action: 'seek', pos: 200 }, { t: 'ctl', action: 'seek', pos: 500 }]);
   });
 
   it('se cale sur la position de l’hôte : saut si grand écart, lecture si le salon joue', async () => {
