@@ -1,8 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { hasProviders, movieAvailability, releasedByDate } from '../data/released';
 import { dayDiff, todayStr } from './dates.js';
-import { getVideoLang } from '../data/prefs';
-import { pickTrailerKey } from '../data/trailers';
+import { completeVideos, includeVideoLanguages, pickTrailerKey, trailerLang } from '../data/trailers';
 import { api, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
@@ -53,7 +52,7 @@ export function pickLogo(logos, size) {
 }
 
 export function pickTrailer(videos) {
-  return pickTrailerKey(videos, getVideoLang());
+  return pickTrailerKey(videos, trailerLang());
 }
 
 export function certification(raw, type) {
@@ -126,18 +125,15 @@ export async function fetchDetail(item) {
 }
 
 /** Langues demandées pour les vidéos : la langue choisie, l'anglais, puis les vidéos sans langue. */
-export const videoLanguages = () => getVideoLang().lang + ',en,null';
+export const videoLanguages = () => includeVideoLanguages(trailerLang());
 
-/** Repli : si aucune bande-annonce n'est ressortie, une dernière requête en anglais. */
+/**
+ * Vidéos du titre, complétées si la langue choisie n'a pas de bande-annonce doublée (saison 1 pour une série,
+ * variantes régionales pour un film, anglais en dernier recours).
+ */
 export async function videosOf(raw, type, id) {
   const list = (raw.videos && raw.videos.results) || [];
-  if (pickTrailer(list)) return list;
-  try {
-    const en = await tmdb(type + '/' + id + '/videos', { language: 'en-US' });
-    return list.concat(en.results || []);
-  } catch (_) {
-    return list;
-  }
+  return completeVideos(list, type, id, trailerLang(), (path, params) => tmdb(path, params));
 }
 
 export function getDetail(item) {
