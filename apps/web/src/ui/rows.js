@@ -19,6 +19,27 @@ export function updateArrows(wrap) {
   if (next) next.hidden = max <= 2 || r.scrollLeft >= max - 2;
 }
 
+/**
+ * Change le contenu d'une rangée (`change`) sans perdre le défilement horizontal ni le focus clavier / télécommande.
+ * La carte focalisée est retrouvée par l'attribut `attr` (ex. `data-resume`) ; si elle a disparu, la carte de même rang.
+ */
+export function keepRowState(slot, change, attr) {
+  const before = slot.querySelector(ROW_SEL);
+  const left = before ? before.scrollLeft : 0;
+  const act = document.activeElement;
+  const focused = act instanceof HTMLElement && attr && act.hasAttribute(attr) && slot.contains(act) ? act : null;
+  const cards = () => Array.from(slot.querySelectorAll('[' + attr + ']'));
+  const idx = focused ? cards().indexOf(focused) : -1;
+  const id = focused ? focused.getAttribute(attr) : null;
+  change();
+  const after = slot.querySelector(ROW_SEL);
+  if (after) after.scrollLeft = left;
+  if (!focused) return;
+  const all = cards();
+  const back = all.find((el) => el.getAttribute(attr) === id) || all[Math.min(idx, all.length - 1)];
+  if (back) back.focus({ preventScroll: true });
+}
+
 export function decorateRows() {
   rowsRaf = 0;
   document.querySelectorAll(ROW_SEL).forEach((r) => {
