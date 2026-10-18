@@ -7,12 +7,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "USER_STORE", "class_name": "UserStoreDO" },
-      { "name": "PARTY_ROOM", "class_name": "PartyRoom" }
+      { "name": "PARTY_ROOM", "class_name": "PartyRoom" },
+      { "name": "METRICS", "class_name": "Metrics" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] },
-    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] }
+    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["Metrics"] }
   ],
   "kv_namespaces": [{ "binding": "CACHE" }],
   "assets": { "directory": "./tests-workers/ui", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },

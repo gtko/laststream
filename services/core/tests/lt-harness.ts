@@ -25,6 +25,8 @@ export async function startApp(options: {
   thumbs?: AppDeps['thumbs'];
   /** Relais de plages (secret + base du Worker) : `null` par défaut, jamais lu dans l'environnement pendant les tests. */
   rangeProxy?: AppDeps['rangeProxy'];
+  /** Dépendances supplémentaires (administration : métriques, caches, TV, salons, limites). */
+  extra?: Partial<AppDeps>;
 }): Promise<RunningApp> {
   const app = createApp({
     secret: SECRET,
@@ -37,6 +39,7 @@ export async function startApp(options: {
     skipDetect: options.skipDetect,
     thumbs: options.thumbs ?? { ffmpeg: null },
     rangeProxy: options.rangeProxy ?? null,
+    ...options.extra,
   });
   const server: Server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));

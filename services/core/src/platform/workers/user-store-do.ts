@@ -1,6 +1,7 @@
 import type { DurableObjectState } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
+import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
@@ -18,6 +19,7 @@ function callableNames(prototype: object): Set<string> {
 const USER_METHODS = callableNames(UserStore.prototype);
 const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
 const SOCIAL_METHODS = callableNames(SocialStore.prototype);
+const ADMIN_METHODS = callableNames(AdminStore.prototype);
 
 function dispatch(target: object, allowed: ReadonlySet<string>, method: string, args: unknown[]): unknown {
   if (!allowed.has(method)) throw new Error(`méthode inconnue : ${method}`);
@@ -34,6 +36,7 @@ export class UserStoreDO extends DurableObject {
   private readonly users: UserStore;
   private readonly skips: SkipSegmentStore;
   private readonly socialStore: SocialStore;
+  private readonly adminStore: AdminStore;
   private readonly db: SqlDb;
 
   constructor(ctx: DurableObjectState, env: unknown) {
@@ -48,6 +51,7 @@ export class UserStoreDO extends DurableObject {
     this.users = new UserStore(db);
     this.skips = new SkipSegmentStore(db);
     this.socialStore = new SocialStore(db);
+    this.adminStore = new AdminStore(db);
   }
 
   /** Appelle une méthode de UserStore. */
@@ -63,6 +67,11 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SocialStore (parrainage, amis, présence, masqués, annuaire des salons). */
   social(method: string, args: unknown[]): unknown {
     return dispatch(this.socialStore, SOCIAL_METHODS, method, args);
+  }
+
+  /** Appelle une méthode d'AdminStore (administration : comptes, réglages, audit, signalements). Réservé aux routes /admin et aux salons. */
+  manage(method: string, args: unknown[]): unknown {
+    return dispatch(this.adminStore, ADMIN_METHODS, method, args);
   }
 
   /** Migration des données (route /__admin/, protégée par ADMIN_SECRET côté Worker) : voir admin/routes.ts. */

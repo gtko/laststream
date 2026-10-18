@@ -6,6 +6,8 @@ import { nodeScheduler } from './scheduler.js';
 import { nodeLocalMedia } from './local-media.js';
 import { createFsUiAssets } from './ui-assets.js';
 import { createNodeUserBackend } from './user-backend.js';
+import { withCacheMetrics } from '../../metrics/cache.js';
+import { createMemoryMetrics } from '../../metrics/memory.js';
 import type { Platform } from '../types.js';
 
 export { createFsUiAssets, assertUiDir } from './ui-assets.js';
@@ -19,12 +21,14 @@ export { createNodeUserBackend } from './user-backend.js';
 
 /** Plateforme Node : process.env, undici, timers, mémoire, fichiers. */
 export function createNodePlatform(): Platform {
+  const metrics = createMemoryMetrics();
   return {
     env: nodeRuntimeEnv,
     http: nodeHttpClient,
     scheduler: nodeScheduler,
     capabilities: nodeCapabilities,
-    createKvCache: () => createMemoryKvCache(),
+    createKvCache: (namespace) => withCacheMetrics(createMemoryKvCache(), namespace, metrics.sink),
+    metrics,
     createUserBackend: (options) => createNodeUserBackend(options),
     localMedia: nodeLocalMedia,
     uiAssetsFromDir: createFsUiAssets,

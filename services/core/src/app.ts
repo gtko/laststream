@@ -21,6 +21,9 @@ import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
 import { registerPartyRoutes } from './party/routes.js';
 import { registerUserRoutes } from './user/routes.js';
+import { registerAdminRoutes } from './admin/api.js';
+import { createMaintenanceGate, maintenanceMiddleware } from './admin/maintenance.js';
+import { metricsMiddleware } from './metrics/middleware.js';
 import { registerStreamingProxy } from './streaming-proxy.js';
 import { registerUiRoutes } from './ui.js';
 import { createRateLimiter } from './rate-limit.js';
@@ -61,8 +64,10 @@ const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
 const USER_PATH = /^\/user(?:\/|$)/;
 /** Salons de visionnage (/party/*) : mêmes règles d'origine et d'en-têtes que /user. */
 const PARTY_PATH = /^\/party(?:\/|$)/;
+/** Administration (/admin/*) : propriétaire seulement, mêmes règles d'origine que /user. */
+const ADMIN_PATH = /^\/admin(?:\/|$)/;
 const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
-const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token';
+const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token, X-Profile-Id, X-Admin-Elevation';
 
 /** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
 function isOpenPath(c: Ctx): boolean {
@@ -95,12 +100,12 @@ function corsMiddleware(origins: readonly string[]): MiddlewareHandler<AppEnv> {
       c.header('Access-Control-Allow-Origin', '*');
       c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
       c.header('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(path) || LT_WRITE_PATH.test(path) || USER_PATH.test(path) || PARTY_PATH.test(path)) {
+    } else if (CONFIG_PATH.test(path) || LT_WRITE_PATH.test(path) || USER_PATH.test(path) || PARTY_PATH.test(path) || ADMIN_PATH.test(path)) {
       const origin = c.req.header('origin');
       c.header('Vary', 'Origin', { append: true });
       if (origin !== undefined && origins.includes(origin)) {
         c.header('Access-Control-Allow-Origin', origin);
-        if (USER_PATH.test(path) || PARTY_PATH.test(path)) {
+        if (USER_PATH.test(path) || PARTY_PATH.test(path) || ADMIN_PATH.test(path)) {
           c.header('Access-Control-Allow-Methods', USER_METHODS);
           c.header('Access-Control-Allow-Headers', USER_HEADERS);
         } else {
@@ -190,6 +195,8 @@ export function createApp(deps: AppDeps): App {
   // Derrière un reverse proxy de confiance uniquement : le débit se mesure alors sur la vraie IP du client.
   const trustedHops = isTrustProxy() ? 1 : 0;
   app.use('*', etag());
+  // Mesures d'exploitation : groupe de routes, statut, latence, dernières erreurs 5xx (écriture en mémoire, envoi groupé).
+  app.use('*', metricsMiddleware(() => deps.metrics ?? platform().metrics));
   app.use('*', async (c, next) => {
     c.set('ip', clientAddress(c, trustedHops));
     c.set('edge', false);
@@ -198,6 +205,11 @@ export function createApp(deps: AppDeps): App {
   // Relais de confiance authentifié par secret (LASTADDON_EDGE_SECRET) : IP réelle du client, sans faire confiance à un en-tête libre.
   app.use('*', edgeTrust());
   app.use('*', corsMiddleware([...allowedOrigins(), ...(deps.uiOrigins ?? [])]));
+  // Une seule base de données utilisateur par application : fournie, ou créée par la plateforme au premier besoin.
+  const backend = deps.userBackend ?? platform().createUserBackend({ path: deps.userDbPath });
+  // Mode maintenance (réglage global lu à travers un cache de quelques secondes) : tout répond 503 sauf /admin, /health, connexion.
+  const maintenance = createMaintenanceGate(async () => (backend.hasData?.() === false ? { enabled: false, message: '' } : (await backend.admin().getSettings()).maintenance));
+  app.use('*', maintenanceMiddleware(maintenance));
   app.use('*', rateLimit((c) => CONFIG_PATH.test(c.req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use('*', rateLimit((c) => LT_WRITE_PATH.test(c.req.path) && c.req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use('*', rateLimit((c) => c.req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(c.req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
@@ -243,12 +255,12 @@ export function createApp(deps: AppDeps): App {
   registerStreamRoutes(app, deps);
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
-  // Une seule base de données utilisateur par application : fournie, ou créée par la plateforme au premier besoin.
-  const backend = deps.userBackend ?? platform().createUserBackend({ path: deps.userDbPath });
   registerLtRoutes(app, deps, backend);
   registerIndexerRoutes(app, deps);
-  registerUserRoutes(app, deps, backend);
-  registerPartyRoutes(app, deps, backend, deps.party ?? platform().createPartyBackend?.());
+  registerUserRoutes(app, deps, backend, maintenance);
+  const party = deps.party ?? platform().createPartyBackend?.();
+  registerPartyRoutes(app, deps, backend, party);
+  registerAdminRoutes(app, deps, backend, maintenance, party);
   closers.set(app, () => {
     closeLtRoutes(app);
     backend.close();

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { type MaintenanceGate, maintenanceResponse } from '../admin/maintenance.js';
 import type { ErrorHandler } from 'hono';
 import { type App, type AppEnv, newApp } from '../http/app-env.js';
 import { errorHandler } from '../http/common.js';
@@ -37,6 +38,7 @@ import {
   credentialsSchema,
   registerSchema,
   deleteAccountSchema,
+  passwordResetSchema,
   followTypeSchema,
   followWriteSchema,
   librarySortSchema,
@@ -75,6 +77,7 @@ const SENSITIVE_ROUTES: readonly { method: string; path: RegExp }[] = [
   { method: 'POST', path: /^\/register$/ },
   { method: 'POST', path: /^\/login$/ },
   { method: 'POST', path: /^\/password$/ },
+  { method: 'POST', path: /^\/password-reset$/ },
   { method: 'DELETE', path: /^\/account$/ },
   { method: 'POST', path: /^\/profiles\/[^/]+\/unlock$/ },
   { method: 'POST', path: /^\/profiles\/[^/]+\/import\/stremio$/ },
@@ -146,7 +149,7 @@ export const userErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
  * API des données utilisateur, montée sous /user. Les données passent par `backend` (SQLite local sous Node, Durable
  * Object sous Workers), ouvert au premier appel : une application sans appel /user n'écrit jamais de fichier.
  */
-export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend): void {
+export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend, maintenance?: MaintenanceGate): void {
   const db = (): UserRepo => backend.users();
   const ctx: LtContext = createLtContext(deps);
   const limits = { ...DEFAULT_LIMITS, ...deps.userRateLimits };
@@ -177,7 +180,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const ip = c.get('ip') ?? 'inconnu';
     const verdict = limiters[kind](ip);
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
-    if (c.req.method === 'POST' && (path === '/login' || path === '/register')) {
+    if (c.req.method === 'POST' && (path === '/login' || path === '/register' || path === '/password-reset')) {
       if (deps.authLimiter === undefined) {
         const auth = authByIp(ip);
         if (!auth.allowed) throw new UserApiError(429, 'rate_limited', undefined, auth.retryAfterSec);
@@ -222,10 +225,33 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     if (record === undefined) await hashSecret(body.password);
     const valid = record !== undefined && (await verifySecret(body.password, record.passwordHash));
     if (record === undefined || !valid) throw new UserApiError(401, 'invalid_credentials');
+    // Compte suspendu par l'administration (révélé seulement à qui connaît le mot de passe).
+    if (record.suspended) throw new UserApiError(403, 'account_suspended');
+    // Maintenance : seul le propriétaire peut se connecter (pour rouvrir le service depuis /admin).
+    if (!record.isOwner && maintenance !== undefined) {
+      const state = await maintenance.current();
+      if (state.enabled) return maintenanceResponse(c, state);
+    }
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
     await users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt);
     return sendJson(c, { token, expiresAt });
+  });
+
+  /** Réinitialisation du mot de passe par lien à usage unique (émis par l'administration, valable 24 h) ; révoque toutes les sessions. */
+  router.post('/password-reset', async (c) => {
+    const body = parseWith(passwordResetSchema, c.get('body'));
+    const result = await backend.admin().redeemPasswordReset(hashSessionToken(body.token), nowIso(), await hashSecret(body.password));
+    if (result === undefined) throw new UserApiError(400, 'reset_invalid');
+    await backend.admin().addAudit({ at: nowIso(), actorId: result.accountId, actor: result.username, action: 'password_reset_used', target: result.username, detail: null });
+    return sendEmpty(c, 204);
+  });
+
+  /** Informations publiques pour l'écran d'inscription (aucune autre donnée) : serveur vide, inscription sur invitation, maintenance. */
+  router.get('/signup-info', async (c) => {
+    const empty = (await db().countAccounts()) === 0;
+    const state = maintenance === undefined ? undefined : await maintenance.current();
+    return sendJson(c, { serverEmpty: empty, inviteOnly: !isSignupAllowed(), maintenance: state?.enabled === true });
   });
 
   router.post('/refresh', async (c) => {
@@ -252,7 +278,8 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   });
 
   router.get('/me', async (c) => {
-    return sendJson(c, { account: (await sessionOf(db(), c)).account });
+    const { account } = await sessionOf(db(), c);
+    return sendJson(c, { account: { ...account, role: account.isOwner ? 'owner' : 'member' } });
   });
 
   /** Change le mot de passe ; révoque les autres sessions. Le mot de passe actuel est exigé. */

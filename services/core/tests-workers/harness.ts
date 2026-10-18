@@ -34,6 +34,8 @@ export function startApp(options: {
   skipDetect?: AppDeps['skipDetect'];
   thumbs?: AppDeps['thumbs'];
   rangeProxy?: AppDeps['rangeProxy'];
+  /** Dépendances supplémentaires (administration : métriques, caches, TV, salons, limites). */
+  extra?: Partial<AppDeps>;
 }): Promise<RunningApp> {
   const baseUrl = `http://app-${++counter}.test`;
   const app = createApp({
@@ -44,6 +46,7 @@ export function startApp(options: {
     userRateLimits: options.userRateLimits ?? DEFAULT_USER_RATE_LIMITS,
     rangeProxy: options.rangeProxy ?? null,
     userBackend: createDurableObjectUserBackend((env as unknown as WorkerEnv).USER_STORE, `test-${crypto.randomUUID()}`),
+    ...options.extra,
   });
   apps.set(baseUrl, app);
   return Promise.resolve({

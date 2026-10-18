@@ -11,6 +11,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
+import { metrics } from '../metrics/index.js';
 import type { KvCache } from '../platform/types.js';
 import { MAX_BODY_BYTES, readBodyLimited } from './http.js';
 
@@ -681,7 +682,24 @@ export class AllDebridClient {
     return this.request(method, path, form);
   }
 
+  /** Appel mesuré : succès ou code d'erreur par type d'opération (déblocage, magnets), sans clé ni identifiant. */
   private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    form?: URLSearchParams | MultipartBody,
+  ): Promise<Record<string, unknown>> {
+    const op = path.includes('/link/unlock') ? 'unlock' : path.includes('/magnet/') ? 'magnet' : 'other';
+    try {
+      const data = await this.requestRaw(method, path, form);
+      metrics().alldebrid(op, null);
+      return data;
+    } catch (err) {
+      metrics().alldebrid(op, errorCodeOf(err));
+      throw err;
+    }
+  }
+
+  private async requestRaw(
     method: 'GET' | 'POST',
     path: string,
     form?: URLSearchParams | MultipartBody,

@@ -1,4 +1,4 @@
-import type { DurableObjectState, WebSocket as CfWebSocket } from '@cloudflare/workers-types';
+import type { DurableObjectNamespace, DurableObjectState, WebSocket as CfWebSocket } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { IDENTITY_HEADER } from '../../party/backend.js';
 import {
@@ -14,6 +14,8 @@ import {
   parseClientMessage,
 } from '../../party/protocol.js';
 import { type Effect, type JoinCheck, type Member, RoomCore } from '../../party/room-core.js';
+import { USER_STORE_NAME } from './user-backend.js';
+import type { UserStoreDO } from './user-store-do.js';
 
 /** Constructeur de paires WebSocket de l'exécution Workers (non déclaré par les types retenus ici). */
 declare const WebSocketPair: new () => { 0: CfWebSocket; 1: CfWebSocket };
@@ -110,6 +112,15 @@ export class PartyRoom extends DurableObject {
     return core.reports;
   }
 
+  async deleteMessage(messageId: string): Promise<'ok' | 'not_found'> {
+    const core = this.core;
+    if (core === undefined) return 'not_found';
+    const { removed, effects } = core.removeMessage(messageId);
+    if (!removed) return 'not_found';
+    await this.apply(effects);
+    return 'ok';
+  }
+
   // WebSocket
 
   async fetch(request: Request): Promise<Response> {
@@ -155,6 +166,25 @@ export class PartyRoom extends DurableObject {
       return;
     }
     await this.apply(core.handle(attachment.accountId, parsed));
+    await this.forwardReports(core);
+  }
+
+  /** Transmet les nouveaux signalements à la file de l'administration (Durable Object des utilisateurs) ; sans effet sur le salon en cas d'échec. */
+  private async forwardReports(core: RoomCore): Promise<void> {
+    if (core.fresh.length === 0) return;
+    const fresh = core.fresh.splice(0, core.fresh.length);
+    const users = (this.env as { USER_STORE?: DurableObjectNamespace<UserStoreDO> }).USER_STORE;
+    if (users === undefined) return;
+    const stub = users.getByName(USER_STORE_NAME);
+    for (const { entry, againstId } of fresh) {
+      try {
+        await stub.manage('addReport', [
+          { roomId: core.data.meta.id, messageId: entry.messageId, by: entry.by, againstId, against: entry.against, text: entry.text, reason: entry.reason, at: entry.at },
+        ]);
+      } catch {
+        // La file d'administration est facultative : le signalement reste dans le salon.
+      }
+    }
   }
 
   async webSocketClose(ws: CfWebSocket, code: number, reason: string): Promise<void> {

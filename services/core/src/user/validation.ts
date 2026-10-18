@@ -87,6 +87,9 @@ export const pinSchema = z.object({ pin: PIN });
 
 export const passwordChangeSchema = z.object({ current: z.string().min(1).max(256), next: PASSWORD });
 
+/** Réinitialisation par lien à usage unique : jeton (43 caractères base64url) et nouveau mot de passe. */
+export const passwordResetSchema = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/), password: PASSWORD });
+
 export const deleteAccountSchema = z.object({ password: z.string().min(1).max(256) });
 
 export const librarySortSchema = z.object({

@@ -163,6 +163,8 @@ export type ServerMessage =
   | { t: 'muted'; user: string; muted: boolean }
   | { t: 'host'; user: string }
   | { t: 'reported'; messageId: string; by?: string; against?: string; text?: string }
+  /** Message retiré par la modération du serveur : les clients le masquent. */
+  | { t: 'removed'; messageId: string }
   | { t: 'error'; code: string }
   | { t: 'ended'; reason: string };
 

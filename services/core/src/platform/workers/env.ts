@@ -1,5 +1,6 @@
 import type { DurableObjectNamespace, KVNamespace } from '@cloudflare/workers-types';
 import type { EnvLike, RuntimeEnv } from '../types.js';
+import type { Metrics } from './metrics-do.js';
 import type { PartyRoom } from './party-room.js';
 import type { UserStoreDO } from './user-store-do.js';
 
@@ -19,6 +20,8 @@ export interface WorkerEnv {
   USER_STORE: DurableObjectNamespace<UserStoreDO>;
   /** Durable Objects des salons de visionnage (un par salon). */
   PARTY_ROOM: DurableObjectNamespace<PartyRoom>;
+  /** Durable Object des métriques d'exploitation et des purges de cache (absent : métriques en mémoire de l'isolat). */
+  METRICS?: DurableObjectNamespace<Metrics>;
   /** KV des caches persistants (statut AllDebrid, packs, URL émises, état de lecture). */
   CACHE: KVNamespace;
   /** Interface web (Workers Assets). */

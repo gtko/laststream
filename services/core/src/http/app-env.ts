@@ -15,6 +15,8 @@ export interface AppVariables {
   edge: boolean;
   /** Corps JSON décodé (undefined si la requête n'en porte pas ou n'est pas en JSON). */
   body: unknown;
+  /** Nature de l'erreur interne en cours (nom et message de l'exception) : lue par les métriques, jamais renvoyée au client. */
+  failure?: string;
 }
 
 /** Environnement Hono de l'application : liaisons de l'hôte et variables des middlewares. */

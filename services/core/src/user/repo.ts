@@ -1,3 +1,4 @@
+import type { AdminStore } from './admin-store.js';
 import type { SkipSegmentStore } from './skip-segments.js';
 import type { SocialStore } from './social-store.js';
 import type { UserStore } from './store.js';
@@ -25,11 +26,17 @@ export type SkipRepo = AsyncRepo<Omit<SkipSegmentStore, 'close'>>;
 /** Parrainage, amis, présence, bibliothèque partagée, titres masqués, annuaire des salons. */
 export type SocialRepo = AsyncRepo<SocialStore>;
 
+/** Administration : comptes, réglages globaux, journal d'audit, réinitialisation de mot de passe, signalements. */
+export type AdminRepo = AsyncRepo<AdminStore>;
+
 /** Accès aux dépôts, ouverts au premier besoin. */
 export interface UserBackend {
   users(): UserRepo;
   skips(): SkipRepo;
   social(): SocialRepo;
+  admin(): AdminRepo;
+  /** Faux tant qu'aucune base n'existe (Node : fichier absent et jamais ouvert) : rien à lire, et lire n'en créerait pas. Absent = vrai. */
+  hasData?(): boolean;
   /** Libère les ressources (fichier fermé). Sans effet pour un Durable Object ; idempotent. */
   close(): void;
 }
