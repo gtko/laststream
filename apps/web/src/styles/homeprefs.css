@@ -1,57 +1,28 @@
-/* Réglages de l'accueil par profil (ui/homeprefs.js) : puces de genres et grille des titres masqués. */
+/* Panneau « Accueil et recommandations » (ui/homeprefs.js) : titres masqués en liste compacte, genres exclus en puces.
+ * Les puces (.set-chip), badges et boutons-icônes viennent de settings.css. */
 
-/* Genres : des puces de l'app (classe .pill), qui reviennent à la ligne sans défilement horizontal. */
-.home-genres { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
-.home-genre { position: relative; cursor: pointer; }
-/* Case native masquée visuellement mais restée au clavier (focus, espace) et lue par les lecteurs d'écran. */
-.home-genre-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-.home-genre:has(.home-genre-input:checked) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-.home-genre:has(.home-genre-input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
+.hm-info { margin: 0; padding: 12px 0; font-size: 14px; line-height: 1.55; color: var(--soft); }
 
-/* Titres masqués : grille de petites affiches avec le bouton « Réafficher ». */
-.home-hidden-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 16px;
-}
-.home-hidden-item { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.home-hidden-item img,
-.home-hidden-noimg {
-  display: block;
-  width: 100%;
-  aspect-ratio: 2 / 3;
-  height: auto;
-  border-radius: 10px;
-  object-fit: cover;
-  background: var(--line-2);
-}
-.home-hidden-title {
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--soft);
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow-wrap: anywhere;
-}
-.home-hidden-item .btn { width: 100%; justify-content: center; }
-.home-empty { margin: 0; }
+/* Titres masqués */
+.hm-list { display: flex; flex-direction: column; }
+.hm-item { display: flex; align-items: center; gap: 14px; padding: 10px 0; }
+.hm-item + .hm-item { border-top: 1px solid var(--line); }
+.hm-poster { flex: none; width: 40px; height: 60px; border-radius: 6px; object-fit: cover; background: var(--line-2); }
+.hm-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.hm-t strong { font-size: 15px; font-weight: 700; line-height: 1.3; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hm-t small { font-size: 12.5px; line-height: 1.3; color: var(--dim); }
+.hm-empty { display: flex; align-items: center; gap: 16px; margin: 8px 0; padding: 20px; border: 1.5px dashed var(--line-2); border-radius: 14px; }
+.hm-empty-ic { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.06); color: var(--dim); }
+.hm-empty p { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hm-empty strong { font-size: 15px; color: var(--soft); }
+.hm-empty span:not(.hm-empty-ic) { font-size: 13px; line-height: 1.45; color: var(--dim); }
 
-@media (max-width: 600px) {
-  .home-hidden-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px; }
+/* Genres exclus */
+.hm-aside { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+[data-genres-reset]:disabled { opacity: 0.4; }
+.set-card-b > .set-chips { padding: 12px 0 14px; }
+
+@media (max-width: 760px) {
+  .set-card-h:has(.hm-aside) { flex-direction: column; gap: 10px; }
+  .hm-aside { justify-content: flex-start; }
 }

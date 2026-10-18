@@ -1,0 +1,138 @@
+// Page Réglages : navigation latérale, interrupteurs, panneau « Accueil et recommandations ».
+import fs from 'node:fs';
+import path from 'node:path';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+function mockFetch(url: string): Response {
+  const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+  const u = new URL(url);
+  if (u.pathname === '/config/schema') return json({ properties: {} });
+  if (u.pathname === '/config/decode') return json({ services: {}, languages: { preferred: ['fr'], acceptVostfr: true }, sources: [] });
+  return json({ error: 'not_found' }, 404);
+}
+
+const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+const page = () => document.querySelector('#detail .set-page') as HTMLElement;
+const click = (el: Element | null) => (el as HTMLElement).click();
+const scrolled: string[] = [];
+
+beforeAll(async () => {
+  const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
+  document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
+  localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG' }));
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => mockFetch(String(url))));
+  window.scrollTo = () => undefined;
+  Element.prototype.scrollIntoView = function scroll(this: Element) { scrolled.push(this.id); };
+  location.hash = '#/settings';
+  await import('../src/main.js');
+  await settle(900);
+});
+
+describe('navigation latérale', () => {
+  it('liste les catégories et active la première', () => {
+    const items = Array.from(page().querySelectorAll('[data-set-cat]')) as HTMLElement[];
+    expect(items.map((i) => i.dataset.setCat)).toEqual(['account', 'appearance', 'region', 'playback', 'home', 'server', 'sources']);
+    expect(items.filter((i) => i.getAttribute('aria-current') === 'true').map((i) => i.dataset.setCat)).toEqual(['account']);
+    expect(page().querySelector('#set-p-sources')).not.toBeNull();
+  });
+
+  it('un clic ancre le panneau et met la catégorie active à jour', () => {
+    click(page().querySelector('[data-set-cat="playback"]'));
+    expect(scrolled).toContain('set-p-playback');
+    const cur = Array.from(page().querySelectorAll('[data-set-cat][aria-current="true"]')) as HTMLElement[];
+    expect(cur.map((i) => i.dataset.setCat)).toEqual(['playback']);
+    click(page().querySelector('[data-set-cat="home"]'));
+    expect((page().querySelector('[data-set-cat="home"]') as HTMLElement).getAttribute('aria-current')).toBe('true');
+    expect((page().querySelector('[data-set-cat="playback"]') as HTMLElement).getAttribute('aria-current')).toBe('false');
+  });
+});
+
+describe('interrupteurs', () => {
+  it('basculent aria-checked et écrivent la même préférence que l’ancien bouton', async () => {
+    const { getAutoplay, getSkipPref } = await import('../src/data/prefs');
+    const sw = page().querySelector('[data-set-pref="autoplay"]') as HTMLElement;
+    expect(sw.getAttribute('role')).toBe('switch');
+    const before = getAutoplay();
+    expect(sw.getAttribute('aria-checked')).toBe(String(before));
+    click(sw);
+    expect(sw.getAttribute('aria-checked')).toBe(String(!before));
+    expect(getAutoplay()).toBe(!before);
+    click(sw);
+    expect(getAutoplay()).toBe(before);
+
+    const intro = page().querySelector('[data-set-pref="skip-intro"]') as HTMLElement;
+    const introBefore = getSkipPref('intro');
+    click(intro);
+    expect(intro.getAttribute('aria-checked')).toBe(String(!introBefore));
+    expect(getSkipPref('intro')).toBe(!introBefore);
+  });
+
+  it('un clic sur la ligne bascule l’interrupteur, et le formulaire lit aria-checked', () => {
+    const row = page().querySelector('[data-sw-row] [name="onlyCached"]')!.closest('[data-sw-row]') as HTMLElement;
+    const sw = row.querySelector('[role="switch"]') as HTMLElement;
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    click(row.querySelector('.set-row-t'));
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    const form = page().querySelector('#set-la') as HTMLFormElement;
+    expect(form.elements.namedItem('onlyCached')).toBe(sw);
+  });
+});
+
+describe('Accueil et recommandations', () => {
+  it('état vide, puis liste compacte des titres masqués avec « Réafficher »', async () => {
+    const home = page().querySelector('#set-p-home') as HTMLElement;
+    expect(home.querySelector('.hm-empty')).not.toBeNull();
+    expect(home.querySelector('[data-hidden-count]')!.textContent).toBe('Aucun titre masqué');
+
+    const { hideTitle } = await import('../src/data/homeFilters');
+    hideTitle({ key: 'movie:42', title: 'Le Grand Bleu', poster: '/abc.jpg' });
+    hideTitle({ key: 'tv:7', title: 'Sans affiche', poster: '' });
+    const { showSettings } = await import('../src/ui/settings.js');
+    await showSettings();
+    await settle(100);
+    const h = page().querySelector('#set-p-home') as HTMLElement;
+    const items = Array.from(h.querySelectorAll('.hm-item'));
+    expect(items).toHaveLength(2);
+    expect(items[0].querySelector('img')!.getAttribute('width')).toBe('40');
+    expect(items[0].textContent).toContain('Le Grand Bleu');
+    expect(items[0].textContent).toContain('Film');
+    expect(items[1].querySelector('.hm-noimg')).not.toBeNull();
+    expect(h.querySelector('[data-hidden-count]')!.textContent).toBe('2 titres masqués');
+
+    const btn = items[0].querySelector('[data-unhide]') as HTMLElement;
+    expect(btn.getAttribute('aria-label')).toContain('Le Grand Bleu');
+    click(btn);
+    expect(h.querySelectorAll('.hm-item')).toHaveLength(1);
+    expect(h.querySelector('[data-hidden-count]')!.textContent).toBe('1 titre masqué');
+    click(h.querySelector('[data-unhide]'));
+    expect(h.querySelector('.hm-empty')).not.toBeNull();
+  });
+
+  it('puces de genres, compteur et réinitialisation', async () => {
+    const { bannedGenreIds } = await import('../src/data/homeFilters');
+    const h = page().querySelector('#set-p-home') as HTMLElement;
+    const chips = Array.from(h.querySelectorAll('[data-ban-genre]')) as HTMLElement[];
+    expect(chips.length).toBe(24);
+    expect(chips.every((c) => c.getAttribute('role') === 'checkbox' && c.getAttribute('aria-checked') === 'false')).toBe(true);
+    const counter = h.querySelector('[data-genre-count]') as HTMLElement;
+    const reset = h.querySelector('[data-genres-reset]') as HTMLButtonElement;
+    expect(counter.textContent).toBe('Aucun genre exclu');
+    expect(reset.disabled).toBe(true);
+
+    click(chips[0]); // Action : deux identifiants TMDB, une seule puce
+    click(chips[11]);
+    expect(chips[0].getAttribute('aria-checked')).toBe('true');
+    expect(bannedGenreIds().has(28) && bannedGenreIds().has(10759)).toBe(true);
+    expect(counter.textContent).toBe('2 genres exclus');
+    expect(reset.disabled).toBe(false);
+
+    click(chips[11]);
+    expect(counter.textContent).toBe('1 genre exclu');
+
+    click(reset);
+    expect(bannedGenreIds().size).toBe(0);
+    expect(chips.every((c) => c.getAttribute('aria-checked') === 'false')).toBe(true);
+    expect(counter.textContent).toBe('Aucun genre exclu');
+    expect(reset.disabled).toBe(true);
+  });
+});

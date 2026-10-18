@@ -11,9 +11,12 @@ import {
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { userStore } from '../data/userStore';
-import { auth, importFromStremio, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
+import { auth, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
-import { homeSettingsHTML } from './homeprefs.js';
+import { homePanelHTML } from './homeprefs.js';
+import {
+  CATEGORIES, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
+} from './settings-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
@@ -54,136 +57,198 @@ function enumOf(path, fallback) {
   } catch (_) { return fallback; }
 }
 
-function check(name, label, on, extra) {
-  return '<label class="set-check"><input type="checkbox" name="' + esc(name) + '"' + (on ? ' checked' : '') + (extra || '') + '> <span>' + esc(label) + '</span></label>';
+const stackInput = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input class="set-input" id="' + id + '" ' + attrs + '>', { stack: true });
+const msgP = (id, text) => '<p class="set-msg" id="' + id + '" role="status">' + esc(text || '') + '</p>';
+const actions = (inner) => '<div class="set-actions">' + inner + '</div>';
+
+function accountPanel() {
+  const p = userStore.currentProfile();
+  const lib = userStore.getLibrary().length;
+  const data = card('Données de ce navigateur', rowHTML('Bibliothèque', 'Titres gardés pour le profil « ' + p.name + ' » dans ce navigateur.', () => '<span class="set-val">' + lib + ' titre(s)</span>') +
+    rowHTML('Vider le cache', 'Supprime les réponses mémorisées du catalogue ; rien d’autre n’est effacé.', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-clear>Vider le cache</button>'));
+  if (!isServerMode()) {
+    return card('Compte', '<p class="set-hint">' + (auth.status === 'offline'
+      ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
+      : 'Sans compte, la bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
+      actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data;
+  }
+  const pr = auth.profile;
+  return card('Compte et profils',
+    rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
+    rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span><button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>') +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + data +
+    card('Importer ma bibliothèque Stremio',
+      '<form id="set-stremio" class="set-form" autocomplete="off">' +
+      '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
+      stackInput('E-mail Stremio', '', 'type="email" name="email" required autocomplete="off"') +
+      stackInput('Mot de passe Stremio', '', 'type="password" name="password" required autocomplete="off"') +
+      msgP('set-st-msg') + actions('<button type="submit" class="btn btn-primary">Importer</button>') + '</form>');
 }
 
-function field(label, inner, hint) {
-  return '<label class="tv-field">' + esc(label) + inner + (hint ? '<span class="set-hint">' + esc(hint) + '</span>' : '') + '</label>';
+function appearancePanel() {
+  const th = readTheme();
+  const themes = '<div class="set-themes" role="group" aria-label="Thème" data-nav>' +
+    PRESETS.map((p) => '<button type="button" class="set-theme" data-set-theme="' + p.id + '" aria-pressed="' + (th.id === p.id) + '"><span class="set-dot" style="background:' + p.accent + '"></span>' + esc(p.label) + '</button>').join('') +
+    '<button type="button" class="set-theme" data-set-theme="custom" aria-pressed="' + (th.id === CUSTOM_THEME_ID) + '"><span class="set-dot set-dot-custom"></span>Personnalisé</button></div>';
+  return card('Thème', '<div class="set-row is-stack"><div class="set-row-t"><span class="set-row-l">Couleur de l’application</span><span class="set-row-d">Choisis une palette ou compose ta propre couleur d’accent.</span></div><div class="set-row-c">' + themes + '</div></div>' +
+    fieldRow('Couleur d’accent', 'Disponible avec le thème Personnalisé.', (id) => '<span class="set-color"><input type="color" id="' + id + '" data-set-color value="' + esc(th.accent.toLowerCase()) + '"' + (th.id === CUSTOM_THEME_ID ? '' : ' disabled') + '></span>'));
 }
 
-function lastAddonSection() {
+function regionPanel() {
+  const r = getRegion();
+  const vl = getVideoLangSetting();
+  return card('Région', fieldRow('Pays', 'Disponibilités en streaming, classification par âge et sorties selon le pays.', (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>')) +
+    card('Bandes-annonces et synopsis', fieldRow('Langue', 'Les vidéos dans cette langue passent en premier, puis l’anglais.', (id) =>
+      '<select class="set-input" id="' + id + '" data-set-pref="videolang"><option value="auto"' + (vl === 'auto' ? ' selected' : '') + '>Automatique (selon la région)</option>' +
+      VIDEO_LANGS.map(([c, l]) => '<option value="' + c + '"' + (vl === c ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'));
+}
+
+function playbackPanel() {
+  const bw = getBandwidthSetting();
+  const stored = readStoredBandwidth();
+  const mbps = stored && stored.expiresAt > Date.now() ? (stored.kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s' : '';
+  return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"')) +
+    card('Connexion',
+      fieldRow('Débit de ma connexion', 'Sert à choisir une source que ta connexion peut lire.', (id) =>
+        '<select class="set-input" id="' + id + '" data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>Automatique (mesure)</option>' +
+        BANDWIDTH_PRESETS_MBPS.map((n) => '<option value="' + n + '"' + (bw === n ? ' selected' : '') + '>' + n + ' Mb/s</option>').join('') + '</select>') +
+      rowHTML('Mesurer maintenant', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-bw>Tester ma connexion</button>') +
+      msgP('set-bw-msg', mbps ? 'Dernière mesure : ' + mbps : '')) +
+    card('Séries et épisodes',
+      switchRow('Passer l’intro', 'Saute le générique d’ouverture quand il est repéré.', getSkipPref('intro'), 'data-set-pref="skip-intro"') +
+      switchRow('Passer le récapitulatif', 'Saute le « précédemment » quand il est repéré.', getSkipPref('recap'), 'data-set-pref="skip-recap"') +
+      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"'));
+}
+
+function serverPanelInner() {
   const c = ed.cfg || {};
   const sv = c.services || {};
+  const android = isAndroidApp();
+  const base = getBase() || (android ? '' : DEFAULT_BASE);
+  const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
+    ? stackInput(title, desc, 'type="text" name="svc.' + k + '" value="' + esc(sv[k] || 'openai/gpt-4o-mini') + '"')
+    : stackInput(title, desc, 'type="password" autocomplete="off" name="svc.' + k + '" placeholder="' + esc(secretPlaceholder(sv[k])) + '"'))).join('');
+  return card('Adresse', stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.' + (android ? ' Sur Android, c’est lastAddon sur ton PC : adresse du réseau local, par exemple http://192.168.1.20:7000.' : ''),
+    'type="url" name="base" value="' + esc(base) + '" placeholder="' + (android ? 'http://192.168.1.20:7000' : 'http://localhost:7000') + '"') +
+    actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester l’adresse</button>')) +
+    card('Clés des services', services + actions('<button type="button" class="btn btn-ghost btn-sm" data-set-test="services">Tester les clés</button>') +
+      '<div class="set-tests" id="set-tests-services" aria-live="polite"></div>', { desc: 'Catalogues, notes, saisons et recommandations. Laisse un champ vide pour garder la clé enregistrée.' });
+}
+
+function sourcesPanelInner() {
+  const c = ed.cfg || {};
   const langs = c.languages || {};
   const pref = langs.preferred || ['fr', 'multi'];
   const res = c.resolutions || {};
   const allowed = res.allowed || RESOLUTIONS;
   const size = c.size || {};
   const resList = enumOf(['resolutions', 'allowed'], RESOLUTIONS) || RESOLUTIONS;
-  const android = isAndroidApp();
-  const base = getBase() || (android ? '' : DEFAULT_BASE);
-  const status = ed.loading ? 'Chargement de la configuration…' : ed.error ? ed.error : ed.loaded ? 'Configuration chargée.' : isConfigured() ? '' : 'Aucune configuration enregistrée : renseigne l’adresse puis enregistre.';
-
-  const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
-    ? field(title, '<input type="text" name="svc.' + k + '" value="' + esc(sv[k] || 'openai/gpt-4o-mini') + '">', desc)
-    : field(title, '<input type="password" autocomplete="off" name="svc.' + k + '" placeholder="' + esc(secretPlaceholder(sv[k])) + '">', desc))).join('');
-
   const debrid = c.debrid;
-  return '<section class="set-sec glass" aria-labelledby="set-la-h"><h2 class="f-sub" id="set-la-h">lastAddon</h2>' +
-    '<p class="set-hint">Le serveur qui fournit le catalogue, les notes, la TV et les sources.' + (android ? ' Sur Android, c’est lastAddon sur ton PC : adresse du réseau local, par exemple http://192.168.1.20:7000.' : '') + '</p>' +
-    '<form id="set-la" class="tv-form set-form" autocomplete="off">' +
-    field('Adresse du serveur', '<input type="url" name="base" value="' + esc(base) + '" placeholder="' + (android ? 'http://192.168.1.20:7000' : 'http://localhost:7000') + '">') +
-    '<p class="tv-form-msg" id="set-la-msg" role="status">' + esc(status) + '</p>' +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-ping>Tester l’adresse</button></div>' +
-    '<div class="set-block"><h3 class="set-h3">Clés des services</h3>' + services +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-test="services">Tester les clés</button></div>' +
-    '<div class="set-tests" id="set-tests-services" aria-live="polite"></div></div>' +
-    '<div class="set-block"><h3 class="set-h3">Langues</h3><div class="set-checks">' +
-    LANGS.map(([v, l]) => check('lang.' + v, l, pref.includes(v))).join('') + '</div>' +
-    check('acceptVostfr', 'Accepter la VOSTFR', langs.acceptVostfr !== false) +
-    check('fallbackToOthers', 'Afficher les autres langues s’il n’y a rien dans ma langue', langs.fallbackToOthers !== false) + '</div>' +
-    '<div class="set-block"><h3 class="set-h3">Résolutions</h3><div class="set-checks">' +
-    resList.map((v) => check('res.' + v, v, allowed.includes(v))).join('') + '</div>' +
-    field('Résolution maximale', '<select name="resMax"><option value="">Aucune limite</option>' + resList.map((v) => '<option value="' + v + '"' + (res.max === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>') + '</div>' +
-    '<div class="set-block"><h3 class="set-h3">Tailles</h3><div class="set-grid">' +
-    field('Taille minimale (Go)', '<input type="number" min="0" step="0.1" name="minGb" value="' + esc(size.minGb != null ? size.minGb : '') + '">') +
-    field('Taille maximale (Go)', '<input type="number" min="0.1" step="0.1" name="maxGb" value="' + esc(size.maxGb != null ? size.maxGb : '') + '">') +
-    field('Nombre de résultats', '<input type="number" min="1" max="500" name="maxResults" value="' + esc(c.maxResults != null ? c.maxResults : 30) + '">') + '</div></div>' +
-    '<div class="set-block"><h3 class="set-h3">Sources</h3>' + sourcesHTML() +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-addsrc="upstream">Ajouter un addon amont</button>' +
-    '<button type="button" class="btn btn-ghost" data-set-addsrc="torznab">Ajouter un Torznab</button>' +
-    '<button type="button" class="btn btn-ghost" data-set-test="sources">Tester les sources</button></div>' +
-    '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div></div>' +
-    '<div class="set-block"><h3 class="set-h3">Debrid</h3>' +
-    check('debridOn', 'Activer AllDebrid', !!debrid) +
-    field('Clé API AllDebrid', '<input type="password" autocomplete="off" name="debridKey" placeholder="' + esc(secretPlaceholder(debrid && debrid.apiKey)) + '">', 'Laisse vide pour garder la clé enregistrée.') +
-    check('onlyCached', 'Seulement les sources déjà en cache', !!c.onlyCached) +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-test="debrid">Tester AllDebrid</button></div>' +
-    '<div class="set-tests" id="set-tests-debrid" aria-live="polite"></div></div>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div>' +
-    '<p class="tv-form-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p>' +
-    '</form></section>';
+  const num = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" ' + attrs + '>');
+  return card('Langues', rowHTML('Langues préférées', 'Les sources dans ces langues passent en premier.', () => chipsHTML('Langues préférées', LANGS.map(([v, l]) => chipHTML(l, pref.includes(v), 'data-set-toggle name="lang.' + v + '"')).join('')), { stack: true }) +
+    switchRow('Accepter la VOSTFR', '', langs.acceptVostfr !== false, 'name="acceptVostfr"') +
+    switchRow('Autres langues en dernier recours', 'Affiche les autres langues s’il n’y a rien dans ma langue.', langs.fallbackToOthers !== false, 'name="fallbackToOthers"')) +
+    card('Résolutions', rowHTML('Résolutions acceptées', '', () => chipsHTML('Résolutions acceptées', resList.map((v) => chipHTML(v, allowed.includes(v), 'data-set-toggle name="res.' + v + '"')).join('')), { stack: true }) +
+      fieldRow('Résolution maximale', '', (id) => '<select class="set-input" id="' + id + '" name="resMax"><option value="">Aucune limite</option>' +
+        resList.map((v) => '<option value="' + v + '"' + (res.max === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>')) +
+    card('Tailles et résultats',
+      num('Taille minimale', 'En Go.', 'min="0" step="0.1" name="minGb" value="' + esc(size.minGb != null ? size.minGb : '') + '"') +
+      num('Taille maximale', 'En Go.', 'min="0.1" step="0.1" name="maxGb" value="' + esc(size.maxGb != null ? size.maxGb : '') + '"') +
+      num('Nombre de résultats', '', 'min="1" max="500" name="maxResults" value="' + esc(c.maxResults != null ? c.maxResults : 30) + '"')) +
+    card('Sources', sourcesHTML() +
+      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon amont</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="torznab">Ajouter un Torznab</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
+      '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Addons amont et indexeurs interrogés pour trouver des sources.' }) +
+    card('Debrid',
+      switchRow('Activer AllDebrid', '', !!debrid, 'name="debridOn"') +
+      stackInput('Clé API AllDebrid', 'Laisse vide pour garder la clé enregistrée.', 'type="password" autocomplete="off" name="debridKey" placeholder="' + esc(secretPlaceholder(debrid && debrid.apiKey)) + '"') +
+      switchRow('Seulement les sources en cache', 'Masque les sources qu’AllDebrid doit d’abord télécharger.', !!c.onlyCached, 'name="onlyCached"') +
+      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-test="debrid">Tester AllDebrid</button>') +
+      '<div class="set-tests" id="set-tests-debrid" aria-live="polite"></div>');
 }
 
-function playbackSection() {
-  const bw = getBandwidthSetting();
-  const stored = readStoredBandwidth();
-  const mbps = stored && stored.expiresAt > Date.now() ? (stored.kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s' : '';
-  return '<section class="set-sec glass" aria-labelledby="set-pl-h"><h2 class="f-sub" id="set-pl-h">Lecture</h2>' +
-    check('autoplay', 'Lancer automatiquement la meilleure source', getAutoplay(), ' data-set-pref="autoplay"') +
-    '<div class="set-row">' + field('Débit de ma connexion', '<select data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>Automatique (mesure)</option>' +
-    BANDWIDTH_PRESETS_MBPS.map((n) => '<option value="' + n + '"' + (bw === n ? ' selected' : '') + '>' + n + ' Mb/s</option>').join('') + '</select>') +
-    '<button type="button" class="btn btn-ghost" data-set-bw>Tester ma connexion</button></div>' +
-    '<p class="tv-form-msg" id="set-bw-msg" role="status">' + (mbps ? 'Dernière mesure : ' + mbps : '') + '</p>' +
-    check('skip-intro', 'Passer l’intro automatiquement', getSkipPref('intro'), ' data-set-pref="skip-intro"') +
-    check('skip-recap', 'Passer le récapitulatif automatiquement', getSkipPref('recap'), ' data-set-pref="skip-recap"') +
-    check('skip-next', 'Enchaîner l’épisode suivant', getSkipPref('nextEpisode'), ' data-set-pref="skip-next"') + '</section>';
+function serverFormHTML(cats) {
+  const status = ed.loading ? 'Chargement de la configuration…' : ed.error ? ed.error : ed.loaded ? 'Configuration chargée.' : isConfigured() ? '' : 'Aucune configuration enregistrée : renseigne l’adresse puis enregistre.';
+  const cat = (id) => cats.find((c) => c.id === id);
+  return '<form id="set-la" class="set-form" autocomplete="off">' +
+    panelHTML(cat('server'), 'Adresse du serveur et clés des services.', serverPanelInner()) +
+    panelHTML(cat('sources'), 'Langues, résolutions, tailles, addons, indexeurs et AllDebrid.', sourcesPanelInner()) +
+    '<div class="set-savebar"><div class="set-savebar-t">' + msgP('set-la-msg', status) +
+    '<p class="set-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p></div>' +
+    '<button type="submit" class="btn btn-primary">Enregistrer</button></div></form>';
 }
 
-function appearanceSection() {
-  const th = readTheme();
-  return '<section class="set-sec glass" aria-labelledby="set-ap-h"><h2 class="f-sub" id="set-ap-h">Apparence</h2>' +
-    '<div class="pills" role="group" aria-label="Thème">' +
-    PRESETS.map((p) => '<button type="button" class="pill set-theme" data-set-theme="' + p.id + '" aria-pressed="' + (th.id === p.id) + '"><span class="set-dot" style="background:' + p.accent + '"></span>' + esc(p.label) + '</button>').join('') +
-    '<button type="button" class="pill set-theme" data-set-theme="custom" aria-pressed="' + (th.id === CUSTOM_THEME_ID) + '">Personnalisé</button></div>' +
-    '<label class="set-check set-color"><span>Couleur d’accent</span><input type="color" data-set-color value="' + esc(th.accent.toLowerCase()) + '"' + (th.id === CUSTOM_THEME_ID ? '' : ' disabled') + '></label></section>';
-}
+const PANEL_DESC = {
+  account: 'Ton compte, ton profil actif et les données gardées dans ce navigateur.',
+  appearance: 'Thème et couleur d’accent de l’application.',
+  region: 'Pays, disponibilités et langue des bandes-annonces.',
+  playback: 'Lancement des sources, connexion et enchaînement des épisodes.',
+  home: 'Ce qui est proposé, ou non, sur l’accueil de ce profil.',
+};
 
-function regionSection() {
-  const r = getRegion();
-  return '<section class="set-sec glass" aria-labelledby="set-rg-h"><h2 class="f-sub" id="set-rg-h">Région</h2>' +
-    '<p class="set-hint">Disponibilités en streaming, classification par âge et sorties selon le pays.</p>' +
-    field('Pays', '<select data-set-pref="region">' + REGIONS.map((x) => '<option value="' + x.code + '"' + (x.code === r.code ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</select>') +
-    field('Langue des bandes-annonces et des synopsis', '<select data-set-pref="videolang"><option value="auto"' + (getVideoLangSetting() === 'auto' ? ' selected' : '') + '>Automatique (selon la région)</option>' + VIDEO_LANGS.map(([c, l]) => '<option value="' + c + '"' + (getVideoLangSetting() === c ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>', 'Les vidéos dans cette langue passent en premier, puis l’anglais.') + '</section>';
-}
+let activeCat = 'account';
+let lockUntil = 0;
 
-function dataSection() {
-  const p = userStore.currentProfile();
-  return '<section class="set-sec glass" aria-labelledby="set-dt-h"><h2 class="f-sub" id="set-dt-h">Profil et données</h2>' +
-    '<p class="set-hint">Profil actif : <strong>' + esc(p.name) + '</strong> · ' + userStore.getLibrary().length + ' titre(s) dans la bibliothèque. Les comptes, profils et la synchronisation arrivent avec l’API utilisateur de lastAddon.</p>' +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-clear>Vider le cache</button></div></section>';
-}
-
-function accountSection() {
-  if (!isServerMode()) {
-    return '<section class="set-sec glass" aria-labelledby="set-ac-h"><h2 class="f-sub" id="set-ac-h">Compte</h2>' +
-      '<p class="set-hint">' + (auth.status === 'offline'
-        ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
-        : 'Sans compte, la bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
-      '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button></div></section>';
-  }
-  const p = auth.profile;
-  return '<section class="set-sec glass" aria-labelledby="set-ac-h"><h2 class="f-sub" id="set-ac-h">Compte et profils</h2>' +
-    '<p class="set-hint">Connecté : <strong>' + esc(auth.username) + '</strong> · profil actif : <strong>' + esc(p.name) + '</strong>' + (p.isKid ? ' (enfant)' : '') + '.</p>' +
-    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-switch>Changer de profil</button>' +
-    '<button type="button" class="btn btn-ghost" data-set-logout>Se déconnecter</button></div></section>' +
-    '<section class="set-sec glass" aria-labelledby="set-st-h"><h2 class="f-sub" id="set-st-h">Importer ma bibliothèque Stremio</h2>' +
-    '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
-    '<form id="set-stremio" class="tv-form set-form" autocomplete="off">' +
-    field('E-mail Stremio', '<input type="email" name="email" required autocomplete="off">') +
-    field('Mot de passe Stremio', '<input type="password" name="password" required autocomplete="off">') +
-    '<p class="tv-form-msg" id="set-st-msg" role="status"></p>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Importer</button></div></form></section>';
+function categories() {
+  return CATEGORIES.filter((c) => c.id !== 'home' || !isKidProfile());
 }
 
 function pageHTML() {
+  const cats = categories();
+  const cat = (id) => cats.find((c) => c.id === id);
+  if (!cat(activeCat)) activeCat = cats[0].id;
+  const panels = [
+    panelHTML(cat('account'), PANEL_DESC.account, accountPanel()),
+    panelHTML(cat('appearance'), PANEL_DESC.appearance, appearancePanel()),
+    panelHTML(cat('region'), PANEL_DESC.region, regionPanel()),
+    panelHTML(cat('playback'), PANEL_DESC.playback, playbackPanel()),
+    cat('home') ? panelHTML(cat('home'), PANEL_DESC.home, homePanelHTML()) : '',
+    serverFormHTML(cats),
+  ].join('');
   return topBar(false) +
-    '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
-    '<h1 class="svc-title" id="svc-title" tabindex="-1">Réglages</h1><p class="svc-eyebrow">lastAddon, lecture, apparence et région</p></div></header>' +
-    '<div class="set-body">' + accountSection() + lastAddonSection() + playbackSection() + appearanceSection() + regionSection() + homeSettingsHTML() + dataSection() + '</div></article>';
+    '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="set-head">' +
+    '<p class="set-eyebrow">Laststream</p><h1 class="set-title" id="svc-title" tabindex="-1">Réglages</h1></header>' +
+    '<div class="set-layout">' + navHTML(cats, activeCat) + '<div class="set-main">' + panels + '</div></div></article>';
 }
 
+function setActive(id) {
+  activeCat = id;
+  detailEl.querySelectorAll('[data-set-cat]').forEach((b) => {
+    const on = b.dataset.setCat === id;
+    b.setAttribute('aria-current', on ? 'true' : 'false');
+    const nav = b.closest('.set-nav');
+    if (on && nav && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = b.offsetLeft - (nav.clientWidth - b.offsetWidth) / 2;
+  });
+}
+
+/** Ancre : active la catégorie tout de suite (sans attendre le défilement) et amène son panneau en haut. */
+export function goCategory(id) {
+  const panel = detailEl.querySelector('#set-p-' + id);
+  if (!panel) return;
+  setActive(id);
+  lockUntil = Date.now() + 800;
+  if (typeof panel.scrollIntoView === 'function') panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  panel.focus({ preventScroll: true });
+}
+
+/** Scrollspy : la catégorie active est celle du dernier panneau dont le haut a passé la ligne de lecture. */
+export function syncActiveCategory() {
+  if (state.kind !== 'settings' || Date.now() < lockUntil) return;
+  const panels = Array.from(detailEl.querySelectorAll('.set-panel'));
+  if (!panels.length) return;
+  let cur = panels[0];
+  panels.forEach((p) => { if (p.getBoundingClientRect().top <= 140) cur = p; });
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) cur = panels[panels.length - 1];
+  if (cur.dataset.cat !== activeCat) setActive(cur.dataset.cat);
+}
+
+let spyFrame = 0;
+window.addEventListener('scroll', () => {
+  if (state.kind !== 'settings' || spyFrame) return;
+  spyFrame = requestAnimationFrame(() => { spyFrame = 0; syncActiveCategory(); });
+}, { passive: true });
 function rerender() {
   const scroll = window.scrollY;
   detailEl.innerHTML = pageHTML();
@@ -217,6 +282,7 @@ async function loadConfig() {
 export async function showSettings() {
   teardownFiche();
   state.kind = 'settings';
+  activeCat = 'account';
   document.title = 'Réglages · Laststream';
   ed.loaded = false;
   ed.cfg = null;
@@ -241,19 +307,19 @@ function buildConfig(form) {
     else if (k === 'openrouterModel') delete cfg.services[k];
   });
   cfg.languages = cfg.languages || {};
-  cfg.languages.preferred = LANGS.map(([v]) => v).filter((v) => f['lang.' + v] && f['lang.' + v].checked);
-  cfg.languages.acceptVostfr = f.acceptVostfr.checked;
-  cfg.languages.fallbackToOthers = f.fallbackToOthers.checked;
+  cfg.languages.preferred = LANGS.map(([v]) => v).filter((v) => f['lang.' + v] && isOn(f['lang.' + v]));
+  cfg.languages.acceptVostfr = isOn(f.acceptVostfr);
+  cfg.languages.fallbackToOthers = isOn(f.fallbackToOthers);
   const resList = enumOf(['resolutions', 'allowed'], RESOLUTIONS) || RESOLUTIONS;
   cfg.resolutions = cfg.resolutions || {};
-  cfg.resolutions.allowed = resList.filter((v) => f['res.' + v] && f['res.' + v].checked);
+  cfg.resolutions.allowed = resList.filter((v) => f['res.' + v] && isOn(f['res.' + v]));
   if (f.resMax.value) cfg.resolutions.max = f.resMax.value; else delete cfg.resolutions.max;
   cfg.size = cfg.size || {};
   ['minGb', 'maxGb'].forEach((k) => { if (f[k].value !== '') cfg.size[k] = Number(f[k].value); else delete cfg.size[k]; });
   if (f.maxResults.value !== '') cfg.maxResults = Number(f.maxResults.value);
   cfg.sources = serializeSources();
-  cfg.onlyCached = f.onlyCached.checked;
-  if (f.debridOn.checked) {
+  cfg.onlyCached = isOn(f.onlyCached);
+  if (isOn(f.debridOn)) {
     const key = f.debridKey.value.trim();
     if (key) cfg.debrid = { service: 'alldebrid', apiKey: key };
     else if (!cfg.debrid) cfg.debrid = undefined; // pas de clé : rien à activer
@@ -322,10 +388,34 @@ async function save(form) {
   }
 }
 
+/** Effet d'un interrupteur de lecture : même écriture qu'avant (préférences locales), puis synchronisation du compte. */
+function applyToggle(pref, on) {
+  setTimeout(pushPrefs, 0);
+  if (pref === 'autoplay') setAutoplay(on);
+  else if (pref === 'skip-intro') setSkipPref('intro', on);
+  else if (pref === 'skip-recap') setSkipPref('recap', on);
+  else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
+}
+
 // ---------- Événements (délégués, limités à la page) ----------
 detailEl.addEventListener('click', async (e) => {
   const t = e.target;
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
+  const cat = t.closest('[data-set-cat]');
+  if (cat) { e.preventDefault(); goCategory(cat.dataset.setCat); return; }
+  const tg = t.closest('[data-set-toggle]');
+  if (tg) {
+    e.preventDefault();
+    const on = flip(tg);
+    if (tg.dataset.setPref) applyToggle(tg.dataset.setPref, on);
+    return;
+  }
+  const swRow = t.closest('[data-sw-row]');
+  if (swRow && !t.closest('button, a, input, select')) {
+    const sw = swRow.querySelector('[data-set-toggle]');
+    if (sw) sw.click();
+    return;
+  }
   if (t.closest('[data-set-ping]')) {
     const form = detailEl.querySelector('#set-la');
     const m = detailEl.querySelector('#set-la-msg');
@@ -375,11 +465,7 @@ detailEl.addEventListener('change', (e) => {
   const p = t.dataset.setPref;
   if (!p) return;
   setTimeout(pushPrefs, 0);
-  if (p === 'autoplay') setAutoplay(t.checked);
-  else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
-  else if (p === 'skip-intro') setSkipPref('intro', t.checked);
-  else if (p === 'skip-recap') setSkipPref('recap', t.checked);
-  else if (p === 'skip-next') setSkipPref('nextEpisode', t.checked);
+  if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
   else if (p === 'videolang') {
     setVideoLang(t.value);
     clearCache();
