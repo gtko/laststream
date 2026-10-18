@@ -11,6 +11,7 @@ export const SERVICE_SECRET_FIELDS = [
   'openrouterApiKey',
   'fanartApiKey',
   'introdbApiKey',
+  'skipdbApiKey',
   'animeskipClientId',
 ] as const;
 

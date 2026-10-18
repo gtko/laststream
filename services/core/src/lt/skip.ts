@@ -5,7 +5,7 @@ import { getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
 /** Types de segments : intro, reprise, générique de fin, post-générique, aperçu. */
 export type SkipKind = 'intro' | 'recap' | 'credits' | 'postcredits' | 'preview';
 /** Source d'un segment venu d'un service externe. */
-export type SkipSource = 'introdb' | 'aniskip' | 'animeskip';
+export type SkipSource = 'introdb' | 'skipdb' | 'aniskip' | 'animeskip';
 /** Origine d'un segment : service externe, store communautaire local, ou déduction à partir de la saison. */
 export type SkipOrigin = SkipSource | 'community' | 'inferred';
 
@@ -17,7 +17,7 @@ export interface SkipSegment {
   source: SkipOrigin;
   /** Sources concordantes (présent seulement si au moins deux sources ont fusionné sur ce segment). */
   sources?: SkipSource[];
-  /** Confiance : rapportée par la source (IntroDB), lissée par les votes (communauté), 0,5 (déduit). */
+  /** Confiance : rapportée par la source (IntroDB, SkipDB), lissée par les votes (communauté), 0,5 (déduit). */
   confidence?: number;
   /** Vrai pour un segment déduit des autres épisodes de la saison. */
   inferred?: true;
@@ -38,15 +38,16 @@ export interface SkipTarget {
 }
 
 export const INTRODB_BASE = 'https://api.introdb.app';
+export const SKIPDB_BASE = 'https://api.skipdb.tv';
 const ARM_BASE = 'https://arm.haglund.dev/api/v2';
 const ANISKIP_BASE = 'https://api.aniskip.com/v2';
 const ANIMESKIP_URL = 'https://api.anime-skip.com/graphql';
 
 /**
  * Rang des sources pour un même segment (plus petit = prioritaire). IntroDB avec au moins TRUSTED_SUBMISSIONS
- * soumissions passe en tête ; IntroDB peu soumis passe en queue.
+ * soumissions passe en tête ; viennent ensuite AniSkip (anime), SkipDB, Anime Skip ; IntroDB peu soumis passe en queue.
  */
-const RANK = { introdbTrusted: 0, aniskip: 1, animeskip: 2, introdbWeak: 3 } as const;
+const RANK = { introdbTrusted: 0, aniskip: 1, skipdb: 2, animeskip: 3, introdbWeak: 4 } as const;
 /** Soumissions IntroDB minimales pour qu'un segment soit préféré. */
 const TRUSTED_SUBMISSIONS = 2;
 /** Écart maximal (secondes) entre deux sources sur le début et la fin pour qu'elles concordent et fusionnent. */
@@ -144,6 +145,42 @@ async function introdbSegments(ctx: LtContext, apiKey: string | undefined, targe
     const submissions = num(segment.submission_count);
     const trusted = submissions !== undefined && submissions >= TRUSTED_SUBMISSIONS;
     const candidate: Candidate = { kind, start, end, source: 'introdb', priority: trusted ? RANK.introdbTrusted : RANK.introdbWeak };
+    const confidence = num(segment.confidence);
+    if (confidence !== undefined) candidate.confidence = confidence;
+    candidates.push(candidate);
+  }
+  return candidates;
+}
+
+/**
+ * SkipDB (lecture ouverte, 120 req/min) : intro, reprise, générique de fin (« outro ») et aperçu. Les segments hors
+ * repère (`match: out-of-range`) sont écartés : l'API les qualifie d'incertains. Sans `duration`, le repère est
+ * « agnostic » (pas de comparaison possible) ; la durée fournie est celle d'AniSkip quand il l'a donnée.
+ */
+const SKIPDB_FIELDS: readonly [string, SkipKind][] = [
+  ['intro', 'intro'],
+  ['recap', 'recap'],
+  ['outro', 'credits'],
+  ['preview', 'preview'],
+];
+
+async function skipdbSegments(ctx: LtContext, target: SkipTarget, durationSeconds: number | undefined): Promise<Candidate[]> {
+  const query = new URLSearchParams({ imdb_id: target.imdbId });
+  if (target.type === 'series') {
+    query.set('season', String(target.season));
+    query.set('episode', String(target.episode));
+  }
+  if (durationSeconds !== undefined) query.set('duration', String(durationSeconds));
+  const json = await jsonOrNothing(ctx, `${SKIPDB_BASE}/api/segments?${query}`, { headers: { accept: 'application/json' } });
+  if (!isRecord(json) || !isRecord(json.segments)) return [];
+  const candidates: Candidate[] = [];
+  for (const [field, kind] of SKIPDB_FIELDS) {
+    const segment = json.segments[field];
+    if (!isRecord(segment) || segment.match === 'out-of-range') continue;
+    const start = num(segment.start_ms);
+    const end = num(segment.end_ms);
+    if (start === undefined || end === undefined || end <= start) continue;
+    const candidate: Candidate = { kind, start: start / 1000, end: end / 1000, source: 'skipdb', priority: RANK.skipdb };
     const confidence = num(segment.confidence);
     if (confidence !== undefined) candidate.confidence = confidence;
     candidates.push(candidate);
@@ -365,39 +402,55 @@ function toResponse(candidates: Candidate[], episodeLength: number | undefined):
   return episodeLength === undefined ? { segments } : { segments, episodeLength };
 }
 
+/** Résultat de la recherche de sources : `complete` faux si une source a échoué (la réponse n'est alors pas mise en cache). */
+interface Sourced {
+  response: SkipResponse;
+  complete: boolean;
+}
+
 /**
- * Segments de saut d'une cible. Film ou série live : IntroDB. Série d'animation (ARM la rattache à un MAL) : AniSkip,
- * puis Anime Skip si son identifiant client est configuré, et IntroDB en plus (fusion des concordances, voir
- * mergeCandidates) ; si IntroDB échoue alors que l'animation a donné un segment, on garde l'animation seule. Cache
- * partagé : 7 jours si un segment est trouvé, 6 h sinon. La clé ne contient aucune clé de service, seulement si Anime
- * Skip est configuré.
+ * Interroge les sources d'une cible et fusionne. Série d'animation (ARM la rattache à un MAL) : AniSkip, puis Anime Skip
+ * si son identifiant client est configuré. IntroDB et SkipDB sont interrogés dans tous les cas, en parallèle. Une source
+ * en échec ne fait échouer la réponse que si aucune autre n'a donné de segment ; sinon la réponse part sans elle.
+ */
+async function fetchSegments(ctx: LtContext, services: Config['services'], target: SkipTarget): Promise<Sourced> {
+  const entries = target.type === 'series' ? await armEntries(ctx, target.imdbId) : [];
+  const entry = target.type === 'series' ? armEntryFor(entries, target.season) : undefined;
+  const anime: { candidates: Candidate[]; episodeLength?: number } =
+    entry?.mal !== undefined ? await aniskipSegments(ctx, entry.mal, target.episode) : { candidates: [] };
+  const candidates = [...anime.candidates];
+  if (entry?.anilist !== undefined && services.animeskipClientId !== undefined) {
+    candidates.push(...(await animeskipSegments(ctx, services.animeskipClientId, entry.anilist, target.season, target.episode)));
+  }
+  const [introdb, skipdb] = await Promise.allSettled([
+    introdbSegments(ctx, services.introdbApiKey, target),
+    skipdbSegments(ctx, target, anime.episodeLength),
+  ]);
+  const failures = [introdb, skipdb].filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+  for (const result of [introdb, skipdb]) {
+    if (result.status === 'fulfilled') candidates.push(...result.value);
+  }
+  const [firstFailure] = failures;
+  if (firstFailure !== undefined) {
+    if (candidates.length === 0) throw firstFailure.reason;
+    const code = firstFailure.reason instanceof LtError ? firstFailure.reason.code : 'inconnu';
+    console.warn(`[lt][skip] source externe indisponible, autres sources seules (statut amont : ${code})`);
+  }
+  return { response: toResponse(candidates, anime.episodeLength), complete: failures.length === 0 };
+}
+
+/**
+ * Segments de saut d'une cible : IntroDB et SkipDB (film ou série live), ou en plus AniSkip et Anime Skip (série
+ * d'animation). Fusion des concordances, voir mergeCandidates. Cache partagé, sans clé de service dans la clé (seulement
+ * l'état d'Anime Skip) : 7 jours si un segment est trouvé, 6 h sinon, jamais si une source a échoué.
  */
 export async function skipSegments(ctx: LtContext, services: Config['services'], target: SkipTarget): Promise<SkipResponse> {
   const animeskipOn = services.animeskipClientId !== undefined ? '1' : '0';
   const key = `skip:${target.type}:${target.imdbId}:${target.season}:${target.episode}:${animeskipOn}`;
-  return ctx.state.cache.get<SkipResponse>(
+  const sourced = await ctx.state.cache.get<Sourced>(
     key,
-    (result) => (result.segments.length > 0 ? TTL.skip : TTL.skipEmpty),
-    async () => {
-      const entries = target.type === 'series' ? await armEntries(ctx, target.imdbId) : [];
-      const entry = target.type === 'series' ? armEntryFor(entries, target.season) : undefined;
-      if (entry === undefined) {
-        return toResponse(await introdbSegments(ctx, services.introdbApiKey, target), undefined);
-      }
-      const anime: { candidates: Candidate[]; episodeLength?: number } =
-        entry.mal !== undefined ? await aniskipSegments(ctx, entry.mal, target.episode) : { candidates: [] };
-      const candidates = [...anime.candidates];
-      if (services.animeskipClientId !== undefined && entry.anilist !== undefined) {
-        candidates.push(...(await animeskipSegments(ctx, services.animeskipClientId, entry.anilist, target.season, target.episode)));
-      }
-      const animeFound = candidates.length > 0;
-      try {
-        candidates.push(...(await introdbSegments(ctx, services.introdbApiKey, target)));
-      } catch (err) {
-        if (!animeFound) throw err;
-        console.warn(`[lt][skip] IntroDB indisponible, segments d'animation seuls (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
-      }
-      return toResponse(candidates, anime.episodeLength);
-    },
+    (result) => (!result.complete ? 0 : result.response.segments.length > 0 ? TTL.skip : TTL.skipEmpty),
+    () => fetchSegments(ctx, services, target),
   );
+  return sourced.response;
 }
