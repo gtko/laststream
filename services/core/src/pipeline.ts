@@ -173,7 +173,7 @@ function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariant
   // Le nom de la release doit commencer par un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
   const release = raw.filename ?? raw.title;
   if (release !== undefined) {
-    if (!nameMatchesTitles(release, titles.titles)) return 'titre';
+    if (!nameMatchesTitles(release, [...titles.titles, ...(titles.aliases ?? [])])) return 'titre';
     if (!releaseYearFits(release, titles, ref.type)) return 'annee';
   }
   const scope = candidate.parsed.scope ?? {};

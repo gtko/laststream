@@ -10,6 +10,8 @@ const MAX_TITLE_LENGTH = 200;
 
 /** Nombre maximal de requêtes texte produites pour une recherche. */
 export const MAX_QUERIES = 8;
+/** Nombre maximal d'alias TMDB retenus (`TitleVariants.aliases`). */
+const MAX_ALIASES = 30;
 
 /** Titres d'un contenu, et année de sortie (films) ou de première diffusion (séries), si connue. */
 export interface TitleVariants {
@@ -21,6 +23,11 @@ export interface TitleVariants {
   en?: string;
   /** Identifiant TVDB d'une série (TMDB external_ids), quand il est connu. */
   tvdbId?: number;
+  /**
+   * Titres alternatifs TMDB (romaji, titres d'exportation…), nettoyés, dédupliqués, sans doublon de `titles`, limités à
+   * MAX_ALIASES. Servent seulement à la correspondance du nom de release : jamais aux requêtes (`titles` les exclut).
+   */
+  aliases?: string[];
 }
 
 interface CacheEntry {
@@ -57,6 +64,7 @@ function variantsOnly(found: TmdbTitles): TitleVariants {
   if (found.fr !== undefined) out.fr = found.fr;
   if (found.en !== undefined) out.en = found.en;
   if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
+  if (found.aliases !== undefined) out.aliases = found.aliases;
   return out;
 }
 
@@ -69,14 +77,16 @@ export function nameTokens(text: string): string[] {
     .filter((token) => token !== '');
 }
 
-/** Groupes de tête entre crochets (« [SubsPlease] », « [YTS.MX] ») : ils ne font pas partie du titre. */
-function withoutLeadingGroups(name: string): string {
-  return name.replace(/^\s*(?:\[[^\]]*\]\s*)+/, '');
-}
+/**
+ * Groupes de tête ne faisant pas partie du titre : crochets (« [SubsPlease] », « [www.site.org] ») et préfixes de site,
+ * « www.Site.com - » ou « www.site.org. » (www. + domaine, séparateurs ensuite), « site.org - » (domaine suivi d'un
+ * tiret ou d'une barre, précédé d'un espace). Un domaine nu suivi d'un point ne compte pas : « Star.Trek.S01E01 » reste.
+ */
+const LEADING_GROUP = /^\s*(?:\[[^\]]*\]\s*|www\.[a-z0-9-]+\.[a-z]{2,6}[\s._|-]+|[a-z0-9-]+\.[a-z]{2,6}\s+[-_|–]+\s*)+/i;
 
-/** Jetons du nom d'une release, sans groupes de tête. */
+/** Jetons du nom d'une release, sans groupes de tête (crochets et préfixe de site). */
 function releaseTokens(name: string): string[] {
-  return nameTokens(withoutLeadingGroups(name));
+  return nameTokens(name.replace(LEADING_GROUP, ''));
 }
 
 /** Formes de jetons d'un titre, sans doublon : apostrophe retirée (« lapothicaire ») ou séparatrice (« l apothicaire »). */
@@ -234,10 +244,10 @@ async function fetchTmdbTitles(ref: ContentRef, token: string, fetchFn: FetchFn,
   const originalKey = isMovie ? 'original_title' : 'original_name';
   const dateKey = isMovie ? 'release_date' : 'first_air_date';
   // Séries : identifiants externes (TVDB) pour la recherche par id ; un échec ne rend pas le résultat incomplet.
+  // La fiche en-US porte aussi les titres alternatifs (alias) ; ils ne servent qu'à la correspondance des releases.
   const [en, fr, external] = await Promise.all([
-    ...['en-US', 'fr-FR'].map((language) =>
-      getJson(`${TMDB_API_URL}/${kind}/${id}?language=${language}`, token, fetchFn, timeoutMs),
-    ),
+    getJson(`${TMDB_API_URL}/${kind}/${id}?language=en-US&append_to_response=alternative_titles`, token, fetchFn, timeoutMs),
+    getJson(`${TMDB_API_URL}/${kind}/${id}?language=fr-FR`, token, fetchFn, timeoutMs),
     isMovie ? Promise.resolve(undefined) : getJson(`${TMDB_API_URL}/tv/${id}/external_ids`, token, fetchFn, timeoutMs),
   ]);
   const titles = unique([
@@ -255,7 +265,23 @@ async function fetchTmdbTitles(ref: ContentRef, token: string, fetchFn: FetchFn,
   };
   const tvdbId = tvdbIdFrom(external);
   if (tvdbId !== undefined) out.tvdbId = tvdbId;
+  const aliases = aliasesOf(en, isMovie, titles);
+  if (aliases.length > 0) out.aliases = aliases;
   return out;
+}
+
+/**
+ * Titres alternatifs d'une fiche TMDB (append_to_response=alternative_titles) : `titles[]` pour un film, `results[]` pour
+ * une série. Nettoyés, dédupliqués, sans doublon des titres déjà connus, limités à MAX_ALIASES.
+ */
+function aliasesOf(en: Record<string, unknown> | undefined, isMovie: boolean, titles: readonly string[]): string[] {
+  const block = en?.alternative_titles;
+  const list = isRecord(block) ? block[isMovie ? 'titles' : 'results'] : undefined;
+  if (!Array.isArray(list)) return [];
+  const known = new Set(titles.map((title) => title.toLowerCase()));
+  const aliases = unique(list.map((entry: unknown) => (isRecord(entry) ? cleanTitle(entry.title) : undefined)))
+    .filter((title) => !known.has(title.toLowerCase()));
+  return aliases.slice(0, MAX_ALIASES);
 }
 
 /** Ajoute le titre de repli (dédupliqué) et l'année de repli si TMDB n'en donne pas. */
@@ -267,6 +293,7 @@ function finish(found: TitleVariants, fallback: TitleInfo | undefined): TitleVar
   if (found.fr !== undefined) out.fr = found.fr;
   if (found.en !== undefined) out.en = found.en;
   if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
+  if (found.aliases !== undefined) out.aliases = found.aliases;
   return out;
 }
 
@@ -466,7 +493,7 @@ export function yearMatches(resultTitle: string, year: number | undefined, title
 export function releaseYearFits(name: string, variants: TitleVariants, type: ContentRef['type']): boolean {
   const year = variants.year;
   if (year === undefined) return true;
-  const detected = releaseYear(name, variants.titles);
+  const detected = releaseYear(name, [...variants.titles, ...(variants.aliases ?? [])]);
   if (detected === undefined) return true;
   return type === 'movie' ? Math.abs(detected - year) <= 1 : detected >= year - 1;
 }
@@ -475,6 +502,6 @@ export function releaseYearFits(name: string, variants: TitleVariants, type: Con
 export function filterByYear(streams: RawStream[], ref: ContentRef, variants: TitleVariants | undefined): RawStream[] {
   const year = variants?.year;
   if (ref.type !== 'movie' || year === undefined) return streams;
-  const titles = variants?.titles ?? [];
+  const titles = [...(variants?.titles ?? []), ...(variants?.aliases ?? [])];
   return streams.filter((stream) => yearMatches(stream.title ?? stream.filename ?? '', year, titles));
 }

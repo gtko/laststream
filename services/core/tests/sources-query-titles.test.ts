@@ -38,7 +38,7 @@ function tmdb(table: Record<string, Handler>) {
 function duneTable(): Record<string, Handler> {
   return {
     [`${API}/find/tt15239678?external_source=imdb_id`]: () => json({ movie_results: [{ id: 693134 }], tv_results: [] }),
-    [`${API}/movie/693134?language=en-US`]: () =>
+    [`${API}/movie/693134?language=en-US&append_to_response=alternative_titles`]: () =>
       json({ title: 'Dune: Part Two', original_title: 'Dune: Part Two', release_date: '2024-02-27' }),
     [`${API}/movie/693134?language=fr-FR`]: () =>
       json({ title: 'Dune : Deuxième Partie', original_title: 'Dune: Part Two', release_date: '2024-02-27' }),
@@ -49,7 +49,7 @@ function duneTable(): Record<string, Handler> {
 function severanceTable(): Record<string, Handler> {
   return {
     [`${API}/find/tt9000001?external_source=imdb_id`]: () => json({ movie_results: [], tv_results: [{ id: 4242 }] }),
-    [`${API}/tv/4242?language=en-US`]: () =>
+    [`${API}/tv/4242?language=en-US&append_to_response=alternative_titles`]: () =>
       json({ name: 'Severance', original_name: 'Severance', first_air_date: '2022-02-18' }),
     [`${API}/tv/4242?language=fr-FR`]: () =>
       json({ name: 'Severance', original_name: 'Severance', first_air_date: '2022-02-18' }),
@@ -69,7 +69,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
       en: 'Dune: Part Two',
     });
     const urls = mock.mock.calls.map((call) => String(call[0]));
-    expect(urls).toContain(`${API}/movie/693134?language=en-US`);
+    expect(urls).toContain(`${API}/movie/693134?language=en-US&append_to_response=alternative_titles`);
     expect(urls).toContain(`${API}/movie/693134?language=fr-FR`);
     expect(urls.some((url) => url.includes(TOKEN))).toBe(false);
     const init = mock.mock.calls[0]?.[1];
@@ -286,5 +286,104 @@ describe('yearMatches', () => {
     expect(yearMatches('Blade.Runner.2049.2017.1080p', 2017)).toBe(true);
     expect(detectYear('Film.1920x1080.mkv')).toBeUndefined();
     expect(detectYear('Film.2024p.mkv')).toBeUndefined();
+  });
+});
+
+/** Frieren (série, TMDB 209867) : titres alternatifs TMDB (romaji, titre d'exportation) hors de `titles`. */
+const FRIEREN: ContentRef = { type: 'series', id: 'tt9100001:1:5', imdbId: 'tt9100001', season: 1, episode: 5 };
+
+const FRIEREN_ALTERNATIVES = [
+  { iso_3166_1: 'JP', title: 'Sousou no Frieren', type: '' },
+  { iso_3166_1: 'US', title: "Frieren: Beyond Journey's End", type: '' },
+  { iso_3166_1: 'FR', title: 'Frieren, au-delà du voyage', type: '' },
+  { iso_3166_1: 'JP', title: '  Sousou   no Frieren ', type: '' },
+  { iso_3166_1: 'XX', title: '', type: '' },
+];
+
+function frierenTable(alternatives: unknown[] = FRIEREN_ALTERNATIVES): Record<string, Handler> {
+  return {
+    [`${API}/find/tt9100001?external_source=imdb_id`]: () => json({ movie_results: [], tv_results: [{ id: 209867 }] }),
+    [`${API}/tv/209867?language=en-US&append_to_response=alternative_titles`]: () =>
+      json({
+        name: "Frieren: Beyond Journey's End",
+        original_name: '葬送のフリーレン',
+        first_air_date: '2023-09-29',
+        alternative_titles: { results: alternatives },
+      }),
+    [`${API}/tv/209867?language=fr-FR`]: () =>
+      json({ name: 'Frieren : Au-delà du voyage', original_name: '葬送のフリーレン', first_air_date: '2023-09-29' }),
+  };
+}
+
+describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêtes', () => {
+  it('série : alternative_titles.results en alias, dédupliqués et nettoyés ; titles ne grossit pas et ne sert pas aux requêtes', async () => {
+    const { fetch, mock } = tmdb(frierenTable());
+
+    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new Map() });
+
+    expect(variants.aliases).toEqual(['Sousou no Frieren', 'Frieren, au-delà du voyage']);
+    expect(variants.titles).toEqual(['葬送のフリーレン', "Frieren: Beyond Journey's End", 'Frieren : Au-delà du voyage']);
+    expect(variants.titles).not.toContain('Sousou no Frieren');
+    const urls = mock.mock.calls.map((call) => String(call[0]));
+    expect(urls).toContain(`${API}/tv/209867?language=en-US&append_to_response=alternative_titles`);
+    expect(buildQueries(variants, FRIEREN).some((query) => query.includes('Sousou'))).toBe(false);
+  });
+
+  it('film : alternative_titles.titles en alias ; titres vides, non textuels ou déjà connus ignorés', async () => {
+    const { fetch } = tmdb({
+      ...duneTable(),
+      [`${API}/movie/693134?language=en-US&append_to_response=alternative_titles`]: () =>
+        json({
+          title: 'Dune: Part Two',
+          original_title: 'Dune: Part Two',
+          release_date: '2024-02-27',
+          alternative_titles: {
+            titles: [
+              { iso_3166_1: 'DE', title: 'Dune 2', type: '' },
+              { iso_3166_1: 'US', title: 'Dune: Part Two', type: '' },
+              { iso_3166_1: 'FR', title: '  Dune   2 ', type: '' },
+              { iso_3166_1: 'ES', title: 'Dune Parte Dos', type: '' },
+              { iso_3166_1: 'XX', title: '', type: '' },
+              { iso_3166_1: 'XX', title: 42, type: '' },
+            ],
+          },
+        }),
+    });
+
+    const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new Map() });
+
+    expect(variants.aliases).toEqual(['Dune 2', 'Dune Parte Dos']);
+    expect(variants.titles).toEqual(['Dune: Part Two', 'Dune : Deuxième Partie']);
+  });
+
+  it('aliases limités à 30', async () => {
+    const many = Array.from({ length: 40 }, (_, index) => ({ iso_3166_1: 'XX', title: `Alias ${index + 1}`, type: '' }));
+    const { fetch } = tmdb(frierenTable(many));
+
+    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new Map() });
+
+    expect(variants.aliases).toHaveLength(30);
+    expect(variants.aliases?.[0]).toBe('Alias 1');
+    expect(variants.aliases?.at(-1)).toBe('Alias 30');
+  });
+
+  it('aliases mis en cache avec les titres : un second appel les renvoie sans appel TMDB', async () => {
+    const cache: TitleCache = new Map();
+    const first = tmdb(frierenTable());
+    await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch: first.fetch, cache });
+    const offline = tmdb({});
+
+    const second = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch: offline.fetch, cache });
+
+    expect(second.aliases).toEqual(['Sousou no Frieren', 'Frieren, au-delà du voyage']);
+    expect(offline.mock).not.toHaveBeenCalled();
+  });
+
+  it('sans alias TMDB : aucun champ aliases', async () => {
+    const { fetch } = tmdb(severanceTable());
+
+    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
+
+    expect(variants).not.toHaveProperty('aliases');
   });
 });

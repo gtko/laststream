@@ -29,7 +29,7 @@ function tmdb(table: Record<string, () => Response>) {
 
 const severance = {
   [`${API}/find/tt9000001?external_source=imdb_id`]: () => json({ movie_results: [], tv_results: [{ id: 4242 }] }),
-  [`${API}/tv/4242?language=en-US`]: () => json({ name: 'Severance', original_name: 'Severance', first_air_date: '2022-02-18' }),
+  [`${API}/tv/4242?language=en-US&append_to_response=alternative_titles`]: () => json({ name: 'Severance', original_name: 'Severance', first_air_date: '2022-02-18' }),
   [`${API}/tv/4242?language=fr-FR`]: () => json({ name: 'Severance', original_name: 'Severance', first_air_date: '2022-02-18' }),
 };
 
@@ -153,5 +153,43 @@ describe('année de la release : films à ±1 an, séries pas antérieure à la 
     expect(releaseYearFits('Star.Trek.1966.S01E01', variants, 'series')).toBe(true);
     expect(releaseYearFits('Star.Trek.1965.S01E01', variants, 'series')).toBe(true);
     expect(releaseYearFits('Star.Trek.1950.S01E01', variants, 'series')).toBe(false);
+  });
+
+  it('alias TMDB (releaseYearFits) : l’année d’un titre alternatif n’est pas une année de sortie', () => {
+    const variants = { titles: ['Blade Runner'], aliases: ['Blade Runner 2049'], year: 2017 };
+    expect(releaseYearFits('Blade.Runner.2049.1080p', variants, 'movie')).toBe(true);
+    expect(releaseYearFits('Blade.Runner.2049.1080p', { titles: ['Blade Runner'], year: 2017 }, 'movie')).toBe(false);
+  });
+});
+
+describe('alias TMDB : correspondance du nom de release, sans élargir le titre principal', () => {
+  it('Frieren accepté via l’alias « Sousou no Frieren », refusé sans cet alias', () => {
+    const titles = ["Frieren: Beyond Journey's End", 'Sousou no Frieren'];
+    expect(nameMatchesTitles('Sousou.No.Frieren.S01E05.MULTi', titles)).toBe(true);
+    expect(nameMatchesTitles('Sousou.No.Frieren.S01E05.MULTi', ["Frieren: Beyond Journey's End"])).toBe(false);
+  });
+
+  it('Star Trek 1966 rejette toujours Strange New Worlds, même si un alias existe', () => {
+    const titles = ['Star Trek', 'Star Trek: The Original Series', 'Strange New Worlds'];
+    expect(nameMatchesTitles('Star.Trek.Strange.New.Worlds.2022.S01E01.1080p.WEB', titles)).toBe(false);
+    expect(nameMatchesTitles('Star.Trek.1966.S01E01.1080p.WEB-DL', titles)).toBe(true);
+  });
+});
+
+describe('préfixe de site en tête de release (www.xxx.tld, xxx.tld), sans toucher aux titres avec un point', () => {
+  it('www.Site.com - Star Trek S01E01 MULTI, [www.site.org] Star.Trek.S01E01 et site.org - Star Trek : acceptés', () => {
+    expect(nameMatchesTitles('www.Site.com - Star Trek S01E01 MULTI', ['Star Trek'])).toBe(true);
+    expect(nameMatchesTitles('[www.site.org] Star.Trek.S01E01', ['Star Trek'])).toBe(true);
+    expect(nameMatchesTitles('www.site.org.Star.Trek.S01E01.1080p', ['Star Trek'])).toBe(true);
+    expect(nameMatchesTitles('site.org - Star Trek S01E01', ['Star Trek'])).toBe(true);
+    expect(nameMatchesTitles('[SubsPlease] www.site.org - Star Trek S01E01', ['Star Trek'])).toBe(true);
+  });
+
+  it('le préfixe ne fait pas passer un autre titre, et les titres avec un point restent intacts', () => {
+    expect(nameMatchesTitles('www.Site.com - Star Trek Strange New Worlds S01E01', ['Star Trek'])).toBe(false);
+    expect(nameMatchesTitles('Star.Trek.S01E01', ['Star Trek'])).toBe(true);
+    expect(nameMatchesTitles('Mr.Robot.S01E01', ['Mr Robot'])).toBe(true);
+    expect(nameMatchesTitles('Dune.Part.Two.2024.1080p', ['Dune Part Two'])).toBe(true);
+    expect(releaseYear('www.Site.com - Blade.Runner.2049.2017.1080p', ['Blade Runner 2049'])).toBe(2017);
   });
 });

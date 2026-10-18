@@ -531,3 +531,41 @@ describe('pipeline v2 : série au titre strict (Star Trek 1966, toutes origines)
     expect(result.streams.map((stream) => stream.infoHash).sort()).toEqual([H4, H5].sort());
   });
 });
+
+describe('pipeline v2 : alias TMDB d’une série (titre alternatif romaji)', () => {
+  it('« Sousou.No.Frieren » gardé grâce à l’alias TMDB ; « Frieren Autre Serie » écarté', async () => {
+    const cinemeta: Route = (url) =>
+      url.hostname === 'v3-cinemeta.strem.io'
+        ? json({ meta: { name: 'Frieren', releaseInfo: '2023', runtime: '24 min' } })
+        : undefined;
+    const tmdbSeries: Route = (url) => {
+      if (url.hostname !== 'api.themoviedb.org') return undefined;
+      if (url.pathname.startsWith('/3/find/')) return json({ movie_results: [], tv_results: [{ id: 209867 }] });
+      if (url.pathname === '/3/tv/209867' && url.searchParams.get('language') === 'fr-FR') {
+        return json({ name: 'Frieren : Au-delà du voyage', original_name: '葬送のフリーレン', first_air_date: '2023-09-29' });
+      }
+      if (url.pathname === '/3/tv/209867') {
+        return json({
+          name: "Frieren: Beyond Journey's End",
+          original_name: '葬送のフリーレン',
+          first_air_date: '2023-09-29',
+          alternative_titles: { results: [{ iso_3166_1: 'JP', title: 'Sousou no Frieren', type: '' }] },
+        });
+      }
+      return undefined;
+    };
+    const { fetch } = routedFetch([
+      cinemeta,
+      tmdbSeries,
+      upstreamWith([
+        { name: 'Upstream', title: 'Sousou.No.Frieren.S01E05.MULTi.1080p.WEB', infoHash: H.a, description: '👤 50' },
+        { name: 'Upstream', title: 'Frieren.Autre.Serie.S01E05.MULTi.1080p', infoHash: H.b, description: '👤 40' },
+      ]),
+    ]);
+    const ref: ContentRef = { type: 'series', id: 'tt9100001:1:5', imdbId: 'tt9100001', season: 1, episode: 5 };
+
+    const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), ref, ctxFor(fetch));
+
+    expect(result.streams.map((stream) => stream.infoHash)).toEqual([H.a]);
+  });
+});
