@@ -1,4 +1,4 @@
-import { DEFAULT_BASE, getSettings, saveSettings } from './config';
+import { DEFAULT_BASE, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings } from './config';
 
 /*
  * Synchronisation de la config lastAddon chiffrée avec le compte (réglages du profil, clé `lastaddonConfig`).
@@ -48,7 +48,10 @@ export async function reconcileConfig(
   const local = getSettings();
   if (local.config) return typeof remote === 'string' && remote ? 'none' : configForAccount(local.config) ? 'push' : 'none';
   if (typeof remote !== 'string' || !remote.trim()) return 'none';
-  const base = (await servedByLastAddon()) ? location.origin : local.base || DEFAULT_BASE;
+  // Serveur perso choisi : son adresse. Sinon origine de la page servie par lastAddon, puis serveur Laststream sur Android.
+  const base = local.mode === 'custom' && local.custom
+    ? local.custom
+    : (await servedByLastAddon()) ? location.origin : local.base || (isAndroidApp() ? PUBLIC_BASE : DEFAULT_BASE);
   saveSettings({ base, config: remote });
   return 'pulled';
 }

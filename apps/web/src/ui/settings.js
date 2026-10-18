@@ -2,7 +2,8 @@
 import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
 import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
 import { testServer } from '../data/serverTest';
-import { DEFAULT_BASE, getBase, getConfig, isAndroidApp, isConfigured, normalizeBase, saveSettings } from '../data/config';
+import { DEFAULT_BASE, getBase, getConfig, getCustom, getMode, isAndroidApp, isConfigured, normalizeBase, saveSettings } from '../data/config';
+import { laststreamBase, PUBLIC_PROBE_MS, probeHealth, serverChoiceVisible, switchServer } from '../data/serverMode';
 import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
@@ -139,16 +140,31 @@ function audioPanel() {
       fieldRow('Langue apprise', '', langSelect('lang-learnlang', lp.learnLang, [], !lp.learn)));
 }
 
+/** Choix du serveur (Android et pages servies par lastAddon) : Laststream par défaut, ou un serveur perso. */
+function serverChoiceHTML() {
+  const mode = ed.srvMode || getMode() || 'public';
+  const laststream = laststreamBase();
+  const btn = (id, label) => '<button type="button" class="btn ' + (mode === id ? 'btn-primary' : 'btn-ghost') + ' btn-sm" data-set-srvmode="' + id + '" aria-pressed="' + (mode === id) + '">' + label + '</button>';
+  return actions(btn('public', 'Serveur Laststream (par défaut)') + btn('custom', 'Mon propre serveur')) +
+    (mode === 'public'
+      ? '<p class="set-hint">Adresse : <b>' + esc(laststream) + '</b>. Le catalogue, les notes et les sources passent par ce serveur.</p>' +
+        '<input type="hidden" name="base" value="' + esc(laststream) + '">'
+      : stackInput('Adresse de mon serveur', 'Ton propre lastAddon : par exemple http://192.168.1.20:7000 sur le réseau local, ou une adresse https.',
+        'type="url" name="base" value="' + esc(getCustom() || getBase()) + '" placeholder="http://192.168.1.20:7000"') +
+        actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester</button>'));
+}
+
 function serverPanelInner() {
   const c = ed.cfg || {};
   const sv = c.services || {};
   const android = isAndroidApp();
+  const choice = serverChoiceVisible();
   const base = getBase() || (android ? '' : DEFAULT_BASE);
   const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
     ? stackInput(title, desc, 'type="text" name="svc.' + k + '" value="' + esc(sv[k] || 'openai/gpt-4o-mini') + '"')
     : stackInput(title, desc, 'type="password" autocomplete="off" name="svc.' + k + '" placeholder="' + esc(secretPlaceholder(sv[k])) + '"'))).join('');
-  return card('Adresse', stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.' + (android ? ' Sur Android, c’est lastAddon sur ton PC : adresse du réseau local, par exemple http://192.168.1.20:7000.' : ''),
-    'type="url" name="base" value="' + esc(base) + '" placeholder="' + (android ? 'http://192.168.1.20:7000' : 'http://localhost:7000') + '"') +
+  return card('Adresse', choice ? serverChoiceHTML() : stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.',
+    'type="url" name="base" value="' + esc(base) + '" placeholder="http://localhost:7000"') +
     actions('<button type="button" class="btn btn-ghost btn-sm" data-set-ping>Tester l’adresse</button>')) +
     card('Clés des services', services + actions('<button type="button" class="btn btn-ghost btn-sm" data-set-test="services">Tester les clés</button>') +
       '<div class="set-tests" id="set-tests-services" aria-live="polite"></div>', { desc: 'Catalogues, notes, saisons et recommandations. Laisse un champ vide pour garder la clé enregistrée.' });
@@ -387,12 +403,36 @@ async function runTest(kind, btn) {
   }
 }
 
+/** « Serveur Laststream » s'applique tout de suite (l'application redémarre si le serveur change) ; « Mon propre serveur » attend « Enregistrer ». */
+function chooseServerMode(mode) {
+  if (mode === 'custom') { ed.srvMode = 'custom'; rerender(); return; }
+  ed.srvMode = 'public';
+  if (!switchServer({ mode: 'public' })) rerender();
+}
+
+/** Test d'un serveur perso : /health, message OK ou erreur. */
+async function pingMessage(raw) {
+  let base = '';
+  try { base = normalizeBase(raw); } catch (err) { return err.message; }
+  if (!base) return 'Saisis l’adresse de ton serveur, par exemple http://192.168.1.20:7000.';
+  return (await probeHealth(base, PUBLIC_PROBE_MS))
+    ? 'OK : lastAddon répond à cette adresse.'
+    : 'Erreur : serveur injoignable, ou ce n’est pas lastAddon. Vérifie l’adresse et que lastAddon tourne.';
+}
+
 async function save(form) {
   const msg = detailEl.querySelector('#set-la-msg');
   if (msg) msg.textContent = 'Enregistrement…';
   try {
+    const choice = serverChoiceVisible() ? (ed.srvMode || getMode() || 'public') : null;
+    if (choice === 'custom' && !form.elements.base.value.trim()) throw new Error('Saisis l’adresse de ton serveur.');
     const { base, config } = await encodeFromForm(form);
-    saveSettings({ base, config });
+    if (choice) {
+      // Serveur changé : l'application redémarre avec la config chiffrée de ce serveur.
+      if (switchServer({ mode: choice, custom: choice === 'custom' ? base : undefined }, config)) return;
+    } else {
+      saveSettings({ base, config });
+    }
     pushConfig(config);
     clearCache();
     ed.cfg = (await decodeConfig(config, base)) || ed.cfg;
@@ -452,9 +492,14 @@ detailEl.addEventListener('click', async (e) => {
   if (t.closest('[data-set-ping]')) {
     const form = detailEl.querySelector('#set-la');
     const m = detailEl.querySelector('#set-la-msg');
-    if (form && m) { m.textContent = 'Connexion en cours…'; m.textContent = (await testServer(form.elements.base.value)).message; }
+    if (form && m) {
+      m.textContent = 'Connexion en cours…';
+      m.textContent = serverChoiceVisible() ? await pingMessage(form.elements.base.value) : (await testServer(form.elements.base.value)).message;
+    }
     return;
   }
+  const srvMode = t.closest('[data-set-srvmode]');
+  if (srvMode) { e.preventDefault(); chooseServerMode(srvMode.dataset.setSrvmode); return; }
   const test = t.closest('[data-set-test]');
   if (test) { e.preventDefault(); runTest(test.dataset.setTest, test); return; }
   const th = t.closest('[data-set-theme]');

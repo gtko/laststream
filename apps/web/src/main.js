@@ -16,7 +16,7 @@ import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
 import { applyTheme, readTheme } from './data/theme';
 import { runAuthFlow } from './ui/auth-ui.js';
-import { needsServerSetup, runServerSetup } from './ui/server-setup.js';
+import { ensureServerSetup } from './ui/server-setup.js';
 import { app, detailEl } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
@@ -32,16 +32,13 @@ import './ui/calendar.js';
 import './ui/sources-ui.js';
 import { announceShellReady } from './player/shell';
 import { servedByLastAddon } from './data/configSync';
-import { getSettings, saveSettings } from './data/config';
+import { setServedOrigin } from './data/serverMode';
 
-// Application Android, premier lancement : adresse du serveur lastAddon (sur le PC) avant tout appel réseau.
-if (needsServerSetup()) await runServerSetup();
-// App Windows (ou toute page servie par lastAddon lui-même) : l'adresse du serveur est l'origine de la page,
-// quel que soit le port choisi au démarrage (7000 peut être déjà pris).
-if (await servedByLastAddon()) {
-  const s = getSettings();
-  if (s.base !== location.origin) saveSettings({ ...s, base: location.origin });
-}
+// App Windows (ou toute page servie par lastAddon lui-même) : serveur = origine de la page, quel que soit le port
+// choisi au démarrage, sauf si l'utilisateur a choisi un serveur perso. Déclaré avant la résolution du serveur.
+if (await servedByLastAddon()) setServedOrigin(location.origin);
+// Application Android : serveur Laststream par défaut, écran de saisie seulement s'il ne répond pas (avant tout appel réseau).
+await ensureServerSetup();
 await initAuth();
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });

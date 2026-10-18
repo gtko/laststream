@@ -8,10 +8,20 @@ import { cleartextAllowed } from './lan';
  */
 export const SETTINGS_STORAGE_KEY = 'laststream.lastaddon';
 export const DEFAULT_BASE = 'http://localhost:7000';
+/** Serveur public de lastAddon : adresse par défaut de l'application Android (une seule modification à faire ici). */
+export const PUBLIC_BASE = 'https://laststream.gtux-prog.workers.dev';
+
+/** Choix du serveur (Android et pages servies par lastAddon) : Laststream par défaut, ou un serveur perso. */
+export type ServerMode = 'public' | 'custom';
 
 export interface LastAddonSettings {
+  /** Adresse effective utilisée par les requêtes (calculée selon le choix et la plateforme). */
   base: string;
   config: string;
+  /** Absent tant que le choix n'a pas été fait (anciennes installations). */
+  mode?: ServerMode;
+  /** Adresse du serveur perso, gardée même quand le mode est 'public'. */
+  custom?: string;
 }
 
 export type QueryValue = string | number | boolean | null | undefined;
@@ -26,9 +36,12 @@ function readSettings(): LastAddonSettings {
     const stored = typeof parsed?.base === 'string' ? parsed.base : '';
     // Android : une adresse http stockée hors réseau local est écartée au démarrage.
     const base = isAndroidApp() && stored && !cleartextAllowed(stored) ? '' : stored;
+    const mode = parsed?.mode === 'public' || parsed?.mode === 'custom' ? parsed.mode : undefined;
     return {
       base,
       config: typeof parsed?.config === 'string' ? parsed.config : '',
+      ...(mode ? { mode } : {}),
+      custom: typeof parsed?.custom === 'string' ? parsed.custom : '',
     };
   } catch {
     return { ...EMPTY };
@@ -79,6 +92,8 @@ export function normalizeBase(raw: string): string {
 export const getBase = (): string => settings.base;
 export const getConfig = (): string => settings.config;
 export const getSettings = (): LastAddonSettings => ({ ...settings });
+export const getMode = (): ServerMode | undefined => settings.mode;
+export const getCustom = (): string => settings.custom ?? '';
 export const isConfigured = (): boolean => settings.base !== '' && settings.config !== '';
 
 /** Enregistre {base, config} dans la clé historique. */
@@ -86,6 +101,8 @@ export function saveSettings(next: Partial<LastAddonSettings>): void {
   const merged: LastAddonSettings = {
     base: next.base !== undefined ? normalizeBase(next.base) : settings.base,
     config: next.config !== undefined ? next.config.trim() : settings.config,
+    ...(next.mode !== undefined ? { mode: next.mode } : settings.mode ? { mode: settings.mode } : {}),
+    custom: next.custom !== undefined ? (next.custom.trim() ? normalizeBase(next.custom) : '') : (settings.custom ?? ''),
   };
   settings = merged;
   writeSettings(merged);
