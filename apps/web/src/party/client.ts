@@ -38,6 +38,7 @@ export interface ClientEvents {
   host: string;
   muted: { user: string; muted: boolean };
   reported: { by?: string; against?: string; text?: string };
+  removed: { messageId: string };
   error: string;
   status: ClientStatus;
   end: EndReason;
@@ -271,6 +272,11 @@ export class PartyClient {
         break;
       case 'reported':
         this.emit('reported', { by: msg.by, against: msg.against, text: msg.text });
+        break;
+      case 'removed':
+        // Message retiré par la modération : il disparaît du chat.
+        this.chat = this.chat.filter((l) => l.id !== msg.messageId);
+        this.emit('removed', { messageId: msg.messageId });
         break;
       case 'error':
         this.emit('error', msg.code);
