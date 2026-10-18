@@ -39,7 +39,7 @@ let token: string;
 let profile: string;
 
 /** Application neuve, compte « alice » connecté et un profil libre. */
-async function boot(userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>): Promise<void> {
+async function boot(userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>): Promise<void> {
   app = await startApp({ userRateLimits });
   await request(app, 'POST', '/user/register', { body: { username: 'alice', password: PASSWORD } });
   token = await loginAs(app, 'alice');

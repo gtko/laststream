@@ -3,6 +3,7 @@ import type { Express, Request, Response } from 'express';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
+import { isEdgeRequest } from '../config/edge.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
@@ -45,7 +46,7 @@ function firstToken(value: string | undefined): string | undefined {
  * - LASTADDON_PUBLIC_URL, si défini (validé au démarrage), prime toujours.
  * - Sinon, en mode public (LASTADDON_PUBLIC=1) : erreur, la base doit être configurée (voir assertStartupEnv).
  * - Sinon : protocole et hôte de la requête. X-Forwarded-Proto / X-Forwarded-Host ne sont lus que si
- *   LASTADDON_TRUST_PROXY=1 ; valeurs validées (protocole http(s), hôte au format nom ou IP avec port).
+ *   LASTADDON_TRUST_PROXY=1 ou si la requête vient du relais authentifié (LASTADDON_EDGE_SECRET) ; valeurs validées (protocole http(s), hôte au format nom ou IP avec port).
  */
 export function publicBaseUrl(req: Request): string {
   const configured = configuredPublicUrl();
@@ -54,7 +55,7 @@ export function publicBaseUrl(req: Request): string {
     throw new Error('LASTADDON_PUBLIC=1 exige LASTADDON_PUBLIC_URL');
   }
 
-  const trustProxy = isTrustProxy();
+  const trustProxy = isTrustProxy() || isEdgeRequest(req);
   const forwardedProto = trustProxy ? firstToken(req.get('x-forwarded-proto'))?.toLowerCase() : undefined;
   const scheme = forwardedProto === 'http' || forwardedProto === 'https' ? forwardedProto : req.protocol;
   const hostCandidates = [trustProxy ? firstToken(req.get('x-forwarded-host')) : undefined, req.get('host')];

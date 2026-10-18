@@ -2,6 +2,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
+import { edgeTrust } from './config/edge.js';
 import { allowedOrigins, configuredStreamingServer, isTrustProxy } from './config/runtime-env.js';
 import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
@@ -186,6 +187,8 @@ export function createApp(deps: AppDeps): Express {
   app.disable('x-powered-by');
   // Derrière un reverse proxy de confiance uniquement : le débit se mesure alors sur la vraie IP du client.
   if (isTrustProxy()) app.set('trust proxy', 1);
+  // Relais de confiance authentifié par secret (LASTADDON_EDGE_SECRET) : IP réelle du client, sans faire confiance à un en-tête libre.
+  app.use(edgeTrust());
   app.use(corsMiddleware([...allowedOrigins(), ...(deps.uiOrigins ?? [])]));
   app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));

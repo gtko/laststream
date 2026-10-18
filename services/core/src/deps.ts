@@ -23,8 +23,8 @@ export interface AppDeps {
   lookupHost?: (hostname: string) => Promise<readonly string[]>;
   /** Base SQLite des données utilisateur (':memory:' pour les tests). Par défaut : LASTADDON_DATA_DIR/laststream.db. */
   userDbPath?: string;
-  /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur. */
-  userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>;
+  /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
+  userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   /**
    * Prowlarr local détecté (absent : aucun, ce qui désactive la détection). Le serveur l'initialise au démarrage.
    * Sa clé ne doit jamais sortir vers les clients ni dans les journaux.

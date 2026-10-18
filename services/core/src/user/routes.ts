@@ -61,7 +61,9 @@ const DEFAULT_KID_MAX_AGE: KidMaxAge = 12;
 export const PIN_MAX_FAILURES = 5;
 export const PIN_LOCK_MS = 15 * 60_000;
 const LIMIT_WINDOW_MS = 60_000;
-const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10 } as const;
+const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10, authPerIp: 10 } as const;
+/** Connexion et inscription : tentatives par IP sur une fenêtre longue (freine la force brute). */
+const AUTH_WINDOW_MS = 15 * 60_000;
 const SETTING_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const MAX_SETTINGS_PER_WRITE = 100;
 const MAX_SETTING_BYTES = 4096;
@@ -199,6 +201,7 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     sensitive: createRateLimiter(limits.sensitive, LIMIT_WINDOW_MS),
   };
   const loginByUsername = createRateLimiter(limits.loginPerUsername, LIMIT_WINDOW_MS);
+  const authByIp = createRateLimiter(limits.authPerIp, AUTH_WINDOW_MS);
 
   const router = express.Router();
   router.use((_req, res, next) => {
@@ -213,6 +216,10 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     const kind = sensitive ? 'sensitive' : req.method === 'GET' || req.method === 'HEAD' ? 'read' : 'write';
     const verdict = limiters[kind](req.ip ?? 'inconnu');
     if (!verdict.allowed) return next(new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec));
+    if (req.method === 'POST' && (req.path === '/login' || req.path === '/register')) {
+      const auth = authByIp(req.ip ?? 'inconnu');
+      if (!auth.allowed) return next(new UserApiError(429, 'rate_limited', undefined, auth.retryAfterSec));
+    }
     next();
   });
 
