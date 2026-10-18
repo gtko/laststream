@@ -57,11 +57,11 @@ describe('routes générales', () => {
     expect(schema.properties).toHaveProperty('sources');
   });
 
-  it('CORS ouvert (*) sur le manifest, absent sur /health', async () => {
+  it('CORS ouvert (*) sur le manifest, et sur la sonde /health', async () => {
     const manifest = await fetch(`${baseUrl}/manifest.json`);
     expect(manifest.headers.get('access-control-allow-origin')).toBe('*');
     const health = await fetch(`${baseUrl}/health`);
-    expect(health.headers.get('access-control-allow-origin')).toBeNull();
+    expect(health.headers.get('access-control-allow-origin')).toBe('*');
   });
 });
 

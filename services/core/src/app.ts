@@ -38,6 +38,8 @@ export const MANIFEST = {
 
 /** Routes publiques lues par Stremio : CORS ouvert (`*`). */
 const OPEN_CORS_PATHS: readonly RegExp[] = [
+  // Sonde de disponibilité : lue depuis les apps (Capacitor, autre origine) avant toute connexion ; aucune donnée.
+  /^\/health$/,
   /^\/manifest\.json$/,
   /^\/[^/]+\/manifest\.json$/,
   /^\/[^/]+\/stream\/[^/]+\/[^/]+$/,

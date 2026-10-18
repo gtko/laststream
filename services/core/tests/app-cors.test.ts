@@ -46,9 +46,9 @@ describe('CORS : routes Stremio ouvertes', () => {
     },
   );
 
-  it('les autres routes (health, play) n ont pas de CORS ouvert', async () => {
+  it('la route play n a pas de CORS ouvert (/health, sonde publique, l a)', async () => {
     const health = await fetch(`${custom}/health`, { headers: { Origin: 'https://anywhere.example' } });
-    expect(health.headers.get('access-control-allow-origin')).toBeNull();
+    expect(health.headers.get('access-control-allow-origin')).toBe('*');
   });
 });
 
@@ -121,5 +121,14 @@ describe('createRateLimiter', () => {
     expect(limiter('autre').allowed).toBe(true);
     now = 1000;
     expect(limiter('ip').allowed).toBe(true);
+  });
+});
+
+describe('CORS : sonde /health', () => {
+  it('est lisible depuis une autre origine (apps Capacitor) sans données', async () => {
+    const res = await fetch(`${custom}/health`, { headers: { Origin: 'capacitor://localhost' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(await res.json()).toEqual({ ok: true });
   });
 });
