@@ -42,6 +42,14 @@ export function closeHover() {
   hv.key = '';
 }
 
+/** Position de la tuile hors zoom de survol (transform) : le zoom ne doit pas faire croire que la page a bougé. */
+export function layoutPos(tile) {
+  const p = tile.offsetParent;
+  if (!p) { const r = tile.getBoundingClientRect(); return { left: r.left, top: r.top }; }
+  const pr = p.getBoundingClientRect();
+  return { left: pr.left + tile.offsetLeft - p.scrollLeft, top: pr.top + tile.offsetTop - p.scrollTop };
+}
+
 export function placeHover(el, anchor) {
   const r = anchor.getBoundingClientRect();
   const w = el.offsetWidth;
@@ -61,7 +69,7 @@ export function openHover(tile) {
   const token = hv.token;
   hv.tile = tile;
   hv.key = key;
-  hv.anchor = tile.getBoundingClientRect();
+  hv.anchor = layoutPos(tile);
   const anchor = tile.querySelector('.card-media, .up-media') || tile;
   const rect = anchor.getBoundingClientRect();
   const w = Math.round(Math.max(360, Math.min(620, rect.width * 1.9)));
@@ -140,7 +148,7 @@ document.addEventListener('pointerover', (e) => {
   if (e.target.closest('#hovercard')) {
     // La mise en page a changé sous l'aperçu (rangée insérée, image chargée) : il ne désigne plus la bonne tuile.
     if (hv.tile && hv.anchor) {
-      const r = hv.tile.getBoundingClientRect();
+      const r = layoutPos(hv.tile);
       if (!hv.tile.isConnected || Math.abs(r.left - hv.anchor.left) + Math.abs(r.top - hv.anchor.top) > 6) { closeHover(); return; }
     }
     clearTimeout(hv.closeTimer);
@@ -181,4 +189,14 @@ document.addEventListener('focusin', (e) => {
 });
 document.addEventListener('focusout', (e) => {
   if (hoverTileOf(e.target) && !(e.relatedTarget instanceof Element && e.relatedTarget.closest('#hovercard'))) closeHover();
+});
+// Clic sur la carte agrandie (hors boutons) : même effet qu'un clic sur la tuile — reprendre la lecture pour une
+// carte « Reprendre », sinon ouvrir la fiche.
+document.addEventListener('click', (e) => {
+  if (!(e.target instanceof Element)) return;
+  const card = e.target.closest('#hovercard');
+  if (!card || e.target.closest('button, a, input, select, [role="button"]')) return;
+  const tile = hv.tile;
+  closeHover();
+  if (tile && tile.isConnected) tile.click();
 });
