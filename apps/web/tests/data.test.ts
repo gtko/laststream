@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, reque
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { canonSummary, normalizeCanon, tmdbShape } from '../src/data/series';
 import { hasProviders, movieAvailability } from '../src/data/released';
 import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
 import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
@@ -313,6 +314,38 @@ describe('affiche typographique', () => {
     expect(html).toContain('>ST<');
     expect(html).toContain('2017 · Science-fiction');
     expect(html).toContain('--tp1:hsl(');
+  });
+});
+
+describe('structure canonique des séries', () => {
+  const raw = { source: 'tvdb', seasons: [
+    { season_number: 2, episodes: [{ episode_number: 1, aired: '2022-03-01', title: 'B' }] },
+    { seasonNumber: 1, name: 'S1', episodes: [{ number: 2, name: 'Deux', airDate: '2021-01-08', absoluteNumber: 2, still_path: '/x.jpg' }, { number: 1, name: 'Un', air_date: '2021-01-01', image: 'https://i/x.png' }] },
+    { number: 'x', episodes: [] },
+  ] };
+  it('accepte les variantes de noms de champs et trie saisons et épisodes', () => {
+    const c = normalizeCanon(raw)!;
+    expect(c.seasons.map((s) => s.number)).toEqual([1, 2]);
+    expect(c.seasons[0].episodes.map((e) => e.episode)).toEqual([1, 2]);
+    expect(c.seasons[0].episodes[0]).toMatchObject({ name: 'Un', airDate: '2021-01-01', still: 'https://i/x.png' });
+    expect(c.seasons[0].episodes[1]).toMatchObject({ absolute: 2, still: '/x.jpg' });
+    expect(c.seasons[1].airDate).toBe('2022-03-01');
+    expect(normalizeCanon(null)).toBeNull();
+    expect(normalizeCanon({ seasons: [] })).toBeNull();
+  });
+  it('résume : saisons au format TMDB, dernier épisode diffusé, prochain, compteurs', () => {
+    const c = normalizeCanon(raw)!;
+    const s = canonSummary(c, '2022-01-01');
+    expect(s.seasons).toEqual([
+      { season_number: 1, episode_count: 2, air_date: '2021-01-01', name: 'S1' },
+      { season_number: 2, episode_count: 1, air_date: '2022-03-01', name: '' },
+    ]);
+    expect(s.lastAired).toEqual({ season_number: 1, episode_number: 2 });
+    expect(s.next).toMatchObject({ season: 2, episode: 1, airDate: '2022-03-01' });
+    expect(s.nSeasons).toBe(2);
+    expect(s.nEpisodes).toBe(3);
+    expect(canonSummary(c, '2030-01-01').next).toBeNull();
+    expect(tmdbShape(c.seasons[0].episodes[1])).toMatchObject({ episode_number: 2, season_number: 1, still_path: '/x.jpg', air_date: '2021-01-08' });
   });
 });
 
