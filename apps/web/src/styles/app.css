@@ -65,9 +65,6 @@
 .auth-actions { justify-content: center; margin-top: 8px; }
 .auth-actions { align-items: stretch; }
 .auth-actions .btn { min-height: 44px; box-sizing: border-box; line-height: 1.2; }
-/* Éditeur de profil : Enregistrer, Annuler et Supprimer restent sur la même ligne, à largeur égale. */
-.tv-form-actions:has([data-pfe-delete]) { flex-wrap: nowrap; }
-.tv-form-actions:has([data-pfe-delete]) .btn { flex: 1 1 0; min-width: 0; padding-inline: 10px; white-space: nowrap; justify-content: center; }
 .pf-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 32px; margin: 12px 0; }
 .pf { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 132px; color: var(--muted); font-weight: 700; }
 .pf-av { position: relative; width: 112px; height: 112px; border-radius: 22px; display: grid; place-items: center; font-family: var(--ff-title); font-size: 46px; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); border: 3px solid transparent; transition: transform 0.15s, border-color 0.15s; }
@@ -81,8 +78,41 @@
 .pf-kid { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 2px 9px; margin-top: -4px; }
 .pin-back { position: fixed; inset: 0; z-index: 800; background: rgba(8, 7, 12, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
 .pin { width: min(360px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: 20px; padding: 26px 24px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.pf-editor { align-items: stretch; width: min(420px, 100%); }
-.pf-editor .pin-title { text-align: center; }
+/* Éditeur de profil : fenêtre large et centrée ; en-tête et pied fixes, seul le corps défile (rien n'est coupé en haut). */
+.pin-back.pf-back { overflow: hidden; padding: 3vh 3vw; }
+.pf-editor { width: min(1040px, 94vw); max-height: 90vh; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-radius: 20px; overflow: hidden; }
+.pf-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--line-2); }
+.pf-title { margin: 0; font-family: var(--ff-title); font-size: 20px; font-weight: 800; }
+.pf-x { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--muted); background: transparent; }
+.pf-x:hover, .pf-x:focus-visible { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+.pf-x svg { width: 20px; height: 20px; }
+.pf-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px; }
+.pf-cols { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; align-items: start; }
+.pf-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pf-main { min-width: 0; }
+.pf-preview-box { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.pf-av.pf-av-lg { width: 168px; height: 168px; border-radius: 36px; font-size: 68px; flex: none; }
+.pf-preview-name { margin: 0; max-width: 100%; font-family: var(--ff-title); font-size: 18px; font-weight: 800; text-align: center; overflow-wrap: anywhere; }
+.pf-group { display: flex; flex-direction: column; gap: 8px; }
+.pf-label { font-size: 13px; font-weight: 700; color: var(--dim); }
+.pf-section-title { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 800; }
+.pf-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--line-2); }
+.pf-msg { min-height: 0; text-align: left; }
+.pf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-actions .btn { min-height: 44px; }
+.pf-actions .pf-del { margin-right: auto; }
+@media (max-width: 899px) { .pf-cols { grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 24px; } .pf-av.pf-av-lg { width: 150px; height: 150px; } }
+/* Mobile (moins de 720 px) : une colonne, plein écran. */
+@media (max-width: 719px) {
+  .pin-back.pf-back { padding: 0; }
+  .pf-editor { width: 100%; max-height: none; height: 100%; border: 0; border-radius: 0; }
+  .pf-head { padding: 12px 10px 12px 16px; }
+  .pf-body { padding: 18px 16px; }
+  .pf-cols { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .pf-av.pf-av-lg { width: 132px; height: 132px; font-size: 56px; border-radius: 30px; }
+  .pf-foot { padding: 12px 16px 16px; }
+  .pf-actions .btn:not(.pf-del) { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
+}
 .pin-title { font-family: var(--ff-title); font-size: 20px; font-weight: 800; text-align: center; }
 .pin-dots { display: flex; gap: 14px; }
 .pin-dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); }
@@ -92,8 +122,8 @@
 .pin-keys button { height: 58px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line-2); font-family: var(--ff-title); font-size: 22px; font-weight: 700; display: grid; place-items: center; }
 .pin-keys button:hover, .pin-keys button:focus-visible { border-color: var(--accent); }
 .pin-keys [data-pin-cancel] { font-size: 13px; font-family: var(--ff-body); color: var(--muted); }
-.pf-colors { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-.pf-color { width: 34px; height: 34px; border-radius: 10px; position: relative; cursor: pointer; border: 3px solid transparent; }
+.pf-colors { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+.pf-color { width: 32px; height: 32px; border-radius: 10px; position: relative; cursor: pointer; border: 3px solid transparent; }
 .pf-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .pf-color:has(input:checked) { border-color: var(--text); }
 .pf-color:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -477,19 +507,19 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 /* Avatars illustrés (DiceBear) : l'illustration entière (contain) remplace l'initiale ; la couleur du profil reste le repli. */
 [data-avatar][data-art] { background-size: contain; background-position: center; background-repeat: no-repeat; font-size: 0; color: transparent; text-shadow: none; }
 .wp-dot[data-avatar] { width: 20px; height: 20px; }
-/* Sélecteur d'avatars de l'éditeur : champ pleine largeur, boutons côte à côte, grille centrée qui défile avec le panneau. */
-.pf-picker-avatars { display: grid; gap: 12px; width: 100%; min-width: 0; }
-.av-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.av-subs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+/* Sélecteur d'avatars (colonne de droite de l'éditeur) : grille dense de vignettes 72 px (6 à 8 colonnes), outils sur une ligne. */
+.pf-picker-avatars { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; margin: 0; }
+.av-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-subs { display: flex; flex-wrap: wrap; gap: 6px; }
 .av-subs[hidden] { display: none; }
-.av-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.av-tools input { grid-column: 1 / -1; min-width: 0; }
-.av-grid { display: grid; grid-template-columns: repeat(auto-fill, 68px); justify-content: center; gap: 10px; }
-.av-tile { position: relative; width: 68px; height: 68px; border-radius: 18px; border: 3px solid transparent; padding: 0; background-color: var(--surface); background-size: contain; background-position: center; background-repeat: no-repeat; cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
+.av-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.av-tools input { flex: 1 1 220px; min-width: 0; }
+.av-grid { display: grid; grid-template-columns: repeat(auto-fill, 72px); justify-content: center; gap: 12px; }
+.av-tile { position: relative; width: 72px; height: 72px; border-radius: 20px; border: 3px solid transparent; padding: 0; background-color: var(--surface); background-size: contain; background-position: center; background-repeat: no-repeat; cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
 .av-tile:hover, .av-tile:focus-visible { transform: scale(1.06); border-color: var(--text); }
 .av-tile[aria-pressed="true"] { border-color: var(--accent); }
-.av-more { justify-self: center; }
+.av-more { align-self: center; }
 .av-credits-more { font-size: 12px; color: var(--muted); }
-.av-credits-more summary { cursor: pointer; text-align: center; }
+.av-credits-more summary { cursor: pointer; }
 .av-credits { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .av-credits li { margin: 2px 0; }

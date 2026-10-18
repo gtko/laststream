@@ -26,6 +26,8 @@ export type AuthStatus = 'local' | 'offline' | 'needs-login' | 'needs-profile' |
 export const auth = {
   status: 'local' as AuthStatus,
   username: '',
+  /** Identifiant opaque du compte, pour la supervision seulement (Sentry) : jamais le pseudo. */
+  accountId: '',
   /** Propriétaire du serveur (peut régler les quotas d'invitation). */
   isOwner: false,
   profiles: [] as Profile[],
@@ -99,6 +101,7 @@ export async function initAuth(): Promise<AuthStatus> {
   try {
     const { account } = await api.me(4000);
     auth.username = account.username;
+    auth.accountId = account.id;
     auth.isOwner = account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner);
     // Session restaurée : la config locale n'est gardée que si elle appartient à ce compte.
     claimLocalConfig(account.username, true);
@@ -244,6 +247,9 @@ export async function signIn(username: string, password: string): Promise<AuthSt
   const wasLocal = isLocalMode();
   setSession(res.token, res.expiresAt, name);
   auth.username = name;
+  // /login ne renvoie pas l'identifiant de compte : on le lit comme au démarrage (supervision seulement, sans attendre).
+  // Ignorée si la session a changé entre-temps (déconnexion ou autre compte) : jamais le compte d'un autre.
+  api.me(4000).then(({ account }) => { if (auth.username === name) auth.accountId = account.id; }).catch(() => undefined);
   setLocalMode(false);
   // Un autre compte ne réutilise jamais la config locale (URL d'addons, clés) d'un compte précédent.
   claimLocalConfig(name, wasLocal);
@@ -264,6 +270,7 @@ export async function signOut(silent = false): Promise<void> {
   managerId = null;
   auth.isOwner = false;
   auth.username = '';
+  auth.accountId = '';
   useLocal('needs-login');
 }
 
