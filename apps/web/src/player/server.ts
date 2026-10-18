@@ -1,3 +1,5 @@
+import { isNativePlayer, nativeFetch } from './native';
+
 /* Client du serveur de streaming Stremio (HLS, probe, torrents, sous-titres).
  * Protocole repris de stremio-video (withStreamingServer, fetchVideoParams, createTorrent, buildProxyUrl). */
 
@@ -50,7 +52,7 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: ctl.signal });
+    const res = isNativePlayer() ? await nativeFetch(url, init, timeoutMs) : await fetch(url, { ...init, signal: ctl.signal });
     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
     const json = (await res.json()) as T & { error?: unknown };
     if (json && typeof json === 'object' && 'error' in json && json.error) {

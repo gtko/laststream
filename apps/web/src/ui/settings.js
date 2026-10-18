@@ -1,7 +1,8 @@
 /* Page #/settings : lastAddon (schéma, clés, langues, sources, debrid), lecture, apparence, région. */
 import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
 import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
-import { DEFAULT_BASE, getBase, getConfig, isConfigured, normalizeBase, saveSettings } from '../data/config';
+import { testServer } from '../data/serverTest';
+import { DEFAULT_BASE, getBase, getConfig, isAndroidApp, isConfigured, normalizeBase, saveSettings } from '../data/config';
 import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
@@ -69,7 +70,8 @@ function lastAddonSection() {
   const allowed = res.allowed || RESOLUTIONS;
   const size = c.size || {};
   const resList = enumOf(['resolutions', 'allowed'], RESOLUTIONS) || RESOLUTIONS;
-  const base = getBase() || DEFAULT_BASE;
+  const android = isAndroidApp();
+  const base = getBase() || (android ? '' : DEFAULT_BASE);
   const status = ed.loading ? 'Chargement de la configuration…' : ed.error ? ed.error : ed.loaded ? 'Configuration chargée.' : isConfigured() ? '' : 'Aucune configuration enregistrée : renseigne l’adresse puis enregistre.';
 
   const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
@@ -78,10 +80,11 @@ function lastAddonSection() {
 
   const debrid = c.debrid;
   return '<section class="set-sec glass" aria-labelledby="set-la-h"><h2 class="f-sub" id="set-la-h">lastAddon</h2>' +
-    '<p class="set-hint">Le serveur qui fournit le catalogue, les notes, la TV et les sources.</p>' +
+    '<p class="set-hint">Le serveur qui fournit le catalogue, les notes, la TV et les sources.' + (android ? ' Sur Android, c’est lastAddon sur ton PC : adresse du réseau local, par exemple http://192.168.1.20:7000.' : '') + '</p>' +
     '<form id="set-la" class="tv-form set-form" autocomplete="off">' +
-    field('Adresse du serveur', '<input type="url" name="base" value="' + esc(base) + '" placeholder="http://localhost:7000">') +
+    field('Adresse du serveur', '<input type="url" name="base" value="' + esc(base) + '" placeholder="' + (android ? 'http://192.168.1.20:7000' : 'http://localhost:7000') + '">') +
     '<p class="tv-form-msg" id="set-la-msg" role="status">' + esc(status) + '</p>' +
+    '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-ping>Tester l’adresse</button></div>' +
     '<div class="set-block"><h3 class="set-h3">Clés des services</h3>' + services +
     '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-set-test="services">Tester les clés</button></div>' +
     '<div class="set-tests" id="set-tests-services" aria-live="polite"></div></div>' +
@@ -321,6 +324,12 @@ async function save(form) {
 detailEl.addEventListener('click', async (e) => {
   const t = e.target;
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
+  if (t.closest('[data-set-ping]')) {
+    const form = detailEl.querySelector('#set-la');
+    const m = detailEl.querySelector('#set-la-msg');
+    if (form && m) { m.textContent = 'Connexion en cours…'; m.textContent = (await testServer(form.elements.base.value)).message; }
+    return;
+  }
   const test = t.closest('[data-set-test]');
   if (test) { e.preventDefault(); runTest(test.dataset.setTest, test); return; }
   const th = t.closest('[data-set-theme]');

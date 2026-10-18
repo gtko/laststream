@@ -13,9 +13,12 @@
     "lint": "eslint src/ui src/player src/sources src/main.js"
   },
   "dependencies": {
+    "@capacitor/android": "7.6.9",
+    "@capacitor/core": "7.6.9",
     "hls.js": "1.7.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "7.6.9",
     "@types/node": "26.6.5",
     "eslint": "10.13.0",
     "globals": "17.13.0",

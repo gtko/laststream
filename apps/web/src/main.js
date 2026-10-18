@@ -11,6 +11,7 @@ import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
 import { applyTheme, readTheme } from './data/theme';
 import { runAuthFlow } from './ui/auth-ui.js';
+import { needsServerSetup, runServerSetup } from './ui/server-setup.js';
 import { app, detailEl } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
@@ -25,6 +26,8 @@ import './ui/rate.js';
 import './ui/calendar.js';
 import './ui/sources-ui.js';
 
+// Application Android, premier lancement : adresse du serveur lastAddon (sur le PC) avant tout appel réseau.
+if (needsServerSetup()) await runServerSetup();
 await initAuth();
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });

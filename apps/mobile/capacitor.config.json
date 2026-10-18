@@ -1,0 +1,8 @@
+{
+  "appId": "com.laststream.app",
+  "appName": "Laststream",
+  "webDir": "dist",
+  "backgroundColor": "#0c0b11",
+  "server": { "androidScheme": "http", "cleartext": true },
+  "android": { "allowMixedContent": true, "backgroundColor": "#0c0b11" }
+}

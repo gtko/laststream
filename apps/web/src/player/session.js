@@ -1,7 +1,8 @@
 /* Session de lecture : s'ouvre tout de suite (écran de chargement), cherche et choisit la source à l'intérieur du lecteur,
  * choisit le moteur, suit la progression, saute les génériques, bascule sur une autre copie en cas d'échec, gère pistes
  * audio, sous-titres (calage compris), épisodes. L'interface est dans ui.js et panels.js. */
-import { addonUrl, isConfigured } from '../data/config';
+import { addonUrl, getBase, isConfigured } from '../data/config';
+import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb } from '../data/lt';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { imdbIdOf, measureBandwidthKbps, stremioId } from '../data/sources';
@@ -14,18 +15,19 @@ import { state as appState } from '../ui/state.js';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
 import { chooseEngine } from './engine';
-import { HtmlEngine, MpvEngine } from './engines.js';
+import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
 import { filterEpisodes, firstUnseen, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
 import { StallWatch, failoverOrder } from './failover';
 import { keyToAction, stepVolume } from './keys';
 import { fileKey, getMemory, getSubSync, remember, setSubSync } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
+import { NativePlayer, isNativePlayer, toNativeSegments, toNativeSubtitles } from './native';
 import { connectShell } from './shell';
 import { activeSkip, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip } from './skip';
 import {
   createTorrent, embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
-  serverAlive, serverBase, subtitlesVttUrl,
+  SERVER_STORAGE_KEY as SERVER_KEY, serverAlive, serverBase, setShellServerAddress, subtitlesVttUrl,
 } from './server';
 import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, writeSubStyle } from './subs';
 import { RATE_CHOICES, findSync, rateChoice, suggestRate, syncTrusted } from './subsync';
@@ -41,6 +43,7 @@ const AUTOSYNC_MIN = 25;
 let ui = null;
 let html = null;
 let mpv = null;
+let nativeEng = null;
 let P = null; // session courante (null : lecteur fermé)
 let tickTimer = null;
 
@@ -101,6 +104,42 @@ function bindEngine(e) {
   e.on('error', (err) => { if (P && P.engine === e) failover('Erreur de lecture (' + (err && err.message ? err.message : 'inconnue') + ')'); });
   e.on('tracks', () => { if (P && P.engine === e) onTracks(); });
   e.on('ready', () => { if (P && P.engine === e) onReady(); });
+  // Lecteur natif Android : fermeture par l'utilisateur, bouton « Épisode suivant », changement de piste dans le panneau natif.
+  e.on('closed', () => { if (P && P.engine === e) closePlayer(); });
+  e.on('next', () => { if (P && P.engine === e) onAction('next'); });
+  e.on('trackChanged', (d) => { if (P && P.engine === e) onNativeTrack(d); });
+}
+
+/** Choix de piste fait dans le panneau du lecteur natif : mémorisé par titre, comme dans le lecteur web. */
+function onNativeTrack(d) {
+  if (!P || !d) return;
+  if (d.kind === 'audio' && d.lang) remember(P.req.key, { audio: d.lang });
+  if (d.kind === 'sub') remember(P.req.key, { sub: d.lang && d.lang !== 'off' ? d.lang : 'off' });
+}
+
+/** Options d'ouverture du lecteur natif : titre, reprise, langues, segments de saut et épisode suivant. */
+function nativeOptions() {
+  const p = P;
+  const mem = getMemory(p.req.key);
+  const nx = nextRef();
+  const info = nx && (p.episodes.get(nx.season) || []).find((e) => e.episode === nx.episode);
+  return {
+    title: headingFor(p)[0],
+    subtitle: headingFor(p)[1],
+    preferredAudioLang: audioPreference()[0] || '',
+    preferredSubLang: mem.sub || preferredLang() || '',
+    subMode: mem.sub ? 'always' : p.subs.style.mode,
+    skipSegments: toNativeSegments(p.segments),
+    nextEpisode: nx ? { title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: (info && info.still) || '' } : null,
+  };
+}
+
+/** Pousse au lecteur natif ce qui arrive après l'ouverture (segments, épisode suivant, titre). */
+function syncNative() {
+  const p = P;
+  if (!p || !p.engine || p.engine.kind !== 'native') return;
+  const o = nativeOptions();
+  p.engine.update({ skipSegments: o.skipSegments, nextEpisode: o.nextEpisode, title: o.title, subtitle: o.subtitle });
 }
 
 // ---------- Ouverture ----------
@@ -207,11 +246,11 @@ function loadSideData(token) {
       if (!p.imdb) p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
       if (p.imdb && isConfigured()) {
         const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);
-        if (alive()) p.segments = normalizeSkip(r);
+        if (alive()) { p.segments = normalizeSkip(r); syncNative(); }
       }
     } catch (_) { /* pas de segments : aucun bouton de saut */ }
   })();
-  if (p.req.type === 'tv') loadSeasons().then(() => { if (alive()) ui.setSeries(true, !!nextRef()); });
+  if (p.req.type === 'tv') loadSeasons().then(() => { if (alive()) { ui.setSeries(true, !!nextRef()); syncNative(); } });
 }
 
 /** Saisons : réponse canonique de lastAddon (TVDB / groupes TMDB), sinon saisons TMDB. */
@@ -314,12 +353,15 @@ async function playView(view, startAt) {
   ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', base);
   try {
     const shell = await connectShell();
+    const native = !shell && isNativePlayer();
+    // Android : le serveur de streaming Stremio tourne sur le même PC que lastAddon (port 11470), sauf réglage contraire.
+    if (native && !storeGet(SERVER_KEY)) { const b = streamingServerFor(getBase()); if (b) setShellServerAddress(b); }
     if (stale()) return;
     const media = await resolveMedia(view);
     if (stale()) return;
     p.mediaUrl = media.url;
     let probe = null;
-    if (!shell && media.up) {
+    if (!shell && !native && media.up) {
       ui.setLoading(p.meta.title || 'Lecture', media.torrent ? 'Connexion au torrent…' : 'Analyse du fichier…', base);
       probe = await fetchProbe(media.url, media.base);
       if (stale()) return;
@@ -327,7 +369,7 @@ async function playView(view, startAt) {
     p.probe = probe;
     p.probeTracks = parseProbe(probe);
     const choice = chooseEngine({
-      torrent: media.torrent, shell: !!shell, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
+      torrent: media.torrent, shell: !!shell, native, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
       name: view.filename || media.url, forceTranscoding: p.forceHls,
       preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
     });
@@ -335,8 +377,13 @@ async function playView(view, startAt) {
     ui.setLoading(p.meta.title || 'Lecture', 'Moteur : ' + choice.label + '…', base);
     p.startedAt = Date.now();
     p.watch = new StallWatch(p.startedAt);
-    ui.root.classList.toggle('is-mpv', choice.engine === 'mpv');
-    if (choice.engine === 'mpv') {
+    ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
+    if (choice.engine === 'native') {
+      if (!nativeEng) { nativeEng = new NativeEngine(NativePlayer); bindEngine(nativeEng); }
+      p.engine = nativeEng;
+      ui.video.hidden = true;
+      await nativeEng.load({ url: media.url, startAt, open: nativeOptions() });
+    } else if (choice.engine === 'mpv') {
       if (!mpv) { mpv = new MpvEngine(shell, ui.root); bindEngine(mpv); }
       p.engine = mpv;
       ui.video.hidden = true;
@@ -370,6 +417,7 @@ function failover(reason) {
   const options = failoverOrder(p.ranked, p.view, p.tried);
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
     try { p.engine.pause(); } catch (_) { /* ignoré */ }
+    if (p.engine.kind === 'native') p.engine.closeNow();
     ui.setLoading(null);
     ui.setError('Lecture impossible', reason + '. Aucune autre source à essayer automatiquement.', [{ act: 'source', label: 'Essayer une autre source' }, { act: 'retry', label: 'Réessayer' }, { act: 'close', label: 'Fermer' }]);
     return;
@@ -385,11 +433,13 @@ function failover(reason) {
 function onReady() {
   if (!P) return;
   ui.setLoading(null);
+  if (P.engine.kind === 'native') { ensureExternalSubs(true); return; } // le lecteur natif choisit lui-même les pistes (langues préférées)
   if (!P.defaultsDone) setTimeout(() => P && applyDefaultTracks(true), 700);
 }
 
 function onTracks() {
   if (!P) return;
+  if (P.engine.kind === 'native') { ui.refreshPanel(); return; }
   if (!P.defaultsDone) applyDefaultTracks(false);
   ui.refreshPanel();
 }
@@ -451,6 +501,7 @@ async function ensureExternalSubs(auto, force) {
     if (!P || P.token !== token || P.view !== view) return;
     p.subs.external = list;
     p.subs.loadedFor = view.index;
+    if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, preferredLang())); return; }
     if (auto && p.subs.selectedId === null && p.defaultsDone) chooseDefaultSubtitle(allSubtitleTracks(), true);
   } finally {
     if (P && P.token === token) { p.subs.loading = false; ui.refreshPanel(); }
@@ -609,7 +660,7 @@ function tick() {
     if (tickN % 5 === 0) s.nativeCues = p.engine.nativeCues();
     cues = s.nativeCues || [];
   }
-  const cue = s.native && p.engine.kind === 'mpv' ? null : activeCue(cues, st.time, s.offset + s.shift, s.rate);
+  const cue = p.engine.kind === 'native' || (s.native && p.engine.kind === 'mpv') ? null : activeCue(cues, st.time, s.offset + s.shift, s.rate);
   ui.setCue(cue ? cueHtml(cue.text) : '', s.style);
   if (tickN % 3 === 0) refreshUI(st);
   if (tickN % 10 !== 0) return;

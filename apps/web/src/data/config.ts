@@ -1,4 +1,6 @@
+import { Capacitor } from '@capacitor/core';
 import { LastAddonError } from './errors';
+import { cleartextAllowed } from './lan';
 
 /**
  * Réglages lastAddon : même clé localStorage que l'application précédente (même origine), pour récupérer
@@ -47,6 +49,11 @@ export function reloadSettings(): LastAddonSettings {
   return settings;
 }
 
+/** Application native (Capacitor) : pas de navigateur, serveur lastAddon sur le réseau local. */
+export function isAndroidApp(): boolean {
+  try { return Capacitor.isNativePlatform(); } catch { return false; }
+}
+
 export function normalizeBase(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, '');
   if (trimmed === '') return '';
@@ -58,6 +65,10 @@ export function normalizeBase(raw: string): string {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new LastAddonError('invalid_base', 'L’adresse lastAddon doit commencer par http ou https.');
+  }
+  // Application Android : le http en clair n'est permis que vers le réseau local (le PC qui héberge lastAddon).
+  if (isAndroidApp() && !cleartextAllowed(trimmed)) {
+    throw new LastAddonError('invalid_base', 'En http, l’adresse doit être celle d’un appareil de ton réseau local (par exemple http://192.168.1.20:7000). Sinon utilise https.');
   }
   return trimmed;
 }

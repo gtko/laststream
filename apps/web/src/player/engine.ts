@@ -1,10 +1,10 @@
 import type { MediaCaps, Probe } from './server';
 import { trackLang } from './tracks';
 
-/* Choix du moteur de lecture : mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
+/* Choix du moteur de lecture : lecteur natif Android (libVLC), mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
  * Logique pure (capacités du navigateur injectées), testée. */
 
-export type EngineKind = 'mpv' | 'direct' | 'hls';
+export type EngineKind = 'mpv' | 'native' | 'direct' | 'hls';
 
 export interface EngineChoice {
   engine: EngineKind;
@@ -19,6 +19,8 @@ export interface EngineInput {
   /** Fichier torrent (infoHash) servi par le serveur de streaming. */
   torrent: boolean;
   shell: boolean;
+  /** Application Android : le lecteur natif (libVLC) lit tous les formats. */
+  native?: boolean;
   serverUp: boolean;
   probe: Probe | null;
   caps: MediaCaps;
@@ -80,6 +82,9 @@ export function guessWebPlayable(name: string, notWebReady: boolean): boolean {
 }
 
 export function chooseEngine(i: EngineInput): EngineChoice {
+  if (i.native) {
+    return { engine: 'native', viaServer: i.torrent, label: 'libVLC (lecteur natif Android)' + (i.torrent ? ' · torrent' : ''), reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
+  }
   if (i.shell) {
     return { engine: 'mpv', viaServer: i.torrent, label: 'mpv (application Windows)' + (i.torrent ? ' · torrent' : ''), reason: 'Coque Windows détectée : mpv lit tous les formats.' };
   }

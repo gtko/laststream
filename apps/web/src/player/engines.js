@@ -1,8 +1,9 @@
-/* Moteurs de lecture : HTML5 (direct ou HLS via hls.js) et mpv (coque Windows). Même interface pour les deux :
+/* Moteurs de lecture : HTML5 (direct ou HLS via hls.js), mpv (coque Windows) et lecteur natif Android (libVLC). Même interface pour les deux :
  *   on(event, fn), load({ url, hls, startAt }), play(), pause(), seek(s), setVolume(0..1), setMuted(b), setRate(r),
  *   state(), audioTracks(), setAudioTrack(id), subtitleTracks(), setSubtitleTrack(id|null), nativeCues(), destroy()
  * Événements : state, ended, error, tracks, ready, buffering. */
 import { audioTrackLabel, langName, trackLang } from './tracks';
+import { nativeAudioTracks, nativeSubtitleTracks } from './native';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
 
 class Emitter {
@@ -302,6 +303,86 @@ export class MpvEngine extends Emitter {
   setAudioTrack(id) { this.ipc.send('mpv-set-prop', ['aid', Number(id)]); }
   subtitleTracks() { return mpvSubtitleTracks(this.p['track-list'] || []); }
   setSubtitleTrack(id) { this.ipc.send('mpv-set-prop', ['sid', id === null ? 'no' : Number(id)]); }
+  nativeCues() { return []; }
+  supportsPip() { return false; }
+  togglePip() { return Promise.resolve(); }
+}
+
+/** Lecteur natif Android (libVLC, plugin Capacitor) : l'activité native porte l'image, le son et ses propres contrôles ;
+ * ce moteur ne fait que relayer ses évènements (état, pistes, fin, erreur) et ses commandes. */
+export class NativeEngine extends Emitter {
+  constructor(plugin) {
+    super();
+    this.kind = 'native';
+    this.plugin = plugin;
+    this.p = { time: 0, duration: 0, paused: false, buffering: true, rate: 1 };
+    this.audio = [];
+    this.subs = [];
+    this.loaded = false;
+    this.live = false;
+    this.closeTimer = null;
+    const on = (ev, fn) => { plugin.addListener(ev, (d) => { if (this.live) fn(d || {}); }).catch(() => {}); };
+    on('state', (d) => { this.setState(d); this.emit('state'); });
+    on('progress', (d) => { this.setState(d); this.emit('state'); });
+    on('tracks', (d) => { this.audio = d.audio || []; this.subs = d.subs || []; this.emit('tracks'); });
+    on('ended', () => this.emit('ended'));
+    on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
+    on('closed', (d) => this.emit('closed', d));
+    on('nextEpisode', () => this.emit('next'));
+    on('trackChanged', (d) => this.emit('trackChanged', d));
+  }
+
+  setState(d) {
+    const p = this.p;
+    if (typeof d.position === 'number') p.time = d.position;
+    if (typeof d.duration === 'number' && d.duration > 0) p.duration = d.duration;
+    if (typeof d.paused === 'boolean') p.paused = d.paused;
+    if (typeof d.buffering === 'boolean') p.buffering = d.buffering;
+    if (typeof d.rate === 'number') p.rate = d.rate;
+    if (!this.loaded && p.duration > 0 && p.time > 0) { this.loaded = true; this.emit('ready'); }
+  }
+
+  async load({ url, startAt, open }) {
+    clearTimeout(this.closeTimer);
+    this.live = true;
+    this.loaded = false;
+    this.p = { time: startAt || 0, duration: 0, paused: false, buffering: true, rate: 1 };
+    this.audio = [];
+    this.subs = [];
+    await this.plugin.open({ ...open, url, startPosition: startAt || 0 });
+  }
+
+  /** Fermeture différée : un `load` immédiat (épisode suivant, autre source) réutilise l'activité sans la fermer. */
+  destroy() {
+    this.live = false;
+    clearTimeout(this.closeTimer);
+    this.closeTimer = setTimeout(() => { this.plugin.close().catch(() => {}); }, 700);
+  }
+
+  closeNow() {
+    this.live = false;
+    clearTimeout(this.closeTimer);
+    this.plugin.close().catch(() => {});
+  }
+
+  play() { this.plugin.play().catch(() => {}); }
+  pause() { this.plugin.pause().catch(() => {}); }
+  seek(t) { this.p.time = Math.max(0, t); this.plugin.seek({ position: Math.max(0, t) }).catch(() => {}); }
+  setVolume() { /* volume du système */ }
+  setMuted() { /* volume du système */ }
+  setRate(r) { this.plugin.setRate({ rate: r }).catch(() => {}); }
+
+  state() {
+    const p = this.p;
+    return { time: p.time, duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], volume: 1, muted: false, rate: p.rate, pip: false };
+  }
+
+  audioTracks() { return nativeAudioTracks(this.audio); }
+  setAudioTrack(id) { this.plugin.setAudioTrack({ id: Number(id) }).catch(() => {}); }
+  subtitleTracks() { return nativeSubtitleTracks(this.subs); }
+  setSubtitleTrack(id) { this.plugin.setSubtitleTrack({ id: id === null ? -1 : Number(id) }).catch(() => {}); }
+  addSubtitles(list) { if (list.length) this.plugin.addSubtitles({ subtitles: list }).catch(() => {}); }
+  update(patch) { this.plugin.update(patch).catch(() => {}); }
   nativeCues() { return []; }
   supportsPip() { return false; }
   togglePip() { return Promise.resolve(); }

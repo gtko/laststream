@@ -1,4 +1,5 @@
 import { detectCaps } from './engine';
+import { isNativePlayer } from './native';
 import { isShellEnvironment } from './shell';
 import type { MediaCaps } from './server';
 
@@ -21,7 +22,7 @@ export function browserCaps(): MediaCaps {
   return cached;
 }
 
-/** Dans la coque Windows, mpv lit tout : aucune règle de lecture directe. */
-export const inShell = (): boolean => isShellEnvironment();
+/** Coque Windows (mpv) ou application Android (libVLC) : le lecteur lit tout, aucune règle de lecture directe. */
+export const inShell = (): boolean => isShellEnvironment() || isNativePlayer();
 
 export function resetCapsCache(): void { cached = null; }
