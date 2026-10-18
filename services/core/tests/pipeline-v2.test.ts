@@ -505,3 +505,29 @@ describe('pipeline v2 : série en numérotation absolue (anime) sans remappage',
     expect(result.streams.map((stream) => stream.infoHash)).toEqual([H.a]);
   });
 });
+
+describe('pipeline v2 : série au titre strict (Star Trek 1966, toutes origines)', () => {
+  it('Strange New Worlds, Starfleet Academy et The Next Generation écartés ; Star Trek 1966 et S01E01 MULTI gardés', async () => {
+    const cinemeta: Route = (url) =>
+      url.hostname === 'v3-cinemeta.strem.io'
+        ? json({ meta: { name: 'Star Trek', releaseInfo: '1966', runtime: '50 min' } })
+        : undefined;
+    const H4 = '4'.repeat(40);
+    const H5 = '5'.repeat(40);
+    const { fetch } = routedFetch([
+      cinemeta,
+      upstreamWith([
+        { name: 'Upstream', title: 'Star.Trek.Strange.New.Worlds.2022.S01E01.1080p.WEB-DL', infoHash: H.a, description: '👤 50' },
+        { name: 'Upstream', title: 'Star Trek Starfleet Academy S01E01 MULTI 1080p', infoHash: H.b, description: '👤 40' },
+        { name: 'Upstream', title: 'Star.Trek.The.Next.Generation.S01E01.1080p', infoHash: H.c, description: '👤 30' },
+        { name: 'Upstream', title: 'Star.Trek.1966.S01E01.MULTI.1080p.WEB-DL', infoHash: H4, description: '👤 20' },
+        { name: 'Upstream', title: 'Star Trek S01E01 MULTI 1080p', infoHash: H5, description: '👤 10' },
+      ]),
+    ]);
+    const ref: ContentRef = { type: 'series', id: 'tt0060028:1:1', imdbId: 'tt0060028', season: 1, episode: 1 };
+
+    const result = await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctxFor(fetch));
+
+    expect(result.streams.map((stream) => stream.infoHash).sort()).toEqual([H4, H5].sort());
+  });
+});

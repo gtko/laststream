@@ -20,7 +20,7 @@ import type { HosterClient } from './sources/hosters.js';
 import type { TitleInfo } from './sources/indexers.js';
 import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
 import { PROWLARR_BUDGET_MS, PROWLARR_SOFT_MS } from './sources/prowlarr.js';
-import { getTitleVariants, nameMatchesTitles, type TitleVariants } from './sources/query-titles.js';
+import { getTitleVariants, nameMatchesTitles, releaseYearFits, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
 import type { ContentRef, RawStream, StremioStream, StreamOrigin } from './types.js';
@@ -153,27 +153,29 @@ function withCopies<T extends Candidate>(items: T[]): (T & { copies: CopyRef[] }
   });
 }
 
+/** Raison pour laquelle une release est écartée : titre, année, ou portée (épisode), ou undefined si elle est gardée. */
+type Rejection = 'titre' | 'annee' | 'portee';
+
 /**
- * Vrai si la release concerne l'épisode demandé (série avec saison et épisode) : épisode exact, pack de la saison, ou
- * intégrale / multi-saisons qui la couvre. Une release sans aucun texte, ou un lien direct, n'est pas écartée : rien
- * à vérifier. Une release au nom sans portée reconnue est écartée (« Titre S04E05 » ne passe pas pour S04E04).
+ * Motif d'écart d'une release de série (saison et épisode demandés), commun à toutes les origines (addons, indexeurs,
+ * Prowlarr) : titre (correspondance stricte, voir nameMatchesTitles), année (pas antérieure à la première diffusion moins
+ * un an), puis portée : épisode exact, pack de la saison, ou intégrale qui la couvre. Une release sans aucun texte, ou un
+ * lien direct, n'est pas écartée : rien à vérifier. Une release au nom sans portée reconnue est écartée (« Titre S04E05 »
+ * ne passe pas pour S04E04). Films : inchangé ici (année à ±1 an dans filterByYear).
  */
-/** Raison pour laquelle une release est écartée (« titre » ou « portée »), ou undefined si elle est gardée. */
-function rejectionOf(
-  candidate: Candidate,
-  ref: ContentRef,
-  titles: readonly string[],
-  absolute?: number,
-): 'titre' | 'portee' | undefined {
+function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariants, absolute?: number): Rejection | undefined {
   const { season, episode } = ref;
   if (ref.type !== 'series' || season === undefined || episode === undefined) return undefined;
   const { raw } = candidate;
   if (raw.url !== undefined) return undefined;
   const hasText = [raw.filename, raw.title, raw.name, raw.description].some((text) => text !== undefined && text.trim() !== '');
   if (!hasText) return undefined;
-  // Le nom de la release doit contenir un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
+  // Le nom de la release doit commencer par un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
   const release = raw.filename ?? raw.title;
-  if (release !== undefined && !nameMatchesTitles(release, titles)) return 'titre';
+  if (release !== undefined) {
+    if (!nameMatchesTitles(release, titles.titles)) return 'titre';
+    if (!releaseYearFits(release, titles, ref.type)) return 'annee';
+  }
   const scope = candidate.parsed.scope ?? {};
   // Numéro absolu (anime) sans remappage connu (remappeur absent ou en délai) : la release n'est pas écartée, faute
   // de moyen de la vérifier. Avec un remappage, la correspondance est exigée.
@@ -658,13 +660,14 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
 
   // c) parsing, filtre par épisode (série), premier filtre, groupement des copies.
   const parsedAll: Candidate[] = streams.map((raw) => withEpisodeSize({ raw, parsed: parseRawStream(raw) }, ref, seasonCounts));
-  const rejections = parsedAll.map((candidate) => rejectionOf(candidate, ref, titles.titles, absolute));
+  const rejections = parsedAll.map((candidate) => rejectionOf(candidate, ref, titles, absolute));
   const candidates: Candidate[] = parsedAll.filter((_candidate, index) => rejections[index] === undefined);
   debugStage(ref, 'c.parse', {
     collected: collected.streams.length,
     withHash: read.length,
     parsed: parsedAll.length,
     rejetTitre: rejections.filter((r) => r === 'titre').length,
+    rejetAnnee: rejections.filter((r) => r === 'annee').length,
     rejetPortee: rejections.filter((r) => r === 'portee').length,
     gardes: candidates.length,
     titres: titles.titles.join(' | '),

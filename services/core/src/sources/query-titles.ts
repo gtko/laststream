@@ -69,17 +69,84 @@ export function nameTokens(text: string): string[] {
     .filter((token) => token !== '');
 }
 
+/** Groupes de tête entre crochets (« [SubsPlease] », « [YTS.MX] ») : ils ne font pas partie du titre. */
+function withoutLeadingGroups(name: string): string {
+  return name.replace(/^\s*(?:\[[^\]]*\]\s*)+/, '');
+}
+
+/** Jetons du nom d'une release, sans groupes de tête. */
+function releaseTokens(name: string): string[] {
+  return nameTokens(withoutLeadingGroups(name));
+}
+
+/** Formes de jetons d'un titre, sans doublon : apostrophe retirée (« lapothicaire ») ou séparatrice (« l apothicaire »). */
+function titleTokenForms(title: string): string[][] {
+  const forms = [nameTokens(title), nameTokens(title.replace(/['’]/g, ' '))].filter((tokens) => tokens.length > 0);
+  const seen = new Set<string>();
+  return forms.filter((tokens) => {
+    const key = tokens.join(' ');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+const YEAR_TOKEN_ONLY = /^(?:19|20)\d{2}$/;
+/** Saison ou épisode : « s01 », « s01e02 », « s01e01e02 », « e05 », « ep05 », « 2x05 ». */
+const EPISODE_TOKEN = /^(?:s\d{1,3}(?:e\d{1,4})*|(?:e|ep)\d{1,4}|\d{1,2}x\d{2,3})$/;
+/** Résolution : « 1080p », « 720i », « 4k ». */
+const RESOLUTION_TOKEN = /^(?:\d{3,4}[pi]|[248]k|uhd|hd|hdr)$/;
+const BARE_NUMBER = /^\d{1,4}$/;
+/** Langue, source, mots de saison ou d'intégrale : ce qui peut suivre directement un titre dans un nom de release. */
+const LABEL_TOKENS = new Set([
+  'saison', 'saisons', 'season', 'seasons', 'integrale', 'complete',
+  'multi', 'vf', 'vff', 'vfq', 'vfi', 'vf2', 'vfb', 'vo', 'vost', 'vostfr', 'vostf', 'subfrench', 'truefrench', 'french', 'fr',
+  'english', 'eng', 'en', 'dual',
+  'web', 'webrip', 'webdl', 'dl', 'bluray', 'blu', 'ray', 'bdrip', 'brrip', 'bd', 'hdtv', 'dvdrip', 'dvd', 'hdrip', 'remux',
+  'amzn', 'nf', 'ddp', 'x264', 'x265', 'h264', 'h265', 'hevc', '10bit',
+]);
+
+/** Marqueur de fin de titre : année, saison ou épisode, résolution, langue, tag de source. */
+function isTitleEndMarker(token: string): boolean {
+  return YEAR_TOKEN_ONLY.test(token) || EPISODE_TOKEN.test(token) || RESOLUTION_TOKEN.test(token) || LABEL_TOKENS.has(token);
+}
+
 /**
- * Vrai si le nom de la release contient, en entier et dans l'ordre, l'un des titres (jetons consécutifs). « Lupin.S03E01 »
- * contient « Lupin » ; « Simon.2016.S03 » ne contient pas « Lupin ». Sans titre exploitable : vrai (rien à vérifier).
+ * Vrai si un titre peut finir au jeton `index` : fin du nom, marqueur de fin, ou numéro absolu d'anime (« One Piece 1071 »)
+ * suivi de la fin ou d'un marqueur. Un mot de plus (« Strange New Worlds », « The Next Generation ») empêche la fin.
+ */
+function titleEndsAt(tokens: readonly string[], index: number): boolean {
+  if (index === tokens.length) return true;
+  if (isTitleEndMarker(tokens[index])) return true;
+  return BARE_NUMBER.test(tokens[index]) && (index + 1 === tokens.length || isTitleEndMarker(tokens[index + 1]));
+}
+
+/**
+ * Nombre de jetons du titre le plus long qui ouvre le nom (jetons déjà extraits) et se termine à un marqueur ou à la fin
+ * du nom. Undefined si aucun titre ne correspond. Le titre doit être le début exact du nom : « Sousou.No.Frieren » ne
+ * correspond pas à « Frieren ».
+ */
+function openingTitleLength(tokens: readonly string[], titles: readonly string[]): number | undefined {
+  let best: number | undefined;
+  for (const title of titles) {
+    for (const form of titleTokenForms(title)) {
+      if (form.length > tokens.length || !form.every((token, index) => tokens[index] === token)) continue;
+      if (!titleEndsAt(tokens, form.length)) continue;
+      if (best === undefined || form.length > best) best = form.length;
+    }
+  }
+  return best;
+}
+
+/**
+ * Vrai si le nom de la release commence exactement par l'un des titres, suivi directement d'un marqueur de fin (année,
+ * SxxEyy / Sxx / « Saison », résolution, langue, tag de source) ou de la fin du nom. « Star.Trek.1966.S01E01 » et
+ * « Star Trek S01E01 MULTI » passent pour « Star Trek » ; « Star.Trek.Strange.New.Worlds.2022.S01 » non.
+ * Sans titre exploitable (vide, ou sans lettre latine) : vrai, rien à vérifier.
  */
 export function nameMatchesTitles(name: string, titles: readonly string[]): boolean {
-  const haystack = nameTokens(name);
-  const needles = titles.map(nameTokens).filter((tokens) => tokens.length > 0);
-  if (needles.length === 0) return true;
-  return needles.some((needle) =>
-    haystack.some((_token, start) => needle.every((token, offset) => haystack[start + offset] === token)),
-  );
+  if (!titles.some((title) => titleTokenForms(title).length > 0)) return true;
+  return openingTitleLength(releaseTokens(name), titles) !== undefined;
 }
 
 /** Identifiant TVDB d'une série (réponse external_ids de TMDB), ou undefined. */
@@ -366,25 +433,48 @@ export function buildQueries(variants: TitleVariants, ref: ContentRef): string[]
   return unique(queries.map(cleanTitle)).slice(0, MAX_QUERIES);
 }
 
-const YEAR_TOKEN = /(?<![A-Za-z0-9])(19\d{2}|20\d{2})(?![A-Za-z0-9])/g;
-
-/** Dernière année isolée dans un titre de release (« Blade.Runner.2049.2017.1080p » donne 2017). */
-export function detectYear(title: string): number | undefined {
+/**
+ * Année de la release : la dernière année isolée, hors du titre qui ouvre le nom. « Blade.Runner.2049.2017.1080p » donne
+ * 2017 ; « 1923.S01E01 » avec le titre « 1923 » ne donne aucune année (l'année fait partie du titre).
+ */
+export function releaseYear(name: string, titles: readonly string[] = []): number | undefined {
+  const tokens = releaseTokens(name);
+  const from = openingTitleLength(tokens, titles) ?? 0;
   let last: number | undefined;
-  for (const match of title.matchAll(YEAR_TOKEN)) last = Number(match[1]);
+  for (const token of tokens.slice(from)) {
+    if (YEAR_TOKEN_ONLY.test(token)) last = Number(token);
+  }
   return last;
 }
 
-/** Vrai si l'année du titre est absente ou à ±1 de l'année attendue (absente : vrai). */
-export function yearMatches(resultTitle: string, year: number | undefined): boolean {
+/** Dernière année isolée dans un titre de release (« Blade.Runner.2049.2017.1080p » donne 2017). */
+export function detectYear(title: string): number | undefined {
+  return releaseYear(title);
+}
+
+/** Vrai si l'année du titre est absente ou à ±1 de l'année attendue (absente : vrai). `titles` : l'année d'un titre n'en est pas une. */
+export function yearMatches(resultTitle: string, year: number | undefined, titles: readonly string[] = []): boolean {
   if (year === undefined) return true;
-  const detected = detectYear(resultTitle);
+  const detected = releaseYear(resultTitle, titles);
   return detected === undefined || Math.abs(detected - year) <= 1;
+}
+
+/**
+ * Année de la release compatible avec l'œuvre. Films : à ±1 an de la sortie. Séries : pas antérieure à la première
+ * diffusion moins un an (une saison plus récente est acceptée). Année absente, ou année attendue inconnue : vrai.
+ */
+export function releaseYearFits(name: string, variants: TitleVariants, type: ContentRef['type']): boolean {
+  const year = variants.year;
+  if (year === undefined) return true;
+  const detected = releaseYear(name, variants.titles);
+  if (detected === undefined) return true;
+  return type === 'movie' ? Math.abs(detected - year) <= 1 : detected >= year - 1;
 }
 
 /** Retire les flux d'un film dont l'année du titre diffère de plus de 1 de l'année attendue. Séries : inchangé. */
 export function filterByYear(streams: RawStream[], ref: ContentRef, variants: TitleVariants | undefined): RawStream[] {
   const year = variants?.year;
   if (ref.type !== 'movie' || year === undefined) return streams;
-  return streams.filter((stream) => yearMatches(stream.title ?? stream.filename ?? '', year));
+  const titles = variants?.titles ?? [];
+  return streams.filter((stream) => yearMatches(stream.title ?? stream.filename ?? '', year, titles));
 }
