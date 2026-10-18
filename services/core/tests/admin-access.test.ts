@@ -110,6 +110,26 @@ describe('/admin : contrôle d\'accès', () => {
     await rig.backend.admin().setAdminProfileId(rig.owner.profile);
   });
 
+  it('profil principal : seul à écrire la configuration (sources, extensions, clés) ; isMainProfile annoncé', async () => {
+    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'jessica2' } });
+    const put = (profile: string) => request(rig.app, 'PUT', `/user/profiles/${profile}/settings`, { token: rig.owner.token, body: { lastaddonConfig: 'CHIFFRE' } });
+    expect((await put(jessica.body.id)).status).toBe(403);
+    expect(((await put(jessica.body.id)).body as { error: string }).error).toBe('main_profile_required');
+    expect((await put(rig.owner.profile)).status).toBe(200);
+    // Les préférences restent modifiables depuis un profil secondaire.
+    const prefs = await request(rig.app, 'PUT', `/user/profiles/${jessica.body.id}/settings`, { token: rig.owner.token, body: { theme: 'dark' } });
+    expect(prefs.status).toBe(200);
+    // Lecture de la config du profil principal depuis la session du compte (profil secondaire).
+    const read = await request<{ settings: Record<string, string> }>(rig.app, 'GET', `/user/profiles/${rig.owner.profile}/settings`, { token: rig.owner.token });
+    expect(read.body.settings.lastaddonConfig).toBe('CHIFFRE');
+    const list = await request<{ profiles: Array<{ id: string; isMainProfile: boolean }> }>(rig.app, 'GET', '/user/profiles', { token: rig.owner.token });
+    expect(list.body.profiles.filter((p) => p.isMainProfile).map((p) => p.id)).toEqual([rig.owner.profile]);
+    // Compte invité : son premier profil est le principal.
+    const bobList = await request<{ profiles: Array<{ id: string; isMainProfile: boolean }> }>(rig.app, 'GET', '/user/profiles', { token: member.token });
+    expect(bobList.body.profiles.find((p) => p.id === member.profile)?.isMainProfile).toBe(true);
+    expect((await request(rig.app, 'PUT', `/user/profiles/${member.profile}/settings`, { token: member.token, body: { lastaddonConfig: 'X' } })).status).toBe(200);
+  });
+
   it('profil adulte protégé par PIN : jeton de déverrouillage exigé', async () => {
     const created = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'verrou', pin: '1234' } });
     const profileId = created.body.id;

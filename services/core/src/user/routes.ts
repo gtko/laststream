@@ -69,6 +69,8 @@ const LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10, authPerIp: 10 } as const;
 /** Connexion et inscription : tentatives par IP sur une fenêtre longue (freine la force brute). */
 const AUTH_WINDOW_MS = 15 * 60_000;
+/** Réglage de profil qui porte la configuration lastAddon chiffrée (sources, extensions, clés). */
+const CONFIG_SETTING_KEY = 'lastaddonConfig';
 const SETTING_KEY = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const MAX_SETTINGS_PER_WRITE = 100;
 const MAX_SETTING_BYTES = 4096;
@@ -315,7 +317,13 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const { account } = await sessionOf(db(), c);
     // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil).
     const adminId = account.isOwner ? await backend.admin().adminProfileId() : null;
-    const profiles = (await db().listProfiles(account.id)).map((p) => ({ ...publicProfile(p), isAdminProfile: adminId !== null && p.id === adminId }));
+    // Profil principal : seul à gérer la configuration (sources, extensions, clés) ; les autres profils n'ont que leurs préférences.
+    const mainId = await backend.admin().mainProfileId(account.id);
+    const profiles = (await db().listProfiles(account.id)).map((p) => ({
+      ...publicProfile(p),
+      isAdminProfile: adminId !== null && p.id === adminId,
+      isMainProfile: mainId !== null && p.id === mainId,
+    }));
     return sendJson(c, { profiles });
   });
 
@@ -613,8 +621,13 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
 
   router.put('/profiles/:id/settings', async (c) => {
     const users = db();
-    const { profile } = await scopeOf(users, c, deps.secret, true);
-    await users.writeSettings(profile.id, settingsEntries(c.get('body')));
+    const { profile, account } = await scopeOf(users, c, deps.secret, true);
+    const entries = settingsEntries(c.get('body'));
+    // La configuration lastAddon (sources, extensions, clés) ne s'écrit que depuis le profil principal du compte.
+    if (entries.some(([key]) => key === CONFIG_SETTING_KEY) && (await backend.admin().mainProfileId(account.id)) !== profile.id) {
+      throw new UserApiError(403, 'main_profile_required');
+    }
+    await users.writeSettings(profile.id, entries);
     return sendJson(c, { settings: await users.listSettings(profile.id) });
   });
 

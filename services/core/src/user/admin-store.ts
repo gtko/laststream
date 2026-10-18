@@ -298,6 +298,18 @@ export class AdminStore {
     return String(oldest.id);
   }
 
+  /**
+   * Profil principal d'un compte : seul à gérer la configuration (sources, extensions, clés). Compte propriétaire : le
+   * profil administrateur ; autre compte : son plus ancien profil. Null s'il n'a aucun profil.
+   */
+  mainProfileId(accountId: string): string | null {
+    const owner = this.db.prepare('SELECT is_owner FROM accounts WHERE id = ?').get(accountId) as SqlRow | undefined;
+    if (owner === undefined) return null;
+    if (Number(owner.is_owner) === 1) return this.adminProfileId();
+    const oldest = this.db.prepare('SELECT id FROM profiles WHERE account_id = ? ORDER BY created_at, id LIMIT 1').get(accountId) as SqlRow | undefined;
+    return oldest === undefined ? null : String(oldest.id);
+  }
+
   /** Désigne le profil administrateur (doit appartenir au propriétaire). `false` sinon. */
   setAdminProfileId(profileId: string): boolean {
     const ok = this.db.prepare('SELECT 1 AS ok FROM profiles p JOIN accounts a ON a.id = p.account_id WHERE p.id = ? AND a.is_owner = 1').get(profileId);
