@@ -1574,7 +1574,8 @@ function panelData(name) {
     if (v.releaseGroup) rows.push(['Release', v.releaseGroup]);
     if (p.probeTracks.height) rows.push(['Vidéo', p.probeTracks.width + '×' + p.probeTracks.height + ' · ' + (p.probeTracks.videoCodec || '').toUpperCase()]);
     if (p.choice) rows.push(['Pourquoi ce moteur', p.choice.reason]);
-    rows.push(['Serveur de streaming', serverBase()]);
+    // Le serveur de streaming ne sert plus qu'à la conversion HLS (web) : sinon, lecture directe du lien débridé.
+    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : 'Non utilisé · lecture directe du lien AllDebrid']);
     const m = p.model;
     return {
       title, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview, rating: m && m.vote ? Number(m.vote).toFixed(1) + ' / 10' : '',
