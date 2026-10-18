@@ -31,14 +31,19 @@ import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, wr
 import { RATE_CHOICES, findSync, rateChoice, suggestRate, syncTrusted } from './subsync';
 import { parseProbe, pickDefaultAudio, pickDefaultSubtitle, pickRememberedSubtitle } from './tracks';
 import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
+import { Thumbs } from './thumbview.js';
+import { thumbsAllowed } from './thumbs';
 import { createPlayerUI } from './ui.js';
+import { knownBandwidthKbps } from '../sources/load';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
+const THUMBS_KEY = 'laststream.player.thumbs';
 const MAX_ATTEMPTS = 6;
 const AUTOSYNC_TARGET = 90;
 const AUTOSYNC_MIN = 25;
 
 let ui = null;
+let thumbs = null;
 let html = null;
 let mpv = null;
 let P = null; // session courante (null : lecteur fermé)
@@ -80,6 +85,22 @@ function ensureUI() {
     },
     // Fermer le panneau des sources sans avoir choisi (recherche initiale) annule la lecture : retour à la fiche.
     panelClosed: (name) => { if (name === 'sources' && P && !P.view) closePlayer(); },
+    thumb: (t) => { if (thumbs && P && P.view) thumbs.request(t); },
+    thumbCancel: () => { if (thumbs) thumbs.cancel(); },
+  });
+  thumbs = new Thumbs(ui.thumbCanvas, {
+    allowed: () => !!P && !!P.view && P.engine.kind !== 'mpv' && thumbsAllowed({
+      enabled: storeGet(THUMBS_KEY) !== '0', shell: P.engine.kind === 'mpv', duration: P.engine.state().duration,
+      bandwidthKbps: knownBandwidthKbps(), torrentBuffering: !!P.torrent && P.engine.state().buffering,
+    }),
+    duration: () => (P ? P.engine.state().duration : 0),
+    // Vidéo d'aperçu sur la même source : lien direct, ou une seconde session HLS du serveur (pour ne pas gêner la lecture).
+    source: async () => {
+      const p = P;
+      if (!p || !p.mediaUrl || !p.choice || p.choice.engine === 'mpv') return null;
+      if (p.choice.engine === 'hls') return { url: hlsMasterUrl(p.mediaBase || serverBase(), newSessionId(), p.mediaUrl, getCaps(), p.forceHls), hls: true };
+      return { url: p.mediaUrl, hls: false };
+    },
   });
   html = new HtmlEngine(ui.video);
   bindEngine(html);
@@ -307,6 +328,8 @@ async function playView(view, startAt) {
   const s = p.subs;
   Object.assign(s, { selectedId: null, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
   stopAutoSync();
+  if (thumbs) thumbs.reset();
+  p.torrent = false;
   if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
@@ -318,6 +341,7 @@ async function playView(view, startAt) {
     const media = await resolveMedia(view);
     if (stale()) return;
     p.mediaUrl = media.url;
+    p.torrent = media.torrent;
     let probe = null;
     if (!shell && media.up) {
       ui.setLoading(p.meta.title || 'Lecture', media.torrent ? 'Connexion au torrent…' : 'Analyse du fichier…', base);
@@ -690,8 +714,10 @@ function seekTo(t) {
 function seekBy(d) {
   if (!P || !P.view) return;
   const st = P.engine.state();
-  seekTo(Math.min(st.duration || Infinity, Math.max(0, st.time + d)));
+  const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
+  seekTo(to);
   ui.toast((d > 0 ? '+' : '−') + Math.abs(d) + ' s', 900);
+  ui.previewTime(to);
 }
 
 function togglePlay() {
@@ -833,6 +859,7 @@ function onAction(act, data) {
     case 'substyle': updateStyle({ [data.key]: data.key === 'size' ? Number(data.val) : data.val }); break;
     case 'substep': updateStyle({ [data.key]: s.style[data.key] + Number(data.by) }); break;
     case 'rate': P.engine.setRate(Number(data.rate)); setTimeout(() => ui.refreshPanel(), 50); break;
+    case 'thumbs': storeSet(THUMBS_KEY, storeGet(THUMBS_KEY) === '0' ? '1' : '0'); thumbs.cancel(); ui.refreshPanel(); break;
     case 'aspect': P.aspect = data.val; ui.video.style.objectFit = data.val; ui.refreshPanel(); break;
     case 'autopip': { const on = storeGet(AUTOPIP_KEY) !== '1'; storeSet(AUTOPIP_KEY, on ? '1' : '0'); ui.video.autoPictureInPicture = on; ui.refreshPanel(); break; }
     case 'season': ensureEpisodes(Number(data.season)); break;
@@ -921,7 +948,7 @@ function panelData(name) {
     if (web) rows.push(['Lecture', web]);
     if (p.choice) rows.push(['Moteur', p.choice.label]);
     return {
-      rate: st.rate, source: rows, aspect: p.aspect, autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(),
+      rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(),
       canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
     };
   }
@@ -1010,6 +1037,7 @@ async function teardown(silent) {
   clearInterval(tickTimer);
   clearTimeout(p.resumeTimer);
   stopAutoSync();
+  if (thumbs) thumbs.reset();
   try { p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;

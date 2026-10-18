@@ -4,6 +4,7 @@
  * Aucune logique de lecture ici : tout passe par les gestionnaires `h` fournis par session.js. */
 import { esc } from '../ui/util.js';
 import { LI } from './icons.js';
+import { clampTooltip } from './thumbs';
 import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
@@ -39,7 +40,7 @@ function skeleton() {
     '<div class="lp-bottom">' +
       '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span></div>' +
-        '<span class="lp-thumb"></span><span class="lp-hover" hidden></span>' +
+        '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
       '</div>' +
       '<div class="lp-row">' +
         '<div class="lp-grp">' +
@@ -152,6 +153,24 @@ export function createPlayerUI(h) {
     return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
   };
   const hover = q('.lp-hover');
+  const hoverT = q('.lp-hover-t');
+  const hoverS = q('.lp-hover-s');
+  let previewTimer = null;
+  /** Cadre d'aperçu au-dessus de la barre, à la fraction `f` : image (si disponible), heure et nom du segment. */
+  function showHover(f, time) {
+    if (!last || !last.duration) return;
+    const r = seek.getBoundingClientRect();
+    const seg = markList.find((m) => f >= m.from && f <= m.to);
+    hover.hidden = false;
+    hoverT.textContent = formatClock(time);
+    hoverS.textContent = seg ? MARK_LABEL[seg.kind] : '';
+    hover.style.left = clampTooltip(f * r.width, r.width, hover.offsetWidth || 120) + 'px';
+    if (h.thumb) h.thumb(time);
+  }
+  function hideHover() {
+    hover.hidden = true;
+    if (h.thumbCancel) h.thumbCancel();
+  }
   function previewSeek(f) {
     q('.lp-played').style.width = f * 100 + '%';
     q('.lp-thumb').style.left = f * 100 + '%';
@@ -159,13 +178,10 @@ export function createPlayerUI(h) {
   seek.addEventListener('pointermove', (e) => {
     if (!last || !last.duration) return;
     const f = frac(e);
-    hover.hidden = false;
-    hover.style.left = f * 100 + '%';
-    const seg = markList.find((m) => f >= m.from && f <= m.to);
-    hover.textContent = (seg ? MARK_LABEL[seg.kind] + ' · ' : '') + formatClock(f * last.duration);
+    showHover(f, f * last.duration);
     if (dragging) previewSeek(f);
   });
-  seek.addEventListener('pointerleave', () => { hover.hidden = true; });
+  seek.addEventListener('pointerleave', () => { if (!dragging) hideHover(); });
   seek.addEventListener('pointerdown', (e) => {
     if (!last || !last.duration) return;
     dragging = true;
@@ -175,6 +191,7 @@ export function createPlayerUI(h) {
   seek.addEventListener('pointerup', (e) => {
     if (!dragging) return;
     dragging = false;
+    hideHover();
     if (last && last.duration) h.seekTo(frac(e) * last.duration);
   });
   seek.addEventListener('keydown', (e) => {
@@ -219,6 +236,14 @@ export function createPlayerUI(h) {
   const api = {
     root,
     video,
+    thumbCanvas: q('.lp-hover-c'),
+    /** Aperçu au clavier : montre le cadre à `time` un instant (saut de 10 s, flèches sur la barre). */
+    previewTime(time, ms = 1300) {
+      if (!last || !last.duration) return;
+      showHover(Math.min(1, Math.max(0, time / last.duration)), time);
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(hideHover, ms);
+    },
     get panel() { return panelName; },
     show() { root.hidden = false; root.classList.add('is-ui'); wake(); },
     hide() { root.hidden = true; api.closePanel(true); api.setPauseScreen(null); },
