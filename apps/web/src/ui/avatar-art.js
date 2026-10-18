@@ -14,6 +14,15 @@ const camel = (id) => id.replace(/-([a-z0-9])/g, (_m, c) => c.toUpperCase());
 const loadCore = () => corePromise || (corePromise = import('@dicebear/core'));
 const loadCollection = () => collectionPromise || (collectionPromise = import('@dicebear/collection/async'));
 
+/**
+ * Échelle de la figure dans son cadre : plusieurs styles débordent de leur viewBox (corps, cheveux, oreilles), ce qui les
+ * rognait dans la tuile. À 70 %, la figure entière reste visible avec une marge, centrée (DiceBear garde le centrage).
+ */
+export const AVATAR_SCALE = 70;
+
+/** Le SVG occupe toute la tuile (width/height 100 %) ; le viewBox garde les proportions. */
+export const fitSvg = (svg) => svg.replace(/<svg\b([^>]*)>/, (_m, attrs) => '<svg' + attrs.replace(/\s(?:width|height)="[^"]*"/g, '') + ' width="100%" height="100%">');
+
 /** SVG de l'avatar en URI data:, ou '' si la valeur est invalide / non autorisée / non générable. Mis en cache. */
 export async function avatarUri(value) {
   const parsed = parseAvatar(value);
@@ -25,7 +34,7 @@ export async function avatarUri(value) {
     const loader = coll[camel(parsed.style.id)];
     if (typeof loader !== 'function') return '';
     const style = await loader();
-    const svg = core.createAvatar(style, { seed: parsed.seed, backgroundColor: [...AVATAR_BACKGROUNDS], size: 128 }).toString();
+    const svg = fitSvg(core.createAvatar(style, { seed: parsed.seed, backgroundColor: [...AVATAR_BACKGROUNDS], scale: AVATAR_SCALE }).toString());
     const uri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     cache.set(value, uri);
     return uri;
