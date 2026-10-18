@@ -5,6 +5,7 @@ import { LI } from './icons.js';
 import { SPEEDS } from './keys';
 import { offsetLabel } from './subs';
 import { RATE_CHOICES } from './subsync';
+import { isEpFolded } from './epfold.js';
 
 export const head = (title, sub) => '<div class="lp-panel-head"><div><h2>' + esc(title) + '</h2>' + (sub ? '<p class="lp-panel-sub">' + esc(sub) + '</p>' : '') + '</div>' +
   '<button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="Fermer le panneau">' + LI.close + '</button></div>';
@@ -88,14 +89,19 @@ export function episodesHtml(d) {
     const on = d.season === cur.season && ep.episode === cur.episode;
     const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
     const still = '<span class="lp-ep-still">' + (ep.still ? '<img src="' + esc(ep.still) + '" alt="" loading="lazy" decoding="async">' : '') +
+      (on ? '<span class="lp-ep-now">En cours</span>' : '') +
       (ep.aired ? '' : '<span class="lp-ep-soon">Bientôt</span>') +
-      (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') +
-      (ep.watched ? '<span class="lp-ep-seen" title="Vu">' + LI.check + '</span>' : '') + '</span>';
-    return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (ep.aired ? '' : ' is-soon') + '" data-ep="' + ep.episode + '">' +
+      (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
+    // Bouton « vu » : frère (et non enfant) du bouton de lecture, pour ne pas imbriquer des boutons.
+    const seenLabel = ep.watched ? 'Marquer comme non vu' : 'Marquer comme vu';
+    const seen = ep.aired || ep.watched ? '<button type="button" class="lp-ep-seen' + (ep.watched ? ' is-on' : '') + '" data-act="ep-seen" data-season="' + d.season + '" data-episode="' + ep.episode + '" data-seen="' + (ep.watched ? '0' : '1') + '" title="' + seenLabel + '" aria-label="' + seenLabel + '">' + LI.check + '</button>' : '';
+    const folded = !!ep.overview && isEpFolded(d.season, ep.episode);
+    const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="Afficher le synopsis complet" title="Plus">' + LI.mini + '</button>' : '';
+    return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (ep.aired ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
       '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (ep.aired ? '' : ' disabled') + '>' + still +
-        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + esc(ep.name || 'Épisode ' + ep.episode) + (on ? ' <em>En cours</em>' : '') + '</span>' +
+        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + esc(ep.name || 'Épisode ' + ep.episode) + '</span>' +
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
-      (ep.aired ? '<span class="lp-ep-actions"><button type="button" class="lp-chip" data-act="ep-seen" data-season="' + d.season + '" data-episode="' + ep.episode + '" data-seen="' + (ep.watched ? '0' : '1') + '">' + (ep.watched ? 'Marquer non vu' : 'Marquer vu') + '</button></span>' : '') +
+      seen + more +
       '</div>';
   }).join('') + (!d.loading && !d.episodes.length && d.error ? '<p class="lp-empty">Impossible de charger les épisodes. Change de saison ou rouvre le panneau pour réessayer.</p>' : '') + (!d.loading && !d.episodes.length && !d.error ? '<p class="lp-empty">Aucun épisode' + (d.query ? ' ne correspond à « ' + esc(d.query) + ' »' : '') + '.</p>' : '');
   const seasons = d.seasons.map((s) => s.season);
