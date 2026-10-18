@@ -9,10 +9,15 @@ const ALLOW_PLAIN_KEY = 'LASTADDON_ALLOW_PLAIN';
 /** Longueur minimale de LASTADDON_SECRET (caractères, après trim). */
 export const MIN_SECRET_LENGTH = 32;
 
-/** Chemin du fichier .env à la racine du projet (relatif à ce module, pas au répertoire courant). */
+/**
+ * Chemin du fichier .env à la racine du projet (relatif à ce module, pas au répertoire courant).
+ * LASTADDON_ENV_FILE le remplace (applications packagées) ; chemin relatif résolu depuis la racine du projet.
+ */
 export function envFilePath(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  return resolve(moduleDir, '..', '..', '.env');
+  const root = resolve(moduleDir, '..', '..');
+  const override = process.env.LASTADDON_ENV_FILE?.trim();
+  return override ? resolve(root, override) : resolve(root, '.env');
 }
 
 /** Parse le contenu d'un fichier .env (KEY=VALUE, commentaires #, guillemets simples ou doubles). */

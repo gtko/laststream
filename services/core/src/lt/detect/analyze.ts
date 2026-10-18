@@ -13,7 +13,7 @@ import {
 } from './fingerprint.js';
 import type { LocalUrlPolicy } from './media-url.js';
 import { runProcess } from './proc.js';
-import { ByteBudget, JOB_BYTE_BUDGET, openSource, type SourceProxy } from './proxy.js';
+import { ByteBudget, jobByteBudget, openSource, type SourceProxy } from './proxy.js';
 import type { MediaTools } from './tools.js';
 
 /** Confiance d'un segment trouvé par empreinte audio, et par noir et silence de fin. */
@@ -22,10 +22,10 @@ export const FALLBACK_MIN_CONFIDENCE = 0.6;
 /** Longueurs retenues (secondes). */
 const INTRO_RANGE = { min: 15, max: 120 } as const;
 const CREDITS_RANGE = { min: 15, max: 300 } as const;
-/** Fenêtres analysées : début d'épisode (25 %, 10 min au plus) et fin (6 min). */
+/** Fenêtres analysées : début d'épisode (25 %, 6 min au plus) et fin (4 min). */
 const INTRO_SHARE = 0.25;
-const INTRO_WINDOW_MAX = 600;
-const CREDITS_WINDOW = 360;
+const INTRO_WINDOW_MAX = 360;
+const CREDITS_WINDOW = 240;
 /** Part de l'empreinte de référence qui doit se retrouver dans un nouvel épisode. */
 const REFERENCE_SHARE = 0.7;
 const MIN_DURATION = 120;
@@ -52,6 +52,10 @@ export interface AnalyzeDeps {
   allowLocal: LocalUrlPolicy;
   /** Autres épisodes de la saison dont on connaît le média (les plus proches d'abord). */
   siblings: (job: EpisodeRef) => EpisodeRef[];
+  /** Vrai si la saison peut encore tenter un appariement (au plus deux tentatives par saison). */
+  canPair: (job: EpisodeRef) => boolean;
+  /** Signale qu'une tentative d'appariement a eu lieu. */
+  pairTried: (job: EpisodeRef) => void;
   now: () => Date;
   byteBudget?: number;
 }
@@ -190,7 +194,7 @@ async function creditsFallback(
 export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promise<Outcome> {
   const started = Date.now();
   const deadline = (): number => JOB_TIMEOUT_MS - (Date.now() - started);
-  const budget = new ByteBudget(deps.byteBudget ?? JOB_BYTE_BUDGET);
+  const budget = new ByteBudget(deps.byteBudget ?? jobByteBudget());
   const proxies: SourceProxy[] = [];
   const open = async (url: URL): Promise<string> => {
     const proxy = await openSource(url, budget, deps.allowLocal);
@@ -231,10 +235,11 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
           outcome = 'fingerprint';
         }
       }
-      // Appariement avec un épisode voisin pour les types sans référence.
+      // Appariement avec un épisode voisin pour les types sans référence (une saison n'en tente que deux).
       const todo = (['intro', 'credits'] as const).filter((kind) => !referenced.has(kind));
-      if (todo.length > 0) {
-        const siblings = deps.siblings(job).slice(0, 2);
+      if (todo.length > 0 && deps.canPair(job)) {
+        const siblings = deps.siblings(job).slice(0, 1);
+        if (siblings.length > 0) deps.pairTried(job);
         if (siblings.length === 0 && have.size === 0) outcome = 'waiting';
         for (const sibling of siblings) {
           const siblingReader = new EpisodeReader(deps, sibling, await open(sibling.url), deadline);
@@ -252,7 +257,7 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
             have.add(kind);
             outcome = 'fingerprint';
           }
-          if (have.size === todo.length) break;
+          if (have.size > 0) break; // correspondance sûre trouvée : on s'arrête là
         }
       }
     }

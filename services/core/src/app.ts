@@ -2,7 +2,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
-import { allowedOrigins, isTrustProxy } from './config/runtime-env.js';
+import { allowedOrigins, configuredStreamingServer, isTrustProxy } from './config/runtime-env.js';
 import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { catalogEntries } from './lt/catalog.js';
@@ -13,6 +13,8 @@ import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
 import { registerUserRoutes } from './user/routes.js';
+import { registerStreamingProxy } from './streaming-proxy.js';
+import { registerUiRoutes } from './ui.js';
 import { createRateLimiter } from './rate-limit.js';
 import { isRecord } from './sources/http.js';
 
@@ -184,7 +186,7 @@ export function createApp(deps: AppDeps): Express {
   app.disable('x-powered-by');
   // Derrière un reverse proxy de confiance uniquement : le débit se mesure alors sur la vraie IP du client.
   if (isTrustProxy()) app.set('trust proxy', 1);
-  app.use(corsMiddleware(allowedOrigins()));
+  app.use(corsMiddleware([...allowedOrigins(), ...(deps.uiOrigins ?? [])]));
   app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
@@ -248,6 +250,11 @@ export function createApp(deps: AppDeps): Express {
     closeLt();
     closeUser();
   });
+
+  if (deps.uiDir !== undefined) {
+    registerStreamingProxy(app, deps.streamingServer ?? configuredStreamingServer());
+    registerUiRoutes(app, deps.uiDir);
+  }
 
   app.use(errorHandler);
   return app;

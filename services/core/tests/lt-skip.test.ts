@@ -8,6 +8,7 @@ const INTRODB_KEY = 'idb_test_key_0123456789';
 const ANIMESKIP_CLIENT = 'animeskip-client-0123456789';
 
 const INTRODB = 'https://api.introdb.app/segments';
+const SKIPDB = 'https://api.skipdb.tv/api/segments';
 const ARM = 'https://arm.haglund.dev/api/v2/imdb';
 const ANISKIP = 'https://api.aniskip.com/v2/skip-times';
 const ANIMESKIP = 'https://api.anime-skip.com/graphql';
@@ -65,6 +66,13 @@ beforeAll(async () => {
       }
       return json({ error: 'unexpected' }, 599);
     },
+    // SkipDB sans donnée pour ces cibles (forme réelle observée : Stargate Universe S01E03, tt1286039).
+    [SKIPDB]: (call) =>
+      json({
+        imdb_id: call.url.searchParams.get('imdb_id'),
+        segments: { intro: null, recap: null, outro: null, preview: null },
+        intro_length_estimate_ms: null,
+      }),
     [ARM]: (call) => {
       const id = call.url.searchParams.get('id');
       if (id === FRIEREN) {

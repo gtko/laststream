@@ -8,6 +8,8 @@ export { validateMediaUrl } from './media-url.js';
 
 /** Débit maximal : jobs démarrés par minute. */
 export const MAX_JOBS_PER_MINUTE = 2;
+/** Appariements d'épisodes tentés par saison au plus (ensuite, seule l'empreinte de référence sert). */
+const MAX_PAIRINGS = 2;
 /** Durée de vie d'une URL de média rapportée (le lecteur la renouvelle à chaque lecture). */
 const MEDIA_TTL_MS = 6 * 3600e3;
 const MAX_MEDIA = 500;
@@ -78,6 +80,7 @@ export function createAutoDetector(openStore: () => SkipSegmentStore, options: A
   const pending: EpisodeRef[] = [];
   const active = new Set<string>();
   const startTimes: number[] = [];
+  const pairings = new Map<string, number>();
   let tools: MediaTools | undefined;
   let toolsLoaded = false;
   let running: Promise<void> = Promise.resolve();
@@ -140,6 +143,11 @@ export function createAutoDetector(openStore: () => SkipSegmentStore, options: A
             store: openStore(),
             allowLocal,
             siblings: siblingsOf,
+            canPair: (episode) => (pairings.get(seasonOf(episode.imdbId, episode.season)) ?? 0) < MAX_PAIRINGS,
+            pairTried: (episode) => {
+              const key = seasonOf(episode.imdbId, episode.season);
+              pairings.set(key, (pairings.get(key) ?? 0) + 1);
+            },
             now,
             ...(options.byteBudget === undefined ? {} : { byteBudget: options.byteBudget }),
           };

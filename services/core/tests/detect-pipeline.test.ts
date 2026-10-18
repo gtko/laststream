@@ -184,6 +184,7 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
             outro: null,
             post_credits: null,
           }),
+        'https://api.skipdb.tv/api/segments': () => json({ error: 'not found' }, 404),
         'https://arm.haglund.dev/api/v2/imdb': () => json({ error: 'not found' }, 404),
       });
       app = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup(), skipDetect: { tools: tools!, allowLocal: local } });

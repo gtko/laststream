@@ -7,15 +7,20 @@ import { createPinnedAgent } from '../../sources/http.js';
 import { isLiteralSafe } from '../guard.js';
 import type { LocalUrlPolicy } from './media-url.js';
 
-/** Plafond d'octets téléchargés par job (spec : 40 Mo). */
-export const JOB_BYTE_BUDGET = 40 * 1024 * 1024;
+/** Plafond d'octets téléchargés par job : 400 Mo par défaut (audio entrelacé avec la vidéo), LASTADDON_SKIP_DETECT_MAX_MB le règle. */
+export const DEFAULT_JOB_MB = 400;
+
+export function jobByteBudget(env: NodeJS.ProcessEnv = process.env): number {
+  const mb = Number(env.LASTADDON_SKIP_DETECT_MAX_MB);
+  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_JOB_MB) * 1024 * 1024;
+}
 const MAX_HOPS = 4;
 
 /** Compteur d'octets partagé par toutes les sources d'un job. */
 export class ByteBudget {
   used = 0;
   exceeded = false;
-  constructor(readonly limit: number = JOB_BYTE_BUDGET) {}
+  constructor(readonly limit: number = jobByteBudget()) {}
   get remaining(): number {
     return Math.max(0, this.limit - this.used);
   }

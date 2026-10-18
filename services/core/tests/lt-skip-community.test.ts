@@ -14,6 +14,7 @@ import {
 
 const INTRODB = 'https://api.introdb.app/segments';
 const SUBMIT = 'https://api.introdb.app/submit';
+const SKIPDB = 'https://api.skipdb.tv/api/segments';
 const TMDB = 'https://api.themoviedb.org/3';
 const ARM = 'https://arm.haglund.dev/api/v2/imdb';
 
@@ -65,6 +66,13 @@ beforeAll(() => {
       if (body.imdb_id === FAILING_FORWARD) return json({ error: 'down' }, 500);
       return json({ ok: true, submission: { id: 'mock' } });
     },
+    // SkipDB sans donnée (forme réelle, comme Stargate Universe S01E03).
+    [SKIPDB]: (call) =>
+      json({
+        imdb_id: call.url.searchParams.get('imdb_id'),
+        segments: { intro: null, recap: null, outro: null, preview: null },
+        intro_length_estimate_ms: null,
+      }),
     [ARM]: () => json({ error: 'not found' }, 404),
   };
   for (const [imdb, show] of Object.entries(SHOWS)) {

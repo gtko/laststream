@@ -301,6 +301,10 @@ const ServicesSchema = z
       'Clé IntroDB (introdb.app)',
       'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible).',
     ),
+    skipdbApiKey: serviceKey(
+      'Clé SkipDB (skipdb.tv)',
+      'Clé API SkipDB facultative : sans clé, les segments se lisent. Avec clé, vos propositions de segments sont aussi envoyées à SkipDB (données sous licence ODbL 1.0 + réciprocité).',
+    ),
     animeskipClientId: serviceKey(
       'Client ID Anime Skip (anime-skip.com)',
       'Identifiant client Anime Skip facultatif : repères de saut pour les séries d’animation.',

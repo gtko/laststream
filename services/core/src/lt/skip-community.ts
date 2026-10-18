@@ -4,7 +4,15 @@ import { type AutoSegment, type CommunityKind, type CommunitySegment, type Propo
 import type { AutoDetector } from './detect/index.js';
 import { seriesEpisodes, type SeriesEpisode } from './episodes.js';
 import { LtError, type LtContext, ltRequest, TTL } from './context.js';
-import { INTRODB_BASE, parseSkipTarget, type SkipResponse, type SkipSegment, skipSegments, type SkipTarget } from './skip.js';
+import {
+  INTRODB_BASE,
+  parseSkipTarget,
+  SKIPDB_BASE,
+  type SkipResponse,
+  type SkipSegment,
+  skipSegments,
+  type SkipTarget,
+} from './skip.js';
 import { inferCredits, inferIntro, type Span } from './skip-infer.js';
 import { tmdbGet } from './providers.js';
 
@@ -23,6 +31,9 @@ const INTRODB_TYPE: Record<CommunityKind, string> = {
   credits: 'outro',
   postcredits: 'post-credits',
 };
+
+/** Type de segment côté SkipDB. Pas de post-générique chez SkipDB : ce type n'est pas envoyé. */
+const SKIPDB_TYPE: Partial<Record<CommunityKind, string>> = { intro: 'intro', recap: 'recap', credits: 'outro' };
 
 type Services = Config['services'];
 
@@ -175,6 +186,32 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
       });
   }
 
+  /** Envoi à SkipDB (POST /api/segments, durées en millisecondes). Best-effort, comme IntroDB : jamais de clé dans les journaux. */
+  function forwardToSkipDb(apiKey: string, sub: Submission): void {
+    const { target } = sub;
+    const segmentType = SKIPDB_TYPE[sub.kind];
+    if (segmentType === undefined) return;
+    const payload = {
+      imdb_id: target.imdbId,
+      segment_type: segmentType,
+      ...(target.type === 'movie' ? {} : { season: target.season, episode: target.episode }),
+      start_ms: Math.round(sub.start * 1000),
+      end_ms: Math.round(sub.end * 1000),
+      duration_ms: Math.round(sub.duration * 1000),
+    };
+    ltRequest(ctx, `${SKIPDB_BASE}/api/segments`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json', 'X-API-Key': apiKey },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (!res.ok) console.warn(`[lt][skip] envoi SkipDB refusé (statut amont : ${res.status})`);
+      })
+      .catch((err: unknown) => {
+        console.warn(`[lt][skip] envoi SkipDB indisponible (${err instanceof LtError ? err.code : 'erreur'})`);
+      });
+  }
+
   /**
    * Déduction pour une série : voisins de la saison (au plus SIBLING_LOOKUPS, les plus proches d'abord), puis intro et
    * générique communs. Le générique se reporte sur la durée de la cible, connue par la structure ou à défaut.
@@ -304,6 +341,7 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
     }
     if (applied > 0) seasonEpochs.set(seasonKey(target.imdbId, target.season), epochOf(target.imdbId, target.season) + 1);
     if (!sub.negative && services.introdbApiKey !== undefined) forwardToIntroDb(services.introdbApiKey, sub);
+    if (!sub.negative && services.skipdbApiKey !== undefined) forwardToSkipDb(services.skipdbApiKey, sub);
     return { applied };
   }
 
