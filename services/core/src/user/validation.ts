@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { KID_MAX_AGES } from './store.js';
+import { AVATAR_PATTERN } from './avatar.js';
 
 /** Erreur de l'API utilisateur : statut HTTP, code stable, et chemins des champs invalides (jamais leurs valeurs). */
 export class UserApiError extends Error {
@@ -37,6 +38,8 @@ const USERNAME = z
 const PASSWORD = z.string().min(8).max(256);
 const PIN = z.string().regex(/^\d{4}$/);
 const AVATAR_COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+/** Avatar illustré : `dicebear:<style>:<graine>` (style en minuscules et tirets, graine alphanumérique, 40 caractères au plus). */
+const AVATAR = z.string().max(80).regex(AVATAR_PATTERN);
 const KID_AGE = z.literal([...KID_MAX_AGES]);
 const CATALOGS = z.array(z.string().trim().min(1).max(64)).max(50);
 const IMDB_ID = z.string().regex(/^tt\d{1,10}$/);
@@ -67,6 +70,7 @@ export const registerSchema = credentialsSchema.extend({ invite: INVITE_CODE.opt
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1).max(40),
   avatarColor: AVATAR_COLOR.default('#3b82f6'),
+  avatar: AVATAR.optional(),
   isKid: z.boolean().default(false),
   kidMaxAge: KID_AGE.optional(),
   pin: PIN.optional(),
@@ -76,6 +80,8 @@ export const createProfileSchema = z.object({
 export const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   avatarColor: AVATAR_COLOR.optional(),
+  /** `null` retire l'avatar illustré (retour à l'initiale sur la couleur). */
+  avatar: AVATAR.nullable().optional(),
   isKid: z.boolean().optional(),
   kidMaxAge: KID_AGE.optional(),
   /** `null` retire le PIN ; une chaîne le remplace. */

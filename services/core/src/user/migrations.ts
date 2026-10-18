@@ -319,6 +319,13 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX party_reports_status ON party_reports(status, id);
     `,
   },
+  {
+    version: 9,
+    name: 'avatar illustré du profil (dicebear:<style>:<graine>), la couleur reste le repli',
+    sql: `
+      ALTER TABLE profiles ADD COLUMN avatar TEXT;
+    `,
+  },
 ];
 
 /**

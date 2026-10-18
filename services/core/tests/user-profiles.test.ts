@@ -215,3 +215,26 @@ describe('profils : modification et suppression (profil principal seulement)', (
     expect(res.body.issues?.some((issue) => issue.startsWith('name:'))).toBe(true);
   });
 });
+
+describe('profils : avatar illustré (dicebear:<style>:<graine>)', () => {
+  it('accepte le format, le renvoie, le modifie et le retire ; la couleur reste le repli', async () => {
+    const main = (await createProfile({ name: 'Principal', avatar: 'dicebear:lorelei:Abc_123-x' })).body as ProfileBody & { avatar: string | null };
+    expect(main.avatar).toBe('dicebear:lorelei:Abc_123-x');
+    expect(main.avatarColor).toBe('#3b82f6');
+    const edited = await request<ProfileBody & { avatar: string | null }>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { avatar: 'dicebear:thumbs:42' } });
+    expect(edited.body.avatar).toBe('dicebear:thumbs:42');
+    const kept = await request<ProfileBody & { avatar: string | null }>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { name: 'Autre nom' } });
+    expect(kept.body.avatar).toBe('dicebear:thumbs:42');
+    const cleared = await request<ProfileBody & { avatar: string | null }>(app, 'PATCH', `/user/profiles/${main.id}`, { ...asProfile(main.id), body: { avatar: null } });
+    expect(cleared.body.avatar).toBeNull();
+    const list = await request<{ profiles: Array<{ avatar: string | null }> }>(app, 'GET', '/user/profiles', { token: alice });
+    expect(list.body.profiles[0].avatar).toBeNull();
+  });
+
+  it('refuse les formats invalides (préfixe, majuscules du style, caractères, longueur)', async () => {
+    await createProfile({ name: 'Principal' });
+    for (const avatar of ['http://x/a.svg', 'dicebear:Lorelei:abc', 'dicebear:lorelei:a b', 'dicebear:lorelei:', 'dicebear:lorelei:' + 'a'.repeat(41), 'dicebear::abc', '<svg>', 'dicebear:lorelei:é']) {
+      expect((await createProfile({ name: 'X', avatar })).status, avatar).toBe(400);
+    }
+  });
+});

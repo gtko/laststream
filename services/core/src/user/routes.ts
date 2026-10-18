@@ -351,6 +351,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const fields: ProfileFields = {
       name: body.name,
       avatarColor: body.avatarColor,
+      avatar: body.avatar ?? null,
       isKid,
       kidMaxAge: isKid ? (body.kidMaxAge ?? DEFAULT_KID_MAX_AGE) : null,
       pinHash: body.pin === undefined ? null : await hashSecret(body.pin),
@@ -379,6 +380,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const fields: ProfileEditableFields = {
       name: patch.name ?? profile.name,
       avatarColor: patch.avatarColor ?? profile.avatarColor,
+      avatar: patch.avatar === undefined ? profile.avatar : patch.avatar,
       isKid,
       kidMaxAge: isKid ? (patch.kidMaxAge ?? profile.kidMaxAge ?? DEFAULT_KID_MAX_AGE) : null,
       allowedCatalogs: patch.allowedCatalogs ?? profile.allowedCatalogs,

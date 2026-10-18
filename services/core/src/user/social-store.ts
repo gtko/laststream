@@ -49,6 +49,7 @@ export type FriendStatus = 'online' | 'watching' | 'offline';
 export interface FriendView {
   username: string;
   avatarColor: string;
+  avatar?: string;
   status: FriendStatus;
   watching: WatchingNow | null;
   since: string;
@@ -57,6 +58,7 @@ export interface FriendView {
 export interface FriendRequestView {
   username: string;
   avatarColor: string;
+  avatar?: string;
   requestedAt: string;
 }
 
@@ -96,6 +98,7 @@ export interface PartyRoomRecord {
   createdAt: string;
 }
 
+const AVATAR_ART_SQL = `(SELECT p.avatar FROM profiles p WHERE p.account_id = a.id AND p.is_kid = 0 ORDER BY p.created_at, p.id LIMIT 1)`;
 const AVATAR_SQL = `COALESCE((SELECT p.avatar_color FROM profiles p WHERE p.account_id = a.id AND p.is_kid = 0 ORDER BY p.created_at, p.id LIMIT 1), '#3b82f6')`;
 
 /** Code d'invitation : 16 octets aléatoires (22 caractères base64url, 128 bits). */
@@ -336,7 +339,7 @@ export class SocialStore {
     const nowMs = Date.parse(now);
     const rows = this.db
       .prepare(
-        `SELECT a.username, ${AVATAR_SQL} AS avatar, f.status, f.requested_by, f.created_at, f.accepted_at,
+        `SELECT a.username, ${AVATAR_SQL} AS avatar, ${AVATAR_ART_SQL} AS avatar_art, f.status, f.requested_by, f.created_at, f.accepted_at,
                 pr.seen_at, pr.watching, pr.invisible
          FROM friendships f
          JOIN accounts a ON a.id = CASE WHEN f.low_id = ? THEN f.high_id ELSE f.low_id END
@@ -347,6 +350,7 @@ export class SocialStore {
       .all(accountId, accountId, accountId) as unknown as {
       username: string;
       avatar: string;
+      avatar_art: string | null;
       status: 'pending' | 'accepted';
       requested_by: string;
       created_at: string;
@@ -358,7 +362,7 @@ export class SocialStore {
     const out: FriendsOverview = { friends: [], incoming: [], outgoing: [] };
     for (const row of rows) {
       if (row.status === 'pending') {
-        const view = { username: row.username, avatarColor: row.avatar, requestedAt: row.created_at };
+        const view = { username: row.username, avatarColor: row.avatar, ...(row.avatar_art ? { avatar: row.avatar_art } : {}), requestedAt: row.created_at };
         (row.requested_by === accountId ? out.outgoing : out.incoming).push(view);
         continue;
       }
@@ -367,6 +371,7 @@ export class SocialStore {
       out.friends.push({
         username: row.username,
         avatarColor: row.avatar,
+        ...(row.avatar_art ? { avatar: row.avatar_art } : {}),
         status: watching !== null ? 'watching' : online ? 'online' : 'offline',
         watching,
         since: row.accepted_at ?? row.created_at,

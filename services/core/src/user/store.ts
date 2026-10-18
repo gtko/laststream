@@ -36,6 +36,8 @@ export interface Profile {
   id: string;
   name: string;
   avatarColor: string;
+  /** Avatar illustré (`dicebear:<style>:<graine>`), ou null : initiale sur la couleur. */
+  avatar: string | null;
   isKid: boolean;
   kidMaxAge: KidMaxAge | null;
   hasPin: boolean;
@@ -55,6 +57,7 @@ export interface ProfileRecord extends Profile {
 export interface ProfileFields {
   name: string;
   avatarColor: string;
+  avatar: string | null;
   isKid: boolean;
   kidMaxAge: KidMaxAge | null;
   pinHash: string | null;
@@ -213,6 +216,7 @@ interface ProfileRow {
   account_id: string;
   name: string;
   avatar_color: string;
+  avatar?: string | null;
   is_kid: number;
   kid_max_age: number | null;
   pin_hash: string | null;
@@ -275,6 +279,7 @@ function toProfileRecord(row: ProfileRow): ProfileRecord {
     accountId: row.account_id,
     name: row.name,
     avatarColor: row.avatar_color,
+    avatar: row.avatar ?? null,
     isKid: row.is_kid === 1,
     kidMaxAge: row.kid_max_age === null ? null : (row.kid_max_age as KidMaxAge),
     hasPin: row.pin_hash !== null,
@@ -293,6 +298,7 @@ export function publicProfile(record: ProfileRecord): Profile {
     id: record.id,
     name: record.name,
     avatarColor: record.avatarColor,
+    avatar: record.avatar,
     isKid: record.isKid,
     kidMaxAge: record.kidMaxAge,
     hasPin: record.hasPin,
@@ -502,14 +508,15 @@ export class UserStore {
   insertProfile(accountId: string, profileId: string, fields: ProfileFields, createdAt: string): void {
     this.db
       .prepare(
-        `INSERT INTO profiles (id, account_id, name, avatar_color, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         profileId,
         accountId,
         fields.name,
         fields.avatarColor,
+        fields.avatar,
         fields.isKid ? 1 : 0,
         fields.kidMaxAge,
         fields.pinHash,
@@ -532,12 +539,13 @@ export class UserStore {
   private updateProfileFields(accountId: string, profileId: string, fields: ProfileEditableFields): void {
     this.db
       .prepare(
-        `UPDATE profiles SET name = ?, avatar_color = ?, is_kid = ?, kid_max_age = ?, allowed_catalogs = ?
+        `UPDATE profiles SET name = ?, avatar_color = ?, avatar = ?, is_kid = ?, kid_max_age = ?, allowed_catalogs = ?
          WHERE id = ? AND account_id = ?`,
       )
       .run(
         fields.name,
         fields.avatarColor,
+        fields.avatar,
         fields.isKid ? 1 : 0,
         fields.kidMaxAge,
         JSON.stringify(fields.allowedCatalogs),

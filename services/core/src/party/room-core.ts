@@ -125,6 +125,7 @@ export class RoomCore {
     return {
       username: member.username,
       avatarColor: member.avatarColor,
+      ...(member.avatar ? { avatar: member.avatar } : {}),
       host: member.accountId === this.hostId,
       muted: this.data.muted.includes(member.accountId),
       joinedAt: member.joinedAt,

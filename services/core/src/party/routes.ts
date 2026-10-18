@@ -234,7 +234,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (check === 'closed') throw new UserApiError(404, 'room_not_found');
     if (check === 'banned') throw new UserApiError(403, 'banned');
     if (check === 'room_full') throw new UserApiError(409, 'room_full');
-    const { ticket, expiresAt } = signTicket(id, { accountId: account.id, username: account.username, avatarColor: profile.avatarColor }, Date.now(), deps.secret);
+    const { ticket, expiresAt } = signTicket(id, { accountId: account.id, username: account.username, avatarColor: profile.avatarColor, ...(profile.avatar ? { avatar: profile.avatar } : {}) }, Date.now(), deps.secret);
     return sendJson(c, { ticket, expiresAt, wsPath: `${PARTY_MOUNT}/${id}/ws?ticket=${ticket}`, room: info });
   });
 

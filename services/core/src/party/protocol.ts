@@ -109,11 +109,14 @@ export interface Identity {
   accountId: string;
   username: string;
   avatarColor: string;
+  /** Avatar illustré du profil (dicebear:<style>:<graine>), absent s'il n'y en a pas. */
+  avatar?: string;
 }
 
 export interface Participant {
   username: string;
   avatarColor: string;
+  avatar?: string;
   host: boolean;
   muted: boolean;
   joinedAt: number;
