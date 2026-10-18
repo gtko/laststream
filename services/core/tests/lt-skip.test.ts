@@ -18,6 +18,10 @@ const FRIEREN = 'tt22248376';
 const MOVIE = 'tt0000002';
 const UNKNOWN = 'tt0000001';
 const BROKEN = 'tt0000003';
+/** Jujutsu Kaisen S1E1 (MAL 40748) : AniSkip et IntroDB concordent sur l'intro, un générique « mixed » parasite. */
+const JJK = 'tt12343534';
+/** Fixture de repli : génériques mêlés seuls (MAL 40750), un recap qui chevauche l'intro. */
+const MIXED = 'tt0000011';
 
 let upstream: MockUpstream;
 let app: RunningApp;
@@ -26,8 +30,22 @@ beforeAll(async () => {
   upstream = mockUpstream({
     [INTRODB]: (call) => {
       const id = call.url.searchParams.get('imdb_id');
+      const season = call.url.searchParams.get('season');
+      const episode = call.url.searchParams.get('episode');
       if (id === UNKNOWN) return json({ error: 'not found' }, 404);
       if (id === BROKEN) return json({ error: 'down' }, 500);
+      if (id === JJK && season === '1' && episode === '1') {
+        return json({
+          imdb_id: JJK,
+          intro: { start_sec: 55, end_sec: 145, confidence: 0.8, submission_count: 5 },
+          recap: null,
+          outro: { start_sec: 1350, end_sec: 1436, confidence: 0.8, submission_count: 2 },
+          post_credits: null,
+        });
+      }
+      if (id === MIXED || (id === FRIEREN && season === '1')) {
+        return json({ intro: null, recap: null, outro: null, post_credits: null });
+      }
       if (id === MOVIE && call.url.searchParams.get('is_movie') === 'true') {
         return json({ imdb_id: MOVIE, is_movie: true, intro: { start_sec: 12, end_sec: 70, confidence: 0.9, submission_count: 3 }, post_credits: null });
       }
@@ -56,8 +74,30 @@ beforeAll(async () => {
         ]);
       }
       if (id === 'tt0000009') return json([{ anilist: 1, 'themoviedb-season': 1 }]);
+      if (id === JJK) return json([{ anilist: 113415, myanimelist: 40748, 'themoviedb-season': 1, imdb: JJK }]);
+      if (id === MIXED) return json([{ anilist: 113416, myanimelist: 40750, 'themoviedb-season': 1, imdb: MIXED }]);
       return json({ error: 'not found' }, 404);
     },
+    [`${ANISKIP}/40748/1`]: () =>
+      json({
+        found: true,
+        results: [
+          { interval: { startTime: 55, endTime: 145 }, skipType: 'op', skipId: 'j1', episodeLength: 1440 },
+          { interval: { startTime: 1338, endTime: 1428 }, skipType: 'ed', skipId: 'j2', episodeLength: 1440 },
+          { interval: { startTime: 224, endTime: 314 }, skipType: 'mixed-ed', skipId: 'j3', episodeLength: 1440 },
+        ],
+        statusCode: 200,
+      }),
+    [`${ANISKIP}/40750/1`]: () =>
+      json({
+        found: true,
+        results: [
+          { interval: { startTime: 60, endTime: 150 }, skipType: 'mixed-op', skipId: 'm1', episodeLength: 1440 },
+          { interval: { startTime: 224, endTime: 314 }, skipType: 'mixed-ed', skipId: 'm2', episodeLength: 1440 },
+          { interval: { startTime: 100, endTime: 160 }, skipType: 'recap', skipId: 'm3', episodeLength: 1440 },
+        ],
+        statusCode: 200,
+      }),
     [`${ANISKIP}/52991/1`]: () =>
       json({
         found: true,
@@ -171,7 +211,7 @@ describe('lt/skip : film', () => {
 });
 
 describe('lt/skip : anime (AniSkip, puis Anime Skip)', () => {
-  it('AniSkip : op → intro, ed → credits, durée de l\'épisode ; IntroDB non interrogé', async () => {
+  it('AniSkip : op → intro, ed → credits, durée de l\'épisode ; IntroDB interrogé mais sans segment, rien ne change', async () => {
     const introBefore = callsTo(INTRODB).length;
     const res = await skip(tokenFor({}), 'series', FRIEREN, 1, 1);
     expect(res.status).toBe(200);
@@ -182,7 +222,7 @@ describe('lt/skip : anime (AniSkip, puis Anime Skip)', () => {
         { kind: 'credits', start: 1417.135, end: 1507.135, source: 'aniskip' },
       ],
     });
-    expect(callsTo(INTRODB).length).toBe(introBefore);
+    expect(callsTo(INTRODB).length).toBe(introBefore + 1);
   });
 
   it('Anime Skip configuré : X-Client-ID envoyé ; repères Anime Skip perdus face à AniSkip (priorité)', async () => {
@@ -210,6 +250,29 @@ describe('lt/skip : anime (AniSkip, puis Anime Skip)', () => {
         { kind: 'intro', start: 0, end: 90, source: 'animeskip' },
         { kind: 'credits', start: 1460, end: 1550, source: 'animeskip' },
       ],
+    });
+  });
+});
+
+describe('lt/skip : fiabilité des segments (fusion, garde-fous de position, pas de chevauchement)', () => {
+  it('fixture Jujutsu Kaisen S1E1 : intro AniSkip et IntroDB fusionnées, générique IntroDB (≥ 2 soumissions) préféré, mixed-ed écarté', async () => {
+    const res = await skip(tokenFor({}), 'series', JJK, 1, 1);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      episodeLength: 1440,
+      segments: [
+        { kind: 'intro', start: 55, end: 145, source: 'introdb', sources: ['introdb', 'aniskip'], confidence: 1 },
+        { kind: 'credits', start: 1350, end: 1436, source: 'introdb', confidence: 0.8 },
+      ],
+    });
+  });
+
+  it('mixed-op seul devient intro ; mixed-ed sous 50 % écarté ; recap chevauchant écarté', async () => {
+    const res = await skip(tokenFor({}), 'series', MIXED, 1, 1);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      episodeLength: 1440,
+      segments: [{ kind: 'intro', start: 60, end: 150, source: 'aniskip' }],
     });
   });
 });

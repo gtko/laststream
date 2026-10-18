@@ -1,11 +1,14 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import type { AppDeps } from '../deps.js';
+import { openUserDb, userDbPath } from '../user/db.js';
+import { SkipSegmentStore } from '../user/skip-segments.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
-import { parseSkipTarget, skipSegments } from './skip.js';
+import { parseSkipTarget } from './skip.js';
+import { createSkipCommunity } from './skip-community.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
 import type { TvAlternative, TvChannel } from './tv-catalog.js';
 
@@ -48,8 +51,10 @@ function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedC
  * Routes publiques par configuration, montées sous `/:config/lt/*` (mêmes chemins que le prototype sans `/api`)
  * et catalogues Stremio sous `/:config/catalog/*`.
  */
-export function registerLtRoutes(app: Express, deps: AppDeps): void {
+export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   const ctx: LtContext = createLtContext(deps);
+  // Base utilisateur ouverte au premier besoin (store communautaire des segments de saut).
+  const community = createSkipCommunity(ctx, () => new SkipSegmentStore(openUserDb(deps.userDbPath ?? userDbPath())));
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (req: Request): string => String((req.params as Record<string, unknown>).config);
   const configOf = (req: Request) => decodeFor(deps, tokenOf(req));
@@ -115,17 +120,23 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
     res.json(body);
   });
 
-  // Segments de saut (intro, reprise, générique). Cible validée ; clés IntroDB et Anime Skip facultatives.
+  // Segments de saut (intro, reprise, générique) : services externes, puis communauté, puis déduction de saison.
+  // Cible validée ; clés IntroDB et Anime Skip facultatives.
   lt.get('/skip/:type/:imdbId/:season/:episode', async (req, res) => {
     const config = configOf(req);
     const target = parseSkipTarget(req.params.type, req.params.imdbId, req.params.season, req.params.episode);
-    const body = await skipSegments(ctx, config.services, target).catch((err: unknown): never => {
+    const body = await community.resolve(config.services, target).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
       console.warn(`[lt][skip] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'skip_unavailable');
     });
     cacheable(res);
     res.json(body);
+  });
+
+  // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clé IntroDB facultative.
+  lt.post('/skip/submit', async (req, res) => {
+    res.json(await community.submit(configOf(req).services, bodyOf(req)));
   });
 
   lt.post('/recommend', async (req, res) => {
@@ -214,4 +225,5 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
   catalog.get('/:type/:id/:extra.json', (req, res) => sendCatalog(req, res, req.params.extra));
   catalog.use(ltErrorHandler);
   app.use('/:config/catalog', catalog);
+  return () => community.close();
 }
