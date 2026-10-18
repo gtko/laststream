@@ -94,19 +94,44 @@
 .lp-eps-tools { display: flex; gap: 8px; align-items: center; }
 .lp-search { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; font-size: 14px; }
 .lp-search:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-.lp-eps { padding: 8px 12px; gap: 4px; }
-.lp-ep-row { position: relative; border-radius: 14px; }
-.lp-ep-row.is-on { background: rgba(255, 255, 255, 0.08); box-shadow: inset 3px 0 0 var(--accent); }
-.lp-ep { padding: 10px; }
+.lp-eps { padding: 8px 12px; gap: 4px; --ep-still: 160px; }
+/* Ligne à hauteur stable : vignette 16:9 à gauche, titre sur une ligne, durée et date, synopsis sur 2 lignes au plus.
+ * Le survol et le focus ne changent que le fond et le filet (aucune variation de taille, de police ni de contenu). */
+.lp-ep-row { position: relative; border-radius: 12px; transition: background-color 150ms ease, box-shadow 150ms ease; }
+.lp-ep-row:hover, .lp-ep-row:focus-within { background: rgba(255, 255, 255, 0.1); box-shadow: inset 0 0 0 1px var(--accent); }
+.lp-ep-row.is-on { background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 2px var(--accent); }
+.lp-ep-row.is-on:hover, .lp-ep-row.is-on:focus-within { background: rgba(255, 255, 255, 0.1); box-shadow: inset 0 0 0 2px var(--accent); }
+.lp-ep { display: flex; gap: 12px; width: 100%; padding: 8px; border: 0; border-radius: 12px; text-align: left; color: var(--soft); background: transparent; cursor: pointer; }
+.lp-ep:focus-visible { outline: none; }
 .lp-ep:disabled { opacity: 0.55; cursor: default; }
-.lp-ep-still { width: 156px; }
-.lp-ep-soon { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; background: var(--accent); color: var(--on-accent); }
-.lp-ep-syn { -webkit-line-clamp: 2; }
-.lp-ep:focus-visible .lp-ep-syn, .lp-ep-row:hover .lp-ep-syn { -webkit-line-clamp: 6; }
-.lp-ep-actions { display: none; padding: 0 10px 10px 176px; }
-.lp-ep-row:hover .lp-ep-actions, .lp-ep-row:focus-within .lp-ep-actions { display: block; }
-.lp-ep-actions .lp-chip { min-height: 38px; font-size: 13px; }
+.lp-ep-still { position: relative; flex: none; width: var(--ep-still); aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.lp-ep-still img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .lp-ep-row.is-soon .lp-ep-still img { opacity: 0.45; }
+.lp-ep-now, .lp-ep-soon { position: absolute; left: 6px; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 800; line-height: 1.3; background: var(--accent); color: var(--on-accent); }
+.lp-ep-now { top: 6px; }
+.lp-ep-soon { bottom: 6px; }
+.lp-ep-prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.3); }
+.lp-ep-prog i { display: block; height: 100%; background: var(--accent); }
+.lp-ep-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.lp-ep-row.has-more .lp-ep-text { padding-right: 28px; }
+.lp-ep-name, .lp-ep-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-ep-name { font-size: 15px; font-weight: 700; color: var(--text); }
+.lp-ep-meta { font-size: 12px; color: var(--dim); font-weight: 600; }
+.lp-ep-syn { font-size: 12.5px; line-height: 1.4; color: var(--muted); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; transition: height 150ms ease; }
+.lp-ep-row.is-open .lp-ep-syn { display: block; }
+/* Vu : rond plein sur la vignette, toujours visible. Non vu : contour, visible au survol ou au focus de la ligne. */
+.lp-ep-seen { position: absolute; z-index: 1; top: 14px; left: calc(8px + var(--ep-still) - 30px); width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 2px solid rgba(255, 255, 255, 0.85); border-radius: 50%; background: rgba(12, 11, 17, 0.55); color: var(--text); cursor: pointer; opacity: 0; transition: opacity 150ms ease; }
+.lp-ep-seen svg { width: 13px; height: 13px; }
+.lp-ep-seen.is-on { opacity: 1; background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.lp-ep-row:hover .lp-ep-seen, .lp-ep-row:focus-within .lp-ep-seen, .lp-ep-seen:focus-visible { opacity: 1; }
+.lp-ep-seen:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Bouton « Plus » : chevron à la fin de la zone texte, hors du bouton de lecture (pas d'imbrication). */
+.lp-ep-more { position: absolute; z-index: 1; right: 8px; bottom: 8px; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--dim); cursor: pointer; }
+.lp-ep-more svg { width: 16px; height: 16px; transition: transform 150ms ease; }
+.lp-ep-more:hover, .lp-ep-more:focus-visible { color: var(--text); background: rgba(255, 255, 255, 0.12); outline: none; }
+.lp-ep-more:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.lp-ep-row.is-open .lp-ep-more svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .lp-ep-row, .lp-ep-syn, .lp-ep-seen, .lp-ep-more svg { transition: none; } }
 .lp-eps-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 12px 18px 18px; border-top: 1px solid var(--line); }
 .lp-step { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
@@ -129,8 +154,7 @@
 /* Mobile : feuille en bas de l'écran */
 @media (max-width: 700px) {
   .lp-panel, .lp-panel.is-wide, .lp-panel.is-eps, .lp-panel.is-host { top: auto; left: 0; right: 0; width: 100%; max-height: 82%; border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); border-radius: 22px 22px 0 0; box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55); animation: lp-rise 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .lp-ep-still { width: 120px; }
-  .lp-ep-actions { padding-left: 140px; }
+  .lp-eps { --ep-still: 120px; }
   .lp-below { padding-inline: 14px; }
 }
 @keyframes lp-rise { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }

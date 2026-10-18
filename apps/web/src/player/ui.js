@@ -6,6 +6,7 @@ import { esc } from '../ui/util.js';
 import { LI } from './icons.js';
 import { clampTooltip } from './thumbs';
 import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
+import { bindEpisodeFold } from './epfold.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
 import { createMiniView } from './miniview.js';
@@ -549,5 +550,6 @@ export function createPlayerUI(h) {
     const b = e.target instanceof Element ? e.target.closest('[data-act]') : null;
     if (b && b.dataset.act === 'panel-close') { e.stopPropagation(); api.closePanel(); }
   });
+  bindEpisodeFold(panel);
   return api;
 }
