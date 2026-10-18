@@ -124,6 +124,7 @@ export function settingsHtml(d) {
       '<button type="button" class="lp-more" data-act="source">' + LI.source + 'Changer de source</button></section>' +
     '<section class="lp-sec"><h3>Vitesse de lecture</h3><div class="lp-speeds">' + SPEEDS.map((r) => chip('rate', { rate: r }, r === 1 ? 'Normale' : r + '×', Math.abs(d.rate - r) < 0.01)).join('') + '</div></section>' +
     '<section class="lp-sec"><h3>Image</h3>' + seg('aspect', 'mode', [['contain', 'Ajuster'], ['cover', 'Remplir'], ['fill', '16:9']], d.aspect) +
+      field('Aperçu sur la barre', chip('thumbs', {}, d.thumbs ? 'Activé' : 'Désactivé', d.thumbs)) +
       (d.pipAvailable ? field('Image dans l’image automatique', chip('autopip', {}, d.autoPip ? 'Activée' : 'Désactivée', d.autoPip)) : '') + '</section>' +
     (d.canMark ? '<section class="lp-sec"><h3>Marquer un segment</h3><p class="lp-hint">Aide la communauté : signale où commencent et finissent l’intro, le récap ou le générique de cet épisode.</p>' + markBody + '</section>' : '') +
     '</div>';

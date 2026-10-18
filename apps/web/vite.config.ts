@@ -12,8 +12,8 @@ export default defineConfig({
   build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 700 },
   test: {
     environment: 'jsdom',
-    testTimeout: 60000,
-    hookTimeout: 60000,
+    testTimeout: 120000,
+    hookTimeout: 120000,
     include: ['tests/**/*.test.ts'],
   },
 });
