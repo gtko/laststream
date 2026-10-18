@@ -2,6 +2,47 @@
  * Variables d'environnement d'exécution. Lues à la demande (pas au chargement du module) pour rester
  * testables avec vi.stubEnv.
  */
+import { resolve } from 'node:path';
+
+/** LASTADDON_UI_DIR : dossier de l'interface web servie à la racine (chemin absolu), ou undefined si absent ou vide. */
+export function configuredUiDir(): string | undefined {
+  const raw = process.env.LASTADDON_UI_DIR?.trim();
+  return raw ? resolve(raw) : undefined;
+}
+
+/** Serveur de streaming Stremio par défaut, relayé sous /_ss quand l'interface est servie. */
+export const DEFAULT_STREAMING_SERVER = 'http://127.0.0.1:11470';
+const LOCAL_HOSTNAMES: readonly string[] = ['localhost', '127.0.0.1', '[::1]'];
+
+/**
+ * Valide une origine de serveur de streaming : http ou https, sans chemin, identifiants ni requête, sur un hôte local
+ * uniquement (localhost, 127.0.0.1, [::1]). Renvoie l'origine. Le message ne contient jamais la valeur saisie.
+ */
+export function parseStreamingServer(raw: string): string {
+  const message = 'LASTADDON_STREAMING_SERVER invalide : origine http(s) locale attendue (localhost, 127.0.0.1 ou [::1]), sans chemin';
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(message);
+  }
+  const plainOrigin =
+    (url.protocol === 'http:' || url.protocol === 'https:') &&
+    LOCAL_HOSTNAMES.includes(url.hostname) &&
+    url.username === '' &&
+    url.password === '' &&
+    (url.pathname === '/' || url.pathname === '') &&
+    url.search === '' &&
+    url.hash === '';
+  if (!plainOrigin) throw new Error(message);
+  return url.origin;
+}
+
+/** LASTADDON_STREAMING_SERVER validée, ou l'origine par défaut. Lève si la valeur est invalide. */
+export function configuredStreamingServer(): string {
+  const raw = process.env.LASTADDON_STREAMING_SERVER?.trim();
+  return parseStreamingServer(raw ? raw : DEFAULT_STREAMING_SERVER);
+}
 
 /** LASTADDON_ALLOW_SIGNUP=1 : inscription ouverte (sinon seul le premier compte peut être créé sur /user/register). */
 export function isSignupAllowed(): boolean {

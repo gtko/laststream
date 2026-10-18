@@ -28,4 +28,10 @@ export interface AppDeps {
    * Sa clé ne doit jamais sortir vers les clients ni dans les journaux.
    */
   localProwlarr?: LocalProwlarrProvider;
+  /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
+  uiDir?: string;
+  /** Origines ajoutées au CORS quand l'interface est servie par ce serveur (même site). */
+  uiOrigins?: readonly string[];
+  /** Origine du serveur de streaming relayé sous /_ss (LASTADDON_STREAMING_SERVER). Par défaut : la variable, ou 127.0.0.1:11470. */
+  streamingServer?: string;
 }

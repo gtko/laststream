@@ -45,6 +45,7 @@ curl http://localhost:7000/health
 | `npm test` | Tests unitaires et d'intégration (vitest) |
 | `npm run lint` | ESLint (configuration flat, typescript-eslint) |
 | `npm run typecheck` | Vérification des types de `src/` et `tests/` |
+| `npm run bundle` | Bundle mono-fichier `dist-bundle/lastaddon.cjs` (voir « Distribution ») |
 
 ## Variables d'environnement
 
@@ -59,6 +60,9 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL saisies dans les sources (upstream, Torznab, Prowlarr, Jackett) ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
 | `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*` et `/user/*`. Les routes manifest et stream restent ouvertes (`*`). |
 | `LASTADDON_DATA_DIR` | `./data` | Dossier de la base SQLite des données utilisateur (`laststream.db`). Relatif à la racine du projet. Voir « Données utilisateur ». |
+| `LASTADDON_UI_DIR` | aucun | Dossier de l'interface web compilée (contient `index.html`), servi à la racine. Chemin absolu conseillé. Équivalent de `--ui`. Voir « Distribution ». |
+| `LASTADDON_STREAMING_SERVER` | `http://127.0.0.1:11470` | Serveur de streaming local relayé sous `/_ss/*` quand l'interface est servie. Origine locale uniquement (`localhost`, `127.0.0.1` ou `[::1]`). Voir « Distribution ». |
+| `LASTADDON_ENV_FILE` | `.env` à la racine du projet | Emplacement du fichier `.env` (secret). Chemin absolu conseillé pour une application packagée. Voir « Distribution ». |
 | `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription sur `/user/register`. Sinon seul le premier compte peut être créé. |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
 | `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public) | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
@@ -588,6 +592,68 @@ lastAddon peut stocker pour chaque utilisateur sa bibliothèque, sa progression,
 
 **Import Stremio.** `POST /user/profiles/:id/import/stremio` lit la bibliothèque d'un compte Stremio (au plus 5000 entrées). Les identifiants Stremio servent une seule fois, ne sont ni stockés ni journalisés.
 
+## Distribution
+
+lastAddon peut être livré comme un fichier unique, `dist-bundle/lastaddon.cjs`, avec l'interface Laststream, pour une application de bureau ou mobile. Le bundle est un CommonJS pour Node 22 qui inclut toutes les dépendances npm. Seuls les modules `node:` restent externes, dont `node:sqlite` pour les données utilisateur. Il faut Node.js 22.13 ou plus récent, où `node:sqlite` est disponible sans option.
+
+### Construction
+
+```
+npm run bundle
+```
+
+La commande produit `dist-bundle/lastaddon.cjs` avec esbuild (`platform: node`, `target: node22`). Le dossier `dist-bundle/` est ignoré par Git.
+
+### Lancement
+
+```
+node dist-bundle/lastaddon.cjs --port 7000 --ui ./ui --data ./donnees
+```
+
+| Option | Équivalent | Rôle |
+| --- | --- | --- |
+| `--port <n>` | `PORT` | Port d'écoute. Prioritaire sur `PORT`. |
+| `--ui <dossier>` | `LASTADDON_UI_DIR` | Interface web compilée, servie à la racine. Le dossier doit contenir `index.html`, sinon le serveur refuse de démarrer. |
+| `--data <dossier>` | `LASTADDON_DATA_DIR` | Dossier de la base `laststream.db` (données utilisateur). |
+
+Les chemins passés en ligne de commande sont résolus depuis le répertoire courant. Une option inconnue ou sans valeur arrête le démarrage avec un message.
+
+**Interface web.** Quand `LASTADDON_UI_DIR` ou `--ui` est défini, l'interface est servie à la racine :
+
+- `index.html` et `service-worker.js` ne sont jamais mis en cache (`no-cache`). Les fichiers de `/assets/*` le sont longtemps (`max-age=31536000, immutable`).
+- Une navigation inconnue (GET avec `Accept: text/html`) reçoit `index.html`. Les requêtes de scripts ou d'images inconnues renvoient 404.
+- Les routes de l'API restent prioritaires : `/health`, `/manifest.json`, `/config/*`, `/user/*` et `/:config/…`.
+- L'origine du même site est ajoutée automatiquement aux origines CORS : `http://localhost:<port>`, `http://127.0.0.1:<port>`, et l'origine de `LASTADDON_PUBLIC_URL` si elle est définie.
+
+**Relais du streaming (`/_ss/*`).** Le serveur Stremio local n'envoie du CORS qu'aux domaines strem.io. Quand l'interface est servie, `/_ss/<chemin>?<requête>` est donc relayé vers `LASTADDON_STREAMING_SERVER/<chemin>?<requête>` (défaut `http://127.0.0.1:11470`) :
+
+- le corps est transmis en flux, sans tampon, avec `Range`, `206`, `Content-Range`, `Accept-Ranges`, `Content-Type` et `Content-Length` (playlists et segments HLS, `/hlsv2/*`, sous-titres, `/probe`, etc.) ;
+- seuls GET et HEAD sont acceptés (405 sinon) ; les en-têtes `Cookie`, `Authorization` et les jetons de profil ne sont jamais transmis ;
+- la cible doit être une origine locale (`localhost`, `127.0.0.1` ou `[::1]`), sans chemin : sinon le serveur refuse de démarrer ;
+- le délai maximal est de 60 secondes pour recevoir les en-têtes, sans délai global sur le flux. Si le client part, la connexion amont est fermée. Si le serveur de streaming est injoignable, la réponse est un `502` (`streaming_server_unavailable`).
+
+**Signal de disponibilité.** Une fois à l'écoute, le serveur écrit sur sa sortie standard la ligne `LASTADDON_READY port=<n>`. L'application packagée attend cette ligne avant d'ouvrir l'interface. Une ligne lisible « lastAddon en écoute » est écrite juste avant.
+
+### Emplacements des fichiers
+
+Les défauts restent ceux du projet : `.env` et `data/` à la racine du projet. Dans le bundle, la racine est le dossier de `lastaddon.cjs`. Une application packagée doit donc fixer les deux emplacements :
+
+| Variable | Contenu |
+| --- | --- |
+| `LASTADDON_DATA_DIR` (ou `--data`) | Base `laststream.db`. Créée au besoin. |
+| `LASTADDON_ENV_FILE` | Fichier `.env` avec `LASTADDON_SECRET`. |
+
+Exemple PowerShell sous Windows, avec les données dans `%APPDATA%` :
+
+```
+$env:LASTADDON_UI_DIR = "C:\Laststream\ui"
+$env:LASTADDON_DATA_DIR = "$env:APPDATA\Laststream\lastaddon"
+$env:LASTADDON_ENV_FILE = "$env:APPDATA\Laststream\lastaddon\.env"
+node dist-bundle\lastaddon.cjs --port 7000
+```
+
+Si `LASTADDON_SECRET` est absent, une clé est générée dans le fichier `.env` au premier démarrage. Si ce fichier change d'emplacement, les configurations déjà chiffrées ne se déchiffrent plus : conservez le fichier `.env` avec les données.
+
 ## Sécurité
 
 **Risque SSRF.** Les URL des sources (addons amont, indexeurs Torznab, Prowlarr, Jackett) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
@@ -646,6 +712,10 @@ Le test n'affiche ni la clé ni les réponses brutes. Il ajoute un magnet au com
 ```
 src/
   server.ts          point d'entrée (démarre si exécuté directement)
+  bundle.ts          point d'entrée du bundle mono-fichier (npm run bundle)
+  cli.ts             options de ligne de commande (--port, --ui, --data)
+  ui.ts              interface web statique, repli de navigation, origines du même site
+  streaming-proxy.ts relais same-origin /_ss/* vers le serveur de streaming local
   app.ts             createApp() : routes, CORS, limites de débit, gestion d'erreurs
   deps.ts            dépendances injectées (secret, allowPlain, fetch, client AllDebrid)
   pipeline.ts        getStreams() : orchestration du pipeline (métadonnées, collecte, groupement, cache, sonde, formatage)

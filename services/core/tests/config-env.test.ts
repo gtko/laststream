@@ -140,6 +140,16 @@ describe('getSecret : longueur minimale et emplacement du .env', () => {
   it('envFilePath pointe sur la racine du projet, indépendamment du répertoire courant', () => {
     expect(envFilePath()).toBe(join(PROJECT_ROOT, '.env'));
   });
+
+  it('LASTADDON_ENV_FILE remplace le chemin du .env (absolu, ou relatif à la racine du projet)', () => {
+    const absolute = join(workDir, 'app.env');
+    vi.stubEnv('LASTADDON_ENV_FILE', absolute);
+    expect(envFilePath()).toBe(absolute);
+    vi.stubEnv('LASTADDON_ENV_FILE', 'config/prod.env');
+    expect(envFilePath()).toBe(join(PROJECT_ROOT, 'config', 'prod.env'));
+    vi.stubEnv('LASTADDON_ENV_FILE', '');
+    expect(envFilePath()).toBe(join(PROJECT_ROOT, '.env'));
+  });
 });
 
 describe('allowedOrigins', () => {
