@@ -12,6 +12,8 @@ export interface PartyRoomStub {
   info(): Promise<RoomInfo | null>;
   /** Un compte peut-il se connecter (salon plein, exclu) ? `closed` : le salon n'existe plus. */
   check(accountId: string): Promise<JoinCheck | 'closed'>;
+  /** Le compte est-il déjà connecté au salon ? (droit d'inviter : membre existant seulement). */
+  isMember(accountId: string): Promise<boolean>;
   /** Termine le salon. `requesterId` doit être l'hôte, sauf `null` (propriétaire du serveur). */
   close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'>;
   /** Signalements reçus (hôte, ou propriétaire du serveur avec `null`). */

@@ -10,6 +10,8 @@ import {
   type RoomData,
   type RoomInfo,
   type RoomMeta,
+  RTC_MAX_FRAME_CHARS,
+  type RtcRelay,
   type ServerMessage,
   type StoredChatLine,
   parseClientMessage,
@@ -36,7 +38,8 @@ function decodeIdentity(header: string | null): Identity | undefined {
     const value = JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as Partial<Identity>;
     if (typeof value.accountId === 'string' && typeof value.username === 'string' && typeof value.avatarColor === 'string') {
       const avatar = typeof value.avatar === 'string' && AVATAR_PATTERN.test(value.avatar) ? { avatar: value.avatar } : {};
-      return { accountId: value.accountId, username: value.username, avatarColor: value.avatarColor, ...avatar };
+      const guest = value.guest === true ? { guest: true as const } : {};
+      return { accountId: value.accountId, username: value.username, avatarColor: value.avatarColor, ...avatar, ...guest };
     }
   } catch {
     // en-tête illisible
@@ -99,6 +102,10 @@ export class PartyRoom extends DurableObject {
     return this.core === undefined ? 'closed' : this.core.canJoin(accountId);
   }
 
+  isMember(accountId: string): boolean {
+    return this.core?.members.has(accountId) ?? false;
+  }
+
   async close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'> {
     const core = this.core;
     if (core === undefined) return 'not_found';
@@ -131,9 +138,9 @@ export class PartyRoom extends DurableObject {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(426, { error: 'upgrade_required' });
     const identity = decodeIdentity(request.headers.get(IDENTITY_HEADER));
     if (identity === undefined) return json(400, { error: 'identity_required' });
-    const check = core.canJoin(identity.accountId);
+    const check = identity.guest === true ? core.canJoinGuest(identity) : core.canJoin(identity.accountId);
     if (check === 'banned') return json(403, { error: 'banned' });
-    if (check === 'room_full') return json(409, { error: 'room_full' });
+    if (check !== 'ok') return json(409, { error: check });
 
     // Une nouvelle connexion remplace l'ancienne du même compte.
     for (const old of this.socketsOf(identity.accountId)) old.close(CLOSE.replaced, 'replaced');
@@ -156,7 +163,7 @@ export class PartyRoom extends DurableObject {
       ws.close(1011, 'room_closed');
       return;
     }
-    if (typeof message !== 'string' || message.length > MAX_FRAME_BYTES) {
+    if (typeof message !== 'string' || message.length > RTC_MAX_FRAME_CHARS) {
       ws.close(1009, 'frame_too_large');
       return;
     }
@@ -164,6 +171,11 @@ export class PartyRoom extends DurableObject {
     if (core.members.get(attachment.accountId)?.connId !== attachment.connId) return;
     const parsed = parseClientMessage(message);
     if (parsed === undefined) {
+      // Hors signalisation, une trame de plus de MAX_FRAME_BYTES ferme la connexion (comme avant).
+      if (message.length > MAX_FRAME_BYTES) {
+        ws.close(1009, 'frame_too_large');
+        return;
+      }
       this.send(ws, { t: 'error', code: 'invalid_message' });
       return;
     }
@@ -225,7 +237,7 @@ export class PartyRoom extends DurableObject {
     );
   }
 
-  private send(ws: CfWebSocket, msg: ServerMessage): void {
+  private send(ws: CfWebSocket, msg: ServerMessage | RtcRelay): void {
     try {
       ws.send(JSON.stringify(msg));
     } catch {
@@ -249,6 +261,12 @@ export class PartyRoom extends DurableObject {
           break;
         case 'close':
           for (const ws of this.socketsOf(effect.to)) ws.close(effect.code, effect.reason);
+          break;
+        case 'peer':
+          // Signalisation : une seule connexion, celle du pair visé (identifiant de connexion).
+          for (const ws of this.ctx.getWebSockets() as unknown as CfWebSocket[]) {
+            if ((ws.deserializeAttachment() as Attachment | null)?.connId === effect.peerId) this.send(ws, effect.msg);
+          }
           break;
         case 'end':
           ended = true;

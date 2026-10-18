@@ -22,6 +22,7 @@ describe('watch party sous Node', () => {
       ['POST', '/party'],
       ['GET', '/party/abcdefghijklmnop'],
       ['POST', '/party/abcdefghijklmnop/join'],
+      ['POST', '/party/abcdefghijklmnop/invite'],
       ['DELETE', '/party/abcdefghijklmnop'],
     ] as const) {
       const res = await request(app, method, path, { token: alice.token, body: method === 'POST' ? {} : undefined });

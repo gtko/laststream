@@ -229,11 +229,11 @@ describe('watch party sur Workers', () => {
     const guest = await account('guest');
     const room = (await createRoom(host)).body.room;
     const h = await join(host, room.id);
-    expect(h.welcome.you).toEqual({ username: host.name, host: true, muted: false });
+    expect(h.welcome.you).toEqual({ username: host.name, host: true, muted: false, peerId: expect.any(String) });
     expect(h.welcome.room).toMatchObject({ id: room.id, title: 'Matrix', host: host.name, media: { type: 'movie', tmdbId: 603 }, fingerprint, maxParticipants: 20 });
     expect(h.welcome.state).toMatchObject({ playing: false, pos: 0 });
     const g = await join(guest, room.id);
-    expect(g.welcome.you).toEqual({ username: guest.name, host: false, muted: false });
+    expect(g.welcome.you).toEqual({ username: guest.name, host: false, muted: false, peerId: expect.any(String) });
     expect(g.welcome.participants.map((p: any) => p.username).sort()).toEqual([guest.name, host.name].sort());
     expect(g.welcome.participants.find((p: any) => p.username === host.name)).toMatchObject({ host: true, avatarColor: '#aa5500' });
     const hostSees = await h.peer.type('join');
@@ -493,5 +493,171 @@ describe('watch party sur Workers', () => {
     }
     for (const id of ids) expect(seen).toContain(id);
     expect(new Set(seen).size).toBe(seen.length);
+  });
+});
+
+/** Connexion WebSocket d'un invité sans compte : jeton de POST /party/:id/invite et pseudo. */
+async function guestSocket(roomId: string, token: string, name: string): Promise<{ res: Response; peer?: Peer; welcome?: any }> {
+  const res = await upgrade(`/party/${roomId}/ws?t=${encodeURIComponent(token)}&name=${encodeURIComponent(name)}`);
+  if (res.status !== 101) return { res };
+  const peer = new Peer((res as unknown as { webSocket: unknown }).webSocket);
+  return { res, peer, welcome: await peer.type('welcome') };
+}
+
+async function inviteFrom(member: Account, roomId: string) {
+  return await api<{ token: string; expiresAt: string }>('POST', `/party/${roomId}/invite`, { token: member.token, body: { profileId: member.profile } });
+}
+
+/** Attend que le nombre de participants du salon atteigne `expected` (fermetures de sockets traitées par le Durable Object). */
+async function waitForParticipants(roomId: string, token: string, expected: number): Promise<void> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const info = await api<{ room: { participants: number } }>('GET', `/party/${roomId}`, { token });
+    if (info.body.room?.participants === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`participants attendus : ${expected}`);
+}
+
+describe('invités sans compte sur Workers', () => {
+  it('invitation réservée aux membres connectés (401 sans session, 403 hors salon, 404 salon inconnu) ; jeton signé avec échéance', async () => {
+    const host = await account('host');
+    const outsider = await account('outsider');
+    const room = (await createRoom(host)).body.room;
+    expect((await api('POST', `/party/${room.id}/invite`, { body: { profileId: host.profile } })).status).toBe(401);
+    expect((await inviteFrom(host, room.id)).status).toBe(403);
+    const h = await join(host, room.id);
+    const invite = await inviteFrom(host, room.id);
+    expect(invite.status).toBe(201);
+    expect(invite.body.token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(Date.parse(invite.body.expiresAt) - Date.now()).toBeGreaterThan(11 * 3600_000);
+    const notMember = await api('POST', `/party/${room.id}/invite`, { token: outsider.token, body: { profileId: outsider.profile } });
+    expect(notMember.status).toBe(403);
+    expect(notMember.body.error).toBe('not_member');
+    expect((await api('POST', '/party/inexistant0123456789/invite', { token: host.token, body: { profileId: host.profile } })).status).toBe(404);
+    h.peer.close();
+  });
+
+  it('connexion invitée : pseudo nettoyé, drapeau guest dans la liste, pas de compte ni de jeton dans les messages', async () => {
+    const host = await account('host');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const { token } = (await inviteFrom(host, room.id)).body;
+    const g = await guestSocket(room.id, token, '  Léa​   Dupont-Martin-de-la-Rochefoucauld  ');
+    expect(g.res.status).toBe(101);
+    // 24 caractères au plus : « Léa Dupont-Martin-de-la- ». L'affiche du salon n'est pas envoyée à l'invité.
+    const shown = 'Léa Dupont-Martin-de-la-';
+    expect(g.welcome.room.poster).toBeNull();
+    expect(h.welcome.room.poster).toBe('/matrix.jpg');
+    expect(g.welcome.you).toEqual({ username: shown, host: false, muted: false, peerId: expect.any(String) });
+    expect(g.welcome.participants.find((p: any) => p.username === host.name)).not.toHaveProperty('guest');
+    expect(g.welcome.participants.find((p: any) => p.username === shown)).toMatchObject({ guest: true });
+    const joined = await h.peer.next((m) => m.t === 'join' && m.participant.guest === true);
+    expect(joined.participant).toMatchObject({ username: shown, guest: true, peerId: expect.any(String) });
+    const serialized = JSON.stringify([g.welcome, joined]);
+    expect(serialized).not.toContain(host.token);
+    expect(serialized).not.toContain(host.profile);
+    expect(serialized).not.toContain(token);
+    expect(serialized).not.toMatch(/https?:\/\//);
+    g.peer?.close();
+    h.peer.close();
+  });
+
+  it('invité : lecture partagée comme les autres ; ne modère pas, ne termine pas ; signalisation ciblée', async () => {
+    const host = await account('host');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const { token } = (await inviteFrom(host, room.id)).body;
+    const g = await guestSocket(room.id, token, 'Léa');
+    const guestPeer = g.peer as Peer;
+    const hostPeerId: string = h.welcome.you.peerId;
+    const guestPeerId: string = g.welcome.you.peerId;
+
+    guestPeer.send({ t: 'ctl', action: 'play', pos: 12 });
+    expect(await h.peer.next((m) => m.t === 'state' && m.state.playing === true)).toMatchObject({ state: { pos: 12 }, by: 'Léa' });
+
+    guestPeer.send({ t: 'kick', user: host.name });
+    expect((await guestPeer.type('error')).code).toBe('not_host');
+    guestPeer.send({ t: 'end' });
+    expect((await guestPeer.type('error')).code).toBe('not_host');
+
+    // Signalisation : l'invité envoie une offre à l'hôte, l'hôte reçoit exactement le relais, sans diffusion.
+    const offer = { sdp: 'v=0 o=- 1 2 IN IP4 127.0.0.1', type: 'offer' };
+    guestPeer.send({ type: 'rtc', to: hostPeerId, data: offer });
+    expect(await h.peer.next((m) => m.type === 'rtc')).toEqual({ type: 'rtc', from: guestPeerId, data: offer });
+
+    // Réponse de l'hôte vers l'invité.
+    h.peer.send({ type: 'rtc', to: guestPeerId, data: { type: 'answer', sdp: 'v=0' } });
+    expect(await guestPeer.next((m) => m.type === 'rtc')).toEqual({ type: 'rtc', from: hostPeerId, data: { type: 'answer', sdp: 'v=0' } });
+
+    // Refus : pair inconnu, soi-même, donnée au-delà de 16 Ko.
+    guestPeer.send({ type: 'rtc', to: 'inconnu-0123456789', data: {} });
+    expect((await guestPeer.type('error')).code).toBe('peer_not_found');
+    guestPeer.send({ type: 'rtc', to: guestPeerId, data: {} });
+    expect((await guestPeer.type('error')).code).toBe('cannot_target_self');
+    guestPeer.send({ type: 'rtc', to: hostPeerId, data: { blob: 'x'.repeat(16 * 1024) } });
+    expect((await guestPeer.type('error')).code).toBe('rtc_too_large');
+    expect(h.peer.messages.some((m) => m.type === 'rtc' && m.from === guestPeerId && m.data.blob !== undefined)).toBe(false);
+    guestPeer.close();
+    h.peer.close();
+  });
+
+  it('au plus 4 invités connectés : le 5e est refusé (409 guest_limit) ; pseudo d’un membre refusé (409 name_taken)', async () => {
+    const host = await account('host');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const peers: Peer[] = [];
+    for (let i = 1; i <= 4; i += 1) {
+      const { token } = (await inviteFrom(host, room.id)).body;
+      const g = await guestSocket(room.id, token, `Invité ${i}`);
+      expect(g.res.status).toBe(101);
+      peers.push(g.peer as Peer);
+    }
+    const fifth = (await inviteFrom(host, room.id)).body.token;
+    const refused = await guestSocket(room.id, fifth, 'Invité 5');
+    expect(refused.res.status).toBe(409);
+    expect(await refused.res.json()).toEqual({ error: 'guest_limit' });
+
+    // Une place libérée est reprise.
+    peers[0]?.close();
+    await h.peer.next((m) => m.t === 'leave' && m.user === 'Invité 1');
+    const retry = await guestSocket(room.id, fifth, 'Invité 5');
+    expect(retry.res.status).toBe(101);
+    retry.peer?.close();
+
+    // Pseudo d'un membre (casse ignorée) : refusé.
+    const { token } = (await inviteFrom(host, room.id)).body;
+    const clash = await guestSocket(room.id, token, host.name.toUpperCase());
+    expect(clash.res.status).toBe(409);
+    expect(await clash.res.json()).toEqual({ error: 'name_taken' });
+    for (const p of peers) p.close();
+    h.peer.close();
+  });
+
+  it('jeton invité refusé : falsifié, d’un autre salon, pseudo vide ; sans jeton, le ticket de compte reste requis', async () => {
+    const host = await account('host');
+    const room = (await createRoom(host)).body.room;
+    const other = (await createRoom(host)).body.room;
+    // L'invitation exige un membre connecté : l'hôte rejoint chaque salon avant d'inviter.
+    const h = await join(host, room.id);
+    const otherHost = await join(host, other.id);
+    const { token } = (await inviteFrom(host, room.id)).body;
+    const otherToken = (await inviteFrom(host, other.id)).body.token;
+    const [body, signature] = token.split('.') as [string, string];
+    const forged = `${body}.${signature.startsWith('A') ? `B${signature.slice(1)}` : `A${signature.slice(1)}`}`;
+    expect((await upgrade(`/party/${room.id}/ws?t=${forged}&name=Léa`)).status).toBe(401);
+    expect((await upgrade(`/party/${room.id}/ws?t=${otherToken}&name=Léa`)).status).toBe(401);
+    expect((await upgrade(`/party/${room.id}/ws?t=${token}&name=%20%20`)).status).toBe(400);
+    expect((await upgrade(`/party/${room.id}/ws?t=${token}`)).status).toBe(400);
+    expect((await upgrade(`/party/${room.id}/ws?t=bidon&name=Léa`)).status).toBe(401);
+    expect((await upgrade(`/party/${room.id}/ws?name=Léa`)).status).toBe(401);
+    // Le jeton valide, lui, ouvre la connexion.
+    const ok = await guestSocket(room.id, token, 'Léa');
+    expect(ok.res.status).toBe(101);
+    ok.peer?.close();
+    h.peer.close();
+    otherHost.peer.close();
+    // Attendre que le Durable Object ait traité les fermetures (sinon le test se termine avant).
+    await waitForParticipants(room.id, host.token, 0);
+    await waitForParticipants(other.id, host.token, 0);
   });
 });

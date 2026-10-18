@@ -114,7 +114,7 @@ describe('salon : rejoindre et contrôles', () => {
     const effects = fx.core.join(fx.member('a-bob'));
     const welcome = sent(effects, 'a-bob')[0];
     if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
-    expect(welcome.you).toEqual({ username: 'bob', host: false, muted: false });
+    expect(welcome.you).toEqual({ username: 'bob', host: false, muted: false, peerId: expect.any(String) });
     expect(welcome.room).toMatchObject({ title: 'Severance', host: 'host', maxParticipants: 20, media: { season: 1, episode: 1 } });
     expect(welcome.participants.map((p) => p.username)).toEqual(['host', 'bob']);
     expect(welcome.chat).toHaveLength(1);
