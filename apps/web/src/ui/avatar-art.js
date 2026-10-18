@@ -3,7 +3,8 @@
  * sont chargés à la demande (import dynamique) : l'accueil n'est pas alourdi. Repli : l'initiale sur la couleur du
  * profil reste affichée tant que l'illustration n'est pas prête (ou si elle échoue).
  */
-import { AVATAR_BACKGROUNDS, parseAvatar } from '../data/avatars';
+import { AVATAR_BACKGROUNDS, parseAvatar, parseHero } from '../data/avatars';
+import { heroDataUri } from '../data/heroes/render';
 
 /** Avatars déjà générés : valeur « dicebear:style:graine » -> URI data: du SVG. */
 const cache = new Map();
@@ -25,6 +26,8 @@ export const fitSvg = (svg) => svg.replace(/<svg\b([^>]*)>/, (_m, attrs) => '<sv
 
 /** SVG de l'avatar en URI data:, ou '' si la valeur est invalide / non autorisée / non générable. Mis en cache. */
 export async function avatarUri(value) {
+  const hero = heroUri(value);
+  if (hero) return hero;
   const parsed = parseAvatar(value);
   if (!parsed) return '';
   const hit = cache.get(value);
@@ -43,8 +46,19 @@ export async function avatarUri(value) {
   }
 }
 
-/** URI déjà en cache (rendu synchrone), sinon ''. */
-export const cachedAvatarUri = (value) => cache.get(value) || '';
+/** Avatar « Héros » (hero:<famille>:<graine>) : dessiné tout de suite, en local, sans chargement ; '' si ce n'est pas un Héros. */
+function heroUri(value) {
+  const hit = cache.get(value);
+  if (hit) return hit;
+  const hero = parseHero(value);
+  if (!hero) return '';
+  const uri = heroDataUri(hero.family, hero.seed);
+  cache.set(value, uri);
+  return uri;
+}
+
+/** URI déjà en cache (rendu synchrone), sinon '' ; les Héros sont générés à la volée. */
+export const cachedAvatarUri = (value) => heroUri(value) || cache.get(value) || '';
 
 /** Vide le cache (tests). */
 export const resetAvatarCache = () => cache.clear();
@@ -57,8 +71,7 @@ const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').
  */
 export function avatarAttrs(avatar, color) {
   const bg = 'background:' + attrEsc(color || '#94a3b8');
-  const parsed = parseAvatar(avatar);
-  if (!parsed) return ' style="' + bg + '"';
+  if (!parseAvatar(avatar) && !parseHero(avatar)) return ' style="' + bg + '"';
   const uri = cachedAvatarUri(avatar);
   return ' data-avatar="' + attrEsc(avatar) + '"' + (uri ? ' data-art="1"' : '') +
     ' style="' + bg + (uri ? ';background-image:url(&quot;' + attrEsc(uri) + '&quot;)' : '') + '"';

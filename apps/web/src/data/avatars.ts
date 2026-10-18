@@ -5,9 +5,14 @@
  * personnel et commercial avec crédit) sont proposés : voir LICENSE de chaque paquet @dicebear/<style>.
  */
 
+import { HERO_FAMILIES, HERO_FAMILY_IDS, type HeroFamily } from './heroes/render';
+
+export type { HeroFamily } from './heroes/render';
+export { HERO_FAMILIES } from './heroes/render';
+
 export type AvatarFamily = 'personnages' | 'illustres' | 'robots' | 'fun';
 export type AvatarLicense = 'cc0' | 'cc-by' | 'libre';
-export type AvatarTab = 'enfants' | AvatarFamily;
+export type AvatarTab = 'heroes' | 'enfants' | AvatarFamily;
 
 export interface AvatarStyle {
   /** Nom du paquet @dicebear/<id> (minuscules et tirets). */
@@ -87,6 +92,7 @@ export const LICENSE_URL: Record<AvatarLicense, string> = {
 export const usableStyles = (): AvatarStyle[] => AVATAR_STYLES.filter((st) => ALLOWED_LICENSES.includes(st.license));
 
 export const AVATAR_TABS: ReadonlyArray<{ id: AvatarTab; label: string }> = [
+  { id: 'heroes', label: 'Héros' },
   { id: 'enfants', label: 'Enfants' },
   { id: 'personnages', label: 'Personnages' },
   { id: 'illustres', label: 'Illustrés' },
@@ -103,9 +109,34 @@ export const DEFAULT_SEEDS: readonly string[] = [
 /** Couleurs de fond (palette de l'app : corail, violet, turquoise, jaune, bleu, rose, vert, ardoise), sans le #. */
 export const AVATAR_BACKGROUNDS: readonly string[] = ['ff5a36', '7b5bf5', '19c3a6', 'f5b700', '3b82f6', 'ec4899', '22c55e', '94a3b8'];
 
-/** Même format que le serveur (user/avatar.ts) : dicebear:<style>:<graine>. */
+/** Même format que le serveur (user/avatar.ts) : dicebear:<style>:<graine> (les Héros ont HERO_PATTERN). */
 export const AVATAR_PATTERN = /^dicebear:[a-z][a-z0-9-]{1,23}:[A-Za-z0-9_-]{1,40}$/;
 export const SEED_MAX = 40;
+
+/** Avatars « Héros » (générateur maison laststream-heroes) : hero:<famille>:<graine>, famille = heros | vilains | scifi | fantasy. */
+export const HERO_PATTERN = /^hero:(heros|vilains|scifi|fantasy):[A-Za-z0-9_-]{1,40}$/;
+export const formatHero = (family: HeroFamily, seed: string): string => `hero:${family}:${seed}`;
+
+export interface ParsedHero { family: HeroFamily; seed: string }
+
+/** Lit un avatar « Héros » stocké ; null si le format est invalide ou la famille inconnue. */
+export function parseHero(value: unknown): ParsedHero | null {
+  if (typeof value !== 'string' || !HERO_PATTERN.test(value)) return null;
+  const [, family, seed] = value.split(':') as [string, HeroFamily, string];
+  return HERO_FAMILY_IDS.includes(family) ? { family, seed } : null;
+}
+
+/** Vrai pour tout avatar stocké reconnu : DiceBear autorisé ou Héros. */
+export const isValidAvatar = (value: unknown): boolean => parseAvatar(value) !== null || parseHero(value) !== null;
+
+/** Graines fixes des Héros : 48 noms originaux, puis deux séries de variantes (« Plus »). Déterministe. */
+const HERO_NAMES: readonly string[] = [
+  'Aegis', 'Blaze', 'Cyra', 'Dax', 'Ember', 'Flux', 'Gale', 'Halo', 'Ion', 'Jinx', 'Kaze', 'Lyra',
+  'Mako', 'Nova', 'Onyx', 'Pyra', 'Quill', 'Rune', 'Sable', 'Titan', 'Umbra', 'Vega', 'Wren', 'Xeno',
+  'Yara', 'Zephyr', 'Apex', 'Bolt', 'Cinder', 'Drift', 'Echo', 'Fable', 'Glint', 'Havoc', 'Iris', 'Jolt',
+  'Kilo', 'Lumen', 'Mirage', 'Nimbus', 'Orbit', 'Pulse', 'Quasar', 'Riot', 'Spark', 'Talon', 'Vortex', 'Warden',
+];
+export const HERO_SEEDS: readonly string[] = [...HERO_NAMES, ...HERO_NAMES.map((n) => n + '-2'), ...HERO_NAMES.map((n) => n + '-3')];
 
 export const formatAvatar = (style: string, seed: string): string => `dicebear:${style}:${seed}`;
 
@@ -150,14 +181,19 @@ export function stylesForTab(tab: AvatarTab): AvatarStyle[] {
   return tab === 'enfants' ? all.filter((st) => st.kid) : all.filter((st) => st.family === tab);
 }
 
-export interface AvatarTile { style: AvatarStyle; seed: string; value: string }
+export interface AvatarTile { style: { id: string; label: string }; seed: string; value: string }
 
 /**
  * Avatars d'un onglet : si `word` (recherche ou « Au hasard ») est donné, cette graine est montrée dans chaque style de
  * l'onglet en premier, puis les graines fixes. Déterministe.
  */
-export function tabTiles(tab: AvatarTab, word = ''): AvatarTile[] {
+export function tabTiles(tab: AvatarTab, word = '', sub: HeroFamily = 'heros'): AvatarTile[] {
   const seed = cleanSeed(word);
+  if (tab === 'heroes') {
+    const label = HERO_FAMILIES.find((f) => f.id === sub)?.label ?? sub;
+    const seeds = seed ? [seed, ...HERO_SEEDS.filter((d) => d !== seed)] : [...HERO_SEEDS];
+    return seeds.map((sd) => ({ style: { id: sub, label }, seed: sd, value: formatHero(sub, sd) }));
+  }
   const styles = stylesForTab(tab);
   const seeds = seed ? [seed, ...DEFAULT_SEEDS.filter((d) => d !== seed)] : [...DEFAULT_SEEDS];
   const tiles: AvatarTile[] = [];
@@ -166,7 +202,7 @@ export function tabTiles(tab: AvatarTab, word = ''): AvatarTile[] {
 }
 
 /** Nombre d'avatars proposés au total (tous onglets confondus, sans doublon). */
-export const avatarCount = (): number => pickerStyles().length * DEFAULT_SEEDS.length;
+export const avatarCount = (): number => pickerStyles().length * DEFAULT_SEEDS.length + HERO_FAMILY_IDS.length * HERO_SEEDS.length;
 
 /**
  * Crédits à afficher : un par illustrateur et licence, avec chaque style proposé et sa page source (une seule ligne par

@@ -5,6 +5,7 @@ import {
   ALLOWED_LICENSES, AVATAR_PATTERN, AVATAR_STYLES, avatarCount, avatarCredits, cleanSeed, formatAvatar, parseAvatar, pickerStyles,
   RETIRED_STYLE_IDS, stylesForTab, tabTiles, usableStyles, type AvatarLicense,
 } from '../src/data/avatars';
+import { HERO_SEEDS } from '../src/data/avatars';
 import { AVATAR_SCALE, avatarAttrs, avatarUri, hydrateAvatars, resetAvatarCache } from '../src/ui/avatar-art.js';
 import { SETTINGS_STORAGE_KEY, reloadSettings } from '../src/data/config';
 import { reloadSession } from '../src/data/session';
@@ -90,7 +91,7 @@ describe('catalogue', () => {
       expect(pickerStyles().some((s) => s.id === id), id).toBe(false);
       expect(parseAvatar(formatAvatar(id, 'Mimi')), id).not.toBeNull();
     }
-    expect(avatarCount()).toBe(pickerStyles().length * 16);
+    expect(avatarCount()).toBe(pickerStyles().length * 16 + 4 * HERO_SEEDS.length);
   });
 });
 
@@ -228,7 +229,12 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
     const form = await openEditor();
     expect(form).not.toBeNull();
     const tabs = Array.from(form.querySelectorAll('[data-av-tab]')).map((b) => (b as HTMLElement).dataset.avTab);
-    expect(tabs).toEqual(['enfants', 'personnages', 'illustres', 'robots', 'fun']);
+    expect(tabs).toEqual(['heroes', 'enfants', 'personnages', 'illustres', 'robots', 'fun']);
+    // Premier onglet : Héros, avec ses quatre sous-filtres.
+    expect(Array.from(form.querySelectorAll('[data-av-sub]')).map((b) => (b as HTMLElement).dataset.avSub)).toEqual(['heros', 'vilains', 'scifi', 'fantasy']);
+    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:heros:/);
+    (form.querySelector('[data-av-sub="vilains"]') as HTMLElement).click();
+    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:vilains:/);
     // Paginé : 48 tuiles d'abord, « Voir plus » en ajoute.
     expect(form.querySelectorAll('.av-tile').length).toBe(48);
     (form.querySelector('[data-av-more]') as HTMLElement).click();
@@ -260,7 +266,7 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
   it('crédits dans l’éditeur et profil enfant : onglet Enfants d’abord', async () => {
     const form = await openEditor();
     expect(form.querySelector('details')!.textContent).toContain('Lisa Wischofsky');
-    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('personnages');
+    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('heroes');
     const kid = form.elements.namedItem('kid') as HTMLInputElement;
     kid.checked = true;
     kid.dispatchEvent(new Event('change', { bubbles: true }));

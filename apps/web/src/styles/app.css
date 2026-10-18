@@ -487,6 +487,8 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 /* Sélecteur d'avatars de l'éditeur : champ pleine largeur, boutons côte à côte, grille centrée qui défile avec le panneau. */
 .pf-picker-avatars { display: grid; gap: 12px; width: 100%; min-width: 0; }
 .av-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.av-subs { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.av-subs[hidden] { display: none; }
 .av-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .av-tools input { grid-column: 1 / -1; min-width: 0; }
 .av-grid { display: grid; grid-template-columns: repeat(auto-fill, 68px); justify-content: center; gap: 10px; }
