@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ErrorHandler, MiddlewareHandler, NotFoundHandler } from 'hono';
+import { reportUnhandledError } from '../observability/report.js';
 import type { AppEnv } from './app-env.js';
 import { sendJson } from './respond.js';
 
@@ -53,6 +54,7 @@ export const errorHandler: ErrorHandler<AppEnv> = (err, c) => {
     return sendJson(c, { error: 'bad_request' }, status as 400);
   }
   c.set('failure', err instanceof Error ? `${err.name}: ${err.message}` : 'erreur inconnue');
+  reportUnhandledError(err);
   console.error('Erreur interne', err instanceof Error ? err.name : 'inconnue');
   return sendJson(c, { error: 'internal_error' }, 500);
 };

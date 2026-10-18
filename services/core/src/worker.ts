@@ -1,10 +1,13 @@
+import * as Sentry from '@sentry/cloudflare';
 import type { ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import { ADMIN_PREFIX, handleAdmin } from './admin/routes.js';
 import { USER_STORE_NAME } from './platform/workers/user-backend.js';
-import { createApp } from './app.js';
+import { createApp, MANIFEST } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
+import { beforeBreadcrumbFilter, beforeSendFilter, beforeSendTransactionFilter } from './observability/scrub.js';
+import { setUnhandledErrorReporter } from './observability/report.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { createWorkersPlatform, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
@@ -44,11 +47,10 @@ function authLimiterFrom(env: WorkerEnv): AppDeps['authLimiter'] {
   };
 }
 
-/**
- * Point d'entrée Cloudflare Workers : même application Hono que le serveur Node, plateforme Workers (voir
- * platform/workers/). L'IP du client vient de CF-Connecting-IP (posé par Cloudflare, non falsifiable).
- */
-export default {
+// Erreurs 500 de l'application (routes, middlewares) : remontées à Sentry. Sans SENTRY_DSN, le SDK n'envoie rien.
+setUnhandledErrorReporter((error) => Sentry.captureException(error));
+
+const worker = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     if (new URL(request.url).pathname.startsWith(ADMIN_PREFIX)) {
       const secret = typeof env.ADMIN_SECRET === 'string' ? env.ADMIN_SECRET : undefined;
@@ -65,7 +67,8 @@ export default {
       }
       return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp }, ctx)));
     } catch (err) {
-      // Configuration absente ou invalide : message générique, jamais de valeur.
+      // Configuration absente ou invalide : remontée à Sentry, puis message générique, jamais de valeur.
+      Sentry.captureException(err);
       console.error('[worker] erreur de démarrage', err instanceof Error ? err.name : 'inconnue');
       return Response.json({ error: 'worker_misconfigured' }, { status: 500 });
     }
@@ -76,3 +79,21 @@ export default {
     ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
   },
 };
+
+/**
+ * Point d'entrée Cloudflare Workers : même application Hono que le serveur Node, plateforme Workers (voir
+ * platform/workers/). L'IP du client vient de CF-Connecting-IP (posé par Cloudflare, non falsifiable).
+ * Sentry (`@sentry/cloudflare`) : actif seulement si le secret SENTRY_DSN est posé ; données épurées (observability/scrub.ts).
+ */
+export default Sentry.withSentry(
+  (env: WorkerEnv) => ({
+    dsn: env.SENTRY_DSN,
+    environment: 'production',
+    release: `lastaddon-core@${MANIFEST.version}`,
+    tracesSampleRate: 0.05,
+    beforeSend: beforeSendFilter,
+    beforeSendTransaction: beforeSendTransactionFilter,
+    beforeBreadcrumb: beforeBreadcrumbFilter,
+  }),
+  worker,
+);
