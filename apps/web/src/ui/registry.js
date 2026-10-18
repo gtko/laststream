@@ -59,7 +59,7 @@ const followedPeople = () => (userStore.getFollows ? userStore.getFollows('perso
 // Seuls les titres déjà sortis (hors rangées « Bientôt » : def.upcoming).
 const toItems = (json, forced, upcoming) => {
   const l = listOf(json, forced);
-  return l ? l.filter((it) => it.poster && (upcoming || isReleasedItem(it))).map(register) : [];
+  return l ? l.filter((it) => (it.poster || it.backdropPath) && (upcoming || isReleasedItem(it))).map(register) : [];
 };
 
 function interleave(a, b) {

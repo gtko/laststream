@@ -23,8 +23,20 @@ export function resolvePoster(it) {
     done.set(it.key, new Promise((resolve) => {
       queue.push(async () => {
         try {
+          // 1. détail ; 2. images TMDB (affiches dans toutes les langues, puis fonds) ; 3. série : affiche d'une saison.
           const raw = await tmdb(it.type + '/' + it.id);
-          resolve({ poster: raw.poster_path || '', backdrop: raw.backdrop_path || '' });
+          let poster = raw.poster_path || '';
+          let backdrop = raw.backdrop_path || '';
+          if (!poster) {
+            const im = await tmdb(it.type + '/' + it.id + '/images', { include_image_language: 'fr,en,null' }).catch(() => null);
+            poster = (im && im.posters && im.posters[0] && im.posters[0].file_path) || '';
+            backdrop = backdrop || (im && im.backdrops && im.backdrops[0] && im.backdrops[0].file_path) || '';
+          }
+          if (!poster && it.type === 'tv') {
+            const seasons = (raw.seasons || []).filter((s) => s.poster_path);
+            poster = (seasons[0] && seasons[0].poster_path) || '';
+          }
+          resolve({ poster, backdrop });
         } catch (_) {
           done.delete(it.key); // réessayé au prochain affichage
           resolve(null);
@@ -36,11 +48,11 @@ export function resolvePoster(it) {
   return done.get(it.key);
 }
 
-function paint(key, poster) {
+function paint(key, path, isBackdrop) {
   document.querySelectorAll('[data-tile="' + key + '"] .card-media').forEach((media) => {
     if (media.querySelector('img')) return;
     const alt = media.closest('.tile-land') ? '' : (state.byKey.get(key) || {}).name || '';
-    media.insertAdjacentHTML('afterbegin', '<img src="' + IMG('w342', poster) + '" alt="' + alt.replace(/"/g, '&quot;') + '" loading="lazy" decoding="async">');
+    media.insertAdjacentHTML('afterbegin', '<img src="' + IMG(isBackdrop ? 'w780' : 'w342', path) + '" alt="' + alt.replace(/"/g, '&quot;') + '" loading="lazy" decoding="async">');
     media.classList.remove('no-img');
   });
 }
@@ -49,11 +61,12 @@ function paint(key, poster) {
 export function fillMissingPosters(items) {
   items.filter((it) => !it.poster && it.id).forEach(async (it) => {
     const r = await resolvePoster(it);
-    if (!r || !r.poster) return;
-    it.posterPath = r.poster;
-    it.poster = IMG('w342', r.poster);
+    if (r && !r.poster && !r.backdrop) it.noImage = true;
+    if (!r || (!r.poster && !r.backdrop)) return;
+    it.posterPath = r.poster || it.posterPath;
+    it.poster = r.poster ? IMG('w342', r.poster) : it.poster;
     it.backdropPath = it.backdropPath || r.backdrop;
-    paint(it.key, r.poster);
-    if (userStore.updateLibraryPoster) userStore.updateLibraryPoster(it.key, r.poster);
+    paint(it.key, r.poster || r.backdrop, !r.poster);
+    if (r.poster && userStore.updateLibraryPoster) userStore.updateLibraryPoster(it.key, r.poster);
   });
 }

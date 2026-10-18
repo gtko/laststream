@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { fillMissingPosters } from './posters.js';
+import { fallbackHTML } from './typo.js';
 import { newEpisodeCount } from '../data/episodes';
 import { userStore } from '../data/userStore';
 import { tmdb } from '../data/lt';
@@ -36,7 +38,7 @@ export function tileCard(it, o) {
   const upDate = ''; // « Prochainement » a sa propre carte (upCard)
   const rank = (upDate || o.soon) ? 0 : (o.rank || state.top10.get(it.key) || 0);
   const fresh = o.soon ? 'Prochainement' : (!upDate && !rank ? freshText(it, infoStore.get(it.key)) : '');
-  const src = land ? it.backdrop || it.poster : it.poster;
+  const src = land ? it.backdrop || it.poster : it.poster || it.backdrop; // sans affiche : le fond, recadré au centre
   const imdb = (detailOf(it).ratings || {}).imdb;
   const score = imdb != null ? fmtNum(imdb, 1) : it.vote;
   const metaTxt = o.sub || [it.genre, it.year, score ? '★ ' + score : ''].filter(Boolean).join(' · ');
@@ -61,7 +63,7 @@ export function tileCard(it, o) {
   const media =
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img src="' + esc(src) + '" alt="' + (land ? '' : esc(it.name)) + '" data-fb="' + esc(it.poster) + '" loading="lazy" decoding="async">' : '') +
-    '<span class="card-fallback">' + esc(it.name) + '</span>' + ribbon + badge + dateBar +
+    fallbackHTML(it) + ribbon + badge + dateBar +
     (land ? '<span class="t-shade" aria-hidden="true"></span><span class="t-titlewrap"><span class="t-title">' + esc(it.name) + '</span></span><span class="t-prov"></span>' : '') +
     '<span class="t-meta" aria-hidden="true">' + esc(metaTxt) + '</span>' +
     (it.cinema ? '<span class="t-cinema" aria-hidden="true">Au cinéma</span>' : '') +
@@ -85,7 +87,7 @@ export function topCard(it, n) {
     '<span class="rank" aria-hidden="true">' + n + '</span>' +
     '<span class="card-media' + (it.poster ? '' : ' no-img') + '">' +
     (it.poster ? '<img src="' + esc(it.poster) + '" alt="" decoding="async">' : '') +
-    '<span class="card-fallback">' + esc(it.name) + '</span>' +
+    fallbackHTML(it) +
     '<span class="rib-top" aria-hidden="true"><b>TOP</b><i>' + n + '</i><em>cette semaine</em></span></span></button>';
 }
 
@@ -218,6 +220,13 @@ export function applyEnrich(key) {
 
 export function observeTiles(root) {
   if (!root || !root.querySelectorAll) return;
+  // Tuiles sans image : on cherche une image dans TMDB avant de laisser l'affiche typographique.
+  const missing = [];
+  root.querySelectorAll('[data-tile] .card-media.no-img').forEach((m) => {
+    const it = state.byKey.get(m.closest('[data-tile]').dataset.tile);
+    if (it && it.type && !it.noImage) missing.push(it);
+  });
+  if (missing.length) fillMissingPosters(missing);
   root.querySelectorAll('[data-lazy]:not([data-obs])').forEach((el) => {
     el.dataset.obs = '1';
     const go1 = () => {

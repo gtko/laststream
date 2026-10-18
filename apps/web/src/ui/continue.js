@@ -1,4 +1,5 @@
 /* « Reprendre la lecture » : cartes paysage 16:9 montrant où tu en es (épisode en cours, logo, temps restant, progression). */
+import { fallbackHTML } from './typo.js';
 import { tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
 import { getDetail, register, toItem } from './catalog.js';
@@ -25,7 +26,7 @@ export function continueCardHTML(p) {
     ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img class="cont-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
-    '<span class="card-fallback">' + esc(p.title) + '</span>' +
+    fallbackHTML({ name: p.title, type: p.type }) +
     '<span class="cont-shade" aria-hidden="true"></span>' +
     '<span class="cont-new" aria-hidden="true" hidden>Nouveau</span>' +
     '<span class="cont-play" aria-hidden="true">' + ICON.play + '</span>' +

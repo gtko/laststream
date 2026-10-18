@@ -29,6 +29,11 @@ function mockFetch(url: string, init?: RequestInit): Response {
       images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: {}, 'watch/providers': { results: { FR: {} } },
       release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: cin }] }] } });
   }
+  const bare = /\/lt\/tmdb\/movie\/(80\d)(\/images)?$/.exec(u.pathname);
+  if (bare) {
+    if (bare[2]) return json({ posters: bare[1] === '801' ? [{ file_path: '/found.jpg' }] : [], backdrops: [] });
+    return json({ id: Number(bare[1]), title: 'Obscur ' + bare[1], poster_path: null, backdrop_path: null, seasons: [] });
+  }
   const trend = /\/lt\/tmdb\/trending\/(movie|tv)\/week$/.exec(u.pathname);
   if (trend) return json({ results: ITEMS.map((i) => ({ ...i, media_type: trend[1] })) });
   const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
@@ -347,6 +352,29 @@ describe('interface portée', () => {
     expect(JSON.parse(localStorage.getItem('laststream.follows')!).some((f: { id: number }) => f.id === 505)).toBe(true);
     location.hash = '#/';
     await settle(50);
+  });
+
+  it('titres sans affiche : image retrouvée dans TMDB, sinon affiche typographique', async () => {
+    localStorage.setItem('laststream.library', JSON.stringify([
+      { id: 801, type: 'movie', title: 'Sabaya', poster: '', addedAt: 3 },
+      { id: 802, type: 'movie', title: 'Don’t Forget Me Tomorrow', poster: '', addedAt: 2 },
+    ]));
+    const { renderLibrary } = await import('../src/ui/library.js');
+    renderLibrary();
+    const media = (id: number) => document.querySelector('#lib-slot [data-tile="movie:' + id + '"] .card-media') as HTMLElement;
+    // Avant la réponse : jamais une boîte vide, l'affiche générée est déjà là.
+    expect(media(801).classList.contains('no-img')).toBe(true);
+    expect(media(801).querySelector('.tp-title')!.textContent).toBe('Sabaya');
+    await settle(400);
+    expect(media(801).querySelector('img')!.getAttribute('src')).toContain('/found.jpg'); // trouvée via /images
+    expect(media(801).classList.contains('no-img')).toBe(false);
+    expect(media(802).querySelector('img')).toBeNull();
+    expect(media(802).classList.contains('no-img')).toBe(true); // rien nulle part : affiche typographique
+    expect(media(802).querySelector('.tp-title')!.textContent).toBe('Don’t Forget Me Tomorrow');
+    expect(media(802).querySelector('.tp-mono')!.textContent).toBe('DF');
+    expect(media(802).querySelector('.tp-icon svg')).not.toBeNull();
+    localStorage.setItem('laststream.library', '[]');
+    renderLibrary();
   });
 
   it('utilise la région France par défaut', () => {

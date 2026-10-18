@@ -334,3 +334,17 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 
 /* ---------- Films uniquement au cinéma ---------- */
 .t-cinema { position: absolute; top: 8px; left: 8px; z-index: 2; padding: 4px 10px; border-radius: 999px; background: rgba(12, 11, 17, 0.85); border: 1px solid var(--accent); color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0.03em; }
+
+/* ---------- Affiche typographique (aucune image TMDB) ---------- */
+.card-fallback.tp { padding: 0; display: none; flex-direction: column; justify-content: flex-end; gap: 4px; overflow: hidden; isolation: isolate; background: linear-gradient(160deg, var(--tp1), var(--tp2)); color: #fff; }
+.no-img > .card-fallback.tp { display: flex; }
+.tp > * { position: relative; z-index: 1; }
+.tp-mono { position: absolute !important; right: -6%; top: 10%; z-index: 0 !important; font-family: var(--ff-title); font-weight: 800; font-size: 150px; line-height: 1; letter-spacing: -0.05em; opacity: 0.08; color: #fff; pointer-events: none; white-space: nowrap; }
+.tp-icon { position: absolute !important; top: 10px; right: 10px; width: 18px; height: 18px; opacity: 0.55; }
+.tp-icon svg { width: 18px; height: 18px; }
+.tp-grain { position: absolute !important; inset: 0; z-index: 2 !important; opacity: 0.18; mix-blend-mode: overlay; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.tp-title { padding: 0 14px; font-family: var(--ff-title); font-weight: 800; font-size: var(--tp-size, 20px); line-height: 1.05; letter-spacing: -0.015em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; text-wrap: balance; }
+.tp-sub { padding: 0 14px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-land .tp-title, .cont-card .tp-title { -webkit-line-clamp: 3; font-size: calc(var(--tp-size, 20px) * 0.9); }
+.tile-land .tp-mono, .cont-card .tp-mono { font-size: 120px; top: -10%; }
+.top-item .tp-mono { font-size: 110px; }

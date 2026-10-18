@@ -270,6 +270,27 @@ describe('disponibilité d’un film', () => {
   });
 });
 
+describe('affiche typographique', () => {
+  it('donne une palette stable, sombre et propre à chaque titre', async () => {
+    const { palette, titleSize, hashTitle } = await import('../src/ui/typo.js');
+    expect(palette('Sabaya')).toEqual(palette('Sabaya'));
+    expect(hashTitle('Sabaya')).not.toBe(hashTitle('Positano'));
+    const hues = new Set(['Sabaya', 'Positano', 'Riverrun', 'Memento', 'Gone Girl', 'Loki'].map((t) => palette(t).hue));
+    expect(hues.size).toBeGreaterThanOrEqual(5);
+    const light = (c: string) => Number(/ (\d+)%\)$/.exec(c)![1]);
+    ['Sabaya', 'Riverrun', 'Memento'].forEach((t) => { expect(light(palette(t).c1)).toBeLessThanOrEqual(22); expect(light(palette(t).c2)).toBeLessThanOrEqual(12); });
+    expect(titleSize('Loki')).toBeGreaterThan(titleSize('Don’t Forget Me Tomorrow Because'));
+  });
+  it('génère le titre, un monogramme, l’année et le genre', async () => {
+    const { fallbackHTML } = await import('../src/ui/typo.js');
+    const html = fallbackHTML({ name: 'Star Trek <Discovery>', year: '2017', genre: 'Science-fiction', type: 'tv' });
+    expect(html).toContain('Star Trek &lt;Discovery&gt;');
+    expect(html).toContain('>ST<');
+    expect(html).toContain('2017 · Science-fiction');
+    expect(html).toContain('--tp1:hsl(');
+  });
+});
+
 describe('région', () => {
   it('vaut France par défaut', () => {
     expect(getRegion().code).toBe('FR');
