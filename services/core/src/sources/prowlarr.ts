@@ -56,7 +56,7 @@ export interface ProwlarrSearchOptions extends HttpOptions {
 }
 
 /** Budget global par défaut d'une recherche Prowlarr (découverte et requêtes), en millisecondes. */
-export const PROWLARR_BUDGET_MS = 8_000;
+export const PROWLARR_BUDGET_MS = 14_000;
 /** Durée de vie, en mémoire, de la liste des indexeurs d'une source : 10 minutes. */
 export const PROWLARR_DISCOVERY_TTL_MS = 10 * 60 * 1_000;
 

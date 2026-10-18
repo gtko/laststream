@@ -48,7 +48,7 @@ export interface StageBudgets {
   hosters: number;
   probe: number;
 }
-const STAGE_BUDGET_MS: StageBudgets = { sources: 8_000, torrents: 3_000, cache: 2_000, hosters: 2_000, probe: 3_000 };
+const STAGE_BUDGET_MS: StageBudgets = { sources: 15_000, torrents: 3_000, cache: 2_000, hosters: 2_000, probe: 3_000 };
 
 /** Durée de vie du cache des résultats : 5 minutes, 200 entrées. */
 const RESULT_TTL_MS = 5 * 60 * 1_000;
