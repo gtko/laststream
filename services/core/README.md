@@ -686,6 +686,17 @@ Le même code tourne sur Node et sur Cloudflare Workers (`src/worker.ts`, config
 
 **Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `RANGE_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
 
+### Migration des données vers le Durable Object
+
+`npx tsx scripts/export-cloud.ts [--db fichier] [--url https://…] [--force] [--dry-run] [--verify-only]` copie les tables utilisateur d'une base
+SQLite locale (ouverte en lecture seule ; arrêter le service local avant l'export final) vers le Durable Object, par lots transactionnels, via la
+route `/__admin/` du Worker (en-tête `x-admin-secret`, secret wrangler `ADMIN_SECRET`, lu dans `%APPDATA%\Laststreamdmin.secret` ou la variable
+`ADMIN_SECRET`). L'import est refusé si le Durable Object n'est pas vide (sauf `--force`, qui le vide d'abord). Le script compare ensuite nombre
+de lignes et SHA-256 par table (`GET /__admin/counts`). La route répond 404 sans `ADMIN_SECRET` : `wrangler secret delete ADMIN_SECRET` la ferme.
+
+Connexion et inscription : binding Rate Limiting (`AUTH_LIMITER_IP`, `AUTH_LIMITER_USER`), 10 tentatives par minute (la période d'un binding vaut 10 ou
+60 s, pas 15 minutes ; le comptage est par emplacement Cloudflare et approximatif).
+
 ## Sécurité
 
 **Risque SSRF.** Les URL des sources (addons amont, indexeurs Torznab, Prowlarr, Jackett) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
