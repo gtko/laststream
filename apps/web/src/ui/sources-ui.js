@@ -38,7 +38,9 @@ export function playFrom(btn) {
   const request = requestFrom(btn);
   if (!request) return;
   // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).
-  playBest(request, btn);
+  // Épisode diffusé dans les 14 prochains jours (data-air) : lisible, et « Pas encore disponible » si aucune source.
+  const air = btn.closest('.ep')?.dataset.air;
+  playBest(request, btn, air ? { notYetAired: air } : {});
 }
 
 /** Sélecteur de sources, ouvert dans le lecteur : choisir une source lance la lecture. */

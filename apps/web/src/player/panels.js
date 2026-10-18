@@ -85,20 +85,24 @@ export function tracksHtml(d) {
 export function episodesHtml(d) {
   const cur = d.current;
   const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
+  const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
   const rows = d.loading ? '<p class="lp-empty">Chargement…</p>' : d.episodes.map((ep) => {
     const on = d.season === cur.season && ep.episode === cur.episode;
+    // Diffusé, ou diffusion dans les 14 prochains jours : lisible (la recherche de sources décide), sinon « Bientôt ».
+    const open = ep.aired || !!ep.playable;
     const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
+    const soonBadge = ep.aired ? '' : open ? 'Diffusion TV le ' + fmtShort(ep.airDate) + ' · déjà en ligne ?' : 'Bientôt';
     const still = '<span class="lp-ep-still">' + (ep.still ? '<img src="' + esc(ep.still) + '" alt="" loading="lazy" decoding="async">' : '') +
       (on ? '<span class="lp-ep-now">En cours</span>' : '') +
-      (ep.aired ? '' : '<span class="lp-ep-soon">Bientôt</span>') +
+      (soonBadge ? '<span class="lp-ep-soon">' + esc(soonBadge) + '</span>' : '') +
       (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
     // Bouton « vu » : frère (et non enfant) du bouton de lecture, pour ne pas imbriquer des boutons.
     const seenLabel = ep.watched ? 'Marquer comme non vu' : 'Marquer comme vu';
     const seen = ep.aired || ep.watched ? '<button type="button" class="lp-ep-seen' + (ep.watched ? ' is-on' : '') + '" data-act="ep-seen" data-season="' + d.season + '" data-episode="' + ep.episode + '" data-seen="' + (ep.watched ? '0' : '1') + '" title="' + seenLabel + '" aria-label="' + seenLabel + '">' + LI.check + '</button>' : '';
     const folded = !!ep.overview && isEpFolded(d.season, ep.episode);
     const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="Afficher le synopsis complet" title="Plus">' + LI.mini + '</button>' : '';
-    return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (ep.aired ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
-      '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (ep.aired ? '' : ' disabled') + '>' + still +
+    return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (open ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
+      '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (open ? '' : ' disabled') + '>' + still +
         '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + esc(ep.name || 'Épisode ' + ep.episode) + '</span>' +
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
       seen + more +

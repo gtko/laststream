@@ -58,7 +58,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
     return json({ poster_path: '/sp.jpg', episodes: [
       { episode_number: 1, name: 'Pilote', air_date: '2020-01-01', still_path: '/s1.jpg', runtime: 42, overview: 'Début.' },
       { episode_number: 4, name: 'Épisode 4', air_date: future(6), still_path: null, overview: '' },
-      { episode_number: 5, name: 'Le grand retour', air_date: future(13), still_path: '/s5.jpg', overview: '' },
+      { episode_number: 5, name: 'Le grand retour', air_date: future(20), still_path: '/s5.jpg', overview: '' },
     ] });
   }
   if (u.pathname.includes('/lt/tmdb/')) {
@@ -276,25 +276,30 @@ describe('interface portée', () => {
   it('fiche série : carte « Bientôt » pour les épisodes à venir', async () => {
     location.hash = '#/tv/101';
     await settle(500);
+    // Diffusé dans 6 jours : lisible (bouton actif, « déjà en ligne ? »), sans carte à compte à rebours.
+    const near = document.querySelector('#detail .ep[data-ep="1:4"]') as HTMLElement;
+    expect(near.classList.contains('is-soon')).toBe(false);
+    expect(near.querySelector('[data-play]')).not.toBeNull();
+    expect(near.querySelector('.ep-meta')!.textContent).toMatch(/ · déjà en ligne \?$/);
+    expect(near.getAttribute('data-air')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(near.querySelector('.ep-seen')).toBeNull();
+    // Diffusé dans 20 jours : au-delà de la fenêtre, carte « Bientôt » inchangée.
     const soon = Array.from(document.querySelectorAll('#detail .ep.is-soon')) as HTMLElement[];
-    expect(soon).toHaveLength(2);
-    const [a, b] = soon;
+    expect(soon).toHaveLength(1);
+    const [a] = soon;
     expect(a.querySelector('.soon-date b')!.textContent).toMatch(/^\d+$/);
     expect(a.querySelector('.soon-date i')!.textContent).toMatch(/^[A-ZÉÛ]+$/);
-    expect(a.querySelector('.soon-count')!.textContent).toBe('Dans 6 jours');
-    expect(a.querySelector('.soon-code')!.textContent).toBe('S1 · É4');
-    expect(a.querySelector('.soon-title')).toBeNull(); // « Épisode 4 » est un titre générique
-    expect(a.querySelector('.ep-title')!.textContent).toBe('É4');
+    expect(a.querySelector('.soon-count')!.textContent).toBe('Dans 20 jours');
+    expect(a.querySelector('.soon-code')!.textContent).toBe('S1 · É5');
+    expect(a.querySelector('.soon-title')!.textContent).toBe('Le grand retour');
     expect(a.querySelector('.ep-meta')!.textContent).toMatch(/^Le .+ · Bientôt$/);
-    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, net
+    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w500/s5.jpg'); // visuel de l'épisode
     expect(a.querySelector('.soon.is-blur')).toBeNull(); // le flou n'est que le dernier repli
     expect(a.querySelector('.soon-poster')!.getAttribute('src')).toContain('/w342/'); // affiche de la série en vignette
-    expect(a.querySelector('.soon-series')!.textContent!.length).toBeGreaterThan(0); // nom de la série au-dessus de S1 · É4
+    expect(a.querySelector('.soon-series')!.textContent!.length).toBeGreaterThan(0); // nom de la série au-dessus de S1 · É5
     expect(a.classList.contains('is-seen')).toBe(false);
     expect(a.querySelector('.soon-bell')).not.toBeNull();
     expect(a.querySelector('.ep-seen')).toBeNull();
-    expect(b.querySelector('.soon-title')!.textContent).toBe('Le grand retour');
-    expect(b.querySelector('.soon.has-still .soon-bg img')!.getAttribute('src')).toContain('/w500/s5.jpg');
     // « Me prévenir » suit la série.
     (a.querySelector('.soon-bell') as HTMLElement).click();
     expect(JSON.parse(localStorage.getItem('laststream.follows')!).some((f: { id: number }) => f.id === 101)).toBe(true);
@@ -322,9 +327,10 @@ describe('interface portée', () => {
     // Compteur : 4 épisodes diffusés, aucun vu -> 0 ; marquer S1 É1 comme vu -> 3 nouveaux.
     (d.querySelector('[data-season="2"]') as HTMLElement).click();
     await settle(300);
-    const soon = d.querySelector('#f-eplist .ep.is-soon') as HTMLElement;
-    expect(soon.querySelector('.soon-code')!.textContent).toBe('S2 · É2');
-    expect(soon.querySelector('.soon-count')!.textContent).toBe('Dans 9 jours');
+    // Diffusé dans 9 jours : lisible, « déjà en ligne ? » (pas de carte « Bientôt »).
+    const soon = d.querySelector('#f-eplist .ep[data-ep="2:2"]') as HTMLElement;
+    expect(soon.classList.contains('is-soon')).toBe(false);
+    expect(soon.querySelector('.ep-meta')!.textContent).toMatch(/déjà en ligne \?$/);
     (d.querySelector('[data-season="1"]') as HTMLElement).click();
     await settle(300);
     (d.querySelector('#f-eplist .ep[data-ep="1:1"] .ep-seen') as HTMLElement).click();
