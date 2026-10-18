@@ -6,6 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": false },
+  "services": [{ "binding": "APP", "service": "laststream" }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

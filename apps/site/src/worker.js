@@ -7,7 +7,7 @@ export default {
     if (pathname === '/api/android') {
       if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Method Not Allowed', { status: 405 });
       try {
-        const r = await fetch(UPSTREAM, { cf: { cacheTtl: 300, cacheEverything: true } });
+        const r = await env.APP.fetch(UPSTREAM);
         if (!r.ok) throw new Error(String(r.status));
         const j = await r.json();
         const out = { versionName: j.versionName, size: j.size, url: j.url, sha256: j.sha256, notes: j.notes };
