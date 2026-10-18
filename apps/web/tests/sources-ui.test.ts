@@ -13,6 +13,9 @@ function mockFetch(url: string, init?: RequestInit): Response {
   }
   if (u.hostname === 'nostream.example') return json({ name: 'Catalogue seul', version: '1.0.0', resources: ['catalog'], types: ['movie'] });
   if (u.hostname === 'blocked.example') throw new TypeError('Failed to fetch'); // CORS
+  if (u.hostname === 'configurable.example') {
+    return json({ name: 'Addon configurable', version: '1.0.0', logo: 'https://configurable.example/logo.png', types: ['movie'], resources: ['catalog', 'stream'], behaviorHints: { configurable: true } });
+  }
   if (u.pathname === '/config/schema') return json({ properties: {} });
   if (u.pathname === '/config/decode') {
     return json({
@@ -126,6 +129,75 @@ describe('cartes de sources', () => {
     expect(cards()[3].querySelector('.src-name')!.textContent).toBe('Catalogue seul');
     expect(cards()[3].querySelector('.src-dot')!.classList.contains('is-warn')).toBe(true); // pas de ressource « stream »
     // Retirer.
+    (cards()[3].querySelector('[data-src-menu]') as HTMLElement).click();
+    (cards()[3].querySelector('[data-src-remove]') as HTMLElement).click();
+    expect(cards()).toHaveLength(3);
+  });
+});
+
+describe('configuration de l’addon', () => {
+  const cards = () => Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
+  const clip = { readText: vi.fn(async () => 'stremio://configurable.example/cfg456/manifest.json'), writeText: vi.fn(async () => undefined) };
+
+  it('calcule la page /configure (préfixe de config et query gardés) et convertit stremio://', async () => {
+    const { configureUrl, toHttpsUrl, manifestInfo } = await import('../src/ui/settings-sources.js');
+    expect(configureUrl('https://addon.example/manifest.json')).toBe('https://addon.example/configure');
+    expect(configureUrl('stremio://addon.example/eyJhIjoxfQ/manifest.json')).toBe('https://addon.example/eyJhIjoxfQ/configure');
+    expect(configureUrl('https://addon.example/eyJhIjoxfQ/manifest.json?lang=fr')).toBe('https://addon.example/eyJhIjoxfQ/configure?lang=fr');
+    expect(configureUrl('https://addon.example/x/')).toBe('https://addon.example/x/configure');
+    expect(configureUrl('')).toBe('');
+    expect(toHttpsUrl(' stremio://a.example/manifest.json ')).toBe('https://a.example/manifest.json');
+    expect(toHttpsUrl('https://a.example/manifest.json')).toBe('https://a.example/manifest.json');
+    expect(manifestInfo({ behaviorHints: { configurationRequired: true } }).configurable).toBe(true);
+    expect(manifestInfo({ resources: ['stream'] }).configurable).toBe(false);
+  });
+
+  it('bouton « Configurer » seulement pour un manifest configurable', async () => {
+    expect(cards()).toHaveLength(3);
+    expect(cards().every((c) => c.querySelector('.src-cfg') === null)).toBe(true); // aucun addon configurable
+    (document.querySelector('[data-set-addsrc="upstream"]') as HTMLElement).click();
+    const url = cards()[3].querySelector('[data-sf="url"]') as HTMLInputElement;
+    url.value = 'stremio://configurable.example/cfg123/manifest.json';
+    url.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle(200);
+    expect(cards()[3].querySelector('.src-name')!.textContent).toBe('Addon configurable');
+    expect(cards()[3].querySelector('.src-cfg')).not.toBeNull();
+    expect(url.value).toBe('https://configurable.example/cfg123/manifest.json'); // stremio:// converti dans le champ
+  });
+
+  it('ouvre la configuration dans un nouvel onglet (web) et affiche l’aide ; le menu propose ouvrir et copier', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const card = cards()[3];
+    (card.querySelector('.src-cfg') as HTMLElement).click();
+    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
+    expect((card.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
+    expect(card.querySelector('.src-cfg-steps')!.textContent).toContain('Configure l’addon dans la page ouverte');
+    (card.querySelector('[data-src-menu]') as HTMLElement).click();
+    expect(card.querySelector('[data-src-open-config]')).not.toBeNull();
+    expect(card.querySelector('[data-src-copy]')).not.toBeNull();
+    open.mockRestore();
+  });
+
+  it('« Coller » remplit le champ avec le lien d’installation, relit le manifest ; sans lien, le dit', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clip });
+    const card = cards()[3];
+    (card.querySelector('[data-src-paste]') as HTMLElement).click();
+    await settle(200);
+    const url = card.querySelector('[data-sf="url"]') as HTMLInputElement;
+    expect(url.value).toBe('https://configurable.example/cfg456/manifest.json');
+    expect(card.querySelector('.src-cfg-status')!.textContent).toContain('Addon lu');
+    clip.readText.mockResolvedValueOnce('bonjour');
+    (card.querySelector('[data-src-paste]') as HTMLElement).click();
+    await settle(50);
+    expect(url.value).toBe('https://configurable.example/cfg456/manifest.json');
+    expect(card.querySelector('.src-cfg-status')!.textContent).toContain('Pas de lien');
+  });
+
+  it('« Copier l’URL » copie l’adresse du manifest ; retirer ramène à trois sources', async () => {
+    const card = cards()[3];
+    (card.querySelector('[data-src-menu]') as HTMLElement).click();
+    (card.querySelector('[data-src-copy]') as HTMLElement).click();
+    expect(clip.writeText).toHaveBeenCalledWith('https://configurable.example/cfg456/manifest.json');
     (cards()[3].querySelector('[data-src-menu]') as HTMLElement).click();
     (cards()[3].querySelector('[data-src-remove]') as HTMLElement).click();
     expect(cards()).toHaveLength(3);

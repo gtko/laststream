@@ -368,11 +368,20 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .src-edit { padding: 4px 14px 14px 52px; display: flex; flex-direction: column; gap: 10px; }
 .src-edit[hidden] { display: none; }
 .src-order-hint { margin-top: 2px; }
+.src-cfg { flex: none; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-2); display: inline-grid; place-items: center; color: var(--muted); }
+.src-cfg svg { width: 18px; height: 18px; }
+.src-cfg:hover, .src-cfg:focus-visible { border-color: var(--accent); color: var(--text); }
+.src-cfg-help { margin: 0 14px 14px 52px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
+.src-cfg-help[hidden] { display: none; }
+.src-cfg-help .src-cfg-steps { margin: 0; padding-left: 20px; }
+.src-cfg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.src-cfg-status { margin: 0; }
 @media (max-width: 760px) {
   .src-head { flex-wrap: wrap; row-gap: 6px; }
   .src-meta { flex-basis: 50%; }
   .src-toggle span { display: none; }
   .src-edit { padding-left: 14px; }
+  .src-cfg-help { margin: 0 14px 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .src-dot.is-load { animation: none; } }
 

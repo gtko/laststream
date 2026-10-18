@@ -1,7 +1,8 @@
 /* Réglages > lastAddon > Sources : cartes compactes (logo, nom, état), priorité par glisser-déposer ou boutons,
  * activation par source, informations lues dans le manifest de l'addon amont. */
-import { getBase } from '../data/config';
+import { getBase, isAndroidApp } from '../data/config';
 import { isMask, testSource } from '../data/configApi';
+import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -15,9 +16,14 @@ const info = new Map();
 let seq = 0;
 
 // ---------- Manifest ----------
+/** `stremio://…` → `https://…` (les autres adresses sont inchangées, espaces retirés). */
+export function toHttpsUrl(raw) {
+  return String(raw || '').trim().replace(/^stremio:\/\//i, 'https://');
+}
+
 /** `stremio://…` → https, avec ou sans /manifest.json : renvoie l'adresse du manifest (vide si invalide). */
 export function normalizeManifestUrl(raw) {
-  let u = String(raw || '').trim().replace(/^stremio:\/\//i, 'https://');
+  let u = toHttpsUrl(raw);
   if (!u) return '';
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
   try {
@@ -27,9 +33,19 @@ export function normalizeManifestUrl(raw) {
   } catch (_) { return ''; }
 }
 
-/** Nom, version, description, logo, types et présence de la ressource « stream » d'un manifest Stremio. */
+/** Page de configuration d'un addon : le /manifest.json devient /configure (préfixe de config et query gardés). */
+export function configureUrl(raw) {
+  const manifest = normalizeManifestUrl(raw);
+  if (!manifest) return '';
+  const url = new URL(manifest);
+  url.pathname = url.pathname.replace(/\/manifest\.json$/i, '/configure');
+  return url.toString();
+}
+
+/** Nom, version, description, logo, types, présence de la ressource « stream » et de la configuration d'un manifest Stremio. */
 export function manifestInfo(m) {
   const resources = Array.isArray(m && m.resources) ? m.resources.map((r) => (typeof r === 'string' ? r : r && r.name)) : [];
+  const hints = (m && m.behaviorHints && typeof m.behaviorHints === 'object') ? m.behaviorHints : {};
   return {
     name: String((m && m.name) || ''),
     version: String((m && m.version) || ''),
@@ -37,6 +53,7 @@ export function manifestInfo(m) {
     logo: String((m && (m.logo || m.icon)) || ''),
     types: Array.isArray(m && m.types) ? m.types : [],
     hasStream: resources.includes('stream'),
+    configurable: !!(hints.configurable || hints.configurationRequired),
   };
 }
 
@@ -65,7 +82,7 @@ async function loadInfo(src) {
     // Bloqué par CORS ou injoignable depuis le navigateur : lastAddon teste la source à notre place.
     try {
       const r = await testSource({ type: 'upstream', name: src.name || 'Source', url }, getBase());
-      result = { name: r.name || '', logo: r.logo || '', version: r.version || '', desc: r.description || '', types: r.types || [], status: r.ok ? 'ok' : 'ko', error: r.ok ? '' : r.error || 'Source injoignable' };
+      result = { name: r.name || '', logo: r.logo || '', version: r.version || '', desc: r.description || '', types: r.types || [], configurable: !!r.configurable, status: r.ok ? 'ok' : 'ko', error: r.ok ? '' : r.error || 'Source injoignable' };
     } catch (_e) {
       result = { status: 'ko', error: 'Source injoignable' };
     }
@@ -110,7 +127,7 @@ export function syncFromDom() {
     card.querySelectorAll('[data-sf]').forEach((inp) => {
       const f = inp.dataset.sf;
       const v = inp.value.trim();
-      if (f === 'apiKey') { if (v) s.apiKey = v; } else if (f === 'name') { if (v !== s.name) s.autoName = ''; s.name = v; } else s[f] = v;
+      if (f === 'apiKey') { if (v) s.apiKey = v; } else if (f === 'name') { if (v !== s.name) s.autoName = ''; s.name = v; } else if (f === 'url') s.url = toHttpsUrl(v); else s[f] = v;
     });
   });
 }
@@ -154,19 +171,42 @@ function cardParts(s, pos) {
   return { status, name, sub, logo, err: i.error || '' , pos };
 }
 
+/** Vrai pour un addon amont dont le manifest déclare une configuration (behaviorHints.configurable / configurationRequired). */
+function isConfigurable(s) {
+  return s.type !== 'torznab' && !!configureUrl(s.url) && !!(info.get(s.id) || {}).configurable;
+}
+
+/** Adresse copiée par « Copier l’URL » : le manifest d’un addon, l’adresse Torznab d’un indexeur. */
+function copyTarget(s) {
+  return s.type === 'torznab' ? String(s.baseUrl || '') : normalizeManifestUrl(s.url);
+}
+
 function headHTML(s, pos) {
   const p = cardParts(s, pos);
+  const cfg = isConfigurable(s);
+  const copy = copyTarget(s);
   return '<span class="src-pos" aria-label="Priorité ' + pos + '">' + pos + '</span>' +
     '<button type="button" class="src-handle" data-src-handle aria-label="Déplacer la source ' + esc(p.name) + ' (flèches haut et bas)" title="Glisser pour changer la priorité">⋮⋮</button>' +
     '<span class="src-logo' + (s.type === 'torznab' ? ' is-generic' : '') + '">' + p.logo + '</span>' +
     '<span class="src-meta"><strong class="src-name">' + esc(p.name) + '</strong><span class="src-sub">' + esc(p.sub) + '</span></span>' +
     '<span class="src-dot is-' + p.status + '" role="img" aria-label="' + esc(STATUS_LABEL[p.status] + (p.err ? ' : ' + p.err : '')) + '" title="' + esc(STATUS_LABEL[p.status] + (p.err ? ' : ' + p.err : '')) + '"></span>' +
     '<label class="src-toggle"><input type="checkbox" data-src-enabled' + (s.enabled ? ' checked' : '') + '> <span>' + (s.enabled ? 'Activée' : 'Désactivée') + '</span></label>' +
+    (cfg ? '<button type="button" class="src-cfg" data-src-config aria-label="Configurer l’addon ' + esc(p.name) + '" title="Configurer l’addon">' + ICON.gear + '</button>' : '') +
     '<span class="src-move"><button type="button" data-src-up aria-label="Monter la source ' + esc(p.name) + '">↑</button><button type="button" data-src-down aria-label="Descendre la source ' + esc(p.name) + '">↓</button></span>' +
     '<span class="ep-menu-wrap"><button type="button" class="src-more" data-src-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions pour ' + esc(p.name) + '">…</button>' +
     '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-src-edit>Modifier</button>' +
+    (cfg ? '<button type="button" role="menuitem" data-src-open-config>Ouvrir la configuration</button>' : '') +
+    (copy ? '<button type="button" role="menuitem" data-src-copy>Copier l’URL</button>' : '') +
     '<button type="button" role="menuitem" data-src-toggle>' + (s.enabled ? 'Désactiver' : 'Activer') + '</button>' +
     '<button type="button" role="menuitem" data-src-remove>Retirer</button></span></span>';
+}
+
+/** Aide affichée sous la ligne après « Configurer » : l’utilisateur revient coller le lien d’installation. */
+function cfgHelpHTML() {
+  return '<div class="src-cfg-help" hidden>' +
+    '<ol class="set-hint src-cfg-steps"><li>Configure l’addon dans la page ouverte.</li><li>Copie le lien d’installation.</li><li>Colle-le ici.</li></ol>' +
+    '<div class="src-cfg-actions"><button type="button" class="btn btn-ghost btn-sm" data-src-paste>Coller</button></div>' +
+    '<p class="set-hint src-cfg-status" aria-live="polite"></p></div>';
 }
 
 function editHTML(s) {
@@ -183,6 +223,7 @@ function cardHTML(s, pos) {
   const status = (info.get(s.id) || {}).status || 'unk';
   return '<div class="src-card' + (s.enabled ? '' : ' is-off') + (s.open ? ' is-open' : '') + '" data-srcid="' + s.id + '" data-status="' + status + '">' +
     '<div class="src-head">' + headHTML(s, pos) + '</div>' +
+    (s.type === 'torznab' ? '' : cfgHelpHTML()) +
     '<div class="src-edit"' + (s.open ? '' : ' hidden') + '>' + editHTML(s) + '</div></div>';
 }
 
@@ -267,6 +308,42 @@ detailEl.addEventListener('dragend', () => {
   detailEl.querySelectorAll('.src-card').forEach((c) => { c.classList.remove('is-drag', 'is-over'); c.draggable = false; });
 });
 
+// ---------- Configuration de l’addon ----------
+/** Page web hors de l’app : navigateur Android du système, sinon nouvel onglet. */
+function openWeb(url) {
+  if (isAndroidApp()) window.open(url, '_system');
+  else window.open(url, '_blank', 'noopener');
+}
+
+/** Coque Windows : navigateur par défaut via la coque ; repli sur l’ouverture web si la coque ne répond pas. */
+function openOutside(url) {
+  if (!isShellEnvironment()) { openWeb(url); return Promise.resolve(); }
+  return connectShell().then((t) => { if (t) openExternal(t, url); else openWeb(url); }, () => openWeb(url));
+}
+
+/** Le lien d’installation collé remplit le champ URL, relit le manifest ; l’enregistrement reste celui de la page. */
+async function pasteInstallLink(card, s) {
+  const status = card.querySelector('.src-cfg-status');
+  const input = card.querySelector('[data-sf="url"]');
+  const say = (msg) => { if (status) status.textContent = msg; };
+  let text = '';
+  try { text = navigator.clipboard && navigator.clipboard.readText ? await navigator.clipboard.readText() : ''; } catch (_) { text = ''; }
+  const link = toHttpsUrl(text);
+  if (!/^https?:\/\//i.test(link)) {
+    say('Pas de lien dans le presse-papiers : copie le lien d’installation, puis colle-le dans le champ URL ci-dessous.');
+    if (input) input.focus();
+    return;
+  }
+  if (input) input.value = link;
+  syncFromDom();
+  say('Lecture de l’addon…');
+  await loadInfo(s);
+  const i = info.get(s.id) || {};
+  say(i.status === 'ok' ? 'Addon lu : ' + s.name + '. Enregistre la page pour valider.'
+    : i.status === 'warn' ? 'Addon lu, mais sans ressource « stream ». Enregistre la page pour valider.'
+      : 'Lien collé, mais l’addon ne répond pas : ' + (i.error || 'vérifie le lien.'));
+}
+
 // ---------- Actions ----------
 function closeMenus() {
   detailEl.querySelectorAll('.src-card .ep-menu').forEach((m) => { m.hidden = true; });
@@ -304,6 +381,34 @@ detailEl.addEventListener('click', (e) => {
     box.hidden = !open;
     menu.setAttribute('aria-expanded', String(open));
     if (open) box.querySelector('button').focus();
+    return;
+  }
+  if (t.closest('[data-src-config]') || t.closest('[data-src-open-config]')) {
+    e.preventDefault();
+    closeMenus();
+    syncFromDom();
+    const s = list.find((x) => x.id === id);
+    const page = s && configureUrl(s.url);
+    const help = card.querySelector('.src-cfg-help');
+    if (help) help.hidden = false;
+    if (page) void openOutside(page);
+    return;
+  }
+  if (t.closest('[data-src-copy]')) {
+    e.preventDefault();
+    closeMenus();
+    syncFromDom();
+    const s = list.find((x) => x.id === id);
+    const text = s ? copyTarget(s) : '';
+    if (!text) return;
+    if (!navigator.clipboard || !navigator.clipboard.writeText) { toast('Copie impossible'); return; }
+    navigator.clipboard.writeText(text).then(() => toast('URL copiée'), () => toast('Copie impossible'));
+    return;
+  }
+  if (t.closest('[data-src-paste]')) {
+    e.preventDefault();
+    const s = list.find((x) => x.id === id);
+    if (s) void pasteInstallLink(card, s);
     return;
   }
   if (t.closest('[data-src-edit]')) {
@@ -345,6 +450,8 @@ detailEl.addEventListener('change', (e) => {
   if (t.matches('[data-src-enabled]')) { toggleEnabled(card.dataset.srcid, t.checked); return; }
   if (t.matches('[data-sf="url"]')) {
     const s = list.find((x) => x.id === card.dataset.srcid);
+    const https = toHttpsUrl(t.value);
+    if (https !== t.value) t.value = https; // stremio:// → https://
     syncFromDom();
     if (s) loadInfo(s).then(() => { const n = card.querySelector('[data-sf="name"]'); if (n && s.name) n.value = s.name; });
   }
