@@ -48,6 +48,8 @@ export interface Profile {
   allowedCatalogs?: string[];
   /** Profil administrateur du serveur (annoncé au compte propriétaire seulement). */
   isAdminProfile?: boolean;
+  /** Profil principal du compte : seul à gérer sources, extensions et clés (absent : serveur ancien, tout est permis). */
+  isMainProfile?: boolean;
 }
 
 export interface UserStore {

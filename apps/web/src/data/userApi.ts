@@ -42,6 +42,8 @@ export interface ProfileDto {
   allowedCatalogs: string[];
   /** Profil administrateur du serveur (seul à accéder à l'administration ; annoncé au propriétaire). */
   isAdminProfile?: boolean;
+  /** Profil principal du compte (gère sources, extensions et clés). */
+  isMainProfile?: boolean;
   createdAt: string;
 }
 

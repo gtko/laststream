@@ -90,3 +90,36 @@ describe('rendu de la console', () => {
     expect(document.querySelector('.adm-layer')).toBeNull();
   });
 });
+
+describe('profil principal : Réglages', () => {
+  const as2 = (isMainProfile: boolean | undefined, kid = false) => {
+    auth.status = 'ready';
+    auth.isOwner = true;
+    auth.profile = { id: 'p1', name: 'Jessica', isKid: kid, kidMaxAge: kid ? 10 : null, hasPin: false, allowedCatalogs: [], isMainProfile };
+  };
+  const cats = async () => {
+    const { showSettings } = (await import('../src/ui/settings.js')) as any;
+    await showSettings();
+    return Array.from(document.querySelectorAll('#detail [data-set-cat]')).map((b) => (b.textContent ?? '').trim());
+  };
+  it('profil principal : Sources et Serveur lastAddon visibles, formulaire de clés présent', async () => {
+    as2(true);
+    const c = await cats();
+    expect(c).toEqual(expect.arrayContaining(['Sources', 'Serveur lastAddon', 'Apparence']));
+    expect(document.querySelector('#set-la')).not.toBeNull();
+  });
+  it('profil secondaire (Jessica) : ni Sources, ni Serveur lastAddon, ni clés ; ses préférences restent', async () => {
+    as2(false);
+    const c = await cats();
+    expect(c).not.toContain('Sources');
+    expect(c).not.toContain('Serveur lastAddon');
+    expect(c).toEqual(expect.arrayContaining(['Profil et compte', 'Langue et région', 'Audio et sous-titres', 'Apparence', 'Lecture', 'Accueil et recommandations']));
+    expect(document.querySelector('#set-la')).toBeNull();
+  });
+  it('profil enfant : pas de Sources ni de Serveur', async () => {
+    as2(false, true);
+    const c = await cats();
+    expect(c).not.toContain('Sources');
+    expect(c).not.toContain('Serveur lastAddon');
+  });
+});

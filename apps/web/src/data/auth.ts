@@ -44,6 +44,11 @@ export const kidSection = (id: string): boolean => !isKidProfile() || sectionAll
 export const isKidProfile = (): boolean => kidMaxAge() !== null;
 /** Le compte connecté est le propriétaire du serveur (role === 'owner'). */
 export const isOwner = (): boolean => auth.isOwner;
+/**
+ * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Mode local (sans compte) : toujours ;
+ * serveur ancien qui n'annonce rien : traité comme principal. Les profils secondaires et enfants n'ont que leurs préférences.
+ */
+export const isMainProfile = (): boolean => !isServerMode() || auth.profile?.isMainProfile !== false;
 /** Profil administrateur du serveur : le seul à voir et ouvrir l'administration (pas le conjoint, pas les enfants). */
 export const isAdminProfile = (): boolean => auth.profile?.isAdminProfile === true;
 /** Accès à la console #/admin : propriétaire, session serveur active, profil adulte désigné administrateur. */
@@ -156,14 +161,20 @@ async function syncPrefsIn(profileId: string): Promise<void> {
     if (Object.keys(settings).length) applyPrefs(settings);
     else await api.putSettings(profileId, snapshotPrefs());
     applyAccountFilters(profileId, settings); // titres masqués, genres bannis, séries vues en entier (par profil)
-    const verdict = await reconcileConfig(settings);
-    if (verdict === 'push') pushConfig(getConfig());
+    // Profil secondaire ou enfant : la config (sources, extensions, clés) est celle du profil principal du compte, en lecture seule.
+    let configSettings = settings;
+    if (!isMainProfile()) {
+      const main = auth.profiles.find((p) => p.isMainProfile && p.id !== profileId);
+      if (main) configSettings = (await api.getSettings(main.id).catch(() => ({ settings: {} }))).settings;
+    }
+    const verdict = await reconcileConfig(configSettings);
+    if (verdict === 'push' && isMainProfile()) pushConfig(getConfig());
   } catch { /* Réglages locaux conservés. */ }
 }
 
 /** Envoie la config lastAddon chiffrée au profil actif (sans effet hors mode serveur ; erreurs ignorées). */
 export function pushConfig(config: string): void {
-  if (!isServerMode() || !auth.profile) return;
+  if (!isServerMode() || !auth.profile || !isMainProfile()) return;
   const value = configForAccount(config);
   if (!value) return;
   api.putSettings(auth.profile.id, { [CONFIG_SETTING_KEY]: value }).catch(() => undefined);

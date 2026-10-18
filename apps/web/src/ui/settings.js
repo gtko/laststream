@@ -13,7 +13,7 @@ import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
-import { auth, canAdmin, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
+import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
 import { invitesCard, refreshInvites } from './invites.js';
@@ -201,7 +201,8 @@ let activeCat = 'account';
 let lockUntil = 0;
 
 function categories() {
-  return CATEGORIES.filter((c) => c.id !== 'home' || !isKidProfile());
+  const main = isMainProfile() && !isKidProfile();
+  return CATEGORIES.filter((c) => (c.id !== 'home' || !isKidProfile()) && (main || (c.id !== 'server' && c.id !== 'sources')));
 }
 
 function pageHTML() {
@@ -215,7 +216,7 @@ function pageHTML() {
     panelHTML(cat('playback'), PANEL_DESC.playback, playbackPanel()),
     panelHTML(cat('audio'), PANEL_DESC.audio, audioPanel()),
     cat('home') ? panelHTML(cat('home'), PANEL_DESC.home, homePanelHTML()) : '',
-    serverFormHTML(cats),
+    cat('server') ? serverFormHTML(cats) : '',
   ].join('');
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="set-head">' +
@@ -280,6 +281,7 @@ async function dropServerDebridKey(decoded, enc, base) {
 }
 
 async function loadConfig() {
+  if (!detailEl.querySelector('#set-la')) return; // profil secondaire ou enfant : ni sources ni clés
   const token = ++ed.token;
   ed.loading = true;
   ed.error = '';
