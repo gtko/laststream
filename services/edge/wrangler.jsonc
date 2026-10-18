@@ -6,6 +6,12 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": false },
+  // Application : Worker « lastaddon-core » appelé par Service Binding (toutes les routes).
+  "services": [{ "binding": "CORE", "service": "lastaddon-core" }],
+  "vars": {
+    // Repli vers le tunnel du PC si core renvoie 5xx ET qu'un tunnel est enregistré. « 0 » le désactive (puis wrangler deploy).
+    "TUNNEL_FALLBACK": "1"
+  },
   "kv_namespaces": [
     { "binding": "LASTSTREAM_ROUTE", "id": "7b2471b0347c4620b96b2d54a6142ed0" }
   ]

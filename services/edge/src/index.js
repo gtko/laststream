@@ -1,5 +1,6 @@
-// Relais à adresse fixe vers le lastAddon de l'utilisateur, joignable par un tunnel rapide cloudflared dont l'URL change.
-// L'URL courante du tunnel est enregistrée par le PC (POST /__laststream/register, secret partagé) dans le KV LASTSTREAM_ROUTE.
+// Adresse publique fixe de Laststream : relaie toutes les routes vers le Worker « lastaddon-core » (Service Binding CORE).
+// Repli optionnel vers le lastAddon du PC par un tunnel rapide cloudflared (dont l'URL change), uniquement si core renvoie 5xx
+// et qu'un tunnel est enregistré (POST /__laststream/register, secret partagé, KV LASTSTREAM_ROUTE). Désactivable : TUNNEL_FALLBACK=0.
 
 import { handleRange, RANGE_PATH } from './range.js';
 
@@ -115,7 +116,9 @@ function upstreamHeaders(request, publicHost, env) {
 }
 
 const TRANSIENT_STATUS = new Set([502, 503, 504, 530, 1033]);
+// Tunnel absent côté Cloudflare : rien n'a atteint le serveur, le corps peut être renvoyé sans risque.
 const TUNNEL_DOWN_STATUS = new Set([530, 1033]);
+const NO_STATUS = new Set();
 const MAX_BUFFERED_BODY = 1024 * 1024;
 const MAX_RETRIES = 2;
 
@@ -150,65 +153,106 @@ function passthrough(upstream) {
   return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
 }
 
+/** Repli vers le tunnel du PC : actif sauf si la variable TUNNEL_FALLBACK vaut « 0 » (ou « off », « false »). */
+export function fallbackEnabled(env) {
+  return !['0', 'off', 'false'].includes(String(env.TUNNEL_FALLBACK ?? '1').toLowerCase());
+}
+
+/**
+ * Envoie la requête via `send` avec réessais. Renvoie { response } (réponse à restituer, éventuellement 5xx réel) ou
+ * { response: null, detail } quand rien d'exploitable n'est revenu (erreurs réseau, cible absente).
+ */
+async function forward(send, { retries, idempotent, downStatus, env }) {
+  let detail = 'inconnu';
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (attempt > 0) await sleep(retryDelay(env));
+    let upstream;
+    try {
+      upstream = await send();
+    } catch (error) {
+      detail = String(error?.message ?? error).slice(0, 120);
+      continue;
+    }
+    if (!TRANSIENT_STATUS.has(upstream.status)) return { response: upstream };
+    detail = `statut amont ${upstream.status}`;
+    const down = downStatus.has(upstream.status);
+    // Avec corps, seule une cible absente (rien n'a atteint le serveur) autorise un nouvel essai.
+    if (attempt < retries && (idempotent || down)) {
+      await upstream.body?.cancel();
+      continue;
+    }
+    // Un 502/503/504 réel du serveur est restitué tel quel ; seule une cible absente est masquée.
+    if (!down) return { response: upstream };
+    break;
+  }
+  return { response: null, detail };
+}
+
 async function relay(request, env) {
   const url = new URL(request.url);
   if (isBlockedPath(url.pathname)) {
     return json(403, { error: 'forbidden_path', message: 'Le relais TV HLS ne passe pas par ce domaine.' });
   }
 
-  // Relu à chaque requête (cacheTtl minimal du KV) : aucune URL conservée dans l'isolate.
-  const stored = await env.LASTSTREAM_ROUTE.get(ROUTE_KEY, { type: 'json', cacheTtl: 30 });
-  const origin = parseTunnelUrl(stored?.url);
-  if (origin === null) {
-    return unavailable(request, { error: 'no_tunnel', message: 'Aucun tunnel enregistré : le serveur est hors ligne.' }, '30');
-  }
-
-  const target = `${origin}${url.pathname}${url.search}`;
   const headers = upstreamHeaders(request, url.host, env);
   const hasBody = request.body !== null && request.method !== 'GET' && request.method !== 'HEAD';
   const idempotent = !hasBody;
 
-  // GET/HEAD/corps vide : 2 réessais. Corps non vide : tamponné s'il est petit pour pouvoir être renvoyé, 1 réessai ; sinon aucun.
+  // GET/HEAD/corps vide : 2 réessais. Corps non vide : tamponné s'il est petit pour pouvoir être renvoyé, 1 réessai ; sinon aucun
+  // réessai et aucun repli (le flux est consommé par le premier envoi).
   let body;
   let retries = MAX_RETRIES;
+  let replayable = true;
   if (hasBody) {
     retries = 0;
+    replayable = false;
     body = request.body;
     const length = Number(request.headers.get('content-length'));
     if (request.headers.has('content-length') && Number.isFinite(length) && length <= MAX_BUFFERED_BODY) {
       body = await request.arrayBuffer();
       retries = 1;
+      replayable = true;
     }
   }
 
-  let detail = 'inconnu';
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    if (attempt > 0) await sleep(retryDelay(env));
-    let upstream;
-    try {
-      upstream = await fetch(target, { method: request.method, headers, body, redirect: 'manual' });
-    } catch (error) {
-      detail = String(error?.message ?? error).slice(0, 120);
-      continue;
+  // 1. lastaddon-core (Worker, Service Binding) : toutes les routes.
+  const core =
+    env.CORE === undefined
+      ? { response: null, detail: 'liaison CORE absente' }
+      : await forward(() => env.CORE.fetch(new Request(request.url, { method: request.method, headers, body, redirect: 'manual' })), {
+          retries,
+          idempotent,
+          downStatus: NO_STATUS,
+          env,
+        });
+  if (core.response !== null && core.response.status < 500) return passthrough(core.response);
+
+  // 2. Repli vers le tunnel du PC, uniquement si core renvoie 5xx (ou échoue) ET qu'un tunnel est enregistré.
+  let detail = core.detail ?? `statut core ${core.response?.status}`;
+  if (replayable && fallbackEnabled(env)) {
+    // Relu à chaque requête (cacheTtl minimal du KV) : aucune URL conservée dans l'isolate.
+    const stored = await env.LASTSTREAM_ROUTE.get(ROUTE_KEY, { type: 'json', cacheTtl: 30 });
+    const origin = parseTunnelUrl(stored?.url);
+    if (origin !== null) {
+      const target = `${origin}${url.pathname}${url.search}`;
+      const tunnel = await forward(() => fetch(target, { method: request.method, headers, body, redirect: 'manual' }), {
+        retries,
+        idempotent,
+        downStatus: TUNNEL_DOWN_STATUS,
+        env,
+      });
+      if (tunnel.response !== null && (tunnel.response.status < 500 || core.response === null)) {
+        await core.response?.body?.cancel();
+        return passthrough(tunnel.response);
+      }
+      await tunnel.response?.body?.cancel();
+      detail = `${detail} ; tunnel : ${tunnel.detail ?? `statut ${tunnel.response?.status}`}`;
     }
-    if (!TRANSIENT_STATUS.has(upstream.status)) return passthrough(upstream);
-    detail = `statut amont ${upstream.status}`;
-    const down = TUNNEL_DOWN_STATUS.has(upstream.status);
-    // Avec corps, seul 530/1033 (tunnel absent, rien n'a atteint le serveur) autorise un nouvel essai.
-    const mayRetry = attempt < retries && (idempotent || down);
-    if (mayRetry) {
-      await upstream.body?.cancel();
-      continue;
-    }
-    // Un 502/503/504 réel du serveur est restitué tel quel ; seul le tunnel absent est masqué.
-    if (!down) return passthrough(upstream);
-    break;
   }
-  return unavailable(
-    request,
-    { error: 'tunnel_unreachable', message: 'Le serveur est injoignable pour le moment.', detail },
-    '15',
-  );
+
+  // 3. Rien d'exploitable : le 5xx réel de core est restitué, sinon page d'attente / JSON 503.
+  if (core.response !== null) return passthrough(core.response);
+  return unavailable(request, { error: 'upstream_unreachable', message: 'Le serveur est injoignable pour le moment.', detail }, '15');
 }
 
 export default {

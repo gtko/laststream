@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import worker, { isBlockedPath, parseTunnelUrl } from '../src/index.js';
+import worker, { fallbackEnabled, isBlockedPath, parseTunnelUrl } from '../src/index.js';
 
 const SECRET = 'secret-de-test-registre-0123456789';
 const realFetch = globalThis.fetch;
@@ -8,11 +8,25 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function makeEnv(initial) {
+/** Liaison CORE de test : `handler(request)` ; sans handler, core est en panne (exception), ce qui exerce le repli tunnel. */
+function coreBinding(handler) {
+  const calls = [];
+  return {
+    calls,
+    fetch: async (request) => {
+      calls.push(request);
+      if (!handler) throw new TypeError('core indisponible');
+      return handler(request);
+    },
+  };
+}
+
+function makeEnv(initial, core = coreBinding()) {
   const store = new Map(initial ? [['tunnel', JSON.stringify(initial)]] : []);
   return {
     REGISTER_SECRET: SECRET,
     RETRY_DELAY_MS: 1,
+    CORE: core,
     EDGE_SECRET: 'secret-de-test-du-relais-0123456789',
     LASTSTREAM_ROUTE: {
       get: async (key, opt) => (store.has(key) ? (opt === 'json' || opt?.type === 'json' ? JSON.parse(store.get(key)) : store.get(key)) : null),
@@ -77,7 +91,7 @@ describe('relais', () => {
   it('503 clair sans tunnel enregistré', async () => {
     const res = await call(makeEnv(), '/health');
     assert.equal(res.status, 503);
-    assert.equal((await res.json()).error, 'no_tunnel');
+    assert.equal((await res.json()).error, 'upstream_unreachable');
   });
   it('503 clair si le tunnel est injoignable', async () => {
     globalThis.fetch = async () => {
@@ -85,7 +99,7 @@ describe('relais', () => {
     };
     const res = await call(makeEnv({ url: 'https://abc.trycloudflare.com' }), '/health');
     assert.equal(res.status, 503);
-    assert.equal((await res.json()).error, 'tunnel_unreachable');
+    assert.equal((await res.json()).error, 'upstream_unreachable');
   });
   it('relaie méthode, chemin, query, corps ; remplace les en-têtes de confiance ; renvoie la réponse', async () => {
     let seen;
@@ -102,6 +116,7 @@ describe('relais', () => {
       body: '{"x":1}',
       headers: {
         'content-type': 'application/json',
+        'content-length': '7',
         authorization: 'Bearer t',
         'cf-connecting-ip': '198.51.100.4',
         'x-laststream-edge': 'forge',
@@ -156,7 +171,7 @@ describe('résilience', () => {
     const calls = sequence(new TypeError('boom'));
     const res = await call(env0(), '/health');
     assert.equal(res.status, 503);
-    assert.equal((await res.json()).error, 'tunnel_unreachable');
+    assert.equal((await res.json()).error, 'upstream_unreachable');
     assert.equal(calls(), 3);
   });
   it('GET : un 503 persistant du serveur est restitué tel quel', async () => {
@@ -219,5 +234,93 @@ describe('résilience', () => {
     assert.match(api.headers.get('content-type'), /json/);
     const none = await call(makeEnv(), '/', { headers: { accept: 'text/html' } });
     assert.match(none.headers.get('content-type'), /text\/html/);
+  });
+});
+
+describe('lastaddon-core par Service Binding', () => {
+  const okCore = (status = 200, text = 'depuis core') => coreBinding(() => new Response(text, { status, headers: { 'x-core': '1' } }));
+  const noTunnelFetch = () => {
+    globalThis.fetch = async () => {
+      throw new Error('le tunnel ne doit pas être appelé');
+    };
+  };
+
+  it('relaie toutes les routes vers core avec les en-têtes de confiance, sans toucher au tunnel', async () => {
+    noTunnelFetch();
+    const core = okCore(201);
+    const env = makeEnv({ url: 'https://abc.trycloudflare.com' }, core);
+    const res = await call(env, '/user/login?a=1', {
+      method: 'POST',
+      body: '{"x":1}',
+      headers: { 'content-length': '7', 'cf-connecting-ip': '198.51.100.4', 'x-laststream-client-ip': '6.6.6.6', authorization: 'Bearer t' },
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.headers.get('x-core'), '1');
+    assert.equal(await res.text(), 'depuis core');
+    assert.equal(core.calls.length, 1);
+    const sent = core.calls[0];
+    assert.equal(new URL(sent.url).pathname + new URL(sent.url).search, '/user/login?a=1');
+    assert.equal(sent.method, 'POST');
+    assert.equal(await sent.text(), '{"x":1}');
+    assert.equal(sent.headers.get('x-laststream-edge'), env.EDGE_SECRET);
+    assert.equal(sent.headers.get('x-laststream-client-ip'), '198.51.100.4');
+    assert.equal(sent.headers.get('authorization'), 'Bearer t');
+    assert.equal(sent.headers.get('cf-connecting-ip'), null);
+  });
+  it('un 4xx de core est restitué sans repli', async () => {
+    noTunnelFetch();
+    const res = await call(makeEnv({ url: 'https://abc.trycloudflare.com' }, okCore(401)), '/user/login', { method: 'POST' });
+    assert.equal(res.status, 401);
+  });
+  it('relais TV HLS : 403 sans appeler core', async () => {
+    const core = okCore();
+    assert.equal((await call(makeEnv(null, core), '/abc/lt/tv/hls')).status, 403);
+    assert.equal(core.calls.length, 0);
+  });
+  it('réessaie core sur 503 transitoire puis réussit', async () => {
+    let n = 0;
+    const core = coreBinding(() => new Response('x', { status: (n += 1) < 3 ? 503 : 200 }));
+    noTunnelFetch();
+    const res = await call(makeEnv(null, core), '/health');
+    assert.equal(res.status, 200);
+    assert.equal(core.calls.length, 3);
+  });
+  it('core 5xx + tunnel enregistré : repli vers le tunnel', async () => {
+    const seen = [];
+    globalThis.fetch = async (target) => {
+      seen.push(target);
+      return new Response('depuis le PC', { status: 200 });
+    };
+    const res = await call(makeEnv({ url: 'https://abc.trycloudflare.com' }, okCore(500, 'oups')), '/torrents');
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'depuis le PC');
+    assert.deepEqual(seen, ['https://abc.trycloudflare.com/torrents']);
+  });
+  it('core 5xx sans tunnel enregistré : le 5xx de core est restitué', async () => {
+    noTunnelFetch();
+    const res = await call(makeEnv(null, okCore(500, 'oups')), '/torrents');
+    assert.equal(res.status, 500);
+    assert.equal(await res.text(), 'oups');
+  });
+  it('core 5xx + tunnel qui échoue aussi : le 5xx de core est restitué', async () => {
+    globalThis.fetch = async () => {
+      throw new TypeError('boom');
+    };
+    const res = await call(makeEnv({ url: 'https://abc.trycloudflare.com' }, okCore(500, 'oups')), '/torrents');
+    assert.equal(res.status, 500);
+  });
+  it('TUNNEL_FALLBACK=0 : aucun repli', async () => {
+    noTunnelFetch();
+    const env = makeEnv({ url: 'https://abc.trycloudflare.com' }, okCore(500, 'oups'));
+    env.TUNNEL_FALLBACK = '0';
+    assert.equal((await call(env, '/torrents')).status, 500);
+    assert.equal(fallbackEnabled(env), false);
+    assert.equal(fallbackEnabled({}), true);
+  });
+  it('core injoignable sans tunnel : page d’attente HTML pour un navigateur', async () => {
+    noTunnelFetch();
+    const res = await call(makeEnv(null), '/', { headers: { accept: 'text/html' } });
+    assert.equal(res.status, 503);
+    assert.match(await res.text(), /Laststream redémarre/);
   });
 });
