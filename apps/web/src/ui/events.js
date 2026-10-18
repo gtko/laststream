@@ -19,7 +19,7 @@ import { closePlayer, openPlayer, playerKey, showBanner, updateBanner, zap } fro
 import { cancelDwell, postYT, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
-import { playFrom } from './sources-ui.js';
+import { openSources, playFrom } from './sources-ui.js';
 import { state } from './state.js';
 import { allChannels, bannerEl, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
@@ -176,6 +176,13 @@ document.addEventListener('click', (e) => {
       b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span>';
     });
     toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
+    return;
+  }
+  const srcOpen = t.closest('[data-sources-open]');
+  if (srcOpen && state.model) {
+    e.preventDefault();
+    const m = state.model;
+    openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen);
     return;
   }
   const play = t.closest('[data-play]');

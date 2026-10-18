@@ -270,7 +270,10 @@ describe('interface portée', () => {
     expect(a.querySelector('.soon-title')).toBeNull(); // « Épisode 4 » est un titre générique
     expect(a.querySelector('.ep-title')!.textContent).toBe('É4');
     expect(a.querySelector('.ep-meta')!.textContent).toMatch(/^Le .+ · Bientôt$/);
-    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, pas une boîte vide
+    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, net
+    expect(a.querySelector('.soon.is-blur')).toBeNull(); // le flou n'est que le dernier repli
+    expect(a.querySelector('.soon-poster')!.getAttribute('src')).toContain('/w342/'); // affiche de la série en vignette
+    expect(a.querySelector('.soon-series')!.textContent!.length).toBeGreaterThan(0); // nom de la série au-dessus de S1 · É4
     expect(a.classList.contains('is-seen')).toBe(false);
     expect(a.querySelector('.soon-bell')).not.toBeNull();
     expect(a.querySelector('.ep-seen')).toBeNull();
@@ -342,10 +345,19 @@ describe('interface portée', () => {
     expect(tiles.every((t) => t.querySelector('.t-cinema'))).toBe(true);
     // Les films « Au cinéma » ne sont pas dans les rangées normales.
     expect(document.querySelectorAll('#app #films [data-tile^="movie:5"]')).toHaveLength(0);
+    const streamCallsBefore = calls.filter((c) => c.includes('/stream/')).length;
     location.hash = '#/movie/505';
     await settle(400);
     const d = document.getElementById('detail')!;
     expect(d.querySelector('.f-actions [data-play]')).toBeNull();
+    // Bouton rond « Sources » : présent, mais rien n'est vérifié tant qu'on ne clique pas.
+    const srcBtn = d.querySelector('.f-actions [data-sources-open]') as HTMLElement;
+    expect(srcBtn.classList.contains('btn-round')).toBe(true);
+    expect(srcBtn.getAttribute('data-tip')).toBe('Voir les sources');
+    expect(calls.filter((c) => c.includes('/stream/')).length).toBe(streamCallsBefore);
+    // Le « Suivre » est la pastille principale : pas de cloche en double.
+    expect(d.querySelectorAll('.f-actions [data-follow="movie:505"]')).toHaveLength(1);
+    expect(d.querySelector('.f-actions .btn-pill.is-cinema')).not.toBeNull();
     expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
     const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
     expect(be.textContent).toBe('Me prévenir de la sortie en VOD');
