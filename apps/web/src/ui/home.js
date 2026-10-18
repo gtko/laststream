@@ -22,6 +22,7 @@ import { brand, row, section } from './fragments.js';
 import { ICON } from './icons.js';
 import { renderLibrary } from './library.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
+import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -247,6 +248,8 @@ export function headerA() {
     '<a href="#series" data-scroll="series">Séries</a>' +
     '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
     '<a href="#/emissions" data-showsnav>Émissions TV</a>' +
+    '<a href="#/collections" data-go>Collections</a>' +
+    '<a href="#/discover" data-go>Découvrir</a>' +
     '<a href="#/services" data-svcs>Services</a>' +
     '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a><a href="#" data-noop>Stats</a></nav>' +
     '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
@@ -261,12 +264,14 @@ export function viewA(d) {
     '<div id="follow-slot"></div>' +
     '<div id="ai-slot"></div>' +
     section('top10', 'Top 10 aujourd’hui', r.top, (l) => row(l.map((it, i) => topCard(it, i + 1)).join(''))) +
+    '<div id="feat-slot"></div>' +
     '<div id="up-slot"></div>' +
     '<div id="live-slot"></div>' +
     '<div id="tonight-slot"></div>' +
     '<div id="shows-slot"></div>' +
     '<div id="reg-slot"></div>' +
     '<div id="svc-slot"></div>' +
+    '<div id="col-slot"></div>' +
     '<div id="lib-slot"></div>' +
     '</div></main>';
 }
@@ -318,6 +323,7 @@ export function renderHome() {
   hydrateContinue(document.getElementById('cont-slot'));
   renderAI();
   renderUpcoming();
+  if (!state.data.kids) renderFeatured();
   renderLive();
   if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
@@ -328,13 +334,13 @@ export function renderHome() {
   } else {
     initHero(d.heroes);
     // Services de streaming puis Ma bibliothèque terminent la page, une fois les rangées chargées.
-    startRegistry({ seen: d.heroes.map((x) => x.key), onDone: () => { renderServices(); renderLibrary(); } });
+    startRegistry({ seen: d.heroes.map((x) => x.key), onDone: () => { renderHomeCollections().then((ok) => { if (!ok && state.status === 'ready') renderServices(); }); renderLibrary(); } });
   }
 }
 export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
-export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : '#/');
-export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : ' data-noop');
+export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : '#/');
+export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : ' data-noop');
 
 /**
  * Signaux envoyés à /recommend : bibliothèque et titres entamés, du plus récent au plus ancien.

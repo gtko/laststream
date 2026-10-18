@@ -225,6 +225,8 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (state.ctxMenu) closeCtx();
+  const goT = t.closest('[data-go]');
+  if (goT && goT.getAttribute('href')) { e.preventDefault(); go(goT.getAttribute('href'), goT); return; }
   const brw = t.closest('[data-browse]');
   if (brw) { e.preventDefault(); go('#/browse/' + brw.dataset.browse, brw); return; }
   const srch = t.closest('[data-search]');
@@ -316,6 +318,7 @@ document.addEventListener('visibilitychange', () => {
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement)) return;
+  if (img.closest('.ct')) return; // tuiles de collections : repli géré dans collections.js
   if (img.classList.contains('logo-img')) {
     const span = document.createElement('span');
     span.className = 'title-text';

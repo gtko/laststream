@@ -15,6 +15,8 @@ import { closeModal } from './modal.js';
 import { showPerson } from './person.js';
 import { closePlayer } from './player.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
+import { showCollection, showCollections } from './collections.js';
+import { showDiscover } from './discover.js';
 import { showService, showServices } from './services.js';
 import { showSettings } from './settings.js';
 import { state } from './state.js';
@@ -36,6 +38,9 @@ export function go(url, opener) {
 export function showView(r) {
   if (r.kind === 'service') showService(r.slug);
   else if (r.kind === 'services') showServices();
+  else if (r.kind === 'collections') showCollections(r.cat);
+  else if (r.kind === 'collection') showCollection(r.id);
+  else if (r.kind === 'discover') showDiscover();
   else if (r.kind === 'library') showLibrary();
   else if (r.kind === 'hidden') showHidden();
   else if (r.kind === 'settings') showSettings();
@@ -58,7 +63,7 @@ export function applyRestore() {
 export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -72,6 +77,11 @@ function parseRouteRaw() {
   r = /^#\/person\/(\d{1,9})$/.exec(h);
   if (r) return { kind: 'person', id: r[1] };
   if (h === '#/services') return { kind: 'services' };
+  r = /^#\/collections(?:\/([A-Za-z0-9_-]{1,64}))?$/.exec(h);
+  if (r) return { kind: 'collections', cat: r[1] || '' };
+  r = /^#\/collection\/([A-Za-z0-9_-]{1,64})$/.exec(h);
+  if (r) return { kind: 'collection', id: r[1] };
+  if (h === '#/discover') return { kind: 'discover' };
   if (h === '#/library') return { kind: 'library' };
   if (h === '#/hidden') return { kind: 'hidden' };
   if (h === '#/settings') return { kind: 'settings' };
