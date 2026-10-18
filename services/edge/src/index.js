@@ -1,6 +1,8 @@
 // Relais à adresse fixe vers le lastAddon de l'utilisateur, joignable par un tunnel rapide cloudflared dont l'URL change.
 // L'URL courante du tunnel est enregistrée par le PC (POST /__laststream/register, secret partagé) dans le KV LASTSTREAM_ROUTE.
 
+import { handleRange, RANGE_PATH } from './range.js';
+
 const ROUTE_KEY = 'tunnel';
 const REGISTER_PATH = '/__laststream/register';
 const MAX_REGISTER_BYTES = 1024;
@@ -213,6 +215,7 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === REGISTER_PATH) return register(request, env);
+    if (pathname === RANGE_PATH) return handleRange(request, env);
     if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
     return relay(request, env);
   },
