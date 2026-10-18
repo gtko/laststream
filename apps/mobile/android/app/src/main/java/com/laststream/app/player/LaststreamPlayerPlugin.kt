@@ -45,7 +45,7 @@ class LaststreamPlayerPlugin : Plugin() {
         if (req == null) { call.reject("L'adresse de lecture (url) est obligatoire", "bad_request"); return }
         PlayerHub.pending = req
         val running = PlayerHub.activity
-        if (running != null) {
+        if (running != null && !running.isFinishing) {
             running.runOnUiThread { running.load(req) }
         } else {
             val i = Intent(context, PlayerActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

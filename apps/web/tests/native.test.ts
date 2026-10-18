@@ -7,10 +7,10 @@ import { normalizeBase } from '../src/data/config';
 import type { SubtitleTrack } from '../src/player/tracks';
 
 describe('réseau local (http Android)', () => {
-  it.each(['localhost', '127.0.0.1', '10.0.0.5', '192.168.1.20', '172.16.0.1', '172.31.255.254', '169.254.1.1', 'monpc.local', 'monpc', '[::1]', 'fd12:3456::1'])('%s est local', (h) => {
+  it.each(['localhost', '127.0.0.1', '10.0.0.5', '192.168.1.20', '172.16.0.1', '172.31.255.254', '169.254.1.1', 'monpc.local', '[::1]', 'fd12:3456::1'])('%s est local', (h) => {
     expect(isLanHost(h)).toBe(true);
   });
-  it.each(['8.8.8.8', '172.32.0.1', '172.15.0.1', '192.169.1.1', 'example.com', '300.1.1.1', ''])('%s n’est pas local', (h) => {
+  it.each(['8.8.8.8', '172.32.0.1', '172.15.0.1', '192.169.1.1', 'example.com', '300.1.1.1', 'monpc', 'nas.internal', ''])('%s n’est pas local', (h) => {
     expect(isLanHost(h)).toBe(false);
   });
   it('autorise https partout, http seulement en local', () => {

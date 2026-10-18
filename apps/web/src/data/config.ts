@@ -23,8 +23,11 @@ function readSettings(): LastAddonSettings {
     const raw = globalThis.localStorage?.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return { ...EMPTY };
     const parsed = JSON.parse(raw) as Partial<LastAddonSettings> | null;
+    const stored = typeof parsed?.base === 'string' ? parsed.base : '';
+    // Android : une adresse http stockée hors réseau local est écartée au démarrage.
+    const base = isAndroidApp() && stored && !cleartextAllowed(stored) ? '' : stored;
     return {
-      base: typeof parsed?.base === 'string' ? parsed.base : '',
+      base,
       config: typeof parsed?.config === 'string' ? parsed.config : '',
     };
   } catch {

@@ -1,6 +1,12 @@
 package com.laststream.app.player
 
+import android.app.PendingIntent
 import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.graphics.drawable.Icon
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
@@ -27,6 +33,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -107,6 +114,15 @@ class PlayerActivity : AppCompatActivity() {
     private var lastPos = 0.0
     private var lastDur = 0.0
     private var audioFocusHeld = false
+    private var resumeOnStart = false
+
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.action == PIP_ACTION && ::player.isInitialized) { setPlaying(!player.isPlaying); updatePipActions() }
+        }
+    }
+
+    companion object { const val PIP_ACTION = "com.laststream.app.PIP_TOGGLE" }
 
     // ---------- Cycle de vie ----------
 
@@ -124,7 +140,9 @@ class PlayerActivity : AppCompatActivity() {
         player.attachViews(videoLayout, null, true, false)
         player.setEventListener(::onPlayerEvent)
         handler.post(ticker)
-        PlayerHub.pending?.let { load(it) } ?: finish()
+        val pend = PlayerHub.pending
+        if (pend != null) load(pend) else { silentClose = true; finish() }
+        ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(PIP_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -132,27 +150,49 @@ class PlayerActivity : AppCompatActivity() {
         PlayerHub.pending?.let { load(it) }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (resumeOnStart && ::player.isInitialized) { resumeOnStart = false; setPlaying(true) }
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isInPictureInPictureMode && ::player.isInitialized) {
+            resumeOnStart = player.isPlaying
             if (player.isPlaying) player.pause()
+            rememberPosition()
             emitState(true)
             emitProgress(true)
         }
     }
 
+    /** Position courante gardée dans la requête en attente : une activité recréée reprend là où elle était. */
+    private fun rememberPosition() {
+        val r = req ?: return
+        req = r.copy(startPosition = lastPos, skipSegments = segments, nextEpisode = nextEpisode)
+        PlayerHub.pending = req
+    }
+
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        if (!closedSent && !silentClose) emitClosed()
+        try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
+        if (!closedSent && !silentClose && isFinishing) emitClosed()
         abandonAudioFocus()
         if (PlayerHub.activity === this) PlayerHub.activity = null
-        val p = player
-        val v = vlc
-        // La libération de libVLC peut bloquer : hors du fil principal.
+        if (isFinishing) PlayerHub.pending = null else rememberPosition()
+        val p = if (::player.isInitialized) player else null
+        val v = if (::vlc.isInitialized) vlc else null
+        // Fil principal : plus d'évènements ni de surface. Seule la libération (bloquante) passe en arrière-plan.
+        try { p?.setEventListener(null); p?.detachViews() } catch (_: Exception) { }
         thread(name = "vlc-release") {
-            try { p.setEventListener(null); p.stop(); p.release(); v.release() } catch (_: Exception) { }
+            try { p?.stop(); p?.release(); v?.release() } catch (_: Exception) { }
         }
         super.onDestroy()
+    }
+
+    override fun finish() {
+        if (PlayerHub.activity === this) PlayerHub.activity = null
+        super.finish()
     }
 
     override fun onUserLeaveHint() {
@@ -225,7 +265,7 @@ class PlayerActivity : AppCompatActivity() {
             setOnClickListener { doSkip() }
             setOnFocusChangeListener { _, f -> skipLabel.setTextColor(if (f) Tokens.BG else Tokens.TEXT); (getChildAt(0) as ImageView).setColorFilter(if (f) Tokens.BG else Color.WHITE) }
         }
-        ui.addView(skipButton, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(112) })
+        ui.addView(skipButton, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(40) })
 
         buildNextCard()
         buildPanel()
@@ -350,7 +390,7 @@ class PlayerActivity : AppCompatActivity() {
             addView(nextStill, LinearLayout.LayoutParams(kit.dp(150), kit.dp(100)))
             addView(body, LinearLayout.LayoutParams(kit.dp(300), -2))
         }
-        ui.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(112) })
+        ui.addView(nextCard, FrameLayout.LayoutParams(-2, -2, Gravity.END or Gravity.BOTTOM).apply { rightMargin = kit.dp(40); bottomMargin = kit.dp(40) })
     }
 
     private fun buildPanel() {
@@ -806,6 +846,7 @@ class PlayerActivity : AppCompatActivity() {
     /** Fermeture à l'initiative de l'utilisateur : `closed` part vers le JS, qui enregistre la progression. */
     private fun finishWithClosed() {
         if (!closedSent) emitClosed()
+        PlayerHub.activity = null
         finish()
     }
 
@@ -824,9 +865,16 @@ class PlayerActivity : AppCompatActivity() {
         if (controlsVisible && panelName == null && ::player.isInitialized && player.isPlaying) handler.postDelayed(hideRunnable, 3000)
     }
 
+    /** Au-dessus de la barre basse quand les contrôles sont visibles, près du bord sinon. */
+    private fun moveOverlays() {
+        val m = kit.dp(if (controlsVisible) 150 else 40)
+        listOf(skipButton, nextCard).forEach { v -> (v.layoutParams as FrameLayout.LayoutParams).bottomMargin = m; v.requestLayout() }
+    }
+
     private fun showControls() {
         if (!controlsVisible) {
             controlsVisible = true
+            moveOverlays()
             controls.visibility = View.VISIBLE
             controls.alpha = 0f
             controls.animate().alpha(1f).setDuration(180).start()
@@ -838,6 +886,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun hideControls() {
         if (panelName != null || scrubberBusy()) return
         controlsVisible = false
+        moveOverlays()
         controls.animate().alpha(0f).setDuration(220).withEndAction { if (!controlsVisible) controls.visibility = View.GONE }.start()
         root.requestFocus()
     }
@@ -845,6 +894,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun scrubberBusy() = ::scrubber.isInitialized && scrubber.isPressed
 
     private fun updatePlayIcons(playing: Boolean) {
+        updatePipActions()
         val res = if (playing) R.drawable.ic_pause else R.drawable.ic_play
         listOf(bigPlay, playIcon).forEach { b ->
             (b.getChildAt(0) as ImageView).setImageDrawable(androidx.core.content.ContextCompat.getDrawable(this, res)?.mutate())
@@ -907,6 +957,19 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun pipSupported() = Build.VERSION.SDK_INT >= 26 && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
+    private fun pipActions(): List<RemoteAction> {
+        val playing = ::player.isInitialized && player.isPlaying
+        val pi = PendingIntent.getBroadcast(this, 0, Intent(PIP_ACTION).setPackage(packageName), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val label = if (playing) "Pause" else "Lecture"
+        return listOf(RemoteAction(Icon.createWithResource(this, if (playing) R.drawable.ic_pause else R.drawable.ic_play), label, label, pi))
+    }
+
+    private fun updatePipActions() {
+        if (Build.VERSION.SDK_INT >= 26 && isInPictureInPictureMode) {
+            try { setPictureInPictureParams(PictureInPictureParams.Builder().setActions(pipActions()).build()) } catch (_: Exception) { }
+        }
+    }
+
     private fun enterPip() {
         if (!pipSupported()) { toast("Image dans l’image indisponible ici"); return }
         try {
@@ -918,7 +981,7 @@ class PlayerActivity : AppCompatActivity() {
             } catch (_: Exception) { }
             val ratio = Rational(w, h).let { if (it.toFloat() > 2.39f) Rational(239, 100) else if (it.toFloat() < 0.42f) Rational(100, 239) else it }
             hideControls()
-            enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(ratio).build())
+            enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(ratio).setActions(pipActions()).build())
         } catch (_: Exception) {
             toast("Image dans l’image refusée")
         }

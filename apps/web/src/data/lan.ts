@@ -1,7 +1,7 @@
 /* Adresses du réseau local : sur Android, le serveur lastAddon tourne sur le PC de l'utilisateur, en http. Le http n'est
  * accepté que pour ces adresses (Android ne sait pas limiter le trafic en clair à des plages IP). Fonctions pures, testées. */
 
-/** localhost, 127.x, 10.x, 172.16-31.x, 192.168.x, 169.254.x, IPv6 local, noms en .local / .lan / .home ou sans point. */
+/** localhost, 127.x, 10.x, 172.16-31.x, 192.168.x, 169.254.x, IPv6 local, noms en .local. */
 export function isLanHost(hostname: string): boolean {
   const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
   if (!h) return false;
@@ -13,7 +13,7 @@ export function isLanHost(hostname: string): boolean {
     if (m.slice(1).some((x) => Number(x) > 255)) return false;
     return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
   }
-  return /\.(local|lan|home|internal)$/.test(h) || !h.includes('.');
+  return /\.local$/.test(h);
 }
 
 /** `http://` n'est permis que vers le réseau local ; `https://` toujours. */

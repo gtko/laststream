@@ -5,7 +5,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:banner="@drawable/banner"
@@ -38,11 +38,10 @@
             android:name=".player.PlayerActivity"
             android:theme="@style/PlayerTheme"
             android:launchMode="singleTop"
-            android:taskAffinity="com.laststream.app.player"
             android:screenOrientation="sensorLandscape"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|layoutDirection"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|layoutDirection|density|fontScale|colorMode"
             android:exported="false" />
 
         <provider

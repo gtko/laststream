@@ -325,9 +325,9 @@ export class NativeEngine extends Emitter {
     on('state', (d) => { this.setState(d); this.emit('state'); });
     on('progress', (d) => { this.setState(d); this.emit('state'); });
     on('tracks', (d) => { this.audio = d.audio || []; this.subs = d.subs || []; this.emit('tracks'); });
-    on('ended', () => this.emit('ended'));
+    on('ended', (d) => { this.setState(d); this.emit('ended'); });
     on('error', (d) => this.emit('error', new Error('native:' + (d.code || 'inconnue'))));
-    on('closed', (d) => this.emit('closed', d));
+    on('closed', (d) => { this.setState(d); this.emit('closed', d); });
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
   }
