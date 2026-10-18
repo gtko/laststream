@@ -4,10 +4,11 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, reque
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { canonSummary, normalizeCanon, tmdbShape } from '../src/data/series';
 import { hasProviders, movieAvailability } from '../src/data/released';
 import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
 import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
-import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, PROBES } from '../src/data/rows';
+import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, passesQuality, pickSeed, PROBES, rowById } from '../src/data/rows';
 import { compactItems, packRecs, todayLocal, unpackRecs } from '../src/data/recs';
 import { pickTrailerKey, sortVideos } from '../src/data/trailers';
 import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
@@ -175,6 +176,31 @@ describe('recommandations du jour', () => {
   });
 });
 
+describe('qualité des rangées et graines', () => {
+  it('écarte actualités, talk-shows, téléréalité et titres trop peu votés', () => {
+    expect(passesQuality({ type: 'tv', genreIds: [10763], votes: 5000 })).toBe(false); // Tagesschau
+    expect(passesQuality({ type: 'tv', genreIds: [10767, 35], votes: 900 })).toBe(false); // talk-show
+    expect(passesQuality({ type: 'tv', genreIds: [10764], votes: 900 })).toBe(false);
+    expect(passesQuality({ type: 'tv', genreIds: [18], votes: 99 })).toBe(false);
+    expect(passesQuality({ type: 'tv', genreIds: [18], votes: 100 })).toBe(true);
+    expect(passesQuality({ type: 'movie', genreIds: [28], votes: 199 })).toBe(false);
+    expect(passesQuality({ type: 'movie', genreIds: [28], votes: 200 })).toBe(true);
+    expect(passesQuality({ type: 'movie', genreIds: [28] })).toBe(true); // nombre de votes inconnu
+  });
+  it('envoie la disponibilité du pays et l’exclusion des genres bruit dans les requêtes génériques', () => {
+    const ctx = makeCtx('CH', null, new Date(2026, 9, 18));
+    const series = rowById('series')!.fetch as { k: 'discover'; params: (c: typeof ctx) => Record<string, string> };
+    expect(series.params(ctx)).toMatchObject({ watch_region: 'CH', with_watch_monetization_types: 'flatrate|free|ads|rent|buy', without_genres: '10763,10767,10764', 'vote_count.gte': '100' });
+    const films = rowById('films')!.fetch as { k: 'discover'; params: (c: typeof ctx) => Record<string, string> };
+    expect(films.params(ctx)).toMatchObject({ watch_region: 'CH', 'vote_count.gte': '200' });
+  });
+  it('une graine ne pilote qu’une rangée : on prend la suivante', () => {
+    const used = new Set<string>(['tv:1']);
+    expect(pickSeed([{ key: 'tv:1' }, { key: 'movie:2' }, { key: 'tv:3' }], used)).toEqual({ key: 'movie:2' });
+    expect(pickSeed([{ key: 'tv:1' }], used)).toBeUndefined();
+  });
+});
+
 describe('registre des rangées', () => {
   it('a des identifiants uniques et des sondes pour chaque paramètre à vérifier', () => {
     const ids = [...ADULT_ROWS, ...KID_ROWS].map((r) => r.id);
@@ -288,6 +314,38 @@ describe('affiche typographique', () => {
     expect(html).toContain('>ST<');
     expect(html).toContain('2017 · Science-fiction');
     expect(html).toContain('--tp1:hsl(');
+  });
+});
+
+describe('structure canonique des séries', () => {
+  const raw = { source: 'tvdb', seasons: [
+    { season_number: 2, episodes: [{ episode_number: 1, aired: '2022-03-01', title: 'B' }] },
+    { seasonNumber: 1, name: 'S1', episodes: [{ number: 2, name: 'Deux', airDate: '2021-01-08', absoluteNumber: 2, still_path: '/x.jpg' }, { number: 1, name: 'Un', air_date: '2021-01-01', image: 'https://i/x.png' }] },
+    { number: 'x', episodes: [] },
+  ] };
+  it('accepte les variantes de noms de champs et trie saisons et épisodes', () => {
+    const c = normalizeCanon(raw)!;
+    expect(c.seasons.map((s) => s.number)).toEqual([1, 2]);
+    expect(c.seasons[0].episodes.map((e) => e.episode)).toEqual([1, 2]);
+    expect(c.seasons[0].episodes[0]).toMatchObject({ name: 'Un', airDate: '2021-01-01', still: 'https://i/x.png' });
+    expect(c.seasons[0].episodes[1]).toMatchObject({ absolute: 2, still: '/x.jpg' });
+    expect(c.seasons[1].airDate).toBe('2022-03-01');
+    expect(normalizeCanon(null)).toBeNull();
+    expect(normalizeCanon({ seasons: [] })).toBeNull();
+  });
+  it('résume : saisons au format TMDB, dernier épisode diffusé, prochain, compteurs', () => {
+    const c = normalizeCanon(raw)!;
+    const s = canonSummary(c, '2022-01-01');
+    expect(s.seasons).toEqual([
+      { season_number: 1, episode_count: 2, air_date: '2021-01-01', name: 'S1' },
+      { season_number: 2, episode_count: 1, air_date: '2022-03-01', name: '' },
+    ]);
+    expect(s.lastAired).toEqual({ season_number: 1, episode_number: 2 });
+    expect(s.next).toMatchObject({ season: 2, episode: 1, airDate: '2022-03-01' });
+    expect(s.nSeasons).toBe(2);
+    expect(s.nEpisodes).toBe(3);
+    expect(canonSummary(c, '2030-01-01').next).toBeNull();
+    expect(tmdbShape(c.seasons[0].episodes[1])).toMatchObject({ episode_number: 2, season_number: 1, still_path: '/x.jpg', air_date: '2021-01-08' });
   });
 });
 

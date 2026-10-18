@@ -67,6 +67,11 @@ Toute lecture et écriture de la bibliothèque, de la progression, de « Reprend
 - **Vu**, **Suivre** (films, séries, personnes), **notes** par demi-étoile, **calendrier** (`#/calendar`), badge « +N » : les routes serveur correspondantes (`/watched`, `/follows`, `/ratings`, `DELETE /continue`) sont optionnelles ; sur une 404 l'application garde l'état en local. Toute modification est affichée tout de suite et annulée si le serveur la refuse.
 - **Menu contextuel** unifié : clic droit, appui long, bouton « … », Maj+F10.
 
+### Séries : numérotation canonique et listes infinies
+
+- La fiche d'une série lit `GET {base}/{config}/lt/series/:tmdbId/episodes?language=…` (saisons et épisodes dans l'ordre diffusé de TheTVDB ou d'un groupe TMDB, numéros absolus, visuels rattachés). Sélecteur de saison, compteur « nouveaux épisodes », prochain épisode, clés « vu » et progression, Reprendre et identifiants de flux `tt:saison:épisode` suivent cette numérotation ; sur une 404, repli sur les saisons TMDB (`src/data/series.ts`, `src/ui/seasons.js`).
+- Les grilles paginées (Tout voir, bibliothèque, filmographie, chaînes TV, recherche) chargent la page suivante avant la fin (`src/ui/infinite.js`), mémorisent leur contenu pour le retour en arrière et gardent un lien « Charger plus » au clavier.
+
 ### TV en direct
 
 Catalogue Free-TV / iptv-org via `/lt/tv/channels` (pays, langue, catégorie, source, recherche, pagination) et `/lt/tv/facets` pour les compteurs ; filtres par défaut : pays de la région, français, chaînes fiables. Tolérant : un ancien serveur (liste complète sans champs étendus) fonctionne, filtré côté client. Si un flux échoue, les `alternatives` de la chaîne sont essayées avant « Cette chaîne ne répond pas ». Les playlists HLS ne passent jamais par le cache JSON (hls.js les lit directement, avec reprise sur erreur réseau ou média).

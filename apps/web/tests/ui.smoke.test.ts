@@ -34,6 +34,22 @@ function mockFetch(url: string, init?: RequestInit): Response {
     if (bare[2]) return json({ posters: bare[1] === '801' ? [{ file_path: '/found.jpg' }] : [], backdrops: [] });
     return json({ id: Number(bare[1]), title: 'Obscur ' + bare[1], poster_path: null, backdrop_path: null, seasons: [] });
   }
+  const canon = /\/lt\/series\/(\d+)\/episodes$/.exec(u.pathname);
+  if (canon) {
+    if (canon[1] !== '102') return json({ error: 'not_found' }, 404); // les autres séries : repli sur les saisons TMDB
+    const future = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+    return json({ source: 'tvdb-aired', seasons: [
+      { number: 1, name: 'Saison 1', episodes: [
+        { number: 1, absolute: 1, name: 'Début', airDate: '2021-01-01', runtime: 24, still: 'https://img.example/s1e1.jpg' },
+        { number: 2, absolute: 2, name: 'Épisode 2', airDate: '2021-01-08', still: '/s1e2.jpg' },
+        { number: 3, absolute: 3, name: 'La suite', airDate: '2021-01-15' },
+      ] },
+      { number: 2, name: 'Saison 2', episodes: [
+        { number: 1, absolute: 4, name: 'Retour', airDate: '2022-01-01' },
+        { number: 2, absolute: 5, name: 'Épisode 2', airDate: future(9) },
+      ] },
+    ] });
+  }
   const trend = /\/lt\/tmdb\/trending\/(movie|tv)\/week$/.exec(u.pathname);
   if (trend) return json({ results: ITEMS.map((i) => ({ ...i, media_type: trend[1] })) });
   const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
@@ -270,7 +286,10 @@ describe('interface portée', () => {
     expect(a.querySelector('.soon-title')).toBeNull(); // « Épisode 4 » est un titre générique
     expect(a.querySelector('.ep-title')!.textContent).toBe('É4');
     expect(a.querySelector('.ep-meta')!.textContent).toMatch(/^Le .+ · Bientôt$/);
-    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, pas une boîte vide
+    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, net
+    expect(a.querySelector('.soon.is-blur')).toBeNull(); // le flou n'est que le dernier repli
+    expect(a.querySelector('.soon-poster')!.getAttribute('src')).toContain('/w342/'); // affiche de la série en vignette
+    expect(a.querySelector('.soon-series')!.textContent!.length).toBeGreaterThan(0); // nom de la série au-dessus de S1 · É4
     expect(a.classList.contains('is-seen')).toBe(false);
     expect(a.querySelector('.soon-bell')).not.toBeNull();
     expect(a.querySelector('.ep-seen')).toBeNull();
@@ -282,6 +301,37 @@ describe('interface portée', () => {
     expect(a.querySelector('.soon-bell')!.textContent).toBe('Suivi');
     // L'épisode déjà sorti reste une carte normale.
     expect(document.querySelector('#detail .ep[data-ep="1:1"] .ep-seen')).not.toBeNull();
+    location.hash = '#/';
+    await settle(50);
+  });
+
+  it('fiche série : numérotation canonique de lastAddon (saisons, épisodes, prochain, compteur)', async () => {
+    localStorage.removeItem('ls_seen');
+    location.hash = '#/tv/102';
+    await settle(500);
+    const d = document.getElementById('detail')!;
+    const pills = Array.from(d.querySelectorAll('[data-season]')).map((b) => b.textContent);
+    expect(pills).toEqual(['Saison 1', 'Saison 2']); // et non les saisons TMDB
+    const eps = Array.from(d.querySelectorAll('#f-eplist .ep')) as HTMLElement[];
+    expect(eps.map((e) => e.dataset.ep)).toEqual(['1:1', '1:2', '1:3']); // épisodes canoniques de la saison 1
+    expect(eps[0].querySelector('.ep-still img')!.getAttribute('src')).toBe('https://img.example/s1e1.jpg'); // visuel rattaché par le serveur
+    expect(eps[0].querySelector('.ep-title')!.textContent).toBe('É1 · Début');
+    expect(eps[1].querySelector('.ep-title')!.textContent).toBe('É2'); // titre générique non répété
+    // Prochain épisode : le premier épisode à paraître de la numérotation canonique.
+    expect(d.querySelector('#f-next')!.textContent).toMatch(/S2 · É2/);
+    // Compteur : 4 épisodes diffusés, aucun vu -> 0 ; marquer S1 É1 comme vu -> 3 nouveaux.
+    (d.querySelector('[data-season="2"]') as HTMLElement).click();
+    await settle(300);
+    const soon = d.querySelector('#f-eplist .ep.is-soon') as HTMLElement;
+    expect(soon.querySelector('.soon-code')!.textContent).toBe('S2 · É2');
+    expect(soon.querySelector('.soon-count')!.textContent).toBe('Dans 9 jours');
+    (d.querySelector('[data-season="1"]') as HTMLElement).click();
+    await settle(300);
+    (d.querySelector('#f-eplist .ep[data-ep="1:1"] .ep-seen') as HTMLElement).click();
+    await settle(50);
+    expect(d.querySelector('#f-newcount')!.textContent).toBe('3 nouveaux épisodes');
+    // « Lecture » vise le prochain épisode non vu, en numérotation canonique (identifiant de flux tt:saison:épisode).
+    expect(d.querySelector('.f-actions [data-play] .f-play-label')!.textContent).toBe('Reprendre · S1 É2');
     location.hash = '#/';
     await settle(50);
   });
@@ -342,10 +392,19 @@ describe('interface portée', () => {
     expect(tiles.every((t) => t.querySelector('.t-cinema'))).toBe(true);
     // Les films « Au cinéma » ne sont pas dans les rangées normales.
     expect(document.querySelectorAll('#app #films [data-tile^="movie:5"]')).toHaveLength(0);
+    const streamCallsBefore = calls.filter((c) => c.includes('/stream/')).length;
     location.hash = '#/movie/505';
     await settle(400);
     const d = document.getElementById('detail')!;
     expect(d.querySelector('.f-actions [data-play]')).toBeNull();
+    // Bouton rond « Sources » : présent, mais rien n'est vérifié tant qu'on ne clique pas.
+    const srcBtn = d.querySelector('.f-actions [data-sources-open]') as HTMLElement;
+    expect(srcBtn.classList.contains('btn-round')).toBe(true);
+    expect(srcBtn.getAttribute('data-tip')).toBe('Voir les sources');
+    expect(calls.filter((c) => c.includes('/stream/')).length).toBe(streamCallsBefore);
+    // Le « Suivre » est la pastille principale : pas de cloche en double.
+    expect(d.querySelectorAll('.f-actions [data-follow="movie:505"]')).toHaveLength(1);
+    expect(d.querySelector('.f-actions .btn-pill.is-cinema')).not.toBeNull();
     expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
     const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
     expect(be.textContent).toBe('Me prévenir de la sortie en VOD');

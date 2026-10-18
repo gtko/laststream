@@ -1,4 +1,6 @@
 /* Recherche (#/search) : titres et personnes TMDB. Profil enfant : seulement les genres jeunesse, puis contrôle de la classification. */
+import { infiniteList } from './infinite.js';
+import { applyRestore } from './router.js';
 import { filterAvailable } from './avail.js';
 import { todayStr } from './dates.js';
 import { isKidProfile } from '../data/auth';
@@ -39,17 +41,34 @@ async function run(q) {
   const grid = detailEl.querySelector('#search-grid');
   if (!grid) return;
   state.searchQ = q;
-  if (q.trim().length < 2) { grid.innerHTML = ''; return; }
-  try {
-    const json = await tmdb('search/multi', { query: q.trim(), include_adult: 'false' });
-    if (my !== seq || state.kind !== 'search') return;
-    const items = await filterAvailable(filterResults(json.results, isKidProfile()).map((r) => register(toItem(r, r.media_type))));
-    if (my !== seq || state.kind !== 'search') return;
-    grid.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Aucun résultat.</p>';
-    observeTiles(grid);
-  } catch (_) {
-    if (my === seq) grid.innerHTML = '<p class="row-msg" role="status">La recherche n’a pas abouti.</p>';
-  }
+  grid.innerHTML = '';
+  if (q.trim().length < 2) return;
+  const list = infiniteList({
+    host: grid,
+    key: location.hash + '|' + q.trim(),
+    restore: state.restoreY != null,
+    load: async (page) => {
+      try {
+        // Une page entièrement filtrée ne ferme pas la liste : on enchaîne jusqu'à 4 pages.
+        for (let p = page, tries = 0; tries < 4; p += 1, tries += 1) {
+          const json = await tmdb('search/multi', { query: q.trim(), include_adult: 'false', ...(p > 1 ? { page: p } : {}) });
+          if (my !== seq || state.kind !== 'search') return { html: '', done: true };
+          const total = json.total_pages || 1;
+          const items = await filterAvailable(filterResults(json.results, isKidProfile()).map((r) => register(toItem(r, r.media_type))));
+          if (items.length) return { html: items.map((it) => posterCard(it)).join(''), done: p >= total, advance: p - page + 1 };
+          if (p >= total) return { html: '', done: true, advance: p - page + 1 };
+        }
+        return { html: '', done: true };
+      } catch (_) {
+        if (my === seq) throw _;
+        return { html: '', done: true };
+      }
+    },
+    after: (host) => observeTiles(host),
+  });
+  await list.ready;
+  if (my === seq && !grid.querySelector('[data-tile]') && !grid.querySelector('.row-msg')) grid.insertAdjacentHTML('afterbegin', '<p class="row-msg">Aucun résultat.</p>');
+  if (my === seq) applyRestore();
 }
 
 detailEl.addEventListener('input', (e) => {

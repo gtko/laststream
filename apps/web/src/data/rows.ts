@@ -48,6 +48,22 @@ export interface RowDef {
 }
 
 export const MIN_ITEMS = 8;
+
+/** Genres « bruit » : actualités (10763), talk-shows (10767) et téléréalité (10764). */
+export const NOISE_GENRES: readonly number[] = [10763, 10767, 10764];
+/** Votes minimum pour une rangée générique : films 200, séries 100. */
+export const MIN_VOTES = { movie: 200, tv: 100 } as const;
+
+/** Un titre de liste générique est écarté s'il relève du bruit (sauf rangée dédiée) ou s'il a trop peu de votes. */
+export function passesQuality(item: { type: 'movie' | 'tv'; genreIds?: number[]; votes?: number }): boolean {
+  if ((item.genreIds ?? []).some((g) => NOISE_GENRES.includes(g))) return false;
+  return item.votes === undefined || item.votes >= MIN_VOTES[item.type];
+}
+
+/** Premier titre de `candidates` pas déjà utilisé comme graine d'une autre rangée personnalisée. */
+export function pickSeed<T extends { key: string }>(candidates: T[], used: ReadonlySet<string>): T | undefined {
+  return candidates.find((c) => !used.has(c.key));
+}
 export const ROW_MAX = 20;
 /** Un titre apparaît au plus deux fois sur la page. */
 export const MAX_REPEAT = 2;
@@ -59,10 +75,13 @@ export function makeCtx(region: string, kidMaxAge: number | null, now = new Date
 
 const daysAgo = (today: string, n: number): string => new Date(Date.parse(today) - n * 864e5).toISOString().slice(0, 10);
 const POP: Params = { sort_by: 'popularity.desc', include_adult: 'false' };
+/** Disponible dans le pays : fournisseur (abonnement, gratuit, publicité, location ou achat) dans la région. */
+const AVAIL = (c: RowCtx): Params => ({ watch_region: c.region, with_watch_monetization_types: 'flatrate|free|ads|rent|buy' });
+
 const movie = (id: string, title: string, params: (c: RowCtx) => Params, extra: Partial<RowDef> = {}): RowDef =>
-  ({ id, title, kind: 'poster', fetch: { k: 'discover', type: 'movie', params: (c) => ({ ...POP, ...params(c) }) }, ...extra });
+  ({ id, title, kind: 'poster', fetch: { k: 'discover', type: 'movie', params: (c) => ({ ...POP, ...AVAIL(c), 'vote_count.gte': '200', ...params(c) }) }, ...extra });
 const tv = (id: string, title: string, params: (c: RowCtx) => Params, extra: Partial<RowDef> = {}): RowDef =>
-  ({ id, title, kind: 'poster', fetch: { k: 'discover', type: 'tv', params: (c) => ({ ...POP, ...params(c) }) }, ...extra });
+  ({ id, title, kind: 'poster', fetch: { k: 'discover', type: 'tv', params: (c) => ({ ...POP, ...AVAIL(c), without_genres: '10763,10767,10764', 'vote_count.gte': '100', ...params(c) }) }, ...extra });
 const list = (id: string, title: string, path: string, extra: Partial<RowDef> = {}): RowDef =>
   ({ id, title, kind: 'poster', fetch: { k: 'list', path }, ...extra });
 
@@ -70,8 +89,8 @@ const inMonths = (...months: number[]) => (c: RowCtx): boolean => months.include
 
 /** Rangées du profil adulte, dans l'ordre d'affichage (après les rangées fixes du haut de l'accueil). */
 export const ADULT_ROWS: RowDef[] = [
-  { ...list('films', 'Films populaires', 'movie/popular') },
-  { ...list('series', 'Séries populaires', 'tv/popular') },
+  { ...movie('films', 'Films populaires', () => ({})) },
+  { ...tv('series', 'Séries populaires', () => ({})) },
   { id: 'because-w-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 0 } },
   { id: 'because-r-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'rated', index: 0 } },
   { id: 'top-series', title: 'Top 10 séries de la semaine', kind: 'top10', fetch: { k: 'list', path: 'trending/tv/week' }, minItems: 10 },

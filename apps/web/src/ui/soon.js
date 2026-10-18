@@ -27,16 +27,22 @@ export function soonInnerHTML(o) {
   const d = new Date(o.airDate + 'T00:00:00');
   const day = isNaN(d) ? '' : d.getDate();
   const mon = isNaN(d) ? '' : d.toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '').toUpperCase();
-  const base = o.still ? IMG('w500', o.still) : IMG('w780', o.backdrop) || IMG('w500', o.poster);
+  // Fond net : image de l'épisode, sinon fond de la série. Le flou n'est que le tout dernier repli (affiche seule).
+  const sharp = o.still ? IMG('w500', o.still) : IMG('w780', o.backdrop);
+  const blurred = !sharp && !!o.poster;
+  const bg = sharp || (blurred ? IMG('w500', o.poster) : '');
+  const inset = !blurred && o.poster ? IMG('w342', o.poster) : '';
   const real = !isPlaceholderTitle(o.epTitle);
-  return '<span class="soon' + (o.still ? ' has-still' : '') + '">' +
-    '<span class="soon-bg">' + (base ? '<img src="' + esc(base) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>' +
+  const mark = o.logo && !inset
+    ? '<img class="logo-img soon-logo is-big" src="' + esc(o.logo) + '" alt="' + esc(o.name || '') + '" data-logo="' + esc(o.name || '') + '" loading="lazy">'
+    : '<span class="soon-series">' + esc(o.name || '') + '</span>';
+  return '<span class="soon' + (o.still ? ' has-still' : '') + (blurred ? ' is-blur' : '') + (inset ? ' has-poster' : '') + '">' +
+    '<span class="soon-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>' +
     '<span class="soon-grad" aria-hidden="true"></span>' +
+    (inset ? '<img class="soon-poster" src="' + esc(inset) + '" alt="" loading="lazy" decoding="async">' : '') +
     '<span class="soon-date" aria-hidden="true"><b>' + day + '</b><i>' + esc(mon) + '</i></span>' +
     '<span class="soon-count">' + esc(countdownText(o.airDate, o.time)) + '</span>' +
-    '<span class="soon-body">' +
-    (o.logo ? '<img class="logo-img soon-logo" src="' + esc(o.logo) + '" alt="' + esc(o.name || '') + '" data-logo="' + esc(o.name || '') + '" loading="lazy">'
-      : '<span class="soon-series">' + esc(o.name || '') + '</span>') +
+    '<span class="soon-body">' + mark +
     '<span class="soon-code">S' + o.season + ' · É' + o.episode + '</span>' +
     (real ? '<span class="soon-title">' + esc(o.epTitle) + '</span>' : '') + '</span>' +
     '<span class="soon-dash" aria-hidden="true"></span></span>';

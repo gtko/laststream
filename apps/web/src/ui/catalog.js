@@ -28,6 +28,8 @@ export function toItem(raw, forcedType) {
     date: String(raw.release_date || raw.first_air_date || ''),
     genre: (raw.genre_ids || []).map((g) => GENRE_FR[g]).filter(Boolean)[0] || '',
     vote: fmtNum(raw.vote_average, 1),
+    genreIds: raw.genre_ids || [],
+    votes: typeof raw.vote_count === 'number' ? raw.vote_count : undefined,
     reason: raw.reason_fr || '',
   };
 }

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { seasonEpisodes } from './seasons.js';
 import { countdownText, isPlaceholderTitle, soonBell, soonInnerHTML } from './soon.js';
 import { userStore } from '../data/userStore';
 import { refreshWatchedUI } from './watched.js';
@@ -64,7 +65,7 @@ export async function fillNext(m, token) {
   const slot = detailEl.querySelector('#f-next');
   if (!slot) return;
   let date = m.next ? m.next.airDate : '';
-  if (m.tvdbId) {
+  if (m.tvdbId && !m.canon) { // la numérotation canonique donne déjà le prochain épisode
     try {
       const tv = await api('tvdb/series/' + m.tvdbId);
       if (tv && tv.nextAired) date = tv.nextAired;
@@ -85,7 +86,7 @@ export async function loadSeason(m, n, token) {
   list.innerHTML = '<li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li>';
   let data;
   try {
-    data = await tmdb('tv/' + m.id + '/season/' + n);
+    data = await seasonEpisodes(m.id, n);
   } catch (_) {
     if (token !== state.token) return;
     list.innerHTML = '<li class="row-msg">Les épisodes n’ont pas pu être chargés. <button type="button" class="link-btn" data-season-retry="' + n + '">Réessayer</button></li>';
@@ -120,7 +121,7 @@ export async function loadSeason(m, n, token) {
       '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number)) + '">' +
       '<span class="ep-still' + (still ? '' : ' no-img') + '">' + (still ? '<img src="' + esc(still) + '" alt="" loading="lazy" decoding="async">' : '') +
       '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : 0) + '%"></span></span></span>' +
-      '<span class="ep-title">' + esc(code + ' · ' + (e.name || 'Épisode ' + e.episode_number)) + '</span>' +
+      '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +
       '<span class="ep-meta">' + esc(meta) + (future ? ' · Bientôt' : '') + '</span>' +
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +
       (future ? ''

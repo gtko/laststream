@@ -1,4 +1,5 @@
 /* Calendrier des suivis (#/calendar) et rangée d'accueil « Cette semaine dans tes suivis ». */
+import { canonical } from './seasons.js';
 import { soonItemHTML } from './soon.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
@@ -26,7 +27,17 @@ function itemOf(type, id, name, poster, backdrop) {
   return register(listOf({ results: [raw] }, type)[0]);
 }
 
+async function canonEvents(f, from, to, canon) {
+  const d = await tmdb('tv/' + f.id);
+  const it = itemOf('tv', f.id, d.name || f.title, d.poster_path || f.poster, d.backdrop_path);
+  return canon.seasons.filter((s) => s.number > 0).flatMap((s) => s.episodes)
+    .filter((e) => e.airDate && e.airDate >= from && e.airDate <= to)
+    .map((e) => ({ date: e.airDate, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(e.season, e.episode), season: e.season, episode: e.episode, epTitle: e.name, backdrop: d.backdrop_path }));
+}
+
 async function seriesEvents(f, from, to) {
+  const canon = await canonical(f.id);
+  if (canon) return canonEvents(f, from, to, canon);
   const d = await tmdb('tv/' + f.id);
   const seasons = (d.seasons || []).filter((s) => s.season_number > 0).sort((a, b) => a.season_number - b.season_number);
   // Saisons qui peuvent diffuser dans la période : débutées avant sa fin, et suivies d'une saison qui commence après son début.
