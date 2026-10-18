@@ -1,7 +1,7 @@
 // Signal d'état du lecteur TV (« Connexion… », « En direct », « Son seul », « Chaîne indisponible ») et transparence de la
 // page pendant la lecture mpv. Logique pure dans src/ui/tvStatus.js ; transparence dans src/ui/tvExternal.js (DOM simulé).
 import { afterEach, describe, expect, it } from 'vitest';
-import { AUDIO_ONLY_MS, LABELS, reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, initialStatus, statusView } from '../src/ui/tvStatus.js';
+import { AUDIO_ONLY_MS, LABELS, pillView, reasonOfExternal, reasonOfHls, reduceTvStatus, renderTvStatus, initialStatus, statusView } from '../src/ui/tvStatus.js';
 import { externalSample, setTvTransparent, stopExternal } from '../src/ui/tvExternal.js';
 
 const T0 = 1_000_000;
