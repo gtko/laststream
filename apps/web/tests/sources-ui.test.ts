@@ -68,6 +68,19 @@ describe('manifest', () => {
 });
 
 describe('cartes de sources', () => {
+  it('Sources : seulement les addons Stremio ; les débrideurs sont dans « Avancé », replié, avec l’avertissement', () => {
+    expect(document.querySelector('[data-set-addsrc="torznab"]')).toBeNull();
+    expect(document.querySelector('[data-set-addsrc="upstream"]')!.textContent).toContain('addon Stremio');
+    const adv = document.querySelector('#detail details.set-adv') as HTMLDetailsElement;
+    expect(adv).not.toBeNull();
+    expect(adv.open).toBe(false);
+    expect(adv.querySelector('summary')!.textContent).toBe('Avancé');
+    expect(adv.textContent).toContain('Tes addons (Lumio…) débrident déjà eux-mêmes');
+    expect(adv.textContent).toContain('une même clé utilisée à deux endroits peut faire suspendre ton compte');
+    expect(adv.querySelector('#set-debrid')).not.toBeNull();
+    expect(document.querySelector('#detail')!.textContent).not.toMatch(/Prowlarr local|indexeurs/i);
+  });
+
   it('affiche des cartes compactes avec logo, nom du manifest, version, types et état', () => {
     const cards = Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
     expect(cards).toHaveLength(3);
@@ -152,7 +165,7 @@ describe('rendre mes addons sûrs', () => {
   };
   const KEY = 'ABCDEFGH12345678';
 
-  it('classe chaque addon (sûr, clé de débrideur, inconnu), masque la clé et propose la correction', async () => {
+  it('classe chaque addon (débride lui-même, torrents seulement), sans traiter une clé comme un problème', async () => {
     const before = cards().length; // 3 : aucune carte de test
     addUpstream('https://configurable.example/cfg123/manifest.json'); // sûr : infoHash
     addUpstream(`https://torrentio.example/alldebrid=${KEY}|sort=qualitysize/manifest.json`); // clé dans l’adresse
@@ -163,37 +176,26 @@ describe('rendre mes addons sûrs', () => {
 
     (document.querySelector('[data-set-safe]') as HTMLElement).click();
     await settle(400);
-    expect(sure.querySelector('.src-safety')!.classList.contains('is-safe')).toBe(true);
-    expect(keyed.querySelector('.src-safety')!.classList.contains('is-debrid')).toBe(true);
-    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Utilise ta clé de débrideur');
-    expect(keyed.querySelector('.src-safety')!.textContent).toContain('ABCD…5678');
+    // infoHash seul : aucune source lisible sans débrideur (avertissement).
+    expect(sure.querySelector('.src-safety')!.classList.contains('is-torrents')).toBe(true);
+    expect(sure.querySelector('.src-safety')!.textContent).toContain('Ne renvoie que des torrents : aucune source lisible sans débrideur');
+    expect(sure.querySelector('[data-safe-config]')).not.toBeNull();
+    // Clé dans l’adresse : l’addon débride lui-même, en vert, sans afficher la clé ni proposer de la retirer.
+    expect(keyed.querySelector('.src-safety')!.classList.contains('is-self')).toBe(true);
+    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Débride lui-même (mode recommandé)');
     expect(keyed.querySelector('.src-safety')!.textContent).not.toContain(KEY);
-    expect(keyed.querySelector('[data-safe-fix]')).not.toBeNull();
+    expect(keyed.querySelector('[data-safe-fix]')).toBeNull();
     expect(keyed.querySelector('[data-safe-config]')).toBeNull();
-    expect(opaque.querySelector('.src-safety')!.classList.contains('is-debrid')).toBe(true);
-    expect(opaque.querySelector('[data-safe-fix]')).toBeNull(); // rien à réécrire : on passe par la page de l’addon
-    expect(opaque.querySelector('[data-safe-config]')).not.toBeNull();
-    expect(sure.querySelector('[data-safe-config]')).toBeNull();
-    expect(document.getElementById('src-safe-sum')!.textContent).toContain('1 sûr(s)');
-    expect(document.getElementById('src-safe-sum')!.textContent).toContain('2 inconnu(s)');
-
-    // Corriger : aperçu sans clé, puis application (champ mis à jour, addon relu et re-testé).
-    (keyed.querySelector('[data-safe-fix]') as HTMLElement).click();
-    const preview = keyed.querySelector('.src-safety-preview')!;
-    expect(preview.textContent).toContain('ABCD…5678');
-    expect(preview.textContent).not.toContain(KEY);
-    (keyed.querySelector('[data-safe-apply]') as HTMLElement).click();
-    await settle(400);
-    const fixedUrl = keyed.querySelector('[data-sf="url"]') as HTMLInputElement;
-    expect(fixedUrl.value).toBe('https://torrentio.example/sort=qualitysize/manifest.json');
-    expect(keyed.querySelector('.src-safety')!.classList.contains('is-safe')).toBe(true);
-    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Correction appliquée');
+    expect(opaque.querySelector('.src-safety')!.classList.contains('is-self')).toBe(true);
+    expect(opaque.querySelector('[data-safe-config]')).toBeNull();
+    expect(document.getElementById('src-safe-sum')!.textContent).toContain('2 débride(nt) eux-mêmes');
+    expect(document.getElementById('src-safe-sum')!.textContent).toContain('1 torrents seulement');
 
     // Configurer : ouvre la page de l’addon hors de l’app et affiche l’aide de collage.
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
-    (opaque.querySelector('[data-safe-config]') as HTMLElement).click();
-    expect(open).toHaveBeenCalledWith('https://opaque.example/3f2b8c1e-aaaa-4bbb-8ccc-1234567890ab/configure', '_blank', 'noopener');
-    expect((opaque.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
+    (sure.querySelector('[data-safe-config]') as HTMLElement).click();
+    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
+    expect((sure.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
     open.mockRestore();
 
     // Nettoyage : retirer les trois cartes de test.

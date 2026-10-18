@@ -630,8 +630,8 @@ function withoutBad(p, views) {
 /** Message clair pour une erreur de débridage sur l'appareil. */
 function clientError(e) {
   const code = e && e.code;
-  if (code === 'no_provider') return 'Aucun débrideur configuré : ajoute une clé dans Réglages > Sources et debrid.';
-  if (code === 'all_unavailable') return 'Tous tes débrideurs sont indisponibles pour le moment (compte suspendu, quota ou clé invalide). Voir Réglages > Sources et debrid.';
+  if (code === 'no_provider') return 'Aucun débrideur configuré : ajoute une clé dans Réglages > Sources > Avancé.';
+  if (code === 'all_unavailable') return 'Tous tes débrideurs sont indisponibles pour le moment (compte suspendu, quota ou clé invalide). Voir Réglages > Sources > Avancé.';
   if (code === 'host_not_allowed' || code === 'web_unsupported') return 'Ce débrideur ne peut pas être appelé depuis le navigateur : utilise l’application Windows ou Android.';
   if (code === 'not_ready') return 'Cette source n’est pas encore prête chez le débrideur (pas en cache).';
   return 'Débridage impossible' + (code ? ' (' + code + ')' : '') + '.';

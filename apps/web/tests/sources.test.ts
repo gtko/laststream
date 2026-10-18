@@ -14,9 +14,9 @@ const mk = (over: Record<string, unknown> = {}, top: Record<string, unknown> = {
 });
 
 describe('getLaststream : champs enrichis', () => {
-  it('lit audio, canaux, copies, trackers et langues vérifiées sans casser les anciens flux', () => {
-    const i = getLaststream(mk({ audio: ['TrueHD'], channels: '7.1', copies: 3, indexers: ['a', 'b'], releaseGroup: 'FGT', filename: 'f.mkv', languagesVerified: true, bitrateMbps: 12.5 }));
-    expect(i).toMatchObject({ audio: ['TrueHD'], channels: '7.1', copies: 3, indexers: ['a', 'b'], releaseGroup: 'FGT', filename: 'f.mkv', verifiedLanguages: true, bitrateMbps: 12.5 });
+  it('lit audio, canaux, copies et langues vérifiées sans casser les anciens flux', () => {
+    const i = getLaststream(mk({ audio: ['TrueHD'], channels: '7.1', copies: 3, releaseGroup: 'FGT', filename: 'f.mkv', languagesVerified: true, bitrateMbps: 12.5 }));
+    expect(i).toMatchObject({ audio: ['TrueHD'], channels: '7.1', copies: 3, releaseGroup: 'FGT', filename: 'f.mkv', verifiedLanguages: true, bitrateMbps: 12.5 });
     expect(getLaststream(mk())!.audio).toBeUndefined();
   });
 });

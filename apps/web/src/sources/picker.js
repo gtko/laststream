@@ -24,7 +24,7 @@ const chipHtml = (kind, value, label, on, count) =>
   '<button type="button" class="s-chip' + (on ? ' is-on' : '') + '" data-nav data-row="f-' + kind + '" data-chip="' + kind + ':' + value + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
   esc(label) + (count != null ? '<em>' + count + '</em>' : '') + '</button>';
 
-/** Pastille d'origine : logo de l'addon ou icône d'indexeur, puis le nom. */
+/** Pastille d'origine : logo de l'addon ou icône générique, puis le nom. */
 const originIcon = (o) => (o.logo ? '<img class="s-olg" src="' + esc(o.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '<svg class="s-oic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.500v-9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.500" fill="currentColor"/></svg>');
 const originChip = (o, on) => '<button type="button" class="s-chip' + (on ? ' is-on' : '') + '" data-nav data-row="f-origin" data-chip="origin:' + esc(o.name) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + originIcon(o) + esc(o.name) + '<em>' + o.count + '</em></button>';
 
@@ -56,7 +56,6 @@ function itemHtml(v, opts) {
   if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' / ' + v.peers + ' peers' : ''));
   if (v.copies > 1) l3.push(v.copies + ' copies');
   if (v.origins.length) l3.push('<span class="s-orig" title="' + esc(v.origins.map((o) => o.name).join(', ')) + '">' + v.origins.slice(0, 2).map((o) => '<span class="s-o">' + originIcon(o) + esc(o.name) + '</span>').join('') + (v.origins.length > 2 ? '<span class="s-o s-o-more">+' + (v.origins.length - 2) + '</span>' : '') + '</span>');
-  if (v.trackers.length) l3.push('<span class="s-trk" title="' + esc(v.trackers.join(', ')) + '">' + esc(v.trackers.slice(0, 3).join(', ')) + (v.trackers.length > 3 ? ' +' + (v.trackers.length - 3) : '') + '</span>');
 
   const l4 = v.filename
     ? '<code class="s-file" title="' + esc(v.filename) + '">' + esc(truncName(v.filename)) + '</code>' + (v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '')

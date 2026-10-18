@@ -10,7 +10,7 @@ const mk = (over: Record<string, unknown> = {}, top: Record<string, unknown> = {
 });
 
 describe('origine des sources', () => {
-  it('lit laststream.origins (addon, indexeur, Prowlarr local, logo http seulement)', () => {
+  it('lit laststream.origins (toujours des addons, logo http seulement)', () => {
     const i = getLaststream(mk({ origins: [
       { kind: 'addon', name: 'Lumio', logo: 'https://cdn/lumio.png' },
       { kind: 'indexer', name: 'C411', logo: 'javascript:alert(1)' },
@@ -21,15 +21,15 @@ describe('origine des sources', () => {
     ] }))!;
     expect(i.origins).toEqual([
       { kind: 'addon', name: 'Lumio', logo: 'https://cdn/lumio.png' },
-      { kind: 'indexer', name: 'C411' },
-      { kind: 'prowlarr-local', name: 'YggReborn' },
-      { kind: 'indexer', name: 'Autre' },
+      { kind: 'addon', name: 'C411' },
+      { kind: 'addon', name: 'YggReborn' },
+      { kind: 'addon', name: 'Autre' },
     ]);
   });
 
-  it('repli : laststream.indexers, puis première ligne du nom du stream, sans doublon', () => {
+  it('repli : première ligne du nom du stream, sans doublon ; les anciens champs d’indexeurs sont ignorés', () => {
     const idx = toSourceViews([mk({ indexers: ['C411', 'c411', 'YGG'] })] as never)[0];
-    expect(idx.origins).toEqual([{ kind: 'indexer', name: 'C411' }, { kind: 'indexer', name: 'YGG' }]);
+    expect(idx.origins).toEqual([]);
     const named = toSourceViews([mk({}, { name: 'Lumio\n1080p' })] as never)[0];
     expect(named.origins).toEqual([{ kind: 'addon', name: 'Lumio' }]);
     expect(toSourceViews([mk()] as never)[0].origins).toEqual([]);
@@ -37,7 +37,7 @@ describe('origine des sources', () => {
   });
 
   it('résumé : « C411, YGG +1 »', () => {
-    const o = (n: string) => ({ kind: 'indexer' as const, name: n });
+    const o = (n: string) => ({ kind: 'addon' as const, name: n });
     expect(originSummary([])).toBe('');
     expect(originSummary([o('C411')])).toBe('C411');
     expect(originSummary([o('C411'), o('YGG')])).toBe('C411, YGG');

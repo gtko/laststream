@@ -40,7 +40,7 @@ export const CATEGORIES = [
   { id: 'audio', label: 'Audio et sous-titres', icon: 'subtitles' },
   { id: 'home', label: 'Accueil et recommandations', icon: 'home' },
   { id: 'server', label: 'Serveur lastAddon', icon: 'server' },
-  { id: 'sources', label: 'Sources et debrid', icon: 'layers' },
+  { id: 'sources', label: 'Sources', icon: 'layers' },
 ];
 
 export function navHTML(cats, active) {
@@ -61,6 +61,13 @@ export function card(title, body, opts) {
   return '<div class="set-card"' + (o.attrs ? ' ' + o.attrs : '') + '>' +
     (title ? '<div class="set-card-h"><div class="set-card-t"><h3>' + esc(title) + '</h3>' + (o.desc ? '<p>' + esc(o.desc) + '</p>' : '') + '</div>' + (o.aside || '') + '</div>' : '') +
     '<div class="set-card-b">' + body + '</div></div>';
+}
+
+/** Section « Avancé » repliée : débrideurs de l'appareil, à n'utiliser que si on sait ce qu'on fait. */
+export function advancedHTML(body) {
+  return '<details class="set-adv"><summary class="set-adv-s">Avancé</summary>' +
+    '<p class="set-adv-n">Facultatif. Tes addons (Lumio…) débrident déjà eux-mêmes. N’ajoute une clé ici que si tu sais ce que tu fais : une même clé utilisée à deux endroits peut faire suspendre ton compte.</p>' +
+    body + '</details>';
 }
 
 let uid = 0;

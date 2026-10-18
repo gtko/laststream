@@ -1,7 +1,7 @@
-/* Sécurité des addons amont : une clé de débrideur dans l'adresse fait appeler le débrideur depuis le serveur de
- * l'addon. Ce module lit l'adresse (Torrentio, configuration base64 JSON), propose une réécriture sans clé quand le
- * format est évident, et classe les flux renvoyés (infoHash = torrent ; lien de résolution ou hébergeur débrideur =
- * débrideur). Fonctions pures, sans réseau : aucune clé n'est renvoyée en clair (maskKey). */
+/* Addons amont : la clé du débrideur est dans l'addon, qui débride lui-même (mode recommandé). Ce module lit l'adresse
+ * (Torrentio, configuration base64 JSON) pour savoir si l'addon porte une clé, et classe les flux renvoyés (lien lisible
+ * = l'addon débride ; infoHash seul = torrents bruts, inutilisables sans débrideur). Fonctions pures, sans réseau :
+ * aucune clé n'est renvoyée en clair (maskKey). */
 
 /** Options Torrentio (segments `nom=valeur` séparés par `|`) qui branchent un débrideur. */
 export const DEBRID_OPTIONS: string[] = ['realdebrid', 'alldebrid', 'premiumize', 'debridlink', 'torbox', 'offcloud', 'putio'];
@@ -15,7 +15,8 @@ const KEY_FIELD = /^(debrid_?api_?key|api_?key)$/i;
 /** Lien de résolution de l'addon lui-même : /resolve/…, /playback/…, /r/…. */
 const RESOLVE_PATH = /\/(resolve|playback|r)\//i;
 
-export type Verdict = 'safe' | 'debrid' | 'unknown';
+/** `self` : l'addon débride lui-même (mode recommandé) ; `torrents` : il ne renvoie que des torrents bruts ; `unknown` : rien de lisible. */
+export type Verdict = 'self' | 'torrents' | 'unknown';
 
 export interface UrlFix {
   /** Adresse du manifest réécrite, sans clé. */
@@ -213,15 +214,17 @@ export function isDebridUrl(raw: string, addonOrigin: string): boolean {
   return u.origin === addonOrigin && RESOLVE_PATH.test(u.pathname);
 }
 
-/** Classe la réponse de l'addon : un lien débrideur l'emporte ; sinon un infoHash = torrent sans clé. */
+/** Classe la réponse de l'addon : un lien lisible (débrideur de l'addon ou lien direct) l'emporte ; sinon un infoHash = torrents bruts. */
+const RE_HTTP = /^https?:\/\//i;
+
 export function classifyStreams(streams: unknown, addonOrigin: string): Verdict {
   if (!Array.isArray(streams) || !streams.length) return 'unknown';
-  let safe = false;
+  let torrents = false;
   for (const item of streams) {
     if (!item || typeof item !== 'object') continue;
     const st = item as Record<string, unknown>;
-    if (typeof st.url === 'string' && isDebridUrl(st.url, addonOrigin)) return 'debrid';
-    if (typeof st.infoHash === 'string' && st.infoHash.trim() !== '') safe = true;
+    if (typeof st.url === 'string' && (isDebridUrl(st.url, addonOrigin) || RE_HTTP.test(st.url))) return 'self';
+    if (typeof st.infoHash === 'string' && st.infoHash.trim() !== '') torrents = true;
   }
-  return safe ? 'safe' : 'unknown';
+  return torrents ? 'torrents' : 'unknown';
 }

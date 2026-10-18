@@ -19,7 +19,7 @@ import { homePanelHTML } from './homeprefs.js';
 import { bindDebrid, debridCardHTML } from './settings-debrid.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import {
-  CATEGORIES, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
+  CATEGORIES, advancedHTML, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -198,14 +198,12 @@ function sourcesPanelInner() {
       num('Taille maximale', 'En Go.', 'min="0.1" step="0.1" name="maxGb" value="' + esc(size.maxGb != null ? size.maxGb : '') + '"') +
       num('Nombre de résultats', '', 'min="1" max="500" name="maxResults" value="' + esc(c.maxResults != null ? c.maxResults : 30) + '"')) +
     card('Sources', sourcesHTML() +
-      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon amont</button>' +
-        '<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="torznab">Ajouter un Torznab</button>' +
+      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="upstream">Ajouter un addon Stremio</button>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
-      '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Addons amont et indexeurs interrogés pour trouver des sources.' }) +
-    debridCardHTML() +
-    card('Débridage',
+      '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Les addons Stremio interrogés pour trouver des sources. Ils débrident eux-mêmes : la clé de ton débrideur se règle dans l’addon.' }) +
+    advancedHTML(debridCardHTML() + card('Débridage',
       switchRow('Seulement les sources en cache', 'Masque les sources que le débrideur doit d’abord télécharger (statut connu seulement).', !!c.onlyCached, 'name="onlyCached"') +
-      (debrid ? switchRow('Retirer la clé enregistrée sur le serveur', 'Une ancienne clé AllDebrid est encore dans ta configuration chiffrée ; elle n’est plus utilisée pour lire. Active puis enregistre pour l’effacer.', false, 'name="debridClear"') : ''));
+      (debrid ? switchRow('Retirer la clé enregistrée sur le serveur', 'Une ancienne clé AllDebrid est encore dans ta configuration chiffrée ; elle n’est plus utilisée pour lire. Active puis enregistre pour l’effacer.', false, 'name="debridClear"') : '')));
 }
 
 function serverFormHTML(cats) {
@@ -213,7 +211,7 @@ function serverFormHTML(cats) {
   const cat = (id) => cats.find((c) => c.id === id);
   return '<form id="set-la" class="set-form" autocomplete="off">' +
     panelHTML(cat('server'), 'Adresse du serveur et clés des services.', serverPanelInner()) +
-    panelHTML(cat('sources'), 'Langues, résolutions, tailles, addons, indexeurs et AllDebrid.', sourcesPanelInner()) +
+    panelHTML(cat('sources'), 'Langues, résolutions, tailles et addons Stremio.', sourcesPanelInner()) +
     '<div class="set-savebar"><div class="set-savebar-t">' + msgP('set-la-msg', status) +
     '<p class="set-note">Les clés sont chiffrées par le serveur ; ce navigateur ne garde que la configuration chiffrée.</p></div>' +
     '<button type="submit" class="btn btn-primary">Enregistrer</button></div></form>';

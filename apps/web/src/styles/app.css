@@ -384,8 +384,8 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .src-safe-bar .set-hint { margin: 0; }
 .src-safety { margin: 0 14px 0 52px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid var(--line-2); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .src-safety[hidden] { display: none; }
-.src-safety.is-safe { border-left-color: #4ade80; }
-.src-safety.is-debrid { border-left-color: #fb923c; }
+.src-safety.is-self { border-left-color: #4ade80; }
+.src-safety.is-torrents { border-left-color: #fb923c; }
 .src-safety.is-unknown { border-left-color: #6b6678; }
 .src-safety p { margin: 0; }
 .src-safety code { word-break: break-all; font-size: 12px; }

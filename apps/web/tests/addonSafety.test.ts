@@ -97,12 +97,13 @@ describe('classification du comportement', () => {
     expect(isDebridUrl('https://other.example/resolve/x', origin)).toBe(false); // autre origine : pas l’addon
   });
 
-  it('infoHash = sûr ; lien débrideur = débrideur (il l’emporte) ; rien de lisible = inconnu', () => {
+  it('lien lisible = l’addon débride lui-même (il l’emporte) ; infoHash seul = torrents ; rien = inconnu', () => {
     const origin = 'https://addon.example';
-    expect(classifyStreams([{ infoHash: 'a'.repeat(40) }], origin)).toBe('safe');
-    expect(classifyStreams([{ infoHash: 'a'.repeat(40) }, { url: 'https://foo.real-debrid.com/d/x' }], origin)).toBe('debrid');
-    expect(classifyStreams([{ url: 'https://addon.example/resolve/x' }], origin)).toBe('debrid');
-    expect(classifyStreams([{ url: 'https://cdn.example/a.mp4' }], origin)).toBe('unknown');
+    expect(classifyStreams([{ infoHash: 'a'.repeat(40) }], origin)).toBe('torrents');
+    expect(classifyStreams([{ infoHash: 'a'.repeat(40) }, { url: 'https://foo.real-debrid.com/d/x' }], origin)).toBe('self');
+    expect(classifyStreams([{ url: 'https://addon.example/resolve/x' }], origin)).toBe('self');
+    expect(classifyStreams([{ url: 'https://cdn.example/a.mp4' }], origin)).toBe('self');
+    expect(classifyStreams([{ url: 'magnet:?xt=urn:btih:abc' }], origin)).toBe('unknown');
     expect(classifyStreams([], origin)).toBe('unknown');
     expect(classifyStreams(null, origin)).toBe('unknown');
   });

@@ -33,6 +33,9 @@
 
 /* ---------- Cartes de groupe ---------- */
 .set-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 4px 20px; }
+.set-adv { margin-top: 12px; }
+.set-adv-s { cursor: pointer; font-weight: 600; padding: 10px 2px; }
+.set-adv-n { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid #fb923c; font-size: 13px; }
 .set-card-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 0 4px; }
 .set-card-t { min-width: 0; }
 .set-card-t h3 { margin: 0; font-family: var(--ff-title); font-size: 16px; font-weight: 700; color: var(--text); }

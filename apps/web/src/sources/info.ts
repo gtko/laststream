@@ -10,7 +10,7 @@ import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type St
 export type SourceStatus = 'cached' | 'uncached' | 'direct';
 
 export interface Origin {
-  kind: 'addon' | 'indexer' | 'prowlarr-local';
+  kind: 'addon';
   name: string;
   logo?: string;
 }
@@ -46,7 +46,7 @@ export interface SourceView {
   seeders: number | null;
   peers: number | null;
   copies: number;
-  /** Où la source a été trouvée (addons, indexeurs) ; vide si inconnu. */
+  /** Où la source a été trouvée (addons Stremio) ; vide si inconnu. */
   origins: Origin[];
   trackers: string[];
   filename: string;
@@ -180,13 +180,12 @@ export function trackerHosts(sources: unknown): string[] {
 }
 
 /**
- * Origines d'une source : `laststream.origins`, à défaut `laststream.indexers`, à défaut la première ligne du nom du stream
+ * Origines d'une source : `laststream.origins`, à défaut la première ligne du nom du stream
  * (« Lumio\n1080p »). Sans doublon (casse ignorée).
  */
 export function originsOf(info: LastStreamInfo | null, stream: Stream): Origin[] {
   let list: Origin[] = [];
   if (info?.origins?.length) list = info.origins.map((o) => ({ ...o }));
-  else if (info?.indexers?.length) list = info.indexers.map((name) => ({ kind: 'indexer' as const, name }));
   else if (typeof stream.name === 'string') {
     const first = stream.name.split('\n')[0].trim();
     if (first) list = [{ kind: 'addon', name: first }];
@@ -304,7 +303,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const kbps = info?.estBitrateKbps ?? (info?.bitrateMbps ? info.bitrateMbps * 1000 : null);
   const durationSec = sizeBytes > 0 && kbps && kbps > 0 ? (sizeBytes * 8) / 1000 / kbps : null;
   const filename = info?.filename ?? hints.filename ?? '';
-  const trackers = info?.indexers ?? trackerHosts(stream.sources);
+  const trackers = trackerHosts(stream.sources);
   const origins = originsOf(info, stream);
   const langs = info ? languageBadges(info, text) : [];
   const hasFrench = info ? info.languages.includes('fr') || info.languages.includes('multi') || langs.some((b) => /^(VF|VFF|VFQ|VFI|MULTI|TRUEFRENCH)/i.test(b.label)) : /\b(vf|multi|truefrench)\b/i.test(text);

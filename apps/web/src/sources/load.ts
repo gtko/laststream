@@ -3,7 +3,7 @@ import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { browserCaps, inShell } from '../player/caps';
-import { applyVerdicts, isClientStream, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
+import { applyVerdicts, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { CHECK_TOP_N, debrid } from './debridClient';
 import { recommend, type Recommendation } from './rank';
 
@@ -24,7 +24,7 @@ export interface SourceRequest {
 export interface LoadedSources {
   imdb: string;
   views: SourceView[];
-  /** Sources de torrents / indexeurs encore interrogés (réponse partielle de lastAddon). */
+  /** Addons Stremio encore interrogés (réponse partielle de lastAddon). */
   pending: string[];
   /** Message du serveur (ex. « Configure AllDebrid ») quand les torrents sont masqués faute de débrideur. */
   notice?: string;
@@ -40,7 +40,6 @@ export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | '
 
 /** Attente maximale du contrôle « cache » avant d'afficher la liste : au-delà, statut « à la demande » (le contrôle continue en arrière-plan). */
 export const CACHE_CHECK_WAIT_MS = 5_000;
-export const NO_PROVIDER_NOTICE = 'Ajoute ta clé AllDebrid, TorBox ou Real-Debrid dans Réglages > Sources et debrid pour lire les torrents.';
 
 /**
  * Sources « client » (torrents sans lien) : contrôle du cache sur l'appareil pour les N meilleures, statuts combinés des
@@ -63,15 +62,14 @@ export async function annotateClientViews(views: SourceView[], opts: { onlyCache
 async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
-  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode);
-  // Débrideur obligatoire : seules les sources à lien HTTP(S) sont gardées, jamais un infoHash à lire en pair-à-pair.
+  // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
+  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk });
+  // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
   const streams = sortStreams(playableStreams(res.streams, clientOk));
   let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps());
   if (clientOk) views = await annotateClientViews(views, { onlyCached: res.onlyCached });
-  // Torrents livrés sans lien mais aucun débrideur utilisable sur cet appareil : message clair.
-  const needsKey = !clientOk && res.streams.some(isClientStream);
-  return { imdb, views, pending: res.pending, notice: needsKey ? NO_PROVIDER_NOTICE : res.notice };
+  return { imdb, views, pending: res.pending, notice: res.notice };
 }
 
 /**
@@ -119,7 +117,7 @@ export const POLL_MAX_MS = 20_000;
  */
 export async function pollSources(req: SourceRequest, current: LoadedSources): Promise<LoadedSources> {
   if (!current.pending.length) return current;
-  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode);
+  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode, { torrents: debrid().hasAny() });
   if (!status) return { ...current, pending: [] };
   if (statusChanged({ count: current.views.length, pending: current.pending }, status)) {
     try {

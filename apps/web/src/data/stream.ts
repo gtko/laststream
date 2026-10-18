@@ -21,9 +21,8 @@ export interface LastStreamInfo {
   channels?: string;
   bitrateMbps?: number;
   copies?: number;
-  indexers?: string[];
-  /** D'où vient la source : addon Stremio, indexeur, Prowlarr local (version récente de lastAddon). */
-  origins?: Array<{ kind: 'addon' | 'indexer' | 'prowlarr-local'; name: string; logo?: string }>;
+  /** D'où vient la source : l'addon Stremio qui l'a renvoyée. */
+  origins?: Array<{ kind: 'addon'; name: string; logo?: string }>;
   peers?: number;
   filename?: string;
   releaseGroup?: string;
@@ -85,15 +84,11 @@ export function getLaststream(stream: unknown): LastStreamInfo | null {
   if (isStr(i.channels) && i.channels) out.channels = i.channels;
   if (isNum(i.bitrateMbps)) out.bitrateMbps = i.bitrateMbps;
   if (isNum(i.copies) && i.copies > 0) out.copies = i.copies;
-  const indexers = i.indexers ?? i.trackers;
-  if (strList(indexers) && indexers.length) out.indexers = indexers;
   if (Array.isArray(i.origins)) {
-    const kinds = ['addon', 'indexer', 'prowlarr-local'];
     const origins = i.origins.flatMap((o: unknown) => {
       const r = isRecord(o) ? o : null;
       if (!r || !isStr(r.name) || !r.name.trim()) return [];
-      const kind = kinds.includes(r.kind as string) ? (r.kind as 'addon' | 'indexer' | 'prowlarr-local') : 'indexer';
-      return [{ kind, name: r.name.trim(), ...(isStr(r.logo) && /^https?:\/\//i.test(r.logo) ? { logo: r.logo } : {}) }];
+      return [{ kind: 'addon' as const, name: r.name.trim(), ...(isStr(r.logo) && /^https?:\/\//i.test(r.logo) ? { logo: r.logo } : {}) }];
     });
     if (origins.length) out.origins = origins;
   }

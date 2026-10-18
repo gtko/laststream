@@ -226,7 +226,7 @@ body.lp-open .toast { z-index: 900; }
 @media (prefers-reduced-motion: reduce) { .s-spin { animation-duration: 3s; } }
 .s-web-video { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
 
-/* Origines des sources (addon, indexeur) */
+/* Origines des sources (addon Stremio) */
 .s-orig { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .s-o { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px 1px 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); font-size: 12px; font-weight: 700; color: var(--soft); }
 .s-o-more { padding-left: 8px; }

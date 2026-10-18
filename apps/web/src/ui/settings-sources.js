@@ -114,7 +114,7 @@ export function initSources(sources) {
 
 export function addSource(type) {
   syncFromDom();
-  const s = toModel(type === 'torznab' ? { type: 'torznab', name: 'Torznab', baseUrl: '' } : { type: 'upstream', name: 'Addon amont', url: '' });
+  const s = toModel({ type: 'upstream', name: 'Addon amont', url: '' });
   s.open = true;
   list.push(s);
   renderSources();
@@ -167,9 +167,9 @@ function cardParts(s, pos) {
   const i = info.get(s.id) || { status: 'unk' };
   const t = s.type === 'torznab';
   const status = i.status || 'unk';
-  const name = s.name || i.name || (t ? 'Torznab' : 'Addon amont');
+  const name = s.name || i.name || (t ? 'Ancienne source' : 'Addon amont');
   const types = (i.types || []).map((x) => TYPE_FR[x] || x).join(', ');
-  const sub = t ? 'Torznab · ' + (host(s.baseUrl) || 'indexeur') : [i.version ? 'v' + i.version : '', types, i.desc].filter(Boolean).join(' · ') || host(s.url) || 'Addon amont';
+  const sub = t ? 'Ancienne source (inactive) · ' + (host(s.baseUrl) || 'sans adresse') : [i.version ? 'v' + i.version : '', types, i.desc].filter(Boolean).join(' · ') || host(s.url) || 'Addon amont';
   const logo = !t && i.logo ? '<img src="' + esc(i.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : t ? TRACKER_ICON : ICON.film;
   return { status, name, sub, logo, err: i.error || '' , pos };
 }
@@ -179,7 +179,7 @@ function isConfigurable(s) {
   return s.type !== 'torznab' && !!configureUrl(s.url) && !!(info.get(s.id) || {}).configurable;
 }
 
-/** Adresse copiée par « Copier l’URL » : le manifest d’un addon, l’adresse Torznab d’un indexeur. */
+/** Adresse copiée par « Copier l’URL » : le manifest d’un addon (ou l’adresse d’une ancienne source, conservée telle quelle). */
 function copyTarget(s) {
   return s.type === 'torznab' ? String(s.baseUrl || '') : normalizeManifestUrl(s.url);
 }
@@ -232,16 +232,16 @@ function cardHTML(s, pos) {
 
 export function sourcesHTML() {
   return '<div class="src-safe-bar"><button type="button" class="btn btn-ghost btn-sm" data-set-safe>Rendre mes addons sûrs</button>' +
-    '<p class="set-hint" id="src-safe-sum" aria-live="polite">Vérifie que tes addons renvoient des torrents sans ta clé de débrideur.</p></div>' +
+    '<p class="set-hint" id="src-safe-sum" aria-live="polite">Vérifie que tes addons débrident eux-mêmes et renvoient des sources lisibles.</p></div>' +
     '<div id="set-sources" class="src-list" role="list" aria-label="Sources, par ordre de priorité">' +
-    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon amont ou un indexeur Torznab.</p>') + '</div>' +
+    (list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon Stremio.</p>') + '</div>' +
     '<p class="set-hint src-order-hint">L’ordre est la priorité : la source 1 passe en premier.</p><p class="sr-only" id="src-live" aria-live="polite"></p>';
 }
 
 function renderSources() {
   const box = detailEl.querySelector('#set-sources');
   if (!box) return;
-  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon amont ou un indexeur Torznab.</p>';
+  box.innerHTML = list.length ? list.map((s, i) => cardHTML(s, i + 1)).join('') : '<p class="set-hint">Aucune source : ajoute un addon Stremio.</p>';
 }
 
 /** Met à jour une carte en place (pastille, nom, logo) sans toucher aux champs en cours de saisie. */
@@ -358,7 +358,7 @@ function openConfigure(card, s) {
 }
 
 // ---------- Sécurité des addons ----------
-const SAFE_LABEL = { safe: 'Sûr', debrid: 'Utilise ta clé de débrideur', unknown: 'Inconnu' };
+const SAFE_LABEL = { self: 'Débride lui-même (mode recommandé)', torrents: 'Ne renvoie que des torrents : aucune source lisible sans débrideur', unknown: 'Inconnu' };
 const TEST_STREAM = '/stream/movie/tt0133093.json'; // Matrix : un flux de test suffit pour savoir ce que renvoie l’addon
 
 /** Flux de test de l’addon, lu depuis l’app. Ne contacte jamais le débrideur : seul l’addon répond. */
@@ -380,12 +380,8 @@ async function probeStreams(manifest) {
 }
 
 function reasonOf(verdict, a) {
-  if (verdict === 'safe') return 'renvoie des torrents (infoHash), sans clé.';
-  if (verdict === 'debrid') {
-    return a.usesDebrid
-      ? 'clé de débrideur dans l’adresse' + (a.masked.length ? ' (' + a.masked.join(', ') + ')' : '') + ' : l’addon appelle le débrideur depuis son serveur.'
-      : 'ses liens passent par un débrideur.';
-  }
+  if (verdict === 'self') return a.usesDebrid ? 'ta clé est dans l’addon, qui appelle lui-même le débrideur.' : 'l’addon renvoie des liens lisibles.';
+  if (verdict === 'torrents') return 'configure ton débrideur dans l’addon (bouton Configurer).';
   return 'pas de réponse lisible depuis l’app (CORS, hors ligne, ou aucun flux pour ce test).';
 }
 
@@ -393,31 +389,19 @@ function reasonOf(verdict, a) {
 async function checkSafety(s, note = '') {
   const manifest = normalizeManifestUrl(s.url);
   if (!manifest) {
-    safety.set(s.id, { verdict: 'unknown', reason: 'adresse vide.', fix: null, preview: false, note });
+    safety.set(s.id, { verdict: 'unknown', reason: 'adresse vide.', note });
   } else {
     const a = analyzeAddonUrl(manifest);
-    const verdict = a.usesDebrid ? 'debrid' : await probeStreams(manifest);
-    safety.set(s.id, { verdict, reason: reasonOf(verdict, a), fix: a.fix, preview: false, note });
+    const verdict = a.usesDebrid ? 'self' : await probeStreams(manifest);
+    safety.set(s.id, { verdict, reason: reasonOf(verdict, a), note });
   }
   paintSafety(s.id);
-}
-
-/** Corrige l’adresse (clé retirée), relit le manifest et refait le test. L’enregistrement reste celui de la page. */
-async function applyFix(card, s) {
-  const st = safety.get(s.id);
-  if (!st || !st.fix) return;
-  syncFromDom();
-  s.url = st.fix.url;
-  const input = card.querySelector('[data-sf="url"]');
-  if (input) input.value = st.fix.url;
-  await loadInfo(s);
-  await checkSafety(s, 'Correction appliquée. Enregistre la page pour valider.');
 }
 
 function summaryText() {
   const verdicts = list.filter((s) => s.type === 'upstream').map((s) => (safety.get(s.id) || {}).verdict);
   const n = (v) => verdicts.filter((x) => x === v).length;
-  return 'Résultat : ' + n('safe') + ' sûr(s) · ' + n('debrid') + ' utilise(nt) ta clé de débrideur · ' + n('unknown') + ' inconnu(s).';
+  return 'Résultat : ' + n('self') + ' débride(nt) eux-mêmes · ' + n('torrents') + ' torrents seulement · ' + n('unknown') + ' inconnu(s).';
 }
 
 /** « Rendre mes addons sûrs » : vérifie tous les addons amont en parallèle. */
@@ -434,15 +418,7 @@ async function runSafetyCheck() {
 function safetyHTML(st) {
   const btn = (attr, label) => '<button type="button" class="btn btn-ghost btn-sm" ' + attr + '>' + esc(label) + '</button>';
   let html = '<p class="src-safety-line"><strong>' + esc(SAFE_LABEL[st.verdict]) + '</strong> · ' + esc(st.reason) + '</p>';
-  if (st.verdict === 'debrid' && !st.fix) html += '<p class="set-hint">Choisis « aucun débrideur / torrents seulement » dans la page ouverte, puis colle le nouveau lien ci-dessous.</p>';
-  if (st.preview && st.fix) {
-    html += '<div class="src-safety-preview"><p class="set-hint">Avant : <code>' + esc(st.fix.before) + '</code></p>' +
-      '<p class="set-hint">Après : <code>' + esc(st.fix.after) + '</code></p><div class="src-cfg-actions">' + btn('data-safe-apply', 'Appliquer la correction') + '</div></div>';
-  } else if (st.fix) {
-    html += '<div class="src-cfg-actions">' + btn('data-safe-fix', 'Corriger automatiquement') + '</div>';
-  } else if (st.verdict === 'debrid') {
-    html += '<div class="src-cfg-actions">' + btn('data-safe-config', 'Configurer') + '</div>';
-  }
+  if (st.verdict === 'torrents') html += '<div class="src-cfg-actions">' + btn('data-safe-config', 'Configurer') + '</div>';
   if (st.note) html += '<p class="set-hint">' + esc(st.note) + '</p>';
   return html;
 }
@@ -505,18 +481,6 @@ detailEl.addEventListener('click', (e) => {
     syncFromDom();
     const s = list.find((x) => x.id === id);
     if (s) openConfigure(card, s);
-    return;
-  }
-  if (t.closest('[data-safe-fix]')) {
-    e.preventDefault();
-    const st = safety.get(id);
-    if (st && st.fix) { st.preview = true; paintSafety(id); }
-    return;
-  }
-  if (t.closest('[data-safe-apply]')) {
-    e.preventDefault();
-    const s = list.find((x) => x.id === id);
-    if (s) void applyFix(card, s);
     return;
   }
   if (t.closest('[data-src-copy]')) {

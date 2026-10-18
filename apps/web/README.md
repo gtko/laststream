@@ -20,7 +20,7 @@ Prérequis : Node 20 ou plus, et un lastAddon joignable (par défaut `http://loc
 
 Au premier lancement, ouvre **Réglages** (clic sur l'avatar, ou `#/settings`) :
 
-- **Adresse du serveur** et clés des services (TMDB, MDBList, TVDB, OpenRouter…), langues, résolutions, tailles, sources (addon amont, Torznab), AllDebrid. Les formulaires suivent `GET {base}/config/schema` ; les clés déjà enregistrées s'affichent en masque (`POST /config/decode`) et un champ vide les conserve ; l'enregistrement passe par `POST /config/encode` avec `previous`. Les boutons « Tester » appellent `POST /config/test`.
+- **Adresse du serveur** et clés des services (TMDB, MDBList, TVDB, OpenRouter…), langues, résolutions, tailles, sources (addons Stremio, qui débrident eux-mêmes), débrideurs facultatifs dans « Avancé ». Les formulaires suivent `GET {base}/config/schema` ; les clés déjà enregistrées s'affichent en masque (`POST /config/decode`) et un champ vide les conserve ; l'enregistrement passe par `POST /config/encode` avec `previous`. Les boutons « Tester » appellent `POST /config/test`.
 - **Lecture** : lecture automatique, débit (automatique ou fixé, « Tester ma connexion »), saut d'intro / récap, épisode suivant.
 - **Apparence** : thème Laststream (corail, par défaut), Stremio, Teal, Amber ou couleur personnalisée.
 - **Région** : France par défaut ; Suisse, Belgique, Canada, Luxembourg. Elle pilote `region`, `watch_region` et la classification par âge.

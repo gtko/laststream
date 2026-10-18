@@ -55,10 +55,10 @@ export interface StreamsResult {
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
 
 /** Streams d'un titre avec la liste des sources encore en attente (`pending`) ; absente dans l'ancienne forme de réponse. */
-export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<StreamsResult> {
+export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean } = {}): Promise<StreamsResult> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
-  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown }>(addonUrl(`stream/${kind}/${id}.json`));
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
   const notice = typeof res?.notice === 'string' && res.notice ? res.notice : undefined;
   return {
     streams: Array.isArray(res?.streams) ? res.streams : [],
@@ -74,11 +74,11 @@ export interface StreamsStatus {
 }
 
 /** État de la recherche en cours : GET {base}/{config}/lt/streams/status/:type/:id. Null si la route n'existe pas. */
-export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<StreamsStatus | null> {
+export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean } = {}): Promise<StreamsStatus | null> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
   try {
-    const res = await requestJson<{ pending?: unknown; count?: unknown }>(ltUrl(`streams/status/${kind}/${id}`));
+    const res = await requestJson<{ pending?: unknown; count?: unknown }>(ltUrl(`streams/status/${kind}/${id}`, opts.torrents ? { torrents: '1' } : undefined));
     return { pending: strings(res?.pending), count: typeof res?.count === 'number' ? res.count : 0 };
   } catch {
     return null;
