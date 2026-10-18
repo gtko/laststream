@@ -13,7 +13,7 @@ describe('synchronisation de la config avec le compte', () => {
   });
 
   it('détecte lastAddon sur l’origine courante via /health', async () => {
-    const f = vi.fn(async () => ({ ok: true }));
+    const f = vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) }));
     vi.stubGlobal('fetch', f);
     expect(await servedByLastAddon()).toBe(true);
     expect(String((f.mock.calls as unknown[][])[0][0])).toMatch(/\/health$/);
@@ -22,7 +22,7 @@ describe('synchronisation de la config avec le compte', () => {
   });
 
   it('reprend la config du compte quand rien en local (base = origine si servi par lastAddon)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ ok: true }) })));
     expect(await reconcileConfig({ lastaddonConfig: 'CHIFFRE' })).toBe('pulled');
     expect(getSettings().config).toBe('CHIFFRE');
     expect(getSettings().base).toBe(location.origin);
@@ -41,5 +41,14 @@ describe('synchronisation de la config avec le compte', () => {
     expect(await reconcileConfig({ lastaddonConfig: 'AUTRE' })).toBe('none');
     expect(getSettings().config).toBe('LOCAL');
     expect(await reconcileConfig({})).toBe('push');
+  });
+});
+
+describe('détection lastAddon : faux positifs', () => {
+  it("refuse une origine qui renvoie index.html (fallback SPA, app Android)", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => { throw new SyntaxError('HTML'); } })));
+    const { servedByLastAddon } = await import('../src/data/configSync');
+    expect(await servedByLastAddon()).toBe(false);
+    vi.unstubAllGlobals();
   });
 });
