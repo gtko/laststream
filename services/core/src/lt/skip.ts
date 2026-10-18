@@ -4,17 +4,23 @@ import { getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
 
 /** Types de segments : intro, reprise, générique de fin, post-générique, aperçu. */
 export type SkipKind = 'intro' | 'recap' | 'credits' | 'postcredits' | 'preview';
-/** Source d'un segment. */
+/** Source d'un segment venu d'un service externe. */
 export type SkipSource = 'introdb' | 'aniskip' | 'animeskip';
+/** Origine d'un segment : service externe, store communautaire local, ou déduction à partir de la saison. */
+export type SkipOrigin = SkipSource | 'community' | 'inferred';
 
 export interface SkipSegment {
   kind: SkipKind;
   /** Secondes depuis le début de l'épisode. */
   start: number;
   end: number;
-  source: SkipSource;
-  /** Confiance rapportée par la source (IntroDB uniquement). */
+  source: SkipOrigin;
+  /** Sources concordantes (présent seulement si au moins deux sources ont fusionné sur ce segment). */
+  sources?: SkipSource[];
+  /** Confiance : rapportée par la source (IntroDB), lissée par les votes (communauté), 0,5 (déduit). */
   confidence?: number;
+  /** Vrai pour un segment déduit des autres épisodes de la saison. */
+  inferred?: true;
 }
 
 export interface SkipResponse {
@@ -31,13 +37,26 @@ export interface SkipTarget {
   episode: number;
 }
 
-const INTRODB_BASE = 'https://api.introdb.app';
+export const INTRODB_BASE = 'https://api.introdb.app';
 const ARM_BASE = 'https://arm.haglund.dev/api/v2';
 const ANISKIP_BASE = 'https://api.aniskip.com/v2';
 const ANIMESKIP_URL = 'https://api.anime-skip.com/graphql';
 
-/** Priorité des sources pour un même segment (plus petit = prioritaire). */
-const PRIORITY = { aniskip: 0, animeskip: 1, introdb: 2 } as const;
+/**
+ * Rang des sources pour un même segment (plus petit = prioritaire). IntroDB avec au moins TRUSTED_SUBMISSIONS
+ * soumissions passe en tête ; IntroDB peu soumis passe en queue.
+ */
+const RANK = { introdbTrusted: 0, aniskip: 1, animeskip: 2, introdbWeak: 3 } as const;
+/** Soumissions IntroDB minimales pour qu'un segment soit préféré. */
+const TRUSTED_SUBMISSIONS = 2;
+/** Écart maximal (secondes) entre deux sources sur le début et la fin pour qu'elles concordent et fusionnent. */
+const MERGE_SECONDS = 5;
+/** Confiance ajoutée par source concordante supplémentaire (plafonnée à 1). Sans confiance rapportée : 0,5 de base. */
+const AGREE_BONUS = 0.2;
+const UNREPORTED_CONFIDENCE = 0.5;
+/** Garde-fous de position (quand la durée de l'épisode est connue) : générique après 50 %, intro avant 40 %. */
+const CREDITS_MIN_SHARE = 0.5;
+const INTRO_MAX_SHARE = 0.4;
 /** Durée maximale d'un segment déduit des repères Anime Skip (secondes) : évite un repère isolé qui couvre tout. */
 const MAX_SEGMENT_SECONDS = 900;
 
@@ -122,7 +141,9 @@ async function introdbSegments(ctx: LtContext, apiKey: string | undefined, targe
     const start = num(segment.start_sec);
     const end = num(segment.end_sec);
     if (start === undefined || end === undefined || end <= start) continue;
-    const candidate: Candidate = { kind, start, end, source: 'introdb', priority: PRIORITY.introdb };
+    const submissions = num(segment.submission_count);
+    const trusted = submissions !== undefined && submissions >= TRUSTED_SUBMISSIONS;
+    const candidate: Candidate = { kind, start, end, source: 'introdb', priority: trusted ? RANK.introdbTrusted : RANK.introdbWeak };
     const confidence = num(segment.confidence);
     if (confidence !== undefined) candidate.confidence = confidence;
     candidates.push(candidate);
@@ -169,22 +190,28 @@ async function aniskipSegments(
   const types = ['op', 'ed', 'recap', 'mixed-op', 'mixed-ed'].map((type) => `types=${type}`).join('&');
   const json = await jsonOrNothing(ctx, `${ANISKIP_BASE}/skip-times/${malId}/${episode}?${types}&episodeLength=0`);
   if (!isRecord(json) || json.found !== true || !Array.isArray(json.results)) return { candidates: [] };
-  const candidates: Candidate[] = [];
+  const found: { type: string; candidate: Candidate }[] = [];
   let episodeLength: number | undefined;
   for (const result of json.results) {
     if (!isRecord(result)) continue;
-    const kind = typeof result.skipType === 'string' ? ANISKIP_KINDS[result.skipType] : undefined;
+    const type = typeof result.skipType === 'string' ? result.skipType : undefined;
+    const kind = type === undefined ? undefined : ANISKIP_KINDS[type];
     const interval = result.interval;
-    if (kind !== undefined && isRecord(interval)) {
+    if (type !== undefined && kind !== undefined && isRecord(interval)) {
       const start = num(interval.startTime);
       const end = num(interval.endTime);
       if (start !== undefined && end !== undefined && end > start) {
-        candidates.push({ kind, start, end, source: 'aniskip', priority: PRIORITY.aniskip });
+        found.push({ type, candidate: { kind, start, end, source: 'aniskip', priority: RANK.aniskip } });
       }
     }
     const length = num(result.episodeLength);
     if (episodeLength === undefined && length !== undefined && length > 0) episodeLength = length;
   }
+  // mixed-op / mixed-ed (génériques mêlés à l'épisode) ne comptent que sans op / ed simple de l'épisode.
+  const hasPlain = (type: string): boolean => found.some((item) => item.type === type);
+  const candidates = found
+    .filter((item) => !(item.type === 'mixed-op' && hasPlain('op')) && !(item.type === 'mixed-ed' && hasPlain('ed')))
+    .map((item) => item.candidate);
   return episodeLength === undefined ? { candidates } : { candidates, episodeLength };
 }
 
@@ -232,7 +259,7 @@ function animeskipTimestamps(list: unknown): Candidate[] {
     if (kind === undefined) continue;
     const next = stamps.find((other) => other.at > stamp.at);
     if (next === undefined || next.at - stamp.at > MAX_SEGMENT_SECONDS) continue;
-    candidates.push({ kind, start: stamp.at, end: next.at, source: 'animeskip', priority: PRIORITY.animeskip });
+    candidates.push({ kind, start: stamp.at, end: next.at, source: 'animeskip', priority: RANK.animeskip });
   }
   return candidates;
 }
@@ -270,31 +297,78 @@ async function animeskipSegments(
 }
 
 /**
- * Fusion : pour un même type de segment, un chevauchement garde la source la plus prioritaire, puis la confiance la
- * plus haute. Les segments de types différents ne se concurrencent pas.
+ * Garde-fous de position, quand la durée de l'épisode est connue : un générique qui commence avant la moitié de
+ * l'épisode, ou une intro qui commence après 40 %, est écarté.
  */
-function mergeCandidates(candidates: Candidate[]): SkipSegment[] {
-  const ordered = [...candidates].sort(
-    (a, b) => a.priority - b.priority || (b.confidence ?? 0) - (a.confidence ?? 0) || a.start - b.start,
-  );
-  const kept: Candidate[] = [];
+function plausible(candidate: Candidate, episodeLength: number | undefined): boolean {
+  if (episodeLength === undefined) return true;
+  if (candidate.kind === 'credits') return candidate.start >= episodeLength * CREDITS_MIN_SHARE;
+  if (candidate.kind === 'intro') return candidate.start <= episodeLength * INTRO_MAX_SHARE;
+  return true;
+}
+
+/** Confiance d'un segment fusionné : la meilleure confiance des sources, plus un bonus par source concordante. */
+function agreedConfidence(members: Candidate[]): number {
+  const best = Math.max(...members.map((member) => member.confidence ?? UNREPORTED_CONFIDENCE));
+  return Math.min(1, best + AGREE_BONUS * (members.length - 1));
+}
+
+/** Segment retenu et sources qui concordent avec lui (la première est la source de tête, aux bornes retenues). */
+interface Group {
+  head: Candidate;
+  members: Candidate[];
+}
+
+/**
+ * Fusion, dans l'ordre de rang (puis confiance, puis début) :
+ * - garde-fous de position (ci-dessus) ;
+ * - deux sources différentes du même type qui concordent (début et fin à ±5 s) fusionnent : bornes de la source de
+ *   tête, confiance relevée, liste des sources ;
+ * - un segment qui chevauche un segment retenu, quel que soit son type, est écarté : jamais de chevauchement.
+ */
+function mergeCandidates(candidates: Candidate[], episodeLength: number | undefined): SkipSegment[] {
+  const ordered = candidates
+    .filter((candidate) => plausible(candidate, episodeLength))
+    .sort((a, b) => a.priority - b.priority || (b.confidence ?? 0) - (a.confidence ?? 0) || a.start - b.start);
+  const groups: Group[] = [];
   for (const candidate of ordered) {
-    const clash = kept.some((other) => other.kind === candidate.kind && candidate.start < other.end && other.start < candidate.end);
-    if (!clash) kept.push(candidate);
+    const agreeing = groups.find(
+      (group) =>
+        group.head.kind === candidate.kind &&
+        !group.members.some((member) => member.source === candidate.source) &&
+        Math.abs(group.head.start - candidate.start) <= MERGE_SECONDS &&
+        Math.abs(group.head.end - candidate.end) <= MERGE_SECONDS,
+    );
+    if (agreeing !== undefined) {
+      agreeing.members.push(candidate);
+      continue;
+    }
+    const clash = groups.some((group) => candidate.start < group.head.end && group.head.start < candidate.end);
+    if (!clash) groups.push({ head: candidate, members: [candidate] });
   }
-  return kept
-    .sort((a, b) => a.start - b.start)
-    .map(({ priority: _priority, ...segment }) => segment);
+  return groups
+    .map(({ head, members }): SkipSegment => {
+      const segment: SkipSegment = { kind: head.kind, start: head.start, end: head.end, source: head.source };
+      if (members.length > 1) {
+        segment.sources = members.map((member) => member.source);
+        segment.confidence = agreedConfidence(members);
+      } else if (head.confidence !== undefined) {
+        segment.confidence = head.confidence;
+      }
+      return segment;
+    })
+    .sort((a, b) => a.start - b.start);
 }
 
 function toResponse(candidates: Candidate[], episodeLength: number | undefined): SkipResponse {
-  const segments = mergeCandidates(candidates);
+  const segments = mergeCandidates(candidates, episodeLength);
   return episodeLength === undefined ? { segments } : { segments, episodeLength };
 }
 
 /**
  * Segments de saut d'une cible. Film ou série live : IntroDB. Série d'animation (ARM la rattache à un MAL) : AniSkip,
- * puis Anime Skip si son identifiant client est configuré ; IntroDB seulement si l'animation ne donne rien. Cache
+ * puis Anime Skip si son identifiant client est configuré, et IntroDB en plus (fusion des concordances, voir
+ * mergeCandidates) ; si IntroDB échoue alors que l'animation a donné un segment, on garde l'animation seule. Cache
  * partagé : 7 jours si un segment est trouvé, 6 h sinon. La clé ne contient aucune clé de service, seulement si Anime
  * Skip est configuré.
  */
@@ -316,7 +390,13 @@ export async function skipSegments(ctx: LtContext, services: Config['services'],
       if (services.animeskipClientId !== undefined && entry.anilist !== undefined) {
         candidates.push(...(await animeskipSegments(ctx, services.animeskipClientId, entry.anilist, target.season, target.episode)));
       }
-      if (candidates.length === 0) candidates.push(...(await introdbSegments(ctx, services.introdbApiKey, target)));
+      const animeFound = candidates.length > 0;
+      try {
+        candidates.push(...(await introdbSegments(ctx, services.introdbApiKey, target)));
+      } catch (err) {
+        if (!animeFound) throw err;
+        console.warn(`[lt][skip] IntroDB indisponible, segments d'animation seuls (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
+      }
       return toResponse(candidates, anime.episodeLength);
     },
   );

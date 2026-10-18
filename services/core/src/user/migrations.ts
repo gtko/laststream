@@ -134,6 +134,27 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 5,
+    name: 'segments de saut proposés par la communauté (votes pour et contre, source)',
+    sql: `
+      CREATE TABLE skip_segments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        imdb_id TEXT NOT NULL,
+        season INTEGER NOT NULL,
+        episode INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('intro', 'recap', 'credits', 'postcredits')),
+        "start" REAL NOT NULL CHECK ("start" >= 0),
+        "end" REAL NOT NULL CHECK ("end" > "start"),
+        duration REAL NOT NULL CHECK (duration > 0),
+        votes_up INTEGER NOT NULL DEFAULT 0 CHECK (votes_up >= 0),
+        votes_down INTEGER NOT NULL DEFAULT 0 CHECK (votes_down >= 0),
+        source TEXT NOT NULL DEFAULT 'user' CHECK (source IN ('user', 'inferred')),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX skip_segments_episode ON skip_segments (imdb_id, season, episode, kind);
+    `,
+  },
 ];
 
 /**

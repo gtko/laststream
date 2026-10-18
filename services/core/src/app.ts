@@ -241,9 +241,13 @@ export function createApp(deps: AppDeps): Express {
   registerStreamRoutes(app, deps);
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
-  registerLtRoutes(app, deps);
+  const closeLt = registerLtRoutes(app, deps);
   registerIndexerRoutes(app, deps);
-  closers.set(app, registerUserRoutes(app, deps));
+  const closeUser = registerUserRoutes(app, deps);
+  closers.set(app, () => {
+    closeLt();
+    closeUser();
+  });
 
   app.use(errorHandler);
   return app;
