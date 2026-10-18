@@ -189,23 +189,22 @@ async function syncPrefsIn(profileId: string): Promise<void> {
     if (Object.keys(settings).length) applyPrefs(settings);
     else await api.putSettings(profileId, snapshotPrefs());
     applyAccountFilters(profileId, settings); // titres masqués, genres bannis, séries vues en entier (par profil)
-    // Profil secondaire ou enfant : la config (sources, extensions, clés) est celle du profil principal du compte, en lecture seule.
-    let configSettings = settings;
-    if (!isMainProfile()) {
-      const main = auth.profiles.find((p) => p.isMainProfile && p.id !== profileId);
-      if (main) configSettings = (await api.getSettings(main.id).catch(() => ({ settings: {} }))).settings;
-    }
-    const verdict = await reconcileConfig(configSettings);
-    if (verdict === 'push' && isMainProfile()) pushConfig(getConfig());
   } catch { /* Réglages locaux conservés. */ }
+  try {
+    // La config (sources, extensions, clés) est celle du compte : tout profil la lit, même enfant, sans PIN du principal.
+    // Seul le principal la modifie. Réseau coupé : config locale conservée.
+    const { config } = await api.getAccountConfig(profileId);
+    const verdict = await reconcileConfig(config ? { [CONFIG_SETTING_KEY]: config } : {});
+    if (verdict === 'push' && isMainProfile()) pushConfig(getConfig());
+  } catch { /* Config locale conservée. */ }
 }
 
-/** Envoie la config lastAddon chiffrée au profil actif (sans effet hors mode serveur ; erreurs ignorées). */
+/** Envoie la config lastAddon chiffrée au compte, depuis le profil principal actif (sans effet hors mode serveur ; erreurs ignorées). */
 export function pushConfig(config: string): void {
   if (!isServerMode() || !auth.profile || !isMainProfile()) return;
   const value = configForAccount(config);
   if (!value) return;
-  api.putSettings(auth.profile.id, { [CONFIG_SETTING_KEY]: value }).catch(() => undefined);
+  api.putAccountConfig(auth.profile.id, value).catch(() => undefined);
 }
 
 // Filtres d'accueil par profil : chaque changement part vers les réglages du profil (hors mode serveur, rien).

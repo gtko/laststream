@@ -36,11 +36,16 @@ function fakeServer() {
     }
     if (u === '/user/me') return json({ account: { username: currentUser, role: 'member' } });
     if (u === '/user/logout') return new Response(null, { status: 204 });
-    if (u === '/user/profiles' && (init?.method ?? 'GET') === 'GET') return json({ profiles: [{ id: 'main-' + currentUser, name: 'Principal', avatarColor: '#fff', isKid: false, hasPin: false, isMainProfile: true }] });
-    if (/\/user\/profiles\/[^/]+\/settings$/.test(u)) {
-      if (init?.method === 'PUT') return json({ settings: {} });
-      return json({ settings: serverConfig[currentUser] ? { lastaddonConfig: serverConfig[currentUser] } : {} });
+    if (u === '/user/profiles' && (init?.method ?? 'GET') === 'GET') return json({ profiles: [{ id: 'main-' + currentUser, name: 'Principal', avatarColor: '#fff', isKid: false, hasPin: false, isMainProfile: true }, { id: 'kid-' + currentUser, name: 'Petit', avatarColor: '#fff', isKid: true, hasPin: false, isMainProfile: false }] });
+    if (u === '/user/account/config') {
+      if (init?.method === 'PUT') {
+        if (headers['x-profile-id'] !== 'main-' + currentUser) return json({ error: 'main_profile_required' }, 403);
+        serverConfig[currentUser] = JSON.parse(body).config;
+        return json({ config: serverConfig[currentUser] });
+      }
+      return json({ config: serverConfig[currentUser] ?? null });
     }
+    if (/\/user\/profiles\/[^/]+\/settings$/.test(u)) return json({ settings: {} });
     if (/\/unlock$/.test(u)) {
       if (failures >= 5) return json({ error: 'pin_locked' }, 429, { 'retry-after': '300' });
       if (JSON.parse(body).pin === GOOD) return json({ token: 'pt', expiresAt: new Date(Date.now() + 3e9).toISOString() });
@@ -117,6 +122,30 @@ describe('config lastAddon locale : jamais héritée par un autre compte', () =>
     await chooseProfile('main-b');
     expect(getSettings().config).not.toContain('CFG-A');
     expect(calls.some((c) => c.method === 'PUT' && c.body.includes('CFG-A'))).toBe(false);
+  });
+});
+
+describe('config lastAddon du compte : lisible par tous les profils', () => {
+  it('enfant choisi juste après la connexion : config du compte reprise sans PIN du principal, sans écriture', async () => {
+    const { chooseProfile, signIn } = await import('../src/data/auth');
+    serverConfig.a = 'CFG-COMPTE';
+    await signIn('a', 'x'.repeat(10));
+    await chooseProfile('kid-a');
+    expect(getSettings().config).toBe('CFG-COMPTE');
+    const read = calls.find((c) => c.url === '/user/account/config');
+    expect(read?.headers['x-profile-id']).toBe('kid-a');
+    expect(read?.headers['x-profile-token']).toBeUndefined();
+    expect(calls.some((c) => c.method === 'PUT' && c.url === '/user/account/config')).toBe(false);
+  });
+
+  it('le principal enregistre la config au niveau du compte', async () => {
+    const { chooseProfile, signIn, pushConfig } = await import('../src/data/auth');
+    serverConfig.a = 'CFG-COMPTE';
+    await signIn('a', 'x'.repeat(10));
+    await chooseProfile('main-a');
+    pushConfig('NOUVELLE');
+    await tick();
+    expect(serverConfig.a).toBe('NOUVELLE');
   });
 });
 

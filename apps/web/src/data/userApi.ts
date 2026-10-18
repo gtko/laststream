@@ -251,5 +251,9 @@ export const getTitleProgress = (id: string, type: MediaKind, tmdbId: number) =>
 export const getSettings = (id: string) => call<{ settings: Record<string, unknown> }>(P(id) + '/settings', { profileId: id });
 export const putSettings = (id: string, settings: Record<string, unknown>) =>
   call<{ settings: Record<string, unknown> }>(P(id) + '/settings', { method: 'PUT', body: settings, profileId: id });
+/** Config lastAddon chiffrée du compte : lisible par tout profil (sans PIN), écrite par le seul profil principal. */
+export const getAccountConfig = (profileId: string) => call<{ config: string | null }>('/account/config', { headers: { 'x-profile-id': profileId } });
+export const putAccountConfig = (mainProfileId: string, config: string | null) =>
+  call<{ config: string | null }>('/account/config', { method: 'PUT', body: { config }, profileId: mainProfileId, headers: { 'x-profile-id': mainProfileId } });
 export const importStremio = (id: string, email: string, password: string, config?: string) =>
   call<Record<string, unknown>>(P(id) + '/import/stremio', { method: 'POST', body: { email, password, config }, profileId: id, timeoutMs: 120_000 });
