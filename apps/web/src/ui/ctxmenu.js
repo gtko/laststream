@@ -4,6 +4,8 @@
 import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
 import { isKidProfile } from '../data/auth';
+import { LastAddonError } from '../data/errors';
+import { UserApiError } from '../data/userApi';
 import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
@@ -98,13 +100,36 @@ export async function removeFromContinue(key) {
   });
 }
 
+/** Raison lisible d'un échec (ni URL, ni jeton, ni valeur de réglage). */
+export function reasonOf(err) {
+  if (err instanceof LastAddonError) {
+    if (err.kind === 'network') return 'lastAddon est injoignable (réseau)';
+    if (err.kind === 'not_configured') return 'lastAddon n’est pas configuré';
+    if (err.kind === 'http') return err.status === 429 ? 'trop de requêtes, réessaie dans un instant' : 'lastAddon a répondu HTTP ' + err.status + (err.code ? ' (' + err.code + ')' : '');
+    return 'réponse lastAddon illisible';
+  }
+  if (err instanceof UserApiError) {
+    if (err.code === 'network') return 'serveur injoignable (réseau)';
+    if (err.status === 429) return 'trop de requêtes, réessaie dans un instant';
+    if (err.code === 'pin_required') return 'code du profil requis';
+    if (err.code === 'unauthorized') return 'session expirée, reconnecte-toi';
+    return 'serveur : ' + err.code + ' (HTTP ' + err.status + ')';
+  }
+  return (err && err.message) || 'erreur inconnue';
+}
+
 async function toggleSeriesWatched(key) {
   const [type, id] = key.split(':');
   const on = userStore.watchedEpisodes(key).length === 0;
   toast(on ? 'Marquage de la série…' : 'Série marquée comme non vue…');
-  const m = await fetchFull(type, id);
-  const { markSeries } = await import('./watched.js');
-  await markSeries(m, on);
+  try {
+    const m = await fetchFull(type, id);
+    const { markSeries } = await import('./watched.js');
+    await markSeries(m, on);
+  } catch (err) {
+    console.error('[laststream] série ' + key + ' : ' + (on ? 'marquage' : 'retrait') + ' impossible', err);
+    toast('Impossible de marquer la série : ' + reasonOf(err));
+  }
 }
 
 function titleItems(t) {
@@ -202,7 +227,10 @@ export function openCtx(t, x, y) {
     e.stopPropagation();
     const item = items.find((i) => i.id === b.dataset.ctx);
     closeCtx(false);
-    if (item) Promise.resolve(item.run()).catch(() => toast('Action impossible'));
+    if (item) Promise.resolve(item.run()).catch((err) => {
+      console.error('[laststream] menu contextuel : « ' + item.id + ' » impossible', err);
+      toast('Action impossible : ' + reasonOf(err));
+    });
   });
   menu.addEventListener('keydown', (e) => {
     const i = buttons.indexOf(document.activeElement);

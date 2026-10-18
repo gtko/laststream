@@ -12,6 +12,13 @@ import { LocalUserStore, progressKey, watchedKey } from './userStore';
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w342';
 const kindOf = (t: 'movie' | 'tv'): MediaKind => (t === 'tv' ? 'series' : 'movie');
 const typeOf = (k: MediaKind): 'movie' | 'tv' => (k === 'series' ? 'tv' : 'movie');
+/** Épisodes par écriture « vu » : le serveur refuse plus de 2 000 épisodes ou plus de 64 ko de JSON par requête. */
+const WATCHED_BATCH = 500;
+const chunkRefs = (list: WatchedRef[], size: number): WatchedRef[][] => {
+  const out: WatchedRef[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+};
 
 /** Chemin d'affiche TMDB (/abc.jpg) depuis l'URL stockée par le serveur ; vide si l'URL n'est pas TMDB. */
 export function posterPathOf(url: string | null): string {
@@ -325,17 +332,29 @@ export class ServerUserStore implements UserStore {
     this.local.applyWatched(key, episodes, watched); // affichage optimiste
     if (!this.watchedApi) return true;
     const [type, id] = key.split(':');
+    const kind = kindOf(type as 'movie' | 'tv');
+    // Le serveur accepte 2 000 épisodes et 64 ko par requête : une longue série part en lots, dans l'ordre.
+    const parts: Array<WatchedRef[] | undefined> = episodes && episodes.length > WATCHED_BATCH ? chunkRefs(episodes, WATCHED_BATCH) : [episodes ?? undefined];
+    const sent: WatchedRef[][] = [];
     try {
-      await putWatched(this.active.id, { type: kindOf(type as 'movie' | 'tv'), tmdbId: Number(id), episodes: episodes ?? undefined, watched });
+      for (const part of parts) {
+        await putWatched(this.active.id, { type: kind, tmdbId: Number(id), episodes: part, watched });
+        if (part) sent.push(part);
+      }
       return true;
     } catch (err) {
       if (err instanceof UserApiError && err.status === 404) { this.watchedApi = false; return true; }
-      // Refus ou réseau coupé : retour à l'état précédent.
+      // Refus ou réseau coupé : retour à l'état précédent, et annulation des lots déjà acceptés par le serveur.
+      console.warn('[laststream] vu : écriture refusée par lastAddon', err);
       const was = new Set(before);
-      keys.forEach((k) => {
-        const e = episodes ? refs[keys.indexOf(k)] : null;
+      keys.forEach((k, i) => {
+        const e = episodes ? refs[i] : null;
         this.local.applyWatched(key, e ? [e] : null, was.has(k));
       });
+      for (const part of sent) {
+        const undo = part.filter((e) => was.has(watchedKey(key, e.season, e.episode)) !== watched);
+        if (undo.length) await putWatched(this.active.id, { type: kind, tmdbId: Number(id), episodes: undo, watched: !watched }).catch(() => undefined);
+      }
       return false;
     }
   }
