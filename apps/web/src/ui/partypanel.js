@@ -117,6 +117,7 @@ function attach() {
   attached = c;
   if (!c) return;
   c.on('chat', () => render());
+  c.on('removed', () => render());
   c.on('react', (r) => floatReaction(r.emoji, r.user));
   c.on('host', (user) => { toast(user + ' est maintenant l’hôte'); render(); });
   c.on('muted', () => render());

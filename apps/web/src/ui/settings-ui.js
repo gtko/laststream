@@ -17,6 +17,17 @@ export const SET_ICON = {
   film: svg('<rect x="4" y="4" width="16" height="16" rx="2.500"/><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/>'),
   x: svg('<path d="M6.500 6.500l11 11M17.500 6.500l-11 11"/>'),
   subtitles: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 11h4M13 11h4M7 15h2.500M11.500 15h5.500"/>'),
+  shield: svg('<path d="M12 3l7.500 3v5.500c0 4.500-3 7.800-7.500 9.500-4.500-1.700-7.500-5-7.500-9.500V6z"/><path d="M9 12l2.200 2.200L15.500 10"/>'),
+  grid: svg('<rect x="4" y="4" width="7" height="7" rx="1.500"/><rect x="13" y="4" width="7" height="7" rx="1.500"/><rect x="4" y="13" width="7" height="7" rx="1.500"/><rect x="13" y="13" width="7" height="7" rx="1.500"/>'),
+  users: svg('<circle cx="9" cy="8.500" r="3.200"/><path d="M3 19.500c.7-3.300 3-5 6-5s5.300 1.700 6 5"/><circle cx="17" cy="9.500" r="2.400"/><path d="M17 14.500c2.200.2 3.600 1.600 4.200 4"/>'),
+  tree: svg('<circle cx="12" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M12 7v5M12 12H6v5M12 12h6v5"/>'),
+  chart: svg('<path d="M4 20V4M4 20h16"/><path d="M8 15l3.500-4 3 2.500L19 8"/>'),
+  database: svg('<ellipse cx="12" cy="6" rx="7.500" ry="3"/><path d="M4.500 6v6c0 1.700 3.400 3 7.500 3s7.500-1.300 7.500-3V6M4.500 12v6c0 1.700 3.400 3 7.500 3s7.500-1.300 7.500-3v-6"/>'),
+  tv: svg('<rect x="3" y="5" width="18" height="12" rx="2.500"/><path d="M8 21h8M12 17v4"/>'),
+  party: svg('<circle cx="8" cy="9" r="3"/><circle cx="16.500" cy="9.500" r="2.500"/><path d="M2.500 19c.6-3 2.700-4.500 5.500-4.500s4.900 1.500 5.500 4.500M14.500 15c2.600-.3 4.700.9 5.500 4"/>'),
+  flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+  sliders: svg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
+  scroll: svg('<path d="M7 4h11v13a3 3 0 0 1-3 3H6a3 3 0 0 0 3-3V6a2 2 0 0 0-2-2z"/><path d="M10 9h5M10 13h5"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
 };
 

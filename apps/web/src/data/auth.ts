@@ -1,4 +1,5 @@
 import { getConfig, isConfigured } from './config';
+import { clearElevation } from './adminApi';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
 import { startPresence, stopPresence } from './presence';
@@ -41,6 +42,10 @@ export const kidMaxAge = (): number | null => (auth.profile && auth.profile.isKi
 /** La section du catalogue enfant est-elle autorisée pour le profil actif ? (toujours vrai hors profil enfant) */
 export const kidSection = (id: string): boolean => !isKidProfile() || sectionAllowed(auth.profile?.allowedCatalogs, id);
 export const isKidProfile = (): boolean => kidMaxAge() !== null;
+/** Le compte connecté est le propriétaire du serveur (role === 'owner'). */
+export const isOwner = (): boolean => auth.isOwner;
+/** Accès à la console #/admin : propriétaire, session serveur active et profil non enfant. */
+export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidProfile();
 
 function useLocal(status: AuthStatus): AuthStatus {
   setUserStore(new LocalUserStore());
@@ -62,7 +67,7 @@ export async function initAuth(): Promise<AuthStatus> {
   try {
     const { account } = await api.me(4000);
     auth.username = account.username;
-    auth.isOwner = !!account.isAdmin;
+    auth.isOwner = account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner);
   } catch (err) {
     if (err instanceof UserApiError && err.status === 401) {
       if (getSession()) clearSession();
@@ -193,6 +198,8 @@ export async function signUp(username: string, password: string, bootstrapToken?
 export async function signOut(silent = false): Promise<void> {
   if (!silent) await api.logout().catch(() => undefined);
   clearSession();
+  clearElevation();
+  auth.isOwner = false;
   auth.username = '';
   useLocal('needs-login');
 }

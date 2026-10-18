@@ -13,7 +13,7 @@ import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
-import { auth, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
+import { auth, canAdmin, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
 import { bindDebrid, debridCardHTML } from './settings-debrid.js';
@@ -67,6 +67,9 @@ const stackInput = (label, desc, attrs) => fieldRow(label, desc, (id) => '<input
 const msgP = (id, text) => '<p class="set-msg" id="' + id + '" role="status">' + esc(text || '') + '</p>';
 const actions = (inner) => '<div class="set-actions">' + inner + '</div>';
 
+/** Propriétaire sur un profil adulte : accès à la console #/admin. */
+const adminCard = () => (canAdmin() ? card('Administration', rowHTML('Console d’administration', 'Comptes, performance, caches, modération et réglages du serveur.', () => '<a class="btn btn-ghost btn-sm" href="#/admin" data-go>Administration</a>')) : '');
+
 function accountPanel() {
   const p = userStore.currentProfile();
   const lib = userStore.getLibrary().length;
@@ -82,7 +85,7 @@ function accountPanel() {
   return card('Compte et profils',
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span><button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>') +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + invitesCard() + data +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + adminCard() + invitesCard() + data +
     card('Importer ma bibliothèque Stremio',
       '<form id="set-stremio" class="set-form" autocomplete="off">' +
       '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +

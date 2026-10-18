@@ -27,6 +27,9 @@ export interface AccountDto {
   id: string;
   username: string;
   isAdmin?: boolean;
+  isOwner?: boolean;
+  /** Rôle du compte : le propriétaire accède à /admin. */
+  role?: 'owner' | 'member';
 }
 
 export interface ProfileDto {
@@ -100,6 +103,8 @@ interface CallOptions {
   timeoutMs?: number;
   /** Préfixe de l'API (défaut `/user`) ; `/party` pour les salons. */
   prefix?: string;
+  /** En-têtes supplémentaires (administration : X-Profile-Id, X-Admin-Elevation). */
+  headers?: Record<string, string>;
 }
 
 export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
@@ -116,6 +121,7 @@ export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
     if (pt) headers['x-profile-token'] = pt;
   }
   if (o.bootstrapToken) headers['x-bootstrap-token'] = o.bootstrapToken;
+  if (o.headers) Object.assign(headers, o.headers);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 10_000);
   let res: Response;
@@ -154,6 +160,9 @@ export const login = (username: string, password: string) =>
   call<{ token: string; expiresAt: string }>('/login', { method: 'POST', body: { username, password }, anonymous: true });
 export const refresh = () => call<{ token: string; expiresAt: string }>('/refresh', { method: 'POST' });
 export const logout = () => call<void>('/logout', { method: 'POST' });
+/** Page publique de réinitialisation : le jeton vient d'un lien généré par le propriétaire (24 h, usage unique). */
+export const passwordReset = (token: string, password: string) =>
+  call<void>('/password-reset', { method: 'POST', body: { token, password }, anonymous: true });
 export const me = (timeoutMs?: number) => call<{ account: AccountDto }>('/me', { timeoutMs });
 
 // ---- Profils ----

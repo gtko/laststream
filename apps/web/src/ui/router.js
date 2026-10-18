@@ -3,7 +3,8 @@ import { showCalendar } from './calendar.js';
 import { showHidden } from './hidden.js';
 import { showFriendLibrary, showFriends } from './friends.js';
 import { showParties, showParty } from './parties.js';
-import { isKidProfile, kidSection } from '../data/auth';
+import { canAdmin, isKidProfile, kidSection } from '../data/auth';
+import { showAdmin } from './admin.js';
 import { browseAllowed, showBrowse } from './registry.js';
 import { showAiBrowse } from './recs-ui.js';
 import { showSearch } from './search.js';
@@ -50,6 +51,7 @@ export function showView(r) {
   else if (r.kind === 'parties') showParties();
   else if (r.kind === 'party') showParty(r.id);
   else if (r.kind === 'settings') showSettings();
+  else if (r.kind === 'admin') showAdmin();
   else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
   else if (r.kind === 'search') showSearch();
   else if (r.kind === 'calendar') showCalendar();
@@ -68,6 +70,11 @@ export function applyRestore() {
 }
 export function parseRoute() {
   const r = parseRouteRaw();
+  // Console d'administration : propriétaire, session serveur, profil non enfant. Sinon la route n'existe pas (retour à l'accueil).
+  if (r && r.kind === 'admin' && !canAdmin()) {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* adresse inchangée */ }
+    return null;
+  }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
   if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
@@ -97,6 +104,7 @@ function parseRouteRaw() {
   r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (r) return { kind: 'party', id: r[1] };
   if (h === '#/settings') return { kind: 'settings' };
+  if (h === '#/admin') return { kind: 'admin' };
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
   if (r) return { kind: 'browse', id: r[1] };
   if (h === '#/search') return { kind: 'search' };
