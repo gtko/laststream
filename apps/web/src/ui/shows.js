@@ -8,14 +8,15 @@ import { IMG } from './constants.js';
 import { detailEl } from './dom.js';
 import { ficheHeroShell, ficheSkeleton, fsec, teardownFiche } from './fiche.js';
 import { followBtn } from './follows.js';
-import { row, svcError, topBar } from './fragments.js';
+import { svcError, topBar } from './fragments.js';
 import { ICON } from './icons.js';
 import { openPlayer } from './player.js';
 import { fetchProviders, providersHTML } from './providers.js';
 import { go } from './router.js';
 import { state } from './state.js';
+import { fallbackHTML } from './typo.js';
 import { normChannel, tv } from './tv.js';
-import { esc, fmtDate } from './util.js';
+import { esc, fmtDate, fmtMin } from './util.js';
 
 const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -33,12 +34,14 @@ export function showSub(s, now) {
   return s.platform || 'Émission';
 }
 
+/** Carte « Émissions du moment » : affiche 2:3 comme les autres rangées de posters, titre et diffusion dessous. */
 export function showCard(s, now) {
   const live = s.airings.length && isLiveNow(s.airings[0], now);
   const sub = showSub(s, now);
   const src = IMG('w342', s.poster);
-  return '<button type="button" class="card tile show-card" data-showopen="' + s.id + '" aria-label="' + esc(s.name + ', ' + sub) + '">' +
+  return '<button type="button" class="card tile show-card" data-showopen="' + esc(s.id) + '" aria-label="' + esc(s.name + ', ' + sub) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
+    fallbackHTML({ name: s.name, type: 'tv' }) +
     (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') + '</span>' +
     '<span class="card-title" aria-hidden="true">' + esc(s.name) + '</span><span class="card-meta" aria-hidden="true">' + esc(sub) + '</span></button>';
 }
@@ -55,19 +58,32 @@ async function renderShowsRow() {
   const fresh = document.getElementById('shows-slot');
   if (!fresh || !items.length) return;
   fresh.innerHTML = '<section class="row-section" id="emissions" aria-labelledby="h-emissions"><h2 class="row-title" id="h-emissions">Émissions du moment ' +
-    '<a class="row-link" href="#/emissions" data-showsnav>Toutes les émissions</a></h2>' + row(items.map((s) => showCard(s, now)).join('')) + '</section>';
+    '<a class="row-link" href="#/emissions" data-showsnav>Toutes les émissions</a></h2>' + '<div class="row" data-nav>' + items.map((s) => showCard(s, now)).join('') + '</div></section>';
 }
 
-function tonightTile(a, known, now) {
-  const img = known ? IMG('w342', known.poster) : a.icon || '';
-  const logo = a.channel.logo;
-  const num = a.channel.num ? '<b class="ch-num" aria-hidden="true">' + a.channel.num + '</b> ' : '';
-  const sub = hhmm(a.start) + ' · ' + a.channel.name;
-  const attrs = known ? ' data-showopen="' + known.id + '"' : a.channel.playId ? ' data-showwatch="' + esc(a.channel.playId) + '"' : ' data-showsnav';
-  return '<button type="button" class="card tile show-card tonight-card' + (known ? '' : ' is-epg') + '"' + attrs + ' aria-label="' + esc(a.title + ', ' + sub) + '">' +
-    '<span class="card-media' + (img || logo ? '' : ' no-img') + '">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async">' : logo ? '<img class="tn-logo" src="' + esc(logo) + '" alt="" loading="lazy" decoding="async">' : '') +
-    (isLiveNow(a, now) ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') + '</span>' +
-    '<span class="card-title" aria-hidden="true">' + esc(a.title) + '</span><span class="card-meta" aria-hidden="true">' + num + esc(sub) + '</span></button>';
+/**
+ * Carte « Ce soir à la TV » : paysage 16:9 (même gabarit que « Reprendre la lecture »). Image : fond TMDB de l'émission
+ * si elle est connue, sinon image du guide, sinon fond typographique. Chaîne en haut à gauche, heure et durée en grand,
+ * titre et genre en bas ; « En direct » et progression si l'émission est en cours à `now` (secondes).
+ */
+export function tonightTile(a, known, now) {
+  const live = isLiveNow(a, now);
+  const img = known && known.backdrop ? IMG('w780', known.backdrop) : a.icon || '';
+  const ch = a.channel;
+  const dur = fmtMin(Math.round((a.stop - a.start) / 60));
+  const attrs = known ? ' data-showopen="' + esc(known.id) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
+  const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? ', en direct' : '');
+  const chan = '<span class="tn-chan">' + (ch.num ? '<b class="ch-num">' + ch.num + '</b>' : '') +
+    (ch.logo ? '<img class="tn-logo" src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="tn-name">' + esc(ch.name) + '</span>') + '</span>';
+  return '<button type="button" class="card tile tile-land show-card tonight-card' + (live ? ' is-live' : '') + (known ? '' : ' is-epg') + '"' + attrs + ' aria-label="' + esc(label) + '">' +
+    '<span class="card-media' + (img ? '' : ' no-img') + '">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async">' : '') +
+    fallbackHTML({ name: a.title, type: 'tv' }) +
+    '<span class="t-shade" aria-hidden="true"></span>' + chan +
+    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') +
+    '<span class="tn-info" aria-hidden="true"><span class="tn-when"><strong class="tn-time">' + hhmm(a.start) + '</strong>' +
+    (dur ? '<span class="tn-dur">' + esc(dur) + '</span>' : '') + '</span>' +
+    '<span class="tn-title">' + esc(a.title) + '</span>' + (a.category ? '<span class="tn-sub">' + esc(a.category) + '</span>' : '') + '</span>' +
+    (live ? '<span class="progress" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') + '</span></button>';
 }
 
 async function renderTonightRow() {
@@ -82,7 +98,8 @@ async function renderTonightRow() {
   if (!fresh || prime.length < 3) return;
   const known = listed ? listed.shows : [];
   fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + (late ? 'Demain soir à la TV' : 'Ce soir à la TV') +
-    ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + row(prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, known.map((k) => ({ ...k, aliases: k.aliases }))), now)).join('')) + '</section>';
+    ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + '<div class="row" data-nav>' +
+    prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, known.map((k) => ({ ...k, aliases: k.aliases }))), now)).join('') + '</div></section>';
 }
 
 /** Rangées « Ce soir à la TV » et « Émissions du moment » de l'accueil (silencieuses en cas d'échec). */
