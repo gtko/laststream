@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { countdownText, isPlaceholderTitle, soonBell, soonInnerHTML } from './soon.js';
 import { userStore } from '../data/userStore';
 import { refreshWatchedUI } from './watched.js';
 import { setupWhy } from './why.js';
@@ -106,6 +107,15 @@ export async function loadSeason(m, n, token) {
     const future = e.air_date && e.air_date > today;
     const still = IMG('w500', e.still_path);
     const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
+    if (future) {
+      const real = !isPlaceholderTitle(e.name);
+      return '<li class="ep is-soon" data-ep="' + n + ':' + e.episode_number + '">' +
+        '<div class="ep-main" role="group" aria-label="' + esc(m.name + ', saison ' + n + ', épisode ' + e.episode_number + ', ' + countdownText(e.air_date)) + '">' +
+        soonInnerHTML({ airDate: e.air_date, season: n, episode: e.episode_number, epTitle: e.name, still: e.still_path, backdrop: m.backdropPath, poster: data.poster_path || m.posterPath, logo: m.logo, name: m.name }) +
+        '<span class="ep-title">' + esc(code + (real ? ' · ' + e.name : '')) + '</span>' +
+        '<span class="ep-meta">' + esc('Le ' + fmtDate(e.air_date) + ' · Bientôt' + (e.runtime ? ' · ' + fmtMin(e.runtime) : '')) + '</span>' +
+        (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</div>' + soonBell(m.key) + '</li>';
+    }
     return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '">' +
       '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number)) + '">' +
       '<span class="ep-still' + (still ? '' : ' no-img') + '">' + (still ? '<img src="' + esc(still) + '" alt="" loading="lazy" decoding="async">' : '') +

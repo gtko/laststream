@@ -12,6 +12,11 @@ export interface CalEvent {
   label: string;
   /** Plusieurs épisodes le même jour : nombre. */
   count?: number;
+  /** Épisodes : détails pour la carte « Bientôt ». */
+  season?: number;
+  episode?: number;
+  epTitle?: string;
+  backdrop?: string;
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0');

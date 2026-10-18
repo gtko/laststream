@@ -1,4 +1,5 @@
 /* Calendrier des suivis (#/calendar) et rangée d'accueil « Cette semaine dans tes suivis ». */
+import { soonItemHTML } from './soon.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { episodeLabel, groupByDate, isoDate, mergeEpisodes, monthGrid, movieReleases } from '../data/calendar';
@@ -38,7 +39,7 @@ async function seriesEvents(f, from, to) {
   const out = [];
   const nextEp = d.next_episode_to_air;
   if (nextEp && nextEp.air_date >= from && nextEp.air_date <= to) {
-    out.push({ date: nextEp.air_date, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(nextEp.season_number, nextEp.episode_number) });
+    out.push({ date: nextEp.air_date, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(nextEp.season_number, nextEp.episode_number), season: nextEp.season_number, episode: nextEp.episode_number, epTitle: nextEp.name, backdrop: d.backdrop_path });
   }
   const res = await Promise.allSettled(wanted.map((s) => tmdb('tv/' + f.id + '/season/' + s.season_number)));
   res.forEach((r, i) => {
@@ -46,7 +47,7 @@ async function seriesEvents(f, from, to) {
     (r.value.episodes || []).forEach((e) => {
       if (!e.air_date || e.air_date < from || e.air_date > to) return;
       if (out.some((x) => x.date === e.air_date && x.label === episodeLabel(wanted[i].season_number, e.episode_number))) return;
-      out.push({ date: e.air_date, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(wanted[i].season_number, e.episode_number) });
+      out.push({ date: e.air_date, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(wanted[i].season_number, e.episode_number), season: wanted[i].season_number, episode: e.episode_number, epTitle: e.name, backdrop: d.backdrop_path });
     });
   });
   return out;
@@ -102,6 +103,7 @@ export async function renderFollowRow() {
   const seen = new Set();
   const items = sorted.filter((e) => !seen.has(e.key) && seen.add(e.key)).slice(0, 20).map((e) => {
     const it = state.byKey.get(e.key);
+    if (e.kind === 'episode' && e.date >= today && e.season) return soonOf(e);
     return it ? tileCard(it, { variant: 'land', alwaysMeta: true, sub: e.label + ' · ' + (e.date < today ? 'sorti' : countdown(e.date) || fmtShort(e.date)) }) : '';
   }).filter(Boolean);
   if (!items.length) return;
@@ -123,6 +125,8 @@ function evHTML(e) {
     '<span class="cal-th">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(e.title.slice(0, 2)) + '</b>') + (watched ? '<span class="cal-check" aria-hidden="true">' + ICON.check + '</span>' : '') + '</span>' +
     '<span class="cal-tx"><strong>' + esc(e.title) + '</strong><em>' + esc(e.label) + '</em></span></button>';
 }
+
+const soonOf = (e) => soonItemHTML({ airDate: e.date, season: e.season, episode: e.episode, epTitle: e.epTitle, backdrop: e.backdrop, poster: e.poster, name: e.title }, e.key);
 
 function isEpWatched(e) {
   const m = /S(\d+) É(\d+)(?:–É(\d+))?/.exec(e.label);
@@ -154,7 +158,7 @@ function agendaHTML() {
     const d = new Date(date + 'T00:00:00');
     return '<section class="cal-agenda-day' + (date < today ? ' is-past' : '') + (date === today ? ' is-today' : '') + '"><h3>' +
       esc(d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })) + (date === today ? ' <span class="cal-now">Aujourd’hui</span>' : '') + '</h3>' +
-      '<div class="cal-agenda-list">' + evs.map((e) => evHTML(e)).join('') + '</div></section>';
+      '<div class="cal-agenda-list">' + evs.map((e) => (e.kind === 'episode' && e.date >= today && e.season ? soonOf(e) : evHTML(e))).join('') + '</div></section>';
   }).join('') + '</div>';
 }
 

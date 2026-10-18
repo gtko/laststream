@@ -19,13 +19,22 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const u = new URL(url);
   if (u.pathname === '/config/schema') return json({ properties: { services: { properties: { tmdbToken: { title: 'Jeton TMDB', description: 'd' } } } } });
   if (u.pathname === '/config/decode') return json({ services: { tmdbToken: { set: true, last4: '…abcd' }, openrouterModel: 'openai/gpt-4o-mini' }, languages: { preferred: ['fr'] }, sources: [], maxResults: 30 });
+  const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
+  if (season) {
+    const future = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+    return json({ poster_path: '/sp.jpg', episodes: [
+      { episode_number: 1, name: 'Pilote', air_date: '2020-01-01', still_path: '/s1.jpg', runtime: 42, overview: 'Début.' },
+      { episode_number: 4, name: 'Épisode 4', air_date: future(6), still_path: null, overview: '' },
+      { episode_number: 5, name: 'Le grand retour', air_date: future(13), still_path: '/s5.jpg', overview: '' },
+    ] });
+  }
   if (u.pathname.includes('/lt/tmdb/')) {
-    return json({
+    return json({ seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
       results: ITEMS, id: 100, title: 'Film 0', name: 'Série 0', overview: 'Un synopsis assez long pour la fiche.', tagline: 'Slogan',
       poster_path: '/p.jpg', backdrop_path: '/b.jpg', release_date: '2025-01-01', runtime: 120, vote_average: 7.4, genres: [{ id: 28, name: 'Action' }],
       images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: { imdb_id: 'tt0100' },
       release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ certification: '12', release_date: '2025-01-01', type: 3 }] }] },
-      recommendations: { results: ITEMS.slice(0, 3) }, similar: { results: [] }, seasons: [], 'watch/providers': { results: {} },
+      recommendations: { results: ITEMS.slice(0, 3) }, similar: { results: [] }, 'watch/providers': { results: {} },
     });
   }
   if (u.pathname.includes('/lt/mdblist/')) return json({ ratings: { imdb: 7.9 } });
@@ -219,6 +228,35 @@ describe('interface portée', () => {
     await settle(50);
     expect(document.querySelector('#detail .cal-agenda, #detail .cal-wrap .row-msg')).not.toBeNull();
     (document.querySelector('#detail [data-caltoday]') as HTMLElement).click();
+    location.hash = '#/';
+    await settle(50);
+  });
+
+  it('fiche série : carte « Bientôt » pour les épisodes à venir', async () => {
+    location.hash = '#/tv/101';
+    await settle(500);
+    const soon = Array.from(document.querySelectorAll('#detail .ep.is-soon')) as HTMLElement[];
+    expect(soon).toHaveLength(2);
+    const [a, b] = soon;
+    expect(a.querySelector('.soon-date b')!.textContent).toMatch(/^\d+$/);
+    expect(a.querySelector('.soon-date i')!.textContent).toMatch(/^[A-ZÉÛ]+$/);
+    expect(a.querySelector('.soon-count')!.textContent).toBe('Dans 6 jours');
+    expect(a.querySelector('.soon-code')!.textContent).toBe('S1 · É4');
+    expect(a.querySelector('.soon-title')).toBeNull(); // « Épisode 4 » est un titre générique
+    expect(a.querySelector('.ep-title')!.textContent).toBe('É4');
+    expect(a.querySelector('.ep-meta')!.textContent).toMatch(/^Le .+ · Bientôt$/);
+    expect(a.querySelector('.soon-bg img')!.getAttribute('src')).toContain('/w780/'); // fond de la série, pas une boîte vide
+    expect(a.classList.contains('is-seen')).toBe(false);
+    expect(a.querySelector('.soon-bell')).not.toBeNull();
+    expect(a.querySelector('.ep-seen')).toBeNull();
+    expect(b.querySelector('.soon-title')!.textContent).toBe('Le grand retour');
+    expect(b.querySelector('.soon.has-still .soon-bg img')!.getAttribute('src')).toContain('/w500/s5.jpg');
+    // « Me prévenir » suit la série.
+    (a.querySelector('.soon-bell') as HTMLElement).click();
+    expect(JSON.parse(localStorage.getItem('laststream.follows')!).some((f: { id: number }) => f.id === 101)).toBe(true);
+    expect(a.querySelector('.soon-bell')!.textContent).toBe('Suivi');
+    // L'épisode déjà sorti reste une carte normale.
+    expect(document.querySelector('#detail .ep[data-ep="1:1"] .ep-seen')).not.toBeNull();
     location.hash = '#/';
     await settle(50);
   });

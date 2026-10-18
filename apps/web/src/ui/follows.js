@@ -32,7 +32,8 @@ export function refreshFollowUI() {
     b.classList.toggle('is-on', on);
     b.dataset.tip = on ? 'Suivi' : 'Suivre';
     b.setAttribute('aria-label', on ? 'Suivi (ne plus suivre)' : 'Suivre');
-    const label = b.classList.contains('btn') ? '<span class="f-follow-label">' + (on ? 'Suivi' : 'Suivre') + '</span>' : '';
+    const off = b.dataset.offLabel;
+    const label = b.classList.contains('btn') || off ? '<span class="f-follow-label">' + (on ? 'Suivi' : off || 'Suivre') + '</span>' : '';
     b.innerHTML = (on ? ICON.bellOn : ICON.bell) + label;
   });
 }

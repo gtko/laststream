@@ -272,3 +272,39 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
   .cal-th { width: 100%; height: 34px; }
   .cal-title { min-width: 0; font-size: 20px; }
 }
+
+/* ---------- Carte « Bientôt » d'un épisode à venir ---------- */
+.soon { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; color: #fff; text-align: left; background: linear-gradient(150deg, #3a2130, #17151f 70%); isolation: isolate; }
+.soon-bg, .soon-bg img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.soon-bg img { object-fit: cover; transform: scale(1.12); filter: blur(6px) brightness(0.55); }
+.soon.has-still .soon-bg img { transform: none; filter: brightness(0.7); }
+.soon-grad { position: absolute; inset: 0; z-index: 1; background: linear-gradient(135deg, var(--accent), transparent 70%); opacity: 0.18; pointer-events: none; }
+.soon::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, rgba(12, 11, 17, 0.8), rgba(12, 11, 17, 0) 62%); pointer-events: none; }
+.soon-date { position: absolute; top: 10px; left: 10px; z-index: 3; width: 54px; padding: 6px 0 5px; border-radius: 12px; background: var(--accent); color: var(--on-accent); display: flex; flex-direction: column; align-items: center; line-height: 1; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); }
+.soon-date b { font-family: var(--ff-title); font-weight: 800; font-size: 26px; }
+.soon-date i { margin-top: 3px; font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; }
+.soon-count { position: absolute; top: 12px; right: 10px; z-index: 3; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(12, 11, 17, 0.72); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.soon-count:empty { display: none; }
+.soon-body { position: absolute; left: 14px; right: 14px; bottom: 16px; z-index: 3; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.soon-series { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.soon-logo { height: 28px; width: auto; max-width: 62%; object-fit: contain; object-position: left center; filter: brightness(0) invert(1); margin-bottom: 2px; }
+.soon-code { font-family: var(--ff-title); font-weight: 800; font-size: 26px; line-height: 1.05; letter-spacing: -0.01em; }
+.soon-title { font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.soon-dash { position: absolute; left: 0; right: 0; bottom: 0; height: 0; z-index: 3; border-top: 2px dashed rgba(255, 255, 255, 0.4); }
+.ep.is-soon { position: relative; }
+.ep.is-soon .ep-main { cursor: default; display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.ep.is-soon .ep-main:hover { transform: none; }
+.ep.is-soon .ep-title { color: var(--soft); }
+.soon-bell { position: absolute; right: 10px; bottom: 74px; z-index: 4; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 800; opacity: 0; transform: translateY(4px); transition: opacity 0.18s, transform 0.18s; }
+.soon-bell svg { width: 16px; height: 16px; }
+.soon-bell.is-on { background: rgba(12, 11, 17, 0.85); color: var(--text); }
+.ep.is-soon:hover .soon-bell, .ep.is-soon:focus-within .soon-bell, .soon-item:hover .soon-bell, .soon-item:focus-within .soon-bell { opacity: 1; transform: none; }
+@media (hover: none) { .soon-bell { opacity: 1; transform: none; } }
+.soon-item { position: relative; flex: 0 0 340px; width: 340px; min-width: 0; }
+.soon-card { display: block; width: 100%; border-radius: 12px; transition: transform 0.2s; }
+.soon-card:hover, .soon-card:focus-visible { transform: scale(1.02); outline: none; }
+.soon-card:focus-visible .soon { outline: 3px solid var(--accent); outline-offset: -3px; }
+.soon-item .soon-bell { bottom: 12px; }
+.cal-agenda-list .soon-item { flex: none; width: 100%; max-width: 360px; }
+@media (max-width: 640px) { .soon-item { flex-basis: 260px; width: 260px; } .soon-code { font-size: 22px; } }
+@media (prefers-reduced-motion: reduce) { .soon-bell, .soon-card { transition: none; transform: none; } }
