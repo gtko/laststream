@@ -315,9 +315,9 @@ describe('forme des streams Stremio', () => {
     expect(vff?.name).toBe('lastAddon 1080p');
     // Débit réel : 4,2 Go sur 120 min, soit environ 5 Mb/s ; la langue VFF est annoncée, pas vérifiée (« ? »).
     expect(vff?.description).toBe(
-      'WEB-DL • 📶 5 Mb/s 🇫🇷? • 💾 4,2 Go • 🌱 120 seeders\n🎧 AVC • 5.1 DDP • GRP\n🗂️ Film.2024.VFF.1080p.WEB-DL.DDP5.1.H264-GRP',
+      'WEB-DL • 📶 5 Mb/s 🇫🇷? • 💾 4,2 Go • 🌱 120 seeders • 🔎 Upstream\n🎧 AVC • 5.1 DDP • GRP\n🗂️ Film.2024.VFF.1080p.WEB-DL.DDP5.1.H264-GRP',
     );
-    expect(vff?.laststream).toMatchObject({ bitrateMbps: 5, copies: 1, verifiedLanguages: [], indexers: [] });
+    expect(vff?.laststream).toMatchObject({ bitrateMbps: 5, copies: 1, verifiedLanguages: [], indexers: [], origins: [{ kind: 'addon', name: 'Upstream' }] });
     expect(vff?.behaviorHints?.bingeGroup).toBe('lastaddon|1080p|vff|WEB-DL');
     expect(vff?.infoHash).toBe(H.vff);
     expect(vff?.url).toBeUndefined();

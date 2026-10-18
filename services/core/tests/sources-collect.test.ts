@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseConfig } from '../src/config/schema.js';
 import { collectStreams, mergeIndexerCopies } from '../src/sources/collect.js';
 import type { FetchFn } from '../src/sources/http.js';
+import { clearProwlarrDiscoveryCache } from '../src/sources/prowlarr.js';
 import type { ContentRef } from '../src/types.js';
+
+// Les recherches par indexeur sont gardées en mémoire (5 min) : chaque test repart de zéro.
+beforeEach(() => clearProwlarrDiscoveryCache());
 
 const MOVIE: ContentRef = { type: 'movie', id: 'tt1234567', imdbId: 'tt1234567' };
 const TORZNAB_KEY = 'TZ-COLLECT-SECRET-9';

@@ -154,55 +154,74 @@ describe('discoverProwlarrIndexers', () => {
 });
 
 describe('searchProwlarr : regroupement par capacité', () => {
-  it('film : Alpha (id IMDb) en requête par id, Beta (texte) en requêtes « Titre » et « Titre Année » avec les catégories 2000', async () => {
+  it('film : une requête par indexeur ; Alpha (id IMDb) par id, Beta (texte) par « Titre » puis « Titre Année » faute de résultat', async () => {
     const { fetch, mock } = routes(() => jsonResponse([]));
 
     await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film', year: 2024 } });
 
     const searches = searchCalls(mock);
-    // Une requête par id (Alpha, ancrée sur le titre), puis une requête texte par variante pour Beta.
-    expect(searches).toHaveLength(3);
-    const byId = searches.find((url) => url.searchParams.has('imdbId'));
-    const byText = searches.filter((url) => !url.searchParams.has('imdbId'));
+    // Chaque requête vise un seul indexeur (indexerIds=<id>).
+    expect(searches.every((url) => url.searchParams.getAll('indexerIds').length === 1)).toBe(true);
+    const alpha = searches.filter((url) => url.searchParams.get('indexerIds') === '1');
+    const beta = searches.filter((url) => url.searchParams.get('indexerIds') === '2');
+    const byId = alpha.find((url) => url.searchParams.has('imdbId'));
     expect(byId?.searchParams.get('type')).toBe('movie');
     expect(byId?.searchParams.get('imdbId')).toBe('1234567');
-    expect(byId?.searchParams.getAll('indexerIds')).toEqual(['1']);
     expect(byId?.searchParams.getAll('categories')).toEqual(['2000']);
     expect(byId?.searchParams.get('query')).toBe('Film');
-    expect(byText.map((url) => url.searchParams.get('query'))).toEqual(['Film', 'Film 2024']);
-    expect(byText.map((url) => url.searchParams.getAll('indexerIds'))).toEqual([['1', '2'], ['1', '2']]);
+    // Cœur de Beta : « Titre » ; rien reçu : le complément « Titre Année » part ensuite.
+    expect(beta.map((url) => url.searchParams.get('query'))).toEqual(['Film', 'Film 2024']);
+    expect(beta.every((url) => url.searchParams.getAll('categories').join() === '2000')).toBe(true);
   });
 
-  it('épisode : tvsearch avec titre, saison et épisode pour l’id ; texte « Titre S01 » puis « Titre S01E02 », catégories 5000', async () => {
+  it('film : un résultat de la requête par id suffit, aucune requête texte de plus pour Alpha', async () => {
+    const release = { title: 'Film.2024.1080p.BluRay', indexer: 'Alpha', indexerId: 1, protocol: 'torrent', infoHash: HASH };
+    const { fetch, mock } = routes((url) => jsonResponse(url.searchParams.has('imdbId') ? [release] : []));
+
+    await searchProwlarr(SOURCE, MOVIE, { fetch, titleInfo: { title: 'Film', year: 2024 } });
+
+    const alpha = searchCalls(mock).filter((url) => url.searchParams.get('indexerIds') === '1');
+    expect(alpha).toHaveLength(1);
+    expect(alpha[0]?.searchParams.has('imdbId')).toBe(true);
+  });
+
+  it('épisode : tvsearch avec titre, saison et épisode pour l’id ; packs « SNN » partout, épisode exact seulement sans id', async () => {
     const { fetch, mock } = routes(() => jsonResponse([]));
 
     await searchProwlarr(SOURCE, SERIES, { fetch, titleInfo: { title: 'Serie' } });
 
     const searches = searchCalls(mock);
-    const byId = searches.find((url) => url.searchParams.has('imdbId'));
-    const byText = searches.filter((url) => !url.searchParams.has('imdbId'));
+    const alpha = searches.filter((url) => url.searchParams.get('indexerIds') === '1');
+    const beta = searches.filter((url) => url.searchParams.get('indexerIds') === '2');
+    const byId = alpha.find((url) => url.searchParams.has('imdbId'));
     expect(byId?.searchParams.get('type')).toBe('tvsearch');
     expect(byId?.searchParams.get('query')).toBe('Serie');
     expect(byId?.searchParams.get('season')).toBe('1');
     expect(byId?.searchParams.get('episode')).toBe('2');
     expect(byId?.searchParams.getAll('categories')).toEqual(['5000']);
-    expect(byText.map((url) => url.searchParams.get('query'))).toEqual([
-      'Serie S01',
-      'Serie Saison 1',
-      'Serie Intégrale',
-      'Serie complete',
-      'Serie S01E02',
-      'Serie Integrale',
-    ]);
-    // Packs et intégrale : tous les indexeurs ; épisode exact : seulement les indexeurs sans id (Beta).
-    expect(byText.map((url) => [url.searchParams.get('query'), url.searchParams.getAll('indexerIds')])).toEqual([
-      ['Serie S01', ['1', '2']],
-      ['Serie Saison 1', ['1', '2']],
-      ['Serie Intégrale', ['1', '2']],
-      ['Serie complete', ['1', '2']],
-      ['Serie S01E02', ['2']],
-      ['Serie Integrale', ['1', '2']],
-    ]);
+    const queriesOf = (urls: URL[]): (string | null)[] => urls.filter((url) => !url.searchParams.has('imdbId')).map((url) => url.searchParams.get('query'));
+    // Cœur : pack « SNN » (+ épisode exact sans id) ; compléments : « Saison N », intégrale, « complete » (rien reçu).
+    expect(queriesOf(alpha).slice(0, 1)).toEqual(['Serie S01']);
+    expect(queriesOf(alpha)).not.toContain('Serie S01E02');
+    expect(queriesOf(beta).slice(0, 2)).toEqual(['Serie S01', 'Serie S01E02']);
+    expect(queriesOf(beta)).toEqual(expect.arrayContaining(['Serie Saison 1', 'Serie Intégrale']));
+    // Aucune requête en double pour un même indexeur.
+    for (const urls of [alpha, beta]) {
+      const keys = urls.map((url) => url.searchParams.toString());
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+  });
+
+  it('épisode : l’id a répondu, l’intégrale (requête texte) est sautée chez cet indexeur ; « Saison N » reste demandée', async () => {
+    const release = { title: 'Serie.S01E02.1080p', indexer: 'Alpha', indexerId: 1, protocol: 'torrent', infoHash: HASH };
+    const { fetch, mock } = routes((url) => jsonResponse(url.searchParams.has('imdbId') ? [release] : []));
+
+    await searchProwlarr(SOURCE, SERIES, { fetch, titleInfo: { title: 'Serie' } });
+
+    const alphaQueries = searchCalls(mock)
+      .filter((url) => url.searchParams.get('indexerIds') === '1' && !url.searchParams.has('imdbId'))
+      .map((url) => url.searchParams.get('query'));
+    expect(alphaQueries).toEqual(['Serie S01', 'Serie Saison 1']);
   });
 
   it('sans titre connu : pas de requête texte, seule la requête par id part', async () => {
@@ -386,7 +405,7 @@ describe('searchProwlarr : isolation, santé et budget', () => {
 
     await searchProwlarr(SOURCE, MOVIE, { fetch, health, titleInfo: { title: 'Film' } });
 
-    // Alpha reçoit la requête par id et la requête texte (packs : tous les indexeurs) : deux réussites.
+    // Alpha : requête par id, puis (rien reçu) le complément texte « Film » : deux réussites.
     expect(health.get('Prowlarr', 1)).toMatchObject({ status: 'ok', count: 2, errorCount: 0 });
     expect(health.get('Prowlarr', 2)?.avgLatencyMs).toEqual(expect.any(Number));
   });

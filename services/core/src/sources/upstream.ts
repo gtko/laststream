@@ -135,6 +135,21 @@ function toRawStream(raw: Record<string, unknown>, sourceName: string): RawStrea
 }
 
 /**
+ * Charge le manifest d'un addon en arrière-plan (cache 1 h) pour que ses flux portent son nom et son logo. Échec ignoré.
+ */
+export function warmUpstreamManifest(source: UpstreamSource, opts: HttpOptions = {}): void {
+  if (manifestCache.get(manifestCacheKey(source.url)) === undefined) void loadManifest(source, opts).catch(() => undefined);
+}
+
+/** Provenance d'un flux de l'addon : nom et logo du manifest s'il est en cache, sinon le nom de la source. */
+function originOf(source: UpstreamSource, _opts: HttpOptions): { name: string; logo?: string } {
+  const cached = manifestCache.get(manifestCacheKey(source.url));
+  const origin: { name: string; logo?: string } = { name: cached?.name ?? source.name };
+  if (cached?.logo !== undefined) origin.logo = cached.logo;
+  return origin;
+}
+
+/**
  * Interroge un addon Stremio amont pour un contenu et renvoie ses streams.
  * Lève une SourceError sûre (sans URL ni clé) en cas d'erreur HTTP, de JSON invalide ou de délai dépassé.
  */
@@ -156,7 +171,8 @@ export async function fetchUpstream(
     if (!isRecord(body) || !Array.isArray(body.streams)) {
       throw new SourceError('réponse inattendue (champ streams absent)');
     }
-    return body.streams.filter(isRecord).map((raw) => toRawStream(raw, source.name));
+    const origin = originOf(source, opts);
+    return body.streams.filter(isRecord).map((raw) => ({ ...toRawStream(raw, source.name), origin }));
   } catch (err) {
     throw sourceFailure(source.name, err);
   }

@@ -1,6 +1,6 @@
 import { LruCache, hashConfigKey } from './cache/lru.js';
 import type { Config } from './config/schema.js';
-import { getCinemetaTitle, getRuntimeSeconds } from './engine/cinemeta.js';
+import { getCinemetaTitle, getRuntimeSeconds, getSeasonEpisodeCounts } from './engine/cinemeta.js';
 import { type FormatItem, type PlayableCopy, formatStreams } from './engine/format.js';
 import { type CopyRef, type GroupedCandidate, groupCopies } from './engine/group.js';
 import { enrichHosterLinks } from './engine/hosters-step.js';
@@ -14,17 +14,23 @@ import type { AllDebridClient } from './sources/alldebrid.js';
 import type { HostHealth } from './play/hosts.js';
 import type { PackStore } from './play/packs.js';
 import { parseRawStream } from './parse/index.js';
-import { scopeCovers } from './parse/scope.js';
+import { type ReleaseScope, scopeCovers } from './parse/scope.js';
 import { type CollectResult, collectStreams, mergeIndexerCopies, type SourceErrorEntry } from './sources/collect.js';
 import type { HosterClient } from './sources/hosters.js';
 import type { TitleInfo } from './sources/indexers.js';
 import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
+import { PROWLARR_BUDGET_MS, PROWLARR_SOFT_MS } from './sources/prowlarr.js';
 import { getTitleVariants, nameMatchesTitles, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
-import type { ContentRef, RawStream, StremioStream } from './types.js';
+import type { ContentRef, RawStream, StremioStream, StreamOrigin } from './types.js';
 import type { AnimeMapper } from './anime/mapping.js';
 
+/**
+ * Budget de lecture des .torrent d'une réponse rapide (échéance douce), en ms : un .torrent d'indexeur privé met souvent
+ * 1 à 3 s. Les lectures abandonnées sont reprises, avec le budget complet, par le recalcul en arrière-plan.
+ */
+const SOFT_TORRENT_BUDGET_MS = 1_200;
 /** Nombre maximal de .torrent lus (flux sans infoHash mais avec downloadUrl), les premiers après fusion. */
 const RESOLVE_TOP_N = 12;
 /** Nombre maximal d'infoHash interrogés auprès du débrideur pour le statut « cache » (copies des premiers groupes). */
@@ -48,7 +54,7 @@ export interface StageBudgets {
   hosters: number;
   probe: number;
 }
-const STAGE_BUDGET_MS: StageBudgets = { sources: 15_000, torrents: 3_000, cache: 2_000, hosters: 2_000, probe: 3_000 };
+const STAGE_BUDGET_MS: StageBudgets = { sources: PROWLARR_BUDGET_MS, torrents: 3_000, cache: 2_000, hosters: 2_000, probe: 3_000 };
 
 /** Durée de vie du cache des résultats : 5 minutes, 200 entrées. */
 const RESULT_TTL_MS = 5 * 60 * 1_000;
@@ -88,16 +94,39 @@ export interface PipelineContext {
   stageTimer?: (stage: string, ms: number) => void;
   /** Budgets des étapes (tests). Défaut : STAGE_BUDGET_MS. */
   budgetsMs?: Partial<StageBudgets>;
-  /** Prowlarr local détecté : interrogé seulement si la configuration n'a aucune source (et autoProwlarr actif). */
+  /** Prowlarr local détecté : ajouté aux sources de la configuration (autoProwlarr actif, sauf s'il y figure déjà). */
   localProwlarr?: LocalProwlarrProvider;
   /** Remappage anime (numéro absolu d'un épisode de série). Absent : aucun remappage, comportement inchangé. */
   animeMapper?: Pick<AnimeMapper, 'toAbsolute'>;
+  /** Échéance douce des indexeurs Prowlarr, en ms (défaut PROWLARR_SOFT_MS) : au-delà, réponse partielle. */
+  softMs?: number;
+  /** `full` : attend tous les indexeurs (dans le budget dur) au lieu de répondre à l'échéance douce. */
+  wait?: 'soft' | 'full';
+  /** Recalcul en arrière-plan : les indexeurs échoués récemment ne sont pas relancés. Usage interne. */
+  reuseFailed?: boolean;
 }
 
 export interface PipelineResult {
   streams: StremioStream[];
   /** Erreurs isolées des sources : elles ne font jamais échouer la requête. */
   errors: SourceErrorEntry[];
+  /** Vrai si des indexeurs lents n'ont pas encore répondu : le résultat complet remplacera celui-ci dans le cache. */
+  partial?: boolean;
+  /** Noms des indexeurs encore en cours (avec `partial`). */
+  pending?: string[];
+}
+
+/** Calcul d'un résultat, et sa suite en arrière-plan quand il est partiel. */
+interface Computed {
+  result: PipelineResult;
+  /** Se résout quand les recherches encore actives (indexeurs lents, compléments) sont terminées. */
+  settled?: Promise<void>;
+}
+
+/** Avancement d'une requête, pour les clients qui rechargent un résultat partiel. */
+export interface StreamsStatus {
+  pending: string[];
+  count: number;
 }
 
 /** Candidat groupé, classé ou non : ses copies suivent le candidat à travers les étapes. */
@@ -129,22 +158,68 @@ function withCopies<T extends Candidate>(items: T[]): (T & { copies: CopyRef[] }
  * intégrale / multi-saisons qui la couvre. Une release sans aucun texte, ou un lien direct, n'est pas écartée : rien
  * à vérifier. Une release au nom sans portée reconnue est écartée (« Titre S04E05 » ne passe pas pour S04E04).
  */
-function coversRequest(candidate: Candidate, ref: ContentRef, titles: readonly string[], absolute?: number): boolean {
+/** Raison pour laquelle une release est écartée (« titre » ou « portée »), ou undefined si elle est gardée. */
+function rejectionOf(
+  candidate: Candidate,
+  ref: ContentRef,
+  titles: readonly string[],
+  absolute?: number,
+): 'titre' | 'portee' | undefined {
   const { season, episode } = ref;
-  if (ref.type !== 'series' || season === undefined || episode === undefined) return true;
+  if (ref.type !== 'series' || season === undefined || episode === undefined) return undefined;
   const { raw } = candidate;
-  if (raw.url !== undefined) return true;
+  if (raw.url !== undefined) return undefined;
   const hasText = [raw.filename, raw.title, raw.name, raw.description].some((text) => text !== undefined && text.trim() !== '');
-  if (!hasText) return true;
+  if (!hasText) return undefined;
   // Le nom de la release doit contenir un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
   const release = raw.filename ?? raw.title;
-  if (release !== undefined && !nameMatchesTitles(release, titles)) return false;
+  if (release !== undefined && !nameMatchesTitles(release, titles)) return 'titre';
   const scope = candidate.parsed.scope ?? {};
   // Numéro absolu (anime) sans remappage connu (remappeur absent ou en délai) : la release n'est pas écartée, faute
   // de moyen de la vérifier. Avec un remappage, la correspondance est exigée.
   const absoluteOnly = scope.absolute !== undefined && scope.episode === undefined && scope.pack === undefined;
-  if (absoluteOnly && absolute === undefined) return true;
-  return scopeCovers(scope, season, episode, absolute);
+  if (absoluteOnly && absolute === undefined) return undefined;
+  return scopeCovers(scope, season, episode, absolute) ? undefined : 'portee';
+}
+
+/** Compteurs par étape (débogage), journalisés si LASTADDON_DEBUG=1 : jamais de contenu, seulement des nombres. */
+function debugStage(ref: ContentRef, stage: string, details: Record<string, number | string>): void {
+  if (process.env.LASTADDON_DEBUG !== '1') return;
+  console.debug(`[pipeline ${ref.id}] ${stage} ${JSON.stringify(details)}`);
+}
+
+/** Épisodes supposés d'une saison dont le nombre est inconnu (Cinemeta absent ou sans cette saison). */
+const DEFAULT_SEASON_EPISODES = 10;
+/** Épisodes supposés d'une intégrale sans bornes de saisons, quand le nombre de saisons est inconnu. */
+const DEFAULT_COMPLETE_EPISODES = 50;
+
+/** Nombre d'épisodes couverts par un pack : sa saison, ou les saisons de l'intégrale (Cinemeta, sinon valeurs par défaut). */
+export function packEpisodeCount(scope: ReleaseScope, counts: ReadonlyMap<number, number>): number {
+  if (scope.pack === 'season') {
+    return (scope.season === undefined ? undefined : counts.get(scope.season)) ?? DEFAULT_SEASON_EPISODES;
+  }
+  const seasons: number[] = [];
+  if (scope.seasons !== undefined) {
+    for (let season = scope.seasons.from; season <= scope.seasons.to && seasons.length < 60; season += 1) seasons.push(season);
+  } else {
+    seasons.push(...[...counts.keys()].filter((season) => season > 0));
+  }
+  if (seasons.length === 0) return DEFAULT_COMPLETE_EPISODES;
+  return seasons.reduce((sum, season) => sum + (counts.get(season) ?? DEFAULT_SEASON_EPISODES), 0);
+}
+
+/**
+ * Pack (saison ou intégrale) d'une série : sa taille est celle de tout le pack, pas de l'épisode demandé. Elle est
+ * remplacée par une estimation par épisode (taille du pack / nombre d'épisodes), pour que les filtres de taille et de
+ * débit, le classement et l'affichage jugent l'épisode ; la taille du pack est gardée dans `packSizeBytes`. Le fichier
+ * exact est choisi à la lecture. Sans taille, sans pack ou hors série : inchangé.
+ */
+function withEpisodeSize(candidate: Candidate, ref: ContentRef, counts: ReadonlyMap<number, number>): Candidate {
+  const { scope } = candidate.parsed;
+  const size = candidate.parsed.sizeBytes ?? candidate.raw.sizeBytes;
+  if (ref.type !== 'series' || scope?.pack === undefined || size === undefined || !(size > 0)) return candidate;
+  const episodes = Math.max(1, packEpisodeCount(scope, counts));
+  return { ...candidate, parsed: { ...candidate.parsed, sizeBytes: Math.floor(size / episodes), packSizeBytes: size } };
 }
 
 /** Numéro absolu d'un épisode de série (remappage anime), borné à ANIME_TIMEOUT_MS. Undefined sans remappage. */
@@ -260,8 +335,25 @@ const urlKey = (url: string): string => `url:${url}`;
 /** Indexeurs et informations de torrent par source (infoHash ou URL), pour les copies d'un groupe. */
 interface SourceInfo {
   indexers: string[];
+  origins: StreamOrigin[];
   guid?: string;
   privateTorrent: boolean;
+}
+
+/** Provenances d'un flux : l'addon amont, ou chacun des indexeurs (du Prowlarr local ou d'une source explicite). */
+function originsOf(raw: RawStream): StreamOrigin[] {
+  if (raw.origin !== undefined) {
+    return [{ kind: 'addon', name: raw.origin.name, ...(raw.origin.logo === undefined ? {} : { logo: raw.origin.logo }) }];
+  }
+  const kind = raw.viaLocalProwlarr === true ? 'prowlarr-local' : 'indexer';
+  return (raw.indexers ?? []).map((name) => ({ kind, name }));
+}
+
+/** Ajoute des provenances sans doublon (même type et même nom). */
+function addOrigins(into: StreamOrigin[], more: readonly StreamOrigin[]): void {
+  for (const origin of more) {
+    if (!into.some((known) => known.kind === origin.kind && known.name === origin.name)) into.push(origin);
+  }
 }
 
 function indexSources(candidates: Candidate[]): Map<string, SourceInfo> {
@@ -271,8 +363,9 @@ function indexSources(candidates: Candidate[]): Map<string, SourceInfo> {
     const keys = [hash === undefined ? undefined : hashKey(hash), isDirect(candidate) ? urlKey(candidate.raw.url ?? '') : undefined];
     for (const key of keys) {
       if (key === undefined) continue;
-      const info = index.get(key) ?? { indexers: [], privateTorrent: false };
+      const info = index.get(key) ?? { indexers: [], origins: [], privateTorrent: false };
       info.indexers.push(...(candidate.raw.indexers ?? []));
+      addOrigins(info.origins, originsOf(candidate.raw));
       if (info.guid === undefined && candidate.raw.guid !== undefined) info.guid = candidate.raw.guid;
       if (candidate.raw.privateTorrent === true) info.privateTorrent = true;
       index.set(key, info);
@@ -338,11 +431,14 @@ function toFormatItem(
   if (copies.length === 0 && isPrivateItem(item, sources)) return undefined;
   const cachedFirst = [...copies].sort((a, b) => Number(b.cached === true) - Number(a.cached === true));
   const indexers = new Set<string>(item.raw.indexers ?? []);
+  const origins: StreamOrigin[] = [];
+  addOrigins(origins, originsOf(item.raw));
   for (const copy of item.copies) {
     const key = copy.infoHash !== undefined ? hashKey(copy.infoHash) : copy.url !== undefined ? urlKey(copy.url) : undefined;
     for (const name of key === undefined ? [] : (sources.get(key)?.indexers ?? [])) indexers.add(name);
+    addOrigins(origins, key === undefined ? [] : (sources.get(key)?.origins ?? []));
   }
-  return { ...item, copies: cachedFirst, indexers: [...indexers] };
+  return { ...item, copies: cachedFirst, indexers: [...indexers], origins };
 }
 
 /** Pack learning : le fichier d'un épisode connu du magasin (torrent déjà lu) remplace celui de la copie. */
@@ -380,14 +476,48 @@ function resultCacheKey(config: Config, ref: ContentRef, ctx: PipelineContext): 
 }
 
 /**
- * Sources interrogées : celles de la configuration, ou le Prowlarr local détecté quand elle n'en a aucune. Le
- * fournisseur n'est appelé que dans ce cas ; son échec n'empêche jamais la requête (sources vides).
+ * Sources interrogées : celles de la configuration, plus le Prowlarr local détecté (voir effectiveSources). Le
+ * fournisseur est appelé à chaque requête (détection mise en cache) ; son échec n'empêche jamais la requête.
  */
 async function sourcesOf(config: Config, ctx: PipelineContext): Promise<Config['sources']> {
-  if (config.sources.length > 0 || !config.autoProwlarr || ctx.localProwlarr === undefined) return config.sources;
+  if (!config.autoProwlarr || !config.localProwlarr.enabled || ctx.localProwlarr === undefined) return config.sources;
   const provider = ctx.localProwlarr;
   const local = await settle(() => provider(), null);
   return effectiveSources(config, local);
+}
+
+/** Calculs en cours par clé de cache : deux requêtes identiques simultanées ne lancent qu'un calcul. */
+const inflight = new Map<string, Promise<PipelineResult>>();
+/** Recalculs complets en arrière-plan (après un résultat partiel), par clé de cache. */
+const refreshing = new Map<string, Promise<PipelineResult>>();
+
+/**
+ * Quand les indexeurs lents ont répondu, recalcule le résultat complet (leurs réponses sont en mémoire : le recalcul ne
+ * refait aucune requête) et remplace l'entrée partielle du cache (stale-while-revalidate).
+ */
+function refreshInBackground(
+  key: string,
+  cache: LruCache<PipelineResult>,
+  config: Config,
+  ref: ContentRef,
+  ctx: PipelineContext,
+  settled: Promise<void>,
+  partial: PipelineResult,
+): void {
+  const work = (async (): Promise<PipelineResult> => {
+    await settled;
+    const { result } = await computeStreams(config, ref, { ...ctx, wait: 'full', reuseFailed: true });
+    if (result.errors.length === 0) cache.set(key, result);
+    else cache.delete(key);
+    return result;
+  })().catch(() => {
+    cache.delete(key);
+    return partial;
+  });
+  refreshing.set(key, work);
+  void work.finally(() => {
+    if (refreshing.get(key) === work) refreshing.delete(key);
+  });
 }
 
 /**
@@ -395,18 +525,51 @@ async function sourcesOf(config: Config, ctx: PipelineContext): Promise<Config['
  * parsing, filtre, groupement des copies, statut « cache », liens d'hébergeur, classement, sonde audio, second
  * filtre, apprentissage des packs, formatage Stremio. Chaque étape est isolée : son échec la désactive, sans exception.
  * Les résultats sans erreur de source sont gardés en cache (LRU, 5 min) quand ctx.cache n'est pas `false`.
+ * Indexeurs lents : à l'échéance douce (ctx.softMs), le résultat est partiel (`partial`, `pending`) ; il est gardé en
+ * cache, puis remplacé par le résultat complet quand les indexeurs lents ont répondu. `ctx.wait = 'full'` attend ce
+ * résultat complet.
  */
 export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<PipelineResult> {
   const effective: Config = { ...config, sources: await sourcesOf(config, ctx) };
   const cache = ctx.cache === false ? undefined : (ctx.cache ?? sharedResultCache);
   const key = cache === undefined ? undefined : resultCacheKey(effective, ref, ctx);
-  if (cache !== undefined && key !== undefined) {
-    const hit = cache.get(key);
-    if (hit !== undefined) return hit;
+  if (cache === undefined || key === undefined) return (await computeStreams(effective, ref, ctx)).result;
+
+  const waitFull = async (result: PipelineResult): Promise<PipelineResult> =>
+    result.partial === true && ctx.wait === 'full' ? ((await refreshing.get(key)) ?? result) : result;
+  const hit = cache.get(key);
+  if (hit !== undefined) return waitFull(hit);
+  const running = inflight.get(key);
+  if (running !== undefined) return waitFull(await running);
+
+  const work = (async (): Promise<PipelineResult> => {
+    const { result, settled } = await computeStreams(effective, ref, ctx);
+    // Recherches encore actives (indexeurs lents, compléments) : le résultat est gardé, puis remplacé par le complet.
+    if (settled !== undefined && (result.partial === true || result.errors.length === 0)) {
+      cache.set(key, result);
+      refreshInBackground(key, cache, effective, ref, ctx, settled, result);
+    } else if (result.errors.length === 0) {
+      cache.set(key, result);
+    }
+    return result;
+  })();
+  inflight.set(key, work);
+  try {
+    return await waitFull(await work);
+  } finally {
+    if (inflight.get(key) === work) inflight.delete(key);
   }
-  const result = await computeStreams(effective, ref, ctx);
-  if (cache !== undefined && key !== undefined && result.errors.length === 0) cache.set(key, result);
-  return result;
+}
+
+/** Avancement d'une requête : indexeurs encore en cours et nombre de flux disponibles (léger : aucune recherche lancée). */
+export async function getStreamsStatus(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<StreamsStatus> {
+  const effective: Config = { ...config, sources: await sourcesOf(config, ctx) };
+  const cache = ctx.cache === false ? undefined : (ctx.cache ?? sharedResultCache);
+  if (cache === undefined) return { pending: [], count: 0 };
+  const key = resultCacheKey(effective, ref, ctx);
+  const hit = cache.get(key);
+  if (hit !== undefined) return { pending: hit.partial === true ? (hit.pending ?? []) : [], count: hit.streams.length };
+  return { pending: inflight.has(key) ? ['search'] : [], count: 0 };
 }
 
 /** Chronomètre d'étapes : chaque `lap` signale le temps écoulé depuis le lap précédent (sans effet sans stageTimer). */
@@ -415,6 +578,7 @@ function stageClock(timer: PipelineContext['stageTimer']): (stage: string) => vo
   return (stage) => {
     const now = Date.now();
     timer?.(stage, now - last);
+    if (process.env.LASTADDON_DEBUG === '1') console.debug(`[pipeline] étape ${stage} ${now - last} ms`);
     last = now;
   };
 }
@@ -428,7 +592,7 @@ function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([work, expired]).finally(() => clearTimeout(timer));
 }
 
-async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<PipelineResult> {
+async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<Computed> {
   const fetchFn = ctx.fetch;
   const tmdbToken = config.services.tmdbToken;
   const budget: StageBudgets = { ...STAGE_BUDGET_MS, ...ctx.budgetsMs };
@@ -447,16 +611,25 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   const titles = withTitleFallback(tmdbTitles, cinemetaTitle);
   lap('a.titres');
   const collecting = settle(
-    () => collectStreams(config, ref, { fetch: fetchFn, titles, budgetMs: budget.sources, absolute }),
+    () =>
+      collectStreams(config, ref, {
+        fetch: fetchFn,
+        titles,
+        budgetMs: budget.sources,
+        absolute,
+        softMs: ctx.wait === 'full' ? undefined : (ctx.softMs ?? PROWLARR_SOFT_MS),
+        reuseFailed: ctx.reuseFailed,
+      }),
     EMPTY_COLLECT,
   );
   const metaLoading = Promise.all([
     settle(() => getRuntimeSeconds(ref, { fetch: fetchFn }), undefined),
     settle(() => getContentMeta(ref, { tmdbToken, fetch: fetchFn, timeoutMs: META_TIMEOUT_MS }), {} as ContentMeta),
+    settle(() => getSeasonEpisodeCounts(ref, { fetch: fetchFn }), new Map<number, number>()),
   ]);
   const collected = await collecting;
   lap('b.sources');
-  const [runtime, contentMeta] = await metaLoading;
+  const [runtime, contentMeta, seasonCounts] = await metaLoading;
   const meta: ContentMeta = { ...contentMeta };
   if (meta.runtimeSeconds === undefined && runtime !== undefined) meta.runtimeSeconds = runtime;
 
@@ -467,10 +640,12 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
         fetch: fetchFn,
         topN: RESOLVE_TOP_N,
         cache: ctx.torrentCache,
-        budgetMs: budget.torrents,
+        budgetMs: ctx.wait === 'full' ? budget.torrents : Math.min(budget.torrents, SOFT_TORRENT_BUDGET_MS),
       }),
     collected.streams,
   );
+  // Lectures abandonnées à l'échéance courte : le recalcul en arrière-plan (budget complet) les reprend.
+  const unresolved = ctx.wait === 'full' ? 0 : read.filter((raw) => raw.infoHash === undefined && raw.downloadUrl !== undefined).length;
   lap('c.torrents');
   const streams = mergeIndexerCopies(read);
   if (ctx.packStore !== undefined) {
@@ -482,9 +657,23 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   }
 
   // c) parsing, filtre par épisode (série), premier filtre, groupement des copies.
-  const candidates: Candidate[] = streams
-    .map((raw) => ({ raw, parsed: parseRawStream(raw) }))
-    .filter((candidate) => coversRequest(candidate, ref, titles.titles, absolute));
+  const parsedAll: Candidate[] = streams.map((raw) => withEpisodeSize({ raw, parsed: parseRawStream(raw) }, ref, seasonCounts));
+  const rejections = parsedAll.map((candidate) => rejectionOf(candidate, ref, titles.titles, absolute));
+  const candidates: Candidate[] = parsedAll.filter((_candidate, index) => rejections[index] === undefined);
+  debugStage(ref, 'c.parse', {
+    collected: collected.streams.length,
+    withHash: read.length,
+    parsed: parsedAll.length,
+    rejetTitre: rejections.filter((r) => r === 'titre').length,
+    rejetPortee: rejections.filter((r) => r === 'portee').length,
+    gardes: candidates.length,
+    titres: titles.titles.join(' | '),
+  });
+  if (process.env.LASTADDON_DEBUG_NAMES === '1') {
+    parsedAll.forEach((candidate, index) => {
+      console.debug(`[pipeline ${ref.id}] ${rejections[index] ?? 'garde'} ${JSON.stringify(candidate.parsed.scope ?? {})} ${candidate.raw.title ?? ''} ${candidate.raw.sizeBytes ?? ''}`);
+    });
+  }
   const sources = indexSources(candidates);
   let pool = candidates;
   if (hosters !== undefined && !config.filters.includeHosterLinks) {
@@ -495,6 +684,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   const firstPass = await settle(() => filterCandidates(pool, firstPassConfig(config), meta), []);
   let groups: Grouped[] = await settle(() => groupCopies(firstPass), []);
   lap('d.filtre1');
+  debugStage(ref, 'd.filtre1', { entree: pool.length, apresFiltres: firstPass.length, apresGroupement: groups.length });
 
   // Statut « cache » AllDebrid, par copie (budget propre : à l'échéance, groupes inchangés).
   const debrid = ctx.debrid;
@@ -542,6 +732,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   const verified = withCopies(await settle(() => filterCandidates(unflagged, config, meta), unflagged));
   const finalRanked = limitPerResolution(rankWithCopies(verified, config), config);
   lap('h.filtre2');
+  debugStage(ref, 'h.final', { sonde: probed.length, apresFiltre2: verified.length, final: finalRanked.length });
 
   // d) pack learning, puis formatage (un torrent privé sans copie jouable n'est pas livré).
   const learned = applyLearnedFiles(finalRanked, ref, ctx.packStore);
@@ -563,5 +754,14 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     episode: ref.episode,
   });
   lap('i.format');
-  return { streams: formatted, errors: collected.errors };
+  const result: PipelineResult = { streams: formatted, errors: collected.errors };
+  const pending = collected.pending ?? [];
+  if (pending.length > 0) {
+    result.partial = true;
+    result.pending = pending;
+    for (const stream of result.streams) stream.laststream = { ...stream.laststream, partial: true };
+  }
+  debugStage(ref, 'i.format', { streams: formatted.length, pending: pending.join(',') });
+  const settled = collected.settled ?? (unresolved > 0 ? Promise.resolve() : undefined);
+  return { result, settled };
 }

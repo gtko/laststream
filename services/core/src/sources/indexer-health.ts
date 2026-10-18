@@ -10,6 +10,8 @@ export const LATENCY_WINDOW = 10;
 /** Nombre maximal d'indexeurs suivis ; au-delà, le plus anciennement créé est oublié. */
 export const MAX_TRACKED_INDEXERS = 1000;
 const MAX_ERROR_CODE_LENGTH = 120;
+/** Poids de la dernière mesure dans la moyenne exponentielle (EWMA) de latence. */
+export const EWMA_ALPHA = 0.3;
 
 export type HealthStatus = 'ok' | 'slow' | 'error';
 
@@ -35,6 +37,8 @@ interface Entry {
   source: string;
   indexerId: string;
   latencies: number[];
+  /** Latence moyenne exponentielle (réussites et délais dépassés) : sert à lancer les indexeurs lents en premier. */
+  ewmaMs?: number;
   count: number;
   errorCount: number;
   lastOk: boolean;
@@ -92,6 +96,10 @@ export class IndexerHealth {
     }
     entry.count += 1;
     entry.lastCheckedAt = this.clock();
+    // Une erreur rapide (refus, 4xx) ne dit rien de la lenteur : seules les réussites et les délais comptent.
+    if (outcome.ok || /délai/i.test(outcome.error)) {
+      entry.ewmaMs = entry.ewmaMs === undefined ? outcome.latencyMs : entry.ewmaMs + EWMA_ALPHA * (outcome.latencyMs - entry.ewmaMs);
+    }
     if (outcome.ok) {
       entry.lastOk = true;
       entry.latencies.push(outcome.latencyMs);
@@ -107,6 +115,11 @@ export class IndexerHealth {
   get(source: string, indexerId: number | string): IndexerHealthSnapshot | undefined {
     const entry = this.entries.get(keyOf(source, String(indexerId)));
     return entry === undefined ? undefined : snapshot(entry);
+  }
+
+  /** Latence moyenne exponentielle d'un indexeur (ms), ou undefined s'il n'a jamais été mesuré. */
+  ewma(source: string, indexerId: number | string): number | undefined {
+    return this.entries.get(keyOf(source, String(indexerId)))?.ewmaMs;
   }
 
   /** États de tous les indexeurs suivis, ou seulement ceux d'une source. */

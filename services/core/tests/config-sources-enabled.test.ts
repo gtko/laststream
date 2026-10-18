@@ -46,7 +46,7 @@ describe('sources : champ enabled et ordre = priorité', () => {
 
   it('Prowlarr local inchangé : sans source explicite, la source détectée est activée', () => {
     const sources = effectiveSources(
-      { sources: [], autoProwlarr: true },
+      { sources: [], autoProwlarr: true, localProwlarr: { enabled: true } },
       { baseUrl: 'http://localhost:9696', apiKey: 'local-key-123', indexerCount: 3 },
     );
     expect(sources).toEqual([

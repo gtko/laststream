@@ -11,6 +11,8 @@ interface MetaRuntimes {
   runtimeSeconds: number | undefined;
   /** Durée par épisode, clé « saison:épisode », uniquement si Cinemeta la fournit. */
   episodes: Map<string, number>;
+  /** Nombre d'épisodes par saison (saison 1 et suivantes), d'après la liste des vidéos. */
+  seasonCounts: Map<number, number>;
   /** Titre et année de sortie (ou de début), si Cinemeta les fournit : repli de recherche sans jeton TMDB. */
   title?: string;
   year?: number;
@@ -57,14 +59,16 @@ function summarize(json: unknown): MetaRuntimes | undefined {
   if (!isRecord(json) || !isRecord(json.meta)) return undefined;
   const meta = json.meta;
   const episodes = new Map<string, number>();
+  const seasonCounts = new Map<number, number>();
   if (Array.isArray(meta.videos)) {
     for (const video of meta.videos) {
       if (!isRecord(video) || typeof video.season !== 'number' || typeof video.episode !== 'number') continue;
+      if (video.season > 0) seasonCounts.set(video.season, (seasonCounts.get(video.season) ?? 0) + 1);
       const seconds = parseRuntimeSeconds(video.runtime);
       if (seconds !== undefined) episodes.set(episodeKey(video.season, video.episode), seconds);
     }
   }
-  const out: MetaRuntimes = { runtimeSeconds: parseRuntimeSeconds(meta.runtime), episodes };
+  const out: MetaRuntimes = { runtimeSeconds: parseRuntimeSeconds(meta.runtime), episodes, seasonCounts };
   if (typeof meta.name === 'string' && meta.name.trim() !== '') out.title = meta.name.trim();
   const year = typeof meta.releaseInfo === 'string' ? /^\s*(\d{4})/.exec(meta.releaseInfo) : null;
   if (year !== null) out.year = Number(year[1]);
@@ -148,5 +152,18 @@ export async function getCinemetaTitle(ref: ContentRef, opts: CinemetaOptions = 
     return runtimes.year === undefined ? { title: runtimes.title } : { title: runtimes.title, year: runtimes.year };
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Nombre d'épisodes par saison d'une série (Cinemeta, même requête et même cache que la durée). Sert à estimer la taille
+ * par épisode d'un pack. Film, erreur ou fiche sans vidéos : table vide. Ne lève jamais.
+ */
+export async function getSeasonEpisodeCounts(ref: ContentRef, opts: CinemetaOptions = {}): Promise<Map<number, number>> {
+  if (ref.type !== 'series') return new Map();
+  try {
+    return (await loadMeta(ref, opts))?.seasonCounts ?? new Map();
+  } catch {
+    return new Map();
   }
 }

@@ -1,18 +1,21 @@
 import { createHash } from 'node:crypto';
-import type { Express, Request } from 'express';
+import type { Express, Request, Response } from 'express';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
-import { getStreams } from '../pipeline.js';
+import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
 import { HosterClient } from '../sources/hosters.js';
+import { warmUpstreamManifest } from '../sources/upstream.js';
 import { defaultPlayState } from '../play/state.js';
 import type { ContentRef } from '../types.js';
 
 const MOVIE_ID = /^tt\d{1,12}$/;
 const SERIES_ID = /^(tt\d{1,12}):(\d{1,4}):(\d{1,4})$/;
 const CACHE_CONTROL = 'max-age=60';
+/** Résultat partiel (indexeurs lents en cours) : jamais mis en cache par le client, il doit être rechargé. */
+const PARTIAL_CACHE_CONTROL = 'no-store';
 const HOST_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$/;
 
 /**
@@ -94,30 +97,24 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
     return hosters;
   };
 
-  app.get('/:config/stream/:type/:id.json', async (req, res) => {
-    const encoded: string = req.params.config;
-    let config: Config;
+  /** Configuration de l'URL, ou undefined (réponse 400 déjà envoyée). */
+  const configOf = (req: Request, res: Response): Config | undefined => {
     try {
-      config = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
+      return decodeConfig(req.params.config as string, deps.secret, { allowPlain: deps.allowPlain });
     } catch (err) {
       if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
         res.status(400).json({ error: 'invalid_config' });
-        return;
+        return undefined;
       }
       throw err;
     }
+  };
 
-    res.setHeader('Cache-Control', CACHE_CONTROL);
-    const ref = parseContentRef(req.params.type, req.params.id);
-    if (ref === undefined) {
-      res.json({ streams: [] });
-      return;
-    }
-
+  const contextOf = (req: Request, config: Config, wait: PipelineContext['wait']): PipelineContext => {
     const apiKey = config.debrid?.apiKey;
-    const result = await getStreams(config, ref, {
+    return {
       playBaseUrl: publicBaseUrl(req),
-      configToken: encoded,
+      configToken: req.params.config as string,
       secret: deps.secret,
       fetch: deps.fetch,
       debrid: apiKey === undefined ? undefined : debridFor(apiKey),
@@ -126,7 +123,49 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
       torrentCache: defaultPlayState.torrentCache,
       packStore: defaultPlayState.packStore,
       localProwlarr: deps.localProwlarr,
-    });
+      wait,
+    };
+  };
+
+  /**
+   * GET /:config/stream/:type/:id.json. Les indexeurs lents ne retardent pas la réponse : passé l'échéance douce, les
+   * flux arrivés sont rendus avec `pending` (noms des indexeurs en cours) et `laststream.partial`. `?wait=full` attend
+   * tous les indexeurs (dans le budget dur).
+   */
+  app.get('/:config/stream/:type/:id.json', async (req, res) => {
+    const config = configOf(req, res);
+    if (config === undefined) return;
+
+    res.setHeader('Cache-Control', CACHE_CONTROL);
+    const ref = parseContentRef(req.params.type, req.params.id);
+    if (ref === undefined) {
+      res.json({ streams: [] });
+      return;
+    }
+
+    // Addons amont : manifest (nom, logo) chargé en arrière-plan, pour les provenances affichées aux requêtes suivantes.
+    if (deps.fetch === undefined) {
+      for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
+    }
+    const result = await getStreams(config, ref, contextOf(req, config, req.query.wait === 'full' ? 'full' : 'soft'));
+    if (result.partial === true) {
+      res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
+      res.json({ streams: result.streams, partial: true, pending: result.pending ?? [] });
+      return;
+    }
     res.json({ streams: result.streams });
+  });
+
+  /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */
+  app.get('/:config/lt/streams/status/:type/:id', async (req, res) => {
+    const config = configOf(req, res);
+    if (config === undefined) return;
+    res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
+    const ref = parseContentRef(req.params.type, req.params.id.replace(/\.json$/, ''));
+    if (ref === undefined) {
+      res.json({ pending: [], count: 0 });
+      return;
+    }
+    res.json(await getStreamsStatus(config, ref, contextOf(req, config, 'soft')));
   });
 }

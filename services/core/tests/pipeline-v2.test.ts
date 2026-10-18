@@ -114,7 +114,7 @@ describe('pipeline v2 : groupement, copies et statut cache', () => {
     expect(result.streams).toHaveLength(1);
     expect(result.streams[0]?.infoHash).toBe(H.a);
     expect(result.streams[0]?.laststream).toMatchObject({ copies: 3 });
-    expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 3 copies');
+    expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 Upstream · 3 copies');
   });
 
   it('jeton /play/c/ : copies cachées d abord, puis par seeders, décodable avec le secret', async () => {
@@ -406,7 +406,7 @@ describe('pipeline v2 : groupes de copies', () => {
     expect(result.streams).toHaveLength(1);
     expect(result.streams[0]?.infoHash).toBe(H.a);
     expect(result.streams[0]?.laststream).toMatchObject({ copies: 2 });
-    expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 2 copies');
+    expect(result.streams[0]?.description?.split('\n')[0]).toContain('🔎 Upstream · 2 copies');
   });
 });
 

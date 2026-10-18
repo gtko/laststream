@@ -5,7 +5,7 @@ import type { AppDeps } from '../deps.js';
 import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
 import { createLtContext, LtError } from '../lt/context.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
-import { localProwlarrStatusOf } from '../sources/local-prowlarr.js';
+import { LOCAL_PROWLARR_NAME, localProwlarrStatusOf } from '../sources/local-prowlarr.js';
 import { defaultIndexerHealth, type HealthStatus } from '../sources/indexer-health.js';
 import { discoverJackettIndexers } from '../sources/jackett.js';
 import type { IndexerInfo } from '../sources/indexers.js';
@@ -14,7 +14,7 @@ import { discoverProwlarrIndexers } from '../sources/prowlarr.js';
 import { testTorznab } from '../sources/torznab.js';
 import { testUpstream, type UpstreamManifestInfo } from '../sources/upstream.js';
 
-export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid' | 'prowlarr' | 'jackett';
+export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid' | 'prowlarr' | 'jackett' | 'prowlarr-local';
 
 /** Statut d'un indexeur (Prowlarr, Jackett) : issu de la santé en mémoire, jamais de clé ni d'URL. */
 export interface IndexerCheck {
@@ -46,7 +46,9 @@ export interface SourceCheck {
   error?: string;
   indexers?: IndexerCheck[];
   manifest?: UpstreamManifestInfo;
-  enabled?: false;
+  enabled?: boolean;
+  /** `prowlarr-local` : rang parmi les sources configurées. */
+  position?: number | null;
 }
 
 /** Libellé d'une source désactivée : elle n'est pas interrogée. */
@@ -214,9 +216,27 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
           ];
 
     const sources = await Promise.all([...sourceChecks, ...debridCheck]);
+    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr, config);
+    // Entrée virtuelle « Prowlarr local » : statuts des indexeurs détectés (ou désactivée), à la suite des sources.
+    if (localProwlarr.source !== undefined && deps.localProwlarr !== undefined) {
+      const entry = localProwlarr.source;
+      if (!entry.enabled) {
+        sources.push({ name: entry.name, type: 'prowlarr-local', enabled: false, position: entry.position, ok: false, error: DISABLED_LABEL });
+      } else {
+        const local = await deps.localProwlarr().catch(() => null);
+        if (local !== null) {
+          const check = await settleIndexers(
+            LOCAL_PROWLARR_NAME,
+            'prowlarr',
+            () => discoverProwlarrIndexers({ name: LOCAL_PROWLARR_NAME, baseUrl: local.baseUrl, apiKey: local.apiKey }, fetchOpts),
+            [...secrets, local.apiKey],
+          );
+          sources.push({ ...check, name: entry.name, type: 'prowlarr-local', enabled: true, position: entry.position });
+        }
+      }
+    }
     const ltContext = createLtContext(deps);
     const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
-    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr);
     res.setHeader('Cache-Control', 'no-store');
     res.json({ sources, services, localProwlarr });
   });

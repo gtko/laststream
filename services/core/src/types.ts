@@ -21,6 +21,8 @@ export interface ParsedRelease {
   subsFr: boolean;
   group?: string;
   sizeBytes?: number;
+  /** Pack de série : taille du pack entier (`sizeBytes` en est alors l'estimation par épisode). */
+  packSizeBytes?: number;
   seeders?: number;
   infoHash?: string;
   fileIdx?: number;
@@ -51,6 +53,10 @@ export interface RawStream {
   sources?: string[];
   /** Indexeurs ayant renvoyé ce flux (Prowlarr, Jackett). Fusionné par infoHash dans collectStreams. */
   indexers?: string[];
+  /** Addon amont d'où vient le flux (nom du manifest ou de la source, logo si connu). Absent pour un indexeur. */
+  origin?: { name: string; logo?: string };
+  /** Vrai si le flux vient du Prowlarr local détecté (et non d'une source explicite). */
+  viaLocalProwlarr?: boolean;
   /**
    * Lien de téléchargement du .torrent (proxifié par Prowlarr, parfois avec une passkey ou une clé API).
    * SECRET : gardé en mémoire seulement. Ne jamais le recopier dans une réponse Stremio, un journal ou un message
@@ -88,4 +94,11 @@ export interface ContentRef {
   imdbId: string;
   season?: number;
   episode?: number;
+}
+
+/** Provenance d'un flux, pour l'affichage : un addon amont, un indexeur, ou un indexeur du Prowlarr local. */
+export interface StreamOrigin {
+  kind: 'addon' | 'indexer' | 'prowlarr-local';
+  name: string;
+  logo?: string;
 }

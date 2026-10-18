@@ -1,6 +1,7 @@
 import { encodeCopiesToken, type PlayCopy } from '../play/token.js';
 import type { ParsedRelease, StremioStream } from '../types.js';
 import { bitrateMbps } from './filter.js';
+import type { StreamOrigin } from '../types.js';
 import { renderTemplate, type StreamView, type TemplateId } from './templates.js';
 import { fileIdxOf, infoHashOf, isDirect, type Ranked, seedersOf, sizeOf } from './types.js';
 
@@ -24,6 +25,8 @@ export interface PlayableCopy {
 export interface FormatItem extends Ranked {
   copies?: PlayableCopy[];
   indexers?: string[];
+  /** Provenances de toutes les copies (addons amont, indexeurs), sans doublon. */
+  origins?: StreamOrigin[];
 }
 
 export interface FormatOptions {
@@ -183,6 +186,7 @@ function viewOf(item: FormatItem, opts: FormatOptions, target: Target, copyCount
     seeders: seedersOf(item),
     fallbackLanguage: item.languageFallback === true,
     indexers: item.indexers ?? [],
+    origins: item.origins,
     hoster: item.hoster,
   };
   view.sizeBytes = size;
@@ -256,9 +260,11 @@ function laststreamOf(item: FormatItem, opts: FormatOptions, copyCount: number, 
     verifiedLanguages: item.verifiedLanguages ?? [],
     certification: opts.certificationFr ?? null,
     indexers: item.indexers ?? [],
+    origins: item.origins ?? (item.indexers ?? []).map((name) => ({ kind: 'indexer', name })),
     ...(item.languageFallback === true ? { languageFallback: true } : {}),
     // Série : pack « season » (saison entière) ou « complete » (intégrale) ; `episode` (numéro) si le nom donne l'épisode exact.
     ...(parsed.scope?.pack !== undefined ? { pack: parsed.scope.pack } : {}),
+    ...(parsed.packSizeBytes !== undefined ? { packSizeBytes: parsed.packSizeBytes, sizeEstimated: true } : {}),
     ...(parsed.scope?.episode !== undefined ? { episode: parsed.scope.episode } : {}),
   };
 }
