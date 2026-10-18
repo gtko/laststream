@@ -65,6 +65,20 @@ export function parseServerMessage(raw: unknown): ServerMsg | null {
   return typeof t === 'string' && SERVER_TYPES.has(t) ? (v as ServerMsg) : null;
 }
 
+/** Signalisation WebRTC relayée par le salon (`{type:'rtc',from,data}`), ou null si la trame n'en est pas une. */
+export function parseRtcFrame(raw: unknown): { from: string; data: unknown } | null {
+  if (typeof raw !== 'string') return null;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as { type?: unknown; from?: unknown; data?: unknown };
+  return o.type === 'rtc' && typeof o.from === 'string' && o.data !== undefined ? { from: o.from, data: o.data } : null;
+}
+
 /** Trame à envoyer ; null si elle dépasse 4 Ko (le serveur fermerait la connexion). */
 export function encodeClientMessage(msg: ClientMsg): string | null {
   const s = JSON.stringify(msg);

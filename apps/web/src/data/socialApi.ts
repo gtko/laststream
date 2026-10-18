@@ -158,6 +158,10 @@ export interface PartyParticipant {
   host?: boolean;
   muted?: boolean;
   joinedAt?: string;
+  /** Identifiant de pair pour la signalisation WebRTC du partage de lecture. */
+  peerId?: string;
+  /** Invité (lien d'invitation, sans compte). */
+  guest?: boolean;
 }
 export interface PartyRoom {
   id: string;
@@ -211,3 +215,9 @@ export interface JoinTicket {
 }
 export const joinParty = (id: string, profileId: string) => call<JoinTicket>('/' + enc(id) + '/join', { ...party, method: 'POST', body: { profileId } });
 export const endParty = (id: string) => call<void>('/' + enc(id), { ...party, method: 'DELETE' });
+/** Invitation d'un invité (sans compte) : jeton à placer dans le lien `#/party/join/<id>?t=<jeton>`. Réservé à l'hôte. */
+export interface PartyInvite {
+  token: string;
+  expiresAt: string;
+}
+export const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId } });

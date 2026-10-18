@@ -1,6 +1,6 @@
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import {
-  encodeClientMessage, FINAL_CLOSE_CODES, parseServerMessage, type ChatLine, type ClientMsg, type ServerMsg, type You,
+  encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, parseRtcFrame, parseServerMessage, type ChatLine, type ClientMsg, type ServerMsg, type You,
 } from './protocol';
 import { ClockEstimator, type PlaybackState } from './sync';
 
@@ -39,6 +39,8 @@ export interface ClientEvents {
   muted: { user: string; muted: boolean };
   reported: { by?: string; against?: string; text?: string };
   removed: { messageId: string };
+  /** Signalisation WebRTC relayée par le salon (partage de lecture), `from` = identifiant de pair de l'émetteur. */
+  rtc: { from: string; data: unknown };
   error: string;
   status: ClientStatus;
   end: EndReason;
@@ -215,7 +217,11 @@ export class PartyClient {
   // ---- Réception ----
   private onFrame(data: unknown): void {
     const msg = parseServerMessage(data);
-    if (!msg) return;
+    if (!msg) {
+      const rtc = parseRtcFrame(data);
+      if (rtc) this.emit('rtc', rtc);
+      return;
+    }
     switch (msg.t) {
       case 'welcome':
         this.room = msg.room;
@@ -321,4 +327,14 @@ export class PartyClient {
   kick(user: string): boolean { return this.isHost && this.raw({ t: 'kick', user }); }
   transfer(user: string): boolean { return this.isHost && this.raw({ t: 'transfer', user }); }
   endRoom(): boolean { return this.isHost && this.raw({ t: 'end' }); }
+
+  /** Signalisation WebRTC vers un pair du salon (relayée par le serveur). False si hors ligne ou trame trop grande. */
+  sendRtc(to: string, data: unknown): boolean {
+    const s = this.socket;
+    if (!s || this.status !== 'open') return false;
+    const frame = JSON.stringify({ type: 'rtc', to, data });
+    if (new TextEncoder().encode(frame).length > MAX_FRAME_BYTES) return false;
+    try { s.send(frame); } catch { return false; }
+    return true;
+  }
 }

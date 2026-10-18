@@ -3,6 +3,8 @@ import { showCalendar } from './calendar.js';
 import { showHidden } from './hidden.js';
 import { showFriendLibrary, showFriends } from './friends.js';
 import { showParties, showParty } from './parties.js';
+import { showPartyJoin, teardownPartyJoin } from './partyjoin.js';
+import { parseJoinHash } from '../party/join';
 import { canAdmin, isKidProfile, kidSection } from '../data/auth';
 import { showAdmin } from './admin.js';
 import { browseAllowed, showBrowse } from './registry.js';
@@ -50,6 +52,7 @@ export function showView(r) {
   else if (r.kind === 'friend') showFriendLibrary(r.id);
   else if (r.kind === 'parties') showParties();
   else if (r.kind === 'party') showParty(r.id);
+  else if (r.kind === 'partyjoin') showPartyJoin(r.id, r.token);
   else if (r.kind === 'settings') showSettings();
   else if (r.kind === 'admin') showAdmin();
   else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
@@ -103,6 +106,9 @@ function parseRouteRaw() {
   if (h === '#/parties') return { kind: 'parties' };
   r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (r) return { kind: 'party', id: r[1] };
+  // Invitation d'un invité (sans compte) : #/party/join/<id>?t=<jeton>.
+  const join = parseJoinHash(h);
+  if (join) return { kind: 'partyjoin', id: join.roomId, token: join.token };
   if (h === '#/settings') return { kind: 'settings' };
   if (h === '#/admin') return { kind: 'admin' };
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
@@ -124,6 +130,7 @@ export function route() {
   state.curHash = location.hash || '';
   state.restoreY = pop && state.scrolls.has(state.curHash) ? state.scrolls.get(state.curHash) : null;
   const r = parseRoute();
+  if (!r || r.kind !== 'partyjoin') teardownPartyJoin();
   if (r) {
     if (!state.inDetail) {
       state.homeScroll = window.scrollY;
