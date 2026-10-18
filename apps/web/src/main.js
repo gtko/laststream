@@ -1,6 +1,7 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
  * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public).
  * ?still désactive les aperçus vidéo. */
+import { initSentry } from './observability/sentry';
 import './styles/styles.css';
 import './styles/app.css';
 import './styles/search.css';
@@ -43,6 +44,7 @@ import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
 import { initUpdateBanner } from './ui/update-banner.js';
 
+initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
 
 // App Windows (ou toute page servie par lastAddon lui-même) : serveur = origine de la page, quel que soit le port
