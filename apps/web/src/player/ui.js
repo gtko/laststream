@@ -3,55 +3,36 @@
  * panneaux latéraux (épisodes ; audio et sous-titres sur deux colonnes ; vitesse ; infos), écran de pause.
  * Aucune logique de lecture ici : tout passe par les gestionnaires `h` fournis par session.js. */
 import { esc } from '../ui/util.js';
-import { SPEEDS } from './keys';
+import { LI } from './icons.js';
+import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
 import { formatClock } from './progress';
-import { SKIP_LABEL } from './skip';
-import { offsetLabel } from './subs';
-
-const svg = (d, extra = '') => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + extra + '>' + d + '</svg>';
-export const LI = {
-  play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>',
-  pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>',
-  back10: svg('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M9.5 15.5v-4.2l-1 .6M13 11.3h2.2a.9.9 0 0 1 .9.9v2.4a.9.9 0 0 1-.9.9H13z"/>'),
-  fwd10: svg('<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/><path d="M9.5 15.5v-4.2l-1 .6M13 11.3h2.2a.9.9 0 0 1 .9.9v2.4a.9.9 0 0 1-.9.9H13z"/>'),
-  vol: svg('<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/>'),
-  mute: svg('<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M17 9l5 6M22 9l-5 6"/>'),
-  tracks: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 12h3M12.5 12H17M7 15.5h5M14 15.5h3"/>'),
-  source: svg('<path d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2"/>'),
-  list: svg('<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'),
-  pip: svg('<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1" fill="currentColor"/>'),
-  full: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
-  fullExit: svg('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
-  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
-  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'),
-  close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
-  back: svg('<path d="M19 12H5M12 19l-7-7 7-7"/>'),
-  next: svg('<path d="M5 5l9 7-9 7zM18 5v14"/>'),
-  skip: svg('<path d="M5 5l9 7-9 7zM16 5l5 7-5 7"/>'),
-  check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
-};
+import { skipLabel } from './skip';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
-const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks' };
+const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks', speed: 'settings' };
 const REMAIN_KEY = 'laststream.player.remaining';
+const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
 
 function skeleton() {
   return '<video class="lp-video" playsinline></video>' +
     '<div class="lp-subs" aria-hidden="true"></div>' +
     '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">Vous regardez</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
-    '<div class="lp-loading" role="status"><div class="lp-spin" aria-hidden="true"></div><div class="lp-load-logo"></div><p class="lp-load-msg"></p><p class="lp-load-src"></p></div>' +
+    '<div class="lp-loading" role="status"><div class="lp-load-bg"></div><div class="lp-load-in">' +
+      '<div class="lp-lring" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="lp-lring-bg" cx="32" cy="32" r="28"/><circle class="lp-lring-fg" cx="32" cy="32" r="28" stroke-dasharray="175.9" stroke-dashoffset="132"/></svg></div>' +
+      '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
+      '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
     '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div></div>' +
     '<div class="lp-top">' +
       btn('close', LI.back, 'Retour (Échap)', '', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('info', LI.info, 'Infos (I)') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:speed', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('info', LI.info, 'Infos (I)') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
       btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
     '</div>' +
     '<div class="lp-ripple lp-ripple-l" hidden>−10 s</div><div class="lp-ripple lp-ripple-r" hidden>+10 s</div>' +
-    '<button type="button" class="lp-skip" data-act="skip" hidden></button>' +
+    '<button type="button" class="lp-skip" data-act="skip" hidden></button><button type="button" class="lp-skipno" data-act="skip-wrong" hidden></button>' +
     '<div class="lp-next" hidden></div>' +
     '<div class="lp-endrow" hidden></div>' +
     '<div class="lp-resume" role="dialog" aria-label="Reprise" hidden></div>' +
@@ -107,6 +88,7 @@ export function createPlayerUI(h) {
   let lastTap = { t: 0, side: '' };
   let pauseTimer = null;
   let pauseInfo = null;
+  let markList = [];
 
   // ---------- Contrôles : masquage après 3 s d'inactivité ----------
   function wake() {
@@ -179,7 +161,8 @@ export function createPlayerUI(h) {
     const f = frac(e);
     hover.hidden = false;
     hover.style.left = f * 100 + '%';
-    hover.textContent = formatClock(f * last.duration);
+    const seg = markList.find((m) => f >= m.from && f <= m.to);
+    hover.textContent = (seg ? MARK_LABEL[seg.kind] + ' · ' : '') + formatClock(f * last.duration);
     if (dragging) previewSeek(f);
   });
   seek.addEventListener('pointerleave', () => { hover.hidden = true; });
@@ -200,82 +183,38 @@ export function createPlayerUI(h) {
   vs.addEventListener('input', () => h.setVolume(Number(vs.value) / 100));
   vs.addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) e.stopPropagation(); });
 
-  // ---------- Panneaux ----------
-  const optRow = (act, data, label, detail, on, extra = '') => '<button type="button" class="lp-opt' + (on ? ' is-on' : '') + '" role="menuitemradio" aria-checked="' + (on ? 'true' : 'false') + '" data-act="' + act + '"' +
-    Object.entries(data).map(([k, v]) => ' data-' + k + '="' + esc(String(v)) + '"').join('') + extra + '><span class="lp-opt-check">' + (on ? LI.check : '') + '</span><span class="lp-opt-text"><span class="lp-opt-label">' + esc(label) + '</span>' +
-    (detail ? '<span class="lp-opt-detail">' + esc(detail) + '</span>' : '') + '</span></button>';
-  const head = (title) => '<div class="lp-panel-head"><h2>' + esc(title) + '</h2><button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="Fermer le panneau">' + LI.close + '</button></div>';
-  const chip = (act, attrs, label, on, aria) => '<button type="button" class="lp-chip' + (on ? ' is-on' : '') + '" data-act="' + act + '"' + attrs + (aria ? ' aria-label="' + esc(aria) + '"' : '') + (on !== undefined ? ' aria-pressed="' + !!on + '"' : '') + '>' + label + '</button>';
-
-  function tracksHtml(d) {
-    const a = d.audio;
-    const s = d.subs;
-    const seg = (key, opts, cur) => '<span class="lp-seg" role="group">' + opts.map(([v, l]) => chip('substyle', ' data-key="' + key + '" data-val="' + v + '"', esc(l), cur === v)).join('') + '</span>';
-    const audioCol = '<section class="lp-col" data-col="audio"><h3>Audio</h3><div class="lp-list" role="menu">' +
-      (a.tracks.length ? a.tracks.map((t) => optRow('audio', { id: t.id }, t.label, '', t.selected)).join('') : '<p class="lp-empty">' + esc(a.note) + '</p>') +
-      (a.canTranscode ? '<button type="button" class="btn btn-ghost lp-wide" data-act="force-hls">Lire en transcodage (toutes les pistes)</button>' : '') + '</div></section>';
-    const subCol = '<section class="lp-col" data-col="subs"><h3>Sous-titres</h3><div class="lp-list" role="menu">' +
-      optRow('sub', { id: '' }, 'Désactivés', '', s.selectedId === null) +
-      s.tracks.map((t) => optRow('sub', { id: t.id }, t.label, t.origin === 'external' ? (t.source || 'Externe') : 'Dans le fichier' + (t.renderable ? '' : ' · image, non affichable'), t.id === s.selectedId, t.renderable ? '' : ' disabled')).join('') +
-      (s.loading ? '<p class="lp-empty">Recherche de sous-titres…</p>' : '') +
-      (!s.tracks.length && !s.loading ? '<p class="lp-empty">Aucun sous-titre trouvé.</p>' : '') + '</div>' +
-      '<div class="lp-opts">' +
-        '<div class="lp-field"><span>Synchronisation</span><span class="lp-step">' + chip('suboffset', ' data-by="-0.5"', '−0,5', undefined, 'Avancer de 0,5 s') + chip('suboffset', ' data-by="-0.1"', '−0,1', undefined, 'Avancer de 0,1 s') + '<output class="lp-val">' + esc(offsetLabel(s.offset)) + '</output>' + chip('suboffset', ' data-by="0.1"', '+0,1', undefined, 'Retarder de 0,1 s') + chip('suboffset', ' data-by="0.5"', '+0,5', undefined, 'Retarder de 0,5 s') + '</span></div>' +
-        '<div class="lp-field"><span>Taille</span><span class="lp-step">' + chip('substep', ' data-key="size" data-by="-10"', 'A−', undefined, 'Plus petit') + '<output class="lp-val">' + s.style.size + ' %</output>' + chip('substep', ' data-key="size" data-by="10"', 'A+', undefined, 'Plus grand') + '</span></div>' +
-        '<div class="lp-field"><span>Position</span><span class="lp-step">' + chip('substep', ' data-key="position" data-by="2"', '↑', undefined, 'Monter') + '<output class="lp-val">' + s.style.position + ' %</output>' + chip('substep', ' data-key="position" data-by="-2"', '↓', undefined, 'Descendre') + '</span></div>' +
-        '<div class="lp-field"><span>Fond</span>' + seg('background', [['none', 'Aucun'], ['shadow', 'Ombre'], ['box', 'Boîte']], s.style.background) + '</div>' +
-        '<div class="lp-field"><span>Couleur</span>' + seg('color', [['white', 'Blanc'], ['yellow', 'Jaune']], s.style.color) + '</div>' +
-        '<div class="lp-field"><span>Par défaut</span>' + seg('mode', [['auto', 'Auto'], ['always', 'Toujours'], ['off', 'Jamais']], s.style.mode) + '</div>' +
-      '</div></section>';
-    return head('Audio et sous-titres') + '<div class="lp-cols">' + audioCol + subCol + '</div>';
-  }
-
-  function episodesHtml(d) {
-    const cur = d.current;
-    return head('Épisodes') + '<div class="lp-eps-bar">' +
-      (d.seasons.length ? '<label class="lp-sel"><span class="sr-only">Saison</span><select class="lp-select" aria-label="Saison">' + d.seasons.map((s) => '<option value="' + s.season + '"' + (s.season === d.season ? ' selected' : '') + '>Saison ' + s.season + '</option>').join('') + '</select></label>' : '') + '</div>' +
-      '<div class="lp-list lp-eps" role="menu">' +
-      (d.loading ? '<p class="lp-empty">Chargement…</p>' : d.episodes.map((ep) => {
-        const on = d.season === cur.season && ep.episode === cur.episode;
-        return '<button type="button" class="lp-ep' + (on ? ' is-on' : '') + '" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '">' +
-          '<span class="lp-ep-still">' + (ep.still ? '<img src="' + esc(ep.still) + '" alt="" loading="lazy" decoding="async">' : '') +
-            (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') +
-            (ep.watched ? '<span class="lp-ep-seen" title="Vu">' + LI.check + '</span>' : '') + '</span>' +
-          '<span class="lp-ep-text"><span class="lp-ep-name">' + ep.episode + '. ' + esc(ep.name || 'Épisode ' + ep.episode) + (on ? ' <em>En cours</em>' : '') + '</span>' +
-          '<span class="lp-ep-meta">' + (ep.runtime ? ep.runtime + ' min' : '') + '</span>' +
-          (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>';
-      }).join('')) +
-      (!d.loading && !d.episodes.length ? '<p class="lp-empty">Aucun épisode.</p>' : '') + '</div>';
-  }
-
-  const focusKeyOf = (el) => (el.dataset ? [el.dataset.act, el.dataset.id, el.dataset.key, el.dataset.val, el.dataset.by, el.dataset.rate, el.dataset.season, el.dataset.episode, el.tagName === 'SELECT' ? 'sel' : ''].join('|') : '');
+  // ---------- Panneaux (HTML dans panels.js) ----------
+  const focusKeyOf = (el) => (el.dataset ? [el.dataset.act, el.dataset.id, el.dataset.key, el.dataset.val, el.dataset.by, el.dataset.rate, el.dataset.season, el.dataset.episode, el.tagName === 'SELECT' || el.tagName === 'INPUT' ? el.tagName : '', el.dataset.kind, el.dataset.seen].join('|') : '');
 
   function renderPanel() {
-    if (!panelName) return;
+    if (!panelName || panelName === 'sources') return;
     const d = h.panelData(panelName);
-    let html = '';
-    if (panelName === 'tracks') html = tracksHtml(d);
-    else if (panelName === 'speed') {
-      html = head('Réglages') + '<div class="lp-list" role="menu"><h3 class="lp-h3">Vitesse de lecture</h3>' + SPEEDS.map((r) => optRow('rate', { rate: r }, r === 1 ? 'Normale' : r + '×', '', Math.abs(d.rate - r) < 0.01)).join('') + '</div>' +
-        (d.pipAvailable ? '<div class="lp-opts"><div class="lp-field"><span>Image dans l’image automatique</span>' + chip('autopip', '', d.autoPip ? 'Activée' : 'Désactivée', d.autoPip) + '</div><p class="lp-empty">Quand tu quittes l’onglet, la vidéo passe en fenêtre flottante.</p></div>' : '');
-    } else if (panelName === 'episodes') html = episodesHtml(d);
-    else if (panelName === 'info') {
-      html = head('Infos') + '<div class="lp-info"><dl>' + d.rows.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl></div>';
-    }
-    const keep = Array.from(panel.querySelectorAll('.lp-list')).map((l) => l.scrollTop);
-    const focusKey = document.activeElement && panel.contains(document.activeElement) ? focusKeyOf(document.activeElement) : null;
+    const html = panelName === 'tracks' ? tracksHtml(d) : panelName === 'episodes' ? episodesHtml(d) : panelName === 'settings' ? settingsHtml(d) : infoHtml(d);
+    const keep = Array.from(panel.querySelectorAll('.lp-list, .lp-scroll, .lp-col')).map((l) => l.scrollTop);
+    const act = document.activeElement && panel.contains(document.activeElement) ? document.activeElement : null;
+    const focusKey = act ? focusKeyOf(act) : null;
+    const caret = act && act.matches('.lp-search') ? act.selectionStart : null;
     panel.innerHTML = html;
-    panel.classList.toggle('is-wide', panelName === 'tracks');
-    panel.classList.toggle('is-eps', panelName === 'episodes');
-    panel.querySelectorAll('.lp-list').forEach((l, i) => { if (keep[i]) l.scrollTop = keep[i]; });
+    panel.className = 'lp-panel' + (panelName === 'tracks' ? ' is-wide' : panelName === 'episodes' ? ' is-eps' : '');
+    panel.querySelectorAll('.lp-list, .lp-scroll, .lp-col').forEach((l, i) => { if (keep[i]) l.scrollTop = keep[i]; });
     if (focusKey) {
-      const again = Array.from(panel.querySelectorAll('button:not([disabled]), select')).find((b) => focusKeyOf(b) === focusKey);
-      if (again) again.focus({ preventScroll: true });
+      const again = Array.from(panel.querySelectorAll('button:not([disabled]), select, input')).find((b) => focusKeyOf(b) === focusKey);
+      if (again) {
+        again.focus({ preventScroll: true });
+        if (caret !== null && again.setSelectionRange) again.setSelectionRange(caret, caret);
+      }
     }
   }
   panel.addEventListener('change', (e) => {
     if (e.target instanceof HTMLSelectElement) h.action('season', { season: e.target.value });
   });
+  panel.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t instanceof HTMLInputElement && t.dataset.input) h.action(t.dataset.input, { q: t.value });
+  });
+  panel.addEventListener('toggle', (e) => {
+    if (e.target instanceof HTMLDetailsElement) h.action('style-open', { open: e.target.open ? '1' : '0' });
+  }, true);
 
   const api = {
     root,
@@ -287,14 +226,31 @@ export function createPlayerUI(h) {
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
     setHeading(title, sub) { q('.lp-title').textContent = title || ''; q('.lp-sub').textContent = sub || ''; },
-    /** `extra` : { logo, source } pour le logo du titre et la ligne « 1080p · VFF · AllDebrid ». */
+    /**
+     * Chargeur. `extra` : { logo, backdrop, episode, source, steps, step, cancel }. Avec `steps`, l'anneau se remplit à chaque
+     * étape (sources trouvées, choix, préparation du lien) ; sans, il tourne.
+     */
     setLoading(title, msg, extra) {
       const el = q('.lp-loading');
       el.hidden = !title && !msg;
       const e = extra || {};
       q('.lp-load-logo').innerHTML = e.logo ? '<img src="' + esc(e.logo) + '" alt="' + esc(title || '') + '">' : title ? '<span>' + esc(title) + '</span>' : '';
+      q('.lp-load-ep').textContent = e.episode || '';
       q('.lp-load-msg').textContent = msg || '';
       q('.lp-load-src').textContent = e.source || '';
+      q('.lp-load-bg').style.backgroundImage = e.backdrop ? 'url("' + e.backdrop + '")' : '';
+      const steps = e.steps || [];
+      q('.lp-steps').innerHTML = steps.map((t, i) => '<li class="' + (i < e.step ? 'is-done' : i === e.step ? 'is-active' : '') + '">' + (i < e.step ? LI.check : '<i></i>') + '<span>' + esc(t) + '</span></li>').join('');
+      el.classList.toggle('is-det', steps.length > 0);
+      q('.lp-lring-fg').style.strokeDashoffset = String(steps.length ? 175.9 * (1 - (e.step + 0.6) / steps.length) : 132);
+      q('.lp-cancel').hidden = !e.cancel;
+    },
+    /** Fait défiler la liste d'épisodes jusqu'à l'épisode donné (0 : aucun) et lui donne le focus. */
+    revealEpisode(n) {
+      const row = n ? panel.querySelector('.lp-ep-row[data-ep="' + n + '"] .lp-ep') : null;
+      if (!row) return;
+      row.scrollIntoView({ block: 'center' });
+      row.focus({ preventScroll: true });
     },
     setError(title, msg, actions) {
       const el = q('.lp-error');
@@ -360,7 +316,8 @@ export function createPlayerUI(h) {
       const key = JSON.stringify(marks);
       if (el.dataset.key === key) return;
       el.dataset.key = key;
-      el.innerHTML = marks.map((m) => '<i class="lp-mark lp-mark-' + m.kind + '" style="left:' + m.from * 100 + '%;width:' + Math.max(0.4, (m.to - m.from) * 100) + '%"></i>').join('');
+      markList = marks;
+      el.innerHTML = marks.map((m) => '<i class="lp-mark lp-mark-' + m.kind + '" title="' + MARK_LABEL[m.kind] + '" style="left:' + m.from * 100 + '%;width:' + Math.max(0.4, (m.to - m.from) * 100) + '%"></i>').join('');
     },
     setSeries(isSeries, hasNext) {
       q('[data-role="episodes"]').hidden = !isSeries;
@@ -369,9 +326,13 @@ export function createPlayerUI(h) {
     setPipAvailable(ok) { q('[data-role="pip"]').hidden = !ok; },
     setSkip(seg) {
       const b = q('.lp-skip');
-      if (!seg) { b.hidden = true; return; }
+      if (!seg) { b.hidden = true; q('.lp-skipno').hidden = true; return; }
       const wasHidden = b.hidden;
-      if (wasHidden || b.dataset.kind !== seg.kind) { b.dataset.kind = seg.kind; b.innerHTML = LI.skip + '<span>' + esc(SKIP_LABEL[seg.kind]) + '</span>'; }
+      const key = seg.kind + (seg.inferred ? '?' : '');
+      if (wasHidden || b.dataset.kind !== key) { b.dataset.kind = key; b.innerHTML = LI.skip + '<span>' + esc(skipLabel(seg)) + '</span>'; }
+      const no = q('.lp-skipno');
+      no.hidden = !seg.inferred;
+      no.textContent = seg.kind === 'intro' ? 'Ce n’est pas l’intro' : seg.kind === 'recap' ? 'Ce n’est pas le récap' : 'Ce n’est pas ça';
       b.hidden = false;
       // Focus prêt pour la télécommande (Entrée) dès l'apparition, sans voler le focus d'un panneau ou d'une fenêtre ouverts.
       if (wasHidden && !panelName && !document.querySelector('#modal:not([hidden])')) b.focus({ preventScroll: true });
@@ -453,17 +414,29 @@ export function createPlayerUI(h) {
       const t = c && (c.querySelector('.lp-opt.is-on') || c.querySelector('button:not([disabled])'));
       if (t) t.focus({ preventScroll: true });
     },
+    /** Panneau dont le contenu est fourni par l'appelant (sélecteur de sources) ; renvoie l'élément hôte. */
+    mountPanel(name, title) {
+      panelName = name;
+      panel.hidden = false;
+      panel.className = 'lp-panel is-wide is-host';
+      root.classList.add('has-panel', 'is-ui');
+      panel.innerHTML = head(title) + '<div class="lp-host"></div>';
+      return panel.querySelector('.lp-host');
+    },
     refreshPanel() { if (panelName) renderPanel(); },
     closePanel(silent) {
       if (!panelName) return;
+      const was = panelName;
       panelName = null;
       panel.hidden = true;
       panel.innerHTML = '';
+      panel.className = 'lp-panel';
       root.classList.remove('has-panel');
-      if (!silent) api.focusFirst();
+      if (!silent) { api.focusFirst(); if (h.panelClosed) h.panelClosed(was); }
     },
     /** Déplacement au clavier / à la télécommande dans le panneau ouvert. */
     navPanel(dir) {
+      if (panelName === 'sources') return;
       const items = Array.from(panel.querySelectorAll('button:not([disabled]), select'));
       if (!items.length) return;
       const cur = document.activeElement;

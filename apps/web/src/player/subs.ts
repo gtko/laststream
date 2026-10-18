@@ -59,9 +59,9 @@ export function parseSubtitles(source: string, hint = ''): Cue[] {
   return parseCues(source);
 }
 
-/** Cue visible à l'instant `time` avec un décalage `offset` (secondes : positif = sous-titres plus tard). */
-export function activeCue(cues: readonly Cue[], time: number, offset = 0): Cue | null {
-  const t = time - offset;
+/** Cue visible à l'instant `time` avec un décalage `offset` (secondes : positif = sous-titres plus tard) et un rapport de vitesse. */
+export function activeCue(cues: readonly Cue[], time: number, offset = 0, rate = 1): Cue | null {
+  const t = (time - offset) / (rate > 0 ? rate : 1);
   let lo = 0;
   let hi = cues.length - 1;
   let best = -1;
@@ -92,9 +92,12 @@ export interface SubtitleStyle {
   background: SubBackground;
   color: 'white' | 'yellow';
   mode: 'auto' | 'always' | 'off';
+  font: 'sans' | 'serif' | 'mono';
+  /** Bord de l'écran dont `position` mesure la distance. */
+  edge: 'bottom' | 'top';
 }
 
-export const DEFAULT_SUB_STYLE: SubtitleStyle = { size: 100, position: 8, background: 'shadow', color: 'white', mode: 'auto' };
+export const DEFAULT_SUB_STYLE: SubtitleStyle = { size: 100, position: 8, background: 'shadow', color: 'white', mode: 'auto', font: 'sans', edge: 'bottom' };
 export const SUB_STYLE_KEY = 'laststream.player.subtitles';
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
@@ -108,6 +111,8 @@ export function normalizeSubStyle(x: Partial<SubtitleStyle> | null | undefined):
     background: o.background === 'none' || o.background === 'box' || o.background === 'shadow' ? o.background : d.background,
     color: o.color === 'yellow' ? 'yellow' : 'white',
     mode: o.mode === 'always' || o.mode === 'off' ? o.mode : 'auto',
+    font: o.font === 'serif' || o.font === 'mono' ? o.font : 'sans',
+    edge: o.edge === 'top' ? 'top' : 'bottom',
   };
 }
 

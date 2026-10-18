@@ -150,7 +150,7 @@ export class HtmlEngine extends Emitter {
       return this.hls.audioTracks.map((t, i) => {
         const lang = trackLang(t.lang || t.language, t.name);
         const ch = parseInt(t.channels, 10) || 0;
-        return { id: String(i), lang, codec: String(t.audioCodec || '').toLowerCase(), channels: ch, selected: i === this.hls.audioTrack, label: audioTrackLabel({ lang, title: t.name, codec: t.audioCodec, channels: ch }) };
+        return { id: String(i), title: t.name || '', lang, codec: String(t.audioCodec || '').toLowerCase(), channels: ch, selected: i === this.hls.audioTrack, label: audioTrackLabel({ lang, title: t.name, codec: t.audioCodec, channels: ch }) };
       });
     }
     const al = this.video.audioTracks;
@@ -158,7 +158,7 @@ export class HtmlEngine extends Emitter {
       return Array.from({ length: al.length }, (_, i) => {
         const t = al[i];
         const lang = trackLang(t.language, t.label);
-        return { id: String(i), lang, codec: '', channels: 0, selected: !!t.enabled, label: audioTrackLabel({ lang, title: t.label }) };
+        return { id: String(i), title: t.label || '', lang, codec: '', channels: 0, selected: !!t.enabled, label: audioTrackLabel({ lang, title: t.label }) };
       });
     }
     return [];
@@ -176,7 +176,7 @@ export class HtmlEngine extends Emitter {
     if (!this.hls || !this.hls.subtitleTracks) return [];
     return this.hls.subtitleTracks.map((t, i) => {
       const lang = trackLang(t.lang, t.name);
-      return { id: 'h' + i, lang, codec: 'webvtt', forced: !!t.forced, origin: 'embedded', renderable: true, engineId: i, selected: i === this.hlsSubIndex, label: (lang ? langName(lang) : t.name || 'Sous-titres') + (t.forced ? ' (forcés)' : '') };
+      return { id: 'h' + i, title: t.name || '', lang, codec: 'webvtt', forced: !!t.forced, origin: 'embedded', renderable: true, engineId: i, selected: i === this.hlsSubIndex, label: (lang ? langName(lang) : t.name || 'Sous-titres') + (t.forced ? ' (forcés)' : '') };
     });
   }
 

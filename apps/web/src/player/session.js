@@ -1,63 +1,57 @@
-/* Session de lecture : choisit le moteur, charge la source, suit la progression, saute les génériques, bascule sur une
- * autre copie en cas d'échec, gère pistes audio, sous-titres, épisodes. L'interface est dans ui.js. */
+/* Session de lecture : s'ouvre tout de suite (écran de chargement), cherche et choisit la source à l'intérieur du lecteur,
+ * choisit le moteur, suit la progression, saute les génériques, bascule sur une autre copie en cas d'échec, gère pistes
+ * audio, sous-titres (calage compris), épisodes. L'interface est dans ui.js et panels.js. */
 import { addonUrl, isConfigured } from '../data/config';
-import { skipSegments, tmdb } from '../data/lt';
-import { getAutoplay, getSkipPref } from '../data/prefs';
-import { measureBandwidthKbps } from '../data/sources';
-import { stremioId } from '../data/sources';
+import { api, postLt, skipSegments, tmdb } from '../data/lt';
+import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
+import { imdbIdOf, measureBandwidthKbps, stremioId } from '../data/sources';
 import { userStore } from '../data/userStore';
-import { openSourcePicker } from '../sources/picker.js';
 import { loadSources, preferredLang, recommendFor } from '../sources/load';
+import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
-import { toast as appToast } from '../ui/dom.js';
 import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
-import { chooseEngine, detectCaps } from './engine';
+import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
+import { browserCaps } from './caps';
+import { chooseEngine } from './engine';
 import { HtmlEngine, MpvEngine } from './engines.js';
+import { filterEpisodes, firstUnseen, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
 import { StallWatch, failoverOrder } from './failover';
-import { getMemory, remember } from './memory';
 import { keyToAction, stepVolume } from './keys';
+import { fileKey, getMemory, getSubSync, remember, setSubSync } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { connectShell } from './shell';
-import { activeSkip, autoSkipEnabled, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip } from './skip';
+import { activeSkip, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip } from './skip';
 import {
   createTorrent, embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
   serverAlive, serverBase, subtitlesVttUrl,
 } from './server';
-import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, stepOffset, writeSubStyle } from './subs';
+import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, writeSubStyle } from './subs';
+import { RATE_CHOICES, findSync, rateChoice, suggestRate, syncTrusted } from './subsync';
 import { parseProbe, pickDefaultAudio, pickDefaultSubtitle, pickRememberedSubtitle } from './tracks';
+import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { createPlayerUI } from './ui.js';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
 const MAX_ATTEMPTS = 6;
+const AUTOSYNC_TARGET = 90;
+const AUTOSYNC_MIN = 25;
 
 let ui = null;
 let html = null;
 let mpv = null;
 let P = null; // session courante (null : lecteur fermé)
 let tickTimer = null;
-let caps = null;
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
 const storeSet = (k, v) => { try { globalThis.localStorage.setItem(k, v); } catch (_) { /* ignoré */ } };
+const getCaps = browserCaps;
 
 /** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
 function audioPreference() {
   const mem = P ? getMemory(P.req.key) : {};
   return [mem.audio, preferredLang()].filter(Boolean);
-}
-
-function getCaps() {
-  if (!caps) {
-    const v = document.createElement('video');
-    const chromium = !!window.chrome;
-    let ch = 2;
-    if (/firefox/i.test(navigator.userAgent)) ch = 6;
-    else if (window.AudioContext && !chromium) { try { ch = new AudioContext().destination.maxChannelCount || 2; } catch (_) { ch = 2; } }
-    caps = detectCaps((m) => v.canPlayType(m), { chromium, maxChannels: ch });
-  }
-  return caps;
 }
 
 const seLabel = (r) => (r.season != null ? 'S' + r.season + ':É' + r.episode : '');
@@ -80,7 +74,12 @@ function ensureUI() {
     seekTo: (t) => seekTo(t),
     setVolume: (v) => { if (P) { P.engine.setMuted(false); P.engine.setVolume(v); rememberVolume(v); } },
     panelData,
-    panelOpened: (name) => { if (name === 'tracks') ensureExternalSubs(); if (name === 'episodes') ensureEpisodes(P && P.cur.season); },
+    panelOpened: (name) => {
+      if (name === 'tracks') ensureExternalSubs();
+      if (name === 'episodes') ensureEpisodes(P && P.cur.season, true);
+    },
+    // Fermer le panneau des sources sans avoir choisi (recherche initiale) annule la lecture : retour à la fiche.
+    panelClosed: (name) => { if (name === 'sources' && P && !P.view) closePlayer(); },
   });
   html = new HtmlEngine(ui.video);
   bindEngine(html);
@@ -106,35 +105,43 @@ function bindEngine(e) {
 
 // ---------- Ouverture ----------
 
-/**
- * Lance le lecteur sur `view`. `request` décrit le titre ; `views` toutes les sources (pour le failover et « Changer de source »).
- * `opts.resume` : 'ask' (proposer), 'auto' (reprendre sans demander), 'none' (depuis le début).
- */
-export async function startSession(request, views, view, opts = {}) {
+/** Crée la session et ouvre le lecteur tout de suite, sans source : l'écran de chargement prend le relais. */
+async function initSession(request, views, view, opts = {}) {
   ensureUI();
   if (P) await teardown(true);
   const token = Symbol('session');
   P = {
     token, req: request, views, ranked: [...views], cur: { season: request.season, episode: request.episode },
-    view, tried: new Set(), attempts: 0, engine: html, choice: null, probe: null, probeTracks: parseProbe(null), mediaUrl: '', hlsSession: null,
+    view, tried: new Set(), attempts: 0, engine: html, choice: null, probe: null, probeTracks: parseProbe(null), mediaUrl: '',
     segments: [], nextDismissed: false, lastSave: 0, watchedMarked: false, finished: false,
-    subs: { external: [], loadedFor: null, loading: false, selectedId: null, cues: [], offset: 0, style: readSubStyle(), native: false, embedded: [] },
+    subs: {
+      external: [], loadedFor: null, loading: false, selectedId: null, cues: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '',
+      style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
+    },
     defaultsDone: false, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
-    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '',
+    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false,
+    mark: { state: 'idle', kind: 'intro', start: 0 }, aspect: 'contain',
   };
   const meta = appState.byKey.get(request.key) || {};
   const model = appState.model && appState.model.key === request.key ? appState.model : null;
+  P.model = model;
   P.meta = {
     poster: meta.posterPath || (model && model.posterPath) || '', backdrop: meta.backdropPath || (model && model.backdropPath) || '', title: request.name || meta.name || '',
     logo: (model && model.logo) || '', overview: (model && model.overview) || meta.overview || '',
   };
   document.body.classList.add('modal-open', 'lp-open');
+  ui.root.classList.toggle('is-searching', !view);
+  ui.root.classList.remove('is-mpv');
+  ui.video.hidden = false;
+  ui.video.style.objectFit = 'contain';
   ui.setHeading(...headingFor(P));
   ui.setSeries(request.type === 'tv', false);
   ui.setError(null);
   ui.setResume(null);
   ui.setSkip(null);
   ui.setNextCard(null);
+  ui.setEndRow(false);
+  ui.setCue('', P.subs.style);
   ui.show();
   ui.focusFirst();
   clearInterval(tickTimer);
@@ -142,17 +149,43 @@ export async function startSession(request, views, view, opts = {}) {
   loadSideData(token);
   updatePauseScreen();
   if (request.type === 'tv') ensureEpisodes(request.season);
-  const saved = request.type && userStore.getProgress(request.key, request.season ?? undefined, request.episode ?? undefined);
+  return P;
+}
+
+/** Données du chargeur : logo, fond, épisode, étapes (sources trouvées → choix → lien) et ligne de source. */
+function loaderExtra(step, over = {}) {
+  const p = P;
+  const found = p.views.length;
+  return {
+    logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w1280', p.meta.backdrop) : '', episode: headingFor(p)[1], cancel: true,
+    steps: [found ? found + ' source' + (found > 1 ? 's' : '') + ' trouvée' + (found > 1 ? 's' : '') : 'Recherche des sources', 'Choix de la meilleure source', 'Préparation du lien'],
+    step, ...over,
+  };
+}
+
+/** Poursuit la session avec la source choisie : reprise éventuelle puis lecture. */
+function continueWith(view, opts = {}) {
+  const p = P;
+  p.view = view;
+  p.notice = opts.notice || p.notice;
+  ui.root.classList.remove('is-searching');
+  const saved = userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
   const rd = resumeDecision(saved);
   const mode = opts.resume || 'ask';
   if (typeof opts.startAt === 'number') return playView(view, opts.startAt);
   if (rd.prompt && mode === 'ask') {
     ui.setLoading(null);
     ui.setResume(rd.position);
-    P.resumeTimer = setTimeout(() => chooseResume(true), 12_000);
+    p.resumeTimer = setTimeout(() => chooseResume(true), 12_000);
     return undefined;
   }
   return playView(view, rd.prompt && mode === 'auto' ? rd.position : 0);
+}
+
+/** Lance le lecteur sur `view` (sources déjà connues, par exemple choisies dans un tiroir). */
+export async function startSession(request, views, view, opts = {}) {
+  await initSession(request, views, view, opts);
+  return continueWith(view, opts);
 }
 
 function chooseResume(resume) {
@@ -171,10 +204,7 @@ function loadSideData(token) {
   const alive = () => P && P.token === token;
   (async () => {
     try {
-      if (!p.imdb) {
-        const { imdbIdOf } = await import('../data/sources');
-        p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
-      }
+      if (!p.imdb) p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
       if (p.imdb && isConfigured()) {
         const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);
         if (alive()) p.segments = normalizeSkip(r);
@@ -184,35 +214,49 @@ function loadSideData(token) {
   if (p.req.type === 'tv') loadSeasons().then(() => { if (alive()) ui.setSeries(true, !!nextRef()); });
 }
 
+/** Saisons : réponse canonique de lastAddon (TVDB / groupes TMDB), sinon saisons TMDB. */
 async function loadSeasons() {
-  if (!P || P.seasons.length) return;
-  const m = appState.model && appState.model.key === P.req.key ? appState.model : null;
+  const p = P;
+  if (!p || p.seasons.length) return;
+  try {
+    const c = normalizeCanonical(await api('series/' + p.req.id + '/episodes', { language: getVideoLang().tag }));
+    if (c && P === p) { p.seasons = c.seasons; p.episodes = c.episodes; p.canonical = true; return; }
+  } catch (_) { /* repli TMDB */ }
+  const m = p.model;
   let list = m && Array.isArray(m.seasons) ? m.seasons : null;
   if (!list) {
-    try { const d = await tmdb('tv/' + P.req.id); list = d && d.seasons; } catch (_) { list = null; }
+    try { const d = await tmdb('tv/' + p.req.id); list = d && d.seasons; } catch (_) { list = null; }
   }
-  if (!P) return;
-  P.seasons = (list || []).map((s) => ({ season: s.season_number, count: s.episode_count || 0 })).filter((s) => s.season > 0 && s.count > 0);
+  if (P !== p) return;
+  p.seasons = (list || []).map((s) => ({ season: s.season_number, count: s.episode_count || 0 })).filter((s) => s.season > 0 && s.count > 0);
 }
 
-async function ensureEpisodes(season) {
-  if (!P || P.req.type !== 'tv') return;
+async function ensureEpisodes(season, reveal) {
+  const p = P;
+  if (!p || p.req.type !== 'tv') return;
   await loadSeasons();
-  const s = season ?? P.cur.season ?? 1;
-  P.panelSeason = s;
-  if (!P.episodes.has(s)) {
-    P.episodesLoading = true;
+  if (P !== p) return;
+  const s = season ?? p.cur.season ?? 1;
+  p.panelSeason = s;
+  if (!p.episodes.has(s)) {
+    p.episodesLoading = true;
     ui.refreshPanel();
     try {
-      const d = await tmdb('tv/' + P.req.id + '/season/' + s);
-      if (!P) return;
-      P.episodes.set(s, (d.episodes || []).map((e) => ({ episode: e.episode_number, name: e.name, runtime: e.runtime, overview: e.overview || '', still: IMG('w300', e.still_path) })));
-    } catch (_) { if (P) P.episodes.set(s, []); }
-    if (P) P.episodesLoading = false;
+      const d = await tmdb('tv/' + p.req.id + '/season/' + s);
+      if (P !== p) return;
+      const today = new Date().toISOString().slice(0, 10);
+      p.episodes.set(s, (d.episodes || []).map((e) => ({
+        episode: e.episode_number, name: e.name || '', runtime: e.runtime || null, overview: e.overview || '', still: IMG('w300', e.still_path),
+        airDate: e.air_date || '', aired: !e.air_date || e.air_date <= today,
+      })));
+    } catch (_) { if (P === p) p.episodes.set(s, []); }
+    if (P === p) p.episodesLoading = false;
   }
-  ui.setHeading(...headingFor(P));
+  if (P !== p) return;
+  ui.setHeading(...headingFor(p));
   updatePauseScreen();
   ui.refreshPanel();
+  if (reveal) ui.revealEpisode(s === p.cur.season ? p.cur.episode : 0);
 }
 
 /** Écran de pause : « Vous regardez… » avec le résumé de l'épisode (ou du film). */
@@ -260,16 +304,14 @@ async function playView(view, startAt) {
   p.failing = false;
   p.autoNexting = false;
   p.startAt = startAt || 0;
-  p.subs.selectedId = null;
-  p.subs.cues = [];
-  p.subs.native = false;
-  p.subs.embedded = [];
-  p.subs.loadedFor = null;
-  p.subs.external = [];
+  const s = p.subs;
+  Object.assign(s, { selectedId: null, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
+  stopAutoSync();
   if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
-  const lx = { logo: p.meta.logo, source: sourceLine(view) };
-  ui.setLoading(p.meta.title || 'Lecture', 'Préparation de la source…', lx);
+  ui.root.classList.remove('is-searching');
+  const base = loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : '') + ' — démarrage…' });
+  ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', base);
   try {
     const shell = await connectShell();
     if (stale()) return;
@@ -278,7 +320,7 @@ async function playView(view, startAt) {
     p.mediaUrl = media.url;
     let probe = null;
     if (!shell && media.up) {
-      ui.setLoading(p.meta.title || 'Lecture', media.torrent ? 'Connexion au torrent…' : 'Analyse du fichier…', lx);
+      ui.setLoading(p.meta.title || 'Lecture', media.torrent ? 'Connexion au torrent…' : 'Analyse du fichier…', base);
       probe = await fetchProbe(media.url, media.base);
       if (stale()) return;
     }
@@ -290,7 +332,7 @@ async function playView(view, startAt) {
       preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
     });
     p.choice = choice;
-    ui.setLoading(p.meta.title || 'Lecture', 'Moteur : ' + choice.label + '…', lx);
+    ui.setLoading(p.meta.title || 'Lecture', 'Moteur : ' + choice.label + '…', base);
     p.startedAt = Date.now();
     p.watch = new StallWatch(p.startedAt);
     ui.root.classList.toggle('is-mpv', choice.engine === 'mpv');
@@ -379,16 +421,21 @@ function applyDefaultTracks(force) {
     }
   }
   p.audioLang = audioLang;
-  const style = p.subs.style;
-  const mem = getMemory(p.req.key);
-  const idx = mem.sub ? pickRememberedSubtitle(subs, mem.sub) : pickDefaultSubtitle(subs, preferredLang(), audioLang, style.mode);
-  if (idx >= 0) selectSubtitle(subs[idx].id, true);
+  chooseDefaultSubtitle(subs, true);
   ensureExternalSubs(true);
 }
 
-async function ensureExternalSubs(auto) {
+function chooseDefaultSubtitle(tracks, quiet) {
   const p = P;
-  if (!p || p.subs.loadedFor === p.view.index || p.subs.loading) return;
+  const mem = getMemory(p.req.key);
+  const idx = mem.sub ? pickRememberedSubtitle(tracks, mem.sub) : pickDefaultSubtitle(tracks, preferredLang(), p.audioLang || '', p.subs.style.mode);
+  if (idx >= 0) selectSubtitle(tracks[idx].id, quiet);
+}
+
+/** Sous-titres externes (lastAddon, OpenSubtitles) ; `force` relance la recherche à la demande. */
+async function ensureExternalSubs(auto, force) {
+  const p = P;
+  if (!p || p.subs.loading || (!force && p.subs.loadedFor === p.view.index)) return;
   p.subs.loading = true;
   ui.refreshPanel();
   const token = p.token;
@@ -404,11 +451,7 @@ async function ensureExternalSubs(auto) {
     if (!P || P.token !== token || P.view !== view) return;
     p.subs.external = list;
     p.subs.loadedFor = view.index;
-    if (auto && p.subs.selectedId === null && p.defaultsDone) {
-      const mem = getMemory(p.req.key);
-      const idx = mem.sub ? pickRememberedSubtitle(allSubtitleTracks(), mem.sub) : pickDefaultSubtitle(allSubtitleTracks(), preferredLang(), p.audioLang || '', p.subs.style.mode);
-      if (idx >= 0) selectSubtitle(allSubtitleTracks()[idx].id, true);
-    }
+    if (auto && p.subs.selectedId === null && p.defaultsDone) chooseDefaultSubtitle(allSubtitleTracks(), true);
   } finally {
     if (P && P.token === token) { p.subs.loading = false; ui.refreshPanel(); }
   }
@@ -420,7 +463,14 @@ async function selectSubtitle(id, quiet) {
   const s = p.subs;
   s.selectedId = id || null;
   s.cues = [];
+  s.nativeCues = [];
   s.native = false;
+  s.offset = 0;
+  s.rate = 1;
+  s.rateId = 'none';
+  s.shift = 0;
+  s.rateHint = '';
+  stopAutoSync();
   if (!id) {
     p.engine.setSubtitleTrack(null);
     if (!quiet) ui.toast('Sous-titres désactivés');
@@ -429,24 +479,105 @@ async function selectSubtitle(id, quiet) {
   }
   const track = allSubtitleTracks().find((t) => t.id === id);
   if (!track) return;
+  s.syncKey = fileKey(p.view.filename || p.meta.title, p.view.sizeBytes) + '#' + (track.url || track.id);
   if (track.origin === 'embedded' && !track.url) {
     p.engine.setSubtitleTrack(track.id);
-    s.native = true; // mpv les affiche lui-même ; hls.js : cues relues dans le calque
+    s.native = true; // mpv les affiche lui-même ; hls.js : cues relues dans le calque (recalées par hls.js sur le fichier)
   } else {
     p.engine.setSubtitleTrack(null);
+    // Les sous-titres extraits par le serveur gardent l'heure du fichier d'origine, dont le premier paquet n'est pas toujours à 0.
+    if (track.origin === 'embedded') s.shift = -p.probeTracks.startTime;
     try {
       const up = await serverAlive();
       const base = serverBase();
       const via = up && track.origin === 'external' ? subtitlesVttUrl(base, track.url) : track.url;
       let text = '';
       try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
-      if (P === p && s.selectedId === id) s.cues = parseSubtitles(text, track.url);
-      if (P === p && !s.cues.length && s.selectedId === id) ui.toast('Ce sous-titre est vide ou illisible');
+      if (P === p && s.selectedId === id) {
+        s.cues = parseSubtitles(text, track.url);
+        if (!s.cues.length) ui.toast('Ce sous-titre est vide ou illisible');
+        else initialSync(track);
+      }
     } catch (_) {
       if (P === p) ui.toast('Impossible de charger ce sous-titre');
     }
   }
   if (!quiet) ui.toast('Sous-titres : ' + track.label);
+  ui.refreshPanel();
+}
+
+/** Calage d'une piste chargée : celui mémorisé pour ce fichier, sinon une correction de vitesse suggérée. */
+function initialSync(track) {
+  const p = P;
+  const s = p.subs;
+  const [file, sub] = s.syncKey.split('#');
+  const saved = getSubSync(file, sub);
+  if (saved) {
+    s.offset = saved.offset;
+    s.rate = saved.rate;
+    s.rateId = (RATE_CHOICES.find((r) => Math.abs(r.ratio - saved.rate) < 1e-4) || RATE_CHOICES[0]).id;
+    s.rateHint = 'Calage mémorisé pour ce fichier.';
+    return;
+  }
+  const last = s.cues.length ? Math.max(...s.cues.map((c) => c.end)) : 0;
+  const dur = p.engine.state().duration || p.probeTracks.durationSec || 0;
+  const guess = suggestRate(last, dur);
+  if (guess.id !== 'none') {
+    s.rate = guess.ratio;
+    s.rateId = guess.id;
+    s.rateHint = 'Vitesse corrigée automatiquement (' + guess.label + ') : ces sous-titres semblent calés pour une autre cadence.';
+    ui.toast('Sous-titres : vitesse corrigée (' + guess.label + ')', 4500);
+  }
+  void track;
+}
+
+function saveSync() {
+  const s = P.subs;
+  if (!s.syncKey) return;
+  const [file, sub] = s.syncKey.split('#');
+  setSubSync(file, sub, { offset: s.offset, rate: s.rate });
+}
+
+// ---------- Synchronisation automatique (parole ↔ sous-titres) ----------
+
+function stopAutoSync() {
+  const sy = P && P.subs.sync;
+  if (sy && sy.probe) sy.probe.stop();
+  if (P) P.subs.sync = { state: 'idle', message: '' };
+}
+
+function startAutoSync() {
+  const p = P;
+  const sup = levelProbeSupported(ui.video);
+  if (!sup.ok) { p.subs.sync = { state: 'idle', message: sup.reason }; ui.refreshPanel(); return; }
+  const probe = createLevelProbe(ui.video);
+  if (!probe.ok) { p.subs.sync = { state: 'idle', message: probe.reason }; ui.refreshPanel(); return; }
+  probe.start();
+  p.subs.sync = { state: 'collecting', probe, message: '' };
+  p.engine.play();
+  ui.toast('Analyse lancée : laisse la lecture avancer', 3500);
+  ui.refreshPanel();
+}
+
+function finishAutoSync() {
+  const p = P;
+  const sy = p.subs.sync;
+  if (!sy.probe) return;
+  const samples = sy.probe.samples;
+  sy.probe.stop();
+  const cues = p.subs.native ? p.subs.nativeCues : p.subs.cues;
+  const res = findSync(samples, cues, { rates: [1, RATE_CHOICES[1].ratio, RATE_CHOICES[2].ratio] });
+  if (syncTrusted(res)) {
+    p.subs.offset = Math.round((res.offset - p.subs.shift) * 10) / 10;
+    p.subs.rate = res.rate;
+    p.subs.rateId = (RATE_CHOICES.find((r) => Math.abs(r.ratio - res.rate) < 1e-4) || RATE_CHOICES[0]).id;
+    saveSync();
+    const sign = p.subs.offset > 0 ? '+' : '';
+    p.subs.sync = { state: 'idle', message: 'Calé automatiquement : ' + sign + p.subs.offset.toFixed(1).replace('.', ',') + ' s' + (res.rate !== 1 ? ' et vitesse corrigée' : '') + '.' };
+    ui.toast('Sous-titres calés (' + sign + p.subs.offset.toFixed(1).replace('.', ',') + ' s)', 4000);
+  } else {
+    p.subs.sync = { state: 'idle', message: 'Résultat peu fiable : réessaie sur une scène avec beaucoup de dialogues.' };
+  }
   ui.refreshPanel();
 }
 
@@ -468,7 +599,7 @@ function onEnded() {
 let tickN = 0;
 function tick() {
   const p = P;
-  if (!p || !p.engine) return;
+  if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
   // Sous-titres (100 ms).
@@ -478,7 +609,7 @@ function tick() {
     if (tickN % 5 === 0) s.nativeCues = p.engine.nativeCues();
     cues = s.nativeCues || [];
   }
-  const cue = s.native && p.engine.kind === 'mpv' ? null : activeCue(cues, st.time, s.offset);
+  const cue = s.native && p.engine.kind === 'mpv' ? null : activeCue(cues, st.time, s.offset + s.shift, s.rate);
   ui.setCue(cue ? cueHtml(cue.text) : '', s.style);
   if (tickN % 3 === 0) refreshUI(st);
   if (tickN % 10 !== 0) return;
@@ -489,9 +620,13 @@ function tick() {
     else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
   }
   if (st.time > 0 && !st.buffering) ui.setLoading(null);
+  if (s.sync.state === 'collecting') {
+    const secs = s.sync.probe.seconds();
+    if (secs >= AUTOSYNC_TARGET) finishAutoSync(); else ui.refreshPanel();
+  }
   if (st.duration > 0) {
     const seg = activeSkip(p.segments, st.time);
-    if (seg && autoSkipEnabled(seg.kind) && p.skipped !== seg.start && p.undone !== seg.start) {
+    if (seg && autoSkipEnabled(seg.kind, getSkipPref, seg.inferred) && p.skipped !== seg.start && p.undone !== seg.start) {
       p.skipped = seg.start;
       p.engine.seek(seg.end);
       p.watch.reset(Date.now());
@@ -514,7 +649,7 @@ function tick() {
 }
 
 function refreshUI(st) {
-  if (!P || !P.engine) return;
+  if (!P || !P.engine || !P.view) return;
   const s = st || P.engine.state();
   ui.update(s, chapterMarks(P.segments, s.duration));
 }
@@ -523,7 +658,7 @@ function refreshUI(st) {
 
 function saveProgress(force, st) {
   const p = P;
-  if (!p || !p.engine) return;
+  if (!p || !p.engine || !p.view) return;
   const s = st || p.engine.state();
   if (!shouldSave(Date.now(), p.lastSave, force, s.duration) || s.time <= 1) return;
   p.lastSave = Date.now();
@@ -546,21 +681,21 @@ function markWatched() {
 // ---------- Actions ----------
 
 function seekTo(t) {
-  if (!P) return;
+  if (!P || !P.view) return;
   P.engine.seek(t);
   P.watch.reset(Date.now());
   P.skipped = null;
 }
 
 function seekBy(d) {
-  if (!P) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   seekTo(Math.min(st.duration || Infinity, Math.max(0, st.time + d)));
   ui.toast((d > 0 ? '+' : '−') + Math.abs(d) + ' s', 900);
 }
 
 function togglePlay() {
-  if (!P) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   if (st.paused) P.engine.play(); else { P.engine.pause(); saveProgress(true); }
 }
@@ -573,22 +708,29 @@ async function toggleFullscreen() {
 }
 
 async function togglePip() {
-  if (!P || !P.engine.supportsPip()) { ui.toast('Image dans l’image indisponible ici'); return; }
+  if (!P || !P.view || !P.engine.supportsPip()) { ui.toast('Image dans l’image indisponible ici'); return; }
   try { await P.engine.togglePip(); } catch (_) { ui.toast('Image dans l’image refusée par le navigateur'); }
 }
 
-function openChangeSource() {
-  if (!P) return;
+/** Sélecteur de sources dans un panneau du lecteur : recherche initiale sans résultat, lecture automatique désactivée, changement de source. */
+function showSourcesPanel() {
   const p = P;
-  const btn = ui.root.querySelector('[data-act="source"]');
-  openSourcePicker(p.req, btn, {
-    views: p.views, currentIndex: p.view.index,
-    onPick: (view) => {
+  if (!p) return;
+  ui.setLoading(null);
+  ui.root.classList.remove('is-searching');
+  const host = ui.mountPanel('sources', 'Sources');
+  openSourcePicker(p.req, null, {
+    host, views: p.views, currentIndex: p.view ? p.view.index : null,
+    onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
-      const st = P.engine.state();
-      if (view.index === P.view.index) { ui.focusFirst(); return; }
-      P.attempts = 0;
-      P.tried = new Set();
+      ui.closePanel(true);
+      p.views = views;
+      p.ranked = [...views];
+      if (!p.view) { p.req.imdb = p.req.imdb || p.imdb; continueWith(view, { resume: p.resumeMode || 'ask' }); return; }
+      if (view.index === p.view.index) { ui.focusFirst(); return; }
+      const st = p.engine.state();
+      p.attempts = 0;
+      p.tried = new Set();
       ui.toast('Changement de source…');
       playView(view, st.time > 5 ? st.time : 0);
       ui.focusFirst();
@@ -596,31 +738,48 @@ function openChangeSource() {
   });
 }
 
-async function playEpisode(season, episode) {
+/** Épisode d'une série : même ouverture immédiate que « Lecture », sans reprise proposée. */
+function playEpisode(season, episode) {
   const p = P;
-  if (!p) return;
-  const req = { ...p.req, season, episode, imdb: p.imdb };
+  if (!p) return Promise.resolve();
   ui.closePanel(true);
-  ui.setLoading(p.meta.title, 'Recherche d’une source pour S' + season + ' · É' + episode + '…');
+  return playBest({ ...p.req, season, episode, imdb: p.imdb }, p.opener, { resume: 'none' });
+}
+
+function submitTarget() {
+  const p = P;
+  return { type: p.req.type === 'tv' ? 'series' : 'movie', imdbId: p.imdb, season: p.req.type === 'tv' ? p.cur.season ?? 1 : 0, episode: p.req.type === 'tv' ? p.cur.episode ?? 1 : 0 };
+}
+
+async function sendSegment(kind, start, end, negative) {
+  const p = P;
+  const body = buildSubmission(submitTarget(), kind, start, end, p.engine.state().duration, negative);
+  if (!body) { ui.toast('Segment invalide : il doit durer au moins 3 s'); return false; }
   try {
-    const { views } = await loadSources(req);
-    if (!P || P.token !== p.token) return;
-    const bw = await measureBandwidthKbps().catch(() => null);
-    const rec = recommendFor(views, bw);
-    if (!rec) { ui.setLoading(null); ui.toast('Aucune source pour cet épisode', 5000); return; }
-    const opener = p.opener;
-    await startSession(req, views, rec.view, { opener, resume: 'none', notice: rec.languageFallback ? rec.reason : '' });
+    await postLt('skip/submit', body);
+    if (negative) {
+      p.segments = p.segments.filter((s) => !(s.kind === kind && s.inferred));
+      ui.setSkip(null);
+      ui.toast('Merci, signalé : ce segment ne sera plus proposé');
+    } else {
+      p.segments = [...p.segments.filter((s) => s.kind !== kind), { kind, start: body.start, end: body.end }].sort((a, b) => a.start - b.start);
+      ui.toast('Merci, segment envoyé et utilisable tout de suite');
+    }
+    return true;
   } catch (_) {
-    ui.setLoading(null);
-    ui.toast('Impossible de charger les sources de cet épisode', 5000);
+    ui.toast('Envoi impossible pour le moment');
+    return false;
   }
 }
 
 function onAction(act, data) {
   if (!P) return;
+  if (act === 'close') { closePlayer(); return; }
+  if (act === 'source') { showSourcesPanel(); return; }
+  if (!P.view) return; // recherche en cours : seuls « Annuler » et le choix de source sont possibles
   const st = P.engine.state();
+  const s = P.subs;
   switch (act) {
-    case 'close': closePlayer(); break;
     case 'toggle-play': togglePlay(); break;
     case 'back10': seekBy(-10); break;
     case 'fwd10': seekBy(10); break;
@@ -628,8 +787,8 @@ function onAction(act, data) {
     case 'fullscreen': toggleFullscreen(); break;
     case 'pip': togglePip(); break;
     case 'info': ui.togglePanel('info'); break;
-    case 'source': openChangeSource(); break;
     case 'skip': { const seg = activeSkip(P.segments, st.time); if (seg) { seekTo(seg.end); ui.toast('Passé'); } break; }
+    case 'skip-wrong': { const seg = activeSkip(P.segments, st.time); if (seg) sendSegment(seg.kind, seg.start, seg.end, true); break; }
     case 'next': { const nx = nextRef(); if (nx) playEpisode(nx.season, nx.episode); else ui.toast('Dernier épisode'); break; }
     case 'next-dismiss': P.nextDismissed = true; ui.setNextCard(null); break;
     case 'end-dismiss': P.endDismissed = true; ui.setEndRow(false); break;
@@ -645,7 +804,15 @@ function onAction(act, data) {
     case 'resume': chooseResume(true); break;
     case 'restart': chooseResume(false); break;
     case 'retry': { const v = P.view; P.tried = new Set(); P.attempts = 0; playView(v, st.time > 5 ? st.time : 0); break; }
-    case 'audio': { const t = P.engine.audioTracks().find((x) => x.id === data.id); if (t && t.lang) remember(P.req.key, { audio: t.lang }); P.engine.setAudioTrack(data.id); } P.watch.reset(Date.now()); setTimeout(() => ui.refreshPanel(), 200); ui.toast('Audio : ' + ((P.engine.audioTracks().find((t) => t.id === data.id) || {}).label || '')); break;
+    case 'audio': {
+      const t = P.engine.audioTracks().find((x) => x.id === data.id);
+      if (t && t.lang) remember(P.req.key, { audio: t.lang });
+      P.engine.setAudioTrack(data.id);
+      P.watch.reset(Date.now());
+      setTimeout(() => ui.refreshPanel(), 200);
+      ui.toast('Audio : ' + (t ? t.label : ''));
+      break;
+    }
     case 'force-hls': P.forceHls = true; ui.closePanel(true); ui.toast('Passage en transcodage…'); P.tried = new Set(); playView(P.view, st.time > 5 ? st.time : 0); break;
     case 'sub': {
       const t = data.id ? allSubtitleTracks().find((x) => x.id === data.id) : null;
@@ -653,13 +820,50 @@ function onAction(act, data) {
       selectSubtitle(data.id || null);
       break;
     }
-    case 'suboffset': P.subs.offset = stepOffset(P.subs.offset, Number(data.by)); ui.refreshPanel(); break;
-    case 'substyle': updateStyle({ [data.key]: data.val }); break;
-    case 'substep': { const cur = P.subs.style; updateStyle({ [data.key]: cur[data.key] + Number(data.by) }); break; }
+    case 'subsearch': ensureExternalSubs(false, true); break;
+    case 'suboffset': s.offset = Math.max(-120, Math.min(120, Math.round((s.offset + Number(data.by)) * 10) / 10)); saveSync(); ui.refreshPanel(); break;
+    case 'suboffset-reset': s.offset = 0; s.rate = 1; s.rateId = 'none'; s.rateHint = ''; saveSync(); ui.refreshPanel(); break;
+    case 'subrate': { const r = rateChoice(data.id); s.rate = r.ratio; s.rateId = r.id; s.rateHint = ''; saveSync(); ui.refreshPanel(); break; }
+    case 'autosync': startAutoSync(); break;
+    case 'autosync-now':
+      if (s.sync.probe && s.sync.probe.seconds() >= AUTOSYNC_MIN) finishAutoSync(); else ui.toast('Encore un peu de lecture (' + AUTOSYNC_MIN + ' s minimum)');
+      break;
+    case 'autosync-cancel': stopAutoSync(); ui.refreshPanel(); break;
+    case 'style-open': s.styleOpen = data.open === '1'; break;
+    case 'substyle': updateStyle({ [data.key]: data.key === 'size' ? Number(data.val) : data.val }); break;
+    case 'substep': updateStyle({ [data.key]: s.style[data.key] + Number(data.by) }); break;
     case 'rate': P.engine.setRate(Number(data.rate)); setTimeout(() => ui.refreshPanel(), 50); break;
+    case 'aspect': P.aspect = data.val; ui.video.style.objectFit = data.val; ui.refreshPanel(); break;
     case 'autopip': { const on = storeGet(AUTOPIP_KEY) !== '1'; storeSet(AUTOPIP_KEY, on ? '1' : '0'); ui.video.autoPictureInPicture = on; ui.refreshPanel(); break; }
     case 'season': ensureEpisodes(Number(data.season)); break;
     case 'episode': playEpisode(Number(data.season), Number(data.episode)); break;
+    case 'epsearch': P.epQuery = data.q || ''; ui.refreshPanel(); break;
+    case 'ep-seen': {
+      Promise.resolve(userStore.setWatched(P.req.key, [{ season: Number(data.season), episode: Number(data.episode) }], data.seen === '1')).then(() => ui.refreshPanel());
+      break;
+    }
+    case 'ep-season-seen': {
+      const sn = Number(data.season);
+      const aired = (P.episodes.get(sn) || []).filter((e) => e.aired);
+      const all = aired.every((e) => userStore.isWatched(P.req.key, sn, e.episode));
+      Promise.resolve(userStore.setWatched(P.req.key, aired.map((e) => ({ season: sn, episode: e.episode })), !all)).then(() => { ui.refreshPanel(); ui.toast(all ? 'Saison marquée non vue' : 'Saison marquée comme vue'); });
+      break;
+    }
+    case 'ep-next-unseen': {
+      const from = firstUnseen(P.seasons, P.episodes, P.panelSeason ?? P.cur.season ?? 1, (sn, e) => userStore.isWatched(P.req.key, sn, e));
+      if (!from) { ui.toast('Tous les épisodes diffusés sont vus'); break; }
+      P.epQuery = '';
+      ensureEpisodes(from.season).then(() => ui.revealEpisode(from.episode));
+      break;
+    }
+    case 'mark-kind': P.mark.kind = data.val; ui.refreshPanel(); break;
+    case 'mark-start': P.mark = { ...P.mark, state: 'start', start: st.time }; ui.toast('Début noté à ' + formatClock(st.time)); ui.refreshPanel(); break;
+    case 'mark-cancel': P.mark.state = 'idle'; ui.refreshPanel(); break;
+    case 'mark-end': {
+      const m = P.mark;
+      sendSegment(m.kind, m.start, st.time, false).then((ok) => { if (ok) { P.mark.state = 'idle'; ui.refreshPanel(); } });
+      break;
+    }
     default: break;
   }
 }
@@ -675,36 +879,72 @@ function updateStyle(patch) {
 
 function panelData(name) {
   const p = P;
-  if (!p) return {};
+  if (!p || !p.view) return {};
   if (name === 'tracks') {
     const tracks = p.engine.audioTracks();
     const hasApi = p.engine.kind !== 'html' || !!ui.video.audioTracks || !!p.engine.hls;
+    const titles = {};
+    tracks.forEach((t) => { titles[t.id] = t.title || ''; });
+    const subTracks = allSubtitleTracks();
+    subTracks.forEach((t) => { titles[t.id] = t.title || ''; });
+    const s = p.subs;
+    const cues = s.native ? s.nativeCues : s.cues;
+    const sup = levelProbeSupported(ui.video);
+    const sync = s.sync;
     return {
       audio: {
-        tracks,
+        groups: groupAudioTracks(tracks, audioPreference(), titles),
         note: hasApi ? 'Une seule piste audio dans ce flux.' : 'Ce navigateur n’expose pas les pistes audio d’un fichier lu directement.',
         canTranscode: !tracks.length && !hasApi && p.choice && p.choice.engine === 'direct',
       },
-      subs: { tracks: allSubtitleTracks(), selectedId: p.subs.selectedId, offset: p.subs.offset, style: p.subs.style, loading: p.subs.loading },
+      subs: {
+        sections: sectionSubtitleTracks(subTracks, [preferredLang()], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
+        style: s.style, styleOpen: s.styleOpen, loading: s.loading,
+        sync: {
+          canAuto: !!s.selectedId && cues.length > 0 && sup.ok && p.engine.kind === 'html', reason: !s.selectedId ? 'Choisis d’abord une piste de sous-titres.' : !cues.length ? 'Pas de texte à caler pour cette piste.' : sup.reason || (p.engine.kind !== 'html' ? 'Indisponible avec mpv.' : ''),
+          state: sync.state, message: sync.message, seconds: sync.probe ? sync.probe.seconds() : 0, target: AUTOSYNC_TARGET,
+        },
+      },
     };
   }
-  if (name === 'speed') return { rate: p.engine.state().rate, autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip() };
+  if (name === 'settings') {
+    const v = p.view;
+    const st = p.engine.state();
+    const web = v.web === 'direct' ? { html: '<b class="lp-tag is-sync">Lecture directe</b>' } : v.web === 'convert' ? { html: '<b class="lp-tag is-warn">Conversion</b>' } : null;
+    const rows = [
+      ['Résolution', [v.quality, v.sourceType].filter(Boolean).join(' · ') || 'Inconnue'],
+      ['Codec', [v.codec, ...v.hdr].filter(Boolean).join(' · ') || 'Inconnu'],
+      ['Débit', [v.bitrateLabel, v.sizeLabel].filter(Boolean).join(' · ') || 'Inconnu'],
+      ['Langue', v.langs.map((l) => l.label + (l.verified ? ' ✓' : '')).join(', ') || 'Inconnue'],
+      ['Fournisseur', v.provider || v.statusLabel],
+    ];
+    if (web) rows.push(['Lecture', web]);
+    if (p.choice) rows.push(['Moteur', p.choice.label]);
+    return {
+      rate: st.rate, source: rows, aspect: p.aspect, autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(),
+      canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
+    };
+  }
   if (name === 'episodes') {
     const s = p.panelSeason ?? p.cur.season ?? 1;
-    const episodes = (p.episodes.get(s) || []).map((e) => {
+    const all = (p.episodes.get(s) || []).map((e) => {
       const pr = userStore.getProgress(p.req.key, s, e.episode);
       return { ...e, watched: userStore.isWatched(p.req.key, s, e.episode), progress: pr && pr.duration ? pr.position / pr.duration : 0 };
     });
-    return { seasons: p.seasons, season: s, episodes, loading: !!p.episodesLoading, current: p.cur };
+    return {
+      seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, current: p.cur, query: p.epQuery,
+      logo: p.meta.logo, title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
+    };
   }
   if (name === 'info') {
     const v = p.view;
+    const eps = p.episodes.get(p.cur.season);
+    const ep = eps && eps.find((e) => e.episode === p.cur.episode);
+    const [title, sub] = headingFor(p);
     const rows = [
-      ['Titre', p.meta.title + (p.req.season != null ? ' · ' + seLabel(p.req) : '')],
       ['Moteur', p.choice ? p.choice.label : '…'],
       ['Qualité', [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
       ['Audio', v.audio || 'Inconnu'],
-      ['Langues', v.langs.map((l) => l.label + (l.verified ? ' ✓' : '')).join(', ') || 'Inconnues'],
       ['Taille', [v.sizeLabel, v.bitrateLabel, v.durationLabel && '≈ ' + v.durationLabel].filter(Boolean).join(' · ') || 'Inconnue'],
       ['Statut', v.statusLabel],
       ['Fichier', v.filename || '—'],
@@ -713,7 +953,11 @@ function panelData(name) {
     if (p.probeTracks.height) rows.push(['Vidéo', p.probeTracks.width + '×' + p.probeTracks.height + ' · ' + (p.probeTracks.videoCodec || '').toUpperCase()]);
     if (p.choice) rows.push(['Pourquoi ce moteur', p.choice.reason]);
     rows.push(['Serveur de streaming', serverBase()]);
-    return { rows };
+    const m = p.model;
+    return {
+      title, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview, rating: m && m.vote ? Number(m.vote).toFixed(1) + ' / 10' : '',
+      cast: m && Array.isArray(m.cast) ? m.cast.slice(0, 12) : [], rows,
+    };
   }
   return {};
 }
@@ -723,10 +967,12 @@ function panelData(name) {
 function onKey(e) {
   if (!P || ui.root.hidden) return;
   const modal = document.getElementById('modal');
-  if (modal && !modal.hidden) return; // le sélecteur de sources gère ses propres touches
+  if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
   const typing = !!(t && t.closest('input[type="text"], textarea, select'));
   const onButton = !!(t && t.closest('button'));
+  // Le sélecteur de sources (dans un panneau) gère lui-même ses flèches ; Échap le ferme.
+  if (ui.panel === 'sources' && e.key !== 'Escape' && e.key !== 'Backspace' && /^(Arrow|Home$|End$)/.test(e.key)) return;
   const action = keyToAction(e.key, { panelOpen: !!ui.panel, typing, onButton }, { ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey });
   ui.wake();
   if (!action) return;
@@ -734,7 +980,8 @@ function onKey(e) {
   if (action.type === 'nav') { e.preventDefault(); e.stopImmediatePropagation(); ui.navPanel(action.dir); return; }
   e.preventDefault();
   e.stopImmediatePropagation();
-  const st = P.engine.state();
+  if (!P.view && action.type !== 'back') return;
+  const st = P.view ? P.engine.state() : null;
   switch (action.type) {
     case 'toggle-play': togglePlay(); break;
     case 'seek': seekBy(action.by); break;
@@ -762,6 +1009,7 @@ async function teardown(silent) {
   saveProgress(true);
   clearInterval(tickTimer);
   clearTimeout(p.resumeTimer);
+  stopAutoSync();
   try { p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
@@ -789,32 +1037,38 @@ export const isPlayerOpen = () => !!P;
 // ---------- Lecture automatique (bouton « Lecture ») ----------
 
 /**
- * Choisit la meilleure source selon le débit et la langue préférée et la lance sans passer par le sélecteur.
- * Réglage « lecture automatique » désactivé, ou aucune source qui tienne : ouvre le sélecteur.
+ * Ouvre le lecteur tout de suite ; la recherche de sources et le choix de la meilleure (débit, langue, lecture directe)
+ * se font dans l'écran de chargement. Réglage « lecture automatique » désactivé, aucune source ou aucune qui convienne :
+ * le sélecteur s'ouvre dans un panneau du lecteur. « Annuler » ramène à la fiche.
  */
 export async function playBest(request, opener, opts = {}) {
-  ensureUI();
-  appToast('Recherche de la meilleure source…', { ms: 4000 });
-  const pick = (view, views) => startSession(request, views || loaded.views, view, { opener, resume: opts.resume || 'ask', notice: '' });
-  let loaded;
+  const p = await initSession(request, [], null, { opener });
+  const token = p.token;
+  const alive = () => P && P.token === token;
+  p.resumeMode = opts.resume || 'ask';
+  ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  let loaded = null;
   try {
     if (userStore.loadProgress) await userStore.loadProgress(request.key);
     loaded = await loadSources(request);
   } catch (_) { loaded = null; }
-  // Rien de lisible ou erreur : le sélecteur explique pourquoi (aucune source, lastAddon injoignable…).
-  if (!loaded || !loaded.views.length) { openSourcePicker(request, opener, { onPick: pick }); return; }
+  if (!alive()) return;
+  if (!loaded || !loaded.views.length) { showSourcesPanel(); return; }
   request.imdb = loaded.imdb;
-  if (!getAutoplay() && !opts.force) {
-    openSourcePicker(request, opener, { views: loaded.views, onPick: pick });
-    return;
-  }
+  p.imdb = loaded.imdb;
+  p.views = loaded.views;
+  p.ranked = [...loaded.views];
+  if (opts.picker || (!getAutoplay() && !opts.force)) { showSourcesPanel(); return; }
+  ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
   const bw = await measureBandwidthKbps().catch(() => null);
+  if (!alive()) return;
   const rec = recommendFor(loaded.views, bw);
-  if (!rec) { openSourcePicker(request, opener, { views: loaded.views, onPick: pick }); return; }
-  await startSession(request, loaded.views, rec.view, { opener, resume: opts.resume || 'ask', notice: rec.languageFallback ? rec.reason : '' });
+  if (!rec) { showSourcesPanel(); return; }
+  ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') + ' — démarrage…' }));
+  await continueWith(rec.view, { resume: p.resumeMode, notice: rec.languageFallback ? rec.reason : '' });
 }
 
-/** Lance une source choisie dans le sélecteur. */
+/** Lance une source choisie dans le sélecteur de la fiche. */
 export function playSource(request, views, view, opener, opts = {}) {
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }

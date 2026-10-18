@@ -8,6 +8,10 @@ export interface SkipSegment {
   kind: SkipKind;
   start: number;
   end: number;
+  /** Déduit d'une autre saison par lastAddon, pas confirmé pour cet épisode : le bouton demande confirmation. */
+  inferred?: boolean;
+  /** Confiance de la source (0 à 1), si elle la donne. */
+  confidence?: number;
 }
 
 const KINDS: readonly string[] = ['intro', 'recap', 'credits', 'postcredits', 'preview'];
@@ -20,9 +24,14 @@ export function normalizeSkip(resp: unknown): SkipSegment[] {
     const r = s as Partial<SkipSegment> | null;
     if (!r || typeof r.kind !== 'string' || !KINDS.includes(r.kind)) continue;
     if (typeof r.start !== 'number' || typeof r.end !== 'number' || !Number.isFinite(r.start) || !Number.isFinite(r.end) || r.end - r.start < 3 || r.start < 0) continue;
-    out.push({ kind: r.kind as SkipKind, start: r.start, end: r.end });
+    out.push({ kind: r.kind as SkipKind, start: r.start, end: r.end, ...(r.inferred === true ? { inferred: true } : {}), ...(typeof r.confidence === 'number' ? { confidence: r.confidence } : {}) });
   }
   return out.sort((a, b) => a.start - b.start);
+}
+
+/** Libellé du bouton : « Passer l'intro » ou, pour un segment déduit, « Passer l'intro ? ». */
+export function skipLabel(seg: Pick<SkipSegment, 'kind' | 'inferred'>): string {
+  return SKIP_LABEL[seg.kind] + (seg.inferred ? ' ?' : '');
 }
 
 export const SKIP_LABEL: Record<SkipKind, string> = {
@@ -34,11 +43,23 @@ export function activeSkip(segments: readonly SkipSegment[], t: number): SkipSeg
   return segments.find((s) => (s.kind === 'intro' || s.kind === 'recap' || s.kind === 'preview') && t >= s.start - 0.25 && t < s.end - 1) ?? null;
 }
 
-/** Début du générique de fin : segment connu, sinon les 45 dernières secondes. */
+export const CREDITS_MIN_CONFIDENCE = 0.6;
+/** Sans données fiables, la carte « épisode suivant » n'apparaît que dans les dernières secondes. */
+export const FALLBACK_TAIL_SECONDS = 25;
+
+/** Un générique n'est retenu que s'il est fiable (ni déduit, ni peu sûr) et commence dans les 15 % finaux (4 min au plus). */
+export function validCredits(seg: SkipSegment, duration: number): boolean {
+  if (seg.kind !== 'credits' || seg.inferred) return false;
+  if (typeof seg.confidence === 'number' && seg.confidence < CREDITS_MIN_CONFIDENCE) return false;
+  return seg.start >= duration - Math.min(duration * 0.15, 240) && seg.start < duration;
+}
+
+/** Début du générique de fin : segment valide, sinon les 25 dernières secondes. */
 export function creditsStart(segments: readonly SkipSegment[], duration: number): number | null {
-  const c = segments.find((s) => s.kind === 'credits' && s.start > duration * 0.5);
+  if (!(duration > 0)) return null;
+  const c = segments.find((s) => validCredits(s, duration));
   if (c) return c.start;
-  return duration > 600 ? duration - 45 : null;
+  return duration > FALLBACK_TAIL_SECONDS * 2 ? duration - FALLBACK_TAIL_SECONDS : null;
 }
 
 export interface NextCardState {
@@ -68,6 +89,8 @@ export function nextEpisodeCard(segments: readonly SkipSegment[], t: number, dur
   if (!hasNext || !duration) return hidden;
   const start = creditsStart(segments, duration);
   if (start === null || t < start) return hidden;
+  // Jamais pendant une intro ou un récap.
+  if (segments.some((s) => (s.kind === 'intro' || s.kind === 'recap') && t >= s.start && t < s.end)) return hidden;
   if (!auto) return { show: true, countdown: null, ratio: 0 };
   const from = countdownStart(segments, duration) ?? start;
   if (t < from) return { show: true, countdown: null, ratio: 0 };
@@ -82,7 +105,8 @@ export function movieEndRow(segments: readonly SkipSegment[], t: number, duratio
 }
 
 /** Saut automatique selon les réglages (`intro`, `recap`). */
-export function autoSkipEnabled(kind: SkipKind, pref: (n: SkipPrefName) => boolean = getSkipPref): boolean {
+export function autoSkipEnabled(kind: SkipKind, pref: (n: SkipPrefName) => boolean = getSkipPref, inferred = false): boolean {
+  if (inferred) return false;
   if (kind === 'intro') return pref('intro');
   if (kind === 'recap') return pref('recap');
   return false;
@@ -92,4 +116,33 @@ export function autoSkipEnabled(kind: SkipKind, pref: (n: SkipPrefName) => boole
 export function chapterMarks(segments: readonly SkipSegment[], duration: number): Array<{ kind: SkipKind; from: number; to: number }> {
   if (!duration) return [];
   return segments.map((s) => ({ kind: s.kind, from: Math.min(1, s.start / duration), to: Math.min(1, s.end / duration) }));
+}
+
+// ---------- Envoi de segments à lastAddon ----------
+
+export type MarkKind = 'intro' | 'recap' | 'credits';
+
+export interface SkipSubmission {
+  type: 'movie' | 'series';
+  imdbId: string;
+  season: number;
+  episode: number;
+  kind: MarkKind;
+  start: number;
+  end: number;
+  duration: number;
+  /** Retour négatif : « ce n'est pas l'intro ». */
+  negative?: boolean;
+}
+
+/** Valide un segment saisi à la main (début < fin, 3 s au moins, dans la durée) ; null si invalide. */
+export function buildSubmission(
+  target: { type: 'movie' | 'series'; imdbId: string; season: number; episode: number },
+  kind: MarkKind, start: number, end: number, duration: number, negative = false,
+): SkipSubmission | null {
+  if (!target.imdbId || !Number.isFinite(start) || !Number.isFinite(end) || !(duration > 0)) return null;
+  const a = Math.max(0, Math.round(start * 10) / 10);
+  const b = Math.min(duration, Math.round(end * 10) / 10);
+  if (b - a < 3) return null;
+  return { ...target, kind, start: a, end: b, duration: Math.round(duration * 10) / 10, ...(negative ? { negative: true } : {}) };
 }

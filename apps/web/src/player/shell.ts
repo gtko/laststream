@@ -88,7 +88,7 @@ const IMAGE = new Set(['pgs', 'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle
 export function mpvAudioTracks(list: readonly MpvTrack[]): AudioTrack[] {
   return list.filter((t) => t.type === 'audio').map((t) => {
     const lang = trackLang(t.lang, t.title);
-    return { id: String(t.id), lang, codec: (t.codec ?? '').toLowerCase(), channels: t['audio-channels'] ?? 0, selected: !!t.selected, label: audioTrackLabel({ lang, title: t.title, codec: t.codec, channels: t['audio-channels'] }) };
+    return { id: String(t.id), title: t.title || '', lang, codec: (t.codec ?? '').toLowerCase(), channels: t['audio-channels'] ?? 0, selected: !!t.selected, label: audioTrackLabel({ lang, title: t.title, codec: t.codec, channels: t['audio-channels'] }) };
   });
 }
 
@@ -97,7 +97,7 @@ export function mpvSubtitleTracks(list: readonly MpvTrack[]): SubtitleTrack[] {
     const lang = trackLang(t.lang, t.title);
     const codec = (t.codec ?? '').toLowerCase();
     return {
-      id: String(t.id), lang, codec, forced: !!t.forced, origin: 'embedded', renderable: true, engineId: t.id, selected: !!t.selected,
+      id: String(t.id), title: t.title || '', lang, codec, forced: !!t.forced, origin: 'embedded', renderable: true, engineId: t.id, selected: !!t.selected,
       label: (lang ? langName(lang) : t.title || 'Sous-titres') + (t.forced ? ' (forcés)' : '') + (codec ? ' · ' + codecLabel(codec) : '') + (IMAGE.has(codec) ? '' : ''),
     };
   });

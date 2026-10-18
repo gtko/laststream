@@ -392,7 +392,7 @@ describe('interface portée', () => {
     expect(detail.querySelector('[data-play]')).not.toBeNull();
   });
 
-  it('Lecture lance la meilleure source ; lecture automatique désactivée : tiroir de sources détaillé', async () => {
+  it('Lecture ouvre le lecteur et lance la meilleure source ; lecture automatique désactivée : sélecteur dans le lecteur', async () => {
     (document.querySelector('#detail [data-play]') as HTMLElement).click();
     await settle(400);
     const player = document.getElementById('lsplayer') as HTMLElement;
@@ -404,12 +404,16 @@ describe('interface portée', () => {
     localStorage.setItem('laststream.autoplay', '0');
     (document.querySelector('#detail [data-play]') as HTMLElement).click();
     await settle(300);
-    expect(document.getElementById('modal')!.hidden).toBe(false);
-    expect(document.querySelector('#modal .drawer-title')!.textContent).toBe('Sources');
-    const item = document.querySelector('#modal .src2') as HTMLElement;
+    // Le lecteur est ouvert et le sélecteur détaillé est un panneau du lecteur, pas un tiroir de la fiche.
+    expect(player.hidden).toBe(false);
+    expect(document.getElementById('modal')!.hidden).toBe(true);
+    const item = player.querySelector('.lp-panel .src2') as HTMLElement;
     expect(item.querySelector('.q')!.textContent).toBe('1080p');
     expect(item.textContent).toContain('WEB-DL');
-    expect(document.querySelector('#modal .s-chip[data-chip="res:1080p"]')).not.toBeNull();
+    expect(player.querySelector('.lp-panel .s-chip[data-chip="res:1080p"]')).not.toBeNull();
+    (player.querySelector('[data-act="panel-close"]') as HTMLElement).click(); // fermer sans choisir : retour à la fiche
+    await settle(100);
+    expect(player.hidden).toBe(true);
     localStorage.removeItem('laststream.autoplay');
   });
 

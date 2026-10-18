@@ -1,24 +1,24 @@
 /* « Lecture » : branche les boutons de l'interface sur le sélecteur de sources (src/sources) et le lecteur (src/player). */
 import { getAutoplay } from '../data/prefs';
-import { closePlayer, playBest, playSource } from '../player/session.js';
-import { openSourcePicker } from '../sources/picker.js';
+import { closePlayer, playBest } from '../player/session.js';
+import { prefetchSources } from '../sources/load';
 import { nextToWatch } from './fiche.js';
 import { hv } from './hover.js';
 import { state } from './state.js';
 
-/** Cible de lecture d'après le bouton « Lecture » cliqué (fiche, épisode, aperçu au survol). */
-export function playFrom(btn) {
+/** Cible de lecture d'après le bouton « Lecture » (fiche, épisode, aperçu au survol) ; null si le titre est inconnu. */
+function requestFrom(btn) {
   const hc = btn.closest('#hovercard');
   let type; let id; let name; let season = null; let episode = null;
   const ep = btn.closest('.ep');
   if (hc) {
     const it = state.byKey.get(hv.key);
-    if (!it) return;
+    if (!it) return null;
     ({ type, id, name } = it);
     if (type === 'tv') { season = 1; episode = 1; }
   } else {
     const m = state.model;
-    if (!m) return;
+    if (!m) return null;
     ({ type, name } = m);
     id = m.id;
     if (type === 'tv') {
@@ -31,17 +31,19 @@ export function playFrom(btn) {
       }
     }
   }
-  const request = { type, id: String(id), name, season, episode, key: type + ':' + id };
-  // Lecture automatique de la meilleure source (réglage activé par défaut) ; sinon le sélecteur détaillé.
-  if (getAutoplay()) playBest(request, btn);
-  else openSources(request, btn);
+  return { type, id: String(id), name, season, episode, key: type + ':' + id };
 }
 
-/** Tiroir des sources : choisir une source lance le lecteur. */
+export function playFrom(btn) {
+  const request = requestFrom(btn);
+  if (!request) return;
+  // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).
+  playBest(request, btn);
+}
+
+/** Sélecteur de sources, ouvert dans le lecteur : choisir une source lance la lecture. */
 export function openSources(request, opener) {
-  return openSourcePicker(request, opener, {
-    onPick: (view, views) => playSource(request, views, view, opener),
-  });
+  return playBest(request, opener, { picker: true });
 }
 
 /** Reprise directe (carte « Reprendre la lecture ») : meilleure source, position enregistrée. */
@@ -50,3 +52,22 @@ export function playDirect(request, opener) {
 }
 
 export const closeVideo = closePlayer;
+
+// Préchargement : un survol ou un focus de plus de 300 ms sur « Lecture » lance la recherche de sources en arrière-plan,
+// pour que le lecteur s'ouvre souvent avec la source déjà choisie.
+let hoverTimer = null;
+const playBtn = (t) => (t instanceof Element ? t.closest('[data-play]') : null);
+function armPrefetch(e) {
+  const b = playBtn(e.target);
+  if (!b) return;
+  clearTimeout(hoverTimer);
+  hoverTimer = setTimeout(() => {
+    const r = requestFrom(b);
+    if (r && getAutoplay()) prefetchSources(r);
+  }, 300);
+}
+const disarmPrefetch = () => clearTimeout(hoverTimer);
+document.addEventListener('pointerover', armPrefetch);
+document.addEventListener('focusin', armPrefetch);
+document.addEventListener('pointerout', (e) => { if (playBtn(e.target)) disarmPrefetch(); });
+document.addEventListener('focusout', (e) => { if (playBtn(e.target)) disarmPrefetch(); });

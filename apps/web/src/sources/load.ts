@@ -24,13 +24,39 @@ export interface LoadedSources {
   views: SourceView[];
 }
 
-/** Récupère les streams de lastAddon pour la demande, triés par score, en fiches détaillées. */
-export async function loadSources(req: SourceRequest): Promise<LoadedSources> {
+const CACHE_MS = 90_000;
+const pending = new Map<string, { at: number; promise: Promise<LoadedSources> }>();
+
+export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | 'episode'>): string =>
+  [req.type, req.id, req.season ?? '', req.episode ?? ''].join(':');
+
+async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
   const streams = sortStreams(await fetchStreams(req.type, imdb, req.season, req.episode));
   return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()) };
 }
+
+/**
+ * Récupère les streams de lastAddon pour la demande, triés par score, en fiches détaillées. Le résultat (ou la recherche en
+ * cours) est gardé 90 s : la préchargée au survol de « Lecture » sert à l'ouverture du lecteur.
+ */
+export function loadSources(req: SourceRequest, now = Date.now()): Promise<LoadedSources> {
+  const key = requestKey(req);
+  const hit = pending.get(key);
+  if (hit && now - hit.at < CACHE_MS) return hit.promise;
+  const promise = fetchSources(req);
+  pending.set(key, { at: now, promise });
+  promise.catch(() => { if (pending.get(key)?.promise === promise) pending.delete(key); });
+  return promise;
+}
+
+/** Lance la recherche en arrière-plan (survol ou focus prolongé du bouton « Lecture »). Ne rejette jamais. */
+export function prefetchSources(req: SourceRequest): void {
+  loadSources(req).catch(() => undefined);
+}
+
+export function clearSourceCache(): void { pending.clear(); }
 
 const SUPPORTED: readonly Lang[] = ['fr', 'en', 'es', 'de', 'it'];
 

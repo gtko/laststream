@@ -5,7 +5,7 @@ import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
 import { createTorrent, hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl, torrentUrl } from '../src/player/server';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast, isShellEnvironment } from '../src/player/shell';
-import { activeSkip, chapterMarks, creditsStart, movieEndRow, nextEpisodeCard, normalizeSkip } from '../src/player/skip';
+import { activeSkip, autoSkipEnabled, buildSubmission, chapterMarks, creditsStart, movieEndRow, nextEpisodeCard, normalizeSkip, skipLabel } from '../src/player/skip';
 import { activeCue, cueHtml, normalizeSubStyle, offsetLabel, parseAss, parseCues, parseSubtitles, stepOffset } from '../src/player/subs';
 import { normalizeExternal, mergeExternal, openSubtitlesUrl } from '../src/player/extsubs';
 import { audioTrackLabel, normalizeLang, parseProbe, pickDefaultAudio, pickDefaultSubtitle, type AudioTrack, type SubtitleTrack } from '../src/player/tracks';
@@ -199,7 +199,7 @@ describe('sous-titres : lecture et affichage', () => {
     expect(stepOffset(59.9, 0.5)).toBe(60);
     expect(offsetLabel(0.5)).toBe('+0,5 s');
     expect(offsetLabel(-1)).toBe('-1,0 s');
-    expect(normalizeSubStyle({ size: 999, position: -3, background: 'box', color: 'yellow', mode: 'always' })).toEqual({ size: 200, position: 2, background: 'box', color: 'yellow', mode: 'always' });
+    expect(normalizeSubStyle({ size: 999, position: -3, background: 'box', color: 'yellow', mode: 'always' })).toEqual({ size: 200, position: 2, background: 'box', color: 'yellow', mode: 'always', font: 'sans', edge: 'bottom' });
     expect(normalizeSubStyle(null).mode).toBe('auto');
   });
 
@@ -250,8 +250,50 @@ describe('segments de saut', () => {
     expect(nextEpisodeCard(withPost, 2562, 2600, true, true).countdown).toBe(8);
     expect(movieEndRow(segs, 2399, 2600)).toBe(false);
     expect(movieEndRow(segs, 2401, 2600)).toBe(true);
-    expect(creditsStart([], 3000)).toBe(2955);
-    expect(creditsStart([], 300)).toBeNull();
+    expect(creditsStart([], 3000)).toBe(2975);
+    expect(creditsStart([], 20)).toBeNull();
+  });
+
+  it('générique retenu seulement s’il est fiable et dans les derniers 15 % (4 min au plus)', () => {
+    const D = 1436; // épisode de 24 min
+    const credits = (start: number, extra: Record<string, unknown> = {}) => normalizeSkip({ segments: [{ kind: 'credits', start, end: start + 90, ...extra }] });
+    expect(creditsStart(credits(1338), D)).toBe(1338);
+    // « mixed-ed » aberrant à 224 s : ignoré, retour aux 25 dernières secondes.
+    expect(creditsStart(credits(224), D)).toBe(D - 25);
+    expect(creditsStart(credits(1338, { inferred: true }), D)).toBe(D - 25);
+    expect(creditsStart(credits(1338, { confidence: 0.4 }), D)).toBe(D - 25);
+    expect(creditsStart(credits(1338, { confidence: 0.8 }), D)).toBe(1338);
+    // Film de 2 h : fenêtre de 4 min, pas 15 % (18 min).
+    expect(creditsStart(credits(6000), 7200)).toBe(7175);
+    expect(creditsStart(credits(6990), 7200)).toBe(6990);
+    expect(nextEpisodeCard(credits(224), 300, D, true, true).show).toBe(false);
+    expect(nextEpisodeCard([], D - 30, D, true, true).show).toBe(false);
+    expect(nextEpisodeCard([], D - 24, D, true, true).show).toBe(true);
+  });
+
+  it('jamais pendant une intro ou un récap', () => {
+    const segs = normalizeSkip({ segments: [{ kind: 'intro', start: 1400, end: 1420 }, { kind: 'credits', start: 1380, end: 1430 }] });
+    expect(nextEpisodeCard(segs, 1410, 1436, true, false).show).toBe(false);
+    expect(nextEpisodeCard(segs, 1425, 1436, true, false).show).toBe(true);
+  });
+
+  it('segments déduits : bouton « ? », jamais de saut automatique', () => {
+    const segs = normalizeSkip({ segments: [{ kind: 'intro', start: 10, end: 60, inferred: true }] });
+    expect(segs[0].inferred).toBe(true);
+    expect(skipLabel(segs[0])).toBe('Passer l’intro ?');
+    expect(skipLabel({ kind: 'intro' })).toBe('Passer l’intro');
+    expect(autoSkipEnabled('intro', () => true, true)).toBe(false);
+    expect(autoSkipEnabled('intro', () => true)).toBe(true);
+  });
+
+  it('envoi d’un segment : validé et arrondi', () => {
+    const t = { type: 'series' as const, imdbId: 'tt1', season: 1, episode: 3 };
+    expect(buildSubmission(t, 'intro', 0.04, 31.26, 1400)).toEqual({ ...t, kind: 'intro', start: 0, end: 31.3, duration: 1400 });
+    expect(buildSubmission(t, 'intro', 10, 11, 1400)).toBeNull();
+    expect(buildSubmission(t, 'intro', 50, 20, 1400)).toBeNull();
+    expect(buildSubmission({ ...t, imdbId: '' }, 'intro', 0, 30, 1400)).toBeNull();
+    expect(buildSubmission(t, 'recap', 5, 9000, 1400)?.end).toBe(1400);
+    expect(buildSubmission(t, 'intro', 5, 40, 1400, true)?.negative).toBe(true);
   });
 });
 

@@ -69,6 +69,8 @@ export function channelsLabel(n: number | undefined): string {
 
 export interface AudioTrack {
   id: string;
+  /** Titre brut de la piste dans le fichier (« Français VFF »). */
+  title?: string;
   lang: string;
   label: string;
   codec: string;
@@ -78,6 +80,7 @@ export interface AudioTrack {
 
 export interface SubtitleTrack {
   id: string;
+  title?: string;
   lang: string;
   label: string;
   codec: string;
@@ -89,6 +92,11 @@ export interface SubtitleTrack {
   url?: string;
   /** Fournisseur d'une piste externe (lastAddon, OpenSubtitles). */
   source?: string;
+  /** Nom de release annoncé par le fournisseur, et correspondance par empreinte du fichier (OpenSubtitles). */
+  release?: string;
+  hashMatch?: boolean;
+  downloads?: number;
+  rating?: number;
   /** Pour les pistes `embedded` lues par le moteur (hls.js, mpv). */
   engineId?: string | number;
   selected: boolean;
@@ -110,30 +118,37 @@ export interface ProbeTracks {
   subtitles: SubtitleTrack[];
   videoCodec: string;
   durationSec: number | null;
+  /** Heure du premier paquet du fichier (s) : les sous-titres extraits par le serveur gardent cette origine. */
+  startTime: number;
+  /** Images par seconde de la vidéo. */
+  fps: number | null;
   width: number | null;
   height: number | null;
 }
 
 /** Pistes d'un fichier d'après le probe du serveur (identifiants `a<n>` / `s<n>` = indice dans le fichier). */
 export function parseProbe(probe: Probe | null): ProbeTracks {
-  const empty: ProbeTracks = { audio: [], subtitles: [], videoCodec: '', durationSec: null, width: null, height: null };
+  const empty: ProbeTracks = { audio: [], subtitles: [], videoCodec: '', durationSec: null, startTime: 0, fps: null, width: null, height: null };
   if (!probe) return empty;
   const video = probe.streams.find((s) => s.track === 'video');
   const audio = probe.streams.filter((s) => s.track === 'audio').map((s: ProbeStream, i) => {
     const lang = trackLang(s.lang ?? s.language, s.title ?? s.label);
-    return { id: 'a' + (s.id ?? i), lang, codec: (s.codec ?? '').toLowerCase(), channels: s.channels ?? 0, selected: false, label: audioTrackLabel({ lang, title: s.title ?? s.label, codec: s.codec, channels: s.channels }) };
+    return { id: 'a' + (s.id ?? i), title: s.title ?? s.label ?? '', lang, codec: (s.codec ?? '').toLowerCase(), channels: s.channels ?? 0, selected: false, label: audioTrackLabel({ lang, title: s.title ?? s.label, codec: s.codec, channels: s.channels }) };
   });
   const subtitles = probe.streams.filter((s) => s.track === 'subtitle').map((s: ProbeStream, i): SubtitleTrack => {
     const lang = trackLang(s.lang ?? s.language, s.title ?? s.label);
     const codec = (s.codec ?? '').toLowerCase();
     const forced = s.forced === true || /forc/i.test(s.title ?? s.label ?? '');
     return {
-      id: 's' + (s.id ?? i), lang, codec, forced, origin: 'embedded', renderable: !IMAGE_SUBS.has(codec), engineId: s.id ?? i, selected: false,
+      id: 's' + (s.id ?? i), title: s.title ?? s.label ?? '', lang, codec, forced, origin: 'embedded', renderable: !IMAGE_SUBS.has(codec), engineId: s.id ?? i, selected: false,
       label: (lang ? langName(lang) : s.title || 'Sous-titres') + (forced ? ' (forcés)' : '') + (codec ? ' · ' + codecLabel(codec) : ''),
     };
   });
   const d = probe.format?.duration;
-  return { audio, subtitles, videoCodec: (video?.codec ?? '').toLowerCase(), durationSec: typeof d === 'number' && d > 0 ? d : null, width: video?.width ?? null, height: video?.height ?? null };
+  const vStart = (video as { startTime?: number } | undefined)?.startTime;
+  const startTime = typeof vStart === 'number' && Number.isFinite(vStart) ? Math.max(0, vStart) : 0;
+  const fps = typeof video?.frameRate === 'number' && video.frameRate > 0 ? video.frameRate : null;
+  return { audio, subtitles, videoCodec: (video?.codec ?? '').toLowerCase(), durationSec: typeof d === 'number' && d > 0 ? d : null, startTime, fps, width: video?.width ?? null, height: video?.height ?? null };
 }
 
 /** Piste audio par défaut : langue préférée, sinon langue d'origine annoncée par le fichier, sinon la première. Index, ou -1 si vide. */

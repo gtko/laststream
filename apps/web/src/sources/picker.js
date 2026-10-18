@@ -11,6 +11,8 @@ const RES_CHIPS = [['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD',
 const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
 
 let session = null;
+/** Éléments hôtes (panneau du lecteur) déjà équipés de leurs écouteurs. */
+const bound = new WeakSet();
 
 const chipHtml = (kind, value, label, on, count) =>
   '<button type="button" class="s-chip' + (on ? ' is-on' : '') + '" data-nav data-row="f-' + kind + '" data-chip="' + kind + ':' + value + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
@@ -85,21 +87,23 @@ function render() {
     g.views.map((v) => itemHtml(v, { current: s.currentIndex === v.index })).join('') + '</ul>').join('');
   if (!shown.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
 
-  const focusKey = document.activeElement && modalBody.contains(document.activeElement) ? (document.activeElement.dataset.chip || document.activeElement.dataset.src) : null;
-  const scroller = modalBody.closest('.modal');
+  const host = s.host;
+  const focusKey = document.activeElement && host.contains(document.activeElement) ? (document.activeElement.dataset.chip || document.activeElement.dataset.src) : null;
+  const scroller = host === modalBody ? modalBody.closest('.modal') : host;
   const top = scroller ? scroller.scrollTop : 0;
-  modalBody.innerHTML = '<div class="drawer s-drawer"><h2 id="modal-title" class="drawer-title">Sources</h2>' +
+  host.innerHTML = '<div class="drawer s-drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">Sources</h2>' : '') +
     '<p class="drawer-text"><strong>' + esc(label) + '</strong> · ' + views.length + ' source' + (views.length > 1 ? 's' : '') + (shown.length !== views.length ? ' (' + shown.length + ' affichées)' : '') + '</p>' +
     toolbar + body + '</div>';
   if (scroller) scroller.scrollTop = top;
   if (focusKey) {
-    const again = modalBody.querySelector('[data-chip="' + focusKey + '"], [data-src="' + focusKey + '"]');
+    const again = host.querySelector('[data-chip="' + focusKey + '"], [data-src="' + focusKey + '"]');
     if (again) again.focus({ preventScroll: true });
   }
 }
 
 function showMessage(msg) {
-  modalBody.innerHTML = '<div class="drawer"><h2 id="modal-title" class="drawer-title">Sources</h2><p class="drawer-text">' + esc(msg) + '</p></div>';
+  const host = session ? session.host : modalBody;
+  host.innerHTML = '<div class="drawer">' + (host === modalBody ? '<h2 id="modal-title" class="drawer-title">Sources</h2>' : '') + '<p class="drawer-text">' + esc(msg) + '</p></div>';
 }
 
 /**
@@ -108,8 +112,10 @@ function showMessage(msg) {
  */
 export async function openSourcePicker(request, opener, opts) {
   const token = Symbol('picker');
-  session = { token, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
-  openModal('<div class="drawer"><h2 id="modal-title" class="drawer-title">Sources</h2><ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>', opener, 'is-drawer is-sources');
+  const host = opts.host || modalBody;
+  session = { token, host, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
+  const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
+  if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
   try {
     if (!session.views.length) {
@@ -128,7 +134,7 @@ export async function openSourcePicker(request, opener, opts) {
   session.bwPending = known === null;
   session.rec = recommendFor(session.views, known);
   render();
-  const first = modalBody.querySelector('.is-rec') || modalBody.querySelector('[data-src]:not([disabled])');
+  const first = host.querySelector('.is-rec') || host.querySelector('[data-src]:not([disabled])');
   if (first) first.focus({ preventScroll: true });
   if (known === null) {
     const kbps = await measureBandwidthKbps().catch(() => null);
@@ -141,8 +147,9 @@ export async function openSourcePicker(request, opener, opts) {
 }
 
 export function closeSourcePicker() {
+  const host = session && session.host;
   session = null;
-  closeModal(true);
+  if (!host || host === modalBody) closeModal(true);
 }
 
 function toggleSet(set, v) {
@@ -151,7 +158,7 @@ function toggleSet(set, v) {
   return n;
 }
 
-modalBody.addEventListener('click', (e) => {
+function onClick(e) {
   const s = session;
   if (!s || !(e.target instanceof Element)) return;
   const chip = e.target.closest('[data-chip]');
@@ -174,12 +181,12 @@ modalBody.addEventListener('click', (e) => {
     const cb = s.onPick;
     if (view && cb) { closeSourcePicker(); cb(view, s.views); }
   }
-});
+}
 
 // Navigation au clavier / télécommande : gauche-droite dans une rangée de puces, haut-bas entre les rangées et les sources.
-modalBody.addEventListener('keydown', (e) => {
+function onKeydown(e) {
   if (!session || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-  const items = Array.from(modalBody.querySelectorAll('[data-nav]:not([disabled])'));
+  const items = Array.from(session.host.querySelectorAll('[data-nav]:not([disabled])'));
   const cur = items.indexOf(document.activeElement);
   if (cur < 0) return;
   const row = items[cur].dataset.row;
@@ -202,4 +209,13 @@ modalBody.addEventListener('keydown', (e) => {
     }
   }
   if (target) { e.preventDefault(); e.stopPropagation(); target.focus(); target.scrollIntoView({ block: 'nearest' }); }
-});
+}
+
+function bindHost(host) {
+  if (bound.has(host)) return;
+  bound.add(host);
+  host.addEventListener('click', onClick);
+  host.addEventListener('keydown', onKeydown);
+}
+
+bindHost(modalBody);
