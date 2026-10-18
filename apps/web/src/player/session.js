@@ -21,7 +21,7 @@ import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
-import { filterEpisodes, firstUnseen, normalizeCanonical } from './episodes';
+import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
 import { autoSubsToast } from './langPolicy';
 import { TrackApplier } from './trackApply';
@@ -609,7 +609,7 @@ async function ensureEpisodes(season, reveal) {
       const today = new Date().toISOString().slice(0, 10);
       p.episodes.set(s, (d.episodes || []).map((e) => ({
         episode: e.episode_number, name: e.name || '', runtime: e.runtime || null, overview: e.overview || '', still: IMG('w300', e.still_path),
-        airDate: e.air_date || '', aired: !e.air_date || e.air_date <= today,
+        airDate: e.air_date || '', aired: isAired(e.air_date || '', today), playable: isPlayable(e.air_date || '', today),
       })));
     } catch (_) { if (P === p) p.episodesError = true; } // pas mis en cache : rouvrir le panneau réessaie
     if (P === p) p.episodesLoading = false;
@@ -1208,7 +1208,7 @@ function onEnded() {
   saveProgress(true);
   markWatched();
   if (partyBridge.guestLocked()) return; // en salon, c'est l'hôte qui passe à l'épisode suivant
-  const nx = nextRef();
+  const nx = autoNextEpisode(nextRef(), p.episodes); // jamais vers un épisode pas encore diffusé : lancement manuel
   if (nx && getSkipPref('nextEpisode')) { playEpisode(nx.season, nx.episode); return; }
   p.finished = true;
   const key = p.req.key;
@@ -1258,7 +1258,7 @@ function tick() {
     // Mini-lecteur : ni pastille de saut ni carte (le saut automatique, s'il est activé, reste actif plus haut).
     const mini = miniState.mini;
     ui.setSkip(!mini && seg && p.skipped !== seg.start ? seg : null);
-    const nx = nextRef();
+    const nx = autoNextEpisode(nextRef(), p.episodes); // épisode non diffusé : ni carte ni enchaînement automatique
     const card = nextEpisodeCard(p.segments, st.time, st.duration, !!nx, getSkipPref('nextEpisode'));
     if (card.show && !p.nextDismissed && nx) {
       const ep = p.episodes.get(nx.season);
@@ -1418,8 +1418,13 @@ function playEpisode(season, episode) {
   const p = P;
   if (!p || guestBlocked()) return Promise.resolve();
   ui.closePanel(true);
-  return playBest({ ...p.req, season, episode, imdb: p.imdb }, p.opener, { resume: 'none' });
+  const info = (p.episodes.get(season) || []).find((e) => e.episode === episode);
+  return playBest({ ...p.req, season, episode, imdb: p.imdb }, p.opener, { resume: 'none', notYetAired: info && !info.aired ? info.airDate : '' });
 }
+
+/** Message quand un épisode pas encore diffusé n'a aucune source (la recherche décide de la lecture). */
+const notYetAiredMessage = (iso) => 'Pas encore disponible — diffusion le ' +
+  new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
 function submitTarget() {
   const p = P;
@@ -1770,7 +1775,11 @@ export async function playBest(request, opener, opts = {}) {
   } catch (_) { loaded = null; }
   if (!alive()) return;
   // Liste vide sans recherche en cours : le panneau explique pourquoi ; vide mais encore en cours : on attend la suite.
-  if (!loaded || (!loaded.views.length && !loaded.pending.length)) { showSourcesPanel(); return; }
+  if (!loaded || (!loaded.views.length && !loaded.pending.length)) {
+    if (opts.notYetAired) ui.toast(notYetAiredMessage(opts.notYetAired));
+    showSourcesPanel();
+    return;
+  }
   request.imdb = loaded.imdb;
   p.imdb = loaded.imdb;
   p.views = loaded.views;

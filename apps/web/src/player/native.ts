@@ -146,7 +146,7 @@ export function toNativeSources<V extends SourceLike>(views: readonly V[], curre
   }));
 }
 
-interface EpisodeLike { episode: number; name?: string; runtime?: number | null; still?: string; aired?: boolean }
+interface EpisodeLike { episode: number; name?: string; runtime?: number | null; still?: string; aired?: boolean; playable?: boolean }
 
 /** Épisodes du lecteur natif : toutes les saisons déjà chargées ; la saison affichée au démarrage est celle de l'épisode courant. */
 export function toNativeEpisodes(
@@ -162,7 +162,7 @@ export function toNativeEpisodes(
       const st = state(season, e.episode);
       items.push({
         season, episode: e.episode, title: e.name || '', still: e.still || undefined, durationMin: e.runtime || 0,
-        watched: st.watched, progress: st.progress, current: season === cur.season && e.episode === cur.episode, aired: e.aired !== false,
+        watched: st.watched, progress: st.progress, current: season === cur.season && e.episode === cur.episode, aired: (e.playable ?? e.aired) !== false,
       });
     });
   });

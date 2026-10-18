@@ -1,6 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { seasonEpisodes } from './seasons.js';
-import { countdownText, isPlaceholderTitle, soonBell, soonInnerHTML } from './soon.js';
+import { countdownText, isPlaceholderTitle, isSoonPlayable, playableBadge, soonBell, soonInnerHTML } from './soon.js';
 import { userStore } from '../data/userStore';
 import { refreshWatchedUI } from './watched.js';
 import { setupWhy } from './why.js';
@@ -14,6 +14,7 @@ import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { progressResume, resumePillHTML } from './resume.js';
 import { esc, fmtDate, fmtMin } from './util.js';
+import { playableSoon } from '../player/episodes';
 
 // ---------- Fiche : sections chargées après coup ----------
 export async function fillRatings(m, token) {
@@ -76,6 +77,14 @@ export async function fillNext(m, token) {
   const today = new Date().toISOString().slice(0, 10);
   if (date < today) return;
   const label = m.next ? m.next.code + (m.next.name ? ' « ' + m.next.name + ' »' : '') : '';
+  // Diffusion dans les 14 prochains jours : la ligne lance la recherche de sources de cet épisode.
+  const nums = m.next && m.next.airDate === date ? m.next : null;
+  if (nums && nums.season != null && isSoonPlayable(date)) {
+    slot.innerHTML = 'Prochain épisode : <button type="button" class="link-btn" data-play data-play-key="' + esc(m.key) + '" data-name="' + esc(m.name || '') +
+      '" data-play-season="' + esc(nums.season) + '" data-play-episode="' + esc(nums.episode) + '" data-air="' + esc(date) + '">' +
+      (label ? '<strong>' + esc(label) + '</strong> · ' : '') + esc(playableBadge(date)) + '</button>';
+    return;
+  }
   slot.innerHTML = 'Prochain épisode : ' + (label ? '<strong>' + esc(label) + '</strong> ' : '') + 'le ' + esc(fmtDate(date));
 }
 
@@ -107,9 +116,11 @@ export async function loadSeason(m, n, token) {
     const sk = m.key + ':' + n + ':' + e.episode_number;
     const done = userStore.isWatched(m.key, n, e.episode_number);
     const future = e.air_date && e.air_date > today;
+    // Diffusion dans les 14 prochains jours : « peut-être déjà en ligne », lisible ; au-delà, carte « Bientôt ».
+    const soonPlayable = future && playableSoon(e.air_date, today);
     const still = IMG('w500', e.still_path);
     const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
-    if (future) {
+    if (future && !soonPlayable) {
       const real = !isPlaceholderTitle(e.name);
       return '<li class="ep is-soon" data-ep="' + n + ':' + e.episode_number + '">' +
         '<div class="ep-main" role="group" aria-label="' + esc(m.name + ', saison ' + n + ', épisode ' + e.episode_number + ', ' + countdownText(e.air_date)) + '">' +
@@ -121,13 +132,13 @@ export async function loadSeason(m, n, token) {
     // Reprise : pastille et barre d’après la progression ; un épisode vu garde son état « vu » (pastille masquée en CSS).
     const rs = progressResume(userStore.getProgress(m.key, n, e.episode_number));
     const resumeAria = rs && !done ? ', reprise à ' + rs.label : '';
-    return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '">' +
+    return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '"' + (soonPlayable ? ' data-air="' + esc(e.air_date) + '"' : '') + '>' +
       '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number) + resumeAria) + '">' +
       '<span class="ep-still' + (still ? '' : ' no-img') + '">' + (still ? '<img src="' + esc(still) + '" alt="" loading="lazy" decoding="async">' : '') +
       (rs ? resumePillHTML(rs.label) : '') +
       '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : rs ? Math.round(rs.ratio * 100) : 0) + '%"></span></span></span>' +
       '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +
-      '<span class="ep-meta">' + esc(meta) + (future ? ' · Bientôt' : '') + '</span>' +
+      '<span class="ep-meta">' + esc(meta) + (soonPlayable ? ' · déjà en ligne ?' : '') + '</span>' +
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +
       (future ? ''
         : '<button type="button" class="ep-upto" data-upto="' + n + ':' + e.episode_number + '" aria-label="' + esc('Marquer comme vu jusqu’à ' + code) + '">Vu jusqu’ici</button>' +

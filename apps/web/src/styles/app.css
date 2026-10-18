@@ -282,6 +282,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .soon-date i { margin-top: 3px; font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; }
 .soon-count { position: absolute; top: 12px; right: 10px; z-index: 3; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(12, 11, 17, 0.72); border: 1px solid rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 .soon-count:empty { display: none; }
+.soon-count.is-avail { right: 8px; max-width: 62%; border-radius: 12px; line-height: 1.3; text-align: right; white-space: normal; }
 .soon-body { position: absolute; left: 14px; right: 14px; bottom: 16px; z-index: 3; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .soon-series { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .soon-logo { height: 28px; width: auto; max-width: 62%; object-fit: contain; object-position: left center; filter: brightness(0) invert(1); margin-bottom: 2px; }
