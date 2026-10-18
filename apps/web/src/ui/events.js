@@ -226,7 +226,11 @@ document.addEventListener('click', (e) => {
   }
   if (state.ctxMenu) closeCtx();
   const goT = t.closest('[data-go]');
-  if (goT && goT.getAttribute('href')) { e.preventDefault(); go(goT.getAttribute('href'), goT); return; }
+  if (goT && goT.getAttribute('href')) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return; // nouvel onglet / fenêtre : laisse le navigateur faire
+    e.preventDefault(); go(goT.getAttribute('href'), goT);
+    return;
+  }
   const brw = t.closest('[data-browse]');
   if (brw) { e.preventDefault(); go('#/browse/' + brw.dataset.browse, brw); return; }
   const srch = t.closest('[data-search]');

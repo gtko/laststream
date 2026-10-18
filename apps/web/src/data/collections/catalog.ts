@@ -31,6 +31,8 @@ const KINDS = new Set(['DISCOVER', 'LIST', 'COLLECTION', 'COMPANY']);
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+/** Adresse d'image : http(s) seulement (pas de data:, javascript:…). */
+export const httpUrl = (v: unknown): string | undefined => (typeof v === 'string' && /^https?:\/\//i.test(v) ? v : undefined);
 
 function cleanSource(raw: unknown): Source | null {
   if (!isObj(raw) || !KINDS.has(String(raw.kind))) return null; // trakt, addon : ignorés
@@ -58,7 +60,7 @@ export function buildCatalog(raw: unknown): Catalog {
       if (!isObj(f) || !str(f.id) || !str(f.title)) continue;
       const sources = (Array.isArray(f.sources) ? f.sources : []).map(cleanSource).filter((s): s is Source => !!s);
       const folder: Folder = { id: f.id as string, title: f.title as string, sources };
-      for (const k of ['cover', 'gif', 'logo', 'hero'] as const) if (str(f[k])) folder[k] = f[k] as string;
+      for (const k of ['cover', 'gif', 'logo', 'hero'] as const) { const u = httpUrl(f[k]); if (u) folder[k] = u; }
       if (f.hidden === true || !sources.length) {
         if (f.hidden === true) art.set(folder.id, folder);
         continue;

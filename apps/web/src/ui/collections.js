@@ -245,9 +245,12 @@ export function pillsHTML(attr, items, current, label) {
  * Grille infinie des titres d'un dossier (fusion des sources, dédoublonnage et filtres de l'accueil dans le moteur).
  * @param {{host: HTMLElement, folder: object, sort: string, media: string, key?: string, onCount?: (n:number, done:boolean, total:number)=>void}} o
  */
+let gridCtx = null;
 export function startFolderGrid(o) {
   const token = state.token;
+  if (gridCtx) gridCtx.cancelled = true; // la grille précédente abandonne ses requêtes en vol
   const ctx = newCtx({ sort: o.sort, media: o.media });
+  gridCtx = ctx;
   let loaded = 0;
   o.host.innerHTML = '';
   const list = infiniteList({
@@ -257,7 +260,7 @@ export function startFolderGrid(o) {
     load: async (page) => {
       o.host.querySelectorAll('[data-tile]').forEach((el) => ctx.seen.add(el.dataset.tile));
       const res = await resolveUntil(o.folder, page, ctx);
-      if (token !== state.token) return { html: '', done: true };
+      if (token !== state.token || ctx.cancelled) return { html: '', done: true };
       const items = await filterAvailable(res.items.map((r) => register(toItem(r, r.media_type))));
       loaded += items.length;
       if (o.onCount) o.onCount(loaded, res.done, ctx.total);

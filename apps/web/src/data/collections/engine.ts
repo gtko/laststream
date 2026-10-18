@@ -158,10 +158,12 @@ export interface ResolveCtx {
   /** Estimation du nombre de titres (somme des totaux TMDB de la première page de chaque source). */
   total: number;
   counted: Set<string>;
+  /** Mis à vrai quand la grille est relancée : les requêtes en vol sont abandonnées. */
+  cancelled: boolean;
 }
 
 export function newCtx(o: { sort?: SortKey; media?: Media | 'all' } = {}): ResolveCtx {
-  return { sort: o.sort ?? 'default', media: o.media ?? 'all', seen: new Set(), exhausted: new Set(), total: 0, counted: new Set() };
+  return { sort: o.sort ?? 'default', media: o.media ?? 'all', seen: new Set(), exhausted: new Set(), total: 0, counted: new Set(), cancelled: false };
 }
 
 /** Titre réduit à ce que lisent les filtres de l'accueil. */
@@ -285,6 +287,7 @@ export async function resolveFolder(folder: Folder, page: number, ctx: ResolveCt
     }
   }));
 
+  if (ctx.cancelled) return { items: [], done: true };
   if (listBroken && !wasBroken) return resolveFolder(folder, page, ctx, opts); // repli : on relance avec les sources de remplacement
 
   const merged = interleave(lists).filter((r) => {
@@ -315,8 +318,9 @@ export async function resolveUntil(folder: Folder, page: number, ctx: ResolveCtx
   const items: RawTitle[] = [];
   let advance = 0;
   let done = false;
-  for (let tries = 0; tries < 6 && items.length < min && !done; tries += 1) {
+  for (let tries = 0; tries < 6 && items.length < min && !done && !ctx.cancelled; tries += 1) {
     const r = await resolveFolder(folder, page + advance, ctx, opts);
+    if (ctx.cancelled) return { items: [], done: true, advance };
     advance += 1;
     items.push(...r.items);
     done = r.done;
@@ -324,16 +328,36 @@ export async function resolveUntil(folder: Folder, page: number, ctx: ResolveCtx
   return { items, done, advance };
 }
 
-/** Fond TMDB d'un titre du dossier : repli quand l'image du catalogue est cassée. '' si rien n'est trouvé. */
-export async function folderBackdrop(folder: Folder, opts: ResolveOpts = {}): Promise<string> {
-  try {
-    const ctx = newCtx();
-    const r = await resolveFolder(folder, 1, ctx, { ...opts, visible: (x) => x });
-    const hit = r.items.find((t) => t.backdrop_path);
-    return hit ? `https://image.tmdb.org/t/p/w780${hit.backdrop_path}` : '';
-  } catch {
-    return '';
+const backdrops = new Map<string, Promise<string>>();
+let activeBackdrops = 0;
+const waiting: Array<() => void> = [];
+const MAX_BACKDROPS = 2;
+async function slot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeBackdrops >= MAX_BACKDROPS) await new Promise<void>((res) => waiting.push(res));
+  activeBackdrops += 1;
+  try { return await fn(); } finally {
+    activeBackdrops -= 1;
+    waiting.shift()?.();
   }
+}
+export const resetBackdrops = (): void => backdrops.clear();
+
+/** Fond TMDB d'un titre du dossier : repli quand l'image du catalogue est cassée. '' si rien n'est trouvé. Au plus 2 à la fois, mis en cache par dossier. */
+export function folderBackdrop(folder: Folder, opts: ResolveOpts = {}): Promise<string> {
+  let p = backdrops.get(folder.id);
+  if (!p) {
+    p = slot(async () => {
+      try {
+        const r = await resolveFolder(folder, 1, newCtx(), { ...opts, visible: (x) => x });
+        const hit = r.items.find((t) => t.backdrop_path);
+        return hit ? `https://image.tmdb.org/t/p/w780${hit.backdrop_path}` : '';
+      } catch {
+        return '';
+      }
+    });
+    backdrops.set(folder.id, p);
+  }
+  return p;
 }
 
 // ---- Découvrir : filtres libres ----

@@ -18,7 +18,7 @@ import {
 } from '../src/data/collections/catalog';
 import {
   buildDiscoverFolder, buildRequest, interleave, mapFilters, newCtx, resetListSupport, resolveFolder, resolveUntil, usableSources,
-  type Folder, type Source,
+  folderBackdrop, resetBackdrops, type Folder, type Source,
 } from '../src/data/collections/engine';
 import { hideTitle, resetFiltersCache, setGenreBanned } from '../src/data/homeFilters';
 
@@ -399,5 +399,55 @@ describe('tuile et GIF au survol', () => {
     expect(host.querySelector('.ct-img')).toBeNull();
     expect(host.querySelector('.ct')!.classList.contains('no-img')).toBe(true);
     expect(host.querySelector('.ct-name')!.textContent).toBe('Mubi');
+  });
+});
+
+describe('corrections de relecture', () => {
+  it('catalogue : seules les URL http(s) sont gardées pour les visuels', () => {
+    const cat = buildCatalog({ categories: [{ id: 'c', title: 'C', folders: [{ id: 'f', title: 'F', cover: 'javascript:alert(1)', gif: 'data:image/gif;base64,AAAA',
+      logo: 'https://ok.example/l.png', hero: 'http://ok.example/h.jpg', sources: [{ kind: 'DISCOVER', media: 'movie' }] }] }] });
+    const f = cat.byId.get('f')!;
+    expect(f.cover).toBeUndefined();
+    expect(f.gif).toBeUndefined();
+    expect(f.logo).toBe('https://ok.example/l.png');
+    expect(f.hero).toBe('http://ok.example/h.jpg');
+  });
+
+  it('fond de repli : 2 requêtes à la fois au plus, mis en cache par dossier', async () => {
+    resetBackdrops();
+    let live = 0; let peak = 0;
+    handler = async () => { live += 1; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 15)); live -= 1; return { results: [movie(1)], total_pages: 1 }; };
+    const mk = (id: string): Folder => ({ id, title: id, sources: [{ kind: 'DISCOVER', media: 'movie' }] });
+    const out = await Promise.all(['a', 'b', 'c', 'd', 'a'].map((id) => folderBackdrop(mk(id), { region: 'FR', today: TODAY })));
+    expect(out[0]).toBe('https://image.tmdb.org/t/p/w780/b1.jpg');
+    expect(peak).toBeLessThanOrEqual(2);
+    expect(calls).toHaveLength(4); // « a » demandé deux fois, une seule requête
+  });
+
+  it('resolveUntil s’arrête quand la grille est relancée (annulation)', async () => {
+    let n = 0;
+    handler = async () => { n += 1; await new Promise((r) => setTimeout(r, 10)); return { results: [], total_pages: 50 }; };
+    const f: Folder = { id: 'cx', title: 'CX', sources: [{ kind: 'DISCOVER', media: 'movie' }, { kind: 'DISCOVER', media: 'movie' }, { kind: 'DISCOVER', media: 'movie' }, { kind: 'DISCOVER', media: 'movie' }] };
+    const ctx = newCtx();
+    const p = resolveUntil(f, 1, ctx, { region: 'FR', today: TODAY });
+    setTimeout(() => { ctx.cancelled = true; }, 5);
+    const r = await p;
+    expect(r.items).toEqual([]);
+    expect(r.done).toBe(true);
+    expect(n).toBeLessThanOrEqual(3); // pas de pages suivantes après l’annulation
+  });
+
+  it('[data-go] : ctrl, méta, maj et clic milieu ne sont pas interceptés', async () => {
+    mountDom();
+    await import('../src/ui/events.js');
+    const host = document.getElementById('host')!;
+    host.innerHTML = '<a href="#/collections" data-go id="g">Collections</a>';
+    const a = document.getElementById('g')!;
+    const fire = (init: MouseEventInit) => { const ev = new MouseEvent('click', { bubbles: true, cancelable: true, ...init }); a.dispatchEvent(ev); return ev.defaultPrevented; };
+    expect(fire({ ctrlKey: true })).toBe(false);
+    expect(fire({ metaKey: true })).toBe(false);
+    expect(fire({ shiftKey: true })).toBe(false);
+    expect(fire({ button: 1 })).toBe(false);
+    expect(fire({})).toBe(true);
   });
 });
