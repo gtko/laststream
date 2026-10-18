@@ -18,11 +18,17 @@ export function configForAccount(config: string): string | null {
 /** Vrai si la page est servie par lastAddon lui-même (GET /health sur l'origine courante). */
 export async function servedByLastAddon(timeoutMs = 2500): Promise<boolean> {
   if (typeof location === 'undefined' || !/^https?:$/.test(location.protocol)) return false;
+  // Dans l'app Android (Capacitor), http://localhost sert l'app embarquée : ce n'est jamais lastAddon.
+  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  if (cap?.isNativePlatform?.()) return false;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${location.origin}/health`, { signal: ctrl.signal, cache: 'no-store' });
-    return res.ok;
+    if (!res.ok) return false;
+    // Un serveur statique renvoie index.html (fallback SPA) : seul lastAddon répond { ok: true } en JSON.
+    const body = (await res.json().catch(() => null)) as { ok?: unknown } | null;
+    return body?.ok === true;
   } catch {
     return false;
   } finally {
