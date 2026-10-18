@@ -59,3 +59,11 @@
 @media (prefers-reduced-motion: reduce) {
   .lp.is-mini, .lp-mini-btn, .lp-mini-prog { transition: none; }
 }
+
+/* Menu contextuel de l'application : au-dessus de la vignette. */
+body.lp-open .ctxmenu { z-index: 700; }
+
+/* Tactile : pas de survol, les contrôles de la vignette restent visibles. */
+@media (hover: none) {
+  .lp.is-mini .lp-mini-btn, .lp.is-mini .lp-mini-prog { opacity: 1; }
+}

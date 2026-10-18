@@ -177,3 +177,8 @@ export class MiniState {
     try { if (this.storage) this.storage.setItem(CORNER_KEY, c); } catch (_) { /* ignoré */ }
   }
 }
+
+/** Plein écrans à quitter avant de réduire : celui du document et celui de la fenêtre de la coque. */
+export function minimizeExits(s: { docFullscreen: boolean; shell: boolean; shellFullscreen: boolean }): { exitDoc: boolean; exitShell: boolean } {
+  return { exitDoc: s.docFullscreen, exitShell: s.shell && s.shellFullscreen };
+}

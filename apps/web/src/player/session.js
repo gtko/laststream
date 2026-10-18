@@ -23,7 +23,7 @@ import { fetchExternalSubtitles } from './extsubs';
 import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
-import { MiniState } from './mini';
+import { MiniState, minimizeExits } from './mini';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
@@ -150,7 +150,10 @@ const canMinimize = () => !!P && !!P.view && !!P.engine && P.engine.kind !== 'na
 
 function minimizePlayer() {
   if (!canMinimize()) return false;
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  // Plein écran (document ou fenêtre de la coque) quitté d'abord : la vignette serait sinon perdue dans l'écran.
+  const exits = minimizeExits({ docFullscreen: !!document.fullscreenElement, shell: !!shell, shellFullscreen });
+  if (exits.exitDoc) document.exitFullscreen().catch(() => {});
+  if (exits.exitShell) { shellFullscreen = false; setShellFullscreen(shell, false); }
   saveProgress(true);
   return miniState.minimize();
 }

@@ -33,6 +33,7 @@ export class PageHole {
   paint() {
     const rect = this.rect;
     if (!rect) return;
+    this.observeChildren();
     for (const el of Array.from(document.body.children)) {
       if (!(el instanceof HTMLElement) || IGNORED_TAGS.has(el.tagName) || IGNORED_IDS.has(el.id) || this.keep.includes(el)) continue;
       const box = el.getBoundingClientRect();
@@ -41,9 +42,11 @@ export class PageHole {
       if (!intersects(mine, rect)) { this.restore(el); continue; }
       if (!this.saved.has(el)) {
         this.saved.set(el, { clip: el.style.clipPath, bg: el.style.background, minHeight: el.style.minHeight });
-        if (isTransparent(getComputedStyle(el).backgroundColor)) {
+        // Les éléments fixes (menus, bandeaux) ne sont que découpés ; seuls les conteneurs de page reçoivent un fond plein.
+        const cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' && isTransparent(cs.backgroundColor)) {
           el.style.background = 'var(--bg)';
-          el.style.minHeight = '100vh';
+          if (el.id === 'app') el.style.minHeight = '100vh';
         }
       }
       el.style.clipPath = holeClipFor(mine, rect, MINI_RADIUS);
@@ -82,8 +85,14 @@ export class PageHole {
       this.obs = new MutationObserver(this.onEvent);
       this.obs.observe(document.body, { childList: true });
       // Les conteneurs de page changent de contenu sans changer de boîte : seul leur attribut `hidden` compte.
-      for (const el of Array.from(document.body.children)) if (el instanceof HTMLElement) this.obs.observe(el, { attributes: true, attributeFilter: ['hidden'] });
+      this.observeChildren();
     } else this.obs = { disconnect() { /* rien à débrancher */ } };
+  }
+
+  /** Surveille `hidden` de chaque enfant de `body`, y compris ceux ajoutés après watch() (ré-observer un nœud est sans effet). */
+  observeChildren() {
+    if (!this.obs || !this.obs.observe) return;
+    for (const el of Array.from(document.body.children)) if (el instanceof HTMLElement) this.obs.observe(el, { attributes: true, attributeFilter: ['hidden'] });
   }
 
   unwatch() {
