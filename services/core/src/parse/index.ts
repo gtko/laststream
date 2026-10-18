@@ -1,6 +1,7 @@
 import type { ParsedRelease, RawStream } from '../types.js';
 import { parseLanguages } from './language.js';
 import { extractInfoHash, parseSeeders, parseSize } from './meta.js';
+import { releaseScope } from './scope.js';
 import { parseVideo, type VideoInfo } from './video.js';
 
 const nonEmpty = (value: string | undefined): value is string => typeof value === 'string' && value.trim() !== '';
@@ -92,7 +93,10 @@ function mergeVideo(infos: readonly VideoInfo[]): VideoInfo {
 export function parseRawStream(raw: RawStream): ParsedRelease {
   const parts = streamParts(raw);
   const title = [raw.filename, raw.title, raw.name].find(nonEmpty);
-  const release = buildRelease(parts.join('\n'), mergeVideo(parts.map((part) => parseVideo(part))), title);
+  const text = parts.join('\n');
+  const release = buildRelease(text, mergeVideo(parts.map((part) => parseVideo(part))), title);
+  const scope = releaseScope(text);
+  if (Object.keys(scope).length > 0) release.scope = scope;
 
   if (raw.sizeBytes !== undefined) release.sizeBytes = raw.sizeBytes;
   if (raw.seeders !== undefined) release.seeders = raw.seeders;

@@ -1,7 +1,6 @@
 /**
  * Vérification live (hors suite de tests) : Prowlarr, TMDB et AllDebrid réels, avec le code de src/ tel quel.
- * Lancement (cwd = racine du worktree) :
- *   op run --env-file=C:/Users/grego/Projets/laststream/prototype-home/.env.op -- npx tsx scripts/live-check.ts
+ * Lancement (cwd = racine du worktree) : npx tsx scripts/live-check.ts (clés lues dans l'environnement du shell)
  * N'imprime que des statuts et des compteurs. Toute sortie passe par redact().
  */
 import { randomBytes } from 'node:crypto';

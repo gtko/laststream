@@ -65,6 +65,8 @@ function fakeFetch(handler: Handler) {
 
 /** Prowlarr local qui répond : indexeurs et résultats de recherche. Les autres hôtes renvoient 404. */
 const prowlarrHandler: Handler = (url) => {
+  // Cinemeta : titre de repli, sans lequel aucune requête texte ni par id n'est envoyée à Prowlarr.
+  if (url.hostname === 'v3-cinemeta.strem.io') return json({ meta: { name: 'Film', releaseInfo: '2001' } });
   if (url.origin === BASE && url.pathname === '/api/v1/indexer') return json(INDEXERS);
   if (url.origin === BASE && url.pathname === '/api/v1/search') return json(RESULTS);
   return json({}, 404);

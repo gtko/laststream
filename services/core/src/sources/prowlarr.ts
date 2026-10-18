@@ -31,7 +31,7 @@ import {
   releaseAliases,
   type Candidate,
 } from './query-merge.js';
-import { buildQueries, filterByYear, variantsFor, type TitleVariants } from './query-titles.js';
+import { buildQueries, filterByYear, idQueryOf, variantsFor, type TitleVariants } from './query-titles.js';
 
 /** Source Prowlarr : un point d'entrée qui interroge plusieurs indexeurs torrent. */
 export interface ProwlarrSource {
@@ -48,6 +48,8 @@ export interface ProwlarrSearchOptions extends HttpOptions {
   titleInfo?: TitleInfo;
   /** Titres et année : une requête texte par variante (prime sur titleInfo). */
   titles?: TitleVariants;
+  /** Numéro absolu de l'épisode (anime, remappage Fribb) : ajoute « Titre 05 » et « Titre - 05 » en requêtes texte. */
+  absolute?: number;
   /** Budget global de la recherche (découverte + requêtes), en millisecondes. */
   budgetMs?: number;
   health?: IndexerHealth;
@@ -180,38 +182,69 @@ function baseParams(ref: ContentRef, indexers: IndexerInfo[], categories: readon
   return params;
 }
 
+/** Titre d'ancrage d'une requête par identifiant, et identifiant TVDB d'une série (si connu). */
+interface IdAnchor {
+  title: string;
+  tvdbId?: number;
+}
+
 /**
- * Regroupe les indexeurs par capacité : ceux qui acceptent l'identifiant IMDb reçoivent une requête par id,
- * les autres une requête texte par variante de titre (si des titres sont connus). Un indexeur ne figure que dans
- * un groupe.
+ * Regroupe les indexeurs par capacité : ceux qui acceptent l'identifiant IMDb reçoivent une requête par id, les
+ * autres une requête texte par variante de titre (si des titres sont connus). Un indexeur ne figure que dans un groupe.
+ * La requête par id porte aussi le titre (`query`) : mesuré, Prowlarr ignore imdbId/tvdbId seuls et renvoie la liste
+ * générale des indexeurs. Sans titre d'ancrage, il n'y a donc pas de requête par id.
  */
 function planSearches(
   indexers: IndexerInfo[],
   ref: ContentRef,
   categories: readonly number[],
   queries: readonly string[],
+  anchor: IdAnchor | undefined,
 ): PlannedSearch[] {
   const byId = indexers.filter((indexer) => idCapable(indexer, ref));
   const byText = indexers.filter((indexer) => !idCapable(indexer, ref));
   const plans: PlannedSearch[] = [];
 
-  if (byId.length > 0) {
+  if (byId.length > 0 && anchor !== undefined) {
     const params = baseParams(ref, byId, categories);
+    params.set('query', anchor.title);
     params.set('imdbId', ref.imdbId.replace(/^tt/i, ''));
     if (ref.type === 'series') {
+      if (anchor.tvdbId !== undefined) params.set('tvdbId', String(anchor.tvdbId));
       if (ref.season !== undefined) params.set('season', String(ref.season));
       if (ref.episode !== undefined) params.set('episode', String(ref.episode));
     }
     plans.push({ indexers: byId, params });
   }
-  if (byText.length > 0) {
-    for (const query of queries) {
-      const params = baseParams(ref, byText, categories);
-      params.set('query', query);
-      plans.push({ indexers: byText, params });
-    }
+  // Requêtes texte : packs et intégrale vont à tous les indexeurs (rapides partout, y compris chez ceux qui acceptent
+  // l'id). La requête d'épisode exact « Titre SxxEyy », lente chez certains indexeurs (2 à 4 s), reste réservée aux
+  // indexeurs sans id : la requête par id porte déjà la saison et l'épisode.
+  const episodeTag = ref.type === 'series' && ref.season !== undefined && ref.episode !== undefined ? episodeTagOf(ref) : undefined;
+  for (const query of queries) {
+    const isEpisode = episodeTag !== undefined && query.toUpperCase().endsWith(episodeTag);
+    const targets = isEpisode ? byText : indexers;
+    if (targets.length === 0) continue;
+    const params = baseParams(ref, targets, categories);
+    params.set('query', query);
+    plans.push({ indexers: targets, params });
   }
   return plans;
+}
+
+/**
+ * Requêtes d'un épisode d'anime par numéro absolu : « Titre 05 » et « Titre - 05 » (releases étiquetées ainsi). Sans
+ * numéro absolu, sans titre ou pour un film : aucune. En tête des requêtes : elles sont rapides.
+ */
+function absoluteQueriesOf(ref: ContentRef, title: string | undefined, absolute: number | undefined): string[] {
+  if (ref.type !== 'series' || title === undefined || absolute === undefined || !(absolute >= 1)) return [];
+  const number = String(absolute).padStart(2, '0');
+  return [`${title} ${number}`, `${title} - ${number}`];
+}
+
+/** Marque d'épisode exact d'une série, « S04E04 » (deux chiffres par défaut, comme les requêtes de query-titles). */
+function episodeTagOf(ref: ContentRef): string {
+  const pad = (value: number | undefined): string => String(value ?? 0).padStart(2, '0');
+  return `S${pad(ref.season)}E${pad(ref.episode)}`;
 }
 
 function selectIndexers(indexers: IndexerInfo[], ids: readonly number[] | undefined): IndexerInfo[] {
@@ -305,8 +338,18 @@ export async function searchProwlarr(
   try {
     const discovered = await discoverCached(source, fetchFn, timeLeft());
     const variants = variantsFor(opts);
-    const queries = variants === undefined ? [] : buildQueries(variants, ref);
-    const plans = planSearches(selectIndexers(discovered, source.indexerIds), ref, categoriesFor(source, ref), queries);
+    const title = variants === undefined ? undefined : idQueryOf(variants);
+    const absoluteQueries = absoluteQueriesOf(ref, title, opts.absolute);
+    const queries = variants === undefined ? [] : [...absoluteQueries, ...buildQueries(variants, ref)];
+    const anchor: IdAnchor | undefined =
+      title === undefined ? undefined : { title, tvdbId: ref.type === 'series' ? variants?.tvdbId : undefined };
+    const plans = planSearches(
+      selectIndexers(discovered, source.indexerIds),
+      ref,
+      categoriesFor(source, ref),
+      queries,
+      anchor,
+    );
     if (plans.length === 0) return [];
 
     const names = new Map(discovered.map((indexer) => [String(indexer.id), indexer.name]));

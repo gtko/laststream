@@ -257,6 +257,9 @@ function laststreamOf(item: FormatItem, opts: FormatOptions, copyCount: number, 
     certification: opts.certificationFr ?? null,
     indexers: item.indexers ?? [],
     ...(item.languageFallback === true ? { languageFallback: true } : {}),
+    // Série : pack « season » (saison entière) ou « complete » (intégrale) ; `episode` (numéro) si le nom donne l'épisode exact.
+    ...(parsed.scope?.pack !== undefined ? { pack: parsed.scope.pack } : {}),
+    ...(parsed.scope?.episode !== undefined ? { episode: parsed.scope.episode } : {}),
   };
 }
 

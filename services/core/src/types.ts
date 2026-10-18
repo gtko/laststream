@@ -1,3 +1,5 @@
+import type { ReleaseScope } from './parse/scope.js';
+
 export type Resolution = '2160p' | '1080p' | '720p' | '480p' | 'SD' | 'unknown';
 export type SourceKind = 'REMUX' | 'BluRay' | 'WEB-DL' | 'WEBRip' | 'HDTV' | 'DVDRip' | 'CAM' | 'TS' | 'SCR' | 'unknown';
 export type Codec = 'HEVC' | 'AVC' | 'AV1' | 'unknown';
@@ -23,6 +25,8 @@ export interface ParsedRelease {
   infoHash?: string;
   fileIdx?: number;
   title?: string;
+  /** Portée de la release (série) : épisode exact, pack de saison, intégrale, numéro absolu. Absente si rien n'est lu. */
+  scope?: ReleaseScope;
 }
 
 export interface RawStream {

@@ -1,4 +1,5 @@
 import { fetchText } from '../sources/http.js';
+import type { TitleInfo } from '../sources/indexers.js';
 import type { ContentRef } from '../types.js';
 
 const CINEMETA_META_URL = 'https://v3-cinemeta.strem.io/meta';
@@ -10,6 +11,9 @@ interface MetaRuntimes {
   runtimeSeconds: number | undefined;
   /** Durée par épisode, clé « saison:épisode », uniquement si Cinemeta la fournit. */
   episodes: Map<string, number>;
+  /** Titre et année de sortie (ou de début), si Cinemeta les fournit : repli de recherche sans jeton TMDB. */
+  title?: string;
+  year?: number;
 }
 
 interface CacheEntry {
@@ -60,7 +64,11 @@ function summarize(json: unknown): MetaRuntimes | undefined {
       if (seconds !== undefined) episodes.set(episodeKey(video.season, video.episode), seconds);
     }
   }
-  return { runtimeSeconds: parseRuntimeSeconds(meta.runtime), episodes };
+  const out: MetaRuntimes = { runtimeSeconds: parseRuntimeSeconds(meta.runtime), episodes };
+  if (typeof meta.name === 'string' && meta.name.trim() !== '') out.title = meta.name.trim();
+  const year = typeof meta.releaseInfo === 'string' ? /^\s*(\d{4})/.exec(meta.releaseInfo) : null;
+  if (year !== null) out.year = Number(year[1]);
+  return out;
 }
 
 async function fetchMeta(ref: ContentRef, fetchFn: typeof fetch, timeoutMs: number): Promise<unknown> {
@@ -95,29 +103,49 @@ function storeEntry(cache: RuntimeCache, key: string, value: MetaRuntimes): void
  * Durée en secondes pour un film ou un épisode, via Cinemeta. Pour une série, la durée de l'épisode
  * est utilisée si elle est fournie, sinon la durée de la série. Ne lève jamais : erreur ⇒ undefined.
  */
+/** Fiche Cinemeta résumée (cache 24 h, une requête partagée par identifiant). Undefined si inconnue ou en erreur. */
+async function loadMeta(ref: ContentRef, opts: CinemetaOptions): Promise<MetaRuntimes | undefined> {
+  if (ref.type !== 'movie' && ref.type !== 'series') return undefined;
+  if (!IMDB_ID.test(ref.imdbId)) return undefined;
+
+  const cache = opts.cache ?? defaultCache;
+  const key = `${ref.type}:${ref.imdbId}`;
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const json = await fetchMeta(ref, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const runtimes = summarize(json);
+  if (runtimes === undefined) return undefined;
+  storeEntry(cache, key, runtimes);
+  return runtimes;
+}
+
+/**
+ * Durée en secondes pour un film ou un épisode, via Cinemeta. Pour une série, la durée de l'épisode
+ * est utilisée si elle est fournie, sinon la durée de la série. Ne lève jamais : erreur ⇒ undefined.
+ */
 export async function getRuntimeSeconds(ref: ContentRef, opts: CinemetaOptions = {}): Promise<number | undefined> {
   try {
-    if (ref.type !== 'movie' && ref.type !== 'series') return undefined;
-    if (!IMDB_ID.test(ref.imdbId)) return undefined;
-
-    const cache = opts.cache ?? defaultCache;
-    const key = `${ref.type}:${ref.imdbId}`;
-    let runtimes: MetaRuntimes | undefined;
-    const cached = cache.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
-      runtimes = cached.value;
-    } else {
-      const json = await fetchMeta(ref, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-      runtimes = summarize(json);
-      if (runtimes === undefined) return undefined;
-      storeEntry(cache, key, runtimes);
-    }
-
+    const runtimes = await loadMeta(ref, opts);
+    if (runtimes === undefined) return undefined;
     if (ref.type === 'series' && ref.season !== undefined && ref.episode !== undefined) {
       const episodeSeconds = runtimes.episodes.get(episodeKey(ref.season, ref.episode));
       if (episodeSeconds !== undefined) return episodeSeconds;
     }
     return runtimes.runtimeSeconds;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Titre et année d'un film ou d'une série via Cinemeta (même requête et même cache que la durée). Sert de repli
+ * de recherche quand TMDB ne donne aucun titre (jeton absent ou en panne). Ne lève jamais : erreur ⇒ undefined.
+ */
+export async function getCinemetaTitle(ref: ContentRef, opts: CinemetaOptions = {}): Promise<TitleInfo | undefined> {
+  try {
+    const runtimes = await loadMeta(ref, opts);
+    if (runtimes?.title === undefined) return undefined;
+    return runtimes.year === undefined ? { title: runtimes.title } : { title: runtimes.title, year: runtimes.year };
   } catch {
     return undefined;
   }

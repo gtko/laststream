@@ -4,6 +4,7 @@ import {
   buildQueries,
   detectYear,
   getTitleVariants,
+  idQueryOf,
   stripAccents,
   stripPunctuation,
   yearMatches,
@@ -194,17 +195,48 @@ describe('buildQueries', () => {
     expect(buildQueries({ titles: ['Dune'] }, MOVIE)).toEqual(['Dune']);
   });
 
-  it('série épisode : « Titre S01E02 », « Titre Saison 1 », « Titre S01 » (pack), variantes sans accents', () => {
+  it('série épisode : packs et intégrale d’abord, « Titre S01E02 » ensuite, puis variantes sans accents', () => {
     const queries = buildQueries({ titles: ['Le Problème à trois corps'] }, EPISODE);
 
     expect(queries).toEqual([
-      'Le Problème à trois corps S01E02',
-      'Le Problème à trois corps Saison 1',
       'Le Problème à trois corps S01',
-      'Le Probleme a trois corps S01E02',
-      'Le Probleme a trois corps Saison 1',
+      'Le Problème à trois corps Saison 1',
+      'Le Problème à trois corps Intégrale',
+      'Le Problème à trois corps complete',
+      'Le Problème à trois corps S01E02',
       'Le Probleme a trois corps S01',
+      'Le Probleme a trois corps Saison 1',
+      'Le Probleme a trois corps Integrale',
     ]);
+  });
+
+  it('série épisode : titre français puis original, familles du français en tête', () => {
+    const queries = buildQueries({ titles: ['Breaking Bad', 'Breaking Bad Original'], fr: 'Breaking Bad' }, EPISODE);
+
+    expect(queries.slice(0, 5)).toEqual([
+      'Breaking Bad S01',
+      'Breaking Bad Saison 1',
+      'Breaking Bad Intégrale',
+      'Breaking Bad complete',
+      'Breaking Bad S01E02',
+    ]);
+    expect(queries).toContain('Breaking Bad Original S01');
+  });
+
+  it('série : titre sans lettre latine (japonais) écarté des requêtes ; titre latin conservé', () => {
+    const queries = buildQueries({ titles: ['葬送のフリーレン', 'Frieren'] }, EPISODE);
+
+    expect(queries.some((query) => query.includes('葬'))).toBe(false);
+    expect(queries[0]).toBe('Frieren S01');
+  });
+
+  it('idQueryOf : titre français, sinon anglais ou original latin ; undefined sans titre latin', () => {
+    expect(
+      idQueryOf({ titles: ['Dune: Part Two', 'Dune : Deuxième Partie'], fr: 'Dune : Deuxième Partie', en: 'Dune: Part Two' }),
+    ).toBe('Dune : Deuxième Partie');
+    expect(idQueryOf({ titles: ['Frieren'] })).toBe('Frieren');
+    expect(idQueryOf({ titles: ['葬送のフリーレン'] })).toBeUndefined();
+    expect(idQueryOf({ titles: [] })).toBeUndefined();
   });
 
   it('série sans épisode connu : saison puis pack, pas de SxxEyy', () => {

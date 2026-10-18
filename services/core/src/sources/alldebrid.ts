@@ -272,6 +272,8 @@ function pickFile(files: readonly FlatFile[], sel: Selection): FlatFile {
   if (season !== undefined && episode !== undefined) {
     const matches = candidates.filter((file) => matchesEpisode(file.name, season, episode));
     if (matches.length > 0) return largest(matches);
+    // Pack de plusieurs vidéos sans l'épisode demandé : le plus gros fichier serait un autre épisode, on échoue.
+    if (candidates.length > 1) throw new AllDebridError('no_file', 'épisode absent du pack');
   }
 
   if (fileIdx !== undefined && size !== undefined && fileIdx < files.length) {

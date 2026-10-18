@@ -25,6 +25,8 @@ export interface CollectOptions extends HttpOptions {
   /** Titres et année (getTitleVariants) : requêtes texte Prowlarr, Jackett et Torznab. Prime sur titleInfo. */
   titles?: TitleVariants;
   budgetMs?: number;
+  /** Numéro absolu de l'épisode (anime, remappage) : requêtes « Titre 05 » et « Titre - 05 » côté Prowlarr. */
+  absolute?: number;
 }
 
 type SourceConfig = Config['sources'][number];

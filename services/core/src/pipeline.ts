@@ -1,6 +1,6 @@
 import { LruCache, hashConfigKey } from './cache/lru.js';
 import type { Config } from './config/schema.js';
-import { getRuntimeSeconds } from './engine/cinemeta.js';
+import { getCinemetaTitle, getRuntimeSeconds } from './engine/cinemeta.js';
 import { type FormatItem, type PlayableCopy, formatStreams } from './engine/format.js';
 import { type CopyRef, type GroupedCandidate, groupCopies } from './engine/group.js';
 import { enrichHosterLinks } from './engine/hosters-step.js';
@@ -14,13 +14,16 @@ import type { AllDebridClient } from './sources/alldebrid.js';
 import type { HostHealth } from './play/hosts.js';
 import type { PackStore } from './play/packs.js';
 import { parseRawStream } from './parse/index.js';
+import { scopeCovers } from './parse/scope.js';
 import { type CollectResult, collectStreams, mergeIndexerCopies, type SourceErrorEntry } from './sources/collect.js';
 import type { HosterClient } from './sources/hosters.js';
+import type { TitleInfo } from './sources/indexers.js';
 import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
-import { getTitleVariants, type TitleVariants } from './sources/query-titles.js';
+import { getTitleVariants, nameMatchesTitles, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
 import type { ContentRef, RawStream, StremioStream } from './types.js';
+import type { AnimeMapper } from './anime/mapping.js';
 
 /** Nombre maximal de .torrent lus (flux sans infoHash mais avec downloadUrl), les premiers après fusion. */
 const RESOLVE_TOP_N = 12;
@@ -30,6 +33,8 @@ const CACHE_CHECK_LIMIT = 8;
 const HOSTER_TOP_N = 8;
 const TITLE_TIMEOUT_MS = 3_000;
 const META_TIMEOUT_MS = 4_000;
+/** Délai maximal du remappage anime (table Fribb déjà en mémoire, sinon l'épisode est traité sans numéro absolu). */
+const ANIME_TIMEOUT_MS = 1_500;
 
 /**
  * Budgets des étapes, en millisecondes. Une étape qui dépasse son budget est abandonnée : ses résultats partiels
@@ -85,6 +90,8 @@ export interface PipelineContext {
   budgetsMs?: Partial<StageBudgets>;
   /** Prowlarr local détecté : interrogé seulement si la configuration n'a aucune source (et autoProwlarr actif). */
   localProwlarr?: LocalProwlarrProvider;
+  /** Remappage anime (numéro absolu d'un épisode de série). Absent : aucun remappage, comportement inchangé. */
+  animeMapper?: Pick<AnimeMapper, 'toAbsolute'>;
 }
 
 export interface PipelineResult {
@@ -115,6 +122,46 @@ function withCopies<T extends Candidate>(items: T[]): (T & { copies: CopyRef[] }
     const copies = 'copies' in item && Array.isArray(item.copies) ? (item.copies as CopyRef[]) : [];
     return { ...item, copies };
   });
+}
+
+/**
+ * Vrai si la release concerne l'épisode demandé (série avec saison et épisode) : épisode exact, pack de la saison, ou
+ * intégrale / multi-saisons qui la couvre. Une release sans aucun texte, ou un lien direct, n'est pas écartée : rien
+ * à vérifier. Une release au nom sans portée reconnue est écartée (« Titre S04E05 » ne passe pas pour S04E04).
+ */
+function coversRequest(candidate: Candidate, ref: ContentRef, titles: readonly string[], absolute?: number): boolean {
+  const { season, episode } = ref;
+  if (ref.type !== 'series' || season === undefined || episode === undefined) return true;
+  const { raw } = candidate;
+  if (raw.url !== undefined) return true;
+  const hasText = [raw.filename, raw.title, raw.name, raw.description].some((text) => text !== undefined && text.trim() !== '');
+  if (!hasText) return true;
+  // Le nom de la release doit contenir un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
+  const release = raw.filename ?? raw.title;
+  if (release !== undefined && !nameMatchesTitles(release, titles)) return false;
+  return scopeCovers(candidate.parsed.scope ?? {}, season, episode, absolute);
+}
+
+/** Numéro absolu d'un épisode de série (remappage anime), borné à ANIME_TIMEOUT_MS. Undefined sans remappage. */
+function absoluteOf(ref: ContentRef, mapper: PipelineContext['animeMapper']): Promise<number | undefined> {
+  const { season, episode } = ref;
+  if (mapper === undefined || ref.type !== 'series' || season === undefined || episode === undefined) {
+    return Promise.resolve(undefined);
+  }
+  return within(
+    settle(() => mapper.toAbsolute(ref.imdbId, season, episode), undefined),
+    ANIME_TIMEOUT_MS,
+    undefined,
+  );
+}
+
+/** Titres TMDB, complétés du titre Cinemeta (repli) s'il n'est pas déjà présent. Sans repli : inchangés. */
+function withTitleFallback(variants: TitleVariants, fallback: TitleInfo | undefined): TitleVariants {
+  if (fallback === undefined) return variants;
+  const known = variants.titles.some((title) => title.toLowerCase() === fallback.title.toLowerCase());
+  const titles = known ? variants.titles : [...variants.titles, fallback.title];
+  const year = variants.year ?? fallback.year;
+  return year === undefined ? { ...variants, titles } : { ...variants, titles, year };
 }
 
 /** Configuration de la première passe : aucune exigence qui dépend de la sonde ou du cache (appliquées après). */
@@ -385,14 +432,17 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   // Catalogue d'hébergeurs (gardé 12 h, requête partagée) : demandé dès le départ, en parallèle des sources.
   const hostsCatalog = hosters === undefined ? undefined : settle(() => hosters.getHosts(), undefined);
 
-  // a) titres d'abord (la recherche en dépend) ; collecte ensuite, pendant que la fiche et la durée se chargent.
-  const titles = await settle(
-    () => getTitleVariants(ref, { tmdbToken, fetch: fetchFn, timeoutMs: TITLE_TIMEOUT_MS }),
-    NO_TITLES,
-  );
+  // a) titres d'abord (la recherche en dépend) : TMDB et, en parallèle, Cinemeta en repli (sans jeton ou panne TMDB).
+  // La collecte suit, pendant que la fiche et la durée se chargent (la fiche Cinemeta est déjà en cache).
+  const [tmdbTitles, cinemetaTitle, absolute] = await Promise.all([
+    settle(() => getTitleVariants(ref, { tmdbToken, fetch: fetchFn, timeoutMs: TITLE_TIMEOUT_MS }), NO_TITLES),
+    settle(() => getCinemetaTitle(ref, { fetch: fetchFn, timeoutMs: TITLE_TIMEOUT_MS }), undefined),
+    absoluteOf(ref, ctx.animeMapper),
+  ]);
+  const titles = withTitleFallback(tmdbTitles, cinemetaTitle);
   lap('a.titres');
   const collecting = settle(
-    () => collectStreams(config, ref, { fetch: fetchFn, titles, budgetMs: budget.sources }),
+    () => collectStreams(config, ref, { fetch: fetchFn, titles, budgetMs: budget.sources, absolute }),
     EMPTY_COLLECT,
   );
   const metaLoading = Promise.all([
@@ -426,8 +476,10 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     }
   }
 
-  // c) parsing, premier filtre, groupement des copies.
-  const candidates: Candidate[] = streams.map((raw) => ({ raw, parsed: parseRawStream(raw) }));
+  // c) parsing, filtre par épisode (série), premier filtre, groupement des copies.
+  const candidates: Candidate[] = streams
+    .map((raw) => ({ raw, parsed: parseRawStream(raw) }))
+    .filter((candidate) => coversRequest(candidate, ref, titles.titles, absolute));
   const sources = indexSources(candidates);
   let pool = candidates;
   if (hosters !== undefined && !config.filters.includeHosterLinks) {

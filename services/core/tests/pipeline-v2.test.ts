@@ -277,6 +277,11 @@ const PASSKEY_URL = 'https://tracker.test/dl/42?passkey=PASSKEY-XYZ';
 /** Routes Prowlarr pour un release privé ; `release` remplace des champs du résultat (ex. `{ guid: undefined }`). */
 function prowlarrRoutes(release: Record<string, unknown> = {}): Route[] {
   return [
+    // Cinemeta : titre de repli (sans jeton TMDB, Prowlarr reçoit au moins ce titre).
+    (url) =>
+      url.hostname === 'v3-cinemeta.strem.io'
+        ? json({ meta: { name: 'Film', releaseInfo: '2024', runtime: '100 min' } })
+        : undefined,
     (url) =>
       url.hostname === 'prowlarr.test' && url.pathname === '/api/v1/indexer'
         ? json([

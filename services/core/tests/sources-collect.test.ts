@@ -52,7 +52,7 @@ describe('collectStreams', () => {
       }),
     );
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result.errors).toEqual([]);
     expect(result.streams.map((s) => [s.sourceKind, s.sourceName])).toEqual([
@@ -76,7 +76,7 @@ describe('collectStreams', () => {
       }),
     );
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result.streams).toHaveLength(1);
     expect(result.streams[0]?.sourceName).toBe('Torz');
@@ -97,7 +97,7 @@ describe('collectStreams', () => {
       }),
     );
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result.streams).toEqual([]);
     expect(result.errors.map((e) => e.source)).toEqual(['A', 'B']);
@@ -108,7 +108,7 @@ describe('collectStreams', () => {
     const config = parseConfig({});
     const { fetch, mock } = mockFetch(async () => jsonResponse({}));
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result).toEqual({ streams: [], errors: [] });
     expect(mock).not.toHaveBeenCalled();
@@ -125,7 +125,7 @@ describe('collectStreams', () => {
       throw new TypeError(`connexion refusée vers ${url}`);
     });
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
     const serialized = JSON.stringify(result.errors);
 
     expect(result.errors).toHaveLength(2);
@@ -188,7 +188,7 @@ describe('collectStreams : Prowlarr et Jackett', () => {
       }
       if (parsed.pathname === '/api/v1/search') {
         if (options.prowlarr === 'fail') return new Response('down', { status: 503 });
-        return jsonResponse(parsed.searchParams.get('query') !== null ? [] : options.prowlarr);
+        return jsonResponse(parsed.searchParams.get('query') !== null && parsed.searchParams.get('imdbId') === null ? [] : options.prowlarr);
       }
       if (parsed.pathname.endsWith('/results/torznab/api')) {
         if (options.jackett === 'fail') return new Response('down', { status: 500 });
@@ -207,7 +207,7 @@ describe('collectStreams : Prowlarr et Jackett', () => {
     });
     const { fetch } = routeAll({ prowlarr: 'fail', jackett: '<rss version="2.0"><channel/></rss>' });
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result.streams).toEqual([]);
     expect(result.errors).toEqual([{ source: 'PR', error: 'Source "PR" : HTTP 503' }]);
@@ -226,7 +226,7 @@ describe('collectStreams : Prowlarr et Jackett', () => {
 </channel></rss>`;
     const { fetch } = routeAll({ prowlarr: [PROWLARR_RELEASE], jackett: jackettFeed });
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
 
     expect(result.errors).toEqual([]);
     expect(result.streams).toHaveLength(1);
@@ -244,7 +244,7 @@ describe('collectStreams : Prowlarr et Jackett', () => {
       throw new TypeError(`connexion refusée vers ${url}`);
     });
 
-    const result = await collectStreams(config, MOVIE, { fetch });
+    const result = await collectStreams(config, MOVIE, { fetch, titleInfo: { title: 'Film' } });
     const serialized = JSON.stringify(result.errors);
 
     expect(result.errors).toHaveLength(2);

@@ -19,6 +19,8 @@ export interface TitleVariants {
   /** Titre français et titre anglais (TMDB), quand ils sont connus : ils passent en tête des requêtes de film. */
   fr?: string;
   en?: string;
+  /** Identifiant TVDB d'une série (TMDB external_ids), quand il est connu. */
+  tvdbId?: number;
 }
 
 interface CacheEntry {
@@ -54,7 +56,36 @@ function variantsOnly(found: TmdbTitles): TitleVariants {
   if (found.year !== undefined) out.year = found.year;
   if (found.fr !== undefined) out.fr = found.fr;
   if (found.en !== undefined) out.en = found.en;
+  if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
   return out;
+}
+
+/** Jetons d'un texte, pour comparer un titre à un nom de release : sans accents, minuscules, lettres et chiffres seuls. */
+export function nameTokens(text: string): string[] {
+  return stripAccents(text)
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token !== '');
+}
+
+/**
+ * Vrai si le nom de la release contient, en entier et dans l'ordre, l'un des titres (jetons consécutifs). « Lupin.S03E01 »
+ * contient « Lupin » ; « Simon.2016.S03 » ne contient pas « Lupin ». Sans titre exploitable : vrai (rien à vérifier).
+ */
+export function nameMatchesTitles(name: string, titles: readonly string[]): boolean {
+  const haystack = nameTokens(name);
+  const needles = titles.map(nameTokens).filter((tokens) => tokens.length > 0);
+  if (needles.length === 0) return true;
+  return needles.some((needle) =>
+    haystack.some((_token, start) => needle.every((token, offset) => haystack[start + offset] === token)),
+  );
+}
+
+/** Identifiant TVDB d'une série (réponse external_ids de TMDB), ou undefined. */
+function tvdbIdFrom(external: Record<string, unknown> | undefined): number | undefined {
+  const id = external?.tvdb_id;
+  return typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : undefined;
 }
 
 /** Texte nettoyé (espaces réduits, borné), ou undefined si vide. */
@@ -135,24 +166,29 @@ async function fetchTmdbTitles(ref: ContentRef, token: string, fetchFn: FetchFn,
   const titleKey = isMovie ? 'title' : 'name';
   const originalKey = isMovie ? 'original_title' : 'original_name';
   const dateKey = isMovie ? 'release_date' : 'first_air_date';
-  const [en, fr] = await Promise.all(
-    ['en-US', 'fr-FR'].map((language) =>
+  // Séries : identifiants externes (TVDB) pour la recherche par id ; un échec ne rend pas le résultat incomplet.
+  const [en, fr, external] = await Promise.all([
+    ...['en-US', 'fr-FR'].map((language) =>
       getJson(`${TMDB_API_URL}/${kind}/${id}?language=${language}`, token, fetchFn, timeoutMs),
     ),
-  );
+    isMovie ? Promise.resolve(undefined) : getJson(`${TMDB_API_URL}/tv/${id}/external_ids`, token, fetchFn, timeoutMs),
+  ]);
   const titles = unique([
     cleanTitle(en?.[originalKey]) ?? cleanTitle(fr?.[originalKey]),
     cleanTitle(en?.[titleKey]),
     cleanTitle(fr?.[titleKey]),
   ]);
   const year = yearOf(en?.[dateKey]) ?? yearOf(fr?.[dateKey]);
-  return {
+  const out: TmdbTitles = {
     titles,
     year,
     fr: cleanTitle(fr?.[titleKey]),
     en: cleanTitle(en?.[titleKey]),
     complete: en !== undefined && fr !== undefined,
   };
+  const tvdbId = tvdbIdFrom(external);
+  if (tvdbId !== undefined) out.tvdbId = tvdbId;
+  return out;
 }
 
 /** Ajoute le titre de repli (dédupliqué) et l'année de repli si TMDB n'en donne pas. */
@@ -163,6 +199,7 @@ function finish(found: TitleVariants, fallback: TitleInfo | undefined): TitleVar
   if (year !== undefined) out.year = year;
   if (found.fr !== undefined) out.fr = found.fr;
   if (found.en !== undefined) out.en = found.en;
+  if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
   return out;
 }
 
@@ -222,12 +259,26 @@ function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-/** Suffixes d'un épisode de série : SxxEyy, « Saison N » et « SNN » (pack) ; saison seule : « Saison N » et « SNN ». */
+/**
+ * Suffixes d'une requête de série, par ordre de priorité. Les packs (« SNN », « Saison N ») et l'intégrale (« Intégrale »,
+ * « complete ») passent avant « SxxEyy » : mesuré, les requêtes d'épisode exact sont lentes (2 à 4 s) et rendent peu,
+ * alors que les packs répondent en moins de 350 ms. Saison seule : « Saison N » et « SNN ».
+ */
 function seriesSuffixes(ref: ContentRef): string[] {
   const { season, episode } = ref;
   if (season === undefined) return [''];
   if (episode === undefined) return [` Saison ${season}`, ` S${pad2(season)}`];
-  return [` S${pad2(season)}E${pad2(episode)}`, ` Saison ${season}`, ` S${pad2(season)}`];
+  return [` S${pad2(season)}`, ` Saison ${season}`, ' Intégrale', ' complete', ` S${pad2(season)}E${pad2(episode)}`];
+}
+
+/** Vrai si le titre contient une lettre latine : un titre japonais seul n'apporte rien aux indexeurs francophones. */
+const hasLatinLetter = (text: string): boolean => /\p{Script=Latin}/u.test(text);
+
+/** Titre à ancrer dans une requête par identifiant : français, puis anglais ou original latin. Undefined si aucun. */
+export function idQueryOf(variants: TitleVariants): string | undefined {
+  return orderedEntries(variants)
+    .map((entry) => cleanTitle(entry.text))
+    .find((text): text is string => text !== undefined && hasLatinLetter(text));
 }
 
 /** Transformations appliquées à chaque titre, dans l'ordre de priorité : tel quel, sans accents, sans accents ni ponctuation, sans ponctuation. */
@@ -283,16 +334,22 @@ function movieQueries(variants: TitleVariants): string[] {
   return queries;
 }
 
-/** Requêtes d'épisode ou de saison : titres (tels quels, puis transformés) suffixés par SxxEyy, « Saison N » ou « SNN ». */
+/**
+ * Requêtes d'épisode, de saison ou d'intégrale : titre français puis original (latins), suffixés selon `seriesSuffixes`.
+ * Ordre : toutes les formes telles quelles d'abord (titre français, puis original, famille par famille), puis les
+ * variantes sans accents ni ponctuation (le suffixe est transformé avec le titre).
+ */
 function seriesQueries(variants: TitleVariants, ref: ContentRef): string[] {
-  const bases = unique(variants.titles.map(cleanTitle));
+  const bases = orderedEntries(variants)
+    .map((entry) => cleanTitle(entry.text))
+    .filter((text): text is string => text !== undefined && hasLatinLetter(text));
   const suffixes = seriesSuffixes(ref);
   const queries: string[] = [];
   for (const fold of FOLDS) {
-    for (const suffix of suffixes) {
-      for (const base of bases) {
-        const folded = cleanTitle(fold(base));
-        if (folded !== undefined) queries.push(`${folded}${suffix}`);
+    for (const base of bases) {
+      for (const suffix of suffixes) {
+        const folded = cleanTitle(fold(`${base}${suffix}`));
+        if (folded !== undefined) queries.push(folded);
       }
     }
   }

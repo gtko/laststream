@@ -114,9 +114,12 @@ describe('searchTorznab : requêtes texte en plus de la requête par id', () => 
       .filter((url) => url.searchParams.has('q'))
       .map((url) => [url.searchParams.get('t'), url.searchParams.get('q')]);
     expect(queries).toEqual([
-      ['tvsearch', 'Severance S01E02'],
-      ['tvsearch', 'Severance Saison 1'],
       ['tvsearch', 'Severance S01'],
+      ['tvsearch', 'Severance Saison 1'],
+      ['tvsearch', 'Severance Intégrale'],
+      ['tvsearch', 'Severance complete'],
+      ['tvsearch', 'Severance S01E02'],
+      ['tvsearch', 'Severance Integrale'],
     ]);
   });
 });
