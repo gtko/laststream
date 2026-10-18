@@ -174,7 +174,7 @@ body.modal-open { overflow: hidden; }
 .top-item { position: relative; flex: 0 0 250px; height: 220px; display: flex; align-items: flex-end; text-align: left; scroll-snap-align: start; }
 .rank {
   position: relative; z-index: 0; margin-right: -22px; font-family: var(--ff-title); font-weight: 800;
-  font-size: 190px; line-height: 0.8; color: var(--bg); -webkit-text-stroke: 3px #5b566a; user-select: none;
+  font-size: 190px; line-height: 0.8; color: var(--bg); -webkit-text-stroke: 6px #5b566a; paint-order: stroke fill; /* le remplissage recouvre les contours internes de la police (plus de lignes qui se croisent) */ user-select: none;
 }
 .top-item .card-media { position: relative; z-index: 1; width: 146px; height: 218px; border-radius: 8px; }
 
