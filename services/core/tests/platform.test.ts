@@ -28,7 +28,7 @@ describe('plateforme Node : variables d\'exécution', () => {
 
   it('setPlatform remplace la plateforme active', () => {
     const original = platform();
-    const replacement = { ...createNodePlatform(), capabilities: { thumbs: false, skipDetect: false, tvHls: false } };
+    const replacement = { ...createNodePlatform(), capabilities: { thumbs: false, rangeThumbs: false, skipDetect: false, tvHls: false, sharedState: false } };
     setPlatform(replacement);
     expect(platform().capabilities.tvHls).toBe(false);
     setPlatform(original);

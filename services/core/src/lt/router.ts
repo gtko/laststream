@@ -103,7 +103,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide, ou si la plateforme n'a pas ffmpeg.
   const thumbs: ThumbPort = capabilities.thumbs ? (platform().localMedia?.createThumbs(deps.thumbs) ?? DISABLED_THUMBS) : DISABLED_THUMBS;
   // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
-  const range = rangeProxyOf(deps);
+  const range = capabilities.rangeThumbs ? rangeProxyOf(deps) : null;
   const rangeIssued = deps.thumbs?.issued ?? issuedUrls;
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';

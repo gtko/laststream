@@ -103,6 +103,13 @@ export interface Capabilities {
   skipDetect: boolean;
   /** Proxy HLS des chaînes TV. */
   tvHls: boolean;
+  /** Miniatures décodées côté client (WebCodecs) via le relais de plages Cloudflare (jeton HMAC émis par ce serveur). */
+  rangeThumbs: boolean;
+  /**
+   * Les instances ne partagent pas leur mémoire (Workers : un isolat par région, éphémère) : les états qui doivent
+   * survivre à une instance (statuts AllDebrid, packs, URL émises, torrents privés) passent par un `KvCache` partagé.
+   */
+  sharedState: boolean;
 }
 
 /** Fichiers de l'interface web servis à la racine (Node : dossier ; Workers : binding Assets). */
@@ -135,4 +142,6 @@ export interface Platform {
   localMedia?: LocalMedia;
   /** Interface web lue dans un dossier (Node). Absent sur Workers, où elle vient d'un binding Assets. */
   uiAssetsFromDir?(dir: string): UiAssets;
+  /** Interface web fournie par la plateforme elle-même (Workers Assets). */
+  uiAssets?: UiAssets;
 }

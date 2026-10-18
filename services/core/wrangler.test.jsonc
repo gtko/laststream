@@ -1,0 +1,19 @@
+{
+  // Configuration des tests Workers (vitest.workers.config.ts) : même Worker, ressources locales simulées par Miniflare.
+  "name": "lastaddon-core-test",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "USER_STORE", "class_name": "UserStoreDO" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] }],
+  "kv_namespaces": [{ "binding": "CACHE" }],
+  "assets": { "directory": "./tests-workers/ui", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
+  "vars": {
+    // Valeurs de test, jamais des secrets réels.
+    "LASTADDON_SECRET": "lt-test-secret-with-more-than-32-chars",
+    "RANGE_SECRET": "range-test-secret-0123456789",
+    "LASTADDON_PUBLIC": "1",
+    "LASTADDON_PUBLIC_URL": "https://lastaddon-test.example.com",
+    "LASTADDON_RANGE_BASE": "https://relay.example.com"
+  }
+}

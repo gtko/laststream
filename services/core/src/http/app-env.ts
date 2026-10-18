@@ -3,6 +3,8 @@ import { type Context, Hono } from 'hono';
 /** Liaisons fournies par l'adaptateur Node (@hono/node-server) : seule la socket entrante nous intéresse. */
 export interface ServerBindings {
   incoming?: { socket?: { remoteAddress?: string } };
+  /** Adresse IP du client fournie par l'hôte (Workers : en-tête CF-Connecting-IP posé par Cloudflare). */
+  clientIp?: string;
 }
 
 /** Variables posées par les middlewares communs. */

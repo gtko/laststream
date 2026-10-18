@@ -250,9 +250,10 @@ export function createApp(deps: AppDeps): App {
     backend.close();
   });
 
-  const ui = deps.ui ?? (deps.uiDir === undefined ? undefined : platform().uiAssetsFromDir?.(deps.uiDir));
+  const ui = deps.ui ?? platform().uiAssets ?? (deps.uiDir === undefined ? undefined : platform().uiAssetsFromDir?.(deps.uiDir));
   if (ui !== undefined) {
-    registerStreamingProxy(app, deps.streamingServer ?? configuredStreamingServer());
+    // Le serveur de streaming local n'existe que sur une machine (Node) : pas de relais /_ss sur Workers.
+    if (platform().localMedia !== undefined) registerStreamingProxy(app, deps.streamingServer ?? configuredStreamingServer());
     registerUiRoutes(app, ui);
   }
 

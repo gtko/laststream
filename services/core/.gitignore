@@ -5,3 +5,6 @@ coverage/
 *.log
 data/
 dist-bundle/
+worker-ui/
+.wrangler/
+.dev.vars

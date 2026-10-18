@@ -1,0 +1,44 @@
+{
+  // Worker Cloudflare « lastaddon-core » : même application Hono que le serveur Node (src/worker.ts), plateforme Workers.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lastaddon-core",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  // Plan payant : jusqu'à 30 s de CPU par requête (scrypt ≈ 72 ms à la connexion, analyse des sources).
+  "limits": { "cpu_ms": 30000 },
+  "observability": { "enabled": true },
+
+  // Données utilisateur : un Durable Object SQLite global nommé « users » (voir src/platform/workers/user-store-do.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "USER_STORE", "class_name": "UserStoreDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] }],
+
+  // Caches persistants partagés entre instances : statut AllDebrid, packs, URL émises, torrents privés, hébergeurs.
+  "kv_namespaces": [{ "binding": "CACHE", "id": "ec421766c5b74c5cac6f3cd76d4f7adf" }],
+
+  // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
+  // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.
+  "assets": {
+    "directory": "./worker-ui",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+
+  "vars": {
+    // Mode public : adresses privées refusées pour les URL saisies (SSRF) ; la base publique sert aux liens /play.
+    "LASTADDON_PUBLIC": "1",
+    "LASTADDON_PUBLIC_URL": "https://lastaddon-core.gtux-prog.workers.dev",
+    // Relais de plages des miniatures décodées côté client : Worker « laststream » (jeton HMAC RANGE_SECRET).
+    "LASTADDON_RANGE_BASE": "https://laststream.gtux-prog.workers.dev",
+    // Origines autorisées pour /config, /user et les écritures lt (en plus de l'origine du Worker).
+    "LASTADDON_ALLOWED_ORIGINS": "https://lastaddon-core.gtux-prog.workers.dev,https://laststream.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
+  }
+  // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, RANGE_SECRET, EDGE_SECRET,
+  // et LASTADDON_BOOTSTRAP_TOKEN si le premier compte doit être protégé.
+}
