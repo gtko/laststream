@@ -54,3 +54,9 @@
 .fit-tight { background: #fbbf24; color: #1c1917; border-color: #fcd34d; }
 .fit-risky { background: #7f1d1d; color: #fee2e2; border-color: #fca5a5; }
 .fit-unknown { background: transparent; color: #c9c4d6; border: 1px dashed #8a8499; font-weight: 700; }
+
+/* Logos officiels (public/badges/*.svg, sources et marques dans SOURCES.md) : même hauteur, plaque sombre commune.
+ * Les logos noirs (.bdg-mono) passent en blanc ; les autres gardent leurs couleurs. */
+.bdg.bdg-logo { background: #120f1d; border-color: #3d3852; padding: 0 6px; }
+.bdg-logo .bdg-img { display: block; height: 18px; width: auto; max-width: 120px; object-fit: contain; }
+.bdg-logo.bdg-mono .bdg-img { filter: invert(1); }
