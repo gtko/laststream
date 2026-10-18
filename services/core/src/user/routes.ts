@@ -639,6 +639,37 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
+  // Configuration lastAddon du compte (sources, extensions, clés) : chaîne chiffrée opaque. Lue par tout profil du compte
+  // (même enfant, sans PIN : l'en-tête X-Profile-Id est facultatif), écrite par le seul profil principal.
+
+  router.get('/account/config', async (c) => {
+    const users = db();
+    const { account } = await sessionOf(users, c);
+    const actor = c.req.header('x-profile-id');
+    if (actor !== undefined && (await users.findProfile(account.id, actor)) === undefined) throw new UserApiError(404, 'profile_not_found');
+    let config = await users.getAccountConfig(account.id);
+    if (config === null) {
+      // Compatibilité (une version) : ancienne clé dans les réglages du profil principal.
+      const mainId = await backend.admin().mainProfileId(account.id);
+      const legacy = mainId === null ? undefined : (await users.listSettings(mainId))[CONFIG_SETTING_KEY];
+      config = typeof legacy === 'string' ? legacy : null;
+    }
+    return sendJson(c, { config });
+  });
+
+  router.put('/account/config', async (c) => {
+    const users = db();
+    const session = await managerOf(users, c, false);
+    const body = c.get('body');
+    const config = isRecord(body) ? body.config : undefined;
+    if (config !== null && typeof config !== 'string') throw new UserApiError(400, 'invalid_body', ['config:chaine_attendue']);
+    if (config !== null && new TextEncoder().encode(config).byteLength > MAX_SETTING_BYTES) throw new UserApiError(400, 'invalid_body', ['config:trop_grande']);
+    await users.setAccountConfig(session.account.id, config);
+    // Anciennes versions de l'app : la clé du profil principal reste alimentée le temps d'une version.
+    await users.writeSettings(String(c.req.header('x-profile-id')), [[CONFIG_SETTING_KEY, config]]);
+    return sendJson(c, { config });
+  });
+
   // Réglages
 
   router.get('/profiles/:id/settings', async (c) => {
@@ -656,6 +687,9 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
       throw new UserApiError(403, 'main_profile_required');
     }
     await users.writeSettings(profile.id, entries);
+    // Ancienne voie d'écriture (apps non mises à jour) : la valeur rejoint aussi le niveau compte.
+    const legacy = entries.find(([key]) => key === CONFIG_SETTING_KEY);
+    if (legacy !== undefined) await users.setAccountConfig(account.id, typeof legacy[1] === 'string' ? legacy[1] : null);
     return sendJson(c, { settings: await users.listSettings(profile.id) });
   });
 

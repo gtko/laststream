@@ -882,4 +882,17 @@ export class UserStore {
       }
     });
   }
+
+  /** Configuration lastAddon chiffrée du compte (chaîne opaque), ou null si le compte n'en a pas. */
+  getAccountConfig(accountId: string): string | null {
+    const row = this.db.prepare('SELECT lastaddon_config AS v FROM accounts WHERE id = ?').get(accountId) as { v: string | null } | undefined;
+    if (row === undefined || row.v === null) return null;
+    const value = JSON.parse(row.v) as unknown;
+    return typeof value === 'string' ? value : null;
+  }
+
+  /** Enregistre (ou, avec null, supprime) la configuration lastAddon chiffrée du compte. */
+  setAccountConfig(accountId: string, value: string | null): void {
+    this.db.prepare('UPDATE accounts SET lastaddon_config = ? WHERE id = ?').run(value === null ? null : JSON.stringify(value), accountId);
+  }
 }

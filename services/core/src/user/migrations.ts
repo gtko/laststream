@@ -326,6 +326,26 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE profiles ADD COLUMN avatar TEXT;
     `,
   },
+  {
+    version: 10,
+    name: 'configuration lastAddon au niveau du compte (accounts.lastaddon_config), copiée depuis le profil principal',
+    sql: `
+      -- Configuration lastAddon chiffrée (JSON d'une chaîne) : lisible par tous les profils du compte, écrite par le principal seul.
+      ALTER TABLE accounts ADD COLUMN lastaddon_config TEXT;
+
+      -- Reprise de la valeur gardée jusqu'ici dans les réglages du profil principal (compte propriétaire : profil
+      -- administrateur ; sinon plus ancien profil, repli compris).
+      UPDATE accounts SET lastaddon_config = (
+        SELECT s.value FROM settings s
+        WHERE s.key = 'lastaddonConfig' AND s.profile_id = COALESCE(
+          CASE WHEN accounts.is_owner = 1
+            THEN (SELECT p.id FROM profiles p WHERE p.account_id = accounts.id AND p.id = (SELECT json_extract(value, '$') FROM app_settings WHERE key = 'admin_profile_id'))
+          END,
+          (SELECT p2.id FROM profiles p2 WHERE p2.account_id = accounts.id ORDER BY p2.created_at, p2.id LIMIT 1)
+        )
+      );
+    `,
+  },
 ];
 
 /**
