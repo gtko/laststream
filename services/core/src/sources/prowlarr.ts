@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { ContentRef, RawStream } from '../types.js';
 import { defaultIndexerHealth, type IndexerHealth } from './indexer-health.js';
 import {
-  INDEXER_REQUEST_TIMEOUT_MS,
   describeFailure,
   endpointUrl,
   infoHashFromMagnet,
@@ -24,14 +23,16 @@ import {
   type FetchFn,
   type HttpOptions,
 } from './http.js';
+import { mergeRequestResults, releaseAliases, type Candidate } from './query-merge.js';
 import {
-  MAX_PARALLEL_QUERIES,
-  mapBounded,
-  mergeRequestResults,
-  releaseAliases,
-  type Candidate,
-} from './query-merge.js';
-import { buildQueries, filterByYear, idQueryOf, variantsFor, type TitleVariants } from './query-titles.js';
+  buildQueries,
+  filterByYear,
+  idQueryOf,
+  stripAccents,
+  stripPunctuation,
+  variantsFor,
+  type TitleVariants,
+} from './query-titles.js';
 
 /** Source Prowlarr : un point d'entrée qui interroge plusieurs indexeurs torrent. */
 export interface ProwlarrSource {
@@ -50,13 +51,47 @@ export interface ProwlarrSearchOptions extends HttpOptions {
   titles?: TitleVariants;
   /** Numéro absolu de l'épisode (anime, remappage Fribb) : ajoute « Titre 05 » et « Titre - 05 » en requêtes texte. */
   absolute?: number;
-  /** Budget global de la recherche (découverte + requêtes), en millisecondes. */
+  /** Budget dur d'une recherche par indexeur (requêtes comprises), en millisecondes. Défaut : PROWLARR_BUDGET_MS. */
   budgetMs?: number;
+  /**
+   * Échéance douce, en millisecondes : passé ce délai, la recherche rend ce qui est arrivé et les indexeurs lents
+   * continuent en arrière-plan (`pending`, `done`). Absent : on attend tous les indexeurs, dans le budget dur.
+   */
+  softMs?: number;
+  /** Reprend les recherches échouées dans les dernières 60 s au lieu de les relancer (recalcul après un résultat partiel). */
+  reuseFailed?: boolean;
   health?: IndexerHealth;
 }
 
-/** Budget global par défaut d'une recherche Prowlarr (découverte et requêtes), en millisecondes. */
-export const PROWLARR_BUDGET_MS = 14_000;
+/** Résultat d'une recherche à échéance douce : ce qui est arrivé, les indexeurs encore en cours, et la suite. */
+export interface ProwlarrOutcome {
+  streams: RawStream[];
+  /** Noms des indexeurs dont la première réponse n'est pas arrivée (ils continuent en arrière-plan). */
+  pending: string[];
+  /** Vrai si des recherches (retardataires ou compléments) tournent encore : `done` apportera des flux de plus. */
+  busy: boolean;
+  /** Se résout quand tous les indexeurs ont répondu ou échoué (budget dur compris) : tous les flux, sans jamais rejeter. */
+  done: Promise<RawStream[]>;
+}
+
+/** Budget dur par défaut d'une recherche Prowlarr par indexeur (découverte exclue), en millisecondes. */
+export const PROWLARR_BUDGET_MS = 25_000;
+/** Échéance douce par défaut (réponse partielle), en millisecondes. */
+export const PROWLARR_SOFT_MS = 4_000;
+/** Délai d'une requête de recherche : un indexeur privé lent (mesuré : 13 s) doit pouvoir répondre. */
+export const PROWLARR_REQUEST_TIMEOUT_MS = 20_000;
+/** Requêtes de recherche simultanées vers Prowlarr, tous indexeurs confondus. */
+export const MAX_PARALLEL_REQUESTS = 10;
+/** Requêtes au plus par indexeur dans le cœur, puis dans les compléments. */
+const WAVE1_MAX = 3;
+const WAVE2_MAX = 3;
+/** Un indexeur est « lent » si sa latence moyenne dépasse l'échéance douce, après au moins ce nombre de mesures. */
+const SLOW_MIN_SAMPLES = 1;
+/** Durée de vie, en mémoire, des résultats d'un indexeur : 5 minutes (comme le cache des résultats). */
+export const PROWLARR_TASK_TTL_MS = 5 * 60 * 1_000;
+/** Un indexeur en échec n'est pas réinterrogé pendant ce délai pour la même recherche (le recalcul complet le reprendrait). */
+const PROWLARR_FAILED_TASK_TTL_MS = 60 * 1_000;
+const MAX_TASKS = 500;
 /** Durée de vie, en mémoire, de la liste des indexeurs d'une source : 10 minutes. */
 export const PROWLARR_DISCOVERY_TTL_MS = 10 * 60 * 1_000;
 
@@ -71,6 +106,7 @@ const discoveryCache = new Map<string, DiscoveryEntry>();
 /** Vide le cache de découverte (tests, ou indexeurs modifiés à chaud). */
 export function clearProwlarrDiscoveryCache(): void {
   discoveryCache.clear();
+  taskCache.clear();
 }
 
 function discoveryKey(source: ProwlarrSource): string {
@@ -93,12 +129,6 @@ async function discoverCached(source: ProwlarrSource, fetchFn: FetchFn, timeoutM
 
 const MOVIE_CATEGORIES: readonly number[] = [2000];
 const SERIES_CATEGORIES: readonly number[] = [5000];
-
-/** Requête regroupée : indexeurs qui partagent une même capacité de recherche, et paramètres prêts à l'emploi. */
-interface PlannedSearch {
-  indexers: IndexerInfo[];
-  params: URLSearchParams;
-}
 
 function headers(apiKey: string): Record<string, string> {
   // Clé dans un en-tête : jamais dans l'URL, donc jamais dans un message d'erreur ou un journal.
@@ -173,11 +203,11 @@ function idCapable(indexer: IndexerInfo, ref: ContentRef): boolean {
   return ref.type === 'movie' ? indexer.movieImdb : indexer.tvImdb && indexer.supportsSeason;
 }
 
-/** Paramètres communs à une requête : type, indexeurs restreints, catégories. */
-function baseParams(ref: ContentRef, indexers: IndexerInfo[], categories: readonly number[]): URLSearchParams {
+/** Paramètres communs à une requête : type, indexeur restreint, catégories. */
+function baseParams(ref: ContentRef, indexer: IndexerInfo, categories: readonly number[]): URLSearchParams {
   const params = new URLSearchParams();
   params.set('type', ref.type === 'movie' ? 'movie' : 'tvsearch');
-  for (const indexer of indexers) params.append('indexerIds', String(indexer.id));
+  params.append('indexerIds', String(indexer.id));
   for (const category of categories) params.append('categories', String(category));
   return params;
 }
@@ -188,25 +218,97 @@ interface IdAnchor {
   tvdbId?: number;
 }
 
+/** Requêtes texte d'une recherche, triées par rôle. */
+interface QuerySets {
+  /** Requêtes de numéro absolu (anime) : rapides, envoyées partout. */
+  absolute: string[];
+  /** Packs de saison (« Titre S04 », « Titre Saison 4 ») ou, pour un film, titre sans puis avec année. */
+  primary: string[];
+  /** Épisode exact « Titre S04E04 » : seulement pour les indexeurs sans id. */
+  episode: string[];
+  /** Intégrale (« Intégrale », « complete ») : indexeurs sans id, ou en seconde vague si l'id n'a rien rendu. */
+  integrale: string[];
+  /** Autres formes (accents, ponctuation retirés) : dernier recours. */
+  folds: string[];
+}
+
+const INTEGRALE_TAIL = /\b(?:int[eé]grale|complete)$/i;
+
+/** Clé de déduplication : deux requêtes qui ne diffèrent que par la casse, les accents ou la ponctuation sont identiques. */
+function normalizedQuery(query: string): string {
+  return stripPunctuation(stripAccents(query)).toLowerCase();
+}
+
 /**
- * Regroupe les indexeurs par capacité : ceux qui acceptent l'identifiant IMDb reçoivent une requête par id, les
- * autres une requête texte par variante de titre (si des titres sont connus). Un indexeur ne figure que dans un groupe.
- * La requête par id porte aussi le titre (`query`) : mesuré, Prowlarr ignore imdbId/tvdbId seuls et renvoie la liste
- * générale des indexeurs. Sans titre d'ancrage, il n'y a donc pas de requête par id.
+ * Classe les requêtes. Une requête identique à une précédente (casse près) est ignorée ; celle qui n'en diffère que par
+ * les accents ou la ponctuation va en dernier recours. Les requêtes de numéro absolu viennent en tête.
  */
-function planSearches(
-  indexers: IndexerInfo[],
+function classifyQueries(queries: readonly string[], absolute: readonly string[], ref: ContentRef): QuerySets {
+  const sets: QuerySets = { absolute: [...absolute], primary: [], episode: [], integrale: [], folds: [] };
+  const seen = new Set<string>(absolute.map(normalizedQuery));
+  const exact = new Set<string>(absolute.map((query) => query.toLowerCase()));
+  const episodeTag = ref.type === 'series' && ref.season !== undefined && ref.episode !== undefined ? episodeTagOf(ref) : undefined;
+  for (const query of queries) {
+    if (exact.has(query.toLowerCase())) continue;
+    exact.add(query.toLowerCase());
+    const key = normalizedQuery(query);
+    if (seen.has(key)) {
+      sets.folds.push(query);
+      continue;
+    }
+    seen.add(key);
+    if (episodeTag !== undefined && query.toUpperCase().endsWith(episodeTag)) sets.episode.push(query);
+    else if (ref.type === 'series' && INTEGRALE_TAIL.test(query)) sets.integrale.push(query);
+    else sets.primary.push(query);
+  }
+  return sets;
+}
+
+/** Condition d'envoi d'une requête de la seconde vague. */
+type WaveCondition = 'always' | 'unlessId' | 'ifEmpty';
+
+interface ExtraRequest {
+  params: URLSearchParams;
+  when: WaveCondition;
+}
+
+/**
+ * Requêtes d'un indexeur. Première vague (« cœur », en parallèle) : l'essentiel, de quoi répondre vite. Seconde vague
+ * (« compléments »), après le cœur : variantes qui élargissent le résultat sans retarder la réponse. Mesuré : Prowlarr
+ * espace d'environ 2 s les requêtes successives d'un même indexeur, chaque requête de plus coûte donc ce temps.
+ */
+interface IndexerPlan {
+  indexer: IndexerInfo;
+  /** Vrai si la première requête du cœur est la requête par id. */
+  byId: boolean;
+  core: URLSearchParams[];
+  extras: ExtraRequest[];
+}
+
+/**
+ * Plan d'un indexeur. Ceux qui acceptent l'identifiant IMDb reçoivent une requête par id (ancrée sur le titre : mesuré,
+ * Prowlarr ignore imdbId/tvdbId seuls) ; les autres, une requête texte.
+ * Film : cœur = la requête par id, ou le titre ; compléments (si le cœur n'a rien rendu) = autres titres et formes.
+ * Série : cœur = id (si accepté) + pack « Titre SNN », ou pack + épisode exact « Titre SNNENN » sans id ; compléments =
+ * « Saison N » toujours, intégrale sauf si l'id a déjà répondu, puis (si rien n'est venu) « complete » et les formes
+ * sans accents. L'épisode exact n'est jamais tenté chez un indexeur avec id : la requête par id porte déjà l'épisode.
+ */
+function planIndexer(
+  indexer: IndexerInfo,
   ref: ContentRef,
   categories: readonly number[],
-  queries: readonly string[],
+  sets: QuerySets,
   anchor: IdAnchor | undefined,
-): PlannedSearch[] {
-  const byId = indexers.filter((indexer) => idCapable(indexer, ref));
-  const byText = indexers.filter((indexer) => !idCapable(indexer, ref));
-  const plans: PlannedSearch[] = [];
-
-  if (byId.length > 0 && anchor !== undefined) {
-    const params = baseParams(ref, byId, categories);
+): IndexerPlan {
+  const byId = idCapable(indexer, ref) && anchor !== undefined;
+  const text = (query: string): URLSearchParams => {
+    const params = baseParams(ref, indexer, categories);
+    params.set('query', query);
+    return params;
+  };
+  const core: URLSearchParams[] = [];
+  if (byId && anchor !== undefined) {
+    const params = baseParams(ref, indexer, categories);
     params.set('query', anchor.title);
     params.set('imdbId', ref.imdbId.replace(/^tt/i, ''));
     if (ref.type === 'series') {
@@ -214,21 +316,30 @@ function planSearches(
       if (ref.season !== undefined) params.set('season', String(ref.season));
       if (ref.episode !== undefined) params.set('episode', String(ref.episode));
     }
-    plans.push({ indexers: byId, params });
+    core.push(params);
   }
-  // Requêtes texte : packs et intégrale vont à tous les indexeurs (rapides partout, y compris chez ceux qui acceptent
-  // l'id). La requête d'épisode exact « Titre SxxEyy », lente chez certains indexeurs (2 à 4 s), reste réservée aux
-  // indexeurs sans id : la requête par id porte déjà la saison et l'épisode.
-  const episodeTag = ref.type === 'series' && ref.season !== undefined && ref.episode !== undefined ? episodeTagOf(ref) : undefined;
-  for (const query of queries) {
-    const isEpisode = episodeTag !== undefined && query.toUpperCase().endsWith(episodeTag);
-    const targets = isEpisode ? byText : indexers;
-    if (targets.length === 0) continue;
-    const params = baseParams(ref, targets, categories);
-    params.set('query', query);
-    plans.push({ indexers: targets, params });
+  const coreQueries: string[] = sets.absolute.slice(0, 1);
+  const extras: ExtraRequest[] = sets.absolute.slice(1).map((query) => ({ params: text(query), when: 'always' }));
+  if (ref.type === 'movie') {
+    if (!byId) coreQueries.push(...sets.primary.slice(0, 1));
+    const rest = [...sets.primary.slice(byId ? 0 : 1), ...sets.folds];
+    extras.push(...rest.map((query): ExtraRequest => ({ params: text(query), when: 'ifEmpty' })));
+  } else {
+    coreQueries.push(...sets.primary.slice(0, 1));
+    if (!byId) coreQueries.push(...sets.episode.slice(0, 1));
+    extras.push(...sets.primary.slice(1).map((query): ExtraRequest => ({ params: text(query), when: 'always' })));
+    extras.push(...sets.integrale.slice(0, 1).map((query): ExtraRequest => ({ params: text(query), when: 'unlessId' })));
+    extras.push(
+      ...[...sets.integrale.slice(1), ...sets.folds].map((query): ExtraRequest => ({ params: text(query), when: 'ifEmpty' })),
+    );
   }
-  return plans;
+  core.push(...coreQueries.map(text));
+  return { indexer, byId, core: core.slice(0, WAVE1_MAX), extras };
+}
+
+/** Plan allégé d'un indexeur lent : chaque requête lui coûte plusieurs secondes, on n'en garde que l'essentiel. */
+function slimPlan(plan: IndexerPlan): IndexerPlan {
+  return { ...plan, core: plan.core.slice(0, 1), extras: plan.extras.slice(0, 1) };
 }
 
 /**
@@ -311,80 +422,309 @@ function indexerNameOf(raw: Record<string, unknown>, names: ReadonlyMap<string, 
   return optionalString(raw.indexer) ?? names.get(String(raw.indexerId)) ?? fallback;
 }
 
+/** Limiteur de requêtes simultanées (file FIFO) : les indexeurs lents, démarrés en premier, passent avant les autres. */
+class Limiter {
+  private active = 0;
+  private readonly waiting: (() => void)[] = [];
+
+  constructor(private readonly max: number) {}
+
+  async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.active >= this.max) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    else this.active += 1;
+    try {
+      return await work();
+    } finally {
+      const next = this.waiting.shift();
+      if (next === undefined) this.active -= 1;
+      else next();
+    }
+  }
+}
+
+const requestLimiter = new Limiter(MAX_PARALLEL_REQUESTS);
+
+/** Recherche d'un indexeur, en cours ou terminée : partagée entre les appels (dédoublonnage et cache de 5 minutes). */
+interface IndexerTask {
+  indexer: IndexerInfo;
+  /** Résultat de chaque requête (cœur puis compléments), à son rang ; rempli au fil de l'eau. */
+  slots: (Candidate[] | undefined)[];
+  /** Vrai quand le cœur (première vague) est terminé. */
+  coreSettled: boolean;
+  /** Vrai quand tout est terminé (compléments compris). */
+  settled: boolean;
+  expiresAt: number;
+  /** Erreur si le cœur a échoué en entier. */
+  error?: unknown;
+  /** Se résout (jamais ne rejette) quand le cœur est terminé. */
+  core: Promise<void>;
+  /** Se résout (jamais ne rejette) quand tout est terminé. */
+  done: Promise<void>;
+}
+
+/** Recherches par indexeur, clé = source, indexeur et requêtes : un second appel réutilise la recherche en cours. */
+const taskCache = new Map<string, IndexerTask>();
+
+function taskKey(source: ProwlarrSource, plan: IndexerPlan): string {
+  const requests = [...plan.core, ...plan.extras.map((extra) => extra.params)].map((params) => params.toString()).join('\n');
+  return `${discoveryKey(source)}\u0000${plan.indexer.id}\u0000${createHash('sha256').update(requests).digest('hex')}`;
+}
+
+function pruneTasks(now: number): void {
+  for (const [key, task] of taskCache) {
+    if (task.settled && task.expiresAt <= now) taskCache.delete(key);
+  }
+  while (taskCache.size > MAX_TASKS) {
+    const oldest = taskCache.keys().next().value;
+    if (oldest === undefined) return;
+    taskCache.delete(oldest);
+  }
+}
+
+/** Contexte d'exécution partagé par les requêtes d'une recherche. */
+interface RunContext {
+  source: ProwlarrSource;
+  fetchFn: FetchFn;
+  health: IndexerHealth;
+  names: ReadonlyMap<string, string>;
+  requestTimeoutMs: number;
+  budgetMs: number;
+  /** Reprend les recherches échouées récemment au lieu de les relancer (recalcul en arrière-plan). */
+  reuseFailed: boolean;
+}
+
+/** Une requête de recherche vers un indexeur ; la santé de l'indexeur est mise à jour, la clé n'est jamais journalisée. */
+async function requestOnce(
+  run: RunContext,
+  indexer: IndexerInfo,
+  params: URLSearchParams,
+  deadline: number,
+): Promise<Candidate[]> {
+  const { source, health } = run;
+  return requestLimiter.run(async () => {
+    const remaining = deadline - Date.now();
+    // Budget épuisé avant l'envoi : la requête n'part pas, et l'indexeur n'est pas pénalisé dans la santé.
+    if (remaining <= 0) throw new SourceError(`délai dépassé (${run.budgetMs} ms)`);
+    const timeoutMs = Math.min(run.requestTimeoutMs, Math.ceil(remaining));
+    const started = Date.now();
+    try {
+      const url = endpointUrl(source.baseUrl, '/api/v1/search', params);
+      const res = await fetchText(run.fetchFn, url, { headers: headers(source.apiKey) }, timeoutMs);
+      if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
+      const body = parseJson(res.text);
+      if (!Array.isArray(body)) throw new SourceError('réponse inattendue (liste de résultats attendue)');
+      health.record(source.name, indexer.id, { ok: true, latencyMs: Date.now() - started });
+      if (process.env.LASTADDON_DEBUG === '1') {
+        console.debug(`[prowlarr] ${indexer.name} ${Date.now() - started} ms n=${body.length} q=${params.get('query') ?? ''}${params.has('imdbId') ? ' (id)' : ''}`);
+      }
+      return body.filter(isRecord).flatMap((raw) => {
+        const stream = toRawStream(raw, indexerNameOf(raw, run.names, source.name));
+        return stream === undefined ? [] : [{ stream, aliases: releaseAliases(stream.guid, stream.downloadUrl) }];
+      });
+    } catch (err) {
+      const error = describeFailure(err, source.apiKey);
+      health.record(source.name, indexer.id, { ok: false, latencyMs: Date.now() - started, error });
+      throw err;
+    }
+  });
+}
+
+/** Requêtes envoyées en parallèle ; chaque résultat est rangé à son rang dès qu'il arrive. Renvoie les échecs. */
+async function sendAll(
+  run: RunContext,
+  task: IndexerTask,
+  requests: readonly { params: URLSearchParams; slot: number }[],
+  deadline: number,
+): Promise<PromiseRejectedResult[]> {
+  const settled = await Promise.allSettled(
+    requests.map(async ({ params, slot }) => {
+      task.slots[slot] = await requestOnce(run, task.indexer, params, deadline);
+    }),
+  );
+  return settled.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+}
+
+const hasResults = (task: IndexerTask, from = 0, to = task.slots.length): boolean =>
+  task.slots.slice(from, to).some((batch) => batch !== undefined && batch.length > 0);
+
+/** Recherche d'un indexeur : le cœur, puis les compléments (selon leur condition). Lève si tout le cœur a échoué. */
+async function searchIndexer(run: RunContext, plan: IndexerPlan, task: IndexerTask, coreDone: () => void): Promise<void> {
+  const deadline = Date.now() + run.budgetMs;
+  const coreCount = plan.core.length;
+  const failures = await sendAll(run, task, plan.core.map((params, slot) => ({ params, slot })), deadline);
+  coreDone();
+  if (failures.length === coreCount) throw failures[0]?.reason;
+
+  const idAnswered = plan.byId && hasResults(task, 0, 1);
+  const anyResult = hasResults(task);
+  const wanted = plan.extras
+    .map((extra, index) => ({ extra, slot: coreCount + index }))
+    .filter(({ extra }) => extra.when === 'always' || (extra.when === 'unlessId' ? !idAnswered : !anyResult))
+    .slice(0, WAVE2_MAX);
+  if (wanted.length === 0) return;
+  // Les compléments sont facultatifs : leur échec ne retire rien au cœur.
+  await sendAll(run, task, wanted.map(({ extra, slot }) => ({ params: extra.params, slot })), deadline);
+}
+
+/** Démarre (ou reprend) la recherche d'un indexeur. */
+function taskFor(run: RunContext, plan: IndexerPlan, slow: boolean): IndexerTask {
+  const key = taskKey(run.source, plan);
+  const now = Date.now();
+  const existing = taskCache.get(key);
+  if (existing !== undefined && (!existing.settled || (existing.expiresAt > now && (existing.error === undefined || run.reuseFailed)))) {
+    return existing;
+  }
+  pruneTasks(now);
+  let coreDone: () => void = () => undefined;
+  const core = new Promise<void>((resolve) => {
+    coreDone = resolve;
+  });
+  const task: IndexerTask = {
+    indexer: plan.indexer,
+    slots: [],
+    coreSettled: false,
+    settled: false,
+    expiresAt: 0,
+    core,
+    done: Promise.resolve(),
+  };
+  const markCore = (): void => {
+    task.coreSettled = true;
+    coreDone();
+  };
+  task.done = searchIndexer(run, slow ? slimPlan(plan) : plan, task, markCore).then(
+    () => {
+      task.expiresAt = Date.now() + PROWLARR_TASK_TTL_MS;
+      task.settled = true;
+      markCore();
+    },
+    (error: unknown) => {
+      task.error = error;
+      task.expiresAt = Date.now() + PROWLARR_FAILED_TASK_TTL_MS;
+      task.settled = true;
+      markCore();
+    },
+  );
+  taskCache.set(key, task);
+  return task;
+}
+
+/** Attend `promise` au plus `ms` millisecondes (le minuteur est toujours libéré). */
+async function waitAtMost(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, Math.max(0, ms));
+  });
+  try {
+    await Promise.race([promise, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function streamsOf(tasks: readonly IndexerTask[], ref: ContentRef, variants: TitleVariants | undefined): RawStream[] {
+  const batches = tasks.flatMap((task) => task.slots.filter((batch): batch is Candidate[] => batch !== undefined));
+  return filterByYear(mergeRequestResults(batches), ref, variants);
+}
+
 /**
- * Recherche Prowlarr (GET /api/v1/search) sur les indexeurs torrent retenus.
- * Les indexeurs sont regroupés par capacité (id IMDb ou texte) ; chaque groupe est une requête, et chaque variante de
- * titre ajoute une requête texte. Au plus MAX_PARALLEL_QUERIES requêtes à la fois. Un groupe en échec n'empêche pas les
- * autres (santé mise à jour par indexeur). Budget global : chaque requête ne dépasse pas le temps restant, et une
- * requête qui n'a pas pu partir avant l'échéance est écartée sans pénalité. La liste des indexeurs vient du cache
- * (10 min). Lève une SourceError sûre seulement si la découverte échoue ou si tous les groupes échouent.
+ * Recherche Prowlarr (GET /api/v1/search) sur les indexeurs torrent retenus, une requête par indexeur
+ * (`indexerIds=<id>`) : tous les indexeurs partent en parallèle, les plus lents (latence moyenne au-dessus de
+ * l'échéance douce) en premier et avec moins de requêtes. Chaque indexeur fait d'abord son « cœur » (une ou deux
+ * requêtes), puis des compléments (variantes de titre, « Saison N », intégrale) qui n'ajoutent rien à l'attente.
+ * Au plus MAX_PARALLEL_REQUESTS requêtes à la fois.
+ *
+ * Échéance douce (`softMs`) : la recherche rend ce qui est arrivé dès que le cœur des indexeurs rapides est terminé,
+ * ou à l'échéance. `pending` nomme les indexeurs dont le cœur n'est pas terminé ; ils continuent en arrière-plan, avec
+ * les compléments, et leurs résultats restent en mémoire 5 minutes (`done`, et reprise de la même recherche). Si rien
+ * n'est arrivé, l'attente se prolonge jusqu'au premier résultat (au plus une échéance de plus). Les indexeurs lents ne
+ * retardent pas la réponse. Sans `softMs`, la recherche attend tout, dans le budget dur (`budgetMs`).
+ *
+ * Lève une SourceError sûre seulement si la découverte échoue ou si tous les indexeurs échouent.
  */
+export async function searchProwlarrDetailed(
+  source: ProwlarrSource,
+  ref: ContentRef,
+  opts: ProwlarrSearchOptions = {},
+): Promise<ProwlarrOutcome> {
+  const { fetchFn } = resolveOptions(opts);
+  const budgetMs = opts.budgetMs ?? PROWLARR_BUDGET_MS;
+  const health = opts.health ?? defaultIndexerHealth;
+
+  try {
+    const discovered = await discoverCached(source, fetchFn, Math.min(opts.timeoutMs ?? PROWLARR_REQUEST_TIMEOUT_MS, budgetMs));
+    const variants = variantsFor(opts);
+    const title = variants === undefined ? undefined : idQueryOf(variants);
+    const absoluteQueries = absoluteQueriesOf(ref, title, opts.absolute);
+    const queries = variants === undefined ? [] : buildQueries(variants, ref);
+    const anchor: IdAnchor | undefined =
+      title === undefined ? undefined : { title, tvdbId: ref.type === 'series' ? variants?.tvdbId : undefined };
+    const sets = classifyQueries(queries, absoluteQueries, ref);
+    const categories = categoriesFor(source, ref);
+    const plans = selectIndexers(discovered, source.indexerIds)
+      .map((indexer) => planIndexer(indexer, ref, categories, sets, anchor))
+      .filter((plan) => plan.core.length > 0);
+    if (plans.length === 0) return { streams: [], pending: [], busy: false, done: Promise.resolve([]) };
+
+    const softMs = opts.softMs;
+    const run: RunContext = {
+      source,
+      fetchFn,
+      health,
+      names: new Map(discovered.map((indexer) => [String(indexer.id), indexer.name])),
+      requestTimeoutMs: opts.timeoutMs ?? PROWLARR_REQUEST_TIMEOUT_MS,
+      budgetMs,
+      reuseFailed: opts.reuseFailed === true,
+    };
+    // Lents d'abord (ils prennent les premiers créneaux et démarrent tôt) ; l'ordre des résultats reste celui des plans.
+    const slowThreshold = softMs ?? PROWLARR_SOFT_MS;
+    const ewmaOf = (plan: IndexerPlan): number | undefined => health.ewma(source.name, plan.indexer.id);
+    const isSlow = (plan: IndexerPlan): boolean => {
+      const ewma = ewmaOf(plan);
+      return ewma !== undefined && ewma > slowThreshold && (health.get(source.name, plan.indexer.id)?.count ?? 0) >= SLOW_MIN_SAMPLES;
+    };
+    const slowFlags = new Map(plans.map((plan) => [plan, isSlow(plan)]));
+    const startOrder = [...plans].sort(
+      (a, b) => Number(slowFlags.get(b)) - Number(slowFlags.get(a)) || (ewmaOf(b) ?? 0) - (ewmaOf(a) ?? 0),
+    );
+    const started = new Map(startOrder.map((plan) => [plan, taskFor(run, plan, slowFlags.get(plan) === true)]));
+    const tasks = plans.map((plan) => started.get(plan)).filter((task): task is IndexerTask => task !== undefined);
+    const fastTasks = plans
+      .filter((plan) => slowFlags.get(plan) !== true)
+      .map((plan) => started.get(plan))
+      .filter((task): task is IndexerTask => task !== undefined);
+
+    const allDone = Promise.all(tasks.map((task) => task.done));
+    const done = allDone.then(() => streamsOf(tasks, ref, variants));
+    const pendingCores = (): IndexerTask[] => tasks.filter((task) => !task.coreSettled);
+    const hasStreams = (): boolean => tasks.some((task) => task.slots.some((batch) => batch !== undefined && batch.length > 0));
+
+    if (softMs === undefined) {
+      await allDone;
+    } else {
+      const begun = Date.now();
+      await waitAtMost(Promise.all(fastTasks.map((task) => task.core)), softMs);
+      // Rien d'arrivé : attendre le premier résultat plutôt que de répondre vide (au plus une échéance de plus).
+      const graceEnd = begun + 2 * softMs;
+      while (!hasStreams() && pendingCores().length > 0 && Date.now() < graceEnd) {
+        await waitAtMost(Promise.race(pendingCores().map((task) => task.core)), graceEnd - Date.now());
+      }
+    }
+
+    const pending = pendingCores();
+    const busy = tasks.some((task) => !task.settled);
+    if (!busy && tasks.every((task) => task.error !== undefined)) throw tasks[0]?.error;
+    return { streams: streamsOf(tasks, ref, variants), pending: pending.map((task) => task.indexer.name), busy, done };
+  } catch (err) {
+    throw sourceFailure(source.name, err);
+  }
+}
+
+/** Recherche Prowlarr qui attend tous les indexeurs (ou le budget dur) : voir searchProwlarrDetailed. */
 export async function searchProwlarr(
   source: ProwlarrSource,
   ref: ContentRef,
   opts: ProwlarrSearchOptions = {},
 ): Promise<RawStream[]> {
-  const { fetchFn } = resolveOptions(opts);
-  const budgetMs = opts.budgetMs ?? PROWLARR_BUDGET_MS;
-  const perRequestMs = opts.timeoutMs ?? INDEXER_REQUEST_TIMEOUT_MS;
-  const health = opts.health ?? defaultIndexerHealth;
-  const deadline = Date.now() + budgetMs;
-  const timeLeft = (): number => {
-    const left = deadline - Date.now();
-    if (left <= 0) throw new SourceError(`délai dépassé (${budgetMs} ms)`);
-    return Math.min(perRequestMs, Math.ceil(left));
-  };
-
-  try {
-    const discovered = await discoverCached(source, fetchFn, timeLeft());
-    const variants = variantsFor(opts);
-    const title = variants === undefined ? undefined : idQueryOf(variants);
-    const absoluteQueries = absoluteQueriesOf(ref, title, opts.absolute);
-    const queries = variants === undefined ? [] : [...absoluteQueries, ...buildQueries(variants, ref)];
-    const anchor: IdAnchor | undefined =
-      title === undefined ? undefined : { title, tvdbId: ref.type === 'series' ? variants?.tvdbId : undefined };
-    const plans = planSearches(
-      selectIndexers(discovered, source.indexerIds),
-      ref,
-      categoriesFor(source, ref),
-      queries,
-      anchor,
-    );
-    if (plans.length === 0) return [];
-
-    const names = new Map(discovered.map((indexer) => [String(indexer.id), indexer.name]));
-    const run = async (plan: PlannedSearch): Promise<Candidate[]> => {
-      // Budget épuisé avant l'envoi : la requête n'part pas, et l'indexeur n'est pas pénalisé dans la santé.
-      if (deadline <= Date.now()) throw new SourceError(`délai dépassé (${budgetMs} ms)`);
-      const started = Date.now();
-      try {
-        const url = endpointUrl(source.baseUrl, '/api/v1/search', plan.params);
-        const res = await fetchText(fetchFn, url, { headers: headers(source.apiKey) }, timeLeft());
-        if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
-        const body = parseJson(res.text);
-        if (!Array.isArray(body)) throw new SourceError('réponse inattendue (liste de résultats attendue)');
-        const latencyMs = Date.now() - started;
-        for (const indexer of plan.indexers) health.record(source.name, indexer.id, { ok: true, latencyMs });
-        return body.filter(isRecord).flatMap((raw) => {
-          const stream = toRawStream(raw, indexerNameOf(raw, names, source.name));
-          return stream === undefined ? [] : [{ stream, aliases: releaseAliases(stream.guid, stream.downloadUrl) }];
-        });
-      } catch (err) {
-        const error = describeFailure(err, source.apiKey);
-        const latencyMs = Date.now() - started;
-        for (const indexer of plan.indexers) health.record(source.name, indexer.id, { ok: false, latencyMs, error });
-        throw err;
-      }
-    };
-
-    // Requêtes en parallèle, au plus MAX_PARALLEL_QUERIES à la fois (mesuré : au-delà, chaque requête ralentit
-    // nettement côté Prowlarr) ; résultats fusionnés sans doublon, filtrés sur l'année.
-    const settled = await mapBounded(plans, MAX_PARALLEL_QUERIES, run);
-    const rejected = settled.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
-    if (rejected.length === settled.length) throw rejected[0]?.reason;
-    const batches = settled.flatMap((outcome) => (outcome.status === 'fulfilled' ? [outcome.value] : []));
-    return filterByYear(mergeRequestResults(batches), ref, variants);
-  } catch (err) {
-    throw sourceFailure(source.name, err);
-  }
+  return (await searchProwlarrDetailed(source, ref, opts)).streams;
 }

@@ -30,13 +30,14 @@ function fakeProwlarr() {
 }
 
 describe('searchProwlarr : numéro absolu (anime)', () => {
-  it('avec numéro absolu : « Titre 05 » et « Titre - 05 » en tête des requêtes texte', async () => {
+  it('avec numéro absolu : « Titre 05 » en tête du cœur, « Titre - 05 » parmi les compléments', async () => {
     clearProwlarrDiscoveryCache();
     const { fetch, queries } = fakeProwlarr();
 
     await searchProwlarr(SOURCE, EPISODE, { fetch, titleInfo: { title: 'Frieren' }, absolute: 5 });
 
-    expect(queries().slice(0, 2)).toEqual(['Frieren 05', 'Frieren - 05']);
+    expect(queries()[0]).toBe('Frieren 05');
+    expect(queries()).toContain('Frieren - 05');
     expect(queries()).toContain('Frieren S01');
   });
 

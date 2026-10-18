@@ -166,7 +166,7 @@ describe('formatStreams : name et description', () => {
       indexers: ['Tracker A', 'Tracker B'],
     };
     const [stream] = formatStreams([item], { ...BASE, hasDebrid: false });
-    expect(stream?.description?.split('\n')[0]).toContain('🔎 Tracker A | Tracker B · 3 copies');
+    expect(stream?.description?.split('\n')[0]).toContain('🔎 Tracker A · Tracker B · 3 copies');
   });
 
   it('P2P : les seeders apparaissent dans la description', () => {

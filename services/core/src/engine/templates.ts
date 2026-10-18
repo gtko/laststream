@@ -40,8 +40,10 @@ export interface StreamView {
   debrid?: boolean;
   seeders?: number;
   fallbackLanguage?: boolean;
-  /** Indexeurs ayant renvoyé une copie (toutes les copies du groupe) : « 🔎 Tracker A | Tracker B ». */
+  /** Indexeurs ayant renvoyé une copie (toutes les copies du groupe) : « 🔎 Tracker A · Tracker B ». */
   indexers?: string[];
+  /** Provenances (addons amont, indexeurs) de toutes les copies : prime sur `indexers` pour le segment 🔎. */
+  origins?: { name: string }[];
   /** Hébergeur d'un lien direct débridé (ex. « 1fichier ») : « Lien direct · 1fichier ». */
   hoster?: string;
 }
@@ -152,14 +154,15 @@ function copiesText(copies: number): string | undefined {
 
 /** Indexeurs distincts, nettoyés, dans l'ordre d'arrivée. */
 function indexerNames(view: StreamView): string[] {
-  const names = (view.indexers ?? []).map(cleanText).filter((name): name is string => name !== undefined);
+  const listed = view.origins !== undefined && view.origins.length > 0 ? view.origins.map((origin) => origin.name) : (view.indexers ?? []);
+  const names = listed.map(cleanText).filter((name): name is string => name !== undefined);
   return [...new Set(names)];
 }
 
-/** Segment 🔎 : indexeurs (« A | B ») puis nombre de copies (à partir de 2), séparés par « · ». */
+/** Segment 🔎 : provenances (« Lumio · A · B ») puis nombre de copies (à partir de 2), séparés par « · ». */
 function sourcesText(view: StreamView): string | undefined {
   const names = indexerNames(view);
-  return join([names.length > 0 ? names.join(' | ') : undefined, copiesText(view.copies)], DOT);
+  return join([names.length > 0 ? names.join(DOT) : undefined, copiesText(view.copies)], DOT);
 }
 
 /** « Lien direct · 1fichier » pour un lien d'hébergeur débridé ; undefined sinon. */

@@ -219,7 +219,12 @@ describe('détection : validation et cache', () => {
 describe('statut public et sources effectives', () => {
   it('statut sans URL ni clé, libellé conforme', () => {
     const status = localProwlarrStatus(LOCAL);
-    expect(status).toEqual({ detected: true, indexers: 1, label: 'Prowlarr local détecté (1 indexeurs)' });
+    expect(status).toEqual({
+      detected: true,
+      indexers: 1,
+      label: 'Prowlarr local détecté (1 indexeurs)',
+      source: { type: 'prowlarr-local', name: 'Prowlarr local (1 indexeurs)', enabled: true, position: null },
+    });
     expect(JSON.stringify(status)).not.toContain(KEY);
     expect(JSON.stringify(status)).not.toContain(BASE);
     expect(localProwlarrStatus(null)).toEqual({ detected: false, indexers: 0, label: 'Aucun Prowlarr local détecté' });
@@ -234,9 +239,35 @@ describe('statut public et sources effectives', () => {
     ).toMatchObject({ detected: false, indexers: 0 });
   });
 
-  it('les sources explicites ne sont jamais remplacées par le Prowlarr local', () => {
-    const config = parseConfig({ sources: [{ type: 'upstream', name: 'Amont', url: 'https://up.example.com' }] });
-    expect(effectiveSources(config, LOCAL)).toEqual(config.sources);
+  it('les sources explicites sont conservées (ordre inchangé) ; le Prowlarr local s’ajoute en dernier par défaut', () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'upstream', name: 'A', url: 'https://a.example.com' },
+        { type: 'upstream', name: 'B', url: 'https://b.example.com', enabled: false },
+      ],
+    });
+    const effective = effectiveSources(config, LOCAL);
+    expect(effective.map((source) => source.name)).toEqual(['A', 'B', 'Prowlarr local']);
+    expect(effective.slice(0, 2)).toEqual(config.sources);
+  });
+
+  it('localProwlarr.position place le Prowlarr local parmi les sources ; enabled=false ou autoProwlarr=false le retire', () => {
+    const sources = [
+      { type: 'upstream', name: 'A', url: 'https://a.example.com' },
+      { type: 'upstream', name: 'B', url: 'https://b.example.com' },
+    ];
+    const names = (input: unknown): string[] => effectiveSources(parseConfig(input), LOCAL).map((source) => source.name);
+    expect(names({ sources, localProwlarr: { position: 0 } })).toEqual(['Prowlarr local', 'A', 'B']);
+    expect(names({ sources, localProwlarr: { position: 1 } })).toEqual(['A', 'Prowlarr local', 'B']);
+    expect(names({ sources, localProwlarr: { position: 99 } })).toEqual(['A', 'B', 'Prowlarr local']);
+    expect(names({ sources, localProwlarr: { enabled: false } })).toEqual(['A', 'B']);
+    expect(names({ sources, autoProwlarr: false })).toEqual(['A', 'B']);
+  });
+
+  it('une source Prowlarr explicite sur la même instance (localhost ou 127.0.0.1) évite le doublon', () => {
+    const explicit = { type: 'prowlarr', name: 'Mon Prowlarr', baseUrl: 'http://127.0.0.1:9696/', apiKey: 'other-key' };
+    const effective = effectiveSources(parseConfig({ sources: [explicit] }), { ...LOCAL, baseUrl: 'http://localhost:9696' });
+    expect(effective.map((source) => source.name)).toEqual(['Mon Prowlarr']);
   });
 
   it('sans source : le Prowlarr local est utilisé seul, sauf si autoProwlarr est faux', () => {
@@ -279,13 +310,22 @@ describe('pipeline : repli sur le Prowlarr local', () => {
     expect(JSON.stringify(result)).not.toContain(KEY);
   });
 
-  it('configuration avec sources explicites : le fournisseur n’est pas appelé', async () => {
+  it('configuration avec sources explicites : le Prowlarr local est interrogé en plus, sauf s’il est désactivé', async () => {
     const { fetch, mock } = fakeFetch(prowlarrHandler);
     const provider = vi.fn(async () => LOCAL);
     const config = parseConfig({ sources: [{ type: 'upstream', name: 'Amont', url: 'https://up.example.com' }] });
-    await getStreams(config, MOVIE, movieCtx(fetch, { localProwlarr: provider }));
-    expect(provider).not.toHaveBeenCalled();
-    expect(mock.mock.calls.some(([input]) => String(input).startsWith(BASE))).toBe(false);
+    await getStreams(config, MOVIE, movieCtx(fetch, { localProwlarr: provider, cache: false }));
+    expect(provider).toHaveBeenCalled();
+    expect(mock.mock.calls.some(([input]) => String(input).startsWith(BASE))).toBe(true);
+    expect(mock.mock.calls.some(([input]) => String(input).startsWith('https://up.example.com'))).toBe(true);
+
+    const off = fakeFetch(prowlarrHandler);
+    const disabled = parseConfig({
+      sources: [{ type: 'upstream', name: 'Amont', url: 'https://up.example.com' }],
+      localProwlarr: { enabled: false },
+    });
+    await getStreams(disabled, MOVIE, movieCtx(off.fetch, { localProwlarr: provider, cache: false }));
+    expect(off.mock.mock.calls.some(([input]) => String(input).startsWith(BASE))).toBe(false);
   });
 
   it('autoProwlarr désactivé : pas d’appel au fournisseur, aucune source', async () => {
@@ -314,7 +354,12 @@ describe('routes : statut sans fuite de clé', () => {
       const res = await fetch(`${app.baseUrl}/config/schema`);
       const text = await res.text();
       const body = JSON.parse(text) as { localProwlarr: unknown };
-      expect(body.localProwlarr).toEqual({ detected: true, indexers: 1, label: 'Prowlarr local détecté (1 indexeurs)' });
+      expect(body.localProwlarr).toEqual({
+        detected: true,
+        indexers: 1,
+        label: 'Prowlarr local détecté (1 indexeurs)',
+        source: { type: 'prowlarr-local', name: 'Prowlarr local (1 indexeurs)', enabled: true, position: null },
+      });
       expect(text).not.toContain(KEY);
       expect(text).not.toContain(BASE);
     } finally {

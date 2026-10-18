@@ -64,7 +64,7 @@ function query(url: URL): string {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('searchProwlarr : requêtes texte par variante de titre', () => {
-  it('plusieurs requêtes texte partent en parallèle et leurs résultats sont fusionnés sans doublon', async () => {
+  it('le cœur sans résultat déclenche les compléments en parallèle ; leurs résultats sont fusionnés sans doublon', async () => {
     const releaseA = { title: 'Dune.Part.Two.2024.1080p.WEB', indexer: 'Beta', indexerId: 2, infoHash: HASH_A, guid: 'guid-a' };
     const releaseB = { title: 'Dune.Deuxieme.Partie.2024.FRENCH.1080p', indexer: 'Beta', indexerId: 2, infoHash: HASH_B, guid: 'guid-b' };
     let inFlight = 0;
@@ -84,13 +84,12 @@ describe('searchProwlarr : requêtes texte par variante de titre', () => {
 
     const streams = await searchProwlarr(SOURCE, MOVIE, { fetch, titles: TITLES });
 
+    // Cœur : « Dune Part Two » (rien) ; compléments (au plus trois, en parallèle) : année, puis titre français.
     expect(searches().map(query)).toEqual([
       'Dune Part Two',
       'Dune Part Two 2024',
       'Dune Deuxième Partie',
       'Dune Deuxième Partie 2024',
-      'Dune Deuxieme Partie',
-      'Dune Deuxieme Partie 2024',
     ]);
     expect(maxInFlight).toBeGreaterThanOrEqual(2);
     expect(streams.map((stream) => stream.title)).toEqual([
@@ -132,7 +131,8 @@ describe('searchProwlarr : requêtes texte par variante de titre', () => {
   it('sans infoHash : deux requêtes renvoyant le même guid donnent une seule entrée', async () => {
     const proxied = `https://prowlarr.example.com/1/download?apikey=${KEY}&link=abc`;
     const release = { title: 'Sans.Hash.2024.1080p', indexer: 'Beta', indexerId: 2, downloadUrl: proxied, guid: 'guid-x' };
-    const { fetch, searches } = prowlarr([textOnly(2, 'Beta')], () => jsonResponse([release]));
+    // Le cœur ne rend rien : les compléments (plusieurs requêtes) rendent tous le même release.
+    const { fetch, searches } = prowlarr([textOnly(2, 'Beta')], (url) => jsonResponse(query(url) === 'Dune Part Two' ? [] : [release]));
 
     const streams = await searchProwlarr(SOURCE, MOVIE, { fetch, titles: TITLES });
 

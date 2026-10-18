@@ -20,6 +20,16 @@ export interface LocalProwlarrStatus {
   detected: boolean;
   indexers: number;
   label: string;
+  /** Entrée virtuelle de la liste des sources (présente si détecté) : à afficher, désactiver et réordonner. */
+  source?: LocalProwlarrSourceEntry;
+}
+
+/** Entrée virtuelle « Prowlarr local » dans la liste des sources : `position` = rang parmi les sources configurées. */
+export interface LocalProwlarrSourceEntry {
+  type: 'prowlarr-local';
+  name: string;
+  enabled: boolean;
+  position: number | null;
 }
 
 /** Entrées de la détection : variables d'environnement, lecture de fichier (synchrone), fetch injectable. */
@@ -143,34 +153,77 @@ export function clearLocalProwlarrCache(): void {
 }
 
 /** Statut public d'un Prowlarr local : présence et nombre d'indexeurs, jamais l'URL ni la clé. */
-export function localProwlarrStatus(local: LocalProwlarr | null): LocalProwlarrStatus {
+export function localProwlarrStatus(
+  local: LocalProwlarr | null,
+  config?: Pick<Config, 'sources' | 'autoProwlarr' | 'localProwlarr'>,
+): LocalProwlarrStatus {
   if (local === null) return { detected: false, indexers: 0, label: 'Aucun Prowlarr local détecté' };
+  const position = config === undefined ? null : Math.min(config.localProwlarr.position ?? config.sources.length, config.sources.length);
   return {
     detected: true,
     indexers: local.indexerCount,
     label: `Prowlarr local détecté (${local.indexerCount} indexeurs)`,
+    source: {
+      type: 'prowlarr-local',
+      name: `Prowlarr local (${local.indexerCount} indexeurs)`,
+      enabled: config === undefined ? true : config.autoProwlarr && config.localProwlarr.enabled,
+      position,
+    },
   };
 }
 
 /** Statut à partir d'un fournisseur optionnel ; un fournisseur en échec donne « non détecté ». */
-export async function localProwlarrStatusOf(provider: LocalProwlarrProvider | undefined): Promise<LocalProwlarrStatus> {
+export async function localProwlarrStatusOf(
+  provider: LocalProwlarrProvider | undefined,
+  config?: Pick<Config, 'sources' | 'autoProwlarr' | 'localProwlarr'>,
+): Promise<LocalProwlarrStatus> {
   if (provider === undefined) return localProwlarrStatus(null);
   try {
-    return localProwlarrStatus(await provider());
+    return localProwlarrStatus(await provider(), config);
   } catch {
     return localProwlarrStatus(null);
   }
 }
 
+/** Hôte et port d'une URL, `localhost` et loopback confondus : sert à reconnaître le même Prowlarr. */
+function endpointKey(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    const port = url.port !== '' ? url.port : url.protocol === 'https:' ? '443' : '80';
+    return `${loopback ? 'localhost' : host}:${port}${url.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return raw;
+  }
+}
+
+/** Vrai si la configuration a déjà une source Prowlarr sur cette instance (même URL de base). */
+export function hasExplicitProwlarr(sources: Config['sources'], baseUrl: string): boolean {
+  const wanted = endpointKey(baseUrl);
+  return sources.some((source) => source.type === 'prowlarr' && endpointKey(source.baseUrl) === wanted);
+}
+
 /**
- * Sources à interroger. Les sources explicites ne sont jamais remplacées : le Prowlarr local n'est utilisé que si la
- * configuration n'a aucune source, que `autoProwlarr` est actif et qu'un Prowlarr local est détecté.
+ * Sources à interroger : les sources explicites (ordre conservé), plus le Prowlarr local détecté. Le Prowlarr local est
+ * ajouté si `autoProwlarr` et `localProwlarr.enabled` sont actifs, qu'il est détecté et qu'aucune source Prowlarr de la
+ * configuration ne vise déjà la même instance. Sa position (`localProwlarr.position`, défaut : en dernier) est son rang
+ * de priorité. Les sources explicites ne sont jamais remplacées.
  */
 export function effectiveSources(
-  config: Pick<Config, 'sources' | 'autoProwlarr'>,
+  config: Pick<Config, 'sources' | 'autoProwlarr' | 'localProwlarr'>,
   local: LocalProwlarr | null,
 ): Config['sources'] {
-  if (config.sources.length > 0) return config.sources;
-  if (!config.autoProwlarr || local === null) return [];
-  return [{ enabled: true, type: 'prowlarr', name: LOCAL_PROWLARR_NAME, baseUrl: local.baseUrl, apiKey: local.apiKey }];
+  if (!config.autoProwlarr || !config.localProwlarr.enabled || local === null) return config.sources;
+  if (hasExplicitProwlarr(config.sources, local.baseUrl)) return config.sources;
+  const sources = [...config.sources];
+  const position = Math.min(config.localProwlarr.position ?? sources.length, sources.length);
+  sources.splice(position, 0, {
+    enabled: true,
+    type: 'prowlarr',
+    name: LOCAL_PROWLARR_NAME,
+    baseUrl: local.baseUrl,
+    apiKey: local.apiKey,
+  });
+  return sources;
 }

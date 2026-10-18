@@ -36,6 +36,20 @@ const COMPLETE = /(?<![a-z])(?:int[ée]grale|complete|full[ .-]?series|s[ée]rie
 /** Numéro absolu d'anime : « - 05 » suivi d'autre chose qu'un chiffre, une lettre ou un tiret (pas de plage). */
 const ABSOLUTE = /(?<!\w)-\s*(\d{2,3})(?:v\d)?(?![\dA-Za-z-])/;
 
+/**
+ * Certains indexeurs renvoient des titres UTF-8 relus en latin-1 (« IntÃ©grale », « ComplÃ¨te »). Si le texte contient
+ * ces séquences et se relit proprement en UTF-8, on le relit ; sinon il est rendu tel quel.
+ */
+export function repairMojibake(text: string): string {
+  if (!/[\u00C2\u00C3][\u0080-\u00BF]/.test(text) || /[\u0100-\uFFFF]/.test(text)) return text;
+  try {
+    const repaired = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(text, (char) => char.charCodeAt(0)));
+    return repaired;
+  } catch {
+    return text;
+  }
+}
+
 function rangeOf(a: number, b: number): { from: number; to: number } {
   return { from: Math.min(a, b), to: Math.max(a, b) };
 }
@@ -44,7 +58,8 @@ function rangeOf(a: number, b: number): { from: number; to: number } {
  * Portée d'une release, d'après son texte (nom de fichier, titre, description). Ordre de lecture : épisode exact,
  * plage de saisons, saison (« S04 », « Saison 4 »), intégrale, numéro absolu. Un texte sans indication : `{}`.
  */
-export function releaseScope(text: string): ReleaseScope {
+export function releaseScope(rawText: string): ReleaseScope {
+  const text = repairMojibake(rawText);
   const episode = SXE.exec(text) ?? WORD_EPISODE.exec(text) ?? NXNN.exec(text);
   if (episode) return { season: Number(episode[1]), episode: Number(episode[2]) };
 
