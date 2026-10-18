@@ -1,25 +1,29 @@
 import type { Config } from '../config/schema.js';
-import { getJson, LtError, type LtContext } from './context.js';
-import { mdblistRatings } from './providers.js';
+import { getJson, type LtContext } from './context.js';
+import { mdblistRatings, tvdbApiVersion } from './providers.js';
 
 /** Clé de service testable, telle qu'elle apparaît dans la configuration. */
 export type ServiceField = 'tmdbToken' | 'tmdbApiKey' | 'mdblistApiKey' | 'tvdbApiKey' | 'openrouterApiKey' | 'fanartApiKey';
 
-/** Sonde d'un service configuré : `probe` lève en cas d'échec (message sans clé ni URL). */
+/**
+ * Sonde d'un service configuré : `probe` lève en cas d'échec (message sans clé ni URL). Elle renvoie une note
+ * non sensible (ex. version d'API TheTVDB) ou undefined.
+ */
 export interface ServiceProbe {
   name: string;
   type: ServiceField;
-  probe: () => Promise<void>;
+  probe: () => Promise<string | undefined>;
 }
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TVDB_LOGIN = 'https://api4.thetvdb.com/v4/login';
+/** Note de la sonde TheTVDB quand la clé est une clé legacy acceptée par l'API v3. */
+export const TVDB_LEGACY_NOTE = 'clé legacy (API v3)';
 
 /** Sondes des clés configurées uniquement. Chaque sonde appelle un point léger de chaque service. */
 export function serviceProbes(ctx: LtContext, config: Config): ServiceProbe[] {
   const { services } = config;
   const probes: ServiceProbe[] = [];
-  const add = (name: string, type: ServiceField, probe: () => Promise<void>): void => {
+  const add = (name: string, type: ServiceField, probe: () => Promise<string | undefined>): void => {
     probes.push({ name, type, probe });
   };
 
@@ -43,14 +47,11 @@ export function serviceProbes(ctx: LtContext, config: Config): ServiceProbe[] {
   }
   if (services.tvdbApiKey !== undefined) {
     const key = services.tvdbApiKey;
+    const pin = services.tvdbPin;
     add('TheTVDB', 'tvdbApiKey', async () => {
-      const json = await getJson(ctx, TVDB_LOGIN, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ apikey: key }),
-      });
-      const data = json !== null && typeof json === 'object' ? (json as { data?: { token?: unknown } }).data : undefined;
-      if (typeof data?.token !== 'string') throw new LtError(502, 'tvdb_login_failed');
+      // Même repli que les routes lt : v4 d'abord, v3 pour une clé legacy.
+      const version = await tvdbApiVersion(ctx, key, pin);
+      return version === 'v3' ? TVDB_LEGACY_NOTE : undefined;
     });
   }
   if (services.openrouterApiKey !== undefined) {

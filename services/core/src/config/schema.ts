@@ -264,7 +264,14 @@ const ServicesSchema = z
     ),
     tmdbApiKey: serviceKey('Clé API TMDB (v3)', 'Clé API TMDB v3 facultative, testée par POST /config/test.'),
     mdblistApiKey: serviceKey('Clé MDBList', 'Clé API MDBList : notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'),
-    tvdbApiKey: serviceKey('Clé TheTVDB', 'Clé API TheTVDB v4 : saisons et prochain épisode des séries.'),
+    tvdbApiKey: serviceKey(
+      'Clé TheTVDB',
+      'Clé API TheTVDB : clé v4 personnelle, ou clé legacy de 32 caractères hexadécimaux (API v3). Saisons et prochain épisode des séries.',
+    ),
+    tvdbPin: serviceKey(
+      "PIN d'abonné TVDB (clés v4 personnelles)",
+      "PIN d'abonné TheTVDB, requis seulement avec une clé v4 personnelle. Inutile pour une clé legacy.",
+    ),
     openrouterApiKey: serviceKey(
       'Clé OpenRouter',
       'Clé OpenRouter : recommandations IA et textes « Pourquoi tu vas aimer » (facturés par OpenRouter).',
@@ -280,6 +287,14 @@ const ServicesSchema = z
         description: 'Identifiant du modèle OpenRouter utilisé pour les recommandations et les textes.',
       }),
     fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative, testée par POST /config/test.'),
+    introdbApiKey: serviceKey(
+      'Clé IntroDB (introdb.app)',
+      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible).',
+    ),
+    animeskipClientId: serviceKey(
+      'Client ID Anime Skip (anime-skip.com)',
+      'Identifiant client Anime Skip facultatif : repères de saut pour les séries d’animation.',
+    ),
   })
   .meta({
     title: 'Services',

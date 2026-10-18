@@ -15,6 +15,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
+    "tv:live": "tsx scripts/tv-live-check.ts",
     "lint": "eslint ."
   },
   "dependencies": {

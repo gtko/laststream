@@ -30,8 +30,11 @@ export const TTL = {
   tvdb: 12 * 3600e3, // saisons TVDB
   aiRecommend: 30 * 60e3, // recommandations (par charge utile)
   aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
-  tvChannels: 6 * 3600e3, // listes de chaînes
+  tvChannels: 12 * 3600e3, // catalogue TV (sources amont)
+  tvPartial: 15 * 60e3, // catalogue incomplet (une source a échoué) : nouvel essai plus tôt
   tvEpg: 3 * 3600e3, // programmes EPG
+  skip: 7 * 24 * 3600e3, // segments intro/recap/crédits trouvés
+  skipEmpty: 6 * 3600e3, // aucun segment trouvé (à revérifier plus tôt)
 } as const;
 
 /** Délai de cache négatif : une 404 amont est mémorisée brièvement ; aucune autre erreur n'est mise en cache. */
@@ -119,7 +122,8 @@ export class TtlCache {
     return this.totalBytes;
   }
 
-  get<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  /** Durée fixe, ou fonction de la valeur chargée (ex. plus courte pour un résultat vide). */
+  get<T>(key: string, ttlMs: number | ((value: T) => number), load: () => Promise<T>): Promise<T> {
     const hit = this.values.get(key);
     if (hit !== undefined && hit.exp > Date.now()) {
       this.values.delete(key);
@@ -132,7 +136,7 @@ export class TtlCache {
     const promise = load()
       .then(
         (value) => {
-          this.store(key, { value }, approximateBytes(value), ttlMs);
+          this.store(key, { value }, approximateBytes(value), typeof ttlMs === 'number' ? ttlMs : ttlMs(value));
           return value;
         },
         (err: unknown) => {
@@ -192,10 +196,17 @@ export function serviceKey(config: Config, name: ServiceName): string {
   return value;
 }
 
-/** État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API). */
+/** Version de l'API TheTVDB qui accepte une clé : v4 (clé personnelle) ou v3 (clé legacy). */
+export type TvdbVersion = 'v4' | 'v3';
+
+/**
+ * État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API et du PIN), version
+ * TVDB retenue par clé (évite un essai v4 voué à l'échec à chaque requête).
+ */
 export interface LtState {
   cache: TtlCache;
   tvdbSessions: Map<string, { token: string; exp: number }>;
+  tvdbVersions: Map<string, { version: TvdbVersion; exp: number }>;
 }
 
 /**
@@ -212,7 +223,7 @@ export interface LtContext {
 
 export function createLtContext(deps: AppDeps): LtContext {
   return {
-    state: { cache: new TtlCache(), tvdbSessions: new Map() },
+    state: { cache: new TtlCache(), tvdbSessions: new Map(), tvdbVersions: new Map() },
     fetch: deps.fetch ?? globalThis.fetch,
     guard: createPublicGuard(),
     dispatcher: createPinnedAgent(deps.lookupHost),

@@ -1,8 +1,9 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { decodeConfig, encodeConfig } from './config/codec.js';
+import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { allowedOrigins, isTrustProxy } from './config/runtime-env.js';
+import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { catalogEntries } from './lt/catalog.js';
 import { registerLtRoutes } from './lt/router.js';
@@ -10,6 +11,11 @@ import { registerIndexerRoutes } from './routes/indexers.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
+import { registerUserRoutes } from './user/routes.js';
+import { createRateLimiter } from './rate-limit.js';
+import { isRecord } from './sources/http.js';
+
+export { createRateLimiter };
 
 export const MANIFEST = {
   id: 'com.laststream.lastaddon',
@@ -38,6 +44,10 @@ const CONFIG_PATH = /^\/config(?:\/|$)/;
 const OPEN_LT_PATHS: readonly RegExp[] = [/^\/[^/]+\/lt\/.+$/, /^\/[^/]+\/catalog\/.+$/];
 /** Routes lt en POST : origines restreintes et limite de débit, comme /config/*. */
 const LT_WRITE_PATH = /^\/[^/]+\/lt(?:\/|$)/;
+/** Données utilisateur (/user/*) : origines restreintes, limite de débit comme /config/*, jamais en cache. */
+const USER_PATH = /^\/user(?:\/|$)/;
+const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
+const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token';
 
 /** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
 function isOpenPath(req: Request): boolean {
@@ -51,7 +61,6 @@ const CONFIG_RATE_WINDOW_MS = 60_000;
 /** GET lt et catalogues : 120 requêtes par minute et par IP. */
 const READ_RATE_LIMIT = 120;
 const READ_RATE_WINDOW_MS = 60_000;
-const RATE_TABLE_PRUNE_SIZE = 10_000;
 
 /**
  * CORS : `*` uniquement sur les routes manifest et stream (GET). Sur /config/*, seule une origine
@@ -63,13 +72,18 @@ function corsMiddleware(origins: readonly string[]) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path)) {
+    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path) || USER_PATH.test(req.path)) {
       const origin = req.get('origin');
       res.vary('Origin');
       if (origin !== undefined && origins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (USER_PATH.test(req.path)) {
+          res.setHeader('Access-Control-Allow-Methods', USER_METHODS);
+          res.setHeader('Access-Control-Allow-Headers', USER_HEADERS);
+        } else {
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        }
       }
     }
     if (req.method === 'OPTIONS') {
@@ -77,27 +91,6 @@ function corsMiddleware(origins: readonly string[]) {
       return;
     }
     next();
-  };
-}
-
-/** Compteur à fenêtre fixe par clé (en mémoire, par processus). Renvoie false une fois la limite atteinte. */
-export function createRateLimiter(limit: number, windowMs: number, now: () => number = Date.now) {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  return (key: string): { allowed: boolean; retryAfterSec: number } => {
-    const current = now();
-    if (windows.size > RATE_TABLE_PRUNE_SIZE) {
-      for (const [existing, window] of windows) {
-        if (window.resetAt <= current) windows.delete(existing);
-      }
-    }
-    let window = windows.get(key);
-    if (window === undefined || window.resetAt <= current) {
-      window = { count: 0, resetAt: current + windowMs };
-      windows.set(key, window);
-    }
-    window.count += 1;
-    const retryAfterSec = Math.max(1, Math.ceil((window.resetAt - current) / 1000));
-    return { allowed: window.count <= limit, retryAfterSec };
   };
 }
 
@@ -148,6 +141,39 @@ function manifestFor(deps: AppDeps, encoded: string) {
   return { ...MANIFEST, resources: ['stream', 'catalog'], catalogs: catalogEntries() };
 }
 
+/** Problèmes de configuration à renvoyer (chemins et messages, jamais de valeur saisie), ou undefined. */
+function configIssues(err: unknown): string[] | undefined {
+  if (err instanceof ConfigValidationError) return [...err.issues];
+  if (err instanceof ConfigDecodeError) return [`config: ${err.message}`];
+  return undefined;
+}
+
+/**
+ * Entrée de POST /config/encode. Forme directe : la configuration elle-même (inchangée). Forme `{ previous, config }` :
+ * `previous` (chiffrée) est déchiffrée ici et ses secrets sont gardés là où `config` les laisse vides, absents ou
+ * masqués. Sans `config`, la configuration précédente est reconduite telle quelle.
+ */
+function encodeInput(body: unknown, deps: AppDeps): unknown {
+  if (!isRecord(body) || !('previous' in body || 'config' in body)) return body;
+  if (body.previous !== undefined && typeof body.previous !== 'string') {
+    throw new ConfigValidationError(['previous: chaîne encodée attendue']);
+  }
+  if (body.config !== undefined && !isRecord(body.config)) throw new ConfigValidationError(['config: objet attendu']);
+  const previous =
+    typeof body.previous === 'string' ? decodeConfig(body.previous, deps.secret, { allowPlain: deps.allowPlain }) : undefined;
+  const patch = isRecord(body.config) ? body.config : { ...previous };
+  return mergeSecrets(patch, previous);
+}
+
+/** Fermetures des ressources propres à une application (base des données utilisateur), par application. */
+const closers = new WeakMap<Express, () => void>();
+
+/** Libère les ressources d'une application créée par createApp (tests, arrêt propre). */
+export function closeApp(app: Express): void {
+  closers.get(app)?.();
+  closers.delete(app);
+}
+
 export function createApp(deps: AppDeps): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -177,10 +203,29 @@ export function createApp(deps: AppDeps): Express {
 
   app.post('/config/encode', (req, res, next) => {
     try {
-      res.json({ config: encodeConfig(req.body, deps.secret) });
+      res.json({ config: encodeConfig(encodeInput(req.body, deps), deps.secret) });
     } catch (err) {
-      if (err instanceof ConfigValidationError) {
-        res.status(400).json({ error: 'invalid_config', issues: err.issues });
+      const issues = configIssues(err);
+      if (issues !== undefined) {
+        res.status(400).json({ error: 'invalid_config', issues });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // Déchiffre une configuration pour le configurateur : secrets remplacés par un masque, jamais de valeur.
+  app.post('/config/decode', (req, res, next) => {
+    try {
+      const encoded = isRecord(req.body) ? req.body.config : undefined;
+      if (typeof encoded !== 'string') throw new ConfigValidationError(['config: chaîne encodée attendue']);
+      const config = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(maskConfig(config));
+    } catch (err) {
+      const issues = configIssues(err);
+      if (issues !== undefined) {
+        res.status(400).json({ error: 'invalid_config', issues });
         return;
       }
       next(err);
@@ -192,6 +237,7 @@ export function createApp(deps: AppDeps): Express {
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps);
   registerIndexerRoutes(app, deps);
+  closers.set(app, registerUserRoutes(app, deps));
 
   app.use(errorHandler);
   return app;

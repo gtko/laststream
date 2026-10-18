@@ -202,7 +202,8 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(TTL.tvdb).toBe(12 * 3600e3);
     expect(TTL.aiRecommend).toBe(30 * 60e3);
     expect(TTL.aiText).toBe(7 * 24 * 3600e3);
-    expect(TTL.tvChannels).toBe(6 * 3600e3);
+    expect(TTL.tvChannels).toBe(12 * 3600e3);
+    expect(TTL.tvPartial).toBe(15 * 60e3);
     expect(TTL.tvEpg).toBe(3 * 3600e3);
   });
 
@@ -241,7 +242,7 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
       const path = `${tvApp.baseUrl}/${fullToken()}/lt/tv/channels`;
       expect((await fetch(path)).status).toBe(502);
       expect((await fetch(path)).status).toBe(502);
-      expect(failing.callsTo('https://iptv-org.github.io/iptv/countries/fr.m3u').length).toBe(2);
+      expect(failing.callsTo('https://iptv-org.github.io/api/channels.json').length).toBe(2);
     } finally {
       await tvApp.close();
     }
