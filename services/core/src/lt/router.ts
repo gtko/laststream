@@ -3,6 +3,7 @@ import type { AppDeps } from '../deps.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
+import { seriesEpisodes } from './episodes.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
 import { parseSkipTarget, skipSegments } from './skip.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
@@ -97,6 +98,19 @@ export function registerLtRoutes(app: Express, deps: AppDeps): void {
       console.warn(`[lt][tvdb] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'tvdb_unavailable');
     });
+    cacheable(res);
+    res.json(body);
+  });
+
+  // Saisons et épisodes canoniques d'une série (TVDB, groupe TMDB ou TMDB). Langue : fr-FR par défaut.
+  lt.get('/series/:tmdbId/episodes', async (req, res) => {
+    const config = configOf(req);
+    const body = await seriesEpisodes(
+      ctx,
+      { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
+      req.params.tmdbId,
+      queryOf(req).language,
+    );
     cacheable(res);
     res.json(body);
   });

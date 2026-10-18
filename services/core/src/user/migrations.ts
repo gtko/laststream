@@ -91,6 +91,49 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE profiles ADD COLUMN pin_version INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 3,
+    name: 'suivis (titres et personnes) et notes sur 5 par demi-étoiles',
+    sql: `
+      CREATE TABLE follows (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series', 'person')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT NOT NULL,
+        poster TEXT,
+        followed_at TEXT NOT NULL,
+        notify INTEGER NOT NULL DEFAULT 0 CHECK (notify IN (0, 1)),
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+
+      CREATE TABLE ratings (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        tmdb_id INTEGER,
+        imdb_id TEXT,
+        title TEXT,
+        rating REAL NOT NULL CHECK (rating >= 0 AND rating <= 5 AND rating * 2 = CAST(rating * 2 AS INTEGER)),
+        rated_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+    `,
+  },
+  {
+    version: 4,
+    name: 'titres masqués de « continuer à regarder » (réapparaissent à la prochaine progression)',
+    sql: `
+      CREATE TABLE continue_hidden (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        title_ref TEXT NOT NULL,
+        hidden_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, type, title_ref)
+      );
+    `,
+  },
 ];
 
 /**

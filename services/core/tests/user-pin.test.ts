@@ -67,6 +67,15 @@ function dataCalls(id: string): { name: string; method: string; path: string; bo
     { name: 'settings GET', method: 'GET', path: `/user/profiles/${id}/settings` },
     { name: 'settings PUT', method: 'PUT', path: `/user/profiles/${id}/settings`, body: { theme: 'dark' } },
     { name: 'import', method: 'POST', path: `/user/profiles/${id}/import/stremio`, body: { email: 'a@b.test', password: 'x' } },
+    { name: 'watched PUT', method: 'PUT', path: `/user/profiles/${id}/watched`, body: { type: 'movie', tmdbId: 603, watched: true } },
+    { name: 'watched GET', method: 'GET', path: `/user/profiles/${id}/watched/movie/603` },
+    { name: 'continue DELETE', method: 'DELETE', path: `/user/profiles/${id}/continue/movie/603` },
+    { name: 'follows GET', method: 'GET', path: `/user/profiles/${id}/follows` },
+    { name: 'follows PUT', method: 'PUT', path: `/user/profiles/${id}/follows/movie/603`, body: { title: 'Matrix' } },
+    { name: 'follows DELETE', method: 'DELETE', path: `/user/profiles/${id}/follows/movie/603` },
+    { name: 'ratings GET', method: 'GET', path: `/user/profiles/${id}/ratings` },
+    { name: 'ratings PUT', method: 'PUT', path: `/user/profiles/${id}/ratings/movie/603`, body: { rating: 4 } },
+    { name: 'ratings DELETE', method: 'DELETE', path: `/user/profiles/${id}/ratings/movie/603` },
   ];
 }
 

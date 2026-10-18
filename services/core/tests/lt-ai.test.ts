@@ -21,6 +21,10 @@ beforeAll(async () => {
     'https://api.themoviedb.org/3/search/movie': (call) => {
       const query = call.url.searchParams.get('query');
       if (query === 'Dune') return json({ results: [{ id: 438631, title: 'Dune', poster_path: '/dune.jpg' }] });
+      // « Film A001 » / « Film B002 » : résultats génériques (id stable, année 2000) pour les tests de volume.
+      if (query?.startsWith('Film ')) {
+        return json({ results: [{ id: query.charCodeAt(5) * 1000 + Number(query.slice(6)), title: query, release_date: '2000-01-01', poster_path: '/f.jpg' }] });
+      }
       return json({ results: [] });
     },
     'https://api.themoviedb.org/3/search/tv': (call) => {
@@ -67,9 +71,9 @@ const recommendReply = (items: unknown[]) => () => ({ items });
 describe('lt/recommend', () => {
   it('propose des titres puis les résout via TMDB (media_type, raison, affiche)', async () => {
     reply = recommendReply([
-      { title: 'Dune', year: 2021, type: 'movie', reason_fr: 'Épique et visuel' },
-      { title: 'Severance', year: 2022, type: 'tv', reason_fr: 'Mystère au bureau' },
-      { title: 'Titre introuvable', year: 1990, type: 'movie', reason_fr: 'Rien' },
+      { t: 'Dune', y: 2021, k: 'movie', r: 'Épique et visuel' },
+      { t: 'Severance', y: 2022, k: 'tv', r: 'Mystère au bureau' },
+      { t: 'Titre introuvable', y: 1990, k: 'movie', r: 'Rien' },
     ]);
     const res = await post('recommend', { history: [{ title: 'Blade Runner', year: 1982, type: 'movie' }], liked: [] });
     expect(res.status).toBe(200);
@@ -95,8 +99,8 @@ describe('lt/recommend', () => {
 
   it('dédoublonne les titres résolus vers le même résultat', async () => {
     reply = recommendReply([
-      { title: 'Dune', year: 2021, type: 'movie', reason_fr: 'Un' },
-      { title: 'Dune', year: 2021, type: 'movie', reason_fr: 'Deux' },
+      { t: 'Dune', y: 2021, k: 'movie', r: 'Un' },
+      { t: 'Dune', y: 2021, k: 'movie', r: 'Deux' },
     ]);
     const body = (await (await post('recommend', { history: [], liked: [] })).json()) as { items: unknown[] };
     expect(body.items).toHaveLength(1);
@@ -124,6 +128,111 @@ describe('lt/recommend', () => {
     const text = await res.text();
     expect(JSON.parse(text)).toEqual({ error: 'upstream_500' });
     expect(text).not.toContain(KEYS.openrouterApiKey);
+  });
+});
+
+/** Réponse compacte { t, y, k, r } : le nombre demandé dans le prompt, préfixé selon l'angle (A goûts, B découvertes). */
+const compactReply = (payload: { messages: { content: string }[] }): unknown => {
+  const system = payload.messages[0]?.content ?? '';
+  const count = Number(/Donne exactement (\d+) titres/.exec(system)?.[1] ?? 0);
+  const prefix = system.includes('Angle : dans les goûts') ? 'A' : 'B';
+  return {
+    items: Array.from({ length: count }, (_, index) => ({ t: `Film ${prefix}${String(index + 1).padStart(3, '0')}`, y: 2000, k: 'movie', r: 'Parce que' })),
+  };
+};
+
+const openrouterCalls = (): number => upstream.callsTo(OPENROUTER).length;
+
+describe('lt/recommend : volume, exclusions, notes', () => {
+  // Application dédiée : POST /lt est limité à 30 par minute et par IP, et le reste du fichier en consomme déjà.
+  let volume: RunningApp;
+  beforeAll(async () => {
+    volume = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup() });
+  });
+  afterAll(async () => {
+    await volume.close();
+  });
+  const post = (path: string, body: unknown): Promise<Response> => fetch(`${volume.baseUrl}/${fullToken()}/lt/${path}`, postJson(body));
+
+  it('par défaut : 50 titres renvoyés, deux appels parallèles de 33 titres (count + 15 au total)', async () => {
+    reply = compactReply;
+    const before = openrouterCalls();
+    const res = await post('recommend', { history: [{ title: 'Volume', type: 'movie' }], liked: [] });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { title: string }[] };
+    expect(body.items).toHaveLength(50);
+    expect(body.items[0]?.title).toBe('Film A001');
+    const payloads = upstream
+      .callsTo(OPENROUTER)
+      .slice(before)
+      .map((call) => JSON.parse(call.body) as { max_tokens: number; messages: { content: string }[] });
+    expect(payloads).toHaveLength(2);
+    expect(payloads.map((payload) => payload.max_tokens)).toEqual([33 * 60 + 200, 33 * 60 + 200]);
+    expect(payloads[0]?.messages[0]?.content).toContain('Angle : dans les goûts');
+    expect(payloads[1]?.messages[0]?.content).toContain('Angle : découvertes');
+  });
+
+  it('count : entier de 1 à 80 ; hors bornes ou non entier : 400 bad_request', async () => {
+    reply = compactReply;
+    for (const count of [0, 81, 'dix', 2.5]) {
+      const res = await post('recommend', { history: [{ title: 'Bornes' }], count });
+      expect(res.status, String(count)).toBe(400);
+      expect(await res.json()).toEqual({ error: 'bad_request' });
+    }
+    const ten = (await (await post('recommend', { history: [{ title: 'Bornes' }], count: 10 })).json()) as { items: unknown[] };
+    expect(ten.items).toHaveLength(10);
+  });
+
+  it('exclusions : par identifiant TMDB, et par titre et année (une autre année ne compte pas)', async () => {
+    reply = compactReply;
+    const body = {
+      history: [{ title: 'Exclusions' }],
+      count: 40,
+      exclude: [
+        { type: 'movie', tmdbId: 65001 },
+        { title: 'Film B002', year: 2000 },
+        { title: 'Film B003', year: 1999 },
+      ],
+    };
+    const titles = ((await (await post('recommend', body)).json()) as { items: { title: string }[] }).items.map((item) => item.title);
+    expect(titles).toHaveLength(40);
+    expect(titles).not.toContain('Film A001');
+    expect(titles).not.toContain('Film B002');
+    expect(titles).toContain('Film B003');
+  });
+
+  it('exclusions : plus de 500 entrées refusées (400)', async () => {
+    const exclude = Array.from({ length: 501 }, (_, index) => ({ type: 'movie', tmdbId: index + 1 }));
+    const res = await post('recommend', { history: [], exclude });
+    expect(res.status).toBe(400);
+  });
+
+  it('notes : 40 au plus dans le prompt, notes invalides ignorées, plus de 100 entrées refusées', async () => {
+    reply = compactReply;
+    const ratings = Array.from({ length: 99 }, (_, index) => ({ title: `Note ${String(index + 1).padStart(3, '0')}`, year: 2010, type: 'movie', rating: 3 }));
+    ratings.push({ title: 'Demi-étoile interdite', year: 2010, type: 'movie', rating: 4.25 });
+    const before = openrouterCalls();
+    expect((await post('recommend', { history: [{ title: 'Notes' }], ratings })).status).toBe(200);
+    const user = (JSON.parse(upstream.callsTo(OPENROUTER).slice(before)[0]?.body ?? '{}') as { messages: { content: string }[] }).messages[1]?.content ?? '';
+    expect(user).toContain("Notes de l'utilisateur sur 5");
+    expect(user).toContain('évite ce qui ressemble aux titres notés 0–2');
+    expect(user.match(/Note \d{3} \(2010\) \[movie\] 3/g)).toHaveLength(40);
+    expect(user).not.toContain('Demi-étoile interdite');
+
+    const tooMany = Array.from({ length: 101 }, (_, index) => ({ title: `Trop ${index}`, rating: 1 }));
+    expect((await post('recommend', { history: [], ratings: tooMany })).status).toBe(400);
+  });
+
+  it('cache : la clé inclut les notes ; mêmes notes = pas d appel au modèle, notes changées = nouvel appel', async () => {
+    reply = compactReply;
+    const base = { history: [{ title: 'Cache notes' }] };
+    const first = openrouterCalls();
+    await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 5 }] });
+    expect(openrouterCalls() - first).toBe(2);
+    await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 5 }] });
+    expect(openrouterCalls() - first).toBe(2);
+    await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 1 }] });
+    expect(openrouterCalls() - first).toBe(4);
   });
 });
 

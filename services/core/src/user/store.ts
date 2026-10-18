@@ -105,6 +105,92 @@ export interface ProgressWrite {
   finished: boolean;
 }
 
+/** Un suivi peut aussi viser une personne (acteur, réalisateur) : pas de saison ni d'épisode. */
+export type FollowType = MediaType | 'person';
+
+export interface WatchedWrite {
+  profileId: string;
+  type: MediaType;
+  tmdbId: number | null;
+  imdbId: string | null;
+  /** Épisodes visés ; un film a un seul élément (0, 0). */
+  episodes: readonly { season: number; episode: number }[];
+  watched: boolean;
+  updatedAt: string;
+}
+
+export interface FollowItem {
+  type: FollowType;
+  tmdbId: number | null;
+  imdbId: string | null;
+  title: string;
+  poster: string | null;
+  followedAt: string;
+  notify: boolean;
+}
+
+export interface FollowWrite extends Omit<FollowItem, 'followedAt'> {
+  profileId: string;
+  followedAt: string;
+}
+
+export interface RatingItem {
+  type: MediaType;
+  tmdbId: number | null;
+  imdbId: string | null;
+  title: string | null;
+  /** Note sur 5, par pas de 0,5. */
+  rating: number;
+  ratedAt: string;
+}
+
+export interface RatingWrite extends Omit<RatingItem, 'ratedAt'> {
+  profileId: string;
+  ratedAt: string;
+}
+
+interface FollowRow {
+  type: FollowType;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  title: string;
+  poster: string | null;
+  followed_at: string;
+  notify: number;
+}
+
+interface RatingRow {
+  type: MediaType;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  title: string | null;
+  rating: number;
+  rated_at: string;
+}
+
+function toFollowItem(row: FollowRow): FollowItem {
+  return {
+    type: row.type,
+    tmdbId: row.tmdb_id,
+    imdbId: row.imdb_id,
+    title: row.title,
+    poster: row.poster,
+    followedAt: row.followed_at,
+    notify: row.notify === 1,
+  };
+}
+
+function toRatingItem(row: RatingRow): RatingItem {
+  return {
+    type: row.type,
+    tmdbId: row.tmdb_id,
+    imdbId: row.imdb_id,
+    title: row.title,
+    rating: row.rating,
+    ratedAt: row.rated_at,
+  };
+}
+
 export type SettingsMap = Record<string, unknown>;
 
 interface AccountRow {
@@ -592,6 +678,135 @@ export class UserStore {
       )
       .all(profileId) as unknown as ProgressRow[];
     return rows.map(toProgressItem);
+  }
+
+  /**
+   * Marque des épisodes (ou un film) vus ou non vus, en une transaction. Vu : la ligne est créée si absente, sinon
+   * passe à terminée, et sa position se règle sur la durée connue (0 si inconnue). Non vu : seules les lignes terminées
+   * sont retirées, une lecture en cours n'est pas touchée. Idempotent.
+   */
+  setWatched(write: WatchedWrite): void {
+    const ref = titleRef(write.tmdbId, write.imdbId);
+    const mark = this.db.prepare(
+      `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1)
+       ON CONFLICT(profile_id, type, title_ref, season, episode) DO UPDATE SET
+         tmdb_id = COALESCE(excluded.tmdb_id, progress.tmdb_id),
+         imdb_id = COALESCE(excluded.imdb_id, progress.imdb_id),
+         position_sec = CASE WHEN progress.duration_sec > 0 THEN progress.duration_sec ELSE 0 END,
+         updated_at = excluded.updated_at,
+         finished = 1`,
+    );
+    const unmark = this.db.prepare(
+      'DELETE FROM progress WHERE profile_id = ? AND type = ? AND title_ref = ? AND season = ? AND episode = ? AND finished = 1',
+    );
+    this.transaction(() => {
+      for (const { season, episode } of write.episodes) {
+        if (write.watched) {
+          mark.run(write.profileId, write.type, ref, write.tmdbId, write.imdbId, season, episode, write.updatedAt);
+        } else {
+          unmark.run(write.profileId, write.type, ref, season, episode);
+        }
+      }
+    });
+  }
+
+  // Suivis
+
+  listFollows(profileId: string): FollowItem[] {
+    const rows = this.db
+      .prepare('SELECT type, tmdb_id, imdb_id, title, poster, followed_at, notify FROM follows WHERE profile_id = ? ORDER BY followed_at DESC, title_ref')
+      .all(profileId) as unknown as FollowRow[];
+    return rows.map(toFollowItem);
+  }
+
+  /** Suit un titre ou une personne. Un suivi existant garde sa date ; titre, affiche et notification sont mis à jour. */
+  upsertFollow(write: FollowWrite): void {
+    this.db
+      .prepare(
+        `INSERT INTO follows (profile_id, type, title_ref, tmdb_id, imdb_id, title, poster, followed_at, notify)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, type, title_ref) DO UPDATE SET
+           tmdb_id = COALESCE(excluded.tmdb_id, follows.tmdb_id),
+           imdb_id = COALESCE(excluded.imdb_id, follows.imdb_id),
+           title = excluded.title,
+           poster = excluded.poster,
+           notify = excluded.notify`,
+      )
+      .run(
+        write.profileId,
+        write.type,
+        titleRef(write.tmdbId, write.imdbId),
+        write.tmdbId,
+        write.imdbId,
+        write.title,
+        write.poster,
+        write.followedAt,
+        write.notify ? 1 : 0,
+      );
+  }
+
+  removeFollow(profileId: string, type: FollowType, ref: string): void {
+    this.db.prepare('DELETE FROM follows WHERE profile_id = ? AND type = ? AND title_ref = ?').run(profileId, type, ref);
+  }
+
+  // Notes
+
+  listRatings(profileId: string, type: MediaType | undefined): RatingItem[] {
+    const typeClause = type === undefined ? '' : 'AND type = ?';
+    const params: string[] = type === undefined ? [profileId] : [profileId, type];
+    const rows = this.db
+      .prepare(`SELECT type, tmdb_id, imdb_id, title, rating, rated_at FROM ratings WHERE profile_id = ? ${typeClause} ORDER BY rated_at DESC, title_ref`)
+      .all(...params) as unknown as RatingRow[];
+    return rows.map(toRatingItem);
+  }
+
+  /** Note un titre (remplace la note précédente). Le titre déjà connu est conservé si l'écriture n'en donne pas. */
+  upsertRating(write: RatingWrite): void {
+    this.db
+      .prepare(
+        `INSERT INTO ratings (profile_id, type, title_ref, tmdb_id, imdb_id, title, rating, rated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, type, title_ref) DO UPDATE SET
+           tmdb_id = COALESCE(excluded.tmdb_id, ratings.tmdb_id),
+           imdb_id = COALESCE(excluded.imdb_id, ratings.imdb_id),
+           title = COALESCE(excluded.title, ratings.title),
+           rating = excluded.rating,
+           rated_at = excluded.rated_at`,
+      )
+      .run(
+        write.profileId,
+        write.type,
+        titleRef(write.tmdbId, write.imdbId),
+        write.tmdbId,
+        write.imdbId,
+        write.title,
+        write.rating,
+        write.ratedAt,
+      );
+  }
+
+  removeRating(profileId: string, type: MediaType, ref: string): void {
+    this.db.prepare('DELETE FROM ratings WHERE profile_id = ? AND type = ? AND title_ref = ?').run(profileId, type, ref);
+  }
+
+  // Continuer à regarder : titres masqués
+
+  /** Date de masquage par titre, clé `type|titleRef`. Un titre masqué réapparaît dès qu'il a une progression plus récente. */
+  hiddenContinue(profileId: string): Map<string, string> {
+    const rows = this.db
+      .prepare('SELECT type, title_ref, hidden_at FROM continue_hidden WHERE profile_id = ?')
+      .all(profileId) as { type: string; title_ref: string; hidden_at: string }[];
+    return new Map(rows.map((row) => [`${row.type}|${row.title_ref}`, row.hidden_at]));
+  }
+
+  hideContinue(profileId: string, type: MediaType, ref: string, hiddenAt: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO continue_hidden (profile_id, type, title_ref, hidden_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(profile_id, type, title_ref) DO UPDATE SET hidden_at = excluded.hidden_at`,
+      )
+      .run(profileId, type, ref, hiddenAt);
   }
 
   // Réglages

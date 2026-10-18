@@ -101,13 +101,39 @@ describe('TtlCache : plafonds et éviction LRU', () => {
 describe('paramètres TMDB en liste blanche', () => {
   it('garde les paramètres autorisés, écarte les autres et n accepte include_adult qu à false', () => {
     expect(
-      tmdbPublicParams({ with_genres: '28', year: '1999', include_adult: 'true', sort_by: 'popularity.desc', api_key: 'x', language: 'en-US' }),
+      tmdbPublicParams({ with_genres: '28', fake_param: '1', include_adult: 'true', sort_by: 'popularity.desc', api_key: 'x', language: 'en-US' }),
     ).toEqual({ with_genres: '28', sort_by: 'popularity.desc', language: 'en-US' });
     expect(tmdbPublicParams({ include_adult: 'false', primary_release_date_gte: '2020' })).toEqual({ include_adult: 'false' });
     expect(tmdbPublicParams({ 'primary_release_date.gte': '2020', 'air_date.lte': '2024' })).toEqual({
       'primary_release_date.gte': '2020',
       'air_date.lte': '2024',
     });
+  });
+
+  it('laisse passer les filtres de découverte ajoutés (durée, notes, pays, type, statut, personnes, dates)', () => {
+    const filters: Record<string, string> = {
+      'with_runtime.gte': '60',
+      'with_runtime.lte': '120',
+      'vote_average.gte': '7',
+      'vote_average.lte': '9',
+      'vote_count.lte': '5000',
+      with_origin_country: 'FR',
+      with_type: '4',
+      with_status: '0',
+      without_companies: '420',
+      with_people: '287',
+      with_cast: '287',
+      with_crew: '525',
+      first_air_date_year: '2020',
+      primary_release_year: '2019',
+      year: '1999',
+      timezone: 'Europe/Paris',
+      screened_theatrically: 'true',
+      with_release_type: '3',
+      'release_date.gte': '2020-01-01',
+      'release_date.lte': '2020-12-31',
+    };
+    expect(tmdbPublicParams(filters)).toEqual(filters);
   });
 });
 
@@ -156,13 +182,13 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
 
   it('TMDB : seuls les paramètres en liste blanche partent vers l amont', async () => {
     const res = await fetch(
-      `${app.baseUrl}/${tokenFor({ tmdbToken: 'tmdb-token-A' })}/lt/tmdb/discover/movie?with_genres=28&year=1999&include_adult=true&api_key=stolen&sort_by=popularity.desc`,
+      `${app.baseUrl}/${tokenFor({ tmdbToken: 'tmdb-token-A' })}/lt/tmdb/discover/movie?with_genres=28&fake_param=1&include_adult=true&api_key=stolen&sort_by=popularity.desc`,
     );
     expect(res.status).toBe(200);
     const call = upstream.callsTo('https://api.themoviedb.org/3/discover/movie').at(-1);
     expect(call?.url.searchParams.get('with_genres')).toBe('28');
     expect(call?.url.searchParams.get('sort_by')).toBe('popularity.desc');
-    expect(call?.url.searchParams.has('year')).toBe(false);
+    expect(call?.url.searchParams.has('fake_param')).toBe(false);
     expect(call?.url.searchParams.has('include_adult')).toBe(false);
     expect(call?.url.searchParams.has('api_key')).toBe(false);
   });
@@ -269,10 +295,12 @@ describe('limite de débit des lectures lt et catalogue', () => {
   let app: RunningApp;
 
   beforeAll(async () => {
+    process.env.LASTADDON_READ_RATE_LIMIT = '120';
     app = await startApp({ lookupHost: fakeLookup() });
   });
 
   afterAll(async () => {
+    delete process.env.LASTADDON_READ_RATE_LIMIT;
     await app.close();
   });
 

@@ -57,6 +57,8 @@ function apiUrl(baseUrl: string, params: Record<string, string>): string {
   return url.toString();
 }
 
+// TODO (anime, numéro absolu) : essayer aussi « E<absolu> » via canonicalToSearch (src/lt/episodes.ts). ContentRef n'a ni
+// identifiant TMDB ni jeton TMDB : à fournir au pipeline avant de câbler.
 function searchParams(source: TorznabSource, ref: ContentRef): Record<string, string> {
   const params: Record<string, string> = { t: 'movie', imdbid: ref.imdbId.replace(/^tt/i, '') };
   if (ref.type === 'series') {

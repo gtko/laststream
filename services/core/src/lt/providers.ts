@@ -37,6 +37,26 @@ const TMDB_PUBLIC_PARAMS: ReadonlySet<string> = new Set([
   'with_original_language',
   'include_adult',
   'external_source',
+  'with_runtime.gte',
+  'with_runtime.lte',
+  'vote_average.gte',
+  'vote_average.lte',
+  'vote_count.lte',
+  'with_origin_country',
+  'with_type',
+  'with_status',
+  'without_companies',
+  'with_people',
+  'with_cast',
+  'with_crew',
+  'first_air_date_year',
+  'primary_release_year',
+  'year',
+  'timezone',
+  'screened_theatrically',
+  'with_release_type',
+  'release_date.gte',
+  'release_date.lte',
 ]);
 /** Sources d'identifiant externe acceptées par `find` (external_source). */
 const TMDB_EXTERNAL_SOURCES: ReadonlySet<string> = new Set(['imdb_id', 'tvdb_id']);
@@ -258,19 +278,36 @@ async function tvdbV4Series(ctx: LtContext, token: string, id: string): Promise<
   return toTvdbSeries(recordAt(data, 'status').name, seasonNumbers, data.nextAired, data.lastAired);
 }
 
-/** Tous les épisodes de la série (API v3, 100 par page), jusqu'à `links.next` nul. */
-async function tvdbV3Episodes(ctx: LtContext, token: string, id: string): Promise<unknown[]> {
-  const episodes: unknown[] = [];
-  const init = { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } };
-  let page: number | null = 1;
+/**
+ * Lit toutes les pages d'une liste TVDB à partir de `first`, jusqu'à `links.next` nul (numéro de page suivant).
+ * `rows` extrait le tableau d'une page. Plafond : TVDB_V3_MAX_PAGES pages.
+ */
+async function tvdbPages(
+  ctx: LtContext,
+  first: number,
+  url: (page: number) => string,
+  init: RequestInit,
+  rows: (json: unknown) => unknown,
+): Promise<unknown[]> {
+  const out: unknown[] = [];
+  let page: number | null = first;
   for (let read = 0; page !== null; read += 1) {
     if (read >= TVDB_V3_MAX_PAGES) throw new LtError(502, 'tvdb_too_many_pages');
-    const json = await getJson(ctx, `${TVDB_V3_BASE}/series/${id}/episodes?page=${page}`, init);
-    if (isRecord(json) && Array.isArray(json.data)) episodes.push(...json.data);
+    const json = await getJson(ctx, url(page), init);
+    const list = rows(json);
+    if (Array.isArray(list)) out.push(...list);
     const next: unknown = recordAt(json, 'links').next;
     page = typeof next === 'number' && next > page ? next : null;
   }
-  return episodes;
+  return out;
+}
+
+/** Tous les épisodes de la série (API v3, 100 par page), jusqu'à `links.next` nul. */
+async function tvdbV3Episodes(ctx: LtContext, token: string, id: string): Promise<unknown[]> {
+  const init = { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } };
+  return tvdbPages(ctx, 1, (page) => `${TVDB_V3_BASE}/series/${id}/episodes?page=${page}`, init, (json) =>
+    isRecord(json) ? json.data : undefined,
+  );
 }
 
 /**
@@ -314,5 +351,104 @@ export async function tvdbSeries(ctx: LtContext, apiKey: string, id: string, pin
     withTvdbToken(ctx, apiKey, pin, (version, token) =>
       version === 'v4' ? tvdbV4Series(ctx, token, id) : tvdbV3Series(ctx, token, id),
     ),
+  );
+}
+
+/** Langues de texte demandées à TVDB : français, puis anglais en repli. */
+export type TvdbLang = 'fr' | 'en';
+
+/** Épisode de l'ordre de diffusion TVDB. Saison 0 incluse (spéciaux). Champs absents : null. */
+export interface TvdbAiredEpisode {
+  season: number;
+  number: number;
+  name: string | null;
+  overview: string | null;
+  airDate: string | null;
+  runtime: number | null;
+}
+
+/** Codes de langue ISO 639-2 attendus par l'API v4 (chemin « /episodes/default/{lang} »). */
+const TVDB_V4_LANG: Record<TvdbLang, string> = { fr: 'fra', en: 'eng' };
+
+/** Entier positif ou nul, nombre ou chaîne numérique ; sinon null. */
+function intOf(value: unknown): number | null {
+  const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** Texte non vide, sinon null. */
+function nonEmpty(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null;
+}
+
+/** Date AAAA-MM-JJ, sinon null. */
+function airDateOf(value: unknown): string | null {
+  return typeof value === 'string' && AIR_DATE.test(value) ? value : null;
+}
+
+function airedFromV4(raw: unknown): TvdbAiredEpisode | undefined {
+  if (!isRecord(raw)) return undefined;
+  const season = intOf(raw.seasonNumber);
+  const number = intOf(raw.number);
+  if (season === null || number === null || number < 1) return undefined;
+  return {
+    season,
+    number,
+    name: nonEmpty(raw.name),
+    overview: nonEmpty(raw.overview),
+    airDate: airDateOf(raw.aired),
+    runtime: intOf(raw.runtime) || null,
+  };
+}
+
+function airedFromV3(raw: unknown): TvdbAiredEpisode | undefined {
+  if (!isRecord(raw)) return undefined;
+  const season = intOf(raw.airedSeason);
+  const number = intOf(raw.airedEpisodeNumber);
+  if (season === null || number === null || number < 1) return undefined;
+  return {
+    season,
+    number,
+    name: nonEmpty(raw.episodeName),
+    overview: nonEmpty(raw.overview),
+    airDate: airDateOf(raw.firstAired),
+    runtime: null,
+  };
+}
+
+/** Épisodes de l'ordre de diffusion en v4 (langue du chemin) ou v3 (en-tête Accept-Language). */
+async function tvdbAired(ctx: LtContext, token: string, id: string, lang: TvdbLang, version: TvdbVersion): Promise<TvdbAiredEpisode[]> {
+  if (version === 'v4') {
+    const init = { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } };
+    const rows = await tvdbPages(
+      ctx,
+      0,
+      (page) => `${TVDB_V4_BASE}/series/${id}/episodes/default/${TVDB_V4_LANG[lang]}?page=${page}`,
+      init,
+      (json) => recordAt(json, 'data').episodes,
+    );
+    return rows.map(airedFromV4).filter((e): e is TvdbAiredEpisode => e !== undefined);
+  }
+  const init = { headers: { Authorization: 'Bearer ' + token, accept: 'application/json', 'accept-language': lang } };
+  const rows = await tvdbPages(ctx, 1, (page) => `${TVDB_V3_BASE}/series/${id}/episodes?page=${page}`, init, (json) =>
+    isRecord(json) ? json.data : undefined,
+  );
+  return rows.map(airedFromV3).filter((e): e is TvdbAiredEpisode => e !== undefined);
+}
+
+/**
+ * Épisodes de la série dans l'ordre de diffusion (« aired order »), texte dans la langue demandée. Cache partagé
+ * (métadonnées publiques, comme tvdbSeries). API v4 avec la clé (et le PIN), repli sur v3 pour une clé legacy.
+ */
+export async function tvdbAiredEpisodes(
+  ctx: LtContext,
+  apiKey: string,
+  id: string,
+  lang: TvdbLang,
+  pin?: string,
+): Promise<TvdbAiredEpisode[]> {
+  if (!/^\d{1,9}$/.test(id)) throw new LtError(404, 'not_found');
+  return ctx.state.cache.get(`tvdb:aired:${id}:${lang}`, TTL.tvdb, () =>
+    withTvdbToken(ctx, apiKey, pin, (version, token) => tvdbAired(ctx, token, id, lang, version)),
   );
 }

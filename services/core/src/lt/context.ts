@@ -28,6 +28,7 @@ export const TTL = {
   tmdbWatch: 12 * 3600e3, // fournisseurs de streaming
   mdb: 24 * 3600e3, // notes MDBList
   tvdb: 12 * 3600e3, // saisons TVDB
+  episodes: 12 * 3600e3, // structure saisons et épisodes (TMDB, groupes TMDB, TVDB)
   aiRecommend: 30 * 60e3, // recommandations (par charge utile)
   aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
   tvChannels: 12 * 3600e3, // catalogue TV (sources amont)

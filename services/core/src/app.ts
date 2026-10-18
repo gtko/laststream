@@ -59,8 +59,12 @@ function isOpenPath(req: Request): boolean {
 }
 const CONFIG_RATE_LIMIT = 30;
 const CONFIG_RATE_WINDOW_MS = 60_000;
-/** GET lt et catalogues : 120 requêtes par minute et par IP. */
-const READ_RATE_LIMIT = 120;
+/**
+ * GET lt et catalogues, par minute et par IP. Une page d'accueil longue charge des centaines de fiches
+ * (servies depuis le cache partagé) : 1200 par défaut, réglable par LASTADDON_READ_RATE_LIMIT.
+ */
+const readRateLimit = (): number =>
+  Number(process.env.LASTADDON_READ_RATE_LIMIT) > 0 ? Number(process.env.LASTADDON_READ_RATE_LIMIT) : 1200;
 const READ_RATE_WINDOW_MS = 60_000;
 
 /**
@@ -183,7 +187,7 @@ export function createApp(deps: AppDeps): Express {
   app.use(corsMiddleware(allowedOrigins()));
   app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
-  app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(READ_RATE_LIMIT, READ_RATE_WINDOW_MS)));
+  app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
   app.use(express.json({ limit: '64kb' }));
 
   app.get('/health', (_req, res) => {

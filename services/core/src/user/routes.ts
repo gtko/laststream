@@ -21,6 +21,7 @@ import { continueWatching, normalizeProgress } from './progress.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
 import {
   type Account,
+  type FollowType,
   type KidMaxAge,
   type MediaType,
   type ProfileEditableFields,
@@ -34,6 +35,8 @@ import {
   createProfileSchema,
   credentialsSchema,
   deleteAccountSchema,
+  followTypeSchema,
+  followWriteSchema,
   librarySortSchema,
   libraryWriteSchema,
   mediaTypeSchema,
@@ -41,11 +44,14 @@ import {
   passwordChangeSchema,
   pinSchema,
   progressWriteSchema,
+  ratingsQuerySchema,
+  ratingWriteSchema,
   stremioImportSchema,
   titleIdParam,
   tmdbIdParam,
   updateProfileSchema,
   UserApiError,
+  watchedWriteSchema,
 } from './validation.js';
 
 /** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
@@ -449,10 +455,26 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
   router.get('/profiles/:id/continue', (req, res) => {
     const users = db();
     const { profile } = scopeOf(users, req, deps.secret, true);
-    const items = continueWatching(users.latestProgressPerTitle(profile.id), (type, ref, season, episode) =>
+    const hidden = users.hiddenContinue(profile.id);
+    // Un titre masqué ne revient que si sa progression la plus récente est postérieure au masquage.
+    const latest = users.latestProgressPerTitle(profile.id).filter((row) => {
+      const hiddenAt = hidden.get(`${row.type}|${row.titleRef}`);
+      return hiddenAt === undefined || row.updatedAt > hiddenAt;
+    });
+    const items = continueWatching(latest, (type, ref, season, episode) =>
       users.progressEpisode(profile.id, type, ref, season, episode),
     );
     res.json({ items });
+  });
+
+  /** Masque un titre de « continuer à regarder » sans toucher à la progression ni aux vus. Il réapparaît à la prochaine progression. */
+  router.delete('/profiles/:id/continue/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    users.hideContinue(profile.id, type, titleRef(tmdbId, null), nowIso());
+    res.status(204).end();
   });
 
   router.get('/profiles/:id/progress/:type/:tmdbId', (req, res) => {
@@ -462,6 +484,120 @@ export function registerUserRoutes(app: Express, deps: AppDeps): () => void {
     const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
     const items = users.progressForTitle(profile.id, type, `tmdb:${tmdbId}`);
     res.json({ items: items.map(toProgressDto) });
+  });
+
+  /**
+   * Vu / non vu : un film (saison et épisode à 0) ou des épisodes listés. Les épisodes non listés ne sont jamais
+   * touchés ; la saison 0 (spéciaux) n'est écrite que si elle figure explicitement dans `episodes`.
+   */
+  router.put('/profiles/:id/watched', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const body = parseWith(watchedWriteSchema, req.body);
+    users.setWatched({
+      profileId: profile.id,
+      type: body.type,
+      tmdbId: body.tmdbId ?? null,
+      imdbId: body.imdbId ?? null,
+      episodes: body.type === 'movie' ? [{ season: 0, episode: 0 }] : body.episodes,
+      watched: body.watched,
+      updatedAt: nowIso(),
+    });
+    res.status(204).end();
+  });
+
+  /** `{ movie }` pour un film ; `{ episodes }` pour une série (épisodes avec progression, vus ou en cours). */
+  router.get('/profiles/:id/watched/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    const rows = users.progressForTitle(profile.id, type, titleRef(tmdbId, null));
+    if (type === 'movie') {
+      res.json({ movie: rows.some((row) => row.finished) });
+      return;
+    }
+    res.json({
+      episodes: rows.map((row) => ({
+        season: row.season,
+        episode: row.episode,
+        finished: row.finished,
+        positionSec: row.positionSec,
+        durationSec: row.durationSec,
+      })),
+    });
+  });
+
+  // Suivis
+
+  router.get('/profiles/:id/follows', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    res.json({ items: users.listFollows(profile.id) });
+  });
+
+  router.put('/profiles/:id/follows/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: FollowType = parseWith(followTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    const body = parseWith(followWriteSchema, req.body);
+    users.upsertFollow({
+      profileId: profile.id,
+      type,
+      tmdbId,
+      imdbId: body.imdbId ?? null,
+      title: body.title,
+      poster: body.poster ?? null,
+      notify: body.notify,
+      followedAt: nowIso(),
+    });
+    res.status(204).end();
+  });
+
+  router.delete('/profiles/:id/follows/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: FollowType = parseWith(followTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    users.removeFollow(profile.id, type, titleRef(tmdbId, null));
+    res.status(204).end();
+  });
+
+  // Notes sur 5 (demi-étoiles)
+
+  router.get('/profiles/:id/ratings', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const query = parseWith(ratingsQuerySchema, req.query);
+    res.json({ items: users.listRatings(profile.id, query.type) });
+  });
+
+  router.put('/profiles/:id/ratings/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    const body = parseWith(ratingWriteSchema, req.body);
+    users.upsertRating({
+      profileId: profile.id,
+      type,
+      tmdbId,
+      imdbId: body.imdbId ?? null,
+      title: body.title ?? null,
+      rating: body.rating,
+      ratedAt: nowIso(),
+    });
+    res.status(204).end();
+  });
+
+  router.delete('/profiles/:id/ratings/:type/:tmdbId', (req, res) => {
+    const users = db();
+    const { profile } = scopeOf(users, req, deps.secret, true);
+    const type: MediaType = parseWith(mediaTypeSchema, req.params.type);
+    const tmdbId = parseWith(tmdbIdParam, req.params.tmdbId);
+    users.removeRating(profile.id, type, titleRef(tmdbId, null));
+    res.status(204).end();
   });
 
   // Réglages
