@@ -12,6 +12,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { metrics } from '../metrics/index.js';
+import { runtimeEnv } from '../platform/index.js';
 import type { KvCache } from '../platform/types.js';
 import { MAX_BODY_BYTES, readBodyLimited } from './http.js';
 
@@ -705,6 +706,9 @@ export class AllDebridClient {
     form?: URLSearchParams | MultipartBody,
   ): Promise<Record<string, unknown>> {
     if (this.now() < this.backoffUntil) throw new AllDebridError('rate_limited', 'rate limited');
+    // Coupe-circuit : AllDebrid sanctionne les appels venant d'IP de serveurs (Cloudflare). Sur le Worker public,
+    // aucun appel AllDebrid côté serveur tant que LASTADDON_DEBRID_SERVER_SIDE n'est pas explicitement « 1 ».
+    if (serverSideDebridBlocked()) throw new AllDebridError('server_side_disabled', 'AllDebrid désactivé côté serveur');
     const payload = bodyOf(form);
     let res: Response;
     try {
@@ -859,5 +863,14 @@ export class AllDebridClient {
     if (hasValue(entry.error)) throw new AllDebridError(apiErrorCode(entry.error), 'AllDebrid : fichiers indisponibles');
     if (!Array.isArray(entry.files)) throw new AllDebridError('invalid_response', 'AllDebrid : réponse invalide');
     return flattenFiles(entry.files);
+  }
+}
+
+/** Vrai sur un serveur où les appels AllDebrid sont interdits (Worker public : LASTADDON_DEBRID_SERVER_SIDE=0). */
+export function serverSideDebridBlocked(): boolean {
+  try {
+    return runtimeEnv().get('LASTADDON_DEBRID_SERVER_SIDE') === '0';
+  } catch {
+    return false;
   }
 }
