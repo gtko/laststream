@@ -1,3 +1,4 @@
+import { type EnvLike, runtimeEnv } from '../../platform/index.js';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -76,7 +77,7 @@ export function isWebp(data: Buffer): boolean {
   return data.length > 12 && data.toString('latin1', 0, 4) === 'RIFF' && data.toString('latin1', 8, 12) === 'WEBP';
 }
 
-export function ffmpegFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+export function ffmpegFromEnv(env: EnvLike = runtimeEnv().all()): string | null {
   const path = env.LASTADDON_FFMPEG?.trim();
   return path !== undefined && path !== '' && existsSync(path) ? path : null;
 }

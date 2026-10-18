@@ -3,10 +3,11 @@
  * testables avec vi.stubEnv.
  */
 import { resolve } from 'node:path';
+import { runtimeEnv } from '../platform/index.js';
 
 /** LASTADDON_UI_DIR : dossier de l'interface web servie à la racine (chemin absolu), ou undefined si absent ou vide. */
 export function configuredUiDir(): string | undefined {
-  const raw = process.env.LASTADDON_UI_DIR?.trim();
+  const raw = runtimeEnv().get('LASTADDON_UI_DIR')?.trim();
   return raw ? resolve(raw) : undefined;
 }
 
@@ -40,18 +41,18 @@ export function parseStreamingServer(raw: string): string {
 
 /** LASTADDON_STREAMING_SERVER validée, ou l'origine par défaut. Lève si la valeur est invalide. */
 export function configuredStreamingServer(): string {
-  const raw = process.env.LASTADDON_STREAMING_SERVER?.trim();
+  const raw = runtimeEnv().get('LASTADDON_STREAMING_SERVER')?.trim();
   return parseStreamingServer(raw ? raw : DEFAULT_STREAMING_SERVER);
 }
 
 /** LASTADDON_ALLOW_SIGNUP=1 : inscription ouverte (sinon seul le premier compte peut être créé sur /user/register). */
 export function isSignupAllowed(): boolean {
-  return process.env.LASTADDON_ALLOW_SIGNUP === '1';
+  return runtimeEnv().get('LASTADDON_ALLOW_SIGNUP') === '1';
 }
 
 /** LASTADDON_BOOTSTRAP_TOKEN : exigé (en-tête X-Bootstrap-Token) pour créer le premier compte. Absent ou vide : non exigé. */
 export function bootstrapToken(): string | undefined {
-  const raw = process.env.LASTADDON_BOOTSTRAP_TOKEN?.trim();
+  const raw = runtimeEnv().get('LASTADDON_BOOTSTRAP_TOKEN')?.trim();
   return raw ? raw : undefined;
 }
 
@@ -60,12 +61,12 @@ export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = ['http://localhost:808
 
 /** LASTADDON_PUBLIC=1 : mode public (SSRF : adresses privées refusées pour les URL saisies). */
 export function isPublicMode(): boolean {
-  return process.env.LASTADDON_PUBLIC === '1';
+  return runtimeEnv().get('LASTADDON_PUBLIC') === '1';
 }
 
 /** LASTADDON_TRUST_PROXY=1 : X-Forwarded-Proto et X-Forwarded-Host sont utilisés pour les liens de lecture. */
 export function isTrustProxy(): boolean {
-  return process.env.LASTADDON_TRUST_PROXY === '1';
+  return runtimeEnv().get('LASTADDON_TRUST_PROXY') === '1';
 }
 
 /**
@@ -87,7 +88,7 @@ export function parsePublicUrl(raw: string): string {
 
 /** LASTADDON_PUBLIC_URL validée, ou undefined si absente ou vide. Lève si la valeur est invalide. */
 export function configuredPublicUrl(): string | undefined {
-  const raw = process.env.LASTADDON_PUBLIC_URL?.trim();
+  const raw = runtimeEnv().get('LASTADDON_PUBLIC_URL')?.trim();
   return raw ? parsePublicUrl(raw) : undefined;
 }
 
@@ -103,7 +104,7 @@ export function assertStartupEnv(): void {
 
 /** Origines autorisées pour CORS sur /config/* : liste séparée par des virgules, ou valeurs par défaut. */
 export function allowedOrigins(): string[] {
-  const raw = process.env.LASTADDON_ALLOWED_ORIGINS?.trim();
+  const raw = runtimeEnv().get('LASTADDON_ALLOWED_ORIGINS')?.trim();
   if (!raw) return [...DEFAULT_ALLOWED_ORIGINS];
   return raw
     .split(',')

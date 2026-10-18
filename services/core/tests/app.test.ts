@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { decodeConfig } from '../src/config/codec.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'app-test-secret';
 let server: Server;
@@ -10,7 +11,7 @@ let baseUrl: string;
 
 beforeAll(async () => {
   const app = createApp({ secret: SECRET, allowPlain: false });
-  server = app.listen(0);
+  server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${port}`;

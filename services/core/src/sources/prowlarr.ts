@@ -1,3 +1,4 @@
+import { runtimeEnv } from '../platform/index.js';
 import { createHash } from 'node:crypto';
 import type { ContentRef, RawStream } from '../types.js';
 import { defaultIndexerHealth, type IndexerHealth } from './indexer-health.js';
@@ -514,7 +515,7 @@ async function requestOnce(
       const body = parseJson(res.text);
       if (!Array.isArray(body)) throw new SourceError('réponse inattendue (liste de résultats attendue)');
       health.record(source.name, indexer.id, { ok: true, latencyMs: Date.now() - started });
-      if (process.env.LASTADDON_DEBUG === '1') {
+      if (runtimeEnv().get('LASTADDON_DEBUG') === '1') {
         console.debug(`[prowlarr] ${indexer.name} ${Date.now() - started} ms n=${body.length} q=${params.get('query') ?? ''}${params.has('imdbId') ? ' (id)' : ''}`);
       }
       return body.filter(isRecord).flatMap((raw) => {

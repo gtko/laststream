@@ -690,7 +690,8 @@ Hors smoke test (ci-dessous), les tests n'effectuent aucun appel réseau : les s
 | Fichier | Couverture |
 | --- | --- |
 | `tests/config.test.ts`, `tests/config-v2.test.ts`, `tests/config-presets.test.ts`, `tests/config-env.test.ts` | Schéma, défauts, préréglages, chiffrement, variables d'environnement |
-| `tests/app.test.ts`, `tests/app-cors.test.ts` | Endpoints HTTP, validation d'entrée, CORS |
+| `tests/app.test.ts`, `tests/app-cors.test.ts`, `tests/http-layer.test.ts` | Endpoints HTTP, validation d'entrée, CORS, socle Hono (corps JSON, ETag, 404, IP du client) |
+| `tests/platform.test.ts` | Plateforme Node : variables d'exécution, cache KV, planificateur, fichiers de l'interface |
 | `tests/parse-*.test.ts` | Parseurs (vidéo, taille, seeders, langues) et intégration `parseRelease` / `parseRawStream` |
 | `tests/sources-*.test.ts`, `tests/alldebrid.test.ts`, `tests/routes-indexers.test.ts` | Sources amont, Torznab, Prowlarr, Jackett, client AllDebrid, `POST /config/indexers` |
 | `tests/engine-*.test.ts`, `tests/pipeline-v2.test.ts` | Filtre, filtres v2, déduplication, groupement des copies, classement, formatage, gabarits, sonde, hébergeurs, Cinemeta, TMDB, pipeline |
@@ -723,12 +724,14 @@ Le test n'affiche ni la clé ni les réponses brutes. Il ajoute un magnet au com
 
 ```
 src/
-  server.ts          point d'entrée (démarre si exécuté directement)
+  server.ts          point d'entrée Node (installe la plateforme Node, sert createApp() avec @hono/node-server)
   bundle.ts          point d'entrée du bundle mono-fichier (npm run bundle)
   cli.ts             options de ligne de commande (--port, --ui, --data)
   ui.ts              interface web statique, repli de navigation, origines du même site
   streaming-proxy.ts relais same-origin /_ss/* vers le serveur de streaming local
-  app.ts             createApp() : routes, CORS, limites de débit, gestion d'erreurs
+  app.ts             createApp() : application Hono (routes, CORS, limites de débit, gestion d'erreurs)
+  http/              socle Hono commun : types d'application, corps JSON (64 ko), ETag, 404/500, IP du client
+  platform/          interfaces d'hôte : RuntimeEnv, KvCache, HttpClient, Scheduler, Capabilities, UiAssets (+ platform/node/)
   deps.ts            dépendances injectées (secret, allowPlain, fetch, client AllDebrid)
   pipeline.ts        getStreams() : orchestration du pipeline (métadonnées, collecte, groupement, cache, sonde, formatage)
   types.ts           types partagés (RawStream, ParsedRelease, StremioStream, ContentRef)
@@ -738,7 +741,7 @@ src/
     schema.ts        schéma zod, défauts, parseConfig, JSON Schema
     presets.ts       préréglages Essentiel, Zen, Cinéphile, Nomade
     codec.ts         chiffrement AES-256-GCM de la configuration
-    secret.ts        lecture de LASTADDON_SECRET et du .env
+    secret.ts        LASTADDON_SECRET (via RuntimeEnv) ; la lecture et la création du .env sont dans platform/node/secret-file.ts
     runtime-env.ts   variables d'environnement (mode public, proxy, origines)
   parse/
     index.ts         parseRelease, parseRawStream

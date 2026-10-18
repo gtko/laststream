@@ -15,8 +15,8 @@
  * la sonde échoue (null) plutôt que de tout télécharger.
  */
 
-import type { Agent } from 'undici';
-import { type FetchFn, createPinnedAgent, fetchBytes } from '../sources/http.js';
+import { platform, type OutboundDispatcher } from '../platform/index.js';
+import { type FetchFn, fetchBytes } from '../sources/http.js';
 import { type MkvProbe, isEbml, parseMkv } from './ebml.js';
 import { type Mp4Info, isMp4Head, parseMoov, scanTopLevelBoxes } from './mp4.js';
 import {
@@ -54,10 +54,10 @@ const DEFAULT_TAIL_BYTES = 2_000_000;
 const DEFAULT_TIMEOUT_MS = 4000;
 
 /** Agent au DNS épinglé, créé à la première sonde. */
-let agent: Agent | undefined;
+let agent: OutboundDispatcher | undefined;
 
-function probeDispatcher(): Agent {
-  agent ??= createPinnedAgent();
+function probeDispatcher(): OutboundDispatcher | undefined {
+  agent ??= platform().http.pinnedDispatcher();
   return agent;
 }
 

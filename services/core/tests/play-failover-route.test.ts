@@ -1,9 +1,9 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import express from 'express';
 import { describe, expect, it } from 'vitest';
 import { encodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
+import { newApp } from '../src/http/app-env.js';
 import { HostHealth } from '../src/play/hosts.js';
 import { PackStore } from '../src/play/packs.js';
 import type { PlayState } from '../src/play/state.js';
@@ -11,6 +11,7 @@ import { type EncodeCopiesOptions, type PlayCopy, encodeCopiesToken } from '../s
 import { registerPlayRoutes } from '../src/routes/play.js';
 import { AllDebridClient, AllDebridError, type ResolvedLink } from '../src/sources/alldebrid.js';
 import { TorrentCache } from '../src/torrent/fetch-torrent.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'play-failover-route-secret';
 const API_KEY = 'AD-FAILOVER-KEY-SECRETE-456';
@@ -102,9 +103,9 @@ const depsWith = (factory: NonNullable<AppDeps['alldebridFactory']>): AppDeps =>
 
 /** Lance l'application minimale (la seule route /play) le temps de `run`, puis la ferme. */
 async function withServer<T>(deps: AppDeps, state: PlayState, run: (baseUrl: string) => Promise<T>): Promise<T> {
-  const app = express();
+  const app = newApp();
   registerPlayRoutes(app, deps, state);
-  const server: Server = app.listen(0);
+  const server: Server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   try {

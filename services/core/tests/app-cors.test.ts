@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp, createRateLimiter } from '../src/app.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'cors-test-secret-with-32-chars-min!';
 const ALLOWED = 'https://ui.example.test';
@@ -9,7 +10,7 @@ const servers: Server[] = [];
 
 async function listen(env: Record<string, string>, build: () => ReturnType<typeof createApp>): Promise<string> {
   for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
-  const server = build().listen(0);
+  const server = serveApp(build());
   servers.push(server);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   vi.unstubAllEnvs();

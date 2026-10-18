@@ -1,11 +1,10 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createPinnedAgent, pinnedLookup } from '../src/platform/node/http-client.js';
 import {
   checkOutboundUrl,
-  createPinnedAgent,
   fetchBytes,
-  pinnedLookup,
   SourceError,
   UnsafeTargetError,
   type FetchFn,

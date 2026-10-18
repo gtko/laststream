@@ -1,5 +1,9 @@
-import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import type { ErrorHandler } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppDeps } from '../deps.js';
+import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
+import { sendBody, sendJson } from '../http/respond.js';
+import { platform, runtimeEnv } from '../platform/index.js';
 import { openUserDb, userDbPath } from '../user/db.js';
 import { SkipSegmentStore } from '../user/skip-segments.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
@@ -11,7 +15,7 @@ import { createAutoDetector, MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateM
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
 import { issuedUrls } from '../play/issued.js';
-import { ThumbService } from './thumbs/index.js';
+import { type FrameResult, type Registration, ThumbService } from './thumbs/index.js';
 import { signRangeToken } from './thumbs/range-token.js';
 import { resolveThumbSource } from './thumbs/source.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
@@ -27,25 +31,26 @@ const THUMB_WAIT_MS = 9000;
 /** Secret et base du relais de plages : option explicite (`null` désactive), sinon variables d'environnement. */
 function rangeProxyOf(deps: AppDeps): { secret: string; base: string } | null {
   if (deps.rangeProxy !== undefined) return deps.rangeProxy;
-  const secret = process.env.LASTADDON_RANGE_SECRET?.trim() ?? '';
-  const base = (process.env.LASTADDON_RANGE_BASE ?? '').trim().replace(/\/+$/, '');
+  const env = runtimeEnv();
+  const secret = env.get('LASTADDON_RANGE_SECRET')?.trim() ?? '';
+  const base = (env.get('LASTADDON_RANGE_BASE') ?? '').trim().replace(/\/+$/, '');
   return secret !== '' && /^https:\/\//.test(base) ? { secret, base } : null;
 }
 
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
-export function ltErrorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
-  res.setHeader('Cache-Control', NO_STORE);
+export const ltErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
+  c.header('Cache-Control', NO_STORE);
   if (err instanceof LtError) {
-    res.status(err.status).json(err.service === undefined ? { error: err.code } : { error: err.code, service: err.service });
-    return;
+    const status = err.status as ContentfulStatusCode;
+    return sendJson(c, err.service === undefined ? { error: err.code } : { error: err.code, service: err.service }, status);
   }
   console.error('[lt] erreur interne', err instanceof Error ? err.name : 'inconnue');
-  res.status(500).json({ error: 'internal' });
-}
+  return sendJson(c, { error: 'internal' }, 500);
+};
 
 /** Marque une réponse GET réussie comme cacheable. À appeler après l'obtention du corps, jamais avant. */
-function cacheable(res: Response): void {
-  res.setHeader('Cache-Control', PRIVATE_CACHE);
+function cacheable(c: Ctx): void {
+  c.header('Cache-Control', PRIVATE_CACHE);
 }
 
 /** Chaîne et ses solutions de repli, chacune annotée de sa signature pour la configuration `scope` (le proxy HLS la vérifie). */
@@ -62,40 +67,51 @@ function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedC
   };
 }
 
+/** Service de miniatures : le vrai (ffmpeg local) ou, sans ffmpeg sur cette plateforme, un service désactivé. */
+type ThumbPort = Pick<ThumbService, 'enabled' | 'register' | 'frame' | 'close'>;
+
+const DISABLED_THUMBS: ThumbPort = {
+  enabled: false,
+  register: (): Promise<Registration | null> => Promise.resolve(null),
+  frame: (): Promise<FrameResult> => Promise.resolve({ status: 'unknown' }),
+  close: () => Promise.resolve(),
+};
+
 /**
  * Routes publiques par configuration, montées sous `/:config/lt/*` (mêmes chemins que le prototype sans `/api`)
  * et catalogues Stremio sous `/:config/catalog/*`.
  */
-export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
+export function registerLtRoutes(app: App, deps: AppDeps): () => void {
   const ctx: LtContext = createLtContext(deps);
+  const capabilities = platform().capabilities;
   // Base utilisateur ouverte au premier besoin (store communautaire des segments de saut).
   let store: SkipSegmentStore | undefined;
   const openStore = (): SkipSegmentStore => (store ??= new SkipSegmentStore(openUserDb(deps.userDbPath ?? userDbPath())));
   // Détection automatique locale (chapitres, empreinte audio) : file en arrière-plan, jamais bloquante pour le GET.
   const detector = createAutoDetector(openStore, {
-    disabled: process.env.LASTADDON_SKIP_DETECT === '0',
+    disabled: runtimeEnv().get('LASTADDON_SKIP_DETECT') === '0' || !capabilities.skipDetect,
     ...deps.skipDetect,
   });
   const community = createSkipCommunity(ctx, openStore, detector);
-  // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide.
-  const thumbs = new ThumbService(deps.thumbs);
+  // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide, ou si la plateforme n'a pas ffmpeg.
+  const thumbs: ThumbPort = capabilities.thumbs ? new ThumbService(deps.thumbs) : DISABLED_THUMBS;
   // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
   const range = rangeProxyOf(deps);
   const rangeIssued = deps.thumbs?.issued ?? issuedUrls;
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
-  const tokenOf = (req: Request): string => String((req.params as Record<string, unknown>).config);
-  const configOf = (req: Request) => decodeFor(deps, tokenOf(req));
+  const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';
+  const configOf = (c: Ctx) => decodeFor(deps, tokenOf(c));
 
-  const lt = express.Router({ mergeParams: true });
-  lt.use((_req, res, next) => {
-    res.setHeader('Cache-Control', NO_STORE);
-    next();
+  const lt = newApp();
+  lt.use('*', async (c, next) => {
+    c.header('Cache-Control', NO_STORE);
+    await next();
   });
 
-  lt.get('/health', (req, res) => {
-    const { services } = configOf(req);
-    cacheable(res);
-    res.json({
+  lt.get('/health', (c) => {
+    const { services } = configOf(c);
+    cacheable(c);
+    return sendJson(c, {
       ok: true,
       configured: {
         tmdb: services.tmdbToken !== undefined,
@@ -109,65 +125,65 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
   });
 
   // TMDB : chemin en liste blanche (validé dans tmdbGet), paramètres en liste blanche (tmdbPublicParams).
-  lt.get(/^\/tmdb\/(.+)$/, async (req, res) => {
-    const token = serviceKey(configOf(req), 'tmdb');
-    const body = await tmdbGet(ctx, token, String(req.params[0] ?? ''), tmdbPublicParams(queryOf(req)));
-    cacheable(res);
-    res.json(body);
+  lt.get('/tmdb/:rest{.+}', async (c) => {
+    const token = serviceKey(configOf(c), 'tmdb');
+    const body = await tmdbGet(ctx, token, c.req.param('rest'), tmdbPublicParams(queryOf(c)));
+    cacheable(c);
+    return sendJson(c, body);
   });
 
-  lt.get('/mdblist/:type/:id', async (req, res) => {
-    const apiKey = serviceKey(configOf(req), 'mdblist');
-    const body = await mdblistRatings(ctx, apiKey, req.params.type, req.params.id);
-    cacheable(res);
-    res.json(body);
+  lt.get('/mdblist/:type/:id', async (c) => {
+    const apiKey = serviceKey(configOf(c), 'mdblist');
+    const body = await mdblistRatings(ctx, apiKey, c.req.param('type'), c.req.param('id'));
+    cacheable(c);
+    return sendJson(c, body);
   });
 
-  lt.get('/tvdb/series/:id', async (req, res) => {
-    const config = configOf(req);
+  lt.get('/tvdb/series/:id', async (c) => {
+    const config = configOf(c);
     const apiKey = serviceKey(config, 'tvdb');
-    const body = await tvdbSeries(ctx, apiKey, req.params.id, config.services.tvdbPin).catch((err: unknown): never => {
+    const body = await tvdbSeries(ctx, apiKey, c.req.param('id'), config.services.tvdbPin).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
       console.warn(`[lt][tvdb] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'tvdb_unavailable');
     });
-    cacheable(res);
-    res.json(body);
+    cacheable(c);
+    return sendJson(c, body);
   });
 
   // Saisons et épisodes canoniques d'une série (TVDB, groupe TMDB ou TMDB). Langue : fr-FR par défaut.
-  lt.get('/series/:tmdbId/episodes', async (req, res) => {
-    const config = configOf(req);
+  lt.get('/series/:tmdbId/episodes', async (c) => {
+    const config = configOf(c);
     const body = await seriesEpisodes(
       ctx,
       { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
-      req.params.tmdbId,
-      queryOf(req).language,
+      c.req.param('tmdbId'),
+      queryOf(c).language,
     );
-    cacheable(res);
-    res.json(body);
+    cacheable(c);
+    return sendJson(c, body);
   });
 
   // Segments de saut (intro, reprise, générique) : services externes, puis communauté, puis déduction de saison.
   // Cible validée ; clés IntroDB, SkipDB et Anime Skip facultatives.
-  lt.get('/skip/:type/:imdbId/:season/:episode', async (req, res) => {
-    const config = configOf(req);
-    const target = parseSkipTarget(req.params.type, req.params.imdbId, req.params.season, req.params.episode);
+  lt.get('/skip/:type/:imdbId/:season/:episode', async (c) => {
+    const config = configOf(c);
+    const target = parseSkipTarget(c.req.param('type'), c.req.param('imdbId'), c.req.param('season'), c.req.param('episode'));
     const body = await community.resolve(config.services, target).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
       console.warn(`[lt][skip] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
       throw new LtError(503, 'skip_unavailable');
     });
     // Une détection en cours change la réponse bientôt : pas de cache.
-    if (body.analyzing !== true) cacheable(res);
-    res.json(body);
+    if (body.analyzing !== true) cacheable(c);
+    return sendJson(c, body);
   });
 
   // Le lecteur rapporte l'URL réellement lue pour un épisode : la détection locale l'analyse en arrière-plan.
   // Corps : { type, imdbId, season, episode, mediaUrl, duration }. L'URL n'est jamais journalisée ni stockée.
-  lt.post('/skip/analyze', async (req, res) => {
-    configOf(req);
-    const body = bodyOf(req);
+  lt.post('/skip/analyze', async (c) => {
+    configOf(c);
+    const body = bodyOf(c);
     const { type, imdbId, season, episode, mediaUrl, duration } = body;
     const invalid = (): never => {
       throw new LtError(400, 'invalid_analyze');
@@ -184,142 +200,129 @@ export function registerLtRoutes(app: Express, deps: AppDeps): () => void {
     const url = validateMediaUrl(mediaUrl, deps.skipDetect?.allowLocal);
     if (url === null) return invalid();
     const result = await detector.report({ target, url, duration });
-    res.status(202).json({ queued: result.queued, ...(result.reason === undefined ? {} : { reason: result.reason }) });
+    return sendJson(c, { queued: result.queued, ...(result.reason === undefined ? {} : { reason: result.reason }) }, 202);
   });
 
   // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clés IntroDB et SkipDB facultatives.
-  lt.post('/skip/submit', async (req, res) => {
-    res.json(await community.submit(configOf(req).services, bodyOf(req)));
-  });
+  lt.post('/skip/submit', async (c) => sendJson(c, await community.submit(configOf(c).services, bodyOf(c))));
 
   // Miniatures de la barre : on enregistre une source autorisée (serveur de streaming local ou lien émis par lastAddon),
   // puis on lit les images par tranche de 30 s. 501 si ffmpeg est absent ; 400 si la source est refusée.
-  lt.post('/thumbs', async (req, res) => {
-    configOf(req);
+  lt.post('/thumbs', async (c) => {
+    configOf(c);
     if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
-    const body = bodyOf(req);
+    const body = bodyOf(c);
     const registration = await thumbs.register(body.url, body.duration, body.start);
     if (registration === null) throw new LtError(400, 'invalid_source');
-    res.json(registration);
+    return sendJson(c, registration);
   });
 
   // Source de miniatures décodées côté client (WebCodecs) : même liste d'URL autorisées que /thumbs, mais seules les
   // adresses https publiques (liens débridés) sont acceptées ; la réponse porte le lien lu, un jeton de relais et la base du Worker.
-  lt.post('/range-source', async (req, res) => {
-    configOf(req);
+  lt.post('/range-source', async (c) => {
+    configOf(c);
     if (range === null) throw new LtError(501, 'range_disabled');
-    const body = bodyOf(req);
+    const body = bodyOf(c);
     const source = resolveThumbSource(body.url, rangeIssued, deps.thumbs?.allowLocal);
     if (source === null || source.target.protocol !== 'https:') throw new LtError(400, 'invalid_source');
     const url = source.target.href;
     const { token, exp } = await signRangeToken(range.secret, url);
-    res.json({ url, token, exp, base: range.base });
+    return sendJson(c, { url, token, exp, base: range.base });
   });
 
-  lt.get('/thumbs/:key/:index.webp', async (req, res) => {
-    configOf(req);
+  lt.get('/thumbs/:key/:indexwebp{[^/]+\\.webp}', async (c) => {
+    configOf(c);
     if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
-    const key = String(req.params.key);
-    const raw = String(req.params.index);
+    const key = c.req.param('key');
+    const raw = c.req.param('indexwebp').replace(/\.webp$/, '');
     if (!/^[0-9a-f]{40}$/.test(key) || !/^\d{1,4}$/.test(raw)) throw new LtError(404, 'not_found');
     const frame = await thumbs.frame(key, Number(raw), THUMB_WAIT_MS);
     if (frame.status === 'unknown') throw new LtError(404, 'unknown_source');
     if (frame.status === 'missing') throw new LtError(404, 'not_found');
-    if (frame.status === 'pending') {
-      res.status(202).json({ pending: true });
-      return;
-    }
-    res.setHeader('Content-Type', 'image/webp');
-    res.setHeader('Cache-Control', 'private, max-age=86400');
-    res.send(frame.data);
+    if (frame.status === 'pending') return sendJson(c, { pending: true }, 202);
+    c.header('Cache-Control', 'private, max-age=86400');
+    return sendBody(c, frame.data, 200, 'image/webp');
   });
 
-  lt.post('/recommend', async (req, res) => {
-    res.json(await recommend(ctx, configOf(req), bodyOf(req)));
-  });
+  lt.post('/recommend', async (c) => sendJson(c, await recommend(ctx, configOf(c), bodyOf(c))));
 
-  lt.post('/why', async (req, res) => {
-    res.json(await why(ctx, configOf(req), bodyOf(req)));
-  });
+  lt.post('/why', async (c) => sendJson(c, await why(ctx, configOf(c), bodyOf(c))));
 
-  lt.post('/person-why', async (req, res) => {
-    res.json(await personWhy(ctx, configOf(req), bodyOf(req)));
-  });
+  lt.post('/person-why', async (c) => sendJson(c, await personWhy(ctx, configOf(c), bodyOf(c))));
 
   // TV : valide la configuration de l'URL ; aucune clé de service requise.
   // Filtres : country, language, category, source, q. Pagination : page, limit (sans les deux : tout le catalogue).
   // Sans limit ni page : tableau. Sinon : enveloppe { total, page, limit, channels }.
-  lt.get('/tv/channels', async (req, res) => {
-    configOf(req);
-    const scope = tokenOf(req);
-    const query = parseTvQuery(queryOf(req));
+  lt.get('/tv/channels', async (c) => {
+    configOf(c);
+    const scope = tokenOf(c);
+    const query = parseTvQuery(queryOf(c));
     const page = await tvChannels(ctx, query);
     const channels = page.items.map((channel) => signChannel(ctx, scope, channel));
-    cacheable(res);
-    if (query.limit === undefined) {
-      res.json(channels);
-      return;
-    }
-    res.json({ total: page.total, page: query.page ?? 1, limit: query.limit, channels });
+    cacheable(c);
+    if (query.limit === undefined) return sendJson(c, channels);
+    return sendJson(c, { total: page.total, page: query.page ?? 1, limit: query.limit, channels });
   });
 
-  lt.get('/tv/facets', async (req, res) => {
-    configOf(req);
+  lt.get('/tv/facets', async (c) => {
+    configOf(c);
     const body = await tvFacets(ctx);
-    cacheable(res);
-    res.json(body);
+    cacheable(c);
+    return sendJson(c, body);
   });
 
-  lt.get('/tv/epg', async (req, res) => {
-    configOf(req);
-    const body = await tvEpg(ctx, queryOf(req));
-    cacheable(res);
-    res.json(body);
+  lt.get('/tv/epg', async (c) => {
+    configOf(c);
+    const body = await tvEpg(ctx, queryOf(c));
+    cacheable(c);
+    return sendJson(c, body);
   });
 
-  lt.get('/tv/hls', async (req, res) => {
-    configOf(req);
-    const query = queryOf(req);
-    const text = await tvHls(ctx, tokenOf(req), query.u ?? null, query.s ?? null);
+  lt.get('/tv/hls', async (c) => {
+    configOf(c);
+    if (!capabilities.tvHls) throw new LtError(501, 'tv_hls_disabled');
+    const query = queryOf(c);
+    const text = await tvHls(ctx, tokenOf(c), query.u ?? null, query.s ?? null);
     // Playlist en direct : elle change à chaque segment, le lecteur doit la relire sans cache (no-store, cf. fef31bf).
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.send(text);
+    return sendBody(c, text, 200, 'application/vnd.apple.mpegurl; charset=utf-8');
   });
 
-  lt.get('/tv/stats', async (req, res) => {
-    configOf(req);
+  lt.get('/tv/stats', async (c) => {
+    configOf(c);
     const body = await tvStats(ctx);
-    cacheable(res);
-    res.json(body);
+    cacheable(c);
+    return sendJson(c, body);
   });
 
-  lt.post('/tv/import', async (req, res) => {
-    configOf(req);
-    const imported = await tvImport(ctx, bodyOf(req));
-    res.json({ count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(req), channel)) });
+  lt.post('/tv/import', async (c) => {
+    configOf(c);
+    const imported = await tvImport(ctx, bodyOf(c));
+    return sendJson(c, { count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(c), channel)) });
   });
 
-  lt.use((_req, _res, next) => next(new LtError(404, 'not_found')));
-  lt.use(ltErrorHandler);
-  app.use('/:config/lt', lt);
+  lt.all('*', () => {
+    throw new LtError(404, 'not_found');
+  });
+  lt.onError(ltErrorHandler);
+  app.route('/:config/lt', lt);
 
-  const catalog = express.Router({ mergeParams: true });
-  catalog.use((_req, res, next) => {
-    res.setHeader('Cache-Control', NO_STORE);
-    next();
+  const catalog = newApp();
+  catalog.use('*', async (c, next) => {
+    c.header('Cache-Control', NO_STORE);
+    await next();
   });
 
-  const sendCatalog = async (req: Request, res: Response, extra: string | undefined): Promise<void> => {
-    const token = serviceKey(configOf(req), 'tmdb');
-    const def = findCatalog(String(req.params.type), String(req.params.id));
+  const sendCatalog = async (c: Ctx, extra: string | undefined): Promise<Response> => {
+    const token = serviceKey(configOf(c), 'tmdb');
+    const def = findCatalog(c.req.param('type') ?? '', (c.req.param('idjson') ?? '').replace(/\.json$/, ''));
     const metas = def === undefined ? [] : await catalogMetas(ctx, token, def, parseSkip(extra));
-    cacheable(res);
-    res.json({ metas });
+    cacheable(c);
+    return sendJson(c, { metas });
   };
-  catalog.get('/:type/:id.json', (req, res) => sendCatalog(req, res, undefined));
-  catalog.get('/:type/:id/:extra.json', (req, res) => sendCatalog(req, res, req.params.extra));
-  catalog.use(ltErrorHandler);
-  app.use('/:config/catalog', catalog);
+  catalog.get('/:type/:idjson{[^/]+\\.json}', (c) => sendCatalog(c, undefined));
+  catalog.get('/:type/:idjson/:extrajson{[^/]+\\.json}', (c) => sendCatalog(c, c.req.param('extrajson').replace(/\.json$/, '')));
+  catalog.onError(ltErrorHandler);
+  app.route('/:config/catalog', catalog);
   return () => {
     void detector.close();
     void thumbs.close();

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
 import { applyPreset, PRESETS, presetCatalog } from '../src/config/presets.js';
 import { type Config, ConfigValidationError, PRESET_VALUES, parseConfig } from '../src/config/schema.js';
+import { serveApp } from './serve.js';
 
 const DEBRID = { service: 'alldebrid', apiKey: 'AD-KEY' } as const;
 
@@ -196,7 +197,7 @@ describe('préréglages : catalogue et GET /config/schema', () => {
 
     beforeAll(async () => {
       const app = createApp({ secret: SECRET, allowPlain: false });
-      server = app.listen(0);
+      server = serveApp(app);
       await new Promise<void>((resolve) => server.once('listening', () => resolve()));
       const { port } = server.address() as AddressInfo;
       baseUrl = `http://127.0.0.1:${port}`;

@@ -1,4 +1,4 @@
-import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import type { MiddlewareHandler } from 'hono';
 import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
@@ -6,8 +6,14 @@ import { edgeTrust } from './config/edge.js';
 import { allowedOrigins, configuredStreamingServer, isTrustProxy } from './config/runtime-env.js';
 import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
+import { type App, type AppEnv, type Ctx, newApp } from './http/app-env.js';
+import { clientAddress } from './http/client-ip.js';
+import { errorHandler, etag, notFound } from './http/common.js';
+import { DEFAULT_JSON_LIMIT, jsonBody } from './http/json-body.js';
+import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { registerLtRoutes } from './lt/router.js';
+import { platform, runtimeEnv } from './platform/index.js';
 import { localProwlarrStatusOf } from './sources/local-prowlarr.js';
 import { registerIndexerRoutes } from './routes/indexers.js';
 import { registerPlayRoutes } from './routes/play.js';
@@ -56,11 +62,12 @@ const USER_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
 const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-Token';
 
 /** Routes ouvertes : manifest, stream, lt et catalogues en GET (préflight GET inclus). */
-function isOpenPath(req: Request): boolean {
-  if (OPEN_CORS_PATHS.some((pattern) => pattern.test(req.path))) return true;
-  if (!OPEN_LT_PATHS.some((pattern) => pattern.test(req.path))) return false;
-  if (req.method === 'GET') return true;
-  return req.method === 'OPTIONS' && req.get('access-control-request-method') === 'GET';
+function isOpenPath(c: Ctx): boolean {
+  const path = c.req.path;
+  if (OPEN_CORS_PATHS.some((pattern) => pattern.test(path))) return true;
+  if (!OPEN_LT_PATHS.some((pattern) => pattern.test(path))) return false;
+  if (c.req.method === 'GET') return true;
+  return c.req.method === 'OPTIONS' && c.req.header('access-control-request-method') === 'GET';
 }
 const CONFIG_RATE_LIMIT = 30;
 const CONFIG_RATE_WINDOW_MS = 60_000;
@@ -68,70 +75,57 @@ const CONFIG_RATE_WINDOW_MS = 60_000;
  * GET lt et catalogues, par minute et par IP. Une page d'accueil longue charge des centaines de fiches
  * (servies depuis le cache partagé) : 1200 par défaut, réglable par LASTADDON_READ_RATE_LIMIT.
  */
-const readRateLimit = (): number =>
-  Number(process.env.LASTADDON_READ_RATE_LIMIT) > 0 ? Number(process.env.LASTADDON_READ_RATE_LIMIT) : 1200;
+const readRateLimit = (): number => {
+  const configured = Number(runtimeEnv().get('LASTADDON_READ_RATE_LIMIT'));
+  return configured > 0 ? configured : 1200;
+};
 const READ_RATE_WINDOW_MS = 60_000;
 
 /**
  * CORS : `*` uniquement sur les routes manifest et stream (GET). Sur /config/*, seule une origine
  * présente dans `origins` reçoit Access-Control-Allow-Origin. Les autres routes n'ont pas d'en-tête CORS.
  */
-function corsMiddleware(origins: readonly string[]) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (isOpenPath(req)) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    } else if (CONFIG_PATH.test(req.path) || LT_WRITE_PATH.test(req.path) || USER_PATH.test(req.path)) {
-      const origin = req.get('origin');
-      res.vary('Origin');
+function corsMiddleware(origins: readonly string[]): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const path = c.req.path;
+    if (isOpenPath(c)) {
+      c.header('Access-Control-Allow-Origin', '*');
+      c.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type');
+    } else if (CONFIG_PATH.test(path) || LT_WRITE_PATH.test(path) || USER_PATH.test(path)) {
+      const origin = c.req.header('origin');
+      c.header('Vary', 'Origin', { append: true });
       if (origin !== undefined && origins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        if (USER_PATH.test(req.path)) {
-          res.setHeader('Access-Control-Allow-Methods', USER_METHODS);
-          res.setHeader('Access-Control-Allow-Headers', USER_HEADERS);
+        c.header('Access-Control-Allow-Origin', origin);
+        if (USER_PATH.test(path)) {
+          c.header('Access-Control-Allow-Methods', USER_METHODS);
+          c.header('Access-Control-Allow-Headers', USER_HEADERS);
         } else {
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+          c.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          c.header('Access-Control-Allow-Headers', 'Content-Type');
         }
       }
     }
-    if (req.method === 'OPTIONS') {
-      res.status(204).end();
-      return;
-    }
-    next();
+    if (c.req.method === 'OPTIONS') return c.body(null, 204);
+    await next();
   };
 }
 
 /** Limite les requêtes qui satisfont `applies` à CONFIG_RATE_LIMIT par minute et par IP (préflights OPTIONS exclus). */
-function rateLimit(applies: (req: Request) => boolean, limiter: ReturnType<typeof createRateLimiter>) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    if (!applies(req) || req.method === 'OPTIONS') {
-      next();
+function rateLimit(applies: (c: Ctx) => boolean, limiter: ReturnType<typeof createRateLimiter>): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (!applies(c) || c.req.method === 'OPTIONS') {
+      await next();
       return;
     }
-    const verdict = limiter(req.ip ?? 'inconnu');
+    const verdict = limiter(c.get('ip') ?? 'inconnu');
     if (!verdict.allowed) {
-      res.setHeader('Retry-After', String(verdict.retryAfterSec));
-      res.setHeader('Cache-Control', 'no-store');
-      res.status(429).json({ error: 'rate_limited' });
-      return;
+      c.header('Retry-After', String(verdict.retryAfterSec));
+      c.header('Cache-Control', 'no-store');
+      return sendJson(c, { error: 'rate_limited' }, 429);
     }
-    next();
+    await next();
   };
-}
-
-/** Erreur du parseur JSON (400) ou payload trop gros (413) : réponse générique, sans contenu. */
-function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
-  res.setHeader('Cache-Control', 'no-store');
-  const status = typeof err === 'object' && err !== null && 'status' in err ? (err as { status: unknown }).status : undefined;
-  if (typeof status === 'number' && status >= 400 && status < 500) {
-    res.status(status).json({ error: 'bad_request' });
-    return;
-  }
-  console.error('Erreur interne', err instanceof Error ? err.name : 'inconnue');
-  res.status(500).json({ error: 'internal_error' });
 }
 
 /**
@@ -176,72 +170,70 @@ function encodeInput(body: unknown, deps: AppDeps): unknown {
 }
 
 /** Fermetures des ressources propres à une application (base des données utilisateur), par application. */
-const closers = new WeakMap<Express, () => void>();
+const closers = new WeakMap<App, () => void>();
 
 /** Libère les ressources d'une application créée par createApp (tests, arrêt propre). */
-export function closeApp(app: Express): void {
+export function closeApp(app: App): void {
   closers.get(app)?.();
   closers.delete(app);
 }
 
-export function createApp(deps: AppDeps): Express {
-  const app = express();
-  app.disable('x-powered-by');
+/**
+ * Application Hono : même table de routes sous Node (@hono/node-server) et sous Workers. Les services dépendants de
+ * l'hôte viennent de la plateforme active (voir platform/).
+ */
+export function createApp(deps: AppDeps): App {
+  const app = newApp();
   // Derrière un reverse proxy de confiance uniquement : le débit se mesure alors sur la vraie IP du client.
-  if (isTrustProxy()) app.set('trust proxy', 1);
+  const trustedHops = isTrustProxy() ? 1 : 0;
+  app.use('*', etag());
+  app.use('*', async (c, next) => {
+    c.set('ip', clientAddress(c, trustedHops));
+    c.set('edge', false);
+    await next();
+  });
   // Relais de confiance authentifié par secret (LASTADDON_EDGE_SECRET) : IP réelle du client, sans faire confiance à un en-tête libre.
-  app.use(edgeTrust());
-  app.use(corsMiddleware([...allowedOrigins(), ...(deps.uiOrigins ?? [])]));
-  app.use(rateLimit((req) => CONFIG_PATH.test(req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
-  app.use(rateLimit((req) => LT_WRITE_PATH.test(req.path) && req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
-  app.use(rateLimit((req) => req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
-  app.use(express.json({ limit: '64kb' }));
+  app.use('*', edgeTrust());
+  app.use('*', corsMiddleware([...allowedOrigins(), ...(deps.uiOrigins ?? [])]));
+  app.use('*', rateLimit((c) => CONFIG_PATH.test(c.req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use('*', rateLimit((c) => LT_WRITE_PATH.test(c.req.path) && c.req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use('*', rateLimit((c) => c.req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(c.req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
+  app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
-  app.get('/health', (_req, res) => {
-    res.json({ ok: true });
-  });
+  app.get('/health', (c) => sendJson(c, { ok: true }));
 
-  app.get('/manifest.json', (_req, res) => {
-    res.json(MANIFEST);
-  });
+  app.get('/manifest.json', (c) => sendJson(c, MANIFEST));
 
-  app.get('/:config/manifest.json', (req, res) => {
-    res.json(manifestFor(deps, req.params.config));
-  });
+  app.get('/:config/manifest.json', (c) => sendJson(c, manifestFor(deps, c.req.param('config'))));
 
-  app.get('/config/schema', async (_req, res) => {
+  app.get('/config/schema', async (c) => {
     const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr);
-    res.json({ ...configJsonSchema(), presets: presetCatalog(), localProwlarr });
+    return sendJson(c, { ...configJsonSchema(), presets: presetCatalog(), localProwlarr });
   });
 
-  app.post('/config/encode', (req, res, next) => {
+  app.post('/config/encode', (c) => {
     try {
-      res.json({ config: encodeConfig(encodeInput(req.body, deps), deps.secret) });
+      return sendJson(c, { config: encodeConfig(encodeInput(c.get('body'), deps), deps.secret) });
     } catch (err) {
       const issues = configIssues(err);
-      if (issues !== undefined) {
-        res.status(400).json({ error: 'invalid_config', issues });
-        return;
-      }
-      next(err);
+      if (issues !== undefined) return sendJson(c, { error: 'invalid_config', issues }, 400);
+      throw err;
     }
   });
 
   // Déchiffre une configuration pour le configurateur : secrets remplacés par un masque, jamais de valeur.
-  app.post('/config/decode', (req, res, next) => {
+  app.post('/config/decode', (c) => {
     try {
-      const encoded = isRecord(req.body) ? req.body.config : undefined;
+      const body = c.get('body');
+      const encoded = isRecord(body) ? body.config : undefined;
       if (typeof encoded !== 'string') throw new ConfigValidationError(['config: chaîne encodée attendue']);
       const config = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
-      res.setHeader('Cache-Control', 'no-store');
-      res.json(maskConfig(config));
+      c.header('Cache-Control', 'no-store');
+      return sendJson(c, maskConfig(config));
     } catch (err) {
       const issues = configIssues(err);
-      if (issues !== undefined) {
-        res.status(400).json({ error: 'invalid_config', issues });
-        return;
-      }
-      next(err);
+      if (issues !== undefined) return sendJson(c, { error: 'invalid_config', issues }, 400);
+      throw err;
     }
   });
 
@@ -256,11 +248,13 @@ export function createApp(deps: AppDeps): Express {
     closeUser();
   });
 
-  if (deps.uiDir !== undefined) {
+  const ui = deps.ui ?? (deps.uiDir === undefined ? undefined : platform().uiAssetsFromDir?.(deps.uiDir));
+  if (ui !== undefined) {
     registerStreamingProxy(app, deps.streamingServer ?? configuredStreamingServer());
-    registerUiRoutes(app, deps.uiDir);
+    registerUiRoutes(app, ui);
   }
 
-  app.use(errorHandler);
+  app.onError(errorHandler);
+  app.notFound(notFound);
   return app;
 }

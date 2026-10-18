@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { Express, Request, Response } from 'express';
+import type { App, Ctx } from '../http/app-env.js';
+import { sendJson, queryParams } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
@@ -39,6 +40,12 @@ export function parseContentRef(type: string, id: string): ContentRef | undefine
   return undefined;
 }
 
+/** Ce que publicBaseUrl lit d'une requête : son URL et ses en-têtes (HonoRequest, ou une requête simulée). */
+export interface RequestLike {
+  url: string;
+  header(name: string): string | undefined;
+}
+
 function firstToken(value: string | undefined): string | undefined {
   return value?.split(',')[0]?.trim() || undefined;
 }
@@ -50,17 +57,17 @@ function firstToken(value: string | undefined): string | undefined {
  * - Sinon : protocole et hôte de la requête. X-Forwarded-Proto / X-Forwarded-Host ne sont lus que si
  *   LASTADDON_TRUST_PROXY=1 ou si la requête vient du relais authentifié (LASTADDON_EDGE_SECRET) ; valeurs validées (protocole http(s), hôte au format nom ou IP avec port).
  */
-export function publicBaseUrl(req: Request): string {
+export function publicBaseUrl(req: RequestLike, edge = false): string {
   const configured = configuredPublicUrl();
   if (configured !== undefined) return configured;
   if (isPublicMode()) {
     throw new Error('LASTADDON_PUBLIC=1 exige LASTADDON_PUBLIC_URL');
   }
 
-  const trustProxy = isTrustProxy() || isEdgeRequest(req);
-  const forwardedProto = trustProxy ? firstToken(req.get('x-forwarded-proto'))?.toLowerCase() : undefined;
-  const scheme = forwardedProto === 'http' || forwardedProto === 'https' ? forwardedProto : req.protocol;
-  const hostCandidates = [trustProxy ? firstToken(req.get('x-forwarded-host')) : undefined, req.get('host')];
+  const trustProxy = isTrustProxy() || edge;
+  const forwardedProto = trustProxy ? firstToken(req.header('x-forwarded-proto'))?.toLowerCase() : undefined;
+  const scheme = forwardedProto === 'http' || forwardedProto === 'https' ? forwardedProto : new URL(req.url).protocol.slice(0, -1);
+  const hostCandidates = [trustProxy ? firstToken(req.header('x-forwarded-host')) : undefined, req.header('host')];
   const host = hostCandidates.find(
     (candidate): candidate is string => candidate !== undefined && HOST_PATTERN.test(candidate),
   );
@@ -73,7 +80,7 @@ const noticeOf = (config: Config): { notice?: string } => (config.debrid === und
  * Route Stremio : GET /:config/stream/:type/:id.json.
  * Configuration invalide : 400 sans détail. Type ou identifiant hors format : liste vide.
  */
-export function registerStreamRoutes(app: Express, deps: AppDeps): void {
+export function registerStreamRoutes(app: App, deps: AppDeps): void {
   // Clients debrid mis en cache par empreinte de clé : le cache de disponibilité survit entre requêtes.
   const clients = new Map<string, DebridClient>();
   // Clients des hébergeurs (liens AllDebrid) : un par clé, construit sur le client debrid de cette clé.
@@ -103,24 +110,23 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
     return hosters;
   };
 
-  /** Configuration de l'URL, ou undefined (réponse 400 déjà envoyée). */
-  const configOf = (req: Request, res: Response): Config | undefined => {
+  /** Configuration de l'URL, ou la réponse 400 à renvoyer. */
+  const configOf = (c: Ctx): Config | Response => {
     try {
-      return decodeConfig(req.params.config as string, deps.secret, { allowPlain: deps.allowPlain });
+      return decodeConfig(c.req.param('config') as string, deps.secret, { allowPlain: deps.allowPlain });
     } catch (err) {
       if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
-        res.status(400).json({ error: 'invalid_config' });
-        return undefined;
+        return sendJson(c, { error: 'invalid_config' }, 400);
       }
       throw err;
     }
   };
 
-  const contextOf = (req: Request, config: Config, wait: PipelineContext['wait']): PipelineContext => {
+  const contextOf = (c: Ctx, config: Config, wait: PipelineContext['wait']): PipelineContext => {
     const apiKey = config.debrid?.apiKey;
     return {
-      playBaseUrl: publicBaseUrl(req),
-      configToken: req.params.config as string,
+      playBaseUrl: publicBaseUrl(c.req, isEdgeRequest(c)),
+      configToken: c.req.param('config') as string,
       secret: deps.secret,
       fetch: deps.fetch,
       debrid: apiKey === undefined ? undefined : debridFor(apiKey),
@@ -138,41 +144,34 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
    * flux arrivés sont rendus avec `pending` (noms des indexeurs en cours) et `laststream.partial`. `?wait=full` attend
    * tous les indexeurs (dans le budget dur).
    */
-  app.get('/:config/stream/:type/:id.json', async (req, res) => {
-    const config = configOf(req, res);
-    if (config === undefined) return;
+  app.get('/:config/stream/:type/:idjson{[^/]+\\.json}', async (c) => {
+    const config = configOf(c);
+    if (config instanceof Response) return config;
 
-    res.setHeader('Cache-Control', CACHE_CONTROL);
-    const ref = parseContentRef(req.params.type, req.params.id);
-    if (ref === undefined) {
-      res.json({ streams: [] });
-      return;
-    }
+    c.header('Cache-Control', CACHE_CONTROL);
+    const ref = parseContentRef(c.req.param('type'), c.req.param('idjson').replace(/\.json$/, ''));
+    if (ref === undefined) return sendJson(c, { streams: [] });
 
     // Addons amont : manifest (nom, logo) chargé en arrière-plan, pour les provenances affichées aux requêtes suivantes.
     if (deps.fetch === undefined) {
       for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
     }
-    const result = await getStreams(config, ref, contextOf(req, config, req.query.wait === 'full' ? 'full' : 'soft'));
+    const result = await getStreams(config, ref, contextOf(c, config, queryParams(c).wait === 'full' ? 'full' : 'soft'));
     issuedUrls.noteStreams(result.streams);
     if (result.partial === true) {
-      res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
-      res.json({ streams: result.streams, partial: true, pending: result.pending ?? [], ...noticeOf(config) });
-      return;
+      c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
+      return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...noticeOf(config) });
     }
-    res.json({ streams: result.streams, ...noticeOf(config) });
+    return sendJson(c, { streams: result.streams, ...noticeOf(config) });
   });
 
   /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */
-  app.get('/:config/lt/streams/status/:type/:id', async (req, res) => {
-    const config = configOf(req, res);
-    if (config === undefined) return;
-    res.setHeader('Cache-Control', PARTIAL_CACHE_CONTROL);
-    const ref = parseContentRef(req.params.type, req.params.id.replace(/\.json$/, ''));
-    if (ref === undefined) {
-      res.json({ pending: [], count: 0 });
-      return;
-    }
-    res.json(await getStreamsStatus(config, ref, contextOf(req, config, 'soft')));
+  app.get('/:config/lt/streams/status/:type/:id', async (c) => {
+    const config = configOf(c);
+    if (config instanceof Response) return config;
+    c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
+    const ref = parseContentRef(c.req.param('type'), c.req.param('id').replace(/\.json$/, ''));
+    if (ref === undefined) return sendJson(c, { pending: [], count: 0 });
+    return sendJson(c, await getStreamsStatus(config, ref, contextOf(c, config, 'soft')));
   });
 }

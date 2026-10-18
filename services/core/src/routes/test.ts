@@ -1,4 +1,5 @@
-import type { Express } from 'express';
+import type { App } from '../http/app-env.js';
+import { sendJson } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError, parseConfig } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
@@ -184,12 +185,11 @@ function parseBody(input: unknown, deps: AppDeps): Parsed {
  * POST /config/test : configuration JSON non chiffrée. Teste chaque source (upstream, Torznab) et le compte
  * debrid en parallèle. Réponse : `{ sources: [{ name, type, ok, error? }] }`.
  */
-export function registerTestRoutes(app: Express, deps: AppDeps): void {
-  app.post('/config/test', async (req, res) => {
-    const parsed = parseBody(req.body, deps);
+export function registerTestRoutes(app: App, deps: AppDeps): void {
+  app.post('/config/test', async (c) => {
+    const parsed = parseBody(c.get('body'), deps);
     if ('issues' in parsed) {
-      res.status(400).json({ error: 'invalid_config', issues: parsed.issues });
-      return;
+      return sendJson(c, { error: 'invalid_config', issues: parsed.issues }, 400);
     }
     const { config } = parsed;
     const secrets = secretsOf(config);
@@ -237,7 +237,7 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
     }
     const ltContext = createLtContext(deps);
     const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
-    res.setHeader('Cache-Control', 'no-store');
-    res.json({ sources, services, localProwlarr });
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { sources, services, localProwlarr });
   });
 }

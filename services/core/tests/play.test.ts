@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import { encodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
 import { AllDebridError, type ResolveOptions, type ResolvedLink } from '../src/sources/alldebrid.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'play-test-secret';
 const API_KEY = 'AD-PLAY-KEY-SECRETE-789';
@@ -53,7 +54,7 @@ interface Running {
 }
 
 async function start(deps: AppDeps): Promise<Running> {
-  const server: Server = createApp(deps).listen(0);
+  const server: Server = serveApp(createApp(deps));
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   return {

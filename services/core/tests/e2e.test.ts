@@ -5,6 +5,7 @@ import { createApp } from '../src/app.js';
 import { decodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
 import { decodeCopiesToken } from '../src/play/token.js';
+import { serveApp } from './serve.js';
 
 /*
  * Parcours complet : configuration (plain ou chiffrée), agrégation, filtre, dédoublonnage, tri,
@@ -211,7 +212,7 @@ interface Running {
 }
 
 async function start(deps: AppDeps): Promise<Running> {
-  const server: Server = createApp(deps).listen(0);
+  const server: Server = serveApp(createApp(deps));
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   return {

@@ -3,10 +3,12 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Express } from 'express';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { assertUiDir, isApiPath, sameOriginsFor } from '../src/ui.js';
+import type { App } from '../src/http/app-env.js';
+import { assertUiDir } from '../src/platform/node/index.js';
+import { isApiPath, sameOriginsFor } from '../src/ui.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'ui-static-test-secret';
 const UI_MARKER = 'interface-lastaddon-test';
@@ -17,8 +19,8 @@ let uiDir: string;
 let withUi: { server: Server; baseUrl: string };
 let withoutUi: { server: Server; baseUrl: string };
 
-async function listen(app: Express): Promise<{ server: Server; baseUrl: string }> {
-  const server = app.listen(0);
+async function listen(app: App): Promise<{ server: Server; baseUrl: string }> {
+  const server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${port}` };

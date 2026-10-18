@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { configuredStreamingServer, DEFAULT_STREAMING_SERVER, parseStreamingServer } from '../src/config/runtime-env.js';
 import { upstreamUrl } from '../src/streaming-proxy.js';
+import { serveApp } from './serve.js';
 
 const SECRET = 'streaming-proxy-test-secret';
 
@@ -94,11 +95,11 @@ beforeAll(async () => {
   writeFileSync(join(uiDir, 'index.html'), '<!doctype html><title>ui</title>');
 
   const proxiedServer = createApp({ secret: SECRET, allowPlain: false, uiDir, streamingServer: upstreamOrigin });
-  const proxiedHttp = proxiedServer.listen(0, '127.0.0.1');
+  const proxiedHttp = serveApp(proxiedServer, 0, '127.0.0.1');
   await new Promise<void>((resolve) => proxiedHttp.once('listening', () => resolve()));
   proxied = { server: proxiedHttp, baseUrl: `http://127.0.0.1:${(proxiedHttp.address() as AddressInfo).port}` };
 
-  const plainHttp = createApp({ secret: SECRET, allowPlain: false }).listen(0, '127.0.0.1');
+  const plainHttp = serveApp(createApp({ secret: SECRET, allowPlain: false }), 0, '127.0.0.1');
   await new Promise<void>((resolve) => plainHttp.once('listening', () => resolve()));
   noUi = { server: plainHttp, baseUrl: `http://127.0.0.1:${(plainHttp.address() as AddressInfo).port}` };
 
@@ -174,7 +175,7 @@ describe('relais /_ss/* vers le serveur de streaming', () => {
 
   it('serveur de streaming injoignable : 502 sans détail', async () => {
     const app = createApp({ secret: SECRET, allowPlain: false, uiDir, streamingServer: closedOrigin });
-    const server = app.listen(0, '127.0.0.1');
+    const server = serveApp(app, 0, '127.0.0.1');
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     try {
       const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/_ss/abc/video.bin`);

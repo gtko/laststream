@@ -1,22 +1,20 @@
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
+import { runtimeEnv } from '../platform/index.js';
+import { projectRoot } from '../platform/node/paths.js';
 import { migrate } from './migrations.js';
 
 /** Nom du fichier SQLite des données utilisateur, dans LASTADDON_DATA_DIR. */
 export const USER_DB_FILE = 'laststream.db';
 
-/** Racine du projet (src/user ou dist/user : deux niveaux au-dessus). */
-export function projectRoot(): string {
-  return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-}
+export { projectRoot };
 
 /**
  * Chemin de la base : LASTADDON_DATA_DIR (relatif à la racine du projet si relatif), sinon ./data. Lu à la demande.
  */
 export function userDbPath(): string {
-  const raw = process.env.LASTADDON_DATA_DIR?.trim();
+  const raw = runtimeEnv().get('LASTADDON_DATA_DIR')?.trim();
   return join(resolve(projectRoot(), raw ? raw : 'data'), USER_DB_FILE);
 }
 

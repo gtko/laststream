@@ -1,6 +1,5 @@
-import { existsSync, statSync } from 'node:fs';
-import { basename, join, relative, resolve, sep } from 'node:path';
-import express, { type Express, type NextFunction, type Request, type Response } from 'express';
+import type { App, Ctx } from './http/app-env.js';
+import type { UiAssets } from './platform/index.js';
 
 /** Fichier d'entrée de l'interface : repli des routes de navigation, jamais mis en cache. */
 export const UI_INDEX_FILE = 'index.html';
@@ -29,48 +28,54 @@ export function sameOriginsFor(port: number, publicUrl?: string): string[] {
   return origins;
 }
 
-/** Erreur de démarrage si le dossier d'interface n'contient pas index.html. Le message ne montre aucun contenu. */
-export function assertUiDir(dir: string): void {
-  const index = join(dir, UI_INDEX_FILE);
-  if (!existsSync(index) || !statSync(index).isFile()) {
-    throw new Error(`Dossier d'interface invalide (LASTADDON_UI_DIR ou --ui) : ${UI_INDEX_FILE} introuvable`);
-  }
+/** Dernier segment d'un chemin (« index.html » pour « / » et les dossiers). */
+function fileNameOf(pathname: string): string {
+  if (pathname.endsWith('/')) return UI_INDEX_FILE;
+  return pathname.slice(pathname.lastIndexOf('/') + 1);
 }
 
-/** En-têtes de cache des fichiers statiques : index.html et service-worker.js sans cache, /assets/* en cache longue durée. */
-function staticHeaders(root: string) {
-  return (res: Response, filePath: string): void => {
-    if (NO_CACHE_FILES.includes(basename(filePath))) {
-      res.setHeader('Cache-Control', 'no-cache');
-    } else if (relative(root, filePath).split(sep)[0] === 'assets') {
-      res.setHeader('Cache-Control', ASSET_CACHE);
-    }
-  };
+/** Ajoute les en-têtes de cache de l'application : index.html et service-worker.js sans cache, /assets/* en cache longue durée. */
+function withCacheHeaders(res: Response, pathname: string): Response {
+  const headers = new Headers(res.headers);
+  if (NO_CACHE_FILES.includes(fileNameOf(pathname))) {
+    headers.set('Cache-Control', 'no-cache');
+  } else if (pathname.startsWith('/assets/')) {
+    headers.set('Cache-Control', ASSET_CACHE);
+  }
+  return new Response(res.body, { status: res.status, headers });
 }
 
 /** Requête de navigation : GET ou HEAD, hors API, qui accepte du HTML. Les requêtes de scripts ou d'images n'en sont pas. */
-function isNavigation(req: Request): boolean {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
-  if (isApiPath(req.path)) return false;
-  return /text\/html/i.test(req.get('accept') ?? '');
+function isNavigation(c: Ctx): boolean {
+  if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return false;
+  if (isApiPath(c.req.path)) return false;
+  return /text\/html/i.test(c.req.header('accept') ?? '');
 }
 
 /**
  * Sert l'interface compilée à la racine. À appeler après les routes API : celles-ci gardent la priorité.
  * Une navigation inconnue (hors API, Accept text/html) reçoit index.html ; un fichier absent reste un 404.
  */
-export function registerUiRoutes(app: Express, dir: string): void {
-  const root = resolve(dir);
-  const indexPath = join(root, UI_INDEX_FILE);
-  app.use(express.static(root, { index: UI_INDEX_FILE, setHeaders: staticHeaders(root) }));
-  app.use((req: Request, res: Response, next: NextFunction): void => {
-    if (!isNavigation(req)) {
-      next();
+export function registerUiRoutes(app: App, ui: UiAssets): void {
+  app.use('*', async (c, next) => {
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+      await next();
       return;
     }
-    res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(indexPath, (err) => {
-      if (err && !res.headersSent) next(err);
-    });
+    const pathname = c.req.path;
+    const file = await ui.serve(c.req.raw, pathname === '/' ? `/${UI_INDEX_FILE}` : pathname);
+    if (file !== null) return withCacheHeaders(file, pathname);
+    if (!isNavigation(c)) {
+      await next();
+      return;
+    }
+    const index = await ui.serve(c.req.raw, `/${UI_INDEX_FILE}`);
+    if (index === null) {
+      await next();
+      return;
+    }
+    const headers = new Headers(index.headers);
+    headers.set('Cache-Control', 'no-cache');
+    return new Response(index.body, { status: index.status, headers });
   });
 }

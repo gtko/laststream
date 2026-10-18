@@ -1,8 +1,6 @@
-import type { LookupAddress } from 'node:dns';
-import { lookup } from 'node:dns/promises';
-import { isIP, type LookupFunction } from 'node:net';
-import { Agent, type Dispatcher } from 'undici';
+import { isIP } from 'node:net';
 import { isPublicMode } from '../config/runtime-env.js';
+import { platform, type HostLookup, type OutboundDispatcher } from '../platform/index.js';
 import { isNonPublicAddress } from './ip.js';
 
 /** Fonction fetch injectable (défaut : fetch global, résolu à chaque appel). */
@@ -169,52 +167,18 @@ export async function checkOutboundUrl(
   return url;
 }
 
-/** Résolution DNS d'un hôte : toutes les adresses renvoyées. */
-export type HostLookup = (hostname: string) => Promise<readonly string[]>;
+export type { HostLookup };
 
-/** Résolution DNS réelle d'un hôte : toutes les adresses renvoyées. */
-export async function resolveHost(hostname: string): Promise<string[]> {
-  const records = await lookup(hostname, { all: true, verbatim: true });
-  return records.map((record) => record.address);
+/** Résolution DNS réelle d'un hôte (client HTTP de la plateforme) : toutes les adresses renvoyées. */
+export function resolveHost(hostname: string): Promise<readonly string[]> {
+  return platform().http.resolveHost(hostname);
 }
 
-/**
- * Lookup épinglé pour la connexion (connect.lookup de l'agent). L'hôte est résolu une seule fois, au moment de la
- * connexion ; si une seule adresse n'est pas publique, la connexion échoue (UnsafeTargetError) ; sinon seules les
- * adresses vérifiées sont renvoyées. Le contrôle et la connexion portent donc sur la même réponse DNS : un
- * rebinding entre les deux est impossible, et chaque saut de redirection est revérifié.
- */
-export function pinnedLookup(resolve: HostLookup = resolveHost): LookupFunction {
-  return (hostname, options, callback) => {
-    resolve(hostname).then(
-      (addresses) => {
-        if (addresses.length === 0 || addresses.some((address) => isNonPublicAddress(address))) {
-          callback(new UnsafeTargetError(), '', 4);
-          return;
-        }
-        const records: LookupAddress[] = addresses.map((address) => ({ address, family: isIP(address) === 6 ? 6 : 4 }));
-        const [first] = records;
-        if (options.all === true || first === undefined) {
-          callback(null, records);
-          return;
-        }
-        callback(null, first.address, first.family);
-      },
-      (err: unknown) => callback(err instanceof Error ? err : new SourceError('hôte non résolu'), '', 4),
-    );
-  };
-}
+let defaultAgent: OutboundDispatcher | undefined;
 
-/** Agent undici dont la résolution DNS est épinglée à la connexion (voir pinnedLookup). */
-export function createPinnedAgent(resolve: HostLookup = resolveHost): Agent {
-  return new Agent({ connect: { lookup: pinnedLookup(resolve) } });
-}
-
-let defaultAgent: Agent | undefined;
-
-/** Agent épinglé partagé, pour les appels sans agent injecté (mode public ou garde active). */
-function defaultPinnedAgent(): Agent {
-  defaultAgent ??= createPinnedAgent();
+/** Connexion épinglée partagée, pour les appels sans agent injecté (mode public ou garde active). */
+function defaultPinnedAgent(): OutboundDispatcher | undefined {
+  defaultAgent ??= platform().http.pinnedDispatcher();
   return defaultAgent;
 }
 
@@ -274,7 +238,7 @@ export interface BodyOptions {
   maxBytes?: number;
   guard?: UrlGuard;
   /** Agent de connexion (DNS épinglé). Sans lui, le mode public utilise l'agent épinglé partagé. */
-  dispatcher?: Dispatcher;
+  dispatcher?: OutboundDispatcher;
 }
 
 /** Réponse dont le corps a été lu en octets. `url` est l'adresse finale, après redirections. */

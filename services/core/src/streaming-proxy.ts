@@ -1,6 +1,5 @@
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import type { Express, Request, Response } from 'express';
+import type { App, Ctx } from './http/app-env.js';
+import { originalUrl, sendJson } from './http/respond.js';
 
 /** Préfixe côté navigateur : /_ss/<chemin>?<requête> est relayé vers <serveur de streaming>/<chemin>?<requête>. */
 export const STREAM_PROXY_PREFIX = '/_ss';
@@ -34,72 +33,69 @@ export function upstreamUrl(base: URL, originalUrl: string): URL {
   return url;
 }
 
-function sendUnavailable(res: Response): void {
-  res.setHeader('Cache-Control', 'no-store');
-  res.status(502).json({ error: 'streaming_server_unavailable' });
+function sendUnavailable(c: Ctx): Response {
+  c.header('Cache-Control', 'no-store');
+  return sendJson(c, { error: 'streaming_server_unavailable' }, 502);
 }
 
 /** Relaie une requête GET ou HEAD : en-têtes de lecture (Range, 206) et corps en flux, sans tampon. */
-async function relay(base: URL, req: Request, res: Response): Promise<void> {
-  const upstream = upstreamUrl(base, req.originalUrl);
+async function relay(base: URL, c: Ctx): Promise<Response> {
+  const upstream = upstreamUrl(base, originalUrl(c));
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
-    const value = req.get(name);
+    const value = c.req.header(name);
     if (value !== undefined) headers.set(name, value);
   }
 
   // Le client qui part interrompt la requête amont (et donc le flux), y compris pendant la lecture du corps.
   const controller = new AbortController();
-  let clientGone = false;
-  res.on('close', () => {
-    if (res.writableFinished) return;
-    clientGone = true;
-    controller.abort();
-  });
+  const clientSignal = c.req.raw.signal;
+  const onClientGone = (): void => controller.abort();
+  if (clientSignal.aborted) controller.abort();
+  else clientSignal.addEventListener('abort', onClientGone, { once: true });
 
   const headersTimer = setTimeout(() => controller.abort(), HEADERS_TIMEOUT_MS);
-  let upstreamRes: globalThis.Response;
+  let upstreamRes: Response;
   try {
-    upstreamRes = await fetch(upstream, { method: req.method, headers, redirect: 'manual', signal: controller.signal });
+    upstreamRes = await fetch(upstream, { method: c.req.method, headers, redirect: 'manual', signal: controller.signal });
   } catch {
     clearTimeout(headersTimer);
-    if (!clientGone) sendUnavailable(res);
-    return;
+    clientSignal.removeEventListener('abort', onClientGone);
+    return sendUnavailable(c);
   }
   clearTimeout(headersTimer);
 
-  res.status(upstreamRes.status);
+  const out = new Headers();
   for (const name of FORWARDED_RESPONSE_HEADERS) {
     const value = upstreamRes.headers.get(name);
-    if (value !== null) res.setHeader(name, value);
+    if (value !== null) out.set(name, value);
   }
-  if (upstreamRes.body === null || req.method === 'HEAD') {
-    res.end();
-    return;
+  if (upstreamRes.body === null || c.req.method === 'HEAD') {
+    clientSignal.removeEventListener('abort', onClientGone);
+    await upstreamRes.body?.cancel().catch(() => undefined);
+    return new Response(null, { status: upstreamRes.status, headers: out });
   }
-  try {
-    // pipeline détruit les deux côtés en cas d'erreur ou de fermeture, ce qui coupe aussi la connexion amont.
-    await pipeline(Readable.fromWeb(upstreamRes.body as import('node:stream/web').ReadableStream), res);
-  } catch {
-    // Flux amont interrompu ou client parti : rien à ajouter, la réponse est déjà fermée.
-  }
+  // Le corps est relayé tel quel : l'annulation côté client (fermeture de la connexion) coupe aussi la connexion amont.
+  return new Response(upstreamRes.body, { status: upstreamRes.status, headers: out });
 }
 
 /**
  * Relais same-origin /_ss/* vers le serveur de streaming local (le serveur Stremio n'envoie du CORS qu'aux domaines
  * strem.io). Méthodes GET et HEAD seulement. À monter avant les routes statiques de l'interface.
  */
-export function registerStreamingProxy(app: Express, target: string): void {
+export function registerStreamingProxy(app: App, target: string): void {
   const base = new URL(target);
-  app.use(STREAM_PROXY_PREFIX, (req, res) => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.setHeader('Allow', 'GET, HEAD');
-      res.status(405).end();
-      return;
+  const handler = async (c: Ctx): Promise<Response> => {
+    if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+      c.header('Allow', 'GET, HEAD');
+      return c.body(null, 405);
     }
-    relay(base, req, res).catch(() => {
-      if (res.headersSent) res.destroy();
-      else sendUnavailable(res);
-    });
-  });
+    try {
+      return await relay(base, c);
+    } catch {
+      return sendUnavailable(c);
+    }
+  };
+  app.all(STREAM_PROXY_PREFIX, handler);
+  app.all(`${STREAM_PROXY_PREFIX}/*`, handler);
 }

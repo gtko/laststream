@@ -2,15 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { Agent, type Dispatcher, request } from 'undici';
-import { createPinnedAgent } from '../../sources/http.js';
+import { type EnvLike, platform, runtimeEnv } from '../../platform/index.js';
 import { isLiteralSafe } from '../guard.js';
 import type { LocalUrlPolicy } from './media-url.js';
 
 /** Plafond d'octets téléchargés par job : 400 Mo par défaut (audio entrelacé avec la vidéo), LASTADDON_SKIP_DETECT_MAX_MB le règle. */
 export const DEFAULT_JOB_MB = 400;
 
-export function jobByteBudget(env: NodeJS.ProcessEnv = process.env): number {
+export function jobByteBudget(env: EnvLike = runtimeEnv().all()): number {
   const mb = Number(env.LASTADDON_SKIP_DETECT_MAX_MB);
   return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_JOB_MB) * 1024 * 1024;
 }
@@ -35,14 +34,6 @@ export interface SourceProxy {
 const FORWARDED = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag'];
 const REDIRECT = new Set([301, 302, 303, 307, 308]);
 
-let pinned: Agent | undefined;
-let plain: Agent | undefined;
-
-function dispatcherFor(url: URL, allowLocal: LocalUrlPolicy): Dispatcher {
-  if (allowLocal(url)) return (plain ??= new Agent());
-  return (pinned ??= createPinnedAgent());
-}
-
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
@@ -65,16 +56,21 @@ async function serve(
       res.writeHead(403).end();
       return;
     }
-    const upstream = await request(url, {
+    const { http } = platform();
+    if (http.stream === undefined) {
+      res.writeHead(501).end();
+      return;
+    }
+    const upstream = await http.stream(url, {
       method,
       headers,
-      dispatcher: dispatcherFor(url, allowLocal),
-      headersTimeout: 15_000,
-      bodyTimeout: 20_000,
+      allowLocal: allowLocal(url),
+      headersTimeoutMs: 15_000,
+      bodyTimeoutMs: 20_000,
     });
     const location = headerValue(upstream.headers.location);
     if (REDIRECT.has(upstream.statusCode) && location !== undefined) {
-      await upstream.body.dump();
+      await upstream.dump();
       url = new URL(location, url);
       continue;
     }
@@ -85,7 +81,7 @@ async function serve(
     }
     res.writeHead(upstream.statusCode, out);
     if (method === 'HEAD') {
-      await upstream.body.dump();
+      await upstream.dump();
       res.end();
       return;
     }

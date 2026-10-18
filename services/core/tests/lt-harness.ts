@@ -5,6 +5,7 @@ import { encodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
 import type { ConfigInput } from '../src/config/schema.js';
 import type { LocalProwlarr } from '../src/sources/local-prowlarr.js';
+import { serveApp } from './serve.js';
 
 /** Secret de chiffrement des configurations de test (jamais un secret réel). */
 export const SECRET = 'lt-test-secret-with-more-than-32-chars';
@@ -126,7 +127,7 @@ export async function startApp(options: {
     thumbs: options.thumbs ?? { ffmpeg: null },
     rangeProxy: options.rangeProxy ?? null,
   });
-  const server: Server = app.listen(0);
+  const server: Server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   return {

@@ -1,3 +1,4 @@
+import { type EnvLike, runtimeEnv } from '../../platform/index.js';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { projectRoot } from '../../user/db.js';
@@ -37,7 +38,7 @@ function findIn(directories: readonly string[], name: string): string | undefine
  * Localise ffmpeg et ffprobe : LASTADDON_FFMPEG / LASTADDON_FFPROBE, puis le PATH, puis le dossier de l'application
  * (bin/ à la racine, ou à côté). Retourne undefined si aucun couple n'est utilisable.
  */
-export async function locateTools(env: NodeJS.ProcessEnv = process.env): Promise<MediaTools | undefined> {
+export async function locateTools(env: EnvLike = runtimeEnv().all()): Promise<MediaTools | undefined> {
   const root = projectRoot();
   const bundledDirs = [join(root, 'bin'), root, join(root, '..')];
   const pathDirs = (env.PATH ?? env.Path ?? '').split(delimiter).filter((entry) => entry !== '');

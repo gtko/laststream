@@ -1,12 +1,16 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { parseCliArgs, type CliOptions } from './cli.js';
 import { assertStartupEnv, configuredPublicUrl, configuredStreamingServer, configuredUiDir, isPublicMode } from './config/runtime-env.js';
-import { getSecret, isPlainAllowed, loadEnvFile } from './config/secret.js';
+import { isPlainAllowed } from './config/secret.js';
+import { type RuntimeEnv, setPlatform } from './platform/index.js';
+import { assertUiDir, createNodePlatform } from './platform/node/index.js';
+import { getSecret, loadEnvFile } from './platform/node/secret-file.js';
 import { detectLocalProwlarr, type LocalProwlarrIo, localProwlarrEnabled } from './sources/local-prowlarr.js';
-import { assertUiDir, sameOriginsFor } from './ui.js';
+import { sameOriginsFor } from './ui.js';
 
 const DEFAULT_PORT = 7000;
 
@@ -30,10 +34,10 @@ function isDirectRun(): boolean {
 }
 
 /** Reporte les options de ligne de commande dans l'environnement (prioritaires sur .env et sur l'environnement hérité). */
-function applyCliOptions(options: CliOptions): void {
-  if (options.port !== undefined) process.env.PORT = options.port;
-  if (options.uiDir !== undefined) process.env.LASTADDON_UI_DIR = options.uiDir;
-  if (options.dataDir !== undefined) process.env.LASTADDON_DATA_DIR = options.dataDir;
+function applyCliOptions(options: CliOptions, env: RuntimeEnv): void {
+  if (options.port !== undefined) env.set?.('PORT', options.port);
+  if (options.uiDir !== undefined) env.set?.('LASTADDON_UI_DIR', options.uiDir);
+  if (options.dataDir !== undefined) env.set?.('LASTADDON_DATA_DIR', options.dataDir);
 }
 
 /**
@@ -41,15 +45,18 @@ function applyCliOptions(options: CliOptions): void {
  * `LASTADDON_READY port=<n>` : les applications packagées attendent cette ligne.
  */
 export function start(argv: readonly string[] = process.argv.slice(2)): void {
+  const nodePlatform = createNodePlatform();
+  setPlatform(nodePlatform);
+  const env = nodePlatform.env;
   let port: number;
   let secret: string;
   let uiDir: string | undefined;
   let uiOrigins: string[] | undefined;
   let streamingServer: string | undefined;
   try {
-    applyCliOptions(parseCliArgs(argv, process.cwd()));
+    applyCliOptions(parseCliArgs(argv, process.cwd()), env);
     loadEnvFile();
-    port = resolvePort(process.env.PORT);
+    port = resolvePort(env.get('PORT'));
     assertStartupEnv();
     secret = getSecret();
     uiDir = configuredUiDir();
@@ -64,7 +71,7 @@ export function start(argv: readonly string[] = process.argv.slice(2)): void {
     process.exit(1);
   }
   const localIo: LocalProwlarrIo = {
-    env: process.env,
+    env: env.all(),
     readFile: (path) => readFileSync(path, 'utf8'),
     homeDir: homedir(),
   };
@@ -82,7 +89,7 @@ export function start(argv: readonly string[] = process.argv.slice(2)): void {
   if (isPublicMode()) {
     console.warn('LASTADDON_PUBLIC=1 : mode public actif (adresses privées refusées pour les URL des sources).');
   }
-  if (localProwlarrEnabled(process.env)) {
+  if (localProwlarrEnabled(env.all())) {
     // Lit la clé une seule fois au démarrage ; le résultat ne contient que le nombre d'indexeurs, jamais la clé.
     void detectLocalProwlarr(localIo).then((local) =>
       console.log(
@@ -92,7 +99,7 @@ export function start(argv: readonly string[] = process.argv.slice(2)): void {
       ),
     );
   }
-  const server = app.listen(port, () => {
+  const server = serve({ fetch: app.fetch, port, overrideGlobalObjects: false }, () => {
     console.log(`lastAddon en écoute sur http://localhost:${port}`);
     if (uiDir !== undefined) console.log(`Interface web servie depuis ${uiDir}`);
     console.log(`LASTADDON_READY port=${port}`);

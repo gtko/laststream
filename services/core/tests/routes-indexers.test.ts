@@ -1,11 +1,13 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import express from 'express';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import type { AppDeps } from '../src/deps.js';
+import { newApp } from '../src/http/app-env.js';
+import { jsonBody } from '../src/http/json-body.js';
 import { registerIndexerRoutes } from '../src/routes/indexers.js';
 import { defaultIndexerHealth, IndexerHealth } from '../src/sources/indexer-health.js';
+import { serveApp } from './serve.js';
 
 const PR_KEY = 'PR-ROUTE-KEY-31337';
 const JK_KEY = 'JK-ROUTE-KEY-27182';
@@ -49,10 +51,10 @@ function fakeFetch(options: { prowlarr?: Response | 'ok'; jackett?: Response | '
 
 /** Mini application : seule la route à tester est montée (non enregistrée dans app.ts). */
 async function startMini(deps: AppDeps, health: IndexerHealth): Promise<{ url: string; close: () => Promise<void> }> {
-  const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  const app = newApp();
+  app.use('*', jsonBody(1024 * 1024));
   registerIndexerRoutes(app, deps, health);
-  const server: Server = app.listen(0);
+  const server: Server = serveApp(app);
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
   const { port } = server.address() as AddressInfo;
   return {
@@ -214,7 +216,7 @@ describe('POST /config/indexers', () => {
 describe('POST /config/test : statuts par indexeur', () => {
   it('Prowlarr : ok, et un statut par indexeur issu de la santé (error après un échec enregistré)', async () => {
     const app = createApp({ secret: 's', allowPlain: true, fetch: fakeFetch() });
-    const server = app.listen(0);
+    const server = serveApp(app);
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     const { port } = server.address() as AddressInfo;
     try {
@@ -250,7 +252,7 @@ describe('POST /config/test : statuts par indexeur', () => {
       allowPlain: true,
       fetch: fakeFetch({ jackett: new Response('down', { status: 500 }) }),
     });
-    const server = app.listen(0);
+    const server = serveApp(app);
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     const { port } = server.address() as AddressInfo;
     try {

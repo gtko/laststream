@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { Express, Response } from 'express';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { App, Ctx } from '../http/app-env.js';
+import { originalUrl, queryParams, sendBody, sendEmpty, sendJson } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
@@ -118,11 +120,9 @@ function readConfig(deps: AppDeps, encoded: string): Config | undefined {
 }
 
 /** Réponse d'échec : page HTML ou JSON selon Accept, sans clé ni URL. Le statut vient de la table des raisons. */
-function sendFailure(res: Response, reason: PlayFailureReason, accept: string | undefined): void {
+function sendFailure(c: Ctx, reason: PlayFailureReason, accept: string | undefined): Response {
   const failure = renderFailure(reason, { accept });
-  res.status(failure.status);
-  res.setHeader('Content-Type', failure.contentType);
-  res.send(failure.body);
+  return sendBody(c, failure.body, failure.status as ContentfulStatusCode, failure.contentType);
 }
 
 /**
@@ -133,7 +133,7 @@ function sendFailure(res: Response, reason: PlayFailureReason, accept: string | 
  *   Une copie `kind: 'hoster'` est débridée via AllDebrid ; une copie `privateTorrent` envoie ses octets (cache par guid).
  * Succès : 302 vers le lien. Erreurs : pages ou JSON génériques, sans clé ni configuration ni URL.
  */
-export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState = defaultPlayState): void {
+export function registerPlayRoutes(app: App, deps: AppDeps, state: PlayState = defaultPlayState): void {
   // Clients mis en cache par empreinte de clé API : la clé brute n'est jamais une clé de Map.
   const clients = new Map<string, DebridClient>();
   // Un HosterClient par client AllDebrid : son catalogue d'hébergeurs est gardé 12 h.
@@ -166,31 +166,27 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
   };
 
   // Déclarée avant la route legacy : /:config/play/c/:token ne doit pas être lue comme un hash.
-  app.get('/:config/play/c/:token', async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const accept = req.get('accept');
+  app.get('/:config/play/c/:token', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const accept = c.req.header('accept');
 
-    const decoded = decodeCopiesToken(req.params.token, deps.secret);
+    const decoded = decodeCopiesToken(c.req.param('token'), deps.secret);
     if (decoded === null) {
-      res.status(400).json({ error: 'invalid_token', message: 'Lien de lecture invalide.' });
-      return;
+      return sendJson(c, { error: 'invalid_token', message: 'Lien de lecture invalide.' }, 400);
     }
 
-    const config = readConfig(deps, req.params.config);
+    const config = readConfig(deps, c.req.param('config'));
     if (config === undefined) {
-      res.status(400).json({ error: 'invalid_config' });
-      return;
+      return sendJson(c, { error: 'invalid_config' }, 400);
     }
 
     // Contrôles avant toute résolution : un contenu non sorti ou hors limite d'âge ne consomme aucun appel au debrid.
     if (decoded.releasedAt !== undefined && Date.parse(decoded.releasedAt) > Date.now()) {
-      sendFailure(res, 'not_released', accept);
-      return;
+      return sendFailure(c, 'not_released', accept);
     }
     const ageLimit = config.filters.ageLimit;
     if (typeof ageLimit === 'number' && decoded.ageFr !== undefined && decoded.ageFr > ageLimit) {
-      sendFailure(res, 'age_limit', accept);
-      return;
+      return sendFailure(c, 'age_limit', accept);
     }
 
     const debrid = config.debrid;
@@ -246,68 +242,62 @@ export function registerPlayRoutes(app: Express, deps: AppDeps, state: PlayState
     });
 
     if (!result.ok) {
-      sendFailure(res, RENDERED_REASON[result.reason], accept);
-      return;
+      return sendFailure(c, RENDERED_REASON[result.reason], accept);
     }
     const location = hostFromUrl(result.link.url) === undefined ? undefined : new URL(result.link.url).href;
     if (location === undefined) {
-      sendFailure(res, 'unknown', accept);
-      return;
+      return sendFailure(c, 'unknown', accept);
     }
-    issuedUrls.noteResolved(req.originalUrl, location);
-    res.setHeader('Location', location);
-    res.status(302).end();
+    issuedUrls.noteResolved(originalUrl(c), location);
+    c.header('Location', location);
+    return sendEmpty(c, 302);
   });
 
-  app.get('/:config/play/:infoHash{/:fileIdx}', async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const encoded: string = req.params.config;
-    const infoHash: string = req.params.infoHash;
-    const rawFileIdx: string | undefined = req.params.fileIdx;
+  app.get('/:config/play/:infoHash/:fileIdx?', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    const encoded: string = c.req.param('config');
+    const infoHash: string = c.req.param('infoHash');
+    const rawFileIdx: string | undefined = c.req.param('fileIdx');
 
     if (!INFO_HASH_PATTERN.test(infoHash)) {
-      res.status(400).json({ error: 'invalid_hash' });
-      return;
+      return sendJson(c, { error: 'invalid_hash' }, 400);
     }
     if (rawFileIdx !== undefined && !FILE_IDX_PATTERN.test(rawFileIdx)) {
-      res.status(400).json({ error: 'invalid_file_idx' });
-      return;
+      return sendJson(c, { error: 'invalid_file_idx' }, 400);
     }
 
     const config = readConfig(deps, encoded);
     if (config === undefined) {
-      res.status(400).json({ error: 'invalid_config' });
-      return;
+      return sendJson(c, { error: 'invalid_config' }, 400);
     }
 
     if (config.debrid === undefined) {
-      res.status(404).json({ error: 'no_debrid' });
-      return;
+      return sendJson(c, { error: 'no_debrid' }, 404);
     }
     const client = clientFor(config.debrid.apiKey);
+    const query = queryParams(c);
 
     try {
       const link = await client.resolve(
         infoHash,
         rawFileIdx === undefined ? undefined : Number(rawFileIdx),
         {
-          season: episodePart(req.query.s),
-          episode: episodePart(req.query.e),
-          filename: queryFilename(req.query.filename),
-          size: querySize(req.query.size),
+          season: episodePart(query.s),
+          episode: episodePart(query.e),
+          filename: queryFilename(query.filename),
+          size: querySize(query.size),
         },
       );
-      issuedUrls.noteResolved(req.originalUrl, new URL(link.url).href);
-      res.setHeader('Location', new URL(link.url).href);
-      res.status(302).end();
+      issuedUrls.noteResolved(originalUrl(c), new URL(link.url).href);
+      c.header('Location', new URL(link.url).href);
+      return sendEmpty(c, 302);
     } catch (err) {
       if (err instanceof AllDebridError && err.code === 'not_ready') {
         // Contrat historique : 503 avec Retry-After pour que le lecteur réessaie.
-        res.setHeader('Retry-After', String(RETRY_AFTER_SECONDS));
-        sendFailure(res, 'host_unavailable', req.get('accept'));
-        return;
+        c.header('Retry-After', String(RETRY_AFTER_SECONDS));
+        return sendFailure(c, 'host_unavailable', c.req.header('accept'));
       }
-      sendFailure(res, RENDERED_REASON[reasonOfError(err)], req.get('accept'));
+      return sendFailure(c, RENDERED_REASON[reasonOfError(err)], c.req.header('accept'));
     }
   });
 }

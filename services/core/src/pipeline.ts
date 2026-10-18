@@ -1,3 +1,4 @@
+import { runtimeEnv } from './platform/index.js';
 import { LruCache, hashConfigKey } from './cache/lru.js';
 import type { Config } from './config/schema.js';
 import { getCinemetaTitle, getRuntimeSeconds, getSeasonEpisodeCounts } from './engine/cinemeta.js';
@@ -186,7 +187,7 @@ function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariant
 
 /** Compteurs par étape (débogage), journalisés si LASTADDON_DEBUG=1 : jamais de contenu, seulement des nombres. */
 function debugStage(ref: ContentRef, stage: string, details: Record<string, number | string>): void {
-  if (process.env.LASTADDON_DEBUG !== '1') return;
+  if (runtimeEnv().get('LASTADDON_DEBUG') !== '1') return;
   console.debug(`[pipeline ${ref.id}] ${stage} ${JSON.stringify(details)}`);
 }
 
@@ -580,7 +581,7 @@ function stageClock(timer: PipelineContext['stageTimer']): (stage: string) => vo
   return (stage) => {
     const now = Date.now();
     timer?.(stage, now - last);
-    if (process.env.LASTADDON_DEBUG === '1') console.debug(`[pipeline] étape ${stage} ${now - last} ms`);
+    if (runtimeEnv().get('LASTADDON_DEBUG') === '1') console.debug(`[pipeline] étape ${stage} ${now - last} ms`);
     last = now;
   };
 }
@@ -672,7 +673,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     gardes: candidates.length,
     titres: titles.titles.join(' | '),
   });
-  if (process.env.LASTADDON_DEBUG_NAMES === '1') {
+  if (runtimeEnv().get('LASTADDON_DEBUG_NAMES') === '1') {
     parsedAll.forEach((candidate, index) => {
       console.debug(`[pipeline ${ref.id}] ${rejections[index] ?? 'garde'} ${JSON.stringify(candidate.parsed.scope ?? {})} ${candidate.raw.title ?? ''} ${candidate.raw.sizeBytes ?? ''}`);
     });

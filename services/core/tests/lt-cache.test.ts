@@ -319,13 +319,23 @@ describe('limite de débit des lectures lt et catalogue', () => {
 describe('trust proxy : activé seulement avec LASTADDON_TRUST_PROXY=1', () => {
   const deps = { secret: SECRET, allowPlain: false };
 
-  it('sans la variable : pas de trust proxy', () => {
+  /** 31 requêtes /config (limite : 30 par minute et par IP) dont X-Forwarded-For change à chaque appel. */
+  async function sawRateLimit(app: ReturnType<typeof createApp>): Promise<boolean> {
+    let limited = false;
+    for (let i = 0; i < 31; i++) {
+      const res = await app.request('/config/schema', { headers: { 'x-forwarded-for': `203.0.113.${i + 1}` } });
+      if (res.status === 429) limited = true;
+    }
+    return limited;
+  }
+
+  it('sans la variable : X-Forwarded-For ignoré (tous les appels partagent la même IP, donc 429)', async () => {
     vi.stubEnv('LASTADDON_TRUST_PROXY', '');
-    expect(createApp(deps).get('trust proxy')).toBe(false);
+    expect(await sawRateLimit(createApp(deps))).toBe(true);
   });
 
-  it('avec LASTADDON_TRUST_PROXY=1 : un saut de confiance', () => {
+  it('avec LASTADDON_TRUST_PROXY=1 : un saut de confiance, le dernier X-Forwarded-For identifie le client', async () => {
     vi.stubEnv('LASTADDON_TRUST_PROXY', '1');
-    expect(createApp(deps).get('trust proxy')).toBe(1);
+    expect(await sawRateLimit(createApp(deps))).toBe(false);
   });
 });

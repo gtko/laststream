@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Request } from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   allowedOrigins,
@@ -11,8 +10,9 @@ import {
   DEFAULT_ALLOWED_ORIGINS,
   parsePublicUrl,
 } from '../src/config/runtime-env.js';
-import { envFilePath, getSecret, MIN_SECRET_LENGTH } from '../src/config/secret.js';
-import { publicBaseUrl } from '../src/routes/stream.js';
+import { MIN_SECRET_LENGTH } from '../src/config/secret.js';
+import { envFilePath, getSecret } from '../src/platform/node/secret-file.js';
+import { publicBaseUrl, type RequestLike } from '../src/routes/stream.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let workDir: string;
@@ -30,9 +30,9 @@ afterEach(() => {
 });
 
 /** Requête minimale pour publicBaseUrl. */
-function fakeRequest(headers: Record<string, string>, protocol = 'http'): Request {
+function fakeRequest(headers: Record<string, string>, protocol = 'http'): RequestLike {
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
-  return { protocol, get: (name: string) => lower[name.toLowerCase()] } as unknown as Request;
+  return { url: `${protocol}://${lower.host ?? 'localhost'}/x`, header: (name: string) => lower[name.toLowerCase()] };
 }
 
 describe('LASTADDON_PUBLIC_URL : validation', () => {

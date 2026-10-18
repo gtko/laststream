@@ -1,13 +1,12 @@
 import { createHash } from 'node:crypto';
-import type { Request } from 'express';
-import type { Dispatcher } from 'undici';
+import type { Ctx } from '../http/app-env.js';
+import { platform, type OutboundDispatcher } from '../platform/index.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import {
   type BodyOptions,
   type BytesResult,
-  createPinnedAgent,
   fetchBytes,
   type FetchFn,
   isRecord,
@@ -218,7 +217,7 @@ export interface LtContext {
   state: LtState;
   fetch: FetchFn;
   guard: UrlGuard;
-  dispatcher: Dispatcher;
+  dispatcher: OutboundDispatcher | undefined;
   signer: UrlSigner;
 }
 
@@ -227,7 +226,7 @@ export function createLtContext(deps: AppDeps): LtContext {
     state: { cache: new TtlCache(), tvdbSessions: new Map(), tvdbVersions: new Map() },
     fetch: deps.fetch ?? globalThis.fetch,
     guard: createPublicGuard(),
-    dispatcher: createPinnedAgent(deps.lookupHost),
+    dispatcher: platform().http.pinnedDispatcher(deps.lookupHost),
     signer: createUrlSigner(deps.secret),
   };
 }
@@ -307,11 +306,12 @@ export function recordAt(value: unknown, ...keys: string[]): Record<string, unkn
 }
 
 /** Corps JSON d'une requête : objet simple, sinon objet vide. */
-export function bodyOf(req: Request): Record<string, unknown> {
-  return isRecord(req.body) ? req.body : {};
+export function bodyOf(c: Ctx): Record<string, unknown> {
+  const body = c.get('body');
+  return isRecord(body) ? body : {};
 }
 
 /** Paramètres de l'URL (dernière valeur gagne), tels que le prototype les transmet. */
-export function queryOf(req: Request): Record<string, string> {
-  return Object.fromEntries(new URL(req.originalUrl, 'http://localhost').searchParams);
+export function queryOf(c: Ctx): Record<string, string> {
+  return Object.fromEntries(new URL(c.req.url).searchParams);
 }

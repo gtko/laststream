@@ -1,6 +1,7 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
 import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { ThumbOptions } from './lt/thumbs/index.js';
+import type { UiAssets } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
@@ -42,6 +43,8 @@ export interface AppDeps {
   rangeProxy?: { secret: string; base: string } | null;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
   uiDir?: string;
+  /** Fichiers de l'interface web (binding Assets sous Workers). Prime sur `uiDir`. */
+  ui?: UiAssets;
   /** Origines ajoutées au CORS quand l'interface est servie par ce serveur (même site). */
   uiOrigins?: readonly string[];
   /** Origine du serveur de streaming relayé sous /_ss (LASTADDON_STREAMING_SERVER). Par défaut : la variable, ou 127.0.0.1:11470. */

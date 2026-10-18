@@ -1,4 +1,5 @@
-import type { Express, Request } from 'express';
+import type { App, Ctx } from '../http/app-env.js';
+import { sendJson } from '../http/respond.js';
 import { isPublicMode } from '../config/runtime-env.js';
 import { IndexerSourceSchema } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
@@ -31,8 +32,8 @@ function describeIssue(issue: { path: readonly PropertyKey[]; message: string })
   return `${issue.path.map(String).join('.') || '(racine)'}: ${issue.message}`;
 }
 
-function exceedsBodyLimit(req: Request): boolean {
-  return Buffer.byteLength(JSON.stringify(req.body ?? null), 'utf8') > INDEXERS_BODY_MAX_BYTES;
+function exceedsBodyLimit(c: Ctx): boolean {
+  return new TextEncoder().encode(JSON.stringify(c.get('body') ?? null)).length > INDEXERS_BODY_MAX_BYTES;
 }
 
 /**
@@ -41,17 +42,13 @@ function exceedsBodyLimit(req: Request): boolean {
  * Erreurs : 400 invalid_config (chemins et messages seulement), 413 si le corps dépasse la limite, 502 si la
  * découverte échoue. Non enregistrée par défaut dans l'application (wiring côté appelant).
  */
-export function registerIndexerRoutes(app: Express, deps: AppDeps, health: IndexerHealth = defaultIndexerHealth): void {
-  app.post('/config/indexers', async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (exceedsBodyLimit(req)) {
-      res.status(413).json({ error: 'payload_too_large' });
-      return;
-    }
-    const parsed = IndexerSourceSchema.safeParse(req.body);
+export function registerIndexerRoutes(app: App, deps: AppDeps, health: IndexerHealth = defaultIndexerHealth): void {
+  app.post('/config/indexers', async (c) => {
+    c.header('Cache-Control', 'no-store');
+    if (exceedsBodyLimit(c)) return sendJson(c, { error: 'payload_too_large' }, 413);
+    const parsed = IndexerSourceSchema.safeParse(c.get('body'));
     if (!parsed.success) {
-      res.status(400).json({ error: 'invalid_config', issues: parsed.error.issues.map(describeIssue) });
-      return;
+      return sendJson(c, { error: 'invalid_config', issues: parsed.error.issues.map(describeIssue) }, 400);
     }
     const source = parsed.data;
 
@@ -61,8 +58,7 @@ export function registerIndexerRoutes(app: Express, deps: AppDeps, health: Index
       await checkOutboundUrl(source.baseUrl, isPublicMode(), resolveHost, true);
     } catch (err) {
       const reason = err instanceof SourceError ? err.message : 'URL refusée';
-      res.status(400).json({ error: 'invalid_config', issues: [`baseUrl: ${reason}`] });
-      return;
+      return sendJson(c, { error: 'invalid_config', issues: [`baseUrl: ${reason}`] }, 400);
     }
 
     try {
@@ -71,7 +67,7 @@ export function registerIndexerRoutes(app: Express, deps: AppDeps, health: Index
         source.type === 'prowlarr'
           ? await discoverProwlarrIndexers(source, fetchOpts)
           : await discoverJackettIndexers(source, fetchOpts);
-      res.json({
+      return sendJson(c, {
         indexers: indexers.map((indexer) => ({
           id: indexer.id,
           name: indexer.name,
@@ -82,7 +78,7 @@ export function registerIndexerRoutes(app: Express, deps: AppDeps, health: Index
         })),
       });
     } catch (err) {
-      res.status(502).json({ error: 'indexers_unavailable', message: describeFailure(err, source.apiKey) });
+      return sendJson(c, { error: 'indexers_unavailable', message: describeFailure(err, source.apiKey) }, 502);
     }
   });
 }

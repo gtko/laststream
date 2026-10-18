@@ -10,9 +10,9 @@ const outDir = join(root, 'dist-bundle');
 mkdirSync(outDir, { recursive: true });
 
 // Dans un CJS, import.meta.url n'existe pas. Le bundle se comporte comme un module situé à
-// <dossier du bundle>/bundle/entry/ : les défauts (data/, .env) se trouvent donc à côté du bundle.
+// <dossier du bundle>/bundle/entry/node/ : les défauts (data/, .env) se trouvent donc à côté du bundle.
 const IMPORT_META_URL_BANNER =
-  "const __lastaddonImportMetaUrl = require('node:url').pathToFileURL(require('node:path').join(__dirname, 'bundle', 'entry', 'lastaddon.js')).href;";
+  "const __lastaddonImportMetaUrl = require('node:url').pathToFileURL(require('node:path').join(__dirname, 'bundle', 'entry', 'node', 'lastaddon.js')).href;";
 
 await build({
   entryPoints: [join(root, 'src', 'bundle.ts')],
