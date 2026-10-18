@@ -12,9 +12,10 @@ function makeEnv(initial) {
   const store = new Map(initial ? [['tunnel', JSON.stringify(initial)]] : []);
   return {
     REGISTER_SECRET: SECRET,
+    RETRY_DELAY_MS: 1,
     EDGE_SECRET: 'secret-de-test-du-relais-0123456789',
     LASTSTREAM_ROUTE: {
-      get: async (key, type) => (store.has(key) ? (type === 'json' ? JSON.parse(store.get(key)) : store.get(key)) : null),
+      get: async (key, opt) => (store.has(key) ? (opt === 'json' || opt?.type === 'json' ? JSON.parse(store.get(key)) : store.get(key)) : null),
       put: async (key, value) => {
         store.set(key, value);
       },
@@ -127,5 +128,96 @@ describe('relais', () => {
   it('parseTunnelUrl : cas limites', () => {
     assert.equal(parseTunnelUrl('https://a.b-c.trycloudflare.com/x?y'), 'https://a.b-c.trycloudflare.com');
     assert.equal(parseTunnelUrl('https://-a.trycloudflare.com'), null);
+  });
+});
+
+describe('résilience', () => {
+  const env0 = () => makeEnv({ url: 'https://abc.trycloudflare.com' });
+  const sequence = (...steps) => {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      const step = steps[Math.min(calls, steps.length - 1)];
+      calls += 1;
+      if (step instanceof Error) throw step;
+      return new Response(step.body ?? 'x', { status: step.status });
+    };
+    return () => calls;
+  };
+  const post = (path = '/x') => call(env0(), path, { method: 'POST', body: 'abc', headers: { 'content-length': '3' } });
+
+  it('GET : réessaie sur 530 puis 503, puis réussit', async () => {
+    const calls = sequence({ status: 530 }, { status: 503 }, { status: 200, body: 'ok' });
+    const res = await call(env0(), '/health');
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'ok');
+    assert.equal(calls(), 3);
+  });
+  it('GET : erreur réseau persistante, 2 réessais maximum puis 503 JSON', async () => {
+    const calls = sequence(new TypeError('boom'));
+    const res = await call(env0(), '/health');
+    assert.equal(res.status, 503);
+    assert.equal((await res.json()).error, 'tunnel_unreachable');
+    assert.equal(calls(), 3);
+  });
+  it('GET : un 503 persistant du serveur est restitué tel quel', async () => {
+    const calls = sequence({ status: 503, body: 'indispo' });
+    const res = await call(env0(), '/health');
+    assert.equal(res.status, 503);
+    assert.equal(await res.text(), 'indispo');
+    assert.equal(calls(), 3);
+  });
+  it('POST avec corps : un seul nouvel essai sur erreur de connexion, corps renvoyé intact', async () => {
+    const bodies = [];
+    let n = 0;
+    globalThis.fetch = async (_t, init) => {
+      bodies.push(await new Response(init.body).text());
+      n += 1;
+      if (n === 1) throw new TypeError('connexion refusée');
+      return new Response('ok', { status: 201 });
+    };
+    const res = await call(env0(), '/x', { method: 'POST', body: '{"a":1}', headers: { 'content-length': '7' } });
+    assert.equal(res.status, 201);
+    assert.deepEqual(bodies, ['{"a":1}', '{"a":1}']);
+  });
+  it('POST avec corps : pas de nouvel essai sur 503 ; un seul sur échecs répétés', async () => {
+    let calls = sequence({ status: 503 });
+    let res = await post();
+    assert.equal(res.status, 503);
+    assert.equal(calls(), 1);
+    calls = sequence(new TypeError('boom'));
+    res = await post();
+    assert.equal(res.status, 503);
+    assert.equal(calls(), 2);
+  });
+  it('POST à corps vide : traité comme idempotent (2 réessais)', async () => {
+    const calls = sequence({ status: 530 });
+    const res = await call(env0(), '/x', { method: 'POST' });
+    assert.equal(res.status, 503);
+    assert.equal(calls(), 3);
+  });
+  it('le KV est relu à chaque requête', async () => {
+    const env = env0();
+    const targets = [];
+    globalThis.fetch = async (t) => {
+      targets.push(t);
+      return new Response('ok');
+    };
+    await call(env, '/a');
+    env.store.set('tunnel', JSON.stringify({ url: 'https://neuf.trycloudflare.com' }));
+    await call(env, '/a');
+    assert.deepEqual(targets, ['https://abc.trycloudflare.com/a', 'https://neuf.trycloudflare.com/a']);
+  });
+  it('erreur : page HTML FR avec rechargement pour un navigateur, JSON sinon', async () => {
+    sequence(new TypeError('boom'));
+    const html = await call(env0(), '/', { headers: { accept: 'text/html,application/xhtml+xml' } });
+    assert.equal(html.status, 503);
+    assert.match(html.headers.get('content-type'), /text\/html/);
+    const text = await html.text();
+    assert.match(text, /Laststream redémarre/);
+    assert.match(text, /http-equiv="refresh" content="5"/);
+    const api = await call(env0(), '/health', { headers: { accept: 'application/json' } });
+    assert.match(api.headers.get('content-type'), /json/);
+    const none = await call(makeEnv(), '/', { headers: { accept: 'text/html' } });
+    assert.match(none.headers.get('content-type'), /text\/html/);
   });
 });

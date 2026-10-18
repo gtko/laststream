@@ -112,40 +112,101 @@ function upstreamHeaders(request, publicHost, env) {
   return headers;
 }
 
+const TRANSIENT_STATUS = new Set([502, 503, 504, 530, 1033]);
+const TUNNEL_DOWN_STATUS = new Set([530, 1033]);
+const MAX_BUFFERED_BODY = 1024 * 1024;
+const MAX_RETRIES = 2;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const retryDelay = (env) => (env.RETRY_DELAY_MS !== undefined ? Number(env.RETRY_DELAY_MS) : 200 + Math.random() * 300);
+
+const RESTART_PAGE = `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="5"><title>Laststream redémarre</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1115;color:#e8eaed;font:16px system-ui,sans-serif;text-align:center;padding:16px}
+h1{font-size:1.4rem;margin:0 0 .5rem}p{margin:0;color:#9aa0a6}</style></head>
+<body><main><h1>Laststream redémarre…</h1><p>Nouvel essai automatique dans quelques secondes.</p></main>
+<script>setTimeout(function(){location.reload()},5000)</script></body></html>`;
+
+/** Erreur 503 : page HTML FR à rechargement automatique pour un navigateur, JSON pour les appels API. */
+function unavailable(request, body, retryAfter) {
+  const accept = request.headers.get('accept') ?? '';
+  if (accept.includes('text/html')) {
+    return new Response(RESTART_PAGE, {
+      status: 503,
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'retry-after': retryAfter },
+    });
+  }
+  return json(503, body, { 'retry-after': retryAfter });
+}
+
+function passthrough(upstream) {
+  const headers = new Headers();
+  for (const [name, value] of upstream.headers) {
+    if (!HOP_BY_HOP.has(name.toLowerCase())) headers.append(name, value);
+  }
+  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
 async function relay(request, env) {
   const url = new URL(request.url);
   if (isBlockedPath(url.pathname)) {
     return json(403, { error: 'forbidden_path', message: 'Le relais TV HLS ne passe pas par ce domaine.' });
   }
 
-  const stored = await env.LASTSTREAM_ROUTE.get(ROUTE_KEY, 'json');
+  // Relu à chaque requête (cacheTtl minimal du KV) : aucune URL conservée dans l'isolate.
+  const stored = await env.LASTSTREAM_ROUTE.get(ROUTE_KEY, { type: 'json', cacheTtl: 30 });
   const origin = parseTunnelUrl(stored?.url);
   if (origin === null) {
-    return json(503, { error: 'no_tunnel', message: 'Aucun tunnel enregistré : le serveur est hors ligne.' }, { 'retry-after': '30' });
+    return unavailable(request, { error: 'no_tunnel', message: 'Aucun tunnel enregistré : le serveur est hors ligne.' }, '30');
   }
 
   const target = `${origin}${url.pathname}${url.search}`;
-  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
-  const unreachable = (detail) =>
-    json(503, { error: 'tunnel_unreachable', message: 'Le serveur est injoignable pour le moment.', detail }, { 'retry-after': '15' });
-  let upstream;
-  try {
-    upstream = await fetch(target, {
-      method: request.method,
-      headers: upstreamHeaders(request, url.host, env),
-      body: hasBody ? request.body : undefined,
-      redirect: 'manual',
-    });
-  } catch (error) {
-    return unreachable(String(error?.message ?? error).slice(0, 120));
+  const headers = upstreamHeaders(request, url.host, env);
+  const hasBody = request.body !== null && request.method !== 'GET' && request.method !== 'HEAD';
+  const idempotent = !hasBody;
+
+  // GET/HEAD/corps vide : 2 réessais. Corps non vide : tamponné s'il est petit pour pouvoir être renvoyé, 1 réessai ; sinon aucun.
+  let body;
+  let retries = MAX_RETRIES;
+  if (hasBody) {
+    retries = 0;
+    body = request.body;
+    const length = Number(request.headers.get('content-length'));
+    if (request.headers.has('content-length') && Number.isFinite(length) && length <= MAX_BUFFERED_BODY) {
+      body = await request.arrayBuffer();
+      retries = 1;
+    }
   }
-  // Erreurs de Cloudflare quand le tunnel n'existe plus (530 / 1033) : message clair plutôt qu'une page HTML.
-  if (upstream.status === 530 || upstream.status === 1033) return unreachable(`statut amont ${upstream.status}`);
-  const headers = new Headers();
-  for (const [name, value] of upstream.headers) {
-    if (!HOP_BY_HOP.has(name.toLowerCase())) headers.append(name, value);
+
+  let detail = 'inconnu';
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (attempt > 0) await sleep(retryDelay(env));
+    let upstream;
+    try {
+      upstream = await fetch(target, { method: request.method, headers, body, redirect: 'manual' });
+    } catch (error) {
+      detail = String(error?.message ?? error).slice(0, 120);
+      continue;
+    }
+    if (!TRANSIENT_STATUS.has(upstream.status)) return passthrough(upstream);
+    detail = `statut amont ${upstream.status}`;
+    const down = TUNNEL_DOWN_STATUS.has(upstream.status);
+    // Avec corps, seul 530/1033 (tunnel absent, rien n'a atteint le serveur) autorise un nouvel essai.
+    const mayRetry = attempt < retries && (idempotent || down);
+    if (mayRetry) {
+      await upstream.body?.cancel();
+      continue;
+    }
+    // Un 502/503/504 réel du serveur est restitué tel quel ; seul le tunnel absent est masqué.
+    if (!down) return passthrough(upstream);
+    break;
   }
-  return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
+  return unavailable(
+    request,
+    { error: 'tunnel_unreachable', message: 'Le serveur est injoignable pour le moment.', detail },
+    '15',
+  );
 }
 
 export default {
