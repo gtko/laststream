@@ -84,6 +84,7 @@ export interface SourceProbe {
   version?: string;
   description?: string;
   types?: string[];
+  configurable?: boolean;
 }
 
 /** Teste une seule source via lastAddon (repli quand le navigateur ne peut pas lire le manifest : CORS). */
@@ -99,5 +100,6 @@ export async function testSource(source: Record<string, unknown>, base: string =
     version: typeof m.version === 'string' ? m.version : undefined,
     description: typeof m.description === 'string' ? m.description : undefined,
     types: Array.isArray(m.types) ? m.types : undefined,
+    configurable: !!(m.behaviorHints && (m.behaviorHints.configurable || m.behaviorHints.configurationRequired)),
   };
 }
