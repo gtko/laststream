@@ -1,3 +1,4 @@
+import { getLangPrefs } from './langPrefs';
 import { getVideoLang, type VideoLang } from './prefs';
 
 /** Vidéo TMDB (champs utiles). */
@@ -15,7 +16,13 @@ export interface TmdbVideo {
 
 /** Langue des bandes-annonces : le réglage de l'utilisateur. Point d'entrée unique, à rebrancher plus tard sur la langue audio. */
 export function trailerLang(): VideoLang {
-  return getVideoLang();
+  // Langue audio principale des réglages « Audio et sous-titres » ; l'ancien réglage sert de repli (pays, langues non gérées).
+  const base = getVideoLang();
+  let lang = base.lang;
+  try { lang = getLangPrefs().audio || base.lang; } catch { /* réglage illisible : ancien réglage */ }
+  if (lang === base.lang) return base;
+  const country = ({ fr: base.country === 'CA' ? 'CA' : 'FR', en: 'US', es: 'ES', de: 'DE', it: 'IT', ja: 'JP', ko: 'KR', pt: 'BR' } as Record<string, string>)[lang] ?? lang.toUpperCase();
+  return { lang, tag: `${lang}-${country}`, country };
 }
 
 /** Valeur du paramètre TMDB `include_video_language` : la langue choisie, l'anglais, puis les vidéos sans langue. */
