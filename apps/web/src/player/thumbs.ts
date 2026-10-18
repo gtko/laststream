@@ -96,7 +96,7 @@ export const THUMB_HLS_WIDTH = 320;
 /** Après ce nombre d'échecs de lecture, on renonce aux aperçus pour la source courante (repli silencieux). */
 export const MAX_THUMB_FAILURES = 3;
 
-export type ThumbSource = { mode: 'direct' } | { mode: 'hls'; forceTranscoding: boolean; maxWidth: number } | { mode: 'addon' } | { mode: 'none' };
+export type ThumbSource = { mode: 'direct' } | { mode: 'hls'; forceTranscoding: boolean; maxWidth: number } | { mode: 'addon' } | { mode: 'range' } | { mode: 'none' };
 
 export interface ThumbSourceInput {
   /** Moteur de lecture choisi : 'direct' | 'hls' | 'mpv' | 'native'. */
@@ -107,10 +107,13 @@ export interface ThumbSourceInput {
   forceHls?: boolean;
   /** lastAddon annonce qu'il sait générer des miniatures (ffmpeg disponible). */
   addon?: boolean;
+  /** Lien débridé https distant, WebCodecs disponible et relais de plages annoncé par lastAddon : miniatures décodées ici (src/thumbs). */
+  range?: boolean;
 }
 
 /**
  * D'où viennent les images d'aperçu selon le moteur :
+ * - lien débridé distant (toutes plateformes) : src/thumbs, démultiplexage par plages via le relais Cloudflare + WebCodecs, sans ffmpeg ;
  * - lecture directe : le fichier lui-même (le navigateur sait le lire) ;
  * - HLS : une seconde session du serveur, basse résolution ;
  * - mpv : le fichier n'est souvent pas décodable par la WebView (MKV/HEVC/AV1/DTS) → images générées par ffmpeg côté lastAddon
@@ -119,6 +122,7 @@ export interface ThumbSourceInput {
  */
 export function thumbSource(i: ThumbSourceInput): ThumbSource {
   if (!i.hasMedia) return { mode: 'none' };
+  if (i.range) return { mode: 'range' };
   if (i.engine === 'direct') return { mode: 'direct' };
   if (i.engine === 'hls') return i.serverUp ? { mode: 'hls', forceTranscoding: !!i.forceHls, maxWidth: THUMB_HLS_WIDTH } : { mode: 'none' };
   if (i.engine === 'mpv') return i.addon ? { mode: 'addon' } : { mode: 'none' };

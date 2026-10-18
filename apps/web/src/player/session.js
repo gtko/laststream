@@ -45,7 +45,8 @@ import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
 import { thumbsAllowed, thumbSource } from './thumbs';
-import { ThumbFeed, serverHasThumbs } from './thumbfeed';
+import { ThumbFeed, serverHasThumbs, serverHasRangeThumbs } from './thumbfeed';
+import { makeLocalFeed, webCodecsAvailable, IdbThumbStore } from '../thumbs';
 import { createPlayerUI } from './ui.js';
 import { knownBandwidthKbps } from '../sources/load';
 
@@ -60,6 +61,11 @@ let thumbs = null;
 /** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
 let feed = null;
 let addonThumbs = false;
+/** Aperçu par plages (src/thumbs) : relais Cloudflare + WebCodecs, pour les liens débridés distants. */
+let rangeFeed = null;
+let rangeLocal = null;
+let rangeThumbs = false;
+let rangeStore = null;
 let html = null;
 let mpv = null;
 let nativeEng = null;
@@ -98,7 +104,7 @@ const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.p
 
 // ---------- Création de l'interface (une seule fois) ----------
 function thumbSourceOf(p) {
-  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls), addon: addonThumbs });
+  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls), addon: addonThumbs, range: rangeThumbs && rangeUrlOf(p) !== null && webCodecsAvailable() });
 }
 
 /** Adresse de la source pour lastAddon : serveur de streaming local (repris derrière le relais /_ss) ou lien http(s) émis par lui. */
@@ -106,6 +112,12 @@ function thumbMediaUrl(p) {
   const u = p && p.mediaUrl;
   if (!u) return null;
   return analyzeUrl(u, serverBase()) || (/^https?:/i.test(u) ? u : null);
+}
+
+/** Lien https distant (hors serveur de streaming local en http) dont la lecture passe par lastAddon/débrideur ; sinon null. */
+function rangeUrlOf(p) {
+  const u = thumbMediaUrl(p);
+  return u && /^https:/i.test(u) ? u : null;
 }
 
 function thumbsAllowedNow() {
@@ -140,15 +152,48 @@ function addonThumb(t) {
   if (url) { img.src = url; img.hidden = false; } else img.hidden = true;
 }
 
+/** Survol de la barre, voie par plages : image clé lue par le relais Cloudflare puis décodée ici (WebCodecs). */
+function rangeThumb(t) {
+  const img = ui.thumbImg;
+  if (!thumbsAllowedNow()) { img.hidden = true; return; }
+  if (!rangeFeed) {
+    rangeStore = new IdbThumbStore();
+    rangeFeed = new ThumbFeed({
+      register: async (signal) => {
+        const sourceId = rangeUrlOf(P);
+        if (!sourceId) return null;
+        rangeLocal = makeLocalFeed({
+          sourceId, store: rangeStore, fetchFn: (url, init) => fetch(url, init),
+          resolve: async () => {
+            const r = await postLt('range-source', { url: sourceId });
+            return r && typeof r.token === 'string' ? { url: r.url, token: r.token, base: r.base } : null;
+          },
+        });
+        return rangeLocal.register(signal);
+      },
+      imageUrl: (key, index) => rangeLocal.imageUrl(key, index),
+      fetchFn: (url, init) => rangeLocal.fetchFn(url, init),
+      maxParallel: 2,
+      makeUrl: (blob) => URL.createObjectURL(blob),
+      revokeUrl: (url) => { try { URL.revokeObjectURL(url); } catch (_) { /* ignoré */ } },
+      wait: (ms, signal) => new Promise((resolve) => { const id = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(id); resolve(); }, { once: true }); }),
+      onReady: (index, url) => { if (rangeFeed && rangeFeed.targetIndex === index) { img.src = url; img.hidden = false; } },
+    });
+  }
+  const url = rangeFeed.request(t, P.engine.state().duration);
+  if (url) { img.src = url; img.hidden = false; } else img.hidden = true;
+}
+
 function cancelAddonThumb() {
+  if (rangeFeed) rangeFeed.cancel();
   if (feed) feed.cancel();
   if (ui && ui.thumbImg) ui.thumbImg.hidden = true;
 }
 
 /** La capacité « miniatures » est annoncée par /lt/health (ffmpeg présent côté lastAddon) ; l'option est masquée sinon. */
 function refreshAddonThumbs() {
-  if (addonThumbs) return;
-  ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
+  if (addonThumbs && rangeThumbs) return;
+  ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); rangeThumbs = serverHasRangeThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
 }
 
 function ensureUI() {
@@ -166,7 +211,9 @@ function ensureUI() {
     panelClosed: (name) => { if (name === 'sources' && P && !P.view) closePlayer(); },
     thumb: (t) => {
       if (!P || !P.view) return;
-      if (thumbSourceOf(P).mode === 'addon') addonThumb(t);
+      const mode = thumbSourceOf(P).mode;
+      if (mode === 'range') rangeThumb(t);
+      else if (mode === 'addon') addonThumb(t);
       else if (thumbs) thumbs.request(t);
     },
     thumbCancel: () => { if (thumbs) thumbs.cancel(); cancelAddonThumb(); },
@@ -664,6 +711,7 @@ async function playView(view, startAt) {
   stopAutoSync();
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
+  if (rangeFeed) rangeFeed.reset();
   p.torrent = false;
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
@@ -721,7 +769,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
   p.choice = choice;
-  if (choice.engine === 'mpv') refreshAddonThumbs();
+  refreshAddonThumbs();
   p.conversion = plan.conversion;
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
@@ -1604,6 +1652,7 @@ async function teardown(silent) {
   stopAutoSync();
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
+  if (rangeFeed) rangeFeed.reset();
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;

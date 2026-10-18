@@ -38,6 +38,12 @@ export function serverHasThumbs(health: unknown): boolean {
   return caps?.thumbs === true;
 }
 
+/** Capacité annoncée par GET /lt/health : le relais de plages (Worker Cloudflare + jeton) est configuré. */
+export function serverHasRangeThumbs(health: unknown): boolean {
+  const caps = (health as { capabilities?: { rangeThumbs?: unknown } } | null | undefined)?.capabilities;
+  return caps?.rangeThumbs === true;
+}
+
 export interface FeedDeps {
   /** Enregistre la source courante auprès du serveur ; renvoie la clé, ou null si elle est refusée. */
   register(signal: AbortSignal): Promise<string | null>;
@@ -47,6 +53,8 @@ export interface FeedDeps {
   makeUrl(blob: Blob): string;
   revokeUrl(url: string): void;
   wait(ms: number, signal: AbortSignal): Promise<void>;
+  /** Requêtes en vol au plus (défaut MAX_PARALLEL). */
+  maxParallel?: number;
   /** Une image vient d'arriver (tranche, URL d'objet). */
   onReady(index: number, url: string): void;
 }
@@ -122,7 +130,7 @@ export class ThumbFeed {
   private pump(): void {
     if (this.dead || this.target < 0) return;
     for (const index of wantedSlices(this.target, this.last)) {
-      if (this.loading.size >= MAX_PARALLEL) return;
+      if (this.loading.size >= (this.deps.maxParallel ?? MAX_PARALLEL)) return;
       if (this.images.has(index) || this.loading.has(index) || this.missing.has(index)) continue;
       void this.load(index);
     }
