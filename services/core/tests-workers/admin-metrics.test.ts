@@ -195,10 +195,13 @@ describe('statistiques KV', () => {
   });
 });
 
+/** Profil administrateur de chaque jeton propriétaire : l'administration exige X-Profile-Id. */
+const adminProfiles = new Map<string, string>();
 let ipCounter = 0;
 async function api<T = any>(method: string, path: string, options: { token?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<{ status: number; body: T }> {
   const headers: Record<string, string> = { 'cf-connecting-ip': `198.51.100.${(ipCounter += 1) % 250}`, ...(options.headers ?? {}) };
   if (options.token !== undefined) headers.authorization = `Bearer ${options.token}`;
+  if (options.token !== undefined && path.startsWith('/admin/') && adminProfiles.has(options.token) && headers['x-profile-id'] === undefined) headers['x-profile-id'] = adminProfiles.get(options.token) as string;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   const res = await worker.fetch(`https://worker.test${path}`, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   const text = await res.text();
@@ -216,6 +219,7 @@ describe('administration contre le vrai Worker', () => {
     expect((await api('POST', '/user/register', { body: { username: 'proprio', password: PASSWORD } })).status).toBe(201);
     const login = await api<{ token: string }>('POST', '/user/login', { body: { username: 'proprio', password: PASSWORD } });
     const token = login.body.token;
+    adminProfiles.set(token, (await api<{ id: string }>('POST', '/user/profiles', { token, body: { name: 'proprio' } })).body.id);
     const code = (await api<{ invites: { code: string }[] }>('GET', '/user/invites', { token })).body.invites[0]?.code as string;
     expect((await api('POST', '/user/register', { body: { username: 'membre', password: PASSWORD, invite: code } })).status).toBe(201);
     const member = (await api<{ token: string }>('POST', '/user/login', { body: { username: 'membre', password: PASSWORD } })).body.token;

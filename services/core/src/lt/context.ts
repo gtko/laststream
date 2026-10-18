@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Ctx } from '../http/app-env.js';
 import { platform, type OutboundDispatcher } from '../platform/index.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
+import { withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import {
@@ -235,7 +236,7 @@ export function createLtContext(deps: AppDeps): LtContext {
 /** Décode la configuration de l'URL. Configuration illisible : 400 invalid_config. */
 export function decodeFor(deps: AppDeps, encoded: string): Config {
   try {
-    return decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
+    return withServerServices(decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain }));
   } catch (err) {
     if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
       throw new LtError(400, 'invalid_config');

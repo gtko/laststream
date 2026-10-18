@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fakeLookup, fullToken, json, KEYS, mockUpstream, type MockUpstream, startApp, type RunningApp, tokenFor } from './lt-harness.js';
 
 let upstream: MockUpstream;
@@ -247,5 +247,36 @@ describe('lt : route inconnue', () => {
     const res = await fetch(`${app.baseUrl}/${fullToken()}/lt/inconnue`);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'not_found' });
+  });
+});
+
+describe('clés de services du serveur', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('config vide : repli sur les clés du serveur, annoncées en booléens, jamais renvoyées', async () => {
+    vi.stubEnv('TMDB_TOKEN', KEYS.tmdbToken);
+    const empty = tokenFor({});
+    const health = await fetch(`${app.baseUrl}/${empty}/lt/health`);
+    const healthText = await health.text();
+    expect(JSON.parse(healthText).configured).toEqual({ tmdb: true, mdblist: false, tvdb: false, openrouter: false, fanart: false });
+    const res = await fetch(`${app.baseUrl}/${empty}/lt/tmdb/movie/603`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(JSON.parse(text).title).toBe('Matrix');
+    expect(healthText + text).not.toContain(KEYS.tmdbToken);
+    const decoded = await fetch(`${app.baseUrl}/config/decode`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ config: empty }) });
+    expect(await decoded.text()).not.toContain(KEYS.tmdbToken);
+  });
+
+  it('la clé de la configuration prime sur celle du serveur', async () => {
+    vi.stubEnv('TMDB_TOKEN', 'jeton-serveur-invalide');
+    const res = await fetch(`${app.baseUrl}/${tmdbToken()}/lt/tmdb/movie/603`);
+    expect(res.status).toBe(200);
+  });
+
+  it('sans clé serveur ni clé utilisateur : 404 service_not_configured', async () => {
+    const res = await fetch(`${app.baseUrl}/${tokenFor({})}/lt/tmdb/movie/603`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'service_not_configured', service: 'tmdb' });
   });
 });

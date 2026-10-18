@@ -8,9 +8,14 @@ const worker = (workerExports as unknown as { default: { fetch(input: string, in
 const PASSWORD = 'mot-de-passe-test-1';
 let ipCounter = 0;
 
+/** Profil de chaque jeton : l'administration exige X-Profile-Id (profil administrateur du propriétaire). */
+const profileOf = new Map<string, string>();
+
 async function api<T = any>(method: string, path: string, options: { token?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<{ status: number; body: T }> {
   const headers: Record<string, string> = { 'cf-connecting-ip': `192.0.2.${(ipCounter += 1) % 250}`, ...(options.headers ?? {}) };
   if (options.token !== undefined) headers.authorization = `Bearer ${options.token}`;
+  const profile = options.token === undefined ? undefined : profileOf.get(options.token);
+  if (profile !== undefined && path.startsWith('/admin/') && headers['x-profile-id'] === undefined) headers['x-profile-id'] = profile;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   const res = await worker.fetch(`https://worker.test${path}`, { method, headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   const text = await res.text();
@@ -55,6 +60,7 @@ async function register(username: string, invite?: string): Promise<{ token: str
   expect((await api('POST', '/user/register', { body: invite === undefined ? { username, password: PASSWORD } : { username, password: PASSWORD, invite } })).status).toBe(201);
   const token = (await api<{ token: string }>('POST', '/user/login', { body: { username, password: PASSWORD } })).body.token;
   const profile = (await api<{ id: string }>('POST', '/user/profiles', { token, body: { name: username } })).body.id;
+  profileOf.set(token, profile);
   return { token, profile };
 }
 

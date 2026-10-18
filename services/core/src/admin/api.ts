@@ -73,17 +73,20 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     await next();
   });
 
-  /** Session du propriétaire. Un profil enfant (ou protégé par un PIN non déverrouillé) annoncé par X-Profile-Id est refusé. */
+  /**
+   * Session du profil administrateur : compte propriétaire ET X-Profile-Id égal au profil administrateur (par défaut le
+   * plus ancien profil du propriétaire). Sans l'en-tête, ou avec un autre profil (conjoint, enfant) : 403.
+   */
   async function owner(c: Ctx): Promise<Session> {
     const session = await sessionOf(users(), c);
     if (!session.account.isOwner) throw new UserApiError(403, 'owner_only');
     const profileId = c.req.header('x-profile-id');
-    if (profileId !== undefined) {
-      const profile = await users().findProfile(session.account.id, profileId);
-      if (profile === undefined) throw new UserApiError(403, 'profile_invalid');
-      if (profile.isKid) throw new UserApiError(403, 'kid_profile');
-      assertUnlocked(c, session, profile, deps.secret);
-    }
+    if (profileId === undefined) throw new UserApiError(403, 'admin_profile_required');
+    const profile = await users().findProfile(session.account.id, profileId);
+    if (profile === undefined) throw new UserApiError(403, 'profile_invalid');
+    if (profile.isKid) throw new UserApiError(403, 'kid_profile');
+    if ((await admin().adminProfileId()) !== profile.id) throw new UserApiError(403, 'admin_profile_required');
+    assertUnlocked(c, session, profile, deps.secret);
     return session;
   }
 
@@ -110,6 +113,19 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   router.get('/me', async (c) => {
     const { account } = await owner(c);
     return sendJson(c, { account: { id: account.id, username: account.username }, elevationTtlSec: ELEVATION_TTL_MS / 1000 });
+  });
+
+  /** Désigne un autre profil du propriétaire comme profil administrateur (depuis le profil administrateur seulement). */
+  router.put('/admin-profile', async (c) => {
+    const session = await owner(c);
+    const body = c.get('body') as { profileId?: unknown } | undefined;
+    const target = typeof body?.profileId === 'string' ? body.profileId : '';
+    const profile = await users().findProfile(session.account.id, target);
+    if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
+    if (profile.isKid) throw new UserApiError(403, 'kid_profile');
+    await audit(session, 'admin.profile', profile.name);
+    await admin().setAdminProfileId(profile.id);
+    return sendJson(c, { adminProfileId: profile.id });
   });
 
   /** Ré-authentification : le mot de passe du propriétaire donne un jeton d'élévation de 10 minutes (X-Admin-Elevation). */

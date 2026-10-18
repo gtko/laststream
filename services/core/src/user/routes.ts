@@ -6,6 +6,7 @@ import { errorHandler } from '../http/common.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
+import { withServerServices } from '../config/server-services.js';
 import { ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { createLtContext, type LtContext } from '../lt/context.js';
@@ -129,7 +130,7 @@ function settingsEntries(body: unknown): [string, unknown][] {
 /** Jeton TMDB d'une configuration encodée (import Stremio : résolution des identifiants). */
 function tmdbTokenOf(encoded: string, secret: string, allowPlain: boolean): string | undefined {
   try {
-    return decodeConfig(encoded, secret, { allowPlain }).services.tmdbToken;
+    return withServerServices(decodeConfig(encoded, secret, { allowPlain })).services.tmdbToken;
   } catch (err) {
     if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) throw new UserApiError(400, 'invalid_config');
     throw err;
@@ -312,7 +313,10 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
 
   router.get('/profiles', async (c) => {
     const { account } = await sessionOf(db(), c);
-    return sendJson(c, { profiles: (await db().listProfiles(account.id)).map(publicProfile) });
+    // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil).
+    const adminId = account.isOwner ? await backend.admin().adminProfileId() : null;
+    const profiles = (await db().listProfiles(account.id)).map((p) => ({ ...publicProfile(p), isAdminProfile: adminId !== null && p.id === adminId }));
+    return sendJson(c, { profiles });
   });
 
   router.post('/profiles', async (c) => {

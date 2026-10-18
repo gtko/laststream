@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
+import { withServerServices } from './config/server-services.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { edgeTrust } from './config/edge.js';
@@ -142,7 +143,7 @@ function rateLimit(applies: (c: Ctx) => boolean, limiter: ReturnType<typeof crea
  */
 function hasTmdbToken(deps: AppDeps, encoded: string): boolean {
   try {
-    return decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain }).services.tmdbToken !== undefined;
+    return withServerServices(decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain })).services.tmdbToken !== undefined;
   } catch {
     return false;
   }

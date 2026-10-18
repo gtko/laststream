@@ -81,9 +81,39 @@ describe('/admin : contrôle d\'accès', () => {
     expect(foreign.body.error).toBe('profile_invalid');
   });
 
+  it("profil administrateur : un autre profil adulte du même compte (conjoint) est refusé, comme l'absence d'en-tête", async () => {
+    const jessica = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'jessica' } });
+    const denied = await rig.call<{ error: string }>('GET', '/admin/accounts', { headers: { 'x-profile-id': jessica.body.id } });
+    expect(denied.status).toBe(403);
+    expect(denied.body.error).toBe('admin_profile_required');
+    const writeDenied = await rig.call('PUT', '/admin/settings', { headers: { 'x-profile-id': jessica.body.id }, body: { invitesOpen: false } });
+    expect(writeDenied.status).toBe(403);
+    // Sans X-Profile-Id : refusé aussi.
+    const bare = await request<{ error: string }>(rig.app, 'GET', '/admin/accounts', { token: rig.owner.token });
+    expect(bare.status).toBe(403);
+    expect(bare.body.error).toBe('admin_profile_required');
+    // Le profil administrateur (le plus ancien) passe.
+    expect((await rig.call('GET', '/admin/accounts', { headers: { 'x-profile-id': rig.owner.profile } })).status).toBe(200);
+    // /user/profiles annonce le profil administrateur au propriétaire seulement.
+    const list = await request<{ profiles: Array<{ id: string; isAdminProfile: boolean }> }>(rig.app, 'GET', '/user/profiles', { token: rig.owner.token });
+    expect(list.body.profiles.find((p) => p.id === rig.owner.profile)?.isAdminProfile).toBe(true);
+    expect(list.body.profiles.find((p) => p.id === jessica.body.id)?.isAdminProfile).toBe(false);
+    const other = await request<{ profiles: Array<{ isAdminProfile: boolean }> }>(rig.app, 'GET', '/user/profiles', { token: member.token });
+    expect(other.body.profiles.every((p) => !p.isAdminProfile)).toBe(true);
+    // Le changement se fait depuis le profil administrateur seulement.
+    const byJessica = await rig.call('PUT', '/admin/admin-profile', { headers: { 'x-profile-id': jessica.body.id }, body: { profileId: jessica.body.id } });
+    expect(byJessica.status).toBe(403);
+    const byAdmin = await rig.call('PUT', '/admin/admin-profile', { body: { profileId: jessica.body.id } });
+    expect(byAdmin.status).toBe(200);
+    expect((await rig.call('GET', '/admin/accounts')).status).toBe(403);
+    expect((await rig.call('GET', '/admin/accounts', { headers: { 'x-profile-id': jessica.body.id } })).status).toBe(200);
+    await rig.backend.admin().setAdminProfileId(rig.owner.profile);
+  });
+
   it('profil adulte protégé par PIN : jeton de déverrouillage exigé', async () => {
     const created = await request<{ id: string }>(rig.app, 'POST', '/user/profiles', { token: rig.owner.token, body: { name: 'verrou', pin: '1234' } });
     const profileId = created.body.id;
+    await rig.backend.admin().setAdminProfileId(profileId);
     const locked = await rig.call<{ error: string }>('GET', '/admin/accounts', { headers: { 'x-profile-id': profileId } });
     expect(locked.status).toBe(403);
     expect(locked.body.error).toBe('pin_required');
@@ -91,6 +121,7 @@ describe('/admin : contrôle d\'accès', () => {
     expect(unlock.status).toBe(200);
     const ok = await rig.call('GET', '/admin/accounts', { headers: { 'x-profile-id': profileId, 'x-profile-token': unlock.body.token } });
     expect(ok.status).toBe(200);
+    await rig.backend.admin().setAdminProfileId(rig.owner.profile);
   });
 
   it('une route inconnue sous /admin répond 404 JSON (après authentification)', async () => {

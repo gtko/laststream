@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { App, Ctx } from '../http/app-env.js';
 import { sendJson, queryParams } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
+import { withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps, DebridClient } from '../deps.js';
 import { isEdgeRequest } from '../config/edge.js';
@@ -130,7 +131,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
   /** Configuration de l'URL, ou la réponse 400 à renvoyer. */
   const configOf = (c: Ctx): Config | Response => {
     try {
-      return decodeConfig(c.req.param('config') as string, deps.secret, { allowPlain: deps.allowPlain });
+      return withServerServices(decodeConfig(c.req.param('config') as string, deps.secret, { allowPlain: deps.allowPlain }));
     } catch (err) {
       if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
         return sendJson(c, { error: 'invalid_config' }, 400);

@@ -275,6 +275,39 @@ export class AdminStore {
     return writeAppSettings(this.db, patch);
   }
 
+  /**
+   * Profil administrateur : le seul profil du compte propriétaire qui accède à l'administration. Valeur enregistrée
+   * (clé admin_profile_id), sinon (migration) le plus ancien profil du propriétaire, enregistré à la première lecture.
+   * Null s'il n'existe aucun profil propriétaire.
+   */
+  adminProfileId(): string | null {
+    const owner = this.db.prepare('SELECT id FROM accounts WHERE is_owner = 1 LIMIT 1').get() as SqlRow | undefined;
+    if (owner === undefined) return null;
+    const stored = this.db.prepare("SELECT value FROM app_settings WHERE key = 'admin_profile_id'").get() as SqlRow | undefined;
+    if (stored !== undefined) {
+      try {
+        const id = JSON.parse(String(stored.value)) as unknown;
+        if (typeof id === 'string' && this.db.prepare('SELECT 1 AS ok FROM profiles WHERE id = ? AND account_id = ?').get(id, String(owner.id)) !== undefined) return id;
+      } catch {
+        // Valeur illisible : repli sur le plus ancien profil.
+      }
+    }
+    const oldest = this.db.prepare('SELECT id FROM profiles WHERE account_id = ? ORDER BY created_at, id LIMIT 1').get(String(owner.id)) as SqlRow | undefined;
+    if (oldest === undefined) return null;
+    this.setAdminProfileId(String(oldest.id));
+    return String(oldest.id);
+  }
+
+  /** Désigne le profil administrateur (doit appartenir au propriétaire). `false` sinon. */
+  setAdminProfileId(profileId: string): boolean {
+    const ok = this.db.prepare('SELECT 1 AS ok FROM profiles p JOIN accounts a ON a.id = p.account_id WHERE p.id = ? AND a.is_owner = 1').get(profileId);
+    if (ok === undefined) return false;
+    this.db
+      .prepare("INSERT INTO app_settings (key, value) VALUES ('admin_profile_id', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+      .run(JSON.stringify(profileId));
+    return true;
+  }
+
   // Journal d'audit
 
   addAudit(entry: { at: string; actorId: string | null; actor: string; action: string; target: string | null; detail: Record<string, unknown> | null }): void {

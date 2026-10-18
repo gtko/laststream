@@ -97,7 +97,7 @@ describe('/admin : mode maintenance', () => {
     expect((await rig.call('GET', '/admin/settings')).status).toBe(200);
     const ownerLogin = await request<{ token: string }>(rig.app, 'POST', '/user/login', { body: { username: 'alice', password: PASSWORD } });
     expect(ownerLogin.status).toBe(200);
-    expect((await request(rig.app, 'GET', '/admin/me', { token: ownerLogin.body.token })).status).toBe(200);
+    expect((await request(rig.app, 'GET', '/admin/me', { token: ownerLogin.body.token, headers: { 'x-profile-id': rig.owner.profile } })).status).toBe(200);
     // /admin reste protégé en maintenance.
     expect((await request(rig.app, 'GET', '/admin/settings', { token: member.token })).status).toBe(403);
     expect((await request(rig.app, 'GET', '/admin/settings')).status).toBe(401);

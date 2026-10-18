@@ -33,7 +33,7 @@ export async function startAdmin(extra: Partial<AppDeps> = {}): Promise<AdminRig
   const owner = await bootstrapOwner(app);
   const call: AdminRig['call'] = (method, path, options = {}) => {
     const { elevation, ...rest } = options;
-    const headers = { ...(rest.headers ?? {}), ...(elevation === undefined ? {} : { 'x-admin-elevation': elevation }) };
+    const headers = { 'x-profile-id': owner.profile, ...(rest.headers ?? {}), ...(elevation === undefined ? {} : { 'x-admin-elevation': elevation }) };
     return request(app, method, path, { token: owner.token, ...rest, headers }) as never;
   };
   const elevate = async (): Promise<string> => {
