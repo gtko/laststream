@@ -12,7 +12,7 @@
 .lp.is-mini:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 .lp.is-mini.is-dragging { cursor: grabbing; transition: none; }
 .lp.is-mini.is-dragging .lp-video { pointer-events: none; }
-.lp.is-mini.is-mpv { background: transparent; }
+.lp.is-mini.is-mpv.is-video { background: transparent; }
 .lp.is-mini::before, .lp.is-mini::after { display: none; }
 
 /* Tout ce qui est du plein lecteur disparaît, hors vidéo et contrôles de la vignette. */

@@ -234,7 +234,7 @@ export class MpvEngine extends Emitter {
     this.hole = new PageHole();
     this.nativeSub = false;
     this.lastEmit = 0;
-    ['time-pos', 'volume', 'pause', 'seeking', 'eof-reached', 'duration', 'track-list', 'paused-for-cache', 'demuxer-cache-time', 'aid', 'sid', 'speed', 'mute', 'mpv-version'].forEach((n) => ipc.send('mpv-observe-prop', n));
+    ['time-pos', 'volume', 'pause', 'seeking', 'eof-reached', 'duration', 'track-list', 'paused-for-cache', 'demuxer-cache-time', 'aid', 'sid', 'speed', 'mute', 'mpv-version', 'video-params'].forEach((n) => ipc.send('mpv-observe-prop', n));
     ipc.on('mpv-prop-change', (a) => this.onProp(a));
     ipc.on('mpv-event-ended', (a) => {
       if (!this.live) return;
@@ -252,6 +252,8 @@ export class MpvEngine extends Emitter {
     if (a.name === 'mpv-version') this.version = String(a.data || '');
     if (!this.live) return;
     this.p[a.name] = a.data;
+    // Paramètres vidéo connus : mpv a configuré sa sortie, la page peut devenir transparente (voir showVideo).
+    if (a.name === 'video-params' && a.data) this.showVideo();
     if (a.name === 'track-list') { this.emit('tracks'); }
     if (a.name === 'aid' || a.name === 'sid') {
       // mpv ne ré-émet pas `track-list` quand la piste change : on aligne les indicateurs `selected` pour que le panneau suive.
@@ -263,6 +265,16 @@ export class MpvEngine extends Emitter {
     if (a.name === 'duration' && a.data > 0 && !this.loaded) { this.loaded = true; this.emit('ready'); }
     const now = Date.now();
     if (a.name !== 'time-pos' || now - this.lastEmit > 250) { this.lastEmit = now; this.emit('state'); }
+  }
+
+  /**
+   * Première image : la page ne devient transparente qu'une fois mpv prêt à dessiner. Avant, la fenêtre derrière la page
+   * (blanche sous WebView2) apparaissait pendant le fondu du chargeur, le temps que mpv affiche sa première image.
+   */
+  showVideo() {
+    if (!this.live || this.transparent) return;
+    this.container.classList.add('is-video');
+    this.setTransparent(true);
   }
 
   setTransparent(on) {
@@ -310,7 +322,7 @@ export class MpvEngine extends Emitter {
     this.live = true;
     this.loaded = false;
     this.ipc.send('mpv-command', ['stop']);
-    this.setTransparent(true);
+    // Pas de transparence ici : elle arrive avec la première image (showVideo).
     // La syntaxe de loadfile dépend de la version de mpv, annoncée juste après l'observation de `mpv-version`.
     if (!this.version) await new Promise((r) => setTimeout(r, 400));
     this.ipc.send('mpv-command', ['loadfile', ...loadfileArgs(url, startAt || 0, mpvVersionAtLeast(this.version || '0.0', '0.39'))]);
@@ -323,6 +335,7 @@ export class MpvEngine extends Emitter {
   destroy() {
     this.live = false;
     this.ipc.send('mpv-command', ['stop']);
+    this.container.classList.remove('is-video');
     this.setTransparent(false);
   }
 

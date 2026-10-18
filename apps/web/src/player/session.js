@@ -481,7 +481,7 @@ async function initSession(request, views, view, opts = {}) {
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
   ui.root.classList.toggle('is-searching', !view);
-  ui.root.classList.remove('is-mpv');
+  ui.root.classList.remove('is-mpv', 'is-video');
   ui.setMiniAvailable(true);
   ui.video.hidden = false;
   ui.video.style.objectFit = 'contain';
@@ -827,6 +827,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
   ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
+  // Lecteur natif : transparent dès le départ (comme avant). mpv : transparent seulement à la première image (MpvEngine.showVideo).
+  ui.root.classList.toggle('is-video', choice.engine === 'native' || (choice.engine === 'mpv' && !!mpv && mpv.transparent));
   ui.setMiniAvailable(true);
   if (nativeMini && choice.engine !== 'native') { nativeMini = false; if (nativeEng) nativeEng.closeNow(); miniState.reset(); }
   ui.relayoutMini();
