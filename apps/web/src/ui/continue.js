@@ -1,6 +1,6 @@
 /* « Reprendre la lecture » : cartes paysage 16:9 montrant où tu en es (épisode en cours, logo, temps restant, progression). */
+import { nextSeasonNumber, seasonEpisodes } from './seasons.js';
 import { fallbackHTML } from './typo.js';
-import { tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
 import { getDetail, register, toItem } from './catalog.js';
 import { IMG } from './constants.js';
@@ -39,12 +39,14 @@ export function continueCardHTML(p) {
 }
 
 async function episodeAfter(id, season, episode) {
-  let s = await tmdb('tv/' + id + '/season/' + season);
+  let s = await seasonEpisodes(id, season);
   let e = (s.episodes || []).find((x) => x.episode_number === episode + 1);
   if (e) return { season, e };
-  s = await tmdb('tv/' + id + '/season/' + (season + 1));
-  e = (s.episodes || []).find((x) => x.episode_number === 1);
-  return e ? { season: season + 1, e } : null;
+  const nxt = await nextSeasonNumber(id, season);
+  if (nxt == null) return null;
+  s = await seasonEpisodes(id, nxt);
+  e = (s.episodes || []).sort((a, b) => a.episode_number - b.episode_number)[0];
+  return e ? { season: nxt, e } : null;
 }
 
 async function hydrateCard(card) {
@@ -74,7 +76,7 @@ async function hydrateCard(card) {
       card.dataset.season = String(season);
       card.dataset.episode = String(episode);
     } else {
-      const s = await tmdb('tv/' + id + '/season/' + season);
+      const s = await seasonEpisodes(id, season);
       ep = (s.episodes || []).find((x) => x.episode_number === episode);
     }
     if (!ep || !card.isConnected) return;

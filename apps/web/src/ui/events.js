@@ -1,6 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { toggleEpisode } from './watched.js';
-import { browseMore } from './registry.js';
 import { isKidProfile } from '../data/auth';
 import { leaveKidProfile } from './auth-ui.js';
 import { IMG, REDUCE } from './constants.js';
@@ -20,9 +19,9 @@ import { closePlayer, openPlayer, playerKey, showBanner, updateBanner, zap } fro
 import { cancelDwell, postYT, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
-import { playFrom } from './sources-ui.js';
+import { openSources, playFrom } from './sources-ui.js';
 import { state } from './state.js';
-import { allChannels, bannerEl, moreRows, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
+import { allChannels, bannerEl, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 document.addEventListener('click', (e) => {
@@ -104,7 +103,6 @@ document.addEventListener('click', (e) => {
   }
   const tprog = t.closest('[data-tvprog]');
   if (tprog) { e.preventDefault(); const [cid, st] = tprog.dataset.tvprog.split('|'); showProg(cid, st); return; }
-  if (t.closest('[data-tvmore]')) { e.preventDefault(); moreRows(); return; }
   const hcl = t.closest('[data-hclib]');
   if (hcl) {
     e.preventDefault();
@@ -136,7 +134,6 @@ document.addEventListener('click', (e) => {
   if (ppf) { e.preventDefault(); if (state.pp) { state.pp.filter = ppf.dataset.ppf; state.pp.limit = 80; renderFilmography(); } return; }
   const pps = t.closest('[data-pps]');
   if (pps) { e.preventDefault(); if (state.pp) { state.pp.sort = pps.dataset.pps; state.pp.limit = 80; renderFilmography(); } return; }
-  if (t.closest('[data-ppmore]')) { e.preventDefault(); if (state.pp) { state.pp.limit += 120; renderFilmography(); } return; }
   const ph = t.closest('[data-photo]');
   if (ph) {
     e.preventDefault();
@@ -181,6 +178,13 @@ document.addEventListener('click', (e) => {
     toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     return;
   }
+  const srcOpen = t.closest('[data-sources-open]');
+  if (srcOpen && state.model) {
+    e.preventDefault();
+    const m = state.model;
+    openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen);
+    return;
+  }
   const play = t.closest('[data-play]');
   if (play) { e.preventDefault(); playFrom(play); return; }
   const vid = t.closest('[data-vid]');
@@ -223,7 +227,6 @@ document.addEventListener('click', (e) => {
   if (state.ctxMenu) closeCtx();
   const brw = t.closest('[data-browse]');
   if (brw) { e.preventDefault(); go('#/browse/' + brw.dataset.browse, brw); return; }
-  if (t.closest('[data-browse-more]')) { e.preventDefault(); browseMore(); return; }
   const srch = t.closest('[data-search]');
   if (srch) { e.preventDefault(); go('#/search', srch); return; }
   const calB = t.closest('[data-calnav]');

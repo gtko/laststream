@@ -1,9 +1,12 @@
 /* Calendrier des suivis (#/calendar) et rangée d'accueil « Cette semaine dans tes suivis ». */
+import { canonical } from './seasons.js';
 import { soonItemHTML } from './soon.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { episodeLabel, groupByDate, isoDate, mergeEpisodes, monthGrid, movieReleases } from '../data/calendar';
 import { userStore } from '../data/userStore';
+import { followedAirings, loadGuide } from '../data/showsApi';
+import { hhmm, localDate } from '../data/shows';
 import { listOf, register } from './catalog.js';
 import { addDays, countdown, fmtShort, todayStr } from './dates.js';
 import { detailEl } from './dom.js';
@@ -26,7 +29,17 @@ function itemOf(type, id, name, poster, backdrop) {
   return register(listOf({ results: [raw] }, type)[0]);
 }
 
+async function canonEvents(f, from, to, canon) {
+  const d = await tmdb('tv/' + f.id);
+  const it = itemOf('tv', f.id, d.name || f.title, d.poster_path || f.poster, d.backdrop_path);
+  return canon.seasons.filter((s) => s.number > 0).flatMap((s) => s.episodes)
+    .filter((e) => e.airDate && e.airDate >= from && e.airDate <= to)
+    .map((e) => ({ date: e.airDate, kind: 'episode', key: it.key, title: it.name, poster: d.poster_path || f.poster, label: episodeLabel(e.season, e.episode), season: e.season, episode: e.episode, epTitle: e.name, backdrop: d.backdrop_path }));
+}
+
 async function seriesEvents(f, from, to) {
+  const canon = await canonical(f.id);
+  if (canon) return canonEvents(f, from, to, canon);
   const d = await tmdb('tv/' + f.id);
   const seasons = (d.seasons || []).filter((s) => s.season_number > 0).sort((a, b) => a.season_number - b.season_number);
   // Saisons qui peuvent diffuser dans la période : débutées avant sa fin, et suivies d'une saison qui commence après son début.
@@ -77,6 +90,13 @@ async function personEvents(f, from, to) {
   return out;
 }
 
+/** Diffusions TV (guide) des émissions et séries suivies, dans la période ; une seule requête de guide, mise en cache. */
+async function airingEvents(follows, from, to) {
+  if (!follows.some((f) => f.type === 'tv')) return [];
+  const guide = await loadGuide();
+  return followedAirings(follows, guide, localDate, hhmm, Math.floor(Date.now() / 1000)).filter((e) => e.date >= from && e.date <= to);
+}
+
 /** Événements des suivis dans une période ; une requête par suivi, mise en cache. */
 export async function loadEvents(from, to) {
   const follows = userStore.getFollows();
@@ -84,7 +104,8 @@ export async function loadEvents(from, to) {
   const ck = from + '|' + to + '|' + sig;
   if (!cache.has(ck)) {
     const p = Promise.allSettled(follows.map((f) => (f.type === 'tv' ? seriesEvents(f, from, to) : f.type === 'movie' ? movieEvents(f, from, to) : personEvents(f, from, to))))
-      .then((rs) => mergeEpisodes(rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))));
+      .then((rs) => mergeEpisodes(rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))))
+      .then(async (evs) => evs.concat(await airingEvents(follows, from, to).catch(() => [])));
     p.catch(() => cache.delete(ck));
     cache.set(ck, p);
   }
@@ -112,16 +133,17 @@ export async function renderFollowRow() {
 }
 
 // ---------- Page ----------
-const view = { y: 0, m: 0, mode: 'month', kinds: new Set(['movie', 'tv', 'person']), events: [], token: 0 };
+const view = { y: 0, m: 0, mode: 'month', kinds: new Set(['movie', 'tv', 'person', 'airing']), events: [], token: 0 };
 
-const kindOfEvent = (e) => (e.kind === 'episode' ? 'tv' : e.kind === 'movie' ? 'movie' : 'person');
+const kindOfEvent = (e) => (e.kind === 'episode' ? 'tv' : e.kind === 'movie' ? 'movie' : e.kind === 'airing' ? 'airing' : 'person');
 
 function evHTML(e) {
   const today = todayStr();
   const past = e.date < today;
   const watched = past && (e.kind === 'movie' ? userStore.isWatched(e.key) : e.kind === 'episode' ? userStore.watchedEpisodes(e.key).length > 0 && /É(\d+)/.test(e.label) && isEpWatched(e) : false);
   const src = e.poster ? 'https://image.tmdb.org/t/p/w185' + e.poster : '';
-  return '<button type="button" class="cal-ev kind-' + e.kind + (watched ? ' is-seen' : '') + '" data-open="' + esc(e.key) + '" title="' + esc(e.title + ' · ' + e.label) + '">' +
+  const open = e.kind === 'airing' ? 'data-showopen="' + e.showId + '"' : 'data-open="' + esc(e.key) + '"';
+  return '<button type="button" class="cal-ev kind-' + e.kind + (watched ? ' is-seen' : '') + '" ' + open + ' title="' + esc(e.label + ' · ' + e.title) + '">' +
     '<span class="cal-th">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(e.title.slice(0, 2)) + '</b>') + (watched ? '<span class="cal-check" aria-hidden="true">' + ICON.check + '</span>' : '') + '</span>' +
     '<span class="cal-tx"><strong>' + esc(e.title) + '</strong><em>' + esc(e.label) + '</em></span></button>';
 }
@@ -171,7 +193,7 @@ function pageHTML() {
     '<button type="button" class="btn btn-ghost btn-sm" data-caltoday>Aujourd’hui</button></div>' +
     '<div class="pills" role="group" aria-label="Affichage"><button type="button" class="pill" data-calmode="month" aria-pressed="' + (view.mode === 'month') + '">Mois</button>' +
     '<button type="button" class="pill" data-calmode="agenda" aria-pressed="' + (view.mode === 'agenda') + '">Agenda</button></div>' +
-    '<div class="pills" role="group" aria-label="Filtrer">' + pill('movie', 'Films') + pill('tv', 'Séries') + pill('person', 'Personnes') + '</div></div>' +
+    '<div class="pills" role="group" aria-label="Filtrer">' + pill('movie', 'Films') + pill('tv', 'Séries') + pill('airing', 'TV') + pill('person', 'Personnes') + '</div></div>' +
     '<div id="cal-body" aria-busy="false">' + (view.mode === 'month' ? gridHTML() : agendaHTML()) + '</div>';
 }
 

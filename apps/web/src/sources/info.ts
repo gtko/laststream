@@ -1,12 +1,18 @@
 import { copiesOf, formatBitrate, formatSize, getQualityGroupKey, languageLabel, type QualityGroupKey } from '../data/sources';
 import type { MediaCaps } from '../player/server';
-import { webPlayback, type WebPlayback } from './direct';
+import { conversionOf, webPlayback, type WebPlayback } from './direct';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
 
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
  * données d'affichage prêtes à l'emploi pour le sélecteur de sources. Fonctions pures, testées. */
 
 export type SourceStatus = 'cached' | 'uncached' | 'p2p' | 'direct';
+
+export interface Origin {
+  kind: 'addon' | 'indexer' | 'prowlarr-local';
+  name: string;
+  logo?: string;
+}
 
 export interface LangBadge {
   label: string;
@@ -39,6 +45,8 @@ export interface SourceView {
   seeders: number | null;
   peers: number | null;
   copies: number;
+  /** Où la source a été trouvée (addons, indexeurs) ; vide si inconnu. */
+  origins: Origin[];
   trackers: string[];
   filename: string;
   releaseGroup: string;
@@ -53,6 +61,8 @@ export interface SourceView {
   score: number;
   /** Lecture directe dans le navigateur, conversion nécessaire, ou inconnu (renseigné par `withWebPlayback`). */
   web: WebPlayback;
+  /** Nature de la conversion quand `web` vaut `convert` : audio seulement (léger) ou vidéo (réencodage lent). */
+  convert: 'audio' | 'video' | null;
 }
 
 const QUALITY_BADGE: Record<Resolution, string> = {
@@ -165,6 +175,29 @@ export function trackerHosts(sources: unknown): string[] {
   return [...hosts];
 }
 
+/**
+ * Origines d'une source : `laststream.origins`, à défaut `laststream.indexers`, à défaut la première ligne du nom du stream
+ * (« Lumio\n1080p »). Sans doublon (casse ignorée).
+ */
+export function originsOf(info: LastStreamInfo | null, stream: Stream): Origin[] {
+  let list: Origin[] = [];
+  if (info?.origins?.length) list = info.origins.map((o) => ({ ...o }));
+  else if (info?.indexers?.length) list = info.indexers.map((name) => ({ kind: 'indexer' as const, name }));
+  else if (typeof stream.name === 'string') {
+    const first = stream.name.split('\n')[0].trim();
+    if (first) list = [{ kind: 'addon', name: first }];
+  }
+  const seen = new Set<string>();
+  return list.filter((o) => { const k = o.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** « C411 » ; « C411 +2 » quand il y en a davantage que `max`. */
+export function originSummary(origins: readonly Origin[], max = 2): string {
+  if (!origins.length) return '';
+  const shown = origins.slice(0, max).map((o) => o.name).join(', ');
+  return origins.length > max ? shown + ' +' + (origins.length - max) : shown;
+}
+
 export function formatDuration(sec: number | null): string {
   if (!sec || sec <= 0 || !Number.isFinite(sec)) return '';
   const min = Math.round(sec / 60);
@@ -200,6 +233,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const durationSec = sizeBytes > 0 && kbps && kbps > 0 ? (sizeBytes * 8) / 1000 / kbps : null;
   const filename = info?.filename ?? hints.filename ?? '';
   const trackers = info?.indexers ?? trackerHosts(stream.sources);
+  const origins = originsOf(info, stream);
   const langs = info ? languageBadges(info, text) : [];
   const hasFrench = info ? info.languages.includes('fr') || info.languages.includes('multi') || langs.some((b) => /^(VF|VFF|VFQ|VFI|MULTI|TRUEFRENCH)/i.test(b.label)) : /\b(vf|multi|truefrench)\b/i.test(text);
   return {
@@ -224,6 +258,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     seeders: info?.seeders ?? null,
     peers: info?.peers ?? null,
     copies: info?.copies ?? copiesOf(stream, all),
+    origins,
     trackers,
     filename,
     releaseGroup: info?.releaseGroup ?? '',
@@ -235,6 +270,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,
     web: 'unknown',
+    convert: null,
   };
 }
 
@@ -251,5 +287,9 @@ export function copySignature(v: SourceView): string {
 
 /** Renseigne `web` d'après les capacités réelles du navigateur ; `null` (coque Windows) : inconnu partout. */
 export function withWebPlayback(views: readonly SourceView[], caps: MediaCaps | null): SourceView[] {
-  return views.map((v) => ({ ...v, web: caps ? webPlayback(v.stream, v.info, caps) : 'unknown' }));
+  return views.map((v) => {
+    if (!caps) return { ...v, web: 'unknown' as const, convert: null };
+    const c = conversionOf(v.stream, v.info, caps);
+    return { ...v, web: webPlayback(v.stream, v.info, caps), convert: c === 'audio' || c === 'video' ? c : null };
+  });
 }

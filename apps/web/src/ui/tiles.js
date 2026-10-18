@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { canonSummary } from '../data/series';
+import { canonical } from './seasons.js';
 import { fillMissingPosters } from './posters.js';
 import { fallbackHTML } from './typo.js';
 import { newEpisodeCount } from '../data/episodes';
@@ -166,7 +168,20 @@ export function paintNewBadge(el, it, info) {
   if (it.type === 'tv' && info && info.seasons) {
     const watched = userStore.watchedEpisodes(it.key);
     if (userStore.isFollowing(it.key) || watched.length) {
-      const n = newEpisodeCount(info.seasons, info.lastAired, watched);
+      let seasons = info.seasons;
+      let lastAired = info.lastAired;
+      if (info.canon) ({ seasons, lastAired } = info.canon);
+      else if (info.canon === undefined) {
+        // Une seule fois par série : la numérotation canonique remplace celle de TMDB, puis le badge est recalculé.
+        info.canon = null;
+        canonical(it.id).then((c) => {
+          if (!c) return;
+          const s = canonSummary(c, new Date().toISOString().slice(0, 10));
+          info.canon = { seasons: s.seasons, lastAired: s.lastAired };
+          document.querySelectorAll('[data-tile="' + it.key + '"]').forEach((t) => paintNewBadge(t, it, info));
+        });
+      }
+      const n = newEpisodeCount(seasons, lastAired, watched);
       if (n > 0) { text = '+' + n; label = n === 1 ? '1 nouvel épisode' : n + ' nouveaux épisodes'; }
     }
   } else if (it.type === 'movie' && userStore.isFollowing(it.key) && !userStore.isWatched(it.key)) {

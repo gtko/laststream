@@ -51,6 +51,9 @@ const join = (base: string, path: string): string => base.replace(/\/+$/, '') + 
 async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Promise<T> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  if (init?.signal) {
+    if (init.signal.aborted) ctl.abort(); else init.signal.addEventListener('abort', () => ctl.abort(), { once: true });
+  }
   try {
     const res = isNativePlayer() ? await nativeFetch(url, init, timeoutMs) : await fetch(url, { ...init, signal: ctl.signal });
     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
@@ -119,9 +122,9 @@ export function probeUrl(base: string, mediaURL: string): string {
   return join(base, '/hlsv2/probe?' + new URLSearchParams([['mediaURL', mediaURL]]).toString());
 }
 
-export async function fetchProbe(mediaURL: string, base = serverBase()): Promise<Probe | null> {
+export async function fetchProbe(mediaURL: string, base = serverBase(), signal?: AbortSignal): Promise<Probe | null> {
   try {
-    const p = await getJson<Probe>(probeUrl(base, mediaURL), 20_000);
+    const p = await getJson<Probe>(probeUrl(base, mediaURL), 20_000, { signal });
     return p && Array.isArray(p.streams) ? p : null;
   } catch {
     return null;
@@ -170,7 +173,7 @@ export interface TorrentRequest {
 }
 
 /** Crée (ou retrouve) le torrent côté serveur et renvoie l'URL du fichier à lire. */
-export async function createTorrent(req: TorrentRequest, base = serverBase()): Promise<{ url: string; fileIdx: number }> {
+export async function createTorrent(req: TorrentRequest, base = serverBase(), signal?: AbortSignal): Promise<{ url: string; fileIdx: number }> {
   const hash = req.infoHash.toLowerCase();
   const trackers = (req.sources ?? []).filter((s) => s.startsWith('tracker:')).map((s) => s.slice(8));
   const known = req.fileIdx !== undefined && req.fileIdx !== null && Number.isFinite(req.fileIdx);
@@ -188,7 +191,7 @@ export async function createTorrent(req: TorrentRequest, base = serverBase()): P
     body.guessFileIdx = g;
   }
   const resp = await getJson<{ guessedFileIdx?: number }>(join(base, '/' + encodeURIComponent(hash) + '/create'), 30_000, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal,
   });
   const idx = known ? (req.fileIdx as number) : typeof resp.guessedFileIdx === 'number' ? resp.guessedFileIdx : -1;
   return { url: torrentUrl(base, hash, idx, trackers), fileIdx: idx };

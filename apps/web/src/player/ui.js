@@ -19,9 +19,11 @@ function skeleton() {
   return '<video class="lp-video" playsinline></video>' +
     '<div class="lp-subs" aria-hidden="true"></div>' +
     '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">Vous regardez</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
+    '<div class="lp-bspin" aria-hidden="true"></div>' +
     '<div class="lp-loading" role="status"><div class="lp-load-bg"></div><div class="lp-load-in">' +
       '<div class="lp-lring" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="lp-lring-bg" cx="32" cy="32" r="28"/><circle class="lp-lring-fg" cx="32" cy="32" r="28" stroke-dasharray="175.9" stroke-dashoffset="132"/></svg></div>' +
       '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
+      '<button type="button" class="btn btn-primary lp-self" data-act="choose-myself" hidden>Choisir moi-même</button>' +
       '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
     '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div></div>' +
     '<div class="lp-top">' +
@@ -156,6 +158,7 @@ export function createPlayerUI(h) {
   const hoverT = q('.lp-hover-t');
   const hoverS = q('.lp-hover-s');
   let previewTimer = null;
+  let loadTimer = null;
   /** Cadre d'aperçu au-dessus de la barre, à la fraction `f` : image (si disponible), heure et nom du segment. */
   function showHover(f, time) {
     if (!last || !last.duration) return;
@@ -257,9 +260,20 @@ export function createPlayerUI(h) {
      */
     setLoading(title, msg, extra) {
       const el = q('.lp-loading');
-      el.hidden = !title && !msg;
+      clearTimeout(loadTimer);
+      if (!title && !msg) {
+        // Sortie en fondu : la carte disparaît, puis les contrôles prennent la place.
+        if (!el.hidden) {
+          el.classList.add('is-out');
+          loadTimer = setTimeout(() => { el.hidden = true; el.classList.remove('is-out'); }, 380);
+        }
+        return;
+      }
+      el.classList.remove('is-out');
+      el.hidden = false;
       const e = extra || {};
-      q('.lp-load-logo').innerHTML = e.logo ? '<img src="' + esc(e.logo) + '" alt="' + esc(title || '') + '">' : title ? '<span>' + esc(title) + '</span>' : '';
+      // Le titre en texte est déjà dans la barre haute : la carte n'affiche que le logo, s'il y en a un.
+      q('.lp-load-logo').innerHTML = e.logo ? '<img src="' + esc(e.logo) + '" alt="' + esc(title || '') + '">' : '';
       q('.lp-load-ep').textContent = e.episode || '';
       q('.lp-load-msg').textContent = msg || '';
       q('.lp-load-src').textContent = e.source || '';
@@ -269,6 +283,7 @@ export function createPlayerUI(h) {
       el.classList.toggle('is-det', steps.length > 0);
       q('.lp-lring-fg').style.strokeDashoffset = String(steps.length ? 175.9 * (1 - (e.step + 0.6) / steps.length) : 132);
       q('.lp-cancel').hidden = !e.cancel;
+      q('.lp-self').hidden = !e.slow;
     },
     /** Fait défiler la liste d'épisodes jusqu'à l'épisode donné (0 : aucun) et lui donne le focus. */
     revealEpisode(n) {
@@ -313,7 +328,7 @@ export function createPlayerUI(h) {
       if (document.activeElement !== vs) vs.value = String(Math.round((st.muted ? 0 : st.volume) * 100));
       root.classList.toggle('is-buffering', !!st.buffering);
       root.classList.toggle('is-paused', !!st.paused);
-      q('[data-role="full"]').innerHTML = document.fullscreenElement === root ? LI.fullExit : LI.full;
+      q('[data-role="full"]').innerHTML = (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full;
       q('[data-role="pip"]').classList.toggle('is-active', !!st.pip);
       if (st.paused) root.classList.add('is-ui');
       // Écran de pause : après 8 s à l'arrêt (hors panneau ouvert).
@@ -325,6 +340,13 @@ export function createPlayerUI(h) {
         q('.lp-pause').hidden = true;
       }
       if (marks) api.setMarks(marks);
+    },
+    /** `loading` : seuls retour, titre et « Sources » restent visibles ; `ready` : les contrôles apparaissent puis se masquent seuls. */
+    setPhase(phase) {
+      root.classList.toggle('is-loading', phase === 'loading');
+      root.classList.toggle('is-ready', phase === 'ready');
+      if (phase === 'ready') wake();
+      else { root.classList.add('is-ui'); clearTimeout(hideTimer); }
     },
     /** Informations de l'écran de pause : { logo, title, episode, synopsis, backdrop } ou null. */
     setPauseScreen(info) {

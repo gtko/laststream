@@ -1,5 +1,5 @@
 import { getBandwidthSetting, getVideoLang } from '../data/prefs';
-import { fetchStreams, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
+import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { browserCaps, inShell } from '../player/caps';
 import { toSourceViews, withWebPlayback, type SourceView } from './info';
@@ -22,10 +22,14 @@ export interface SourceRequest {
 export interface LoadedSources {
   imdb: string;
   views: SourceView[];
+  /** Sources de torrents / indexeurs encore interrogés (réponse partielle de lastAddon). */
+  pending: string[];
 }
 
 const CACHE_MS = 90_000;
-const pending = new Map<string, { at: number; promise: Promise<LoadedSources> }>();
+const inflight = new Map<string, { at: number; promise: Promise<LoadedSources> }>();
+/** Une liste partielle ne reste en cache que quelques secondes. */
+const PARTIAL_CACHE_MS = 8_000;
 
 export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | 'episode'>): string =>
   [req.type, req.id, req.season ?? '', req.episode ?? ''].join(':');
@@ -33,8 +37,9 @@ export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | '
 async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
-  const streams = sortStreams(await fetchStreams(req.type, imdb, req.season, req.episode));
-  return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()) };
+  const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode);
+  const streams = sortStreams(res.streams);
+  return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()), pending: res.pending };
 }
 
 /**
@@ -43,11 +48,14 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
  */
 export function loadSources(req: SourceRequest, now = Date.now()): Promise<LoadedSources> {
   const key = requestKey(req);
-  const hit = pending.get(key);
+  const hit = inflight.get(key);
   if (hit && now - hit.at < CACHE_MS) return hit.promise;
   const promise = fetchSources(req);
-  pending.set(key, { at: now, promise });
-  promise.catch(() => { if (pending.get(key)?.promise === promise) pending.delete(key); });
+  inflight.set(key, { at: now, promise });
+  promise.then((r) => {
+    // Liste partielle : on la garde peu de temps, la suite arrive par `refreshSources`.
+    if (r.pending.length && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - PARTIAL_CACHE_MS), promise });
+  }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
   return promise;
 }
 
@@ -56,7 +64,65 @@ export function prefetchSources(req: SourceRequest): void {
   loadSources(req).catch(() => undefined);
 }
 
-export function clearSourceCache(): void { pending.clear(); }
+export function clearSourceCache(): void { inflight.clear(); }
+
+/** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */
+export async function refreshSources(req: SourceRequest): Promise<LoadedSources> {
+  const promise = fetchSources(req);
+  inflight.set(requestKey(req), { at: Date.now(), promise });
+  return promise;
+}
+
+/** La recherche a-t-elle avancé depuis la dernière liste ? (nombre de sources ou sources encore en attente) */
+export function statusChanged(known: { count: number; pending: readonly string[] }, status: { count: number; pending: readonly string[] }): boolean {
+  return status.count !== known.count || status.pending.length !== known.pending.length;
+}
+
+export const POLL_EVERY_MS = 2_000;
+export const POLL_MAX_MS = 20_000;
+
+/**
+ * Une interrogation de l'état : renvoie la nouvelle liste si la recherche a avancé, la liste actuelle sans `pending` si elle est
+ * terminée ou si la route n'existe pas (ancien lastAddon), ou la liste actuelle inchangée.
+ */
+export async function pollSources(req: SourceRequest, current: LoadedSources): Promise<LoadedSources> {
+  if (!current.pending.length) return current;
+  const status = await fetchStreamStatus(req.type, current.imdb, req.season, req.episode);
+  if (!status) return { ...current, pending: [] };
+  if (statusChanged({ count: current.views.length, pending: current.pending }, status)) {
+    try {
+      return await refreshSources({ ...req, imdb: current.imdb });
+    } catch {
+      return current;
+    }
+  }
+  return current;
+}
+
+/**
+ * Surveille une recherche partielle : toutes les 2 s (20 s au plus) tant que des sources sont en attente, rappelle `onUpdate`
+ * avec la liste complétée et le nombre de sources ajoutées. Renvoie la fonction d'arrêt.
+ */
+export function watchSources(req: SourceRequest, start: LoadedSources, onUpdate: (next: LoadedSources, added: number) => void, opts: { every?: number; maxMs?: number } = {}): () => void {
+  let stopped = false;
+  let current = start;
+  const t0 = Date.now();
+  const every = opts.every ?? POLL_EVERY_MS;
+  const maxMs = opts.maxMs ?? POLL_MAX_MS;
+  const step = async (): Promise<void> => {
+    if (stopped || !current.pending.length || Date.now() - t0 >= maxMs) return;
+    const next = await pollSources(req, current);
+    if (stopped) return;
+    if (next !== current) {
+      const added = next.views.length - current.views.length;
+      current = next;
+      onUpdate(next, Math.max(0, added));
+    }
+    setTimeout(() => { void step(); }, every);
+  };
+  setTimeout(() => { void step(); }, every);
+  return () => { stopped = true; };
+}
 
 const SUPPORTED: readonly Lang[] = ['fr', 'en', 'es', 'de', 'it'];
 

@@ -1,10 +1,10 @@
 /* « Vu » : épisodes, saisons, série entière et films. Affichage optimiste, retour arrière si le serveur refuse. */
+import { seasonEpisodes } from './seasons.js';
 import { newEpisodeCount } from '../data/episodes';
 import { refreshRatingUI, showRatePrompt } from './rate.js';
 import { refreshNewBadges } from './tiles.js';
 import { userStore } from '../data/userStore';
 import { markNext, updatePlayLabel } from './fiche.js';
-import { tmdb } from '../data/lt';
 import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
@@ -92,7 +92,7 @@ export function refreshWatchedUI() {
 /** Toutes les saisons (hors saison 0) : épisodes diffusés. */
 async function seriesAired(m) {
   const seasons = (m.seasons || []).filter((s) => s.season_number > 0);
-  const lists = await Promise.all(seasons.map((s) => tmdb('tv/' + m.id + '/season/' + s.season_number).catch(() => null)));
+  const lists = await Promise.all(seasons.map((s) => seasonEpisodes(m.id, s.season_number).catch(() => null)));
   const out = [];
   lists.forEach((d, i) => {
     if (d && d.episodes) d.episodes.filter(isAired).forEach((e) => out.push({ season: seasons[i].season_number, episode: e.episode_number }));

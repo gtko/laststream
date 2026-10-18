@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { canonSummary } from '../data/series';
+import { canonical } from './seasons.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { getVideoLang } from '../data/prefs';
@@ -26,7 +28,8 @@ export function frReleaseDate(raw) {
   return pool[0] || '';
 }
 
-export function buildModel(type, id, raw, en) {
+export function buildModel(type, id, raw, en, canon) {
+  const sum = canon ? canonSummary(canon, new Date().toISOString().slice(0, 10)) : null;
   const isTv = type === 'tv';
   const crew = (raw.credits && raw.credits.crew) || [];
   const uniq = (list) => Array.from(new Set(list));
@@ -59,15 +62,20 @@ export function buildModel(type, id, raw, en) {
     certRaw: certification(raw, type),
     cinemaSince: type === 'movie' ? availOf(raw).cinemaSince : null,
     cert: certLabel(certification(raw, type)),
-    seasons: (raw.seasons || []).filter((s) => s.season_number > 0).length
-      ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || []),
-    nSeasons: raw.number_of_seasons || 0,
-    nEpisodes: raw.number_of_episodes || 0,
+    // Numérotation canonique de lastAddon quand elle existe ; sinon saisons TMDB.
+    canon: canon || null,
+    seasons: sum
+      ? (sum.seasons.filter((s) => s.season_number > 0).length ? sum.seasons.filter((s) => s.season_number > 0) : sum.seasons)
+      : ((raw.seasons || []).filter((s) => s.season_number > 0).length ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || [])),
+    nSeasons: sum ? sum.nSeasons : raw.number_of_seasons || 0,
+    nEpisodes: sum ? sum.nEpisodes : raw.number_of_episodes || 0,
     status: STATUS_FR[raw.status] || raw.status || '',
-    next: raw.next_episode_to_air
+    next: sum
+      ? (sum.next ? { airDate: sum.next.airDate, code: 'S' + sum.next.season + ' · É' + sum.next.episode, name: sum.next.name } : null)
+      : raw.next_episode_to_air
       ? { airDate: raw.next_episode_to_air.air_date || '', code: 'S' + raw.next_episode_to_air.season_number + ' · É' + raw.next_episode_to_air.episode_number, name: raw.next_episode_to_air.name || '' }
       : null,
-    lastAired: raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
+    lastAired: sum ? sum.lastAired : raw.last_episode_to_air ? { season_number: raw.last_episode_to_air.season_number, episode_number: raw.last_episode_to_air.episode_number } : null,
     tvdbId: (raw.external_ids && raw.external_ids.tvdb_id) || null,
     imdbId: raw.imdb_id || (raw.external_ids && raw.external_ids.imdb_id) || '',
     vote: raw.vote_average || 0,
@@ -96,11 +104,12 @@ export function fetchFull(type, id) {
     const p = (async () => {
       const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
       raw.videos = { results: await videosOf(raw, type, id) };
+      const canon = type === 'tv' ? await canonical(id) : null;
       let en = null;
       if (!raw.overview || !raw.tagline) {
         try { en = await tmdb(type + '/' + id, { language: 'en-US' }); } catch (_) { /* repli silencieux */ }
       }
-      return buildModel(type, id, raw, en);
+      return buildModel(type, id, raw, en, canon);
     })();
     p.catch(() => fullCache.delete(key));
     fullCache.set(key, p);

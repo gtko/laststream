@@ -1,11 +1,12 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
- * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/library, #/tv-live, #/settings.
+ * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/library, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings.
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';
 import './styles/player.css';
 import './styles/player-ui.css';
 import './styles/player-panels.css';
+import './styles/player-loading.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
@@ -25,6 +26,7 @@ import './ui/follows.js';
 import './ui/rate.js';
 import './ui/calendar.js';
 import './ui/sources-ui.js';
+import { announceShellReady } from './player/shell';
 
 // Application Android, premier lancement : adresse du serveur lastAddon (sur le PC) avant tout appel réseau.
 if (needsServerSetup()) await runServerSetup();
@@ -45,4 +47,6 @@ if (parseRoute()) {
   detailEl.hidden = false;
   showView(parseRoute());
 }
-load();
+// La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
+Promise.resolve(load()).catch(() => undefined).finally(() => { announceShellReady(); });
+setTimeout(() => { announceShellReady(); }, 8000);

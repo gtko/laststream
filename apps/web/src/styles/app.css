@@ -276,10 +276,14 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 /* ---------- Carte « Bientôt » d'un épisode à venir ---------- */
 .soon { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; color: #fff; text-align: left; background: linear-gradient(150deg, #3a2130, #17151f 70%); isolation: isolate; }
 .soon-bg, .soon-bg img { position: absolute; inset: 0; width: 100%; height: 100%; }
-.soon-bg img { object-fit: cover; transform: scale(1.12); filter: blur(6px) brightness(0.55); }
-.soon.has-still .soon-bg img { transform: none; filter: brightness(0.7); }
+.soon-bg img { object-fit: cover; filter: brightness(0.75); }
+.soon.is-blur .soon-bg img { transform: scale(1.12); filter: blur(8px) brightness(0.55); } /* dernier repli : affiche seule */
 .soon-grad { position: absolute; inset: 0; z-index: 1; background: linear-gradient(135deg, var(--accent), transparent 70%); opacity: 0.18; pointer-events: none; }
-.soon::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, rgba(12, 11, 17, 0.8), rgba(12, 11, 17, 0) 62%); pointer-events: none; }
+.soon::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, rgba(12, 11, 17, 0.95) 0%, rgba(12, 11, 17, 0.8) 42%, rgba(12, 11, 17, 0.2) 100%), linear-gradient(0deg, rgba(12, 11, 17, 0.5), rgba(12, 11, 17, 0) 45%); pointer-events: none; }
+.soon-poster { position: absolute; right: 12px; bottom: 12px; z-index: 2; height: 64%; aspect-ratio: 2 / 3; width: auto; border-radius: 10px; object-fit: cover; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55); }
+.soon.has-poster .soon-body { right: calc(24% + 24px); }
+.soon.has-poster .soon-code { font-size: 24px; }
+.soon-logo.is-big { height: 44px; max-width: 70%; }
 .soon-date { position: absolute; top: 10px; left: 10px; z-index: 3; width: 54px; padding: 6px 0 5px; border-radius: 12px; background: var(--accent); color: var(--on-accent); display: flex; flex-direction: column; align-items: center; line-height: 1; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); }
 .soon-date b { font-family: var(--ff-title); font-weight: 800; font-size: 26px; }
 .soon-date i { margin-top: 3px; font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; }
@@ -388,3 +392,50 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
   .src-edit { padding-left: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .src-dot.is-load { animation: none; } }
+
+/* ---------- Défilement infini ---------- */
+.inf { padding: 8px var(--gutter) 40px; text-align: center; min-height: 24px; }
+.inf-more { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.inf-more:focus { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: inline-block; padding: 10px 22px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 800; }
+.inf-end { margin: 0; font-size: 13px; color: var(--dim); }
+.inf-end[hidden] { display: none; }
+.lib-grid .sk-grid, .sk-grid { width: 100%; height: auto; aspect-ratio: 2 / 3; flex: none; }
+.epg-sk { height: 64px; display: flex; align-items: center; padding: 0 12px; }
+.epg-sk .sk-line { width: 260px; margin: 0; }
+
+/* Actions de la fiche : la rangée peut dépasser la colonne d'informations avant de passer à la ligne */
+.f-actions { width: max-content; max-width: min(88vw, 780px); }
+.f-actions .btn-pill { flex: 0 1 auto; min-width: 0; }
+.fiche .f-actions .btn-pill.is-cinema { padding: 0 26px; font-size: 16px; }
+@media (max-width: 640px) { .f-actions { width: 100%; max-width: 100%; } }
+
+/* ---------- TV : numéro de chaîne, émissions, « Ce soir à la TV » ---------- */
+.ch-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--soft); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.show-card { cursor: pointer; }
+.show-card .card-media { aspect-ratio: 2 / 3; }
+.show-card .card-media img { width: 100%; height: 100%; object-fit: cover; }
+.show-card .t-badge.show-live { background: #E50914; color: #fff; }
+.tonight-card .card-media img.tn-logo { object-fit: contain; padding: 18%; background: #fff; }
+.tonight-card.is-epg .card-media img:not(.tn-logo) { object-fit: cover; }
+.shows-h { padding: 8px var(--gutter) 0; }
+.show-airs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 980px; }
+.show-air { display: grid; grid-template-columns: minmax(150px, 220px) minmax(160px, 1fr) 2fr auto; align-items: center; gap: 8px 16px; padding: 12px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.show-air.is-live { border-color: #E50914; }
+.sa-chan { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sa-chan img, .sa-chan > b { width: 40px; height: 40px; border-radius: 9px; background: #fff; object-fit: contain; padding: 3px; flex: none; color: #0c0b11; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.sa-name { font-weight: 700; font-size: 14px; min-width: 0; }
+.sa-when { font-size: 14px; color: var(--soft); }
+.sa-when strong { color: var(--text); text-transform: capitalize; }
+.show-air.is-live .sa-when strong { color: #E50914; }
+.sa-title { font-size: 14px; color: var(--dim); min-width: 0; }
+.sa-prog { grid-column: 1 / -1; }
+.show-past { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 820px; }
+.show-ep { display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 14px; }
+.se-code { color: var(--accent); font-weight: 800; }
+.se-date { color: var(--dim); font-variant-numeric: tabular-nums; }
+.cal-ev.kind-airing .cal-tx em { color: #E50914; font-weight: 700; }
+@media (max-width: 760px) {
+  .show-air { grid-template-columns: 1fr; }
+  .show-ep { grid-template-columns: 70px 1fr; }
+  .se-date { grid-column: 2; }
+}

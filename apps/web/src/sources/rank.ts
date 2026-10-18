@@ -15,12 +15,14 @@ export interface SourceFilters {
   langs: ReadonlySet<LangFilter>;
   cachedOnly: boolean;
   hdrOnly: boolean;
+  /** Noms d'origine retenus (vide : toutes). */
+  origins: ReadonlySet<string>;
 }
 
-export const NO_FILTERS: SourceFilters = { resolutions: new Set(), langs: new Set(), cachedOnly: false, hdrOnly: false };
+export const NO_FILTERS: SourceFilters = { resolutions: new Set(), langs: new Set(), cachedOnly: false, hdrOnly: false, origins: new Set() };
 
 export function filtersActive(f: SourceFilters): boolean {
-  return f.resolutions.size > 0 || f.langs.size > 0 || f.cachedOnly || f.hdrOnly;
+  return f.resolutions.size > 0 || f.langs.size > 0 || f.cachedOnly || f.hdrOnly || f.origins.size > 0;
 }
 
 function matchesLangFilter(v: SourceView, l: LangFilter): boolean {
@@ -36,6 +38,7 @@ export function applyFilters(views: readonly SourceView[], f: SourceFilters): So
     if (f.langs.size && ![...f.langs].some((l) => matchesLangFilter(v, l))) return false;
     if (f.cachedOnly && v.status !== 'cached') return false;
     if (f.hdrOnly && v.hdr.length === 0) return false;
+    if (f.origins.size && !v.origins.some((o) => f.origins.has(o.name))) return false;
     return true;
   });
 }
@@ -103,9 +106,12 @@ export interface RecommendOptions {
 
 const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1080p': 2, '720p': 1, SD: 0, other: 0 };
 
-/** Rang d'une source dans le navigateur : sa résolution, moins un cran si elle exige une conversion. */
+/**
+ * Rang d'une source dans le navigateur : sa résolution, moins un cran pour une conversion audio seule (la vidéo est copiée),
+ * et trois crans pour un réencodage vidéo (lent, gourmand : un 4K HEVC ne passe pas devant un 1080p lisible).
+ */
 export function webRank(v: SourceView): number {
-  return TIER[v.group] - (v.web === 'convert' ? 1 : 0);
+  return TIER[v.group] - (v.web !== 'convert' ? 0 : v.convert === 'video' ? 3 : 1);
 }
 
 /**
@@ -128,7 +134,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
       const pool = withLang.length ? withLang : [...fitting].sort(webOrder);
       const view = pool[0];
       const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
-      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.web === 'convert' ? ' · avec conversion' : '') };
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') };
     }
   } else {
     const streams = playable.map((v) => v.stream);
@@ -141,4 +147,34 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
   const lightest = [...playable].sort((a, b) => (a.bitrateKbps ?? Infinity) - (b.bitrateKbps ?? Infinity) || b.score - a.score)[0];
   const usable = budget === Infinity ? 0 : Math.round(budget / 1000);
   return { view: lightest, languageFallback: !lightest.hasFrench, reason: 'Aucune source ne tient dans ta connexion' + (usable ? ' (' + usable + ' Mb/s utiles)' : '') + ' : la moins lourde est proposée' };
+}
+
+/**
+ * Une liste partielle suffit pour lancer la lecture : source en cache, dans la langue préférée (pas un repli), en 1080p ou mieux.
+ * Sinon on attend le reste de la recherche.
+ */
+export function isGoodMatch(rec: Recommendation | null): boolean {
+  return !!rec && !rec.languageFallback && rec.view.status === 'cached' && (rec.view.group === '2160p' || rec.view.group === '1080p');
+}
+
+/** « Recherche encore sur C411, YGG et 2 autres… » */
+export function describePending(pending: readonly string[]): string {
+  if (!pending.length) return '';
+  const shown = pending.slice(0, 2).join(', ');
+  const more = pending.length - 2;
+  return 'Recherche encore sur ' + shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '…';
+}
+
+/** Nombre de sources par origine, de la plus fournie à la moins fournie. */
+export function countOrigins(views: readonly SourceView[]): Array<{ name: string; count: number; logo?: string }> {
+  const map = new Map<string, { name: string; count: number; logo?: string }>();
+  for (const v of views) {
+    for (const o of v.origins) {
+      const e = map.get(o.name) ?? { name: o.name, count: 0, logo: o.logo };
+      e.count += 1;
+      if (!e.logo && o.logo) e.logo = o.logo;
+      map.set(o.name, e);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }

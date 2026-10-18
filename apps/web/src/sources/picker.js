@@ -4,8 +4,9 @@ import { measureBandwidthKbps, QUALITY_LABEL } from '../data/sources';
 import { modalBody } from '../ui/dom.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
-import { countByGroup, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
-import { knownBandwidthKbps, loadSources, recommendFor } from './load';
+import { countByGroup, countOrigins, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
+import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './load';
+import { describePending } from './rank';
 
 const RES_CHIPS = [['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
 const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
@@ -17,6 +18,10 @@ const bound = new WeakSet();
 const chipHtml = (kind, value, label, on, count) =>
   '<button type="button" class="s-chip' + (on ? ' is-on' : '') + '" data-nav data-row="f-' + kind + '" data-chip="' + kind + ':' + value + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
   esc(label) + (count != null ? '<em>' + count + '</em>' : '') + '</button>';
+
+/** Pastille d'origine : logo de l'addon ou icône d'indexeur, puis le nom. */
+const originIcon = (o) => (o.logo ? '<img class="s-olg" src="' + esc(o.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '<svg class="s-oic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.500v-9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.500" fill="currentColor"/></svg>');
+const originChip = (o, on) => '<button type="button" class="s-chip' + (on ? ' is-on' : '') + '" data-nav data-row="f-origin" data-chip="origin:' + esc(o.name) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + originIcon(o) + esc(o.name) + '<em>' + o.count + '</em></button>';
 
 function truncName(name) {
   if (name.length <= 56) return name;
@@ -30,7 +35,8 @@ function itemHtml(v, opts) {
   if (v.codec) l1.push('<span class="s-codec">' + esc(v.codec) + '</span>');
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
   const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
-    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="Le serveur de streaming convertit le flux (HEVC, DTS, REMUX…)">Conversion</span>' : '';
+    : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
+    : v.web === 'convert' ? '<span class="s-web s-web-convert" title="La vidéo est copiée, seul l’audio est converti">Conversion audio</span>' : '';
 
   const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? 'Langue vérifiée dans le fichier' : 'Langue annoncée par le nom de la release') + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
   const l2 = (v.audio ? '<span class="s-audio">' + esc(v.audio) + '</span>' : '') + langs;
@@ -41,6 +47,7 @@ function itemHtml(v, opts) {
   if (v.durationLabel) l3.push('≈ ' + esc(v.durationLabel));
   if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' / ' + v.peers + ' peers' : ''));
   if (v.copies > 1) l3.push(v.copies + ' copies');
+  if (v.origins.length) l3.push('<span class="s-orig" title="' + esc(v.origins.map((o) => o.name).join(', ')) + '">' + v.origins.slice(0, 2).map((o) => '<span class="s-o">' + originIcon(o) + esc(o.name) + '</span>').join('') + (v.origins.length > 2 ? '<span class="s-o s-o-more">+' + (v.origins.length - 2) + '</span>' : '') + '</span>');
   if (v.trackers.length) l3.push('<span class="s-trk" title="' + esc(v.trackers.join(', ')) + '">' + esc(v.trackers.slice(0, 3).join(', ')) + (v.trackers.length > 3 ? ' +' + (v.trackers.length - 3) : '') + '</span>');
 
   const l4 = v.filename
@@ -64,6 +71,7 @@ function render() {
   if (!s) return;
   const { views, filters, sort } = s;
   const counts = countByGroup(views);
+  const origins = countOrigins(views);
   const shown = applyFilters(views, filters);
   const rec = s.rec && shown.some((v) => v.index === s.rec.view.index) ? s.rec : null;
   const ordered = sortViews(shown, sort, rec ? rec.view.index : null);
@@ -74,18 +82,24 @@ function render() {
     '<div class="s-bar" role="group" aria-label="Filtres">' +
       '<div class="s-chips" data-label="Résolution">' + RES_CHIPS.filter(([k]) => counts[k]).map(([k, l]) => chipHtml('res', k, l, filters.resolutions.has(k), counts[k])).join('') + '</div>' +
       '<div class="s-chips" data-label="Langue">' + LANG_CHIPS.map(([k, l]) => chipHtml('lang', k, l, filters.langs.has(k))).join('') + '</div>' +
+      (origins.length > 1 ? '<div class="s-chips" data-label="Origine">' + origins.slice(0, 8).map((o) => originChip(o, filters.origins.has(o.name))).join('') + '</div>' : '') +
       '<div class="s-chips" data-label="Affichage">' + chipHtml('cache', 'on', 'Cache uniquement ⚡', filters.cachedOnly) + chipHtml('hdr', 'on', 'HDR', filters.hdrOnly) +
         (filtersActive(filters) ? '<button type="button" class="s-chip s-reset" data-nav data-row="f-reset" data-chip="reset:1">Réinitialiser</button>' : '') + '</div>' +
       '<div class="s-chips" data-label="Trier par">' + SORT_KEYS.map((k) => chipHtml('sort', k, SORT_LABELS[k], sort === k)).join('') + '</div>' +
     '</div>';
 
   let body = '';
-  if (rec) body += '<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
+  // Sources essayées sans succès (lenteur, erreur) : une ligne par source avec la raison.
+  if (s.notice.length) body += '<div class="s-fail" role="alert"><b>Sources essayées sans succès</b><ul>' + s.notice.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
+  // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
+  if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
+  else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
+  if (rec) body +='<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
   else if (s.bwPending) body += '<p class="s-note">Mesure de ta connexion pour choisir la meilleure source…</p>';
   const groups = groupViews(rest);
   body += groups.map((g) => '<h3 class="src-group">' + esc(QUALITY_LABEL[g.key]) + ' <span>' + g.views.length + '</span></h3><ul class="src-list">' +
     g.views.map((v) => itemHtml(v, { current: s.currentIndex === v.index })).join('') + '</ul>').join('');
-  if (!shown.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
+  if (!shown.length && views.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
 
   const host = s.host;
   const focusKey = document.activeElement && host.contains(document.activeElement) ? (document.activeElement.dataset.chip || document.activeElement.dataset.src) : null;
@@ -111,9 +125,10 @@ function showMessage(msg) {
  * source en cours de lecture) ; `opts.currentIndex` marque la source en cours.
  */
 export async function openSourcePicker(request, opener, opts) {
+  if (session && session.stop) session.stop();
   const token = Symbol('picker');
   const host = opts.host || modalBody;
-  session = { token, host, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
+  session = { token, host, notice: opts.notice || [], pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
   const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
@@ -123,13 +138,28 @@ export async function openSourcePicker(request, opener, opts) {
       if (!alive()) return;
       request.imdb = loaded.imdb;
       session.views = loaded.views;
+      session.pending = loaded.pending;
     }
   } catch (e) {
     if (alive()) showMessage(e && e.message === 'no-imdb' ? 'Aucun identifiant IMDb pour ce titre : impossible de chercher des sources.' : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
     return;
   }
-  if (!session.views.length) { showMessage('Aucune source trouvée pour le moment.'); return; }
+  if (!session.views.length && !session.pending.length) { showMessage('Aucune source trouvée pour le moment.'); return; }
   const known = knownBandwidthKbps();
+  // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
+  if (session.pending.length) {
+    let clearAdded = null;
+    session.stop = watchSources(request, { imdb: opts.imdb || request.imdb || '', views: session.views, pending: session.pending }, (next, added) => {
+      if (!alive()) return;
+      session.views = next.views;
+      session.pending = next.pending;
+      session.added = added;
+      session.rec = recommendFor(session.views, session.bw);
+      render();
+      clearTimeout(clearAdded);
+      if (!next.pending.length) clearAdded = setTimeout(() => { if (alive()) { session.added = 0; render(); } }, 4000);
+    });
+  }
   session.bw = known;
   session.bwPending = known === null;
   session.rec = recommendFor(session.views, known);
@@ -148,6 +178,7 @@ export async function openSourcePicker(request, opener, opts) {
 
 export function closeSourcePicker() {
   const host = session && session.host;
+  if (session && session.stop) session.stop();
   session = null;
   if (!host || host === modalBody) closeModal(true);
 }
@@ -169,6 +200,7 @@ function onClick(e) {
     else if (kind === 'lang') s.filters = { ...s.filters, langs: toggleSet(s.filters.langs, value) };
     else if (kind === 'cache') s.filters = { ...s.filters, cachedOnly: !s.filters.cachedOnly };
     else if (kind === 'hdr') s.filters = { ...s.filters, hdrOnly: !s.filters.hdrOnly };
+    else if (kind === 'origin') s.filters = { ...s.filters, origins: toggleSet(s.filters.origins, chip.dataset.chip.slice('origin:'.length)) };
     else if (kind === 'sort') s.sort = value;
     else if (kind === 'reset') s.filters = { ...NO_FILTERS, resolutions: new Set(), langs: new Set() };
     render();

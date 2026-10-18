@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { stopInfinite } from './infinite.js';
 import { followBtn } from './follows.js';
 import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
@@ -98,7 +99,7 @@ export function remindBtn(m, cls, extra) {
     '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span></button>';
 }
 export function primaryBtn(m) {
-  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill', '', 'Me prévenir de la sortie en VOD');
+  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', 'Me prévenir de la sortie en VOD');
   return isUnreleased(m)
     ? remindBtn(m, 'btn btn-primary btn-pill')
     : '<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>';
@@ -182,7 +183,9 @@ export function ficheHTML(m) {
       : '') +
     libBtn(m) +
     (m.type === 'movie' ? watchBtn(m) : '') +
-    followBtn(m.key, 'btn-round') +
+    (m.cinemaSince
+      ? '<button type="button" class="btn-round" data-sources-open data-tip="Voir les sources" aria-label="Voir les sources">' + ICON.list + '</button>' // sur demande seulement : aucune vérification automatique
+      : followBtn(m.key, 'btn-round')) +
     '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
 
   const panels = [];
@@ -268,6 +271,7 @@ export function scrollToSection(name) {
   if (el) el.scrollIntoView({ behavior: REDUCE ? 'auto' : 'smooth', block: 'start' });
 }
 export function teardownFiche() {
+  stopInfinite();
   clearAmbient();
   if (state.svcIO) state.svcIO.disconnect();
   state.svcIO = null;

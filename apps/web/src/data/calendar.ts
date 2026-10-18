@@ -3,7 +3,7 @@
 export interface CalEvent {
   /** AAAA-MM-JJ. */
   date: string;
-  kind: 'episode' | 'movie' | 'person';
+  kind: 'episode' | 'movie' | 'person' | 'airing';
   /** Clé du titre à ouvrir (`tv:1399`, `movie:550`). */
   key: string;
   title: string;
@@ -17,6 +17,10 @@ export interface CalEvent {
   episode?: number;
   epTitle?: string;
   backdrop?: string;
+  /** Diffusions TV : horodatage de début (tri dans la journée), identifiant de l'émission. */
+  start?: number;
+  showId?: number;
+  channelId?: string | null;
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -68,7 +72,7 @@ export function movieReleases(results: ReleaseResult[] | undefined, region: stri
 
 export function groupByDate(events: CalEvent[]): Map<string, CalEvent[]> {
   const map = new Map<string, CalEvent[]>();
-  [...events].sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title, 'fr')).forEach((e) => {
+  [...events].sort((a, b) => a.date.localeCompare(b.date) || (a.start ?? 0) - (b.start ?? 0) || a.title.localeCompare(b.title, 'fr')).forEach((e) => {
     (map.get(e.date) ?? map.set(e.date, []).get(e.date)!).push(e);
   });
   return map;

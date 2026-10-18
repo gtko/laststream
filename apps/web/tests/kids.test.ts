@@ -74,21 +74,26 @@ describe('accueil du profil enfant', () => {
     expect(document.body.classList.contains('kid-mode')).toBe(true);
     const app = document.getElementById('app')!;
     expect(app.querySelector('.kid-hello')!.textContent).toBe('Salut Léo !');
-    ['dessins', 'famille', 'jeunesse-series', 'nouveautes', 'disney', 'pixar'].forEach((id) => expect(app.querySelector('#' + id)).not.toBeNull());
+    ['dessins', 'famille', 'jeunesse-series', 'nouveautes'].forEach((id) => expect(app.querySelector('#' + id)).not.toBeNull());
     expect(app.querySelector('#top10')).toBeNull();
     expect(app.querySelector('#ai')).toBeNull();
     expect(app.querySelector('.nav [data-tvlive]')).toBeNull(); // TV jeunesse désactivée par défaut
   });
 
-  it('demande à TMDB la certification du pays et les genres jeunesse', () => {
+  it('demande à TMDB la certification du pays et les genres jeunesse', async () => {
     const fam = calls.find((c) => c.includes('/lt/tmdb/discover/movie') && c.includes('with_genres=10751'))!;
     const q = new URL(fam).searchParams;
     expect(q.get('certification_country')).toBe('FR');
     expect(q.get('certification.lte')).toBe('10');
     expect(q.get('region')).toBe('FR');
+    // Rangées plus bas dans la page (chargées au défilement) : requête construite par le registre.
+    const { resolveRow } = await import('../src/ui/registry.js');
+    const { rowById, makeCtx } = await import('../src/data/rows');
+    await resolveRow(rowById('disney')!, 1, makeCtx('FR', 10));
     const comp = calls.filter((c) => c.includes('with_companies=2') && !c.includes('999999999'));
     expect(comp.length).toBeGreaterThan(0);
     expect(new URL(comp[0]).searchParams.get('certification.lte')).toBe('10');
+    await resolveRow(rowById('kid-anime')!, 1, makeCtx('FR', 10));
     const anime = new URL(calls.find((c) => c.includes('/lt/tmdb/discover/tv') && c.includes('with_original_language=ja'))!).searchParams;
     expect(anime.get('with_genres')).toBe('16');
   });

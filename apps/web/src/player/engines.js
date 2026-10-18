@@ -238,9 +238,11 @@ export class MpvEngine extends Emitter {
   }
 
   onProp(a) {
-    if (!a || !a.name || !this.live) return;
-    this.p[a.name] = a.data;
+    if (!a || !a.name) return;
+    // La version de mpv arrive juste après l'observation, avant tout chargement : elle fixe la syntaxe de `loadfile`.
     if (a.name === 'mpv-version') this.version = String(a.data || '');
+    if (!this.live) return;
+    this.p[a.name] = a.data;
     if (a.name === 'track-list') { this.emit('tracks'); }
     if (a.name === 'aid' || a.name === 'sid') this.emit('tracks');
     if (a.name === 'duration' && a.data > 0 && !this.loaded) { this.loaded = true; this.emit('ready'); }

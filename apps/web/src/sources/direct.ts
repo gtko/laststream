@@ -47,28 +47,38 @@ function channelsOf(info: LastStreamInfo | null, text: string): number | null {
   return m ? Number(m[1]) + Number(m[2]) : null;
 }
 
+export type Conversion = 'none' | 'audio' | 'video' | 'unknown';
+
 /**
- * Lecture directe si conteneur, vidéo et audio sont pris en charge par le navigateur ; conversion si l'un d'eux ne l'est
- * pas (HEVC, DTS, TrueHD, REMUX, trop de canaux) ; inconnu quand les métadonnées ne permettent pas de trancher.
+ * Ce que le serveur de streaming devrait faire pour que le navigateur lise la source :
+ *  - `none` : rien (lecture directe) ;
+ *  - `audio` : copier la vidéo (remux) et ne convertir que l'audio ou le conteneur : léger ;
+ *  - `video` : réencoder la vidéo (codec non pris en charge) : lent et coûteux ;
+ *  - `unknown` : métadonnées insuffisantes.
  */
-export function webPlayback(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): WebPlayback {
+export function conversionOf(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): Conversion {
   const hints = stream.behaviorHints ?? {};
   const name = String(hints.filename ?? info?.filename ?? stream.url ?? '');
   const text = [name, stream.description, stream.title].filter((x) => typeof x === 'string').join(' ');
-  if (/remux/i.test(text) || /remux/i.test(info?.source ?? '')) return 'convert';
-  const ext = containerOf(name);
-  const containerKnown = ext !== '';
-  if (containerKnown) {
-    const ok = ext === 'mp4' || ext === 'm4v' || ext === 'webm' || ((ext === 'mkv') && caps.formats.some((f) => f.includes('matroska')));
-    if (!ok) return 'convert';
-  }
+  const remux = /remux/i.test(text) || /remux/i.test(info?.source ?? '');
   const vids = videoCodecOf(info, text);
-  if (vids && !vids.some((v) => caps.videoCodecs.includes(v))) return 'convert';
+  if (vids && !vids.some((v) => caps.videoCodecs.includes(v))) return 'video';
+  const ext = containerOf(name);
+  let light = false;
+  if (ext !== '' && !(ext === 'mp4' || ext === 'm4v' || ext === 'webm' || (ext === 'mkv' && caps.formats.some((f) => f.includes('matroska'))))) light = true;
   const aud = audioCodecOf(info, text);
-  if (aud && !caps.audioCodecs.includes(aud)) return 'convert';
+  if (aud && !caps.audioCodecs.includes(aud)) light = true;
   const ch = channelsOf(info, text);
-  if (ch !== null && ch > caps.maxAudioChannels) return 'convert';
-  if (hints.notWebReady === true && !vids && !aud) return 'convert';
-  // Il faut au moins un indice de codec ou de conteneur pour affirmer que c'est lisible.
-  return vids || aud || containerKnown ? 'direct' : 'unknown';
+  if (ch !== null && ch > caps.maxAudioChannels) light = true;
+  // Un REMUX porte presque toujours du DTS / TrueHD : la vidéo est copiée, l'audio converti.
+  if (remux) light = true;
+  if (light) return 'audio';
+  if (hints.notWebReady === true && !vids && !aud) return 'audio';
+  return vids || aud || ext !== '' ? 'none' : 'unknown';
+}
+
+/** Lecture directe si conteneur, vidéo et audio sont pris en charge ; conversion sinon ; inconnu sans métadonnées. */
+export function webPlayback(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): WebPlayback {
+  const c = conversionOf(stream, info, caps);
+  return c === 'none' ? 'direct' : c === 'unknown' ? 'unknown' : 'convert';
 }

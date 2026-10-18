@@ -61,6 +61,7 @@ export function openHover(tile) {
   const token = hv.token;
   hv.tile = tile;
   hv.key = key;
+  hv.anchor = tile.getBoundingClientRect();
   const anchor = tile.querySelector('.card-media, .up-media') || tile;
   const rect = anchor.getBoundingClientRect();
   const w = Math.round(Math.max(300, Math.min(480, rect.width * 1.5)));
@@ -135,7 +136,16 @@ export function scheduleHover(tile, ms) {
 
 document.addEventListener('pointerover', (e) => {
   if (e.pointerType !== 'mouse' || !finePointer() || !(e.target instanceof Element)) return;
-  if (e.target.closest('#hovercard')) { clearTimeout(hv.closeTimer); hv.closeTimer = null; return; }
+  if (e.target.closest('#hovercard')) {
+    // La mise en page a changé sous l'aperçu (rangée insérée, image chargée) : il ne désigne plus la bonne tuile.
+    if (hv.tile && hv.anchor) {
+      const r = hv.tile.getBoundingClientRect();
+      if (!hv.tile.isConnected || Math.abs(r.left - hv.anchor.left) + Math.abs(r.top - hv.anchor.top) > 6) { closeHover(); return; }
+    }
+    clearTimeout(hv.closeTimer);
+    hv.closeTimer = null;
+    return;
+  }
   const tile = hoverTileOf(e.target);
   if (tile) {
     if (hv.el && hv.tile === tile) { clearTimeout(hv.closeTimer); hv.closeTimer = null; return; }

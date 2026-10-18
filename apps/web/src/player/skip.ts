@@ -118,6 +118,54 @@ export function chapterMarks(segments: readonly SkipSegment[], duration: number)
   return segments.map((s) => ({ kind: s.kind, from: Math.min(1, s.start / duration), to: Math.min(1, s.end / duration) }));
 }
 
+// ---------- Analyse et nouvelle interrogation des segments ----------
+
+export const REPOLL_EVERY_MS = 30_000;
+export const REPOLL_MAX = 10;
+export const ANALYZE_MIN_SECONDS = 60;
+export const ANALYZE_MAX_SECONDS = 86_400;
+const STREAMING_SERVER_PORT = '11470';
+
+/** Adresse privée ou locale : boucle locale, réseau privé, lien local, nom sans point ou en .local. */
+export function isPrivateHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1' || h.endsWith('.local') || h.endsWith('.localhost') || (!h.includes('.') && !h.includes(':'))) return true;
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  return h.includes(':') && (h.startsWith('fe80') || h.startsWith('fc') || h.startsWith('fd'));
+}
+
+/**
+ * Adresse à confier à lastAddon pour analyser l'épisode : le lien direct réellement lu (débrideur…) ou le serveur de
+ * streaming local (127.0.0.1:11470, repris même derrière le relais /_ss). Jamais une autre adresse privée ; null sinon.
+ */
+export function analyzeUrl(url: string, serverBase = '', proxyPath = '/_ss'): string | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  // Derrière le relais de l'application, on redonne l'adresse du serveur de streaming local.
+  if (serverBase && serverBase.endsWith(proxyPath) && url.startsWith(serverBase)) {
+    return 'http://127.0.0.1:' + STREAMING_SERVER_PORT + url.slice(serverBase.length);
+  }
+  if (isPrivateHost(u.hostname)) {
+    const loopback = u.hostname === '127.0.0.1' || u.hostname === 'localhost';
+    return loopback && u.port === STREAMING_SERVER_PORT ? url : null;
+  }
+  return url;
+}
+
+export function validAnalyzeDuration(duration: number): boolean {
+  return Number.isFinite(duration) && duration >= ANALYZE_MIN_SECONDS && duration <= ANALYZE_MAX_SECONDS;
+}
+
+/** Nouvelle interrogation des segments pendant que lastAddon analyse l'épisode (toutes les 30 s, 10 fois au plus, en lecture). */
+export function shouldRepoll(s: { analyzing: boolean; polls: number; lastAt: number; now: number; playing: boolean }): boolean {
+  return s.analyzing && s.playing && s.polls < REPOLL_MAX && s.now - s.lastAt >= REPOLL_EVERY_MS;
+}
+
 // ---------- Envoi de segments à lastAddon ----------
 
 export type MarkKind = 'intro' | 'recap' | 'credits';
