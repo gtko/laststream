@@ -264,7 +264,7 @@ describe('interface portée', () => {
     await settle(300);
     expect(document.querySelectorAll('#detail .cal-day').length).toBeGreaterThanOrEqual(28);
     expect(document.querySelector('#detail #cal-title')!.textContent!.length).toBeGreaterThan(5);
-    expect(document.querySelectorAll('#detail [data-calkind]')).toHaveLength(3);
+    expect(document.querySelectorAll('#detail [data-calkind]')).toHaveLength(4);
     (document.querySelector('#detail [data-calmode="agenda"]') as HTMLElement).click();
     await settle(50);
     expect(document.querySelector('#detail .cal-agenda, #detail .cal-wrap .row-msg')).not.toBeNull();

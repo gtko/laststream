@@ -408,3 +408,34 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .f-actions .btn-pill { flex: 0 1 auto; min-width: 0; }
 .fiche .f-actions .btn-pill.is-cinema { padding: 0 26px; font-size: 16px; }
 @media (max-width: 640px) { .f-actions { width: 100%; max-width: 100%; } }
+
+/* ---------- TV : numéro de chaîne, émissions, « Ce soir à la TV » ---------- */
+.ch-num { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--soft); font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.show-card { cursor: pointer; }
+.show-card .card-media { aspect-ratio: 2 / 3; }
+.show-card .card-media img { width: 100%; height: 100%; object-fit: cover; }
+.show-card .t-badge.show-live { background: #E50914; color: #fff; }
+.tonight-card .card-media img.tn-logo { object-fit: contain; padding: 18%; background: #fff; }
+.tonight-card.is-epg .card-media img:not(.tn-logo) { object-fit: cover; }
+.shows-h { padding: 8px var(--gutter) 0; }
+.show-airs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-width: 980px; }
+.show-air { display: grid; grid-template-columns: minmax(150px, 220px) minmax(160px, 1fr) 2fr auto; align-items: center; gap: 8px 16px; padding: 12px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.show-air.is-live { border-color: #E50914; }
+.sa-chan { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sa-chan img, .sa-chan > b { width: 40px; height: 40px; border-radius: 9px; background: #fff; object-fit: contain; padding: 3px; flex: none; color: #0c0b11; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.sa-name { font-weight: 700; font-size: 14px; min-width: 0; }
+.sa-when { font-size: 14px; color: var(--soft); }
+.sa-when strong { color: var(--text); text-transform: capitalize; }
+.show-air.is-live .sa-when strong { color: #E50914; }
+.sa-title { font-size: 14px; color: var(--dim); min-width: 0; }
+.sa-prog { grid-column: 1 / -1; }
+.show-past { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 820px; }
+.show-ep { display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; padding: 10px 14px; border-radius: 10px; background: var(--surface); font-size: 14px; }
+.se-code { color: var(--accent); font-weight: 800; }
+.se-date { color: var(--dim); font-variant-numeric: tabular-nums; }
+.cal-ev.kind-airing .cal-tx em { color: #E50914; font-weight: 700; }
+@media (max-width: 760px) {
+  .show-air { grid-template-columns: 1fr; }
+  .show-ep { grid-template-columns: 70px 1fr; }
+  .se-date { grid-column: 2; }
+}

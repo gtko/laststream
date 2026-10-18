@@ -1,0 +1,304 @@
+/* Émissions TV : guide des chaînes principales (EPG), émissions TMDB, rapprochement. Tout est mis en cache (le guide 10 min,
+ * les identifiants TMDB des émissions suivies d'office 30 jours) pour garder un débit de requêtes raisonnable. */
+import { tmdb, tvChannels, tvEpg, type Json, type TvChannel } from './lt';
+import { getRegion, getVideoLang } from './prefs';
+import {
+  SEED_SHOWS, airingsFor, titleKey, titleMatches, type Airing, type EpgProgram, type GuideChannel, type SeedShow,
+} from './shows';
+import { NATIONAL, langCode3, rankChannels } from './tvRank';
+
+const GUIDE_TTL_MS = 10 * 60 * 1000;
+const SEED_TTL_MS = 30 * 24 * 3600 * 1000;
+const SEED_KEY = 'laststream.shows.seeds';
+const GUIDE_HOURS = 40;
+const SLICE_SEC = 8 * 3600;
+const MAIN_FALLBACK = 25;
+
+export interface Guide {
+  channels: GuideChannel[];
+  programs: EpgProgram[];
+  channelOf: (p: EpgProgram) => GuideChannel | undefined;
+  /** Chaînes du catalogue par identifiant (lecture en direct). */
+  catalog: Map<string, TvChannel>;
+  at: number;
+}
+
+interface LocalCh extends TvChannel { lowRel?: boolean; num?: number | null }
+
+async function fetchCatalog(country: string, language: string): Promise<LocalCh[]> {
+  const q = { country, language, page: 1, limit: 500 };
+  let res: Json;
+  try {
+    res = await tvChannels(q);
+  } catch (e) {
+    if ((e as { status?: number }).status !== 400) throw e;
+    res = await tvChannels({ country, page: 1, limit: 500 }); // filtre de langue refusé : liste du pays
+  }
+  const raw: LocalCh[] = Array.isArray(res) ? res : res?.channels ?? res?.items ?? [];
+  return raw.map((c) => ({ ...c, lowRel: c.reliability === 'low' || (c.reliability == null && !!c.flaky) }));
+}
+
+/** Chaînes principales : TNT numérotée (ou, pays sans table, les mieux classées), complétées par les numéros absents du catalogue. */
+export function mainChannels(catalog: LocalCh[], country: string): GuideChannel[] {
+  const ranked = rankChannels(catalog, country);
+  const table = NATIONAL[country.toUpperCase()];
+  if (!table) {
+    return ranked.filter((c) => !c.fast).slice(0, MAIN_FALLBACK).map((c) => ({ epgId: c.id, playId: c.id, name: c.name, logo: c.logo, num: null }));
+  }
+  const out: GuideChannel[] = ranked.filter((c) => c.num).map((c) => ({ epgId: c.id, playId: c.id, name: c.name, logo: c.logo, num: c.num ?? null }));
+  const have = new Set(out.map((c) => c.num));
+  table.forEach((e) => { if (!have.has(e.num)) out.push({ epgId: e.epg, playId: null, name: e.label, logo: '', num: e.num }); });
+  return out.sort((a, b) => (a.num ?? 99) - (b.num ?? 99));
+}
+
+let guideCache: { at: number; p: Promise<Guide> } | null = null;
+
+/** Guide des chaînes principales pour les prochaines 40 h ; un seul chargement partagé, rafraîchi toutes les 10 minutes. */
+export function loadGuide(force = false): Promise<Guide> {
+  if (!force && guideCache && Date.now() - guideCache.at < GUIDE_TTL_MS) return guideCache.p;
+  const p = (async (): Promise<Guide> => {
+    const country = getRegion().code;
+    const catalog = await fetchCatalog(country, langCode3(getVideoLang().lang));
+    const channels = mainChannels(catalog, country);
+    const now = Math.floor(Date.now() / 1000);
+    const ids = channels.map((c) => c.epgId);
+    // Le serveur limite chaque requête de guide à 8 h : la fenêtre est découpée en tranches, les programmes dédoublonnés.
+    const jobs: Array<Promise<unknown>> = [];
+    for (let t = now - 3600; t < now + GUIDE_HOURS * 3600; t += SLICE_SEC) {
+      for (let i = 0; i < ids.length; i += 40) jobs.push(tvEpg(ids.slice(i, i + 40), t, Math.min(t + SLICE_SEC, now + GUIDE_HOURS * 3600)));
+    }
+    const settled = await Promise.allSettled(jobs);
+    const seenProg = new Set<string>();
+    const programs: EpgProgram[] = [];
+    settled.forEach((r) => {
+      if (r.status !== 'fulfilled' || !Array.isArray(r.value)) return;
+      (r.value as EpgProgram[]).forEach((pr) => {
+        const k = pr.channelId + '|' + pr.start;
+        if (!seenProg.has(k)) { seenProg.add(k); programs.push(pr); }
+      });
+    });
+    const byId = new Map(channels.map((c) => [c.epgId, c]));
+    return { channels, programs, channelOf: (pr) => byId.get(pr.channelId), catalog: new Map(catalog.map((c) => [c.id, c])), at: Date.now() };
+  })();
+  p.catch(() => { if (guideCache && guideCache.p === p) guideCache = null; });
+  guideCache = { at: Date.now(), p };
+  return p;
+}
+
+export function resetShowsCache(): void {
+  guideCache = null;
+  showsCache = null;
+}
+
+// ---- TMDB ----
+export interface TmdbShow {
+  id: number;
+  name: string;
+  poster: string;
+  backdrop: string;
+  overview: string;
+  popularity: number;
+  firstAir: string;
+}
+
+const toShow = (r: Json): TmdbShow => ({
+  id: r.id, name: r.name || r.original_name || '', poster: r.poster_path || '', backdrop: r.backdrop_path || '',
+  overview: r.overview || '', popularity: Number(r.popularity) || 0, firstAir: String(r.first_air_date || ''),
+});
+
+/** Téléréalité, talk-shows, actualités, et humour/talk dans la langue du pays, par popularité. */
+export async function discoverShows(): Promise<TmdbShow[]> {
+  const lang = getVideoLang().lang;
+  const base = { sort_by: 'popularity.desc', with_original_language: lang, 'vote_count.gte': '5' };
+  const calls = [
+    tmdb('discover/tv', { ...base, with_genres: '10764|10767|10763' }),
+    tmdb('discover/tv', { ...base, with_genres: '35,10767' }),
+    tmdb('discover/tv', { ...base, with_genres: '35,10764' }),
+    tmdb('discover/tv', { ...base, with_genres: '10764|10767|10763', page: 2 }),
+  ];
+  const settled = await Promise.allSettled(calls);
+  const seen = new Set<number>();
+  const out: TmdbShow[] = [];
+  settled.forEach((r) => {
+    if (r.status !== 'fulfilled') return;
+    (r.value?.results ?? []).forEach((x: Json) => {
+      if (!x.poster_path || seen.has(x.id)) return;
+      seen.add(x.id);
+      out.push(toShow(x));
+    });
+  });
+  return out;
+}
+
+type SeedCache = Record<string, { at: number; show: TmdbShow | null }>;
+const readSeeds = (): SeedCache => { try { return JSON.parse(globalThis.localStorage?.getItem(SEED_KEY) || '{}') as SeedCache; } catch { return {}; } };
+const writeSeeds = (c: SeedCache): void => { try { globalThis.localStorage?.setItem(SEED_KEY, JSON.stringify(c)); } catch { /* stockage indisponible */ } };
+
+/** Émission TMDB d'un titre (recherche), mémorisée 30 jours ; préfère une émission du pays. */
+export async function resolveSeed(seed: SeedShow): Promise<TmdbShow | null> {
+  const cache = readSeeds();
+  const hit = cache[seed.name];
+  if (hit && Date.now() - hit.at < SEED_TTL_MS) return hit.show;
+  const j = await tmdb('search/tv', { query: seed.name.replace(/\s*[:!?]+\s*$/, '') });
+  const key = titleKey(seed.name);
+  const region = getRegion().code;
+  const results: Json[] = (j?.results ?? []).filter((r: Json) => r.poster_path);
+  const named = results.filter((r) => titleMatches(r.name || '', seed.name, seed.aliases) || titleKey(r.name).startsWith(key));
+  const pool = named.length ? named : results;
+  const best = pool.find((r) => Array.isArray(r.origin_country) && r.origin_country.includes(region)) ?? pool[0];
+  const show = best ? toShow(best) : null;
+  cache[seed.name] = { at: Date.now(), show };
+  writeSeeds(cache);
+  return show;
+}
+
+export interface ShowEpisode { season: number; episode: number; name: string; date: string; still: string }
+export interface ShowDetail {
+  id: number;
+  name: string;
+  overview: string;
+  poster: string;
+  backdrop: string;
+  status: string;
+  networks: string[];
+  next: ShowEpisode | null;
+  last: ShowEpisode | null;
+  seasons: Array<{ number: number; air: string; count: number }>;
+}
+const ep = (e: Json): ShowEpisode | null => (e ? { season: e.season_number, episode: e.episode_number, name: e.name || '', date: String(e.air_date || ''), still: e.still_path || '' } : null);
+
+export async function showDetail(id: number | string): Promise<ShowDetail> {
+  const d = await tmdb('tv/' + id);
+  return {
+    id: Number(id), name: d.name || '', overview: d.overview || '', poster: d.poster_path || '', backdrop: d.backdrop_path || '', status: d.status || '',
+    networks: (d.networks ?? []).map((n: Json) => n.name).filter(Boolean),
+    next: ep(d.next_episode_to_air), last: ep(d.last_episode_to_air),
+    seasons: (d.seasons ?? []).filter((s: Json) => s.season_number > 0).map((s: Json) => ({ number: s.season_number, air: s.air_date || '', count: s.episode_count || 0 })),
+  };
+}
+
+/** Derniers épisodes diffusés (du plus récent au plus ancien) d'après la dernière saison commencée. */
+export async function pastEpisodes(detail: ShowDetail, today: string, max = 12): Promise<ShowEpisode[]> {
+  const started = detail.seasons.filter((s) => s.air && s.air <= today).sort((a, b) => b.number - a.number);
+  const out: ShowEpisode[] = [];
+  for (const s of started.slice(0, 2)) {
+    try {
+      const j = await tmdb('tv/' + detail.id + '/season/' + s.number);
+      (j?.episodes ?? []).forEach((e: Json) => { if (e.air_date && e.air_date <= today) out.push({ season: s.number, episode: e.episode_number, name: e.name || '', date: e.air_date, still: e.still_path || '' }); });
+    } catch { /* saison indisponible */ }
+    if (out.length >= max) break;
+  }
+  return out.sort((a, b) => b.date.localeCompare(a.date) || b.episode - a.episode).slice(0, max);
+}
+
+// ---- Liste des émissions du moment ----
+export interface ShowEntry extends TmdbShow {
+  aliases: string[];
+  airings: Airing[];
+  /** Plateforme connue pour une émission de streaming. */
+  platform: string;
+  /** Prochain épisode annoncé par TMDB (émissions sans diffusion au guide). */
+  next: ShowEpisode | null;
+}
+
+let showsCache: { at: number; p: Promise<{ shows: ShowEntry[]; guide: Guide }> } | null = null;
+
+async function mapLimit<T, R>(items: readonly T[], n: number, fn: (x: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(items.length);
+  let i = 0;
+  const worker = async (): Promise<void> => {
+    while (i < items.length) {
+      const k = i; i += 1;
+      try { out[k] = { status: 'fulfilled', value: await fn(items[k]) }; } catch (reason) { out[k] = { status: 'rejected', reason }; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+  return out;
+}
+
+/**
+ * Émissions du moment : émissions TMDB populaires + liste d'émissions suivies d'office, chacune avec ses prochaines
+ * diffusions trouvées au guide ; les émissions de streaming reçoivent leur prochain épisode TMDB.
+ */
+export function loadShows(force = false): Promise<{ shows: ShowEntry[]; guide: Guide }> {
+  if (!force && showsCache && Date.now() - showsCache.at < GUIDE_TTL_MS) return showsCache.p;
+  const p = (async () => {
+    const [guideR, discR] = await Promise.allSettled([loadGuide(force), discoverShows()]);
+    const guide: Guide = guideR.status === 'fulfilled' ? guideR.value : { channels: [], programs: [], channelOf: () => undefined, catalog: new Map(), at: Date.now() };
+    const discovered = discR.status === 'fulfilled' ? discR.value : [];
+    const now = Math.floor(Date.now() / 1000);
+    const byId = new Map<number, ShowEntry>();
+    const add = (s: TmdbShow, aliases: string[], platform = ''): ShowEntry => {
+      const cur = byId.get(s.id);
+      if (cur) { cur.aliases = [...new Set([...cur.aliases, ...aliases])]; cur.platform = cur.platform || platform; return cur; }
+      const e: ShowEntry = { ...s, aliases, airings: [], platform, next: null };
+      byId.set(s.id, e);
+      return e;
+    };
+    discovered.forEach((s) => add(s, []));
+    // Émissions suivies d'office : rapprochées d'une émission déjà connue, sinon cherchées sur TMDB si elles passent au guide.
+    const pending: SeedShow[] = [];
+    SEED_SHOWS.forEach((seed) => {
+      const known = [...byId.values()].find((e) => titleMatches(e.name, seed.name, seed.aliases));
+      if (known) { add(known, [seed.name, ...(seed.aliases ?? [])], seed.streaming ?? ''); return; }
+      const onAir = airingsFor(seed, guide.programs, guide.channelOf, now).length > 0;
+      if (onAir || seed.streaming) pending.push(seed);
+    });
+    const resolved = await mapLimit(pending, 4, resolveSeed);
+    resolved.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value) add(r.value, [pending[i].name, ...(pending[i].aliases ?? [])], pending[i].streaming ?? '');
+    });
+    const shows = [...byId.values()];
+    shows.forEach((s) => { s.airings = airingsFor({ name: s.name, aliases: s.aliases }, guide.programs, guide.channelOf, now); });
+    // Sans diffusion au guide : prochain épisode TMDB (émissions de streaming), pour les plus populaires seulement.
+    const streaming = shows.filter((s) => !s.airings.length).sort((a, b) => Number(!!b.platform) - Number(!!a.platform) || b.popularity - a.popularity).slice(0, 8);
+    const details = await mapLimit(streaming, 4, (s) => showDetail(s.id));
+    details.forEach((r, i) => { if (r.status === 'fulfilled') streaming[i].next = r.value.next; });
+    const today = new Date(now * 1000).toISOString().slice(0, 10);
+    const rank = (s: ShowEntry): number => {
+      const live = s.airings.find((a) => a.start <= now && now < a.stop);
+      if (live) return 0;
+      if (s.airings.length) return s.airings[0].start - now + 1;
+      if (s.next && s.next.date >= today) return 1e9 + Date.parse(s.next.date) / 1000;
+      return 2e9 - s.popularity;
+    };
+    shows.sort((a, b) => rank(a) - rank(b) || b.popularity - a.popularity);
+    return { shows, guide };
+  })();
+  p.catch(() => { if (showsCache && showsCache.p === p) showsCache = null; });
+  showsCache = { at: Date.now(), p };
+  return p;
+}
+
+// ---- Calendrier ----
+export interface AiringEvent {
+  date: string;
+  kind: 'airing';
+  key: string;
+  title: string;
+  poster: string;
+  /** « 20:10 · TF1 ». */
+  label: string;
+  start: number;
+  channelId: string | null;
+  showId: number;
+}
+
+export function followedAirings(
+  follows: ReadonlyArray<{ type: string; id: number; title: string; poster?: string }>,
+  guide: Guide,
+  localDate: (s: number) => string,
+  hhmm: (s: number) => string,
+  now: number,
+): AiringEvent[] {
+  const out: AiringEvent[] = [];
+  follows.filter((f) => f.type === 'tv' && f.title).forEach((f) => {
+    airingsFor({ name: f.title }, guide.programs, guide.channelOf, now).forEach((a) => {
+      out.push({
+        date: localDate(a.start), kind: 'airing', key: 'tv:' + f.id, title: f.title, poster: f.poster ?? '', start: a.start, showId: f.id, channelId: a.channel.playId,
+        label: hhmm(a.start) + ' · ' + a.channel.name,
+      });
+    });
+  });
+  return out;
+}
