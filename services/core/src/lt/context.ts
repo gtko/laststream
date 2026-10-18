@@ -286,8 +286,9 @@ export async function getJson(
   url: string,
   init: RequestInit = {},
   timeoutMs: number = SERVICE_TIMEOUT_MS,
+  body: BodyOptions = {},
 ): Promise<unknown> {
-  const bytes = await ltDownload(ctx, url, init, timeoutMs);
+  const bytes = await ltDownload(ctx, url, init, timeoutMs, body);
   try {
     return JSON.parse(bytes.toString('utf8')) as unknown;
   } catch {

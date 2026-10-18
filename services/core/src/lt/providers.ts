@@ -103,9 +103,26 @@ export async function tmdbGet(
   if (!query.has('language')) query.set('language', 'fr-FR');
   if (!query.has('region')) query.set('region', 'FR');
   query.forEach((value, key) => url.searchParams.set(key, value));
-  return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), () =>
-    getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }),
+  return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), async () =>
+    slimTmdb(await getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }, undefined, { maxBytes: TMDB_MAX_BYTES })),
   );
+}
+
+/** Saisons longues (anime : 40+ épisodes) : la réponse TMDB dépasse plusieurs Mo, surtout à cause des génériques par épisode. */
+export const TMDB_MAX_BYTES = 16 * 1024 * 1024;
+
+/** Retire l'équipe et les invités de chaque épisode d'une saison : l'app ne les affiche pas et ils pèsent l'essentiel du JSON. */
+export function slimTmdb(data: unknown): unknown {
+  const episodes = (data as { episodes?: unknown } | null)?.episodes;
+  if (Array.isArray(episodes)) {
+    for (const ep of episodes) {
+      if (ep && typeof ep === 'object') {
+        delete (ep as Record<string, unknown>).crew;
+        delete (ep as Record<string, unknown>).guest_stars;
+      }
+    }
+  }
+  return data;
 }
 
 const MDB_TYPES: Record<string, string> = { movie: 'movie', tv: 'show', show: 'show' };
