@@ -84,6 +84,7 @@ export function hdrChips(raw: readonly string[]): string[] {
     else if (/hlg/.test(t)) out.add('HLG');
     else if (/hdr/.test(t)) out.add('HDR');
   }
+  if (out.has('HDR10+') || out.has('HDR10')) out.delete('HDR');
   const order = ['DV', 'HDR10+', 'HDR10', 'HDR', 'HLG'];
   return order.filter((c) => out.has(c));
 }
@@ -123,7 +124,7 @@ function languageBadges(info: LastStreamInfo, text: string): LangBadge[] {
   const verified = (l: Lang): boolean => info.verifiedLanguages === true || (Array.isArray(info.verifiedLanguages) && info.verifiedLanguages.includes(l));
   const out: LangBadge[] = [];
   if (info.frVariant) {
-    out.push({ label: info.frVariant.toUpperCase().replace('MULTI', 'MULTI'), verified: verified('fr') });
+    out.push({ label: info.frVariant.toUpperCase(), verified: verified('fr') });
   }
   if (info.languages.includes('multi') && !out.some((b) => /multi/i.test(b.label))) out.push({ label: 'MULTI', verified: verified('multi') });
   if (!out.length) {

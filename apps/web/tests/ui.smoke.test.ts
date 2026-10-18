@@ -323,10 +323,11 @@ describe('interface portée', () => {
     // Un clic reprend la lecture directement (source choisie automatiquement), à la position enregistrée.
     by('movie:100').click();
     await settle(400);
-    const player = document.getElementById('vplayer') as HTMLElement;
+    const player = document.getElementById('lsplayer') as HTMLElement;
     expect(player.hidden).toBe(false);
-    expect((document.getElementById('vplayer-video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
-    (player.querySelector('[data-vclose]') as HTMLElement).click();
+    expect((player.querySelector('video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
+    (player.querySelector('[data-act="close"]') as HTMLElement).click();
+    await settle(50);
     expect(player.hidden).toBe(true);
     localStorage.clear();
     localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));
@@ -391,11 +392,25 @@ describe('interface portée', () => {
     expect(detail.querySelector('[data-play]')).not.toBeNull();
   });
 
-  it('ouvre le tiroir Sources avec un message si le titre n’a pas de sources', async () => {
+  it('Lecture lance la meilleure source ; lecture automatique désactivée : tiroir de sources détaillé', async () => {
     (document.querySelector('#detail [data-play]') as HTMLElement).click();
-    await settle(200);
+    await settle(400);
+    const player = document.getElementById('lsplayer') as HTMLElement;
+    expect(player.hidden).toBe(false);
+    expect((player.querySelector('video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
+    (player.querySelector('[data-act="close"]') as HTMLElement).click();
+    await settle(50);
+    expect(player.hidden).toBe(true);
+    localStorage.setItem('laststream.autoplay', '0');
+    (document.querySelector('#detail [data-play]') as HTMLElement).click();
+    await settle(300);
     expect(document.getElementById('modal')!.hidden).toBe(false);
     expect(document.querySelector('#modal .drawer-title')!.textContent).toBe('Sources');
+    const item = document.querySelector('#modal .src2') as HTMLElement;
+    expect(item.querySelector('.q')!.textContent).toBe('1080p');
+    expect(item.textContent).toContain('WEB-DL');
+    expect(document.querySelector('#modal .s-chip[data-chip="res:1080p"]')).not.toBeNull();
+    localStorage.removeItem('laststream.autoplay');
   });
 
   it('affiche les réglages lastAddon', async () => {

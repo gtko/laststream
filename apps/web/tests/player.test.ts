@@ -5,7 +5,7 @@ import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
 import { createTorrent, hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl, torrentUrl } from '../src/player/server';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast, isShellEnvironment } from '../src/player/shell';
-import { activeSkip, chapterMarks, creditsStart, nextEpisodeCard, normalizeSkip } from '../src/player/skip';
+import { activeSkip, chapterMarks, creditsStart, movieEndRow, nextEpisodeCard, normalizeSkip } from '../src/player/skip';
 import { activeCue, cueHtml, normalizeSubStyle, offsetLabel, parseAss, parseCues, parseSubtitles, stepOffset } from '../src/player/subs';
 import { normalizeExternal, mergeExternal, openSubtitlesUrl } from '../src/player/extsubs';
 import { audioTrackLabel, normalizeLang, parseProbe, pickDefaultAudio, pickDefaultSubtitle, type AudioTrack, type SubtitleTrack } from '../src/player/tracks';
@@ -239,9 +239,17 @@ describe('segments de saut', () => {
 
   it('carte épisode suivant dès le générique, compte à rebours selon le réglage', () => {
     expect(nextEpisodeCard(segs, 2000, 2600, true, true).show).toBe(false);
-    expect(nextEpisodeCard(segs, 2410, 2600, true, true)).toEqual({ show: true, countdown: 10 });
-    expect(nextEpisodeCard(segs, 2410, 2600, true, false)).toEqual({ show: true, countdown: null });
+    expect(nextEpisodeCard(segs, 2400, 2600, true, true)).toEqual({ show: true, countdown: 10, ratio: 1 });
+    expect(nextEpisodeCard(segs, 2406.5, 2600, true, true)).toEqual({ show: true, countdown: 4, ratio: 0.4 });
+    expect(nextEpisodeCard(segs, 2420, 2600, true, true).countdown).toBe(0);
+    expect(nextEpisodeCard(segs, 2410, 2600, true, false)).toEqual({ show: true, countdown: null, ratio: 0 });
     expect(nextEpisodeCard(segs, 2410, 2600, false, true).show).toBe(false);
+    // Scène post-générique : la carte s'affiche mais le compte à rebours attend la fin de la scène.
+    const withPost = [...segs, { kind: 'postcredits' as const, start: 2500, end: 2560 }];
+    expect(nextEpisodeCard(withPost, 2450, 2600, true, true)).toEqual({ show: true, countdown: null, ratio: 0 });
+    expect(nextEpisodeCard(withPost, 2562, 2600, true, true).countdown).toBe(8);
+    expect(movieEndRow(segs, 2399, 2600)).toBe(false);
+    expect(movieEndRow(segs, 2401, 2600)).toBe(true);
     expect(creditsStart([], 3000)).toBe(2955);
     expect(creditsStart([], 300)).toBeNull();
   });

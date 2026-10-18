@@ -1,0 +1,148 @@
+import type { Probe, ProbeStream } from './server';
+
+/* Pistes audio et sous-titres : normalisation des langues, libellés, choix par défaut. Fonctions pures, testées. */
+
+const LANG_ALIASES: Record<string, string> = {
+  fre: 'fr', fra: 'fr', french: 'fr', francais: 'fr', 'français': 'fr',
+  eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', spa: 'es', spanish: 'es', ita: 'it', italian: 'it',
+  por: 'pt', portuguese: 'pt', jpn: 'ja', japanese: 'ja', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh',
+  rus: 'ru', russian: 'ru', ara: 'ar', arabic: 'ar', dut: 'nl', nld: 'nl', dutch: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', und: '', unknown: '',
+};
+
+const LANG_NAMES: Record<string, string> = {
+  fr: 'Français', en: 'Anglais', de: 'Allemand', es: 'Espagnol', it: 'Italien', pt: 'Portugais', ja: 'Japonais', ko: 'Coréen',
+  zh: 'Chinois', ru: 'Russe', ar: 'Arabe', nl: 'Néerlandais', pl: 'Polonais', tr: 'Turc', sv: 'Suédois',
+};
+
+/** Code de langue à deux lettres (fre, fra, fr-FR, French → fr) ; vide si inconnu. */
+export function normalizeLang(raw: string | undefined | null): string {
+  const t = (raw ?? '').trim().toLowerCase();
+  if (!t) return '';
+  if (t in LANG_ALIASES) return LANG_ALIASES[t];
+  const base = t.split(/[-_]/)[0];
+  if (base in LANG_ALIASES) return LANG_ALIASES[base];
+  return /^[a-z]{2}$/.test(base) ? base : base.length === 3 ? '' : base;
+}
+
+export function langName(code: string): string {
+  const c = normalizeLang(code);
+  return LANG_NAMES[c] ?? (c ? c.toUpperCase() : 'Inconnue');
+}
+
+const CODEC_LABEL: Record<string, string> = {
+  aac: 'AAC', ac3: 'Dolby Digital', eac3: 'Dolby Digital+', truehd: 'TrueHD', dts: 'DTS', 'dts-hd': 'DTS-HD', mp3: 'MP3', opus: 'Opus', vorbis: 'Vorbis', flac: 'FLAC',
+  subrip: 'SRT', srt: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'WebVTT', mov_text: 'Texte', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', dvb_subtitle: 'DVB',
+};
+
+export function codecLabel(codec: string | undefined): string {
+  const c = (codec ?? '').toLowerCase();
+  return CODEC_LABEL[c] ?? (c ? c.toUpperCase() : '');
+}
+
+export function channelsLabel(n: number | undefined): string {
+  if (!n || n <= 0) return '';
+  return ({ 1: 'Mono', 2: 'Stéréo', 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? n + ' canaux';
+}
+
+export interface AudioTrack {
+  id: string;
+  lang: string;
+  label: string;
+  codec: string;
+  channels: number;
+  selected: boolean;
+}
+
+export interface SubtitleTrack {
+  id: string;
+  lang: string;
+  label: string;
+  codec: string;
+  forced: boolean;
+  /** `embedded` : dans le fichier ; `external` : addon / OpenSubtitles. */
+  origin: 'embedded' | 'external';
+  /** Texte rendu par le lecteur (SRT, VTT, ASS) ; PGS / VobSub (image) ne le sont pas. */
+  renderable: boolean;
+  url?: string;
+  /** Fournisseur d'une piste externe (lastAddon, OpenSubtitles). */
+  source?: string;
+  /** Pour les pistes `embedded` lues par le moteur (hls.js, mpv). */
+  engineId?: string | number;
+  selected: boolean;
+}
+
+export function audioTrackLabel(t: { lang: string; title?: string; codec?: string; channels?: number }): string {
+  const parts = [t.lang ? langName(t.lang) : t.title || 'Piste audio'];
+  if (t.title && t.lang && !t.title.toLowerCase().includes(langName(t.lang).toLowerCase())) parts[0] += ' (' + t.title + ')';
+  const tech = [codecLabel(t.codec), channelsLabel(t.channels)].filter(Boolean).join(' ');
+  return tech ? parts[0] + ' · ' + tech : parts[0];
+}
+
+const IMAGE_SUBS = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'pgssub', 'dvdsub']);
+
+export interface ProbeTracks {
+  audio: AudioTrack[];
+  subtitles: SubtitleTrack[];
+  videoCodec: string;
+  durationSec: number | null;
+  width: number | null;
+  height: number | null;
+}
+
+/** Pistes d'un fichier d'après le probe du serveur (identifiants `a<n>` / `s<n>` = indice dans le fichier). */
+export function parseProbe(probe: Probe | null): ProbeTracks {
+  const empty: ProbeTracks = { audio: [], subtitles: [], videoCodec: '', durationSec: null, width: null, height: null };
+  if (!probe) return empty;
+  const video = probe.streams.find((s) => s.track === 'video');
+  const audio = probe.streams.filter((s) => s.track === 'audio').map((s: ProbeStream, i) => {
+    const lang = normalizeLang(s.lang ?? s.language);
+    return { id: 'a' + (s.id ?? i), lang, codec: (s.codec ?? '').toLowerCase(), channels: s.channels ?? 0, selected: false, label: audioTrackLabel({ lang, title: s.title ?? s.label, codec: s.codec, channels: s.channels }) };
+  });
+  const subtitles = probe.streams.filter((s) => s.track === 'subtitle').map((s: ProbeStream, i): SubtitleTrack => {
+    const lang = normalizeLang(s.lang ?? s.language);
+    const codec = (s.codec ?? '').toLowerCase();
+    const forced = s.forced === true || /forc/i.test(s.title ?? s.label ?? '');
+    return {
+      id: 's' + (s.id ?? i), lang, codec, forced, origin: 'embedded', renderable: !IMAGE_SUBS.has(codec), engineId: s.id ?? i, selected: false,
+      label: (lang ? langName(lang) : s.title || 'Sous-titres') + (forced ? ' (forcés)' : '') + (codec ? ' · ' + codecLabel(codec) : ''),
+    };
+  });
+  const d = probe.format?.duration;
+  return { audio, subtitles, videoCodec: (video?.codec ?? '').toLowerCase(), durationSec: typeof d === 'number' && d > 0 ? d : null, width: video?.width ?? null, height: video?.height ?? null };
+}
+
+/** Piste audio par défaut : langue préférée, sinon langue d'origine annoncée par le fichier, sinon la première. Index, ou -1 si vide. */
+export function pickDefaultAudio(tracks: readonly AudioTrack[], preferred: readonly string[]): number {
+  if (!tracks.length) return -1;
+  for (const p of preferred) {
+    const lang = normalizeLang(p);
+    const matches = tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.lang === lang);
+    if (matches.length) {
+      // À langue égale, la piste la plus riche (canaux) que le navigateur peut décoder, la première en cas d'égalité.
+      return matches.sort((a, b) => b.t.channels - a.t.channels || a.i - b.i)[0].i;
+    }
+  }
+  return 0;
+}
+
+export type SubtitleMode = 'auto' | 'always' | 'off';
+
+/**
+ * Sous-titres par défaut. `auto` : aucun si l'audio est dans la langue préférée (sauf pistes « forcés »), sinon la
+ * langue préférée ; `always` : toujours la langue préférée ; `off` : aucun. Index ou -1.
+ */
+export function pickDefaultSubtitle(tracks: readonly SubtitleTrack[], preferredLang: string, audioLang: string, mode: SubtitleMode): number {
+  const pref = normalizeLang(preferredLang);
+  const usable = tracks.map((t, i) => ({ t, i })).filter(({ t }) => t.renderable);
+  if (mode === 'off' || !usable.length) return -1;
+  const mine = usable.filter(({ t }) => t.lang === pref);
+  const audioIsPref = normalizeLang(audioLang) === pref;
+  if (mode === 'auto' && audioIsPref) {
+    const forced = mine.find(({ t }) => t.forced);
+    return forced ? forced.i : -1;
+  }
+  if (!mine.length) return -1;
+  // Hors « forcés » d'abord : une piste complète vaut mieux qu'une piste qui ne traduit que les passages étrangers.
+  const full = mine.find(({ t }) => !t.forced);
+  return (full ?? mine[0]).i;
+}

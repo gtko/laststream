@@ -3,6 +3,8 @@
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';
+import './styles/player.css';
+import './styles/player-ui.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';

@@ -6,11 +6,11 @@
   "description": "Laststream : application web (interface du prototype, backend lastAddon).",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
-    "build": "tsc --noEmit && eslint src/ui src/main.js && vite build",
+    "build": "tsc --noEmit && eslint src/ui src/player src/sources src/main.js && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/ui src/main.js"
+    "lint": "eslint src/ui src/player src/sources src/main.js"
   },
   "dependencies": {
     "hls.js": "1.7.3"
