@@ -67,3 +67,6 @@ body.lp-open .ctxmenu { z-index: 700; }
 @media (hover: none) {
   .lp.is-mini .lp-mini-btn, .lp.is-mini .lp-mini-prog { opacity: 1; }
 }
+
+/* Lecteur natif Android réduit : la vignette est une vue native au-dessus de la WebView, rien à afficher côté web. */
+.lp.is-native-mini { display: none !important; }

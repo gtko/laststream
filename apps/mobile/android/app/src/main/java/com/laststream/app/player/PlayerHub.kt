@@ -123,17 +123,53 @@ data class OpenRequest(
     }
 }
 
+/** Commandes du pont JS, communes au plein écran (PlayerActivity) et à la vignette (MiniPlayer). */
+interface PlayerControl {
+    fun load(r: OpenRequest)
+    fun setHeading(title: String, subtitle: String)
+    fun setSegments(list: List<SkipSegment>)
+    fun setSources(list: List<SourceItem>)
+    fun setEpisodes(d: EpisodesData?)
+    fun setNextEpisode(n: NextEpisodeInfo?)
+    fun addSubtitles(list: List<SubtitleSource>)
+    fun setPlaying(play: Boolean)
+    fun seekTo(sec: Double)
+    fun setRate(r: Double)
+    fun selectAudio(id: Int)
+    fun selectSubtitle(id: Int)
+    fun setSubtitleDelay(ms: Long)
+    fun stateJson(): JSObject
+    fun closeSilently()
+    /** Passe en vignette (plein écran) ; faux si impossible ou déjà en vignette. */
+    fun minimize(): Boolean = false
+    /** Revient au plein écran (vignette) ; faux si impossible ou déjà en plein écran. */
+    fun expand(): Boolean = false
+}
+
 /**
- * Passerelle entre le plugin Capacitor (processus du WebView) et l'activité du lecteur : l'un et l'autre vivent dans le même
- * processus, mais pas forcément en même temps.
+ * Passerelle entre le plugin Capacitor (processus du WebView) et le lecteur : l'un et l'autre vivent dans le même
+ * processus, mais pas forcément en même temps. La lecture (`core`) est tenue tour à tour par l'activité plein écran
+ * et par la vignette flottante (`mini`).
  */
 object PlayerHub {
     @Volatile var plugin: LaststreamPlayerPlugin? = null
     @Volatile var activity: PlayerActivity? = null
+    @Volatile var mini: MiniPlayer? = null
     @Volatile var pending: OpenRequest? = null
+
+    /** Lecture en cours, partagée entre le plein écran et la vignette. */
+    @Volatile var core: PlaybackCore? = null
+    /** Vrai quand la prochaine activité doit reprendre `core` telle quelle (agrandissement de la vignette). */
+    @Volatile var adopt = false
+    /** La prochaine activité plein écran passe directement en image dans l'image (app quittée pendant la vignette). */
+    @Volatile var enterPipOnStart = false
+    val machine = MiniMachine()
 
     /** Écouteur de test (instrumenté) : reçoit les mêmes évènements que le JS. */
     @Volatile var listener: ((String, JSObject) -> Unit)? = null
+
+    /** Interface qui reçoit les commandes : la vignette si elle est affichée, sinon l'activité plein écran. */
+    fun control(): PlayerControl? = mini ?: activity
 
     fun emit(event: String, data: JSObject = JSObject()) {
         listener?.invoke(event, data)

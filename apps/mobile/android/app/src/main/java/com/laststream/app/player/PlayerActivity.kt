@@ -57,10 +57,10 @@ import kotlin.concurrent.thread
  * « Audio et sous-titres », « Passer l'intro », « Épisode suivant »). La logique de session (progression enregistrée, segments,
  * épisode suivant) reste côté JS : l'activité n'émet que des évènements.
  */
-class PlayerActivity : AppCompatActivity() {
+class PlayerActivity : AppCompatActivity(), PlayerControl, PlaybackCore.Ui {
     private lateinit var kit: UiKit
-    private lateinit var vlc: LibVLC
-    private lateinit var player: MediaPlayer
+    private lateinit var core: PlaybackCore
+    private val player: MediaPlayer get() = core.player
     private lateinit var videoLayout: VLCVideoLayout
     private lateinit var root: FrameLayout
     private lateinit var ui: FrameLayout
@@ -83,55 +83,46 @@ class PlayerActivity : AppCompatActivity() {
     private lateinit var panelBody: LinearLayout
     private lateinit var toast: TextView
     private lateinit var pipButton: FrameLayout
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var req: OpenRequest? = null
-    private var segments: List<SkipSegment> = emptyList()
-    private var nextEpisode: NextEpisodeInfo? = null
-    private var nextDismissed = false
-    private var externalSubs: List<SubtitleSource> = emptyList()
-    private var extMeta = ArrayList<SubtitleSource>()
-    private var embeddedSpuIds: Set<Int>? = null
-    private var aspect = AspectMode.BEST
-    private var rate = 1.0
-    private var subDelayMs = 0L
-    private var controlsVisible = false
-    private var panelName: String? = null
-    private var defaultsApplied = false
-    private var userPickedSub = false
-    private var endedSent = false
-    private var closedSent = false
-    private var silentClose = false
-    private var startSeekDone = true
-    private var wantedStart = 0.0
-    private var lastState = 0L
-    private var lastProgress = 0L
-    private var lastTrackSig = ""
-    private var audioTracks: List<TrackInfo> = emptyList()
-    private var subTracks: List<TrackInfo> = emptyList()
-    private var buffering = false
-    private var errored = false
-    private var lastPos = 0.0
-    private var lastDur = 0.0
-    private var audioFocusHeld = false
-    private var resumeOnStart = false
-    private var sources: List<SourceItem> = emptyList()
-    private var episodes: EpisodesData? = null
-    private var panelSeason = 0
     private lateinit var sourcesButton: LinearLayout
     private lateinit var episodesButton: LinearLayout
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var nextDismissed = false
+    private var controlsVisible = false
+    private var panelName: String? = null
+    private var closedSent = false
+    private var silentClose = false
+    private var resumeOnStart = false
+    /** La lecture a été confiée à la vignette flottante : l'activité se ferme sans la toucher. */
+    private var handedOff = false
+    private var panelSeason = 0
     private val images = ImageLoader()
+
+    // L'état de lecture vit dans PlaybackCore (partagé avec la vignette) ; l'activité n'en garde qu'une vue.
+    private var req: OpenRequest?
+        get() = core.req
+        set(v) { core.req = v }
+    private val segments: List<SkipSegment> get() = core.segments
+    private val nextEpisode: NextEpisodeInfo? get() = core.nextEpisode
+    private val sources: List<SourceItem> get() = core.sources
+    private val episodes: EpisodesData? get() = core.episodes
+    private val aspect: AspectMode get() = core.aspect
+    private val rate: Double get() = core.rate
+    private val subDelayMs: Long get() = core.subDelayMs
+    private val errored: Boolean get() = core.errored
+    private val lastPos: Double get() = core.lastPos
+    private val lastDur: Double get() = core.lastDur
+    private val audioTracks: List<TrackInfo> get() = core.audioTracks
+    private val subTracks: List<TrackInfo> get() = core.subTracks
 
     private val pipReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            if (i.action == PIP_ACTION && ::player.isInitialized) { setPlaying(!player.isPlaying); updatePipActions() }
+            if (i.action == PIP_ACTION && ::core.isInitialized) { setPlaying(!player.isPlaying); updatePipActions() }
         }
     }
 
     companion object {
         const val PIP_ACTION = "com.laststream.app.PIP_TOGGLE"
-        /** Libération libVLC de l'activité précédente : la suivante l'attend avant de créer sa propre instance (décodeur matériel, sortie audio). */
-        @Volatile private var releasing: Thread? = null
     }
 
     // ---------- Cycle de vie ----------
@@ -144,16 +135,21 @@ class PlayerActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         buildUi()
         enterImmersive()
-        val args = arrayListOf("--audio-time-stretch", "--no-sub-autodetect-file", "--network-caching=3000", "--file-caching=3000", "--avcodec-skiploopfilter=0")
-        try { releasing?.join(3000) } catch (_: InterruptedException) { }
-        vlc = LibVLC(this, args)
-        player = MediaPlayer(vlc)
-        player.attachViews(videoLayout, null, true, false)
-        player.setEventListener(::onPlayerEvent)
-        handler.post(ticker)
+        // La lecture d'une vignette qu'on agrandit est reprise telle quelle ; sinon une nouvelle instance libVLC.
+        val shared = PlayerHub.core?.takeIf { !it.released && it.req != null && PlayerHub.adopt }
+        PlayerHub.adopt = false
+        core = shared ?: PlaybackCore.create(this).also { PlayerHub.core = it }
+        core.ui = this
+        core.attach(videoLayout)
         val pend = PlayerHub.pending
-        if (pend != null) load(pend) else { silentClose = true; finish() }
+        if (shared != null) adopt(shared)
+        else if (pend != null) load(pend) else { silentClose = true; finish() }
+        PlayerHub.machine.open()
         ContextCompat.registerReceiver(this, pipReceiver, IntentFilter(PIP_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
+        if (shared != null && PlayerHub.enterPipOnStart) {
+            PlayerHub.enterPipOnStart = false
+            handler.post { if (!isFinishing) enterPip() }
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -163,12 +159,12 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (resumeOnStart && ::player.isInitialized) { resumeOnStart = false; setPlaying(true) }
+        if (resumeOnStart && ::core.isInitialized) { resumeOnStart = false; setPlaying(true) }
     }
 
     override fun onStop() {
         super.onStop()
-        if (!isInPictureInPictureMode && ::player.isInitialized) {
+        if (!isInPictureInPictureMode && !handedOff && ::core.isInitialized) {
             resumeOnStart = player.isPlaying
             if (player.isPlaying) player.pause()
             rememberPosition()
@@ -179,24 +175,22 @@ class PlayerActivity : AppCompatActivity() {
 
     /** Position courante gardée dans la requête en attente : une activité recréée reprend là où elle était. */
     private fun rememberPosition() {
-        val r = req ?: return
-        req = r.copy(startPosition = lastPos, skipSegments = segments, nextEpisode = nextEpisode, sources = sources, episodes = episodes)
-        PlayerHub.pending = req
+        if (!::core.isInitialized) return
+        PlayerHub.pending = core.snapshot()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) { }
-        if (!closedSent && !silentClose && isFinishing) emitClosed()
-        abandonAudioFocus()
         if (PlayerHub.activity === this) PlayerHub.activity = null
-        if (isFinishing) PlayerHub.pending = null else rememberPosition()
-        val p = if (::player.isInitialized) player else null
-        val v = if (::vlc.isInitialized) vlc else null
-        // Fil principal : plus d'évènements ni de surface. Seule la libération (bloquante) passe en arrière-plan.
-        try { p?.setEventListener(null); p?.detachViews() } catch (_: Exception) { }
-        releasing = thread(name = "vlc-release") {
-            try { p?.stop(); p?.release(); v?.release() } catch (_: Exception) { }
+        if (::core.isInitialized && !handedOff) {
+            if (!closedSent && !silentClose && isFinishing) emitClosed()
+            if (isFinishing) PlayerHub.pending = null else rememberPosition()
+            if (core.ui === this) core.ui = null
+            if (PlayerHub.core === core) PlayerHub.core = null
+            PlayerHub.machine.close()
+            // Plus d'évènements ni de surface ; seule la libération (bloquante) passe en arrière-plan.
+            core.release()
         }
         super.onDestroy()
     }
@@ -208,7 +202,7 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (::player.isInitialized && player.isPlaying && pipSupported()) enterPip()
+        if (!handedOff && ::core.isInitialized && player.isPlaying && pipSupported()) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
@@ -226,6 +220,45 @@ class PlayerActivity : AppCompatActivity() {
         val c = WindowInsetsControllerCompat(window, window.decorView)
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         c.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
+    // ---------- Réduction en vignette ----------
+
+    /** Confie la lecture à la vignette flottante au-dessus de l'interface web ; faux si impossible (pas d'hôte, télévision). */
+    override fun minimize(): Boolean {
+        if (handedOff || isFinishing || !::core.isInitialized) return false
+        val host = PlayerHub.plugin?.activity ?: return false
+        if (!MiniPlayer.supported(host)) return false
+        rememberPosition()
+        handedOff = true
+        PlayerHub.pending = null
+        core.ui = null
+        core.detach()
+        if (!MiniPlayer.show(host, core)) {
+            // Échec de la mise en place : on reprend le plein écran tel quel.
+            handedOff = false
+            core.ui = this
+            core.attach(videoLayout)
+            return false
+        }
+        finish()
+        return true
+    }
+
+    /** Reprise d'une lecture déjà en cours (agrandissement de la vignette) : interface remise à jour, média intact. */
+    private fun adopt(c: PlaybackCore) {
+        val r = c.req ?: return
+        setHeading(r.title, r.subtitle)
+        setNextEpisode(c.nextEpisode)
+        setSources(c.sources)
+        setEpisodes(c.episodes)
+        nextCard.visibility = View.GONE
+        skipButton.visibility = View.GONE
+        closePanel()
+        if (player.isPlaying) { hideSpinner(); updatePlayIcons(true) } else if (c.errored) showSpinner("") else { hideSpinner(); updatePlayIcons(false) }
+        updateMarks()
+        c.refreshTracks()
+        showControls()
     }
 
     // ---------- Construction de l'interface ----------
@@ -294,6 +327,11 @@ class PlayerActivity : AppCompatActivity() {
                 if (panelName != null) closePanel() else if (controlsVisible) hideControls() else showControls()
                 return true
             }
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null || panelName != null) return false
+                if (MiniLogic.isMinimizeSwipe(e2.x - e1.x, e2.y - e1.y, velocityY, resources.displayMetrics.density)) return minimize()
+                return false
+            }
             override fun onDoubleTap(e: MotionEvent): Boolean {
                 val f = e.x / root.width
                 if (f < 0.35f) seekBy(-PlayerLogic.SEEK_STEP_S) else if (f > 0.65f) seekBy(PlayerLogic.SEEK_STEP_S) else togglePlay()
@@ -318,13 +356,14 @@ class PlayerActivity : AppCompatActivity() {
             background = gradient(true)
             setPadding(kit.dp(24), kit.dp(16), kit.dp(24), kit.dp(28))
         }
-        bar.addView(kit.iconButton(R.drawable.ic_back, "Retour", 48, 26) { finishWithClosed() })
+        bar.addView(kit.iconButton(R.drawable.ic_back, "Retour", 48, 26) { if (!minimize()) finishWithClosed() })
         val heading = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(kit.dp(10), 0, kit.dp(10), 0) }
         titleView = kit.text("", 19f, Tokens.TEXT, 800, sora = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         subtitleView = kit.text("", 14f, Tokens.SOFT, 600).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, kit.dp(3), 0, 0) }
         heading.addView(titleView)
         heading.addView(subtitleView)
         bar.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
+        if (MiniPlayer.supported(this)) bar.addView(kit.iconButton(R.drawable.ic_minimize, "Réduire en vignette", 48, 26) { minimize() })
         pipButton = kit.iconButton(R.drawable.ic_pip, "Image dans l’image", 48, 24) { enterPip() }
         pipButton.visibility = if (pipSupported()) View.VISIBLE else View.GONE
         bar.addView(pipButton)
@@ -497,10 +536,10 @@ class PlayerActivity : AppCompatActivity() {
         if (name == "episodes") { buildEpisodesPanel(); return }
         val cols = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         if (name == "tracks") {
-            val audioRows = if (audioTracks.isEmpty()) listOf(Row("Une seule piste", true) {}) else audioTracks.map { t -> Row(t.name, t.selected) { selectAudio(t.id, true) } }
+            val audioRows = if (audioTracks.isEmpty()) listOf(Row("Une seule piste", true) {}) else audioTracks.map { t -> Row(t.name, t.selected) { selectAudio(t.id) } }
             val subRows = ArrayList<Row>()
-            subRows.add(Row("Désactivés", subTracks.none { it.selected && it.id >= 0 }) { selectSubtitle(-1, true) })
-            subTracks.filter { it.id >= 0 }.forEach { t -> subRows.add(Row(t.name, t.selected) { selectSubtitle(t.id, true) }) }
+            subRows.add(Row("Désactivés", subTracks.none { it.selected && it.id >= 0 }) { selectSubtitle(-1) })
+            subTracks.filter { it.id >= 0 }.forEach { t -> subRows.add(Row(t.name, t.selected) { selectSubtitle(t.id) }) }
             cols.addView(scroll(column("Audio", audioRows)), LinearLayout.LayoutParams(0, -2, 1f))
             cols.addView(scroll(column("Sous-titres", subRows, delayControls())), LinearLayout.LayoutParams(0, -2, 1f))
         } else {
@@ -512,15 +551,15 @@ class PlayerActivity : AppCompatActivity() {
         panelBody.addView(cols, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    fun setSources(list: List<SourceItem>) {
-        sources = list
+    override fun setSources(list: List<SourceItem>) {
+        core.sources = list
         sourcesButton.visibility = if (list.size > 0) View.VISIBLE else View.GONE
         if (panelName == "sources") refreshPanel()
     }
 
-    fun setEpisodes(d: EpisodesData?) {
+    override fun setEpisodes(d: EpisodesData?) {
         val changedCurrent = d?.currentSeason != episodes?.currentSeason
-        episodes = d
+        core.episodes = d
         episodesButton.visibility = if (d != null) View.VISIBLE else View.GONE
         if (d != null && (panelSeason == 0 || changedCurrent)) panelSeason = d.currentSeason
         if (panelName == "episodes") refreshPanel()
@@ -529,7 +568,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun switching(msg: String) {
         closePanel()
         showSpinner(msg)
-        if (::player.isInitialized) player.pause()
+        if (::core.isInitialized) player.pause()
     }
 
     private fun buildSourcesPanel() {
@@ -624,26 +663,8 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------- Chargement d'un média ----------
 
-    fun load(r: OpenRequest) {
-        req = r
-        segments = r.skipSegments
-        nextEpisode = r.nextEpisode
+    override fun load(r: OpenRequest) {
         nextDismissed = false
-        externalSubs = r.subtitles
-        extMeta = ArrayList()
-        embeddedSpuIds = null
-        defaultsApplied = false
-        userPickedSub = false
-        endedSent = false
-        errored = false
-        subDelayMs = 0
-        lastTrackSig = ""
-        audioTracks = emptyList()
-        subTracks = emptyList()
-        wantedStart = r.startPosition
-        startSeekDone = r.startPosition < 1.0
-        lastPos = 0.0
-        lastDur = 0.0
         setHeading(r.title, r.subtitle)
         setNextEpisode(r.nextEpisode)
         setSources(r.sources)
@@ -652,42 +673,24 @@ class PlayerActivity : AppCompatActivity() {
         skipButton.visibility = View.GONE
         showSpinner("")
         closePanel()
-        requestAudioFocus()
-        try {
-            val m = Media(vlc, Uri.parse(r.url))
-            m.setHWDecoderEnabled(true, false)
-            if (r.startPosition >= 1.0) m.addOption(":start-time=${r.startPosition}")
-            r.headers.forEach { (k, v) ->
-                when (k.lowercase()) {
-                    "user-agent" -> m.addOption(":http-user-agent=$v")
-                    "referer", "referrer" -> m.addOption(":http-referrer=$v")
-                }
-            }
-            player.media = m
-            m.release()
-            player.play()
-            player.rate = 1f
-            rate = 1.0
-            setAspect(aspect)
-        } catch (e: Exception) {
-            fail("open")
-        }
+        core.begin(r)
+        updateMarks()
         showControls()
     }
 
-    fun setHeading(title: String, subtitle: String) {
+    override fun setHeading(title: String, subtitle: String) {
         if (title.isNotEmpty()) titleView.text = title
         subtitleView.text = subtitle
         subtitleView.visibility = if (subtitle.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    fun setSegments(list: List<SkipSegment>) {
-        segments = list
+    override fun setSegments(list: List<SkipSegment>) {
+        core.segments = list
         updateMarks()
     }
 
-    fun setNextEpisode(n: NextEpisodeInfo?) {
-        nextEpisode = n
+    override fun setNextEpisode(n: NextEpisodeInfo?) {
+        core.nextEpisode = n
         nextButton.visibility = if (n != null) View.VISIBLE else View.GONE
         if (n != null) {
             nextTitle.text = n.title
@@ -715,176 +718,27 @@ class PlayerActivity : AppCompatActivity() {
 
     // ---------- Lecture ----------
 
-    private fun onPlayerEvent(e: MediaPlayer.Event) {
-        when (e.type) {
-            MediaPlayer.Event.Opening -> showSpinner("")
-            MediaPlayer.Event.Buffering -> {
-                buffering = e.buffering < 100f
-                if (buffering && !errored) showSpinner("") else if (!buffering) hideSpinner()
-            }
-            MediaPlayer.Event.Playing -> {
-                buffering = false
-                hideSpinner()
-                updatePlayIcons(true)
-                scheduleHide()
-                handler.postDelayed({ afterStart() }, 600)
-            }
-            MediaPlayer.Event.Paused -> { updatePlayIcons(false); showControls(); emitState(true); emitProgress(true) }
-            MediaPlayer.Event.EndReached -> {
-                if (!endedSent) { endedSent = true; emitEvent("ended", JSObject().put("position", lastPos).put("duration", lastDur)) }
-                showSpinner("")
-            }
-            MediaPlayer.Event.EncounteredError -> fail("decode")
-            MediaPlayer.Event.ESAdded, MediaPlayer.Event.ESDeleted, MediaPlayer.Event.ESSelected -> refreshTracks()
-        }
-    }
 
-    private fun afterStart() {
-        if (isDestroyed) return
-        if (!startSeekDone) {
-            startSeekDone = true
-            // `start-time` est ignoré par certains serveurs : on rattrape la position à la main.
-            if (player.time / 1000.0 < wantedStart - 5) player.time = (wantedStart * 1000).toLong()
-        }
-        refreshTracks()
-        if (!defaultsApplied && (audioTracks.isNotEmpty() || subTracks.isNotEmpty())) applyDefaults()
-        applyExternalSubs()
-    }
 
-    private fun applyExternalSubs() {
-        if (embeddedSpuIds == null) embeddedSpuIds = subTracks.map { it.id }.toSet()
-        val pending = externalSubs.filter { s -> extMeta.none { it.url == s.url } }
-        pending.forEach { s ->
-            try {
-                player.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(s.url), false)
-                extMeta.add(s)
-            } catch (_: Exception) { }
-        }
-        if (pending.isNotEmpty()) handler.postDelayed({ refreshTracks(); maybeSelectExternal() }, 1200)
-    }
 
-    fun addSubtitles(list: List<SubtitleSource>) {
-        externalSubs = (externalSubs + list).distinctBy { it.url }
-        if (embeddedSpuIds != null) applyExternalSubs()
-    }
 
-    private fun selectedAudioLang(): String = audioTracks.firstOrNull { it.selected }?.lang ?: ""
 
-    private fun maybeSelectExternal() {
-        val r = req ?: return
-        if (userPickedSub || subTracks.any { it.selected && it.id >= 0 }) return
-        PlayerLogic.defaultSubtitle(subTracks, r.preferredSubLang, selectedAudioLang(), r.subMode)?.let { selectSubtitle(it.id, false) }
-    }
 
-    private fun applyDefaults() {
-        val r = req ?: return
-        defaultsApplied = true
-        PlayerLogic.pickAudio(audioTracks, r.preferredAudioLang)?.let { if (!it.selected) selectAudio(it.id, false) }
-        if (r.preferredSubLang.isBlank() && r.subMode != "off") return // aucune préférence : choix par défaut de libVLC
-        val pick = PlayerLogic.defaultSubtitle(subTracks, r.preferredSubLang, selectedAudioLang(), r.subMode)
-        if (pick != null) selectSubtitle(pick.id, false) else if (subTracks.any { it.selected }) selectSubtitle(-1, false)
-    }
 
-    private fun mediaTracks(type: Int): List<IMedia.Track> {
-        val m = player.media ?: return emptyList()
-        val out = ArrayList<IMedia.Track>()
-        try { for (i in 0 until m.trackCount) m.getTrack(i)?.let { if (it.type == type) out.add(it) } } catch (_: Exception) { }
-        m.release()
-        return out
-    }
 
-    private fun refreshTracks() {
-        if (isDestroyed) return
-        val audioDesc = player.audioTracks ?: emptyArray()
-        val spuDesc = player.spuTracks ?: emptyArray()
-        val mAudio = mediaTracks(IMedia.Track.Type.Audio)
-        val mText = mediaTracks(IMedia.Track.Type.Text)
-        val curAudio = player.audioTrack
-        val curSpu = player.spuTrack
-        var ai = 0
-        audioTracks = audioDesc.filter { it.id >= 0 }.map { d ->
-            val mt = mAudio.getOrNull(ai++)
-            val lang = PlayerLogic.langFromTrackName(d.name).ifEmpty { PlayerLogic.normalizeLang(mt?.language) }
-            val ch = (mt as? IMedia.AudioTrack)?.channels ?: 0
-            TrackInfo(d.id, PlayerLogic.trackLabel(lang, d.name, mt?.codec ?: "", ch), lang, d.id == curAudio)
-        }
-        var si = 0
-        var extIdx = 0
-        val embedded = embeddedSpuIds
-        subTracks = spuDesc.filter { it.id >= 0 }.map { d ->
-            val isExt = embedded != null && d.id !in embedded
-            val ext = if (isExt) extMeta.getOrNull(extIdx++) else null
-            val mt = if (isExt) null else mText.getOrNull(si++)
-            val lang = ext?.lang?.let { PlayerLogic.normalizeLang(it) } ?: PlayerLogic.langFromTrackName(d.name).ifEmpty { PlayerLogic.normalizeLang(mt?.language) }
-            val label = if (ext != null) ext.label.ifBlank { PlayerLogic.languageName(lang).ifEmpty { "Sous-titres externes" } } + " · externe"
-            else PlayerLogic.trackLabel(lang, d.name, mt?.codec ?: "")
-            TrackInfo(d.id, label, lang, d.id == curSpu)
-        }
-        val sig = audioTracks.joinToString { "${it.id}${it.selected}" } + "|" + subTracks.joinToString { "${it.id}${it.selected}" }
-        if (sig != lastTrackSig) {
-            lastTrackSig = sig
-            emitEvent("tracks", JSObject().put("audio", tracksJson(audioTracks)).put("subs", tracksJson(subTracks)))
-            if (panelName != null) refreshPanel()
-        }
-    }
 
-    private fun tracksJson(l: List<TrackInfo>): JSONArray = JSONArray().apply {
-        l.forEach { put(JSONObject().put("id", it.id).put("label", it.name).put("lang", it.lang).put("selected", it.selected)) }
-    }
 
-    fun selectAudio(id: Int, fromUser: Boolean = true) {
-        player.audioTrack = id
-        refreshTracks()
-        val t = audioTracks.firstOrNull { it.id == id }
-        if (fromUser) { toast("Audio : " + (t?.name ?: "")); emitEvent("trackChanged", JSObject().put("kind", "audio").put("id", id).put("lang", t?.lang ?: "").put("label", t?.name ?: "")) }
-    }
 
-    fun selectSubtitle(id: Int, fromUser: Boolean = true) {
-        if (fromUser) userPickedSub = true
-        player.spuTrack = id
-        refreshTracks()
-        val t = subTracks.firstOrNull { it.id == id }
-        if (fromUser) {
-            toast(if (id < 0) "Sous-titres désactivés" else "Sous-titres : " + (t?.name ?: ""))
-            emitEvent("trackChanged", JSObject().put("kind", "sub").put("id", id).put("lang", if (id < 0) "off" else t?.lang ?: "").put("label", t?.name ?: ""))
-        }
-    }
 
-    fun setSubtitleDelay(ms: Long) {
-        subDelayMs = PlayerLogic.clampDelayMs(ms)
-        player.spuDelay = subDelayMs * 1000
-    }
 
-    fun setRate(r: Double) {
-        rate = r
-        player.rate = r.toFloat()
-    }
 
-    private fun setAspect(a: AspectMode) {
-        aspect = a
-        try {
-            when (a) {
-                AspectMode.BEST -> { player.setAspectRatio(null); player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT }
-                AspectMode.FILL -> { player.setAspectRatio(null); player.videoScale = MediaPlayer.ScaleType.SURFACE_FILL }
-                else -> { player.setAspectRatio(a.vlc); player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT }
-            }
-        } catch (_: Exception) { }
-    }
 
-    fun setPlaying(play: Boolean) {
-        if (play) { requestAudioFocus(); player.play() } else player.pause()
-    }
 
     private fun togglePlay() {
         setPlaying(!player.isPlaying)
         showControls()
     }
 
-    fun seekTo(sec: Double) {
-        if (lastDur > 0) player.time = (PlayerLogic.seekTarget(sec, 0.0, lastDur) * 1000).toLong() else player.time = (sec * 1000).toLong()
-        lastPos = sec
-        emitState(true)
-    }
 
     private fun seekBy(delta: Double) {
         val cur = player.time / 1000.0
@@ -907,29 +761,11 @@ class PlayerActivity : AppCompatActivity() {
         emitEvent("nextEpisode", JSObject().put("position", lastPos).put("duration", lastDur))
     }
 
-    private fun fail(code: String) {
-        if (errored) return
-        errored = true
-        showSpinner("Lecture impossible, recherche d’une autre source…")
-        emitEvent("error", JSObject().put("code", code).put("position", lastPos))
-    }
 
     // ---------- Boucle périodique : position, boutons de saut, évènements ----------
 
-    private val ticker = object : Runnable {
-        override fun run() {
-            if (!isDestroyed && ::player.isInitialized) {
-                try { tick() } catch (_: Exception) { }
-                handler.postDelayed(this, 250)
-            }
-        }
-    }
 
-    private fun tick() {
-        val t = player.time
-        val l = player.length
-        if (t >= 0) lastPos = t / 1000.0
-        if (l > 0) { if (lastDur != l / 1000.0) { lastDur = l / 1000.0; updateMarks() } }
+    private fun onTickUi() {
         scrubber.setProgress(if (lastDur > 0) lastPos / lastDur else 0.0)
         if (controlsVisible) timeView.text = PlayerLogic.formatClock(lastPos) + " / " + PlayerLogic.formatClock(lastDur)
         val seg = PlayerLogic.activeSkip(segments, lastPos)
@@ -940,35 +776,42 @@ class PlayerActivity : AppCompatActivity() {
         val showNext = !nextDismissed && nextEpisode != null && !errored && PlayerLogic.showNextCard(segments, lastPos, lastDur, true) && !isInPictureInPictureMode
         nextCard.visibility = if (showNext) View.VISIBLE else View.GONE
         if (nextCard.visibility == View.VISIBLE && skipButton.visibility == View.VISIBLE) skipButton.visibility = View.GONE
-        emitState(false)
-        emitProgress(false)
     }
 
-    fun stateJson(): JSObject = JSObject()
-        .put("position", lastPos).put("duration", lastDur).put("paused", !player.isPlaying).put("buffering", buffering)
-        .put("rate", rate).put("ended", endedSent)
+    // ---------- Rappels de PlaybackCore (interface du plein écran) ----------
 
-    private fun emitState(force: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!force && !PlayerLogic.shouldEmit(now, lastState, 1000)) return
-        lastState = now
-        emitEvent("state", stateJson())
-    }
+    override fun busy(show: Boolean, msg: String) { if (show) showSpinner(msg) else hideSpinner() }
+    override fun playing(playing: Boolean) { updatePlayIcons(playing); if (playing) scheduleHide() }
+    override fun paused() { showControls() }
+    override fun tracksChanged() { if (panelName != null) refreshPanel() }
+    override fun durationChanged() { updateMarks() }
+    override fun tick() { onTickUi() }
 
-    private fun emitProgress(force: Boolean) {
-        val now = System.currentTimeMillis()
-        if (!force && (!player.isPlaying || !PlayerLogic.shouldEmit(now, lastProgress, 5000))) return
-        if (lastDur <= 0) return
-        lastProgress = now
-        emitEvent("progress", JSObject().put("position", lastPos).put("duration", lastDur))
-    }
-
-    private fun emitEvent(name: String, data: JSObject) = PlayerHub.emit(name, data)
+    private fun emitState(force: Boolean) = core.emitState(force)
+    private fun emitProgress(force: Boolean) = core.emitProgress(force)
+    private fun emitEvent(name: String, data: JSObject) = core.emit(name, data)
+    private fun refreshTracks() = core.refreshTracks()
+    private fun setAspect(a: AspectMode) = core.setAspect(a)
 
     private fun emitClosed() {
         closedSent = true
-        emitEvent("closed", JSObject().put("position", lastPos).put("duration", lastDur))
+        core.emitClosed()
     }
+
+    // Commandes du pont JS (PlayerControl) : la lecture elle-même est dans PlaybackCore.
+    override fun addSubtitles(list: List<SubtitleSource>) = core.addSubtitles(list)
+    override fun selectAudio(id: Int) = core.selectAudio(id)
+    override fun selectSubtitle(id: Int) = core.selectSubtitle(id)
+    override fun setSubtitleDelay(ms: Long) = core.setSubtitleDelay(ms)
+    override fun setRate(r: Double) = core.setRate(r)
+    override fun setPlaying(play: Boolean) = core.setPlaying(play)
+    override fun seekTo(sec: Double) = core.seekTo(sec)
+    override fun stateJson(): JSObject = core.stateJson()
+
+
+
+
+
 
     /** Fermeture à l'initiative de l'utilisateur : `closed` part vers le JS, qui enregistre la progression. */
     private fun finishWithClosed() {
@@ -978,7 +821,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /** Fermeture demandée par le JS : pas d'évènement en retour. */
-    fun closeSilently() {
+    override fun closeSilently() {
         silentClose = true
         finish()
     }
@@ -989,7 +832,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun scheduleHide() {
         handler.removeCallbacks(hideRunnable)
-        if (controlsVisible && panelName == null && ::player.isInitialized && player.isPlaying) handler.postDelayed(hideRunnable, 3000)
+        if (controlsVisible && panelName == null && ::core.isInitialized && player.isPlaying) handler.postDelayed(hideRunnable, 3000)
     }
 
     /** Au-dessus de la barre basse quand les contrôles sont visibles, près du bord sinon. */
@@ -1040,7 +883,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private val toastHide = Runnable { toast.visibility = View.GONE }
 
-    private fun toast(msg: String) {
+    override fun toast(msg: String) {
         toast.text = msg
         toast.visibility = View.VISIBLE
         handler.removeCallbacks(toastHide)
@@ -1052,7 +895,7 @@ class PlayerActivity : AppCompatActivity() {
         val k = e.keyCode
         when (k) {
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
-                if (panelName != null) closePanel() else finishWithClosed()
+                if (panelName != null) closePanel() else if (!minimize()) finishWithClosed()
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> { togglePlay(); return true }
@@ -1085,7 +928,7 @@ class PlayerActivity : AppCompatActivity() {
     private fun pipSupported() = Build.VERSION.SDK_INT >= 26 && packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
     private fun pipActions(): List<RemoteAction> {
-        val playing = ::player.isInitialized && player.isPlaying
+        val playing = ::core.isInitialized && player.isPlaying
         val pi = PendingIntent.getBroadcast(this, 0, Intent(PIP_ACTION).setPackage(packageName), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val label = if (playing) "Pause" else "Lecture"
         return listOf(RemoteAction(Icon.createWithResource(this, if (playing) R.drawable.ic_pause else R.drawable.ic_play), label, label, pi))
@@ -1114,25 +957,4 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // ---------- Focus audio ----------
-
-    private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
-            if (::player.isInitialized && player.isPlaying) player.pause()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun requestAudioFocus() {
-        if (audioFocusHeld) return
-        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        audioFocusHeld = am.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    }
-
-    @Suppress("DEPRECATION")
-    private fun abandonAudioFocus() {
-        if (!audioFocusHeld) return
-        (getSystemService(Context.AUDIO_SERVICE) as AudioManager).abandonAudioFocus(focusListener)
-        audioFocusHeld = false
-    }
 }

@@ -78,6 +78,7 @@ let tickTimer = null;
 let shell = null; // transport de la coque Windows (null dans un navigateur)
 let shellFullscreen = false;
 let shellPip = false; // image dans l'image de la coque (petite fenêtre au premier plan)
+let nativeMini = false; // vignette flottante du lecteur natif Android affichée (la page web est alors libre)
 let lastMiniRect = null; // rectangle de l'image du mini-lecteur (px de la fenêtre), pour mpv
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
@@ -274,7 +275,7 @@ function ensureUI() {
 // ---------- Mini-lecteur ----------
 
 /** Réduction possible : une source est en lecture, moteur web ou mpv (le lecteur natif Android a son image dans l'image système). */
-const canMinimize = () => !!P && !!P.view && !!P.engine && P.engine.kind !== 'native' && !(shell && shellPip);
+const canMinimize = () => !!P && !!P.view && !!P.engine && !(shell && shellPip);
 
 function minimizePlayer() {
   if (!canMinimize()) return false;
@@ -283,10 +284,23 @@ function minimizePlayer() {
   if (exits.exitDoc) document.exitFullscreen().catch(() => {});
   if (exits.exitShell) { shellFullscreen = false; setShellFullscreen(shell, false); }
   saveProgress(true);
-  return miniState.minimize();
+  const native = P.engine.kind === 'native';
+  const ok = miniState.minimize();
+  // Lecteur natif Android : la vignette est une vue native ; si elle n'est pas disponible (télévision), on revient au plein écran.
+  if (ok && native) P.engine.minimize().then((on) => { if (!on && nativeMini) { nativeMini = false; miniState.expand(); } });
+  return ok;
 }
 
-function expandPlayer() { return miniState.expand(); }
+function expandPlayer() {
+  if (nativeMini && nativeEng) nativeEng.expand();
+  return miniState.expand();
+}
+
+/** Remise à zéro du mini-lecteur à chaque nouvelle session ; la vignette native, elle, accueille le média suivant sans repasser en plein écran. */
+function resetMini() {
+  if (nativeMini) return;
+  miniState.reset();
+}
 
 /** Nouvelle position de la vignette : mpv recale son image (marges) et la page est percée au même endroit. */
 function onMiniLayout(video) {
@@ -297,6 +311,8 @@ function onMiniLayout(video) {
 /** Bascule visuelle réduit / plein lecteur (la lecture, elle, n'est jamais interrompue). */
 function applyMini(on) {
   if (!ui) return;
+  nativeMini = on && !!P && !!P.engine && P.engine.kind === 'native';
+  ui.root.classList.toggle('is-native-mini', nativeMini);
   ui.setMini(on);
   document.body.classList.toggle('modal-open', !on && !!P);
   if (on) {
@@ -346,6 +362,8 @@ function bindEngine(e) {
   e.on('closed', () => { if (P && P.engine === e) closePlayer(); });
   e.on('next', () => { if (P && P.engine === e) onAction('next'); });
   e.on('trackChanged', (d) => { if (P && P.engine === e) onNativeTrack(d); });
+  // Vignette native : réduite ou agrandie depuis le natif (tap, bouton retour, geste), l'état web suit.
+  e.on('mini', (on) => { if (P && P.engine === e) { if (on) miniState.minimize(); else { nativeMini = false; miniState.expand(); } } });
   e.on('selectSource', (d) => { if (P && P.engine === e) onNativeSource(d); });
   e.on('selectEpisode', (d) => { if (P && P.engine === e) playEpisode(Number(d.season), Number(d.episode)); });
   e.on('loadSeason', (d) => { if (P && P.engine === e) ensureEpisodes(Number(d.season)).then(syncNative); });
@@ -436,7 +454,7 @@ function syncNative() {
 /** Crée la session et ouvre le lecteur tout de suite, sans source : l'écran de chargement prend le relais. */
 async function initSession(request, views, view, opts = {}) {
   ensureUI();
-  miniState.reset();
+  resetMini();
   if (P) await teardown(true);
   const token = Symbol('session');
   P = {
@@ -809,7 +827,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
   ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
-  ui.setMiniAvailable(choice.engine !== 'native');
+  ui.setMiniAvailable(true);
+  if (nativeMini && choice.engine !== 'native') { nativeMini = false; if (nativeEng) nativeEng.closeNow(); miniState.reset(); }
   ui.relayoutMini();
   if (choice.engine === 'native') {
     if (!nativeEng) { nativeEng = new NativeEngine(NativePlayer); bindEngine(nativeEng); }
@@ -1693,7 +1712,8 @@ function onKey(e) {
 async function teardown(silent) {
   const p = P;
   if (!p) return;
-  miniState.reset();
+  if (!silent) nativeMini = false;
+  resetMini();
   saveProgress(true);
   clearInterval(tickTimer);
   clearTimeout(p.resumeTimer);

@@ -70,6 +70,7 @@ describe('NativeEngine', () => {
       open: vi.fn(async () => {}), close: vi.fn(async () => {}), play: vi.fn(async () => {}), pause: vi.fn(async () => {}),
       seek: vi.fn(async () => {}), setRate: vi.fn(async () => {}), setAudioTrack: vi.fn(async () => {}), setSubtitleTrack: vi.fn(async () => {}),
       addSubtitles: vi.fn(async () => {}), update: vi.fn(async () => {}),
+      minimize: vi.fn(async () => ({ mini: true })), expand: vi.fn(async () => ({ mini: false })),
     };
     return { plugin, fire: (ev: string, d: unknown) => handlers.get(ev)?.(d) };
   }
@@ -84,6 +85,21 @@ describe('NativeEngine', () => {
     fire('state', { position: 43, duration: 3000, paused: false, buffering: false, rate: 1 });
     expect(ready).toHaveBeenCalledTimes(1);
     expect(e.state()).toMatchObject({ time: 43, duration: 3000, paused: false, rate: 1 });
+  });
+
+  it('vignette flottante : relaie miniChanged, minimize() et expand()', async () => {
+    const { plugin, fire } = fakePlugin();
+    const e = new NativeEngine(plugin);
+    await e.load({ url: 'http://x/a.mkv', startAt: 0, open: {} });
+    const mini = vi.fn();
+    e.on('mini', mini);
+    fire('miniChanged', { mini: true });
+    fire('miniChanged', { mini: false });
+    expect(mini.mock.calls).toEqual([[true], [false]]);
+    await expect(e.minimize()).resolves.toBe(true);
+    await expect(e.expand()).resolves.toBe(false);
+    plugin.minimize.mockRejectedValueOnce(new Error('absent'));
+    await expect(e.minimize()).resolves.toBe(false);
   });
 
   it('relaie fin, erreur, fermeture et épisode suivant ; ignore les évènements après destroy', async () => {

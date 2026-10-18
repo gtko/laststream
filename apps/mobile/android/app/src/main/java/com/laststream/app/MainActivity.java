@@ -7,6 +7,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
 import com.laststream.app.player.LaststreamPlayerPlugin;
+import com.laststream.app.player.MiniPlayer;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -21,5 +22,30 @@ public class MainActivity extends BridgeActivity {
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             return WindowInsetsCompat.CONSUMED;
         });
+    }
+
+    // Mini-lecteur natif : quitter l'application pendant la vignette passe en image dans l'image (sinon pause).
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        MiniPlayer.onHostLeaving(this);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        MiniPlayer.onHostStarted();
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        MiniPlayer.onHostStopped();
+    }
+
+    @Override
+    public void onDestroy() {
+        MiniPlayer.onHostDestroyed();
+        super.onDestroy();
     }
 }

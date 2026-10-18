@@ -390,6 +390,7 @@ export class NativeEngine extends Emitter {
     on('loadSeason', (d) => this.emit('loadSeason', d));
     on('nextEpisode', () => this.emit('next'));
     on('trackChanged', (d) => this.emit('trackChanged', d));
+    on('miniChanged', (d) => this.emit('mini', !!d.mini));
   }
 
   setState(d) {
@@ -430,6 +431,10 @@ export class NativeEngine extends Emitter {
     clearTimeout(this.closeTimer);
     this.plugin.close().catch(() => {});
   }
+
+  /** Vignette flottante native : renvoie vrai si elle est affichée. */
+  minimize() { return this.plugin.minimize().then((r) => !!(r && r.mini), () => false); }
+  expand() { return this.plugin.expand().then((r) => !!(r && r.mini), () => false); }
 
   play() { this.plugin.play().catch(() => {}); }
   pause() { this.plugin.pause().catch(() => {}); }

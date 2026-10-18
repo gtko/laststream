@@ -51,6 +51,8 @@ export interface NativeEvents {
   selectEpisode: { season: number; episode: number };
   loadSeason: { season: number };
   trackChanged: { kind: 'audio' | 'sub'; id: number; lang: string; label: string };
+  /** Le lecteur natif passe en vignette flottante (true) ou revient en plein écran (false). */
+  miniChanged: { mini: boolean };
 }
 
 export interface LaststreamPlayerPlugin {
@@ -64,8 +66,12 @@ export interface LaststreamPlayerPlugin {
   setAudioTrack(options: { id: number }): Promise<void>;
   setSubtitleTrack(options: { id: number }): Promise<void>;
   setSubtitleDelay(options: { ms: number }): Promise<void>;
-  getState(): Promise<{ open: boolean } & Partial<NativeEvents['state']>>;
+  getState(): Promise<{ open: boolean; mini?: boolean } & Partial<NativeEvents['state']>>;
   close(): Promise<void>;
+  /** Réduit en vignette flottante ; `mini` indique si la vignette est affichée (faux : non pris en charge, p. ex. télévision). */
+  minimize(): Promise<{ mini: boolean }>;
+  /** Agrandit la vignette en plein écran. */
+  expand(): Promise<{ mini: boolean }>;
   addListener<E extends keyof NativeEvents>(event: E, fn: (data: NativeEvents[E]) => void): Promise<PluginListenerHandle>;
 }
 
