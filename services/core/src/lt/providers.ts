@@ -504,14 +504,17 @@ function airedFromV3(raw: unknown): TvdbAiredEpisode | undefined {
   };
 }
 
-/** Épisodes de l'ordre de diffusion en v4 (langue du chemin) ou v3 (en-tête Accept-Language). */
-async function tvdbAired(ctx: LtContext, token: string, id: string, lang: TvdbLang, version: TvdbVersion): Promise<TvdbAiredEpisode[]> {
+/** Ordre de saison TVDB lu en v4 : « default » (ordre de diffusion TVDB), « official » en repli quand il est vide. */
+type TvdbOrder = 'default' | 'official';
+
+/** Épisodes d'un ordre TVDB en v4 (langue du chemin) ou v3 (en-tête Accept-Language, ordre unique). */
+async function tvdbAired(ctx: LtContext, token: string, id: string, lang: TvdbLang, version: TvdbVersion, order: TvdbOrder): Promise<TvdbAiredEpisode[]> {
   if (version === 'v4') {
     const init = { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } };
     const rows = await tvdbPages(
       ctx,
       0,
-      (page) => `${TVDB_V4_BASE}/series/${id}/episodes/default/${TVDB_V4_LANG[lang]}?page=${page}`,
+      (page) => `${TVDB_V4_BASE}/series/${id}/episodes/${order}/${TVDB_V4_LANG[lang]}?page=${page}`,
       init,
       (json) => recordAt(json, 'data').episodes,
     );
@@ -525,8 +528,9 @@ async function tvdbAired(ctx: LtContext, token: string, id: string, lang: TvdbLa
 }
 
 /**
- * Épisodes de la série dans l'ordre de diffusion (« aired order »), texte dans la langue demandée. Cache partagé
- * (métadonnées publiques, comme tvdbSeries). API v4 avec la clé (et le PIN), repli sur v3 pour une clé legacy.
+ * Épisodes de la série dans l'ordre TVDB `default` (ordre de diffusion), texte dans la langue demandée, avec repli sur
+ * l'ordre `official` quand `default` ne renvoie aucun épisode (comme Stremio AIOMetadata). Cache partagé (métadonnées
+ * publiques, comme tvdbSeries). API v4 avec la clé (et le PIN), repli sur v3 pour une clé legacy.
  */
 export async function tvdbAiredEpisodes(
   ctx: LtContext,
@@ -536,7 +540,11 @@ export async function tvdbAiredEpisodes(
   pin?: string,
 ): Promise<TvdbAiredEpisode[]> {
   if (!/^\d{1,9}$/.test(id)) throw new LtError(404, 'not_found');
-  return ctx.state.cache.get(`tvdb:aired:${id}:${lang}`, TTL.tvdb, () =>
-    withTvdbToken(ctx, apiKey, pin, (version, token) => tvdbAired(ctx, token, id, lang, version)),
+  return ctx.state.cache.get(`tvdb:aired:v2:${id}:${lang}`, TTL.tvdb, () =>
+    withTvdbToken(ctx, apiKey, pin, async (version, token) => {
+      const rows = await tvdbAired(ctx, token, id, lang, version, 'default');
+      if (rows.length > 0 || version !== 'v4') return rows;
+      return tvdbAired(ctx, token, id, lang, version, 'official');
+    }),
   );
 }

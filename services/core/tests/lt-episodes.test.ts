@@ -55,13 +55,26 @@ const v4Login = (): Handler => (call) => {
   return apikey === V4_KEY ? json({ status: 'success', data: { token: 'v4-session' } }) : json({ status: 'failure' }, 401);
 };
 
-/** Épisodes TVDB v4 d'une langue (`fra` ou `eng`), une seule page. */
-const v4Episodes = (id: string, lang: 'fra' | 'eng', episodes: unknown[]): Handlers => ({
-  [`${TVDB4}/series/${id}/episodes/default/${lang}`]: (call) =>
+/** Épisodes TVDB v4 d'un ordre (`default` ou `official`) et d'une langue (`fra` ou `eng`), une seule page. */
+const v4Order = (id: string, order: 'default' | 'official', lang: 'fra' | 'eng', episodes: unknown[]): Handlers => ({
+  [`${TVDB4}/series/${id}/episodes/${order}/${lang}`]: (call) =>
     call.headers.authorization === 'Bearer v4-session'
       ? json({ status: 'success', data: { series: { id: Number(id) }, episodes }, links: { prev: null, self: 0, next: null } })
       : json({ status: 'failure' }, 401),
 });
+
+/** Épisodes TVDB v4 de l'ordre `default`, une langue. */
+const v4Episodes = (id: string, lang: 'fra' | 'eng', episodes: unknown[]): Handlers => v4Order(id, 'default', lang, episodes);
+
+/** Plus belle la vie (fixture, identifiant TMDB 1010) : ordre TVDB default, saisons 1 et 2, épisodes futurs datés. */
+const PBLV_FR = [
+  { id: 101, seasonNumber: 1, number: 1, name: 'Pilote FR', overview: 'Résumé S1E1', aired: '2004-08-30', runtime: 25 },
+  { id: 201, seasonNumber: 2, number: 1, name: 'Suite FR', overview: 'Résumé S2E1', aired: '2005-01-03', runtime: 25 },
+  { id: 202, seasonNumber: 2, number: 2, name: 'Épisode 2 FR', overview: 'Résumé S2E2', aired: '2005-01-04', runtime: 25 },
+  { id: 205, seasonNumber: 2, number: 205, name: 'Épisode 205 FR', overview: 'Résumé S2E205', aired: '2026-10-18', runtime: 25 },
+  { id: 206, seasonNumber: 2, number: 206, name: 'Épisode 206 FR', overview: 'Résumé S2E206', aired: '2026-10-19', runtime: 25 },
+  { id: 207, seasonNumber: 2, number: 207, name: 'Épisode 207 FR', overview: 'Résumé S2E207', aired: '2026-10-20', runtime: 25 },
+];
 
 const FR_EPISODES = [
   { id: 1, seasonNumber: 1, number: 1, name: 'Pilote FR', overview: null, aired: '2020-01-01', runtime: 25 },
@@ -158,6 +171,51 @@ beforeAll(async () => {
     }),
     ...tmdbSeason('1005', 1, [
       { season_number: 1, episode_number: 1, name: 'Plain', overview: 'Repli', air_date: '2020-01-01', runtime: 19, still_path: null },
+    ]),
+    // Série plate avec identifiant IMDb côté TMDB, sans TVDB (1006) : streamId au numéro TMDB.
+    ...details(1006, {
+      number_of_seasons: 1,
+      seasons: [{ season_number: 1, name: 'Saison 1', episode_count: 2, air_date: '2020-01-01', poster_path: null }],
+      external_ids: { tvdb_id: null, imdb_id: 'tt7000006' },
+      episode_groups: { results: [] },
+    }),
+    ...tmdbSeason('1006', 1, PLAIN_S1),
+    // Plus belle la vie (fixture, 1010) : TVDB 81010, saisons TMDB sans épisodes (aucun lien attendu).
+    ...details(1010, {
+      number_of_seasons: 2,
+      seasons: [
+        { season_number: 1, name: 'Saison 1', episode_count: 2, air_date: '2004-08-30', poster_path: null },
+        { season_number: 2, name: 'Saison 2', episode_count: 3, air_date: '2005-01-03', poster_path: null },
+      ],
+      external_ids: { tvdb_id: 81010, imdb_id: 'tt29694831' },
+      episode_groups: { results: [] },
+    }),
+    ...tmdbSeason('1010', 1, []),
+    ...tmdbSeason('1010', 2, []),
+    ...v4Episodes('81010', 'fra', PBLV_FR),
+    // Ordre default vide : repli sur l'ordre official (81011), puis langue anglaise si le français est vide (81012).
+    ...details(1011, {
+      number_of_seasons: 1,
+      seasons: [{ season_number: 1, name: 'Saison 1', episode_count: 1, air_date: '2020-01-01', poster_path: null }],
+      external_ids: { tvdb_id: 81011 },
+      episode_groups: { results: [] },
+    }),
+    ...tmdbSeason('1011', 1, []),
+    ...v4Order('81011', 'default', 'fra', []),
+    ...v4Order('81011', 'official', 'fra', [
+      { id: 1, seasonNumber: 1, number: 1, name: 'Official FR', overview: 'Résumé official', aired: '2020-01-01', runtime: 20 },
+    ]),
+    ...details(1012, {
+      number_of_seasons: 1,
+      seasons: [{ season_number: 1, name: 'Saison 1', episode_count: 1, air_date: '2020-01-01', poster_path: null }],
+      external_ids: { tvdb_id: 81012 },
+      episode_groups: { results: [] },
+    }),
+    ...tmdbSeason('1012', 1, []),
+    ...v4Order('81012', 'default', 'fra', []),
+    ...v4Order('81012', 'official', 'fra', []),
+    ...v4Order('81012', 'default', 'eng', [
+      { id: 1, seasonNumber: 1, number: 1, name: 'English only', overview: 'Summary only', aired: '2020-01-01', runtime: null },
     ]),
     // TVDB v4 : connexion de V4_KEY ; épisodes en français puis en anglais (texte manquant seulement).
     [`${TVDB4}/login`]: v4Login(),
@@ -286,6 +344,63 @@ describe('lt/series/episodes : ordre TVDB', () => {
       episodes: [{ season: 1, episode: 1, absolute: 1, name: 'Plain', overview: 'Repli', tmdbSeason: 1, tmdbEpisode: 1 }],
     });
     expect(raw).not.toContain(V4_KEY);
+  });
+});
+
+describe('lt/series/episodes : numérotation AIOMetadata (TVDB default, repli official) et streamId', () => {
+  const PBLV_SERVICES = { tmdbToken: KEYS.tmdbToken, tvdbApiKey: V4_KEY };
+
+  it('Plus belle la vie : épisodes futurs datés inclus, S2E206 (2026-10-19) avec streamId tt29694831:2:206', async () => {
+    const res = await get(PBLV_SERVICES, '1010');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { source: string; episodes: Array<Record<string, unknown>> };
+    expect(body.source).toBe('tvdb');
+    expect(body.episodes.find((e) => e.season === 2 && e.episode === 206)).toMatchObject({
+      season: 2,
+      episode: 206,
+      name: 'Épisode 206 FR',
+      airDate: '2026-10-19',
+      streamId: 'tt29694831:2:206',
+    });
+    // Numéro dans la saison TVDB, jamais le rang absolu : 206 reste 206 et l'identifiant suit la saison.
+    expect(body.episodes.filter((e) => e.season === 2).map((e) => e.episode)).toEqual([1, 2, 205, 206, 207]);
+    expect(body.episodes.every((e) => e.streamId === `tt29694831:${e.season}:${e.episode}`)).toBe(true);
+    expect(upstream.callsTo(`${TVDB4}/series/81010/episodes/official/fra`)).toHaveLength(0);
+  });
+
+  it('ordre default vide : repli sur l’ordre official', async () => {
+    const res = await get({ tmdbToken: KEYS.tmdbToken, tvdbApiKey: V4_KEY }, '1011');
+    expect(await res.json()).toMatchObject({
+      source: 'tvdb',
+      episodes: [{ season: 1, episode: 1, name: 'Official FR', airDate: '2020-01-01' }],
+    });
+    expect(upstream.callsTo(`${TVDB4}/series/81011/episodes/official/fra`)).toHaveLength(1);
+  });
+
+  it('aucun épisode en français (default ni official) : structure anglaise, une seule lecture anglaise', async () => {
+    const res = await get({ tmdbToken: KEYS.tmdbToken, tvdbApiKey: V4_KEY }, '1012');
+    expect(await res.json()).toMatchObject({
+      source: 'tvdb',
+      episodes: [{ season: 1, episode: 1, name: 'English only', overview: 'Summary only' }],
+    });
+    expect(upstream.callsTo(`${TVDB4}/series/81012/episodes/default/eng`)).toHaveLength(1);
+  });
+
+  it('sans TVDB, IMDb connu : repli TMDB inchangé, streamId au numéro TMDB', async () => {
+    const res = await get(TMDB_ONLY, '1006');
+    expect(await res.json()).toMatchObject({
+      source: 'tmdb',
+      episodes: [
+        { season: 1, episode: 1, absolute: 1, name: 'Ep 1', tmdbSeason: 1, tmdbEpisode: 1, streamId: 'tt7000006:1:1' },
+        { season: 1, episode: 2, absolute: 2, name: 'Ep 2', tmdbSeason: 1, tmdbEpisode: 2, streamId: 'tt7000006:1:2' },
+      ],
+    });
+  });
+
+  it('deuxième requête servie par le cache (aucun appel amont), streamId inchangé', async () => {
+    const before = upstream.calls.length;
+    await get(PBLV_SERVICES, '1010');
+    expect(upstream.calls.length).toBe(before);
   });
 });
 

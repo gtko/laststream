@@ -30,6 +30,8 @@ export interface SeriesEpisode {
   /** Coordonnées TMDB de l'épisode, null s'il n'a pas d'équivalent côté TMDB. */
   tmdbSeason: number | null;
   tmdbEpisode: number | null;
+  /** Identifiant de flux `<imdb>:<saison>:<épisode>` avec la numérotation de cette structure ; absent si IMDb inconnu. */
+  streamId?: string;
 }
 
 export interface SeriesEpisodes {
@@ -365,6 +367,10 @@ interface AiredSets {
 async function loadAired(ctx: LtContext, svc: SeriesServices, apiKey: string, tvdbId: number, primary: TvdbLang): Promise<AiredSets> {
   const id = String(tvdbId);
   const first = await tvdbAiredEpisodes(ctx, apiKey, id, primary, svc.tvdbPin);
+  // Comme AIOMetadata : sans aucun épisode dans la langue demandée, l'anglais devient la structure de référence.
+  if (first.length === 0 && primary !== 'en') {
+    return { primary: await tvdbAiredEpisodes(ctx, apiKey, id, 'en', svc.tvdbPin), english: [] };
+  }
   const incomplete = primary !== 'en' && first.some((e) => e.name === null || e.overview === null);
   const english = incomplete
     ? await tvdbAiredEpisodes(ctx, apiKey, id, 'en', svc.tvdbPin).catch((): TvdbAiredEpisode[] => [])
@@ -492,7 +498,13 @@ async function withCinemetaStills(
 async function load(ctx: LtContext, svc: SeriesServices, tmdbId: string, language: string): Promise<Loaded> {
   const base = await loadStructure(ctx, svc, tmdbId, language);
   const done = await withCinemetaStills(ctx, base.details, base.loaded.body);
-  return { body: done.body, degraded: base.loaded.degraded || done.failed };
+  return { body: withStreamIds(done.body, base.details.imdbId), degraded: base.loaded.degraded || done.failed };
+}
+
+/** `<imdb>:<saison>:<épisode>` pour chaque épisode, avec la numérotation de la structure (TVDB, groupe ou TMDB). */
+function withStreamIds(body: SeriesEpisodes, imdbId: string | null): SeriesEpisodes {
+  if (imdbId === null) return body;
+  return { ...body, episodes: body.episodes.map((e) => ({ ...e, streamId: `${imdbId}:${e.season}:${e.episode}` })) };
 }
 
 async function loadStructure(
@@ -542,7 +554,7 @@ export async function seriesEpisodes(
   language: string | undefined,
 ): Promise<SeriesEpisodes> {
   const req = parseSeriesRequest(tmdbId, language);
-  const key = `episodes:v2:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
+  const key = `episodes:v3:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
   const loaded = await ctx.state.cache.get<Loaded>(
     key,
     (value) => (value.degraded ? TTL.tvPartial : TTL.episodes),
