@@ -269,7 +269,11 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === REGISTER_PATH) return register(request, env);
-    if (pathname === RANGE_PATH) return handleRange(request, env);
+    // Coupé : lire les fichiers AllDebrid depuis des IP Cloudflare a fait suspendre le compte. Réactivable par RANGE_ENABLED=1.
+    if (pathname === RANGE_PATH) {
+      if (env.RANGE_ENABLED !== '1') return json(410, { error: 'range_disabled', message: 'Relais de miniatures désactivé.' });
+      return handleRange(request, env);
+    }
     if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
     return relay(request, env);
   },
