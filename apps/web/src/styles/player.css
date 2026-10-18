@@ -214,3 +214,9 @@ body.lp-open .toast { z-index: 900; }
 .s-web { padding: 2px 9px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid var(--line-2); color: var(--muted); }
 .s-web-direct { color: #4ade80; border-color: rgba(74, 222, 128, 0.45); }
 .s-web-convert { color: #fbbf24; border-color: rgba(251, 191, 36, 0.45); }
+
+/* Recherche encore en cours dans le sélecteur de sources */
+.s-pending { display: flex; align-items: center; gap: 10px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); font-size: 13px; font-weight: 700; color: var(--soft); }
+.s-pending.is-done { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+.s-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: lp-rot 0.9s linear infinite; flex: none; }
+@media (prefers-reduced-motion: reduce) { .s-spin { animation-duration: 3s; } }

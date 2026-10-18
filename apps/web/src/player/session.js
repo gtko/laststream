@@ -6,7 +6,8 @@ import { api, postLt, skipSegments, tmdb } from '../data/lt';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { imdbIdOf, measureBandwidthKbps, stremioId } from '../data/sources';
 import { userStore } from '../data/userStore';
-import { loadSources, preferredLang, recommendFor } from '../sources/load';
+import { POLL_EVERY_MS, POLL_MAX_MS, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
+import { describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
@@ -801,7 +802,7 @@ function showSourcesPanel() {
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
   openSourcePicker(p.req, null, {
-    host, views: p.views, currentIndex: p.view ? p.view.index : null,
+    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null,
     onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
       ui.closePanel(true);
@@ -1136,16 +1137,38 @@ export async function playBest(request, opener, opts = {}) {
     loaded = await loadSources(request);
   } catch (_) { loaded = null; }
   if (!alive()) return;
-  if (!loaded || !loaded.views.length) { showSourcesPanel(); return; }
+  // Liste vide sans recherche en cours : le panneau explique pourquoi ; vide mais encore en cours : on attend la suite.
+  if (!loaded || (!loaded.views.length && !loaded.pending.length)) { showSourcesPanel(); return; }
   request.imdb = loaded.imdb;
   p.imdb = loaded.imdb;
   p.views = loaded.views;
+  p.pending = loaded.pending;
   p.ranked = [...loaded.views];
   if (opts.picker || (!getAutoplay() && !opts.force)) { showSourcesPanel(); return; }
   ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
-  const rec = recommendFor(loaded.views, bw);
+  let rec = recommendFor(loaded.views, bw);
+  // Réponse partielle : on part tout de suite si la meilleure source disponible est une bonne correspondance (cache, langue
+  // préférée, 1080p ou mieux) ; sinon on attend le reste de la recherche, 20 s au plus.
+  let cur = loaded;
+  const t0 = Date.now();
+  while (cur.pending.length && !isGoodMatch(rec) && Date.now() - t0 < POLL_MAX_MS) {
+    ui.setLoading(p.meta.title || 'Lecture', describePending(cur.pending), loaderExtra(0));
+    await new Promise((r) => setTimeout(r, POLL_EVERY_MS));
+    if (!alive()) return;
+    const next = await pollSources(request, cur);
+    if (!alive()) return;
+    if (next !== cur) {
+      cur = next;
+      p.views = next.views;
+      p.pending = next.pending;
+      p.ranked = [...next.views];
+      rec = recommendFor(next.views, bw);
+    }
+  }
+  loaded.views = cur.views;
+  loaded.pending = cur.pending;
   if (!rec) { showSourcesPanel(); return; }
   ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') + ' — démarrage…' }));
   await continueWith(rec.view, { resume: p.resumeMode, notice: rec.languageFallback ? rec.reason : '' });

@@ -1,4 +1,4 @@
-import { addonUrl } from './config';
+import { addonUrl, ltUrl } from './config';
 import { tmdb } from './lt';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
@@ -38,6 +38,39 @@ export async function fetchStreams(type: 'movie' | 'tv', imdbId: string, season?
   const url = addonUrl(`stream/${kind}/${id}.json`);
   const res = await cachedRequest(url, () => requestJson<{ streams?: Stream[] }>(url), 60_000);
   return Array.isArray(res?.streams) ? res.streams : [];
+}
+
+/** Résultat d'une recherche de sources : streams et sources encore en cours d'interrogation (réponse partielle de lastAddon). */
+export interface StreamsResult {
+  streams: Stream[];
+  pending: string[];
+}
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
+
+/** Streams d'un titre avec la liste des sources encore en attente (`pending`) ; absente dans l'ancienne forme de réponse. */
+export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<StreamsResult> {
+  const kind = type === 'tv' ? 'series' : 'movie';
+  const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown }>(addonUrl(`stream/${kind}/${id}.json`));
+  return { streams: Array.isArray(res?.streams) ? res.streams : [], pending: strings(res?.pending) };
+}
+
+export interface StreamsStatus {
+  pending: string[];
+  count: number;
+}
+
+/** État de la recherche en cours : GET {base}/{config}/lt/streams/status/:type/:id. Null si la route n'existe pas. */
+export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<StreamsStatus | null> {
+  const kind = type === 'tv' ? 'series' : 'movie';
+  const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
+  try {
+    const res = await requestJson<{ pending?: unknown; count?: unknown }>(ltUrl(`streams/status/${kind}/${id}`));
+    return { pending: strings(res?.pending), count: typeof res?.count === 'number' ? res.count : 0 };
+  } catch {
+    return null;
+  }
 }
 
 // ---------- Tri, regroupement ----------

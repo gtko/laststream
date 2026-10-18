@@ -5,7 +5,8 @@ import { modalBody } from '../ui/dom.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
 import { countByGroup, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
-import { knownBandwidthKbps, loadSources, recommendFor } from './load';
+import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './load';
+import { describePending } from './rank';
 
 const RES_CHIPS = [['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
 const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
@@ -80,12 +81,15 @@ function render() {
     '</div>';
 
   let body = '';
-  if (rec) body += '<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
+  // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
+  if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
+  else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
+  if (rec) body +='<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
   else if (s.bwPending) body += '<p class="s-note">Mesure de ta connexion pour choisir la meilleure source…</p>';
   const groups = groupViews(rest);
   body += groups.map((g) => '<h3 class="src-group">' + esc(QUALITY_LABEL[g.key]) + ' <span>' + g.views.length + '</span></h3><ul class="src-list">' +
     g.views.map((v) => itemHtml(v, { current: s.currentIndex === v.index })).join('') + '</ul>').join('');
-  if (!shown.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
+  if (!shown.length && views.length) body += '<p class="drawer-text">Aucune source ne correspond à ces filtres.</p>';
 
   const host = s.host;
   const focusKey = document.activeElement && host.contains(document.activeElement) ? (document.activeElement.dataset.chip || document.activeElement.dataset.src) : null;
@@ -111,9 +115,10 @@ function showMessage(msg) {
  * source en cours de lecture) ; `opts.currentIndex` marque la source en cours.
  */
 export async function openSourcePicker(request, opener, opts) {
+  if (session && session.stop) session.stop();
   const token = Symbol('picker');
   const host = opts.host || modalBody;
-  session = { token, host, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
+  session = { token, host, pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
   const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
@@ -123,13 +128,28 @@ export async function openSourcePicker(request, opener, opts) {
       if (!alive()) return;
       request.imdb = loaded.imdb;
       session.views = loaded.views;
+      session.pending = loaded.pending;
     }
   } catch (e) {
     if (alive()) showMessage(e && e.message === 'no-imdb' ? 'Aucun identifiant IMDb pour ce titre : impossible de chercher des sources.' : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
     return;
   }
-  if (!session.views.length) { showMessage('Aucune source trouvée pour le moment.'); return; }
+  if (!session.views.length && !session.pending.length) { showMessage('Aucune source trouvée pour le moment.'); return; }
   const known = knownBandwidthKbps();
+  // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
+  if (session.pending.length) {
+    let clearAdded = null;
+    session.stop = watchSources(request, { imdb: opts.imdb || request.imdb || '', views: session.views, pending: session.pending }, (next, added) => {
+      if (!alive()) return;
+      session.views = next.views;
+      session.pending = next.pending;
+      session.added = added;
+      session.rec = recommendFor(session.views, session.bw);
+      render();
+      clearTimeout(clearAdded);
+      if (!next.pending.length) clearAdded = setTimeout(() => { if (alive()) { session.added = 0; render(); } }, 4000);
+    });
+  }
   session.bw = known;
   session.bwPending = known === null;
   session.rec = recommendFor(session.views, known);
@@ -148,6 +168,7 @@ export async function openSourcePicker(request, opener, opts) {
 
 export function closeSourcePicker() {
   const host = session && session.host;
+  if (session && session.stop) session.stop();
   session = null;
   if (!host || host === modalBody) closeModal(true);
 }

@@ -142,3 +142,19 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
   const usable = budget === Infinity ? 0 : Math.round(budget / 1000);
   return { view: lightest, languageFallback: !lightest.hasFrench, reason: 'Aucune source ne tient dans ta connexion' + (usable ? ' (' + usable + ' Mb/s utiles)' : '') + ' : la moins lourde est proposée' };
 }
+
+/**
+ * Une liste partielle suffit pour lancer la lecture : source en cache, dans la langue préférée (pas un repli), en 1080p ou mieux.
+ * Sinon on attend le reste de la recherche.
+ */
+export function isGoodMatch(rec: Recommendation | null): boolean {
+  return !!rec && !rec.languageFallback && rec.view.status === 'cached' && (rec.view.group === '2160p' || rec.view.group === '1080p');
+}
+
+/** « Recherche encore sur C411, YGG et 2 autres… » */
+export function describePending(pending: readonly string[]): string {
+  if (!pending.length) return '';
+  const shown = pending.slice(0, 2).join(', ');
+  const more = pending.length - 2;
+  return 'Recherche encore sur ' + shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '…';
+}
