@@ -22,6 +22,9 @@ const playBtn = (it) => {
   return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? 'Reprendre' + code : 'Lecture') + '</span></button>';
 };
 
+/** Note TMDB de repli (en pourcentage) quand MDBList ne fournit pas la note. */
+const tmdbFallback = (it) => (it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0);
+
 /** Contenu d'une diapositive : badge, titre ou logo, méta, notes, fournisseurs, synopsis, boutons. */
 export function heroContentHTML(it, eyebrow) {
   const d = detailOf(it);
@@ -30,7 +33,7 @@ export function heroContentHTML(it, eyebrow) {
     titleEl(it, d, 'hero-title') +
     '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
     (d.note ? '<p class="hero-note">' + esc(d.note) + '</p>' : '') +
-    '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0) + '</ul>' +
+    '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, tmdbFallback(it)) + '</ul>' +
     (d.providers && d.providers.length
       ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
         '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
@@ -98,6 +101,19 @@ function preloadNext() {
   getDetail(next);
 }
 
+/**
+ * Notes MDBList de la diapositive affichée, chargées à son affichage seulement (le quota est partagé) ; seule la liste
+ * des notes de cette diapositive est remplacée.
+ */
+export function rateSlide(it) {
+  if (!it) return;
+  getDetail(it, { ratings: true }).then((d) => {
+    const slide = Array.from(document.querySelectorAll('#app .hero-slide')).find((s) => s.dataset.slideKey === it.key);
+    const list = slide && slide.querySelector('.rates-hero');
+    if (d && list) list.innerHTML = ratingList(d.ratings, tmdbFallback(it));
+  });
+}
+
 export function go(index, auto) {
   const n = hero.items.length;
   if (!hero.el || n < 2) return;
@@ -116,6 +132,7 @@ export function go(index, auto) {
   });
   setupPreviews(); // la bande-annonce après inactivité concerne la diapositive courante
   preloadNext();
+  rateSlide(hero.items[next]);
   schedule();
 }
 
@@ -152,11 +169,12 @@ export function stopHero() {
 export function initHero(items) {
   stopHero();
   const el = document.querySelector('#app [data-hero]');
-  if (!el) return;
+  if (!el) { rateSlide(items && items[0]); return; } // titre unique : mise en avant simple, sans carrousel
   Object.assign(hero, { el, items, i: 0, hover: false, focus: false });
   items.slice(0, 2).forEach((it) => { if (detailOf(it).released === false) dropSlide(it.key); });
   items.slice(2).forEach((it) => getDetail(it).then((d) => { if (d) refreshSlide(it.key); }));
   preloadNext();
+  rateSlide(hero.items[hero.i]);
   schedule();
 }
 
