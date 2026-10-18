@@ -9,6 +9,7 @@ import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
 import { externalKind } from './tvExternal.js';
 import { ICON } from './icons.js';
+import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
 
@@ -16,6 +17,8 @@ export const tv = {
   user: [], epg: new Map(), epgReq: new Set(), w0: 0,
   cat: 'Toutes', list: [], shown: 0, homeList: [], play: null,
   hls: null, hlsPromise: null, bannerTimer: null, stallTimer: null, playToken: 0, attempt: 0, info: false, opener: null, io: null,
+  // Signal d'état du lecteur (tvStatus.js), son minuteur, et chaînes en échec pendant cette session (ids).
+  status: initialStatus(), statusTimer: 0, failed: new Set(),
   // Catalogue : chaînes déjà chargées (par id), page courante du filtre, facettes, filtres.
   byId: new Map(), pageList: [], page: 0, hasMore: false, fetching: false, total: null,
   facets: null, catFacets: null, filters: null, qTimer: null,
@@ -28,6 +31,7 @@ export const playerEl = document.getElementById('player');
 export const videoEl = document.getElementById('player-video');
 export const bannerEl = document.getElementById('player-banner');
 export const perrEl = document.getElementById('player-error');
+export const statusEl = document.getElementById('player-status');
 export const getFavs = () => store('ls_tv_fav') || [];
 export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user);
 const FAV_SNAP_KEY = 'ls_tv_favch';
@@ -338,9 +342,17 @@ export function epgShell() {
     '<div class="epg-more" id="epg-more"></div>';
 }
 
+/** Chaîne en échec pendant cette session : grisée dans la liste (ses lignes déjà affichées sont mises à jour aussi). Redevient normale dès qu'elle repart. */
+export function setChannelDown(id, down) {
+  if (!id) return;
+  if (down) tv.failed.add(id); else tv.failed.delete(id);
+  const row = detailEl.querySelector('.epg-row[data-chid="' + String(id).replace(/"/g, '\\"') + '"]');
+  if (row) row.classList.toggle('is-down', !!down);
+}
+
 export function epgRowHTML(c) {
   const fav = getFavs().includes(c.id);
-  return '<div class="epg-row" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
+  return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
     '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
     '<span class="epg-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
     '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + '</span></button>' +
