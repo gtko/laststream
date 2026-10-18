@@ -1,14 +1,12 @@
-/* « Ne plus proposer » (fiche, menu contextuel) et réglages de l'accueil par profil : titres masqués et genres bannis.
- * Le profil enfant n'a ni le bouton ni le panneau : son accueil est déjà filtré par l'âge et les rubriques. */
+/* « Ne plus proposer » (fiche, menu contextuel) et réglages de l'accueil par profil : titres masqués (une ligne, « Gérer »
+ * ouvre #/hidden) et genres bannis. Le profil enfant n'a ni le bouton ni le panneau : son accueil est déjà filtré par l'âge et les rubriques. */
 import {
   GENRE_OPTIONS, bannedGenreIds, currentFilters, hideTitle, isHiddenKey, setGenreBanned, unhideTitle,
 } from '../data/homeFilters';
 import { isKidProfile } from '../data/auth';
 import { toast } from './dom.js';
-import { IMG } from './constants.js';
 import { state } from './state.js';
-import { esc } from './util.js';
-import { SET_ICON, card, chipHTML, chipsHTML } from './settings-ui.js';
+import { card, chipHTML, chipsHTML } from './settings-ui.js';
 
 /** Retire un titre de l'accueil, avec annulation dans le message. */
 export function hideFromHome(key, title, poster) {
@@ -32,30 +30,14 @@ export function toggleHidden(key, title, poster) {
 }
 
 const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
-const KIND_FR = { movie: 'Film', tv: 'Série' };
 
-function maskedOn(ts) {
-  try { return new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return ''; }
+/** Titres masqués : une seule ligne compacte avec « Gérer » (vue dédiée #/hidden), ou l'état vide sans bouton. */
+function hiddenLineHTML(n) {
+  if (!n) return '<div class="hm-line is-empty" data-home-hidden><p class="hm-line-t">Aucun titre masqué</p></div>';
+  return '<div class="hm-line" data-home-hidden><p class="hm-line-t">Titres masqués — <span data-hidden-count>' + plural(n, 'titre', 'titres') + '</span></p>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-hidden-nav aria-label="Gérer les titres masqués">Gérer</button></div>';
 }
 
-/** Liste compacte des titres masqués (petite affiche, titre, type et date, bouton icône « Réafficher »), ou état vide. */
-function hiddenListHTML(list) {
-  if (!list.length) {
-    return '<div class="hm-empty"><span class="hm-empty-ic">' + SET_ICON.eye + '</span><p><strong>Aucun titre masqué</strong>' +
-      '<span>« Ne plus proposer » (fiche d’un titre, menu contextuel) le retire de l’accueil ; il apparaît alors ici.</span></p></div>';
-  }
-  return '<ul class="hm-list" aria-label="Titres masqués">' + list.map((h) => {
-    const kind = KIND_FR[String(h.key).split(':')[0]] || '';
-    const sub = [kind, h.addedAt ? 'masqué le ' + maskedOn(h.addedAt) : ''].filter(Boolean).join(' · ');
-    return '<li class="hm-item">' + (h.poster
-      ? '<img class="hm-poster" src="' + esc(IMG('w92', h.poster)) + '" alt="" width="40" height="60" loading="lazy">'
-      : '<span class="hm-poster hm-noimg" aria-hidden="true"></span>') +
-      '<span class="hm-t"><strong>' + esc(h.title) + '</strong>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' +
-      '<button type="button" class="set-icon-btn" data-unhide="' + esc(h.key) + '" aria-label="Réafficher « ' + esc(h.title) + ' »" title="Réafficher">' + SET_ICON.eyeOff + '</button></li>';
-  }).join('') + '</ul>';
-}
-
-const hiddenCountText = (n) => (n ? plural(n, 'titre masqué', 'titres masqués') : 'Aucun titre masqué');
 const genreCount = () => { const b = bannedGenreIds(); return GENRE_OPTIONS.filter((g) => g.ids.some((id) => b.has(id))).length; };
 const genreCountText = (n) => (n ? plural(n, 'genre exclu', 'genres exclus') : 'Aucun genre exclu');
 
@@ -69,10 +51,7 @@ export function homePanelHTML() {
     chipHTML(g.label, g.ids.some((id) => banned.has(id)), 'data-ban-genre="' + g.ids.join(',') + '"')).join(''));
   const info = card('', '<p class="hm-info">Les films vus ou regardés à 90 % et les séries vues en entier ne sont plus proposés sur l’accueil. ' +
     'Ils restent dans la bibliothèque, la recherche et la fiche.</p>');
-  const hidden = card('Titres masqués', '<div class="hm-hidden" data-home-hidden>' + hiddenListHTML(f.hidden) + '</div>', {
-    desc: 'Ces titres ne sont plus proposés sur l’accueil.',
-    aside: '<span class="set-badge" data-hidden-count>' + hiddenCountText(f.hidden.length) + '</span>',
-  });
+  const hidden = card('', hiddenLineHTML(f.hidden.length));
   const genres = card('Genres à ne jamais proposer', chips, {
     desc: 'Les titres de ces genres sortent de l’accueil (films et séries).',
     aside: '<div class="hm-aside"><span class="set-badge' + (n ? ' is-on' : '') + '" data-genre-count aria-live="polite">' + genreCountText(n) + '</span>' +
@@ -81,7 +60,7 @@ export function homePanelHTML() {
   return info + hidden + genres;
 }
 
-/** Remet à jour le compteur de genres, le bouton de réinitialisation et le compteur de titres masqués. */
+/** Remet à jour le compteur de genres, le bouton de réinitialisation et la ligne des titres masqués. */
 function refreshHome(root) {
   const scope = root || document;
   const n = genreCount();
@@ -89,23 +68,13 @@ function refreshHome(root) {
   if (badge) { badge.textContent = genreCountText(n); badge.classList.toggle('is-on', n > 0); }
   const reset = scope.querySelector('[data-genres-reset]');
   if (reset) reset.disabled = n === 0;
-  const hid = scope.querySelector('[data-hidden-count]');
-  if (hid) hid.textContent = hiddenCountText(currentFilters().hidden.length);
+  const line = scope.querySelector('[data-home-hidden]');
+  if (line) line.outerHTML = hiddenLineHTML(currentFilters().hidden.length);
 }
 
 document.addEventListener('click', (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || isKidProfile()) return;
-  const un = t.closest('[data-unhide]');
-  if (un) {
-    e.preventDefault();
-    unhideTitle(un.dataset.unhide);
-    const box = un.closest('[data-home-hidden]');
-    if (box) box.innerHTML = hiddenListHTML(currentFilters().hidden);
-    refreshHome(box ? box.closest('.set-panel') : null);
-    toast('Réaffiché : visible sur l’accueil au prochain chargement');
-    return;
-  }
   const gc = t.closest('[data-ban-genre]');
   if (gc) {
     e.preventDefault();

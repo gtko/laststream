@@ -1,21 +1,12 @@
-/* Panneau « Accueil et recommandations » (ui/homeprefs.js) : titres masqués en liste compacte, genres exclus en puces.
- * Les puces (.set-chip), badges et boutons-icônes viennent de settings.css. */
+/* Panneau « Accueil et recommandations » (ui/homeprefs.js) : titres masqués en une ligne (la vue détaillée est sur #/hidden,
+ * voir hidden.css), genres exclus en puces. Les puces (.set-chip), badges et boutons viennent de settings.css. */
 
 .hm-info { margin: 0; padding: 12px 0; font-size: 14px; line-height: 1.55; color: var(--soft); }
 
-/* Titres masqués */
-.hm-list { display: flex; flex-direction: column; }
-.hm-item { display: flex; align-items: center; gap: 14px; padding: 10px 0; }
-.hm-item + .hm-item { border-top: 1px solid var(--line); }
-.hm-poster { flex: none; width: 40px; height: 60px; border-radius: 6px; object-fit: cover; background: var(--line-2); }
-.hm-t { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.hm-t strong { font-size: 15px; font-weight: 700; line-height: 1.3; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hm-t small { font-size: 12.5px; line-height: 1.3; color: var(--dim); }
-.hm-empty { display: flex; align-items: center; gap: 16px; margin: 8px 0; padding: 20px; border: 1.5px dashed var(--line-2); border-radius: 14px; }
-.hm-empty-ic { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.06); color: var(--dim); }
-.hm-empty p { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.hm-empty strong { font-size: 15px; color: var(--soft); }
-.hm-empty span:not(.hm-empty-ic) { font-size: 13px; line-height: 1.45; color: var(--dim); }
+/* Titres masqués : une ligne, « Gérer » à droite (ou l'état vide, sans bouton) */
+.hm-line { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; padding: 14px 0; }
+.hm-line-t { margin: 0; min-width: 0; font-size: 15px; line-height: 1.4; color: var(--text); }
+.hm-line.is-empty .hm-line-t { color: var(--dim); }
 
 /* Genres exclus */
 .hm-aside { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }

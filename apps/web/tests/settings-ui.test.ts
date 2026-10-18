@@ -79,33 +79,34 @@ describe('interrupteurs', () => {
 });
 
 describe('Accueil et recommandations', () => {
-  it('état vide, puis liste compacte des titres masqués avec « Réafficher »', async () => {
+  it('état vide sans bouton, puis une seule ligne « Titres masqués — N titres » avec « Gérer »', async () => {
     const home = page().querySelector('#set-p-home') as HTMLElement;
-    expect(home.querySelector('.hm-empty')).not.toBeNull();
-    expect(home.querySelector('[data-hidden-count]')!.textContent).toBe('Aucun titre masqué');
+    const empty = home.querySelector('[data-home-hidden]') as HTMLElement;
+    expect(empty.classList.contains('is-empty')).toBe(true);
+    expect(empty.textContent).toBe('Aucun titre masqué');
+    expect(home.querySelector('[data-hidden-nav]')).toBeNull();
 
-    const { hideTitle } = await import('../src/data/homeFilters');
+    const { hideTitle, unhideTitles } = await import('../src/data/homeFilters');
     hideTitle({ key: 'movie:42', title: 'Le Grand Bleu', poster: '/abc.jpg' });
     hideTitle({ key: 'tv:7', title: 'Sans affiche', poster: '' });
     const { showSettings } = await import('../src/ui/settings.js');
     await showSettings();
     await settle(100);
     const h = page().querySelector('#set-p-home') as HTMLElement;
-    const items = Array.from(h.querySelectorAll('.hm-item'));
-    expect(items).toHaveLength(2);
-    expect(items[0].querySelector('img')!.getAttribute('width')).toBe('40');
-    expect(items[0].textContent).toContain('Le Grand Bleu');
-    expect(items[0].textContent).toContain('Film');
-    expect(items[1].querySelector('.hm-noimg')).not.toBeNull();
-    expect(h.querySelector('[data-hidden-count]')!.textContent).toBe('2 titres masqués');
+    expect(h.querySelector('.hm-item')).toBeNull(); // plus de liste dans les réglages
+    const line = h.querySelector('[data-home-hidden]') as HTMLElement;
+    expect(line.querySelector('.hm-line-t')!.textContent).toBe('Titres masqués — 2 titres');
+    expect(h.querySelector('[data-hidden-count]')!.textContent).toBe('2 titres');
+    const btn = h.querySelector('[data-hidden-nav]') as HTMLElement;
+    expect(btn.textContent).toBe('Gérer');
+    expect(btn.getAttribute('aria-label')).toBe('Gérer les titres masqués');
 
-    const btn = items[0].querySelector('[data-unhide]') as HTMLElement;
-    expect(btn.getAttribute('aria-label')).toContain('Le Grand Bleu');
-    click(btn);
-    expect(h.querySelectorAll('.hm-item')).toHaveLength(1);
-    expect(h.querySelector('[data-hidden-count]')!.textContent).toBe('1 titre masqué');
-    click(h.querySelector('[data-unhide]'));
-    expect(h.querySelector('.hm-empty')).not.toBeNull();
+    expect(unhideTitles(['movie:42', 'tv:7'])).toHaveLength(2); // retour à l'état vide pour les tests suivants
+    await showSettings();
+    await settle(100);
+    const again = page().querySelector('#set-p-home [data-home-hidden]') as HTMLElement;
+    expect(again.classList.contains('is-empty')).toBe(true);
+    expect(again.querySelector('[data-hidden-nav]')).toBeNull();
   });
 
   it('puces de genres, compteur et réinitialisation', async () => {

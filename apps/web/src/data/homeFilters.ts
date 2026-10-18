@@ -264,12 +264,36 @@ export function hideTitle(entry: { key: string; title: string; poster?: string }
 /** Vrai si les filtres tiennent dans les morceaux du compte. */
 export const fitsCapacity = (f: HomeFilters): boolean => fitsChunks(f.hidden) && fitsChunks(f.completed);
 
+/** Titres masqués du profil actif, en lecture seule (les changer passe par hideTitle, unhideTitle, unhideTitles). */
+export const hiddenTitles = (): readonly HiddenEntry[] => currentFilters().hidden;
+
+/**
+ * Réaffiche plusieurs titres d'un coup : un seul enregistrement, donc un seul envoi au compte. Renvoie les entrées retirées
+ * (pour l'annulation) ; une liste vide si aucune clé ne correspond.
+ */
+export function unhideTitles(keys: Iterable<string>): HiddenEntry[] {
+  const f = currentFilters();
+  const want = new Set(keys);
+  const removed = f.hidden.filter((h) => want.has(h.key));
+  if (removed.length) save(profileId(), { ...f, hidden: f.hidden.filter((h) => !want.has(h.key)) });
+  return removed;
+}
+
+/** Remet des titres réaffichés (annulation), à leur place d'origine. Faux si la liste ne tient plus dans les morceaux du compte. */
+export function restoreHidden(entries: readonly HiddenEntry[]): boolean {
+  const f = currentFilters();
+  const have = new Set(f.hidden.map((h) => h.key));
+  const back = entries.filter((h) => KEY_RE.test(h.key) && !have.has(h.key));
+  if (!back.length) return true;
+  const next = { ...f, hidden: [...f.hidden, ...back].sort((a, b) => a.addedAt - b.addedAt) };
+  if (!fitsCapacity(next)) return false;
+  save(profileId(), next);
+  return true;
+}
+
 /** Réaffiche un titre masqué. Renvoie l'entrée retirée (pour l'annulation), ou null. */
 export function unhideTitle(key: string): HiddenEntry | null {
-  const f = currentFilters();
-  const removed = f.hidden.find((h) => h.key === key) ?? null;
-  if (removed) save(profileId(), { ...f, hidden: f.hidden.filter((h) => h.key !== key) });
-  return removed;
+  return unhideTitles([key])[0] ?? null;
 }
 
 export const isHiddenKey = (key: string): boolean => currentFilters().hidden.some((h) => h.key === key);

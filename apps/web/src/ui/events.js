@@ -235,6 +235,8 @@ document.addEventListener('click', (e) => {
     if (setB) { e.preventDefault(); if (isKidProfile()) leaveKidProfile(); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');
   if (libNav) { e.preventDefault(); go('#/library', libNav); return; }
+  const hidNav = t.closest('[data-hidden-nav]');
+  if (hidNav) { e.preventDefault(); go('#/hidden', hidNav); return; }
   const tvNav = t.closest('[data-tvlive]');
   if (tvNav) { e.preventDefault(); go('#/tv-live', tvNav); return; }
   const libF = t.closest('[data-libf]');
