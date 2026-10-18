@@ -16,7 +16,7 @@ import java.io.File
  *
  * Média : sample-multiaudio.mkv (20 s, H.264 720p, piste 1 jpn « Japonais », piste 2 fre « VFF »).
  *  - file:// : poussé dans /sdcard/Android/data/com.laststream.app/files/sample-multiaudio.mkv
- *  - http:// : servi par l'hôte (python -m http.server 8765) -> http://10.0.2.2:8765/sample-multiaudio.mkv
+ *  - http:// : servi par l'hôte (python -m http.server 8765) -> http://localhost:8765/sample-multiaudio.mkv
  */
 class PlayerActivityInstrumentedTest {
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
@@ -28,7 +28,7 @@ class PlayerActivityInstrumentedTest {
         return "file://" + f.absolutePath
     }
 
-    private fun httpUrl() = "http://10.0.2.2:8765/sample-multiaudio.mkv"
+    private fun httpUrl() = "http://localhost:8765/sample-multiaudio.mkv"
 
     private fun launch(url: String, start: Double = 0.0): ActivityScenario<PlayerActivity> {
         // Même requête que celle construite par LaststreamPlayerPlugin.open().
