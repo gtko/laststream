@@ -181,8 +181,8 @@ Messages JSON, une trame = un message, 4 Ko au plus. Le client envoie `{ "t": �
 | --- | --- | --- |
 | `{t:"ping", c:<horloge client ms>}` | tous | répond `pong` |
 | `{t:"sync"}` | tous | répond l'état courant |
-| `{t:"ctl", action:"play"\|"pause"\|"seek", pos:<s>}` | **hôte** | change l'état, diffusé à tous |
-| `{t:"ctl", action:"sync", pos:<s>}` | **hôte** | rapport périodique de position (toutes les ~5 s) ; rediffusé seulement si l'écart dépasse 0,75 s |
+| `{t:"ctl", action:"play"\|"pause"\|"seek", pos:<s>}` | tous | lecture partagée : change l'état, diffusé à tous ; `rev` croît |
+| `{t:"ctl", action:"sync", pos:<s>}` | **hôte** | rapport périodique de position, horloge de référence (toutes les ~5 s) ; rediffusé seulement si l'écart dépasse 0,75 s |
 | `{t:"episode", season, episode, fingerprint?}` | **hôte** | changement d'épisode (séries) ; position remise à 0, en pause |
 | `{t:"chat", text}` | tous | message (500 caractères, filtré) |
 | `{t:"react", emoji}` | tous | réaction parmi 👍 ❤️ 😂 😮 😢 👏 🔥 🎉 |
@@ -221,7 +221,7 @@ Codes de fermeture : `4000` salon terminé, `4003` exclu, `4008` débit abusif, 
    - écart < **0,3 s** : rien ;
    - de 0,3 s à 2 s : vitesse **0,95** (en avance) ou **1,05** (en retard) jusqu'à rattrapage ;
    - ≥ 2 s (ou lecture à l'arrêt) : saut direct à `expected`.
-4. L'hôte envoie `ctl` `sync` avec sa position environ toutes les 5 s, et un `ctl` à chaque action. Si un participant a changé de version (autre fichier, autre durée), il peut se recaler avec `{t:"sync"}`.
+4. Tout participant envoie un `ctl` `play`, `pause` ou `seek` à chaque action locale (y compris l'hôte) ; l'hôte envoie en plus `ctl` `sync` avec sa position environ toutes les 5 s. Chacun applique à son lecteur chaque `state` reçu (pause et reprise comprises) sans renvoyer ce changement (anti-écho : pas de commande pendant l'application d'un état reçu, et une commande locale n'est pas annulée avant l'écho du serveur). Si un participant a changé de version (autre fichier, autre durée), il peut se recaler avec `{t:"sync"}`.
 
 Ces formules sont implémentées et testées dans `src/party/sync.ts` (`expectedPosition`, `estimateOffset`, `driftAction`).
 

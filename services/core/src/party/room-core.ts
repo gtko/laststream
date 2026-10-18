@@ -214,13 +214,14 @@ export class RoomCore {
       case 'sync':
         return [{ kind: 'send', to: accountId, msg: { t: 'state', state: this.data.state, serverTime: now, by: this.data.meta.hostName } }];
       case 'ctl': {
-        if (!isHost) return this.err(accountId, 'not_host');
         const current = this.data.state;
         if (message.action === 'sync') {
-          // Rapport périodique de l'hôte : on ne rediffuse que si la position diffère de ce que les autres suivent.
+          // Rapport périodique de l'hôte (horloge de référence) : on ne rediffuse que si la position diffère de ce que les autres suivent.
+          if (!isHost) return this.err(accountId, 'not_host');
           if (Math.abs(message.pos - expectedPosition(current, now)) <= HOST_SYNC_TOLERANCE_SEC) return [];
           this.data.state = this.nextState(current.playing, message.pos);
         } else {
+          // Lecture partagée : play, pause et seek viennent de n'importe quel participant (hôte ou invité).
           this.data.state = this.nextState(message.action === 'seek' ? current.playing : message.action === 'play', message.pos);
         }
         this.dirty.add('room');

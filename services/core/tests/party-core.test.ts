@@ -122,20 +122,18 @@ describe('salon : rejoindre et contrôles', () => {
     expect(broadcasts(effects)).toEqual([{ t: 'join', participant: expect.objectContaining({ username: 'bob' }) }]);
   });
 
-  it('seul l’hôte contrôle lecture, pause, seek et changement d’épisode', () => {
+  it('play, pause et seek viennent de tout participant ; seul l’hôte change d’épisode et envoie le rapport de position', () => {
     const fx = makeRoom();
     joined(fx, 'a-host', 'a-bob');
-    for (const m of [
-      { t: 'ctl', action: 'play', pos: 5 },
-      { t: 'ctl', action: 'pause', pos: 5 },
-      { t: 'ctl', action: 'seek', pos: 50 },
-      { t: 'episode', season: 1, episode: 2 },
-    ]) {
-      expect(errors(fx.core.handle('a-bob', msg(m)))).toEqual(['not_host']);
-    }
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'episode', season: 1, episode: 2 })))).toEqual(['not_host']);
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'sync', pos: 5 })))).toEqual(['not_host']);
     expect(fx.data.state).toEqual({ playing: false, pos: 0, at: T0, rev: 0 });
-    const played = fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 5 }));
-    expect(broadcasts(played)).toEqual([{ t: 'state', state: { playing: true, pos: 5, at: T0, rev: 1 }, serverTime: T0, by: 'host' }]);
+    // L'invité met en lecture : diffusé à tous, y compris à l'hôte.
+    const played = fx.core.handle('a-bob', msg({ t: 'ctl', action: 'play', pos: 5 }));
+    expect(broadcasts(played)).toEqual([{ t: 'state', state: { playing: true, pos: 5, at: T0, rev: 1 }, serverTime: T0, by: 'bob' }]);
+    // Puis l'hôte met en pause, et l'invité saute : à chaque fois, rev croît et l'état est rediffusé.
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'ctl', action: 'pause', pos: 9 })))).toEqual([{ t: 'state', state: { playing: false, pos: 9, at: T0, rev: 2 }, serverTime: T0, by: 'host' }]);
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'seek', pos: 50 })))).toEqual([{ t: 'state', state: { playing: false, pos: 50, at: T0, rev: 3 }, serverTime: T0, by: 'bob' }]);
   });
 
   it('play / pause / seek mettent à jour l’état (seek garde l’état de lecture)', () => {
@@ -237,12 +235,13 @@ describe('modération', () => {
     expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'chat', text: 'salut' })))).toHaveLength(1);
   });
 
-  it('transfert d’hôte : le nouvel hôte contrôle, l’ancien non', () => {
+  it('transfert d’hôte : le nouvel hôte seul envoie le rapport de position et change d’épisode', () => {
     const fx = makeRoom();
     joined(fx, 'a-host', 'a-bob');
     expect(broadcasts(fx.core.handle('a-host', msg({ t: 'transfer', user: 'bob' })))).toEqual([{ t: 'host', user: 'bob' }]);
-    expect(errors(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 1 })))).toEqual(['not_host']);
-    expect(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'play', pos: 1 }))).toHaveLength(1);
+    expect(errors(fx.core.handle('a-host', msg({ t: 'ctl', action: 'sync', pos: 1 })))).toEqual(['not_host']);
+    expect(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 1 }))).toHaveLength(1);
+    expect(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'sync', pos: 30 }))).toHaveLength(1);
   });
 
   it('signalement : retrouve le message, notifie l’hôte, pas de doublon, pas d’auto-signalement', () => {
