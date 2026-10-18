@@ -153,9 +153,10 @@ export async function requestJson<T>(url: string, options: RequestOptions = {}):
   };
 
   let response = await send();
-  if (response.status === 429) {
+  for (let attempt = 0; response.status === 429 && attempt < 3; attempt += 1) {
+    // Trop de requêtes : on attend le délai annoncé (ou 1,5 s, 3 s, 6 s) puis on réessaie.
     const retry = Number(response.headers.get('retry-after'));
-    await sleep(Number.isFinite(retry) && retry > 0 ? Math.min(retry, 10) * 1000 : 1500);
+    await sleep(Number.isFinite(retry) && retry > 0 ? Math.min(retry, 10) * 1000 : 1500 * 2 ** attempt);
     response = await send();
   }
 

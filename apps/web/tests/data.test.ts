@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addonUrl, isConfigured, ltUrl, reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
-import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT } from '../src/data/transport';
+import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, requestJson } from '../src/data/transport';
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
@@ -62,6 +62,18 @@ describe('transport', () => {
     await cachedRequest(key, load);
     await cachedRequest(key, load);
     expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('réessaie après une réponse 429 en respectant Retry-After', async () => {
+    const answers = [429, 429, 200];
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      const code = answers.shift()!;
+      return code === 200 ? new Response('{"ok":true}', { status: 200 }) : new Response('{}', { status: 429, headers: { 'retry-after': '1' } });
+    }));
+    const t0 = Date.now();
+    await expect(requestJson('http://x/y')).resolves.toEqual({ ok: true });
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1900);
+    expect(answers).toHaveLength(0);
   });
 
   it('limite à 6 requêtes en vol', async () => {

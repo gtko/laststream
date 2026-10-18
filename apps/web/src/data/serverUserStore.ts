@@ -1,9 +1,9 @@
 import { tmdb } from './lt';
 import {
-  deleteContinue, deleteLibrary, getContinue, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
+  deleteContinue, deleteFollow, deleteLibrary, deleteRating, getContinue, getFollows, getRatings, putFollow, putRating, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
   type ContinueDto, type LibraryItemDto, type MediaKind, type ProfileDto,
 } from './userApi';
-import type { LibraryEntry, Profile, ProgressEntry, UserStore, WatchedRef } from './userStore';
+import type { FollowEntry, LibraryEntry, Profile, ProgressEntry, RatingEntry, UserStore, WatchedRef } from './userStore';
 import { LocalUserStore, progressKey, watchedKey } from './userStore';
 
 /* Adaptateur de l'API utilisateur de lastAddon : lectures synchrones depuis un cache hydraté à la connexion,
@@ -51,7 +51,120 @@ export class ServerUserStore implements UserStore {
     const id = this.active.id;
     const [lib, cont] = await Promise.all([getLibrary(id), getContinue(id)]);
     this.library = libraryFromDto(lib.items);
+    void this.resolveImported(lib.items);
     this.cont = await this.enrich(cont.items);
+    await Promise.all([this.loadFollows(), this.loadRatings()]);
+  }
+
+  private listeners: Array<() => void> = [];
+  subscribe(fn: () => void): void {
+    this.listeners.push(fn);
+  }
+  private emit(): void {
+    this.listeners.forEach((f) => f());
+  }
+
+  updateLibraryPoster(key: string, posterPath: string): void {
+    const e = this.library.find((x) => `${x.type}:${x.id}` === key);
+    if (!e || e.poster === posterPath) return;
+    e.poster = posterPath;
+    putLibrary(this.active.id, kindOf(e.type), e.id, { title: e.title || String(e.id), poster: posterUrlOf(posterPath) }).catch(() => undefined);
+  }
+
+  /**
+   * Titres importés (Stremio) sans identifiant TMDB : retrouvés un par un via /find (file d'attente à 2 à la fois,
+   * en cache côté client), puis enregistrés avec leur affiche sur le profil.
+   */
+  private async resolveImported(items: LibraryItemDto[]): Promise<void> {
+    const todo = items.filter((i) => i.tmdbId == null && i.imdbId);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < todo.length) {
+        const i = todo[next++];
+        try {
+          const found = await tmdb<any>(`find/${i.imdbId}`, { external_source: 'imdb_id' });
+          const hit = i.type === 'series' ? found.tv_results?.[0] : found.movie_results?.[0];
+          if (!hit) continue;
+          const type = typeOf(i.type);
+          const entry: LibraryEntry = { id: hit.id, type, title: i.title || hit.title || hit.name || '', poster: hit.poster_path || '', addedAt: Date.parse(i.addedAt) || 0 };
+          if (!this.library.some((x) => x.id === entry.id && x.type === type)) this.library.push(entry);
+          await putLibrary(this.active.id, i.type, entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster), imdbId: i.imdbId ?? undefined }).catch(() => undefined);
+          this.emit();
+        } catch {
+          // Titre introuvable : il reste masqué.
+        }
+      }
+    };
+    await Promise.all([worker(), worker()]);
+  }
+
+  private followsApi = true;
+  private ratingsApi = true;
+
+  private async loadFollows(): Promise<void> {
+    try {
+      const res = await getFollows(this.active.id);
+      this.local.replaceFollows(res.items.filter((f) => f.tmdbId != null).map((f): FollowEntry => ({
+        type: f.type === 'series' ? 'tv' : f.type, id: f.tmdbId, title: f.title || f.name || '', poster: posterPathOf(f.poster ?? null) || (f.poster ?? ''), addedAt: Date.parse(f.addedAt ?? '') || 0,
+      })));
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) this.followsApi = false; // serveur sans cette route : suivis locaux
+    }
+  }
+
+  private async loadRatings(): Promise<void> {
+    try {
+      const res = await getRatings(this.active.id);
+      this.local.replaceRatings(res.items.filter((r) => r.tmdbId != null).map((r): RatingEntry => ({
+        type: r.type === 'series' ? 'tv' : (r.type as 'movie'), id: r.tmdbId, title: r.title || '', year: String(r.year ?? ''), rating: r.rating, updatedAt: Date.parse(r.updatedAt ?? '') || 0,
+      })));
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) this.ratingsApi = false;
+    }
+  }
+
+  // ---- Suivis et notes : cache local immédiat, serveur ensuite, retour arrière si refus ----
+  getFollows(type?: FollowEntry['type']): FollowEntry[] {
+    return this.local.getFollows(type);
+  }
+  isFollowing(key: string): boolean {
+    return this.local.isFollowing(key);
+  }
+  async setFollow(entry: Omit<FollowEntry, 'addedAt'>, follow: boolean): Promise<boolean> {
+    const before = this.local.getFollows();
+    await this.local.setFollow(entry, follow);
+    if (!this.followsApi) return true;
+    try {
+      const kind = entry.type === 'tv' ? 'series' : entry.type;
+      if (follow) await putFollow(this.active.id, kind, entry.id, { title: entry.title, poster: entry.type === 'person' ? entry.poster : posterUrlOf(entry.poster) });
+      else await deleteFollow(this.active.id, kind, entry.id);
+      return true;
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) { this.followsApi = false; return true; }
+      this.local.replaceFollows(before);
+      return false;
+    }
+  }
+  getRatings(): RatingEntry[] {
+    return this.local.getRatings();
+  }
+  getRating(key: string): number | null {
+    return this.local.getRating(key);
+  }
+  async setRating(entry: Omit<RatingEntry, 'updatedAt' | 'rating'>, rating: number | null): Promise<boolean> {
+    const before = this.local.getRatings();
+    if (!(await this.local.setRating(entry, rating))) return false;
+    if (!this.ratingsApi) return true;
+    try {
+      const kind = entry.type === 'tv' ? 'series' : 'movie';
+      if (rating === null) await deleteRating(this.active.id, kind, entry.id);
+      else await putRating(this.active.id, kind, entry.id, { rating, title: entry.title, year: entry.year });
+      return true;
+    } catch (err) {
+      if (err instanceof UserApiError && err.status === 404) { this.ratingsApi = false; return true; }
+      this.local.replaceRatings(before);
+      return false;
+    }
   }
 
   /** Les éléments « continuer » ne portent ni titre ni affiche : TMDB les fournit (en cache côté client). */

@@ -6,6 +6,7 @@ import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { row, topBar } from './fragments.js';
 import { state } from './state.js';
+import { fillMissingPosters } from './posters.js';
 import { observeTiles, posterCard } from './tiles.js';
 
 // Bibliothèque : toutes les lectures/écritures passent par userStore (adaptateur local aujourd'hui, API lastAddon ensuite).
@@ -31,7 +32,8 @@ export function renderLibrary() {
   const items = libItems().sort((a, b) => b.added - a.added);
   if (!items.length) { slot.innerHTML = ''; return; }
   slot.innerHTML = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? 'Mes favoris' : 'Ma bibliothèque') + ' ' +
-    '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.map((it) => posterCard(it)).join('')) + '</section>';
+    '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.slice(0, 30).map((it) => posterCard(it)).join('')) + '</section>';
+  fillMissingPosters(items.slice(0, 30));
 }
 
 export function renderLibraryPage() {
@@ -47,6 +49,7 @@ export function renderLibraryPage() {
   detailEl.querySelectorAll('[data-libf]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libf === v.type)));
   detailEl.querySelectorAll('[data-libs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libs === v.sort)));
   observeTiles(box);
+  fillMissingPosters(items);
 }
 
 export function showLibrary() {

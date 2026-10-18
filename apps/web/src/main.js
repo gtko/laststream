@@ -4,6 +4,8 @@
 import './styles/styles.css';
 import './styles/app.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
+import { userStore } from './data/userStore';
+import { renderLibrary, renderLibraryPage } from './ui/library.js';
 import { applyTheme, readTheme } from './data/theme';
 import { runAuthFlow } from './ui/auth-ui.js';
 import { app, detailEl } from './ui/dom.js';
@@ -18,6 +20,8 @@ import './ui/settings.js';
 import './ui/sources-ui.js';
 
 await initAuth();
+// Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
+if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
 await runAuthFlow();
 if (isKidProfile()) {
   document.body.classList.add('kid-mode');

@@ -160,6 +160,36 @@ export const unlockProfile = (id: string, pin: string) =>
   call<{ token: string; expiresAt: string }>('/profiles/' + encodeURIComponent(id) + '/unlock', { method: 'POST', body: { pin } });
 export const lockProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id) + '/lock', { method: 'POST' });
 
+// ---- Suivis et notes ----
+export type FollowKind = MediaKind | 'person';
+export interface FollowDto {
+  type: FollowKind;
+  tmdbId: number;
+  title?: string;
+  name?: string;
+  poster?: string | null;
+  addedAt?: string;
+}
+export interface RatingDto {
+  type: MediaKind;
+  tmdbId: number;
+  rating: number;
+  title?: string;
+  year?: string | number | null;
+  updatedAt?: string;
+}
+const PF = (id: string) => '/profiles/' + encodeURIComponent(id);
+export const getFollows = (id: string) => call<{ items: FollowDto[] }>(PF(id) + '/follows', { profileId: id });
+export const putFollow = (id: string, type: FollowKind, tmdbId: number, body: { title?: string; poster?: string | null }) =>
+  call<void>(`${PF(id)}/follows/${type}/${tmdbId}`, { method: 'PUT', body, profileId: id });
+export const deleteFollow = (id: string, type: FollowKind, tmdbId: number) =>
+  call<void>(`${PF(id)}/follows/${type}/${tmdbId}`, { method: 'DELETE', profileId: id });
+export const getRatings = (id: string) => call<{ items: RatingDto[] }>(PF(id) + '/ratings', { profileId: id });
+export const putRating = (id: string, type: MediaKind, tmdbId: number, body: { rating: number; title?: string; year?: string | null }) =>
+  call<void>(`${PF(id)}/ratings/${type}/${tmdbId}`, { method: 'PUT', body, profileId: id });
+export const deleteRating = (id: string, type: MediaKind, tmdbId: number) =>
+  call<void>(`${PF(id)}/ratings/${type}/${tmdbId}`, { method: 'DELETE', profileId: id });
+
 // ---- « Vu » (films et épisodes) ----
 export interface WatchedEpisode {
   season: number;

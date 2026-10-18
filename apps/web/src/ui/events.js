@@ -316,7 +316,18 @@ document.addEventListener('error', (e) => {
     img.replaceWith(span);
     return;
   }
-  if (img.dataset.fb && img.dataset.fbUsed !== '1') {
+  // Image en échec : même adresse une fois (erreur passagère), puis une autre taille, puis l'image de repli, puis le titre.
+  const tries = Number(img.dataset.tries || 0);
+  img.dataset.tries = String(tries + 1);
+  const src = img.currentSrc || img.src;
+  const size = /\/t\/p\/(w\d+)\//.exec(src);
+  if (tries === 0 && src) { setTimeout(() => { if (img.isConnected) img.src = src; }, 1200); return; }
+  if (tries === 1 && size) {
+    const alt = size[1] === 'w500' ? 'w342' : 'w500';
+    img.src = src.replace('/' + size[1] + '/', '/' + alt + '/');
+    return;
+  }
+  if (img.dataset.fb && img.dataset.fbUsed !== '1' && img.dataset.fb !== src) {
     img.dataset.fbUsed = '1';
     img.src = img.dataset.fb;
     return;

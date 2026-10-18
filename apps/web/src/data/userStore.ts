@@ -58,6 +58,10 @@ export interface UserStore {
   loadProgress?(key: string): Promise<void>;
   /** Titres entamés (2 % à 95 %), le plus récent d'abord, un par titre ; les titres retirés par l'utilisateur sont exclus. */
   continueWatching(limit?: number): ProgressEntry[];
+  /** Enregistre l'affiche retrouvée d'un titre de la bibliothèque (chemin TMDB). */
+  updateLibraryPoster?(key: string, posterPath: string): void;
+  /** Abonnement aux changements asynchrones de la bibliothèque (résolution des titres importés). */
+  subscribe?(fn: () => void): void;
   /** Retire un titre de « Reprendre la lecture » sans perdre la progression. Faux en cas d'échec (rien n'a changé). */
   hideContinue(key: string): Promise<boolean>;
   showContinue(key: string): Promise<void>;
@@ -78,10 +82,46 @@ export interface UserStore {
   /** Charge l'état « vu » d'un titre depuis le serveur avant affichage (adaptateur serveur ; sans effet en local). */
   loadWatched?(key: string): Promise<void>;
 
+  /** Suivis (films, séries, personnes). Clés : `movie:1`, `tv:2`, `person:3`. */
+  getFollows(type?: FollowEntry['type']): FollowEntry[];
+  isFollowing(key: string): boolean;
+  /** Suit ou ne suit plus ; faux si le serveur a refusé (le cache est alors revenu à l'état précédent). */
+  setFollow(entry: Omit<FollowEntry, 'addedAt'>, follow: boolean): Promise<boolean>;
+
+  /** Notes. */
+  getRatings(): RatingEntry[];
+  getRating(key: string): number | null;
+  /** `rating` null retire la note. */
+  setRating(entry: Omit<RatingEntry, 'updatedAt' | 'rating'>, rating: number | null): Promise<boolean>;
+
   getProfiles(): Profile[];
   currentProfile(): Profile;
   setProfile(id: string): void;
 }
+
+/** Titre ou personne suivi (type `tv` pour une série). Indépendant de la bibliothèque. */
+export interface FollowEntry {
+  type: 'movie' | 'tv' | 'person';
+  id: number;
+  title: string;
+  /** Affiche ou photo (chemin TMDB). */
+  poster: string;
+  addedAt: number;
+}
+
+/** Note de 0,5 à 5 (par demi-étoile). */
+export interface RatingEntry {
+  type: 'movie' | 'tv';
+  id: number;
+  title: string;
+  year: string;
+  rating: number;
+  updatedAt: number;
+}
+
+export const FOLLOWS_KEY = 'laststream.follows';
+export const RATINGS_KEY = 'laststream.ratings';
+export const validRating = (n: number): boolean => Number.isFinite(n) && n >= 0.5 && n <= 5 && Math.round(n * 2) === n * 2;
 
 export interface WatchedRef {
   season: number;
@@ -207,6 +247,15 @@ export class LocalUserStore implements UserStore {
     if (list.includes(key)) writeJson(this.ls, CONTINUE_HIDDEN_KEY, list.filter((k) => k !== key));
   }
 
+  updateLibraryPoster(key: string, posterPath: string): void {
+    const list = this.getLibrary();
+    const e = list.find((x) => `${x.type}:${x.id}` === key);
+    if (e && e.poster !== posterPath) {
+      e.poster = posterPath;
+      this.saveLibrary(list);
+    }
+  }
+
   async hideContinue(key: string): Promise<boolean> {
     const list = this.hiddenKeys();
     if (!list.includes(key)) writeJson(this.ls, CONTINUE_HIDDEN_KEY, [...list, key]);
@@ -246,6 +295,42 @@ export class LocalUserStore implements UserStore {
     else list.push(episodeKey);
     writeJson(this.ls, SEEN_KEY, list);
     return i < 0;
+  }
+
+  getFollows(type?: FollowEntry['type']): FollowEntry[] {
+    const raw = readJson<unknown>(this.ls, FOLLOWS_KEY, []);
+    const list = Array.isArray(raw) ? (raw as FollowEntry[]).filter((f) => f && Number.isFinite(f.id) && ['movie', 'tv', 'person'].includes(f.type)) : [];
+    return (type ? list.filter((f) => f.type === type) : list).sort((a, b) => b.addedAt - a.addedAt);
+  }
+  isFollowing(key: string): boolean {
+    return this.getFollows().some((f) => `${f.type}:${f.id}` === key);
+  }
+  replaceFollows(list: FollowEntry[]): void {
+    writeJson(this.ls, FOLLOWS_KEY, list);
+  }
+  async setFollow(entry: Omit<FollowEntry, 'addedAt'>, follow: boolean): Promise<boolean> {
+    const key = `${entry.type}:${entry.id}`;
+    const rest = this.getFollows().filter((f) => `${f.type}:${f.id}` !== key);
+    this.replaceFollows(follow ? [...rest, { ...entry, addedAt: Date.now() }] : rest);
+    return true;
+  }
+
+  getRatings(): RatingEntry[] {
+    const raw = readJson<unknown>(this.ls, RATINGS_KEY, []);
+    return (Array.isArray(raw) ? (raw as RatingEntry[]).filter((r) => r && validRating(r.rating) && Number.isFinite(r.id)) : []).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+  getRating(key: string): number | null {
+    return this.getRatings().find((r) => `${r.type}:${r.id}` === key)?.rating ?? null;
+  }
+  replaceRatings(list: RatingEntry[]): void {
+    writeJson(this.ls, RATINGS_KEY, list);
+  }
+  async setRating(entry: Omit<RatingEntry, 'updatedAt' | 'rating'>, rating: number | null): Promise<boolean> {
+    if (rating !== null && !validRating(rating)) return false;
+    const key = `${entry.type}:${entry.id}`;
+    const rest = this.getRatings().filter((r) => `${r.type}:${r.id}` !== key);
+    this.replaceRatings(rating === null ? rest : [...rest, { ...entry, rating, updatedAt: Date.now() }]);
+    return true;
   }
 
   isWatched(key: string, season?: number, episode?: number): boolean {

@@ -164,6 +164,18 @@ describe('interface portée', () => {
     await settle(100);
   });
 
+  it('affiche une affiche retrouvée pour un titre de la bibliothèque sans image, et la garde', async () => {
+    localStorage.setItem('laststream.library', JSON.stringify([{ id: 77, type: 'movie', title: 'Memento', poster: '', addedAt: 5 }]));
+    const { renderLibrary } = await import('../src/ui/library.js');
+    renderLibrary();
+    const tile = () => document.querySelector('#lib-slot [data-tile="movie:77"] .card-media') as HTMLElement;
+    expect(tile().querySelector('img')).toBeNull();
+    await settle(300);
+    expect(tile().querySelector('img')!.getAttribute('src')).toContain('/p.jpg');
+    expect(tile().classList.contains('no-img')).toBe(false);
+    expect(JSON.parse(localStorage.getItem('laststream.library')!)[0].poster).toBe('/p.jpg');
+  });
+
   it('utilise la région France par défaut', () => {
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });
