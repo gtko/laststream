@@ -387,16 +387,9 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .src-cfg-help .src-cfg-steps { margin: 0; padding-left: 20px; }
 .src-cfg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .src-cfg-status { margin: 0; }
-.src-safe-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 10px; }
-.src-safe-bar .set-hint { margin: 0; }
-.src-safety { margin: 0 14px 0 52px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid var(--line-2); display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.src-safety { margin: 0 14px 0 52px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid #fb923c; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .src-safety[hidden] { display: none; }
-.src-safety.is-self { border-left-color: #4ade80; }
-.src-safety.is-torrents { border-left-color: #fb923c; }
-.src-safety.is-unknown { border-left-color: #6b6678; }
 .src-safety p { margin: 0; }
-.src-safety code { word-break: break-all; font-size: 12px; }
-.src-safety-preview { display: flex; flex-direction: column; gap: 6px; }
 @media (max-width: 760px) {
   .src-head { flex-wrap: wrap; row-gap: 6px; }
   .src-meta { flex-basis: 50%; }

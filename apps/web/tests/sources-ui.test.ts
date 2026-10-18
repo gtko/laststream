@@ -157,58 +157,6 @@ describe('cartes de sources', () => {
   });
 });
 
-describe('rendre mes addons sûrs', () => {
-  const cards = () => Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
-  const addUpstream = (url: string) => {
-    (document.querySelector('[data-set-addsrc="upstream"]') as HTMLElement).click();
-    const input = cards()[cards().length - 1].querySelector('[data-sf="url"]') as HTMLInputElement;
-    input.value = url;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  };
-  const KEY = 'ABCDEFGH12345678';
-
-  it('classe chaque addon (débride lui-même, torrents seulement), sans traiter une clé comme un problème', async () => {
-    const before = cards().length; // 3 : aucune carte de test
-    addUpstream('https://configurable.example/cfg123/manifest.json'); // sûr : infoHash
-    addUpstream(`https://torrentio.example/alldebrid=${KEY}|sort=qualitysize/manifest.json`); // clé dans l’adresse
-    addUpstream('https://opaque.example/3f2b8c1e-aaaa-4bbb-8ccc-1234567890ab/manifest.json'); // config chez l’addon, débrideur
-    await settle(300);
-    expect(cards()).toHaveLength(before + 3);
-    const [sure, keyed, opaque] = [cards()[3], cards()[4], cards()[5]];
-
-    (document.querySelector('[data-set-safe]') as HTMLElement).click();
-    await settle(400);
-    // infoHash seul : aucune source lisible sans débrideur (avertissement).
-    expect(sure.querySelector('.src-safety')!.classList.contains('is-torrents')).toBe(true);
-    expect(sure.querySelector('.src-safety')!.textContent).toContain('Ne renvoie que des torrents : aucune source lisible sans débrideur');
-    expect(sure.querySelector('[data-safe-config]')).not.toBeNull();
-    // Clé dans l’adresse : l’addon débride lui-même, en vert, sans afficher la clé ni proposer de la retirer.
-    expect(keyed.querySelector('.src-safety')!.classList.contains('is-self')).toBe(true);
-    expect(keyed.querySelector('.src-safety')!.textContent).toContain('Débride lui-même (mode recommandé)');
-    expect(keyed.querySelector('.src-safety')!.textContent).not.toContain(KEY);
-    expect(keyed.querySelector('[data-safe-fix]')).toBeNull();
-    expect(keyed.querySelector('[data-safe-config]')).toBeNull();
-    expect(opaque.querySelector('.src-safety')!.classList.contains('is-self')).toBe(true);
-    expect(opaque.querySelector('[data-safe-config]')).toBeNull();
-    expect(document.getElementById('src-safe-sum')!.textContent).toContain('2 débride(nt) eux-mêmes');
-    expect(document.getElementById('src-safe-sum')!.textContent).toContain('1 torrents seulement');
-
-    // Configurer : ouvre la page de l’addon hors de l’app et affiche l’aide de collage.
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
-    (sure.querySelector('[data-safe-config]') as HTMLElement).click();
-    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
-    expect((sure.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
-    open.mockRestore();
-
-    // Nettoyage : retirer les trois cartes de test.
-    for (let i = cards().length - 1; i >= before; i -= 1) {
-      (cards()[i].querySelector('[data-src-menu]') as HTMLElement).click();
-      (cards()[i].querySelector('[data-src-remove]') as HTMLElement).click();
-    }
-    expect(cards()).toHaveLength(before);
-  });
-});
-
 describe('configuration de l’addon', () => {
   const cards = () => Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
   const clip = { readText: vi.fn(async () => 'stremio://configurable.example/cfg456/manifest.json'), writeText: vi.fn(async () => undefined) };
@@ -275,5 +223,75 @@ describe('configuration de l’addon', () => {
     (cards()[3].querySelector('[data-src-menu]') as HTMLElement).click();
     (cards()[3].querySelector('[data-src-remove]') as HTMLElement).click();
     expect(cards()).toHaveLength(3);
+  });
+});
+
+describe('avertissement « torrents seulement » (diagnostic quotidien)', () => {
+  const cards = () => Array.from(document.querySelectorAll('#set-sources .src-card')) as HTMLElement[];
+  const row = (card: HTMLElement) => card.querySelector('.src-safety') as HTMLElement;
+  const KEY = 'ABCDEFGH12345678';
+  const DAY = 24 * 60 * 60 * 1000;
+  // Appels au flux de test d’une adresse (les fetch simulés), pour compter les diagnostics.
+  const streamCalls = (marker: string): number =>
+    (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(([u]) => String(u).includes(marker)).length;
+  // Ouverture de la page : relit les sources (diagnostic en arrière-plan), puis rend la liste.
+  const openPage = async (sources: Array<Record<string, unknown>>): Promise<void> => {
+    const { initSources, sourcesHTML } = await import('../src/ui/settings-sources.js');
+    initSources(sources);
+    const fresh = new DOMParser().parseFromString(sourcesHTML(), 'text/html').getElementById('set-sources')!;
+    document.getElementById('set-sources')!.replaceWith(document.importNode(fresh, true));
+    await settle(600);
+  };
+
+  it('pas de bouton « Rendre mes addons sûrs » ni de texte d’aide', () => {
+    expect(document.querySelector('[data-set-safe]')).toBeNull();
+    expect(document.getElementById('src-safe-sum')).toBeNull();
+    expect(document.querySelector('#set-p-sources')!.textContent).not.toContain('Rendre mes addons sûrs');
+    expect(document.querySelector('#set-p-sources')!.textContent).not.toContain('Vérifie que tes addons');
+  });
+
+  it('avertissement seulement pour un addon « torrents seulement » ; rien pour les autres', async () => {
+    await openPage([
+      { type: 'upstream', name: 'Torrents', url: 'https://configurable.example/cfg123/manifest.json' },
+      { type: 'upstream', name: 'Clé', url: `https://torrentio.example/alldebrid=${KEY}|sort=qualitysize/manifest.json` },
+      { type: 'upstream', name: 'Lisible', url: 'https://opaque.example/3f2b8c1e-aaaa-4bbb-8ccc-1234567890ab/manifest.json' },
+    ]);
+    const [torrents, keyed, readable] = cards();
+    expect(row(torrents).hasAttribute('hidden')).toBe(false);
+    expect(row(torrents).textContent).toContain('Ne renvoie que des torrents : aucune source lisible');
+    expect(torrents.querySelector('[data-safe-config]')).not.toBeNull();
+    // Une clé dans l’adresse ne prouve rien : c’est la réponse de l’addon qui compte, et la clé n’est jamais affichée.
+    expect(row(keyed).hasAttribute('hidden')).toBe(false);
+    expect(row(keyed).textContent).not.toContain(KEY);
+    // Lien lisible : rien d’affiché, pas de badge vert.
+    expect(row(readable).hasAttribute('hidden')).toBe(true);
+    expect(row(readable).textContent).toBe('');
+    expect(readable.querySelector('[data-safe-config]')).toBeNull();
+  });
+
+  it('« Configurer » ouvre la page de l’addon hors de l’app et affiche l’aide de collage', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const torrents = cards()[0];
+    (torrents.querySelector('[data-safe-config]') as HTMLElement).click();
+    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
+    expect((torrents.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
+    open.mockRestore();
+  });
+
+  it('diagnostic au plus une fois par jour et par addon ; l’avertissement reste affiché entre-temps', async () => {
+    const sources = [{ type: 'upstream', name: 'Jour', url: 'https://configurable.example/jour1/manifest.json' }];
+    const before = streamCalls('/jour1/stream/');
+    await openPage(sources);
+    expect(streamCalls('/jour1/stream/') - before).toBe(1);
+    expect(row(cards()[0]).hasAttribute('hidden')).toBe(false);
+    await openPage(sources); // même jour : rien relancé, l’avertissement vient du stockage local
+    await openPage(sources);
+    expect(streamCalls('/jour1/stream/') - before).toBe(1);
+    expect(row(cards()[0]).hasAttribute('hidden')).toBe(false);
+    // Le lendemain : un nouveau diagnostic.
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + DAY + 60_000);
+    await openPage(sources);
+    spy.mockRestore();
+    expect(streamCalls('/jour1/stream/') - before).toBe(2);
   });
 });
