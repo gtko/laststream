@@ -1236,7 +1236,7 @@ function panelData(name) {
     if (web) rows.push(['Lecture', web]);
     if (p.choice) rows.push(['Moteur', p.choice.label]);
     return {
-      rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(),
+      rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
       canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
     };
   }
