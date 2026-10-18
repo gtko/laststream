@@ -33,6 +33,7 @@ export const TTL = {
   tvChannels: 12 * 3600e3, // catalogue TV (sources amont)
   tvPartial: 15 * 60e3, // catalogue incomplet (une source a échoué) : nouvel essai plus tôt
   tvEpg: 3 * 3600e3, // programmes EPG
+  tvStore: 5 * 60e3, // catalogue et EPG lus depuis le stockage (Workers : R2 alimenté par le Cron)
   skip: 7 * 24 * 3600e3, // segments intro/recap/crédits trouvés
   skipEmpty: 6 * 3600e3, // aucun segment trouvé (à revérifier plus tôt)
 } as const;

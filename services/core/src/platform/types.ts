@@ -7,6 +7,7 @@
 import type { AutoDetectOptions, AutoDetector } from '../lt/detect/index.js';
 import type { ThumbOptions, ThumbService } from '../lt/thumbs/index.js';
 import type { PartyBackend } from '../party/backend.js';
+import type { TvBlobStore } from '../lt/tv-build.js';
 import type { SkipRepo, UserBackend } from '../user/repo.js';
 
 export type { UserBackend } from '../user/repo.js';
@@ -148,4 +149,10 @@ export interface Platform {
   uiAssetsFromDir?(dir: string): UiAssets;
   /** Interface web fournie par la plateforme elle-même (Workers Assets). */
   uiAssets?: UiAssets;
+  /**
+   * Catalogue TV et EPG préparés hors requête (Workers : Cron Trigger → R2). Présent : les routes /lt/tv/* lisent ce
+   * stockage au lieu de télécharger les sources (impossible sous 128 Mo). `requestRefresh` demande une construction
+   * en arrière-plan quand le stockage est encore vide.
+   */
+  tvStore?: { blobs: TvBlobStore; requestRefresh(): void };
 }

@@ -686,6 +686,14 @@ Le même code tourne sur Node et sur Cloudflare Workers (`src/worker.ts`, config
 
 **Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `RANGE_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
 
+**Miniatures (`POST /lt/range-source`).** Le jeton de relais est émis pour une URL émise par `/play`, et aussi pour tout lien https d'un domaine débrid autorisé (`*.debrid.it`, `*.alldebrid.com`, surchargeable par `LASTADDON_RANGE_HOSTS`, même liste que le Worker de relais), car les addons externes renvoient directement des liens AllDebrid. Ces derniers sont limités à 20 par minute et par configuration (binding `RANGE_LIMITER`). Tout autre domaine reste refusé (`400 invalid_source`).
+
+### TV en direct sur Workers (Cron + R2)
+
+Un Worker ne peut ni télécharger 32 Mo de JSON iptv-org ni décompresser 256 Mo d'EPG dans la mémoire d'un isolat (128 Mo). Un Cron Trigger (`0 */6 * * *`, `wrangler.jsonc`) exécute donc `scheduled()` (`src/worker.ts`) : `src/lt/tv-build.ts` lit les sources **en flux** (`src/lt/json-stream.ts`, `DecompressionStream` pour l'XMLTV), ne garde que les chaînes des pays `TV_COUNTRIES` (défaut `FR,BE,CH,LU,CA,MC`) et l'EPG de ces chaînes de maintenant à +24 h, puis écrit `catalog.json`, `epg.json` et `probe.json` dans le bucket R2 `lastaddon-tv` (à créer une fois : `npx wrangler r2 bucket create lastaddon-tv`). Les routes `/lt/tv/*` lisent R2 (cache mémoire de 5 min) ; R2 encore vide : `503 tv_building` et construction lancée en arrière-plan (verrou KV).
+
+Le proxy HLS reste désactivé (`tvHls: false`, annoncé par `/lt/health`) : les chaînes sont renvoyées avec `sig: null` et le lecteur lit l'URL du flux directement (hls.js, mpv, libVLC). Le Cron sonde chaque flux https (requête avec l'origine de l'application, réponse `Access-Control-Allow-Origin`) et renseigne `direct` (`true` lisible depuis une page web, `false` : http ou sans CORS, absent : inconnu). `GET /lt/tv/channels?direct=1` écarte les chaînes dont aucun flux n'est lisible sans relais (pages web) ; mpv et libVLC n'en ont pas besoin et gardent tout.
+
 ### Migration des données vers le Durable Object
 
 `npx tsx scripts/export-cloud.ts [--db fichier] [--url https://…] [--force] [--dry-run] [--verify-only]` copie les tables utilisateur d'une base

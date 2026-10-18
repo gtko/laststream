@@ -31,8 +31,16 @@
   // 10 tentatives par minute et par IP (AUTH_LIMITER_IP) et par nom d'utilisateur (AUTH_LIMITER_USER).
   "ratelimits": [
     { "name": "AUTH_LIMITER_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
-    { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } }
+    { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
+    // Signature de liens débridés directs (POST /lt/range-source) : 20 par minute et par configuration.
+    { "name": "RANGE_LIMITER", "namespace_id": "1003", "simple": { "limit": 20, "period": 60 } }
   ],
+
+  // TV en direct : le catalogue des chaînes et l'EPG réduit (maintenant → +24 h) sont construits hors requête, en flux
+  // (sous 128 Mo), par le Cron Trigger ci-dessous, et écrits dans R2 ; les routes /lt/tv/* les lisent.
+  // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-tv
+  "r2_buckets": [{ "binding": "TV", "bucket_name": "lastaddon-tv" }],
+  "triggers": { "crons": ["0 */6 * * *"] },
 
   // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
   // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.

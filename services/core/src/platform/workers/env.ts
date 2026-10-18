@@ -1,4 +1,4 @@
-import type { DurableObjectNamespace, KVNamespace } from '@cloudflare/workers-types';
+import type { DurableObjectNamespace, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
 import type { EnvLike, RuntimeEnv } from '../types.js';
 import type { PartyRoom } from './party-room.js';
 import type { UserStoreDO } from './user-store-do.js';
@@ -26,6 +26,10 @@ export interface WorkerEnv {
   /** Limite de connexion/inscription par IP et par nom d'utilisateur (absentes : compteurs en mémoire). */
   AUTH_LIMITER_IP?: RateLimitBinding;
   AUTH_LIMITER_USER?: RateLimitBinding;
+  /** Limite des signatures de liens débridés directs (/lt/range-source), par configuration. */
+  RANGE_LIMITER?: RateLimitBinding;
+  /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */
+  TV?: R2Bucket;
   /** Autres liaisons : variables (chaînes) et secrets. */
   [name: string]: unknown;
 }

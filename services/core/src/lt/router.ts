@@ -6,7 +6,8 @@ import { sendBody, sendJson } from '../http/respond.js';
 import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platform/index.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { personWhy, recommend, why } from './ai.js';
-import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
+import { createRateLimiter } from '../rate-limit.js';
+import { bodyOf, createLtContext, decodeFor, digest, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
 import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/media-url.js';
@@ -15,6 +16,7 @@ import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
 import { issuedUrls } from '../play/issued.js';
 import type { FrameResult, Registration } from './thumbs/index.js';
+import { parseDebridUrl, rangeHostPatterns } from './thumbs/range-hosts.js';
 import { signRangeToken } from './thumbs/range-token.js';
 import { resolveThumbSource } from './thumbs/source.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
@@ -45,6 +47,10 @@ function rangeProxyOf(deps: AppDeps): { secret: string; base: string } | null {
   return secret !== '' && /^https:\/\//.test(base) ? { secret, base } : null;
 }
 
+/** Signatures de liens débridés directs (/range-source) : au plus 20 par minute et par configuration (en plus de la limite par IP des écritures lt). */
+const RANGE_SOURCE_LIMIT = 20;
+const RANGE_SOURCE_WINDOW_S = 60;
+
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
 export const ltErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
   c.header('Cache-Control', NO_STORE);
@@ -67,11 +73,13 @@ type SignedChannel = Omit<TvChannel, 'alternatives'> & {
   alternatives: (TvAlternative & { sig: string | null })[];
 };
 
-function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedChannel {
+/** `sig` est null quand la plateforme n'a pas de proxy HLS (Workers) : le lecteur lit alors l'URL du flux directement. */
+function signChannel(ctx: LtContext, scope: string, channel: TvChannel, hls: boolean): SignedChannel {
+  const sign = (url: string): string | null => (hls ? signTvUrl(ctx, scope, url) : null);
   return {
     ...channel,
-    sig: signTvUrl(ctx, scope, channel.url),
-    alternatives: channel.alternatives.map((alt) => ({ ...alt, sig: signTvUrl(ctx, scope, alt.url) })),
+    sig: sign(channel.url),
+    alternatives: channel.alternatives.map((alt) => ({ ...alt, sig: sign(alt.url) })),
   };
 }
 
@@ -105,6 +113,10 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
   const range = capabilities.rangeThumbs ? rangeProxyOf(deps) : null;
   const rangeIssued = (): ReturnType<typeof issuedUrls> => deps.thumbs?.issued ?? issuedUrls();
+  // Limite de débit des liens débridés directs : binding partagé (Workers) ou compteur en mémoire.
+  const localRangeLimit = createRateLimiter(RANGE_SOURCE_LIMIT, RANGE_SOURCE_WINDOW_S * 1000);
+  const rangeSourceAllowed = (key: string): Promise<boolean> =>
+    deps.rangeLimiter !== undefined ? deps.rangeLimiter(key) : Promise.resolve(localRangeLimit(key).allowed);
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';
   const configOf = (c: Ctx) => decodeFor(deps, tokenOf(c));
@@ -127,7 +139,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
         openrouter: services.openrouterApiKey !== undefined,
         fanart: services.fanartApiKey !== undefined,
       },
-      capabilities: { thumbs: thumbs.enabled, rangeThumbs: range !== null },
+      capabilities: { thumbs: thumbs.enabled, rangeThumbs: range !== null, tvHls: capabilities.tvHls },
     });
   });
 
@@ -231,8 +243,17 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     if (range === null) throw new LtError(501, 'range_disabled');
     const body = bodyOf(c);
     const source = await resolveThumbSource(body.url, rangeIssued(), deps.thumbs?.allowLocal);
-    if (source === null || source.target.protocol !== 'https:') throw new LtError(400, 'invalid_source');
-    const url = source.target.href;
+    let url = source !== null && source.target.protocol === 'https:' ? source.target.href : undefined;
+    if (url === undefined) {
+      // Lien débridé renvoyé directement par un addon externe : signé s'il est d'un domaine autorisé, avec limite de débit par configuration.
+      const debrid = parseDebridUrl(body.url, rangeHostPatterns(runtimeEnv().get('LASTADDON_RANGE_HOSTS')));
+      if (debrid === null) throw new LtError(400, 'invalid_source');
+      if (!(await rangeSourceAllowed(digest(tokenOf(c))))) {
+        c.header('Retry-After', String(RANGE_SOURCE_WINDOW_S));
+        throw new LtError(429, 'rate_limited');
+      }
+      url = debrid.href;
+    }
     const { token, exp } = await signRangeToken(range.secret, url);
     return sendJson(c, { url, token, exp, base: range.base });
   });
@@ -265,7 +286,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     const scope = tokenOf(c);
     const query = parseTvQuery(queryOf(c));
     const page = await tvChannels(ctx, query);
-    const channels = page.items.map((channel) => signChannel(ctx, scope, channel));
+    const channels = page.items.map((channel) => signChannel(ctx, scope, channel, capabilities.tvHls));
     cacheable(c);
     if (query.limit === undefined) return sendJson(c, channels);
     return sendJson(c, { total: page.total, page: query.page ?? 1, limit: query.limit, channels });
@@ -304,7 +325,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   lt.post('/tv/import', async (c) => {
     configOf(c);
     const imported = await tvImport(ctx, bodyOf(c));
-    return sendJson(c, { count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(c), channel)) });
+    return sendJson(c, { count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(c), channel, capabilities.tvHls)) });
   });
 
   lt.all('*', () => {
