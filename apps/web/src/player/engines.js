@@ -255,6 +255,14 @@ export class MpvEngine extends Emitter {
     for (let c = this.container; c; c = c.parentElement) els.push(c);
     els.push(document.body, document.documentElement);
     els.forEach((el) => { el.style.background = on ? 'transparent' : ''; });
+    // Le reste de la page (accueil, fiche…) masquerait la vidéo mpv, qui est sous la fenêtre web.
+    if (on) {
+      this.hidden = [...document.body.children].filter((el) => !els.includes(el) && el.style.visibility !== 'hidden');
+      this.hidden.forEach((el) => { el.style.visibility = 'hidden'; });
+    } else {
+      (this.hidden || []).forEach((el) => { el.style.visibility = ''; });
+      this.hidden = [];
+    }
   }
 
   async load({ url, startAt }) {
