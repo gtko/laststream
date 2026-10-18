@@ -1,3 +1,4 @@
+import { appFetch } from './crossFetch';
 import { signOut } from './auth';
 import { getBase, getCustom, getMode, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings, type ServerMode } from './config';
 import { isLanHost } from './lan';
@@ -52,7 +53,7 @@ export async function probeHealth(base: string, timeoutMs: number): Promise<bool
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/health`, { signal: ctrl.signal, cache: 'no-store' });
+    const res = await appFetch(`${base}/health`, { signal: ctrl.signal, cache: 'no-store' });
     if (!res.ok) return false;
     // Une page HTML (fallback SPA) n'est pas lastAddon : seul { ok: true } compte.
     const body = (await res.json().catch(() => null)) as { ok?: unknown } | null;

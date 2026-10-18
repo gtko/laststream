@@ -3,6 +3,12 @@
   "appName": "Laststream",
   "webDir": "dist",
   "backgroundColor": "#0c0b11",
-  "server": { "androidScheme": "http", "cleartext": true },
+  "server": {
+    "url": "https://laststream.gtux-prog.workers.dev",
+    "androidScheme": "https",
+    "allowNavigation": ["laststream.gtux-prog.workers.dev"],
+    "errorPath": "offline.html",
+    "cleartext": true
+  },
   "android": { "allowMixedContent": false, "backgroundColor": "#0c0b11" }
 }

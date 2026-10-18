@@ -1,3 +1,4 @@
+import { appFetch } from './crossFetch';
 import { requireBase } from './config';
 import { getSession, validProfileToken } from './session';
 
@@ -130,7 +131,7 @@ export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
   const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 10_000);
   let res: Response;
   try {
-    res = await fetch(requireBase() + (o.prefix ?? '/user') + path, { method: o.method ?? 'GET', headers, body, signal: controller.signal });
+    res = await appFetch(requireBase() + (o.prefix ?? '/user') + path, { method: o.method ?? 'GET', headers, body, signal: controller.signal });
   } catch {
     throw new UserApiError(0, 'network');
   } finally {

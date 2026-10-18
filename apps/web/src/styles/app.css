@@ -464,3 +464,18 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
   .show-ep { grid-template-columns: 70px 1fr; }
   .se-date { grid-column: 2; }
 }
+
+/* ---------- Mise à jour de l'application Android ---------- */
+.upd-banner {
+  position: fixed; z-index: 400; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 10px); width: min(560px, calc(100vw - 24px));
+  display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 16px; border-radius: 14px;
+  background: rgba(23, 21, 31, 0.98); border: 1px solid var(--line-2); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.upd-info { flex: 1; min-width: 0; }
+.upd-text { margin: 0; font-weight: 800; font-size: 14px; }
+.upd-sub { margin: 2px 0 0; font-size: 12px; line-height: 1.4; color: var(--dim); }
+.upd-go { min-height: 40px; padding: 0 18px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 800; }
+.upd-go:disabled { opacity: 0.6; }
+.upd-x { width: 36px; height: 36px; border-radius: 50%; font-size: 22px; line-height: 1; color: var(--muted); }
+.upd-x:hover { color: var(--text); }

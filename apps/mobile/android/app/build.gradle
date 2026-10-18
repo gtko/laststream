@@ -1,6 +1,26 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+// versionCode = AAAAMMJJNN : la date du jour puis un compteur (01 à 99) incrémenté à chaque build (assemble*/bundle*), gardé dans
+// version-counter.properties (non versionné). Debug et release d'une même commande partagent le même numéro. Les mises à jour en un
+// tap (LaststreamUpdate) comparent ce numéro à celui de scripts/publish-android.mjs.
+def laststreamVersion() {
+    def today = new Date().format('yyyyMMdd')
+    def counter = file('version-counter.properties')
+    def props = new Properties()
+    if (counter.exists()) counter.withInputStream { props.load(it) }
+    int n = props.getProperty('date') == today ? props.getProperty('n', '0').toInteger() : 0
+    def building = gradle.startParameter.taskNames.any { it.toLowerCase().contains('assemble') || it.toLowerCase().contains('bundle') }
+    if (building || n == 0) n = Math.min(n + 1, 99)
+    if (building) {
+        props.setProperty('date', today)
+        props.setProperty('n', String.valueOf(n))
+        counter.withOutputStream { props.store(it, 'Compteur de build du jour (genere)') }
+    }
+    return [code: (today + String.format('%02d', n)).toInteger(), name: new Date().format('yyyy.MM.dd') + '.' + n]
+}
+def lsVersion = laststreamVersion()
+
 android {
     namespace "com.laststream.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -8,8 +28,8 @@ android {
         applicationId "com.laststream.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode lsVersion.code
+        versionName lsVersion.name
         // libVLC pèse une centaine de Mo par architecture : seuls les téléphones, tablettes et boîtiers Android TV ARM sont ciblés.
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a'

@@ -40,6 +40,7 @@ import { announceShellReady } from './player/shell';
 import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
+import { initUpdateBanner } from './ui/update-banner.js';
 
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
 
@@ -71,3 +72,5 @@ if (parseRoute()) {
 // La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
 Promise.resolve(load()).catch(() => undefined).finally(() => { announceShellReady(); });
 setTimeout(() => { announceShellReady(); }, 8000);
+// Application Android : bannière « Mise à jour disponible » (sans effet ailleurs).
+initUpdateBanner();

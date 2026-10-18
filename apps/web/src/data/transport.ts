@@ -1,3 +1,4 @@
+import { appFetch } from './crossFetch';
 import { LastAddonError } from './errors';
 
 export const DEFAULT_TTL_MS = 10 * 60 * 1000;
@@ -145,7 +146,7 @@ export async function requestJson<T>(url: string, options: RequestOptions = {}):
 
   const send = async (): Promise<Response> => {
     try {
-      return await limited(() => fetch(url, { method, headers, body, signal: options.signal }));
+      return await limited(() => appFetch(url, { method, headers, body, signal: options.signal }));
     } catch (error) {
       if (options.signal?.aborted) throw error;
       throw new LastAddonError('network', 'lastAddon est injoignable.');
