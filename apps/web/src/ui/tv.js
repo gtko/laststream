@@ -4,7 +4,9 @@ import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
 import { boxAccess, boxCat, boxGroups, boxOnlyChannels, getBoxQuality, getBoxReach, mergeBox } from '../data/tvBox';
 import { activeBoxChannels, BOX_CHANGED, refreshAll } from '../data/tvSources';
 import { hasLocalGuide, localProgs } from '../data/tvXmltv';
-import { isKidProfile, kidSection } from '../data/auth';
+import { auth, isKidProfile, kidSection } from '../data/auth';
+import { favStorageKey, toggleId } from '../data/tvChannelList';
+import { badgeOf, buildLogoIndex, findLogo } from '../data/tvLogos';
 import { getRegion, getVideoLang } from '../data/prefs';
 import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank';
 import { detailEl } from './dom.js';
@@ -37,8 +39,55 @@ export const videoEl = document.getElementById('player-video');
 export const bannerEl = document.getElementById('player-banner');
 export const perrEl = document.getElementById('player-error');
 export const statusEl = document.getElementById('player-status');
-export const getFavs = () => store('ls_tv_fav') || [];
+/** Favoris du profil actif ; sans liste propre au profil, ceux d'avant (stockage commun) servent de point de départ. */
+export const getFavs = () => {
+  const key = favStorageKey(auth.profile && auth.profile.id);
+  return store(key) || (key !== favStorageKey() ? store(favStorageKey()) : null) || [];
+};
 export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user, tv.boxOnly);
+
+// ---------- Logos : celui de la chaîne, sinon celui du catalogue (nom, guide, numéro), sinon une pastille ----------
+const logoIdx = { n: -1, map: null };
+/** Adresse du logo d'une chaîne (le sien ou celui du catalogue), ou chaîne vide : `logoHTML` dessine alors la pastille. */
+export function logoOf(c) {
+  if (!c) return '';
+  if (c.logo) return c.logo;
+  if (!logoIdx.map || logoIdx.n !== tv.byId.size) {
+    logoIdx.map = buildLogoIndex(tv.byId.values());
+    logoIdx.n = tv.byId.size;
+  }
+  return findLogo(c, logoIdx.map);
+}
+const fbInner = (text, num) => '<span class="chlogo-t">' + esc(text) + '</span>' + (num ? '<i class="chlogo-n">' + esc(num) + '</i>' : '');
+/** Logo d'une chaîne, jamais vide : image si connue (pastille si elle ne charge pas), sinon initiales + numéro sur une couleur dérivée du nom. */
+export function logoHTML(c, cls) {
+  const b = badgeOf(c || {});
+  const url = logoOf(c);
+  const attrs = ' data-fb="' + esc(b.text) + '" data-fbn="' + esc(b.num) + '" style="--fb:' + b.bg + '"';
+  const klass = 'chlogo ' + (url ? 'has-img' : 'is-fb') + (cls ? ' ' + cls : '');
+  return '<span class="' + klass + '"' + attrs + '>' + (url
+    ? '<img src="' + esc(url) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
+    : fbInner(b.text, b.num)) + '</span>';
+}
+// Logo qui ne charge pas : la pastille prend le relais.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  const wrap = img instanceof HTMLImageElement ? img.parentElement : null;
+  if (!wrap || !wrap.classList.contains('chlogo')) return;
+  wrap.classList.remove('has-img');
+  wrap.classList.add('is-fb');
+  wrap.innerHTML = fbInner(wrap.dataset.fb || '?', wrap.dataset.fbn || '');
+}, true);
+
+/**
+ * Chaînes à proposer pour zapper depuis le lecteur : tout le catalogue chargé qui passe les filtres (pays, langue, profil
+ * jeunesse), dans l'ordre de pertinence, puis les chaînes des playlists.
+ */
+export function playableChannels() {
+  const f = initFilters();
+  const cat = Array.from(tv.byId.values()).filter((c) => matchesFilters(c, f, 'Toutes'));
+  return rankChannels(cat, f.country).concat(tv.boxOnly.filter((c) => matchesFilters(c, f, 'Toutes')), tv.user);
+}
 
 /**
  * Rapproche les playlists actives du catalogue chargé : les chaînes qui y figurent reçoivent la version box comme source
@@ -251,7 +300,7 @@ export const numHTML = (c) => (channelNumber(c) ? '<b class="ch-num" aria-hidden
 export function liveTile(c, nn, now) {
   const pct = Math.max(0, Math.min(100, Math.round(((now - nn.cur.start) / (nn.cur.stop - nn.cur.start)) * 100)));
   return '<button type="button" class="live-tile" data-tvplay="' + esc(c.id) + '" data-tvctx="home" aria-label="' + esc((channelNumber(c) ? 'Chaîne ' + channelNumber(c) + ', ' : '') + c.name + ', en direct : ' + nn.cur.title + (nn.next ? ', ensuite : ' + nn.next.title : '')) + '">' +
-    '<span class="lt-top"><span class="lt-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
+    '<span class="lt-top">' + logoHTML(c, 'lt-logo') +
     '<span class="lt-name">' + numHTML(c) + esc(c.name) + '</span><span class="lt-live" aria-hidden="true">En direct</span></span>' +
     '<span class="lt-title" aria-hidden="true">' + esc(nn.cur.title) + '</span>' +
     '<span class="lt-next" aria-hidden="true">' + (nn.next ? 'Ensuite : ' + esc(nn.next.title) : '&nbsp;') + '</span>' +
@@ -405,7 +454,7 @@ export function epgRowHTML(c) {
   const fav = getFavs().includes(c.id);
   return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + (boxLocked(c) ? ' is-box-off' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
     '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
-    '<span class="epg-logo">' + (c.logo ? '<img src="' + esc(c.logo) + '" alt="" loading="lazy" decoding="async">' : '<b>' + esc(c.name.slice(0, 3)) + '</b>') + '</span>' +
+    logoHTML(c, 'epg-logo') +
     '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">Box</em>' : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
     '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
     '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">Chargement…</span></div></div>';
@@ -540,17 +589,15 @@ export async function setCategory(cat) {
 
 /** Ajoute ou retire une chaîne des favoris ; garde un instantané pour l'afficher hors du filtre courant. */
 export function toggleFav(id) {
-  const favs = getFavs();
-  const i = favs.indexOf(id);
+  const { list, on } = toggleId(getFavs(), id);
   const snaps = favSnaps();
-  if (i >= 0) { favs.splice(i, 1); delete snaps[id]; } else {
-    favs.push(id);
-    const c = tv.byId.get(id) || tv.user.find((x) => x.id === id);
+  if (on) {
+    const c = tv.byId.get(id) || tv.user.find((x) => x.id === id) || tv.boxOnly.find((x) => x.id === id);
     if (c) snaps[id] = c;
-  }
-  store('ls_tv_fav', favs);
+  } else delete snaps[id];
+  store(favStorageKey(auth.profile && auth.profile.id), list);
   store(FAV_SNAP_KEY, snaps);
-  return i < 0;
+  return on;
 }
 
 export async function reloadList() {

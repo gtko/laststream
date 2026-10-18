@@ -237,3 +237,71 @@ export function infoModel(c, programs, now, tech) {
     tech: rows,
   };
 }
+
+// ---------- Panneau « Audio et sous-titres » : libellés lisibles ----------
+
+const FLAG_RULES = [
+  [/\b(ad|audio ?desc\w*|audiodesc\w*|malvoy\w*|descriptive)\b/, 'AD'],
+  [/\b(sme|sdh|hearing|sourds?|malentendants?|cc)\b/, 'SME'],
+  [/\b(forces?|forced)\b/, 'Forcés'],
+  [/\b(vo|vost|vostfr|original)\b/, 'VO'],
+];
+const VARIANT = /\b(vff|vfq|vfi|vf)\b/i;
+
+const plain = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/**
+ * Ligne d'un panneau de pistes : libellé de langue lisible (« Français », « Anglais (AD) »), détail secondaire (variante
+ * VFF/VFQ, codec) et état. Les options « Désactivés » et « Auto » gardent leur texte.
+ */
+export function trackRow(o, kind) {
+  if (o.id === NONE) return { id: o.id, selected: o.selected, text: o.label, detail: '', special: true };
+  const [head, ...rest] = String(o.label || '').split(' · ');
+  const low = plain(head);
+  const code = trackLang('', head);
+  const flags = FLAG_RULES.filter(([re]) => re.test(low)).map(([, f]) => f);
+  const variant = (VARIANT.exec(head) || [''])[0].toUpperCase();
+  const tech = rest.join(' · ');
+  if (!code) {
+    const raw = head.trim();
+    return { id: o.id, selected: o.selected, text: raw || (kind === 'sub' ? 'Sous-titres' : 'Piste audio'), detail: tech, special: false };
+  }
+  const flagTxt = flags.length ? ' (' + flags.join(', ') + ')' : '';
+  return { id: o.id, selected: o.selected, text: langName(code) + flagTxt, detail: [variant, tech].filter(Boolean).join(' · '), special: false };
+}
+
+/** Lignes d'une colonne : les doublons (deux « Français » sans autre indice) sont numérotés. */
+export function trackRows(list, kind) {
+  const rows = (list || []).map((o) => trackRow(o, kind));
+  const seen = new Map();
+  rows.forEach((r) => {
+    if (r.special) return;
+    const n = (seen.get(r.text) || 0) + 1;
+    seen.set(r.text, n);
+    if (n > 1) r.text += ' ' + n;
+  });
+  return rows;
+}
+
+/** Détail d'un niveau de qualité (« Full HD », « HD »…) d'après sa hauteur. */
+export function qualityDetail(label) {
+  const m = /^(\d{3,4})p$/.exec(String(label));
+  const h = m ? Number(m[1]) : 0;
+  if (!h) return label === 'Auto' ? 'Selon la connexion' : '';
+  if (h >= 2000) return 'Ultra HD 4K';
+  if (h >= 1000) return 'Full HD';
+  if (h >= 700) return 'HD';
+  return 'Qualité standard';
+}
+
+/**
+ * Contenu du panneau « Audio et sous-titres » : deux colonnes (audio, sous-titres) et, si plusieurs niveaux existent,
+ * une ligne « Qualité » séparée. Les sous-titres commencent par « Désactivés ».
+ */
+export function tracksModel(audio, subs, levels) {
+  return {
+    audio: trackRows(audio, 'audio'),
+    subs: trackRows(subs, 'sub'),
+    quality: (levels || []).length > 1 ? trackRows(levels, 'quality').map((r) => ({ ...r, detail: qualityDetail(r.text) })) : [],
+  };
+}

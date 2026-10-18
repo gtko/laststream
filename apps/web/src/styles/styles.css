@@ -819,9 +819,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 }
 .live-tile:hover, .live-tile:focus-visible { transform: scale(1.04); outline: 3px solid var(--accent); outline-offset: 2px; z-index: 2; }
 .lt-top { display: flex; align-items: center; gap: 10px; }
-.lt-logo, .epg-logo, .pb-logo { width: 44px; height: 44px; flex: none; border-radius: 10px; background: #fff; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
-.lt-logo img, .epg-logo img, .pb-logo img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
-.lt-logo b, .epg-logo b, .pb-logo b { color: #0c0b11; font-family: var(--ff-title); font-size: 13px; }
+.lt-logo, .epg-logo, .pb-logo, .pi-logo { width: 44px; height: 44px; }
 .lt-name { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lt-live { flex: none; padding: 2px 7px; border-radius: 5px; background: #E50914; color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .lt-title { font-family: var(--ff-title); font-weight: 700; font-size: 17px; line-height: 1.2; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -907,7 +905,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 @media (max-width: 640px) {
   .tv-head { padding-top: 84px; }
   .epg-chcol, .epg-corner { width: 150px; }
-  .epg-logo { display: none; }
+  .epg-logo { width: 30px; height: 30px; }
 }
 
 /* ---------- Lecteur TV ---------- */
@@ -943,9 +941,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .player-info[hidden], .player-panel[hidden] { display: none; }
 .pi-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .pi-head > div { flex: 1; min-width: 0; }
-.pi-logo { width: 52px; height: 52px; flex: none; border-radius: 10px; background: #fff; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
-.pi-logo img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
-.pi-logo b { color: #0c0b11; font-family: var(--ff-title); font-size: 13px; }
+.pi-logo { width: 52px; height: 52px; }
 .pi-num { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
 .pi-name { margin: 2px 0 0; font-family: var(--ff-title); font-size: 20px; font-weight: 800; }
 .pi-k { margin: 0 0 6px; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
@@ -961,18 +957,6 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .pi-tech div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; font-size: 14px; }
 .pi-tech dt { color: var(--dim); font-weight: 700; }
 .pi-tech dd { margin: 0; color: var(--soft); text-align: right; }
-.player-panel {
-  position: absolute; right: clamp(24px, 4vw, 72px); bottom: 96px; z-index: 4; width: min(360px, calc(100% - 48px)); max-height: 58vh; overflow-y: auto;
-  padding: 14px; border-radius: 16px; background: rgba(23, 21, 31, 0.94); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border: 1px solid rgba(255, 255, 255, 0.14);
-}
-.pp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 10px; }
-.pp-head h2 { margin: 0; font-family: var(--ff-title); font-size: 17px; font-weight: 800; }
-.pp-list { margin: 0; padding: 0; list-style: none; }
-.pp-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--soft); font: inherit; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; }
-.pp-item:hover, .pp-item:focus-visible { background: rgba(255, 255, 255, 0.12); outline: none; color: var(--text); }
-.pp-item[aria-pressed="true"] { color: var(--accent); font-weight: 800; }
-.pp-item[aria-pressed="true"]::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.pp-item .pp-n { flex: none; min-width: 34px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .pb-logo { width: 56px; height: 56px; }
 .pb-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .pb-ch { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
@@ -1007,7 +991,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
   .pbar-name { max-width: 50vw; }
   .pbar-grp-r { margin-left: 0; }
   .player-status { top: 96px; max-width: calc(100% - 32px); }
-  .player-info, .player-panel { left: 16px; right: 16px; width: auto; bottom: 200px; }
+  .player-info { left: 16px; right: 16px; width: auto; bottom: 200px; }
   .player-info { top: 84px; }
 }
 
