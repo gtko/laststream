@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ErrorHandler } from 'hono';
-import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
+import { type App, type AppEnv, newApp } from '../http/app-env.js';
 import { errorHandler } from '../http/common.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';

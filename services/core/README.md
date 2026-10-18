@@ -67,7 +67,7 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_UI_DIR` | aucun | Dossier de l'interface web compilée (contient `index.html`), servi à la racine. Chemin absolu conseillé. Équivalent de `--ui`. Voir « Distribution ». |
 | `LASTADDON_STREAMING_SERVER` | `http://127.0.0.1:11470` | Serveur de streaming local relayé sous `/_ss/*` quand l'interface est servie. Origine locale uniquement (`localhost`, `127.0.0.1` ou `[::1]`). Voir « Distribution ». |
 | `LASTADDON_ENV_FILE` | `.env` à la racine du projet | Emplacement du fichier `.env` (secret). Chemin absolu conseillé pour une application packagée. Voir « Distribution ». |
-| `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription sur `/user/register`. Sinon seul le premier compte peut être créé. |
+| `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription libre (serveur perso). Sinon seul le premier compte s'inscrit sans lien ; les suivants exigent un lien de parrainage (voir [docs/social.md](docs/social.md)). |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
 | `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public) | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
 | `LASTADDON_PROWLARR_URL` | `http://localhost:9696` | Base du Prowlarr local à interroger. Remplace l'adresse par défaut. |
@@ -596,7 +596,7 @@ lastAddon peut stocker pour chaque utilisateur sa bibliothèque, sa progression,
 
 **Premier compte (risque à connaître).** Le premier compte créé devient propriétaire. Si `LASTADDON_BOOTSTRAP_TOKEN` est défini, il faut l'en-tête `X-Bootstrap-Token` avec cette valeur pour créer ce premier compte. Sans cette variable, quiconque atteint le serveur avant vous peut créer ce compte. Pour un usage local mono-utilisateur, ce risque est acceptable. Pour un serveur exposé sur Internet, définissez `LASTADDON_BOOTSTRAP_TOKEN`.
 
-**Inscription.** Les comptes suivants ne sont créés que si `LASTADDON_ALLOW_SIGNUP=1`. Un nom déjà pris renvoie `409 username_taken`, ce qui révèle qu'il existe. Ce choix est assumé : `/user/register` est limité à 10 requêtes par minute et par IP.
+**Inscription.** Les comptes suivants ne sont créés qu'avec un lien de parrainage (`invite` dans le corps de `/user/register`), ou si `LASTADDON_ALLOW_SIGNUP=1`. Amis, présence, bibliothèques partagées, titres masqués et watch party : [docs/social.md](docs/social.md). Un nom déjà pris renvoie `409 username_taken`, ce qui révèle qu'il existe. Ce choix est assumé : `/user/register` est limité à 10 requêtes par minute et par IP.
 
 **Sessions.** Un jeton de 256 bits, valable 180 jours, renouvelé par `POST /user/refresh` (l'ancien jeton cesse de valoir). Un compte garde au plus 20 sessions : la plus ancienne est supprimée au-delà. `POST /user/logout-all` ferme toutes les sessions. `POST /user/password` change le mot de passe et ferme les autres sessions. `DELETE /user/account` supprime le compte et toutes ses données, après confirmation du mot de passe.
 

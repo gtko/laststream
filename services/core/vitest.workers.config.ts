@@ -24,6 +24,8 @@ export default defineConfig({
       'tests/user-settings.test.ts',
       'tests/user-watched.test.ts',
       'tests/user-cors.test.ts',
+      // Fonctions sociales : mêmes fichiers que sous Node, contre l'application câblée sur le Durable Object.
+      'tests/social-*.test.ts',
     ],
     setupFiles: ['tests-workers/setup.ts'],
   },

@@ -140,8 +140,9 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     }
     const page = await social().listPublicRooms({ limit: query.limit, cursor: query.cursor, language: query.language });
     const rooms: ReturnType<typeof publicRow>[] = [];
-    for (const record of page.rooms) {
-      const info = await party.room(record.id).info();
+    const infos = await Promise.all(page.rooms.map((record) => party.room(record.id).info()));
+    for (const [index, record] of page.rooms.entries()) {
+      const info = infos[index] ?? null;
       if (info === null) {
         // Salon terminé ou expiré : retiré de l'annuaire au passage.
         await social().deletePartyRoom(record.id);
@@ -154,6 +155,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
 
   /** Crée un salon depuis un titre ou un épisode. Public : profils non enfants seulement. */
   router.post('/', async (c) => {
+    await sessionOf(users(), c); // 401 avant toute validation du corps
     const body = parseWith(createSchema, c.get('body'));
     const { account, profile } = await profileFor(c, body.profileId);
     if (body.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
@@ -221,6 +223,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
    */
   router.post('/:id/join', async (c) => {
     const id = roomId(c);
+    await sessionOf(users(), c);
     const body = parseWith(joinSchema, c.get('body'));
     const { account, profile } = await profileFor(c, body.profileId);
     const stub = party.room(id);
