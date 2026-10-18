@@ -36,12 +36,14 @@ export function folderTile(f, o) {
   o = o || {};
   const pal = palette(f.title);
   const size = o.size || 'm';
-  return '<a class="ct ct-' + size + (f.logo ? ' has-logo' : '') + (f.cover ? '' : ' no-img') + '" href="' + esc(o.href || folderHref(f)) + '" data-go data-folder="' + esc(f.id) + '"' +
-    (f.gif ? ' data-gif="' + esc(f.gif) + '"' : '') + ' style="--c1:' + pal.c1 + ';--c2:' + pal.c2 + '" aria-label="' + esc(f.title) + '">' +
+  // La couverture (visuels Kaptain) contient déjà le logo : la surimpression ne sert que sans couverture (ou si elle casse).
+  const logo = f.logo && !f.cover;
+  return '<a class="ct ct-' + size + (logo ? ' has-logo' : '') + (f.cover ? '' : ' no-img') + '" href="' + esc(o.href || folderHref(f)) + '" data-go data-folder="' + esc(f.id) + '"' +
+    (f.gif ? ' data-gif="' + esc(f.gif) + '"' : '') + (f.logo && f.cover ? ' data-logo="' + esc(f.logo) + '"' : '') + ' style="--c1:' + pal.c1 + ';--c2:' + pal.c2 + '" aria-label="' + esc(f.title) + '">' +
     '<span class="ct-media">' +
     (f.cover ? '<img class="ct-img" src="' + esc(f.cover) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') +
     '<span class="ct-shade" aria-hidden="true"></span>' +
-    (f.logo ? '<img class="ct-logo" src="' + esc(f.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') +
+    (logo ? '<img class="ct-logo" src="' + esc(f.logo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') +
     '<span class="ct-name" aria-hidden="true">' + esc(f.title) + '</span>' +
     '</span></a>';
 }
@@ -129,6 +131,18 @@ export async function coverFallback(img) {
   const giveUp = () => { img.remove(); tile.classList.add('no-img'); };
   if (img.dataset.fb) { giveUp(); return; }
   img.dataset.fb = '1';
+  // Couverture cassée : le fond de repli n'a pas de logo, on le superpose.
+  if (tile.dataset.logo && media && !tile.querySelector('.ct-logo')) {
+    const shade = media.querySelector('.ct-shade');
+    const logo = document.createElement('img');
+    logo.className = 'ct-logo';
+    logo.alt = '';
+    logo.decoding = 'async';
+    logo.referrerPolicy = 'no-referrer';
+    logo.src = tile.dataset.logo;
+    if (shade) shade.after(logo); else media.append(logo);
+    tile.classList.add('has-logo');
+  }
   const folder = catalogRef && (catalogRef.byId.get(tile.dataset.folder) || catalogRef.art.get(tile.dataset.folder));
   if (!folder || !media) { giveUp(); return; }
   const url = await folderBackdrop(folder);

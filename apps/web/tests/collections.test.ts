@@ -341,7 +341,9 @@ describe('tuile et GIF au survol', () => {
     expect(host.querySelectorAll('img.ct-gif')).toHaveLength(0);
     const [a, b] = Array.from(host.querySelectorAll('.ct')) as HTMLElement[];
     expect(a.querySelector('.ct-img')!.getAttribute('src')).toBe('https://img.example/n.webp');
-    expect(a.querySelector('.ct-logo')).not.toBeNull(); // logo en surimpression
+    expect(a.querySelector(".ct-logo")).toBeNull(); // la couverture porte déjà le logo : pas de doublon
+    expect(a.dataset.logo).toBe("https://img.example/n-logo.png"); // gardé pour le repli si la couverture casse
+    expect(folderTile({ ...folder, cover: "" })).toContain("ct-logo"); // sans couverture : logo en surimpression
     expect(b.querySelector('.ct-logo')).toBeNull(); // sinon le nom
     expect(b.querySelector('.ct-name')!.textContent).toBe('Mubi');
 
