@@ -104,15 +104,17 @@ describe('aperçu sur la barre : source selon le moteur', () => {
     expect(thumbSource({ ...base, engine: 'hls', forceHls: true })).toMatchObject({ mode: 'hls', forceTranscoding: true });
   });
 
-  it('mpv : session HLS transcodée basse résolution (MKV/HEVC/AV1 illisibles par la WebView)', () => {
-    expect(thumbSource({ ...base, engine: 'mpv' })).toEqual({ mode: 'hls', forceTranscoding: true, maxWidth: THUMB_HLS_WIDTH });
+  it('mpv : images ffmpeg de lastAddon quand le serveur annonce la capacité, sinon aucun aperçu (option masquée)', () => {
+    expect(thumbSource({ ...base, engine: 'mpv', addon: true })).toEqual({ mode: 'addon' });
+    expect(thumbSource({ ...base, engine: 'mpv', addon: true, serverUp: false })).toEqual({ mode: 'addon' });
+    expect(thumbSource({ ...base, engine: 'mpv' }).mode).toBe('none');
+    expect(thumbSource({ ...base, engine: 'mpv', addon: false }).mode).toBe('none');
   });
 
   it('aucune source : natif Android, serveur absent, pas de média', () => {
     expect(thumbSource({ ...base, engine: 'native' }).mode).toBe('none');
-    expect(thumbSource({ ...base, engine: 'mpv', serverUp: false }).mode).toBe('none');
     expect(thumbSource({ ...base, engine: 'hls', serverUp: false }).mode).toBe('none');
-    expect(thumbSource({ ...base, engine: 'mpv', hasMedia: false }).mode).toBe('none');
+    expect(thumbSource({ ...base, engine: 'mpv', addon: true, hasMedia: false }).mode).toBe('none');
     expect(thumbSource({ ...base, engine: null }).mode).toBe('none');
   });
 });

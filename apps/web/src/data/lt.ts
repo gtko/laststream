@@ -101,6 +101,9 @@ export function tvHlsUrl(channel: Pick<TvChannel, 'url' | 'sig'>): string {
 export const skipSegments = (type: 'movie' | 'series', imdbId: string, season: number, episode: number) =>
   api('skip/' + type + '/' + imdbId + '/' + season + '/' + episode);
 
+/** Réponse de /lt/health (capacités du serveur : miniatures ffmpeg, ...). */
+export const ltHealth = () => api('health');
+
 /** Vrai quand la base lastAddon est joignable (route /health de l'addon, hors configuration). */
 export async function pingAddon(): Promise<boolean> {
   try {

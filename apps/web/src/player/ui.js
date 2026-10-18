@@ -43,7 +43,7 @@ function skeleton() {
     '<div class="lp-bottom">' +
       '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span></div>' +
-        '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
+        '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
       '</div>' +
       '<div class="lp-row">' +
         '<div class="lp-grp">' +
@@ -248,6 +248,7 @@ export function createPlayerUI(h) {
     root,
     video,
     thumbCanvas: q('.lp-hover-c'),
+    thumbImg: q('.lp-hover-i'),
     /** Aperçu au clavier : montre le cadre à `time` un instant (saut de 10 s, flèches sur la barre). */
     previewTime(time, ms = 1300) {
       if (!last || !last.duration) return;

@@ -3,7 +3,8 @@
  * audio, sous-titres (calage compris), épisodes. L'interface est dans ui.js et panels.js. */
 import { addonUrl, getBase, isConfigured } from '../data/config';
 import { streamingServerFor } from '../data/lan';
-import { api, postLt, skipSegments, tmdb } from '../data/lt';
+import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
+import { ltUrl } from '../data/config';
 import { pushPrefs } from '../data/auth';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
@@ -44,6 +45,7 @@ import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
 import { thumbsAllowed, thumbSource } from './thumbs';
+import { ThumbFeed, serverHasThumbs } from './thumbfeed';
 import { createPlayerUI } from './ui.js';
 import { knownBandwidthKbps } from '../sources/load';
 
@@ -55,6 +57,9 @@ const AUTOSYNC_MIN = 25;
 
 let ui = null;
 let thumbs = null;
+/** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
+let feed = null;
+let addonThumbs = false;
 let html = null;
 let mpv = null;
 let nativeEng = null;
@@ -93,7 +98,57 @@ const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.p
 
 // ---------- Création de l'interface (une seule fois) ----------
 function thumbSourceOf(p) {
-  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls) });
+  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls), addon: addonThumbs });
+}
+
+/** Adresse de la source pour lastAddon : serveur de streaming local (repris derrière le relais /_ss) ou lien http(s) émis par lui. */
+function thumbMediaUrl(p) {
+  const u = p && p.mediaUrl;
+  if (!u) return null;
+  return analyzeUrl(u, serverBase()) || (/^https?:/i.test(u) ? u : null);
+}
+
+function thumbsAllowedNow() {
+  return !!P && !!P.view && thumbsAllowed({
+    enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(P).mode !== 'none', duration: P.engine.state().duration,
+    bandwidthKbps: knownBandwidthKbps(), torrentBuffering: !!P.torrent && P.engine.state().buffering,
+  });
+}
+
+/** Survol de la barre avec mpv : image ffmpeg de la tranche de 30 s la plus proche, affichée dès qu'elle est prête, sinon rien. */
+function addonThumb(t) {
+  const img = ui.thumbImg;
+  if (!thumbsAllowedNow()) { img.hidden = true; return; }
+  if (!feed) {
+    feed = new ThumbFeed({
+      register: async () => {
+        const url = thumbMediaUrl(P);
+        if (!url || !P) return null;
+        const st = P.engine.state();
+        const r = await postLt('thumbs', { url, duration: Math.round(st.duration), start: Math.round(st.time) });
+        return r && typeof r.key === 'string' ? r.key : null;
+      },
+      imageUrl: (key, index) => ltUrl('thumbs/' + key + '/' + index + '.webp'),
+      fetchFn: (url, init) => fetch(url, init),
+      makeUrl: (blob) => URL.createObjectURL(blob),
+      revokeUrl: (url) => { try { URL.revokeObjectURL(url); } catch (_) { /* ignoré */ } },
+      wait: (ms, signal) => new Promise((resolve) => { const id = setTimeout(resolve, ms); signal.addEventListener('abort', () => { clearTimeout(id); resolve(); }, { once: true }); }),
+      onReady: (index, url) => { if (feed && feed.targetIndex === index) { img.src = url; img.hidden = false; } },
+    });
+  }
+  const url = feed.request(t, P.engine.state().duration);
+  if (url) { img.src = url; img.hidden = false; } else img.hidden = true;
+}
+
+function cancelAddonThumb() {
+  if (feed) feed.cancel();
+  if (ui && ui.thumbImg) ui.thumbImg.hidden = true;
+}
+
+/** La capacité « miniatures » est annoncée par /lt/health (ffmpeg présent côté lastAddon) ; l'option est masquée sinon. */
+function refreshAddonThumbs() {
+  if (addonThumbs) return;
+  ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
 }
 
 function ensureUI() {
@@ -109,17 +164,18 @@ function ensureUI() {
     },
     // Fermer le panneau des sources sans avoir choisi (recherche initiale) annule la lecture : retour à la fiche.
     panelClosed: (name) => { if (name === 'sources' && P && !P.view) closePlayer(); },
-    thumb: (t) => { if (thumbs && P && P.view) thumbs.request(t); },
-    thumbCancel: () => { if (thumbs) thumbs.cancel(); },
+    thumb: (t) => {
+      if (!P || !P.view) return;
+      if (thumbSourceOf(P).mode === 'addon') addonThumb(t);
+      else if (thumbs) thumbs.request(t);
+    },
+    thumbCancel: () => { if (thumbs) thumbs.cancel(); cancelAddonThumb(); },
     miniState,
     miniLayout: onMiniLayout,
   });
   miniState.onChange(applyMini);
   thumbs = new Thumbs(ui.thumbCanvas, {
-    allowed: () => !!P && !!P.view && thumbsAllowed({
-      enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(P).mode !== 'none', duration: P.engine.state().duration,
-      bandwidthKbps: knownBandwidthKbps(), torrentBuffering: !!P.torrent && P.engine.state().buffering,
-    }),
+    allowed: () => thumbsAllowedNow(),
     duration: () => (P ? P.engine.state().duration : 0),
     // Vidéo d'aperçu : lien direct, ou seconde session HLS basse résolution du serveur (jamais celle de la lecture).
     source: async () => {
@@ -607,6 +663,7 @@ async function playView(view, startAt) {
   Object.assign(s, { selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
   stopAutoSync();
   if (thumbs) thumbs.reset();
+  if (feed) feed.reset();
   p.torrent = false;
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
@@ -664,6 +721,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
   p.choice = choice;
+  if (choice.engine === 'mpv') refreshAddonThumbs();
   p.conversion = plan.conversion;
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
@@ -1350,7 +1408,7 @@ function onAction(act, data) {
     case 'substyle': updateStyle({ [data.key]: data.key === 'size' ? Number(data.val) : data.val }); break;
     case 'substep': updateStyle({ [data.key]: s.style[data.key] + Number(data.by) }); break;
     case 'rate': P.engine.setRate(Number(data.rate)); setTimeout(() => ui.refreshPanel(), 50); break;
-    case 'thumbs': storeSet(THUMBS_KEY, storeGet(THUMBS_KEY) === '0' ? '1' : '0'); thumbs.cancel(); ui.refreshPanel(); break;
+    case 'thumbs': storeSet(THUMBS_KEY, storeGet(THUMBS_KEY) === '0' ? '1' : '0'); thumbs.cancel(); cancelAddonThumb(); ui.refreshPanel(); break;
     case 'aspect': P.aspect = data.val; ui.video.style.objectFit = data.val; ui.refreshPanel(); break;
     case 'autopip': { const on = storeGet(AUTOPIP_KEY) !== '1'; storeSet(AUTOPIP_KEY, on ? '1' : '0'); ui.video.autoPictureInPicture = on; ui.refreshPanel(); break; }
     case 'season': ensureEpisodes(Number(data.season)); break;
@@ -1545,6 +1603,7 @@ async function teardown(silent) {
   clearTimeout(p.resumeTimer);
   stopAutoSync();
   if (thumbs) thumbs.reset();
+  if (feed) feed.reset();
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;

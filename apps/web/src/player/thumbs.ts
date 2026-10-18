@@ -96,7 +96,7 @@ export const THUMB_HLS_WIDTH = 320;
 /** Après ce nombre d'échecs de lecture, on renonce aux aperçus pour la source courante (repli silencieux). */
 export const MAX_THUMB_FAILURES = 3;
 
-export type ThumbSource = { mode: 'direct' } | { mode: 'hls'; forceTranscoding: boolean; maxWidth: number } | { mode: 'none' };
+export type ThumbSource = { mode: 'direct' } | { mode: 'hls'; forceTranscoding: boolean; maxWidth: number } | { mode: 'addon' } | { mode: 'none' };
 
 export interface ThumbSourceInput {
   /** Moteur de lecture choisi : 'direct' | 'hls' | 'mpv' | 'native'. */
@@ -105,19 +105,22 @@ export interface ThumbSourceInput {
   /** Serveur de streaming joignable (nécessaire pour toute session HLS). */
   serverUp: boolean;
   forceHls?: boolean;
+  /** lastAddon annonce qu'il sait générer des miniatures (ffmpeg disponible). */
+  addon?: boolean;
 }
 
 /**
  * D'où viennent les images d'aperçu selon le moteur :
  * - lecture directe : le fichier lui-même (le navigateur sait le lire) ;
  * - HLS : une seconde session du serveur, basse résolution ;
- * - mpv : le fichier n'est souvent pas décodable par la WebView (MKV/HEVC/AV1/DTS) → session HLS transcodée basse résolution ;
+ * - mpv : le fichier n'est souvent pas décodable par la WebView (MKV/HEVC/AV1/DTS) → images générées par ffmpeg côté lastAddon
+ *   (une toutes les 30 s), si le serveur l'annonce ; sinon aucun aperçu ;
  * - natif (Android) ou serveur absent : aucun aperçu (l'option est alors masquée).
  */
 export function thumbSource(i: ThumbSourceInput): ThumbSource {
   if (!i.hasMedia) return { mode: 'none' };
   if (i.engine === 'direct') return { mode: 'direct' };
   if (i.engine === 'hls') return i.serverUp ? { mode: 'hls', forceTranscoding: !!i.forceHls, maxWidth: THUMB_HLS_WIDTH } : { mode: 'none' };
-  if (i.engine === 'mpv') return i.serverUp ? { mode: 'hls', forceTranscoding: true, maxWidth: THUMB_HLS_WIDTH } : { mode: 'none' };
+  if (i.engine === 'mpv') return i.addon ? { mode: 'addon' } : { mode: 'none' };
   return { mode: 'none' };
 }
