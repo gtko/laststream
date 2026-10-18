@@ -27,9 +27,17 @@ import './ui/rate.js';
 import './ui/calendar.js';
 import './ui/sources-ui.js';
 import { announceShellReady } from './player/shell';
+import { servedByLastAddon } from './data/configSync';
+import { getSettings, saveSettings } from './data/config';
 
 // Application Android, premier lancement : adresse du serveur lastAddon (sur le PC) avant tout appel réseau.
 if (needsServerSetup()) await runServerSetup();
+// App Windows (ou toute page servie par lastAddon lui-même) : l'adresse du serveur est l'origine de la page,
+// quel que soit le port choisi au démarrage (7000 peut être déjà pris).
+if (await servedByLastAddon()) {
+  const s = getSettings();
+  if (s.base !== location.origin) saveSettings({ ...s, base: location.origin });
+}
 await initAuth();
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
