@@ -149,7 +149,9 @@ export function languageLabel(info: LastStreamInfo): string {
 }
 
 /** Vrai si la langue est celle demandée (ou du multi-audio) et non un repli. */
-export function matchesLanguage(info: LastStreamInfo, lang: Lang): boolean {
+export function matchesLanguage(info: LastStreamInfo, lang: Lang, alsoAccept: readonly Lang[] = []): boolean {
+  // Langues acceptées d'office (mode apprentissage : VO, multi) : même quand le serveur les a signalées comme repli.
+  if (alsoAccept.some((l) => info.languages.includes(l))) return true;
   if (info.languageFallback === true) return false;
   return info.languages.includes(lang) || info.languages.includes('multi');
 }
@@ -256,7 +258,7 @@ export interface AutoplayPick<T> {
  * Meilleure source qui tient dans 80 % du débit (`bwKbps` null : pas de filtre). Une VF qui tient est préférée,
  * même en qualité inférieure ; sinon repli VO. Null si aucune source ne tient le débit.
  */
-export function pickAutoplay<T extends object>(streams: readonly T[], bwKbps: number | null, preferred: Lang = 'fr'): AutoplayPick<T> | null {
+export function pickAutoplay<T extends object>(streams: readonly T[], bwKbps: number | null, preferred: Lang = 'fr', alsoAccept: readonly Lang[] = []): AutoplayPick<T> | null {
   const budget = bwKbps === null || !Number.isFinite(bwKbps) ? Infinity : Math.max(0, bwKbps) * BANDWIDTH_HEADROOM;
   const scored: Array<{ stream: T; info: LastStreamInfo }> = [];
   sortStreams(streams).forEach((stream) => {
@@ -265,8 +267,8 @@ export function pickAutoplay<T extends object>(streams: readonly T[], bwKbps: nu
   });
   const fitting = scored.filter(({ info }) => info.estBitrateKbps === null || info.estBitrateKbps <= budget);
   if (fitting.length === 0) return null;
-  const pref = fitting.find(({ info }) => matchesLanguage(info, preferred));
+  const pref = fitting.find(({ info }) => matchesLanguage(info, preferred, alsoAccept));
   if (pref) return { stream: pref.stream, languageFallback: false };
-  const anyPref = scored.some(({ info }) => matchesLanguage(info, preferred));
+  const anyPref = scored.some(({ info }) => matchesLanguage(info, preferred, alsoAccept));
   return { stream: fitting[0].stream, languageFallback: true, fallbackReason: anyPref ? 'vf-too-heavy' : 'no-vf' };
 }

@@ -6,7 +6,8 @@ const LANG_ALIASES: Record<string, string> = {
   fre: 'fr', fra: 'fr', french: 'fr', francais: 'fr', 'français': 'fr',
   eng: 'en', english: 'en', ger: 'de', deu: 'de', german: 'de', spa: 'es', spanish: 'es', ita: 'it', italian: 'it',
   por: 'pt', portuguese: 'pt', jpn: 'ja', japanese: 'ja', kor: 'ko', korean: 'ko', chi: 'zh', zho: 'zh', chinese: 'zh',
-  rus: 'ru', russian: 'ru', ara: 'ar', arabic: 'ar', dut: 'nl', nld: 'nl', dutch: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', und: '', unknown: '',
+  rus: 'ru', russian: 'ru', ara: 'ar', arabic: 'ar', dut: 'nl', nld: 'nl', dutch: 'nl', pol: 'pl', tur: 'tr', swe: 'sv', und: '', unknown: '', mul: '', zxx: '', mis: '', qaa: '',
+  vf: 'fr', vff: 'fr', vfq: 'fr', vfi: 'fr', truefrench: 'fr', vostfr: 'fr', jp: 'ja', jap: 'ja', cze: 'cs', ces: 'cs', por_br: 'pt',
 };
 
 const LANG_NAMES: Record<string, string> = {

@@ -207,6 +207,8 @@ export class HtmlEngine extends Emitter {
     return [];
   }
 
+  /** Un seul sous-titre natif : le second est affiché par notre calque (cues lues et tracées à part). */
+  supportsSecondary() { return false; }
   supportsPip() { return !!document.pictureInPictureEnabled && !this.video.disablePictureInPicture; }
   async togglePip() {
     const v = this.video;
@@ -313,6 +315,7 @@ export class MpvEngine extends Emitter {
     if (!this.version) await new Promise((r) => setTimeout(r, 400));
     this.ipc.send('mpv-command', ['loadfile', ...loadfileArgs(url, startAt || 0, mpvVersionAtLeast(this.version || '0.0', '0.39'))]);
     this.ipc.send('mpv-set-prop', ['sid', 'no']);
+    this.ipc.send('mpv-set-prop', ['secondary-sid', 'no']);
     this.ipc.send('mpv-set-prop', ['pause', false]);
     this.ipc.send('mpv-set-prop', ['mute', 'no']);
   }
@@ -353,6 +356,9 @@ export class MpvEngine extends Emitter {
   setAudioTrack(id) { this.ipc.send('mpv-set-prop', ['aid', Number(id)]); }
   subtitleTracks() { return mpvSubtitleTracks(this.p['track-list'] || []); }
   setSubtitleTrack(id) { this.ipc.send('mpv-set-prop', ['sid', id === null ? 'no' : Number(id)]); }
+  /** Second sous-titre affiché en haut de l'image (propriété `secondary-sid` de mpv, autorisée par la coque). */
+  supportsSecondary() { return true; }
+  setSecondarySubtitleTrack(id) { this.ipc.send('mpv-set-prop', ['secondary-sid', id === null ? 'no' : Number(id)]); }
   nativeCues() { return []; }
   supportsPip() { return true; } // image dans l'image gérée par la coque (fenêtre réduite), voir session.togglePip
   togglePip() { return Promise.resolve(); }
@@ -444,6 +450,7 @@ export class NativeEngine extends Emitter {
   addSubtitles(list) { if (list.length) this.plugin.addSubtitles({ subtitles: list }).catch(() => {}); }
   update(patch) { this.plugin.update(patch).catch(() => {}); }
   nativeCues() { return []; }
+  supportsSecondary() { return false; } // un seul sous-titre libVLC à la fois
   supportsPip() { return false; }
   togglePip() { return Promise.resolve(); }
 }

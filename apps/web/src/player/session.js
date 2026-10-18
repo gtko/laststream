@@ -4,6 +4,8 @@
 import { addonUrl, getBase, isConfigured } from '../data/config';
 import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb } from '../data/lt';
+import { pushPrefs } from '../data/auth';
+import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { imdbIdOf, measureBandwidthKbps, stremioId } from '../data/sources';
 import { userStore } from '../data/userStore';
@@ -20,6 +22,8 @@ import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from '
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
 import { filterEpisodes, firstUnseen, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
+import { autoSubsToast } from './langPolicy';
+import { TrackApplier } from './trackApply';
 import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
@@ -35,7 +39,7 @@ import {
 } from './server';
 import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, writeSubStyle } from './subs';
 import { RATE_CHOICES, findSync, rateChoice, suggestRate, syncTrusted } from './subsync';
-import { parseProbe, pickDefaultAudio, pickDefaultSubtitle, pickRememberedSubtitle } from './tracks';
+import { langFromTitle, normalizeLang, parseProbe } from './tracks';
 import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
@@ -226,6 +230,9 @@ function bindEngine(e) {
 /** Choix de piste fait dans le panneau du lecteur natif : mémorisé par titre, comme dans le lecteur web. */
 function onNativeTrack(d) {
   if (!P || !d) return;
+  // Les pistes que nous venons d'appliquer (ou celles que le lecteur choisit seul au départ) ne sont pas un choix de l'utilisateur.
+  if (!P.applier.done || Date.now() - P.autoAppliedAt < 2500) return;
+  P.applier.markManual();
   if (d.kind === 'audio' && d.lang) remember(P.req.key, { audio: d.lang });
   if (d.kind === 'sub') remember(P.req.key, { sub: d.lang && d.lang !== 'off' ? d.lang : 'off' });
 }
@@ -284,8 +291,8 @@ function nativeOptions() {
     title: headingFor(p)[0],
     subtitle: headingFor(p)[1],
     preferredAudioLang: audioPreference()[0] || '',
-    preferredSubLang: mem.sub || preferredLang() || '',
-    subMode: mem.sub ? 'always' : p.subs.style.mode,
+    preferredSubLang: mem.sub || wantedSubLang(getLangPrefs()) || '',
+    subMode: mem.sub ? 'always' : effectiveSubMode(),
     skipSegments: toNativeSegments(p.segments),
     ...nativeLists(),
     nextEpisode: nx ? { title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: (info && info.still) || '' } : null,
@@ -313,10 +320,10 @@ async function initSession(request, views, view, opts = {}) {
     view, tried: new Set(), attempts: 0, engine: html, choice: null, probe: null, probeTracks: parseProbe(null), mediaUrl: '',
     segments: [], nextDismissed: false, lastSave: 0, watchedMarked: false, finished: false,
     subs: {
-      external: [], loadedFor: null, loading: false, selectedId: null, cues: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '',
+      external: [], loadedFor: null, loading: false, selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '',
       style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
     },
-    defaultsDone: false, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
+    defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
     notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false,
     mark: { state: 'idle', kind: 'intro', start: 0 }, aspect: 'contain',
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
@@ -583,13 +590,16 @@ async function playView(view, startAt) {
   p.tried.add(view.index);
   p.attempts += 1;
   p.defaultsDone = false;
+  p.applier.reset();
+  p.autoToast = false;
+  clearTimeout(p.nativeApplyTimer);
   p.failing = false;
   p.autoNexting = false;
   p.analyzed = false;
   p.hint = null;
   p.startAt = startAt || 0;
   const s = p.subs;
-  Object.assign(s, { selectedId: null, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
+  Object.assign(s, { selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
   stopAutoSync();
   if (thumbs) thumbs.reset();
   p.torrent = false;
@@ -706,14 +716,15 @@ function failover(reason) {
 
 function onReady() {
   if (!P) return;
-  if (P.engine.kind === 'native') { ensureExternalSubs(true); return; } // le lecteur natif choisit lui-même les pistes (langues préférées)
+  if (P.engine.kind === 'native') { ensureExternalSubs(true); scheduleNativeApply(); return; } // pistes appliquées une fois la liste connue
   if (!P.defaultsDone) setTimeout(() => P && applyDefaultTracks(true), 700);
 }
 
 function onTracks() {
   if (!P) return;
-  if (P.engine.kind === 'native') { ui.refreshPanel(); return; }
+  if (P.engine.kind === 'native') { if (P.applier.done) lateTracks(); else scheduleNativeApply(); ui.refreshPanel(); return; }
   if (!P.defaultsDone) applyDefaultTracks(false);
+  else lateTracks();
   ui.refreshPanel();
 }
 
@@ -726,7 +737,52 @@ function allSubtitleTracks() {
   return [...embedded.map((t) => ({ ...t, selected: t.id === s.selectedId })), ...s.external.map((t) => ({ ...t, selected: t.id === s.selectedId }))];
 }
 
-/** Piste audio et sous-titres initiaux, une seule fois par source (quand le moteur a annoncé ses pistes). */
+/** Mode des sous-titres en vigueur : l'interrupteur des réglages (source de vérité) puis « Auto / Toujours » du panneau. */
+function effectiveSubMode() {
+  if (!getLangPrefs().subsOn) return 'off';
+  return P && P.subs.style.mode === 'always' ? 'always' : 'auto';
+}
+
+/** Contexte du choix de pistes : langue d'origine du titre, mémoire de ce titre, capacités du moteur. */
+function trackContext() {
+  const p = P;
+  const mem = getMemory(p.req.key);
+  const origName = p.model && p.model.origLang ? String(p.model.origLang) : '';
+  const lp = getLangPrefs();
+  return {
+    originalLang: origName ? langFromTitle(origName) || normalizeLang(origName) : '',
+    unknownAudioLang: p.view && p.view.hasFrench && lp.audio === 'fr' ? 'fr' : '',
+    alwaysSubs: effectiveSubMode() === 'always',
+    rememberedAudio: mem.audio || '',
+    rememberedSub: mem.sub || '',
+    // Second sous-titre : piste texte dont on a l'adresse (calque de la page) ou piste embarquée affichée par mpv ; jamais en natif Android.
+    canSecondary: (t) => p.engine.kind !== 'native' && (!!t.url || (p.engine.kind === 'mpv' && t.origin === 'embedded')),
+  };
+}
+
+/** Ce que le moteur courant sait faire pour appliquer un choix de pistes. */
+function trackSink() {
+  const p = P;
+  if (p.engine.kind === 'native') {
+    return { setAudio: (id) => p.engine.setAudioTrack(id), setSub: (id) => p.engine.setSubtitleTrack(id === null ? null : id), setSecondary: () => {} };
+  }
+  return { setAudio: (id) => p.engine.setAudioTrack(id), setSub: (id) => selectSubtitle(id, true), setSecondary: (id) => selectSecondary(id) };
+}
+
+/** Message discret quand des sous-titres viennent d'être activés automatiquement (une fois par lecture). */
+function announceAuto(pick) {
+  const p = P;
+  if (!p || !pick || p.autoToast) return;
+  const main = normalizeLang(getLangPrefs().audio);
+  // Sous-titres forcés d'un audio dans la langue principale : rien à annoncer.
+  if (pick.audioLang && pick.audioLang === main && !getLangPrefs().learn && effectiveSubMode() !== 'always') return;
+  const msg = autoSubsToast(pick);
+  if (!msg) return;
+  p.autoToast = true;
+  ui.toast(msg, 4500);
+}
+
+/** Piste audio et sous-titres initiaux d'après les langues du profil, une seule fois par source (quand le moteur a annoncé ses pistes). */
 function applyDefaultTracks(force) {
   const p = P;
   if (!p || p.defaultsDone) return;
@@ -734,25 +790,39 @@ function applyDefaultTracks(force) {
   const subs = allSubtitleTracks();
   if (!audio.length && !subs.length && !force) return;
   p.defaultsDone = true;
-  const pref = audioPreference();
-  let audioLang = audio.length ? '' : (p.view.hasFrench ? 'fr' : '');
-  if (audio.length) {
-    const i = pickDefaultAudio(audio, pref);
-    if (i >= 0) {
-      audioLang = audio[i].lang;
-      if (!audio[i].selected) p.engine.setAudioTrack(audio[i].id);
-    }
-  }
+  const pick = p.applier.apply(audio, subs, getLangPrefs(), trackContext(), trackSink(), true);
+  let audioLang = pick ? pick.audioLang : '';
+  if (!audio.length) audioLang = p.view.hasFrench ? 'fr' : '';
   p.audioLang = audioLang;
-  chooseDefaultSubtitle(subs, true);
+  p.autoAppliedAt = Date.now();
+  announceAuto(pick);
   ensureExternalSubs(true);
 }
 
-function chooseDefaultSubtitle(tracks, quiet) {
+/** Sous-titres externes arrivés après le démarrage : complètent ce qui manquait, sans rien changer à un choix déjà fait. */
+function lateTracks() {
   const p = P;
-  const mem = getMemory(p.req.key);
-  const idx = mem.sub ? pickRememberedSubtitle(tracks, mem.sub) : pickDefaultSubtitle(tracks, preferredLang(), p.audioLang || '', p.subs.style.mode);
-  if (idx >= 0) selectSubtitle(tracks[idx].id, quiet);
+  if (!p || !p.defaultsDone) return;
+  const pick = p.applier.late(p.engine.audioTracks(), p.engine.kind === 'native' ? p.engine.subtitleTracks() : allSubtitleTracks(), getLangPrefs(), trackContext(), trackSink());
+  if (pick) { p.autoAppliedAt = Date.now(); announceAuto(pick); }
+}
+
+/** Lecteur natif Android : la liste des pistes n'est complète qu'un instant après le début ; on applique une fois, sans double sous-titre. */
+function scheduleNativeApply() {
+  const p = P;
+  if (!p || p.applier.done) return;
+  clearTimeout(p.nativeApplyTimer);
+  p.nativeApplyTimer = setTimeout(() => {
+    if (!P || P !== p || p.applier.done) return;
+    const audio = p.engine.audioTracks();
+    const subs = p.engine.subtitleTracks();
+    if (!audio.length && !subs.length) return;
+    p.defaultsDone = true;
+    const pick = p.applier.apply(audio, subs, getLangPrefs(), trackContext(), trackSink(), true);
+    p.audioLang = pick ? pick.audioLang : '';
+    p.autoAppliedAt = Date.now();
+    announceAuto(pick);
+  }, 700);
 }
 
 /** Sous-titres externes (lastAddon, OpenSubtitles) ; `force` relance la recherche à la demande. */
@@ -770,12 +840,12 @@ async function ensureExternalSubs(auto, force) {
     if (!id) return;
     const type = p.req.type === 'tv' ? 'series' : 'movie';
     const addon = isConfigured() ? addonUrl('subtitles/' + type + '/' + id + '.json') : null;
-    const list = await fetchExternalSubtitles({ type, id, hash: params && params.hash, size: (params && params.size) || view.sizeBytes || null, filename: view.filename }, addon, preferredLang());
+    const list = await fetchExternalSubtitles({ type, id, hash: params && params.hash, size: (params && params.size) || view.sizeBytes || null, filename: view.filename }, addon, wantedSubLang(getLangPrefs()));
     if (!P || P.token !== token || P.view !== view) return;
     p.subs.external = list;
     p.subs.loadedFor = view.index;
-    if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, preferredLang())); return; }
-    if (auto && p.subs.selectedId === null && p.defaultsDone) chooseDefaultSubtitle(allSubtitleTracks(), true);
+    if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, wantedSubLang(getLangPrefs()))); return; }
+    if (auto && p.defaultsDone) lateTracks();
   } finally {
     if (P && P.token === token) { p.subs.loading = false; ui.refreshPanel(); }
   }
@@ -785,6 +855,7 @@ async function selectSubtitle(id, quiet) {
   const p = P;
   if (!p) return;
   const s = p.subs;
+  if (s.swapped) clearSecondary();
   s.selectedId = id || null;
   s.cues = [];
   s.nativeCues = [];
@@ -827,6 +898,64 @@ async function selectSubtitle(id, quiet) {
     }
   }
   if (!quiet) ui.toast('Sous-titres : ' + track.label);
+  ui.refreshPanel();
+}
+
+/** Retire le second sous-titre (et rend à mpv ses deux sous-titres dans l'ordre normal). */
+function clearSecondary() {
+  const p = P;
+  if (!p) return;
+  const s = p.subs;
+  if (s.secondaryId && p.engine.supportsSecondary && p.engine.supportsSecondary()) p.engine.setSecondarySubtitleTrack(null);
+  Object.assign(s, { secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false });
+}
+
+/**
+ * Second sous-titre (mode apprentissage) : la langue apprise reste le sous-titre principal (en haut) et la langue principale
+ * passe dessous. mpv affiche lui-même les pistes embarquées (le second en haut : on échange alors les deux emplacements) ;
+ * sinon la page affiche les cues des pistes dont on a l'adresse.
+ */
+async function selectSecondary(id) {
+  const p = P;
+  if (!p) return;
+  const s = p.subs;
+  if (!id) { clearSecondary(); ui.refreshPanel(); return; }
+  const tracks = allSubtitleTracks();
+  const track = tracks.find((t) => t.id === id);
+  if (!track) return;
+  const first = tracks.find((t) => t.id === s.selectedId);
+  s.secondaryId = id;
+  s.cues2 = [];
+  s.native2 = false;
+  s.shift2 = 0;
+  s.swapped = false;
+  if (track.origin === 'embedded' && !track.url) {
+    if (!(p.engine.supportsSecondary && p.engine.supportsSecondary())) { s.secondaryId = null; return; }
+    s.native2 = true;
+    if (first && first.origin === 'embedded' && !first.url && s.native) {
+      // Les deux pistes sont affichées par mpv : le second sous-titre y est en haut, donc la langue apprise.
+      p.engine.setSubtitleTrack(track.id);
+      p.engine.setSecondarySubtitleTrack(first.id);
+      s.swapped = true;
+    } else {
+      p.engine.setSecondarySubtitleTrack(track.id);
+    }
+    ui.refreshPanel();
+    return;
+  }
+  if (track.origin === 'embedded') s.shift2 = -p.probeTracks.startTime;
+  try {
+    const up = await serverAlive();
+    const via = up && track.origin === 'external' ? subtitlesVttUrl(serverBase(), track.url) : track.url;
+    let text = '';
+    try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
+    if (P === p && s.secondaryId === id) {
+      s.cues2 = parseSubtitles(text, track.url);
+      if (!s.cues2.length) s.secondaryId = null;
+    }
+  } catch (_) {
+    if (P === p && s.secondaryId === id) s.secondaryId = null;
+  }
   ui.refreshPanel();
 }
 
@@ -934,7 +1063,8 @@ function tick() {
     cues = s.nativeCues || [];
   }
   const cue = p.engine.kind === 'native' || (s.native && p.engine.kind === 'mpv') ? null : activeCue(cues, st.time, s.offset + s.shift, s.rate);
-  ui.setCue(cue ? cueHtml(cue.text) : '', s.style);
+  const cue2 = s.secondaryId && !s.native2 && p.engine.kind !== 'native' ? activeCue(s.cues2, st.time, s.shift2, 1) : null;
+  ui.setCue(cue ? cueHtml(cue.text) : '', s.style, cue2 ? cueHtml(cue2.text) : '');
   if (tickN % 3 === 0) refreshUI(st);
   if (tickN % 10 !== 0) return;
   // Chaque seconde : blocage, saut, carte suivante, progression.
@@ -1177,12 +1307,14 @@ function onAction(act, data) {
       }, 50);
       break;
     }
+    case 'langsettings': closePlayer(); location.hash = '#/settings'; break;
     case 'resume': chooseResume(true); break;
     case 'restart': chooseResume(false); break;
     case 'retry': { const v = P.view; P.tried = new Set(); P.attempts = 0; playView(v, st.time > 5 ? st.time : 0); break; }
     case 'audio': {
       const t = P.engine.audioTracks().find((x) => x.id === data.id);
       if (t && t.lang) remember(P.req.key, { audio: t.lang });
+      P.applier.markManual();
       P.engine.setAudioTrack(data.id);
       P.watch.reset(Date.now());
       setTimeout(() => ui.refreshPanel(), 200);
@@ -1193,6 +1325,8 @@ function onAction(act, data) {
     case 'sub': {
       const t = data.id ? allSubtitleTracks().find((x) => x.id === data.id) : null;
       remember(P.req.key, { sub: t ? t.lang || 'off' : 'off' });
+      P.applier.markManual();
+      clearSecondary();
       selectSubtitle(data.id || null);
       break;
     }
@@ -1249,6 +1383,8 @@ function updateStyle(patch) {
   const next = normalizeSubStyle({ ...P.subs.style, ...patch });
   P.subs.style = next;
   writeSubStyle(next);
+  // « Par défaut : Auto / Toujours / Jamais » : « Jamais » coupe les sous-titres automatiques du profil (réglage Audio et sous-titres).
+  if (patch.mode !== undefined) { setLangPrefs({ subsOn: next.mode !== 'off' }); pushPrefs(); }
   ui.refreshPanel();
 }
 
@@ -1275,8 +1411,8 @@ function panelData(name) {
         canTranscode: !tracks.length && !hasApi && p.choice && p.choice.engine === 'direct',
       },
       subs: {
-        sections: sectionSubtitleTracks(subTracks, [preferredLang()], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
-        style: s.style, styleOpen: s.styleOpen, loading: s.loading,
+        sections: sectionSubtitleTracks(subTracks, [wantedSubLang(getLangPrefs())], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
+        style: { ...s.style, mode: effectiveSubMode() }, styleOpen: s.styleOpen, loading: s.loading,
         sync: {
           canAuto: !!s.selectedId && cues.length > 0 && sup.ok && p.engine.kind === 'html', reason: !s.selectedId ? 'Choisis d’abord une piste de sous-titres.' : !cues.length ? 'Pas de texte à caler pour cette piste.' : sup.reason || (p.engine.kind !== 'html' ? 'Indisponible avec mpv.' : ''),
           state: sync.state, message: sync.message, seconds: sync.probe ? sync.probe.seconds() : 0, target: AUTOSYNC_TARGET,

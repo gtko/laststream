@@ -1,6 +1,6 @@
 import { Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import type { SkipSegment } from './skip';
-import { normalizeLang, type AudioTrack, type SubtitleTrack } from './tracks';
+import { normalizeLang, trackLang, type AudioTrack, type SubtitleTrack } from './tracks';
 
 /* Pont vers le lecteur natif Android (plugin Capacitor `LaststreamPlayer`, libVLC). Comme pour mpv dans la coque Windows,
  * la lecture est déléguée : la session JS garde la progression, les segments et l'épisode suivant, et réagit aux évènements. */
@@ -98,12 +98,12 @@ export function toNativeSubtitles(list: readonly SubtitleTrack[], preferredLang:
 
 /** Pistes natives au format des pistes du lecteur web (identifiant = identifiant libVLC). */
 export function nativeAudioTracks(list: readonly NativeTrack[]): AudioTrack[] {
-  return list.map((t) => ({ id: String(t.id), title: t.label, lang: t.lang, codec: '', channels: 0, selected: t.selected, label: t.label }));
+  return list.map((t) => ({ id: String(t.id), title: t.label, lang: trackLang(t.lang, t.label), codec: '', channels: 0, selected: t.selected, label: t.label }));
 }
 
 export function nativeSubtitleTracks(list: readonly NativeTrack[]): SubtitleTrack[] {
   return list.map((t): SubtitleTrack => ({
-    id: String(t.id), title: t.label, lang: t.lang, codec: '', forced: /forc/i.test(t.label), origin: 'embedded', renderable: true, engineId: t.id, selected: t.selected, label: t.label,
+    id: String(t.id), title: t.label, lang: trackLang(t.lang, t.label), codec: '', forced: /forc/i.test(t.label), origin: 'embedded', renderable: true, engineId: t.id, selected: t.selected, label: t.label,
   }));
 }
 

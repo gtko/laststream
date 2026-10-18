@@ -1,4 +1,5 @@
-import { getBandwidthSetting, getVideoLang } from '../data/prefs';
+import { getLangPrefs, LANG_VO } from '../data/langPrefs';
+import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { browserCaps, inShell } from '../player/caps';
@@ -126,14 +127,25 @@ export function watchSources(req: SourceRequest, start: LoadedSources, onUpdate:
 
 const SUPPORTED: readonly Lang[] = ['fr', 'en', 'es', 'de', 'it'];
 
-/** Langue préférée pour l'audio : celle des réglages (français par défaut). */
+/**
+ * Langue audio visée pour le classement des sources : la langue apprise en mode apprentissage, sinon la langue audio
+ * principale des réglages « Audio et sous-titres » (reprend l'ancienne langue des bandes-annonces tant que rien n'est choisi).
+ * Une langue que les sources n'annoncent pas (japonais…) ou « version originale » vise les sources en VO.
+ */
 export function preferredLang(): Lang {
-  const l = getVideoLang().lang as Lang;
-  return SUPPORTED.includes(l) ? l : 'fr';
+  const lp = getLangPrefs();
+  const want = lp.learn && lp.learnLang !== lp.audio ? lp.learnLang : lp.audio;
+  if (want === LANG_VO) return 'original';
+  return SUPPORTED.includes(want as Lang) ? (want as Lang) : 'original';
+}
+
+/** Mode apprentissage : les sources en VO ou multi-audio ne sont pas pénalisées (elles portent l'audio de la langue apprise). */
+function alsoAccepted(): readonly Lang[] {
+  return getLangPrefs().learn ? ['original', 'multi'] : [];
 }
 
 export function recommendFor(views: readonly SourceView[], bwKbps: number | null): Recommendation | null {
-  return recommend(views, bwKbps, preferredLang(), { preferDirect: !inShell() });
+  return recommend(views, bwKbps, preferredLang(), { preferDirect: !inShell(), alsoAccept: alsoAccepted() });
 }
 
 /** Débit connu sans mesurer (réglage fixe ou mesure récente), sinon null. */

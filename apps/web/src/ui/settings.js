@@ -10,6 +10,7 @@ import {
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
+import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
@@ -121,6 +122,23 @@ function playbackPanel() {
       switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"'));
 }
 
+const langOptions = (value, extra) => extra.map(([c, l]) => [c, l]).concat(LANG_CHOICES).map(([c, l]) => '<option value="' + c + '"' + (c === value ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
+const langSelect = (pref, value, extra, disabled) => (id) => '<select class="set-input" id="' + id + '" data-set-pref="' + pref + '"' + (disabled ? ' disabled' : '') + '>' + langOptions(value, extra) + '</select>';
+
+/** Langues audio et sous-titres du profil : appliquées au démarrage de chaque lecture (voir player/langPolicy.ts). */
+function audioPanel() {
+  const lp = getLangPrefs();
+  return card('Langue audio',
+    fieldRow('Langue audio principale', 'La piste utilisée en priorité. Dans cette langue, seuls les sous-titres forcés restent affichés.', langSelect('lang-audio', lp.audio, [])) +
+    fieldRow('Langue audio secondaire', 'Utilisée quand la principale manque dans la source. « Version originale » prend la langue d’origine du titre.', langSelect('lang-audio2', lp.audio2, [[LANG_VO, 'Version originale'], [LANG_NONE, 'Aucune']]))) +
+    card('Sous-titres',
+      switchRow('Sous-titres hors langue principale', 'Les active quand l’audio n’est pas dans la langue principale.', lp.subsOn, 'data-set-pref="lang-subs"') +
+      fieldRow('Langue des sous-titres', 'Pistes du fichier d’abord, puis sous-titres externes.', langSelect('lang-subtitles', lp.subs, [[LANG_MAIN, 'Identique à la langue principale']], !lp.subsOn)), { attrs: 'data-lang-subs-card' }) +
+    card('Mode apprentissage de langue',
+      switchRow('Apprendre une langue', 'Audio dans la langue apprise si elle existe, avec deux sous-titres : la langue apprise et ta langue principale.', lp.learn, 'data-set-pref="lang-learn"') +
+      fieldRow('Langue apprise', '', langSelect('lang-learnlang', lp.learnLang, [], !lp.learn)));
+}
+
 function serverPanelInner() {
   const c = ed.cfg || {};
   const sv = c.services || {};
@@ -185,6 +203,7 @@ const PANEL_DESC = {
   appearance: 'Thème et couleur d’accent de l’application.',
   region: 'Pays, disponibilités et langue des bandes-annonces.',
   playback: 'Lancement des sources, connexion et enchaînement des épisodes.',
+  audio: 'Langues de l’audio et des sous-titres, appliquées au début de chaque lecture sur ce profil.',
   home: 'Ce qui est proposé, ou non, sur l’accueil de ce profil.',
 };
 
@@ -204,6 +223,7 @@ function pageHTML() {
     panelHTML(cat('appearance'), PANEL_DESC.appearance, appearancePanel()),
     panelHTML(cat('region'), PANEL_DESC.region, regionPanel()),
     panelHTML(cat('playback'), PANEL_DESC.playback, playbackPanel()),
+    panelHTML(cat('audio'), PANEL_DESC.audio, audioPanel()),
     cat('home') ? panelHTML(cat('home'), PANEL_DESC.home, homePanelHTML()) : '',
     serverFormHTML(cats),
   ].join('');
@@ -395,6 +415,19 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-intro') setSkipPref('intro', on);
   else if (pref === 'skip-recap') setSkipPref('recap', on);
   else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
+  else if (pref === 'lang-subs' || pref === 'lang-learn') {
+    setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
+    syncLangRows();
+  }
+}
+
+/** Les listes de langue des sous-titres et de la langue apprise se grisent avec leur interrupteur. */
+function syncLangRows() {
+  const lp = getLangPrefs();
+  const subs = detailEl.querySelector('[data-set-pref="lang-subtitles"]');
+  const learn = detailEl.querySelector('[data-set-pref="lang-learnlang"]');
+  if (subs) subs.disabled = !lp.subsOn;
+  if (learn) learn.disabled = !lp.learn;
 }
 
 // ---------- Événements (délégués, limités à la page) ----------
@@ -465,7 +498,11 @@ detailEl.addEventListener('change', (e) => {
   const p = t.dataset.setPref;
   if (!p) return;
   setTimeout(pushPrefs, 0);
-  if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
+  if (p === 'lang-audio') setLangPrefs({ audio: t.value });
+  else if (p === 'lang-audio2') setLangPrefs({ audio2: t.value });
+  else if (p === 'lang-subtitles') setLangPrefs({ subs: t.value });
+  else if (p === 'lang-learnlang') setLangPrefs({ learnLang: t.value });
+  else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
   else if (p === 'videolang') {
     setVideoLang(t.value);
     clearCache();

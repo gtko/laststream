@@ -66,6 +66,7 @@ export function tracksHtml(d) {
     field('Police', seg('substyle', 'font', [['sans', 'Sans'], ['serif', 'Serif'], ['mono', 'Mono']], st.font)) +
     field('Position', seg('substyle', 'edge', [['bottom', 'Bas'], ['top', 'Haut']], st.edge) + '<span class="lp-step">' + chip('substep', { key: 'position', by: 2 }, '↑', undefined, 'Éloigner du bord') + '<output class="lp-val">' + st.position + ' %</output>' + chip('substep', { key: 'position', by: -2 }, '↓', undefined, 'Rapprocher du bord') + '</span>') +
     field('Par défaut', seg('substyle', 'mode', [['auto', 'Auto'], ['always', 'Toujours'], ['off', 'Jamais']], st.mode)) +
+    field('Langues', '<button type="button" class="lp-more" data-act="langsettings">Régler dans Audio et sous-titres</button>') +
     '</div></details>';
 
   const subCol = '<section class="lp-col" data-col="subs"><h3>Sous-titres</h3><div class="lp-list" role="menu">' +

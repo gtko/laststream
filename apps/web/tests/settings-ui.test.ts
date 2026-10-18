@@ -31,7 +31,7 @@ beforeAll(async () => {
 describe('navigation latérale', () => {
   it('liste les catégories et active la première', () => {
     const items = Array.from(page().querySelectorAll('[data-set-cat]')) as HTMLElement[];
-    expect(items.map((i) => i.dataset.setCat)).toEqual(['account', 'appearance', 'region', 'playback', 'home', 'server', 'sources']);
+    expect(items.map((i) => i.dataset.setCat)).toEqual(['account', 'appearance', 'region', 'playback', 'audio', 'home', 'server', 'sources']);
     expect(items.filter((i) => i.getAttribute('aria-current') === 'true').map((i) => i.dataset.setCat)).toEqual(['account']);
     expect(page().querySelector('#set-p-sources')).not.toBeNull();
   });
@@ -134,5 +134,51 @@ describe('Accueil et recommandations', () => {
     expect(chips.every((c) => c.getAttribute('aria-checked') === 'false')).toBe(true);
     expect(counter.textContent).toBe('Aucun genre exclu');
     expect(reset.disabled).toBe(true);
+  });
+});
+
+describe('panneau « Audio et sous-titres »', () => {
+  const sel = (pref: string) => page().querySelector('#set-p-audio [data-set-pref="' + pref + '"]') as HTMLSelectElement;
+  const change = (el: HTMLSelectElement, value: string) => { el.value = value; el.dispatchEvent(new Event('change', { bubbles: true })); };
+  const stored = () => JSON.parse(localStorage.getItem('laststream.langprefs') || 'null');
+
+  it('affiche les valeurs par défaut : français, version originale, sous-titres activés', () => {
+    expect(page().querySelector('#set-p-audio')).not.toBeNull();
+    expect(sel('lang-audio').value).toBe('fr');
+    expect(sel('lang-audio2').value).toBe('vo');
+    expect(sel('lang-subtitles').value).toBe('main');
+    expect(sel('lang-subtitles').disabled).toBe(false);
+    expect(sel('lang-learnlang').disabled).toBe(true);
+    expect(Array.from(sel('lang-audio2').options).map((o) => o.textContent)).toEqual(expect.arrayContaining(['Version originale', 'Aucune', 'Anglais', 'Japonais', 'Espagnol', 'Allemand', 'Italien', 'Coréen']));
+  });
+
+  it('les listes s’enregistrent dans les réglages du profil', () => {
+    change(sel('lang-audio'), 'en');
+    change(sel('lang-audio2'), 'none');
+    expect(stored()).toMatchObject({ audio: 'en', audio2: 'none' });
+    change(sel('lang-audio'), 'fr');
+    change(sel('lang-audio2'), 'vo');
+  });
+
+  it('l’interrupteur du mode apprentissage active la liste de la langue apprise', () => {
+    const sw = page().querySelector('#set-p-audio [data-set-pref="lang-learn"]') as HTMLElement;
+    click(sw);
+    expect(stored().learn).toBe(true);
+    expect(sel('lang-learnlang').disabled).toBe(false);
+    change(sel('lang-learnlang'), 'ja');
+    expect(stored().learnLang).toBe('ja');
+    click(sw);
+    expect(stored().learn).toBe(false);
+    expect(sel('lang-learnlang').disabled).toBe(true);
+  });
+
+  it('l’interrupteur des sous-titres grise leur langue', () => {
+    const sw = page().querySelector('#set-p-audio [data-set-pref="lang-subs"]') as HTMLElement;
+    click(sw);
+    expect(stored().subsOn).toBe(false);
+    expect(sel('lang-subtitles').disabled).toBe(true);
+    click(sw);
+    expect(stored().subsOn).toBe(true);
+    expect(sel('lang-subtitles').disabled).toBe(false);
   });
 });

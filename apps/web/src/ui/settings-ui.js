@@ -16,6 +16,7 @@ export const SET_ICON = {
   eyeOff: svg('<path d="M4 4l16 16"/><path d="M9.800 5.800A9 9 0 0 1 12 5.500c6 0 9.500 6.500 9.500 6.500a15 15 0 0 1-3 3.700M6.300 7.700C3.800 9.500 2.500 12 2.500 12S6 18.500 12 18.500c1.300 0 2.500-.3 3.500-.8"/>'),
   film: svg('<rect x="4" y="4" width="16" height="16" rx="2.500"/><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/>'),
   x: svg('<path d="M6.500 6.500l11 11M17.500 6.500l-11 11"/>'),
+  subtitles: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M7 11h4M13 11h4M7 15h2.500M11.500 15h5.500"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
 };
 
@@ -25,6 +26,7 @@ export const CATEGORIES = [
   { id: 'appearance', label: 'Apparence', icon: 'palette' },
   { id: 'region', label: 'Langue et région', icon: 'globe' },
   { id: 'playback', label: 'Lecture', icon: 'play' },
+  { id: 'audio', label: 'Audio et sous-titres', icon: 'subtitles' },
   { id: 'home', label: 'Accueil et recommandations', icon: 'home' },
   { id: 'server', label: 'Serveur lastAddon', icon: 'server' },
   { id: 'sources', label: 'Sources et debrid', icon: 'layers' },

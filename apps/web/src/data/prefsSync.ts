@@ -1,6 +1,7 @@
 import {
   getAutoplay, getBandwidthSetting, getRegion, getSkipPref, setAutoplay, setBandwidthSetting, setRegion, setSkipPref,
 } from './prefs';
+import { getLangPrefs, normalizeLangPrefs, LANG_PREFS_KEY } from './langPrefs';
 import { readTheme, resolveTheme, saveTheme } from './theme';
 
 /** Préférences synchronisées avec les réglages du profil (GET/PUT /user/profiles/:id/settings). */
@@ -16,6 +17,8 @@ export function snapshotPrefs(): PrefsSnapshot {
     skipIntro: getSkipPref('intro'),
     skipRecap: getSkipPref('recap'),
     skipNext: getSkipPref('nextEpisode'),
+    // Langues audio / sous-titres du profil (petit objet : bien sous la limite de 4 Ko par valeur).
+    langPrefs: getLangPrefs(),
   };
 }
 
@@ -33,5 +36,8 @@ export function applyPrefs(s: PrefsSnapshot): boolean {
   if (typeof s.skipIntro === 'boolean') { setSkipPref('intro', s.skipIntro); any = true; }
   if (typeof s.skipRecap === 'boolean') { setSkipPref('recap', s.skipRecap); any = true; }
   if (typeof s.skipNext === 'boolean') { setSkipPref('nextEpisode', s.skipNext); any = true; }
+  if (s.langPrefs && typeof s.langPrefs === 'object' && !Array.isArray(s.langPrefs)) {
+    try { globalThis.localStorage?.setItem(LANG_PREFS_KEY, JSON.stringify(normalizeLangPrefs(s.langPrefs))); any = true; } catch { /* valable pour la session seulement */ }
+  }
   return any;
 }

@@ -442,12 +442,19 @@ export function createPlayerUI(h) {
       const b = el.querySelector('[data-act="resume"]');
       if (b) b.focus({ preventScroll: true });
     },
-    setCue(htmlText, style) {
+    /** Sous-titre à l'écran. `bottomHtml` : second sous-titre (mode apprentissage) : la langue apprise (`htmlText`) en haut,
+     * plus petite et en italique, la langue principale dessous. */
+    setCue(htmlText, style, bottomHtml = '') {
       const el = q('.lp-subs');
-      el.className = 'lp-subs bg-' + style.background + ' c-' + style.color;
+      const dual = !!(htmlText && bottomHtml);
+      el.className = 'lp-subs bg-' + style.background + ' c-' + style.color + (dual ? ' is-dual' : '');
       el.style.bottom = style.position + '%';
       el.style.setProperty('--subsize', String(style.size / 100));
-      if (el.dataset.html !== htmlText) { el.dataset.html = htmlText; el.innerHTML = htmlText ? '<span>' + htmlText + '</span>' : ''; }
+      const key = htmlText + '\u0000' + bottomHtml;
+      if (el.dataset.html === key) return;
+      el.dataset.html = key;
+      if (dual) el.innerHTML = '<span class="lp-sub-top">' + htmlText + '</span><span class="lp-sub-bot">' + bottomHtml + '</span>';
+      else { const one = htmlText || bottomHtml; el.innerHTML = one ? '<span>' + one + '</span>' : ''; }
     },
     /** Message bref ; `action` { label, run } ajoute un bouton (ex. « Annuler »). */
     toast(msg, ms = 3200, action) {

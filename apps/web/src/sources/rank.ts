@@ -85,7 +85,7 @@ export interface Recommendation {
   reason: string;
 }
 
-const LANG_NAME: Record<string, string> = { fr: 'VF', en: 'VO anglaise', es: 'VO espagnole', de: 'VO allemande', it: 'VO italienne' };
+const LANG_NAME: Record<string, string> = { original: 'VO', multi: 'multi-audio', fr: 'VF', en: 'VO anglaise', es: 'VO espagnole', de: 'VO allemande', it: 'VO italienne' };
 const mbps = (kbps: number): string => String(Math.round(kbps / 1000));
 
 /** Phrase « Pourquoi ce choix » pour la source recommandée. */
@@ -100,6 +100,8 @@ export function recommendationReason(v: SourceView, bwKbps: number | null, prefe
 }
 
 export interface RecommendOptions {
+  /** Langues de source acceptées en plus de la langue préférée (mode apprentissage : VO, multi). */
+  alsoAccept?: readonly Lang[];
   /** Navigateur : préfère les sources qui se lisent sans conversion (inutile dans la coque Windows, où mpv lit tout). */
   preferDirect?: boolean;
 }
@@ -124,7 +126,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
   if (!playable.length) return null;
   const budget = bwKbps === null || !Number.isFinite(bwKbps) ? Infinity : Math.max(0, bwKbps) * BANDWIDTH_HEADROOM;
   const fits = (v: SourceView): boolean => v.bitrateKbps === null || v.bitrateKbps <= budget;
-  const langOk = (v: SourceView): boolean => !!v.info && matchesLanguage(v.info, preferred);
+  const langOk = (v: SourceView): boolean => !!v.info && matchesLanguage(v.info, preferred, opts.alsoAccept);
   if (opts.preferDirect) {
     const fitting = playable.filter((v) => v.info && fits(v));
     if (fitting.length) {
@@ -138,7 +140,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
     }
   } else {
     const streams = playable.map((v) => v.stream);
-    const pick = pickAutoplay(streams, bwKbps, preferred);
+    const pick = pickAutoplay(streams, bwKbps, preferred, opts.alsoAccept);
     if (pick) {
       const view = playable[streams.indexOf(pick.stream)];
       return { view, languageFallback: pick.languageFallback, reason: recommendationReason(view, bwKbps, preferred, pick.languageFallback ? pick.fallbackReason ?? 'no-vf' : false) };
