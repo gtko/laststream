@@ -7,6 +7,10 @@ import { esc } from '../ui/util.js';
 import { countByGroup, countOrigins, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
 import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './load';
 import { describePending } from './rank';
+import { isShellEnvironment } from '../player/shell';
+
+// Apps Windows (mpv) et Android (libVLC) : tous les formats sont lus tels quels, jamais de transcodage.
+const nativePlayer = () => isShellEnvironment() || !!globalThis.Capacitor?.isNativePlatform?.();
 
 const RES_CHIPS = [['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
 const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
@@ -54,7 +58,7 @@ function itemHtml(v, opts) {
     ? '<code class="s-file" title="' + esc(v.filename) + '">' + esc(truncName(v.filename)) + '</code>' + (v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '')
     : v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '';
 
-  const warn = v.notWebReady ? '<span class="s-warn">Transcodage probable</span>' : '';
+  const warn = v.notWebReady && !nativePlayer() ? '<span class="s-warn">Transcodage probable</span>' : '';
   const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '');
   return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable ? '' : ' disabled') + '>' +
     (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
