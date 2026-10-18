@@ -24,6 +24,7 @@ import './ui/follows.js';
 import './ui/rate.js';
 import './ui/calendar.js';
 import './ui/sources-ui.js';
+import { announceShellReady } from './player/shell';
 
 await initAuth();
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
@@ -42,4 +43,6 @@ if (parseRoute()) {
   detailEl.hidden = false;
   showView(parseRoute());
 }
-load();
+// La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
+Promise.resolve(load()).catch(() => undefined).finally(() => { announceShellReady(); });
+setTimeout(() => { announceShellReady(); }, 8000);

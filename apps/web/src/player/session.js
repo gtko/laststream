@@ -21,8 +21,8 @@ import { StallWatch, failoverOrder } from './failover';
 import { keyToAction, stepVolume } from './keys';
 import { fileKey, getMemory, getSubSync, remember, setSubSync } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
-import { connectShell } from './shell';
-import { activeSkip, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip } from './skip';
+import { connectShell, setShellFullscreen } from './shell';
+import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
 import {
   createTorrent, embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
   serverAlive, serverBase, subtitlesVttUrl,
@@ -48,6 +48,8 @@ let html = null;
 let mpv = null;
 let P = null; // session courante (null : lecteur fermé)
 let tickTimer = null;
+let shell = null; // transport de la coque Windows (null dans un navigateur)
+let shellFullscreen = false;
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
 const storeSet = (k, v) => { try { globalThis.localStorage.setItem(k, v); } catch (_) { /* ignoré */ } };
@@ -104,6 +106,7 @@ function ensureUI() {
   });
   html = new HtmlEngine(ui.video);
   bindEngine(html);
+  bindShell();
   const v = Number(storeGet('laststream.player.volume'));
   if (Number.isFinite(v) && storeGet('laststream.player.volume') !== null) ui.video.volume = Math.min(1, Math.max(0, v));
   ui.video.autoPictureInPicture = storeGet(AUTOPIP_KEY) === '1';
@@ -112,6 +115,22 @@ function ensureUI() {
   document.addEventListener('fullscreenchange', () => { if (P) refreshUI(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && P) saveProgress(true); });
   window.addEventListener('pagehide', () => { if (P) saveProgress(true); });
+}
+
+/** Événements de la coque : touches multimédia (lecture/pause, piste suivante) et état plein écran de la fenêtre. */
+function bindShell() {
+  connectShell().then((t) => {
+    if (!t) return;
+    shell = t;
+    t.on('media-key', (action) => {
+      if (!P || !P.view) return;
+      if (action === 'play-pause') togglePlay();
+      else if (action === 'next-track') onAction('next');
+      else if (action === 'previous-track') seekTo(0);
+    });
+    t.on('win-visibility-changed', (v) => { if (v && typeof v.isFullscreen === 'boolean') { shellFullscreen = v.isFullscreen; if (P) refreshUI(); } });
+    t.on('win-set-visibility', (v) => { if (v && typeof v.fullscreen === 'boolean') { shellFullscreen = v.fullscreen; if (P) refreshUI(); } });
+  });
 }
 
 const rememberVolume = (v) => storeSet('laststream.player.volume', String(v));
@@ -142,6 +161,7 @@ async function initSession(request, views, view, opts = {}) {
     defaultsDone: false, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
     notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false,
     mark: { state: 'idle', kind: 'intro', start: 0 }, aspect: 'contain',
+    skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
   const meta = appState.byKey.get(request.key) || {};
   const model = appState.model && appState.model.key === request.key ? appState.model : null;
@@ -228,7 +248,10 @@ function loadSideData(token) {
       if (!p.imdb) p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
       if (p.imdb && isConfigured()) {
         const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);
-        if (alive()) p.segments = normalizeSkip(r);
+        if (alive()) {
+          p.segments = normalizeSkip(r);
+          p.skipPoll = { analyzing: !!r && r.analyzing === true, polls: 0, lastAt: Date.now() };
+        }
       }
     } catch (_) { /* pas de segments : aucun bouton de saut */ }
   })();
@@ -324,6 +347,7 @@ async function playView(view, startAt) {
   p.defaultsDone = false;
   p.failing = false;
   p.autoNexting = false;
+  p.analyzed = false;
   p.startAt = startAt || 0;
   const s = p.subs;
   Object.assign(s, { selectedId: null, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
@@ -668,14 +692,43 @@ function tick() {
     } else ui.setNextCard(null);
     ui.setEndRow(p.req.type === 'movie' && !p.endDismissed && movieEndRow(p.segments, st.time, st.duration));
     if (!st.paused) saveProgress(false, st);
+    maybeAnalyze(st);
+    maybeRepoll(st);
     if (!p.watchedMarked && isWatched(st.time, st.duration)) markWatched();
   }
+}
+
+/** Une fois par épisode, lastAddon reçoit le lien lu pour analyser l'épisode (intro, générique). Les erreurs sont ignorées. */
+function maybeAnalyze(st) {
+  const p = P;
+  if (p.analyzed || !p.imdb || !isConfigured() || st.time < 3 || !validAnalyzeDuration(st.duration)) return;
+  const played = typeof p.view.stream.url === 'string' && /^https?:/i.test(p.view.stream.url) ? p.view.stream.url : p.mediaUrl;
+  const url = analyzeUrl(played, serverBase()) || analyzeUrl(p.mediaUrl, serverBase());
+  p.analyzed = true;
+  if (!url) return;
+  const tgt = submitTarget();
+  postLt('skip/analyze', { ...tgt, mediaUrl: url, duration: Math.round(st.duration) }).catch(() => undefined);
+}
+
+/** Pendant que lastAddon analyse, on redemande les segments (30 s, 10 fois au plus) et les boutons se mettent à jour. */
+function maybeRepoll(st) {
+  const p = P;
+  const sp = p.skipPoll;
+  if (!shouldRepoll({ analyzing: sp.analyzing, polls: sp.polls, lastAt: sp.lastAt, now: Date.now(), playing: !st.paused })) return;
+  sp.polls += 1;
+  sp.lastAt = Date.now();
+  const t = submitTarget();
+  skipSegments(t.type, t.imdbId, t.season, t.episode).then((r) => {
+    if (P !== p) return;
+    p.segments = normalizeSkip(r);
+    sp.analyzing = !!r && r.analyzing === true;
+  }).catch(() => undefined);
 }
 
 function refreshUI(st) {
   if (!P || !P.engine || !P.view) return;
   const s = st || P.engine.state();
-  ui.update(s, chapterMarks(P.segments, s.duration));
+  ui.update(shell ? { ...s, fullscreen: shellFullscreen } : s, chapterMarks(P.segments, s.duration));
 }
 
 // ---------- Progression ----------
@@ -727,6 +780,8 @@ function togglePlay() {
 }
 
 async function toggleFullscreen() {
+  // Dans la coque, c'est la fenêtre qui passe en plein écran (mpv est dessous), pas un élément de la page.
+  if (shell) { shellFullscreen = !shellFullscreen; setShellFullscreen(shell, shellFullscreen); refreshUI(); return; }
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else await ui.root.requestFullscreen();

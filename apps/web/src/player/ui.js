@@ -313,7 +313,7 @@ export function createPlayerUI(h) {
       if (document.activeElement !== vs) vs.value = String(Math.round((st.muted ? 0 : st.volume) * 100));
       root.classList.toggle('is-buffering', !!st.buffering);
       root.classList.toggle('is-paused', !!st.paused);
-      q('[data-role="full"]').innerHTML = document.fullscreenElement === root ? LI.fullExit : LI.full;
+      q('[data-role="full"]').innerHTML = (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full;
       q('[data-role="pip"]').classList.toggle('is-active', !!st.pip);
       if (st.paused) root.classList.add('is-ui');
       // Écran de pause : après 8 s à l'arrêt (hors panneau ouvert).
