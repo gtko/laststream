@@ -43,6 +43,16 @@ const CACHE_MS = 90_000;
 const inflight = new Map<string, { at: number; promise: Promise<LoadedSources> }>();
 /** Une liste partielle ne reste en cache que quelques secondes. */
 const PARTIAL_CACHE_MS = 8_000;
+/** Une liste vide (aucune source, rien en attente) ne reste en cache que 60 s : un addon peut répondre vide avant la sortie. */
+const EMPTY_CACHE_MS = 60_000;
+
+/** Raccourcit la durée de vie du résultat selon son contenu : partielle 8 s, vide 60 s, complète 90 s (inchangée). */
+function shortenCache(key: string, promise: Promise<LoadedSources>, now: number): void {
+  promise.then((r) => {
+    const ttl = r.pending.length ? PARTIAL_CACHE_MS : r.views.length === 0 ? EMPTY_CACHE_MS : undefined;
+    if (ttl !== undefined && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - ttl), promise });
+  }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
+}
 
 export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | 'episode'>): string =>
   [req.type, req.id, req.season ?? '', req.episode ?? ''].join(':');
@@ -126,10 +136,7 @@ export function loadSources(req: SourceRequest, now = Date.now()): Promise<Loade
   if (hit && now - hit.at < CACHE_MS) return hit.promise;
   const promise = fetchSources(req);
   inflight.set(key, { at: now, promise });
-  promise.then((r) => {
-    // Liste partielle : on la garde peu de temps, la suite arrive par `refreshSources`.
-    if (r.pending.length && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - PARTIAL_CACHE_MS), promise });
-  }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
+  shortenCache(key, promise, now);
   return promise;
 }
 
@@ -142,8 +149,10 @@ export function clearSourceCache(): void { inflight.clear(); deviceStates.clear(
 
 /** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */
 export async function refreshSources(req: SourceRequest): Promise<LoadedSources> {
+  const now = Date.now();
   const promise = fetchSources(req);
-  inflight.set(requestKey(req), { at: Date.now(), promise });
+  inflight.set(requestKey(req), { at: now, promise });
+  shortenCache(requestKey(req), promise, now);
   return promise;
 }
 

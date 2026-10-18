@@ -25,7 +25,9 @@ export interface CanonicalSeries {
   episodes: Map<number, EpisodeInfo[]>;
 }
 
-const isoDay = (d: Date): string => d.toISOString().slice(0, 10);
+/** Jour civil de l'appareil (AAAA-MM-JJ) : l'épisode diffusé ce jour-là est diffusé, même avant minuit UTC. */
+export const localDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
@@ -33,12 +35,12 @@ const DAY_MS = 86_400_000;
 export const SOON_WINDOW_DAYS = 14;
 
 /** Un épisode sans date est considéré comme diffusé (les séries anciennes n'en ont pas toujours). */
-export function isAired(airDate: string, today: string = isoDay(new Date())): boolean {
+export function isAired(airDate: string, today: string = localDay(new Date())): boolean {
   return !airDate || airDate <= today;
 }
 
 /** Jours entre `today` et `airDate` (AAAA-MM-JJ) ; null si une des deux dates n'est pas exploitable. */
-export function daysUntil(airDate: string, today: string = isoDay(new Date())): number | null {
+export function daysUntil(airDate: string, today: string = localDay(new Date())): number | null {
   if (!ISO_DAY.test(airDate) || !ISO_DAY.test(today)) return null;
   const diff = Math.round((Date.parse(airDate) - Date.parse(today)) / DAY_MS);
   return Number.isFinite(diff) ? diff : null;
@@ -48,13 +50,13 @@ export function daysUntil(airDate: string, today: string = isoDay(new Date())): 
  * Diffusion dans les 1 à 14 jours qui suivent `today` : l'épisode peut déjà être en ligne (streaming avant la TV).
  * Aujourd'hui ou passé : c'est `isAired`, pas ce cas. Sans date, ou au-delà de 14 jours : false.
  */
-export function playableSoon(airDate: string, today: string = isoDay(new Date())): boolean {
+export function playableSoon(airDate: string, today: string = localDay(new Date())): boolean {
   const d = daysUntil(airDate, today);
   return d !== null && d >= 1 && d <= SOON_WINDOW_DAYS;
 }
 
 /** Lisible maintenant : diffusé, ou diffusion proche (voir `playableSoon`). */
-export function isPlayable(airDate: string, today: string = isoDay(new Date())): boolean {
+export function isPlayable(airDate: string, today: string = localDay(new Date())): boolean {
   return isAired(airDate, today) || playableSoon(airDate, today);
 }
 
@@ -71,7 +73,7 @@ export function autoNextEpisode(
 }
 
 /** Réponse canonique `{ seasons: [{ number, episodeCount }], episodes: [{ season, episode, name… }] }` ; null si inexploitable. */
-export function normalizeCanonical(resp: unknown, today: string = isoDay(new Date())): CanonicalSeries | null {
+export function normalizeCanonical(resp: unknown, today: string = localDay(new Date())): CanonicalSeries | null {
   const r = resp as { seasons?: unknown; episodes?: unknown } | null;
   if (!r || !Array.isArray(r.episodes) || !r.episodes.length) return null;
   const episodes = new Map<number, EpisodeInfo[]>();

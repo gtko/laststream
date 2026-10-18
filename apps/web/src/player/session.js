@@ -21,7 +21,7 @@ import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
-import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, normalizeCanonical } from './episodes';
+import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
 import { autoSubsToast } from './langPolicy';
 import { TrackApplier } from './trackApply';
@@ -606,7 +606,7 @@ async function ensureEpisodes(season, reveal) {
     try {
       const d = await tmdb('tv/' + p.req.id + '/season/' + s);
       if (P !== p) return;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDay(new Date());
       p.episodes.set(s, (d.episodes || []).map((e) => ({
         episode: e.episode_number, name: e.name || '', runtime: e.runtime || null, overview: e.overview || '', still: IMG('w300', e.still_path),
         airDate: e.air_date || '', aired: isAired(e.air_date || '', today), playable: isPlayable(e.air_date || '', today),
