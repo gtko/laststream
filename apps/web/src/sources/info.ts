@@ -6,7 +6,8 @@ import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type St
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
  * données d'affichage prêtes à l'emploi pour le sélecteur de sources. Fonctions pures, testées. */
 
-export type SourceStatus = 'cached' | 'uncached' | 'p2p' | 'direct';
+/** `cached` / `uncached` : lien débridé (AllDebrid), en cache ou à la demande ; `direct` : lien HTTP fourni tel quel par un addon. Jamais de P2P. */
+export type SourceStatus = 'cached' | 'uncached' | 'direct';
 
 export interface Origin {
   kind: 'addon' | 'indexer' | 'prowlarr-local';
@@ -53,9 +54,8 @@ export interface SourceView {
   status: SourceStatus;
   statusLabel: string;
   provider: string;
-  /** Joignable par le navigateur ou le serveur de streaming : lien HTTP ou torrent. */
+  /** Lisible : lien HTTP(S) (débridé ou direct). Un infoHash seul n'est jamais lisible (aucune lecture torrent). */
   playable: boolean;
-  isTorrent: boolean;
   /** Indice « lecture navigateur incertaine » (HEVC, REMUX, DTS/TrueHD). */
   notWebReady: boolean;
   score: number;
@@ -207,27 +207,33 @@ export function formatDuration(sec: number | null): string {
   return h + ' h ' + String(m).padStart(2, '0');
 }
 
-export function statusLabelOf(status: SourceStatus, provider: string): string {
+export function statusLabelOf(status: SourceStatus): string {
   switch (status) {
-    case 'cached': return 'Cache ' + (provider || 'débrideur') + ' ⚡ prêt';
-    case 'uncached': return 'Non caché (téléchargement)';
-    case 'p2p': return 'P2P';
+    case 'cached': return 'Débridé · En cache ⚡';
+    case 'uncached': return 'Débridé · À la demande';
     default: return 'Lien direct';
   }
 }
 
-const hasUrl = (s: Stream): boolean => typeof s.url === 'string' && /^(https?:)?\/\//i.test(s.url);
-const hasHash = (s: Stream): boolean => typeof s.infoHash === 'string' && s.infoHash.length >= 32;
+/** Lien HTTP(S) lisible. Une source sans lien (torrent : infoHash seul) n'est jamais lue : pas de moteur torrent. */
+export const hasHttpUrl = (s: Stream): boolean => typeof s.url === 'string' && /^https?:\/\//i.test(s.url);
+
+/** Lien de lecture débridée de lastAddon : `/play/c/<jeton>` ou `/play/<infoHash>` (résolu par AllDebrid à la demande). */
+export const isDebridUrl = (url: unknown): boolean => typeof url === 'string' && /\/play\/(c\/[^/?#]+|[0-9a-f]{40})/i.test(url);
+
+/** Politique « débrideur obligatoire » : ne garde que les sources à lien HTTP(S) ; les torrents sans lien débridé sont masqués. */
+export function playableStreams<T extends Stream>(streams: readonly T[]): T[] {
+  return streams.filter(hasHttpUrl);
+}
 
 export function toSourceView(stream: Stream, index: number, all: readonly Stream[] = [stream]): SourceView {
   const info = getLaststream(stream);
   const hints = stream.behaviorHints ?? {};
   const text = [stream.name, stream.title, stream.description, hints.filename].filter((x): x is string => typeof x === 'string').join(' ');
   const resolution: Resolution = info?.resolution ?? (/2160|4k|uhd/i.test(text) ? '2160p' : /1080/.test(text) ? '1080p' : /720/.test(text) ? '720p' : 'unknown');
-  const provider = providerOf(info, text);
-  const torrentOnly = !hasUrl(stream) && hasHash(stream);
+  const provider = providerOf(info, text) || (isDebridUrl(stream.url) ? 'AllDebrid' : '');
   const cached = info?.cached === true;
-  const status: SourceStatus = torrentOnly ? 'p2p' : provider || info ? (cached ? 'cached' : provider ? 'uncached' : 'direct') : 'direct';
+  const status: SourceStatus = cached ? 'cached' : provider ? 'uncached' : 'direct';
   const sizeBytes = info?.sizeBytes ?? (typeof hints.videoSize === 'number' ? hints.videoSize : 0);
   const kbps = info?.estBitrateKbps ?? (info?.bitrateMbps ? info.bitrateMbps * 1000 : null);
   const durationSec = sizeBytes > 0 && kbps && kbps > 0 ? (sizeBytes * 8) / 1000 / kbps : null;
@@ -263,10 +269,9 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     filename,
     releaseGroup: info?.releaseGroup ?? '',
     status,
-    statusLabel: statusLabelOf(status, provider),
+    statusLabel: statusLabelOf(status),
     provider,
-    playable: hasUrl(stream) || hasHash(stream),
-    isTorrent: torrentOnly,
+    playable: hasHttpUrl(stream),
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,
     web: 'unknown',

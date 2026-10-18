@@ -35,7 +35,7 @@ import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNat
 import { backStep, connectShell, setShellFullscreen, setShellPip, startShellDrag } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
 import {
-  createTorrent, embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
+  embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
   SERVER_STORAGE_KEY as SERVER_KEY, serverAlive, serverBase, setShellServerAddress, subtitlesVttUrl,
 } from './server';
 import { activeCue, cueHtml, normalizeSubStyle, parseSubtitles, readSubStyle, writeSubStyle } from './subs';
@@ -94,7 +94,7 @@ function headingFor(p) {
   return [p.meta.title || p.req.name || '', seLabel(p.cur) + (ep && ep.name ? ' « ' + ep.name + ' »' : '')];
 }
 
-const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider || (v.status === 'p2p' ? 'P2P' : ''), originSummary(v.origins, 1)].filter(Boolean).join(' · ');
+const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider, originSummary(v.origins, 1)].filter(Boolean).join(' · ');
 
 // ---------- Création de l'interface (une seule fois) ----------
 function thumbSourceOf(p) {
@@ -111,7 +111,7 @@ function thumbMediaUrl(p) {
 function thumbsAllowedNow() {
   return !!P && !!P.view && thumbsAllowed({
     enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(P).mode !== 'none', duration: P.engine.state().duration,
-    bandwidthKbps: knownBandwidthKbps(), torrentBuffering: !!P.torrent && P.engine.state().buffering,
+    bandwidthKbps: knownBandwidthKbps(), torrentBuffering: false,
   });
 }
 
@@ -567,15 +567,11 @@ async function resolveMedia(view, signal) {
   const hints = s.behaviorHints || {};
   if (typeof s.url === 'string' && /^https?:\/\//i.test(s.url)) {
     const ph = hints.proxyHeaders;
-    if (up && ph && typeof ph === 'object') return { url: proxyUrl(base, s.url, ph.request || {}, ph.response || {}), torrent: false, up, base };
-    return { url: s.url, torrent: false, up, base };
+    if (up && ph && typeof ph === 'object') return { url: proxyUrl(base, s.url, ph.request || {}, ph.response || {}), up, base };
+    return { url: s.url, up, base };
   }
-  if (typeof s.infoHash === 'string') {
-    if (!up) throw new Error('Le serveur de streaming est indisponible : il est nécessaire pour lire un torrent.');
-    const t = await createTorrent({ infoHash: s.infoHash, fileIdx: s.fileIdx, sources: Array.isArray(s.sources) ? s.sources : [], season: P.req.season, episode: P.req.episode }, base, signal);
-    return { url: t.url, torrent: true, up, base };
-  }
-  throw new Error('Cette source n’a ni lien ni identifiant de torrent.');
+  // Jamais de lecture torrent (P2P) : une source sans lien HTTP(S) n'est pas lisible, il faut un débrideur.
+  throw new Error('Cette source n’a pas de lien lisible : un débrideur (AllDebrid) est nécessaire, la lecture torrent est désactivée.');
 }
 
 /** Clé « titre + épisode » des sources lentes ou en échec (mémorisées 24 h). */
@@ -583,7 +579,7 @@ const badKey = (p) => p.req.key + ':' + (p.cur.season ?? '') + ':' + (p.cur.epis
 const describeView = (v) => [v.quality, v.sourceType, v.langs.map((l) => l.label).join('/'), v.provider].filter(Boolean).join(' · ') || 'Source';
 
 /**
- * Préparation d'une source, interruptible : lien (lastAddon /play, torrent), sonde du fichier, choix du moteur et, pour le
+ * Préparation d'une source, interruptible : lien (lastAddon /play débridé ou lien HTTP direct), sonde du fichier, choix du moteur et, pour le
  * transcodage, création de la session HLS (premier appel de la playlist, qui démarre le travail du serveur).
  * `direct` : même source mais en lecture directe, pour démarrer vite quand seule la piste audio demande le transcodage.
  */
@@ -600,7 +596,7 @@ async function prepareView(p, cand, signal) {
   if (!shell && !native && media.up && !probe) probe = await fetchProbe(media.url, media.base, signal);
   if (signal.aborted) throw abortError();
   let choice = chooseEngine({
-    torrent: media.torrent, shell: !!shell, native, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
+    shell: !!shell, native, serverUp: media.up, probe, caps: getCaps(), notWebReady: view.notWebReady,
     name: view.filename || media.url, forceTranscoding: p.forceHls && !direct,
     preferredLang: audioPreference()[0], audioTracksSupported: !!ui.video.audioTracks,
   });
@@ -608,7 +604,7 @@ async function prepareView(p, cand, signal) {
     // Démarrage rapide possible : la vidéo passe telle quelle dans le navigateur, seul l'audio demande le transcodage.
     p.hint = { url: media.url, probe, fastDirect: !p.forceHls && directVideoOk(probe, getCaps()) };
   }
-  if (direct && !native) choice = { engine: 'direct', viaServer: media.torrent, label: 'lecture directe (démarrage rapide)', reason: 'La vidéo est lisible telle quelle ; piste audio du fichier par défaut.' };
+  if (direct && !native) choice = { engine: 'direct', viaServer: false, label: 'lecture directe (démarrage rapide)', reason: 'La vidéo est lisible telle quelle ; piste audio du fichier par défaut.' };
   const conversion = choice.engine === 'hls' ? probeConversion(probe, getCaps(), p.forceHls) : 'none';
   let hlsUrl = null;
   let hlsId = '';
@@ -664,7 +660,6 @@ async function playView(view, startAt) {
   stopAutoSync();
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
-  p.torrent = false;
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
@@ -717,7 +712,6 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.mediaUrl = media.url;
   p.mediaBase = media.base;
   p.mediaUp = !!media.up;
-  p.torrent = media.torrent;
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
   p.choice = choice;

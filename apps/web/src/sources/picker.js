@@ -94,6 +94,7 @@ function render() {
 
   let body = '';
   // Sources essayées sans succès (lenteur, erreur) : une ligne par source avec la raison.
+  if (s.serverNotice) body += '<p class="s-pending" role="status">' + esc(s.serverNotice) + '</p>';
   if (s.notice.length) body += '<div class="s-fail" role="alert"><b>Sources essayées sans succès</b><ul>' + s.notice.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
   // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
   if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
@@ -143,12 +144,13 @@ export async function openSourcePicker(request, opener, opts) {
       request.imdb = loaded.imdb;
       session.views = loaded.views;
       session.pending = loaded.pending;
+      session.serverNotice = loaded.notice || '';
     }
   } catch (e) {
     if (alive()) showMessage(e && e.message === 'no-imdb' ? 'Aucun identifiant IMDb pour ce titre : impossible de chercher des sources.' : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
     return;
   }
-  if (!session.views.length && !session.pending.length) { showMessage('Aucune source trouvée pour le moment.'); return; }
+  if (!session.views.length && !session.pending.length) { showMessage(session.serverNotice || 'Aucune source trouvée pour le moment.'); return; }
   const known = knownBandwidthKbps();
   // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
   if (session.pending.length) {

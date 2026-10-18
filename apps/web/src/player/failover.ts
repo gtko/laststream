@@ -3,7 +3,7 @@ import { copySignature, type SourceView } from '../sources/info';
 /* Reprise automatique : ordre des sources à essayer et détection des blocages. Fonctions pures, testées. */
 
 export const STALL_LIMIT_MS = 15_000;
-/** Délai avant la première image (le transcodage et les torrents démarrent plus lentement). */
+/** Délai avant la première image (le transcodage et le débridage à la demande démarrent plus lentement). */
 export const STARTUP_LIMIT_MS = 45_000;
 
 /**

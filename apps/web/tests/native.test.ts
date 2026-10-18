@@ -30,11 +30,11 @@ describe('réseau local (http Android)', () => {
 });
 
 describe('moteur natif', () => {
-  const base = { torrent: false, shell: false, serverUp: false, probe: null, caps: { formats: [], videoCodecs: [], audioCodecs: [], maxAudioChannels: 2 }, notWebReady: true, name: 'x.mkv' };
+  const base = { shell: false, serverUp: false, probe: null, caps: { formats: [], videoCodecs: [], audioCodecs: [], maxAudioChannels: 2 }, notWebReady: true, name: 'x.mkv' };
   it('le lecteur natif prime sur tout, même pour du HEVC sans serveur', () => {
     const c = chooseEngine({ ...base, native: true });
     expect(c.engine).toBe('native');
-    expect(chooseEngine({ ...base, native: true, torrent: true }).viaServer).toBe(true);
+    expect(chooseEngine({ ...base, native: true }).viaServer).toBe(false);
   });
   it('sans natif, le choix existant est inchangé', () => {
     expect(chooseEngine({ ...base, shell: true }).engine).toBe('mpv');

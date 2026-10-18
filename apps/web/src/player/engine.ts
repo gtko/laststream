@@ -1,14 +1,15 @@
 import type { MediaCaps, Probe } from './server';
 import { trackLang } from './tracks';
 
-/* Choix du moteur de lecture : lecteur natif Android (libVLC), mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
+/* Toute lecture passe par un lien HTTPS (débrideur ou lien direct d'un addon) : aucun moteur torrent.
+ * Choix du moteur de lecture : lecteur natif Android (libVLC), mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
  * Logique pure (capacités du navigateur injectées), testée. */
 
 export type EngineKind = 'mpv' | 'native' | 'direct' | 'hls';
 
 export interface EngineChoice {
   engine: EngineKind;
-  /** Passe par le serveur de streaming (torrent, transcodage). */
+  /** Passe par le serveur de streaming : uniquement le transcodage HLS d'un lien HTTPS débridé (jamais de torrent). */
   viaServer: boolean;
   /** Phrase courte pour l'écran de chargement et la fiche d'infos. */
   label: string;
@@ -16,8 +17,6 @@ export interface EngineChoice {
 }
 
 export interface EngineInput {
-  /** Fichier torrent (infoHash) servi par le serveur de streaming. */
-  torrent: boolean;
   shell: boolean;
   /** Application Android : le lecteur natif (libVLC) lit tous les formats. */
   native?: boolean;
@@ -83,21 +82,20 @@ export function guessWebPlayable(name: string, notWebReady: boolean): boolean {
 
 export function chooseEngine(i: EngineInput): EngineChoice {
   if (i.native) {
-    return { engine: 'native', viaServer: i.torrent, label: 'libVLC (lecteur natif Android)' + (i.torrent ? ' · torrent' : ''), reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
+    return { engine: 'native', viaServer: false, label: 'libVLC (lecteur natif Android)', reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
   }
   if (i.shell) {
-    return { engine: 'mpv', viaServer: i.torrent, label: 'mpv (application Windows)' + (i.torrent ? ' · torrent' : ''), reason: 'Coque Windows détectée : mpv lit tous les formats.' };
+    return { engine: 'mpv', viaServer: false, label: 'mpv (application Windows)', reason: 'Coque Windows détectée : mpv lit tous les formats.' };
   }
   const playable = i.forceTranscoding ? false : i.probe ? canPlayProbe(i.probe, i.caps, { preferredLang: i.preferredLang, audioTracksSupported: i.audioTracksSupported }) : guessWebPlayable(i.name, i.notWebReady);
   if (playable || !i.serverUp) {
-    const t = i.torrent ? 'Torrent · ' : '';
     return {
-      engine: 'direct', viaServer: i.torrent, label: t + 'lecture directe',
+      engine: 'direct', viaServer: false, label: 'lecture directe',
       reason: playable ? 'Fichier lisible par le navigateur.' : 'Serveur de streaming absent : lecture directe tentée.',
     };
   }
   return {
-    engine: 'hls', viaServer: true, label: (i.torrent ? 'Torrent · ' : '') + 'transcodage HLS',
+    engine: 'hls', viaServer: true, label: 'transcodage HLS',
     reason: i.probe ? 'Codecs, pistes audio ou sous-titres non gérés par le navigateur.' : 'Format incertain : transcodage par le serveur.',
   };
 }

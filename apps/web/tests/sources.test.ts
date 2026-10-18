@@ -36,17 +36,16 @@ describe('fiche de source', () => {
     expect(v.seeders).toBe(120);
     expect(v.peers).toBe(30);
     expect(v.filename).toBe('Film.2160p.REMUX.mkv');
-    expect(v.statusLabel).toBe('Cache AllDebrid ⚡ prêt');
+    expect(v.statusLabel).toBe('Débridé · En cache ⚡');
   });
 
-  it('statuts : non caché, P2P et lien direct', () => {
-    expect(toSourceView(mk({ cached: false }), 0).statusLabel).toBe('Non caché (téléchargement)');
-    const p2p = toSourceView({ infoHash: 'a'.repeat(40), laststream: (mk().laststream as object), sources: ['tracker:udp://tracker.example.org:80/announce'] }, 0);
-    expect(p2p.status).toBe('p2p');
-    expect(p2p.statusLabel).toBe('P2P');
-    expect(p2p.isTorrent).toBe(true);
-    expect(p2p.trackers).toEqual(['tracker.example.org']);
+  it('statuts : en cache, à la demande, lien direct ; un infoHash seul n est jamais lisible', () => {
+    expect(toSourceView(mk({ cached: false }), 0).statusLabel).toBe('Débridé · À la demande');
+    const torrent = toSourceView({ infoHash: 'a'.repeat(40), laststream: (mk().laststream as object), sources: ['tracker:udp://tracker.example.org:80/announce'] }, 0);
+    expect(torrent.playable).toBe(false);
+    expect(torrent.status).not.toBe('p2p');
     expect(toSourceView({ url: 'https://cdn/x.mp4' }, 0).status).toBe('direct');
+    expect(toSourceView({ url: 'https://cdn/x.mp4' }, 0).statusLabel).toBe('Lien direct');
     expect(toSourceView({}, 0).playable).toBe(false);
   });
 

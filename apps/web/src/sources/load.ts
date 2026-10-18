@@ -3,7 +3,7 @@ import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { browserCaps, inShell } from '../player/caps';
-import { toSourceViews, withWebPlayback, type SourceView } from './info';
+import { playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { recommend, type Recommendation } from './rank';
 
 /* Chargement des sources d'un titre et recommandation selon le débit et la langue préférée. */
@@ -25,6 +25,8 @@ export interface LoadedSources {
   views: SourceView[];
   /** Sources de torrents / indexeurs encore interrogés (réponse partielle de lastAddon). */
   pending: string[];
+  /** Message du serveur (ex. « Configure AllDebrid ») quand les torrents sont masqués faute de débrideur. */
+  notice?: string;
 }
 
 const CACHE_MS = 90_000;
@@ -39,8 +41,9 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode);
-  const streams = sortStreams(res.streams);
-  return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()), pending: res.pending };
+  // Débrideur obligatoire : seules les sources à lien HTTP(S) sont gardées, jamais un infoHash à lire en pair-à-pair.
+  const streams = sortStreams(playableStreams(res.streams));
+  return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()), pending: res.pending, notice: res.notice };
 }
 
 /**

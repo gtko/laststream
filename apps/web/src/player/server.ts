@@ -1,7 +1,7 @@
 import { isNativePlayer, nativeFetch } from './native';
 
-/* Client du serveur de streaming Stremio (HLS, probe, torrents, sous-titres).
- * Protocole repris de stremio-video (withStreamingServer, fetchVideoParams, createTorrent, buildProxyUrl). */
+/* Client du serveur de streaming Stremio (HLS, probe, proxy, sous-titres ; jamais de torrent : les sources passent par un débrideur).
+ * Protocole repris de stremio-video (withStreamingServer, fetchVideoParams, buildProxyUrl). */
 
 export const DEFAULT_SERVER = 'http://127.0.0.1:11470';
 export const SERVER_STORAGE_KEY = 'laststream.streamingServer';
@@ -156,46 +156,6 @@ export function newSessionId(): string {
 /** Sous-titre ASS embarqué dans la session HLS. */
 export function embeddedSubtitleUrl(base: string, id: string, streamId: number, query: string): string {
   return join(base, '/hlsv2/' + encodeURIComponent(id) + '/source/subtitle/' + streamId + '.ass?' + query);
-}
-
-// ---------- Torrents ----------
-
-export function torrentUrl(base: string, infoHash: string, fileIdx: number | null | undefined, trackers: readonly string[] = []): string {
-  const q = trackers.length ? '?' + new URLSearchParams(trackers.map((t) => ['tr', t])).toString() : '';
-  return join(base, '/' + encodeURIComponent(infoHash) + '/' + encodeURIComponent(String(fileIdx ?? -1))) + q;
-}
-
-export interface TorrentRequest {
-  infoHash: string;
-  fileIdx?: number | null;
-  sources?: readonly string[];
-  season?: number | null;
-  episode?: number | null;
-}
-
-/** Crée (ou retrouve) le torrent côté serveur et renvoie l'URL du fichier à lire. */
-export async function createTorrent(req: TorrentRequest, base = serverBase(), signal?: AbortSignal): Promise<{ url: string; fileIdx: number }> {
-  const hash = req.infoHash.toLowerCase();
-  const trackers = (req.sources ?? []).filter((s) => s.startsWith('tracker:')).map((s) => s.slice(8));
-  const known = req.fileIdx !== undefined && req.fileIdx !== null && Number.isFinite(req.fileIdx);
-  if (known && !trackers.length) return { url: torrentUrl(base, hash, req.fileIdx), fileIdx: req.fileIdx as number };
-  const body: Record<string, unknown> = { torrent: { infoHash: hash } };
-  if (req.sources?.length) {
-    const src = ['dht:' + hash, ...req.sources.map((s) => (s.startsWith('tracker:') || s.startsWith('dht:') ? s : 'tracker:' + s))];
-    body.peerSearch = { sources: [...new Set(src)], min: 40, max: 200 };
-  }
-  if (known) body.guessFileIdx = false;
-  else {
-    const g: Record<string, number> = {};
-    if (req.season != null) g.season = req.season;
-    if (req.episode != null) g.episode = req.episode;
-    body.guessFileIdx = g;
-  }
-  const resp = await getJson<{ guessedFileIdx?: number }>(join(base, '/' + encodeURIComponent(hash) + '/create'), 30_000, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal,
-  });
-  const idx = known ? (req.fileIdx as number) : typeof resp.guessedFileIdx === 'number' ? resp.guessedFileIdx : -1;
-  return { url: torrentUrl(base, hash, idx, trackers), fileIdx: idx };
 }
 
 // ---------- Proxy, sous-titres ----------

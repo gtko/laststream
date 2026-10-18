@@ -3,7 +3,7 @@ import { canPlayProbe, chooseEngine, detectCaps, guessWebPlayable } from '../src
 import { failoverOrder, StallWatch } from '../src/player/failover';
 import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
-import { createTorrent, hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl, torrentUrl } from '../src/player/server';
+import { hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl } from '../src/player/server';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast, isShellEnvironment } from '../src/player/shell';
 import { activeSkip, autoSkipEnabled, buildSubmission, chapterMarks, creditsStart, movieEndRow, nextEpisodeCard, normalizeSkip, skipLabel } from '../src/player/skip';
 import { activeCue, cueHtml, normalizeSubStyle, offsetLabel, parseAss, parseCues, parseSubtitles, stepOffset } from '../src/player/subs';
@@ -15,7 +15,7 @@ const caps = { formats: ['mp4', 'matroska,webm'], videoCodecs: ['h264', 'vp9'], 
 const probe = (streams: Array<Record<string, unknown>>, format = 'mov,mp4,m4a,3gp,3g2,mj2') => ({ format: { name: format, duration: 7200 }, streams: streams as never });
 
 describe('choix du moteur', () => {
-  const base = { torrent: false, shell: false, serverUp: true, probe: null, caps, notWebReady: false, name: 'film.mp4' };
+  const base = { shell: false, serverUp: true, probe: null, caps, notWebReady: false, name: 'film.mp4' };
 
   it('mp4 h264/aac : lecture directe', () => {
     const p = probe([{ track: 'video', codec: 'h264' }, { track: 'audio', codec: 'aac', channels: 2 }]);
@@ -45,11 +45,14 @@ describe('choix du moteur', () => {
     expect(chooseEngine({ ...base, name: 'a.mkv', serverUp: false }).engine).toBe('direct');
   });
 
-  it('torrent : passe par le serveur, étiquette dédiée', () => {
-    const c = chooseEngine({ ...base, torrent: true, name: 'x.mkv' });
-    expect(c.engine).toBe('hls');
-    expect(c.label).toContain('Torrent');
-    expect(chooseEngine({ ...base, torrent: true, probe: probe([{ track: 'video', codec: 'h264' }, { track: 'audio', codec: 'aac', channels: 2 }]) }).viaServer).toBe(true);
+  it('plus de voie torrent : le serveur de streaming ne sert que le transcodage HLS d un lien HTTPS', () => {
+    const hls = chooseEngine({ ...base, name: 'x.mkv' });
+    expect(hls.engine).toBe('hls');
+    expect(hls.label).not.toMatch(/torrent/i);
+    const direct = chooseEngine({ ...base, name: 'x.mp4' });
+    expect(direct).toMatchObject({ engine: 'direct', viaServer: false });
+    expect(chooseEngine({ ...base, shell: true }).viaServer).toBe(false);
+    expect(chooseEngine({ ...base, native: true }).viaServer).toBe(false);
   });
 
   it('coque Windows : mpv, quel que soit le fichier', () => {
@@ -80,7 +83,7 @@ describe('serveur de streaming : URL', () => {
     expect(serverBase()).toBe('http://nas:11470');
   });
 
-  it('probe, master HLS, sous-titres, torrent, proxy', () => {
+  it('probe, master HLS, sous-titres, proxy', () => {
     const b = 'http://127.0.0.1:11470';
     expect(probeUrl(b, 'http://x/a b.mkv')).toBe(b + '/hlsv2/probe?mediaURL=http%3A%2F%2Fx%2Fa+b.mkv');
     const u = new URL(hlsMasterUrl(b, 'abc', 'http://x/a.mkv', { videoCodecs: ['h264'], audioCodecs: ['aac', 'opus'], maxAudioChannels: 2 }));
@@ -89,25 +92,7 @@ describe('serveur de streaming : URL', () => {
     expect(u.searchParams.getAll('audioCodecs')).toEqual(['aac', 'opus']);
     expect(u.searchParams.get('maxAudioChannels')).toBe('2');
     expect(subtitlesVttUrl(b, 'http://s/x.srt')).toBe(b + '/subtitles.vtt?from=http%3A%2F%2Fs%2Fx.srt');
-    expect(torrentUrl(b, 'ABC', 3)).toBe(b + '/ABC/3');
-    expect(torrentUrl(b, 'abc', null, ['udp://t:1'])).toBe(b + '/abc/-1?tr=udp%3A%2F%2Ft%3A1');
     expect(proxyUrl(b, 'https://h.example/v/a.mp4?t=1', { referer: 'r' })).toBe(b + '/proxy/d=https%3A%2F%2Fh.example&h=referer%3Ar/v/a.mp4?t=1');
-  });
-
-  it('torrent avec index connu et sans tracker : pas d’appel réseau', async () => {
-    const t = await createTorrent({ infoHash: 'ABCDEF', fileIdx: 2 }, 'http://s');
-    expect(t).toEqual({ url: 'http://s/abcdef/2', fileIdx: 2 });
-  });
-
-  it('torrent sans index : création côté serveur puis fichier deviné', async () => {
-    const f = vi.fn(async () => ({ ok: true, json: async () => ({ guessedFileIdx: 4 }) }));
-    vi.stubGlobal('fetch', f);
-    const t = await createTorrent({ infoHash: 'abc', season: 1, episode: 2 }, 'http://s');
-    expect(t.url).toBe('http://s/abc/4');
-    const call = f.mock.calls[0] as unknown as [string, RequestInit];
-    expect(call[0]).toBe('http://s/abc/create');
-    expect(JSON.parse(call[1].body as string).guessFileIdx).toEqual({ season: 1, episode: 2 });
-    vi.unstubAllGlobals();
   });
 });
 
