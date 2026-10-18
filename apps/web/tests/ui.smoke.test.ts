@@ -19,6 +19,16 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const u = new URL(url);
   if (u.pathname === '/config/schema') return json({ properties: { services: { properties: { tmdbToken: { title: 'Jeton TMDB', description: 'd' } } } } });
   if (u.pathname === '/config/decode') return json({ services: { tmdbToken: { set: true, last4: '…abcd' }, openrouterModel: 'openai/gpt-4o-mini' }, languages: { preferred: ['fr'] }, sources: [], maxResults: 30 });
+  const cin = new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10);
+  if (u.pathname.endsWith('/lt/tmdb/movie/now_playing')) {
+    return json({ results: Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, title: 'Salle ' + i, poster_path: '/c' + i + '.jpg', backdrop_path: '/cb.jpg', release_date: cin, vote_average: 7, genre_ids: [28] })) });
+  }
+  const salle = /\/lt\/tmdb\/movie\/(5\d\d)$/.exec(u.pathname);
+  if (salle) {
+    return json({ id: Number(salle[1]), title: 'Salle ' + salle[1], overview: 'Au cinéma.', poster_path: '/c.jpg', backdrop_path: '/cb.jpg', release_date: cin, genres: [{ id: 28, name: 'Action' }],
+      images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: {}, 'watch/providers': { results: { FR: {} } },
+      release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: cin }] }] } });
+  }
   const trend = /\/lt\/tmdb\/trending\/(movie|tv)\/week$/.exec(u.pathname);
   if (trend) return json({ results: ITEMS.map((i) => ({ ...i, media_type: trend[1] })) });
   const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
@@ -33,9 +43,9 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (u.pathname.includes('/lt/tmdb/')) {
     return json({ imdb_id: 'tt0100', next_episode_to_air: /\/tv\/\d+$/.test(u.pathname) ? { air_date: new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10), season_number: 1, episode_number: 5 } : null, seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
       results: ITEMS, id: 100, title: 'Film 0', name: 'Série 0', overview: 'Un synopsis assez long pour la fiche.', tagline: 'Slogan',
-      poster_path: '/p.jpg', backdrop_path: '/b.jpg', release_date: '2025-01-01', runtime: 120, vote_average: 7.4, genres: [{ id: 28, name: 'Action' }],
+      poster_path: '/p.jpg', backdrop_path: '/b.jpg', release_date: '2025-01-01', first_air_date: '2025-01-01', runtime: 120, vote_average: 7.4, genres: [{ id: 28, name: 'Action' }],
       images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: { imdb_id: 'tt0100' },
-      release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ certification: '12', release_date: '2025-01-01', type: 3 }] }] },
+      release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ certification: '12', release_date: '2025-01-01', type: 3 }, { release_date: '2025-03-01', type: 4 }] }] },
       recommendations: { results: ITEMS.slice(0, 3) }, similar: { results: [] }, 'watch/providers': { results: {} },
     });
   }
@@ -318,7 +328,29 @@ describe('interface portée', () => {
     renderContinue();
   });
 
+  it('films uniquement en salle : rangée « Au cinéma », badge, pas de Lecture sur la fiche', async () => {
+    location.hash = '#/';
+    await settle(300);
+    const tiles = Array.from(document.querySelectorAll('#app #cinema [data-tile]')) as HTMLElement[];
+    expect(tiles.length).toBeGreaterThanOrEqual(6);
+    expect(tiles.every((t) => t.querySelector('.t-cinema'))).toBe(true);
+    // Les films « Au cinéma » ne sont pas dans les rangées normales.
+    expect(document.querySelectorAll('#app #films [data-tile^="movie:5"]')).toHaveLength(0);
+    location.hash = '#/movie/505';
+    await settle(400);
+    const d = document.getElementById('detail')!;
+    expect(d.querySelector('.f-actions [data-play]')).toBeNull();
+    expect(d.querySelector('.f-release')!.textContent).toMatch(/Au cinéma depuis le/);
+    const be = d.querySelector('.f-actions [data-follow="movie:505"]') as HTMLElement;
+    expect(be.textContent).toBe('Me prévenir de la sortie en VOD');
+    be.click();
+    expect(JSON.parse(localStorage.getItem('laststream.follows')!).some((f: { id: number }) => f.id === 505)).toBe(true);
+    location.hash = '#/';
+    await settle(50);
+  });
+
   it('utilise la région France par défaut', () => {
+    expect(calls.some((c) => c.includes('/lt/tmdb/discover/movie') && c.includes('primary_release_date.lte='))).toBe(true); // seuls les titres déjà sortis
     expect(calls.some((c) => c.includes('region=FR'))).toBe(true);
   });
 

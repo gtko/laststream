@@ -1,4 +1,6 @@
 /* Recherche (#/search) : titres et personnes TMDB. Profil enfant : seulement les genres jeunesse, puis contrôle de la classification. */
+import { filterAvailable } from './avail.js';
+import { todayStr } from './dates.js';
 import { isKidProfile } from '../data/auth';
 import { kidGenreOk } from '../data/kid';
 import { tmdb } from '../data/lt';
@@ -29,7 +31,7 @@ export function showSearch() {
 /** Résultats utilisables : jamais de personne ni de titre sans affiche ; pour un enfant, genres jeunesse uniquement. */
 export function filterResults(results, kid) {
   return (results || []).filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && r.poster_path &&
-    (!kid || kidGenreOk(r.genre_ids)));
+    (r.release_date || r.first_air_date || '9999').slice(0, 10) <= todayStr() && (!kid || kidGenreOk(r.genre_ids)));
 }
 
 async function run(q) {
@@ -41,7 +43,8 @@ async function run(q) {
   try {
     const json = await tmdb('search/multi', { query: q.trim(), include_adult: 'false' });
     if (my !== seq || state.kind !== 'search') return;
-    const items = filterResults(json.results, isKidProfile()).map((r) => register(toItem(r, r.media_type)));
+    const items = await filterAvailable(filterResults(json.results, isKidProfile()).map((r) => register(toItem(r, r.media_type))));
+    if (my !== seq || state.kind !== 'search') return;
     grid.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Aucun résultat.</p>';
     observeTiles(grid);
   } catch (_) {

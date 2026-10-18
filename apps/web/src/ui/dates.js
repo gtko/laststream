@@ -20,3 +20,9 @@ export function countdown(iso) {
   if (n < 61) return 'dans ' + n + ' jours';
   return 'dans ' + Math.round(n / 30) + ' mois';
 }
+
+/** Titre déjà sorti d'après sa date (film : sortie, série : première diffusion). Sans date : non sorti. */
+export const isReleasedItem = (it) => !!it && !!it.date && String(it.date).slice(0, 10) <= todayStr();
+
+/** Filtre de requête « déjà sorti » pour discover. */
+export const releasedParams = (type) => (type === 'tv' ? { 'first_air_date.lte': todayStr() } : { 'primary_release_date.lte': todayStr() });

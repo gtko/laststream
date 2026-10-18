@@ -113,8 +113,8 @@ describe('accueil du profil enfant', () => {
     expect(parseRoute()).toEqual({ kind: 'browse', id: 'dessins' });
     const { filterResults } = await import('../src/ui/search.js');
     const out = filterResults([
-      { media_type: 'movie', poster_path: '/a', genre_ids: [16] },
-      { media_type: 'movie', poster_path: '/b', genre_ids: [28] },
+      { media_type: 'movie', poster_path: '/a', genre_ids: [16], release_date: '2024-01-01' },
+      { media_type: 'movie', poster_path: '/b', genre_ids: [28], release_date: '2024-01-01' },
       { media_type: 'person', poster_path: '/c' },
     ], true);
     expect(out).toHaveLength(1);

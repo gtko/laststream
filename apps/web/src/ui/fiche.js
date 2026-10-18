@@ -98,6 +98,7 @@ export function remindBtn(m, cls, extra) {
     '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span></button>';
 }
 export function primaryBtn(m) {
+  if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill', '', 'Me prévenir de la sortie en VOD');
   return isUnreleased(m)
     ? remindBtn(m, 'btn btn-primary btn-pill')
     : '<button type="button" class="btn btn-primary btn-pill" data-play>' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>';
@@ -166,6 +167,7 @@ export function ficheHTML(m) {
   const info =
     '<div class="f-info">' + title +
     '<ul class="meta f-meta">' + metaLine(m) + '</ul>' +
+    (m.cinemaSince ? '<p class="f-release"><span>Au cinéma</span> depuis le <strong>' + esc(fmtDate(m.cinemaSince)) + '</strong> · pas encore disponible en streaming</p>' : '') +
     (isUnreleased(m) ? '<p class="f-release"><span>Prochainement</span> Sortie le <strong>' + esc(fmtDate(m.releaseFR)) + '</strong> · ' + esc(countdown(m.releaseFR)) + '</p>' : '') +
     '<ul class="rates" id="f-rates" aria-label="Notes"></ul>' +
     '<div class="f-prov" id="f-prov" data-nav></div>' +
@@ -220,7 +222,7 @@ export function ficheHTML(m) {
     '<section class="f-first" aria-label="Présentation">' + info + '</section>' +
     '<div class="f-panels">' + panels.join('') + '</div></article>' +
     '<div class="f-sticky" id="f-sticky" aria-hidden="true"><span class="f-sticky-title">' + esc(m.name) + '</span>' +
-    (isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
+    (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', 'Me prévenir de la sortie en VOD') : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
 }
 
 export function infosHTML(m) {

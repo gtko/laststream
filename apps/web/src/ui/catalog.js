@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { dayDiff } from './dates.js';
+import { hasProviders, movieAvailability, releasedByDate } from '../data/released';
+import { dayDiff, todayStr } from './dates.js';
 import { getVideoLang } from '../data/prefs';
 import { pickTrailerKey } from '../data/trailers';
 import { api, tmdb } from '../data/lt';
@@ -66,6 +67,12 @@ export const certLabel = (c) => (!c ? '' : /^(U|TP|0)$/i.test(c) ? 'Tous publics
 
 // Détail léger d'un titre de l'accueil : TMDB (fr-FR, repli en-US pour le synopsis) + notes MDBList.
 /** « Nouvel épisode le 24 oct. » ou « S3 disponible » pour la mise en avant d'une série. */
+/** Disponibilité d'un film d'après un détail TMDB contenant release_dates et watch/providers. */
+export function availOf(raw) {
+  return movieAvailability(raw.release_dates && raw.release_dates.results, getRegion().code, raw.release_date, todayStr(),
+    hasProviders(raw['watch/providers'], getRegion().code));
+}
+
 export function seriesNote(raw) {
   const next = raw.next_episode_to_air;
   const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
@@ -78,7 +85,7 @@ export function seriesNote(raw) {
 }
 
 export async function fetchDetail(item) {
-  const append = item.type === 'tv' ? 'videos,images,external_ids,content_ratings' : 'videos,images,external_ids,release_dates';
+  const append = item.type === 'tv' ? 'videos,images,external_ids,content_ratings' : 'videos,images,external_ids,release_dates,watch/providers';
   const raw = await tmdb(item.type + '/' + item.id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
   let overview = raw.overview || '';
   if (!overview) {
@@ -109,6 +116,8 @@ export async function fetchDetail(item) {
     runtime: fmtMin(runtime),
     cert: certification(raw, item.type),
     note: item.type === 'tv' ? seriesNote(raw) : '',
+    released: item.type === 'tv' ? releasedByDate(raw.first_air_date, todayStr()) : availOf(raw).available,
+    cinemaSince: item.type === 'movie' ? availOf(raw).cinemaSince : null,
     ratings,
     vote: fmtNum(raw.vote_average, 1),
   };

@@ -331,3 +331,6 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 
 /* ---------- Mise en avant : note de série, boutons ---------- */
 .hero-note { margin: -4px 0 0; font-size: 14px; font-weight: 700; color: var(--accent); }
+
+/* ---------- Films uniquement au cinéma ---------- */
+.t-cinema { position: absolute; top: 8px; left: 8px; z-index: 2; padding: 4px 10px; border-radius: 999px; background: rgba(12, 11, 17, 0.85); border: 1px solid var(--accent); color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: 0.03em; }

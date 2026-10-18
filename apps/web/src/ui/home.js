@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { filterAvailable } from './avail.js';
+import { isReleasedItem } from './dates.js';
 import { continueCardHTML, hydrateContinue } from './continue.js';
 import { renderFollowRow } from './calendar.js';
 import { starsText } from './rate.js';
@@ -32,13 +34,13 @@ export async function loadHome() {
     tmdb('trending/tv/week'),
   ]);
   const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
-  const day = listOf(val(0));
-  const week = listOf(val(1));
-  if ([day, week].every((l) => l === null)) throw new Error('catalogue indisponible');
+  const day = await filterAvailable((listOf(val(0)) || []).filter(isReleasedItem));
+  const week = await filterAvailable((listOf(val(1)) || []).filter(isReleasedItem));
+  if ([0, 1, 2, 3].every((i) => settled[i].status === 'rejected')) throw new Error('catalogue indisponible');
 
   // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
-  const films = (listOf(val(2), 'movie') || []).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' }));
-  const series = (listOf(val(3), 'tv') || []).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' }));
+  const films = (await filterAvailable((listOf(val(2), 'movie') || []).filter(isReleasedItem))).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' }));
+  const series = (listOf(val(3), 'tv') || []).filter(isReleasedItem).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' }));
   const heroes = [];
   const taken = new Set();
   for (let i = 0; i < Math.max(films.length, series.length) && heroes.length < HERO_MAX; i++) {
@@ -71,7 +73,8 @@ function ratedReason(text) {
 }
 
 function useRecs(recs) {
-  const items = recs.items.map((r) => {
+  const year = new Date().getFullYear();
+  const items = recs.items.filter((r) => !r.y || Number(r.y) <= year).map((r) => {
     const c = register(toItem(rawOf(r)));
     c.reason = ratedReason(r.r); // affichée seulement dans l'aperçu au survol
     return c;

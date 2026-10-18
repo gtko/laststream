@@ -3,7 +3,7 @@ import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { getVideoLang } from '../data/prefs';
 import { sortVideos } from '../data/trailers';
-import { certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
+import { availOf, certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
 import { names } from './util.js';
 
@@ -36,7 +36,7 @@ export function buildModel(type, id, raw, en) {
     .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0] }));
   const recs = ((raw.recommendations && raw.recommendations.results) || []);
   const sims = ((raw.similar && raw.similar.results) || []);
-  const recList = (recs.length ? recs : sims).filter((r) => r.poster_path).slice(0, 20).map((r) => register(toItem(r, type)));
+  const recList = (recs.length ? recs : sims).filter((r) => r.poster_path && (r.release_date || r.first_air_date || '9999').slice(0, 10) <= new Date().toISOString().slice(0, 10)).slice(0, 20).map((r) => register(toItem(r, type)));
   const runtime = isTv
     ? Number((raw.episode_run_time || [])[0]) || Number(raw.last_episode_to_air && raw.last_episode_to_air.runtime) || 0
     : Number(raw.runtime) || 0;
@@ -57,6 +57,7 @@ export function buildModel(type, id, raw, en) {
     genres: (raw.genres || []).map((g) => g.name),
     minutes: runtime,
     certRaw: certification(raw, type),
+    cinemaSince: type === 'movie' ? availOf(raw).cinemaSince : null,
     cert: certLabel(certification(raw, type)),
     seasons: (raw.seasons || []).filter((s) => s.season_number > 0).length
       ? (raw.seasons || []).filter((s) => s.season_number > 0) : (raw.seasons || []),
@@ -91,7 +92,7 @@ export function buildModel(type, id, raw, en) {
 export function fetchFull(type, id) {
   const key = type + ':' + id;
   if (!fullCache.has(key)) {
-    const append = (type === 'tv' ? 'videos,images,credits,external_ids,content_ratings' : 'videos,images,credits,external_ids,release_dates') + ',recommendations,similar';
+    const append = (type === 'tv' ? 'videos,images,credits,external_ids,content_ratings' : 'videos,images,credits,external_ids,release_dates,watch/providers') + ',recommendations,similar';
     const p = (async () => {
       const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
       raw.videos = { results: await videosOf(raw, type, id) };

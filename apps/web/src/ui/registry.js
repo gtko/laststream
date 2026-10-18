@@ -1,5 +1,7 @@
 /* Accueil « long » : rangées définies dans src/data/rows.ts, chargées à la demande (2 rangées d'avance),
  * sans doublon excessif, avec « Tout voir » paginé (#/browse/:rowId). */
+import { filterAvailable } from './avail.js';
+import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
@@ -54,9 +56,10 @@ function ratedSources() {
 const followedPeople = () => (userStore.getFollows ? userStore.getFollows('person').map((p) => ({ id: p.id, name: p.title })) : []);
 
 // ---------- Récupération ----------
-const toItems = (json, forced) => {
+// Seuls les titres déjà sortis (hors rangées « Bientôt » : def.upcoming).
+const toItems = (json, forced, upcoming) => {
   const l = listOf(json, forced);
-  return l ? l.filter((it) => it.poster).map(register) : [];
+  return l ? l.filter((it) => it.poster && (upcoming || isReleasedItem(it))).map(register) : [];
 };
 
 function interleave(a, b) {
@@ -80,8 +83,8 @@ const tvParams = (p) => {
 export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, kidMaxAge())) {
   const f = def.fetch;
   const pg = page > 1 ? { page } : {};
-  if (f.k === 'discover') return { title: def.title, items: toItems(await tmdb('discover/' + f.type, { ...f.params(ctx), ...pg }), f.type) };
-  if (f.k === 'list') return { title: def.title, items: toItems(await tmdb(f.path, pg), f.type) };
+  if (f.k === 'discover') return { title: def.title, items: toItems(await tmdb('discover/' + f.type, { ...releasedParams(f.type), ...f.params(ctx), ...pg }), f.type) };
+  if (f.k === 'list') return { title: def.title, items: toItems(await tmdb(f.path, pg), f.type, def.upcoming) };
   if (f.k === 'collections') {
     if (page > 1) return { title: def.title, items: [] };
     const res = await Promise.allSettled(f.ids.map((id) => tmdb('collection/' + id)));
@@ -89,7 +92,8 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
     res.forEach((r) => {
       if (r.status !== 'fulfilled') return;
       const parts = (r.value.parts || []).filter((p) => p.poster_path).sort((a, b) => String(a.release_date || '9999').localeCompare(String(b.release_date || '9999')));
-      if (parts[0]) items.push(register(listOf({ results: [parts[0]] }, 'movie')[0]));
+      const first = parts.find((p) => p.release_date && p.release_date <= todayStr()); // la première partie déjà sortie
+      if (first) items.push(register(listOf({ results: [first] }, 'movie')[0]));
     });
     return { title: def.title, items };
   }
@@ -101,7 +105,7 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
     const one = async (type) => {
       const base = def.kid ? kidBase(ctx, type) : { sort_by: 'popularity.desc', include_adult: 'false' };
       const extra = f.params ? f.params(ctx) : {};
-      const params = { ...base, ...(type === 'tv' ? tvParams(extra) : extra), watch_region: ctx.region, with_watch_providers: sv.ids.join('|'), with_watch_monetization_types: 'flatrate|free|ads', ...pg };
+      const params = { ...base, ...releasedParams(type), ...(type === 'tv' ? tvParams(extra) : extra), watch_region: ctx.region, with_watch_providers: sv.ids.join('|'), with_watch_monetization_types: 'flatrate|free|ads', ...pg };
       return toItems(await tmdb('discover/' + type, params), type);
     };
     if (f.type === 'both') {
@@ -122,7 +126,7 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
     if (page > 1) return { title: 'Avec ' + (p.name || ''), items: [] };
     const j = await tmdb('person/' + p.id + '/combined_credits');
     const items = (j.cast || []).filter((c) => c.poster_path && (c.media_type === 'movie' || c.media_type === 'tv') && !(c.genre_ids || []).some((g) => g === 10767 || g === 10763))
-      .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40).map((c) => register(listOf({ results: [c] }, c.media_type)[0]));
+      .filter((c) => (c.release_date || c.first_air_date || '9999') <= todayStr()).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40).map((c) => register(listOf({ results: [c] }, c.media_type)[0]));
     return { title: 'Avec ' + (p.name || 'ta personnalité suivie'), items };
   }
   return null;
@@ -161,7 +165,7 @@ async function loadNext() {
     if (!(await rowAvailable(def))) return;
     const res = await resolveRow(def, 1, reg.ctx);
     if (token !== reg.token || !res) return;
-    const items = res.items.filter((it) => reg.appear.canShow(it.key)).slice(0, def.kind === 'top10' ? 10 : ROW_MAX);
+    const items = (await filterAvailable(res.items.filter((it) => reg.appear.canShow(it.key)), { cinema: def.cinema })).slice(0, def.kind === 'top10' ? 10 : ROW_MAX);
     if (items.length < (def.minItems || MIN_ITEMS)) return;
     items.forEach((it) => reg.appear.commit(it.key));
     const holder = document.createElement('div');
@@ -231,7 +235,7 @@ async function fillBrowse(token) {
     const res = await resolveRow(browse.def, browse.page, browse.ctx);
     if (token !== state.token) return;
     const have = new Set(Array.from(box.querySelectorAll('[data-tile]')).map((e) => e.dataset.tile));
-    const items = ((res && res.items) || []).filter((it) => !have.has(it.key));
+    const items = (await filterAvailable(((res && res.items) || []).filter((it) => !have.has(it.key)), { cinema: browse.def.cinema }));
     if (!items.length) browse.done = true;
     if (browse.page === 1) {
       const h1 = detailEl.querySelector('#svc-title');

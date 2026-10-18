@@ -109,7 +109,7 @@ function titleItems(t) {
   const [type, id] = t.key.split(':');
   const resume = resumeEntry(t.key);
   const items = [];
-  items.push({ id: 'play', label: resume || (type === 'tv' && userStore.watchedEpisodes(t.key).length) ? 'Reprendre' : 'Lecture', icon: ICON.play, run: () => playTitle(t.key, t.el, false) });
+  if (!it.cinema) items.push({ id: 'play', label: resume || (type === 'tv' && userStore.watchedEpisodes(t.key).length) ? 'Reprendre' : 'Lecture', icon: ICON.play, run: () => playTitle(t.key, t.el, false) });
   items.push({ id: 'info', label: 'Plus d’infos', icon: ICON.info, run: () => go('#/' + type + '/' + id, t.el) });
   items.push({
     id: 'trailer', label: 'Bande-annonce', icon: ICON.film,

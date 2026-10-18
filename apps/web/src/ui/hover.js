@@ -92,6 +92,7 @@ export function openHover(tile) {
     if (token !== hv.token || !hv.el || !d) return;
     const title = hv.el.querySelector('.hc-title');
     if (d.logo && title) title.innerHTML = '<img class="hc-logo logo-img" src="' + esc(d.logo) + '" alt="' + esc(it.name) + '" data-logo="' + esc(it.name) + '">';
+    if (d.cinemaSince) { const pl = hv.el.querySelector('.hc-play'); if (pl) pl.remove(); }
     const rates = hv.el.querySelector('.hc-rates');
     const fb = it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0;
     if (rates) { rates.innerHTML = compactRates(d.ratings, fb); if (!rates.innerHTML) rates.hidden = true; }

@@ -41,6 +41,10 @@ export interface RowDef {
   minItems?: number;
   /** Pas de lien « Tout voir ». */
   noBrowse?: boolean;
+  /** Rangée de titres à venir : exemptée de la règle « déjà sorti ». */
+  upcoming?: boolean;
+  /** Films uniquement en salle (« Au cinéma en ce moment »). */
+  cinema?: boolean;
 }
 
 export const MIN_ITEMS = 8;
@@ -71,11 +75,12 @@ export const ADULT_ROWS: RowDef[] = [
   { id: 'because-w-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 0 } },
   { id: 'because-r-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'rated', index: 0 } },
   { id: 'top-series', title: 'Top 10 séries de la semaine', kind: 'top10', fetch: { k: 'list', path: 'trending/tv/week' }, minItems: 10 },
+  { ...list('cinema', 'Au cinéma en ce moment', 'movie/now_playing', { cinema: true, upcoming: true, minItems: 6 }) },
   { id: 'top-films', title: 'Top 10 films', kind: 'top10', fetch: { k: 'list', path: 'trending/movie/week' }, minItems: 10 },
   { id: 'because-w-1', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 1 } },
   { ...list('trending-day', 'Tendances aujourd’hui', 'trending/all/day') },
   { id: 'new-netflix', title: 'Nouveautés sur Netflix', kind: 'landscape', fetch: { k: 'provider', slug: 'netflix', type: 'both', params: (c) => ({ sort_by: 'primary_release_date.desc', 'primary_release_date.lte': c.today, 'primary_release_date.gte': daysAgo(c.today, 120) }) } },
-  { ...list('soon-streaming', 'Bientôt en streaming', 'movie/upcoming') },
+  { ...list('soon-streaming', 'Bientôt en streaming', 'movie/upcoming', { upcoming: true }) },
   { id: 'person-0', title: '', kind: 'poster', fetch: { k: 'person', index: 0 } },
   { ...movie('critics', 'Acclamés par la critique', () => ({ sort_by: 'vote_average.desc', 'vote_average.gte': '7.8', 'vote_count.gte': '2000' }), { needs: ['vote_average.gte'] }) },
   { id: 'new-prime', title: 'Nouveautés sur Prime Video', kind: 'landscape', fetch: { k: 'provider', slug: 'prime-video', type: 'both', params: (c) => ({ sort_by: 'primary_release_date.desc', 'primary_release_date.lte': c.today, 'primary_release_date.gte': daysAgo(c.today, 120) }) } },

@@ -64,6 +64,7 @@ export function tileCard(it, o) {
     '<span class="card-fallback">' + esc(it.name) + '</span>' + ribbon + badge + dateBar +
     (land ? '<span class="t-shade" aria-hidden="true"></span><span class="t-titlewrap"><span class="t-title">' + esc(it.name) + '</span></span><span class="t-prov"></span>' : '') +
     '<span class="t-meta" aria-hidden="true">' + esc(metaTxt) + '</span>' +
+    (it.cinema ? '<span class="t-cinema" aria-hidden="true">Au cinéma</span>' : '') +
     '<span class="t-more" aria-hidden="true" title="Plus d’options">•••</span>' +
     (o.removable ? '<span class="t-remove" data-continue-remove="' + esc(it.key) + '" aria-hidden="true" title="Retirer de Reprendre la lecture">' + ICON.close + '</span>' : '') +
     (it.type === 'movie' && userStore.isWatched(it.key) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +

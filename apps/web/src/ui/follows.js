@@ -1,4 +1,5 @@
 /* Suivre un film, une série ou une personne (indépendant de la bibliothèque). */
+import { esc } from './util.js';
 import { userStore } from '../data/userStore';
 import { toast } from './dom.js';
 import { ICON } from './icons.js';
@@ -18,11 +19,11 @@ export function followMeta(key, btn) {
 }
 
 /** Bouton « Suivre » : rond (icône) ou avec libellé selon la classe. */
-export function followBtn(key, cls, extra) {
+export function followBtn(key, cls, extra, offLabel) {
   const on = userStore.isFollowing(key);
   return '<button type="button" class="' + cls + (on ? ' is-on' : '') + '" data-follow="' + key + '" aria-pressed="' + on + '"' + (extra || '') +
-    ' data-tip="' + (on ? 'Suivi' : 'Suivre') + '" aria-label="' + (on ? 'Suivi (ne plus suivre)' : 'Suivre') + '">' + (on ? ICON.bellOn : ICON.bell) +
-    (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? 'Suivi' : 'Suivre') + '</span>' : '') + '</button>';
+    (offLabel ? ' data-off-label="' + esc(offLabel) + '"' : '') + ' data-tip="' + (on ? 'Suivi' : 'Suivre') + '" aria-label="' + (on ? 'Suivi (ne plus suivre)' : 'Suivre') + '">' + (on ? ICON.bellOn : ICON.bell) +
+    (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? 'Suivi' : offLabel || 'Suivre') + '</span>' : '') + '</button>';
 }
 
 export function refreshFollowUI() {

@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, reque
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { hasProviders, movieAvailability } from '../src/data/released';
 import { episodeIndex, newEpisodeCount } from '../src/data/episodes';
 import { groupByDate, mergeEpisodes, monthGrid, movieReleases } from '../src/data/calendar';
 import { ADULT_ROWS, activeRows, Appearances, KID_ROWS, kidBase, makeCtx, PROBES } from '../src/data/rows';
@@ -235,6 +236,37 @@ describe('nouveaux épisodes et calendrier', () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].label).toBe('S2 É5–É7');
     expect(groupByDate(merged).get('2026-10-20')).toHaveLength(1);
+  });
+});
+
+describe('disponibilité d’un film', () => {
+  const today = '2026-10-18';
+  const fr = (...rs: Array<[number, string]>) => [{ iso_3166_1: 'FR', release_dates: rs.map(([type, release_date]) => ({ type, release_date })) }];
+  it('disponible avec un fournisseur ou une sortie numérique / physique / télé passée', () => {
+    expect(movieAvailability(fr([3, '2026-10-01']), 'FR', '2026-10-01', today, true).available).toBe(true);
+    expect(movieAvailability(fr([3, '2026-08-01'], [4, '2026-10-10']), 'FR', '2026-08-01', today, false).available).toBe(true);
+    expect(movieAvailability(fr([5, '2026-10-18']), 'FR', '2026-08-01', today, false).available).toBe(true);
+    expect(movieAvailability(fr([6, '2026-10-17']), 'FR', '2026-08-01', today, false).available).toBe(true);
+  });
+  it('seulement en salle, même ancienne : au cinéma, pas jouable (plus de repli à 45 jours)', () => {
+    const a = movieAvailability(fr([3, '2026-01-05']), 'FR', '2026-01-05', today, false);
+    expect(a).toEqual({ available: false, cinemaSince: '2026-01-05' });
+    expect(movieAvailability(fr([3, '2026-10-01'], [4, '2026-12-20']), 'FR', '2026-10-01', today, false)).toEqual({ available: false, cinemaSince: '2026-10-01' });
+  });
+  it('sans date dans la région : États-Unis, sinon n’importe quelle région, sinon la date principale', () => {
+    const us = [{ iso_3166_1: 'US', release_dates: [{ type: 4, release_date: '2026-09-01' }] }];
+    expect(movieAvailability(us, 'FR', null, today, false).available).toBe(true);
+    const other = [{ iso_3166_1: 'JP', release_dates: [{ type: 3, release_date: '2026-09-01' }] }];
+    expect(movieAvailability(other, 'FR', '2026-09-01', today, false).available).toBe(false);
+    expect(movieAvailability([], 'FR', '2026-09-01', today, false).available).toBe(true);
+    expect(movieAvailability([], 'FR', '2027-01-01', today, false).available).toBe(false);
+    expect(movieAvailability(fr([4, '2027-01-01']), 'FR', '2027-01-01', today, false)).toEqual({ available: false, cinemaSince: null });
+  });
+  it('lit les fournisseurs de la région', () => {
+    expect(hasProviders({ results: { FR: { rent: [{}] } } }, 'FR')).toBe(true);
+    expect(hasProviders({ results: { FR: { rent: [] } } }, 'FR')).toBe(false);
+    expect(hasProviders({ results: { US: { flatrate: [{}] } } }, 'FR')).toBe(false);
+    expect(hasProviders(undefined, 'FR')).toBe(false);
   });
 });
 

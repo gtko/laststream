@@ -160,7 +160,7 @@ export async function showPerson(id) {
   // Profil enfant : seulement les titres aux genres jeunesse (la classification est vérifiée tuile par tuile).
   const entries = personEntries(raw).filter((e) => !isKidProfile() || e.kidGenre);
   const today = todayStr();
-  const real = entries.filter((e) => !e.noise && !e.self);
+  const real = entries.filter((e) => !e.noise && !e.self && e.date && e.date <= today); // seuls les titres déjà sortis
   const known = real.slice().sort((a, b) => b.votes - a.votes).slice(0, 20);
   const films = real.filter((e) => e.kinds.has('Acteur') && e.it.type === 'movie').sort(byDateDesc);
   const series = real.filter((e) => e.kinds.has('Acteur') && e.it.type === 'tv').sort(byDateDesc);

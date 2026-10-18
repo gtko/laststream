@@ -47,7 +47,7 @@ export async function fillCollection(m, token) {
   try {
     const c = await tmdb('collection/' + m.collection.id);
     if (token !== state.token) return;
-    const parts = (c.parts || []).filter((p) => p.poster_path)
+    const parts = (c.parts || []).filter((p) => p.poster_path && ((p.release_date || '9999') <= new Date().toISOString().slice(0, 10) || String(p.id) === String(m.id)))
       .sort((a, b) => String(a.release_date || '9999').localeCompare(String(b.release_date || '9999')))
       .map((p) => register(toItem(p, 'movie')));
     if (parts.length < 2) { drop(); return; }

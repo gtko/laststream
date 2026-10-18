@@ -119,10 +119,25 @@ export function go(index, auto) {
 }
 
 /** Les détails (logo, notes, bande-annonce) arrivent après le premier rendu : on met la diapositive à jour. */
+/** Retire une diapositive (titre pas encore sorti dans la région). */
+function dropSlide(key) {
+  const i = hero.items.findIndex((x) => x.key === key);
+  if (i < 0 || hero.items.length < 2) return;
+  const wasCurrent = i === hero.i;
+  hero.items.splice(i, 1);
+  const s = hero.el.querySelectorAll('.hero-slide')[i];
+  if (s) s.remove();
+  hero.el.querySelectorAll('.hero-dot')[i]?.remove();
+  hero.el.querySelectorAll('.hero-dot').forEach((dot, k) => { dot.textContent = String(k + 1); dot.dataset.heroGo = String(k); });
+  if (hero.i > i || hero.i >= hero.items.length) hero.i = Math.max(0, hero.i - 1);
+  if (wasCurrent) go(hero.i, 'force');
+}
+
 export function refreshSlide(key) {
   const s = hero.el && hero.el.querySelector('.hero-slide[data-slide-key="' + key.replace(/"/g, '\\"') + '"]');
   const it = hero.items.find((x) => x.key === key);
   if (!s || !it) return;
+  if (detailOf(it).released === false) { dropSlide(key); return; }
   s.querySelector('.hero-content').innerHTML = heroContentHTML(it, rankLabel(it));
 }
 
@@ -138,6 +153,7 @@ export function initHero(items) {
   const el = document.querySelector('#app [data-hero]');
   if (!el) return;
   Object.assign(hero, { el, items, i: 0, hover: false, focus: false });
+  items.slice(0, 2).forEach((it) => { if (detailOf(it).released === false) dropSlide(it.key); });
   items.slice(2).forEach((it) => getDetail(it).then((d) => { if (d) refreshSlide(it.key); }));
   preloadNext();
   schedule();

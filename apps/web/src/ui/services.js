@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { releasedParams, todayStr } from './dates.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { register, toItem } from './catalog.js';
@@ -111,6 +112,7 @@ export function svcRows(type) {
 export async function loadSvcRow(sec, sv, type, def, token) {
   const isTv = type === 'tv';
   const params = Object.assign({
+    ...releasedParams(type),
     watch_region: getRegion().code,
     with_watch_providers: sv.ids.join('|'),
     with_watch_monetization_types: 'flatrate|free|ads',
@@ -120,7 +122,7 @@ export async function loadSvcRow(sec, sv, type, def, token) {
   let items = [];
   try {
     const j = await tmdb('discover/' + type, params);
-    items = (j.results || []).filter((r) => r.poster_path).map((r) => register(toItem(r, type)));
+    items = (j.results || []).filter((r) => r.poster_path && (r.release_date || r.first_air_date || '9999') <= todayStr()).map((r) => register(toItem(r, type)));
   } catch (_) {
     if (token === state.token) sec.querySelector('.row').innerHTML = '<p class="row-msg" role="status">Cette rangée n’a pas pu être chargée.</p>';
     return;
