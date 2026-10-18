@@ -461,7 +461,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .ep-meta { font-size: 13px; color: var(--dim); }
 .ep-ov { font-size: 14px; line-height: 1.5; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .ep.is-seen .ep-title { color: var(--dim); }
-.ep-seen { position: absolute; top: 10px; right: 10px; z-index: 2; width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(12, 11, 17, 0.72); border: 1.5px solid rgba(255, 255, 255, 0.5); color: transparent; transition: background-color 0.2s, color 0.2s; }
+.ep-seen { position: absolute; top: 10px; right: 10px; z-index: 2; width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(12, 11, 17, 0.72); border: 1.5px solid rgba(255, 255, 255, 0.5); color: rgba(255, 255, 255, 0.55); /* coche visible en gris : le bouton n'est plus un cercle vide */ transition: background-color 0.2s, color 0.2s; }
 .ep-seen:hover { color: var(--text); }
 .ep-seen[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .ep-seen:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
