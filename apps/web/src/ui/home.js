@@ -8,7 +8,7 @@ import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs,
 import { HERO_MAX, heroCarousel, initHero, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
-import { isKidProfile, isServerMode } from '../data/auth';
+import { auth, isKidProfile, isServerMode } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { recommend, tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
@@ -24,6 +24,7 @@ import { renderLibrary } from './library.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
+import { exploreMenuHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderTvRows } from './shows.js';
@@ -241,23 +242,19 @@ export function renderAI() {
 
 /** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant. */
 export const socialEnabled = () => isServerMode() && !isKidProfile();
-export const socialNav = () => (socialEnabled() ? '<a href="#/friends" data-go>Amis</a><a href="#/parties" data-go>Watch parties</a>' : '');
 
 // ---------- Accueil (style A · Cinéma) ----------
+/** Barre du haut : logo, cinq liens, menu Explorer ; à droite recherche, Watch parties, profil. */
 export function headerA() {
   return '<header class="topbar">' + brand() +
     '<nav class="nav" aria-label="Principale">' +
     '<a href="#/" data-noop class="is-current" aria-current="page">Accueil</a>' +
     '<a href="#films" data-scroll="films">Films</a>' +
     '<a href="#series" data-scroll="series">Séries</a>' +
-    '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
-    '<a href="#/emissions" data-showsnav>Émissions TV</a>' +
-    '<a href="#/collections" data-go>Collections</a>' +
-    '<a href="#/discover" data-go>Découvrir</a>' +
-    '<a href="#/services" data-svcs>Services</a>' +
-    '<a href="#/library" data-libnav>Bibliothèque</a><a href="#/calendar" data-calnav>Calendrier</a>' + socialNav() + '<a href="#" data-noop>Stats</a></nav>' +
-    '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
-    '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
+    '<a href="#/tv-live" data-tvlive class="nav-wide">Direct</a>' +
+    '<a href="#/library" data-libnav class="nav-wide">Ma liste</a>' +
+    exploreMenuHTML() + '</nav>' +
+    topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: auth.isOwner }) + '</header>';
 }
 
 export function viewA(d) {
@@ -326,6 +323,7 @@ export function renderHome() {
   }
   const d = visibleHome(state.data);
   app.innerHTML = (d.kids ? viewKids(d) : viewA(d)) + footer() + tabbar();
+  syncTopbar();
   hydrateContinue(document.getElementById('cont-slot'));
   renderAI();
   renderUpcoming();
@@ -343,7 +341,6 @@ export function renderHome() {
     startRegistry({ seen: d.heroes.map((x) => x.key), onDone: () => { renderHomeCollections().then((ok) => { if (!ok && state.status === 'ready') renderServices(); }); renderLibrary(); } });
   }
 }
-export const avatarStyle = () => { const c = userStore.currentProfile().avatarColor; return c ? ' style="background:' + esc(c) + '"' : ''; };
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
 export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Amis' ? '#/friends' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : '#/');
 export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Amis' ? ' data-go' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : ' data-noop');

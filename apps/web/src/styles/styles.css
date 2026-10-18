@@ -212,12 +212,32 @@ body.modal-open { overflow: hidden; }
 .state-hero { margin: 0 var(--gutter); }
 
 .s-a { --title-size: 84px; --logo-h: 150px; }
-.s-a .topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; gap: 24px; padding: 24px var(--gutter); }
-.s-a .nav { display: flex; gap: 28px; font-size: 15px; }
-.s-a .nav a { color: var(--muted); font-weight: 500; }
-.s-a .nav a:hover, .s-a .nav a.is-current { color: #fff; }
-.s-a .top-actions { margin-left: auto; display: flex; gap: 16px; align-items: center; }
-.s-a { --topbar-h: 88px; }
+.s-a { --topbar-h: 76px; }
+.s-a .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; align-items: center; gap: 28px; padding: 16px var(--gutter); transition: background-color 0.25s ease, box-shadow 0.25s ease; }
+.s-a .topbar.is-scrolled { background: rgba(12, 11, 17, 0.9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 0 var(--line); }
+.s-a .topbar .brand { flex: none; }
+.s-a .nav { display: flex; align-items: center; gap: clamp(16px, 2vw, 28px); min-width: 0; font-size: 15px; white-space: nowrap; }
+.s-a .nav > a { position: relative; padding: 6px 0; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.s-a .nav > a:hover, .s-a .nav > a.is-current, .nav-drop-btn:hover, .nav-drop-btn[aria-expanded="true"] { color: #fff; }
+.s-a .nav > a.is-current::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 2px; background: var(--accent); }
+.s-a .top-actions { margin-left: auto; display: flex; gap: 12px; align-items: center; flex: none; }
+.nav-drop { position: relative; }
+.nav-drop-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 15px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.nav-drop-btn svg { width: 14px; height: 14px; transform: rotate(90deg); transition: transform 0.2s ease; }
+.nav-drop-btn[aria-expanded="true"] svg { transform: rotate(270deg); }
+.nav-pop { position: absolute; top: calc(100% + 14px); z-index: 60; padding: 10px; border-radius: 14px; background: rgba(23, 21, 31, 0.97); border: 1px solid var(--line-2); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5); white-space: nowrap; }
+.nav-pop[hidden] { display: none; }
+.nav-pop-explore { left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; width: min(440px, calc(100vw - 2 * var(--gutter))); }
+.nav-pop-profile { right: 0; width: 240px; }
+.nav-pop-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.nav-pop-compact { display: none; order: -1; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line-2); }
+.nav-pop a, .nav-pop-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: none; color: var(--soft); font: inherit; font-size: 14px; font-weight: 500; text-align: left; white-space: nowrap; cursor: pointer; }
+.nav-pop a:hover, .nav-pop a:focus-visible, .nav-pop-item:hover, .nav-pop-item:focus-visible { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.nav-pop svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.nav-pop-who { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 10px; margin-bottom: 6px; border-bottom: 1px solid var(--line-2); color: var(--text); font-weight: 700; }
+.nav-pop-sub { font-size: 12px; font-weight: 500; color: var(--dim); }
+.nav-avatar { border: 0; cursor: pointer; }
+.nav-party { flex: none; }
 .s-a .hero { position: relative; display: grid; min-height: max(85vh, 640px); overflow: hidden; background: var(--surface-2); }
 .s-a .hero-slide { grid-area: 1 / 1; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; padding: calc(var(--topbar-h) + 32px) var(--gutter) 84px; transition: opacity 0.9s ease, visibility 0.9s; }
 .s-a .hero-slide:not(.is-current) { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -253,22 +273,34 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- Tablette 641-1023 ---------- */
 @media (max-width: 1023px) {
-  .s-a { --gutter: 32px; --title-size: 64px; --logo-h: 110px; }
-  .s-a .topbar { position: static; padding: 16px var(--gutter); }
-  .s-a .nav { display: none; }
-  .s-a { --topbar-h: 0px; }
+  .s-a { --gutter: 32px; --title-size: 64px; --logo-h: 110px; --topbar-h: 68px; }
   .s-a .hero { min-height: max(70vh, 560px); }
-  .s-a .hero-slide { padding: 32px var(--gutter) 84px; }
+  .s-a .hero-slide { padding: calc(var(--topbar-h) + 24px) var(--gutter) 84px; }
   .s-a .hero-content { max-width: none; }
   .s-a .rows { margin-top: 40px; }
 }
 
+/* ---------- Navigation : Explorer reprend Direct et Ma liste sous 1100 px ---------- */
+@media (max-width: 1099px) {
+  .s-a .nav-wide { display: none; }
+  .nav-pop-compact { display: grid; }
+}
+
+/* ---------- Tabbar jusqu'à 760 px : la barre du haut ne garde que logo, recherche et profil ---------- */
+@media (max-width: 760px) {
+  .s-a .nav, .s-a .nav-party { display: none; }
+  .s-a .topbar { gap: 12px; }
+  .tabbar { display: flex; }
+  .foot { padding-bottom: 110px; }
+  .s-a .rows { padding-bottom: 110px; }
+}
+
 /* ---------- Mobile <= 640 ---------- */
 @media (max-width: 640px) {
-  .s-a { --gutter: 16px; --title-size: 46px; --logo-h: 90px; }
+  .s-a { --gutter: 16px; --title-size: 46px; --logo-h: 90px; --topbar-h: 60px; }
   .s-a .topbar { padding: 14px 16px; }
   .s-a .hero { min-height: max(64vh, 480px); margin: 0; border-radius: 0; }
-  .s-a .hero-slide { padding: 24px 16px 64px; }
+  .s-a .hero-slide { padding: calc(var(--topbar-h) + 16px) 16px 64px; }
   .s-a .hero-content { align-items: flex-start; text-align: left; }
   .s-a .hero-desc { font-size: 14px; line-height: 1.5; }
   .s-a .hero-actions { width: 100%; flex-wrap: nowrap; }
@@ -279,8 +311,6 @@ body.modal-open { overflow: hidden; }
   .s-a .top-item { flex-basis: 200px; height: 190px; }
   .s-a .rank { font-size: 150px; }
   .s-a .top-item .card-media { width: 118px; height: 176px; }
-  .tabbar { display: flex; }
-  .foot { padding-bottom: 110px; }
 }
 
 /* ---------- Modale (bande-annonce, vidéos, sources) ---------- */
