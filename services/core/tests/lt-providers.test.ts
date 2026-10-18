@@ -123,12 +123,12 @@ describe('lt/tmdb', () => {
     expect(call?.headers.authorization).toBe(`Bearer ${KEYS.tmdbToken}`);
   });
 
-  it('ne transmet que les paramètres en liste blanche (query oui, year écarté)', async () => {
-    const res = await fetch(`${app.baseUrl}/${tmdbToken()}/lt/tmdb/search/movie?query=matrix&year=1999`);
+  it('ne transmet que les paramètres en liste blanche (query oui, paramètre inconnu écarté)', async () => {
+    const res = await fetch(`${app.baseUrl}/${tmdbToken()}/lt/tmdb/search/movie?query=matrix&fake_param=1`);
     expect(res.status).toBe(200);
     const call = upstream.callsTo('https://api.themoviedb.org/3/search/movie').at(-1);
     expect(call?.url.searchParams.get('query')).toBe('matrix');
-    expect(call?.url.searchParams.has('year')).toBe(false);
+    expect(call?.url.searchParams.has('fake_param')).toBe(false);
   });
 
   it('met en cache : une seule requête amont pour deux appels identiques', async () => {

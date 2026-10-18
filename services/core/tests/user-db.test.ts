@@ -136,7 +136,7 @@ describe('primitives cryptographiques', () => {
 
       const upgraded = openUserDb(file);
       try {
-        expect(upgraded.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(2);
+        expect(upgraded.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(MIGRATIONS.length);
         const row = upgraded.prepare('SELECT name, pin_failures, pin_locked_until, pin_version FROM profiles').get();
         expect(row).toEqual({ name: 'Greg', pin_failures: 0, pin_locked_until: null, pin_version: 0 });
       } finally {

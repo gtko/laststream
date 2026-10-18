@@ -104,6 +104,50 @@ export const progressWriteSchema = z.object({
   durationSec: z.number().finite().min(0).max(1_000_000),
 });
 
+/** Nombre maximal d'épisodes dans une écriture « vu / non vu » (une saison entière tient largement). */
+export const MAX_WATCHED_EPISODES = 2000;
+
+const EPISODE_REF = z.object({ season: SEASON_OR_EPISODE, episode: SEASON_OR_EPISODE });
+
+/** Vu / non vu : un film, ou une liste d'épisodes (la saison 0 n'est écrite que si elle est listée). */
+export const watchedWriteSchema = z
+  .discriminatedUnion('type', [
+    z.object({ type: z.literal('movie'), tmdbId: TMDB_ID.optional(), imdbId: IMDB_ID.optional(), watched: z.boolean() }),
+    z.object({
+      type: z.literal('series'),
+      tmdbId: TMDB_ID.optional(),
+      imdbId: IMDB_ID.optional(),
+      episodes: z.array(EPISODE_REF).min(1).max(MAX_WATCHED_EPISODES),
+      watched: z.boolean(),
+    }),
+  ])
+  .refine((body) => body.tmdbId !== undefined || body.imdbId !== undefined, 'tmdbId_ou_imdbId_requis');
+
+/** Suivi d'un titre ou d'une personne (`person` : pas de saison, pas de notification par épisode). */
+export const followWriteSchema = z.object({
+  imdbId: IMDB_ID.optional(),
+  title: z.string().trim().min(1).max(200),
+  poster: HTTP_URL.nullable().optional(),
+  notify: z.boolean().default(false),
+});
+
+/** Note de 0 à 5 par pas de 0,5 (demi-étoiles). */
+const RATING = z
+  .number()
+  .min(0)
+  .max(5)
+  .refine((value) => Number.isInteger(value * 2), 'pas_de_demi_etoile');
+
+export const ratingWriteSchema = z.object({
+  rating: RATING,
+  imdbId: IMDB_ID.optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+});
+
+export const followTypeSchema = z.enum(['movie', 'series', 'person']);
+
+export const ratingsQuerySchema = z.object({ type: MEDIA_TYPE.optional() });
+
 export const stremioImportSchema = z.object({
   email: z.string().trim().min(3).max(254),
   password: z.string().min(1).max(512),
