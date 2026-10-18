@@ -21,12 +21,14 @@ function appFor(env: WorkerEnv): App {
   const secret = secretFromEnv();
   if (secret === undefined) throw new Error('LASTADDON_SECRET manquant : wrangler secret put LASTADDON_SECRET');
   const rangeLimit = env.RANGE_LIMITER;
+  const mdbLimit = env.MDBLIST_LIMITER;
   app = createApp({
     secret,
     allowPlain: isPlainAllowed(),
     ui: platform.uiAssets,
     authLimiter: authLimiterFrom(env),
     rangeLimiter: rangeLimit === undefined ? undefined : async (key) => (await rangeLimit.limit({ key })).success,
+    mdblistLimiter: mdbLimit === undefined ? undefined : async () => (await mdbLimit.limit({ key: 'mdblist' })).success,
   });
   return app;
 }

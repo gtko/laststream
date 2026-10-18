@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Ctx } from '../http/app-env.js';
-import { platform, type OutboundDispatcher } from '../platform/index.js';
+import { platform, type KvCache, type OutboundDispatcher } from '../platform/index.js';
+import { createRateLimiter } from '../rate-limit.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
@@ -209,6 +210,10 @@ export interface LtState {
   cache: TtlCache;
   tvdbSessions: Map<string, { token: string; exp: number }>;
   tvdbVersions: Map<string, { version: TvdbVersion; exp: number }>;
+  /** Cache persistant des notes MDBList et disjoncteur de quota (Workers : KV partagé ; Node : mémoire). */
+  mdbKv: KvCache;
+  /** Fin (ms epoch) du disjoncteur MDBList connue de cette instance : évite de relire le KV pendant la coupure. */
+  mdbBreakerUntil: number;
 }
 
 /**
@@ -221,15 +226,32 @@ export interface LtContext {
   guard: UrlGuard;
   dispatcher: OutboundDispatcher | undefined;
   signer: UrlSigner;
+  /** Limite de débit globale des appels MDBList sortants (true = autorisé). */
+  mdbLimiter: () => Promise<boolean>;
+}
+
+/** Appels MDBList sortants par minute (par instance sans limiteur partagé). */
+export const MDBLIST_CALLS_PER_MINUTE = 20;
+
+function mdblistLocalLimiter(): () => Promise<boolean> {
+  const limit = createRateLimiter(MDBLIST_CALLS_PER_MINUTE, 60e3);
+  return () => Promise.resolve(limit('mdblist').allowed);
 }
 
 export function createLtContext(deps: AppDeps): LtContext {
   return {
-    state: { cache: new TtlCache(), tvdbSessions: new Map(), tvdbVersions: new Map() },
+    state: {
+      cache: new TtlCache(),
+      tvdbSessions: new Map(),
+      tvdbVersions: new Map(),
+      mdbKv: platform().createKvCache('mdb'),
+      mdbBreakerUntil: 0,
+    },
     fetch: deps.fetch ?? globalThis.fetch,
     guard: createPublicGuard(),
     dispatcher: platform().http.pinnedDispatcher(deps.lookupHost),
     signer: createUrlSigner(deps.secret),
+    mdbLimiter: deps.mdblistLimiter ?? mdblistLocalLimiter(),
   };
 }
 

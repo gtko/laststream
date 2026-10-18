@@ -65,6 +65,8 @@ export interface AppDeps {
    * configuration. Absent : compteur en mémoire (20 par minute et par configuration). `true` = autorisé.
    */
   rangeLimiter?: (key: string) => Promise<boolean>;
+  /** Limite de débit globale des appels sortants vers MDBList (binding partagé sous Workers). Absent : compteur en mémoire. */
+  mdblistLimiter?: () => Promise<boolean>;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
   uiDir?: string;
   /** Fichiers de l'interface web (binding Assets sous Workers). Prime sur `uiDir`. */

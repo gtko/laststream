@@ -895,4 +895,15 @@ export class UserStore {
   setAccountConfig(accountId: string, value: string | null): void {
     this.db.prepare('UPDATE accounts SET lastaddon_config = ? WHERE id = ?').run(value === null ? null : JSON.stringify(value), accountId);
   }
+
+  /** Sources TV chiffrées du compte (chaîne opaque base64url), ou null si le compte n'en a pas. */
+  getTvSources(accountId: string): string | null {
+    const row = this.db.prepare('SELECT tv_sources AS v FROM accounts WHERE id = ?').get(accountId) as { v: string | null } | undefined;
+    return row?.v ?? null;
+  }
+
+  /** Enregistre (ou, avec null, supprime) les sources TV chiffrées du compte. */
+  setTvSources(accountId: string, value: string | null): void {
+    this.db.prepare('UPDATE accounts SET tv_sources = ? WHERE id = ?').run(value, accountId);
+  }
 }

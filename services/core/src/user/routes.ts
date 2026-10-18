@@ -5,7 +5,7 @@ import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
 import { errorHandler } from '../http/common.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';
-import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
+import { ConfigDecodeError, decodeConfig, decryptJson, encryptJson } from '../config/codec.js';
 import { withServerServices } from '../config/server-services.js';
 import { ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
@@ -22,6 +22,7 @@ import {
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
 import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session.js';
+import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
@@ -668,6 +669,37 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     // Anciennes versions de l'app : la clé du profil principal reste alimentée le temps d'une version.
     await users.writeSettings(String(c.req.header('x-profile-id')), [[CONFIG_SETTING_KEY, config]]);
     return sendJson(c, { config });
+  });
+
+  // Sources TV du compte (playlists M3U, guides XMLTV) : JSON chiffré côté serveur, rendu en clair au seul compte
+  // (no-store), lu par tout profil, écrit par le principal. Le serveur ne télécharge jamais ces URL et ne les journalise pas.
+
+  router.get('/account/tv-sources', async (c) => {
+    const users = db();
+    const { account } = await sessionOf(users, c);
+    const actor = c.req.header('x-profile-id');
+    if (actor !== undefined && (await users.findProfile(account.id, actor)) === undefined) throw new UserApiError(404, 'profile_not_found');
+    const stored = await users.getTvSources(account.id);
+    let lists: unknown = null;
+    if (stored !== null) {
+      try {
+        lists = decryptJson(stored, deps.secret, TV_SOURCES_PURPOSE);
+      } catch {
+        throw new UserApiError(500, 'tv_sources_unreadable');
+      }
+    }
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { lists });
+  });
+
+  router.put('/account/tv-sources', async (c) => {
+    const users = db();
+    const session = await managerOf(users, c, false);
+    const body = c.get('body');
+    const lists = parseTvSources(isRecord(body) ? body.lists : undefined);
+    await users.setTvSources(session.account.id, lists === null ? null : encryptJson(lists, deps.secret, TV_SOURCES_PURPOSE));
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { ok: true });
   });
 
   // Réglages

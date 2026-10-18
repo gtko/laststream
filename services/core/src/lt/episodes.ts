@@ -1,5 +1,6 @@
 import { isRecord } from '../sources/http.js';
 import { LtError, type LtContext, recordAt, TTL } from './context.js';
+import { type CinemetaThumb, cinemetaThumbs, pickThumb } from './cinemeta-thumbs.js';
 import { tmdbGet, tvdbAiredEpisodes, type TvdbAiredEpisode, type TvdbLang } from './providers.js';
 
 /**
@@ -107,6 +108,7 @@ interface SeriesDetails {
   seasons: SeasonInfo[];
   numberOfSeasons: number;
   tvdbId: number | null;
+  imdbId: string | null;
   groups: TmdbGroupInfo[];
 }
 
@@ -128,6 +130,7 @@ function seriesDetails(json: unknown): SeriesDetails {
       ];
     });
   const tvdbId = intOf(recordAt(details, 'external_ids').tvdb_id);
+  const imdbRaw = textOf(recordAt(details, 'external_ids').imdb_id);
   const groups = arrayOf(recordAt(details, 'episode_groups').results)
     .filter(isRecord)
     .map((raw) => ({
@@ -140,6 +143,7 @@ function seriesDetails(json: unknown): SeriesDetails {
     seasons,
     numberOfSeasons: intOf(details.number_of_seasons) ?? seasons.filter((s) => s.number > 0).length,
     tvdbId: tvdbId !== null && tvdbId > 0 ? tvdbId : null,
+    imdbId: imdbRaw !== null && /^tt\d{5,12}$/.test(imdbRaw) ? imdbRaw : null,
     groups,
   };
 }
@@ -346,6 +350,7 @@ interface TvdbDraft {
   enOverview: string | null;
   airDate: string | null;
   runtime: number | null;
+  tvdbImage: string | null;
 }
 
 interface AiredSets {
@@ -368,8 +373,8 @@ async function loadAired(ctx: LtContext, svc: SeriesServices, apiKey: string, tv
 }
 
 /**
- * Structure TVDB. Texte : TVDB français, puis TMDB, puis TVDB anglais. Images, durées et coordonnées TMDB viennent de
- * l'épisode TMDB relié par date ou par rang absolu, quand TVDB ne les fournit pas.
+ * Structure TVDB. Texte : TVDB français, puis TMDB, puis TVDB anglais. Image : TMDB, puis TVDB. Durées et coordonnées
+ * TMDB viennent de l'épisode TMDB relié par date ou par rang absolu, quand TVDB ne les fournit pas.
  */
 function tvdbStructure(details: SeriesDetails, tmdb: TmdbEpisode[], aired: AiredSets): SeriesEpisodes {
   const english = new Map(aired.english.map((e) => [`${e.season}:${e.number}`, e]));
@@ -384,6 +389,7 @@ function tvdbStructure(details: SeriesDetails, tmdb: TmdbEpisode[], aired: Aired
       enOverview: en?.overview ?? null,
       airDate: e.airDate,
       runtime: e.runtime,
+      tvdbImage: e.image,
     };
   });
   const regular = drafts.filter((d) => d.season > 0);
@@ -401,7 +407,7 @@ function tvdbStructure(details: SeriesDetails, tmdb: TmdbEpisode[], aired: Aired
       overview: d.frOverview ?? t?.overview ?? d.enOverview,
       airDate: d.airDate ?? t?.airDate ?? null,
       runtime: d.runtime ?? t?.runtime ?? null,
-      still: t?.still ?? null,
+      still: t?.still ?? d.tvdbImage,
       tmdbSeason: t?.season ?? null,
       tmdbEpisode: t?.episode ?? null,
     };
@@ -454,10 +460,47 @@ interface Loaded {
 }
 
 /**
+ * Complète les vignettes manquantes avec Cinemeta (un appel par série, seulement s'il manque une image). Panne
+ * Cinemeta : structure inchangée, signalée par `failed` (résultat gardé peu de temps).
+ */
+async function withCinemetaStills(
+  ctx: LtContext,
+  details: SeriesDetails,
+  body: SeriesEpisodes,
+): Promise<{ body: SeriesEpisodes; failed: boolean }> {
+  if (details.imdbId === null || body.episodes.every((e) => e.still !== null)) return { body, failed: false };
+  let thumbs: CinemetaThumb[];
+  try {
+    thumbs = await cinemetaThumbs(ctx, details.imdbId);
+  } catch (err) {
+    if (!(err instanceof LtError)) throw err;
+    console.warn(`[lt][episodes] Cinemeta indisponible, pas de vignette de repli (statut amont : ${err.code})`);
+    return { body, failed: true };
+  }
+  if (thumbs.length === 0) return { body, failed: false };
+  const used = new Set<CinemetaThumb>();
+  const episodes = body.episodes.map((e) =>
+    e.still !== null ? e : { ...e, still: pickThumb(thumbs, e.season, e.episode, e.airDate, used) },
+  );
+  return { body: { ...body, episodes }, failed: false };
+}
+
+/**
  * Ordre de choix : TVDB (clé configurée et identifiant TVDB connu), puis groupe TMDB, puis saisons TMDB. Une panne TVDB
  * (erreur amont) bascule sur TMDB, signalée par un journal sans clé.
  */
 async function load(ctx: LtContext, svc: SeriesServices, tmdbId: string, language: string): Promise<Loaded> {
+  const base = await loadStructure(ctx, svc, tmdbId, language);
+  const done = await withCinemetaStills(ctx, base.details, base.loaded.body);
+  return { body: done.body, degraded: base.loaded.degraded || done.failed };
+}
+
+async function loadStructure(
+  ctx: LtContext,
+  svc: SeriesServices,
+  tmdbId: string,
+  language: string,
+): Promise<{ loaded: Loaded; details: SeriesDetails }> {
   const token = svc.tmdbToken;
   const details = seriesDetails(
     await tmdbGet(ctx, token, `tv/${tmdbId}`, { language, append_to_response: 'external_ids,episode_groups' }),
@@ -476,16 +519,16 @@ async function load(ctx: LtContext, svc: SeriesServices, tmdbId: string, languag
     }
     if (aired !== undefined) {
       const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons);
-      return { body: tvdbStructure(details, tmdb, aired), degraded: false };
+      return { loaded: { body: tvdbStructure(details, tmdb, aired), degraded: false }, details };
     }
   }
   const group = pickGroup(details);
   if (group !== undefined) {
     const body = await groupStructure(ctx, token, details, group, language, tmdbId);
-    if (body !== undefined) return { body, degraded };
+    if (body !== undefined) return { loaded: { body, degraded }, details };
   }
   const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons);
-  return { body: plainStructure(details, tmdb), degraded };
+  return { loaded: { body: plainStructure(details, tmdb), degraded }, details };
 }
 
 /**
@@ -499,7 +542,7 @@ export async function seriesEpisodes(
   language: string | undefined,
 ): Promise<SeriesEpisodes> {
   const req = parseSeriesRequest(tmdbId, language);
-  const key = `episodes:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
+  const key = `episodes:v2:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
   const loaded = await ctx.state.cache.get<Loaded>(
     key,
     (value) => (value.degraded ? TTL.tvPartial : TTL.episodes),

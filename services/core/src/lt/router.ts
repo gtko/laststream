@@ -9,7 +9,8 @@ import { personWhy, recommend, why } from './ai.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { bodyOf, createLtContext, decodeFor, digest, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
-import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
+import { mdblistCached } from './mdblist.js';
+import { tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
 import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/media-url.js';
 import type { AutoDetector } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
@@ -153,8 +154,9 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
 
   lt.get('/mdblist/:type/:id', async (c) => {
     const apiKey = serviceKey(configOf(c), 'mdblist');
-    const body = await mdblistRatings(ctx, apiKey, c.req.param('type'), c.req.param('id'));
-    cacheable(c);
+    const body = await mdblistCached(ctx, apiKey, c.req.param('type'), c.req.param('id'));
+    // Réponse dégradée (quota) : jamais mise en cache par le navigateur.
+    if (body.unavailable !== true) cacheable(c);
     return sendJson(c, body);
   });
 

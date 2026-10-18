@@ -346,6 +346,14 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 11,
+    name: 'sources TV du compte (accounts.tv_sources), chiffrées côté serveur',
+    sql: `
+      -- Playlists M3U / guides XMLTV de l'utilisateur : JSON chiffré (AES-256-GCM, base64url), jamais en clair en base.
+      ALTER TABLE accounts ADD COLUMN tv_sources TEXT;
+    `,
+  },
 ];
 
 /**

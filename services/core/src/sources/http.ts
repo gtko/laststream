@@ -251,6 +251,8 @@ export interface BytesResult {
   ok: boolean;
   url: string;
   bytes: Uint8Array;
+  /** En-têtes de la réponse finale (limites de débit, Retry-After…). */
+  headers: Headers;
 }
 
 async function discardBody(response: Response): Promise<void> {
@@ -288,7 +290,7 @@ export async function fetchBytes(
       const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
       if (location === null) {
         const bytes = await readBytesLimited(response, body.maxBytes ?? MAX_BODY_BYTES);
-        return { status: response.status, ok: response.ok, url: target, bytes };
+        return { status: response.status, ok: response.ok, url: target, bytes, headers: response.headers };
       }
       await discardBody(response);
       if (redirects >= MAX_REDIRECTS) {

@@ -1,5 +1,5 @@
 import { isRecord } from '../sources/http.js';
-import { getJson, keyDigest, LtError, type LtContext, recordAt, TTL, type TvdbVersion } from './context.js';
+import { getJson, keyDigest, LtError, type LtContext, ltRequest, recordAt, TTL, type TvdbVersion } from './context.js';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/';
 /** Chemins TMDB autorisés (liste blanche du prototype). */
@@ -140,23 +140,72 @@ export interface MdbRatings {
   score: number | null;
 }
 
-/** Notes MDBList (IMDb ou TMDB id). Seules les notes et le score sont renvoyés. */
-export async function mdblistRatings(ctx: LtContext, apiKey: string, type: string, id: string): Promise<MdbRatings> {
+/** Quota MDBList épuisé (429). `retryAfterMs` : délai annoncé par les en-têtes, ou undefined. Même forme qu'une 502 upstream_429. */
+export class MdbRateLimited extends LtError {
+  readonly retryAfterMs: number | undefined;
+
+  constructor(retryAfterMs: number | undefined) {
+    super(502, 'upstream_429', 'mdblist');
+    this.name = 'MdbRateLimited';
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+/** Délai avant remise à zéro d'après les en-têtes MDBList (Retry-After, X-RateLimit-Reset : secondes, epoch ou date). */
+export function mdblistRetryDelayMs(headers: Headers, now: number = Date.now()): number | undefined {
+  for (const name of ['retry-after', 'x-ratelimit-reset', 'ratelimit-reset', 'x-ratelimit-reset-after']) {
+    const raw = headers.get(name)?.trim();
+    if (!raw) continue;
+    if (/^\d+(\.\d+)?$/.test(raw)) {
+      const n = Number(raw);
+      return n > 1e9 ? Math.max(0, n * 1000 - now) : n * 1000;
+    }
+    const date = Date.parse(raw);
+    if (Number.isFinite(date)) return Math.max(0, date - now);
+  }
+  return undefined;
+}
+
+/** Cible MDBList d'une demande : source (imdb|tmdb), type MDBList et identifiant. Entrée invalide : 404 not_found. */
+export function mdblistTarget(type: string, id: string): { source: 'imdb' | 'tmdb'; mdbType: string; id: string } {
   const mdbType = MDB_TYPES[type];
   if (mdbType === undefined) throw new LtError(404, 'not_found');
-  let source: 'imdb' | 'tmdb';
-  if (/^tt\d{5,12}$/.test(id)) source = 'imdb';
-  else if (/^\d{1,9}$/.test(id)) source = 'tmdb';
-  else throw new LtError(404, 'not_found');
-  return ctx.state.cache.get(`mdb:${source}:${mdbType}:${id}`, TTL.mdb, async () => {
-    const url = `https://api.mdblist.com/${source}/${mdbType}/${encodeURIComponent(id)}?apikey=${encodeURIComponent(apiKey)}`;
-    const json = await getJson(ctx, url);
-    const list: unknown[] = isRecord(json) && Array.isArray(json.ratings) ? json.ratings : [];
-    const pick = (name: string): number | null => {
-      const entry = list.find((x) => isRecord(x) && x.source === name);
-      return isRecord(entry) && typeof entry.value === 'number' ? entry.value : null;
-    };
-    return {
+  if (/^tt\d{5,12}$/.test(id)) return { source: 'imdb', mdbType, id };
+  if (/^\d{1,9}$/.test(id)) return { source: 'tmdb', mdbType, id };
+  throw new LtError(404, 'not_found');
+}
+
+/** Notes MDBList sans cache, avec la date de sortie (null si inconnue). 429 : MdbRateLimited. */
+export async function mdblistFetch(
+  ctx: LtContext,
+  apiKey: string,
+  type: string,
+  id: string,
+): Promise<{ ratings: MdbRatings; released: string | null }> {
+  const target = mdblistTarget(type, id);
+  const url = `https://api.mdblist.com/${target.source}/${target.mdbType}/${encodeURIComponent(target.id)}?apikey=${encodeURIComponent(apiKey)}`;
+  const res = await ltRequest(ctx, url);
+  if (res.status === 429) throw new MdbRateLimited(mdblistRetryDelayMs(res.headers));
+  if (!res.ok) throw new LtError(502, `upstream_${res.status}`);
+  let json: unknown;
+  try {
+    json = JSON.parse(Buffer.from(res.bytes).toString('utf8')) as unknown;
+  } catch {
+    throw new LtError(502, 'upstream_bad_json');
+  }
+  // Certaines réponses de quota arrivent avec un message d'erreur plutôt qu'un statut 429.
+  if (isRecord(json) && typeof json.error === 'string' && /limit/i.test(json.error)) {
+    throw new MdbRateLimited(mdblistRetryDelayMs(res.headers));
+  }
+  const list: unknown[] = isRecord(json) && Array.isArray(json.ratings) ? json.ratings : [];
+  const pick = (name: string): number | null => {
+    const entry = list.find((x) => isRecord(x) && x.source === name);
+    return isRecord(entry) && typeof entry.value === 'number' ? entry.value : null;
+  };
+  const day = isRecord(json) && typeof json.released === 'string' ? json.released.slice(0, 10) : '';
+  return {
+    released: AIR_DATE.test(day) ? day : null,
+    ratings: {
       ratings: {
         imdb: pick('imdb'),
         rottentomatoes: pick('tomatoes'),
@@ -167,8 +216,14 @@ export async function mdblistRatings(ctx: LtContext, apiKey: string, type: strin
         trakt: pick('trakt'),
       },
       score: isRecord(json) && typeof json.score === 'number' ? json.score : null,
-    };
-  });
+    },
+  };
+}
+
+/** Notes MDBList sans cache persistant (vérification d'une clé). Seules les notes et le score sont renvoyés. */
+export async function mdblistRatings(ctx: LtContext, apiKey: string, type: string, id: string): Promise<MdbRatings> {
+  mdblistTarget(type, id);
+  return ctx.state.cache.get(`mdb:${type}:${id}`, TTL.mdb, async () => (await mdblistFetch(ctx, apiKey, type, id)).ratings);
 }
 
 export interface TvdbSeries {
@@ -382,6 +437,8 @@ export interface TvdbAiredEpisode {
   overview: string | null;
   airDate: string | null;
   runtime: number | null;
+  /** Vignette de l'épisode (URL https complète), null si absente. */
+  image: string | null;
 }
 
 /** Codes de langue ISO 639-2 attendus par l'API v4 (chemin « /episodes/default/{lang} »). */
@@ -403,6 +460,18 @@ function airDateOf(value: unknown): string | null {
   return typeof value === 'string' && AIR_DATE.test(value) ? value : null;
 }
 
+/** Hôte des images TVDB : v4 renvoie une URL complète, v3 un chemin relatif (« episodes/1/2.jpg »). */
+const TVDB_ARTWORK = 'https://artworks.thetvdb.com';
+
+function tvdbImage(value: unknown): string | null {
+  const text = nonEmpty(value)?.trim();
+  if (text === undefined) return null;
+  if (/^https:\/\//i.test(text)) return text;
+  if (/^http:\/\//i.test(text)) return 'https://' + text.slice('http://'.length);
+  if (/^[\w./-]+$/.test(text) && !text.includes('..')) return `${TVDB_ARTWORK}/banners/${text.replace(/^\/+(banners\/)?/, '')}`;
+  return null;
+}
+
 function airedFromV4(raw: unknown): TvdbAiredEpisode | undefined {
   if (!isRecord(raw)) return undefined;
   const season = intOf(raw.seasonNumber);
@@ -415,6 +484,7 @@ function airedFromV4(raw: unknown): TvdbAiredEpisode | undefined {
     overview: nonEmpty(raw.overview),
     airDate: airDateOf(raw.aired),
     runtime: intOf(raw.runtime) || null,
+    image: tvdbImage(raw.image),
   };
 }
 
@@ -430,6 +500,7 @@ function airedFromV3(raw: unknown): TvdbAiredEpisode | undefined {
     overview: nonEmpty(raw.overview),
     airDate: airDateOf(raw.firstAired),
     runtime: null,
+    image: tvdbImage(raw.filename),
   };
 }
 
