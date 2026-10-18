@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile } from '../data/auth';
 import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
 import { detailEl } from './dom.js';
@@ -29,7 +30,7 @@ export function renderLibrary() {
   if (!slot) return;
   const items = libItems().sort((a, b) => b.added - a.added);
   if (!items.length) { slot.innerHTML = ''; return; }
-  slot.innerHTML = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">Ma bibliothèque ' +
+  slot.innerHTML = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? 'Mes favoris' : 'Ma bibliothèque') + ' ' +
     '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.map((it) => posterCard(it)).join('')) + '</section>';
 }
 

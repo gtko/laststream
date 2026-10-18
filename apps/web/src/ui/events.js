@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { browseMore } from './kids.js';
 import { isKidProfile } from '../data/auth';
 import { leaveKidProfile } from './auth-ui.js';
 import { userStore } from '../data/userStore';
@@ -233,6 +234,11 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (state.ctxMenu) closeCtx();
+  const brw = t.closest('[data-browse]');
+  if (brw) { e.preventDefault(); go('#/browse/' + brw.dataset.browse, brw); return; }
+  if (t.closest('[data-browse-more]')) { e.preventDefault(); browseMore(); return; }
+  const srch = t.closest('[data-search]');
+  if (srch) { e.preventDefault(); go('#/search', srch); return; }
   const setB = t.closest('[data-settings]');
     if (setB) { e.preventDefault(); if (isKidProfile()) leaveKidProfile(); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');

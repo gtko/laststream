@@ -41,6 +41,7 @@ export interface Profile {
   isKid?: boolean;
   kidMaxAge?: number | null;
   hasPin?: boolean;
+  allowedCatalogs?: string[];
 }
 
 export interface UserStore {

@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { loadKidsHome, viewKids } from './kids.js';
 import { isKidProfile, kidMaxAge } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { kidAllows } from '../data/kid';
@@ -92,7 +93,7 @@ export async function load() {
   state.status = 'loading';
   renderHome();
   try {
-    state.data = await loadHome();
+    state.data = isKidProfile() ? await loadKidsHome() : await loadHome();
     state.status = 'ready';
   } catch (err) {
     console.error('[laststream] catalogue indisponible');
@@ -196,11 +197,11 @@ export function headerA() {
     '<a href="#/tv-live" data-tvlive>TV en direct</a>' +
     '<a href="#/services" data-svcs>Services</a>' +
     '<a href="#/library" data-libnav>Bibliothèque</a><a href="#" data-noop>Stats</a></nav>' +
-    '<div class="top-actions"><button type="button" class="icon-btn" aria-label="Rechercher">' + ICON.search + '</button>' +
+    '<div class="top-actions"><button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
     '<button type="button" class="avatar" data-settings' + avatarStyle() + ' aria-label="Profil ' + esc(userStore.currentProfile().name) + (isKidProfile() ? ', changer de profil' : ' et réglages') + '">' + esc(initialOf()) + '</button></div></header>';
 }
 
-export function heroA(it) {
+export function heroA(it, eyebrow) {
   if (!it) return heroEmpty();
   const d = detailOf(it);
   return '<section class="hero" aria-label="À la une">' +
@@ -208,7 +209,7 @@ export function heroA(it) {
     '<img src="' + esc(IMG('w1280', it.backdropPath)) + '" alt="" data-fb="' + esc(it.backdrop) + '" fetchpriority="high" decoding="async"></div>' +
     '<div class="scrim" aria-hidden="true"></div>' +
     '<div class="hero-content">' +
-    '<span class="eyebrow">Tendance cette semaine</span>' +
+    '<span class="eyebrow">' + esc(eyebrow || 'Tendance cette semaine') + '</span>' +
     titleEl(it, d, 'hero-title') +
     '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
     '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0) + '</ul>' +
@@ -277,7 +278,7 @@ export function renderHome() {
     app.innerHTML = errorView();
     return;
   }
-  app.innerHTML = viewA(state.data) + footer() + tabbar();
+  app.innerHTML = (state.data.kids ? viewKids(state.data) : viewA(state.data)) + footer() + tabbar();
   renderAI();
   renderServices();
   renderUpcoming();

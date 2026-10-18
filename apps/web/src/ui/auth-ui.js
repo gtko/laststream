@@ -3,6 +3,7 @@ import {
   adultsWithPin, auth, chooseProfile, continueWithoutAccount, hasValidToken, removeProfile,
   saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
+import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { KID_AGES, UserApiError } from '../data/userApi';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
@@ -240,8 +241,10 @@ function profileEditor(p) {
     '<div class="pf-colors" role="radiogroup" aria-label="Couleur">' + COLORS.map((c) =>
       '<label class="pf-color" style="background:' + c + '"><input type="radio" name="color" value="' + c + '"' + (c.toLowerCase() === String(cur.avatarColor).toLowerCase() ? ' checked' : '') + '><span class="sr-only">' + c + '</span></label>').join('') + '</div>' +
     '<label class="set-check"><input type="checkbox" name="kid"' + (cur.isKid ? ' checked' : '') + '> <span>Profil enfant</span></label>' +
-    '<label class="tv-field" data-kidage' + (cur.isKid ? '' : ' hidden') + '>Âge maximal<select name="age">' + KID_AGES.map((a) =>
+    '<div data-kidage' + (cur.isKid ? '' : ' hidden') + '><label class="tv-field">Âge maximal<select name="age">' + KID_AGES.map((a) =>
       '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
+    '<fieldset class="pf-sections"><legend>Rubriques autorisées</legend>' + KID_SECTIONS.map(([id, label]) =>
+      '<label class="set-check"><input type="checkbox" name="sec" value="' + id + '"' + (sectionAllowed(cur.allowedCatalogs, id) ? ' checked' : '') + '> <span>' + esc(label) + '</span></label>').join('') + '</fieldset></div>' +
     '<label class="tv-field">Code PIN (4 chiffres)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" placeholder="' + (cur.hasPin ? 'Laisser vide pour garder' : 'Aucun') + '"></label>' +
     (cur.hasPin ? '<label class="set-check"><input type="checkbox" name="nopin"> <span>Retirer le code PIN</span></label>' : '') +
     '<p class="pin-msg" id="pfe-msg" role="alert"></p>' +
@@ -268,7 +271,13 @@ function profileEditor(p) {
     e.preventDefault();
     const f = form.elements;
     const input = { name: f.name.value.trim(), avatarColor: (form.querySelector('input[name="color"]:checked') || {}).value || COLORS[0], isKid: f.kid.checked };
-    if (input.isKid) input.kidMaxAge = Number(f.age.value);
+    if (input.isKid) {
+      input.kidMaxAge = Number(f.age.value);
+      const chosen = Array.from(form.querySelectorAll('input[name="sec"]:checked')).map((x) => x.value);
+      // Défaut (toutes les rubriques sauf la TV jeunesse) = liste vide.
+      const isDefault = chosen.length === KID_SECTIONS.length - 1 && !chosen.includes('tv');
+      input.allowedCatalogs = isDefault ? [] : chosen;
+    }
     const pin = f.pin.value.trim();
     if (pin && !/^\d{4}$/.test(pin)) { msg.textContent = 'Le code PIN compte 4 chiffres.'; return; }
     if (pin) input.pin = pin;

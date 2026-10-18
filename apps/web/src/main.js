@@ -3,7 +3,7 @@
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';
-import { initAuth, isKidProfile } from './data/auth';
+import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { applyTheme, readTheme } from './data/theme';
 import { runAuthFlow } from './ui/auth-ui.js';
 import { app, detailEl } from './ui/dom.js';
@@ -19,7 +19,10 @@ import './ui/sources-ui.js';
 
 await initAuth();
 await runAuthFlow();
-if (isKidProfile()) document.body.classList.add('kid-mode');
+if (isKidProfile()) {
+  document.body.classList.add('kid-mode');
+  if (kidSection('tv')) document.body.classList.add('kid-tv');
+}
 applyTheme(readTheme()); // après la synchronisation des préférences du profil
 state.curHash = location.hash || '';
 if (parseRoute()) {

@@ -1,5 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { isKidProfile } from '../data/auth';
+import { isKidProfile, kidSection } from '../data/auth';
+import { showBrowse } from './kids.js';
+import { showSearch } from './search.js';
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
 import { closeHover } from './hover.js';
@@ -31,6 +33,8 @@ export function showView(r) {
   else if (r.kind === 'services') showServices();
   else if (r.kind === 'library') showLibrary();
   else if (r.kind === 'settings') showSettings();
+  else if (r.kind === 'browse') showBrowse(r.id);
+  else if (r.kind === 'search') showSearch();
   else if (r.kind === 'person') showPerson(r.id);
   else if (r.kind === 'tvlive') showTvLive();
   else showFiche(r.type, r.id);
@@ -45,7 +49,8 @@ export function applyRestore() {
 export function parseRoute() {
   const r = parseRouteRaw();
   // Profil enfant : ni réglages ni TV en direct.
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'tvlive')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || (r.kind === 'tvlive' && !kidSection('tv')))) return null;
+  if (r && r.kind === 'browse' && !isKidProfile()) return null;
   return r;
 }
 
@@ -60,6 +65,9 @@ function parseRouteRaw() {
   if (h === '#/services') return { kind: 'services' };
   if (h === '#/library') return { kind: 'library' };
   if (h === '#/settings') return { kind: 'settings' };
+  r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
+  if (r) return { kind: 'browse', id: r[1] };
+  if (h === '#/search') return { kind: 'search' };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;
 }
 

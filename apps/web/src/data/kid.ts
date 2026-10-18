@@ -26,3 +26,47 @@ export function kidAllows(cert: string | null | undefined, maxAge: number): bool
   const age = certAge(cert);
   return age !== null && age <= maxAge;
 }
+
+/** Genres jeunesse TMDB : Animation 16, Famille 10751, Kids 10762 (séries). */
+export const KID_GENRES: readonly number[] = [16, 10751, 10762];
+
+/** Un titre ne passe que s'il a au moins un genre jeunesse (genres inconnus : refusé). */
+export const kidGenreOk = (ids: readonly number[] | null | undefined): boolean =>
+  !!ids && ids.some((g) => KID_GENRES.includes(g));
+
+/**
+ * Valeur `certification.lte` de TMDB pour un âge maximal, par pays (les valeurs sont celles des listes de
+ * certifications TMDB du pays). Null : pas de borne connue, le contrôle titre par titre fait foi.
+ */
+const CERT_LTE: Record<string, Array<[number, string]>> = {
+  // [âge maximal du profil, certification TMDB]
+  FR: [[10, '10'], [12, '12'], [16, '16'], [18, '18']],
+  CH: [[10, '10'], [12, '12'], [16, '16'], [18, '18']],
+  BE: [[10, '9'], [12, '12'], [16, '16'], [18, '16']],
+  LU: [[10, '6'], [12, '12'], [16, '16'], [18, '18']],
+  CA: [[10, 'PG'], [12, 'PG'], [16, '14A'], [18, '18A']],
+};
+
+export function certLteFor(region: string, maxAge: number): string | null {
+  const table = CERT_LTE[region.toUpperCase()];
+  if (!table) return null;
+  return (table.find(([age]) => maxAge <= age) ?? table[table.length - 1])[1];
+}
+
+/** Sections du catalogue enfant que le parent peut activer. `tv` (TV jeunesse) est désactivée par défaut. */
+export const KID_SECTIONS: ReadonlyArray<readonly [string, string]> = [
+  ['dessins', 'Dessins animés'],
+  ['famille', 'Films en famille'],
+  ['series', 'Séries jeunesse'],
+  ['disney', 'Classiques Disney et Pixar'],
+  ['anime', 'Animés pour les jeunes'],
+  ['nouveautes', 'Nouveautés jeunesse'],
+  ['plateformes', 'Plateformes (Disney+, Netflix)'],
+  ['tv', 'TV jeunesse'],
+];
+
+/** Liste vide = tout sauf la TV jeunesse ; sinon seulement les sections cochées. */
+export function sectionAllowed(allowed: readonly string[] | null | undefined, id: string): boolean {
+  if (!allowed || allowed.length === 0) return id !== 'tv';
+  return allowed.includes(id);
+}

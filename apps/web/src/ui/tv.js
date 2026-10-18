@@ -1,6 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
-import { isKidProfile } from '../data/auth';
+import { isKidProfile, kidSection } from '../data/auth';
 import { getRegion } from '../data/prefs';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
@@ -56,7 +56,13 @@ export function normChannel(c) {
 }
 
 /** Un filtre n'écarte une chaîne que si elle porte le champ concerné (ancien serveur : rien n'est écarté). */
+/** TV jeunesse : seulement les chaînes classées jeunesse ou animation. */
+export const isKidChannel = (c) => (Array.isArray(c.categories) && c.categories.some((k) => /^(kids?|animation|children|jeunesse|enfants?)$/i.test(k.id || k.label || '')))
+  || /jeunesse|enfant|kids|anim|cartoon/i.test(c.cat || '');
+const isKidCat = (k) => /^(kids?|animation|children|jeunesse|enfants?)$/i.test(k.id || k.label || '');
+
 export function matchesFilters(c, f, cat) {
+  if (isKidProfile() && !isKidChannel(c)) return false;
   if (f.country && c.country && String(c.country).toUpperCase() !== String(f.country).toUpperCase()) return false;
   if (f.language && Array.isArray(c.languages) && c.languages.length && !c.languages.some((l) => l.code === f.language)) return false;
   if (f.source && c.source && c.source !== 'user' && c.source !== f.source) return false;
@@ -193,7 +199,7 @@ export function liveTile(c, nn, now) {
 
 export async function renderLive() {
   try {
-    if (state.status !== 'ready' || !document.getElementById('live-slot') || isKidProfile()) return;
+    if (state.status !== 'ready' || !document.getElementById('live-slot') || (isKidProfile() && !kidSection('tv'))) return;
     const chs = await loadTvChannels();
     const pool = chs.filter((c) => !c.fast).slice(0, 24).concat(chs.filter((c) => c.fast).slice(0, 12));
     await ensureEpg(pool);
@@ -235,10 +241,11 @@ export function catCount(cat) {
 }
 
 export function catsHTML() {
-  const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.map((k) => ({ id: k.id, label: k.label })) : null;
+  const kid = isKidProfile();
+  const server = tv.catFacets && tv.catFacets.categories.length ? tv.catFacets.categories.filter((k) => !kid || isKidCat(k)).map((k) => ({ id: k.id, label: k.label })) : null;
   const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: c }))
-    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c)).map((c) => ({ id: c, label: c })))
-    .concat([{ id: 'Ma playlist', label: 'Ma playlist' }]);
+    .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
+    .concat(kid ? [] : [{ id: 'Ma playlist', label: 'Ma playlist' }]);
   return list.map((c) => {
     const n = catCount(c.id);
     return '<div data-nav><button type="button" class="tv-cat" data-tvcat="' + esc(c.id) + '" aria-pressed="' + (c.id === tv.cat) + '">' + esc(c.label) +

@@ -1,4 +1,5 @@
 import { isConfigured } from './config';
+import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
 import { ServerUserStore, profileFromDto } from './serverUserStore';
 import {
@@ -31,6 +32,8 @@ const emit = (): void => listeners.forEach((f) => f());
 export const isServerMode = (): boolean => auth.status === 'ready' && auth.profile !== null;
 /** Âge maximal du profil enfant actif, ou null pour un profil adulte / le mode local. */
 export const kidMaxAge = (): number | null => (auth.profile && auth.profile.isKid ? auth.profile.kidMaxAge ?? 12 : null);
+/** La section du catalogue enfant est-elle autorisée pour le profil actif ? (toujours vrai hors profil enfant) */
+export const kidSection = (id: string): boolean => !isKidProfile() || sectionAllowed(auth.profile?.allowedCatalogs, id);
 export const isKidProfile = (): boolean => kidMaxAge() !== null;
 
 function useLocal(status: AuthStatus): AuthStatus {

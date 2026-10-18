@@ -4,6 +4,7 @@ import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT } from
 import { getRegion, setRegion } from '../src/data/prefs';
 import { groupByQuality, pickAutoplay, planBandwidth, sortStreams, stremioId } from '../src/data/sources';
 import { getLaststream } from '../src/data/stream';
+import { certLteFor, kidGenreOk, sectionAllowed } from '../src/data/kid';
 import { LocalUserStore, LIBRARY_KEY } from '../src/data/userStore';
 import { onAccent, readTheme, resolveTheme } from '../src/data/theme';
 
@@ -81,6 +82,28 @@ describe('transport', () => {
     await Promise.all(jobs);
     expect(peak).toBeLessThanOrEqual(MAX_IN_FLIGHT);
     expect(inFlightCount()).toBe(0);
+  });
+});
+
+describe('profil enfant : certification et genres', () => {
+  it('traduit l’âge en certification TMDB du pays', () => {
+    expect(certLteFor('FR', 10)).toBe('10');
+    expect(certLteFor('FR', 12)).toBe('12');
+    expect(certLteFor('fr', 14)).toBe('16');
+    expect(certLteFor('CA', 10)).toBe('PG');
+    expect(certLteFor('XX', 10)).toBeNull();
+  });
+  it('exige un genre jeunesse', () => {
+    expect(kidGenreOk([28, 16])).toBe(true);
+    expect(kidGenreOk([28, 53])).toBe(false);
+    expect(kidGenreOk([])).toBe(false);
+    expect(kidGenreOk(undefined)).toBe(false);
+  });
+  it('limite la TV jeunesse aux sections cochées', () => {
+    expect(sectionAllowed([], 'dessins')).toBe(true);
+    expect(sectionAllowed([], 'tv')).toBe(false);
+    expect(sectionAllowed(['tv', 'dessins'], 'tv')).toBe(true);
+    expect(sectionAllowed(['dessins'], 'famille')).toBe(false);
   });
 });
 

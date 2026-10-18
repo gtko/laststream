@@ -94,7 +94,7 @@ export function continueCard(it, pct) {
 
 // Chargement paresseux (tuiles visibles seulement) : fournisseur FR ou chaîne, logo du titre, fraîcheur.
 import { isKidProfile, kidMaxAge } from '../data/auth';
-import { kidAllows } from '../data/kid';
+import { kidAllows, kidGenreOk } from '../data/kid';
 
 export function enrich(it, needLogo) {
   const ck = it.key + (needLogo ? '#l' : '');
@@ -118,6 +118,7 @@ export function enrich(it, needLogo) {
             seasonDate: last ? last.air_date : '',
             epDate: (raw.last_episode_to_air && raw.last_episode_to_air.air_date) || '',
             cert: certification(raw, it.type),
+            genreIds: (raw.genres || []).map((g) => g.id),
           });
           if (needLogo) info.logo = pickLogo(raw.images && raw.images.logos, 'w300');
           infoStore.set(it.key, info);
@@ -153,7 +154,7 @@ export function applyEnrich(key) {
   const it = state.byKey.get(key);
   if (!info || !it) return;
   if (isKidProfile()) {
-    if (!kidAllows(info.cert, kidMaxAge())) { removeTiles(key); return; }
+    if (!kidAllows(info.cert, kidMaxAge()) || !kidGenreOk(info.genreIds)) { removeTiles(key); return; }
     document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => { el.dataset.kid = 'ok'; });
   }
   document.querySelectorAll('[data-tile="' + key + '"]').forEach((el) => {

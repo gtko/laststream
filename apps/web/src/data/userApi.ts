@@ -46,6 +46,8 @@ export interface ProfileInput {
   isKid?: boolean;
   kidMaxAge?: KidMaxAge;
   pin?: string | null;
+  /** Sections du catalogue enfant autorisées (vide : toutes sauf la TV jeunesse). */
+  allowedCatalogs?: string[];
 }
 
 export interface LibraryItemDto {

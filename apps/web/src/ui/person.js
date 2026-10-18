@@ -1,4 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { isKidProfile } from '../data/auth';
+import { kidGenreOk } from '../data/kid';
 import { personWhy, tmdb } from '../data/lt';
 import { register, toItem } from './catalog.js';
 import { IMG } from './constants.js';
@@ -44,7 +46,7 @@ export function personEntries(raw) {
     if (!e) {
       e = { it, kinds: new Set(), jobs: new Set(), char: '', episodes: 0, self: false, date: String(c.release_date || c.first_air_date || ''),
         pop: c.popularity || 0, votes: c.vote_count || 0, rating: c.vote_average || 0, backdrop: c.backdrop_path || '',
-        noise: (c.genre_ids || []).some((g) => NOISE_GENRES.includes(g)) };
+        noise: (c.genre_ids || []).some((g) => NOISE_GENRES.includes(g)), kidGenre: kidGenreOk(c.genre_ids) };
       map.set(it.key, e);
     }
     return e;
@@ -153,7 +155,8 @@ export async function showPerson(id) {
     return;
   }
   if (token !== state.token) return;
-  const entries = personEntries(raw);
+  // Profil enfant : seulement les titres aux genres jeunesse (la classification est vérifiée tuile par tuile).
+  const entries = personEntries(raw).filter((e) => !isKidProfile() || e.kidGenre);
   const today = todayStr();
   const real = entries.filter((e) => !e.noise && !e.self);
   const known = real.slice().sort((a, b) => b.votes - a.votes).slice(0, 20);
