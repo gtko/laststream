@@ -1,5 +1,6 @@
 import { getBase, getConfig } from './config';
 import { clearElevation } from './adminApi';
+import { emitDataEvent } from './events';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
 import { startPresence, stopPresence } from './presence';
@@ -161,6 +162,7 @@ async function activate(profile: Profile): Promise<void> {
   // Profil enfant : les jetons des profils adultes sont retirés, sortir de ce profil redemande le code parental.
   if (profile.isKid) auth.profiles.forEach((p) => { if (p.id !== profile.id) dropProfileToken(p.id); });
   emit();
+  emitDataEvent({ kind: 'profile' });
 }
 
 const MIGRATED_PREFIX = 'laststream.migrated.';
@@ -323,4 +325,13 @@ export async function importFromStremio(email: string, password: string, config:
   const res = await api.importStremio(auth.profile.id, email, password, config || undefined);
   await store?.hydrate();
   return res;
+}
+
+/**
+ * Relit le compte (bibliothèque et « Reprendre la lecture » du profil actif) : changements faits sur un autre appareil ou
+ * profil. Sans effet hors mode serveur. Les erreurs réseau remontent à l'appelant.
+ */
+export async function refreshRemote(): Promise<void> {
+  if (!store || !isServerMode()) return;
+  await store.refresh();
 }

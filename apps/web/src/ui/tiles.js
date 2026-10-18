@@ -167,7 +167,7 @@ export function removeTiles(key) {
 }
 
 /** Badge « +N » (épisodes diffusés depuis le dernier vu) pour les séries suivies ou entamées, « Sorti » pour un film suivi. */
-// Zones de l'accueil qui ne suivent pas les filtres « déjà vu » : reprendre, suivis, bibliothèque, calendrier, TV en direct.
+// Zones gérées à part, hors de ce balayage : reprendre (renderContinue, même filtre), suivis, bibliothèque, calendrier, TV en direct.
 const OUT_OF_HOME = '#cont-slot,#follow-slot,#lib-slot,#tonight-slot,#live-slot,#shows-slot';
 
 /** Retire de l'accueil les tuiles devenues vues, masquées ou aux genres bannis, sans rechargement. */

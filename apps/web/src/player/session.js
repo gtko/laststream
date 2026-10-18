@@ -10,6 +10,7 @@ import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
+import { emitDataEvent } from '../data/events';
 import { POLL_EVERY_MS, POLL_MAX_MS, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
 import { describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
@@ -1733,6 +1734,7 @@ async function teardown(silent) {
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
+  emitDataEvent({ kind: 'player' }); // l'accueil rattrape les changements faits pendant la lecture
   partyBridge.sessionClosed(silent);
   if (!silent) {
     setWatching(null);
