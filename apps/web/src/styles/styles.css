@@ -186,7 +186,8 @@ body.modal-open { overflow: hidden; }
 .preview.is-on { opacity: 1; }
 .preview iframe { position: absolute; border: 0; pointer-events: none; }
 .preview-sound {
-  position: absolute; right: 14px; bottom: 14px; z-index: 3;
+  /* En haut à droite, sous la barre de navigation : ne chevauche plus les points de la bannière. */
+  position: absolute; right: var(--gutter, 24px); top: 96px; z-index: 3;
   padding: 7px 12px; border-radius: 999px; background: rgba(12, 11, 17, 0.75);
   color: var(--text); font-size: 13px; font-weight: 700; border: 1px solid rgba(255, 255, 255, 0.2);
 }
