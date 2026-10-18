@@ -481,7 +481,7 @@ async function initSession(request, views, view, opts = {}) {
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
   ui.root.classList.toggle('is-searching', !view);
-  ui.root.classList.remove('is-mpv');
+  ui.root.classList.remove('is-mpv', 'is-video');
   ui.setMiniAvailable(true);
   ui.video.hidden = false;
   ui.video.style.objectFit = 'contain';
@@ -827,6 +827,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
   ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
+  // Lecteur natif : transparent dès le départ (comme avant). mpv : transparent seulement à la première image (MpvEngine.showVideo).
+  ui.root.classList.toggle('is-video', choice.engine === 'native' || (choice.engine === 'mpv' && !!mpv && mpv.transparent));
   ui.setMiniAvailable(true);
   if (nativeMini && choice.engine !== 'native') { nativeMini = false; if (nativeEng) nativeEng.closeNow(); miniState.reset(); }
   ui.relayoutMini();
@@ -1340,22 +1342,22 @@ function markWatched() {
 
 // ---------- Actions ----------
 
-/** Salon : seul l'hôte pilote ; un invité qui essaie est prévenu. */
+/** Salon : seul l'hôte change d'épisode ; un invité qui essaie est prévenu. La lecture (pause, reprise, saut) est partagée. */
 function guestBlocked() {
   if (!partyBridge.guestLocked()) return false;
-  ui.toast('Seul l’hôte du salon pilote la lecture', 1800);
+  ui.toast('Seul l’hôte du salon change d’épisode', 1800);
   return true;
 }
 
 function seekTo(t) {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   P.engine.seek(t);
   P.watch.reset(Date.now());
   P.skipped = null;
 }
 
 function seekBy(d) {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
   seekTo(to);
@@ -1364,7 +1366,7 @@ function seekBy(d) {
 }
 
 function togglePlay() {
-  if (!P || !P.view || guestBlocked()) return;
+  if (!P || !P.view) return;
   const st = P.engine.state();
   if (st.paused) P.engine.play(); else { P.engine.pause(); saveProgress(true); }
 }

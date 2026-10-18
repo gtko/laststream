@@ -407,7 +407,8 @@ document.addEventListener('keydown', (e) => {
     if (!modal.hidden) {
       e.preventDefault();
       closeModal();
-    } else if (state.inDetail && !(e.target instanceof Element && e.target.closest('select'))) {
+    } else if (state.inDetail && !e.defaultPrevented && !(e.target instanceof Element && e.target.closest('select'))) {
+      // defaultPrevented : un menu ouvert de la barre du haut (topnav.js) s'est déjà fermé avec Échap.
       e.preventDefault();
       goBack();
     }

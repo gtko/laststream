@@ -1,21 +1,24 @@
-/* Recherche (#/search) : meilleur résultat, filtres, titres classés (searchRank.js) et personnalités TMDB.
- * Les deux premières pages sont classées ensemble, puis les suivantes sont ajoutées en fin par défilement infini.
+/* Recherche (#/search) : champ dans la barre du haut (barre de navigation conservée), meilleur résultat en bandeau,
+ * filtres, puis grilles de jaquettes Films / Séries et rangée Personnalités (searchRank.js).
+ * Les deux premières pages sont classées ensemble, puis les suivantes sont ajoutées en fin de groupe par défilement infini.
  * Profil enfant : genres jeunesse uniquement, pas de personnalités. */
 import { infiniteList, stopInfinite } from './infinite.js';
 import { applyRestore } from './router.js';
 import { filterAvailable } from './avail.js';
 import { todayStr } from './dates.js';
-import { auth, isKidProfile } from '../data/auth';
+import { auth, canAdmin, isKidProfile, isServerMode, kidSection } from '../data/auth';
 import { kidGenreOk } from '../data/kid';
 import { tmdb } from '../data/lt';
 import { register, toItem } from './catalog.js';
 import { IMG } from './constants.js';
 import { detailEl, modal } from './dom.js';
 import { teardownFiche } from './fiche.js';
-import { topBar } from './fragments.js';
+import { brand } from './fragments.js';
+import { tabbar } from './home.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
+import { exploreMenuHTML, topActionsHTML } from './topnav.js';
 import { esc, plural } from './util.js';
 import { kindOf, rankResults, resultKey, splitBanned, titleMatch } from './searchRank.js';
 import { isBannedGenre } from '../data/homeFilters';
@@ -26,10 +29,35 @@ const PEOPLE_MAX = 12;
 const BEST_MIN_SCORE = 60; // correspondance exacte ou préfixe du titre
 const RECENT_BASE = 'laststream.search.recent';
 const PILLS = [['all', 'Tout'], ['movie', 'Films'], ['tv', 'Séries'], ['people', 'Personnalités']];
+const KINDS = ['movie', 'tv']; // ordre des groupes : Films, puis Séries, puis Personnalités
+const GROUP_TITLE = { movie: 'Films', tv: 'Séries' };
+/** Suffixe des ids des menus de la barre de recherche : la barre de l'accueil (masquée) garde les siens. */
+const BAR_ID = '-search';
 
 let timer = null;
 let seq = 0; // jeton de la dernière recherche lancée : une réponse plus ancienne est ignorée
-let session = null; // { q, token, media, people, raw, seen, next, total, done, best, filter, shown }
+let session = null; // { q, token, media, held, people, raw, seen, next, total, done, best, filter, shown }
+
+/** Champ de recherche de la barre du haut (remplace la loupe). */
+const searchFieldHTML = (q) =>
+  '<form id="search-form" class="search-form" role="search">' +
+  '<div class="search-bar"><label class="sr-only" for="search-input">Rechercher un film, une série ou une personnalité</label>' +
+  '<span class="search-ico" aria-hidden="true">' + ICON.search + '</span>' +
+  '<input id="search-input" class="search-input" type="search" name="q" autocomplete="off" enterkeyhint="search" placeholder="Films, séries, personnalités…" value="' + esc(q) + '">' +
+  '<button type="button" class="search-clear" data-search-clear aria-label="Effacer la recherche"' + (q ? '' : ' hidden') + '>' + ICON.close + '</button>' +
+  '</div></form>';
+
+/** Barre du haut de la page Recherche : logo, liens de l'app, champ, puis profil (même contenu que l'accueil, sans Accueil/Films/Séries). */
+function topbarHTML(q) {
+  const kid = isKidProfile();
+  const server = isServerMode();
+  const nav = kid
+    ? '<a href="#/library" data-libnav>Mes favoris</a>' + (kidSection('tv') ? '<a href="#/tv-live" data-tvlive>TV jeunesse</a>' : '')
+    : '<a href="#/tv-live" data-tvlive class="nav-wide">Direct</a><a href="#/library" data-libnav class="nav-wide">Ma liste</a>' + exploreMenuHTML(BAR_ID);
+  return '<header class="topbar search-topbar">' + brand() +
+    '<nav class="nav" aria-label="Principale">' + nav + '</nav>' +
+    topActionsHTML({ kid, social: server && !kid, server, owner: canAdmin(), search: searchFieldHTML(q), idSuffix: BAR_ID }) + '</header>';
+}
 
 export function showSearch() {
   clearTimeout(timer);
@@ -40,18 +68,12 @@ export function showSearch() {
   state.kind = 'search';
   document.title = 'Recherche · Laststream';
   const q = state.searchQ || '';
-  detailEl.innerHTML = topBar(false) +
+  detailEl.innerHTML = '<div class="s-a search-root">' + topbarHTML(q) +
     '<article class="svc-page search-page" aria-labelledby="search-title">' +
-    '<header class="search-head"><h1 class="search-title" id="search-title" tabindex="-1">Recherche</h1>' +
-    '<form id="search-form" class="search-form" role="search">' +
-    '<div class="search-bar"><label class="sr-only" for="search-input">Rechercher un film, une série ou une personnalité</label>' +
-    '<span class="search-ico" aria-hidden="true">' + ICON.search + '</span>' +
-    '<input id="search-input" class="search-input" type="search" name="q" autocomplete="off" enterkeyhint="search" placeholder="Films, séries, personnalités…" value="' + esc(q) + '">' +
-    '<button type="button" class="search-clear" data-search-clear aria-label="Effacer la recherche"' + (q ? '' : ' hidden') + '>' + ICON.close + '</button>' +
-    '</div></form></header>' +
+    '<h1 class="sr-only" id="search-title" tabindex="-1">Recherche</h1>' +
     '<div class="search-body" id="search-body"></div>' +
     '<p class="sr-only" id="search-status" role="status" aria-live="polite"></p>' +
-    '</article>';
+    '</article>' + tabbar() + '</div>';
   const inp = input();
   if (inp) { inp.focus(); run(inp.value); }
 }
@@ -64,6 +86,7 @@ export function filterResults(results, kid) {
 
 const input = () => detailEl.querySelector('#search-input');
 const bodyEl = () => detailEl.querySelector('#search-body');
+const groupsEl = () => detailEl.querySelector('#srch-groups');
 const isLive = (s) => s.token === seq && state.kind === 'search';
 const fetchPage = (q, page) => tmdb('search/multi', { query: q, include_adult: 'false', ...(page > 1 ? { page } : {}) });
 
@@ -139,7 +162,7 @@ function pickBest(s) {
   return raw && titleMatch(raw, s.q) >= BEST_MIN_SCORE ? first : null;
 }
 
-/** Page suivante du défilement infini : une page par appel ; les pages en échec sont rejouées. */
+/** Page suivante du défilement infini : une page par appel ; les pages en échec sont rejouées. Les titres sont ajoutés à leur groupe. */
 async function loadMore(s) {
   if (s.done || !isLive(s)) return { html: '', done: true };
   const page = s.next;
@@ -161,13 +184,12 @@ async function loadMore(s) {
   if (s.done && !s.media.length && !s.people.length) { paintNone(s); return { html: '', done: true }; }
   updateCounts(s);
   if (s.done) setStatus(statusText(s));
-  const add = [...items, ...tail].filter((it) => visibleInGrid(s, it));
-  const html = add.length ? add.map((it) => posterCard(it)).join('') : (s.done && !gridItems(s).length ? emptyMsg(s) : '');
-  return { html, done: s.done };
+  appendGroups(s, [...items, ...tail]);
+  return { html: '', done: s.done };
 }
 
 const inFilter = (it, f) => f === 'all' || (f === 'movie' && it.type === 'movie') || (f === 'tv' && it.type === 'tv');
-/** Le meilleur résultat a sa propre carte dans la vue « Tout » : il n'est pas répété dans la grille. */
+/** Le meilleur résultat a sa propre carte dans la vue « Tout » : il n'est pas répété dans les groupes. */
 const visibleInGrid = (s, it) => inFilter(it, s.filter) && !(s.filter === 'all' && s.best && it.key === s.best.key);
 const gridItems = (s) => s.media.filter((it) => visibleInGrid(s, it));
 
@@ -188,17 +210,18 @@ function setStatus(text) {
 
 // ---------- Rendu ----------
 
-const mediaTitle = (f) => (f === 'movie' ? 'Films' : f === 'tv' ? 'Séries' : 'Films et séries');
-
+/** Message d'un groupe vide ; marqué data-empty pour être retiré quand des résultats arrivent. */
 function emptyMsg(s) {
   if (!s.done || (s.filter === 'all' && s.best)) return '';
   const what = s.filter === 'movie' ? 'film' : s.filter === 'tv' ? 'série' : 'film ni série';
-  return '<p class="row-msg">Aucun ' + what + ' pour cette recherche.</p>';
+  return '<p class="row-msg" data-empty>Aucun ' + what + ' pour cette recherche.</p>';
 }
 
-function gridHtml(s) {
-  const items = gridItems(s);
-  return items.length ? items.map((it) => posterCard(it)).join('') : emptyMsg(s);
+/** Groupe « Films » ou « Séries » : titre, puis grille dense de jaquettes. */
+function groupHtml(kind, inner) {
+  return '<section class="srch-group" id="srch-sec-' + kind + '" aria-labelledby="srch-h-' + kind + '">' +
+    '<h2 class="row-title" id="srch-h-' + kind + '">' + GROUP_TITLE[kind] + '</h2>' +
+    '<div class="srch-grid" id="srch-grid-' + kind + '" data-nav>' + inner + '</div></section>';
 }
 
 function filtersHtml(s) {
@@ -208,11 +231,11 @@ function filtersHtml(s) {
     ' <span class="srch-n" data-count="' + f + '">' + c[f] + '</span></button>').join('');
 }
 
+/** Meilleur résultat en bandeau compact : vignette, titre, méta, synopsis court, bouton. */
 function bestHtml(it) {
   const meta = [it.type === 'tv' ? 'Série' : 'Film', it.year, it.vote ? '★ ' + it.vote : ''].filter(Boolean);
   return '<section class="srch-best" data-nav aria-label="Meilleur résultat">' +
-    '<div class="srch-best-media"><img src="' + esc(IMG('w1280', it.backdropPath)) + '" alt="" decoding="async"></div>' +
-    '<div class="srch-best-shade" aria-hidden="true"></div>' +
+    '<div class="srch-best-media"><img src="' + esc(IMG('w780', it.backdropPath)) + '" alt="" decoding="async"></div>' +
     '<div class="srch-best-info"><span class="eyebrow">Meilleur résultat</span>' +
     '<h2 class="srch-best-title">' + esc(it.name) + '</h2>' +
     '<p class="meta">' + meta.map((x) => '<span>' + esc(x) + '</span>').join('<span aria-hidden="true">·</span>') + '</p>' +
@@ -234,25 +257,58 @@ function personHtml(p) {
     (known.length ? '<span class="cast-role">Connu pour ' + esc(known.join(', ')) + '</span>' : '') + '</a></li>';
 }
 
+/** Rangée « Personnalités » (dernier groupe), seulement s'il y en a ; hors profil enfant. */
+function peopleHtml(s) {
+  if (isKidProfile() || (s.filter !== 'all' && s.filter !== 'people')) return '';
+  if (!s.people.length) return s.filter === 'people' ? '<p class="row-msg" data-empty>Aucune personnalité pour cette recherche.</p>' : '';
+  return '<section class="srch-people row-section" id="srch-people" aria-labelledby="srch-people-h"><h2 class="row-title" id="srch-people-h">Personnalités</h2>' +
+    '<ul class="cast-row srch-cast" data-nav>' + s.people.map(personHtml).join('') + '</ul></section>';
+}
+
+/** Haut de page : meilleur résultat (vue « Tout ») et filtres. */
 function topHtml(s) {
-  const kid = isKidProfile();
+  return (s.best && s.filter === 'all' ? bestHtml(s.best) : '') +
+    '<div class="pills srch-filters" role="group" aria-label="Filtrer les résultats" data-nav>' + filtersHtml(s) + '</div>';
+}
+
+/** Groupes visibles selon le filtre : Films, Séries (grilles), puis Personnalités. */
+function groupsHtml(s) {
+  const items = gridItems(s);
+  const kinds = s.filter === 'all' ? KINDS : KINDS.filter((k) => k === s.filter);
   let h = '';
-  if (s.best && s.filter === 'all') h += bestHtml(s.best);
-  h += '<div class="pills srch-filters" role="group" aria-label="Filtrer les résultats" data-nav>' + filtersHtml(s) + '</div>';
-  if (!kid && (s.filter === 'all' || s.filter === 'people') && s.people.length) {
-    h += '<section class="srch-people row-section" aria-labelledby="srch-people-h"><h2 class="row-title" id="srch-people-h">Personnalités</h2>' +
-      '<ul class="cast-row srch-cast" data-nav>' + s.people.map(personHtml).join('') + '</ul></section>';
-  } else if (!kid && s.filter === 'people') {
-    h += '<p class="row-msg">Aucune personnalité pour cette recherche.</p>';
+  for (const k of kinds) {
+    const list = items.filter((it) => it.type === k);
+    if (list.length) h += groupHtml(k, list.map((it) => posterCard(it)).join(''));
+    else if (s.filter !== 'all') h += groupHtml(k, emptyMsg(s));
   }
-  return h;
+  if (s.filter === 'all' && !items.length) h += emptyMsg(s);
+  return h + peopleHtml(s);
 }
 
 function bodyHtml(s) {
   return '<div class="srch-top" id="srch-top">' + topHtml(s) + '</div>' +
-    '<section class="srch-media" id="srch-media"' + (s.filter === 'people' ? ' hidden' : '') + '>' +
-    '<h2 class="row-title" id="srch-media-h">' + mediaTitle(s.filter) + '</h2>' +
-    '<div class="srch-grid" id="search-grid" data-nav>' + gridHtml(s) + '</div></section>';
+    '<div class="srch-groups" id="srch-groups">' + groupsHtml(s) + '</div>';
+}
+
+/** Ajoute les titres visibles à leur groupe (Films, Séries), créé au besoin dans l'ordre Films, Séries, Personnalités. */
+function appendGroups(s, items) {
+  const wrap = groupsEl();
+  const add = items.filter((it) => visibleInGrid(s, it));
+  if (!wrap || !add.length) return;
+  wrap.querySelectorAll('[data-empty]').forEach((n) => n.remove());
+  for (const k of KINDS) {
+    const list = add.filter((it) => it.type === k);
+    if (!list.length) continue;
+    let grid = wrap.querySelector('#srch-grid-' + k);
+    if (!grid) {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = groupHtml(k, '');
+      const sec = tpl.content.firstElementChild;
+      wrap.insertBefore(sec, wrap.querySelector(k === 'movie' ? '#srch-sec-tv, #srch-people' : '#srch-people'));
+      grid = sec.querySelector('.srch-grid');
+    }
+    grid.insertAdjacentHTML('beforeend', list.map((it) => posterCard(it)).join(''));
+  }
 }
 
 function paintSession(s) {
@@ -261,7 +317,7 @@ function paintSession(s) {
   s.shown = true;
   body.innerHTML = bodyHtml(s);
   observeTiles(body);
-  infiniteList({ host: body.querySelector('#search-grid'), load: () => loadMore(s), after: (h) => observeTiles(h) });
+  infiniteList({ host: groupsEl(), load: () => loadMore(s), after: (h) => observeTiles(h) });
   setStatus(statusText(s));
   applyRestore();
 }
@@ -328,22 +384,19 @@ function recentHtml(list) {
     '<div class="pills" data-nav>' + list.map((q) => '<button type="button" class="pill" data-recent="' + esc(q) + '">' + esc(q) + '</button>').join('') + '</div></section>';
 }
 
-/** Changement de filtre : aucune requête, la grille et les blocs sont redessinés depuis les résultats déjà chargés. */
+/** Changement de filtre : aucune requête, le haut et les groupes sont redessinés depuis les résultats déjà chargés. */
 function setFilter(f) {
   const s = session;
   if (!s || !s.shown || f === s.filter) return;
   s.filter = f;
   const top = detailEl.querySelector('#srch-top');
-  const media = detailEl.querySelector('#srch-media');
-  const grid = detailEl.querySelector('#search-grid');
-  if (!top || !media || !grid) return;
+  const wrap = groupsEl();
+  if (!top || !wrap) return;
   top.innerHTML = topHtml(s);
   const pressed = top.querySelector('[data-filter="' + f + '"]');
   if (pressed) pressed.focus({ preventScroll: true });
-  media.hidden = f === 'people';
-  media.querySelector('#srch-media-h').textContent = mediaTitle(f);
-  grid.innerHTML = gridHtml(s);
-  observeTiles(grid);
+  wrap.innerHTML = groupsHtml(s);
+  observeTiles(wrap);
   updateCounts(s);
 }
 

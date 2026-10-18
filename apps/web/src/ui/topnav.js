@@ -14,7 +14,7 @@ const menuLink = (href, attrs, icon, label) =>
   '<a href="' + href + '"' + attrs + '>' + ICON[icon] + '<span>' + label + '</span></a>';
 
 /** Menu « Explorer » : cinq entrées en colonnes ; sous 1100 px, Direct et Ma liste s'y ajoutent (classe nav-pop-compact). */
-export function exploreMenuHTML() {
+export function exploreMenuHTML(idSuffix = '') {
   const compact = '<ul class="nav-pop-list nav-pop-compact">' +
     '<li>' + menuLink('#/tv-live', ' data-tvlive', 'play', 'Direct') + '</li>' +
     '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li></ul>';
@@ -25,8 +25,8 @@ export function exploreMenuHTML() {
     '<li>' + menuLink('#/emissions', ' data-showsnav', 'tv', 'Émissions TV') + '</li>' +
     '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', 'Calendrier') + '</li></ul>';
   return '<div class="nav-drop" data-drop>' +
-    '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore">Explorer' + ICON.chev + '</button>' +
-    '<div class="nav-pop nav-pop-explore" id="nav-explore" hidden>' + main + compact + '</div></div>';
+    '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore' + idSuffix + '">Explorer' + ICON.chev + '</button>' +
+    '<div class="nav-pop nav-pop-explore" id="nav-explore' + idSuffix + '" hidden>' + main + compact + '</div></div>';
 }
 
 /** Bouton « Watch parties » (comptes connectés hors profil enfant). */
@@ -34,10 +34,10 @@ export const partyLinkHTML = () =>
   '<a class="icon-btn nav-party" href="#/parties" data-go aria-label="Watch parties" title="Watch parties">' + ICON.party + '</a>';
 
 /**
- * Recherche, Watch parties (si social), puis l'avatar qui ouvre le menu du profil.
+ * Recherche (loupe, ou champ fourni par `search` : page Recherche), Watch parties (si social), puis l'avatar qui ouvre le menu du profil.
  * kid : profil enfant (seulement « Changer de profil »). social : Amis et Watch parties. server : profil de compte (changement, déconnexion). owner : propriétaire du serveur.
  */
-export function topActionsHTML({ kid = false, social = false, server = false, owner = false } = {}) {
+export function topActionsHTML({ kid = false, social = false, server = false, owner = false, search = '', idSuffix = '' } = {}) {
   const current = userStore.currentProfile();
   const name = current.name || '?';
   const initial = name.slice(0, 1).toUpperCase();
@@ -51,12 +51,12 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
     server && !kid ? '<button type="button" class="nav-pop-item" data-nav-logout>' + ICON.logout + '<span>Se déconnecter</span></button>' : '',
   ].join('');
   return '<div class="top-actions">' +
-    '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>' +
+    (search || '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>') +
     (social ? partyLinkHTML() : '') +
     '<div class="nav-drop nav-drop-profile" data-drop>' +
-    '<button type="button" class="avatar nav-avatar" data-drop-btn aria-expanded="false" aria-controls="nav-profile"' + bg +
+    '<button type="button" class="avatar nav-avatar" data-drop-btn aria-expanded="false" aria-controls="nav-profile' + idSuffix + '"' + bg +
     ' aria-label="Profil ' + esc(name) + ', menu">' + esc(initial) + '</button>' +
-    '<div class="nav-pop nav-pop-profile" id="nav-profile" hidden>' +
+    '<div class="nav-pop nav-pop-profile" id="nav-profile' + idSuffix + '" hidden>' +
     '<div class="nav-pop-who">' + esc(name) + (kid ? '<span class="nav-pop-sub">Profil enfant</span>' : '') + '</div>' +
     items + '</div></div></div>';
 }
@@ -165,10 +165,10 @@ function onFocusOut(e) {
   if (next instanceof Element && !open.contains(next)) closeDrop(open);
 }
 
-/** Fond opaque et flou dès qu'on défile ; transparent tant qu'on est en haut de page. */
+/** Fond opaque et flou dès qu'on défile ; transparent tant qu'on est en haut de page. (Plusieurs barres : accueil masqué + page Recherche.) */
 export function syncTopbar() {
-  const bar = document.querySelector('.topbar');
-  if (bar) bar.classList.toggle('is-scrolled', window.scrollY > 8);
+  const scrolled = window.scrollY > 8;
+  document.querySelectorAll('.topbar').forEach((bar) => bar.classList.toggle('is-scrolled', scrolled));
 }
 
 let ready = false;

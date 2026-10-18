@@ -71,7 +71,7 @@ function roomHTML(c) {
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
     '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host) + '</ul>' +
-    (host ? '' : '<p class="wp-note">L’hôte pilote la lecture ; la tienne se cale sur la sienne.</p>') +
+    (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
     '<h4 class="wp-sub">Chat</h4><div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
     '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="500" autocomplete="off" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
     '<button type="submit" class="btn btn-primary btn-sm"' + (you && you.muted ? ' disabled' : '') + '>Envoyer</button></form>' +

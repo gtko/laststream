@@ -161,10 +161,28 @@ describe('mpv par la coque', () => {
     const cmds = sent.filter(([e]) => e === 'mpv-command').map(([, a]) => a as string[]);
     expect(cmds.every((c) => COMMANDS.includes(c[0]))).toBe(true);
     expect(cmds.find((c) => c[0] === 'loadfile')).toEqual(['loadfile', 'http://127.0.0.1:11470/abc/2', 'replace', '-1', 'start=+90']);
+    // Tant que mpv n'a pas de paramètres vidéo, la page reste opaque (fond noir, pas la fenêtre blanche derrière).
+    expect(container.style.background).toBe('');
+    expect(document.documentElement.style.background).toBe('');
+    expect(document.body.style.background).toBe('');
     // La page devient transparente pour laisser voir mpv, et redevient normale à l'arrêt.
+    handlers.get('mpv-prop-change')!({ name: 'video-params', data: { w: 1920, h: 1080 } });
     expect(container.style.background).toBe('transparent');
+    expect(container.classList.contains('is-video')).toBe(true);
+    expect(document.documentElement.style.background).toBe('transparent');
+    expect(document.body.style.background).toBe('transparent');
     engine.destroy();
     expect(container.style.background).toBe('');
+    expect(container.classList.contains('is-video')).toBe(false);
+  });
+
+  it('paramètres vidéo vides (fichier audio, arrêt) : la page reste opaque', () => {
+    const { handlers, engine, container } = setup();
+    handlers.get('mpv-prop-change')!({ name: 'mpv-version', data: 'mpv 0.39.0' });
+    engine.load({ url: 'http://127.0.0.1:11470/abc/2', startAt: 0 });
+    handlers.get('mpv-prop-change')!({ name: 'video-params', data: null });
+    expect(container.style.background).toBe('');
+    engine.destroy();
   });
 
   it('muet : l’état suit le clic tout de suite (icône du bouton son)', () => {

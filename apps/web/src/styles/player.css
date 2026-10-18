@@ -3,7 +3,7 @@
 /* ---------- Lecteur ---------- */
 .lp { position: fixed; inset: 0; z-index: 600; background: #000; color: var(--text); overflow: hidden; font-family: var(--ff-body); user-select: none; -webkit-user-select: none; }
 .lp[hidden] { display: none; }
-.lp.is-mpv { background: transparent; }
+.lp.is-mpv.is-video { background: transparent; }
 .lp-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .lp-video[hidden] { display: none; }
 .lp:not(.is-ui) { cursor: none; }
