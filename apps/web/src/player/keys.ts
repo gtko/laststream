@@ -8,6 +8,7 @@ export type KeyAction =
   | { type: 'mute' }
   | { type: 'skip' }
   | { type: 'pip' }
+  | { type: 'mini' }
   | { type: 'panel'; name: 'subtitles' | 'audio' | 'episodes' | 'info' | 'speed' }
   | { type: 'next' }
   | { type: 'back' }
@@ -53,7 +54,7 @@ export function keyToAction(key: string, ctx: KeyContext, mods: { ctrl?: boolean
     case 'c': case 'C': return { type: 'panel', name: 'subtitles' };
     case 'a': case 'A': return { type: 'panel', name: 'audio' };
     case 'e': case 'E': return { type: 'panel', name: 'episodes' };
-    case 'i': case 'I': return { type: 'panel', name: 'info' };
+    case 'i': case 'I': return { type: 'mini' };
     case 'n': case 'N': case 'MediaTrackNext': return { type: 'next' };
     case 'Escape': case 'Backspace': case 'BrowserBack': return { type: 'back' };
     case 'Tab': case 'Enter': return { type: 'wake' };

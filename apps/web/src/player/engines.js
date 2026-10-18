@@ -5,6 +5,8 @@
 import { audioTrackLabel, langName, trackLang } from './tracks';
 import { nativeAudioTracks, nativeSubtitleTracks } from './native';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
+import { marginProps, mpvMargins, sameMargins, ZERO_MARGINS } from './mini';
+import { PageHole } from './minihole.js';
 
 class Emitter {
   constructor() { this.ls = new Map(); }
@@ -223,6 +225,11 @@ export class MpvEngine extends Emitter {
     this.p = { 'time-pos': 0, duration: 0, pause: false, volume: 100, mute: false, speed: 1, 'paused-for-cache': false, seeking: false, 'demuxer-cache-time': 0, 'track-list': [], aid: null, sid: null };
     this.loaded = false;
     this.version = '';
+    this.hidden = [];
+    this.transparent = false;
+    this.miniRect = null; // vignette du mini-lecteur (px de la fenêtre) ; null : plein lecteur
+    this.margins = { ...ZERO_MARGINS }; // dernières marges envoyées à mpv
+    this.hole = new PageHole();
     this.nativeSub = false;
     this.lastEmit = 0;
     ['time-pos', 'volume', 'pause', 'seeking', 'eof-reached', 'duration', 'track-list', 'paused-for-cache', 'demuxer-cache-time', 'aid', 'sid', 'speed', 'mute', 'mpv-version'].forEach((n) => ipc.send('mpv-observe-prop', n));
@@ -261,14 +268,40 @@ export class MpvEngine extends Emitter {
     for (let c = this.container; c; c = c.parentElement) els.push(c);
     els.push(document.body, document.documentElement);
     els.forEach((el) => { el.style.background = on ? 'transparent' : ''; });
-    // Le reste de la page (accueil, fiche…) masquerait la vidéo mpv, qui est sous la fenêtre web.
-    if (on) {
-      this.hidden = [...document.body.children].filter((el) => !els.includes(el) && el.style.visibility !== 'hidden');
-      this.hidden.forEach((el) => { el.style.visibility = 'hidden'; });
+    this.transparent = on;
+    this.hole.keep = els;
+    this.syncPage();
+  }
+
+  /**
+   * Mini-lecteur : l'image mpv est calée dans `rect` (px de la fenêtre) par les marges mpv et la page est percée à cet endroit,
+   * au lieu d'être masquée. `null` : retour au plein lecteur (marges à 0, page masquée sous la vidéo comme avant).
+   */
+  setMini(rect) {
+    this.miniRect = rect ? { ...rect } : null;
+    this.syncPage();
+  }
+
+  syncPage() {
+    const mini = this.transparent && this.miniRect;
+    if (this.transparent && !mini) {
+      // Le reste de la page (accueil, fiche…) masquerait la vidéo mpv, qui est sous la fenêtre web.
+      if (!this.hidden.length) {
+        this.hidden = [...document.body.children].filter((el) => !this.hole.keep.includes(el) && el.style.visibility !== 'hidden');
+        this.hidden.forEach((el) => { el.style.visibility = 'hidden'; });
+      }
     } else {
-      (this.hidden || []).forEach((el) => { el.style.visibility = ''; });
+      this.hidden.forEach((el) => { el.style.visibility = ''; });
       this.hidden = [];
     }
+    this.hole.apply(mini ? this.miniRect : null);
+    this.sendMargins(mini ? mpvMargins(this.miniRect, { width: window.innerWidth, height: window.innerHeight }) : { ...ZERO_MARGINS });
+  }
+
+  sendMargins(m) {
+    if (sameMargins(this.margins, m)) return;
+    this.margins = m;
+    marginProps(m).forEach(([name, value]) => this.ipc.send('mpv-set-prop', [name, value]));
   }
 
   async load({ url, startAt }) {

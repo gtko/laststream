@@ -23,6 +23,7 @@ import { fetchExternalSubtitles } from './extsubs';
 import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
+import { MiniState } from './mini';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
@@ -58,10 +59,15 @@ let tickTimer = null;
 let shell = null; // transport de la coque Windows (null dans un navigateur)
 let shellFullscreen = false;
 let shellPip = false; // image dans l'image de la coque (petite fenêtre au premier plan)
+let lastMiniRect = null; // rectangle de l'image du mini-lecteur (px de la fenêtre), pour mpv
 
 const storeGet = (k) => { try { return globalThis.localStorage.getItem(k); } catch (_) { return null; } };
 const storeSet = (k, v) => { try { globalThis.localStorage.setItem(k, v); } catch (_) { /* ignoré */ } };
 const getCaps = browserCaps;
+const miniState = new MiniState({
+  getItem: (k) => storeGet(k),
+  setItem: (k, v) => storeSet(k, v),
+});
 
 /** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
 function audioPreference() {
@@ -97,7 +103,10 @@ function ensureUI() {
     panelClosed: (name) => { if (name === 'sources' && P && !P.view) closePlayer(); },
     thumb: (t) => { if (thumbs && P && P.view) thumbs.request(t); },
     thumbCancel: () => { if (thumbs) thumbs.cancel(); },
+    miniState,
+    miniLayout: onMiniLayout,
   });
+  miniState.onChange(applyMini);
   thumbs = new Thumbs(ui.thumbCanvas, {
     allowed: () => !!P && !!P.view && P.engine.kind !== 'mpv' && thumbsAllowed({
       enabled: storeGet(THUMBS_KEY) !== '0', shell: P.engine.kind === 'mpv', duration: P.engine.state().duration,
@@ -130,6 +139,45 @@ function ensureUI() {
   document.addEventListener('fullscreenchange', () => { if (P) refreshUI(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && P) saveProgress(true); });
   window.addEventListener('pagehide', () => { if (P) saveProgress(true); });
+  // Retour du navigateur pendant la lecture : le lecteur se réduit (la page derrière a déjà navigué) au lieu de se fermer.
+  window.addEventListener('popstate', () => { if (P && P.view && !miniState.mini) minimizePlayer(); });
+}
+
+// ---------- Mini-lecteur ----------
+
+/** Réduction possible : une source est en lecture, moteur web ou mpv (le lecteur natif Android a son image dans l'image système). */
+const canMinimize = () => !!P && !!P.view && !!P.engine && P.engine.kind !== 'native' && !(shell && shellPip);
+
+function minimizePlayer() {
+  if (!canMinimize()) return false;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  saveProgress(true);
+  return miniState.minimize();
+}
+
+function expandPlayer() { return miniState.expand(); }
+
+/** Nouvelle position de la vignette : mpv recale son image (marges) et la page est percée au même endroit. */
+function onMiniLayout(video) {
+  lastMiniRect = video;
+  if (mpv) mpv.setMini(video);
+}
+
+/** Bascule visuelle réduit / plein lecteur (la lecture, elle, n'est jamais interrompue). */
+function applyMini(on) {
+  if (!ui) return;
+  ui.setMini(on);
+  document.body.classList.toggle('modal-open', !on && !!P);
+  if (on) {
+    const a = document.activeElement;
+    if (a instanceof HTMLElement && ui.root.contains(a)) a.blur();
+    const opener = P && P.opener;
+    if (opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
+  } else {
+    if (mpv) mpv.setMini(null);
+    lastMiniRect = null;
+    if (P) { ui.wake(); ui.focusFirst(); }
+  }
 }
 
 /** Événements de la coque : touches multimédia (lecture/pause, piste suivante) et état plein écran de la fenêtre. */
@@ -254,6 +302,7 @@ function syncNative() {
 /** Crée la session et ouvre le lecteur tout de suite, sans source : l'écran de chargement prend le relais. */
 async function initSession(request, views, view, opts = {}) {
   ensureUI();
+  miniState.reset();
   if (P) await teardown(true);
   const token = Symbol('session');
   P = {
@@ -281,6 +330,7 @@ async function initSession(request, views, view, opts = {}) {
   ui.setPhase(P.phase);
   ui.root.classList.toggle('is-searching', !view);
   ui.root.classList.remove('is-mpv');
+  ui.setMiniAvailable(true);
   ui.video.hidden = false;
   ui.video.style.objectFit = 'contain';
   ui.setHeading(...headingFor(P));
@@ -598,6 +648,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
   ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
+  ui.setMiniAvailable(choice.engine !== 'native');
+  ui.relayoutMini();
   if (choice.engine === 'native') {
     if (!nativeEng) { nativeEng = new NativeEngine(NativePlayer); bindEngine(nativeEng); }
     p.engine = nativeEng;
@@ -609,6 +661,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
     p.engine = mpv;
     ui.video.hidden = true;
     await mpv.load({ url: media.url, startAt });
+    if (miniState.mini && lastMiniRect) mpv.setMini(lastMiniRect);
   } else {
     p.engine = html;
     ui.video.hidden = false;
@@ -635,6 +688,7 @@ function failover(reason) {
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
     try { p.engine.pause(); } catch (_) { /* ignoré */ }
     if (p.engine.kind === 'native') p.engine.closeNow();
+    expandPlayer();
     ui.setLoading(null);
     ui.setError('Lecture impossible', reason + '. Aucune autre source à essayer automatiquement.', [{ act: 'source', label: 'Essayer une autre source' }, { act: 'retry', label: 'Réessayer' }, { act: 'close', label: 'Fermer' }]);
     return;
@@ -898,17 +952,19 @@ function tick() {
       p.watch.reset(Date.now());
       ui.toast((seg.kind === 'intro' ? 'Intro passée' : 'Récap passé'), 3000, { label: 'Annuler', run: () => { p.undone = seg.start; p.engine.seek(seg.start); } });
     }
-    ui.setSkip(seg && p.skipped !== seg.start ? seg : null);
+    // Mini-lecteur : ni pastille de saut ni carte (le saut automatique, s'il est activé, reste actif plus haut).
+    const mini = miniState.mini;
+    ui.setSkip(!mini && seg && p.skipped !== seg.start ? seg : null);
     const nx = nextRef();
     const card = nextEpisodeCard(p.segments, st.time, st.duration, !!nx, getSkipPref('nextEpisode'));
     if (card.show && !p.nextDismissed && nx) {
       const ep = p.episodes.get(nx.season);
       const info = ep && ep.find((e) => e.episode === nx.episode);
-      ui.setNextCard({ title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: info ? info.still : '', countdown: card.countdown, ratio: card.ratio });
+      if (!mini) ui.setNextCard({ title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: info ? info.still : '', countdown: card.countdown, ratio: card.ratio });
       if (!ep) ensureEpisodes(nx.season);
       if (card.countdown === 0 && !p.autoNexting) { p.autoNexting = true; playEpisode(nx.season, nx.episode); }
     } else ui.setNextCard(null);
-    ui.setEndRow(p.req.type === 'movie' && !p.endDismissed && movieEndRow(p.segments, st.time, st.duration));
+    ui.setEndRow(!mini && p.req.type === 'movie' && !p.endDismissed && movieEndRow(p.segments, st.time, st.duration));
     if (!st.paused) saveProgress(false, st);
     maybeAnalyze(st);
     maybeRepoll(st);
@@ -1024,6 +1080,7 @@ function showSourcesPanel(reasons = []) {
   const p = P;
   if (!p) return;
   if (nativeEng && p.engine === nativeEng) nativeEng.closeNow(); // le panneau web passe par-dessus : l'activité native se ferme
+  expandPlayer();
   ui.setLoading(null);
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
@@ -1083,6 +1140,8 @@ async function sendSegment(kind, start, end, negative) {
 function onAction(act, data) {
   if (!P) return;
   if (act === 'close') { closePlayer(); return; }
+  if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
+  if (act === 'expand') { expandPlayer(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
@@ -1286,6 +1345,12 @@ function onKey(e) {
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
+  // Mini-lecteur : aucun raccourci global, sauf « I » pour agrandir (jamais pendant une saisie).
+  if (miniState.mini) {
+    const field = !!(t && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));
+    if ((e.key === 'i' || e.key === 'I') && !field && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); expandPlayer(); }
+    return;
+  }
   const typing = !!(t && t.closest('input[type="text"], textarea, select'));
   const onButton = !!(t && t.closest('button'));
   // Le sélecteur de sources (dans un panneau) gère lui-même ses flèches ; Échap le ferme.
@@ -1308,6 +1373,7 @@ function onKey(e) {
     case 'skip': onAction('skip'); break;
     case 'pip': togglePip(); break;
     case 'panel': ui.togglePanel(action.name); break;
+    case 'mini': if (!minimizePlayer()) ui.toast('Réduction indisponible ici'); break;
     case 'next': onAction('next'); break;
     case 'back':
       switch (backStep({ panelOpen: !!ui.panel, shellFullscreen: !!shell && shellFullscreen, docFullscreen: !!document.fullscreenElement, shellPip: !!shell && shellPip })) {
@@ -1327,6 +1393,7 @@ function onKey(e) {
 async function teardown(silent) {
   const p = P;
   if (!p) return;
+  miniState.reset();
   saveProgress(true);
   clearInterval(tickTimer);
   clearTimeout(p.resumeTimer);

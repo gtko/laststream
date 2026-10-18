@@ -8,6 +8,7 @@ import { clampTooltip } from './thumbs';
 import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
+import { createMiniView } from './miniview.js';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
@@ -27,9 +28,9 @@ function skeleton() {
       '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
     '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div></div>' +
     '<div class="lp-top">' +
-      btn('close', LI.back, 'Retour (Échap)', '', 'lp-close') +
+      btn('close', LI.back, 'Retour (Échap)', ' data-role="back"', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('info', LI.info, 'Infos (I)') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
       btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
@@ -76,6 +77,7 @@ export function createPlayerUI(h) {
   root.innerHTML = skeleton();
   document.body.appendChild(root);
   const q = (s) => root.querySelector(s);
+  const mini = createMiniView(root, { state: h.miniState, action: (act, d) => h.action(act, d), layout: (video, lay) => h.miniLayout(video, lay) });
   const video = q('.lp-video');
   const panel = q('.lp-panel');
   const seek = q('[data-seek]');
@@ -123,6 +125,12 @@ export function createPlayerUI(h) {
   root.addEventListener('click', (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    // Mini-lecteur : un contrôle de la vignette agit, le reste de la vignette ramène au plein lecteur.
+    if (root.classList.contains('is-mini')) {
+      const m = t.closest('[data-act]');
+      if (m && !m.disabled) h.action(m.dataset.act, m.dataset); else h.action('expand');
+      return;
+    }
     wake();
     const a = t.closest('[data-act]');
     if (a && !a.disabled) {
@@ -253,7 +261,23 @@ export function createPlayerUI(h) {
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
-    setHeading(title, sub) { q('.lp-title').textContent = title || ''; q('.lp-sub').textContent = sub || ''; },
+    setHeading(title, sub) { q('.lp-title').textContent = title || ''; q('.lp-sub').textContent = sub || ''; mini.setTitle(title, sub); },
+    /** Mini-lecteur : vignette en bas à droite (ou barre mobile) à la place du plein écran. */
+    setMini(on) {
+      if (on) { api.closePanel(true); mini.enter(); } else mini.leave();
+    },
+    /** Reprend la géométrie du mini-lecteur (moteur mpv choisi ou quitté pendant la réduction). */
+    relayoutMini() { mini.relayout(); },
+    isMini: () => mini.active,
+    /** Le bouton « Réduire » n'existe pas partout (lecteur natif Android : le PiP système suffit). */
+    setMiniAvailable(ok) {
+      q('[data-role="mini"]').hidden = !ok;
+      const back = q('[data-role="back"]');
+      back.dataset.act = ok ? 'minimize' : 'close';
+      const label = ok ? 'Réduire le lecteur' : 'Retour (Échap)';
+      back.setAttribute('aria-label', label);
+      back.dataset.tip = label;
+    },
     /**
      * Chargeur. `extra` : { logo, backdrop, episode, source, steps, step, cancel }. Avec `steps`, l'anneau se remplit à chaque
      * étape (sources trouvées, choix, préparation du lien) ; sans, il tourne.
@@ -306,6 +330,7 @@ export function createPlayerUI(h) {
     /** `st` : état du moteur (voir engines.js). */
     update(st, marks) {
       last = st;
+      mini.update(st);
       const dur = st.duration || 0;
       const pct = dur ? Math.min(100, (st.time / dur) * 100) : 0;
       if (!dragging) {

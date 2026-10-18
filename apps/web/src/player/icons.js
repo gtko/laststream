@@ -19,5 +19,7 @@ export const LI = {
   back: svg('<path d="M19 12H5M12 19l-7-7 7-7"/>'),
   next: svg('<path d="M5 5l9 7-9 7zM18 5v14"/>'),
   skip: svg('<path d="M5 5l9 7-9 7zM16 5l5 7-5 7"/>'),
+  mini: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="12" width="8" height="6" rx="1" fill="currentColor"/>'),
+  expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
 };
