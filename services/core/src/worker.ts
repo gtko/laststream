@@ -1,4 +1,4 @@
-import type { ExecutionContext } from '@cloudflare/workers-types';
+import type { ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import { ADMIN_PREFIX, handleAdmin } from './admin/routes.js';
 import { USER_STORE_NAME } from './platform/workers/user-backend.js';
 import { createApp } from './app.js';
@@ -6,7 +6,7 @@ import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
 import { setPlatform } from './platform/index.js';
-import { createWorkersPlatform, runInRequest, type WorkerEnv } from './platform/workers/index.js';
+import { createWorkersPlatform, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
 export { UserStoreDO } from './platform/workers/index.js';
 
@@ -19,7 +19,14 @@ function appFor(env: WorkerEnv): App {
   setPlatform(platform);
   const secret = secretFromEnv();
   if (secret === undefined) throw new Error('LASTADDON_SECRET manquant : wrangler secret put LASTADDON_SECRET');
-  app = createApp({ secret, allowPlain: isPlainAllowed(), ui: platform.uiAssets, authLimiter: authLimiterFrom(env) });
+  const rangeLimit = env.RANGE_LIMITER;
+  app = createApp({
+    secret,
+    allowPlain: isPlainAllowed(),
+    ui: platform.uiAssets,
+    authLimiter: authLimiterFrom(env),
+    rangeLimiter: rangeLimit === undefined ? undefined : async (key) => (await rangeLimit.limit({ key })).success,
+  });
   return app;
 }
 
@@ -53,5 +60,10 @@ export default {
       console.error('[worker] erreur de démarrage', err instanceof Error ? err.name : 'inconnue');
       return Response.json({ error: 'worker_misconfigured' }, { status: 500 });
     }
+  },
+
+  /** Cron Trigger (wrangler.jsonc, « triggers ») : reconstruit le catalogue TV et l'EPG réduit dans R2, en flux. */
+  scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
+    ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
   },
 };

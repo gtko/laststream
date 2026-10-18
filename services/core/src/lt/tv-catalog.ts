@@ -25,6 +25,8 @@ export interface TvAlternative {
   source: string;
   quality: string;
   reliability: Reliability;
+  /** Lisible sans relais depuis une page web (https et CORS). Absent : inconnu (catalogue des Workers seulement). */
+  direct?: boolean;
 }
 
 export interface TvChannel {
@@ -44,6 +46,8 @@ export interface TvChannel {
   categories: TvCategory[];
   quality: string;
   reliability: Reliability;
+  /** Flux principal lisible sans relais depuis une page web. Absent : inconnu (le relais HLS existe, ou rien n'a été sondé). */
+  direct?: boolean;
   alternatives: TvAlternative[];
 }
 
@@ -78,6 +82,8 @@ export interface TvQuery {
   category?: string;
   source?: string;
   q?: string;
+  /** Écarte les chaînes dont aucun flux n'est lisible sans relais (page web sans proxy HLS). */
+  direct?: boolean;
   page?: number;
   limit?: number;
 }
@@ -629,6 +635,7 @@ export function selectChannels(catalog: TvCatalog, query: TvQuery): { total: num
     if (query.language !== undefined && !channel.languages.some((language) => language.code === query.language)) return;
     if (query.category !== undefined && !channel.categories.some((category) => category.id === query.category)) return;
     if (query.source !== undefined && channel.source !== query.source) return;
+    if (query.direct === true && channel.direct === false && !channel.alternatives.some((alt) => alt.direct !== false)) return;
     if (needle !== '' && !(catalog.search[index] ?? '').includes(needle)) return;
     matches.push(channel);
   });

@@ -48,6 +48,11 @@ export interface AppDeps {
    * sans secret, la fonctionnalité est désactivée.
    */
   rangeProxy?: { secret: string; base: string } | null;
+  /**
+   * Limiteur partagé entre instances des signatures de liens débridés directs (/lt/range-source), clé = empreinte de la
+   * configuration. Absent : compteur en mémoire (20 par minute et par configuration). `true` = autorisé.
+   */
+  rangeLimiter?: (key: string) => Promise<boolean>;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */
   uiDir?: string;
   /** Fichiers de l'interface web (binding Assets sous Workers). Prime sur `uiDir`. */

@@ -19,6 +19,9 @@ import {
   DEFAULT_LIMIT,
   MAX_LIMIT,
 } from './tv-catalog.js';
+import { type CatalogSnapshot, type EpgSnapshot, parseSnapshot, TV_KEYS } from './tv-build.js';
+import { fastEntry, M3uAccumulator, type Programme, XmltvIngest } from './tv-feed.js';
+import { platform, type Platform } from '../platform/index.js';
 
 /**
  * TV en direct, sources légales uniquement : chaînes gratuites Free-TV (playlist maîtresse), catalogue iptv-org
@@ -49,15 +52,6 @@ const MAX_EPG_OUTPUT_BYTES = 256 * 1024 * 1024;
 const MAX_PLAYLIST_BYTES = 6 * 1024 * 1024;
 const MAX_HLS_BYTES = 2 * 1024 * 1024;
 
-interface Programme {
-  start: number;
-  stop: number;
-  title: string;
-  desc: string;
-  icon: string;
-  category: string;
-}
-
 export interface TvStats {
   counts: Record<string, number>;
   reliability: Record<string, number>;
@@ -78,105 +72,15 @@ const NO_EPG: TvEpgData = { epg: new Map(), epgStats: [] };
 const stripBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 
 export function parseM3U(text: string): M3uEntry[] {
-  const out: M3uEntry[] = [];
-  let current: { attrs: Record<string, string>; name: string } | null = null;
-  for (const raw of stripBom(text).split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith('#EXTINF')) {
-      const attrs: Record<string, string> = {};
-      line.replace(/([\w-]+)="([^"]*)"/g, (_match, key: string, value: string) => {
-        attrs[key.toLowerCase()] = value;
-        return '';
-      });
-      current = { attrs, name: line.slice(line.lastIndexOf(',') + 1).trim() };
-    } else if (line.startsWith('#')) {
-      continue;
-    } else if (current !== null) {
-      out.push({ ...current, url: line });
-      current = null;
-    }
-  }
-  return out;
+  const acc = new M3uAccumulator();
+  for (const line of text.split(/\r?\n/)) acc.push(line);
+  return acc.entries;
 }
 
 /** Chaînes FAST (format i.mjh.nz, région française). `slug` contient {id} pour l'URL de lecture. */
 function fromMjh(json: unknown, source: 'pluto' | 'samsung', prefix: string, slug: string): FastEntry[] {
   const channels = recordAt(json, 'regions', 'fr', 'channels');
-  return Object.keys(channels).map((id) => {
-    const info = recordAt(channels, id);
-    return {
-      key: prefix + ':' + id,
-      epgId: id,
-      name: typeof info.name === 'string' && info.name !== '' ? info.name : id,
-      logo: typeof info.logo === 'string' ? info.logo : '',
-      group: typeof info.group === 'string' && info.group !== '' ? info.group : 'FAST',
-      source,
-      url: slug.replace('{id}', id),
-      country: 'FR',
-      languages: ['fra'],
-    };
-  });
-}
-
-/** Décodage des entités XML et des sections CDATA. */
-const xmlDecode = (value: string | undefined): string =>
-  String(value ?? '')
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_match, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&amp;/g, '&')
-    .trim();
-
-/** Horodatage XMLTV (AAAAMMJJHHMMSS +HHMM) en secondes Unix ; 0 si invalide. */
-function xmltvTime(value: string | undefined): number {
-  const match = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\s*([+-]\d{4})?/.exec(String(value ?? ''));
-  if (!match) return 0;
-  const tz = match[7] ? match[7].slice(0, 3) + ':' + match[7].slice(3) : 'Z';
-  const time = Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}${tz}`);
-  return Number.isFinite(time) ? Math.floor(time / 1000) : 0;
-}
-
-/** Ajoute les programmes de la fenêtre [lo, hi] au magasin. Une source antérieure fait foi pour une chaîne. */
-function ingestXmltv(xml: string, store: Map<string, Programme[]>, lo: number, hi: number): number {
-  const re = /<programme\b([^>]*)>([\s\S]*?)<\/programme>/g;
-  const seenHere = new Set<string>();
-  let count = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(xml)) !== null) {
-    const attrs: Record<string, string> = {};
-    (match[1] ?? '').replace(/([\w:-]+)="([^"]*)"/g, (_m, key: string, value: string) => {
-      attrs[key] = value;
-      return '';
-    });
-    const start = xmltvTime(attrs.start);
-    const stop = xmltvTime(attrs.stop);
-    if (!attrs.channel || !start || !stop || stop < lo || start > hi) continue;
-    const body = match[2] ?? '';
-    const pick = (tag: string): string => {
-      const found = new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)</' + tag + '>').exec(body);
-      return found ? xmlDecode(found[1]) : '';
-    };
-    const icon = /<icon\b[^>]*src="([^"]*)"/.exec(body);
-    const channel = xmlDecode(attrs.channel);
-    if (store.has(channel) && !seenHere.has(channel)) continue;
-    seenHere.add(channel);
-    const list = store.get(channel) ?? [];
-    list.push({
-      start,
-      stop,
-      title: pick('title'),
-      desc: pick('desc'),
-      icon: icon ? xmlDecode(icon[1]) : '',
-      category: pick('category'),
-    });
-    store.set(channel, list);
-    count++;
-  }
-  return count;
+  return Object.keys(channels).map((id) => fastEntry(id, recordAt(channels, id), source, prefix, slug));
 }
 
 /** Télécharge une source TV (plafond de taille, délai). */
@@ -235,7 +139,28 @@ async function buildCatalogFromSources(ctx: LtContext): Promise<TvCatalog> {
   });
 }
 
+/**
+ * Plateforme à stockage TV (Workers : R2, alimenté par le Cron) : le catalogue est lu, jamais construit dans la requête.
+ * Stockage encore vide : 503 `tv_building` et construction demandée en arrière-plan.
+ */
+async function readCatalogSnapshot(store: NonNullable<Platform['tvStore']>): Promise<TvCatalog> {
+  const snapshot = parseSnapshot<CatalogSnapshot>(await store.blobs.get(TV_KEYS.catalog));
+  if (snapshot === undefined) {
+    store.requestRefresh();
+    throw new LtError(503, 'tv_building');
+  }
+  return snapshot.catalog;
+}
+
+async function readEpgSnapshot(store: NonNullable<Platform['tvStore']>): Promise<TvEpgData> {
+  const snapshot = parseSnapshot<EpgSnapshot>(await store.blobs.get(TV_KEYS.epg));
+  if (snapshot === undefined) return NO_EPG;
+  return { epg: new Map(Object.entries(snapshot.programmes)), epgStats: snapshot.epgStats };
+}
+
 function loadCatalog(ctx: LtContext): Promise<TvCatalog> {
+  const store = platform().tvStore;
+  if (store !== undefined) return ctx.state.cache.get('tv:catalog', TTL.tvStore, () => readCatalogSnapshot(store));
   return ctx.state.cache.get(
     'tv:catalog',
     (catalog: TvCatalog) => (catalog.partial ? TTL.tvPartial : TTL.tvChannels),
@@ -245,6 +170,8 @@ function loadCatalog(ctx: LtContext): Promise<TvCatalog> {
 
 /** EPG : en cas d'échec, les chaînes restent disponibles sans programmes. */
 function loadEpg(ctx: LtContext): Promise<TvEpgData> {
+  const store = platform().tvStore;
+  if (store !== undefined) return ctx.state.cache.get('tv:epg', TTL.tvStore, () => readEpgSnapshot(store)).catch(() => NO_EPG);
   return ctx.state.cache.get('tv:epg', TTL.tvEpg, () => buildEpg(ctx)).catch(() => NO_EPG);
 }
 
@@ -261,7 +188,9 @@ async function buildEpg(ctx: LtContext): Promise<TvEpgData> {
     try {
       const raw = await tvGet(ctx, url, 90000, MAX_EPG_BYTES);
       const xml = /\.gz$/i.test(url) ? gunzipSync(raw, { maxOutputLength: MAX_EPG_OUTPUT_BYTES }) : raw;
-      const programmes = ingestXmltv(xml.toString('utf8'), epg, now - 6 * 3600, now + 30 * 3600);
+      const ingest = new XmltvIngest(epg, now - 6 * 3600, now + 30 * 3600);
+      ingest.push(xml.toString('utf8'));
+      const programmes = ingest.count;
       epgStats.push({ url: label, programmes, ok: true });
     } catch {
       epgStats.push({ url: label, programmes: 0, ok: false });
@@ -319,6 +248,11 @@ export function parseTvQuery(raw: Record<string, string>): TvQuery {
   if (source !== '') {
     if (!(SOURCE_IDS as readonly string[]).includes(source)) bad();
     query.source = source;
+  }
+  const direct = (raw.direct ?? '').trim();
+  if (direct !== '') {
+    if (direct !== '0' && direct !== '1') bad();
+    if (direct === '1') query.direct = true;
   }
   const q = (raw.q ?? '').trim();
   if (q !== '') query.q = q.slice(0, 100);
