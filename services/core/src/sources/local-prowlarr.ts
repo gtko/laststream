@@ -172,5 +172,5 @@ export function effectiveSources(
 ): Config['sources'] {
   if (config.sources.length > 0) return config.sources;
   if (!config.autoProwlarr || local === null) return [];
-  return [{ type: 'prowlarr', name: LOCAL_PROWLARR_NAME, baseUrl: local.baseUrl, apiKey: local.apiKey }];
+  return [{ enabled: true, type: 'prowlarr', name: LOCAL_PROWLARR_NAME, baseUrl: local.baseUrl, apiKey: local.apiKey }];
 }

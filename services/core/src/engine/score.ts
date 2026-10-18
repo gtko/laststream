@@ -15,6 +15,7 @@ import {
   seedersOf,
   SOURCE_RANK,
   sizeOf,
+  sourcePriorityOf,
 } from './types.js';
 
 /** Variantes FR exactes : légèrement au-dessus d'un MULTi à même rang de langue. */
@@ -149,15 +150,18 @@ interface Entry {
 }
 
 /**
- * Ordre du classement : déclassés en fin de liste, puis selon `sort`.
- * - default : score décroissant, taille la plus petite d'abord (inconnue en dernier), puis seeders décroissants.
+ * Ordre du classement : déclassés en fin de liste, puis selon `sort`. La priorité de source (ordre de `sources`)
+ * ne sert qu'à départager des scores égaux : elle ne change jamais le score lui-même.
+ * - default : score décroissant, priorité de source, taille la plus petite d'abord (inconnue en dernier), puis seeders.
  * - heaviest / lightest : niveau de langue décroissant, puis taille (la plus grande ou la plus petite d'abord),
- *   puis score, puis seeders.
+ *   puis score, priorité de source, puis seeders.
  */
 function compareEntries(a: Entry, b: Entry, sort: Sort): number {
   if (a.scored.kept !== b.scored.kept) return a.scored.kept ? -1 : 1;
   if (sort === 'default') {
     if (a.scored.score !== b.scored.score) return b.scored.score - a.scored.score;
+    const priorityOrder = sourcePriorityOf(a.ranked) - sourcePriorityOf(b.ranked);
+    if (priorityOrder !== 0) return priorityOrder;
     const sizeOrder = compareSize(a.ranked, b.ranked, 1);
     if (sizeOrder !== 0) return sizeOrder;
   } else {
@@ -165,6 +169,8 @@ function compareEntries(a: Entry, b: Entry, sort: Sort): number {
     const sizeOrder = compareSize(a.ranked, b.ranked, sort === 'heaviest' ? -1 : 1);
     if (sizeOrder !== 0) return sizeOrder;
     if (a.scored.score !== b.scored.score) return b.scored.score - a.scored.score;
+    const priorityOrder = sourcePriorityOf(a.ranked) - sourcePriorityOf(b.ranked);
+    if (priorityOrder !== 0) return priorityOrder;
   }
   return (seedersOf(b.ranked) ?? 0) - (seedersOf(a.ranked) ?? 0);
 }

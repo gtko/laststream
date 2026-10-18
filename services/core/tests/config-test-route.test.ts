@@ -11,7 +11,7 @@ const CONFIG: ConfigInput = {
 
 /** Résultat attendu pour CONFIG : chaque clé et chaque source testées, rien d'autre. */
 const EXPECTED = {
-  sources: [{ name: 'Source test', type: 'upstream', ok: true }],
+  sources: [{ name: 'Source test', type: 'upstream', ok: true, manifest: { types: [], hasStream: true } }],
   services: [
     { name: 'TMDB (jeton v4)', type: 'tmdbToken', ok: true },
     { name: 'OpenRouter', type: 'openrouterApiKey', ok: true },
@@ -91,5 +91,55 @@ describe('POST /config/test : formes de corps acceptées', () => {
     const raw = await (await probe(app.baseUrl, { config: encodeConfig(CONFIG, SECRET) })).text();
     for (const value of [KEYS.tmdbToken, KEYS.openrouterApiKey]) expect(raw).not.toContain(value);
     expect(raw).not.toContain('https://');
+  });
+});
+
+describe('POST /config/test : sources désactivées et manifest d’un addon amont', () => {
+  let own: MockUpstream;
+  let ownApp: RunningApp;
+
+  beforeAll(async () => {
+    own = mockUpstream({
+      'https://tok.example.com/TOKEN-XYZ-123/manifest.json': () =>
+        json({
+          id: 'tok.addon',
+          name: 'Addon TOKEN-XYZ-123',
+          version: '2.0',
+          description: 'Flux FR',
+          logo: 'https://tok.example.com/TOKEN-XYZ-123/logo.png',
+          types: ['movie'],
+          resources: ['stream'],
+        }),
+      'https://down.example.com/manifest.json': () => json({ id: 'down', resources: ['stream'] }),
+    });
+    ownApp = await startApp({ fetch: own.fetch, lookupHost: fakeLookup() });
+  });
+
+  afterAll(async () => {
+    await ownApp.close();
+  });
+
+  it('source désactivée : rapportée « désactivée » et jamais interrogée ; source active : manifest sans jeton', async () => {
+    const res = await probe(ownApp.baseUrl, {
+      sources: [
+        { name: 'Off', type: 'upstream', url: 'https://down.example.com/', enabled: false },
+        { name: 'On', type: 'upstream', url: 'https://tok.example.com/TOKEN-XYZ-123/manifest.json' },
+      ],
+    });
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(body).sources).toEqual([
+      { name: 'Off', type: 'upstream', enabled: false, ok: false, error: 'désactivée' },
+      {
+        name: 'On',
+        type: 'upstream',
+        ok: true,
+        manifest: { name: 'Addon ***', version: '2.0', description: 'Flux FR', types: ['movie'], hasStream: true },
+      },
+    ]);
+    expect(own.callsTo('https://down.example.com/manifest.json')).toHaveLength(0);
+    expect(body).not.toContain('TOKEN-XYZ-123');
+    expect(body).not.toContain('tok.example.com');
   });
 });

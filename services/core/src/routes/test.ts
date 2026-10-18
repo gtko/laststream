@@ -12,7 +12,7 @@ import type { IndexerInfo } from '../sources/indexers.js';
 import { isRecord, maskSecrets, SourceError, type SourceTestResult } from '../sources/http.js';
 import { discoverProwlarrIndexers } from '../sources/prowlarr.js';
 import { testTorznab } from '../sources/torznab.js';
-import { testUpstream } from '../sources/upstream.js';
+import { testUpstream, type UpstreamManifestInfo } from '../sources/upstream.js';
 
 export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid' | 'prowlarr' | 'jackett';
 
@@ -35,14 +35,22 @@ export interface ServiceCheck {
   note?: string;
 }
 
-/** Résultat du test d'une source. `error` est absent quand la source répond. `indexers` : Prowlarr et Jackett. */
+/**
+ * Résultat du test d'une source. `error` est absent quand la source répond. `indexers` : Prowlarr et Jackett.
+ * `manifest` : métadonnées publiques d'un addon amont qui répond. `enabled: false` : source désactivée, non testée.
+ */
 export interface SourceCheck {
   name: string;
   type: SourceCheckType;
   ok: boolean;
   error?: string;
   indexers?: IndexerCheck[];
+  manifest?: UpstreamManifestInfo;
+  enabled?: false;
 }
+
+/** Libellé d'une source désactivée : elle n'est pas interrogée. */
+const DISABLED_LABEL = 'désactivée';
 
 type SourceConfig = Config['sources'][number];
 
@@ -85,10 +93,10 @@ async function probeService(probe: ServiceProbe, secrets: readonly string[]): Pr
 async function settle(
   name: string,
   type: SourceCheckType,
-  run: () => Promise<SourceTestResult>,
+  run: () => Promise<SourceTestResult & { manifest?: UpstreamManifestInfo }>,
   secrets: readonly string[],
 ): Promise<SourceCheck> {
-  let result: SourceTestResult;
+  let result: SourceTestResult & { manifest?: UpstreamManifestInfo };
   try {
     result = await run();
   } catch {
@@ -96,6 +104,7 @@ async function settle(
   }
   const check: SourceCheck = { name, type, ok: result.ok };
   if (!result.ok) check.error = scrubSecrets(result.error ?? UNEXPECTED_ERROR, secrets);
+  if (result.ok && result.manifest !== undefined) check.manifest = result.manifest;
   return check;
 }
 
@@ -126,8 +135,11 @@ async function settleIndexers(
   return { name, type, ok: true, indexers: statuses };
 }
 
-/** Teste une source selon son type. Ne lève jamais. */
+/** Teste une source selon son type. Ne lève jamais. Une source désactivée n'est pas interrogée. */
 function checkSource(source: SourceConfig, fetchOpts: { fetch?: typeof fetch }, secrets: readonly string[]): Promise<SourceCheck> {
+  if (source.enabled === false) {
+    return Promise.resolve({ name: source.name, type: source.type, enabled: false, ok: false, error: DISABLED_LABEL });
+  }
   switch (source.type) {
     case 'upstream':
       return settle(source.name, 'upstream', () => testUpstream(source, fetchOpts), secrets);

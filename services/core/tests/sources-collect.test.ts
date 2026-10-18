@@ -277,3 +277,64 @@ describe('mergeIndexerCopies', () => {
     expect(merged[0]).toEqual(plain);
   });
 });
+
+describe('collectStreams : sources désactivées et priorité d’ordre', () => {
+  it('une source désactivée n’est jamais interrogée et n’apparaît pas dans les erreurs', async () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'upstream', name: 'Off', url: 'https://off.example.com/addon/manifest.json', enabled: false },
+        { type: 'torznab', name: 'Torz', baseUrl: 'https://idx.example.com', apiKey: TORZNAB_KEY },
+      ],
+    });
+    const { fetch, mock } = mockFetch(
+      routeHandler({
+        upstream: async () => jsonResponse({ streams: [{ name: 'Off', infoHash: 'b'.repeat(40) }] }),
+        torznab: async () => xmlResponse(TORZNAB_RSS),
+      }),
+    );
+
+    const result = await collectStreams(config, MOVIE, { fetch });
+
+    expect(mock.mock.calls.some(([url]) => url.includes('off.example.com'))).toBe(false);
+    expect(result.errors).toEqual([]);
+    expect(result.streams.map((s) => s.sourceName)).toEqual(['Torz']);
+  });
+
+  it('enabled absent vaut activée (défaut du schéma)', () => {
+    const config = parseConfig({ sources: [{ type: 'upstream', name: 'A', url: 'https://a.example.com/' }] });
+    expect(config.sources[0]?.enabled).toBe(true);
+  });
+
+  it('chaque flux porte sourcePriority = index de sa source dans la configuration (désactivée comprise)', async () => {
+    const config = parseConfig({
+      sources: [
+        { type: 'upstream', name: 'Off', url: 'https://off.example.com/', enabled: false },
+        { type: 'upstream', name: 'Premier', url: 'https://first.example.com/' },
+        { type: 'torznab', name: 'Second', baseUrl: 'https://idx.example.com', apiKey: TORZNAB_KEY },
+      ],
+    });
+    const { fetch } = mockFetch(
+      routeHandler({
+        upstream: async () => jsonResponse({ streams: [{ name: 'Up', infoHash: 'c'.repeat(40) }] }),
+        torznab: async () => xmlResponse(TORZNAB_RSS),
+      }),
+    );
+
+    const result = await collectStreams(config, MOVIE, { fetch });
+
+    const priorities = Object.fromEntries(result.streams.map((s) => [s.sourceName, s.sourcePriority]));
+    expect(priorities).toEqual({ Premier: 1, Second: 2 });
+  });
+
+  it('une copie fusionnée garde la meilleure priorité parmi ses occurrences', () => {
+    const hash = 'd'.repeat(40);
+    const merged = mergeIndexerCopies([
+      { sourceName: 'Lente', sourceKind: 'torznab', infoHash: hash, indexers: ['A'], sourcePriority: 3 },
+      { sourceName: 'Rapide', sourceKind: 'torznab', infoHash: hash, indexers: ['B'], sourcePriority: 0 },
+    ]);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.sourcePriority).toBe(0);
+    expect(merged[0]?.indexers).toEqual(['A', 'B']);
+  });
+});

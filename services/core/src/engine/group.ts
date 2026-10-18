@@ -1,5 +1,5 @@
 import type { FrVariant, Hdr, Lang, ParsedRelease } from '../types.js';
-import { type Candidate, fileIdxOf, infoHashOf, isDirect, seedersOf, sizeOf } from './types.js';
+import { type Candidate, fileIdxOf, infoHashOf, isDirect, seedersOf, sizeOf, sourcePriorityOf } from './types.js';
 
 /** Une copie de la release : une source (hash ou URL directe) qui peut la fournir. */
 export interface CopyRef {
@@ -88,11 +88,14 @@ function sizesClose(a: number, b: number): boolean {
   return Math.abs(a - b) <= SIZE_TOLERANCE * Math.max(a, b);
 }
 
-/** Vrai si `a` est un meilleur représentant que `b` : cached > seeders > URL directe. À égalité, le premier gagne. */
+/** Vrai si `a` est un meilleur représentant que `b` : cached > priorité de source > seeders > URL directe. À égalité, le premier gagne. */
 function isBetter(a: Candidate, b: Candidate): boolean {
   const cachedA = a.cached === true;
   const cachedB = b.cached === true;
   if (cachedA !== cachedB) return cachedA;
+  const priorityA = sourcePriorityOf(a);
+  const priorityB = sourcePriorityOf(b);
+  if (priorityA !== priorityB) return priorityA < priorityB;
   const seedersA = seedersOf(a) ?? -1;
   const seedersB = seedersOf(b) ?? -1;
   if (seedersA !== seedersB) return seedersA > seedersB;
@@ -102,11 +105,16 @@ function isBetter(a: Candidate, b: Candidate): boolean {
   return false;
 }
 
-/** Ordre des copies : cachées d'abord, puis seeders décroissants (inconnus en dernier), puis directes en fin. */
+/**
+ * Ordre des copies : cachées d'abord, puis priorité de source (index dans `sources`), puis seeders décroissants
+ * (inconnus en dernier), puis directes en fin.
+ */
 function compareForCopies(a: Candidate, b: Candidate): number {
   const cachedA = a.cached === true;
   const cachedB = b.cached === true;
   if (cachedA !== cachedB) return cachedA ? -1 : 1;
+  const priorityDiff = sourcePriorityOf(a) - sourcePriorityOf(b);
+  if (priorityDiff !== 0) return priorityDiff;
   const seedersDiff = (seedersOf(b) ?? -1) - (seedersOf(a) ?? -1);
   if (seedersDiff !== 0) return seedersDiff;
   const directA = isDirect(a);

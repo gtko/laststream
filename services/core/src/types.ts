@@ -32,6 +32,11 @@ export interface ParsedRelease {
 export interface RawStream {
   sourceName: string;
   sourceKind: 'upstream' | 'torznab';
+  /**
+   * Priorité de la source d'origine : son index dans `sources` (plus petit = prioritaire), renseigné par collectStreams.
+   * Sert au départage des scores égaux et au choix de la copie lue en premier. Absent hors collecte.
+   */
+  sourcePriority?: number;
   title?: string;
   name?: string;
   description?: string;

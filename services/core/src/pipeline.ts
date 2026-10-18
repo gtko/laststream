@@ -139,7 +139,12 @@ function coversRequest(candidate: Candidate, ref: ContentRef, titles: readonly s
   // Le nom de la release doit contenir un titre de la série : un pack « S03 » d'une autre série n'est pas le bon.
   const release = raw.filename ?? raw.title;
   if (release !== undefined && !nameMatchesTitles(release, titles)) return false;
-  return scopeCovers(candidate.parsed.scope ?? {}, season, episode, absolute);
+  const scope = candidate.parsed.scope ?? {};
+  // Numéro absolu (anime) sans remappage connu (remappeur absent ou en délai) : la release n'est pas écartée, faute
+  // de moyen de la vérifier. Avec un remappage, la correspondance est exigée.
+  const absoluteOnly = scope.absolute !== undefined && scope.episode === undefined && scope.pack === undefined;
+  if (absoluteOnly && absolute === undefined) return true;
+  return scopeCovers(scope, season, episode, absolute);
 }
 
 /** Numéro absolu d'un épisode de série (remappage anime), borné à ANIME_TIMEOUT_MS. Undefined sans remappage. */

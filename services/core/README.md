@@ -73,7 +73,7 @@ Les clés API (sources Torznab, Prowlarr, Jackett, debrid, services) sont conten
 
 ### Prowlarr local
 
-Si la configuration n'a aucune source, le serveur utilise un Prowlarr installé sur la même machine (par défaut `http://localhost:9696`). La clé API est lue dans `LASTADDON_PROWLARR_KEY`, sinon dans le `config.xml` de Prowlarr. L'instance est validée par un appel à `GET /api/v1/indexer` (délai 3 s), et le résultat est mis en cache 60 secondes. Les sources explicites ne sont jamais remplacées. Pour désactiver ce repli pour une configuration donnée, réglez « Utiliser le Prowlarr local détecté » sur faux (`autoProwlarr: false`).
+Détection automatique, sans rien saisir : si la configuration n'a aucune source, le serveur utilise un Prowlarr installé sur la même machine (par défaut `http://localhost:9696`). La clé API est lue dans `LASTADDON_PROWLARR_KEY`, sinon dans le `config.xml` de Prowlarr. L'instance est validée par un appel à `GET /api/v1/indexer` (délai 3 s), et le résultat est mis en cache 60 secondes. Les sources explicites ne sont jamais remplacées. Pour désactiver ce repli pour une configuration donnée, réglez « Utiliser le Prowlarr local détecté » sur faux (`autoProwlarr: false`).
 
 `/config/schema` et `/config/test` indiquent la présence du Prowlarr local dans `localProwlarr` : `{"detected": true, "indexers": 12, "label": "Prowlarr local détecté (12 indexeurs)"}`, sans URL ni clé.
 
@@ -142,7 +142,7 @@ Corps : une configuration JSON brute (non chiffrée). Chaque source, le compte A
 }
 ```
 
-`error` est absent quand `ok` vaut `true`. Un corps invalide renvoie `400` `{"error":"invalid_config","issues":[...]}`, qui ne contient que des chemins et des messages, jamais les valeurs saisies.
+`error` est absent quand `ok` vaut `true`. Une source désactivée (`"enabled": false`) n'est pas interrogée : elle est rapportée avec `"enabled": false`, `"ok": false` et `"error": "désactivée"`. Pour une source `upstream` qui répond, `manifest` donne les métadonnées publiques de l'addon (`name`, `logo`, `version`, `description`, `types`, `hasStream`), lues sur son manifest et gardées une heure. Ni l'URL ni le jeton de l'addon ne sont renvoyés, et un échec n'ajoute que le statut. Un corps invalide renvoie `400` `{"error":"invalid_config","issues":[...]}`, qui ne contient que des chemins et des messages, jamais les valeurs saisies.
 
 ### `POST /config/encode`
 
@@ -319,6 +319,8 @@ Chaque source est discriminée par son champ `type` :
 - `{"type":"prowlarr","name":"...","baseUrl":"https://...","apiKey":"...","indexerIds":[1,2],"categories":[2000]}` : une instance Prowlarr, plusieurs indexeurs. `indexerIds` et `categories` sont optionnels ; sans `indexerIds`, tous les indexeurs torrent activés sont interrogés.
 - `{"type":"jackett","name":"...","baseUrl":"https://...","apiKey":"...","indexers":"all"}` : une instance Jackett. `indexers` vaut `"all"` (défaut) ou une liste d'identifiants d'indexeurs.
 
+Chaque source accepte `"enabled"` (défaut `true`, libellé « Activée »). Une source à `false` est ignorée partout : collecte et `POST /config/test`. **L'ordre de `sources` est la priorité** : la première source est la plus prioritaire. Elle départage les scores égaux (avant la taille, en tri par défaut), et, parmi des releases identiques, la copie la plus prioritaire se lit en premier (cachées d'abord, puis priorité de source, puis seeders).
+
 Les URL doivent être en `http` ou `https`.
 
 ### Mode JSON brut (déconseillé)
@@ -419,7 +421,7 @@ AllDebrid débride aussi les liens des hébergeurs qu'il prend en charge. Cette 
   ```
 
   Seuls les indexeurs torrent activés sont listés pour Prowlarr ; Jackett ne liste que les indexeurs configurés. `health.status` vaut `ok`, `slow` (latence moyenne au-delà de 5 s sur les 10 dernières requêtes), `error` (la dernière requête a échoué) ou `unknown` (jamais interrogé). Aucune clé ni URL n'est renvoyée. Erreurs : `400 invalid_config` (chemins et messages seulement), `413 payload_too_large` au-delà de 16 Ko, `502 indexers_unavailable` si la découverte échoue.
-- **Recherche Prowlarr** : `GET /api/v1/search`, clé dans l'en-tête `X-Api-Key`. Les indexeurs qui acceptent la recherche par identifiant IMDb reçoivent une requête par identifiant. Pour une série, l'indexeur doit aussi accepter la recherche par saison ; la requête porte alors la saison et l'épisode. Les autres reçoivent une recherche texte par titre, une par variante de titre. Les catégories par défaut sont 2000 (films) et 5000 (séries).
+- **Recherche Prowlarr** : `GET /api/v1/search`, clé dans l'en-tête `X-Api-Key`. Les indexeurs qui acceptent la recherche par identifiant IMDb reçoivent une requête par identifiant, qui porte aussi le titre (et le TVDB si connu) ; pour une série, la saison et l'épisode s'y ajoutent si l'indexeur accepte la recherche par saison. Les packs et l'intégrale sont demandés en texte à tous les indexeurs, et la requête texte « Titre SxxEyy » seulement à ceux qui n'acceptent pas l'identifiant. Les autres reçoivent une recherche texte par titre, une par variante de titre. Les catégories par défaut sont 2000 (films) et 5000 (séries).
 - **Recherche Jackett** : une requête Torznab par cible (`all`, ou chaque identifiant de la liste), sur `/api/v2.0/indexers/<cible>/results/torznab`.
 - **Titres FR et EN** : pour la recherche texte, les titres français et anglais viennent de TMDB (cache 7 jours). Sans `services.tmdbToken`, aucune requête texte n'est lancée. Au plus 8 requêtes texte sont construites par contenu, avec l'année filtrée dans les résultats.
 - **Budgets** : 3 requêtes en parallèle au plus, 12 s pour la recherche entière, 10 s par requête.
@@ -438,7 +440,11 @@ AllDebrid débride aussi les liens des hébergeurs qu'il prend en charge. Cette 
 - **Autres caches** : métadonnées TMDB 6 h ; titres TMDB 7 jours ; .torrent 6 h (200 entrées) ; sondes audio 30 jours (5 000 entrées) ; catalogue des hébergeurs AllDebrid 12 h ; statut « cache » AllDebrid (voir « Méthode de cache-check AllDebrid »).
 - **Hôtes en panne** : un hébergeur qui renvoie `host_unavailable` pendant une lecture est marqué en panne pendant 1 h. Ses copies sont sautées par le failover, et ses liens sont écartés sans contrôle au calcul des streams.
 - **Apprentissage des packs** : les fichiers d'un torrent sont mémorisés dès qu'ils sont connus (lecture du .torrent, ou liste des fichiers chez AllDebrid), jusqu'à 2 000 torrents pendant 30 jours. Pour un épisode de série, le fichier correspondant du pack est retrouvé et remplace le fichier indiqué par la copie. Ce magasin est en mémoire : il est vidé au redémarrage.
-- **Remappage anime : partiel.** Le module `src/anime/mapping.ts` (table de correspondance anime vers IMDb, TVDB et TMDB, lecture de la liste de correspondances et des groupes d'épisodes TMDB) existe et est couvert par `tests/anime-mapping.test.ts`, mais **aucune route ni étape du pipeline ne l'appelle** : les streams ne sont pas remappés aujourd'hui.
+- **Remappage anime : partiel.** Le module `src/anime/mapping.ts` (table de correspondance anime vers IMDb, TVDB et TMDB, lecture de la liste de correspondances et des groupes d'épisodes TMDB) est couvert par `tests/anime-mapping.test.ts`, et le pipeline sait l'utiliser (`animeMapper`), mais **le serveur ne l'injecte pas** : aucun numéro absolu n'est remappé aujourd'hui. Les releases en numérotation absolue (« Titre - 05 ») ne sont donc pas écartées faute de remappage, et les requêtes Prowlarr « Titre 05 » ne sont pas envoyées.
+
+### Séries : épisode, packs et intégrales
+
+Pour un épisode demandé, une release est gardée si son nom désigne cet épisode (`SxxEyy`, `4x04`, « Saison 4 Episode 4 »), le pack de sa saison, ou une intégrale ou un multi-saisons qui la couvre. Une release d'un autre épisode est écartée, de même qu'une release dont le nom ne contient aucun titre de la série. Les liens directs et les flux sans texte ne sont pas filtrés. Les titres TMDB sont complétés du titre Cinemeta s'il manque (pas de jeton TMDB, ou TMDB en panne). Côté AllDebrid, un pack qui ne contient pas l'épisode demandé échoue au lieu de jouer le plus gros fichier.
 
 ## Format des streams
 

@@ -4,6 +4,7 @@ import { cand, MB } from './engine-fixtures.js';
 
 const HASH_A = 'a'.repeat(40);
 const HASH_B = 'b'.repeat(40);
+const HASH_C = 'c'.repeat(40);
 
 describe('groupCopies', () => {
   it('renvoie un tableau vide pour une entrée vide', () => {
@@ -186,5 +187,25 @@ describe('groupCopies', () => {
       { ...cand({ raw: { title: 'movie 2024' } }), languageFallback: false },
     ]);
     expect(mixed[0]?.languageFallback).toBe(false);
+  });
+});
+
+describe('groupCopies : priorité de source pour l’ordre des copies', () => {
+  it('cachées d’abord, puis priorité de source, puis seeders', () => {
+    const result = groupCopies([
+      cand({ raw: { title: 'Film.2024.1080p.WEB-DL.mkv', infoHash: HASH_A, sourceName: 'Seeds', sourcePriority: 0, seeders: 900 } }),
+      cand({ raw: { title: 'Film.2024.1080p.WEB-DL.mkv', infoHash: HASH_B, sourceName: 'Prio', sourcePriority: 1, seeders: 5 } }),
+      cand({ raw: { title: 'Film.2024.1080p.WEB-DL.mkv', infoHash: HASH_C, sourceName: 'Cachee', sourcePriority: 4, seeders: 1 }, cached: true }),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.copies.map((copy) => copy.sourceName)).toEqual(['Cachee', 'Seeds', 'Prio']);
+  });
+
+  it('le représentant du groupe est la copie de la source la plus prioritaire (à cached égal)', () => {
+    const result = groupCopies([
+      cand({ raw: { title: 'Film.2024.1080p.WEB-DL.mkv', infoHash: HASH_B, sourceName: 'Basse', sourcePriority: 2, seeders: 999 } }),
+      cand({ raw: { title: 'Film.2024.1080p.WEB-DL.mkv', infoHash: HASH_B, sourceName: 'Haute', sourcePriority: 0, seeders: 1 } }),
+    ]);
+    expect(result[0]?.raw.sourceName).toBe('Haute');
   });
 });

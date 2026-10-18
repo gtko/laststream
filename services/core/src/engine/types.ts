@@ -9,6 +9,11 @@ export interface VerifiedAudio {
 }
 
 /** Candidat : un stream amont déjà parsé, prêt pour le moteur (le moteur ne parse jamais). */
+/** Priorité de la source d'origine (index dans `sources`, plus petit = prioritaire). Absente : la plus basse. */
+export function sourcePriorityOf(c: Candidate): number {
+  return c.raw.sourcePriority ?? Number.MAX_SAFE_INTEGER;
+}
+
 export interface Candidate {
   raw: RawStream;
   parsed: ParsedRelease;

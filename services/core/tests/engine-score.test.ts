@@ -145,3 +145,40 @@ describe('selectForCacheCheck', () => {
     expect(selectForCacheCheck([sized], 5)).toEqual([HASH_B]);
   });
 });
+
+describe('rankCandidates : priorité de source (départage des scores égaux)', () => {
+  const same = { resolution: '1080p' as const, languages: ['fr' as const], frVariant: 'VFF' as const, source: 'WEB-DL' as const };
+
+  it('à score égal, la source prioritaire passe devant, même plus lourde (tri par défaut)', () => {
+    const result = rankCandidates(
+      [
+        cand({ parsed: { ...same, sizeBytes: 2 * GB }, raw: { title: 'leger-prio-1', sourcePriority: 1 } }),
+        cand({ parsed: { ...same, sizeBytes: 4 * GB }, raw: { title: 'lourd-prio-0', sourcePriority: 0 } }),
+      ],
+      config,
+    );
+    expect(titles(result)).toEqual(['lourd-prio-0', 'leger-prio-1']);
+  });
+
+  it('la priorité ne passe jamais devant un meilleur score (résolution)', () => {
+    const result = rankCandidates(
+      [
+        cand({ parsed: { ...same, resolution: '720p' }, raw: { title: '720-prio-0', sourcePriority: 0 } }),
+        cand({ parsed: { ...same }, raw: { title: '1080-prio-3', sourcePriority: 3 } }),
+      ],
+      config,
+    );
+    expect(titles(result)).toEqual(['1080-prio-3', '720-prio-0']);
+  });
+
+  it('tri par taille : à score et taille égaux, la priorité départage avant les seeders', () => {
+    const result = rankCandidates(
+      [
+        cand({ parsed: { ...same, sizeBytes: 4 * GB, seeders: 900 }, raw: { title: 'seeds-prio-2', sourcePriority: 2 } }),
+        cand({ parsed: { ...same, sizeBytes: 4 * GB, seeders: 5 }, raw: { title: 'peu-prio-1', sourcePriority: 1 } }),
+      ],
+      cfg({ sort: 'heaviest' }),
+    );
+    expect(titles(result)).toEqual(['peu-prio-1', 'seeds-prio-2']);
+  });
+});

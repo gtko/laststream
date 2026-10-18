@@ -69,6 +69,10 @@ export function mergeIndexerCopies(streams: RawStream[]): RawStream[] {
       continue;
     }
     first.indexers = [...new Set([...(first.indexers ?? []), ...stream.indexers])];
+    // La copie fusionnée garde la meilleure priorité de source parmi ses occurrences.
+    if (stream.sourcePriority !== undefined) {
+      first.sourcePriority = Math.min(first.sourcePriority ?? Number.MAX_SAFE_INTEGER, stream.sourcePriority);
+    }
   }
   return merged;
 }
@@ -87,26 +91,32 @@ function bounded(work: Promise<RawStream[]>, name: string, budgetMs: number | un
 }
 
 /**
- * Interroge toutes les sources de la configuration en parallèle.
+ * Interroge en parallèle les sources activées de la configuration (les désactivées sont ignorées).
  * Une source en échec n'empêche pas les autres : son erreur est listée dans `errors`.
  * Les streams sont renvoyés dans l'ordre des sources de la configuration, copies d'indexeurs fusionnées par infoHash.
  */
 export async function collectStreams(config: Config, ref: ContentRef, opts: CollectOptions = {}): Promise<CollectResult> {
+  // Sources désactivées ignorées. L'index d'une source dans la configuration (son ordre = sa priorité) est conservé.
+  const active = config.sources
+    .map((source, priority) => ({ source, priority }))
+    .filter(({ source }) => source.enabled !== false);
   // Chaque source borne sa propre recherche un peu avant le budget de la collecte : elle rend ses résultats partiels
   // à temps, au lieu d'être coupée par la limite externe (qui ne garde rien de la source).
   const inner: CollectOptions =
     opts.budgetMs === undefined ? opts : { ...opts, budgetMs: Math.max(0, opts.budgetMs - SOURCE_MARGIN_MS) };
-  const runs = config.sources.map((source) => bounded(searchSource(source, ref, inner), source.name, opts.budgetMs));
+  const runs = active.map(({ source }) => bounded(searchSource(source, ref, inner), source.name, opts.budgetMs));
   const settled = await Promise.allSettled(runs);
 
   const streams: RawStream[] = [];
   const errors: SourceErrorEntry[] = [];
   settled.forEach((result, index) => {
+    const entry = active[index];
+    const source = entry?.source.name ?? 'inconnue';
     if (result.status === 'fulfilled') {
-      streams.push(...result.value);
+      const priority = entry?.priority;
+      streams.push(...result.value.map((stream) => (priority === undefined ? stream : { ...stream, sourcePriority: priority })));
       return;
     }
-    const source = config.sources[index]?.name ?? 'inconnue';
     const error =
       result.reason instanceof SourceError ? result.reason.message : `Source "${source}" : erreur inattendue`;
     errors.push({ source, error });

@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { LruCache } from '../cache/lru.js';
 import type { ContentRef, RawStream } from '../types.js';
 import {
   SourceError,
@@ -15,9 +17,44 @@ export interface UpstreamSource {
   url: string;
 }
 
-/** Chemin de base d'un addon amont, sans /manifest.json ni slashes finaux. */
+/**
+ * Métadonnées publiques du manifest d'un addon amont, renvoyées par POST /config/test. Jamais l'URL source ni son
+ * jeton : les textes et le logo sont épurés de ces secrets.
+ */
+export interface UpstreamManifestInfo {
+  name?: string;
+  logo?: string;
+  version?: string;
+  description?: string;
+  types: string[];
+  hasStream: boolean;
+}
+
+/** Résultat du test d'un addon amont. `manifest` n'est présent qu'en cas de succès. */
+export interface UpstreamTestResult extends SourceTestResult {
+  manifest?: UpstreamManifestInfo;
+}
+
+/** Durée de vie du manifest en cache : une heure. Seuls les succès sont gardés. */
+export const MANIFEST_CACHE_MS = 60 * 60 * 1000;
+const manifestCache = new LruCache<UpstreamManifestInfo>({ max: 64, ttlMs: MANIFEST_CACHE_MS, now: () => Date.now() });
+
+/** Longueur maximale d'un texte du manifest, et nombre maximal de types. */
+const MAX_MANIFEST_TEXT = 300;
+const MAX_MANIFEST_TYPES = 20;
+const MAX_LOGO_LENGTH = 2048;
+/** Segment de chemin assez long pour être un jeton : seuls ceux-là sont masqués dans les textes du manifest. */
+const MIN_SECRET_SEGMENT = 8;
+
+/**
+ * Chemin de base d'un addon amont, sans /manifest.json, sans slashes finaux ni doublés (le jeton intégré reste intact).
+ */
 function addonPath(url: URL): string {
-  return url.pathname.replace(/\/manifest\.json$/i, '').replace(/\/+$/, '');
+  return url.pathname
+    .replace(/\/+$/, '')
+    .replace(/\/manifest\.json$/i, '')
+    .replace(/\/+$/, '')
+    .replace(/\/{2,}/g, '/');
 }
 
 function parseSourceUrl(sourceUrl: string): URL {
@@ -28,10 +65,17 @@ function parseSourceUrl(sourceUrl: string): URL {
   }
 }
 
+/**
+ * Identifiant dans le chemin : encodé, sauf les `:` des identifiants de série (tt1234567:1:2), comme le fait Stremio.
+ */
+function encodeStreamId(id: string): string {
+  return encodeURIComponent(id).replace(/%3A/gi, ':');
+}
+
 /** URL GET `{base}/stream/{type}/{id}.json` ; la query string de la source est conservée. */
 function streamUrl(sourceUrl: string, ref: ContentRef): string {
   const url = parseSourceUrl(sourceUrl);
-  url.pathname = `${addonPath(url)}/stream/${ref.type}/${encodeURIComponent(ref.id)}.json`;
+  url.pathname = `${addonPath(url)}/stream/${ref.type}/${encodeStreamId(ref.id)}.json`;
   url.hash = '';
   return url.toString();
 }
@@ -118,23 +162,107 @@ export async function fetchUpstream(
   }
 }
 
-/** Vérifie qu'un addon amont répond et expose un manifest (champ id ou resources). */
-export async function testUpstream(source: UpstreamSource, opts: HttpOptions = {}): Promise<SourceTestResult> {
-  const { fetchFn, timeoutMs } = resolveOptions(opts);
+/** Clé de cache : empreinte du chemin du manifest (le jeton n'est jamais gardé en clair). */
+function manifestCacheKey(sourceUrl: string): string {
+  return createHash('sha256').update(manifestUrl(sourceUrl)).digest('hex');
+}
+
+function safeDecode(segment: string): string {
   try {
-    const res = await fetchText(
-      fetchFn,
-      manifestUrl(source.url),
-      { headers: { Accept: 'application/json' } },
-      timeoutMs,
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/** Segments de chemin de l'addon qui sont des jetons probables (à masquer dans les textes du manifest). */
+function secretSegments(sourceUrl: string): string[] {
+  const segments = addonPath(parseSourceUrl(sourceUrl)).split('/').filter((segment) => segment.length >= MIN_SECRET_SEGMENT);
+  return segments.flatMap((segment) => {
+    const decoded = safeDecode(segment);
+    return decoded === segment ? [segment] : [segment, decoded];
+  });
+}
+
+/** Texte du manifest épuré : secrets masqués, longueur bornée. Absent si vide ou non textuel. */
+function manifestText(value: unknown, secrets: readonly string[]): string | undefined {
+  const text = optionalString(value)?.trim();
+  if (text === undefined || text === '') return undefined;
+  const clean = secrets.reduce((acc, secret) => acc.split(secret).join('***'), text);
+  return clean.slice(0, MAX_MANIFEST_TEXT);
+}
+
+/** Logo du manifest : seulement une URL http(s) qui ne contient aucun secret de l'addon. */
+function manifestLogo(value: unknown, secrets: readonly string[]): string | undefined {
+  const logo = optionalString(value)?.trim();
+  if (logo === undefined || logo === '' || logo.length > MAX_LOGO_LENGTH) return undefined;
+  let url: URL;
+  try {
+    url = new URL(logo);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+  if (secrets.some((secret) => logo.includes(secret))) return undefined;
+  return logo;
+}
+
+/** Métadonnées publiques d'un manifest valide. Le champ `resources` donne `hasStream` (ressource « stream »). */
+function manifestInfo(manifest: Record<string, unknown>, sourceUrl: string): UpstreamManifestInfo {
+  const secrets = secretSegments(sourceUrl);
+  const info: UpstreamManifestInfo = { types: [], hasStream: false };
+  const name = manifestText(manifest.name, secrets);
+  if (name !== undefined) info.name = name;
+  const version = manifestText(manifest.version, secrets);
+  if (version !== undefined) info.version = version;
+  const description = manifestText(manifest.description, secrets);
+  if (description !== undefined) info.description = description;
+  const logo = manifestLogo(manifest.logo, secrets);
+  if (logo !== undefined) info.logo = logo;
+  if (Array.isArray(manifest.types)) {
+    info.types = manifest.types
+      .filter((type): type is string => typeof type === 'string' && type.trim() !== '')
+      .slice(0, MAX_MANIFEST_TYPES)
+      .map((type) => type.trim().slice(0, 50));
+  }
+  if (Array.isArray(manifest.resources)) {
+    info.hasStream = manifest.resources.some(
+      (resource) => resource === 'stream' || (isRecord(resource) && resource.name === 'stream'),
     );
-    if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
-    const manifest = parseJson(res.text);
-    if (!isRecord(manifest) || !(typeof manifest.id === 'string' || Array.isArray(manifest.resources))) {
-      throw new SourceError('manifest invalide (id ou resources absent)');
-    }
-    return { ok: true };
+  }
+  return info;
+}
+
+/** Charge le manifest d'un addon (cache 1 h). Lève une SourceError brute ; l'appelant la préfixe par le nom. */
+async function loadManifest(source: UpstreamSource, opts: HttpOptions): Promise<UpstreamManifestInfo> {
+  const key = manifestCacheKey(source.url);
+  const cached = manifestCache.get(key);
+  if (cached !== undefined) return cached;
+  const { fetchFn, timeoutMs } = resolveOptions(opts);
+  const res = await fetchText(fetchFn, manifestUrl(source.url), { headers: { Accept: 'application/json' } }, timeoutMs);
+  if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
+  const manifest = parseJson(res.text);
+  if (!isRecord(manifest) || !(typeof manifest.id === 'string' || Array.isArray(manifest.resources))) {
+    throw new SourceError('manifest invalide (id ou resources absent)');
+  }
+  const info = manifestInfo(manifest, source.url);
+  manifestCache.set(key, info);
+  return info;
+}
+
+/**
+ * Vérifie qu'un addon amont répond et expose un manifest (champ id ou resources). En cas de succès, renvoie aussi
+ * ses métadonnées publiques (`manifest`). Échec : statut seulement, sans URL ni jeton. Ne lève jamais.
+ */
+export async function testUpstream(source: UpstreamSource, opts: HttpOptions = {}): Promise<UpstreamTestResult> {
+  try {
+    return { ok: true, manifest: await loadManifest(source, opts) };
   } catch (err) {
     return { ok: false, error: sourceFailure(source.name, err).message };
   }
+}
+
+/** Vide le cache des manifests (tests). */
+export function clearUpstreamManifestCache(): void {
+  manifestCache.clear();
 }

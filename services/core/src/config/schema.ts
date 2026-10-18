@@ -209,13 +209,21 @@ const PlaySchema = z
 
 const HttpUrlSchema = z.url({ protocol: /^https?$/ });
 
+/** Source activée (défaut). Une source désactivée n'est jamais interrogée, et POST /config/test la rapporte. */
+const EnabledSchema = z.boolean().default(true).meta({
+  title: 'Activée',
+  description: 'Désactiver une source la retire de la recherche sans la supprimer de la configuration.',
+});
+
 const UpstreamSourceSchema = z.object({
+  enabled: EnabledSchema,
   type: z.literal('upstream'),
   name: z.string().trim().min(1).max(100),
   url: HttpUrlSchema,
 });
 
 const TorznabSourceSchema = z.object({
+  enabled: EnabledSchema,
   type: z.literal('torznab'),
   name: z.string().trim().min(1).max(100),
   baseUrl: HttpUrlSchema,
@@ -225,6 +233,7 @@ const TorznabSourceSchema = z.object({
 
 /** Prowlarr : un point d'entrée, plusieurs indexeurs. `indexerIds` vide ou absent : tous les indexeurs torrent activés. */
 export const ProwlarrSourceSchema = z.object({
+  enabled: EnabledSchema,
   type: z.literal('prowlarr'),
   name: z.string().trim().min(1).max(100),
   baseUrl: HttpUrlSchema,
@@ -238,6 +247,7 @@ const JackettIndexerIdSchema = z.string().trim().regex(/^[A-Za-z0-9_.-]{1,100}$/
 
 /** Jackett : `indexers` vaut 'all' (agrégation Jackett) ou la liste des identifiants à interroger. */
 export const JackettSourceSchema = z.object({
+  enabled: EnabledSchema,
   type: z.literal('jackett'),
   name: z.string().trim().min(1).max(100),
   baseUrl: HttpUrlSchema,
@@ -341,7 +351,12 @@ export const ConfigSchema = z.object({
         JackettSourceSchema,
       ]),
     )
-    .default([]),
+    .default([])
+    .meta({
+      title: 'Sources',
+      description:
+        "Sources interrogées. L'ordre est la priorité : la première est prioritaire (départage des scores égaux, et copie lue en premier parmi les releases identiques). Une source désactivée est ignorée.",
+    }),
   autoProwlarr: z.boolean().default(true).meta({
     title: 'Utiliser le Prowlarr local détecté',
     description:

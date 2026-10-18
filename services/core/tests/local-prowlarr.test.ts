@@ -243,7 +243,7 @@ describe('statut public et sources effectives', () => {
     const auto = parseConfig({});
     expect(auto.autoProwlarr).toBe(true);
     expect(effectiveSources(auto, LOCAL)).toEqual([
-      { type: 'prowlarr', name: 'Prowlarr local', baseUrl: BASE, apiKey: KEY },
+      { enabled: true, type: 'prowlarr', name: 'Prowlarr local', baseUrl: BASE, apiKey: KEY },
     ]);
     expect(effectiveSources(parseConfig({ autoProwlarr: false }), LOCAL)).toEqual([]);
     expect(effectiveSources(auto, null)).toEqual([]);

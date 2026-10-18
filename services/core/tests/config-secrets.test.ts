@@ -59,7 +59,7 @@ describe('POST /config/decode', () => {
     expect(body.services.tvdbPin).toEqual({ set: true });
     expect(body.services.openrouterApiKey).toEqual({ set: true, last4: '…-111' });
     expect(body.debrid.apiKey).toEqual({ set: true, last4: '…6789' });
-    expect(body.sources[0]).toEqual({ type: 'torznab', name: 'Indexeur', baseUrl: 'https://indexer.example.com/api', apiKey: { set: true } });
+    expect(body.sources[0]).toEqual({ enabled: true, type: 'torznab', name: 'Indexeur', baseUrl: 'https://indexer.example.com/api', apiKey: { set: true } });
   });
 
   it('ne change pas les champs non secrets (modèle, nombre de résultats)', async () => {

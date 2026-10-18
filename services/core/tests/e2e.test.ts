@@ -383,7 +383,7 @@ describe('debrid AllDebrid (cache simulé)', () => {
     expect(streams[0]?.url?.startsWith(`${main.baseUrl}/${token}/play/c/`)).toBe(true);
     expect(copiesOf(streams[0] ?? {})).toMatchObject({ copies: [{ infoHash: H.series }], season: 1, episode: 2 });
     expect(streams[0]?.laststream?.estBitrateKbps).toBe(Math.round((1.5 * GB * 8) / 3120 / 1000));
-    expect(requests.some((r) => r.url.endsWith('/stream/series/tt7654321%3A1%3A2.json'))).toBe(true);
+    expect(requests.some((r) => r.url.endsWith('/stream/series/tt7654321:1:2.json'))).toBe(true);
   });
 
   it('LASTADDON_PUBLIC_URL prime sur les en-têtes X-Forwarded-*', async () => {
@@ -481,7 +481,7 @@ describe('POST /config/test et chiffrement', () => {
       sources: Array<{ name: string; type: string; ok: boolean; error?: string }>;
     };
     const byName = (name: string) => sources.find((s) => s.name === name);
-    expect(byName('Upstream')).toEqual({ name: 'Upstream', type: 'upstream', ok: true });
+    expect(byName('Upstream')).toEqual({ name: 'Upstream', type: 'upstream', ok: true, manifest: { types: [], hasStream: true } });
     expect(byName('Indexeur')).toEqual({ name: 'Indexeur', type: 'torznab', ok: true });
     expect(byName('Indexeur KO')?.ok).toBe(false);
     expect(byName('Indexeur KO')?.error).toContain('***');

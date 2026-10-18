@@ -486,3 +486,22 @@ describe('pipeline v2 : budgets par étape', () => {
     expect(result.errors).toEqual([{ source: 'Lente', error: 'Source "Lente" : délai dépassé (150 ms)' }]);
   });
 });
+
+describe('pipeline v2 : série en numérotation absolue (anime) sans remappage', () => {
+  it('« Titre - 05 » sans remappage connu est gardée ; « Titre S01E04 » est écartée pour S01E05', async () => {
+    const cinemeta: Route = (url) =>
+      url.hostname === 'v3-cinemeta.strem.io' ? json({ meta: { name: 'Sousou no Frieren', runtime: '24 min' } }) : undefined;
+    const { fetch } = routedFetch([
+      cinemeta,
+      upstreamWith([
+        { name: 'Upstream', title: '[SubsPlease] Sousou no Frieren - 05 (1080p) [HEVC]', infoHash: H.a, description: '👤 50' },
+        { name: 'Upstream', title: 'Sousou no Frieren S01E04 1080p WEB-DL', infoHash: H.b, description: '👤 20' },
+      ]),
+    ]);
+    const ref: ContentRef = { type: 'series', id: 'tt9900001:1:5', imdbId: 'tt9900001', season: 1, episode: 5 };
+
+    const result = await getStreams(cfg({ sources: [UPSTREAM] }), ref, ctxFor(fetch));
+
+    expect(result.streams.map((stream) => stream.infoHash)).toEqual([H.a]);
+  });
+});

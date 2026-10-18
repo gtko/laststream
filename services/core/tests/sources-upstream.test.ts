@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentRef } from '../src/types.js';
 import { fetchWithTimeout, redactUrl, type FetchFn } from '../src/sources/http.js';
-import { fetchUpstream, testUpstream } from '../src/sources/upstream.js';
+import { clearUpstreamManifestCache, fetchUpstream, testUpstream } from '../src/sources/upstream.js';
 
 const MOVIE: ContentRef = { type: 'movie', id: 'tt1234567', imdbId: 'tt1234567' };
 const SERIES: ContentRef = { type: 'series', id: 'tt1234567:1:2', imdbId: 'tt1234567', season: 1, episode: 2 };
@@ -59,12 +59,12 @@ describe('fetchUpstream', () => {
     expect(mock.mock.calls[1]?.[0]).toBe('https://up.example.com/addon/stream/movie/tt1234567.json');
   });
 
-  it('encode l’identifiant de série (tt:1:2) dans le chemin', async () => {
+  it('garde les « : » de l’identifiant de série (tt:1:2) dans le chemin', async () => {
     const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
 
     await fetchUpstream(SOURCE, SERIES, { fetch });
 
-    expect(mock.mock.calls[0]?.[0]).toBe('https://up.example.com/addon/stream/series/tt1234567%3A1%3A2.json');
+    expect(mock.mock.calls[0]?.[0]).toBe('https://up.example.com/addon/stream/series/tt1234567:1:2.json');
   });
 
   it('mappe filename et sizeBytes depuis behaviorHints et conserve les hints', async () => {
@@ -180,14 +180,14 @@ describe('testUpstream', () => {
 
     const result = await testUpstream(SOURCE, { fetch });
 
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, manifest: { types: [], hasStream: true } });
     expect(mock.mock.calls[0]?.[0]).toBe('https://up.example.com/addon/manifest.json');
   });
 
   it('ok quand le manifest contient resources (sans id)', async () => {
     const { fetch } = mockFetch(async () => jsonResponse({ resources: ['stream'] }));
 
-    await expect(testUpstream(SOURCE, { fetch })).resolves.toEqual({ ok: true });
+    await expect(testUpstream(SOURCE, { fetch })).resolves.toEqual({ ok: true, manifest: { types: [], hasStream: true } });
   });
 
   it('HTTP 404 : ok à false, erreur sans clé', async () => {
@@ -242,5 +242,159 @@ describe('fetchWithTimeout', () => {
     const { fetch } = mockFetch(hangingFetch);
 
     await expect(fetchWithTimeout(fetch, 'https://a.example.com/', {}, 20)).rejects.toThrow('délai dépassé (20 ms)');
+  });
+});
+
+beforeEach(() => {
+  clearUpstreamManifestCache();
+});
+
+/** URL d'appel réellement envoyée au fetch simulé (premier appel). */
+function calledUrl(mock: ReturnType<typeof mockFetch>['mock']): string {
+  return String(mock.mock.calls[0]?.[0]);
+}
+
+describe('normalisation des URL d’addon (jeton intégré, suffixe /manifest.json)', () => {
+  it('https://mylumio.tv/<jeton>/manifest.json : le jeton reste dans le chemin, sans doublon de slash', async () => {
+    const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
+
+    await fetchUpstream({ name: 'Mylumio', url: 'https://mylumio.tv/TOKEN123abc/manifest.json' }, MOVIE, { fetch });
+
+    expect(calledUrl(mock)).toBe('https://mylumio.tv/TOKEN123abc/stream/movie/tt1234567.json');
+  });
+
+  it('https://loostream.nipva.com/<base64>/manifest.json avec = (ou %3D) : base64 conservé tel quel', async () => {
+    const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
+
+    await fetchUpstream({ name: 'Loo', url: 'https://loostream.nipva.com/eyJhIjoxfQ==/manifest.json' }, MOVIE, { fetch });
+    await fetchUpstream({ name: 'Loo', url: 'https://loostream.nipva.com/eyJhIjoxfQ%3D%3D/manifest.json' }, MOVIE, { fetch });
+
+    expect(mock.mock.calls[0]?.[0]).toBe('https://loostream.nipva.com/eyJhIjoxfQ==/stream/movie/tt1234567.json');
+    expect(mock.mock.calls[1]?.[0]).toBe('https://loostream.nipva.com/eyJhIjoxfQ%3D%3D/stream/movie/tt1234567.json');
+  });
+
+  it('base64 contenant + et / (segments encodés ou non) : le chemin est reconstruit à l’identique', async () => {
+    const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
+
+    await fetchUpstream({ name: 'Loo', url: 'https://loostream.nipva.com/ab+c/de%2Ffg==/manifest.json' }, SERIES, { fetch });
+
+    expect(calledUrl(mock)).toBe('https://loostream.nipva.com/ab+c/de%2Ffg==/stream/series/tt1234567:1:2.json');
+  });
+
+  it('suffixe /manifest.json suivi de slashes, ou URL de base avec slash final : même appel', async () => {
+    const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
+
+    await fetchUpstream({ name: 'A', url: 'https://mylumio.tv/TOKEN123abc//manifest.json/' }, MOVIE, { fetch });
+    await fetchUpstream({ name: 'A', url: 'https://mylumio.tv/TOKEN123abc/' }, MOVIE, { fetch });
+
+    expect(mock.mock.calls[0]?.[0]).toBe('https://mylumio.tv/TOKEN123abc/stream/movie/tt1234567.json');
+    expect(mock.mock.calls[1]?.[0]).toBe('https://mylumio.tv/TOKEN123abc/stream/movie/tt1234567.json');
+  });
+
+  it('la query string de la source est conservée (ex. ?lang=fr)', async () => {
+    const { fetch, mock } = mockFetch(async () => jsonResponse({ streams: [] }));
+
+    await fetchUpstream({ name: 'A', url: 'https://mylumio.tv/TOKEN123abc/manifest.json?lang=fr' }, MOVIE, { fetch });
+
+    expect(calledUrl(mock)).toBe('https://mylumio.tv/TOKEN123abc/stream/movie/tt1234567.json?lang=fr');
+  });
+});
+
+describe('testUpstream : métadonnées du manifest', () => {
+  it('renvoie name, version, description, logo, types et hasStream (ressource stream en objet ou en texte)', async () => {
+    const { fetch } = mockFetch(async () =>
+      jsonResponse({
+        id: 'org.up',
+        name: 'Mylumio',
+        version: '1.2.0',
+        description: 'Flux FR',
+        logo: 'https://img.example.com/logo.png',
+        types: ['movie', 'series'],
+        resources: ['catalog', { name: 'stream', types: ['movie'] }],
+      }),
+    );
+
+    const result = await testUpstream(SOURCE, { fetch });
+
+    expect(result).toEqual({
+      ok: true,
+      manifest: {
+        name: 'Mylumio',
+        version: '1.2.0',
+        description: 'Flux FR',
+        logo: 'https://img.example.com/logo.png',
+        types: ['movie', 'series'],
+        hasStream: true,
+      },
+    });
+  });
+
+  it('hasStream à false quand aucune ressource stream n’est déclarée', async () => {
+    const { fetch } = mockFetch(async () => jsonResponse({ id: 'org.up', resources: ['catalog'] }));
+
+    const result = await testUpstream(SOURCE, { fetch });
+
+    expect(result.manifest?.hasStream).toBe(false);
+  });
+
+  it('ne renvoie jamais le jeton : logo contenant le jeton écarté, textes épurés', async () => {
+    const tokenSource = { name: 'Mylumio', url: 'https://mylumio.tv/TOKEN123abc/manifest.json' };
+    const { fetch } = mockFetch(async () =>
+      jsonResponse({
+        id: 'org.up',
+        name: 'Addon TOKEN123abc',
+        logo: 'https://mylumio.tv/TOKEN123abc/logo.png',
+        description: 'Voir https://mylumio.tv/TOKEN123abc/config',
+        resources: ['stream'],
+      }),
+    );
+
+    const result = await testUpstream(tokenSource, { fetch });
+
+    expect(result.ok).toBe(true);
+    expect(result.manifest?.logo).toBeUndefined();
+    expect(result.manifest?.name).toBe('Addon ***');
+    expect(JSON.stringify(result)).not.toContain('TOKEN123abc');
+  });
+
+  it('logo qui n’est pas une URL http(s) : ignoré', async () => {
+    const { fetch } = mockFetch(async () => jsonResponse({ id: 'org.up', logo: 'javascript:alert(1)', resources: ['stream'] }));
+
+    const result = await testUpstream(SOURCE, { fetch });
+
+    expect(result.manifest?.logo).toBeUndefined();
+  });
+
+  it('met le manifest en cache 1 heure : pas de nouvel appel avant, nouvel appel après', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z'));
+    try {
+      const { fetch, mock } = mockFetch(async () => jsonResponse({ id: 'org.up', name: 'Cache', resources: ['stream'] }));
+
+      await testUpstream(SOURCE, { fetch });
+      vi.setSystemTime(new Date('2026-10-18T10:59:00Z'));
+      const again = await testUpstream(SOURCE, { fetch });
+      expect(mock).toHaveBeenCalledTimes(1);
+      expect(again.manifest?.name).toBe('Cache');
+
+      vi.setSystemTime(new Date('2026-10-18T11:01:00Z'));
+      await testUpstream(SOURCE, { fetch });
+      expect(mock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('échec : statut seulement, sans manifest, et rien n’est mis en cache', async () => {
+    const { fetch, mock } = mockFetch(async () => new Response('boom', { status: 500 }));
+
+    const failed = await testUpstream(SOURCE, { fetch });
+    expect(failed).toEqual({ ok: false, error: 'Source "Amont" : HTTP 500' });
+    expect(failed).not.toHaveProperty('manifest');
+
+    mock.mockImplementation(async () => jsonResponse({ id: 'org.up', name: 'Après', resources: ['stream'] }));
+    const recovered = await testUpstream(SOURCE, { fetch });
+    expect(recovered.ok).toBe(true);
+    expect(recovered.manifest?.name).toBe('Après');
   });
 });
