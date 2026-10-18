@@ -1624,7 +1624,7 @@ function panelData(name) {
     });
     return {
       seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, error: !!p.episodesError, current: p.cur, query: p.epQuery,
-      logo: p.meta.logo, title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
+      logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w780', p.meta.backdrop) : '', title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
     };
   }
   if (name === 'info') {

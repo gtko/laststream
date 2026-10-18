@@ -12,6 +12,7 @@ import { IMG, REDUCE } from './constants.js';
 import { countdown, isFuture } from './dates.js';
 import { detailEl } from './dom.js';
 import { fetchFull } from './ficheModel.js';
+import { inProgressRef } from './epFocus.js';
 import { fillCollection, fillNext, fillRatings, fillWhy, loadSeason } from './ficheSections.js';
 import { topBar } from './fragments.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
@@ -353,7 +354,7 @@ export async function showFiche(type, id) {
   if (m.collection) fillCollection(m, token);
   if (m.type === 'tv') {
     fillNext(m, token);
-    const n = nextToWatch(m);
+    const n = inProgressRef(m.key) || nextToWatch(m);
     if (n) loadSeason(m, n.s, token);
   }
 }

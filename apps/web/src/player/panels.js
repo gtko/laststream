@@ -88,7 +88,9 @@ export function episodesHtml(d) {
   const rows = d.loading ? '<p class="lp-empty">Chargement…</p>' : d.episodes.map((ep) => {
     const on = d.season === cur.season && ep.episode === cur.episode;
     const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
-    const still = '<span class="lp-ep-still">' + (ep.still ? '<img src="' + esc(ep.still) + '" alt="" loading="lazy" decoding="async">' : '') +
+    const fb = !ep.still; // repli : fond de la série assombri + numéro (jamais de vignette vide)
+    const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' + (ep.still || (fb && d.backdrop) ? '<img src="' + esc(ep.still || d.backdrop) + '" alt="" loading="lazy" decoding="async">' : '') +
+      (fb ? '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' : '') +
       (on ? '<span class="lp-ep-now">En cours</span>' : '') +
       (ep.aired ? '' : '<span class="lp-ep-soon">Bientôt</span>') +
       (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
