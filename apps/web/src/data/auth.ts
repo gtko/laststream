@@ -1,4 +1,5 @@
-import { isConfigured } from './config';
+import { getConfig, isConfigured } from './config';
+import { CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
 import { ServerUserStore, profileFromDto } from './serverUserStore';
@@ -133,9 +134,17 @@ async function syncPrefsIn(profileId: string): Promise<void> {
     const { settings } = await api.getSettings(profileId);
     if (Object.keys(settings).length) applyPrefs(settings);
     else await api.putSettings(profileId, snapshotPrefs());
-  } catch {
-    // Réglages locaux conservés.
-  }
+    const verdict = await reconcileConfig(settings);
+    if (verdict === 'push') pushConfig(getConfig());
+  } catch { /* Réglages locaux conservés. */ }
+}
+
+/** Envoie la config lastAddon chiffrée au profil actif (sans effet hors mode serveur ; erreurs ignorées). */
+export function pushConfig(config: string): void {
+  if (!isServerMode() || !auth.profile) return;
+  const value = configForAccount(config);
+  if (!value) return;
+  api.putSettings(auth.profile.id, { [CONFIG_SETTING_KEY]: value }).catch(() => undefined);
 }
 
 let pushTimer: ReturnType<typeof setTimeout> | undefined;
