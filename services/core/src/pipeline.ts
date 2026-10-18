@@ -79,6 +79,12 @@ export interface PipelineContext {
   fetch?: typeof fetch;
   /** Client debrid : statut « cache » et sonde des liens cachés. Absent : aucune vérification. */
   debrid?: PipelineDebrid;
+  /**
+   * `client` : le serveur n'appelle jamais AllDebrid (LASTADDON_DEBRID_SERVER_SIDE=0). Les torrents sont livrés sans lien,
+   * marqués `behaviorHints.lastDebrid = "client"` ; l'appareil de l'utilisateur vérifie le cache et débride lui-même.
+   * Le filtre « seulement en cache » est alors laissé à l'appareil.
+   */
+  debridMode?: 'server' | 'client';
   /** Hébergeurs AllDebrid (contrôle des liens d'hébergeur). Absent : aucun lien d'hébergeur n'est identifié. */
   hosters?: Pick<HosterClient, 'getHosts' | 'hosterFor' | 'linkInfos'>;
   /** Hébergeurs signalés en panne : leurs liens sont écartés sans contrôle. */
@@ -474,7 +480,7 @@ function withoutLanguageFallback(item: Scored): Scored {
 
 /** Clé de cache : hash de la configuration et de l'identifiant (sans config en clair). */
 function resultCacheKey(config: Config, ref: ContentRef, ctx: PipelineContext): string {
-  const id = [ref.type, ref.id, ref.season ?? '', ref.episode ?? '', ctx.playBaseUrl, ctx.configToken, ctx.secret].join('|');
+  const id = [ref.type, ref.id, ref.season ?? '', ref.episode ?? '', ctx.playBaseUrl, ctx.configToken, ctx.secret, ctx.debridMode ?? 'server'].join('|');
   return hashConfigKey(config, id);
 }
 
@@ -487,6 +493,11 @@ async function sourcesOf(config: Config, ctx: PipelineContext): Promise<Config['
   const provider = ctx.localProwlarr;
   const local = await settle(() => provider(), null);
   return effectiveSources(config, local);
+}
+
+/** Configuration du calcul : sources effectives ; en mode `client`, « seulement en cache » est appliqué par l'appareil. */
+function effectiveConfig(config: Config, sources: Config['sources'], ctx: PipelineContext): Config {
+  return ctx.debridMode === 'client' ? { ...config, sources, onlyCached: false } : { ...config, sources };
 }
 
 /** Calculs en cours par clé de cache : deux requêtes identiques simultanées ne lancent qu'un calcul. */
@@ -533,7 +544,7 @@ function refreshInBackground(
  * résultat complet.
  */
 export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<PipelineResult> {
-  const effective: Config = { ...config, sources: await sourcesOf(config, ctx) };
+  const effective: Config = effectiveConfig(config, await sourcesOf(config, ctx), ctx);
   const cache = ctx.cache === false ? undefined : (ctx.cache ?? sharedResultCache);
   const key = cache === undefined ? undefined : resultCacheKey(effective, ref, ctx);
   if (cache === undefined || key === undefined) return (await computeStreams(effective, ref, ctx)).result;
@@ -566,7 +577,7 @@ export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineC
 
 /** Avancement d'une requête : indexeurs encore en cours et nombre de flux disponibles (léger : aucune recherche lancée). */
 export async function getStreamsStatus(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<StreamsStatus> {
-  const effective: Config = { ...config, sources: await sourcesOf(config, ctx) };
+  const effective: Config = effectiveConfig(config, await sourcesOf(config, ctx), ctx);
   const cache = ctx.cache === false ? undefined : (ctx.cache ?? sharedResultCache);
   if (cache === undefined) return { pending: [], count: 0 };
   const key = resultCacheKey(effective, ref, ctx);
@@ -756,6 +767,7 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
     releaseDate: meta.releaseDate,
     maxResults: config.maxResults,
     hasDebrid: config.debrid !== undefined,
+    clientDebrid: ctx.debridMode === 'client',
     season: ref.season,
     episode: ref.episode,
   });

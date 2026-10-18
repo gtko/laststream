@@ -46,6 +46,11 @@ export interface FormatOptions {
   maxResults: number;
   /** Vrai si le débrideur est configuré : les torrents et les liens d'hébergeur passent alors par /play. */
   hasDebrid: boolean;
+  /**
+   * Mode « client » : le serveur n'appelle pas AllDebrid. Un torrent est livré sans URL (infoHash, fileIdx, nom de fichier
+   * et taille), marqué `behaviorHints.lastDebrid = "client"` ; l'appareil vérifie le cache et débride. Aucune URL /play.
+   */
+  clientDebrid?: boolean;
   season?: number;
   episode?: number;
 }
@@ -56,8 +61,11 @@ export interface FormatOptions {
  */
 type Target =
   | { kind: 'direct'; url: string }
-  | { kind: 'play'; url: string; direct: boolean };
+  | { kind: 'play'; url: string; direct: boolean }
+  | { kind: 'client'; copies: PlayCopy[] };
 
+/** Copies d'un même groupe transmises à l'appareil (au plus). */
+const MAX_CLIENT_COPIES = 5;
 const UPSTREAM_HINT_KEYS = ['proxyHeaders', 'headers'] as const;
 /** HEVC/AV1 et audio DTS/TrueHD ne sont pas lus par les navigateurs ; les REMUX sont des conteneurs lourds. */
 const NOT_WEB_READY_AUDIO = /dts|truehd/i;
@@ -136,6 +144,13 @@ function targetOf(item: FormatItem, opts: FormatOptions): Target | undefined {
   if (url !== undefined && url.length > 0 && (item.hoster === undefined || !opts.hasDebrid)) {
     return { kind: 'direct', url };
   }
+  // Mode client : torrent sans URL, résolu sur l'appareil. Un torrent privé (octets du .torrent côté serveur) n'est pas livrable.
+  if (opts.clientDebrid === true) {
+    const copies = playableCopies(item)
+      .filter((copy) => copy.infoHash !== undefined && copy.privateTorrent !== true)
+      .map(toPlayCopy);
+    return copies.length === 0 ? undefined : { kind: 'client', copies };
+  }
   // Sans débrideur : un torrent n'est pas livrable (jamais en P2P), seuls les liens HTTP directs restent.
   if (!opts.hasDebrid) return undefined;
   const copies = playableCopies(item).map(toPlayCopy);
@@ -182,7 +197,7 @@ function viewOf(item: FormatItem, opts: FormatOptions, target: Target, copyCount
     filename: item.raw.filename || item.raw.title || undefined,
     cached: item.cached === true,
     direct: target.kind === 'direct' || (target.kind === 'play' && target.direct),
-    debrid: target.kind === 'play' && !target.direct,
+    debrid: target.kind === 'client' || (target.kind === 'play' && !target.direct),
     seeders: seedersOf(item),
     fallbackLanguage: item.languageFallback === true,
     indexers: item.indexers ?? [],
@@ -269,6 +284,20 @@ function laststreamOf(item: FormatItem, opts: FormatOptions, copyCount: number, 
   };
 }
 
+/** Ce dont l'appareil a besoin pour débrider : copies (hash, fichier attendu), épisode visé. Jamais d'URL ni de secret. */
+function clientInfoOf(copies: readonly PlayCopy[], opts: FormatOptions): Record<string, unknown> {
+  return {
+    copies: copies.slice(0, MAX_CLIENT_COPIES).map((copy) => ({
+      infoHash: copy.infoHash,
+      ...(copy.fileIdx !== undefined ? { fileIdx: copy.fileIdx } : {}),
+      ...(copy.filename !== undefined ? { filename: copy.filename } : {}),
+      ...(copy.size !== undefined ? { size: copy.size } : {}),
+    })),
+    ...(opts.season !== undefined ? { season: opts.season } : {}),
+    ...(opts.episode !== undefined ? { episode: opts.episode } : {}),
+  };
+}
+
 function formatOne(item: FormatItem, opts: FormatOptions): StremioStream | undefined {
   let target: Target | undefined;
   try {
@@ -289,6 +318,14 @@ function formatOne(item: FormatItem, opts: FormatOptions): StremioStream | undef
     laststream: laststreamOf(item, opts, copyCount, view.bitrateMbps),
   };
 
+  if (target.kind === 'client') {
+    const lead = target.copies[0] as PlayCopy;
+    stream.infoHash = lead.infoHash;
+    if (lead.fileIdx !== undefined) stream.fileIdx = lead.fileIdx;
+    stream.behaviorHints = { ...stream.behaviorHints, lastDebrid: 'client' };
+    stream.laststream = { ...stream.laststream, client: clientInfoOf(target.copies, opts) };
+    return stream;
+  }
   stream.url = target.url;
   return stream;
 }

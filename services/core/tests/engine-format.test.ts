@@ -286,3 +286,29 @@ describe('formatStreams : troncature', () => {
     expect(streams).toHaveLength(2);
   });
 });
+
+describe('formatStreams : mode client (le serveur n appelle pas AllDebrid)', () => {
+  it('livre le torrent sans URL, avec infoHash, fichier attendu et lastDebrid=client', () => {
+    const [stream] = format(
+      [cand({ parsed: { infoHash: HASH, fileIdx: 2 }, raw: { filename: 'Show.S01E02.mkv', sizeBytes: 1234 } })],
+      { clientDebrid: true, hasDebrid: false, season: 1, episode: 2 },
+    );
+    expect(stream?.url).toBeUndefined();
+    expect(stream?.infoHash).toBe(HASH);
+    expect(stream?.fileIdx).toBe(2);
+    expect(stream?.behaviorHints?.lastDebrid).toBe('client');
+    expect(stream?.laststream?.client).toEqual({
+      copies: [{ infoHash: HASH, fileIdx: 2, filename: 'Show.S01E02.mkv', size: 1234 }],
+      season: 1,
+      episode: 2,
+    });
+  });
+
+  it('écarte un torrent privé (ses octets restent côté serveur) et garde l URL directe amont', () => {
+    const privateItem: FormatItem = { ...ranked(cand({ parsed: { infoHash: HASH } })), copies: [{ infoHash: HASH, privateTorrent: true, guid: 'g1' }] };
+    const direct = ranked(cand({ raw: { sourceKind: 'upstream', url: 'https://up.example.com/v.mkv' } }), 42);
+    const streams = formatStreams([privateItem, direct], { ...BASE, clientDebrid: true });
+    expect(streams).toHaveLength(1);
+    expect(streams[0]?.url).toBe('https://up.example.com/v.mkv');
+  });
+});

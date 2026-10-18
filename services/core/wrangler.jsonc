@@ -61,8 +61,8 @@
     "LASTADDON_DEBRID_SERVER_SIDE": "0",
     "LASTADDON_PUBLIC": "1",
     "LASTADDON_PUBLIC_URL": "https://lastaddon-core.gtux-prog.workers.dev",
-    // Relais de plages des miniatures décodées côté client : Worker « laststream » (jeton HMAC RANGE_SECRET).
-    "LASTADDON_RANGE_BASE": "https://laststream.gtux-prog.workers.dev",
+    // Plus de relais de plages (LASTADDON_RANGE_BASE retiré) : l'appareil lit les miniatures directement chez l'hébergeur
+    // débridé, avec son IP, comme la lecture. Aucune requête vers AllDebrid ni ses hôtes ne part de Cloudflare.
     // Origines autorisées pour /config, /user et les écritures lt (en plus de l'origine du Worker).
     "LASTADDON_ALLOWED_ORIGINS": "https://lastaddon-core.gtux-prog.workers.dev,https://laststream.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
   }

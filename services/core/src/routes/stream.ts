@@ -8,7 +8,7 @@ import { isEdgeRequest } from '../config/edge.js';
 import { platform, sharedKvCache } from '../platform/index.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
-import { AllDebridClient } from '../sources/alldebrid.js';
+import { AllDebridClient, serverSideDebridBlocked } from '../sources/alldebrid.js';
 import { HosterClient } from '../sources/hosters.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
 import { issuedUrls } from '../play/issued.js';
@@ -75,7 +75,18 @@ export function publicBaseUrl(req: RequestLike, edge = false): string {
   return `${scheme}://${host ?? 'localhost'}`;
 }
 
-const noticeOf = (config: Config): { notice?: string } => (config.debrid === undefined ? { notice: NO_DEBRID_NOTICE } : {});
+/**
+ * Mode « client » : le serveur n'appelle jamais AllDebrid (compte sanctionné pour des appels depuis des IP de serveurs).
+ * Les torrents sont livrés sans lien ; l'appareil vérifie le cache et débride avec sa propre clé, depuis son IP.
+ */
+const clientMode = (): boolean => serverSideDebridBlocked();
+
+const noticeOf = (config: Config): { notice?: string; debrid?: 'client'; onlyCached?: boolean } =>
+  clientMode()
+    ? { debrid: 'client', onlyCached: config.onlyCached }
+    : config.debrid === undefined
+      ? { notice: NO_DEBRID_NOTICE }
+      : {};
 
 /**
  * Route Stremio : GET /:config/stream/:type/:id.json.
@@ -127,8 +138,11 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
   const playState = defaultPlayState();
 
   const contextOf = (c: Ctx, config: Config, wait: PipelineContext['wait']): PipelineContext => {
-    const apiKey = config.debrid?.apiKey;
+    const client = clientMode();
+    // Mode client : ni client AllDebrid ni hébergeurs (le catalogue d'hébergeurs est aussi un appel AllDebrid).
+    const apiKey = client ? undefined : config.debrid?.apiKey;
     return {
+      debridMode: client ? 'client' : 'server',
       playBaseUrl: publicBaseUrl(c.req, isEdgeRequest(c)),
       configToken: c.req.param('config') as string,
       secret: deps.secret,
