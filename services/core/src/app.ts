@@ -7,6 +7,7 @@ import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { catalogEntries } from './lt/catalog.js';
 import { registerLtRoutes } from './lt/router.js';
+import { localProwlarrStatusOf } from './sources/local-prowlarr.js';
 import { registerIndexerRoutes } from './routes/indexers.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
@@ -197,8 +198,9 @@ export function createApp(deps: AppDeps): Express {
     res.json(manifestFor(deps, req.params.config));
   });
 
-  app.get('/config/schema', (_req, res) => {
-    res.json({ ...configJsonSchema(), presets: presetCatalog() });
+  app.get('/config/schema', async (_req, res) => {
+    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr);
+    res.json({ ...configJsonSchema(), presets: presetCatalog(), localProwlarr });
   });
 
   app.post('/config/encode', (req, res, next) => {

@@ -1,8 +1,10 @@
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.js';
 import { isPublicMode, assertStartupEnv } from './config/runtime-env.js';
 import { getSecret, isPlainAllowed, loadEnvFile } from './config/secret.js';
+import { detectLocalProwlarr, type LocalProwlarrIo, localProwlarrEnabled } from './sources/local-prowlarr.js';
 
 const DEFAULT_PORT = 7000;
 
@@ -38,12 +40,31 @@ export function start(): void {
     console.error(err instanceof Error ? err.message : 'configuration invalide');
     process.exit(1);
   }
-  const app = createApp({ secret, allowPlain: isPlainAllowed() });
+  const localIo: LocalProwlarrIo = {
+    env: process.env,
+    readFile: (path) => readFileSync(path, 'utf8'),
+    homeDir: homedir(),
+  };
+  const app = createApp({
+    secret,
+    allowPlain: isPlainAllowed(),
+    localProwlarr: () => detectLocalProwlarr(localIo),
+  });
   if (isPlainAllowed()) {
     console.warn('LASTADDON_ALLOW_PLAIN=1 : configurations en JSON brut acceptées (non chiffrées).');
   }
   if (isPublicMode()) {
     console.warn('LASTADDON_PUBLIC=1 : mode public actif (adresses privées refusées pour les URL des sources).');
+  }
+  if (localProwlarrEnabled(process.env)) {
+    // Lit la clé une seule fois au démarrage ; le résultat ne contient que le nombre d'indexeurs, jamais la clé.
+    void detectLocalProwlarr(localIo).then((local) =>
+      console.log(
+        local === null
+          ? 'Aucun Prowlarr local détecté.'
+          : `Prowlarr local détecté (${local.indexerCount} indexeurs), utilisé si aucune source n'est configurée.`,
+      ),
+    );
   }
   const server = app.listen(port, () => {
     console.log(`lastAddon en écoute sur http://localhost:${port}`);

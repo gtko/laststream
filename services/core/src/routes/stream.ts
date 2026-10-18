@@ -125,6 +125,7 @@ export function registerStreamRoutes(app: Express, deps: AppDeps): void {
       hostHealth: defaultPlayState.hostHealth,
       torrentCache: defaultPlayState.torrentCache,
       packStore: defaultPlayState.packStore,
+      localProwlarr: deps.localProwlarr,
     });
     res.json({ streams: result.streams });
   });

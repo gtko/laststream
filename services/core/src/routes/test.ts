@@ -5,6 +5,7 @@ import type { AppDeps } from '../deps.js';
 import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
 import { createLtContext, LtError } from '../lt/context.js';
 import { AllDebridClient } from '../sources/alldebrid.js';
+import { localProwlarrStatusOf } from '../sources/local-prowlarr.js';
 import { defaultIndexerHealth, type HealthStatus } from '../sources/indexer-health.js';
 import { discoverJackettIndexers } from '../sources/jackett.js';
 import type { IndexerInfo } from '../sources/indexers.js';
@@ -203,7 +204,8 @@ export function registerTestRoutes(app: Express, deps: AppDeps): void {
     const sources = await Promise.all([...sourceChecks, ...debridCheck]);
     const ltContext = createLtContext(deps);
     const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
+    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr);
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ sources, services });
+    res.json({ sources, services, localProwlarr });
   });
 }

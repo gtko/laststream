@@ -1,4 +1,5 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
+import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
 export type DebridClient = Pick<
@@ -22,4 +23,9 @@ export interface AppDeps {
   userDbPath?: string;
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number }>;
+  /**
+   * Prowlarr local détecté (absent : aucun, ce qui désactive la détection). Le serveur l'initialise au démarrage.
+   * Sa clé ne doit jamais sortir vers les clients ni dans les journaux.
+   */
+  localProwlarr?: LocalProwlarrProvider;
 }

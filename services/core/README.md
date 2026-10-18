@@ -61,11 +61,21 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_DATA_DIR` | `./data` | Dossier de la base SQLite des données utilisateur (`laststream.db`). Relatif à la racine du projet. Voir « Données utilisateur ». |
 | `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription sur `/user/register`. Sinon seul le premier compte peut être créé. |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
+| `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public) | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
+| `LASTADDON_PROWLARR_URL` | `http://localhost:9696` | Base du Prowlarr local à interroger. Remplace l'adresse par défaut. |
+| `LASTADDON_PROWLARR_KEY` | aucun | Clé API du Prowlarr local. Prioritaire sur le fichier de configuration. Lue une seule fois au démarrage, jamais renvoyée ni journalisée. |
+| `LASTADDON_PROWLARR_CONFIG_PATH` | `C:\ProgramData\Prowlarr\config.xml` (Windows), `~/.config/Prowlarr/config.xml` (Linux) | Fichier `config.xml` de Prowlarr, dont la balise `<ApiKey>` sert de clé si `LASTADDON_PROWLARR_KEY` est absente. |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
 **Important :** si `LASTADDON_SECRET` change, toutes les configurations déjà chiffrées (et donc toutes les URL de manifest installées) deviennent invalides, ainsi que les liens `/play/c` déjà émis. Sauvegardez cette valeur. Ne la committez jamais : `.env` est dans `.gitignore`.
 
-Les clés API (sources Torznab, Prowlarr, Jackett, debrid, services) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur d'indexeur.
+Les clés API (sources Torznab, Prowlarr, Jackett, debrid, services) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur d'indexeur. La clé du Prowlarr local n'est pas dans la configuration : elle n'apparaît dans aucune réponse, ni dans `/config/*`, ni dans les erreurs.
+
+### Prowlarr local
+
+Si la configuration n'a aucune source, le serveur utilise un Prowlarr installé sur la même machine (par défaut `http://localhost:9696`). La clé API est lue dans `LASTADDON_PROWLARR_KEY`, sinon dans le `config.xml` de Prowlarr. L'instance est validée par un appel à `GET /api/v1/indexer` (délai 3 s), et le résultat est mis en cache 60 secondes. Les sources explicites ne sont jamais remplacées. Pour désactiver ce repli pour une configuration donnée, réglez « Utiliser le Prowlarr local détecté » sur faux (`autoProwlarr: false`).
+
+`/config/schema` et `/config/test` indiquent la présence du Prowlarr local dans `localProwlarr` : `{"detected": true, "indexers": 12, "label": "Prowlarr local détecté (12 indexeurs)"}`, sans URL ni clé.
 
 ## Endpoints
 

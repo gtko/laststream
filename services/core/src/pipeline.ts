@@ -16,6 +16,7 @@ import type { PackStore } from './play/packs.js';
 import { parseRawStream } from './parse/index.js';
 import { type CollectResult, collectStreams, mergeIndexerCopies, type SourceErrorEntry } from './sources/collect.js';
 import type { HosterClient } from './sources/hosters.js';
+import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
 import { getTitleVariants, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
@@ -82,6 +83,8 @@ export interface PipelineContext {
   stageTimer?: (stage: string, ms: number) => void;
   /** Budgets des étapes (tests). Défaut : STAGE_BUDGET_MS. */
   budgetsMs?: Partial<StageBudgets>;
+  /** Prowlarr local détecté : interrogé seulement si la configuration n'a aucune source (et autoProwlarr actif). */
+  localProwlarr?: LocalProwlarrProvider;
 }
 
 export interface PipelineResult {
@@ -325,19 +328,31 @@ function resultCacheKey(config: Config, ref: ContentRef, ctx: PipelineContext): 
 }
 
 /**
+ * Sources interrogées : celles de la configuration, ou le Prowlarr local détecté quand elle n'en a aucune. Le
+ * fournisseur n'est appelé que dans ce cas ; son échec n'empêche jamais la requête (sources vides).
+ */
+async function sourcesOf(config: Config, ctx: PipelineContext): Promise<Config['sources']> {
+  if (config.sources.length > 0 || !config.autoProwlarr || ctx.localProwlarr === undefined) return config.sources;
+  const provider = ctx.localProwlarr;
+  const local = await settle(() => provider(), null);
+  return effectiveSources(config, local);
+}
+
+/**
  * Agrège les streams de toutes les sources (pipeline v2) : métadonnées et titres, collecte, lecture des .torrent,
  * parsing, filtre, groupement des copies, statut « cache », liens d'hébergeur, classement, sonde audio, second
  * filtre, apprentissage des packs, formatage Stremio. Chaque étape est isolée : son échec la désactive, sans exception.
  * Les résultats sans erreur de source sont gardés en cache (LRU, 5 min) quand ctx.cache n'est pas `false`.
  */
 export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineContext): Promise<PipelineResult> {
+  const effective: Config = { ...config, sources: await sourcesOf(config, ctx) };
   const cache = ctx.cache === false ? undefined : (ctx.cache ?? sharedResultCache);
-  const key = cache === undefined ? undefined : resultCacheKey(config, ref, ctx);
+  const key = cache === undefined ? undefined : resultCacheKey(effective, ref, ctx);
   if (cache !== undefined && key !== undefined) {
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
   }
-  const result = await computeStreams(config, ref, ctx);
+  const result = await computeStreams(effective, ref, ctx);
   if (cache !== undefined && key !== undefined && result.errors.length === 0) cache.set(key, result);
   return result;
 }

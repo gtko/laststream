@@ -342,6 +342,11 @@ export const ConfigSchema = z.object({
       ]),
     )
     .default([]),
+  autoProwlarr: z.boolean().default(true).meta({
+    title: 'Utiliser le Prowlarr local détecté',
+    description:
+      "Sans source configurée, interroge le Prowlarr installé sur cette machine. Sans effet si des sources sont définies.",
+  }),
   debrid: z
     .object({
       service: z.literal('alldebrid'),

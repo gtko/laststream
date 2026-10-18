@@ -16,6 +16,7 @@ const EXPECTED = {
     { name: 'TMDB (jeton v4)', type: 'tmdbToken', ok: true },
     { name: 'OpenRouter', type: 'openrouterApiKey', ok: true },
   ],
+  localProwlarr: { detected: false, indexers: 0, label: 'Aucun Prowlarr local détecté' },
 };
 
 /** Configuration en JSON brut encodé en base64url (accepté seulement avec allowPlain). */
