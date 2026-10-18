@@ -13,6 +13,7 @@ import './styles/player-ui.css';
 import './styles/player-panels.css';
 import './styles/player-loading.css';
 import './styles/player-mini.css';
+import './styles/badges.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';

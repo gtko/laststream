@@ -6,6 +6,7 @@ import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
 import { countByGroup, countOrigins, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
 import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './load';
+import { bitDepthOf, codecBadges, fitBadge } from './badges';
 import { describePending } from './rank';
 import { isShellEnvironment } from '../player/shell';
 
@@ -32,18 +33,21 @@ function truncName(name) {
   return name.slice(0, 40) + '…' + name.slice(-14);
 }
 
+/** Données des badges d'une carte : libellés du sélecteur, 10-bit détecté dans le nom de la release. */
+const badgeInput = (v) => ({ source: v.sourceType, codec: v.codec, hdr: v.hdr, audio: v.audio, channels: v.info ? v.info.channels : undefined, bitDepth: bitDepthOf(v.codec + ' ' + v.filename) });
+
 function itemHtml(v, opts) {
-  const l1 = ['<span class="q q-' + v.group + '">' + esc(v.quality) + '</span>'];
-  if (v.sourceType) l1.push('<span class="s-type">' + esc(v.sourceType) + '</span>');
-  v.hdr.forEach((c) => l1.push('<span class="s-hdr s-hdr-' + c.replace('+', 'p') + '">' + esc(c) + '</span>'));
-  if (v.codec) l1.push('<span class="s-codec">' + esc(v.codec) + '</span>');
+  const badges = badgeInput(v);
+  const l1 = ['<span class="q q-' + v.group + '">' + esc(v.quality) + '</span>', codecBadges(badges, 'video')];
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
+  // Pastille d'adéquation : débit de la source contre débit de la connexion (mesuré ou réglé), à chaque rendu.
+  const fit = fitBadge(v.bitrateKbps, session ? session.bw : null);
   const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
     : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
     : v.web === 'convert' ? '<span class="s-web s-web-convert" title="La vidéo est copiée, seul l’audio est converti">Conversion audio</span>' : '';
 
   const langs = v.langs.map((b) => '<span class="s-lang' + (b.verified ? ' is-verified' : '') + '" title="' + (b.verified ? 'Langue vérifiée dans le fichier' : 'Langue annoncée par le nom de la release') + '">' + esc(b.label) + (b.verified ? ' ✓' : '') + '</span>').join('');
-  const l2 = (v.audio ? '<span class="s-audio">' + esc(v.audio) + '</span>' : '') + langs;
+  const l2 = codecBadges(badges, 'audio') + langs;
 
   const l3 = [];
   if (v.sizeLabel) l3.push(esc(v.sizeLabel));
@@ -63,7 +67,7 @@ function itemHtml(v, opts) {
   return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable ? '' : ' disabled') + '>' +
     (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
     (opts.current ? '<span class="s-cur">En cours de lecture</span>' : '') +
-    '<span class="s-l1">' + l1.join('') + web + st + warn + '</span>' +
+    '<span class="s-l1">' + l1.join('') + web + st + fit + warn + '</span>' +
     (l2 ? '<span class="s-l2">' + l2 + '</span>' : '') +
     (l3.length ? '<span class="s-l3">' + l3.join('<i aria-hidden="true">·</i>') + '</span>' : '') +
     (l4 ? '<span class="s-l4">' + l4 + '</span>' : '') +
@@ -89,6 +93,7 @@ function render() {
       (origins.length > 1 ? '<div class="s-chips" data-label="Origine">' + origins.slice(0, 8).map((o) => originChip(o, filters.origins.has(o.name))).join('') + '</div>' : '') +
       '<div class="s-chips" data-label="Affichage">' + chipHtml('cache', 'on', 'Cache uniquement ⚡', filters.cachedOnly) + chipHtml('hdr', 'on', 'HDR', filters.hdrOnly) +
         (filtersActive(filters) ? '<button type="button" class="s-chip s-reset" data-nav data-row="f-reset" data-chip="reset:1">Réinitialiser</button>' : '') + '</div>' +
+      (s.bw == null ? '<div class="s-chips" data-label="Connexion">' + measureChip(s) + '</div>' : '') +
       '<div class="s-chips" data-label="Trier par">' + SORT_KEYS.map((k) => chipHtml('sort', k, SORT_LABELS[k], sort === k)).join('') + '</div>' +
     '</div>';
 
@@ -182,6 +187,27 @@ export async function openSourcePicker(request, opener, opts) {
   }
 }
 
+/** Bouton de la barre : débit inconnu (pastilles « Débit inconnu »). Désactivé pendant la mesure. */
+function measureChip(s) {
+  return '<button type="button" class="s-chip" data-nav data-row="f-bw" data-chip="bw:measure"' + (s.bwPending ? ' disabled' : '') + '>' +
+    (s.bwPending ? 'Mesure en cours…' : 'Mesurer ma connexion') + '</button>';
+}
+
+/** « Mesurer » : relance la mesure existante (valable 24 h) puis rafraîchit les pastilles et la recommandation. */
+async function remeasure() {
+  const s = session;
+  if (!s || s.bwPending) return;
+  const token = s.token;
+  s.bwPending = true;
+  render();
+  const kbps = await measureBandwidthKbps().catch(() => null);
+  if (!session || session.token !== token) return;
+  session.bw = kbps;
+  session.bwPending = false;
+  session.rec = recommendFor(session.views, kbps);
+  render();
+}
+
 export function closeSourcePicker() {
   const host = session && session.host;
   if (session && session.stop) session.stop();
@@ -202,6 +228,7 @@ function onClick(e) {
   if (chip) {
     e.preventDefault();
     const [kind, value] = chip.dataset.chip.split(':');
+    if (kind === 'bw') { remeasure(); return; }
     if (kind === 'res') s.filters = { ...s.filters, resolutions: toggleSet(s.filters.resolutions, value) };
     else if (kind === 'lang') s.filters = { ...s.filters, langs: toggleSet(s.filters.langs, value) };
     else if (kind === 'cache') s.filters = { ...s.filters, cachedOnly: !s.filters.cachedOnly };
