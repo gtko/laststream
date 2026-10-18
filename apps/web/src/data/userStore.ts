@@ -31,6 +31,10 @@ export interface ProgressEntry {
   position: number;
   duration: number;
   updatedAt: number;
+  /** Épisode terminé : la carte propose le suivant. */
+  finished?: boolean;
+  /** Épisode suivant proposé par le serveur (season / episode désignent déjà cet épisode). */
+  suggested?: boolean;
 }
 
 export interface Profile {
@@ -272,9 +276,9 @@ export class LocalUserStore implements UserStore {
     Object.values(this.progressMap()).forEach((p) => {
       if (!p || !p.duration || p.duration <= 0 || hidden.has(p.key)) return;
       const ratio = p.position / p.duration;
-      if (ratio < 0.02 || ratio > 0.95) return;
+      if (ratio < 0.02 || (ratio > 0.95 && p.type !== 'tv')) return;
       const cur = latest.get(p.key);
-      if (!cur || p.updatedAt > cur.updatedAt) latest.set(p.key, p);
+      if (!cur || p.updatedAt > cur.updatedAt) latest.set(p.key, ratio > 0.95 ? { ...p, finished: true } : p);
     });
     return [...latest.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
   }

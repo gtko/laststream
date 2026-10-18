@@ -308,3 +308,26 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .cal-agenda-list .soon-item { flex: none; width: 100%; max-width: 360px; }
 @media (max-width: 640px) { .soon-item { flex-basis: 260px; width: 260px; } .soon-code { font-size: 22px; } }
 @media (prefers-reduced-motion: reduce) { .soon-bell, .soon-card { transition: none; transform: none; } }
+
+/* ---------- Reprendre la lecture : cartes paysage ---------- */
+.cont-card .card-media { aspect-ratio: 16 / 9; }
+.cont-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cont-shade { position: absolute; inset: 0; z-index: 1; background: linear-gradient(0deg, rgba(12, 11, 17, 0.92) 0%, rgba(12, 11, 17, 0.5) 38%, rgba(12, 11, 17, 0) 66%); pointer-events: none; }
+.cont-info { position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 3; display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left; }
+.cont-name { font-family: var(--ff-title); font-weight: 800; font-size: 18px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cont-logo { height: 34px; width: auto; max-width: 70%; object-fit: contain; object-position: left center; margin-bottom: 2px; }
+.cont-code { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cont-left { font-size: 12px; color: var(--muted); font-weight: 600; }
+.cont-left:empty { display: none; }
+.cont-card .progress { z-index: 5; height: 4px; }
+.cont-new { position: absolute; top: 10px; left: 10px; z-index: 3; padding: 4px 10px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800; }
+.cont-new[hidden] { display: none; }
+.cont-play { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; opacity: 0; transition: opacity 0.18s; pointer-events: none; }
+.cont-play svg { width: 54px; height: 54px; padding: 14px 12px 14px 16px; border-radius: 50%; background: rgba(12, 11, 17, 0.7); border: 2px solid rgba(255, 255, 255, 0.85); }
+.cont-card:hover .cont-play, .cont-card:focus-visible .cont-play { opacity: 1; }
+.cont-card .t-meta { display: none; }
+@media (hover: none) { .cont-play { display: none; } }
+@media (prefers-reduced-motion: reduce) { .cont-play { transition: none; } }
+
+/* ---------- Mise en avant : note de série, boutons ---------- */
+.hero-note { margin: -4px 0 0; font-size: 14px; font-weight: 700; color: var(--accent); }

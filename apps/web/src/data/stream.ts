@@ -16,6 +16,18 @@ export interface LastStreamInfo {
   score: number;
   estBitrateKbps: number | null;
   languageFallback?: boolean;
+  // Champs facultatifs (versions récentes de lastAddon) : absents des anciennes réponses.
+  audio?: string[];
+  channels?: string;
+  bitrateMbps?: number;
+  copies?: number;
+  indexers?: string[];
+  peers?: number;
+  filename?: string;
+  releaseGroup?: string;
+  provider?: string;
+  /** Langues dont la piste audio a été vérifiée (`true` : toutes celles annoncées). */
+  verifiedLanguages?: Lang[] | true;
 }
 
 export interface Stream {
@@ -66,5 +78,19 @@ export function getLaststream(stream: unknown): LastStreamInfo | null {
   if (isNum(i.sizeBytes)) out.sizeBytes = i.sizeBytes;
   if (isNum(i.seeders)) out.seeders = i.seeders;
   if (typeof i.languageFallback === 'boolean') out.languageFallback = i.languageFallback;
+  const audio = isStr(i.audio) ? [i.audio] : strList(i.audio) ? i.audio : null;
+  if (audio && audio.length) out.audio = audio;
+  if (isStr(i.channels) && i.channels) out.channels = i.channels;
+  if (isNum(i.bitrateMbps)) out.bitrateMbps = i.bitrateMbps;
+  if (isNum(i.copies) && i.copies > 0) out.copies = i.copies;
+  const indexers = i.indexers ?? i.trackers;
+  if (strList(indexers) && indexers.length) out.indexers = indexers;
+  if (isNum(i.peers)) out.peers = i.peers;
+  if (isStr(i.filename) && i.filename) out.filename = i.filename;
+  if (isStr(i.releaseGroup) && i.releaseGroup) out.releaseGroup = i.releaseGroup;
+  if (isStr(i.provider) && i.provider) out.provider = i.provider;
+  const verified = i.languagesVerified ?? i.verifiedLanguages ?? i.verified;
+  if (verified === true) out.verifiedLanguages = true;
+  else if (strList(verified)) out.verifiedLanguages = verified.filter((l) => LANGS.includes(l)) as Lang[];
   return out;
 }

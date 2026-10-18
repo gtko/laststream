@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { continueCardHTML, hydrateContinue } from './continue.js';
 import { renderFollowRow } from './calendar.js';
 import { starsText } from './rate.js';
 import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
@@ -19,7 +20,7 @@ import { renderLibrary } from './library.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { renderServices } from './services.js';
 import { state } from './state.js';
-import { continueCard, observeTiles, posterCard, topCard, upCard } from './tiles.js';
+import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderLive } from './tv.js';
 import { cut, esc } from './util.js';
 
@@ -27,6 +28,8 @@ export async function loadHome() {
   const settled = await Promise.allSettled([
     tmdb('trending/all/day'),
     tmdb('trending/all/week'),
+    tmdb('trending/movie/week'),
+    tmdb('trending/tv/week'),
   ]);
   const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
   const day = listOf(val(0));
@@ -34,7 +37,16 @@ export async function loadHome() {
   if ([day, week].every((l) => l === null)) throw new Error('catalogue indisponible');
 
   // Mise en avant : les tendances de la semaine ayant un fond (rang d'origine conservé pour le badge).
-  const heroes = (week || []).map((it, i) => Object.assign(it, { heroRank: i + 1 })).filter((it) => it.backdropPath).slice(0, HERO_MAX);
+  const films = (listOf(val(2), 'movie') || []).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Film' }));
+  const series = (listOf(val(3), 'tv') || []).map((it, i) => Object.assign(it, { heroRank: i + 1, heroKind: 'Série' }));
+  const heroes = [];
+  const taken = new Set();
+  for (let i = 0; i < Math.max(films.length, series.length) && heroes.length < HERO_MAX; i++) {
+    [films[i], series[i]].forEach((it) => {
+      if (it && it.backdropPath && !taken.has(it.key) && heroes.length < HERO_MAX) { taken.add(it.key); heroes.push(it); }
+    });
+  }
+  if (!heroes.length) (week || []).map((it, i) => Object.assign(it, { heroRank: i + 1 })).filter((it) => it.backdropPath).slice(0, HERO_MAX).forEach((it) => heroes.push(it));
   await Promise.all(heroes.slice(0, 2).map(getDetail)); // le reste arrive pendant l'affichage (initHero)
   const hero = heroes[0] || null;
 
@@ -268,6 +280,7 @@ export function renderHome() {
     return;
   }
   app.innerHTML = (state.data.kids ? viewKids(state.data) : viewA(state.data)) + footer() + tabbar();
+  hydrateContinue(document.getElementById('cont-slot'));
   renderAI();
   renderUpcoming();
   renderLive();
@@ -313,12 +326,7 @@ export function recoSeed() {
 export function continueSection() {
   const real = userStore.continueWatching(10);
   if (!real.length) return '';
-  const items = real.map((p) => {
-    const raw = { id: p.id, poster_path: p.poster, backdrop_path: p.backdrop || '' };
-    raw[p.type === 'tv' ? 'name' : 'title'] = p.title;
-    return { it: register(toItem(raw, p.type)), pct: Math.round((p.position / p.duration) * 100) };
-  });
-  return section('reprendre', 'Reprendre la lecture', items, (l) => row(l.map((x) => continueCard(x.it, x.pct)).join('')));
+  return section('reprendre', 'Reprendre la lecture', real, (l) => row(l.map(continueCardHTML).join('')));
 }
 
 /** Rafraîchit « Reprendre la lecture » au retour sur l'accueil. */
@@ -327,4 +335,5 @@ export function renderContinue() {
   if (!slot) return;
   slot.innerHTML = continueSection();
   observeTiles(slot);
+  hydrateContinue(slot);
 }

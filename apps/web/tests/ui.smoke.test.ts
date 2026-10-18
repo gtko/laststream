@@ -19,6 +19,8 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const u = new URL(url);
   if (u.pathname === '/config/schema') return json({ properties: { services: { properties: { tmdbToken: { title: 'Jeton TMDB', description: 'd' } } } } });
   if (u.pathname === '/config/decode') return json({ services: { tmdbToken: { set: true, last4: '…abcd' }, openrouterModel: 'openai/gpt-4o-mini' }, languages: { preferred: ['fr'] }, sources: [], maxResults: 30 });
+  const trend = /\/lt\/tmdb\/trending\/(movie|tv)\/week$/.exec(u.pathname);
+  if (trend) return json({ results: ITEMS.map((i) => ({ ...i, media_type: trend[1] })) });
   const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
   if (season) {
     const future = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
@@ -29,7 +31,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
     ] });
   }
   if (u.pathname.includes('/lt/tmdb/')) {
-    return json({ seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
+    return json({ imdb_id: 'tt0100', next_episode_to_air: /\/tv\/\d+$/.test(u.pathname) ? { air_date: new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10), season_number: 1, episode_number: 5 } : null, seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
       results: ITEMS, id: 100, title: 'Film 0', name: 'Série 0', overview: 'Un synopsis assez long pour la fiche.', tagline: 'Slogan',
       poster_path: '/p.jpg', backdrop_path: '/b.jpg', release_date: '2025-01-01', runtime: 120, vote_average: 7.4, genres: [{ id: 28, name: 'Action' }],
       images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: { imdb_id: 'tt0100' },
@@ -52,6 +54,9 @@ function mockFetch(url: string, init?: RequestInit): Response {
     ]);
   }
   if (u.pathname.endsWith('/lt/tv/epg')) return json([]);
+  if (u.pathname.endsWith('/stream/movie/tt0100.json')) {
+    return json({ streams: [{ url: 'https://cdn.example/film.mp4', laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 90, estBitrateKbps: 4000 } }] });
+  }
   void init;
   return json({ error: 'not_found' }, 404);
 }
@@ -91,8 +96,13 @@ describe('interface portée', () => {
     const slides = hero.querySelectorAll('.hero-slide');
     expect(slides.length).toBeGreaterThanOrEqual(6);
     expect(slides.length).toBeLessThanOrEqual(8);
-    expect(slides[0].querySelector('.eyebrow')!.textContent).toBe('Tendance n°1 cette semaine');
-    expect(slides[2].querySelector('.eyebrow')!.textContent).toBe('Tendance n°3 cette semaine');
+    // Films et séries en alternance, rang propre à chaque classement.
+    expect(slides[0].querySelector('.eyebrow')!.textContent).toBe('Tendance n°1 · Film');
+    expect(slides[1].querySelector('.eyebrow')!.textContent).toBe('Tendance n°1 · Série');
+    expect(slides[2].querySelector('.eyebrow')!.textContent).toBe('Tendance n°2 · Film');
+    expect(slides[1].querySelector('.hero-note')!.textContent).toMatch(/^Nouvel épisode le /);
+    expect(slides[0].querySelector('[data-heroplay]')).not.toBeNull();
+    expect(slides[0].querySelectorAll('.hero-actions .btn-ghost').length).toBeGreaterThanOrEqual(2); // Bande-annonce et Plus d’infos
     expect(hero.querySelectorAll('.hero-slide.is-current')).toHaveLength(1);
     expect(slides[1].hasAttribute('inert')).toBe(true);
     (hero.querySelector('[data-hero-go="2"]') as HTMLElement).click();
@@ -259,6 +269,53 @@ describe('interface portée', () => {
     expect(document.querySelector('#detail .ep[data-ep="1:1"] .ep-seen')).not.toBeNull();
     location.hash = '#/';
     await settle(50);
+  });
+
+  it('Suivre : bouton rond sans libellé, comme les autres boutons de la fiche', async () => {
+    location.hash = '#/movie/100';
+    await settle(300);
+    const f = document.querySelector('#detail .f-actions [data-follow="movie:100"]') as HTMLElement;
+    expect(f.classList.contains('btn-round')).toBe(true);
+    expect(f.querySelector('.f-follow-label')).toBeNull();
+    expect(f.getAttribute('data-tip')).toMatch(/Suivre|Suivi/);
+    location.hash = '#/';
+    await settle(50);
+  });
+
+  it('Reprendre la lecture : cartes paysage avec épisode, temps restant, suite et reprise directe', async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));
+    const { userStore } = await import('../src/data/userStore');
+    userStore.setProgress({ key: 'tv:101', type: 'tv', id: 101, title: 'Série 101', poster: '/p.jpg', backdrop: '/b101.jpg', season: 1, episode: 4, position: 600, duration: 2400 });
+    userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film 100', poster: '/p.jpg', backdrop: '/b100.jpg', position: 1000, duration: 6000 });
+    userStore.setProgress({ key: 'tv:103', type: 'tv', id: 103, title: 'Série 103', poster: '/p.jpg', backdrop: '/b103.jpg', season: 1, episode: 1, position: 2390, duration: 2400 });
+    const { renderContinue } = await import('../src/ui/home.js');
+    renderContinue();
+    await settle(300);
+    const cards = Array.from(document.querySelectorAll('#cont-slot .cont-card')) as HTMLElement[];
+    expect(cards).toHaveLength(3);
+    const by = (k: string) => cards.find((c) => c.dataset.resume === k)!;
+    expect(by('tv:101').querySelector('.cont-code')!.textContent).toBe('S1 · É4');
+    expect(by('tv:101').querySelector('.cont-left')!.textContent).toBe('reste 30 min');
+    expect(by('tv:101').querySelector('.progress span')!.getAttribute('style')).toContain('25%');
+    expect(by('movie:100').querySelector('.cont-left')!.textContent).toBe('reste 83 min'.replace('83 min', '1 h 23'));
+    expect(by('movie:100').querySelector('.cont-img')!.getAttribute('src')).toContain('/w780/b100.jpg');
+    // Épisode terminé : le suivant est proposé.
+    expect(by('tv:103').querySelector('.cont-code')!.textContent).toMatch(/^À suivre : S\d+ · É\d+/);
+    expect(by('tv:103').querySelector('.progress span')!.getAttribute('style')).toContain('0%');
+    expect(by('movie:100').querySelector('.t-remove')).not.toBeNull();
+    // Un clic reprend la lecture directement (source choisie automatiquement), à la position enregistrée.
+    by('movie:100').click();
+    await settle(400);
+    const player = document.getElementById('vplayer') as HTMLElement;
+    expect(player.hidden).toBe(false);
+    expect((document.getElementById('vplayer-video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
+    (player.querySelector('[data-vclose]') as HTMLElement).click();
+    expect(player.hidden).toBe(true);
+    localStorage.clear();
+    localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));
+    renderContinue();
   });
 
   it('utilise la région France par défaut', () => {

@@ -22,7 +22,7 @@ export function followBtn(key, cls, extra) {
   const on = userStore.isFollowing(key);
   return '<button type="button" class="' + cls + (on ? ' is-on' : '') + '" data-follow="' + key + '" aria-pressed="' + on + '"' + (extra || '') +
     ' data-tip="' + (on ? 'Suivi' : 'Suivre') + '" aria-label="' + (on ? 'Suivi (ne plus suivre)' : 'Suivre') + '">' + (on ? ICON.bellOn : ICON.bell) +
-    (cls.includes('btn') ? '<span class="f-follow-label">' + (on ? 'Suivi' : 'Suivre') + '</span>' : '') + '</button>';
+    (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? 'Suivi' : 'Suivre') + '</span>' : '') + '</button>';
 }
 
 export function refreshFollowUI() {

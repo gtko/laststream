@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { dayDiff } from './dates.js';
 import { getVideoLang } from '../data/prefs';
 import { pickTrailerKey } from '../data/trailers';
 import { api, tmdb } from '../data/lt';
@@ -64,6 +65,18 @@ export function certification(raw, type) {
 export const certLabel = (c) => (!c ? '' : /^(U|TP|0)$/i.test(c) ? 'Tous publics' : /^\d+$/.test(c) ? '-' + c : c);
 
 // Détail léger d'un titre de l'accueil : TMDB (fr-FR, repli en-US pour le synopsis) + notes MDBList.
+/** « Nouvel épisode le 24 oct. » ou « S3 disponible » pour la mise en avant d'une série. */
+export function seriesNote(raw) {
+  const next = raw.next_episode_to_air;
+  const short = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  if (next && next.air_date) {
+    const d = dayDiff(next.air_date);
+    if (d >= 0 && d <= 45) return 'Nouvel épisode le ' + short(next.air_date);
+  }
+  const aired = (raw.seasons || []).filter((s) => s.season_number > 1 && s.air_date && dayDiff(s.air_date) <= 0).sort((a, b) => b.season_number - a.season_number)[0];
+  return aired && dayDiff(aired.air_date) >= -120 ? 'S' + aired.season_number + ' disponible' : '';
+}
+
 export async function fetchDetail(item) {
   const append = item.type === 'tv' ? 'videos,images,external_ids,content_ratings' : 'videos,images,external_ids,release_dates';
   const raw = await tmdb(item.type + '/' + item.id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
@@ -95,6 +108,7 @@ export async function fetchDetail(item) {
     minutes: runtime,
     runtime: fmtMin(runtime),
     cert: certification(raw, item.type),
+    note: item.type === 'tv' ? seriesNote(raw) : '',
     ratings,
     vote: fmtNum(raw.vote_average, 1),
   };

@@ -178,6 +178,7 @@ export class ServerUserStore implements UserStore {
           title: raw.title || raw.name || '', poster: raw.poster_path || '', backdrop: raw.backdrop_path || '',
           season: c.season ?? undefined, episode: c.episode ?? undefined,
           position: c.positionSec, duration: c.durationSec ?? 0, updatedAt: Date.parse(c.updatedAt) || 0,
+          suggested: c.suggested || undefined,
         };
       } catch {
         return null;
@@ -244,6 +245,7 @@ export class ServerUserStore implements UserStore {
     this.cont = this.cont.filter((c) => c.key !== entry.key);
     const ratio = entry.duration > 0 ? entry.position / entry.duration : 0;
     if (ratio >= 0.02 && ratio <= 0.95) this.cont.unshift(full);
+    else if (ratio > 0.95 && entry.type === 'tv') this.cont.unshift({ ...full, finished: true });
     putProgress(this.active.id, {
       type: kindOf(entry.type), tmdbId: entry.id, season: entry.season, episode: entry.episode,
       positionSec: Math.floor(entry.position), durationSec: Math.floor(entry.duration),

@@ -1,4 +1,6 @@
 /* Mise en avant de l'accueil : carrousel des tendances de la semaine (fondu enchaîné, pastilles numérotées, flèches, clavier). */
+import { userStore } from '../data/userStore';
+import { playTitle } from './ctxmenu.js';
 import { getRegion } from '../data/prefs';
 import { detailOf, getDetail } from './catalog.js';
 import { IMG, REDUCE } from './constants.js';
@@ -13,6 +15,12 @@ import { esc } from './util.js';
 export const HERO_MS = 10000;
 export const HERO_MAX = 8;
 
+const playBtn = (it) => {
+  const resume = userStore.continueWatching(50).find((p) => p.key === it.key);
+  const code = resume && resume.type === 'tv' && resume.season != null ? ' S' + resume.season + ' · É' + resume.episode : '';
+  return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? 'Reprendre' + code : 'Lecture') + '</span></button>';
+};
+
 /** Contenu d'une diapositive : badge, titre ou logo, méta, notes, fournisseurs, synopsis, boutons. */
 export function heroContentHTML(it, eyebrow) {
   const d = detailOf(it);
@@ -20,15 +28,16 @@ export function heroContentHTML(it, eyebrow) {
   return '<span class="eyebrow">' + esc(eyebrow || 'Tendance cette semaine') + '</span>' +
     titleEl(it, d, 'hero-title') +
     '<ul class="meta">' + metaHTML(it, d) + '</ul>' +
+    (d.note ? '<p class="hero-note">' + esc(d.note) + '</p>' : '') +
     '<ul class="rates rates-hero" aria-label="Notes">' + ratingList(d.ratings, it.vote ? Number(it.vote.replace(',', '.')) * 10 : 0) + '</ul>' +
     (d.providers && d.providers.length
       ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
         '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
     '<p class="clamp-3 hero-desc">' + esc(overview) + '</p>' +
-    '<div class="hero-actions">' + trailerBtn(it, d) + infoBtn(it) + '</div>';
+    '<div class="hero-actions">' + playBtn(it) + trailerBtn(it, d).replace('btn btn-primary', 'btn btn-ghost') + infoBtn(it) + '</div>';
 }
 
-const rankLabel = (it) => (it.heroRank ? 'Tendance n°' + it.heroRank + ' cette semaine' : 'Tendance cette semaine');
+const rankLabel = (it) => (it.heroRank ? 'Tendance n°' + it.heroRank + (it.heroKind ? ' · ' + it.heroKind : ' cette semaine') : 'Tendance cette semaine');
 
 function slideHTML(it, eyebrow, current, first) {
   return '<div class="hero-slide' + (current ? ' is-current' : '') + '" data-slide-key="' + esc(it.key) + '"' + (current ? '' : ' inert') + '>' +
@@ -149,7 +158,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && he
 
 document.addEventListener('click', (e) => {
   const t = e.target instanceof Element ? e.target : null;
+  const play0 = t && t.closest('[data-heroplay]');
+  if (play0 && !(hero.el && hero.el.contains(t))) { e.preventDefault(); e.stopPropagation(); playTitle(play0.dataset.heroplay, play0, false); return; }
   if (!t || !hero.el || !hero.el.contains(t)) return;
+  const play = t.closest('[data-heroplay]');
+  if (play) { e.preventDefault(); e.stopPropagation(); playTitle(play.dataset.heroplay, play, false); return; }
   const step = t.closest('[data-hero-step]');
   if (step) { e.preventDefault(); e.stopPropagation(); go(hero.i + Number(step.dataset.heroStep), true); return; }
   const dot = t.closest('[data-hero-go]');

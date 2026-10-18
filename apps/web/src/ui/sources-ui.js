@@ -3,11 +3,11 @@ import { showRatePrompt } from './rate.js';
 import { isConfigured } from '../data/config';
 import {
   copiesOf, fetchStreams, formatBitrate, formatSize, groupByQuality, imdbIdOf, languageLabel,
-  matchesLanguage, QUALITY_LABEL, sortStreams,
+  getStreamHttpUrl, matchesLanguage, measureBandwidthKbps, pickAutoplay, QUALITY_LABEL, sortStreams,
 } from '../data/sources';
 import { getLaststream } from '../data/stream';
 import { userStore } from '../data/userStore';
-import { modalBody } from './dom.js';
+import { modalBody, toast } from './dom.js';
 import { esc } from './util.js';
 import { nextToWatch } from './fiche.js';
 import { hv } from './hover.js';
@@ -105,6 +105,28 @@ export async function openSources(request, opener) {
   }
 }
 
+/**
+ * Reprise directe : choisit une source adaptée au débit (VF d'abord) et lance la lecture à la position enregistrée ;
+ * sans source utilisable, ouvre le tiroir de sources.
+ */
+export async function playDirect(request, opener) {
+  req = request;
+  streams = [];
+  const token = ++drawerToken;
+  toast('Lancement de la lecture…');
+  try {
+    if (userStore.loadProgress) await userStore.loadProgress(request.key);
+    const imdb = await imdbIdOf(request.type, request.id);
+    if (!imdb) throw new Error('imdb');
+    request.imdb = imdb;
+    streams = sortStreams(await fetchStreams(request.type, imdb, request.season, request.episode));
+    const pick = pickAutoplay(streams, await measureBandwidthKbps(), 'fr');
+    const url = pick ? getStreamHttpUrl(pick.stream) : null;
+    if (token === drawerToken && url) { openVideo(url, opener); return; }
+  } catch (_) { /* repli : le tiroir de sources */ }
+  if (token === drawerToken) openSources(request, opener);
+}
+
 // ---------- Lecteur plein écran basique ----------
 let lastSave = 0;
 let opener = null;
@@ -146,7 +168,8 @@ function openVideo(url, from) {
   box.hidden = false;
   document.body.classList.add('modal-open');
   v.src = url;
-  v.play().catch(() => {});
+  const started = v.play();
+  if (started && started.catch) started.catch(() => {});
   const c = box.querySelector('[data-vclose]');
   if (c) c.focus({ preventScroll: true });
 }
