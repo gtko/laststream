@@ -54,8 +54,12 @@ export interface SourceView {
   status: SourceStatus;
   statusLabel: string;
   provider: string;
-  /** Lisible : lien HTTP(S) (débridé ou direct). Un infoHash seul n'est jamais lisible (aucune lecture torrent). */
+  /** Lisible : lien HTTP(S) (débridé ou direct), ou source « client » à débrider sur l'appareil. Jamais de lecture torrent. */
   playable: boolean;
+  /** Torrent livré sans lien (`behaviorHints.lastDebrid = "client"`) : débridé sur l'appareil par debridClient. */
+  client: boolean;
+  /** Fournisseurs qui l'ont en cache (renseigné par `applyVerdicts`), dans l'ordre de priorité. */
+  debridBy: string[];
   /** Indice « lecture navigateur incertaine » (HEVC, REMUX, DTS/TrueHD). */
   notWebReady: boolean;
   score: number;
@@ -221,9 +225,70 @@ export const hasHttpUrl = (s: Stream): boolean => typeof s.url === 'string' && /
 /** Lien de lecture débridée de lastAddon : `/play/c/<jeton>` ou `/play/<infoHash>` (résolu par AllDebrid à la demande). */
 export const isDebridUrl = (url: unknown): boolean => typeof url === 'string' && /\/play\/(c\/[^/?#]+|[0-9a-f]{40})/i.test(url);
 
-/** Politique « débrideur obligatoire » : ne garde que les sources à lien HTTP(S) ; les torrents sans lien débridé sont masqués. */
-export function playableStreams<T extends Stream>(streams: readonly T[]): T[] {
-  return streams.filter(hasHttpUrl);
+/** Source torrent sans lien, à débrider sur l'appareil (lastAddon ne contacte jamais le débrideur). */
+export const isClientStream = (s: Stream): boolean => s.behaviorHints?.lastDebrid === 'client' && typeof s.infoHash === 'string' && !hasHttpUrl(s);
+
+/**
+ * Politique « débrideur obligatoire » : ne garde que les sources à lien HTTP(S), plus les sources « client » quand un débrideur
+ * est configuré sur l'appareil (`clientOk`) ; les autres torrents sont masqués.
+ */
+export function playableStreams<T extends Stream>(streams: readonly T[], clientOk = false): T[] {
+  return streams.filter((s) => hasHttpUrl(s) || (clientOk && isClientStream(s)));
+}
+
+/** Copies à débrider et épisode visé, lus de `laststream.client` (repli : le hash et le fichier du stream). */
+export function clientCopiesOf(s: Stream): { copies: Array<{ infoHash: string; fileIdx?: number; filename?: string; size?: number }>; season?: number; episode?: number } {
+  const raw = (s.laststream as { client?: { copies?: unknown; season?: unknown; episode?: unknown } } | undefined)?.client;
+  const copies: Array<{ infoHash: string; fileIdx?: number; filename?: string; size?: number }> = [];
+  if (Array.isArray(raw?.copies)) {
+    for (const c of raw.copies as Array<Record<string, unknown>>) {
+      if (typeof c?.infoHash !== 'string') continue;
+      copies.push({
+        infoHash: c.infoHash,
+        ...(typeof c.fileIdx === 'number' ? { fileIdx: c.fileIdx } : {}),
+        ...(typeof c.filename === 'string' ? { filename: c.filename } : {}),
+        ...(typeof c.size === 'number' ? { size: c.size } : {}),
+      });
+    }
+  }
+  if (!copies.length && typeof s.infoHash === 'string') {
+    copies.push({
+      infoHash: s.infoHash,
+      ...(typeof s.fileIdx === 'number' ? { fileIdx: s.fileIdx } : {}),
+      ...(typeof s.behaviorHints?.filename === 'string' ? { filename: s.behaviorHints.filename } : {}),
+      ...(typeof s.behaviorHints?.videoSize === 'number' ? { size: s.behaviorHints.videoSize } : {}),
+    });
+  }
+  return {
+    copies,
+    ...(typeof raw?.season === 'number' ? { season: raw.season } : {}),
+    ...(typeof raw?.episode === 'number' ? { episode: raw.episode } : {}),
+  };
+}
+
+const PROVIDER_NAMES: Record<string, string> = { alldebrid: 'AllDebrid', torbox: 'TorBox', realdebrid: 'Real-Debrid' };
+
+/**
+ * Statut d'après les verdicts de cache combinés (hash → { cached, by }) : « En cache » si au moins un fournisseur l'a, sinon
+ * « À la demande ». Les sources non « client » restent inchangées.
+ */
+export function applyVerdicts(views: readonly SourceView[], verdicts: ReadonlyMap<string, { cached: boolean | undefined; by: readonly string[] }>): SourceView[] {
+  return views.map((v) => {
+    if (!v.client) return v;
+    const hash = (v.stream.infoHash ?? '').toLowerCase();
+    const verdict = verdicts.get(hash);
+    const cached = verdict?.cached === true;
+    const by = cached ? [...verdict.by] : [];
+    const status: SourceStatus = cached ? 'cached' : 'uncached';
+    return {
+      ...v,
+      status,
+      debridBy: by,
+      statusLabel: statusLabelOf(status) + (by.length ? ' · ' + by.map((id) => PROVIDER_NAMES[id] ?? id).join(' + ') : ''),
+      info: v.info ? { ...v.info, cached } : v.info,
+      provider: by.length ? by.map((id) => PROVIDER_NAMES[id] ?? id).join(' + ') : v.provider,
+    };
+  });
 }
 
 export function toSourceView(stream: Stream, index: number, all: readonly Stream[] = [stream]): SourceView {
@@ -231,7 +296,8 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const hints = stream.behaviorHints ?? {};
   const text = [stream.name, stream.title, stream.description, hints.filename].filter((x): x is string => typeof x === 'string').join(' ');
   const resolution: Resolution = info?.resolution ?? (/2160|4k|uhd/i.test(text) ? '2160p' : /1080/.test(text) ? '1080p' : /720/.test(text) ? '720p' : 'unknown');
-  const provider = providerOf(info, text) || (isDebridUrl(stream.url) ? 'AllDebrid' : '');
+  const client = isClientStream(stream);
+  const provider = providerOf(info, text) || (isDebridUrl(stream.url) ? 'AllDebrid' : '') || (client ? 'Débrideur' : '');
   const cached = info?.cached === true;
   const status: SourceStatus = cached ? 'cached' : provider ? 'uncached' : 'direct';
   const sizeBytes = info?.sizeBytes ?? (typeof hints.videoSize === 'number' ? hints.videoSize : 0);
@@ -271,7 +337,9 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     status,
     statusLabel: statusLabelOf(status),
     provider,
-    playable: hasHttpUrl(stream),
+    playable: hasHttpUrl(stream) || client,
+    client,
+    debridBy: [],
     notWebReady: hints.notWebReady === true,
     score: info?.score ?? 0,
     web: 'unknown',

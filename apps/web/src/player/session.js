@@ -16,7 +16,7 @@ import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
-import { originSummary } from '../sources/info';
+import { clientCopiesOf, isClientStream, originSummary } from '../sources/info';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
@@ -45,7 +45,9 @@ import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
 import { thumbsAllowed, thumbSource } from './thumbs';
-import { ThumbFeed, serverHasThumbs, serverHasRangeThumbs } from './thumbfeed';
+import { ThumbFeed, serverHasThumbs } from './thumbfeed';
+import { debrid, PROVIDER_LABEL } from '../sources/debridClient';
+import { createRangeFetch, parseDebridUrl } from '../sources/debrid/http';
 import { makeLocalFeed, webCodecsAvailable, IdbThumbStore } from '../thumbs';
 import { createPlayerUI } from './ui.js';
 import { partyBridge } from '../party/bridge';
@@ -67,7 +69,6 @@ let addonThumbs = false;
 /** Aperçu par plages (src/thumbs) : relais Cloudflare + WebCodecs, pour les liens débridés distants. */
 let rangeFeed = null;
 let rangeLocal = null;
-let rangeThumbs = false;
 let rangeStore = null;
 let html = null;
 let mpv = null;
@@ -107,7 +108,7 @@ const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.p
 
 // ---------- Création de l'interface (une seule fois) ----------
 function thumbSourceOf(p) {
-  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls), addon: addonThumbs, range: rangeThumbs && rangeUrlOf(p) !== null && webCodecsAvailable() });
+  return thumbSource({ engine: p && p.choice ? p.choice.engine : null, hasMedia: !!(p && p.mediaUrl), serverUp: !!(p && p.mediaUp), forceHls: !!(p && p.forceHls), addon: addonThumbs, range: rangeUrlOf(p) !== null && webCodecsAvailable() });
 }
 
 /** Adresse de la source pour lastAddon : serveur de streaming local (repris derrière le relais /_ss) ou lien http(s) émis par lui. */
@@ -117,11 +118,14 @@ function thumbMediaUrl(p) {
   return analyzeUrl(u, serverBase()) || (/^https?:/i.test(u) ? u : null);
 }
 
-/** Lien https distant (hors serveur de streaming local en http) dont la lecture passe par lastAddon/débrideur ; sinon null. */
+/** Lien https d'un hébergeur débridé (AllDebrid, TorBox, Real-Debrid) : lu directement depuis l'appareil, sinon null. */
 function rangeUrlOf(p) {
   const u = thumbMediaUrl(p);
-  return u && /^https:/i.test(u) ? u : null;
+  return u && parseDebridUrl(u) ? u : null;
 }
+
+/** Lecture de plages des miniatures : navigateur, puis pont natif (Windows, Android) ; jamais par un serveur. */
+const rangeHttp = createRangeFetch();
 
 function thumbsAllowedNow() {
   return !!P && !!P.view && thumbsAllowed({
@@ -155,7 +159,7 @@ function addonThumb(t) {
   if (url) { img.src = url; img.hidden = false; } else img.hidden = true;
 }
 
-/** Survol de la barre, voie par plages : image clé lue par le relais Cloudflare puis décodée ici (WebCodecs). */
+/** Survol de la barre, voie par plages : image clé lue directement chez l'hébergeur débridé (même IP que la lecture) puis décodée ici (WebCodecs). */
 function rangeThumb(t) {
   const img = ui.thumbImg;
   if (!thumbsAllowedNow()) { img.hidden = true; return; }
@@ -166,11 +170,8 @@ function rangeThumb(t) {
         const sourceId = rangeUrlOf(P);
         if (!sourceId) return null;
         rangeLocal = makeLocalFeed({
-          sourceId, store: rangeStore, fetchFn: (url, init) => fetch(url, init),
-          resolve: async () => {
-            const r = await postLt('range-source', { url: sourceId });
-            return r && typeof r.token === 'string' ? { url: r.url, token: r.token, base: r.base } : null;
-          },
+          sourceId, store: rangeStore, fetchFn: rangeHttp,
+          resolve: async () => ({ url: sourceId }),
         });
         return rangeLocal.register(signal);
       },
@@ -195,8 +196,8 @@ function cancelAddonThumb() {
 
 /** La capacité « miniatures » est annoncée par /lt/health (ffmpeg présent côté lastAddon) ; l'option est masquée sinon. */
 function refreshAddonThumbs() {
-  if (addonThumbs && rangeThumbs) return;
-  ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); rangeThumbs = serverHasRangeThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
+  if (addonThumbs) return;
+  ltHealth().then((h) => { addonThumbs = serverHasThumbs(h); if (ui) ui.refreshPanel(); }).catch(() => undefined);
 }
 
 /** Titre en cours de lecture, tel que le salon (watch party) le voit : identité, source choisie, moteur. Jamais de lien. */
@@ -233,6 +234,8 @@ function ensureUI() {
     miniLayout: onMiniLayout,
   });
   miniState.onChange(applyMini);
+  // Bascule automatique entre débrideurs : « AllDebrid indisponible → TorBox ».
+  debrid().setHandlers({ onSwitch: (from, to) => ui.toast(PROVIDER_LABEL[from] + ' indisponible → ' + PROVIDER_LABEL[to], 6000) });
   mountPartyPanel(ui.root, { adapter: () => partyAdapter() });
   thumbs = new Thumbs(ui.thumbCanvas, {
     allowed: () => thumbsAllowedNow(),
@@ -624,6 +627,16 @@ function withoutBad(p, views) {
   return good.length ? good : views;
 }
 
+/** Message clair pour une erreur de débridage sur l'appareil. */
+function clientError(e) {
+  const code = e && e.code;
+  if (code === 'no_provider') return 'Aucun débrideur configuré : ajoute une clé dans Réglages > Sources et debrid.';
+  if (code === 'all_unavailable') return 'Tous tes débrideurs sont indisponibles pour le moment (compte suspendu, quota ou clé invalide). Voir Réglages > Sources et debrid.';
+  if (code === 'host_not_allowed' || code === 'web_unsupported') return 'Ce débrideur ne peut pas être appelé depuis le navigateur : utilise l’application Windows ou Android.';
+  if (code === 'not_ready') return 'Cette source n’est pas encore prête chez le débrideur (pas en cache).';
+  return 'Débridage impossible' + (code ? ' (' + code + ')' : '') + '.';
+}
+
 async function resolveMedia(view, signal) {
   const s = view.stream;
   const up = await serverAlive();
@@ -633,6 +646,17 @@ async function resolveMedia(view, signal) {
     const ph = hints.proxyHeaders;
     if (up && ph && typeof ph === 'object') return { url: proxyUrl(base, s.url, ph.request || {}, ph.response || {}), up, base };
     return { url: s.url, up, base };
+  }
+  // Torrent livré sans lien par lastAddon : cache et déblocage sur l'appareil (AllDebrid, TorBox, Real-Debrid), jamais par le serveur.
+  if (isClientStream(s)) {
+    const { copies, season, episode } = clientCopiesOf(s);
+    try {
+      const r = await debrid().resolve(copies, { season, episode }, signal);
+      if (P) P.debridVia = PROVIDER_LABEL[r.provider];
+      return { url: r.url, up, base, provider: r.provider };
+    } catch (e) {
+      throw new Error(clientError(e));
+    }
   }
   // Jamais de lecture torrent (P2P) : une source sans lien HTTP(S) n'est pas lisible, il faut un débrideur.
   throw new Error('Cette source n’a pas de lien lisible : un débrideur (AllDebrid) est nécessaire, la lecture torrent est désactivée.');
@@ -1603,7 +1627,8 @@ function panelData(name) {
     if (p.probeTracks.height) rows.push(['Vidéo', p.probeTracks.width + '×' + p.probeTracks.height + ' · ' + (p.probeTracks.videoCodec || '').toUpperCase()]);
     if (p.choice) rows.push(['Pourquoi ce moteur', p.choice.reason]);
     // Le serveur de streaming ne sert plus qu'à la conversion HLS (web) : sinon, lecture directe du lien débridé.
-    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : 'Non utilisé · lecture directe du lien AllDebrid']);
+    if (p.debridVia) rows.push(['Débridé par', p.debridVia]);
+    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : 'Non utilisé · lecture directe du lien débridé']);
     const m = p.model;
     return {
       title, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview, rating: m && m.vote ? Number(m.vote).toFixed(1) + ' / 10' : '',

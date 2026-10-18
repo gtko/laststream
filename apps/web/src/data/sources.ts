@@ -46,6 +46,10 @@ export interface StreamsResult {
   pending: string[];
   /** Message de lastAddon (ex. « Configure AllDebrid ») : les torrents sont masqués faute de débrideur. */
   notice?: string;
+  /** lastAddon ne débride pas : les torrents sont livrés sans lien (`debrid: "client"`), l'appareil vérifie le cache et débride. */
+  clientDebrid?: boolean;
+  /** Réglage « seulement les sources en cache » de la configuration : appliqué sur l'appareil quand le statut est connu. */
+  onlyCached?: boolean;
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x !== '') : []);
@@ -54,9 +58,14 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<StreamsResult> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
-  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown }>(addonUrl(`stream/${kind}/${id}.json`));
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown }>(addonUrl(`stream/${kind}/${id}.json`));
   const notice = typeof res?.notice === 'string' && res.notice ? res.notice : undefined;
-  return { streams: Array.isArray(res?.streams) ? res.streams : [], pending: strings(res?.pending), ...(notice ? { notice } : {}) };
+  return {
+    streams: Array.isArray(res?.streams) ? res.streams : [],
+    pending: strings(res?.pending),
+    ...(notice ? { notice } : {}),
+    ...(res?.debrid === 'client' ? { clientDebrid: true, onlyCached: res.onlyCached === true } : {}),
+  };
 }
 
 export interface StreamsStatus {

@@ -4,7 +4,7 @@
 
 import { canDecode, decodeKeyframe, type CodecEnv } from './decode';
 import { openVideoIndex } from './index';
-import { proxyFetchRange, RangeAuthError, type FetchFn } from './proxy';
+import { directFetchRange, proxyFetchRange, RangeAuthError, type FetchFn } from './proxy';
 import { MemoryThumbStore, thumbKey, type ThumbStore } from './store';
 import type { ByteSource, ByteSourceOptions } from './bytes';
 import type { VideoIndex } from './types';
@@ -14,11 +14,11 @@ export const LOCAL_SLICE_SECONDS = 30;
 export const LOCAL_MAX_PARALLEL = 2;
 
 export interface LocalSource {
-  /** Lien débridé lu par le relais. */
+  /** Lien débridé lu. */
   url: string;
-  token: string;
-  /** Base du Worker Cloudflare. */
-  base: string;
+  /** Avec `token` et `base` : lecture par le relais (ancienne voie, abandonnée) ; sans eux : lecture directe depuis l'appareil. */
+  token?: string;
+  base?: string;
 }
 
 export interface LocalFeedOptions {
@@ -61,7 +61,8 @@ export function makeLocalFeed(o: LocalFeedOptions): LocalFeed {
     opened = null;
     const s = await o.resolve(signal);
     if (s === null) return false;
-    const r = await openVideoIndex(proxyFetchRange(s, o.fetchFn), o.source ?? {}, signal);
+    const fetchRange = s.token !== undefined && s.base !== undefined ? proxyFetchRange({ url: s.url, token: s.token, base: s.base }, o.fetchFn) : directFetchRange(s.url, o.fetchFn);
+    const r = await openVideoIndex(fetchRange, o.source ?? {}, signal);
     if (r === null || !(await canDecode(r.index.info, o.env))) return false;
     opened = r;
     return true;

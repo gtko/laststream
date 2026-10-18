@@ -12,6 +12,10 @@
 .set-source-head { display: flex; justify-content: space-between; align-items: center; }
 .set-tests { display: flex; flex-direction: column; gap: 4px; }
 .set-test { font-size: 14px; color: var(--soft); }
+.set-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--soft); margin-right: 4px; vertical-align: middle; }
+.set-dot.is-ok { background: #3fb950; }
+.set-dot.is-ko { background: #f85149; }
+.set-dot.is-unknown { background: #d29922; }
 .set-test strong { display: inline-block; width: 1.2em; }
 .set-test.is-ok strong { color: #4ade80; }
 .set-test.is-ko strong, .set-test.is-ko { color: #ff8a73; }

@@ -3,7 +3,8 @@ import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { browserCaps, inShell } from '../player/caps';
-import { playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
+import { applyVerdicts, isClientStream, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
+import { CHECK_TOP_N, debrid } from './debridClient';
 import { recommend, type Recommendation } from './rank';
 
 /* Chargement des sources d'un titre et recommandation selon le débit et la langue préférée. */
@@ -37,13 +38,40 @@ const PARTIAL_CACHE_MS = 8_000;
 export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | 'episode'>): string =>
   [req.type, req.id, req.season ?? '', req.episode ?? ''].join(':');
 
+/** Attente maximale du contrôle « cache » avant d'afficher la liste : au-delà, statut « à la demande » (le contrôle continue en arrière-plan). */
+export const CACHE_CHECK_WAIT_MS = 5_000;
+export const NO_PROVIDER_NOTICE = 'Ajoute ta clé AllDebrid, TorBox ou Real-Debrid dans Réglages > Sources et debrid pour lire les torrents.';
+
+/**
+ * Sources « client » (torrents sans lien) : contrôle du cache sur l'appareil pour les N meilleures, statuts combinés des
+ * fournisseurs configurés, filtre « seulement en cache » quand le statut est connu. Ne lève jamais.
+ */
+export async function annotateClientViews(views: SourceView[], opts: { onlyCached?: boolean; waitMs?: number } = {}): Promise<SourceView[]> {
+  const clients = views.filter((v) => v.client);
+  if (!clients.length) return views;
+  const manager = debrid();
+  const hashes = clients.slice(0, CHECK_TOP_N).map((v) => v.stream.infoHash ?? '');
+  const work = manager.checkCache(hashes).catch(() => null);
+  const verdicts = (await Promise.race([work, new Promise<null>((r) => setTimeout(() => r(null), opts.waitMs ?? CACHE_CHECK_WAIT_MS))])) ?? (await manager.cachedVerdicts(hashes));
+  // Les verdicts déjà connus de toutes les sources (cache local), pas seulement des N vérifiées.
+  const all = await manager.cachedVerdicts(clients.map((v) => v.stream.infoHash ?? ''));
+  for (const [k, v] of verdicts) all.set(k, v);
+  const annotated = applyVerdicts(views, all);
+  return opts.onlyCached ? annotated.filter((v) => !v.client || all.get((v.stream.infoHash ?? '').toLowerCase())?.cached !== false) : annotated;
+}
+
 async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode);
   // Débrideur obligatoire : seules les sources à lien HTTP(S) sont gardées, jamais un infoHash à lire en pair-à-pair.
-  const streams = sortStreams(playableStreams(res.streams));
-  return { imdb, views: withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps()), pending: res.pending, notice: res.notice };
+  const clientOk = debrid().hasAny();
+  const streams = sortStreams(playableStreams(res.streams, clientOk));
+  let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps());
+  if (clientOk) views = await annotateClientViews(views, { onlyCached: res.onlyCached });
+  // Torrents livrés sans lien mais aucun débrideur utilisable sur cet appareil : message clair.
+  const needsKey = !clientOk && res.streams.some(isClientStream);
+  return { imdb, views, pending: res.pending, notice: needsKey ? NO_PROVIDER_NOTICE : res.notice };
 }
 
 /**

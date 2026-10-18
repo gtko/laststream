@@ -16,6 +16,7 @@ import { userStore } from '../data/userStore';
 import { auth, importFromStremio, isKidProfile, isServerMode, pushConfig, pushPrefs, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
+import { bindDebrid, debridCardHTML } from './settings-debrid.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import {
   CATEGORIES, card, chipHTML, chipsHTML, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
@@ -25,6 +26,8 @@ import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { state } from './state.js';
+
+bindDebrid();
 
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['multi', 'Multi'], ['original', 'Version originale']];
 const RESOLUTIONS = ['2160p', '1080p', '720p', '480p', 'SD'];
@@ -196,12 +199,10 @@ function sourcesPanelInner() {
         '<button type="button" class="btn btn-ghost btn-sm" data-set-addsrc="torznab">Ajouter un Torznab</button>' +
         '<button type="button" class="btn btn-ghost btn-sm" data-set-test="sources">Tester les sources</button>') +
       '<div class="set-tests" id="set-tests-sources" aria-live="polite"></div>', { desc: 'Addons amont et indexeurs interrogés pour trouver des sources.' }) +
-    card('Debrid',
-      switchRow('Activer AllDebrid', '', !!debrid, 'name="debridOn"') +
-      stackInput('Clé API AllDebrid', 'Laisse vide pour garder la clé enregistrée.', 'type="password" autocomplete="off" name="debridKey" placeholder="' + esc(secretPlaceholder(debrid && debrid.apiKey)) + '"') +
-      switchRow('Seulement les sources en cache', 'Masque les sources qu’AllDebrid doit d’abord télécharger.', !!c.onlyCached, 'name="onlyCached"') +
-      actions('<button type="button" class="btn btn-ghost btn-sm" data-set-test="debrid">Tester AllDebrid</button>') +
-      '<div class="set-tests" id="set-tests-debrid" aria-live="polite"></div>');
+    debridCardHTML() +
+    card('Débridage',
+      switchRow('Seulement les sources en cache', 'Masque les sources que le débrideur doit d’abord télécharger (statut connu seulement).', !!c.onlyCached, 'name="onlyCached"') +
+      (debrid ? switchRow('Retirer la clé enregistrée sur le serveur', 'Une ancienne clé AllDebrid est encore dans ta configuration chiffrée ; elle n’est plus utilisée pour lire. Active puis enregistre pour l’effacer.', false, 'name="debridClear"') : ''));
 }
 
 function serverFormHTML(cats) {
@@ -357,14 +358,8 @@ function buildConfig(form) {
   if (f.maxResults.value !== '') cfg.maxResults = Number(f.maxResults.value);
   cfg.sources = serializeSources();
   cfg.onlyCached = isOn(f.onlyCached);
-  if (isOn(f.debridOn)) {
-    const key = f.debridKey.value.trim();
-    if (key) cfg.debrid = { service: 'alldebrid', apiKey: key };
-    else if (!cfg.debrid) cfg.debrid = undefined; // pas de clé : rien à activer
-  } else {
-    delete cfg.debrid;
-  }
-  if (cfg.debrid === undefined) delete cfg.debrid;
+  // Les clés des débrideurs restent sur l'appareil (réglages ci-dessus) : la configuration serveur ne reçoit plus de clé.
+  if (f.debridClear && isOn(f.debridClear)) delete cfg.debrid;
   return cfg;
 }
 
@@ -396,7 +391,6 @@ async function runTest(kind, btn) {
     const { base, config } = await encodeFromForm(form);
     const res = await testConfig(config, base);
     if (kind === 'services') showTests('services', res.services);
-    else if (kind === 'debrid') showTests('debrid', res.sources.filter((s) => s.type === 'alldebrid'));
     else { const src = res.sources.filter((x) => x.type !== 'alldebrid'); showTests('sources', src); applyTestResults(src); }
   } catch (err) {
     if (box) box.innerHTML = '<p class="set-test is-ko">' + esc(issuesText(err) || 'Test impossible : vérifie l’adresse et la configuration.') + '</p>';

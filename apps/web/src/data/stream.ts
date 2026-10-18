@@ -39,7 +39,7 @@ export interface Stream {
   url?: string;
   infoHash?: string;
   fileIdx?: number;
-  behaviorHints?: { filename?: string; videoSize?: number; bingeGroup?: string; notWebReady?: boolean };
+  behaviorHints?: { filename?: string; videoSize?: number; bingeGroup?: string; notWebReady?: boolean; /** `client` : torrent sans lien, débridé sur l'appareil (lastAddon n'appelle jamais le débrideur). */ lastDebrid?: string };
   laststream?: unknown;
   [key: string]: unknown;
 }
