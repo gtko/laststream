@@ -60,6 +60,8 @@ export class RoomCore {
   readonly members = new Map<string, Member>();
   /** Parties de l'état modifiées depuis le dernier enregistrement (le DO les écrit puis vide l'ensemble). */
   readonly dirty = new Set<StoreKey>();
+  /** Signalements nouveaux, pas encore transmis à l'administration (le Durable Object les vide après envoi). */
+  readonly fresh: { entry: ReportEntry; againstId: string }[] = [];
   private readonly hits = new Map<string, number[]>();
   private seq = 0;
 
@@ -72,6 +74,20 @@ export class RoomCore {
 
   get hostId(): string {
     return this.data.meta.hostId;
+  }
+
+  /** Modération du serveur : retire un message de l'historique (et ses signalements) et prévient les participants. */
+  removeMessage(messageId: string): { removed: boolean; effects: Effect[] } {
+    const index = this.chat.findIndex((line) => line.id === messageId);
+    if (index === -1) return { removed: false, effects: [] };
+    this.chat.splice(index, 1);
+    this.dirty.add('chat');
+    const kept = this.reports.filter((report) => report.messageId !== messageId);
+    if (kept.length !== this.reports.length) {
+      this.reports.splice(0, this.reports.length, ...kept);
+      this.dirty.add('reports');
+    }
+    return { removed: true, effects: [{ kind: 'broadcast', msg: { t: 'removed', messageId } }] };
   }
 
   info(): RoomInfo {
@@ -240,14 +256,16 @@ export class RoomCore {
         if (line.fromId === accountId) return this.err(accountId, 'cannot_report_self');
         const already = this.reports.some((r) => r.messageId === line.id && r.by === member.username);
         if (!already) {
-          this.reports.push({
+          const entry: ReportEntry = {
             messageId: line.id,
             by: member.username,
             against: line.from,
             text: cleanReportText(line.text),
             reason: message.reason === null ? null : cleanReportText(message.reason) || null,
             at: now,
-          });
+          };
+          this.reports.push(entry);
+          this.fresh.push({ entry, againstId: line.fromId });
           if (this.reports.length > MAX_REPORTS) this.reports.splice(0, this.reports.length - MAX_REPORTS);
           this.dirty.add('reports');
         }

@@ -52,6 +52,7 @@ export const errorHandler: ErrorHandler<AppEnv> = (err, c) => {
   if (typeof status === 'number' && status >= 400 && status < 500) {
     return sendJson(c, { error: 'bad_request' }, status as 400);
   }
+  c.set('failure', err instanceof Error ? `${err.name}: ${err.message}` : 'erreur inconnue');
   console.error('Erreur interne', err instanceof Error ? err.name : 'inconnue');
   return sendJson(c, { error: 'internal_error' }, 500);
 };

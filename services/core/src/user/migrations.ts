@@ -267,6 +267,58 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX party_rooms_host ON party_rooms(host_id);
     `,
   },
+  {
+    version: 8,
+    name: 'administration : suspension des comptes, réglages globaux, journal d audit, réinitialisation de mot de passe, signalements',
+    sql: `
+      -- Compte suspendu : ne peut plus se connecter, ses sessions sont refusées. NULL = actif.
+      ALTER TABLE accounts ADD COLUMN suspended_at TEXT;
+
+      -- Réglages globaux (clé → JSON) : quota d'invitations par défaut, inscriptions par invitation, mode maintenance.
+      CREATE TABLE app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      -- Journal d'audit des actions d'administration (qui, quoi, quand). Jamais de secret dans detail.
+      CREATE TABLE admin_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at TEXT NOT NULL,
+        actor_id TEXT,
+        actor_name TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT
+      );
+
+      -- Liens de réinitialisation de mot de passe : seule l'empreinte du jeton est stockée, usage unique.
+      CREATE TABLE password_resets (
+        token_hash TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE INDEX password_resets_account ON password_resets(account_id);
+
+      -- File des messages signalés dans les salons (alimentée par le salon au moment du signalement).
+      CREATE TABLE party_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        by_name TEXT NOT NULL,
+        against_id TEXT,
+        against_name TEXT NOT NULL,
+        text TEXT NOT NULL,
+        reason TEXT,
+        at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'deleted', 'suspended', 'ignored')),
+        resolved_at TEXT,
+        UNIQUE (room_id, message_id, by_name)
+      );
+      CREATE INDEX party_reports_status ON party_reports(status, id);
+    `,
+  },
 ];
 
 /**

@@ -9,7 +9,7 @@ import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { createWorkersPlatform, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
-export { PartyRoom, UserStoreDO } from './platform/workers/index.js';
+export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
 /** Application construite au premier appel de l'isolat : les liaisons `env` sont les mêmes pour toutes les requêtes. */
 let app: App | undefined;

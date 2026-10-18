@@ -16,12 +16,15 @@
     "bindings": [
       { "name": "USER_STORE", "class_name": "UserStoreDO" },
       // Salons de visionnage : un Durable Object par salon (WebSocket, API d'hibernation), voir src/platform/workers/party-room.ts.
-      { "name": "PARTY_ROOM", "class_name": "PartyRoom" }
+      { "name": "PARTY_ROOM", "class_name": "PartyRoom" },
+      // Métriques d'exploitation (tranches de 5 min, 7 jours) et purges de cache asynchrones, voir src/platform/workers/metrics-do.ts.
+      { "name": "METRICS", "class_name": "Metrics" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["UserStoreDO"] },
-    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] }
+    { "tag": "v2", "new_sqlite_classes": ["PartyRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["Metrics"] }
   ],
 
   // Caches persistants partagés entre instances : statut AllDebrid, packs, URL émises, torrents privés, hébergeurs.

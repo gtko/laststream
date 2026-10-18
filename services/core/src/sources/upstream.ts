@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { LruCache } from '../cache/lru.js';
+import { hostOf, metrics, type UpstreamOutcome } from '../metrics/index.js';
 import type { ContentRef, RawStream } from '../types.js';
 import {
   SourceError,
@@ -159,6 +160,12 @@ export async function fetchUpstream(
   opts: HttpOptions = {},
 ): Promise<RawStream[]> {
   const { fetchFn, timeoutMs } = resolveOptions(opts);
+  const started = Date.now();
+  // Santé de l'addon (par nom d'hôte seul, jamais le chemin qui porte le jeton).
+  const host = hostOf(source.url);
+  const measure = (outcome: UpstreamOutcome): void => {
+    if (host !== undefined) metrics().upstream(host, outcome, Date.now() - started);
+  };
   try {
     const res = await fetchText(
       fetchFn,
@@ -172,8 +179,11 @@ export async function fetchUpstream(
       throw new SourceError('réponse inattendue (champ streams absent)');
     }
     const origin = originOf(source, opts);
-    return body.streams.filter(isRecord).map((raw) => ({ ...toRawStream(raw, source.name), origin }));
+    const streams = body.streams.filter(isRecord).map((raw) => ({ ...toRawStream(raw, source.name), origin }));
+    measure('ok');
+    return streams;
   } catch (err) {
+    measure(err instanceof SourceError && err.message.startsWith('délai dépassé') ? 'timeout' : 'fail');
     throw sourceFailure(source.name, err);
   }
 }

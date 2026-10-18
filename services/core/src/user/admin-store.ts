@@ -1,0 +1,411 @@
+import { type AppSettings, readAppSettings, writeAppSettings } from './app-settings.js';
+import type { SqlDb, SqlParam, SqlRow } from './sql.js';
+
+/**
+ * Données de l'administration : comptes (vue d'ensemble, parrainage, suspension), réglages globaux, journal d'audit,
+ * liens de réinitialisation, file des signalements. Même base et mêmes migrations que UserStore. Chaque vue est une
+ * liste explicite de champs : ni hash de mot de passe ou de PIN, ni jeton, ni configuration chiffrée n'en sort.
+ */
+
+export const MAX_AUDIT_ROWS = 10_000;
+const MAX_TREE_ACCOUNTS = 5_000;
+const MAX_REPORT_ROWS = 2_000;
+export const RESET_TTL_MS = 24 * 3600_000;
+
+export type AccountStatus = 'active' | 'suspended';
+
+export interface AdminAccount {
+  id: string;
+  username: string;
+  isOwner: boolean;
+  createdAt: string;
+  status: AccountStatus;
+  suspendedAt: string | null;
+  /** Pseudo du parrain (null : premier compte ou lien « système »). */
+  referrer: string | null;
+  /** Dernière trace d'activité (présence, connexion, progression), ou null. */
+  lastActivityAt: string | null;
+  profileCount: number;
+  libraryCount: number;
+  inviteQuota: number;
+  invitesUsed: number;
+}
+
+export interface AccountListQuery {
+  /** Fragment du pseudo (insensible à la casse). */
+  q?: string;
+  status?: AccountStatus;
+  /** Pseudo exact du parrain. */
+  referrer?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  order: 'newest' | 'oldest';
+  limit: number;
+  cursor?: string;
+}
+
+export interface AdminAccountDetail {
+  account: AdminAccount;
+  profiles: { id: string; name: string; isKid: boolean; hasPin: boolean; createdAt: string; libraryCount: number }[];
+  invitees: { username: string; usedAt: string | null }[];
+  sessions: number;
+}
+
+export interface ReferralNode {
+  id: string;
+  username: string;
+  createdAt: string;
+  status: AccountStatus;
+  children: ReferralNode[];
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  actor: string;
+  actorId: string | null;
+  action: string;
+  target: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export type ReportStatus = 'open' | 'deleted' | 'suspended' | 'ignored';
+
+export interface PartyReportRecord {
+  id: number;
+  roomId: string;
+  messageId: string;
+  by: string;
+  againstId: string | null;
+  against: string;
+  text: string;
+  reason: string | null;
+  at: number;
+  status: ReportStatus;
+  resolvedAt: string | null;
+}
+
+export type NewPartyReport = Omit<PartyReportRecord, 'id' | 'status' | 'resolvedAt'>;
+
+export interface RegisteredRoom {
+  id: string;
+  hostId: string;
+  host: string;
+  visibility: 'private' | 'public';
+  title: string;
+  mediaType: 'movie' | 'series';
+  createdAt: string;
+}
+
+const LIKE_ESCAPE = /[\\%_]/g;
+
+const ACCOUNT_COLUMNS = `
+  a.id, a.username, a.is_owner, a.created_at, a.suspended_at, a.invite_quota,
+  (SELECT ia.username FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id LIMIT 1) AS referrer,
+  (SELECT COUNT(*) FROM profiles p WHERE p.account_id = a.id) AS profile_count,
+  (SELECT COUNT(*) FROM library_items l JOIN profiles p ON p.id = l.profile_id WHERE p.account_id = a.id AND l.removed = 0) AS library_count,
+  (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL) AS invites_used,
+  MAX(
+    COALESCE((SELECT seen_at FROM presence WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(created_at) FROM sessions WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(pr.updated_at) FROM progress pr JOIN profiles p ON p.id = pr.profile_id WHERE p.account_id = a.id), '')
+  ) AS last_activity`;
+
+function toAdminAccount(row: SqlRow): AdminAccount {
+  const suspendedAt = row.suspended_at === null || row.suspended_at === undefined ? null : String(row.suspended_at);
+  const activity = String(row.last_activity ?? '');
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    isOwner: Number(row.is_owner) === 1,
+    createdAt: String(row.created_at),
+    status: suspendedAt === null ? 'active' : 'suspended',
+    suspendedAt,
+    referrer: row.referrer === null || row.referrer === undefined ? null : String(row.referrer),
+    lastActivityAt: activity === '' ? null : activity,
+    profileCount: Number(row.profile_count),
+    libraryCount: Number(row.library_count),
+    inviteQuota: Number(row.invite_quota),
+    invitesUsed: Number(row.invites_used),
+  };
+}
+
+function toReport(row: SqlRow): PartyReportRecord {
+  return {
+    id: Number(row.id),
+    roomId: String(row.room_id),
+    messageId: String(row.message_id),
+    by: String(row.by_name),
+    againstId: row.against_id === null || row.against_id === undefined ? null : String(row.against_id),
+    against: String(row.against_name),
+    text: String(row.text),
+    reason: row.reason === null || row.reason === undefined ? null : String(row.reason),
+    at: Number(row.at),
+    status: String(row.status) as ReportStatus,
+    resolvedAt: row.resolved_at === null || row.resolved_at === undefined ? null : String(row.resolved_at),
+  };
+}
+
+export class AdminStore {
+  constructor(private readonly db: SqlDb) {}
+
+  // Comptes
+
+  listAccounts(query: AccountListQuery): { accounts: AdminAccount[]; nextCursor: string | null; total: number } {
+    const where: string[] = [];
+    const params: SqlParam[] = [];
+    if (query.q !== undefined && query.q !== '') {
+      where.push("a.username LIKE ? ESCAPE '\\'");
+      params.push(`%${query.q.toLowerCase().replace(LIKE_ESCAPE, '\\$&')}%`);
+    }
+    if (query.status === 'suspended') where.push('a.suspended_at IS NOT NULL');
+    if (query.status === 'active') where.push('a.suspended_at IS NULL');
+    if (query.referrer !== undefined) {
+      where.push('EXISTS (SELECT 1 FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id AND ia.username = ?)');
+      params.push(query.referrer);
+    }
+    if (query.createdFrom !== undefined) {
+      where.push('a.created_at >= ?');
+      params.push(query.createdFrom);
+    }
+    if (query.createdTo !== undefined) {
+      where.push('a.created_at <= ?');
+      params.push(query.createdTo);
+    }
+    const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
+    const total = Number(this.db.prepare(`SELECT COUNT(*) AS n FROM accounts a${filter}`).get(...params)?.n ?? 0);
+    const newest = query.order === 'newest';
+    const paged = [...where];
+    const pagedParams = [...params];
+    if (query.cursor !== undefined) {
+      const sep = query.cursor.indexOf('|');
+      if (sep > 0) {
+        paged.push(newest ? '(a.created_at, a.id) < (?, ?)' : '(a.created_at, a.id) > (?, ?)');
+        pagedParams.push(query.cursor.slice(0, sep), query.cursor.slice(sep + 1));
+      }
+    }
+    const pagedFilter = paged.length === 0 ? '' : ` WHERE ${paged.join(' AND ')}`;
+    const rows = this.db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${pagedFilter} ORDER BY a.created_at ${newest ? 'DESC' : 'ASC'}, a.id ${newest ? 'DESC' : 'ASC'} LIMIT ?`)
+      .all(...pagedParams, query.limit + 1);
+    const accounts = rows.slice(0, query.limit).map(toAdminAccount);
+    const last = accounts[accounts.length - 1];
+    return { accounts, nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null, total };
+  }
+
+  accountById(id: string): AdminAccount | undefined {
+    const row = this.db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.id = ?`).get(id);
+    return row === undefined ? undefined : toAdminAccount(row);
+  }
+
+  accountDetail(id: string): AdminAccountDetail | undefined {
+    const account = this.accountById(id);
+    if (account === undefined) return undefined;
+    const profiles = this.db
+      .prepare(
+        `SELECT p.id, p.name, p.is_kid, p.pin_hash IS NOT NULL AS has_pin, p.created_at,
+                (SELECT COUNT(*) FROM library_items l WHERE l.profile_id = p.id AND l.removed = 0) AS library_count
+         FROM profiles p WHERE p.account_id = ? ORDER BY p.created_at, p.id`,
+      )
+      .all(id)
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        isKid: Number(row.is_kid) === 1,
+        hasPin: Number(row.has_pin) === 1,
+        createdAt: String(row.created_at),
+        libraryCount: Number(row.library_count),
+      }));
+    const invitees = this.db
+      .prepare('SELECT a.username, i.used_at FROM invites i JOIN accounts a ON a.id = i.used_by WHERE i.inviter_id = ? ORDER BY i.used_at')
+      .all(id)
+      .map((row) => ({ username: String(row.username), usedAt: row.used_at === null ? null : String(row.used_at) }));
+    const sessions = Number(this.db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE account_id = ?').get(id)?.n ?? 0);
+    return { account, profiles, invitees, sessions };
+  }
+
+  /** Forêt de parrainage : racines = comptes sans parrain (premier compte, liens « système »). */
+  referralTree(): { roots: ReferralNode[]; total: number; truncated: boolean } {
+    const accounts = this.db
+      .prepare('SELECT id, username, created_at, suspended_at FROM accounts ORDER BY created_at, id LIMIT ?')
+      .all(MAX_TREE_ACCOUNTS + 1);
+    const truncated = accounts.length > MAX_TREE_ACCOUNTS;
+    const nodes = new Map<string, ReferralNode>();
+    for (const row of accounts.slice(0, MAX_TREE_ACCOUNTS)) {
+      nodes.set(String(row.id), {
+        id: String(row.id),
+        username: String(row.username),
+        createdAt: String(row.created_at),
+        status: row.suspended_at === null ? 'active' : 'suspended',
+        children: [],
+      });
+    }
+    const hasParent = new Set<string>();
+    const links = this.db.prepare('SELECT inviter_id, used_by FROM invites WHERE used_by IS NOT NULL AND inviter_id IS NOT NULL ORDER BY used_at').all();
+    for (const link of links) {
+      const parent = nodes.get(String(link.inviter_id));
+      const child = nodes.get(String(link.used_by));
+      if (parent === undefined || child === undefined || hasParent.has(child.id) || parent.id === child.id) continue;
+      parent.children.push(child);
+      hasParent.add(child.id);
+    }
+    return { roots: [...nodes.values()].filter((node) => !hasParent.has(node.id)), total: nodes.size, truncated };
+  }
+
+  setInviteQuota(id: string, quota: number): boolean {
+    return this.db.prepare('UPDATE accounts SET invite_quota = ? WHERE id = ?').run(quota, id).changes !== 0;
+  }
+
+  /** Suspend ou réactive un compte ; la suspension révoque ses sessions. `false` si le compte n'existe pas. */
+  setSuspended(id: string, suspended: boolean, now: string): boolean {
+    return this.db.transaction(() => {
+      const changed = this.db.prepare('UPDATE accounts SET suspended_at = ? WHERE id = ?').run(suspended ? now : null, id).changes !== 0;
+      if (changed && suspended) this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(id);
+      return changed;
+    });
+  }
+
+  // Réglages globaux
+
+  getSettings(): AppSettings {
+    return readAppSettings(this.db);
+  }
+
+  updateSettings(patch: Partial<AppSettings>): AppSettings {
+    return writeAppSettings(this.db, patch);
+  }
+
+  // Journal d'audit
+
+  addAudit(entry: { at: string; actorId: string | null; actor: string; action: string; target: string | null; detail: Record<string, unknown> | null }): void {
+    this.db
+      .prepare('INSERT INTO admin_audit (at, actor_id, actor_name, action, target, detail) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(entry.at, entry.actorId, entry.actor, entry.action, entry.target, entry.detail === null ? null : JSON.stringify(entry.detail));
+    this.db.prepare('DELETE FROM admin_audit WHERE id <= (SELECT MAX(id) FROM admin_audit) - ?').run(MAX_AUDIT_ROWS);
+  }
+
+  /** Entrées récentes d'abord ; `before` : identifiant de la dernière entrée vue. */
+  listAudit(options: { limit: number; before?: number; action?: string }): { entries: AuditEntry[]; nextBefore: number | null } {
+    const where: string[] = [];
+    const params: SqlParam[] = [];
+    if (options.before !== undefined) {
+      where.push('id < ?');
+      params.push(options.before);
+    }
+    if (options.action !== undefined) {
+      where.push('action = ?');
+      params.push(options.action);
+    }
+    const rows = this.db
+      .prepare(`SELECT id, at, actor_id, actor_name, action, target, detail FROM admin_audit${where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`} ORDER BY id DESC LIMIT ?`)
+      .all(...params, options.limit + 1);
+    const entries = rows.slice(0, options.limit).map((row): AuditEntry => {
+      let detail: Record<string, unknown> | null = null;
+      if (typeof row.detail === 'string') {
+        try {
+          detail = JSON.parse(row.detail) as Record<string, unknown>;
+        } catch {
+          detail = null;
+        }
+      }
+      return {
+        id: Number(row.id),
+        at: String(row.at),
+        actor: String(row.actor_name),
+        actorId: row.actor_id === null ? null : String(row.actor_id),
+        action: String(row.action),
+        target: row.target === null ? null : String(row.target),
+        detail,
+      };
+    });
+    const last = entries[entries.length - 1];
+    return { entries, nextBefore: rows.length > options.limit && last !== undefined ? last.id : null };
+  }
+
+  // Réinitialisation de mot de passe
+
+  /** Enregistre l'empreinte d'un jeton (un seul lien valide par compte : les précédents sont supprimés). */
+  createPasswordReset(accountId: string, tokenHash: string, now: string, expiresAt: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM password_resets WHERE account_id = ?').run(accountId);
+      this.db.prepare('DELETE FROM password_resets WHERE expires_at <= ?').run(now);
+      this.db.prepare('INSERT INTO password_resets (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(tokenHash, accountId, now, expiresAt);
+    });
+  }
+
+  /**
+   * Consomme un lien (usage unique, non expiré) : nouveau mot de passe et révocation de toutes les sessions, dans la même
+   * transaction. Renvoie le pseudo du compte, ou undefined si le lien est invalide, expiré ou déjà utilisé.
+   */
+  redeemPasswordReset(tokenHash: string, now: string, passwordHash: string): { accountId: string; username: string } | undefined {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT r.account_id, a.username FROM password_resets r JOIN accounts a ON a.id = r.account_id
+           WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?`,
+        )
+        .get(tokenHash, now);
+      if (row === undefined) return undefined;
+      const claimed = this.db.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(now, tokenHash);
+      if (claimed.changes === 0) return undefined;
+      const accountId = String(row.account_id);
+      this.db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(passwordHash, accountId);
+      this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
+      return { accountId, username: String(row.username) };
+    });
+  }
+
+  // Signalements de salons
+
+  addReport(report: NewPartyReport): void {
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO party_reports (room_id, message_id, by_name, against_id, against_name, text, reason, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(report.roomId, report.messageId, report.by, report.againstId, report.against, report.text.slice(0, 1000), report.reason?.slice(0, 200) ?? null, report.at);
+    this.db.prepare('DELETE FROM party_reports WHERE id <= (SELECT MAX(id) FROM party_reports) - ?').run(MAX_REPORT_ROWS);
+  }
+
+  listReports(status: ReportStatus, limit: number): PartyReportRecord[] {
+    return this.db.prepare('SELECT * FROM party_reports WHERE status = ? ORDER BY id DESC LIMIT ?').all(status, limit).map(toReport);
+  }
+
+  reportById(id: number): PartyReportRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM party_reports WHERE id = ?').get(id);
+    return row === undefined ? undefined : toReport(row);
+  }
+
+  resolveReport(id: number, status: Exclude<ReportStatus, 'open'>, now: string): boolean {
+    return this.db.prepare("UPDATE party_reports SET status = ?, resolved_at = ? WHERE id = ? AND status = 'open'").run(status, now, id).changes !== 0;
+  }
+
+  // Annuaire des salons (tous, privés compris)
+
+  listRegisteredRooms(limit: number): RegisteredRoom[] {
+    return this.db
+      .prepare(
+        `SELECT r.id, r.host_id, a.username AS host, r.visibility, r.title, r.media_type, r.created_at
+         FROM party_rooms r JOIN accounts a ON a.id = r.host_id ORDER BY r.created_at DESC, r.id LIMIT ?`,
+      )
+      .all(limit)
+      .map((row) => ({
+        id: String(row.id),
+        hostId: String(row.host_id),
+        host: String(row.host),
+        visibility: String(row.visibility) as 'private' | 'public',
+        title: String(row.title),
+        mediaType: String(row.media_type) as 'movie' | 'series',
+        createdAt: String(row.created_at),
+      }));
+  }
+
+  deleteRegisteredRoom(id: string): void {
+    this.db.prepare('DELETE FROM party_rooms WHERE id = ?').run(id);
+  }
+
+  /** Salons dont l'hôte est ce compte (à fermer avant la suppression du compte). */
+  roomIdsOfHost(hostId: string): string[] {
+    return this.db.prepare('SELECT id FROM party_rooms WHERE host_id = ?').all(hostId).map((row) => String(row.id));
+  }
+}

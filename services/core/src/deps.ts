@@ -1,6 +1,8 @@
 import type { AllDebridClient } from './sources/alldebrid.js';
 import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { ThumbOptions } from './lt/thumbs/index.js';
+import type { CacheAdmin, TvAdmin } from './admin/cache-types.js';
+import type { MetricsService } from './metrics/core.js';
 import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 
@@ -28,6 +30,14 @@ export interface AppDeps {
   userBackend?: UserBackend;
   /** Salons de visionnage (Workers : Durable Objects). Par défaut : celui de la plateforme ; absent, /party répond 501. */
   party?: PartyBackend;
+  /** Métriques d'exploitation (tests). Par défaut : celles de la plateforme. */
+  metrics?: MetricsService;
+  /** Statistiques et purge des caches KV (tests). Par défaut : celles de la plateforme (Workers). */
+  cacheAdmin?: CacheAdmin;
+  /** Limites /admin/* par minute et par IP (lectures, écritures, ré-authentifications par 10 min). */
+  adminRateLimits?: Partial<{ read: number; write: number; elevate: number }>;
+  /** API TV d'administration (dernier cron, relance). Absente : les routes /admin/tv répondent 501. */
+  tvAdmin?: TvAdmin;
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   /**

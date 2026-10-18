@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readAppSettings } from './app-settings.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
@@ -26,6 +27,8 @@ export interface Account {
 
 export interface AccountRecord extends Account {
   passwordHash: string;
+  /** Compte suspendu par l'administration : connexion et sessions refusées. */
+  suspended: boolean;
 }
 
 /** Profil tel que vu par le client : aucun secret, aucun compteur de PIN. */
@@ -202,6 +205,7 @@ interface AccountRow {
   password_hash: string;
   is_owner: number;
   created_at: string;
+  suspended_at?: string | null;
 }
 
 interface ProfileRow {
@@ -248,7 +252,9 @@ interface SettingRow {
   value: string;
 }
 
-export type CreateAccountResult = { ok: true; account: Account } | { ok: false; reason: 'signup_disabled' | 'username_taken' | 'invite_invalid' };
+export type CreateAccountResult =
+  | { ok: true; account: Account }
+  | { ok: false; reason: 'signup_disabled' | 'username_taken' | 'invite_invalid' | 'invites_closed' };
 
 function toAccount(row: Omit<AccountRow, 'password_hash'>): Account {
   return { id: row.id, username: row.username, isOwner: row.is_owner === 1, createdAt: row.created_at };
@@ -348,18 +354,18 @@ export class UserStore {
 
   findAccountRecord(username: string): AccountRecord | undefined {
     const row = this.db
-      .prepare('SELECT id, username, password_hash, is_owner, created_at FROM accounts WHERE username = ?')
+      .prepare('SELECT id, username, password_hash, is_owner, created_at, suspended_at FROM accounts WHERE username = ?')
       .get(username) as AccountRow | undefined;
     if (row === undefined) return undefined;
-    return { ...toAccount(row), passwordHash: row.password_hash };
+    return { ...toAccount(row), passwordHash: row.password_hash, suspended: row.suspended_at != null };
   }
 
   accountRecordById(accountId: string): AccountRecord | undefined {
     const row = this.db
-      .prepare('SELECT id, username, password_hash, is_owner, created_at FROM accounts WHERE id = ?')
+      .prepare('SELECT id, username, password_hash, is_owner, created_at, suspended_at FROM accounts WHERE id = ?')
       .get(accountId) as AccountRow | undefined;
     if (row === undefined) return undefined;
-    return { ...toAccount(row), passwordHash: row.password_hash };
+    return { ...toAccount(row), passwordHash: row.password_hash, suspended: row.suspended_at != null };
   }
 
   /**
@@ -378,6 +384,9 @@ export class UserStore {
       const isFirst = this.countAccounts() === 0;
       const invite = !isFirst && input.inviteCode !== undefined;
       if (!isFirst && !invite && !input.allowSignup) return { ok: false, reason: 'signup_disabled' };
+      const settings = readAppSettings(this.db);
+      // Inscriptions par lien fermées par l'administration (le tout premier compte n'est jamais concerné).
+      if (invite && !settings.invitesOpen) return { ok: false, reason: 'invites_closed' };
       if (this.findAccountRecord(input.username) !== undefined) return { ok: false, reason: 'username_taken' };
       if (invite && input.inviteCode !== undefined) {
         const row = this.db.prepare('SELECT used_at FROM invites WHERE code = ?').get(input.inviteCode) as { used_at: string | null } | undefined;
@@ -390,8 +399,8 @@ export class UserStore {
         createdAt: input.now,
       };
       this.db
-        .prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(account.id, account.username, input.passwordHash, isFirst ? 1 : 0, account.createdAt);
+        .prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at, invite_quota) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(account.id, account.username, input.passwordHash, isFirst ? 1 : 0, account.createdAt, settings.inviteDefaultQuota);
       if (invite && input.inviteCode !== undefined && !redeemInvite(this.db, input.inviteCode, account.id, input.now).ok) {
         throw new Error('lien de parrainage consommé en cours d\'inscription'); // annule la transaction (inatteignable : synchrone)
       }
@@ -443,7 +452,7 @@ export class UserStore {
       .prepare(
         `SELECT a.id, a.username, a.is_owner, a.created_at
          FROM sessions s JOIN accounts a ON a.id = s.account_id
-         WHERE s.token_hash = ? AND s.expires_at > ?`,
+         WHERE s.token_hash = ? AND s.expires_at > ? AND a.suspended_at IS NULL`,
       )
       .get(tokenHash, now) as Omit<AccountRow, 'password_hash'> | undefined;
     return row === undefined ? undefined : toAccount(row);

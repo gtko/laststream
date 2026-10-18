@@ -6,6 +6,8 @@
 
 import type { AutoDetectOptions, AutoDetector } from '../lt/detect/index.js';
 import type { ThumbOptions, ThumbService } from '../lt/thumbs/index.js';
+import type { CacheAdmin } from '../admin/cache-types.js';
+import type { MetricsService } from '../metrics/core.js';
 import type { PartyBackend } from '../party/backend.js';
 import type { TvBlobStore } from '../lt/tv-build.js';
 import type { SkipRepo, UserBackend } from '../user/repo.js';
@@ -138,6 +140,10 @@ export interface Platform {
    * Workers : Durable Object SQLite).
    */
   createUserBackend(options?: { path?: string }): UserBackend;
+  /** Métriques d'exploitation (mémoire sous Node, Durable Object sous Workers). Absent : aucune mesure. */
+  readonly metrics?: MetricsService;
+  /** Statistiques et purge des caches KV partagés (Workers seulement) ; absent : les routes /admin/caches répondent 501. */
+  readonly cacheAdmin?: CacheAdmin;
   /** Salons de visionnage en temps réel (Workers : Durable Object PartyRoom). Absent sur Node : les routes /party répondent 501. */
   createPartyBackend?(): PartyBackend;
   /**

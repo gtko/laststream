@@ -16,6 +16,8 @@ export interface PartyRoomStub {
   close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'>;
   /** Signalements reçus (hôte, ou propriétaire du serveur avec `null`). */
   reports(requesterId: string | null): Promise<ReportEntry[] | 'forbidden' | 'not_found'>;
+  /** Modération du serveur : retire un message de l'historique du salon. `not_found` : salon terminé ou message absent. */
+  deleteMessage(messageId: string): Promise<'ok' | 'not_found'>;
   /** Mise à niveau WebSocket (identité dans l'en-tête interne `x-party-identity`, posé par handlePartyWs). */
   fetch(request: Request): Promise<Response>;
 }

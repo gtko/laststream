@@ -3,6 +3,7 @@ import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { defineConfig } from 'vitest/config';
 
 const harness = fileURLToPath(new URL('./tests-workers/harness.ts', import.meta.url));
+const adminBackend = fileURLToPath(new URL('./tests-workers/admin-backend.ts', import.meta.url));
 
 /**
  * Tests exécutés dans le runtime Workers (workerd, via Miniflare) : les stores contre le Durable Object SQLite, et la
@@ -13,7 +14,10 @@ export default defineConfig({
   plugins: [cloudflareTest({ wrangler: { configPath: './wrangler.test.jsonc' } })],
   resolve: {
     // Les tests /user du dépôt importent le harnais Node (serveur HTTP local) : remplacé par un harnais Workers.
-    alias: [{ find: /^\.\/lt-harness\.js$/, replacement: harness }],
+    alias: [
+      { find: /^\.\/lt-harness\.js$/, replacement: harness },
+      { find: /^\.\/admin-backend\.js$/, replacement: adminBackend },
+    ],
   },
   test: {
     include: [
@@ -26,6 +30,8 @@ export default defineConfig({
       'tests/user-cors.test.ts',
       // Fonctions sociales : mêmes fichiers que sous Node, contre l'application câblée sur le Durable Object.
       'tests/social-*.test.ts',
+      // Administration : mêmes fichiers que sous Node, contre l'application câblée sur le Durable Object.
+      'tests/admin-*.test.ts',
     ],
     setupFiles: ['tests-workers/setup.ts'],
   },
