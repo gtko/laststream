@@ -78,6 +78,16 @@ async function hydrateCard(card) {
     } else {
       const s = await seasonEpisodes(id, season);
       ep = (s.episodes || []).find((x) => x.episode_number === episode);
+      // Épisode suggéré par le serveur (dernier vu + 1) au-delà de la fin de saison : premier épisode de la saison suivante.
+      if (!ep && card.dataset.next === 'self' && episode > 1 && (s.episodes || []).length) {
+        const nx = await episodeAfter(id, season, episode - 1);
+        if (!nx) { removeCard(card); return; } // série terminée
+        season = nx.season;
+        ep = nx.e;
+        episode = ep.episode_number;
+        card.dataset.season = String(season);
+        card.dataset.episode = String(episode);
+      }
     }
     if (!ep || !card.isConnected) return;
     const code = 'S' + season + ' · É' + episode + (placeholder(ep.name) ? '' : ' · ' + ep.name);
