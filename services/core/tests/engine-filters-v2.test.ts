@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bitrateMbps, filterCandidates, limitPerResolution } from '../src/engine/filter.js';
 import type { ContentMeta } from '../src/engine/types.js';
 import { cand, cfg, GB, titles } from './engine-fixtures.js';
@@ -345,5 +345,34 @@ describe('filterCandidates : réglages cumulés', () => {
       meta,
     );
     expect(titles(result)).toEqual(['ok']);
+  });
+});
+
+describe('filterCandidates : sortie du jour au fuseau de diffusion', () => {
+  const candidates = [cand({ raw: { title: 'x' } })];
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('épisode : fenêtre de 14 jours avant la diffusion (jour de Paris inclus), au-delà masqué', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z'));
+    const episode: ContentMeta = { releaseDate: '2026-11-01', releaseWindowDays: 14 };
+    expect(filterCandidates(candidates, cfg({}), episode)).toHaveLength(1);
+    expect(filterCandidates(candidates, cfg({}), { ...episode, releaseDate: '2026-11-02' })).toEqual([]);
+  });
+
+  it('film : sans fenêtre, une sortie à venir reste masquée jusqu’à son jour', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T10:00:00Z'));
+    expect(filterCandidates(candidates, cfg({}), { releaseDate: '2026-10-19' })).toEqual([]);
+    expect(filterCandidates(candidates, cfg({}), { releaseDate: '2026-10-18' })).toHaveLength(1);
+  });
+
+  it('épisode diffusé aujourd’hui à Paris (01 h 03 le 19, 23 h 03 UTC la veille) : gardé', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-18T23:03:00Z'));
+    expect(filterCandidates(candidates, cfg({}), { releaseDate: '2026-10-19' })).toHaveLength(1);
   });
 });
