@@ -387,12 +387,15 @@ async function loadSeasons() {
 async function ensureEpisodes(season, reveal) {
   const p = P;
   if (!p || p.req.type !== 'tv') return;
+  // « Chargement… » dès l'ouverture, y compris pendant la liste canonique des saisons.
+  if (!p.seasons.length) { p.episodesLoading = true; p.episodesError = false; ui.refreshPanel(); }
   await loadSeasons();
   if (P !== p) return;
   const s = season ?? p.cur.season ?? 1;
   p.panelSeason = s;
   if (!p.episodes.has(s)) {
     p.episodesLoading = true;
+    p.episodesError = false;
     ui.refreshPanel();
     try {
       const d = await tmdb('tv/' + p.req.id + '/season/' + s);
@@ -402,9 +405,9 @@ async function ensureEpisodes(season, reveal) {
         episode: e.episode_number, name: e.name || '', runtime: e.runtime || null, overview: e.overview || '', still: IMG('w300', e.still_path),
         airDate: e.air_date || '', aired: !e.air_date || e.air_date <= today,
       })));
-    } catch (_) { if (P === p) p.episodes.set(s, []); }
+    } catch (_) { if (P === p) p.episodesError = true; } // pas mis en cache : rouvrir le panneau réessaie
     if (P === p) p.episodesLoading = false;
-  }
+  } else p.episodesLoading = false;
   if (P !== p) return;
   ui.setHeading(...headingFor(p));
   updatePauseScreen();
@@ -1244,7 +1247,7 @@ function panelData(name) {
       return { ...e, watched: userStore.isWatched(p.req.key, s, e.episode), progress: pr && pr.duration ? pr.position / pr.duration : 0 };
     });
     return {
-      seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, current: p.cur, query: p.epQuery,
+      seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, error: !!p.episodesError, current: p.cur, query: p.epQuery,
       logo: p.meta.logo, title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
     };
   }

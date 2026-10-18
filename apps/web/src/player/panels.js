@@ -96,7 +96,7 @@ export function episodesHtml(d) {
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
       (ep.aired ? '<span class="lp-ep-actions"><button type="button" class="lp-chip" data-act="ep-seen" data-season="' + d.season + '" data-episode="' + ep.episode + '" data-seen="' + (ep.watched ? '0' : '1') + '">' + (ep.watched ? 'Marquer non vu' : 'Marquer vu') + '</button></span>' : '') +
       '</div>';
-  }).join('') + (!d.loading && !d.episodes.length ? '<p class="lp-empty">Aucun épisode' + (d.query ? ' ne correspond à « ' + esc(d.query) + ' »' : '') + '.</p>' : '');
+  }).join('') + (!d.loading && !d.episodes.length && d.error ? '<p class="lp-empty">Impossible de charger les épisodes. Change de saison ou rouvre le panneau pour réessayer.</p>' : '') + (!d.loading && !d.episodes.length && !d.error ? '<p class="lp-empty">Aucun épisode' + (d.query ? ' ne correspond à « ' + esc(d.query) + ' »' : '') + '.</p>' : '');
   const seasons = d.seasons.map((s) => s.season);
   const i = seasons.indexOf(d.season);
   return head('Épisodes') +
