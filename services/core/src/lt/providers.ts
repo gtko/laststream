@@ -3,7 +3,7 @@ import { getJson, keyDigest, LtError, type LtContext, recordAt, TTL, type TvdbVe
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/';
 /** Chemins TMDB autorisés (liste blanche du prototype). */
-const TMDB_PATH = /^(trending|movie|tv|discover|search|collection|watch|person|find)(\/[a-z0-9_-]+)*$/;
+const TMDB_PATH = /^(trending|movie|tv|discover|search|collection|watch|person|find|list)(\/[a-z0-9_-]+)*$/;
 /** Paramètres TMDB acceptés depuis l'extérieur. Tout autre paramètre est ignoré. */
 const TMDB_PUBLIC_PARAMS: ReadonlySet<string> = new Set([
   'language',
