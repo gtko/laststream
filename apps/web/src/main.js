@@ -3,6 +3,7 @@
  * ?still désactive les aperçus vidéo. */
 import './styles/styles.css';
 import './styles/app.css';
+import './styles/search.css';
 import './styles/player.css';
 import './styles/player-ui.css';
 import './styles/player-panels.css';
