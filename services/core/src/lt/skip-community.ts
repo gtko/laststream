@@ -1,6 +1,7 @@
 import type { Config } from '../config/schema.js';
 import { isRecord } from '../sources/http.js';
-import { type AutoSegment, type CommunityKind, type CommunitySegment, type Proposal, type SkipSegmentStore } from '../user/skip-segments.js';
+import type { SkipRepo } from '../user/repo.js';
+import type { AutoSegment, CommunityKind, CommunitySegment, Proposal } from '../user/skip-segments.js';
 import type { AutoDetector } from './detect/index.js';
 import { seriesEpisodes, type SeriesEpisode } from './episodes.js';
 import { LtError, type LtContext, ltRequest, TTL } from './context.js';
@@ -65,8 +66,6 @@ export interface SkipCommunity {
   resolve(services: Services, target: SkipTarget): Promise<SkipResponse>;
   /** Enregistre une proposition, ou un vote négatif sur les propositions qu'il vise. */
   submit(services: Services, body: Record<string, unknown>): Promise<{ applied: number }>;
-  /** Ferme la base communautaire si elle a été ouverte. */
-  close(): void;
 }
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -150,15 +149,11 @@ async function tmdbIdOf(ctx: LtContext, token: string, imdbId: string): Promise<
 }
 
 /**
- * Segments communautaires et déduits. Le store s'ouvre au premier besoin ; `openStore` fournit la base utilisateur.
+ * Segments communautaires et déduits. `store` fournit les segments de la base utilisateur (ouverte au premier besoin).
  * Les propositions incrémentent un compteur par saison : la déduction (cache 7 j) est recalculée après tout ajout.
  */
-export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegmentStore, detector?: AutoDetector): SkipCommunity {
-  let store: SkipSegmentStore | undefined;
-  const db = (): SkipSegmentStore => {
-    store ??= openStore();
-    return store;
-  };
+export function createSkipCommunity(ctx: LtContext, store: () => SkipRepo, detector?: AutoDetector): SkipCommunity {
+  const db = store;
   const seasonKey = (imdbId: string, season: number): string => `${imdbId}:${season}`;
   const seasonEpochs = new Map<string, number>();
   const epochOf = (imdbId: string, season: number): number => seasonEpochs.get(seasonKey(imdbId, season)) ?? 0;
@@ -237,7 +232,7 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
     const season = episodes.filter((episode) => episode.season === target.season);
     const own = season.find((episode) => episode.episode === target.episode);
     const targetDuration =
-      secondsOf(own?.runtime) ?? externalLength ?? db().durationOf(imdbId, target.season, target.episode);
+      secondsOf(own?.runtime) ?? externalLength ?? (await db().durationOf(imdbId, target.season, target.episode));
     const siblings = season
       .filter((episode) => episode.episode !== target.episode)
       .sort(
@@ -257,9 +252,9 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
           const segments =
             external.segments.length > 0
               ? external.segments
-              : db().segmentsFor(imdbId, target.season, sibling.episode).map(communityToSegment);
+              : (await db().segmentsFor(imdbId, target.season, sibling.episode)).map(communityToSegment);
           const duration =
-            secondsOf(sibling.runtime) ?? external.episodeLength ?? db().durationOf(imdbId, target.season, sibling.episode);
+            secondsOf(sibling.runtime) ?? external.episodeLength ?? (await db().durationOf(imdbId, target.season, sibling.episode));
           return { episode: sibling.episode, segments, duration };
         } catch (err) {
           console.warn(`[lt][skip] épisode voisin indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
@@ -303,9 +298,8 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
 
   async function resolve(services: Services, target: SkipTarget): Promise<SkipResponse> {
     const external = await skipSegments(ctx, services, target);
-    const community = db().segmentsFor(target.imdbId, target.season, target.episode).map(communityToSegment);
-    const auto = db()
-      .autoSegmentsFor(target.imdbId, target.season, target.episode)
+    const community = (await db().segmentsFor(target.imdbId, target.season, target.episode)).map(communityToSegment);
+    const auto = (await db().autoSegmentsFor(target.imdbId, target.season, target.episode))
       .sort((a, b) => b.confidence - a.confidence)
       .map(autoToSegment);
     const lacks = (layers: SkipSegment[][]): boolean =>
@@ -334,9 +328,9 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
     };
     let applied: number;
     if (sub.negative) {
-      applied = db().dispute(proposal);
+      applied = await db().dispute(proposal);
     } else {
-      db().propose(proposal, new Date().toISOString());
+      await db().propose(proposal, new Date().toISOString());
       applied = 1;
     }
     if (applied > 0) seasonEpochs.set(seasonKey(target.imdbId, target.season), epochOf(target.imdbId, target.season) + 1);
@@ -345,12 +339,5 @@ export function createSkipCommunity(ctx: LtContext, openStore: () => SkipSegment
     return { applied };
   }
 
-  return {
-    resolve,
-    submit,
-    close: () => {
-      store?.close();
-      store = undefined;
-    },
-  };
+  return { resolve, submit };
 }

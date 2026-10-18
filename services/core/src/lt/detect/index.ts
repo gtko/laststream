@@ -1,10 +1,10 @@
-import type { SkipSegmentStore } from '../../user/skip-segments.js';
+import type { SkipRepo } from '../../user/repo.js';
 import type { SkipTarget } from '../skip.js';
 import { analyzeEpisode, type AnalyzeDeps, type EpisodeRef, type Outcome } from './analyze.js';
 import { defaultLocalPolicy, type LocalUrlPolicy } from './media-url.js';
 import { locateTools, type MediaTools } from './tools.js';
 
-export { validateMediaUrl } from './media-url.js';
+export { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './media-url.js';
 
 /** Débit maximal : jobs démarrés par minute. */
 export const MAX_JOBS_PER_MINUTE = 2;
@@ -16,10 +16,6 @@ const MAX_MEDIA = 500;
 const MAX_QUEUE = 20;
 /** Délai avant de réanalyser un épisode dont la dernière analyse n'a rien donné. */
 const RETRY_AFTER_MS = 6 * 3600e3;
-/** Durée plausible d'un épisode ou d'un film rapporté (secondes). */
-export const MIN_REPORT_DURATION = 60;
-export const MAX_REPORT_DURATION = 86_400;
-
 export interface AutoDetectOptions {
   /** Binaires ffmpeg/ffprobe (tests) ; sinon localisés à la demande. */
   tools?: MediaTools | (() => Promise<MediaTools | undefined>);
@@ -72,7 +68,7 @@ const seasonOf = (imdbId: string, season: number): string => `${imdbId}:${season
  * File d'analyse en arrière-plan : un job à la fois, au plus MAX_JOBS_PER_MINUTE démarrages par minute. Les URL de
  * média rapportées restent en mémoire seulement (jamais en base, jamais dans les journaux).
  */
-export function createAutoDetector(openStore: () => SkipSegmentStore, options: AutoDetectOptions = {}): AutoDetector {
+export function createAutoDetector(openStore: () => SkipRepo, options: AutoDetectOptions = {}): AutoDetector {
   const now = options.now ?? (() => new Date());
   const allowLocal = options.allowLocal ?? defaultLocalPolicy;
   const media = new Map<string, Known>();
@@ -119,9 +115,9 @@ export function createAutoDetector(openStore: () => SkipSegmentStore, options: A
     return found.sort((a, b) => Math.abs(a.episode - job.episode) - Math.abs(b.episode - job.episode) || a.episode - b.episode);
   };
 
-  const complete = (store: SkipSegmentStore, job: Report): boolean => {
+  const complete = async (store: SkipRepo, job: Report): Promise<boolean> => {
     const { imdbId, season, episode } = job.target;
-    const saved = store.autoSegmentsFor(imdbId, season, episode);
+    const saved = await store.autoSegmentsFor(imdbId, season, episode);
     if (saved.some((segment) => segment.method === 'chapters' && (segment.kind === 'intro' || segment.kind === 'credits'))) return true;
     const has = (kind: string): boolean => saved.some((segment) => segment.kind === kind && segment.method === 'fingerprint');
     return has('intro') && has('credits');
@@ -173,7 +169,7 @@ export function createAutoDetector(openStore: () => SkipSegmentStore, options: A
     remember(imdbId, season, episode, { url: input.url, duration: input.duration, at: time });
     if ((await loadTools()) === undefined) return { queued: false, reason: 'no_ffmpeg' };
     if (active.has(key)) return { queued: true };
-    if (complete(openStore(), input)) return { queued: false, reason: 'known' };
+    if (await complete(openStore(), input)) return { queued: false, reason: 'known' };
     const last = attempts.get(key);
     const job: EpisodeRef = { imdbId, season, episode, type, url: input.url, duration: input.duration };
     if (last !== undefined) {

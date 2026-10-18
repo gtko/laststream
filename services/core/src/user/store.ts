@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDb } from './sql.js';
 
 export type MediaType = 'movie' | 'series';
 export const KID_MAX_AGES = [10, 12, 16, 18] as const;
@@ -323,18 +323,10 @@ function toProgressItem(row: ProgressRow): ProgressItem {
  * leur empreinte.
  */
 export class UserStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SqlDb) {}
 
   transaction<T>(work: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
+    return this.db.transaction(work);
   }
 
   /** Ferme la base (fichier libéré). Ne plus utiliser le store ensuite. */
@@ -497,8 +489,18 @@ export class UserStore {
       );
   }
 
-  /** Champs modifiables hors PIN (le PIN passe par setPin). */
-  updateProfile(accountId: string, profileId: string, fields: ProfileEditableFields): void {
+  /**
+   * Champs modifiables ; le PIN (haché, `null` pour le retirer) n'est touché que s'il est fourni, dans la même
+   * transaction (voir setPin).
+   */
+  updateProfile(accountId: string, profileId: string, fields: ProfileEditableFields, pinHash?: string | null): void {
+    this.transaction(() => {
+      this.updateProfileFields(accountId, profileId, fields);
+      if (pinHash !== undefined) this.setPin(accountId, profileId, pinHash);
+    });
+  }
+
+  private updateProfileFields(accountId: string, profileId: string, fields: ProfileEditableFields): void {
     this.db
       .prepare(
         `UPDATE profiles SET name = ?, avatar_color = ?, is_kid = ?, kid_max_age = ?, allowed_catalogs = ?
@@ -568,6 +570,14 @@ export class UserStore {
   }
 
   // Bibliothèque
+
+  /** Import en bloc (bibliothèque et progression) en une seule transaction. */
+  importMany(library: readonly LibraryWrite[], progress: readonly ProgressWrite[]): void {
+    this.transaction(() => {
+      for (const write of library) this.upsertLibraryItem(write);
+      for (const write of progress) this.upsertProgress(write);
+    });
+  }
 
   listLibrary(profileId: string, type: MediaType | undefined, sort: LibrarySort): LibraryItem[] {
     const order = sort === 'title' ? 'title COLLATE NOCASE, title_ref' : 'added_at DESC, title_ref';

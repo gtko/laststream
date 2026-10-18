@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDb } from './sql.js';
 
 /** Migration versionnée. Les versions appliquées sont tracées dans `schema_migrations`. */
 export interface Migration {
@@ -198,7 +198,7 @@ export const MIGRATIONS: readonly Migration[] = [
  * Applique les migrations en attente, chacune dans sa propre transaction. Refuse une base plus récente que le code
  * (version inconnue) plutôt que de risquer une corruption.
  */
-export function migrate(db: DatabaseSync, migrations: readonly Migration[] = MIGRATIONS): void {
+export function migrate(db: SqlDb, migrations: readonly Migration[] = MIGRATIONS): void {
   db.exec(
     'CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)',
   );
@@ -209,18 +209,13 @@ export function migrate(db: DatabaseSync, migrations: readonly Migration[] = MIG
   }
   for (const migration of [...migrations].sort((a, b) => a.version - b.version)) {
     if (applied.has(migration.version)) continue;
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    db.transaction(() => {
       db.exec(migration.sql);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         migration.version,
         migration.name,
         new Date().toISOString(),
       );
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    });
   }
 }

@@ -10,7 +10,6 @@ import type { AppDeps } from '../deps.js';
 import { createLtContext, type LtContext } from '../lt/context.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { isRecord } from '../sources/http.js';
-import { openUserDb, userDbPath } from './db.js';
 import {
   generateSessionToken,
   hashSecret,
@@ -21,6 +20,7 @@ import {
   verifySecret,
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
+import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
 import {
   type Account,
@@ -32,7 +32,6 @@ import {
   type ProfileRecord,
   publicProfile,
   titleRef,
-  UserStore,
 } from './store.js';
 import {
   createProfileSchema,
@@ -98,17 +97,17 @@ interface Session {
 }
 
 /** Session valide de la requête (jeton Bearer), ou 401. */
-function sessionOf(store: UserStore, c: Ctx): Session {
+async function sessionOf(store: UserRepo, c: Ctx): Promise<Session> {
   const token = bearerToken(c);
   if (token === undefined) throw new UserApiError(401, 'unauthorized');
   const tokenHash = hashSessionToken(token);
-  const account = store.accountForSession(tokenHash, nowIso());
+  const account = await store.accountForSession(tokenHash, nowIso());
   if (account === undefined) throw new UserApiError(401, 'unauthorized');
   return { tokenHash, account };
 }
 
-function profileOf(store: UserStore, account: Account, c: Ctx): ProfileRecord {
-  const profile = store.findProfile(account.id, String(c.req.param('id')));
+async function profileOf(store: UserRepo, account: Account, c: Ctx): Promise<ProfileRecord> {
+  const profile = await store.findProfile(account.id, String(c.req.param('id')));
   if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
   return profile;
 }
@@ -121,9 +120,9 @@ interface Scope extends Session {
  * Session et profil de la requête. Si `unlock` et que le profil a un PIN, un jeton de profil valide est exigé
  * (en-tête X-Profile-Token) : lié à cette session et à la version courante du PIN, sinon 403 pin_required.
  */
-function scopeOf(store: UserStore, c: Ctx, secret: string, unlock: boolean): Scope {
-  const session = sessionOf(store, c);
-  const profile = profileOf(store, session.account, c);
+async function scopeOf(store: UserRepo, c: Ctx, secret: string, unlock: boolean): Promise<Scope> {
+  const session = await sessionOf(store, c);
+  const profile = await profileOf(store, session.account, c);
   if (unlock && profile.hasPin) {
     const token = c.req.header('x-profile-token');
     const valid =
@@ -172,7 +171,7 @@ function settingsEntries(body: unknown): [string, unknown][] {
   if (entries.length > MAX_SETTINGS_PER_WRITE) throw new UserApiError(400, 'invalid_body', ['(racine):trop_de_cles']);
   for (const [key, value] of entries) {
     if (!SETTING_KEY.test(key)) throw new UserApiError(400, 'invalid_body', ['cle:invalide']);
-    if (value !== null && Buffer.byteLength(JSON.stringify(value), 'utf8') > MAX_SETTING_BYTES) {
+    if (value !== null && new TextEncoder().encode(JSON.stringify(value)).byteLength > MAX_SETTING_BYTES) {
       throw new UserApiError(400, 'invalid_body', ['valeur:trop_grande']);
     }
   }
@@ -199,15 +198,11 @@ const userErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
 };
 
 /**
- * API des données utilisateur, montée sous /user. La base SQLite s'ouvre au premier appel (pas au démarrage) :
- * une application sans routes /user n'écrit jamais de fichier. Renvoie la fermeture de la base.
+ * API des données utilisateur, montée sous /user. Les données passent par `backend` (SQLite local sous Node, Durable
+ * Object sous Workers), ouvert au premier appel : une application sans appel /user n'écrit jamais de fichier.
  */
-export function registerUserRoutes(app: App, deps: AppDeps): () => void {
-  let store: UserStore | undefined;
-  const db = (): UserStore => {
-    if (store === undefined) store = new UserStore(openUserDb(deps.userDbPath ?? userDbPath()));
-    return store;
-  };
+export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend): void {
+  const db = (): UserRepo => backend.users();
   const ctx: LtContext = createLtContext(deps);
   const limits = { ...DEFAULT_LIMITS, ...deps.userRateLimits };
   const limiters = {
@@ -250,7 +245,7 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     const body = parseWith(credentialsSchema, c.get('body'));
     const users = db();
     const allowSignup = isSignupAllowed();
-    const isFirst = users.countAccounts() === 0;
+    const isFirst = await users.countAccounts() === 0;
     if (!isFirst && !allowSignup) throw new UserApiError(403, 'signup_disabled');
     // Premier compte : jeton d'amorçage exigé si LASTADDON_BOOTSTRAP_TOKEN est défini.
     const required = bootstrapToken();
@@ -258,7 +253,7 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
       throw new UserApiError(403, 'bootstrap_token_invalid');
     }
     const passwordHash = await hashSecret(body.password);
-    const result = users.createAccount({ username: body.username, passwordHash, allowSignup, now: nowIso() });
+    const result = await users.createAccount({ username: body.username, passwordHash, allowSignup, now: nowIso() });
     if (!result.ok) throw new UserApiError(result.reason === 'username_taken' ? 409 : 403, result.reason);
     return sendJson(c, { account: result.account }, 201);
   });
@@ -268,79 +263,79 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     const byUser = loginByUsername(body.username);
     if (!byUser.allowed) throw new UserApiError(429, 'rate_limited', undefined, byUser.retryAfterSec);
     const users = db();
-    const record = users.findAccountRecord(body.username);
+    const record = await users.findAccountRecord(body.username);
     // Même coût de calcul que pour un compte existant : le délai ne révèle pas si le nom existe.
     if (record === undefined) await hashSecret(body.password);
     const valid = record !== undefined && (await verifySecret(body.password, record.passwordHash));
     if (record === undefined || !valid) throw new UserApiError(401, 'invalid_credentials');
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt);
+    await users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt);
     return sendJson(c, { token, expiresAt });
   });
 
-  router.post('/refresh', (c) => {
+  router.post('/refresh', async (c) => {
     const users = db();
-    const session = sessionOf(users, c);
+    const session = await sessionOf(users, c);
     const token = generateSessionToken();
     const now = nowIso();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    const rotated = users.rotateSession(session.tokenHash, hashSessionToken(token), session.account.id, now, expiresAt);
+    const rotated = await users.rotateSession(session.tokenHash, hashSessionToken(token), session.account.id, now, expiresAt);
     if (!rotated) throw new UserApiError(401, 'unauthorized');
     return sendJson(c, { token, expiresAt });
   });
 
-  router.post('/logout', (c) => {
+  router.post('/logout', async (c) => {
     const users = db();
-    users.deleteSession(sessionOf(users, c).tokenHash);
+    await users.deleteSession((await sessionOf(users, c)).tokenHash);
     return sendEmpty(c, 204);
   });
 
-  router.post('/logout-all', (c) => {
+  router.post('/logout-all', async (c) => {
     const users = db();
-    users.deleteAllSessions(sessionOf(users, c).account.id);
+    await users.deleteAllSessions((await sessionOf(users, c)).account.id);
     return sendEmpty(c, 204);
   });
 
-  router.get('/me', (c) => {
-    return sendJson(c, { account: sessionOf(db(), c).account });
+  router.get('/me', async (c) => {
+    return sendJson(c, { account: (await sessionOf(db(), c)).account });
   });
 
   /** Change le mot de passe ; révoque les autres sessions. Le mot de passe actuel est exigé. */
   router.post('/password', async (c) => {
     const users = db();
-    const session = sessionOf(users, c);
+    const session = await sessionOf(users, c);
     const body = parseWith(passwordChangeSchema, c.get('body'));
-    const record = users.accountRecordById(session.account.id);
+    const record = await users.accountRecordById(session.account.id);
     if (record === undefined || !(await verifySecret(body.current, record.passwordHash))) {
       throw new UserApiError(403, 'invalid_password');
     }
-    users.changePassword(session.account.id, await hashSecret(body.next), session.tokenHash);
+    await users.changePassword(session.account.id, await hashSecret(body.next), session.tokenHash);
     return sendEmpty(c, 204);
   });
 
   /** Supprime le compte et toutes ses données. Le mot de passe est exigé. */
   router.delete('/account', async (c) => {
     const users = db();
-    const session = sessionOf(users, c);
+    const session = await sessionOf(users, c);
     const body = parseWith(deleteAccountSchema, c.get('body'));
-    const record = users.accountRecordById(session.account.id);
+    const record = await users.accountRecordById(session.account.id);
     if (record === undefined || !(await verifySecret(body.password, record.passwordHash))) {
       throw new UserApiError(403, 'invalid_password');
     }
-    users.deleteAccount(session.account.id);
+    await users.deleteAccount(session.account.id);
     return sendEmpty(c, 204);
   });
 
   // Profils
 
-  router.get('/profiles', (c) => {
-    const { account } = sessionOf(db(), c);
-    return sendJson(c, { profiles: db().listProfiles(account.id).map(publicProfile) });
+  router.get('/profiles', async (c) => {
+    const { account } = await sessionOf(db(), c);
+    return sendJson(c, { profiles: (await db().listProfiles(account.id)).map(publicProfile) });
   });
 
   router.post('/profiles', async (c) => {
-    const { account } = sessionOf(db(), c);
+    const { account } = await sessionOf(db(), c);
     const body = parseWith(createProfileSchema, c.get('body'));
     const isKid = body.isKid;
     const fields: ProfileFields = {
@@ -352,15 +347,15 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
       allowedCatalogs: body.allowedCatalogs,
     };
     const profileId = randomUUID();
-    db().insertProfile(account.id, profileId, fields, nowIso());
-    const created = db().findProfile(account.id, profileId);
+    await db().insertProfile(account.id, profileId, fields, nowIso());
+    const created = await db().findProfile(account.id, profileId);
     if (created === undefined) throw new Error('profil introuvable après création');
     return sendJson(c, publicProfile(created), 201);
   });
 
   router.patch('/profiles/:id', async (c) => {
     const users = db();
-    const { account, profile } = scopeOf(users, c, deps.secret, true);
+    const { account, profile } = await scopeOf(users, c, deps.secret, true);
     const patch = parseWith(updateProfileSchema, c.get('body'));
     const isKid = patch.isKid ?? profile.isKid;
     const fields: ProfileEditableFields = {
@@ -371,19 +366,16 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
       allowedCatalogs: patch.allowedCatalogs ?? profile.allowedCatalogs,
     };
     const newPinHash = patch.pin === undefined ? undefined : patch.pin === null ? null : await hashSecret(patch.pin);
-    users.transaction(() => {
-      users.updateProfile(account.id, profile.id, fields);
-      if (newPinHash !== undefined) users.setPin(account.id, profile.id, newPinHash);
-    });
-    const updated = users.findProfile(account.id, profile.id);
+    await users.updateProfile(account.id, profile.id, fields, newPinHash);
+    const updated = await users.findProfile(account.id, profile.id);
     if (updated === undefined) throw new Error('profil introuvable après mise à jour');
     return sendJson(c, publicProfile(updated));
   });
 
-  router.delete('/profiles/:id', (c) => {
+  router.delete('/profiles/:id', async (c) => {
     const users = db();
-    const { account, profile } = scopeOf(users, c, deps.secret, true);
-    users.deleteProfile(account.id, profile.id);
+    const { account, profile } = await scopeOf(users, c, deps.secret, true);
+    await users.deleteProfile(account.id, profile.id);
     return sendEmpty(c, 204);
   });
 
@@ -393,11 +385,11 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
    */
   router.post('/profiles/:id/unlock', async (c) => {
     const users = db();
-    const { account, profile, tokenHash } = scopeOf(users, c, deps.secret, false);
+    const { account, profile, tokenHash } = await scopeOf(users, c, deps.secret, false);
     const { pin } = parseWith(pinSchema, c.get('body'));
     const pinHash = profile.pinHash;
     if (pinHash === null) throw new UserApiError(409, 'pin_not_set');
-    const blockedUntil = users.reservePinAttempt(
+    const blockedUntil = await users.reservePinAttempt(
       profile.id,
       nowIso(),
       new Date(Date.now() + PIN_LOCK_MS).toISOString(),
@@ -405,11 +397,11 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     );
     if (blockedUntil !== null) throw pinLocked(blockedUntil);
     if (await verifySecret(pin, pinHash)) {
-      users.resetPinAttempts(profile.id);
+      await users.resetPinAttempts(profile.id);
       const claims = { accountId: account.id, profileId: profile.id, sessionHash: tokenHash, pinVersion: profile.pinVersion };
       return sendJson(c, signProfileToken(claims, Date.now(), deps.secret));
     }
-    const lockedNow = users.pinLockedUntil(profile.id, nowIso());
+    const lockedNow = await users.pinLockedUntil(profile.id, nowIso());
     if (lockedNow !== null) throw pinLocked(lockedNow);
     throw new UserApiError(403, 'invalid_pin');
   });
@@ -418,28 +410,28 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
    * Verrouillage explicite, appelé par le client au changement de profil. Sans effet côté serveur : le jeton reste
    * valable jusqu'à déconnexion, changement de PIN ou expiration. Le profil doit appartenir au compte.
    */
-  router.post('/profiles/:id/lock', (c) => {
-    scopeOf(db(), c, deps.secret, false);
+  router.post('/profiles/:id/lock', async (c) => {
+    await scopeOf(db(), c, deps.secret, false);
     return sendEmpty(c, 204);
   });
 
   // Bibliothèque
 
-  router.get('/profiles/:id/library', (c) => {
+  router.get('/profiles/:id/library', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const query = parseWith(librarySortSchema, queryParams(c));
-    return sendJson(c, { items: users.listLibrary(profile.id, query.type, query.sort) });
+    return sendJson(c, { items: await users.listLibrary(profile.id, query.type, query.sort) });
   });
 
-  router.put('/profiles/:id/library/:type/:itemId', (c) => {
+  router.put('/profiles/:id/library/:type/:itemId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const itemId = parseWith(titleIdParam, c.req.param('itemId'));
     const body = parseWith(libraryWriteSchema, c.get('body'));
     const key = titleKey(itemId, body.imdbId);
-    users.upsertLibraryItem({
+    await users.upsertLibraryItem({
       profileId: profile.id,
       type,
       tmdbId: key.tmdbId,
@@ -451,24 +443,24 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     return sendEmpty(c, 204);
   });
 
-  router.delete('/profiles/:id/library/:type/:itemId', (c) => {
+  router.delete('/profiles/:id/library/:type/:itemId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const itemId = parseWith(titleIdParam, c.req.param('itemId'));
     const key = titleKey(itemId, undefined);
-    users.removeLibraryItem(profile.id, type, titleRef(key.tmdbId, key.imdbId));
+    await users.removeLibraryItem(profile.id, type, titleRef(key.tmdbId, key.imdbId));
     return sendEmpty(c, 204);
   });
 
   // Progression
 
-  router.put('/profiles/:id/progress', (c) => {
+  router.put('/profiles/:id/progress', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const normalized = normalizeProgress(parseWith(progressWriteSchema, c.get('body')));
-    users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso() });
-    const saved = users.progressEpisode(
+    await users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso() });
+    const saved = await users.progressEpisode(
       profile.id,
       normalized.type,
       titleRef(normalized.tmdbId, normalized.imdbId),
@@ -479,37 +471,37 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     return sendJson(c, { item: toProgressDto(saved) });
   });
 
-  router.get('/profiles/:id/continue', (c) => {
+  router.get('/profiles/:id/continue', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
-    const hidden = users.hiddenContinue(profile.id);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
+    const hidden = await users.hiddenContinue(profile.id);
     // Un titre masqué ne revient que si sa progression la plus récente est postérieure au masquage.
-    const latest = users.latestProgressPerTitle(profile.id).filter((row) => {
+    const latest = (await users.latestProgressPerTitle(profile.id)).filter((row) => {
       const hiddenAt = hidden.get(`${row.type}|${row.titleRef}`);
       return hiddenAt === undefined || row.updatedAt > hiddenAt;
     });
-    const items = continueWatching(latest, (type, ref, season, episode) =>
+    const items = await continueWatching(latest, (type, ref, season, episode) =>
       users.progressEpisode(profile.id, type, ref, season, episode),
     );
     return sendJson(c, { items });
   });
 
   /** Masque un titre de « continuer à regarder » sans toucher à la progression ni aux vus. Il réapparaît à la prochaine progression. */
-  router.delete('/profiles/:id/continue/:type/:tmdbId', (c) => {
+  router.delete('/profiles/:id/continue/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
-    users.hideContinue(profile.id, type, titleRef(tmdbId, null), nowIso());
+    await users.hideContinue(profile.id, type, titleRef(tmdbId, null), nowIso());
     return sendEmpty(c, 204);
   });
 
-  router.get('/profiles/:id/progress/:type/:tmdbId', (c) => {
+  router.get('/profiles/:id/progress/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
-    const items = users.progressForTitle(profile.id, type, `tmdb:${tmdbId}`);
+    const items = await users.progressForTitle(profile.id, type, `tmdb:${tmdbId}`);
     return sendJson(c, { items: items.map(toProgressDto) });
   });
 
@@ -517,11 +509,11 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
    * Vu / non vu : un film (saison et épisode à 0) ou des épisodes listés. Les épisodes non listés ne sont jamais
    * touchés ; la saison 0 (spéciaux) n'est écrite que si elle figure explicitement dans `episodes`.
    */
-  router.put('/profiles/:id/watched', (c) => {
+  router.put('/profiles/:id/watched', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const body = parseWith(watchedWriteSchema, c.get('body'));
-    users.setWatched({
+    await users.setWatched({
       profileId: profile.id,
       type: body.type,
       tmdbId: body.tmdbId ?? null,
@@ -534,12 +526,12 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
   });
 
   /** `{ movie }` pour un film ; `{ episodes }` pour une série (épisodes avec progression, vus ou en cours). */
-  router.get('/profiles/:id/watched/:type/:tmdbId', (c) => {
+  router.get('/profiles/:id/watched/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
-    const rows = users.progressForTitle(profile.id, type, titleRef(tmdbId, null));
+    const rows = await users.progressForTitle(profile.id, type, titleRef(tmdbId, null));
     if (type === 'movie') {
       return sendJson(c, { movie: rows.some((row) => row.finished) });
     }
@@ -556,19 +548,19 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
 
   // Suivis
 
-  router.get('/profiles/:id/follows', (c) => {
+  router.get('/profiles/:id/follows', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
-    return sendJson(c, { items: users.listFollows(profile.id) });
+    const { profile } = await scopeOf(users, c, deps.secret, true);
+    return sendJson(c, { items: await users.listFollows(profile.id) });
   });
 
-  router.put('/profiles/:id/follows/:type/:tmdbId', (c) => {
+  router.put('/profiles/:id/follows/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: FollowType = parseWith(followTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
     const body = parseWith(followWriteSchema, c.get('body'));
-    users.upsertFollow({
+    await users.upsertFollow({
       profileId: profile.id,
       type,
       tmdbId,
@@ -581,31 +573,31 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     return sendEmpty(c, 204);
   });
 
-  router.delete('/profiles/:id/follows/:type/:tmdbId', (c) => {
+  router.delete('/profiles/:id/follows/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: FollowType = parseWith(followTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
-    users.removeFollow(profile.id, type, titleRef(tmdbId, null));
+    await users.removeFollow(profile.id, type, titleRef(tmdbId, null));
     return sendEmpty(c, 204);
   });
 
   // Notes sur 5 (demi-étoiles)
 
-  router.get('/profiles/:id/ratings', (c) => {
+  router.get('/profiles/:id/ratings', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const query = parseWith(ratingsQuerySchema, queryParams(c));
-    return sendJson(c, { items: users.listRatings(profile.id, query.type) });
+    return sendJson(c, { items: await users.listRatings(profile.id, query.type) });
   });
 
-  router.put('/profiles/:id/ratings/:type/:tmdbId', (c) => {
+  router.put('/profiles/:id/ratings/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
     const body = parseWith(ratingWriteSchema, c.get('body'));
-    users.upsertRating({
+    await users.upsertRating({
       profileId: profile.id,
       type,
       tmdbId,
@@ -617,35 +609,35 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
     return sendEmpty(c, 204);
   });
 
-  router.delete('/profiles/:id/ratings/:type/:tmdbId', (c) => {
+  router.delete('/profiles/:id/ratings/:type/:tmdbId', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const type: MediaType = parseWith(mediaTypeSchema, c.req.param('type'));
     const tmdbId = parseWith(tmdbIdParam, c.req.param('tmdbId'));
-    users.removeRating(profile.id, type, titleRef(tmdbId, null));
+    await users.removeRating(profile.id, type, titleRef(tmdbId, null));
     return sendEmpty(c, 204);
   });
 
   // Réglages
 
-  router.get('/profiles/:id/settings', (c) => {
+  router.get('/profiles/:id/settings', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
-    return sendJson(c, { settings: users.listSettings(profile.id) });
+    const { profile } = await scopeOf(users, c, deps.secret, true);
+    return sendJson(c, { settings: await users.listSettings(profile.id) });
   });
 
-  router.put('/profiles/:id/settings', (c) => {
+  router.put('/profiles/:id/settings', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
-    users.writeSettings(profile.id, settingsEntries(c.get('body')));
-    return sendJson(c, { settings: users.listSettings(profile.id) });
+    const { profile } = await scopeOf(users, c, deps.secret, true);
+    await users.writeSettings(profile.id, settingsEntries(c.get('body')));
+    return sendJson(c, { settings: await users.listSettings(profile.id) });
   });
 
   // Import Stremio
 
   router.post('/profiles/:id/import/stremio', async (c) => {
     const users = db();
-    const { profile } = scopeOf(users, c, deps.secret, true);
+    const { profile } = await scopeOf(users, c, deps.secret, true);
     const body = parseWith(stremioImportSchema, c.get('body'));
     const tmdbToken = body.config === undefined ? undefined : tmdbTokenOf(body.config, deps.secret, deps.allowPlain);
     try {
@@ -673,8 +665,4 @@ export function registerUserRoutes(app: App, deps: AppDeps): () => void {
   router.onError(userErrorHandler);
 
   app.route(USER_MOUNT, router);
-  return () => {
-    store?.close();
-    store = undefined;
-  };
 }

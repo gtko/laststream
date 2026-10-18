@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { SqlDb } from './sql.js';
 
 /** Types de segments proposés par la communauté. Le générique de fin « credits » couvre aussi les films. */
 export const COMMUNITY_KINDS = ['intro', 'recap', 'credits', 'postcredits'] as const;
@@ -76,7 +76,7 @@ function overlapRatio(aStart: number, aEnd: number, bStart: number, bEnd: number
  * voix pour ; un vote négatif ajoute une voix contre aux propositions visibles qui se chevauchent.
  */
 export class SkipSegmentStore {
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(private readonly db: SqlDb) {}
 
   /** Ferme la base (fichier libéré). Ne plus utiliser le store ensuite. */
   close(): void {
@@ -115,15 +115,10 @@ export class SkipSegmentStore {
         overlapRatio(Number(row.start), Number(row.end), proposal.start, proposal.end) >= DISPUTE_OVERLAP,
     );
     if (hit.length === 0) return 0;
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    this.db.transaction(() => {
       const bump = this.db.prepare('UPDATE skip_segments SET votes_down = votes_down + 1 WHERE id = ?');
-      for (const row of hit) bump.run(row.id);
-      this.db.exec('COMMIT');
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
+      for (const row of hit) bump.run(row.id as number);
+    });
     return hit.length;
   }
 
@@ -165,21 +160,16 @@ export class SkipSegmentStore {
       .prepare("SELECT id, confidence FROM skip_segments WHERE imdb_id = ? AND season = ? AND episode = ? AND kind = ? AND source = 'auto'")
       .all(imdbId, season, episode, segment.kind);
     if (existing.some((row) => Number(row.confidence ?? 0) > segment.confidence)) return false;
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
+    this.db.transaction(() => {
       const drop = this.db.prepare('DELETE FROM skip_segments WHERE id = ?');
-      for (const row of existing) drop.run(row.id);
+      for (const row of existing) drop.run(row.id as number);
       this.db
         .prepare(
           `INSERT INTO skip_segments (imdb_id, season, episode, kind, "start", "end", duration, votes_up, votes_down, source, created_at, confidence, method)
            VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'auto', ?, ?, ?)`,
         )
         .run(imdbId, season, episode, segment.kind, segment.start, segment.end, duration, nowIso, segment.confidence, segment.method);
-      this.db.exec('COMMIT');
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
+    });
     return true;
   }
 

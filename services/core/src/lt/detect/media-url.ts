@@ -1,5 +1,9 @@
 import { isLiteralSafe } from '../guard.js';
 
+/** Durée plausible d'un épisode ou d'un film rapporté (secondes). */
+export const MIN_REPORT_DURATION = 60;
+export const MAX_REPORT_DURATION = 86_400;
+
 /** Longueur maximale d'une URL de média acceptée. */
 const MAX_URL_LENGTH = 4096;
 

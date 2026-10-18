@@ -12,7 +12,7 @@ import { errorHandler, etag, notFound } from './http/common.js';
 import { DEFAULT_JSON_LIMIT, jsonBody } from './http/json-body.js';
 import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
-import { registerLtRoutes } from './lt/router.js';
+import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
 import { platform, runtimeEnv } from './platform/index.js';
 import { localProwlarrStatusOf } from './sources/local-prowlarr.js';
 import { registerIndexerRoutes } from './routes/indexers.js';
@@ -169,7 +169,7 @@ function encodeInput(body: unknown, deps: AppDeps): unknown {
   return mergeSecrets(patch, previous);
 }
 
-/** Fermetures des ressources propres à une application (base des données utilisateur), par application. */
+/** Fermetures des ressources propres à une application (base des données utilisateur, services lt), par application. */
 const closers = new WeakMap<App, () => void>();
 
 /** Libère les ressources d'une application créée par createApp (tests, arrêt propre). */
@@ -240,12 +240,14 @@ export function createApp(deps: AppDeps): App {
   registerStreamRoutes(app, deps);
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
-  const closeLt = registerLtRoutes(app, deps);
+  // Une seule base de données utilisateur par application : fournie, ou créée par la plateforme au premier besoin.
+  const backend = deps.userBackend ?? platform().createUserBackend({ path: deps.userDbPath });
+  registerLtRoutes(app, deps, backend);
   registerIndexerRoutes(app, deps);
-  const closeUser = registerUserRoutes(app, deps);
+  registerUserRoutes(app, deps, backend);
   closers.set(app, () => {
-    closeLt();
-    closeUser();
+    closeLtRoutes(app);
+    backend.close();
   });
 
   const ui = deps.ui ?? (deps.uiDir === undefined ? undefined : platform().uiAssetsFromDir?.(deps.uiDir));

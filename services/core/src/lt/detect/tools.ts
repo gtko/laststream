@@ -1,7 +1,7 @@
 import { type EnvLike, runtimeEnv } from '../../platform/index.js';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { projectRoot } from '../../user/db.js';
+import { projectRoot } from '../../platform/node/paths.js';
 import { runProcess } from './proc.js';
 
 export interface MediaTools {

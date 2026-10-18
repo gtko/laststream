@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createAutoDetector } from '../src/lt/detect/index.js';
 import { runProcess } from '../src/lt/detect/proc.js';
 import { locateTools, type MediaTools } from '../src/lt/detect/tools.js';
-import { openUserDb } from '../src/user/db.js';
+import { openUserDb } from '../src/platform/node/user-db.js';
+import { type SkipRepo, asyncRepo } from '../src/user/repo.js';
 import { SkipSegmentStore } from '../src/user/skip-segments.js';
 import { episodeAudio, ffmpegSync, type FileServer, serveDir, writeChapters, writeWav } from './detect-fixtures.js';
 import { fakeLookup, json, mockUpstream, postJson, startApp, tokenFor, type RunningApp } from './lt-harness.js';
@@ -58,7 +59,7 @@ afterAll(async () => {
 const local = (url: URL): boolean => url.hostname === '127.0.0.1';
 const mediaUrl = (name: string): URL => new URL(`${server.base}/${name}?token=${TOKEN}`);
 
-function detectorFor(store: SkipSegmentStore, media: MediaTools, extra: { byteBudget?: number } = {}) {
+function detectorFor(store: SkipRepo, media: MediaTools, extra: { byteBudget?: number } = {}) {
   let clock = Date.UTC(2026, 0, 1);
   const detector = createAutoDetector(() => store, { tools: media, allowLocal: local, now: () => new Date(clock), ...extra });
   return {
@@ -79,14 +80,14 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
 
   it('1. chapitres : intro et générique exacts, confiance 0,95, aucune URL dans les journaux', async () => {
     const spies = (['log', 'warn', 'error', 'info'] as const).map((name) => vi.spyOn(console, name));
-    const store = new SkipSegmentStore(openUserDb(':memory:'));
+    const store = asyncRepo(new SkipSegmentStore(openUserDb(':memory:')));
     const { detector } = detectorFor(store, tools!);
     const result = await detector.report({ target: target('tt1000001', 1), url: mediaUrl('chapters.mkv'), duration: 130 });
     expect(result).toEqual({ queued: true });
     expect(detector.analyzing(target('tt1000001', 1))).toBe(true);
     await detector.idle();
     expect(detector.analyzing(target('tt1000001', 1))).toBe(false);
-    const segments = store.autoSegmentsFor('tt1000001', 1, 1);
+    const segments = await store.autoSegmentsFor('tt1000001', 1, 1);
     expect(segments.map(({ kind, start, end, confidence, method }) => ({ kind, start, end, confidence, method }))).toEqual([
       { kind: 'intro', start: 20, end: 50, confidence: 0.95, method: 'chapters' },
       { kind: 'credits', start: 100, end: 130, confidence: 0.95, method: 'chapters' },
@@ -104,17 +105,20 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
     ['empreinte spectrale interne', tools === undefined ? undefined : { ...tools, chromaprint: false }, 'tt1000011'],
   ])('2. empreinte audio entre épisodes : %s', (_label, media, imdb) => {
     it.skipIf(media === undefined)('appariement de deux épisodes puis propagation à un troisième', async () => {
-      const store = new SkipSegmentStore(openUserDb(':memory:'));
+      const store = asyncRepo(new SkipSegmentStore(openUserDb(':memory:')));
       const { detector, tick } = detectorFor(store, media!);
       // Un seul épisode connu : rien à comparer, on attend.
       await detector.report({ target: target(imdb, 1), url: mediaUrl('ep1.mka'), duration: 400 });
       await detector.idle();
-      expect(store.autoSegmentsFor(imdb, 1, 1)).toEqual([]);
+      expect(await store.autoSegmentsFor(imdb, 1, 1)).toEqual([]);
       // Un deuxième épisode : appariement, résultats pour les deux.
       tick();
       expect(await detector.report({ target: target(imdb, 2), url: mediaUrl('ep2.mka'), duration: 400 })).toEqual({ queued: true });
       await detector.idle();
-      const intro = (episode: number) => store.autoSegmentsFor(imdb, 1, episode).find((segment) => segment.kind === 'intro');
+      const introsOf = async (episodes: number[]) =>
+        new Map(await Promise.all(episodes.map(async (episode) => [episode, (await store.autoSegmentsFor(imdb, 1, episode)).find((segment) => segment.kind === 'intro')] as const)));
+      let intros = await introsOf([1, 2]);
+      const intro = (episode: number) => intros.get(episode);
       console.log(`[${media!.chromaprint ? 'chromaprint' : 'spectral'}] ep1 intro`, intro(1), 'ep2 intro', intro(2));
       expect(Math.abs((intro(1)?.start ?? -9) - 20)).toBeLessThan(1.5);
       expect(Math.abs((intro(1)?.end ?? -9) - 60)).toBeLessThan(1.5);
@@ -122,11 +126,12 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
       expect(Math.abs((intro(2)?.end ?? -9) - 75)).toBeLessThan(1.5);
       expect(intro(1)?.confidence).toBe(0.8);
       expect(intro(1)?.method).toBe('fingerprint');
-      expect(store.fingerprintsFor(imdb, 1, media!.chromaprint ? 'chromaprint' : 'spectral').map((fp) => fp.kind)).toEqual(['intro']);
+      expect((await store.fingerprintsFor(imdb, 1, media!.chromaprint ? 'chromaprint' : 'spectral')).map((fp) => fp.kind)).toEqual(['intro']);
       // Troisième épisode : reconnu avec la seule empreinte de la saison.
       tick();
       await detector.report({ target: target(imdb, 3), url: mediaUrl('ep3.mka'), duration: 400 });
       await detector.idle();
+      intros = await introsOf([3]);
       expect(Math.abs((intro(3)?.start ?? -9) - 10)).toBeLessThan(1.5);
       expect(Math.abs((intro(3)?.end ?? -9) - 50)).toBeLessThan(1.5);
       await detector.close();
@@ -134,11 +139,11 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
   });
 
   it('3. fichier unique : générique de fin par noir et silence (confiance ≥ 0,6)', async () => {
-    const store = new SkipSegmentStore(openUserDb(':memory:'));
+    const store = asyncRepo(new SkipSegmentStore(openUserDb(':memory:')));
     const { detector } = detectorFor(store, tools!);
     await detector.report({ target: { type: 'movie', imdbId: 'tt1000020', season: 0, episode: 0 }, url: mediaUrl('credits.mkv'), duration: 150 });
     await detector.idle();
-    const [credits] = store.autoSegmentsFor('tt1000020', 0, 0);
+    const [credits] = await store.autoSegmentsFor('tt1000020', 0, 0);
     expect(credits?.kind).toBe('credits');
     expect(credits?.method).toBe('blackdetect');
     expect(credits?.confidence).toBeGreaterThanOrEqual(0.6);
@@ -149,17 +154,17 @@ describe.skipIf(tools === undefined)('détection locale (ffmpeg réel, serveur H
 
   it('4. budget d’octets : la lecture est coupée, rien n’est enregistré', async () => {
     const before = server.served();
-    const store = new SkipSegmentStore(openUserDb(':memory:'));
+    const store = asyncRepo(new SkipSegmentStore(openUserDb(':memory:')));
     const { detector } = detectorFor(store, tools!, { byteBudget: 150_000 });
     await detector.report({ target: target('tt1000030', 1), url: mediaUrl('ep1.mka'), duration: 400 });
     await detector.idle();
-    expect(store.autoSegmentsFor('tt1000030', 1, 1)).toEqual([]);
+    expect(await store.autoSegmentsFor('tt1000030', 1, 1)).toEqual([]);
     expect(server.served() - before).toBeLessThan(150_000 + 600_000);
     await detector.close();
   }, 60_000);
 
   it('5. débit : au plus 2 jobs par minute', async () => {
-    const store = new SkipSegmentStore(openUserDb(':memory:'));
+    const store = asyncRepo(new SkipSegmentStore(openUserDb(':memory:')));
     const { detector, tick } = detectorFor(store, tools!);
     const send = (episode: number) => detector.report({ target: target('tt1000040', episode), url: mediaUrl('ep1.mka'), duration: 400 });
     expect((await send(1)).queued).toBe(true);

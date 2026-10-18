@@ -3,23 +3,31 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppDeps } from '../deps.js';
 import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
 import { sendBody, sendJson } from '../http/respond.js';
-import { platform, runtimeEnv } from '../platform/index.js';
-import { openUserDb, userDbPath } from '../user/db.js';
-import { SkipSegmentStore } from '../user/skip-segments.js';
+import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platform/index.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { personWhy, recommend, why } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { mdblistRatings, tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
-import { createAutoDetector, MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/index.js';
+import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/media-url.js';
+import type { AutoDetector } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
 import { issuedUrls } from '../play/issued.js';
-import { type FrameResult, type Registration, ThumbService } from './thumbs/index.js';
+import type { FrameResult, Registration } from './thumbs/index.js';
 import { signRangeToken } from './thumbs/range-token.js';
 import { resolveThumbSource } from './thumbs/source.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
 import type { TvAlternative, TvChannel } from './tv-catalog.js';
+
+/** Fermetures des services locaux (détection, miniatures) d'une application. */
+const closers = new WeakMap<App, () => void>();
+
+/** Arrête les services locaux d'une application lt (appelé par closeApp). */
+export function closeLtRoutes(app: App): void {
+  closers.get(app)?.();
+  closers.delete(app);
+}
 
 /** Réponses d'erreur et POST : jamais en cache. */
 const NO_STORE = 'no-store';
@@ -68,8 +76,6 @@ function signChannel(ctx: LtContext, scope: string, channel: TvChannel): SignedC
 }
 
 /** Service de miniatures : le vrai (ffmpeg local) ou, sans ffmpeg sur cette plateforme, un service désactivé. */
-type ThumbPort = Pick<ThumbService, 'enabled' | 'register' | 'frame' | 'close'>;
-
 const DISABLED_THUMBS: ThumbPort = {
   enabled: false,
   register: (): Promise<Registration | null> => Promise.resolve(null),
@@ -81,20 +87,21 @@ const DISABLED_THUMBS: ThumbPort = {
  * Routes publiques par configuration, montées sous `/:config/lt/*` (mêmes chemins que le prototype sans `/api`)
  * et catalogues Stremio sous `/:config/catalog/*`.
  */
-export function registerLtRoutes(app: App, deps: AppDeps): () => void {
+export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend): void {
   const ctx: LtContext = createLtContext(deps);
   const capabilities = platform().capabilities;
-  // Base utilisateur ouverte au premier besoin (store communautaire des segments de saut).
-  let store: SkipSegmentStore | undefined;
-  const openStore = (): SkipSegmentStore => (store ??= new SkipSegmentStore(openUserDb(deps.userDbPath ?? userDbPath())));
+  // Segments de saut communautaires et détectés : base utilisateur de la plateforme, ouverte au premier besoin.
+  const openStore = () => backend.skips();
   // Détection automatique locale (chapitres, empreinte audio) : file en arrière-plan, jamais bloquante pour le GET.
-  const detector = createAutoDetector(openStore, {
-    disabled: runtimeEnv().get('LASTADDON_SKIP_DETECT') === '0' || !capabilities.skipDetect,
-    ...deps.skipDetect,
-  });
-  const community = createSkipCommunity(ctx, openStore, detector);
+  // Absente (null) quand la plateforme n'a pas ffmpeg local (Workers).
+  const detector: AutoDetector | null =
+    platform().localMedia?.createDetector(openStore, {
+      disabled: runtimeEnv().get('LASTADDON_SKIP_DETECT') === '0' || !capabilities.skipDetect,
+      ...deps.skipDetect,
+    }) ?? null;
+  const community = createSkipCommunity(ctx, openStore, detector ?? undefined);
   // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide, ou si la plateforme n'a pas ffmpeg.
-  const thumbs: ThumbPort = capabilities.thumbs ? new ThumbService(deps.thumbs) : DISABLED_THUMBS;
+  const thumbs: ThumbPort = capabilities.thumbs ? (platform().localMedia?.createThumbs(deps.thumbs) ?? DISABLED_THUMBS) : DISABLED_THUMBS;
   // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
   const range = rangeProxyOf(deps);
   const rangeIssued = deps.thumbs?.issued ?? issuedUrls;
@@ -199,7 +206,7 @@ export function registerLtRoutes(app: App, deps: AppDeps): () => void {
     }
     const url = validateMediaUrl(mediaUrl, deps.skipDetect?.allowLocal);
     if (url === null) return invalid();
-    const result = await detector.report({ target, url, duration });
+    const result = detector === null ? { queued: false, reason: 'disabled' } : await detector.report({ target, url, duration });
     return sendJson(c, { queued: result.queued, ...(result.reason === undefined ? {} : { reason: result.reason }) }, 202);
   });
 
@@ -323,9 +330,8 @@ export function registerLtRoutes(app: App, deps: AppDeps): () => void {
   catalog.get('/:type/:idjson/:extrajson{[^/]+\\.json}', (c) => sendCatalog(c, c.req.param('extrajson').replace(/\.json$/, '')));
   catalog.onError(ltErrorHandler);
   app.route('/:config/catalog', catalog);
-  return () => {
-    void detector.close();
+  closers.set(app, () => {
+    void detector?.close();
     void thumbs.close();
-    community.close();
-  };
+  });
 }

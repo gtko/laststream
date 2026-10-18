@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { type IssuedUrls, issuedUrls } from '../../play/issued.js';
-import { userDbPath } from '../../user/db.js';
+import { userDbPath } from '../../platform/node/user-db.js';
 import { runProcess, type RunResult } from '../detect/proc.js';
 import { ByteBudget, openSource, type SourceProxy } from '../detect/proxy.js';
 import { defaultLocalPolicy, type LocalUrlPolicy } from '../detect/media-url.js';

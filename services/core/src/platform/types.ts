@@ -4,6 +4,12 @@
  * plateforme active (voir `platform()` dans ./index.ts). Les implémentations vivent dans ./node (et, plus tard, ./workers).
  */
 
+import type { AutoDetectOptions, AutoDetector } from '../lt/detect/index.js';
+import type { ThumbOptions, ThumbService } from '../lt/thumbs/index.js';
+import type { SkipRepo, UserBackend } from '../user/repo.js';
+
+export type { UserBackend } from '../user/repo.js';
+
 /** Variables d'environnement vues comme un simple dictionnaire (valeurs non définies = absentes). */
 export type EnvLike = Readonly<Record<string, string | undefined>>;
 
@@ -78,6 +84,17 @@ export interface Scheduler {
   background(work: Promise<unknown>): void;
 }
 
+/** Service de miniatures utilisé par les routes lt. */
+export type ThumbPort = Pick<ThumbService, 'enabled' | 'register' | 'frame' | 'close'>;
+
+/** Services ffmpeg locaux, injectés par la plateforme pour que le code Worker n'importe ni child_process ni fs. */
+export interface LocalMedia {
+  /** Service de miniatures de la barre de lecture. */
+  createThumbs(options: ThumbOptions | undefined): ThumbPort;
+  /** Détecteur automatique des segments de saut. */
+  createDetector(openSkips: () => SkipRepo, options: AutoDetectOptions): AutoDetector;
+}
+
 /** Fonctions disponibles selon la plateforme. */
 export interface Capabilities {
   /** Miniatures de la barre de lecture par ffmpeg. */
@@ -106,6 +123,16 @@ export interface Platform {
   readonly capabilities: Capabilities;
   /** Fabrique un cache nommé. */
   createKvCache(namespace: string): KvCache;
+  /**
+   * Dépôts de données utilisateur et de segments de saut (Node : SQLite local, `path` ou LASTADDON_DATA_DIR ;
+   * Workers : Durable Object SQLite).
+   */
+  createUserBackend(options?: { path?: string }): UserBackend;
+  /**
+   * Services locaux liés à la machine (ffmpeg : miniatures, détection des segments de saut). Absent sur Workers, où
+   * les capacités `thumbs` et `skipDetect` sont fausses.
+   */
+  localMedia?: LocalMedia;
   /** Interface web lue dans un dossier (Node). Absent sur Workers, où elle vient d'un binding Assets. */
   uiAssetsFromDir?(dir: string): UiAssets;
 }

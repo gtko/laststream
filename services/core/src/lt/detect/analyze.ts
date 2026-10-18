@@ -1,4 +1,5 @@
-import type { AutoKind, AutoMethod, SkipSegmentStore } from '../../user/skip-segments.js';
+import type { SkipRepo } from '../../user/repo.js';
+import type { AutoKind, AutoMethod } from '../../user/skip-segments.js';
 import { CHAPTER_CONFIDENCE, type Found, probeChapters, segmentsFromChapters } from './chapters.js';
 import { parseCreditsOutput } from './credits.js';
 import {
@@ -48,7 +49,7 @@ export interface EpisodeRef {
 
 export interface AnalyzeDeps {
   tools: MediaTools;
-  store: SkipSegmentStore;
+  store: SkipRepo;
   allowLocal: LocalUrlPolicy;
   /** Autres épisodes de la saison dont on connaît le média (les plus proches d'abord). */
   siblings: (job: EpisodeRef) => EpisodeRef[];
@@ -202,7 +203,7 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
     return proxy.url;
   };
   const nowIso = (): string => deps.now().toISOString();
-  const save = (episode: EpisodeRef, found: Found, confidence: number, method: AutoMethod): boolean =>
+  const save = (episode: EpisodeRef, found: Found, confidence: number, method: AutoMethod): Promise<boolean> =>
     deps.store.saveAuto(
       episode.imdbId,
       episode.season,
@@ -214,7 +215,7 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
   try {
     const ownUrl = await open(job.url);
     const chapters = segmentsFromChapters(await probeChapters(deps.tools, ownUrl), job.duration);
-    for (const found of chapters) save(job, found, CHAPTER_CONFIDENCE, 'chapters');
+    for (const found of chapters) await save(job, found, CHAPTER_CONFIDENCE, 'chapters');
     if (chapters.some((found) => found.kind === 'intro' || found.kind === 'credits')) return 'chapters';
     if (job.duration < MIN_DURATION) return 'none';
 
@@ -223,14 +224,14 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
     let outcome: Outcome = 'none';
     if (job.type === 'series') {
       const method = deps.tools.chromaprint ? 'chromaprint' : 'spectral';
-      const references = deps.store.fingerprintsFor(job.imdbId, job.season, method);
+      const references = await deps.store.fingerprintsFor(job.imdbId, job.season, method);
       const referenced = new Set<Kind>(references.map((reference) => reference.kind));
       // Référence de saison : un seul épisode a suffi à l'établir.
       for (const reference of references) {
         const window = await reader.window(reference.kind);
         if (window === undefined) continue;
         const found = matchReference(reference.points, window, reference.kind, job.duration);
-        if (found !== undefined && save(job, found, FINGERPRINT_CONFIDENCE, 'fingerprint')) {
+        if (found !== undefined && (await save(job, found, FINGERPRINT_CONFIDENCE, 'fingerprint'))) {
           have.add(reference.kind);
           outcome = 'fingerprint';
         }
@@ -251,9 +252,9 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
             const run = longestRun(mine.fp, theirs.fp, Math.ceil((kind === 'intro' ? INTRO_RANGE : CREDITS_RANGE).min / ITEM_SECONDS));
             const matched = run === undefined ? undefined : toMatched(run, mine, theirs, kind);
             if (matched === undefined) continue;
-            save(job, finish(kind, matched.a, mine, job.duration), FINGERPRINT_CONFIDENCE, 'fingerprint');
-            save(sibling, finish(kind, matched.b, theirs, sibling.duration), FINGERPRINT_CONFIDENCE, 'fingerprint');
-            deps.store.saveFingerprint(job.imdbId, job.season, { kind, method, points: matched.points }, nowIso());
+            await save(job, finish(kind, matched.a, mine, job.duration), FINGERPRINT_CONFIDENCE, 'fingerprint');
+            await save(sibling, finish(kind, matched.b, theirs, sibling.duration), FINGERPRINT_CONFIDENCE, 'fingerprint');
+            await deps.store.saveFingerprint(job.imdbId, job.season, { kind, method, points: matched.points }, nowIso());
             have.add(kind);
             outcome = 'fingerprint';
           }
@@ -265,7 +266,7 @@ export async function analyzeEpisode(deps: AnalyzeDeps, job: EpisodeRef): Promis
       const fallback = await creditsFallback(deps.tools, ownUrl, job.duration, Math.min(EXTRACT_TIMEOUT_MS, deadline()));
       if (fallback !== undefined) {
         const kind: AutoKind = 'credits';
-        const saved = save(job, { kind, start: Math.round(fallback.start * 10) / 10, end: job.duration }, fallback.confidence, 'blackdetect');
+        const saved = await save(job, { kind, start: Math.round(fallback.start * 10) / 10, end: job.duration }, fallback.confidence, 'blackdetect');
         if (saved && outcome !== 'fingerprint') outcome = 'fallback';
       }
     }

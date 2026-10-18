@@ -2,7 +2,8 @@ import { getJson, type LtContext, LtError, recordAt } from '../lt/context.js';
 import { tmdbGet } from '../lt/providers.js';
 import { isRecord } from '../sources/http.js';
 import { isFinished } from './progress.js';
-import type { MediaType, UserStore } from './store.js';
+import type { MediaType } from './store.js';
+import type { UserRepo } from './repo.js';
 
 /**
  * Import de la bibliothèque et de la progression depuis un compte Stremio. Les identifiants Stremio servent une
@@ -210,7 +211,7 @@ export async function resolveTmdbIds(
 }
 
 export interface StremioImportInput {
-  store: UserStore;
+  store: UserRepo;
   ctx: LtContext;
   profileId: string;
   email: string;
@@ -230,33 +231,29 @@ export async function importStremioLibrary(input: StremioImportInput): Promise<S
   const tmdbIds = input.tmdbToken === undefined ? new Map<string, number>() : await resolveTmdbIds(input.ctx, input.tmdbToken, titles);
   const tmdbFor = (type: MediaType, imdbId: string): number | null => tmdbIds.get(`${type}:${imdbId}`) ?? null;
 
-  input.store.transaction(() => {
-    for (const entry of mapped.library) {
-      input.store.upsertLibraryItem({
-        profileId: input.profileId,
-        type: entry.type,
-        tmdbId: tmdbFor(entry.type, entry.imdbId),
-        imdbId: entry.imdbId,
-        title: entry.title,
-        poster: entry.poster,
-        addedAt: entry.addedAt,
-      });
-    }
-    for (const entry of mapped.progress) {
-      input.store.upsertProgress({
-        profileId: input.profileId,
-        type: entry.type,
-        tmdbId: tmdbFor(entry.type, entry.imdbId),
-        imdbId: entry.imdbId,
-        season: entry.season,
-        episode: entry.episode,
-        positionSec: entry.positionSec,
-        durationSec: entry.durationSec,
-        updatedAt: entry.updatedAt,
-        finished: isFinished(entry.positionSec, entry.durationSec),
-      });
-    }
-  });
+  await input.store.importMany(
+    mapped.library.map((entry) => ({
+      profileId: input.profileId,
+      type: entry.type,
+      tmdbId: tmdbFor(entry.type, entry.imdbId),
+      imdbId: entry.imdbId,
+      title: entry.title,
+      poster: entry.poster,
+      addedAt: entry.addedAt,
+    })),
+    mapped.progress.map((entry) => ({
+      profileId: input.profileId,
+      type: entry.type,
+      tmdbId: tmdbFor(entry.type, entry.imdbId),
+      imdbId: entry.imdbId,
+      season: entry.season,
+      episode: entry.episode,
+      positionSec: entry.positionSec,
+      durationSec: entry.durationSec,
+      updatedAt: entry.updatedAt,
+      finished: isFinished(entry.positionSec, entry.durationSec),
+    })),
+  );
 
   return {
     library: mapped.library.length,

@@ -96,10 +96,10 @@ function toContinueItem(row: ProgressItem, suggested: boolean): ContinueItem {
  * Épisode à proposer après un épisode terminé : le premier épisode suivant sans progression terminée. S'il a une
  * progression en cours, c'est elle qui est reprise ; sinon l'épisode suivant est proposé (sans progression).
  */
-function nextEpisodeAfter(row: ProgressItem, episodeAt: EpisodeLookup): ContinueItem | undefined {
+async function nextEpisodeAfter(row: ProgressItem, episodeAt: EpisodeLookup): Promise<ContinueItem | undefined> {
   for (let step = 1; step <= NEXT_EPISODE_SCAN_LIMIT; step++) {
     const episode = row.episode + step;
-    const found = episodeAt(row.type, row.titleRef, row.season, episode);
+    const found = await episodeAt(row.type, row.titleRef, row.season, episode);
     if (found === undefined) {
       return toContinueItem({ ...row, episode, positionSec: 0, durationSec: 0, finished: false }, true);
     }
@@ -108,20 +108,20 @@ function nextEpisodeAfter(row: ProgressItem, episodeAt: EpisodeLookup): Continue
   return undefined;
 }
 
-export type EpisodeLookup = (type: MediaType, titleRef: string, season: number, episode: number) => ProgressItem | undefined;
+export type EpisodeLookup = (type: MediaType, titleRef: string, season: number, episode: number) => ProgressItem | undefined | Promise<ProgressItem | undefined>;
 
 /**
  * « Continuer à regarder » : une entrée par titre (sa progression la plus récente), non terminée ; pour une série
  * terminée, l'épisode suivant. Trié par date de mise à jour décroissante, au plus CONTINUE_LIMIT éléments.
  * `latest` contient une ligne par titre.
  */
-export function continueWatching(latest: readonly ProgressItem[], episodeAt: EpisodeLookup, limit = CONTINUE_LIMIT): ContinueItem[] {
+export async function continueWatching(latest: readonly ProgressItem[], episodeAt: EpisodeLookup, limit = CONTINUE_LIMIT): Promise<ContinueItem[]> {
   const candidates: ContinueItem[] = [];
   for (const row of latest) {
     if (!row.finished) {
       candidates.push(toContinueItem(row, false));
     } else if (row.type === 'series') {
-      const next = nextEpisodeAfter(row, episodeAt);
+      const next = await nextEpisodeAfter(row, episodeAt);
       if (next !== undefined) candidates.push(next);
     }
   }

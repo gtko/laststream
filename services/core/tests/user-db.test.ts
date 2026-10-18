@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openUserDb, projectRoot, userDbPath, USER_DB_FILE } from '../src/user/db.js';
+import { openUserDb, projectRoot, userDbPath, USER_DB_FILE, wrapSqlite } from '../src/platform/node/user-db.js';
+import type { SqlDb } from '../src/user/sql.js';
 import {
   generateSessionToken,
   hashSecret,
@@ -25,7 +26,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function tableNames(db: DatabaseSync): string[] {
+function tableNames(db: SqlDb): string[] {
   return (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map(
     (row) => row.name,
   );
@@ -43,7 +44,7 @@ describe('base de données utilisateur', () => {
   });
 
   it('une migration en échec est annulée entièrement et non tracée', () => {
-    const db = new DatabaseSync(':memory:');
+    const db = wrapSqlite(new DatabaseSync(':memory:'));
     const broken: Migration[] = [{ version: 1, name: 'cassée', sql: 'CREATE TABLE partielle (a INTEGER); CE N EST PAS DU SQL;' }];
     expect(() => migrate(db, broken)).toThrow();
     expect(tableNames(db)).not.toContain('partielle');
@@ -128,7 +129,7 @@ describe('primitives cryptographiques', () => {
     const dir = mkdtempSync(join(tmpdir(), 'lastaddon-v2-'));
     const file = join(dir, 'laststream.db');
     try {
-      const old = new DatabaseSync(file);
+      const old = wrapSqlite(new DatabaseSync(file));
       migrate(old, MIGRATIONS.slice(0, 1));
       old.prepare("INSERT INTO accounts (id, username, password_hash, is_owner, created_at) VALUES ('a1', 'alice', 'h', 1, 't')").run();
       old.prepare("INSERT INTO profiles (id, account_id, name, avatar_color, created_at) VALUES ('p1', 'a1', 'Greg', '#000000', 't')").run();
@@ -175,7 +176,7 @@ describe('règles de progression', () => {
     expect(series).toMatchObject({ season: 1, episode: 2, positionSec: 10, durationSec: 0, finished: false });
   });
 
-  it('continuer : limite respectée, films terminés ignorés', () => {
+  it('continuer : limite respectée, films terminés ignorés', async () => {
     const row = (tmdbId: number, finished: boolean, updatedAt: string): ProgressItem => ({
       type: 'movie',
       tmdbId,
@@ -189,9 +190,9 @@ describe('règles de progression', () => {
       titleRef: titleRef(tmdbId, null),
     });
     const latest = [row(1, false, '2025-01-03T00:00:00.000Z'), row(2, true, '2025-01-02T00:00:00.000Z'), row(3, false, '2025-01-01T00:00:00.000Z')];
-    const items = continueWatching(latest, () => undefined, 1);
+    const items = await continueWatching(latest, () => undefined, 1);
     expect(items.map((item) => item.tmdbId)).toEqual([1]);
-    expect(continueWatching(latest, () => undefined).map((item) => item.tmdbId)).toEqual([1, 3]);
+    expect((await continueWatching(latest, () => undefined)).map((item) => item.tmdbId)).toEqual([1, 3]);
   });
 });
 

@@ -1,9 +1,10 @@
 import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { runtimeEnv } from '../platform/index.js';
-import { projectRoot } from '../platform/node/paths.js';
-import { migrate } from './migrations.js';
+import { migrate } from '../../user/migrations.js';
+import type { SqlDb } from '../../user/sql.js';
+import { runtimeEnv } from '../index.js';
+import { projectRoot } from './paths.js';
 
 /** Nom du fichier SQLite des données utilisateur, dans LASTADDON_DATA_DIR. */
 export const USER_DB_FILE = 'laststream.db';
@@ -30,14 +31,42 @@ function restrictFile(path: string): void {
   }
 }
 
+/** Adapte une base node:sqlite à l'interface SQL commune (transaction : BEGIN IMMEDIATE / COMMIT / ROLLBACK). */
+export function wrapSqlite(db: DatabaseSync): SqlDb {
+  return {
+    prepare: (sql) => {
+      const statement = db.prepare(sql);
+      return {
+        get: (...params) => statement.get(...params),
+        all: (...params) => statement.all(...params),
+        run: (...params) => statement.run(...params),
+      };
+    },
+    exec: (sql) => db.exec(sql),
+    transaction: (work) => {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const result = work();
+        db.exec('COMMIT');
+        return result;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+    close: () => db.close(),
+  };
+}
+
 /** Ouvre la base (':memory:' accepté pour les tests), active les clés étrangères et applique les migrations. */
-export function openUserDb(path: string): DatabaseSync {
+export function openUserDb(path: string): SqlDb {
   const inMemory = path === ':memory:';
   if (!inMemory) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(path);
+  const raw = new DatabaseSync(path);
   if (!inMemory) restrictFile(path);
-  db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-  if (!inMemory) db.exec('PRAGMA journal_mode = WAL;');
+  raw.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+  if (!inMemory) raw.exec('PRAGMA journal_mode = WAL;');
+  const db = wrapSqlite(raw);
   migrate(db);
   return db;
 }
