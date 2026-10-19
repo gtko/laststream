@@ -328,24 +328,23 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- Mobile <= 640 ---------- */
 @media (max-width: 640px) {
-  .s-a { --gutter: 16px; --title-size: 34px; --logo-h: 56px; --topbar-h: 60px; }
+  .s-a { --gutter: 16px; --title-size: 30px; --logo-h: 40px; --topbar-h: 60px; }
   .s-a .topbar { padding: 14px 16px; }
   /* Mise en avant mobile : l'image (ou la bande-annonce) en bandeau 16:9 en haut, le texte compact en dessous. Une vidéo
      16:9 qui couvrait tout le bloc n'en montrait qu'un tiers, recadré trop haut. */
   .s-a { --hero-media-h: 56.25vw; }
   .s-a .hero { min-height: 0; margin: 0; border-radius: 0; background: var(--bg); }
-  .s-a .hero-slide { justify-content: flex-start; padding: calc(var(--hero-media-h) - 28px) 16px 52px; }
-  .s-a .hero-bg, .s-a .scrim { bottom: auto; height: var(--hero-media-h); }
+  .s-a .hero-slide { justify-content: flex-start; padding: calc(var(--topbar-h) + var(--hero-media-h) + 12px) 16px 20px; }
+  /* Le bandeau commence sous la barre du haut : logo et boutons restent sur fond noir, hors de la vidéo. */
+  .s-a .hero-bg, .s-a .scrim { top: var(--topbar-h); bottom: auto; height: var(--hero-media-h); }
   .s-a .hero-bg { overflow: hidden; }
   .s-a .scrim {
-    background:
-      linear-gradient(180deg, rgba(12, 11, 17, 0.55) 0%, rgba(12, 11, 17, 0) 28%),
-      linear-gradient(0deg, var(--bg) 0%, rgba(12, 11, 17, 0.5) 18%, rgba(12, 11, 17, 0) 45%);
+    background: linear-gradient(0deg, rgba(12, 11, 17, 0.35) 0%, rgba(12, 11, 17, 0) 30%);
   }
   .s-a .hero-content { align-items: flex-start; gap: 10px; text-align: left; }
   .s-a .hero-content .eyebrow { margin-bottom: 2px; padding: 4px 9px; font-size: 11px; }
   .s-a .hero-title { line-height: 1; }
-  .s-a .logo-img { max-width: 72%; }
+  .s-a .logo-img { max-width: 58%; }
   .s-a .hero-content .meta { gap: 4px 10px; font-size: 13px; }
   .s-a .hero-content .chip { padding: 2px 7px; font-size: 12px; }
   .s-a .hero-content .rates-hero, .s-a .hero-content .prov-mini, .s-a .hero-note { display: none; }
@@ -353,7 +352,18 @@ body.modal-open { overflow: hidden; }
   .s-a .hero-actions { width: 100%; flex-wrap: nowrap; gap: 8px; margin-top: 4px; }
   .s-a .hero-actions .btn { flex: 1 1 0; padding: 9px 12px; min-height: 40px; font-size: 14px; }
   .s-a .hero-actions .btn svg { width: 16px; height: 16px; }
-  .s-a .hero.is-cinema .hero-slide.is-current { padding-bottom: 56px; }
+  /* « Plus d'infos » réduit à son icône : trois boutons pleins ne tiennent pas sur un téléphone. */
+  .s-a .hero-actions [data-info] { flex: none; width: 40px; padding: 0; }
+  .s-a .hero-actions [data-info] span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* La vidéo est au-dessus du texte : rien à estomper pendant la bande-annonce (sinon un trou noir apparaît). */
+  .s-a .hero-slide.is-quiet .hero-content > :not(.hero-title):not(.hero-actions),
+  .s-a .hero-slide.is-quiet .hero-actions > *,
+  .s-a .hero.is-cinema .hero-slide.is-current .hero-content > :not(.hero-title):not(.hero-actions),
+  .s-a .hero.is-cinema .hero-slide.is-current .hero-actions > :not(.btn-primary) { opacity: 1; visibility: visible; pointer-events: auto; }
+  .s-a .hero-slide.is-quiet .hero-title, .s-a .hero.is-cinema .hero-slide.is-current .hero-title { transform: none; }
+  .s-a .hero.is-cinema .hero-slide.is-current { padding-bottom: 20px; }
+  .s-a .hero-dots { display: none; }
+  .s-a .hero .preview-sound { top: 10px; right: 10px; }
   .sk-hero { height: calc(var(--hero-media-h, 56.25vw) + 190px); }
   .s-a .rows { margin-top: 20px; padding: 0 16px 110px; gap: 32px; }
   .s-a .card { width: 150px; flex-basis: 150px; }

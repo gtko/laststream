@@ -124,6 +124,19 @@ describe('héros de l’accueil : mode cinéma avec le son', () => {
   });
 });
 
+describe('héros de l’accueil : fin de la bande-annonce', () => {
+  it('la bande-annonce ne boucle pas et sa fin fait passer au titre suivant', async () => {
+    mountCarousel([1, 2, 3]);
+    const p = await startPreviewOnCurrent();
+    expect(p.iframe.src).toContain('loop=0');
+    p.iframe.dispatchEvent(new Event('load'));
+    const before = shownKey();
+    window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ info: { playerState: 0 } }), source: p.iframe.contentWindow }));
+    expect(shownKey()).not.toBe(before);
+    expect(state.preview).toBeNull();
+  });
+});
+
 describe('aperçu sans héros (fiche, grille) : pas de mode cinéma', () => {
   it('un aperçu hors du héros ignore le son sans toucher aux classes du héros', () => {
     const outside = document.createElement('div');

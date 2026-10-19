@@ -41,6 +41,19 @@ export function whenPlaying(iframe, cb, delayMs = 2600, fallbackMs = 6000) {
   return () => { done = true; cleanup(); };
 }
 
+/** Appelle `cb` une seule fois quand la vidéo YouTube se termine (état 0 de l'API IFrame). Renvoie une fonction d'annulation. */
+export function whenEnded(iframe, cb) {
+  const onMsg = (e) => {
+    if (e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
+    let d;
+    try { d = JSON.parse(e.data); } catch (_) { return; }
+    if (d && d.info && d.info.playerState === 0) { window.removeEventListener('message', onMsg); cb(); }
+  };
+  window.addEventListener('message', onMsg);
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  return () => window.removeEventListener('message', onMsg);
+}
+
 /** Bouton son (aperçu, fiche, survol) : icône haut-parleur barré quand muet, haut-parleur sinon. Même rendu partout. */
 export function paintSound(btn, muted) {
   btn.innerHTML = muted ? ICON.mute : ICON.sound;
@@ -116,6 +129,7 @@ export function stopPreview() {
   setCinema(p.iframe, false);
   if (p.ro) p.ro.disconnect();
   if (p.unfade) p.unfade();
+  if (p.unend) p.unend();
   p.wrap.remove();
   p.btn.remove();
 }
@@ -127,9 +141,11 @@ export async function startPreview(media) {
   const d = await getDetail(item);
   if (!d || !d.trailer || !media.isConnected || media._visible === false || state.inDetail) return;
   stopPreview();
+  // Carrousel de l'accueil : la bande-annonce ne boucle pas, sa fin fait passer au titre suivant (évènement « trailerend »).
+  const carousel = !!media.closest('[data-hero]');
   const wrap = document.createElement('div');
   wrap.className = 'preview';
-  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
+  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, !carousel)) + '"></iframe>';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'f-round preview-sound';
@@ -139,7 +155,7 @@ export async function startPreview(media) {
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');
-  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null };
+  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null, unend: null };
   state.preview = p;
   p.ro = new ResizeObserver(() => fitPreview(p));
   p.ro.observe(media);
@@ -151,6 +167,11 @@ export async function startPreview(media) {
     requestAnimationFrame(() => wrap.classList.add('is-on'));
     // Accueil : les textes de la diapositive s'estompent pendant la lecture effective (grille : rien à estomper).
     p.unfade = textFade(media.closest('.hero-slide'), iframe);
+    if (carousel) {
+      p.unend = whenEnded(iframe, () => {
+        if (state.preview === p) media.dispatchEvent(new CustomEvent('trailerend', { bubbles: true }));
+      });
+    }
   }, { once: true });
 }
 

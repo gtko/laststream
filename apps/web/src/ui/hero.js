@@ -253,6 +253,11 @@ document.addEventListener('keydown', (e) => {
   go(hero.i + (e.key === 'ArrowRight' ? 1 : -1), true);
 });
 
+// Fin de la bande-annonce de la diapositive affichée (preview.js) : titre suivant, avec ou sans le son.
+document.addEventListener('trailerend', (e) => {
+  if (hero.el && e.target instanceof Element && hero.el.contains(e.target)) go(hero.i + 1, true);
+});
+
 // Balayage tactile.
 let touchX = null;
 document.addEventListener('touchstart', (e) => {
