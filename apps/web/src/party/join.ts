@@ -161,6 +161,8 @@ export function entryErrorText(code: string): string {
     case 'invite_invalid': return 'Lien d’invitation invalide ou expiré : demande une nouvelle invitation à l’hôte.';
     case 'room_full':
     case 'guest_limit': return 'Le salon est complet.';
+    case 'banned': return 'Tu ne peux pas rejoindre ce salon avec ce pseudo.';
+    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
     case 'room_not_found': return 'Ce salon n’existe plus.';
     case 'too_many_entries':
     case 'rate_limited': return 'Trop d’entrées sur ce lien : réessaie dans quelques minutes.';

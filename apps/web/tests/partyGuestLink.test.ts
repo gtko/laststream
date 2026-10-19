@@ -124,6 +124,21 @@ describe('panneau de la watch party : lien d’invitation', () => {
     expect(clip.writeText).toHaveBeenCalledTimes(2);
   });
 
+  it('exclusion d’un invité du lien partagé : le salon renouvelle le lien, le champ est mis à jour sans copie', async () => {
+    const c = fakeClient(true);
+    partyBridge.client = c as any;
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('[data-wp-invite-link]')).toBeNull();
+    c.emit('linkRenewed', {});
+    await tick();
+    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite-link' }]);
+    expect(bodies[0]).toMatchObject({ rotate: false });
+    const field = panelOf().querySelector('[data-wp-invite-link]') as HTMLInputElement;
+    expect(field.value.endsWith('#/party/join/r1?t=tok-abcdefgh12')).toBe(true);
+    expect(clip.writeText).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Lien renouvelé après exclusion');
+  });
+
   it('participant non hôte : « Copier le lien » copie le lien du salon, sans créer d’invitation', async () => {
     partyBridge.client = fakeClient(false) as any;
     panel.togglePartyPanel(true);
