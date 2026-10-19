@@ -10,16 +10,16 @@
 
 import { PartyClient, type ClientStatus, type SocketLike } from '../party/client';
 import type { PartyParticipant } from '../data/socialApi';
-import { endText, hostLostText, refusedText, relayErrorText, waitingHostText } from '../party/join';
+import { endText, hostLostText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
 import { RangeClient } from './guest';
 import { MeshGuest, type MeshGuestOptions } from './mesh/guest';
 import { MeshHostState } from './mesh/hostState';
 import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
 import type { RangeSource, UploadStats } from './host';
-import { RelayError, capsMask, encodeCaps, type ChannelLike, type DecodeCap } from './protocol';
+import { RelayError, capsMask, decodeFrame, encodeCaps, encodeMeshReq, toBytes, type ChannelLike, type DecodeCap } from './protocol';
 import { detectDecodeCaps } from './player/detect';
-import type { PlaybackPlan, PlayerCallbacks, PlayerState, RangeReader, RoomState } from './player/types';
+import type { PlaybackPlan, PlayerCallbacks, PlayerState, PlayerStats, RangeReader, RoomState } from './player/types';
 
 let relayTurn: TurnConfig | null = null;
 
@@ -32,6 +32,8 @@ const ECHO_WAIT_MS = 1500;
 /** Reconnexion après une coupure de liaison (bascule de source côté hôte, réseau) : 1 s, puis double, 30 s au plus. */
 export const RECONNECT_BASE_MS = 1000;
 export const RECONNECT_MAX_MS = 30_000;
+/** Pendant un format refusé : vérification de l'identifiant de fichier annoncé par l'hôte, sur la liaison restée ouverte. */
+export const HOLD_PROBE_MS = RECONNECT_MAX_MS;
 
 /** TURN facultatif, injecté par l'application (jamais en dur dans le code). `null` : STUN seul. */
 export function setRelayTurn(turn: TurnConfig | null): void {
@@ -174,7 +176,8 @@ export type GuestPhase =
   | 'unsupported'
   | 'host-lost'
   | 'refused'
-  | 'ended';
+  | 'ended'
+  | 'left';
 
 export interface GuestRelayView {
   phase: GuestPhase;
@@ -203,6 +206,8 @@ export interface GuestPlayerLike {
   seek(t: number): void;
   applyRoomState(room: RoomState, nowMs?: number): void;
   getState(): PlayerState;
+  /** Compteurs du lecteur (diagnostic seulement) : images et sons décodés. */
+  getStats?(): PlayerStats;
   destroy(): void;
 }
 
@@ -253,6 +258,11 @@ export class GuestRelaySession {
   private capsP: Promise<number | null> | null = null;
   /** Coupures consécutives sans liaison réussie : fixe le délai de la prochaine reconnexion. */
   private reconnects = 0;
+  /** Format refusé : liaison restée ouverte, identifiant de fichier de l'hôte connu, minuterie de vérification. */
+  private heldChannel: ChannelLike | null = null;
+  private heldId: string | null = null;
+  private probeTimer: unknown = null;
+  private probeReq = 0;
 
   constructor(private readonly deps: GuestRelayDeps) {}
 
@@ -337,6 +347,27 @@ export class GuestRelaySession {
   }
 
   /**
+   * « Quitter » : ferme le WebSocket du salon, le relais, le maillage et le lecteur, puis affiche « left ». Sans reconnexion ;
+   * la page propose de rejoindre à nouveau avec la même invitation (une nouvelle session).
+   */
+  leave(): void {
+    if (this.stopped) return;
+    this.destroy();
+    this.setView('left', leftText());
+  }
+
+  /** Compteurs de diagnostic (lecture seule) : nombres seulement, jamais d'URL. Octets des pairs : maillage. */
+  debugCounts(): { videoFrames: number; audioData: number; bytesFromHost: number; bytesFromPeers: number } {
+    const st = this.player?.getStats?.();
+    return {
+      videoFrames: st?.decodedFrames ?? 0,
+      audioData: st?.audioChunks ?? 0,
+      bytesFromHost: this.view.bytesReceived,
+      bytesFromPeers: this.view.bytesFromPeers,
+    };
+  }
+
+  /**
    * Reconnexion automatique après une coupure : nouvelle liaison (hello), puis annonce des capacités sur le nouveau canal.
    * Délai doublé à chaque coupure (1 s, 2 s, 4 s… 30 s au plus) ; s'arrête avec la lecture, le salon ou la session.
    */
@@ -347,7 +378,7 @@ export class GuestRelaySession {
     const set = this.deps.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
     this.retryTimer = set(() => {
       this.retryTimer = null;
-      if (this.view.phase === 'host-lost') this.retry();
+      if (this.view.phase === 'host-lost' || this.view.phase === 'unsupported') this.retry();
     }, delay);
   }
 
@@ -442,14 +473,15 @@ export class GuestRelaySession {
       this.range = range;
       const reader = await this.openMesh(client, channel, range, seq);
       if (!this.isCurrent(seq)) return;
+      // Identifiant opaque du fichier de l'hôte (maillage négocié), pour reconnaître un nouveau fichier plus tard.
+      const fileId = this.mesh?.id ?? null;
       const player = this.deps.createPlayer(this.callbacks());
       this.player = player;
       this.setView('loading', '');
       const plan = await player.load(reader, this.deps.canvas);
       if (!this.isCurrent(seq)) return;
       if (plan.kind === 'unsupported') {
-        this.teardownMedia();
-        this.setView('unsupported', plan.message);
+        this.hold(channel, fileId, plan.message);
         return;
       }
       this.setView('ready', '');
@@ -528,8 +560,14 @@ export class GuestRelaySession {
   /** Ferme la lecture et la liaison en cours ; invalide les étapes asynchrones en retard. */
   private teardownMedia(): void {
     this.seq += 1;
+    this.stopHold();
     this.relay?.close();
     this.relay = null;
+    this.releasePlayback();
+  }
+
+  /** Libère le lecteur, le maillage et le lecteur de plages ; la liaison avec l'hôte n'est pas touchée. */
+  private releasePlayback(): void {
     this.mesh?.close();
     this.mesh = null;
     this.range?.close();
@@ -537,6 +575,69 @@ export class GuestRelaySession {
     this.player?.destroy();
     this.player = null;
     this.view = { ...this.view, rateBps: 0, meshPeers: 0, playing: false, position: 0, duration: 0, note: '' };
+  }
+
+  /**
+   * Format refusé par ce navigateur. La liaison avec l'hôte reste ouverte : sa fermeture relance l'ouverture (bascule côté
+   * hôte). L'identifiant de fichier annoncé est vérifié périodiquement ; un nouveau fichier relance le décodage. Le salon
+   * reste joignable : seul « Quitter » ou une nouvelle ouverture met fin à cet état.
+   */
+  private hold(channel: ChannelLike, fileId: string | null, message: string): void {
+    this.releasePlayback();
+    this.setView('unsupported', message);
+    this.heldChannel = channel;
+    this.heldId = fileId;
+    channel.addEventListener('message', this.onHeldMessage);
+    this.scheduleProbe();
+  }
+
+  private stopHold(): void {
+    if (this.probeTimer !== null) {
+      const clear = this.deps.clearTimer ?? ((id: unknown) => clearTimeout(id as ReturnType<typeof setTimeout>));
+      clear(this.probeTimer);
+      this.probeTimer = null;
+    }
+    this.heldChannel?.removeEventListener('message', this.onHeldMessage);
+    this.heldChannel = null;
+    this.heldId = null;
+  }
+
+  /** Vérification périodique de l'identifiant de fichier (MESH?) sur la liaison restée ouverte. */
+  private scheduleProbe(): void {
+    const set = this.deps.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+    this.probeTimer = set(() => {
+      this.probeTimer = null;
+      const channel = this.heldChannel;
+      if (!channel || this.view.phase !== 'unsupported') return;
+      this.probeReq = (this.probeReq + 1) >>> 0;
+      try {
+        channel.send(encodeMeshReq(this.probeReq));
+      } catch {
+        // Canal déjà fermé : sa fermeture relance l'ouverture (onChannelClosed).
+      }
+      this.scheduleProbe();
+    }, HOLD_PROBE_MS);
+  }
+
+  private readonly onHeldMessage = (ev: { data?: unknown }): void => {
+    const bytes = toBytes(ev.data);
+    const frame = bytes ? decodeFrame(bytes) : null;
+    if (frame?.t === 'mesh') this.onHeldFileId(frame.fileId);
+  };
+
+  /**
+   * Identifiant annoncé pendant un format refusé : s'il change, on relance l'ouverture (même délai que la reconnexion).
+   * Sans identifiant connu (maillage non négocié), la première annonce sert de référence.
+   */
+  private onHeldFileId(fileId: string): void {
+    if (this.view.phase !== 'unsupported') return;
+    if (this.heldId === null) {
+      this.heldId = fileId;
+      return;
+    }
+    if (fileId === this.heldId) return;
+    this.heldId = fileId;
+    this.scheduleReconnect();
   }
 
   private setView(phase: GuestPhase, message: string): void {

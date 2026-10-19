@@ -329,7 +329,8 @@ function onClick(e) {
   if (t.closest('[data-wp-invite]') && c) { void invite(); return; }
   if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
-  if (t.closest('[data-wp-leave]')) { partyBridge.leave(); toast('Tu as quitté le salon'); return; }
+  // Quitter ferme le panneau : sans salon, il n'affichait que le formulaire de création.
+  if (t.closest('[data-wp-leave]')) { partyBridge.leave(); togglePartyPanel(false); toast('Tu as quitté le salon'); return; }
   if (t.closest('[data-wp-end]')) {
     if (window.confirm('Terminer le salon pour tous les participants ?')) partyBridge.end();
     return;

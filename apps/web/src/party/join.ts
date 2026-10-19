@@ -89,3 +89,8 @@ export function hostLostText(): string {
 export function waitingHostText(): string {
   return 'En attente de l’hôte : la lecture partagée démarre quand il lit le titre.';
 }
+
+/** Message après « Quitter » : l’invité peut rejoindre à nouveau avec la même invitation. */
+export function leftText(): string {
+  return 'Tu as quitté le salon.';
+}

@@ -93,11 +93,14 @@ function useLocal(status: AuthStatus): AuthStatus {
   return status;
 }
 
-/** Détecte l'API utilisateur et restaure la session. À appeler une fois au démarrage, avant le premier rendu. */
-export async function initAuth(): Promise<AuthStatus> {
+/**
+ * Détecte l'API utilisateur et restaure la session. À appeler une fois au démarrage, avant le premier rendu.
+ * `anonymous` : page d'invitation sans compte, qui n'appelle pas `/user/me` (l'invité n'a pas de compte : réponse 401).
+ */
+export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<AuthStatus> {
   authEvents.onUnauthorized = () => { void signOut(true); };
   // Seule l'adresse du serveur est nécessaire à la connexion (la config est générée ensuite pour un compte neuf).
-  if (!getBase()) return useLocal('local');
+  if (!getBase() || opts.anonymous) return useLocal('local');
   if (isLocalMode() && !getSession()) return useLocal('local');
   try {
     const { account } = await api.me(4000);

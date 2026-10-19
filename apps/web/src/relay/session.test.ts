@@ -2,13 +2,14 @@
 // simulé (WebSocket factices reliés en mémoire, signalisation `rtc` relayée) et des connexions WebRTC factices.
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../party/client';
-import { endText, refusedText } from '../party/join';
+import { endText, leftText, refusedText } from '../party/join';
+import { PIECE_SHIFT } from './mesh/pieces';
 import type { RangeSource } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
 import type { PeerOptions } from './peer';
-import { capsMask, type DecodeCap } from './protocol';
-import type { PlaybackPlan, PlayerCallbacks, RoomState } from './player/types';
-import { GuestRelaySession, HostRelaySession, partySignal, type GuestPlayerLike } from './session';
+import { capsMask, encodeMesh, type DecodeCap } from './protocol';
+import type { PlaybackPlan, PlayerCallbacks, PlayerStats, RoomState } from './player/types';
+import { GuestRelaySession, HOLD_PROBE_MS, HostRelaySession, partySignal, type GuestPlayerLike, type GuestRelayDeps } from './session';
 
 /** Salon simulé : chaque WebSocket connaît son pair ; un `rtc` envoyé est livré au destinataire avec `from`. */
 class FakeSocket implements SocketLike {
@@ -32,8 +33,11 @@ class FakeSocket implements SocketLike {
     if (target) setTimeout(() => target.recv({ type: 'rtc', from, data: payload }), 0);
   }
 
+  /** Fermeture demandée par l'invité (« Quitter ») : observable par le test. */
+  closed = false;
+
   close(): void {
-    /* sans effet : le test pilote les fermetures */
+    this.closed = true;
   }
 
   recv(msg: unknown): void {
@@ -147,6 +151,9 @@ function fakePlayer(cb: PlayerCallbacks, plan: PlaybackPlan) {
     getState() {
       return { playing: false, position: 0, duration: 0 };
     },
+    getStats() {
+      return { decodedFrames: 7, audioChunks: 5 } as unknown as PlayerStats;
+    },
     destroy() {
       log.destroyed += 1;
     },
@@ -171,7 +178,9 @@ function sourceOf(bytes: Uint8Array): RangeSource {
 }
 
 /** Salon complet : hôte (h1) avec sa session de partage, invité (p1) avec sa session, lecteur factice. */
-async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, probe?: () => Promise<DecodeCap[]>) {
+async function chain(plan: PlaybackPlan | PlaybackPlan[] = { kind: 'native' }, size = 300_000, probe?: () => Promise<DecodeCap[]>, extra: Partial<GuestRelayDeps> = {}) {
+  // Une liste : un plan par ouverture du lecteur (le dernier sert ensuite).
+  const plans = Array.isArray(plan) ? plan : [plan];
   const room = new Room();
   const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
   const bytes = bytesOf(size);
@@ -185,7 +194,7 @@ async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, pr
   const guest = new GuestRelaySession({
     connect: async () => room.socket('p1'),
     createPlayer: (cb) => {
-      const f = fakePlayer(cb, plan);
+      const f = fakePlayer(cb, plans[Math.min(players.length, plans.length - 1)]);
       players.push(f);
       return f.player;
     },
@@ -193,6 +202,7 @@ async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, pr
     peer: { createPc: pcFactory('guest', wire) },
     connectTimeoutMs: 3000,
     decodeCaps: probe,
+    ...extra,
   });
   guest.start();
   await flush();
@@ -368,6 +378,91 @@ describe('session invité', () => {
     const { guest, hostRelay } = await chain(plan);
     await waitFor(() => guest.tick().phase === 'unsupported');
     expect(guest.tick().message).toBe(plan.message);
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
+  it('format non pris en charge : non terminal ; la fermeture de la liaison (bascule de l’hôte) relance l’ouverture et le décodage', async () => {
+    const unsupported: PlaybackPlan = { kind: 'unsupported', message: 'Format non pris en charge dans ce navigateur (codec hevc).' };
+    const { hostClient, hostRelay, guest, wire, bytes, players } = await chain([unsupported, { kind: 'native' }]);
+    await waitFor(() => guest.tick().phase === 'unsupported');
+    expect(players[0].log.destroyed).toBe(1);
+
+    // L'hôte bascule sur une source compatible : sa liaison se ferme (le canal de l'invité aussi), puis sa nouvelle session existe.
+    hostRelay.close();
+    wire.ch!.guest.close();
+    await waitFor(() => guest.tick().phase === 'host-lost', 4000);
+    const hostRelay2 = new HostRelaySession({ client: hostClient, source: sourceOf(bytes), createPc: pcFactory('host', wire) });
+    await waitFor(() => guest.tick().phase === 'ready', 8000);
+    expect(players).toHaveLength(2);
+
+    guest.destroy();
+    hostRelay2.close();
+  }, 20000);
+
+  it('format non pris en charge : un nouvel identifiant de fichier annoncé sur la liaison relance le décodage', async () => {
+    const unsupported: PlaybackPlan = { kind: 'unsupported', message: 'Format non pris en charge dans ce navigateur (codec hevc).' };
+    const { wire, guest, players, hostRelay } = await chain([unsupported, { kind: 'native' }]);
+    await waitFor(() => guest.tick().phase === 'unsupported');
+
+    // Sans maillage négocié, la première annonce sert de référence : même fichier, rien ne se passe.
+    wire.ch!.host.send(encodeMesh(1, PIECE_SHIFT, 'meme-fichier'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(guest.tick().phase).toBe('unsupported');
+    expect(players).toHaveLength(1);
+
+    // L'hôte annonce un autre fichier (réponse MESH? avec un nouvel identifiant) : l'invité rouvre la lecture et réessaie.
+    wire.ch!.host.send(encodeMesh(2, PIECE_SHIFT, 'autre-fichier'));
+    await waitFor(() => guest.tick().phase === 'ready', 8000);
+    expect(players).toHaveLength(2);
+
+    guest.destroy();
+    hostRelay.close();
+  }, 20000);
+
+  it('format non pris en charge : la vérification périodique de l’identifiant (MESH?) part sur la liaison, sans relance si le fichier est le même', async () => {
+    const unsupported: PlaybackPlan = { kind: 'unsupported', message: 'Format non pris en charge dans ce navigateur (codec hevc).' };
+    // Seule la vérification périodique est accélérée ; les autres délais restent réels.
+    const fastProbe = (fn: () => void, ms: number) => setTimeout(fn, ms === HOLD_PROBE_MS ? 20 : ms);
+    const { wire, guest, players, hostRelay } = await chain([unsupported, { kind: 'native' }], 300_000, undefined, {
+      setTimer: fastProbe,
+      clearTimer: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    });
+    await waitFor(() => guest.tick().phase === 'unsupported');
+    const sentBefore = wire.ch!.guest.sent;
+    await waitFor(() => wire.ch!.guest.sent > sentBefore, 2000);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(guest.tick().phase).toBe('unsupported');
+    expect(players).toHaveLength(1);
+
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
+  it('quitter : WebSocket du salon, relais, maillage et lecteur fermés ; état « left » ; aucune reconnexion ensuite', async () => {
+    const { room, hostRelay, guest, players } = await chain();
+    await waitFor(() => guest.tick().phase === 'ready');
+
+    guest.leave();
+    expect(guest.tick()).toMatchObject({ phase: 'left', message: leftText(), meshPeers: 0, playing: false });
+    expect(players[0].log.destroyed).toBe(1);
+    expect(room.get('p1')!.closed).toBe(true);
+
+    guest.start();
+    await flush();
+    expect(guest.tick().phase).toBe('left');
+    expect(room.get('p1')!.closed).toBe(true);
+    hostRelay.close();
+  }, 15000);
+
+  it('diagnostic : compteurs numériques (images, sons, octets de l’hôte et des pairs), sans URL', async () => {
+    const { guest, hostRelay } = await chain();
+    await waitFor(() => guest.tick().phase === 'ready');
+    guest.tick();
+    const c = guest.debugCounts();
+    expect(c).toEqual({ videoFrames: 7, audioData: 5, bytesFromHost: expect.any(Number), bytesFromPeers: 0 });
+    expect(c.bytesFromHost).toBeGreaterThan(0);
+    expect(JSON.stringify(c)).not.toMatch(/https?:|\//);
     guest.destroy();
     hostRelay.close();
   }, 15000);

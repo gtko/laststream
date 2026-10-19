@@ -58,11 +58,11 @@ await ensureServerSetup();
 // Lien de réinitialisation du mot de passe (#/reset/<jeton>) : page publique, avant toute connexion.
 const resetTok = resetToken();
 if (resetTok) await runResetFlow(resetTok);
-await initAuth();
+// Invitation d'un salon (#/party/join/<id>?t=<jeton>) : page sans compte, ni /user/me ni écran de connexion.
+const joinPage = parseJoinHash(location.hash || '') !== null;
+await initAuth({ anonymous: joinPage });
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
-// Invitation d'un salon (#/party/join/<id>?t=<jeton>) : page sans compte, l'écran de connexion ne s'affiche pas.
-const joinPage = parseJoinHash(location.hash || '') !== null;
 if (!joinPage) await runAuthFlow();
 if (isKidProfile()) {
   document.body.classList.add('kid-mode');

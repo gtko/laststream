@@ -7,8 +7,8 @@ import { cleanPseudo, guestWsPath, hashWithoutToken } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
 
-/** Phases où la session ne fait plus rien : on rend la main au formulaire. */
-const TERMINAL = new Set(['refused', 'ended', 'unsupported']);
+/** Phases où la session ne fait plus rien : on rend la main au formulaire. « unsupported » ne l'est pas : l'hôte peut changer de fichier. */
+const TERMINAL = new Set(['refused', 'ended', 'left']);
 const PHASE_TEXT = {
   joining: 'Connexion au salon…',
   'waiting-host': '',
@@ -19,6 +19,7 @@ const PHASE_TEXT = {
   refused: '',
   unsupported: '',
   ended: '',
+  left: '',
 };
 
 let session = null;
@@ -73,21 +74,38 @@ function dropTokenFromUrl() {
   }
 }
 
+/** Diagnostic des tests de bout en bout (lecture seule, nombres seulement) : actif seulement si `localStorage['ls.debug']` vaut 1. */
+function exposeStats(s) {
+  let on = false;
+  try {
+    on = globalThis.localStorage?.getItem('ls.debug') === '1';
+  } catch {
+    on = false;
+  }
+  if (on) window.__lsRelayStats = Object.freeze(s.debugCounts());
+}
+
 function refresh(root) {
   if (!session) return;
   const v = session.tick();
+  exposeStats(session);
   // Salon accepté (bienvenue reçue) : la phase n'est plus « joining » ni terminale.
   if (v.phase !== 'joining' && !TERMINAL.has(v.phase)) dropTokenFromUrl();
   const status = root.querySelector('[data-pj-status]');
   // La note (son non pris en charge) s'ajoute à la ligne d'état, sans remplacer le texte de la phase.
   status.textContent = [v.message || PHASE_TEXT[v.phase] || '', v.note].filter(Boolean).join(' ');
   const form = root.querySelector('[data-pj-form]');
+  const submit = root.querySelector('[data-pj-join]');
+  const leave = root.querySelector('[data-pj-leave]');
   if (TERMINAL.has(v.phase)) {
     stopSession();
     form.hidden = false;
+    submit.textContent = v.phase === 'left' ? 'Rejoindre à nouveau' : 'Rejoindre';
+    leave.hidden = true;
     return;
   }
   form.hidden = true;
+  leave.hidden = false;
   const player = root.querySelector('[data-pj-player]');
   player.hidden = !['loading', 'ready', 'host-lost'].includes(v.phase);
   const ready = v.phase === 'ready';
@@ -140,6 +158,13 @@ async function join(root, roomId, token) {
   refresh(root);
 }
 
+/** Clic « Quitter » : le WebSocket, le relais, le maillage et le lecteur se ferment ; la page propose de rejoindre à nouveau. */
+function leave(root) {
+  if (!session) return;
+  session.leave();
+  refresh(root);
+}
+
 /** Affiche la page d'invitation (remplace le contenu de la vue détail). */
 export function showPartyJoin(roomId, token) {
   stopSession();
@@ -150,6 +175,7 @@ export function showPartyJoin(roomId, token) {
     '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" required></label>' +
     '<button type="submit" class="btn btn-primary" data-pj-join>Rejoindre</button></form>' +
     '<p class="pj-msg" role="status" data-pj-status></p>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>Quitter</button>' +
     '<div class="pj-player" data-pj-player hidden>' +
     '<canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas>' +
     '<div class="pj-controls" role="group" aria-label="Lecture">' +
@@ -171,4 +197,5 @@ export function showPartyJoin(roomId, token) {
   root.querySelector('[data-pj-back]').addEventListener('click', () => session?.seekBy(-10));
   root.querySelector('[data-pj-fwd]').addEventListener('click', () => session?.seekBy(10));
   root.querySelector('[data-pj-retry]').addEventListener('click', () => session?.retry());
+  root.querySelector('[data-pj-leave]').addEventListener('click', () => leave(root));
 }
