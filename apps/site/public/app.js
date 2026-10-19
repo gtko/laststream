@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var WIN = 'https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-1.0.1.exe';
+  var WIN = 'https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-1.0.2.exe';
 
   function detectOS() {
     var ua = navigator.userAgent || '';
