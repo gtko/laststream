@@ -10,7 +10,7 @@ import { userStore } from '../data/userStore';
 import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
 import {
-  audioKnown, chooseCompatibleSource, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, type FileCodecs, type SourceLike,
+  audioKnown, chooseCompatibleSource, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, verdictOf, type FileCodecs, type GuestVerdict, type SourceLike,
 } from './compat';
 import { codecCacheKey, getCodecs, probeSource, probeUrl, putCodecs } from './headerCodecs';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
@@ -302,9 +302,29 @@ class PartyBridge {
     const relay = this.relay;
     const a = this.adapter?.() ?? null;
     if (!c || !c.isHost || !relay || !a) return null;
-    // Codecs de l'en-tête quand on les a lus pour ce relais, sinon ceux du nom de la source.
-    const file = this.header && this.header.relay === this.relayKey ? this.header.codecs : fileCodecsOf(a.view);
-    return compatWarning(file, guestStatuses(c.participants, relay.guestCaps()));
+    return compatWarning(this.sharedFile(a), guestStatuses(c.participants, relay.guestCaps()));
+  }
+
+  /**
+   * Verdict de chaque invité qui a annoncé ses capacités (« ok », « no-audio », « unplayable »), par nom de participant.
+   * Vide hors partage : la pastille d'état du panneau n'a rien à dire des autres participants.
+   */
+  guestVerdicts(): Map<string, GuestVerdict> {
+    const out = new Map<string, GuestVerdict>();
+    const c = this.client;
+    const relay = this.relay;
+    const a = this.adapter?.() ?? null;
+    if (!c || !c.isHost || !relay || !a) return out;
+    const file = this.sharedFile(a);
+    for (const g of guestStatuses(c.participants, relay.guestCaps())) {
+      if (g.caps) out.set(g.id, verdictOf(file, g.caps));
+    }
+    return out;
+  }
+
+  /** Codecs du fichier relayé : ceux de l'en-tête quand on les a lus pour ce relais, sinon ceux du nom de la source. */
+  private sharedFile(a: SessionAdapter): FileCodecs {
+    return this.header && this.header.relay === this.relayKey ? this.header.codecs : fileCodecsOf(a.view);
   }
 
   /**

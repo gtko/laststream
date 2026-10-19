@@ -23,45 +23,87 @@ let lastInviteUrl = '';
 let createdHere = false;
 /** Dernier bloc de compatibilité affiché (évite de le reconstruire à chaque seconde). */
 let compatShown = '';
+/** « Copié » affiché sur le bouton d’invitation pendant un instant : l’état vit ici, le panneau est reconstruit à chaque rendu. */
+let inviteCopied = false;
+let copiedTimer = 0;
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
 
-/** Ligne d'état du partage aux invités (débit montant ; aucune URL). */
-function relayText() {
-  if (partyBridge.relayRefused()) return 'Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.';
+/** Ligne compacte du partage : débit montant et nombre d’invités (secondaire). Texte seulement, jamais d’URL. */
+function rateHTML() {
+  const c = partyBridge.client;
+  const n = c ? guestCount(c) : 0;
+  const guests = '<span data-wp-guests>' + n + '</span> invité' + (n > 1 ? 's' : '');
+  if (partyBridge.relayRefused()) {
+    return '<span class="wp-rate-warn" title="Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.">Partage bloqué</span> · ' + guests;
+  }
   const s = partyBridge.relayStats();
-  if (!s) return 'Partage inactif : il démarre quand un invité est présent pendant la lecture.';
-  return 'Envoi : ' + fmtRate(s.rateBps) + ' vers ' + s.links + ' invité' + (s.links > 1 ? 's' : '') + '.';
+  return (s ? '↑ ' + fmtRate(s.rateBps) : 'Partage inactif') + ' · ' + guests;
 }
 
-/** Avertissement de compatibilité des invités et bouton de bascule ; vide si tous les invités annoncés peuvent tout lire. */
+/** Avertissement de compatibilité des invités, en bandeau discret, avec la bascule ; vide si tous les invités annoncés peuvent tout lire. */
 function compatHTML() {
   const warn = partyBridge.guestWarning();
   return warn
-    ? '<p class="wp-note wp-warn" role="status">' + esc(warn) + '</p>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-wp-compat>Passer à une source compatible</button>'
+    ? '<div class="wp-banner" role="status"><span>' + esc(warn) + '</span>' +
+      '<button type="button" class="wp-link" data-wp-compat>Passer à une source compatible</button></div>'
     : '';
 }
 
-function inviteHTML(c) {
+function inviteHTML() {
   const compat = compatHTML();
   compatShown = compat;
-  return '<section class="wp-invite"><button type="button" class="btn btn-ghost btn-sm" data-wp-invite>Copier le lien d’invitation</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button>' +
+  return '<section class="wp-invite">' +
     (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
-    '<p class="wp-note">Invités : <b data-wp-guests>' + guestCount(c) + '</b></p>' +
-    '<p class="wp-note wp-warn">Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.</p>' +
-    '<p class="wp-note" data-wp-relay role="status">' + esc(relayText()) + '</p>' +
+    '<div class="wp-invite-btns"><button type="button" class="btn btn-ghost btn-sm' + (inviteCopied ? ' is-done' : '') + '" data-wp-invite>' +
+    (inviteCopied ? 'Copié' : 'Copier le lien d’invitation') + '</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button></div>' +
+    '<p class="wp-rate" data-wp-relay title="Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.">' + rateHTML() + '</p>' +
     '<div class="wp-compat" data-wp-compatbox>' + compat + '</div></section>';
 }
 
 /** Lien d'un salon (ouvre la page de connexion au salon). */
 export const roomLink = (id) => shareBase().replace(/\/+$/, '') + '/#/party/' + encodeURIComponent(id);
 
-const dot = (color, art) => '<span class="wp-dot"' + avatarAttrs(art, color) + ' aria-hidden="true"></span>';
+/** États de la pastille d’un participant, avec leur libellé (infobulle et nom accessible). */
+const STATE_TEXT = new Map([['ready', 'Prêt'], ['buffering', 'Tampon'], ['no-audio', 'Sans son'], ['unplayable', 'Illisible']]);
 
-export function participantsHTML(list, you, youHost) {
+/**
+ * État affiché : `p.state` si le salon le fournit (tampon, etc.), sinon le verdict de compatibilité d’un invité (sans son,
+ * illisible), sinon « prêt ». Un verdict n’existe que pendant le partage aux invités.
+ */
+export function participantState(p, verdicts = new Map()) {
+  if (p.state && STATE_TEXT.has(p.state)) return p.state;
+  const v = verdicts.get(p.username);
+  return v === 'unplayable' || v === 'no-audio' ? v : 'ready';
+}
+
+/** Vrai si la couleur d’avatar est claire : l’initiale y est sombre (le blanc y contrasterait trop peu). Couleur absente : repli d’avatarAttrs. */
+export function avatarIsLight(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(color ?? '').trim());
+  const hex = m ? m[1] : '94a3b8';
+  const full = hex.length === 3 ? [...hex].map((ch) => ch + ch).join('') : hex;
+  const lin = [0, 2, 4].map((i) => {
+    const v = parseInt(full.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  const lum = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  // Contraste avec le blanc contre contraste avec une encre sombre (luminance ≈ 0,0045) : on garde le meilleur.
+  return (lum + 0.05) / 0.0545 > 1.05 / (lum + 0.05);
+}
+
+/** Initiale du pseudo (un caractère, en majuscule). */
+const initialOf = (name) => {
+  const ch = Array.from(String(name ?? '').trim())[0];
+  return ch ? ch.toLocaleUpperCase('fr') : '?';
+};
+
+/** Avatar rond : l’illustration si elle est en cache (sinon hydratée par avatar-art), sur la couleur du participant ; l’initiale par-dessus. */
+const avatarHTML = (p) => '<span class="wp-av' + (avatarIsLight(p.avatarColor) ? ' is-light' : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) +
+  ' aria-hidden="true"><span class="wp-av-ini">' + esc(initialOf(p.username)) + '</span></span>';
+
+export function participantsHTML(list, you, youHost, verdicts = new Map()) {
   return list.map((p) => {
     const me = you && p.username === you.username;
     const tools = youHost && !me
@@ -69,8 +111,11 @@ export function participantsHTML(list, you, youHost) {
         '<button type="button" class="wp-mini" data-wp-host="' + esc(p.username) + '" title="Céder le rôle d’hôte">Hôte</button>' +
         '<button type="button" class="wp-mini wp-danger" data-wp-kick="' + esc(p.username) + '">Exclure</button></span>'
       : '';
-    return '<li class="wp-user">' + dot(p.avatarColor, p.avatar) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
-      (p.host ? '<em class="wp-badge">Hôte</em>' : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">Muet</em>' : '') + tools + '</li>';
+    const state = participantState(p, verdicts);
+    const label = STATE_TEXT.get(state);
+    return '<li class="wp-user">' + avatarHTML(p) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
+      (p.host ? '<em class="wp-badge">Hôte</em>' : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">Muet</em>' : '') +
+      '<span class="wp-state is-' + state + '" role="img" aria-label="' + label + '" title="' + label + '"></span>' + tools + '</li>';
   }).join('');
 }
 
@@ -110,8 +155,9 @@ function roomHTML(c) {
     '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
-    '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host) + '</ul>' +
-    (inviter ? inviteHTML(c) : '') +
+    '<div class="wp-wait" data-wp-wait hidden></div>' +
+    '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts()) + '</ul>' +
+    (inviter ? inviteHTML() : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
     '<h4 class="wp-sub">Chat</h4><div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
     '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="500" autocomplete="off" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
@@ -153,20 +199,27 @@ function floatReaction(emoji, user) {
   setTimeout(() => s.remove(), 3200);
 }
 
-/** Rafraîchit seulement les compteurs (sans reconstruire le panneau) : débit montant et nombre d'invités. */
+/** Rafraîchit seulement les compteurs (sans reconstruire le panneau) : débit montant, nombre d'invités et bandeau de compatibilité. */
 function updateRelayLine() {
   if (!panel || !open) return;
   const relay = panel.querySelector('[data-wp-relay]');
-  if (relay) relay.textContent = relayText();
+  if (relay) relay.innerHTML = rateHTML();
   const box = panel.querySelector('[data-wp-compatbox]');
   const compat = compatHTML();
   if (box && compat !== compatShown) {
     compatShown = compat;
     box.innerHTML = compat;
   }
-  const c = partyBridge.client;
-  const guests = panel.querySelector('[data-wp-guests]');
-  if (guests && c) guests.textContent = String(guestCount(c));
+}
+
+/** Retour « Copié » pendant 2 s, puis le libellé d’origine revient. */
+function flashCopied() {
+  inviteCopied = true;
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => {
+    inviteCopied = false;
+    render();
+  }, 2000);
 }
 
 function attach() {
@@ -175,6 +228,7 @@ function attach() {
   attached = c;
   lastInviteUrl = '';
   createdHere = false;
+  inviteCopied = false;
   if (!c) return;
   c.on('chat', () => render());
   c.on('removed', () => render());
@@ -262,12 +316,12 @@ export function copyLink(id) {
 
 /**
  * Copie le lien d'invitation du salon (hôte seulement) et l'affiche dans le panneau. Un seul lien pour tous les invités ;
- * `rotate` (« Nouveau lien ») invalide l'ancien. Lève une erreur si l'invitation échoue.
+ * `rotate` (« Nouveau lien ») invalide l'ancien. Rend vrai si la copie a réussi. Lève une erreur si l'invitation échoue.
  */
 async function inviteLink(rotate = false) {
   const inv = await partyBridge.createInvite(rotate);
   lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
-  await copyText(lastInviteUrl, rotate ? 'Nouveau lien copié : l’ancien ne fonctionne plus' : 'Lien d’invitation copié');
+  return copyText(lastInviteUrl, rotate ? 'Nouveau lien copié : l’ancien ne fonctionne plus' : 'Lien d’invitation copié');
 }
 
 /**
@@ -312,7 +366,7 @@ async function switchCompatible() {
 
 async function invite(rotate = false) {
   try {
-    await inviteLink(rotate);
+    if (await inviteLink(rotate)) flashCopied();
   } catch (err) {
     toast(err instanceof UserApiError && err.code === 'not_host' ? 'Seul l’hôte peut inviter.' : 'Invitation impossible pour le moment.');
   }
@@ -329,7 +383,7 @@ async function inviteAfterCreate() {
   if (await partyBridge.waitForHost()) {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        await inviteLink();
+        if (await inviteLink()) flashCopied();
         render();
         return;
       } catch {
