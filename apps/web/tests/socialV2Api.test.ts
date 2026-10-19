@@ -89,13 +89,39 @@ describe('endpoints /user/social', () => {
     expect(sent[0].url).toBe('http://localhost:7000/user/social/me');
     expect(sent[0].headers.authorization).toBe('Bearer sess-token');
     expect(sent[0].headers['x-profile-token']).toBe('prof-token');
+    expect(sent[0].headers['x-profile-id']).toBe('p1');
   });
 
-  it('n’envoie pas de jeton de profil si le profil n’en a pas', async () => {
+  it('n’envoie pas de jeton de profil si le profil n’en a pas, mais envoie toujours X-Profile-Id', async () => {
     auth.profile = { id: 'p2', name: 'Sans jeton' } as any;
     try {
       reply = () => json({ friends: [], household: [], incoming: [], outgoing: [] });
       await api.getFriends();
+      expect(sent[0].headers['x-profile-token']).toBeUndefined();
+      expect(sent[0].headers['x-profile-id']).toBe('p2');
+    } finally {
+      auth.profile = { id: 'p1', name: 'Greg' } as any;
+    }
+  });
+
+  it('X-Profile-Id est le profil actif sur chaque route, ticket du canal compris', async () => {
+    reply = () => json({ wsPath: '/user/social/live?ticket=T' });
+    await api.getMe();
+    await api.putStatus('away');
+    await api.getFriends();
+    await api.putPresence(null);
+    await api.deletePresence();
+    await api.createLiveTicket();
+    expect(sent).toHaveLength(6);
+    for (const s of sent) expect(s.headers['x-profile-id']).toBe('p1');
+  });
+
+  it('suit le changement de profil actif (X-Profile-Id du profil courant)', async () => {
+    auth.profile = { id: 'p2', name: 'Sans jeton' } as any;
+    try {
+      reply = () => json({ wsPath: '/user/social/live?ticket=T' });
+      await api.createLiveTicket();
+      expect(sent[0].headers['x-profile-id']).toBe('p2');
       expect(sent[0].headers['x-profile-token']).toBeUndefined();
     } finally {
       auth.profile = { id: 'p1', name: 'Greg' } as any;

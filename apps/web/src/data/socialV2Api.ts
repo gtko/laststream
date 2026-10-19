@@ -2,8 +2,9 @@ import { auth } from './auth';
 import { call, UserApiError, type MediaKind } from './userApi';
 
 /* Client typé de l'API sociale v2 (`/user/social/*`, contrat docs/social-v2-contract.md) : profils, amis et demandes,
- * présence, messages, notes, ticket du canal temps réel. Le profil agissant est celui du compte connecté : son jeton de
- * profil part avec la requête (en-tête X-Profile-Token, comme le reste de /user). Aucun texte n'est affiché ici. */
+ * présence, messages, notes, ticket du canal temps réel. Le profil agissant est le profil actif : son identifiant part en
+ * X-Profile-Id (exigé par le serveur sur toutes les routes sociales) et son jeton de profil en X-Profile-Token, comme le
+ * reste de /user. Aucun texte n'est affiché ici. */
 
 export type Status = 'online' | 'away' | 'dnd' | 'invisible';
 export type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
@@ -78,9 +79,13 @@ export function validateHandle(input: string): Handle | null {
   return { name, tag, full: `${name}#${tag}` };
 }
 
-/** Appel `/user/social<path>` au nom du profil connecté. */
+/**
+ * Appel `/user/social<path>` au nom du profil actif : X-Profile-Id (sans lui le serveur répond 400 `profile_required`),
+ * et X-Profile-Token si ce profil a un PIN valable. Même mécanisme que `adminCall` et `asActor`.
+ */
 function social<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  return call<T>(SOCIAL + path, { method, body, profileId: auth.profile?.id });
+  const pid = auth.profile?.id;
+  return call<T>(SOCIAL + path, { method, body, profileId: pid, headers: pid ? { 'x-profile-id': pid } : undefined });
 }
 
 /** Ajoute les paramètres renseignés (les `undefined` sont omis) à un chemin. */
