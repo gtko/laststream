@@ -1,12 +1,13 @@
 /* RangeSource de l'hôte : lit des plages du lien débridé (URL https) avec un en-tête `Range`, depuis l'appareil de l'hôte.
  *  - web : `fetch` du navigateur (CORS requis chez l'hébergeur : sinon erreur `source`) ;
- *  - Windows : pont `native-http` de la coque (liste de domaines débrideurs côté coque ; réponse complète en base64, donc
- *    les plages restent bornées à 8 Mo) ;
+ *  - Windows : pont `native-range` de la coque (morceaux bornés) quand elle l'annonce, sinon `native-http` (liste de domaines
+ *    débrideurs côté coque ; réponse complète en base64, donc les plages restent bornées à 8 Mo) ;
  *  - Android : CapacitorHttp (responseType arraybuffer, hors WebView).
  * Le transport est choisi comme pour les débrideurs (`nativeKind`). Limite : un serveur qui ignore `Range` (réponse 200)
  * est refusé plutôt que téléchargé en entier. Aucune URL dans les erreurs, aucun journal. */
 
 import { browserFetchHttp, capacitorHttp, nativeKind, shellHttp, type HttpFn, type HttpRequest, type HttpResponse, type NativeKind } from '../sources/debrid/http';
+import { shellRangeHttp } from '../sources/debrid/nativeRange';
 import type { RangeSource } from './host';
 import { RelayError } from './protocol';
 
@@ -14,7 +15,7 @@ const TIMEOUT_MS = 30_000;
 
 /** Transport HTTP de la plateforme courante (même détection que les débrideurs). */
 export function rangeTransport(kind: NativeKind = nativeKind()): HttpFn {
-  if (kind === 'shell') return shellHttp();
+  if (kind === 'shell') return shellRangeHttp(shellHttp());
   if (kind === 'capacitor') return capacitorHttp();
   return browserFetchHttp();
 }
