@@ -11,13 +11,15 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ui src/player src/sources src/main.js",
-    "relay:e2e": "node scripts/relay-e2e/two-pages.mjs"
+    "relay:e2e": "node scripts/relay-e2e/two-pages.mjs",
+    "relay:e2e:ac3": "node scripts/relay-e2e/ac3.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.6.9",
     "@capacitor/core": "7.6.9",
     "@dicebear/collection": "9.4.2",
     "@dicebear/core": "9.4.2",
+    "@mediabunny/ac3": "^1.61.6",
     "@sentry/browser": "11.4.0",
     "hls.js": "1.7.3",
     "mediabunny": "^1.61.6"

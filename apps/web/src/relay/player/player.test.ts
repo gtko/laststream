@@ -30,6 +30,7 @@ function opened(audio: AudioTrackInfo | null): OpenedMedia {
     info: { container: 'MP4', duration: 10, video: AVC, audio },
     videoSink: null,
     audioSink: null,
+    audioTrack: null,
     videoConfig: { codec: AVC.codecString, codedWidth: 320, codedHeight: 240 },
     audioConfig: audio ? { codec: audio.codecString, sampleRate: audio.sampleRate, numberOfChannels: audio.numberOfChannels } : null,
     close: vi.fn(),
@@ -79,7 +80,7 @@ afterEach(() => {
 describe('GuestPlayer.load : son non décodable', () => {
   it('lit la vidéo sans créer de décodeur ni de contexte audio, et renvoie la note', async () => {
     vi.mocked(openMedia).mockResolvedValue(opened(EAC3));
-    const player = new GuestPlayer({ env: env(false) });
+    const player = new GuestPlayer({ env: env(false), loadAc3: async () => Promise.reject(new Error('non')) });
 
     const plan = await player.load(reader, canvas);
 

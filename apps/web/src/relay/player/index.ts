@@ -1,3 +1,4 @@
+export { loadAc3Decoder, isAc3Codec, sampleToAudioData, type Ac3Loader } from './ac3';
 export { GuestPlayer, type GuestPlayerOptions } from './player';
 export { openMedia, type OpenedMedia } from './demux';
 export { checkSupport, codecLabel, defaultCodecEnv, type CodecEnv, type TrackSet } from './detect';

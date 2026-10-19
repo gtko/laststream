@@ -1,10 +1,12 @@
-import { ALL_FORMATS, CustomSource, EncodedPacketSink, Input } from 'mediabunny';
+import { ALL_FORMATS, CustomSource, EncodedPacketSink, Input, type InputAudioTrack } from 'mediabunny';
 import type { AudioTrackInfo, MediaInfo, RangeReader, VideoTrackInfo } from './types';
 
 export interface OpenedMedia {
   info: MediaInfo;
   videoSink: EncodedPacketSink | null;
   audioSink: EncodedPacketSink | null;
+  /** Piste audio, pour le décodage par mediabunny (AC-3 / E-AC-3, que WebCodecs refuse). */
+  audioTrack: InputAudioTrack | null;
   /** Configuration WebCodecs prête à l'emploi (null si mediabunny ne sait pas la produire). */
   videoConfig: VideoDecoderConfig | null;
   audioConfig: AudioDecoderConfig | null;
@@ -55,6 +57,7 @@ export async function openMedia(reader: RangeReader): Promise<OpenedMedia> {
     let audio: AudioTrackInfo | null = null;
     let audioSink: EncodedPacketSink | null = null;
     let audioConfig: AudioDecoderConfig | null = null;
+    let audioTrack: InputAudioTrack | null = null;
     const at = await input.getPrimaryAudioTrack();
     if (at) {
       const cfg = await at.getDecoderConfig();
@@ -68,6 +71,7 @@ export async function openMedia(reader: RangeReader): Promise<OpenedMedia> {
       if (cfg) {
         audioConfig = cfg;
         audioSink = new EncodedPacketSink(at);
+        audioTrack = at;
       }
     }
 
@@ -82,6 +86,7 @@ export async function openMedia(reader: RangeReader): Promise<OpenedMedia> {
       info: { container: format.name, duration, video, audio },
       videoSink,
       audioSink,
+      audioTrack,
       videoConfig,
       audioConfig,
       close: () => input.dispose(),

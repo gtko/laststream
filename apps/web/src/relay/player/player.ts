@@ -1,4 +1,5 @@
-import type { EncodedPacket } from 'mediabunny';
+import { AudioSampleSink, type AudioSample, type EncodedPacket } from 'mediabunny';
+import { sampleToAudioData, type Ac3Loader } from './ac3';
 import type { CodecEnv } from './detect';
 import { openMedia, type OpenedMedia } from './demux';
 import { resolvePlayback } from './fallback';
@@ -33,6 +34,8 @@ const END_MARGIN_S = 0.05;
 export interface GuestPlayerOptions extends PlayerCallbacks {
   /** Environnement WebCodecs (tests). Par défaut : globalThis. */
   env?: CodecEnv;
+  /** Chargeur du décodeur AC-3 / E-AC-3 (tests). Par défaut : import dynamique de @mediabunny/ac3. */
+  loadAc3?: Ac3Loader;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -50,6 +53,9 @@ const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v
 export class GuestPlayer {
   private readonly cb: PlayerCallbacks;
   private readonly env?: CodecEnv;
+  private readonly loadAc3?: Ac3Loader;
+  /** Sink mediabunny quand le son est décodé par @mediabunny/ac3 (pas d'AudioDecoder). */
+  private ac3Sink: AudioSampleSink | null = null;
   private media: OpenedMedia | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx2d: CanvasRenderingContext2D | null = null;
@@ -81,6 +87,7 @@ export class GuestPlayer {
   constructor(options: GuestPlayerOptions = {}) {
     this.cb = options;
     this.env = options.env;
+    this.loadAc3 = options.loadAc3;
   }
 
   /**
@@ -91,7 +98,7 @@ export class GuestPlayer {
   async load(reader: RangeReader, canvas: HTMLCanvasElement): Promise<PlaybackPlan> {
     this.unload();
     const media = await openMedia(reader);
-    const plan = await resolvePlayback({ video: media.info.video, audio: media.info.audio }, this.env);
+    const plan = await resolvePlayback({ video: media.info.video, audio: media.info.audio }, this.env, this.loadAc3);
     if (plan.kind !== 'native') {
       media.close();
       return plan;
@@ -101,7 +108,7 @@ export class GuestPlayer {
       media.audioConfig = null;
     }
     try {
-      this.setup(media, canvas);
+      this.setup(media, canvas, plan.audioDecoder === 'ac3');
     } catch (error) {
       this.unload();
       throw error;
@@ -171,7 +178,7 @@ export class GuestPlayer {
 
   // ---- Mise en place et déchargement -------------------------------------------------------------
 
-  private setup(media: OpenedMedia, canvas: HTMLCanvasElement): void {
+  private setup(media: OpenedMedia, canvas: HTMLCanvasElement, ac3: boolean): void {
     this.media = media;
     this.duration = media.info.duration;
     this.canvas = canvas;
@@ -193,12 +200,16 @@ export class GuestPlayer {
     }
     if (media.audioConfig) {
       this.audioCtx = new AudioContext();
-      const decoder = new AudioDecoder({
-        output: (data) => this.onAudioData(data),
-        error: (error) => this.fail(error),
-      });
-      decoder.configure(media.audioConfig);
-      this.adec = decoder;
+      if (ac3 && media.audioTrack) {
+        this.ac3Sink = new AudioSampleSink(media.audioTrack);
+      } else {
+        const decoder = new AudioDecoder({
+          output: (data) => this.onAudioData(data),
+          error: (error) => this.fail(error),
+        });
+        decoder.configure(media.audioConfig);
+        this.adec = decoder;
+      }
     }
 
     this.playing = false;
@@ -227,6 +238,7 @@ export class GuestPlayer {
     }
     this.vdec = null;
     this.adec = null;
+    this.ac3Sink = null;
     if (this.audioCtx) void this.audioCtx.close().catch(() => undefined);
     this.audioCtx = null;
     this.media?.close();
@@ -311,7 +323,10 @@ export class GuestPlayer {
       if (key) void this.feedVideo(gen, media.videoSink.packets(key));
       else this.videoEOF = true;
     }
-    if (media.audioSink && this.adec) {
+    if (this.ac3Sink) {
+      // Décodage par mediabunny : les échantillons (secondes) sont convertis en AudioData (µs) à l'arrivée.
+      void this.feedAc3(gen, this.ac3Sink.samples(target));
+    } else if (media.audioSink && this.adec) {
       const packet = (await media.audioSink.getPacket(target)) ?? (await media.audioSink.getFirstPacket());
       if (gen !== this.gen) return;
       if (packet) void this.feedAudio(gen, media.audioSink.packets(packet));
@@ -372,6 +387,36 @@ export class GuestPlayer {
       }
     } catch (error) {
       if (gen === this.gen) this.fail(error);
+    }
+  }
+
+  private async feedAc3(gen: number, samples: AsyncGenerator<AudioSample, void, unknown>): Promise<void> {
+    try {
+      for (;;) {
+        if (gen !== this.gen || !this.ac3Sink) return;
+        if (this.audioFedEnd - this.mediaNow() >= AUDIO_LIMITS.maxAheadSec) {
+          await sleep(WAKE_MS);
+          continue;
+        }
+        const next = await samples.next();
+        if (gen !== this.gen || !this.ac3Sink) {
+          if (!next.done) next.value.close();
+          return;
+        }
+        if (next.done) {
+          this.audioEOF = true;
+          return;
+        }
+        const sample = next.value;
+        this.audioFedEnd = Math.max(this.audioFedEnd, sample.timestamp + sample.duration);
+        this.mediaEnd = Math.max(this.mediaEnd, sample.timestamp + sample.duration);
+        this.onAudioData(sampleToAudioData(sample));
+      }
+    } catch (error) {
+      if (gen === this.gen) this.fail(error);
+    } finally {
+      // Abandon (seek, déchargement) : libère le décodeur de la boucle.
+      if (gen !== this.gen) void samples.return(undefined).catch(() => undefined);
     }
   }
 

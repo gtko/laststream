@@ -48,10 +48,11 @@ export type SupportResult =
 
 /**
  * Décision de lecture. `native` : lecture avec WebCodecs ; `withoutAudio` : seule la vidéo est lue (son refusé),
- * `note` est alors le message discret à afficher. `unsupported` : format refusé, avec un message à afficher.
+ * `note` est alors le message discret à afficher.
+ * `audioDecoder: 'ac3'` : le son (AC-3 / E-AC-3) est décodé par @mediabunny/ac3 au lieu d'AudioDecoder. `unsupported` : format refusé, avec un message à afficher.
  */
 export type PlaybackPlan =
-  | { kind: 'native'; withoutAudio?: boolean; note?: string }
+  | { kind: 'native'; withoutAudio?: boolean; note?: string; audioDecoder?: 'ac3' }
   | { kind: 'unsupported'; message: string };
 
 export interface PlayerState {
