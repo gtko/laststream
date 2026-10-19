@@ -220,7 +220,7 @@ describe('invités dans le salon', () => {
     expect(serialized).not.toMatch(/https?:\/\//);
     // Un invité entre en tampon : l'attente est annoncée avant l'arrivée.
     expect(broadcasts(effects)).toEqual([
-      { t: 'wait', who: ['Léa'], since: T0, maxMs: 45_000 },
+      { t: 'wait', who: ['Léa'], since: T0, maxMs: 45_000, resumeAhead: 10 },
       { t: 'join', participant: expect.objectContaining({ username: 'Léa', guest: true, peerId: guest.connId }) },
     ]);
     // L'affiche (URL) n'est pas envoyée à l'invité, mais reste visible pour un compte.

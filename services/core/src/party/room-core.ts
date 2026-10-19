@@ -16,6 +16,7 @@ import {
   type Identity,
   MAX_GUESTS,
   MAX_REPORTS,
+  PARTY_RESUME_AHEAD_SEC,
   PARTY_WAIT_MAX_MS,
   type Participant,
   type StoredChatLine,
@@ -85,6 +86,11 @@ export function guestRefusal(check: JoinCheck): { code: number; reason: string }
     case 'name_changed':
       return { code: CLOSE.nameChanged, reason: 'name_changed' };
   }
+}
+
+/** Message `wait` : retardataires (vide = fin d'attente), début de l'attente (ms serveur) et seuils lus par les clients. */
+function waitView(who: string[], since: number): ServerMessage {
+  return { t: 'wait', who, since, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC };
 }
 
 /** Fenêtres de débit par participant : `max` messages par `windowMs`. Au-delà de 2 fois la limite, la connexion est fermée. */
@@ -442,7 +448,7 @@ export class RoomCore {
       const name = this.members.get(id)?.username;
       if (name !== undefined) who.push(name);
     }
-    return { t: 'wait', who, since: this.data.waitSince ?? 0, maxMs: PARTY_WAIT_MAX_MS };
+    return waitView(who, this.data.waitSince ?? 0);
   }
 
   /**
@@ -486,7 +492,7 @@ export class RoomCore {
     this.data.waitSince = null;
     this.data.heldByWait = false;
     this.dirty.add('room');
-    const effects: Effect[] = [{ kind: 'broadcast', msg: { t: 'wait', who: [], since, maxMs: PARTY_WAIT_MAX_MS } }];
+    const effects: Effect[] = [{ kind: 'broadcast', msg: waitView([], since) }];
     if (held) {
       this.data.state = this.nextState(true, this.data.state.pos);
       effects.push({ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: this.clock(), by } });
@@ -528,9 +534,8 @@ export class RoomCore {
           // Rapport périodique de l'hôte (horloge de référence) : on ne rediffuse que si la position diffère de ce que les autres suivent.
           if (!isHost) return this.err(accountId, 'not_host');
           if (Math.abs(message.pos - expectedPosition(current, now)) <= HOST_SYNC_TOLERANCE_SEC) return [];
+          // Correction de position pendant l'attente : la position suit, l'attente garde la reprise automatique.
           this.data.state = this.nextState(current.playing, message.pos);
-          // Correction de position pendant l'attente : geste manuel, pas de reprise automatique.
-          if (waiting) this.data.heldByWait = false;
         } else if (waiting && message.action === 'play') {
           // Pendant une attente, la lecture demandée est différée : elle reprend à la fin de l'attente, pas tout de suite.
           this.data.state = this.nextState(false, message.pos);
@@ -538,8 +543,8 @@ export class RoomCore {
         } else {
           // Lecture partagée : play, pause et seek viennent de n'importe quel participant (hôte ou invité).
           this.data.state = this.nextState(message.action === 'seek' ? current.playing : message.action === 'play', message.pos);
-          // Pause ou saut manuel pendant l'attente : une pause voulue n'est jamais relancée.
-          if (waiting) this.data.heldByWait = false;
+          // Seule une pause explicite annule la reprise automatique de l'attente ; un saut (seek) déplace la position et la garde.
+          if (message.action === 'pause') this.data.heldByWait = false;
         }
         this.dirty.add('room');
         return [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by: member.username } }];

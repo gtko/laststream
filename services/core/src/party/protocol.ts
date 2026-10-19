@@ -26,7 +26,7 @@ export const GUEST_SESSION_MS = 12 * 3600_000;
 /** Invités sans compte connectés en même temps dans un salon. */
 export const MAX_GUESTS = 4;
 export const GUEST_NAME_MAX = 24;
-/** Attente de tampon : avance (s) à partir de laquelle un participant se déclare prêt. Seuil côté client (le serveur ne le juge pas). */
+/** Attente de tampon : avance (s) à partir de laquelle un participant se déclare prêt. Seuil côté client (le serveur ne le juge pas), diffusé dans `wait` (`resumeAhead`). */
 export const PARTY_RESUME_AHEAD_SEC = 10;
 /** Attente de tampon : délai maximal (ms) avant reprise sans les retardataires. */
 export const PARTY_WAIT_MAX_MS = 45_000;
@@ -237,8 +237,8 @@ export type ServerMessage =
   | { t: 'reported'; messageId: string; by?: string; against?: string; text?: string }
   /** Message retiré par la modération du serveur : les clients le masquent. */
   | { t: 'removed'; messageId: string }
-  /** Attente de tampon : pseudos des retardataires, début (ms serveur) et délai maximal. `who` vide = fin d'attente. */
-  | { t: 'wait'; who: string[]; since: number; maxMs: number }
+  /** Attente de tampon : pseudos des retardataires, début (ms serveur), délai maximal, et avance (s) de `buf ready` attendue. `who` vide = fin d'attente. */
+  | { t: 'wait'; who: string[]; since: number; maxMs: number; resumeAhead: number }
   /** À l'hôte seulement : le lien partagé a été renouvelé (exclusion d'un invité entré par ce lien) ; il doit en demander la nouvelle valeur. */
   | { t: 'link_renewed' }
   | { t: 'error'; code: string }

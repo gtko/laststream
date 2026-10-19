@@ -186,6 +186,7 @@ Messages JSON, une trame = un message, 4 Ko au plus. Le client envoie `{ "t": �
 | `{t:"episode", season, episode, fingerprint?}` | **hôte** | changement d'épisode (séries) ; position remise à 0, en pause |
 | `{t:"chat", text}` | tous | message (500 caractères, filtré) |
 | `{t:"react", emoji}` | tous | réaction parmi 👍 ❤️ 😂 😮 😢 👏 🔥 🎉 |
+| `{t:"buf", ready, ahead:<s>}` | tous | déclare son tampon : `ready` = assez d'avance pour lire, `ahead` = secondes bufferisées devant la position (0 à 600) ; 20 déclarations / 10 s. Un participant qui n'est pas prêt retient la lecture (voir `wait`) |
 | `{t:"report", messageId, reason?}` | tous | signale un message d'un autre participant |
 | `{t:"mute", user, muted}` | **hôte** | rend muet / rétablit (par pseudo) |
 | `{t:"kick", user}` | **hôte** | exclut définitivement du salon |
@@ -203,6 +204,7 @@ Messages JSON, une trame = un message, 4 Ko au plus. Le client envoie `{ "t": �
 | `join` / `leave` | `participant` / `user` |
 | `chat` | `line {id, from, text, at}` |
 | `react` | `user`, `emoji`, `at` |
+| `wait` | `who` (pseudos des retardataires en tampon ; vide = fin d'attente), `since` (début, ms serveur), `maxMs` (délai avant reprise sans eux : 45 s), `resumeAhead` (avance en s à partir de laquelle un participant est prêt : 10). Fin d'attente : tous prêts, retardataire parti ou exclu, ou délai dépassé. La lecture reprend si l'attente l'avait suspendue ; seule une pause explicite annule cette reprise |
 | `muted` | `user`, `muted` |
 | `host` | `user` (nouvel hôte) |
 | `reported` | confirmation au signaleur ; à l'hôte : `by`, `against`, `text` |
