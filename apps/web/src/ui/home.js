@@ -29,6 +29,7 @@ import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { exploreMenuHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
+import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderTvRows } from './shows.js';
@@ -304,9 +305,20 @@ export function viewA(d) {
 }
 
 export function tabbar() {
-  // Sur mobile, l'onglet « Stats » (pas encore disponible) laisse sa place à « Amis » dès qu'un compte est connecté.
-  const tabs = socialEnabled() ? TABS.map((t) => (t[0] === 'Stats' ? ['Amis', 'users', false] : t)) : TABS;
-  const items = tabs.map(([label, icon, current]) =>
+  // Compte connecté (hors profil enfant) : Accueil, Rechercher, Amis (pastille, ouvre la page Amis) et Ma liste (Social v3).
+  if (socialEnabled()) {
+    const n = socialState().badge;
+    const tab = (cls, attrs, icon, label, extra = '') =>
+      '<' + (attrs.href ? 'a' : 'button type="button"') + ' class="tab' + cls + '"' + attrs.html + '>' + ICON[icon] + '<span class="tab-label">' + label + '</span>' + extra +
+      '</' + (attrs.href ? 'a' : 'button') + '>';
+    const badge = '<span class="soc-badge tab-badge" data-soc-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 99 ? '99+' : n) + '</span>';
+    return '<nav class="tabbar" aria-label="Navigation principale">' +
+      tab(' is-current', { href: true, html: ' href="#/" data-noop aria-current="page"' }, 'home', 'Accueil') +
+      tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
+      tab('', { html: ' data-soc-open aria-controls="social-sidebar" aria-expanded="false" aria-label="Amis"' }, 'users', 'Amis', badge) +
+      tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') + '</nav>';
+  }
+  const items = TABS.map(([label, icon, current]) =>
     '<a href="' + tabHref(label) + '"' + tabData(label) + ' class="tab' + (current ? ' is-current' : '') + '"' + (current ? ' aria-current="page"' : '') + '>' +
     (icon ? ICON[icon] : '<span class="avatar avatar-tab" aria-hidden="true">' + esc(initialOf()) + '</span>') +
     '<span class="tab-label">' + label + '</span></a>').join('');
