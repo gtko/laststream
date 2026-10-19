@@ -78,21 +78,20 @@ export function playDirect(request, opener, extra = {}) {
 
 export const closeVideo = closePlayer;
 
-// Préchargement : un survol ou un focus de plus de 300 ms sur « Lecture » lance la recherche de sources en arrière-plan,
-// pour que le lecteur s'ouvre souvent avec la source déjà choisie.
-let hoverTimer = null;
+// Préchargement : seulement un focus maintenu 1 s sur « Lecture » (télécommande, clavier) lance la recherche de sources en
+// arrière-plan. Un survol souris ne lance ni /stream ni les sondes du débrideur : le clic reste le déclencheur normal.
+const PREFETCH_FOCUS_MS = 1000;
+let focusTimer = null;
 const playBtn = (t) => (t instanceof Element ? t.closest('[data-play]') : null);
 function armPrefetch(e) {
   const b = playBtn(e.target);
   if (!b) return;
-  clearTimeout(hoverTimer);
-  hoverTimer = setTimeout(() => {
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
     const r = requestFrom(b);
     if (r && getAutoplay()) prefetchSources(r);
-  }, 300);
+  }, PREFETCH_FOCUS_MS);
 }
-const disarmPrefetch = () => clearTimeout(hoverTimer);
-document.addEventListener('pointerover', armPrefetch);
+const disarmPrefetch = () => clearTimeout(focusTimer);
 document.addEventListener('focusin', armPrefetch);
-document.addEventListener('pointerout', (e) => { if (playBtn(e.target)) disarmPrefetch(); });
 document.addEventListener('focusout', (e) => { if (playBtn(e.target)) disarmPrefetch(); });

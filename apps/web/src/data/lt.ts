@@ -1,6 +1,6 @@
 import { ltUrl, requireBase, type QueryValue } from './config';
 import { getRegion, getVideoLang } from './prefs';
-import { cachedRequest, requestJson } from './transport';
+import { cachedRequest, isFicheUrl, requestFiche, requestJson } from './transport';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** Les réponses TMDB / MDBList / TVDB gardent la forme du prototype : volontairement non typées ici. */
@@ -8,10 +8,10 @@ export type Json = any;
 
 export type Params = Record<string, QueryValue>;
 
-/** GET {base}/{config}/lt/<path> avec cache client (5 min mini) et au plus 6 requêtes en vol. */
+/** GET {base}/{config}/lt/<path> avec cache client (5 min mini) et au plus 6 requêtes en vol. Les fiches revalident leur ETag. */
 export function api<T = Json>(path: string, params?: Params): Promise<T> {
   const url = ltUrl(path, params);
-  return cachedRequest<T>(url, () => requestJson<T>(url));
+  return cachedRequest<T>(url, () => (isFicheUrl(url) ? requestFiche<T>(url) : requestJson<T>(url)));
 }
 
 /** Route TMDB (liste blanche côté serveur). `region` suit le réglage de l'utilisateur (France par défaut). */
@@ -31,6 +31,91 @@ export interface HistoryEntry {
 
 export const mdblist = (type: string, id: string | number) => api('mdblist/' + type + '/' + id);
 export const tvdbSeries = (id: string | number) => api('tvdb/series/' + id);
+
+// ---- Fiche serveur d'un film ou d'une série (fusion TMDB, TVDB, notes, casting, saisons et épisodes) ----
+export type ServerMetaType = 'movie' | 'series';
+
+/** Notes MDBList : même forme que la route /mdblist (`ratings` par source, `score`). */
+export interface ServerMetaRatings {
+  ratings: Record<string, number | null>;
+  score: number | null;
+}
+
+export interface ServerMetaSeason {
+  number: number;
+  name: string;
+  episodeCount: number;
+  airDate: string | null;
+  poster: string | null;
+}
+
+export interface ServerMetaEpisode {
+  season: number;
+  episode: number;
+  absolute: number | null;
+  name: string | null;
+  overview: string | null;
+  airDate: string | null;
+  runtime: number | null;
+  still: string | null;
+  tmdbSeason: number | null;
+  tmdbEpisode: number | null;
+  streamId?: string;
+}
+
+/** Saisons et épisodes à plat (séries seulement ; null si indisponibles). */
+export interface ServerMetaEpisodes {
+  source: string;
+  seasons: ServerMetaSeason[];
+  episodes: ServerMetaEpisode[];
+}
+
+/** Fiche serveur (GET {base}/{config}/lt/meta/:type/:tmdbId) : forme de MetaFiche côté lastAddon (src/lt/meta.ts). */
+export interface ServerMeta {
+  v: 1;
+  type: ServerMetaType;
+  tmdbId: number;
+  imdbId: string | null;
+  tvdbId: number | null;
+  title: string;
+  originalTitle: string | null;
+  year: number | null;
+  releaseDate: string | null;
+  status: string | null;
+  nextAirDate: string | null;
+  overview: string | null;
+  genres: string[];
+  runtime: number | null;
+  poster: string | null;
+  backdrop: string | null;
+  cast: Array<{ id: number; name: string; character: string | null; profile: string | null }>;
+  ratings: ServerMetaRatings | null;
+  ratingsDueAt: number;
+  tvdb: { status: string; seasonCount: number; nextAired: string; lastAired: string } | null;
+  episodes: ServerMetaEpisodes | null;
+  partial: boolean;
+}
+
+function isServerMeta(value: unknown, type: ServerMetaType, tmdbId: number): value is ServerMeta {
+  if (typeof value !== 'object' || value === null) return false;
+  const r = value as Record<string, unknown>;
+  return r.v === 1 && r.type === type && r.tmdbId === tmdbId && typeof r.title === 'string' && Array.isArray(r.cast);
+}
+
+/**
+ * Fiche serveur d'un film ou d'une série, avec le même cache que les fiches TMDB et TVDB (corps et ETag gardés ; une
+ * réponse 304 réutilise le corps). Rejette sur une erreur (404 : identifiant inconnu ou service non configuré) ou sur une
+ * forme inattendue : l'appelant replie alors sur les appels séparés.
+ */
+export async function fetchServerMeta(type: ServerMetaType, tmdbId: number | string): Promise<ServerMeta> {
+  const id = Number(tmdbId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('identifiant TMDB invalide');
+  // Appel direct à requestFiche : isFicheUrl ne liste que les routes amont (tmdb, mdblist, tvdb).
+  const url = ltUrl(`meta/${type}/${id}`);
+  const body = await cachedRequest<unknown>(url, () => requestFiche<unknown>(url));
+  if (!isServerMeta(body, type, id)) throw new Error('fiche serveur : forme inattendue');
+  return body;
+}
 export interface RecommendOptions {
   /** Nombre de titres demandés. */
   count?: number;

@@ -12,6 +12,7 @@ import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { metaHTML, ratingList } from './ratings.js';
 import { state } from './state.js';
 import { esc } from './util.js';
+import { intentTimer } from './intent.js';
 
 export const HERO_MS = 10000;
 export const HERO_MAX = 8;
@@ -101,17 +102,39 @@ function preloadNext() {
   getDetail(next);
 }
 
-/**
- * Notes MDBList de la diapositive affichée, chargées à son affichage seulement (le quota est partagé) ; seule la liste
- * des notes de cette diapositive est remplacée.
- */
-export function rateSlide(it) {
+// Notes MDBList : seulement après un survol stable de la mise en avant (500 ms), jamais à l'affichage (le quota est partagé).
+const ratings = intentTimer();
+/** Mise en avant simple (profil enfant) : son titre, et l'élément qui la contient pour suivre le survol. */
+let single = null;
+let root = null;
+
+/** Titre dont les notes sont demandées : la diapositive affichée, ou la mise en avant simple. */
+const shownItem = () => (hero.el ? hero.items[hero.i] : single);
+
+/** Notes MDBList de la diapositive affichée ; seule la liste des notes de cette diapositive est remplacée. */
+function rateNow(it) {
   if (!it) return;
   getDetail(it, { ratings: true }).then((d) => {
     const slide = Array.from(document.querySelectorAll('#app .hero-slide')).find((s) => s.dataset.slideKey === it.key);
     const list = slide && slide.querySelector('.rates-hero');
     if (d && list) list.innerHTML = ratingList(d.ratings, tmdbFallback(it));
   });
+}
+
+function armRatings() {
+  ratings.arm(() => rateNow(shownItem()));
+}
+
+/** Détail TMDB du titre affiché (logo, synopsis, bande-annonce) : immédiat, sans MDBList. */
+function loadDetail(it) {
+  if (it) getDetail(it).catch(() => null);
+}
+
+/** Mise en avant simple (profil enfant) : détail TMDB tout de suite, notes MDBList au survol seulement. */
+export function prepareSingle(it) {
+  single = it || null;
+  root = single ? document.querySelector('#app .hero') : null;
+  loadDetail(single);
 }
 
 export function go(index, auto) {
@@ -132,7 +155,9 @@ export function go(index, auto) {
   });
   setupPreviews(); // la bande-annonce après inactivité concerne la diapositive courante
   preloadNext();
-  rateSlide(hero.items[next]);
+  loadDetail(hero.items[next]);
+  ratings.cancel(); // notes de la diapositive précédente : inutiles désormais
+  if (hero.hover) armRatings();
   schedule();
 }
 
@@ -163,18 +188,23 @@ export function stopHero() {
   clearTimeout(hero.timer);
   hero.timer = null;
   hero.el = null;
+  hero.hover = false; // un rendu neuf sous le pointeur : la prochaine entrée doit relancer le compte à rebours
+  ratings.cancel();
+  single = null;
+  root = null;
 }
 
 /** À appeler après chaque rendu de l'accueil. */
 export function initHero(items) {
   stopHero();
   const el = document.querySelector('#app [data-hero]');
-  if (!el) { rateSlide(items && items[0]); return; } // titre unique : mise en avant simple, sans carrousel
+  if (!el) { prepareSingle(items && items[0]); return; } // titre unique : mise en avant simple, sans carrousel
   Object.assign(hero, { el, items, i: 0, hover: false, focus: false });
+  root = el;
   items.slice(0, 2).forEach((it) => { if (detailOf(it).released === false) dropSlide(it.key); });
   items.slice(2).forEach((it) => getDetail(it).then((d) => { if (d) refreshSlide(it.key); }));
   preloadNext();
-  rateSlide(hero.items[hero.i]);
+  loadDetail(hero.items[hero.i]);
   schedule();
 }
 
@@ -189,10 +219,13 @@ export function dropHiddenSlides() {
 onHomeChange(dropHiddenSlides);
 
 document.addEventListener('pointerover', (e) => {
-  if (!hero.el || e.pointerType !== 'mouse') return;
-  hero.hover = e.target instanceof Element && hero.el.contains(e.target);
+  if (e.pointerType !== 'mouse') return;
+  const inside = !!root && root.isConnected && e.target instanceof Element && root.contains(e.target);
+  if (inside && !hero.hover) armRatings(); // entrée dans la mise en avant : les notes attendent 500 ms de survol stable
+  if (!inside) ratings.cancel();
+  hero.hover = inside;
 });
-document.addEventListener('mouseleave', () => { hero.hover = false; });
+document.addEventListener('mouseleave', () => { hero.hover = false; ratings.cancel(); });
 document.addEventListener('focusin', (e) => { hero.focus = !!(hero.el && e.target instanceof Element && hero.el.contains(e.target)); });
 document.addEventListener('focusout', (e) => {
   if (hero.el && !(e.relatedTarget instanceof Element && hero.el.contains(e.relatedTarget))) hero.focus = false;

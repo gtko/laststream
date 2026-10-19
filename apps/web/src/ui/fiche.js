@@ -328,7 +328,7 @@ export async function showFiche(type, id) {
   if (shell) shell.focus({ preventScroll: true });
   let m;
   try {
-    [m] = await Promise.all([fetchFull(type, id), Promise.resolve(userStore.loadWatched && userStore.loadWatched(key)).catch(() => undefined)]);
+    [m] = await Promise.all([fetchFull(type, id, { server: true }), Promise.resolve(userStore.loadWatched && userStore.loadWatched(key)).catch(() => undefined)]);
     if (isKidProfile() && !kidAllows(m.certRaw, kidMaxAge())) throw new Error('profil enfant');
   } catch (_) {
     if (token !== state.token) return;

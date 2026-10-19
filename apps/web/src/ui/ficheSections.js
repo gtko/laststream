@@ -18,13 +18,22 @@ import { esc, fmtDate, fmtMin } from './util.js';
 import { playableSoon } from '../player/episodes';
 
 // ---------- Fiche : sections chargées après coup ----------
+/** Notes de la fiche serveur (même forme que la route MDBList), ou null si elle n'en donne pas. */
+const serverRatingsOf = (m) => {
+  const r = m.serverMeta && m.serverMeta.ratings && m.serverMeta.ratings.ratings;
+  return r && typeof r === 'object' ? r : null;
+};
+
 export async function fillRatings(m, token) {
   const slot = detailEl.querySelector('#f-rates');
   if (!slot) return;
-  let r = {};
-  try {
-    r = (await api('mdblist/' + m.type + '/' + (m.imdbId || m.id))).ratings || {};
-  } catch (_) { /* notes indisponibles */ }
+  let r = serverRatingsOf(m);
+  if (r === null) {
+    r = {};
+    try {
+      r = (await api('mdblist/' + m.type + '/' + (m.imdbId || m.id))).ratings || {};
+    } catch (_) { /* notes indisponibles */ }
+  }
   if (token !== state.token) return;
   slot.innerHTML = ratingsHTML(m, r);
   if (!slot.innerHTML) slot.hidden = true;
@@ -70,7 +79,7 @@ export async function fillNext(m, token) {
   let date = m.next ? m.next.airDate : '';
   if (m.tvdbId && !m.canon) { // la numérotation canonique donne déjà le prochain épisode
     try {
-      const tv = await api('tvdb/series/' + m.tvdbId);
+      const tv = (m.serverMeta && m.serverMeta.tvdb) || await api('tvdb/series/' + m.tvdbId);
       if (tv && tv.nextAired) date = tv.nextAired;
     } catch (_) { /* repli sur TMDB */ }
   }

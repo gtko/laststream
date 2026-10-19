@@ -10,11 +10,12 @@ import { compactRates } from './ratings.js';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
 import { esc, plural } from './util.js';
+import { intentTimer } from './intent.js';
 
 export const HOVER_OPEN_MS = 900;
 export const HOVER_FOCUS_MS = 1200;
 export const HOVER_CLOSE_MS = 250;
-export const hv = { openTimer: null, closeTimer: null, tile: null, el: null, key: '', token: 0, lastEvt: 0 };
+export const hv = { openTimer: null, closeTimer: null, tile: null, el: null, key: '', token: 0, lastEvt: 0, intent: intentTimer() };
 export const finePointer = () => !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
 
 
@@ -31,6 +32,7 @@ export function hoverMeta(it, d) {
 export function closeHover() {
   clearTimeout(hv.openTimer);
   clearTimeout(hv.closeTimer);
+  hv.intent.cancel();
   hv.openTimer = hv.closeTimer = null;
   hv.token++;
   if (hv.el) {
@@ -141,11 +143,20 @@ export function hoverTileOf(target) {
 export function scheduleHover(tile, ms) {
   clearTimeout(hv.openTimer);
   clearTimeout(hv.closeTimer);
+  // Intention : TMDB et MDBList ne partent qu'après un survol stable (500 ms), avant même l'ouverture de la carte.
+  hv.intent.arm(() => prefetchHover(tile));
   hv.openTimer = setTimeout(() => {
     hv.openTimer = null;
     if (state.dragRow && state.dragRow.moved) return;
     openHover(tile);
   }, ms);
+}
+
+/** Données de la carte de survol (détail TMDB et notes MDBList), demandées après l'intention ; la carte les réutilise. */
+function prefetchHover(tile) {
+  if (!tile.isConnected || (state.dragRow && state.dragRow.moved) || !modal.hidden || !playerEl.hidden || state.ctxMenu) return;
+  const it = state.byKey.get(tile.dataset.tile);
+  if (it) getDetail(it, { ratings: true }).catch(() => null);
 }
 
 document.addEventListener('pointerover', (e) => {
@@ -171,11 +182,13 @@ document.addEventListener('pointerover', (e) => {
   }
   clearTimeout(hv.openTimer);
   hv.openTimer = null;
+  hv.intent.cancel();
   if (hv.el && !hv.closeTimer) hv.closeTimer = setTimeout(closeHover, HOVER_CLOSE_MS);
   if (!hv.el) hv.tile = null;
 });
 document.documentElement.addEventListener('mouseleave', () => {
   clearTimeout(hv.openTimer);
+  hv.intent.cancel();
   if (hv.el) { clearTimeout(hv.closeTimer); hv.closeTimer = setTimeout(closeHover, HOVER_CLOSE_MS); }
 });
 document.addEventListener('pointerdown', (e) => {

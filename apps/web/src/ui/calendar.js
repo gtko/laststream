@@ -1,7 +1,7 @@
 /* Calendrier des suivis (#/calendar) et rangée d'accueil « Cette semaine dans tes suivis ». */
 import { canonical } from './seasons.js';
 import { soonItemHTML } from './soon.js';
-import { tmdb } from '../data/lt';
+import { postLt, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { episodeLabel, groupByDate, isoDate, mergeEpisodes, monthGrid, movieReleases } from '../data/calendar';
 import { userStore } from '../data/userStore';
@@ -97,14 +97,62 @@ async function airingEvents(follows, from, to) {
   return followedAirings(follows, guide, localDate, hhmm, Math.floor(Date.now() / 1000)).filter((e) => e.date >= from && e.date <= to);
 }
 
-/** Événements des suivis dans une période ; une requête par suivi, mise en cache. */
+/** Suivis sans doublon : un titre suivi deux fois n'est chargé qu'une fois. */
+const uniqueFollows = (follows) => [...new Map(follows.map((f) => [f.type + ':' + f.id, f])).values()];
+
+/** Nombre maximal de suivis chargés en même temps (sans cela, N suivis lancent N chaînes de requêtes en parallèle). */
+export const CAL_CONCURRENCY = 3;
+
+/** Comme `Promise.allSettled(items.map(fn))`, mais au plus `n` appels en vol à la fois. */
+export async function settleLimited(items, n, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      try {
+        out[i] = { status: 'fulfilled', value: await fn(items[i]) };
+      } catch (reason) {
+        out[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+  return out;
+}
+
+/** Route serveur groupée (`POST lt/calendar/batch`, une seule requête pour tous les suivis) : sans elle, `null`. */
+let batchMissing = false;
+export async function fetchCalendarBatch(follows, from, to) {
+  if (batchMissing || !follows.length) return null;
+  try {
+    const res = await postLt('calendar/batch', { from, to, follows: follows.map((f) => ({ type: f.type, id: f.id })) });
+    if (res && Array.isArray(res.events)) return res.events;
+    batchMissing = true;
+  } catch (err) {
+    // Route absente (404, 405, 501) : inutile de la redemander pendant la session. Autre erreur : repli pour cette fois.
+    if ([404, 405, 501].includes(err && err.status)) batchMissing = true;
+  }
+  return null;
+}
+
+/** Événements des suivis : une route groupée si lastAddon la fournit, sinon une requête par suivi, au plus CAL_CONCURRENCY à la fois. */
+async function loadFollowEvents(follows, from, to) {
+  const unique = uniqueFollows(follows);
+  const batch = await fetchCalendarBatch(unique, from, to);
+  if (batch) return mergeEpisodes(batch);
+  const rs = await settleLimited(unique, CAL_CONCURRENCY, (f) => (f.type === 'tv' ? seriesEvents(f, from, to) : f.type === 'movie' ? movieEvents(f, from, to) : personEvents(f, from, to)));
+  return mergeEpisodes(rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
+}
+
+/** Événements des suivis dans une période ; une requête par suivi (ou une seule route groupée), mise en cache. */
 export async function loadEvents(from, to) {
   const follows = userStore.getFollows();
   const sig = follows.map((f) => f.type + f.id).sort().join(',');
   const ck = from + '|' + to + '|' + sig;
   if (!cache.has(ck)) {
-    const p = Promise.allSettled(follows.map((f) => (f.type === 'tv' ? seriesEvents(f, from, to) : f.type === 'movie' ? movieEvents(f, from, to) : personEvents(f, from, to))))
-      .then((rs) => mergeEpisodes(rs.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))))
+    const p = loadFollowEvents(follows, from, to)
       .then(async (evs) => evs.concat(await airingEvents(follows, from, to).catch(() => [])));
     p.catch(() => cache.delete(ck));
     cache.set(ck, p);

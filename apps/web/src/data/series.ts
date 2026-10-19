@@ -153,3 +153,29 @@ export async function canonAiredOn(tmdbId: string | number, airDate: string): Pr
 }
 
 export const clearCanonCache = (): void => cache.clear();
+
+/**
+ * Structure canonique à partir des saisons et des épisodes à plat de la fiche serveur (même forme que la route
+ * /series/:id/episodes du serveur, sans saisons imbriquées). Null si la forme est inattendue.
+ */
+export function canonFromFiche(raw: unknown): Canon | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Raw;
+  if (!Array.isArray(r.seasons) || !Array.isArray(r.episodes)) return null;
+  const seasons = r.seasons as Raw[];
+  const flat = r.episodes as Raw[];
+  const numbers = new Set<number>();
+  for (const s of seasons) if (typeof s?.number === 'number') numbers.add(s.number);
+  for (const e of flat) if (typeof e?.season === 'number') numbers.add(e.season);
+  const nested = [...numbers].map((number) => ({
+    ...(seasons.find((s) => s?.number === number) ?? { number }),
+    episodes: flat.filter((e) => e?.season === number),
+  }));
+  return normalizeCanon({ source: r.source, seasons: nested });
+}
+
+/** Range une structure canonique déjà reçue (fiche serveur) dans le cache, sans écraser une entrée existante. */
+export function seedCanon(tmdbId: string | number, language: string, canon: Canon): void {
+  const key = tmdbId + '|' + language;
+  if (!cache.has(key)) cache.set(key, Promise.resolve(canon));
+}

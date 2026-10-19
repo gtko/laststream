@@ -128,7 +128,7 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
 
 /**
  * Récupère les streams de lastAddon pour la demande, triés par score, en fiches détaillées. Le résultat (ou la recherche en
- * cours) est gardé 90 s : la préchargée au survol de « Lecture » sert à l'ouverture du lecteur.
+ * cours) est gardé 90 s : la préchargée au focus de « Lecture » sert à l'ouverture du lecteur.
  */
 export function loadSources(req: SourceRequest, now = Date.now()): Promise<LoadedSources> {
   const key = requestKey(req);
@@ -140,7 +140,7 @@ export function loadSources(req: SourceRequest, now = Date.now()): Promise<Loade
   return promise;
 }
 
-/** Lance la recherche en arrière-plan (survol ou focus prolongé du bouton « Lecture »). Ne rejette jamais. */
+/** Lance la recherche en arrière-plan (focus maintenu 1 s sur « Lecture », jamais au survol : voir ui/sources-ui.js). Ne rejette jamais. */
 export function prefetchSources(req: SourceRequest): void {
   loadSources(req).catch(() => undefined);
 }

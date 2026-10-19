@@ -214,7 +214,7 @@ export function performanceHTML(S) {
           '<ul class="adm-legend" aria-hidden="true"><li><i class="adm-key adm-s3"></i>p50</li><li><i class="adm-key adm-s2"></i>p95</li></ul></div></div>' : empty('Aucune requête sur cette période.')) +
           table('Détail par groupe de routes', ['Groupe', { label: 'Requêtes', num: true }, { label: '2xx', num: true }, { label: '3xx', num: true }, { label: '4xx', num: true }, { label: '5xx', num: true }, { label: 'p50', num: true }, { label: 'p95', num: true }],
             rows.map((g) => ({ cells: [esc(g.label), fmtInt(g.requests), fmtInt(g.status['2xx']), fmtInt(g.status['3xx']), fmtInt(g.status['4xx']), fmtInt(g.status['5xx']), fmtMs(g.p50), fmtMs(g.p95)] })))) +
-        upstreamsCard(m) + alldebridCard(m) + errorsCard(m);
+        upstreamsCard(m) + providersCard(m) + alldebridCard(m) + errorsCard(m);
     });
 }
 
@@ -223,6 +223,17 @@ function upstreamsCard(m) {
   return card('Santé des addons amont', rows.length ? table('Addons amont', ['Hôte', { label: 'Appels', num: true }, { label: 'Échecs', num: true }, { label: 'Timeouts', num: true }, { label: 'Latence moy.', num: true }],
     rows.map((u) => ({ cells: [esc(u.host), fmtInt(u.calls), fmtInt(u.failures) + (u.failures ? ' <span class="adm-dim">(' + fmtPct(u.failureRate, 0) + ')</span>' : ''), fmtInt(u.timeouts), fmtMs(u.avgMs)] }))) : empty('Aucun appel amont sur cette période.'),
   { desc: 'Un hôte par addon, sans chemin ni jeton.' });
+}
+
+const PROVIDER_LABEL = new Map([['tmdb', 'TMDB'], ['tvdb', 'TVDB'], ['openrouter', 'OpenRouter'], ['cinemeta', 'Cinemeta'], ['mdblist', 'MDBList'], ['fanart', 'Fanart.tv']]);
+
+/** Totaux 30 jours par fournisseur (`providers.totals`) ; carte absente si le serveur ne publie pas `providers`. */
+function providersCard(m) {
+  if (!m.providers) return '';
+  const rows = m.providers.totals || [];
+  return card('Appels par fournisseur', rows.length ? table('Appels par fournisseur', ['Fournisseur', { label: 'Appels', num: true }, { label: 'Mémoire', num: true }, { label: 'KV', num: true }, { label: 'Périmé', num: true }, { label: 'Jointes', num: true }, { label: 'Fiches R2', num: true }, { label: '304', num: true }, { label: 'Taux de hit', num: true }],
+    rows.map((p) => ({ cells: [esc(PROVIDER_LABEL.get(p.provider) ?? p.provider), esc(fmtInt(p.calls)), esc(fmtInt(p.l1Hits)), esc(fmtInt(p.l2Hits)), esc(fmtInt(p.stale)), esc(fmtInt(p.coalesced)), esc(fmtInt(p.r2Hits)), esc(fmtInt(p.notModified)), esc(fmtPct(p.hitRate, 1))] }))) : empty('Aucun appel fournisseur sur les 30 derniers jours.'),
+  { desc: '30 derniers jours (UTC), indépendants de la période choisie. Taux de hit : lectures servies sans appel sortant.' });
 }
 
 function alldebridCard(m) {
