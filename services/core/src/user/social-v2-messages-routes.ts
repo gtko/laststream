@@ -53,6 +53,7 @@ export function registerSocialV2MessageRoutes(router: App, deps: AppDeps, backen
     if (issues.length > 0) throw new UserApiError(400, 'invalid_body', issues);
     const outcome = await social().sendMessage(me.pid, target, body, input.context, Date.now());
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
+    if (outcome.result === 'not_allowed') throw new UserApiError(403, 'not_allowed');
     if (outcome.result !== 'sent') throw targetError(outcome.result);
     emitSocialEvent(deps.socialEvents, [target], { t: 'message', message: outcome.message });
     return sendJson(c, { message: outcome.message }, 201);

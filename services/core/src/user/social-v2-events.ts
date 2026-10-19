@@ -8,7 +8,9 @@ import type { FriendRequestView, FriendView, MediaRef, MessageView, NoteView } f
  * Chaque événement vise une liste de profils destinataires (pid), passée en premier argument du gestionnaire :
  * - `message` : le destinataire seul ;
  * - `read` : l'expéditeur des messages lus (`pid` = le lecteur, `at` = instant de lecture, en ms) ;
- * - `note` : les amis et le foyer de l'auteur.
+ * - `note` : les amis et le foyer de l'auteur ;
+ * - `join_request` : l'hôte (ami visé) seul, avec la vue du demandeur ;
+ * - `join_answer` : le demandeur seul (`pid` = l'hôte qui répond).
  * La vue `friend` / `presence` est celle du destinataire : `household` vaut vrai pour un profil du même compte.
  */
 export type SocialEvent =
@@ -18,7 +20,9 @@ export type SocialEvent =
   | { t: 'presence'; friend: FriendView }
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string };
 
 /** Gestionnaire fourni par l'hôte. Appelé de façon synchrone ; ne doit ni attendre ni lever d'exception vers la requête. */
 export type SocialEventHandler = (profilePids: readonly string[], event: SocialEvent) => void;

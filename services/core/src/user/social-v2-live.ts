@@ -53,7 +53,9 @@ export type LiveFrame =
   | { t: 'request'; request: FriendRequestView }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -74,7 +76,9 @@ function subjectOut(view: SubjectView): SubjectView {
 }
 
 function friendOut(view: FriendView): FriendView {
-  return { ...subjectOut(view), household: view.household === true };
+  const out: FriendView = { ...subjectOut(view), household: view.household === true, favorite: view.favorite === true, muted: view.muted === true };
+  if (view.nickname !== undefined) out.nickname = view.nickname;
+  return out;
 }
 
 function requestOut(view: FriendRequestView): FriendRequestView {
@@ -116,6 +120,12 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'join_request':
+      return { t: 'join_request', from: friendOut(event.from) };
+    case 'join_answer':
+      return event.partyId === undefined
+        ? { t: 'join_answer', pid: event.pid, accept: event.accept }
+        : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
   }
 }
 

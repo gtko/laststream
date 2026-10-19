@@ -13,6 +13,8 @@ const bob: FriendView = {
   handle: { name: 'bob', tag: 'A7K2', full: 'bob#A7K2' },
   avatarColor: '#3366ff',
   household: false,
+  favorite: false,
+  muted: false,
   status: 'online',
   lastSeen: 1_700_000_000_000,
   watching: { type: 'series', tmdbId: 1399, title: 'Game of Thrones', season: 2, episode: 4, pos: 754, paused: false, at: 1_700_000_000_000 },
@@ -111,7 +113,10 @@ describe('confidentialité', () => {
   it('invisible (vu hors ligne) : jamais de titre en cours', () => {
     const hidden: FriendView = { ...bob, status: 'offline', household: false, lastSeen: undefined };
     const frame = frameFor(ALICE_PID, { t: 'presence', friend: { ...hidden, watching: bob.watching } as FriendView });
-    expect(frame).toEqual({ t: 'presence', friend: { pid: BOB_PID, handle: bob.handle, avatarColor: bob.avatarColor, household: false, status: 'offline' } });
+    expect(frame).toEqual({
+      t: 'presence',
+      friend: { pid: BOB_PID, handle: bob.handle, avatarColor: bob.avatarColor, household: false, favorite: false, muted: false, status: 'offline' },
+    });
   });
 
   it('aucun identifiant interne ne sort : seuls les champs du contrat', () => {
@@ -120,7 +125,7 @@ describe('confidentialité', () => {
     expect(raw).not.toContain('compte-interne-42');
     expect(raw).not.toContain('profil-interne');
     const friend = (JSON.parse(raw) as { friend: Record<string, unknown> }).friend;
-    expect(Object.keys(friend).sort()).toEqual(['avatarColor', 'handle', 'household', 'lastSeen', 'pid', 'status', 'watching']);
+    expect(Object.keys(friend).sort()).toEqual(['avatarColor', 'favorite', 'handle', 'household', 'lastSeen', 'muted', 'pid', 'status', 'watching']);
   });
 });
 
