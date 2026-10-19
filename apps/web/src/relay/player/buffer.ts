@@ -148,7 +148,7 @@ export class ReadAheadReader implements RangeReader {
     if (this.closed) return;
     this.positionSec = positionSec;
     if (this.bytesPerSec <= 0) return;
-    const posBytes = Math.min(this.fileSize, Math.max(0, positionSec * this.bytesPerSec));
+    const posBytes = Math.floor(Math.min(this.fileSize, Math.max(0, positionSec * this.bytesPerSec)));
     const windowStart = this.chunks.length > 0 ? this.chunks[0].start : this.frontier;
     if (posBytes < windowStart || posBytes > this.frontier) {
       this.chunks = [];
