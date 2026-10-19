@@ -5,6 +5,7 @@ import { requireBase } from '../data/config';
 import { enterPartyAsGuest } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
 import { socketUrl } from '../party/bridge';
+import { createBufferReporter, isUnderrun } from '../party/guestbuffer';
 import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
@@ -44,6 +45,10 @@ let controls = null;
 let subs = null;
 let chat = null;
 let subsOff = null;
+/** Attente de tampon du salon (`PartyWait`, ou null), rapport de tampon du lecteur en cours et ce lecteur (statistiques, volume). */
+let roomWait = null;
+let bufferReporter = null;
+let livePlayer = null;
 
 /** Geste utilisateur (clic « Rejoindre ») : l'AudioContext démarre ici, le lecteur peut ensuite jouer le son. */
 function unlockAudio() {
@@ -72,6 +77,9 @@ function stopSession() {
   if (session) session.destroy();
   session = null;
   lastView = null;
+  roomWait = null;
+  bufferReporter = null;
+  livePlayer = null;
   closeAudio();
 }
 
@@ -152,17 +160,63 @@ function refresh(root) {
   const ready = v.phase === 'ready';
   controls.setState({ playing: v.playing, position: v.position, duration: v.duration, ready });
   subs?.tick(v.position);
-  controls.setWait(ready ? null : WAIT_TEXT[v.phase] || null);
-  // Champs sans source dans la session : codecs et tampon restent « — ».
+  controls.setWait(ready ? roomWaitText(roomWait) : WAIT_TEXT[v.phase] || null);
+  // Infos réelles du lecteur (octets reçus de l'hôte et des pairs, codecs, tampon) ; le débit vient de la session.
+  const gs = livePlayer ? livePlayer.stats() : null;
   controls.setInfo({
     rate: v.rateBps,
-    bytesHost: v.bytesReceived,
-    bytesPeers: v.bytesFromPeers,
-    videoCodec: null,
-    audioCodec: null,
-    bufferAhead: null,
+    bytesHost: gs ? gs.bytesFromHost : v.bytesReceived,
+    bytesPeers: gs ? gs.bytesFromPeers : v.bytesFromPeers,
+    videoCodec: gs ? gs.videoCodec : null,
+    audioCodec: gs ? gs.audioCodec : null,
+    bufferAhead: gs ? gs.bufferAhead : null,
   });
+  // Sous-alimentation : la lecture roule alors que le tampon est sous le seuil (spinner central).
+  controls.setBuffering(ready && !!gs && isUnderrun({ ahead: gs.bufferAhead, playing: v.playing, remaining: v.duration > 0 ? v.duration - v.position : undefined }));
   root.querySelector('[data-pj-retry]').hidden = v.phase !== 'host-lost';
+}
+
+/** Bandeau d'attente du salon : les retardataires, par pseudo ; null quand personne n'attend. */
+function roomWaitText(wait) {
+  return wait && wait.who.length > 0 ? 'En attente de ' + wait.who.join(', ') + '…' : null;
+}
+
+/** Lecteur de la lecture en cours, créé à chaque chargement (join, reconnexion, nouveau fichier) : son rapport de tampon repart
+ * donc de l'attente. Un saut local l'y remet ; la fermeture du lecteur libère le salon. */
+function newPlayer(GuestPlayer, callbacks) {
+  const reporter = createBufferReporter({
+    send: (ready, ahead) => session?.sendBuffering(ready, ahead),
+    now: () => Date.now(),
+  });
+  const player = new GuestPlayer({
+    ...callbacks,
+    onBuffer: (ahead) => {
+      const st = player.getState();
+      reporter.update({
+        ahead,
+        playing: st.playing,
+        seeking: false,
+        remaining: st.duration > 0 ? st.duration - st.position : undefined,
+        resumeAhead: roomWait?.resumeAhead,
+      });
+    },
+    onUserSeek: (pos) => {
+      reporter.reset();
+      callbacks.onUserSeek?.(pos);
+    },
+  });
+  const destroy = player.destroy.bind(player);
+  player.destroy = () => {
+    reporter.stop();
+    if (bufferReporter === reporter) bufferReporter = null;
+    if (livePlayer === player) livePlayer = null;
+    destroy();
+  };
+  bufferReporter = reporter;
+  livePlayer = player;
+  // Volume mémorisé sur cet appareil : le curseur affiche la valeur du lecteur.
+  controls?.setVolume({ volume: player.getVolume(), muted: player.isMuted() });
+  return player;
 }
 
 /** Clic « Rejoindre » : geste utilisateur, AudioContext, puis lecteur chargé à la demande (il pèse : mediabunny). */
@@ -217,9 +271,14 @@ async function join(root, roomId, token) {
   const url = socketUrl(base, guestWsPath(roomId, entry.sessionToken, entry.name));
   session = new GuestRelaySession({
     connect: async () => new WebSocket(url),
-    createPlayer: (callbacks) => new GuestPlayer(callbacks),
+    createPlayer: (callbacks) => newPlayer(GuestPlayer, callbacks),
     canvas: root.querySelector('[data-pj-canvas]'),
   });
+  // Attente de tampon du salon (retardataires) ; bienvenue à chaque (re)connexion : le tampon repart de l'attente.
+  session.onWait((wait) => {
+    roomWait = wait;
+  });
+  session.onWelcome(() => bufferReporter?.reset());
   setWho(root, entry.name || name);
   session.start();
   subsOff = session.onSubtitles((tracks) => subs?.setTracks(tracks));
@@ -253,13 +312,15 @@ export function showPartyJoin(roomId, token) {
     '</section>';
   const root = detailEl.querySelector('.pj');
   const stage = root.querySelector('[data-pj-stage]');
-  // Commandes : les actions passent par le salon (play/pause/saut) ; volume et sourdine restent masqués (rien à régler côté lecteur).
+  // Commandes : les actions passent par le salon (play/pause/saut) ; volume et sourdine règlent le son de cet appareil.
   controls = createGuestControls(stage, {
     onPlay: () => session?.play(),
     onPause: () => session?.pause(),
     onSeek: (t) => {
       if (session && lastView) session.seekBy(t - lastView.position);
     },
+    onVolume: (volume) => livePlayer?.setVolume(volume),
+    onMute: (muted) => livePlayer?.setMuted(muted),
   });
   // Sous-titres et chat : le menu des sous-titres et le tiroir du chat ne se superposent pas (chacun ferme l'autre à l'ouverture).
   subs = createGuestSubs(controls, { onOpen: () => chat?.close() });

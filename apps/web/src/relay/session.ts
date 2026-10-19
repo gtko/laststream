@@ -8,7 +8,7 @@
  * Le client de salon, le lecteur et les connexions WebRTC sont injectés (tests). Aucun secret : la clé TURN, si elle existe,
  * est injectée par `setRelayTurn`. */
 
-import { PartyClient, type ClientStatus, type SocketLike } from '../party/client';
+import { PartyClient, type ClientStatus, type PartyWait, type SocketLike } from '../party/client';
 import type { PartyParticipant } from '../data/socialApi';
 import { endText, hostLostText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
 import { RangeClient } from './guest';
@@ -243,6 +243,17 @@ export interface GuestRelayDeps {
   clearTimer?: (id: unknown) => void;
 }
 
+/** Appelle chaque abonné avec `value` ; un abonné défaillant n'empêche pas les autres. */
+function notifyEach<T>(listeners: ReadonlySet<(value: T) => void>, value: T): void {
+  listeners.forEach((cb) => {
+    try {
+      cb(value);
+    } catch {
+      // Un abonné défaillant n'empêche pas les autres.
+    }
+  });
+}
+
 const EMPTY_VIEW: GuestRelayView = { phase: 'joining', message: '', rateBps: 0, bytesReceived: 0, meshPeers: 0, bytesFromPeers: 0, bytesServed: 0, playing: false, position: 0, duration: 0, note: '' };
 
 export class GuestRelaySession {
@@ -275,6 +286,9 @@ export class GuestRelaySession {
   private probeReq = 0;
   /** Abonnés aux sous-titres de l'hôte (voir onSubtitles). */
   private readonly subsListeners = new Set<(tracks: PartySubtitleTrack[]) => void>();
+  /** Abonnés à l'attente de tampon du salon et à sa bienvenue (voir onWait, onWelcome). */
+  private readonly waitListeners = new Set<(wait: PartyWait | null) => void>();
+  private readonly welcomeListeners = new Set<(value: void) => void>();
 
   constructor(private readonly deps: GuestRelayDeps) {}
 
@@ -287,6 +301,27 @@ export class GuestRelaySession {
     return () => {
       this.subsListeners.delete(cb);
     };
+  }
+
+  /** Attente de tampon du salon (`PartyWait`), ouverte, mise à jour ou fermée (`null`). Rend la fonction de désabonnement. */
+  onWait(cb: (wait: PartyWait | null) => void): () => void {
+    this.waitListeners.add(cb);
+    return () => {
+      this.waitListeners.delete(cb);
+    };
+  }
+
+  /** Bienvenue du salon, à chaque (re)connexion : le tampon annoncé au salon repart de zéro. Rend la fonction de désabonnement. */
+  onWelcome(cb: () => void): () => void {
+    this.welcomeListeners.add(cb);
+    return () => {
+      this.welcomeListeners.delete(cb);
+    };
+  }
+
+  /** Tampon de cet invité envoyé au salon (voir PartyClient.sendBuffering) ; false hors salon. */
+  sendBuffering(ready: boolean, ahead: number): boolean {
+    return this.client?.sendBuffering(ready, ahead) ?? false;
   }
 
   /** Chat et réactions du salon (historique, envoi, événements) ; null hors salon. Le client reste propriété de la session. */
@@ -338,7 +373,9 @@ export class GuestRelaySession {
       this.welcomed = true;
       this.refusals = 0;
       this.onRoom();
+      notifyEach(this.welcomeListeners, undefined);
     });
+    client.on('wait', (wait) => notifyEach(this.waitListeners, wait));
     client.on('participants', () => this.onRoom());
     client.on('host', () => this.onRoom());
     client.on('state', () => this.syncRoom());
