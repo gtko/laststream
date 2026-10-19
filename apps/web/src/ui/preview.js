@@ -67,6 +67,7 @@ function setCinema(iframe, on) {
   if (!hero) return;
   hero.classList.toggle('is-cinema', on);
   if (hero.parentElement) hero.parentElement.classList.toggle('hero-cinema', on);
+  if (state.preview && state.preview.iframe === iframe) fitPreview(state.preview);
 }
 
 /**
@@ -100,8 +101,11 @@ export function fitPreview(p) {
   s.width = w + 'px';
   s.height = h + 'px';
   s.left = (w0 - w) / 2 + 'px';
-  // Ancré en bas : les sous-titres (bas de l'image) restent dans la fenêtre, le débordement se coupe en haut.
-  s.top = h0 - h + 'px';
+  // Mise en avant muette (bloc au format 16:9) : centrée, les bandes noires des bandes-annonces au format cinéma se coupent
+  // à parts égales. Avec le son (mode cinéma) et ailleurs, ancrée en bas : les sous-titres (bas de l'image) restent
+  // visibles, le débordement se coupe en haut.
+  const center = p.media.classList.contains('hero-bg') && !p.media.closest('.is-cinema');
+  s.top = (center ? (h0 - h) / 2 : h0 - h) + 'px';
 }
 
 export function stopPreview() {

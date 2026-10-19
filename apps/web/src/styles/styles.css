@@ -211,7 +211,7 @@ body.modal-open { overflow: hidden; }
   background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite;
 }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-.sk-hero { height: 520px; border-radius: 0; }
+.sk-hero { height: max(56.25vw, 600px); border-radius: 0; }
 .sk-line { height: 20px; width: 260px; border-radius: 6px; margin: 0 0 4px; }
 .sk-line.short { width: 180px; }
 .sk-card { flex: 0 0 200px; height: 300px; }
@@ -249,7 +249,8 @@ body.modal-open { overflow: hidden; }
 .nav-pop-sub { font-size: 12px; font-weight: 500; color: var(--dim); }
 .nav-avatar { border: 0; cursor: pointer; }
 .nav-party { flex: none; }
-.s-a .hero { position: relative; display: grid; min-height: max(85vh, 640px); overflow: hidden; background: var(--surface-2); }
+/* Hauteur au format 16:9 de la bande-annonce : la vidéo n'est presque pas recadrée (fitPreview la centre). */
+.s-a .hero { position: relative; display: grid; min-height: max(56.25vw, 600px); overflow: hidden; background: var(--surface-2); }
 .s-a .hero-slide { grid-area: 1 / 1; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; padding: calc(var(--topbar-h) + 32px) var(--gutter) 84px; transition: opacity 0.9s ease, visibility 0.9s; }
 .s-a .hero-slide:not(.is-current) { opacity: 0; visibility: hidden; pointer-events: none; }
 .s-a .hero-bg { position: absolute; inset: 0; background: var(--surface-2); }
@@ -304,7 +305,7 @@ body.modal-open { overflow: hidden; }
 /* ---------- Tablette 641-1023 ---------- */
 @media (max-width: 1023px) {
   .s-a { --gutter: 32px; --title-size: 64px; --logo-h: 110px; --topbar-h: 68px; }
-  .s-a .hero { min-height: max(70vh, 560px); }
+  .s-a .hero { min-height: max(56.25vw, 520px); }
   .s-a .hero-slide { padding: calc(var(--topbar-h) + 24px) var(--gutter) 84px; }
   .s-a .hero-content { max-width: none; }
   .s-a .rows { margin-top: 40px; }
@@ -327,15 +328,34 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- Mobile <= 640 ---------- */
 @media (max-width: 640px) {
-  .s-a { --gutter: 16px; --title-size: 46px; --logo-h: 90px; --topbar-h: 60px; }
+  .s-a { --gutter: 16px; --title-size: 34px; --logo-h: 56px; --topbar-h: 60px; }
   .s-a .topbar { padding: 14px 16px; }
-  .s-a .hero { min-height: max(64vh, 480px); margin: 0; border-radius: 0; }
-  .s-a .hero-slide { padding: calc(var(--topbar-h) + 16px) 16px 64px; }
-  .s-a .hero-content { align-items: flex-start; text-align: left; }
-  .s-a .hero-desc { font-size: 14px; line-height: 1.5; }
-  .s-a .hero-actions { width: 100%; flex-wrap: nowrap; }
-  .s-a .hero-actions .btn { flex: 1 1 0; padding: 12px 14px; min-height: 46px; font-size: 15px; }
-  .s-a .rows { margin-top: 40px; padding: 0 16px 110px; gap: 32px; }
+  /* Mise en avant mobile : l'image (ou la bande-annonce) en bandeau 16:9 en haut, le texte compact en dessous. Une vidéo
+     16:9 qui couvrait tout le bloc n'en montrait qu'un tiers, recadré trop haut. */
+  .s-a { --hero-media-h: 56.25vw; }
+  .s-a .hero { min-height: 0; margin: 0; border-radius: 0; background: var(--bg); }
+  .s-a .hero-slide { justify-content: flex-start; padding: calc(var(--hero-media-h) - 28px) 16px 52px; }
+  .s-a .hero-bg, .s-a .scrim { bottom: auto; height: var(--hero-media-h); }
+  .s-a .hero-bg { overflow: hidden; }
+  .s-a .scrim {
+    background:
+      linear-gradient(180deg, rgba(12, 11, 17, 0.55) 0%, rgba(12, 11, 17, 0) 28%),
+      linear-gradient(0deg, var(--bg) 0%, rgba(12, 11, 17, 0.5) 18%, rgba(12, 11, 17, 0) 45%);
+  }
+  .s-a .hero-content { align-items: flex-start; gap: 10px; text-align: left; }
+  .s-a .hero-content .eyebrow { margin-bottom: 2px; padding: 4px 9px; font-size: 11px; }
+  .s-a .hero-title { line-height: 1; }
+  .s-a .logo-img { max-width: 72%; }
+  .s-a .hero-content .meta { gap: 4px 10px; font-size: 13px; }
+  .s-a .hero-content .chip { padding: 2px 7px; font-size: 12px; }
+  .s-a .hero-content .rates-hero, .s-a .hero-content .prov-mini, .s-a .hero-note { display: none; }
+  .s-a .hero-desc { font-size: 13px; line-height: 1.45; -webkit-line-clamp: 2; line-clamp: 2; }
+  .s-a .hero-actions { width: 100%; flex-wrap: nowrap; gap: 8px; margin-top: 4px; }
+  .s-a .hero-actions .btn { flex: 1 1 0; padding: 9px 12px; min-height: 40px; font-size: 14px; }
+  .s-a .hero-actions .btn svg { width: 16px; height: 16px; }
+  .s-a .hero.is-cinema .hero-slide.is-current { padding-bottom: 56px; }
+  .sk-hero { height: calc(var(--hero-media-h, 56.25vw) + 190px); }
+  .s-a .rows { margin-top: 20px; padding: 0 16px 110px; gap: 32px; }
   .s-a .card { width: 150px; flex-basis: 150px; }
   .s-a .cont { flex-basis: 260px; height: 150px; }
   .s-a .top-item { flex-basis: 200px; height: 190px; }

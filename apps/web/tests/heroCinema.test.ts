@@ -109,13 +109,16 @@ describe('héros de l’accueil : mode cinéma avec le son', () => {
     expect(items.map((x) => x.key)).toContain(shownKey());
   });
 
-  it('le cadre garde le bas de l’image : les sous-titres ne sont pas recadrés', async () => {
+  it('muet, le cadre est centré ; avec le son, il garde le bas de l’image : les sous-titres ne sont pas recadrés', async () => {
     mountCarousel([1, 2, 3]);
     const p = await startPreviewOnCurrent();
     Object.defineProperty(p.media, 'offsetWidth', { value: 800, configurable: true });
     Object.defineProperty(p.media, 'offsetHeight', { value: 450, configurable: true });
     preview.fitPreview(p);
-    // Cadre 1,12 × la fenêtre (504 px de haut) : le bord bas coïncide avec le bas de la fenêtre.
+    // Cadre 1,12 × la fenêtre (504 px de haut) : muet, le débordement se partage entre le haut et le bas.
+    expect(parseFloat(p.iframe.style.top)).toBeCloseTo(-27, 6);
+    preview.setPreviewSound(p.iframe, true, false);
+    // Son activé : le bord bas coïncide avec le bas de la fenêtre.
     expect(parseFloat(p.iframe.style.top)).toBeCloseTo(-54, 6);
     expect(parseFloat(p.iframe.style.top) + parseFloat(p.iframe.style.height)).toBeCloseTo(450, 6);
   });
