@@ -1,6 +1,6 @@
 import { ltUrl, requireBase, type QueryValue } from './config';
 import { getRegion, getVideoLang } from './prefs';
-import { cachedRequest, requestJson } from './transport';
+import { cachedRequest, isFicheUrl, requestFiche, requestJson } from './transport';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** Les réponses TMDB / MDBList / TVDB gardent la forme du prototype : volontairement non typées ici. */
