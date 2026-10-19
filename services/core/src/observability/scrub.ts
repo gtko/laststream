@@ -45,6 +45,8 @@ const EXPECTED_CODES: ReadonlySet<string> = new Set(['server_side_disabled']);
 const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/gi;
 const MAGNET_IN_TEXT = /magnet:[^\s"'<>]*/gi;
 const CREDENTIAL_PARAM = /(apikey|api[_-]?key|access[_-]?token|token|secret|password)=[^&\s"'<>;,]*/gi;
+/** Jeton d'invité des salons en paramètre de requête court (`?t=` / `&t=`) dans un texte libre hors URL absolue. */
+const SHORT_TOKEN_PARAM = /([?&])t=[^&\s"'<>;,]*/g;
 const BEARER = /\bBearer\s+[^\s"'<>,;]+/gi;
 const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
 
@@ -105,6 +107,7 @@ export function scrubText(text: string): string {
     .replace(URL_IN_TEXT, (url) => scrubUrl(url))
     .replace(MAGNET_IN_TEXT, MAGNET)
     .replace(CREDENTIAL_PARAM, (_match, name: string) => `${name}=${REDACTED}`)
+    .replace(SHORT_TOKEN_PARAM, (_match, sep: string) => `${sep}t=${REDACTED}`)
     .replace(BEARER, `Bearer ${REDACTED}`)
     .replace(LONG_SEGMENT_IN_TEXT, `/${CONFIG}`);
 }

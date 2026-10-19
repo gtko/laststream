@@ -669,3 +669,39 @@ describe('invités sans compte sur Workers', () => {
     await waitForParticipants(other.id, host.token, 0);
   });
 });
+
+describe('lien d’invitation partagé sur Workers', () => {
+  const linkFrom = (member: Account, roomId: string, rotate = false) =>
+    api<{ token: string; expiresAt: string }>('POST', `/party/${roomId}/invite-link`, { token: member.token, body: { profileId: member.profile, rotate } });
+  const enterWith = (roomId: string, token: string, name: string) => api<{ sessionToken: string; name: string; error?: string }>('POST', `/party/${roomId}/guest`, { body: { token, name } });
+
+  it('deux invités avec le même lien ; reconnexion par jeton de séance ; kick ; « Nouveau lien »', async () => {
+    const host = await account('host');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const link = (await linkFrom(host, room.id)).body.token;
+    const a = await enterWith(room.id, link, 'Léa');
+    const b = await enterWith(room.id, link, 'Léa');
+    expect([a.status, b.status, a.body.name, b.body.name]).toEqual([201, 201, 'Léa', 'Léa 2']);
+    // Le jeton du lien n'ouvre pas la WebSocket ; le jeton de séance, oui.
+    expect(await refusedGuest(room.id, link, 'Léa')).toEqual({ status: 101, close: { code: 4001, reason: 'expired' } });
+    const ga = await guestSocket(room.id, a.body.sessionToken, a.body.name);
+    const gb = await guestSocket(room.id, b.body.sessionToken, b.body.name);
+    expect([ga.res.status, gb.res.status]).toEqual([101, 101]);
+    // Reconnexion de la première : sa connexion est remplacée, même identifiant ; autre pseudo refusé (4012).
+    expect(await refusedGuest(room.id, a.body.sessionToken, 'Autre')).toEqual({ status: 101, close: { code: 4012, reason: 'name_changed' } });
+    // Kick : le jeton de séance ne revient pas (4004) ; le lien partagé donne un nouvel identifiant.
+    h.peer.send({ t: 'kick', user: 'Léa' });
+    await ga.peer?.whenClosed();
+    expect(await refusedGuest(room.id, a.body.sessionToken, a.body.name)).toEqual({ status: 101, close: { code: 4004, reason: 'banned' } });
+    expect((await enterWith(room.id, link, 'Léa')).status).toBe(201);
+    // Nouveau lien : l'ancien est révoqué.
+    const fresh = (await linkFrom(host, room.id, true)).body.token;
+    expect(fresh).not.toBe(link);
+    expect((await enterWith(room.id, link, 'Tom')).status).toBe(403);
+    expect((await enterWith(room.id, fresh, 'Tom')).status).toBe(201);
+    gb.peer?.close();
+    h.peer.close();
+    await waitForParticipants(room.id, host.token, 0);
+  });
+});

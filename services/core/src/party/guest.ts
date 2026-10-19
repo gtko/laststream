@@ -14,6 +14,8 @@ import { stripInvisible } from './text.js';
  */
 
 const PURPOSE = 'lastaddon-party-guest-v1';
+/** Jeton de lien d'invitation du salon (multi-usage, non lié à un pseudo) : clé HKDF distincte de celle du jeton d'invité. */
+const LINK_PURPOSE = 'lastaddon-party-room-invite-v1';
 const GUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_TOKEN_CHARS = 1024;
 const encoder = new TextEncoder();
@@ -47,10 +49,10 @@ function fromBase64url(text: string): Uint8Array<ArrayBuffer> | undefined {
 }
 
 /** Clé HMAC dérivée du secret (HKDF, `info` = PURPOSE). */
-async function macKey(secret: string, usage: 'sign' | 'verify') {
+async function macKey(secret: string, usage: 'sign' | 'verify', purpose: string = PURPOSE) {
   if (secret.length === 0) throw new RangeError('secret vide');
   const master = await crypto.subtle.importKey('raw', encoder.encode(secret), 'HKDF', false, ['deriveKey']);
-  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode(PURPOSE) }, master, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, [usage]);
+  return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encoder.encode(purpose) }, master, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, [usage]);
 }
 
 export interface GuestToken {
@@ -59,10 +61,18 @@ export interface GuestToken {
   expiresAt: string;
 }
 
-/** Émet un jeton d'invité pour ce salon, valable GUEST_SESSION_MS à partir de `now` (ms). */
-export async function signGuestToken(roomId: string, now: number, secret: string): Promise<GuestToken> {
-  const exp = now + GUEST_SESSION_MS;
-  const payload: GuestPayload = { purpose: PURPOSE, roomId, gid: base64url(crypto.getRandomValues(new Uint8Array(16))), exp };
+/** Identifiant d'invité aléatoire (128 bits). */
+export function newGuestId(): string {
+  return base64url(crypto.getRandomValues(new Uint8Array(16)));
+}
+
+/**
+ * Émet un jeton d'invité pour ce salon, valable GUEST_SESSION_MS à partir de `now` (ms). `options` fixe l'identifiant
+ * (jeton de séance délivré à l'entrée par le lien partagé) et/ou l'échéance (au plus la fin du salon).
+ */
+export async function signGuestToken(roomId: string, now: number, secret: string, options: { gid?: string; exp?: number } = {}): Promise<GuestToken> {
+  const exp = options.exp ?? now + GUEST_SESSION_MS;
+  const payload: GuestPayload = { purpose: PURPOSE, roomId, gid: options.gid ?? newGuestId(), exp };
   const body = base64url(encoder.encode(JSON.stringify(payload)));
   const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await macKey(secret, 'sign'), encoder.encode(body)));
   return { token: `${body}.${base64url(signature)}`, expiresAt: new Date(exp).toISOString() };
@@ -116,4 +126,56 @@ export function cleanGuestName(raw: string | null): string | undefined {
 /** Identité d'un invité dans le salon : clé `guest:<id>`, pseudo nettoyé, drapeau `guest`. */
 export function guestIdentity(guestId: string, username: string): Identity {
   return { accountId: `${GUEST_KEY_PREFIX}${guestId}`, username, avatarColor: GUEST_COLOR, guest: true };
+}
+
+interface LinkPayload {
+  purpose: typeof LINK_PURPOSE;
+  roomId: string;
+  epoch: number;
+  exp: number;
+}
+
+/**
+ * Jeton du lien d'invitation partageable d'un salon : multi-usage, non lié à un pseudo ni à un invité. Il porte le salon,
+ * la génération (`epoch`, stockée dans le salon : l'hôte l'incrémente pour révoquer l'ancien lien) et l'échéance (fin du
+ * salon). Déterministe pour (salon, génération, échéance) : redemander le lien rend le même lien. Il ne suffit pas à
+ * ouvrir une WebSocket : l'entrée passe par POST /party/:id/guest, qui rend le jeton de séance individuel.
+ */
+export async function signRoomInviteToken(roomId: string, epoch: number, exp: number, secret: string): Promise<string> {
+  const payload: LinkPayload = { purpose: LINK_PURPOSE, roomId, epoch, exp };
+  const body = base64url(encoder.encode(JSON.stringify(payload)));
+  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await macKey(secret, 'sign', LINK_PURPOSE), encoder.encode(body)));
+  return `${body}.${base64url(signature)}`;
+}
+
+/** Génération et échéance d'un jeton de lien authentique, non expiré et émis pour ce salon ; sinon `undefined`. */
+export async function verifyRoomInviteToken(token: string, roomId: string, now: number, secret: string): Promise<{ epoch: number; exp: number } | undefined> {
+  if (token.length > MAX_TOKEN_CHARS) return undefined;
+  const dot = token.indexOf('.');
+  if (dot <= 0 || dot !== token.lastIndexOf('.')) return undefined;
+  const body = token.slice(0, dot);
+  const signature = fromBase64url(token.slice(dot + 1));
+  if (signature === undefined) return undefined;
+  // Vérification en temps constant par WebCrypto.
+  if (!(await crypto.subtle.verify('HMAC', await macKey(secret, 'verify', LINK_PURPOSE), signature, encoder.encode(body)))) return undefined;
+  const bytes = fromBase64url(body);
+  if (bytes === undefined) return undefined;
+  let payload: Partial<LinkPayload>;
+  try {
+    payload = JSON.parse(decoder.decode(bytes)) as Partial<LinkPayload>;
+  } catch {
+    return undefined;
+  }
+  if (
+    payload.purpose !== LINK_PURPOSE ||
+    payload.roomId !== roomId ||
+    typeof payload.epoch !== 'number' ||
+    !Number.isInteger(payload.epoch) ||
+    payload.epoch < 0 ||
+    typeof payload.exp !== 'number' ||
+    payload.exp <= now
+  ) {
+    return undefined;
+  }
+  return { epoch: payload.epoch, exp: payload.exp };
 }

@@ -16,7 +16,7 @@ import {
   type StoredChatLine,
   parseClientMessage,
 } from '../../party/protocol.js';
-import { type Effect, type InviteVerdict, type JoinCheck, type Member, RoomCore, guestRefusal } from '../../party/room-core.js';
+import { type Effect, type EntryVerdict, type InviteVerdict, type JoinCheck, type LinkVerdict, type Member, RoomCore, guestRefusal } from '../../party/room-core.js';
 import { refusedSocket } from '../../party/refuse.js';
 import { USER_STORE_NAME } from './user-backend.js';
 import type { UserStoreDO } from './user-store-do.js';
@@ -106,6 +106,24 @@ export class PartyRoom extends DurableObject {
   /** Droit d'émettre une invitation (voir RoomCore.inviteVerdict) ; compté dans le débit du salon si `ok`. */
   invite(requesterId: string): InviteVerdict {
     return this.core === undefined ? 'not_found' : this.core.inviteVerdict(requesterId);
+  }
+
+  /** Lien d'invitation partagé (voir RoomCore.inviteLink). */
+  async inviteLink(requesterId: string, rotate: boolean): Promise<LinkVerdict> {
+    const core = this.core;
+    if (core === undefined) return { ok: false, reason: 'not_found' };
+    const verdict = core.inviteLink(requesterId, rotate);
+    await this.settle();
+    return verdict;
+  }
+
+  /** Entrée d'un invité par le lien partagé (voir RoomCore.enterGuest). */
+  async enterGuest(guestId: string, name: string, epoch: number): Promise<EntryVerdict> {
+    const core = this.core;
+    if (core === undefined) return { ok: false, reason: 'not_found' };
+    const verdict = core.enterGuest(guestId, name, epoch);
+    await this.settle();
+    return verdict;
   }
 
   async close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'> {

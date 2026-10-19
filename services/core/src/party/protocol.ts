@@ -52,6 +52,9 @@ export const CLOSE = {
 
 /** Invitations émises par un salon : au plus INVITES_PER_WINDOW par INVITE_WINDOW_MS. */
 export const INVITES_PER_WINDOW = 10;
+/** Entrées d'invités par le lien partagé : au plus ENTRIES_PER_WINDOW par ENTRY_WINDOW_MS pour le salon (donc pour le lien). */
+export const ENTRIES_PER_WINDOW = 30;
+export const ENTRY_WINDOW_MS = 10 * 60_000;
 export const INVITE_WINDOW_MS = 10 * 60_000;
 /** Pseudos d'invités retenus pour la reconnexion (les plus anciens sont oubliés au-delà). */
 export const GUEST_NAMES_MAX = 200;
@@ -129,6 +132,8 @@ export interface RoomData {
   emptySince: number | null;
   /** Pseudo de chaque invité (clé `guest:<id>`) : une reconnexion avec le même jeton reprend le même pseudo. */
   guestNames?: Record<string, string>;
+  /** Génération du lien d'invitation partagé : « Nouveau lien » l'incrémente, ce qui invalide les liens précédents (absent = 0). */
+  inviteEpoch?: number;
 }
 
 export interface Identity {

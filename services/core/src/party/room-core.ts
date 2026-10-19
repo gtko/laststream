@@ -8,6 +8,9 @@ import {
   type ChatLine,
   type ClientMessage,
   EMPTY_ROOM_TTL_MS,
+  ENTRIES_PER_WINDOW,
+  ENTRY_WINDOW_MS,
+  GUEST_NAME_MAX,
   HOST_GRACE_MS,
   type Identity,
   MAX_GUESTS,
@@ -24,6 +27,7 @@ import {
   type RtcRelay,
   type ServerMessage,
 } from './protocol.js';
+import { GUEST_KEY_PREFIX } from './guest.js';
 import { expectedPosition } from './sync.js';
 
 /**
@@ -49,6 +53,12 @@ export interface Member extends Identity {
 }
 
 export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_taken' | 'name_changed';
+
+/** Droit d'obtenir ou de renouveler le lien d'invitation partagé (hôte connecté seulement). */
+export type LinkVerdict = { ok: true; epoch: number; exp: number } | { ok: false; reason: 'forbidden' | 'not_found' | 'rate_limited' };
+
+/** Entrée d'un invité par le lien partagé : pseudo attribué (suffixé s'il est pris) ou motif de refus. */
+export type EntryVerdict = { ok: true; name: string; exp: number } | { ok: false; reason: 'link_revoked' | 'room_full' | 'guest_limit' | 'rate_limited' | 'not_found' };
 
 /** Résultat d'une demande d'invitation : `ok` consomme un jeton du débit. */
 export type InviteVerdict = 'ok' | 'forbidden' | 'not_found' | 'guests_full' | 'rate_limited';
@@ -101,6 +111,8 @@ export class RoomCore {
   private readonly hits = new Map<string, number[]>();
   /** Instants des invitations émises (fenêtre glissante, en mémoire du Durable Object). */
   private inviteHits: number[] = [];
+  /** Instants des entrées d'invités par le lien partagé (fenêtre glissante, en mémoire du Durable Object). */
+  private entryHits: number[] = [];
   private seq = 0;
 
   constructor(
@@ -263,6 +275,65 @@ export class RoomCore {
     if (recent.length >= INVITES_PER_WINDOW) return 'rate_limited';
     recent.push(now);
     return 'ok';
+  }
+
+  /** Échéance du lien partagé et des jetons de séance : fin du salon. */
+  linkExpiry(): number {
+    return this.data.meta.createdAt + ROOM_MAX_AGE_MS;
+  }
+
+  /**
+   * Lien d'invitation partagé (hôte connecté seulement). `rotate` incrémente la génération : les liens précédents ne
+   * font plus entrer personne (les invités déjà entrés gardent leur jeton de séance). Seules les rotations sont comptées
+   * dans le débit d'invitations du salon.
+   */
+  inviteLink(requesterId: string, rotate: boolean): LinkVerdict {
+    if (requesterId !== this.hostId || !this.members.has(requesterId)) return { ok: false, reason: 'forbidden' };
+    if (rotate) {
+      const now = this.clock();
+      const recent = this.inviteHits.filter((at) => now - at < INVITE_WINDOW_MS);
+      this.inviteHits = recent;
+      if (recent.length >= INVITES_PER_WINDOW) return { ok: false, reason: 'rate_limited' };
+      recent.push(now);
+      this.data.inviteEpoch = (this.data.inviteEpoch ?? 0) + 1;
+      this.dirty.add('room');
+    }
+    return { ok: true, epoch: this.data.inviteEpoch ?? 0, exp: this.linkExpiry() };
+  }
+
+  /**
+   * Entrée d'un invité avec le lien partagé : génération du lien à jour, salon pas plein (participants maximum du salon),
+   * pas plus de MAX_GUESTS invités, débit des entrées du lien. Le pseudo est rendu unique (suffixe « 2 », « 3 »…) face aux
+   * participants, à l'hôte et aux pseudos déjà attribués ; l'invité est enregistré sous ce pseudo, si bien que son jeton de
+   * séance, lié à lui, ne sert qu'avec ce pseudo.
+   */
+  enterGuest(guestId: string, wanted: string, epoch: number): EntryVerdict {
+    if (epoch !== (this.data.inviteEpoch ?? 0)) return { ok: false, reason: 'link_revoked' };
+    if (this.members.size >= this.data.meta.maxParticipants) return { ok: false, reason: 'room_full' };
+    if (this.guestCount() >= MAX_GUESTS) return { ok: false, reason: 'guest_limit' };
+    const now = this.clock();
+    const recent = this.entryHits.filter((at) => now - at < ENTRY_WINDOW_MS);
+    this.entryHits = recent;
+    if (recent.length >= ENTRIES_PER_WINDOW) return { ok: false, reason: 'rate_limited' };
+    recent.push(now);
+    const taken = new Set<string>([this.data.meta.hostName.toLowerCase()]);
+    for (const member of this.members.values()) taken.add(member.username.toLowerCase());
+    for (const name of Object.values(this.data.guestNames ?? {})) taken.add(name.toLowerCase());
+    let name = wanted;
+    for (let n = 2; taken.has(name.toLowerCase()); n += 1) {
+      const suffix = ` ${n}`;
+      name = `${Array.from(wanted)
+        .slice(0, GUEST_NAME_MAX - suffix.length)
+        .join('')
+        .trimEnd()}${suffix}`;
+    }
+    const names: Record<string, string> = { ...(this.data.guestNames ?? {}) };
+    names[`${GUEST_KEY_PREFIX}${guestId}`] = name;
+    const keys = Object.keys(names);
+    for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
+    this.data.guestNames = names;
+    this.dirty.add('room');
+    return { ok: true, name, exp: this.linkExpiry() };
   }
 
   /** Limite de débit : `true` si le message est admis. */

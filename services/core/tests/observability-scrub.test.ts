@@ -100,6 +100,11 @@ describe('scrubUrl : hôtes hors du Worker', () => {
 });
 
 describe('scrubText : texte libre', () => {
+  it('masque le jeton d’invité d’un salon (?t=) dans un chemin relatif', () => {
+    expect(scrubText('erreur /party/abcdefghijklmnop/ws?t=' + SECRET + '&name=Lea')).toBe('erreur /party/abcdefghijklmnop/ws?t=[redacted]&name=Lea');
+    expect(scrubText('echec ' + HOST + '/party/abc/ws?t=' + SECRET + '&name=Lea')).not.toContain(SECRET);
+  });
+
   it('épure les URL contenues dans un message', () => {
     expect(scrubText(`échec sur ${HOST}/${CONFIG}/manifest.json?apikey=${SECRET}`)).toBe(`échec sur ${HOST}/[config]/manifest.json`);
   });

@@ -13,6 +13,7 @@ import { mediaTypeSchema, parseWith, UserApiError } from '../user/validation.js'
 import type { PartyBackend } from './backend.js';
 import {
   DEFAULT_MAX_PARTICIPANTS,
+  GUEST_SESSION_MS,
   type Fingerprint,
   MAX_PARTICIPANTS_LIMIT,
   MAX_ROOMS_PER_HOST,
@@ -21,7 +22,7 @@ import {
   type RoomInfo,
   type RoomMeta,
 } from './protocol.js';
-import { signGuestToken } from './guest.js';
+import { cleanGuestName, newGuestId, signGuestToken, signRoomInviteToken, verifyRoomInviteToken } from './guest.js';
 import { signTicket } from './ticket.js';
 import { ROOM_ID } from './ws.js';
 
@@ -56,6 +57,8 @@ const createSchema = z.object({
   maxParticipants: z.number().int().min(MIN_PARTICIPANTS).max(MAX_PARTICIPANTS_LIMIT).default(DEFAULT_MAX_PARTICIPANTS),
 });
 
+const inviteLinkSchema = z.object({ profileId: z.string().min(1).max(64), rotate: z.boolean().default(false) });
+const guestEntrySchema = z.object({ token: z.string().min(1).max(1024), name: z.string().min(1).max(200) });
 const joinSchema = z.object({ profileId: z.string().min(1).max(64) });
 const listSchema = z.object({
   profileId: z.string().min(1).max(64).optional(),
@@ -261,6 +264,55 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (verdict === 'rate_limited') throw new UserApiError(429, 'too_many_invites');
     const { token, expiresAt } = await signGuestToken(id, Date.now(), deps.secret);
     return sendJson(c, { token, expiresAt }, 201);
+  });
+
+  /**
+   * Lien d'invitation partageable (un seul lien pour tous les invités, comme un lien de réunion) : jeton signé, multi-usage,
+   * non lié à un pseudo, valable jusqu'à la fin du salon. Hôte connecté seulement. `rotate: true` (« Nouveau lien ») invalide
+   * les liens précédents ; sans `rotate`, le lien rendu est toujours le même.
+   */
+  router.post('/:id/invite-link', async (c) => {
+    const id = roomId(c);
+    await sessionOf(users(), c);
+    const body = parseWith(inviteLinkSchema, c.get('body'));
+    const { account, profile } = await profileFor(c, body.profileId);
+    const stub = party.room(id);
+    const info = await stub.info();
+    if (info === null) throw new UserApiError(404, 'room_not_found');
+    if (info.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
+    const verdict = await stub.inviteLink(account.id, body.rotate);
+    if (!verdict.ok) {
+      if (verdict.reason === 'not_found') throw new UserApiError(404, 'room_not_found');
+      if (verdict.reason === 'forbidden') throw new UserApiError(403, 'host_only');
+      throw new UserApiError(429, 'too_many_invites');
+    }
+    const token = await signRoomInviteToken(id, verdict.epoch, verdict.exp, deps.secret);
+    return sendJson(c, { token, expiresAt: new Date(verdict.exp).toISOString() }, 201);
+  });
+
+  /**
+   * Entrée d'un invité sans compte avec le lien partagé : jeton du lien + pseudo souhaité. Rend un jeton de séance
+   * individuel (lié à un identifiant d'invité et au pseudo attribué, unique dans le salon) à présenter ensuite à la
+   * WebSocket (`?t=<sessionToken>&name=<name>`), y compris pour se reconnecter. Sans session de compte.
+   */
+  router.post('/:id/guest', async (c) => {
+    const id = roomId(c);
+    const body = parseWith(guestEntrySchema, c.get('body'));
+    const now = Date.now();
+    const link = await verifyRoomInviteToken(body.token, id, now, deps.secret);
+    if (link === undefined) throw new UserApiError(403, 'invite_invalid');
+    const wanted = cleanGuestName(body.name);
+    if (wanted === undefined) throw new UserApiError(400, 'invalid_name');
+    const guestId = newGuestId();
+    const verdict = await party.room(id).enterGuest(guestId, wanted, link.epoch);
+    if (!verdict.ok) {
+      if (verdict.reason === 'not_found') throw new UserApiError(404, 'room_not_found');
+      if (verdict.reason === 'link_revoked') throw new UserApiError(403, 'invite_revoked');
+      if (verdict.reason === 'rate_limited') throw new UserApiError(429, 'too_many_entries');
+      throw new UserApiError(409, verdict.reason);
+    }
+    const session = await signGuestToken(id, now, deps.secret, { gid: guestId, exp: Math.min(now + GUEST_SESSION_MS, verdict.exp) });
+    return sendJson(c, { sessionToken: session.token, expiresAt: session.expiresAt, name: verdict.name }, 201);
   });
 
   /** Termine le salon : l'hôte (ou le propriétaire du serveur). */
