@@ -13,7 +13,7 @@ import {
   RTC_MAX_FRAME_CHARS,
   type ServerMessage,
 } from '../src/party/protocol.js';
-import { type Effect, type Member, RoomCore } from '../src/party/room-core.js';
+import { type Effect, type Member, RoomCore, guestRefusal } from '../src/party/room-core.js';
 import { signTicket, verifyTicket } from '../src/party/ticket.js';
 
 const SECRET = 'guest-test-secret-with-more-than-32-chars';
@@ -366,5 +366,94 @@ describe('connexion d’invité : rejoindre et réponses', () => {
     fx.core.join(guest);
     expect(errors(fx.core.handle(guest.accountId, msg({ t: 'episode', season: 1, episode: 2, fingerprint: null })))).toEqual(['not_host']);
     expect(sent(fx.core.handle(guest.accountId, msg({ t: 'ping', c: 9 })), guest.accountId)).toEqual([{ t: 'pong', c: 9, s: T0 }]);
+  });
+});
+
+const version = { fileName: 'Matrix.2026.mkv', size: 4_200_000_000, hash: 'abc123def456' };
+const roomOf = (msg: ServerMessage | undefined): { fingerprint?: unknown } | undefined => (msg?.t === 'welcome' ? msg.room : undefined);
+
+describe('invité : empreinte de version expurgée', () => {
+  it('welcome : l’hôte reçoit l’empreinte, l’invité jamais (ni nom de fichier, taille ni hash)', () => {
+    const fx = makeRoom();
+    fx.data.meta.fingerprint = version;
+    const host = fx.account('a-host');
+    const hostWelcome = sent(fx.core.join(host), host.accountId).find((m) => m.t === 'welcome');
+    expect(roomOf(hostWelcome)?.fingerprint).toEqual(version);
+    const guest = fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa');
+    const guestWelcome = sent(fx.core.join(guest), guest.accountId).find((m) => m.t === 'welcome');
+    expect(roomOf(guestWelcome)?.fingerprint).toBeNull();
+    expect(JSON.stringify(guestWelcome)).not.toContain('Matrix.2026');
+  });
+
+  it('media (épisode) : chaque participant reçoit sa version du message ; l’invité n’a pas l’empreinte', () => {
+    const fx = makeRoom();
+    fx.data.meta.media = { type: 'series', tmdbId: 1399, imdbId: null, season: 1, episode: 1 };
+    const host = fx.account('a-host');
+    fx.core.join(host);
+    const guest = fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa');
+    fx.core.join(guest);
+    const effects = fx.core.handle(host.accountId, msg({ t: 'episode', season: 1, episode: 2, fingerprint: version }));
+    const mediaFor = (to: string) => sent(effects, to).filter((m) => m.t === 'media');
+    expect(mediaFor(host.accountId)).toHaveLength(1);
+    expect(JSON.stringify(mediaFor(host.accountId))).toContain('Matrix.2026');
+    expect(mediaFor(guest.accountId)).toHaveLength(1);
+    expect(JSON.stringify(mediaFor(guest.accountId))).not.toContain('Matrix.2026');
+    expect(JSON.stringify(mediaFor(guest.accountId))).not.toContain('abc123def456');
+    // Aucune diffusion à tous : elle contournerait l'expurgation.
+    expect(broadcasts(effects).filter((m) => m.t === 'media')).toEqual([]);
+  });
+});
+
+describe('invité : reconnexion et motifs de refus', () => {
+  it('même jeton : même pseudo seulement, connecté ou après déconnexion', () => {
+    const fx = makeRoom();
+    withHost(fx);
+    const lea = fx.guest('lxxxxxxxxxxxxxxxxx', 'Léa');
+    fx.core.join(lea);
+    expect(fx.core.canJoinGuest(guestIdentity('lxxxxxxxxxxxxxxxxx', 'Autre'))).toBe('name_changed');
+    fx.core.leave(lea.accountId, lea.connId);
+    expect(fx.core.canJoinGuest(guestIdentity('lxxxxxxxxxxxxxxxxx', 'Autre'))).toBe('name_changed');
+    expect(fx.core.canJoinGuest(guestIdentity('lxxxxxxxxxxxxxxxxx', 'Léa'))).toBe('ok');
+  });
+
+  it('chaque motif de refus a son code de fermeture 4xxx ; admis : aucun code', () => {
+    expect(CLOSE.expired).toBe(4001);
+    expect(CLOSE.banned).toBe(4004);
+    expect(CLOSE.nameTaken).toBe(4011);
+    expect(CLOSE.nameChanged).toBe(4012);
+    expect(guestRefusal('banned')).toEqual({ code: 4004, reason: 'banned' });
+    expect(guestRefusal('room_full')).toMatchObject({ code: CLOSE.full });
+    expect(guestRefusal('guest_limit')).toMatchObject({ code: CLOSE.full });
+    expect(guestRefusal('name_taken')).toEqual({ code: 4011, reason: 'name_taken' });
+    expect(guestRefusal('name_changed')).toEqual({ code: 4012, reason: 'name_changed' });
+    expect(guestRefusal('ok')).toBeUndefined();
+  });
+});
+
+describe('invitation : émission réservée à l’hôte, débit et places', () => {
+  it('seul l’hôte connecté émet ; un autre membre ou un inconnu reçoit forbidden', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    const bob = fx.account('a-bob');
+    fx.core.join(bob);
+    expect(fx.core.inviteVerdict(bob.accountId)).toBe('forbidden');
+    expect(fx.core.inviteVerdict('a-inconnu')).toBe('forbidden');
+    expect(fx.core.inviteVerdict(host.accountId)).toBe('ok');
+  });
+
+  it('refusé quand quatre invités sont déjà connectés', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    ['g1', 'g2', 'g3', 'g4'].forEach((id, i) => fx.core.join(fx.guest(id.padEnd(16, 'x'), `Invité${i + 1}`)));
+    expect(fx.core.inviteVerdict(host.accountId)).toBe('guests_full');
+  });
+
+  it('dix jetons par dix minutes et par salon, puis à nouveau après la fenêtre', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    for (let i = 0; i < 10; i += 1) expect(fx.core.inviteVerdict(host.accountId)).toBe('ok');
+    expect(fx.core.inviteVerdict(host.accountId)).toBe('rate_limited');
+    fx.clock.now += 10 * 60_000;
+    expect(fx.core.inviteVerdict(host.accountId)).toBe('ok');
   });
 });

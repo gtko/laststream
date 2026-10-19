@@ -2,6 +2,9 @@ import { cleanReportText, filterChat } from './filter.js';
 import {
   CHAT_HISTORY,
   CLOSE,
+  GUEST_NAMES_MAX,
+  INVITES_PER_WINDOW,
+  INVITE_WINDOW_MS,
   type ChatLine,
   type ClientMessage,
   EMPTY_ROOM_TTL_MS,
@@ -45,7 +48,31 @@ export interface Member extends Identity {
   joinedAt: number;
 }
 
-export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_taken';
+export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_taken' | 'name_changed';
+
+/** Résultat d'une demande d'invitation : `ok` consomme un jeton du débit. */
+export type InviteVerdict = 'ok' | 'forbidden' | 'not_found' | 'guests_full' | 'rate_limited';
+
+/**
+ * Fermeture WebSocket d'un refus d'invité : code 4xxx propre à chaque motif, lu par le navigateur (contrairement à un code HTTP
+ * d'échec de mise à niveau). `undefined` si l'invité est admis.
+ */
+export function guestRefusal(check: JoinCheck): { code: number; reason: string } | undefined {
+  switch (check) {
+    case 'ok':
+      return undefined;
+    case 'banned':
+      return { code: CLOSE.banned, reason: 'banned' };
+    case 'room_full':
+      return { code: CLOSE.full, reason: 'full' };
+    case 'guest_limit':
+      return { code: CLOSE.full, reason: 'guest_limit' };
+    case 'name_taken':
+      return { code: CLOSE.nameTaken, reason: 'name_taken' };
+    case 'name_changed':
+      return { code: CLOSE.nameChanged, reason: 'name_changed' };
+  }
+}
 
 /** Fenêtres de débit par participant : `max` messages par `windowMs`. Au-delà de 2 fois la limite, la connexion est fermée. */
 const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
@@ -70,6 +97,8 @@ export class RoomCore {
   /** Signalements nouveaux, pas encore transmis à l'administration (le Durable Object les vide après envoi). */
   readonly fresh: { entry: ReportEntry; againstId: string }[] = [];
   private readonly hits = new Map<string, number[]>();
+  /** Instants des invitations émises (fenêtre glissante, en mémoire du Durable Object). */
+  private inviteHits: number[] = [];
   private seq = 0;
 
   constructor(
@@ -142,6 +171,9 @@ export class RoomCore {
    */
   canJoinGuest(identity: Identity): JoinCheck {
     if (this.data.banned.includes(identity.accountId)) return 'banned';
+    // Une invitation garde le pseudo de sa première connexion, y compris après une déconnexion.
+    const known = this.data.guestNames?.[identity.accountId];
+    if (known !== undefined && known !== identity.username) return 'name_changed';
     const reconnect = this.members.has(identity.accountId);
     if (!reconnect && this.guestCount() >= MAX_GUESTS) return 'guest_limit';
     if (!reconnect && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
@@ -171,6 +203,7 @@ export class RoomCore {
     // Une ancienne connexion du même compte est fermée par l'hôte du cœur (code CLOSE.replaced) avant cet appel.
     const previous = this.members.get(member.accountId);
     this.members.set(member.accountId, member);
+    if (member.guest === true) this.rememberGuest(member);
     this.data.emptySince = null;
     if (member.accountId === this.hostId) this.data.hostAbsentSince = null;
     this.dirty.add('room');
@@ -181,8 +214,8 @@ export class RoomCore {
       msg: {
         t: 'welcome',
         you: { username: member.username, host: member.accountId === this.hostId, muted: this.data.muted.includes(member.accountId), peerId: member.connId },
-        // Un invité ne reçoit pas l'URL de l'affiche (lien de média) ; les autres participants la reçoivent.
-        room: member.guest === true ? { ...this.roomView(), poster: null } : this.roomView(),
+        // Un invité ne reçoit ni l'URL de l'affiche (lien de média) ni l'empreinte de version (nom, taille, hash).
+        room: member.guest === true ? { ...this.roomView(), poster: null, fingerprint: null } : this.roomView(),
         state: this.data.state,
         serverTime: now,
         participants: [...this.members.values()].map((m) => this.participant(m)),
@@ -203,6 +236,31 @@ export class RoomCore {
     if (this.members.size === 0) this.data.emptySince = now;
     this.dirty.add('room');
     return [{ kind: 'broadcast', msg: { t: 'leave', user: member.username } }];
+  }
+
+  /** Mémorise le pseudo d'un invité pour ses reconnexions, borné à GUEST_NAMES_MAX entrées (les plus anciennes sont oubliées). */
+  private rememberGuest(member: Member): void {
+    const names: Record<string, string> = { ...(this.data.guestNames ?? {}) };
+    delete names[member.accountId];
+    names[member.accountId] = member.username;
+    const keys = Object.keys(names);
+    for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
+    this.data.guestNames = names;
+  }
+
+  /**
+   * Droit d'émettre une invitation : hôte connecté seulement, moins de quatre invités connectés, et au plus INVITES_PER_WINDOW
+   * jetons par INVITE_WINDOW_MS pour le salon. Un jeton accordé est compté tout de suite.
+   */
+  inviteVerdict(requesterId: string): InviteVerdict {
+    if (requesterId !== this.hostId || !this.members.has(requesterId)) return 'forbidden';
+    if (this.guestCount() >= MAX_GUESTS) return 'guests_full';
+    const now = this.clock();
+    const recent = this.inviteHits.filter((at) => now - at < INVITE_WINDOW_MS);
+    this.inviteHits = recent;
+    if (recent.length >= INVITES_PER_WINDOW) return 'rate_limited';
+    recent.push(now);
+    return 'ok';
   }
 
   /** Limite de débit : `true` si le message est admis. */
@@ -275,7 +333,9 @@ export class RoomCore {
         meta.fingerprint = message.fingerprint;
         this.data.state = this.nextState(false, 0);
         this.dirty.add('room');
-        return [{ kind: 'broadcast', msg: { t: 'media', media: meta.media, fingerprint: meta.fingerprint, state: this.data.state, serverTime: now } }];
+        const media: Extract<ServerMessage, { t: 'media' }> = { t: 'media', media: meta.media, fingerprint: meta.fingerprint, state: this.data.state, serverTime: now };
+        // Un invité ne reçoit pas l'empreinte de version (nom de fichier, taille, hash) : envoi par destinataire, sans diffusion.
+        return [...this.members.values()].map((m): Effect => ({ kind: 'send', to: m.accountId, msg: m.guest === true ? { ...media, fingerprint: null } : media }));
       }
       case 'chat': {
         if (this.data.muted.includes(accountId)) return this.err(accountId, 'muted');

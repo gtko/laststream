@@ -33,12 +33,28 @@ export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '�
 
 /** Codes de fermeture WebSocket propres au salon (4000-4999). */
 export const CLOSE = {
+  /** Salon terminé. */
   ended: 4000,
+  /** Jeton d'invité expiré ou invalide. */
+  expired: 4001,
   kicked: 4003,
+  /** Exclu du salon (refus de reconnexion). */
+  banned: 4004,
   rateLimited: 4008,
   replaced: 4009,
+  /** Salon plein, ou quatre invités déjà connectés. */
   full: 4010,
+  /** Pseudo déjà pris par un autre participant. */
+  nameTaken: 4011,
+  /** Reconnexion d'une invitation avec un autre pseudo que le premier. */
+  nameChanged: 4012,
 } as const;
+
+/** Invitations émises par un salon : au plus INVITES_PER_WINDOW par INVITE_WINDOW_MS. */
+export const INVITES_PER_WINDOW = 10;
+export const INVITE_WINDOW_MS = 10 * 60_000;
+/** Pseudos d'invités retenus pour la reconnexion (les plus anciens sont oubliés au-delà). */
+export const GUEST_NAMES_MAX = 200;
 
 export type MediaType = 'movie' | 'series';
 
@@ -111,6 +127,8 @@ export interface RoomData {
   hostAbsentSince: number | null;
   /** Quand le salon est devenu vide (ms) ; null s'il y a du monde. */
   emptySince: number | null;
+  /** Pseudo de chaque invité (clé `guest:<id>`) : une reconnexion avec le même jeton reprend le même pseudo. */
+  guestNames?: Record<string, string>;
 }
 
 export interface Identity {

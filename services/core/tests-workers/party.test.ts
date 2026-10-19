@@ -504,6 +504,14 @@ async function guestSocket(roomId: string, token: string, name: string): Promise
   return { res, peer, welcome: await peer.type('welcome') };
 }
 
+/** Refus d'un invité : la mise à niveau réussit, puis le salon ferme avec un code 4xxx et son motif (rien de HTTP). */
+async function refusedGuest(roomId: string, token: string, name: string): Promise<{ status: number; close?: { code: number; reason: string } }> {
+  const res = await upgrade(`/party/${roomId}/ws?t=${encodeURIComponent(token)}&name=${encodeURIComponent(name)}`);
+  if (res.status !== 101) return { status: res.status };
+  const peer = new Peer((res as unknown as { webSocket: unknown }).webSocket);
+  return { status: res.status, close: await peer.whenClosed() };
+}
+
 async function inviteFrom(member: Account, roomId: string) {
   return await api<{ token: string; expiresAt: string }>('POST', `/party/${roomId}/invite`, { token: member.token, body: { profileId: member.profile } });
 }
@@ -519,7 +527,7 @@ async function waitForParticipants(roomId: string, token: string, expected: numb
 }
 
 describe('invités sans compte sur Workers', () => {
-  it('invitation réservée aux membres connectés (401 sans session, 403 hors salon, 404 salon inconnu) ; jeton signé avec échéance', async () => {
+  it('invitation réservée à l’hôte connecté (401 sans session, 403 hors hôte, 404 salon inconnu) ; jeton signé avec échéance', async () => {
     const host = await account('host');
     const outsider = await account('outsider');
     const room = (await createRoom(host)).body.room;
@@ -531,8 +539,9 @@ describe('invités sans compte sur Workers', () => {
     expect(invite.body.token).toMatch(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     expect(Date.parse(invite.body.expiresAt) - Date.now()).toBeGreaterThan(11 * 3600_000);
     const notMember = await api('POST', `/party/${room.id}/invite`, { token: outsider.token, body: { profileId: outsider.profile } });
+    // Émission réservée à l'hôte : un autre compte (même connecté au salon ou non) reçoit 403 host_only.
     expect(notMember.status).toBe(403);
-    expect(notMember.body.error).toBe('not_member');
+    expect(notMember.body.error).toBe('host_only');
     expect((await api('POST', '/party/inexistant0123456789/invite', { token: host.token, body: { profileId: host.profile } })).status).toBe(404);
     h.peer.close();
   });
@@ -601,34 +610,32 @@ describe('invités sans compte sur Workers', () => {
     h.peer.close();
   });
 
-  it('au plus 4 invités connectés : le 5e est refusé (409 guest_limit) ; pseudo d’un membre refusé (409 name_taken)', async () => {
+  it('au plus 4 invités connectés : invitation et 5e invité refusés (fermeture 4010) ; pseudo d’un membre refusé (fermeture 4011)', async () => {
     const host = await account('host');
     const room = (await createRoom(host)).body.room;
     const h = await join(host, room.id);
+    // Jetons émis avant l'arrivée des invités : le salon n'en émet plus dès quatre invités connectés.
+    const tokens: string[] = [];
+    for (let i = 0; i < 6; i += 1) tokens.push((await inviteFrom(host, room.id)).body.token);
     const peers: Peer[] = [];
     for (let i = 1; i <= 4; i += 1) {
-      const { token } = (await inviteFrom(host, room.id)).body;
-      const g = await guestSocket(room.id, token, `Invité ${i}`);
+      const g = await guestSocket(room.id, tokens[i - 1] ?? '', `Invité ${i}`);
       expect(g.res.status).toBe(101);
       peers.push(g.peer as Peer);
     }
-    const fifth = (await inviteFrom(host, room.id)).body.token;
-    const refused = await guestSocket(room.id, fifth, 'Invité 5');
-    expect(refused.res.status).toBe(409);
-    expect(await refused.res.json()).toEqual({ error: 'guest_limit' });
+    const full = await inviteFrom(host, room.id);
+    expect(full.status).toBe(409);
+    expect(full.body).toEqual({ error: 'guests_full' });
+    const fifth = tokens[4] ?? '';
+    expect(await refusedGuest(room.id, fifth, 'Invité 5')).toEqual({ status: 101, close: { code: 4010, reason: 'guest_limit' } });
 
-    // Une place libérée est reprise.
+    // Une place libérée : pseudo d'un membre (casse ignorée) refusé, puis le 5e invité entre.
     peers[0]?.close();
     await h.peer.next((m) => m.t === 'leave' && m.user === 'Invité 1');
+    expect(await refusedGuest(room.id, tokens[5] ?? '', host.name.toUpperCase())).toMatchObject({ close: { code: 4011, reason: 'name_taken' } });
     const retry = await guestSocket(room.id, fifth, 'Invité 5');
     expect(retry.res.status).toBe(101);
     retry.peer?.close();
-
-    // Pseudo d'un membre (casse ignorée) : refusé.
-    const { token } = (await inviteFrom(host, room.id)).body;
-    const clash = await guestSocket(room.id, token, host.name.toUpperCase());
-    expect(clash.res.status).toBe(409);
-    expect(await clash.res.json()).toEqual({ error: 'name_taken' });
     for (const p of peers) p.close();
     h.peer.close();
   });
@@ -644,11 +651,12 @@ describe('invités sans compte sur Workers', () => {
     const otherToken = (await inviteFrom(host, other.id)).body.token;
     const [body, signature] = token.split('.') as [string, string];
     const forged = `${body}.${signature.startsWith('A') ? `B${signature.slice(1)}` : `A${signature.slice(1)}`}`;
-    expect((await upgrade(`/party/${room.id}/ws?t=${forged}&name=Léa`)).status).toBe(401);
-    expect((await upgrade(`/party/${room.id}/ws?t=${otherToken}&name=Léa`)).status).toBe(401);
+    // Jeton falsifié, d'un autre salon ou invalide : mise à niveau puis fermeture 4001 (jeton expiré ou invalide).
+    expect(await refusedGuest(room.id, forged, 'Léa')).toEqual({ status: 101, close: { code: 4001, reason: 'expired' } });
+    expect(await refusedGuest(room.id, otherToken, 'Léa')).toEqual({ status: 101, close: { code: 4001, reason: 'expired' } });
     expect((await upgrade(`/party/${room.id}/ws?t=${token}&name=%20%20`)).status).toBe(400);
     expect((await upgrade(`/party/${room.id}/ws?t=${token}`)).status).toBe(400);
-    expect((await upgrade(`/party/${room.id}/ws?t=bidon&name=Léa`)).status).toBe(401);
+    expect(await refusedGuest(room.id, 'bidon', 'Léa')).toEqual({ status: 101, close: { code: 4001, reason: 'expired' } });
     expect((await upgrade(`/party/${room.id}/ws?name=Léa`)).status).toBe(401);
     // Le jeton valide, lui, ouvre la connexion.
     const ok = await guestSocket(room.id, token, 'Léa');

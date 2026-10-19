@@ -1,4 +1,4 @@
-import type { JoinCheck } from './room-core.js';
+import type { InviteVerdict, JoinCheck } from './room-core.js';
 import type { ReportEntry, RoomInfo, RoomMeta } from './protocol.js';
 
 /**
@@ -12,8 +12,8 @@ export interface PartyRoomStub {
   info(): Promise<RoomInfo | null>;
   /** Un compte peut-il se connecter (salon plein, exclu) ? `closed` : le salon n'existe plus. */
   check(accountId: string): Promise<JoinCheck | 'closed'>;
-  /** Le compte est-il déjà connecté au salon ? (droit d'inviter : membre existant seulement). */
-  isMember(accountId: string): Promise<boolean>;
+  /** Droit d'émettre une invitation (hôte connecté, moins de quatre invités, débit du salon) ; compté si `ok`. */
+  invite(requesterId: string): Promise<InviteVerdict>;
   /** Termine le salon. `requesterId` doit être l'hôte, sauf `null` (propriétaire du serveur). */
   close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'>;
   /** Signalements reçus (hôte, ou propriétaire du serveur avec `null`). */

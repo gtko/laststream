@@ -253,7 +253,12 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     const info = await stub.info();
     if (info === null) throw new UserApiError(404, 'room_not_found');
     if (info.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
-    if (!(await stub.isMember(account.id))) throw new UserApiError(403, 'not_member');
+    // Émission réservée à l'hôte connecté ; refus si quatre invités sont là ; débit par salon (voir RoomCore.inviteVerdict).
+    const verdict = await stub.invite(account.id);
+    if (verdict === 'not_found') throw new UserApiError(404, 'room_not_found');
+    if (verdict === 'forbidden') throw new UserApiError(403, 'host_only');
+    if (verdict === 'guests_full') throw new UserApiError(409, 'guests_full');
+    if (verdict === 'rate_limited') throw new UserApiError(429, 'too_many_invites');
     const { token, expiresAt } = await signGuestToken(id, Date.now(), deps.secret);
     return sendJson(c, { token, expiresAt }, 201);
   });

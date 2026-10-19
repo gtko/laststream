@@ -2,7 +2,8 @@ import { allowedOrigins } from '../config/runtime-env.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { IDENTITY_HEADER, type PartyBackend } from './backend.js';
 import { cleanGuestName, guestIdentity, verifyGuestToken } from './guest.js';
-import type { Identity } from './protocol.js';
+import { CLOSE, type Identity } from './protocol.js';
+import { refusedSocket } from './refuse.js';
 import { verifyTicket } from './ticket.js';
 
 /** Identifiant de salon accepté dans l'URL (base64url, 16 à 32 caractères). */
@@ -44,7 +45,8 @@ export async function handlePartyWs(
     identity = verifyTicket(url.searchParams.get('ticket') ?? '', roomId, now, options.secret);
   } else {
     const verified = await verifyGuestToken(guestToken, roomId, now, options.secret);
-    if (verified === undefined) return json(401, { error: 'invalid_ticket' });
+    // Jeton expiré ou invalide : refus par fermeture WebSocket 4001 (le navigateur ne voit pas un code HTTP d'échec).
+    if (verified === undefined) return refusedSocket(CLOSE.expired, 'expired');
     const name = cleanGuestName(url.searchParams.get('name'));
     if (name === undefined) return json(400, { error: 'invalid_name' });
     identity = guestIdentity(verified.guestId, name);
