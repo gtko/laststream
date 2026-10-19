@@ -21,6 +21,7 @@ import {
   DebridError, PROVIDER_IDS, PROVIDER_LABEL, normalizeHash,
   type ClientCopy, type DebridProvider, type FileHint, type ProviderId, type ProviderStatus, type ResolvedLink,
 } from './debrid/types';
+import { getSharedLink, publishSharedLink, sourceKeyFor } from './sharedLinks';
 
 export { PROVIDER_IDS, PROVIDER_LABEL, DebridError };
 export type { ClientCopy, FileHint, ProviderId, ProviderStatus, ResolvedLink };
@@ -183,7 +184,8 @@ export interface DebridManagerOptions {
 }
 
 export interface ClientResolved extends ResolvedLink {
-  provider: ProviderId;
+  /** Fournisseur qui a débloqué le lien sur cet appareil ; absent quand le lien vient d'un autre appareil du compte (partage serveur). */
+  provider?: ProviderId;
   /** Fournisseur(s) sauté(s) pour cause de compte indisponible avant celui-ci. */
   switchedFrom?: ProviderId;
 }
@@ -371,7 +373,11 @@ export class DebridManager {
     if (ids.length === 0) throw new DebridError(this.configured().length ? 'all_unavailable' : 'no_provider', 'account');
     const memoKey = JSON.stringify([list.map((c) => [c.infoHash, c.fileIdx, c.filename, c.size]), episode]);
     const memo = this.resolved.get(memoKey);
-    if (memo && this.now() - memo.at < RESOLVE_TTL_MS && this.available().includes(memo.value.provider)) return memo.value;
+    if (memo && this.now() - memo.at < RESOLVE_TTL_MS && memo.value.provider !== undefined && this.available().includes(memo.value.provider)) return memo.value;
+
+    // Lien déjà débloqué par un autre appareil du compte : aucun débrideur n'est appelé ici.
+    const shared = await sharedFor(list);
+    if (shared) return shared;
 
     const verdicts = await this.cachedVerdicts(list.map((c) => c.infoHash));
     const cachedIn = (id: ProviderId, c: ClientCopy): boolean => verdicts.get(c.infoHash.toLowerCase())?.by.includes(id) === true;
@@ -386,6 +392,9 @@ export class DebridManager {
         try {
           const hint: FileHint = { fileIdx: copy.fileIdx, filename: copy.filename, size: copy.size, season: episode.season, episode: episode.episode };
           const link = await this.provider(id).resolve(copy.infoHash, hint, signal);
+          // Partage avec les autres appareils du compte : publication sans attente, un échec n'a aucune conséquence.
+          const sharedKey = sourceKeyFor(copy);
+          if (sharedKey) void publishSharedLink(sharedKey, link.url);
           // Un fournisseur qui a servi un lien : sa disponibilité est confirmée, et le hash est « en cache » chez lui.
           if (this.health[id]) { delete this.health[id]; this.saveHealth(); }
           const value: ClientResolved = { ...link, provider: id, ...(skipped ? { switchedFrom: skipped } : {}) };
@@ -415,6 +424,24 @@ export class DebridManager {
   }
 
   resetCache(): Promise<void> { this.resolved.clear(); return this.statuses.clear(); }
+}
+
+/**
+ * Lien partagé pour la première copie qui en a un (ordre des copies). Sans clé de partage (pas d'index de fichier), rien n'est
+ * demandé. Le nom et la taille viennent des indications de la copie : le partage ne les garde pas. Ne lève pas.
+ */
+async function sharedFor(list: readonly ClientCopy[]): Promise<ClientResolved | null> {
+  const keyed = list.flatMap((copy) => {
+    const key = sourceKeyFor(copy);
+    return key ? [{ copy, key }] : [];
+  });
+  if (keyed.length === 0) return null;
+  const found = await Promise.all(keyed.map(({ key }) => getSharedLink(key)));
+  const i = found.findIndex((link) => link !== null);
+  const link = i >= 0 ? found[i] : null;
+  if (!link) return null;
+  const copy = keyed[i].copy;
+  return { url: link.url, filename: copy.filename ?? '', size: copy.size ?? 0 };
 }
 
 function defaultProvider(id: ProviderId, apiKey: string): DebridProvider {
