@@ -122,11 +122,11 @@ describe('écran d’inscription', () => {
     expect($('#auth-form', overlay())).toBeNull();
   });
 
-  it('sans invitation : « Inscription sur invitation » et aucun formulaire ; le code se saisit à la main', async () => {
+  it('sans invitation : « Rejoindre Laststream » et aucun formulaire ; le code se saisit à la main', async () => {
     await openAuth('/', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: c.path.endsWith('Good1234'), inviter: 'dana' }) : undefined));
-    ($('[data-auth-mode="register"]', overlay()) as HTMLElement).click();
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
     await tick();
-    expect(overlay().textContent).toContain('Inscription sur invitation');
+    expect(overlay().textContent).toContain('Rejoindre Laststream');
     expect($('#auth-form', overlay())).toBeNull();
     const f = $<HTMLFormElement>('[data-invite-form]', overlay())!;
     (f.elements.namedItem('code') as HTMLInputElement).value = 'https://x.fr/?invite=Good1234';
@@ -138,7 +138,7 @@ describe('écran d’inscription', () => {
 
   it('premier compte d’un serveur vide : accès au formulaire avec le jeton d’amorçage', async () => {
     await openAuth('/');
-    ($('[data-auth-mode="register"]', overlay()) as HTMLElement).click();
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
     await tick();
     ($('[data-invite-first]', overlay()) as HTMLElement).click();
     await tick();

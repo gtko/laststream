@@ -90,16 +90,17 @@ export async function checkInviteCode(raw) {
   return invite.status;
 }
 
+/** Vue affichée : 'login' (Connexion) ou 'invite' (Rejoindre Laststream). */
 let mode = 'login';
 
-/** Lit le code d'invitation de l'adresse de la page (au démarrage) : l'inscription s'ouvre alors directement. */
+/** Lit le code d'invitation de l'adresse de la page (au démarrage) : la vue « Rejoindre Laststream » s'ouvre alors directement. */
 export function readInviteFromLocation() {
   const code = parseInviteCode(location.search, location.hash);
   invite.first = false;
   invite.inviter = '';
   invite.code = code;
   invite.status = code ? 'checking' : 'none';
-  mode = code ? 'register' : 'login';
+  mode = code ? 'invite' : 'login';
 }
 readInviteFromLocation();
 
@@ -108,38 +109,59 @@ function forgetInviteInUrl() {
   try { history.replaceState(null, '', location.pathname + rest.search + rest.hash); } catch (_) { /* adresse inchangée */ }
 }
 
-function inviteBlockHTML() {
+/** Étape 1 de « Rejoindre Laststream » : coller le lien (ou le code), puis valider. Le lien est vérifié auprès du serveur. */
+function inviteCodeHTML(msg) {
   const st = invite.status;
-  const field = '<form class="tv-form auth-invite" data-invite-form><label class="tv-field">Code ou lien d’invitation<input type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(st === 'invalid' ? '' : invite.code) + '"></label>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Valider le code</button></div></form>';
-  if (st === 'valid') return '<p class="auth-invite-ok" role="status">' + (invite.inviter ? 'Invité par <strong>' + esc(invite.inviter) + '</strong>' : 'Lien d’invitation valide') + '</p>';
-  if (st === 'checking') return '<p class="tv-form-msg" role="status">Vérification du lien…</p>';
-  if (st === 'unknown') return '<p class="auth-invite-ok" role="status">Lien d’invitation enregistré (vérifié à l’inscription).</p>';
-  return '<h2 class="auth-sub">Inscription sur invitation</h2>' +
-    '<p class="tv-form-note">' + (st === 'invalid'
-      ? 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.'
-      : 'Les comptes se créent avec un lien de parrainage : demande-le à un ami déjà inscrit, ou saisis ici le code reçu.') + '</p>' +
-    field + '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>';
+  const note = msg || (st === 'invalid'
+    ? 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.'
+    : st === 'checking' ? 'Vérification du lien…' : '');
+  return '<form class="tv-form auth-form auth-invite" data-invite-form>' +
+    '<label class="tv-field">Colle ton lien ou code d’invitation<input type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(st === 'invalid' ? '' : invite.code) + '"></label>' +
+    '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(note) + '</p>' +
+    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Valider</button></div>' +
+    '<p class="tv-form-note">Le lien entier ou seulement son code : les deux fonctionnent.</p></form>' +
+    '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>';
+}
+
+/** Étape 2 : l'invitation est reconnue (qui invite). Rien à afficher pour le premier compte du serveur. */
+function inviteStatusHTML() {
+  if (invite.first) return '';
+  if (invite.status === 'valid') return '<p class="auth-invite-ok" role="status">' + (invite.inviter ? 'Invité par <strong>' + esc(invite.inviter) + '</strong>' : 'Lien d’invitation valide') + '</p>';
+  return '<p class="auth-invite-ok" role="status">Lien d’invitation enregistré (vérifié à l’inscription).</p>';
+}
+
+/** Nom d’utilisateur et mot de passe ; à l’inscription, le jeton d’amorçage du premier compte si le serveur l’exige. */
+function credentialsFormHTML(reg, msg) {
+  return '<form id="auth-form" class="tv-form auth-form" autocomplete="on">' +
+    '<label class="tv-field">Nom d’utilisateur<input type="text" name="username" autocomplete="username" autocapitalize="none" required value=""></label>' +
+    '<label class="tv-field">Mot de passe<input type="password" name="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '" required></label>' +
+    (reg && invite.first ? '<label class="tv-field">Jeton d’amorçage (premier compte, si le serveur l’exige)<input type="password" name="bootstrap" autocomplete="off"></label>' : '') +
+    '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
+    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">' + (reg ? 'Créer mon compte' : 'Se connecter') + '</button></div></form>';
+}
+
+/** Vue « Connexion » (par défaut) : le formulaire, puis « Pas encore de compte ? » pour ouvrir l’invitation. */
+function loginViewHTML(msg) {
+  return '<h1 class="auth-title">Connexion</h1>' + credentialsFormHTML(false, msg) +
+    '<section class="auth-new" aria-labelledby="auth-new-title"><h2 class="auth-sub" id="auth-new-title">Pas encore de compte ?</h2>' +
+    '<p class="tv-form-note">Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.</p>' +
+    '<button type="button" class="btn auth-new-btn" data-auth-mode="invite">J’ai un lien d’invitation</button></section>' +
+    '<div class="tv-form-actions auth-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>';
+}
+
+/** Vue « Rejoindre Laststream » : coller le lien (étape 1), puis créer son compte (étape 2). */
+function inviteViewHTML(msg) {
+  const ready = invite.first || invite.status === 'valid' || invite.status === 'unknown';
+  return '<h1 class="auth-title">Rejoindre Laststream</h1>' +
+    (ready ? inviteStatusHTML() + credentialsFormHTML(true, msg) : inviteCodeHTML(msg)) +
+    '<button type="button" class="link-btn" data-auth-mode="login">← J’ai déjà un compte</button>' +
+    '<div class="tv-form-actions auth-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>';
 }
 
 function loginHTML(msg) {
-  const reg = mode === 'register';
-  const showForm = !reg || invite.status === 'valid' || invite.status === 'unknown' || invite.first;
-  return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' +
-    '<h1 class="auth-title">' + (reg ? 'Créer un compte' : 'Connexion') + '</h1>' +
-    '<div class="pills" role="group" aria-label="Mode"><button type="button" class="pill" data-auth-mode="login" aria-pressed="' + !reg + '">Connexion</button>' +
-    '<button type="button" class="pill" data-auth-mode="register" aria-pressed="' + reg + '">Créer un compte</button></div>' +
-    (reg && !invite.first ? inviteBlockHTML() : '') +
-    (showForm ? '<form id="auth-form" class="tv-form auth-form" autocomplete="on">' +
-      '<label class="tv-field">Nom d’utilisateur<input type="text" name="username" autocomplete="username" autocapitalize="none" required value=""></label>' +
-      '<label class="tv-field">Mot de passe<input type="password" name="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '" required></label>' +
-      (reg && invite.first ? '<label class="tv-field">Jeton d’amorçage (premier compte, si le serveur l’exige)<input type="password" name="bootstrap" autocomplete="off"></label>' : '') +
-      '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
-      '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">' + (reg ? 'Créer le compte' : 'Se connecter') + '</button>' +
-      '<button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>' +
-      '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés. Sans compte, tout reste dans ce navigateur.</p></form>'
-      : '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
-        '<div class="tv-form-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>') +
+  const body = mode === 'invite' ? inviteViewHTML(msg) : loginViewHTML(msg);
+  return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' + body +
+    '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés. Sans compte, tout reste dans ce navigateur.</p>' +
     '</div>';
 }
 
@@ -147,9 +169,22 @@ function showLogin(msg) {
   show(loginHTML(msg));
   const u = el().querySelector('input[name="username"]') || el().querySelector('input[name="code"]');
   if (u) u.focus();
-  if (mode === 'register' && invite.status === 'checking') {
-    checkInviteCode(invite.code).then(() => { if (!root.hidden && mode === 'register') showLogin(); });
-  }
+  // Lien de l'adresse : vérifié à l'ouverture de la vue (« Vérification du lien… »).
+  if (mode === 'invite' && invite.status === 'checking') void validateInvite(invite.code);
+}
+
+/** Vérifie le lien ou le code saisi (ou collé), puis réaffiche : compte à créer, ou message si le lien ne vaut rien. */
+function validateInvite(raw) {
+  invite.status = 'checking';
+  // Réponse périmée (une validation plus récente est en vol) : rien à redessiner, sinon showLogin relancerait la vérification.
+  return checkInviteCode(raw).then(() => { if (invite.status !== 'checking' && !root.hidden && mode === 'invite') showLogin(); });
+}
+
+/** Bascule Connexion ↔ Rejoindre Laststream. Ouvrir « Rejoindre » repart de la saisie du lien (le code reste dans le champ). */
+function setMode(next) {
+  mode = next;
+  invite.first = false;
+  if (next === 'invite' && invite.status !== 'checking') invite.status = 'none';
 }
 
 async function submitLogin(form) {
@@ -159,7 +194,7 @@ async function submitLogin(form) {
   btn.disabled = true;
   if (msg) msg.textContent = '';
   try {
-    if (mode === 'register') {
+    if (mode === 'invite') {
       await signUp(f.username.value, f.password.value, f.bootstrap && f.bootstrap.value, invite.first ? '' : invite.code);
       forgetInviteInUrl();
       invite.code = ''; invite.status = 'none';
@@ -529,7 +564,7 @@ document.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || !t.closest('#auth')) return;
   const m = t.closest('[data-auth-mode]');
-  if (m) { mode = m.dataset.authMode; invite.first = false; showLogin(); return; }
+  if (m) { setMode(m.dataset.authMode); showLogin(); return; }
   if (t.closest('[data-invite-first]')) { invite.first = true; showLogin(); return; }
   if (t.closest('[data-auth-local]')) {
     continueWithoutAccount();
@@ -557,9 +592,14 @@ document.addEventListener('submit', (e) => {
   if (e.target && e.target.id === 'auth-form') { e.preventDefault(); submitLogin(e.target); return; }
   if (e.target && e.target.matches && e.target.matches('[data-invite-form]')) {
     e.preventDefault();
-    const raw = e.target.elements.code.value;
-    invite.status = 'checking';
-    checkInviteCode(raw).then(() => showLogin());
+    void validateInvite(e.target.elements.code.value);
   }
+});
+
+// Lien complet ou code collé dans le champ d'invitation : vérifié aussitôt (le texte n'est dans le champ qu'après l'événement).
+document.addEventListener('paste', (e) => {
+  const t = e.target instanceof HTMLInputElement ? e.target : null;
+  if (!t || t.name !== 'code' || !t.closest('[data-invite-form]')) return;
+  setTimeout(() => { void validateInvite(t.value); }, 0);
 });
 

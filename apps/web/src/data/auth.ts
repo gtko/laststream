@@ -1,4 +1,4 @@
-import { getBase, getConfig } from './config';
+import { getBase, getConfig, PUBLIC_BASE, saveSettings } from './config';
 import { clearElevation } from './adminApi';
 import { emitDataEvent } from './events';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
@@ -99,9 +99,12 @@ function useLocal(status: AuthStatus): AuthStatus {
  */
 export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<AuthStatus> {
   authEvents.onUnauthorized = () => { void signOut(true); };
-  // Seule l'adresse du serveur est nécessaire à la connexion (la config est générée ensuite pour un compte neuf).
-  if (!getBase() || opts.anonymous) return useLocal('local');
+  if (opts.anonymous) return useLocal('local');
   if (isLocalMode() && !getSession()) return useLocal('local');
+  // Aucune adresse enregistrée (premier lancement hors lastAddon) : le serveur Laststream par défaut, pour afficher l'écran
+  // de connexion au lieu du mode local. Seule l'adresse est nécessaire (la config est générée ensuite pour un compte neuf).
+  // Serveur injoignable : /user/me échoue et le statut reste 'offline'.
+  if (!getBase()) saveSettings({ base: PUBLIC_BASE, mode: 'public' });
   try {
     const { account } = await api.me(4000);
     auth.username = account.username;
