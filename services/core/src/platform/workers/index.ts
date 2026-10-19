@@ -8,6 +8,7 @@ import { createKvCacheAdmin, createRemoteMetrics } from './metrics.js';
 import { workersScheduler } from './scheduler.js';
 import { createR2TvBlobs, refreshTvFromEnv } from './tv-store.js';
 import { createR2MetaBlobs, createR2RowBlobs } from './meta-blobs.js';
+import { createR2AvatarAssets } from './avatar-assets.js';
 import { platformInstalled, setPlatform } from '../index.js';
 import { createWorkersUiAssets } from './ui-assets.js';
 import { createDurableObjectPartyBackend } from './party-backend.js';
@@ -45,6 +46,7 @@ export function createWorkersPlatform(env: WorkerEnv): Platform {
     createPartyBackend: () => createDurableObjectPartyBackend(env.PARTY_ROOM),
     uiAssets: createWorkersUiAssets(env.ASSETS),
     metaBlobs: env.META === undefined ? undefined : createR2MetaBlobs(env.META),
+    avatarAssets: env.AVATARS === undefined ? undefined : createR2AvatarAssets(env.AVATARS),
     rowBlobs: env.META === undefined ? undefined : createR2RowBlobs(env.META),
     tvStore:
       env.TV === undefined

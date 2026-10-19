@@ -27,6 +27,7 @@ import { createMaintenanceGate, maintenanceMiddleware } from './admin/maintenanc
 import { metricsMiddleware } from './metrics/middleware.js';
 import { installCacheCounters } from './metrics/index.js';
 import { registerStreamingProxy } from './streaming-proxy.js';
+import { registerAvatarRoutes } from './routes/avatars.js';
 import { registerUiRoutes } from './ui.js';
 import { createRateLimiter } from './rate-limit.js';
 import { isRecord } from './sources/http.js';
@@ -56,6 +57,8 @@ const OPEN_CORS_PATHS: readonly RegExp[] = [
   /^\/[^/]+\/manifest\.json$/,
   /^\/[^/]+\/stream\/[^/]+\/[^/]+$/,
 ];
+/** Avatars par collections (/avatars/*) : lecture publique en GET, sans limite de débit (une grille charge beaucoup d'images). */
+const OPEN_AVATAR_PATH = /^\/avatars\/.+$/;
 /** Endpoints de configuration (/config/*) : origines restreintes et limite de débit. */
 const CONFIG_PATH = /^\/config(?:\/|$)/;
 /** Routes lt et catalogues (proxys publics par configuration) : GET ouvert à toute origine. */
@@ -75,7 +78,7 @@ const USER_HEADERS = 'Content-Type, Authorization, X-Profile-Token, X-Bootstrap-
 function isOpenPath(c: Ctx): boolean {
   const path = c.req.path;
   if (OPEN_CORS_PATHS.some((pattern) => pattern.test(path))) return true;
-  if (!OPEN_LT_PATHS.some((pattern) => pattern.test(path))) return false;
+  if (!OPEN_LT_PATHS.some((pattern) => pattern.test(path)) && !OPEN_AVATAR_PATH.test(path)) return false;
   if (c.req.method === 'GET') return true;
   return c.req.method === 'OPTIONS' && c.req.header('access-control-request-method') === 'GET';
 }
@@ -266,6 +269,9 @@ export function createApp(deps: AppDeps): App {
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
   registerAdminRoutes(app, deps, backend, maintenance, party);
+  // Avatars par collections : R2 sous Workers, dossier ou relais sous Node. Avant l'interface web (pas de repli sur index.html).
+  const avatars = platform().avatarAssets;
+  if (avatars !== undefined) registerAvatarRoutes(app, avatars);
   closers.set(app, () => {
     closeLtRoutes(app);
     backend.close();

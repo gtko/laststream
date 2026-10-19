@@ -129,6 +129,15 @@ export interface UiAssets {
   serve(request: Request, pathname: string): Promise<Response | null>;
 }
 
+/**
+ * Fichiers des avatars par collections, servis sous /avatars/ : catalogue (`catalog.json`), personnages d'une collection
+ * (`c/<colId>.json`), vignettes (`i/<colId>/<charId>.webp`). `key` est ce chemin relatif, déjà validé par la route.
+ * Renvoie la réponse (corps, ETag, statut 200 ou 304), ou null si la clé n'existe pas.
+ */
+export interface AvatarAssets {
+  serve(request: Request, key: string): Promise<Response | null>;
+}
+
 /** Ensemble des services de plateforme. */
 export interface Platform {
   readonly env: RuntimeEnv;
@@ -167,4 +176,9 @@ export interface Platform {
   metaBlobs?: MetaBlobStore;
   /** Stockage des rangées d'accueil communes (Workers : même bucket, clés rows/). Absent : rangées calculées à la demande. */
   rowBlobs?: RowBlobStore;
+  /**
+   * Fichiers des avatars par collections (Workers : bucket R2 lastaddon-avatars ; Node : dossier LASTADDON_AVATARS_DIR,
+   * sinon relais vers LASTADDON_PUBLIC_URL). Absent : /avatars/* répond 404.
+   */
+  avatarAssets?: AvatarAssets;
 }

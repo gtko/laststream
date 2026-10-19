@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { KID_MAX_AGES } from './store.js';
-import { AVATAR_PATTERN } from './avatar.js';
+import { ALL_AVATAR_COLLECTIONS, KID_AVATAR_COLLECTIONS } from './avatar-collections.js';
+import { AVATAR_COLLECTION_PATTERN, AVATAR_MAX_LENGTH, AVATAR_PATTERN, collectionOfAvatar } from './avatar.js';
 
 /** Erreur de l'API utilisateur : statut HTTP, code stable, et chemins des champs invalides (jamais leurs valeurs). */
 export class UserApiError extends Error {
@@ -18,6 +19,18 @@ export class UserApiError extends Error {
     this.issues = issues;
     this.retryAfterSec = retryAfterSec;
   }
+}
+
+/**
+ * Avatar `col:<colId>:<charId>` : la collection doit être publiée et, sur un profil enfant, autorisée aux enfants. Les
+ * formats dicebear et hero ne sont pas concernés ; un avatar absent ou nul n'a rien à vérifier.
+ */
+export function assertAvatarAllowed(avatar: string | null | undefined, isKid: boolean): void {
+  if (avatar === null || avatar === undefined) return;
+  const colId = collectionOfAvatar(avatar);
+  if (colId === undefined) return;
+  if (!ALL_AVATAR_COLLECTIONS.has(colId)) throw new UserApiError(400, 'invalid_avatar');
+  if (isKid && !KID_AVATAR_COLLECTIONS.has(colId)) throw new UserApiError(400, 'avatar_not_allowed_for_kid');
 }
 
 /** Valide un corps ou des paramètres ; l'erreur ne renvoie que les chemins et codes des problèmes. */
@@ -38,8 +51,11 @@ const USERNAME = z
 const PASSWORD = z.string().min(8).max(256);
 const PIN = z.string().regex(/^\d{4}$/);
 const AVATAR_COLOR = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-/** Avatar illustré : `dicebear:<style>:<graine>` (style en minuscules et tirets, graine alphanumérique, 40 caractères au plus). */
-const AVATAR = z.string().max(80).regex(AVATAR_PATTERN);
+/** Avatar illustré : `dicebear:<style>:<graine>`, `hero:<famille>:<graine>` ou `col:<colId>:<charId>` (collection connue, voir assertAvatarAllowed). */
+const AVATAR = z
+  .string()
+  .max(AVATAR_MAX_LENGTH)
+  .refine((value) => AVATAR_PATTERN.test(value) || AVATAR_COLLECTION_PATTERN.test(value), 'avatar : format inconnu');
 const KID_AGE = z.literal([...KID_MAX_AGES]);
 const CATALOGS = z.array(z.string().trim().min(1).max(64)).max(50);
 const IMDB_ID = z.string().regex(/^tt\d{1,10}$/);

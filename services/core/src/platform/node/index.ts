@@ -5,12 +5,14 @@ import { createMemoryKvCache } from './kv-cache.js';
 import { nodeScheduler } from './scheduler.js';
 import { nodeLocalMedia } from './local-media.js';
 import { createFsUiAssets } from './ui-assets.js';
+import { createNodeAvatarAssets } from './avatar-assets.js';
 import { createNodeUserBackend } from './user-backend.js';
 import { withCacheMetrics } from '../../metrics/cache.js';
 import { createMemoryMetrics } from '../../metrics/memory.js';
 import type { Platform } from '../types.js';
 
 export { createFsUiAssets, assertUiDir } from './ui-assets.js';
+export { createNodeAvatarAssets } from './avatar-assets.js';
 export { createMemoryKvCache } from './kv-cache.js';
 export { nodeRuntimeEnv } from './env.js';
 export { nodeHttpClient } from './http-client.js';
@@ -32,5 +34,6 @@ export function createNodePlatform(): Platform {
     createUserBackend: (options) => createNodeUserBackend(options),
     localMedia: nodeLocalMedia,
     uiAssetsFromDir: createFsUiAssets,
+    avatarAssets: createNodeAvatarAssets(nodeRuntimeEnv, nodeHttpClient),
   };
 }

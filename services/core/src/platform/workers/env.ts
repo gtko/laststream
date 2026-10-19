@@ -37,6 +37,8 @@ export interface WorkerEnv {
   TV?: R2Bucket;
   /** Bucket R2 des fiches partagées (meta/<type>/<tmdbId>.json) : absent, fiches construites à chaque demande. */
   META?: R2Bucket;
+  /** Bucket R2 des avatars par collections (catalog.json, c/, i/ ; voir scripts/avatars) : absent, /avatars/* répond 404. */
+  AVATARS?: R2Bucket;
   /** DSN Sentry (secret) : absent, aucune remontée d'erreur. */
   SENTRY_DSN?: string;
   /** Autres liaisons : variables (chaînes) et secrets. */

@@ -8,3 +8,6 @@ dist-bundle/
 worker-ui/
 .wrangler/
 .dev.vars
+
+# Sortie du pipeline d avatars (scripts/avatars) : générée, jamais versionnée
+.avatars-build/

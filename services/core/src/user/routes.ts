@@ -60,6 +60,7 @@ import {
   updateProfileSchema,
   UserApiError,
   watchedWriteSchema,
+  assertAvatarAllowed,
 } from './validation.js';
 
 /** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
@@ -351,6 +352,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const { account } = await managerOf(db(), c, true);
     const body = parseWith(createProfileSchema, c.get('body'));
     const isKid = body.isKid;
+    assertAvatarAllowed(body.avatar, isKid);
     const fields: ProfileFields = {
       name: body.name,
       avatarColor: body.avatarColor,
@@ -388,6 +390,8 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
       kidMaxAge: isKid ? (patch.kidMaxAge ?? profile.kidMaxAge ?? DEFAULT_KID_MAX_AGE) : null,
       allowedCatalogs: patch.allowedCatalogs ?? profile.allowedCatalogs,
     };
+    // Avatar `col:` : vérifié quand il change ou quand le profil devient enfant (un avatar déjà en place reste sinon intact).
+    if (patch.avatar !== undefined || (isKid && !profile.isKid)) assertAvatarAllowed(fields.avatar, isKid);
     const newPinHash = patch.pin === undefined ? undefined : patch.pin === null ? null : await hashSecret(patch.pin);
     await users.updateProfile(account.id, profile.id, fields, newPinHash);
     const updated = await users.findProfile(account.id, profile.id);

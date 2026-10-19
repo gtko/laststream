@@ -48,7 +48,10 @@
     { "binding": "TV", "bucket_name": "lastaddon-tv" },
     // Fiches partagées (TMDB + TVDB + notes + casting + épisodes) : meta/<type>/<tmdbId>.json, voir src/lt/meta.ts.
     // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-meta
-    { "binding": "META", "bucket_name": "lastaddon-meta" }
+    { "binding": "META", "bucket_name": "lastaddon-meta" },
+    // Avatars par collections (catalog.json, c/, i/) : envoyés par scripts/avatars/upload.mjs, servis sur /avatars/*.
+    // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-avatars
+    { "binding": "AVATARS", "bucket_name": "lastaddon-avatars" }
   ],
   "triggers": { "crons": ["0 */6 * * *"] },
 
