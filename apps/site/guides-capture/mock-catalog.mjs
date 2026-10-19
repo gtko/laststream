@@ -1,5 +1,5 @@
 // Catalogue factice des captures : titres inventés en français, affiches et fonds = images du site
-// (public/assets/posters). Servi uniquement par page.route() dans le navigateur de test : aucun appel TMDB,
+// (guides-capture/posters, copie des anciennes affiches du site). Servi uniquement par page.route() dans le navigateur de test : aucun appel TMDB,
 // aucune clé, aucune image tierce. Les formes de réponse suivent celles lues par l'app (ui/catalog.js,
 // ui/registry.js, data/rows.ts, lastAddon src/lt/top10.ts).
 import { readFileSync } from 'node:fs';
