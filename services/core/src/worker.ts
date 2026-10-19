@@ -11,7 +11,7 @@ import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter } from './observability/report.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
-import { createWorkersPlatform, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
+import { createWorkersPlatform, createWorkersTvAdmin, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
@@ -26,6 +26,7 @@ function appFor(env: WorkerEnv): App {
   if (secret === undefined) throw new Error('LASTADDON_SECRET manquant : wrangler secret put LASTADDON_SECRET');
   const rangeLimit = env.RANGE_LIMITER;
   const mdbLimit = env.MDBLIST_LIMITER;
+  const tvAdmin = createWorkersTvAdmin(env);
   app = createApp({
     secret,
     allowPlain: isPlainAllowed(),
@@ -33,6 +34,7 @@ function appFor(env: WorkerEnv): App {
     authLimiter: authLimiterFrom(env),
     rangeLimiter: rangeLimit === undefined ? undefined : async (key) => (await rangeLimit.limit({ key })).success,
     mdblistLimiter: mdbLimit === undefined ? undefined : async () => (await mdbLimit.limit({ key: 'mdblist' })).success,
+    ...(tvAdmin === undefined ? {} : { tvAdmin }),
   });
   return app;
 }

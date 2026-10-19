@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- corps JSON de tests */
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryMetrics } from '../src/metrics/memory.js';
+import type { TvCronState } from '../src/admin/cache-types.js';
 import type { RoomMeta } from '../src/party/protocol.js';
 import { fakeCacheAdmin, fakeParty, inviteAndRegister, request, startAdmin, type AdminRig } from './admin-harness.js';
 
@@ -64,10 +65,14 @@ describe('/admin/caches et /admin/tv', () => {
     expect(rerun.body.error).toBe('tv_admin_unavailable');
   });
 
-  it('TV : dernier cron et relance (auditée)', async () => {
+  it('TV : dernier cron (état complet) et relance (auditée)', async () => {
     let runs = 0;
-    rig = await startAdmin({ tvAdmin: { lastCron: () => Promise.resolve('2026-10-18T03:00:00.000Z'), rerun: () => Promise.resolve(void (runs += 1)) } });
-    expect((await rig.call<any>('GET', '/admin/tv')).body).toEqual({ lastCron: '2026-10-18T03:00:00.000Z' });
+    const lastCron: TvCronState = {
+      startedAt: '2026-10-18T03:00:00.000Z', finishedAt: '2026-10-18T03:04:12.000Z', durationMs: 252_000,
+      ok: true, channels: 708, programmes: 15_230, epgOk: true, error: null,
+    };
+    rig = await startAdmin({ tvAdmin: { lastCron: () => Promise.resolve(lastCron), rerun: () => Promise.resolve(void (runs += 1)) } });
+    expect((await rig.call<any>('GET', '/admin/tv')).body).toEqual({ lastCron });
     expect((await rig.call('POST', '/admin/tv/rerun')).status).toBe(202);
     expect(runs).toBe(1);
     const audit = await rig.call<any>('GET', '/admin/audit?action=tv.rerun');

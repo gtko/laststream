@@ -13,7 +13,7 @@ import { createDurableObjectUserBackend } from './user-backend.js';
 
 export { runInRequest } from './scheduler.js';
 export { type WorkerEnv, workersRuntimeEnv } from './env.js';
-export { refreshTvFromEnv } from './tv-store.js';
+export { createWorkersTvAdmin, refreshTvFromEnv } from './tv-store.js';
 export { UserStoreDO } from './user-store-do.js';
 export { PartyRoom } from './party-room.js';
 export { Metrics } from './metrics-do.js';

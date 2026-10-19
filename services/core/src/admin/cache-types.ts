@@ -34,10 +34,25 @@ export interface CacheAdmin {
   purgeJobs(): Promise<PurgeJob[]>;
 }
 
-/** TV : relance de la collecte (cron) par l'API TV ; absente tant qu'elle n'est pas déployée (réponse 501). */
+/** Dernier passage du cron TV (catalogue et EPG reconstruits dans R2). Aucune donnée de chaîne ni d'URL. */
+export interface TvCronState {
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  /** Catalogue reconstruit ; faux : l'ancien catalogue reste servi. */
+  ok: boolean;
+  channels: number | null;
+  programmes: number | null;
+  /** EPG reconstruit ; faux : l'ancien EPG reste servi. */
+  epgOk: boolean;
+  /** Code d'erreur (jamais de message brut). */
+  error: string | null;
+}
+
+/** TV : état du dernier cron et relance de la collecte. Absente hors Workers (réponse 501). */
 export interface TvAdmin {
-  /** Date ISO du dernier cron TV, ou null. */
-  lastCron(): Promise<string | null>;
-  /** Relance la collecte. */
+  /** Dernier passage enregistré, ou null (aucun passage depuis le déploiement). */
+  lastCron(): Promise<TvCronState | null>;
+  /** Relance la collecte en arrière-plan. */
   rerun(): Promise<unknown>;
 }

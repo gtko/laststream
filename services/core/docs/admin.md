@@ -70,7 +70,7 @@ Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_own
 
 ## TV
 
-`GET /admin/tv` → `{ lastCron }` ; `POST /admin/tv/rerun` → `202`. `501 tv_admin_unavailable` tant que l'API TV n'est pas branchée (`AppDeps.tvAdmin`).
+`GET /admin/tv` → `{ lastCron }`, où `lastCron` est le dernier passage du cron TV (`startedAt`, `finishedAt`, `durationMs`, `ok`, `channels`, `programmes`, `epgOk`, `error` : code seulement) ou `null` tant qu'aucun passage n'est enregistré ; la trace est écrite dans R2 (`cron-state.json`) à chaque passage. `POST /admin/tv/rerun` → `202` (relance en arrière-plan). `501 tv_admin_unavailable` sans liaison R2 `TV` (Node, ou `AppDeps.tvAdmin` absent).
 
 ## Watch parties
 
