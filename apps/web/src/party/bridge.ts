@@ -3,7 +3,7 @@ import { requireBase } from '../data/config';
 import { getLangPrefs } from '../data/langPrefs';
 import { getSession } from '../data/session';
 import {
-  createParty, endParty, joinParty, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
+  createParty, createPartyInvite, endParty, joinParty, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
 } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
@@ -11,6 +11,8 @@ import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
+import { HostRelaySession, type RelayStats } from '../relay/session';
+import { urlRangeSource } from '../relay/sources';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -25,6 +27,11 @@ export interface SessionAdapter {
   /** Moteur de lecture (HtmlEngine, MpvEngine ou NativeEngine) ; sa position est mesurable quand `ready`. */
   engine: EngineLike | null;
   ready: boolean;
+  /**
+   * Lien débridé direct de la lecture en cours, lu par cet appareil seulement pour le partage aux invités. Null si la lecture
+   * ne passe pas par un hébergeur débridé. Jamais affiché, jamais envoyé au salon, jamais journalisé.
+   */
+  relayUrl?: () => string | null;
 }
 
 interface EngineLike {
@@ -108,6 +115,9 @@ class PartyBridge {
   adapter: (() => SessionAdapter | null) | null = null;
   private listeners = new Set<Listener>();
   private announced = '';
+  /** Partage de la lecture aux invités : session hôte active, et lien débridé qu'elle sert (comparé, jamais affiché). */
+  private relay: HostRelaySession | null = null;
+  private relayKey = '';
 
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -194,8 +204,51 @@ class PartyBridge {
     this.room = null;
     this.pending = null;
     this.announced = '';
+    this.stopRelay();
     if (c) c.close();
     this.emit();
+  }
+
+  /** Invitation d'un invité pour le salon courant (hôte seulement) : renvoie l'identifiant du salon et le jeton. */
+  async createInvite(): Promise<{ roomId: string; token: string; expiresAt: string }> {
+    const c = this.client;
+    const roomId = c?.room?.id ?? '';
+    if (!c || !c.isHost || !roomId) throw new UserApiError(0, 'not_host');
+    const inv = await createPartyInvite(roomId, this.profileId);
+    return { roomId, token: inv.token, expiresAt: inv.expiresAt };
+  }
+
+  /** Statistiques du partage aux invités (null si aucun partage en cours). */
+  relayStats(): RelayStats | null {
+    return this.relay ? this.relay.stats() : null;
+  }
+
+  /**
+   * Partage de la lecture : une session hôte existe seulement quand un invité est présent et que la lecture de l'hôte passe
+   * par un lien débridé. Elle est reprise si le lien change (épisode suivant), et fermée dès que la condition tombe.
+   */
+  private syncRelay(a: SessionAdapter): void {
+    const c = this.client;
+    const guests = !!c && c.isHost && c.participants.some((p) => p.guest);
+    const url = guests && a.relayUrl ? a.relayUrl() : null;
+    if (!c || !url) {
+      this.stopRelay();
+      return;
+    }
+    if (this.relay && this.relayKey === url) return;
+    this.stopRelay();
+    try {
+      this.relay = new HostRelaySession({ client: c, source: urlRangeSource({ url }) });
+      this.relayKey = url;
+    } catch {
+      this.relay = null;
+    }
+  }
+
+  private stopRelay(): void {
+    this.relay?.close();
+    this.relay = null;
+    this.relayKey = '';
   }
 
   /** L'hôte termine le salon pour tout le monde. */
@@ -253,6 +306,7 @@ class PartyBridge {
   tick(a: SessionAdapter): void {
     if (!this.controller) return;
     this.controller.tick(playerOf(a));
+    this.syncRelay(a);
   }
 
   /** Le lecteur se ferme : sortir du salon (pas pour un simple changement d'épisode, `silent`). */

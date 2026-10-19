@@ -1,0 +1,387 @@
+// Partage de lecture : session hôte (invités, débit montant) et session invité (salon -> hôte -> plages -> lecteur), avec un salon
+// simulé (WebSocket factices reliés en mémoire, signalisation `rtc` relayée) et des connexions WebRTC factices.
+import { describe, expect, it } from 'vitest';
+import { PartyClient, type SocketLike } from '../party/client';
+import { endText, refusedText } from '../party/join';
+import type { RangeSource } from './host';
+import { memoryChannelPair, type MemoryChannel } from './memory';
+import type { PeerOptions } from './peer';
+import type { PlaybackPlan, PlayerCallbacks, RoomState } from './player/types';
+import { GuestRelaySession, HostRelaySession, partySignal, type GuestPlayerLike } from './session';
+
+/** Salon simulé : chaque WebSocket connaît son pair ; un `rtc` envoyé est livré au destinataire avec `from`. */
+class FakeSocket implements SocketLike {
+  /** 1 = OUVERT : le client de salon se considère connecté dès la liaison. */
+  readyState = 1;
+  sent: Array<Record<string, unknown>> = [];
+  onopen: SocketLike['onopen'] = null;
+  onmessage: SocketLike['onmessage'] = null;
+  onclose: SocketLike['onclose'] = null;
+  onerror: SocketLike['onerror'] = null;
+
+  constructor(readonly peer: string, private readonly room: Room) {}
+
+  send(data: string): void {
+    const msg = JSON.parse(data) as Record<string, unknown>;
+    this.sent.push(msg);
+    if (msg.type !== 'rtc') return;
+    const target = this.room.get(String(msg.to));
+    const from = this.peer;
+    const payload = msg.data;
+    if (target) setTimeout(() => target.recv({ type: 'rtc', from, data: payload }), 0);
+  }
+
+  close(): void {
+    /* sans effet : le test pilote les fermetures */
+  }
+
+  recv(msg: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(msg) });
+  }
+
+  drop(code = 1006): void {
+    this.onclose?.({ code });
+  }
+}
+
+class Room {
+  private readonly sockets = new Map<string, FakeSocket>();
+
+  socket(peer: string): FakeSocket {
+    const s = new FakeSocket(peer, this);
+    this.sockets.set(peer, s);
+    return s;
+  }
+
+  get(peer: string): FakeSocket | undefined {
+    return this.sockets.get(peer);
+  }
+}
+
+/** Frame `welcome` du salon : l'hôte est `h1`, l'invité `p1` (participant `guest:true`). */
+function welcome(me: string, host: boolean, participants: unknown[] = DEFAULT_PARTICIPANTS): Record<string, unknown> {
+  return {
+    t: 'welcome',
+    you: { username: me, host, muted: false },
+    room: {
+      id: 'R1', visibility: 'private', title: 'Test', poster: null, language: 'fr', media: { type: 'movie', tmdbId: 1 },
+      fingerprint: null, host: 'alice', participants: 2, maxParticipants: 20, createdAt: '2026-01-01T00:00:00Z',
+    },
+    state: { playing: false, pos: 0, at: 0, rev: 1 },
+    serverTime: 0,
+    participants,
+    chat: [],
+  };
+}
+
+const DEFAULT_PARTICIPANTS = [
+  { username: 'alice', host: true, peerId: 'h1' },
+  { username: 'bob', guest: true, peerId: 'p1' },
+];
+
+/** Connexions WebRTC factices : la piste de données est une paire de canaux en mémoire, sans réseau ni ICE. */
+class FakePc {
+  connectionState: RTCPeerConnectionState = 'new';
+  ondatachannel: ((ev: { channel: unknown }) => void) | null = null;
+  onicecandidate: ((ev: { candidate: { toJSON(): object } | null }) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
+
+  constructor(private readonly role: 'host' | 'guest', private readonly wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } }) {}
+
+  createDataChannel(): unknown {
+    const [host, guest] = memoryChannelPair(0);
+    this.wire.ch = { host, guest };
+    return host;
+  }
+
+  async createOffer(): Promise<{ type: 'offer'; sdp: string }> {
+    return { type: 'offer', sdp: 'OFFER' };
+  }
+
+  async createAnswer(): Promise<{ type: 'answer'; sdp: string }> {
+    return { type: 'answer', sdp: 'ANSWER' };
+  }
+
+  async setLocalDescription(): Promise<void> {}
+
+  async setRemoteDescription(desc: { type: string }): Promise<void> {
+    if (this.role === 'guest' && desc.type === 'offer' && this.wire.ch) this.ondatachannel?.({ channel: this.wire.ch.guest });
+  }
+
+  async addIceCandidate(): Promise<void> {}
+
+  close(): void {
+    this.connectionState = 'closed';
+  }
+}
+
+function pcFactory(role: 'host' | 'guest', wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } }): NonNullable<PeerOptions['createPc']> {
+  return () => new FakePc(role, wire) as unknown as RTCPeerConnection;
+}
+
+/** Lecteur factice : enregistre les appels, lit tout le fichier au chargement (comme un décodeur), applique les états du salon. */
+function fakePlayer(cb: PlayerCallbacks, plan: PlaybackPlan) {
+  const log = { got: null as Uint8Array | null, applied: [] as RoomState[], plays: 0, destroyed: 0 };
+  const player: GuestPlayerLike = {
+    async load(reader) {
+      if (plan.kind === 'native') {
+        const n = await reader.size();
+        log.got = await reader.read(0, n);
+      }
+      return plan;
+    },
+    play() {
+      log.plays += 1;
+      cb.onUserPlay?.(12.5);
+    },
+    pause() {
+      cb.onUserPause?.(13);
+    },
+    seek(t: number) {
+      cb.onUserSeek?.(t);
+    },
+    applyRoomState(room: RoomState) {
+      log.applied.push(room);
+    },
+    getState() {
+      return { playing: false, position: 0, duration: 0 };
+    },
+    destroy() {
+      log.destroyed += 1;
+    },
+  };
+  return { player, log };
+}
+
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+async function waitFor(cond: () => boolean, ms = 4000): Promise<void> {
+  const t0 = Date.now();
+  while (!cond()) {
+    if (Date.now() - t0 > ms) throw new Error('délai dépassé');
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+const bytesOf = (n: number): Uint8Array => Uint8Array.from({ length: n }, (_, i) => (i * 31 + (i >>> 8)) & 0xff);
+
+function sourceOf(bytes: Uint8Array): RangeSource {
+  return { size: async () => bytes.byteLength, read: async (s, e) => bytes.slice(s, e) };
+}
+
+/** Salon complet : hôte (h1) avec sa session de partage, invité (p1) avec sa session, lecteur factice. */
+async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000) {
+  const room = new Room();
+  const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+  const bytes = bytesOf(size);
+  const hostClient = new PartyClient({ connect: async () => room.socket('h1') });
+  hostClient.start();
+  await flush();
+  room.get('h1')?.recv(welcome('alice', true));
+  const hostRelay = new HostRelaySession({ client: hostClient, source: sourceOf(bytes), createPc: pcFactory('host', wire) });
+
+  const players: Array<ReturnType<typeof fakePlayer>> = [];
+  const guest = new GuestRelaySession({
+    connect: async () => room.socket('p1'),
+    createPlayer: (cb) => {
+      const f = fakePlayer(cb, plan);
+      players.push(f);
+      return f.player;
+    },
+    canvas: {} as unknown as HTMLCanvasElement,
+    peer: { createPc: pcFactory('guest', wire) },
+    connectTimeoutMs: 3000,
+  });
+  guest.start();
+  await flush();
+  room.get('p1')?.recv(welcome('bob', false));
+  return { room, hostClient, hostRelay, guest, players, bytes };
+}
+
+describe('session hôte', () => {
+  it('compte les invités du salon, ouvre une liaison au premier bonjour et la ferme au départ de l’invité', async () => {
+    const room = new Room();
+    const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+    const client = new PartyClient({ connect: async () => room.socket('h1') });
+    client.start();
+    await flush();
+    const hostSock = room.get('h1')!;
+    hostSock.recv(welcome('alice', true));
+    const relay = new HostRelaySession({ client, source: sourceOf(bytesOf(1000)), createPc: pcFactory('host', wire) });
+    expect(relay.stats()).toMatchObject({ guests: 1, links: 0, bytesSent: 0 });
+
+    hostSock.recv({ type: 'rtc', from: 'p1', data: { t: 'hello' } });
+    await flush();
+    expect(hostSock.sent).toContainEqual({ type: 'rtc', to: 'p1', data: { t: 'offer', sdp: 'OFFER' } });
+    expect(relay.stats().links).toBe(1);
+
+    hostSock.recv({ t: 'leave', user: 'bob' });
+    expect(relay.stats()).toMatchObject({ guests: 0, links: 0 });
+    relay.close();
+    client.close();
+  });
+
+  it('signalisation : le client de salon relaie les messages rtc vers le pair indiqué', async () => {
+    const room = new Room();
+    const client = new PartyClient({ connect: async () => room.socket('h1') });
+    client.start();
+    await flush();
+    const sock = room.get('h1')!;
+    sock.recv(welcome('alice', true));
+    const seen: unknown[] = [];
+    const signal = partySignal(client);
+    signal.onMessage((from, data) => seen.push({ from, data }));
+    sock.recv({ type: 'rtc', from: 'p1', data: { t: 'ice', candidate: null } });
+    signal.send('p1', { t: 'hello' });
+    expect(seen).toEqual([{ from: 'p1', data: { t: 'ice', candidate: null } }]);
+    expect(sock.sent).toContainEqual({ type: 'rtc', to: 'p1', data: { t: 'hello' } });
+    client.close();
+  });
+});
+
+describe('session invité', () => {
+  it('salon -> hôte (WebRTC) -> plages -> lecteur, puis play/pause/seek relayés au salon et état du salon appliqué sans écho', async () => {
+    const { room, hostRelay, guest, players, bytes } = await chain();
+    await waitFor(() => guest.tick().phase === 'ready');
+
+    const player = players[0];
+    expect(player.log.got).not.toBeNull();
+    let mismatches = 0;
+    for (let i = 0; i < bytes.byteLength; i += 1) if (player.log.got![i] !== bytes[i]) mismatches += 1;
+    expect(mismatches).toBe(0);
+    expect(hostRelay.stats().guests).toBe(1);
+    expect(hostRelay.stats().bytesSent).toBeGreaterThanOrEqual(bytes.byteLength);
+
+    guest.play();
+    expect(room.get('p1')!.sent).toContainEqual({ t: 'ctl', action: 'play', pos: 12.5 });
+    guest.pause();
+    expect(room.get('p1')!.sent).toContainEqual({ t: 'ctl', action: 'pause', pos: 13 });
+    guest.seekBy(10);
+    expect(room.get('p1')!.sent).toContainEqual({ t: 'ctl', action: 'seek', pos: 10 });
+
+    const ctlCount = (): number => room.get('p1')!.sent.filter((m) => m.t === 'ctl').length;
+    const before = ctlCount();
+    room.get('p1')!.recv({ t: 'state', state: { playing: true, pos: 20, at: 1000, rev: 3 }, serverTime: 1000 });
+    const last = player.log.applied[player.log.applied.length - 1];
+    expect(last).toMatchObject({ playing: true, position: 20 });
+    // Appliquer un état du salon ne renvoie aucune commande au salon (pas d'écho).
+    expect(ctlCount()).toBe(before);
+
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
+  it('invité arrivé avant la lecture de l’hôte : attente, puis liaison automatique dès que l’hôte lit', async () => {
+    const room = new Room();
+    const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+    const hostClient = new PartyClient({ connect: async () => room.socket('h1') });
+    hostClient.start();
+    await flush();
+    room.get('h1')!.recv(welcome('alice', true));
+    const bytes = bytesOf(50_000);
+    const players: Array<ReturnType<typeof fakePlayer>> = [];
+    const fastTimer = (fn: () => void, ms: number) => setTimeout(fn, Math.min(ms, 10));
+    const guest = new GuestRelaySession({
+      connect: async () => room.socket('p1'),
+      createPlayer: (cb) => {
+        const f = fakePlayer(cb, { kind: 'native' });
+        players.push(f);
+        return f.player;
+      },
+      canvas: {} as unknown as HTMLCanvasElement,
+      peer: { createPc: pcFactory('guest', wire) },
+      connectTimeoutMs: 40,
+      setTimer: fastTimer,
+      clearTimer: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    });
+    guest.start();
+    await flush();
+    room.get('p1')!.recv(welcome('bob', false));
+    await waitFor(() => guest.tick().phase === 'waiting-host');
+    expect(guest.tick().message).not.toBe('');
+
+    // L'hôte lance sa lecture : la session de partage démarre ; la prochaine tentative de l'invité aboutit.
+    const hostRelay = new HostRelaySession({ client: hostClient, source: sourceOf(bytes), createPc: pcFactory('host', wire) });
+    await waitFor(() => guest.tick().phase === 'ready', 6000);
+    expect(Array.from(players[0].log.got ?? [])).toEqual(Array.from(bytes));
+    guest.destroy();
+    hostRelay.close();
+    hostClient.close();
+  }, 15000);
+
+  it('format non pris en charge : phase unsupported avec le message du lecteur', async () => {
+    const plan: PlaybackPlan = { kind: 'unsupported', message: 'Format non pris en charge dans ce navigateur (codec hevc).' };
+    const { guest, hostRelay } = await chain(plan);
+    await waitFor(() => guest.tick().phase === 'unsupported');
+    expect(guest.tick().message).toBe(plan.message);
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
+  it('salon inaccessible (lien expiré, salon complet, pseudo pris) : refus après des échecs répétés, sans URL', async () => {
+    const guest = new GuestRelaySession({
+      connect: async () => {
+        throw new Error('401');
+      },
+      createPlayer: (cb) => fakePlayer(cb, { kind: 'native' }).player,
+      canvas: {} as unknown as HTMLCanvasElement,
+      maxRefusals: 2,
+      setTimer: (fn) => setTimeout(fn, 0),
+      clearTimer: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+    });
+    guest.start();
+    await waitFor(() => guest.tick().phase === 'refused');
+    expect(guest.tick().message).toBe(refusedText());
+    expect(guest.tick().message).not.toMatch(/https?:/);
+  });
+
+  it('exclusion par l’hôte : fin de session avec le motif, sans reconnexion', async () => {
+    const room = new Room();
+    const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+    const hostClient = new PartyClient({ connect: async () => room.socket('h1') });
+    hostClient.start();
+    await flush();
+    room.get('h1')!.recv(welcome('alice', true));
+    const hostRelay = new HostRelaySession({ client: hostClient, source: sourceOf(bytesOf(10)), createPc: pcFactory('host', wire) });
+    const guest = new GuestRelaySession({
+      connect: async () => room.socket('p1'),
+      createPlayer: (cb) => fakePlayer(cb, { kind: 'native' }).player,
+      canvas: {} as unknown as HTMLCanvasElement,
+    });
+    guest.start();
+    await flush();
+    room.get('p1')!.recv(welcome('bob', false));
+    room.get('p1')!.drop(4003);
+    expect(guest.tick()).toMatchObject({ phase: 'ended', message: endText('kicked') });
+    hostRelay.close();
+    hostClient.close();
+  });
+});
+
+describe('session hôte : admission', () => {
+  it('hello d’un membre non invité : aucune offre ; fin du salon : liaisons fermées sans attendre', async () => {
+    const room = new Room();
+    const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+    const client = new PartyClient({ connect: async () => room.socket('h1') });
+    client.start();
+    await flush();
+    const hostSock = room.get('h1')!;
+    hostSock.recv(welcome('alice', true, [...DEFAULT_PARTICIPANTS, { username: 'carol', peerId: 'p2' }]));
+    const relay = new HostRelaySession({ client, source: sourceOf(bytesOf(1000)), createPc: pcFactory('host', wire) });
+
+    hostSock.recv({ type: 'rtc', from: 'p2', data: { t: 'hello' } });
+    await flush();
+    expect(hostSock.sent.filter((m) => m.type === 'rtc' && m.to === 'p2')).toEqual([]);
+    expect(relay.stats().links).toBe(0);
+
+    hostSock.recv({ type: 'rtc', from: 'p1', data: { t: 'hello' } });
+    await flush();
+    expect(hostSock.sent).toContainEqual({ type: 'rtc', to: 'p1', data: { t: 'offer', sdp: 'OFFER' } });
+    expect(relay.stats().links).toBe(1);
+
+    hostSock.recv({ t: 'ended', reason: 'host_ended' });
+    expect(relay.stats().links).toBe(0);
+    relay.close();
+    client.close();
+  });
+});

@@ -208,6 +208,8 @@ function partyAdapter(p = P) {
   return {
     req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
     ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer),
+    // Lien débridé direct, lu par cet appareil pour le partage aux invités (rangeUrlOf : seulement les hébergeurs autorisés).
+    relayUrl: () => (p.engine ? rangeUrlOf(p) : null),
   };
 }
 
