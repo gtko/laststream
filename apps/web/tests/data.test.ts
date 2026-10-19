@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addonUrl, isConfigured, ltUrl, reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { cachedRequest, clearCache, inFlightCount, limited, MAX_IN_FLIGHT, requestJson } from '../src/data/transport';
 import { getRegion, setRegion } from '../src/data/prefs';
@@ -100,6 +100,33 @@ describe('transport', () => {
     }
     await Promise.all(jobs);
     expect(peak).toBeLessThanOrEqual(MAX_IN_FLIGHT);
+    expect(inFlightCount()).toBe(0);
+  });
+});
+
+describe('délai des requêtes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejette une requête sans réponse à l’échéance et libère son créneau', async () => {
+    // fetch qui ne répond jamais et ignore le signal : seul le délai peut la terminer.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    await expect(requestJson('http://x/lent', { timeoutMs: 30 })).rejects.toMatchObject({ kind: 'network' });
+    expect(inFlightCount()).toBe(0);
+  });
+
+  it('après six requêtes bloquées, une septième passe une fois leur délai écoulé', async () => {
+    const fetchMock = vi.fn();
+    for (let i = 0; i < MAX_IN_FLIGHT; i += 1) fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {}));
+    fetchMock.mockImplementation(async () => new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const blocked = Array.from({ length: MAX_IN_FLIGHT }, () =>
+      expect(requestJson('http://x/bloque', { timeoutMs: 30 })).rejects.toMatchObject({ kind: 'network' }),
+    );
+    await expect(requestJson('http://x/suivante')).resolves.toEqual({ ok: true });
+    await Promise.all(blocked);
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_IN_FLIGHT + 1);
     expect(inFlightCount()).toBe(0);
   });
 });

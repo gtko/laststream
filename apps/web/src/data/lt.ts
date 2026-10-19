@@ -27,8 +27,8 @@ export function top10<T = Json>(scope: 'movie' | 'tv' | 'all', page = 1, period?
   return api<T>('top10/' + scope, { page: String(page), region: getRegion().code, language: getVideoLang().tag, ...(period ? { window: period } : {}) });
 }
 
-export function postLt<T = Json>(path: string, body: unknown): Promise<T> {
-  return requestJson<T>(ltUrl(path), { method: 'POST', body });
+export function postLt<T = Json>(path: string, body: unknown, opts: { timeoutMs?: number } = {}): Promise<T> {
+  return requestJson<T>(ltUrl(path), { method: 'POST', body, timeoutMs: opts.timeoutMs });
 }
 
 export interface HistoryEntry {
@@ -131,8 +131,9 @@ export interface RecommendOptions {
   exclude?: Array<{ type: 'movie' | 'tv'; tmdbId: number }>;
   ratings?: Array<{ title: string; year: number | null; type: 'movie' | 'tv'; rating: number }>;
 }
+/** Le modèle IA peut prendre du temps : délai plus long que les autres appels (60 s). */
 export const recommend = (history: HistoryEntry[], liked: HistoryEntry[], opts: RecommendOptions = {}) =>
-  postLt('recommend', { history, liked, ...opts });
+  postLt('recommend', { history, liked, ...opts }, { timeoutMs: 60_000 });
 export const why = (type: 'movie' | 'tv', tmdbId: number | string, language = 'fr-FR') =>
   postLt<{ text: string }>('why', { type, tmdbId: Number(tmdbId), language });
 export const personWhy = (tmdbId: number | string, language = 'fr-FR') =>
@@ -190,7 +191,7 @@ export const tvChannels = (query: TvChannelQuery = {}) =>
 export const tvFacets = (query: Pick<TvChannelQuery, 'country' | 'language'> = {}) =>
   api<any>('tv/facets', { ...query }).catch(() => null);
 export const tvEpg = (ids: string[], from: number, to: number) => api<any[]>('tv/epg', { ids: ids.join(','), from, to });
-export const tvImport = (cfg: TvImportRequest) => postLt<{ count: number; channels: TvChannel[] }>('tv/import', cfg);
+export const tvImport = (cfg: TvImportRequest) => postLt<{ count: number; channels: TvChannel[] }>('tv/import', cfg, { timeoutMs: 120_000 }); // grosses playlists : lent
 
 /** URL du proxy HLS pour une chaîne, avec la signature telle que renvoyée dans l'entrée de chaîne. */
 export function tvHlsUrl(channel: Pick<TvChannel, 'url' | 'sig'>): string {

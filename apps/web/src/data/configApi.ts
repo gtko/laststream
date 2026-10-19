@@ -27,7 +27,7 @@ export interface SecretMask {
 /** Configuration enregistrée, secrets masqués ({set, last4}). Null si le serveur ne la décode pas. */
 export async function decodeConfig(encoded: string, base: string = requireBase()): Promise<Record<string, any> | null> {
   try {
-    const res = await requestJson<unknown>(`${base}/config/decode`, { method: 'POST', body: { config: encoded } });
+    const res = await requestJson<unknown>(`${base}/config/decode`, { method: 'POST', body: { config: encoded }, timeoutMs: 60_000 });
     return typeof res === 'object' && res !== null && !Array.isArray(res) ? (res as Record<string, any>) : null;
   } catch {
     return null;
@@ -49,7 +49,7 @@ export interface TestResponse {
 
 /** Teste les sources, le compte debrid et les clés de service d'une configuration chiffrée (POST /config/test). */
 export async function testConfig(encoded: string, base: string = requireBase()): Promise<TestResponse> {
-  const res = await requestJson<Partial<TestResponse>>(`${base}/config/test`, { method: 'POST', body: { config: encoded } });
+  const res = await requestJson<Partial<TestResponse>>(`${base}/config/test`, { method: 'POST', body: { config: encoded }, timeoutMs: 60_000 });
   return { sources: res.sources ?? [], services: res.services ?? [] };
 }
 
@@ -89,7 +89,7 @@ export interface SourceProbe {
 
 /** Teste une seule source via lastAddon (repli quand le navigateur ne peut pas lire le manifest : CORS). */
 export async function testSource(source: Record<string, unknown>, base: string = requireBase()): Promise<SourceProbe> {
-  const res = await requestJson<any>(`${base}/config/test`, { method: 'POST', body: { config: { sources: [source] } } });
+  const res = await requestJson<any>(`${base}/config/test`, { method: 'POST', body: { config: { sources: [source] } }, timeoutMs: 60_000 });
   const r = res?.sources?.[0] ?? {};
   const m = r.manifest && typeof r.manifest === 'object' ? r.manifest : r;
   return {

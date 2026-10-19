@@ -6,6 +6,8 @@ export const DEFAULT_TTL_MS = 10 * 60 * 1000;
 export const MIN_TTL_MS = 5 * 60 * 1000;
 /** Le serveur limite les GET /lt/* à 120/min/IP : peu de requêtes en vol, les autres attendent leur tour. */
 export const MAX_IN_FLIGHT = 6;
+/** Délai maximal d'une tentative, créneau compris : une réponse qui ne vient jamais ne doit pas garder son créneau. */
+export const REQUEST_TIMEOUT_MS = 20_000;
 const SESSION_PREFIX = 'laststream.cache:';
 const SESSION_MAX_CHARS = 150_000;
 
@@ -134,6 +136,8 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  /** Délai maximal d'une tentative (ms), créneau compris. Défaut : REQUEST_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 /** Envoie la requête à concurrence bornée. Une réponse 429 est retentée (jusqu'à 3 fois) après une courte pause. */
@@ -146,9 +150,28 @@ async function send(url: string, options: RequestOptions = {}): Promise<Response
     body = JSON.stringify(options.body);
   }
 
+  /** Une tentative, lancée dès l'obtention du créneau : le délai court jusqu'à la réponse (en-têtes) ou l'échéance. */
+  const attempt = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const abort = (): void => controller.abort();
+    // Rejet même si le fetch sous-jacent ignore le signal : le créneau doit toujours se libérer.
+    const gone = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () => reject(Object.assign(new Error('Requête annulée'), { name: 'AbortError' })), { once: true });
+    });
+    const timer = setTimeout(abort, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
+    try {
+      return await Promise.race([appFetch(url, { method, headers, body, signal: controller.signal }), gone]);
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+    }
+  };
+
   const once = async (): Promise<Response> => {
     try {
-      return await limited(() => appFetch(url, { method, headers, body, signal: options.signal }));
+      return await limited(attempt);
     } catch (error) {
       if (options.signal?.aborted) throw error;
       throw new LastAddonError('network', 'lastAddon est injoignable.');
