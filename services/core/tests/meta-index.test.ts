@@ -37,7 +37,7 @@ describe('migration v12 : index des fiches partagées', () => {
     expect(tableNames(db)).toContain('meta_index');
     expect(indexNames(db)).toEqual(expect.arrayContaining(['meta_index_imdb', 'meta_index_tvdb']));
     expect(db.prepare('SELECT version FROM schema_migrations WHERE version = 12').get()?.version).toBe(12);
-    expect(MIGRATIONS.at(-1)?.version).toBe(13);
+    expect(MIGRATIONS.at(-1)?.version).toBe(14);
   });
 
   it('base v11 existante : migration v12 appliquée, données conservées', () => {

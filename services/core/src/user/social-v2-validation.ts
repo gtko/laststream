@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseHandle } from './social-handles.js';
+import { MAX_MESSAGE_PAGE } from './social-v2-store.js';
 
 /** Schémas des routes sociales v2 (`/user/social/*`). Objets stricts : une clé inconnue est refusée. */
 
@@ -64,3 +65,104 @@ export const historyQuerySchema = z.object({
     .optional()
     .transform((value) => value ?? 20),
 });
+
+// Messages et notes
+
+/** Titre (contrat `MediaRef`) : saison et épisode facultatifs. */
+const MEDIA_FIELDS = {
+  type: z.enum(['movie', 'series']),
+  tmdbId: TMDB_ID,
+  season: SEASON.optional(),
+  episode: EPISODE.optional(),
+};
+
+const POSITION = z.number().min(0).max(10_000_000);
+
+/** Corps de `POST /messages/:pid`. Le texte est vérifié ensuite (longueur en caractères, contrôle) : voir `cleanMessageBody`. */
+export const messageSchema = z.strictObject({
+  body: z.string().max(4000),
+  context: z.strictObject({ ...MEDIA_FIELDS, pos: POSITION.optional() }).optional(),
+});
+
+/** Corps de `POST /notes` : titre, position, type (texte ou emoji) et contenu (vérifié par `cleanNoteBody`). */
+export const noteSchema = z.strictObject({
+  ...MEDIA_FIELDS,
+  pos: POSITION,
+  kind: z.enum(['text', 'emoji']),
+  body: z.string().max(1000),
+});
+
+/** `?before=<createdAt ms>&limit=` : page de messages, 50 au plus (50 par défaut). */
+export const messagesQuery = z.strictObject({
+  before: z
+    .string()
+    .regex(/^\d{1,15}$/)
+    .transform(Number)
+    .optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(MAX_MESSAGE_PAGE))
+    .optional()
+    .transform((value) => value ?? MAX_MESSAGE_PAGE),
+});
+
+/** `?type&tmdbId&season&episode` : notes d'un titre. Saison et épisode facultatifs (ignorés pour un film). */
+export const notesQuery = z.strictObject({
+  type: z.enum(['movie', 'series']),
+  tmdbId: z
+    .string()
+    .regex(/^[1-9]\d{0,8}$/)
+    .transform(Number),
+  season: z
+    .string()
+    .regex(/^\d{1,5}$/)
+    .transform(Number)
+    .pipe(z.number().int().max(10_000))
+    .optional(),
+  episode: z
+    .string()
+    .regex(/^\d{1,5}$/)
+    .transform(Number)
+    .pipe(z.number().int().max(10_000))
+    .optional(),
+});
+
+export const MESSAGE_MAX_CHARS = 1000;
+export const NOTE_TEXT_MAX_CHARS = 140;
+
+const CONTROL_CHARACTER = /\p{Cc}/u;
+/** Découpage en graphèmes (un emoji composé, ZWJ, drapeau ou ton de peau, ne compte que pour un). */
+const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
+/** Un graphème d'emoji contient toujours un pictogramme (ou un indicateur régional pour les drapeaux). */
+const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+
+/** Vrai si `text` est exactement un emoji : un seul graphème, qui contient un pictogramme. */
+export function isSingleEmoji(text: string): boolean {
+  return [...GRAPHEMES.segment(text)].length === 1 && PICTOGRAPHIC.test(text);
+}
+
+/** Problèmes d'un texte (déjà débarrassé de ses espaces de bord). Chemins seulement, jamais les valeurs. */
+function textIssues(body: string, max: number, allowNewlines: boolean): string[] {
+  const issues: string[] = [];
+  const length = [...body].length;
+  if (length === 0) issues.push('body:empty');
+  else if (length > max) issues.push('body:too_long');
+  if ([...body].some((ch) => CONTROL_CHARACTER.test(ch) && !(allowNewlines && ch === '\n'))) issues.push('body:control_char');
+  return issues;
+}
+
+/** Texte d'un message : espaces de bord retirés, 1 à 1000 caractères, sans caractère de contrôle (saut de ligne admis). */
+export function cleanMessageBody(raw: string): { body: string; issues: string[] } {
+  const body = raw.trim();
+  return { body, issues: textIssues(body, MESSAGE_MAX_CHARS, true) };
+}
+
+/** Contenu d'une note : texte de 1 à 140 caractères sans contrôle, ou exactement un emoji. */
+export function cleanNoteBody(kind: 'text' | 'emoji', raw: string): { body: string; issues: string[] } {
+  const body = raw.trim();
+  if (kind === 'text') return { body, issues: textIssues(body, NOTE_TEXT_MAX_CHARS, false) };
+  if (body === '') return { body, issues: ['body:empty'] };
+  return { body, issues: isSingleEmoji(body) ? [] : ['body:not_emoji'] };
+}

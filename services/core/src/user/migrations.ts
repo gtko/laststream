@@ -457,6 +457,43 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec(PROFILE_SOCIAL_BACKFILL_SQL);
     },
   },
+  {
+    version: 14,
+    name: 'messages entre profils et notes sur les titres',
+    sql: `
+      -- Messages entre profils amis ou du même foyer. Corps 1 à 1000 car. (contrôlé avant écriture), contexte JSON facultatif.
+      -- read_at : lecture par le destinataire (NULL = non lu). Supprimés avec le profil.
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        context TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK (from_pid <> to_pid)
+      );
+      -- Conversation (les deux sens) ; quota d'envoi par expéditeur sur created_at.
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+
+      -- Notes posées sur un titre à une position (saison et épisode à 0 pour un film). Texte ou emoji.
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER NOT NULL DEFAULT 0,
+        episode INTEGER NOT NULL DEFAULT 0,
+        pos REAL NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('text', 'emoji')),
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX notes_media ON notes (type, tmdb_id, season, episode, pos);
+      CREATE INDEX notes_author ON notes (author_pid, created_at);
+    `,
+  },
 ];
 
 /**

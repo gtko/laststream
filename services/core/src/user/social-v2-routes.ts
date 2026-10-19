@@ -44,7 +44,7 @@ export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, sec
 }
 
 /** Pid d'un paramètre de route. Un pid mal formé équivaut à un pid inconnu. */
-function pidParam(raw: string, notFound: string): string {
+export function pidParam(raw: string, notFound: string): string {
   if (!isPid(raw)) throw new UserApiError(404, notFound);
   return raw;
 }

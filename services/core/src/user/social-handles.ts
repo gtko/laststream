@@ -133,10 +133,15 @@ function allocateTag(db: SqlDb, key: string, profileId: string, random: RandomBy
   throw new Error('attribution du tag impossible (collisions répétées)');
 }
 
-/** Retire l'identité sociale d'un profil devenu enfant : ses amitiés et sa présence disparaissent avec elle. */
+/**
+ * Retire l'identité sociale d'un profil devenu enfant : ses amitiés, sa présence, ses messages et ses notes disparaissent
+ * avec elle (les clés étrangères sur pid interdiraient sinon de vider le pid).
+ */
 function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
   db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? OR high_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
+  db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
   db.prepare('UPDATE profiles SET pid = NULL, handle_name = NULL, handle_key = NULL, handle_tag = NULL WHERE id = ?').run(profileId);
 }
 

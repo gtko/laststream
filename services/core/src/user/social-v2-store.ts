@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
@@ -185,6 +186,143 @@ function viewOf(row: ViewRow, now: number): SubjectView {
 function pairOf(a: string, b: string): { low: string; high: string } {
   return a < b ? { low: a, high: b } : { low: b, high: a };
 }
+
+// Messages et notes
+
+/** Quotas d'écriture par profil auteur, sur une fenêtre glissante d'une minute (comptée en SQL sur created_at). */
+export const MESSAGES_PER_MINUTE = 30;
+export const NOTES_PER_MINUTE = 20;
+const WRITE_WINDOW_MS = 60_000;
+/** Messages renvoyés au plus par page, et notes renvoyées au plus pour un titre. */
+export const MAX_MESSAGE_PAGE = 50;
+export const MAX_NOTES_PER_MEDIA = 500;
+
+/** Référence à un titre (contrat `MediaRef`). Saison et épisode ignorés pour un film. */
+export interface MediaRef {
+  type: 'movie' | 'series';
+  tmdbId: number;
+  season?: number;
+  episode?: number;
+}
+
+/** Contexte d'un message : titre et position (secondes) de la lecture au moment de l'envoi. */
+export interface MessageContext extends MediaRef {
+  pos?: number;
+}
+
+export interface MessageView {
+  id: string;
+  /** Pid de l'expéditeur. */
+  from: string;
+  /** Pid du destinataire. */
+  to: string;
+  body: string;
+  context?: MessageContext;
+  createdAt: number;
+  readAt?: number;
+}
+
+export interface ConversationView {
+  pid: string;
+  handle: Handle;
+  avatarColor: string;
+  last?: MessageView;
+  unread: number;
+}
+
+export interface NoteView {
+  id: string;
+  author: { pid: string; handle: Handle; avatarColor: string };
+  pos: number;
+  kind: 'text' | 'emoji';
+  body: string;
+  createdAt: number;
+}
+
+/** Cible d'un message refusée : soi-même (400), profil inconnu ou enfant (404), profil ni ami ni du foyer (403). */
+export type TargetError = 'self' | 'unknown' | 'not_friend';
+
+export type SendOutcome = { result: TargetError } | { result: 'limit_reached'; retryAfterSec: number } | { result: 'sent'; message: MessageView };
+export type MessagesOutcome = { result: TargetError } | { result: 'ok'; messages: MessageView[] };
+/** `count` : messages reçus qui viennent d'être marqués lus (0 : rien à faire, rien à notifier). */
+export type ReadOutcome = { result: TargetError } | { result: 'ok'; count: number; at: number };
+export type AddNoteOutcome =
+  | { result: 'unknown' }
+  | { result: 'limit_reached'; retryAfterSec: number }
+  | { result: 'ok'; note: NoteView; audience: string[] };
+
+/** Référence normalisée : saison et épisode gardés seulement pour une série. */
+export function normalizeMedia(input: MediaRef): MediaRef {
+  const out: MediaRef = { type: input.type, tmdbId: input.tmdbId };
+  if (input.type === 'series') {
+    if (input.season !== undefined) out.season = input.season;
+    if (input.episode !== undefined) out.episode = input.episode;
+  }
+  return out;
+}
+
+/** Clés stockées d'un titre : saison et épisode à 0 pour un film (comme la progression) ou une série sans précision. */
+function mediaKey(media: MediaRef): { type: 'movie' | 'series'; tmdbId: number; season: number; episode: number } {
+  const series = media.type === 'series';
+  return { type: media.type, tmdbId: media.tmdbId, season: series ? (media.season ?? 0) : 0, episode: series ? (media.episode ?? 0) : 0 };
+}
+
+function contextOf(input: MessageContext): MessageContext {
+  const out: MessageContext = normalizeMedia(input);
+  if (input.pos !== undefined) out.pos = input.pos;
+  return out;
+}
+
+interface MessageRow {
+  id: string;
+  from_pid: string;
+  to_pid: string;
+  body: string;
+  context: string | null;
+  created_at: number;
+  read_at: number | null;
+}
+
+const MESSAGE_COLUMNS = 'id, from_pid, to_pid, body, context, created_at, read_at';
+
+function messageOf(row: MessageRow): MessageView {
+  const view: MessageView = { id: row.id, from: row.from_pid, to: row.to_pid, body: row.body, createdAt: Number(row.created_at) };
+  if (row.context !== null) {
+    try {
+      view.context = JSON.parse(row.context) as MessageContext;
+    } catch {
+      // Contexte illisible : le message reste lisible sans lui.
+    }
+  }
+  if (row.read_at !== null) view.readAt = Number(row.read_at);
+  return view;
+}
+
+interface NoteRow {
+  id: string;
+  pos: number;
+  kind: 'text' | 'emoji';
+  body: string;
+  created_at: number;
+  pid: string;
+  handle_name: string;
+  handle_tag: string;
+  avatar_color: string;
+}
+
+function noteOf(row: NoteRow): NoteView {
+  return {
+    id: row.id,
+    author: { pid: row.pid, handle: handleOf(row.handle_name, row.handle_tag), avatarColor: row.avatar_color },
+    pos: Number(row.pos),
+    kind: row.kind,
+    body: row.body,
+    createdAt: Number(row.created_at),
+  };
+}
+
+const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM messages WHERE from_pid = ? AND created_at > ?';
+const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM notes WHERE author_pid = ? AND created_at > ?';
 
 export class SocialV2Store {
   constructor(private readonly db: SqlDb) {}
@@ -543,5 +681,167 @@ export class SocialV2Store {
       if (Number(row.duration_sec) > 0) item.duration = Number(row.duration_sec);
       return item;
     });
+  }
+
+  // Messages : conversations entre amis et foyer
+
+  /** Amis acceptés et autres profils du foyer, joignables en message. */
+  private peersOf(pid: string): Card[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color FROM profile_friendships f
+           JOIN profiles p ON p.pid = CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
+          WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?) AND p.is_kid = 0
+         UNION
+         SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color FROM profiles p
+          WHERE p.account_id = (SELECT account_id FROM profiles WHERE pid = ?) AND p.pid <> ? AND p.is_kid = 0 AND p.pid IS NOT NULL`,
+      )
+      .all(pid, pid, pid, pid, pid) as unknown as { pid: string; handle_name: string; handle_tag: string; avatar_color: string }[];
+    return rows.map((row) => ({ pid: row.pid, handle: handleOf(row.handle_name, row.handle_tag), avatarColor: row.avatar_color }));
+  }
+
+  /** Cible d'un message : `undefined` si `targetPid` est joignable (ami ou foyer), sinon la raison du refus. */
+  private targetError(viewerPid: string, targetPid: string): TargetError | undefined {
+    if (targetPid === viewerPid) return 'self';
+    if (this.card(targetPid) === undefined) return 'unknown';
+    return this.relationOf(viewerPid, targetPid) === undefined ? 'not_friend' : undefined;
+  }
+
+  /**
+   * Secondes avant le prochain envoi permis, ou `undefined` si le quota de la minute n'est pas atteint. `sql` compte les
+   * envois de la fenêtre (paramètres : pid, début de fenêtre) et donne le plus ancien, qui libère une place à son expiration.
+   */
+  private retryAfter(sql: string, pid: string, limit: number, now: number): number | undefined {
+    const row = this.db.prepare(sql).get(pid, now - WRITE_WINDOW_MS);
+    if (Number(row?.n ?? 0) < limit) return undefined;
+    const oldest = Number(row?.oldest ?? now);
+    return Math.max(1, Math.ceil((oldest + WRITE_WINDOW_MS - now) / 1000));
+  }
+
+  /** Conversations : amis et foyer, avec le dernier message et le nombre de non-lus. Les plus récentes d'abord, puis par nom. */
+  conversations(pid: string): ConversationView[] {
+    const views = this.peersOf(pid).map((peer): ConversationView => {
+      const last = this.db
+        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE (from_pid = ? AND to_pid = ?) OR (from_pid = ? AND to_pid = ?) ORDER BY created_at DESC, rowid DESC LIMIT 1`)
+        .get(pid, peer.pid, peer.pid, pid);
+      const unread = this.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL').get(peer.pid, pid);
+      const view: ConversationView = { pid: peer.pid, handle: peer.handle, avatarColor: peer.avatarColor, unread: Number(unread?.n ?? 0) };
+      if (last !== undefined) view.last = messageOf(last as unknown as MessageRow);
+      return view;
+    });
+    return views.sort((a, b) => {
+      const byRecency = (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
+      if (byRecency !== 0) return byRecency;
+      return a.handle.name.toLowerCase().localeCompare(b.handle.name.toLowerCase()) || a.handle.tag.localeCompare(b.handle.tag);
+    });
+  }
+
+  /**
+   * Messages échangés avec `targetPid` (dans les deux sens), du plus ancien au plus récent : `limit` au plus, antérieurs à
+   * `before` (ms) s'il est donné.
+   */
+  messagesWith(viewerPid: string, targetPid: string, before: number | undefined, limit: number): MessagesOutcome {
+    const failure = this.targetError(viewerPid, targetPid);
+    if (failure !== undefined) return { result: failure };
+    const rows = this.db
+      .prepare(
+        `SELECT ${MESSAGE_COLUMNS} FROM messages
+          WHERE ((from_pid = ? AND to_pid = ?) OR (from_pid = ? AND to_pid = ?)) AND created_at < ?
+          ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      )
+      .all(viewerPid, targetPid, targetPid, viewerPid, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as MessageRow[];
+    return { result: 'ok', messages: rows.reverse().map((row) => messageOf(row)) };
+  }
+
+  /**
+   * Envoi d'un message au profil `toPid`. Refusé (sans rien écrire) si la cible n'est pas joignable ou si l'expéditeur a
+   * déjà envoyé 30 messages dans la dernière minute.
+   */
+  sendMessage(fromPid: string, toPid: string, body: string, context: MessageContext | undefined, now: number): SendOutcome {
+    return this.db.transaction((): SendOutcome => {
+      const failure = this.targetError(fromPid, toPid);
+      if (failure !== undefined) return { result: failure };
+      const retryAfterSec = this.retryAfter(SENT_MESSAGES_SQL, fromPid, MESSAGES_PER_MINUTE, now);
+      if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
+      const id = randomUUID();
+      const stored = context === undefined ? null : JSON.stringify(contextOf(context));
+      this.db
+        .prepare('INSERT INTO messages (id, from_pid, to_pid, body, context, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, NULL)')
+        .run(id, fromPid, toPid, body, stored, now);
+      return { result: 'sent', message: messageOf({ id, from_pid: fromPid, to_pid: toPid, body, context: stored, created_at: now, read_at: null }) };
+    });
+  }
+
+  /** Marque lus les messages reçus de `fromPid`. `count` : ceux qui viennent de l'être. */
+  readFrom(viewerPid: string, fromPid: string, now: number): ReadOutcome {
+    return this.db.transaction((): ReadOutcome => {
+      const failure = this.targetError(viewerPid, fromPid);
+      if (failure !== undefined) return { result: failure };
+      const changes = this.db
+        .prepare('UPDATE messages SET read_at = ? WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL')
+        .run(now, fromPid, viewerPid).changes;
+      return { result: 'ok', count: Number(changes), at: now };
+    });
+  }
+
+  // Notes : sur un titre, à une position
+
+  /**
+   * Notes d'un titre visibles par `viewerPid` : les siennes, celles de ses amis et celles de son foyer. Triées par position
+   * (puis ancienneté), 500 au plus.
+   */
+  notesOf(viewerPid: string, media: MediaRef): NoteView[] {
+    const key = mediaKey(media);
+    const rows = this.db
+      .prepare(
+        `SELECT n.id, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color
+           FROM notes n JOIN profiles p ON p.pid = n.author_pid
+          WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ?
+            AND (n.author_pid = ?
+              OR n.author_pid IN (SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
+                                    FROM profile_friendships f
+                                   WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?))
+              OR n.author_pid IN (SELECT h.pid FROM profiles h
+                                   WHERE h.account_id = (SELECT a.account_id FROM profiles a WHERE a.pid = ?) AND h.is_kid = 0 AND h.pid IS NOT NULL))
+          ORDER BY n.pos, n.created_at, n.rowid
+          LIMIT ?`,
+      )
+      .all(key.type, key.tmdbId, key.season, key.episode, viewerPid, viewerPid, viewerPid, viewerPid, viewerPid, MAX_NOTES_PER_MEDIA) as unknown as NoteRow[];
+    return rows.map((row) => noteOf(row));
+  }
+
+  /**
+   * Pose une note. Refusée (sans rien écrire) si l'auteur a déjà posé 20 notes dans la dernière minute. `audience` :
+   * amis puis foyer de l'auteur, destinataires de l'événement.
+   */
+  addNote(authorPid: string, media: MediaRef, pos: number, kind: 'text' | 'emoji', body: string, now: number): AddNoteOutcome {
+    return this.db.transaction((): AddNoteOutcome => {
+      const author = this.card(authorPid);
+      if (author === undefined) return { result: 'unknown' };
+      const retryAfterSec = this.retryAfter(SENT_NOTES_SQL, authorPid, NOTES_PER_MINUTE, now);
+      if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
+      const id = randomUUID();
+      const key = mediaKey(media);
+      this.db
+        .prepare(
+          'INSERT INTO notes (id, author_pid, type, tmdb_id, season, episode, pos, kind, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(id, authorPid, key.type, key.tmdbId, key.season, key.episode, pos, kind, body, now);
+      const { friends, household } = this.audience(authorPid);
+      const note: NoteView = {
+        id,
+        author: { pid: author.pid, handle: author.handle, avatarColor: author.avatarColor },
+        pos,
+        kind,
+        body,
+        createdAt: now,
+      };
+      return { result: 'ok', note, audience: [...friends, ...household] };
+    });
+  }
+
+  /** Supprime une note de son auteur. `false` si la note n'existe pas ou n'est pas à ce profil. */
+  deleteNote(authorPid: string, noteId: string): boolean {
+    return Number(this.db.prepare('DELETE FROM notes WHERE id = ? AND author_pid = ?').run(noteId, authorPid).changes) === 1;
   }
 }
