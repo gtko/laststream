@@ -1,5 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { ICON } from './icons.js';
+import { friendsButtonHTML } from './socialButton.js';
 import { esc } from './util.js';
 
 // ---------- Fragments communs (accueil) ----------
@@ -41,11 +42,12 @@ export function backBtn() {
 }
 
 export function topBar(withActions) {
-  return '<div class="f-top" data-nav>' + backBtn() +
-    (withActions
-      ? '<div class="f-top-r"><button type="button" class="f-round" data-share data-tip="Partager" aria-label="Partager">' + ICON.share + '</button>' +
-        '<button type="button" class="f-round" data-fsound hidden aria-pressed="false" data-tip="Activer le son" aria-label="Activer le son">' + ICON.mute + '</button></div>'
-      : '') + '</div>';
+  const friends = friendsButtonHTML('f-round'); // vide hors compte connecté (profil enfant, mode local)
+  const actions = withActions
+    ? '<button type="button" class="f-round" data-share data-tip="Partager" aria-label="Partager">' + ICON.share + '</button>' +
+      '<button type="button" class="f-round" data-fsound hidden aria-pressed="false" data-tip="Activer le son" aria-label="Activer le son">' + ICON.mute + '</button>'
+    : '';
+  return '<div class="f-top" data-nav>' + backBtn() + (friends || actions ? '<div class="f-top-r">' + friends + actions + '</div>' : '') + '</div>';
 }
 export function svcError(msg) {
   return topBar(false) + '<article class="fiche f-error" tabindex="-1"><div class="state" role="alert"><p>' + esc(msg) + '</p>' +

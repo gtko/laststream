@@ -5,6 +5,7 @@ import { userStore } from '../data/userStore';
 import { avatarAttrs } from './avatar-art.js';
 import { leaveKidProfile, openPicker } from './auth-ui.js';
 import { ICON } from './icons.js';
+import { friendsButtonHTML } from './socialButton.js';
 import { esc } from './util.js';
 
 const TOP_DROP = '.topbar [data-drop]';
@@ -34,8 +35,8 @@ export const partyLinkHTML = () =>
   '<a class="icon-btn nav-party" href="#/parties" data-go aria-label="Watch parties" title="Watch parties">' + ICON.party + '</a>';
 
 /**
- * Recherche (loupe, ou champ fourni par `search` : page Recherche), Watch parties (si social), puis l'avatar qui ouvre le menu du profil.
- * kid : profil enfant (seulement « Changer de profil »). social : Amis et Watch parties. server : profil de compte (changement, déconnexion). owner : propriétaire du serveur.
+ * Recherche (loupe, ou champ fourni par `search` : page Recherche), Amis et Watch parties (si social), puis l'avatar qui ouvre le menu du profil.
+ * kid : profil enfant (seulement « Changer de profil »). social : bouton Amis (barre latérale, pastille) et Watch parties. server : profil de compte (changement, déconnexion). owner : propriétaire du serveur.
  */
 export function topActionsHTML({ kid = false, social = false, server = false, owner = false, search = '', idSuffix = '' } = {}) {
   const current = userStore.currentProfile();
@@ -43,7 +44,6 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   const initial = name.slice(0, 1).toUpperCase();
   const bg = current.avatarColor || current.avatar ? avatarAttrs(current.avatar, current.avatarColor) : '';
   const items = [
-    social ? menuLink('#/friends', ' data-go', 'users', 'Amis') : '',
     kid ? '' : menuLink('#/stats', ' data-go', 'stats', 'Statistiques'),
     kid ? '' : menuLink('#/settings', ' data-go', 'gear', 'Réglages'),
     owner && !kid ? menuLink('#/admin', ' data-go', 'shield', 'Administration') : '',
@@ -52,6 +52,7 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   ].join('');
   return '<div class="top-actions">' +
     (search || '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>') +
+    (social ? friendsButtonHTML('icon-btn') : '') +
     (social ? partyLinkHTML() : '') +
     '<div class="nav-drop nav-drop-profile" data-drop>' +
     '<button type="button" class="avatar nav-avatar" data-drop-btn aria-expanded="false" aria-controls="nav-profile' + idSuffix + '"' + bg +

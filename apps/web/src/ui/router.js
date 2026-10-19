@@ -2,7 +2,8 @@
 import { showCalendar } from './calendar.js';
 import { showHidden } from './hidden.js';
 import { showStats } from './stats.js';
-import { showFriendLibrary, showFriends } from './friends.js';
+import { showFriendLibrary } from './friends.js';
+import { openSidebar } from './socialSidebar.js';
 import { showParties, showParty } from './parties.js';
 import { showPartyJoin, teardownPartyJoin } from './partyjoin.js';
 import { parseJoinHash } from '../party/join';
@@ -50,7 +51,7 @@ export function showView(r) {
   else if (r.kind === 'library') showLibrary();
   else if (r.kind === 'hidden') showHidden();
   else if (r.kind === 'stats') showStats();
-  else if (r.kind === 'friends') showFriends();
+  else if (r.kind === 'friends') openSidebar();
   else if (r.kind === 'friend') showFriendLibrary(r.id);
   else if (r.kind === 'parties') showParties();
   else if (r.kind === 'party') showParty(r.id);
@@ -134,6 +135,11 @@ export function route() {
   state.restoreY = pop && state.scrolls.has(state.curHash) ? state.scrolls.get(state.curHash) : null;
   const r = parseRoute();
   if (!r || r.kind !== 'partyjoin') teardownPartyJoin();
+  // Amis (#/friends) : la barre latérale s'ouvre par-dessus la page en cours, qui reste affichée.
+  if (r && r.kind === 'friends') {
+    openSidebar();
+    return;
+  }
   if (r) {
     if (!state.inDetail) {
       state.homeScroll = window.scrollY;

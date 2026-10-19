@@ -33,6 +33,7 @@ import { app, detailEl } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
+import { mountSocialSidebar } from './ui/socialSidebar.js';
 import { parseJoinHash } from './party/join';
 import './ui/events.js';
 import './ui/scrollbars.js';
@@ -72,13 +73,15 @@ if (isKidProfile()) {
   if (kidSection('tv')) document.body.classList.add('kid-tv');
 }
 applyTheme(readTheme()); // après la synchronisation des préférences du profil
+mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
 state.curHash = location.hash || '';
-if (parseRoute()) {
+const first = parseRoute();
+if (first && first.kind !== 'friends') {
   // Ouverture directe d'une page : l'accueil se charge en arrière-plan.
   state.inDetail = true;
   app.hidden = true;
   detailEl.hidden = false;
-  showView(parseRoute());
+  showView(first);
 }
 // La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
 Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(() => { announceShellReady(); });
