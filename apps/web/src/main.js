@@ -12,6 +12,7 @@ import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/stats.css';
 import './styles/social.css';
+import './styles/socialProfile.css';
 import './styles/chat.css';
 import './styles/convwin.css';
 import './styles/partyjoin.css';
@@ -42,6 +43,7 @@ import { parseRoute, showView } from './ui/router.js';
 import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from './ui/socialSidebar.js';
 import { createConversationRenderer } from './ui/socialChat.js';
 import { configureSocialConv } from './ui/socialConv.js';
+import './ui/socialProfile.js'; // enregistre openProfileEditor (F2) et la page #/social/profile
 import { createWatchWithHandler } from './data/watchWith';
 import { playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
