@@ -5,6 +5,8 @@ import type { CacheAdmin, TvAdmin } from './admin/cache-types.js';
 import type { MetricsService } from './metrics/core.js';
 import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
+import type { MetaBlobStore } from './lt/meta.js';
+import type { RowBlobStore } from './lt/rows.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
 export type DebridClient = Pick<
@@ -65,6 +67,10 @@ export interface AppDeps {
    * configuration. Absent : compteur en mémoire (20 par minute et par configuration). `true` = autorisé.
    */
   rangeLimiter?: (key: string) => Promise<boolean>;
+  /** Stockage des fiches partagées (tests ; Workers : R2 par la plateforme). Absent : fiches construites à chaque demande. */
+  metaBlobs?: MetaBlobStore;
+  /** Stockage des rangées d'accueil communes (tests ; Workers : R2 par la plateforme). Absent : rangées calculées à la demande. */
+  rowBlobs?: RowBlobStore;
   /** Limite de débit globale des appels sortants vers MDBList (binding partagé sous Workers). Absent : compteur en mémoire. */
   mdblistLimiter?: () => Promise<boolean>;
   /** Dossier de l'interface web servie à la racine (LASTADDON_UI_DIR ou --ui). Absent : pas d'interface. */

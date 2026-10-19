@@ -44,7 +44,12 @@
   // TV en direct : le catalogue des chaînes et l'EPG réduit (maintenant → +24 h) sont construits hors requête, en flux
   // (sous 128 Mo), par le Cron Trigger ci-dessous, et écrits dans R2 ; les routes /lt/tv/* les lisent.
   // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-tv
-  "r2_buckets": [{ "binding": "TV", "bucket_name": "lastaddon-tv" }],
+  "r2_buckets": [
+    { "binding": "TV", "bucket_name": "lastaddon-tv" },
+    // Fiches partagées (TMDB + TVDB + notes + casting + épisodes) : meta/<type>/<tmdbId>.json, voir src/lt/meta.ts.
+    // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-meta
+    { "binding": "META", "bucket_name": "lastaddon-meta" }
+  ],
   "triggers": { "crons": ["0 */6 * * *"] },
 
   // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.

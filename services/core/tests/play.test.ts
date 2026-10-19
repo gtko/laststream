@@ -1,11 +1,15 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { encodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
 import { AllDebridError, type ResolveOptions, type ResolvedLink } from '../src/sources/alldebrid.js';
 import { serveApp } from './serve.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : ces scénarios débrident côté serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const SECRET = 'play-test-secret';
 const API_KEY = 'AD-PLAY-KEY-SECRETE-789';

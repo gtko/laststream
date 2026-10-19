@@ -25,6 +25,7 @@ import { registerUserRoutes } from './user/routes.js';
 import { registerAdminRoutes } from './admin/api.js';
 import { createMaintenanceGate, maintenanceMiddleware } from './admin/maintenance.js';
 import { metricsMiddleware } from './metrics/middleware.js';
+import { installCacheCounters } from './metrics/index.js';
 import { registerStreamingProxy } from './streaming-proxy.js';
 import { registerUiRoutes } from './ui.js';
 import { createRateLimiter } from './rate-limit.js';
@@ -198,6 +199,8 @@ export function createApp(deps: AppDeps): App {
   app.use('*', etag());
   // Mesures d'exploitation : groupe de routes, statut, latence, dernières erreurs 5xx (écriture en mémoire, envoi groupé).
   app.use('*', metricsMiddleware(() => deps.metrics ?? platform().metrics));
+  // Compteurs par fournisseur (appels, hits L1/L2, périmés, jointures) : écouteur global du cache à deux niveaux.
+  installCacheCounters();
   app.use('*', async (c, next) => {
     c.set('ip', clientAddress(c, trustedHops));
     c.set('edge', false);

@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AllDebridClient } from '../src/sources/alldebrid.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : le client est appelé depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 /**
  * Choix du fichier d'un pack par épisode (saison, épisode) : fichiers factices, AllDebrid simulé, aucun réseau.

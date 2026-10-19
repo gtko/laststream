@@ -53,7 +53,7 @@ export async function cinemetaThumbs(ctx: LtContext, imdbId: string): Promise<Ci
       const released = typeof raw.released === 'string' && DAY.test(raw.released) ? raw.released.slice(0, 10) : null;
       return [{ season, episode, released, thumbnail }];
     });
-  });
+  }, { provider: 'cinemeta', swr: true });
 }
 
 /**

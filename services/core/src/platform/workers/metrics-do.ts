@@ -1,7 +1,20 @@
 import type { DurableObjectState, KVNamespace } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { isCachePrefix, type PurgeJob } from '../../admin/cache-types.js';
-import { type MetricsBatch, type MetricsRange, type MetricsReport, MAX_ERRORS, RETENTION_MS, buildReport } from '../../metrics/core.js';
+import {
+  type MetricsBatch,
+  type MetricsRange,
+  type MetricsReport,
+  MAX_ERRORS,
+  RETENTION_MS,
+  buildReport,
+  isProvider,
+  isProviderEvent,
+  type ProviderEvent,
+  type ProviderName,
+  type ProviderRow,
+  providerWindowStart,
+} from '../../metrics/core.js';
 import { durableObjectSql } from './sql.js';
 
 /** Au plus cette durée (ms) ou ce nombre d'opérations KV par réveil : la purge reprend au réveil suivant. */
@@ -34,7 +47,8 @@ const toJob = (row: JobRow): PurgeJob => ({
 
 /**
  * Durable Object « Metrics » : agrégation des métriques d'exploitation (tranches de 5 minutes, 7 jours de rétention,
- * 100 dernières erreurs 5xx) et purges de cache par préfixe, asynchrones (alarme, lots, progression consultable).
+ * 100 dernières erreurs 5xx), compteurs par fournisseur et par jour (30 jours), et purges de cache par préfixe,
+ * asynchrones (alarme, lots, progression consultable).
  * Un seul objet global : les instances du Worker lui envoient des lots, jamais une requête par requête HTTP.
  */
 export class Metrics extends DurableObject {
@@ -47,6 +61,7 @@ export class Metrics extends DurableObject {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS metrics (bucket INTEGER NOT NULL, name TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (bucket, name)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, route TEXT NOT NULL, status INTEGER NOT NULL, message TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS provider_daily (day INTEGER NOT NULL, provider TEXT NOT NULL, event TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (day, provider, event)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS purge_jobs (
         id TEXT PRIMARY KEY, prefix TEXT NOT NULL, status TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, cursor TEXT,
         started_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT
@@ -54,13 +69,22 @@ export class Metrics extends DurableObject {
     `);
   }
 
-  /** Reçoit le lot d'une instance : additionne les compteurs par (tranche, nom) et garde les dernières erreurs. */
+  /**
+   * Reçoit le lot d'une instance : additionne les compteurs par (tranche, nom) et par (jour, fournisseur, événement),
+   * et garde les dernières erreurs.
+   */
   ingest(batch: MetricsBatch): void {
     this.db.transaction(() => {
       const upsert = this.db.prepare(
         'INSERT INTO metrics (bucket, name, value) VALUES (?, ?, ?) ON CONFLICT (bucket, name) DO UPDATE SET value = value + excluded.value',
       );
       for (const row of batch.rows) upsert.run(row.bucket, row.name, Math.round(row.value));
+      const upsertProvider = this.db.prepare(
+        'INSERT INTO provider_daily (day, provider, event, value) VALUES (?, ?, ?, ?) ON CONFLICT (day, provider, event) DO UPDATE SET value = value + excluded.value',
+      );
+      for (const row of batch.providers ?? []) {
+        if (isProvider(row.provider) && isProviderEvent(row.event)) upsertProvider.run(row.day, row.provider, row.event, Math.round(row.value));
+      }
       const insert = this.db.prepare('INSERT INTO errors (at, route, status, message) VALUES (?, ?, ?, ?)');
       for (const error of batch.errors.slice(-MAX_ERRORS)) insert.run(error.at, error.route, error.status, error.message);
       this.db.prepare('DELETE FROM errors WHERE id <= (SELECT MAX(id) FROM errors) - ?').run(MAX_ERRORS);
@@ -70,17 +94,27 @@ export class Metrics extends DurableObject {
       this.lastPrune = now;
       this.db.prepare('DELETE FROM metrics WHERE bucket < ?').run(now - RETENTION_MS);
       this.db.prepare('DELETE FROM errors WHERE at < ?').run(now - RETENTION_MS);
+      this.db.prepare('DELETE FROM provider_daily WHERE day < ?').run(providerWindowStart(now));
     }
   }
 
   report(range: MetricsRange, now: number = Date.now()): MetricsReport {
     const rows = this.db.prepare('SELECT bucket, name, value FROM metrics WHERE bucket >= ?').all(now - RETENTION_MS);
     const errors = this.db.prepare('SELECT at, route, status, message FROM errors ORDER BY id').all();
+    const providers = this.db.prepare('SELECT day, provider, event, value FROM provider_daily WHERE day >= ?').all(providerWindowStart(now));
     return buildReport(
       rows.map((row) => ({ bucket: Number(row.bucket), name: String(row.name), value: Number(row.value) })),
       errors.map((row) => ({ at: Number(row.at), route: String(row.route), status: Number(row.status), message: String(row.message) })),
       range,
       now,
+      providers.map(
+        (row): ProviderRow => ({
+          day: Number(row.day),
+          provider: String(row.provider) as ProviderName,
+          event: String(row.event) as ProviderEvent,
+          value: Number(row.value),
+        }),
+      ),
     );
   }
 

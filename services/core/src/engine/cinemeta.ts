@@ -1,6 +1,7 @@
 import { fetchText } from '../sources/http.js';
 import type { TitleInfo } from '../sources/indexers.js';
 import type { ContentRef } from '../types.js';
+import { sharedCache, type TtlCache } from '../cache/ttl-cache.js';
 
 const CINEMETA_META_URL = 'https://v3-cinemeta.strem.io/meta';
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -18,20 +19,12 @@ interface MetaRuntimes {
   year?: number;
 }
 
-interface CacheEntry {
-  expiresAt: number;
-  value: MetaRuntimes;
-}
-
-export type RuntimeCache = Map<string, CacheEntry>;
-
 export interface CinemetaOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
-  cache?: RuntimeCache;
+  /** Cache partagé (par défaut : celui de l'isolat). */
+  cache?: TtlCache;
 }
-
-const defaultCache: RuntimeCache = new Map();
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -95,14 +88,6 @@ async function fetchMeta(ref: ContentRef, fetchFn: typeof fetch, timeoutMs: numb
   }
 }
 
-function storeEntry(cache: RuntimeCache, key: string, value: MetaRuntimes): void {
-  const now = Date.now();
-  for (const [existingKey, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(existingKey);
-  }
-  cache.set(key, { expiresAt: now + TTL_MS, value });
-}
-
 /**
  * Durée en secondes pour un film ou un épisode, via Cinemeta. Pour une série, la durée de l'épisode
  * est utilisée si elle est fournie, sinon la durée de la série. Ne lève jamais : erreur ⇒ undefined.
@@ -112,15 +97,13 @@ async function loadMeta(ref: ContentRef, opts: CinemetaOptions): Promise<MetaRun
   if (ref.type !== 'movie' && ref.type !== 'series') return undefined;
   if (!IMDB_ID.test(ref.imdbId)) return undefined;
 
-  const cache = opts.cache ?? defaultCache;
-  const key = `${ref.type}:${ref.imdbId}`;
-  const cached = cache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
-  const json = await fetchMeta(ref, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const runtimes = summarize(json);
-  if (runtimes === undefined) return undefined;
-  storeEntry(cache, key, runtimes);
-  return runtimes;
+  // Une seule requête par titre, même pour des appels simultanés (cache partagé, requêtes en vol dédoublonnées).
+  return (opts.cache ?? sharedCache()).get<MetaRuntimes | undefined>(
+    `${ref.type}:${ref.imdbId}`,
+    (runtimes) => (runtimes === undefined ? 0 : TTL_MS),
+    async () => summarize(await fetchMeta(ref, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
+    { provider: 'cinemeta', swr: true },
+  );
 }
 
 /**

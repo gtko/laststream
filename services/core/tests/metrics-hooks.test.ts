@@ -1,10 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- corps JSON de tests */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { metricsService } from '../src/metrics/index.js';
 import { platform } from '../src/platform/index.js';
 import { AllDebridClient } from '../src/sources/alldebrid.js';
 import { fetchUpstream } from '../src/sources/upstream.js';
 import { startAdmin } from './admin-harness.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : le client AllDebrid est appelé depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const metrics = () => {
   const service = metricsService();

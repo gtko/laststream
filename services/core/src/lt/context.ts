@@ -6,6 +6,7 @@ import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
+import { CACHE_MAX_BYTES, CACHE_MAX_ENTRIES, TtlCache } from '../cache/ttl-cache.js';
 import {
   type BodyOptions,
   type BytesResult,
@@ -30,7 +31,8 @@ export const TTL = {
   mdb: 24 * 3600e3, // notes MDBList
   tvdb: 12 * 3600e3, // saisons TVDB
   episodes: 12 * 3600e3, // structure saisons et épisodes (TMDB, groupes TMDB, TVDB)
-  aiRecommend: 30 * 60e3, // recommandations (par charge utile)
+  aiRecommend: 24 * 3600e3, // recommandations partagées par empreinte de goûts (SWR)
+  aiRecommendEmpty: 5 * 60e3, // lot de recommandations vide : nouvel essai plus tôt
   aiText: 7 * 24 * 3600e3, // « pourquoi » (par identifiant de titre ou de personne)
   tvChannels: 12 * 3600e3, // catalogue TV (sources amont)
   tvPartial: 15 * 60e3, // catalogue incomplet (une source a échoué) : nouvel essai plus tôt
@@ -40,16 +42,9 @@ export const TTL = {
   skipEmpty: 6 * 3600e3, // aucun segment trouvé (à revérifier plus tôt)
 } as const;
 
-/** Délai de cache négatif : une 404 amont est mémorisée brièvement ; aucune autre erreur n'est mise en cache. */
-export const NEGATIVE_TTL_MS = 60e3;
 
 /** Délai par défaut des appels vers les services (ms). */
 export const SERVICE_TIMEOUT_MS = 12000;
-/** Plafond du cache : nombre d'entrées, et taille totale approchée (octets). */
-export const CACHE_MAX_ENTRIES = 10_000;
-export const CACHE_MAX_BYTES = 100 * 1024 * 1024;
-/** Taille comptée pour une entrée négative (erreur mémorisée). */
-const NEGATIVE_BYTES = 256;
 
 /** Erreur HTTP de la couche lt : statut, code stable, et service concerné si pertinent. Jamais de clé. */
 export class LtError extends Error {
@@ -79,108 +74,6 @@ export function keyDigest(key: string): string {
   return digest(key).slice(0, 16);
 }
 
-/** Taille approchée d'une valeur de cache en octets (JSON ; les Map sont sérialisées comme des objets). */
-function approximateBytes(value: unknown): number {
-  const json = JSON.stringify(value, (_key, item: unknown) => (item instanceof Map ? Object.fromEntries(item) : item)) as
-    | string
-    | undefined;
-  return Buffer.byteLength(json ?? '', 'utf8');
-}
-
-/** Erreur amont 404 : la seule erreur mise en cache, brièvement (cache négatif). */
-function isNegative(err: unknown): boolean {
-  return err instanceof LtError && err.code === 'upstream_404';
-}
-
-interface CacheEntry {
-  exp: number;
-  bytes: number;
-  value?: unknown;
-  failure?: unknown;
-}
-
-/**
- * Cache mémoire à durée fixe, borné en entrées et en octets. Éviction LRU : une lecture déplace l'entrée en fin de
- * file, les plus anciennes partent les premières (les expirées d'abord). Les requêtes identiques en cours sont
- * dédoublonnées. Les erreurs ne sont pas mises en cache, sauf une 404 amont (cache négatif de NEGATIVE_TTL_MS).
- * Une valeur plus grosse que le plafond total n'est pas gardée.
- */
-export class TtlCache {
-  private readonly values = new Map<string, CacheEntry>();
-  private readonly pending = new Map<string, Promise<unknown>>();
-  private readonly maxEntries: number;
-  private readonly maxBytes: number;
-  private totalBytes = 0;
-
-  constructor(maxEntries = CACHE_MAX_ENTRIES, maxBytes = CACHE_MAX_BYTES) {
-    this.maxEntries = maxEntries;
-    this.maxBytes = maxBytes;
-  }
-
-  get size(): number {
-    return this.values.size;
-  }
-
-  get bytes(): number {
-    return this.totalBytes;
-  }
-
-  /** Durée fixe, ou fonction de la valeur chargée (ex. plus courte pour un résultat vide). */
-  get<T>(key: string, ttlMs: number | ((value: T) => number), load: () => Promise<T>): Promise<T> {
-    const hit = this.values.get(key);
-    if (hit !== undefined && hit.exp > Date.now()) {
-      this.values.delete(key);
-      this.values.set(key, hit); // LRU : la dernière consultation passe en fin de file
-      return hit.failure !== undefined ? Promise.reject(hit.failure) : Promise.resolve(hit.value as T);
-    }
-    if (hit !== undefined) this.remove(key);
-    const inflight = this.pending.get(key);
-    if (inflight !== undefined) return inflight as Promise<T>;
-    const promise = load()
-      .then(
-        (value) => {
-          this.store(key, { value }, approximateBytes(value), typeof ttlMs === 'number' ? ttlMs : ttlMs(value));
-          return value;
-        },
-        (err: unknown) => {
-          if (isNegative(err)) this.store(key, { failure: err }, NEGATIVE_BYTES, NEGATIVE_TTL_MS);
-          throw err;
-        },
-      )
-      .finally(() => this.pending.delete(key));
-    this.pending.set(key, promise);
-    return promise;
-  }
-
-  private store(key: string, payload: { value?: unknown; failure?: unknown }, bytes: number, ttlMs: number): void {
-    this.remove(key);
-    if (bytes > this.maxBytes) return;
-    this.values.set(key, { ...payload, exp: Date.now() + ttlMs, bytes });
-    this.totalBytes += bytes;
-    this.evict();
-  }
-
-  private evict(): void {
-    if (this.values.size <= this.maxEntries && this.totalBytes <= this.maxBytes) return;
-    const now = Date.now();
-    for (const [key, entry] of this.values) {
-      if (entry.exp <= now) this.remove(key);
-    }
-    while (this.values.size > this.maxEntries || this.totalBytes > this.maxBytes) {
-      const oldest = this.values.keys().next();
-      if (oldest.done) break;
-      this.remove(oldest.value);
-    }
-  }
-
-  private remove(key: string): void {
-    const entry = this.values.get(key);
-    if (entry === undefined) return;
-    this.values.delete(key);
-    this.totalBytes -= entry.bytes;
-  }
-}
-
 /** Services de données et champ de configuration correspondant. */
 export type ServiceName = 'tmdb' | 'mdblist' | 'tvdb' | 'openrouter' | 'fanart';
 
@@ -198,6 +91,8 @@ export function serviceKey(config: Config, name: ServiceName): string {
   if (value === undefined) throw new LtError(404, 'service_not_configured', name);
   return value;
 }
+
+export { CACHE_MAX_BYTES, CACHE_MAX_ENTRIES, NEGATIVE_TTL_MS, TtlCache } from '../cache/ttl-cache.js';
 
 /** Version de l'API TheTVDB qui accepte une clé : v4 (clé personnelle) ou v3 (clé legacy). */
 export type TvdbVersion = 'v4' | 'v3';
@@ -238,10 +133,22 @@ function mdblistLocalLimiter(): () => Promise<boolean> {
   return () => Promise.resolve(limit('mdblist').allowed);
 }
 
+/** Un contexte par application : `createApp` ne tourne qu'une fois par isolat, donc un seul état partagé en production. */
+const contexts = new WeakMap<AppDeps, LtContext>();
+
+/** Contexte partagé des routes lt de l'application `deps` (mêmes caches, sessions et disjoncteurs pour toutes les routes). */
 export function createLtContext(deps: AppDeps): LtContext {
+  const known = contexts.get(deps);
+  if (known !== undefined) return known;
+  const ctx = buildLtContext(deps);
+  contexts.set(deps, ctx);
+  return ctx;
+}
+
+function buildLtContext(deps: AppDeps): LtContext {
   return {
     state: {
-      cache: new TtlCache(),
+      cache: new TtlCache(CACHE_MAX_ENTRIES, CACHE_MAX_BYTES),
       tvdbSessions: new Map(),
       tvdbVersions: new Map(),
       mdbKv: platform().createKvCache('mdb'),

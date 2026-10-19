@@ -1,3 +1,4 @@
+import { TtlCache } from '../src/cache/ttl-cache.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { certificationAge, getContentMeta } from '../src/engine/tmdb-meta.js';
 import type { ContentRef } from '../src/types.js';
@@ -99,14 +100,14 @@ describe('certificationAge', () => {
 describe('getContentMeta : film', () => {
   it('renvoie durée, certification FR (la plus restrictive) et date de sortie', async () => {
     const fetchMock = routes(matrixTable());
-    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta).toEqual({ runtimeSeconds: 136 * 60, certificationFr: 12, releaseDate: '1999-03-31' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('envoie le jeton en Bearer, jamais dans l\'URL', async () => {
     const fetchMock = routes(matrixTable());
-    await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     for (const [url, init] of fetchMock.mock.calls) {
       expect(String(url)).not.toContain(TOKEN);
       expect((init as RequestInit | undefined)?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
@@ -117,7 +118,7 @@ describe('getContentMeta : film', () => {
     const fetchMock = routes(
       matrixTable({ release_dates: { results: [{ iso_3166_1: 'FR', release_dates: [{ certification: 'TP' }] }] } }),
     );
-    return getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() }).then((meta) => {
+    return getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() }).then((meta) => {
       expect(meta.certificationFr).toBe(0);
     });
   });
@@ -126,13 +127,13 @@ describe('getContentMeta : film', () => {
     const fetchMock = routes(
       matrixTable({ release_dates: { results: [{ iso_3166_1: 'US', release_dates: [{ certification: 'R' }] }] } }),
     );
-    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta.certificationFr).toBeUndefined();
   });
 
   it('omet la date de sortie si elle est absente ou mal formée', async () => {
     const fetchMock = routes(matrixTable({ release_date: '' }));
-    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta).not.toHaveProperty('releaseDate');
     expect(meta.runtimeSeconds).toBe(136 * 60);
   });
@@ -141,14 +142,14 @@ describe('getContentMeta : film', () => {
 describe('getContentMeta : série', () => {
   it('renvoie la durée de l\'épisode, sa date de diffusion et la certification FR de la série', async () => {
     const fetchMock = routes(seriesTable());
-    const meta = await getContentMeta(EPISODE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(EPISODE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta).toEqual({ runtimeSeconds: 47 * 60, certificationFr: 18, releaseDate: '2008-02-10' });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('sans saison ni épisode, n\'appelle pas l\'épisode et ne donne ni durée ni date', async () => {
     const fetchMock = routes(seriesTable());
-    const meta = await getContentMeta(SERIES, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(SERIES, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta).toEqual({ certificationFr: 18 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toContain(EPISODE_DETAILS);
@@ -158,9 +159,9 @@ describe('getContentMeta : série', () => {
 describe('getContentMeta : repli sur Cinemeta et absence de jeton', () => {
   it('sans jeton, aucun appel et seul le runtime Cinemeta est renvoyé', async () => {
     const fetchMock = routes(matrixTable());
-    expect(await getContentMeta(MOVIE, { fetch: asFetch(fetchMock), cache: new Map() })).toEqual({});
+    expect(await getContentMeta(MOVIE, { fetch: asFetch(fetchMock), cache: new TtlCache() })).toEqual({});
     expect(
-      await getContentMeta(MOVIE, { fetch: asFetch(fetchMock), cache: new Map(), cinemetaRuntimeSeconds: 5400 }),
+      await getContentMeta(MOVIE, { fetch: asFetch(fetchMock), cache: new TtlCache(), cinemetaRuntimeSeconds: 5400 }),
     ).toEqual({ runtimeSeconds: 5400 });
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -170,7 +171,7 @@ describe('getContentMeta : repli sur Cinemeta et absence de jeton', () => {
     const meta = await getContentMeta(MOVIE, {
       tmdbToken: TOKEN,
       fetch: asFetch(fetchMock),
-      cache: new Map(),
+      cache: new TtlCache(),
       cinemetaRuntimeSeconds: 5400,
     });
     expect(meta.runtimeSeconds).toBe(136 * 60);
@@ -181,7 +182,7 @@ describe('getContentMeta : repli sur Cinemeta et absence de jeton', () => {
     const meta = await getContentMeta(MOVIE, {
       tmdbToken: TOKEN,
       fetch: asFetch(fetchMock),
-      cache: new Map(),
+      cache: new TtlCache(),
       cinemetaRuntimeSeconds: 5400,
     });
     expect(meta).toEqual({ certificationFr: 12, releaseDate: '1999-03-31', runtimeSeconds: 5400 });
@@ -190,7 +191,7 @@ describe('getContentMeta : repli sur Cinemeta et absence de jeton', () => {
   it('ignore un identifiant IMDb invalide, sans appel', async () => {
     const fetchMock = routes(matrixTable());
     const bad: ContentRef = { type: 'movie', id: 'x', imdbId: 'nope' };
-    expect(await getContentMeta(bad, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() })).toEqual({});
+    expect(await getContentMeta(bad, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() })).toEqual({});
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -200,7 +201,7 @@ describe('getContentMeta : erreurs', () => {
     const failing = vi.fn(async () => {
       throw new TypeError('network down');
     });
-    const cache = new Map();
+    const cache = new TtlCache();
     await expect(getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: failing as unknown as typeof fetch, cache })).resolves.toEqual({});
     await expect(
       getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: failing as unknown as typeof fetch, cache, cinemetaRuntimeSeconds: 3000 }),
@@ -209,7 +210,7 @@ describe('getContentMeta : erreurs', () => {
 
   it('ne lève pas sur un corps non JSON et n\'expose jamais le jeton', async () => {
     const fetchMock = routes({ [MOVIE_FIND]: () => new Response('<html>oops</html>', { status: 200 }) });
-    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() });
+    const meta = await getContentMeta(MOVIE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
     expect(meta).toEqual({});
     expect(JSON.stringify(meta)).not.toContain(TOKEN);
   });
@@ -219,7 +220,7 @@ describe('getContentMeta : erreurs', () => {
     const table = matrixTable();
     table[MOVIE_DETAILS] = () => (failMovie ? new Response('boom', { status: 500 }) : json({ runtime: 136 }));
     const fetchMock = routes(table);
-    const cache = new Map();
+    const cache = new TtlCache();
     const options = { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache };
 
     expect(await getContentMeta(MOVIE, options)).toEqual({});
@@ -232,7 +233,7 @@ describe('getContentMeta : erreurs', () => {
     const table = seriesTable();
     table[EPISODE_DETAILS] = () => new Response('gone', { status: 404 });
     const fetchMock = routes(table);
-    const meta = await getContentMeta(EPISODE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map(), cinemetaRuntimeSeconds: 2700 });
+    const meta = await getContentMeta(EPISODE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache(), cinemetaRuntimeSeconds: 2700 });
     expect(meta).toEqual({ certificationFr: 18, runtimeSeconds: 2700 });
   });
 });
@@ -242,7 +243,7 @@ describe('getContentMeta : cache', () => {
     let clock = 1_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => clock);
     const fetchMock = routes(matrixTable());
-    const options = { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new Map() };
+    const options = { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() };
 
     await getContentMeta(MOVIE, options);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -251,14 +252,14 @@ describe('getContentMeta : cache', () => {
     await getContentMeta(MOVIE, options);
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
-    clock += 2;
+    clock += 2; // périmé : valeur servie tout de suite, rafraîchie en arrière-plan
     await getContentMeta(MOVIE, options);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   });
 
   it('applique le repli Cinemeta même sur un résultat en cache', async () => {
     const fetchMock = routes(matrixTable({ runtime: null }));
-    const cache = new Map();
+    const cache = new TtlCache();
     const options = { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache };
     await getContentMeta(MOVIE, options);
     const meta = await getContentMeta(MOVIE, { ...options, cinemetaRuntimeSeconds: 4000 });

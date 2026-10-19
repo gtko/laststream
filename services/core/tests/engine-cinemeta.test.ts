@@ -1,3 +1,4 @@
+import { TtlCache } from '../src/cache/ttl-cache.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getRuntimeSeconds, parseRuntimeSeconds } from '../src/engine/cinemeta.js';
 import type { ContentRef } from '../src/types.js';
@@ -40,7 +41,7 @@ describe('parseRuntimeSeconds', () => {
 describe('getRuntimeSeconds', () => {
   it('lit la durée d un film sur l URL Cinemeta', async () => {
     const fetchMock = mockFetch(async () => jsonResponse({ meta: { runtime: '142 min' } }));
-    const result = await getRuntimeSeconds(movie, { fetch: fetchMock as unknown as typeof fetch, cache: new Map() });
+    const result = await getRuntimeSeconds(movie, { fetch: fetchMock as unknown as typeof fetch, cache: new TtlCache() });
     expect(result).toBe(8520);
     expect(fetchMock).toHaveBeenCalledWith('https://v3-cinemeta.strem.io/meta/movie/tt0111161.json', expect.anything());
   });
@@ -55,14 +56,14 @@ describe('getRuntimeSeconds', () => {
         ],
       },
     };
-    const options = { fetch: mockFetch(async () => jsonResponse(body)) as unknown as typeof fetch, cache: new Map() };
+    const options = { fetch: mockFetch(async () => jsonResponse(body)) as unknown as typeof fetch, cache: new TtlCache() };
     await expect(getRuntimeSeconds(episode, options)).resolves.toBe(2700);
     await expect(getRuntimeSeconds({ ...episode, episode: 5 }, options)).resolves.toBe(3000);
     await expect(getRuntimeSeconds({ ...episode, episode: 9 }, options)).resolves.toBe(3000);
   });
 
   it('met la réponse en cache et ne refait pas la requête', async () => {
-    const cache = new Map();
+    const cache = new TtlCache();
     const fetchMock = mockFetch(async () => jsonResponse({ meta: { runtime: '90 min' } }));
     const options = { fetch: fetchMock as unknown as typeof fetch, cache };
     await getRuntimeSeconds(movie, options);
@@ -74,7 +75,7 @@ describe('getRuntimeSeconds', () => {
     const start = 1_000_000;
     const now = vi.spyOn(Date, 'now').mockReturnValue(start);
     const fetchMock = mockFetch(async () => jsonResponse({ meta: { runtime: '90 min' } }));
-    const options = { fetch: fetchMock as unknown as typeof fetch, cache: new Map() };
+    const options = { fetch: fetchMock as unknown as typeof fetch, cache: new TtlCache() };
 
     await getRuntimeSeconds(movie, options);
     now.mockReturnValue(start + DAY_MS - 1);
@@ -96,7 +97,7 @@ describe('getRuntimeSeconds', () => {
       async () => jsonResponse({ nothing: true }),
     ];
     for (const impl of failures) {
-      const options = { fetch: mockFetch(impl) as unknown as typeof fetch, cache: new Map() };
+      const options = { fetch: mockFetch(impl) as unknown as typeof fetch, cache: new TtlCache() };
       await expect(getRuntimeSeconds(movie, options)).resolves.toBeUndefined();
     }
   });
@@ -105,7 +106,7 @@ describe('getRuntimeSeconds', () => {
     const fetchMock = vi.fn(() => new Promise<Response>(() => {}));
     const result = await getRuntimeSeconds(movie, {
       fetch: fetchMock as unknown as typeof fetch,
-      cache: new Map(),
+      cache: new TtlCache(),
       timeoutMs: 20,
     });
     expect(result).toBeUndefined();
@@ -115,7 +116,7 @@ describe('getRuntimeSeconds', () => {
     const fetchMock = mockFetch(async () => jsonResponse({ meta: { runtime: '90 min' } }));
     const result = await getRuntimeSeconds(
       { ...movie, imdbId: 'kitsu:1' },
-      { fetch: fetchMock as unknown as typeof fetch, cache: new Map() },
+      { fetch: fetchMock as unknown as typeof fetch, cache: new TtlCache() },
     );
     expect(result).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import type { ContentRef, RawStream } from '../types.js';
 import { fetchText, isRecord, type FetchFn } from './http.js';
 import type { TitleInfo } from './indexers.js';
+import { sharedCache, type TtlCache } from '../cache/ttl-cache.js';
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -30,42 +31,20 @@ export interface TitleVariants {
   aliases?: string[];
 }
 
-interface CacheEntry {
-  expiresAt: number;
-  value: TitleVariants;
-}
-
-/** Cache mémoire des titres TMDB, clé « type:imdb », valable 7 jours. */
-export type TitleCache = Map<string, CacheEntry>;
-
-const defaultCache: TitleCache = new Map();
-
 export interface TitleVariantsOptions {
   /** Jeton de lecture TMDB (API v4, en-tête Bearer). Absent : aucun appel TMDB. */
   tmdbToken?: string;
   fetch?: FetchFn;
   timeoutMs?: number;
-  cache?: TitleCache;
+  /** Cache partagé TMDB (titres et fiches). */
+  cache?: TtlCache;
   /** Titre (et année) connu par ailleurs, typiquement Cinemeta : repli sans jeton ou si TMDB échoue. */
   fallbackTitle?: TitleInfo;
-  /** Horloge injectée (tests). Défaut : Date.now. */
-  now?: () => number;
 }
 
 interface TmdbTitles extends TitleVariants {
   /** Faux si un appel TMDB a échoué : le résultat n'est alors pas mis en cache. */
   complete: boolean;
-}
-
-/** Copie des champs de titres renseignés (sans l'indicateur interne de complétude). */
-function variantsOnly(found: TmdbTitles): TitleVariants {
-  const out: TitleVariants = { titles: found.titles };
-  if (found.year !== undefined) out.year = found.year;
-  if (found.fr !== undefined) out.fr = found.fr;
-  if (found.en !== undefined) out.en = found.en;
-  if (found.tvdbId !== undefined) out.tvdbId = found.tvdbId;
-  if (found.aliases !== undefined) out.aliases = found.aliases;
-  return out;
 }
 
 /** Jetons d'un texte, pour comparer un titre à un nom de release : sans accents, minuscules, lettres et chiffres seuls. */
@@ -297,23 +276,6 @@ function finish(found: TitleVariants, fallback: TitleInfo | undefined): TitleVar
   return out;
 }
 
-function readCache(cache: TitleCache, key: string, now: number): TitleVariants | undefined {
-  const entry = cache.get(key);
-  if (entry === undefined) return undefined;
-  if (entry.expiresAt <= now) {
-    cache.delete(key);
-    return undefined;
-  }
-  return entry.value;
-}
-
-function storeEntry(cache: TitleCache, key: string, value: TitleVariants, now: number): void {
-  for (const [existingKey, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(existingKey);
-  }
-  cache.set(key, { expiresAt: now + CACHE_TTL_MS, value });
-}
-
 /**
  * Titres d'un film ou d'une série (original, anglais, français) et année, via TMDB (API v4, jeton Bearer).
  * Sans jeton, ou si TMDB échoue, renvoie le titre de repli (`fallbackTitle`). Résultats complets non vides mis
@@ -325,16 +287,13 @@ export async function getTitleVariants(ref: ContentRef, opts: TitleVariantsOptio
     const token = opts.tmdbToken?.trim();
     if (token === undefined || token === '' || !IMDB_ID.test(ref.imdbId)) return finish({ titles: [] }, fallback);
 
-    const now = opts.now ?? Date.now;
-    const cache = opts.cache ?? defaultCache;
-    const key = `${ref.type}:${ref.imdbId}`;
-    const cached = readCache(cache, key, now());
-    if (cached !== undefined) return finish(cached, fallback);
-
-    const found = await fetchTmdbTitles(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    if (found.complete && found.titles.length > 0) {
-      storeEntry(cache, key, variantsOnly(found), now());
-    }
+    // Résultats complets non vides seulement (TTL nul sinon) ; les appels simultanés partagent une seule requête.
+    const found = await (opts.cache ?? sharedCache()).get<TmdbTitles>(
+      `titles:${ref.type}:${ref.imdbId}`,
+      (result) => (result.complete && result.titles.length > 0 ? CACHE_TTL_MS : 0),
+      () => fetchTmdbTitles(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      { provider: 'tmdb', swr: true },
+    );
     return finish(found, fallback);
   } catch {
     return finish({ titles: [] }, fallback);

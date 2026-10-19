@@ -706,8 +706,8 @@ export class AllDebridClient {
     form?: URLSearchParams | MultipartBody,
   ): Promise<Record<string, unknown>> {
     if (this.now() < this.backoffUntil) throw new AllDebridError('rate_limited', 'rate limited');
-    // Coupe-circuit : AllDebrid sanctionne les appels venant d'IP de serveurs (Cloudflare). Sur le Worker public,
-    // aucun appel AllDebrid côté serveur tant que LASTADDON_DEBRID_SERVER_SIDE n'est pas explicitement « 1 ».
+    // Coupe-circuit : AllDebrid sanctionne les appels venant d'IP de serveurs (Cloudflare). Par défaut, aucun appel
+    // AllDebrid côté serveur : il faut activer explicitement le mode serveur avec LASTADDON_DEBRID_SERVER_SIDE=1 (opt-in).
     if (serverSideDebridBlocked()) throw new AllDebridError('server_side_disabled', 'AllDebrid désactivé côté serveur');
     const payload = bodyOf(form);
     let res: Response;
@@ -866,11 +866,14 @@ export class AllDebridClient {
   }
 }
 
-/** Vrai sur un serveur où les appels AllDebrid sont interdits (Worker public : LASTADDON_DEBRID_SERVER_SIDE=0). */
+/**
+ * Vrai sauf si LASTADDON_DEBRID_SERVER_SIDE vaut exactement « 1 » (opt-in) : par défaut, le serveur n'appelle jamais
+ * AllDebrid. Une lecture de l'environnement qui échoue bloque aussi (défaut sûr).
+ */
 export function serverSideDebridBlocked(): boolean {
   try {
-    return runtimeEnv().get('LASTADDON_DEBRID_SERVER_SIDE') === '0';
+    return runtimeEnv().get('LASTADDON_DEBRID_SERVER_SIDE') !== '1';
   } catch {
-    return false;
+    return true;
   }
 }

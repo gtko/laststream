@@ -190,20 +190,21 @@ function extractJSON(text: string): string {
   return text.slice(start, end + 1);
 }
 
-/** Recommandations : nombre de titres par défaut, plafond, et titres demandés en plus (compensent les non-résolus et les exclus). */
+/** Recommandations : nombre de titres par défaut, plafond, et titres de réserve (compensent les non-résolus et les déjà vus). */
 const RECOMMEND_DEFAULT_COUNT = 50;
 const RECOMMEND_MAX_COUNT = 80;
 const RECOMMEND_SPARE = 15;
-/** Un appel au modèle par angle, en parallèle : titres dans les goûts, puis découvertes. */
-const RECOMMEND_ANGLES = [
-  'dans les goûts de l’utilisateur : proches de son historique, de ses titres aimés et de ses notes 4 à 5',
-  'découvertes : titres moins connus ou inattendus, hors des habitudes visibles, qui devraient pourtant lui plaire',
-] as const;
+/** Un seul appel au modèle par requête : titres proches des goûts et quelques découvertes, dans une même réponse. */
+const RECOMMEND_ANGLE =
+  'environ deux tiers proches des goûts de l’utilisateur (historique, titres aimés, notes 4 à 5), un tiers de découvertes : titres moins connus ou inattendus qui devraient pourtant lui plaire';
 const RECOMMEND_EXCLUDE_MAX = 500;
 const RECOMMEND_RATINGS_MAX = 100;
-/** Bornes fixes du prompt : quel que soit le corps reçu, la partie « notes » et « déjà vus » reste petite. */
+/** Borne fixe du prompt : quel que soit le corps reçu, la partie « notes » reste petite. */
 const RECOMMEND_RATINGS_IN_PROMPT = 40;
-const RECOMMEND_EXCLUDED_IN_PROMPT = 30;
+/** Empreinte de goûts : titres les plus marqués retenus (goûts, puis rejets), et longueur de titre retenue. */
+const FINGERPRINT_LIKED = 10;
+const FINGERPRINT_DISLIKED = 5;
+const FINGERPRINT_KEY_CHARS = 60;
 /** Résolutions TMDB simultanées (les résultats de recherche sont mis en cache par tmdbGet). */
 const RESOLVE_CONCURRENCY = 6;
 /** Budget de jetons par titre demandé (sortie compacte {t,y,k,r}). */
@@ -255,7 +256,7 @@ function ratingsOf(list: unknown): RatedTitle[] {
 /** Exclusion : un titre déjà vu ou suivi, par identifiant TMDB ou par titre et année. */
 type Exclusion =
   | { kind: 'id'; type: 'movie' | 'tv'; tmdbId: number }
-  | { kind: 'title'; label: string; key: string; year: number | null };
+  | { kind: 'title'; key: string; year: number | null };
 
 /** `exclude` : 500 entrées au plus ; les entrées sans identifiant ni titre sont ignorées. */
 function exclusionsOf(list: unknown): Exclusion[] {
@@ -270,7 +271,7 @@ function exclusionsOf(list: unknown): Exclusion[] {
     const key = normalizeTitle(label);
     if (key === '') return [];
     const year = x.year;
-    return [{ kind: 'title', label, key, year: typeof year === 'number' && Number.isInteger(year) ? year : null }];
+    return [{ kind: 'title', key, year: typeof year === 'number' && Number.isInteger(year) ? year : null }];
   });
 }
 
@@ -282,8 +283,11 @@ function countOf(body: Record<string, unknown>): number {
   throw new LtError(400, 'bad_request');
 }
 
-/** Contexte utilisateur du prompt : historique, titres aimés, notes sur 5, titres déjà vus (bornés). */
-function promptContext(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTitle[], exclude: Exclusion[]): string {
+/**
+ * Contexte de goûts du prompt : historique, titres aimés, notes sur 5 (bornées). Les titres déjà vus ne figurent pas
+ * ici : le lot est partagé entre profils, leurs exclusions s'appliquent après lecture du cache.
+ */
+function promptContext(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTitle[]): string {
   const fmt = (arr: HistoryItem[]): string =>
     arr.length ? arr.map((x) => `${x.title}${x.year ? ' (' + x.year + ')' : ''} [${x.type}]`).join(', ') : 'aucun';
   const lines = [`Historique récent : ${fmt(history)}`, `Titres aimés : ${fmt(liked)}`];
@@ -294,13 +298,11 @@ function promptContext(history: HistoryItem[], liked: HistoryItem[], ratings: Ra
       `Notes de l'utilisateur sur 5 : ${list}. Privilégie ce qui ressemble aux titres notés 4–5, évite ce qui ressemble aux titres notés 0–2.`,
     );
   }
-  const seen = exclude.flatMap((entry) => (entry.kind === 'title' ? [entry.label] : [])).slice(0, RECOMMEND_EXCLUDED_IN_PROMPT);
-  if (seen.length > 0) lines.push(`Déjà vus ou suivis (ne pas proposer) : ${seen.join(', ')}`);
   return lines.join('\n');
 }
 
-/** Un appel au modèle : `count` titres, selon l'angle donné. Sortie compacte, budget de jetons proportionné. */
-async function askModel(ctx: LtContext, ai: AiSettings, count: number, angle: string, context: string): Promise<Suggestion[]> {
+/** Un appel au modèle : `count` titres selon l'angle commun. Sortie compacte, budget de jetons proportionné. */
+async function askModel(ctx: LtContext, ai: AiSettings, count: number, context: string): Promise<Suggestion[]> {
   const text = await complete(ctx, ai, {
     temperature: 0.7,
     max_tokens: count * TOKENS_PER_ITEM + 200,
@@ -312,7 +314,7 @@ async function askModel(ctx: LtContext, ai: AiSettings, count: number, angle: st
           'Tu es un recommandeur de films et de séries. Réponds uniquement avec un objet JSON compact de la forme ' +
           '{"items":[{"t":"Titre original","y":2000,"k":"movie" ou "tv","r":"raison courte en français"}]}, sans texte autour. ' +
           `Donne exactement ${count} titres réels et distincts, qui ne figurent pas parmi les titres déjà cités. ` +
-          `r fait au plus 120 caractères. Angle : ${angle}.`,
+          `r fait au plus 120 caractères. Angle : ${RECOMMEND_ANGLE}.`,
       },
       { role: 'user', content: context },
     ],
@@ -386,10 +388,64 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, load: (item: T
   return results;
 }
 
+/** Taille du lot partagé pour `count` titres : arrondie à la dizaine supérieure, plus une réserve (titres déjà vus). */
+function poolSizeOf(count: number): number {
+  return Math.ceil(count / 10) * 10 + RECOMMEND_SPARE;
+}
+
+const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Poids quantifié : 1 (faible) à 3 (fort), par tranches de deux points. */
+const weightLevel = (weight: number): number => Math.min(3, Math.ceil(weight / 2));
+
+/** Les `n` titres les plus pesants, quantifiés et triés par titre : l'ordre du corps n'entre pas dans l'empreinte. */
+function topWeights(weights: Map<string, number>, n: number): [string, number][] {
+  return [...weights]
+    .sort(([keyA, a], [keyB, b]) => b - a || compareText(keyA, keyB))
+    .slice(0, n)
+    .map(([key, weight]): [string, number] => [key, weightLevel(weight)])
+    .sort(([a], [b]) => compareText(a, b));
+}
+
 /**
- * Recommandations : deux appels parallèles au modèle (count + 15 titres au total, un angle chacun), résolus via TMDB
- * (6 à la fois), puis dédoublonnés et filtrés (exclusions, titres non résolus). Renvoie au plus `count` titres.
- * Cache 30 min par charge utile, notes incluses (empreinte).
+ * Empreinte de goûts partagée entre profils : titres les plus marqués (historique +1, titres aimés +2, note 4 à 5 +2,
+ * note 3 +1 ; notes 0 à 2 au rejet), quantifiés, triés, tronqués, puis hachés avec le modèle, la langue et la taille
+ * du lot. Aucun identifiant de profil, aucun nom, aucune exclusion : celles-ci s'appliquent après lecture du cache.
+ */
+function tasteKey(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTitle[], model: string, pool: number): string {
+  const likes = new Map<string, number>();
+  const dislikes = new Map<string, number>();
+  const add = (weights: Map<string, number>, item: { title: string; type: 'movie' | 'tv' }, weight: number): void => {
+    const key = `${item.type}:${normalizeTitle(item.title).slice(0, FINGERPRINT_KEY_CHARS)}`;
+    weights.set(key, (weights.get(key) ?? 0) + weight);
+  };
+  for (const item of history) add(likes, item, 1);
+  for (const item of liked) add(likes, item, 2);
+  for (const rated of ratings) {
+    if (rated.rating >= 4) add(likes, rated, 2);
+    else if (rated.rating === 3) add(likes, rated, 1);
+    else if (rated.rating <= 2) add(dislikes, rated, 1);
+  }
+  return digest({
+    v: 1,
+    lang: DEFAULT_LANGUAGE,
+    model,
+    pool,
+    likes: topWeights(likes, FINGERPRINT_LIKED),
+    dislikes: topWeights(dislikes, FINGERPRINT_DISLIKED),
+  });
+}
+
+/** Lot résolu via TMDB, avant exclusions : au plus `poolSizeOf(count)` titres, sans doublon. */
+interface RecommendPool {
+  items: Record<string, unknown>[];
+}
+
+/**
+ * Recommandations : un seul appel au modèle par requête en cas de manque, résolu via TMDB (6 à la fois), puis
+ * dédoublonné. Le lot est partagé entre profils aux goûts proches : clé = empreinte de goûts, niveau 2 KV (fournisseur
+ * openrouter), 24 h, périmé servi puis rafraîchi (SWR). Les titres déjà vus du profil sont retirés après lecture du
+ * cache, puis le résultat est coupé à `count`.
  */
 export async function recommend(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<unknown> {
   const ai = aiSettings(config);
@@ -399,23 +455,27 @@ export async function recommend(ctx: LtContext, config: Config, body: Record<str
   const ratings = ratingsOf(body.ratings);
   const exclude = exclusionsOf(body.exclude);
   const count = countOf(body);
-  const cacheKey = `ai:${digest({ history, liked, ratings: digest(ratings), exclude, count, model: ai.model })}`;
-  return ctx.state.cache.get(cacheKey, TTL.aiRecommend, async () => {
-    const perCall = Math.ceil((count + RECOMMEND_SPARE) / RECOMMEND_ANGLES.length);
-    const context = promptContext(history, liked, ratings, exclude);
-    const batches = await Promise.all(RECOMMEND_ANGLES.map((angle) => askModel(ctx, ai, perCall, angle, context)));
-    const resolved = await mapLimit(batches.flat(), RESOLVE_CONCURRENCY, (item) => resolveTitle(ctx, token, item));
-    const seen = new Set<string>();
-    const items: Record<string, unknown>[] = [];
-    for (const hit of resolved) {
-      if (hit === null || isExcluded(hit, exclude)) continue;
-      const hitKey = `${String(hit.media_type)}${String(hit.id)}`;
-      if (seen.has(hitKey)) continue;
-      seen.add(hitKey);
-      items.push(hit);
-    }
-    return { items: items.slice(0, count) };
-  });
+  const pool = poolSizeOf(count);
+  const shared = await ctx.state.cache.get<RecommendPool>(
+    `recommend:${tasteKey(history, liked, ratings, ai.model, pool)}`,
+    (value) => (value.items.length > 0 ? TTL.aiRecommend : TTL.aiRecommendEmpty),
+    async () => {
+      const suggestions = await askModel(ctx, ai, pool, promptContext(history, liked, ratings));
+      const resolved = await mapLimit(suggestions, RESOLVE_CONCURRENCY, (item) => resolveTitle(ctx, token, item));
+      const seen = new Set<string>();
+      const items: Record<string, unknown>[] = [];
+      for (const hit of resolved) {
+        if (hit === null) continue;
+        const hitKey = `${String(hit.media_type)}${String(hit.id)}`;
+        if (seen.has(hitKey)) continue;
+        seen.add(hitKey);
+        items.push(hit);
+      }
+      return { items };
+    },
+    { provider: 'openrouter', swr: true },
+  );
+  return { items: shared.items.filter((hit) => !isExcluded(hit, exclude)).slice(0, count) };
 }
 
 /**
@@ -443,7 +503,7 @@ export async function why(ctx: LtContext, config: Config, body: Record<string, u
       ],
     });
     return { text: cleanText(raw, 600) };
-  });
+  }, { provider: 'openrouter', swr: true });
 }
 
 /**
@@ -465,5 +525,5 @@ export async function personWhy(ctx: LtContext, config: Config, body: Record<str
       ],
     });
     return { text: cleanText(raw, 500) };
-  });
+  }, { provider: 'openrouter', swr: true });
 }

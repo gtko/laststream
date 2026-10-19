@@ -354,6 +354,30 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE accounts ADD COLUMN tv_sources TEXT;
     `,
   },
+  {
+    version: 12,
+    name: 'index des fiches partagées (R2 meta/<type>/<tmdbId>.json), recherche par identifiant IMDb ou TVDB',
+    sql: `
+      -- Une ligne par fiche stockée dans R2 : contenu partagé entre tous les comptes, aucune donnée personnelle.
+      -- etag : empreinte du contenu de la fiche ; une ligne n'est réécrite que si cette empreinte change.
+      CREATE TABLE meta_index (
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        imdb_id TEXT,
+        tvdb_id INTEGER,
+        title TEXT NOT NULL,
+        original_title TEXT,
+        year INTEGER,
+        status TEXT,
+        updated_at TEXT NOT NULL,
+        next_air_date TEXT,
+        etag TEXT NOT NULL,
+        PRIMARY KEY (type, tmdb_id)
+      );
+      CREATE INDEX meta_index_imdb ON meta_index (imdb_id);
+      CREATE INDEX meta_index_tvdb ON meta_index (tvdb_id);
+    `,
+  },
 ];
 
 /**

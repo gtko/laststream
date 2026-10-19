@@ -131,13 +131,12 @@ describe('lt/recommend', () => {
   });
 });
 
-/** Réponse compacte { t, y, k, r } : le nombre demandé dans le prompt, préfixé selon l'angle (A goûts, B découvertes). */
+/** Réponse compacte { t, y, k, r } : le nombre demandé dans le prompt, titres « Film A### » numérotés dans l'ordre. */
 const compactReply = (payload: { messages: { content: string }[] }): unknown => {
   const system = payload.messages[0]?.content ?? '';
   const count = Number(/Donne exactement (\d+) titres/.exec(system)?.[1] ?? 0);
-  const prefix = system.includes('Angle : dans les goûts') ? 'A' : 'B';
   return {
-    items: Array.from({ length: count }, (_, index) => ({ t: `Film ${prefix}${String(index + 1).padStart(3, '0')}`, y: 2000, k: 'movie', r: 'Parce que' })),
+    items: Array.from({ length: count }, (_, index) => ({ t: `Film A${String(index + 1).padStart(3, '0')}`, y: 2000, k: 'movie', r: 'Parce que' })),
   };
 };
 
@@ -154,7 +153,7 @@ describe('lt/recommend : volume, exclusions, notes', () => {
   });
   const post = (path: string, body: unknown): Promise<Response> => fetch(`${volume.baseUrl}/${fullToken()}/lt/${path}`, postJson(body));
 
-  it('par défaut : 50 titres renvoyés, deux appels parallèles de 33 titres (count + 15 au total)', async () => {
+  it('par défaut : 50 titres renvoyés, un seul appel au modèle de 65 titres (50 + 15 de réserve)', async () => {
     reply = compactReply;
     const before = openrouterCalls();
     const res = await post('recommend', { history: [{ title: 'Volume', type: 'movie' }], liked: [] });
@@ -166,10 +165,10 @@ describe('lt/recommend : volume, exclusions, notes', () => {
       .callsTo(OPENROUTER)
       .slice(before)
       .map((call) => JSON.parse(call.body) as { max_tokens: number; messages: { content: string }[] });
-    expect(payloads).toHaveLength(2);
-    expect(payloads.map((payload) => payload.max_tokens)).toEqual([33 * 60 + 200, 33 * 60 + 200]);
-    expect(payloads[0]?.messages[0]?.content).toContain('Angle : dans les goûts');
-    expect(payloads[1]?.messages[0]?.content).toContain('Angle : découvertes');
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]?.max_tokens).toBe(65 * 60 + 200);
+    expect(payloads[0]?.messages[0]?.content).toContain('Donne exactement 65 titres');
+    expect(payloads[0]?.messages[0]?.content).toContain('Angle : environ deux tiers');
   });
 
   it('count : entier de 1 à 80 ; hors bornes ou non entier : 400 bad_request', async () => {
@@ -190,15 +189,15 @@ describe('lt/recommend : volume, exclusions, notes', () => {
       count: 40,
       exclude: [
         { type: 'movie', tmdbId: 65001 },
-        { title: 'Film B002', year: 2000 },
-        { title: 'Film B003', year: 1999 },
+        { title: 'Film A002', year: 2000 },
+        { title: 'Film A003', year: 1999 },
       ],
     };
     const titles = ((await (await post('recommend', body)).json()) as { items: { title: string }[] }).items.map((item) => item.title);
     expect(titles).toHaveLength(40);
     expect(titles).not.toContain('Film A001');
-    expect(titles).not.toContain('Film B002');
-    expect(titles).toContain('Film B003');
+    expect(titles).not.toContain('Film A002');
+    expect(titles).toContain('Film A003');
   });
 
   it('exclusions : plus de 500 entrées refusées (400)', async () => {
@@ -223,16 +222,16 @@ describe('lt/recommend : volume, exclusions, notes', () => {
     expect((await post('recommend', { history: [], ratings: tooMany })).status).toBe(400);
   });
 
-  it('cache : la clé inclut les notes ; mêmes notes = pas d appel au modèle, notes changées = nouvel appel', async () => {
+  it('cache : l empreinte inclut les notes ; mêmes notes = pas d appel au modèle, notes changées = nouvel appel', async () => {
     reply = compactReply;
     const base = { history: [{ title: 'Cache notes' }] };
     const first = openrouterCalls();
     await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 5 }] });
-    expect(openrouterCalls() - first).toBe(2);
+    expect(openrouterCalls() - first).toBe(1);
     await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 5 }] });
-    expect(openrouterCalls() - first).toBe(2);
+    expect(openrouterCalls() - first).toBe(1);
     await post('recommend', { ...base, ratings: [{ title: 'Dune', year: 2021, type: 'movie', rating: 1 }] });
-    expect(openrouterCalls() - first).toBe(4);
+    expect(openrouterCalls() - first).toBe(2);
   });
 });
 

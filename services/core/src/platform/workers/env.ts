@@ -35,6 +35,8 @@ export interface WorkerEnv {
   MDBLIST_LIMITER?: RateLimitBinding;
   /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */
   TV?: R2Bucket;
+  /** Bucket R2 des fiches partagées (meta/<type>/<tmdbId>.json) : absent, fiches construites à chaque demande. */
+  META?: R2Bucket;
   /** DSN Sentry (secret) : absent, aucune remontée d'erreur. */
   SENTRY_DSN?: string;
   /** Autres liaisons : variables (chaînes) et secrets. */

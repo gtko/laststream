@@ -1,4 +1,5 @@
 import type { AdminStore } from './admin-store.js';
+import type { MetaStore } from './meta-store.js';
 import type { SkipSegmentStore } from './skip-segments.js';
 import type { SocialStore } from './social-store.js';
 import type { UserStore } from './store.js';
@@ -29,12 +30,16 @@ export type SocialRepo = AsyncRepo<SocialStore>;
 /** Administration : comptes, réglages globaux, journal d'audit, réinitialisation de mot de passe, signalements. */
 export type AdminRepo = AsyncRepo<AdminStore>;
 
+/** Index des fiches partagées (R2 meta/…) : identifiants croisés, recherche par IMDb ou TVDB. */
+export type MetaRepo = AsyncRepo<MetaStore>;
+
 /** Accès aux dépôts, ouverts au premier besoin. */
 export interface UserBackend {
   users(): UserRepo;
   skips(): SkipRepo;
   social(): SocialRepo;
   admin(): AdminRepo;
+  meta(): MetaRepo;
   /** Faux tant qu'aucune base n'existe (Node : fichier absent et jamais ouvert) : rien à lire, et lire n'en créerait pas. Absent = vrai. */
   hasData?(): boolean;
   /** Libère les ressources (fichier fermé). Sans effet pour un Durable Object ; idempotent. */

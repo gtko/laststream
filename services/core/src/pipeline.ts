@@ -82,7 +82,7 @@ export interface PipelineContext {
   /** Client debrid : statut « cache » et sonde des liens cachés. Absent : aucune vérification. */
   debrid?: PipelineDebrid;
   /**
-   * `client` : le serveur n'appelle jamais AllDebrid (LASTADDON_DEBRID_SERVER_SIDE=0). Les torrents sont livrés sans lien,
+   * `client` : le serveur n'appelle jamais AllDebrid (LASTADDON_DEBRID_SERVER_SIDE absent ou différent de 1). Les torrents sont livrés sans lien,
    * marqués `behaviorHints.lastDebrid = "client"` ; l'appareil de l'utilisateur vérifie le cache et débride lui-même.
    * Le filtre « seulement en cache » est alors laissé à l'appareil.
    */

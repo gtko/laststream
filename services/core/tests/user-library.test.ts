@@ -2,10 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { type ErrorBody, loginAs, PASSWORD, request, createProfileVia } from './user-harness.js';
 
-interface ProfileBody {
-  id: string;
-}
-
 interface LibraryBody {
   items: { type: string; tmdbId: number | null; imdbId: string | null; title: string; poster: string | null; addedAt: string }[];
 }

@@ -1,3 +1,4 @@
+import { TtlCache } from '../src/cache/ttl-cache.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { FetchFn } from '../src/sources/http.js';
 import {
@@ -40,7 +41,7 @@ describe('getTitleVariants : identifiant TVDB des séries (TMDB external_ids)', 
       [`${API}/tv/4242/external_ids`]: () => json({ imdb_id: 'tt9000001', tvdb_id: 371028 }),
     });
 
-    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants).toEqual({ titles: ['Severance'], year: 2022, fr: 'Severance', en: 'Severance', tvdbId: 371028 });
     const urls = mock.mock.calls.map((call) => String(call[0]));
@@ -51,7 +52,7 @@ describe('getTitleVariants : identifiant TVDB des séries (TMDB external_ids)', 
   it('external_ids en échec : résultat complet sans tvdbId', async () => {
     const { fetch } = tmdb(severance);
 
-    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants).toEqual({ titles: ['Severance'], year: 2022, fr: 'Severance', en: 'Severance' });
     expect(variants.tvdbId).toBeUndefined();

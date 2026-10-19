@@ -1,6 +1,7 @@
 import { fetchText, isRecord } from '../sources/http.js';
 import type { ContentRef } from '../types.js';
 import type { ContentMeta } from './types.js';
+import { sharedCache, type TtlCache } from '../cache/ttl-cache.js';
 
 const TMDB_API_URL = 'https://api.themoviedb.org/3';
 const TTL_MS = 6 * 60 * 60 * 1000;
@@ -9,22 +10,13 @@ const IMDB_ID = /^tt\d+$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const FR_AGES: ReadonlySet<number> = new Set([10, 12, 16, 18]);
 
-interface CacheEntry {
-  expiresAt: number;
-  value: ContentMeta;
-}
-
-/** Cache mémoire des métadonnées TMDB, clé « type:imdb:saison:épisode ». */
-export type MetaCache = Map<string, CacheEntry>;
-
-const defaultCache: MetaCache = new Map();
-
 export interface TmdbMetaOptions {
   /** Jeton de lecture TMDB (API v4, en-tête Bearer). Absent : aucun appel TMDB. */
   tmdbToken?: string;
   fetch?: typeof fetch;
   timeoutMs?: number;
-  cache?: MetaCache;
+  /** Cache partagé TMDB (fiches et titres, même cache que les titres de recherche). */
+  cache?: TtlCache;
   /** Durée Cinemeta en secondes, utilisée si TMDB ne fournit aucune durée. */
   cinemetaRuntimeSeconds?: number;
 }
@@ -181,24 +173,6 @@ function cacheKey(ref: ContentRef): string {
   return `${ref.type}:${ref.imdbId}:${ref.season ?? '-'}:${ref.episode ?? '-'}`;
 }
 
-function readCache(cache: MetaCache, key: string): ContentMeta | undefined {
-  const entry = cache.get(key);
-  if (entry === undefined) return undefined;
-  if (entry.expiresAt <= Date.now()) {
-    cache.delete(key);
-    return undefined;
-  }
-  return entry.value;
-}
-
-function storeEntry(cache: MetaCache, key: string, value: ContentMeta): void {
-  const now = Date.now();
-  for (const [existingKey, entry] of cache) {
-    if (entry.expiresAt <= now) cache.delete(existingKey);
-  }
-  cache.set(key, { expiresAt: now + TTL_MS, value });
-}
-
 /**
  * Métadonnées d'un film ou d'un épisode : durée réelle, certification FR et date de sortie, via TMDB (API v4,
  * jeton Bearer). Sans jeton, aucun appel n'est fait. La durée Cinemeta sert de repli si TMDB n'en donne pas.
@@ -213,13 +187,13 @@ export async function getContentMeta(ref: ContentRef, opts: TmdbMetaOptions = {}
     if (ref.type !== 'movie' && ref.type !== 'series') return withCinemetaRuntime({}, cinemetaSeconds);
     if (!IMDB_ID.test(ref.imdbId)) return withCinemetaRuntime({}, cinemetaSeconds);
 
-    const cache = opts.cache ?? defaultCache;
-    const key = cacheKey(ref);
-    const cached = readCache(cache, key);
-    if (cached !== undefined) return withCinemetaRuntime(cached, cinemetaSeconds);
-
-    const outcome = await fetchTmdbMeta(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    if (outcome.complete) storeEntry(cache, key, outcome.meta);
+    // Seuls les résultats complets sont gardés (TTL nul sinon) ; les appels simultanés partagent une seule requête.
+    const outcome = await (opts.cache ?? sharedCache()).get(
+      `meta:${cacheKey(ref)}`,
+      (result) => (result.complete ? TTL_MS : 0),
+      () => fetchTmdbMeta(ref, token, opts.fetch ?? fetch, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      { provider: 'tmdb', swr: true },
+    );
     return withCinemetaRuntime(outcome.meta, cinemetaSeconds);
   } catch {
     return withCinemetaRuntime({}, cinemetaSeconds);
