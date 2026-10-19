@@ -21,7 +21,8 @@ export const MAX_MIME_BYTES = 255;
 export const FLAG_FIN = 0x01;
 
 /** Codes envoyés par l'hôte (index = octet sur le fil : ne pas réordonner). */
-export const RANGE_ERROR_CODES = ['bad_request', 'too_large', 'out_of_range', 'busy', 'source'] as const;
+// `unshareable` (lecture refusée au navigateur de l'hôte : CORS, lien non lisible en web) est ajouté en fin : les index existants ne bougent pas.
+export const RANGE_ERROR_CODES = ['bad_request', 'too_large', 'out_of_range', 'busy', 'source', 'unshareable'] as const;
 export type RangeErrorCode = (typeof RANGE_ERROR_CODES)[number];
 
 /** Codes locaux (délais, annulation, fermeture) en plus des codes de l'hôte. */
@@ -33,6 +34,7 @@ const MESSAGES: Record<RelayErrorCode, string> = {
   out_of_range: 'Plage hors du fichier.',
   busy: 'Trop de requêtes en cours côté hôte.',
   source: 'Lecture de la source impossible.',
+  unshareable: 'Ce lien ne peut pas être partagé depuis le navigateur.',
   timeout: 'Délai dépassé.',
   cancelled: 'Requête annulée.',
   closed: 'Canal de relais fermé.',

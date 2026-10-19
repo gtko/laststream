@@ -25,6 +25,7 @@ const guestCount = (c) => c.participants.filter((p) => p.guest).length;
 
 /** Ligne d'état du partage aux invités (débit montant ; aucune URL). */
 function relayText() {
+  if (partyBridge.relayRefused()) return 'Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.';
   const s = partyBridge.relayStats();
   if (!s) return 'Partage inactif : il démarre quand un invité est présent pendant la lecture.';
   return 'Envoi : ' + fmtRate(s.rateBps) + ' vers ' + s.links + ' invité' + (s.links > 1 ? 's' : '') + '.';

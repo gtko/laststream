@@ -1,5 +1,5 @@
 // Source de plage du lien débridé : en-têtes Range, tailles, refus des réponses sans plage, erreurs sans URL.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { HttpFn, HttpRequest, HttpResponse } from '../sources/debrid/http';
 import { RelayError } from './protocol';
 import { parseContentRange, urlRangeSource } from './sources';
@@ -92,10 +92,12 @@ describe('urlRangeSource', () => {
     expect(await codeOf(urlRangeSource({ url: LINK, http }).read(0, 5, ctl.signal))).toBe('cancelled');
   });
 
-  it('URL non https ou plage vide : refusées sans écho de l’URL', () => {
+  it('lien direct d’addon en http accepté ; autre schéma ou plage vide : refusés sans écho de l’URL', () => {
+    const http: HttpFn = async () => reply(206);
+    expect(() => urlRangeSource({ url: 'http://example.invalid/x?token=SECRET', http })).not.toThrow();
     const err = (() => {
       try {
-        urlRangeSource({ url: 'http://example.invalid/x?token=SECRET' });
+        urlRangeSource({ url: 'ftp://example.invalid/x?token=SECRET' });
         return null;
       } catch (e) {
         return e as RelayError;
@@ -103,7 +105,21 @@ describe('urlRangeSource', () => {
     })();
     expect(err?.code).toBe('bad_request');
     expect(err?.message).not.toMatch(/SECRET|example/);
-    const http: HttpFn = async () => reply(206);
     return expect(codeOf(urlRangeSource({ url: LINK, http }).read(5, 5))).resolves.toBe('bad_request');
+  });
+
+  it('navigateur : échec de lecture (CORS refusé par la source) = unshareable, sans écho de l’URL', async () => {
+    const fetchMock = vi.fn(async () => { throw new TypeError('Failed to fetch ' + LINK); });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const src = urlRangeSource({ url: LINK });
+      const err = await src.size().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(RelayError);
+      expect((err as RelayError).code).toBe('unshareable');
+      expect((err as Error).message).not.toMatch(/example|token|SECRET|https?:/);
+      expect(await codeOf(urlRangeSource({ url: LINK }).read(0, 5))).toBe('unshareable');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

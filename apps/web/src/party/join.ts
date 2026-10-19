@@ -72,6 +72,7 @@ export function relayErrorText(code: string): string {
     case 'timeout': return 'L’hôte ne répond pas : sa lecture doit être en cours.';
     case 'unavailable': return 'Connexion à l’hôte impossible (réseau bloqué ?).';
     case 'source': return 'L’hôte n’arrive pas à lire le fichier pour le moment.';
+    case 'unshareable': return 'Ce lien ne peut pas être partagé depuis le navigateur de l’hôte.';
     case 'busy': return 'L’hôte est très sollicité : nouvel essai en cours.';
     case 'closed': return 'La liaison avec l’hôte a été coupée.';
     case 'protocol': return 'Réponse inattendue de l’hôte.';

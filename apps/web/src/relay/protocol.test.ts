@@ -54,6 +54,9 @@ describe('trames hôte -> invité', () => {
       expect(decodeFrame(encodeErr(4, code))).toEqual({ t: 'err', reqId: 4, code });
     }
     expect(() => encodeErr(4, 'nope' as never)).toThrow();
+    // Index sur le fil : les codes existants ne bougent pas, « unshareable » arrive en fin de liste.
+    expect(RANGE_ERROR_CODES.slice(0, 5)).toEqual(['bad_request', 'too_large', 'out_of_range', 'busy', 'source']);
+    expect(new Uint8Array(encodeErr(4, 'unshareable'))[5]).toBe(5);
   });
 });
 

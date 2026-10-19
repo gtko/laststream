@@ -11,6 +11,8 @@ import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
+import type { RangeSource } from '../relay/host';
+import { RelayError } from '../relay/protocol';
 import { HostRelaySession, type RelayStats } from '../relay/session';
 import { urlRangeSource } from '../relay/sources';
 
@@ -28,8 +30,8 @@ export interface SessionAdapter {
   engine: EngineLike | null;
   ready: boolean;
   /**
-   * Lien débridé direct de la lecture en cours, lu par cet appareil seulement pour le partage aux invités. Null si la lecture
-   * ne passe pas par un hébergeur débridé. Jamais affiché, jamais envoyé au salon, jamais journalisé.
+   * Lien HTTP(S) lu directement par cet appareil (débridé ou direct d'addon) pour le partage aux invités ; null pour un torrent,
+   * un magnet ou un proxy. Jamais affiché, jamais envoyé au salon, jamais journalisé.
    */
   relayUrl?: () => string | null;
 }
@@ -115,9 +117,11 @@ class PartyBridge {
   adapter: (() => SessionAdapter | null) | null = null;
   private listeners = new Set<Listener>();
   private announced = '';
-  /** Partage de la lecture aux invités : session hôte active, et lien débridé qu'elle sert (comparé, jamais affiché). */
+  /** Partage de la lecture aux invités : session hôte active, et lien qu'elle sert (comparé, jamais affiché). */
   private relay: HostRelaySession | null = null;
   private relayKey = '';
+  /** La source refuse la lecture depuis ce navigateur (CORS) : l'hôte le voit, et les invités reçoivent le même motif. */
+  private refusedRelay = false;
 
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -223,9 +227,15 @@ class PartyBridge {
     return this.relay ? this.relay.stats() : null;
   }
 
+  /** Le navigateur de l'hôte ne peut pas lire ce lien (CORS) : le partage est en cours, mais les invités ne reçoivent rien. */
+  relayRefused(): boolean {
+    return this.relay !== null && this.refusedRelay;
+  }
+
   /**
    * Partage de la lecture : une session hôte existe seulement quand un invité est présent et que la lecture de l'hôte passe
-   * par un lien débridé. Elle est reprise si le lien change (épisode suivant), et fermée dès que la condition tombe.
+   * par un lien HTTP(S) lu directement (débridé ou direct d'addon). Elle est reprise si le lien change (épisode suivant), et
+   * fermée dès que la condition tombe.
    */
   private syncRelay(a: SessionAdapter): void {
     const c = this.client;
@@ -238,17 +248,36 @@ class PartyBridge {
     if (this.relay && this.relayKey === url) return;
     this.stopRelay();
     try {
-      this.relay = new HostRelaySession({ client: c, source: urlRangeSource({ url }) });
+      const source = this.watchedSource(urlRangeSource({ url }));
+      this.relay = new HostRelaySession({ client: c, source });
       this.relayKey = url;
+      // Lecture d'essai : l'hôte apprend tout de suite si son navigateur peut partager ce lien (sans attendre un invité).
+      void source.size().catch(() => undefined);
     } catch {
       this.relay = null;
     }
+  }
+
+  /** Source surveillée : son état de lecture (refus du navigateur ou non) alimente l'affichage de l'hôte. */
+  private watchedSource(base: RangeSource): RangeSource {
+    const mark = (refused: boolean): void => {
+      if (this.refusedRelay === refused) return;
+      this.refusedRelay = refused;
+      this.emit();
+    };
+    const isRefusal = (err: unknown): boolean => err instanceof RelayError && err.code === 'unshareable';
+    return {
+      mime: base.mime,
+      size: () => base.size().then((n) => { mark(false); return n; }, (err: unknown) => { mark(isRefusal(err)); throw err; }),
+      read: (start, end, signal) => base.read(start, end, signal).then((b) => { mark(false); return b; }, (err: unknown) => { mark(isRefusal(err)); throw err; }),
+    };
   }
 
   private stopRelay(): void {
     this.relay?.close();
     this.relay = null;
     this.relayKey = '';
+    this.refusedRelay = false;
   }
 
   /** L'hôte termine le salon pour tout le monde. */

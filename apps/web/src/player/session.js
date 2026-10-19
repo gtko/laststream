@@ -49,6 +49,7 @@ import { thumbsAllowed, thumbSource } from './thumbs';
 import { ThumbFeed, serverHasThumbs } from './thumbfeed';
 import { debrid, PROVIDER_LABEL } from '../sources/debridClient';
 import { createRangeFetch, parseDebridUrl } from '../sources/debrid/http';
+import { relayableUrl } from '../relay/sourceUrl';
 import { makeLocalFeed, webCodecsAvailable, IdbThumbStore, stableSourceId } from '../thumbs';
 import { createPlayerUI } from './ui.js';
 import { partyBridge } from '../party/bridge';
@@ -217,8 +218,8 @@ function partyAdapter(p = P) {
   return {
     req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
     ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer),
-    // Lien débridé direct, lu par cet appareil pour le partage aux invités (rangeUrlOf : seulement les hébergeurs autorisés).
-    relayUrl: () => (p.engine ? rangeUrlOf(p) : null),
+    // Lien HTTP(S) lu directement par cet appareil (débridé ou direct d'addon) pour le partage aux invités ; jamais un torrent.
+    relayUrl: () => (p.engine ? relayableUrl(p.mediaUrl, p.view ? p.view.stream : null) : null),
   };
 }
 
