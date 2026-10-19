@@ -85,6 +85,8 @@ const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
   admin: { max: 20, windowMs: 10_000 },
   // Négociation WebRTC : quelques offres, réponses et candidats ICE par pair.
   rtc: { max: 60, windowMs: 10_000 },
+  // Négociation du maillage invité à invité (jusqu'à 8 pairs : hello, offre, réponse et une dizaine de candidats par pair).
+  mesh: { max: 200, windowMs: 10_000 },
 };
 
 /** Écart (s) à partir duquel le rapport de position de l'hôte corrige l'état diffusé. */
@@ -419,6 +421,11 @@ export class RoomCore {
         if (message.to === member.connId) return this.err(accountId, 'cannot_target_self');
         const peer = [...this.members.values()].find((other) => other.connId === message.to);
         if (peer === undefined) return this.err(accountId, 'peer_not_found');
+        // Maillage : seulement entre invités, et seulement des types de signalisation connus (liste blanche).
+        if (isMeshSignal(message)) {
+          if (typeof message.data.t !== 'string' || !MESH_SIGNAL_TYPES.has(message.data.t)) return this.err(accountId, 'invalid_message');
+          if (member.guest !== true || peer.guest !== true) return this.err(accountId, 'mesh_guests_only');
+        }
         return [{ kind: 'peer', peerId: peer.connId, msg: { type: 'rtc', from: member.connId, data: message.data } }];
       }
     }
@@ -489,7 +496,16 @@ function publicLine(line: StoredChatLine): ChatLine {
   return { id: line.id, from: line.from, text: line.text, at: line.at };
 }
 
+/** Types de signalisation du maillage invité à invité (`data.m === 'mesh'`) ; tout autre type est refusé par le salon. */
+export const MESH_SIGNAL_TYPES: ReadonlySet<string> = new Set(['hello', 'offer', 'answer', 'ice']);
+
+/** Vrai si la signalisation relayée appartient au maillage (étiquette `m: 'mesh'`). */
+function isMeshSignal(message: ClientMessage): boolean {
+  return message.t === 'rtc' && message.data.m === 'mesh';
+}
+
 function rateKind(message: ClientMessage): string {
+  if (isMeshSignal(message)) return 'mesh';
   switch (message.t) {
     case 'kick':
     case 'mute':

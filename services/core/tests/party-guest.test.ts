@@ -358,6 +358,65 @@ describe('signalisation WebRTC : relais ciblé', () => {
   });
 });
 
+describe('signalisation du maillage invité à invité', () => {
+  const hello = { m: 'mesh', t: 'hello' };
+
+  it('relayé au seul invité visé, avec l’identifiant de l’émetteur posé par le serveur (pas d’usurpation)', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    const a = fx.guest('axxxxxxxxxxxxxxxxx', 'Ana');
+    const b = fx.guest('bxxxxxxxxxxxxxxxxx', 'Bob');
+    fx.core.join(a);
+    fx.core.join(b);
+    expect(fx.core.handle(a.accountId, msg({ type: 'rtc', to: b.connId, data: hello }))).toEqual([
+      { kind: 'peer', peerId: b.connId, msg: { type: 'rtc', from: a.connId, data: hello } },
+    ]);
+    // Un faux « from » dans la charge ne remplace pas l'émetteur réel : la charge reste dans data, `from` est celui de a.
+    const forged = { m: 'mesh', t: 'offer', sdp: 'v=0', from: host.connId };
+    const out = fx.core.handle(a.accountId, msg({ type: 'rtc', to: b.connId, data: forged }));
+    expect(out).toEqual([{ kind: 'peer', peerId: b.connId, msg: { type: 'rtc', from: a.connId, data: forged } }]);
+    // Un faux champ « from » à la racine de la trame est ignoré par l'analyse.
+    const parsed = parseClientMessage(JSON.stringify({ type: 'rtc', to: b.connId, from: host.connId, data: hello }));
+    expect(parsed).toMatchObject({ t: 'rtc', to: b.connId });
+    expect(parsed).not.toHaveProperty('from');
+  });
+
+  it('liste blanche : seuls hello, offer, answer et ice ; invité à invité seulement', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    const a = fx.guest('axxxxxxxxxxxxxxxxx', 'Ana');
+    const b = fx.guest('bxxxxxxxxxxxxxxxxx', 'Bob');
+    const acct = fx.account('a-carl');
+    fx.core.join(a);
+    fx.core.join(b);
+    fx.core.join(acct);
+    for (const t of ['hello', 'offer', 'answer', 'ice']) {
+      expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: b.connId, data: { m: 'mesh', t } })))).toEqual([]);
+    }
+    expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: b.connId, data: { m: 'mesh', t: 'file', url: 'https://x' } })))).toEqual(['invalid_message']);
+    expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: b.connId, data: { m: 'mesh' } })))).toEqual(['invalid_message']);
+    // Le maillage ne passe ni par l'hôte ni par un compte.
+    expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: host.connId, data: hello })))).toEqual(['mesh_guests_only']);
+    expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: acct.connId, data: hello })))).toEqual(['mesh_guests_only']);
+    expect(errors(fx.core.handle(acct.accountId, msg({ type: 'rtc', to: b.connId, data: hello })))).toEqual(['mesh_guests_only']);
+    // La signalisation hôte ↔ invité d'origine reste libre.
+    expect(errors(fx.core.handle(a.accountId, msg({ type: 'rtc', to: host.connId, data: { t: 'hello' } })))).toEqual([]);
+  });
+
+  it('débit propre au maillage : 200 messages par 10 s, sans entamer le quota de la signalisation hôte', () => {
+    const fx = makeRoom();
+    const host = withHost(fx);
+    const a = fx.guest('axxxxxxxxxxxxxxxxx', 'Ana');
+    const b = fx.guest('bxxxxxxxxxxxxxxxxx', 'Bob');
+    fx.core.join(a);
+    fx.core.join(b);
+    const frame = msg({ type: 'rtc', to: b.connId, data: { m: 'mesh', t: 'ice' } });
+    for (let i = 0; i < 200; i += 1) expect(fx.core.handle(a.accountId, frame).some((e) => e.kind === 'peer')).toBe(true);
+    expect(errors(fx.core.handle(a.accountId, frame))).toEqual(['rate_limited']);
+    expect(fx.core.handle(a.accountId, msg({ type: 'rtc', to: host.connId, data: { t: 'hello' } })).some((e) => e.kind === 'peer')).toBe(true);
+  });
+});
+
 describe('connexion d’invité : rejoindre et réponses', () => {
   it('un invité qui envoie un message d’hôte reçoit not_host ; un message de signalisation vers un compte fonctionne', () => {
     const fx = makeRoom();
