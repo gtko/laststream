@@ -658,7 +658,7 @@ function clientError(e) {
   return 'Débridage impossible' + (code ? ' (' + code + ')' : '') + '.';
 }
 
-async function resolveMedia(view, signal) {
+async function resolveMedia(view, signal, local = false) {
   const s = view.stream;
   const up = await serverAlive();
   const base = serverBase();
@@ -672,9 +672,11 @@ async function resolveMedia(view, signal) {
   if (isClientStream(s)) {
     const { copies, season, episode } = clientCopiesOf(s);
     try {
-      const r = await debrid().resolve(copies, { season, episode }, signal);
-      if (P) P.debridVia = PROVIDER_LABEL[r.provider];
-      return { url: r.url, up, base, provider: r.provider };
+      // `local` : le lien partagé a échoué, il est invalidé sur le serveur puis débloqué ici.
+      const r = local ? await debrid().recoverShared(copies, { season, episode }, signal) : await debrid().resolve(copies, { season, episode }, signal);
+      // Sans fournisseur, le lien vient d'un autre appareil du compte (partage serveur).
+      if (P) P.debridVia = (r.provider && PROVIDER_LABEL[r.provider]) || 'Appareil du compte';
+      return { url: r.url, up, base, provider: r.provider, shared: r.provider === undefined };
     } catch (e) {
       throw new Error(clientError(e));
     }
@@ -692,14 +694,17 @@ const describeView = (v) => [v.quality, v.sourceType, v.langs.map((l) => l.label
  * transcodage, création de la session HLS (premier appel de la playlist, qui démarre le travail du serveur).
  * `direct` : même source mais en lecture directe, pour démarrer vite quand seule la piste audio demande le transcodage.
  */
-async function prepareView(p, cand, signal) {
+async function prepareView(p, cand, signal, local = false) {
   const { view, direct } = cand;
   const shell = await connectShell();
   const native = !shell && isNativePlayer();
   // Android : le serveur de streaming Stremio tourne sur le même PC que lastAddon (port 11470), sauf réglage contraire.
   if (native && !storeGet(SERVER_KEY)) { const b = streamingServerFor(getBase()); if (b) setShellServerAddress(b); }
   if (signal.aborted) throw abortError();
-  const media = await resolveMedia(view, signal);
+  // Drapeau propre à cette tentative : une préparation qui échoue avant la résolution ne doit pas hériter d'un ancien partage.
+  view.fromShare = false;
+  const media = await resolveMedia(view, signal, local);
+  view.fromShare = media.shared === true;
   if (signal.aborted) throw abortError();
   let probe = p.hint && p.hint.url === media.url ? p.hint.probe : null;
   if (!shell && !native && media.up && !probe) probe = await fetchProbe(media.url, media.base, signal);
@@ -727,6 +732,19 @@ async function prepareView(p, cand, signal) {
   }
   console.debug('[player] session', { source: describeView(view), engine: choice.engine, conversion, direct: !!direct, hls: hlsUrl ? hlsId : null });
   return { shell, media, probe, choice, conversion, hlsUrl, hlsId, direct: !!direct };
+}
+
+/**
+ * Préparation d'un candidat, avec repli sur le déblocage local : un lien partagé qui échoue à la préparation (session refusée,
+ * lien mort) est invalidé sur le serveur, débloqué sur cet appareil et republié ; la préparation reprend une fois.
+ */
+async function prepareWithLocalFallback(p, cand, signal) {
+  try {
+    return await prepareView(p, cand, signal);
+  } catch (err) {
+    if (signal.aborted || cand.view.fromShare !== true) throw err;
+    return prepareView(p, cand, signal, true);
+  }
 }
 
 /** Prochain candidat de la course : lecture directe de la même source, sinon la meilleure autre (langue, cache, lecture directe). */
@@ -782,7 +800,7 @@ async function playView(view, startAt) {
   const race = raceCandidates({
     first: { view, direct: false },
     next: (tried) => nextCandidate(p, tried),
-    run: (cand, signal) => prepareView(p, cand, signal),
+    run: (cand, signal) => prepareWithLocalFallback(p, cand, signal),
     onProgress: ({ attempt, max, slow, candidate }) => {
       if (stale() || !slow) return;
       p.view = candidate.view;

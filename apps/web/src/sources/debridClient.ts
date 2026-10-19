@@ -21,7 +21,7 @@ import {
   DebridError, PROVIDER_IDS, PROVIDER_LABEL, normalizeHash,
   type ClientCopy, type DebridProvider, type FileHint, type ProviderId, type ProviderStatus, type ResolvedLink,
 } from './debrid/types';
-import { getSharedLink, publishSharedLink, sourceKeyFor } from './sharedLinks';
+import { forgetSharedLink, getSharedLink, publishSharedLink, sourceKeyFor } from './sharedLinks';
 
 export { PROVIDER_IDS, PROVIDER_LABEL, DebridError };
 export type { ClientCopy, FileHint, ProviderId, ProviderStatus, ResolvedLink };
@@ -363,20 +363,38 @@ export class DebridManager {
   // ----- Résolution avec bascule -----
 
   /**
+   * Lien partagé en échec de lecture : le serveur l'oublie pour ce compte, puis l'appareil le débloque lui-même (le partage n'est
+   * pas relu) et republie le nouveau lien (`resolve`). Ne lève que comme `resolve`.
+   */
+  async recoverShared(copies: readonly ClientCopy[], episode: { season?: number; episode?: number } = {}, signal?: AbortSignal): Promise<ClientResolved> {
+    await Promise.all(copies.slice(0, MAX_COPIES_TRIED).map((c) => {
+      const key = sourceKeyFor(c);
+      return key ? forgetSharedLink(key) : undefined;
+    }));
+    return this.resolve(copies, episode, signal, { skipShared: true });
+  }
+
+  /**
    * Lien de lecture pour une source (une ou plusieurs copies : hash + fichier). Ordre : fournisseurs qui l'ont en cache (priorité),
    * puis les autres disponibles. Erreur de compte : fournisseur marqué indisponible, essai du suivant ; `onSwitch` signale la bascule.
+   * `skipShared` : débloque sur l'appareil sans lire le lien partagé ni le mémo (cas d'un lien partagé en échec).
    */
-  async resolve(copies: readonly ClientCopy[], episode: { season?: number; episode?: number } = {}, signal?: AbortSignal): Promise<ClientResolved> {
+  async resolve(
+    copies: readonly ClientCopy[],
+    episode: { season?: number; episode?: number } = {},
+    signal?: AbortSignal,
+    options: { skipShared?: boolean } = {},
+  ): Promise<ClientResolved> {
     const list = copies.filter((c) => normalizeHash(c.infoHash) !== null).slice(0, MAX_COPIES_TRIED + 2);
     if (list.length === 0) throw new DebridError('invalid_hash', 'content');
     const ids = this.available();
     if (ids.length === 0) throw new DebridError(this.configured().length ? 'all_unavailable' : 'no_provider', 'account');
     const memoKey = JSON.stringify([list.map((c) => [c.infoHash, c.fileIdx, c.filename, c.size]), episode]);
     const memo = this.resolved.get(memoKey);
-    if (memo && this.now() - memo.at < RESOLVE_TTL_MS && memo.value.provider !== undefined && this.available().includes(memo.value.provider)) return memo.value;
+    if (!options.skipShared && memo && this.now() - memo.at < RESOLVE_TTL_MS && memo.value.provider !== undefined && this.available().includes(memo.value.provider)) return memo.value;
 
     // Lien déjà débloqué par un autre appareil du compte : aucun débrideur n'est appelé ici.
-    const shared = await sharedFor(list);
+    const shared = options.skipShared ? null : await sharedFor(list);
     if (shared) return shared;
 
     const verdicts = await this.cachedVerdicts(list.map((c) => c.infoHash));
@@ -427,11 +445,11 @@ export class DebridManager {
 }
 
 /**
- * Lien partagé pour la première copie qui en a un (ordre des copies). Sans clé de partage (pas d'index de fichier), rien n'est
- * demandé. Le nom et la taille viennent des indications de la copie : le partage ne les garde pas. Ne lève pas.
+ * Lien partagé pour la première copie qui en a un (ordre des copies, 3 copies au plus). Sans clé de partage (pas d'index de
+ * fichier), rien n'est demandé. Le nom et la taille viennent des indications de la copie : le partage ne les garde pas. Ne lève pas.
  */
 async function sharedFor(list: readonly ClientCopy[]): Promise<ClientResolved | null> {
-  const keyed = list.flatMap((copy) => {
+  const keyed = list.slice(0, MAX_COPIES_TRIED).flatMap((copy) => {
     const key = sourceKeyFor(copy);
     return key ? [{ copy, key }] : [];
   });

@@ -3,7 +3,7 @@ import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { clearSession, setActiveProfile, setLocalMode, setSession } from '../src/data/session';
 import { DebridManager, MemoryStatusStore, type KeyValueStore } from '../src/sources/debridClient';
 import type { DebridProvider, ProviderId } from '../src/sources/debrid/types';
-import { getSharedLink, publishSharedLink, sourceKeyFor } from '../src/sources/sharedLinks';
+import { forgetSharedLink, getSharedLink, publishSharedLink, sourceKeyFor } from '../src/sources/sharedLinks';
 
 /* Liens débridés partagés : serveur simulé (fetch), débrideur simulé. Aucun appel réseau réel, aucune clé réelle. */
 
@@ -108,6 +108,19 @@ describe('lecture du partage', () => {
   });
 });
 
+describe('invalidation du partage', () => {
+  it('DELETE de la clé encodée ; coupure réseau : ne lève pas', async () => {
+    const sent = stubApi(() => ({ status: 200, body: { ok: true } }));
+    await forgetSharedLink(`${H1}:0`);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].method).toBe('DELETE');
+    expect(sent[0].url).toContain('/debrid-links/' + encodeURIComponent(`${H1}:0`));
+
+    stubApi(() => 'throw');
+    await expect(forgetSharedLink(`${H1}:0`)).resolves.toBeUndefined();
+  });
+});
+
 describe('publication du partage', () => {
   it('PUT {sourceKey, url} sans expiresAt quand elle est inconnue', async () => {
     const sent = stubApi(() => ({ status: 200, body: { expiresAt: EXP } }));
@@ -206,7 +219,27 @@ describe('résolution sur l’appareil et partage', () => {
     expect(sent).toHaveLength(0);
   });
 
-  it('copie sans index de fichier : ni lecture ni publication serveur', async () => {
+  it('lien partagé en échec : DELETE du lien, déblocage sur l’appareil sans relire le partage, puis publication du nouveau lien', async () => {
+    const sent = stubApi((s) => (s.method === 'GET' ? { status: 200, body: { url: URL_SRV, expiresAt: EXP } } : { status: 200, body: { ok: true, expiresAt: EXP } }));
+    const ad = fake();
+    const r = await manager(ad).recoverShared([{ infoHash: H1, fileIdx: 0, filename: 'f.mkv', size: 7 }]);
+    expect(r).toMatchObject({ url: URL_DEV, provider: 'alldebrid' });
+    expect(ad.resolveCalls).toBe(1);
+    expect(sent[0].method).toBe('DELETE');
+    expect(sent[0].url).toContain('/debrid-links/' + encodeURIComponent(`${H1}:0`));
+    expect(sent.some((s) => s.method === 'GET')).toBe(false);
+    await vi.waitFor(() => expect(sent.filter((s) => s.method === 'PUT')).toHaveLength(1));
+    expect(sent.find((s) => s.method === 'PUT')?.body).toEqual({ sourceKey: `${H1}:0`, url: URL_DEV });
+  });
+
+  it('partage : 3 copies au plus interrogées', async () => {
+    const sent = stubApi(() => ({ status: 404 }));
+    const copies = [0, 1, 2, 3, 4].map((fileIdx) => ({ infoHash: H1, fileIdx }));
+    await manager(fake()).resolve(copies);
+    expect(sent.filter((s) => s.method === 'GET')).toHaveLength(3);
+  });
+
+  it('copie sans index de fichier : ni lecture ni publication serveur',async () => {
     const sent = stubApi(() => ({ status: 200, body: { url: URL_SRV } }));
     const ad = fake();
     const r = await manager(ad).resolve([{ infoHash: H1 }]);

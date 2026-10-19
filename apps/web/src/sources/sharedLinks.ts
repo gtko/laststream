@@ -12,6 +12,7 @@ import { normalizeHash } from './debrid/types';
 /** Lecture : au-delà de ce délai, on débloque sur l'appareil (la lecture n'attend pas le serveur plus longtemps). */
 const GET_TIMEOUT_MS = 3_000;
 const PUT_TIMEOUT_MS = 5_000;
+const DELETE_TIMEOUT_MS = 5_000;
 /** Motif accepté par le serveur pour `sourceKey`. */
 const SOURCE_KEY_RE = /^[A-Za-z0-9:._-]{8,256}$/;
 const HTTP_URL_RE = /^https?:\/\//i;
@@ -57,6 +58,23 @@ export async function getSharedLink(key: string): Promise<SharedLink | null> {
     return { url: r.url, ...(typeof r.expiresAt === 'string' ? { expiresAt: r.expiresAt } : {}) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Invalide sur le serveur le lien partagé de cette source, pour ce compte : à appeler quand il a échoué à la lecture, avant de
+ * débloquer et republier sur l'appareil. Un échec est silencieux (le lien périmé ne sert plus qu'à ce compte). Ne lève jamais.
+ */
+export async function forgetSharedLink(key: string): Promise<void> {
+  if (!connected() || !SOURCE_KEY_RE.test(key)) return;
+  try {
+    await call<unknown>('/debrid-links/' + encodeURIComponent(key), {
+      method: 'DELETE',
+      headers: profileHeaders(),
+      timeoutMs: DELETE_TIMEOUT_MS,
+    });
+  } catch {
+    // Échec silencieux : la republication après déblocage local remplace de toute façon le lien.
   }
 }
 
