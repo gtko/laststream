@@ -3,11 +3,14 @@ import { TTL, type LtContext } from './context.js';
 import { tmdbGet } from './providers.js';
 
 /**
- * Top 10 de l'accueil (films et séries) : une page des tendances de la semaine, ne gardant que les titres disponibles
- * dans la région. Calcul serveur, partagé entre les comptes et mis en cache (le client ne vérifie plus chaque tuile).
- *  - film : une sortie numérique (type 4) ou physique (type 5) déjà passée, dans la région (repli US si la région n'a
- *    aucune date), ou au moins un fournisseur dans la région (abonnement, gratuit, publicité, location, achat) ;
- *  - série : au moins un épisode diffusé (première diffusion ou dernier épisode passé).
+ * Top 10 de l'accueil (films et séries) : jusqu'à dix titres disponibles dans la région, calculés côté serveur, partagés
+ * entre les comptes et mis en cache (le client ne vérifie plus chaque tuile).
+ *  - sources lues dans l'ordre : tendances de la semaine, puis populaires si la semaine ne suffit pas ; au plus
+ *    MAX_PAGES pages lues au total, titres dédupliqués, dans l'ordre de popularité ;
+ *  - film : un abonnement, une offre gratuite ou publicitaire dans la région, ou une sortie numérique (type 4) ou
+ *    physique (type 5) déjà passée (repli US si la région n'a aucune date). La location et l'achat ne comptent pas à
+ *    part : une précommande (sortie numérique future) n'est pas disponible ;
+ *  - série : au moins un épisode diffusé (première diffusion ou dernier épisode passés).
  * Une simple sortie en salle ne suffit pas. Sans donnée TMDB exploitable, le titre est écarté.
  */
 
@@ -18,15 +21,20 @@ export function isTopType(value: string): value is TopType {
   return (TOP_TYPES as readonly string[]).includes(value);
 }
 
+/** Titres attendus par rangée : la réponse en compte exactement TOP_SIZE quand les sources le permettent. */
+const TOP_SIZE = 10;
+/** Pages de liste TMDB lues au plus par requête, toutes sources confondues. */
+const MAX_PAGES = 5;
 /** Types de sortie TMDB comptés comme disponibles chez soi : numérique (4) et physique (5). */
 const DIGITAL_RELEASE_TYPES: readonly number[] = [4, 5];
-const PROVIDER_KINDS = ['flatrate', 'free', 'ads', 'rent', 'buy'] as const;
+/** Fournisseurs disponibles sans achat : abonnement, gratuit, publicité. */
+const DIRECT_KINDS = ['flatrate', 'free', 'ads'] as const;
 /** Détails TMDB lus en parallèle par lot (une page de tendances en compte 20). */
 const CHECK_BATCH = 5;
 
 type Json = Record<string, unknown>;
 
-/** Page de tendances filtrée : `raw` titres reçus de TMDB (0 : fin des tendances), `results` titres disponibles retenus. */
+/** Page du Top 10 : `raw` titres reçus de TMDB en lisant les pages (0 : rien à lire à partir de `page`), `results` titres disponibles retenus (10 au plus). */
 export interface Top10Page {
   page: number;
   raw: number;
@@ -56,25 +64,29 @@ function usableReleases(detail: Json, region: string): Json[] {
   return own.length > 0 ? own : datesOf('US');
 }
 
-/** Au moins un fournisseur de streaming, gratuit, publicitaire, de location ou d'achat dans la région. */
-function hasProviderIn(detail: Json, region: string): boolean {
+/** Au moins un abonnement, une offre gratuite ou publicitaire dans la région (location et achat exclus). */
+function hasDirectProviderIn(detail: Json, region: string): boolean {
   const block = detail['watch/providers'];
   if (!isRecord(block) || !isRecord(block.results)) return false;
   const country = block.results[region];
   if (!isRecord(country)) return false;
-  return PROVIDER_KINDS.some((kind) => {
+  return DIRECT_KINDS.some((kind) => {
     const list = country[kind];
     return Array.isArray(list) && list.length > 0;
   });
 }
 
+/** Sortie numérique ou physique déjà passée dans la région (repli US). */
+function digitalReleased(detail: Json, region: string, today: string): boolean {
+  return usableReleases(detail, region).some((r) => typeof r.type === 'number' && DIGITAL_RELEASE_TYPES.includes(r.type) && releasedBy(r.release_date, today));
+}
+
 /**
- * Film disponible : fournisseur dans la région, ou sortie numérique / physique passée. Le détail doit porter
- * `release_dates` et `watch/providers` (append_to_response).
+ * Film disponible : abonnement, gratuit ou publicitaire dans la région, ou sortie numérique / physique passée. Le détail doit
+ * porter `release_dates` et `watch/providers` (append_to_response).
  */
 export function movieAvailable(detail: Json, region: string, today: string): boolean {
-  if (hasProviderIn(detail, region)) return true;
-  return usableReleases(detail, region).some((r) => typeof r.type === 'number' && DIGITAL_RELEASE_TYPES.includes(r.type) && releasedBy(r.release_date, today));
+  return hasDirectProviderIn(detail, region) || digitalReleased(detail, region, today);
 }
 
 /** Série avec au moins un épisode diffusé : première diffusion passée, ou dernier épisode diffusé passé. */
@@ -82,15 +94,6 @@ export function seriesAired(detail: Json, today: string): boolean {
   const last = detail.last_episode_to_air;
   const lastAirDate = isRecord(last) ? last.air_date : undefined;
   return releasedBy(detail.first_air_date, today) || releasedBy(lastAirDate, today);
-}
-
-/** Lots de `size` appels simultanés, dans l'ordre des éléments (évite de saturer l'amont). */
-async function mapBatched<T, R>(items: readonly T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
-  for (let i = 0; i < items.length; i += size) {
-    out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
-  }
-  return out;
 }
 
 /** Détail TMDB du titre, puis verdict de disponibilité. Une erreur amont écarte le titre (jamais affiché sans preuve). */
@@ -109,12 +112,49 @@ async function isAvailable(ctx: LtContext, token: string, type: TopType, item: J
   }
 }
 
-/** Une page des tendances de la semaine (TMDB), filtrée sur la disponibilité. Le client complète avec la page suivante. */
+/** Titres d'une page de liste TMDB (tendances ou populaires), sans les entrées mal formées. */
+async function listPage(ctx: LtContext, token: string, path: string, page: number): Promise<Json[]> {
+  const json = await tmdbGet(ctx, token, path, { page: String(page) });
+  return isRecord(json) && Array.isArray(json.results) ? json.results.filter(isRecord).filter((r) => typeof r.id === 'number') : [];
+}
+
+/** Sources lues dans l'ordre : tendances de la semaine, puis populaires (si la semaine ne suffit pas). */
+function sourcesOf(type: TopType): string[] {
+  return [`trending/${type}/week`, `${type}/popular`];
+}
+
+/**
+ * Jusqu'à dix titres disponibles, en lisant les pages à partir de `startPage` : tendances de la semaine d'abord, puis
+ * populaires, au plus MAX_PAGES pages au total. Une page vide termine sa source. Chaque titre n'est vérifié qu'une fois,
+ * par lots de CHECK_BATCH appels simultanés ; la lecture s'arrête dès que la rangée est pleine.
+ */
 export async function buildTop10Page(ctx: LtContext, token: string, type: TopType, region: string, page: number, today: string): Promise<Top10Page> {
-  const json = await tmdbGet(ctx, token, `trending/${type}/week`, { page: String(page) });
-  const raw = isRecord(json) && Array.isArray(json.results) ? json.results.filter(isRecord).filter((r) => typeof r.id === 'number') : [];
-  const keep = await mapBatched(raw, CHECK_BATCH, (item) => isAvailable(ctx, token, type, item, region, today));
-  return { page, raw: raw.length, results: raw.filter((_, i) => keep[i] === true) };
+  const checked = new Set<number>();
+  const results: Json[] = [];
+  let raw = 0;
+  let pagesRead = 0;
+  for (const path of sourcesOf(type)) {
+    for (let current = page; pagesRead < MAX_PAGES && results.length < TOP_SIZE; current++) {
+      pagesRead++;
+      const received = await listPage(ctx, token, path, current);
+      if (received.length === 0) break;
+      raw += received.length;
+      const fresh = received.filter((item) => {
+        const id = item.id as number;
+        if (checked.has(id)) return false;
+        checked.add(id);
+        return true;
+      });
+      for (let i = 0; i < fresh.length && results.length < TOP_SIZE; i += CHECK_BATCH) {
+        const batch = fresh.slice(i, i + CHECK_BATCH);
+        const keep = await Promise.all(batch.map((item) => isAvailable(ctx, token, type, item, region, today)));
+        batch.forEach((item, j) => {
+          if (keep[j] === true && results.length < TOP_SIZE) results.push(item);
+        });
+      }
+    }
+  }
+  return { page, raw, results };
 }
 
 /** Date du jour (AAAA-MM-JJ, UTC) pour les règles « déjà sorti » et la clé de cache. */
@@ -123,12 +163,13 @@ export function todayOf(now: number): string {
 }
 
 /**
- * Page du Top 10, en cache partagé (durée des tendances TMDB). La date du jour fait partie de la clé : une sortie
- * du jour ne reste pas écartée après minuit.
+ * Top 10 à partir de la page `page`, en cache partagé (durée des tendances TMDB). La date du jour fait partie de la clé :
+ * une sortie du jour ne reste pas écartée après minuit. La version de la clé change avec le format de la réponse
+ * (une page seule, avant le remplissage) : les anciennes entrées ne sont plus lues.
  */
 export function top10Page(ctx: LtContext, token: string, type: TopType, region: string, page: number, now: number): Promise<Top10Page> {
   const today = todayOf(now);
-  return ctx.state.cache.get(`top10:${type}:${region}:${today}:${page}`, TTL.tmdbFast, () => buildTop10Page(ctx, token, type, region, page, today), {
+  return ctx.state.cache.get(`top10v2:${type}:${region}:${today}:${page}`, TTL.tmdbFast, () => buildTop10Page(ctx, token, type, region, page, today), {
     provider: 'tmdb',
     swr: true,
   });
