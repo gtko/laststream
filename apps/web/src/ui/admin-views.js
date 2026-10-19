@@ -255,13 +255,16 @@ export function cachesHTML(S) {
 }
 
 // ---------- TV ----------
-const CRON_LABELS = { at: 'Date', startedAt: 'Début', finishedAt: 'Fin', status: 'Statut', ok: 'Réussi', durationMs: 'Durée', channels: 'Chaînes', error: 'Erreur', count: 'Éléments' };
+const CRON_LABELS = {
+  at: 'Date', startedAt: 'Début', finishedAt: 'Fin', status: 'Statut', ok: 'Réussi', durationMs: 'Durée', channels: 'Chaînes',
+  programmes: 'Programmes EPG', epgOk: 'EPG reconstruit', error: 'Erreur', count: 'Éléments',
+};
 function cronRows(v) {
   if (v == null) return [];
   if (typeof v !== 'object') return [['Dernier passage', Number.isFinite(toMs(v)) ? fmtDateTime(v) : String(v)]];
   return Object.entries(v).filter(([, x]) => x == null || typeof x !== 'object').map(([k, x]) => {
     const isDate = /(^|[a-z])(At|at|Date)$/.test(k) && Number.isFinite(toMs(x));
-    return [CRON_LABELS[k] || k, k === 'durationMs' ? fmtMs(Number(x)) : isDate ? fmtDateTime(x) : typeof x === 'boolean' ? (x ? 'oui' : 'non') : String(x ?? '—')];
+    return [CRON_LABELS[k] || k, k === 'durationMs' ? fmtMs(Number(x)) : isDate ? fmtDateTime(x) : typeof x === 'boolean' ? (x ? 'oui' : 'non') : typeof x === 'number' ? fmtInt(x) : String(x ?? '—')];
   });
 }
 

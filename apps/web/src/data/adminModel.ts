@@ -1,4 +1,4 @@
-import type { GroupStats, Metrics, PurgeJob, ReferralNode } from './adminApi';
+import type { AccountList, GroupStats, Metrics, PurgeJob, ReferralNode } from './adminApi';
 
 /* Fonctions pures de la console d'administration : accès, métriques, pagination, purge, parrainage, formats. */
 
@@ -163,3 +163,30 @@ export const isActiveWithin = (lastActivityAt: unknown, hours: number, now = Dat
   const t = toMs(lastActivityAt);
   return Number.isFinite(t) && now - t <= hours * 3_600_000;
 };
+
+// ---- Vue d'ensemble : balayage des comptes ----
+/** Taille maximale d'une page de GET /admin/accounts (serveur : `limit` de 1 à 100, sinon 400 invalid_body). */
+export const ACCOUNT_PAGE_LIMIT = 100;
+/** Pages parcourues au plus pour la vue d'ensemble : 1 000 comptes les plus récents. */
+export const ACCOUNT_SCAN_PAGES = 10;
+
+export interface AccountScan { total: number; active24: number; suspended: number; scanned: number; truncated: boolean }
+
+/** Parcourt les pages de comptes (les plus récents d'abord) : total, actifs sur 24 h, suspendus, nombre scanné. */
+export async function scanAccounts(page: (cursor: string | null) => Promise<AccountList>, now = Date.now()): Promise<AccountScan> {
+  let active = 0;
+  let suspended = 0;
+  let scanned = 0;
+  let current = await page(null);
+  for (let pages = 1; ; pages += 1) {
+    for (const a of current.accounts) {
+      scanned += 1;
+      if (isActiveWithin(a.lastActivityAt, 24, now)) active += 1;
+      if (a.status === 'suspended') suspended += 1;
+    }
+    if (!current.nextCursor || pages >= ACCOUNT_SCAN_PAGES) {
+      return { total: current.total, active24: active, suspended, scanned, truncated: !!current.nextCursor };
+    }
+    current = await page(current.nextCursor);
+  }
+}
