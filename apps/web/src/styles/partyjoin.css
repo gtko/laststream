@@ -143,7 +143,8 @@
 .gp .lp-btn { width: 44px; height: 44px; }
 .gp .lp-btn:disabled, .gp .lp-btn:disabled:hover { opacity: 0.4; cursor: default; background: transparent; }
 .gp .lp-btn.is-active { color: var(--accent); }
-.gp .lp-time { margin-left: 4px; font-size: 14px; }
+/* Le temps reste dans sa rangée : player.css le met en pleine largeur sous 700 px (lecteur principal). */
+.gp .lp-time { width: auto; order: 0; margin-left: 4px; font-size: 14px; }
 .gp .lp-vslider { accent-color: var(--accent); }
 @media (hover: none) { .gp .lp-vslider { width: 84px; opacity: 1; margin: 0 8px 0 4px; } }
 
@@ -392,6 +393,13 @@
   .gp .gp-center { width: 60px; height: 60px; }
   .gp .lp-time { font-size: 13px; }
   .gp .gp-info { left: 10px; right: 10px; min-width: 0; }
+}
+/* Sous 600 px, la barre tient sur une ligne : le curseur de volume disparaît (l'icône de sourdine reste), le temps est compact.
+ * Le cadre reste en 16:9 ; la barre se superpose au bas de la vidéo, comme sur ordinateur. */
+@media (max-width: 599px) {
+  .gp .lp-row, .gp .lp-grp { flex-wrap: nowrap; }
+  .gp .lp-vslider { display: none; }
+  .gp .lp-time { font-size: 12px; padding: 0; margin-left: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gp::after, .gp .gp-ui, .gp .gp-subs { transition: none; }
