@@ -289,6 +289,11 @@ export class GuestRelaySession {
     };
   }
 
+  /** Chat et réactions du salon (historique, envoi, événements) ; null hors salon. Le client reste propriété de la session. */
+  chatPort(): Pick<PartyClient, 'chat' | 'on' | 'sendChat' | 'sendReact'> | null {
+    return this.client;
+  }
+
   private emitSubtitles(tracks: PartySubtitleTrack[]): void {
     this.subsListeners.forEach((cb) => {
       try {

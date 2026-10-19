@@ -566,3 +566,22 @@ describe('session invité : sous-titres de l’hôte', () => {
     hostRelay.close();
   });
 });
+
+describe('session invité : chat du salon', () => {
+  it('chatPort : client du salon pendant la séance (historique, envoi), null avant le départ et après destroy', async () => {
+    const idle = new GuestRelaySession({ connect: () => new Promise<SocketLike>(() => undefined), createPlayer: (cb) => fakePlayer(cb, { kind: 'native' }).player, canvas: {} as unknown as HTMLCanvasElement });
+    expect(idle.chatPort()).toBeNull();
+
+    const { hostRelay, guest, room } = await chain();
+    await waitFor(() => guest.tick().phase === 'ready');
+    const port = guest.chatPort();
+    expect(port).not.toBeNull();
+    expect(port!.chat).toEqual([]);
+    expect(port!.sendChat('salut')).toBe(true);
+    expect(room.get('p1')!.sent).toContainEqual({ t: 'chat', text: 'salut' });
+
+    guest.destroy();
+    expect(guest.chatPort()).toBeNull();
+    hostRelay.close();
+  });
+});
