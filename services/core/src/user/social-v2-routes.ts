@@ -1,11 +1,14 @@
 import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
+import { signLiveTicket } from '../party/ticket.js';
+import { createRateLimiter } from '../rate-limit.js';
 import { parseHandle } from './social-handles.js';
 import type { SocialV2Repo, UserBackend, UserRepo } from './repo.js';
 import { assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
+import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
 import type { PresenceChange, SubjectView } from './social-v2-store.js';
 import { historyQuerySchema, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
@@ -49,10 +52,14 @@ export function pidParam(raw: string, notFound: string): string {
   return raw;
 }
 
+/** Tickets du flux temps réel délivrés par profil et par minute (au-delà : 429). */
+const LIVE_TICKETS_PER_MINUTE = 20;
+
 export function registerSocialV2Routes(router: App, deps: AppDeps, backend: UserBackend): void {
   const users = () => backend.users();
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, users(), social(), deps.secret);
+  const liveTickets = createRateLimiter(LIVE_TICKETS_PER_MINUTE, 60_000);
 
   /** Diffuse un changement de présence : amis (vue « ami ») puis foyer (vue « foyer »). */
   const announcePresence = (change: PresenceChange | undefined): void => {
@@ -183,5 +190,19 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     const me = await actor(c);
     announcePresence(await social().clearPresence(me.pid, Date.now()));
     return sendEmpty(c, 204);
+  });
+
+  // Flux temps réel
+
+  /**
+   * Ticket de 60 s pour ouvrir le flux temps réel du profil agissant : `{ wsPath }` (`/user/social/live?ticket=…`), à
+   * suivre en WebSocket. Profil enfant : 403 `kid_profile`. 429 au-delà de 20 par minute et par profil.
+   */
+  router.post('/social/live-ticket', async (c) => {
+    const me = await actor(c);
+    const verdict = liveTickets(me.pid);
+    if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
+    const { ticket } = signLiveTicket(me.pid, me.accountId, Date.now(), deps.secret);
+    return sendJson(c, { wsPath: `${SOCIAL_LIVE_PATH}?ticket=${ticket}` });
   });
 }
