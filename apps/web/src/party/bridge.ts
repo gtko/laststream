@@ -222,6 +222,31 @@ class PartyBridge {
     return { roomId, token: inv.token, expiresAt: inv.expiresAt };
   }
 
+  /**
+   * Attend le rôle d'hôte du salon courant (bienvenue reçue). Le créateur est l'hôte, mais sa connexion peut encore
+   * s'établir : vrai dès que c'est le cas ; faux si la connexion se ferme, si le salon est quitté, ou après `ms`.
+   */
+  waitForHost(ms = 5000): Promise<boolean> {
+    const c = this.client;
+    if (!c) return Promise.resolve(false);
+    if (c.isHost) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const offs: Array<() => void> = [];
+      const finish = (ok: boolean) => {
+        if (timer !== null) clearTimeout(timer);
+        offs.forEach((off) => off());
+        resolve(ok);
+      };
+      const check = () => {
+        if (c.isHost) finish(true);
+        else if (c.status === 'closed') finish(false);
+      };
+      offs.push(c.on('welcome', check), c.on('status', check));
+      timer = setTimeout(() => finish(c.isHost), ms);
+    });
+  }
+
   /** Statistiques du partage aux invités (null si aucun partage en cours). */
   relayStats(): RelayStats | null {
     return this.relay ? this.relay.stats() : null;

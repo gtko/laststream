@@ -19,6 +19,8 @@ let open = false;
 let chatDraft = '';
 /** Dernier lien d'invitation créé pour le salon affiché (le jeton ne vit que dans ce panneau). */
 let lastInviteUrl = '';
+/** Salon créé depuis ce panneau : son créateur est l'hôte, même avant la bienvenue du serveur. */
+let createdHere = false;
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
@@ -85,15 +87,16 @@ function createHTML() {
 function roomHTML(c) {
   const you = c.you;
   const host = !!(you && you.host);
+  const inviter = host || createdHere;
   const status = c.status === 'open' ? '' : '<p class="wp-status" role="status">' + (c.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
   const room = c.room;
   return '<div class="wp-head"><h3 class="wp-title">' + esc(room ? room.title : 'Salon') + '</h3>' +
     '<span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span></div>' + status +
-    '<div class="wp-actions">' + (host ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
+    '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
     '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host) + '</ul>' +
-    (host ? inviteHTML(c) : '') +
+    (inviter ? inviteHTML(c) : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
     '<h4 class="wp-sub">Chat</h4><div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
     '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="500" autocomplete="off" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
@@ -150,6 +153,7 @@ function attach() {
   if (c === attached) return;
   attached = c;
   lastInviteUrl = '';
+  createdHere = false;
   if (!c) return;
   c.on('chat', () => render());
   c.on('removed', () => render());
@@ -176,7 +180,7 @@ export function mountPartyPanel(root, opts) {
   root.appendChild(floats);
   root.appendChild(panel);
   partyBridge.onChange(() => { attach(); render(); });
-  partyBridge.onCreated = (room) => { copyLink(room.id); togglePartyPanel(true); };
+  partyBridge.onCreated = () => { togglePartyPanel(true); void inviteAfterCreate(); };
   panel.addEventListener('click', onClick);
   panel.addEventListener('submit', onSubmit);
   setInterval(updateRelayLine, 1000);
@@ -209,8 +213,8 @@ async function onSubmit(e) {
     const vis = (f.querySelector('input[name="vis"]:checked') || {}).value === 'public' ? 'public' : 'private';
     f.querySelector('[type=submit]').disabled = true;
     try {
-      const room = await partyBridge.create(a, vis);
-      await copyLink(room.id);
+      await partyBridge.create(a, vis);
+      await inviteAfterCreate();
     } catch (err) {
       f.querySelector('[type=submit]').disabled = false;
       if (msg) msg.textContent = err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
@@ -234,15 +238,41 @@ export function copyLink(id) {
   return copyText(roomLink(id), 'Lien du salon copié');
 }
 
-/** Crée un lien d'invitation (hôte seulement), le copie et l'affiche dans le panneau. */
+/** Crée un lien d'invitation (hôte seulement), le copie et l'affiche dans le panneau. Lève une erreur si l'invitation échoue. */
+async function inviteLink() {
+  const inv = await partyBridge.createInvite();
+  lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
+  await copyText(lastInviteUrl, 'Lien d’invitation copié');
+}
+
 async function invite() {
   try {
-    const inv = await partyBridge.createInvite();
-    lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
-    await copyText(lastInviteUrl, 'Lien d’invitation copié');
+    await inviteLink();
   } catch (err) {
     toast(err instanceof UserApiError && err.code === 'not_host' ? 'Seul l’hôte peut inviter.' : 'Invitation impossible pour le moment.');
   }
+  render();
+}
+
+/**
+ * Après la création, le créateur est l'hôte : on copie son lien d'invitation, jamais le lien de salon (réservé aux comptes).
+ * Attend la bienvenue du serveur, puis réessaie une fois. En cas d'échec, rien n'est copié et le bouton reste dans le panneau.
+ */
+async function inviteAfterCreate() {
+  createdHere = true;
+  render();
+  if (await partyBridge.waitForHost()) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await inviteLink();
+        render();
+        return;
+      } catch {
+        if (attempt === 1) await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  toast('Salon créé. Lien d’invitation indisponible : utilise « Copier le lien d’invitation » dans le panneau.', { ms: 6000 });
   render();
 }
 

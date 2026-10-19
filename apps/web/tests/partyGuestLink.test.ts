@@ -10,21 +10,47 @@ const tick = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 const detail = () => document.getElementById('detail')!;
 const panelOf = () => document.querySelector('aside.lp-party') as HTMLElement;
 
-/** Client de salon minimal : seules les propriétés lues par le panneau et le pont sont présentes. */
-const fakeClient = (isHost: boolean) => ({
-  status: 'open',
-  room: { id: 'r1', visibility: 'private', title: 'Severance' },
-  isHost,
-  you: { username: isHost ? 'alice' : 'bob', host: isHost, muted: false },
-  participants: [{ username: 'alice', host: true }, { username: 'bob' }, { username: 'carl', guest: true }],
-  chat: [],
-  on: () => undefined,
-});
+/** Client de salon minimal : propriétés lues par le panneau et le pont, et événements (on / emit) pour simuler la connexion. */
+const fakeClient = (isHost: boolean, status = 'open') => {
+  const handlers: Record<string, Array<(p?: unknown) => void>> = {};
+  return {
+    status,
+    room: { id: 'r1', visibility: 'private', title: 'Severance' } as { id: string; visibility: string; title: string } | null,
+    you: { username: isHost ? 'alice' : 'bob', host: isHost, muted: false } as { username: string; host: boolean; muted: boolean } | null,
+    participants: [{ username: 'alice', host: true }, { username: 'bob' }, { username: 'carl', guest: true }],
+    chat: [],
+    get isHost(): boolean { return !!this.you?.host; },
+    on(event: string, fn: (p?: unknown) => void) {
+      (handlers[event] ??= []).push(fn);
+      return () => { handlers[event] = (handlers[event] ?? []).filter((h) => h !== fn); };
+    },
+    emit(event: string, payload?: unknown) { [...(handlers[event] ?? [])].forEach((h) => h(payload)); },
+  };
+};
+type FakeClient = ReturnType<typeof fakeClient>;
+
+/** Connexion en cours, sans bienvenue : le créateur n'est pas encore reconnu comme hôte. */
+const pendingClient = (): FakeClient => {
+  const c = fakeClient(false, 'connecting');
+  c.you = null;
+  c.room = null;
+  return c;
+};
+
+/** La bienvenue arrive : le client connaît son rôle d'hôte et le salon. */
+const becomeHost = (c: FakeClient) => {
+  c.you = { username: 'alice', host: true, muted: false };
+  c.room = { id: 'r1', visibility: 'private', title: 'Severance' };
+  c.status = 'open';
+  c.emit('welcome', {});
+};
 
 let panel: typeof import('../src/ui/partypanel.js');
 let partyBridge: typeof import('../src/party/bridge')['partyBridge'];
 let clip: { writeText: ReturnType<typeof vi.fn> };
 let calls: { method: string; path: string }[] = [];
+/** Adaptateur de lecture du formulaire de création (prêt seulement pendant le test de soumission). */
+let adapterStub: { ready: boolean } | null = null;
 
 beforeAll(async () => {
   localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'x' }));
@@ -38,7 +64,7 @@ beforeAll(async () => {
   ({ partyBridge } = await import('../src/party/bridge'));
   const root = document.createElement('div');
   document.body.appendChild(root);
-  panel.mountPartyPanel(root, { adapter: () => null });
+  panel.mountPartyPanel(root, { adapter: () => adapterStub });
 });
 
 beforeEach(() => {
@@ -152,6 +178,62 @@ describe('invitation ouverte par un compte connecté', () => {
       auth.status = before.status;
       auth.profile = before.profile;
       location.hash = '';
+    }
+  });
+});
+
+describe('création du salon : le créateur copie son lien d’invitation', () => {
+  it('une fois la bienvenue reçue, copie le lien #/party/join/<id>?t=<jeton>, jamais le lien de salon', async () => {
+    const c = pendingClient();
+    partyBridge.client = c as any;
+    panel.togglePartyPanel(true);
+    partyBridge.onCreated!({ id: 'r1' } as any);
+    await tick();
+    expect(clip.writeText).not.toHaveBeenCalled(); // pas de copie avant la bienvenue
+    becomeHost(c);
+    await tick();
+    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite' }]);
+    expect(clip.writeText).toHaveBeenCalledTimes(1);
+    const copied = clip.writeText.mock.calls[0][0] as string;
+    expect(copied).toMatch(/#\/party\/join\/r1\?t=tok-abcdefgh12$/);
+    expect(copied).not.toMatch(/#\/party\/r1$/);
+  });
+
+  it('si la connexion se ferme avant la bienvenue : rien n’est copié, le bouton « Copier le lien d’invitation » reste', async () => {
+    const c = pendingClient();
+    partyBridge.client = c as any;
+    panel.togglePartyPanel(true);
+    partyBridge.onCreated!({ id: 'r1' } as any);
+    c.status = 'closed';
+    c.emit('status', 'closed');
+    await tick();
+    expect(clip.writeText).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+    const invite = panelOf().querySelector('[data-wp-invite]') as HTMLElement | null;
+    expect(invite?.textContent).toBe('Copier le lien d’invitation');
+    expect(panelOf().querySelector('[data-wp-copy]')).toBeNull();
+  });
+
+  it('le formulaire de création copie le même lien d’invitation après la création', async () => {
+    partyBridge.client = null;
+    adapterStub = { ready: true };
+    try {
+      panel.togglePartyPanel(true);
+      const created = pendingClient();
+      const spy = vi.spyOn(partyBridge, 'create').mockImplementation(async () => {
+        partyBridge.client = created as any;
+        setTimeout(() => becomeHost(created), 10);
+        return { id: 'r1' } as any;
+      });
+      const form = panelOf().querySelector('[data-wp-create]') as HTMLFormElement;
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await tick(80);
+      expect(spy).toHaveBeenCalledTimes(1);
+      spy.mockRestore();
+      expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite' }]);
+      expect(clip.writeText.mock.calls[0][0]).toMatch(/#\/party\/join\/r1\?t=tok-abcdefgh12$/);
+    } finally {
+      adapterStub = null;
     }
   });
 });
