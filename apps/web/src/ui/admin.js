@@ -4,7 +4,7 @@
 import { canAdmin } from '../data/auth';
 import * as api from '../data/adminApi';
 import { setElevationPrompt } from '../data/adminApi';
-import { CursorPager, daysAgoIso, fmtDateTime, isActiveWithin, purgeList } from '../data/adminModel';
+import { ACCOUNT_PAGE_LIMIT, CursorPager, daysAgoIso, fmtDateTime, purgeList, scanAccounts } from '../data/adminModel';
 import { UserApiError } from '../data/userApi';
 import { closeAllLayers, confirmDialog, openLayer, passwordDialog } from './admin-dialog.js';
 import {
@@ -50,19 +50,13 @@ function paint() {
 // ---------- Chargement ----------
 const FETCH = {
   async overview() {
-    const first = await api.listAccounts({ limit: 200, order: 'newest' });
-    let active = 0; let suspended = 0; let scanned = 0; let page = first; let n = 0;
-    for (;;) {
-      for (const a of page.accounts) { scanned++; if (isActiveWithin(a.lastActivityAt, 24)) active++; if (a.status === 'suspended') suspended++; }
-      if (!page.nextCursor || ++n >= 5) break;
-      page = await api.listAccounts({ limit: 200, order: 'newest', cursor: page.nextCursor });
-    }
+    const accounts = await scanAccounts((cursor) => api.listAccounts({ limit: ACCOUNT_PAGE_LIMIT, order: 'newest', cursor }));
     const [signups, metrics, rooms, reports, settings] = await Promise.allSettled([
       api.listAccounts({ createdFrom: daysAgoIso(7), limit: 1 }), api.getMetrics('24h'), api.listRooms(), api.listReports('open'), api.getSettings(),
     ]);
     const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
     return {
-      total: first.total, active24: active, suspended, scanned, truncated: !!page.nextCursor,
+      total: accounts.total, active24: accounts.active24, suspended: accounts.suspended, scanned: accounts.scanned, truncated: accounts.truncated,
       signups7: ok(signups) ? ok(signups).total : null, metrics: ok(metrics),
       rooms: ok(rooms) ? ok(rooms).rooms.length : null, reports: ok(reports) ? ok(reports).reports.length : null,
       maintenance: ok(settings) ? !!ok(settings).maintenance.enabled : false,
