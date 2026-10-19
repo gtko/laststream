@@ -13,6 +13,7 @@ import './styles/hidden.css';
 import './styles/stats.css';
 import './styles/social.css';
 import './styles/chat.css';
+import './styles/convwin.css';
 import './styles/partyjoin.css';
 import './styles/player.css';
 import './styles/player-ui.css';
@@ -39,6 +40,7 @@ import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
 import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from './ui/socialSidebar.js';
 import { createConversationRenderer } from './ui/socialChat.js';
+import { configureSocialConv } from './ui/socialConv.js';
 import { createWatchWithHandler } from './data/watchWith';
 import { playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
@@ -93,6 +95,7 @@ applyTheme(readTheme()); // après la synchronisation des préférences du profi
 const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
 setConversationRenderer(createConversationRenderer({ launch: socialLaunch, toast }));
 setWatchWithHandler(createWatchWithHandler({ launch: socialLaunch, toast }));
+configureSocialConv({ launch: socialLaunch, toast }); // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
 state.curHash = location.hash || '';
 const first = parseRoute();
