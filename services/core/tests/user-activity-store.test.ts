@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { AppDeps } from '../src/deps.js';
 import { openUserDb } from '../src/platform/node/user-db.js';
+import type { UserBackend } from '../src/user/repo.js';
+import { recordActivity } from '../src/user/social-v2-activity-routes.js';
 import { SocialV2Store } from '../src/user/social-v2-store.js';
 
 /**
@@ -70,5 +73,17 @@ describe('écriture publique d’activité (recordActivity)', () => {
 
     db.exec(`INSERT INTO profile_presence (profile_pid, status, watching, updated_at) VALUES ('${BOB}', 'invisible', NULL, 0)`);
     expect(store.activityFeed(ALICE, undefined, 30)).toEqual([]);
+  });
+});
+
+describe('recordActivity (écriture publique avec annonce)', () => {
+  it('écrit l’événement du profil ; un profil inconnu n’écrit rien', async () => {
+    const { store } = seeded();
+    const backend = { socialV2: () => store } as unknown as UserBackend;
+    const deps = {} as AppDeps;
+    const item = await recordActivity(backend, deps, { id: 'p1', accountId: 'a1' }, 'favorited', MATRIX, { title: 'Matrix' }, NOW);
+    expect(item).toMatchObject({ pid: ALICE, kind: 'favorited', media: { title: 'Matrix' } });
+    expect(store.activityFeed(BOB, undefined, 30).map((event) => event.id)).toEqual([item?.id]);
+    expect(await recordActivity(backend, deps, { id: 'inconnu', accountId: 'a1' }, 'listed', MATRIX, {}, NOW)).toBeUndefined();
   });
 });

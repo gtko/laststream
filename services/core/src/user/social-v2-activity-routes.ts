@@ -1,7 +1,7 @@
 import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
-import { announceActivity, type ProgressState, progressActivityKinds } from './social-v2-activity.js';
+import { type ActivityItem, type ActivityKind, type ActivityOptions, announceActivity, type ProgressState, progressActivityKinds } from './social-v2-activity.js';
 import type { UserBackend } from './repo.js';
 import { actorOf } from './social-v2-routes.js';
 import { activityQuery, heatmapQuery, missedQuery } from './social-v2-validation.js';
@@ -23,8 +23,30 @@ function mediaOf(query: { type: 'movie' | 'series'; tmdbId: number; season?: num
 }
 
 /**
+ * Écriture publique d'un événement d'activité pour un profil : débuts, fins, favoris (S1), listes (S3b) et notes sur 5. Mêmes
+ * règles partout : un profil sans identité sociale (enfant) n'écrit rien ; un événement par titre, genre et jour ; le
+ * nouvel événement est annoncé en temps réel (`announceActivity`). `undefined` si rien n'a été écrit.
+ */
+export async function recordActivity(
+  backend: UserBackend,
+  deps: AppDeps,
+  profile: { id: string; accountId: string },
+  kind: ActivityKind,
+  media: MediaRef,
+  options: ActivityOptions,
+  now: number,
+): Promise<ActivityItem | undefined> {
+  const social = backend.socialV2();
+  const identity = await social.identityOf(profile.accountId, profile.id);
+  if (identity === undefined || identity.isKid || identity.pid === null) return undefined;
+  const item = await social.recordActivity(identity.pid, kind, media, options, now);
+  if (item !== undefined) announceActivity(deps.socialEvents, item);
+  return item;
+}
+
+/**
  * Activité d'une écriture de progression (PUT /profiles/:id/progress) : débuts et fins, dédoublonnés par titre et jour.
- * Un profil sans identité sociale (enfant) n'en produit aucune. Sans effet tant qu'aucun genre ne s'applique.
+ * Sans effet tant qu'aucun genre ne s'applique.
  */
 export async function recordProgressActivity(
   backend: UserBackend,
@@ -35,14 +57,8 @@ export async function recordProgressActivity(
   after: ProgressState,
   now: number,
 ): Promise<void> {
-  const kinds = progressActivityKinds(before, after);
-  if (kinds.length === 0) return;
-  const social = backend.socialV2();
-  const identity = await social.identityOf(profile.accountId, profile.id);
-  if (identity === undefined || identity.isKid || identity.pid === null) return;
-  for (const kind of kinds) {
-    const item = await social.recordActivity(identity.pid, kind, media, {}, now);
-    if (item !== undefined) announceActivity(deps.socialEvents, item);
+  for (const kind of progressActivityKinds(before, after)) {
+    await recordActivity(backend, deps, profile, kind, media, {}, now);
   }
 }
 
