@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { revokeLegacyFriendship } from './social-handles.js';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
+import {
+  type ActivityItem,
+  type ActivityKind,
+  type ActivityOptions,
+  activityAudienceFilter,
+  heatmapBuckets,
+  isActivityRating,
+  peerPidsFilter,
+  utcDay,
+} from './social-v2-activity.js';
 import type { SqlDb } from './sql.js';
 
 /**
@@ -250,7 +260,14 @@ export type ReadOutcome = { result: TargetError } | { result: 'ok'; count: numbe
 export type AddNoteOutcome =
   | { result: 'unknown' }
   | { result: 'limit_reached'; retryAfterSec: number }
-  | { result: 'ok'; note: NoteView; audience: string[] };
+  | { result: 'ok'; note: NoteView; audience: string[]; activity?: ActivityItem };
+
+/** Résumé de ce qui a été manqué (`GET /user/social/missed`). */
+export interface MissedSummary {
+  messages: number;
+  byFriend: Array<{ pid: string; handle: Handle; count: number }>;
+  notes: NoteView[];
+}
 
 /** Référence normalisée : saison et épisode gardés seulement pour une série. */
 export function normalizeMedia(input: MediaRef): MediaRef {
@@ -325,6 +342,47 @@ function noteOf(row: NoteRow): NoteView {
 const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM messages WHERE from_pid = ? AND created_at > ?';
 /** Notes comptées par le journal des créations : une suppression ne libère pas de place dans le quota. */
 const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM note_creations WHERE author_pid = ? AND created_at > ?';
+
+// Activité
+
+/** Ligne d'événement jointe à son auteur. */
+interface ActivityRow {
+  id: string;
+  pid: string;
+  kind: ActivityKind;
+  type: 'movie' | 'series';
+  tmdb_id: number;
+  season: number | null;
+  episode: number | null;
+  title: string;
+  poster: string | null;
+  rating: number | null;
+  at: number;
+  handle_name: string;
+  handle_tag: string;
+  avatar_color: string;
+}
+
+const ACTIVITY_COLUMNS =
+  'a.id, a.pid, a.kind, a.type, a.tmdb_id, a.season, a.episode, a.title, a.poster, a.rating, a.at, p.handle_name, p.handle_tag, p.avatar_color';
+
+function activityOf(row: ActivityRow): ActivityItem {
+  const media: ActivityItem['media'] = { type: row.type, tmdbId: Number(row.tmdb_id), title: row.title };
+  if (row.poster !== null && row.poster !== '') media.poster = row.poster;
+  if (row.type === 'series' && row.season !== null) media.season = Number(row.season);
+  if (row.type === 'series' && row.episode !== null) media.episode = Number(row.episode);
+  const item: ActivityItem = {
+    id: row.id,
+    pid: row.pid,
+    handle: handleOf(row.handle_name, row.handle_tag),
+    avatarColor: row.avatar_color,
+    kind: row.kind,
+    media,
+    at: Number(row.at),
+  };
+  if (row.rating !== null) item.rating = Number(row.rating);
+  return item;
+}
 
 export class SocialV2Store {
   constructor(private readonly db: SqlDb) {}
@@ -846,12 +904,161 @@ export class SocialV2Store {
         body,
         createdAt: now,
       };
-      return { result: 'ok', note, audience: [...friends, ...household] };
+      // Activité « noted » : même transaction que la note, un événement par titre et par jour (voir insertActivity).
+      const activity = this.insertActivity(authorPid, 'noted', media, {}, now);
+      return activity === undefined
+        ? { result: 'ok', note, audience: [...friends, ...household] }
+        : { result: 'ok', note, audience: [...friends, ...household], activity };
     });
   }
 
   /** Supprime une note de son auteur. `false` si la note n'existe pas ou n'est pas à ce profil. */
   deleteNote(authorPid: string, noteId: string): boolean {
     return Number(this.db.prepare('DELETE FROM notes WHERE id = ? AND author_pid = ?').run(noteId, authorPid).changes) === 1;
+  }
+
+  // Activité, carte de chaleur, résumé
+
+  /**
+   * Écrit un événement d'activité du profil `pid` (débuts, fins, notes, notes sur 5, favoris, listes). Dédoublonnage : un
+   * seul événement par profil, genre, titre et jour (UTC). `undefined` si le profil n'a pas d'identité sociale (enfant), si
+   * la note sur 5 est invalide, ou si l'événement du jour existe déjà. Titre et affiche viennent de `options`, sinon de la
+   * bibliothèque du profil.
+   */
+  recordActivity(pid: string, kind: ActivityKind, media: MediaRef, options: ActivityOptions, now: number): ActivityItem | undefined {
+    return this.db.transaction(() => this.insertActivity(pid, kind, media, options, now));
+  }
+
+  /**
+   * Flux d'activité des amis et du foyer de `viewerPid`, du plus récent au plus ancien : `limit` au plus, antérieurs à
+   * `before` (ms) s'il est donné. Pagination : passer le `at` du dernier élément reçu (deux événements de la même
+   * milliseconde ne sont pas séparés). Le filtre d'audience est dans activityAudienceFilter.
+   */
+  activityFeed(viewerPid: string, before: number | undefined, limit: number): ActivityItem[] {
+    const audience = activityAudienceFilter(viewerPid);
+    const rows = this.db
+      .prepare(
+        `SELECT ${ACTIVITY_COLUMNS} FROM activity a
+           JOIN profiles p ON p.pid = a.pid
+           LEFT JOIN profile_presence pr ON pr.profile_pid = a.pid
+          WHERE ${audience.sql} AND a.at < ?
+          ORDER BY a.at DESC, a.id DESC
+          LIMIT ?`,
+      )
+      .all(...audience.params, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as ActivityRow[];
+    return rows.map((row) => activityOf(row));
+  }
+
+  /**
+   * Carte de chaleur des notes d'un titre visibles par `viewerPid` (les siennes, celles des amis et du foyer) : nombre de
+   * notes par tranche égale de la durée, `buckets` tranches. La durée est celle de la progression du spectateur sur ce
+   * titre ; à défaut, la plus grande position des notes visibles.
+   */
+  notesHeatmap(viewerPid: string, media: MediaRef, buckets: number): number[] {
+    const key = mediaKey(media);
+    const audience = this.noteAudience(viewerPid);
+    const positions = (
+      this.db
+        .prepare(`SELECT n.pos FROM notes n WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ? AND ${audience.sql}`)
+        .all(key.type, key.tmdbId, key.season, key.episode, ...audience.params) as { pos: number }[]
+    ).map((row) => Number(row.pos));
+    const known = this.db
+      .prepare(
+        `SELECT MAX(pg.duration_sec) AS d FROM progress pg JOIN profiles p ON p.id = pg.profile_id
+          WHERE p.pid = ? AND pg.type = ? AND pg.tmdb_id = ? AND pg.season = ? AND pg.episode = ?`,
+      )
+      .get(viewerPid, key.type, key.tmdbId, key.season, key.episode);
+    const ownDuration = Number(known?.d ?? 0);
+    const duration = ownDuration > 0 ? ownDuration : positions.reduce((max, pos) => Math.max(max, pos), 0);
+    return heatmapBuckets(positions, duration, buckets);
+  }
+
+  /**
+   * Ce qui a été manqué depuis `since` (ms, exclu) : messages reçus des amis et du foyer (total et par ami), et notes des
+   * amis et du foyer sur le titre `media` (aucune sans titre). Mes propres notes et mes messages envoyés n'y figurent pas.
+   */
+  missedSince(viewerPid: string, since: number, media: MediaRef | undefined): MissedSummary {
+    const peers = new Map(this.peersOf(viewerPid).map((peer) => [peer.pid, peer]));
+    const counts = this.db
+      .prepare('SELECT from_pid AS pid, COUNT(*) AS n FROM messages WHERE to_pid = ? AND created_at > ? GROUP BY from_pid')
+      .all(viewerPid, since) as { pid: string; n: number }[];
+    const byFriend = counts
+      .flatMap((row) => {
+        const peer = peers.get(row.pid);
+        return peer === undefined ? [] : [{ pid: peer.pid, handle: peer.handle, count: Number(row.n) }];
+      })
+      .sort((a, b) => b.count - a.count || a.handle.full.localeCompare(b.handle.full));
+    const messages = byFriend.reduce((sum, friend) => sum + friend.count, 0);
+    return { messages, byFriend, notes: media === undefined ? [] : this.missedNotes(viewerPid, since, media) };
+  }
+
+  /** Notes d'un titre visibles par `viewerPid` : les siennes, celles de ses amis et de son foyer (clause SQL sur `n`). */
+  private noteAudience(viewerPid: string): { sql: string; params: string[] } {
+    const peers = peerPidsFilter('n.author_pid', viewerPid);
+    return { sql: `(n.author_pid = ? OR ${peers.sql})`, params: [viewerPid, ...peers.params] };
+  }
+
+  /** Notes postées depuis `since` par les amis et le foyer de `viewerPid` sur le titre `media`, 500 au plus. */
+  private missedNotes(viewerPid: string, since: number, media: MediaRef): NoteView[] {
+    const key = mediaKey(media);
+    const peers = peerPidsFilter('n.author_pid', viewerPid);
+    const rows = this.db
+      .prepare(
+        `SELECT n.id, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color
+           FROM notes n JOIN profiles p ON p.pid = n.author_pid
+          WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ? AND n.created_at > ? AND ${peers.sql}
+          ORDER BY n.created_at, n.rowid
+          LIMIT ?`,
+      )
+      .all(key.type, key.tmdbId, key.season, key.episode, since, ...peers.params, MAX_NOTES_PER_MEDIA) as unknown as NoteRow[];
+    return rows.map((row) => noteOf(row));
+  }
+
+  /** Titre et affiche d'un titre dans la bibliothèque du profil `pid` (entrée la plus récente), s'il y figure. */
+  private libraryTitleOf(pid: string, media: MediaRef): { title: string; poster: string | null } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT li.title, li.poster FROM library_items li JOIN profiles p ON p.id = li.profile_id
+          WHERE p.pid = ? AND li.type = ? AND li.tmdb_id = ? AND li.removed = 0
+          ORDER BY li.added_at DESC LIMIT 1`,
+      )
+      .get(pid, media.type, media.tmdbId) as { title: string; poster: string | null } | undefined;
+    return row === undefined ? undefined : { title: row.title, poster: row.poster };
+  }
+
+  /**
+   * Insertion d'un événement, sans transaction propre (appelée dans celle de addNote). L'index unique (pid, genre, type,
+   * tmdb_id, jour) dédoublonne : `undefined` si l'événement du jour existe déjà.
+   */
+  private insertActivity(pid: string, kind: ActivityKind, media: MediaRef, options: ActivityOptions, now: number): ActivityItem | undefined {
+    const author = this.card(pid);
+    if (author === undefined) return undefined;
+    if (options.rating !== undefined && !isActivityRating(options.rating)) return undefined;
+    const ref = normalizeMedia(media);
+    const known = this.libraryTitleOf(pid, ref);
+    const row: ActivityRow = {
+      id: randomUUID(),
+      pid,
+      kind,
+      type: ref.type,
+      tmdb_id: ref.tmdbId,
+      season: ref.type === 'series' ? (ref.season ?? null) : null,
+      episode: ref.type === 'series' ? (ref.episode ?? null) : null,
+      title: options.title ?? known?.title ?? '',
+      poster: options.poster ?? known?.poster ?? null,
+      rating: options.rating ?? null,
+      at: now,
+      handle_name: author.handle.name,
+      handle_tag: author.handle.tag,
+      avatar_color: author.avatarColor,
+    };
+    const inserted = this.db
+      .prepare(
+        `INSERT INTO activity (id, pid, kind, type, tmdb_id, season, episode, title, poster, rating, day, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (pid, kind, type, tmdb_id, day) DO NOTHING`,
+      )
+      .run(row.id, row.pid, row.kind, row.type, row.tmdb_id, row.season, row.episode, row.title, row.poster, row.rating, utcDay(now), now);
+    return Number(inserted.changes) === 1 ? activityOf(row) : undefined;
   }
 }

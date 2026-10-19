@@ -1,3 +1,4 @@
+import type { ActivityItem } from './social-v2-activity.js';
 import type { FriendRequestView, FriendView, MediaRef, MessageView, NoteView } from './social-v2-store.js';
 
 /**
@@ -18,7 +19,9 @@ export type SocialEvent =
   | { t: 'presence'; friend: FriendView }
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  // Activité : destinataires fixés par activityLiveAudience (social-v2-activity.ts), vide tant que S2 n'est pas fusionné.
+  | { t: 'activity'; item: ActivityItem };
 
 /** Gestionnaire fourni par l'hôte. Appelé de façon synchrone ; ne doit ni attendre ni lever d'exception vers la requête. */
 export type SocialEventHandler = (profilePids: readonly string[], event: SocialEvent) => void;

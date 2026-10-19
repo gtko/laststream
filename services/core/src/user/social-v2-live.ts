@@ -1,3 +1,4 @@
+import type { ActivityItem } from './social-v2-activity.js';
 import type { SocialEvent } from './social-v2-events.js';
 import {
   type FriendRequestView,
@@ -53,7 +54,8 @@ export type LiveFrame =
   | { t: 'request'; request: FriendRequestView }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'activity'; item: ActivityItem };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -88,6 +90,16 @@ function messageOut(view: MessageView): MessageView {
   return out;
 }
 
+function activityOut(view: ActivityItem): ActivityItem {
+  const media: ActivityItem['media'] = { type: view.media.type, tmdbId: view.media.tmdbId, title: view.media.title };
+  if (view.media.poster !== undefined) media.poster = view.media.poster;
+  if (view.media.season !== undefined) media.season = view.media.season;
+  if (view.media.episode !== undefined) media.episode = view.media.episode;
+  const out: ActivityItem = { id: view.id, pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, kind: view.kind, media, at: view.at };
+  if (view.rating !== undefined) out.rating = view.rating;
+  return out;
+}
+
 function noteOut(view: NoteView): NoteView {
   return {
     id: view.id,
@@ -116,6 +128,8 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'activity':
+      return { t: 'activity', item: activityOut(event.item) };
   }
 }
 
