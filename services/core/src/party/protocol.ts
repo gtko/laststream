@@ -35,6 +35,36 @@ export const RTC_MAX_DATA_BYTES = 16 * 1024;
 export const RTC_MAX_FRAME_CHARS = 64 * 1024;
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
 
+/** Préparation : état déclaré par chaque participant avant le départ (message `status`). */
+export const PREP_STATUSES = ['searching', 'ready', 'buffering'] as const;
+export type PrepStatus = (typeof PREP_STATUSES)[number];
+/** Réglages du salon, modifiés par l'hôte (`settings`). Les défauts reproduisent le comportement antérieur. */
+export const CONTROL_MODES = ['all', 'host'] as const;
+export type ControlMode = (typeof CONTROL_MODES)[number];
+export const WAIT_LATE_MODES = ['off', '10s', 'always'] as const;
+export type WaitLateMode = (typeof WAIT_LATE_MODES)[number];
+export const REACTION_MODES = ['float', 'discreet', 'off'] as const;
+export type ReactionMode = (typeof REACTION_MODES)[number];
+export interface PartySettings {
+  control: ControlMode;
+  waitLate: WaitLateMode;
+  reactions: ReactionMode;
+}
+export const DEFAULT_SETTINGS: PartySettings = { control: 'all', waitLate: 'always', reactions: 'float' };
+/** Délai maximal (ms) d'attente de tampon selon le réglage `waitLate` ; 0 : pas d'attente. */
+export const WAIT_LATE_MS: Record<WaitLateMode, number> = { off: 0, '10s': 10_000, always: PARTY_WAIT_MAX_MS };
+export const QUALITY_MAX = 40;
+export const COUNTDOWN_MIN_SEC = 1;
+export const COUNTDOWN_MAX_SEC = 10;
+export const COUNTDOWN_DEFAULT_SEC = 5;
+/** Vote du titre : nombre d'options et longueur du titre proposé. */
+export const VOTE_MIN_OPTIONS = 2;
+export const VOTE_MAX_OPTIONS = 6;
+export const VOTE_TITLE_MAX = 200;
+/** Événements lisibles diffusés aux participants (`event`). */
+export const EVENT_KINDS = ['pause', 'play', 'seek', 'join', 'leave'] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
 /** Codes de fermeture WebSocket propres au salon (4000-4999). */
 export const CLOSE = {
   /** Salon terminé. */
@@ -104,12 +134,13 @@ export interface RoomMeta {
   createdAt: number;
 }
 
-/** Ligne de chat telle que vue des participants : pseudo seulement. */
+/** Ligne de chat telle que vue des participants : pseudo seulement, et position du film au moment de l'envoi si connue. */
 export interface ChatLine {
   id: string;
   from: string;
   text: string;
   at: number;
+  pos?: number;
 }
 
 /** Ligne conservée par le salon : porte aussi l'identifiant du compte (signalements, jamais diffusé). */
@@ -152,6 +183,14 @@ export interface RoomData {
   heldByWait?: boolean;
   /** Retardataires retirés par le délai de l'attente, pas encore prêts : leurs déclarations « pas prêt » ne rouvrent pas l'attente (levée par ready, départ, exclusion ou seek). */
   waitTimedOut?: string[];
+  /** Réglages de l'hôte (absent : défauts DEFAULT_SETTINGS). */
+  settings?: PartySettings;
+  /** Préparation déclarée par participant (clé de compte) ; retirée au départ. */
+  prep?: Record<string, PrepState>;
+  /** Démarrage programmé (ms serveur) : la lecture reprend à cet instant. Null hors compte à rebours. */
+  countdownAt?: number | null;
+  /** Vote du titre en cours ; null hors vote. */
+  vote?: VoteState | null;
   /** Entrées d'invités par le lien partagé : instants (ms) de la fenêtre de débit, conservés avec le salon (survivent à l'éviction du Durable Object). */
   entryHits?: number[];
   /** Jetons de séance obtenus mais pas encore connectés : clé `guest:<id>` -> instant de réservation (ms). Ils comptent dans les plafonds RESERVATION_MS. */
@@ -169,6 +208,32 @@ export interface Identity {
   guest?: true;
 }
 
+/** Préparation d'un participant : prêt à lire, qualité choisie (libellé libre), état déclaré. */
+export interface PrepState {
+  ready: boolean;
+  quality: string | null;
+  status: PrepStatus;
+}
+
+/** Option d'un vote de titre, telle que proposée par l'hôte. */
+export interface VoteInput {
+  type: MediaType;
+  tmdbId: number;
+  title: string;
+}
+export interface VoteOption extends VoteInput {
+  id: string;
+}
+/** Option avec son nombre de voix (aucun votant n'est identifié). */
+export interface VoteView extends VoteOption {
+  votes: number;
+}
+/** Vote ouvert : options et choix de chaque compte (clé de compte -> identifiant d'option). */
+export interface VoteState {
+  options: VoteOption[];
+  choices: Record<string, string>;
+}
+
 export interface Participant {
   username: string;
   avatarColor: string;
@@ -180,6 +245,10 @@ export interface Participant {
   peerId: string;
   /** Présent (true) seulement pour un invité sans compte. */
   guest?: true;
+  /** Préparation (voir PrepState). */
+  ready: boolean;
+  quality: string | null;
+  status: PrepStatus;
 }
 
 /** Vue publique d'un salon (liste, détail, jeton de connexion). */
@@ -204,8 +273,21 @@ export type ClientMessage =
   | { t: 'sync' }
   | { t: 'ctl'; action: 'play' | 'pause' | 'seek' | 'sync'; pos: number }
   | { t: 'episode'; season: number; episode: number; fingerprint: Fingerprint | null }
-  | { t: 'chat'; text: string }
-  | { t: 'react'; emoji: string }
+  /** `pos` : position du film (s) au moment de l'envoi, ou null. */
+  | { t: 'chat'; text: string; pos: number | null }
+  /** Réaction signée par son auteur ; `pos` : position du film (s), ou null. */
+  | { t: 'react'; emoji: string; pos: number | null }
+  /** Réglages du salon (hôte seul) : seuls les champs présents sont modifiés. */
+  | { t: 'settings'; control?: ControlMode; waitLate?: WaitLateMode; reactions?: ReactionMode }
+  /** Préparation : prêt à lire (et qualité choisie, ou null). */
+  | { t: 'ready'; ready: boolean; quality: string | null }
+  | { t: 'status'; status: PrepStatus }
+  /** Démarrage (hôte seul) : lecture reprise après `countdown` secondes. */
+  | { t: 'start'; countdown: number }
+  /** Vote du titre (hôte ouvre, hôte ferme, chacun vote). */
+  | { t: 'vote_open'; options: VoteInput[] }
+  | { t: 'vote'; optionId: string }
+  | { t: 'vote_close' }
   | { t: 'report'; messageId: string; reason: string | null }
   | { t: 'kick'; user: string }
   | { t: 'mute'; user: string; muted: boolean }
@@ -226,14 +308,25 @@ export interface RtcRelay {
 // Serveur -> client
 
 export type ServerMessage =
-  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean; peerId: string }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[] }
+  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean; peerId: string }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[]; settings: PartySettings; countdownAt: number | null; vote: VoteView[] | null }
   | { t: 'pong'; c: number; s: number }
   | { t: 'state'; state: PlaybackState; serverTime: number; by: string }
   | { t: 'media'; media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState; serverTime: number }
   | { t: 'join'; participant: Participant }
   | { t: 'leave'; user: string }
   | { t: 'chat'; line: ChatLine }
-  | { t: 'react'; user: string; emoji: string; at: number }
+  /** Réaction signée : `by` = pseudo de l'auteur (`user` identique, gardé pour les clients antérieurs). */
+  | { t: 'react'; user: string; by: string; emoji: string; at: number; pos: number | null }
+  /** Réglages du salon modifiés (diffusion à tous). */
+  | { t: 'settings'; settings: PartySettings; by: string }
+  /** Préparation d'un participant modifiée. */
+  | { t: 'prep'; user: string; ready: boolean; quality: string | null; status: PrepStatus }
+  /** Compte à rebours : `at` = instant serveur (ms) où la lecture reprend ; null = annulé. */
+  | { t: 'countdown'; at: number | null; by: string }
+  /** Vote du titre : options avec leurs voix ; `open` faux à la fermeture. */
+  | { t: 'vote'; options: VoteView[]; open: boolean }
+  /** Événement lisible : `delta` (s) pour un saut, négatif si l'on recule. */
+  | { t: 'event'; kind: EventKind; by: string; pos: number; delta?: number }
   | { t: 'muted'; user: string; muted: boolean }
   | { t: 'host'; user: string }
   | { t: 'reported'; messageId: string; by?: string; against?: string; text?: string }
@@ -269,6 +362,35 @@ export function parseFingerprint(raw: unknown): Fingerprint | null {
 
 /** Identifiant de connexion (pair WebRTC) : base64url ou UUID, 1 à 64 caractères. */
 const PEER_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Valeur parmi une liste fermée, ou undefined. */
+function oneOf<T extends string>(value: unknown, options: readonly T[]): T | undefined {
+  return typeof value === 'string' && (options as readonly string[]).includes(value) ? (value as T) : undefined;
+}
+
+/** Position optionnelle (s) : null si absente, undefined si invalide. */
+function optionalPos(value: unknown): number | null | undefined {
+  if (value === undefined || value === null) return null;
+  return finiteNumber(value, 0, MAX_POS);
+}
+
+/** Qualité déclarée : texte nettoyé et borné, null si vide ou absente, undefined si d'un autre type. */
+function parseQuality(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const clean = stripInvisible(value).trim().slice(0, QUALITY_MAX);
+  return clean === '' ? null : clean;
+}
+
+/** Option de vote : type, identifiant TMDB entier et titre ; undefined si invalide. */
+function parseVoteInput(raw: unknown): VoteInput | undefined {
+  if (!isRecord(raw)) return undefined;
+  const type = oneOf(raw.type, ['movie', 'series'] as const);
+  const tmdbId = finiteNumber(raw.tmdbId, 1, 1_000_000_000);
+  const title = typeof raw.title === 'string' ? stripInvisible(raw.title).trim().slice(0, VOTE_TITLE_MAX) : '';
+  if (type === undefined || tmdbId === undefined || !Number.isInteger(tmdbId) || title === '') return undefined;
+  return { type, tmdbId, title };
+}
 
 /** Décode un message client : `undefined` si la forme est invalide (jamais d'exception). */
 export function parseClientMessage(text: string): ClientMessage | undefined {
@@ -311,10 +433,60 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
       if (season === undefined || episode === undefined || !Number.isInteger(season) || !Number.isInteger(episode)) return undefined;
       return { t: 'episode', season, episode, fingerprint: parseFingerprint(raw.fingerprint) };
     }
-    case 'chat':
-      return typeof raw.text === 'string' ? { t: 'chat', text: raw.text } : undefined;
-    case 'react':
-      return typeof raw.emoji === 'string' ? { t: 'react', emoji: raw.emoji } : undefined;
+    case 'chat': {
+      const pos = optionalPos(raw.pos);
+      return typeof raw.text === 'string' && pos !== undefined ? { t: 'chat', text: raw.text, pos } : undefined;
+    }
+    case 'react': {
+      const pos = optionalPos(raw.pos);
+      return typeof raw.emoji === 'string' && pos !== undefined ? { t: 'react', emoji: raw.emoji, pos } : undefined;
+    }
+    case 'settings': {
+      const patch: { control?: ControlMode; waitLate?: WaitLateMode; reactions?: ReactionMode } = {};
+      if (raw.control !== undefined) {
+        const control = oneOf(raw.control, CONTROL_MODES);
+        if (control === undefined) return undefined;
+        patch.control = control;
+      }
+      if (raw.waitLate !== undefined) {
+        const waitLate = oneOf(raw.waitLate, WAIT_LATE_MODES);
+        if (waitLate === undefined) return undefined;
+        patch.waitLate = waitLate;
+      }
+      if (raw.reactions !== undefined) {
+        const reactions = oneOf(raw.reactions, REACTION_MODES);
+        if (reactions === undefined) return undefined;
+        patch.reactions = reactions;
+      }
+      return Object.keys(patch).length > 0 ? { t: 'settings', ...patch } : undefined;
+    }
+    case 'ready': {
+      const quality = parseQuality(raw.quality);
+      return typeof raw.ready === 'boolean' && quality !== undefined ? { t: 'ready', ready: raw.ready, quality } : undefined;
+    }
+    case 'status': {
+      const status = oneOf(raw.status, PREP_STATUSES);
+      return status === undefined ? undefined : { t: 'status', status };
+    }
+    case 'start': {
+      if (raw.countdown === undefined) return { t: 'start', countdown: COUNTDOWN_DEFAULT_SEC };
+      const countdown = finiteNumber(raw.countdown, COUNTDOWN_MIN_SEC, COUNTDOWN_MAX_SEC);
+      return countdown === undefined ? undefined : { t: 'start', countdown: Math.round(countdown) };
+    }
+    case 'vote_open': {
+      if (!Array.isArray(raw.options) || raw.options.length < VOTE_MIN_OPTIONS || raw.options.length > VOTE_MAX_OPTIONS) return undefined;
+      const options: VoteInput[] = [];
+      for (const item of raw.options) {
+        const option = parseVoteInput(item);
+        if (option === undefined) return undefined;
+        options.push(option);
+      }
+      return { t: 'vote_open', options };
+    }
+    case 'vote':
+      return typeof raw.optionId === 'string' && raw.optionId.length <= 16 ? { t: 'vote', optionId: raw.optionId } : undefined;
+    case 'vote_close':
+      return { t: 'vote_close' };
     case 'report':
       if (typeof raw.messageId !== 'string' || raw.messageId.length > 64) return undefined;
       return { t: 'report', messageId: raw.messageId, reason: typeof raw.reason === 'string' ? raw.reason.slice(0, 200) : null };

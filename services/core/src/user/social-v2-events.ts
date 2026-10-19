@@ -1,4 +1,4 @@
-import type { FriendRequestView, FriendView, MediaRef, MessageView, NoteView } from './social-v2-store.js';
+import type { FriendRequestView, FriendView, Handle, MediaRef, MessageView, NoteView } from './social-v2-store.js';
 
 /**
  * Événements sociaux temps réel. Le serveur les émet après chaque écriture : demande, acceptation, suppression d'amitié,
@@ -18,7 +18,9 @@ export type SocialEvent =
   | { t: 'presence'; friend: FriendView }
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  /** Invitation à un salon de visionnage (watch party) : `from` = l'ami qui invite, destinataire seul. */
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string };
 
 /** Gestionnaire fourni par l'hôte. Appelé de façon synchrone ; ne doit ni attendre ni lever d'exception vers la requête. */
 export type SocialEventHandler = (profilePids: readonly string[], event: SocialEvent) => void;
