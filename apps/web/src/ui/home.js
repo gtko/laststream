@@ -11,11 +11,11 @@ import { startRegistry, stopRegistry } from './registry.js';
 import { auth, canAdmin, isKidProfile, isServerMode, refreshRemote } from '../data/auth';
 import { isConfigured } from '../data/config';
 import { onDataEvent } from '../data/events';
-import { recommend, tmdb } from '../data/lt';
+import { recommend, tmdb, top10 } from '../data/lt';
 import { userStore } from '../data/userStore';
 import { keepVisible, onHomeChange } from '../data/homeFilters';
 import { isPlayerOpen } from '../player/session.js';
-import { ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
+import { fillRow, ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
 import { getDetail, listOf, register, toItem } from './catalog.js';
 import { TABS } from './constants.js';
 import { addDays, isFuture, todayStr } from './dates.js';
@@ -59,14 +59,25 @@ function visibleHome(d) {
 
 export async function loadHome() {
   const settled = await Promise.allSettled([
-    tmdb('trending/all/day'),
+    top10('all', 1, 'day'), // Top 10 aujourd'hui : films et séries disponibles, filtrés par lastAddon
     tmdb('trending/all/week'),
     tmdb('trending/movie/week'),
     tmdb('trending/tv/week'),
+    top10('movie'), // Top 10 de la semaine (films, séries) : rangs des tuiles
+    top10('tv'),
   ]);
   const val = (i) => (settled[i].status === 'fulfilled' ? settled[i].value : null);
-  // Titres déjà vus, masqués ou aux genres bannis retirés (keepVisible) ; le Top 10 et « Pour bien commencer » sont complétés.
-  const day = await visibleMore(keepVisible(await filterAvailable((listOf(val(0)) || []).filter(isReleasedItem))), 'trending/all/day', TOP_COUNT);
+  // Top 10 aujourd'hui : titres vus ou masqués retirés (keepVisible), puis pages suivantes du serveur pour rester à 10.
+  const dayRow = await fillRow(
+    async (page) => {
+      const json = page === 1 ? val(0) : await top10('all', page, 'day').catch(() => null);
+      return json ? { title: '', raw: typeof json.raw === 'number' ? json.raw : 0, items: listOf(json) || [] } : null;
+    },
+    TOP_COUNT,
+    async (fresh) => keepVisible(fresh),
+  );
+  const day = dayRow ? dayRow.items : [];
+  // « Pour bien commencer » : tendances de la semaine, filtrées comme avant (disponibilité des films récents).
   const week = keepVisible(await filterAvailable((listOf(val(1)) || []).filter(isReleasedItem)));
   if ([0, 1, 2, 3].every((i) => settled[i].status === 'rejected')) throw new Error('catalogue indisponible');
 
@@ -84,7 +95,14 @@ export async function loadHome() {
   await Promise.all(heroes.slice(0, 2).map(getDetail)); // le reste arrive pendant l'affichage (initHero)
   const hero = heroes[0] || null;
 
-  state.top10 = new Map(cut(day, 10) ? cut(day, 10).map((it, i) => [it.key, i + 1]) : []);
+  // Rangs des listes serveur : le Top 10 du jour sert à l'accueil (state.top10) ; les badges des tuiles (state.topBadge)
+  // reprennent d'abord la semaine (films, puis séries), puis le jour pour les autres titres.
+  const ranked = (items) => (items || []).slice(0, TOP_COUNT).map((it, i) => [it.key, i + 1]);
+  state.top10 = new Map(ranked(day));
+  state.topBadge = new Map();
+  [...ranked(listOf(val(4), 'movie')), ...ranked(listOf(val(5), 'tv')), ...ranked(day)].forEach(([key, rank]) => {
+    if (!state.topBadge.has(key)) state.topBadge.set(key, rank);
+  });
   const all = [...heroes, ...(day || []), ...(week || [])];
   all.forEach(register);
   return {

@@ -18,7 +18,8 @@ export const state = {
   libView: { type: 'all', sort: 'date' },
   libMode: 'library', // onglet de la bibliothèque : « library » (Ma bibliothèque) ou « watched » (Vus)
   scrolls: new Map(), curHash: '', popping: false, restoreY: null, pp: null,
-  top10: new Map(), // clé -> rang dans les tendances du jour
+  top10: new Map(), // clé -> rang dans le Top 10 du jour (serveur) : titres déjà affichés à l'accueil
+  topBadge: new Map(), // clé -> rang dans les Top 10 serveur (semaine d'abord, puis jour) : badge des tuiles
   upcoming: null,
   svcIO: null, // observateur des rangées de la page service
   ctxMenu: null, // menu contextuel ouvert

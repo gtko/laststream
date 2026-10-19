@@ -61,6 +61,12 @@ function mockFetch(url: string, init?: RequestInit): Response {
       { episode_number: 5, name: 'Le grand retour', air_date: future(20), still_path: '/s5.jpg', overview: '' },
     ] });
   }
+  if (u.pathname.includes('/lt/top10/')) {
+    // Top 10 servi par lastAddon (jour : films et séries mêlés ; semaine : films ou séries), une page de dix titres.
+    const page = Number(u.searchParams.get('page') ?? '1');
+    const results = page === 1 ? ITEMS.slice(0, 10) : [];
+    return json({ page, raw: results.length, results });
+  }
   if (u.pathname.includes('/lt/tmdb/')) {
     return json({ imdb_id: 'tt0100', next_episode_to_air: /\/tv\/\d+$/.test(u.pathname) ? { air_date: new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10), season_number: 1, episode_number: 5 } : null, seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
       results: ITEMS, id: 100, title: 'Film 0', name: 'Série 0', overview: 'Un synopsis assez long pour la fiche.', tagline: 'Slogan',
@@ -113,7 +119,7 @@ describe('interface portée', () => {
     expect(app.querySelector('.hero')).not.toBeNull();
     expect(app.querySelector('#top10 .top-item')).not.toBeNull();
     expect(app.querySelectorAll('.row-section').length).toBeGreaterThan(3);
-    expect(calls.some((c) => c.startsWith('http://localhost:7000/CFG_abc-123/lt/tmdb/trending/all/day'))).toBe(true);
+    expect(calls.some((c) => c.startsWith('http://localhost:7000/CFG_abc-123/lt/top10/all') && c.includes('window=day'))).toBe(true);
     expect(calls.every((c) => !c.includes('/api/'))).toBe(true);
     // Aucun signal (ni bibliothèque ni progression) : « Pour bien commencer », sans appel IA.
     expect(app.querySelector('#commencer')).not.toBeNull();

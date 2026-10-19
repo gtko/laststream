@@ -40,7 +40,7 @@ export function tileCard(it, o) {
   const variant = o.variant || 'poster';
   const land = variant !== 'poster';
   const upDate = ''; // « Prochainement » a sa propre carte (upCard)
-  const rank = (upDate || o.soon) ? 0 : (o.rank || state.top10.get(it.key) || 0);
+  const rank = (upDate || o.soon) ? 0 : (o.rank || state.topBadge.get(it.key) || 0);
   const fresh = o.soon ? 'Prochainement' : (!upDate && !rank ? freshText(it, infoStore.get(it.key)) : '');
   const src = land ? it.backdrop || it.poster : it.poster || it.backdrop; // sans affiche : le fond, recadré au centre
   const imdb = (detailOf(it).ratings || {}).imdb;
