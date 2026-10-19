@@ -46,6 +46,23 @@ export function getSkipPref(name: SkipPrefName): boolean {
 }
 export const setSkipPref = (name: SkipPrefName, enabled: boolean): void => write(skipPrefKey(name), enabled ? '1' : '0');
 
+// ---- Lancer la lecture après la bande-annonce (fiche) ----
+export const TRAILER_AUTOPLAY_KEY = 'laststream.trailerAutoplay';
+/** Réglage explicite, ou undefined tant qu'il n'a jamais été réglé (le défaut dépend du profil : voir getTrailerAutoplay). */
+export const getTrailerAutoplayStored = (): boolean | undefined => {
+  const raw = read(TRAILER_AUTOPLAY_KEY);
+  return raw === null ? undefined : raw === '1';
+};
+export const setTrailerAutoplay = (enabled: boolean): void => write(TRAILER_AUTOPLAY_KEY, enabled ? '1' : '0');
+export const clearTrailerAutoplay = (): void => {
+  try { globalThis.localStorage?.removeItem(TRAILER_AUTOPLAY_KEY); } catch { /* ignoré */ }
+};
+/** Activé par défaut ; désactivé par défaut pour les profils enfants (`kid`), sauf réglage explicite. */
+export const getTrailerAutoplay = (kid: boolean): boolean => {
+  const stored = getTrailerAutoplayStored();
+  return stored === undefined ? !kid : stored;
+};
+
 // ---- Région (watch_region, region, classification) ----
 export const REGION_STORAGE_KEY = 'laststream.region';
 export interface Region {

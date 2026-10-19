@@ -6,7 +6,6 @@ import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
 import { isKidProfile, isServerMode, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
-import { clearAmbient } from './heroVideo.js';
 import { getRegion } from '../data/prefs';
 import { IMG, REDUCE } from './constants.js';
 import { countdown, isFuture } from './dates.js';
@@ -17,6 +16,7 @@ import { fillCollection, fillNext, fillRatings, fillWhy, loadSeason } from './fi
 import { topBar } from './fragments.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
+import { autoPlayOn, createTrailerPlay } from './trailerPlay.js';
 import { inLib } from './library.js';
 import { fillProviders } from './providers.js';
 import { ratingList } from './ratings.js';
@@ -289,11 +289,10 @@ export function scrollToSection(name) {
 }
 export function teardownFiche() {
   stopInfinite();
-  clearAmbient();
   if (state.svcIO) state.svcIO.disconnect();
   state.svcIO = null;
   if (tv.io) tv.io.disconnect();
-  detailEl.classList.remove('is-ambient', 'is-scrolled');
+  detailEl.classList.remove('is-quiet', 'is-handoff', 'is-scrolled');
   state.model = null;
   state.token++;
   heroVideoStop();
@@ -312,6 +311,28 @@ export function setupSticky() {
     bar.querySelector('button').tabIndex = out ? 0 : -1;
   }, { threshold: 0 });
   ficheIO.observe(actions);
+}
+
+/** Cible de lecture de la fiche, comme pour le bouton « Lecture » : le film, ou l'épisode à suivre d'une série. */
+export function ficheRequest(m) {
+  let season = null;
+  let episode = null;
+  if (m.type === 'tv') {
+    const n = nextToWatch(m);
+    season = n ? n.s : 1;
+    episode = n ? n.e : 1;
+  }
+  return { type: m.type, id: String(m.id), name: m.name, season, episode, key: m.key };
+}
+
+/** Enchaînement bande-annonce → lecture : seulement pour un titre jouable (ni à venir, ni au cinéma) qui a une bande-annonce. */
+function trailerPlayFor(m, token) {
+  if (!m.trailer || isUnreleased(m) || m.cinemaSince || !autoPlayOn()) return null;
+  return createTrailerPlay({
+    request: ficheRequest(m),
+    opener: detailEl.querySelector('[data-play]') || detailEl,
+    alive: () => state.token === token && state.model === m,
+  });
 }
 
 export async function showFiche(type, id) {
@@ -347,7 +368,7 @@ export async function showFiche(type, id) {
   observeTiles(detailEl);
   applyRestore();
   setupSticky();
-  heroVideoSetup(m);
+  heroVideoSetup(m, trailerPlayFor(m, token));
   fillRatings(m, token);
   fillProviders(m, token);
   fillWhy(m, token);

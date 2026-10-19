@@ -84,6 +84,14 @@ body.modal-open { overflow: hidden; }
 .btn-ghost:hover { background: rgba(255, 255, 255, 0.22); }
 .btn:disabled { opacity: 0.45; transform: none; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+/* Fondu des textes pendant la bande-annonce de la mise en avant (playback.js) : Lecture reste atténué, le titre se réduit. */
+.hero-slide .hero-content > :not(.hero-title):not(.hero-actions) { transition: opacity 0.6s ease; }
+.hero-slide.is-quiet .hero-content > :not(.hero-title):not(.hero-actions) { opacity: 0; }
+.hero-slide .hero-title { transform-origin: left bottom; transition: transform 0.6s ease; }
+.hero-slide.is-quiet .hero-title { transform: scale(0.72); }
+.hero-slide .hero-actions > * { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s; }
+.hero-slide.is-quiet .hero-actions > :not(.btn-primary) { opacity: 0; }
+.hero-slide.is-quiet .hero-actions > .btn-primary { opacity: 0.6; }
 .eyebrow {
   align-self: flex-start; padding: 6px 12px; border-radius: 6px;
   background: rgba(255, 255, 255, 0.12); font-size: 13px; font-weight: 700;
@@ -370,12 +378,31 @@ body.modal-open { overflow: hidden; }
 }
 .f-round[data-tip]:hover::after, .f-round[data-tip]:focus-visible::after { top: calc(100% + 8px); }
 .btn-round[data-tip]:hover::after, .btn-round[data-tip]:focus-visible::after { bottom: calc(100% + 8px); }
-#detail.is-ambient .f-top { opacity: 0; }
-
 /* Premier écran : bloc d'infos en bas à gauche */
 .f-first { position: relative; z-index: 2; height: calc(100vh - var(--tabs-h)); height: calc(100svh - var(--tabs-h)); min-height: 520px; display: flex; align-items: flex-end; padding: 0 var(--gutter) 8vh; }
 .f-info { width: min(44vw, 640px); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; transition: opacity 0.9s ease; }
-#detail.is-ambient .f-info { opacity: 0.15; }
+/* Fondu des textes pendant la bande-annonce (playback.js) : synopsis, métadonnées et boutons secondaires s'estompent,
+   le titre se réduit, Lecture et Son restent atténués. Sur téléphone, la fiche ne s'estompe pas. */
+@media (min-width: 641px) {
+  #detail .f-info > :not(.f-title):not(.f-actions) { transition: opacity 0.6s ease; }
+  #detail.is-quiet .f-info > :not(.f-title):not(.f-actions) { opacity: 0; }
+  #detail .f-title { transform-origin: left bottom; transition: transform 0.6s ease; }
+  #detail.is-quiet .f-title { transform: scale(0.72); }
+  #detail .f-actions > * { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
+  #detail.is-quiet .f-actions > :not(.btn-primary) { opacity: 0; }
+  #detail.is-quiet .f-actions > .btn-primary { opacity: 0.6; }
+  #detail .f-top .f-round { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
+  #detail.is-quiet .f-top .f-round:not([data-fsound]) { opacity: 0; }
+  #detail.is-quiet .f-top [data-fsound] { opacity: 0.6; }
+}
+/* Enchaînement bande-annonce → lecture (trailerPlay.js) : compte à rebours discret, fondu vers le lecteur. */
+.f-next-up {
+  position: absolute; right: var(--gutter); bottom: 8vh; z-index: 5; display: flex; align-items: center; gap: 12px;
+  padding: 6px 6px 6px 18px; border-radius: 999px; background: rgba(23, 21, 31, 0.8); border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 14px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+}
+#detail .fiche { transition: opacity 0.6s ease; }
+#detail.is-handoff .fiche { opacity: 0; }
 .f-title { margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: clamp(40px, 5.2vw, 76px); line-height: 0.98; letter-spacing: -0.03em; outline: none; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
 .f-title .logo-img { height: auto; width: auto; max-width: min(100%, 480px); max-height: 160px; object-fit: contain; object-position: left bottom; filter: drop-shadow(0 4px 24px rgba(0, 0, 0, 0.55)); }
 .f-meta { gap: 6px 0; font-size: 15px; font-weight: 500; color: var(--soft); }
@@ -615,7 +642,6 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
   .vid { width: 240px; }
   .f-infos { grid-template-columns: 1fr; }
   .f-credits div { flex-direction: column; gap: 2px; }
-  #detail.is-ambient .f-info, #detail.is-ambient .f-top { opacity: 1; }
   .f-sticky {
     display: flex; align-items: center; gap: 12px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
     padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom, 0px)); background: rgba(12, 11, 17, 0.96);
@@ -1119,6 +1145,14 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .hc-more svg { transform: rotate(90deg); }
 .hc-btn[data-tip]:hover::after { bottom: calc(100% + 8px); }
 @media (hover: none), (pointer: coarse) { .hc { display: none; } }
+/* Fondu des textes pendant la bande-annonce de la carte au survol (playback.js) : Lecture et Son restent atténués. */
+#hovercard .hc-body > :not(.hc-title):not(.hc-actions) { transition: opacity 0.6s ease; }
+#hovercard.is-quiet .hc-body > :not(.hc-title):not(.hc-actions) { opacity: 0; }
+#hovercard .hc-title { transform-origin: left center; transition: transform 0.6s ease; }
+#hovercard.is-quiet .hc-title { transform: scale(0.8); }
+#hovercard .hc-actions > .hc-btn { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s; }
+#hovercard.is-quiet .hc-actions > :not(.hc-play):not(.hc-sound) { opacity: 0; }
+#hovercard.is-quiet .hc-actions > .hc-play, #hovercard.is-quiet .hc-actions > .hc-sound { opacity: 0.6; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
