@@ -5,6 +5,7 @@
  * ICE : STUN Cloudflare, plus un TURN facultatif fourni par l'appelant (jamais en dur). Aucune URL n'est journalisée. */
 
 import { DEFAULT_UPLOAD_MBPS, RangeServer, type RangeServerOptions, type RangeSource, UploadBudget, type UploadStats, mbpsToBytesPerSec } from './host';
+import type { MeshHostState } from './mesh/hostState';
 import { RELAY_CHANNEL_LABEL, RelayError, type ChannelLike } from './protocol';
 
 export const STUN_URL = 'stun:stun.cloudflare.com:3478';
@@ -70,6 +71,8 @@ export interface HostOptions extends PeerOptions {
   maxUploadMbps?: number;
   /** Délai entre l'offre et la réponse appliquée, en ms (défaut 15 s) ; au-delà, la liaison est fermée. */
   answerTimeoutMs?: number;
+  /** Maillage entre invités : sans lui (hôte ancien ou option coupée), les invités n'ont que le relais direct. */
+  mesh?: MeshHostState;
 }
 
 /** Délai de réponse de l'invité, et nombre de candidats ICE retenus avant la réponse. */
@@ -143,6 +146,7 @@ export class RelayHost {
     link.remote.reject(new RelayError('unavailable'));
     link.server.close();
     link.pc.close();
+    this.opts.mesh?.detach(guestId);
   }
 
   close(): void {
@@ -200,6 +204,7 @@ export class RelayHost {
     const server: RangeServer = new RangeServer(this.source, channel, {
       ...this.opts.server,
       budget: this.budget,
+      onOther: this.opts.mesh?.attach(guestId, channel, () => this.source.size()),
       onIdle: () => this.dropServer(guestId, server),
       onAbuse: () => this.dropServer(guestId, server),
       onStats: (stats) => this.opts.onStats?.(guestId, stats),

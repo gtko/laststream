@@ -18,6 +18,8 @@ export interface You {
   username: string;
   host: boolean;
   muted: boolean;
+  /** Identifiant de connexion (cible de la signalisation WebRTC) ; absent des serveurs anciens. */
+  peerId?: string;
 }
 
 export type ServerMsg =

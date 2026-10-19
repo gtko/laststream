@@ -5,7 +5,7 @@
 
 import {
   CHUNK_BYTES, MAX_RANGE_BYTES, RANGE_ERROR_CODES, RelayError, decodeFrame, encodeData, encodeErr, encodeInfo, isValidRange,
-  toBytes, type ChannelLike, type RangeErrorCode,
+  toBytes, type ChannelLike, type RangeErrorCode, type RelayFrame,
 } from './protocol';
 import { RateMeter, STATS_EVERY_MS } from './stats';
 
@@ -47,6 +47,8 @@ export interface RangeServerOptions {
   onAbuse?: () => void;
   /** Plafond de débit montant partagé par tous les liens d'un même hôte. */
   budget?: UploadBudget;
+  /** Trames que le serveur de plages ne traite pas (maillage entre invités) ; elles comptent comme de l'activité. */
+  onOther?: (frame: RelayFrame) => void;
 }
 
 /** Délai d'inactivité d'un lien (2 min) et erreurs consécutives tolérées (20) avant coupure. */
@@ -106,6 +108,7 @@ export class RangeServer {
   private readonly onIdle: (() => void) | undefined;
   private readonly onAbuse: (() => void) | undefined;
   private readonly budget: UploadBudget | undefined;
+  private readonly onOther: ((frame: RelayFrame) => void) | undefined;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private errorStreak = 0;
 
@@ -126,6 +129,7 @@ export class RangeServer {
     this.onIdle = options.onIdle;
     this.onAbuse = options.onAbuse;
     this.budget = options.budget;
+    this.onOther = options.onOther;
     this.meter = new RateMeter(this.now);
     channel.bufferedAmountLowThreshold = this.lowWater;
     channel.addEventListener('message', this.onMessage);
@@ -176,6 +180,7 @@ export class RangeServer {
         this.active.get(frame.reqId)?.abort();
         break;
       default:
+        this.onOther?.(frame);
         break;
     }
   }

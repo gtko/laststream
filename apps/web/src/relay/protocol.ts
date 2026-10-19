@@ -10,6 +10,13 @@
  *     DATA    [4][reqId u32][offset u64][flags u8][octets]        64 Ko au plus ; offset = position dans le fichier ;
  *                                                                 flags bit 0 = dernier morceau de la requête
  *     ERR     [5][reqId u32][code u8]                             code = index dans RANGE_ERROR_CODES
+ *   maillage entre invités (ajouts de fin ; un pair qui ne les connaît pas les ignore et reste en relais direct)
+ *     MESH?   [32][reqId u32]                                     invité -> hôte, ou invité <-> invité : annonce du maillage
+ *     MESH    [33][reqId u32][pieceShift u8][idLen u8][fileId]    réponse : taille des morceaux (1 << shift) et identifiant opaque du fichier
+ *     HAVE    [34][reqId u32][n u16][(start u32, len u32) × n]    morceaux détenus (intervalles d'index), instantané complet
+ *     LOCATE  [35][reqId u32][index u32]                          invité -> hôte : qui a ce morceau, et son hachage ?
+ *     LOCATED [36][reqId u32][index u32][flags u8][sha256 32][n u8][(idLen u8, id) × n]
+ *                                                                 flags bit 0 = en cours chez un autre invité (attendre) ; hachage nul = inconnu
  *
  * Encodage et décodage purs (testés dans src/relay/protocol.test.ts). */
 
@@ -80,9 +87,24 @@ export type RelayFrame =
   | { t: 'info'; reqId: number; size: number; mime?: string }
   | { t: 'data'; reqId: number; offset: number; fin: boolean; payload: Uint8Array }
   | { t: 'err'; reqId: number; code: RangeErrorCode }
-  | { t: 'cancel'; reqId: number };
+  | { t: 'cancel'; reqId: number }
+  | { t: 'mesh_req'; reqId: number }
+  | { t: 'mesh'; reqId: number; pieceShift: number; fileId: string }
+  | { t: 'have'; reqId: number; ranges: PieceInterval[] }
+  | { t: 'locate'; reqId: number; index: number }
+  | { t: 'located'; reqId: number; index: number; pending: boolean; hash: Uint8Array | null; holders: string[] };
 
-const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6 } as const;
+/** Intervalle d'index de morceaux [start, start + len). */
+export interface PieceInterval {
+  start: number;
+  len: number;
+}
+
+// Maillage : 32 et suivants, pour ne pas heurter les types ajoutés à la suite par d'autres chantiers (7 à 31).
+const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36 } as const;
+/** Intervalles au plus par instantané HAVE, longueur maximale d'un identifiant de fichier ou de pair. */
+export const MAX_HAVE_RANGES = 512;
+export const MAX_ID_BYTES = 64;
 const DATA_HEADER = 14;
 const utf8 = new TextEncoder();
 const utf8Strict = new TextDecoder('utf-8', { fatal: true });
@@ -203,6 +225,53 @@ export function decodeFrame(buf: Uint8Array): RelayFrame | null {
     }
     case TYPE.cancel:
       return n === 5 ? { t: 'cancel', reqId } : null;
+    case TYPE.meshReq:
+      return n === 5 ? { t: 'mesh_req', reqId } : null;
+    case TYPE.mesh: {
+      if (n < 7 || n !== 7 + view.getUint8(6)) return null;
+      const shift = view.getUint8(5);
+      if (shift < 10 || shift > 26) return null;
+      try {
+        return { t: 'mesh', reqId, pieceShift: shift, fileId: utf8Strict.decode(buf.subarray(7)) };
+      } catch {
+        return null;
+      }
+    }
+    case TYPE.have: {
+      if (n < 7) return null;
+      const count = view.getUint16(5);
+      if (count > MAX_HAVE_RANGES || n !== 7 + count * 8) return null;
+      const ranges: PieceInterval[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const start = view.getUint32(7 + i * 8);
+        const len = view.getUint32(11 + i * 8);
+        if (len === 0 || start + len > 0xffffffff) return null;
+        ranges.push({ start, len });
+      }
+      return { t: 'have', reqId, ranges };
+    }
+    case TYPE.locate:
+      return n === 9 ? { t: 'locate', reqId, index: view.getUint32(5) } : null;
+    case TYPE.located: {
+      if (n < 43) return null;
+      const holderCount = view.getUint8(42);
+      const holders: string[] = [];
+      let at = 43;
+      try {
+        for (let i = 0; i < holderCount; i += 1) {
+          if (at >= n) return null;
+          const len = view.getUint8(at);
+          if (at + 1 + len > n) return null;
+          holders.push(utf8Strict.decode(buf.subarray(at + 1, at + 1 + len)));
+          at += 1 + len;
+        }
+      } catch {
+        return null;
+      }
+      if (at !== n) return null;
+      const hash = buf.slice(10, 42);
+      return { t: 'located', reqId, index: view.getUint32(5), pending: (view.getUint8(9) & 1) !== 0, hash: hash.some((b) => b !== 0) ? hash : null, holders };
+    }
     default:
       return null;
   }
@@ -213,4 +282,56 @@ export function toBytes(data: unknown): Uint8Array | null {
   if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   if (data instanceof ArrayBuffer || Object.prototype.toString.call(data) === '[object ArrayBuffer]') return new Uint8Array(data as ArrayBuffer);
   return null;
+}
+
+// ---- Maillage entre invités (ajouts de fin) ----
+
+export function encodeMeshReq(reqId: number): Uint8Array {
+  return header(5, TYPE.meshReq, reqId).out;
+}
+
+export function encodeMesh(reqId: number, pieceShift: number, fileId: string): Uint8Array {
+  const id = utf8.encode(fileId);
+  if (id.byteLength > MAX_ID_BYTES) throw new Error('identifiant trop long');
+  const { out, view } = header(7 + id.byteLength, TYPE.mesh, reqId);
+  view.setUint8(5, pieceShift);
+  view.setUint8(6, id.byteLength);
+  out.set(id, 7);
+  return out;
+}
+
+/** Instantané des morceaux détenus ; au-delà de MAX_HAVE_RANGES intervalles, les plus à droite sont omis. */
+export function encodeHave(reqId: number, ranges: readonly PieceInterval[]): Uint8Array {
+  const list = ranges.slice(0, MAX_HAVE_RANGES);
+  const { out, view } = header(7 + list.length * 8, TYPE.have, reqId);
+  view.setUint16(5, list.length);
+  list.forEach((r, i) => {
+    view.setUint32(7 + i * 8, r.start);
+    view.setUint32(11 + i * 8, r.len);
+  });
+  return out;
+}
+
+export function encodeLocate(reqId: number, index: number): Uint8Array {
+  const { out, view } = header(9, TYPE.locate, reqId);
+  view.setUint32(5, index);
+  return out;
+}
+
+/** Réponse de l'hôte : hachage SHA-256 du morceau (null : inconnu) et invités qui le détiennent. */
+export function encodeLocated(reqId: number, index: number, hash: Uint8Array | null, holders: readonly string[], pending = false): Uint8Array {
+  if (hash && hash.byteLength !== 32) throw new Error('hachage de 32 octets attendu');
+  const ids = holders.slice(0, 8).map((h) => utf8.encode(h)).filter((b) => b.byteLength > 0 && b.byteLength <= MAX_ID_BYTES);
+  const { out, view } = header(43 + ids.reduce((sum, b) => sum + 1 + b.byteLength, 0), TYPE.located, reqId);
+  view.setUint32(5, index);
+  view.setUint8(9, pending ? 1 : 0);
+  if (hash) out.set(hash, 10);
+  view.setUint8(42, ids.length);
+  let at = 43;
+  for (const b of ids) {
+    view.setUint8(at, b.byteLength);
+    out.set(b, at + 1);
+    at += 1 + b.byteLength;
+  }
+  return out;
 }

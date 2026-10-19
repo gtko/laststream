@@ -12,6 +12,9 @@ import { PartyClient, type ClientStatus, type SocketLike } from '../party/client
 import type { PartyParticipant } from '../data/socialApi';
 import { endText, hostLostText, refusedText, relayErrorText, waitingHostText } from '../party/join';
 import { RangeClient } from './guest';
+import { MeshGuest, type MeshGuestOptions } from './mesh/guest';
+import { MeshHostState } from './mesh/hostState';
+import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
 import type { RangeSource, UploadStats } from './host';
 import { RelayError, type ChannelLike } from './protocol';
@@ -64,10 +67,13 @@ export interface HostRelayOptions {
   createPc?: PeerOptions['createPc'];
   /** Plafond de débit montant de l'hôte, tous invités confondus, en Mb/s (défaut 60). */
   maxUploadMbps?: number;
+  /** Maillage entre invités (défaut : activé). Coupé, ou face à un invité ancien, les invités sont servis en relais direct. */
+  mesh?: boolean;
 }
 
 export class HostRelaySession {
   private readonly host: RelayHost;
+  private readonly mesh: MeshHostState | null;
   private readonly uploads = new Map<string, UploadStats>();
   private readonly unsubscribe: () => void;
   /** Identifiants de connexion des invités du salon : seuls ceux-là sont admis à une liaison. */
@@ -75,9 +81,11 @@ export class HostRelaySession {
   private closed = false;
 
   constructor(opts: HostRelayOptions) {
-    this.host = new RelayHost(opts.source, partySignal(opts.client), {
+    this.mesh = opts.mesh === false ? null : new MeshHostState();
+    this.host = new RelayHost(this.mesh ? this.mesh.wrap(opts.source) : opts.source, partySignal(opts.client), {
       iceServers: buildIceServers(relayTurn),
       createPc: opts.createPc,
+      mesh: this.mesh ?? undefined,
       allow: (from) => this.guestIds.has(from),
       maxUploadMbps: opts.maxUploadMbps,
       onStats: (guestId, stats) => {
@@ -145,6 +153,10 @@ export interface GuestRelayView {
   /** Débit descendant (octets/s) depuis l'hôte. */
   rateBps: number;
   bytesReceived: number;
+  /** Maillage : pairs prêts, octets reçus des autres invités et servis aux autres invités (0 en relais direct). */
+  meshPeers: number;
+  bytesFromPeers: number;
+  bytesServed: number;
   playing: boolean;
   /** Position et durée du lecteur, en secondes. */
   position: number;
@@ -171,6 +183,10 @@ export interface GuestRelayDeps {
   canvas: HTMLCanvasElement;
   /** Options de connexion pair à pair (tests, TURN). */
   peer?: PeerOptions;
+  /** Maillage entre invités : `false` le coupe ; sinon réglages facultatifs (tests). */
+  mesh?: false | Partial<Pick<MeshGuestOptions, 'cacheBytes' | 'maxPeers' | 'peerTimeoutMs' | 'peerDeadlineMs' | 'locateTimeoutMs' | 'haveEveryMs' | 'pendingWaitMs' | 'pendingWaits'>>;
+  /** Fabrique de la couche de liaison entre invités (tests ; défaut : WebRTC signalé par le salon). */
+  meshConnector?: (self: string, allow: (peerId: string) => boolean) => PeerConnector;
   /** Échecs de connexion avant que le salon soit considéré comme refusé (défaut : 3). */
   maxRefusals?: number;
   /** Délai de connexion à l'hôte (ms). */
@@ -180,13 +196,14 @@ export interface GuestRelayDeps {
   clearTimer?: (id: unknown) => void;
 }
 
-const EMPTY_VIEW: GuestRelayView = { phase: 'joining', message: '', rateBps: 0, bytesReceived: 0, playing: false, position: 0, duration: 0, note: '' };
+const EMPTY_VIEW: GuestRelayView = { phase: 'joining', message: '', rateBps: 0, bytesReceived: 0, meshPeers: 0, bytesFromPeers: 0, bytesServed: 0, playing: false, position: 0, duration: 0, note: '' };
 
 export class GuestRelaySession {
   private client: PartyClient | null = null;
   private player: GuestPlayerLike | null = null;
   private relay: RelayGuest | null = null;
   private range: RangeClient | null = null;
+  private mesh: MeshGuest | null = null;
   private hostId: string | null = null;
   /** Vrai dès qu'une première recherche d'hôte a eu lieu (même sans hôte trouvé). */
   private roomSeen = false;
@@ -231,8 +248,12 @@ export class GuestRelaySession {
   tick(): GuestRelayView {
     const st = this.player?.getState();
     const dl = this.range?.stats();
+    const ms = this.mesh?.stats();
     this.view = {
       ...this.view,
+      meshPeers: ms?.peers ?? 0,
+      bytesFromPeers: ms?.bytesFromPeers ?? 0,
+      bytesServed: ms?.bytesServed ?? 0,
       playing: st?.playing ?? false,
       position: st?.position ?? 0,
       duration: st?.duration ?? 0,
@@ -304,6 +325,7 @@ export class GuestRelaySession {
   private onRoom(): void {
     const c = this.client;
     if (!c || this.stopped || !c.you) return;
+    this.mesh?.refresh();
     const peer = c.participants.find((p) => p.host && p.peerId)?.peerId ?? null;
     if (this.roomSeen && peer === this.hostId) return;
     this.roomSeen = true;
@@ -354,10 +376,12 @@ export class GuestRelaySession {
         },
       });
       this.range = range;
+      const reader = await this.openMesh(client, channel, range, seq);
+      if (!this.isCurrent(seq)) return;
       const player = this.deps.createPlayer(this.callbacks());
       this.player = player;
       this.setView('loading', '');
-      const plan = await player.load(range, this.deps.canvas);
+      const plan = await player.load(reader, this.deps.canvas);
       if (!this.isCurrent(seq)) return;
       if (plan.kind === 'unsupported') {
         this.teardownMedia();
@@ -378,6 +402,43 @@ export class GuestRelaySession {
       }
       this.setView('host-lost', err instanceof RelayError ? relayErrorText(err.code) : relayErrorText('unknown'));
     }
+  }
+
+  /** Identifiants de pair des autres invités du salon, les plus anciens d'abord. */
+  private otherGuests(client: PartyClient, self: string): string[] {
+    return client.participants
+      .filter((p) => p.guest && p.peerId && p.peerId !== self)
+      .sort((a, b) => (a.joinedAt ?? '').localeCompare(b.joinedAt ?? '') || (a.peerId ?? '').localeCompare(b.peerId ?? ''))
+      .map((p) => p.peerId as string);
+  }
+
+  /**
+   * Maillage avec les autres invités, si l'hôte le propose (MESH?) : rend le lecteur de plages à donner au lecteur vidéo.
+   * Hôte ancien, serveur sans identifiant de pair ou maillage coupé : le RangeClient de l'hôte est lu directement, comme avant.
+   */
+  private async openMesh(client: PartyClient, channel: ChannelLike, range: RangeClient, seq: number): Promise<RangeReader> {
+    const self = client.you?.peerId;
+    if (this.deps.mesh === false || !self) return range;
+    let mesh: MeshGuest | null = null;
+    const allow = (id: string): boolean => this.isCurrent(seq) && this.otherGuests(client, self).includes(id) && (mesh?.admits(id) ?? false);
+    const connector = this.deps.meshConnector
+      ? this.deps.meshConnector(self, allow)
+      : new RtcConnector(meshTransport(partySignal(client)), self, { ...this.deps.peer, allow });
+    mesh = await MeshGuest.negotiate({
+      ...this.deps.mesh,
+      hostChannel: channel,
+      host: range,
+      connector,
+      guests: () => this.otherGuests(client, self),
+    });
+    if (!mesh || !this.isCurrent(seq)) {
+      mesh?.close();
+      connector.close();
+      return range;
+    }
+    this.mesh = mesh;
+    mesh.refresh();
+    return mesh.reader();
   }
 
   private onChannelClosed(seq: number): void {
@@ -406,11 +467,13 @@ export class GuestRelaySession {
     this.seq += 1;
     this.relay?.close();
     this.relay = null;
+    this.mesh?.close();
+    this.mesh = null;
     this.range?.close();
     this.range = null;
     this.player?.destroy();
     this.player = null;
-    this.view = { ...this.view, rateBps: 0, playing: false, position: 0, duration: 0, note: '' };
+    this.view = { ...this.view, rateBps: 0, meshPeers: 0, playing: false, position: 0, duration: 0, note: '' };
   }
 
   private setView(phase: GuestPhase, message: string): void {
