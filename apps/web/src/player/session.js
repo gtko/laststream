@@ -443,6 +443,8 @@ function nativeOptions() {
   return {
     title: headingFor(p)[0],
     subtitle: headingFor(p)[1],
+    // Durée du fichier (sonde) : le lecteur natif la garde en repli pour sauvegarder la progression.
+    durationSec: p.probeTracks.durationSec || 0,
     preferredAudioLang: audioPreference()[0] || '',
     preferredSubLang: mem.sub || wantedSubLang(getLangPrefs()) || '',
     subMode: mem.sub ? 'always' : effectiveSubMode(),
