@@ -309,6 +309,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
       if (verdict.reason === 'not_found') throw new UserApiError(404, 'room_not_found');
       if (verdict.reason === 'link_revoked') throw new UserApiError(403, 'invite_revoked');
       if (verdict.reason === 'rate_limited') throw new UserApiError(429, 'too_many_entries');
+      if (verdict.reason === 'name_taken') throw new UserApiError(409, 'name_taken');
       throw new UserApiError(409, verdict.reason);
     }
     const session = await signGuestToken(id, now, deps.secret, { gid: guestId, exp: Math.min(now + GUEST_SESSION_MS, verdict.exp) });

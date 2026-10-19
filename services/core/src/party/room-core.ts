@@ -28,6 +28,7 @@ import {
   type ServerMessage,
 } from './protocol.js';
 import { GUEST_KEY_PREFIX } from './guest.js';
+import { canonicalName } from './names.js';
 import { expectedPosition } from './sync.js';
 
 /**
@@ -58,7 +59,7 @@ export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_ta
 export type LinkVerdict = { ok: true; epoch: number; exp: number } | { ok: false; reason: 'forbidden' | 'not_found' | 'rate_limited' };
 
 /** Entrée d'un invité par le lien partagé : pseudo attribué (suffixé s'il est pris) ou motif de refus. */
-export type EntryVerdict = { ok: true; name: string; exp: number } | { ok: false; reason: 'link_revoked' | 'room_full' | 'guest_limit' | 'rate_limited' | 'not_found' };
+export type EntryVerdict = { ok: true; name: string; exp: number } | { ok: false; reason: 'link_revoked' | 'room_full' | 'guest_limit' | 'rate_limited' | 'not_found' | 'name_taken' };
 
 /** Résultat d'une demande d'invitation : `ok` consomme un jeton du débit. */
 export type InviteVerdict = 'ok' | 'forbidden' | 'not_found' | 'guests_full' | 'rate_limited';
@@ -191,9 +192,11 @@ export class RoomCore {
     const reconnect = this.members.has(identity.accountId);
     if (!reconnect && this.guestCount() >= MAX_GUESTS) return 'guest_limit';
     if (!reconnect && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
-    const wanted = identity.username.toLowerCase();
+    // Comparaison sur la forme canonique (casse, diacritiques, caractères confondables) : pas de sosie de l'hôte ni d'un participant.
+    const wanted = canonicalName(identity.username);
+    if (wanted === canonicalName(this.data.meta.hostName) && identity.accountId !== this.hostId) return 'name_taken';
     for (const member of this.members.values()) {
-      if (member.accountId !== identity.accountId && member.username.toLowerCase() === wanted) return 'name_taken';
+      if (member.accountId !== identity.accountId && canonicalName(member.username) === wanted) return 'name_taken';
     }
     return 'ok';
   }
@@ -316,11 +319,15 @@ export class RoomCore {
     this.entryHits = recent;
     if (recent.length >= ENTRIES_PER_WINDOW) return { ok: false, reason: 'rate_limited' };
     recent.push(now);
-    const taken = new Set<string>([this.data.meta.hostName.toLowerCase()]);
-    for (const member of this.members.values()) taken.add(member.username.toLowerCase());
-    for (const name of Object.values(this.data.guestNames ?? {})) taken.add(name.toLowerCase());
+    // Un pseudo canoniquement égal à celui de l'hôte ou d'un compte présent est refusé (pas de sosie) ; face à un autre invité, suffixe.
+    const wantedKey = canonicalName(wanted);
+    if (wantedKey === canonicalName(this.data.meta.hostName)) return { ok: false, reason: 'name_taken' };
+    for (const member of this.members.values()) if (member.guest !== true && canonicalName(member.username) === wantedKey) return { ok: false, reason: 'name_taken' };
+    const taken = new Set<string>();
+    for (const member of this.members.values()) taken.add(canonicalName(member.username));
+    for (const name of Object.values(this.data.guestNames ?? {})) taken.add(canonicalName(name));
     let name = wanted;
-    for (let n = 2; taken.has(name.toLowerCase()); n += 1) {
+    for (let n = 2; taken.has(canonicalName(name)); n += 1) {
       const suffix = ` ${n}`;
       name = `${Array.from(wanted)
         .slice(0, GUEST_NAME_MAX - suffix.length)

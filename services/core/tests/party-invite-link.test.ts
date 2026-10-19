@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- corps JSON de tests */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PartyBackend } from '../src/party/backend.js';
+import { canonicalName } from '../src/party/names.js';
 import { cleanGuestName, guestIdentity, signGuestToken, signRoomInviteToken, verifyGuestToken, verifyRoomInviteToken } from '../src/party/guest.js';
 import { GUEST_NAME_MAX, GUEST_SESSION_MS, MAX_GUESTS, parseClientMessage, ROOM_MAX_AGE_MS, type RoomData } from '../src/party/protocol.js';
 import { type Member, RoomCore } from '../src/party/room-core.js';
@@ -83,6 +84,33 @@ function makeRoom(max = 20) {
   return { core, clock, data, enter };
 }
 
+describe('pseudos : forme canonique', () => {
+  it('casse, diacritiques, pleine chasse et lettres confondables grec/cyrillique se replient sur le latin', () => {
+    const same = ['Léa', 'LEA', 'léa', 'Lea', 'Ｌｅａ', 'Léa', 'Lеа'];
+    for (const name of same) expect(canonicalName(name)).toBe('lea');
+    expect(canonicalName('Hоst')).toBe('host'); // « о » cyrillique
+    expect(canonicalName('Straße')).toBe('strasse');
+    expect(canonicalName('  A   b ')).toBe('a b');
+    expect(canonicalName('Léa')).not.toBe(canonicalName('Léo'));
+  });
+
+  it('NFC à l’enregistrement', () => {
+    expect(cleanGuestName('Léa')).toBe('Léa');
+  });
+
+  it('un sosie de l’hôte ou d’un compte présent est refusé ; face à un invité, suffixe sur la forme canonique', () => {
+    const fx = makeRoom();
+    for (const wanted of ['host', 'HOST', 'Hоst', 'Ｈost', 'Hóst']) expect(fx.enter(wanted).verdict).toEqual({ ok: false, reason: 'name_taken' });
+    fx.core.join({ accountId: 'a-bob', username: 'Bob', avatarColor: '#000000', connId: 'bob', joinedAt: T0 });
+    expect(fx.enter('Воb').verdict).toEqual({ ok: false, reason: 'name_taken' }); // cyrillique В, о
+    expect(fx.enter('Léa').verdict).toMatchObject({ name: 'Léa' });
+    expect(fx.enter('Lеа').verdict).toMatchObject({ name: 'Lеа 2' });
+    // WebSocket : un ancien jeton ne passe pas non plus avec un sosie.
+    expect(fx.core.canJoinGuest(guestIdentity('legacyidlegacyid0', 'Hоst'))).toBe('name_taken');
+    expect(fx.core.canJoinGuest(guestIdentity('legacyidlegacyid1', 'BOB'))).toBe('name_taken');
+  });
+});
+
 describe('salon : entrée par le lien partagé', () => {
   it('deux invités avec le même lien : chacun son identifiant et son pseudo', () => {
     const fx = makeRoom();
@@ -99,14 +127,14 @@ describe('salon : entrée par le lien partagé', () => {
   it('pseudo déjà pris (hôte, invité connecté ou seulement entré) : suffixe automatique, 24 caractères au plus', () => {
     const fx = makeRoom();
     const names: string[] = [];
-    for (const wanted of ['host', 'Léa', 'LÉA', 'léa', 'x'.repeat(GUEST_NAME_MAX), 'x'.repeat(GUEST_NAME_MAX)]) {
+    for (const wanted of ['Léa', 'LÉA', 'léa', 'x'.repeat(GUEST_NAME_MAX), 'x'.repeat(GUEST_NAME_MAX)]) {
       const entry = fx.enter(wanted);
       expect(entry.verdict.ok).toBe(true);
       if (entry.verdict.ok) names.push(entry.verdict.name);
     }
-    expect(names.slice(0, 4)).toEqual(['host 2', 'Léa', 'LÉA 2', 'léa 3']);
-    expect(names[4]).toBe('x'.repeat(GUEST_NAME_MAX));
-    expect(names[5]).toBe(`${'x'.repeat(GUEST_NAME_MAX - 2)} 2`);
+    expect(names.slice(0, 3)).toEqual(['Léa', 'LÉA 2', 'léa 3']);
+    expect(names[3]).toBe('x'.repeat(GUEST_NAME_MAX));
+    expect(names[4]).toBe(`${'x'.repeat(GUEST_NAME_MAX - 2)} 2`);
     expect(new Set(names.map((name) => name.toLowerCase())).size).toBe(names.length);
     for (const name of names) expect(cleanGuestName(name)).toBe(name);
   });

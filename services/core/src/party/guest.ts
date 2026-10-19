@@ -118,7 +118,7 @@ export async function verifyGuestToken(token: string, roomId: string, now: numbe
  */
 export function cleanGuestName(raw: string | null): string | undefined {
   if (raw === null) return undefined;
-  const name = stripInvisible(raw.slice(0, 200)).replace(/\s+/g, ' ').trim();
+  const name = stripInvisible(raw.slice(0, 200)).normalize('NFC').replace(/\s+/g, ' ').trim();
   const clipped = Array.from(name).slice(0, GUEST_NAME_MAX).join('').trim();
   return clipped === '' ? undefined : clipped;
 }
