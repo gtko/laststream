@@ -13,7 +13,7 @@ export const CLUSTER_GAP_PCT = 1;
 /** Longueur maximale d'une note texte, en caractères (points de code). */
 export const NOTE_MAX = 140;
 /** Rangée d'emojis rapides du popover « Réagir ici ». */
-export const QUICK_EMOJIS: readonly string[] = ['👍', '😂', '😮', '😢', '🔥', '❤️', '👏'];
+export const QUICK_EMOJIS: readonly string[] = ['😂', '🔥', '😱', '❤️', '🤯', '😭', '👏'];
 /** Couleur de repli pour un marqueur quand la couleur d'avatar reçue n'est pas une couleur sûre. */
 export const FALLBACK_COLOR = '#94a3b8';
 
