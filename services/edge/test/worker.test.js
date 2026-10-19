@@ -85,6 +85,9 @@ describe('chemins interdits', () => {
   it('les autres chemins TV restent permis', () => {
     for (const p of ['/abc/lt/tv/channels', '/abc/lt/tv/epg', '/health']) assert.equal(isBlockedPath(p), false, p);
   });
+  it('le direct social (/user/social/live) n’est pas bloqué', () => {
+    assert.equal(isBlockedPath('/user/social/live'), false);
+  });
 });
 
 describe('relais', () => {
@@ -322,5 +325,59 @@ describe('lastaddon-core par Service Binding', () => {
     const res = await call(makeEnv(null), '/', { headers: { accept: 'text/html' } });
     assert.equal(res.status, 503);
     assert.match(await res.text(), /Laststream redémarre/);
+  });
+
+  it('upgrade WebSocket /user/social/live : relayé vers CORE avec la query ticket, sans tunnel', async () => {
+    noTunnelFetch();
+    const core = okCore(200, 'socket');
+    const env = makeEnv({ url: 'https://abc.trycloudflare.com' }, core);
+    const res = await call(env, '/user/social/live?ticket=abc.def', {
+      headers: { upgrade: 'websocket', 'cf-connecting-ip': '198.51.100.4' },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), 'socket');
+    assert.equal(core.calls.length, 1);
+    const sent = core.calls[0];
+    const sentUrl = new URL(sent.url);
+    assert.equal(sentUrl.pathname, '/user/social/live');
+    assert.equal(sentUrl.searchParams.get('ticket'), 'abc.def');
+    assert.equal(sent.method, 'GET');
+    assert.equal(sent.headers.get('upgrade'), 'websocket');
+    assert.equal(sent.headers.get('x-laststream-edge'), env.EDGE_SECRET);
+    assert.equal(sent.headers.get('x-laststream-client-ip'), '198.51.100.4');
+    assert.equal(sent.headers.get('cf-connecting-ip'), null);
+  });
+  it('upgrade WebSocket sur un autre chemin : 426 sans appeler CORE ni le tunnel', async () => {
+    noTunnelFetch();
+    const core = okCore();
+    const env = makeEnv({ url: 'https://abc.trycloudflare.com' }, core);
+    const paths = ['/user/social/live/', '/user/social/live/x', '/user/social/live2', '/user/social', '/USER/SOCIAL/LIVE', '/party/abc', '/health'];
+    for (const path of paths) {
+      const res = await call(env, path, { headers: { upgrade: 'websocket' } });
+      assert.equal(res.status, 426, path);
+      assert.equal((await res.json()).error, 'upgrade_required', path);
+    }
+    assert.equal(core.calls.length, 0);
+  });
+  it('upgrade WebSocket /user/social/live sans liaison CORE : 426', async () => {
+    noTunnelFetch();
+    const env = makeEnv({ url: 'https://abc.trycloudflare.com' });
+    env.CORE = undefined;
+    const res = await call(env, '/user/social/live?ticket=abc', { headers: { upgrade: 'websocket' } });
+    assert.equal(res.status, 426);
+    assert.equal((await res.json()).error, 'upgrade_required');
+  });
+  it('requête HTTP non-upgrade sur /user/social/live : chemin HTTP habituel, repli tunnel inchangé', async () => {
+    const seen = [];
+    globalThis.fetch = async (target) => {
+      seen.push(target);
+      return new Response('depuis le PC');
+    };
+    const core = okCore(500, 'oups');
+    const res = await call(makeEnv({ url: 'https://abc.trycloudflare.com' }, core), '/user/social/live?ticket=abc');
+    assert.equal(await res.text(), 'depuis le PC');
+    assert.equal(core.calls.length, 1);
+    assert.equal(core.calls[0].headers.get('upgrade'), null);
+    assert.deepEqual(seen, ['https://abc.trycloudflare.com/user/social/live?ticket=abc']);
   });
 });

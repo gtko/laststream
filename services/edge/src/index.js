@@ -12,6 +12,10 @@ const TUNNEL_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9
 // Le relais TV HLS de lastAddon (/:config/lt/tv/hls) ne doit pas faire transiter la vidéo par Cloudflare.
 const BLOCKED_PATH = /(^|\/)lt\/tv\/hls(\/|$)/;
 
+// Seuls ces chemins acceptent une connexion WebSocket relayée vers lastaddon-core : salons de watch party et direct social.
+const WEBSOCKET_PARTY_PATH = /^\/party\/[^/]+\/ws$/;
+const WEBSOCKET_EXACT_PATHS = new Set(['/user/social/live']);
+
 const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
   'transfer-encoding', 'upgrade', 'proxy-connection',
@@ -196,10 +200,11 @@ async function relay(request, env) {
 
   const headers = upstreamHeaders(request, url.host, env);
 
-  // Watch party : la connexion WebSocket du salon passe telle quelle vers lastaddon-core (pas de réessai ni de repli).
+  // Watch party et direct social : la connexion WebSocket passe telle quelle vers lastaddon-core (pas de réessai ni de repli).
   if ((request.headers.get('upgrade') || '').toLowerCase() === 'websocket') {
-    if (!/^\/party\/[^/]+\/ws$/.test(url.pathname) || env.CORE === undefined) {
-      return json(426, { error: 'upgrade_required', message: 'WebSocket réservé aux salons de watch party.' });
+    const allowed = WEBSOCKET_PARTY_PATH.test(url.pathname) || WEBSOCKET_EXACT_PATHS.has(url.pathname);
+    if (!allowed || env.CORE === undefined) {
+      return json(426, { error: 'upgrade_required', message: 'WebSocket réservé aux salons de watch party et au direct social.' });
     }
     headers.set('upgrade', 'websocket');
     return env.CORE.fetch(new Request(request.url, { method: 'GET', headers }));
