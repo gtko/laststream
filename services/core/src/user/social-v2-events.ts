@@ -1,4 +1,4 @@
-import type { FriendRequestView, FriendView, MediaRef, MessageView, NoteView } from './social-v2-store.js';
+import type { FriendLiveView, FriendRequestView, MediaRef, MessageView, NoteView } from './social-v2-store.js';
 
 /**
  * Événements sociaux temps réel. Le serveur les émet après chaque écriture : demande, acceptation, suppression d'amitié,
@@ -13,9 +13,9 @@ import type { FriendRequestView, FriendView, MediaRef, MessageView, NoteView } f
  */
 export type SocialEvent =
   | { t: 'request'; request: FriendRequestView }
-  | { t: 'friend'; friend: FriendView }
+  | { t: 'friend'; friend: FriendLiveView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'presence'; friend: FriendView }
+  | { t: 'presence'; friend: FriendLiveView }
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
   | { t: 'note'; media: MediaRef; note: NoteView };

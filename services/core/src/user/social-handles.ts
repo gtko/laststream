@@ -141,9 +141,22 @@ function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
   revokeLegacyFriendshipsOf(db, pid);
   db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? OR high_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
+  db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
   db.prepare('UPDATE profiles SET pid = NULL, handle_name = NULL, handle_key = NULL, handle_tag = NULL WHERE id = ?').run(profileId);
+}
+
+/**
+ * Nouveau tag pour un profil déjà identifié (changement volontaire) : différent de l'actuel et non pris pour ce nom
+ * normalisé. Renvoie le tag sans l'écrire ; l'appelant l'enregistre dans sa propre transaction.
+ */
+export function drawNewHandleTag(db: SqlDb, profileId: string, key: string, currentTag: string, random: RandomBytes = cryptoRandomBytes): string {
+  for (let attempt = 0; attempt < MAX_ALLOCATION_ATTEMPTS; attempt++) {
+    const tag = generateHandleTag(random);
+    if (tag !== currentTag && !isTagTaken(db, key, tag, profileId)) return tag;
+  }
+  throw new Error('attribution du tag impossible (collisions répétées)');
 }
 
 /**
@@ -255,8 +268,8 @@ export function linkInvitedPrincipals(db: SqlDb, accountId: string, now: number)
     const high = a < b ? b : a;
     // ON CONFLICT : une paire déjà liée n'est ni dupliquée ni modifiée.
     db.prepare(
-      `INSERT INTO profile_friendships (low_pid, high_pid, requested_by, status, created_at) VALUES (?, ?, ?, 'accepted', ?)
+      `INSERT INTO profile_friendships (low_pid, high_pid, requested_by, status, created_at, accepted_at) VALUES (?, ?, ?, 'accepted', ?, ?)
        ON CONFLICT (low_pid, high_pid) DO NOTHING`,
-    ).run(low, high, a, now);
+    ).run(low, high, a, now, now);
   }
 }

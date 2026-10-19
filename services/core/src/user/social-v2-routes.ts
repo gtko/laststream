@@ -9,7 +9,7 @@ import { assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
-import type { PresenceChange, SubjectView } from './social-v2-store.js';
+import type { FriendLiveView, FriendView, PresenceChange, SubjectView } from './social-v2-store.js';
 import { historyQuerySchema, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
 
@@ -71,8 +71,10 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     emitSocialEvent(deps.socialEvents, change.household, { t: 'presence', friend: { ...change.subject, household: true } });
   };
 
-  /** Vue d'un profil telle qu'un ami la voit (drapeau « foyer » faux). */
-  const asFriend = (view: SubjectView) => ({ ...view, household: false });
+  /** Vue d'un profil telle qu'un ami la voit (drapeau « foyer » faux). Trames temps réel : sans réglages par profil. */
+  const asFriend = (view: SubjectView): FriendLiveView => ({ ...view, household: false });
+  /** Même vue en réponse REST : une amitié acceptée repart des réglages par défaut (pas de favori, pas de sourdine). */
+  const restFriend = (view: SubjectView): FriendView => ({ ...asFriend(view), favorite: false, muted: false });
 
   // Moi
 
@@ -118,7 +120,7 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     if (outcome.result === 'accepted') {
       emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: asFriend(outcome.self) });
       emitSocialEvent(deps.socialEvents, [outcome.self.pid], { t: 'friend', friend: asFriend(outcome.other) });
-      return sendJson(c, { friend: asFriend(outcome.other) }, 200);
+      return sendJson(c, { friend: restFriend(outcome.other) }, 200);
     }
     emitSocialEvent(deps.socialEvents, [outcome.outgoing.pid], { t: 'request', request: outcome.incoming });
     return sendJson(c, { request: outcome.outgoing }, 201);
@@ -133,7 +135,7 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'friend_limit_reached');
     emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: asFriend(outcome.self) });
     emitSocialEvent(deps.socialEvents, [outcome.self.pid], { t: 'friend', friend: asFriend(outcome.other) });
-    return sendJson(c, { friend: asFriend(outcome.other) });
+    return sendJson(c, { friend: restFriend(outcome.other) });
   });
 
   /**

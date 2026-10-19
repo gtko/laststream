@@ -534,6 +534,37 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
     `,
   },
+  {
+    version: 18,
+    name: 'profil social étendu (bio, statut, bannière, favoris, cooldown du tag), relations par profil',
+    sql: `
+      -- Champs du profil social (JSON, NULL = absent) : bio ≤ 140 car., statut personnalisé, bannière, favoris (≤ 4).
+      -- tag_changed_at : dernier changement de tag (ms) ; le cooldown de 30 jours s'y applique. Aucun NULL par défaut.
+      ALTER TABLE profiles ADD COLUMN bio TEXT;
+      ALTER TABLE profiles ADD COLUMN custom_status TEXT;
+      ALTER TABLE profiles ADD COLUMN banner TEXT;
+      ALTER TABLE profiles ADD COLUMN favorites TEXT;
+      ALTER TABLE profiles ADD COLUMN tag_changed_at INTEGER;
+
+      -- Date d'acceptation d'une amitié (ms) : « ami depuis ». Les amitiés déjà acceptées reçoivent leur date de demande.
+      ALTER TABLE profile_friendships ADD COLUMN accepted_at INTEGER;
+      UPDATE profile_friendships SET accepted_at = created_at WHERE status = 'accepted';
+
+      -- Réglages qu'un profil applique à un autre (favori, surnom, sourdine, activité masquée). Une ligne par couple ;
+      -- l'absence de ligne vaut les défauts (false, aucun surnom). Supprimée avec l'un des deux profils.
+      CREATE TABLE profile_relations (
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        target_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
+        nickname TEXT,
+        muted INTEGER NOT NULL DEFAULT 0 CHECK (muted IN (0, 1)),
+        hide_activity INTEGER NOT NULL DEFAULT 0 CHECK (hide_activity IN (0, 1)),
+        PRIMARY KEY (owner_pid, target_pid),
+        CHECK (owner_pid <> target_pid)
+      );
+      CREATE INDEX profile_relations_target ON profile_relations (target_pid);
+    `,
+  },
 ];
 
 /**
