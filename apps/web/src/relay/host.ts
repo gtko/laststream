@@ -49,6 +49,8 @@ export interface RangeServerOptions {
   budget?: UploadBudget;
   /** Trames que le serveur de plages ne traite pas (maillage entre invités) ; elles comptent comme de l'activité. */
   onOther?: (frame: RelayFrame) => void;
+  /** Capacités de décodage annoncées par l'invité à l'ouverture (masque, voir `DECODE_CAPS`). */
+  onCaps?: (mask: number) => void;
 }
 
 /** Délai d'inactivité d'un lien (2 min) et erreurs consécutives tolérées (20) avant coupure. */
@@ -109,6 +111,7 @@ export class RangeServer {
   private readonly onAbuse: (() => void) | undefined;
   private readonly budget: UploadBudget | undefined;
   private readonly onOther: ((frame: RelayFrame) => void) | undefined;
+  private readonly onCaps: ((mask: number) => void) | undefined;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private errorStreak = 0;
 
@@ -130,6 +133,7 @@ export class RangeServer {
     this.onAbuse = options.onAbuse;
     this.budget = options.budget;
     this.onOther = options.onOther;
+    this.onCaps = options.onCaps;
     this.meter = new RateMeter(this.now);
     channel.bufferedAmountLowThreshold = this.lowWater;
     channel.addEventListener('message', this.onMessage);
@@ -178,6 +182,9 @@ export class RangeServer {
         break;
       case 'cancel':
         this.active.get(frame.reqId)?.abort();
+        break;
+      case 'caps':
+        this.onCaps?.(frame.mask);
         break;
       default:
         this.onOther?.(frame);

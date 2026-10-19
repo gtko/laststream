@@ -561,3 +561,24 @@ describe('choix des pairs', () => {
     expect(meshPeerOrder(iso, 'me')).toEqual(['a', 'b']);
   });
 });
+
+describe('bascule de source et reconnexion', () => {
+  it('chaque état hôte (une session par lien) a son propre identifiant de fichier', () => {
+    const ids = new Set(Array.from({ length: 20 }, () => new MeshHostState().fileId));
+    expect(ids.size).toBe(20);
+  });
+
+  it('un pair d’un autre fichier est refusé dès l’annonce, et fermer le maillage vide le cache', async () => {
+    const r = rig(2 * MIB);
+    const a = (await r.addGuest('A')).mesh!;
+    await readAll(a, 2 * MIB);
+    const x = a as unknown as { adopt(id: string, ch: ChannelLike): void; peers: Map<string, unknown>; cache: PieceCache };
+    const [mine, theirs] = memoryChannelPair(0);
+    x.adopt('Z', mine);
+    expect(x.peers.has('Z')).toBe(true);
+    theirs.send(encodeMesh(0, 20, 'un-autre-fichier'));
+    await until(() => !x.peers.has('Z'));
+    a.close();
+    expect(x.cache.bytes).toBe(0); // la reconnexion crée un MeshGuest neuf : rien du fichier précédent ne survit
+  });
+});

@@ -73,6 +73,8 @@ export interface HostOptions extends PeerOptions {
   answerTimeoutMs?: number;
   /** Maillage entre invités : sans lui (hôte ancien ou option coupée), les invités n'ont que le relais direct. */
   mesh?: MeshHostState;
+  /** Capacités de décodage annoncées par un invité (masque, voir `DECODE_CAPS`). */
+  onCaps?: (guestId: string, mask: number) => void;
 }
 
 /** Délai de réponse de l'invité, et nombre de candidats ICE retenus avant la réponse. */
@@ -205,6 +207,7 @@ export class RelayHost {
       ...this.opts.server,
       budget: this.budget,
       onOther: this.opts.mesh?.attach(guestId, channel, () => this.source.size()),
+      onCaps: (mask) => this.opts.onCaps?.(guestId, mask),
       onIdle: () => this.dropServer(guestId, server),
       onAbuse: () => this.dropServer(guestId, server),
       onStats: (stats) => this.opts.onStats?.(guestId, stats),

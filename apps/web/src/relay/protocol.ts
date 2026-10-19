@@ -18,6 +18,9 @@
  *     LOCATED [36][reqId u32][index u32][flags u8][sha256 32][n u8][(idLen u8, id) × n]
  *                                                                 flags bit 0 = en cours chez un autre invité (attendre) ; hachage nul = inconnu
  *
+ *   invité -> hôte (à l'ouverture du canal)
+ *     CAPS    [7][reqId u32 = 0][mask u32]                        bit i = DECODE_CAPS[i] : décodages que l'invité sait faire
+ *
  * Encodage et décodage purs (testés dans src/relay/protocol.test.ts). */
 
 /** Nom du DataChannel des plages (créé par l'hôte). */
@@ -34,6 +37,13 @@ export type RangeErrorCode = (typeof RANGE_ERROR_CODES)[number];
 
 /** Codes locaux (délais, annulation, fermeture) en plus des codes de l'hôte. */
 export type RelayErrorCode = RangeErrorCode | 'timeout' | 'cancelled' | 'closed' | 'unavailable' | 'protocol';
+
+/**
+ * Capacités de décodage annoncées par un invité (vidéo, puis audio). L'index sert de bit sur le fil : ne pas réordonner,
+ * ajouter en fin de liste.
+ */
+export const DECODE_CAPS = ['h264', 'hevc', 'av1', 'vp9', 'aac', 'opus', 'ac3', 'eac3', 'dts', 'flac'] as const;
+export type DecodeCap = (typeof DECODE_CAPS)[number];
 
 const MESSAGES: Record<RelayErrorCode, string> = {
   bad_request: 'Requête de plage invalide.',
@@ -92,7 +102,8 @@ export type RelayFrame =
   | { t: 'mesh'; reqId: number; pieceShift: number; fileId: string }
   | { t: 'have'; reqId: number; ranges: PieceInterval[] }
   | { t: 'locate'; reqId: number; index: number }
-  | { t: 'located'; reqId: number; index: number; pending: boolean; hash: Uint8Array | null; holders: string[] };
+  | { t: 'located'; reqId: number; index: number; pending: boolean; hash: Uint8Array | null; holders: string[] }
+  | { t: 'caps'; mask: number };
 
 /** Intervalle d'index de morceaux [start, start + len). */
 export interface PieceInterval {
@@ -101,7 +112,8 @@ export interface PieceInterval {
 }
 
 // Maillage : 32 et suivants, pour ne pas heurter les types ajoutés à la suite par d'autres chantiers (7 à 31).
-const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36 } as const;
+const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, caps: 7, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36 } as const;
+
 /** Intervalles au plus par instantané HAVE, longueur maximale d'un identifiant de fichier ou de pair. */
 export const MAX_HAVE_RANGES = 512;
 export const MAX_ID_BYTES = 64;
@@ -147,6 +159,29 @@ export function encodeInfoReq(reqId: number): Uint8Array {
 
 export function encodeCancel(reqId: number): Uint8Array {
   return header(5, TYPE.cancel, reqId).out;
+}
+
+/** Bits (DECODE_CAPS) des capacités d'une liste ; les noms inconnus sont ignorés. */
+export function capsMask(caps: readonly string[]): number {
+  let mask = 0;
+  for (const cap of caps) {
+    const i = DECODE_CAPS.indexOf(cap as DecodeCap);
+    if (i >= 0) mask |= 1 << i;
+  }
+  return mask >>> 0;
+}
+
+/** Capacités d'un masque, dans l'ordre de DECODE_CAPS (les bits inconnus sont ignorés). */
+export function capsFromMask(mask: number): DecodeCap[] {
+  return DECODE_CAPS.filter((_, i) => (mask & (1 << i)) !== 0);
+}
+
+/** Annonce des capacités de décodage de l'invité (bits de DECODE_CAPS). */
+export function encodeCaps(mask: number): Uint8Array {
+  if (!Number.isInteger(mask) || mask < 0 || mask > 0xffffffff) throw new Error('masque hors bornes');
+  const { out, view } = header(9, TYPE.caps, 0);
+  view.setUint32(5, mask);
+  return out;
 }
 
 /** Réponse d'information ; un type trop long (> 255 octets) est omis. */
@@ -272,6 +307,8 @@ export function decodeFrame(buf: Uint8Array): RelayFrame | null {
       const hash = buf.slice(10, 42);
       return { t: 'located', reqId, index: view.getUint32(5), pending: (view.getUint8(9) & 1) !== 0, hash: hash.some((b) => b !== 0) ? hash : null, holders };
     }
+    case TYPE.caps:
+      return n === 9 && reqId === 0 ? { t: 'caps', mask: view.getUint32(5) } : null;
     default:
       return null;
   }

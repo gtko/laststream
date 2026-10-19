@@ -9,6 +9,10 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
+import {
+  audioKnown, chooseCompatibleSource, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, type FileCodecs, type SourceLike,
+} from './compat';
+import { codecCacheKey, getCodecs, probeSource, probeUrl, putCodecs } from './headerCodecs';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
 import type { RangeSource } from '../relay/host';
@@ -34,7 +38,16 @@ export interface SessionAdapter {
    * un magnet ou un proxy. Jamais affiché, jamais envoyé au salon, jamais journalisé.
    */
   relayUrl?: () => string | null;
+  /** Sources déjà chargées du titre (classées), pour proposer une source compatible avec tous les invités. */
+  sources?: () => readonly SourceLike[];
+  /** Bascule demandée par le salon en cours de rechargement : le lecteur suit le salon, il ne s'aligne pas sur lui. */
+  switching?: boolean;
+  /** Lien lisible d'une source (débridé ou direct seulement, jamais torrent) pour en lire l'en-tête ; null sinon. */
+  resolveUrl?: (view: SourceLike, signal: AbortSignal) => Promise<string | null>;
 }
+
+/** Résultat de la bascule vers une source compatible. `audioUnverified` : le son de cette source n'est pas connu. */
+export type SwitchResult = { status: 'switched'; audioUnverified: boolean } | { status: 'none' };
 
 interface EngineLike {
   kind: string;
@@ -115,6 +128,11 @@ class PartyBridge {
   /** Salon créé depuis la fiche (création différée) : l'interface copie le lien et ouvre le panneau. */
   onCreated: ((room: PartyRoom) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
+  /**
+   * Bascule la lecture sur une source déjà chargée, à la même position ; `allow` filtre les sources de repli de cette
+   * bascule. Fourni par le lecteur ; renvoie vrai si la bascule a lieu.
+   */
+  switcher: ((view: SourceLike, allow: (view: SourceLike) => boolean) => boolean) | null = null;
   private listeners = new Set<Listener>();
   private announced = '';
   /** Partage de la lecture aux invités : session hôte active, et lien qu'elle sert (comparé, jamais affiché). */
@@ -122,6 +140,8 @@ class PartyBridge {
   private relayKey = '';
   /** La source refuse la lecture depuis ce navigateur (CORS) : l'hôte le voit, et les invités reçoivent le même motif. */
   private refusedRelay = false;
+  /** Codecs lus dans l'en-tête du fichier relayé, pour le relais `relay` (URL en mémoire seulement, jamais affichée). */
+  private header: { relay: string; codecs: FileCodecs } | null = null;
 
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -258,6 +278,76 @@ class PartyBridge {
   }
 
   /**
+   * Avertissement de compatibilité pour l'hôte (« 1 invité n’aura pas le son (DTS) »), ou null. Il n'existe que pendant le
+   * partage aux invités, et ne concerne que ceux qui ont annoncé leurs capacités de décodage.
+   */
+  guestWarning(): string | null {
+    const c = this.client;
+    const relay = this.relay;
+    const a = this.adapter?.() ?? null;
+    if (!c || !c.isHost || !relay || !a) return null;
+    // Codecs de l'en-tête quand on les a lus pour ce relais, sinon ceux du nom de la source.
+    const file = this.header && this.header.relay === this.relayKey ? this.header.codecs : fileCodecsOf(a.view);
+    return compatWarning(file, guestStatuses(c.participants, relay.guestCaps()));
+  }
+
+  /**
+   * Passe la lecture à la meilleure source compatible avec tous les invités annoncés, à la même position. Les replis de
+   * cette bascule restent limités aux sources compatibles (jamais de torrent).
+   */
+  async switchToCompatible(): Promise<SwitchResult> {
+    const c = this.client;
+    const relay = this.relay;
+    const a = this.adapter?.() ?? null;
+    if (!c || !c.isHost || !relay || !a || !a.sources || !this.switcher) return { status: 'none' };
+    const statuses = guestStatuses(c.participants, relay.guestCaps());
+    // Codecs lus dans l'en-tête des candidates sondées : ils servent aussi aux replis de cette bascule.
+    const probed = new Map<SourceLike, FileCodecs>();
+    const choice = await chooseCompatibleSource(a.sources(), statuses, a.view?.index ?? null, async (v, signal) => {
+      const codecs = await this.candidateCodecs(a, v, signal);
+      if (codecs) probed.set(v, codecs);
+      return codecs;
+    });
+    if (!choice) return { status: 'none' };
+    const allow = (view: SourceLike): boolean => isCompatibleSource(view, statuses, probed.get(view));
+    if (!this.switcher(choice.view, allow)) return { status: 'none' };
+    const audioUnverified = choice.codecs ? choice.codecs.audio === null : !audioKnown(choice.view);
+    return { status: 'switched', audioUnverified };
+  }
+
+  /** Codecs d'une source candidate : cache d'abord, sinon en-tête lu sur son lien (résolu comme à la lecture). Jamais de torrent. */
+  private async candidateCodecs(a: SessionAdapter, view: SourceLike, signal: AbortSignal): Promise<FileCodecs | null> {
+    if (!isStreamable(view) || !a.resolveUrl) return null;
+    const key = await codecCacheKey(view).catch(() => null);
+    const cached = key ? getCodecs(key) : null;
+    if (cached) return cached;
+    const url = await a.resolveUrl(view, signal);
+    if (!url || signal.aborted) return null;
+    const codecs = await probeUrl(url);
+    if (codecs && key) putCodecs(key, codecs);
+    return codecs;
+  }
+
+  /**
+   * En-tête du fichier lu par l'hôte, dès que le relais s'ouvre (cache d'abord). Le fichier sert aussi aux invités :
+   * ses codecs remplacent ceux du nom dans l'avertissement.
+   */
+  private readHeader(a: SessionAdapter, url: string, source: RangeSource): void {
+    void (async () => {
+      const key = await codecCacheKey(a.view).catch(() => null);
+      let codecs = key ? getCodecs(key) : null;
+      if (!codecs) {
+        codecs = await probeSource(source).catch(() => null);
+        if (codecs && key) putCodecs(key, codecs);
+      }
+      if (codecs && this.relayKey === url) {
+        this.header = { relay: url, codecs };
+        this.emit();
+      }
+    })();
+  }
+
+  /**
    * Partage de la lecture : une session hôte existe seulement quand un invité est présent et que la lecture de l'hôte passe
    * par un lien HTTP(S) lu directement (débridé ou direct d'addon). Elle est reprise si le lien change (épisode suivant), et
    * fermée dès que la condition tombe.
@@ -276,6 +366,7 @@ class PartyBridge {
       const source = this.watchedSource(urlRangeSource({ url }));
       this.relay = new HostRelaySession({ client: c, source });
       this.relayKey = url;
+      this.readHeader(a, url, source);
       // Lecture d'essai : l'hôte apprend tout de suite si son navigateur peut partager ce lien (sans attendre un invité).
       void source.size().catch(() => undefined);
     } catch {
@@ -303,6 +394,7 @@ class PartyBridge {
     this.relay = null;
     this.relayKey = '';
     this.refusedRelay = false;
+    this.header = null;
   }
 
   /** L'hôte termine le salon pour tout le monde. */
@@ -340,8 +432,9 @@ class PartyBridge {
     if (!c || !c.room) return;
     this.controller?.reset();
     if (c.isHost) {
-      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure.
-      this.controller?.arm();
+      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure. Pas pour une bascule :
+      // le salon garde la main (son état ne doit pas être écrasé par celui d'un lecteur qui repart).
+      if (!a.switching) this.controller?.arm();
       const m = c.room.media;
       const s = a.cur.season ?? null;
       const e = a.cur.episode ?? null;

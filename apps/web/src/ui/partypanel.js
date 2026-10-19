@@ -21,6 +21,8 @@ let chatDraft = '';
 let lastInviteUrl = '';
 /** Salon créé depuis ce panneau : son créateur est l'hôte, même avant la bienvenue du serveur. */
 let createdHere = false;
+/** Dernier bloc de compatibilité affiché (évite de le reconstruire à chaque seconde). */
+let compatShown = '';
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
@@ -33,12 +35,24 @@ function relayText() {
   return 'Envoi : ' + fmtRate(s.rateBps) + ' vers ' + s.links + ' invité' + (s.links > 1 ? 's' : '') + '.';
 }
 
+/** Avertissement de compatibilité des invités et bouton de bascule ; vide si tous les invités annoncés peuvent tout lire. */
+function compatHTML() {
+  const warn = partyBridge.guestWarning();
+  return warn
+    ? '<p class="wp-note wp-warn" role="status">' + esc(warn) + '</p>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-wp-compat>Passer à une source compatible</button>'
+    : '';
+}
+
 function inviteHTML(c) {
+  const compat = compatHTML();
+  compatShown = compat;
   return '<section class="wp-invite"><button type="button" class="btn btn-ghost btn-sm" data-wp-invite>Copier le lien d’invitation</button>' +
     (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
     '<p class="wp-note">Invités : <b data-wp-guests>' + guestCount(c) + '</b></p>' +
     '<p class="wp-note wp-warn">Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.</p>' +
-    '<p class="wp-note" data-wp-relay role="status">' + esc(relayText()) + '</p></section>';
+    '<p class="wp-note" data-wp-relay role="status">' + esc(relayText()) + '</p>' +
+    '<div class="wp-compat" data-wp-compatbox>' + compat + '</div></section>';
 }
 
 /** Lien d'un salon (ouvre la page de connexion au salon). */
@@ -143,6 +157,12 @@ function updateRelayLine() {
   if (!panel || !open) return;
   const relay = panel.querySelector('[data-wp-relay]');
   if (relay) relay.textContent = relayText();
+  const box = panel.querySelector('[data-wp-compatbox]');
+  const compat = compatHTML();
+  if (box && compat !== compatShown) {
+    compatShown = compat;
+    box.innerHTML = compat;
+  }
   const c = partyBridge.client;
   const guests = panel.querySelector('[data-wp-guests]');
   if (guests && c) guests.textContent = String(guestCount(c));
@@ -245,6 +265,30 @@ async function inviteLink() {
   await copyText(lastInviteUrl, 'Lien d’invitation copié');
 }
 
+/** Bascule sur la meilleure source compatible avec tous les invités (même position), ou le dit. */
+let compatBusy = false;
+
+/** Recherche (en-tête des sources, quelques secondes) puis bascule ; un clic pendant la recherche ne fait rien. */
+async function switchCompatible() {
+  if (compatBusy) return;
+  compatBusy = true;
+  toast('Recherche d’une source compatible…', { ms: 4000 });
+  let r = { status: 'none' };
+  try {
+    r = await partyBridge.switchToCompatible();
+  } catch {
+    r = { status: 'none' };
+  } finally {
+    compatBusy = false;
+  }
+  if (r.status === 'switched') {
+    toast('Lecture sur une source compatible avec tous les invités' + (r.audioUnverified ? ' (son non vérifié)' : ''), { ms: 6000 });
+  } else {
+    toast('Aucune source compatible avec tous les invités', { ms: 6000 });
+  }
+  render();
+}
+
 async function invite() {
   try {
     await inviteLink();
@@ -283,6 +327,7 @@ function onClick(e) {
   const c = partyBridge.client;
   if (t.closest('[data-wp-close]')) { togglePartyPanel(false); return; }
   if (t.closest('[data-wp-invite]') && c) { void invite(); return; }
+  if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
   if (t.closest('[data-wp-leave]')) { partyBridge.leave(); toast('Tu as quitté le salon'); return; }
   if (t.closest('[data-wp-end]')) {

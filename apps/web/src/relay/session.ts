@@ -17,7 +17,8 @@ import { MeshHostState } from './mesh/hostState';
 import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
 import type { RangeSource, UploadStats } from './host';
-import { RelayError, type ChannelLike } from './protocol';
+import { RelayError, capsMask, encodeCaps, type ChannelLike, type DecodeCap } from './protocol';
+import { detectDecodeCaps } from './player/detect';
 import type { PlaybackPlan, PlayerCallbacks, PlayerState, RangeReader, RoomState } from './player/types';
 
 let relayTurn: TurnConfig | null = null;
@@ -28,6 +29,9 @@ const RETRY_HOST_MS = 4000;
 const CONNECT_MS = 10_000;
 /** Après une action locale, on attend l'écho du salon avant de recaler le lecteur (sinon l'état périmé la défait). */
 const ECHO_WAIT_MS = 1500;
+/** Reconnexion après une coupure de liaison (bascule de source côté hôte, réseau) : 1 s, puis double, 30 s au plus. */
+export const RECONNECT_BASE_MS = 1000;
+export const RECONNECT_MAX_MS = 30_000;
 
 /** TURN facultatif, injecté par l'application (jamais en dur dans le code). `null` : STUN seul. */
 export function setRelayTurn(turn: TurnConfig | null): void {
@@ -78,6 +82,8 @@ export class HostRelaySession {
   private readonly unsubscribe: () => void;
   /** Identifiants de connexion des invités du salon : seuls ceux-là sont admis à une liaison. */
   private guestIds = new Set<string>();
+  /** Capacités de décodage annoncées par chaque invité (masque DECODE_CAPS), par identifiant de pair. */
+  private readonly caps = new Map<string, number>();
   private closed = false;
 
   constructor(opts: HostRelayOptions) {
@@ -90,6 +96,9 @@ export class HostRelaySession {
       maxUploadMbps: opts.maxUploadMbps,
       onStats: (guestId, stats) => {
         this.uploads.set(guestId, stats);
+      },
+      onCaps: (guestId, mask) => {
+        if (this.guestIds.has(guestId)) this.caps.set(guestId, mask);
       },
     });
     const offParticipants = opts.client.on('participants', (list) => this.onParticipants(list));
@@ -108,11 +117,18 @@ export class HostRelaySession {
     for (const p of list) if (p.guest && p.peerId) ids.add(p.peerId);
     this.guestIds = ids;
     for (const id of this.host.guests) if (!ids.has(id)) this.host.drop(id);
+    for (const id of [...this.caps.keys()]) if (!ids.has(id)) this.caps.delete(id);
+  }
+
+  /** Capacités de décodage annoncées par les invités présents (masque DECODE_CAPS, par identifiant de pair). */
+  guestCaps(): ReadonlyMap<string, number> {
+    return new Map(this.caps);
   }
 
   /** Fin du salon : toutes les liaisons se ferment tout de suite, et plus aucun invité n'est admis. */
   private onEnd(): void {
     this.guestIds = new Set();
+    this.caps.clear();
     for (const id of this.host.guests) this.host.drop(id);
   }
 
@@ -201,6 +217,8 @@ export interface GuestRelayDeps {
   mesh?: false | Partial<Pick<MeshGuestOptions, 'cacheBytes' | 'maxPeers' | 'peerTimeoutMs' | 'peerDeadlineMs' | 'locateTimeoutMs' | 'haveEveryMs' | 'pendingWaitMs' | 'pendingWaits'>>;
   /** Fabrique de la couche de liaison entre invités (tests ; défaut : WebRTC signalé par le salon). */
   meshConnector?: (self: string, allow: (peerId: string) => boolean) => PeerConnector;
+  /** Capacités de décodage de cet appareil (défaut : sonde WebCodecs, voir detectDecodeCaps). */
+  decodeCaps?: () => Promise<DecodeCap[]>;
   /** Échecs de connexion avant que le salon soit considéré comme refusé (défaut : 3). */
   maxRefusals?: number;
   /** Délai de connexion à l'hôte (ms). */
@@ -231,6 +249,10 @@ export class GuestRelaySession {
   /** Action locale en attente d'écho : révision du salon à ce moment, et fin de la fenêtre d'attente. */
   private pendingRev = -1;
   private pendingUntil = 0;
+  /** Masque des capacités de décodage de cet appareil, sondé une fois à la connexion au salon. */
+  private capsP: Promise<number | null> | null = null;
+  /** Coupures consécutives sans liaison réussie : fixe le délai de la prochaine reconnexion. */
+  private reconnects = 0;
 
   constructor(private readonly deps: GuestRelayDeps) {}
 
@@ -244,6 +266,9 @@ export class GuestRelaySession {
       clearTimer: this.deps.clearTimer,
     });
     this.client = client;
+    const probe = this.deps.decodeCaps ?? (() => detectDecodeCaps());
+    // Sonde en échec : capacités inconnues (null), rien n'est annoncé ; l'hôte ne suppose rien.
+    this.capsP = probe().then(capsMask, () => null);
     client.on('status', (st) => this.onStatus(st));
     client.on('welcome', () => {
       this.welcomed = true;
@@ -309,6 +334,21 @@ export class GuestRelaySession {
     const c = this.client;
     this.client = null;
     c?.close();
+  }
+
+  /**
+   * Reconnexion automatique après une coupure : nouvelle liaison (hello), puis annonce des capacités sur le nouveau canal.
+   * Délai doublé à chaque coupure (1 s, 2 s, 4 s… 30 s au plus) ; s'arrête avec la lecture, le salon ou la session.
+   */
+  private scheduleReconnect(): void {
+    this.cancelRetry();
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.reconnects);
+    this.reconnects += 1;
+    const set = this.deps.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+    this.retryTimer = set(() => {
+      this.retryTimer = null;
+      if (this.view.phase === 'host-lost') this.retry();
+    }, delay);
   }
 
   private scheduleRetry(): void {
@@ -384,6 +424,16 @@ export class GuestRelaySession {
       const channel: ChannelLike = await relay.connect(this.deps.connectTimeoutMs ?? CONNECT_MS);
       if (!this.isCurrent(seq)) return;
       channel.addEventListener('close', () => this.onChannelClosed(seq));
+      // Capacités de décodage : annoncées à l'hôte sur ce canal, avant la première requête de plage.
+      const mask = await (this.capsP ?? Promise.resolve(null));
+      if (!this.isCurrent(seq)) return;
+      if (mask !== null) {
+        try {
+          channel.send(encodeCaps(mask));
+        } catch {
+          // Canal fermé pendant l'annonce : la liaison se rompra d'elle-même (onChannelClosed).
+        }
+      }
       const range = new RangeClient(channel, {
         onStats: (s) => {
           this.view = { ...this.view, bytesReceived: s.bytesReceived, rateBps: s.rateBps };
@@ -403,6 +453,7 @@ export class GuestRelaySession {
         return;
       }
       this.setView('ready', '');
+      this.reconnects = 0;
       this.view = { ...this.view, note: plan.note ?? '' };
       this.syncRoom();
     } catch (err) {
@@ -415,6 +466,7 @@ export class GuestRelaySession {
         return;
       }
       this.setView('host-lost', err instanceof RelayError ? relayErrorText(err.code) : relayErrorText('unknown'));
+      this.scheduleReconnect();
     }
   }
 
@@ -455,6 +507,7 @@ export class GuestRelaySession {
     if (!this.isCurrent(seq)) return;
     this.teardownMedia();
     this.setView('host-lost', hostLostText());
+    this.scheduleReconnect();
   }
 
   private callbacks(): PlayerCallbacks {
