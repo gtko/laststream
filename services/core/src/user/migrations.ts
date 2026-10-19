@@ -507,6 +507,18 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX note_creations_author ON note_creations (author_pid, created_at);
     `,
   },
+  {
+    version: 16,
+    name: 'nonces des tickets du flux temps réel (usage unique)',
+    sql: `
+      -- Un ticket du flux social n'ouvre qu'une connexion : son nonce est mémorisé jusqu'à son échéance (ms), puis purgé.
+      CREATE TABLE live_ticket_nonces (
+        nonce TEXT PRIMARY KEY,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
+    `,
+  },
 ];
 
 /**

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { revokeLegacyFriendship } from './social-handles.js';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
@@ -564,7 +565,12 @@ export class SocialV2Store {
   /** Supprime une amitié acceptée. Le foyer n'est pas une amitié : rien à supprimer. */
   removeFriend(pid: string, otherPid: string): boolean {
     const { low, high } = pairOf(pid, otherPid);
-    return Number(this.db.prepare("DELETE FROM profile_friendships WHERE low_pid = ? AND high_pid = ? AND status = 'accepted'").run(low, high).changes) === 1;
+    return this.db.transaction(() => {
+      const removed = Number(this.db.prepare("DELETE FROM profile_friendships WHERE low_pid = ? AND high_pid = ? AND status = 'accepted'").run(low, high).changes) === 1;
+      // L'amitié legacy compte↔compte (profils principaux) tombe avec elle : sinon l'ex-ami garde l'accès legacy.
+      if (removed) revokeLegacyFriendship(this.db, pid, otherPid);
+      return removed;
+    });
   }
 
   private countFriends(pid: string): number {

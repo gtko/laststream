@@ -340,7 +340,9 @@ export class SocialStore {
     const rows = this.db
       .prepare(
         `SELECT a.username, ${AVATAR_SQL} AS avatar, ${AVATAR_ART_SQL} AS avatar_art, f.status, f.requested_by, f.created_at, f.accepted_at,
-                pr.seen_at, pr.watching, pr.invisible
+                pr.seen_at, pr.watching, pr.invisible,
+                (SELECT pp.status FROM profiles p JOIN profile_presence pp ON pp.profile_pid = p.pid
+                  WHERE p.account_id = a.id AND p.is_kid = 0 AND p.pid IS NOT NULL ORDER BY p.created_at, p.id LIMIT 1) AS v2_status
          FROM friendships f
          JOIN accounts a ON a.id = CASE WHEN f.low_id = ? THEN f.high_id ELSE f.low_id END
          LEFT JOIN presence pr ON pr.account_id = a.id
@@ -358,6 +360,7 @@ export class SocialStore {
       seen_at: string | null;
       watching: string | null;
       invisible: number | null;
+      v2_status: string | null;
     }[];
     const out: FriendsOverview = { friends: [], incoming: [], outgoing: [] };
     for (const row of rows) {
@@ -366,7 +369,7 @@ export class SocialStore {
         (row.requested_by === accountId ? out.outgoing : out.incoming).push(view);
         continue;
       }
-      const online = row.seen_at !== null && row.invisible !== 1 && nowMs - Date.parse(row.seen_at) <= PRESENCE_TTL_MS;
+      const online = row.seen_at !== null && row.invisible !== 1 && row.v2_status !== 'invisible' && nowMs - Date.parse(row.seen_at) <= PRESENCE_TTL_MS;
       const watching = online && row.watching !== null ? parseWatching(row.watching) : null;
       out.friends.push({
         username: row.username,

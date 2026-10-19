@@ -138,6 +138,7 @@ function allocateTag(db: SqlDb, key: string, profileId: string, random: RandomBy
  * avec elle (les clés étrangères sur pid interdiraient sinon de vider le pid).
  */
 function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
+  revokeLegacyFriendshipsOf(db, pid);
   db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? OR high_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
   db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
@@ -195,6 +196,32 @@ export function backfillProfileIdentities(db: SqlDb, random: RandomBytes = crypt
   for (const row of rows) {
     syncProfileIdentity(db, row.account_id, row.id, row.name, false, random);
   }
+}
+
+/**
+ * Révocation de l'amitié legacy (compte↔compte, table `friendships`) entre deux profils : elle n'est supprimée que si les
+ * deux profils sont les profils principaux de leurs comptes (c'est la seule paire que la v2 reflète). Sinon, rien.
+ * Sans elle, un ex-ami retirerait en v2 mais garderait l'accès legacy à la bibliothèque et à la présence.
+ */
+export function revokeLegacyFriendship(db: SqlDb, pidA: string, pidB: string): void {
+  const rowA = db.prepare('SELECT account_id FROM profiles WHERE pid = ?').get(pidA) as { account_id: string } | undefined;
+  const rowB = db.prepare('SELECT account_id FROM profiles WHERE pid = ?').get(pidB) as { account_id: string } | undefined;
+  if (rowA === undefined || rowB === undefined || rowA.account_id === rowB.account_id) return;
+  if (principalPidOf(db, rowA.account_id) !== pidA || principalPidOf(db, rowB.account_id) !== pidB) return;
+  const low = rowA.account_id < rowB.account_id ? rowA.account_id : rowB.account_id;
+  const high = rowA.account_id < rowB.account_id ? rowB.account_id : rowA.account_id;
+  db.prepare('DELETE FROM friendships WHERE low_id = ? AND high_id = ?').run(low, high);
+}
+
+/**
+ * Révoque l'amitié legacy entre `pid` et chacun de ses amis v2 (acceptés ou en attente). À appeler avant la disparition
+ * du profil (suppression, ou perte d'identité par passage en enfant), tant que son pid existe encore.
+ */
+export function revokeLegacyFriendshipsOf(db: SqlDb, pid: string): void {
+  const rows = db
+    .prepare('SELECT CASE WHEN low_pid = ? THEN high_pid ELSE low_pid END AS other FROM profile_friendships WHERE low_pid = ? OR high_pid = ?')
+    .all(pid, pid, pid) as { other: string }[];
+  for (const row of rows) revokeLegacyFriendship(db, pid, row.other);
 }
 
 /** Profil principal d'un compte (premier profil non enfant créé, même règle que la migration v13), `undefined` sinon. */

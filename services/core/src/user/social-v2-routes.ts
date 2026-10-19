@@ -54,12 +54,15 @@ export function pidParam(raw: string, notFound: string): string {
 
 /** Tickets du flux temps réel délivrés par profil et par minute (au-delà : 429). */
 const LIVE_TICKETS_PER_MINUTE = 20;
+/** Demandes d'ami envoyées par profil et par heure (au-delà : 429 `rate_limited`). */
+const FRIEND_REQUESTS_PER_HOUR = 20;
 
 export function registerSocialV2Routes(router: App, deps: AppDeps, backend: UserBackend): void {
   const users = () => backend.users();
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, users(), social(), deps.secret);
   const liveTickets = createRateLimiter(LIVE_TICKETS_PER_MINUTE, 60_000);
+  const friendRequests = createRateLimiter(FRIEND_REQUESTS_PER_HOUR, 3_600_000);
 
   /** Diffuse un changement de présence : amis (vue « ami ») puis foyer (vue « foyer »). */
   const announcePresence = (change: PresenceChange | undefined): void => {
@@ -104,6 +107,8 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     const { handle } = parseWith(requestSchema, c.get('body'));
     const parsed = parseHandle(handle);
     if (parsed === null) throw new UserApiError(400, 'invalid_body', ['handle:format']);
+    const verdict = friendRequests(me.pid);
+    if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     const outcome = await social().requestFriend(me.pid, parsed.key, parsed.tag, Date.now());
     if (outcome.result === 'not_found') throw new UserApiError(404, 'handle_not_found');
     if (outcome.result === 'self') throw new UserApiError(400, 'self');

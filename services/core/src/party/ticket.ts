@@ -93,16 +93,31 @@ export function signLiveTicket(pid: string, accountId: string, now: number, secr
   return { ticket: seal(LIVE_PURPOSE, payload, secret), expiresAt: new Date(exp).toISOString() };
 }
 
-/** Profil et compte d'un ticket du flux social authentique, non expiré et émis pour ce profil ; sinon `undefined`. */
-export function verifyLiveTicket(ticket: string, now: number, secret: string): LiveIdentity | undefined {
+/** Identité d'un ticket du flux social et ses éléments d'usage unique (nonce, échéance en ms). */
+export interface LiveClaims extends LiveIdentity {
+  nonce: string;
+  exp: number;
+}
+
+/** Comme `verifyLiveTicket`, avec le nonce et l'échéance : le Durable Object s'en sert pour consommer le ticket une fois. */
+export function verifyLiveTicketClaims(ticket: string, now: number, secret: string): LiveClaims | undefined {
   const payload = open(ticket, LIVE_PURPOSE, now, secret);
   if (
     payload === undefined ||
     typeof payload.pid !== 'string' ||
     typeof payload.accountId !== 'string' ||
+    typeof payload.nonce !== 'string' ||
+    payload.nonce === '' ||
+    typeof payload.exp !== 'number' ||
     payload.scope !== liveScope(payload.pid)
   ) {
     return undefined;
   }
-  return { pid: payload.pid, accountId: payload.accountId };
+  return { pid: payload.pid, accountId: payload.accountId, nonce: payload.nonce, exp: payload.exp };
+}
+
+/** Profil et compte d'un ticket du flux social authentique, non expiré et émis pour ce profil ; sinon `undefined`. */
+export function verifyLiveTicket(ticket: string, now: number, secret: string): LiveIdentity | undefined {
+  const claims = verifyLiveTicketClaims(ticket, now, secret);
+  return claims === undefined ? undefined : { pid: claims.pid, accountId: claims.accountId };
 }

@@ -230,6 +230,28 @@ describe('flux temps réel social (WebSocket)', () => {
     expect(await socket.whenClosed()).toMatchObject({ code: 4013 });
   }, TEST_TIMEOUT_MS);
 
+  it('trame binaire : fermée (4003) ; le débit est compté avant le type (4008 une fois épuisé)', async () => {
+    const alice = await persona('alice');
+    const binary = (await liveSocket(alice)).peer;
+    binary.ws.send(new Uint8Array([1, 2, 3]).buffer);
+    expect(await binary.whenClosed()).toMatchObject({ code: 4003 });
+
+    const carol = await persona('carol');
+    const flood = (await liveSocket(carol)).peer;
+    for (let i = 0; i < 30; i += 1) flood.send({ t: 'ping' });
+    flood.ws.send(new Uint8Array([1]).buffer);
+    expect(await flood.whenClosed()).toMatchObject({ code: 4008 });
+  }, TEST_TIMEOUT_MS);
+
+  it('ticket à usage unique : le rejouer est refusé (401)', async () => {
+    const alice = await persona('alice');
+    const ticket = await api<{ wsPath: string }>('POST', '/user/social/live-ticket', acting(alice));
+    const first = await upgrade(ticket.body.wsPath);
+    expect(first.status).toBe(101);
+    new Peer(first.webSocket as any).close();
+    expect((await upgrade(ticket.body.wsPath)).status).toBe(401);
+  }, TEST_TIMEOUT_MS);
+
   it('ticket absent, altéré, ou ticket de salon : refusé avant la mise à niveau (401)', async () => {
     const alice = await persona('alice');
     expect((await upgrade('/user/social/live?ticket=n.importe.quoi')).status).toBe(401);

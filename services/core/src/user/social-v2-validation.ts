@@ -26,6 +26,16 @@ export const requestSchema = z.strictObject({
     .refine((value) => parseHandle(value) !== null, 'handle:format'),
 });
 
+/**
+ * Affiche acceptée : URL TMDB en https, ou chemin du site (`/…`, jamais `//` ni un antislash après `/`, qui désignent un autre hôte).
+ * Toute autre valeur est supprimée sans erreur : le titre en cours reste accepté, sans affiche.
+ */
+function cleanPoster(value: string | undefined): string | undefined {
+  if (value === undefined || value.length > 500) return undefined;
+  if (value.startsWith('https://image.tmdb.org/')) return value;
+  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : undefined;
+}
+
 const TMDB_ID = z.number().int().positive().max(1_000_000_000);
 const SEASON = z.number().int().min(0).max(10_000);
 const EPISODE = z.number().int().min(0).max(10_000);
@@ -39,7 +49,10 @@ export const watchingSchema = z.strictObject({
     .regex(/^tt\d{1,10}$/)
     .optional(),
   title: z.string().trim().min(1).max(200),
-  poster: z.string().max(500).optional(),
+  poster: z
+    .string()
+    .optional()
+    .transform((value) => cleanPoster(value)),
   season: SEASON.optional(),
   episode: EPISODE.optional(),
   /** Position en secondes. */
@@ -138,8 +151,13 @@ const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
 /** Un graphème d'emoji contient toujours un pictogramme (ou un indicateur régional pour les drapeaux). */
 const PICTOGRAPHIC = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
 
+/** Unités de code au plus pour un emoji (famille ZWJ la plus longue : 11). */
+const MAX_EMOJI_CODE_UNITS = 16;
+
 /** Vrai si `text` est exactement un emoji : un seul graphème, qui contient un pictogramme. */
 export function isSingleEmoji(text: string): boolean {
+  // Plafond avant segmentation : un « graphème » peut enchaîner des centaines de marques combinantes.
+  if (text.length > MAX_EMOJI_CODE_UNITS) return false;
   return [...GRAPHEMES.segment(text)].length === 1 && PICTOGRAPHIC.test(text);
 }
 

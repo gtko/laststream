@@ -25,6 +25,9 @@ export const SOCIAL_LIVE_PATH = '/user/social/live';
  * forger : le Worker l'écrase toujours. Seul le Durable Object des données lit cet en-tête.
  */
 export const SOCIAL_LIVE_PID_HEADER = 'x-social-live-pid';
+/** En-têtes internes (écrasés par le Worker) : nonce et échéance (ms) du ticket, pour son usage unique. */
+export const SOCIAL_LIVE_NONCE_HEADER = 'x-social-live-nonce';
+export const SOCIAL_LIVE_EXP_HEADER = 'x-social-live-exp';
 /** Taille maximale d'une trame client, en caractères. Au-delà, la connexion est fermée (4013). */
 export const SOCIAL_LIVE_MAX_FRAME_CHARS = 1024;
 /** Code de fermeture d'une connexion remplacée par une plus récente du même profil. */
@@ -36,6 +39,11 @@ export const SOCIAL_LIVE_RATE_LIMITED = 4008;
  * peuvent pas être envoyés par `WebSocket.close` dans l'exécution Workers.
  */
 export const SOCIAL_LIVE_FRAME_TOO_LARGE = 4013;
+/**
+ * Code de fermeture d'une trame non texte (binaire). Applicatif lui aussi : 1003 (« données non acceptables ») est refusé
+ * par workerd, qui n'admet que 1000 et 3000-4999 (voir le commentaire de 4013).
+ */
+export const SOCIAL_LIVE_BINARY_FRAME = 4003;
 
 /** Trame sortante du contrat, telle qu'un client la reçoit. */
 export type LiveFrame =

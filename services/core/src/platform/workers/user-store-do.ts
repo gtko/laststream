@@ -13,11 +13,15 @@ import {
   LIVE_PONG_FRAME,
   liveEnvelopes,
   parseLiveClientFrame,
+  SOCIAL_LIVE_BINARY_FRAME,
+  SOCIAL_LIVE_EXP_HEADER,
   SOCIAL_LIVE_FRAME_TOO_LARGE,
+  SOCIAL_LIVE_NONCE_HEADER,
   SOCIAL_LIVE_PID_HEADER,
   SOCIAL_LIVE_RATE_LIMITED,
   SOCIAL_LIVE_REPLACED,
 } from '../../user/social-v2-live.js';
+import { consumeLiveTicketNonce, isLiveEligible } from '../../user/social-v2-live-tickets.js';
 import { SocialV2Store } from '../../user/social-v2-store.js';
 import type { SqlDb } from '../../user/sql.js';
 import { UserStore } from '../../user/store.js';
@@ -150,6 +154,16 @@ export class UserStoreDO extends DurableObject {
     if (pid === null || request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return new Response(JSON.stringify({ error: 'upgrade_required' }), { status: 426, headers: { 'content-type': 'application/json' } });
     }
+    // Profil supprimé ou devenu enfant depuis l'émission du ticket : refus (le ticket n'est pas consommé).
+    if (!isLiveEligible(this.db, pid)) {
+      return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403, headers: { 'content-type': 'application/json' } });
+    }
+    // Usage unique : le Worker pose nonce et échéance (en-têtes toujours écrasés) ; un nonce rejoué est refusé.
+    const nonce = request.headers.get(SOCIAL_LIVE_NONCE_HEADER);
+    const exp = Number(request.headers.get(SOCIAL_LIVE_EXP_HEADER));
+    if (nonce === null || !consumeLiveTicketNonce(this.db, nonce, exp, Date.now())) {
+      return new Response(JSON.stringify({ error: 'invalid_ticket' }), { status: 401, headers: { 'content-type': 'application/json' } });
+    }
     for (const old of this.ctx.getWebSockets(pid)) closeQuietly(old, SOCIAL_LIVE_REPLACED, 'replaced');
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -170,17 +184,23 @@ export class UserStoreDO extends DurableObject {
     }
   }
 
-  /** Trames client : `{ t: "ping" }` reçoit `{ t: "pong" }` ; trop grosse : fermée (4013) ; invalide : ignorée. */
+  /**
+   * Trames client : `{ t: "ping" }` reçoit `{ t: "pong" }`. Le débit est compté avant tout autre test (type compris) ;
+   * trame non texte : fermée (4003) ; trop grosse : fermée (4013) ; invalide : ignorée.
+   */
   webSocketMessage(ws: CfWebSocket, message: string | ArrayBuffer): void {
-    if (typeof message !== 'string') return;
-    if (isOversizedLiveFrame(message)) {
-      closeQuietly(ws, SOCIAL_LIVE_FRAME_TOO_LARGE, 'frame_too_large');
-      return;
-    }
     const attachment = ws.deserializeAttachment() as LiveAttachment | null;
     if (attachment === null) return;
     if (!liveFrameLimit(attachment.pid).allowed) {
       closeQuietly(ws, SOCIAL_LIVE_RATE_LIMITED, 'rate_limited');
+      return;
+    }
+    if (typeof message !== 'string') {
+      closeQuietly(ws, SOCIAL_LIVE_BINARY_FRAME, 'binary_frame');
+      return;
+    }
+    if (isOversizedLiveFrame(message)) {
+      closeQuietly(ws, SOCIAL_LIVE_FRAME_TOO_LARGE, 'frame_too_large');
       return;
     }
     if (parseLiveClientFrame(message) === 'ping') sendQuietly(ws, LIVE_PONG_FRAME);

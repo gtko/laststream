@@ -1,7 +1,7 @@
 import { allowedOrigins } from '../config/runtime-env.js';
-import { verifyLiveTicket } from '../party/ticket.js';
+import { verifyLiveTicketClaims } from '../party/ticket.js';
 import { createRateLimiter } from '../rate-limit.js';
-import { SOCIAL_LIVE_PATH, SOCIAL_LIVE_PID_HEADER } from './social-v2-live.js';
+import { SOCIAL_LIVE_EXP_HEADER, SOCIAL_LIVE_NONCE_HEADER, SOCIAL_LIVE_PATH, SOCIAL_LIVE_PID_HEADER } from './social-v2-live.js';
 
 /**
  * Porte du flux temps réel social (`GET /user/social/live?ticket=…`), traitée par le Worker avant l'application Hono (une
@@ -28,10 +28,13 @@ export async function handleSocialLiveWs(
   const origin = request.headers.get('origin');
   if (origin !== null && !allowedOrigins().includes(origin) && origin !== url.origin) return json(403, { error: 'origin_forbidden' });
   if (!upgrades(options.ip ?? 'inconnu').allowed) return json(429, { error: 'rate_limited' });
-  const identity = verifyLiveTicket(url.searchParams.get('ticket') ?? '', options.now ?? Date.now(), options.secret);
+  const identity = verifyLiveTicketClaims(url.searchParams.get('ticket') ?? '', options.now ?? Date.now(), options.secret);
   if (identity === undefined) return json(401, { error: 'invalid_ticket' });
   const headers = new Headers(request.headers);
   headers.set(SOCIAL_LIVE_PID_HEADER, identity.pid);
+  // Usage unique : le Durable Object consomme le nonce (voir social-v2-live-tickets.ts). Toujours écrasés ici.
+  headers.set(SOCIAL_LIVE_NONCE_HEADER, identity.nonce);
+  headers.set(SOCIAL_LIVE_EXP_HEADER, String(identity.exp));
   // Le ticket n'a pas à atteindre le Durable Object.
   const forwarded = new URL(url);
   forwarded.search = '';
