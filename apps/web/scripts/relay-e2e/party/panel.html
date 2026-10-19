@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Panneau hôte e2e</title>
+  <style>
+    html, body { margin: 0; background: #0c0b11; }
+    #player { position: relative; width: 1280px; height: 720px; overflow: hidden; background: #000; }
+  </style>
+</head>
+<body>
+  <div id="app" hidden></div>
+  <div id="detail" hidden></div>
+  <div id="modal" hidden><div class="modal"><button id="modal-close" type="button">×</button><div id="modal-body"></div></div></div>
+  <div id="toast" hidden></div>
+  <div id="player" class="lp"></div>
+  <script type="module" src="./panel.ts"></script>
+</body>
+</html>
