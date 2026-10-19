@@ -9,6 +9,7 @@
 
 import { connectShell, isShellEnvironment, type ShellTransport } from '../../player/shell';
 import { DebridError } from './types';
+import { shellRangeHttp } from './nativeRange';
 
 export interface HttpRequest {
   url: string;
@@ -255,6 +256,12 @@ export function webBlocked(needsNative: boolean, native: NativeKind = nativeKind
 export interface RangeReply { status: number; headers: { get(name: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }
 export type RangeFetchFn = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<RangeReply>;
 
+/** Lecture de plages : `native-range` sur Windows quand la coque l'annonce (repli `native-http`) ; CapacitorHttp sur Android. */
+function defaultRangeNative(): HttpFn | null {
+  const kind = nativeKind();
+  return kind === 'shell' ? shellRangeHttp(shellHttp()) : kind === 'capacitor' ? capacitorHttp() : null;
+}
+
 /**
  * Lecture de plages directement chez l'hébergeur débridé (même IP que la lecture). Le navigateur d'abord ; si le fichier est servi
  * sans CORS, le pont natif (Windows IPC, CapacitorHttp) prend le relais pour cet hôte ; sinon l'appel échoue (pas de miniatures).
@@ -262,7 +269,7 @@ export type RangeFetchFn = (url: string, init?: { signal?: AbortSignal; headers?
  */
 export function createRangeFetch(deps: TransportDeps = {}): RangeFetchFn {
   const fetchHttp = deps.fetchHttp ?? browserFetchHttp();
-  const native = deps.nativeHttp === undefined ? defaultNative() : deps.nativeHttp;
+  const native = deps.nativeHttp === undefined ? defaultRangeNative() : deps.nativeHttp;
   const needsNative = new Set<string>();
   return async (url, init = {}) => {
     const parsed = parseDebridUrl(url);

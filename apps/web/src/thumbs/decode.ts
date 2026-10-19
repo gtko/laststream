@@ -4,7 +4,7 @@
 import type { VideoInfo } from './types';
 
 export const THUMB_WIDTH = 160;
-export const THUMB_QUALITY = 0.5;
+export const THUMB_QUALITY = 0.6;
 const DECODE_TIMEOUT_MS = 8000;
 
 /* Les types WebCodecs de TypeScript varient selon la version : on décrit uniquement ce qui sert. */
