@@ -21,16 +21,40 @@ export const MAX_REPORTS = 50;
 export const MAX_FRAME_BYTES = 4096;
 /** Validité du ticket de connexion WebSocket. */
 export const TICKET_TTL_MS = 60_000;
+/** Durée d'une séance invité (jeton signé délivré par l'hôte ou un membre). */
+export const GUEST_SESSION_MS = 12 * 3600_000;
+/** Invités sans compte connectés en même temps dans un salon. */
+export const MAX_GUESTS = 4;
+export const GUEST_NAME_MAX = 24;
+/** Signalisation WebRTC : donnée opaque de 16 Ko au plus (UTF-8), trame de 64 Kio au plus. */
+export const RTC_MAX_DATA_BYTES = 16 * 1024;
+export const RTC_MAX_FRAME_CHARS = 64 * 1024;
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
 
 /** Codes de fermeture WebSocket propres au salon (4000-4999). */
 export const CLOSE = {
+  /** Salon terminé. */
   ended: 4000,
+  /** Jeton d'invité expiré ou invalide. */
+  expired: 4001,
   kicked: 4003,
+  /** Exclu du salon (refus de reconnexion). */
+  banned: 4004,
   rateLimited: 4008,
   replaced: 4009,
+  /** Salon plein, ou quatre invités déjà connectés. */
   full: 4010,
+  /** Pseudo déjà pris par un autre participant. */
+  nameTaken: 4011,
+  /** Reconnexion d'une invitation avec un autre pseudo que le premier. */
+  nameChanged: 4012,
 } as const;
+
+/** Invitations émises par un salon : au plus INVITES_PER_WINDOW par INVITE_WINDOW_MS. */
+export const INVITES_PER_WINDOW = 10;
+export const INVITE_WINDOW_MS = 10 * 60_000;
+/** Pseudos d'invités retenus pour la reconnexion (les plus anciens sont oubliés au-delà). */
+export const GUEST_NAMES_MAX = 200;
 
 export type MediaType = 'movie' | 'series';
 
@@ -103,14 +127,19 @@ export interface RoomData {
   hostAbsentSince: number | null;
   /** Quand le salon est devenu vide (ms) ; null s'il y a du monde. */
   emptySince: number | null;
+  /** Pseudo de chaque invité (clé `guest:<id>`) : une reconnexion avec le même jeton reprend le même pseudo. */
+  guestNames?: Record<string, string>;
 }
 
 export interface Identity {
+  /** Compte Laststream, ou `guest:<id>` pour un invité sans compte (clé interne, jamais diffusée). */
   accountId: string;
   username: string;
   avatarColor: string;
   /** Avatar illustré du profil (dicebear:<style>:<graine>), absent s'il n'y en a pas. */
   avatar?: string;
+  /** Invité sans compte (jeton de séance) : absent pour un compte. */
+  guest?: true;
 }
 
 export interface Participant {
@@ -120,6 +149,10 @@ export interface Participant {
   host: boolean;
   muted: boolean;
   joinedAt: number;
+  /** Identifiant de connexion (aléatoire) : cible de la signalisation WebRTC. Renouvelé à chaque connexion. */
+  peerId: string;
+  /** Présent (true) seulement pour un invité sans compte. */
+  guest?: true;
 }
 
 /** Vue publique d'un salon (liste, détail, jeton de connexion). */
@@ -150,12 +183,21 @@ export type ClientMessage =
   | { t: 'kick'; user: string }
   | { t: 'mute'; user: string; muted: boolean }
   | { t: 'transfer'; user: string }
-  | { t: 'end' };
+  | { t: 'end' }
+  /** Signalisation WebRTC (fil JSON : `{"type":"rtc","to","data"}`) ; `bytes` = taille UTF-8 de `data`, mesurée à l'analyse. */
+  | { t: 'rtc'; to: string; data: Record<string, unknown>; bytes: number };
+
+/** Message de signalisation relayé au seul pair visé (fil JSON : `{"type":"rtc","from","data"}`). */
+export interface RtcRelay {
+  type: 'rtc';
+  from: string;
+  data: Record<string, unknown>;
+}
 
 // Serveur -> client
 
 export type ServerMessage =
-  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[] }
+  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean; peerId: string }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[] }
   | { t: 'pong'; c: number; s: number }
   | { t: 'state'; state: PlaybackState; serverTime: number; by: string }
   | { t: 'media'; media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState; serverTime: number }
@@ -191,16 +233,26 @@ export function parseFingerprint(raw: unknown): Fingerprint | null {
   return { fileName, size: size === undefined ? null : Math.trunc(size), hash };
 }
 
+/** Identifiant de connexion (pair WebRTC) : base64url ou UUID, 1 à 64 caractères. */
+const PEER_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** Décode un message client : `undefined` si la forme est invalide (jamais d'exception). */
 export function parseClientMessage(text: string): ClientMessage | undefined {
-  if (text.length > MAX_FRAME_BYTES) return undefined;
+  if (text.length > RTC_MAX_FRAME_CHARS) return undefined;
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
     return undefined;
   }
-  if (!isRecord(raw) || typeof raw.t !== 'string') return undefined;
+  if (!isRecord(raw)) return undefined;
+  // Signalisation : seule trame autorisée au-delà de MAX_FRAME_BYTES (la taille de `data` est bornée par le salon).
+  if (raw.type === 'rtc') {
+    if (typeof raw.to !== 'string' || !PEER_ID.test(raw.to) || !isRecord(raw.data)) return undefined;
+    const bytes = new TextEncoder().encode(JSON.stringify(raw.data)).length;
+    return { t: 'rtc', to: raw.to, data: raw.data, bytes };
+  }
+  if (text.length > MAX_FRAME_BYTES || typeof raw.t !== 'string') return undefined;
   switch (raw.t) {
     case 'ping': {
       const c = finiteNumber(raw.c, 0, 1e15);

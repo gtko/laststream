@@ -21,6 +21,7 @@ import {
   type RoomInfo,
   type RoomMeta,
 } from './protocol.js';
+import { signGuestToken } from './guest.js';
 import { signTicket } from './ticket.js';
 import { ROOM_ID } from './ws.js';
 
@@ -236,6 +237,30 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (check === 'room_full') throw new UserApiError(409, 'room_full');
     const { ticket, expiresAt } = signTicket(id, { accountId: account.id, username: account.username, avatarColor: profile.avatarColor, ...(profile.avatar ? { avatar: profile.avatar } : {}) }, Date.now(), deps.secret);
     return sendJson(c, { ticket, expiresAt, wsPath: `${PARTY_MOUNT}/${id}/ws?ticket=${ticket}`, room: info });
+  });
+
+  /**
+   * Invitation d'un visiteur sans compte : jeton signé valable 12 h, lié à ce salon. Réservé à un membre connecté du salon ;
+   * même règle que pour rejoindre (profil enfant refusé en public). Le visiteur se connecte avec
+   * GET /party/:id/ws?t=<token>&name=<pseudo>, sans compte.
+   */
+  router.post('/:id/invite', async (c) => {
+    const id = roomId(c);
+    await sessionOf(users(), c);
+    const body = parseWith(joinSchema, c.get('body'));
+    const { account, profile } = await profileFor(c, body.profileId);
+    const stub = party.room(id);
+    const info = await stub.info();
+    if (info === null) throw new UserApiError(404, 'room_not_found');
+    if (info.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
+    // Émission réservée à l'hôte connecté ; refus si quatre invités sont là ; débit par salon (voir RoomCore.inviteVerdict).
+    const verdict = await stub.invite(account.id);
+    if (verdict === 'not_found') throw new UserApiError(404, 'room_not_found');
+    if (verdict === 'forbidden') throw new UserApiError(403, 'host_only');
+    if (verdict === 'guests_full') throw new UserApiError(409, 'guests_full');
+    if (verdict === 'rate_limited') throw new UserApiError(429, 'too_many_invites');
+    const { token, expiresAt } = await signGuestToken(id, Date.now(), deps.secret);
+    return sendJson(c, { token, expiresAt }, 201);
   });
 
   /** Termine le salon : l'hôte (ou le propriétaire du serveur). */

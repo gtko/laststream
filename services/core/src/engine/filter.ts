@@ -90,12 +90,35 @@ function ageAllowed(meta: ContentMeta | undefined, limit: Config['filters']['age
   return typeof certification === 'number' && certification <= limit;
 }
 
-/** Sortie future exclue ; date inconnue ou illisible gardée. */
+/** Fuseau des dates de sortie (calendrier de diffusion TMDB) : une date vaut dès minuit à Paris, pas à minuit UTC. */
+const RELEASE_TIME_ZONE = 'Europe/Paris';
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Jour civil (AAAA-MM-JJ) de l'instant `now` dans le fuseau de diffusion. */
+function releaseDay(now: number): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: RELEASE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const part = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+/** `day` (AAAA-MM-JJ) plus `n` jours, calcul en UTC (pas de décalage d'heure). */
+function addDays(day: string, n: number): string {
+  const ms = Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)) + n);
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Sortie non atteinte exclue ; date inconnue ou illisible gardée. Une date de sortie compte à partir de son jour à Paris,
+ * et l'épisode garde sa fenêtre `releaseWindowDays` (« peut-être déjà en ligne ») avant sa date.
+ */
 function releasedAllowed(meta: ContentMeta | undefined, hideUnreleased: boolean, now: number): boolean {
-  if (!hideUnreleased || meta?.releaseDate === undefined) return true;
-  const releasedAt = Date.parse(meta.releaseDate);
-  if (Number.isNaN(releasedAt)) return true;
-  return releasedAt <= now;
+  if (!hideUnreleased || meta?.releaseDate === undefined || !ISO_DAY.test(meta.releaseDate)) return true;
+  return meta.releaseDate <= addDays(releaseDay(now), meta.releaseWindowDays ?? 0);
 }
 
 /**

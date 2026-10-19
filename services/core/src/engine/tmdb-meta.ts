@@ -9,6 +9,8 @@ const DEFAULT_TIMEOUT_MS = 4000;
 const IMDB_ID = /^tt\d+$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const FR_AGES: ReadonlySet<number> = new Set([10, 12, 16, 18]);
+/** Fenêtre « peut-être déjà en ligne » d'un épisode : ses sources restent visibles jusqu'à 14 jours avant sa diffusion. */
+const EPISODE_WINDOW_DAYS = 14;
 
 export interface TmdbMetaOptions {
   /** Jeton de lecture TMDB (API v4, en-tête Bearer). Absent : aucun appel TMDB. */
@@ -74,6 +76,7 @@ function compact(meta: ContentMeta): ContentMeta {
   if (meta.runtimeSeconds !== undefined) result.runtimeSeconds = meta.runtimeSeconds;
   if (meta.certificationFr !== undefined) result.certificationFr = meta.certificationFr;
   if (meta.releaseDate !== undefined) result.releaseDate = meta.releaseDate;
+  if (meta.releaseWindowDays !== undefined) result.releaseWindowDays = meta.releaseWindowDays;
   return result;
 }
 
@@ -164,7 +167,10 @@ async function fetchTmdbMeta(
     const runtimeSeconds = minutesToSeconds(episode.json.runtime);
     const releaseDate = isoDate(episode.json.air_date);
     if (runtimeSeconds !== undefined) meta.runtimeSeconds = runtimeSeconds;
-    if (releaseDate !== undefined) meta.releaseDate = releaseDate;
+    if (releaseDate !== undefined) {
+      meta.releaseDate = releaseDate;
+      meta.releaseWindowDays = EPISODE_WINDOW_DAYS;
+    }
   }
   return { meta: compact(meta), complete };
 }

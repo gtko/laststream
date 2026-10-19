@@ -379,7 +379,7 @@ async function loadAired(ctx: LtContext, svc: SeriesServices, apiKey: string, tv
 }
 
 /**
- * Structure TVDB. Texte : TVDB français, puis TMDB, puis TVDB anglais. Image : TMDB, puis TVDB. Durées et coordonnées
+ * Structure TVDB. Texte : TVDB français, puis TMDB, puis TVDB anglais. Image : TVDB, puis TMDB (Cinemeta ensuite, si besoin). Durées et coordonnées
  * TMDB viennent de l'épisode TMDB relié par date ou par rang absolu, quand TVDB ne les fournit pas.
  */
 function tvdbStructure(details: SeriesDetails, tmdb: TmdbEpisode[], aired: AiredSets): SeriesEpisodes {
@@ -413,7 +413,7 @@ function tvdbStructure(details: SeriesDetails, tmdb: TmdbEpisode[], aired: Aired
       overview: d.frOverview ?? t?.overview ?? d.enOverview,
       airDate: d.airDate ?? t?.airDate ?? null,
       runtime: d.runtime ?? t?.runtime ?? null,
-      still: t?.still ?? d.tvdbImage,
+      still: d.tvdbImage ?? t?.still ?? null,
       tmdbSeason: t?.season ?? null,
       tmdbEpisode: t?.episode ?? null,
     };
@@ -554,7 +554,7 @@ export async function seriesEpisodes(
   language: string | undefined,
 ): Promise<SeriesEpisodes> {
   const req = parseSeriesRequest(tmdbId, language);
-  const key = `episodes:v3:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
+  const key = `episodes:v4:${req.tmdbId}:${req.language}:${svc.tvdbApiKey === undefined ? 'tmdb' : 'tvdb'}`;
   const loaded = await ctx.state.cache.get<Loaded>(
     key,
     (value) => (value.degraded ? TTL.tvPartial : TTL.episodes),

@@ -52,6 +52,11 @@ export interface ContentMeta {
   certificationFr?: number | 'none';
   /** Date de sortie ISO (AAAA-MM-JJ) du film ou de l'épisode. */
   releaseDate?: string;
+  /**
+   * Jours de tolérance avant `releaseDate` (épisodes : fenêtre « peut-être déjà en ligne »). Absent : la sortie compte
+   * à partir de son jour.
+   */
+  releaseWindowDays?: number;
 }
 
 /** Rang des résolutions (plus grand = meilleur). `unknown` est le plus bas. */

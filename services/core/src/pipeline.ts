@@ -512,6 +512,13 @@ function effectiveConfig(config: Config, sources: Config['sources'], ctx: Pipeli
 const inflight = new Map<string, Promise<PipelineResult>>();
 /** Recalculs complets en arrière-plan (après un résultat partiel), par clé de cache. */
 const refreshing = new Map<string, Promise<PipelineResult>>();
+/** Durée de vie d'un résultat sans flux : un addon peut répondre vide avant la sortie d'un épisode, il ne reste pas en cache. */
+const EMPTY_RESULT_TTL_MS = 60 * 1_000;
+
+/** Stocke un résultat dans le cache ; sans flux, il n'est gardé que 60 s (jamais les 5 minutes du cache). */
+function storeResult(cache: LruCache<PipelineResult>, key: string, result: PipelineResult): void {
+  cache.set(key, result, result.streams.length === 0 ? EMPTY_RESULT_TTL_MS : undefined);
+}
 
 /**
  * Quand les indexeurs lents ont répondu, recalcule le résultat complet (leurs réponses sont en mémoire : le recalcul ne
@@ -529,7 +536,7 @@ function refreshInBackground(
   const work = (async (): Promise<PipelineResult> => {
     await settled;
     const { result } = await computeStreams(config, ref, { ...ctx, wait: 'full', reuseFailed: true });
-    if (result.errors.length === 0) cache.set(key, result);
+    if (result.errors.length === 0) storeResult(cache, key, result);
     else cache.delete(key);
     return result;
   })().catch(() => {
@@ -568,10 +575,10 @@ export async function getStreams(config: Config, ref: ContentRef, ctx: PipelineC
     const { result, settled } = await computeStreams(effective, ref, ctx);
     // Recherches encore actives (indexeurs lents, compléments) : le résultat est gardé, puis remplacé par le complet.
     if (settled !== undefined && (result.partial === true || result.errors.length === 0)) {
-      cache.set(key, result);
+      storeResult(cache, key, result);
       refreshInBackground(key, cache, effective, ref, ctx, settled, result);
     } else if (result.errors.length === 0) {
-      cache.set(key, result);
+      storeResult(cache, key, result);
     }
     return result;
   })();

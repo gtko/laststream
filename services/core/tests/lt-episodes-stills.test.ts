@@ -72,7 +72,7 @@ beforeAll(async () => {
       thumb(1, 4, '2020-03-30', 'https://img.example.com/c4-autre-date.jpg'),
       thumb(1, 9, '2020-02-02', null),
     ]),
-    // 3002 : TVDB v4. Ep1 TMDB, Ep2 image TVDB, Ep3 Cinemeta, Ep4 rien.
+    // 3002 : TVDB v4. Ep1 et Ep2 ont une image TVDB (prioritaire sur TMDB), Ep3 Cinemeta, Ep4 rien.
     ...tv(3002, { external_ids: { tvdb_id: 7002, imdb_id: 'tt0003002' } }, 4),
     ...season(3002, [ep(1, '2020-01-01', '/t1.jpg'), ep(2, '2020-01-08', null), ep(3, '2020-01-15', null), ep(4, '2020-01-22', null)]),
     [`${TVDB4}/login`]: (call) =>
@@ -148,10 +148,10 @@ describe('vignettes d\'épisodes : TMDB, TVDB, Cinemeta', () => {
     expect(upstream.callsTo(`${CINEMETA}/tt0003001.json`).length).toBe(1);
   });
 
-  it('TVDB v4 : TMDB, puis image TVDB, puis Cinemeta, puis rien', async () => {
+  it('TVDB v4 : image TVDB, puis TMDB, puis Cinemeta, puis rien', async () => {
     const services = { tmdbToken: KEYS.tmdbToken, tvdbApiKey: V4_KEY };
     expect(stills(await get(services, 3002))).toEqual([
-      `${IMG}/t1.jpg`,
+      'https://artworks.thetvdb.com/banners/v4/a.jpg',
       'https://artworks.thetvdb.com/banners/v4/b.jpg',
       'https://img.example.com/s3.jpg',
       null,

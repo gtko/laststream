@@ -143,7 +143,7 @@ describe('getContentMeta : série', () => {
   it('renvoie la durée de l\'épisode, sa date de diffusion et la certification FR de la série', async () => {
     const fetchMock = routes(seriesTable());
     const meta = await getContentMeta(EPISODE, { tmdbToken: TOKEN, fetch: asFetch(fetchMock), cache: new TtlCache() });
-    expect(meta).toEqual({ runtimeSeconds: 47 * 60, certificationFr: 18, releaseDate: '2008-02-10' });
+    expect(meta).toEqual({ runtimeSeconds: 47 * 60, certificationFr: 18, releaseDate: '2008-02-10', releaseWindowDays: 14 });
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
