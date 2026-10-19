@@ -35,6 +35,12 @@ vi.mock('../src/relay/session', () => ({
     pause() {}
     seekBy() {}
     retry() {}
+    onSubtitles() {
+      return () => undefined;
+    }
+    chatPort() {
+      return null;
+    }
   },
 }));
 

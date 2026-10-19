@@ -8,7 +8,9 @@ import { socketUrl } from '../party/bridge';
 import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
+import { createGuestChat } from './guestchat.js';
 import { createGuestControls } from './guestplayer.js';
+import { createGuestSubs } from './guestsubs.js';
 import { esc } from './util.js';
 
 /** Phases où la session ne fait plus rien : on rend la main au formulaire. « unsupported » ne l'est pas : l'hôte peut changer de fichier. */
@@ -38,6 +40,10 @@ let currentRoom = '';
 let lastView = null;
 /** Commandes du cadre vidéo de la page affichée (créées par showPartyJoin, détruites au changement de page). */
 let controls = null;
+/** Sous-titres et chat du cadre (créés avec les commandes) ; abonnement aux pistes de l'hôte de la session en cours. */
+let subs = null;
+let chat = null;
+let subsOff = null;
 
 /** Geste utilisateur (clic « Rejoindre ») : l'AudioContext démarre ici, le lecteur peut ensuite jouer le son. */
 function unlockAudio() {
@@ -59,6 +65,10 @@ function closeAudio() {
 function stopSession() {
   if (timer !== null) clearInterval(timer);
   timer = null;
+  subsOff?.();
+  subsOff = null;
+  subs?.setTracks([]);
+  chat?.unbind();
   if (session) session.destroy();
   session = null;
   lastView = null;
@@ -66,6 +76,10 @@ function stopSession() {
 }
 
 function destroyControls() {
+  subs?.destroy();
+  subs = null;
+  chat?.destroy();
+  chat = null;
   controls?.destroy();
   controls = null;
 }
@@ -137,6 +151,7 @@ function refresh(root) {
   player.hidden = !STAGE.has(v.phase);
   const ready = v.phase === 'ready';
   controls.setState({ playing: v.playing, position: v.position, duration: v.duration, ready });
+  subs?.tick(v.position);
   controls.setWait(ready ? null : WAIT_TEXT[v.phase] || null);
   // Champs sans source dans la session : codecs et tampon restent « — ».
   controls.setInfo({
@@ -207,6 +222,8 @@ async function join(root, roomId, token) {
   });
   setWho(root, entry.name || name);
   session.start();
+  subsOff = session.onSubtitles((tracks) => subs?.setTracks(tracks));
+  chat?.bind(session.chatPort());
   timer = setInterval(() => refresh(root), 250);
   refresh(root);
 }
@@ -244,6 +261,9 @@ export function showPartyJoin(roomId, token) {
       if (session && lastView) session.seekBy(t - lastView.position);
     },
   });
+  // Sous-titres et chat : le menu des sous-titres et le tiroir du chat ne se superposent pas (chacun ferme l'autre à l'ouverture).
+  subs = createGuestSubs(controls, { onOpen: () => chat?.close() });
+  chat = createGuestChat(controls, { onOpen: () => subs?.closeMenu() });
   root.querySelector('#pj-title').focus({ preventScroll: true });
   root.querySelector('[data-pj-form]').addEventListener('submit', (e) => {
     e.preventDefault();
