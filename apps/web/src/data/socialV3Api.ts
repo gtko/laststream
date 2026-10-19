@@ -47,7 +47,7 @@ export const DEFAULT_PREFS: SocialPrefs = {
 };
 
 /** Fiche ami v3 : `FriendView` plus les réglages de relation. Optionnels au type, car une réponse ou une fixture v2 ne les porte pas. */
-export type FriendV3 = FriendView & { customStatus?: CustomStatus; favorite?: boolean; nickname?: string; muted?: boolean };
+export type FriendV3 = FriendView & { customStatus?: CustomStatus; favorite?: boolean; nickname?: string; muted?: boolean; hideActivity?: boolean; avatar?: string };
 /** `PUT /friends/:pid/relation` : `nickname` ≤ 32 caractères, `null` pour l'effacer. */
 export type RelationPatch = { favorite?: boolean; nickname?: string | null; muted?: boolean; hideActivity?: boolean };
 export type BlockedPerson = { pid: string; handle: Handle };
