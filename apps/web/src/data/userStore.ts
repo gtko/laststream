@@ -194,7 +194,11 @@ export function normalizeLibraryEntry(x: unknown): LibraryEntry | null {
 }
 
 export class LocalUserStore implements UserStore {
+  /** `storage` : stockage de remplacement (mode démo : en mémoire) ; par défaut le localStorage du navigateur. */
+  constructor(private readonly storage?: Storage) {}
+
   private get ls(): Storage | undefined {
+    if (this.storage) return this.storage;
     try {
       return globalThis.localStorage;
     } catch {

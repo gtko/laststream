@@ -1,5 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
 import { tvHlsUrl } from '../data/lt';
+import { toast } from './dom.js';
 import { getBoxReach } from '../data/tvBox';
 import { LI } from '../player/icons.js';
 import { stopPreview } from './preview.js';
@@ -552,6 +554,7 @@ function togglePip() {
 // ---------- Ouverture, fermeture, zapping ----------
 
 export function openPlayer(c, list, opener) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : pas de lecture TV
   const l = list && list.some((x) => x.id === c.id) ? list : [c];
   tv.play = { list: l, idx: l.findIndex((x) => x.id === c.id) };
   tv.opener = opener || document.activeElement;

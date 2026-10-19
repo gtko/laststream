@@ -4,6 +4,11 @@ import pkg from './package.json' with { type: 'json' };
 // Relais same-origin vers le serveur de streaming Stremio : il n'envoie les en-têtes CORS qu'à strem.io / stremio.com,
 // le navigateur refuserait sinon sondage, playlists HLS (audio, sous-titres) et sous-titres depuis cette origine.
 const streamingServer = {
+  // Mode démo en développement : /config/encode refuse l'origine localhost, le relais présente celle du serveur.
+  '/_edge': {
+    target: 'https://laststream.gtux-prog.workers.dev', changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/_edge/, ''), headers: { origin: 'https://laststream.gtux-prog.workers.dev' },
+  },
   '/_ss': { target: 'http://127.0.0.1:11470', changeOrigin: true, rewrite: (p: string) => p.replace(/^\/_ss/, '') },
 };
 

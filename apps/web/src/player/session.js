@@ -6,6 +6,8 @@ import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
 import { pushPrefs } from '../data/auth';
+import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
+import { toast } from '../ui/dom.js';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
@@ -1887,6 +1889,7 @@ export const isPlayerOpen = () => !!P;
  * le sélecteur s'ouvre dans un panneau du lecteur. « Annuler » ramène à la fiche.
  */
 export async function playBest(request, opener, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : aucune recherche de source ni lecture
   const p = await initSession(request, [], null, { opener });
   const token = p.token;
   const alive = () => P && P.token === token;
