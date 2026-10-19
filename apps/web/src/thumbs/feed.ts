@@ -12,6 +12,82 @@ import type { VideoIndex } from './types';
 export const LOCAL_SLICE_SECONDS = 30;
 /** Décodages simultanés : le décodeur matériel est partagé avec la lecture. */
 export const LOCAL_MAX_PARALLEL = 2;
+/** Délai maximal d'attente d'un moment calme avant de lancer une tranche quand même. */
+export const IDLE_TIMEOUT_MS = 2000;
+/** Délai du repli setTimeout quand requestIdleCallback n'existe pas. */
+export const IDLE_FALLBACK_MS = 100;
+/** Re-vérification périodique tant que la lecture tamponne. */
+export const BUFFER_RECHECK_MS = 1000;
+
+/** Lance `run` au moment choisi ; renvoie l'annulation (sans effet si `run` a déjà été lancé). */
+export type ScheduleFn = (run: () => void) => () => void;
+
+interface IdleHost {
+  requestIdleCallback?: (run: () => void, options: { timeout: number }) => number;
+  cancelIdleCallback?: (id: number) => void;
+}
+
+/** Planification par défaut : au repos du navigateur (requestIdleCallback, délai max IDLE_TIMEOUT_MS), repli setTimeout. */
+export const idleSchedule: ScheduleFn = (run) => {
+  const host = globalThis as unknown as IdleHost;
+  if (typeof host.requestIdleCallback === 'function') {
+    const id = host.requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS });
+    return () => host.cancelIdleCallback?.(id);
+  }
+  const timer = setTimeout(run, IDLE_FALLBACK_MS);
+  return () => clearTimeout(timer);
+};
+
+const abortError = (): DOMException => new DOMException('aborted', 'AbortError');
+
+interface TurnOptions {
+  isBuffering: () => boolean;
+  schedule: ScheduleFn;
+  recheckMs: number;
+}
+
+/**
+ * Attend le créneau d'une tranche : tant que la lecture tamponne, on re-vérifie toutes les `recheckMs` ; puis `schedule` lance la suite.
+ * Annulée par `signal` : rejet AbortError, et plus aucun timer ni callback en attente.
+ */
+function waitTurn(signal: AbortSignal, o: TurnOptions): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) { reject(abortError()); return; }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelIdle: (() => void) | undefined;
+    let settled = false;
+
+    const clear = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      if (timer !== undefined) { clearTimeout(timer); timer = undefined; }
+      if (cancelIdle !== undefined) { cancelIdle(); cancelIdle = undefined; }
+    };
+    const settle = (ok: boolean): void => {
+      if (settled) return;
+      settled = true;
+      clear();
+      if (ok) resolve();
+      else reject(abortError());
+    };
+    const onAbort = (): void => settle(false);
+    const check = (): void => {
+      timer = undefined;
+      if (settled) return;
+      if (o.isBuffering()) { timer = setTimeout(check, o.recheckMs); return; }
+      const cancel = o.schedule(() => {
+        cancelIdle = undefined;
+        if (settled) return;
+        if (o.isBuffering()) { timer = setTimeout(check, o.recheckMs); return; }
+        settle(true);
+      });
+      if (settled) cancel();
+      else cancelIdle = cancel;
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    check();
+  });
+}
 
 export interface LocalSource {
   /** Lien débridé lu. */
@@ -32,6 +108,10 @@ export interface LocalFeedOptions {
   sliceSeconds?: number;
   /** Réglages de lecture (taille du début de fichier gardé, plafond de plage) : tests. */
   source?: ByteSourceOptions;
+  /** Lance chaque tranche (lecture + décodage) au repos du navigateur. Défaut : requestIdleCallback, repli setTimeout. */
+  schedule?: ScheduleFn;
+  /** Vrai tant que la lecture tamponne : aucune tranche ne démarre, re-vérification périodique. Défaut : jamais. */
+  isBuffering?: () => boolean;
 }
 
 export interface LocalFeed {
@@ -90,6 +170,13 @@ export function makeLocalFeed(o: LocalFeedOptions): LocalFeed {
       const cached = await store.get(key).catch(() => undefined);
       if (cached !== undefined) return reply(200, cached);
       if (opened === null) return reply(404, { error: 'unknown_source' });
+      // Budget d'arrière-plan : la tranche attend que la lecture ne tamponne plus, puis un moment calme du navigateur.
+      try {
+        await waitTurn(signal, { isBuffering: o.isBuffering ?? (() => false), schedule: o.schedule ?? idleSchedule, recheckMs: BUFFER_RECHECK_MS });
+      } catch {
+        return reply(499);
+      }
+      if (opened === null) return reply(404, { error: 'unknown_source' }); // source refermée pendant l'attente
       const { index: video } = opened;
       try {
         const duration = video.info.duration;

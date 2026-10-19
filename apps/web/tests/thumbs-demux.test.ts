@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ByteSource, avcCodecString, av1CodecString, canDecode, decodeKeyframe, hashText, hevcCodecString, makeLocalFeed, MemoryThumbStore, openVideoIndex,
-  proxyFetchRange, proxyRangeUrl, readId, readSize, thumbKey, totalFromContentRange, webCodecsAvailable,
+  proxyFetchRange, proxyRangeUrl, readId, readSize, thumbKey, THUMB_QUALITY, totalFromContentRange, webCodecsAvailable,
   type CodecEnv, type FetchFn, type FetchRange, type VideoIndex } from '../src/thumbs';
 import { ThumbFeed } from '../src/player/thumbfeed';
 import { thumbSource } from '../src/player/thumbs';
@@ -208,9 +208,9 @@ describe('HEVC', () => {
 });
 
 describe('WebCodecs simulé', () => {
-  interface Spy { configs: Record<string, unknown>[]; chunks: { type: string; data: Uint8Array }[]; canvases: [number, number][]; closed: number }
+  interface Spy { configs: Record<string, unknown>[]; chunks: { type: string; data: Uint8Array }[]; canvases: [number, number][]; closed: number; qualities: number[] }
   function fakeEnv(opts: { supported?: boolean; fail?: boolean; blobType?: string } = {}): { env: CodecEnv; spy: Spy } {
-    const spy: Spy = { configs: [], chunks: [], canvases: [], closed: 0 };
+    const spy: Spy = { configs: [], chunks: [], canvases: [], closed: 0, qualities: [] };
     class FakeDecoder {
       constructor(private readonly init: { output: (f: { displayWidth: number; displayHeight: number; close(): void }) => void; error: (e: unknown) => void }) {}
       static isConfigSupported(): Promise<{ supported: boolean }> { return Promise.resolve({ supported: opts.supported !== false }); }
@@ -227,7 +227,8 @@ describe('WebCodecs simulé', () => {
     class FakeCanvas {
       constructor(w: number, h: number) { spy.canvases.push([w, h]); }
       getContext(): { drawImage(): void } { return { drawImage: () => undefined }; }
-      convertToBlob(o: { type: string }): Promise<Blob> {
+      convertToBlob(o: { type: string; quality: number }): Promise<Blob> {
+        spy.qualities.push(o.quality);
         const type = opts.blobType ?? o.type;
         return Promise.resolve(new Blob([`img:${o.type}`], { type }));
       }
@@ -258,14 +259,18 @@ describe('WebCodecs simulé', () => {
     expect(spy.chunks[0].data).toBe(sample);
     expect(spy.canvases[0]).toEqual([160, 90]);
     expect(spy.closed).toBe(1);
+    expect(THUMB_QUALITY).toBe(0.6);
+    expect(spy.qualities).toEqual([0.6]);
   });
 
   it('repli JPEG si le WebP n\'est pas encodé ; null sur erreur du décodeur', async () => {
     const { index } = await open('h264.mp4');
     const sample = (await index.readSample((await index.keyframeAt(0))!))!;
-    const jpeg = await decodeKeyframe(sample, index.info, {}, fakeEnv({ blobType: 'image/png' }).env);
+    const fallback = fakeEnv({ blobType: 'image/png' });
+    const jpeg = await decodeKeyframe(sample, index.info, {}, fallback.env);
     expect(jpeg).not.toBeNull();
     expect(await jpeg!.text()).toBe('img:image/jpeg');
+    expect(fallback.spy.qualities).toEqual([0.6, 0.6]); // WebP refusé, JPEG à la même qualité
     expect(await decodeKeyframe(sample, index.info, {}, fakeEnv({ fail: true }).env)).toBeNull();
     expect(await decodeKeyframe(sample, index.info, {}, {})).toBeNull();
   });

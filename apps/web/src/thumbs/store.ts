@@ -22,6 +22,24 @@ export function hashText(text: string): string {
 
 export const thumbKey = (sourceId: string, index: number): string => `${hashText(sourceId)}:${index}`;
 
+/** Ce que l'on sait d'une source : empreinte du torrent et index du fichier dedans, ou le lien (débridé, il change à chaque régénération). */
+export interface SourceRef {
+  infoHash?: string | null;
+  fileIdx?: number | null;
+  url?: string | null;
+}
+
+/**
+ * Identifiant stable d'une source pour le cache : infoHash (en minuscules) et index du fichier s'ils existent, sinon empreinte
+ * de l'adresse sans sa query string. Le lien lui-même n'est jamais renvoyé ni stocké. Null si rien d'exploitable.
+ */
+export function stableSourceId(ref: SourceRef): string | null {
+  const hash = typeof ref.infoHash === 'string' ? ref.infoHash.trim().toLowerCase() : '';
+  if (hash !== '') return `ih:${hash}:${Number.isInteger(ref.fileIdx) ? ref.fileIdx : ''}`;
+  if (typeof ref.url === 'string' && ref.url !== '') return `url:${hashText(ref.url.split(/[?#]/)[0])}`;
+  return null;
+}
+
 export class MemoryThumbStore implements ThumbStore {
   private readonly map = new Map<string, Blob>();
   constructor(private readonly capacity = 400) {}

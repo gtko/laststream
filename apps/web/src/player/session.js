@@ -49,7 +49,7 @@ import { thumbsAllowed, thumbSource } from './thumbs';
 import { ThumbFeed, serverHasThumbs } from './thumbfeed';
 import { debrid, PROVIDER_LABEL } from '../sources/debridClient';
 import { createRangeFetch, parseDebridUrl } from '../sources/debrid/http';
-import { makeLocalFeed, webCodecsAvailable, IdbThumbStore } from '../thumbs';
+import { makeLocalFeed, webCodecsAvailable, IdbThumbStore, stableSourceId } from '../thumbs';
 import { createPlayerUI } from './ui.js';
 import { partyBridge } from '../party/bridge';
 import { setWatching } from '../data/presence';
@@ -129,10 +129,15 @@ function rangeUrlOf(p) {
 /** Lecture de plages des miniatures : navigateur, puis pont natif (Windows, Android) ; jamais par un serveur. */
 const rangeHttp = createRangeFetch();
 
+/** Le lecteur tamponne-t-il (attente de données) ? Les miniatures attendent alors, pour ne pas concurrencer la lecture. */
+function playerBuffering() {
+  try { return !!P && !!P.engine && P.engine.state().buffering === true; } catch (_) { return false; }
+}
+
 function thumbsAllowedNow() {
   return !!P && !!P.view && thumbsAllowed({
     enabled: storeGet(THUMBS_KEY) !== '0', hasSource: thumbSourceOf(P).mode !== 'none', duration: P.engine.state().duration,
-    bandwidthKbps: knownBandwidthKbps(), torrentBuffering: false,
+    bandwidthKbps: knownBandwidthKbps(), torrentBuffering: playerBuffering(),
   });
 }
 
@@ -169,11 +174,15 @@ function rangeThumb(t) {
     rangeStore = new IdbThumbStore();
     rangeFeed = new ThumbFeed({
       register: async (signal) => {
-        const sourceId = rangeUrlOf(P);
+        // Clé de cache : infoHash + fichier de la source, jamais le lien débridé (il change à chaque régénération).
+        const stream = P && P.view ? P.view.stream : null;
+        const url = rangeUrlOf(P);
+        const sourceId = url ? stableSourceId({ infoHash: stream && stream.infoHash, fileIdx: stream && stream.fileIdx, url }) : null;
         if (!sourceId) return null;
         rangeLocal = makeLocalFeed({
-          sourceId, store: rangeStore, fetchFn: rangeHttp,
-          resolve: async () => ({ url: sourceId }),
+          sourceId, store: rangeStore, fetchFn: rangeHttp, isBuffering: playerBuffering,
+          // Lien relu à chaque ouverture de la source : la version courante, sans être gardée ailleurs.
+          resolve: async () => { const current = rangeUrlOf(P); return current ? { url: current } : null; },
         });
         return rangeLocal.register(signal);
       },
