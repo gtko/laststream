@@ -48,8 +48,16 @@ if (!existsSync(files.dts)) {
 const requests = [];
 const media = createHttp((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
-  const cors = url.pathname.startsWith('/cors/');
-  const name = url.pathname.replace(/^\/(cors|nocors)\//, '');
+  // /redir/ : comme un hébergeur débrideur, 302 vers un fichier sans CORS (la redirection casse la sonde : c'est le cas réel).
+  if (url.pathname.startsWith('/redir/')) {
+    res.writeHead(302, { Location: url.pathname.replace('/redir/', '/nocors/'), 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Range', 'Access-Control-Expose-Headers': 'Content-Range' });
+    res.end();
+    return;
+  }
+  // /slow/ : CORS permis, mais les plages (hors sonde d'un octet) n'obtiennent de réponse qu'après 25 s.
+  const slow = url.pathname.startsWith('/slow/');
+  const cors = url.pathname.startsWith('/cors/') || slow;
+  const name = url.pathname.replace(/^\/(cors|nocors|slow)\//, '');
   const file = join(out, name);
   const headers = {};
   if (cors) {
@@ -60,6 +68,10 @@ const media = createHttp((req, res) => {
   }
   if (req.method === 'OPTIONS') { res.writeHead(204, headers); res.end(); return; }
   if (!existsSync(file) || !statSync(file).isFile()) { res.writeHead(404, headers); res.end(); return; }
+  if (slow && req.method === 'GET' && req.headers.origin && req.headers.range && req.headers.range !== 'bytes=0-0') { // seulement les requêtes de la page (fetch CORS), pas celles du <video>
+    setTimeout(() => { if (!res.writableEnded) { res.writeHead(503, headers); res.end(); } }, 25000);
+    return;
+  }
   const size = statSync(file).size;
   const type = name.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4';
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
@@ -279,6 +291,28 @@ try {
     await wait(page, () => window.__w.state.handle.plan.mode !== 'native', null, 15000).catch(() => undefined);
     const after = await page.evaluate(() => window.__w.state.handle.plan);
     check('octets décodés = 0 après 2,5 s de lecture : note CORS', after.mode === 'cors', `${JSON.stringify(after)} après ${Date.now() - t0} ms`);
+    await page.close();
+  }
+
+  console.log('\n== Redirection vers un hôte sans CORS (cas réel) ==');
+  {
+    const { page } = await newPage();
+    const plan = await page.evaluate((u) => window.__w.run(u, { nameCodec: 'eac3' }), `${mediaBase}/redir/eac3.mkv`);
+    check('redirection sans CORS : plan « cors »', plan.mode === 'cors', JSON.stringify(plan));
+    await page.close();
+  }
+
+  console.log('\n== Source lente : aucune donnée audio en 10 s ==');
+  {
+    const { page } = await newPage();
+    const t0 = Date.now();
+    const plan = await page.evaluate((u) => window.__w.run(u, { nameCodec: 'eac3' }), `${mediaBase}/slow/eac3.mkv`);
+    console.log(`plan initial : ${JSON.stringify(plan)}`);
+    await wait(page, () => window.__w.state.mode === 'error', null, 40000).catch(() => undefined);
+    const mode = await page.evaluate(() => window.__w.state.mode);
+    check('source lente : abandon du son après environ 10 s, mode « error »', mode === 'error', `mode=${mode} après ${Date.now() - t0} ms`);
+    const e = await page.evaluate(() => window.__w.engineState());
+    check('source lente : l’image reprend (pas de pause, pas d’attente du son)', !e.paused && !e.soundWait, JSON.stringify({ paused: e.paused, soundWait: e.soundWait, t: e.time }));
     await page.close();
   }
 

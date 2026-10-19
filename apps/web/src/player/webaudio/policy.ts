@@ -15,9 +15,12 @@ import type { MediaCaps } from '../server';
 export type AudioPlan =
   | { mode: 'none' | 'native' | 'app' }
   | { mode: 'unsupported'; codec: string; note: string }
-  | { mode: 'cors'; note: string };
+  | { mode: 'cors'; note: string }
+  /** La source ne livre pas l'en-tête (ou aucun son) en temps utile : image seule, avec une note. */
+  | { mode: 'stalled'; note: string };
 
 export const NOTE_CORS = 'Son non disponible dans le navigateur pour cette source';
+export const NOTE_STALLED = 'Son indisponible : la source met trop de temps à répondre';
 export const NOTE_DTS = 'Son DTS non pris en charge par le navigateur';
 
 const LABEL: Record<string, string> = { dts: 'DTS', truehd: 'TrueHD', ac3: 'AC-3', eac3: 'E-AC-3', aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', vorbis: 'Vorbis' };

@@ -3,7 +3,9 @@ import { startWebAudio, type WebAudioHost } from '../src/player/webaudio/control
 import type { WebAudioFallback } from '../src/player/webaudio/engine';
 import { prepareWebAudio, type PrepareDeps } from '../src/player/webaudio/prepare';
 import type { InspectedAudio } from '../src/player/webaudio/source';
-import { NOTE_CORS, NOTE_DTS } from '../src/player/webaudio/policy';
+import { NOTE_CORS, NOTE_DTS, NOTE_STALLED } from '../src/player/webaudio/policy';
+
+import { rangeDenied, resetRangeMemory } from '../src/sources/hostRange';
 
 /* Sélection du mode et repli CORS, avec des mocks : sonde de plage, en-tête et moteur sont injectés. */
 
@@ -108,6 +110,51 @@ describe('controller du son de repli', () => {
     const { host } = setup();
     const h = await startWebAudio(host, { ...input, nameCodec: 'dts' }, { probeRange: async () => 'denied' });
     expect(h.plan).toMatchObject({ mode: 'unsupported', note: NOTE_DTS });
+  });
+
+  it('le moteur abandonne le son (délai) : note persistante, alternative proposée, mode « error »', async () => {
+    const { host } = setup();
+    let fail: () => void = () => undefined;
+    const engine = engineStub();
+    const deps: PrepareDeps = {
+      probeRange: async () => 'ok', reader: () => ({ size: async () => 1, read: async () => new Uint8Array(1) }), inspect: async () => inspected('eac3'),
+      createEngine: (_v, _a, opts) => { fail = () => opts?.onError?.(new Error('délai')); return engine; },
+    };
+    await startWebAudio(host, input, deps);
+    fail();
+    expect(host.setMode).toHaveBeenLastCalledWith('error', NOTE_STALLED);
+    await vi.waitFor(() => expect((host.toast as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).includes('source 1'))).toBe(true));
+  });
+
+  it('en-tête jamais livré (Range lent, index MKV introuvable) : après 10 s, note persistante et alternative', async () => {
+    const { host } = setup();
+    const closeLate = vi.fn();
+    let resolveLate: (i: InspectedAudio) => void = () => undefined;
+    const deps: PrepareDeps = {
+      probeRange: async () => 'ok', reader: () => ({ size: async () => 1, read: async () => new Uint8Array(1) }),
+      inspect: () => new Promise<InspectedAudio>((r) => { resolveLate = r; }),
+    };
+    const pending = startWebAudio(host, input, deps);
+    await vi.advanceTimersByTimeAsync(9_900);
+    expect(host.setMode).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    const h = await pending;
+    expect(h.plan).toEqual({ mode: 'stalled', note: NOTE_STALLED });
+    expect(host.setMode).toHaveBeenCalledWith('error', NOTE_STALLED);
+    expect(host.attach).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect((host.toast as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).includes('source 1'))).toBe(true));
+    resolveLate({ ...inspected('eac3'), close: closeLate });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(closeLate).toHaveBeenCalled(); // l'ouverture tardive est libérée
+  });
+
+  it('hôte refusé : mémorisé (sans chemin ni requête) pour le sélecteur', async () => {
+    resetRangeMemory();
+    const { host } = setup();
+    await startWebAudio(host, { ...input, url: 'https://f.example.ca/secret/chemin.mkv?token=abc' }, { probeRange: async () => 'denied' });
+    expect(rangeDenied('https://f.example.ca/autre.mkv')).toBe(true);
+    expect(rangeDenied('https://autre.example/film.mkv')).toBe(false);
+    resetRangeMemory();
   });
 
   it('AAC : le navigateur joue seul, aucun moteur, aucune note', async () => {

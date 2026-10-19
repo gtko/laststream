@@ -1,14 +1,16 @@
 import type { FileCodecs, SourceLike } from '../../party/compat';
 import type { MediaCaps } from '../server';
 import type { WebAudioFallback, VideoLike } from './engine';
-import { nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
+import { NOTE_STALLED, nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
+
+export { NOTE_STALLED };
 import { prepareWebAudio, type PrepareDeps, type PreparedAudio } from './prepare';
 
 /* Pilote le son de repli pour une lecture web directe : prépare le plan (CORS, codec), attache le moteur audio au moteur HTML,
  * affiche les notes (DTS, CORS) et propose une source au son lisible. Tout l'accès à l'interface passe par `WebAudioHost`
  * (injecté : testé sans DOM). */
 
-export type AudioMode = 'app' | 'unsupported' | 'cors' | null;
+export type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
 
 export interface WebAudioHost<V extends SourceLike = SourceLike> {
   video: VideoLike & { webkitAudioDecodedByteCount?: number };
@@ -71,8 +73,8 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
       engine.start();
       host.setMode('app', '');
       host.toast('Son décodé par l’app', 3500);
-    } else if (plan.mode === 'unsupported' || plan.mode === 'cors') {
-      host.setMode(plan.mode, plan.note);
+    } else if (plan.mode === 'unsupported' || plan.mode === 'cors' || plan.mode === 'stalled') {
+      host.setMode(plan.mode === 'stalled' ? 'error' : plan.mode, plan.note);
       host.toast(plan.note, 9000);
       void propose(plan.note);
     } else {
@@ -84,7 +86,14 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
     video: host.video, url: input.url, caps: host.caps, web: true, hls: false, nameCodec: input.nameCodec,
     engineOptions: {
       onChange: () => host.onChange(),
-      onError: () => host.toast('Le son s’est interrompu (la source refuse les requêtes par plages)', 8000),
+      // Le moteur a abandonné le son (aucun PCM à temps, flux coupé) : l'image reprend ; note persistante + autre source.
+      onError: () => {
+        if (stale()) return;
+        current = { mode: 'stalled', note: NOTE_STALLED };
+        host.setMode('error', NOTE_STALLED);
+        host.toast(NOTE_STALLED, 9000);
+        void propose(NOTE_STALLED);
+      },
     },
   }, deps);
   if (stale()) { created.dispose(); return handle; }

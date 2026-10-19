@@ -23,6 +23,7 @@ function skeleton() {
     '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">Vous regardez</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
     '<div class="lp-bspin" aria-hidden="true"></div>' +
     '<div class="lp-sndwait" role="status">Chargement du son…</div>' +
+    '<div class="lp-sndnote" role="status" hidden></div>' +
     '<div class="lp-loading" role="status"><div class="lp-load-bg"></div><div class="lp-load-in">' +
       '<div class="lp-lring" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="lp-lring-bg" cx="32" cy="32" r="28"/><circle class="lp-lring-fg" cx="32" cy="32" r="28" stroke-dasharray="175.9" stroke-dashoffset="132"/></svg></div>' +
       '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
@@ -466,6 +467,12 @@ export function createPlayerUI(h) {
       el.dataset.html = key;
       if (dual) el.innerHTML = '<span class="lp-sub-top">' + htmlText + '</span><span class="lp-sub-bot">' + bottomHtml + '</span>';
       else { const one = htmlText || bottomHtml; el.innerHTML = one ? '<span>' + one + '</span>' : ''; }
+    },
+    /** Note persistante sur l'image (ex. « Son DTS non pris en charge ») ; vide : masquée. */
+    setSoundNote(text) {
+      const el = q('.lp-sndnote');
+      el.textContent = text || '';
+      el.hidden = !text;
     },
     /** Message bref ; `action` { label, run } ajoute un bouton (ex. « Annuler »). */
     toast(msg, ms = 3200, action) {

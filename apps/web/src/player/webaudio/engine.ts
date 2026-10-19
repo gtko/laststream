@@ -57,12 +57,16 @@ export interface FallbackOptions {
   onError?: (error: Error) => void;
   /** Tentatives de relance du flux audio après une erreur de lecture avant d'abandonner (le son se coupe, l'image continue). */
   retries?: number;
+  /** Attente maximale du son (ms) : au-delà, le son est abandonné (erreur) et la vidéo reprend sans lui. */
+  holdTimeoutMs?: number;
   startAheadSec?: number;
   maxAheadSec?: number;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const HAVE_FUTURE_DATA = 3;
+/** Attente maximale du son avant d'abandonner (ms). */
+export const HOLD_TIMEOUT_MS = 10_000;
 
 export class WebAudioFallback {
   private readonly ctx: AudioContext;
@@ -88,6 +92,7 @@ export class WebAudioFallback {
   private destroyed = false;
   private failed = false;
   private _holding = false;
+  private holdSince = 0;
   private _volume: number;
   private _muted: boolean;
   private readonly listeners: Array<[string, () => void]> = [];
@@ -221,6 +226,9 @@ export class WebAudioFallback {
         this._holding = false;
         this.opts.onChange?.();
         this.resumeVideo();
+      } else if (Date.now() - this.holdSince > (this.opts.holdTimeoutMs ?? HOLD_TIMEOUT_MS)) {
+        // Aucun son décodé à temps (source lente, plages refusées, MKV sans index) : on n'attend pas indéfiniment.
+        this.giveUp(new Error('son indisponible : délai dépassé'));
       }
       return;
     }
@@ -255,6 +263,7 @@ export class WebAudioFallback {
   private hold(): void {
     if (this._holding) return;
     this._holding = true;
+    this.holdSince = Date.now();
     this.counters.holds++;
     this.stopNodes();
     this.anchor = null;
@@ -262,6 +271,17 @@ export class WebAudioFallback {
     // Pause posée par nous : l'événement « pause » qui suit est ignoré (holding) par le moteur HTML.
     try { this.video.pause(); } catch { /* ignoré */ }
     this.opts.onChange?.();
+  }
+
+  /** Abandonne le son : l'image continue, l'interface est prévenue (`onError`). */
+  private giveUp(error: Error): void {
+    if (this.failed) return;
+    this.failed = true;
+    this.stopNodes();
+    this.anchor = null;
+    this.opts.onError?.(error);
+    this.opts.onChange?.();
+    this.tick();
   }
 
   private resumeVideo(): void {
@@ -386,11 +406,7 @@ export class WebAudioFallback {
           if (gen !== this.gen || this.destroyed) return;
           this.counters.errors++;
           if (attempt >= retries) {
-            this.failed = true;
-            this.stopNodes();
-            this.anchor = null;
-            this.opts.onError?.(error instanceof Error ? error : new Error(String(error)));
-            this.opts.onChange?.();
+            this.giveUp(error instanceof Error ? error : new Error(String(error)));
             return;
           }
           await sleep(500);

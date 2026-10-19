@@ -386,6 +386,38 @@ describe('moteur audio de repli : dérive et panne', () => {
     expect(video.paused).toBe(false);
   });
 
+  it('aucun son décodé en 10 s : attente abandonnée, erreur remontée, la vidéo reprend sans le son', async () => {
+    video.paused = false;
+    source.stalled = new Promise(() => undefined); // la source ne livre rien (Range lent, index MKV introuvable…)
+    make();
+    engine.start();
+    await run(0.3);
+    expect(engine.holding).toBe(true);
+    expect(video.paused).toBe(true);
+    await run(9);
+    expect(engine.holding).toBe(true);
+    expect(errors).not.toHaveBeenCalled();
+    await run(1.5);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(errors.mock.calls[0][0].message).toContain('délai dépassé');
+    expect(engine.isFailed).toBe(true);
+    expect(engine.holding).toBe(false);
+    expect(video.paused).toBe(false);
+  });
+
+  it('l’attente est bornée aussi quand elle suit un seek', async () => {
+    await playing();
+    source.stalled = new Promise(() => undefined);
+    video.seeking = true;
+    video.currentTime = 90;
+    video.dispatchEvent(new Event('seeking'));
+    video.seeking = false;
+    video.dispatchEvent(new Event('seeked'));
+    await run(10.5);
+    expect(errors).toHaveBeenCalledTimes(1);
+    expect(video.paused).toBe(false);
+  });
+
   it('une erreur passagère est rattrapée sans interrompre la lecture', async () => {
     video.paused = false;
     source.failures = 1;

@@ -1,8 +1,9 @@
 import { urlRangeSource } from '../../relay/sources';
+import { rememberRange } from '../../sources/hostRange';
 import type { RangeReader } from '../../relay/player/types';
 import type { MediaCaps } from '../server';
 import { WebAudioFallback, type FallbackOptions, type VideoLike } from './engine';
-import { chooseAudioPlan, chooseAudioPlanBlind, probeRange, type AudioPlan, type RangeProbe } from './policy';
+import { NOTE_STALLED, chooseAudioPlan, chooseAudioPlanBlind, probeRange, type AudioPlan, type RangeProbe } from './policy';
 import { inspectAudio, type InspectedAudio } from './source';
 
 /* Préparation du son en lecture web directe : sonde Range (CORS), lecture de l'en-tête (codec de la piste son), choix du plan
@@ -23,7 +24,11 @@ export interface PrepareInput {
   engineOptions?: FallbackOptions;
 }
 
+/** Délai maximal pour lire l'en-tête (codec de la piste son) : au-delà, la source est jugée trop lente. */
+export const HEADER_TIMEOUT_MS = 10_000;
+
 export interface PrepareDeps {
+  headerTimeoutMs?: number;
   probeRange?: (url: string, signal?: AbortSignal) => Promise<RangeProbe>;
   reader?: (url: string) => RangeReader;
   inspect?: (reader: RangeReader) => Promise<InspectedAudio>;
@@ -56,6 +61,7 @@ export async function prepareWebAudio(input: PrepareInput, deps: PrepareDeps = {
   const probe = deps.probeRange ?? ((u, s) => probeRange(u, undefined, undefined, s));
   const range = await probe(input.url, input.signal);
   if (input.signal?.aborted) return none({ mode: 'none' }, range);
+  rememberRange(input.url, range === 'ok');
 
   const blind = (): AudioPlan => {
     // En-tête illisible : seul le nom dit si le son est lisible. Inconnu ou lisible : on laisse le navigateur faire (le
@@ -73,7 +79,16 @@ export async function prepareWebAudio(input: PrepareInput, deps: PrepareDeps = {
   let inspected: InspectedAudio;
   try {
     const reader = (deps.reader ?? ((u: string) => urlRangeSource({ url: u })))(input.url);
-    inspected = await (deps.inspect ?? ((r: RangeReader) => inspectAudio(r)))(reader);
+    const pending = (deps.inspect ?? ((r: RangeReader) => inspectAudio(r)))(reader);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), deps.headerTimeoutMs ?? HEADER_TIMEOUT_MS); });
+    const first = await Promise.race([pending, late]).finally(() => clearTimeout(timer));
+    if (first === 'late') {
+      // Trop lent : on libère l'ouverture quand elle finira, et on prévient plutôt que d'attendre sans fin.
+      void pending.then((i) => i.close(), () => undefined);
+      return none({ mode: 'stalled', note: NOTE_STALLED }, range);
+    }
+    inspected = first;
   } catch {
     // En-tête illisible malgré la sonde (fichier tronqué, conteneur inconnu) : le navigateur garde la main.
     return none({ mode: 'native' }, range);

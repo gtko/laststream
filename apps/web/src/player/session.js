@@ -926,12 +926,13 @@ async function startPlan(p, plan, startAt, stale, cand) {
 }
 
 /** Libellé du son dans la fiche de lecture quand l'app ne laisse pas le navigateur le jouer. */
-const AUDIO_MODE_LABEL = { app: 'Son décodé par l’app (le navigateur ne le lit pas)', unsupported: 'Non pris en charge par le navigateur', cors: 'Indisponible : la source refuse la lecture du son par le navigateur' };
+const AUDIO_MODE_LABEL = { app: 'Son décodé par l’app (le navigateur ne le lit pas)', unsupported: 'Non pris en charge par le navigateur', error: 'Indisponible : la source répond trop lentement', cors: 'Indisponible : la source refuse la lecture du son par le navigateur' };
 
 function stopWebAudio(p) {
   if (p.webAudio) { try { p.webAudio.dispose(); } catch (_) { /* ignoré */ } p.webAudio = null; }
   p.audioMode = null;
   p.audioNote = '';
+  if (ui) ui.setSoundNote('');
 }
 
 /** Codecs lus dans l'en-tête d'une autre source (plages seulement) : sert à proposer une source au son lisible. */
@@ -955,7 +956,7 @@ function beginWebAudio(p, url, stale) {
     probeView: probeViewHeader,
     describe: describeView,
     play: (v) => { if (P === p) playView(v, p.engine ? p.engine.state().time : 0); },
-    setMode: (mode, note) => { p.audioMode = mode; p.audioNote = note; if (ui) ui.refreshPanel(); },
+    setMode: (mode, note) => { p.audioMode = mode; p.audioNote = note; if (ui) { ui.setSoundNote(mode && mode !== 'app' ? note : ''); ui.refreshPanel(); } },
   }, { url, nameCodec: fileCodecsOf(view).audio, stale }).then((h) => {
     if (stale()) h.dispose(); else p.webAudio = h;
   }).catch(() => undefined);

@@ -6,6 +6,7 @@ import type { Lang, Stream } from '../data/stream';
 import { deviceAddonName, fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
 import { browserCaps, inShell } from '../player/caps';
 import { serverLikelyUp } from '../player/server';
+import { rangeDenied } from './hostRange';
 import { applyVerdicts, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { CHECK_TOP_N, debrid } from './debridClient';
 import { recommend, type Recommendation } from './rank';
@@ -315,7 +316,9 @@ function alsoAccepted(): readonly Lang[] {
 }
 
 export function recommendFor(views: readonly SourceView[], bwKbps: number | null): Recommendation | null {
-  return recommend(views, bwKbps, preferredLang(), { preferDirect: !inShell(), alsoAccept: alsoAccepted() });
+  // Hôte déjà refusé (CORS) par la sonde du moteur audio : son son ne peut plus être décodé par l'app.
+  const checked = views.map((v) => (v.appAudio === 'app' && rangeDenied(v.stream?.url) ? { ...v, appAudio: 'unsupported' as const } : v));
+  return recommend(checked, bwKbps, preferredLang(), { preferDirect: !inShell(), alsoAccept: alsoAccepted() });
 }
 
 /** Débit connu sans mesurer (réglage fixe ou mesure récente), sinon null. */

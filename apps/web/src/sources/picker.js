@@ -9,6 +9,7 @@ import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './l
 import { bitDepthOf, codecBadges, fitBadge } from './badges';
 import { describePending } from './rank';
 import { isShellEnvironment } from '../player/shell';
+import { rangeDenied } from './hostRange';
 
 // Apps Windows (mpv) et Android (libVLC) : tous les formats sont lus tels quels, jamais de transcodage.
 const nativePlayer = () => isShellEnvironment() || !!globalThis.Capacitor?.isNativePlatform?.();
@@ -43,6 +44,7 @@ function itemHtml(v, opts) {
   // Pastille d'adéquation : débit de la source contre débit de la connexion (mesuré ou réglé), à chaque rendu.
   const fit = fitBadge(v.bitrateKbps, session ? session.bw : null);
   const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
+    : v.appAudio === 'app' && rangeDenied(v.stream && v.stream.url) ? '<span class="s-web s-web-video" title="L’hébergeur de ce fichier refuse la lecture du son par le navigateur (CORS) : la vidéo se lira sans son">Sans son (hôte)</span>'
     : v.appAudio === 'app' ? '<span class="s-web s-web-convert" title="Le navigateur ne lit pas ce son (AC-3 / E-AC-3) : l’app le décode elle-même, sans serveur de streaming, si l’hébergeur de la source l’autorise">Son décodé par l’app</span>'
     : v.appAudio === 'unsupported' ? '<span class="s-web s-web-video" title="Son DTS / TrueHD non pris en charge par le navigateur : la vidéo se lira sans son">Sans son (DTS)</span>'
     : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
