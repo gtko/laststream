@@ -25,6 +25,9 @@ import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
+import { registerSocialV2MessageRoutes } from './social-v2-messages-routes.js';
+import { registerSocialV2NoteRoutes } from './social-v2-notes-routes.js';
+import { registerSocialV2Routes } from './social-v2-routes.js';
 import { registerDebridLinkRoutes } from './debrid-links.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
@@ -774,6 +777,9 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   });
 
   registerSocialRoutes(router, deps, backend);
+  registerSocialV2Routes(router, deps, backend);
+  registerSocialV2MessageRoutes(router, deps, backend);
+  registerSocialV2NoteRoutes(router, deps, backend);
   registerDebridLinkRoutes(router, deps, backend);
 
   router.all('*', () => {

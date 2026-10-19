@@ -1,3 +1,4 @@
+import { backfillProfileIdentities } from './social-handles.js';
 import type { SqlDb } from './sql.js';
 
 /** Migration versionnée. Les versions appliquées sont tracées dans `schema_migrations`. */
@@ -5,7 +6,46 @@ export interface Migration {
   readonly version: number;
   readonly name: string;
   readonly sql: string;
+  /** Étape de données facultative, exécutée après `sql` dans la même transaction (ex. tirages aléatoires). */
+  readonly run?: (db: SqlDb) => void;
 }
+
+/** Début de requête commun : profil principal de chaque compte (premier profil non enfant créé, pid déjà attribué). */
+const PRINCIPAL_CTE = `
+  WITH principal AS (
+    SELECT a.id AS account_id,
+      (SELECT p.pid FROM profiles p WHERE p.account_id = a.id AND p.is_kid = 0 ORDER BY p.created_at, p.id LIMIT 1) AS pid
+    FROM accounts a
+  )`;
+
+/**
+ * Reprise des données sociales vers les profils (après l'attribution des identités) : les amitiés compte↔compte
+ * deviennent des amitiés entre profils principaux, la présence existante est rattachée au profil principal. Les
+ * anciennes tables restent en place pour les routes de compatibilité. Horodatages : ms epoch (ISO 8601 UTC → julianday).
+ */
+const PROFILE_SOCIAL_BACKFILL_SQL = `
+  ${PRINCIPAL_CTE}
+  INSERT INTO profile_friendships (low_pid, high_pid, requested_by, status, created_at)
+  SELECT CASE WHEN lo.pid < hi.pid THEN lo.pid ELSE hi.pid END,
+         CASE WHEN lo.pid < hi.pid THEN hi.pid ELSE lo.pid END,
+         CASE WHEN f.requested_by = f.low_id THEN lo.pid ELSE hi.pid END,
+         f.status,
+         CAST(ROUND((julianday(f.created_at) - 2440587.5) * 86400000) AS INTEGER)
+  FROM friendships f
+  JOIN principal lo ON lo.account_id = f.low_id
+  JOIN principal hi ON hi.account_id = f.high_id
+  WHERE lo.pid IS NOT NULL AND hi.pid IS NOT NULL;
+
+  ${PRINCIPAL_CTE}
+  INSERT INTO profile_presence (profile_pid, status, watching, updated_at)
+  SELECT pr.pid,
+         CASE WHEN s.invisible = 1 THEN 'invisible' ELSE 'online' END,
+         NULL,
+         CAST(ROUND((julianday(s.seen_at) - 2440587.5) * 86400000) AS INTEGER)
+  FROM presence s
+  JOIN principal pr ON pr.account_id = s.account_id
+  WHERE pr.pid IS NOT NULL;
+`;
 
 /**
  * Schéma des données utilisateur. `title_ref` identifie un titre : `tmdb:<id>` quand l'identifiant TMDB est connu,
@@ -393,6 +433,107 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 14,
+    name: 'handles par profil (Nom#TAG, pid public), amitiés et présence par profil',
+    sql: `
+      -- Handle : nom normalisé (minuscules) + tag. Identifiant public : pid. Profils enfants : NULL.
+      ALTER TABLE profiles ADD COLUMN handle_name TEXT;
+      ALTER TABLE profiles ADD COLUMN handle_key TEXT;
+      ALTER TABLE profiles ADD COLUMN handle_tag TEXT;
+      ALTER TABLE profiles ADD COLUMN pid TEXT;
+      CREATE UNIQUE INDEX profiles_handle ON profiles (handle_key, handle_tag);
+      CREATE UNIQUE INDEX profiles_pid ON profiles (pid);
+
+      -- Amitiés entre profils : une ligne par paire (low_pid < high_pid, donc une seule quel que soit le sens).
+      -- requested_by = pid du demandeur. Supprimées avec le profil (clés étrangères sur pid).
+      CREATE TABLE profile_friendships (
+        low_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        high_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        requested_by TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'accepted')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (low_pid, high_pid),
+        CHECK (low_pid < high_pid),
+        CHECK (requested_by IN (low_pid, high_pid))
+      );
+      CREATE INDEX profile_friendships_high ON profile_friendships (high_pid);
+
+      -- Présence par profil : statut choisi, titre en cours (JSON, NULL = en ligne seulement), horodatage en ms.
+      CREATE TABLE profile_presence (
+        profile_pid TEXT PRIMARY KEY REFERENCES profiles (pid) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('online', 'away', 'dnd', 'invisible')),
+        watching TEXT,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+    run: (db) => {
+      backfillProfileIdentities(db);
+      db.exec(PROFILE_SOCIAL_BACKFILL_SQL);
+    },
+  },
+  {
+    version: 15,
+    name: 'messages entre profils et notes sur les titres',
+    sql: `
+      -- Messages entre profils amis ou du même foyer. Corps 1 à 1000 car. (contrôlé avant écriture), contexte JSON facultatif.
+      -- read_at : lecture par le destinataire (NULL = non lu). Supprimés avec le profil.
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        context TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK (from_pid <> to_pid)
+      );
+      -- Conversation (les deux sens) ; quota d'envoi par expéditeur sur created_at.
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+
+      -- Notes posées sur un titre à une position (saison et épisode à 0 pour un film). Texte ou emoji.
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER NOT NULL DEFAULT 0,
+        episode INTEGER NOT NULL DEFAULT 0,
+        pos REAL NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('text', 'emoji')),
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX notes_media ON notes (type, tmdb_id, season, episode, pos);
+      CREATE INDEX notes_author ON notes (author_pid, created_at);
+    `,
+  },
+  {
+    version: 16,
+    name: 'journal des créations de notes (quota indépendant des suppressions)',
+    sql: `
+      -- Une ligne par note créée, purgée au-delà d'une minute (fenêtre du quota). Sans clé étrangère : la remise à zéro
+      -- d'identité (pid vidé) ne doit pas être bloquée par ce journal, qui expire de lui-même.
+      CREATE TABLE note_creations (
+        author_pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX note_creations_author ON note_creations (author_pid, created_at);
+    `,
+  },
+  {
+    version: 17,
+    name: 'nonces des tickets du flux temps réel (usage unique)',
+    sql: `
+      -- Un ticket du flux social n'ouvre qu'une connexion : son nonce est mémorisé jusqu'à son échéance (ms), puis purgé.
+      CREATE TABLE live_ticket_nonces (
+        nonce TEXT PRIMARY KEY,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
+    `,
+  },
 ];
 
 /**
@@ -412,6 +553,7 @@ export function migrate(db: SqlDb, migrations: readonly Migration[] = MIGRATIONS
     if (applied.has(migration.version)) continue;
     db.transaction(() => {
       db.exec(migration.sql);
+      migration.run?.(db);
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         migration.version,
         migration.name,

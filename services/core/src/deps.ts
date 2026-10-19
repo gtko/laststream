@@ -7,6 +7,7 @@ import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
 import type { MetaBlobStore } from './lt/meta.js';
 import type { RowBlobStore } from './lt/rows.js';
+import type { SocialEventHandler } from './user/social-v2-events.js';
 
 /** Méthodes du client AllDebrid utilisées par les routes : résolution (magnet et fichier .torrent), appel brut, contrôles. */
 export type DebridClient = Pick<
@@ -42,6 +43,11 @@ export interface AppDeps {
   tvAdmin?: TvAdmin;
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
+  /**
+   * Événements sociaux temps réel (demandes, amitiés, présence visible), émis après chaque changement. Absent : aucun effet.
+   * Le lot WebSocket s'y branche ; une exception du gestionnaire n'interrompt jamais la requête.
+   */
+  socialEvents?: SocialEventHandler;
   /**
    * Limiteur de connexion et d'inscription partagé entre instances (Workers : binding Rate Limiting). Remplace les compteurs
    * en mémoire de /user/login et /user/register. `true` = tentative autorisée.

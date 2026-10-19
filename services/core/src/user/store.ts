@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
+import { linkInvitedPrincipals, revokeLegacyFriendshipsOf, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 import {
@@ -543,23 +544,29 @@ export class UserStore {
   }
 
   insertProfile(accountId: string, profileId: string, fields: ProfileFields, createdAt: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        profileId,
-        accountId,
-        fields.name,
-        fields.avatarColor,
-        fields.avatar,
-        fields.isKid ? 1 : 0,
-        fields.kidMaxAge,
-        fields.pinHash,
-        JSON.stringify(fields.allowedCatalogs),
-        createdAt,
-      );
+    this.transaction(() => {
+      const adults = Number((this.db.prepare('SELECT COUNT(*) AS n FROM profiles WHERE account_id = ? AND is_kid = 0').get(accountId) as { n: number }).n);
+      this.db
+        .prepare(
+          `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          profileId,
+          accountId,
+          fields.name,
+          fields.avatarColor,
+          fields.avatar,
+          fields.isKid ? 1 : 0,
+          fields.kidMaxAge,
+          fields.pinHash,
+          JSON.stringify(fields.allowedCatalogs),
+          createdAt,
+        );
+      syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
+      // Premier profil adulte du compte = profil principal : c'est là que se posent les amitiés d'invitation (v2).
+      if (!fields.isKid && adults === 0) linkInvitedPrincipals(this.db, accountId, Date.now());
+    });
   }
 
   /**
@@ -570,6 +577,7 @@ export class UserStore {
     this.transaction(() => {
       this.updateProfileFields(accountId, profileId, fields);
       if (pinHash !== undefined) this.setPin(accountId, profileId, pinHash);
+      syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
     });
   }
 
@@ -640,7 +648,14 @@ export class UserStore {
   }
 
   deleteProfile(accountId: string, profileId: string): boolean {
-    return this.db.prepare('DELETE FROM profiles WHERE id = ? AND account_id = ?').run(profileId, accountId).changes > 0;
+    return this.transaction(() => {
+      // Profil principal supprimé : ses amitiés legacy compte↔compte tombent avec lui (avant la cascade sur son pid).
+      const row = this.db.prepare('SELECT pid FROM profiles WHERE id = ? AND account_id = ?').get(profileId, accountId) as
+        | { pid: string | null }
+        | undefined;
+      if (row?.pid) revokeLegacyFriendshipsOf(this.db, row.pid);
+      return this.db.prepare('DELETE FROM profiles WHERE id = ? AND account_id = ?').run(profileId, accountId).changes > 0;
+    });
   }
 
   // Bibliothèque

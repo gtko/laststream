@@ -1,6 +1,11 @@
 # API sociale de lastAddon
 
-Fonctions sociales côté serveur : parrainage, amis, présence, bibliothèques partagées, titres masqués et salons de visionnage (watch party). Tout vit dans le Worker `lastaddon-core` (Cloudflare) et fonctionne aussi sur le serveur Node, **sauf la watch party en temps réel** (Workers uniquement ; sous Node, toutes les routes `/party` répondent `501 {"error":"party_unavailable"}`).
+Fonctions sociales côté serveur : parrainage, amis, présence, bibliothèques partagées, titres masqués et salons de visionnage (watch party). Tout vit dans le Worker `lastaddon-core` (Cloudflare) et fonctionne aussi sur le serveur Node, **sauf la watch party et le flux temps réel social en WebSocket** (Workers uniquement ; sous Node, toutes les routes `/party` répondent `501 {"error":"party_unavailable"}`).
+
+Deux générations coexistent :
+
+- **Social v2** (section suivante, routes `/user/social/*`) : l'entité sociale est le **profil**. C'est l'API à utiliser.
+- **v1** (sections 2 et 3, routes `/user/friends*` et `/user/presence`) : niveau compte, conservée pour compatibilité. Ses données ne sont pas synchronisées avec la v2.
 
 ## Conventions
 
@@ -8,13 +13,142 @@ Fonctions sociales côté serveur : parrainage, amis, présence, bibliothèques 
 - Authentification : `Authorization: Bearer <jeton de session>` (celui de `POST /user/login`). Sans session : `401 {"error":"unauthorized"}`.
 - Profils : les routes `/user/profiles/:id/...` exigent que le profil appartienne au compte et, s'il a un PIN, l'en-tête `X-Profile-Token` (comme le reste de l'API).
 - Erreurs : `{ "error": "<code stable>", "issues"?: [...] }`. Limites de débit : `429 rate_limited` avec `Retry-After`.
-- Pseudo = `username` du compte (3 à 32 caractères, minuscules). **Seuls le pseudo et la couleur d'avatar sont exposés aux autres comptes** : jamais d'identifiant de compte, de profil, de session ni de donnée debrid.
+- Pseudo = `username` du compte (3 à 32 caractères, minuscules), identité v1. En v2, l'identité publique est le handle `Nom#TAG` et le `pid` (voir ci-dessous). **En v1, seuls le pseudo et la couleur d'avatar sont exposés aux autres comptes** : jamais d'identifiant de compte, de profil, de session ni de donnée debrid.
+
+## Social v2 (par profil)
+
+Contrat côté application : `docs/social-v2-contract.md` (dépôt laststream). Cette section décrit le code livré ; les écarts avec le contrat sont listés à la fin.
+
+### Modèle
+
+- **Profil** : entité sociale. Chaque profil **non enfant** a :
+  - un **handle** `Nom#TAG`. `Nom` est dérivé du nom du profil : lettres, chiffres, espaces, `_` et `-` conservés, le reste remplacé par un espace, 20 caractères au plus, repli `Profil` si moins de 2 caractères. `TAG` = 4 caractères tirés au hasard dans `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (sans 0, O, 1, I, L), retirés en cas de collision. Unicité : nom normalisé (minuscules) + tag. Saisie insensible à la casse ; un caractère hors alphabet est refusé (400).
+  - un **pid** : 16 caractères base32 aléatoires (80 bits). C'est le seul identifiant exposé aux autres comptes et utilisé dans les URL. L'id interne ne sort jamais.
+- **Renommer** un profil garde son tag, sauf si le couple (nom, tag) est déjà pris : un nouveau tag est alors tiré.
+- **Foyer** : les autres profils non enfants du même compte. Ils se voient sans demande (présence, messages, notes, bibliothèque complète, historique). Ils n'apparaissent pas dans `friends` ; on ne peut ni leur demander d'amitié (`409 already_friends`) ni les retirer.
+- **Amis** : amitié entre deux profils de comptes différents, par demande et acceptation (ou demande croisée). Table `profile_friendships`.
+- **Profil enfant** : aucune identité (ni handle, ni pid), donc ni amis, ni présence, ni messages, ni notes. Toute route `/user/social/*` avec un profil enfant répond `403 kid_profile`. Un profil qui devient enfant **perd** ses amitiés, sa présence, ses messages (dans les deux sens) et ses notes.
+- Ces règles s'appliquent à la création, au renommage et au passage enfant / adulte d'un profil (`syncProfileIdentity`, `src/user/social-handles.ts`, appelé depuis `src/user/store.ts`).
+
+### En-têtes
+
+- `Authorization: Bearer <session>` : sinon `401 unauthorized`.
+- `X-Profile-Id: <id du profil agissant>` : obligatoire (absent : `400 profile_required`). Le profil doit appartenir au compte (sinon `404 profile_not_found`).
+- Si le profil a un PIN : `X-Profile-Token` (sinon `403 pin_required`).
+
+### Tables
+
+| Table | Contenu | Migration |
+| --- | --- | --- |
+| `profiles` (colonnes ajoutées) | `handle_name`, `handle_key`, `handle_tag`, `pid` ; index uniques sur `(handle_key, handle_tag)` et `pid` | v14 |
+| `profile_friendships` | une ligne par paire (`low_pid < high_pid`), `requested_by`, `status` `pending` ou `accepted` | v14 |
+| `profile_presence` | statut choisi, `watching` (JSON), `updated_at` (ms ; 0 = déconnecté) | v14 |
+| `messages` | `from_pid`, `to_pid`, `body`, `context` (JSON), `created_at`, `read_at` | v15 |
+| `notes` | `author_pid`, `type`, `tmdb_id`, `season`, `episode` (0 pour un film), `pos`, `kind`, `body`, `created_at` | v15 |
+
+- Les tables v1 `friendships` et `presence` (niveau compte) restent en place.
+- Backfill v14, exécuté **une seule fois** : les amitiés de compte à compte deviennent des amitiés entre profils principaux (premier profil non enfant créé) ; la présence du compte est rattachée à ce profil (`online`, ou `invisible` si le compte l'était, sans titre).
+- Suppression d'un profil : `ON DELETE CASCADE` sur ses amitiés, sa présence, ses messages et ses notes.
+
+### Routes `/user/social`
+
+Réponses : JSON. Erreurs : `{ "error": "<code>" }` (+ `issues` pour `invalid_body`). Un `pid` mal formé équivaut à un `pid` inconnu.
+
+| Méthode | Chemin | Effet | Réponse et erreurs |
+| --- | --- | --- | --- |
+| GET | `/me` | Profil agissant et statut choisi | `{ pid, handle, status, avatarColor }` |
+| PUT | `/status` `{ status }` | Statut `online`, `away`, `dnd` ou `invisible` | `{ status }` |
+| GET | `/friends` | Amis, foyer, demandes reçues et envoyées | `{ friends, household, incoming, outgoing }` |
+| POST | `/requests` `{ handle }` | Demande par handle exact | 201 `{ request }` ; 200 `{ friend }` si demande croisée ; 404 `handle_not_found`, 400 `self`, 409 `already_friends` / `already_requested`, 429 `friend_limit_reached` |
+| POST | `/requests/:pid/accept` | Accepte une demande reçue | `{ friend }` ; 404 `request_not_found`, 429 `friend_limit_reached` |
+| DELETE | `/requests/:pid` | Refuse une demande reçue ou annule une demande envoyée | 204 ; 404 `request_not_found` |
+| DELETE | `/friends/:pid` | Retire un ami (le foyer ne se retire pas) | 204 ; 404 `friend_not_found` |
+| GET | `/friends/:pid/library?type&limit&offset` | Bibliothèque : ami = titres en `friends` ; foyer = tout | `{ items, total, limit, offset }` ; 404 `friend_not_found` |
+| GET | `/friends/:pid/history?limit` | Historique récent (titres avec identifiant TMDB), du plus récent au plus ancien | `{ items }` ; 404 `friend_not_found` |
+| PUT | `/presence` `{ watching? }` | Battement (≈ 30 s, et à chaque lecture, pause, seek ou changement de média) ; `watching` absent ou `null` = en ligne | 204 ; 400 `invalid_body` |
+| DELETE | `/presence` | Hors ligne immédiatement | 204 |
+| POST | `/live-ticket` | Ticket de 60 s pour le flux temps réel | `{ wsPath }` ; 403 `kid_profile`, 429 `rate_limited` |
+| GET | `/conversations` | Conversations avec amis et foyer (dernier message, non-lus) | `{ conversations }` |
+| GET | `/messages/:pid?before&limit` | Fil avec un ami ou un membre du foyer, du plus ancien au plus récent | `{ messages }` ; 400 `self`, 403 `not_friend`, 404 `profile_not_found` |
+| POST | `/messages/:pid` `{ body, context? }` | Envoi de message | 201 `{ message }` ; 400 `invalid_body`, 403 `not_friend`, 429 `rate_limited` |
+| PUT | `/messages/:pid/read` | Marque lus les messages reçus de `:pid` | 204 ; mêmes erreurs que le fil |
+| GET | `/notes?type&tmdbId&season&episode` | Notes d'un titre : les miennes, celles des amis et du foyer | `{ notes }` |
+| POST | `/notes` `{ type, tmdbId, season?, episode?, pos, kind, body }` | Pose une note à une position | 201 `{ note }` ; 400 `invalid_body`, 429 `rate_limited` |
+| DELETE | `/notes/:id` | Supprime une note (auteur seulement) | 204 ; 404 `note_not_found` |
+
+### Temps réel (WebSocket)
+
+- **Ticket** : `POST /user/social/live-ticket` renvoie `{ "wsPath": "/user/social/live?ticket=…" }`. Ticket HMAC valable 60 s, lié au pid du profil agissant (portée `social-live:<pid>`), dont la finalité est distincte de celle des tickets de salon.
+- **Connexion** : `GET /user/social/live?ticket=…` en WebSocket. Le Worker (`src/worker.ts`, `src/user/social-v2-live-ws.ts`) vérifie le ticket, l'en-tête `Origin` (403 `origin_forbidden` s'il n'est pas autorisé ; absent, le contrôle ne s'applique pas) et le débit de mise à niveau. Il transmet ensuite la connexion au Durable Object `UserStoreDO` avec le pid dans l'en-tête interne `x-social-live-pid`, que le client ne peut pas poser. Refus : 401 `invalid_ticket`, 426 hors mise à niveau, 429 `rate_limited`.
+- **Une connexion par profil** : la nouvelle ferme l'ancienne avec le code `4000`. Les sockets utilisent l'API d'hibernation du Durable Object, étiquetées par pid.
+- **Trames client** : seul `{"t":"ping"}` est reconnu, il reçoit `{"t":"pong"}`. Les autres trames sont ignorées. Une trame de plus de 1024 caractères ferme la connexion en `4013`. Au-delà de 30 trames par minute (ping compris), fermeture en `4008`.
+- **Trames serveur** :
+
+| `t` | Charge | Destinataires |
+| --- | --- | --- |
+| `message` | `message` | le destinataire |
+| `read` | `pid` (le lecteur), `at` (ms) | l'expéditeur |
+| `presence` | `friend` (vue ; `household` vrai pour le foyer) | amis, puis foyer, au changement de statut visible ou de titre |
+| `request` | `request` (le demandeur) | le destinataire de la demande |
+| `friend` | `friend` | les deux, à l'acceptation ou à la demande croisée |
+| `unfriend` | `pid` | les deux |
+| `note` | `media`, `note` | amis et foyer de l'auteur |
+
+- **Émission** : après chaque écriture, `deps.socialEvents` appelle `UserStoreDO.liveBroadcast` en tâche d'arrière-plan. Une trame n'est remise qu'aux sockets ouvertes : rien n'est stocké ni rejoué. Après une coupure, relire `GET /social/friends` et `GET /social/conversations` (le contrat prévoit un repli en polling de 20 s).
+- **Relais** : d'après le contrat, la connexion passe par `laststream-edge`, comme celle des salons. Cette configuration n'est pas dans ce dépôt.
+- **Node** : ni porte WebSocket ni diffusion. Le `wsPath` renvoyé n'a pas de route.
+
+### Limites
+
+| Limite | Valeur | Portée | Dépassement |
+| --- | --- | --- | --- |
+| Amis acceptés | 200 | profil | 429 `friend_limit_reached` |
+| Demandes envoyées en attente | 50 | profil | 429 `friend_limit_reached` |
+| Messages envoyés | 30 par minute (fenêtre glissante) | expéditeur (profil) | 429 `rate_limited` + `Retry-After` |
+| Notes posées | 20 par minute (fenêtre glissante) | auteur (profil) | 429 `rate_limited` + `Retry-After` |
+| Texte d'un message | 1 à 1000 caractères, sans caractère de contrôle (saut de ligne admis) | | 400 `invalid_body` |
+| Texte d'une note | 1 à 140 caractères sans contrôle, ou exactement un emoji | | 400 `invalid_body` |
+| Notes d'un titre | 500 au plus, triées par position | | |
+| Fil de messages | `limit` 1 à 50 (défaut 50) | | 400 |
+| Historique | `limit` 1 à 50 (défaut 20) | | 400 |
+| Bibliothèque | `limit` 1 à 100 (défaut 50), `offset` ≥ 0 | | 400 |
+| Titre en cours | `title` 1 à 200 caractères, `pos` ≤ 10 000 000 s | | 400 |
+| Ticket temps réel | 20 par minute | profil (mémoire de l'instance) | 429 `rate_limited` |
+| Mise à niveau WebSocket | 30 par minute | IP (mémoire de l'instance) | 429 `rate_limited` |
+| Trames WebSocket client | 30 par minute, 1024 caractères max | profil (mémoire du Durable Object) | 4008 ; trame trop grande : 4013 |
+| Connexion temps réel | une par profil | profil | l'ancienne ferme en 4000 |
+| Ensemble des routes `/user/*` | 300 lectures et 120 écritures par minute | IP | 429 `rate_limited` |
+
+Les ticket, mise à niveau et trames sont en mémoire : elles repartent de zéro au redémarrage d'une instance et ne sont pas partagées entre instances. Les quotas de messages et de notes sont comptés en SQL.
+
+### Sécurité
+
+- Toute route exige une session et un profil agissant du compte, hors profil enfant (PIN déverrouillé si besoin).
+- Bibliothèque, historique : un pid sans lien, inconnu ou mal formé reçoit le même `404 friend_not_found`. **Exception** : pour les messages, un pid existant sans lien répond `403 not_friend` et un pid inconnu `404`. L'existence d'un pid est donc révélée ; le risque reste faible, le pid étant aléatoire sur 80 bits.
+- `POST /requests` révèle l'existence d'un handle (404 contre 201 ou 409). Le handle est fait pour être partagé.
+- Champs exposés aux autres profils : `pid`, handle, couleur d'avatar, statut vu, `lastSeen` et titre en cours (ami ou foyer seulement, jamais hors ligne ni en mode invisible). Jamais de compte, de session, d'id interne ni de donnée debrid.
+- Ticket : HMAC, 60 s, nonce, finalité et portée liées au pid ; un ticket de salon n'est pas accepté. Il transite dans l'URL (un navigateur ne pose pas d'en-tête sur une WebSocket) et le Worker retire la query avant de transmettre au Durable Object, qui fait confiance à `x-social-live-pid` : il ne doit être atteint que par le Worker.
+- Contenu : messages et notes sont contrôlés en longueur et en caractères de contrôle (une note emoji doit être exactement un emoji). Il n'y a pas de filtre d'insultes ni de liens (contrairement au chat des salons). L'affichage doit échapper le texte.
+
+### Compatibilité v1
+
+- `/user/friends*` et `/user/presence` gardent leur forme (sections 2 et 3). Ils ne lisent et n'écrivent que `friendships` et `presence` (niveau compte), jamais `profile_friendships` ni `profile_presence`.
+- Une amitié créée en v1 n'apparaît pas en v2, et réciproquement. Une présence v1 n'est pas visible en v2. Le contrat prévoyait un mappage des routes v1 sur le profil principal : il n'est pas implémenté.
+- Le parrainage (section 1) crée une amitié de compte uniquement : en v2, le filleul n'est pas ami du parrain tant que l'un des deux n'a pas envoyé de demande par handle.
+- La bibliothèque d'un ami a la même forme d'élément en v1 (`GET /user/friends/:username/library`) et en v2 (`GET /user/social/friends/:pid/library`). La visibilité `private` / `friends` vaut dans les deux cas.
+
+### Écarts avec le contrat et points d'attention
+
+- Trame client trop grande : le contrat dit `1009`, le code ferme en `4013` (un Worker ne peut pas envoyer `1009`).
+- Refus ou annulation de demande (`DELETE /requests/:pid`) : aucun événement temps réel. Le client doit relire `GET /social/friends`.
+- Un profil passé en enfant perd définitivement ses messages et ses notes.
+- Les événements ne sont ni stockés ni rejoués (voir Temps réel).
 
 ## 1. Parrainage (inscription par lien)
 
 L'inscription n'est possible qu'avec un lien de parrainage. Le tout premier compte d'un serveur vide s'inscrit sans lien (il devient propriétaire). `LASTADDON_ALLOW_SIGNUP=1` rouvre l'inscription libre : option réservée aux serveurs personnels, absente du Worker public.
 
-Chaque compte possède 4 liens (quota ajustable par le propriétaire). Un lien = une inscription. Le filleul devient **automatiquement ami** du parrain.
+Chaque compte possède 4 liens (quota ajustable par le propriétaire). Un lien = une inscription. Le filleul devient **automatiquement ami** du parrain (amitié de compte en v1 ; voir Compatibilité v1 pour la v2).
 
 ### `POST /user/register`
 
@@ -55,9 +189,9 @@ Révoque un lien **non utilisé** : l'ancien code cesse de fonctionner et l'empl
 
 `{ "quota": 0..100 }` → `200 { "username", "quota" }`. `403 owner_only` pour tout autre compte, `404 account_not_found`. Réduire le quota supprime les liens libres en trop, jamais un lien utilisé.
 
-## 2. Amis
+## 2. Amis (v1, compatibilité)
 
-Identifiés par **pseudo exact** (pas de recherche partielle).
+Routes au niveau du compte, sur la table `friendships`. Elles ne voient pas les amitiés de profil de la v2 (voir Social v2). Identifiés par **pseudo exact** (pas de recherche partielle).
 
 | Route | Effet |
 | --- | --- |
@@ -78,7 +212,9 @@ Erreurs : `404 user_not_found`, `400 cannot_befriend_self`, `409 already_friends
 
 `status` : `online`, `watching` (titre dans `watching`) ou `offline`. `incoming` / `outgoing` : `{ username, avatarColor, requestedAt }`.
 
-## 3. Présence
+## 3. Présence (v1, compatibilité)
+
+Table `presence` (niveau compte). La v2 utilise `PUT` et `DELETE /user/social/presence` et la table `profile_presence`.
 
 ### `PUT /user/presence`
 
@@ -96,13 +232,13 @@ Battement de cœur léger, à envoyer **toutes les 30 à 60 s** tant que l'appli
 
 ## 4. Bibliothèques partagées
 
-Chaque titre de bibliothèque porte `visibility` : `private` (défaut) ou `friends`. `GET /user/profiles/:id/library` renvoie ce champ pour chaque élément. Ré-ajouter un titre ne change pas sa visibilité.
+Chaque titre de bibliothèque porte `visibility` : `private` (défaut) ou `friends`. `GET /user/profiles/:id/library` renvoie ce champ pour chaque élément. Ré-ajouter un titre ne change pas sa visibilité. La visibilité vaut aussi en v2. La lecture de la bibliothèque d'un ami est en v1 `GET /user/friends/:username/library`, et en v2 `GET /user/social/friends/:pid/library`.
 
 | Route | Effet |
 | --- | --- |
 | `PUT /user/profiles/:id/library/:type/:itemId/visibility` `{ "visibility" }` | Un titre (`204`, `404 library_item_not_found`) |
 | `PUT /user/profiles/:id/library/visibility` `{ "visibility", "type"? }` | Toute la bibliothèque, ou tous les films / séries : `200 { "updated": n }` |
-| `GET /user/friends/:username/library?type=&limit=&offset=` | Bibliothèque visible d'un ami |
+| `GET /user/friends/:username/library?type=&limit=&offset=` | Bibliothèque visible d'un ami (v1) |
 
 - Lecture d'un ami : titres en visibilité `friends` de ses profils **non enfants**, fusionnés sans doublon. `limit` 1 à 100 (défaut 50), `offset` ≥ 0. Réponse : `{ items: [{ type, tmdbId, imdbId, title, poster, addedAt }], total, limit, offset }`.
 - Un non-ami et un pseudo inconnu reçoivent la **même** réponse `404 friend_not_found` (l'existence des comptes n'est pas révélée).
@@ -239,7 +375,7 @@ Ces formules sont implémentées et testées dans `src/party/sync.ts` (`expected
 
 ## 7. Déploiement et exploitation
 
-- Migrations SQL : `src/user/migrations.ts`, version 7 (`invites`, `friendships`, `presence`, `hidden_titles`, `hidden_import`, `party_rooms`, colonnes `accounts.invite_quota` et `library_items.visibility`). Appliquées automatiquement au démarrage (Node) et par le Durable Object `UserStoreDO`.
-- Durable Objects (`wrangler.jsonc`) : `PARTY_ROOM` → classe `PartyRoom` (migration `v2`, SQLite). Déploiement : `npm run deploy:worker`.
+- Migrations SQL : `src/user/migrations.ts`, versions 7 (fonctions sociales v1 : `invites`, `friendships`, `presence`, `hidden_titles`, `hidden_import`, `party_rooms`, colonnes `accounts.invite_quota` et `library_items.visibility`) à 17 (v13 : agrégat `title_starts` ; Social v2 : v14 identités et amitiés par profil, v15 messages et notes, v16 journal `note_creations`, v17 nonces `live_ticket_nonces`). Appliquées automatiquement au démarrage (Node) et par le Durable Object `UserStoreDO`.
+- Durable Objects (`wrangler.jsonc`) : `PARTY_ROOM` → classe `PartyRoom` (migration `v2`, SQLite) ; `USER_STORE` → `UserStoreDO`, qui porte aussi le flux temps réel social. Déploiement : `npm run deploy:worker`.
 - Comptes de test sur un serveur public : la route d'administration `POST /__admin/invite` (en-tête `x-admin-secret`, secret `ADMIN_SECRET` posé temporairement) crée une invitation « système » (sans parrain, donc sans amitié) ; `DELETE /__admin/invite/<code>` la supprime. Supprimer ensuite le secret avec `wrangler secret delete ADMIN_SECRET`.
-- Tests : `npm test` (Node, dont le cœur du salon) et `npm run test:workers` (parrainage, amis, présence, visibilité, masqués contre le Durable Object ; salons avec vraies WebSocket).
+- Tests : `npm test` (Node, dont le cœur du salon et `tests/social-v2-*.test.ts`) et `npm run test:workers` (parrainage, amis, présence, visibilité, masqués et Social v2 contre le Durable Object ; salons avec vraies WebSocket, et temps réel social dans `tests-workers/social-live.test.ts`).
