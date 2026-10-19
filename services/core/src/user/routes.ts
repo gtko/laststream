@@ -22,6 +22,7 @@ import {
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
 import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session.js';
+import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
 import { registerDebridLinkRoutes } from './debrid-links.js';
@@ -482,7 +483,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const users = db();
     const { profile } = await scopeOf(users, c, deps.secret, true);
     const normalized = normalizeProgress(parseWith(progressWriteSchema, c.get('body')));
-    await users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso() });
+    await users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso(), country: countryCode(c.env?.country) });
     const saved = await users.progressEpisode(
       profile.id,
       normalized.type,

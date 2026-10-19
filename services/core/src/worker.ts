@@ -11,6 +11,7 @@ import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter } from './observability/report.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
+import { countryCode } from './user/title-starts.js';
 import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
@@ -70,7 +71,9 @@ const worker = {
         if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
         return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp });
       }
-      return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp }, ctx)));
+      // Pays Cloudflare (request.cf, absent des types DOM) : « XX » si inconnu.
+      const country = countryCode((request as { cf?: { country?: unknown } }).cf?.country);
+      return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp, country }, ctx)));
     } catch (err) {
       // Configuration absente ou invalide : remontée à Sentry, puis message générique, jamais de valeur.
       Sentry.captureException(err);

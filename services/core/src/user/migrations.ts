@@ -378,6 +378,21 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX meta_index_tvdb ON meta_index (tvdb_id);
     `,
   },
+  {
+    version: 13,
+    name: 'lancements de titres par pays et par jour (agrégat anonyme, sans donnée de compte, purge après 90 jours)',
+    sql: `
+      -- Une ligne par jour UTC, pays et titre (key = « type|référence », sans saison ni épisode). n : nombre de comptes
+      -- dont c'est la première progression sur ce titre. Aucune clé étrangère : l'agrégat survit à la suppression d'un compte.
+      CREATE TABLE title_starts (
+        day TEXT NOT NULL,
+        country TEXT NOT NULL,
+        key TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        PRIMARY KEY (day, country, key)
+      );
+    `,
+  },
 ];
 
 /**
