@@ -6,6 +6,7 @@ import { migrate } from '../../user/migrations.js';
 import { MetaStore } from '../../user/meta-store.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
+import { SocialV2Store } from '../../user/social-v2-store.js';
 import type { SqlDb } from '../../user/sql.js';
 import { UserStore } from '../../user/store.js';
 import { durableObjectSql } from './sql.js';
@@ -20,6 +21,7 @@ function callableNames(prototype: object): Set<string> {
 const USER_METHODS = callableNames(UserStore.prototype);
 const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
 const SOCIAL_METHODS = callableNames(SocialStore.prototype);
+const SOCIAL_V2_METHODS = callableNames(SocialV2Store.prototype);
 const ADMIN_METHODS = callableNames(AdminStore.prototype);
 const META_METHODS = callableNames(MetaStore.prototype);
 
@@ -38,6 +40,7 @@ export class UserStoreDO extends DurableObject {
   private readonly users: UserStore;
   private readonly skips: SkipSegmentStore;
   private readonly socialStore: SocialStore;
+  private readonly socialV2Store: SocialV2Store;
   private readonly adminStore: AdminStore;
   private readonly metaStore: MetaStore;
   private readonly db: SqlDb;
@@ -54,6 +57,7 @@ export class UserStoreDO extends DurableObject {
     this.users = new UserStore(db);
     this.skips = new SkipSegmentStore(db);
     this.socialStore = new SocialStore(db);
+    this.socialV2Store = new SocialV2Store(db);
     this.adminStore = new AdminStore(db);
     this.metaStore = new MetaStore(db);
   }
@@ -71,6 +75,11 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode de SocialStore (parrainage, amis, présence, masqués, annuaire des salons). */
   social(method: string, args: unknown[]): unknown {
     return dispatch(this.socialStore, SOCIAL_METHODS, method, args);
+  }
+
+  /** Appelle une méthode de SocialV2Store (identités par profil, amitiés et foyer, présence, bibliothèque et historique). */
+  socialV2(method: string, args: unknown[]): unknown {
+    return dispatch(this.socialV2Store, SOCIAL_V2_METHODS, method, args);
   }
 
   /** Appelle une méthode d'AdminStore (administration : comptes, réglages, audit, signalements). Réservé aux routes /admin et aux salons. */
