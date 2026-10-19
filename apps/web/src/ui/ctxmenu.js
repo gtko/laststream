@@ -120,7 +120,7 @@ export function reasonOf(err) {
 
 async function toggleSeriesWatched(key) {
   const [type, id] = key.split(':');
-  const on = userStore.watchedEpisodes(key).length === 0;
+  const on = !userStore.watchedTitle(key);
   toast(on ? 'Marquage de la série…' : 'Série marquée comme non vue…');
   try {
     const m = await fetchFull(type, id);
@@ -153,7 +153,7 @@ function titleItems(t) {
     const seen = userStore.isWatched(t.key);
     items.push({ id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(t.key, null, !seen) });
   } else {
-    const any = userStore.watchedEpisodes(t.key).length > 0;
+    const any = !!userStore.watchedTitle(t.key);
     items.push({ id: 'seen', label: any ? 'Marquer la série comme non vue' : 'Marquer la série comme vue', icon: ICON.check, run: () => toggleSeriesWatched(t.key) });
   }
   if (!isKidProfile()) { // profil enfant : pas de « Ne plus proposer » (accueil déjà filtré)

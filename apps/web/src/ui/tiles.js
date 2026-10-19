@@ -76,7 +76,7 @@ export function tileCard(it, o) {
     (it.cinema ? '<span class="t-cinema" aria-hidden="true">Au cinéma</span>' : '') +
     '<span class="t-more" aria-hidden="true" title="Plus d’options">•••</span>' +
     (o.removable ? '<span class="t-remove" data-continue-remove="' + esc(it.key) + '" aria-hidden="true" title="Retirer de Reprendre la lecture">' + ICON.close + '</span>' : '') +
-    (it.type === 'movie' && userStore.isWatched(it.key) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +
+    ((o.watched || (it.type === 'movie' && userStore.isWatched(it.key))) ? '<span class="t-watched" aria-hidden="true" title="Vu">' + ICON.check + '</span>' : '') +
     (rs ? resumePillHTML(rs.label) : '') +
     (o.pct != null ? '<span class="progress" aria-hidden="true"><span style="width:' + o.pct + '%"></span></span>'
       : rs ? '<span class="progress resume-progress" aria-hidden="true"><span style="width:' + Math.round(rs.ratio * 100) + '%"></span></span>' : '') +
