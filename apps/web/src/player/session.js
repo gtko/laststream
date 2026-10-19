@@ -56,11 +56,13 @@ import { partyBridge } from '../party/bridge';
 import { fileCodecsOf } from '../party/compat';
 import { probeUrl as probeHeaderUrl } from '../party/headerCodecs';
 import { startWebAudio } from './webaudio/controller';
-import { setWatching } from '../data/presence';
+import { presenceTick, setPresenceMedia } from './presenceV2';
+import { createMessageBubble } from './messageBubble';
+import { openConversation } from '../ui/socialSidebar.js';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
 import { getNotes, postNote } from '../data/socialV2Api';
-import { getState as getSocialState, onNote } from '../data/socialStore';
+import { getState as getSocialState, onNote, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
 import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
@@ -70,6 +72,8 @@ const AUTOSYNC_TARGET = 90;
 const AUTOSYNC_MIN = 25;
 
 let ui = null;
+/** Bulle des messages entrants (haut gauche), branchée au social : active pendant la lecture. */
+let bubble = null;
 let thumbs = null;
 /** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
 let feed = null;
@@ -301,6 +305,7 @@ function ensureUI() {
   ui.video.autoPictureInPicture = storeGet(AUTOPIP_KEY) === '1';
   ui.setPipAvailable(html.supportsPip());
   document.addEventListener('keydown', onKey, true);
+  bubble = createMessageBubble(ui.root, { getState: getSocialState, subscribe: subscribeSocial, send: sendSocialMessage, openConversation });
   // Image dans l'image : pas de barre de titre, on déplace la fenêtre en glissant sur la vidéo (hors boutons et barre de lecture).
   ui.root.addEventListener('mousedown', (e) => {
     if (!shell || !shellPip || e.button !== 0) return;
@@ -531,6 +536,10 @@ async function initSession(request, views, view, opts = {}) {
     logo: (model && model.logo) || '', overview: (model && model.overview) || meta.overview || '',
   };
   startNotes(P);
+  // Présence (titre regardé) et bulle des messages : ni l'une ni l'autre pour un profil enfant ou hors mode serveur.
+  const social = notesAllowed();
+  setPresenceMedia(social ? presenceMediaOf(P) : null);
+  if (social && bubble) bubble.start();
   document.body.classList.add('modal-open', 'lp-open');
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
@@ -550,9 +559,6 @@ async function initSession(request, views, view, opts = {}) {
   ui.show();
   ui.focusFirst();
   ui.setPartyAvailable(partyBridge.available());
-  if (request.id && Number.isFinite(Number(request.id))) {
-    setWatching({ type: request.type === 'tv' ? 'series' : 'movie', tmdbId: Number(request.id), title: request.name || '', ...(request.type === 'tv' && request.season != null ? { season: request.season, episode: request.episode } : {}) });
-  }
   clearInterval(tickTimer);
   tickTimer = setInterval(tick, 100);
   loadSideData(token);
@@ -1345,6 +1351,7 @@ function tick() {
   const st = p.engine.state();
   tickN += 1;
   notesTick(p, st);
+  presenceTick(st);
   partyBridge.tick(partyAdapter(p));
   // Sous-titres (100 ms).
   const s = p.subs;
@@ -1796,8 +1803,8 @@ function panelData(name) {
 
 function onKey(e) {
   if (!P || ui.root.hidden) return;
-  // Saisie d'une réaction : aucun raccourci du lecteur (Échap ferme le popover, géré dans notesView.ts).
-  if (e.target instanceof Element && e.target.closest('.lp-react')) return;
+  // Saisie d'une réaction ou d'une réponse dans une bulle : aucun raccourci du lecteur (Échap est géré par chaque champ).
+  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-bubble'))) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
@@ -1848,6 +1855,19 @@ function onKey(e) {
 
 /** Le social n'existe ni pour un profil enfant ni hors mode serveur. */
 const notesAllowed = () => isServerMode() && !isKidProfile();
+
+/** Média lu au format de la présence : film, ou série avec saison et épisode en cours. Null si le média n'est pas identifiable. */
+function presenceMediaOf(p) {
+  const id = Number(p.req.id);
+  if (!p.req.id || !Number.isFinite(id)) return null;
+  const series = p.req.type === 'tv';
+  const m = { type: series ? 'series' : 'movie', tmdbId: id, title: p.req.name || p.meta.title || '' };
+  if (p.imdb) m.imdbId = p.imdb;
+  if (p.meta.poster && p.meta.poster.startsWith('/')) m.poster = p.meta.poster;
+  if (series && p.cur.season != null) m.season = p.cur.season;
+  if (series && p.cur.episode != null) m.episode = p.cur.episode;
+  return m;
+}
 
 /** Média lu au format des notes (film, ou série avec saison et épisode). Null si le média n'est pas identifiable. */
 function noteMediaOf(p) {
@@ -1959,6 +1979,7 @@ async function teardown(silent) {
   const p = P;
   if (!p) return;
   stopNotes(p);
+  if (bubble) bubble.stop();
   if (!silent) nativeMini = false;
   resetMini();
   saveProgress(true);
@@ -1975,7 +1996,7 @@ async function teardown(silent) {
   emitDataEvent({ kind: 'player' }); // l'accueil rattrape les changements faits pendant la lecture
   partyBridge.sessionClosed(silent);
   if (!silent) {
-    setWatching(null);
+    setPresenceMedia(null);
     if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (_) { /* ignoré */ } }
     ui.hide();
     document.body.classList.remove('modal-open', 'lp-open');
