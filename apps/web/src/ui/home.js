@@ -402,7 +402,7 @@ export function recoSeed() {
  * le reste de l'accueil) ni les séries dont la carte a été retirée. Rien tant qu'il n'y en a pas.
  */
 function continueList() {
-  return keepVisible(userStore.continueWatching(50)).filter((p) => !isSeriesEnded(p)).slice(0, 10);
+  return keepVisible(userStore.continueWatching()).filter((p) => !isSeriesEnded(p));
 }
 
 export function continueSection() {

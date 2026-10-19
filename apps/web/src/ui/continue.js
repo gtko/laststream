@@ -140,7 +140,7 @@ export function hydrateContinue(root) {
 export async function resumeCard(card) {
   const key = card.dataset.resume;
   const [type, id] = key.split(':');
-  const entry = userStore.continueWatching(50).find((p) => p.key === key);
+  const entry = userStore.continueWatching().find((p) => p.key === key);
   const it = (await import('./state.js')).state.byKey.get(key);
   const season = card.dataset.season !== '' ? Number(card.dataset.season) : null;
   const episode = card.dataset.episode !== '' ? Number(card.dataset.episode) : null;

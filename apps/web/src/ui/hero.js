@@ -18,7 +18,7 @@ export const HERO_MS = 10000;
 export const HERO_MAX = 8;
 
 const playBtn = (it) => {
-  const resume = userStore.continueWatching(50).find((p) => p.key === it.key);
+  const resume = userStore.continueWatching().find((p) => p.key === it.key);
   const code = resume && resume.type === 'tv' && resume.season != null ? ' S' + resume.season + ' · É' + resume.episode : '';
   return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? 'Reprendre' + code : 'Lecture') + '</span></button>';
 };

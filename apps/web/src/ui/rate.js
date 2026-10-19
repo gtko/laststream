@@ -24,7 +24,7 @@ export const starsText = (v) => '★'.repeat(Math.floor(v)) + (v % 1 ? '½' : ''
 export function canRate(key) {
   const [type] = key.split(':');
   if (type === 'movie' ? userStore.isWatched(key) : userStore.watchedEpisodes(key).length > 0) return true;
-  const entry = userStore.continueWatching(50).find((p) => p.key === key) || userStore.getProgress(key);
+  const entry = userStore.continueWatching().find((p) => p.key === key) || userStore.getProgress(key);
   return !!entry && entry.duration > 0 && entry.position / entry.duration >= 0.5;
 }
 

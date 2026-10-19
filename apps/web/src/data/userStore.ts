@@ -287,7 +287,7 @@ export class LocalUserStore implements UserStore {
     emitDataEvent({ kind: 'continue', key });
   }
 
-  continueWatching(limit = 20): ProgressEntry[] {
+  continueWatching(limit = Infinity): ProgressEntry[] {
     const latest = new Map<string, ProgressEntry>();
     const hidden = new Set(this.hiddenKeys());
     Object.values(this.progressMap()).forEach((p) => {
