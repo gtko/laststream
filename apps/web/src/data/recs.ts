@@ -152,9 +152,10 @@ export function excludeList(): Array<{ type: 'movie' | 'tv'; tmdbId: number }> {
     if ((type === 'movie' || type === 'tv') && Number.isFinite(id)) map.set(type + ':' + id, { type, tmdbId: id });
   };
   userStore.getLibrary().forEach((e) => add(e.type, e.id));
-  userStore.getSeen().forEach((k) => { const [t, id] = k.split(':'); add(t, Number(id)); });
   userStore.continueWatching(50).forEach((p) => add(p.type, p.id));
   const rated = (userStore as unknown as { getRatings?: () => Array<{ type: string; id: number }> }).getRatings?.() ?? [];
   rated.forEach((r) => add(r.type, r.id));
-  return [...map.values()];
+  userStore.getSeen().forEach((k) => { const [t, id] = k.split(':'); add(t, Number(id)); });
+  // Le serveur ne lit que 500 entrées : un gros historique de titres vus passe en dernier.
+  return [...map.values()].slice(0, 500);
 }
