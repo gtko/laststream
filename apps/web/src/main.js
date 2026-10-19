@@ -1,6 +1,7 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
  * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public).
  * ?still désactive les aperçus vidéo. */
+import './demoBoot'; // premier module : en démo, stockage du navigateur remplacé par la mémoire avant toute lecture
 import { initSentry } from './observability/sentry';
 import './styles/styles.css';
 import './styles/app.css';
@@ -59,7 +60,12 @@ if (await servedByLastAddon()) setServedOrigin(location.origin);
 // Application Android : serveur Laststream par défaut, écran de saisie seulement s'il ne répond pas (avant tout appel réseau).
 // Mode démo (?demo=1 ou #/demo) : catalogue en lecture seule sans compte ; serveur injoignable, retour à la connexion normale.
 const demoMode = isDemo() && await startDemo();
-if (isDemo() && !demoMode) setDemoFlags({ on: false, clean: false, profile: '' });
+// Démo impossible (serveur injoignable) : rechargement sans paramètre démo, connexion normale avec le vrai stockage.
+if (isDemo() && !demoMode) {
+  setDemoFlags({ on: false, clean: false, profile: '' });
+  location.replace(location.origin + location.pathname);
+  await new Promise(() => undefined);
+}
 if (!demoMode) await ensureServerSetup();
 // Lien de réinitialisation du mot de passe (#/reset/<jeton>) : page publique, avant toute connexion.
 const resetTok = demoMode ? null : resetToken();

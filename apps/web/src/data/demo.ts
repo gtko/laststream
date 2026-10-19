@@ -1,3 +1,4 @@
+import { demoState, detectDemo, MemoryStorage, restoreStorage, type DemoFlags } from '../demoBoot';
 import { auth } from './auth';
 import { encodeConfig } from './configApi';
 import { PUBLIC_BASE, useMemorySettings } from './config';
@@ -8,43 +9,21 @@ import { LocalUserStore, PROFILES_KEY, PROFILE_CURRENT_KEY, setUserStore, type P
  * Mode démo vitrine : navigation du catalogue en lecture seule, sans compte, pour les captures d'écran marketing.
  *  - activé par l'URL seulement (`?demo=1` ou `#/demo`, `clean=1` masque le bandeau) ; jamais enregistré : un rechargement
  *    sans ces paramètres retrouve la connexion normale ;
- *  - réglages et données (profils factices Alex, Sam, Léo) en mémoire, aucune écriture dans le stockage du compte ;
- *  - garde réseau : seules les routes publiques du catalogue (GET /lt/tmdb, meta, top10, tv/channels...) partent vers le
- *    serveur ; flux, sources, comptes, profils, invitations, parties et écritures sont refusés ;
- *  - lecture désactivée (voir `demoBlocked`).
+ *  - localStorage et sessionStorage sont remplacés par un stockage en mémoire dès le premier module (voir demoBoot.ts) :
+ *    ni la session ni les préférences d'un vrai utilisateur ne sont lues ou modifiées ;
+ *  - garde réseau en liste blanche : vers le serveur, seulement les GET du catalogue public (/lt/tmdb, meta, top10, tv/channels...)
+ *    et les fichiers statiques de l'app ; flux, sources, comptes, profils, invitations, parties et écritures sont refusés ;
+ *  - lecture désactivée (voir `DEMO_BLOCKED_MSG`).
  */
 
-export interface DemoFlags {
-  on: boolean;
-  /** Pas de bandeau « Démo » (captures). */
-  clean: boolean;
-  /** Profil factice demandé (`profile=leo|sam|alex`). */
-  profile: string;
-}
+export { detectDemo, MemoryStorage };
+export type { DemoFlags };
 
-const flag = (params: URLSearchParams, name: string): boolean => params.get(name) === '1';
-
-/** Lit l'activation du mode démo dans l'URL : `?demo=1` ou un hash `#/demo`, avec `clean=1` et `profile=` éventuels. */
-export function detectDemo(search: string, hash: string): DemoFlags {
-  const q = new URLSearchParams(search);
-  const h = /^#\/?demo(?:[?&/](.*))?$/.exec(hash);
-  const hq = new URLSearchParams(h?.[1] ?? '');
-  const on = flag(q, 'demo') || h !== null;
-  return {
-    on,
-    clean: on && (flag(q, 'clean') || flag(hq, 'clean')),
-    profile: (q.get('profile') ?? hq.get('profile') ?? '').toLowerCase(),
-  };
-}
-
-// Évalué une fois, au chargement : l'état n'est jamais relu depuis un stockage.
-let flags: DemoFlags = typeof location === 'undefined' ? { on: false, clean: false, profile: '' } : detectDemo(location.search, location.hash);
-
-export const isDemo = (): boolean => flags.on;
-export const isDemoClean = (): boolean => flags.clean;
+export const isDemo = (): boolean => demoState.flags.on;
+export const isDemoClean = (): boolean => demoState.flags.clean;
 /** Tests uniquement. */
 export function setDemoFlags(next: DemoFlags): void {
-  flags = next;
+  demoState.flags = next;
 }
 
 export const DEMO_BLOCKED_MSG = 'Démo : la lecture est désactivée.';
@@ -55,30 +34,29 @@ export const DEMO_PROFILES: Profile[] = [
   { id: 'demo-leo', name: 'Léo', avatarColor: '#19c3a6', isKid: true, kidMaxAge: 10, isMainProfile: false },
 ];
 
-/** Stockage en mémoire (aucune écriture dans le navigateur). */
-export class MemoryStorage implements Storage {
-  private m = new Map<string, string>();
-  get length(): number { return this.m.size; }
-  clear(): void { this.m.clear(); }
-  getItem(k: string): string | null { return this.m.get(k) ?? null; }
-  key(i: number): string | null { return [...this.m.keys()][i] ?? null; }
-  removeItem(k: string): void { this.m.delete(k); }
-  setItem(k: string, v: string): void { this.m.set(k, String(v)); }
-}
+/** Routes lt publiques du catalogue (les seules données autorisées vers le serveur). */
+const LT_READ = /^\/[^/]+\/lt\/(?:tmdb\/[^/]+(?:\/[^/]+)*|top10\/[^/]+|mdblist\/[^/]+\/[^/]+|tvdb\/series\/[^/]+|series\/[^/]+\/episodes|meta\/[^/]+\/[^/]+|health|tv\/(?:channels|facets|epg))$/;
+/** Fichiers statiques de l'application (build) : racine, ou dossiers publics connus. */
+const STATIC = /^\/(?:(?:assets|app|badges|icons)\/[^/][^?#]*|[\w.-]+\.(?:js|mjs|css|png|svg|ico|webp|jpe?g|woff2?|json|webmanifest|map|html|txt|wasm)|)$/;
+/** Serveur de développement Vite (modules, HMR) : seulement avec `dev`. */
+const DEV_STATIC = /^\/(?:src|@vite|@fs|@id|@react-refresh|node_modules|__vite_ping)(?:\/|$)/;
+/** Chemins aux détours classiques (double barre, point-point, séparateurs encodés) : refusés vers le serveur. */
+const SNEAKY = /\/\/|\.\.|%2e|%2f|%5c|\\/i;
 
-/** Routes lt publiques du catalogue (les seules autorisées vers le serveur). */
-const LT_READ = /^\/[^/]+\/lt\/(?:tmdb\/.+|top10\/[^/]+|mdblist\/[^/]+\/[^/]+|tvdb\/series\/[^/]+|series\/[^/]+\/episodes|meta\/[^/]+\/[^/]+|health|tv\/(?:channels|facets|epg))$/;
-
-/** Routes du serveur qui ne sont jamais ouvertes en démo (hors celles de LT_READ). */
-const RESERVED = /^\/(?:[^/]+\/)?(?:lt|stream|catalog|manifest\.json|user|party|admin|config|health)(?:\/|$)/;
+const rawPath = (s: string): string => {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(s);
+  return m ? m[1] : s.split(/[?#]/)[0];
+};
 
 /**
- * Une requête peut-elle partir en mode démo ? Vers le serveur Laststream : GET d'une route de catalogue seulement
- * (jamais flux, TV HLS, sources, /user, /party, /admin, /config, ni POST). Ailleurs (images, polices, bandes-annonces) : GET.
+ * Une requête peut-elle partir en mode démo ? Vers le serveur Laststream ou la page elle-même : liste blanche (GET d'une route
+ * de catalogue, ou fichier statique de l'app), après normalisation par `URL` ; tout détour de chemin est refusé.
+ * Ailleurs (images, polices, bandes-annonces) : GET seulement.
  */
-export function demoAllows(url: string, method: string, bases: readonly string[]): boolean {
+export function demoAllows(url: string, method: string, bases: readonly string[], dev = false): boolean {
   const verb = method.toUpperCase();
   if (verb !== 'GET' && verb !== 'HEAD') return false;
+  if (/^[/\\]{2}/.test(url)) return false; // adresse relative au protocole : jamais
   let u: URL;
   try {
     u = new URL(url, typeof location === 'undefined' ? 'http://localhost' : location.href);
@@ -87,38 +65,57 @@ export function demoAllows(url: string, method: string, bases: readonly string[]
   }
   const serverish = bases.includes(u.origin) || (typeof location !== 'undefined' && u.origin === location.origin);
   if (!serverish) return true;
+  if (SNEAKY.test(rawPath(url)) || SNEAKY.test(u.pathname)) return false;
   if (LT_READ.test(u.pathname)) return true;
-  // Serveur ou page elle-même : ressources statiques de l'app seulement, jamais une route de données.
-  return !RESERVED.test(u.pathname);
+  return STATIC.test(u.pathname) || (dev && DEV_STATIC.test(u.pathname));
 }
 
-function installGuard(bases: readonly string[]): void {
-  const g = globalThis as unknown as Record<string, any>;
-  const realFetch = g.fetch?.bind(globalThis) as typeof fetch | undefined;
+type G = Record<string, any>;
+let uninstall: (() => void) | null = null;
+
+/** Rend fetch, XHR, sendBeacon et WebSocket d'origine (tests). */
+export function removeGuard(): void {
+  uninstall?.();
+  uninstall = null;
+}
+
+function installGuard(bases: readonly string[], dev: boolean): void {
+  if (uninstall) return;
+  const g = globalThis as unknown as G;
+  const realFetch = g.fetch;
+  const xhrProto = g.XMLHttpRequest?.prototype;
+  const realOpen = xhrProto?.open;
+  const nav = g.navigator;
+  const realBeacon = nav?.sendBeacon;
+  const realWs = g.WebSocket;
+  const ok = (url: string, method: string): boolean => demoAllows(url, method, bases, dev);
   if (realFetch) {
     g.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
       const req = typeof Request !== 'undefined' && input instanceof Request ? input : null;
       const url = req ? req.url : String(input);
-      const method = init?.method ?? req?.method ?? 'GET';
-      if (!demoAllows(url, method, bases)) return Promise.reject(new TypeError('Démo : requête bloquée'));
-      return realFetch(input as RequestInfo, init);
+      if (!ok(url, init?.method ?? req?.method ?? 'GET')) return Promise.reject(new TypeError('Démo : requête bloquée'));
+      return realFetch.call(globalThis, input, init);
     };
   }
-  const Xhr = g.XMLHttpRequest?.prototype;
-  if (Xhr) {
-    const open = Xhr.open;
-    Xhr.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
-      if (!demoAllows(String(url), method, bases)) throw new TypeError('Démo : requête bloquée');
-      return open.call(this, method, url, ...rest);
+  if (xhrProto) {
+    xhrProto.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+      if (!ok(String(url), method)) throw new TypeError('Démo : requête bloquée');
+      return realOpen.call(this, method, url, ...rest);
     };
   }
-  try { if (g.navigator) g.navigator.sendBeacon = () => false; } catch { /* propriété en lecture seule */ }
+  try { if (nav) nav.sendBeacon = () => false; } catch { /* propriété en lecture seule */ }
   g.WebSocket = class { constructor() { throw new TypeError('Démo : connexion bloquée'); } };
+  uninstall = () => {
+    if (realFetch) g.fetch = realFetch;
+    if (xhrProto) xhrProto.open = realOpen;
+    try { if (nav) nav.sendBeacon = realBeacon; } catch { /* rien */ }
+    g.WebSocket = realWs;
+  };
 }
 
 function paintBanner(): void {
   document.body.dataset.demo = '1';
-  if (flags.clean || document.getElementById('demo-banner')) return;
+  if (demoState.flags.clean || document.getElementById('demo-banner')) return;
   const el = document.createElement('div');
   el.id = 'demo-banner';
   el.textContent = 'Démo';
@@ -130,20 +127,23 @@ function paintBanner(): void {
 
 /**
  * Installe le mode démo (avant la connexion). Config publique générée à la volée (POST /config/encode, sans compte),
- * profils factices en mémoire, garde réseau. Renvoie faux si le serveur ne répond pas (l'app retombe alors sur la connexion).
+ * profils factices en mémoire, garde réseau. Renvoie faux si le serveur ne répond pas : les vrais stockages sont alors
+ * rendus et l'appelant recharge la page sans mode démo (connexion normale).
  */
 export async function startDemo(): Promise<boolean> {
   const base = getServedOrigin() ?? PUBLIC_BASE;
-  const dev = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && (import.meta as any).env?.DEV;
+  const dev = !!(import.meta as any).env?.DEV;
+  const local = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   let config: string;
   try {
-    config = await encodeConfig({}, undefined, dev ? `${location.origin}/_edge` : base);
+    config = await encodeConfig({}, undefined, dev && local ? `${location.origin}/_edge` : base);
   } catch {
+    restoreStorage();
     return false;
   }
   useMemorySettings({ base, config, mode: 'public', custom: '' });
   const mem = new MemoryStorage();
-  const wanted = DEMO_PROFILES.find((p) => p.id === 'demo-' + flags.profile.replace(/^demo-/, '')) ?? DEMO_PROFILES[0];
+  const wanted = DEMO_PROFILES.find((p) => p.id === 'demo-' + demoState.flags.profile.replace(/^demo-/, '')) ?? DEMO_PROFILES[0];
   mem.setItem(PROFILES_KEY, JSON.stringify(DEMO_PROFILES));
   mem.setItem(PROFILE_CURRENT_KEY, wanted.id);
   setUserStore(new LocalUserStore(mem));
@@ -154,7 +154,7 @@ export async function startDemo(): Promise<boolean> {
   auth.isOwner = false;
   auth.profiles = DEMO_PROFILES;
   auth.profile = wanted;
-  installGuard([base, `${location.origin}`]);
+  installGuard([base, location.origin], dev && local);
   // `#/demo` n'est pas une route de l'application : le hash est vidé (`?demo=1` reste dans l'URL).
   if (/^#\/?demo/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   if (document.body) paintBanner(); else document.addEventListener('DOMContentLoaded', paintBanner, { once: true });
