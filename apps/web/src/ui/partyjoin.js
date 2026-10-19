@@ -29,9 +29,13 @@ const WAIT_TEXT = {
   'host-lost': 'Liaison avec l’hôte interrompue',
 };
 const READY_TEXT = 'Lecture partagée prête : pause, reprise et sauts valent pour tout le salon.';
+/** Durée d'affichage d'un message d'état en salon (toast), en ms. Une alerte (WARN) reste affichée. */
+const TOAST_MS = 4000;
 
 let session = null;
 let timer = null;
+/** Minuterie qui masque le message d'état (toast) du salon. */
+let statusTimer = null;
 let audioCtx = null;
 /** Vrai pendant le chargement du lecteur (évite un second envoi du formulaire). */
 let joining = false;
@@ -70,6 +74,8 @@ function closeAudio() {
 function stopSession() {
   if (timer !== null) clearInterval(timer);
   timer = null;
+  clearTimeout(statusTimer);
+  statusTimer = null;
   subsOff?.();
   subsOff = null;
   subs?.setTracks([]);
@@ -127,6 +133,24 @@ function setWho(root, name) {
   who.hidden = !name;
 }
 
+/** Message d'état. En salon, une information disparaît après TOAST_MS ; une alerte (WARN) reste affichée. Avant de rejoindre, le
+ * message reste sous le formulaire, comme avant. Le texte n'est réécrit (et la minuterie relancée) que s'il change. */
+function paintStatus(root, text, warn) {
+  const status = root.querySelector('[data-pj-status]');
+  status.dataset.tone = warn ? 'warn' : '';
+  if (status.textContent === text) return;
+  status.textContent = text;
+  clearTimeout(statusTimer);
+  statusTimer = null;
+  delete status.dataset.fade;
+  if (text && !warn && root.classList.contains('is-joined')) {
+    statusTimer = setTimeout(() => {
+      statusTimer = null;
+      status.dataset.fade = 'out';
+    }, TOAST_MS);
+  }
+}
+
 function refresh(root) {
   if (!session || !controls) return;
   const v = session.tick();
@@ -134,10 +158,11 @@ function refresh(root) {
   exposeStats(session);
   // Salon accepté (bienvenue reçue) : la phase n'est plus « joining » ni terminale.
   if (v.phase !== 'joining' && !TERMINAL.has(v.phase)) dropTokenFromUrl();
-  const status = root.querySelector('[data-pj-status]');
   // Le message de la session (et la note sur le son) ; la phase « prête » ajoute une ligne d'explication.
-  status.textContent = [v.message || (v.phase === 'ready' ? READY_TEXT : ''), v.note].filter(Boolean).join(' ');
-  status.dataset.tone = WARN.has(v.phase) ? 'warn' : '';
+  const text = [v.message || (v.phase === 'ready' ? READY_TEXT : ''), v.note].filter(Boolean).join(' ');
+  // Salon rejoint (hors fin de séance) : cadre plein écran et en-tête compact ; le message d'état devient un toast.
+  root.classList.toggle('is-joined', !TERMINAL.has(v.phase));
+  paintStatus(root, text, WARN.has(v.phase));
   const form = root.querySelector('[data-pj-form]');
   const submit = root.querySelector('[data-pj-join]');
   const leave = root.querySelector('[data-pj-leave]');
@@ -299,16 +324,16 @@ export function showPartyJoin(roomId, token) {
   stopSession();
   destroyControls();
   detailEl.innerHTML = '<section class="pj" aria-labelledby="pj-title">' +
-    '<header class="pj-head"><h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1><p class="pj-who" data-pj-who hidden></p></header>' +
+    '<header class="pj-head"><h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1><p class="pj-who" data-pj-who hidden></p>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-pj-retry hidden aria-label="Réessayer la liaison avec l’hôte">Réessayer</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>Quitter</button></header>' +
     '<p class="pj-note">Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.</p>' +
     '<form class="pj-form" data-pj-form autocomplete="off">' +
     '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
     '<button type="submit" class="btn btn-primary" data-pj-join>Rejoindre</button></form>' +
     '<p class="pj-msg" role="status" data-pj-status></p>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>Quitter</button>' +
     '<div class="pj-player" data-pj-player hidden>' +
-    '<div class="pj-stage" data-pj-stage><canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas></div>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-retry hidden>Réessayer la liaison avec l’hôte</button></div>' +
+    '<div class="pj-stage" data-pj-stage><canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas></div></div>' +
     '</section>';
   const root = detailEl.querySelector('.pj');
   const stage = root.querySelector('[data-pj-stage]');

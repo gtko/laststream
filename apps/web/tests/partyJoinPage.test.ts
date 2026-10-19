@@ -139,6 +139,29 @@ describe('page invitée (sans compte)', () => {
     expect(JSON.stringify(w.__lsRelayStats)).not.toMatch(/https?:|\//);
     localStorage.removeItem('ls.debug');
   });
+
+  it('message d’état : en salon, une information s’efface après quelques secondes ; une alerte reste affichée', async () => {
+    shared.session = null;
+    showPartyJoin('R1', 'abcdefgh12');
+    submit();
+    await vi.waitFor(() => expect(shared.session).not.toBeNull());
+    const status = (): HTMLElement => $('[data-pj-status]');
+
+    shared.session.phase = 'waiting-host';
+    shared.session.message = 'En attente de l’hôte : test.';
+    await vi.waitFor(() => expect(status().textContent).toBe('En attente de l’hôte : test.'));
+    expect(status().dataset.fade).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 4300));
+    expect(status().dataset.fade).toBe('out');
+
+    shared.session.phase = 'host-lost';
+    shared.session.message = 'Liaison avec l’hôte interrompue.';
+    await vi.waitFor(() => expect(status().textContent).toBe('Liaison avec l’hôte interrompue.'));
+    await new Promise((r) => setTimeout(r, 4300));
+    expect(status().dataset.fade).toBeUndefined();
+    expect(status().dataset.tone).toBe('warn');
+    expect($('[data-pj-retry]').hidden).toBe(false);
+  }, 20000);
 });
 
 describe('initialisation sans compte', () => {
