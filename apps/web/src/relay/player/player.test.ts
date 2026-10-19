@@ -77,6 +77,35 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe('GuestPlayer : statistiques et tampon', () => {
+  it('stats() renvoie les champs de l’interface, onBuffer est appelé environ une fois par seconde', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(openMedia).mockResolvedValue(opened(AAC));
+      const onBuffer = vi.fn();
+      const player = new GuestPlayer({ env: env(true), onBuffer });
+
+      await player.load(reader, canvas);
+      vi.advanceTimersByTime(2000);
+
+      expect(onBuffer).toHaveBeenCalledTimes(2);
+      // Source sans taille ni durée connues : aucun préchargement, donc aucun tampon compressé.
+      expect(player.bufferedAhead()).toBe(0);
+      expect(player.stats()).toMatchObject({
+        bytesFromHost: 0,
+        bytesFromPeers: 0,
+        videoCodec: 'avc',
+        audioCodec: 'aac',
+        bufferAhead: 0,
+        decodedAhead: expect.any(Number),
+      });
+      player.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('GuestPlayer.load : son non décodable', () => {
   it('lit la vidéo sans créer de décodeur ni de contexte audio, et renvoie la note', async () => {
     vi.mocked(openMedia).mockResolvedValue(opened(EAC3));

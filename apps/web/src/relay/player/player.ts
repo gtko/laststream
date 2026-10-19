@@ -1,10 +1,16 @@
 import { AudioSampleSink, type AudioSample, type EncodedPacket } from 'mediabunny';
 import { sampleToAudioData, type Ac3Loader } from './ac3';
+import {
+  AUDIO_DECODED_AHEAD_SEC,
+  GUEST_BUFFER_MAX_BYTES,
+  GUEST_BUFFER_TARGET_SEC,
+  placeSegment,
+  ReadAheadReader,
+} from './buffer';
 import type { CodecEnv } from './detect';
 import { openMedia, type OpenedMedia } from './demux';
 import { resolvePlayback } from './fallback';
 import {
-  audioSchedule,
   canFeed,
   DRIFT_SEEK_THRESHOLD_S,
   expectedPosition,
@@ -14,6 +20,7 @@ import {
   type FeedLimits,
 } from './sync';
 import type {
+  GuestStats,
   PlaybackPlan,
   PlayerCallbacks,
   PlayerState,
@@ -24,8 +31,12 @@ import type {
 
 /** Images décodées : au plus 6 en attente, 8 confiées au décodeur, 2 s d'avance. */
 const VIDEO_LIMITS: FeedLimits = { maxQueue: 6, maxDecodeQueue: 8, maxAheadSec: 2 };
-/** Audio : 1,5 s programmés d'avance au plus. */
-const AUDIO_LIMITS: FeedLimits = { maxQueue: Number.POSITIVE_INFINITY, maxDecodeQueue: 16, maxAheadSec: 1.5 };
+/** Audio : AUDIO_DECODED_AHEAD_SEC programmés d'avance au plus (buffer.ts). */
+const AUDIO_LIMITS: FeedLimits = {
+  maxQueue: Number.POSITIVE_INFINITY,
+  maxDecodeQueue: 16,
+  maxAheadSec: AUDIO_DECODED_AHEAD_SEC,
+};
 const WAKE_MS = 15;
 const STATS_MS = 1000;
 /** Marge (s) avant la fin pour considérer le média terminé. */
@@ -56,6 +67,9 @@ export class GuestPlayer {
   private readonly loadAc3?: Ac3Loader;
   /** Sink mediabunny quand le son est décodé par @mediabunny/ac3 (pas d'AudioDecoder). */
   private ac3Sink: AudioSampleSink | null = null;
+  /** Source d'octets fournie à `load` (pour les octets reçus) et tampon compressé qui la lit à l'avance. */
+  private source: RangeReader | null = null;
+  private readAhead: ReadAheadReader | null = null;
   private media: OpenedMedia | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx2d: CanvasRenderingContext2D | null = null;
@@ -97,10 +111,21 @@ export class GuestPlayer {
    */
   async load(reader: RangeReader, canvas: HTMLCanvasElement): Promise<PlaybackPlan> {
     this.unload();
-    const media = await openMedia(reader);
+    this.source = reader;
+    const readAhead = new ReadAheadReader(reader, { targetSec: GUEST_BUFFER_TARGET_SEC, maxBytes: GUEST_BUFFER_MAX_BYTES });
+    this.readAhead = readAhead;
+    let media: OpenedMedia;
+    try {
+      media = await openMedia(readAhead);
+      readAhead.setTimeline(media.info.duration, await readAhead.size());
+    } catch (error) {
+      this.unload();
+      throw error;
+    }
     const plan = await resolvePlayback({ video: media.info.video, audio: media.info.audio }, this.env, this.loadAc3);
     if (plan.kind !== 'native') {
       media.close();
+      this.unload();
       return plan;
     }
     if (plan.withoutAudio) {
@@ -170,6 +195,31 @@ export class GuestPlayer {
     };
   }
 
+  /** Secondes de tampon compressé (vidéo + audio) préchargées devant la position courante. */
+  bufferedAhead(): number {
+    return this.readAhead?.aheadSec(this.mediaNow()) ?? 0;
+  }
+
+  /**
+   * Statistiques pour l'interface. `decodedAhead` : secondes confiées aux décodeurs devant la position, sur la piste
+   * la moins avancée (vidéo et/ou audio). Les octets viennent de la source si elle les compte (`bytesStats`).
+   */
+  stats(): GuestStats {
+    const pos = this.mediaNow();
+    const bytes = this.source?.bytesStats?.() ?? { bytesFromHost: 0, bytesFromPeers: 0 };
+    const fed: number[] = [];
+    if (this.media?.videoConfig) fed.push(this.videoFedEnd);
+    if (this.media?.audioConfig) fed.push(this.audioFedEnd);
+    return {
+      bytesFromHost: bytes.bytesFromHost,
+      bytesFromPeers: bytes.bytesFromPeers,
+      videoCodec: this.media?.info.video?.codec ?? null,
+      audioCodec: this.media?.info.audio?.codec ?? null,
+      bufferAhead: this.bufferedAhead(),
+      decodedAhead: fed.length > 0 ? Math.max(0, Math.min(...fed) - pos) : 0,
+    };
+  }
+
   /** Libère décodeurs, contexte audio et fichier. Le lecteur ne sert plus ensuite. */
   destroy(): void {
     this.destroyed = true;
@@ -200,6 +250,8 @@ export class GuestPlayer {
     }
     if (media.audioConfig) {
       this.audioCtx = new AudioContext();
+      // Suspendu tant que la lecture n'a pas commencé : sinon le tampon déjà décodé jouerait pendant la pause.
+      void this.audioCtx.suspend().catch(() => undefined);
       if (ac3 && media.audioTrack) {
         this.ac3Sink = new AudioSampleSink(media.audioTrack);
       } else {
@@ -216,7 +268,15 @@ export class GuestPlayer {
     this.ended = false;
     this.seekInternal(0);
     this.rafId = requestAnimationFrame(this.tick);
-    this.statsTimer = setInterval(() => this.cb.onStats?.(this.getStats()), STATS_MS);
+    this.statsTimer = setInterval(() => this.tickSecond(), STATS_MS);
+  }
+
+  /** Une fois par seconde : statistiques, tampon compressé (et éviction derrière la position). */
+  private tickSecond(): void {
+    const pos = this.mediaNow();
+    this.readAhead?.setPosition(pos);
+    this.cb.onStats?.(this.getStats());
+    this.cb.onBuffer?.(this.bufferedAhead());
   }
 
   private unload(): void {
@@ -229,6 +289,9 @@ export class GuestPlayer {
     this.statsTimer = null;
     this.stopAudioNodes();
     this.closeFrames();
+    this.readAhead?.close();
+    this.readAhead = null;
+    this.source = null;
     for (const decoder of [this.vdec, this.adec]) {
       try {
         decoder?.close();
@@ -265,7 +328,9 @@ export class GuestPlayer {
   private startPlayback(): void {
     // Un média terminé ne repart pas tout seul : un seek (utilisateur ou salon) le réarme avant.
     if (!this.media || this.playing || this.ended) return;
-    this.anchorClock = this.clockNow();
+    // Horloge audio : le calage média ↔ AudioContext ne change pas à la reprise. Le recaler sur l'horloge de reprise
+    // décalerait tout ce qui est déjà programmé (chevauchement ou trou). Horloge murale : recalée à la reprise.
+    if (!this.audioCtx) this.anchorClock = this.clockNow();
     this.playing = true;
     if (this.audioCtx) void this.audioCtx.resume().catch(() => undefined);
   }
@@ -309,6 +374,7 @@ export class GuestPlayer {
     this.audioFedEnd = target;
     this.videoEOF = !this.media.videoSink;
     this.audioEOF = !this.media.audioSink;
+    this.readAhead?.setPosition(target);
     this.startFeeders(gen, target).catch((error: unknown) => this.fail(error));
     return target;
   }
@@ -435,10 +501,11 @@ export class GuestPlayer {
     try {
       const ctx = this.audioCtx;
       if (!ctx || this.destroyed || !this.media) return;
-      const ts = data.timestamp / 1e6;
-      const duration = data.numberOfFrames / data.sampleRate;
-      const { when, offset } = audioSchedule(ts, this.anchorMedia, this.anchorClock, ctx.currentTime);
-      if (offset >= duration) return;
+      // Placement par image entière : deux segments contigus sont jointifs, sans cumul d'erreur (buffer.ts).
+      const rate = data.sampleRate;
+      const startFrame = Math.round((data.timestamp / 1e6) * rate);
+      const placed = placeSegment({ media: this.anchorMedia, clock: this.anchorClock }, rate, startFrame, data.numberOfFrames, ctx.currentTime);
+      if (placed.skipped) return;
 
       const buffer = ctx.createBuffer(data.numberOfChannels, data.numberOfFrames, data.sampleRate);
       for (let c = 0; c < data.numberOfChannels; c++) {
@@ -453,7 +520,7 @@ export class GuestPlayer {
         this.audioNodes.delete(node);
       };
       this.audioNodes.add(node);
-      node.start(when, offset);
+      node.start(placed.when, placed.offset);
       this.counters.audioChunks++;
     } catch (error) {
       this.fail(error);
