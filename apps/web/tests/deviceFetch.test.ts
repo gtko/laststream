@@ -5,7 +5,7 @@ import { clearCache } from '../src/data/transport';
 import { DebridError } from '../src/sources/debrid/types';
 import { NATIVE_ADDON_COMMAND, shellHttp, type HttpFn, type HttpRequest } from '../src/sources/debrid/http';
 import type { ShellTransport } from '../src/player/shell';
-import { deviceHttp, fetchDeviceStreams, mergeDeviceStreams, normalizeDeviceResponse, normalizeDeviceStream } from '../src/sources/deviceFetch';
+import { DEVICE_FETCH_TIMEOUT_MS, deviceHttp, fetchDeviceStreams, mergeDeviceStreams, normalizeDeviceResponse, normalizeDeviceStream } from '../src/sources/deviceFetch';
 import { clearSourceCache, loadSources, watchSources, type SourceRequest } from '../src/sources/load';
 import { toSourceViews } from '../src/sources/info';
 
@@ -84,17 +84,17 @@ describe('transport de l’appareil', () => {
   });
 });
 
-describe('délai de 8 s par addon, en parallèle', () => {
+describe('délai par addon (DEVICE_FETCH_TIMEOUT_MS), en parallèle', () => {
   afterEach(() => vi.useRealTimers());
 
-  it('un addon muet est abandonné à 8 s sans retarder les autres', async () => {
+  it('un addon muet est abandonné au délai sans retarder les autres', async () => {
     vi.useFakeTimers();
     const http: HttpFn = (r) => (r.url === URL_A ? new Promise(() => undefined) : Promise.resolve(reply({ streams: [cdn(3)] })));
     const done: Array<[string, number]> = [];
     const all = fetchDeviceStreams([{ addonId: 'A', url: URL_A }, { addonId: 'B', url: URL_B }], { http, onAddon: (t, s) => done.push([t.addonId, s.length]) });
     await vi.advanceTimersByTimeAsync(10);
     expect(done).toEqual([['B', 1]]);
-    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(DEVICE_FETCH_TIMEOUT_MS);
     await all;
     expect(done).toEqual([['B', 1], ['A', 0]]);
   });

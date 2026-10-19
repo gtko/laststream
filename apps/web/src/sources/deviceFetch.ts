@@ -7,7 +7,9 @@ import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_AD
  * (parsing du nom) et les fusionne à la liste. Les URL peuvent porter la clé de débrideur de l'utilisateur : rien n'est
  * journalisé ni mis en cache, et le pont natif n'est utilisé que pour les URL exactes renvoyées par le serveur. */
 
-export const DEVICE_FETCH_TIMEOUT_MS = 8_000;
+/* Les addons répondent souvent en 3 à 10 s (scraping) : 8 s coupaient les plus lents, la liste restait vide. 15 s tiennent dans
+ * la fenêtre d'attente du lancement (20 s) ; les autres addons ne sont pas retardés (voir `fetchDeviceStreams`). */
+export const DEVICE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 // ---------- Normalisation ----------

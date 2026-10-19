@@ -49,11 +49,19 @@ const PARTIAL_CACHE_MS = 8_000;
 /** Une liste vide (aucune source, rien en attente) ne reste en cache que 60 s : un addon peut répondre vide avant la sortie. */
 const EMPTY_CACHE_MS = 60_000;
 
-/** Raccourcit la durée de vie du résultat selon son contenu : partielle 8 s, vide 60 s, complète 90 s (inchangée). */
+/**
+ * Raccourcit la durée de vie du résultat selon son contenu : partielle 8 s, vide 60 s, complète 90 s (inchangée).
+ * Une liste vide où l'appareil a été interrogé n'est pas gardée du tout : la prochaine recherche réinterroge l'appareil.
+ */
 function shortenCache(key: string, promise: Promise<LoadedSources>, now: number): void {
   promise.then((r) => {
+    if (inflight.get(key)?.promise !== promise) return;
+    if (r.pending.length === 0 && r.views.length === 0 && r.deviceVersion !== undefined) {
+      inflight.delete(key);
+      return;
+    }
     const ttl = r.pending.length ? PARTIAL_CACHE_MS : r.views.length === 0 ? EMPTY_CACHE_MS : undefined;
-    if (ttl !== undefined && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - ttl), promise });
+    if (ttl !== undefined) inflight.set(key, { at: now - (CACHE_MS - ttl), promise });
   }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
 }
 
@@ -91,10 +99,15 @@ interface DeviceState {
 }
 const deviceStates = new Map<string, DeviceState>();
 
-/** Lance (une seule fois par recherche) l'interrogation, depuis l'appareil, des addons listés par le serveur. */
-function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = Date.now()): DeviceState | null {
+/**
+ * Lance (une seule fois par recherche) l'interrogation, depuis l'appareil, des addons listés par le serveur. Un appareil
+ * terminé sans aucun flux (addon lent, hors délai) n'est pas repris tel quel : `retry` (recherche demandée par l'utilisateur)
+ * le réinterroge ; le rafraîchissement automatique (`pollSources`) le garde pour ne pas boucler.
+ */
+function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = Date.now(), retry = false): DeviceState | null {
   const known = deviceStates.get(key);
-  if (known && now - known.at < CACHE_MS) return known;
+  const finishedEmpty = known !== undefined && known.pending.length === 0 && known.streams.length === 0;
+  if (known && now - known.at < CACHE_MS && !(retry && finishedEmpty)) return known;
   if (!targets.length) return null;
   const state: DeviceState = { at: now, streams: [], pending: targets.map((t) => t.addonId), version: 0 };
   deviceStates.set(key, state);
@@ -109,7 +122,7 @@ function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = D
   return state;
 }
 
-async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
+async function fetchSources(req: SourceRequest, retry: boolean): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
@@ -117,7 +130,7 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: req.streamId });
   // Film pas encore sorti en numérique : aucune source (les releases restantes ne sont pas fiables), pas d'appel à l'appareil.
   const yet = res.notYetDigital === true;
-  const device = yet ? undefined : startDeviceFetch(requestKey(req), res.deviceFetch ?? []);
+  const device = yet ? undefined : startDeviceFetch(requestKey(req), res.deviceFetch ?? [], Date.now(), retry);
   // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
   const all = device ? mergeDeviceStreams(res.streams, device.streams) : res.streams;
   const streams = yet ? [] : sortStreams(playableStreams(all, clientOk));
@@ -140,7 +153,7 @@ export function loadSources(req: SourceRequest, now = Date.now()): Promise<Loade
   const key = requestKey(req);
   const hit = inflight.get(key);
   if (hit && now - hit.at < CACHE_MS) return hit.promise;
-  const promise = fetchSources(req);
+  const promise = fetchSources(req, true);
   inflight.set(key, { at: now, promise });
   shortenCache(key, promise, now);
   return promise;
@@ -156,7 +169,7 @@ export function clearSourceCache(): void { inflight.clear(); deviceStates.clear(
 /** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */
 export async function refreshSources(req: SourceRequest): Promise<LoadedSources> {
   const now = Date.now();
-  const promise = fetchSources(req);
+  const promise = fetchSources(req, false);
   inflight.set(requestKey(req), { at: now, promise });
   shortenCache(requestKey(req), promise, now);
   return promise;

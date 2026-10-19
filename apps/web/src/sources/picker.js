@@ -142,10 +142,13 @@ export async function openSourcePicker(request, opener, opts) {
   const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
+  // Liste chargée ici : son état complet (repli appareil, sources serveur) guide la surveillance.
+  let loadedHere = null;
   try {
     if (!session.views.length) {
       const loaded = await loadSources(request);
       if (!alive()) return;
+      loadedHere = loaded;
       request.imdb = loaded.imdb;
       session.views = loaded.views;
       session.pending = loaded.pending;
@@ -161,7 +164,7 @@ export async function openSourcePicker(request, opener, opts) {
   // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
   if (session.pending.length) {
     let clearAdded = null;
-    session.stop = watchSources(request, { imdb: opts.imdb || request.imdb || '', views: session.views, pending: session.pending }, (next, added) => {
+    session.stop = watchSources(request, loadedHere ?? { imdb: opts.imdb || request.imdb || '', views: session.views, pending: session.pending }, (next, added) => {
       if (!alive()) return;
       session.views = next.views;
       session.pending = next.pending;
