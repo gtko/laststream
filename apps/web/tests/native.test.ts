@@ -87,6 +87,13 @@ describe('NativeEngine', () => {
     expect(e.state()).toMatchObject({ time: 43, duration: 3000, paused: false, rate: 1 });
   });
 
+  it('la durée de repli de la sonde part à l’ouverture du plugin', async () => {
+    const { plugin } = fakePlugin();
+    const e = new NativeEngine(plugin);
+    await e.load({ url: 'http://x/a.mkv', startAt: 0, open: { durationSec: 5400 } });
+    expect(plugin.open).toHaveBeenCalledWith({ durationSec: 5400, url: 'http://x/a.mkv', startPosition: 0 });
+  });
+
   it('vignette flottante : relaie miniChanged, minimize() et expand()', async () => {
     const { plugin, fire } = fakePlugin();
     const e = new NativeEngine(plugin);
@@ -156,8 +163,30 @@ describe('panneaux Sources et Épisodes du lecteur natif', () => {
     ];
     const out = toNativeSources(views, 1, (v) => 'src' + v.index, () => 'AllDebrid');
     expect(out).toHaveLength(2);
-    expect(out[0]).toEqual({ id: '0', label: 'src0', detail: '40 Go · 60 Mb/s · AllDebrid', current: false, group: '4K' });
+    // Contrat historique (libellé, détail, courant, groupe) ; les champs structurés s'y ajoutent.
+    expect(out[0]).toMatchObject({ id: '0', label: 'src0', detail: '40 Go · 60 Mb/s · AllDebrid', current: false, group: '4K' });
     expect(out[1]).toMatchObject({ id: '1', detail: 'AllDebrid', current: true, group: '1080p' });
+  });
+
+  it('sources : champs structurés de la carte web, libellé, détail et groupe gardés', async () => {
+    const { toNativeSources } = await import('../src/player/native');
+    const view = {
+      index: 4, group: '2160p', quality: '4K', sourceType: 'REMUX', codec: 'HEVC', audio: 'TrueHD Atmos 7.1', hdr: ['HDR10'],
+      langs: [{ label: 'VF', verified: true }, { label: 'VO', verified: false }], sizeLabel: '40 Go', bitrateLabel: '60 Mb/s',
+      filename: 'Film.2160p.REMUX.mkv', releaseGroup: 'GRP', status: 'cached' as const, statusLabel: 'En cache', provider: 'AllDebrid',
+      origins: [{ name: 'Torrentio' }, { name: 'Comet' }], copies: 2, playable: true,
+    };
+    const [s] = toNativeSources([view], 4, () => 'label', () => 'Torrentio');
+    expect(s).toMatchObject({ id: '4', label: 'label', detail: '40 Go · 60 Mb/s · Torrentio', current: true, group: '4K' });
+    expect(s).toMatchObject({
+      quality: '4K', sourceType: 'REMUX', codec: 'HEVC', audio: 'TrueHD Atmos 7.1', hdr: ['HDR10'], size: '40 Go', bitrate: '60 Mb/s',
+      release: 'Film.2160p.REMUX.mkv', releaseGroup: 'GRP', status: 'cached', statusLabel: 'En cache', provider: 'AllDebrid',
+      origins: ['Torrentio', 'Comet'], copies: 2,
+    });
+    expect(s.langs).toEqual([{ label: 'VF', verified: true }, { label: 'VO', verified: false }]);
+    // Sans détail, la source part dans la forme historique : aucun champ vide ni `undefined` sur le fil (JSON).
+    const [plain] = toNativeSources([{ index: 1, group: 'other', playable: true, sizeLabel: '', bitrateLabel: '' }], null, () => 'x', () => '');
+    expect(JSON.parse(JSON.stringify(plain))).toStrictEqual({ id: '1', label: 'x', detail: '', current: false, group: 'Autres' });
   });
 
   it('épisodes : saisons, courant, progression ; null pour un film', async () => {

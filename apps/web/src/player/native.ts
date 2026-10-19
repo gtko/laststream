@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import type { SourceStatus } from '../sources/info';
 import type { SkipSegment } from './skip';
 import { normalizeLang, trackLang, type AudioTrack, type SubtitleTrack } from './tracks';
 
@@ -22,9 +23,20 @@ export interface NativeOpenOptions {
   sources?: NativeSource[];
   /** Panneau « Épisodes » (séries seulement). */
   episodes?: NativeEpisodes | null;
+  /** Durée du fichier en secondes, quand la sonde l'a donnée : repli pour la progression si libVLC ne la fournit pas (0 : inconnue). */
+  durationSec?: number;
 }
 
-export interface NativeSource { id: string; label: string; detail: string; current: boolean; group?: string }
+/** Source du panneau natif. `label` et `detail` restent servis tels quels (anciennes versions du lecteur) ; les champs suivants,
+ * facultatifs, reprennent la carte du sélecteur web (qualité, langues, codecs, statut, release). */
+export interface NativeSource {
+  id: string; label: string; detail: string; current: boolean; group?: string;
+  quality?: string; sourceType?: string; codec?: string; audio?: string; hdr?: string[];
+  langs?: Array<{ label: string; verified: boolean }>;
+  size?: string; bitrate?: string; release?: string; releaseGroup?: string;
+  status?: SourceStatus; statusLabel?: string; provider?: string;
+  origins?: string[]; copies?: number;
+}
 
 export interface NativeEpisode {
   season: number; episode: number; title: string; still?: string; durationMin?: number;
@@ -133,17 +145,43 @@ const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1080p': '1080p', '
 
 interface SourceLike {
   index: number; group: string; playable?: boolean; sizeLabel?: string; bitrateLabel?: string;
+  quality?: string; sourceType?: string; codec?: string; audio?: string; hdr?: string[];
+  langs?: Array<{ label: string; verified: boolean }>;
+  filename?: string; releaseGroup?: string; status?: SourceStatus; statusLabel?: string; provider?: string;
+  origins?: Array<{ name: string }>; copies?: number;
 }
 
-/** Sources du lecteur natif : libellé et détail déjà composés par la session (`line`, `origins`), groupés par qualité. */
+/**
+ * Sources du lecteur natif : libellé et détail déjà composés par la session (`line`, `origins`), groupés par qualité ;
+ * les champs structurés de la carte web partent en plus. Un champ vide est omis (forme historique pour une source sans détail).
+ */
 export function toNativeSources<V extends SourceLike>(views: readonly V[], currentIndex: number | null, line: (v: V) => string, origins: (v: V) => string): NativeSource[] {
-  return views.filter((v) => v.playable !== false).map((v) => ({
-    id: String(v.index),
-    label: line(v),
-    detail: [v.sizeLabel, v.bitrateLabel, origins(v)].filter(Boolean).join(' · '),
-    current: v.index === currentIndex,
-    group: GROUP_LABEL[v.group] ?? 'Autres',
-  }));
+  return views.filter((v) => v.playable !== false).map((v) => {
+    const langs = (v.langs ?? []).map((l) => ({ label: l.label, verified: !!l.verified }));
+    const names = (v.origins ?? []).map((o) => o.name);
+    return {
+      id: String(v.index),
+      label: line(v),
+      detail: [v.sizeLabel, v.bitrateLabel, origins(v)].filter(Boolean).join(' · '),
+      current: v.index === currentIndex,
+      group: GROUP_LABEL[v.group] ?? 'Autres',
+      quality: v.quality || undefined,
+      sourceType: v.sourceType || undefined,
+      codec: v.codec || undefined,
+      audio: v.audio || undefined,
+      hdr: v.hdr?.length ? v.hdr : undefined,
+      langs: langs.length ? langs : undefined,
+      size: v.sizeLabel || undefined,
+      bitrate: v.bitrateLabel || undefined,
+      release: v.filename || undefined,
+      releaseGroup: v.releaseGroup || undefined,
+      status: v.status || undefined,
+      statusLabel: v.statusLabel || undefined,
+      provider: v.provider || undefined,
+      origins: names.length ? names : undefined,
+      copies: (v.copies ?? 0) > 1 ? v.copies : undefined,
+    };
+  });
 }
 
 interface EpisodeLike { episode: number; name?: string; runtime?: number | null; still?: string; aired?: boolean; playable?: boolean }
