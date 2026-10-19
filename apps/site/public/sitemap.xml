@@ -14,4 +14,24 @@
     <xhtml:link rel="alternate" hreflang="en" href="https://laststream-www.gtux-prog.workers.dev/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://laststream-www.gtux-prog.workers.dev/"/>
   </url>
+  <url>
+    <loc>https://laststream-www.gtux-prog.workers.dev/guides/</loc>
+    <lastmod>2026-10-19</lastmod>
+  </url>
+  <url>
+    <loc>https://laststream-www.gtux-prog.workers.dev/guides/creer-un-profil/</loc>
+    <lastmod>2026-10-19</lastmod>
+  </url>
+  <url>
+    <loc>https://laststream-www.gtux-prog.workers.dev/guides/profil-enfant/</loc>
+    <lastmod>2026-10-19</lastmod>
+  </url>
+  <url>
+    <loc>https://laststream-www.gtux-prog.workers.dev/guides/ajouter-une-source/</loc>
+    <lastmod>2026-10-19</lastmod>
+  </url>
+  <url>
+    <loc>https://laststream-www.gtux-prog.workers.dev/guides/tv-en-direct/</loc>
+    <lastmod>2026-10-19</lastmod>
+  </url>
 </urlset>

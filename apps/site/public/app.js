@@ -102,3 +102,66 @@
   }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
   els.forEach(function (el) { io.observe(el); });
 })();
+
+// Lightbox des captures (section Aperçu) : grande version, Échap ou clic pour fermer, focus géré, aria-modal
+(function () {
+  'use strict';
+  var links = document.querySelectorAll('a[data-lightbox]');
+  if (!links.length) return;
+  var en = (document.documentElement.lang || 'fr').slice(0, 2).toLowerCase() === 'en';
+  var T = en ? { close: 'Close', dialog: 'Enlarged screenshot' } : { close: 'Fermer', dialog: 'Capture agrandie' };
+  var box = null, img = null, btn = null, lastFocus = null;
+
+  function build() {
+    box = document.createElement('div');
+    box.className = 'lb';
+    box.hidden = true;
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    box.setAttribute('aria-label', T.dialog);
+    img = document.createElement('img');
+    img.alt = '';
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'lb-close';
+    btn.setAttribute('aria-label', T.close);
+    btn.textContent = '×';
+    box.appendChild(img);
+    box.appendChild(btn);
+    document.body.appendChild(box);
+    btn.addEventListener('click', close);
+    box.addEventListener('click', function (e) { if (e.target !== btn) close(); });
+    document.addEventListener('keydown', function (e) {
+      if (box.hidden) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'Tab') { e.preventDefault(); btn.focus(); }
+    });
+  }
+
+  function open(a) {
+    if (!box) build();
+    var pic = a.querySelector('img');
+    lastFocus = document.activeElement;
+    img.src = a.getAttribute('href');
+    img.alt = pic ? pic.alt : '';
+    box.hidden = false;
+    document.documentElement.style.overflow = 'hidden';
+    btn.focus();
+  }
+
+  function close() {
+    if (!box || box.hidden) return;
+    box.hidden = true;
+    img.removeAttribute('src');
+    document.documentElement.style.overflow = '';
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  links.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      open(a);
+    });
+  });
+})();
