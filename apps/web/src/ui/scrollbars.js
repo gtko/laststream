@@ -15,3 +15,4 @@ document.addEventListener('mousemove', (e) => {
   const near = root.clientWidth - e.clientX < 24;
   if (near !== root.classList.contains('sb-near')) root.classList.toggle('sb-near', near);
 }, { passive: true });
+document.addEventListener('mouseleave', () => root.classList.remove('sb-near'));
