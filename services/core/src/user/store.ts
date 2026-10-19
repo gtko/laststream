@@ -117,6 +117,15 @@ export interface ProgressWrite {
 /** Un suivi peut aussi viser une personne (acteur, réalisateur) : pas de saison ni d'épisode. */
 export type FollowType = MediaType | 'person';
 
+/** Un titre de l'historique « vu » : `watched` compte le film (1) ou les épisodes vus hors saison 0. */
+export interface WatchedTitleItem {
+  type: MediaType;
+  tmdbId: number | null;
+  imdbId: string | null;
+  watched: number;
+  lastWatchedAt: string;
+}
+
 export interface WatchedWrite {
   profileId: string;
   type: MediaType;
@@ -249,6 +258,14 @@ interface ProgressRow {
   duration_sec: number;
   updated_at: string;
   finished: number;
+}
+
+interface WatchedTitleRow {
+  type: MediaType;
+  tmdb_id: number | null;
+  imdb_id: string | null;
+  watched: number;
+  last_watched_at: string;
 }
 
 interface SettingRow {
@@ -725,6 +742,31 @@ export class UserStore {
       )
       .all(profileId) as unknown as ProgressRow[];
     return rows.map(toProgressItem);
+  }
+
+  /**
+   * Historique « vu » du profil : une ligne par titre ayant au moins un film ou un épisode terminé (hors saison 0).
+   * Les plus récemment terminés d'abord. Une lecture en cours (non terminée) n'y figure pas.
+   */
+  watchedTitles(profileId: string): WatchedTitleItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT type, MAX(tmdb_id) AS tmdb_id, MAX(imdb_id) AS imdb_id,
+           SUM(CASE WHEN type = 'movie' OR season > 0 THEN 1 ELSE 0 END) AS watched,
+           MAX(updated_at) AS last_watched_at
+         FROM progress WHERE profile_id = ? AND finished = 1
+         GROUP BY type, title_ref
+         HAVING SUM(CASE WHEN type = 'movie' OR season > 0 THEN 1 ELSE 0 END) > 0
+         ORDER BY last_watched_at DESC`,
+      )
+      .all(profileId) as unknown as WatchedTitleRow[];
+    return rows.map((row) => ({
+      type: row.type,
+      tmdbId: row.tmdb_id,
+      imdbId: row.imdb_id,
+      watched: Number(row.watched),
+      lastWatchedAt: row.last_watched_at,
+    }));
   }
 
   /**
