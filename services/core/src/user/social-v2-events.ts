@@ -18,7 +18,9 @@ export type SocialEvent =
   | { t: 'presence'; friend: FriendView }
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  /** Liste partagée modifiée (contenu, membres, suppression) : chaque membre la relit. */
+  | { t: 'list'; listId: string };
 
 /** Gestionnaire fourni par l'hôte. Appelé de façon synchrone ; ne doit ni attendre ni lever d'exception vers la requête. */
 export type SocialEventHandler = (profilePids: readonly string[], event: SocialEvent) => void;

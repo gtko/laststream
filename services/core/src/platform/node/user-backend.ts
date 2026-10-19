@@ -5,6 +5,7 @@ import { asyncRepo, type UserBackend } from '../../user/repo.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
 import { SocialV2Store } from '../../user/social-v2-store.js';
+import { SocialV3Store } from '../../user/social-v3-store.js';
 import { UserStore } from '../../user/store.js';
 import { openUserDb, userDbPath } from './user-db.js';
 
@@ -14,7 +15,16 @@ import { openUserDb, userDbPath } from './user-db.js';
  */
 export function createNodeUserBackend(options: { path?: string } = {}): UserBackend {
   let stores:
-    | { users: UserStore; skips: SkipSegmentStore; social: SocialStore; socialV2: SocialV2Store; admin: AdminStore; meta: MetaStore; close(): void }
+    | {
+        users: UserStore;
+        skips: SkipSegmentStore;
+        social: SocialStore;
+        socialV2: SocialV2Store;
+        socialV3: SocialV3Store;
+        admin: AdminStore;
+        meta: MetaStore;
+        close(): void;
+      }
     | undefined;
   const open = () => {
     if (stores === undefined) {
@@ -24,6 +34,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
         skips: new SkipSegmentStore(db),
         social: new SocialStore(db),
         socialV2: new SocialV2Store(db),
+        socialV3: new SocialV3Store(db),
         admin: new AdminStore(db),
         meta: new MetaStore(db),
         close: () => db.close(),
@@ -35,6 +46,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
   let skips: ReturnType<typeof asyncRepo<SkipSegmentStore>> | undefined;
   let social: ReturnType<typeof asyncRepo<SocialStore>> | undefined;
   let socialV2: ReturnType<typeof asyncRepo<SocialV2Store>> | undefined;
+  let socialV3: ReturnType<typeof asyncRepo<SocialV3Store>> | undefined;
   let admin: ReturnType<typeof asyncRepo<AdminStore>> | undefined;
   let meta: ReturnType<typeof asyncRepo<MetaStore>> | undefined;
   return {
@@ -42,6 +54,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
     skips: () => (skips ??= asyncRepo(open().skips)),
     social: () => (social ??= asyncRepo(open().social)),
     socialV2: () => (socialV2 ??= asyncRepo(open().socialV2)),
+    socialV3: () => (socialV3 ??= asyncRepo(open().socialV3)),
     admin: () => (admin ??= asyncRepo(open().admin)),
     meta: () => (meta ??= asyncRepo(open().meta)),
     hasData: () => stores !== undefined || existsSync(options.path ?? userDbPath()),
@@ -52,6 +65,7 @@ export function createNodeUserBackend(options: { path?: string } = {}): UserBack
       skips = undefined;
       social = undefined;
       socialV2 = undefined;
+      socialV3 = undefined;
       admin = undefined;
       meta = undefined;
     },

@@ -53,7 +53,8 @@ export type LiveFrame =
   | { t: 'request'; request: FriendRequestView }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'list'; listId: string };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -116,6 +117,8 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'list':
+      return { t: 'list', listId: event.listId };
   }
 }
 
