@@ -1,8 +1,8 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { canonSummary } from '../data/series';
+import { canonFromFiche, canonSummary, seedCanon } from '../data/series';
 import { canonical } from './seasons.js';
-import { tmdb } from '../data/lt';
-import { getRegion } from '../data/prefs';
+import { fetchServerMeta, tmdb } from '../data/lt';
+import { getRegion, getVideoLang } from '../data/prefs';
 import { sortVideos, trailerLang } from '../data/trailers';
 import { availOf, certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
@@ -96,19 +96,35 @@ export function buildModel(type, id, raw, en, canon) {
   };
 }
 
-export function fetchFull(type, id) {
+/** Langue des épisodes de la fiche serveur (route /meta, sans paramètre de langue : défaut fr-FR côté lastAddon). */
+const SERVER_META_LANG = 'fr-FR';
+
+/**
+ * Modèle complet d'un titre (TMDB). `opts.server` : demande aussi la fiche serveur, lancée en parallèle de TMDB ; ses
+ * notes, son membre TVDB et ses épisodes remplacent alors les appels séparés (`model.serverMeta`, null si indisponible).
+ */
+export function fetchFull(type, id, opts = {}) {
   const key = type + ':' + id;
   if (!fullCache.has(key)) {
     const append = (type === 'tv' ? 'videos,images,credits,external_ids,content_ratings' : 'videos,images,credits,external_ids,release_dates,watch/providers') + ',recommendations,similar';
     const p = (async () => {
+      const serverP = opts.server ? fetchServerMeta(type === 'tv' ? 'series' : 'movie', id).catch(() => null) : null;
       const raw = await tmdb(type + '/' + id, { append_to_response: append, include_image_language: 'fr,en,null', include_video_language: videoLanguages() });
       raw.videos = { results: await videosOf(raw, type, id) };
+      const serverMeta = serverP ? await serverP : null;
+      // Épisodes de la fiche : seulement dans la langue du serveur, pour que la numérotation et les textes restent ceux demandés.
+      if (type === 'tv' && serverMeta && getVideoLang().tag === SERVER_META_LANG) {
+        const seeded = canonFromFiche(serverMeta.episodes);
+        if (seeded) seedCanon(id, SERVER_META_LANG, seeded);
+      }
       const canon = type === 'tv' ? await canonical(id) : null;
       let en = null;
       if (!raw.overview || !raw.tagline) {
         try { en = await tmdb(type + '/' + id, { language: 'en-US' }); } catch (_) { /* repli silencieux */ }
       }
-      return buildModel(type, id, raw, en, canon);
+      const model = buildModel(type, id, raw, en, canon);
+      model.serverMeta = serverMeta;
+      return model;
     })();
     p.catch(() => fullCache.delete(key));
     fullCache.set(key, p);
