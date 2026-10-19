@@ -32,7 +32,7 @@ function relayText() {
 }
 
 function inviteHTML(c) {
-  return '<section class="wp-invite"><button type="button" class="btn btn-ghost btn-sm" data-wp-invite>Inviter (lien)</button>' +
+  return '<section class="wp-invite"><button type="button" class="btn btn-ghost btn-sm" data-wp-invite>Copier le lien d’invitation</button>' +
     (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
     '<p class="wp-note">Invités : <b data-wp-guests>' + guestCount(c) + '</b></p>' +
     '<p class="wp-note wp-warn">Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.</p>' +
@@ -89,7 +89,7 @@ function roomHTML(c) {
   const room = c.room;
   return '<div class="wp-head"><h3 class="wp-title">' + esc(room ? room.title : 'Salon') + '</h3>' +
     '<span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span></div>' + status +
-    '<div class="wp-actions"><button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>' +
+    '<div class="wp-actions">' + (host ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
     '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host) + '</ul>' +

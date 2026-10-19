@@ -4,6 +4,7 @@ import { getParty, listParties } from '../data/socialApi';
 import { socialErrorText } from '../data/socialText';
 import { userStore } from '../data/userStore';
 import { canBrowsePublicParties, canJoinRoom, partyBridge } from '../party/bridge';
+import { openLogin } from './auth-ui.js';
 import { IMG } from './constants.js';
 import { detailEl, toast } from './dom.js';
 import { teardownFiche } from './fiche.js';
@@ -99,7 +100,11 @@ export async function showParty(id) {
   teardownFiche();
   state.kind = 'party';
   document.title = 'Watch party · Laststream';
-  if (!isServerMode()) { detailEl.innerHTML = shell('Watch party', 'Invitation', message('Connecte-toi à un compte Laststream pour rejoindre ce salon, puis rouvre le lien.')); return; }
+  if (!isServerMode()) {
+    detailEl.innerHTML = shell('Watch party', 'Invitation', message('Ce lien est réservé aux comptes Laststream. Demande à l’hôte un lien d’invitation.') +
+      '<div class="tv-form-actions"><button type="button" class="btn btn-primary" data-wp-login>Se connecter</button></div>');
+    return;
+  }
   detailEl.innerHTML = shell('Watch party', 'Invitation', message('Recherche du salon…'));
   const token = state.token;
   try {
@@ -133,6 +138,7 @@ detailEl.addEventListener('click', (e) => {
   if (!t) return;
   const join = t.closest('[data-wp-join]');
   if (join && state.kind === 'party') { e.preventDefault(); joinFromPage(join.dataset.wpJoin, join); return; }
+  if (t.closest('[data-wp-login]') && state.kind === 'party') { e.preventDefault(); openLogin(); return; }
   if (state.kind !== 'parties') return;
   if (t.closest('[data-wp-more]')) { e.preventDefault(); loadRooms(true); return; }
   if (t.closest('[data-wp-reload]')) { e.preventDefault(); loadRooms(false); }
