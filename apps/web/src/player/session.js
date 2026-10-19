@@ -225,7 +225,15 @@ function partyAdapter(p = P) {
     relayUrl: () => (p.engine ? relayableUrl(p.mediaUrl, p.view ? p.view.stream : null) : null),
     // Sources déjà chargées du titre, classées : le salon y cherche une source compatible avec tous les invités.
     sources: () => p.ranked || p.views || [],
+    // Lien lisible d'une source pour en lire l'en-tête seulement (sans lancer la lecture) ; jamais un torrent ni un proxy.
+    resolveUrl: (view, signal) => resolveRelayUrl(view, signal),
   };
+}
+
+/** Lien HTTP(S) lisible d'une source (débridé ou direct), ou null : sert à lire son en-tête avant de la proposer. */
+async function resolveRelayUrl(view, signal) {
+  const media = await resolveMedia(view, signal, false);
+  return relayableUrl(media.url, view.stream);
 }
 
 function ensureUI() {

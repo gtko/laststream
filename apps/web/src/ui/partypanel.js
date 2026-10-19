@@ -266,8 +266,21 @@ async function inviteLink() {
 }
 
 /** Bascule sur la meilleure source compatible avec tous les invités (même position), ou le dit. */
-function switchCompatible() {
-  const r = partyBridge.switchToCompatible();
+let compatBusy = false;
+
+/** Recherche (en-tête des sources, quelques secondes) puis bascule ; un clic pendant la recherche ne fait rien. */
+async function switchCompatible() {
+  if (compatBusy) return;
+  compatBusy = true;
+  toast('Recherche d’une source compatible…', { ms: 4000 });
+  let r = { status: 'none' };
+  try {
+    r = await partyBridge.switchToCompatible();
+  } catch {
+    r = { status: 'none' };
+  } finally {
+    compatBusy = false;
+  }
   if (r.status === 'switched') {
     toast('Lecture sur une source compatible avec tous les invités' + (r.audioUnverified ? ' (son non vérifié)' : ''), { ms: 6000 });
   } else {
@@ -314,7 +327,7 @@ function onClick(e) {
   const c = partyBridge.client;
   if (t.closest('[data-wp-close]')) { togglePartyPanel(false); return; }
   if (t.closest('[data-wp-invite]') && c) { void invite(); return; }
-  if (t.closest('[data-wp-compat]') && c) { switchCompatible(); return; }
+  if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
   if (t.closest('[data-wp-leave]')) { partyBridge.leave(); toast('Tu as quitté le salon'); return; }
   if (t.closest('[data-wp-end]')) {

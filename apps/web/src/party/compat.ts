@@ -8,7 +8,8 @@ import { capsFromMask, type DecodeCap } from '../relay/protocol';
 /** Codecs d'un fichier, dans le vocabulaire des capacités de décodage (null : inconnu). */
 export interface FileCodecs {
   video: DecodeCap | null;
-  audio: DecodeCap | null;
+  /** TrueHD n'a pas de décodeur côté invité : une piste TrueHD est connue, et jamais décodable. */
+  audio: DecodeCap | 'truehd' | null;
 }
 
 /** Vue d'une source (liste des sources du titre, ou source lue) : seuls les champs utiles au choix. */
@@ -20,7 +21,8 @@ export interface SourceLike {
   /** Codec et son tels que la liste des sources les affiche (ex. « x265 », « DTS-HD MA 5.1 »). */
   codec?: string;
   audio?: string;
-  stream?: { infoHash?: string; url?: string; behaviorHints?: { filename?: string } } | null;
+  sizeBytes?: number;
+  stream?: { infoHash?: string; fileIdx?: number; url?: string; behaviorHints?: { filename?: string; videoSize?: number } } | null;
 }
 
 /** Invité du salon : `caps` est null tant qu'il n'a pas annoncé ses capacités. */
@@ -32,7 +34,8 @@ export interface GuestStatus {
 /** Verdict pour un invité : tout va, le son ne passera pas, ou la vidéo ne peut pas être lue. */
 export type GuestVerdict = 'ok' | 'no-audio' | 'unplayable';
 
-export const CODEC_LABEL: Record<DecodeCap, string> = {
+export const CODEC_LABEL: Record<DecodeCap | 'truehd', string> = {
+  truehd: 'TrueHD',
   h264: 'H.264',
   hevc: 'HEVC',
   av1: 'AV1',
@@ -100,8 +103,9 @@ export function fileCodecsOf(view: SourceLike | null | undefined): FileCodecs {
 
 /** Verdict d'un invité pour un fichier : la vidéo inconnue ou décodable compte pour OK, la vidéo prime sur le son. */
 export function verdictOf(file: FileCodecs, caps: readonly DecodeCap[]): GuestVerdict {
-  if (file.video && !caps.includes(file.video)) return 'unplayable';
-  if (file.audio && !caps.includes(file.audio)) return 'no-audio';
+  const has = (codec: string): boolean => (caps as readonly string[]).includes(codec);
+  if (file.video && !has(file.video)) return 'unplayable';
+  if (file.audio && !has(file.audio)) return 'no-audio';
   return 'ok';
 }
 
@@ -150,11 +154,66 @@ export function audioKnown(view: SourceLike): boolean {
  * Source utilisable pour une bascule ou un repli : lisible sans torrent, avec au moins un codec connu, et sans
  * incompatibilité connue avec les invités annoncés (un invité sans annonce ne bloque rien).
  */
-export function isCompatibleSource(view: SourceLike, guests: readonly GuestStatus[]): boolean {
-  if (!isStreamable(view)) return false;
-  const file = fileCodecsOf(view);
+export function isCompatibleFile(file: FileCodecs, guests: readonly GuestStatus[]): boolean {
   if (!file.video && !file.audio) return false;
   return guests.every((g) => g.caps === null || verdictOf(file, g.caps) === 'ok');
+}
+
+/**
+ * Source utilisable pour une bascule ou un repli : lisible sans torrent et compatible (`isCompatibleFile`). Les codecs
+ * viennent de l'en-tête si on les a lus (`codecs`), sinon du nom de la source.
+ */
+export function isCompatibleSource(view: SourceLike, guests: readonly GuestStatus[], codecs?: FileCodecs | null): boolean {
+  return isStreamable(view) && isCompatibleFile(codecs ?? fileCodecsOf(view), guests);
+}
+
+/** Attend `p` au plus `ms` ms ; au-delà, `onTimeout` est appelé et le résultat est null. Un rejet donne null aussi. */
+export function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void = () => undefined): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      resolve(null);
+    }, ms);
+  });
+  const value = p.then((v) => v, () => null);
+  return Promise.race([value, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Résultat d'un choix : la source, ses codecs lus dans l'en-tête (null si on a retenu le nom), et la méthode. */
+export interface ChoiceResult<V> {
+  view: V;
+  codecs: FileCodecs | null;
+  source: 'header' | 'name';
+}
+
+/**
+ * Choix d'une source compatible avec tous les invités annoncés. D'abord la sonde d'en-tête, sur les `probeLimit` meilleures
+ * sources streamables (dans l'ordre de classement, séquentiel, `timeoutMs` chacune) : la première dont l'en-tête est
+ * compatible gagne. Sinon, repli sur le parseur de nom, sans les sources dont l'en-tête a été lu et refusé.
+ * `probe` reçoit un signal annulé au délai ; il rend les codecs lus, ou null si la lecture est impossible.
+ */
+export async function chooseCompatibleSource<V extends SourceLike>(
+  views: readonly V[],
+  guests: readonly GuestStatus[],
+  currentIndex: number | null,
+  probe: (view: V, signal: AbortSignal) => Promise<FileCodecs | null>,
+  opts: { probeLimit?: number; timeoutMs?: number } = {},
+): Promise<ChoiceResult<V> | null> {
+  if (!guests.some((g) => g.caps !== null)) return null;
+  const limit = opts.probeLimit ?? 3;
+  const timeoutMs = opts.timeoutMs ?? 8000;
+  const pool = views.filter((v) => v.index !== currentIndex && isStreamable(v));
+  const rejected = new Set<V>();
+  for (const v of pool.slice(0, limit)) {
+    const ctl = new AbortController();
+    const codecs = await withTimeout(probe(v, ctl.signal), timeoutMs, () => ctl.abort());
+    if (!codecs) continue;
+    if (isCompatibleFile(codecs, guests)) return { view: v, codecs, source: 'header' };
+    rejected.add(v);
+  }
+  const named = pickCompatibleSource(views.filter((v) => v.index !== currentIndex && !rejected.has(v)), guests, null);
+  return named ? { view: named, codecs: null, source: 'name' } : null;
 }
 
 /**
