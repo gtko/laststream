@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
+import { syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
@@ -523,23 +524,26 @@ export class UserStore {
   }
 
   insertProfile(accountId: string, profileId: string, fields: ProfileFields, createdAt: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        profileId,
-        accountId,
-        fields.name,
-        fields.avatarColor,
-        fields.avatar,
-        fields.isKid ? 1 : 0,
-        fields.kidMaxAge,
-        fields.pinHash,
-        JSON.stringify(fields.allowedCatalogs),
-        createdAt,
-      );
+    this.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          profileId,
+          accountId,
+          fields.name,
+          fields.avatarColor,
+          fields.avatar,
+          fields.isKid ? 1 : 0,
+          fields.kidMaxAge,
+          fields.pinHash,
+          JSON.stringify(fields.allowedCatalogs),
+          createdAt,
+        );
+      syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
+    });
   }
 
   /**
@@ -550,6 +554,7 @@ export class UserStore {
     this.transaction(() => {
       this.updateProfileFields(accountId, profileId, fields);
       if (pinHash !== undefined) this.setPin(accountId, profileId, pinHash);
+      syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
     });
   }
 
