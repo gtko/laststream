@@ -506,7 +506,11 @@ function profileEditor(p) {
     else if (f.nopin && f.nopin.checked) input.pin = null;
     try {
       // Pas encore de code parental : le profil principal en reçoit un avant que l'enfant soit créé ou modifié.
-      if (mustSetParental) await saveProfile(parentalProfile().id, { pin: parental });
+      // Le PIN tout juste posé verrouille le principal : on le déverrouille aussitôt pour que la création de l'enfant passe.
+      if (mustSetParental) {
+        await saveProfile(parentalProfile().id, { pin: parental });
+        await unlock(parentalProfile().id, parental);
+      }
       await saveProfile(isNew ? null : cur.id, input);
       close();
       manage = true;
