@@ -94,6 +94,15 @@ export interface ReferralNode { id: string; username: string; createdAt: string;
 export interface Settings { inviteDefaultQuota: number; invitesOpen: boolean; maintenance: { enabled: boolean; message: string } }
 export type Range = '1h' | '24h' | '7d';
 export interface GroupStats { requests: number; status: { '2xx': number; '3xx': number; '4xx': number; '5xx': number }; p50: number; p95: number; avgMs: number }
+/** Compteurs d'un fournisseur (serveur : metrics/providers.ts). `hitRate` : lectures servies sans appel sortant / lectures. */
+export interface ProviderCounts {
+  calls: number; l1Hits: number; l2Hits: number; stale: number; coalesced: number; r2Hits: number; r2Misses: number; notModified: number;
+  hitRate: number | null; r2HitRate: number | null;
+}
+export interface ProviderEntry extends ProviderCounts { provider: string }
+export interface ProviderDayEntry { day: string; providers: ProviderEntry[] }
+/** Rapport fournisseurs (fenêtre de 30 jours UTC, indépendante de `range`). */
+export interface ProviderReport { windowDays: number; from: string; to: string; byDay: ProviderDayEntry[]; totals: ProviderEntry[] }
 export interface Metrics {
   range: Range; from: number | string; to: number | string; stepSec: number;
   totals: GroupStats; groups: Record<string, GroupStats>;
@@ -101,6 +110,8 @@ export interface Metrics {
   upstreams: Array<{ host: string; calls: number; failures: number; timeouts: number; avgMs: number }>;
   alldebrid: Record<string, { ok: number; errors: Record<string, number> }>;
   caches: Array<{ prefix: string; hits: number; misses: number; hitRate: number }>;
+  /** Absent sur les serveurs qui ne publient pas encore ces compteurs. */
+  providers?: ProviderReport;
   errors: Array<{ at: number | string; route: string; status: number; message: string }>;
 }
 export interface CacheRow { prefix: string; keys: number; exact: boolean; hits: number; misses: number; hitRate: number }
