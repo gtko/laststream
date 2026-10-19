@@ -8,22 +8,24 @@ import { socketUrl } from '../party/bridge';
 import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
+import { createGuestControls } from './guestplayer.js';
 import { esc } from './util.js';
 
 /** Phases où la session ne fait plus rien : on rend la main au formulaire. « unsupported » ne l'est pas : l'hôte peut changer de fichier. */
 const TERMINAL = new Set(['refused', 'ended', 'left']);
-const PHASE_TEXT = {
+/** Phases où le cadre vidéo et ses commandes sont affichés (attente comprise). */
+const STAGE = new Set(['joining', 'waiting-host', 'connecting-host', 'loading', 'ready', 'host-lost']);
+/** Phases qui méritent un ton d'alerte sous le formulaire. */
+const WARN = new Set(['unsupported', 'host-lost', 'refused', 'ended']);
+/** Bandeau central pendant l'attente (la phase « prête » n'en a pas). */
+const WAIT_TEXT = {
   joining: 'Connexion au salon…',
-  'waiting-host': '',
+  'waiting-host': 'En attente de l’hôte…',
   'connecting-host': 'Connexion à l’hôte…',
   loading: 'Ouverture de la lecture…',
-  ready: 'Lecture partagée prête : pause, reprise et sauts valent pour tout le salon.',
-  'host-lost': '',
-  refused: '',
-  unsupported: '',
-  ended: '',
-  left: '',
+  'host-lost': 'Liaison avec l’hôte interrompue',
 };
+const READY_TEXT = 'Lecture partagée prête : pause, reprise et sauts valent pour tout le salon.';
 
 let session = null;
 let timer = null;
@@ -32,12 +34,10 @@ let audioCtx = null;
 let joining = false;
 /** Salon dont la séance d'invité est en cours (effacée quand la session se termine : exclusion, salon fini, refus). */
 let currentRoom = '';
-
-const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
-const clock = (s) => {
-  const t = Math.max(0, Math.floor(s || 0));
-  return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
-};
+/** Dernière vue de la session (position courante, pour les sauts absolus demandés par les commandes). */
+let lastView = null;
+/** Commandes du cadre vidéo de la page affichée (créées par showPartyJoin, détruites au changement de page). */
+let controls = null;
 
 /** Geste utilisateur (clic « Rejoindre ») : l'AudioContext démarre ici, le lecteur peut ensuite jouer le son. */
 function unlockAudio() {
@@ -61,12 +61,19 @@ function stopSession() {
   timer = null;
   if (session) session.destroy();
   session = null;
+  lastView = null;
   closeAudio();
+}
+
+function destroyControls() {
+  controls?.destroy();
+  controls = null;
 }
 
 /** Arrête la page invitée (changement de route, nouvelle invitation). */
 export function teardownPartyJoin() {
   stopSession();
+  destroyControls();
 }
 
 /** Retire le jeton de l'adresse une fois le salon rejoint : il ne reste que dans la session (ni historique ni copie d'écran). */
@@ -90,22 +97,36 @@ function exposeStats(s) {
   if (on) window.__lsRelayStats = Object.freeze(s.debugCounts());
 }
 
+/** Affiche le pseudo sous le titre, une fois le salon rejoint (texte seul, jamais de balisage). */
+function setWho(root, name) {
+  const who = root.querySelector('[data-pj-who]');
+  if (!who) return;
+  who.textContent = name ? 'Pseudo : ' + name : '';
+  who.hidden = !name;
+}
+
 function refresh(root) {
-  if (!session) return;
+  if (!session || !controls) return;
   const v = session.tick();
+  lastView = v;
   exposeStats(session);
   // Salon accepté (bienvenue reçue) : la phase n'est plus « joining » ni terminale.
   if (v.phase !== 'joining' && !TERMINAL.has(v.phase)) dropTokenFromUrl();
   const status = root.querySelector('[data-pj-status]');
-  // La note (son non pris en charge) s'ajoute à la ligne d'état, sans remplacer le texte de la phase.
-  status.textContent = [v.message || PHASE_TEXT[v.phase] || '', v.note].filter(Boolean).join(' ');
+  // Le message de la session (et la note sur le son) ; la phase « prête » ajoute une ligne d'explication.
+  status.textContent = [v.message || (v.phase === 'ready' ? READY_TEXT : ''), v.note].filter(Boolean).join(' ');
+  status.dataset.tone = WARN.has(v.phase) ? 'warn' : '';
   const form = root.querySelector('[data-pj-form]');
   const submit = root.querySelector('[data-pj-join]');
   const leave = root.querySelector('[data-pj-leave]');
+  const player = root.querySelector('[data-pj-player]');
   if (TERMINAL.has(v.phase)) {
     // Séance finie ou refusée : le jeton de séance ne sert plus, le prochain essai repasse par le lien partagé.
     if (currentRoom) clearGuestSession(currentRoom);
     stopSession();
+    controls.setState({ playing: false, ready: false });
+    controls.setWait(null);
+    player.hidden = true;
     form.hidden = false;
     submit.textContent = v.phase === 'left' ? 'Rejoindre à nouveau' : 'Rejoindre';
     leave.hidden = true;
@@ -113,12 +134,20 @@ function refresh(root) {
   }
   form.hidden = true;
   leave.hidden = false;
-  const player = root.querySelector('[data-pj-player]');
-  player.hidden = !['loading', 'ready', 'host-lost'].includes(v.phase);
+  player.hidden = !STAGE.has(v.phase);
   const ready = v.phase === 'ready';
-  for (const sel of ['[data-pj-play]', '[data-pj-pause]', '[data-pj-back]', '[data-pj-fwd]']) root.querySelector(sel).disabled = !ready;
+  controls.setState({ playing: v.playing, position: v.position, duration: v.duration, ready });
+  controls.setWait(ready ? null : WAIT_TEXT[v.phase] || null);
+  // Champs sans source dans la session : codecs et tampon restent « — ».
+  controls.setInfo({
+    rate: v.rateBps,
+    bytesHost: v.bytesReceived,
+    bytesPeers: v.bytesFromPeers,
+    videoCodec: null,
+    audioCodec: null,
+    bufferAhead: null,
+  });
   root.querySelector('[data-pj-retry]').hidden = v.phase !== 'host-lost';
-  root.querySelector('[data-pj-meta]').textContent = clock(v.position) + ' / ' + clock(v.duration) + (ready ? ' · Débit reçu : ' + fmtRate(v.rateBps) : '');
 }
 
 /** Clic « Rejoindre » : geste utilisateur, AudioContext, puis lecteur chargé à la demande (il pèse : mediabunny). */
@@ -176,6 +205,7 @@ async function join(root, roomId, token) {
     createPlayer: (callbacks) => new GuestPlayer(callbacks),
     canvas: root.querySelector('[data-pj-canvas]'),
   });
+  setWho(root, entry.name || name);
   session.start();
   timer = setInterval(() => refresh(root), 250);
   refresh(root);
@@ -191,8 +221,9 @@ function leave(root) {
 /** Affiche la page d'invitation (remplace le contenu de la vue détail). */
 export function showPartyJoin(roomId, token) {
   stopSession();
+  destroyControls();
   detailEl.innerHTML = '<section class="pj" aria-labelledby="pj-title">' +
-    '<h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1>' +
+    '<header class="pj-head"><h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1><p class="pj-who" data-pj-who hidden></p></header>' +
     '<p class="pj-note">Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.</p>' +
     '<form class="pj-form" data-pj-form autocomplete="off">' +
     '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
@@ -200,25 +231,24 @@ export function showPartyJoin(roomId, token) {
     '<p class="pj-msg" role="status" data-pj-status></p>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-pj-leave hidden>Quitter</button>' +
     '<div class="pj-player" data-pj-player hidden>' +
-    '<canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas>' +
-    '<div class="pj-controls" role="group" aria-label="Lecture">' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-back disabled>−10 s</button>' +
-    '<button type="button" class="btn btn-primary btn-sm" data-pj-play disabled>Lecture</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-pause disabled>Pause</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pj-fwd disabled>+10 s</button></div>' +
-    '<p class="pj-meta" data-pj-meta></p>' +
+    '<div class="pj-stage" data-pj-stage><canvas class="pj-canvas" data-pj-canvas aria-label="Vidéo du salon"></canvas></div>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-pj-retry hidden>Réessayer la liaison avec l’hôte</button></div>' +
     '</section>';
   const root = detailEl.querySelector('.pj');
+  const stage = root.querySelector('[data-pj-stage]');
+  // Commandes : les actions passent par le salon (play/pause/saut) ; volume et sourdine restent masqués (rien à régler côté lecteur).
+  controls = createGuestControls(stage, {
+    onPlay: () => session?.play(),
+    onPause: () => session?.pause(),
+    onSeek: (t) => {
+      if (session && lastView) session.seekBy(t - lastView.position);
+    },
+  });
   root.querySelector('#pj-title').focus({ preventScroll: true });
   root.querySelector('[data-pj-form]').addEventListener('submit', (e) => {
     e.preventDefault();
     join(root, roomId, token);
   });
-  root.querySelector('[data-pj-play]').addEventListener('click', () => session?.play());
-  root.querySelector('[data-pj-pause]').addEventListener('click', () => session?.pause());
-  root.querySelector('[data-pj-back]').addEventListener('click', () => session?.seekBy(-10));
-  root.querySelector('[data-pj-fwd]').addEventListener('click', () => session?.seekBy(10));
   root.querySelector('[data-pj-retry]').addEventListener('click', () => session?.retry());
   root.querySelector('[data-pj-leave]').addEventListener('click', () => leave(root));
 }
