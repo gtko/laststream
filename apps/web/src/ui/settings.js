@@ -73,7 +73,7 @@ function accountPanel() {
   if (!isServerMode()) {
     return card('Compte', '<p class="set-hint">' + (auth.status === 'offline'
       ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
-      : 'Sans compte, la bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
+      : 'La bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
       actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data;
   }
   const pr = auth.profile;

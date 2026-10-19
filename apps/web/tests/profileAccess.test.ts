@@ -72,10 +72,10 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('config lastAddon locale : jamais héritée par un autre compte', () => {
-  it('claimLocalConfig : conserve pour le même compte, vide pour un autre, adopte en mode local', () => {
+  it('claimLocalConfig : conserve pour le même compte, vide pour un autre, adopte une config sans propriétaire si demandé', () => {
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: BASE, config: 'CFG-A' }));
     reloadSettings();
-    claimLocalConfig('a', true); // sans propriétaire mémorisé, mode « sans compte » : la config est celle de l'utilisateur
+    claimLocalConfig('a', true); // sans propriétaire mémorisé (restauration de session) : la config est celle de ce compte
     expect(getSettings().config).toBe('CFG-A');
     expect(localStorage.getItem(CONFIG_OWNER_KEY)).toBe('a');
     claimLocalConfig('a');

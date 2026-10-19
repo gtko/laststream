@@ -5,7 +5,7 @@
  * le lien obtenu APRÈS (fire-and-forget). Connecté uniquement : sans session (invité, mode local), aucun appel au serveur.
  * Un lien n'est jamais journalisé ni placé dans un message d'erreur. Les fonctions ici ne lèvent jamais. */
 
-import { getSession, isLocalMode } from '../data/session';
+import { getSession } from '../data/session';
 import { call } from '../data/userApi';
 import { normalizeHash } from './debrid/types';
 
@@ -34,8 +34,8 @@ export function sourceKeyFor(copy: { infoHash: string; fileIdx?: number }): stri
   return SOURCE_KEY_RE.test(key) ? key : null;
 }
 
-/** Connecté à un compte, hors mode local (« continuer sans compte ») : seul cas où le serveur est interrogé. */
-const connected = (): boolean => getSession() !== null && !isLocalMode();
+/** Connecté à un compte : seul cas où le serveur est interrogé. */
+const connected = (): boolean => getSession() !== null;
 
 /** Profil actif (en-tête X-Profile-Id, optionnel). */
 const profileHeaders = (): Record<string, string> => {

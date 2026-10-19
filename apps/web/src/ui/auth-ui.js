@@ -1,6 +1,6 @@
 /* Comptes : écran de connexion, choix du profil (façon Netflix), clavier PIN, gestion des profils, mode enfant. */
 import {
-  auth, canManageProfiles, chooseProfile, continueWithoutAccount, grantManager, hasValidToken, parentalProfile,
+  auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, offlineWithoutSession, parentalProfile,
   removeProfile, saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
@@ -14,6 +14,8 @@ import { ICON } from './icons.js';
 import { esc } from './util.js';
 
 const COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#3b82f6', '#ec4899', '#22c55e', '#94a3b8'];
+/** Message de l'écran de connexion quand le serveur ne répond pas et qu'aucune session n'existe. */
+const OFFLINE_MSG = 'Serveur Laststream injoignable. Vérifie ta connexion puis réessaie.';
 
 let root = null;
 let resolveFlow = null;
@@ -145,8 +147,7 @@ function loginViewHTML(msg) {
   return '<h1 class="auth-title">Connexion</h1>' + credentialsFormHTML(false, msg) +
     '<section class="auth-new" aria-labelledby="auth-new-title"><h2 class="auth-sub" id="auth-new-title">Pas encore de compte ?</h2>' +
     '<p class="tv-form-note">Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.</p>' +
-    '<button type="button" class="btn auth-new-btn" data-auth-mode="invite">J’ai un lien d’invitation</button></section>' +
-    '<div class="tv-form-actions auth-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>';
+    '<button type="button" class="btn auth-new-btn" data-auth-mode="invite">J’ai un lien d’invitation</button></section>';
 }
 
 /** Vue « Rejoindre Laststream » : coller le lien (étape 1), puis créer son compte (étape 2). */
@@ -154,14 +155,13 @@ function inviteViewHTML(msg) {
   const ready = invite.first || invite.status === 'valid' || invite.status === 'unknown';
   return '<h1 class="auth-title">Rejoindre Laststream</h1>' +
     (ready ? inviteStatusHTML() + credentialsFormHTML(true, msg) : inviteCodeHTML(msg)) +
-    '<button type="button" class="link-btn" data-auth-mode="login">← J’ai déjà un compte</button>' +
-    '<div class="tv-form-actions auth-actions"><button type="button" class="btn btn-ghost" data-auth-local>Continuer sans compte</button></div>';
+    '<button type="button" class="link-btn" data-auth-mode="login">← J’ai déjà un compte</button>';
 }
 
 function loginHTML(msg) {
   const body = mode === 'invite' ? inviteViewHTML(msg) : loginViewHTML(msg);
   return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' + body +
-    '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés. Sans compte, tout reste dans ce navigateur.</p>' +
+    '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>' +
     '</div>';
 }
 
@@ -538,15 +538,16 @@ export function leaveKidProfile() {
 // ---------- Orchestration ----------
 function route() {
   if (auth.status === 'needs-login') { showLogin(); return; }
+  if (offlineWithoutSession()) { showLogin(OFFLINE_MSG); return; }
   if (auth.status === 'needs-profile') { openPicker(); return; }
   hide();
   if (resolveFlow) { const r = resolveFlow; resolveFlow = null; r(); }
   else location.reload();
 }
 
-/** Affiche l'écran requis par l'état de connexion ; se résout quand le profil est prêt (ou le mode local choisi). */
+/** Affiche l'écran requis par l'état de connexion ; se résout quand le profil est prêt. */
 export function runAuthFlow() {
-  if (auth.status !== 'needs-login' && auth.status !== 'needs-profile') return Promise.resolve();
+  if (auth.status !== 'needs-login' && auth.status !== 'needs-profile' && !offlineWithoutSession()) return Promise.resolve();
   return new Promise((resolve) => {
     resolveFlow = resolve;
     route();
@@ -566,11 +567,6 @@ document.addEventListener('click', async (e) => {
   const m = t.closest('[data-auth-mode]');
   if (m) { setMode(m.dataset.authMode); showLogin(); return; }
   if (t.closest('[data-invite-first]')) { invite.first = true; showLogin(); return; }
-  if (t.closest('[data-auth-local]')) {
-    continueWithoutAccount();
-    if (resolveFlow) { hide(); const r = resolveFlow; resolveFlow = null; r(); } else { hide(); location.reload(); }
-    return;
-  }
   if (t.closest('[data-auth-signout]')) { await signOut(); if (resolveFlow) showLogin(); else location.reload(); return; }
   const pf = t.closest('[data-pf]');
   if (pf) { pick(pf.dataset.pf); return; }

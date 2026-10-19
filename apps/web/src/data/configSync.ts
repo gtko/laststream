@@ -116,11 +116,11 @@ export function clearLocalAccountData(): void {
 
 /**
  * Connexion de `username` : la config locale n'est conservée que si elle appartient à ce compte. Sans propriétaire
- * mémorisé, elle n'est reprise qu'en mode « sans compte » (`wasLocal`), où elle est celle de l'utilisateur. Sinon elle
- * est vidée : le compte prend sa config sur le serveur, ou démarre avec la config par défaut.
+ * mémorisé, elle n'est reprise que si `adoptUnowned` (session restaurée d'une installation antérieure au suivi du
+ * propriétaire). Sinon elle est vidée : le compte prend sa config sur le serveur, ou démarre avec la config par défaut.
  */
-export function claimLocalConfig(username: string, wasLocal = false): void {
+export function claimLocalConfig(username: string, adoptUnowned = false): void {
   const owner = getConfigOwner();
-  if (owner !== username && !(owner === '' && wasLocal)) saveSettings({ config: '' });
+  if (owner !== username && !(owner === '' && adoptUnowned)) saveSettings({ config: '' });
   setConfigOwner(username);
 }

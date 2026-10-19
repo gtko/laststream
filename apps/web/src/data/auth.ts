@@ -4,12 +4,12 @@ import { emitDataEvent } from './events';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
 import { startPresence, stopPresence } from './presence';
-import { claimLocalConfig, clearLocalAccountData, CONFIG_SETTING_KEY, configForAccount, ensureDefaultConfig, reconcileConfig } from './configSync';
+import { claimLocalConfig, clearLocalAccountData, CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
 import { ServerUserStore, profileFromDto } from './serverUserStore';
 import {
-  clearSession, dropProfileToken, getSession, isLocalMode, saveProfileToken, setActiveProfile, setLocalMode,
+  clearLegacyLocalMode, clearSession, dropProfileToken, getSession, saveProfileToken, setActiveProfile,
   setSession, validProfileToken,
 } from './session';
 import { dropSyncedLists, pushTvSources, reconcileTvSources, refreshAll, setTvSourcesPusher } from './tvSources';
@@ -19,7 +19,8 @@ import { LocalUserStore, setUserStore, type Profile } from './userStore';
 
 /*
  * Orchestration des comptes : détection de l'API /user, connexion, choix du profil, bascule du `userStore`
- * (local ↔ serveur). Le stockage local reste le repli : serveur absent, injoignable, ou « continuer sans compte ».
+ * (local ↔ serveur). Sans compte, l'app ne s'ouvre pas : la connexion est obligatoire. Le stockage local reste le repli
+ * d'un serveur sans API /user, de la page d'invitation anonyme et d'un serveur injoignable pendant une session existante.
  */
 
 export type AuthStatus = 'local' | 'offline' | 'needs-login' | 'needs-profile' | 'ready';
@@ -49,7 +50,7 @@ export const isKidProfile = (): boolean => kidMaxAge() !== null;
 /** Le compte connecté est le propriétaire du serveur (role === 'owner'). */
 export const isOwner = (): boolean => auth.isOwner;
 /**
- * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Mode local (sans compte) : toujours ;
+ * Profil principal du compte : seul à voir Sources, Serveur lastAddon et les clés. Hors mode serveur (repli local) : toujours ;
  * serveur ancien qui n'annonce rien : traité comme principal. Les profils secondaires et enfants n'ont que leurs préférences.
  */
 export const isMainProfile = (): boolean => !isServerMode() || auth.profile?.isMainProfile !== false;
@@ -94,13 +95,19 @@ function useLocal(status: AuthStatus): AuthStatus {
 }
 
 /**
+ * Serveur injoignable sans session : l'app ne s'ouvre pas en local, l'écran de connexion demande de réessayer.
+ * Avec une session, le repli local reste utilisé (statut 'offline').
+ */
+export const offlineWithoutSession = (): boolean => auth.status === 'offline' && getSession() === null;
+
+/**
  * Détecte l'API utilisateur et restaure la session. À appeler une fois au démarrage, avant le premier rendu.
  * `anonymous` : page d'invitation sans compte, qui n'appelle pas `/user/me` (l'invité n'a pas de compte : réponse 401).
  */
 export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<AuthStatus> {
   authEvents.onUnauthorized = () => { void signOut(true); };
+  clearLegacyLocalMode(); // installations qui avaient choisi « continuer sans compte » : connexion obligatoire
   if (opts.anonymous) return useLocal('local');
-  if (isLocalMode() && !getSession()) return useLocal('local');
   // Aucune adresse enregistrée (premier lancement hors lastAddon) : le serveur Laststream par défaut, pour afficher l'écran
   // de connexion au lieu du mode local. Seule l'adresse est nécessaire (la config est générée ensuite pour un compte neuf).
   // Serveur injoignable : /user/me échoue et le statut reste 'offline'.
@@ -115,7 +122,7 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
   } catch (err) {
     if (err instanceof UserApiError && err.status === 401) {
       if (getSession()) clearSession();
-      return isLocalMode() ? useLocal('local') : useLocal('needs-login');
+      return useLocal('needs-login');
     }
     if (err instanceof UserApiError && err.status === 404) return useLocal('local'); // serveur sans API /user
     return useLocal('offline');
@@ -252,15 +259,13 @@ export function pushPrefs(): void {
 export async function signIn(username: string, password: string): Promise<AuthStatus> {
   const res = await api.login(username, password);
   const name = username.trim().toLowerCase();
-  const wasLocal = isLocalMode();
   setSession(res.token, res.expiresAt, name);
   auth.username = name;
   // /login ne renvoie pas l'identifiant de compte : on le lit comme au démarrage (supervision seulement, sans attendre).
   // Ignorée si la session a changé entre-temps (déconnexion ou autre compte) : jamais le compte d'un autre.
   api.me(4000).then(({ account }) => { if (auth.username === name) auth.accountId = account.id; }).catch(() => undefined);
-  setLocalMode(false);
   // Un autre compte ne réutilise jamais la config locale (URL d'addons, clés) d'un compte précédent.
-  claimLocalConfig(name, wasLocal);
+  claimLocalConfig(name);
   return loadProfiles();
 }
 
@@ -280,12 +285,6 @@ export async function signOut(silent = false): Promise<void> {
   auth.username = '';
   auth.accountId = '';
   useLocal('needs-login');
-}
-
-export function continueWithoutAccount(): void {
-  setLocalMode(true);
-  useLocal('local');
-  void ensureDefaultConfig();
 }
 
 /** Ouvre un profil. Lève UserApiError('pin_required') s'il est verrouillé et qu'aucun jeton ne le déverrouille. */

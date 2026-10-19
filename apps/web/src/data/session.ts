@@ -1,7 +1,7 @@
 /** Session de compte lastAddon (API /user) : jeton de session, profil actif et jetons de profil (PIN). */
 export const SESSION_KEY = 'laststream.session';
-/** Choix « continuer sans compte » : l'écran de connexion ne réapparaît plus. */
-export const LOCAL_MODE_KEY = 'laststream.localmode';
+/** Ancien choix « continuer sans compte » (versions précédentes) : plus utilisé, effacé au démarrage. */
+export const LEGACY_LOCAL_MODE_KEY = 'laststream.localmode';
 
 export interface ProfileToken {
   token: string;
@@ -90,18 +90,10 @@ export function validProfileToken(profileId: string, now = Date.now()): string |
   return Date.parse(t.expiresAt) - 60_000 > now ? t.token : undefined;
 }
 
-export const isLocalMode = (): boolean => {
+/** Efface l'ancien choix « continuer sans compte » : les installations existantes tombent sur l'écran de connexion. */
+export function clearLegacyLocalMode(): void {
   try {
-    return globalThis.localStorage?.getItem(LOCAL_MODE_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-
-export function setLocalMode(on: boolean): void {
-  try {
-    if (on) globalThis.localStorage?.setItem(LOCAL_MODE_KEY, '1');
-    else globalThis.localStorage?.removeItem(LOCAL_MODE_KEY);
+    globalThis.localStorage?.removeItem(LEGACY_LOCAL_MODE_KEY);
   } catch {
     // Stockage indisponible.
   }

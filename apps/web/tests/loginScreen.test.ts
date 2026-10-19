@@ -1,6 +1,7 @@
 // Écran de connexion : « J’ai un lien d’invitation » ouvre « Rejoindre Laststream » ; l’adresse avec une invitation l’ouvre d’emblée.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
+import { clearSession, setSession } from '../src/data/session';
 
 const tick = (ms = 80) => new Promise((r) => setTimeout(r, ms));
 const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T | null;
@@ -39,7 +40,9 @@ describe('écran de connexion', () => {
     expect($('#auth-form', overlay)).not.toBeNull();
     expect($('.pills', overlay)).toBeNull();
     expect($('[data-auth-mode="invite"]', overlay)!.textContent).toBe('J’ai un lien d’invitation');
-    expect($('[data-auth-local]', overlay)!.className).toContain('btn-ghost');
+    // Pas de « Continuer sans compte » ni de note « sans compte » : la connexion est obligatoire.
+    expect($('[data-auth-local]', overlay)).toBeNull();
+    expect(overlay.textContent).not.toMatch(/sans compte/i);
     expect(checks).toHaveLength(0);
   });
 
@@ -52,6 +55,8 @@ describe('écran de connexion', () => {
     ($('[data-auth-mode="invite"]', overlay) as HTMLElement).click();
     expect($('h1', overlay)!.textContent).toBe('Rejoindre Laststream');
     expect($('#auth-form', overlay)).toBeNull();
+    expect($('[data-auth-local]', overlay)).toBeNull();
+    expect(overlay.textContent).not.toMatch(/sans compte/i);
     const input = $<HTMLInputElement>('input[name="code"]', overlay)!;
     input.value = 'https://laststream.example/?invite=Kq3abcd';
     input.dispatchEvent(new Event('paste', { bubbles: true }));
@@ -73,5 +78,39 @@ describe('écran de connexion', () => {
     expect(overlay.textContent).toContain('Invité par alice');
     expect($('#auth-form', overlay)).not.toBeNull();
     expect($('input[name="bootstrap"]', overlay)).toBeNull();
+  });
+
+  it('sans session et serveur injoignable : écran de connexion avec le message, jamais le mode local', async () => {
+    clearSession();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    const { initAuth, offlineWithoutSession } = await import('../src/data/auth');
+    expect(await initAuth()).toBe('offline');
+    expect(offlineWithoutSession()).toBe(true);
+    history.replaceState(null, '', '/');
+    const ui = await import('../src/ui/auth-ui.js');
+    ui.readInviteFromLocation();
+    void ui.runAuthFlow();
+    await tick();
+    const overlay = $('#auth')!;
+    expect(overlay.hidden).toBe(false);
+    expect($('h1', overlay)!.textContent).toBe('Connexion');
+    expect($('#auth-msg', overlay)!.textContent).toBe('Serveur Laststream injoignable. Vérifie ta connexion puis réessaie.');
+    expect($('#auth-form', overlay)).not.toBeNull();
+    expect($('[data-auth-local]', overlay)).toBeNull();
+  });
+
+  it('session existante et serveur injoignable : pas d’écran de connexion, le repli local reste', async () => {
+    setSession('tok', new Date(Date.now() + 1e9).toISOString(), 'greg');
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    try {
+      const { initAuth, offlineWithoutSession } = await import('../src/data/auth');
+      expect(await initAuth()).toBe('offline');
+      expect(offlineWithoutSession()).toBe(false);
+      const ui = await import('../src/ui/auth-ui.js');
+      const outcome = await Promise.race([ui.runAuthFlow().then(() => 'resolved'), tick(200).then(() => 'pending')]);
+      expect(outcome).toBe('resolved');
+    } finally {
+      clearSession();
+    }
   });
 });

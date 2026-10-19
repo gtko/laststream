@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
-import { clearSession, setActiveProfile, setLocalMode, setSession } from '../src/data/session';
+import { clearSession, setActiveProfile, setSession } from '../src/data/session';
 import { DebridManager, MemoryStatusStore, type KeyValueStore } from '../src/sources/debridClient';
 import type { DebridProvider, ProviderId } from '../src/sources/debrid/types';
 import { forgetSharedLink, getSharedLink, publishSharedLink, sourceKeyFor } from '../src/sources/sharedLinks';
@@ -89,14 +89,10 @@ describe('lecture du partage', () => {
     expect(await getSharedLink(`${H1}:0`)).toBeNull();
   });
 
-  it('non connecté (session absente) ou mode local : aucun appel serveur', async () => {
+  it('non connecté (session absente) : aucun appel serveur', async () => {
     const sent = stubApi(() => ({ status: 200, body: { url: URL_SRV } }));
     clearSession();
     expect(await getSharedLink(`${H1}:0`)).toBeNull();
-    setSession('tok', new Date(Date.now() + 1e9).toISOString(), 'greg');
-    setLocalMode(true);
-    expect(await getSharedLink(`${H1}:0`)).toBeNull();
-    setLocalMode(false);
     expect(sent).toHaveLength(0);
   });
 
