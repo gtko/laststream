@@ -1,6 +1,6 @@
 import type { RunningApp } from './lt-harness.js';
-import { bootstrapOwner, inviteAndRegister, type Member } from './social-harness.js';
-import { createProfileVia, request, type RequestOptions, type Reply } from './user-harness.js';
+import { bootstrapOwner, type InviteBody, inviteAndRegister, type Member } from './social-harness.js';
+import { type AccountBody, createProfileVia, loginAs, PASSWORD, request, type RequestOptions, type Reply } from './user-harness.js';
 
 /** Routes v2 : profil agissant = en-tête X-Profile-Id (et X-Profile-Token si le profil a un PIN). */
 export interface Acting {
@@ -55,13 +55,27 @@ export interface Cast {
 }
 
 /**
- * Crée alice (propriétaire), bob et carol (invités par alice), un second profil adulte pour alice et un profil enfant.
- * Aucune amitié n'est créée : chaque test fait ses demandes par les routes v2.
+ * Compte sans profil, inscrit par un lien libre de `inviter`. Un parrain sans profil principal n'ouvre aucune amitié v2
+ * à ses filleuls (voir linkInvitedPrincipals) : castOf s'en sert pour que bob et carol ne soient amis de personne.
+ */
+export async function registerWithoutProfile(app: RunningApp, inviter: Member, username: string): Promise<Member> {
+  const list = await request<InviteBody>(app, 'GET', '/user/invites', { token: inviter.token });
+  const free = list.body.invites.find((invite) => invite.state !== 'used');
+  if (free === undefined) throw new Error('aucun lien libre');
+  const res = await request<AccountBody>(app, 'POST', '/user/register', { body: { username, password: PASSWORD, invite: free.code } });
+  if (res.status !== 201) throw new Error(`inscription refusée (${res.status})`);
+  return { username, token: await loginAs(app, username), profile: '' };
+}
+
+/**
+ * Crée alice (propriétaire), bob et carol (invités par un compte sans profil, lui-même invité par alice), un second
+ * profil adulte pour alice et un profil enfant. Aucune amitié n'est créée : chaque test fait ses demandes par les routes v2.
  */
 export async function castOf(app: RunningApp): Promise<Cast> {
   const alice = await bootstrapOwner(app, 'alice');
-  const bob = await inviteAndRegister(app, alice, 'bob');
-  const carol = await inviteAndRegister(app, alice, 'carol');
+  const hub = await registerWithoutProfile(app, alice, 'hub');
+  const bob = await inviteAndRegister(app, hub, 'bob');
+  const carol = await inviteAndRegister(app, hub, 'carol');
   const twin = await createProfileVia<{ id: string }>(app, alice.token, { name: 'Alice Deux' });
   const kid = await createProfileVia<{ id: string }>(app, alice.token, { name: 'Petit', isKid: true });
   return {

@@ -494,6 +494,19 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX notes_author ON notes (author_pid, created_at);
     `,
   },
+  {
+    version: 15,
+    name: 'journal des créations de notes (quota indépendant des suppressions)',
+    sql: `
+      -- Une ligne par note créée, purgée au-delà d'une minute (fenêtre du quota). Sans clé étrangère : la remise à zéro
+      -- d'identité (pid vidé) ne doit pas être bloquée par ce journal, qui expire de lui-même.
+      CREATE TABLE note_creations (
+        author_pid TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX note_creations_author ON note_creations (author_pid, created_at);
+    `,
+  },
 ];
 
 /**

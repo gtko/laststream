@@ -196,3 +196,40 @@ export function backfillProfileIdentities(db: SqlDb, random: RandomBytes = crypt
     syncProfileIdentity(db, row.account_id, row.id, row.name, false, random);
   }
 }
+
+/** Profil principal d'un compte (premier profil non enfant créé, même règle que la migration v13), `undefined` sinon. */
+function principalPidOf(db: SqlDb, accountId: string): string | undefined {
+  const row = db
+    .prepare('SELECT pid FROM profiles WHERE account_id = ? AND is_kid = 0 AND pid IS NOT NULL ORDER BY created_at, id LIMIT 1')
+    .get(accountId) as { pid: string } | undefined;
+  return row?.pid;
+}
+
+/**
+ * Amitié d'invitation en v2 : le parrain et le filleul deviennent amis (amitié acceptée) entre leurs profils principaux.
+ * À l'inscription, le filleul n'a pas encore de profil ; le lien est donc posé quand le profil principal de l'un ou l'autre
+ * existe. Appelée à la création du premier profil adulte d'un compte : elle couvre le filleul qui crée son profil après
+ * le parrain, et le parrain qui crée le sien après le filleul. Les liens d'invitation (`invites`) restent la source.
+ * Rien ne se passe si l'un des deux comptes n'a pas de profil principal.
+ */
+export function linkInvitedPrincipals(db: SqlDb, accountId: string, now: number): void {
+  const pairs: { inviter: string; invitee: string }[] = [];
+  const invitedBy = db.prepare('SELECT inviter_id FROM invites WHERE used_by = ? AND inviter_id IS NOT NULL').get(accountId) as
+    | { inviter_id: string }
+    | undefined;
+  if (invitedBy !== undefined) pairs.push({ inviter: invitedBy.inviter_id, invitee: accountId });
+  const invitees = db.prepare('SELECT used_by FROM invites WHERE inviter_id = ? AND used_by IS NOT NULL').all(accountId) as { used_by: string }[];
+  for (const row of invitees) pairs.push({ inviter: accountId, invitee: row.used_by });
+  for (const { inviter, invitee } of pairs) {
+    const a = principalPidOf(db, inviter);
+    const b = principalPidOf(db, invitee);
+    if (a === undefined || b === undefined) continue;
+    const low = a < b ? a : b;
+    const high = a < b ? b : a;
+    // ON CONFLICT : une paire déjà liée n'est ni dupliquée ni modifiée.
+    db.prepare(
+      `INSERT INTO profile_friendships (low_pid, high_pid, requested_by, status, created_at) VALUES (?, ?, ?, 'accepted', ?)
+       ON CONFLICT (low_pid, high_pid) DO NOTHING`,
+    ).run(low, high, a, now);
+  }
+}

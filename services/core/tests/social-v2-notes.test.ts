@@ -133,6 +133,18 @@ describe('publication (POST /user/social/notes)', () => {
     expect((await post(cast.bob, episodeNote({ body: 'une minute plus tard' }))).status).toBe(201);
   });
 
+  it('suppression puis repost : le quota compte les créations, pas les notes présentes ; 429', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i++) ids.push((await post(cast.bob, episodeNote({ body: `n${i}` }))).body.note.id);
+    for (const id of ids) expect((await remove(cast.bob, id)).status).toBe(204);
+    const blocked = await post(cast.bob, episodeNote({ body: 'après suppression' }));
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toBe('rate_limited');
+    expect(blocked.headers.get('retry-after')).toBe('60');
+    at(60_000);
+    expect((await post(cast.bob, episodeNote({ body: 'une minute plus tard' }))).status).toBe(201);
+  });
+
   it('profil enfant : aucune route de notes (403 kid_profile)', async () => {
     expect((await post(cast.kid, episodeNote())).body.error).toBe('kid_profile');
     expect((await notesOf(cast.kid)).body.error).toBe('kid_profile');

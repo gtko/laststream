@@ -68,6 +68,10 @@ describe('formes JSON du contrat', () => {
     expect(liveEnvelopes([ALICE_PID], { t: 'unfriend', pid: BOB_PID })[0]?.frame).toBe('{"t":"unfriend","pid":"BBBBBBBBBBBBBBBB"}');
   });
 
+  it('refus ou annulation de demande : une seule trame unfriend, adressée à l’autre profil', () => {
+    expect(liveEnvelopes([ALICE_PID], { t: 'unfriend', pid: BOB_PID })).toEqual([{ pid: ALICE_PID, frame: '{"t":"unfriend","pid":"BBBBBBBBBBBBBBBB"}' }]);
+  });
+
   it('message : { t, message } avec les champs du contrat', () => {
     expect(frameFor(BOB_PID, { t: 'message', message })).toEqual({ t: 'message', message });
   });

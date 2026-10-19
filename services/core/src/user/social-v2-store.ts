@@ -322,7 +322,8 @@ function noteOf(row: NoteRow): NoteView {
 }
 
 const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM messages WHERE from_pid = ? AND created_at > ?';
-const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM notes WHERE author_pid = ? AND created_at > ?';
+/** Notes comptées par le journal des créations : une suppression ne libère pas de place dans le quota. */
+const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM note_creations WHERE author_pid = ? AND created_at > ?';
 
 export class SocialV2Store {
   constructor(private readonly db: SqlDb) {}
@@ -811,17 +812,20 @@ export class SocialV2Store {
   }
 
   /**
-   * Pose une note. Refusée (sans rien écrire) si l'auteur a déjà posé 20 notes dans la dernière minute. `audience` :
-   * amis puis foyer de l'auteur, destinataires de l'événement.
+   * Pose une note. Refusée (sans rien écrire) si l'auteur a déjà créé 20 notes dans la dernière minute, supprimées ou non
+   * (le quota compte les créations, voir note_creations). `audience` : amis puis foyer de l'auteur, destinataires de
+   * l'événement.
    */
   addNote(authorPid: string, media: MediaRef, pos: number, kind: 'text' | 'emoji', body: string, now: number): AddNoteOutcome {
     return this.db.transaction((): AddNoteOutcome => {
       const author = this.card(authorPid);
       if (author === undefined) return { result: 'unknown' };
+      this.db.prepare('DELETE FROM note_creations WHERE created_at <= ?').run(now - WRITE_WINDOW_MS);
       const retryAfterSec = this.retryAfter(SENT_NOTES_SQL, authorPid, NOTES_PER_MINUTE, now);
       if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
       const id = randomUUID();
       const key = mediaKey(media);
+      this.db.prepare('INSERT INTO note_creations (author_pid, created_at) VALUES (?, ?)').run(authorPid, now);
       this.db
         .prepare(
           'INSERT INTO notes (id, author_pid, type, tmdb_id, season, episode, pos, kind, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',

@@ -131,11 +131,15 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     return sendJson(c, { friend: asFriend(outcome.other) });
   });
 
-  /** Refuse une demande reçue ou annule une demande envoyée au profil `:pid`. 204. */
+  /**
+   * Refuse une demande reçue ou annule une demande envoyée au profil `:pid`. 204. L'autre profil, s'il est connecté, reçoit
+   * `unfriend` avec mon pid pour retirer la demande de sa liste.
+   */
   router.delete('/social/requests/:pid', async (c) => {
     const me = await actor(c);
     const otherPid = pidParam(String(c.req.param('pid')), 'request_not_found');
     if (!(await social().declineRequest(me.pid, otherPid))) throw new UserApiError(404, 'request_not_found');
+    emitSocialEvent(deps.socialEvents, [otherPid], { t: 'unfriend', pid: me.pid });
     return sendEmpty(c, 204);
   });
 

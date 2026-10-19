@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
-import { syncProfileIdentity } from './social-handles.js';
+import { linkInvitedPrincipals, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 
@@ -525,6 +525,7 @@ export class UserStore {
 
   insertProfile(accountId: string, profileId: string, fields: ProfileFields, createdAt: string): void {
     this.transaction(() => {
+      const adults = Number((this.db.prepare('SELECT COUNT(*) AS n FROM profiles WHERE account_id = ? AND is_kid = 0').get(accountId) as { n: number }).n);
       this.db
         .prepare(
           `INSERT INTO profiles (id, account_id, name, avatar_color, avatar, is_kid, kid_max_age, pin_hash, allowed_catalogs, created_at)
@@ -543,6 +544,8 @@ export class UserStore {
           createdAt,
         );
       syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
+      // Premier profil adulte du compte = profil principal : c'est là que se posent les amitiés d'invitation (v2).
+      if (!fields.isKid && adults === 0) linkInvitedPrincipals(this.db, accountId, Date.now());
     });
   }
 
