@@ -218,7 +218,11 @@ describe('invités dans le salon', () => {
     expect(serialized).not.toContain(GUEST_KEY_PREFIX);
     expect(serialized).not.toContain('a-host');
     expect(serialized).not.toMatch(/https?:\/\//);
-    expect(broadcasts(effects)).toEqual([{ t: 'join', participant: expect.objectContaining({ username: 'Léa', guest: true, peerId: guest.connId }) }]);
+    // Un invité entre en tampon : l'attente est annoncée avant l'arrivée.
+    expect(broadcasts(effects)).toEqual([
+      { t: 'wait', who: ['Léa'], since: T0, maxMs: 45_000 },
+      { t: 'join', participant: expect.objectContaining({ username: 'Léa', guest: true, peerId: guest.connId }) },
+    ]);
     // L'affiche (URL) n'est pas envoyée à l'invité, mais reste visible pour un compte.
     expect(welcome.room.poster).toBeNull();
     const bob = fx.account('a-bob');
@@ -232,6 +236,8 @@ describe('invités dans le salon', () => {
     withHost(fx);
     const guest = fx.guest('gxxxxxxxxxxxxxxxxxx', 'Léa');
     fx.core.join(guest);
+    // L'invité déclare son tampon prêt avant de lancer la lecture (sinon elle est différée par l'attente).
+    fx.core.handle(guest.accountId, msg({ t: 'buf', ready: true, ahead: 12 }));
     expect(broadcasts(fx.core.handle(guest.accountId, msg({ t: 'ctl', action: 'play', pos: 5 })))).toEqual([
       { t: 'state', state: { playing: true, pos: 5, at: T0, rev: 1 }, serverTime: T0, by: 'Léa' },
     ]);
@@ -259,7 +265,9 @@ describe('invités dans le salon', () => {
     const fx = makeRoom();
     const host = withHost(fx);
     fx.clock.now += 1000;
-    fx.core.join(fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa'));
+    const léa = fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa');
+    fx.core.join(léa);
+    fx.core.handle(léa.accountId, msg({ t: 'buf', ready: true, ahead: 12 }));
     fx.clock.now += 1000;
     fx.core.join(fx.account('a-bob'));
     fx.core.leave(host.accountId, host.connId);
@@ -271,7 +279,9 @@ describe('invités dans le salon', () => {
   it('hôte absent et seuls des invités présents : pas de promotion', () => {
     const fx = makeRoom();
     const host = withHost(fx);
-    fx.core.join(fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa'));
+    const léa = fx.guest('gxxxxxxxxxxxxxxxxx', 'Léa');
+    fx.core.join(léa);
+    fx.core.handle(léa.accountId, msg({ t: 'buf', ready: true, ahead: 12 }));
     fx.core.leave(host.accountId, host.connId);
     fx.clock.now += HOST_GRACE_MS;
     expect(fx.core.tick().effects).toEqual([]);

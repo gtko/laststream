@@ -26,6 +26,10 @@ export const GUEST_SESSION_MS = 12 * 3600_000;
 /** Invités sans compte connectés en même temps dans un salon. */
 export const MAX_GUESTS = 4;
 export const GUEST_NAME_MAX = 24;
+/** Attente de tampon : avance (s) à partir de laquelle un participant se déclare prêt. Seuil côté client (le serveur ne le juge pas). */
+export const PARTY_RESUME_AHEAD_SEC = 10;
+/** Attente de tampon : délai maximal (ms) avant reprise sans les retardataires. */
+export const PARTY_WAIT_MAX_MS = 45_000;
 /** Signalisation WebRTC : donnée opaque de 16 Ko au plus (UTF-8), trame de 64 Kio au plus. */
 export const RTC_MAX_DATA_BYTES = 16 * 1024;
 export const RTC_MAX_FRAME_CHARS = 64 * 1024;
@@ -140,6 +144,12 @@ export interface RoomData {
   linkGuests?: string[];
   /** Formes canoniques des pseudos d'invités exclus : refusés à l'entrée et à la connexion. Bornée à GUEST_NAMES_MAX. */
   bannedNames?: string[];
+  /** Participants en tampon (ready=false), par clé de compte, dans l'ordre d'arrivée. Vide ou absent hors attente. */
+  waiting?: string[];
+  /** Début de l'attente de tampon (ms serveur), null hors attente. */
+  waitSince?: number | null;
+  /** Lecture suspendue par l'attente, à reprendre à sa fin (aussi vrai pour une lecture demandée pendant l'attente). */
+  heldByWait?: boolean;
   /** Entrées d'invités par le lien partagé : instants (ms) de la fenêtre de débit, conservés avec le salon (survivent à l'éviction du Durable Object). */
   entryHits?: number[];
   /** Jetons de séance obtenus mais pas encore connectés : clé `guest:<id>` -> instant de réservation (ms). Ils comptent dans les plafonds RESERVATION_MS. */
@@ -199,6 +209,8 @@ export type ClientMessage =
   | { t: 'mute'; user: string; muted: boolean }
   | { t: 'transfer'; user: string }
   | { t: 'end' }
+  /** Tampon : `ready` = assez d'avance pour lire ; `ahead` = secondes de tampon devant la position (0 à 600). */
+  | { t: 'buf'; ready: boolean; ahead: number }
   /** Signalisation WebRTC (fil JSON : `{"type":"rtc","to","data"}`) ; `bytes` = taille UTF-8 de `data`, mesurée à l'analyse. */
   | { t: 'rtc'; to: string; data: Record<string, unknown>; bytes: number };
 
@@ -225,12 +237,15 @@ export type ServerMessage =
   | { t: 'reported'; messageId: string; by?: string; against?: string; text?: string }
   /** Message retiré par la modération du serveur : les clients le masquent. */
   | { t: 'removed'; messageId: string }
+  /** Attente de tampon : pseudos des retardataires, début (ms serveur) et délai maximal. `who` vide = fin d'attente. */
+  | { t: 'wait'; who: string[]; since: number; maxMs: number }
   /** À l'hôte seulement : le lien partagé a été renouvelé (exclusion d'un invité entré par ce lien) ; il doit en demander la nouvelle valeur. */
   | { t: 'link_renewed' }
   | { t: 'error'; code: string }
   | { t: 'ended'; reason: string };
 
 const MAX_POS = 1_000_000;
+const AHEAD_MAX_SEC = 600;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -279,6 +294,10 @@ export function parseClientMessage(text: string): ClientMessage | undefined {
       return { t: 'sync' };
     case 'end':
       return { t: 'end' };
+    case 'buf': {
+      const ahead = finiteNumber(raw.ahead, 0, AHEAD_MAX_SEC);
+      return typeof raw.ready === 'boolean' && ahead !== undefined ? { t: 'buf', ready: raw.ready, ahead } : undefined;
+    }
     case 'ctl': {
       const pos = finiteNumber(raw.pos, 0, MAX_POS);
       if (pos === undefined || (raw.action !== 'play' && raw.action !== 'pause' && raw.action !== 'seek' && raw.action !== 'sync')) return undefined;

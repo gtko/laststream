@@ -5,6 +5,8 @@ import {
   CLOSE,
   EMPTY_ROOM_TTL_MS,
   HOST_GRACE_MS,
+  PARTY_RESUME_AHEAD_SEC,
+  PARTY_WAIT_MAX_MS,
   parseClientMessage,
   parseFingerprint,
   type PlaybackState,
@@ -379,5 +381,221 @@ describe('protocole et tickets', () => {
     expect(verifyTicket('n.importe.quoi', 'room-0123456789abcdef', T0, SECRET)).toBeUndefined();
     const tampered = ticket.replace(/^[^.]+/, Buffer.from(JSON.stringify({ ...identity, roomId: 'room-0123456789abcdef', exp: T0 + 9e9, purpose: 'x' })).toString('base64url'));
     expect(verifyTicket(tampered, 'room-0123456789abcdef', T0, SECRET)).toBeUndefined();
+  });
+});
+
+describe('attente de tampon : lecture suspendue tant qu’un invité charge', () => {
+  const buf = (ready: boolean) => msg({ t: 'buf', ready, ahead: ready ? 12 : 0 });
+  const guest = (fx: Fixture, id: string, name: string): Member => ({ ...fx.member(`guest:${id}`, name), guest: true });
+  /** Salon dont l'hôte lit depuis 10 s (instant T0). */
+  function playing(): Fixture {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 10 }));
+    return fx;
+  }
+
+  it('déclaration de tampon : prêt ou non, avance bornée à 0..600 s', () => {
+    expect(parseClientMessage(JSON.stringify({ t: 'buf', ready: false, ahead: 0 }))).toEqual({ t: 'buf', ready: false, ahead: 0 });
+    expect(parseClientMessage(JSON.stringify({ t: 'buf', ready: true, ahead: 600 }))).toEqual({ t: 'buf', ready: true, ahead: 600 });
+    for (const bad of [
+      { t: 'buf', ready: 'oui', ahead: 5 },
+      { t: 'buf', ready: true, ahead: 601 },
+      { t: 'buf', ready: true, ahead: -1 },
+      { t: 'buf', ready: true },
+      { t: 'buf', ahead: 5 },
+      { t: 'buf', ready: true, ahead: '5' },
+    ]) {
+      expect(parseClientMessage(JSON.stringify(bad))).toBeUndefined();
+    }
+    expect(PARTY_RESUME_AHEAD_SEC).toBe(10);
+    expect(PARTY_WAIT_MAX_MS).toBe(45_000);
+  });
+
+  it('un invité qui entre pendant la lecture la suspend à la position atteinte et annonce l’attente', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    const effects = fx.core.join(guest(fx, 'lea', 'Léa'));
+    // Pause à 15 s (10 s + 5 s écoulées), rev 2 ; l'attente est diffusée avant l'arrivée du participant.
+    expect(broadcasts(effects)).toEqual([
+      { t: 'state', state: { playing: false, pos: 15, at: T0 + 5000, rev: 2 }, serverTime: T0 + 5000, by: 'Léa' },
+      { t: 'wait', who: ['Léa'], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'join', participant: expect.objectContaining({ username: 'Léa', guest: true }) },
+    ]);
+    // La bienvenue porte déjà l'état suspendu.
+    expect(sent(effects, 'guest:lea')[0]).toMatchObject({ t: 'welcome', state: { playing: false, pos: 15, rev: 2 } });
+  });
+
+  it('salon déjà en pause : un invité qui entre ouvre l’attente sans toucher à l’état', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    const effects = fx.core.join(guest(fx, 'lea', 'Léa'));
+    expect(broadcasts(effects)[0]).toEqual({ t: 'wait', who: ['Léa'], since: T0, maxMs: PARTY_WAIT_MAX_MS });
+    expect(fx.data.state).toEqual({ playing: false, pos: 0, at: T0, rev: 0 });
+    expect(fx.data.heldByWait).toBe(false);
+  });
+
+  it('reprise quand le dernier retardataire est prêt, à la position figée', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.core.join(guest(fx, 'tom', 'Tom'));
+    fx.clock.now += 3000;
+    expect(broadcasts(fx.core.handle('guest:lea', buf(true)))).toEqual([{ t: 'wait', who: ['Tom'], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS }]);
+    expect(broadcasts(fx.core.handle('guest:tom', buf(true)))).toEqual([
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 15, at: T0 + 8000, rev: 3 }, serverTime: T0 + 8000, by: 'Tom' },
+    ]);
+    expect(fx.data.state).toEqual({ playing: true, pos: 15, at: T0 + 8000, rev: 3 });
+  });
+
+  it('attente trop longue : au bout de 45 s les retardataires sont retirés et la lecture reprend (horloge simulée)', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    const deadline = T0 + 5000 + PARTY_WAIT_MAX_MS;
+    expect(fx.core.nextWake()).toBe(deadline);
+    fx.clock.now = deadline - 1;
+    expect(fx.core.tick().effects).toEqual([]);
+    fx.clock.now = deadline;
+    expect(broadcasts(fx.core.tick().effects)).toEqual([
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 15, at: deadline, rev: 3 }, serverTime: deadline, by: 'host' },
+    ]);
+    // Le réveil suivant ne concerne plus l'attente.
+    expect(fx.core.nextWake()).toBe(fx.data.meta.createdAt + ROOM_MAX_AGE_MS);
+  });
+
+  it('pause manuelle pendant l’attente : jamais relancée, ni à la fin de l’attente ni au délai', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += 1000;
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'ctl', action: 'pause', pos: 16 })))).toEqual([
+      { t: 'state', state: { playing: false, pos: 16, at: T0 + 6000, rev: 3 }, serverTime: T0 + 6000, by: 'host' },
+    ]);
+    expect(broadcasts(fx.core.handle('guest:lea', buf(true)))).toEqual([{ t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS }]);
+    expect(fx.data.state).toMatchObject({ playing: false, pos: 16 });
+    fx.clock.now = T0 + 5000 + PARTY_WAIT_MAX_MS;
+    expect(fx.core.tick().effects).toEqual([]);
+    expect(fx.data.state.playing).toBe(false);
+  });
+
+  it.each(['pause', 'seek'] as const)('%s manuel pendant l’attente annule la reprise automatique', (action) => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.core.handle('a-host', msg({ t: 'ctl', action, pos: 40 }));
+    expect(broadcasts(fx.core.handle('guest:lea', buf(true)))).toEqual([{ t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS }]);
+    expect(fx.data.state.playing).toBe(false);
+  });
+
+  it('lecture demandée pendant l’attente : différée, reprise à la fin de l’attente à la position demandée', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += 2000;
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 17 })))).toEqual([
+      { t: 'state', state: { playing: false, pos: 17, at: T0 + 7000, rev: 3 }, serverTime: T0 + 7000, by: 'host' },
+    ]);
+    expect(fx.data.heldByWait).toBe(true);
+    // Un rapport de position de l'hôte dans la tolérance ne change rien à l'attente.
+    expect(fx.core.handle('a-host', msg({ t: 'ctl', action: 'sync', pos: 17.2 }))).toEqual([]);
+    fx.clock.now += 1000;
+    expect(broadcasts(fx.core.handle('guest:lea', buf(true)))).toEqual([
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 17, at: T0 + 8000, rev: 4 }, serverTime: T0 + 8000, by: 'Léa' },
+    ]);
+  });
+
+  it('un retardataire qui part ne retient plus la lecture ; tant qu’il en reste un, pas de reprise', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    const lea = guest(fx, 'lea', 'Léa');
+    const tom = guest(fx, 'tom', 'Tom');
+    fx.core.join(lea);
+    fx.core.join(tom);
+    fx.clock.now += 1000;
+    expect(broadcasts(fx.core.leave(lea.accountId, lea.connId))).toEqual([
+      { t: 'leave', user: 'Léa' },
+      { t: 'wait', who: ['Tom'], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+    ]);
+    expect(broadcasts(fx.core.leave(tom.accountId, tom.connId))).toEqual([
+      { t: 'leave', user: 'Tom' },
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 15, at: T0 + 6000, rev: 3 }, serverTime: T0 + 6000, by: 'Tom' },
+    ]);
+  });
+
+  it('un retardataire exclu : l’attente se termine comme pour un départ', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'kick', user: 'Léa' })))).toEqual([
+      { t: 'leave', user: 'Léa' },
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 15, at: T0 + 5000, rev: 3 }, serverTime: T0 + 5000, by: 'host' },
+    ]);
+  });
+
+  it('un participant qui entre pendant l’attente reçoit l’attente en cours', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += 1000;
+    const effects = fx.core.join(fx.member('a-bob'));
+    expect(sent(effects, 'a-bob')).toContainEqual({ t: 'wait', who: ['Léa'], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS });
+    expect(broadcasts(effects)).toEqual([{ t: 'join', participant: expect.objectContaining({ username: 'bob' }) }]);
+  });
+
+  it('un invité qui se reconnecte doit de nouveau charger : la lecture est suspendue à nouveau', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    const lea = guest(fx, 'lea', 'Léa');
+    fx.core.join(lea);
+    fx.core.handle('guest:lea', buf(true));
+    expect(fx.data.state.playing).toBe(true);
+    fx.clock.now += 1000;
+    const effects = fx.core.join(guest(fx, 'lea', 'Léa'));
+    expect(broadcasts(effects)).toContainEqual({ t: 'wait', who: ['Léa'], since: T0 + 6000, maxMs: PARTY_WAIT_MAX_MS });
+    expect(fx.data.state).toEqual({ playing: false, pos: 16, at: T0 + 6000, rev: 4 });
+  });
+
+  it('épisode changé pendant l’attente : le nouvel épisode reste en pause à la fin de l’attente', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.core.handle('a-host', msg({ t: 'episode', season: 1, episode: 2, fingerprint: null }));
+    expect(broadcasts(fx.core.handle('guest:lea', buf(true)))).toEqual([{ t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS }]);
+    expect(fx.data.state).toMatchObject({ playing: false, pos: 0 });
+  });
+
+  it('l’attente survit à une reprise du salon depuis son stockage (hibernation du Durable Object)', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    const revived = new RoomCore(fx.data, [], [], () => fx.clock.now);
+    const deadline = T0 + 5000 + PARTY_WAIT_MAX_MS;
+    expect(revived.nextWake()).toBe(deadline);
+    fx.clock.now = deadline;
+    expect(broadcasts(revived.tick().effects)).toEqual([
+      { t: 'wait', who: [], since: T0 + 5000, maxMs: PARTY_WAIT_MAX_MS },
+      { t: 'state', state: { playing: true, pos: 15, at: deadline, rev: 3 }, serverTime: deadline, by: 'host' },
+    ]);
+  });
+
+  it('déclarations de tampon : au plus 20 par 10 s, puis erreur rate_limited, puis déconnexion', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    const outcomes: string[] = [];
+    for (let i = 0; i < 41; i += 1) {
+      const effects = fx.core.handle('a-bob', buf(true));
+      outcomes.push(effects.some((e) => e.kind === 'close') ? 'close' : (errors(effects)[0] ?? 'ok'));
+    }
+    expect(outcomes.slice(0, 20)).toEqual(Array(20).fill('ok'));
+    expect(outcomes.slice(20, 40)).toEqual(Array(20).fill('rate_limited'));
+    expect(outcomes[40]).toBe('close');
+    fx.clock.now += 10_000;
+    expect(errors(fx.core.handle('a-bob', buf(true)))).toEqual([]);
   });
 });
