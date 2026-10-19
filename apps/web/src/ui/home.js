@@ -9,7 +9,7 @@ import { HERO_MAX, heroCarousel, initHero, prepareSingle, stopHero } from './her
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
 import { auth, canAdmin, isKidProfile, isServerMode, refreshRemote } from '../data/auth';
-import { isConfigured } from '../data/config';
+import { isConfigured, subscribe } from '../data/config';
 import { onDataEvent } from '../data/events';
 import { recommend, tmdb, top10 } from '../data/lt';
 import { userStore } from '../data/userStore';
@@ -182,6 +182,10 @@ export async function load() {
   renderHome();
   if (state.status === 'ready') loadAI();
 }
+
+// Réglages enregistrés (adresse et configuration) : un accueil resté en erreur « non configuré » recharge le catalogue
+// tout de suite, sans attendre un rechargement de la page.
+subscribe(() => { if (state.status === 'error' && isConfigured()) void load(); });
 // ---------- Rangée « Prochainement » ----------
 export async function loadUpcoming() {
   if (state.upcoming) return state.upcoming;
