@@ -6,6 +6,8 @@ import {
   type MediaRef,
   type MessageView,
   type NoteView,
+  type PollView,
+  type ReactionView,
   type SubjectView,
   normalizeMedia,
   normalizeWatching,
@@ -53,7 +55,10 @@ export type LiveFrame =
   | { t: 'request'; request: FriendRequestView }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
+  | { t: 'poll'; conv: string; poll: PollView }
+  | { t: 'typing'; conv: string; pid: string };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -81,9 +86,36 @@ function requestOut(view: FriendRequestView): FriendRequestView {
   return { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
 }
 
+function reactionOut(view: ReactionView): ReactionView {
+  return { emoji: view.emoji, count: view.count, mine: view.mine };
+}
+
+function pollOut(view: PollView): PollView {
+  return {
+    id: view.id,
+    question: view.question,
+    closed: view.closed,
+    options: view.options.map((option) => ({ id: option.id, label: option.label, votes: option.votes, mine: option.mine })),
+  };
+}
+
 function messageOut(view: MessageView): MessageView {
-  const out: MessageView = { id: view.id, from: view.from, to: view.to, body: view.body, createdAt: view.createdAt };
+  const out: MessageView = {
+    id: view.id,
+    conv: view.conv,
+    from: view.from,
+    kind: view.kind,
+    body: view.body,
+    reactions: view.reactions.map(reactionOut),
+    createdAt: view.createdAt,
+  };
+  if (view.to !== undefined) out.to = view.to;
   if (view.context !== undefined) out.context = { ...normalizeMedia(view.context), ...(view.context.pos === undefined ? {} : { pos: view.context.pos }) };
+  if (view.title !== undefined) out.title = { ...view.title };
+  if (view.moment !== undefined) out.moment = { ...view.moment };
+  if (view.party !== undefined) out.party = { ...view.party };
+  if (view.poll !== undefined) out.poll = pollOut(view.poll);
+  if (view.replyTo !== undefined) out.replyTo = view.replyTo;
   if (view.readAt !== undefined) out.readAt = view.readAt;
   return out;
 }
@@ -116,6 +148,12 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'reaction':
+      return { t: 'reaction', conv: event.conv, id: event.id, reactions: event.reactions.map(reactionOut) };
+    case 'poll':
+      return { t: 'poll', conv: event.conv, poll: pollOut(event.poll) };
+    case 'typing':
+      return { t: 'typing', conv: event.conv, pid: event.pid };
   }
 }
 

@@ -20,10 +20,13 @@ const bob: FriendView = {
 
 const message: MessageView = {
   id: 'msg-1',
+  conv: `dm:${ALICE_PID}`,
   from: ALICE_PID,
   to: BOB_PID,
+  kind: 'text',
   body: 'Salut',
   context: { type: 'movie', tmdbId: 603, pos: 12 },
+  reactions: [],
   createdAt: 1_700_000_000_500,
 };
 

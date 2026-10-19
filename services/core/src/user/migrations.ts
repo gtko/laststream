@@ -534,6 +534,84 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
     `,
   },
+  {
+    version: 20,
+    name: 'messages riches, réactions, sondages et groupes (social v3)',
+    sql: `
+      -- Groupes : membres = profils amis, lus à la date read_at (messages non lus = créés après). Groupe vide : supprimé.
+      CREATE TABLE social_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE social_group_members (
+        group_id TEXT NOT NULL REFERENCES social_groups (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        joined_at INTEGER NOT NULL,
+        read_at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, pid)
+      );
+      CREATE INDEX social_group_members_pid ON social_group_members (pid);
+
+      -- Messages : une conversation est soit un échange entre deux profils (to_pid), soit un groupe (group_id). kind porte
+      -- le type (texte, titre, moment, invitation de salon, sondage) ; payload (JSON) la charge hors texte.
+      -- Reconstruction de la table : to_pid devient facultatif (messages de groupe) et de nouvelles colonnes s'ajoutent.
+      CREATE TABLE messages_v3 (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT REFERENCES profiles (pid) ON DELETE CASCADE,
+        group_id TEXT REFERENCES social_groups (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'title', 'moment', 'party', 'poll')),
+        body TEXT NOT NULL,
+        context TEXT,
+        payload TEXT,
+        reply_to TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK ((to_pid IS NULL) <> (group_id IS NULL)),
+        CHECK (from_pid <> to_pid)
+      );
+      INSERT INTO messages_v3 (rowid, id, from_pid, to_pid, kind, body, context, created_at, read_at)
+        SELECT rowid, id, from_pid, to_pid, 'text', body, context, created_at, read_at FROM messages;
+      DROP TABLE messages;
+      ALTER TABLE messages_v3 RENAME TO messages;
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+      CREATE INDEX messages_group ON messages (group_id, created_at);
+
+      -- Réactions : une par profil, emoji et message (la bascule supprime la ligne).
+      CREATE TABLE message_reactions (
+        message_id TEXT NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        emoji TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (message_id, pid, emoji)
+      );
+      CREATE INDEX message_reactions_message ON message_reactions (message_id, created_at);
+
+      -- Sondages : l'identifiant du sondage est celui de son message. Options ordonnées ; un vote unique par profil.
+      CREATE TABLE polls (
+        message_id TEXT PRIMARY KEY REFERENCES messages (id) ON DELETE CASCADE,
+        question TEXT NOT NULL,
+        closed INTEGER NOT NULL DEFAULT 0 CHECK (closed IN (0, 1))
+      );
+      CREATE TABLE poll_options (
+        id TEXT PRIMARY KEY,
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        label TEXT NOT NULL
+      );
+      CREATE INDEX poll_options_poll ON poll_options (poll_id, position);
+      CREATE TABLE poll_votes (
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        option_id TEXT NOT NULL REFERENCES poll_options (id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (poll_id, pid)
+      );
+    `,
+  },
 ];
 
 /**

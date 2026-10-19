@@ -4,19 +4,23 @@ import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { actorOf, pidParam } from './social-v2-routes.js';
-import type { TargetError } from './social-v2-store.js';
+import type { ConvError, ConvScope } from './social-v2-store.js';
 import { cleanMessageBody, messageSchema, messagesQuery } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
 
 /**
- * Routes des messages (`/user/social/messages/*`, `/user/social/conversations`) : contrat « Social v2 ». Profil agissant
- * et contrôle d'accès comme pour les autres routes v2 (`actorOf`). Cible : pid inconnu ou enfant 404 `profile_not_found` ;
- * soi-même 400 `self` ; ni ami ni du foyer 403 `not_friend`.
+ * Routes des messages directs (`/user/social/messages/:pid`, `/user/social/conversations`) : contrat « Social v2 », servi
+ * par les mêmes données que les conversations v3 (un DM est la conversation `dm:<pid>`, voir social-v3-routes.ts). Profil
+ * agissant et contrôle d'accès comme pour les autres routes v2 (`actorOf`).
  */
 
-/** Erreur HTTP d'une cible refusée. */
-export function targetError(reason: TargetError): UserApiError {
+/**
+ * Erreur HTTP d'une conversation refusée. DM : soi-même 400 `self`, pid inconnu ou enfant 404 `profile_not_found`, ni ami
+ * ni foyer 403 `not_friend`. Groupe : non-membre ou inconnu 404 `conv_not_found` (un groupe ne se devine pas).
+ */
+export function convError(scope: ConvScope, reason: ConvError | string): UserApiError {
   if (reason === 'self') return new UserApiError(400, 'self');
+  if (scope.kind === 'group') return new UserApiError(404, 'conv_not_found');
   if (reason === 'unknown') return new UserApiError(404, 'profile_not_found');
   return new UserApiError(403, 'not_friend');
 }
@@ -24,20 +28,21 @@ export function targetError(reason: TargetError): UserApiError {
 export function registerSocialV2MessageRoutes(router: App, deps: AppDeps, backend: UserBackend): void {
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, backend.users(), backend.socialV2(), deps.secret);
+  const directScope = (c: Ctx): ConvScope => ({ kind: 'dm', peer: pidParam(String(c.req.param('pid')), 'profile_not_found') });
 
-  /** Conversations avec les amis et le foyer : `{ conversations }`, les plus récentes d'abord. */
+  /** Conversations avec les amis, le foyer et les groupes : `{ conversations }`, les plus récentes d'abord. */
   router.get('/social/conversations', async (c) => {
     const me = await actor(c);
-    return sendJson(c, { conversations: await social().conversations(me.pid) });
+    return sendJson(c, { conversations: await social().conversations(me.pid, Date.now()) });
   });
 
   /** Messages échangés avec `:pid` : `{ messages }`, du plus ancien au plus récent (`?before=`, `?limit=` 50 au plus). */
   router.get('/social/messages/:pid', async (c) => {
     const me = await actor(c);
-    const target = pidParam(String(c.req.param('pid')), 'profile_not_found');
+    const scope = directScope(c);
     const query = parseWith(messagesQuery, queryParams(c));
-    const outcome = await social().messagesWith(me.pid, target, query.before, query.limit);
-    if (outcome.result !== 'ok') throw targetError(outcome.result);
+    const outcome = await social().convMessages(me.pid, scope, query.before, query.limit);
+    if (outcome.result !== 'ok') throw convError(scope, outcome.result);
     return sendJson(c, { messages: outcome.messages });
   });
 
@@ -47,14 +52,14 @@ export function registerSocialV2MessageRoutes(router: App, deps: AppDeps, backen
    */
   router.post('/social/messages/:pid', async (c) => {
     const me = await actor(c);
-    const target = pidParam(String(c.req.param('pid')), 'profile_not_found');
+    const scope = directScope(c);
     const input = parseWith(messageSchema, c.get('body'));
     const { body, issues } = cleanMessageBody(input.body);
     if (issues.length > 0) throw new UserApiError(400, 'invalid_body', issues);
-    const outcome = await social().sendMessage(me.pid, target, body, input.context, Date.now());
+    const outcome = await social().sendConvMessage(me.pid, scope, { kind: 'text', body, context: input.context }, Date.now());
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
-    if (outcome.result !== 'sent') throw targetError(outcome.result);
-    emitSocialEvent(deps.socialEvents, [target], { t: 'message', message: outcome.message });
+    if (outcome.result !== 'sent') throw convError(scope, outcome.result);
+    for (const notice of outcome.notices) emitSocialEvent(deps.socialEvents, [notice.pid], { t: 'message', message: notice.payload });
     return sendJson(c, { message: outcome.message }, 201);
   });
 
@@ -63,10 +68,10 @@ export function registerSocialV2MessageRoutes(router: App, deps: AppDeps, backen
    */
   router.put('/social/messages/:pid/read', async (c) => {
     const me = await actor(c);
-    const target = pidParam(String(c.req.param('pid')), 'profile_not_found');
-    const outcome = await social().readFrom(me.pid, target, Date.now());
-    if (outcome.result !== 'ok') throw targetError(outcome.result);
-    if (outcome.count > 0) emitSocialEvent(deps.socialEvents, [target], { t: 'read', pid: me.pid, at: outcome.at });
+    const scope = directScope(c);
+    const outcome = await social().readConv(me.pid, scope, Date.now());
+    if (outcome.result !== 'ok') throw convError(scope, outcome.result);
+    if (outcome.count > 0 && outcome.peer !== undefined) emitSocialEvent(deps.socialEvents, [outcome.peer], { t: 'read', pid: me.pid, at: outcome.at });
     return sendEmpty(c, 204);
   });
 }
