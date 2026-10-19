@@ -54,7 +54,7 @@ export function scrollToCard(list, card) {
 
 /** Épisode entamé et non terminé de ce titre (le plus récent), { s, e } ou null. */
 export function inProgressRef(key) {
-  const p = userStore.continueWatching(50).find((x) => x.key === key && x.season != null && x.episode != null && !x.finished && !x.suggested);
+  const p = userStore.continueWatching().find((x) => x.key === key && x.season != null && x.episode != null && !x.finished && !x.suggested);
   return p ? { s: p.season, e: p.episode } : null;
 }
 

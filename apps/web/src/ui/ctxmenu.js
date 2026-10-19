@@ -60,7 +60,7 @@ export function ctxTarget(el) {
 }
 
 // ---------- Actions ----------
-const resumeEntry = (key) => userStore.continueWatching(50).find((p) => p.key === key) || null;
+const resumeEntry = (key) => userStore.continueWatching().find((p) => p.key === key) || null;
 
 export async function playTitle(key, opener, fromStart) {
   const it = state.byKey.get(key);

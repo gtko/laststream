@@ -418,7 +418,7 @@ function requestOf(key) {
   let season = null;
   let episode = null;
   if (it.type === 'tv') {
-    const cont = userStore.continueWatching(50).find((e) => e.type === 'tv' && e.id === it.id && e.season != null);
+    const cont = userStore.continueWatching().find((e) => e.type === 'tv' && e.id === it.id && e.season != null);
     season = cont ? cont.season : 1;
     episode = cont ? cont.episode : 1;
   }

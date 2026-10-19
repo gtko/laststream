@@ -461,7 +461,7 @@ export class ServerUserStore implements UserStore {
     }));
     this.changed('progress', entry.key);
   }
-  continueWatching(limit = 20): ProgressEntry[] {
+  continueWatching(limit = Infinity): ProgressEntry[] {
     return this.cont.slice(0, limit);
   }
   private continueApi = true;
