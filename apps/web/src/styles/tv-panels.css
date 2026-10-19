@@ -26,7 +26,7 @@
 .pn-sub { margin: 0.15em 0 0; font-size: 0.87em; font-weight: 600; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pn-x { flex: none; width: 2.9em; height: 2.9em; display: inline-flex; align-items: center; justify-content: center; }
 .pn-x svg { width: 1.4em; height: 1.4em; }
-.pn-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.4em 1.1em 1.6em; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; }
+.pn-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0.4em 1.1em 1.6em; scrollbar-width: thin; }
 .pn-body h3, .cp-tools h3 { margin: 0 0 0.6em 0.9em; font-size: 0.8em; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 
 /* ---------- Audio et sous-titres ---------- */
@@ -69,7 +69,7 @@
 .cp-chip:hover { background: rgba(255, 255, 255, 0.1); }
 .cp-chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
 .cp-chip[aria-pressed="true"] span { color: inherit; opacity: 0.8; }
-.cp-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 0.4em; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.25) transparent; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.cp-list { position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 0.4em; scrollbar-width: thin; border-top: 1px solid rgba(255, 255, 255, 0.07); }
 .cp-spacer { position: relative; }
 .cp-row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 2px; box-sizing: border-box; padding: 0 0.3em; }
 .cp-main { flex: 1; min-width: 0; height: calc(100% - 6px); display: flex; align-items: center; gap: 0.8em; padding: 0 0.7em; border: 0; border-radius: 14px; background: transparent; color: var(--soft); font: inherit; text-align: left; cursor: pointer; transition: background 0.12s; }

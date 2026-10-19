@@ -159,7 +159,7 @@ body.modal-open { overflow: hidden; }
   display: flex; gap: 16px; overflow-x: auto; overscroll-behavior-x: contain;
   scroll-snap-type: x mandatory; padding: 4px 0 12px;
   margin-right: calc(-1 * var(--gutter)); padding-right: var(--gutter);
-  scrollbar-width: thin; scrollbar-color: #3a3646 transparent;
+  scrollbar-width: thin;
 }
 .row > * { flex: 0 0 auto; scroll-snap-align: start; }
 .row-msg { padding: 24px; border-radius: 12px; background: var(--surface); color: var(--dim); font-size: 15px; }
@@ -523,7 +523,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .f-panels { position: relative; z-index: 2; min-height: calc(100vh - var(--tabs-h)); padding: 28px var(--gutter) 96px; background: rgba(12, 11, 17, 0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
 .f-panel { outline: none; }
 .f-sec-title { font-family: var(--ff-title); font-size: 22px; font-weight: 700; display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.f-posters { display: flex; gap: 20px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; scrollbar-width: thin; scrollbar-color: #3a3646 transparent; }
+.f-posters { display: flex; gap: 20px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; scrollbar-width: thin; }
 .f-posters .card { width: 200px; flex: 0 0 200px; transition: transform 0.2s; }
 .card:hover, .card:focus-visible { transform: scale(1.05); }
 /* Bords de rangée : le zoom part du bord intérieur, la carte n'est plus rognée par la marge ni collée au bord. */
@@ -543,7 +543,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .f-next { font-size: 14px; color: var(--muted); }
 .f-next:empty { display: none; }
 .f-next strong { color: var(--text); font-weight: 700; }
-.eps { display: flex; gap: 20px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; list-style: none; position: relative; scrollbar-width: thin; scrollbar-color: #3a3646 transparent; }
+.eps { display: flex; gap: 20px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; list-style: none; position: relative; scrollbar-width: thin; }
 .ep { position: relative; flex: 0 0 360px; width: 360px; }
 .ep-main { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; border-radius: 12px; transition: transform 0.2s; }
 .ep-main:hover, .ep-main:focus-visible { transform: scale(1.03); }
@@ -575,7 +575,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .sk-ep { flex: 0 0 360px; height: 280px; border-radius: 12px; list-style: none; }
 
 /* Casting */
-.cast-row, .vid-row { display: flex; gap: 22px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; list-style: none; scrollbar-width: thin; scrollbar-color: #3a3646 transparent; }
+.cast-row, .vid-row { display: flex; gap: 22px; overflow-x: auto; padding: 14px 8px 24px; margin-left: -8px; list-style: none; scrollbar-width: thin; }
 .cast-row > li, .vid-row > li { flex: 0 0 auto; }
 .cast { display: flex; flex-direction: column; align-items: center; width: 140px; text-align: center; gap: 4px; border-radius: 14px; transition: transform 0.2s; }
 .cast:hover, .cast:focus-visible { transform: scale(1.05); }
@@ -925,7 +925,7 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .tv-form-msg { min-height: 20px; font-size: 14px; color: var(--soft); }
 .tv-form-note { font-size: 12px; color: var(--dim); line-height: 1.5; }
 
-.epg-scroll { overflow: auto; max-height: calc(100vh - 300px); border-radius: 14px; border: 1px solid var(--line-2); background: rgba(12, 11, 17, 0.6); scrollbar-width: thin; scrollbar-color: #3a3646 transparent; }
+.epg-scroll { overflow: auto; max-height: calc(100vh - 300px); border-radius: 14px; border: 1px solid var(--line-2); background: rgba(12, 11, 17, 0.6); scrollbar-width: thin; }
 .epg-inner { position: relative; }
 .epg-times { position: sticky; top: 0; z-index: 9; display: flex; height: 40px; background: #17151f; border-bottom: 1px solid var(--line-2); }
 .epg-corner { position: sticky; left: 0; z-index: 10; width: 220px; flex: none; display: flex; align-items: center; padding: 0 14px; font-size: 12px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; background: #17151f; }
