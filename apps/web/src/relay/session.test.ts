@@ -171,7 +171,7 @@ function sourceOf(bytes: Uint8Array): RangeSource {
 }
 
 /** Salon complet : hôte (h1) avec sa session de partage, invité (p1) avec sa session, lecteur factice. */
-async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, caps?: DecodeCap[]) {
+async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, probe?: () => Promise<DecodeCap[]>) {
   const room = new Room();
   const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
   const bytes = bytesOf(size);
@@ -192,12 +192,12 @@ async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, ca
     canvas: {} as unknown as HTMLCanvasElement,
     peer: { createPc: pcFactory('guest', wire) },
     connectTimeoutMs: 3000,
-    decodeCaps: caps ? async () => caps : undefined,
+    decodeCaps: probe,
   });
   guest.start();
   await flush();
   room.get('p1')?.recv(welcome('bob', false));
-  return { room, hostClient, hostRelay, guest, players, bytes };
+  return { room, hostClient, hostRelay, guest, players, bytes, wire };
 }
 
 describe('session hôte', () => {
@@ -243,7 +243,7 @@ describe('session hôte', () => {
 
 describe('session invité', () => {
   it('capacités de décodage : annoncées à l’hôte sur le canal, gardées tant que l’invité est présent, oubliées à son départ', async () => {
-    const { room, hostRelay, guest } = await chain({ kind: 'native' }, 300_000, ['h264', 'aac']);
+    const { room, hostRelay, guest } = await chain({ kind: 'native' }, 300_000, async () => ['h264', 'aac']);
     await waitFor(() => guest.tick().phase === 'ready');
     expect(hostRelay.guestCaps().get('p1')).toBe(capsMask(['h264', 'aac']));
 
@@ -253,6 +253,37 @@ describe('session invité', () => {
     guest.destroy();
     hostRelay.close();
   }, 15000);
+
+  it('sonde de capacités en échec : rien n’est annoncé (inconnu), l’hôte ne suppose aucune capacité', async () => {
+    const { hostRelay, guest } = await chain({ kind: 'native' }, 300_000, async () => {
+      throw new Error('sonde indisponible');
+    });
+    await waitFor(() => guest.tick().phase === 'ready');
+    expect(hostRelay.guestCaps().has('p1')).toBe(false);
+
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
+  it('après une bascule (liaison fermée côté hôte), l’invité se reconnecte seul et réannonce ses capacités', async () => {
+    const probe = async (): Promise<DecodeCap[]> => ['h264', 'aac'];
+    const { hostClient, hostRelay, guest, wire, bytes } = await chain({ kind: 'native' }, 300_000, probe);
+    await waitFor(() => guest.tick().phase === 'ready');
+    expect(hostRelay.guestCaps().get('p1')).toBe(capsMask(['h264', 'aac']));
+
+    // Bascule de source : l'hôte ferme sa liaison ; le canal de l'invité se ferme avec elle.
+    hostRelay.close();
+    wire.ch!.guest.close();
+    await waitFor(() => guest.tick().phase === 'host-lost', 4000);
+
+    // La nouvelle liaison de l'hôte (nouvelle source) existe : l'invité la rejoint sans action, après un court délai.
+    const hostRelay2 = new HostRelaySession({ client: hostClient, source: sourceOf(bytes), createPc: pcFactory('host', wire) });
+    await waitFor(() => guest.tick().phase === 'ready', 8000);
+    await waitFor(() => hostRelay2.guestCaps().get('p1') === capsMask(['h264', 'aac']), 4000);
+
+    guest.destroy();
+    hostRelay2.close();
+  }, 20000);
 
   it('salon -> hôte (WebRTC) -> plages -> lecteur, puis play/pause/seek relayés au salon et état du salon appliqué sans écho', async () => {
     const { room, hostRelay, guest, players, bytes } = await chain();

@@ -26,6 +26,9 @@ const RETRY_HOST_MS = 4000;
 const CONNECT_MS = 10_000;
 /** Après une action locale, on attend l'écho du salon avant de recaler le lecteur (sinon l'état périmé la défait). */
 const ECHO_WAIT_MS = 1500;
+/** Reconnexion après une coupure de liaison (bascule de source côté hôte, réseau) : 1 s, puis double, 30 s au plus. */
+export const RECONNECT_BASE_MS = 1000;
+export const RECONNECT_MAX_MS = 30_000;
 
 /** TURN facultatif, injecté par l'application (jamais en dur dans le code). `null` : STUN seul. */
 export function setRelayTurn(turn: TurnConfig | null): void {
@@ -216,7 +219,9 @@ export class GuestRelaySession {
   private pendingRev = -1;
   private pendingUntil = 0;
   /** Masque des capacités de décodage de cet appareil, sondé une fois à la connexion au salon. */
-  private capsP: Promise<number> | null = null;
+  private capsP: Promise<number | null> | null = null;
+  /** Coupures consécutives sans liaison réussie : fixe le délai de la prochaine reconnexion. */
+  private reconnects = 0;
 
   constructor(private readonly deps: GuestRelayDeps) {}
 
@@ -231,7 +236,8 @@ export class GuestRelaySession {
     });
     this.client = client;
     const probe = this.deps.decodeCaps ?? (() => detectDecodeCaps());
-    this.capsP = probe().then(capsMask, () => 0);
+    // Sonde en échec : capacités inconnues (null), rien n'est annoncé ; l'hôte ne suppose rien.
+    this.capsP = probe().then(capsMask, () => null);
     client.on('status', (st) => this.onStatus(st));
     client.on('welcome', () => {
       this.welcomed = true;
@@ -293,6 +299,21 @@ export class GuestRelaySession {
     const c = this.client;
     this.client = null;
     c?.close();
+  }
+
+  /**
+   * Reconnexion automatique après une coupure : nouvelle liaison (hello), puis annonce des capacités sur le nouveau canal.
+   * Délai doublé à chaque coupure (1 s, 2 s, 4 s… 30 s au plus) ; s'arrête avec la lecture, le salon ou la session.
+   */
+  private scheduleReconnect(): void {
+    this.cancelRetry();
+    const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** this.reconnects);
+    this.reconnects += 1;
+    const set = this.deps.setTimer ?? ((fn: () => void, ms: number) => setTimeout(fn, ms));
+    this.retryTimer = set(() => {
+      this.retryTimer = null;
+      if (this.view.phase === 'host-lost') this.retry();
+    }, delay);
   }
 
   private scheduleRetry(): void {
@@ -368,12 +389,14 @@ export class GuestRelaySession {
       if (!this.isCurrent(seq)) return;
       channel.addEventListener('close', () => this.onChannelClosed(seq));
       // Capacités de décodage : annoncées à l'hôte sur ce canal, avant la première requête de plage.
-      const mask = await (this.capsP ?? Promise.resolve(0));
+      const mask = await (this.capsP ?? Promise.resolve(null));
       if (!this.isCurrent(seq)) return;
-      try {
-        channel.send(encodeCaps(mask));
-      } catch {
-        // Canal fermé pendant l'annonce : la liaison se rompra d'elle-même (onChannelClosed).
+      if (mask !== null) {
+        try {
+          channel.send(encodeCaps(mask));
+        } catch {
+          // Canal fermé pendant l'annonce : la liaison se rompra d'elle-même (onChannelClosed).
+        }
       }
       const range = new RangeClient(channel, {
         onStats: (s) => {
@@ -392,6 +415,7 @@ export class GuestRelaySession {
         return;
       }
       this.setView('ready', '');
+      this.reconnects = 0;
       this.view = { ...this.view, note: plan.note ?? '' };
       this.syncRoom();
     } catch (err) {
@@ -404,6 +428,7 @@ export class GuestRelaySession {
         return;
       }
       this.setView('host-lost', err instanceof RelayError ? relayErrorText(err.code) : relayErrorText('unknown'));
+      this.scheduleReconnect();
     }
   }
 
@@ -411,6 +436,7 @@ export class GuestRelaySession {
     if (!this.isCurrent(seq)) return;
     this.teardownMedia();
     this.setView('host-lost', hostLostText());
+    this.scheduleReconnect();
   }
 
   private callbacks(): PlayerCallbacks {

@@ -90,7 +90,12 @@ export class PartyController {
   }
 
   tick(player: PlayerLike | null): void {
-    if (!player || !player.ready() || !this.client.state || this.client.status === 'closed') return;
+    if (!player || !this.client.state || this.client.status === 'closed') return;
+    if (!player.ready()) {
+      // Lecteur absent ou en rechargement (bascule de source) : la mesure d'avant ne vaut plus, et rien n'est envoyé au salon.
+      this.last = null;
+      return;
+    }
     const now = this.now();
     const cur: Measure = { paused: player.paused(), time: player.time(), at: now };
     if (this.settling !== null) {

@@ -1,7 +1,7 @@
 // Compatibilité des invités de la watch party : parseur des codecs, verdict et avertissement, choix d'une source compatible.
 import { describe, expect, it } from 'vitest';
 import {
-  compatWarning, fileCodecsOf, guestStatuses, parseSourceCodecs, pickCompatibleSource, verdictOf, type FileCodecs, type GuestStatus, type SourceLike,
+  audioKnown, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, isStreamable, parseSourceCodecs, pickCompatibleSource, verdictOf, type FileCodecs, type GuestStatus, type SourceLike,
 } from '../src/party/compat';
 import { capsMask } from '../src/relay/protocol';
 
@@ -133,5 +133,43 @@ describe('choix d’une source compatible', () => {
     ];
     expect(pickCompatibleSource(ranked, all, null)?.id).toBe('video-et-son');
     expect(pickCompatibleSource(ranked.slice(0, 1), all, null)?.id).toBe('video-seule');
+  });
+});
+
+describe('garde des sources de repli et son non vérifié', () => {
+  const guests: GuestStatus[] = [{ id: 'a', caps: ['h264', 'aac', 'dts'] }];
+
+  it('un magnet n’est jamais une source compatible, même avec des codecs connus', () => {
+    const magnet: SourceLike = { playable: true, filename: 'Film 1080p x264 AAC', stream: { url: 'magnet:?xt=urn:btih:abc' } };
+    expect(isStreamable(magnet)).toBe(false);
+    expect(isCompatibleSource(magnet, guests)).toBe(false);
+  });
+
+  it('une source sans aucun codec connu, ou incompatible avec un invité annoncé, n’est pas compatible', () => {
+    expect(isCompatibleSource({ playable: true, filename: 'Film 1080p' }, guests)).toBe(false);
+    expect(isCompatibleSource({ playable: true, filename: 'Film 1080p HEVC AAC' }, guests)).toBe(false);
+    expect(isCompatibleSource({ playable: true, filename: 'Film 1080p x264 AAC' }, guests)).toBe(true);
+  });
+
+  it('un invité qui n’a pas encore annoncé ses capacités ne bloque pas le repli', () => {
+    expect(isCompatibleSource({ playable: true, filename: 'Film 1080p HEVC' }, [{ id: 'b', caps: null }])).toBe(true);
+  });
+
+  it('son non vérifié : signalé, et à égalité de codecs connus, la source au son connu est préférée', () => {
+    expect(audioKnown({ filename: 'Film 1080p x264' })).toBe(false);
+    expect(audioKnown({ filename: 'Film 1080p DTS' })).toBe(true);
+    const ranked: Array<SourceLike & { id: string }> = [
+      { id: 'video-seule', index: 20, playable: true, filename: 'Film 1080p x264' },
+      { id: 'son-seul', index: 21, playable: true, filename: 'Film 1080p DTS' },
+    ];
+    expect(pickCompatibleSource(ranked, guests, null)?.id).toBe('son-seul');
+  });
+
+  it('une source à codecs connus complets bat une source à son seul connu', () => {
+    const ranked: Array<SourceLike & { id: string }> = [
+      { id: 'son-seul', index: 30, playable: true, filename: 'Film DTS' },
+      { id: 'complete', index: 31, playable: true, filename: 'Film x264 DTS' },
+    ];
+    expect(pickCompatibleSource(ranked, guests, null)?.id).toBe('complete');
   });
 });

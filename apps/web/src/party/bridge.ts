@@ -9,7 +9,7 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
-import { compatWarning, fileCodecsOf, guestStatuses, pickCompatibleSource, type SourceLike } from './compat';
+import { audioKnown, compatWarning, fileCodecsOf, guestStatuses, isCompatibleSource, pickCompatibleSource, type SourceLike } from './compat';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
 import type { RangeSource } from '../relay/host';
@@ -37,7 +37,12 @@ export interface SessionAdapter {
   relayUrl?: () => string | null;
   /** Sources déjà chargées du titre (classées), pour proposer une source compatible avec tous les invités. */
   sources?: () => readonly SourceLike[];
+  /** Bascule demandée par le salon en cours de rechargement : le lecteur suit le salon, il ne s'aligne pas sur lui. */
+  switching?: boolean;
 }
+
+/** Résultat de la bascule vers une source compatible. `audioUnverified` : le son de cette source n'est pas connu. */
+export type SwitchResult = { status: 'switched'; audioUnverified: boolean } | { status: 'none' };
 
 interface EngineLike {
   kind: string;
@@ -118,8 +123,11 @@ class PartyBridge {
   /** Salon créé depuis la fiche (création différée) : l'interface copie le lien et ouvre le panneau. */
   onCreated: ((room: PartyRoom) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
-  /** Bascule la lecture sur une source déjà chargée, à la même position (fournie par le lecteur) ; vrai si elle a lieu. */
-  switcher: ((view: SourceLike) => boolean) | null = null;
+  /**
+   * Bascule la lecture sur une source déjà chargée, à la même position ; `allow` filtre les sources de repli de cette
+   * bascule. Fourni par le lecteur ; renvoie vrai si la bascule a lieu.
+   */
+  switcher: ((view: SourceLike, allow: (view: SourceLike) => boolean) => boolean) | null = null;
   private listeners = new Set<Listener>();
   private announced = '';
   /** Partage de la lecture aux invités : session hôte active, et lien qu'elle sert (comparé, jamais affiché). */
@@ -274,14 +282,21 @@ class PartyBridge {
     return compatWarning(fileCodecsOf(a.view), guestStatuses(c.participants, relay.guestCaps()));
   }
 
-  /** Passe la lecture à la meilleure source compatible avec tous les invités annoncés, à la même position. */
-  switchToCompatible(): 'switched' | 'none' {
+  /**
+   * Passe la lecture à la meilleure source compatible avec tous les invités annoncés, à la même position. Les replis de
+   * cette bascule restent limités aux sources compatibles (jamais de torrent).
+   */
+  switchToCompatible(): SwitchResult {
     const c = this.client;
     const relay = this.relay;
     const a = this.adapter?.() ?? null;
-    if (!c || !c.isHost || !relay || !a || !a.sources || !this.switcher) return 'none';
-    const pick = pickCompatibleSource(a.sources(), guestStatuses(c.participants, relay.guestCaps()), a.view?.index ?? null);
-    return pick && this.switcher(pick) ? 'switched' : 'none';
+    if (!c || !c.isHost || !relay || !a || !a.sources || !this.switcher) return { status: 'none' };
+    const statuses = guestStatuses(c.participants, relay.guestCaps());
+    const pick = pickCompatibleSource(a.sources(), statuses, a.view?.index ?? null);
+    if (!pick) return { status: 'none' };
+    const allow = (view: SourceLike): boolean => isCompatibleSource(view, statuses);
+    if (!this.switcher(pick, allow)) return { status: 'none' };
+    return { status: 'switched', audioUnverified: !audioKnown(pick) };
   }
 
   /**
@@ -367,8 +382,9 @@ class PartyBridge {
     if (!c || !c.room) return;
     this.controller?.reset();
     if (c.isHost) {
-      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure.
-      this.controller?.arm();
+      // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure. Pas pour une bascule :
+      // le salon garde la main (son état ne doit pas être écrasé par celui d'un lecteur qui repart).
+      if (!a.switching) this.controller?.arm();
       const m = c.room.media;
       const s = a.cur.season ?? null;
       const e = a.cur.episode ?? null;

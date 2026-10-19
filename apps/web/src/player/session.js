@@ -217,7 +217,10 @@ function partyAdapter(p = P) {
   if (!p) return null;
   return {
     req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
-    ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer),
+    // Pas prêt pendant un rechargement (bascule de source) : l'ancien moteur, détruit, n'est pas une mesure.
+    ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer && !p.reloading),
+    // Bascule de source demandée par le salon : le lecteur suit le salon, il ne l'aligne pas sur lui.
+    switching: !!p.partySwitch,
     // Lien HTTP(S) lu directement par cet appareil (débridé ou direct d'addon) pour le partage aux invités ; jamais un torrent.
     relayUrl: () => (p.engine ? relayableUrl(p.mediaUrl, p.view ? p.view.stream : null) : null),
     // Sources déjà chargées du titre, classées : le salon y cherche une source compatible avec tous les invités.
@@ -775,7 +778,7 @@ function nextCandidate(p, tried) {
   if (p.hint && p.hint.fastDirect && !tried.some((c) => c.direct)) return { view: first.view, direct: true };
   const bad = new Set(badSources(badKey(p)).keys());
   const skip = new Set([...p.tried, ...tried.map((c) => c.view.index)]);
-  const v = pickRaceCandidate(p.ranked, first.view, skip, bad, sourceKey);
+  const v = pickRaceCandidate(fallbackPool(p), first.view, skip, bad, sourceKey);
   return v ? { view: v, direct: false } : null;
 }
 
@@ -810,6 +813,7 @@ async function playView(view, startAt) {
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
   if (rangeFeed) rangeFeed.reset();
+  p.reloading = true;
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
@@ -897,12 +901,14 @@ async function startPlan(p, plan, startAt, stale, cand) {
     await html.load({ url: plan.hlsUrl || media.url, hls: !!plan.hlsUrl, startAt });
   }
   if (stale()) return;
+  p.reloading = false;
   ui.setPipAvailable(p.engine.supportsPip());
   ui.setSeries(p.req.type === 'tv', !!nextRef());
   if (cand && cand.direct) ui.toast('Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
   if (p.notice) { ui.toast(p.notice, 6000); p.notice = ''; }
   refreshUI();
   partyBridge.viewReady(partyAdapter(p));
+  p.partySwitch = false;
 }
 
 /** Repli automatique : copie équivalente d'abord, puis source suivante. */
@@ -911,7 +917,7 @@ function failover(reason) {
   if (!p || p.failing) return;
   p.failing = true;
   const time = p.engine ? p.engine.state().time : 0;
-  const options = failoverOrder(p.ranked, p.view, p.tried);
+  const options = failoverOrder(fallbackPool(p), p.view, p.tried);
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
     try { p.engine.pause(); } catch (_) { /* ignoré */ }
     if (p.engine.kind === 'native') p.engine.closeNow();
@@ -1444,6 +1450,8 @@ function showSourcesPanel(reasons = []) {
     host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons,
     onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
+      // Choix manuel : la bascule salon et son filtre de repli ne s'appliquent plus.
+      p.fallbackFilter = null;
       ui.closePanel(true);
       p.views = views;
       p.ranked = [...views];
@@ -1879,21 +1887,31 @@ export function playSource(request, views, view, opener, opts = {}) {
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
 
-/** Salon : lecture d'une autre source déjà chargée du titre, à la position courante (choix de l'hôte). */
-function switchToView(view) {
+/**
+ * Salon : lecture d'une autre source déjà chargée du titre, à la position courante (choix de l'hôte). `allow` filtre les
+ * sources de repli de cette bascule (compatibles avec les invités) : la lecture ne retombe jamais sur une autre.
+ */
+function switchToView(view, allow) {
   const p = P;
   if (!p || !p.engine || !p.view || !view || view.index === p.view.index) return false;
   const st = p.engine.state();
   p.attempts = 0;
   p.tried = new Set();
+  p.fallbackFilter = typeof allow === 'function' ? allow : null;
+  p.partySwitch = true;
   ui.toast('Changement de source…');
   playView(view, Math.max(0, st.time || 0));
   return true;
 }
 
+/** Sources pouvant servir au repli : celles qu'autorise la bascule en cours, sinon toutes les sources classées. */
+function fallbackPool(p) {
+  return p.fallbackFilter ? p.ranked.filter((v) => p.fallbackFilter(v)) : p.ranked;
+}
+
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
 partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
 partyBridge.adapter = () => partyAdapter();
-partyBridge.switcher = (view) => switchToView(view);
+partyBridge.switcher = (view, allow) => switchToView(view, allow);
 
 export { formatClock };

@@ -20,7 +20,7 @@ export interface SourceLike {
   /** Codec et son tels que la liste des sources les affiche (ex. « x265 », « DTS-HD MA 5.1 »). */
   codec?: string;
   audio?: string;
-  stream?: { infoHash?: string; behaviorHints?: { filename?: string } } | null;
+  stream?: { infoHash?: string; url?: string; behaviorHints?: { filename?: string } } | null;
 }
 
 /** Invité du salon : `caps` est null tant qu'il n'a pas annoncé ses capacités. */
@@ -135,26 +135,46 @@ export function compatWarning(file: FileCodecs, guests: readonly GuestStatus[]):
 }
 
 /**
- * Source à proposer pour que tous les invités annoncés puissent lire : parmi les sources déjà chargées, sans torrent
- * (ni débridage sur l'appareil, ni infoHash), sans la source en cours, et sans incompatibilité connue. Une source dont
- * aucun codec n'est connu n'est pas proposée. À égalité, la plus confirmée (vidéo et son connus) puis la première
- * de la liste (ordre de classement). Null si aucune ne convient, ou si aucun invité n'a annoncé ses capacités.
+ * Source lisible sans torrent : ni magnet, ni infoHash, ni débridage sur l'appareil (règle « jamais de torrent »).
+ */
+export function isStreamable(view: SourceLike): boolean {
+  return view.playable !== false && !view.client && !view.stream?.infoHash && !/^magnet:/i.test(view.stream?.url ?? '');
+}
+
+/** Le son de la source est-il connu (codec d'après son nom) ? Sinon, la bascule le signale comme « son non vérifié ». */
+export function audioKnown(view: SourceLike): boolean {
+  return fileCodecsOf(view).audio !== null;
+}
+
+/**
+ * Source utilisable pour une bascule ou un repli : lisible sans torrent, avec au moins un codec connu, et sans
+ * incompatibilité connue avec les invités annoncés (un invité sans annonce ne bloque rien).
+ */
+export function isCompatibleSource(view: SourceLike, guests: readonly GuestStatus[]): boolean {
+  if (!isStreamable(view)) return false;
+  const file = fileCodecsOf(view);
+  if (!file.video && !file.audio) return false;
+  return guests.every((g) => g.caps === null || verdictOf(file, g.caps) === 'ok');
+}
+
+/**
+ * Source à proposer pour que tous les invités annoncés puissent lire (voir `isCompatibleSource`), sans la source en cours.
+ * Classement : plus de codecs connus d'abord ; à égalité, une source dont le son est connu ; puis l'ordre de la liste.
+ * Null si aucune ne convient, ou si aucun invité n'a annoncé ses capacités.
  */
 export function pickCompatibleSource<V extends SourceLike>(views: readonly V[], guests: readonly GuestStatus[], currentIndex: number | null): V | null {
-  const announced = guests.filter((g): g is GuestStatus & { caps: readonly DecodeCap[] } => g.caps !== null);
-  if (!announced.length) return null;
+  if (!guests.some((g) => g.caps !== null)) return null;
   let best: V | null = null;
-  let bestKnown = 0;
+  let bestRank = -1;
   for (const v of views) {
-    if (v.playable === false || v.client || v.stream?.infoHash) continue;
     if (currentIndex !== null && v.index === currentIndex) continue;
+    if (!isCompatibleSource(v, guests)) continue;
     const file = fileCodecsOf(v);
     const known = (file.video ? 1 : 0) + (file.audio ? 1 : 0);
-    if (known === 0) continue;
-    if (announced.some((g) => verdictOf(file, g.caps) !== 'ok')) continue;
-    if (known > bestKnown) {
+    const rank = known * 2 + (file.audio ? 1 : 0);
+    if (rank > bestRank) {
       best = v;
-      bestKnown = known;
+      bestRank = rank;
     }
   }
   return best;

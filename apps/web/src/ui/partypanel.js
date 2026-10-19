@@ -267,8 +267,12 @@ async function inviteLink() {
 
 /** Bascule sur la meilleure source compatible avec tous les invités (même position), ou le dit. */
 function switchCompatible() {
-  const done = partyBridge.switchToCompatible() === 'switched';
-  toast(done ? 'Lecture sur une source compatible avec tous les invités' : 'Aucune source compatible avec tous les invités', { ms: 6000 });
+  const r = partyBridge.switchToCompatible();
+  if (r.status === 'switched') {
+    toast('Lecture sur une source compatible avec tous les invités' + (r.audioUnverified ? ' (son non vérifié)' : ''), { ms: 6000 });
+  } else {
+    toast('Aucune source compatible avec tous les invités', { ms: 6000 });
+  }
   render();
 }
 

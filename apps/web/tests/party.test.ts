@@ -514,6 +514,26 @@ describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il appli
 });
 
 // ---------- Empreinte et choix de version ----------
+describe('contrôleur : rechargement après une bascule de source', () => {
+  it('lecteur en rechargement : rien n’est envoyé, même quand le nouveau moteur repart en pause à 0', async () => {
+    const r = await room(true, { playing: true, pos: 300, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 300;
+    r.ctl.tick(p); // première mesure : lecture à 300, rien à envoyer
+    r.setNow(100_100); p.t = 300.1; r.ctl.tick(p);
+    const before = r.sent().length;
+
+    // L'ancien moteur est détruit : le lecteur n'est plus prêt pendant le rechargement.
+    p.isReady = false;
+    r.setNow(100_200); r.ctl.tick(p);
+    // Le nouveau moteur démarre en pause à 0, avant que le salon ne lui impose la position.
+    p.isReady = true; p.paused_ = true; p.t = 0;
+    r.setNow(100_300); r.ctl.tick(p);
+    r.setNow(100_400); r.ctl.tick(p);
+    expect(r.sent().slice(before)).toEqual([]);
+  });
+});
+
 describe('choix de la version par empreinte', () => {
   const src = (filename: string, sizeBytes: number, extra: Record<string, unknown> = {}) => ({ filename, sizeBytes, playable: true, stream: { infoHash: extra.hash as string | undefined }, ...extra });
   const host = { fileName: 'Severance.S01E01.1080p.WEB-DL.DDP5.1.x264-NTb.mkv', size: 3_100_000_000 };
