@@ -77,6 +77,28 @@ export function conversionOf(stream: Stream, info: LastStreamInfo | null, caps: 
   return vids || aud || ext !== '' ? 'none' : 'unknown';
 }
 
+/**
+ * Son en lecture web sans serveur de streaming (voir player/webaudio) : `app` = le navigateur ne décode pas la piste (AC-3 / E-AC-3)
+ * mais l'app la décode (moteur audio de repli, CORS permettant) ; `unsupported` = DTS / TrueHD, aucun décodeur : image sans son.
+ * Null : rien de particulier (lecture directe, ou conversion pour une autre raison). Seulement quand la conversion est audio
+ * seulement (la vidéo, elle, passe) et que le conteneur est lu par le navigateur.
+ */
+export type AppAudio = 'app' | 'unsupported' | null;
+
+export function appAudioOf(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): AppAudio {
+  if (conversionOf(stream, info, caps) !== 'audio') return null;
+  const hints = stream.behaviorHints ?? {};
+  const name = String(hints.filename ?? info?.filename ?? stream.url ?? '');
+  const text = [name, stream.description, stream.title].filter((x) => typeof x === 'string').join(' ');
+  const ext = containerOf(name);
+  const containerOk = ext === '' || ext === 'mp4' || ext === 'm4v' || ext === 'webm' || (ext === 'mkv' && caps.formats.some((f) => f.includes('matroska')));
+  if (!containerOk) return null;
+  const aud = audioCodecOf(info, text);
+  if (aud === 'dts' || aud === 'truehd') return 'unsupported';
+  if (aud === 'ac3' || aud === 'eac3') return 'app';
+  return null;
+}
+
 /** Lecture directe si conteneur, vidéo et audio sont pris en charge ; conversion sinon ; inconnu sans métadonnées. */
 export function webPlayback(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): WebPlayback {
   const c = conversionOf(stream, info, caps);

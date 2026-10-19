@@ -1,6 +1,6 @@
 import { copiesOf, formatBitrate, formatSize, getQualityGroupKey, languageLabel, type QualityGroupKey } from '../data/sources';
 import type { MediaCaps } from '../player/server';
-import { conversionOf, webPlayback, type WebPlayback } from './direct';
+import { appAudioOf, conversionOf, webPlayback, type AppAudio, type WebPlayback } from './direct';
 import { parseDebridUrl } from './debrid/hosts';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
 
@@ -70,6 +70,8 @@ export interface SourceView {
   web: WebPlayback;
   /** Nature de la conversion quand `web` vaut `convert` : audio seulement (léger) ou vidéo (réencodage lent). */
   convert: 'audio' | 'video' | null;
+  /** Web sans serveur de streaming : le son est décodé par l'app (`app`) ou ne peut pas l'être (`unsupported`, DTS / TrueHD). */
+  appAudio: AppAudio;
 }
 
 const QUALITY_BADGE: Record<Resolution, string> = {
@@ -358,6 +360,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     score: info?.score ?? 0,
     web: 'unknown',
     convert: null,
+    appAudio: null,
   };
 }
 
@@ -373,10 +376,12 @@ export function copySignature(v: SourceView): string {
 }
 
 /** Renseigne `web` d'après les capacités réelles du navigateur ; `null` (coque Windows) : inconnu partout. */
-export function withWebPlayback(views: readonly SourceView[], caps: MediaCaps | null): SourceView[] {
+export function withWebPlayback(views: readonly SourceView[], caps: MediaCaps | null, opts: { appAudio?: boolean } = {}): SourceView[] {
   return views.map((v) => {
-    if (!caps) return { ...v, web: 'unknown' as const, convert: null };
+    if (!caps) return { ...v, web: 'unknown' as const, convert: null, appAudio: null };
     const c = conversionOf(v.stream, v.info, caps);
-    return { ...v, web: webPlayback(v.stream, v.info, caps), convert: c === 'audio' || c === 'video' ? c : null };
+    // `appAudio` : seulement sans serveur de streaming (le serveur, s'il existe, convertit le son lui-même).
+    const appAudio: AppAudio = opts.appAudio ? appAudioOf(v.stream, v.info, caps) : null;
+    return { ...v, web: webPlayback(v.stream, v.info, caps), convert: c === 'audio' || c === 'video' ? c : null, appAudio };
   });
 }

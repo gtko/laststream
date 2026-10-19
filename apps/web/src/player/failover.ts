@@ -61,7 +61,7 @@ export function pickRaceCandidate(
   ranked: readonly SourceView[], current: SourceView, tried: ReadonlySet<number>, bad: ReadonlySet<string>, keyOf: (v: SourceView) => string,
 ): SourceView | null {
   const open = failoverOrder(ranked, current, tried).filter((v) => !bad.has(keyOf(v)));
-  const ease = (v: SourceView): number => (v.web === 'direct' ? 0 : v.convert === 'audio' ? 1 : v.web === 'unknown' ? 2 : 3);
+  const ease = (v: SourceView): number => (v.appAudio === 'unsupported' ? 5 : v.web === 'direct' ? 0 : v.convert === 'audio' ? 1 : v.web === 'unknown' ? 2 : 3);
   const score = (v: SourceView): number => (v.hasFrench === current.hasFrench ? 0 : 100) + ease(v) * 10 + (v.status === 'cached' ? 0 : 1);
   const sorted = open.map((v, i) => ({ v, i })).sort((a, b) => score(a.v) - score(b.v) || a.i - b.i);
   return sorted.length ? sorted[0].v : null;

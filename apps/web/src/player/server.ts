@@ -71,6 +71,11 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
 let aliveCache: { at: number; ok: boolean } | null = null;
 export function resetServerCache(): void { aliveCache = null; resolved = ''; }
 
+/** Réponse du dernier sondage, sans réseau : vrai si le serveur répondait, ou si une adresse est réglée et pas encore sondée. */
+export function serverLikelyUp(): boolean {
+  return aliveCache ? aliveCache.ok : customBase() !== '';
+}
+
 /** Le serveur répond-il ? Teste les adresses candidates et retient la première qui répond (résultat gardé 30 s). */
 export async function serverAlive(now = Date.now()): Promise<boolean> {
   if (aliveCache && now - aliveCache.at < 30_000) return aliveCache.ok;

@@ -43,6 +43,8 @@ function itemHtml(v, opts) {
   // Pastille d'adéquation : débit de la source contre débit de la connexion (mesuré ou réglé), à chaque rendu.
   const fit = fitBadge(v.bitrateKbps, session ? session.bw : null);
   const web = v.web === 'direct' ? '<span class="s-web s-web-direct" title="Se lit dans le navigateur sans conversion">Lecture directe</span>'
+    : v.appAudio === 'app' ? '<span class="s-web s-web-convert" title="Le navigateur ne lit pas ce son (AC-3 / E-AC-3) : l’app le décode elle-même, sans serveur de streaming, si l’hébergeur de la source l’autorise">Son décodé par l’app</span>'
+    : v.appAudio === 'unsupported' ? '<span class="s-web s-web-video" title="Son DTS / TrueHD non pris en charge par le navigateur : la vidéo se lira sans son">Sans son (DTS)</span>'
     : v.convert === 'video' ? '<span class="s-web s-web-video" title="Le serveur de streaming réencode la vidéo (codec non pris en charge) : démarrage lent">Conversion vidéo</span>'
     : v.web === 'convert' ? '<span class="s-web s-web-convert" title="La vidéo est copiée, seul l’audio est converti">Conversion audio</span>' : '';
 

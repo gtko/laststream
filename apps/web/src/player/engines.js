@@ -42,6 +42,8 @@ export class HtmlEngine extends Emitter {
     this.hls = null;
     this.pendingStart = 0;
     this.hlsSubIndex = -1;
+    /** Moteur audio de repli (web, voir ./webaudio) : joue le son à la place de la piste native, muette. */
+    this.audio = null;
     this.net = 0;
     this.media = 0;
     VIDEO_EVENTS.forEach((e) => video.addEventListener(e, () => this.emit('state')));
@@ -109,7 +111,25 @@ export class HtmlEngine extends Emitter {
     }
   }
 
+  /** Le son vient du moteur de repli : volume, muet et attente du son passent par lui ; la piste native du `<video>` reste muette. */
+  attachAudio(fb) {
+    this.detachAudio();
+    this.audio = fb;
+    this.emit('state');
+  }
+
+  detachAudio() {
+    const fb = this.audio;
+    if (!fb) return;
+    this.audio = null;
+    const muted = fb.muted;
+    try { fb.destroy(); } catch (_) { /* déjà détruit */ }
+    this.video.muted = muted;
+    this.emit('state');
+  }
+
   teardown() {
+    this.detachAudio();
     if (this.hls) { try { this.hls.destroy(); } catch (_) { /* déjà détruit */ } this.hls = null; }
     this.hlsSubIndex = -1;
   }
@@ -122,27 +142,31 @@ export class HtmlEngine extends Emitter {
     try { v.load(); } catch (_) { /* ignoré */ }
   }
 
-  play() { return safePlay(this.video); }
-  pause() { this.video.pause(); }
+  play() { if (this.audio && this.audio.holding) return Promise.resolve(); return safePlay(this.video); }
+  pause() { if (this.audio && this.audio.holding) this.audio.cancelHold(); this.video.pause(); }
   seek(t) { try { this.video.currentTime = Math.max(0, t); } catch (_) { /* pas encore prêt */ } }
-  setVolume(v) { this.video.volume = Math.min(1, Math.max(0, v)); }
-  setMuted(m) { this.video.muted = !!m; }
+  setVolume(v) { this.video.volume = Math.min(1, Math.max(0, v)); if (this.audio) this.audio.setVolume(v); }
+  setMuted(m) { if (this.audio) this.audio.setMuted(m); else this.video.muted = !!m; }
   setRate(r) { this.video.playbackRate = r; }
 
   state() {
     const v = this.video;
+    const a = this.audio;
+    const wait = !!(a && a.holding);
     const ranges = [];
     for (let i = 0; i < v.buffered.length; i++) ranges.push([v.buffered.start(i), v.buffered.end(i)]);
     return {
       time: v.currentTime || 0,
       duration: Number.isFinite(v.duration) ? v.duration : 0,
-      paused: v.paused,
+      // En attente du son, la vidéo est en pause par nous : pour l'utilisateur, la lecture est en cours (et en train de charger).
+      paused: v.paused && !wait,
       ended: v.ended,
       seeking: v.seeking,
-      buffering: !v.paused && !v.ended && v.readyState < 3,
+      buffering: wait || (!v.paused && !v.ended && v.readyState < 3),
+      soundWait: wait,
       buffered: ranges,
       volume: v.volume,
-      muted: v.muted,
+      muted: a ? a.muted : v.muted,
       rate: v.playbackRate,
       pip: document.pictureInPictureElement === v,
     };

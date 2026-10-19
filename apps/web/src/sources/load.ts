@@ -5,6 +5,7 @@ import type { DeviceTarget } from '../data/sources';
 import type { Lang, Stream } from '../data/stream';
 import { deviceAddonName, fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
 import { browserCaps, inShell } from '../player/caps';
+import { serverLikelyUp } from '../player/server';
 import { applyVerdicts, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { CHECK_TOP_N, debrid } from './debridClient';
 import { recommend, type Recommendation } from './rank';
@@ -134,7 +135,8 @@ async function fetchSources(req: SourceRequest, retry: boolean): Promise<LoadedS
   // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
   const all = device ? mergeDeviceStreams(res.streams, device.streams) : res.streams;
   const streams = yet ? [] : sortStreams(playableStreams(all, clientOk));
-  let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps());
+  // Web sans serveur de streaming : le son AC-3 / E-AC-3 est décodé par l'app (moteur audio de repli), le DTS ne l'est pas.
+  let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps(), { appAudio: !inShell() && !serverLikelyUp() });
   if (clientOk) views = await annotateClientViews(views, { onlyCached: res.onlyCached });
   return {
     imdb, views,

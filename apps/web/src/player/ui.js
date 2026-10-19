@@ -22,6 +22,7 @@ function skeleton() {
     '<div class="lp-subs" aria-hidden="true"></div>' +
     '<div class="lp-pause" hidden><div class="lp-pause-in"><p class="lp-pause-k">Vous regardez</p><div class="lp-pause-logo"></div><p class="lp-pause-ep"></p><p class="lp-pause-syn"></p></div></div>' +
     '<div class="lp-bspin" aria-hidden="true"></div>' +
+    '<div class="lp-sndwait" role="status">Chargement du son…</div>' +
     '<div class="lp-loading" role="status"><div class="lp-load-bg"></div><div class="lp-load-in">' +
       '<div class="lp-lring" aria-hidden="true"><svg viewBox="0 0 64 64"><circle class="lp-lring-bg" cx="32" cy="32" r="28"/><circle class="lp-lring-fg" cx="32" cy="32" r="28" stroke-dasharray="175.9" stroke-dashoffset="132"/></svg></div>' +
       '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
@@ -361,6 +362,7 @@ export function createPlayerUI(h) {
       q('[data-role="mute"]').innerHTML = st.muted || st.volume === 0 ? LI.mute : LI.vol;
       if (document.activeElement !== vs) vs.value = String(Math.round((st.muted ? 0 : st.volume) * 100));
       root.classList.toggle('is-buffering', !!st.buffering);
+      root.classList.toggle('is-sound-wait', !!st.soundWait);
       root.classList.toggle('is-paused', !!st.paused);
       q('[data-role="full"]').innerHTML = (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full;
       q('[data-role="pip"]').classList.toggle('is-active', !!st.pip);

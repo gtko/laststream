@@ -128,7 +128,10 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
   const fits = (v: SourceView): boolean => v.bitrateKbps === null || v.bitrateKbps <= budget;
   const langOk = (v: SourceView): boolean => !!v.info && matchesLanguage(v.info, preferred, opts.alsoAccept);
   if (opts.preferDirect) {
-    const fitting = playable.filter((v) => v.info && fits(v));
+    const fits0 = playable.filter((v) => v.info && fits(v));
+    // Web sans serveur : une source dont le son ne peut pas être joué (DTS, TrueHD) ne passe qu'à défaut de toute alternative,
+    // même dans une autre langue (une image sans son ne sert à personne).
+    const fitting = fits0.some((v) => v.appAudio !== 'unsupported') ? fits0.filter((v) => v.appAudio !== 'unsupported') : fits0;
     if (fitting.length) {
       const webOrder = (a: SourceView, b: SourceView): number =>
         webRank(b) - webRank(a) || (b.web === 'direct' ? 1 : 0) - (a.web === 'direct' ? 1 : 0) || b.score - a.score || a.index - b.index;
@@ -136,7 +139,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
       const pool = withLang.length ? withLang : [...fitting].sort(webOrder);
       const view = pool[0];
       const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
-      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') };
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.appAudio === 'app' ? ' · son décodé par l’app' : view.appAudio === 'unsupported' ? ' · sans son (DTS)' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') };
     }
   } else {
     const streams = playable.map((v) => v.stream);

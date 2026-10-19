@@ -53,6 +53,9 @@ import { relayableUrl } from '../relay/sourceUrl';
 import { makeLocalFeed, webCodecsAvailable, IdbThumbStore, stableSourceId } from '../thumbs';
 import { createPlayerUI } from './ui.js';
 import { partyBridge } from '../party/bridge';
+import { fileCodecsOf } from '../party/compat';
+import { probeUrl as probeHeaderUrl } from '../party/headerCodecs';
+import { startWebAudio } from './webaudio/controller';
 import { setWatching } from '../data/presence';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
@@ -822,6 +825,7 @@ async function playView(view, startAt) {
   if (feed) feed.reset();
   if (rangeFeed) rangeFeed.reset();
   p.reloading = true;
+  stopWebAudio(p);
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   ui.setError(null);
   ui.root.classList.remove('is-searching');
@@ -907,6 +911,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
     p.hlsId = plan.hlsId;
     p.mediaBase = media.base;
     await html.load({ url: plan.hlsUrl || media.url, hls: !!plan.hlsUrl, startAt });
+    // Web sans serveur de streaming : si le navigateur ne décode pas la piste son, l'app la joue elle-même (voir ./webaudio).
+    if (!plan.hlsUrl && !shell && !isNativePlayer()) beginWebAudio(p, media.url, stale);
   }
   if (stale()) return;
   p.reloading = false;
@@ -917,6 +923,42 @@ async function startPlan(p, plan, startAt, stale, cand) {
   refreshUI();
   partyBridge.viewReady(partyAdapter(p));
   p.partySwitch = false;
+}
+
+/** Libellé du son dans la fiche de lecture quand l'app ne laisse pas le navigateur le jouer. */
+const AUDIO_MODE_LABEL = { app: 'Son décodé par l’app (le navigateur ne le lit pas)', unsupported: 'Non pris en charge par le navigateur', cors: 'Indisponible : la source refuse la lecture du son par le navigateur' };
+
+function stopWebAudio(p) {
+  if (p.webAudio) { try { p.webAudio.dispose(); } catch (_) { /* ignoré */ } p.webAudio = null; }
+  p.audioMode = null;
+  p.audioNote = '';
+}
+
+/** Codecs lus dans l'en-tête d'une autre source (plages seulement) : sert à proposer une source au son lisible. */
+async function probeViewHeader(view, signal) {
+  const url = await resolveRelayUrl(view, signal);
+  if (!url || signal.aborted) return null;
+  return probeHeaderUrl(url);
+}
+
+/** Moteur audio de repli (web, lecture directe) : lancé sans attendre, la vidéo démarre pendant la sonde. */
+function beginWebAudio(p, url, stale) {
+  const view = p.view;
+  startWebAudio({
+    video: ui.video,
+    caps: getCaps(),
+    attach: (fb) => html.attachAudio(fb),
+    onChange: () => { html.emit('state'); },
+    toast: (m, ms, action) => ui.toast(m, ms, action),
+    alternatives: () => (p.ranked || []).filter((v) => !p.fallbackFilter || p.fallbackFilter(v)),
+    currentIndex: () => (p.view ? p.view.index : null),
+    probeView: probeViewHeader,
+    describe: describeView,
+    play: (v) => { if (P === p) playView(v, p.engine ? p.engine.state().time : 0); },
+    setMode: (mode, note) => { p.audioMode = mode; p.audioNote = note; if (ui) ui.refreshPanel(); },
+  }, { url, nameCodec: fileCodecsOf(view).audio, stale }).then((h) => {
+    if (stale()) h.dispose(); else p.webAudio = h;
+  }).catch(() => undefined);
 }
 
 /** Repli automatique : copie équivalente d'abord, puis source suivante. */
@@ -1681,6 +1723,7 @@ function panelData(name) {
     ];
     if (web) rows.push(['Lecture', web]);
     if (p.choice) rows.push(['Moteur', p.choice.label]);
+    if (p.audioMode) rows.push(['Son', { html: '<b class="lp-tag ' + (p.audioMode === 'app' ? 'is-sync' : 'is-warn') + '">' + (p.audioMode === 'app' ? 'Décodé par l’app' : 'Sans son') + '</b>' }]);
     return {
       rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', thumbsAvailable: thumbSourceOf(p).mode !== 'none', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
       canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
@@ -1705,6 +1748,7 @@ function panelData(name) {
     const rows = [
       ['Moteur', p.choice ? p.choice.label : '…'],
       ['Conversion', p.choice && p.choice.engine === 'hls' ? CONVERSION_LABEL[p.conversion || 'unknown'] : 'Aucune (lecture directe)'],
+      ...(p.audioMode ? [['Son', AUDIO_MODE_LABEL[p.audioMode] + (p.audioMode === 'app' ? '' : ' · ' + p.audioNote)]] : []),
       ['Qualité', [v.quality, v.sourceType, v.codec, ...v.hdr].filter(Boolean).join(' · ')],
       ['Origine', v.origins.map((o) => o.name).join(', ') || 'Inconnue'],
       ['Audio', v.audio || 'Inconnu'],
@@ -1791,6 +1835,7 @@ async function teardown(silent) {
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
   if (rangeFeed) rangeFeed.reset();
+  stopWebAudio(p);
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;

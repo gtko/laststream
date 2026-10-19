@@ -43,6 +43,12 @@
 .lp.is-buffering .lp-center { opacity: 0 !important; }
 .lp.is-buffering .lp-center .lp-btn { pointer-events: none !important; }
 .lp.is-buffering .lp-time::after { content: none; }
+/* Moteur audio de repli (web) : la vidéo attend que le son soit décodé. */
+.lp-sndwait {
+  position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); z-index: 3; padding: 6px 14px; border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62); color: var(--text); font-size: 13px; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.lp.is-ready.is-sound-wait .lp-sndwait { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .lp-bspin { animation-duration: 3s; } .lp-loading { transition: none; } }
 .lp-self { pointer-events: auto; min-height: 46px; padding: 0 26px; align-self: center; }
 .lp-self[hidden] { display: none; }
