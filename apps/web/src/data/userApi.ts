@@ -232,6 +232,16 @@ export interface WatchedDto {
 }
 export const putWatched = (id: string, body: { type: MediaKind; tmdbId: number; imdbId?: string; episodes?: WatchedEpisode[]; watched: boolean }) =>
   call<void>('/profiles/' + encodeURIComponent(id) + '/watched', { method: 'PUT', body, profileId: id });
+/** Une ligne de l'historique « vu » : `watched` = 1 pour un film, épisodes vus hors saison 0 pour une série. */
+export interface WatchedTitleDto {
+  type: MediaKind;
+  tmdbId: number | null;
+  imdbId: string | null;
+  watched: number;
+  lastWatchedAt: string;
+}
+export const getWatchedTitles = (id: string) =>
+  call<{ items: WatchedTitleDto[] }>('/profiles/' + encodeURIComponent(id) + '/watched', { profileId: id });
 export const getWatched = (id: string, type: MediaKind, tmdbId: number) =>
   call<WatchedDto>('/profiles/' + encodeURIComponent(id) + '/watched/' + type + '/' + tmdbId, { profileId: id });
 

@@ -7,6 +7,7 @@
  * l'installer avec `setUserStore(adapter)` au démarrage (src/main.js). Aucun autre code n'est à modifier.
  */
 import { emitDataEvent } from './events';
+import { watchedTitlesFromSeen, type WatchedTitle } from './watchedHistory';
 
 export interface LibraryEntry {
   id: number;
@@ -92,6 +93,10 @@ export interface UserStore {
   setWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): Promise<boolean>;
   /** Charge l'état « vu » d'un titre depuis le serveur avant affichage (adaptateur serveur ; sans effet en local). */
   loadWatched?(key: string): Promise<void>;
+  /** Titres vus (films et séries) du profil, pour l'onglet « Vus » : historique du serveur s'il est chargé, sinon celui de ce téléphone. */
+  watchedTitles(): WatchedTitle[];
+  /** Le titre vu, ou null s'il ne l'est plus (ou jamais). */
+  watchedTitle(key: string): WatchedTitle | null;
 
   /** Suivis (films, séries, personnes). Clés : `movie:1`, `tv:2`, `person:3`. */
   getFollows(type?: FollowEntry['type']): FollowEntry[];
@@ -357,6 +362,14 @@ export class LocalUserStore implements UserStore {
     const pre = key + ':';
     return this.getSeen().filter((k) => k.startsWith(pre)).map((k) => k.slice(pre.length).split(':').map(Number))
       .filter((p) => p.length === 2 && p.every(Number.isFinite)).map(([season, episode]) => ({ season, episode }));
+  }
+
+  watchedTitles(): WatchedTitle[] {
+    return watchedTitlesFromSeen(this.getSeen());
+  }
+
+  watchedTitle(key: string): WatchedTitle | null {
+    return this.watchedTitles().find((t) => t.key === key) ?? null;
   }
 
   /** Remplace les « vus » d'un titre (utilisé par l'adaptateur serveur pour appliquer ou annuler un changement). */

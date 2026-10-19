@@ -12,7 +12,7 @@ import { heroVideoSync, toggleHeroSound } from './heroVideo.js';
 import { load } from './home.js';
 import { closeHover, hv } from './hover.js';
 import { ICON } from './icons.js';
-import { renderLibrary, renderLibraryPage, toggleLib } from './library.js';
+import { renderLibrary, renderLibraryPage, setLibMode, toggleLib } from './library.js';
 import { closeModal, focusables, openModal, openTrailer, openVideo } from './modal.js';
 import { renderFilmography } from './person.js';
 import { openPlayer, playerKey } from './player.js';
@@ -244,6 +244,8 @@ document.addEventListener('click', (e) => {
   if (hidNav) { e.preventDefault(); go('#/hidden', hidNav); return; }
   const tvNav = t.closest('[data-tvlive]');
   if (tvNav) { e.preventDefault(); go('#/tv-live', tvNav); return; }
+  const libM = t.closest('[data-libm]');
+  if (libM) { e.preventDefault(); setLibMode(libM.dataset.libm); return; }
   const libF = t.closest('[data-libf]');
   if (libF) { e.preventDefault(); state.libView.type = libF.dataset.libf; renderLibraryPage(); return; }
   const libS = t.closest('[data-libs]');

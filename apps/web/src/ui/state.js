@@ -16,6 +16,7 @@ export const state = {
   token: 0, // jeton de rendu de la fiche
   ficheKey: '',
   libView: { type: 'all', sort: 'date' },
+  libMode: 'library', // onglet de la bibliothèque : « library » (Ma bibliothèque) ou « watched » (Vus)
   scrolls: new Map(), curHash: '', popping: false, restoreY: null, pp: null,
   top10: new Map(), // clé -> rang dans les tendances du jour
   upcoming: null,
