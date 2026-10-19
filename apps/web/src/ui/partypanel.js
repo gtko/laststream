@@ -3,7 +3,7 @@
 import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
 import { joinLinkOf } from '../party/join';
-import { partyErrorText, REACTIONS } from '../party/protocol';
+import { CHAT_MAX, PARTY_WAIT_MAX_MS, partyErrorText, REACTIONS } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
@@ -26,6 +26,13 @@ let compatShown = '';
 /** « Copié » affiché sur le bouton d’invitation pendant un instant : l’état vit ici, le panneau est reconstruit à chaque rendu. */
 let inviteCopied = false;
 let copiedTimer = 0;
+/** Chat repliable (ouvert par défaut), messages des autres reçus pendant qu'il est replié, et historique de connexion en cours. */
+let chatOpen = true;
+let unread = 0;
+let replaying = false;
+/** Au prochain rendu, défiler tout en bas (après un envoi ou à l'ouverture du chat). */
+let stickBottom = false;
+let renderQueued = false;
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
@@ -103,7 +110,8 @@ const initialOf = (name) => {
 const avatarHTML = (p) => '<span class="wp-av' + (avatarIsLight(p.avatarColor) ? ' is-light' : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) +
   ' aria-hidden="true"><span class="wp-av-ini">' + esc(initialOf(p.username)) + '</span></span>';
 
-export function participantsHTML(list, you, youHost, verdicts = new Map()) {
+/** Liste des participants. `waitWho` : pseudos retardés par le tampon (pastille « Tampon », prime sur le reste). */
+export function participantsHTML(list, you, youHost, verdicts = new Map(), waitWho = []) {
   return list.map((p) => {
     const me = you && p.username === you.username;
     const tools = youHost && !me
@@ -111,7 +119,7 @@ export function participantsHTML(list, you, youHost, verdicts = new Map()) {
         '<button type="button" class="wp-mini" data-wp-host="' + esc(p.username) + '" title="Céder le rôle d’hôte">Hôte</button>' +
         '<button type="button" class="wp-mini wp-danger" data-wp-kick="' + esc(p.username) + '">Exclure</button></span>'
       : '';
-    const state = participantState(p, verdicts);
+    const state = waitWho.includes(p.username) ? 'buffering' : participantState(p, verdicts);
     const label = STATE_TEXT.get(state);
     return '<li class="wp-user">' + avatarHTML(p) + '<span class="wp-name">' + esc(p.username) + (me ? ' (toi)' : '') + '</span>' +
       (p.host ? '<em class="wp-badge">Hôte</em>' : '') + (p.muted ? '<em class="wp-badge wp-badge-muted">Muet</em>' : '') +
@@ -119,13 +127,49 @@ export function participantsHTML(list, you, youHost, verdicts = new Map()) {
   }).join('');
 }
 
+/** Heure locale HH:MM d’un message ; vide si l’horodatage est absent ou invalide. */
+export function timeHTML(at) {
+  if (typeof at !== 'number' || !Number.isFinite(at)) return '';
+  const d = new Date(at);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return '<time class="wp-time" datetime="' + esc(d.toISOString()) + '">' + hh + ':' + mm + '</time>';
+}
+
 export function chatHTML(lines, you) {
   if (!lines.length) return '<p class="wp-empty">Aucun message pour l’instant.</p>';
   return lines.map((l) => {
     const mine = you && l.from === you.username;
-    return '<p class="wp-line' + (mine ? ' is-mine' : '') + '" data-wp-line="' + esc(l.id) + '"><b>' + esc(l.from) + '</b> <span>' + esc(l.text) + '</span>' +
+    return '<p class="wp-line' + (mine ? ' is-mine' : '') + '" data-wp-line="' + esc(l.id) + '">' + timeHTML(l.at) +
+      '<b>' + esc(l.from) + '</b> <span>' + esc(l.text) + '</span>' +
       (mine ? '' : '<button type="button" class="wp-flag" data-wp-report="' + esc(l.id) + '" aria-label="Signaler ce message" title="Signaler">⚑</button>') + '</p>';
   }).join('');
+}
+
+/** Bandeau d’attente de tampon : retardataires (« Léa, Tom »), spinner et compte à rebours. Vide hors attente. */
+function waitInnerHTML(w) {
+  if (!w) return '';
+  return '<span class="wp-spin" aria-hidden="true"></span>' +
+    '<span class="wp-wait-txt" role="status">En attente de <b>' + esc(w.who.join(', ')) + '</b>…</span>' +
+    '<span class="wp-countdown" aria-hidden="true" data-wp-countdown>' + countdownText(w) + '</span>';
+}
+
+/** Temps restant (ms) avant la reprise sans les retardataires : début serveur + délai, borné à [0, délai]. */
+function remainingMs(w) {
+  const max = Number.isFinite(w.maxMs) && w.maxMs > 0 ? w.maxMs : PARTY_WAIT_MAX_MS;
+  const c = partyBridge.client;
+  const now = c && typeof c.serverNow === 'function' ? c.serverNow() : Date.now();
+  const left = w.since + max - now;
+  return Number.isFinite(left) ? Math.min(max, Math.max(0, left)) : max;
+}
+
+const countdownText = (w) => Math.ceil(remainingMs(w) / 1000) + ' s';
+
+/** En-tête du chat : titre repliable, badge « nouveaux messages » quand il est replié. */
+function chatHeadHTML() {
+  const badge = !chatOpen && unread > 0 ? '<span class="wp-unread" data-wp-unread>' + (unread > 1 ? unread + ' nouveaux messages' : '1 nouveau message') + '</span>' : '';
+  return '<button type="button" class="wp-sub wp-chat-toggle" data-wp-chat-toggle aria-expanded="' + (chatOpen ? 'true' : 'false') + '" aria-controls="wp-chat-body">' +
+    'Chat' + badge + '<span class="wp-caret" aria-hidden="true">' + (chatOpen ? '▾' : '▸') + '</span></button>';
 }
 
 function createHTML() {
@@ -150,19 +194,24 @@ function roomHTML(c) {
   const inviter = host || createdHere;
   const status = c.status === 'open' ? '' : '<p class="wp-status" role="status">' + (c.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
   const room = c.room;
+  const wait = c.waiting && Array.isArray(c.waiting.who) && c.waiting.who.length ? c.waiting : null;
   return '<div class="wp-head"><h3 class="wp-title">' + esc(room ? room.title : 'Salon') + '</h3>' +
     '<span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span></div>' + status +
     '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
-    '<div class="wp-wait" data-wp-wait hidden></div>' +
-    '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts()) + '</ul>' +
+    '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
+    '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul>' +
     (inviter ? inviteHTML() : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
-    '<h4 class="wp-sub">Chat</h4><div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
-    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="500" autocomplete="off" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<div class="wp-chatsec">' + chatHeadHTML() +
+    '<div class="wp-chat-body" id="wp-chat-body" data-wp-chat-body' + (chatOpen ? '' : ' hidden') + '>' +
+    '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
+    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
     '<button type="submit" class="btn btn-primary btn-sm"' + (you && you.muted ? ' disabled' : '') + '>Envoyer</button></form>' +
-    '<div class="wp-react" role="group" aria-label="Réactions">' + REACTIONS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>';
+    '<div class="wp-react" role="group" aria-label="Réactions">' + REACTIONS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
+    '</div></div>';
 }
 
 function render() {
@@ -174,7 +223,8 @@ function render() {
   const typing = panel.contains(document.activeElement) && document.activeElement.name === 'text';
   if (typing) chatDraft = document.activeElement.value;
   const chatBox = panel.querySelector('[data-wp-chat]');
-  const keepScroll = chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true;
+  const keepScroll = stickBottom || (chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true);
+  stickBottom = false;
   panel.innerHTML = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">×</button>' + (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
     (partyBridge.endReason ? '<p class="wp-msg" role="alert">' + esc(endText(partyBridge.endReason)) + '</p>' : '') +
     (partyBridge.lastError ? '<p class="wp-msg" role="alert">' + esc(partyBridge.lastError) + '</p>' : '');
@@ -187,6 +237,55 @@ function render() {
 }
 
 const endText = (r) => (r === 'kicked' ? 'Tu as été exclu du salon.' : r === 'ended' ? 'Le salon est terminé.' : r === 'replaced' ? 'Connexion reprise depuis un autre appareil.' : r === 'full' ? 'Le salon est complet.' : 'Salon fermé.');
+
+/**
+ * Rendu différé à la trame suivante : une rafale (historique de 50 lignes à la connexion, attente) ne reconstruit le
+ * panneau qu’une fois.
+ */
+function renderSoon() {
+  if (renderQueued) return;
+  renderQueued = true;
+  const run = () => { renderQueued = false; render(); };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+  else setTimeout(run, 16);
+}
+
+/** Ligne de chat reçue : compte les messages des autres pendant que le chat est replié (pas l’historique de connexion). */
+function onChatLine(c, line) {
+  const me = c.you ? c.you.username : null;
+  if (!replaying && !chatOpen && line.from !== me) unread += 1;
+  renderSoon();
+}
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  if (chatOpen) { unread = 0; stickBottom = true; }
+  render();
+}
+
+/** Compteur de caractères du champ d’envoi, sans reconstruire le panneau. */
+function updateChars() {
+  if (!panel) return;
+  const input = panel.querySelector('input[name="text"]');
+  const counter = panel.querySelector('[data-wp-chars]');
+  if (input && counter) counter.textContent = input.value.length + '/' + CHAT_MAX;
+}
+
+/** Saisie dans le champ d’envoi : brouillon gardé entre deux rendus, compteur mis à jour. */
+function onInput(e) {
+  const f = e.target;
+  if (!(f instanceof HTMLInputElement) || f.name !== 'text' || !f.closest('[data-wp-send]')) return;
+  chatDraft = f.value;
+  updateChars();
+}
+
+/** Rafraîchit le compte à rebours du bandeau d’attente (sans reconstruire le panneau). */
+function updateCountdown() {
+  if (!panel || !open) return;
+  const el = panel.querySelector('[data-wp-countdown]');
+  const w = partyBridge.client ? partyBridge.client.waiting : null;
+  if (el && w) el.textContent = countdownText(w);
+}
 
 function floatReaction(emoji, user) {
   if (!floats) return;
@@ -229,8 +328,17 @@ function attach() {
   lastInviteUrl = '';
   createdHere = false;
   inviteCopied = false;
+  chatOpen = true;
+  unread = 0;
+  stickBottom = false;
   if (!c) return;
-  c.on('chat', () => render());
+  // Les lignes de l’historique suivent « welcome » de façon synchrone : elles ne comptent pas comme nouveaux messages.
+  c.on('welcome', () => {
+    replaying = true;
+    setTimeout(() => { replaying = false; }, 0);
+  });
+  c.on('chat', (line) => onChatLine(c, line));
+  c.on('wait', () => renderSoon());
   c.on('removed', () => render());
   c.on('linkRenewed', () => { void renewLinkAfterKick(); });
   c.on('react', (r) => floatReaction(r.emoji, r.user));
@@ -259,7 +367,8 @@ export function mountPartyPanel(root, opts) {
   partyBridge.onCreated = () => { togglePartyPanel(true); void inviteAfterCreate(); };
   panel.addEventListener('click', onClick);
   panel.addEventListener('submit', onSubmit);
-  setInterval(updateRelayLine, 1000);
+  panel.addEventListener('input', onInput);
+  setInterval(() => { updateRelayLine(); updateCountdown(); }, 1000);
 }
 
 export function togglePartyPanel(force) {
@@ -278,8 +387,8 @@ async function onSubmit(e) {
   e.stopPropagation();
   if (f.matches('[data-wp-send]')) {
     const c = partyBridge.client;
-    const text = f.elements.text.value;
-    if (c && c.sendChat(text)) { chatDraft = ''; f.elements.text.value = ''; }
+    const text = f.elements.text.value.slice(0, CHAT_MAX);
+    if (c && c.sendChat(text)) { chatDraft = ''; f.elements.text.value = ''; stickBottom = true; updateChars(); }
     return;
   }
   if (f.matches('[data-wp-create]')) {
@@ -405,6 +514,7 @@ function onClick(e) {
   if (t.closest('[data-wp-newlink]') && c) { void invite(true); return; }
   if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
+  if (t.closest('[data-wp-chat-toggle]')) { toggleChat(); return; }
   // Quitter ferme le panneau : sans salon, il n'affichait que le formulaire de création.
   if (t.closest('[data-wp-leave]')) { partyBridge.leave(); togglePartyPanel(false); toast('Tu as quitté le salon'); return; }
   if (t.closest('[data-wp-end]')) {
@@ -412,7 +522,7 @@ function onClick(e) {
     return;
   }
   const react = t.closest('[data-wp-react]');
-  if (react && c) { c.react(react.dataset.wpReact); return; }
+  if (react && c) { c.sendReact(react.dataset.wpReact); return; }
   const mute = t.closest('[data-wp-mute]');
   if (mute && c) { c.mute(mute.dataset.wpMute, mute.dataset.muted !== '1'); return; }
   const host = t.closest('[data-wp-host]');

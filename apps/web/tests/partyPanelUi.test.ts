@@ -155,7 +155,7 @@ describe('lien d’invitation : retour « Copié »', () => {
   });
 });
 
-describe('zones réservées aux lots suivants', () => {
+describe('bandeau d’attente : masqué hors attente', () => {
   it('.wp-wait est présent, vide et masqué ; la zone de chat existe', () => {
     partyBridge.client = fakeClient(true, hostParticipants()) as any;
     panel.togglePartyPanel(true);
@@ -164,5 +164,186 @@ describe('zones réservées aux lots suivants', () => {
     expect(wait.hidden).toBe(true);
     expect(wait.textContent).toBe('');
     expect(panelOf().querySelector('.wp-chat')).not.toBeNull();
+  });
+});
+
+/** Client de salon avec bus d’événements : les écouteurs du panneau reçoivent ce que `emit` envoie, comme le vrai client. */
+const busClient = (isHost: boolean, participants: Participant[]): any => {
+  const handlers = new Map<string, Array<(p?: unknown) => void>>();
+  return {
+    status: 'open',
+    room: { id: 'r1', visibility: 'private', title: 'Severance' },
+    you: { username: isHost ? 'alice' : 'bob', host: isHost, muted: false },
+    participants,
+    chat: [] as Array<{ id: string; from: string; text: string; at: number }>,
+    waiting: null as null | { who: string[]; since: number; maxMs: number; resumeAhead: number },
+    serverNow: () => Date.now(),
+    sendChat: vi.fn(() => true),
+    sendReact: vi.fn(() => true),
+    on(event: string, fn: (p?: unknown) => void) {
+      handlers.set(event, [...(handlers.get(event) ?? []), fn]);
+      return () => undefined;
+    },
+    emit(event: string, payload?: unknown) {
+      for (const fn of handlers.get(event) ?? []) fn(payload);
+    },
+  };
+};
+
+const line = (id: string, from: string, text: string, at = Date.UTC(2026, 0, 1, 9, 5)) => ({ id, from, text, at });
+const pad = (n: number) => String(n).padStart(2, '0');
+
+describe('bandeau d’attente de tampon', () => {
+  it('« En attente de Léa, Tom… » dès l’événement wait, avec compte à rebours ; les retardataires ont la pastille « Tampon »', async () => {
+    const c = busClient(true, [{ username: 'alice', host: true }, { username: 'Léa', state: 'ready' }, { username: 'Tom' }, { username: 'bob' }]);
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    expect((panelOf().querySelector('.wp-wait') as HTMLElement).hidden).toBe(true);
+    c.waiting = { who: ['Léa', 'Tom'], since: Date.now() - 5000, maxMs: 45000, resumeAhead: 10 };
+    c.emit('wait', c.waiting);
+    await tick();
+    const wait = panelOf().querySelector('.wp-wait') as HTMLElement;
+    expect(wait.hidden).toBe(false);
+    expect(wait.querySelector('.wp-wait-txt')!.textContent).toBe('En attente de Léa, Tom…');
+    expect(wait.querySelector('[data-wp-countdown]')!.textContent).toBe('40 s');
+    expect(rowOf('Léa').querySelector('.wp-state')!.getAttribute('aria-label')).toBe('Tampon');
+    expect(rowOf('Tom').querySelector('.wp-state')!.classList.contains('is-buffering')).toBe(true);
+    expect(rowOf('bob').querySelector('.wp-state')!.getAttribute('aria-label')).toBe('Prêt');
+  });
+
+  it('masqué et vidé quand l’attente se ferme (wait à null)', async () => {
+    const c = busClient(true, [{ username: 'alice', host: true }, { username: 'Tom' }]);
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    c.waiting = { who: ['Tom'], since: Date.now(), maxMs: 45000, resumeAhead: 10 };
+    c.emit('wait', c.waiting);
+    await tick();
+    expect((panelOf().querySelector('.wp-wait') as HTMLElement).hidden).toBe(false);
+    c.waiting = null;
+    c.emit('wait', null);
+    await tick();
+    const wait = panelOf().querySelector('.wp-wait') as HTMLElement;
+    expect(wait.hidden).toBe(true);
+    expect(wait.textContent).toBe('');
+    expect(rowOf('Tom').querySelector('.wp-state')!.getAttribute('aria-label')).toBe('Prêt');
+  });
+
+  it('pseudos des retardataires échappés', async () => {
+    const c = busClient(true, [{ username: 'alice', host: true }]);
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    c.waiting = { who: ['<img src=x onerror="alert(1)">'], since: Date.now(), maxMs: 45000, resumeAhead: 10 };
+    c.emit('wait', c.waiting);
+    await tick();
+    const wait = panelOf().querySelector('.wp-wait') as HTMLElement;
+    expect(wait.querySelector('img')).toBeNull();
+    expect(wait.textContent).toContain('<img src=x onerror="alert(1)">');
+  });
+
+  it('compte à rebours borné à maxMs (début dans le futur ou délai absent)', () => {
+    const c = busClient(true, [{ username: 'alice', host: true }]);
+    partyBridge.client = c;
+    c.waiting = { who: ['Tom'], since: Date.now() + 60000, maxMs: 45000, resumeAhead: 10 };
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('[data-wp-countdown]')!.textContent).toBe('45 s');
+  });
+});
+
+describe('chat : rendu, échappement, envoi, limite', () => {
+  it('pseudo et texte échappés ; heure HH:MM', async () => {
+    const c = busClient(true, hostParticipants());
+    c.chat = [line('m1', '<b>mal</b>', '<img src=x onerror="alert(1)">')];
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    const chat = panelOf().querySelector('.wp-chat') as HTMLElement;
+    expect(chat.querySelector('img')).toBeNull();
+    expect(chat.querySelectorAll('b')).toHaveLength(1); // seul le <b> du pseudo, jamais celui du texte
+    expect(chat.textContent).toContain('<img src=x onerror="alert(1)">');
+    const d = new Date(Date.UTC(2026, 0, 1, 9, 5));
+    expect(chat.querySelector('.wp-time')!.textContent).toBe(pad(d.getHours()) + ':' + pad(d.getMinutes()));
+  });
+
+  it('Entrée envoie le texte (coupé à 500 caractères) ; le champ se vide et le compteur revient à 0/500', () => {
+    const c = busClient(false, hostParticipants());
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    const form = panelOf().querySelector('[data-wp-send]') as HTMLFormElement;
+    const input = form.querySelector('input[name="text"]') as HTMLInputElement;
+    expect(input.maxLength).toBe(500);
+    input.value = 'x'.repeat(600);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(panelOf().querySelector('[data-wp-chars]')!.textContent).toBe('600/500');
+    form.requestSubmit();
+    expect(c.sendChat).toHaveBeenCalledTimes(1);
+    expect(c.sendChat.mock.calls[0][0]).toHaveLength(500);
+    expect(input.value).toBe('');
+    expect(panelOf().querySelector('[data-wp-chars]')!.textContent).toBe('0/500');
+  });
+
+  it('compteur discret à la frappe', () => {
+    const c = busClient(false, hostParticipants());
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    const input = panelOf().querySelector('input[name="text"]') as HTMLInputElement;
+    input.value = 'salut';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(panelOf().querySelector('[data-wp-chars]')!.textContent).toBe('5/500');
+  });
+
+  it('chat replié : badge « N nouveaux messages » pour ceux des autres ; ni historique ni mes messages ; ouvrir remet à zéro', async () => {
+    const c = busClient(false, hostParticipants()); // je suis bob
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    const toggle = () => panelOf().querySelector('[data-wp-chat-toggle]') as HTMLElement;
+    const badge = () => panelOf().querySelector('[data-wp-unread]') as HTMLElement | null;
+    toggle().click();
+    await tick();
+    expect((panelOf().querySelector('[data-wp-chat-body]') as HTMLElement).hidden).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    // Reconnexion : l’historique arrive après « welcome », il ne compte pas.
+    c.emit('welcome', {});
+    c.chat = [line('h1', 'carl', 'ancien'), line('h2', 'dana', 'ancien aussi')];
+    for (const l of c.chat) c.emit('chat', l);
+    await tick();
+    expect(badge()).toBeNull();
+    await tick(5);
+    c.emit('chat', line('n1', 'carl', 'salut'));
+    await tick();
+    expect(badge()!.textContent).toBe('1 nouveau message');
+    c.emit('chat', line('n2', 'bob', 'moi')); // mon propre message ne compte pas
+    c.emit('chat', line('n3', 'dana', 'coucou'));
+    await tick();
+    expect(badge()!.textContent).toBe('2 nouveaux messages');
+    toggle().click();
+    await tick();
+    expect(badge()).toBeNull();
+    expect((panelOf().querySelector('[data-wp-chat-body]') as HTMLElement).hidden).toBe(false);
+  });
+
+  it('historique de 50 lignes à la connexion : un seul rendu du panneau', async () => {
+    const c = busClient(false, hostParticipants());
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    await tick();
+    const history = Array.from({ length: 50 }, (_, i) => line('h' + i, 'carl', 'message ' + i, Date.UTC(2026, 0, 1, 9, i % 60)));
+    let rebuilds = 0;
+    const observer = new MutationObserver((records) => { rebuilds += records.filter((r) => r.target === panelOf()).length; });
+    observer.observe(panelOf(), { childList: true });
+    c.chat = history;
+    c.emit('welcome', {});
+    for (const l of history) c.emit('chat', l);
+    await tick(60);
+    observer.disconnect();
+    expect(rebuilds).toBe(1);
+    expect(panelOf().querySelectorAll('.wp-line')).toHaveLength(50);
+  });
+
+  it('une réaction de la barre part via sendReact', () => {
+    const c = busClient(false, hostParticipants());
+    partyBridge.client = c;
+    panel.togglePartyPanel(true);
+    const fire = [...panelOf().querySelectorAll<HTMLElement>('[data-wp-react]')].find((b) => b.dataset.wpReact === '\u{1F525}')!;
+    fire.click();
+    expect(c.sendReact).toHaveBeenCalledWith('\u{1F525}');
   });
 });

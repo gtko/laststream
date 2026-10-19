@@ -95,9 +95,15 @@ a.soc-name:hover { color: var(--accent); }
 .wp-status { margin: 0; padding: 6px 10px; border-radius: 8px; background: #3a2a10; color: #f5b700; font-size: 13px; }
 .wp-msg { margin: 0; font-size: 13px; color: #f5b700; }
 .wp-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-/* Bandeau d’attente (rempli par les lots suivants) : masqué tant qu’il est vide. */
-.wp-wait { margin: 0; padding: 7px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); color: var(--soft); font-size: 13px; line-height: 1.4; }
+/* Bandeau d’attente de tampon (« En attente de Léa… ») : masqué hors attente. */
+.wp-wait { display: flex; align-items: center; gap: 8px; margin: 0; padding: 7px 10px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); color: var(--soft); font-size: 13px; line-height: 1.4; }
 .wp-wait[hidden] { display: none; }
+.wp-wait-txt { flex: 1; min-width: 0; }
+.wp-wait-txt b { color: var(--text); font-weight: 700; overflow-wrap: anywhere; }
+.wp-countdown { flex: none; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wp-spin { flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: wp-spin 0.9s linear infinite; }
+@keyframes wp-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wp-spin { animation-duration: 2.4s; } }
 .wp-invite { display: flex; flex-direction: column; gap: 8px; }
 .wp-invite-link { width: 100%; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface); color: var(--soft); font: inherit; font-size: 12px; text-overflow: ellipsis; }
 .wp-invite-btns { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -129,6 +135,15 @@ a.soc-name:hover { color: var(--accent); }
 .wp-flag { border: 0; background: transparent; color: var(--dim); cursor: pointer; font-size: 12px; opacity: 0; }
 .wp-line:hover .wp-flag, .wp-flag:focus-visible { opacity: 1; }
 .wp-empty { margin: 0; font-size: 13px; color: var(--dim); }
+.wp-chatsec { display: flex; flex-direction: column; gap: 8px; }
+.wp-chat-toggle { display: flex; align-items: center; gap: 8px; width: 100%; margin: 6px 0 0; padding: 0; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; cursor: pointer; }
+.wp-chat-toggle:hover, .wp-chat-toggle:focus-visible { color: var(--soft); }
+.wp-caret { margin-left: auto; font-size: 12px; }
+.wp-unread { padding: 2px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none; white-space: nowrap; }
+.wp-chat-body { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.wp-chat-body[hidden] { display: none; }
+.wp-time { flex: none; margin-right: 4px; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wp-chars { flex: none; align-self: center; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .wp-send { display: flex; gap: 6px; }
 .wp-send input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; }
 .wp-react { display: flex; flex-wrap: wrap; gap: 4px; }
