@@ -35,6 +35,14 @@ describe('deviceFetchEntry', () => {
     expect(entry).toEqual({ addonId: 'Torrentio', url: 'https://torrentio.strem.fun/sort=seeders/stream/movie/tt7654321.json' });
   });
 
+  it('nomme l’addon d’après son manifest déjà connu, pas d’après son nom par défaut', async () => {
+    const source = { name: 'Addon amont', url: 'https://named-blocked.example.test/manifest.json' };
+    const fetch = (async () => json({ id: 'named', name: 'Vrai Nom', resources: ['stream'] })) as unknown as FetchFn;
+    expect((await testUpstream(source, { fetch })).ok).toBe(true);
+    expect(deviceFetchEntry(source, MOVIE)?.addonId).toBe('Vrai Nom');
+    expect(deviceFetchEntry({ name: 'Addon amont', url: 'https://unknown-blocked.example.test/manifest.json' }, MOVIE)?.addonId).toBe('Addon amont');
+  });
+
   it('ignore les adresses locales', () => {
     expect(deviceFetchEntry({ name: 'Local', url: 'http://192.168.1.10:7000/manifest.json' }, MOVIE)).toBeUndefined();
     expect(deviceFetchEntry({ name: 'Local', url: 'http://localhost:7000/manifest.json' }, MOVIE)).toBeUndefined();

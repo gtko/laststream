@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 import type { ContentRef } from '../types.js';
 import { isNonPublicAddress } from './ip.js';
-import { upstreamStreamUrl, type UpstreamSource } from './upstream.js';
+import { upstreamDisplayName, upstreamStreamUrl, type UpstreamSource } from './upstream.js';
 
 /**
  * Repli « via l'appareil » : quand un addon amont refuse l'IP du serveur (403, 429, 5xx, page de vérification, délai),
@@ -31,5 +31,5 @@ export function deviceFetchEntry(source: UpstreamSource, ref: ContentRef): Devic
     return undefined;
   }
   if ((target.protocol !== 'https:' && target.protocol !== 'http:') || !isPublicHost(target)) return undefined;
-  return { addonId: source.name, url: upstreamStreamUrl(source.url, ref) };
+  return { addonId: upstreamDisplayName(source), url: upstreamStreamUrl(source.url, ref) };
 }

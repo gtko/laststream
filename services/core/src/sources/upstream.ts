@@ -189,6 +189,11 @@ function originOf(source: UpstreamSource, _opts: HttpOptions): { name: string; l
   return origin;
 }
 
+/** Nom d'un addon amont pour l'appareil : celui de son manifest s'il est déjà en cache, sinon le nom de la source (« Addon amont » par défaut). */
+export function upstreamDisplayName(source: UpstreamSource): string {
+  return manifestCache.get(manifestCacheKey(source.url))?.name || source.name;
+}
+
 /**
  * Interroge un addon Stremio amont pour un contenu et renvoie ses streams.
  * Lève une SourceError sûre (sans URL ni clé) en cas d'erreur HTTP, de JSON invalide ou de délai dépassé.
