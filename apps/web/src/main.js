@@ -18,6 +18,7 @@ import './styles/player-panels.css';
 import './styles/tv-panels.css';
 import './styles/player-loading.css';
 import './styles/player-mini.css';
+import './styles/notes.css';
 import './styles/badges.css';
 import './styles/admin.css';
 import './styles/scrollbars.css';

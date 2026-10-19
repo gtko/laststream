@@ -5,7 +5,7 @@ import { addonUrl, getBase, isConfigured } from '../data/config';
 import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
-import { pushPrefs } from '../data/auth';
+import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
@@ -59,6 +59,9 @@ import { startWebAudio } from './webaudio/controller';
 import { setWatching } from '../data/presence';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
+import { getNotes, postNote } from '../data/socialV2Api';
+import { getState as getSocialState, onNote } from '../data/socialStore';
+import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
 const THUMBS_KEY = 'laststream.player.thumbs';
@@ -272,6 +275,7 @@ function ensureUI() {
     thumbCancel: () => { if (thumbs) thumbs.cancel(); cancelAddonThumb(); },
     miniState,
     miniLayout: onMiniLayout,
+    react: postReact,
   });
   miniState.onChange(applyMini);
   // Bascule automatique entre débrideurs : « AllDebrid indisponible → TorBox ».
@@ -526,6 +530,7 @@ async function initSession(request, views, view, opts = {}) {
     poster: meta.posterPath || (model && model.posterPath) || '', backdrop: meta.backdropPath || (model && model.backdropPath) || '', title: request.name || meta.name || '',
     logo: (model && model.logo) || '', overview: (model && model.overview) || meta.overview || '',
   };
+  startNotes(P);
   document.body.classList.add('modal-open', 'lp-open');
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
@@ -1339,6 +1344,7 @@ function tick() {
   if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
+  notesTick(p, st);
   partyBridge.tick(partyAdapter(p));
   // Sous-titres (100 ms).
   const s = p.subs;
@@ -1427,6 +1433,7 @@ function refreshUI(st) {
     ui.setPhase(P.phase);
   }
   ui.update(shell ? { ...s, fullscreen: shellFullscreen } : s, chapterMarks(P.segments, s.duration));
+  if (P.notes) refreshNoteMarkers(P.notes, s.duration);
 }
 
 // ---------- Progression ----------
@@ -1577,6 +1584,7 @@ function onAction(act, data) {
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
+  if (act === 'react') { openReactHere(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
@@ -1788,6 +1796,8 @@ function panelData(name) {
 
 function onKey(e) {
   if (!P || ui.root.hidden) return;
+  // Saisie d'une réaction : aucun raccourci du lecteur (Échap ferme le popover, géré dans notesView.ts).
+  if (e.target instanceof Element && e.target.closest('.lp-react')) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
@@ -1834,11 +1844,121 @@ function onKey(e) {
   }
 }
 
+// ---------- Notes de la timeline (Social v2) ----------
+
+/** Le social n'existe ni pour un profil enfant ni hors mode serveur. */
+const notesAllowed = () => isServerMode() && !isKidProfile();
+
+/** Média lu au format des notes (film, ou série avec saison et épisode). Null si le média n'est pas identifiable. */
+function noteMediaOf(p) {
+  const id = Number(p.req.id);
+  if (!p.req.id || !Number.isFinite(id)) return null;
+  if (p.req.type !== 'tv') return { type: 'movie', tmdbId: id };
+  if (p.cur.season == null || p.cur.episode == null) return null;
+  return { type: 'series', tmdbId: id, season: p.cur.season, episode: p.cur.episode };
+}
+
+/** Ajoute des notes à la liste (sans doublon d'identifiant) et signale le changement aux marqueurs. */
+function putNotes(nt, notes) {
+  nt.list = uniqueNotes([...nt.list, ...notes]);
+  nt.version += 1;
+}
+
+function removeNote(nt, id) {
+  nt.list = nt.list.filter((n) => n.id !== id);
+  nt.version += 1;
+}
+
+/** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
+function startNotes(p) {
+  const media = notesAllowed() ? noteMediaOf(p) : null;
+  if (!media) { ui.setNotesAvailable(false); return; }
+  const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
+  p.notes = nt;
+  ui.setNotesAvailable(true);
+  nt.unsub = onNote((m, note) => {
+    if (p.notes !== nt || mediaKey(m) !== nt.key) return;
+    putNotes(nt, [note]);
+  });
+  getNotes(media).then(({ notes }) => {
+    if (p.notes === nt) putNotes(nt, notes);
+  }).catch(() => undefined);
+}
+
+/** Fin de session ou changement de média : désabonnement, marqueurs et popover retirés. */
+function stopNotes(p) {
+  const nt = p && p.notes;
+  if (!nt) return;
+  p.notes = null;
+  if (nt.unsub) nt.unsub();
+  ui.setNoteMarkers([]);
+  ui.setNotesAvailable(false);
+}
+
+/** Chaque relevé (100 ms) : les notes franchies par une lecture normale s'affichent ; un retour en arrière les relâche. */
+function notesTick(p, st) {
+  const nt = p.notes;
+  if (!nt) return;
+  const prev = nt.last;
+  nt.last = st.time;
+  if (prev === null || st.paused) return;
+  for (const id of rearmed(prev, st.time, nt.list)) nt.fired.delete(id);
+  for (const n of crossing(prev, st.time, nt.list, { fired: nt.fired })) {
+    nt.fired.add(n.id);
+    ui.showNoteFlash(n);
+  }
+}
+
+/** Marqueurs redessinés seulement quand la liste ou la durée changent. */
+function refreshNoteMarkers(nt, duration) {
+  const dur = Number.isFinite(duration) ? duration : 0;
+  const key = nt.version + ':' + Math.round(dur);
+  if (key === nt.renderKey) return;
+  nt.renderKey = key;
+  ui.setNoteMarkers(clusterNotes(nt.list, dur));
+}
+
+/** « Réagir ici » : popover pour la position courante, figée à l'ouverture. */
+function openReactHere() {
+  if (!P || !P.view || !P.notes) return;
+  ui.openReact(P.engine.state().time);
+}
+
+/**
+ * Envoie une réaction à la position du popover. Si le profil connecté est connu, la note apparaît tout de suite (optimiste,
+ * avec sa bulle) puis est remplacée par celle du serveur ; en cas d'échec elle disparaît et un toast explique.
+ */
+function postReact({ pos, kind, body }) {
+  const p = P;
+  const nt = p && p.notes;
+  if (!nt) return;
+  const at = Math.round(Math.max(0, pos) * 10) / 10;
+  const me = getSocialState().me;
+  const tmp = me ? 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) : '';
+  if (me) {
+    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor }, pos: at, kind, body, createdAt: Date.now() };
+    putNotes(nt, [local]);
+    ui.showNoteFlash(local);
+  }
+  postNote({ ...nt.media, pos: at, kind, body }).then(({ note }) => {
+    if (p.notes !== nt) return;
+    if (tmp) removeNote(nt, tmp);
+    nt.fired.add(note.id);
+    putNotes(nt, [note]);
+    if (!tmp) ui.showNoteFlash(note);
+  }, (err) => {
+    if (p.notes !== nt) return;
+    if (tmp) removeNote(nt, tmp);
+    ui.toast(err && err.status === 429 ? 'Trop de réactions : réessaie dans une minute' : 'Réaction non envoyée, réessaie plus tard', 3500);
+  });
+}
+
 // ---------- Fermeture ----------
 
 async function teardown(silent) {
   const p = P;
   if (!p) return;
+  stopNotes(p);
   if (!silent) nativeMini = false;
   resetMini();
   saveProgress(true);
