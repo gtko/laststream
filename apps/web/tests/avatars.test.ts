@@ -186,7 +186,7 @@ describe('rendu de repli', () => {
   });
 });
 
-describe('éditeur de profil : sélecteur d’avatars', () => {
+describe('éditeur de profil : sélecteur d’avatars (dans le studio)', () => {
   const BASE = 'http://srv.test';
   const bodies: string[] = [];
   const profile = (id: string, extra: Partial<Profile> = {}): Profile =>
@@ -199,7 +199,7 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
     reloadSettings();
     reloadSession();
     bodies.length = 0;
-    document.querySelectorAll('.pin-back').forEach((n) => n.remove());
+    document.querySelectorAll('.pin-back, .as-overlay').forEach((n) => n.remove());
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url).replace(BASE, '');
       if (init?.method === 'POST' && u === '/user/profiles') {
@@ -225,35 +225,56 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
     return document.querySelector('.pf-editor') as HTMLFormElement;
   }
 
-  it('onglets par famille, grille paginée, choix d’un avatar envoyé au serveur avec la couleur de repli', async () => {
+  /**
+   * Ouvre le studio depuis l'éditeur, puis « Illustrés » > « Générés ». Le catalogue est injoignable dans ce test : le studio
+   * tombe alors sur ces avatars générés, seuls disponibles.
+   */
+  async function openGenerated(kidFirst = false) {
     const form = await openEditor();
-    expect(form).not.toBeNull();
-    const tabs = Array.from(form.querySelectorAll('[data-av-tab]')).map((b) => (b as HTMLElement).dataset.avTab);
+    if (kidFirst) {
+      const kid = form.elements.namedItem('kid') as HTMLInputElement;
+      kid.checked = true;
+      kid.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    (form.querySelector('[data-pfe-studio]') as HTMLElement).click();
+    await tick();
+    const studio = document.querySelector('.as-overlay') as HTMLElement;
+    (studio.querySelector('[data-as-fam="free"]') as HTMLElement).click();
+    (studio.querySelector('[data-as-sub="gen"]') as HTMLElement).click();
+    return { form, studio };
+  }
+
+  it('onglets par famille, grille paginée ; « Utiliser cet avatar » reporte le choix dans l’éditeur, envoyé avec la couleur de repli', async () => {
+    const { form, studio } = await openGenerated();
+    expect(studio.querySelector('.as-notice')?.textContent).toContain('Les collections d\'avatars ne sont pas disponibles');
+    const tabs = Array.from(studio.querySelectorAll('[data-av-tab]')).map((b) => (b as HTMLElement).dataset.avTab);
     expect(tabs).toEqual(['heroes', 'enfants', 'personnages', 'illustres', 'robots', 'fun']);
     // Premier onglet : Héros, avec ses quatre sous-filtres.
-    expect(Array.from(form.querySelectorAll('[data-av-sub]')).map((b) => (b as HTMLElement).dataset.avSub)).toEqual(['heros', 'vilains', 'scifi', 'fantasy']);
-    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:heros:/);
-    (form.querySelector('[data-av-sub="vilains"]') as HTMLElement).click();
-    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:vilains:/);
+    expect(Array.from(studio.querySelectorAll('[data-av-sub]')).map((b) => (b as HTMLElement).dataset.avSub)).toEqual(['heros', 'vilains', 'scifi', 'fantasy']);
+    expect((studio.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:heros:/);
+    (studio.querySelector('[data-av-sub="vilains"]') as HTMLElement).click();
+    expect((studio.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/^hero:vilains:/);
     // Paginé : 48 tuiles d'abord, « Voir plus » en ajoute.
-    expect(form.querySelectorAll('.av-tile').length).toBe(48);
-    (form.querySelector('[data-av-more]') as HTMLElement).click();
-    expect(form.querySelectorAll('.av-tile').length).toBeGreaterThan(48);
-    (form.querySelector('[data-av-tab="robots"]') as HTMLElement).click();
-    const first = form.querySelector('.av-tile') as HTMLElement;
+    expect(studio.querySelectorAll('.av-tile').length).toBe(48);
+    (studio.querySelector('[data-av-more]') as HTMLElement).click();
+    expect(studio.querySelectorAll('.av-tile').length).toBeGreaterThan(48);
+    (studio.querySelector('[data-av-tab="robots"]') as HTMLElement).click();
+    const first = studio.querySelector('.av-tile') as HTMLElement;
     expect(first.dataset.avPick).toMatch(/^dicebear:(bottts|bottts-neutral|pixel-art|pixel-art-neutral):/);
     first.click();
-    expect((form.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick).toBe(first.dataset.avPick);
+    expect((studio.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick).toBe(first.dataset.avPick);
     // Recherche : le mot devient la première graine ; « Au hasard » en tire une.
-    const search = form.querySelector('input[name="avsearch"]') as HTMLInputElement;
+    const search = studio.querySelector('input[name="avsearch"]') as HTMLInputElement;
     search.value = 'Zélie';
     search.dispatchEvent(new Event('input', { bubbles: true }));
-    expect((form.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/:Zelie$/);
-    (form.querySelector('[data-av-random]') as HTMLElement).click();
+    expect((studio.querySelector('.av-tile') as HTMLElement).dataset.avPick).toMatch(/:Zelie$/);
+    (studio.querySelector('[data-av-random]') as HTMLElement).click();
     expect(search.value).toMatch(/^[a-z2-9]{8}$/);
-    // Enregistrement.
-    (form.querySelector('.av-tile') as HTMLElement).click();
-    const chosen = (form.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick;
+    // Choix, puis « Utiliser cet avatar » : le studio se ferme et l'éditeur garde l'avatar.
+    (studio.querySelector('.av-tile') as HTMLElement).click();
+    const chosen = (studio.querySelector('.av-tile[aria-pressed="true"]') as HTMLElement).dataset.avPick;
+    (studio.querySelector('[data-as-use]') as HTMLElement).click();
+    expect(document.querySelector('.as-overlay')).toBeNull();
     (form.elements.namedItem('name') as HTMLInputElement).value = 'Nina';
     form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
     await tick();
@@ -263,25 +284,22 @@ describe('éditeur de profil : sélecteur d’avatars', () => {
     expect(sent.name).toBe('Nina');
   });
 
-  it('crédits dans l’éditeur et profil enfant : onglet Enfants d’abord', async () => {
-    const form = await openEditor();
-    expect(form.querySelector('details')!.textContent).toContain('Lisa Wischofsky');
-    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('heroes');
-    const kid = form.elements.namedItem('kid') as HTMLInputElement;
-    kid.checked = true;
-    kid.dispatchEvent(new Event('change', { bubbles: true }));
-    expect((form.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('enfants');
-  });
-
-  it('crédits repliés par défaut, une ligne par auteur, sans « source source »', async () => {
-    const form = await openEditor();
-    const details = form.querySelector('.pf-picker-avatars details.av-credits-more') as HTMLDetailsElement;
+  it('crédits repliés par défaut dans « Générés », une ligne par auteur, sans « source source »', async () => {
+    const { studio } = await openGenerated();
+    const details = studio.querySelector('.pf-picker-avatars details.av-credits-more') as HTMLDetailsElement;
     expect(details).not.toBeNull();
     expect(details.open).toBe(false);
     expect(details.querySelector('summary')!.textContent).toBe('Crédits des illustrations');
+    expect(details.textContent).toContain('Lisa Wischofsky');
     const ui = await import('../src/ui/auth-ui.js');
     const html = ui.creditsHTML();
     expect(html).not.toContain('>source<');
     expect((html.match(/<li>/g) ?? []).length).toBe(avatarCredits().length);
+  });
+
+  it('profil enfant : le studio prend la variante enfant et l’onglet Enfants d’abord', async () => {
+    const { studio } = await openGenerated(true);
+    expect(studio.querySelector('.as-app.is-kid')).not.toBeNull();
+    expect((studio.querySelector('[data-av-tab][aria-pressed="true"]') as HTMLElement).dataset.avTab).toBe('enfants');
   });
 });
