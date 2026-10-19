@@ -1,7 +1,7 @@
 import type { SocialEvent } from './social-v2-events.js';
 import {
+  type FriendLiveView,
   type FriendRequestView,
-  type FriendView,
   type Handle,
   type MediaRef,
   type MessageView,
@@ -49,9 +49,9 @@ export const SOCIAL_LIVE_BINARY_FRAME = 4003;
 export type LiveFrame =
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'presence'; friend: FriendView }
+  | { t: 'presence'; friend: FriendLiveView }
   | { t: 'request'; request: FriendRequestView }
-  | { t: 'friend'; friend: FriendView }
+  | { t: 'friend'; friend: FriendLiveView }
   | { t: 'unfriend'; pid: string }
   | { t: 'note'; media: MediaRef; note: NoteView };
 
@@ -67,18 +67,23 @@ function handleOut(handle: Handle): Handle {
 
 function subjectOut(view: SubjectView): SubjectView {
   const out: SubjectView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, status: view.status };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  if (view.customStatus !== undefined) out.customStatus = { ...view.customStatus };
   // Hors ligne (dont le mode invisible) : jamais de titre en cours.
   if (view.status !== 'offline' && view.watching !== undefined) out.watching = normalizeWatching(view.watching);
   if (view.lastSeen !== undefined) out.lastSeen = view.lastSeen;
   return out;
 }
 
-function friendOut(view: FriendView): FriendView {
+/** Ami diffusé en direct : sans favori, surnom ni sourdine (propres au profil destinataire, absents des trames). */
+function friendOut(view: FriendLiveView): FriendLiveView {
   return { ...subjectOut(view), household: view.household === true };
 }
 
 function requestOut(view: FriendRequestView): FriendRequestView {
-  return { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
+  const out: FriendRequestView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  return out;
 }
 
 function messageOut(view: MessageView): MessageView {
@@ -89,9 +94,11 @@ function messageOut(view: MessageView): MessageView {
 }
 
 function noteOut(view: NoteView): NoteView {
+  const author: NoteView['author'] = { pid: view.author.pid, handle: handleOut(view.author.handle), avatarColor: view.author.avatarColor };
+  if (view.author.avatar !== undefined) author.avatar = view.author.avatar;
   return {
     id: view.id,
-    author: { pid: view.author.pid, handle: handleOut(view.author.handle), avatarColor: view.author.avatarColor },
+    author,
     pos: view.pos,
     kind: view.kind,
     body: view.body,

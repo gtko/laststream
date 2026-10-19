@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { SocialEvent } from '../src/user/social-v2-events.js';
 import { LIVE_PONG_FRAME, liveEnvelopes, liveFrame, parseLiveClientFrame, SOCIAL_LIVE_MAX_FRAME_CHARS } from '../src/user/social-v2-live.js';
-import type { FriendRequestView, FriendView, MessageView, NoteView } from '../src/user/social-v2-store.js';
+import type { FriendRequestView, FriendLiveView, MessageView, NoteView } from '../src/user/social-v2-store.js';
 
 /** Diffusion pure du flux temps réel social : formes JSON du contrat, audience, invisible, trames client. */
 
 const BOB_PID = 'BBBBBBBBBBBBBBBB';
 const ALICE_PID = 'AAAAAAAAAAAAAAAA';
 
-const bob: FriendView = {
+const bob: FriendLiveView = {
   pid: BOB_PID,
   handle: { name: 'bob', tag: 'A7K2', full: 'bob#A7K2' },
   avatarColor: '#3366ff',
@@ -84,7 +84,7 @@ describe('formes JSON du contrat', () => {
     const friend = frameFor(ALICE_PID, { t: 'presence', friend: { ...bob, household: false } });
     expect(friend).toEqual({ t: 'presence', friend: { ...bob, household: false } });
     const household = frameFor(ALICE_PID, { t: 'presence', friend: { ...bob, household: true } });
-    expect((household.friend as FriendView).household).toBe(true);
+    expect((household.friend as FriendLiveView).household).toBe(true);
   });
 
   it('demande reçue : { t, request }', () => {
@@ -109,13 +109,13 @@ describe('formes JSON du contrat', () => {
 
 describe('confidentialité', () => {
   it('invisible (vu hors ligne) : jamais de titre en cours', () => {
-    const hidden: FriendView = { ...bob, status: 'offline', household: false, lastSeen: undefined };
-    const frame = frameFor(ALICE_PID, { t: 'presence', friend: { ...hidden, watching: bob.watching } as FriendView });
+    const hidden: FriendLiveView = { ...bob, status: 'offline', household: false, lastSeen: undefined };
+    const frame = frameFor(ALICE_PID, { t: 'presence', friend: { ...hidden, watching: bob.watching } as FriendLiveView });
     expect(frame).toEqual({ t: 'presence', friend: { pid: BOB_PID, handle: bob.handle, avatarColor: bob.avatarColor, household: false, status: 'offline' } });
   });
 
   it('aucun identifiant interne ne sort : seuls les champs du contrat', () => {
-    const leaky = { ...bob, accountId: 'compte-interne-42', id: 42, profileId: 'profil-interne' } as unknown as FriendView;
+    const leaky = { ...bob, accountId: 'compte-interne-42', id: 42, profileId: 'profil-interne' } as unknown as FriendLiveView;
     const raw = liveEnvelopes([ALICE_PID], { t: 'friend', friend: leaky })[0]?.frame ?? '';
     expect(raw).not.toContain('compte-interne-42');
     expect(raw).not.toContain('profil-interne');
