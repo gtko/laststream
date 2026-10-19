@@ -90,6 +90,13 @@ describe('scrubUrl : adresses', () => {
 });
 
 describe('scrubText : texte libre', () => {
+  it('masque le jeton d’invité d’un salon (?t=) et les adresses WebSocket', () => {
+    expect(scrubText('erreur /party/R1/ws?t=SECRETTOK.sig&name=Lea', APP)).toBe('erreur /party/R1/ws?t=[retiré]&name=Lea');
+    const out = scrubText('WebSocket connection to wss://addon.example/party/R1/ws?t=SECRETTOK.sig&name=Lea failed', APP);
+    expect(out).not.toContain('SECRETTOK');
+    expect(out).not.toContain('SECRETTOK.sig');
+  });
+
   it('réécrit les URL d’un message et garde la ponctuation finale', () => {
     expect(scrubText('Échec de chargement de https://addon.example/abc/manifest.json?key=1.', APP))
       .toBe('Échec de chargement de [host].');

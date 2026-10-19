@@ -3,7 +3,7 @@ import { requireBase } from '../data/config';
 import { getLangPrefs } from '../data/langPrefs';
 import { getSession } from '../data/session';
 import {
-  createParty, createPartyInvite, endParty, joinParty, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
+  createParty, createPartyInviteLink, endParty, joinParty, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
 } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
@@ -233,12 +233,15 @@ class PartyBridge {
     this.emit();
   }
 
-  /** Invitation d'un invité pour le salon courant (hôte seulement) : renvoie l'identifiant du salon et le jeton. */
-  async createInvite(): Promise<{ roomId: string; token: string; expiresAt: string }> {
+  /**
+   * Lien d'invitation partagé du salon courant (hôte seulement) : renvoie l'identifiant du salon et le jeton du lien, le même
+   * à chaque appel. `rotate` (« Nouveau lien ») invalide les liens précédents.
+   */
+  async createInvite(rotate = false): Promise<{ roomId: string; token: string; expiresAt: string }> {
     const c = this.client;
     const roomId = c?.room?.id ?? '';
     if (!c || !c.isHost || !roomId) throw new UserApiError(0, 'not_host');
-    const inv = await createPartyInvite(roomId, this.profileId);
+    const inv = await createPartyInviteLink(roomId, this.profileId, rotate);
     return { roomId, token: inv.token, expiresAt: inv.expiresAt };
   }
 

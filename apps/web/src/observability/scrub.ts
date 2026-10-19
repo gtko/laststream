@@ -19,7 +19,9 @@ const DEBRID = /alldebrid|real-?debrid|torbox|premiumize/i;
 const MEDIA_FILE = /\.(m3u8|mkv|mp4)$/i;
 const MAGNET = /magnet:\?[^\s"'<>]*/gi;
 /** URL (et stremio:) jusqu'au premier espace ou guillemet : une clé après « | » ne doit pas fuir. */
-const URL_IN_TEXT = /(?:https?:\/\/|stremio:)[^\s"'<>]+/gi;
+const URL_IN_TEXT = /(?:(?:https?|wss?):\/\/|stremio:)[^\s"'<>]+/gi;
+/** Jeton d'invité d'un salon en paramètre court (`?t=` / `&t=`) dans un texte libre, hors d'une URL absolue. */
+const SHORT_TOKEN_PARAM = /([?&])t=[^&\s"'<>;,]*/g;
 /** Clés de débrideur en texte libre (hors d'une URL) : valeur masquée jusqu'au séparateur (&, /, |, espace). */
 const DEBRID_PARAM = /\b((?:all|real)-?debrid\w*|torbox|premiumize|debridoptions)(\s*=\s*)[^\s&"',;}|/]+/gi;
 const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
@@ -107,6 +109,7 @@ export function scrubText(text: string, appOrigin: string = currentOrigin()): st
       const core = match.slice(0, match.length - trailing.length);
       return (scrubUrl(core, appOrigin) ?? '[url retirée]') + trailing;
     })
+    .replace(SHORT_TOKEN_PARAM, '$1t=[retiré]')
     .replace(DEBRID_PARAM, '$1$2[retiré]')
     .replace(LONG_SEGMENT_IN_TEXT, '/[config]')
     .replace(SECRET, '$1[retiré]');

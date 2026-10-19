@@ -49,6 +49,8 @@ let panel: typeof import('../src/ui/partypanel.js');
 let partyBridge: typeof import('../src/party/bridge')['partyBridge'];
 let clip: { writeText: ReturnType<typeof vi.fn> };
 let calls: { method: string; path: string }[] = [];
+/** Corps JSON des requêtes, dans l'ordre. */
+let bodies: any[] = [];
 /** Adaptateur de lecture du formulaire de création (prêt seulement pendant le test de soumission). */
 let adapterStub: { ready: boolean } | null = null;
 
@@ -71,9 +73,11 @@ beforeEach(() => {
   clip = { writeText: vi.fn(async () => undefined) };
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clip });
   calls = [];
+  bodies = [];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = new URL(String(url));
     calls.push({ method: init?.method ?? 'GET', path: u.pathname });
+    bodies.push(typeof init?.body === 'string' ? JSON.parse(init.body) : null);
     return new Response(JSON.stringify({ token: 'tok-abcdefgh12', expiresAt: '2026-01-01T00:00:00Z' }), { status: 200 });
   }));
   partyBridge.client = null;
@@ -99,12 +103,25 @@ describe('panneau de la watch party : lien d’invitation', () => {
     panel.togglePartyPanel(true);
     (panelOf().querySelector('[data-wp-invite]') as HTMLElement).click();
     await tick();
-    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite' }]);
+    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite-link' }]);
     const copied = clip.writeText.mock.calls[0][0] as string;
     expect(copied).toMatch(/#\/party\/join\/r1\?t=tok-abcdefgh12$/);
     // Le lien copié est bien un lien invité que la route relit.
     expect(parseJoinHash(copied.slice(copied.indexOf('#')))).toEqual({ roomId: 'r1', token: 'tok-abcdefgh12' });
     expect((panelOf().querySelector('[data-wp-invite-link]') as HTMLInputElement).value).toBe(copied);
+  });
+
+  it('« Nouveau lien » : demande une nouvelle génération (rotate) et copie le nouveau lien', async () => {
+    partyBridge.client = fakeClient(true) as any;
+    panel.togglePartyPanel(true);
+    (panelOf().querySelector('[data-wp-invite]') as HTMLElement).click();
+    await tick();
+    expect(bodies[0]).toMatchObject({ rotate: false });
+    (panelOf().querySelector('[data-wp-newlink]') as HTMLElement).click();
+    await tick();
+    expect(calls.map((c) => c.path)).toEqual(['/party/r1/invite-link', '/party/r1/invite-link']);
+    expect(bodies[1]).toMatchObject({ rotate: true });
+    expect(clip.writeText).toHaveBeenCalledTimes(2);
   });
 
   it('participant non hôte : « Copier le lien » copie le lien du salon, sans créer d’invitation', async () => {
@@ -192,7 +209,7 @@ describe('création du salon : le créateur copie son lien d’invitation', () =
     expect(clip.writeText).not.toHaveBeenCalled(); // pas de copie avant la bienvenue
     becomeHost(c);
     await tick();
-    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite' }]);
+    expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite-link' }]);
     expect(clip.writeText).toHaveBeenCalledTimes(1);
     const copied = clip.writeText.mock.calls[0][0] as string;
     expect(copied).toMatch(/#\/party\/join\/r1\?t=tok-abcdefgh12$/);
@@ -230,7 +247,7 @@ describe('création du salon : le créateur copie son lien d’invitation', () =
       await tick(80);
       expect(spy).toHaveBeenCalledTimes(1);
       spy.mockRestore();
-      expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite' }]);
+      expect(calls).toEqual([{ method: 'POST', path: '/party/r1/invite-link' }]);
       expect(clip.writeText.mock.calls[0][0]).toMatch(/#\/party\/join\/r1\?t=tok-abcdefgh12$/);
     } finally {
       adapterStub = null;

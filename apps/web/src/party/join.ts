@@ -48,7 +48,7 @@ export function guestWsPath(roomId: string, token: string, name: string): string
 
 /** Message du refus : le navigateur ne montre pas le code HTTP de l'échec du WebSocket, donc on énumère les causes. */
 export function refusedText(): string {
-  return 'Le salon n’a pas accepté la connexion : lien expiré ou déjà utilisé, salon complet, ou pseudo déjà pris.';
+  return 'Le salon n’a pas accepté la connexion : lien expiré ou remplacé, salon complet, ou pseudo déjà pris.';
 }
 
 /** Message de fin de salon, selon le motif reçu du client de salon. */
@@ -88,4 +88,79 @@ export function hostLostText(): string {
 /** Message de l’invité quand l’hôte n’a pas encore de lecture partagée. */
 export function waitingHostText(): string {
   return 'En attente de l’hôte : la lecture partagée démarre quand il lit le titre.';
+}
+
+/* ---- Séance d'invité (lien partagé) ----
+ * Le lien est le même pour tous : à l'entrée, le serveur rend un jeton de séance individuel (lié à un identifiant d'invité et au
+ * pseudo attribué). Il sert aux reconnexions et vit en sessionStorage (onglet seulement), jamais en localStorage ni dans l'adresse. */
+
+export interface GuestSession {
+  sessionToken: string;
+  name: string;
+  /** Échéance, ISO 8601. */
+  expiresAt: string;
+}
+
+const SESSION_KEY = 'ls.party.guest.';
+
+/** Stockage de l'onglet, ou null s'il est indisponible (navigation privée, accès bloqué). */
+function tabStorage(): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mémorise la séance de l'invité pour ce salon. Sans effet si le stockage est indisponible. */
+export function saveGuestSession(roomId: string, session: GuestSession, storage = tabStorage()): void {
+  try {
+    storage?.setItem(SESSION_KEY + roomId, JSON.stringify(session));
+  } catch {
+    // stockage plein ou bloqué : l'invité repassera par le lien
+  }
+}
+
+/** Séance mémorisée pour ce salon, si elle existe, est bien formée et n'a pas expiré (sinon elle est oubliée). */
+export function loadGuestSession(roomId: string, now = Date.now(), storage = tabStorage()): GuestSession | null {
+  try {
+    const raw = storage?.getItem(SESSION_KEY + roomId);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<GuestSession> | null;
+    const valid =
+      value !== null && typeof value === 'object' &&
+      typeof value.sessionToken === 'string' && value.sessionToken.length >= TOKEN_MIN && value.sessionToken.length <= TOKEN_MAX &&
+      typeof value.name === 'string' && cleanPseudo(value.name) !== null &&
+      typeof value.expiresAt === 'string' && Date.parse(value.expiresAt) > now;
+    if (valid) return { sessionToken: value.sessionToken as string, name: value.name as string, expiresAt: value.expiresAt as string };
+    storage?.removeItem(SESSION_KEY + roomId);
+  } catch {
+    // illisible ou stockage bloqué
+  }
+  return null;
+}
+
+/** Oublie la séance de l'invité (salon terminé, exclusion, jeton refusé). */
+export function clearGuestSession(roomId: string, storage = tabStorage()): void {
+  try {
+    storage?.removeItem(SESSION_KEY + roomId);
+  } catch {
+    // stockage bloqué
+  }
+}
+
+/** Message d'un refus à l'entrée par le lien partagé (code d'erreur du serveur, jamais de texte du serveur). */
+export function entryErrorText(code: string): string {
+  switch (code) {
+    case 'invite_revoked': return 'Ce lien a été remplacé : demande le nouveau lien à l’hôte.';
+    case 'invite_invalid': return 'Lien d’invitation invalide ou expiré : demande une nouvelle invitation à l’hôte.';
+    case 'room_full':
+    case 'guest_limit': return 'Le salon est complet.';
+    case 'room_not_found': return 'Ce salon n’existe plus.';
+    case 'too_many_entries':
+    case 'rate_limited': return 'Trop d’entrées sur ce lien : réessaie dans quelques minutes.';
+    case 'invalid_name': return 'Pseudo refusé : choisis-en un autre.';
+    case 'network': return 'Serveur injoignable : vérifie ta connexion et réessaie.';
+    default: return 'Entrée dans le salon impossible pour le moment.';
+  }
 }

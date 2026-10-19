@@ -2,10 +2,13 @@
  * pour cette adresse). L'invité choisit un pseudo, rejoint le salon, reçoit la lecture de l'hôte par WebRTC et la décode ici.
  * Le lien débridé ne quitte jamais l'appareil de l'hôte : seules les plages de fichier arrivent. Aucune URL n'est affichée. */
 import { requireBase } from '../data/config';
+import { enterPartyAsGuest } from '../data/socialApi';
+import { UserApiError } from '../data/userApi';
 import { socketUrl } from '../party/bridge';
-import { cleanPseudo, guestWsPath, hashWithoutToken } from '../party/join';
+import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
+import { esc } from './util.js';
 
 /** Phases où la session ne fait plus rien : on rend la main au formulaire. */
 const TERMINAL = new Set(['refused', 'ended', 'unsupported']);
@@ -26,6 +29,8 @@ let timer = null;
 let audioCtx = null;
 /** Vrai pendant le chargement du lecteur (évite un second envoi du formulaire). */
 let joining = false;
+/** Salon dont la séance d'invité est en cours (effacée quand la session se termine : exclusion, salon fini, refus). */
+let currentRoom = '';
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const clock = (s) => {
@@ -83,6 +88,8 @@ function refresh(root) {
   status.textContent = [v.message || PHASE_TEXT[v.phase] || '', v.note].filter(Boolean).join(' ');
   const form = root.querySelector('[data-pj-form]');
   if (TERMINAL.has(v.phase)) {
+    // Séance finie ou refusée : le jeton de séance ne sert plus, le prochain essai repasse par le lien partagé.
+    if (currentRoom) clearGuestSession(currentRoom);
     stopSession();
     form.hidden = false;
     return;
@@ -114,6 +121,21 @@ async function join(root, roomId, token) {
   }
   unlockAudio();
   joining = true;
+  // Lien partagé : le jeton du lien s'échange (une fois) contre un jeton de séance individuel, réutilisé aux reconnexions.
+  let entry = loadGuestSession(roomId);
+  if (!entry) {
+    status.textContent = 'Entrée dans le salon…';
+    try {
+      const res = await enterPartyAsGuest(roomId, token, name);
+      entry = { sessionToken: res.sessionToken, name: res.name, expiresAt: res.expiresAt };
+      saveGuestSession(roomId, entry);
+    } catch (err) {
+      joining = false;
+      closeAudio();
+      status.textContent = entryErrorText(err instanceof UserApiError ? err.code : 'network');
+      return;
+    }
+  }
   status.textContent = 'Chargement du lecteur…';
   let GuestPlayer;
   try {
@@ -129,7 +151,8 @@ async function join(root, roomId, token) {
     closeAudio();
     return;
   }
-  const url = socketUrl(base, guestWsPath(roomId, token, name));
+  currentRoom = roomId;
+  const url = socketUrl(base, guestWsPath(roomId, entry.sessionToken, entry.name));
   session = new GuestRelaySession({
     connect: async () => new WebSocket(url),
     createPlayer: (callbacks) => new GuestPlayer(callbacks),
@@ -147,7 +170,7 @@ export function showPartyJoin(roomId, token) {
     '<h1 class="pj-title" id="pj-title" tabindex="-1">Watch party</h1>' +
     '<p class="pj-note">Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.</p>' +
     '<form class="pj-form" data-pj-form autocomplete="off">' +
-    '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" required></label>' +
+    '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
     '<button type="submit" class="btn btn-primary" data-pj-join>Rejoindre</button></form>' +
     '<p class="pj-msg" role="status" data-pj-status></p>' +
     '<div class="pj-player" data-pj-player hidden>' +
