@@ -14,7 +14,8 @@
     "relay:e2e": "node scripts/relay-e2e/two-pages.mjs",
     "relay:e2e:ac3": "node scripts/relay-e2e/ac3.mjs",
     "relay:e2e:mesh": "node scripts/relay-e2e/mesh.mjs",
-    "webaudio:e2e": "node scripts/web-audio-e2e/web-audio.mjs"
+    "webaudio:e2e": "node scripts/web-audio-e2e/web-audio.mjs",
+    "relay:e2e:party": "node scripts/relay-e2e/party.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.6.9",

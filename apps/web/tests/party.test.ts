@@ -1,8 +1,8 @@
 // Watch party : synchronisation (fonctions pures), client de protocole (messages, reconnexion), contrôleur (lecture partagée),
 // choix de la version par empreinte, profils enfants.
 import { describe, expect, it, vi } from 'vitest';
-import { PartyClient, BACKOFF_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
-import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, requestOfRoom, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
+import { PartyClient, BACKOFF_MS, CHAT_MEMORY_LINES, PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
+import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, playerOf, requestOfRoom, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
 import { PartyController, HOST_SYNC_EVERY_MS, type PlayerLike } from '../src/party/controller';
 import { fingerprintOf, matchScore, nameSimilarity, pickByFingerprint } from '../src/party/fingerprint';
 import { encodeClientMessage, parseServerMessage } from '../src/party/protocol';
@@ -609,6 +609,189 @@ describe('profil enfant et lien du salon', () => {
     const body = roomBodyOf(a, 'public', 'p1', 'fr');
     expect(body).toMatchObject({ profileId: 'p1', visibility: 'public', title: 'Severance', poster: '/s.jpg', language: 'fr', media: { type: 'series', tmdbId: 95396, season: 1, episode: 2 }, fingerprint: { fileName: 'S01E02.mkv', size: 123 } });
     expect(JSON.stringify(body)).not.toContain('debrid.example');
+  });
+});
+
+// ---------- Attente de tampon, chat et réactions (client, contrôleur) ----------
+describe('constantes d’attente (miroir du serveur)', () => {
+  it('avance de reprise ≥ 10 s et délai maximal ≥ 45 s', () => {
+    expect(PARTY_RESUME_AHEAD_SEC).toBeGreaterThanOrEqual(10);
+    expect(PARTY_WAIT_MAX_MS).toBeGreaterThanOrEqual(45_000);
+  });
+});
+
+describe('client : attente de tampon', () => {
+  it('trame wait : ouvre l’attente (who non vide), l’événement suit, who vide la ferme', async () => {
+    const { client, sockets, flush } = setup();
+    const seen: unknown[] = [];
+    client.on('wait', (w) => seen.push(w));
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    expect(client.waiting).toBeNull();
+    sockets[0].recv({ t: 'wait', who: ['alice'], since: 5000, maxMs: 45000, resumeAhead: 10 });
+    expect(client.waiting).toEqual({ who: ['alice'], since: 5000, maxMs: 45000, resumeAhead: 10 });
+    sockets[0].recv({ t: 'wait', who: [], since: 5000, maxMs: 45000 });
+    expect(client.waiting).toBeNull();
+    expect(seen).toEqual([{ who: ['alice'], since: 5000, maxMs: 45000, resumeAhead: 10 }, null]);
+  });
+
+  it('sans resumeAhead dans la trame, l’avance de reprise par défaut est utilisée ; une trame mal formée ne casse rien', async () => {
+    const { client, sockets, flush } = setup();
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    sockets[0].recv({ t: 'wait', who: ['alice', 4], since: 1, maxMs: 2 });
+    expect(client.waiting).toEqual({ who: ['alice'], since: 1, maxMs: 2, resumeAhead: PARTY_RESUME_AHEAD_SEC });
+    sockets[0].recv({ t: 'wait', who: 'bob', since: 1, maxMs: 2 });
+    expect(client.waiting).toBeNull();
+    expect(client.status).toBe('open');
+  });
+
+  it('un nouveau welcome efface l’attente (le serveur la renvoie si elle dure encore), la fermeture aussi', async () => {
+    const { client, sockets, flush } = setup();
+    const seen: unknown[] = [];
+    client.on('wait', (w) => seen.push(w));
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    sockets[0].recv({ t: 'wait', who: ['alice'], since: 1, maxMs: 2, resumeAhead: 10 });
+    sockets[0].recv(welcome('bob', false));
+    expect(client.waiting).toBeNull();
+    sockets[0].recv({ t: 'wait', who: ['alice'], since: 1, maxMs: 2, resumeAhead: 10 });
+    client.close();
+    expect(client.waiting).toBeNull();
+    expect(seen).toEqual([expect.objectContaining({ who: ['alice'] }), null, expect.objectContaining({ who: ['alice'] }), null]);
+  });
+
+  it('sendBuffering : envoie ready et ahead ramené à 0..600 ; hors ligne, rien ne part', async () => {
+    const { client, sockets, flush } = setup();
+    expect(client.sendBuffering(false, 3)).toBe(false);
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    expect(client.sendBuffering(false, 3.5)).toBe(true);
+    expect(client.sendBuffering(true, 9999)).toBe(true);
+    expect(client.sendBuffering(true, -4)).toBe(true);
+    expect(client.sendBuffering(true, Number.NaN)).toBe(true);
+    expect(sockets[0].sent.filter((m) => m.t === 'buf')).toEqual([
+      { t: 'buf', ready: false, ahead: 3.5 }, { t: 'buf', ready: true, ahead: 600 }, { t: 'buf', ready: true, ahead: 0 }, { t: 'buf', ready: true, ahead: 0 },
+    ]);
+  });
+});
+
+describe('client : chat et réactions', () => {
+  it('sendChat : espaces retirés, 500 caractères au plus, message vide ignoré', async () => {
+    const { client, sockets, flush } = setup();
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    expect(client.sendChat('  ' + 'a'.repeat(600))).toBe(true);
+    expect(client.sendChat(' \n ')).toBe(false);
+    const sent = sockets[0].sent.filter((m) => m.t === 'chat');
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).toHaveLength(500);
+    expect(sent[0].text.startsWith('aaaa')).toBe(true);
+  });
+
+  it('événement chat : historique à la connexion, puis nouvelles lignes ; ni doublon ni réémission après reconnexion', async () => {
+    const { client, sockets, flush } = setup();
+    const seen: string[] = [];
+    client.on('chat', (l) => seen.push(l.id));
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    expect(seen).toEqual(['m1']);
+    sockets[0].recv({ t: 'chat', line: { id: 'm2', from: 'alice', text: 'yo', at: 2 } });
+    sockets[0].recv({ t: 'chat', line: { id: 'm2', from: 'alice', text: 'yo', at: 2 } });
+    expect(seen).toEqual(['m1', 'm2']);
+    sockets[0].recv(welcome('bob', false, { chat: [{ id: 'm1', from: 'alice', text: 'hello', at: 1 }, { id: 'm2', from: 'alice', text: 'yo', at: 2 }, { id: 'm3', from: 'bob', text: 'ok', at: 3 }] }));
+    expect(seen).toEqual(['m1', 'm2', 'm3']);
+    expect(client.chat.map((l) => l.id)).toEqual(['m1', 'm2', 'm3']);
+  });
+
+  it('historique borné à CHAT_MEMORY_LINES (200) : les plus anciennes lignes partent', async () => {
+    const { client, sockets, flush } = setup();
+    expect(CHAT_MEMORY_LINES).toBe(200);
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    for (let i = 0; i < 250; i++) sockets[0].recv({ t: 'chat', line: { id: 'x' + i, from: 'alice', text: 't', at: i } });
+    expect(client.chat).toHaveLength(200);
+    expect(client.chat[0].id).toBe('x50');
+    expect(client.chat.at(-1)?.id).toBe('x249');
+    sockets[0].recv(welcome('bob', false, { chat: Array.from({ length: 250 }, (_, i) => ({ id: 'y' + i, from: 'alice', text: 't', at: i })) }));
+    expect(client.chat).toHaveLength(200);
+    expect(client.chat[0].id).toBe('y50');
+  });
+
+  it('sendReact : emoji de la liste du salon seulement ; react reste un alias', async () => {
+    const { client, sockets, flush } = setup();
+    client.start(); await flush(); sockets[0].open(); sockets[0].recv(welcome('bob', false));
+    expect(client.sendReact('🔥')).toBe(true);
+    expect(client.sendReact('💩')).toBe(false);
+    expect(client.react('👍')).toBe(true);
+    expect(sockets[0].sent.filter((m) => m.t === 'react')).toEqual([{ t: 'react', emoji: '🔥' }, { t: 'react', emoji: '👍' }]);
+  });
+});
+
+/** Moteur mpv : `pause()` part en IPC, mais l'état rapporté (propriété observée) ne suit qu'une observation plus tard. */
+function laggingMpv(clock: () => number, lagMs = 300) {
+  const calls: string[] = [];
+  let shown = false;
+  let pending: { value: boolean; at: number } | null = null;
+  const observed = (): boolean => {
+    if (pending !== null && clock() >= pending.at) { shown = pending.value; pending = null; }
+    return shown;
+  };
+  const command = (value: boolean, name: string) => { calls.push(name); pending = { value, at: clock() + lagMs }; };
+  return {
+    kind: 'mpv',
+    calls,
+    state: () => ({ time: 100, duration: 3600, paused: observed(), buffering: false, rate: 1 }),
+    play: () => command(false, 'play'),
+    pause: () => command(true, 'pause'),
+    seek: (t: number) => { calls.push('seek:' + t.toFixed(1)); },
+    setRate: (r: number) => { calls.push('rate:' + r); },
+  };
+}
+
+describe('contrôleur : attente de tampon, pause et reprise sans écho', () => {
+  it('hôte : l’attente ouverte par le salon met le lecteur en pause, la fin le relance, sans rien renvoyer', async () => {
+    const r = await room(true, { playing: true, pos: 100, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p);
+    expect(r.sent()).toEqual([]);
+    r.setNow(100_200);
+    r.sockets[0].recv({ t: 'wait', who: ['bob'], since: 100_200, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC });
+    broadcast(r, { playing: false, pos: 100, rev: 2 }, 'alice');
+    r.setNow(100_600); r.ctl.tick(p);
+    r.setNow(101_200); r.ctl.tick(p);
+    expect(p.paused_).toBe(true);
+    expect(p.calls).toEqual(['pause']);
+    r.setNow(101_800);
+    r.sockets[0].recv({ t: 'wait', who: [], since: 100_200, maxMs: PARTY_WAIT_MAX_MS });
+    broadcast(r, { playing: true, pos: 100, rev: 3 }, 'alice');
+    r.ctl.tick(p);
+    expect(p.calls).toEqual(['pause', 'play']);
+    expect(p.paused_).toBe(false);
+    r.setNow(102_400); r.ctl.tick(p);
+    expect(r.sent().filter((m) => m.action !== 'sync')).toEqual([]);
+  });
+
+  it('hôte sur moteur mpv (état moteur en retard) : la pause du salon est appliquée une fois, jamais renvoyée en ctl', async () => {
+    const r = await room(true, { playing: true, pos: 100, at: 100_000 });
+    const engine = laggingMpv(r.getNow);
+    const player = playerOf({ ready: true, engine } as unknown as SessionAdapter)!;
+    r.ctl.tick(player);
+    r.setNow(100_200);
+    broadcast(r, { playing: false, pos: 100, rev: 2 }, 'alice');
+    for (let t = 100_600; t <= 101_900; t += 100) { r.setNow(t); r.ctl.tick(player); }
+    expect(engine.calls).toEqual(['pause']);
+    expect(r.sent().filter((m) => m.action !== 'sync')).toEqual([]);
+  });
+
+  it('invité : l’attente du salon met son lecteur en pause, sans renvoyer la pause', async () => {
+    const r = await room(false, { playing: true, pos: 100, at: 100_000 });
+    const p = new FakePlayer();
+    p.paused_ = false; p.t = 100;
+    r.ctl.tick(p);
+    r.setNow(100_200);
+    r.sockets[0].recv({ t: 'wait', who: ['alice'], since: 100_200, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC });
+    broadcast(r, { playing: false, pos: 100, rev: 2 }, 'alice');
+    r.setNow(100_600); r.ctl.tick(p);
+    r.setNow(101_200); r.ctl.tick(p);
+    r.setNow(102_000); r.ctl.tick(p);
+    expect(p.calls).toEqual(['pause']);
+    expect(p.paused_).toBe(true);
+    expect(r.sent()).toEqual([]);
   });
 });
 

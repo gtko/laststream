@@ -106,6 +106,7 @@ function makePc(opts: PeerOptions): RTCPeerConnection {
 
 interface HostLink {
   pc: RTCPeerConnection;
+  channel: ChannelLike;
   server: RangeServer;
   /** Résolu quand la réponse de l'invité est appliquée ; rejeté quand la liaison est fermée avant. */
   remote: Deferred;
@@ -121,6 +122,8 @@ export class RelayHost {
   private readonly unsubscribe: () => void;
   /** Plafond de débit montant partagé par tous les liens. */
   private readonly budget: UploadBudget;
+  /** Trames SUBS des sous-titres courants : envoyées à l'ouverture de chaque canal, puis à chaque changement. */
+  private subs: readonly Uint8Array[] | null = null;
 
   constructor(
     private readonly source: RangeSource,
@@ -154,6 +157,25 @@ export class RelayHost {
   close(): void {
     this.unsubscribe();
     for (const id of [...this.links.keys()]) this.drop(id);
+  }
+
+  /**
+   * Sous-titres à envoyer aux invités (trames SUBS, voir encodeSubs) : renvoyés tout de suite sur chaque canal ouvert, et à
+   * l'ouverture de ceux qui ouvrent plus tard. Un canal pas encore ouvert n'a rien à recevoir avant son ouverture.
+   */
+  setSubtitles(frames: readonly Uint8Array[]): void {
+    this.subs = frames;
+    for (const link of this.links.values()) this.sendSubs(link.channel);
+  }
+
+  private sendSubs(channel: ChannelLike): void {
+    const frames = this.subs;
+    if (!frames || channel.readyState !== 'open') return;
+    try {
+      for (const frame of frames) channel.send(frame);
+    } catch {
+      // Canal fermé pendant l'envoi : la liaison se rompt d'elle-même (RangeServer).
+    }
   }
 
   private async onSignal(from: string, raw: unknown): Promise<void> {
@@ -203,6 +225,7 @@ export class RelayHost {
     const pc = makePc(this.opts);
     const channel = pc.createDataChannel(RELAY_CHANNEL_LABEL, { ordered: true }) as unknown as ChannelLike;
     channel.binaryType = 'arraybuffer';
+    channel.addEventListener('open', () => this.sendSubs(channel));
     const server: RangeServer = new RangeServer(this.source, channel, {
       ...this.opts.server,
       budget: this.budget,
@@ -212,7 +235,7 @@ export class RelayHost {
       onAbuse: () => this.dropServer(guestId, server),
       onStats: (stats) => this.opts.onStats?.(guestId, stats),
     });
-    const link: HostLink = { pc, server, remote: deferred(), answerTimer: null, pendingIce: 0 };
+    const link: HostLink = { pc, channel, server, remote: deferred(), answerTimer: null, pendingIce: 0 };
     this.links.set(guestId, link);
     link.answerTimer = setTimeout(() => {
       link.answerTimer = null;

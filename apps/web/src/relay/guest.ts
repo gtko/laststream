@@ -7,6 +7,7 @@ import {
   MAX_RANGE_BYTES, RelayError, decodeFrame, encodeCancel, encodeInfoReq, encodeReq, isValidRange, toBytes,
   type ChannelLike, type RelayFrame,
 } from './protocol';
+import type { ByteSourceStats } from './player/types';
 import { RateMeter, STATS_EVERY_MS } from './stats';
 
 export interface RangeInfo {
@@ -159,6 +160,11 @@ export class RangeClient {
 
   stats(): DownloadStats {
     return { bytesReceived: this.bytesReceived, rateBps: this.meter.rate() };
+  }
+
+  /** Octets reçus de l'hôte (ce client ne parle qu'à l'hôte, aucun octet n'arrive d'un pair). */
+  bytesStats(): ByteSourceStats {
+    return { bytesFromHost: this.bytesReceived, bytesFromPeers: 0 };
   }
 
   /** Arrête le client : les requêtes en cours échouent avec `closed`. Le canal reste à la charge de l'appelant. */

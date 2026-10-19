@@ -14,6 +14,8 @@ const EAC3: AudioTrackInfo = { codec: 'eac3', codecString: 'ec-3', sampleRate: 4
 const NOTE = 'Son non pris en charge par ce navigateur';
 const reader: RangeReader = { size: async () => 0, read: async () => new Uint8Array() };
 const canvas = { width: 0, height: 0, getContext: () => ({}) } as unknown as HTMLCanvasElement;
+/** Gains créés par le contexte audio factice (dans l'ordre de création). */
+const gains: Array<{ gain: { value: number } }> = [];
 
 /** Décodeurs WebCodecs : vidéo et audio acceptent toute configuration, la décision est dans `env`. */
 const env = (audioSupported: boolean): CodecEnv => ({
@@ -38,6 +40,7 @@ function opened(audio: AudioTrackInfo | null): OpenedMedia {
 }
 
 beforeEach(() => {
+  gains.length = 0;
   vi.stubGlobal(
     'VideoDecoder',
     vi.fn(function () {
@@ -56,6 +59,11 @@ beforeEach(() => {
       return {
         currentTime: 0,
         destination: {},
+        createGain: vi.fn(() => {
+          const node = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() };
+          gains.push(node);
+          return node;
+        }),
         resume: vi.fn(async () => undefined),
         suspend: vi.fn(async () => undefined),
         close: vi.fn(async () => undefined),
@@ -75,6 +83,79 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+describe('GuestPlayer : volume et sourdine', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('plein volume par défaut ; setVolume est borné à 0..1 et mémorisé sur l’appareil', () => {
+    const player = new GuestPlayer({ env: env(true) });
+    expect(player.getVolume()).toBe(1);
+    player.setVolume(0.4);
+    expect(player.getVolume()).toBe(0.4);
+    expect(localStorage.getItem('lastream-party-volume')).toBe('0.4');
+    player.setVolume(3);
+    expect(player.getVolume()).toBe(1);
+    player.destroy();
+  });
+
+  it('relit le volume mémorisé à la création ; une valeur illisible donne le plein volume', () => {
+    localStorage.setItem('lastream-party-volume', '0.25');
+    expect(new GuestPlayer({ env: env(true) }).getVolume()).toBe(0.25);
+    localStorage.setItem('lastream-party-volume', 'n/a');
+    expect(new GuestPlayer({ env: env(true) }).getVolume()).toBe(1);
+  });
+
+  it('le gain de sortie suit le volume et la sourdine, sans toucher au volume mémorisé', async () => {
+    vi.mocked(openMedia).mockResolvedValue(opened(AAC));
+    const player = new GuestPlayer({ env: env(true) });
+    await player.load(reader, canvas);
+    const gain = gains.at(-1)!;
+    expect(gain.gain.value).toBe(1);
+    player.setVolume(0.5);
+    expect(gain.gain.value).toBe(0.5);
+    player.setMuted(true);
+    expect(gain.gain.value).toBe(0);
+    expect(player.isMuted()).toBe(true);
+    expect(player.getVolume()).toBe(0.5);
+    player.setMuted(false);
+    expect(gain.gain.value).toBe(0.5);
+    player.destroy();
+  });
+});
+
+describe('GuestPlayer : statistiques et tampon', () => {
+  it('stats() renvoie les champs de l’interface, onBuffer est appelé environ une fois par seconde', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(openMedia).mockResolvedValue(opened(AAC));
+      const onBuffer = vi.fn();
+      const player = new GuestPlayer({ env: env(true), onBuffer });
+
+      await player.load(reader, canvas);
+      vi.advanceTimersByTime(2000);
+
+      expect(onBuffer).toHaveBeenCalledTimes(2);
+      // Source sans taille ni durée connues : aucun préchargement, donc aucun tampon compressé.
+      expect(player.bufferedAhead()).toBe(0);
+      expect(player.stats()).toMatchObject({
+        bytesFromHost: 0,
+        bytesFromPeers: 0,
+        videoCodec: 'avc',
+        audioCodec: 'aac',
+        bufferAhead: 0,
+        decodedAhead: expect.any(Number),
+      });
+      player.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('GuestPlayer.load : son non décodable', () => {

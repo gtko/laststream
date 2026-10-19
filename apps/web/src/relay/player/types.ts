@@ -10,6 +10,13 @@
 export interface RangeReader {
   size(): Promise<number>;
   read(start: number, end: number): Promise<Uint8Array>;
+  /** Octets reçus de l'hôte et des pairs, si la source les compte (optionnel, pour les statistiques). */
+  bytesStats?(): ByteSourceStats;
+}
+
+export interface ByteSourceStats {
+  bytesFromHost: number;
+  bytesFromPeers: number;
 }
 
 export interface VideoTrackInfo {
@@ -91,6 +98,19 @@ export interface PlayerStats {
   seeks: number;
 }
 
+/** Statistiques destinées à l'interface (voir `GuestPlayer.stats()`). */
+export interface GuestStats {
+  /** Octets reçus de l'hôte et des pairs depuis le chargement (0 si la source ne les compte pas). */
+  bytesFromHost: number;
+  bytesFromPeers: number;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  /** Secondes de tampon compressé (vidéo + audio) préchargées devant la position. */
+  bufferAhead: number;
+  /** Secondes décodées (ou confiées au décodeur) devant la position, sur les pistes présentes. */
+  decodedAhead: number;
+}
+
 export interface PlayerCallbacks {
   /** L'utilisateur (et non le salon) a lancé la lecture à cette position. */
   onUserPlay?: (position: number) => void;
@@ -99,6 +119,8 @@ export interface PlayerCallbacks {
   /** L'utilisateur (et non le salon) a demandé un déplacement vers cette position. */
   onUserSeek?: (position: number) => void;
   onStats?: (stats: PlayerStats) => void;
+  /** Secondes de tampon compressé devant la position, environ une fois par seconde. */
+  onBuffer?: (ahead: number) => void;
   onError?: (error: Error) => void;
   onEnded?: () => void;
 }
