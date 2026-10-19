@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createMemoryKvCache } from '../src/platform/memory-kv-cache.js';
 import { platform, setPlatform } from '../src/platform/index.js';
 import type { KvCache } from '../src/platform/types.js';
-import { DEBRID_LINK_DEFAULT_TTL_MS, DEBRID_LINK_MAX_TTL_MS, DEBRID_LINK_NAMESPACE } from '../src/user/debrid-links.js';
+import {
+  DEBRID_LINK_DEFAULT_TTL_MS,
+  DEBRID_LINK_MAX_TTL_MS,
+  DEBRID_LINK_NAMESPACE,
+  DEBRID_LINK_PUTS_PER_MINUTE,
+} from '../src/user/debrid-links.js';
 import { addKidProfile, type AdminRig, inviteAndRegister, type Member, request, startAdmin } from './admin-harness.js';
 
 /*
@@ -50,6 +55,8 @@ describe('liens débridés partagés entre profils', () => {
   beforeAll(async () => {
     setPlatform({
       ...original,
+      // Mode Workers : CF-Connecting-IP est posé par Cloudflare, donc lu. Les tests simulent les IP par cet en-tête.
+      capabilities: { ...original.capabilities, sharedState: true },
       createKvCache: (namespace) => (namespace === DEBRID_LINK_NAMESPACE ? recording : original.createKvCache(namespace)),
     });
     rig = await startAdmin();
@@ -195,6 +202,49 @@ describe('liens débridés partagés entre profils', () => {
     expect(write?.key).toMatch(/^[^:]+:[0-9a-f]{64}$/);
     // Déchiffrée à la lecture : le même compte retrouve bien le lien.
     expect((await get(rig.owner.token, source, IP_A)).body.url).toBe(URL_A);
+  });
+
+  it('hors Workers (Node) : un CF-Connecting-IP forgé est ignoré, l IP de l application fait foi', async () => {
+    const current = platform();
+    setPlatform({ ...current, capabilities: { ...current.capabilities, sharedState: false } });
+    try {
+      const source = 'node-ip-source-0001';
+      expect((await put(rig.owner.token, { sourceKey: source, url: URL_A }, IP_A)).status).toBe(200);
+      // Le client annonce d'autres IP : sans Workers, la même adresse de l'application reste la référence.
+      expect((await get(rig.owner.token, source, IP_B)).status).toBe(200);
+      expect((await get(rig.owner.token, source, null)).status).toBe(200);
+    } finally {
+      setPlatform(current);
+    }
+  });
+
+  it('dépôts : 30 par minute et par compte, 429 `rate_limited` au-delà ; les autres comptes ne sont pas touchés', async () => {
+    const carol = await inviteAndRegister(rig.app, rig.owner, 'carol');
+    for (let index = 0; index < DEBRID_LINK_PUTS_PER_MINUTE; index += 1) {
+      const res = await put(carol.token, { sourceKey: `quota-source-${String(index).padStart(4, '0')}`, url: URL_A }, IP_A);
+      expect(res.status).toBe(200);
+    }
+    const blocked = await put(carol.token, { sourceKey: 'quota-source-9999', url: URL_A }, IP_A);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toBe('rate_limited');
+    expect((await put(bob.token, { sourceKey: 'quota-bob-0001', url: URL_A }, IP_A)).status).toBe(200);
+  });
+
+  it('DELETE : invalide le lien de la source pour ce compte seulement ; sans session 401 ; clé mal formée 400', async () => {
+    const source = 'delete-source-0001';
+    expect((await put(rig.owner.token, { sourceKey: source, url: URL_A }, IP_A)).status).toBe(200);
+    const path = `/user/debrid-links/${encodeURIComponent(source)}`;
+
+    // Un autre compte ne peut pas invalider le lien du propriétaire.
+    expect((await request<LinkBody>(rig.app, 'DELETE', path, { token: bob.token, headers: headersOf(IP_A) })).status).toBe(200);
+    expect((await get(rig.owner.token, source, IP_A)).status).toBe(200);
+
+    const del = await request<LinkBody>(rig.app, 'DELETE', path, { token: rig.owner.token, headers: headersOf(IP_A) });
+    expect(del.status).toBe(200);
+    expect(del.body).toEqual({ ok: true });
+    expect((await get(rig.owner.token, source, IP_A)).status).toBe(404);
+    expect((await request<LinkBody>(rig.app, 'DELETE', path, { headers: headersOf(IP_A) })).status).toBe(401);
+    expect((await request<LinkBody>(rig.app, 'DELETE', '/user/debrid-links/trop%20court', { token: rig.owner.token, headers: headersOf(IP_A) })).status).toBe(400);
   });
 
   it('le lien et l IP ne sont jamais journalisés', async () => {

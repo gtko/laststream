@@ -6,6 +6,7 @@ import type { AppDeps } from '../deps.js';
 import { decryptJson, encryptJson } from '../config/codec.js';
 import { platform } from '../platform/index.js';
 import type { KvCache } from '../platform/types.js';
+import { createRateLimiter } from '../rate-limit.js';
 import { safeEqual } from './crypto.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { sessionOf } from './session.js';
@@ -25,6 +26,8 @@ export const DEBRID_LINK_NAMESPACE = 'dl';
 /** Validité par défaut d'un lien débridé, et plafond : un `expiresAt` plus lointain est ramené à ce plafond. */
 export const DEBRID_LINK_DEFAULT_TTL_MS = 3 * 3600_000;
 export const DEBRID_LINK_MAX_TTL_MS = 24 * 3600_000;
+/** Dépôts (PUT) par compte et par minute : chaque dépôt chiffre et écrit en KV. Au-delà : 429 `rate_limited`. */
+export const DEBRID_LINK_PUTS_PER_MINUTE = 30;
 /** Usage de chiffrement (séparé des configurations) ; lié au compte pour qu'une valeur ne se rejoue pas ailleurs. */
 const LINK_PURPOSE = 'debrid-link';
 const IP_HMAC_PURPOSE = 'debrid-link-ip';
@@ -63,9 +66,13 @@ const getQuerySchema = z.object({ sourceKey: sourceKeySchema });
 const storedSchema = z.object({ url: z.string(), expiresAt: z.string(), ipHash: z.string() });
 type StoredLink = z.infer<typeof storedSchema>;
 
-/** IP publique de l'appareil : CF-Connecting-IP (posé par Cloudflare), sinon l'adresse retenue par l'application. */
+/**
+ * IP publique de l'appareil. Sous Workers, CF-Connecting-IP est posé par Cloudflare et ne peut pas être forgé : on le
+ * lit. Ailleurs (Node), un en-tête libre serait forgeable par le client : on garde l'adresse retenue par l'application
+ * (socket, ou IP du relais de confiance authentifié par secret).
+ */
 function clientIpOf(c: Ctx): string | undefined {
-  const fromEdge = c.req.header('cf-connecting-ip')?.trim();
+  const fromEdge = platform().capabilities.sharedState ? c.req.header('cf-connecting-ip')?.trim() : undefined;
   const ip = fromEdge !== undefined && fromEdge !== '' ? fromEdge : c.get('ip');
   return ip !== undefined && IP_PATTERN.test(ip) ? ip : undefined;
 }
@@ -127,13 +134,19 @@ export function registerDebridLinkRoutes(router: App, deps: AppDeps, backend: Us
     return sendJson(c, { url: stored.url, expiresAt: stored.expiresAt });
   });
 
+  // Dépôts par compte (et non par IP) : un compte ne peut pas inonder le KV en changeant d'appareil ou de profil.
+  const putLimit = createRateLimiter(DEBRID_LINK_PUTS_PER_MINUTE, 60_000);
+
   /**
    * PUT /user/debrid-links `{ sourceKey, url, expiresAt? }` → 200 `{ expiresAt }` (échéance effective, bornée). Remplace
-   * l'entrée existante de la même source. 400 `invalid_body` (issues sans valeurs), 400 `ip_unknown` sans IP.
+   * l'entrée existante de la même source. 400 `invalid_body` (issues sans valeurs), 400 `ip_unknown` sans IP, 429
+   * `rate_limited` au-delà de 30 dépôts par minute et par compte.
    */
   router.put('/debrid-links', async (c) => {
     const users = backend.users();
     const { account } = await sessionOf(users, c);
+    const verdict = putLimit(account.id);
+    if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     await assertActorOf(users, account, c);
     const body = parseWith(putSchema, c.get('body'));
     const now = Date.now();
@@ -149,5 +162,19 @@ export function registerDebridLinkRoutes(router: App, deps: AppDeps, backend: Us
     const value = encryptJson(record, deps.secret, `${LINK_PURPOSE}:${account.id}`);
     await links().set(storageKey(account.id, body.sourceKey), value, Math.ceil((expiresMs - now) / 1000));
     return sendJson(c, { expiresAt: record.expiresAt });
+  });
+
+  /**
+   * DELETE /user/debrid-links/:key (clé de source) → 200 `{ ok: true }`, absent ou non. Invalide le lien partagé de la
+   * source pour ce compte, typiquement après un échec de lecture : l'appareil débloque alors lui-même et republie. 400
+   * `invalid_body` pour une clé mal formée.
+   */
+  router.delete('/debrid-links/:key', async (c) => {
+    const users = backend.users();
+    const { account } = await sessionOf(users, c);
+    await assertActorOf(users, account, c);
+    const { key } = parseWith(z.object({ key: sourceKeySchema }), { key: c.req.param('key') });
+    await links().delete(storageKey(account.id, key));
+    return sendJson(c, { ok: true });
   });
 }

@@ -142,6 +142,43 @@ describe('lt/recommend : lot partagé par empreinte de goûts', () => {
     expect(batchesInKv()).toHaveLength(2);
   });
 
+  it('même empreinte, historiques hors empreinte différents : le modèle ne voit ni ne sert aucun titre de l historique', async () => {
+    // Les 10 titres aimés (poids 2) forment l'empreinte ; l'historique (poids 1) reste hors des 10 retenus, et diffère.
+    const favourites = Array.from({ length: 10 }, (_, index) => ({
+      title: `Favori ${String(index + 1).padStart(2, '0')}`,
+      year: 2005,
+      type: 'movie',
+    }));
+    const secrets = ['Secret Alpha', 'Secret Beta', 'Secret Gamma', 'Secret Delta'];
+    // Le modèle cite chaque titre secret qu'il trouve dans son prompt : si l'historique y est, il fuit dans `reason_fr`.
+    reply = (payload) => {
+      const count = Number(/Donne exactement (\d+) titres/.exec(payload.messages[0]?.content ?? '')?.[1] ?? 0);
+      const cited = secrets.filter((title) => (payload.messages[1]?.content ?? '').includes(title)).join(', ');
+      return {
+        items: Array.from({ length: count }, (_, index) => ({
+          t: `Film A${String(index + 1).padStart(3, '0')}`,
+          y: 2000,
+          k: 'movie',
+          r: index === 0 && cited !== '' ? `Vu : ${cited}` : 'Parce que',
+        })),
+      };
+    };
+    const before = openrouterCalls();
+    const xavier = { history: [{ title: 'Secret Alpha', year: 2010, type: 'movie' }, { title: 'Secret Beta', year: 2010, type: 'movie' }], liked: favourites };
+    const yvonne = { history: [{ title: 'Secret Gamma', year: 2010, type: 'movie' }, { title: 'Secret Delta', year: 2010, type: 'movie' }], liked: favourites };
+
+    const xItems = await itemsOf(await post(xavier));
+    const yItems = await itemsOf(await post(yvonne));
+    expect(openrouterCalls() - before).toBe(1);
+
+    const prompt = (JSON.parse(upstream.callsTo(OPENROUTER).slice(before)[0]?.body ?? '{}') as Payload).messages[1]?.content ?? '';
+    expect(prompt).toContain('Favori 01 (2005) [movie]');
+    for (const secret of secrets) expect(prompt).not.toContain(secret);
+    expect(JSON.stringify(xItems)).not.toContain('Secret');
+    expect(JSON.stringify(yItems)).not.toContain('Secret');
+    expect(JSON.stringify(batchesInKv())).not.toContain('Secret');
+  });
+
   it('une requête : un seul appel au modèle, même pour 80 titres (95 demandés)', async () => {
     const before = openrouterCalls();
     const titles = await titlesOf(await post({ history: [{ title: 'Volume maximal', type: 'movie' }], count: 80 }));

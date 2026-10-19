@@ -85,15 +85,14 @@ describe('lt/recommend', () => {
     expect(body.items[0]?.poster_path).toBe('/dune.jpg');
   });
 
-  it('envoie le modèle configuré, le format JSON et l historique à OpenRouter', async () => {
+  it('envoie le modèle configuré, le format JSON et les titres de l empreinte à OpenRouter', async () => {
     reply = recommendReply([]);
     await post('recommend', { history: [{ title: 'Blade Runner', year: 1982, type: 'movie' }], liked: [{ title: 'Dune', type: 'movie' }] });
     const call = upstream.callsTo(OPENROUTER).at(-1);
     const payload = JSON.parse(call?.body ?? '{}') as { model: string; response_format: unknown; messages: { content: string }[] };
     expect(payload.model).toBe('test/model');
     expect(payload.response_format).toEqual({ type: 'json_object' });
-    expect(payload.messages[1]?.content).toContain('Blade Runner (1982) [movie]');
-    expect(payload.messages[1]?.content).toContain('Titres aimés : Dune [movie]');
+    expect(payload.messages[1]?.content).toContain('Titres vus ou aimés : Blade Runner (1982) [movie], Dune [movie]');
     expect(call?.headers.authorization).toBe(`Bearer ${KEYS.openrouterApiKey}`);
   });
 
@@ -206,16 +205,16 @@ describe('lt/recommend : volume, exclusions, notes', () => {
     expect(res.status).toBe(400);
   });
 
-  it('notes : 40 au plus dans le prompt, notes invalides ignorées, plus de 100 entrées refusées', async () => {
+  it('notes : seuls les 10 titres les plus marqués entrent dans le prompt, notes invalides ignorées, plus de 100 entrées refusées', async () => {
     reply = compactReply;
     const ratings = Array.from({ length: 99 }, (_, index) => ({ title: `Note ${String(index + 1).padStart(3, '0')}`, year: 2010, type: 'movie', rating: 3 }));
     ratings.push({ title: 'Demi-étoile interdite', year: 2010, type: 'movie', rating: 4.25 });
     const before = openrouterCalls();
     expect((await post('recommend', { history: [{ title: 'Notes' }], ratings })).status).toBe(200);
     const user = (JSON.parse(upstream.callsTo(OPENROUTER).slice(before)[0]?.body ?? '{}') as { messages: { content: string }[] }).messages[1]?.content ?? '';
-    expect(user).toContain("Notes de l'utilisateur sur 5");
-    expect(user).toContain('évite ce qui ressemble aux titres notés 0–2');
-    expect(user.match(/Note \d{3} \(2010\) \[movie\] 3/g)).toHaveLength(40);
+    expect(user).toContain('Titres vus ou aimés : ');
+    expect(user).toContain('évite ce qui ressemble aux titres rejetés');
+    expect(user.match(/Note \d{3} \(2010\) \[movie\]/g)).toHaveLength(10);
     expect(user).not.toContain('Demi-étoile interdite');
 
     const tooMany = Array.from({ length: 101 }, (_, index) => ({ title: `Trop ${index}`, rating: 1 }));

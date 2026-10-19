@@ -9,6 +9,8 @@ export const CACHE_MAX_BYTES = 100 * 1024 * 1024;
 export const NEGATIVE_TTL_MS = 60e3;
 /** Taille comptée pour une entrée négative (erreur mémorisée). */
 const NEGATIVE_BYTES = 256;
+/** Échec d'un rafraîchissement SWR : pas de nouvel essai pendant ce délai, la valeur périmée reste servie entre-temps. */
+export const REFRESH_RETRY_MS = 60e3;
 
 /**
  * Fournisseurs dont les réponses publiques passent aussi par le niveau 2 (KV partagé), un espace de noms par
@@ -107,16 +109,13 @@ async function readRecord(kv: KvCache, key: string): Promise<ReadRecord | undefi
 }
 
 /**
- * Écrit une valeur dans le niveau 2, seulement si elle y manque, a changé, ou n'est plus fraîche. Relit la clé juste
- * avant : une autre instance peut avoir écrit la même valeur entre-temps (aucune écriture alors, quota KV préservé).
+ * Écrit une valeur chargée dans le niveau 2. Pas de relecture : `resolve` vient de lire la clé et n'a trouvé ni
+ * enregistrement frais ni valeur à garder, donc une relecture ici ne coûtait qu'une lecture KV de plus.
  */
 async function persist(kv: KvCache, key: string, json: string, exp: number, stale: number): Promise<void> {
   try {
-    const hash = sha256(json);
-    const current = await readRecord(kv, key);
-    if (current !== undefined && current.e > Date.now() && current.h === hash) return;
     const ttlSeconds = Math.max(1, Math.ceil((stale - Date.now()) / 1000));
-    await kv.set(key, `{"e":${exp},"s":${stale},"h":"${hash}","v":${json}}`, ttlSeconds);
+    await kv.set(key, `{"e":${exp},"s":${stale},"h":"${sha256(json)}","v":${json}}`, ttlSeconds);
   } catch {
     /* niveau 2 indisponible : le niveau 1 suffit */
   }
@@ -154,8 +153,9 @@ export function setCacheListener(listener: CacheListener | undefined): void {
  * - Niveau 1 : mémoire de l'instance, LRU (une lecture déplace l'entrée en fin de file ; les périmées partent d'abord).
  * - Niveau 2 : KV partagé entre isolats, pour les fournisseurs (`provider`). Une valeur y est écrite seulement si elle
  *   manque, a changé ou n'est plus fraîche.
- * Stale-while-revalidate (`swr`) : une valeur périmée est servie tout de suite et rafraîchie en arrière-plan.
- * Requêtes identiques en vol : dédoublonnées (un seul appel amont). Les erreurs ne sont pas mises en cache, sauf une
+ * Stale-while-revalidate (`swr`) : une valeur périmée est servie tout de suite et rafraîchie en arrière-plan ; un échec
+ * du rafraîchissement n'est pas relancé avant REFRESH_RETRY_MS. Requêtes identiques en vol : dédoublonnées (un seul
+ * appel amont). Les erreurs ne sont pas mises en cache, sauf une
  * 404 amont (cache négatif de NEGATIVE_TTL_MS). Un TTL nul ou négatif ne garde rien. Une valeur plus grosse que le
  * plafond total n'est pas gardée.
  */
@@ -163,6 +163,8 @@ export class TtlCache {
   private readonly values = new Map<string, Entry>();
   private readonly pending = new Map<string, Promise<unknown>>();
   private readonly refreshing = new Set<string>();
+  /** Instant du dernier échec de rafraîchissement, par clé (délai REFRESH_RETRY_MS avant un nouvel essai). */
+  private readonly refreshFailures = new Map<string, number>();
   private readonly maxEntries: number;
   private readonly maxBytes: number;
   private readonly options: TtlCacheOptions;
@@ -264,14 +266,36 @@ export class TtlCache {
     return value;
   }
 
-  /** Rafraîchit une clé périmée en arrière-plan ; un seul rafraîchissement à la fois. Échec : la valeur périmée reste. */
+  /**
+   * Rafraîchit une clé périmée en arrière-plan ; un seul rafraîchissement à la fois. Échec : la valeur périmée reste, et
+   * aucun nouvel essai pendant REFRESH_RETRY_MS (sinon chaque lecture relancerait un amont en panne).
+   */
   private refreshInBackground<T>(key: string, ttlMs: number | ((value: T) => number), load: () => Promise<T>, options: CacheGetOptions): void {
     if (this.refreshing.has(key)) return;
+    const failedAt = this.refreshFailures.get(key);
+    if (failedAt !== undefined && Date.now() - failedAt < REFRESH_RETRY_MS) return;
     this.refreshing.add(key);
     const work = this.resolve(key, ttlMs, load, options, 'refresh')
-      .catch(() => undefined)
+      .then(
+        () => {
+          this.refreshFailures.delete(key);
+        },
+        () => {
+          this.noteRefreshFailure(key);
+        },
+      )
       .finally(() => this.refreshing.delete(key));
     (this.options.background ?? defaultBackground)(work);
+  }
+
+  private noteRefreshFailure(key: string): void {
+    const now = Date.now();
+    if (this.refreshFailures.size >= this.maxEntries) {
+      for (const [existing, at] of this.refreshFailures) {
+        if (now - at >= REFRESH_RETRY_MS) this.refreshFailures.delete(existing);
+      }
+    }
+    this.refreshFailures.set(key, now);
   }
 
   private kvFor(provider: CacheProvider | undefined): KvCache | undefined {

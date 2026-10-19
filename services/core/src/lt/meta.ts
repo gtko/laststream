@@ -283,6 +283,9 @@ export async function buildMetaFiche(
     type === 'series' ? episodesFor(ctx, svc, tmdbToken, tmdbId) : Promise.resolve({ episodes: null, failed: false }),
   ]);
   const tvdb = tvdbPart.tvdb;
+  // Complète seulement si les clés de service (celles du compte, à défaut celles du serveur) couvrent les sources de la
+  // fiche. Sinon elle est `partial` : une heure au plus de stockage (voir metaTtlMs), jamais 30 jours figés.
+  const incomplete = svc.mdblistApiKey === undefined || (type === 'series' && tvdbId !== null && svc.tvdbApiKey === undefined);
   const tmdbNext = dateOf(recordAt(json, 'next_episode_to_air').air_date);
   const fiche: MetaFiche = {
     v: 1,
@@ -309,7 +312,7 @@ export async function buildMetaFiche(
     ratingsDueAt: ratingsPart.dueAt,
     tvdb,
     episodes: episodesPart.episodes,
-    partial: tvdbPart.failed || episodesPart.failed,
+    partial: tvdbPart.failed || episodesPart.failed || incomplete,
   };
   return fiche;
 }
@@ -367,11 +370,20 @@ async function persist(
   const body = JSON.stringify(fiche);
   const etag = etagOf(body);
   if (rt.blobs !== undefined && (previous === undefined || previous.etag !== etag || previous.expiresAt <= now)) {
+    let stored = true;
     try {
       await rt.blobs.put(key, { body, etag, expiresAt });
-      if (previous?.etag !== etag) await rt.index().upsert(indexRow(fiche, etag, now));
     } catch (err) {
+      stored = false;
       console.warn(`[lt][meta] écriture du stockage échouée (${err instanceof Error ? err.name : 'inconnue'})`);
+    }
+    // L'index ne se met à jour qu'après un écrit réussi ; son propre échec ne doit pas passer pour un échec d'écriture.
+    if (stored && previous?.etag !== etag) {
+      try {
+        await rt.index().upsert(indexRow(fiche, etag, now));
+      } catch (err) {
+        console.warn(`[lt][meta] index des fiches non mis à jour (${err instanceof Error ? err.name : 'inconnue'})`);
+      }
     }
   }
   return { body, etag, expiresAt, stale: false };
@@ -401,11 +413,16 @@ async function rebuild(rt: MetaRuntime, svc: MetaServices, type: MetaType, tmdbI
   return persist(rt, metaKey(type, tmdbId), fiche, now + metaTtlMs(fiche, now), previousBlob, now);
 }
 
-/** Reconstruction dédoublonnée : une seule construction en vol par fiche dans l'isolat. */
+/**
+ * Reconstruction dédoublonnée : une seule construction en vol par fiche dans l'isolat. Les clés de service sont celles
+ * du demandeur : son erreur de configuration est levée avant tout partage, et l'échec d'une construction en vol (jeton
+ * refusé d'un autre compte, par exemple) ne lui est pas transmis : celui qui la rejoint relance la sienne.
+ */
 function rebuildOnce(rt: MetaRuntime, svc: MetaServices, type: MetaType, tmdbId: number, previousBlob: MetaBlob | undefined): Promise<MetaResult> {
+  requireTmdb(svc);
   const key = metaKey(type, tmdbId);
   const running = building.get(key);
-  if (running !== undefined) return running;
+  if (running !== undefined) return running.catch(() => rebuildOnce(rt, svc, type, tmdbId, previousBlob));
   const work = rebuild(rt, svc, type, tmdbId, previousBlob)
     .then((result) => {
       failures.delete(key);

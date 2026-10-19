@@ -199,8 +199,6 @@ const RECOMMEND_ANGLE =
   'environ deux tiers proches des goûts de l’utilisateur (historique, titres aimés, notes 4 à 5), un tiers de découvertes : titres moins connus ou inattendus qui devraient pourtant lui plaire';
 const RECOMMEND_EXCLUDE_MAX = 500;
 const RECOMMEND_RATINGS_MAX = 100;
-/** Borne fixe du prompt : quel que soit le corps reçu, la partie « notes » reste petite. */
-const RECOMMEND_RATINGS_IN_PROMPT = 40;
 /** Empreinte de goûts : titres les plus marqués retenus (goûts, puis rejets), et longueur de titre retenue. */
 const FINGERPRINT_LIKED = 10;
 const FINGERPRINT_DISLIKED = 5;
@@ -284,21 +282,18 @@ function countOf(body: Record<string, unknown>): number {
 }
 
 /**
- * Contexte de goûts du prompt : historique, titres aimés, notes sur 5 (bornées). Les titres déjà vus ne figurent pas
- * ici : le lot est partagé entre profils, leurs exclusions s'appliquent après lecture du cache.
+ * Contexte de goûts du prompt : uniquement les titres de l'empreinte. Le lot est partagé entre profils de même
+ * empreinte : ce que le prompt contient, le modèle peut le citer dans `reason_fr`, servi à tous. Historique hors
+ * empreinte, notes détaillées et exclusions n'entrent donc jamais ici.
  */
-function promptContext(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTitle[]): string {
-  const fmt = (arr: HistoryItem[]): string =>
+function promptContext(fingerprint: TasteFingerprint): string {
+  const fmt = (arr: FingerprintTitle[]): string =>
     arr.length ? arr.map((x) => `${x.title}${x.year ? ' (' + x.year + ')' : ''} [${x.type}]`).join(', ') : 'aucun';
-  const lines = [`Historique récent : ${fmt(history)}`, `Titres aimés : ${fmt(liked)}`];
-  if (ratings.length > 0) {
-    const shown = [...ratings].sort((a, b) => b.rating - a.rating).slice(0, RECOMMEND_RATINGS_IN_PROMPT);
-    const list = shown.map((r) => `${r.title}${r.year ? ' (' + r.year + ')' : ''} [${r.type}] ${r.rating}`).join(', ');
-    lines.push(
-      `Notes de l'utilisateur sur 5 : ${list}. Privilégie ce qui ressemble aux titres notés 4–5, évite ce qui ressemble aux titres notés 0–2.`,
-    );
-  }
-  return lines.join('\n');
+  return [
+    `Titres vus ou aimés : ${fmt(fingerprint.liked)}`,
+    `Titres rejetés : ${fmt(fingerprint.disliked)}`,
+    'Privilégie ce qui ressemble aux titres vus ou aimés, évite ce qui ressemble aux titres rejetés.',
+  ].join('\n');
 }
 
 /** Un appel au modèle : `count` titres selon l'angle commun. Sortie compacte, budget de jetons proportionné. */
@@ -398,26 +393,49 @@ const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 
 /** Poids quantifié : 1 (faible) à 3 (fort), par tranches de deux points. */
 const weightLevel = (weight: number): number => Math.min(3, Math.ceil(weight / 2));
 
-/** Les `n` titres les plus pesants, quantifiés et triés par titre : l'ordre du corps n'entre pas dans l'empreinte. */
-function topWeights(weights: Map<string, number>, n: number): [string, number][] {
+/** Titre pesé de l'empreinte : texte d'origine (pour le prompt), année de la première occurrence, poids cumulé. */
+interface FingerprintTitle {
+  title: string;
+  year: number | null;
+  type: 'movie' | 'tv';
+}
+type WeightedTitles = Map<string, FingerprintTitle & { weight: number }>;
+
+/** Les `n` titres les plus pesants, triés par clé : l'ordre d'entrée ne compte pas. */
+function topOf(weights: WeightedTitles, n: number): [string, FingerprintTitle & { weight: number }][] {
   return [...weights]
-    .sort(([keyA, a], [keyB, b]) => b - a || compareText(keyA, keyB))
+    .sort(([keyA, a], [keyB, b]) => b.weight - a.weight || compareText(keyA, keyB))
     .slice(0, n)
-    .map(([key, weight]): [string, number] => [key, weightLevel(weight)])
     .sort(([a], [b]) => compareText(a, b));
+}
+
+/** Empreinte de goûts : clé de cache partagée, et les seuls titres qui entrent dans le prompt du lot. */
+interface TasteFingerprint {
+  key: string;
+  liked: FingerprintTitle[];
+  disliked: FingerprintTitle[];
 }
 
 /**
  * Empreinte de goûts partagée entre profils : titres les plus marqués (historique +1, titres aimés +2, note 4 à 5 +2,
- * note 3 +1 ; notes 0 à 2 au rejet), quantifiés, triés, tronqués, puis hachés avec le modèle, la langue et la taille
- * du lot. Aucun identifiant de profil, aucun nom, aucune exclusion : celles-ci s'appliquent après lecture du cache.
+ * note 3 +1 ; notes 0 à 2 au rejet). La clé hache ces titres quantifiés, triés, avec le modèle, la langue et la taille
+ * du lot : aucun identifiant de profil, aucun nom, aucune exclusion (celles-ci s'appliquent après lecture du cache).
+ * Les titres retenus sont aussi ceux du prompt : deux profils de même clé reçoivent le même prompt.
  */
-function tasteKey(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTitle[], model: string, pool: number): string {
-  const likes = new Map<string, number>();
-  const dislikes = new Map<string, number>();
-  const add = (weights: Map<string, number>, item: { title: string; type: 'movie' | 'tv' }, weight: number): void => {
+function tasteFingerprint(
+  history: HistoryItem[],
+  liked: HistoryItem[],
+  ratings: RatedTitle[],
+  model: string,
+  pool: number,
+): TasteFingerprint {
+  const likes: WeightedTitles = new Map();
+  const dislikes: WeightedTitles = new Map();
+  const add = (weights: WeightedTitles, item: FingerprintTitle, weight: number): void => {
     const key = `${item.type}:${normalizeTitle(item.title).slice(0, FINGERPRINT_KEY_CHARS)}`;
-    weights.set(key, (weights.get(key) ?? 0) + weight);
+    const entry = weights.get(key);
+    if (entry !== undefined) entry.weight += weight;
+    else weights.set(key, { title: item.title, year: item.year, type: item.type, weight });
   };
   for (const item of history) add(likes, item, 1);
   for (const item of liked) add(likes, item, 2);
@@ -426,14 +444,22 @@ function tasteKey(history: HistoryItem[], liked: HistoryItem[], ratings: RatedTi
     else if (rated.rating === 3) add(likes, rated, 1);
     else if (rated.rating <= 2) add(dislikes, rated, 1);
   }
-  return digest({
-    v: 1,
-    lang: DEFAULT_LANGUAGE,
-    model,
-    pool,
-    likes: topWeights(likes, FINGERPRINT_LIKED),
-    dislikes: topWeights(dislikes, FINGERPRINT_DISLIKED),
-  });
+  const likedTop = topOf(likes, FINGERPRINT_LIKED);
+  const dislikedTop = topOf(dislikes, FINGERPRINT_DISLIKED);
+  const quantized = (top: [string, { weight: number }][]): [string, number][] =>
+    top.map(([key, entry]): [string, number] => [key, weightLevel(entry.weight)]);
+  return {
+    key: digest({
+      v: 2,
+      lang: DEFAULT_LANGUAGE,
+      model,
+      pool,
+      likes: quantized(likedTop),
+      dislikes: quantized(dislikedTop),
+    }),
+    liked: likedTop.map(([, entry]) => entry),
+    disliked: dislikedTop.map(([, entry]) => entry),
+  };
 }
 
 /** Lot résolu via TMDB, avant exclusions : au plus `poolSizeOf(count)` titres, sans doublon. */
@@ -445,7 +471,8 @@ interface RecommendPool {
  * Recommandations : un seul appel au modèle par requête en cas de manque, résolu via TMDB (6 à la fois), puis
  * dédoublonné. Le lot est partagé entre profils aux goûts proches : clé = empreinte de goûts, niveau 2 KV (fournisseur
  * openrouter), 24 h, périmé servi puis rafraîchi (SWR). Les titres déjà vus du profil sont retirés après lecture du
- * cache, puis le résultat est coupé à `count`.
+ * cache, puis le résultat est coupé à `count`. Le prompt du lot ne contient que les titres de l'empreinte : l'historique
+ * hors empreinte d'un profil ne peut donc pas être cité dans `reason_fr` servi à un autre.
  */
 export async function recommend(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<unknown> {
   const ai = aiSettings(config);
@@ -456,11 +483,12 @@ export async function recommend(ctx: LtContext, config: Config, body: Record<str
   const exclude = exclusionsOf(body.exclude);
   const count = countOf(body);
   const pool = poolSizeOf(count);
+  const fingerprint = tasteFingerprint(history, liked, ratings, ai.model, pool);
   const shared = await ctx.state.cache.get<RecommendPool>(
-    `recommend:${tasteKey(history, liked, ratings, ai.model, pool)}`,
+    `recommend:${fingerprint.key}`,
     (value) => (value.items.length > 0 ? TTL.aiRecommend : TTL.aiRecommendEmpty),
     async () => {
-      const suggestions = await askModel(ctx, ai, pool, promptContext(history, liked, ratings));
+      const suggestions = await askModel(ctx, ai, pool, promptContext(fingerprint));
       const resolved = await mapLimit(suggestions, RESOLVE_CONCURRENCY, (item) => resolveTitle(ctx, token, item));
       const seen = new Set<string>();
       const items: Record<string, unknown>[] = [];

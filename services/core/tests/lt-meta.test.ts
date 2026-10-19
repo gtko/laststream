@@ -26,6 +26,8 @@ class MemoryBlobs implements MetaBlobStore {
 let movieTitle = 'Matrix';
 /** Vrai : TMDB répond 503 pour le film 604 (panne simulée). */
 let tmdbDown = false;
+/** Barrière de la réponse TMDB pour le film 605 : le test la lève pour tenir une construction en vol. */
+let gate605: Promise<void> = Promise.resolve();
 
 const movieDetails = () => ({
   id: 603,
@@ -94,6 +96,13 @@ beforeAll(async () => {
     [MATRIX_ID]: () => json(movieDetails()),
     [GOT_ID]: () => json(seriesDetails('2026-10-21', 'Returning Series')),
     [`${TMDB}/movie/604`]: () => (tmdbDown ? new Response('panne', { status: 503 }) : json({ ...movieDetails(), id: 604, title: 'Film 604', imdb_id: null })),
+    // Film 605 : jeton TMDB refusé (401) pour tout autre jeton que celui du compte A.
+    [`${TMDB}/movie/605`]: async (call) => {
+      await gate605;
+      return call.headers.authorization === `Bearer ${KEYS.tmdbToken}`
+        ? json({ ...movieDetails(), id: 605, title: 'Film 605', imdb_id: null })
+        : json({ status_message: 'Invalid API key' }, 401);
+    },
     [`${MDB}/imdb/movie/tt0133093`]: () => json({ ratings: [{ source: 'imdb', value: 8.7 }, { source: 'tomatoes', value: 88 }], score: 85, released: '1999-03-31' }),
     [`${MDB}/imdb/show/tt0944947`]: () => json({ ratings: [{ source: 'imdb', value: 9.2 }], score: 90 }),
   });
@@ -179,16 +188,76 @@ describe('fiche partagée : construction et stockage', () => {
     expect((await meta('movie', '603', accountB(), { 'if-none-match': `"x", W/${etag}` })).status).toBe(304);
   });
 
-  it('série en cours : expiration jusqu’au prochain épisode, bornée à 7 jours', async () => {
+  it('série en cours sans clé TVDB (ni du compte ni du serveur) : fiche partielle, stockée une heure au plus', async () => {
     const res = await meta('series', '1399', accountA());
     expect(res.status).toBe(200);
-    const fiche = (await res.json()) as { type: string; status: string; nextAirDate: string; imdbId: string; tvdbId: number; episodes: unknown };
-    expect(fiche).toMatchObject({ type: 'series', status: 'Returning Series', nextAirDate: '2026-10-21', imdbId: 'tt0944947', tvdbId: 121361 });
+    const fiche = (await res.json()) as { type: string; status: string; nextAirDate: string; imdbId: string; tvdbId: number; episodes: unknown; partial: boolean };
+    expect(fiche).toMatchObject({ type: 'series', status: 'Returning Series', nextAirDate: '2026-10-21', imdbId: 'tt0944947', tvdbId: 121361, partial: true });
     expect(fiche.episodes).not.toBeNull();
     const stored = blobs.items.get('meta/series/1399.json');
     const remaining = (stored?.expiresAt ?? 0) - Date.now();
-    expect(remaining).toBeGreaterThanOrEqual(META_TTL.inProgressMin - 60e3);
-    expect(remaining).toBeLessThanOrEqual(META_TTL.inProgressMax);
+    expect(remaining).toBeGreaterThanOrEqual(META_TTL.partial - 60e3);
+    expect(remaining).toBeLessThanOrEqual(META_TTL.partial + 60e3);
+  });
+
+  it('sans clé MDBList (ni du compte ni du serveur) : fiche partielle, jamais stockée plus d une heure', async () => {
+    const res = await meta('movie', '603', tokenFor({ tmdbToken: KEYS.tmdbToken }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ title: 'Matrix', ratings: null, partial: true });
+    const remaining = (blobs.items.get('meta/movie/603.json')?.expiresAt ?? 0) - Date.now();
+    expect(remaining).toBeLessThanOrEqual(META_TTL.partial + 60e3);
+  });
+
+  it('construction partagée : l échec du jeton d un compte n est pas transmis à celui qui rejoint la construction', async () => {
+    let release = (): void => undefined;
+    gate605 = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const refused = meta('movie', '605', tokenFor({ tmdbToken: 'jeton-refuse-000', mdblistApiKey: KEYS.mdblistApiKey }));
+    await until(() => upstream.callsTo(`${TMDB}/movie/605`).length > 0, 'construction en vol');
+    // Le compte A rejoint la construction en vol (bloquée) ; le lâcher n'arrive qu'après son arrivée.
+    const accepted = meta('movie', '605', accountA());
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+
+    expect((await refused).status).not.toBe(200);
+    const ok = await accepted;
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ title: 'Film 605' });
+  });
+
+  it('index en panne : la fiche reste stockée et servie, et l échec est signalé comme un échec d index', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // Seul `upsert` échoue : le dépôt réel répond pour le reste (le proxy de dépôt n'accepte pas de spy direct).
+    const real = backend.meta();
+    const metaSpy = vi.spyOn(backend, 'meta').mockReturnValue(
+      new Proxy(real, { get: (target, prop, receiver) => (prop === 'upsert' ? () => Promise.reject(new Error('index indisponible')) : Reflect.get(target, prop, receiver)) }),
+    );
+    try {
+      const res = await meta('movie', '603', accountA());
+      expect(res.status).toBe(200);
+      expect(blobs.items.has('meta/movie/603.json')).toBe(true);
+      const messages = warn.mock.calls.map((args) => String(args[0]));
+      expect(messages.some((message) => message.includes('index'))).toBe(true);
+      expect(messages.some((message) => message.includes('écriture du stockage échouée'))).toBe(false);
+    } finally {
+      metaSpy.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it('écriture R2 en échec : la fiche est servie, sans ligne d index', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(blobs, 'put').mockRejectedValue(new Error('r2 indisponible'));
+    try {
+      const res = await meta('movie', '603', accountA());
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ title: 'Matrix' });
+      expect(await backend.meta().find('movie', 603)).toBeUndefined();
+      expect(warn.mock.calls.some((args) => String(args[0]).includes('écriture du stockage échouée'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('fiche périmée : servie aussitôt (no-cache), reconstruite en arrière-plan, nouvelle empreinte et index à jour', async () => {

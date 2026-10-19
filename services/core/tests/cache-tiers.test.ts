@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type CacheEvent, type CacheProvider, TtlCache } from '../src/cache/ttl-cache.js';
+import { type CacheEvent, type CacheProvider, REFRESH_RETRY_MS, TtlCache } from '../src/cache/ttl-cache.js';
 import { getRuntimeSeconds } from '../src/engine/cinemeta.js';
 import { createLtContext } from '../src/lt/context.js';
 import type { KvCache } from '../src/platform/types.js';
@@ -103,6 +103,60 @@ describe('TtlCache : stale-while-revalidate', () => {
   });
 });
 
+describe('TtlCache : échec de rafraîchissement et niveau 2', () => {
+  it('échec du rafraîchissement SWR : pas de nouvel essai pendant 60 s, la valeur périmée reste servie, puis un essai', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    const background: Promise<unknown>[] = [];
+    const cache = new TtlCache(100, 1e6, { kv: () => undefined, background: (work) => background.push(work) });
+    // TTL de 10 min : la fenêtre de service périmé (10 min) dépasse le délai de 60 s à vérifier.
+    const LONG = 10 * 60_000;
+    await cache.get('k', LONG, async () => 'ancienne', { swr: true });
+    vi.setSystemTime(Date.now() + LONG);
+    let attempts = 0;
+    const failing = async (): Promise<string> => {
+      attempts += 1;
+      throw new Error('amont coupé');
+    };
+
+    expect(await cache.get('k', LONG, failing, { swr: true })).toBe('ancienne');
+    await Promise.all(background.splice(0));
+    expect(attempts).toBe(1);
+
+    vi.setSystemTime(Date.now() + 10_000);
+    expect(await cache.get('k', LONG, failing, { swr: true })).toBe('ancienne');
+    await Promise.all(background.splice(0));
+    expect(attempts).toBe(1);
+
+    vi.setSystemTime(Date.now() + REFRESH_RETRY_MS - 10_000);
+    expect(await cache.get('k', LONG, failing, { swr: true })).toBe('ancienne');
+    await Promise.all(background.splice(0));
+    expect(attempts).toBe(2);
+  });
+
+  it('miss sur le niveau 2 : une lecture KV puis une écriture, sans relecture de la clé avant écriture', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    const reads: string[] = [];
+    const writes: string[] = [];
+    const kv: KvCache = {
+      get: (key) => {
+        reads.push(key);
+        return Promise.resolve(undefined);
+      },
+      set: (key) => {
+        writes.push(key);
+        return Promise.resolve();
+      },
+      delete: () => Promise.resolve(),
+    };
+    const cache = new TtlCache(100, 1e6, { kv: () => kv });
+    expect(await cache.get('k', TTL, async () => 'v', { provider: 'openrouter' })).toBe('v');
+    expect(reads).toEqual(['k']);
+    expect(writes).toEqual(['k']);
+  });
+});
+
 describe('TtlCache : requêtes simultanées', () => {
   it('deux appels simultanés pour une même clé = un seul appel amont', async () => {
     const events: CacheEvent[] = [];
@@ -188,16 +242,16 @@ describe('TtlCache : niveau 2 (KV)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('pas de PUT si la même valeur est déjà fraîche en KV (écriture concurrente d une autre instance)', async () => {
+  it('écriture concurrente d une autre instance : la valeur chargée est réécrite, sans relecture avant écriture', async () => {
     const kv = memoryKv();
     await withKv(kv).get('k', TTL, async () => 'v', { provider: 'tmdb' });
     expect(kv.sets).toBe(1);
 
-    // Ce lecteur rate le KV à sa première lecture (l'autre instance n'avait pas encore écrit), puis le trouve frais.
+    // Ce lecteur rate le KV à sa première lecture (l'autre instance n'avait pas encore écrit) : il charge, puis réécrit.
     let loads = 0;
     expect(await withKv(racyOnce(kv)).get('k', TTL, async () => ((loads += 1), 'v'), { provider: 'tmdb' })).toBe('v');
     expect(loads).toBe(1);
-    expect(kv.sets).toBe(1);
+    expect(kv.sets).toBe(2);
   });
 
   it('PUT si la valeur a changé', async () => {
