@@ -330,6 +330,7 @@ export function renderHome() {
   app.innerHTML = (d.kids ? viewKids(d) : viewA(d)) + footer() + tabbar();
   syncTopbar();
   hydrateContinue(document.getElementById('cont-slot'));
+  void refreshHome(true); // ouverture de l'accueil : la rangée reflète le compte sans attendre le prochain tour (60 s)
   renderAI();
   renderUpcoming();
   if (!state.data.kids) renderFeatured();
@@ -436,7 +437,8 @@ function syncHomeData() {
 }
 
 onDataEvent((e) => {
-  if (e.kind === 'player') { if (homeStale) syncHomeData(); return; }
+  // Lecteur fermé : la progression vient d'être écrite, l'accueil la relit aussitôt (sans attendre le prochain tour).
+  if (e.kind === 'player') { if (homeStale) syncHomeData(); void refreshHome(true); return; }
   syncHomeData();
 });
 onHomeChange(syncHomeData);
@@ -445,11 +447,16 @@ onHomeChange(syncHomeData);
 const REMOTE_EVERY_MS = 60_000;
 let remoteAt = 0;
 let remoteBusy = false;
+let remoteAgain = false;
 
-/** Relit le compte (changements faits sur un autre appareil ou profil) ; une relecture à la fois, 5 s au moins entre deux. */
-async function refreshHome() {
-  if (remoteBusy || document.hidden || !homeOnScreen()) return;
-  if (Date.now() - remoteAt < 5000) return;
+/**
+ * Relit le compte (changements faits sur un autre appareil ou profil, progression du lecteur natif). Une relecture à la fois ;
+ * sans `force`, 5 s au moins entre deux. Une demande forcée pendant une relecture en lance une seule de plus, à la suite.
+ */
+async function refreshHome(force = false) {
+  if (document.hidden || !homeOnScreen()) return;
+  if (remoteBusy) { if (force) remoteAgain = true; return; }
+  if (!force && Date.now() - remoteAt < 5000) return;
   remoteAt = Date.now();
   remoteBusy = true;
   try {
@@ -458,15 +465,20 @@ async function refreshHome() {
     // Hors ligne : l'accueil garde ce qu'il affiche.
   } finally {
     remoteBusy = false;
+    if (remoteAgain) { remoteAgain = false; void refreshHome(true); }
   }
 }
 
 let liveOn = false;
-/** Resynchronisation à la reprise du focus ou de la visibilité de la fenêtre, puis toutes les ~60 s. Mise en place une seule fois. */
+/** Resynchronisation toutes les ~60 s quand l'accueil est affiché. Mise en place une seule fois. */
 function startHomeLive() {
   if (liveOn) return;
   liveOn = true;
-  window.addEventListener('focus', () => { void refreshHome(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshHome(); });
   setInterval(() => { void refreshHome(); }, REMOTE_EVERY_MS);
 }
+
+// Retour dans l'app : l'accueil relit le compte aussitôt. Capacitor émet « resume » sur le document quand la WebView reprend
+// (p. ex. après le lecteur natif Android) ; « visibilitychange » et « focus » couvrent le navigateur et la coque Windows.
+document.addEventListener('resume', () => { void refreshHome(true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshHome(); });
+window.addEventListener('focus', () => { void refreshHome(); });

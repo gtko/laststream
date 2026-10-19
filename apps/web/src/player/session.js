@@ -356,7 +356,15 @@ function bindShell() {
 const rememberVolume = (v) => storeSet('laststream.player.volume', String(v));
 
 function bindEngine(e) {
-  e.on('state', () => { if (P && P.engine === e) refreshUI(); });
+  let wasPaused = null;
+  e.on('state', () => {
+    if (!P || P.engine !== e) return;
+    refreshUI();
+    // Lecteur natif : la pause se fait dans son panneau, sans passer par la session ; la position est enregistrée à cet instant.
+    const paused = !!e.state().paused;
+    if (e.kind === 'native' && paused && wasPaused === false) saveProgress(true);
+    wasPaused = paused;
+  });
   e.on('ended', () => { if (P && P.engine === e) onEnded(); });
   e.on('error', (err) => { if (P && P.engine === e) failover('Erreur de lecture (' + (err && err.message ? err.message : 'inconnue') + ')'); });
   e.on('tracks', () => { if (P && P.engine === e) onTracks(); });
@@ -366,7 +374,7 @@ function bindEngine(e) {
   e.on('next', () => { if (P && P.engine === e) onAction('next'); });
   e.on('trackChanged', (d) => { if (P && P.engine === e) onNativeTrack(d); });
   // Vignette native : réduite ou agrandie depuis le natif (tap, bouton retour, geste), l'état web suit.
-  e.on('mini', (on) => { if (P && P.engine === e) { if (on) miniState.minimize(); else { nativeMini = false; miniState.expand(); } } });
+  e.on('mini', (on) => { if (P && P.engine === e) { if (on) { saveProgress(true); miniState.minimize(); } else { nativeMini = false; miniState.expand(); } } });
   e.on('selectSource', (d) => { if (P && P.engine === e) onNativeSource(d); });
   e.on('selectEpisode', (d) => { if (P && P.engine === e) playEpisode(Number(d.season), Number(d.episode)); });
   e.on('loadSeason', (d) => { if (P && P.engine === e) ensureEpisodes(Number(d.season)).then(syncNative); });
