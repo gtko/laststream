@@ -213,15 +213,15 @@ describe('continuer à regarder', () => {
     expect(items).toEqual([expect.objectContaining({ season: 1, episode: 2, positionSec: 30, suggested: false })]);
   });
 
-  it('triée par date de mise à jour décroissante et limitée à 30 éléments', async () => {
+  it('triée par date de mise à jour décroissante, sans plafond de 30 éléments', async () => {
     for (let index = 0; index < 35; index += 1) {
       at(new Date(Date.UTC(2024, 0, 1) + index * 3_600_000).toISOString());
       await putProgress({ type: 'movie', tmdbId: 1000 + index, positionSec: 10, durationSec: 100 });
     }
     const items = await continueList();
-    expect(items).toHaveLength(30);
+    expect(items).toHaveLength(35);
     expect(items[0]?.tmdbId).toBe(1034);
-    expect(items[29]?.tmdbId).toBe(1005);
+    expect(items[34]?.tmdbId).toBe(1000);
   });
 
   it('progression isolée par profil', async () => {
