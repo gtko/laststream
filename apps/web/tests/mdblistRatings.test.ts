@@ -1,4 +1,4 @@
-// Notes MDBList : une requête par titre, seulement là où elles sont affichées (survol, diapositive affichée), jamais
+// Notes MDBList : une requête par titre, seulement au survol stable d'une fiche ou d'une mise en avant (500 ms), jamais
 // pour une rangée de tuiles ; réponse « unavailable » (quota épuisé) gérée sans erreur. lastAddon est simulé par fetch.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,6 +56,13 @@ let cont: typeof import('../src/ui/continue.js');
 async function settle(cond?: () => boolean): Promise<void> {
   for (let i = 0; i < 300 && !(cond ? cond() : false); i += 1) await new Promise((r) => setTimeout(r, 5));
   await new Promise((r) => setTimeout(r, 30));
+}
+
+/** Survol souris d'un élément, comme le navigateur le signale (pointerover, pointerType « mouse »). */
+function hoverEl(el: Element): void {
+  const ev = new Event('pointerover', { bubbles: true });
+  Object.defineProperty(ev, 'pointerType', { value: 'mouse' });
+  el.dispatchEvent(ev);
 }
 
 /** Nombre d'appels MDBList pour un film (son identifiant IMDb se termine par tt<id>). */
@@ -139,32 +146,31 @@ describe('notes MDBList à la demande', () => {
     expect(mdbFor(9201)).toBe(1);
   });
 
-  it('bannière de 8 diapositives : une requête MDBList par diapositive affichée, rien pour les autres', async () => {
+  it('bannière de 8 diapositives : aucune requête MDBList à l’affichage ; un survol stable n’en demande qu’une, pour la diapositive affichée', async () => {
     const ids = Array.from({ length: 8 }, (_, i) => 9301 + i);
     const items = ids.map((id) => item(id));
     document.getElementById('app')!.innerHTML = hero.heroCarousel(items);
     hero.initHero(items);
+    await settle(() => tmdbFor(9301) === 1);
+    expect(mdbCalls).toEqual([]);
+
+    hoverEl(document.querySelector('#app .hero-slide.is-current')!);
+    await new Promise((r) => setTimeout(r, 550)); // 500 ms de survol stable
     await settle(() => mdbFor(9301) === 1);
-    // Première diapositive : chargée à l'affichage initial, les autres pas encore.
-    expect(mdbCalls.length).toBe(1);
-
-    for (let i = 1; i < ids.length; i += 1) {
-      hero.go(i, true);
-      await settle(() => mdbFor(ids[i]) === 1);
-    }
-
-    for (const id of ids) expect(mdbFor(id), 'diapositive ' + id).toBe(1);
-    expect(mdbCalls.length).toBe(ids.length);
-    const shown = document.querySelector('#app .hero-slide.is-current .rates-hero');
-    expect(shown?.innerHTML).toContain('IMDb');
+    expect(mdbCalls).toEqual(['mdblist/movie/tt9301']);
+    expect(document.querySelector('#app .hero-slide.is-current .rates-hero')?.innerHTML).toContain('IMDb');
   });
 
-  it('mise en avant d’un titre unique (profil enfant) : ses notes sont chargées à l’affichage', async () => {
+  it('mise en avant d’un titre unique (profil enfant) : ses notes ne partent qu’après un survol stable', async () => {
     const it = item(9401);
     document.getElementById('app')!.innerHTML = hero.heroA(it, 'Pour toi');
-    hero.initHero([it]);
-    await settle(() => mdbFor(9401) === 1);
+    hero.prepareSingle(it);
+    await settle(() => tmdbFor(9401) === 1);
+    expect(mdbCalls).toEqual([]);
 
+    hoverEl(document.querySelector('#app .hero')!);
+    await new Promise((r) => setTimeout(r, 550));
+    await settle(() => mdbFor(9401) === 1);
     expect(mdbFor(9401)).toBe(1);
     expect(document.querySelector('#app .rates-hero')?.innerHTML).toContain('IMDb');
   });
