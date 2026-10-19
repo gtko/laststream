@@ -189,17 +189,37 @@ describe('salon : entrée par le lien partagé', () => {
     expect(rate.enter('p-31').verdict.ok).toBe(true);
   });
 
-  it('kick : l’invité exclu ne revient pas avec son jeton de séance ; avec le lien partagé il revient sous un nouvel identifiant', () => {
+  it('kick d’un invité du lien partagé : lien renouvelé, pseudo canonique banni, invités connectés conservés', () => {
     const fx = makeRoom();
+    const friend = fx.enter('Léa');
+    const friendMember = friend.connect() as Member;
     const bad = fx.enter('Troll');
     bad.connect();
     const effects = fx.core.handle('a-host', parseClientMessage(JSON.stringify({ t: 'kick', user: 'Troll' })) as never);
     expect(effects.some((e) => e.kind === 'close' && e.code === 4003)).toBe(true);
+    // L'hôte est prévenu : il doit demander la nouvelle valeur du lien.
+    expect(effects).toContainEqual({ kind: 'send', to: 'a-host', msg: { t: 'link_renewed' } });
+    // Jeton de séance de l'exclu : refusé ; ancien lien : mort ; nouveau lien : le pseudo (et ses sosies) est banni.
     expect(fx.core.canJoinGuest(guestIdentity(bad.gid, 'Troll'))).toBe('banned');
-    const again = fx.enter('Troll');
-    expect(again.verdict).toMatchObject({ ok: true, name: 'Troll 2' });
-    expect(again.connect()).toBeDefined();
-    expect(again.gid).not.toBe(bad.gid);
+    expect(fx.enter('Autre', 0).verdict).toEqual({ ok: false, reason: 'link_revoked' });
+    const link = fx.core.inviteLink('a-host', false);
+    expect(link).toMatchObject({ ok: true, epoch: 1 });
+    for (const wanted of ['Troll', 'TROLL', 'Trоll', 'Ｔroll']) expect(fx.enter(wanted, 1).verdict).toEqual({ ok: false, reason: 'name_banned' });
+    expect(fx.core.canJoinGuest(guestIdentity('legacyidlegacyid0', 'tróll'))).toBe('banned');
+    // Un autre pseudo entre avec le nouveau lien ; l'invité déjà connecté se reconnecte avec son jeton de séance.
+    expect(fx.enter('Tom', 1).verdict).toMatchObject({ ok: true, name: 'Tom' });
+    fx.core.leave(friendMember.accountId, friendMember.connId);
+    expect(fx.core.canJoinGuest(guestIdentity(friend.gid, 'Léa'))).toBe('ok');
+  });
+
+  it('kick d’un invité à ancien jeton (hors lien partagé) ou d’un compte : pas de renouvellement du lien', () => {
+    const fx = makeRoom();
+    const legacy = guestIdentity('legacyidlegacyid0', 'Vieux');
+    fx.core.join({ ...legacy, connId: 'legacy', joinedAt: T0 });
+    const effects = fx.core.handle('a-host', parseClientMessage(JSON.stringify({ t: 'kick', user: 'Vieux' })) as never);
+    expect(effects.some((e) => e.kind === 'send' && e.msg.t === 'link_renewed')).toBe(false);
+    expect(fx.core.inviteLink('a-host', false)).toMatchObject({ ok: true, epoch: 0 });
+    expect(fx.core.canJoinGuest(guestIdentity('legacyidlegacyid0', 'Vieux'))).toBe('banned');
   });
 
   it('ancien jeton lié à un pseudo : reste valable à côté du lien partagé, et son pseudo est réservé', () => {

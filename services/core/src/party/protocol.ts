@@ -134,6 +134,10 @@ export interface RoomData {
   guestNames?: Record<string, string>;
   /** Génération du lien d'invitation partagé : « Nouveau lien » l'incrémente, ce qui invalide les liens précédents (absent = 0). */
   inviteEpoch?: number;
+  /** Invités entrés par le lien partagé (clés `guest:<id>`) : leur exclusion renouvelle le lien. Bornée à GUEST_NAMES_MAX. */
+  linkGuests?: string[];
+  /** Formes canoniques des pseudos d'invités exclus : refusés à l'entrée et à la connexion. Bornée à GUEST_NAMES_MAX. */
+  bannedNames?: string[];
 }
 
 export interface Identity {
@@ -215,6 +219,8 @@ export type ServerMessage =
   | { t: 'reported'; messageId: string; by?: string; against?: string; text?: string }
   /** Message retiré par la modération du serveur : les clients le masquent. */
   | { t: 'removed'; messageId: string }
+  /** À l'hôte seulement : le lien partagé a été renouvelé (exclusion d'un invité entré par ce lien) ; il doit en demander la nouvelle valeur. */
+  | { t: 'link_renewed' }
   | { t: 'error'; code: string }
   | { t: 'ended'; reason: string };
 

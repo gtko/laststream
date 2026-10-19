@@ -59,7 +59,7 @@ export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_ta
 export type LinkVerdict = { ok: true; epoch: number; exp: number } | { ok: false; reason: 'forbidden' | 'not_found' | 'rate_limited' };
 
 /** Entrée d'un invité par le lien partagé : pseudo attribué (suffixé s'il est pris) ou motif de refus. */
-export type EntryVerdict = { ok: true; name: string; exp: number } | { ok: false; reason: 'link_revoked' | 'room_full' | 'guest_limit' | 'rate_limited' | 'not_found' | 'name_taken' };
+export type EntryVerdict = { ok: true; name: string; exp: number } | { ok: false; reason: 'link_revoked' | 'room_full' | 'guest_limit' | 'rate_limited' | 'not_found' | 'name_taken' | 'name_banned' };
 
 /** Résultat d'une demande d'invitation : `ok` consomme un jeton du débit. */
 export type InviteVerdict = 'ok' | 'forbidden' | 'not_found' | 'guests_full' | 'rate_limited';
@@ -186,6 +186,7 @@ export class RoomCore {
    */
   canJoinGuest(identity: Identity): JoinCheck {
     if (this.data.banned.includes(identity.accountId)) return 'banned';
+    if (this.data.bannedNames?.includes(canonicalName(identity.username))) return 'banned';
     // Une invitation garde le pseudo de sa première connexion, y compris après une déconnexion.
     const known = this.data.guestNames?.[identity.accountId];
     if (known !== undefined && known !== identity.username) return 'name_changed';
@@ -321,6 +322,7 @@ export class RoomCore {
     recent.push(now);
     // Un pseudo canoniquement égal à celui de l'hôte ou d'un compte présent est refusé (pas de sosie) ; face à un autre invité, suffixe.
     const wantedKey = canonicalName(wanted);
+    if (this.data.bannedNames?.includes(wantedKey)) return { ok: false, reason: 'name_banned' };
     if (wantedKey === canonicalName(this.data.meta.hostName)) return { ok: false, reason: 'name_taken' };
     for (const member of this.members.values()) if (member.guest !== true && canonicalName(member.username) === wantedKey) return { ok: false, reason: 'name_taken' };
     const taken = new Set<string>();
@@ -339,6 +341,7 @@ export class RoomCore {
     const keys = Object.keys(names);
     for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
     this.data.guestNames = names;
+    this.data.linkGuests = [...(this.data.linkGuests ?? []).filter((key) => key !== `${GUEST_KEY_PREFIX}${guestId}`), `${GUEST_KEY_PREFIX}${guestId}`].slice(-GUEST_NAMES_MAX);
     this.dirty.add('room');
     return { ok: true, name, exp: this.linkExpiry() };
   }
@@ -465,10 +468,19 @@ export class RoomCore {
         if (!this.data.banned.includes(target.accountId)) this.data.banned.push(target.accountId);
         this.members.delete(target.accountId);
         this.dirty.add('room');
-        return [
+        const effects: Effect[] = [
           { kind: 'close', to: target.accountId, code: CLOSE.kicked, reason: 'kicked' },
           { kind: 'broadcast', msg: { t: 'leave', user: target.username } },
         ];
+        // Invité entré par le lien partagé : il pourrait revenir sous un nouvel identifiant avec le même lien. Le lien est donc
+        // renouvelé (l'ancien meurt, les invités déjà connectés restent) et le pseudo canonique est banni du salon.
+        if (target.guest === true && this.data.linkGuests?.includes(target.accountId)) {
+          this.data.inviteEpoch = (this.data.inviteEpoch ?? 0) + 1;
+          const banned = canonicalName(target.username);
+          this.data.bannedNames = [...(this.data.bannedNames ?? []).filter((n) => n !== banned), banned].slice(-GUEST_NAMES_MAX);
+          effects.push({ kind: 'send', to: this.hostId, msg: { t: 'link_renewed' } });
+        }
+        return effects;
       }
       case 'mute': {
         if (!isHost) return this.err(accountId, 'not_host');

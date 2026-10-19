@@ -694,12 +694,18 @@ describe('lien d’invitation partagé sur Workers', () => {
     h.peer.send({ t: 'kick', user: 'Léa' });
     await ga.peer?.whenClosed();
     expect(await refusedGuest(room.id, a.body.sessionToken, a.body.name)).toEqual({ status: 101, close: { code: 4004, reason: 'banned' } });
-    expect((await enterWith(room.id, link, 'Léa')).status).toBe(201);
-    // Nouveau lien : l'ancien est révoqué.
+    // L'exclusion d'un invité du lien partagé renouvelle le lien (l'hôte en est prévenu) et bannit son pseudo.
+    expect(await h.peer.type('link_renewed')).toEqual({ t: 'link_renewed' });
+    expect((await enterWith(room.id, link, 'Tom')).body.error).toBe('invite_revoked');
+    const renewed = (await linkFrom(host, room.id)).body.token;
+    expect(renewed).not.toBe(link);
+    expect((await enterWith(room.id, renewed, 'Léa')).body.error).toBe('banned');
+    expect((await enterWith(room.id, renewed, 'Tom')).status).toBe(201);
+    // Nouveau lien manuel : le précédent est révoqué.
     const fresh = (await linkFrom(host, room.id, true)).body.token;
-    expect(fresh).not.toBe(link);
-    expect((await enterWith(room.id, link, 'Tom')).status).toBe(403);
-    expect((await enterWith(room.id, fresh, 'Tom')).status).toBe(201);
+    expect(fresh).not.toBe(renewed);
+    expect((await enterWith(room.id, renewed, 'Zoé')).status).toBe(403);
+    expect((await enterWith(room.id, fresh, 'Zoé')).status).toBe(201);
     gb.peer?.close();
     h.peer.close();
     await waitForParticipants(room.id, host.token, 0);
