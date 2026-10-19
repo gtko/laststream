@@ -1,5 +1,6 @@
 import {
-  getAutoplay, getBandwidthSetting, getRegion, getSkipPref, setAutoplay, setBandwidthSetting, setRegion, setSkipPref,
+  clearTrailerAutoplay, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getTrailerAutoplayStored, setAutoplay,
+  setBandwidthSetting, setRegion, setSkipPref, setTrailerAutoplay,
 } from './prefs';
 import { getLangPrefs, normalizeLangPrefs, LANG_PREFS_KEY } from './langPrefs';
 import { readTheme, resolveTheme, saveTheme } from './theme';
@@ -17,6 +18,8 @@ export function snapshotPrefs(): PrefsSnapshot {
     skipIntro: getSkipPref('intro'),
     skipRecap: getSkipPref('recap'),
     skipNext: getSkipPref('nextEpisode'),
+    // Absent tant que le profil n'a pas réglé l'option : le défaut (profil enfant ou non) s'applique alors.
+    trailerAutoplay: getTrailerAutoplayStored(),
     // Langues audio / sous-titres du profil (petit objet : bien sous la limite de 4 Ko par valeur).
     langPrefs: getLangPrefs(),
   };
@@ -36,6 +39,8 @@ export function applyPrefs(s: PrefsSnapshot): boolean {
   if (typeof s.skipIntro === 'boolean') { setSkipPref('intro', s.skipIntro); any = true; }
   if (typeof s.skipRecap === 'boolean') { setSkipPref('recap', s.skipRecap); any = true; }
   if (typeof s.skipNext === 'boolean') { setSkipPref('nextEpisode', s.skipNext); any = true; }
+  // Sans valeur pour ce profil, on repasse au défaut : le réglage d'un autre profil ne doit pas rester sur l'appareil.
+  if (typeof s.trailerAutoplay === 'boolean') { setTrailerAutoplay(s.trailerAutoplay); any = true; } else clearTrailerAutoplay();
   if (s.langPrefs && typeof s.langPrefs === 'object' && !Array.isArray(s.langPrefs)) {
     try { globalThis.localStorage?.setItem(LANG_PREFS_KEY, JSON.stringify(normalizeLangPrefs(s.langPrefs))); any = true; } catch { /* valable pour la session seulement */ }
   }

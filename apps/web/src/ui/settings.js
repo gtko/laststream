@@ -7,7 +7,7 @@ import { laststreamBase, PUBLIC_PROBE_MS, probeHealth, serverChoiceVisible, swit
 import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
-  setAutoplay, setBandwidthSetting, setRegion, setSkipPref,
+  setAutoplay, setBandwidthSetting, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
@@ -112,7 +112,9 @@ function playbackPanel() {
   const bw = getBandwidthSetting();
   const stored = readStoredBandwidth();
   const mbps = stored && stored.expiresAt > Date.now() ? (stored.kbps / 1000).toFixed(1).replace('.', ',') + ' Mb/s' : '';
-  return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"')) +
+  return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"') +
+    switchRow('Lancer automatiquement après la bande-annonce', 'Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.',
+      getTrailerAutoplay(isKidProfile()), 'data-set-pref="trailer-autoplay"')) +
     card('Connexion',
       fieldRow('Débit de ma connexion', 'Sert à choisir une source que ta connexion peut lire.', (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>Automatique (mesure)</option>' +
@@ -453,6 +455,7 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-intro') setSkipPref('intro', on);
   else if (pref === 'skip-recap') setSkipPref('recap', on);
   else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
+  else if (pref === 'trailer-autoplay') setTrailerAutoplay(on);
   else if (pref === 'lang-subs' || pref === 'lang-learn') {
     setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
     syncLangRows();

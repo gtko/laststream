@@ -4,6 +4,7 @@ import { getDetail } from './catalog.js';
 import { DWELL_MS, REDUCE, STILL } from './constants.js';
 import { ICON } from './icons.js';
 import { app } from './dom.js';
+import { textFade } from './playback.js';
 import { state } from './state.js';
 import { esc } from './util.js';
 
@@ -52,8 +53,8 @@ export function ytSrc(key, extra) {
   return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(key) + '?' + extra;
 }
 /** Aperçu muet en boucle. `vo` : bande-annonce non doublée dans la langue principale, sous-titres dans cette langue. */
-export const ambientSrc = (key, vo) =>
-  ytSrc(key, 'autoplay=1&mute=1&controls=0&loop=1&playlist=' + encodeURIComponent(key) +
+export const ambientSrc = (key, vo, loop = true) =>
+  ytSrc(key, 'autoplay=1&mute=1&controls=0&loop=' + (loop ? 1 : 0) + '&playlist=' + encodeURIComponent(key) +
     '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&' + (captionParams(!!vo) || 'cc_load_policy=0') +
     '&fs=0&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
 
@@ -81,6 +82,7 @@ export function stopPreview() {
   state.preview = null;
   try { postYT(p.iframe, 'pauseVideo'); } catch (_) { /* déjà fermé */ }
   if (p.ro) p.ro.disconnect();
+  if (p.unfade) p.unfade();
   p.wrap.remove();
   p.btn.remove();
 }
@@ -104,7 +106,7 @@ export async function startPreview(media) {
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');
-  const p = { media, wrap, btn, iframe, muted: true, ro: null };
+  const p = { media, wrap, btn, iframe, muted: true, ro: null, unfade: null };
   state.preview = p;
   p.ro = new ResizeObserver(() => fitPreview(p));
   p.ro.observe(media);
@@ -114,6 +116,8 @@ export async function startPreview(media) {
     postYT(iframe, 'mute');
     postYT(iframe, 'playVideo');
     requestAnimationFrame(() => wrap.classList.add('is-on'));
+    // Accueil : les textes de la diapositive s'estompent pendant la lecture effective (grille : rien à estomper).
+    p.unfade = textFade(media.closest('.hero-slide'), iframe);
   }, { once: true });
 }
 

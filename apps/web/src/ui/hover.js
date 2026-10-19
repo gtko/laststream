@@ -6,6 +6,7 @@ import { modal } from './dom.js';
 import { ICON } from './icons.js';
 import { inLib } from './library.js';
 import { ambientSrc, postYT, whenPlaying } from './preview.js';
+import { textFade } from './playback.js';
 import { compactRates } from './ratings.js';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
@@ -35,6 +36,7 @@ export function closeHover() {
   hv.intent.cancel();
   hv.openTimer = hv.closeTimer = null;
   hv.token++;
+  if (hv.unfade) { hv.unfade(); hv.unfade = null; }
   if (hv.el) {
     const el = hv.el;
     hv.el = null;
@@ -127,6 +129,8 @@ export function openHover(tile) {
           postYT(fr, 'playVideo');
           // Affichée seulement une fois la lecture lancée et les surimpressions YouTube (titre, boutons) disparues.
           whenPlaying(fr, () => { if (token === hv.token) vbox.classList.add('is-on'); });
+          // Les textes de la carte s'estompent pendant la lecture effective (voir playback.js).
+          hv.unfade = textFade(hv.el, fr);
         }, { once: true });
       }
     }
