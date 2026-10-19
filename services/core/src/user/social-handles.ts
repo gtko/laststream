@@ -184,7 +184,7 @@ export function syncProfileIdentity(
 }
 
 /**
- * Attribue pid et handle à chaque profil adulte existant (migration v13). Les profils enfants sont ignorés. Ordre :
+ * Attribue pid et handle à chaque profil adulte existant (migration v14). Les profils enfants sont ignorés. Ordre :
  * création, pour que le résultat soit déterministe à collisions égales.
  */
 export function backfillProfileIdentities(db: SqlDb, random: RandomBytes = cryptoRandomBytes): void {
@@ -224,7 +224,7 @@ export function revokeLegacyFriendshipsOf(db: SqlDb, pid: string): void {
   for (const row of rows) revokeLegacyFriendship(db, pid, row.other);
 }
 
-/** Profil principal d'un compte (premier profil non enfant créé, même règle que la migration v13), `undefined` sinon. */
+/** Profil principal d'un compte (premier profil non enfant créé, même règle que la migration v14), `undefined` sinon. */
 function principalPidOf(db: SqlDb, accountId: string): string | undefined {
   const row = db
     .prepare('SELECT pid FROM profiles WHERE account_id = ? AND is_kid = 0 AND pid IS NOT NULL ORDER BY created_at, id LIMIT 1')

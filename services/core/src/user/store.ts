@@ -3,6 +3,18 @@ import { readAppSettings } from './app-settings.js';
 import { linkInvitedPrincipals, revokeLegacyFriendshipsOf, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
+import {
+  accountHasProgress,
+  countryCode,
+  purgeTitleStarts,
+  RETENTION_DAYS,
+  recordTitleStart,
+  shiftDay,
+  type TitleStart,
+  titleStartKey,
+  topTitleStarts,
+  utcDay,
+} from './title-starts.js';
 
 export type MediaType = 'movie' | 'series';
 export const KID_MAX_AGES = [10, 12, 16, 18] as const;
@@ -113,6 +125,11 @@ export interface ProgressWrite {
   durationSec: number;
   updatedAt: string;
   finished: boolean;
+  /**
+   * Pays de la requête (écriture de l'application). Présent : la première progression du compte sur ce titre compte un
+   * lancement (agrégat title_starts). Absent (import Stremio) : aucun lancement compté.
+   */
+  country?: string;
 }
 
 /** Un suivi peut aussi viser une personne (acteur, réalisateur) : pas de saison ni d'épisode. */
@@ -358,6 +375,9 @@ function toProgressItem(row: ProgressRow): ProgressItem {
  * leur empreinte.
  */
 export class UserStore {
+  /** Dernier jour pour lequel les lancements anciens ont été purgés (au plus une purge par jour). */
+  private startsPurgedOn: string | undefined;
+
   constructor(private readonly db: SqlDb) {}
 
   transaction<T>(work: () => T): T {
@@ -699,8 +719,13 @@ export class UserStore {
   /**
    * Enregistre une progression. Une écriture plus ancienne que la ligne existante est ignorée (un import Stremio
    * ne remplace jamais une lecture plus récente faite dans l'application).
+   * Avec un pays (écriture de l'application), une première progression du compte sur ce titre compte un lancement dans
+   * `title_starts`. Le test « première » précède l'écriture dans le même tour synchrone : rien ne s'intercale.
    */
   upsertProgress(write: ProgressWrite): void {
+    const ref = titleRef(write.tmdbId, write.imdbId);
+    const country = write.country === undefined ? undefined : countryCode(write.country);
+    const starts = country !== undefined && !accountHasProgress(this.db, write.profileId, write.type, ref);
     this.db
       .prepare(
         `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished)
@@ -717,7 +742,7 @@ export class UserStore {
       .run(
         write.profileId,
         write.type,
-        titleRef(write.tmdbId, write.imdbId),
+        ref,
         write.tmdbId,
         write.imdbId,
         write.season,
@@ -727,6 +752,22 @@ export class UserStore {
         write.updatedAt,
         write.finished ? 1 : 0,
       );
+    if (country !== undefined && starts) {
+      const day = utcDay(write.updatedAt);
+      if (day !== this.startsPurgedOn) {
+        purgeTitleStarts(this.db, shiftDay(day, -RETENTION_DAYS));
+        this.startsPurgedOn = day;
+      }
+      recordTitleStart(this.db, day, country, titleStartKey(write.type, ref));
+    }
+  }
+
+  /**
+   * Titres les plus lancés dans un pays depuis un jour (AAAA-MM-JJ, inclus), `n` cumulé sur la période. Seuls les titres
+   * à MIN_STARTS lancements ou plus sont renvoyés (anonymat), du plus lancé au moins lancé.
+   */
+  topStarts(country: string, sinceDay: string, limit: number): TitleStart[] {
+    return topTitleStarts(this.db, countryCode(country), sinceDay, limit);
   }
 
   progressForTitle(profileId: string, type: MediaType, ref: string): ProgressItem[] {

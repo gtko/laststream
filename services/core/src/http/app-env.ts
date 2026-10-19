@@ -5,6 +5,8 @@ export interface ServerBindings {
   incoming?: { socket?: { remoteAddress?: string } };
   /** Adresse IP du client fournie par l'hôte (Workers : en-tête CF-Connecting-IP posé par Cloudflare). */
   clientIp?: string;
+  /** Pays du client fourni par l'hôte (Workers : request.cf.country). Absent hors Cloudflare (Node). */
+  country?: string;
 }
 
 /** Variables posées par les middlewares communs. */

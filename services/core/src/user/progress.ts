@@ -3,8 +3,6 @@ import { UserApiError } from './validation.js';
 
 /** Un titre est terminé à partir de 90 % de sa durée. */
 export const FINISHED_RATIO = 0.9;
-/** Nombre maximal d'éléments renvoyés par « continuer à regarder ». */
-export const CONTINUE_LIMIT = 30;
 /** Nombre maximal d'épisodes parcourus pour trouver le prochain à proposer. */
 const NEXT_EPISODE_SCAN_LIMIT = 200;
 
@@ -112,10 +110,11 @@ export type EpisodeLookup = (type: MediaType, titleRef: string, season: number, 
 
 /**
  * « Continuer à regarder » : une entrée par titre (sa progression la plus récente), non terminée ; pour une série
- * terminée, l'épisode suivant. Trié par date de mise à jour décroissante, au plus CONTINUE_LIMIT éléments.
+ * terminée, l'épisode suivant. Trié par date de mise à jour décroissante. Sans plafond par défaut (`limit` = Infinity) ;
+ * `limit` reste optionnel pour borner le résultat.
  * `latest` contient une ligne par titre.
  */
-export async function continueWatching(latest: readonly ProgressItem[], episodeAt: EpisodeLookup, limit = CONTINUE_LIMIT): Promise<ContinueItem[]> {
+export async function continueWatching(latest: readonly ProgressItem[], episodeAt: EpisodeLookup, limit = Infinity): Promise<ContinueItem[]> {
   const candidates: ContinueItem[] = [];
   for (const row of latest) {
     if (!row.finished) {

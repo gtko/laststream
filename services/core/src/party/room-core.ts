@@ -16,6 +16,8 @@ import {
   type Identity,
   MAX_GUESTS,
   MAX_REPORTS,
+  PARTY_RESUME_AHEAD_SEC,
+  PARTY_WAIT_MAX_MS,
   type Participant,
   type StoredChatLine,
   type PlaybackState,
@@ -86,6 +88,11 @@ export function guestRefusal(check: JoinCheck): { code: number; reason: string }
   }
 }
 
+/** Message `wait` : retardataires (vide = fin d'attente), début de l'attente (ms serveur) et seuils lus par les clients. */
+function waitView(who: string[], since: number): ServerMessage {
+  return { t: 'wait', who, since, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC };
+}
+
 /** Fenêtres de débit par participant : `max` messages par `windowMs`. Au-delà de 2 fois la limite, la connexion est fermée. */
 const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
   ping: { max: 20, windowMs: 10_000 },
@@ -99,6 +106,8 @@ const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
   rtc: { max: 60, windowMs: 10_000 },
   // Négociation du maillage invité à invité (jusqu'à 8 pairs : hello, offre, réponse et une dizaine de candidats par pair).
   mesh: { max: 200, windowMs: 10_000 },
+  // Déclarations de tampon (prêt / pas prêt) : un changement d'état par message.
+  buf: { max: 20, windowMs: 10_000 },
 };
 
 /** Écart (s) à partir duquel le rapport de position de l'hôte corrige l'état diffusé. */
@@ -226,6 +235,8 @@ export class RoomCore {
     this.data.emptySince = null;
     if (member.accountId === this.hostId) this.data.hostAbsentSince = null;
     this.dirty.add('room');
+    // Invité (re)connecté : en tampon jusqu'à son premier `ready`. Calculé avant le bienvenue : celui-ci porte l'état après une pause éventuelle.
+    const waitEffects = member.guest === true ? this.setBuffering(member.accountId, true, member.username) : [];
     const now = this.clock();
     effects.push({
       kind: 'send',
@@ -241,6 +252,9 @@ export class RoomCore {
         chat: this.chat.map(publicLine),
       },
     });
+    // Un participant qui entre pendant une attente la reçoit, sauf si l'entrée vient de modifier l'attente (diffusée à tous).
+    if (waitEffects.length === 0 && this.waitingIds().length > 0) effects.push({ kind: 'send', to: member.accountId, msg: this.waitMsg() });
+    effects.push(...waitEffects);
     if (previous === undefined) effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
     return effects;
   }
@@ -250,11 +264,13 @@ export class RoomCore {
     const member = this.members.get(accountId);
     if (member === undefined || member.connId !== connId) return [];
     this.members.delete(accountId);
+    this.forgetTimedOut(accountId);
     const now = this.clock();
     if (accountId === this.hostId) this.data.hostAbsentSince = now;
     if (this.members.size === 0) this.data.emptySince = now;
     this.dirty.add('room');
-    return [{ kind: 'broadcast', msg: { t: 'leave', user: member.username } }];
+    // Un retardataire parti ne retient plus la lecture.
+    return [{ kind: 'broadcast', msg: { t: 'leave', user: member.username } }, ...this.setBuffering(accountId, false, member.username)];
   }
 
   /** Mémorise le pseudo d'un invité pour ses reconnexions, borné à GUEST_NAMES_MAX entrées (les plus anciennes sont oubliées). */
@@ -415,6 +431,99 @@ export class RoomCore {
     return { playing, pos, at: this.clock(), rev: this.data.state.rev + 1 };
   }
 
+  /** Participants en tampon (clés de compte, ordre d'arrivée). */
+  private waitingIds(): string[] {
+    return this.data.waiting ?? [];
+  }
+
+  /** Retardataires retirés par le délai de l'attente et pas encore prêts. */
+  private timedOutIds(): string[] {
+    return this.data.waitTimedOut ?? [];
+  }
+
+  /** Mémorise les retardataires retirés par le délai : leurs « pas prêt » suivants ne rouvrent pas l'attente. */
+  private markTimedOut(ids: string[]): void {
+    if (ids.length === 0) return;
+    const timedOut = this.timedOutIds();
+    this.data.waitTimedOut = [...timedOut, ...ids.filter((id) => !timedOut.includes(id))];
+    this.dirty.add('room');
+  }
+
+  /** Lève l'exclusion d'un retardataire retiré par le délai (sans effet s'il n'y figure pas). */
+  private forgetTimedOut(accountId: string): void {
+    const timedOut = this.timedOutIds();
+    if (!timedOut.includes(accountId)) return;
+    this.data.waitTimedOut = timedOut.filter((id) => id !== accountId);
+    this.dirty.add('room');
+  }
+
+  /** Échéance de l'attente de tampon (ms), ou null hors attente. */
+  private waitDeadline(): number | null {
+    const since = this.data.waitSince ?? null;
+    return since === null ? null : since + PARTY_WAIT_MAX_MS;
+  }
+
+  /** Message d'attente : pseudos des retardataires présents (vide = fin d'attente). */
+  private waitMsg(): ServerMessage {
+    const who: string[] = [];
+    for (const id of this.waitingIds()) {
+      const name = this.members.get(id)?.username;
+      if (name !== undefined) who.push(name);
+    }
+    return waitView(who, this.data.waitSince ?? 0);
+  }
+
+  /**
+   * Ajoute (`buffering`) ou retire un participant de l'ensemble en tampon. Passer de vide à non-vide ouvre l'attente ; retirer
+   * le dernier retardataire la ferme. Sans effet si l'ensemble ne change pas.
+   */
+  private setBuffering(accountId: string, buffering: boolean, by: string): Effect[] {
+    // Un retardataire retiré par le délai ne rouvre pas l'attente tant qu'il n'est ni prêt, ni parti, ni en seek.
+    if (buffering && this.timedOutIds().includes(accountId)) return [];
+    const waiting = this.waitingIds();
+    if (waiting.includes(accountId) === buffering) return [];
+    this.dirty.add('room');
+    if (buffering) {
+      const opening = waiting.length === 0;
+      this.data.waiting = [...waiting, accountId];
+      const effects: Effect[] = opening ? this.openWait(by) : [];
+      return [...effects, { kind: 'broadcast', msg: this.waitMsg() }];
+    }
+    this.data.waiting = waiting.filter((id) => id !== accountId);
+    if (this.data.waiting.length === 0) return this.closeWait(by);
+    return [{ kind: 'broadcast', msg: this.waitMsg() }];
+  }
+
+  /** Ouverture de l'attente : une lecture en cours est suspendue et sera reprise à la fin (heldByWait) ; une pause reste une pause. */
+  private openWait(by: string): Effect[] {
+    const now = this.clock();
+    this.data.waitSince = now;
+    const current = this.data.state;
+    if (!current.playing) {
+      this.data.heldByWait = false;
+      return [];
+    }
+    this.data.heldByWait = true;
+    this.data.state = this.nextState(false, expectedPosition(current, now));
+    return [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by } }];
+  }
+
+  /** Fin de l'attente (tous prêts, retardataire parti ou exclu, délai dépassé) : reprise si l'attente avait suspendu la lecture. */
+  private closeWait(by: string): Effect[] {
+    const since = this.data.waitSince ?? 0;
+    const held = this.data.heldByWait === true;
+    this.data.waiting = [];
+    this.data.waitSince = null;
+    this.data.heldByWait = false;
+    this.dirty.add('room');
+    const effects: Effect[] = [{ kind: 'broadcast', msg: waitView([], since) }];
+    if (held) {
+      this.data.state = this.nextState(true, this.data.state.pos);
+      effects.push({ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: this.clock(), by } });
+    }
+    return effects;
+  }
+
   /** Participant désigné par son pseudo ; à pseudo égal, un compte l'emporte sur un invité (un invité ne peut pas usurper un compte). */
   private findByName(username: string): Member | undefined {
     let guest: Member | undefined;
@@ -444,18 +553,32 @@ export class RoomCore {
         return [{ kind: 'send', to: accountId, msg: { t: 'state', state: this.data.state, serverTime: now, by: this.data.meta.hostName } }];
       case 'ctl': {
         const current = this.data.state;
+        const waiting = this.waitingIds().length > 0;
+        // Un seek lève l'exclusion d'un retardataire retiré par le délai : il peut de nouveau retenir la lecture.
+        if (message.action === 'seek') this.forgetTimedOut(accountId);
         if (message.action === 'sync') {
           // Rapport périodique de l'hôte (horloge de référence) : on ne rediffuse que si la position diffère de ce que les autres suivent.
           if (!isHost) return this.err(accountId, 'not_host');
           if (Math.abs(message.pos - expectedPosition(current, now)) <= HOST_SYNC_TOLERANCE_SEC) return [];
+          // Correction de position pendant l'attente : la position suit, l'attente garde la reprise automatique.
           this.data.state = this.nextState(current.playing, message.pos);
+        } else if (waiting && message.action === 'play') {
+          // Pendant une attente, la lecture demandée est différée : elle reprend à la fin de l'attente, pas tout de suite.
+          this.data.state = this.nextState(false, message.pos);
+          this.data.heldByWait = true;
         } else {
           // Lecture partagée : play, pause et seek viennent de n'importe quel participant (hôte ou invité).
           this.data.state = this.nextState(message.action === 'seek' ? current.playing : message.action === 'play', message.pos);
+          // Seule une pause explicite annule la reprise automatique de l'attente ; un saut (seek) déplace la position et la garde.
+          if (message.action === 'pause') this.data.heldByWait = false;
         }
         this.dirty.add('room');
         return [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by: member.username } }];
       }
+      case 'buf':
+        // Tampon : un participant qui n'est pas prêt retient la lecture ; prêt, il la libère (voir setBuffering).
+        if (message.ready) this.forgetTimedOut(accountId);
+        return this.setBuffering(accountId, !message.ready, member.username);
       case 'episode': {
         if (!isHost) return this.err(accountId, 'not_host');
         const meta = this.data.meta;
@@ -463,6 +586,8 @@ export class RoomCore {
         meta.media = { ...meta.media, season: message.season, episode: message.episode };
         meta.fingerprint = message.fingerprint;
         this.data.state = this.nextState(false, 0);
+        // Nouvel épisode remis en pause par l'hôte : rien à reprendre à la fin d'une attente.
+        this.data.heldByWait = false;
         this.dirty.add('room');
         const media: Extract<ServerMessage, { t: 'media' }> = { t: 'media', media: meta.media, fingerprint: meta.fingerprint, state: this.data.state, serverTime: now };
         // Un invité ne reçoit pas l'empreinte de version (nom de fichier, taille, hash) : envoi par destinataire, sans diffusion.
@@ -515,10 +640,13 @@ export class RoomCore {
         if (target.accountId === accountId) return this.err(accountId, 'cannot_target_self');
         if (!this.data.banned.includes(target.accountId)) this.data.banned.push(target.accountId);
         this.members.delete(target.accountId);
+        this.forgetTimedOut(target.accountId);
         this.dirty.add('room');
         const effects: Effect[] = [
           { kind: 'close', to: target.accountId, code: CLOSE.kicked, reason: 'kicked' },
           { kind: 'broadcast', msg: { t: 'leave', user: target.username } },
+          // Un retardataire exclu ne retient plus la lecture.
+          ...this.setBuffering(target.accountId, false, member.username),
         ];
         // Invité entré par le lien partagé : il pourrait revenir sous un nouvel identifiant avec le même lien. Le lien est donc
         // renouvelé (l'ancien meurt, les invités déjà connectés restent) et le pseudo canonique est banni du salon.
@@ -591,16 +719,23 @@ export class RoomCore {
     const { data } = this;
     if (now - data.meta.createdAt >= ROOM_MAX_AGE_MS) return { effects: this.end('expired'), next: null };
     this.pruneReservations();
+    // Attente de tampon dépassée : les retardataires sont retirés, et la lecture reprend si l'attente l'avait suspendue.
+    const effects: Effect[] = [];
+    const deadline = this.waitDeadline();
+    if (deadline !== null && now >= deadline) {
+      // Les retardataires retirés par le délai sont mémorisés : leurs « pas prêt » suivants ne rouvrent pas l'attente.
+      this.markTimedOut(this.waitingIds());
+      effects.push(...this.closeWait(data.meta.hostName));
+    }
     if (this.members.size === 0) {
       const since = data.emptySince ?? now;
       if (data.emptySince === null) {
         data.emptySince = now;
         this.dirty.add('room');
       }
-      if (now - since >= EMPTY_ROOM_TTL_MS) return { effects: this.end('empty'), next: null };
-      return { effects: [], next: since + EMPTY_ROOM_TTL_MS };
+      if (now - since >= EMPTY_ROOM_TTL_MS) return { effects: [...effects, ...this.end('empty')], next: null };
+      return { effects, next: since + EMPTY_ROOM_TTL_MS };
     }
-    const effects: Effect[] = [];
     if (!this.members.has(this.hostId)) {
       const since = data.hostAbsentSince ?? now;
       if (data.hostAbsentSince === null) {
@@ -624,10 +759,12 @@ export class RoomCore {
   /** Prochain réveil nécessaire (ms) selon l'état courant, ou null. */
   nextWake(): number | null {
     const { data } = this;
-    const expiry = data.meta.createdAt + ROOM_MAX_AGE_MS;
-    if (this.members.size === 0) return Math.min(expiry, (data.emptySince ?? this.clock()) + EMPTY_ROOM_TTL_MS);
-    if (!this.members.has(this.hostId)) return Math.min(expiry, (data.hostAbsentSince ?? this.clock()) + HOST_GRACE_MS);
-    return expiry;
+    const wakes = [data.meta.createdAt + ROOM_MAX_AGE_MS];
+    if (this.members.size === 0) wakes.push((data.emptySince ?? this.clock()) + EMPTY_ROOM_TTL_MS);
+    else if (!this.members.has(this.hostId)) wakes.push((data.hostAbsentSince ?? this.clock()) + HOST_GRACE_MS);
+    const deadline = this.waitDeadline();
+    if (deadline !== null) wakes.push(deadline);
+    return Math.min(...wakes);
   }
 }
 

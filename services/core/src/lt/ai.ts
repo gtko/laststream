@@ -256,11 +256,14 @@ type Exclusion =
   | { kind: 'id'; type: 'movie' | 'tv'; tmdbId: number }
   | { kind: 'title'; key: string; year: number | null };
 
-/** `exclude` : 500 entrées au plus ; les entrées sans identifiant ni titre sont ignorées. */
+/**
+ * `exclude` : les 500 premières entrées comptent, le reste est ignoré (un gros historique ne doit pas faire échouer la
+ * recommandation) ; les entrées sans identifiant ni titre sont ignorées.
+ */
 function exclusionsOf(list: unknown): Exclusion[] {
   if (list === undefined) return [];
-  if (!Array.isArray(list) || list.length > RECOMMEND_EXCLUDE_MAX) throw new LtError(400, 'bad_request');
-  return list.filter(isRecord).flatMap((x): Exclusion[] => {
+  if (!Array.isArray(list)) throw new LtError(400, 'bad_request');
+  return list.slice(0, RECOMMEND_EXCLUDE_MAX).filter(isRecord).flatMap((x): Exclusion[] => {
     const type = x.type === 'movie' ? 'movie' : x.type === 'series' || x.type === 'tv' ? 'tv' : null;
     if (type !== null && typeof x.tmdbId === 'number' && Number.isInteger(x.tmdbId) && x.tmdbId > 0) {
       return [{ kind: 'id', type, tmdbId: x.tmdbId }];

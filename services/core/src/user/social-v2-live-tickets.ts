@@ -2,7 +2,7 @@ import type { SqlDb } from './sql.js';
 
 /**
  * Usage unique des tickets du flux temps réel. Le nonce d'un ticket accepté est mémorisé jusqu'à l'échéance du ticket
- * (table `live_ticket_nonces`, migration v16) : le rejouer échoue. Les nonces expirés sont purgés à chaque consommation.
+ * (table `live_ticket_nonces`, migration v17) : le rejouer échoue. Les nonces expirés sont purgés à chaque consommation.
  */
 
 /** Vrai si le pid est un profil existant et non enfant (un profil enfant n'a pas de pid ; supprimé : plus de ligne). */

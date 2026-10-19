@@ -420,6 +420,21 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 13,
+    name: 'lancements de titres par pays et par jour (agrégat anonyme, sans donnée de compte, purge après 90 jours)',
+    sql: `
+      -- Une ligne par jour UTC, pays et titre (key = « type|référence », sans saison ni épisode). n : nombre de comptes
+      -- dont c'est la première progression sur ce titre. Aucune clé étrangère : l'agrégat survit à la suppression d'un compte.
+      CREATE TABLE title_starts (
+        day TEXT NOT NULL,
+        country TEXT NOT NULL,
+        key TEXT NOT NULL,
+        n INTEGER NOT NULL,
+        PRIMARY KEY (day, country, key)
+      );
+    `,
+  },
+  {
+    version: 14,
     name: 'handles par profil (Nom#TAG, pid public), amitiés et présence par profil',
     sql: `
       -- Handle : nom normalisé (minuscules) + tag. Identifiant public : pid. Profils enfants : NULL.
@@ -458,7 +473,7 @@ export const MIGRATIONS: readonly Migration[] = [
     },
   },
   {
-    version: 14,
+    version: 15,
     name: 'messages entre profils et notes sur les titres',
     sql: `
       -- Messages entre profils amis ou du même foyer. Corps 1 à 1000 car. (contrôlé avant écriture), contexte JSON facultatif.
@@ -495,7 +510,7 @@ export const MIGRATIONS: readonly Migration[] = [
     `,
   },
   {
-    version: 15,
+    version: 16,
     name: 'journal des créations de notes (quota indépendant des suppressions)',
     sql: `
       -- Une ligne par note créée, purgée au-delà d'une minute (fenêtre du quota). Sans clé étrangère : la remise à zéro
@@ -508,7 +523,7 @@ export const MIGRATIONS: readonly Migration[] = [
     `,
   },
   {
-    version: 16,
+    version: 17,
     name: 'nonces des tickets du flux temps réel (usage unique)',
     sql: `
       -- Un ticket du flux social n'ouvre qu'une connexion : son nonce est mémorisé jusqu'à son échéance (ms), puis purgé.

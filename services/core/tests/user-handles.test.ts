@@ -192,11 +192,11 @@ describe('identité sociale des profils', () => {
   });
 });
 
-describe('migration v13 : données sociales reprises sur les profils principaux', () => {
+describe('migration v14 : données sociales reprises sur les profils principaux', () => {
   it('amitiés compte↔compte -> profils principaux ; présence -> principal ; enfants sans identité', () => {
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     db.exec('PRAGMA foreign_keys = ON');
-    migrate(db, MIGRATIONS.slice(0, 12));
+    migrate(db, MIGRATIONS.slice(0, 13));
     addAccount(db, 'a1', true);
     addAccount(db, 'a2');
     addAccount(db, 'a3');

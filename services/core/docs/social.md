@@ -40,14 +40,14 @@ Contrat côté application : `docs/social-v2-contract.md` (dépôt laststream). 
 
 | Table | Contenu | Migration |
 | --- | --- | --- |
-| `profiles` (colonnes ajoutées) | `handle_name`, `handle_key`, `handle_tag`, `pid` ; index uniques sur `(handle_key, handle_tag)` et `pid` | v13 |
-| `profile_friendships` | une ligne par paire (`low_pid < high_pid`), `requested_by`, `status` `pending` ou `accepted` | v13 |
-| `profile_presence` | statut choisi, `watching` (JSON), `updated_at` (ms ; 0 = déconnecté) | v13 |
-| `messages` | `from_pid`, `to_pid`, `body`, `context` (JSON), `created_at`, `read_at` | v14 |
-| `notes` | `author_pid`, `type`, `tmdb_id`, `season`, `episode` (0 pour un film), `pos`, `kind`, `body`, `created_at` | v14 |
+| `profiles` (colonnes ajoutées) | `handle_name`, `handle_key`, `handle_tag`, `pid` ; index uniques sur `(handle_key, handle_tag)` et `pid` | v14 |
+| `profile_friendships` | une ligne par paire (`low_pid < high_pid`), `requested_by`, `status` `pending` ou `accepted` | v14 |
+| `profile_presence` | statut choisi, `watching` (JSON), `updated_at` (ms ; 0 = déconnecté) | v14 |
+| `messages` | `from_pid`, `to_pid`, `body`, `context` (JSON), `created_at`, `read_at` | v15 |
+| `notes` | `author_pid`, `type`, `tmdb_id`, `season`, `episode` (0 pour un film), `pos`, `kind`, `body`, `created_at` | v15 |
 
 - Les tables v1 `friendships` et `presence` (niveau compte) restent en place.
-- Backfill v13, exécuté **une seule fois** : les amitiés de compte à compte deviennent des amitiés entre profils principaux (premier profil non enfant créé) ; la présence du compte est rattachée à ce profil (`online`, ou `invisible` si le compte l'était, sans titre).
+- Backfill v14, exécuté **une seule fois** : les amitiés de compte à compte deviennent des amitiés entre profils principaux (premier profil non enfant créé) ; la présence du compte est rattachée à ce profil (`online`, ou `invisible` si le compte l'était, sans titre).
 - Suppression d'un profil : `ON DELETE CASCADE` sur ses amitiés, sa présence, ses messages et ses notes.
 
 ### Routes `/user/social`
@@ -322,6 +322,7 @@ Messages JSON, une trame = un message, 4 Ko au plus. Le client envoie `{ "t": �
 | `{t:"episode", season, episode, fingerprint?}` | **hôte** | changement d'épisode (séries) ; position remise à 0, en pause |
 | `{t:"chat", text}` | tous | message (500 caractères, filtré) |
 | `{t:"react", emoji}` | tous | réaction parmi 👍 ❤️ 😂 😮 😢 👏 🔥 🎉 |
+| `{t:"buf", ready, ahead:<s>}` | tous | déclare son tampon : `ready` = assez d'avance pour lire, `ahead` = secondes bufferisées devant la position (0 à 600) ; 20 déclarations / 10 s. Un participant qui n'est pas prêt retient la lecture (voir `wait`) |
 | `{t:"report", messageId, reason?}` | tous | signale un message d'un autre participant |
 | `{t:"mute", user, muted}` | **hôte** | rend muet / rétablit (par pseudo) |
 | `{t:"kick", user}` | **hôte** | exclut définitivement du salon |
@@ -339,6 +340,7 @@ Messages JSON, une trame = un message, 4 Ko au plus. Le client envoie `{ "t": �
 | `join` / `leave` | `participant` / `user` |
 | `chat` | `line {id, from, text, at}` |
 | `react` | `user`, `emoji`, `at` |
+| `wait` | `who` (pseudos des retardataires en tampon ; vide = fin d'attente), `since` (début, ms serveur), `maxMs` (délai avant reprise sans eux : 45 s), `resumeAhead` (avance en s à partir de laquelle un participant est prêt : 10). Fin d'attente : tous prêts, retardataire parti ou exclu, ou délai dépassé. La lecture reprend si l'attente l'avait suspendue ; seule une pause explicite annule cette reprise |
 | `muted` | `user`, `muted` |
 | `host` | `user` (nouvel hôte) |
 | `reported` | confirmation au signaleur ; à l'hôte : `by`, `against`, `text` |
@@ -373,7 +375,7 @@ Ces formules sont implémentées et testées dans `src/party/sync.ts` (`expected
 
 ## 7. Déploiement et exploitation
 
-- Migrations SQL : `src/user/migrations.ts`, versions 7 (fonctions sociales v1 : `invites`, `friendships`, `presence`, `hidden_titles`, `hidden_import`, `party_rooms`, colonnes `accounts.invite_quota` et `library_items.visibility`) à 14 (Social v2 : v13 identités et amitiés par profil, v14 messages et notes). Appliquées automatiquement au démarrage (Node) et par le Durable Object `UserStoreDO`.
+- Migrations SQL : `src/user/migrations.ts`, versions 7 (fonctions sociales v1 : `invites`, `friendships`, `presence`, `hidden_titles`, `hidden_import`, `party_rooms`, colonnes `accounts.invite_quota` et `library_items.visibility`) à 17 (v13 : agrégat `title_starts` ; Social v2 : v14 identités et amitiés par profil, v15 messages et notes, v16 journal `note_creations`, v17 nonces `live_ticket_nonces`). Appliquées automatiquement au démarrage (Node) et par le Durable Object `UserStoreDO`.
 - Durable Objects (`wrangler.jsonc`) : `PARTY_ROOM` → classe `PartyRoom` (migration `v2`, SQLite) ; `USER_STORE` → `UserStoreDO`, qui porte aussi le flux temps réel social. Déploiement : `npm run deploy:worker`.
 - Comptes de test sur un serveur public : la route d'administration `POST /__admin/invite` (en-tête `x-admin-secret`, secret `ADMIN_SECRET` posé temporairement) crée une invitation « système » (sans parrain, donc sans amitié) ; `DELETE /__admin/invite/<code>` la supprime. Supprimer ensuite le secret avec `wrangler secret delete ADMIN_SECRET`.
 - Tests : `npm test` (Node, dont le cœur du salon et `tests/social-v2-*.test.ts`) et `npm run test:workers` (parrainage, amis, présence, visibilité, masqués et Social v2 contre le Durable Object ; salons avec vraies WebSocket, et temps réel social dans `tests-workers/social-live.test.ts`).

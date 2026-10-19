@@ -581,6 +581,8 @@ describe('invités sans compte sur Workers', () => {
     const hostPeerId: string = h.welcome.you.peerId;
     const guestPeerId: string = g.welcome.you.peerId;
 
+    // L'invité charge son tampon avant de lancer la lecture (sans cela, la lecture attend son tampon).
+    guestPeer.send({ t: 'buf', ready: true, ahead: 12 });
     guestPeer.send({ t: 'ctl', action: 'play', pos: 12 });
     expect(await h.peer.next((m) => m.t === 'state' && m.state.playing === true)).toMatchObject({ state: { pos: 12 }, by: 'Léa' });
 

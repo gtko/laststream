@@ -13,6 +13,7 @@ import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { handleSocialLiveWs } from './user/social-v2-live-ws.js';
 import { SOCIAL_LIVE_PATH } from './user/social-v2-live.js';
+import { countryCode } from './user/title-starts.js';
 import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
@@ -82,7 +83,9 @@ const worker = {
         const users = env.USER_STORE.getByName(USER_STORE_NAME) as unknown as { fetch(forwarded: Request): Promise<Response> };
         return await handleSocialLiveWs(request, { secret, ip: clientIp, forward: (forwarded) => users.fetch(forwarded) });
       }
-      return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp }, ctx)));
+      // Pays Cloudflare (request.cf, absent des types DOM) : « XX » si inconnu.
+      const country = countryCode((request as { cf?: { country?: unknown } }).cf?.country);
+      return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp, country }, ctx)));
     } catch (err) {
       // Configuration absente ou invalide : remontée à Sentry, puis message générique, jamais de valeur.
       Sentry.captureException(err);

@@ -199,10 +199,12 @@ describe('lt/recommend : volume, exclusions, notes', () => {
     expect(titles).toContain('Film A003');
   });
 
-  it('exclusions : plus de 500 entrées refusées (400)', async () => {
-    const exclude = Array.from({ length: 501 }, (_, index) => ({ type: 'movie', tmdbId: index + 1 }));
-    const res = await post('recommend', { history: [], exclude });
-    expect(res.status).toBe(400);
+  it('exclusions : au-delà de 500 entrées, le surplus est ignoré au lieu de faire échouer la requête', async () => {
+    reply = compactReply;
+    const exclude = Array.from({ length: 1200 }, (_, index) => ({ type: 'movie', tmdbId: index + 1 }));
+    const res = await post('recommend', { history: [{ title: 'Gros historique' }], exclude });
+    expect(res.status).toBe(200);
+    expect((await post('recommend', { history: [], exclude: 'pas une liste' })).status).toBe(400);
   });
 
   it('notes : seuls les 10 titres les plus marqués entrent dans le prompt, notes invalides ignorées, plus de 100 entrées refusées', async () => {
