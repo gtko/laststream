@@ -264,6 +264,7 @@ export class RoomCore {
     const member = this.members.get(accountId);
     if (member === undefined || member.connId !== connId) return [];
     this.members.delete(accountId);
+    this.forgetTimedOut(accountId);
     const now = this.clock();
     if (accountId === this.hostId) this.data.hostAbsentSince = now;
     if (this.members.size === 0) this.data.emptySince = now;
@@ -435,6 +436,27 @@ export class RoomCore {
     return this.data.waiting ?? [];
   }
 
+  /** Retardataires retirés par le délai de l'attente et pas encore prêts. */
+  private timedOutIds(): string[] {
+    return this.data.waitTimedOut ?? [];
+  }
+
+  /** Mémorise les retardataires retirés par le délai : leurs « pas prêt » suivants ne rouvrent pas l'attente. */
+  private markTimedOut(ids: string[]): void {
+    if (ids.length === 0) return;
+    const timedOut = this.timedOutIds();
+    this.data.waitTimedOut = [...timedOut, ...ids.filter((id) => !timedOut.includes(id))];
+    this.dirty.add('room');
+  }
+
+  /** Lève l'exclusion d'un retardataire retiré par le délai (sans effet s'il n'y figure pas). */
+  private forgetTimedOut(accountId: string): void {
+    const timedOut = this.timedOutIds();
+    if (!timedOut.includes(accountId)) return;
+    this.data.waitTimedOut = timedOut.filter((id) => id !== accountId);
+    this.dirty.add('room');
+  }
+
   /** Échéance de l'attente de tampon (ms), ou null hors attente. */
   private waitDeadline(): number | null {
     const since = this.data.waitSince ?? null;
@@ -456,6 +478,8 @@ export class RoomCore {
    * le dernier retardataire la ferme. Sans effet si l'ensemble ne change pas.
    */
   private setBuffering(accountId: string, buffering: boolean, by: string): Effect[] {
+    // Un retardataire retiré par le délai ne rouvre pas l'attente tant qu'il n'est ni prêt, ni parti, ni en seek.
+    if (buffering && this.timedOutIds().includes(accountId)) return [];
     const waiting = this.waitingIds();
     if (waiting.includes(accountId) === buffering) return [];
     this.dirty.add('room');
@@ -530,6 +554,8 @@ export class RoomCore {
       case 'ctl': {
         const current = this.data.state;
         const waiting = this.waitingIds().length > 0;
+        // Un seek lève l'exclusion d'un retardataire retiré par le délai : il peut de nouveau retenir la lecture.
+        if (message.action === 'seek') this.forgetTimedOut(accountId);
         if (message.action === 'sync') {
           // Rapport périodique de l'hôte (horloge de référence) : on ne rediffuse que si la position diffère de ce que les autres suivent.
           if (!isHost) return this.err(accountId, 'not_host');
@@ -551,6 +577,7 @@ export class RoomCore {
       }
       case 'buf':
         // Tampon : un participant qui n'est pas prêt retient la lecture ; prêt, il la libère (voir setBuffering).
+        if (message.ready) this.forgetTimedOut(accountId);
         return this.setBuffering(accountId, !message.ready, member.username);
       case 'episode': {
         if (!isHost) return this.err(accountId, 'not_host');
@@ -613,6 +640,7 @@ export class RoomCore {
         if (target.accountId === accountId) return this.err(accountId, 'cannot_target_self');
         if (!this.data.banned.includes(target.accountId)) this.data.banned.push(target.accountId);
         this.members.delete(target.accountId);
+        this.forgetTimedOut(target.accountId);
         this.dirty.add('room');
         const effects: Effect[] = [
           { kind: 'close', to: target.accountId, code: CLOSE.kicked, reason: 'kicked' },
@@ -694,7 +722,11 @@ export class RoomCore {
     // Attente de tampon dépassée : les retardataires sont retirés, et la lecture reprend si l'attente l'avait suspendue.
     const effects: Effect[] = [];
     const deadline = this.waitDeadline();
-    if (deadline !== null && now >= deadline) effects.push(...this.closeWait(data.meta.hostName));
+    if (deadline !== null && now >= deadline) {
+      // Les retardataires retirés par le délai sont mémorisés : leurs « pas prêt » suivants ne rouvrent pas l'attente.
+      this.markTimedOut(this.waitingIds());
+      effects.push(...this.closeWait(data.meta.hostName));
+    }
     if (this.members.size === 0) {
       const since = data.emptySince ?? now;
       if (data.emptySince === null) {

@@ -617,4 +617,70 @@ describe('attente de tampon : lecture suspendue tant qu’un invité charge', ()
     fx.clock.now += 10_000;
     expect(errors(fx.core.handle('a-bob', buf(true)))).toEqual([]);
   });
+
+  it('retardataire retiré par le délai : ses « pas prêt » répétés ne remettent pas la lecture en pause', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += PARTY_WAIT_MAX_MS;
+    fx.core.tick();
+    expect(fx.data.state.playing).toBe(true);
+    expect(fx.data.waitTimedOut).toEqual(['guest:lea']);
+    for (let i = 0; i < 10; i += 1) {
+      fx.clock.now += 2000;
+      expect(fx.core.handle('guest:lea', buf(false))).toEqual([]);
+    }
+    expect(fx.data.state.playing).toBe(true);
+    expect(fx.data.waiting).toEqual([]);
+  });
+
+  it('retardataire retiré par le délai : « prêt » puis « pas prêt » ouvre une nouvelle attente', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += PARTY_WAIT_MAX_MS;
+    fx.core.tick();
+    fx.clock.now += 2000;
+    expect(fx.core.handle('guest:lea', buf(true))).toEqual([]);
+    expect(fx.data.waitTimedOut).toEqual([]);
+    expect(broadcasts(fx.core.handle('guest:lea', buf(false)))).toEqual([
+      { t: 'state', state: { playing: false, pos: 17, at: T0 + 52000, rev: 4 }, serverTime: T0 + 52000, by: 'Léa' },
+      { t: 'wait', who: ['Léa'], since: T0 + 52000, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC },
+    ]);
+  });
+
+  it('retardataire retiré par le délai : un seek lève l’exclusion, son « pas prêt » suivant rouvre l’attente', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    fx.core.join(guest(fx, 'lea', 'Léa'));
+    fx.clock.now += PARTY_WAIT_MAX_MS;
+    fx.core.tick();
+    fx.core.handle('guest:lea', msg({ t: 'ctl', action: 'seek', pos: 20 }));
+    expect(fx.data.waitTimedOut).toEqual([]);
+    expect(broadcasts(fx.core.handle('guest:lea', buf(false)))).toContainEqual({
+      t: 'wait',
+      who: ['Léa'],
+      since: T0 + 50000,
+      maxMs: PARTY_WAIT_MAX_MS,
+      resumeAhead: PARTY_RESUME_AHEAD_SEC,
+    });
+  });
+
+  it('retardataire retiré par le délai : son départ efface l’exclusion, son retour ouvre une attente', () => {
+    const fx = playing();
+    fx.clock.now += 5000;
+    const lea = guest(fx, 'lea', 'Léa');
+    fx.core.join(lea);
+    fx.clock.now += PARTY_WAIT_MAX_MS;
+    fx.core.tick();
+    fx.core.leave(lea.accountId, lea.connId);
+    expect(fx.data.waitTimedOut).toEqual([]);
+    expect(broadcasts(fx.core.join(guest(fx, 'lea', 'Léa')))).toContainEqual({
+      t: 'wait',
+      who: ['Léa'],
+      since: T0 + 50000,
+      maxMs: PARTY_WAIT_MAX_MS,
+      resumeAhead: PARTY_RESUME_AHEAD_SEC,
+    });
+  });
 });

@@ -150,6 +150,8 @@ export interface RoomData {
   waitSince?: number | null;
   /** Lecture suspendue par l'attente, à reprendre à sa fin (aussi vrai pour une lecture demandée pendant l'attente). */
   heldByWait?: boolean;
+  /** Retardataires retirés par le délai de l'attente, pas encore prêts : leurs déclarations « pas prêt » ne rouvrent pas l'attente (levée par ready, départ, exclusion ou seek). */
+  waitTimedOut?: string[];
   /** Entrées d'invités par le lien partagé : instants (ms) de la fenêtre de débit, conservés avec le salon (survivent à l'éviction du Durable Object). */
   entryHits?: number[];
   /** Jetons de séance obtenus mais pas encore connectés : clé `guest:<id>` -> instant de réservation (ms). Ils comptent dans les plafonds RESERVATION_MS. */
