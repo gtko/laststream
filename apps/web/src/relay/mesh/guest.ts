@@ -162,9 +162,13 @@ export class MeshGuest {
     return !this.closed && !this.banned.has(id) && (this.peers.has(id) || this.peers.size + this.connecting.size < this.maxPeers);
   }
 
-  /** Lecteur par plages d'octets, à donner au lecteur invité à la place du RangeClient. */
+  /** Lecteur par plages d'octets, à donner au lecteur invité à la place du RangeClient. Compte les octets de l'hôte et des pairs. */
   reader(): RangeReader {
-    return { size: () => this.o.host.size(), read: (start, end) => this.read(start, end) };
+    return {
+      size: () => this.o.host.size(),
+      read: (start, end) => this.read(start, end),
+      bytesStats: () => ({ bytesFromHost: this.fromHost, bytesFromPeers: this.fromPeers }),
+    };
   }
 
   stats(): MeshStats {

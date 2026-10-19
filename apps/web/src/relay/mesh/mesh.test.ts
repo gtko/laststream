@@ -283,6 +283,8 @@ describe('maillage : lecture par morceaux', () => {
     expect(r.sourceReads.bytes).toBe(3 * MIB);
     expect(b.stats().bytesFromHost).toBe(0);
     expect(b.stats().bytesFromPeers).toBe(3 * MIB);
+    // Le lecteur invité lit les mêmes compteurs (statistiques d'interface).
+    expect(b.reader().bytesStats?.()).toEqual({ bytesFromHost: 0, bytesFromPeers: 3 * MIB });
     a.close();
     b.close();
   });
