@@ -16,10 +16,16 @@ export interface PlayRequest {
   imdb?: string;
 }
 
-/** `resume: 'none'` ignore la progression propre de l'utilisateur ; `startAt` est la position de départ (secondes). */
+/** Relevé d'un ami, tel que `resumePosition` le lit. */
+export type WatchPoint = Pick<Watching, 'pos' | 'duration' | 'paused' | 'at'>;
+
+/**
+ * `resume: 'none'` ignore la progression propre de l'utilisateur. `startAt` est la position de départ (secondes), ou le
+ * relevé de l'ami : sa position est alors estimée au moment où le lecteur démarre (`resumePosition`), pas au clic.
+ */
 export interface PlayOpts {
   resume: 'none';
-  startAt: number;
+  startAt: number | WatchPoint;
 }
 
 export type Launch = (request: PlayRequest, opener: Element | null, opts: PlayOpts) => unknown;
@@ -37,11 +43,6 @@ export interface MediaRef {
 export interface PlaybackDeps {
   launch: Launch;
   toast: (msg: string) => void;
-}
-
-export interface WatchWithDeps extends PlaybackDeps {
-  /** Horloge (ms epoch), injectable pour les tests. */
-  now?: () => number;
 }
 
 export const LAUNCH_ERROR = 'Impossible de lancer la lecture.';
@@ -79,18 +80,18 @@ export function playRequestOf(m: MediaRef): PlayRequest | null {
 }
 
 /**
- * Ouvre un média à `startAt` par le flux normal. Renvoie false (et affiche un toast) si le média n'a pas de cible.
- * Une erreur de lancement, synchrone ou non, affiche un toast ; elle ne remonte pas.
+ * Ouvre un média à `startAt` (secondes, ou relevé d'un ami) par le flux normal. Renvoie false (et affiche un toast) si le
+ * média n'a pas de cible. Une erreur de lancement, synchrone ou non, affiche un toast ; elle ne remonte pas.
  */
-export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number, opener: Element | null = null): boolean {
+export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number | WatchPoint, opener: Element | null = null): boolean {
   const request = playRequestOf(media);
   if (!request) {
     deps.toast(NOT_OPENABLE);
     return false;
   }
-  const pos = Number.isFinite(startAt) && startAt > 0 ? startAt : 0;
+  const start = typeof startAt === 'number' ? (Number.isFinite(startAt) && startAt > 0 ? startAt : 0) : startAt;
   try {
-    const started = deps.launch(request, opener, { resume: 'none', startAt: pos });
+    const started = deps.launch(request, opener, { resume: 'none', startAt: start });
     Promise.resolve(started).catch(() => deps.toast(LAUNCH_ERROR));
   } catch {
     deps.toast(LAUNCH_ERROR);
@@ -101,10 +102,10 @@ export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number, ope
 
 /**
  * Handler de « Regarder avec lui » (setWatchWithHandler) : `friend` est la fiche de l'ami, ou null si elle a disparu.
- * Sans relevé de lecture, un toast le dit ; sinon le même titre ou épisode part à la position estimée.
+ * Sans relevé de lecture, un toast le dit ; sinon le même titre ou épisode part. Le relevé est transmis tel quel : la
+ * position n'est estimée qu'au démarrage effectif, après le chargement des sources.
  */
-export function createWatchWithHandler(deps: WatchWithDeps): (friend: FriendView | null) => void {
-  const now = deps.now ?? Date.now;
+export function createWatchWithHandler(deps: PlaybackDeps): (friend: FriendView | null) => void {
   return (friend) => {
     const name = friend?.handle?.name || 'Cet ami';
     const w = friend?.watching;
@@ -112,7 +113,7 @@ export function createWatchWithHandler(deps: WatchWithDeps): (friend: FriendView
       deps.toast(name + ' ne regarde rien pour le moment.');
       return;
     }
-    const startAt = resumePosition(w, now());
-    playAt(deps, { type: w.type, tmdbId: w.tmdbId, title: w.title, imdbId: w.imdbId, season: w.season, episode: w.episode }, startAt, null);
+    const point: WatchPoint = { pos: w.pos, at: w.at, paused: w.paused, duration: w.duration };
+    playAt(deps, { type: w.type, tmdbId: w.tmdbId, title: w.title, imdbId: w.imdbId, season: w.season, episode: w.episode }, point, null);
   };
 }

@@ -1,6 +1,8 @@
 // Présence v2 du lecteur (Social v2, lot 4b) : construction du relevé, politique d'émission, saut de lecture, et contrôleur
 // (titre au démarrage, pause et saut après le délai minimal, battement de 25 s, invisible, profil enfant, erreurs silencieuses).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
+import { setStatus } from '../src/data/socialStore';
 import {
   CHECK_MS, DEBOUNCE_MS, HEARTBEAT_MS, buildWatching, isJump, mediaKey, presenceTick, reasonFor, setPresenceMedia, setPresenceSender,
   setPresenceStatusSource, startPresenceV2, stopPresenceV2, type MediaInfo,
@@ -206,5 +208,64 @@ describe('contrôleur de présence', () => {
       stopPresenceV2();
     }).not.toThrow();
     expect(put).toHaveBeenCalled();
+  });
+});
+
+// ---- Bascule vers « invisible » (statut lu dans le store) ----
+describe('passage en invisible : DELETE immédiat', () => {
+  let put: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'x' }));
+    reloadSettings();
+    put = vi.fn(async () => undefined);
+    del = vi.fn(async () => undefined);
+    setPresenceSender({ put: put as unknown as Put, del: del as unknown as () => Promise<unknown> });
+    setPresenceStatusSource(null); // statut lu dans le store social
+    // Réponse du serveur à PUT /social/status : le statut demandé est renvoyé.
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/social/status')) {
+        return new Response(JSON.stringify({ status: JSON.parse(String(init?.body)).status }), { status: 200 });
+      }
+      return new Response(null, { status: 204 });
+    }));
+  });
+
+  afterEach(() => {
+    stopPresenceV2(false);
+    setPresenceSender(null);
+    setPresenceStatusSource(null);
+    vi.unstubAllGlobals();
+  });
+
+  it('basculer en invisible envoie DELETE tout de suite, sans attendre le battement ni la fermeture', async () => {
+    startPresenceV2(false);
+    setPresenceMedia(MOVIE);
+    presenceTick({ time: 10, paused: false });
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(del).not.toHaveBeenCalled();
+
+    await setStatus('invisible');
+    expect(del).toHaveBeenCalledTimes(1);
+
+    // Rien de plus pendant l'invisibilité : ni titre, ni battement, et la fermeture ne redemande pas de DELETE.
+    presenceTick({ time: 11, paused: false });
+    expect(put).toHaveBeenCalledTimes(2);
+    stopPresenceV2();
+    expect(del).toHaveBeenCalledTimes(1);
+  });
+
+  it('un profil enfant ne déclenche aucun DELETE à la bascule', async () => {
+    startPresenceV2(true);
+    await setStatus('invisible');
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it('après l’arrêt de la présence, la bascule ne déclenche plus rien', async () => {
+    startPresenceV2(false);
+    stopPresenceV2(false);
+    await setStatus('invisible');
+    expect(del).not.toHaveBeenCalled();
   });
 });

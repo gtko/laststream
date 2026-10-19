@@ -52,6 +52,8 @@ function markerOf(c: NoteCluster, onSeek: (pos: number) => void): HTMLButtonElem
   if (c.notes.length > 1) b.append(el('b', 'lp-note-n', String(c.notes.length)));
   b.append(cardOf(c.notes, clock));
   b.addEventListener('click', () => onSeek(first.pos));
+  // L'appui ne remonte pas à la barre [data-seek], qui capturerait le pointeur et lancerait un glissement de lecture.
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
   return b;
 }
 

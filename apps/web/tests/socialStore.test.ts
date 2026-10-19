@@ -358,3 +358,43 @@ describe('actions', () => {
     expect(getState().me?.status).toBe('invisible');
   });
 });
+
+/** Retient toutes les réponses réseau jusqu'à l'appel de `release()`, puis les sert comme les routes simulées. */
+function holdReplies(): () => void {
+  const serve = globalThis.fetch as unknown as (url: string, init?: RequestInit) => Promise<Response>;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    await gate;
+    return serve(url, init);
+  }));
+  return release;
+}
+
+describe('réponses périmées (arrêt ou changement de profil pendant un appel en vol)', () => {
+  it('stop pendant un refresh en vol : la réponse arrivée après l’arrêt n’écrit pas dans l’état', async () => {
+    const release = holdReplies();
+    const pending = refresh();
+    stop();
+    release();
+    await pending;
+    await flush();
+    const s = getState();
+    expect(s.me).toBeNull();
+    expect(s.friends).toEqual([]);
+    expect(s.conversations).toEqual([]);
+    expect(s.badge).toBe(0);
+    expect(s.live).toBe('idle');
+  });
+
+  it('stop pendant un chargement de messages : rien n’est mis en cache', async () => {
+    await startConnected();
+    routes['GET /user/social/messages/p1'] = () => ({ body: { messages: [msg('m1', 'p1', 'me', 100)] } });
+    const release = holdReplies();
+    const pending = loadMessages('p1');
+    stop();
+    release();
+    expect(await pending).toEqual([]);
+    expect(getState().messages).toEqual({});
+  });
+});

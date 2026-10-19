@@ -147,6 +147,8 @@ let state: SocialState = initialSocialState();
 const subs = new Set<(s: SocialState) => void>();
 const noteSubs = new Set<NoteListener>();
 let live: SocialLive | null = null;
+/** Incrémenté à chaque démarrage et arrêt : une réponse réseau dont l'époque a changé est périmée et n'est pas écrite. */
+let epoch = 0;
 
 function commit(next: SocialState): void {
   state = next;
@@ -172,7 +174,9 @@ export function onNote(cb: NoteListener): () => void {
 
 /** Relit profil, amis et conversations. */
 export async function refresh(): Promise<void> {
+  const e = epoch;
   const [me, lists, convs] = await Promise.all([api.getMe(), api.getFriends(), api.getConversations()]);
+  if (epoch !== e) return;
   commit(withCounts({
     ...withFriendLists(state, lists),
     me,
@@ -184,39 +188,51 @@ export async function refresh(): Promise<void> {
 /** Relit amis et conversations (et le profil s'il manque) : repli polling et resynchronisation à la reconnexion. */
 async function refreshLists(): Promise<void> {
   if (!state.me) return refresh();
+  const e = epoch;
   const [lists, convs] = await Promise.all([api.getFriends(), api.getConversations()]);
+  if (epoch !== e) return;
   commit(withCounts({ ...withFriendLists(state, lists), conversations: [...convs.conversations].sort(byLastDesc) }));
 }
 
 const resync = (): Promise<void> => refreshLists().catch(() => undefined);
 
 export async function setStatus(status: Status): Promise<void> {
+  const e = epoch;
   const r = await api.putStatus(status);
+  if (epoch !== e) return;
   commit(withCounts({ ...state, status: r.status, me: state.me && { ...state.me, status: r.status } }));
 }
 
 /** Demande d'ami vers `Nom#TAG`. Si l'autre m'avait déjà demandé, l'ami est accepté directement. */
 export async function sendRequest(handle: string): Promise<RequestOutcome> {
+  const e = epoch;
   const out = await api.sendFriendRequest(handle);
+  if (epoch !== e) return out;
   if ('friend' in out) commit(withCounts(befriend(state, out.friend)));
   else commit(withCounts({ ...state, outgoing: upsertPid(state.outgoing, out.request) }));
   return out;
 }
 
 export async function accept(pid: string): Promise<FriendView> {
+  const e = epoch;
   const { friend } = await api.acceptFriendRequest(pid);
+  if (epoch !== e) return friend;
   commit(withCounts(befriend(state, friend)));
   return friend;
 }
 
 /** Refuse une demande reçue ou annule une demande envoyée. */
 export async function decline(pid: string): Promise<void> {
+  const e = epoch;
   await api.declineFriendRequest(pid);
+  if (epoch !== e) return;
   commit(withCounts(removeRequests(state, pid)));
 }
 
 export async function removeFriend(pid: string): Promise<void> {
+  const e = epoch;
   await api.removeFriend(pid);
+  if (epoch !== e) return;
   commit(withCounts({ ...state, friends: removePid(state.friends, pid), household: removePid(state.household, pid) }));
 }
 
@@ -231,14 +247,18 @@ function receive(m: Message): void {
 export async function sendMessage(pid: string, body: string, context?: MessageContext): Promise<Message> {
   const text = body.trim();
   if (text === '' || Array.from(text).length > MESSAGE_MAX) throw new UserApiError(400, 'invalid_body');
+  const e = epoch;
   const { message } = await api.sendMessage(pid, text, context);
+  if (epoch !== e) return message;
   receive(message);
   return message;
 }
 
 /** Marque tout lu avec ce correspondant : compteur à zéro, messages reçus datés de maintenant. */
 export async function markRead(pid: string): Promise<void> {
+  const e = epoch;
   await api.markMessagesRead(pid);
+  if (epoch !== e) return;
   const now = Date.now();
   const list = state.messages[pid];
   commit(withCounts({
@@ -252,7 +272,9 @@ export async function markRead(pid: string): Promise<void> {
 
 /** Charge les messages d'une conversation (les plus récents, ou ceux d'avant `before`) et les fusionne au cache. */
 export async function loadMessages(pid: string, o: { before?: number; limit?: number } = {}): Promise<Message[]> {
+  const e = epoch;
   const { messages } = await api.getMessages(pid, o);
+  if (epoch !== e) return [];
   const merged = mergeMessages(state.messages[pid] ?? [], messages);
   commit(withCounts({ ...state, messages: { ...state.messages, [pid]: merged } }));
   return merged;
@@ -278,12 +300,14 @@ function applyLive(ev: LiveEvent): void {
  */
 export function start(): void {
   if (live || isKidProfile() || !isServerMode()) return;
+  const e = ++epoch;
   live = createSocialLive({
     createTicket: () => api.createLiveTicket(),
     baseUrl: () => requireBase(),
-    poll: resync,
-    onEvent: applyLive,
+    poll: () => (e === epoch ? resync() : Promise.resolve()),
+    onEvent: (ev) => { if (e === epoch) applyLive(ev); },
     onStatus: (s) => {
+      if (e !== epoch) return;
       commit({ ...state, live: s });
       if (s === 'open') void resync();
     },
@@ -293,6 +317,7 @@ export function start(): void {
 
 /** Arrête le temps réel et vide l'état (déconnexion, changement de profil : rien ne doit fuir d'un profil à l'autre). */
 export function stop(): void {
+  epoch++;
   const l = live;
   live = null;
   l?.stop();

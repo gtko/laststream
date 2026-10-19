@@ -161,6 +161,19 @@ describe('rendu DOM', () => {
     expect(parseFloat(marker.style.left)).toBeCloseTo(1, 5);
   });
 
+  it('un appui sur un marqueur ne remonte pas à la barre de progression (pas de capture du pointeur)', () => {
+    const bar = document.createElement('div');
+    const container = document.createElement('div');
+    bar.append(container);
+    const onBar = vi.fn();
+    bar.addEventListener('pointerdown', onBar);
+    renderNoteMarkers(container, clusterNotes([note('a', 10)], 1000), () => undefined);
+    (container.querySelector('.lp-note') as HTMLElement).dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(onBar).not.toHaveBeenCalled();
+    bar.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(onBar).toHaveBeenCalledTimes(1);
+  });
+
   it('un groupe affiche son nombre et un clic amène à la première note', () => {
     const container = document.createElement('div');
     const onSeek = vi.fn();

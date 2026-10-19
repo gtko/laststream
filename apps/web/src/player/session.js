@@ -6,6 +6,7 @@ import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
 import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
+import { resumePosition } from '../data/watchWith';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
@@ -578,6 +579,12 @@ function loaderExtra(step, over = {}) {
   };
 }
 
+/** Position de départ demandée : un nombre, ou le relevé d'un ami estimé à l'instant présent (« Regarder avec lui »). */
+function seekPositionOf(start) {
+  if (typeof start === 'number') return start;
+  return start && typeof start === 'object' ? resumePosition(start, Date.now()) : null;
+}
+
 /** Poursuit la session avec la source choisie : reprise éventuelle puis lecture. */
 function continueWith(view, opts = {}) {
   const p = P;
@@ -587,7 +594,8 @@ function continueWith(view, opts = {}) {
   const saved = userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
   const rd = resumeDecision(saved);
   const mode = opts.resume || 'ask';
-  const at = typeof opts.startAt === 'number' ? opts.startAt : p.seekStart;
+  const at = seekPositionOf(typeof opts.startAt === 'number' ? opts.startAt : p.seekStart);
+  p.seekStart = null; // appliquée une seule fois : une reprise ultérieure suit la progression, pas l'ancienne demande
   if (typeof at === 'number') return playView(view, at);
   if (rd.prompt && mode === 'ask') {
     ui.setLoading(null);
@@ -1922,8 +1930,9 @@ function notesTick(p, st) {
   if (!nt) return;
   const prev = nt.last;
   nt.last = st.time;
-  if (prev === null || st.paused) return;
+  if (prev === null) return;
   for (const id of rearmed(prev, st.time, nt.list)) nt.fired.delete(id);
+  if (st.paused) return;
   for (const n of crossing(prev, st.time, nt.list, { fired: nt.fired })) {
     nt.fired.add(n.id);
     ui.showNoteFlash(n);
@@ -2033,7 +2042,7 @@ export async function playBest(request, opener, opts = {}) {
   const token = p.token;
   const alive = () => P && P.token === token;
   p.resumeMode = opts.resume || 'ask';
-  p.seekStart = typeof opts.startAt === 'number' ? opts.startAt : null;
+  p.seekStart = opts.startAt ?? null;
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   let loaded = null;
   try {

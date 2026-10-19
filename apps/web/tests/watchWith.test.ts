@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FriendView, Watching } from '../src/data/socialV2Api';
 import {
-  createWatchWithHandler, LAUNCH_ERROR, NOT_OPENABLE, playAt, playRequestOf, resumePosition,
+  createWatchWithHandler, LAUNCH_ERROR, NOT_OPENABLE, playAt, playRequestOf, resumePosition, type WatchPoint,
 } from '../src/data/watchWith';
 
 const watching = (over: Partial<Watching> = {}): Watching => ({
@@ -136,24 +136,36 @@ describe('createWatchWithHandler', () => {
     expect(toast).toHaveBeenCalledWith('Cet ami ne regarde rien pour le moment.');
   });
 
-  it('ami qui regarde : même titre et épisode, position estimée à l’instant du clic', () => {
+  it('ami qui regarde : même titre et épisode, relevé transmis tel quel (pas de position calculée au clic)', () => {
     const launch = fakeLaunch();
-    const now = 2_000_000;
+    const at = 2_000_000;
     const f = friend({
-      watching: { type: 'series', tmdbId: 7, title: 'Severance', season: 1, episode: 3, pos: 100, paused: false, at: now - 10_000 },
+      watching: { type: 'series', tmdbId: 7, title: 'Severance', season: 1, episode: 3, pos: 100, paused: false, at },
     });
-    createWatchWithHandler({ launch, toast: vi.fn(), now: () => now })(f);
+    createWatchWithHandler({ launch, toast: vi.fn() })(f);
     expect(launch).toHaveBeenCalledTimes(1);
-    const [request, , opts] = launch.mock.calls[0] as unknown as [{ key: string; season: number; episode: number }, unknown, { startAt: number; resume: string }];
+    const [request, , opts] = launch.mock.calls[0] as unknown as [{ key: string; season: number; episode: number }, unknown, { startAt: WatchPoint; resume: string }];
     expect(request).toEqual(expect.objectContaining({ key: 'tv:7', season: 1, episode: 3, name: 'Severance' }));
     expect(opts.resume).toBe('none');
-    expect(opts.startAt).toBeCloseTo(110, 5);
+    expect(opts.startAt).toEqual({ pos: 100, at, paused: false, duration: undefined });
   });
 
-  it('ami en pause : la position du relevé, sans avancer', () => {
+  it('la position de départ se calcule au démarrage : le temps de chargement compte', () => {
+    const launch = fakeLaunch();
+    const f = friend({ watching: watching({ pos: 100, paused: false, at: 1_000_000 }) });
+    createWatchWithHandler({ launch, toast: vi.fn() })(f);
+    const { startAt } = launch.mock.calls[0][2] as { startAt: WatchPoint };
+    // Quarante secondes de chargement après le clic : la position estimée est celle du démarrage.
+    expect(resumePosition(startAt, 1_040_000)).toBeCloseTo(140, 5);
+    expect(resumePosition(startAt, 1_000_000)).toBeCloseTo(100, 5);
+  });
+
+  it('ami en pause : le relevé est transmis ; sa position reste celle du relevé', () => {
     const launch = fakeLaunch();
     const f = friend({ watching: watching({ pos: 42, paused: true, at: 0 }) });
-    createWatchWithHandler({ launch, toast: vi.fn(), now: () => 999_999 })(f);
-    expect(launch.mock.calls[0][2]).toEqual({ resume: 'none', startAt: 42 });
+    createWatchWithHandler({ launch, toast: vi.fn() })(f);
+    const { startAt } = launch.mock.calls[0][2] as { startAt: WatchPoint };
+    expect(launch.mock.calls[0][2]).toEqual({ resume: 'none', startAt: { pos: 42, at: 0, paused: true, duration: undefined } });
+    expect(resumePosition(startAt, 999_999)).toBe(42);
   });
 });

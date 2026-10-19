@@ -1,5 +1,5 @@
 import { deletePresence, putPresence, type Status, type Watching } from '../data/socialV2Api';
-import { getState } from '../data/socialStore';
+import { getState, subscribe } from '../data/socialStore';
 
 /* Présence v2 (contrat social-v2 : PUT / DELETE `/user/social/presence`). C'est le seul émetteur de présence de
  * l'application : pendant la lecture il envoie le titre regardé (position, pause), et hors lecture le battement reste
@@ -101,6 +101,8 @@ let playback: Playback | null = null;
 let tick: Tick | null = null;
 let last: Mark | null = null;
 let pending = false;
+let unsubStatus: (() => void) | null = null;
+let wasInvisible = false;
 
 /** Appel réseau sans attente ni erreur visible. */
 function fire(call: () => Promise<unknown>): void {
@@ -128,6 +130,13 @@ function onHide(): void {
   if (active && !kid && statusOf() !== 'invisible') fire(() => sender.del());
 }
 
+/** Abonnement au statut du store : la bascule vers « invisible » retire la présence tout de suite (DELETE), sans attendre. */
+function onStatusChange(): void {
+  const invisible = statusOf() === 'invisible';
+  if (invisible && !wasInvisible && active && !kid) fire(() => sender.del());
+  wasInvisible = invisible;
+}
+
 /** Démarre la présence pour le profil actif (remplace la précédente). Profil enfant : rien. */
 export function startPresenceV2(isKid: boolean): void {
   stopPresenceV2(false);
@@ -136,6 +145,8 @@ export function startPresenceV2(isKid: boolean): void {
   if (kid) return;
   flush(Date.now());
   timer = setInterval(() => flush(Date.now()), CHECK_MS);
+  wasInvisible = statusOf() === 'invisible';
+  unsubStatus = subscribe(onStatusChange);
   if (typeof window !== 'undefined') window.addEventListener('pagehide', onHide);
 }
 
@@ -144,6 +155,8 @@ export function stopPresenceV2(offline = true): void {
   const was = active && !kid;
   clearInterval(timer);
   timer = undefined;
+  unsubStatus?.();
+  unsubStatus = null;
   if (typeof window !== 'undefined') window.removeEventListener('pagehide', onHide);
   if (offline && was && statusOf() !== 'invisible') fire(() => sender.del());
   active = false;
