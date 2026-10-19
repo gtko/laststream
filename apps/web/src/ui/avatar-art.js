@@ -1,9 +1,11 @@
 /*
- * Rendu des avatars illustrés (DiceBear, SVG généré localement, aucune requête réseau). Le code DiceBear et les styles
- * sont chargés à la demande (import dynamique) : l'accueil n'est pas alourdi. Repli : l'initiale sur la couleur du
- * profil reste affichée tant que l'illustration n'est pas prête (ou si elle échoue).
+ * Rendu des avatars illustrés. DiceBear : SVG généré localement, aucune requête réseau ; le code DiceBear et les styles
+ * sont chargés à la demande (import dynamique) : l'accueil n'est pas alourdi. Collections (col:<col>:<char>) : vignette
+ * WebP servie par lastAddon, posée en <img> sur la couleur du profil. Repli : l'initiale sur la couleur du profil reste
+ * affichée tant que l'illustration n'est pas prête (ou si elle échoue).
  */
-import { AVATAR_BACKGROUNDS, parseAvatar, parseHero } from '../data/avatars';
+import { AVATAR_BACKGROUNDS, parseAvatar, parseColAvatar, parseHero } from '../data/avatars';
+import { avatarImageUrl } from '../data/avatar-catalog';
 import { heroDataUri } from '../data/heroes/render';
 
 /** Avatars déjà générés : valeur « dicebear:style:graine » -> URI data: du SVG. */
@@ -68,19 +70,55 @@ const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').
 /**
  * Attributs HTML d'un élément avatar : couleur de repli, et illustration si elle est déjà en cache. À placer dans la balise :
  * `<span class="pf-av"` + avatarAttrs(avatar, color) + `>`. Les éléments sans cache sont complétés par hydrateAvatars().
+ * Un avatar « collection » n'a jamais d'illustration en cache : son <img> est ajouté par hydrateAvatars().
  */
 export function avatarAttrs(avatar, color) {
   const bg = 'background:' + attrEsc(color || '#94a3b8');
+  if (parseColAvatar(avatar)) return ' data-avatar="' + attrEsc(avatar) + '" style="' + bg + '"';
   if (!parseAvatar(avatar) && !parseHero(avatar)) return ' style="' + bg + '"';
   const uri = cachedAvatarUri(avatar);
   return ' data-avatar="' + attrEsc(avatar) + '"' + (uri ? ' data-art="1"' : '') +
     ' style="' + bg + (uri ? ';background-image:url(&quot;' + attrEsc(uri) + '&quot;)' : '') + '"';
 }
 
+/**
+ * Pose la vignette d'une collection dans l'élément, sur sa couleur de fond. Pendant le chargement, l'initiale reste visible
+ * (data-art-pending) ; à l'échec, l'<img> est retiré et l'élément garde l'initiale (data-art-failed, sans nouvelle tentative
+ * automatique). Sans adresse lastAddon, rien n'est posé.
+ */
+function attachColArt(node, value) {
+  const col = parseColAvatar(value);
+  const src = col ? avatarImageUrl(col.colId, col.charId) : '';
+  if (!src || !node.isConnected) return;
+  const img = document.createElement('img');
+  img.setAttribute('alt', '');
+  img.setAttribute('loading', 'lazy');
+  img.setAttribute('decoding', 'async');
+  img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;';
+  if (getComputedStyle(node).position === 'static') node.style.position = 'relative';
+  img.addEventListener('load', () => {
+    delete node.dataset.artPending;
+    node.dataset.art = '1';
+  });
+  img.addEventListener('error', () => {
+    img.remove();
+    delete node.dataset.artPending;
+    delete node.dataset.art;
+    node.dataset.artFailed = '1';
+  });
+  node.dataset.artPending = '1';
+  node.append(img);
+  img.src = src;
+}
+
 /** Complète les éléments [data-avatar] d'un conteneur dont l'illustration n'est pas encore posée. */
 export async function hydrateAvatars(root = document) {
-  const nodes = Array.from(root.querySelectorAll('[data-avatar]:not([data-art])'));
+  const nodes = Array.from(root.querySelectorAll('[data-avatar]:not([data-art]):not([data-art-pending]):not([data-art-failed])'));
   await Promise.all(nodes.map(async (node) => {
+    if (parseColAvatar(node.dataset.avatar)) {
+      attachColArt(node, node.dataset.avatar);
+      return;
+    }
     const uri = await avatarUri(node.dataset.avatar);
     if (!uri || !node.isConnected) return;
     node.style.backgroundImage = 'url("' + uri + '")';

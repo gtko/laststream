@@ -126,8 +126,24 @@ export function parseHero(value: unknown): ParsedHero | null {
   return HERO_FAMILY_IDS.includes(family) ? { family, seed } : null;
 }
 
-/** Vrai pour tout avatar stocké reconnu : DiceBear autorisé ou Héros. */
-export const isValidAvatar = (value: unknown): boolean => parseAvatar(value) !== null || parseHero(value) !== null;
+/**
+ * Avatar d'une collection (Pokémon, Disney…) servi par lastAddon : col:<colId>:<charId>, slugs ASCII de 48 caractères au
+ * plus. Seul le format est vérifié ici ; l'appartenance au catalogue et le droit enfant sont vérifiés par le serveur.
+ */
+export const COL_PATTERN = /^col:([a-z0-9][a-z0-9-]{0,47}):([a-z0-9][a-z0-9-]{0,47})$/;
+export const formatColAvatar = (colId: string, charId: string): string => `col:${colId}:${charId}`;
+
+export interface ParsedColAvatar { colId: string; charId: string }
+
+/** Lit un avatar « collection » stocké ; null si le format est invalide. */
+export function parseColAvatar(value: unknown): ParsedColAvatar | null {
+  if (typeof value !== 'string') return null;
+  const m = COL_PATTERN.exec(value);
+  return m ? { colId: m[1], charId: m[2] } : null;
+}
+
+/** Vrai pour tout avatar stocké reconnu : DiceBear autorisé, Héros ou collection (format). */
+export const isValidAvatar = (value: unknown): boolean => parseAvatar(value) !== null || parseHero(value) !== null || parseColAvatar(value) !== null;
 
 /** Graines fixes des Héros : 48 noms originaux, puis deux séries de variantes (« Plus »). Déterministe. */
 const HERO_NAMES: readonly string[] = [

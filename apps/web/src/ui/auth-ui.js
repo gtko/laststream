@@ -7,7 +7,7 @@ import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
 import { checkInvite } from '../data/socialApi';
 import { KID_AGES, UserApiError } from '../data/userApi';
-import { AVATAR_TABS, avatarCredits, HERO_FAMILIES, LICENSE_LABEL, LICENSE_URL, parseAvatar, parseHero, randomSeed, tabTiles } from '../data/avatars';
+import { AVATAR_TABS, avatarCredits, HERO_FAMILIES, LICENSE_LABEL, LICENSE_URL, parseAvatar, parseColAvatar, parseHero, randomSeed, tabTiles } from '../data/avatars';
 import { avatarAttrs } from './avatar-art.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
@@ -64,6 +64,8 @@ export function errorText(err) {
     case 'rate_limited': return 'Trop de tentatives.' + wait;
     case 'stremio_login_failed': return 'Connexion Stremio refusée : vérifie l’e-mail et le mot de passe.';
     case 'invalid_config': return 'Configuration lastAddon invalide : enregistre-la d’abord dans les réglages.';
+    case 'avatar_not_allowed_for_kid': return 'Cet avatar n’est pas autorisé sur un profil enfant : choisis-en un autre.';
+    case 'invalid_avatar': return 'Cet avatar n’est plus disponible : choisis-en un autre.';
     default: return 'Erreur (' + err.code + ').' + wait;
   }
 }
@@ -375,7 +377,10 @@ function avatarPicker(node, cur, onPick = () => {}) {
   const PAGE = 48;
   const parsed = parseAvatar(cur.avatar);
   const hero = parseHero(cur.avatar);
-  const valid = !!(parsed || hero);
+  // Avatar « collection » : pas d'onglet qui le liste (le sélecteur des collections est à venir) ; il est gardé tel quel
+  // tant que l'utilisateur ne choisit pas autre chose, pour qu'un enregistrement ne l'efface pas.
+  const col = parseColAvatar(cur.avatar);
+  const valid = !!(parsed || hero || col);
   const state = { avatar: valid ? cur.avatar : null, tab: hero ? 'heroes' : parsed ? parsed.style.family : cur.isKid ? 'enfants' : 'heroes', sub: hero ? hero.family : 'heros', word: '', shown: PAGE, touched: valid };
   const grid = node.querySelector('[data-av-grid]');
   const more = node.querySelector('[data-av-more]');

@@ -53,7 +53,7 @@ export interface ProfileDto {
 export interface ProfileInput {
   name: string;
   avatarColor?: string;
-  /** dicebear:<style>:<graine> ; null retire l'avatar illustré. */
+  /** dicebear:<style>:<graine>, hero:<famille>:<graine> ou col:<colId>:<charId> ; null retire l'avatar illustré. */
   avatar?: string | null;
   isKid?: boolean;
   kidMaxAge?: KidMaxAge;
