@@ -97,7 +97,7 @@ function manifestUrl(sourceUrl: string): string {
 }
 
 /** Corps « error code: 1042 » (erreurs Cloudflare 10xx, ex. Worker vers Worker) : jamais la réponse d'un addon. */
-const CLOUDFLARE_ERROR_BODY = /^s*error code:s*10dd/i;
+const CLOUDFLARE_ERROR_BODY = /^\s*error code:\s*10\d\d\b/i;
 
 function isJsonRecord(text: string): boolean {
   try {
