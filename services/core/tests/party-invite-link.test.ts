@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { PartyBackend } from '../src/party/backend.js';
 import { canonicalName } from '../src/party/names.js';
 import { cleanGuestName, guestIdentity, signGuestToken, signRoomInviteToken, verifyGuestToken, verifyRoomInviteToken } from '../src/party/guest.js';
-import { GUEST_NAME_MAX, GUEST_SESSION_MS, MAX_GUESTS, parseClientMessage, ROOM_MAX_AGE_MS, type RoomData } from '../src/party/protocol.js';
+import { RESERVATION_MS, GUEST_NAME_MAX, GUEST_SESSION_MS, MAX_GUESTS, parseClientMessage, ROOM_MAX_AGE_MS, type RoomData } from '../src/party/protocol.js';
 import { type Member, RoomCore } from '../src/party/room-core.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { bootstrapOwner, type Member as Account } from './social-harness.js';
@@ -111,6 +111,57 @@ describe('pseudos : forme canonique', () => {
   });
 });
 
+describe('réservations des jetons de séance', () => {
+  it('un jeton obtenu mais jamais connecté compte dans le plafond d’invités pendant 2 min, puis libère place et pseudo', () => {
+    const fx = makeRoom();
+    for (let i = 0; i < MAX_GUESTS; i += 1) expect(fx.enter(`g${i}`).verdict.ok).toBe(true);
+    expect(fx.enter('de-trop').verdict).toEqual({ ok: false, reason: 'guest_limit' });
+    // Un jeton réservé qui se connecte ne compte qu'une fois.
+    const first = fx.core.data.guestNames as Record<string, string>;
+    expect(Object.values(first)).toContain('g0');
+    fx.clock.now += RESERVATION_MS - 1;
+    expect(fx.enter('encore').verdict).toEqual({ ok: false, reason: 'guest_limit' });
+    fx.clock.now += 1;
+    // Réservations expirées : le pseudo « g0 » est libre à nouveau et la place aussi.
+    expect(fx.enter('g0').verdict).toMatchObject({ ok: true, name: 'g0' });
+    expect(Object.keys(fx.core.data.guestReserved ?? {})).toHaveLength(1);
+  });
+
+  it('salon plein : les réservations comptent dans les participants maximum', () => {
+    const fx = makeRoom(3);
+    expect(fx.enter('A').verdict.ok).toBe(true);
+    expect(fx.enter('B').verdict.ok).toBe(true);
+    expect(fx.enter('C').verdict).toEqual({ ok: false, reason: 'room_full' });
+  });
+
+  it('un invité réservé se connecte sans être bloqué par sa propre réservation ; la réservation disparaît', () => {
+    const fx = makeRoom();
+    for (let i = 0; i < MAX_GUESTS - 1; i += 1) fx.enter(`g${i}`);
+    const last = fx.enter('dernier');
+    expect(last.connect()).toBeDefined();
+    expect(fx.core.data.guestReserved?.[`guest:${last.gid}`]).toBeUndefined();
+  });
+
+  it('tick libère les réservations expirées ; guestNames n’évince jamais un invité connecté', () => {
+    const fx = makeRoom();
+    fx.enter('Fantôme');
+    fx.clock.now += RESERVATION_MS;
+    fx.core.tick();
+    expect(Object.values(fx.core.data.guestNames ?? {})).not.toContain('Fantôme');
+    // Plus de GUEST_NAMES_MAX pseudos anciens : le plus ancien connecté reste.
+    const connected = fx.enter('Premier');
+    const premier = connected.connect() as Member;
+    const names = { ...(fx.core.data.guestNames ?? {}) };
+    for (let i = 0; i < 250; i += 1) names[`guest:old${i}`.padEnd(30, 'x')] = `ancien${i}`;
+    fx.core.data.guestNames = names;
+    const other = fx.enter('Nouveau');
+    expect(other.verdict.ok).toBe(true);
+    const kept = fx.core.data.guestNames ?? {};
+    expect(Object.keys(kept).length).toBeLessThanOrEqual(200);
+    expect(kept[premier.accountId]).toBe('Premier');
+  });
+});
+
 describe('salon : entrée par le lien partagé', () => {
   it('deux invités avec le même lien : chacun son identifiant et son pseudo', () => {
     const fx = makeRoom();
@@ -127,14 +178,17 @@ describe('salon : entrée par le lien partagé', () => {
   it('pseudo déjà pris (hôte, invité connecté ou seulement entré) : suffixe automatique, 24 caractères au plus', () => {
     const fx = makeRoom();
     const names: string[] = [];
-    for (const wanted of ['Léa', 'LÉA', 'léa', 'x'.repeat(GUEST_NAME_MAX), 'x'.repeat(GUEST_NAME_MAX)]) {
+    for (const wanted of ['Léa', 'LÉA', 'léa', 'x'.repeat(GUEST_NAME_MAX)]) {
       const entry = fx.enter(wanted);
       expect(entry.verdict.ok).toBe(true);
       if (entry.verdict.ok) names.push(entry.verdict.name);
     }
     expect(names.slice(0, 3)).toEqual(['Léa', 'LÉA 2', 'léa 3']);
     expect(names[3]).toBe('x'.repeat(GUEST_NAME_MAX));
-    expect(names[4]).toBe(`${'x'.repeat(GUEST_NAME_MAX - 2)} 2`);
+    expect(makeRoom().enter('x'.repeat(GUEST_NAME_MAX)).verdict).toMatchObject({ name: 'x'.repeat(GUEST_NAME_MAX) });
+    const twin = makeRoom();
+    twin.enter('x'.repeat(GUEST_NAME_MAX));
+    expect(twin.enter('x'.repeat(GUEST_NAME_MAX)).verdict).toMatchObject({ name: `${'x'.repeat(GUEST_NAME_MAX - 2)} 2` });
     expect(new Set(names.map((name) => name.toLowerCase())).size).toBe(names.length);
     for (const name of names) expect(cleanGuestName(name)).toBe(name);
   });
@@ -183,8 +237,14 @@ describe('salon : entrée par le lien partagé', () => {
     expect(fx.enter('de-trop').verdict).toEqual({ ok: false, reason: 'guest_limit' });
 
     const rate = makeRoom();
-    for (let i = 0; i < 30; i += 1) expect(rate.enter(`p${i}`).verdict.ok).toBe(true);
+    for (let i = 0; i < 30; i += 1) {
+      const member = rate.enter(`p${i}`).connect() as Member;
+      expect(member).toBeDefined();
+      rate.core.leave(member.accountId, member.connId);
+    }
     expect(rate.enter('p-30').verdict).toEqual({ ok: false, reason: 'rate_limited' });
+    // Le compteur est conservé avec l'état du salon (il survit à l'éviction du Durable Object).
+    expect(rate.data.entryHits).toHaveLength(30);
     rate.clock.now += 10 * 60_000;
     expect(rate.enter('p-31').verdict.ok).toBe(true);
   });

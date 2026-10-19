@@ -10,6 +10,7 @@ import {
   EMPTY_ROOM_TTL_MS,
   ENTRIES_PER_WINDOW,
   ENTRY_WINDOW_MS,
+  RESERVATION_MS,
   GUEST_NAME_MAX,
   HOST_GRACE_MS,
   type Identity,
@@ -112,8 +113,6 @@ export class RoomCore {
   private readonly hits = new Map<string, number[]>();
   /** Instants des invitations émises (fenêtre glissante, en mémoire du Durable Object). */
   private inviteHits: number[] = [];
-  /** Instants des entrées d'invités par le lien partagé (fenêtre glissante, en mémoire du Durable Object). */
-  private entryHits: number[] = [];
   private seq = 0;
 
   constructor(
@@ -191,8 +190,10 @@ export class RoomCore {
     const known = this.data.guestNames?.[identity.accountId];
     if (known !== undefined && known !== identity.username) return 'name_changed';
     const reconnect = this.members.has(identity.accountId);
-    if (!reconnect && this.guestCount() >= MAX_GUESTS) return 'guest_limit';
-    if (!reconnect && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
+    // Les jetons de séance obtenus récemment mais pas encore connectés comptent dans les plafonds (sauf le sien).
+    const pending = this.pendingKeys().filter((key) => key !== identity.accountId).length;
+    if (!reconnect && this.guestCount() + pending >= MAX_GUESTS) return 'guest_limit';
+    if (!reconnect && this.members.size + pending >= this.data.meta.maxParticipants) return 'room_full';
     // Comparaison sur la forme canonique (casse, diacritiques, caractères confondables) : pas de sosie de l'hôte ni d'un participant.
     const wanted = canonicalName(identity.username);
     if (wanted === canonicalName(this.data.meta.hostName) && identity.accountId !== this.hostId) return 'name_taken';
@@ -261,9 +262,53 @@ export class RoomCore {
     const names: Record<string, string> = { ...(this.data.guestNames ?? {}) };
     delete names[member.accountId];
     names[member.accountId] = member.username;
-    const keys = Object.keys(names);
-    for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
+    this.data.guestNames = this.trimGuestNames(names);
+    // L'invité s'est connecté : sa réservation est réalisée.
+    if (this.data.guestReserved?.[member.accountId] !== undefined) {
+      const { [member.accountId]: _done, ...rest } = this.data.guestReserved;
+      void _done;
+      this.data.guestReserved = rest;
+    }
+  }
+
+  /** Borne les pseudos retenus à GUEST_NAMES_MAX en oubliant les plus anciens, sans jamais évincer un invité connecté ni une réservation en cours. */
+  private trimGuestNames(names: Record<string, string>): Record<string, string> {
+    const protectedKeys = new Set<string>([...this.members.keys(), ...this.pendingKeys()]);
+    for (const key of Object.keys(names)) {
+      if (Object.keys(names).length <= GUEST_NAMES_MAX) break;
+      if (!protectedKeys.has(key)) delete names[key];
+    }
+    return names;
+  }
+
+  /** Réservations en cours : jetons de séance obtenus il y a moins de RESERVATION_MS et pas encore connectés. */
+  private pendingKeys(): string[] {
+    const now = this.clock();
+    return Object.entries(this.data.guestReserved ?? {})
+      .filter(([key, at]) => now - at < RESERVATION_MS && !this.members.has(key))
+      .map(([key]) => key);
+  }
+
+  /** Oublie les réservations expirées : le pseudo et la place sont libérés (le jeton, lui, n'a pas servi). */
+  private pruneReservations(): void {
+    const reserved = this.data.guestReserved;
+    if (reserved === undefined) return;
+    const now = this.clock();
+    const kept: Record<string, number> = {};
+    const names = { ...(this.data.guestNames ?? {}) };
+    let changed = false;
+    for (const [key, at] of Object.entries(reserved)) {
+      if (now - at < RESERVATION_MS || this.members.has(key)) {
+        if (now - at < RESERVATION_MS) kept[key] = at;
+        continue;
+      }
+      delete names[key];
+      changed = true;
+    }
+    if (!changed && Object.keys(kept).length === Object.keys(reserved).length) return;
+    this.data.guestReserved = kept;
     this.data.guestNames = names;
+    this.dirty.add('room');
   }
 
   /**
@@ -313,13 +358,17 @@ export class RoomCore {
    */
   enterGuest(guestId: string, wanted: string, epoch: number): EntryVerdict {
     if (epoch !== (this.data.inviteEpoch ?? 0)) return { ok: false, reason: 'link_revoked' };
-    if (this.members.size >= this.data.meta.maxParticipants) return { ok: false, reason: 'room_full' };
-    if (this.guestCount() >= MAX_GUESTS) return { ok: false, reason: 'guest_limit' };
+    this.pruneReservations();
+    const pending = this.pendingKeys().length;
+    if (this.members.size + pending >= this.data.meta.maxParticipants) return { ok: false, reason: 'room_full' };
+    if (this.guestCount() + pending >= MAX_GUESTS) return { ok: false, reason: 'guest_limit' };
     const now = this.clock();
-    const recent = this.entryHits.filter((at) => now - at < ENTRY_WINDOW_MS);
-    this.entryHits = recent;
+    // Compteur d'entrées conservé dans l'état du salon : il survit à l'éviction du Durable Object.
+    const recent = (this.data.entryHits ?? []).filter((at) => now - at < ENTRY_WINDOW_MS);
     if (recent.length >= ENTRIES_PER_WINDOW) return { ok: false, reason: 'rate_limited' };
     recent.push(now);
+    this.data.entryHits = recent;
+    this.dirty.add('room');
     // Un pseudo canoniquement égal à celui de l'hôte ou d'un compte présent est refusé (pas de sosie) ; face à un autre invité, suffixe.
     const wantedKey = canonicalName(wanted);
     if (this.data.bannedNames?.includes(wantedKey)) return { ok: false, reason: 'name_banned' };
@@ -338,9 +387,8 @@ export class RoomCore {
     }
     const names: Record<string, string> = { ...(this.data.guestNames ?? {}) };
     names[`${GUEST_KEY_PREFIX}${guestId}`] = name;
-    const keys = Object.keys(names);
-    for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
-    this.data.guestNames = names;
+    this.data.guestNames = this.trimGuestNames(names);
+    this.data.guestReserved = { ...(this.data.guestReserved ?? {}), [`${GUEST_KEY_PREFIX}${guestId}`]: now };
     this.data.linkGuests = [...(this.data.linkGuests ?? []).filter((key) => key !== `${GUEST_KEY_PREFIX}${guestId}`), `${GUEST_KEY_PREFIX}${guestId}`].slice(-GUEST_NAMES_MAX);
     this.dirty.add('room');
     return { ok: true, name, exp: this.linkExpiry() };
@@ -542,6 +590,7 @@ export class RoomCore {
     const now = this.clock();
     const { data } = this;
     if (now - data.meta.createdAt >= ROOM_MAX_AGE_MS) return { effects: this.end('expired'), next: null };
+    this.pruneReservations();
     if (this.members.size === 0) {
       const since = data.emptySince ?? now;
       if (data.emptySince === null) {

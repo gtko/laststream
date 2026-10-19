@@ -55,6 +55,8 @@ export const INVITES_PER_WINDOW = 10;
 /** Entrées d'invités par le lien partagé : au plus ENTRIES_PER_WINDOW par ENTRY_WINDOW_MS pour le salon (donc pour le lien). */
 export const ENTRIES_PER_WINDOW = 30;
 export const ENTRY_WINDOW_MS = 10 * 60_000;
+/** Durée pendant laquelle un jeton de séance jamais connecté réserve une place et un pseudo. */
+export const RESERVATION_MS = 2 * 60_000;
 export const INVITE_WINDOW_MS = 10 * 60_000;
 /** Pseudos d'invités retenus pour la reconnexion (les plus anciens sont oubliés au-delà). */
 export const GUEST_NAMES_MAX = 200;
@@ -138,6 +140,10 @@ export interface RoomData {
   linkGuests?: string[];
   /** Formes canoniques des pseudos d'invités exclus : refusés à l'entrée et à la connexion. Bornée à GUEST_NAMES_MAX. */
   bannedNames?: string[];
+  /** Entrées d'invités par le lien partagé : instants (ms) de la fenêtre de débit, conservés avec le salon (survivent à l'éviction du Durable Object). */
+  entryHits?: number[];
+  /** Jetons de séance obtenus mais pas encore connectés : clé `guest:<id>` -> instant de réservation (ms). Ils comptent dans les plafonds RESERVATION_MS. */
+  guestReserved?: Record<string, number>;
 }
 
 export interface Identity {
