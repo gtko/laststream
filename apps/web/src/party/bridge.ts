@@ -19,6 +19,7 @@ import type { RangeSource } from '../relay/host';
 import { RelayError } from '../relay/protocol';
 import { HostRelaySession, type RelayStats } from '../relay/session';
 import { urlRangeSource } from '../relay/sources';
+import { buildPartySubtitles, type LoadedSubtitle } from './subtitles';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -44,6 +45,8 @@ export interface SessionAdapter {
   switching?: boolean;
   /** Lien lisible d'une source (débridé ou direct seulement, jamais torrent) pour en lire l'en-tête ; null sinon. */
   resolveUrl?: (view: SourceLike, signal: AbortSignal) => Promise<string | null>;
+  /** Sous-titre texte choisi et chargé par le lecteur (langue et cues), pour le partager aux invités ; null sinon. */
+  subtitle?: () => LoadedSubtitle | null;
 }
 
 /** Résultat de la bascule vers une source compatible. `audioUnverified` : le son de cette source n'est pas connu. */
@@ -281,6 +284,16 @@ class PartyBridge {
   }
 
   /**
+   * Renvoie aux invités les sous-titres texte de l'hôte : à appeler quand la piste choisie ou son chargement change (`[]` si
+   * aucune piste texte). Sans partage en cours, rien ne part.
+   */
+  refreshSubtitles(): void {
+    if (!this.relay) return;
+    const a = this.adapter?.() ?? null;
+    this.relay.setSubtitles(buildPartySubtitles(a?.subtitle?.() ?? null));
+  }
+
+  /**
    * Avertissement de compatibilité pour l'hôte (« 1 invité n’aura pas le son (DTS) »), ou null. Il n'existe que pendant le
    * partage aux invités, et ne concerne que ceux qui ont annoncé leurs capacités de décodage.
    */
@@ -369,6 +382,7 @@ class PartyBridge {
       const source = this.watchedSource(urlRangeSource({ url }));
       this.relay = new HostRelaySession({ client: c, source });
       this.relayKey = url;
+      this.relay.setSubtitles(buildPartySubtitles(a.subtitle?.() ?? null));
       this.readHeader(a, url, source);
       // Lecture d'essai : l'hôte apprend tout de suite si son navigateur peut partager ce lien (sans attendre un invité).
       void source.size().catch(() => undefined);

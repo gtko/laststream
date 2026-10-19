@@ -17,7 +17,8 @@ import { MeshHostState } from './mesh/hostState';
 import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
 import type { RangeSource, UploadStats } from './host';
-import { RelayError, capsMask, decodeFrame, encodeCaps, encodeMeshReq, toBytes, type ChannelLike, type DecodeCap } from './protocol';
+import { RelayError, SubsAssembler, capsMask, decodeFrame, encodeCaps, encodeMeshReq, encodeSubs, toBytes, type ChannelLike, type DecodeCap } from './protocol';
+import { encodePartySubtitles, parsePartySubtitles, type PartySubtitleTrack } from '../party/subtitles';
 import { detectDecodeCaps } from './player/detect';
 import type { PlaybackPlan, PlayerCallbacks, PlayerState, PlayerStats, RangeReader, RoomState } from './player/types';
 
@@ -125,6 +126,15 @@ export class HostRelaySession {
   /** Capacités de décodage annoncées par les invités présents (masque DECODE_CAPS, par identifiant de pair). */
   guestCaps(): ReadonlyMap<string, number> {
     return new Map(this.caps);
+  }
+
+  /**
+   * Sous-titres texte de l'hôte, envoyés à chaque invité connecté et à chaque nouvel invité. `[]` : aucune piste (sous-titre
+   * désactivé ou non texte). Seul le texte des pistes part ; rien ne quitte l'appareil hors du canal de salon.
+   */
+  setSubtitles(tracks: readonly PartySubtitleTrack[]): void {
+    if (this.closed) return;
+    this.host.setSubtitles(encodeSubs(encodePartySubtitles(tracks)));
   }
 
   /** Fin du salon : toutes les liaisons se ferment tout de suite, et plus aucun invité n'est admis. */
@@ -263,8 +273,47 @@ export class GuestRelaySession {
   private heldId: string | null = null;
   private probeTimer: unknown = null;
   private probeReq = 0;
+  /** Abonnés aux sous-titres de l'hôte (voir onSubtitles). */
+  private readonly subsListeners = new Set<(tracks: PartySubtitleTrack[]) => void>();
 
   constructor(private readonly deps: GuestRelayDeps) {}
+
+  /**
+   * Sous-titres texte de l'hôte : reçus à chaque liaison et à chaque changement, déjà validés (texte seulement, bornes). `[]`
+   * signifie aucune piste ; la liste repasse à `[]` quand la liaison avec l'hôte se rompt. Rend la fonction de désabonnement.
+   */
+  onSubtitles(cb: (tracks: PartySubtitleTrack[]) => void): () => void {
+    this.subsListeners.add(cb);
+    return () => {
+      this.subsListeners.delete(cb);
+    };
+  }
+
+  private emitSubtitles(tracks: PartySubtitleTrack[]): void {
+    this.subsListeners.forEach((cb) => {
+      try {
+        cb(tracks);
+      } catch {
+        // Un abonné défaillant n'empêche pas les autres.
+      }
+    });
+  }
+
+  /**
+   * Sous-titres de l'hôte sur ce canal. Attaché dès que le canal est remis, avant toute attente : les trames SUBS partent à
+   * l'ouverture du canal côté hôte et ne doivent pas arriver avant l'écoute.
+   */
+  private listenSubtitles(channel: ChannelLike): void {
+    const assembler = new SubsAssembler();
+    channel.addEventListener('message', (ev: { data?: unknown }) => {
+      const bytes = toBytes(ev.data);
+      const frame = bytes ? decodeFrame(bytes) : null;
+      if (!frame || frame.t !== 'subs') return;
+      const message = assembler.push(frame);
+      const tracks = message ? parsePartySubtitles(message) : null;
+      if (tracks) this.emitSubtitles(tracks);
+    });
+  }
 
   /** Rejoint le salon (le WebSocket est ouvert par `deps.connect`). Une seule fois par session. */
   start(): void {
@@ -454,6 +503,7 @@ export class GuestRelaySession {
     try {
       const channel: ChannelLike = await relay.connect(this.deps.connectTimeoutMs ?? CONNECT_MS);
       if (!this.isCurrent(seq)) return;
+      this.listenSubtitles(channel);
       channel.addEventListener('close', () => this.onChannelClosed(seq));
       // Capacités de décodage : annoncées à l'hôte sur ce canal, avant la première requête de plage.
       const mask = await (this.capsP ?? Promise.resolve(null));
@@ -538,6 +588,7 @@ export class GuestRelaySession {
   private onChannelClosed(seq: number): void {
     if (!this.isCurrent(seq)) return;
     this.teardownMedia();
+    this.emitSubtitles([]);
     this.setView('host-lost', hostLostText());
     this.scheduleReconnect();
   }

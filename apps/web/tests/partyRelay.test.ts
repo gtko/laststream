@@ -8,6 +8,7 @@ vi.mock('../src/relay/session', () => ({
   HostRelaySession: class {
     constructor(opts: unknown) { relay.ctor(opts); }
     close() { relay.close(); }
+    setSubtitles() { /* sans effet dans ce test */ }
     stats() { return { guests: 1, links: 0, bytesSent: 0, rateBps: 0 }; }
   },
 }));

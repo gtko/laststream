@@ -7,7 +7,8 @@ import { PIECE_SHIFT } from './mesh/pieces';
 import type { RangeSource } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
 import type { PeerOptions } from './peer';
-import { capsMask, encodeMesh, type DecodeCap } from './protocol';
+import { capsMask, encodeMesh, encodeSubs, type DecodeCap } from './protocol';
+import type { PartySubtitleTrack } from '../party/subtitles';
 import type { PlaybackPlan, PlayerCallbacks, PlayerStats, RoomState } from './player/types';
 import { GuestRelaySession, HOLD_PROBE_MS, HostRelaySession, partySignal, type GuestPlayerLike, type GuestRelayDeps } from './session';
 
@@ -532,5 +533,36 @@ describe('session hôte : admission', () => {
     expect(relay.stats().links).toBe(0);
     relay.close();
     client.close();
+  });
+});
+
+describe('session invité : sous-titres de l’hôte', () => {
+  it('reçus sur la liaison, validés, remplacés à chaque changement ; trame invalide ignorée ; plus d’abonné, plus d’appel', async () => {
+    const { hostRelay, guest, wire } = await chain();
+    await waitFor(() => guest.tick().phase === 'ready');
+    const got: PartySubtitleTrack[][] = [];
+    const off = guest.onSubtitles((t) => got.push(t));
+    const tracks: PartySubtitleTrack[] = [{ id: 's1', lang: 'fr', label: 'Français', vtt: 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nBonjour\n\n' }];
+
+    hostRelay.setSubtitles(tracks);
+    await waitFor(() => got.length === 1);
+    expect(got[0]).toEqual(tracks);
+
+    // Message de sous-titres mal formé (JSON cassé) : rejeté, aucun appel.
+    for (const frame of encodeSubs(new TextEncoder().encode('{pas du json'))) wire.ch!.host.send(frame);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(got).toHaveLength(1);
+
+    hostRelay.setSubtitles([]);
+    await waitFor(() => got.length === 2);
+    expect(got[1]).toEqual([]);
+
+    off();
+    hostRelay.setSubtitles(tracks);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(got).toHaveLength(2);
+
+    guest.destroy();
+    hostRelay.close();
   });
 });

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHUNK_BYTES, FLAG_FIN, RelayError, decodeFrame, encodeCancel, encodeData, encodeErr, encodeInfo, encodeInfoReq, encodeReq,
-  isValidRange, toBytes, RANGE_ERROR_CODES,
+  isValidRange, toBytes, RANGE_ERROR_CODES, SubsAssembler, encodeSubs,
 } from './protocol';
 
 describe('trames invité -> hôte', () => {
@@ -115,5 +115,49 @@ describe('utilitaires', () => {
     expect(new RelayError('out_of_range').retryable).toBe(false);
     expect(new RelayError('cancelled').retryable).toBe(false);
     expect(new RelayError('closed').message).not.toMatch(/https?:|example/);
+  });
+});
+
+describe('trames SUBS (sous-titres, hôte -> invité)', () => {
+  it('un message court tient dans une trame de fin, octets exacts', () => {
+    const msg = Uint8Array.from([91, 93, 0, 255]);
+    const frames = encodeSubs(msg).map((f) => decodeFrame(f));
+    expect(frames).toEqual([{ t: 'subs', fin: true, payload: msg }]);
+  });
+
+  it('un message long est découpé en morceaux de 64 Ko au plus, seul le dernier porte la fin', () => {
+    const msg = new Uint8Array(CHUNK_BYTES * 2 + 10).map((_, i) => i % 251);
+    const frames = encodeSubs(msg).map((f) => decodeFrame(f));
+    expect(frames.map((f) => (f as { fin: boolean }).fin)).toEqual([false, false, true]);
+    const sizes = frames.map((f) => (f as { payload: Uint8Array }).payload.byteLength);
+    expect(sizes).toEqual([CHUNK_BYTES, CHUNK_BYTES, 10]);
+  });
+
+  it('l\'assembleur rend le message complet au dernier morceau', () => {
+    const msg = new Uint8Array(CHUNK_BYTES + 7).map((_, i) => (i * 7) % 256);
+    const asm = new SubsAssembler();
+    let done: Uint8Array | null = null;
+    for (const f of encodeSubs(msg)) {
+      const frame = decodeFrame(f);
+      if (frame?.t === 'subs') done = asm.push(frame) ?? done;
+    }
+    expect(done).toEqual(msg);
+  });
+
+  it('rejette les trames malformées : trop courte, drapeau inconnu, charge trop grande', () => {
+    const ok = encodeSubs(Uint8Array.from([1, 2, 3]))[0];
+    const withFlags = (flags: number) => {
+      const copy = ok.slice();
+      copy[5] = flags;
+      return copy;
+    };
+    expect(decodeFrame(withFlags(0x01))).toMatchObject({ t: 'subs', fin: true });
+    expect(decodeFrame(withFlags(0x02))).toBeNull();
+    expect(decodeFrame(withFlags(0x80))).toBeNull();
+    expect(decodeFrame(Uint8Array.from([37, 0, 0, 0, 0]))).toBeNull();
+    expect(decodeFrame(Uint8Array.from([37, 0, 0, 0, 0, 0]))).toEqual({ t: 'subs', fin: false, payload: new Uint8Array(0) });
+    const tooBig = new Uint8Array(6 + CHUNK_BYTES + 1);
+    tooBig[0] = 37;
+    expect(decodeFrame(tooBig)).toBeNull();
   });
 });

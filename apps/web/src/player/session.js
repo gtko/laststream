@@ -227,7 +227,17 @@ function partyAdapter(p = P) {
     sources: () => p.ranked || p.views || [],
     // Lien lisible d'une source pour en lire l'en-tête seulement (sans lancer la lecture) ; jamais un torrent ni un proxy.
     resolveUrl: (view, signal) => resolveRelayUrl(view, signal),
+    // Sous-titre texte choisi et chargé : partagé aux invités (texte seulement, jamais son adresse).
+    subtitle: () => partySubtitle(p),
   };
+}
+
+/** Sous-titre texte choisi et chargé par l'hôte (cues en mémoire), pour le partage aux invités ; null pour mpv ou sans cues. */
+function partySubtitle(p) {
+  const s = p.subs;
+  if (!s || !s.selectedId || s.native || !s.cues.length) return null;
+  const track = allSubtitleTracks().find((t) => t.id === s.selectedId);
+  return track ? { lang: track.lang, cues: s.cues } : null;
 }
 
 /** Lien HTTP(S) lisible d'une source (débridé ou direct), ou null : sert à lire son en-tête avant de la proposer. */
@@ -1094,6 +1104,7 @@ async function selectSubtitle(id, quiet) {
   s.shift = 0;
   s.rateHint = '';
   stopAutoSync();
+  partyBridge.refreshSubtitles();
   if (!id) {
     p.engine.setSubtitleTrack(null);
     if (!quiet) ui.toast('Sous-titres désactivés');
@@ -1126,6 +1137,7 @@ async function selectSubtitle(id, quiet) {
     }
   }
   if (!quiet) ui.toast('Sous-titres : ' + track.label);
+  partyBridge.refreshSubtitles();
   ui.refreshPanel();
 }
 

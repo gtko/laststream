@@ -20,6 +20,9 @@
  *
  *   invité -> hôte (à l'ouverture du canal)
  *     CAPS    [7][reqId u32 = 0][mask u32]                        bit i = DECODE_CAPS[i] : décodages que l'invité sait faire
+ *   hôte -> invité (ajout de fin ; sous-titres texte, à l'ouverture du canal puis à chaque changement)
+ *     SUBS    [37][reqId u32 = 0][flags u8][octets]               morceau d'un message, 64 Ko au plus ; flags bit 0 = dernier morceau
+ *                                                                 du message ; le message est la charge JSON des pistes (src/party/subtitles.ts)
  *
  * Encodage et décodage purs (testés dans src/relay/protocol.test.ts). */
 
@@ -103,7 +106,8 @@ export type RelayFrame =
   | { t: 'have'; reqId: number; ranges: PieceInterval[] }
   | { t: 'locate'; reqId: number; index: number }
   | { t: 'located'; reqId: number; index: number; pending: boolean; hash: Uint8Array | null; holders: string[] }
-  | { t: 'caps'; mask: number };
+  | { t: 'caps'; mask: number }
+  | { t: 'subs'; fin: boolean; payload: Uint8Array };
 
 /** Intervalle d'index de morceaux [start, start + len). */
 export interface PieceInterval {
@@ -112,7 +116,7 @@ export interface PieceInterval {
 }
 
 // Maillage : 32 et suivants, pour ne pas heurter les types ajoutés à la suite par d'autres chantiers (7 à 31).
-const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, caps: 7, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36 } as const;
+const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, caps: 7, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36, subs: 37 } as const;
 
 /** Intervalles au plus par instantané HAVE, longueur maximale d'un identifiant de fichier ou de pair. */
 export const MAX_HAVE_RANGES = 512;
@@ -309,6 +313,11 @@ export function decodeFrame(buf: Uint8Array): RelayFrame | null {
     }
     case TYPE.caps:
       return n === 9 && reqId === 0 ? { t: 'caps', mask: view.getUint32(5) } : null;
+    case TYPE.subs: {
+      const flags = n >= 6 ? view.getUint8(5) : 0xff;
+      if (n < 6 || n - 6 > CHUNK_BYTES || (flags & ~FLAG_FIN) !== 0) return null;
+      return { t: 'subs', fin: (flags & FLAG_FIN) !== 0, payload: buf.subarray(6) };
+    }
     default:
       return null;
   }
@@ -369,6 +378,70 @@ export function encodeLocated(reqId: number, index: number, hash: Uint8Array | n
     view.setUint8(at, b.byteLength);
     out.set(b, at + 1);
     at += 1 + b.byteLength;
+  }
+  return out;
+}
+
+// ---- Sous-titres de l'hôte (ajout de fin) ----
+
+/** Taille maximale d'un message de sous-titres reconstitué côté invité (charge JSON, marge comprise pour l'échappement). */
+export const MAX_SUBS_WIRE_BYTES = 4 * 1024 * 1024;
+
+function subsFrame(payload: Uint8Array, fin: boolean): Uint8Array {
+  const { out, view } = header(6 + payload.byteLength, TYPE.subs, 0);
+  view.setUint8(5, fin ? FLAG_FIN : 0);
+  out.set(payload, 6);
+  return out;
+}
+
+/** Découpe un message en trames SUBS de 64 Ko au plus ; un message vide donne une seule trame de fin, vide. */
+export function encodeSubs(message: Uint8Array): Uint8Array[] {
+  if (message.byteLength === 0) return [subsFrame(new Uint8Array(0), true)];
+  const frames: Uint8Array[] = [];
+  for (let at = 0; at < message.byteLength; at += CHUNK_BYTES) {
+    const end = Math.min(message.byteLength, at + CHUNK_BYTES);
+    frames.push(subsFrame(message.subarray(at, end), end === message.byteLength));
+  }
+  return frames;
+}
+
+/**
+ * Reconstitue un message SUBS. Le canal est ordonné et les trames d'un message partent d'un seul envoi : elles se suivent.
+ * `push` rend le message complet à son dernier morceau, sinon null. Un message qui dépasse `maxBytes` est abandonné jusqu'à
+ * sa fin (rien n'est rendu), sans affecter le message suivant.
+ */
+export class SubsAssembler {
+  private parts: Uint8Array[] = [];
+  private size = 0;
+  private dropping = false;
+
+  constructor(private readonly maxBytes: number = MAX_SUBS_WIRE_BYTES) {}
+
+  push(frame: { fin: boolean; payload: Uint8Array }): Uint8Array | null {
+    if (!this.dropping) {
+      this.size += frame.payload.byteLength;
+      if (this.size > this.maxBytes) {
+        this.dropping = true;
+        this.parts = [];
+      } else {
+        this.parts.push(frame.payload.slice());
+      }
+    }
+    if (!frame.fin) return null;
+    const done = this.dropping ? null : concatBytes(this.parts, this.size);
+    this.parts = [];
+    this.size = 0;
+    this.dropping = false;
+    return done;
+  }
+}
+
+function concatBytes(parts: readonly Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
   }
   return out;
 }
