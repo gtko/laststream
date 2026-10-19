@@ -19,6 +19,14 @@ export function tmdb<T = Json>(path: string, params: Params = {}): Promise<T> {
   return api<T>('tmdb/' + path, { region: getRegion().code, language: getVideoLang().tag, ...params });
 }
 
+/**
+ * Top 10 servi par lastAddon (lt/top10.ts) : une page, déjà filtrée sur les titres disponibles dans la région.
+ * `movie` / `tv` : tendances de la semaine ; `all` avec `day` : tendances du jour, films et séries mêlés.
+ */
+export function top10<T = Json>(scope: 'movie' | 'tv' | 'all', page = 1, period?: 'day'): Promise<T> {
+  return api<T>('top10/' + scope, { page: String(page), region: getRegion().code, language: getVideoLang().tag, ...(period ? { window: period } : {}) });
+}
+
 export function postLt<T = Json>(path: string, body: unknown): Promise<T> {
   return requestJson<T>(ltUrl(path), { method: 'POST', body });
 }

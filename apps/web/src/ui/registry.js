@@ -6,8 +6,8 @@ import { closeHover } from './hover.js';
 import { filterAvailable } from './avail.js';
 import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
-import { api, tmdb } from '../data/lt';
-import { getRegion, getVideoLang } from '../data/prefs';
+import { tmdb, top10 } from '../data/lt';
+import { getRegion } from '../data/prefs';
 import { keepVisible } from '../data/homeFilters';
 import { activeRows, Appearances, fillRow, passesQuality, pickSeed, rankTop, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById, TOP_COUNT } from '../data/rows';
 import { userStore } from '../data/userStore';
@@ -78,6 +78,11 @@ const toItems = (json, forced, upcoming) => {
   const l = listOf(json, forced);
   return l ? l.filter((it) => (it.poster || it.backdropPath) && (upcoming || (isReleasedItem(it) && passesQuality(it)))).map(register) : [];
 };
+// Top 10 : la disponibilité et la sortie sont décidées par le serveur (lt/top10.ts) ; restent le visuel et la qualité.
+const toTopItems = (json, forced) => {
+  const l = listOf(json, forced);
+  return l ? l.filter((it) => (it.poster || it.backdropPath) && passesQuality(it)).map(register) : [];
+};
 
 function interleave(a, b) {
   const out = [];
@@ -104,8 +109,8 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
   if (f.k === 'top10') {
     // Top 10 : une page des tendances de la semaine, filtrée côté serveur (titres disponibles dans la région). `raw` = titres
     // reçus de la source avant filtre (0 : fin de la source), pour que la rangée complète sa page suivante.
-    const json = await api('top10/' + f.type, { page: String(page), region: getRegion().code, language: getVideoLang().tag });
-    return { title: def.title, raw: typeof json?.raw === 'number' ? json.raw : 0, items: toItems(json, f.type) };
+    const json = await top10(f.type, page);
+    return { title: def.title, raw: typeof json?.raw === 'number' ? json.raw : 0, items: toTopItems(json, f.type) };
   }
   if (f.k === 'list') return { title: def.title, items: toItems(await tmdb(f.path, pg), f.type, def.upcoming) };
   if (f.k === 'collections') {
