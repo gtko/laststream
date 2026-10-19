@@ -48,7 +48,11 @@ function readSettings(): LastAddonSettings {
   }
 }
 
+/** Mode démo : les réglages restent en mémoire, jamais écrits dans le stockage du navigateur. */
+let memoryOnly = false;
+
 function writeSettings(settings: LastAddonSettings): void {
+  if (memoryOnly) return;
   try {
     globalThis.localStorage?.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch {
@@ -58,6 +62,13 @@ function writeSettings(settings: LastAddonSettings): void {
 
 let settings: LastAddonSettings = readSettings();
 const listeners = new Set<() => void>();
+
+/** Mode démo : remplace les réglages par `next`, en mémoire seulement (jusqu'au rechargement de la page). */
+export function useMemorySettings(next: LastAddonSettings): void {
+  memoryOnly = true;
+  settings = { ...next };
+  listeners.forEach((l) => l());
+}
 
 /** Relit le stockage (utile aux tests et après une écriture externe). */
 export function reloadSettings(): LastAddonSettings {

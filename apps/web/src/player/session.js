@@ -7,6 +7,8 @@ import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
 import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
 import { resumePosition } from '../data/watchWith';
+import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
+import { toast } from '../ui/dom.js';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
@@ -512,6 +514,7 @@ function syncNative() {
 
 /** Crée la session et ouvre le lecteur tout de suite, sans source : l'écran de chargement prend le relais. */
 async function initSession(request, views, view, opts = {}) {
+  if (isDemo()) throw new Error(DEMO_BLOCKED_MSG); // mode démo : jamais de session de lecture
   ensureUI();
   resetMini();
   if (P) await teardown(true);
@@ -608,6 +611,7 @@ function continueWith(view, opts = {}) {
 
 /** Lance le lecteur sur `view` (sources déjà connues, par exemple choisies dans un tiroir). */
 export async function startSession(request, views, view, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return undefined; }
   await initSession(request, views, view, opts);
   return continueWith(view, opts);
 }
@@ -2038,6 +2042,7 @@ export const isPlayerOpen = () => !!P;
  * le sélecteur s'ouvre dans un panneau du lecteur. « Annuler » ramène à la fiche.
  */
 export async function playBest(request, opener, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : aucune recherche de source ni lecture
   const p = await initSession(request, [], null, { opener });
   const token = p.token;
   const alive = () => P && P.token === token;
@@ -2102,6 +2107,7 @@ export async function playBest(request, opener, opts = {}) {
 
 /** Lance une source choisie dans le sélecteur de la fiche. */
 export function playSource(request, views, view, opener, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return Promise.resolve(); }
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
 
