@@ -3,7 +3,7 @@
  * Le lien débridé ne quitte jamais l'appareil de l'hôte : seules les plages de fichier arrivent. Aucune URL n'est affichée. */
 import { requireBase } from '../data/config';
 import { socketUrl } from '../party/bridge';
-import { cleanPseudo, guestWsPath } from '../party/join';
+import { cleanPseudo, guestWsPath, hashWithoutToken } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { detailEl } from './dom.js';
 
@@ -63,9 +63,21 @@ export function teardownPartyJoin() {
   stopSession();
 }
 
+/** Retire le jeton de l'adresse une fois le salon rejoint : il ne reste que dans la session (ni historique ni copie d'écran). */
+function dropTokenFromUrl() {
+  try {
+    const hash = location.hash || '';
+    if (/\?t=/.test(hash)) history.replaceState(null, '', location.pathname + location.search + hashWithoutToken(hash));
+  } catch {
+    // sans effet : l'adresse garde le jeton
+  }
+}
+
 function refresh(root) {
   if (!session) return;
   const v = session.tick();
+  // Salon accepté (bienvenue reçue) : la phase n'est plus « joining » ni terminale.
+  if (v.phase !== 'joining' && !TERMINAL.has(v.phase)) dropTokenFromUrl();
   const status = root.querySelector('[data-pj-status]');
   status.textContent = v.message || PHASE_TEXT[v.phase] || '';
   const form = root.querySelector('[data-pj-form]');

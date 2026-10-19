@@ -62,12 +62,15 @@ export interface HostRelayOptions {
   source: RangeSource;
   /** Fabrique de connexion (tests). */
   createPc?: PeerOptions['createPc'];
+  /** Plafond de débit montant de l'hôte, tous invités confondus, en Mb/s (défaut 60). */
+  maxUploadMbps?: number;
 }
 
 export class HostRelaySession {
   private readonly host: RelayHost;
   private readonly uploads = new Map<string, UploadStats>();
   private readonly unsubscribe: () => void;
+  /** Identifiants de connexion des invités du salon : seuls ceux-là sont admis à une liaison. */
   private guestIds = new Set<string>();
   private closed = false;
 
@@ -75,11 +78,18 @@ export class HostRelaySession {
     this.host = new RelayHost(opts.source, partySignal(opts.client), {
       iceServers: buildIceServers(relayTurn),
       createPc: opts.createPc,
+      allow: (from) => this.guestIds.has(from),
+      maxUploadMbps: opts.maxUploadMbps,
       onStats: (guestId, stats) => {
         this.uploads.set(guestId, stats);
       },
     });
-    this.unsubscribe = opts.client.on('participants', (list) => this.onParticipants(list));
+    const offParticipants = opts.client.on('participants', (list) => this.onParticipants(list));
+    const offEnd = opts.client.on('end', () => this.onEnd());
+    this.unsubscribe = () => {
+      offParticipants();
+      offEnd();
+    };
     this.onParticipants(opts.client.participants);
   }
 
@@ -90,6 +100,12 @@ export class HostRelaySession {
     for (const p of list) if (p.guest && p.peerId) ids.add(p.peerId);
     this.guestIds = ids;
     for (const id of this.host.guests) if (!ids.has(id)) this.host.drop(id);
+  }
+
+  /** Fin du salon : toutes les liaisons se ferment tout de suite, et plus aucun invité n'est admis. */
+  private onEnd(): void {
+    this.guestIds = new Set();
+    for (const id of this.host.guests) this.host.drop(id);
   }
 
   stats(): RelayStats {

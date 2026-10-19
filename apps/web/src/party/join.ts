@@ -24,6 +24,11 @@ export function parseJoinHash(hash: string): JoinRoute | null {
   return token.length >= TOKEN_MIN && token.length <= TOKEN_MAX ? { roomId: m[1], token } : null;
 }
 
+/** Adresse sans le jeton : `#/party/join/<id>?t=<jeton>` -> `#/party/join/<id>` ; toute autre adresse est rendue telle quelle. */
+export function hashWithoutToken(hash: string): string {
+  return hash.replace(/\?t=[^&#\s]*/, '');
+}
+
 /** Lien d'invitation à partir de l'origine publique de l'application. */
 export function joinLinkOf(base: string, roomId: string, token: string): string {
   return base.replace(/\/+$/, '') + '/#/party/join/' + encodeURIComponent(roomId) + '?t=' + encodeURIComponent(token);
@@ -53,6 +58,10 @@ export function endText(reason: string): string {
     case 'kicked': return 'Tu as été exclu du salon.';
     case 'replaced': return 'Connexion reprise depuis un autre appareil.';
     case 'full': return 'Le salon est complet.';
+    case 'expired': return 'Lien expiré ou invalide : demande une nouvelle invitation à l’hôte.';
+    case 'banned': return 'Tu ne peux pas rejoindre ce salon.';
+    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
+    case 'name_changed': return 'Cette invitation est liée à un autre pseudo : rejoins avec le pseudo d’origine.';
     default: return 'Salon fermé.';
   }
 }

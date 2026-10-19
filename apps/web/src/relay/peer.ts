@@ -4,7 +4,7 @@
  * `{type:"rtc",from,data}` en réception. Les candidats ICE reçus avant la description distante attendent.
  * ICE : STUN Cloudflare, plus un TURN facultatif fourni par l'appelant (jamais en dur). Aucune URL n'est journalisée. */
 
-import { RangeServer, type RangeServerOptions, type RangeSource, type UploadStats } from './host';
+import { DEFAULT_UPLOAD_MBPS, RangeServer, type RangeServerOptions, type RangeSource, UploadBudget, type UploadStats, mbpsToBytesPerSec } from './host';
 import { RELAY_CHANNEL_LABEL, RelayError, type ChannelLike } from './protocol';
 
 export const STUN_URL = 'stun:stun.cloudflare.com:3478';
@@ -64,19 +64,34 @@ export interface PeerOptions {
 export interface HostOptions extends PeerOptions {
   server?: RangeServerOptions;
   onStats?: (guestId: string, stats: UploadStats) => void;
+  /** Admission : seul un pair accepté reçoit une offre, et seules ses réponses et candidats sont lus. Refus par défaut. */
+  allow?: (from: string) => boolean;
+  /** Plafond de débit montant de l'hôte, tous invités confondus, en Mb/s (défaut 60). */
+  maxUploadMbps?: number;
+  /** Délai entre l'offre et la réponse appliquée, en ms (défaut 15 s) ; au-delà, la liaison est fermée. */
+  answerTimeoutMs?: number;
 }
+
+/** Délai de réponse de l'invité, et nombre de candidats ICE retenus avant la réponse. */
+export const ANSWER_TIMEOUT_MS = 15_000;
+export const MAX_PENDING_ICE = 32;
 
 interface Deferred {
   promise: Promise<void>;
   resolve: () => void;
+  reject: (err: Error) => void;
 }
 
 function deferred(): Deferred {
   let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  let reject: (err: Error) => void = () => undefined;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  // Un rejet n'est pas une erreur non gérée : ceux qui attendent la promesse traitent le refus.
+  promise.catch(() => undefined);
+  return { promise, resolve, reject };
 }
 
 function makePc(opts: PeerOptions): RTCPeerConnection {
@@ -87,20 +102,27 @@ function makePc(opts: PeerOptions): RTCPeerConnection {
 interface HostLink {
   pc: RTCPeerConnection;
   server: RangeServer;
-  /** Résolu quand la réponse de l'invité est appliquée. */
+  /** Résolu quand la réponse de l'invité est appliquée ; rejeté quand la liaison est fermée avant. */
   remote: Deferred;
+  /** Délai de réponse, annulé dès que la réponse est appliquée ou que la liaison est fermée. */
+  answerTimer: ReturnType<typeof setTimeout> | null;
+  /** Candidats ICE en attente de la réponse. */
+  pendingIce: number;
 }
 
 /** Côté hôte : un RTCPeerConnection et un RangeServer par invité. */
 export class RelayHost {
   private readonly links = new Map<string, HostLink>();
   private readonly unsubscribe: () => void;
+  /** Plafond de débit montant partagé par tous les liens. */
+  private readonly budget: UploadBudget;
 
   constructor(
     private readonly source: RangeSource,
     private readonly signaling: SignalTransport,
     private readonly opts: HostOptions = {},
   ) {
+    this.budget = new UploadBudget(mbpsToBytesPerSec(opts.maxUploadMbps ?? DEFAULT_UPLOAD_MBPS));
     this.unsubscribe = signaling.onMessage((from, raw) => {
       void this.onSignal(from, raw);
     });
@@ -116,6 +138,9 @@ export class RelayHost {
     const link = this.links.get(guestId);
     if (!link) return;
     this.links.delete(guestId);
+    if (link.answerTimer !== null) clearTimeout(link.answerTimer);
+    link.answerTimer = null;
+    link.remote.reject(new RelayError('unavailable'));
     link.server.close();
     link.pc.close();
   }
@@ -126,6 +151,8 @@ export class RelayHost {
   }
 
   private async onSignal(from: string, raw: unknown): Promise<void> {
+    // Pair non admis : aucune offre, et ses réponses et candidats sont ignorés en silence.
+    if (this.opts.allow?.(from) !== true) return;
     const s = parseSignal(raw);
     if (!s) return;
     if (s.t === 'hello') {
@@ -138,15 +165,31 @@ export class RelayHost {
       try {
         await link.pc.setRemoteDescription({ type: 'answer', sdp: s.sdp });
         link.remote.resolve();
+        if (link.answerTimer !== null) clearTimeout(link.answerTimer);
+        link.answerTimer = null;
       } catch {
         this.drop(from);
       }
       return;
     }
     if (s.t === 'ice' && s.candidate) {
-      await link.remote.promise;
-      await link.pc.addIceCandidate(s.candidate).catch(() => undefined);
+      // Candidats reçus avant la réponse : bornés, les excédents sont ignorés.
+      if (link.pendingIce >= MAX_PENDING_ICE) return;
+      link.pendingIce += 1;
+      try {
+        await link.remote.promise;
+        await link.pc.addIceCandidate(s.candidate).catch(() => undefined);
+      } catch {
+        // Liaison fermée avant la réponse : le candidat est abandonné.
+      } finally {
+        link.pendingIce -= 1;
+      }
     }
+  }
+
+  /** Ferme la liaison seulement si `server` est encore celle de l'invité (une liaison plus récente n'est pas touchée). */
+  private dropServer(guestId: string, server: RangeServer): void {
+    if (this.links.get(guestId)?.server === server) this.drop(guestId);
   }
 
   private async offer(guestId: string): Promise<void> {
@@ -154,12 +197,19 @@ export class RelayHost {
     const pc = makePc(this.opts);
     const channel = pc.createDataChannel(RELAY_CHANNEL_LABEL, { ordered: true }) as unknown as ChannelLike;
     channel.binaryType = 'arraybuffer';
-    const server = new RangeServer(this.source, channel, {
+    const server: RangeServer = new RangeServer(this.source, channel, {
       ...this.opts.server,
+      budget: this.budget,
+      onIdle: () => this.dropServer(guestId, server),
+      onAbuse: () => this.dropServer(guestId, server),
       onStats: (stats) => this.opts.onStats?.(guestId, stats),
     });
-    const link: HostLink = { pc, server, remote: deferred() };
+    const link: HostLink = { pc, server, remote: deferred(), answerTimer: null, pendingIce: 0 };
     this.links.set(guestId, link);
+    link.answerTimer = setTimeout(() => {
+      link.answerTimer = null;
+      if (this.links.get(guestId) === link) this.drop(guestId);
+    }, this.opts.answerTimeoutMs ?? ANSWER_TIMEOUT_MS);
     pc.onicecandidate = (ev) => {
       if (ev.candidate && this.links.get(guestId) === link) this.signaling.send(guestId, { t: 'ice', candidate: ev.candidate.toJSON() });
     };

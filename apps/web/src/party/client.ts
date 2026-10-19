@@ -18,7 +18,7 @@ export interface SocketLike {
 }
 
 export type ClientStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed';
-export type EndReason = 'ended' | 'kicked' | 'replaced' | 'full' | 'closed' | 'failed';
+export type EndReason = 'ended' | 'expired' | 'kicked' | 'banned' | 'replaced' | 'full' | 'name_taken' | 'name_changed' | 'closed' | 'failed';
 
 export interface ClientDeps {
   /** Ouvre une connexion neuve (nouveau ticket à chaque appel : il ne vaut que 60 s). */

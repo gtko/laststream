@@ -357,3 +357,31 @@ describe('session invité', () => {
     hostClient.close();
   });
 });
+
+describe('session hôte : admission', () => {
+  it('hello d’un membre non invité : aucune offre ; fin du salon : liaisons fermées sans attendre', async () => {
+    const room = new Room();
+    const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
+    const client = new PartyClient({ connect: async () => room.socket('h1') });
+    client.start();
+    await flush();
+    const hostSock = room.get('h1')!;
+    hostSock.recv(welcome('alice', true, [...DEFAULT_PARTICIPANTS, { username: 'carol', peerId: 'p2' }]));
+    const relay = new HostRelaySession({ client, source: sourceOf(bytesOf(1000)), createPc: pcFactory('host', wire) });
+
+    hostSock.recv({ type: 'rtc', from: 'p2', data: { t: 'hello' } });
+    await flush();
+    expect(hostSock.sent.filter((m) => m.type === 'rtc' && m.to === 'p2')).toEqual([]);
+    expect(relay.stats().links).toBe(0);
+
+    hostSock.recv({ type: 'rtc', from: 'p1', data: { t: 'hello' } });
+    await flush();
+    expect(hostSock.sent).toContainEqual({ type: 'rtc', to: 'p1', data: { t: 'offer', sdp: 'OFFER' } });
+    expect(relay.stats().links).toBe(1);
+
+    hostSock.recv({ t: 'ended', reason: 'host_ended' });
+    expect(relay.stats().links).toBe(0);
+    relay.close();
+    client.close();
+  });
+});

@@ -104,7 +104,7 @@ describe('poignée de main et lecture', () => {
     const bus = signalBus();
     const bytes = payload(2 * 1024 * 1024);
     const wire: Wire = {};
-    const host = new RelayHost(memSource(bytes), bus('host'), { createPc: (c) => new FakePc('host', wire) as unknown as RTCPeerConnection, onStats: () => undefined });
+    const host = new RelayHost(memSource(bytes), bus('host'), { allow: () => true, createPc: (c) => new FakePc('host', wire) as unknown as RTCPeerConnection, onStats: () => undefined });
     const guest = new RelayGuest('host', bus('guest'), { createPc: (c) => new FakePc('guest', wire) as unknown as RTCPeerConnection });
     const channel = await guest.connect(2000);
     const client = new RangeClient(channel, { retryDelayMs: 1 });
@@ -124,5 +124,84 @@ describe('poignée de main et lecture', () => {
     const err = await guest.connect(30).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RelayError);
     expect((err as RelayError).code).toBe('timeout');
+  });
+});
+
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Transport manuel : `deliver` simule un message entrant de `from` ; les envois sont notés. */
+function manualTransport(): { transport: SignalTransport; sent: Array<{ to: string; data: RelaySignal }>; deliver: (from: string, data: unknown) => void } {
+  const sent: Array<{ to: string; data: RelaySignal }> = [];
+  let handler: (from: string, data: unknown) => void = () => undefined;
+  const transport: SignalTransport = {
+    send: (to, data) => {
+      sent.push({ to, data });
+    },
+    onMessage: (cb) => {
+      handler = cb;
+      return () => undefined;
+    },
+  };
+  return { transport, sent, deliver: (from, data) => handler(from, data) };
+}
+
+class IcePc extends FakePc {
+  added = 0;
+  async addIceCandidate(): Promise<void> {
+    this.added += 1;
+  }
+}
+
+describe('admission et délais de l’hôte', () => {
+  it('hello d’un pair refusé par allow : aucune offre, aucune liaison ; l’invité admis reçoit son offre', async () => {
+    const { transport, sent, deliver } = manualTransport();
+    const host = new RelayHost(memSource(payload(10)), transport, {
+      allow: (from) => from === 'bob',
+      createPc: () => new FakePc('host', {}) as unknown as RTCPeerConnection,
+    });
+    deliver('mallory', { t: 'hello' });
+    await wait(10);
+    expect(sent.filter((m) => m.data.t === 'offer')).toEqual([]);
+    expect(host.guests).toEqual([]);
+    deliver('bob', { t: 'hello' });
+    await wait(10);
+    expect(sent.filter((m) => m.data.t === 'offer').map((m) => m.to)).toEqual(['bob']);
+    host.close();
+  });
+
+  it('réponse jamais reçue : la liaison est fermée au délai de réponse', async () => {
+    const { transport, deliver } = manualTransport();
+    const host = new RelayHost(memSource(payload(10)), transport, {
+      allow: () => true,
+      answerTimeoutMs: 30,
+      createPc: () => new FakePc('host', {}) as unknown as RTCPeerConnection,
+    });
+    deliver('bob', { t: 'hello' });
+    await wait(10);
+    expect(host.guests).toEqual(['bob']);
+    await wait(60);
+    expect(host.guests).toEqual([]);
+    host.close();
+  });
+
+  it('candidats ICE reçus avant la réponse : au plus 32 sont retenus', async () => {
+    const { transport, deliver } = manualTransport();
+    const pcs: IcePc[] = [];
+    const host = new RelayHost(memSource(payload(10)), transport, {
+      allow: () => true,
+      createPc: () => {
+        const pc = new IcePc('host', {});
+        pcs.push(pc);
+        return pc as unknown as RTCPeerConnection;
+      },
+    });
+    deliver('bob', { t: 'hello' });
+    await wait(5);
+    for (let i = 0; i < 50; i += 1) deliver('bob', { t: 'ice', candidate: { candidate: `c${i}`, sdpMid: '0' } });
+    deliver('bob', { t: 'answer', sdp: 'ANSWER' });
+    await wait(20);
+    expect(pcs[0]?.added).toBeGreaterThan(0);
+    expect(pcs[0]?.added).toBeLessThanOrEqual(32);
+    host.close();
   });
 });

@@ -39,6 +39,47 @@ export interface RangeServerOptions {
   readBlockBytes?: number;
   onStats?: (stats: UploadStats) => void;
   now?: () => number;
+  /** Délai d'inactivité du lien (ms) : sans message de l'invité pendant ce temps, `onIdle` est appelé (défaut 2 min). */
+  idleTimeoutMs?: number;
+  onIdle?: () => void;
+  /** Erreurs envoyées d'affilée avant `onAbuse` (défaut 20) ; une requête servie remet le compte à zéro. */
+  maxConsecutiveErrors?: number;
+  onAbuse?: () => void;
+  /** Plafond de débit montant partagé par tous les liens d'un même hôte. */
+  budget?: UploadBudget;
+}
+
+/** Délai d'inactivité d'un lien (2 min) et erreurs consécutives tolérées (20) avant coupure. */
+export const IDLE_TIMEOUT_MS = 120_000;
+export const MAX_CONSECUTIVE_ERRORS = 20;
+/** Débit montant par défaut de l'hôte, tous liens confondus, en mégabits par seconde. */
+export const DEFAULT_UPLOAD_MBPS = 60;
+
+export function mbpsToBytesPerSec(mbps: number): number {
+  return (mbps * 1_000_000) / 8;
+}
+
+/** Seau à jetons : plafond de débit partagé. `reserve(n)` rend le délai (ms) à attendre avant d'envoyer `n` octets. */
+export class UploadBudget {
+  private tokens: number;
+  private last: number;
+
+  constructor(
+    private readonly bytesPerSec: number,
+    private readonly now: () => number = () => Date.now(),
+    private readonly burst: number = Math.max(CHUNK_BYTES, bytesPerSec / 4),
+  ) {
+    this.tokens = burst;
+    this.last = now();
+  }
+
+  reserve(bytes: number): number {
+    const t = this.now();
+    this.tokens = Math.min(this.burst, this.tokens + ((t - this.last) / 1000) * this.bytesPerSec);
+    this.last = t;
+    this.tokens -= bytes;
+    return this.tokens >= 0 ? 0 : Math.ceil((-this.tokens / this.bytesPerSec) * 1000);
+  }
 }
 
 const MIB = 1024 * 1024;
@@ -60,6 +101,13 @@ export class RangeServer {
   private bytesSent = 0;
   private lastEmit = Number.NEGATIVE_INFINITY;
   private closed = false;
+  private readonly idleTimeout: number;
+  private readonly maxErrors: number;
+  private readonly onIdle: (() => void) | undefined;
+  private readonly onAbuse: (() => void) | undefined;
+  private readonly budget: UploadBudget | undefined;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private errorStreak = 0;
 
   constructor(
     private readonly source: RangeSource,
@@ -73,10 +121,16 @@ export class RangeServer {
     this.readBlock = options.readBlockBytes ?? MIB;
     this.onStats = options.onStats;
     this.now = options.now ?? (() => Date.now());
+    this.idleTimeout = options.idleTimeoutMs ?? IDLE_TIMEOUT_MS;
+    this.maxErrors = options.maxConsecutiveErrors ?? MAX_CONSECUTIVE_ERRORS;
+    this.onIdle = options.onIdle;
+    this.onAbuse = options.onAbuse;
+    this.budget = options.budget;
     this.meter = new RateMeter(this.now);
     channel.bufferedAmountLowThreshold = this.lowWater;
     channel.addEventListener('message', this.onMessage);
     channel.addEventListener('close', this.onClose);
+    this.touch();
   }
 
   stats(): UploadStats {
@@ -91,11 +145,23 @@ export class RangeServer {
     this.channel.removeEventListener('close', this.onClose);
     for (const ctl of this.active.values()) ctl.abort();
     this.active.clear();
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
     this.emit(true);
+  }
+
+  /** Remet à zéro le délai d'inactivité du lien. */
+  private touch(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      this.onIdle?.();
+    }, this.idleTimeout);
   }
 
   private handle(data: unknown): void {
     if (this.closed) return;
+    this.touch();
     const bytes = toBytes(data);
     const frame = bytes ? decodeFrame(bytes) : null;
     if (!frame) return;
@@ -118,6 +184,7 @@ export class RangeServer {
     try {
       const size = await this.sizeOf();
       this.sendFrame(encodeInfo(reqId, size, this.source.mime));
+      this.errorStreak = 0;
     } catch {
       this.fail(reqId, 'source');
     }
@@ -133,6 +200,7 @@ export class RangeServer {
       const size = await this.sizeOf();
       if (end > size) throw new RelayError('out_of_range');
       await this.pump(reqId, start, end, ctl.signal);
+      this.errorStreak = 0;
     } catch (err) {
       if (!ctl.signal.aborted) {
         const known = err instanceof RelayError && (RANGE_ERROR_CODES as readonly string[]).includes(err.code);
@@ -156,6 +224,11 @@ export class RangeServer {
         if (signal.aborted) return;
         const part = block.subarray(p, Math.min(p + CHUNK_BYTES, block.byteLength));
         const at = off + p;
+        const wait = this.budget?.reserve(part.byteLength) ?? 0;
+        if (wait > 0) {
+          await this.sleep(wait, signal);
+          if (signal.aborted) return;
+        }
         this.sendFrame(encodeData(reqId, at, part, at + part.byteLength === end));
         this.bytesSent += part.byteLength;
         this.meter.add(part.byteLength);
@@ -209,6 +282,21 @@ export class RangeServer {
 
   private fail(reqId: number, code: RangeErrorCode): void {
     this.sendFrame(encodeErr(reqId, code));
+    this.errorStreak += 1;
+    if (this.errorStreak === this.maxErrors) this.onAbuse?.();
+  }
+
+  /** Pause de `ms`, interrompue par l'annulation. */
+  private sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      signal.addEventListener('abort', done);
+    });
   }
 
   private emit(force: boolean): void {
