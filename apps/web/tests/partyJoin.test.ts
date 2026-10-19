@@ -162,6 +162,8 @@ describe('séance d’invité du lien partagé (sessionStorage)', () => {
     expect(entryErrorText('invite_revoked')).toContain('nouveau lien');
     expect(entryErrorText('invite_invalid')).toContain('expiré');
     expect(entryErrorText('room_full')).toBe('Le salon est complet.');
+    expect(entryErrorText('banned')).toContain('ce pseudo');
+    expect(entryErrorText('name_taken')).toContain('déjà pris');
     expect(entryErrorText('guest_limit')).toBe('Le salon est complet.');
     for (const code of ['invite_revoked', 'invite_invalid', 'room_not_found', 'too_many_entries', 'invalid_name', 'network', 'autre']) {
       expect(entryErrorText(code)).not.toMatch(/https?:|\/\//);

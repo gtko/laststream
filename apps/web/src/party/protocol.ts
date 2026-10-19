@@ -35,6 +35,8 @@ export type ServerMsg =
   | { t: 'host'; user: string }
   | { t: 'reported'; by?: string; against?: string; text?: string }
   | { t: 'removed'; messageId: string }
+  /** À l'hôte seulement : le lien partagé a été renouvelé après l'exclusion d'un invité ; il en redemande la valeur. */
+  | { t: 'link_renewed' }
   | { t: 'error'; code: string }
   | { t: 'ended'; reason: string };
 
@@ -51,7 +53,7 @@ export type ClientMsg =
   | { t: 'transfer'; user: string }
   | { t: 'end' };
 
-const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'muted', 'host', 'reported', 'removed', 'error', 'ended']);
+const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'muted', 'host', 'reported', 'removed', 'link_renewed', 'error', 'ended']);
 
 /** Message serveur d'une trame texte, ou null si elle est illisible ou d'un type inconnu. */
 export function parseServerMessage(raw: unknown): ServerMsg | null {

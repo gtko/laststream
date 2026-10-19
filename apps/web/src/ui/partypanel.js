@@ -178,6 +178,7 @@ function attach() {
   if (!c) return;
   c.on('chat', () => render());
   c.on('removed', () => render());
+  c.on('linkRenewed', () => { void renewLinkAfterKick(); });
   c.on('react', (r) => floatReaction(r.emoji, r.user));
   c.on('host', (user) => { toast(user + ' est maintenant l’hôte'); render(); });
   c.on('muted', () => render());
@@ -267,6 +268,22 @@ async function inviteLink(rotate = false) {
   const inv = await partyBridge.createInvite(rotate);
   lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
   await copyText(lastInviteUrl, rotate ? 'Nouveau lien copié : l’ancien ne fonctionne plus' : 'Lien d’invitation copié');
+}
+
+/**
+ * Le salon a renouvelé le lien après l'exclusion d'un invité : l'ancien est mort. On affiche le nouveau dans le champ du panneau
+ * sans le copier (pas de geste utilisateur ici : la copie échouerait et afficherait le lien dans un message).
+ */
+async function renewLinkAfterKick() {
+  try {
+    const inv = await partyBridge.createInvite(false);
+    lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
+    toast('Lien renouvelé après exclusion');
+  } catch {
+    lastInviteUrl = '';
+    toast('Lien renouvelé après exclusion : recopie-le avec « Copier le lien d’invitation ».', { ms: 6000 });
+  }
+  render();
 }
 
 /** Bascule sur la meilleure source compatible avec tous les invités (même position), ou le dit. */

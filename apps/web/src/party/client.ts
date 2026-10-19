@@ -39,6 +39,8 @@ export interface ClientEvents {
   muted: { user: string; muted: boolean };
   reported: { by?: string; against?: string; text?: string };
   removed: { messageId: string };
+  /** Le lien d'invitation a été renouvelé par le salon (exclusion d'un invité du lien partagé) : hôte seulement. */
+  linkRenewed: Record<string, never>;
   /** Signalisation WebRTC relayée par le salon (partage de lecture), `from` = identifiant de pair de l'émetteur. */
   rtc: { from: string; data: unknown };
   error: string;
@@ -283,6 +285,9 @@ export class PartyClient {
         // Message retiré par la modération : il disparaît du chat.
         this.chat = this.chat.filter((l) => l.id !== msg.messageId);
         this.emit('removed', { messageId: msg.messageId });
+        break;
+      case 'link_renewed':
+        this.emit('linkRenewed', {});
         break;
       case 'error':
         this.emit('error', msg.code);
