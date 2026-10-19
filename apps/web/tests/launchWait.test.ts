@@ -6,7 +6,7 @@ import { describeLaunch, isGoodMatch, recommend } from '../src/sources/rank';
 import type { SourceView } from '../src/sources/info';
 
 const stream = (n: number, extra: Record<string, unknown> = {}) => ({
-  url: 'https://x/play/' + n,
+  url: 'https://x/play/c/' + n,
   laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50 + n, estBitrateKbps: 5000, ...extra },
 });
 
@@ -80,7 +80,7 @@ describe('lancement sans attendre les addons lents', () => {
     const { choice, doneAt } = await launchAt(first, sim.start, 10_000);
     expect(doneAt).toBeGreaterThanOrEqual(2_500);
     expect(doneAt).toBeLessThan(3_000);
-    expect(choice.rec?.view.stream.url).toBe('https://x/play/1');
+    expect(choice.rec?.view.stream.url).toBe('https://x/play/c/1');
     expect(choice.loaded.views).toHaveLength(1);
     expect(choice.loaded.pending).toEqual(['loostream']);
     expect(sim.statusCalls.length).toBeGreaterThan(0);
@@ -95,8 +95,8 @@ describe('lancement sans attendre les addons lents', () => {
     const first = await loadSources(REQ);
     const { choice, doneAt } = await launchAt(first, sim.start, 10_000);
     expect(doneAt).toBeLessThan(2_500);
-    expect(choice.rec?.view.stream.url).toBe('https://x/play/2');
-    expect(choice.loaded.views.map((v) => v.stream.url).sort()).toEqual(['https://x/play/1', 'https://x/play/2']);
+    expect(choice.rec?.view.stream.url).toBe('https://x/play/c/2');
+    expect(choice.loaded.views.map((v) => v.stream.url).sort()).toEqual(['https://x/play/c/1', 'https://x/play/c/2']);
   });
 
   it('préférence satisfaite dès la première liste : aucune attente, aucun sondage', async () => {
@@ -107,7 +107,7 @@ describe('lancement sans attendre les addons lents', () => {
     const first = await loadSources(REQ);
     const choice = await awaitLaunchable(first, { request: REQ, since: sim.start, readable, recommend: pick, good });
     expect(Date.now() - sim.start).toBe(0);
-    expect(choice.rec?.view.stream.url).toBe('https://x/play/1');
+    expect(choice.rec?.view.stream.url).toBe('https://x/play/c/1');
     expect(sim.statusCalls).toHaveLength(0);
   });
 
@@ -121,7 +121,7 @@ describe('lancement sans attendre les addons lents', () => {
     const { choice, doneAt } = await launchAt(first, sim.start, 25_000);
     expect(doneAt).toBeGreaterThanOrEqual(8_000);
     expect(doneAt).toBeLessThan(8_500);
-    expect(choice.rec?.view.stream.url).toBe('https://x/play/1');
+    expect(choice.rec?.view.stream.url).toBe('https://x/play/c/1');
   });
 
   it('aucune source lisible : on attend le délai existant (20 s), comme avant', async () => {

@@ -4,6 +4,7 @@ import { getBase, isAndroidApp } from '../data/config';
 import { isMask, testSource } from '../data/configApi';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { checkKey, classifyStreams, isDue, readCheck, writeCheck } from '../data/addonSafety';
+import { rememberAddonName } from '../sources/deviceFetch';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -90,6 +91,8 @@ async function loadInfo(src) {
     }
   }
   info.set(src.id, result);
+  // Nom du manifest retenu pour les flux que l'appareil récupère lui-même (« via ton appareil »).
+  if (result.name) rememberAddonName(url, result.name);
   // Le nom du manifest remplit le champ « Nom » tant que l'utilisateur ne l'a pas modifié.
   if (result.name && (DEFAULT_NAMES.includes(src.name) || src.autoName === src.name)) {
     src.name = result.name;

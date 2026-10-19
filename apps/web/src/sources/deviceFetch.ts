@@ -12,6 +12,50 @@ import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_AD
 export const DEVICE_FETCH_TIMEOUT_MS = 15_000;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+// ---------- Nom des addons ----------
+
+/** Noms par défaut (« Addon amont » d'un ajout sans manifest lu, champ vide) : ce ne sont pas des noms d'addon. */
+const GENERIC_ADDON_NAMES = ['addon amont', 'torznab', 'source', ''];
+/** Nom du manifest des addons déjà lus dans cette session (clé : `addonKey`). */
+const knownAddonNames = new Map<string, string>();
+
+export const isGenericAddonName = (name: string): boolean => GENERIC_ADDON_NAMES.includes(name.trim().toLowerCase());
+
+/** Adresse de l'addon sans `manifest.json` ni `/stream/…` (le préfixe de configuration est gardé). Vide si invalide. */
+function addonKey(raw: string): string {
+  try {
+    const url = new URL(raw.replace(/^stremio:\/\//i, 'https://'));
+    url.search = '';
+    url.hash = '';
+    url.pathname = url.pathname.replace(/\/(manifest\.json|stream\/[^/]+\/[^/]+\.json)$/i, '').replace(/\/+$/, '');
+    return url.origin + url.pathname;
+  } catch {
+    return '';
+  }
+}
+
+/** Retient le nom du manifest d'un addon (lu par les réglages) pour nommer ses flux récupérés depuis l'appareil. */
+export function rememberAddonName(addonUrl: string, name: string): void {
+  const key = addonKey(addonUrl);
+  const clean = name.trim();
+  if (key && clean && !isGenericAddonName(clean)) knownAddonNames.set(key, clean);
+}
+
+/**
+ * Nom affiché d'un addon interrogé depuis l'appareil : son nom s'il n'est pas générique, sinon le nom de son manifest déjà connu,
+ * sinon l'hôte de son adresse.
+ */
+export function deviceAddonName(target: DeviceTarget): string {
+  if (!isGenericAddonName(target.addonId)) return target.addonId.trim();
+  const known = knownAddonNames.get(addonKey(target.url));
+  if (known) return known;
+  try {
+    return new URL(target.url).hostname.replace(/^www\./i, '') || target.addonId;
+  } catch {
+    return target.addonId;
+  }
+}
+
 // ---------- Normalisation ----------
 
 const RES_SCORE: Record<Resolution, number> = { '2160p': 400, '1080p': 300, '720p': 200, '480p': 100, SD: 50, unknown: 0 };
@@ -84,7 +128,8 @@ export function normalizeDeviceStream(raw: unknown, addonId: string): Stream | n
   const { languages, frVariant } = languagesOf(text);
   const sizeBytes = sizeOf(text, hints);
   const seeders = seedersOf(text);
-  const cached = !!httpUrl || /⚡|\[[a-z]{1,3}\+\]/i.test(name);
+  // « En cache » seulement si l'addon le signale (⚡ ou [RD+]) : un lien HTTP direct n'est pas un lien débridé en cache.
+  const cached = /⚡|\[[a-z]{1,3}\+\]/i.test(name);
   const score = RES_SCORE[resolution] + (cached ? 60 : 0) + Math.min(seeders ?? 0, 100) / 5 + (languages.includes('fr') || languages.includes('multi') ? 20 : 0) + (source === 'CAM' || source === 'TS' ? -300 : 0);
   const stream: Stream = {
     ...(name ? { name } : {}),
@@ -184,7 +229,7 @@ export async function fetchDeviceStreams(targets: readonly DeviceTarget[], hooks
       const expired = new Promise<never>((_, reject) => { timer = setTimeout(() => { ctl.abort(); reject(new Error('timeout')); }, timeoutMs); });
       const res = await Promise.race([work, expired]);
       if (res.status >= 200 && res.status < 300 && res.body.byteLength <= MAX_BODY_BYTES) {
-        streams = normalizeDeviceResponse(JSON.parse(new TextDecoder().decode(res.body)), target.addonId);
+        streams = normalizeDeviceResponse(JSON.parse(new TextDecoder().decode(res.body)), deviceAddonName(target));
       }
     } catch {
       streams = [];

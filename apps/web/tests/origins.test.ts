@@ -4,7 +4,7 @@ import { originSummary, originsOf, toSourceViews } from '../src/sources/info';
 import { applyFilters, countOrigins, filtersActive, NO_FILTERS } from '../src/sources/rank';
 
 const mk = (over: Record<string, unknown> = {}, top: Record<string, unknown> = {}) => ({
-  url: 'https://x/play/' + Math.random().toString(36).slice(2),
+  url: 'https://x/play/c/' + Math.random().toString(36).slice(2),
   laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50, estBitrateKbps: 5000, ...over },
   ...top,
 });

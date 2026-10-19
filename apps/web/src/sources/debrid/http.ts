@@ -10,6 +10,7 @@
 import { connectShell, isShellEnvironment, type ShellTransport } from '../../player/shell';
 import { DebridError } from './types';
 import { shellRangeHttp } from './nativeRange';
+import { parseDebridUrl } from './hosts';
 
 export interface HttpRequest {
   url: string;
@@ -32,23 +33,7 @@ export type HttpFn = (req: HttpRequest) => Promise<HttpResponse>;
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
-/** Domaines que l'appareil peut contacter (mêmes que la liste de la coque Windows) : API et fichiers des débrideurs. */
-const EXACT_HOSTS = ['api.alldebrid.com', 'api.torbox.app'];
-const SUFFIXES = ['.debrid.it', '.alldebrid.com', '.torbox.app', '.real-debrid.com'];
-
-export function debridHostAllowed(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (host.length > 253 || !/^[a-z0-9.-]+$/.test(host)) return false;
-  return EXACT_HOSTS.includes(host) || SUFFIXES.some((s) => host.endsWith(s) && host.length > s.length);
-}
-
-/** URL https d'un domaine de débrideur, sans identifiants ni port atypique ; sinon null. */
-export function parseDebridUrl(raw: string): URL | null {
-  let url: URL;
-  try { url = new URL(raw); } catch { return null; }
-  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) return null;
-  return debridHostAllowed(url.hostname) ? url : null;
-}
+export { debridHostAllowed, parseDebridUrl } from './hosts';
 
 export const textOf = (res: HttpResponse): string => new TextDecoder().decode(res.body);
 

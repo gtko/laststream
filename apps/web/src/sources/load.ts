@@ -3,7 +3,7 @@ import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { DeviceTarget } from '../data/sources';
 import type { Lang, Stream } from '../data/stream';
-import { fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
+import { deviceAddonName, fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
 import { browserCaps, inShell } from '../player/caps';
 import { applyVerdicts, playableStreams, toSourceViews, withWebPlayback, type SourceView } from './info';
 import { CHECK_TOP_N, debrid } from './debridClient';
@@ -109,12 +109,12 @@ function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = D
   const finishedEmpty = known !== undefined && known.pending.length === 0 && known.streams.length === 0;
   if (known && now - known.at < CACHE_MS && !(retry && finishedEmpty)) return known;
   if (!targets.length) return null;
-  const state: DeviceState = { at: now, streams: [], pending: targets.map((t) => t.addonId), version: 0 };
+  const state: DeviceState = { at: now, streams: [], pending: targets.map(deviceAddonName), version: 0 };
   deviceStates.set(key, state);
   void fetchDeviceStreams(targets, {
     onAddon: (target, streams) => {
       state.streams = mergeDeviceStreams(state.streams, streams);
-      const i = state.pending.indexOf(target.addonId);
+      const i = state.pending.indexOf(deviceAddonName(target));
       if (i >= 0) state.pending.splice(i, 1);
       state.version += 1;
     },

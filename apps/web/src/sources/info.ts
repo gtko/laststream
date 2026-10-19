@@ -1,6 +1,7 @@
 import { copiesOf, formatBitrate, formatSize, getQualityGroupKey, languageLabel, type QualityGroupKey } from '../data/sources';
 import type { MediaCaps } from '../player/server';
 import { conversionOf, webPlayback, type WebPlayback } from './direct';
+import { parseDebridUrl } from './debrid/hosts';
 import { getLaststream, type Lang, type LastStreamInfo, type Resolution, type Stream } from '../data/stream';
 
 /* Fiche détaillée d'une source : transforme un stream lastAddon (objet `laststream` + indices Stremio) en
@@ -230,6 +231,15 @@ export const isDebridUrl = (url: unknown): boolean => typeof url === 'string' &&
 export const isClientStream = (s: Stream): boolean => s.behaviorHints?.lastDebrid === 'client' && typeof s.infoHash === 'string' && !hasHttpUrl(s);
 
 /**
+ * Lien débridé : hôte d'un débrideur connu, lien `/play` de lastAddon, torrent à débrider sur l'appareil, ou addon qui le signale
+ * (`laststream.provider`). Un lien HTTP ordinaire n'est jamais « débridé », même si son nom cite un débrideur.
+ */
+export function isDebridLink(stream: Stream, info: LastStreamInfo | null): boolean {
+  const url = typeof stream.url === 'string' ? stream.url : '';
+  return (url !== '' && (parseDebridUrl(url) !== null || isDebridUrl(url))) || isClientStream(stream) || !!info?.provider;
+}
+
+/**
  * Politique « débrideur obligatoire » : ne garde que les sources à lien HTTP(S), plus les sources « client » quand un débrideur
  * est configuré sur l'appareil (`clientOk`) ; les autres torrents sont masqués.
  */
@@ -298,9 +308,11 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const text = [stream.name, stream.title, stream.description, hints.filename].filter((x): x is string => typeof x === 'string').join(' ');
   const resolution: Resolution = info?.resolution ?? (/2160|4k|uhd/i.test(text) ? '2160p' : /1080/.test(text) ? '1080p' : /720/.test(text) ? '720p' : 'unknown');
   const client = isClientStream(stream);
-  const provider = providerOf(info, text) || (isDebridUrl(stream.url) ? 'AllDebrid' : '') || (client ? 'Débrideur' : '');
-  const cached = info?.cached === true;
-  const status: SourceStatus = cached ? 'cached' : provider ? 'uncached' : 'direct';
+  const debrid = isDebridLink(stream, info);
+  // « Débridé » seulement pour un lien de débrideur : un lien HTTP direct reste « Lien direct », jamais « en cache ».
+  const provider = debrid ? providerOf(info, text) || (client ? 'Débrideur' : isDebridUrl(stream.url) ? 'AllDebrid' : 'Débrideur') : '';
+  const cached = debrid && info?.cached === true;
+  const status: SourceStatus = !debrid ? 'direct' : cached ? 'cached' : 'uncached';
   const sizeBytes = info?.sizeBytes ?? (typeof hints.videoSize === 'number' ? hints.videoSize : 0);
   const kbps = info?.estBitrateKbps ?? (info?.bitrateMbps ? info.bitrateMbps * 1000 : null);
   const durationSec = sizeBytes > 0 && kbps && kbps > 0 ? (sizeBytes * 8) / 1000 / kbps : null;

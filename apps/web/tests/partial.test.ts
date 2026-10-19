@@ -6,7 +6,7 @@ import { describePending, isGoodMatch, recommend } from '../src/sources/rank';
 import { toSourceViews } from '../src/sources/info';
 
 const stream = (n: number, extra: Record<string, unknown> = {}) => ({
-  url: 'https://x/play/' + n,
+  url: 'https://x/play/c/' + n,
   laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50 + n, estBitrateKbps: 5000, ...extra },
 });
 

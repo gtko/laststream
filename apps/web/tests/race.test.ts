@@ -157,7 +157,7 @@ describe('sources lentes mémorisées 24 h', () => {
   });
 
   it('candidat de la course : même langue, lecture directe, cache ; jamais une source écartée', () => {
-    const mk = (over: Record<string, unknown>, top: Record<string, unknown> = {}) => ({ url: 'https://x/' + Math.random().toString(36).slice(2), laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50, estBitrateKbps: 5000, ...over }, ...top });
+    const mk = (over: Record<string, unknown>, top: Record<string, unknown> = {}) => ({ url: 'https://x/play/c/' + Math.random().toString(36).slice(2), laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50, estBitrateKbps: 5000, ...over }, ...top });
     const caps = { formats: ['mp4', 'matroska,webm'], videoCodecs: ['h264'], audioCodecs: ['aac'], maxAudioChannels: 2 };
     const views = withWebPlayback(toSourceViews([
       mk({ audio: ['DTS'] }), // 0 : en cours, audio à convertir
@@ -216,7 +216,7 @@ describe('paramètres de codecs du serveur : remux plutôt que réencodage', () 
     expect(directVideoOk(null, caps)).toBe(false);
   });
 
-  const mk = (over: Record<string, unknown>, hints: Record<string, unknown> = {}) => ({ url: 'https://x/play/abc', behaviorHints: hints, laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50, estBitrateKbps: 5000, ...over } });
+  const mk = (over: Record<string, unknown>, hints: Record<string, unknown> = {}) => ({ url: 'https://x/play/c/abc', behaviorHints: hints, laststream: { resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50, estBitrateKbps: 5000, ...over } });
 
   it('source : audio seul (léger) ou vidéo (lent)', () => {
     const c = (s: ReturnType<typeof mk>) => conversionOf(s as never, getLaststream(s), caps);

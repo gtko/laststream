@@ -4,7 +4,7 @@ import { applyFilters, countByGroup, filtersActive, groupViews, NO_FILTERS, reco
 import { getLaststream, type Stream } from '../src/data/stream';
 
 const mk = (over: Record<string, unknown> = {}, top: Record<string, unknown> = {}): Stream => ({
-  url: 'https://x/play/abc',
+  url: 'https://x/play/c/abc',
   description: 'AllDebrid',
   laststream: {
     resolution: '1080p', height: 1080, source: 'WEB-DL', codec: 'AVC', hdr: [], languages: ['fr'], cached: true, score: 50,
