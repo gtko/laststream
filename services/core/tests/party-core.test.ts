@@ -114,7 +114,7 @@ describe('salon : rejoindre et contrôles', () => {
     const effects = fx.core.join(fx.member('a-bob'));
     const welcome = sent(effects, 'a-bob')[0];
     if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
-    expect(welcome.you).toEqual({ username: 'bob', host: false, muted: false });
+    expect(welcome.you).toEqual({ username: 'bob', host: false, muted: false, peerId: expect.any(String) });
     expect(welcome.room).toMatchObject({ title: 'Severance', host: 'host', maxParticipants: 20, media: { season: 1, episode: 1 } });
     expect(welcome.participants.map((p) => p.username)).toEqual(['host', 'bob']);
     expect(welcome.chat).toHaveLength(1);
@@ -166,7 +166,8 @@ describe('salon : rejoindre et contrôles', () => {
     fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 900 }));
     const fp = { fileName: 'Severance.S01E02.mkv', size: 2_000_000_000 };
     const effects = fx.core.handle('a-host', msg({ t: 'episode', season: 1, episode: 2, fingerprint: fp }));
-    expect(broadcasts(effects)[0]).toMatchObject({
+    // Envoyé par destinataire : l'hôte reçoit l'empreinte complète (un invité ne la reçoit pas, voir party-guest).
+    expect(sent(effects, 'a-host').find((m) => m.t === 'media')).toMatchObject({
       t: 'media',
       media: { season: 1, episode: 2, tmdbId: 95396 },
       fingerprint: { fileName: 'Severance.S01E02.mkv', size: 2_000_000_000, hash: null },

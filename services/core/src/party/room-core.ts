@@ -2,20 +2,26 @@ import { cleanReportText, filterChat } from './filter.js';
 import {
   CHAT_HISTORY,
   CLOSE,
+  GUEST_NAMES_MAX,
+  INVITES_PER_WINDOW,
+  INVITE_WINDOW_MS,
   type ChatLine,
   type ClientMessage,
   EMPTY_ROOM_TTL_MS,
   HOST_GRACE_MS,
   type Identity,
+  MAX_GUESTS,
   MAX_REPORTS,
   type Participant,
   type StoredChatLine,
   type PlaybackState,
   REACTIONS,
   ROOM_MAX_AGE_MS,
+  RTC_MAX_DATA_BYTES,
   type ReportEntry,
   type RoomData,
   type RoomInfo,
+  type RtcRelay,
   type ServerMessage,
 } from './protocol.js';
 import { expectedPosition } from './sync.js';
@@ -29,18 +35,44 @@ export type Effect =
   | { kind: 'send'; to: string; msg: ServerMessage }
   | { kind: 'broadcast'; msg: ServerMessage; except?: string }
   | { kind: 'close'; to: string; code: number; reason: string }
+  /** Signalisation WebRTC : envoi au seul pair `peerId` (identifiant de connexion, voir Participant.peerId). */
+  | { kind: 'peer'; peerId: string; msg: RtcRelay }
   /** Le salon est terminé : fermer toutes les connexions et effacer l'état. */
   | { kind: 'end' };
 
 export type StoreKey = 'room' | 'chat' | 'reports';
 
 export interface Member extends Identity {
-  /** Identifie la connexion : la fermeture d'une ancienne connexion (remplacée) ne retire pas la nouvelle. */
+  /** Identifie la connexion : la fermeture d'une ancienne connexion (remplacée) ne retire pas la nouvelle. Sert de peerId. */
   connId: string;
   joinedAt: number;
 }
 
-export type JoinCheck = 'ok' | 'room_full' | 'banned';
+export type JoinCheck = 'ok' | 'room_full' | 'banned' | 'guest_limit' | 'name_taken' | 'name_changed';
+
+/** Résultat d'une demande d'invitation : `ok` consomme un jeton du débit. */
+export type InviteVerdict = 'ok' | 'forbidden' | 'not_found' | 'guests_full' | 'rate_limited';
+
+/**
+ * Fermeture WebSocket d'un refus d'invité : code 4xxx propre à chaque motif, lu par le navigateur (contrairement à un code HTTP
+ * d'échec de mise à niveau). `undefined` si l'invité est admis.
+ */
+export function guestRefusal(check: JoinCheck): { code: number; reason: string } | undefined {
+  switch (check) {
+    case 'ok':
+      return undefined;
+    case 'banned':
+      return { code: CLOSE.banned, reason: 'banned' };
+    case 'room_full':
+      return { code: CLOSE.full, reason: 'full' };
+    case 'guest_limit':
+      return { code: CLOSE.full, reason: 'guest_limit' };
+    case 'name_taken':
+      return { code: CLOSE.nameTaken, reason: 'name_taken' };
+    case 'name_changed':
+      return { code: CLOSE.nameChanged, reason: 'name_changed' };
+  }
+}
 
 /** Fenêtres de débit par participant : `max` messages par `windowMs`. Au-delà de 2 fois la limite, la connexion est fermée. */
 const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
@@ -51,6 +83,8 @@ const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
   react: { max: 10, windowMs: 10_000 },
   report: { max: 5, windowMs: 60_000 },
   admin: { max: 20, windowMs: 10_000 },
+  // Négociation WebRTC : quelques offres, réponses et candidats ICE par pair.
+  rtc: { max: 60, windowMs: 10_000 },
 };
 
 /** Écart (s) à partir duquel le rapport de position de l'hôte corrige l'état diffusé. */
@@ -63,6 +97,8 @@ export class RoomCore {
   /** Signalements nouveaux, pas encore transmis à l'administration (le Durable Object les vide après envoi). */
   readonly fresh: { entry: ReportEntry; againstId: string }[] = [];
   private readonly hits = new Map<string, number[]>();
+  /** Instants des invitations émises (fenêtre glissante, en mémoire du Durable Object). */
+  private inviteHits: number[] = [];
   private seq = 0;
 
   constructor(
@@ -121,6 +157,33 @@ export class RoomCore {
     return 'ok';
   }
 
+  /** Nombre d'invités sans compte connectés. */
+  guestCount(): number {
+    let count = 0;
+    for (const member of this.members.values()) if (member.guest === true) count += 1;
+    return count;
+  }
+
+  /**
+   * Un invité sans compte peut entrer : pas exclu, salon pas plein, au plus MAX_GUESTS invités connectés, et un pseudo
+   * qui ne porte pas déjà un autre participant (sinon kick/mute/transfert par pseudo seraient ambigus). Un invité déjà
+   * connecté (même jeton) peut se reconnecter.
+   */
+  canJoinGuest(identity: Identity): JoinCheck {
+    if (this.data.banned.includes(identity.accountId)) return 'banned';
+    // Une invitation garde le pseudo de sa première connexion, y compris après une déconnexion.
+    const known = this.data.guestNames?.[identity.accountId];
+    if (known !== undefined && known !== identity.username) return 'name_changed';
+    const reconnect = this.members.has(identity.accountId);
+    if (!reconnect && this.guestCount() >= MAX_GUESTS) return 'guest_limit';
+    if (!reconnect && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
+    const wanted = identity.username.toLowerCase();
+    for (const member of this.members.values()) {
+      if (member.accountId !== identity.accountId && member.username.toLowerCase() === wanted) return 'name_taken';
+    }
+    return 'ok';
+  }
+
   private participant(member: Member): Participant {
     return {
       username: member.username,
@@ -129,6 +192,8 @@ export class RoomCore {
       host: member.accountId === this.hostId,
       muted: this.data.muted.includes(member.accountId),
       joinedAt: member.joinedAt,
+      peerId: member.connId,
+      ...(member.guest === true ? { guest: true as const } : {}),
     };
   }
 
@@ -138,6 +203,7 @@ export class RoomCore {
     // Une ancienne connexion du même compte est fermée par l'hôte du cœur (code CLOSE.replaced) avant cet appel.
     const previous = this.members.get(member.accountId);
     this.members.set(member.accountId, member);
+    if (member.guest === true) this.rememberGuest(member);
     this.data.emptySince = null;
     if (member.accountId === this.hostId) this.data.hostAbsentSince = null;
     this.dirty.add('room');
@@ -147,8 +213,9 @@ export class RoomCore {
       to: member.accountId,
       msg: {
         t: 'welcome',
-        you: { username: member.username, host: member.accountId === this.hostId, muted: this.data.muted.includes(member.accountId) },
-        room: this.roomView(),
+        you: { username: member.username, host: member.accountId === this.hostId, muted: this.data.muted.includes(member.accountId), peerId: member.connId },
+        // Un invité ne reçoit ni l'URL de l'affiche (lien de média) ni l'empreinte de version (nom, taille, hash).
+        room: member.guest === true ? { ...this.roomView(), poster: null, fingerprint: null } : this.roomView(),
         state: this.data.state,
         serverTime: now,
         participants: [...this.members.values()].map((m) => this.participant(m)),
@@ -169,6 +236,31 @@ export class RoomCore {
     if (this.members.size === 0) this.data.emptySince = now;
     this.dirty.add('room');
     return [{ kind: 'broadcast', msg: { t: 'leave', user: member.username } }];
+  }
+
+  /** Mémorise le pseudo d'un invité pour ses reconnexions, borné à GUEST_NAMES_MAX entrées (les plus anciennes sont oubliées). */
+  private rememberGuest(member: Member): void {
+    const names: Record<string, string> = { ...(this.data.guestNames ?? {}) };
+    delete names[member.accountId];
+    names[member.accountId] = member.username;
+    const keys = Object.keys(names);
+    for (const key of keys.slice(0, Math.max(0, keys.length - GUEST_NAMES_MAX))) delete names[key];
+    this.data.guestNames = names;
+  }
+
+  /**
+   * Droit d'émettre une invitation : hôte connecté seulement, moins de quatre invités connectés, et au plus INVITES_PER_WINDOW
+   * jetons par INVITE_WINDOW_MS pour le salon. Un jeton accordé est compté tout de suite.
+   */
+  inviteVerdict(requesterId: string): InviteVerdict {
+    if (requesterId !== this.hostId || !this.members.has(requesterId)) return 'forbidden';
+    if (this.guestCount() >= MAX_GUESTS) return 'guests_full';
+    const now = this.clock();
+    const recent = this.inviteHits.filter((at) => now - at < INVITE_WINDOW_MS);
+    this.inviteHits = recent;
+    if (recent.length >= INVITES_PER_WINDOW) return 'rate_limited';
+    recent.push(now);
+    return 'ok';
   }
 
   /** Limite de débit : `true` si le message est admis. */
@@ -192,9 +284,15 @@ export class RoomCore {
     return { playing, pos, at: this.clock(), rev: this.data.state.rev + 1 };
   }
 
+  /** Participant désigné par son pseudo ; à pseudo égal, un compte l'emporte sur un invité (un invité ne peut pas usurper un compte). */
   private findByName(username: string): Member | undefined {
-    for (const member of this.members.values()) if (member.username === username) return member;
-    return undefined;
+    let guest: Member | undefined;
+    for (const member of this.members.values()) {
+      if (member.username !== username) continue;
+      if (member.guest !== true) return member;
+      guest ??= member;
+    }
+    return guest;
   }
 
   /** Traite un message d'un participant connecté. */
@@ -235,7 +333,9 @@ export class RoomCore {
         meta.fingerprint = message.fingerprint;
         this.data.state = this.nextState(false, 0);
         this.dirty.add('room');
-        return [{ kind: 'broadcast', msg: { t: 'media', media: meta.media, fingerprint: meta.fingerprint, state: this.data.state, serverTime: now } }];
+        const media: Extract<ServerMessage, { t: 'media' }> = { t: 'media', media: meta.media, fingerprint: meta.fingerprint, state: this.data.state, serverTime: now };
+        // Un invité ne reçoit pas l'empreinte de version (nom de fichier, taille, hash) : envoi par destinataire, sans diffusion.
+        return [...this.members.values()].map((m): Effect => ({ kind: 'send', to: m.accountId, msg: m.guest === true ? { ...media, fingerprint: null } : media }));
       }
       case 'chat': {
         if (this.data.muted.includes(accountId)) return this.err(accountId, 'muted');
@@ -306,12 +406,21 @@ export class RoomCore {
         const target = this.findByName(message.user);
         if (target === undefined) return this.err(accountId, 'user_not_found');
         if (target.accountId === accountId) return this.err(accountId, 'cannot_target_self');
+        if (target.guest === true) return this.err(accountId, 'guest_cannot_host');
         this.setHost(target);
         return [{ kind: 'broadcast', msg: { t: 'host', user: target.username } }];
       }
       case 'end':
         if (!isHost) return this.err(accountId, 'not_host');
         return [{ kind: 'broadcast', msg: { t: 'ended', reason: 'host_ended' } }, { kind: 'end' }];
+      case 'rtc': {
+        // Signalisation WebRTC : relayée au seul pair visé, jamais diffusée ni conservée.
+        if (message.bytes > RTC_MAX_DATA_BYTES) return this.err(accountId, 'rtc_too_large');
+        if (message.to === member.connId) return this.err(accountId, 'cannot_target_self');
+        const peer = [...this.members.values()].find((other) => other.connId === message.to);
+        if (peer === undefined) return this.err(accountId, 'peer_not_found');
+        return [{ kind: 'peer', peerId: peer.connId, msg: { type: 'rtc', from: member.connId, data: message.data } }];
+      }
     }
   }
 
@@ -353,7 +462,8 @@ export class RoomCore {
         this.dirty.add('room');
       }
       if (now - since >= HOST_GRACE_MS) {
-        const successor = [...this.members.values()].sort((a, b) => a.joinedAt - b.joinedAt)[0];
+        // Un invité ne devient jamais hôte.
+        const successor = [...this.members.values()].filter((m) => m.guest !== true).sort((a, b) => a.joinedAt - b.joinedAt)[0];
         if (successor !== undefined) {
           this.setHost(successor);
           effects.push({ kind: 'broadcast', msg: { t: 'host', user: successor.username } });
