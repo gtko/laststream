@@ -1,5 +1,6 @@
 import { BANDWIDTH_HEADROOM, matchesLanguage, pickAutoplay, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
 import type { Lang } from '../data/stream';
+import { fileCodecsOf } from '../party/compat';
 import type { SourceView } from './info';
 
 /* Filtres, tri, regroupement et recommandation des sources. Fonctions pures, testées. */
@@ -104,9 +105,30 @@ export interface RecommendOptions {
   alsoAccept?: readonly Lang[];
   /** Navigateur : préfère les sources qui se lisent sans conversion (inutile dans la coque Windows, où mpv lit tout). */
   preferDirect?: boolean;
+  /**
+   * Navigateur sans Dolby natif (`preferDirect` aussi) : une source AC-3 / E-AC-3, décodée par l'app, cède la place à une source
+   * AAC / Opus de résolution proche (un cran plus bas au plus, 720p au moins). La langue et la VF restent prioritaires.
+   */
+  preferAac?: boolean;
 }
 
 const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1080p': 2, '720p': 1, SD: 0, other: 0 };
+
+/** Codec audio connu d'après le nom de la source (parseur de `party/compat`), ou null. */
+const soundOf = (v: SourceView): string | null => fileCodecsOf(v).audio;
+const isDolbySound = (v: SourceView): boolean => { const s = soundOf(v); return s === 'ac3' || s === 'eac3'; };
+const isAacOpusSound = (v: SourceView): boolean => { const s = soundOf(v); return s === 'aac' || s === 'opus'; };
+
+/**
+ * Son Dolby en tête : la meilleure source AAC / Opus de résolution proche (un cran plus bas au plus, 720p au moins) la remplace.
+ * `ordered` est trié (langue puis classement web) : la première AAC / Opus retenue est la mieux classée des proches. Null sinon.
+ */
+function aacInstead(ordered: readonly SourceView[]): SourceView | null {
+  const top = ordered[0];
+  if (!top || !isDolbySound(top)) return null;
+  const floor = Math.max(TIER['720p'], TIER[top.group] - 1);
+  return ordered.find((v) => TIER[v.group] >= floor && isAacOpusSound(v)) ?? null;
+}
 
 /**
  * Rang d'une source dans le navigateur : sa résolution, moins un cran pour une conversion audio seule (la vidéo est copiée),
@@ -137,9 +159,11 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
         webRank(b) - webRank(a) || (b.web === 'direct' ? 1 : 0) - (a.web === 'direct' ? 1 : 0) || b.score - a.score || a.index - b.index;
       const withLang = fitting.filter(langOk).sort(webOrder);
       const pool = withLang.length ? withLang : [...fitting].sort(webOrder);
-      const view = pool[0];
+      const aac = opts.preferAac ? aacInstead(pool) : null;
+      const view = aac ?? pool[0];
       const fallback = withLang.length ? false : playable.some(langOk) ? 'vf-too-heavy' : 'no-vf';
-      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.appAudio === 'app' ? ' · son décodé par l’app' : view.appAudio === 'unsupported' ? ' · sans son (DTS)' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') };
+      const soundNote = aac ? ' · son AAC plutôt que Dolby' : '';
+      return { view, languageFallback: fallback !== false, reason: recommendationReason(view, bwKbps, preferred, fallback) + (view.web === 'direct' ? ' · lecture directe' : view.appAudio === 'app' ? ' · son décodé par l’app' : view.appAudio === 'unsupported' ? ' · sans son (DTS)' : view.convert === 'video' ? ' · avec réencodage vidéo' : view.web === 'convert' ? ' · avec conversion audio' : '') + soundNote };
     }
   } else {
     const streams = playable.map((v) => v.stream);

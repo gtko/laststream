@@ -121,7 +121,10 @@ export function detectCaps(canPlayType: (mime: string) => string, opts: { chromi
   a('flac', 'audio/mp4; codecs="flac"');
   const formats = ['mp4'];
   if (opts.chromium) formats.push('matroska,webm', 'webm');
-  return { formats, videoCodecs: [...new Set(videoCodecs)], audioCodecs: [...new Set(audioCodecs)], maxAudioChannels: opts.maxChannels };
+  // Dolby annoncé par le navigateur lui-même (MSE puis canPlayType) : Edge sous Windows, Safari. Un navigateur qui ment là-dessus
+  // est repris par la surveillance du compteur d'octets (voir webaudio/controller).
+  const dolbyNative = ok('audio/mp4; codecs="ac-3"') || ok('audio/mp4; codecs="ec-3"');
+  return { formats, videoCodecs: [...new Set(videoCodecs)], audioCodecs: [...new Set(audioCodecs)], maxAudioChannels: opts.maxChannels, dolbyNative };
 }
 
 export type ConversionKind = 'none' | 'audio' | 'video' | 'unknown';

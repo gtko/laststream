@@ -13,7 +13,7 @@ export interface PrepareInput {
   video: VideoLike;
   /** Lien HTTP(S) lu par le `<video>` ; ne sort jamais de ce module (ni journal, ni message). */
   url: string;
-  caps: Pick<MediaCaps, 'audioCodecs'>;
+  caps: Pick<MediaCaps, 'audioCodecs' | 'dolbyNative'>;
   /** Navigateur seul (ni coque Windows ni Android). */
   web: boolean;
   /** Lecture HLS via le serveur de streaming : son déjà converti. */

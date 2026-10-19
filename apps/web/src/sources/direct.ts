@@ -95,7 +95,8 @@ export function appAudioOf(stream: Stream, info: LastStreamInfo | null, caps: Me
   if (!containerOk) return null;
   const aud = audioCodecOf(info, text);
   if (aud === 'dts' || aud === 'truehd') return 'unsupported';
-  if (aud === 'ac3' || aud === 'eac3') return 'app';
+  // Navigateur qui décode ce Dolby lui-même (Edge sous Windows, Safari) : rien à décoder, aucune source « sans son ».
+  if (aud === 'ac3' || aud === 'eac3') return caps.dolbyNative && caps.audioCodecs.includes(aud) ? null : 'app';
   return null;
 }
 

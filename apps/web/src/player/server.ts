@@ -121,6 +121,8 @@ export interface MediaCaps {
   videoCodecs: string[];
   audioCodecs: string[];
   maxAudioChannels: number;
+  /** Dolby (AC-3 / E-AC-3) annoncé par le navigateur lui-même (Edge sous Windows, Safari) : pas de repli audio. */
+  dolbyNative?: boolean;
 }
 
 export function probeUrl(base: string, mediaURL: string): string {

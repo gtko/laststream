@@ -3,7 +3,8 @@ import { startWebAudio, type WebAudioHost } from '../src/player/webaudio/control
 import type { WebAudioFallback } from '../src/player/webaudio/engine';
 import { prepareWebAudio, type PrepareDeps } from '../src/player/webaudio/prepare';
 import type { InspectedAudio } from '../src/player/webaudio/source';
-import { NOTE_CORS, NOTE_DTS, NOTE_STALLED } from '../src/player/webaudio/policy';
+import { DOLBY_HINT, NOTE_CORS, NOTE_DTS, NOTE_STALLED } from '../src/player/webaudio/policy';
+import { DOLBY_LINK } from '../src/player/webaudio/controller';
 
 import { rangeDenied, resetRangeMemory } from '../src/sources/hostRange';
 
@@ -79,7 +80,8 @@ describe('controller du son de repli', () => {
     expect(h.plan).toEqual({ mode: 'cors', note: NOTE_CORS });
     expect(inspect).not.toHaveBeenCalled(); // l'en-tête est illisible : pas d'essai
     expect(host.attach).not.toHaveBeenCalled();
-    expect(host.setMode).toHaveBeenCalledWith('cors', NOTE_CORS);
+    // Source E-AC-3 : la note dit où l'ouvrir pour entendre le son (lien vers l'app).
+    expect(host.setMode).toHaveBeenCalledWith('cors', NOTE_CORS + ' · ' + DOLBY_HINT, DOLBY_LINK);
     expect(host.toast).toHaveBeenCalledWith(NOTE_CORS, 9000);
     await vi.waitFor(() => expect((host.toast as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2));
     const [msg, ms, action] = (host.toast as ReturnType<typeof vi.fn>).mock.calls[1];
@@ -122,7 +124,7 @@ describe('controller du son de repli', () => {
     };
     await startWebAudio(host, input, deps);
     fail();
-    expect(host.setMode).toHaveBeenLastCalledWith('error', NOTE_STALLED);
+    expect(host.setMode).toHaveBeenLastCalledWith('error', NOTE_STALLED + ' · ' + DOLBY_HINT, DOLBY_LINK);
     await vi.waitFor(() => expect((host.toast as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).includes('source 1'))).toBe(true));
   });
 
@@ -140,7 +142,7 @@ describe('controller du son de repli', () => {
     await vi.advanceTimersByTimeAsync(300);
     const h = await pending;
     expect(h.plan).toEqual({ mode: 'stalled', note: NOTE_STALLED });
-    expect(host.setMode).toHaveBeenCalledWith('error', NOTE_STALLED);
+    expect(host.setMode).toHaveBeenCalledWith('error', NOTE_STALLED + ' · ' + DOLBY_HINT, DOLBY_LINK);
     expect(host.attach).not.toHaveBeenCalled();
     await vi.waitFor(() => expect((host.toast as ReturnType<typeof vi.fn>).mock.calls.some((c) => String(c[0]).includes('source 1'))).toBe(true));
     resolveLate({ ...inspected('eac3'), close: closeLate });
@@ -229,5 +231,56 @@ describe('préparation : mode et codec', () => {
       { probeRange: async () => 'ok', reader: () => ({ size: async () => 1, read: async () => new Uint8Array(1) }), inspect: async () => { throw new Error('conteneur inconnu'); } },
     );
     expect(p.plan.mode).toBe('native');
+  });
+});
+
+describe('Dolby natif et note persistante', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const edge = { ...caps, audioCodecs: [...caps.audioCodecs, 'eac3'], dolbyNative: true };
+  const okDeps = (engine: WebAudioFallback): PrepareDeps => ({
+    probeRange: async () => 'ok', reader: () => ({ size: async () => 1, read: async () => new Uint8Array(1) }),
+    inspect: async () => inspected('eac3', 'Matroska'), createEngine: () => engine,
+  });
+
+  it('Edge : E-AC-3 en Matroska lu nativement, ni repli ni note', async () => {
+    const { host, video } = setup({ caps: edge });
+    video.webkitAudioDecodedByteCount = 123456;
+    const h = await startWebAudio(host, input, okDeps(engineStub()));
+    for (let i = 0; i < 4; i++) { video.currentTime += 1; await vi.advanceTimersByTimeAsync(1000); }
+    expect(h.plan.mode).toBe('native');
+    expect(host.attach).not.toHaveBeenCalled();
+    expect(host.setMode).toHaveBeenCalledWith(null, '');
+    h.dispose();
+  });
+
+  it('navigateur qui annonce le Dolby sans le lire : après 2,5 s de silence, repli sur l’app', async () => {
+    const { host, video } = setup({ caps: edge });
+    const engine = engineStub();
+    const h = await startWebAudio(host, input, okDeps(engine));
+    for (let i = 0; i < 4; i++) { video.currentTime += 1; await vi.advanceTimersByTimeAsync(1000); }
+    expect(host.attach).toHaveBeenCalledWith(engine);
+    expect(h.plan.mode).toBe('app');
+    h.dispose();
+  });
+
+  it('source non Dolby sans son (CORS) : note inchangée, sans conseil ni lien', async () => {
+    const { host } = setup();
+    await startWebAudio(host, { ...input, nameCodec: 'flac' }, { probeRange: async () => 'denied' });
+    expect(host.setMode).toHaveBeenCalledWith('cors', NOTE_CORS);
+  });
+
+  it('AC-3 que l’app ne peut pas décoder : la note conseille l’app (Edge décode le Dolby)', async () => {
+    const { host } = setup();
+    const deps: PrepareDeps = { probeRange: async () => 'ok', reader: () => ({ size: async () => 1, read: async () => new Uint8Array(1) }), inspect: async () => inspected('ac3', 'MP4', false) };
+    const h = await startWebAudio(host, { ...input, nameCodec: null }, deps);
+    expect(h.plan.mode).toBe('unsupported');
+    expect(host.setMode).toHaveBeenCalledWith('unsupported', 'Son AC-3 non pris en charge par le navigateur · ' + DOLBY_HINT, DOLBY_LINK);
+  });
+
+  it('DTS : aucun conseil Dolby, la note DTS reste seule', async () => {
+    const { host } = setup();
+    await startWebAudio(host, { ...input, nameCodec: 'dts' }, { probeRange: async () => 'denied' });
+    expect(host.setMode).toHaveBeenCalledWith('unsupported', NOTE_DTS);
   });
 });

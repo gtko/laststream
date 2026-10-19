@@ -22,6 +22,8 @@ export type AudioPlan =
 export const NOTE_CORS = 'Son non disponible dans le navigateur pour cette source';
 export const NOTE_STALLED = 'Son indisponible : la source met trop de temps à répondre';
 export const NOTE_DTS = 'Son DTS non pris en charge par le navigateur';
+/** Ajoutée à la note quand la source est Dolby et ne sonne pas dans le navigateur : Edge (Windows) et l'app décodent le son. */
+export const DOLBY_HINT = 'Pour le son Dolby, ouvre Laststream dans Microsoft Edge ou dans l’app Windows/Android';
 
 const LABEL: Record<string, string> = { dts: 'DTS', truehd: 'TrueHD', ac3: 'AC-3', eac3: 'E-AC-3', aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', vorbis: 'Vorbis' };
 const label = (codec: string): string => LABEL[codec] ?? codec.toUpperCase();
@@ -44,7 +46,7 @@ export interface AudioPlanInput {
   codec: string | null;
   /** Nom du conteneur d'après mediabunny (`MP4`, `Matroska`, `WebM`…). */
   container: string;
-  caps: Pick<MediaCaps, 'audioCodecs'>;
+  caps: Pick<MediaCaps, 'audioCodecs' | 'dolbyNative'>;
   /** L'app sait décoder cette piste (`canDecode` de mediabunny, décodeur AC-3 chargé). */
   appCanDecode: boolean;
   /** Sonde de plage : `ok`, ou un refus (CORS, plage ignorée, erreur HTTP). */
@@ -55,12 +57,13 @@ export interface AudioPlanInput {
 
 /**
  * Le navigateur joue-t-il lui-même cette piste ? AC-3 / E-AC-3 : `canPlayType` est annoncé sans réserve par Chrome alors que
- * le conteneur Matroska n'est pas lu avec ces codecs, et la preuve réelle vient du compteur d'octets décodés (voir
- * `nativeAudioSilent`) : on ne s'y fie qu'en MP4. Autres codecs : la liste des capacités suffit.
+ * le conteneur Matroska n'est pas lu avec ces codecs. Hors Matroska/WebM, ou quand le navigateur annonce Dolby lui-même
+ * (`dolbyNative`, Edge sous Windows, Safari), on le tient pour lecteur ; la preuve réelle reste le compteur d'octets décodés
+ * (voir `nativeAudioSilent`). Autres codecs : la liste des capacités suffit.
  */
-export function browserPlaysAudio(codec: string, container: string, caps: Pick<MediaCaps, 'audioCodecs'>): boolean {
+export function browserPlaysAudio(codec: string, container: string, caps: Pick<MediaCaps, 'audioCodecs' | 'dolbyNative'>): boolean {
   if (!caps.audioCodecs.includes(codec)) return false;
-  if (isAc3Family(codec) && /matroska|webm/i.test(container)) return false;
+  if (isAc3Family(codec) && /matroska|webm/i.test(container) && !caps.dolbyNative) return false;
   return true;
 }
 

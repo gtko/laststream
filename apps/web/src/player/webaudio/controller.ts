@@ -1,7 +1,8 @@
 import type { FileCodecs, SourceLike } from '../../party/compat';
+import { PUBLIC_BASE } from '../../data/config';
 import type { MediaCaps } from '../server';
 import type { WebAudioFallback, VideoLike } from './engine';
-import { NOTE_STALLED, nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
+import { DOLBY_HINT, NOTE_STALLED, isAc3Family, nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
 
 export { NOTE_STALLED };
 import { prepareWebAudio, type PrepareDeps, type PreparedAudio } from './prepare';
@@ -12,9 +13,15 @@ import { prepareWebAudio, type PrepareDeps, type PreparedAudio } from './prepare
 
 export type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
 
+/** Lien joint à la note persistante (page de téléchargement de l'app). */
+export interface SoundNoteLink { label: string; href: string }
+
+/** Source Dolby sans son : lien vers la page de téléchargement de l'app (affiché seulement en lecture web, voir `session.js`). */
+export const DOLBY_LINK: SoundNoteLink = { label: 'Télécharger l’app', href: PUBLIC_BASE };
+
 export interface WebAudioHost<V extends SourceLike = SourceLike> {
   video: VideoLike & { webkitAudioDecodedByteCount?: number };
-  caps: Pick<MediaCaps, 'audioCodecs' | 'videoCodecs'>;
+  caps: Pick<MediaCaps, 'audioCodecs' | 'videoCodecs' | 'dolbyNative'>;
   /** Le moteur de repli prend le relais du son (volume, muet, attente du son). */
   attach(engine: WebAudioFallback): void;
   /** L'état du lecteur change (attente du son…) : l'interface se rafraîchit. */
@@ -27,7 +34,7 @@ export interface WebAudioHost<V extends SourceLike = SourceLike> {
   probeView(view: V, signal: AbortSignal): Promise<FileCodecs | null>;
   describe(view: V): string;
   play(view: V): void;
-  setMode(mode: AudioMode, note: string): void;
+  setMode(mode: AudioMode, note: string, link?: SoundNoteLink): void;
 }
 
 export interface WebAudioInput {
@@ -66,6 +73,14 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
     host.toast(note + ' · Source avec un son lisible : ' + host.describe(alt.view), 20_000, { label: 'Essayer', run: () => host.play(alt.view) });
   };
 
+  /** Source Dolby (AC-3 / E-AC-3, d'après l'en-tête lu ou le nom) : vrai aussi quand le son n'a pas pu être lu. */
+  const dolbySource = (): boolean => isAc3Family(prep?.codec ?? input.nameCodec ?? '');
+  /** Note persistante : la cause, et pour une source Dolby sans son, où l'ouvrir pour l'entendre. */
+  const showNote = (mode: AudioMode, note: string): void => {
+    if (dolbySource()) host.setMode(mode, note + ' · ' + DOLBY_HINT, DOLBY_LINK);
+    else host.setMode(mode, note);
+  };
+
   const apply = (plan: AudioPlan, engine: WebAudioFallback | null): void => {
     current = plan;
     if (plan.mode === 'app' && engine) {
@@ -74,7 +89,7 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
       host.setMode('app', '');
       host.toast('Son décodé par l’app', 3500);
     } else if (plan.mode === 'unsupported' || plan.mode === 'cors' || plan.mode === 'stalled') {
-      host.setMode(plan.mode === 'stalled' ? 'error' : plan.mode, plan.note);
+      showNote(plan.mode === 'stalled' ? 'error' : plan.mode, plan.note);
       host.toast(plan.note, 9000);
       void propose(plan.note);
     } else {
@@ -90,7 +105,7 @@ export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>,
       onError: () => {
         if (stale()) return;
         current = { mode: 'stalled', note: NOTE_STALLED };
-        host.setMode('error', NOTE_STALLED);
+        showNote('error', NOTE_STALLED);
         host.toast(NOTE_STALLED, 9000);
         void propose(NOTE_STALLED);
       },

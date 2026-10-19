@@ -468,10 +468,18 @@ export function createPlayerUI(h) {
       if (dual) el.innerHTML = '<span class="lp-sub-top">' + htmlText + '</span><span class="lp-sub-bot">' + bottomHtml + '</span>';
       else { const one = htmlText || bottomHtml; el.innerHTML = one ? '<span>' + one + '</span>' : ''; }
     },
-    /** Note persistante sur l'image (ex. « Son DTS non pris en charge ») ; vide : masquée. */
-    setSoundNote(text) {
+    /** Note persistante sur l'image (ex. « Son DTS non pris en charge ») ; `link` { label, href } ajoute un lien ; vide : masquée. */
+    setSoundNote(text, link) {
       const el = q('.lp-sndnote');
       el.textContent = text || '';
+      if (text && link) {
+        const a = document.createElement('a');
+        a.href = link.href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = link.label;
+        el.append(' · ', a);
+      }
       el.hidden = !text;
     },
     /** Message bref ; `action` { label, run } ajoute un bouton (ex. « Annuler »). */

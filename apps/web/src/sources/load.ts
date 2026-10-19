@@ -318,7 +318,9 @@ function alsoAccepted(): readonly Lang[] {
 export function recommendFor(views: readonly SourceView[], bwKbps: number | null): Recommendation | null {
   // Hôte déjà refusé (CORS) par la sonde du moteur audio : son son ne peut plus être décodé par l'app.
   const checked = views.map((v) => (v.appAudio === 'app' && rangeDenied(v.stream?.url) ? { ...v, appAudio: 'unsupported' as const } : v));
-  return recommend(checked, bwKbps, preferredLang(), { preferDirect: !inShell(), alsoAccept: alsoAccepted() });
+  // Navigateur sans Dolby natif : le son AC-3 / E-AC-3 est décodé par l'app, une source AAC / Opus de résolution proche le vaut mieux.
+  const web = !inShell();
+  return recommend(checked, bwKbps, preferredLang(), { preferDirect: web, preferAac: web && browserCaps().dolbyNative !== true, alsoAccept: alsoAccepted() });
 }
 
 /** Débit connu sans mesurer (réglage fixe ou mesure récente), sinon null. */

@@ -956,7 +956,7 @@ function beginWebAudio(p, url, stale) {
     probeView: probeViewHeader,
     describe: describeView,
     play: (v) => { if (P === p) playView(v, p.engine ? p.engine.state().time : 0); },
-    setMode: (mode, note) => { p.audioMode = mode; p.audioNote = note; if (ui) { ui.setSoundNote(mode && mode !== 'app' ? note : ''); ui.refreshPanel(); } },
+    setMode: (mode, note, link) => { p.audioMode = mode; p.audioNote = note; if (ui) { ui.setSoundNote(mode && mode !== 'app' ? note : '', link); ui.refreshPanel(); } },
   }, { url, nameCodec: fileCodecsOf(view).audio, stale }).then((h) => {
     if (stale()) h.dispose(); else p.webAudio = h;
   }).catch(() => undefined);

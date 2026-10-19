@@ -55,6 +55,7 @@
   background: rgba(0, 0, 0, 0.66); color: #fbbf24; font-size: 13px; font-weight: 700; text-align: center; pointer-events: none;
 }
 .lp-sndnote[hidden] { display: none; }
+.lp-sndnote a { pointer-events: auto; color: inherit; text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .lp-bspin { animation-duration: 3s; } .lp-loading { transition: none; } }
 .lp-self { pointer-events: auto; min-height: 46px; padding: 0 26px; align-self: center; }
 .lp-self[hidden] { display: none; }
