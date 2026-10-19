@@ -3,11 +3,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { auth, initAuth } from '../src/data/auth';
+import { socketUrl } from '../src/party/bridge';
 
 // Session de partage factice : la page n'a besoin que de sa phase, de son message et de ses actions.
 const shared = vi.hoisted(() => ({ session: null as any }));
+// Séance individuelle rendue par `POST /party/R1/guest` (entrée par le lien partagé).
+const guest = vi.hoisted(() => ({ sessionToken: 'sess-abcdefgh-0001', name: 'Léa', expiresAt: '2099-01-01T00:00:00.000Z' }));
 
-vi.mock('../src/party/bridge', () => ({ socketUrl: (base: string, path: string) => base + path }));
+vi.mock('../src/party/bridge', () => ({ socketUrl: vi.fn((base: string, path: string) => base + path) }));
 vi.mock('../src/relay/player/player', () => ({ GuestPlayer: class {} }));
 vi.mock('../src/relay/session', () => ({
   GuestRelaySession: class {
@@ -43,18 +46,30 @@ const submit = (): void => {
 
 let showPartyJoin: (roomId: string, token: string) => void;
 let teardownPartyJoin: () => void;
+let fetchMock: ReturnType<typeof vi.fn>;
+/** Corps des entrées par le lien (`POST /party/R1/guest`), dans l'ordre. */
+const entryPosts = () => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
 
 beforeAll(async () => {
   document.body.innerHTML = '<div id="app"></div><div id="detail"></div><div id="modal"><div class="modal"></div></div>' +
     '<div id="modal-body"></div><button id="modal-close"></button><div id="toast"></div>';
   localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'https://srv.example', config: '' }));
   reloadSettings();
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST' && new URL(String(url)).pathname === '/party/R1/guest') {
+      return new Response(JSON.stringify(guest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ error: 'not_found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+  });
+  vi.stubGlobal('fetch', fetchMock);
   ({ showPartyJoin, teardownPartyJoin } = (await import('../src/ui/partyjoin.js')) as any);
 });
 
 afterAll(() => {
   teardownPartyJoin();
+  vi.unstubAllGlobals();
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 describe('page invitée (sans compte)', () => {
@@ -64,6 +79,10 @@ describe('page invitée (sans compte)', () => {
 
     submit();
     await vi.waitFor(() => expect(shared.session).not.toBeNull());
+    // Lien partagé : le jeton du lien ne sert qu'à l'entrée ; le WebSocket présente la séance, mémorisée dans l'onglet.
+    expect(entryPosts()).toEqual([{ token: 'abcdefgh12', name: 'Léa' }]);
+    expect(socketUrl).toHaveBeenLastCalledWith('https://srv.example', '/party/R1/ws?t=sess-abcdefgh-0001&name=L%C3%A9a');
+    expect(sessionStorage.getItem('ls.party.guest.R1')).not.toBeNull();
     shared.session.phase = 'ready';
     await vi.waitFor(() => expect($('[data-pj-leave]').hidden).toBe(false));
     expect($('[data-pj-form]').hidden).toBe(true);
@@ -74,11 +93,14 @@ describe('page invitée (sans compte)', () => {
     expect($('[data-pj-join]').textContent).toBe('Rejoindre à nouveau');
     expect($('[data-pj-form]').hidden).toBe(false);
     expect($('[data-pj-leave]').hidden).toBe(true);
+    // Quitter efface la séance : « Rejoindre à nouveau » repasse par le lien partagé.
+    expect(sessionStorage.getItem('ls.party.guest.R1')).toBeNull();
 
     const first = shared.session;
     submit();
     await vi.waitFor(() => expect(shared.session).not.toBe(first));
     expect(shared.session.phase).toBe('joining');
+    expect(entryPosts()).toHaveLength(2);
   });
 
   it('« format non pris en charge » n’est pas terminal : le message reste sous la page et « Quitter » reste disponible', async () => {
