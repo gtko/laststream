@@ -7,12 +7,16 @@
 <meta name="description" content="Laststream réunit ton catalogue, la TV en direct, un lecteur intégré, les profils et la watch party dans une seule app. Windows, Android et web. Inscription sur invitation.">
 <meta name="theme-color" content="#0c0b11">
 <link rel="canonical" href="https://laststream-www.gtux-prog.workers.dev/">
+<link rel="alternate" hreflang="fr" href="https://laststream-www.gtux-prog.workers.dev/">
+<link rel="alternate" hreflang="en" href="https://laststream-www.gtux-prog.workers.dev/en/">
+<link rel="alternate" hreflang="x-default" href="https://laststream-www.gtux-prog.workers.dev/">
 <link rel="icon" type="image/svg+xml" href="/assets/logo.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Laststream">
 <meta property="og:locale" content="fr_FR">
+<meta property="og:locale:alternate" content="en_US">
 <meta property="og:title" content="Laststream - Ton cinéma, partout">
 <meta property="og:description" content="Catalogue, TV en direct, lecteur intégré, profils, watch party. Sur Windows, Android et dans ton navigateur.">
 <meta property="og:url" content="https://laststream-www.gtux-prog.workers.dev/">
@@ -24,10 +28,43 @@
 <meta name="twitter:title" content="Laststream - Ton cinéma, partout">
 <meta name="twitter:description" content="Catalogue, TV en direct, lecteur intégré, profils, watch party.">
 <meta name="twitter:image" content="https://laststream-www.gtux-prog.workers.dev/assets/og.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="twitter:image:alt" content="Logo Laststream et le slogan Ton cinéma, partout">
+<link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/style.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Laststream",
+      "description": "Catalogue, TV en direct, lecteur intégré, profils et watch party dans une seule app. Windows, Android et navigateur.",
+      "url": "https://laststream-www.gtux-prog.workers.dev/",
+      "image": "https://laststream-www.gtux-prog.workers.dev/assets/og.png",
+      "operatingSystem": "Windows, Android, Web",
+      "applicationCategory": "MultimediaApplication",
+      "inLanguage": "fr",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+      "publisher": { "@id": "https://laststream-www.gtux-prog.workers.dev/#organization" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://laststream-www.gtux-prog.workers.dev/#organization",
+      "name": "Laststream",
+      "url": "https://laststream-www.gtux-prog.workers.dev/",
+      "logo": "https://laststream-www.gtux-prog.workers.dev/assets/icon-512.png"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://laststream-www.gtux-prog.workers.dev/#website",
+      "name": "Laststream",
+      "url": "https://laststream-www.gtux-prog.workers.dev/",
+      "inLanguage": "fr"
+    }
+  ]
+}
+</script>
 </head>
 <body>
 <a class="skip" href="#contenu">Aller au contenu</a>
@@ -40,11 +77,17 @@
     </a>
     <nav class="nav" aria-label="Navigation principale">
       <a href="#fonctions">Fonctions</a>
+      <a href="#comment">Comment ça marche</a>
       <a href="#apercu">Aperçu</a>
+      <a href="#ensemble">Ensemble</a>
       <a href="#telecharger">Télécharger</a>
       <a href="#faq">FAQ</a>
     </nav>
     <a class="btn btn-sm" href="#telecharger">Télécharger</a>
+    <nav class="lang" aria-label="Langue">
+      <a href="/" hreflang="fr" aria-current="page">FR</a>
+      <a href="/en/" hreflang="en">EN</a>
+    </nav>
   </div>
 </header>
 
@@ -55,17 +98,24 @@
       <div class="hero-text">
         <p class="eyebrow">Inscription sur invitation</p>
         <h1>Ton cinéma,<br><span class="accent">partout.</span></h1>
-        <p class="lead">Un seul endroit pour ton catalogue, la TV en direct et ta watch party entre amis. Un lecteur intégré, des profils pour toute la famille, et ta reprise qui te suit d'un écran à l'autre.</p>
+        <p class="lead">Un accueil façon cinéma, des sources triées pour toi et une lecture qui démarre toute seule. Des profils pour toute la famille, et ta reprise qui te suit d'un écran à l'autre.</p>
         <div class="cta">
           <a class="btn btn-lg" id="hero-cta" href="#telecharger">Télécharger Laststream</a>
-          <a class="btn btn-ghost btn-lg" href="#fonctions">Découvrir</a>
+          <a class="btn btn-ghost btn-lg" href="#comment">Comment ça marche</a>
         </div>
         <p class="hero-note">Windows, Android et navigateur. Laststream n'héberge aucun contenu : il lit les extensions que tu configures.</p>
       </div>
       <div class="hero-visual" aria-hidden="true">
+        <div class="mosaic">
+          <div class="mcol"><div class="mtrack"><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i></div></div>
+          <div class="mcol up"><div class="mtrack"><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i></div></div>
+          <div class="mcol"><div class="mtrack"><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i></div></div>
+          <div class="mcol up"><div class="mtrack"><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i></div></div>
+          <div class="mcol"><div class="mtrack"><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i></div></div>
+        </div>
         <div class="mock mock-home">
           <div class="m-bar"><i></i><i></i><i></i><span class="m-pill"></span></div>
-          <div class="m-hero"><div class="m-title"></div><div class="m-sub"></div><div class="m-btns"><b></b><b></b></div></div>
+          <div class="m-hero"><span class="m-tag">À l'affiche</span><div class="m-title"></div><div class="m-sub"></div><div class="m-btns"><b></b><b></b></div></div>
           <div class="m-row"><span class="m-label"></span><div class="m-tiles"><i class="t1"></i><i class="t2"></i><i class="t3"></i><i class="t4"></i><i class="t5"></i></div></div>
           <div class="m-row"><span class="m-label short"></span><div class="m-tiles"><i class="t6"></i><i class="t7"></i><i class="t8"></i><i class="t1"></i><i class="t3"></i></div></div>
         </div>
@@ -79,61 +129,137 @@
     </div>
   </section>
 
+  <section class="band" aria-label="En bref">
+    <div class="wrap">
+      <ul class="band-in">
+        <li><strong>3 écrans</strong> Windows, Android, navigateur</li>
+        <li><strong>Sources triées</strong> langue, qualité, taille</li>
+        <li><strong>Lecture auto</strong> la meilleure source pour ton débit</li>
+        <li><strong>En famille</strong> profils et mode enfant</li>
+      </ul>
+    </div>
+  </section>
+
   <section class="sec" id="fonctions" aria-labelledby="h-fonctions">
     <div class="wrap">
-      <h2 id="h-fonctions">Tout ce qu'il faut, rien de superflu</h2>
-      <p class="sec-lead">Une interface pensée pour le canapé comme pour le téléphone, rapide dès l'ouverture.</p>
+      <p class="kicker rv">Fonctions</p>
+      <h2 id="h-fonctions" class="rv">Tout ce qu'il faut, rien de superflu</h2>
+      <p class="sec-lead rv">Une interface pensée pour le canapé comme pour le téléphone, rapide dès l'ouverture.</p>
       <ul class="cards">
-        <li class="card">
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
-          <h3>Un catalogue façon cinéma</h3>
-          <p>Des rangées à parcourir, des collections et des services pour filtrer, une fiche claire pour chaque titre et une recherche immédiate.</p>
+          <h3>Un accueil façon cinéma</h3>
+          <p>Une grande affiche à la une, des rangées à parcourir, des bandes-annonces, des collections et une fiche claire pour chaque titre.</p>
         </li>
-        <li class="card">
+        <li class="card rv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h11M4 17h7"/><path d="M18 14l3 3-3 3"/></svg>
+          <h3>Des sources bien rangées</h3>
+          <p>Les sources sont triées par langue, puis qualité, puis taille. Tu peux tout voir et choisir à la main si tu préfères.</p>
+        </li>
+        <li class="card rv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>
+          <h3>Lecture automatique</h3>
+          <p>Laststream mesure ton débit et lance seul la meilleure source qui passe. Pas de test à faire, pas de coupure inutile.</p>
+        </li>
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
           <h3>TV en direct et guide</h3>
           <p>Zappe entre tes chaînes, consulte le guide des programmes et retrouve ce qui passe maintenant, en un geste.</p>
         </li>
-        <li class="card">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>
+        <li class="card rv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M7 21h10M9 8l6 3-6 3z"/></svg>
           <h3>Un vrai lecteur intégré</h3>
           <p>Lecteur natif mpv ou libVLC : choix des pistes audio et des sous-titres, image dans l'image et mini-lecteur pour naviguer sans couper la lecture.</p>
         </li>
-        <li class="card">
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M17 14.2c2.4.2 4 2 4 4.3"/></svg>
-          <h3>Profils et contrôle parental</h3>
-          <p>Un profil par personne, un mode enfant avec limite d'âge et un code pour protéger ce qui doit l'être.</p>
+          <h3>Profils et mode enfant</h3>
+          <p>Un profil par personne et un profil enfant protégé par un code, avec des contenus filtrés selon l'âge.</p>
         </li>
-        <li class="card">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v10H9l-5 4z"/><path d="M8 10h8M8 13h5"/></svg>
-          <h3>Watch party et amis</h3>
-          <p>Regarde en même temps que tes amis : lecture synchronisée, présence en ligne et invitations en un clic.</p>
-        </li>
-        <li class="card">
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>
           <h3>Recommandations par IA</h3>
-          <p>Des suggestions qui tiennent compte de ce que tu as vu et aimé, pour savoir quoi regarder ce soir.</p>
+          <p>Une liste du jour par profil, qui tient compte de ce que tu as vu et aimé, pour savoir quoi regarder ce soir.</p>
         </li>
-        <li class="card">
+        <li class="card rv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+          <h3>Statistiques de visionnage</h3>
+          <p>Une page dédiée par profil : temps passé, genres préférés, tendances par mois. Tout reste sur ton compte.</p>
+        </li>
+        <li class="card rv">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/><path d="M12 21c-1.5 0-2-1.2-1.3-2.3.8-1.2 2.3-1.2 3.3-.7 1.2.6 3 .3 3-1.5"/></svg>
+          <h3>Des thèmes à ta couleur</h3>
+          <p>Plusieurs thèmes prêts à l'emploi et une couleur d'accent personnalisable, pour une app qui te ressemble.</p>
+        </li>
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="9" rx="1.5"/><rect x="17" y="9" width="4.5" height="9" rx="1.2"/><path d="M6 19h6"/></svg>
           <h3>Synchronisation multi-appareils</h3>
           <p>Ta reprise de lecture, tes listes et tes réglages te suivent entre le PC, le téléphone et le navigateur.</p>
         </li>
-        <li class="card">
+        <li class="card rv">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
           <h3>Tes extensions, tes règles</h3>
           <p>Laststream n'héberge rien : tu ajoutes les extensions que tu choisis, et l'app les lit avec des protections intégrées.</p>
+        </li>
+        <li class="card rv">
+          <span class="soon">Bientôt</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v10H9l-5 4z"/><path d="M8 10h8M8 13h5"/></svg>
+          <h3>Watch party et amis</h3>
+          <p>Regarde en même temps que tes amis : lecture synchronisée, salons publics et bibliothèques partagées.</p>
         </li>
       </ul>
     </div>
   </section>
 
-  <section class="sec alt" id="apercu" aria-labelledby="h-apercu">
+  <section class="sec alt" id="comment" aria-labelledby="h-comment">
     <div class="wrap">
-      <h2 id="h-apercu">Un aperçu de l'interface</h2>
-      <p class="sec-lead">Maquettes stylisées : sombre, lisible, centrée sur l'image.</p>
+      <p class="kicker rv">Pour commencer</p>
+      <h2 id="h-comment" class="rv">Comment ça marche</h2>
+      <p class="sec-lead rv">Trois étapes, quelques minutes.</p>
+      <ol class="steps">
+        <li class="step rv">
+          <span class="step-n" aria-hidden="true">1</span>
+          <h3>Reçois une invitation</h3>
+          <p>Un proche déjà inscrit t'envoie son lien de parrainage. Tu l'ouvres, tu choisis ton pseudo et ton compte est créé.</p>
+        </li>
+        <li class="step rv">
+          <span class="step-n" aria-hidden="true">2</span>
+          <h3>Installe et ajoute tes sources</h3>
+          <p>Télécharge l'app, puis ajoute les extensions que tu choisis. Laststream ne fournit aucun contenu : il lit ce que tu configures.</p>
+        </li>
+        <li class="step rv">
+          <span class="step-n" aria-hidden="true">3</span>
+          <h3>Lance-toi</h3>
+          <p>Choisis un titre : les sources sont triées pour toi et la meilleure démarre toute seule selon ton débit.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="sec" id="apercu" aria-labelledby="h-apercu">
+    <div class="wrap">
+      <p class="kicker rv">Aperçu</p>
+      <h2 id="h-apercu" class="rv">Un aperçu de l'interface</h2>
+      <p class="sec-lead rv">Maquettes stylisées : sombre, lisible, centrée sur l'image.</p>
       <div class="shots">
-        <figure class="shot">
+        <figure class="shot rv">
+          <div class="mock s-sources" role="img" aria-label="Maquette de la fiche d'un titre : liste de sources triées par langue et qualité, la première marquée lecture auto">
+            <div class="so-head"><i class="t2"></i><div><span class="so-t"></span><span class="so-s"></span></div></div>
+            <div class="so-row best"><b>FR</b><em>4K</em><span class="so-bar" style="--w:86%"></span><u>Lecture auto</u></div>
+            <div class="so-row"><b>FR</b><em>1080p</em><span class="so-bar" style="--w:62%"></span></div>
+            <div class="so-row"><b>FR</b><em>720p</em><span class="so-bar" style="--w:34%"></span></div>
+            <div class="so-row dim"><b>VO</b><em>1080p</em><span class="so-bar" style="--w:58%"></span></div>
+          </div>
+          <figcaption><strong>Sources triées</strong> Langue, qualité, taille : la meilleure se lance seule.</figcaption>
+        </figure>
+        <figure class="shot rv">
+          <div class="mock s-player" role="img" aria-label="Maquette du lecteur : barre de progression, pistes audio et sous-titres">
+            <div class="pl-screen"><span class="pl-play"></span></div>
+            <div class="pl-ctl"><span class="pl-bar"><i></i></span><div class="pl-icons"><b>Audio</b><b>Sous-titres</b><b>PiP</b></div></div>
+          </div>
+          <figcaption><strong>Lecteur intégré</strong> Pistes, sous-titres, image dans l'image.</figcaption>
+        </figure>
+        <figure class="shot rv">
           <div class="mock s-guide" role="img" aria-label="Maquette du guide TV : une grille de chaînes et de programmes">
             <div class="g-head"><span></span><span></span><span></span><span></span></div>
             <div class="g-row"><b class="ch"></b><i style="--w:38%" class="now"></i><i style="--w:30%"></i><i style="--w:24%"></i></div>
@@ -143,21 +269,110 @@
           </div>
           <figcaption><strong>TV en direct</strong> Le guide des programmes, chaîne par chaîne.</figcaption>
         </figure>
-        <figure class="shot">
-          <div class="mock s-player" role="img" aria-label="Maquette du lecteur : barre de progression, pistes audio et sous-titres">
-            <div class="pl-screen"><span class="pl-play"></span></div>
-            <div class="pl-ctl"><span class="pl-bar"><i></i></span><div class="pl-icons"><b>Audio</b><b>Sous-titres</b><b>PiP</b></div></div>
+        <figure class="shot rv">
+          <div class="mock s-stats" role="img" aria-label="Maquette de la page de statistiques : histogramme mensuel et répartition par genre">
+            <div class="st-chart"><i style="--h:40%"></i><i style="--h:62%"></i><i style="--h:48%"></i><i style="--h:80%"></i><i style="--h:56%"></i><i style="--h:92%" class="hi"></i><i style="--h:70%"></i></div>
+            <div class="st-genres"><span style="--w:88%"></span><span style="--w:64%"></span><span style="--w:42%"></span></div>
           </div>
-          <figcaption><strong>Lecteur intégré</strong> Pistes, sous-titres, image dans l'image.</figcaption>
+          <figcaption><strong>Statistiques</strong> Ton temps de visionnage, mois par mois.</figcaption>
         </figure>
-        <figure class="shot">
-          <div class="mock s-party" role="img" aria-label="Maquette de la watch party : avatars d'amis et lecture synchronisée">
-            <div class="pa-screen"></div>
-            <div class="pa-people"><i class="a1">A</i><i class="a2">M</i><i class="a3">S</i><i class="a4">+2</i></div>
-            <div class="pa-chat"><span></span><span class="r"></span><span></span></div>
+        <figure class="shot rv">
+          <div class="mock s-themes" role="img" aria-label="Maquette des thèmes : quatre couleurs d'accent proposées">
+            <div class="th-prev"><span class="th-btn"></span><span class="th-line"></span><span class="th-line s"></span></div>
+            <div class="th-sw"><i style="--c:#ff5a36"></i><i style="--c:#7b5bf5"></i><i style="--c:#19c3a6"></i><i style="--c:#f5b700"></i></div>
           </div>
-          <figcaption><strong>Watch party</strong> Regarde en même temps que tes amis.</figcaption>
+          <figcaption><strong>Thèmes</strong> Une couleur d'accent à ton goût.</figcaption>
         </figure>
+        <figure class="shot rv">
+          <div class="mock s-profiles" role="img" aria-label="Maquette du choix de profil : trois profils dont un profil enfant">
+            <div class="pr-title"></div>
+            <div class="pr-grid"><div><i class="a1"></i><span></span></div><div><i class="a3"></i><span></span></div><div><i class="a2"></i><span></span><u>Enfant</u></div></div>
+          </div>
+          <figcaption><strong>Profils</strong> Chacun son accueil, sa reprise, ses recommandations.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec alt" id="famille" aria-labelledby="h-famille">
+    <div class="wrap split">
+      <div class="split-text">
+        <p class="kicker rv">En famille</p>
+        <h2 id="h-famille" class="rv">Pour toute la famille</h2>
+        <p class="sec-lead rv">Chaque personne a son profil. Les plus jeunes ont le leur, bien protégé.</p>
+        <ul class="ticks rv">
+          <li><strong>Un profil par personne.</strong> Bibliothèque, reprise de lecture et réglages sont séparés ; les extensions sont communes.</li>
+          <li><strong>Un profil enfant.</strong> Les contenus sont filtrés selon l'âge, d'après les classifications d'âge quand elles existent.</li>
+          <li><strong>Un code pour en sortir.</strong> Le profil enfant n'ouvre ni les extensions ni les réglages, et on n'en sort qu'avec le code.</li>
+          <li><strong>Des recommandations pour chacun.</strong> Une liste du jour par profil.</li>
+        </ul>
+      </div>
+      <div class="split-visual rv" aria-hidden="true">
+        <div class="mock fam">
+          <div class="fam-row"><i class="a1">P</i><div><span class="fam-n">Papa</span><span class="fam-s">Profil complet</span></div></div>
+          <div class="fam-row"><i class="a3">M</i><div><span class="fam-n">Maman</span><span class="fam-s">Profil complet</span></div></div>
+          <div class="fam-row kid"><i class="a2">L</i><div><span class="fam-n">Léo</span><span class="fam-s">Profil enfant</span></div><u>Enfant</u></div>
+          <div class="fam-pin"><span>Code pour quitter le profil enfant</span><div><b></b><b></b><b></b><b class="off"></b></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="invitation" aria-labelledby="h-invit">
+    <div class="wrap split rev">
+      <div class="split-text">
+        <p class="kicker rv">Sur invitation</p>
+        <h2 id="h-invit" class="rv">Un cercle qui s'agrandit de proche en proche</h2>
+        <p class="sec-lead rv">On ne s'inscrit pas librement : chaque compte dispose de 4 liens de parrainage à offrir.</p>
+        <ul class="ticks rv">
+          <li><strong>4 liens par compte.</strong> Tu les retrouves dans Réglages, dans « Mes invitations ».</li>
+          <li><strong>Un suivi clair.</strong> Chaque lien est libre, envoyé ou utilisé. Tu peux le copier, le partager ou le révoquer.</li>
+          <li><strong>Pas encore de lien ?</strong> Demande à la personne qui t'a parlé de Laststream.</li>
+        </ul>
+      </div>
+      <div class="split-visual rv" aria-hidden="true">
+        <div class="mock inv">
+          <div class="inv-h">Mes invitations</div>
+          <div class="inv-row"><span class="inv-n">Lien 1</span><span class="inv-link">laststream…/?invite=••••</span><em class="free">Libre</em></div>
+          <div class="inv-row"><span class="inv-n">Lien 2</span><span class="inv-link">laststream…/?invite=••••</span><em class="sent">Envoyé</em></div>
+          <div class="inv-row"><span class="inv-n">Lien 3</span><span class="inv-link used">Lien consommé</span><em class="used">Utilisé</em></div>
+          <div class="inv-row"><span class="inv-n">Lien 4</span><span class="inv-link">laststream…/?invite=••••</span><em class="free">Libre</em></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec alt" id="ensemble" aria-labelledby="h-ensemble">
+    <div class="wrap">
+      <p class="kicker rv">Ensemble</p>
+      <h2 id="h-ensemble" class="rv">Regarde avec ceux que tu aimes</h2>
+      <p class="sec-lead rv">Les fonctions sociales arrivent. Elles sont conçues pour rester simples et sous ton contrôle.</p>
+      <ul class="cards trio">
+        <li class="card rv">
+          <span class="soon">Bientôt</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M18 8v6M15 11h6"/></svg>
+          <h3>Amis</h3>
+          <p>Envoie et accepte des demandes, vois qui est en ligne et retrouve tes amis au même endroit.</p>
+        </li>
+        <li class="card rv">
+          <span class="soon">Bientôt</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="12" y="4" width="4" height="16" rx="1.5"/><path d="M18.5 6l2.5 14"/></svg>
+          <h3>Bibliothèques partagées</h3>
+          <p>Ta bibliothèque est privée par défaut. Tu choisis les titres visibles par tes amis, un par un ou d'un coup. Rien n'est partagé avec un profil enfant.</p>
+        </li>
+        <li class="card rv">
+          <span class="soon">Bientôt</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v10H9l-5 4z"/><path d="M10 9.5l4 2-4 2z"/></svg>
+          <h3>Watch party</h3>
+          <p>Lecture synchronisée : lecture, pause et avance se répercutent chez tout le monde. Salons entre amis ou publics, avec un lien pour rejoindre. Chacun lit avec ses propres sources.</p>
+        </li>
+      </ul>
+      <div class="party-demo rv" aria-hidden="true">
+        <div class="mock s-party">
+          <div class="pa-screen"></div>
+          <div class="pa-people"><i class="a1">A</i><i class="a2">M</i><i class="a3">S</i><i class="a4">+2</i></div>
+          <div class="pa-chat"><span></span><span class="r"></span><span></span></div>
+        </div>
       </div>
     </div>
   </section>
@@ -172,7 +387,7 @@
       <div class="dl-grid">
         <article class="dl" data-os="windows">
           <h3>Windows</h3>
-          <p class="meta">Installateur 64 bits <span>1.0.0 · 91 Mo</span></p>
+          <p class="meta">Installateur 64 bits <span id="win-meta">1.0.2 · 91 Mo</span></p>
           <p>Lecteur natif complet (mpv), mini-lecteur et mises à jour automatiques.</p>
           <a class="btn" href="https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-1.0.2.exe" download>Télécharger pour Windows</a>
           <p class="hint">Si Windows SmartScreen s'affiche : Informations complémentaires, puis Exécuter quand même.</p>
@@ -217,11 +432,16 @@
 
   <section class="sec alt" id="faq" aria-labelledby="h-faq">
     <div class="wrap narrow">
-      <h2 id="h-faq">Questions fréquentes</h2>
-      <details class="faq"><summary>Comment avoir un compte ?</summary><p>L'inscription se fait sur invitation. Demande un code à la personne qui t'a parlé de Laststream.</p></details>
+      <h2 id="h-faq" class="rv">Questions fréquentes</h2>
+      <details class="faq"><summary>Comment avoir un compte ?</summary><p>L'inscription se fait sur invitation. Demande un lien de parrainage à la personne qui t'a parlé de Laststream : chaque compte en dispose de 4.</p></details>
       <details class="faq"><summary>Laststream fournit-il des films et des séries ?</summary><p>Non. Laststream n'héberge aucun contenu : c'est un lecteur et un catalogue qui lisent les extensions que tu configures toi-même. Tu restes responsable de ce que tu ajoutes et du respect des droits d'auteur dans ton pays.</p></details>
       <details class="faq"><summary>Mes données me suivent-elles d'un appareil à l'autre ?</summary><p>Oui : reprise de lecture, listes et réglages sont synchronisés avec ton compte.</p></details>
       <details class="faq"><summary>Une app pour iPhone, Mac ou Linux ?</summary><p>Une app native est prévue. En attendant, la version web s'installe comme une app et fonctionne très bien.</p></details>
+      <details class="faq"><summary>Comment sont choisies les sources ?</summary><p>Les sources de tes extensions sont triées par langue, puis par qualité, puis par taille. Laststream lance automatiquement la meilleure qui convient à ton débit du moment, et tu peux toujours en choisir une autre dans la liste.</p></details>
+      <details class="faq"><summary>Faut-il un service supplémentaire pour lire ?</summary><p>Cela dépend des extensions que tu configures. Laststream ne fournit aucun service de ce type : c'est à toi de choisir tes sources et, si elles l'exigent, les comptes qui vont avec.</p></details>
+      <details class="faq"><summary>Comment fonctionne le profil enfant ?</summary><p>Tu crées un profil enfant à côté des tiens. Il ne montre que des contenus adaptés à l'âge, d'après les classifications d'âge disponibles, n'ouvre ni les extensions ni les réglages, et on n'en sort qu'avec un code.</p></details>
+      <details class="faq"><summary>Les amis et la watch party, c'est disponible ?</summary><p>C'est en cours de déploiement et marqué « Bientôt » sur cette page. Quand ce sera ouvert, ta bibliothèque restera privée par défaut et chaque participant lira avec ses propres sources : rien n'est partagé entre comptes.</p></details>
+      <details class="faq"><summary>Comment sont mises à jour les apps ?</summary><p>Sur Windows, les mises à jour sont automatiques. Sur Android, l'app te propose la nouvelle version et l'installe en un tap. La version web est toujours à jour.</p></details>
     </div>
   </section>
 </main>
