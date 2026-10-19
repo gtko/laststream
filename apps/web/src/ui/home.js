@@ -349,8 +349,9 @@ export function renderHome() {
   }
 }
 export const initialOf = () => (userStore.currentProfile().name || '?').slice(0, 1).toUpperCase();
-export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Amis' ? '#/friends' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : '#/');
-export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Amis' ? ' data-go' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : ' data-noop');
+const statsTab = (label) => label === 'Stats' && !isKidProfile();
+export const tabHref = (label) => (label === 'Bibliothèque' ? '#/library' : label === 'Amis' ? '#/friends' : label === 'Profil' ? '#/settings' : label === 'Découvrir' && !isKidProfile() ? '#/discover' : statsTab(label) ? '#/stats' : '#/');
+export const tabData = (label) => (label === 'Bibliothèque' ? ' data-libnav' : label === 'Amis' ? ' data-go' : label === 'Profil' ? ' data-settings' : label === 'Découvrir' && !isKidProfile() ? ' data-go' : statsTab(label) ? ' data-go' : ' data-noop');
 
 /**
  * Signaux envoyés à /recommend : bibliothèque et titres entamés, du plus récent au plus ancien.

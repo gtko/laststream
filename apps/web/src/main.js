@@ -1,5 +1,5 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
- * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public).
+ * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public).
  * ?still désactive les aperçus vidéo. */
 import { initSentry } from './observability/sentry';
 import './styles/styles.css';
@@ -9,6 +9,7 @@ import './styles/collections.css';
 import './styles/settings.css';
 import './styles/homeprefs.css';
 import './styles/hidden.css';
+import './styles/stats.css';
 import './styles/social.css';
 import './styles/partyjoin.css';
 import './styles/player.css';

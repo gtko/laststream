@@ -44,7 +44,7 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   const bg = current.avatarColor || current.avatar ? avatarAttrs(current.avatar, current.avatarColor) : '';
   const items = [
     social ? menuLink('#/friends', ' data-go', 'users', 'Amis') : '',
-    kid ? '' : '<a href="#" data-noop>' + ICON.stats + '<span>Statistiques</span></a>',
+    kid ? '' : menuLink('#/stats', ' data-go', 'stats', 'Statistiques'),
     kid ? '' : menuLink('#/settings', ' data-go', 'gear', 'Réglages'),
     owner && !kid ? menuLink('#/admin', ' data-go', 'shield', 'Administration') : '',
     server ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>Changer de profil</span></button>' : '',
