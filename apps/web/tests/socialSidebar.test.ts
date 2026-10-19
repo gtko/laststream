@@ -18,7 +18,8 @@ const h = vi.hoisted(() => {
   return { st, subs, emit, joinAnswerCb: null as null | ((ev: any) => void) };
 });
 
-vi.mock('../src/data/socialStore', () => ({
+vi.mock('../src/data/socialStore', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   getState: () => h.st,
   subscribe: (fn: (s: any) => void) => {
     h.subs.add(fn);
@@ -83,6 +84,7 @@ const hooks = {
   }),
   inviteToParty: vi.fn(),
   openShareDialog: vi.fn(),
+  openConversation: vi.fn(),
   cleanup: vi.fn(),
 };
 
@@ -135,6 +137,7 @@ beforeAll(async () => {
   registerSocialHook('renderConversationList', hooks.renderConversationList);
   registerSocialHook('inviteToParty', hooks.inviteToParty);
   registerSocialHook('openShareDialog', hooks.openShareDialog);
+  registerSocialHook('openConversation', hooks.openConversation);
   sb.mountSocialSidebar();
 });
 
@@ -580,8 +583,7 @@ describe('fiche ami', () => {
     expect(hooks.openShareDialog).toHaveBeenCalledWith({ media: null, to: ['f2'] });
     clickEl('#ss-friend [data-ss-act="message"]');
     await tick();
-    expect($('#ss-conv')!.hidden).toBe(false);
-    expect($('#ss-friend')!.hidden).toBe(true);
+    expect(hooks.openConversation).toHaveBeenCalledWith('dm:f2');
   });
 
   it('le menu ⋯ liste les actions de la maquette et agit sur la relation', async () => {

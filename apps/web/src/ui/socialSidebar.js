@@ -16,7 +16,7 @@ import {
   ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
   posterBox, progressPct, shortName, socialErrorMessage, watchLine,
 } from './socialFmt.js';
-import { inviteToParty, openProfileEditor, renderConversationList } from './socialHooks.js';
+import { inviteToParty, openConversation as openConvHook, openProfileEditor, renderConversationList } from './socialHooks.js';
 import { SI } from './socialIcons.js';
 import { paintSocialBadges, socialAvailable } from './socialButton.js';
 import { esc } from './util.js';
@@ -514,8 +514,14 @@ export function openFriendCard(pid) {
   focusTop();
 }
 
-/** Ouvre la discussion avec un ami (contenu fourni par setConversationRenderer). */
+/** Ouvre la discussion avec un ami : fenêtres de discussion Social v3 (hook F3). */
 export function openConversation(pid) {
+  if (!socialAvailable()) return;
+  openConvHook(pid.startsWith('dm:') || pid.startsWith('g:') ? pid : `dm:${pid}`);
+}
+
+/** Ancienne discussion v2 dans la barre (gardée pour repli, plus appelée). */
+export function openLegacyConversation(pid) {
   if (!root || !socialAvailable()) return;
   openSidebar();
   if (card) card.close();
