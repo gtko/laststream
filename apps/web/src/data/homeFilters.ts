@@ -18,27 +18,44 @@ export interface HiddenEntry {
   addedAt: number;
 }
 
+/** Clés des catégories dérivées (hors genres TMDB) : stables, stockées à côté des identifiants numériques. */
+export const DERIVED_KEYS = ['anime', 'kdrama', 'bollywood', 'chinese', 'telenovela', 'classics'] as const;
+export type DerivedKey = (typeof DERIVED_KEYS)[number];
+/** Genre banni : identifiant TMDB (nombre) ou catégorie dérivée (clé). */
+export type GenreKey = number | DerivedKey;
+
 export interface HomeFilters {
   hidden: HiddenEntry[];
-  /** Identifiants TMDB de genres bannis (films et séries). */
-  genres: number[];
+  /** Genres bannis : identifiants TMDB (films et séries) et clés de catégories dérivées. */
+  genres: GenreKey[];
   /** Clés `tv:ID` des séries marquées vues en entier. */
   completed: string[];
 }
 
-/** Élément affichable sur l'accueil : titre (clé, type, identifiant) et genres TMDB si connus. */
-export interface HomeItemLike {
+/** Champs lus par le filtre, tous optionnels : genres TMDB, langue et pays d'origine, date de sortie ou de première diffusion. */
+export interface ItemFacts {
+  genreIds?: number[];
+  /** `original_language` TMDB (ISO 639-1, ex. `ja`). */
+  originalLanguage?: string;
+  /** `origin_country` TMDB, séries surtout (ISO 3166-1, ex. `JP`). */
+  originCountry?: string[];
+  /** Date de sortie ou de première diffusion (`AAAA-MM-JJ`). */
+  date?: string;
+}
+
+/** Élément affichable sur l'accueil : titre (clé, type, identifiant) et champs du filtre si connus. */
+export interface HomeItemLike extends ItemFacts {
   key?: string;
   type: 'movie' | 'tv';
   id: number;
-  genreIds?: number[];
 }
 
 /** Genres proposés dans les réglages (libellés français). Les doublons TMDB (films / séries) partagent une puce. */
-export const GENRE_OPTIONS: ReadonlyArray<{ label: string; ids: number[] }> = [
+export const GENRE_OPTIONS: ReadonlyArray<{ label: string; ids: GenreKey[] }> = [
   { label: 'Action', ids: [28, 10759] },
   { label: 'Aventure', ids: [12] },
   { label: 'Animation', ids: [16] },
+  { label: 'Anime', ids: ['anime'] },
   { label: 'Comédie', ids: [35] },
   { label: 'Crime', ids: [80] },
   { label: 'Documentaire', ids: [99] },
@@ -57,10 +74,53 @@ export const GENRE_OPTIONS: ReadonlyArray<{ label: string; ids: number[] }> = [
   { label: 'Western', ids: [37] },
   { label: 'Téléfilm', ids: [10770] },
   { label: 'Feuilleton', ids: [10766] },
+  { label: 'Télénovelas', ids: ['telenovela'] },
   { label: 'Talk-show', ids: [10767] },
   { label: 'Téléréalité', ids: [10764] },
   { label: 'Actualités', ids: [10763] },
+  { label: 'K-drama', ids: ['kdrama'] },
+  { label: 'Bollywood (cinéma indien)', ids: ['bollywood'] },
+  { label: 'Cinéma chinois', ids: ['chinese'] },
+  { label: 'Classiques (avant 1980)', ids: ['classics'] },
 ];
+
+const isDerivedKey = (g: unknown): g is DerivedKey => typeof g === 'string' && (DERIVED_KEYS as readonly string[]).includes(g);
+/** Vrai pour un identifiant TMDB entier ou une clé dérivée connue ; le reste est écarté à la lecture. */
+export const isGenreKey = (g: unknown): g is GenreKey => (typeof g === 'number' && Number.isInteger(g)) || isDerivedKey(g);
+
+const INDIAN_LANGUAGES: readonly string[] = ['hi', 'ta', 'te', 'ml', 'kn'];
+const CHINESE_LANGUAGES: readonly string[] = ['zh', 'cn'];
+const TELENOVELA_LANGUAGES: readonly string[] = ['es', 'pt'];
+
+/** Année de sortie ou de première diffusion, ou null si la date est inconnue. */
+const yearOf = (date: string | undefined): number | null => {
+  const m = /^(\d{4})-/.exec(date ?? '');
+  return m ? Number(m[1]) : null;
+};
+
+/**
+ * Catégories dérivées : TMDB n'a ni genre « anime », ni « K-drama », ni « télénovela ». Un élément dont l'information
+ * manque n'est jamais exclu (pas de faux positif).
+ */
+const DERIVED: Record<DerivedKey, (it: ItemFacts) => boolean> = {
+  anime: (it) => (it.genreIds ?? []).includes(16) && (it.originalLanguage === 'ja' || (it.originCountry ?? []).includes('JP')),
+  kdrama: (it) => it.originalLanguage === 'ko',
+  bollywood: (it) => INDIAN_LANGUAGES.includes(it.originalLanguage ?? ''),
+  chinese: (it) => CHINESE_LANGUAGES.includes(it.originalLanguage ?? ''),
+  telenovela: (it) => (it.genreIds ?? []).includes(10766) && TELENOVELA_LANGUAGES.includes(it.originalLanguage ?? ''),
+  classics: (it) => {
+    const year = yearOf(it.date);
+    return year !== null && year < 1980;
+  },
+};
+
+/** Ordre stable des genres : identifiants TMDB croissants, puis clés dérivées par ordre alphabétique. */
+const sortGenres = (list: GenreKey[]): GenreKey[] => [...list].sort((a, b) => {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  if (typeof a === 'number') return -1;
+  if (typeof b === 'number') return 1;
+  return a.localeCompare(b);
+});
 
 export const HOME_FILTERS_KEY_PREFIX = 'laststream.homeFilters.';
 /** Morceaux par liste dans les réglages du compte. */
@@ -173,7 +233,7 @@ const isHiddenEntry = (x: unknown): x is HiddenEntry => {
 export function normalizeFilters(raw: unknown): HomeFilters {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const hidden = Array.isArray(r.hidden) ? r.hidden.filter(isHiddenEntry) : [];
-  const genres = Array.isArray(r.genres) ? [...new Set(r.genres.filter((g): g is number => Number.isInteger(g)))] : [];
+  const genres = Array.isArray(r.genres) ? [...new Set(r.genres.filter(isGenreKey))] : [];
   const completed = Array.isArray(r.completed) ? [...new Set(r.completed.filter((k): k is string => typeof k === 'string' && /^tv:\d+$/.test(k)))] : [];
   return { hidden, genres, completed };
 }
@@ -410,18 +470,33 @@ export function unhideTitle(key: string): HiddenEntry | null {
 
 export const isHiddenKey = (key: string): boolean => currentFilters().hidden.some((h) => h.key === key);
 
-/** Bannit (ou lève le bannissement de) plusieurs identifiants de genre, par exemple les deux ids d'une même puce. */
-export function setGenreBanned(ids: number[], banned: boolean): void {
+/** Bannit (ou lève le bannissement de) plusieurs genres, par exemple les deux ids d'une même puce. */
+export function setGenreBanned(ids: GenreKey[], banned: boolean): void {
   const f = currentFilters();
-  const genres = banned ? [...new Set([...f.genres, ...ids])] : f.genres.filter((g) => !ids.includes(g));
+  const keys = ids.filter(isGenreKey);
+  const genres = banned ? [...new Set([...f.genres, ...keys])] : f.genres.filter((g) => !keys.includes(g));
   save(profileId(), { ...f, genres });
 }
 
-export const bannedGenreIds = (): Set<number> => new Set(currentFilters().genres);
+export const bannedGenreIds = (): Set<GenreKey> => new Set(currentFilters().genres);
 
-/** Vrai si un élément porte un genre banni (liste `genreIds` de TMDB). */
-export function isBannedGenre(item: { genreIds?: number[] }, banned: ReadonlySet<number> = bannedGenreIds()): boolean {
-  return (item.genreIds ?? []).some((g) => banned.has(g));
+/** Vrai si un élément porte un genre banni : identifiant TMDB dans `genreIds`, ou catégorie dérivée qui le décrit. */
+export function isBannedGenre(item: ItemFacts, banned: ReadonlySet<GenreKey> = bannedGenreIds()): boolean {
+  const ids = item.genreIds ?? [];
+  for (const g of banned) {
+    if (typeof g === 'number' ? ids.includes(g) : DERIVED[g](item)) return true;
+  }
+  return false;
+}
+
+/** Champs que lisent les filtres, depuis un résultat TMDB brut (listes, tendances, recherche, moteur de collections). */
+export function homeFacts(raw: Record<string, unknown>): ItemFacts & { genreIds: number[] } {
+  return {
+    genreIds: Array.isArray(raw.genre_ids) ? raw.genre_ids.filter((g): g is number => typeof g === 'number') : [],
+    originalLanguage: typeof raw.original_language === 'string' ? raw.original_language : undefined,
+    originCountry: Array.isArray(raw.origin_country) ? raw.origin_country.filter((c): c is string => typeof c === 'string') : undefined,
+    date: String(raw.release_date || raw.first_air_date || ''),
+  };
 }
 
 /** Enregistre (ou retire) une série marquée vue en entier. Toute décision « non vue » la retire. */
@@ -497,7 +572,7 @@ const hasAny = (f: HomeFilters): boolean => f.hidden.length > 0 || f.genres.leng
 
 const canonical = (f: HomeFilters): string => jsonOf({
   h: [...f.hidden].sort((a, b) => a.key.localeCompare(b.key)),
-  g: [...f.genres].sort((a, b) => a - b),
+  g: sortGenres(f.genres),
   c: [...f.completed].sort(),
 });
 
@@ -521,7 +596,7 @@ export function mergeFilters(a: HomeFilters, b: HomeFilters): HomeFilters {
   if (hidden.length < before) console.warn(`[laststream] ${before - hidden.length} titre(s) masqué(s) les plus anciens écartés à la fusion : capacité du compte atteinte.`);
   return {
     hidden,
-    genres: [...new Set([...a.genres, ...b.genres])].sort((x, y) => x - y),
+    genres: sortGenres([...new Set([...a.genres, ...b.genres])]),
     completed: [...new Set([...a.completed, ...b.completed])].sort(),
   };
 }

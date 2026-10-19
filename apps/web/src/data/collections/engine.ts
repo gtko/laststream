@@ -9,7 +9,7 @@
  * alternant les sources pour qu'aucune ne domine. Les lots défilent source par source, puis page TMDB par page TMDB.
  */
 import { isKidProfile } from '../auth';
-import { keepVisible } from '../homeFilters';
+import { homeFacts, keepVisible, type ItemFacts } from '../homeFilters';
 import { kidGenreOk } from '../kid';
 import { tmdb } from '../lt';
 import type { Params } from '../lt';
@@ -167,7 +167,7 @@ export function newCtx(o: { sort?: SortKey; media?: Media | 'all' } = {}): Resol
 }
 
 /** Titre réduit à ce que lisent les filtres de l'accueil. */
-export interface LightTitle {
+export interface LightTitle extends ItemFacts {
   r: RawTitle;
   type: Media;
   id: number;
@@ -297,7 +297,7 @@ export async function resolveFolder(folder: Folder, page: number, ctx: ResolveCt
     if (!d || d > today) return false; // titre non sorti ou sans date
     return true;
   });
-  const light = merged.map((r) => ({ r, type: r.media_type, id: r.id, key: keyOf(r), genreIds: (r.genre_ids ?? []) as number[] }));
+  const light = merged.map((r) => ({ r, type: r.media_type, id: r.id, key: keyOf(r), ...homeFacts(r) }));
   let kept = visible(light);
   if (kid) kept = kept.filter((x) => kidGenreOk(x.genreIds));
   const items: RawTitle[] = [];

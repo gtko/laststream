@@ -30,6 +30,8 @@ export function toggleHidden(key, title, poster) {
 }
 
 const plural = (n, one, many) => n + ' ' + (n > 1 ? many : one);
+/** Clé d'un genre depuis l'attribut `data-ban-genre` : identifiant TMDB (nombre) ou clé d'une catégorie dérivée (« anime »). */
+const genreKeyOf = (s) => (/^\d+$/.test(s) ? Number(s) : s);
 
 /** Titres masqués : une seule ligne compacte avec « Gérer » (vue dédiée #/hidden), ou l'état vide sans bouton. */
 function hiddenLineHTML(n) {
@@ -80,7 +82,7 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const on = gc.getAttribute('aria-checked') !== 'true';
     gc.setAttribute('aria-checked', String(on));
-    setGenreBanned(gc.dataset.banGenre.split(',').map(Number), on);
+    setGenreBanned(gc.dataset.banGenre.split(',').map(genreKeyOf), on);
     refreshHome(gc.closest('.set-panel'));
     return;
   }

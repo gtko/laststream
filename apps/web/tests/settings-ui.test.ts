@@ -111,7 +111,7 @@ describe('Accueil et recommandations', () => {
     const { bannedGenreIds } = await import('../src/data/homeFilters');
     const h = page().querySelector('#set-p-home') as HTMLElement;
     const chips = Array.from(h.querySelectorAll('[data-ban-genre]')) as HTMLElement[];
-    expect(chips.length).toBe(24);
+    expect(chips.length).toBe(30); // 24 genres TMDB regroupés + 6 catégories dérivées (Anime, K-drama…)
     expect(chips.every((c) => c.getAttribute('role') === 'checkbox' && c.getAttribute('aria-checked') === 'false')).toBe(true);
     const counter = h.querySelector('[data-genre-count]') as HTMLElement;
     const reset = h.querySelector('[data-genres-reset]') as HTMLButtonElement;
@@ -127,6 +127,12 @@ describe('Accueil et recommandations', () => {
 
     click(chips[11]);
     expect(counter.textContent).toBe('1 genre exclu');
+
+    const anime = h.querySelector('[data-ban-genre="anime"]') as HTMLElement; // clé dérivée : pas un identifiant TMDB
+    click(anime);
+    expect(anime.getAttribute('aria-checked')).toBe('true');
+    expect(bannedGenreIds().has('anime')).toBe(true);
+    expect(counter.textContent).toBe('2 genres exclus');
 
     click(reset);
     expect(bannedGenreIds().size).toBe(0);

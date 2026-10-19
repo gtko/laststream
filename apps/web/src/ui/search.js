@@ -21,7 +21,7 @@ import { observeTiles, posterCard } from './tiles.js';
 import { exploreMenuHTML, topActionsHTML } from './topnav.js';
 import { esc, plural } from './util.js';
 import { kindOf, rankResults, resultKey, splitBanned, titleMatch } from './searchRank.js';
-import { isBannedGenre } from '../data/homeFilters';
+import { homeFacts, isBannedGenre } from '../data/homeFilters';
 
 const DEBOUNCE_MS = 300;
 const RECENT_MAX = 8;
@@ -367,7 +367,7 @@ async function loadTrending(my) {
     const json = await tmdb('trending/all/week');
     if (my !== seq || state.kind !== 'search' || !row.isConnected) return;
     // Tendances : les genres bannis sont retirés (et non rangés en fin de liste).
-    const items = await filterAvailable(filterResults(json.results, isKidProfile()).filter((r) => !isBannedGenre({ genreIds: r.genre_ids })).map((r) => register(toItem(r, r.media_type))));
+    const items = await filterAvailable(filterResults(json.results, isKidProfile()).filter((r) => !isBannedGenre(homeFacts(r))).map((r) => register(toItem(r, r.media_type))));
     if (my !== seq || state.kind !== 'search' || !row.isConnected) return;
     row.innerHTML = items.length ? items.map((it) => posterCard(it)).join('') : '<p class="row-msg">Rien à afficher pour le moment.</p>';
     observeTiles(row);
