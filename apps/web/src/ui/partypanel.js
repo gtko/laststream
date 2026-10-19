@@ -48,6 +48,7 @@ function inviteHTML(c) {
   const compat = compatHTML();
   compatShown = compat;
   return '<section class="wp-invite"><button type="button" class="btn btn-ghost btn-sm" data-wp-invite>Copier le lien d’invitation</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button>' +
     (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
     '<p class="wp-note">Invités : <b data-wp-guests>' + guestCount(c) + '</b></p>' +
     '<p class="wp-note wp-warn">Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.</p>' +
@@ -258,11 +259,14 @@ export function copyLink(id) {
   return copyText(roomLink(id), 'Lien du salon copié');
 }
 
-/** Crée un lien d'invitation (hôte seulement), le copie et l'affiche dans le panneau. Lève une erreur si l'invitation échoue. */
-async function inviteLink() {
-  const inv = await partyBridge.createInvite();
+/**
+ * Copie le lien d'invitation du salon (hôte seulement) et l'affiche dans le panneau. Un seul lien pour tous les invités ;
+ * `rotate` (« Nouveau lien ») invalide l'ancien. Lève une erreur si l'invitation échoue.
+ */
+async function inviteLink(rotate = false) {
+  const inv = await partyBridge.createInvite(rotate);
   lastInviteUrl = joinLinkOf(shareBase(), inv.roomId, inv.token);
-  await copyText(lastInviteUrl, 'Lien d’invitation copié');
+  await copyText(lastInviteUrl, rotate ? 'Nouveau lien copié : l’ancien ne fonctionne plus' : 'Lien d’invitation copié');
 }
 
 /** Bascule sur la meilleure source compatible avec tous les invités (même position), ou le dit. */
@@ -289,9 +293,9 @@ async function switchCompatible() {
   render();
 }
 
-async function invite() {
+async function invite(rotate = false) {
   try {
-    await inviteLink();
+    await inviteLink(rotate);
   } catch (err) {
     toast(err instanceof UserApiError && err.code === 'not_host' ? 'Seul l’hôte peut inviter.' : 'Invitation impossible pour le moment.');
   }
@@ -327,6 +331,7 @@ function onClick(e) {
   const c = partyBridge.client;
   if (t.closest('[data-wp-close]')) { togglePartyPanel(false); return; }
   if (t.closest('[data-wp-invite]') && c) { void invite(); return; }
+  if (t.closest('[data-wp-newlink]') && c) { void invite(true); return; }
   if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }
   if (t.closest('[data-wp-copy]') && c && c.room) { copyLink(c.room.id); return; }
   // Quitter ferme le panneau : sans salon, il n'affichait que le formulaire de création.

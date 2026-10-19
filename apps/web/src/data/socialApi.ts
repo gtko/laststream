@@ -221,3 +221,18 @@ export interface PartyInvite {
   expiresAt: string;
 }
 export const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId } });
+/**
+ * Lien d'invitation partagé du salon (hôte seulement) : un seul jeton multi-usage, non lié à un pseudo, valable jusqu'à la fin
+ * du salon. `rotate` (« Nouveau lien ») invalide les liens précédents ; sans lui, le lien rendu est toujours le même.
+ */
+export const createPartyInviteLink = (id: string, profileId: string, rotate = false) =>
+  call<PartyInvite>('/' + enc(id) + '/invite-link', { ...party, method: 'POST', body: { profileId, rotate } });
+/** Séance d'un invité entré par le lien partagé : jeton individuel (à présenter à la WebSocket) et pseudo attribué (unique). */
+export interface GuestEntry {
+  sessionToken: string;
+  expiresAt: string;
+  name: string;
+}
+/** Entrée d'un invité (sans compte) : jeton du lien + pseudo souhaité. */
+export const enterPartyAsGuest = (id: string, token: string, name: string) =>
+  call<GuestEntry>('/' + enc(id) + '/guest', { ...party, method: 'POST', body: { token, name }, anonymous: true });

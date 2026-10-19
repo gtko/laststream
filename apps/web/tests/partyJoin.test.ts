@@ -2,7 +2,9 @@
 // `rtc` du client de salon (envoi et réception).
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../src/party/client';
-import { cleanPseudo, endText, guestWsPath, joinLinkOf, parseJoinHash, refusedText, relayErrorText } from '../src/party/join';
+import {
+  cleanPseudo, clearGuestSession, endText, entryErrorText, guestWsPath, joinLinkOf, loadGuestSession, parseJoinHash, refusedText, relayErrorText, saveGuestSession,
+} from '../src/party/join';
 import { parseRtcFrame } from '../src/party/protocol';
 
 class FakeSocket implements SocketLike {
@@ -103,5 +105,66 @@ describe('signalisation rtc du salon', () => {
     s.recv({ t: 'error', code: 'rate_limited' });
     expect(got).toEqual([{ from: 'h1', data: { t: 'offer', sdp: 'v=0' } }]);
     client.close();
+  });
+});
+
+/** Stockage d'onglet simulé. */
+function memoryStorage(initial: Record<string, string> = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    getItem: (k: string) => data.get(k) ?? null,
+    setItem: (k: string, v: string) => { data.set(k, v); },
+    removeItem: (k: string) => { data.delete(k); },
+  };
+}
+
+describe('séance d’invité du lien partagé (sessionStorage)', () => {
+  const NOW = Date.UTC(2026, 9, 19, 12, 0, 0);
+  const session = { sessionToken: 'abcdefgh.ijklmnop-1234', name: 'Léa 2', expiresAt: new Date(NOW + 3600_000).toISOString() };
+
+  it('mémorise puis relit la séance d’un salon, sans toucher aux autres salons', () => {
+    const store = memoryStorage();
+    saveGuestSession('R1', session, store);
+    expect(loadGuestSession('R1', NOW, store)).toEqual(session);
+    expect(loadGuestSession('R2', NOW, store)).toBeNull();
+    clearGuestSession('R1', store);
+    expect(loadGuestSession('R1', NOW, store)).toBeNull();
+  });
+
+  it('oublie une séance expirée ou mal formée', () => {
+    const store = memoryStorage();
+    saveGuestSession('R1', session, store);
+    expect(loadGuestSession('R1', NOW + 3600_000, store)).toBeNull();
+    expect(store.data.size).toBe(0);
+    store.setItem('ls.party.guest.R1', '{pas du json');
+    expect(loadGuestSession('R1', NOW, store)).toBeNull();
+    store.setItem('ls.party.guest.R1', JSON.stringify({ ...session, sessionToken: 'court' }));
+    expect(loadGuestSession('R1', NOW, store)).toBeNull();
+    store.setItem('ls.party.guest.R1', JSON.stringify({ ...session, name: '   ' }));
+    expect(loadGuestSession('R1', NOW, store)).toBeNull();
+  });
+
+  it('stockage absent ou qui lève : aucune exception, la page fonctionne sans', () => {
+    const broken = {
+      getItem: () => { throw new Error('bloqué'); },
+      setItem: () => { throw new Error('bloqué'); },
+      removeItem: () => { throw new Error('bloqué'); },
+    };
+    expect(() => saveGuestSession('R1', session, broken)).not.toThrow();
+    expect(loadGuestSession('R1', NOW, broken)).toBeNull();
+    expect(() => clearGuestSession('R1', broken)).not.toThrow();
+    expect(() => saveGuestSession('R1', session, null)).not.toThrow();
+    expect(loadGuestSession('R1', NOW, null)).toBeNull();
+  });
+
+  it('messages d’entrée : codes connus, jamais d’adresse', () => {
+    expect(entryErrorText('invite_revoked')).toContain('nouveau lien');
+    expect(entryErrorText('invite_invalid')).toContain('expiré');
+    expect(entryErrorText('room_full')).toBe('Le salon est complet.');
+    expect(entryErrorText('guest_limit')).toBe('Le salon est complet.');
+    for (const code of ['invite_revoked', 'invite_invalid', 'room_not_found', 'too_many_entries', 'invalid_name', 'network', 'autre']) {
+      expect(entryErrorText(code)).not.toMatch(/https?:|\/\//);
+    }
   });
 });
