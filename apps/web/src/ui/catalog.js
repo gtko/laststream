@@ -1,7 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { hasProviders, movieAvailability, releasedByDate } from '../data/released';
 import { dayDiff, todayStr } from './dates.js';
-import { completeVideos, includeVideoLanguages, pickTrailerKey, trailerLang } from '../data/trailers';
+import { completeVideos, includeVideoLanguages, pickTrailer as pickFromVideos, trailerLang } from '../data/trailers';
 import { api, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
@@ -51,8 +51,10 @@ export function pickLogo(logos, size) {
   return IMG(size || 'w500', pool[0].file_path);
 }
 
-export function pickTrailer(videos) {
-  return pickTrailerKey(videos, trailerLang());
+/** Champs « bande-annonce » d'un détail : clé YouTube, et vrai si elle n'est pas doublée dans la langue choisie (VO). */
+export function trailerFields(videos) {
+  const t = pickFromVideos(videos, trailerLang());
+  return { trailer: t.key, trailerVO: t.vo };
 }
 
 export function certification(raw, type) {
@@ -149,7 +151,7 @@ export async function fetchDetail(item, { ratings = false } = {}) {
     overview,
     tagline: raw.tagline || '',
     logo: pickLogo(raw.images && raw.images.logos, 'w500'),
-    trailer: pickTrailer(await videosOf(raw, item.type, item.id)),
+    ...trailerFields(await videosOf(raw, item.type, item.id)),
     genres: (raw.genres || []).map((g) => g.name),
     minutes: runtime,
     runtime: fmtMin(runtime),

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  audioLangOf, completeVideos, hasTrailerInLang, includeVideoLanguages, isTrailerCandidate, mergeVideos, pickTrailerKey,
-  trailerFallbackTags, type TmdbVideo, videoTier,
+  audioLangOf, captionParams, completeVideos, hasTrailerInLang, includeVideoLanguages, isTrailerCandidate, isVoVideo, mergeVideos,
+  pickTrailer, pickTrailerKey, trailerFallbackTags, trailerLang, type TmdbVideo, type TrailerLang, videoTier,
 } from '../src/data/trailers';
 
 const fr = { lang: 'fr', tag: 'fr-FR', country: 'FR' };
@@ -145,5 +145,84 @@ describe('repli : langue, saison 1, régions, anglais', () => {
     expect(mergeVideos(a, [v({ key: 'x' }), v({ key: 'y' })]).map((x) => x.key)).toEqual(['x', 'y']);
     expect(hasTrailerInLang([v({ key: 'en' })], fr)).toBe(false);
     expect(hasTrailerInLang([v({ key: 'vf', name: 'VF' })], fr)).toBe(true);
+  });
+});
+
+describe('scénario : liste TMDB simulée', () => {
+  it('fr VOST, fr VF, en official, sans langue → la VF', () => {
+    const list = [
+      v({ key: 'vostfr', name: 'Bande-annonce VOSTFR', iso_639_1: 'fr' }),
+      v({ key: 'vf', name: 'Bande-annonce VF', iso_639_1: 'fr' }),
+      v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en', official: true }),
+      v({ key: 'nul', name: 'Trailer', iso_639_1: null, official: true }),
+    ];
+    expect(pickTrailer(list, fr)).toEqual({ key: 'vf', vo: false });
+  });
+
+  it('pas de fr → anglais officiel, VO signalée, sous-titres français seulement dans ce cas', () => {
+    const pick = pickTrailer([v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en', official: true })], fr);
+    expect(pick).toEqual({ key: 'en', vo: true });
+    expect(captionParams(pick.vo, fr)).toBe('hl=fr&cc_lang_pref=fr&cc_load_policy=1');
+    expect(captionParams(false, fr)).toBe('');
+  });
+
+  it('une VF choisie n’est pas marquée VO, un VOSTFR l’est', () => {
+    expect(isVoVideo(v({ name: 'Bande-annonce VF', iso_639_1: 'fr' }), fr)).toBe(false);
+    expect(isVoVideo(v({ name: 'Bande-annonce VOSTFR', iso_639_1: 'fr' }), fr)).toBe(true);
+    expect(pickTrailer([], fr)).toEqual({ key: '', vo: false });
+  });
+
+  it('sans langue passe avant l’anglais', () => {
+    expect(pickTrailerKey([v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en' }), v({ key: 'nul', name: 'Trailer', iso_639_1: null })], fr)).toBe('nul');
+  });
+
+  it('langue secondaire passe avant l’anglais et les vidéos sans langue', () => {
+    const pref: TrailerLang = { ...fr, secondary: 'es' };
+    const en = v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en' });
+    const nul = v({ key: 'nul', name: 'Trailer', iso_639_1: null });
+    const es = v({ key: 'es', name: 'Tráiler oficial', iso_639_1: 'es' });
+    expect(pickTrailerKey([en, nul, es], pref)).toBe('es');
+    expect(pickTrailerKey([en, nul], pref)).toBe('nul');
+  });
+
+  it('teaser VF avant bande-annonce anglaise : la langue prime sur la nature', () => {
+    expect(pickTrailerKey([v({ key: 'en', name: 'Official Trailer' }), v({ key: 'tvf', type: 'Teaser', name: 'Teaser VF', iso_639_1: 'fr' })], fr)).toBe('tvf');
+  });
+
+  it('clip après toutes les bandes-annonces et teasers, mais admis en dernier recours', () => {
+    const clipVf = v({ key: 'clip', type: 'Clip', name: 'VF Clip', iso_639_1: 'fr' });
+    const en = v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en' });
+    expect(pickTrailerKey([clipVf, en], fr)).toBe('en');
+    expect(pickTrailerKey([clipVf], fr)).toBe('clip');
+    expect(isTrailerCandidate(v({ key: 'c', type: 'Clip', name: 'Clip' }))).toBe(true);
+    expect(isTrailerCandidate(v({ key: 'c', type: 'Trailer', name: 'Clip VF' }))).toBe(false);
+  });
+});
+
+describe('include_video_language', () => {
+  it('langue, secondaire (anglais à défaut), sans langue, anglais, sans doublon', () => {
+    expect(includeVideoLanguages(fr)).toBe('fr,en,null');
+    expect(includeVideoLanguages({ ...fr, secondary: 'es' })).toBe('fr,es,null,en');
+    expect(includeVideoLanguages({ ...fr, secondary: 'en' })).toBe('fr,en,null');
+    expect(includeVideoLanguages({ lang: 'en', tag: 'en-US', country: 'US' })).toBe('en,null');
+  });
+});
+
+describe('langue des bandes-annonces lue dans les réglages', () => {
+  beforeEach(() => localStorage.clear());
+
+  it('audio principal et secondaire des réglages', () => {
+    localStorage.setItem('laststream.langprefs', JSON.stringify({ audio: 'fr', audio2: 'es' }));
+    expect(trailerLang()).toMatchObject({ lang: 'fr', tag: 'fr-FR', secondary: 'es' });
+  });
+
+  it('version originale en secondaire : pas de secondaire', () => {
+    localStorage.setItem('laststream.langprefs', JSON.stringify({ audio: 'fr', audio2: 'vo' }));
+    expect(trailerLang().secondary).toBeUndefined();
+  });
+
+  it('version originale en principal : repli sur l’ancien réglage de langue', () => {
+    localStorage.setItem('laststream.langprefs', JSON.stringify({ audio: 'vo', audio2: 'none' }));
+    expect(trailerLang().lang).toBe('fr');
   });
 });

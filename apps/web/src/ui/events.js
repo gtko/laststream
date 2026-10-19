@@ -16,7 +16,7 @@ import { renderLibrary, renderLibraryPage, toggleLib } from './library.js';
 import { closeModal, focusables, openModal, openTrailer, openVideo } from './modal.js';
 import { renderFilmography } from './person.js';
 import { openPlayer, playerKey } from './player.js';
-import { cancelDwell, postYT, stopPreview } from './preview.js';
+import { cancelDwell, paintSound, postYT, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
@@ -35,9 +35,7 @@ document.addEventListener('click', (e) => {
     if (!p) return;
     p.muted = !p.muted;
     postYT(p.iframe, p.muted ? 'mute' : 'unMute');
-    p.btn.textContent = p.muted ? 'Son' : 'Couper le son';
-    p.btn.setAttribute('aria-pressed', String(!p.muted));
-    p.btn.setAttribute('aria-label', p.muted ? 'Activer le son' : 'Couper le son');
+    paintSound(p.btn, p.muted);
     return;
   }
   const scroll = t.closest('[data-scroll]');
@@ -191,7 +189,7 @@ document.addEventListener('click', (e) => {
   const vid = t.closest('[data-vid]');
   if (vid) {
     e.preventDefault();
-    openVideo(vid.dataset.vid, vid.dataset.vtitle || 'Vidéo', vid);
+    openVideo(vid.dataset.vid, vid.dataset.vtitle || 'Vidéo', vid, vid.dataset.vo === '1');
     return;
   }
   const fs = t.closest('[data-fsound]');

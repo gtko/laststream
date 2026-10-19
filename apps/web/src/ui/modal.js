@@ -1,4 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { captionParams } from '../data/trailers';
 import { getDetail } from './catalog.js';
 import { modal, modalBody, modalBox, modalClose } from './dom.js';
 import { heroVideoSync } from './heroVideo.js';
@@ -10,11 +11,13 @@ import { esc } from './util.js';
 export async function openTrailer(it, opener) {
   const d = await getDetail(it);
   if (!d || !d.trailer) return;
-  openVideo(d.trailer, 'Bande-annonce : ' + it.name, opener);
+  openVideo(d.trailer, 'Bande-annonce : ' + it.name, opener, d.trailerVO);
 }
 
-export function openVideo(key, title, opener) {
-  const src = ytSrc(key, 'autoplay=1&rel=0&modestbranding=1&playsinline=1');
+/** Lecteur avec son. `vo` : sous-titres dans la langue principale, seulement si la vidéo n'y est pas doublée. */
+export function openVideo(key, title, opener, vo = false) {
+  const caps = captionParams(!!vo);
+  const src = ytSrc(key, 'autoplay=1&rel=0&modestbranding=1&playsinline=1' + (caps ? '&' + caps : ''));
   openModal(
     '<h2 id="modal-title" class="sr-only">' + esc(title) + '</h2>' +
     '<div class="video"><iframe src="' + esc(src) + '" title="' + esc(title) +
