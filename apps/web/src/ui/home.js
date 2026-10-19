@@ -1,18 +1,20 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { filterAvailable } from './avail.js';
 import { isReleasedItem } from './dates.js';
-import { continueCardHTML, hydrateContinue } from './continue.js';
+import { continueCardHTML, continueSig, hydrateContinue, isSeriesEnded } from './continue.js';
 import { renderFollowRow } from './calendar.js';
 import { starsText } from './rate.js';
 import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs, saveRecs, todayLocal } from '../data/recs';
 import { HERO_MAX, heroCarousel, initHero, prepareSingle, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
-import { auth, canAdmin, isKidProfile, isServerMode } from '../data/auth';
+import { auth, canAdmin, isKidProfile, isServerMode, refreshRemote } from '../data/auth';
 import { isConfigured } from '../data/config';
+import { onDataEvent } from '../data/events';
 import { recommend, tmdb } from '../data/lt';
 import { userStore } from '../data/userStore';
-import { keepVisible } from '../data/homeFilters';
+import { keepVisible, onHomeChange } from '../data/homeFilters';
+import { isPlayerOpen } from '../player/session.js';
 import { ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
 import { getDetail, listOf, register, toItem } from './catalog.js';
 import { TABS } from './constants.js';
@@ -21,6 +23,7 @@ import { app } from './dom.js';
 import { brand, row, section } from './fragments.js';
 import { ICON } from './icons.js';
 import { renderLibrary } from './library.js';
+import { keepRowState } from './rows.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
@@ -322,6 +325,8 @@ export function renderHome() {
     return;
   }
   const d = visibleHome(state.data);
+  homeStale = false;
+  startHomeLive();
   app.innerHTML = (d.kids ? viewKids(d) : viewA(d)) + footer() + tabbar();
   syncTopbar();
   hydrateContinue(document.getElementById('cont-slot'));
@@ -367,18 +372,101 @@ export function recoSeed() {
   return { history: history.slice(0, 10), liked: history.slice(0, 3), ratings };
 }
 
-/** « Reprendre la lecture » : uniquement la progression réelle ; rien tant qu'il n'y en a pas. */
+/**
+ * « Reprendre la lecture » : la progression réelle, sans les titres vus, masqués ou aux genres bannis (même filtre que
+ * le reste de l'accueil) ni les séries dont la carte a été retirée. Rien tant qu'il n'y en a pas.
+ */
+function continueList() {
+  return keepVisible(userStore.continueWatching(50)).filter((p) => !isSeriesEnded(p)).slice(0, 10);
+}
+
 export function continueSection() {
-  const real = userStore.continueWatching(10);
+  const real = continueList();
   if (!real.length) return '';
   return section('reprendre', 'Reprendre la lecture', real, (l) => row(l.map(continueCardHTML).join('')));
 }
 
-/** Rafraîchit « Reprendre la lecture » au retour sur l'accueil. */
+const cardOf = (html) => {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  return tpl.content.firstElementChild;
+};
+
+/**
+ * Rafraîchit « Reprendre la lecture » sans rechargement : les cartes inchangées sont gardées (image, logo, focus), les
+ * autres sont refaites, et l'ordre (récent d'abord) suit la progression. Sans effet si rien n'a changé.
+ */
 export function renderContinue() {
   const slot = document.getElementById('cont-slot');
   if (!slot) return;
-  slot.innerHTML = continueSection();
+  const list = continueList();
+  if (!list.length) { slot.innerHTML = ''; return; }
+  const rowEl = slot.querySelector('.row');
+  if (!rowEl) {
+    slot.innerHTML = continueSection();
+    observeTiles(slot);
+    hydrateContinue(slot);
+    return;
+  }
+  const have = new Map(Array.from(rowEl.querySelectorAll('.cont-card')).map((c) => [c.dataset.resume, c]));
+  const nodes = list.map((p) => {
+    const old = have.get(p.key);
+    return old && old.dataset.sig === continueSig(p) ? old : cardOf(continueCardHTML(p));
+  });
+  const cur = Array.from(rowEl.children);
+  if (nodes.length === cur.length && nodes.every((n, i) => n === cur[i])) return;
+  keepRowState(slot, () => rowEl.replaceChildren(...nodes), 'data-resume');
   observeTiles(slot);
   hydrateContinue(slot);
+}
+
+// ---------- Mise à jour à chaud (sans rechargement) ----------
+/** Vrai quand l'accueil est affiché : ni fiche ni page de compte par-dessus. */
+const homeOnScreen = () => !!document.getElementById('cont-slot') && !app.hidden && !state.inDetail;
+/** Des changements attendent la fermeture du lecteur : il recouvre l'accueil et rend le focus à sa carte d'origine. */
+let homeStale = false;
+
+/** Redessine les rangées qui dépendent des données de l'utilisateur ; sans effet si rien n'a changé. */
+function syncHomeData() {
+  if (!homeOnScreen()) return;
+  if (isPlayerOpen()) { homeStale = true; return; }
+  homeStale = false;
+  renderContinue();
+  renderLibrary();
+}
+
+onDataEvent((e) => {
+  if (e.kind === 'player') { if (homeStale) syncHomeData(); return; }
+  syncHomeData();
+});
+onHomeChange(syncHomeData);
+
+/** Intervalle de resynchronisation avec le compte quand l'accueil est visible. */
+const REMOTE_EVERY_MS = 60_000;
+let remoteAt = 0;
+let remoteBusy = false;
+
+/** Relit le compte (changements faits sur un autre appareil ou profil) ; une relecture à la fois, 5 s au moins entre deux. */
+async function refreshHome() {
+  if (remoteBusy || document.hidden || !homeOnScreen()) return;
+  if (Date.now() - remoteAt < 5000) return;
+  remoteAt = Date.now();
+  remoteBusy = true;
+  try {
+    await refreshRemote();
+  } catch (_) {
+    // Hors ligne : l'accueil garde ce qu'il affiche.
+  } finally {
+    remoteBusy = false;
+  }
+}
+
+let liveOn = false;
+/** Resynchronisation à la reprise du focus ou de la visibilité de la fenêtre, puis toutes les ~60 s. Mise en place une seule fois. */
+function startHomeLive() {
+  if (liveOn) return;
+  liveOn = true;
+  window.addEventListener('focus', () => { void refreshHome(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshHome(); });
+  setInterval(() => { void refreshHome(); }, REMOTE_EVERY_MS);
 }

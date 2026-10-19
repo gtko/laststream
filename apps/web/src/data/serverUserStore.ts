@@ -5,6 +5,7 @@ import {
 } from './userApi';
 import type { FollowEntry, LibraryEntry, Profile, ProgressEntry, RatingEntry, UserStore, WatchedRef } from './userStore';
 import { LocalUserStore, progressKey, watchedKey } from './userStore';
+import { emitDataEvent, type DataKind } from './events';
 
 /* Adaptateur de l'API utilisateur de lastAddon : lectures synchrones depuis un cache hydraté à la connexion,
  * écritures optimistes envoyées en arrière-plan. Le stockage local reste le repli hors ligne (voir auth). */
@@ -63,6 +64,31 @@ export class ServerUserStore implements UserStore {
     await Promise.all([this.loadFollows(), this.loadRatings()]);
   }
 
+  /**
+   * Relit bibliothèque et « Reprendre la lecture » du profil actif : les changements faits sur un autre appareil ou profil
+   * arrivent ainsi sans reconnexion. Si une écriture locale a eu lieu pendant l'appel, le résultat est jeté (le cache local
+   * fait foi). Renvoie vrai si le cache a été mis à jour ; les erreurs réseau remontent à l'appelant.
+   */
+  async refresh(): Promise<boolean> {
+    const id = this.active.id;
+    const before = this.writes;
+    const [lib, cont] = await Promise.all([getLibrary(id), getContinue(id)]);
+    const continueList = await this.enrich(cont.items);
+    if (before !== this.writes) return false;
+    this.library = libraryFromDto(lib.items);
+    this.cont = continueList;
+    emitDataEvent({ kind: 'remote' });
+    return true;
+  }
+
+  /** Nombre d'écritures locales : une relecture commencée avant une écriture ne doit pas l'écraser. */
+  private writes = 0;
+  /** Écriture locale : le cache change, les rangées s'y ajustent sans rechargement. */
+  private changed(kind: DataKind, key?: string): void {
+    this.writes += 1;
+    emitDataEvent({ kind, key });
+  }
+
   private listeners: Array<() => void> = [];
   subscribe(fn: () => void): void {
     this.listeners.push(fn);
@@ -95,6 +121,7 @@ export class ServerUserStore implements UserStore {
           const type = typeOf(i.type);
           const entry: LibraryEntry = { id: hit.id, type, title: i.title || hit.title || hit.name || '', poster: hit.poster_path || '', addedAt: Date.parse(i.addedAt) || 0 };
           if (!this.library.some((x) => x.id === entry.id && x.type === type)) this.library.push(entry);
+          this.writes += 1; // titre résolu, pas encore confirmé par le serveur : une relecture ne doit pas l'effacer
           await putLibrary(this.active.id, i.type, entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster), imdbId: i.imdbId ?? undefined }).catch(() => undefined);
           this.emit();
         } catch {
@@ -180,12 +207,15 @@ export class ServerUserStore implements UserStore {
       const type = typeOf(c.type);
       try {
         const raw = await tmdb<any>(`${type}/${c.tmdbId}`);
+        const ratio = c.durationSec ? c.positionSec / c.durationSec : 0;
         return {
           key: `${type}:${c.tmdbId}`, type, id: c.tmdbId as number,
           title: raw.title || raw.name || '', poster: raw.poster_path || '', backdrop: raw.backdrop_path || '',
           season: c.season ?? undefined, episode: c.episode ?? undefined,
           position: c.positionSec, duration: c.durationSec ?? 0, updatedAt: Date.parse(c.updatedAt) || 0,
           suggested: c.suggested || undefined,
+          // Épisode terminé (plus de 95 %) : la carte propose le suivant, comme après une lecture locale (voir continueWatching).
+          finished: type === 'tv' && ratio > 0.95 ? true : undefined,
         };
       } catch {
         return null;
@@ -205,17 +235,20 @@ export class ServerUserStore implements UserStore {
     if (this.inLibrary(`${entry.type}:${entry.id}`)) return;
     this.library.push({ ...entry, addedAt: entry.addedAt ?? Date.now() });
     putLibrary(this.active.id, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }).catch(() => undefined);
+    this.changed('library', `${entry.type}:${entry.id}`);
   }
   /** Ajout attendu (migration) : le cache n'est mis à jour qu'après la réponse du serveur. */
   async addToLibraryNow(entry: LibraryEntry, profileId: string): Promise<void> {
     await putLibrary(profileId, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) });
     if (!this.inLibrary(`${entry.type}:${entry.id}`)) this.library.push(entry);
+    this.changed('library', `${entry.type}:${entry.id}`);
   }
   removeFromLibrary(key: string): void {
     const e = this.library.find((x) => `${x.type}:${x.id}` === key);
     if (!e) return;
     this.library = this.library.filter((x) => x !== e);
     deleteLibrary(this.active.id, kindOf(e.type), e.id).catch(() => undefined);
+    this.changed('library', key);
   }
   toggleLibrary(entry: Omit<LibraryEntry, 'addedAt'>): boolean {
     const key = `${entry.type}:${entry.id}`;
@@ -257,6 +290,7 @@ export class ServerUserStore implements UserStore {
       type: kindOf(entry.type), tmdbId: entry.id, season: entry.season, episode: entry.episode,
       positionSec: Math.floor(entry.position), durationSec: Math.floor(entry.duration),
     }).catch(() => undefined);
+    this.changed('progress', entry.key);
   }
   continueWatching(limit = 20): ProgressEntry[] {
     return this.cont.slice(0, limit);
@@ -268,6 +302,7 @@ export class ServerUserStore implements UserStore {
     if (!entry) return true;
     this.cont = this.cont.filter((c) => c.key !== key); // optimiste
     this.hidden.push(entry);
+    this.changed('continue', key);
     if (!this.continueApi) return true;
     const [type, id] = key.split(':');
     try {
@@ -276,6 +311,7 @@ export class ServerUserStore implements UserStore {
       if (err instanceof UserApiError && err.status === 404) { this.continueApi = false; return true; } // serveur sans cette route : masqué localement
       this.cont.unshift(entry);
       this.hidden = this.hidden.filter((h) => h !== entry);
+      this.changed('continue', key);
       return false;
     }
     return true;
@@ -285,6 +321,7 @@ export class ServerUserStore implements UserStore {
     if (!entry) return;
     this.hidden = this.hidden.filter((h) => h !== entry);
     this.cont.unshift(entry);
+    this.changed('continue', key);
     // Côté serveur, le titre revient dès la prochaine lecture (la suppression ne touche pas la progression).
   }
 
@@ -330,6 +367,7 @@ export class ServerUserStore implements UserStore {
     const keys = episodes ? refs.map((e) => watchedKey(key, e.season, e.episode)) : [key];
     const before = keys.filter((k) => this.local.getSeen().includes(k));
     this.local.applyWatched(key, episodes, watched); // affichage optimiste
+    this.changed('watched', key);
     if (!this.watchedApi) return true;
     const [type, id] = key.split(':');
     const kind = kindOf(type as 'movie' | 'tv');
@@ -355,6 +393,7 @@ export class ServerUserStore implements UserStore {
         const undo = part.filter((e) => was.has(watchedKey(key, e.season, e.episode)) !== watched);
         if (undo.length) await putWatched(this.active.id, { type: kind, tmdbId: Number(id), episodes: undo, watched: !watched }).catch(() => undefined);
       }
+      this.changed('watched', key);
       return false;
     }
   }

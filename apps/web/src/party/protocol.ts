@@ -65,6 +65,20 @@ export function parseServerMessage(raw: unknown): ServerMsg | null {
   return typeof t === 'string' && SERVER_TYPES.has(t) ? (v as ServerMsg) : null;
 }
 
+/** Signalisation WebRTC relayée par le salon (`{type:'rtc',from,data}`), ou null si la trame n'en est pas une. */
+export function parseRtcFrame(raw: unknown): { from: string; data: unknown } | null {
+  if (typeof raw !== 'string') return null;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof v !== 'object' || v === null) return null;
+  const o = v as { type?: unknown; from?: unknown; data?: unknown };
+  return o.type === 'rtc' && typeof o.from === 'string' && o.data !== undefined ? { from: o.from, data: o.data } : null;
+}
+
 /** Trame à envoyer ; null si elle dépasse 4 Ko (le serveur fermerait la connexion). */
 export function encodeClientMessage(msg: ClientMsg): string | null {
   const s = JSON.stringify(msg);
@@ -72,8 +86,8 @@ export function encodeClientMessage(msg: ClientMsg): string | null {
 }
 
 /** Codes de fermeture après lesquels on ne se reconnecte pas. */
-export const FINAL_CLOSE_CODES: Readonly<Record<number, 'ended' | 'kicked' | 'replaced' | 'full'>> = {
-  4000: 'ended', 4003: 'kicked', 4009: 'replaced', 4010: 'full',
+export const FINAL_CLOSE_CODES: Readonly<Record<number, 'ended' | 'expired' | 'kicked' | 'banned' | 'replaced' | 'full' | 'name_taken' | 'name_changed'>> = {
+  4000: 'ended', 4001: 'expired', 4003: 'kicked', 4004: 'banned', 4009: 'replaced', 4010: 'full', 4011: 'name_taken', 4012: 'name_changed',
 };
 
 /** Messages lisibles des erreurs du salon. */

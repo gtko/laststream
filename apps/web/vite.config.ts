@@ -16,6 +16,6 @@ export default defineConfig({
     environment: 'jsdom',
     testTimeout: 120000,
     hookTimeout: 120000,
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'src/relay/*.test.ts', 'src/relay/player/**/*.test.ts'],
   },
 });

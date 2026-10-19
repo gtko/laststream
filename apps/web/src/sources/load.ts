@@ -43,6 +43,16 @@ const CACHE_MS = 90_000;
 const inflight = new Map<string, { at: number; promise: Promise<LoadedSources> }>();
 /** Une liste partielle ne reste en cache que quelques secondes. */
 const PARTIAL_CACHE_MS = 8_000;
+/** Une liste vide (aucune source, rien en attente) ne reste en cache que 60 s : un addon peut répondre vide avant la sortie. */
+const EMPTY_CACHE_MS = 60_000;
+
+/** Raccourcit la durée de vie du résultat selon son contenu : partielle 8 s, vide 60 s, complète 90 s (inchangée). */
+function shortenCache(key: string, promise: Promise<LoadedSources>, now: number): void {
+  promise.then((r) => {
+    const ttl = r.pending.length ? PARTIAL_CACHE_MS : r.views.length === 0 ? EMPTY_CACHE_MS : undefined;
+    if (ttl !== undefined && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - ttl), promise });
+  }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
+}
 
 export const requestKey = (req: Pick<SourceRequest, 'type' | 'id' | 'season' | 'episode'>): string =>
   [req.type, req.id, req.season ?? '', req.episode ?? ''].join(':');
@@ -126,10 +136,7 @@ export function loadSources(req: SourceRequest, now = Date.now()): Promise<Loade
   if (hit && now - hit.at < CACHE_MS) return hit.promise;
   const promise = fetchSources(req);
   inflight.set(key, { at: now, promise });
-  promise.then((r) => {
-    // Liste partielle : on la garde peu de temps, la suite arrive par `refreshSources`.
-    if (r.pending.length && inflight.get(key)?.promise === promise) inflight.set(key, { at: now - (CACHE_MS - PARTIAL_CACHE_MS), promise });
-  }).catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key); });
+  shortenCache(key, promise, now);
   return promise;
 }
 
@@ -142,8 +149,10 @@ export function clearSourceCache(): void { inflight.clear(); deviceStates.clear(
 
 /** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */
 export async function refreshSources(req: SourceRequest): Promise<LoadedSources> {
+  const now = Date.now();
   const promise = fetchSources(req);
-  inflight.set(requestKey(req), { at: Date.now(), promise });
+  inflight.set(requestKey(req), { at: now, promise });
+  shortenCache(requestKey(req), promise, now);
   return promise;
 }
 
@@ -154,6 +163,10 @@ export function statusChanged(known: { count: number; pending: readonly string[]
 
 export const POLL_EVERY_MS = 2_000;
 export const POLL_MAX_MS = 20_000;
+/** Fenêtre de grâce après la première source lisible (lien HTTP) : le reste de la recherche n'est pas attendu. */
+export const LAUNCH_GRACE_MS = 2_500;
+/** Délai global, depuis le début de l'attente, au-delà duquel on lance dès qu'une source lisible existe. */
+export const LAUNCH_MAX_MS = 8_000;
 
 /**
  * Une interrogation de l'état : renvoie la nouvelle liste si la recherche a avancé, la liste actuelle sans `pending` si elle est
@@ -203,6 +216,62 @@ export function watchSources(req: SourceRequest, start: LoadedSources, onUpdate:
   };
   setTimeout(() => { void step(); }, every);
   return () => { stopped = true; };
+}
+
+/** Attend `work` au plus tard à `at` (epoch ms) : null si le délai est écoulé d'abord. */
+function until<T>(work: Promise<T>, at: number): Promise<T | null> {
+  return Promise.race([work, new Promise<null>((r) => setTimeout(() => r(null), Math.max(0, at - Date.now())))]);
+}
+
+export interface LaunchOptions {
+  request: SourceRequest;
+  /** Début de l'attente (epoch ms) : le délai global court depuis là. Par défaut : maintenant. */
+  since?: number;
+  /** Une source lisible sans attendre existe-t-elle déjà (lien HTTP(S), pas un torrent) ? */
+  readable: (views: readonly SourceView[]) => boolean;
+  /** Recommandation parmi les sources reçues. */
+  recommend: (views: readonly SourceView[]) => Recommendation | null;
+  /** La recommandation satisfait les préférences : on lance sans attendre. */
+  good: (rec: Recommendation | null) => boolean;
+  /** Vrai pour interrompre l'attente (session fermée, « Choisir moi-même »). */
+  stop?: () => boolean;
+  /** Liste complétée pendant l'attente. */
+  onUpdate?: (next: LoadedSources) => void;
+  /** Avant chaque pause : l'écran de chargement affiche l'état courant. */
+  onWait?: (cur: LoadedSources, rec: Recommendation | null) => void;
+}
+
+export interface LaunchChoice {
+  loaded: LoadedSources;
+  rec: Recommendation | null;
+}
+
+/**
+ * Attente avant lancement. Une recommandation qui satisfait les préférences part tout de suite. Sinon, dès qu'une source lisible
+ * est là, on attend la fenêtre de grâce (2,5 s), sans dépasser 8 s depuis `since` ; sans source lisible, on attend le délai
+ * existant (20 s). La recherche qui reste n'est pas attendue : `loaded` renferme ce qui est reçu à cet instant.
+ */
+export async function awaitLaunchable(start: LoadedSources, opts: LaunchOptions): Promise<LaunchChoice> {
+  const t0 = opts.since ?? Date.now();
+  let cur = start;
+  let rec = opts.recommend(cur.views);
+  let readableAt = 0;
+  while (!opts.stop?.() && cur.pending.length && !opts.good(rec)) {
+    const now = Date.now();
+    if (!readableAt && opts.readable(cur.views)) readableAt = now;
+    const deadline = readableAt ? Math.min(readableAt + LAUNCH_GRACE_MS, t0 + LAUNCH_MAX_MS) : t0 + POLL_MAX_MS;
+    if (now >= deadline) break;
+    opts.onWait?.(cur, rec);
+    await new Promise((r) => setTimeout(r, Math.min(POLL_EVERY_MS, deadline - now)));
+    if (opts.stop?.()) break;
+    const next = await until(pollSources(opts.request, cur).catch(() => cur), deadline);
+    if (next && next !== cur) {
+      cur = next;
+      rec = opts.recommend(cur.views);
+      opts.onUpdate?.(cur);
+    }
+  }
+  return { loaded: cur, rec };
 }
 
 const SUPPORTED: readonly Lang[] = ['fr', 'en', 'es', 'de', 'it'];

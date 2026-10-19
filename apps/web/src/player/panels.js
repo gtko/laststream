@@ -6,6 +6,8 @@ import { SPEEDS } from './keys';
 import { offsetLabel } from './subs';
 import { RATE_CHOICES } from './subsync';
 import { isEpFolded } from './epfold.js';
+import { localDay } from './episodes';
+import '../ui/epStill.js'; // repli des vignettes cassées (écouteur global)
 
 export const head = (title, sub) => '<div class="lp-panel-head"><div><h2>' + esc(title) + '</h2>' + (sub ? '<p class="lp-panel-sub">' + esc(sub) + '</p>' : '') + '</div>' +
   '<button type="button" class="lp-btn lp-btn-s" data-act="panel-close" aria-label="Fermer le panneau">' + LI.close + '</button></div>';
@@ -86,17 +88,26 @@ export function episodesHtml(d) {
   const cur = d.current;
   const fmtDate = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso; } };
   const fmtShort = (iso) => { try { return new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }); } catch (_) { return iso; } };
+  const today = localDay(new Date());
   const rows = d.loading ? '<p class="lp-empty">Chargement…</p>' : d.episodes.map((ep) => {
     const on = d.season === cur.season && ep.episode === cur.episode;
     // Diffusé, ou diffusion dans les 14 prochains jours : lisible (la recherche de sources décide), sinon « Bientôt ».
     const open = ep.aired || !!ep.playable;
     const meta = [ep.runtime ? ep.runtime + ' min' : '', ep.airDate ? fmtDate(ep.airDate) : ''].filter(Boolean).join(' · ');
-    const soonBadge = ep.aired ? '' : open ? 'Diffusion TV le ' + fmtShort(ep.airDate) + ' · déjà en ligne ?' : 'Bientôt';
-    const fb = !ep.still; // repli : fond de la série assombri + numéro (jamais de vignette vide)
-    const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' + (ep.still || (fb && d.backdrop) ? '<img src="' + esc(ep.still || d.backdrop) + '" alt="" loading="lazy" decoding="async">' : '') +
-      (fb ? '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' : '') +
+    // Pastille discrète : « Aujourd’hui » pour l’épisode du jour ; « À venir · 21 oct. » pour une diffusion dans la fenêtre
+    // (« peut-être déjà en ligne » dans l’infobulle) ; « Bientôt » au-delà ; rien pour un épisode déjà diffusé.
+    const pill = ep.airDate === today ? { text: 'Aujourd’hui', tip: 'Diffusé aujourd’hui', now: true }
+      : ep.aired ? null
+        : open ? { text: 'À venir · ' + fmtShort(ep.airDate), tip: 'Diffusion TV le ' + fmtDate(ep.airDate) + ' · peut-être déjà en ligne', now: false }
+          : { text: 'Bientôt', tip: 'Diffusion TV le ' + fmtDate(ep.airDate), now: false };
+    // Repli si la vignette est absente ou ne charge pas : fond de la série (flouté, assombri), sinon dégradé ; numéro en surimpression.
+    const fb = !ep.still;
+    const src = ep.still || d.backdrop || '';
+    const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' +
+      (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async" data-still' + (ep.still && d.backdrop ? ' data-fb="' + esc(d.backdrop) + '"' : '') + '>' : '') +
+      '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' +
       (on ? '<span class="lp-ep-now">En cours</span>' : '') +
-      (soonBadge ? '<span class="lp-ep-soon">' + esc(soonBadge) + '</span>' : '') +
+      (pill ? '<span class="lp-ep-soon' + (pill.now ? ' is-today' : '') + '" title="' + esc(pill.tip) + '">' + esc(pill.text) + '</span>' : '') +
       (ep.progress > 0 && !ep.watched ? '<span class="lp-ep-prog"><i style="width:' + Math.round(ep.progress * 100) + '%"></i></span>' : '') + '</span>';
     // Bouton « vu » : frère (et non enfant) du bouton de lecture, pour ne pas imbriquer des boutons.
     const seenLabel = ep.watched ? 'Marquer comme non vu' : 'Marquer comme vu';

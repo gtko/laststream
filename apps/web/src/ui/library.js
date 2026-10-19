@@ -8,6 +8,7 @@ import { register, toItem } from './catalog.js';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { row, topBar } from './fragments.js';
+import { keepRowState } from './rows.js';
 import { state } from './state.js';
 import { fillMissingPosters } from './posters.js';
 import { observeTiles, posterCard } from './tiles.js';
@@ -30,13 +31,19 @@ export function libItems() {
     return it;
   });
 }
+/** Dernier HTML de la rangée par emplacement : un rafraîchissement sans changement ne redessine rien. */
+const libHtml = new WeakMap();
+
 export function renderLibrary() {
   const slot = document.getElementById('lib-slot');
   if (!slot) return;
   const items = libItems().sort((a, b) => b.added - a.added);
-  if (!items.length) { slot.innerHTML = ''; return; }
-  slot.innerHTML = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? 'Mes favoris' : 'Ma bibliothèque') + ' ' +
+  if (!items.length) { slot.innerHTML = ''; libHtml.delete(slot); return; }
+  const html = '<section class="row-section" id="bibliotheque" aria-labelledby="h-bibliotheque"><h2 class="row-title" id="h-bibliotheque">' + (isKidProfile() ? 'Mes favoris' : 'Ma bibliothèque') + ' ' +
     '<a class="row-link" href="#/library" data-libnav>Tout voir</a></h2>' + row(items.slice(0, 30).map((it) => posterCard(it)).join('')) + '</section>';
+  if (libHtml.get(slot) === html) return;
+  libHtml.set(slot, html);
+  keepRowState(slot, () => { slot.innerHTML = html; }, 'data-tile');
   fillMissingPosters(items.slice(0, 30));
 }
 

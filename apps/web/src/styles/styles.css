@@ -482,9 +482,10 @@ a.prov:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .ep-main:focus-visible { outline: none; }
 .ep-still { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: linear-gradient(160deg, #2b2440, #15121d); margin-bottom: 4px; }
 .ep-still > img { width: 100%; height: 100%; object-fit: cover; }
-/* Carte sans image d’épisode : fond de la série assombri, numéro en surimpression. */
-.ep-still.is-fb > img { filter: brightness(0.4) saturate(0.7); }
-.ep-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 800; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.92); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); pointer-events: none; }
+/* Carte sans image d’épisode : fond de la série flouté et assombri, numéro en surimpression (dégradé si pas de fond). */
+.ep-still.is-fb > img { filter: brightness(0.42) saturate(0.7) blur(3px); transform: scale(1.08); }
+.ep-still:not(.is-fb) .ep-num { display: none; }
+.ep-num { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 800; letter-spacing: 0.02em; color: rgba(255, 255, 255, 0.92); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .ep-main:hover .ep-still, .ep-main:focus-visible .ep-still { outline: 3px solid var(--accent); outline-offset: -3px; }
 .ep.is-next .ep-still { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ep.is-next .ep-title::after { content: 'À suivre'; margin-left: 8px; padding: 2px 7px; border-radius: 5px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 2px; }

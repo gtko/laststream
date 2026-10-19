@@ -6,6 +6,7 @@
  * import Stremio) qui implémente `UserStore` (cache local synchrone + synchronisation en arrière-plan), puis
  * l'installer avec `setUserStore(adapter)` au démarrage (src/main.js). Aucun autre code n'est à modifier.
  */
+import { emitDataEvent } from './events';
 
 export interface LibraryEntry {
   id: number;
@@ -215,10 +216,12 @@ export class LocalUserStore implements UserStore {
     if (list.some((e) => libKey(e) === libKey(entry))) return;
     list.push({ ...entry, addedAt: entry.addedAt ?? Date.now() });
     this.saveLibrary(list);
+    emitDataEvent({ kind: 'library', key: libKey(entry) });
   }
 
   removeFromLibrary(key: string): void {
     this.saveLibrary(this.getLibrary().filter((e) => libKey(e) !== key));
+    emitDataEvent({ kind: 'library', key });
   }
 
   toggleLibrary(entry: Omit<LibraryEntry, 'addedAt'>): boolean {
@@ -245,6 +248,7 @@ export class LocalUserStore implements UserStore {
     map[progressKey(entry.key, entry.season, entry.episode)] = { ...entry, updatedAt: Date.now() };
     writeJson(this.ls, PROGRESS_KEY, map);
     this.unhide(entry.key); // une nouvelle lecture réaffiche le titre
+    emitDataEvent({ kind: 'progress', key: entry.key });
   }
 
   hiddenKeys(): string[] {
@@ -269,11 +273,13 @@ export class LocalUserStore implements UserStore {
   async hideContinue(key: string): Promise<boolean> {
     const list = this.hiddenKeys();
     if (!list.includes(key)) writeJson(this.ls, CONTINUE_HIDDEN_KEY, [...list, key]);
+    emitDataEvent({ kind: 'continue', key });
     return true;
   }
 
   async showContinue(key: string): Promise<void> {
     this.unhide(key);
+    emitDataEvent({ kind: 'continue', key });
   }
 
   continueWatching(limit = 20): ProgressEntry[] {
@@ -363,6 +369,7 @@ export class LocalUserStore implements UserStore {
 
   async setWatched(key: string, episodes: WatchedRef[] | null, watched: boolean): Promise<boolean> {
     this.applyWatched(key, episodes, watched);
+    emitDataEvent({ kind: 'watched', key });
     return true;
   }
 

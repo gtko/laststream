@@ -10,6 +10,7 @@ import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } fr
 import { detailEl } from './dom.js';
 import { markNext, nextToWatch, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
+import './epStill.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
 import { progressResume, resumePillHTML } from './resume.js';
@@ -128,6 +129,8 @@ export async function loadSeason(m, n, token) {
     // Diffusion dans les 14 prochains jours : « peut-être déjà en ligne », lisible ; au-delà, carte « Bientôt ».
     const soonPlayable = future && playableSoon(e.air_date, today);
     const img = episodeImage(e.still_path, m.backdropPath);
+    // Vignette qui ne charge pas : repli sur le fond de la série (jamais d’image cassée, voir epStill.js).
+    const bgFb = img.fallback ? '' : episodeImage('', m.backdropPath).src;
     const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
     if (future && !soonPlayable) {
       const real = !isPlaceholderTitle(e.name);
@@ -143,8 +146,8 @@ export async function loadSeason(m, n, token) {
     const resumeAria = rs && !done ? ', reprise à ' + rs.label : '';
     return '<li class="ep' + (done ? ' is-seen' : '') + '" data-ep="' + n + ':' + e.episode_number + '"' + (soonPlayable ? ' data-air="' + esc(e.air_date) + '"' : '') + '>' +
       '<button type="button" class="ep-main" data-play aria-label="' + esc('Lire ' + code + ' : ' + (e.name || 'Épisode ' + e.episode_number) + resumeAria) + '">' +
-      '<span class="ep-still' + (img.fallback ? ' is-fb' : '') + '">' + (img.src ? '<img src="' + esc(img.src) + '" alt="" loading="lazy" decoding="async">' : '') +
-      (img.fallback ? '<span class="ep-num" aria-hidden="true">' + esc(code) + '</span>' : '') +
+      '<span class="ep-still' + (img.fallback ? ' is-fb' : '') + '">' + (img.src ? '<img src="' + esc(img.src) + '" alt="" loading="lazy" decoding="async" data-still' + (bgFb ? ' data-fb="' + esc(bgFb) + '"' : '') + '>' : '') +
+      '<span class="ep-num" aria-hidden="true">' + esc(code) + '</span>' +
       (rs ? resumePillHTML(rs.label) : '') +
       '<span class="ep-bar" aria-hidden="true"><span style="width:' + (done ? 100 : rs ? Math.round(rs.ratio * 100) : 0) + '%"></span></span></span>' +
       '<span class="ep-title">' + esc(code + (isPlaceholderTitle(e.name) ? '' : ' · ' + e.name)) + '</span>' +

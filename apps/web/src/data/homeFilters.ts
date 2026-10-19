@@ -447,7 +447,7 @@ export function homeVisibility(store: SeenStore, f: HomeFilters): (item: HomeIte
 
 /**
  * Retire de la liste les titres « déjà vus », masqués ou aux genres bannis. C'est le seul point de filtrage de l'accueil
- * (bannière, rangées, Top 10, IA, « Prochainement », « Tout voir »). Ne pas l'appeler pour « Reprendre la lecture »,
+ * (bannière, rangées, Top 10, IA, « Prochainement », « Tout voir », « Reprendre la lecture »). Ne pas l'appeler pour
  * « Cette semaine dans tes suivis », la bibliothèque, le calendrier, la recherche, la fiche ou les pages personne.
  */
 export function keepVisible<T extends HomeItemLike>(items: readonly T[] | null | undefined): T[] {

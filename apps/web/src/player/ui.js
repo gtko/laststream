@@ -83,6 +83,10 @@ export function createPlayerUI(h) {
   const panel = q('.lp-panel');
   const seek = q('[data-seek]');
   const vs = q('.lp-vslider');
+  // Le panneau s’arrête au-dessus de la barre de contrôles : sa hauteur réelle est lue par le CSS (--lp-bar-h).
+  const bottomBar = q('.lp-bottom');
+  const syncBarHeight = () => root.style.setProperty('--lp-bar-h', bottomBar.offsetHeight + 'px');
+  if (typeof globalThis.ResizeObserver === 'function') new globalThis.ResizeObserver(syncBarHeight).observe(bottomBar);
   let panelName = null;
   let focusCol = 'audio';
   let hideTimer = null;
@@ -225,6 +229,7 @@ export function createPlayerUI(h) {
     const caret = act && act.matches('.lp-search') ? act.selectionStart : null;
     panel.innerHTML = html;
     panel.className = 'lp-panel' + (panelName === 'tracks' ? ' is-wide' : panelName === 'episodes' ? ' is-eps' : '');
+    syncBarHeight();
     panel.querySelectorAll('.lp-list, .lp-scroll, .lp-col').forEach((l, i) => { if (keep[i]) l.scrollTop = keep[i]; });
     if (focusKey) {
       const again = Array.from(panel.querySelectorAll('button:not([disabled]), select, input')).find((b) => focusKeyOf(b) === focusKey);
@@ -427,7 +432,7 @@ export function createPlayerUI(h) {
           : '';
         el.innerHTML = '<span class="lp-next-still">' + (card.still ? '<img src="' + esc(card.still) + '" alt="">' : '') + ring + '</span>' +
           '<div class="lp-next-body"><p class="lp-next-k">Épisode suivant</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
-          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next">' + LI.next + 'Lire maintenant</button><button type="button" class="btn btn-ghost" data-act="next-dismiss">Regarder le générique</button></div></div>';
+          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="Lire maintenant l’épisode suivant">' + LI.next + 'Lire maintenant</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="Regarder le générique">Générique</button></div></div>';
       }
       el.hidden = false;
     },
@@ -502,6 +507,7 @@ export function createPlayerUI(h) {
       panelName = name;
       panel.hidden = false;
       panel.className = 'lp-panel is-wide is-host';
+      syncBarHeight();
       root.classList.add('has-panel', 'is-ui');
       panel.innerHTML = head(title) + '<div class="lp-host"></div>';
       return panel.querySelector('.lp-host');

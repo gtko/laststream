@@ -1,0 +1,33 @@
+/* Page invitée d'une watch party (#/party/join/...). Sans compte : mise en page simple, largeur de téléphone d'abord. */
+.pj {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+  color: var(--text);
+}
+.pj-title { margin: 0; font-family: var(--ff-title); font-size: 26px; line-height: 1.2; }
+.pj-title:focus { outline: none; }
+.pj-note, .pj-meta { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.pj-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.pj-form[hidden] { display: none; }
+.pj-field { display: flex; flex: 1 1 220px; flex-direction: column; gap: 6px; font-size: 14px; color: var(--soft); }
+.pj-field input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.pj-msg { min-height: 1.5em; margin: 0; color: var(--soft); font-size: 14px; line-height: 1.5; }
+.pj-player { display: flex; flex-direction: column; gap: 10px; }
+.pj-player[hidden] { display: none; }
+.pj-canvas { width: 100%; height: auto; max-height: 60vh; background: #000; border-radius: 10px; }
+.pj-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.pj-controls .btn { min-height: 44px; min-width: 44px; }
+.pj-player [data-pj-retry] { align-self: flex-start; }

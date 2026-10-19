@@ -13,7 +13,17 @@ import { esc, fmtMin } from './util.js';
 
 const placeholder = (t) => !t || /^\s*(é|e)pisode\s*\d+\s*$/i.test(t);
 
+/** Empreinte de ce qui s'affiche sur une carte : une carte inchangée est gardée telle quelle lors d'un rafraîchissement. */
+export function continueSig(p) {
+  return [p.key, p.position, p.duration, p.updatedAt, p.finished ? 1 : 0, p.suggested ? 1 : 0, p.season, p.episode, p.title, p.poster, p.backdrop].join('|');
+}
+
+/** Séries dont la carte a été retirée (plus d'épisode suivant) : tant que leur progression ne change pas, elle reste absente. */
+const endedSigs = new Set();
+export const isSeriesEnded = (p) => endedSigs.has(continueSig(p));
+
 export function continueCardHTML(p) {
+  const sig = continueSig(p);
   const raw = { id: p.id, poster_path: p.poster, backdrop_path: p.backdrop || '' };
   raw[p.type === 'tv' ? 'name' : 'title'] = p.title;
   const it = register(toItem(raw, p.type));
@@ -26,7 +36,7 @@ export function continueCardHTML(p) {
   const src = IMG('w780', p.backdrop) || IMG('w500', p.poster);
   const info = next ? 'À suivre' + (code ? ' : ' + code : '') : (code || (left ? '' : 'Film'));
   return '<button type="button" class="card tile tile-land cont-card" data-tile="' + esc(it.key) + '" data-resume="' + esc(it.key) + '" data-next="' + next + '"' +
-    ' data-season="' + (p.season != null ? p.season : '') + '" data-episode="' + (p.episode != null ? p.episode : '') + '" data-variant="logo"' +
+    ' data-season="' + (p.season != null ? p.season : '') + '" data-episode="' + (p.episode != null ? p.episode : '') + '" data-variant="logo" data-sig="' + esc(sig) + '"' +
     ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (rs ? ', reprise à ' + rs.label : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
     (src ? '<img class="cont-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
@@ -115,6 +125,7 @@ async function hydrateCard(card) {
 
 function removeCard(card) {
   const sec = card.closest('.row-section');
+  if (card.dataset.sig) endedSigs.add(card.dataset.sig);
   card.remove();
   if (sec && !sec.querySelector('.cont-card')) sec.remove();
 }

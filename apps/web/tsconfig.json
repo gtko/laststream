@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src/data/**/*.ts", "src/player/**/*.ts", "src/sources/**/*.ts", "src/thumbs/**/*.ts", "src/observability/**/*.ts", "tests/**/*.ts", "src/env.d.ts"]
+  "include": ["src/data/**/*.ts", "src/player/**/*.ts", "src/sources/**/*.ts", "src/thumbs/**/*.ts", "src/relay/*.ts", "src/relay/player/**/*.ts", "src/observability/**/*.ts", "tests/**/*.ts", "src/env.d.ts"]
 }

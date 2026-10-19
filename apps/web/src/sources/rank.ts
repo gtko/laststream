@@ -159,12 +159,22 @@ export function isGoodMatch(rec: Recommendation | null): boolean {
   return !!rec && !rec.languageFallback && rec.view.status === 'cached' && (rec.view.group === '2160p' || rec.view.group === '1080p');
 }
 
+/** « C411, YGG et 2 autres » */
+function pendingNames(pending: readonly string[]): string {
+  const shown = pending.slice(0, 2).join(', ');
+  const more = pending.length - 2;
+  return shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '');
+}
+
 /** « Recherche encore sur C411, YGG et 2 autres… » */
 export function describePending(pending: readonly string[]): string {
   if (!pending.length) return '';
-  const shown = pending.slice(0, 2).join(', ');
-  const more = pending.length - 2;
-  return 'Recherche encore sur ' + shown + (more > 0 ? ' et ' + more + ' autre' + (more > 1 ? 's' : '') : '') + '…';
+  return 'Recherche encore sur ' + pendingNames(pending) + '…';
+}
+
+/** « Lancement avec 10 sources (loostream encore en recherche) » : lecture lancée pendant que des addons répondent encore. */
+export function describeLaunch(count: number, pending: readonly string[]): string {
+  return 'Lancement avec ' + count + ' source' + (count > 1 ? 's' : '') + ' (' + pendingNames(pending) + ' encore en recherche)';
 }
 
 /** Nombre de sources par origine, de la plus fournie à la moins fournie. */

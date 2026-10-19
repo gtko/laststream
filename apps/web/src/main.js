@@ -10,6 +10,7 @@ import './styles/settings.css';
 import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/social.css';
+import './styles/partyjoin.css';
 import './styles/player.css';
 import './styles/player-ui.css';
 import './styles/player-panels.css';
@@ -29,6 +30,7 @@ import { app, detailEl } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
+import { parseJoinHash } from './party/join';
 import './ui/events.js';
 import './ui/rows.js';
 import './ui/ctxmenu.js';
@@ -58,7 +60,9 @@ if (resetTok) await runResetFlow(resetTok);
 await initAuth();
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
-await runAuthFlow();
+// Invitation d'un salon (#/party/join/<id>?t=<jeton>) : page sans compte, l'écran de connexion ne s'affiche pas.
+const joinPage = parseJoinHash(location.hash || '') !== null;
+if (!joinPage) await runAuthFlow();
 if (isKidProfile()) {
   document.body.classList.add('kid-mode');
   if (kidSection('tv')) document.body.classList.add('kid-tv');
@@ -73,7 +77,7 @@ if (parseRoute()) {
   showView(parseRoute());
 }
 // La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
-Promise.resolve(load()).catch(() => undefined).finally(() => { announceShellReady(); });
+Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(() => { announceShellReady(); });
 setTimeout(() => { announceShellReady(); }, 8000);
 // Application Android : bannière « Mise à jour disponible » (sans effet ailleurs).
 initUpdateBanner();
