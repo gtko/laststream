@@ -1,7 +1,7 @@
 import { tmdb } from './lt';
 import {
   deleteContinue, deleteFollow, deleteLibrary, deleteRating, getContinue, getFollows, getRatings, putFollow, putRating, getLibrary, getTitleProgress, getWatched, putLibrary, putProgress, putWatched, UserApiError,
-  type ContinueDto, type LibraryItemDto, type MediaKind, type ProfileDto,
+  type ContinueDto, type LibraryItemDto, type MediaKind, type ProfileDto, type ProgressWrite,
 } from './userApi';
 import type { FollowEntry, LibraryEntry, Profile, ProgressEntry, RatingEntry, UserStore, WatchedRef } from './userStore';
 import { LocalUserStore, progressKey, watchedKey } from './userStore';
@@ -70,15 +70,56 @@ export class ServerUserStore implements UserStore {
    * fait foi). Renvoie vrai si le cache a été mis à jour ; les erreurs réseau remontent à l'appelant.
    */
   async refresh(): Promise<boolean> {
+    const before = this.writes; // une écriture faite à partir d'ici (même pendant l'attente ci-dessous) fait rejeter le résultat
+    await this.settle();
     const id = this.active.id;
-    const before = this.writes;
     const [lib, cont] = await Promise.all([getLibrary(id), getContinue(id)]);
     const continueList = await this.enrich(cont.items);
     if (before !== this.writes) return false;
     this.library = libraryFromDto(lib.items);
-    this.cont = continueList;
+    this.cont = this.withUnsynced(continueList);
     emitDataEvent({ kind: 'remote' });
     return true;
+  }
+
+  /** Écritures envoyées et pas encore acquittées par le serveur. */
+  private inflight = new Set<Promise<unknown>>();
+  /** Progressions dont l'envoi a échoué : affichées depuis ce téléphone et renvoyées à la prochaine relecture. */
+  private unsynced = new Map<string, { profileId: string; body: ProgressWrite; shown: ProgressEntry | null }>();
+  private seq = 0;
+  /** Numéro de la dernière écriture de progression de chaque titre : une écriture plus ancienne ne compte plus. */
+  private latestSeq = new Map<string, number>();
+
+  /** Écriture envoyée au serveur, suivie jusqu'à sa réponse : une relecture attend qu'elle soit arrivée (voir settle). */
+  private send<T>(p: Promise<T>): Promise<T> {
+    this.inflight.add(p);
+    const done = () => { this.inflight.delete(p); };
+    p.then(done, done);
+    return p;
+  }
+
+  /**
+   * Attend que le serveur ait reçu les écritures en vol, puis renvoie les progressions restées sans réponse. Une relecture
+   * qui partirait avant renverrait l'ancien état du compte et effacerait la fin de lecture qui vient d'être écrite.
+   */
+  private async settle(): Promise<void> {
+    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
+    for (const [key, u] of [...this.unsynced]) {
+      try {
+        await putProgress(u.profileId, u.body);
+        if (this.unsynced.get(key) === u) this.unsynced.delete(key);
+      } catch {
+        // Toujours hors ligne : la progression reste affichée depuis ce téléphone.
+      }
+    }
+  }
+
+  /** Le compte ne voit pas encore les progressions non envoyées : elles gardent leur place, la plus récente en tête. */
+  private withUnsynced(list: ProgressEntry[]): ProgressEntry[] {
+    if (!this.unsynced.size) return list;
+    const out = list.filter((e) => !this.unsynced.has(e.key));
+    for (const u of this.unsynced.values()) if (u.shown) out.push(u.shown);
+    return out.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   /** Nombre d'écritures locales : une relecture commencée avant une écriture ne doit pas l'écraser. */
@@ -101,7 +142,7 @@ export class ServerUserStore implements UserStore {
     const e = this.library.find((x) => `${x.type}:${x.id}` === key);
     if (!e || e.poster === posterPath) return;
     e.poster = posterPath;
-    putLibrary(this.active.id, kindOf(e.type), e.id, { title: e.title || String(e.id), poster: posterUrlOf(posterPath) }).catch(() => undefined);
+    this.send(putLibrary(this.active.id, kindOf(e.type), e.id, { title: e.title || String(e.id), poster: posterUrlOf(posterPath) }).catch(() => undefined));
   }
 
   /**
@@ -122,7 +163,7 @@ export class ServerUserStore implements UserStore {
           const entry: LibraryEntry = { id: hit.id, type, title: i.title || hit.title || hit.name || '', poster: hit.poster_path || '', addedAt: Date.parse(i.addedAt) || 0 };
           if (!this.library.some((x) => x.id === entry.id && x.type === type)) this.library.push(entry);
           this.writes += 1; // titre résolu, pas encore confirmé par le serveur : une relecture ne doit pas l'effacer
-          await putLibrary(this.active.id, i.type, entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster), imdbId: i.imdbId ?? undefined }).catch(() => undefined);
+          await this.send(putLibrary(this.active.id, i.type, entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster), imdbId: i.imdbId ?? undefined }).catch(() => undefined));
           this.emit();
         } catch {
           // Titre introuvable : il reste masqué.
@@ -234,12 +275,12 @@ export class ServerUserStore implements UserStore {
   addToLibrary(entry: Omit<LibraryEntry, 'addedAt'> & { addedAt?: number }): void {
     if (this.inLibrary(`${entry.type}:${entry.id}`)) return;
     this.library.push({ ...entry, addedAt: entry.addedAt ?? Date.now() });
-    putLibrary(this.active.id, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }).catch(() => undefined);
+    this.send(putLibrary(this.active.id, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }).catch(() => undefined));
     this.changed('library', `${entry.type}:${entry.id}`);
   }
   /** Ajout attendu (migration) : le cache n'est mis à jour qu'après la réponse du serveur. */
   async addToLibraryNow(entry: LibraryEntry, profileId: string): Promise<void> {
-    await putLibrary(profileId, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) });
+    await this.send(putLibrary(profileId, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }));
     if (!this.inLibrary(`${entry.type}:${entry.id}`)) this.library.push(entry);
     this.changed('library', `${entry.type}:${entry.id}`);
   }
@@ -247,7 +288,7 @@ export class ServerUserStore implements UserStore {
     const e = this.library.find((x) => `${x.type}:${x.id}` === key);
     if (!e) return;
     this.library = this.library.filter((x) => x !== e);
-    deleteLibrary(this.active.id, kindOf(e.type), e.id).catch(() => undefined);
+    this.send(deleteLibrary(this.active.id, kindOf(e.type), e.id).catch(() => undefined));
     this.changed('library', key);
   }
   toggleLibrary(entry: Omit<LibraryEntry, 'addedAt'>): boolean {
@@ -284,12 +325,20 @@ export class ServerUserStore implements UserStore {
     this.progress.set(progressKey(entry.key, entry.season, entry.episode), full);
     this.cont = this.cont.filter((c) => c.key !== entry.key);
     const ratio = entry.duration > 0 ? entry.position / entry.duration : 0;
-    if (ratio >= 0.02 && ratio <= 0.95) this.cont.unshift(full);
-    else if (ratio > 0.95 && entry.type === 'tv') this.cont.unshift({ ...full, finished: true });
-    putProgress(this.active.id, {
+    const shown: ProgressEntry | null = ratio >= 0.02 && ratio <= 0.95 ? full : ratio > 0.95 && entry.type === 'tv' ? { ...full, finished: true } : null;
+    if (shown) this.cont.unshift(shown);
+    const seq = ++this.seq;
+    this.latestSeq.set(entry.key, seq);
+    this.unsynced.delete(entry.key);
+    const profileId = this.active.id;
+    const body: ProgressWrite = {
       type: kindOf(entry.type), tmdbId: entry.id, season: entry.season, episode: entry.episode,
       positionSec: Math.floor(entry.position), durationSec: Math.floor(entry.duration),
-    }).catch(() => undefined);
+    };
+    this.send(putProgress(profileId, body).catch(() => {
+      // Refusée ou réseau coupé : gardée à l'écran et renvoyée à la prochaine relecture, si c'est encore la dernière écriture du titre.
+      if (this.latestSeq.get(entry.key) === seq) this.unsynced.set(entry.key, { profileId, body, shown });
+    }));
     this.changed('progress', entry.key);
   }
   continueWatching(limit = 20): ProgressEntry[] {
@@ -301,12 +350,13 @@ export class ServerUserStore implements UserStore {
     const entry = this.cont.find((c) => c.key === key);
     if (!entry) return true;
     this.cont = this.cont.filter((c) => c.key !== key); // optimiste
+    this.unsynced.delete(key); // une progression pas encore envoyée ne doit pas revenir avec la prochaine relecture
     this.hidden.push(entry);
     this.changed('continue', key);
     if (!this.continueApi) return true;
     const [type, id] = key.split(':');
     try {
-      await deleteContinue(this.active.id, kindOf(type as 'movie' | 'tv'), Number(id));
+      await this.send(deleteContinue(this.active.id, kindOf(type as 'movie' | 'tv'), Number(id)));
     } catch (err) {
       if (err instanceof UserApiError && err.status === 404) { this.continueApi = false; return true; } // serveur sans cette route : masqué localement
       this.cont.unshift(entry);
