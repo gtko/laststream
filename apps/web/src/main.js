@@ -23,6 +23,7 @@ import './styles/player-loading.css';
 import './styles/player-mini.css';
 import './styles/notes.css';
 import './styles/bubble.css';
+import './styles/social-player.css';
 import './styles/badges.css';
 import './styles/admin.css';
 import './styles/scrollbars.css';
