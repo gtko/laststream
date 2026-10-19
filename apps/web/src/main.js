@@ -11,6 +11,7 @@ import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/stats.css';
 import './styles/social.css';
+import './styles/chat.css';
 import './styles/partyjoin.css';
 import './styles/player.css';
 import './styles/player-ui.css';
@@ -29,11 +30,14 @@ import { applyTheme, readTheme } from './data/theme';
 import { runAuthFlow } from './ui/auth-ui.js';
 import { resetToken, runResetFlow } from './ui/reset-ui.js';
 import { ensureServerSetup } from './ui/server-setup.js';
-import { app, detailEl } from './ui/dom.js';
+import { app, detailEl, toast } from './ui/dom.js';
 import { state } from './ui/state.js';
 import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
-import { mountSocialSidebar } from './ui/socialSidebar.js';
+import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from './ui/socialSidebar.js';
+import { createConversationRenderer } from './ui/socialChat.js';
+import { createWatchWithHandler } from './data/watchWith';
+import { playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
 import './ui/events.js';
 import './ui/scrollbars.js';
@@ -73,6 +77,10 @@ if (isKidProfile()) {
   if (kidSection('tv')) document.body.classList.add('kid-tv');
 }
 applyTheme(readTheme()); // après la synchronisation des préférences du profil
+// Discussion et « Regarder avec lui » : la lecture passe par le flux normal du lecteur (source de l'utilisateur).
+const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
+setConversationRenderer(createConversationRenderer({ launch: socialLaunch, toast }));
+setWatchWithHandler(createWatchWithHandler({ launch: socialLaunch, toast }));
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
 state.curHash = location.hash || '';
 const first = parseRoute();
