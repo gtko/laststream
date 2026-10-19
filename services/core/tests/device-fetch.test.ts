@@ -6,7 +6,7 @@ import { parseConfig } from '../src/config/schema.js';
 import { clearUpstreamTasks, collectStreams } from '../src/sources/collect.js';
 import { deviceFetchEntry } from '../src/sources/device-fetch.js';
 import type { FetchFn } from '../src/sources/http.js';
-import { clearUpstreamManifestCache, looksLikeChallenge, testUpstream } from '../src/sources/upstream.js';
+import { clearUpstreamManifestCache, looksLikeChallenge, testUpstream, warmUpstreamManifest } from '../src/sources/upstream.js';
 import type { ContentRef } from '../src/types.js';
 import { serveApp } from './serve.js';
 
@@ -76,6 +76,7 @@ describe('collectStreams : deviceFetch', () => {
     ['401', () => json({}, 401)],
     ['451', () => json({}, 451)],
     ['JSON invalide en 200', () => new Response('pas du json', { status: 200 })],
+    ['« error code: 1042 » en 404', () => new Response('error code: 1042', { status: 404 })],
     ['« error code: 1042 » en 200', () => new Response('error code: 1042', { status: 200 })],
     ['erreur réseau (reset)', () => { throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }); }],
   ])('liste l’addon bloqué (%s)', async (_label, blocked) => {
@@ -89,17 +90,32 @@ describe('collectStreams : deviceFetch', () => {
     expect((await run(() => json({ streams: [] }))).deviceFetch).toBeUndefined();
   });
 
-  it('404 sur /stream : addon bloqué seulement quand son manifest est connu', async () => {
+  it('404 sur /stream : bloqué si le corps n’est pas du JSON d’addon, « 0 source » normal si c’est un JSON', async () => {
     const single = parseConfig({ sources: [{ type: 'upstream', name: 'Bloque', url: 'https://blocked-a.example.test/manifest.json' }] });
-    const fetch = vi.fn(async (url: string) => (url.endsWith('/manifest.json') ? json({ id: 'org.blocked', resources: ['stream'] }) : json({}, 404))) as unknown as FetchFn;
+    const entry = [{ addonId: 'Bloque', url: 'https://blocked-a.example.test/stream/movie/tt7654321.json' }];
+    const withBody = (body: string): FetchFn => vi.fn(async () => new Response(body, { status: 404 })) as unknown as FetchFn;
 
-    expect((await collectStreams(single, MOVIE, { fetch })).deviceFetch).toBeUndefined();
+    // Erreur Cloudflare 1042 (Worker vers Worker) : manifest ET /stream en 404 texte, manifest jamais chargé.
+    expect((await collectStreams(single, MOVIE, { fetch: withBody('error code: 1042') })).deviceFetch).toEqual(entry);
+    expect((await collectStreams(single, MOVIE, { fetch: withBody('Not Found') })).deviceFetch).toEqual(entry);
+    expect((await collectStreams(single, MOVIE, { fetch: withBody(HTML_CHALLENGE) })).deviceFetch).toEqual(entry);
+    // 404 avec un JSON valide : l'addon répond, il n'a rien pour ce titre.
+    expect((await collectStreams(single, MOVIE, { fetch: withBody('{"streams":[]}') })).deviceFetch).toBeUndefined();
+  });
 
-    await testUpstream({ name: 'Bloque', url: 'https://blocked-a.example.test/manifest.json' }, { fetch });
-
-    expect((await collectStreams(single, MOVIE, { fetch })).deviceFetch).toEqual([
-      { addonId: 'Bloque', url: 'https://blocked-a.example.test/stream/movie/tt7654321.json' },
-    ]);
+  it('cache l’échec du manifest (négatif court) et le rejoue sans nouvelle requête, sauf pour le test explicite', async () => {
+    const source = { name: 'Bloque', url: 'https://blocked-a.example.test/manifest.json' };
+    const fetch = vi.fn(async () => new Response('error code: 1042', { status: 404 }));
+    const opts = { fetch: fetch as unknown as FetchFn };
+    const first = await testUpstream(source, opts);
+    expect(first).toMatchObject({ ok: false, error: 'Source "Bloque" : HTTP 404' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    warmUpstreamManifest(source, opts);
+    warmUpstreamManifest(source, opts);
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await testUpstream(source, opts);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('liste un délai dépassé', async () => {
@@ -116,6 +132,7 @@ describe('GET /stream : champ deviceFetch', () => {
   const fakeFetch = async (input: string | URL | Request): Promise<Response> => {
     const url = new URL(String(input instanceof Request ? input.url : input));
     if (url.hostname === 'route-blocked.example.test') return json({ error: 'forbidden' }, 403);
+    if (url.hostname === 'route-1042.example.test') return new Response('error code: 1042', { status: 404 });
     if (url.hostname === 'route-ok.example.test') return json({ streams: [{ name: 'Ok', title: 'Film.2024.1080p.WEB-DL.x264-GRP', infoHash: 'c'.repeat(40) }] });
     if (url.hostname === 'v3-cinemeta.strem.io') return json({ meta: { runtime: '120 min' } });
     return json({}, 404);
@@ -150,5 +167,13 @@ describe('GET /stream : champ deviceFetch', () => {
 
     const fine = await (await fetch(`${baseUrl}/${plain({ sources: [{ type: 'upstream', name: 'Ok', url: 'https://route-ok.example.test' }] })}/stream/movie/tt7000002.json`)).json() as { deviceFetch?: unknown[] };
     expect(fine.deviceFetch).toBeUndefined();
+  });
+
+  it('upstream simulé en 404 texte « error code: 1042 » (manifest et /stream) : 0 source mais deviceFetch présent', async () => {
+    const res = await fetch(`${baseUrl}/${plain({ sources: [{ type: 'upstream', name: 'Mur', url: 'https://route-1042.example.test' }] })}/stream/movie/tt7000003.json`);
+    const body = (await res.json()) as { streams: unknown[]; deviceFetch?: unknown[] };
+    expect(res.status).toBe(200);
+    expect(body.streams).toEqual([]);
+    expect(body.deviceFetch).toEqual([{ addonId: 'Mur', url: 'https://route-1042.example.test/stream/movie/tt7000003.json' }]);
   });
 });

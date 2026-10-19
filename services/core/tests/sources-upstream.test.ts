@@ -193,11 +193,14 @@ describe('fetchUpstream : marquage « bloqué » (repli appareil)', () => {
     expect(await blockedOf(() => new Response('refusé', { status }))).toBe(true);
   });
 
-  it('HTTP 404 : bloqué seulement si le manifest de l’addon est connu', async () => {
-    expect(await blockedOf(() => new Response('nope', { status: 404 }))).toBe(false);
+  it('HTTP 404 : bloqué sauf si le corps est un JSON d’addon (manifest connu ou non)', async () => {
+    expect(await blockedOf(() => new Response('nope', { status: 404 }))).toBe(true);
+    expect(await blockedOf(() => new Response('error code: 1042', { status: 404 }))).toBe(true);
+    expect(await blockedOf(() => new Response('{"streams":[]}', { status: 404 }))).toBe(false);
 
     await knownManifest();
 
+    expect(await blockedOf(() => new Response('{"streams":[]}', { status: 404 }))).toBe(false);
     expect(await blockedOf(() => new Response('nope', { status: 404 }))).toBe(true);
   });
 

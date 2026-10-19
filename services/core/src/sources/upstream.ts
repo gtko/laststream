@@ -40,6 +40,14 @@ export interface UpstreamTestResult extends SourceTestResult {
 export const MANIFEST_CACHE_MS = 60 * 60 * 1000;
 const manifestCache = new LruCache<UpstreamManifestInfo>({ max: 64, ttlMs: MANIFEST_CACHE_MS, now: () => Date.now() });
 
+/** Cache négatif court : un manifest qui échoue n'est pas redemandé à chaque requête /stream. */
+export const MANIFEST_FAILURE_CACHE_MS = 60 * 1000;
+interface ManifestFailure {
+  message: string;
+  blocked: boolean;
+}
+const manifestFailures = new LruCache<ManifestFailure>({ max: 64, ttlMs: MANIFEST_FAILURE_CACHE_MS, now: () => Date.now() });
+
 /** Longueur maximale d'un texte du manifest, et nombre maximal de types. */
 const MAX_MANIFEST_TEXT = 300;
 const MAX_MANIFEST_TYPES = 20;
@@ -88,13 +96,27 @@ function manifestUrl(sourceUrl: string): string {
   return url.toString();
 }
 
+/** Corps « error code: 1042 » (erreurs Cloudflare 10xx, ex. Worker vers Worker) : jamais la réponse d'un addon. */
+const CLOUDFLARE_ERROR_BODY = /^s*error code:s*10dd/i;
+
+function isJsonRecord(text: string): boolean {
+  try {
+    return isRecord(JSON.parse(text));
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Statuts typiques d'un blocage d'IP de serveur ou d'une panne passagère : 401, 403, 429, 451, 5xx. Un 404 ne compte
- * que sur la route /stream d'un addon dont le manifest est connu (l'addon existe, sa route refuse l'IP du serveur).
+ * Une réponse HTTP en échec vient-elle d'un blocage d'IP de serveur ou d'une panne passagère ? 401, 403, 429, 451, 5xx : oui.
+ * 404 : oui, sauf si le corps est un JSON d'addon (ex. `{streams:[]}` = « rien pour ce titre », cas normal). Un corps
+ * « error code: 10xx » ou une page de vérification est toujours un blocage, quel que soit le statut.
  */
-function isBlockingStatus(status: number, manifestKnown: boolean): boolean {
-  if (status === 404) return manifestKnown;
-  return status === 401 || status === 403 || status === 429 || status === 451 || status >= 500;
+export function isBlockingResponse(status: number, text: string): boolean {
+  if (status === 401 || status === 403 || status === 429 || status === 451 || status >= 500) return true;
+  if (CLOUDFLARE_ERROR_BODY.test(text) || looksLikeChallenge(text)) return true;
+  if (status === 404) return !isJsonRecord(text);
+  return false;
 }
 
 /** Page HTML de vérification Cloudflare (ou équivalent) au lieu du JSON de l'addon. */
@@ -155,7 +177,8 @@ function toRawStream(raw: Record<string, unknown>, sourceName: string): RawStrea
  * Charge le manifest d'un addon en arrière-plan (cache 1 h) pour que ses flux portent son nom et son logo. Échec ignoré.
  */
 export function warmUpstreamManifest(source: UpstreamSource, opts: HttpOptions = {}): void {
-  if (manifestCache.get(manifestCacheKey(source.url)) === undefined) void loadManifest(source, opts).catch(() => undefined);
+  const key = manifestCacheKey(source.url);
+  if (manifestCache.get(key) === undefined && manifestFailures.get(key) === undefined) void loadManifest(source, opts).catch(() => undefined);
 }
 
 /** Provenance d'un flux de l'addon : nom et logo du manifest s'il est en cache, sinon le nom de la source. */
@@ -189,8 +212,7 @@ export async function fetchUpstream(
       { headers: { Accept: 'application/json' } },
       timeoutMs,
     );
-    const manifestKnown = manifestCache.get(manifestCacheKey(source.url)) !== undefined;
-    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingStatus(res.status, manifestKnown));
+    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingResponse(res.status, res.text));
     if (looksLikeChallenge(res.text)) throw new SourceError('page de vérification reçue', true);
     const body = parseJson(res.text, true);
     if (!isRecord(body) || !Array.isArray(body.streams)) {
@@ -278,20 +300,28 @@ function manifestInfo(manifest: Record<string, unknown>, sourceUrl: string): Ups
 }
 
 /** Charge le manifest d'un addon (cache 1 h). Lève une SourceError brute ; l'appelant la préfixe par le nom. */
-async function loadManifest(source: UpstreamSource, opts: HttpOptions): Promise<UpstreamManifestInfo> {
+async function loadManifest(source: UpstreamSource, opts: HttpOptions, fresh = false): Promise<UpstreamManifestInfo> {
   const key = manifestCacheKey(source.url);
   const cached = manifestCache.get(key);
   if (cached !== undefined) return cached;
+  const failed = fresh ? undefined : manifestFailures.get(key);
+  if (failed !== undefined) throw new SourceError(failed.message, failed.blocked);
   const { fetchFn, timeoutMs } = resolveOptions(opts);
-  const res = await fetchText(fetchFn, manifestUrl(source.url), { headers: { Accept: 'application/json' } }, timeoutMs);
-  if (!res.ok) throw new SourceError(`HTTP ${res.status}`);
-  const manifest = parseJson(res.text);
-  if (!isRecord(manifest) || !(typeof manifest.id === 'string' || Array.isArray(manifest.resources))) {
-    throw new SourceError('manifest invalide (id ou resources absent)');
+  try {
+    const res = await fetchText(fetchFn, manifestUrl(source.url), { headers: { Accept: 'application/json' } }, timeoutMs);
+    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingResponse(res.status, res.text));
+    const manifest = parseJson(res.text, true);
+    if (!isRecord(manifest) || !(typeof manifest.id === 'string' || Array.isArray(manifest.resources))) {
+      throw new SourceError('manifest invalide (id ou resources absent)');
+    }
+    const info = manifestInfo(manifest, source.url);
+    manifestCache.set(key, info);
+    manifestFailures.delete(key);
+    return info;
+  } catch (err) {
+    if (err instanceof SourceError) manifestFailures.set(key, { message: err.message, blocked: err.blocked });
+    throw err;
   }
-  const info = manifestInfo(manifest, source.url);
-  manifestCache.set(key, info);
-  return info;
 }
 
 /**
@@ -300,7 +330,7 @@ async function loadManifest(source: UpstreamSource, opts: HttpOptions): Promise<
  */
 export async function testUpstream(source: UpstreamSource, opts: HttpOptions = {}): Promise<UpstreamTestResult> {
   try {
-    return { ok: true, manifest: await loadManifest(source, opts) };
+    return { ok: true, manifest: await loadManifest(source, opts, true) };
   } catch (err) {
     return { ok: false, error: sourceFailure(source.name, err).message };
   }
@@ -309,4 +339,5 @@ export async function testUpstream(source: UpstreamSource, opts: HttpOptions = {
 /** Vide le cache des manifests (tests). */
 export function clearUpstreamManifestCache(): void {
   manifestCache.clear();
+  manifestFailures.clear();
 }
