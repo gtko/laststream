@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   // Installateur Windows : seul endroit à modifier pour une nouvelle version (le HTML garde des valeurs de secours)
-  var WIN_VERSION = '1.0.2';
+  var WIN_VERSION = '1.0.3';
   var WIN_SIZE = '91';
   var WIN = 'https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-' + WIN_VERSION + '.exe';
 
