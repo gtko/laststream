@@ -587,7 +587,8 @@ function continueWith(view, opts = {}) {
   const saved = userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
   const rd = resumeDecision(saved);
   const mode = opts.resume || 'ask';
-  if (typeof opts.startAt === 'number') return playView(view, opts.startAt);
+  const at = typeof opts.startAt === 'number' ? opts.startAt : p.seekStart;
+  if (typeof at === 'number') return playView(view, at);
   if (rd.prompt && mode === 'ask') {
     ui.setLoading(null);
     ui.setResume(rd.position);
@@ -2032,6 +2033,7 @@ export async function playBest(request, opener, opts = {}) {
   const token = p.token;
   const alive = () => P && P.token === token;
   p.resumeMode = opts.resume || 'ask';
+  p.seekStart = typeof opts.startAt === 'number' ? opts.startAt : null;
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   let loaded = null;
   try {
