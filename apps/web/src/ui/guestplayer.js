@@ -97,9 +97,9 @@ export function createGuestControls(stage, handlers = {}) {
   let lastTap = 0;
   let lastPointer = 'mouse';
   const listeners = [];
-  const on = (target, type, fn) => {
-    target.addEventListener(type, fn);
-    listeners.push([target, type, fn]);
+  const on = (target, type, fn, capture = false) => {
+    target.addEventListener(type, fn, capture);
+    listeners.push([target, type, fn, capture]);
   };
 
   const root = doc.createElement('div');
@@ -306,7 +306,16 @@ export function createGuestControls(stage, handlers = {}) {
     if (!dragging) el.hover.hidden = true;
   });
 
-  // Raccourcis : Espace / K lecture-pause, flèches ±5 s, F plein écran, M muet, Échap ferme « i ».
+  // Échap ferme « i » ou quitte le plein écran : phase de capture, pour que l'événement ne remonte pas au gestionnaire global
+  // (events.js) qui quitterait la page. Le plein écran est quitté par le navigateur ; ici on ne fait que consommer la touche.
+  on(doc, 'keydown', (e) => {
+    if (e.key !== 'Escape' || !(infoOpen || fsActive())) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (infoOpen) toggleInfo(false);
+  }, true);
+
+  // Raccourcis : Espace / K lecture-pause, flèches ±5 s, F plein écran, M muet.
   // Ignorés pendant la saisie (pseudo, curseur de volume) et quand le cadre est masqué par la page.
   on(doc, 'keydown', (e) => {
     if (destroyed || e.ctrlKey || e.altKey || e.metaKey || stage.closest('[hidden]')) return;
@@ -324,10 +333,6 @@ export function createGuestControls(stage, handlers = {}) {
       case 'ArrowRight': action = 'right'; break;
       case 'f': case 'F': action = 'full'; break;
       case 'm': case 'M': action = 'mute'; break;
-      case 'Escape':
-        if (!infoOpen) return;
-        action = 'info';
-        break;
       default:
         return;
     }
@@ -338,7 +343,6 @@ export function createGuestControls(stage, handlers = {}) {
     else if (action === 'right') seekBy(KEY_SEEK_S);
     else if (action === 'full') toggleFullscreen();
     else if (action === 'mute') setMuted(!vol.muted);
-    else if (action === 'info') toggleInfo(false);
   });
 
   on(doc, 'fullscreenchange', () => {
@@ -432,7 +436,7 @@ export function createGuestControls(stage, handlers = {}) {
     destroyed = true;
     clearTimeout(idleTimer);
     idleTimer = null;
-    for (const [target, type, fn] of listeners) target.removeEventListener(type, fn);
+    for (const [target, type, fn, capture] of listeners) target.removeEventListener(type, fn, capture);
     listeners.length = 0;
     try {
       if (fsActive() && typeof doc.exitFullscreen === 'function') void doc.exitFullscreen()?.catch?.(() => undefined);

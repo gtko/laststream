@@ -192,3 +192,41 @@ describe('menu', () => {
     expect(pop.hidden).toBe(true);
   });
 });
+
+describe('Échap', () => {
+  /** Écouteur de bulle sur document, comme le gestionnaire global de la page (events.js) qui quitte la page. */
+  function globalKeydown() {
+    const fn = vi.fn();
+    document.addEventListener('keydown', fn);
+    return { fn, off: () => document.removeEventListener('keydown', fn) };
+  }
+  const escape = (target: EventTarget) => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+  it('ferme le menu, focus sur son bouton, sans remonter au gestionnaire global', () => {
+    const global = globalKeydown();
+    try {
+      const { subs, btn, pop } = setup();
+      subs.setTracks([FR]);
+      btn.click();
+      expect(pop.hidden).toBe(false);
+      escape(btn);
+      expect(pop.hidden).toBe(true);
+      expect(btn.getAttribute('aria-expanded')).toBe('false');
+      expect(global.fn).not.toHaveBeenCalled();
+    } finally {
+      global.off();
+    }
+  });
+
+  it('menu fermé : Échap suit son cours et atteint le gestionnaire global', () => {
+    const global = globalKeydown();
+    try {
+      const { subs, btn } = setup();
+      subs.setTracks([FR]);
+      escape(btn);
+      expect(global.fn).toHaveBeenCalledTimes(1);
+    } finally {
+      global.off();
+    }
+  });
+});

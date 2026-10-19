@@ -77,9 +77,9 @@ export function createGuestChat(controls, { onOpen } = {}) {
   const shown = new Set();
   const timers = new Set();
   const listeners = [];
-  const listen = (target, type, fn) => {
-    target.addEventListener(type, fn);
-    listeners.push([target, type, fn]);
+  const listen = (target, type, fn, capture = false) => {
+    target.addEventListener(type, fn, capture);
+    listeners.push([target, type, fn, capture]);
   };
 
   for (const e of REACTION_BAR) {
@@ -262,9 +262,14 @@ export function createGuestChat(controls, { onOpen } = {}) {
 
   listen(form, 'submit', sendText);
   listen(closeBtn, 'click', closeDrawer);
-  listen(drawer, 'keydown', (e) => {
-    if (e.key === 'Escape') closeDrawer();
-  });
+  // Phase de capture sur la page : Échap ferme le tiroir (où qu'est le focus) avant le gestionnaire global (events.js) qui quitterait la page.
+  listen(doc, 'keydown', (e) => {
+    if (open && e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeDrawer();
+    }
+  }, true);
 
   setEnabled(false);
 
@@ -272,7 +277,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
     if (destroyed) return;
     unbind();
     destroyed = true;
-    for (const [t, type, fn] of listeners) t.removeEventListener(type, fn);
+    for (const [t, type, fn, capture] of listeners) t.removeEventListener(type, fn, capture);
     listeners.length = 0;
     for (const id of timers) clearTimeout(id);
     timers.clear();

@@ -123,7 +123,8 @@
   text-align: center;
 }
 
-/* Centre : gros bouton lecture (pause), bandeau d'attente, spinner de tampon. */
+/* Centre : gros bouton lecture (pause), bandeau d'attente, spinner de tampon. Le bandeau se place au-dessus du gros bouton
+ * (72 px, 60 px sur mobile) pour ne jamais le recouvrir : il reste lisible, et le bouton reste utilisable pendant l'attente. */
 .gp .gp-center {
   position: absolute;
   left: 50%;
@@ -142,7 +143,7 @@
 .gp .gp-wait {
   position: absolute;
   left: 50%;
-  top: 50%;
+  top: calc(50% - 64px);
   z-index: 1;
   display: flex;
   align-items: center;

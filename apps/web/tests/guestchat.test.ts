@@ -258,3 +258,41 @@ describe('raccourcis et cycle de vie', () => {
     expect(stage.querySelector('.gc-fx')).toBeNull();
   });
 });
+
+describe('Échap', () => {
+  /** Écouteur de bulle sur document, comme le gestionnaire global de la page (events.js) qui quitte la page. */
+  function globalKeydown() {
+    const fn = vi.fn();
+    document.addEventListener('keydown', fn);
+    return { fn, off: () => document.removeEventListener('keydown', fn) };
+  }
+  const escape = (target: EventTarget) => target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+  it('ferme le tiroir, focus sur le bouton ou dans le tiroir, sans remonter au gestionnaire global', () => {
+    const global = globalKeydown();
+    try {
+      const { btn, drawer, input } = setup();
+      btn.click();
+      expect(drawer.hidden).toBe(false);
+      escape(btn);
+      expect(drawer.hidden).toBe(true);
+      btn.click();
+      escape(input);
+      expect(drawer.hidden).toBe(true);
+      expect(global.fn).not.toHaveBeenCalled();
+    } finally {
+      global.off();
+    }
+  });
+
+  it('tiroir fermé : Échap suit son cours et atteint le gestionnaire global', () => {
+    const global = globalKeydown();
+    try {
+      const { btn } = setup();
+      escape(btn);
+      expect(global.fn).toHaveBeenCalledTimes(1);
+    } finally {
+      global.off();
+    }
+  });
+});

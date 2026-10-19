@@ -79,9 +79,9 @@ export function createGuestSubs(controls, { onOpen } = {}) {
   let open = false;
   let destroyed = false;
   const listeners = [];
-  const listen = (target, type, fn) => {
-    target.addEventListener(type, fn);
-    listeners.push([target, type, fn]);
+  const listen = (target, type, fn, capture = false) => {
+    target.addEventListener(type, fn, capture);
+    listeners.push([target, type, fn, capture]);
   };
 
   function cuesOf(t) {
@@ -190,16 +190,21 @@ export function createGuestSubs(controls, { onOpen } = {}) {
     if (t && (pop.contains(t) || btn.contains(t))) return;
     closeMenu();
   });
+  // Phase de capture : Échap ferme le menu avant le gestionnaire global de la page (events.js) qui quitterait la page.
   listen(doc, 'keydown', (e) => {
-    if (open && e.key === 'Escape') closeMenu();
-  });
+    if (open && e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+    }
+  }, true);
 
   select(null);
 
   function destroy() {
     if (destroyed) return;
     destroyed = true;
-    for (const [t, type, fn] of listeners) t.removeEventListener(type, fn);
+    for (const [t, type, fn, capture] of listeners) t.removeEventListener(type, fn, capture);
     listeners.length = 0;
     open = false;
     pop.remove();

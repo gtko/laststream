@@ -295,3 +295,49 @@ describe('clavier et cycle de vie', () => {
     expect(onPlay).not.toHaveBeenCalled();
   });
 });
+
+describe('Échap et page', () => {
+  /** Écouteur de bulle sur document, comme le gestionnaire global de la page (events.js) qui quitte la page. */
+  function globalKeydown() {
+    const fn = vi.fn();
+    document.addEventListener('keydown', fn);
+    return { fn, off: () => document.removeEventListener('keydown', fn) };
+  }
+
+  it('Échap ferme « i » sans remonter au gestionnaire global de la page', () => {
+    const global = globalKeydown();
+    try {
+      const { root } = mount({});
+      q(root, '[data-gp="info"]').click();
+      key('Escape', q(root, '[data-gp="info"]'));
+      expect(q(root, '.gp-info').hidden).toBe(true);
+      expect(global.fn).not.toHaveBeenCalled();
+    } finally {
+      global.off();
+    }
+  });
+
+  it('plein écran actif : Échap ne remonte pas au gestionnaire global (il ne quitte pas la page)', () => {
+    const global = globalKeydown();
+    const { stage, root } = mount({});
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => stage });
+    try {
+      key('Escape', q(root, '[data-gp="full"]'));
+      expect(global.fn).not.toHaveBeenCalled();
+    } finally {
+      delete (document as any).fullscreenElement;
+      global.off();
+    }
+  });
+
+  it('hors plein écran et « i » fermé : Échap atteint le gestionnaire global', () => {
+    const global = globalKeydown();
+    try {
+      mount({});
+      key('Escape');
+      expect(global.fn).toHaveBeenCalledTimes(1);
+    } finally {
+      global.off();
+    }
+  });
+});
