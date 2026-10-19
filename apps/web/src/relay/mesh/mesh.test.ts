@@ -13,6 +13,7 @@ import { MeshHostState } from './hostState';
 import { PIECE_BYTES, PieceCache, fromIntervals, pieceBounds, pieceCount, sameHash, sha256, toIntervals } from './pieces';
 import { RtcConnector, meshTransport, type PeerConnector } from './rtc';
 import { parseSignal, type RelaySignal, type SignalTransport } from '../peer';
+import { meshPeerOrder } from '../session';
 
 const MIB = 1024 * 1024;
 
@@ -539,5 +540,24 @@ describe('signalisation du maillage', () => {
     handlers[0]!('x', null);
     expect(received).toEqual([['x', { m: 'mesh', t: 'hello' }]]);
     expect(parseSignal({ m: 'mesh', t: 'hello' })).toEqual({ t: 'hello' });
+  });
+});
+
+describe('choix des pairs', () => {
+  it('autres invités seulement, les plus anciens d’abord ; joinedAt en ms (serveur) ou en ISO', () => {
+    const list = [
+      { username: 'hote', host: true, peerId: 'h' },
+      { username: 'c', guest: true, peerId: 'c', joinedAt: 3000 },
+      { username: 'moi', guest: true, peerId: 'me', joinedAt: 1000 },
+      { username: 'a', guest: true, peerId: 'a', joinedAt: 2000 },
+      { username: 'sans', guest: true, joinedAt: 5 },
+      { username: 'compte', peerId: 'x', joinedAt: 1 },
+    ] as unknown as Parameters<typeof meshPeerOrder>[0];
+    expect(meshPeerOrder(list, 'me')).toEqual(['a', 'c']);
+    const iso = [
+      { username: 'b', guest: true, peerId: 'b', joinedAt: '2026-01-01T00:00:02Z' },
+      { username: 'a', guest: true, peerId: 'a', joinedAt: '2026-01-01T00:00:01Z' },
+    ] as unknown as Parameters<typeof meshPeerOrder>[0];
+    expect(meshPeerOrder(iso, 'me')).toEqual(['a', 'b']);
   });
 });

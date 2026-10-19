@@ -133,7 +133,21 @@ export class HostRelaySession {
   }
 }
 
-// ---- Invité --------------------------------------------------------------------------------------------
+// ---- Invité ----
+
+/** Identifiants de pair des autres invités du salon, les plus anciens d'abord (le serveur envoie `joinedAt` en ms ou en ISO). */
+export function meshPeerOrder(participants: readonly PartyParticipant[], self: string): string[] {
+  const when = (p: PartyParticipant): number => {
+    const raw = p.joinedAt as unknown;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Date.parse(raw) : 0;
+    return Number.isFinite(n) ? n : 0;
+  };
+  return participants
+    .filter((p) => p.guest && p.peerId && p.peerId !== self)
+    .sort((a, b) => when(a) - when(b) || (a.peerId ?? '').localeCompare(b.peerId ?? ''))
+    .map((p) => p.peerId as string);
+}
+
 
 export type GuestPhase =
   | 'joining'
@@ -404,12 +418,8 @@ export class GuestRelaySession {
     }
   }
 
-  /** Identifiants de pair des autres invités du salon, les plus anciens d'abord. */
   private otherGuests(client: PartyClient, self: string): string[] {
-    return client.participants
-      .filter((p) => p.guest && p.peerId && p.peerId !== self)
-      .sort((a, b) => (a.joinedAt ?? '').localeCompare(b.joinedAt ?? '') || (a.peerId ?? '').localeCompare(b.peerId ?? ''))
-      .map((p) => p.peerId as string);
+    return meshPeerOrder(client.participants, self);
   }
 
   /**
