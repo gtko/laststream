@@ -3,10 +3,10 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { parseConfig } from '../src/config/schema.js';
-import { collectStreams } from '../src/sources/collect.js';
+import { clearUpstreamTasks, collectStreams } from '../src/sources/collect.js';
 import { deviceFetchEntry } from '../src/sources/device-fetch.js';
 import type { FetchFn } from '../src/sources/http.js';
-import { looksLikeChallenge } from '../src/sources/upstream.js';
+import { clearUpstreamManifestCache, looksLikeChallenge, testUpstream } from '../src/sources/upstream.js';
 import type { ContentRef } from '../src/types.js';
 import { serveApp } from './serve.js';
 
@@ -21,6 +21,11 @@ const KEY = 'RD-SECRET-KEY-DO-NOT-LEAK-123';
 
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const html = (body: string, status = 200): Response => new Response(body, { status, headers: { 'content-type': 'text/html' } });
+
+beforeEach(() => {
+  clearUpstreamManifestCache();
+  clearUpstreamTasks();
+});
 
 describe('deviceFetchEntry', () => {
   it('donne l’URL /stream du titre, y compris quand l’adresse porte la clé de débrideur de l’utilisateur', () => {
@@ -67,10 +72,34 @@ describe('collectStreams : deviceFetch', () => {
     expect(result.streams.map((s) => s.sourceName)).toEqual(['Ok']);
   });
 
-  it('ne liste pas un addon en échec pour une autre raison (404, JSON invalide) ni un addon vide', async () => {
+  it.each([
+    ['401', () => json({}, 401)],
+    ['451', () => json({}, 451)],
+    ['JSON invalide en 200', () => new Response('pas du json', { status: 200 })],
+    ['« error code: 1042 » en 200', () => new Response('error code: 1042', { status: 200 })],
+    ['erreur réseau (reset)', () => { throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }); }],
+  ])('liste l’addon bloqué (%s)', async (_label, blocked) => {
+    const result = await run(blocked);
+    expect(result.deviceFetch).toEqual([{ addonId: 'Bloque', url: 'https://blocked-a.example.test/stream/movie/tt7654321.json' }]);
+  });
+
+  it('ne liste pas un addon en échec sans cause de blocage (404 au manifest inconnu, JSON sans streams) ni un addon vide', async () => {
     expect((await run(() => json({}, 404))).deviceFetch).toBeUndefined();
-    expect((await run(() => new Response('pas du json', { status: 200 }))).deviceFetch).toBeUndefined();
+    expect((await run(() => json({ message: 'hello' }))).deviceFetch).toBeUndefined();
     expect((await run(() => json({ streams: [] }))).deviceFetch).toBeUndefined();
+  });
+
+  it('404 sur /stream : addon bloqué seulement quand son manifest est connu', async () => {
+    const single = parseConfig({ sources: [{ type: 'upstream', name: 'Bloque', url: 'https://blocked-a.example.test/manifest.json' }] });
+    const fetch = vi.fn(async (url: string) => (url.endsWith('/manifest.json') ? json({ id: 'org.blocked', resources: ['stream'] }) : json({}, 404))) as unknown as FetchFn;
+
+    expect((await collectStreams(single, MOVIE, { fetch })).deviceFetch).toBeUndefined();
+
+    await testUpstream({ name: 'Bloque', url: 'https://blocked-a.example.test/manifest.json' }, { fetch });
+
+    expect((await collectStreams(single, MOVIE, { fetch })).deviceFetch).toEqual([
+      { addonId: 'Bloque', url: 'https://blocked-a.example.test/stream/movie/tt7654321.json' },
+    ]);
   });
 
   it('liste un délai dépassé', async () => {

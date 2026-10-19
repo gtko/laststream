@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentRef } from '../src/types.js';
-import { fetchWithTimeout, redactUrl, type FetchFn } from '../src/sources/http.js';
+import { SourceError, fetchWithTimeout, redactUrl, type FetchFn } from '../src/sources/http.js';
 import { clearUpstreamManifestCache, fetchUpstream, testUpstream } from '../src/sources/upstream.js';
 
 const MOVIE: ContentRef = { type: 'movie', id: 'tt1234567', imdbId: 'tt1234567' };
@@ -171,6 +171,70 @@ describe('fetchUpstream', () => {
       'Source "Cassée" : URL source invalide',
     );
     expect(mock).not.toHaveBeenCalled();
+  });
+});
+
+describe('fetchUpstream : marquage « bloqué » (repli appareil)', () => {
+  /** `blocked` de l'erreur levée par fetchUpstream pour cette réponse (ou erreur réseau levée par le fetch). */
+  async function blockedOf(respond: () => Response | Promise<Response>): Promise<boolean> {
+    const { fetch } = mockFetch(async () => respond());
+    const error = await errorOf(fetchUpstream(SOURCE, MOVIE, { fetch }));
+    expect(error).toBeInstanceOf(SourceError);
+    return (error as SourceError).blocked;
+  }
+
+  /** Charge le manifest de l'addon dans le cache (comme le fait l'appel /config/test ou le préchargement). */
+  async function knownManifest(): Promise<void> {
+    const { fetch } = mockFetch(async () => jsonResponse({ id: 'org.up', resources: ['stream'] }));
+    await testUpstream(SOURCE, { fetch });
+  }
+
+  it.each([401, 403, 429, 451, 500, 503])('HTTP %i : bloqué', async (status) => {
+    expect(await blockedOf(() => new Response('refusé', { status }))).toBe(true);
+  });
+
+  it('HTTP 404 : bloqué seulement si le manifest de l’addon est connu', async () => {
+    expect(await blockedOf(() => new Response('nope', { status: 404 }))).toBe(false);
+
+    await knownManifest();
+
+    expect(await blockedOf(() => new Response('nope', { status: 404 }))).toBe(true);
+  });
+
+  it('HTTP 400 et autres 4xx : pas bloqué', async () => {
+    expect(await blockedOf(() => new Response('bad', { status: 400 }))).toBe(false);
+    expect(await blockedOf(() => new Response('gone', { status: 410 }))).toBe(false);
+  });
+
+  it('corps non JSON (page HTML, « error code: 1042 ») : bloqué, même en 200', async () => {
+    expect(await blockedOf(() => new Response('<html>Access denied</html>', { status: 200 }))).toBe(true);
+    expect(await blockedOf(() => new Response('error code: 1042', { status: 200 }))).toBe(true);
+  });
+
+  it('JSON sans champ streams : pas bloqué', async () => {
+    expect(await blockedOf(() => jsonResponse({ message: 'hello' }))).toBe(false);
+  });
+
+  it('erreur réseau : bloqué, avec le code seul', async () => {
+    const error = await errorOf(
+      fetchUpstream(SOURCE, MOVIE, {
+        fetch: (async () => {
+          throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } });
+        }) as unknown as FetchFn,
+      }),
+    );
+
+    expect(error).toBeInstanceOf(SourceError);
+    expect((error as SourceError).blocked).toBe(true);
+    expect(error.message).toBe('Source "Amont" : erreur réseau (ECONNRESET)');
+  });
+
+  it('délai dépassé : bloqué', async () => {
+    const { fetch } = mockFetch(hangingFetch);
+
+    const error = await errorOf(fetchUpstream(SOURCE, MOVIE, { fetch, timeoutMs: 20 }));
+
+    expect((error as SourceError).blocked).toBe(true);
   });
 });
 

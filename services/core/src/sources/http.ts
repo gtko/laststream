@@ -23,7 +23,7 @@ export interface SourceTestResult {
 
 /** Erreur dont le message est sûr : jamais d'URL complète, de clé API ni de contenu de configuration. */
 export class SourceError extends Error {
-  /** Source probablement bloquée pour l'IP du serveur (403, 429, 5xx, page de vérification, délai) : l'appareil peut retenter. */
+  /** Source probablement bloquée pour l'IP du serveur (401, 403, 429, 451, 5xx, page de vérification, corps non JSON, erreur réseau, délai) : l'appareil peut retenter. */
   readonly blocked: boolean;
 
   constructor(message: string, blocked = false) {
@@ -338,7 +338,8 @@ export function sourceFailure(label: string, err: unknown): SourceError {
 function transportError(err: unknown, timeoutMs: number): SourceError {
   if (isAbortError(err)) return new SourceError(`délai dépassé (${timeoutMs} ms)`, true);
   const code = networkErrorCode(err);
-  return new SourceError(code ? `erreur réseau (${code})` : 'erreur réseau');
+  // Une coupure réseau (ex. reset de la connexion par une barrière) peut être un blocage : l'appareil peut retenter.
+  return new SourceError(code ? `erreur réseau (${code})` : 'erreur réseau', true);
 }
 
 function isAbortError(err: unknown): boolean {

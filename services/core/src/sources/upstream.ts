@@ -88,9 +88,13 @@ function manifestUrl(sourceUrl: string): string {
   return url.toString();
 }
 
-/** Statuts typiques d'un blocage d'IP de serveur ou d'une panne passagère : 403, 429, 5xx. */
-function isBlockingStatus(status: number): boolean {
-  return status === 403 || status === 429 || status >= 500;
+/**
+ * Statuts typiques d'un blocage d'IP de serveur ou d'une panne passagère : 401, 403, 429, 451, 5xx. Un 404 ne compte
+ * que sur la route /stream d'un addon dont le manifest est connu (l'addon existe, sa route refuse l'IP du serveur).
+ */
+function isBlockingStatus(status: number, manifestKnown: boolean): boolean {
+  if (status === 404) return manifestKnown;
+  return status === 401 || status === 403 || status === 429 || status === 451 || status >= 500;
 }
 
 /** Page HTML de vérification Cloudflare (ou équivalent) au lieu du JSON de l'addon. */
@@ -99,11 +103,12 @@ export function looksLikeChallenge(text: string): boolean {
   return /^\s*</.test(head) && /just a moment|cf-chl|cf-browser-verification|attention required|challenge-platform|cloudflare/i.test(head);
 }
 
-function parseJson(text: string): unknown {
+/** JSON du corps. `blocked` : un corps non JSON sur la route /stream vient d'une barrière (page HTML, « error code: 10xx »). */
+function parseJson(text: string, blocked = false): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new SourceError('réponse JSON invalide');
+    throw new SourceError('réponse JSON invalide', blocked);
   }
 }
 
@@ -184,9 +189,10 @@ export async function fetchUpstream(
       { headers: { Accept: 'application/json' } },
       timeoutMs,
     );
-    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingStatus(res.status));
+    const manifestKnown = manifestCache.get(manifestCacheKey(source.url)) !== undefined;
+    if (!res.ok) throw new SourceError(`HTTP ${res.status}`, isBlockingStatus(res.status, manifestKnown));
     if (looksLikeChallenge(res.text)) throw new SourceError('page de vérification reçue', true);
-    const body = parseJson(res.text);
+    const body = parseJson(res.text, true);
     if (!isRecord(body) || !Array.isArray(body.streams)) {
       throw new SourceError('réponse inattendue (champ streams absent)');
     }
