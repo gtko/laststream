@@ -61,9 +61,14 @@ export function urlRangeSource(opts: UrlSourceOptions): RangeSource {
   let sizeP: Promise<number> | null = null;
 
   const probeSize = async (): Promise<number> => {
-    const head = await call(http, { url, method: 'HEAD', timeoutMs: TIMEOUT_MS }, web);
-    const len = head.headers['content-length'];
-    if (head.status >= 200 && head.status < 300 && typeof len === 'string' && /^\d+$/.test(len)) return Number(len);
+    // HEAD refusé par le transport (hôte hors liste de `native-http` pour un lien direct d'addon, serveur qui ne l'accepte pas) :
+    // la taille vient alors de la plage d'un octet. Seul un abandon (`cancelled`) est définitif.
+    const head = await call(http, { url, method: 'HEAD', timeoutMs: TIMEOUT_MS }, web).catch((err: unknown) => {
+      if (err instanceof RelayError && err.code === 'cancelled') throw err;
+      return null;
+    });
+    const len = head?.headers['content-length'];
+    if (head && head.status >= 200 && head.status < 300 && typeof len === 'string' && /^\d+$/.test(len)) return Number(len);
     // Pas de Content-Length : la taille vient de Content-Range d'une plage d'un octet.
     const probe = await call(http, { url, method: 'GET', headers: { Range: 'bytes=0-0' }, timeoutMs: TIMEOUT_MS }, web);
     const total = probe.status === 206 ? parseContentRange(probe.headers['content-range'])?.total : null;

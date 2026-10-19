@@ -61,6 +61,16 @@ describe('urlRangeSource', () => {
     expect(await urlRangeSource({ url: LINK, http }).size()).toBe(777);
   });
 
+  it('taille de repli aussi quand HEAD est refusé par le transport (lien direct d’addon hors liste native-http)', async () => {
+    const http: HttpFn = async (req) => {
+      if (req.method === 'HEAD') throw new Error('host_not_allowed');
+      return reply(206, { 'content-range': 'bytes 0-0/4242' }, new Uint8Array(1));
+    };
+    expect(await urlRangeSource({ url: LINK, http }).size()).toBe(4242);
+    const dead: HttpFn = async () => { throw new Error('réseau'); };
+    expect(await codeOf(urlRangeSource({ url: LINK, http: dead }).size())).toBe('source');
+  });
+
   it('serveur qui ignore Range (200) : refusé, pas de téléchargement en entier', async () => {
     const http: HttpFn = async () => reply(200, { 'content-length': '10' }, new Uint8Array(10));
     expect(await codeOf(urlRangeSource({ url: LINK, http }).read(0, 5))).toBe('source');
