@@ -16,7 +16,7 @@ import { renderLibrary, renderLibraryPage, toggleLib } from './library.js';
 import { closeModal, focusables, openModal, openTrailer, openVideo } from './modal.js';
 import { renderFilmography } from './person.js';
 import { openPlayer, playerKey } from './player.js';
-import { cancelDwell, paintSound, postYT, stopPreview } from './preview.js';
+import { cancelDwell, paintSound, setPreviewSound, stopPreview } from './preview.js';
 import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
@@ -34,7 +34,7 @@ document.addEventListener('click', (e) => {
     const p = state.preview;
     if (!p) return;
     p.muted = !p.muted;
-    postYT(p.iframe, p.muted ? 'mute' : 'unMute');
+    setPreviewSound(p.iframe, !p.muted, p.vo);
     paintSound(p.btn, p.muted);
     return;
   }

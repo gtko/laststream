@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   audioLangOf, captionParams, completeVideos, hasTrailerInLang, includeVideoLanguages, isTrailerCandidate, isVoVideo, mergeVideos,
-  pickTrailer, pickTrailerKey, trailerFallbackTags, trailerLang, type TmdbVideo, type TrailerLang, videoTier,
+  pickTrailer, pickTrailerKey, titleScore, trailerFallbackTags, trailerLang, type TmdbVideo, type TrailerLang, videoTier,
 } from '../src/data/trailers';
 
 const fr = { lang: 'fr', tag: 'fr-FR', country: 'FR' };
@@ -224,5 +224,57 @@ describe('langue des bandes-annonces lue dans les réglages', () => {
   it('version originale en principal : repli sur l’ancien réglage de langue', () => {
     localStorage.setItem('laststream.langprefs', JSON.stringify({ audio: 'vo', audio2: 'none' }));
     expect(trailerLang().lang).toBe('fr');
+  });
+});
+
+describe('listes TMDB réelles (fr) : promo, VOST, plateforme', () => {
+  const souvenirs = [
+    v({ key: 'promo', name: 'L\'île des Souvenirs - Beach Art à Deauville [Au cinéma le 21 octobre]', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2026-10-15T10:00:00Z' }),
+    v({ key: 'vf', name: 'Nouvelle bande-annonce officielle VF', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2026-09-01T10:00:00Z' }),
+    v({ key: 'vost', name: 'Nouvelle bande-annonce officielle VOST', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2026-09-02T10:00:00Z' }),
+  ];
+  it('L\'île des Souvenirs : la VF officielle, jamais la promo de Deauville', () => {
+    expect(pickTrailer(souvenirs, fr)).toEqual({ key: 'vf', vo: false });
+    expect(pickTrailer([...souvenirs].reverse(), fr)).toEqual({ key: 'vf', vo: false });
+  });
+
+  const avatar = [
+    v({ key: 'disney', name: 'Avatar : De Feu et de Cendres - Bande-annonce officielle | Disney+', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2025-11-05T10:00:00Z' }),
+    v({ key: '20th', name: 'Avatar : De Feu et de Cendres - Bande-annonce officielle (VF) | 20th Century Studios', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2025-10-01T10:00:00Z' }),
+    v({ key: 'premiere-vf', name: 'Première bande-annonce (VF)', iso_639_1: 'fr', iso_3166_1: 'FR', official: true, published_at: '2025-06-01T10:00:00Z' }),
+    v({ key: 'premiere-vost', name: 'Première bande-annonce (VOST)', iso_639_1: 'en', iso_3166_1: 'US', official: true, published_at: '2025-06-02T10:00:00Z' }),
+  ];
+  it('Avatar : la VF officielle du studio, pas la version Disney+', () => {
+    expect(pickTrailerKey(avatar, fr)).toBe('20th');
+    expect(pickTrailerKey([...avatar].reverse(), fr)).toBe('20th');
+    expect(pickTrailerKey(avatar.filter((x) => x.key !== '20th'), fr)).toBe('premiere-vf');
+  });
+
+  it('VOST jamais choisie quand une VF existe, même plus ancienne et sans « officielle »', () => {
+    const vost = v({ key: 'vost', name: 'Nouvelle bande-annonce officielle VOST', iso_639_1: 'fr', published_at: '2026-09-02T10:00:00Z' });
+    const vf = v({ key: 'vf', name: 'Bande-annonce VF', iso_639_1: 'fr', published_at: '2020-01-01T10:00:00Z', official: false });
+    expect(pickTrailerKey([vost, vf], fr)).toBe('vf');
+  });
+
+  it('promo jamais choisie quand une bande-annonce officielle existe, quelle que soit sa langue', () => {
+    const promo = souvenirs[0];
+    const enOfficial = v({ key: 'en', name: 'Official Trailer', iso_639_1: 'en', official: true });
+    expect(pickTrailerKey([promo, enOfficial], fr)).toBe('en');
+    expect(pickTrailerKey([promo, souvenirs[1]], fr)).toBe('vf');
+    expect(pickTrailerKey([promo], fr)).toBe('promo');
+  });
+
+  it('mention explicite de la VF avant une vidéo fr sans mention de langue', () => {
+    const sansMention = v({ key: 'nue', name: 'Official Trailer', iso_639_1: 'fr', official: false });
+    const explicite = v({ key: 'vf', name: 'Bande-annonce VF', iso_639_1: 'en', official: false });
+    expect(pickTrailerKey([sansMention, explicite], fr)).toBe('vf');
+  });
+
+  it('titleScore : VF explicite, officielle, nouveauté, plateforme', () => {
+    expect(titleScore(v({ name: 'Bande-annonce officielle (VF)' }), fr)).toBe(7);
+    expect(titleScore(v({ name: 'Nouvelle bande-annonce officielle VF' }), fr)).toBe(9);
+    expect(titleScore(v({ name: 'Bande-annonce officielle | Disney+' }), fr)).toBe(2);
+    expect(titleScore(v({ name: 'Official Trailer' }), fr)).toBe(0 + 3);
+    expect(titleScore(v({ name: 'Trailer' }), fr)).toBe(0);
   });
 });

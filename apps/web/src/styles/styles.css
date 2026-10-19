@@ -222,7 +222,9 @@ body.modal-open { overflow: hidden; }
 
 .s-a { --title-size: 84px; --logo-h: 150px; }
 .s-a { --topbar-h: 76px; }
-.s-a .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; align-items: center; gap: 28px; padding: 16px var(--gutter); transition: background-color 0.25s ease, box-shadow 0.25s ease; }
+.s-a .topbar { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: flex; align-items: center; gap: 28px; padding: 16px var(--gutter); transition: background-color 0.25s ease, box-shadow 0.25s ease, opacity 0.6s ease; }
+.s-a .hero-cinema .topbar { opacity: 0.25; }
+.s-a .hero-cinema .topbar:hover, .s-a .hero-cinema .topbar:focus-within { opacity: 1; }
 .s-a .topbar.is-scrolled { background: rgba(12, 11, 17, 0.9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); box-shadow: 0 1px 0 var(--line); }
 .s-a .topbar .brand { flex: none; }
 .s-a .nav { display: flex; align-items: center; gap: clamp(16px, 2vw, 28px); min-width: 0; font-size: 15px; white-space: nowrap; }
@@ -260,6 +262,25 @@ body.modal-open { overflow: hidden; }
 .s-a .hero-content { position: relative; max-width: 600px; display: flex; flex-direction: column; gap: 18px; z-index: 1; }
 .s-a .hero-content .eyebrow { margin-bottom: 16px; }
 .s-a .hero-desc { max-width: 560px; }
+/* Mode cinéma (son de l'aperçu activé) : la vidéo seule, avec le logo réduit et Lecture en bas à gauche. Le bas de l'image
+   reste dégagé pour les sous-titres ; le bouton son (hors du texte) reste visible pour couper le son. */
+.s-a .hero-dots, .s-a .hero-arrow, .s-a .rows { transition: opacity 0.6s ease, visibility 0.6s; }
+.s-a .hero-slide .hero-content > :not(.hero-title):not(.hero-actions) { transition: opacity 0.6s ease, visibility 0.6s; }
+.s-a .hero-slide .hero-actions > :not(.btn-primary) { transition: opacity 0.6s ease, visibility 0.6s, background-color 0.2s, transform 0.15s; }
+.s-a .hero.is-cinema .hero-slide.is-current { padding-bottom: 130px; }
+.s-a .hero.is-cinema .hero-slide.is-current .hero-actions .btn-primary { flex: none; }
+.s-a .hero.is-cinema .hero-slide.is-current .hero-content { z-index: 3; }
+.s-a .hero.is-cinema .hero-slide.is-current .hero-content > :not(.hero-title):not(.hero-actions),
+.s-a .hero.is-cinema .hero-slide.is-current .hero-actions > :not(.btn-primary) { opacity: 0; visibility: hidden; pointer-events: none; }
+.s-a .hero.is-cinema .hero-slide.is-current .hero-title { transform: scale(0.5); }
+.s-a .hero.is-cinema .hero-dots, .s-a .hero.is-cinema .hero-arrow { opacity: 0; visibility: hidden; pointer-events: none; }
+.s-a .hero.is-cinema .scrim { z-index: 2; background: linear-gradient(0deg, rgba(12, 11, 17, 0.45) 0%, rgba(12, 11, 17, 0) 26%); }
+.s-a .hero-cinema .rows { opacity: 0; visibility: hidden; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .s-a .hero-dots, .s-a .hero-arrow, .s-a .rows, .s-a .topbar,
+  .s-a .hero-slide .hero-content > :not(.hero-title):not(.hero-actions),
+  .s-a .hero-slide .hero-actions > :not(.btn-primary), .s-a .hero-slide .hero-title { transition: none; }
+}
 .s-a .rows { position: relative; z-index: 1; margin-top: 40px; padding: 0 var(--gutter) 64px; }
 .s-a .card-meta { display: none; }
 .s-a .card-title { font-size: 14px; }

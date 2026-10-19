@@ -156,9 +156,9 @@ describe('watchPlayback', () => {
 
 describe('bande-annonce de fond : boucle ou non', () => {
   it('boucle par défaut, et ne boucle plus quand l’enchaînement est actif', () => {
-    expect(ambientSrc('abc', false)).toContain('loop=1');
-    expect(ambientSrc('abc', false, true)).toContain('loop=1');
-    expect(ambientSrc('abc', false, false)).toContain('loop=0');
-    expect(ambientSrc('abc', false, false)).toContain('playlist=abc');
+    expect(ambientSrc('abc')).toContain('loop=1');
+    expect(ambientSrc('abc', true)).toContain('loop=1');
+    expect(ambientSrc('abc', false)).toContain('loop=0');
+    expect(ambientSrc('abc', false)).toContain('playlist=abc');
   });
 });

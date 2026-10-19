@@ -121,7 +121,7 @@ export function openHover(tile) {
       }
       if (!REDUCE && !STILL) {
         const vbox = hv.el.querySelector('.hc-video');
-        vbox.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, d.trailerVO)) + '"></iframe>';
+        vbox.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
         const fr = vbox.querySelector('iframe');
         fr.addEventListener('load', () => {
           if (token !== hv.token) return;

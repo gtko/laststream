@@ -1,7 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { FICHE_IDLE_MS, REDUCE, STILL } from './constants.js';
 import { detailEl, modal } from './dom.js';
-import { ambientSrc, fitPreview, paintSound, postYT } from './preview.js';
+import { ambientSrc, fitPreview, paintSound, postYT, setPreviewSound } from './preview.js';
 import { textFade } from './playback.js';
 import { esc } from './util.js';
 
@@ -39,7 +39,7 @@ export function heroVideoSetup(m, auto = null) {
     }
     const wrap = document.createElement('div');
     wrap.className = 'f-video';
-    wrap.innerHTML = '<iframe title="Bande-annonce en arrière-plan, sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(me.key, me.vo, !auto)) + '"></iframe>';
+    wrap.innerHTML = '<iframe title="Bande-annonce en arrière-plan, sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(me.key, !auto)) + '"></iframe>';
     bg.appendChild(wrap);
     me.wrap = wrap;
     me.iframe = wrap.querySelector('iframe');
@@ -79,7 +79,7 @@ export function heroVideoSync() {
 export function toggleHeroSound(btn) {
   if (!fv || !fv.ready) return;
   fv.muted = !fv.muted;
-  postYT(fv.iframe, fv.muted ? 'mute' : 'unMute');
+  setPreviewSound(fv.iframe, !fv.muted, fv.vo);
   if (!fv.muted) postYT(fv.iframe, 'setVolume', [80]);
   paintSound(btn, fv.muted);
 }

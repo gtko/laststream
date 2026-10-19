@@ -1,5 +1,5 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
-import { captionParams } from '../data/trailers';
+import { trailerLang } from '../data/trailers';
 import { getDetail } from './catalog.js';
 import { DWELL_MS, REDUCE, STILL } from './constants.js';
 import { ICON } from './icons.js';
@@ -52,11 +52,38 @@ export function paintSound(btn, muted) {
 export function ytSrc(key, extra) {
   return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(key) + '?' + extra;
 }
-/** Aperçu muet en boucle. `vo` : bande-annonce non doublée dans la langue principale, sous-titres dans cette langue. */
-export const ambientSrc = (key, vo, loop = true) =>
+/** Aperçu muet en boucle. Jamais de sous-titres à l'arrivée : ils ne s'affichent qu'avec le son (voir setPreviewSound). */
+export const ambientSrc = (key, loop = true) =>
   ytSrc(key, 'autoplay=1&mute=1&controls=0&loop=' + (loop ? 1 : 0) + '&playlist=' + encodeURIComponent(key) +
-    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&' + (captionParams(!!vo) || 'cc_load_policy=0') +
+    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&cc_load_policy=0' +
     '&fs=0&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
+
+/**
+ * Mode cinéma du héros : son activé → seule la vidéo reste (logo réduit et Lecture en bas à gauche), la barre du haut
+ * s'atténue. Sans effet hors du héros (fiche, survol, grille).
+ */
+function setCinema(iframe, on) {
+  const hero = iframe.closest('.hero');
+  if (!hero) return;
+  hero.classList.toggle('is-cinema', on);
+  if (hero.parentElement) hero.parentElement.classList.toggle('hero-cinema', on);
+}
+
+/**
+ * Son de l'aperçu (`on` : son activé). `vo` : bande-annonce non doublée dans la langue principale ; ses sous-titres
+ * s'activent avec le son et sont retirés quand il est coupé. Une VF n'a jamais de sous-titres imposés.
+ */
+export function setPreviewSound(iframe, on, vo) {
+  postYT(iframe, on ? 'unMute' : 'mute');
+  setCinema(iframe, on);
+  if (!vo) return;
+  if (on) {
+    postYT(iframe, 'loadModule', ['captions']);
+    postYT(iframe, 'setOption', ['captions', 'track', { languageCode: trailerLang().lang }]);
+  } else {
+    postYT(iframe, 'unloadModule', ['captions']);
+  }
+}
 
 export function fitPreview(p) {
   const w0 = p.media.offsetWidth;
@@ -73,7 +100,8 @@ export function fitPreview(p) {
   s.width = w + 'px';
   s.height = h + 'px';
   s.left = (w0 - w) / 2 + 'px';
-  s.top = (h0 - h) / 2 + 'px';
+  // Ancré en bas : les sous-titres (bas de l'image) restent dans la fenêtre, le débordement se coupe en haut.
+  s.top = h0 - h + 'px';
 }
 
 export function stopPreview() {
@@ -81,6 +109,7 @@ export function stopPreview() {
   if (!p) return;
   state.preview = null;
   try { postYT(p.iframe, 'pauseVideo'); } catch (_) { /* déjà fermé */ }
+  setCinema(p.iframe, false);
   if (p.ro) p.ro.disconnect();
   if (p.unfade) p.unfade();
   p.wrap.remove();
@@ -96,7 +125,7 @@ export async function startPreview(media) {
   stopPreview();
   const wrap = document.createElement('div');
   wrap.className = 'preview';
-  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, d.trailerVO)) + '"></iframe>';
+  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'f-round preview-sound';
@@ -106,7 +135,7 @@ export async function startPreview(media) {
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');
-  const p = { media, wrap, btn, iframe, muted: true, ro: null, unfade: null };
+  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null };
   state.preview = p;
   p.ro = new ResizeObserver(() => fitPreview(p));
   p.ro.observe(media);

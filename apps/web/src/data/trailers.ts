@@ -50,9 +50,9 @@ export function includeVideoLanguages(pref: TrailerLang): string {
 // ---- Marqueurs de titre ----
 // TMDB étiquette souvent mal la langue : ce que dit le nom de la vidéo (VF, VOSTFR…) prime sur `iso_639_1`.
 
-/** Doublage ou version parlée dans la langue, d'après le nom. */
+/** Doublage ou version parlée dans la langue, d'après le nom (mention explicite). */
 const DUB_MARKERS: ReadonlyArray<readonly [string, RegExp]> = [
-  ['fr', /\bvff?\b|version fran[cç]a(?:is|ise)|\bdoubl[é]e?s?\b|bande[- ]annonce/i],
+  ['fr', /\bvff?\b|version fran[cç]a(?:is|ise)|\bdoubl[é]e?s?\b/i],
   ['en', /\benglish\b/i],
   ['es', /\bdoblad[oa]s?\b|\bespa[ñn]ol(?:a)?\b|\blatino\b|\bcastellano\b/i],
   ['de', /\bdeutsch(?:e|er)?\b|\bsynchronisiert(?:e)?\b|\bsynchro\b/i],
@@ -73,6 +73,14 @@ const EXCLUDED = /behind the scenes|featurette|bloopers?|b[eê]tisier|\br[ée]ca
 const CLIP_NAME = /\bclips?\b/i;
 const TEASER = /\bteaser\b/i;
 const CANDIDATE_TYPES: readonly string[] = ['Trailer', 'Teaser', 'Clip'];
+/** Promo ou événement (avant-première, festival, « au cinéma le », « beach »…) : passe après toute vraie bande-annonce. */
+const PROMO = /deauville|cannes|venise|avant[- ]premi[eè]re|festival|au cin[ée]ma le|en salles? le|\bbeach\b|\binterviews?\b|\bspots? tv\b|\btv spots?\b|r[ée]actions?\b|\bbonus\b/i;
+/** « Bande-annonce officielle » ou « official trailer ». */
+const OFFICIAL = /bande[- ]annonce officielle|official trailer|tr[aá]iler oficial|offizieller trailer|trailer ufficiale/i;
+/** Nouveauté (« nouvelle », « finale », « bande-annonce 2 ») : à score égal, la date publiée départage. */
+const NEWER = /\bnouvel{1,2}e?\b|\bnouveau\b|\bfinale?\b|\bfinal trailer\b|\bnew trailer\b|\bbande[- ]annonce 2\b|\btrailer 2\b/i;
+/** Plateforme de streaming accolée au titre (« | Disney+ ») : léger malus. */
+const PLATFORM = /disney\+|netflix|prime video|canal\+|apple tv/i;
 
 /** Vrai si le nom annonce des sous-titres dans la langue choisie (VOSTFR, sous-titré, subtitled…). */
 function isSubtitled(v: TmdbVideo, pref: TrailerLang): boolean {
@@ -80,11 +88,16 @@ function isSubtitled(v: TmdbVideo, pref: TrailerLang): boolean {
   return (SUB_MARKERS[pref.lang]?.test(name) ?? false) || GENERIC_SUB.test(name);
 }
 
+/** « Bande-annonce » sans autre mention : titre français, donc doublage français. */
+const FR_BANNER = /bande[- ]annonce/i;
+
 /** Langue parlée : un marqueur de doublage dans le nom prime sur l'étiquette TMDB. */
 export function audioLangOf(v: TmdbVideo): string | null {
   const name = v.name ?? '';
   const dub = DUB_MARKERS.find(([, re]) => re.test(name));
-  return dub ? dub[0] : v.iso_639_1 || null;
+  if (dub) return dub[0];
+  if (FR_BANNER.test(name)) return 'fr';
+  return v.iso_639_1 || null;
 }
 
 /**
@@ -107,22 +120,34 @@ function kindRank(v: TmdbVideo): number {
 }
 
 /**
- * Rang d'une vidéo (plus petit = meilleur). Les clips passent toujours après les bandes-annonces et teasers ; pour
- * ceux-ci, la langue prime (une VF teaser bat une bande-annonce anglaise), puis la nature (bande-annonce avant teaser).
+ * Rang d'une vidéo (plus petit = meilleur). Les promos (avant-premières, événements) passent après toute bande-annonce ou
+ * teaser, et les clips après tout le reste ; pour le reste, la langue prime (une VF teaser bat une bande-annonce
+ * anglaise), puis la nature (bande-annonce avant teaser).
  */
 export function videoTier(v: TmdbVideo, pref: TrailerLang): number {
-  return (v.type === 'Clip' ? 100 : 0) + langGroup(v, pref) * 3 + kindRank(v);
+  return (v.type === 'Clip' ? 100 : 0) + (PROMO.test(v.name ?? '') ? 50 : 0) + langGroup(v, pref) * 3 + kindRank(v);
 }
 
 /**
- * Même rang : variante régionale correspondante (doublage seulement), puis « official », puis la plus récente,
- * puis la taille 1080.
+ * Score du titre (plus haut = meilleur) : mention explicite de la langue principale (+4), « bande-annonce officielle »
+ * (+3), nouveauté (+2), moins une plateforme de streaming dans le nom (-1).
+ */
+export function titleScore(v: TmdbVideo, pref: TrailerLang): number {
+  const name = v.name ?? '';
+  const explicit = DUB_MARKERS.find(([lang]) => lang === pref.lang)?.[1].test(name) ? 4 : 0;
+  return explicit + (OFFICIAL.test(name) ? 3 : 0) + (NEWER.test(name) ? 2 : 0) - (PLATFORM.test(name) ? 1 : 0);
+}
+
+/**
+ * Même rang : meilleur score du titre, puis variante régionale correspondante (doublage seulement), puis « official »,
+ * puis la plus récente, puis la taille 1080.
  */
 export function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: TrailerLang): number {
   const t = videoTier(a, pref) - videoTier(b, pref);
   if (t) return t;
   const region = (v: TmdbVideo) => (langGroup(v, pref) === 0 && v.iso_3166_1 === pref.country ? 0 : 1);
-  return region(a) - region(b)
+  return titleScore(b, pref) - titleScore(a, pref)
+    || region(a) - region(b)
     || Number(!!b.official) - Number(!!a.official)
     || (Date.parse(b.published_at ?? '') || 0) - (Date.parse(a.published_at ?? '') || 0)
     || Number(b.size === 1080) - Number(a.size === 1080);
