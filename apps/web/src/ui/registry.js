@@ -6,8 +6,8 @@ import { closeHover } from './hover.js';
 import { filterAvailable } from './avail.js';
 import { isReleasedItem, releasedParams, todayStr } from './dates.js';
 import { isKidProfile, kidMaxAge, kidSection } from '../data/auth';
-import { tmdb } from '../data/lt';
-import { getRegion } from '../data/prefs';
+import { api, tmdb } from '../data/lt';
+import { getRegion, getVideoLang } from '../data/prefs';
 import { keepVisible } from '../data/homeFilters';
 import { activeRows, Appearances, fillRow, passesQuality, pickSeed, rankTop, kidBase, makeCtx, MIN_ITEMS, PROBES, ROW_MAX, rowById, TOP_COUNT } from '../data/rows';
 import { userStore } from '../data/userStore';
@@ -101,6 +101,12 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
   const f = def.fetch;
   const pg = page > 1 ? { page } : {};
   if (f.k === 'discover') return { title: def.title, items: toItems(await tmdb('discover/' + f.type, { ...releasedParams(f.type), ...f.params(ctx), ...pg }), f.type) };
+  if (f.k === 'top10') {
+    // Top 10 : une page des tendances de la semaine, filtrée côté serveur (titres disponibles dans la région). `raw` = titres
+    // reçus de la source avant filtre (0 : fin de la source), pour que la rangée complète sa page suivante.
+    const json = await api('top10/' + f.type, { page: String(page), region: getRegion().code, language: getVideoLang().tag });
+    return { title: def.title, raw: typeof json?.raw === 'number' ? json.raw : 0, items: toItems(json, f.type) };
+  }
   if (f.k === 'list') return { title: def.title, items: toItems(await tmdb(f.path, pg), f.type, def.upcoming) };
   if (f.k === 'collections') {
     if (page > 1) return { title: def.title, items: [] };
@@ -170,7 +176,7 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
 export async function resolveHomeRow(def, page = 1, ctx) {
   const res = await resolveRow(def, page, ctx);
   if (!res) return null;
-  return { title: res.title, raw: res.items.length, items: keepVisible(res.items) };
+  return { title: res.title, raw: res.raw ?? res.items.length, items: keepVisible(res.items) };
 }
 
 // ---------- Accueil : chargement progressif ----------
@@ -227,7 +233,11 @@ async function loadNext() {
     const res = await fillRow(
       async (page) => (token === reg.token ? resolveHomeRow(def, page, reg.ctx) : null),
       def.kind === 'top10' ? TOP_COUNT : ROW_MAX,
-      (fresh) => filterAvailable(fresh.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key)), { cinema: def.cinema }),
+      async (fresh) => {
+        const open = fresh.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key));
+        // Top 10 : la disponibilité est décidée côté serveur (une page déjà filtrée), jamais par tuile.
+        return def.fetch.k === 'top10' ? open : filterAvailable(open, { cinema: def.cinema });
+      },
     );
     if (token !== reg.token || !res) return;
     const items = res.items;
@@ -327,7 +337,8 @@ export async function showBrowse(id) {
         if (token !== state.token) return { html: '', done: true };
         if (!res || res.raw === 0) return { html: '', done: true, };
         if (page === 1 && tries === 0 && h1) h1.textContent = res.title;
-        const items = (await filterAvailable(res.items.filter((it) => !have.has(it.key)), { cinema: def.cinema }));
+        const fresh = res.items.filter((it) => !have.has(it.key));
+        const items = def.fetch.k === 'top10' ? fresh : (await filterAvailable(fresh, { cinema: def.cinema }));
         if (items.length) return { html: items.map(card).join(''), done: false, advance: p - page + 1 };
       }
       return { html: '', done: true };

@@ -34,6 +34,9 @@ export interface LoadedSources {
   notice?: string;
   /** Avancement du repli « via l'appareil » à la construction de cette liste (voir `pollSources`). */
   deviceVersion?: number;
+  /** Film pas encore disponible en numérique : aucune source proposée (`views` vide), message à la place. */
+  notYetDigital?: boolean;
+  digitalDate?: string;
   /** Part du serveur : nombre de flux reçus et sources encore en attente (le reste vient de l'appareil). */
   serverCount?: number;
   serverPending?: string[];
@@ -112,16 +115,19 @@ async function fetchSources(req: SourceRequest): Promise<LoadedSources> {
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: req.streamId });
-  const device = startDeviceFetch(requestKey(req), res.deviceFetch ?? []);
+  // Film pas encore sorti en numérique : aucune source (les releases restantes ne sont pas fiables), pas d'appel à l'appareil.
+  const yet = res.notYetDigital === true;
+  const device = yet ? undefined : startDeviceFetch(requestKey(req), res.deviceFetch ?? []);
   // Sources lisibles seulement : lien HTTP(S) des addons, jamais un infoHash à lire en pair-à-pair sans débrideur.
   const all = device ? mergeDeviceStreams(res.streams, device.streams) : res.streams;
-  const streams = sortStreams(playableStreams(all, clientOk));
+  const streams = yet ? [] : sortStreams(playableStreams(all, clientOk));
   let views = withWebPlayback(toSourceViews(streams), inShell() ? null : browserCaps());
   if (clientOk) views = await annotateClientViews(views, { onlyCached: res.onlyCached });
   return {
     imdb, views,
     pending: [...res.pending, ...(device?.pending ?? [])],
     notice: res.notice,
+    ...(yet ? { notYetDigital: true, ...(res.digitalDate !== undefined ? { digitalDate: res.digitalDate } : {}) } : {}),
     ...(device ? { deviceVersion: device.version, serverCount: res.streams.length, serverPending: res.pending } : {}),
   };
 }

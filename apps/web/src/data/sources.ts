@@ -60,6 +60,28 @@ export interface StreamsResult {
   onlyCached?: boolean;
   /** Addons que lastAddon n'a pas pu joindre (IP serveur bloquée) : l'appareil les interroge lui-même. */
   deviceFetch?: DeviceTarget[];
+  /** Film pas encore disponible en numérique ou physique : lastAddon ne renvoie que les releases de l'année exacte, l'app n'affiche aucune source. */
+  notYetDigital?: boolean;
+  /** Date de sortie numérique annoncée (AAAA-MM-JJ), quand TMDB la donne. */
+  digitalDate?: string;
+}
+
+/** Date AAAA-MM-JJ valide, ou undefined. */
+const isoDayOf = (v: unknown): string | undefined => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined);
+
+/** Champs « pas encore disponible en numérique » d'une réponse lastAddon (rien d'autre que `notYetDigital` : absents sinon). */
+export function notYetDigitalOf(raw: { notYetDigital?: unknown; digitalDate?: unknown }): { notYetDigital?: true; digitalDate?: string } {
+  if (raw.notYetDigital !== true) return {};
+  const digitalDate = isoDayOf(raw.digitalDate);
+  return digitalDate === undefined ? { notYetDigital: true } : { notYetDigital: true, digitalDate };
+}
+
+/** Message affiché à la place des sources d'un film pas encore disponible en numérique. */
+export function notYetDigitalText(digitalDate?: string): string {
+  if (digitalDate === undefined) return 'Pas encore disponible en streaming.';
+  const d = new Date(digitalDate + 'T00:00:00');
+  const label = Number.isNaN(d.getTime()) ? digitalDate : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return 'Pas encore disponible en streaming (sortie numérique prévue le ' + label + ').';
 }
 
 /** Addon à interroger depuis l'appareil : son URL /stream pour ce titre (peut porter la clé de débrideur de l'utilisateur : jamais journalisée, jamais mise en cache). */
@@ -90,7 +112,7 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
 export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null, opts: { torrents?: boolean; streamId?: string | null } = {}): Promise<StreamsResult> {
   const kind = type === 'tv' ? 'series' : 'movie';
   const id = type === 'tv' ? episodeStreamId(imdbId, season, episode, opts.streamId) : imdbId;
-  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown; deviceFetch?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
+  const res = await requestJson<{ streams?: Stream[]; pending?: unknown; notice?: unknown; debrid?: unknown; onlyCached?: unknown; deviceFetch?: unknown; notYetDigital?: unknown; digitalDate?: unknown }>(addonUrl(`stream/${kind}/${id}.json${opts.torrents ? '?torrents=1' : ''}`));
   const notice = typeof res?.notice === 'string' && res.notice ? res.notice : undefined;
   const deviceFetch = parseDeviceTargets(res?.deviceFetch);
   return {
@@ -99,6 +121,7 @@ export async function fetchStreamsResult(type: 'movie' | 'tv', imdbId: string, s
     pending: strings(res?.pending),
     ...(notice ? { notice } : {}),
     ...(res?.debrid === 'client' ? { clientDebrid: true, onlyCached: res.onlyCached === true } : {}),
+    ...notYetDigitalOf(res ?? {}),
   };
 }
 
