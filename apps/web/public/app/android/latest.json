@@ -1,8 +1,1 @@
-{
-  "notes": "Lecteur Android : PiP corrigé, mini-lecteur, sources détaillées, commandes en icônes, reprise fiable",
-  "url": "https://laststream.gtux-prog.workers.dev/app/android/laststream-2026101901.apk",
-  "versionCode": 2026101901,
-  "versionName": "2026.10.19.1",
-  "size": 49557319,
-  "sha256": "8935e1d1998c34516bf7f51ef712f1fde2e275ffb14ac9bd798ef90c2655b267"
-}
+{  "versionCode": 2026101802,  "versionName": "2026.10.18.2",  "url": "https://laststream.gtux-prog.workers.dev/app/android/laststream-2026101802.apk",  "sha256": "e5cc5552d0f8cc6bebb3c5bb39a8dd90ea74607a55c2a78be17877a3fc5a8820",  "size": 46521454,  "notes": "Mini-lecteur natif, interface chargée depuis le serveur, mise à jour en un tap"}
