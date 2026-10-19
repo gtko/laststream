@@ -6,6 +6,12 @@ import type { PlaybackState } from './sync';
 export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
 export const CHAT_MAX = 500;
 export const MAX_FRAME_BYTES = 4096;
+/** Attente de tampon (miroir du serveur) : avance (s) à partir de laquelle un participant se déclare prêt. */
+export const PARTY_RESUME_AHEAD_SEC = 10;
+/** Attente de tampon (miroir du serveur) : délai maximal (ms) avant reprise sans les retardataires. */
+export const PARTY_WAIT_MAX_MS = 45_000;
+/** Avance de tampon acceptée par le serveur (secondes) ; au-delà, le client la ramène à cette valeur. */
+export const PARTY_BUF_AHEAD_MAX_SEC = 600;
 
 export interface ChatLine {
   id: string;
@@ -35,6 +41,8 @@ export type ServerMsg =
   | { t: 'host'; user: string }
   | { t: 'reported'; by?: string; against?: string; text?: string }
   | { t: 'removed'; messageId: string }
+  /** Attente de tampon : pseudos des retardataires, début (ms serveur), délai maximal et avance de reprise (s) ; `who` vide = fin. */
+  | { t: 'wait'; who: string[]; since: number; maxMs: number; resumeAhead?: number }
   /** À l'hôte seulement : le lien partagé a été renouvelé après l'exclusion d'un invité ; il en redemande la valeur. */
   | { t: 'link_renewed' }
   | { t: 'error'; code: string }
@@ -51,9 +59,11 @@ export type ClientMsg =
   | { t: 'mute'; user: string; muted: boolean }
   | { t: 'kick'; user: string }
   | { t: 'transfer'; user: string }
-  | { t: 'end' };
+  | { t: 'end' }
+  /** Tampon : `ready` = assez d'avance pour lire ; `ahead` = secondes de tampon devant la position (0 à 600). */
+  | { t: 'buf'; ready: boolean; ahead: number };
 
-const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'muted', 'host', 'reported', 'removed', 'link_renewed', 'error', 'ended']);
+const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
 
 /** Message serveur d'une trame texte, ou null si elle est illisible ou d'un type inconnu. */
 export function parseServerMessage(raw: unknown): ServerMsg | null {

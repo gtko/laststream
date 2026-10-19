@@ -1,8 +1,12 @@
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import {
-  encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, parseRtcFrame, parseServerMessage, type ChatLine, type ClientMsg, type ServerMsg, type You,
+  CHAT_MAX, encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, PARTY_BUF_AHEAD_MAX_SEC, PARTY_RESUME_AHEAD_SEC, parseRtcFrame, parseServerMessage, REACTIONS,
+  type ChatLine, type ClientMsg, type ServerMsg, type You,
 } from './protocol';
 import { ClockEstimator, type PlaybackState } from './sync';
+
+/* Constantes d'attente de tampon, miroirs du serveur (réexportées pour les écrans et les tests). */
+export { PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS } from './protocol';
 
 /* Client du protocole d'un salon : connexion WebSocket, horloge serveur (ping/pong), état, reconnexion automatique avec
  * reprise (le `welcome` renvoie l'état, les participants et le chat), envoi des commandes. Aucune dépendance au
@@ -28,12 +32,23 @@ export interface ClientDeps {
   clearTimer?: (id: unknown) => void;
 }
 
+/** Attente de tampon en cours : retardataires (pseudos), début (ms serveur), délai maximal et avance de reprise (s). */
+export interface PartyWait {
+  who: string[];
+  since: number;
+  maxMs: number;
+  resumeAhead: number;
+}
+
 export interface ClientEvents {
   welcome: ServerMsg & { t: 'welcome' };
   state: PlaybackState;
   media: { media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState };
   participants: PartyParticipant[];
+  /** Ligne de chat : une ligne de l'historique reçue à la (re)connexion, ou une nouvelle ligne. */
   chat: ChatLine;
+  /** Attente de tampon ouverte ou mise à jour (`PartyWait`), ou fermée (`null`). */
+  wait: PartyWait | null;
   react: { user: string; emoji: string; at: number };
   host: string;
   muted: { user: string; muted: boolean };
@@ -55,6 +70,8 @@ export const PING_BURST_MS = 250;
 export const PING_EVERY_MS = 25_000;
 export const PONG_TIMEOUT_MS = 10_000;
 export const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15_000] as const;
+/** Lignes de chat gardées en mémoire (l'historique reçu à la connexion compris). */
+export const CHAT_MEMORY_LINES = 200;
 
 export class PartyClient {
   status: ClientStatus = 'idle';
@@ -63,6 +80,8 @@ export class PartyClient {
   state: PlaybackState | null = null;
   participants: PartyParticipant[] = [];
   chat: ChatLine[] = [];
+  /** Attente de tampon en cours (null hors attente). */
+  waiting: PartyWait | null = null;
   readonly clock = new ClockEstimator();
   /** Nombre de reconnexions réussies (reprise après coupure). */
   resumes = 0;
@@ -165,6 +184,7 @@ export class PartyClient {
     this.closedByUs = true;
     this.stopTimers();
     this.setStatus('closed');
+    this.setWaiting(null);
     this.emit('end', reason);
   }
 
@@ -176,6 +196,14 @@ export class PartyClient {
     this.socket = null;
     if (s) { try { s.close(1000); } catch { /* ignoré */ } }
     this.setStatus('closed');
+    this.setWaiting(null);
+  }
+
+  /** Met à jour l'attente de tampon et l'annonce ; sans effet si elle reste absente. */
+  private setWaiting(next: PartyWait | null): void {
+    if (next === null && this.waiting === null) return;
+    this.waiting = next;
+    this.emit('wait', next);
   }
 
   private stopTimers(): void {
@@ -225,16 +253,21 @@ export class PartyClient {
       return;
     }
     switch (msg.t) {
-      case 'welcome':
+      case 'welcome': {
+        // Historique : les lignes déjà connues ne sont pas réémises. Une attente en cours, si elle existe, est renvoyée par le serveur.
+        const known = new Set(this.chat.map((l) => l.id));
         this.room = msg.room;
         this.you = msg.you;
         this.participants = msg.participants;
-        this.chat = msg.chat ?? [];
+        this.chat = (msg.chat ?? []).slice(-CHAT_MEMORY_LINES);
         this.state = msg.state;
+        this.setWaiting(null);
         this.emit('welcome', msg);
         this.emit('participants', this.participants);
         this.emit('state', msg.state);
+        for (const line of this.chat) if (!known.has(line.id)) this.emit('chat', line);
         break;
+      }
       case 'pong': {
         if (this.pongTimer !== null) { this.clearTimer(this.pongTimer); this.pongTimer = null; }
         this.clock.add(msg.c, this.now(), msg.s);
@@ -259,9 +292,21 @@ export class PartyClient {
         this.emit('participants', this.participants);
         break;
       case 'chat':
-        if (!this.chat.some((l) => l.id === msg.line.id)) this.chat = [...this.chat, msg.line].slice(-200);
-        this.emit('chat', msg.line);
+        if (!this.chat.some((l) => l.id === msg.line.id)) {
+          this.chat = [...this.chat, msg.line].slice(-CHAT_MEMORY_LINES);
+          this.emit('chat', msg.line);
+        }
         break;
+      case 'wait': {
+        const who = Array.isArray(msg.who) ? msg.who.filter((w): w is string => typeof w === 'string') : [];
+        this.setWaiting(who.length === 0 ? null : {
+          who,
+          since: msg.since,
+          maxMs: msg.maxMs,
+          resumeAhead: typeof msg.resumeAhead === 'number' && Number.isFinite(msg.resumeAhead) ? msg.resumeAhead : PARTY_RESUME_AHEAD_SEC,
+        });
+        break;
+      }
       case 'react':
         this.emit('react', { user: msg.user, emoji: msg.emoji, at: msg.at });
         break;
@@ -322,11 +367,25 @@ export class PartyClient {
   changeEpisode(season: number, episode: number, fingerprint?: Fingerprint): boolean {
     return this.isHost && this.raw({ t: 'episode', season, episode, ...(fingerprint ? { fingerprint } : {}) });
   }
+  /** Message du chat : espaces retirés, CHAT_MAX caractères au plus ; vide = rien n'est envoyé. */
   sendChat(text: string): boolean {
-    const t = text.trim().slice(0, 500);
+    const t = text.trim().slice(0, CHAT_MAX);
     return t ? this.raw({ t: 'chat', text: t }) : false;
   }
-  react(emoji: string): boolean { return this.raw({ t: 'react', emoji }); }
+  /** Réaction : emoji de la liste du salon uniquement ; false sinon ou hors ligne. */
+  sendReact(emoji: string): boolean {
+    return (REACTIONS as readonly string[]).includes(emoji) && this.raw({ t: 'react', emoji });
+  }
+  /** Alias de `sendReact` (appels existants). */
+  react(emoji: string): boolean { return this.sendReact(emoji); }
+  /**
+   * Tampon local, envoyé au salon : `ready` = assez d'avance pour lire, `ahead` = secondes de tampon devant la position
+   * (ramenées à 0..PARTY_BUF_AHEAD_MAX_SEC). Le salon retient la lecture tant qu'un participant n'est pas prêt.
+   */
+  sendBuffering(ready: boolean, ahead: number): boolean {
+    const a = Number.isFinite(ahead) ? Math.min(PARTY_BUF_AHEAD_MAX_SEC, Math.max(0, ahead)) : 0;
+    return this.raw({ t: 'buf', ready: !!ready, ahead: a });
+  }
   report(messageId: string, reason?: string): boolean { return this.raw({ t: 'report', messageId, ...(reason ? { reason } : {}) }); }
   mute(user: string, muted: boolean): boolean { return this.isHost && this.raw({ t: 'mute', user, muted }); }
   kick(user: string): boolean { return this.isHost && this.raw({ t: 'kick', user }); }
