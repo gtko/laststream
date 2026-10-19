@@ -21,6 +21,8 @@ export interface RowCtx {
 export type Fetcher =
   | { k: 'discover'; type: 'movie' | 'tv'; params: (c: RowCtx) => Params }
   | { k: 'list'; path: string; type?: 'movie' | 'tv' }
+  /** Top 10 : tendances de la semaine filtrées côté serveur (titres disponibles dans la région, lt/top10.ts). */
+  | { k: 'top10'; type: 'movie' | 'tv' }
   | { k: 'collections'; ids: number[] }
   | { k: 'provider'; slug: string; type: 'movie' | 'tv' | 'both'; params?: (c: RowCtx) => Params }
   | { k: 'because'; source: 'watched' | 'rated'; index: number }
@@ -93,9 +95,9 @@ export const ADULT_ROWS: RowDef[] = [
   { ...tv('series', 'Séries populaires', () => ({})) },
   { id: 'because-w-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 0 } },
   { id: 'because-r-0', title: '', kind: 'poster', fetch: { k: 'because', source: 'rated', index: 0 } },
-  { id: 'top-series', title: 'Top 10 séries de la semaine', kind: 'top10', fetch: { k: 'list', path: 'trending/tv/week' }, minItems: 10 },
+  { id: 'top-series', title: 'Top 10 séries de la semaine', kind: 'top10', fetch: { k: 'top10', type: 'tv' }, minItems: 10 },
   { ...list('cinema', 'Au cinéma en ce moment', 'movie/now_playing', { cinema: true, upcoming: true, minItems: 6 }) },
-  { id: 'top-films', title: 'Top 10 films', kind: 'top10', fetch: { k: 'list', path: 'trending/movie/week' }, minItems: 10 },
+  { id: 'top-films', title: 'Top 10 films', kind: 'top10', fetch: { k: 'top10', type: 'movie' }, minItems: 10 },
   { id: 'because-w-1', title: '', kind: 'poster', fetch: { k: 'because', source: 'watched', index: 1 } },
   { ...list('trending-day', 'Tendances aujourd’hui', 'trending/all/day') },
   { id: 'new-netflix', title: 'Nouveautés sur Netflix', kind: 'landscape', fetch: { k: 'provider', slug: 'netflix', type: 'both', params: (c) => ({ sort_by: 'primary_release_date.desc', 'primary_release_date.lte': c.today, 'primary_release_date.gte': daysAgo(c.today, 120) }) } },

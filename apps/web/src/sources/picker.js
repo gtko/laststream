@@ -1,6 +1,6 @@
 /* Sélecteur de sources détaillé : tiroir du prototype (qualité, audio, langues, taille, débit, copies, fichier),
  * filtres, tri, regroupement par résolution, source recommandée en tête. Navigable au clavier et à la télécommande. */
-import { measureBandwidthKbps, QUALITY_LABEL } from '../data/sources';
+import { measureBandwidthKbps, notYetDigitalText, QUALITY_LABEL } from '../data/sources';
 import { modalBody } from '../ui/dom.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
@@ -150,12 +150,13 @@ export async function openSourcePicker(request, opener, opts) {
       session.views = loaded.views;
       session.pending = loaded.pending;
       session.serverNotice = loaded.notice || '';
+      session.notYet = loaded.notYetDigital ? notYetDigitalText(loaded.digitalDate) : '';
     }
   } catch (e) {
     if (alive()) showMessage(e && e.message === 'no-imdb' ? 'Aucun identifiant IMDb pour ce titre : impossible de chercher des sources.' : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
     return;
   }
-  if (!session.views.length && !session.pending.length) { showMessage(session.serverNotice || 'Aucune source trouvée pour le moment.'); return; }
+  if (!session.views.length && !session.pending.length) { showMessage(session.notYet || session.serverNotice || 'Aucune source trouvée pour le moment.'); return; }
   const known = knownBandwidthKbps();
   // La liste se complète toute seule tant que lastAddon interroge d'autres sources (2 s, 20 s au plus), sans toucher à la lecture.
   if (session.pending.length) {
