@@ -23,7 +23,7 @@ import type { TitleInfo } from './sources/indexers.js';
 import { effectiveSources, type LocalProwlarrProvider } from './sources/local-prowlarr.js';
 import { legacyIndexersEnabled } from './config/runtime-env.js';
 import { PROWLARR_BUDGET_MS, PROWLARR_SOFT_MS } from './sources/prowlarr.js';
-import { getTitleVariants, nameMatchesTitles, releaseYearFits, type TitleVariants } from './sources/query-titles.js';
+import { getTitleVariants, movieNotYetDigital, movieReleaseFits, nameMatchesTitles, releaseYearFits, type TitleVariants } from './sources/query-titles.js';
 import { resolveInfoHashes } from './torrent/enrich.js';
 import { scrubUrl, type TorrentCache } from './torrent/fetch-torrent.js';
 import type { ContentRef, RawStream, StremioStream, StreamOrigin } from './types.js';
@@ -127,6 +127,10 @@ export interface PipelineResult {
   pending?: string[];
   /** Addons amont bloqués pour le serveur, à interroger depuis l'appareil (URL /stream, éventuellement avec la clé de débrideur de l'utilisateur). */
   deviceFetch?: DeviceFetchEntry[];
+  /** Film pas encore sorti en numérique ou physique (TMDB) : seules les releases de l'année exacte sont gardées. */
+  notYetDigital?: boolean;
+  /** Date de la sortie numérique ou physique annoncée (AAAA-MM-JJ), quand TMDB la donne (avec `notYetDigital`). */
+  digitalDate?: string;
 }
 
 /** Calcul d'un résultat, et sa suite en arrière-plan quand il est partiel. */
@@ -174,12 +178,18 @@ type Rejection = 'titre' | 'annee' | 'portee';
  * Prowlarr) : titre (correspondance stricte, voir nameMatchesTitles), année (pas antérieure à la première diffusion moins
  * un an), puis portée : épisode exact, pack de la saison, ou intégrale qui la couvre. Une release sans aucun texte, ou un
  * lien direct, n'est pas écartée : rien à vérifier. Une release au nom sans portée reconnue est écartée (« Titre S04E05 »
- * ne passe pas pour S04E04). Films : inchangé ici (année à ±1 an dans filterByYear).
+ * ne passe pas pour S04E04). Films : l'année du nom doit être compatible avec la sortie (movieReleaseFits) ; les liens
+ * directs ne sont pas vérifiés.
  */
 function rejectionOf(candidate: Candidate, ref: ContentRef, titles: TitleVariants, absolute?: number): Rejection | undefined {
   const { season, episode } = ref;
-  if (ref.type !== 'series' || season === undefined || episode === undefined) return undefined;
   const { raw } = candidate;
+  if (ref.type === 'movie') {
+    if (raw.url !== undefined) return undefined;
+    const name = raw.filename ?? raw.title;
+    return name !== undefined && name.trim() !== '' && !movieReleaseFits(name, titles) ? 'annee' : undefined;
+  }
+  if (ref.type !== 'series' || season === undefined || episode === undefined) return undefined;
   if (raw.url !== undefined) return undefined;
   const hasText = [raw.filename, raw.title, raw.name, raw.description].some((text) => text !== undefined && text.trim() !== '');
   if (!hasText) return undefined;
@@ -790,6 +800,10 @@ async function computeStreams(config: Config, ref: ContentRef, ctx: PipelineCont
   lap('i.format');
   const result: PipelineResult = { streams: formatted, errors: collected.errors };
   if (collected.deviceFetch !== undefined) result.deviceFetch = collected.deviceFetch;
+  if (ref.type === 'movie' && movieNotYetDigital(titles)) {
+    result.notYetDigital = true;
+    if (titles.digitalDate !== undefined) result.digitalDate = titles.digitalDate;
+  }
   const pending = collected.pending ?? [];
   if (pending.length > 0) {
     result.partial = true;

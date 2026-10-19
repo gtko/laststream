@@ -153,16 +153,16 @@ describe('getTitleVariants : cache de 7 jours (horloge simulée)', () => {
     const options = { tmdbToken: TOKEN, fetch, cache };
 
     await getTitleVariants(MOVIE, options);
-    expect(mock).toHaveBeenCalledTimes(3); // find, en-US, fr-FR
+    expect(mock).toHaveBeenCalledTimes(5); // find, en-US, fr-FR, release_dates, watch/providers (films)
 
     vi.setSystemTime(Date.now() + SEVEN_DAYS_MS - 1);
     await getTitleVariants(MOVIE, options);
-    expect(mock).toHaveBeenCalledTimes(3);
+    expect(mock).toHaveBeenCalledTimes(5);
 
     vi.setSystemTime(Date.now() + 1); // exactement 7 jours : périmé, servi puis rafraîchi
     const again = await getTitleVariants(MOVIE, options);
     expect(again.titles).toEqual(['Dune: Part Two', 'Dune : Deuxième Partie']);
-    await vi.waitFor(() => expect(mock).toHaveBeenCalledTimes(6));
+    await vi.waitFor(() => expect(mock).toHaveBeenCalledTimes(10));
   });
 });
 
@@ -174,7 +174,7 @@ describe('getTitleVariants : requêtes simultanées', () => {
 
     const [first, second] = await Promise.all([getTitleVariants(MOVIE, options), getTitleVariants(MOVIE, options)]);
 
-    expect(mock).toHaveBeenCalledTimes(3); // find, en-US, fr-FR
+    expect(mock).toHaveBeenCalledTimes(5); // find, en-US, fr-FR, release_dates, watch/providers (films)
     expect(second).toEqual(first);
   });
 });

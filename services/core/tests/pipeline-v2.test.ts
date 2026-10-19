@@ -69,7 +69,8 @@ function tmdbWith(options: { certification?: string; releaseDate?: string; runti
         options.certification === undefined
           ? { results: [] }
           : { results: [{ iso_3166_1: 'FR', release_dates: [{ certification: options.certification }] }] };
-      return json({ runtime: options.runtime ?? 120, release_date: options.releaseDate ?? '2001-01-01', release_dates });
+      // Année de sortie cohérente avec les releases de test (« 2024 ») : la pipeline écarte les releases d'une autre année.
+      return json({ runtime: options.runtime ?? 120, release_date: options.releaseDate ?? '2024-01-01', release_dates });
     }
     return json({}, 404);
   };
@@ -211,7 +212,7 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
     );
     expect(hidden.streams).toEqual([]);
 
-    const past = routedFetch([CINEMETA, tmdbWith({ releaseDate: '2001-01-01' }), upstreamWith(FILES)]);
+    const past = routedFetch([CINEMETA, tmdbWith({ releaseDate: '2024-01-01' }), upstreamWith(FILES)]);
     const shown = await getStreams(
       cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }),
       movie('tt7100014'),
@@ -231,6 +232,28 @@ describe('pipeline v2 : filtres de contenu (TMDB, Cinemeta)', () => {
     expect(result.streams).toHaveLength(1);
     expect(hashOf(result.streams[0])).toBe(H.b);
     expect(result.streams[0]?.laststream).toMatchObject({ bitrateMbps: 23.9 });
+  });
+
+  it('film 2026 pas encore sorti en numérique : l’homonyme d’une autre année est écarté, réponse notYetDigital', async () => {
+    const odyssey = routedFetch([
+      CINEMETA,
+      (url) => {
+        if (url.hostname !== 'api.themoviedb.org') return undefined;
+        if (url.pathname.startsWith('/3/find/')) return json({ movie_results: [{ id: 9002 }] });
+        if (url.pathname === '/3/movie/9002') return json({ title: 'L’Odyssée', original_title: 'The Odyssey', runtime: 120, release_date: '2026-07-17', release_dates: { results: [] } });
+        if (url.pathname === '/3/movie/9002/release_dates') return json({ results: [{ iso_3166_1: 'FR', release_dates: [{ type: 3, release_date: '2026-07-17T00:00:00.000Z' }] }] });
+        if (url.pathname === '/3/movie/9002/watch/providers') return json({ results: {} });
+        return json({}, 404);
+      },
+      upstreamWith([
+        { name: 'Upstream', title: 'The.Odyssey.1997.STV.DVDRip', infoHash: H.a, behaviorHints: { videoSize: 2 * GB } },
+        { name: 'Upstream', title: 'The.Odyssey.2026.2160p.WEB-DL', infoHash: H.b, behaviorHints: { videoSize: 20 * GB } },
+      ]),
+    ]);
+    const result = await getStreams(cfg({ sources: [UPSTREAM], services: { tmdbToken: 'tmdb-token' } }), movie('tt7100060'), ctxFor(odyssey.fetch));
+    expect(result.notYetDigital).toBe(true);
+    expect(result.streams).toHaveLength(1);
+    expect(hashOf(result.streams[0])).toBe(H.b);
   });
 });
 

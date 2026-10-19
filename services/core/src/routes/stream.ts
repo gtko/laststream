@@ -94,6 +94,12 @@ const deviceOf = (c: Ctx, result: { deviceFetch?: DeviceFetchEntry[] }): { devic
   return { deviceFetch: result.deviceFetch };
 };
 
+/** Film pas encore disponible en numérique : `notYetDigital` (et la date de sortie numérique annoncée, si connue). */
+const notYetDigitalOf = (result: { notYetDigital?: boolean; digitalDate?: string }): { notYetDigital?: true; digitalDate?: string } => {
+  if (result.notYetDigital !== true) return {};
+  return result.digitalDate === undefined ? { notYetDigital: true } : { notYetDigital: true, digitalDate: result.digitalDate };
+};
+
 /**
  * Route Stremio : GET /:config/stream/:type/:id.json.
  * Configuration invalide : 400 sans détail. Type ou identifiant hors format : liste vide.
@@ -186,9 +192,9 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     platform().scheduler.background(issuedUrls().noteStreams(result.streams));
     if (result.partial === true) {
       c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
-      return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...deviceOf(c, result), ...noticeOf(config) });
+      return sendJson(c, { streams: result.streams, partial: true, pending: result.pending ?? [], ...deviceOf(c, result), ...notYetDigitalOf(result), ...noticeOf(config) });
     }
-    return sendJson(c, { streams: result.streams, ...deviceOf(c, result), ...noticeOf(config) });
+    return sendJson(c, { streams: result.streams, ...deviceOf(c, result), ...notYetDigitalOf(result), ...noticeOf(config) });
   });
 
   /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */
