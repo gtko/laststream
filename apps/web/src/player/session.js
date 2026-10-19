@@ -11,8 +11,8 @@ import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
-import { POLL_EVERY_MS, POLL_MAX_MS, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
-import { describePending, isGoodMatch } from '../sources/rank';
+import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
+import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
@@ -467,7 +467,7 @@ async function initSession(request, views, view, opts = {}) {
       style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
-    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false,
+    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false, pickMine: false,
     mark: { state: 'idle', kind: 'intro', start: 0 }, aspect: 'contain',
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
@@ -833,12 +833,13 @@ async function startPlan(p, plan, startAt, stale, cand) {
   ui.setMiniAvailable(true);
   if (nativeMini && choice.engine !== 'native') { nativeMini = false; if (nativeEng) nativeEng.closeNow(); miniState.reset(); }
   ui.relayoutMini();
+  // Les addons encore en recherche alimentent la liste de sources pendant la lecture (tous moteurs).
+  pollMoreSources(p);
   if (choice.engine === 'native') {
     if (!nativeEng) { nativeEng = new NativeEngine(NativePlayer); bindEngine(nativeEng); }
     p.engine = nativeEng;
     ui.video.hidden = true;
     await nativeEng.load({ url: media.url, startAt, open: nativeOptions() });
-    pollMoreSources(p);
   } else if (choice.engine === 'mpv') {
     if (!mpv) { mpv = new MpvEngine(shell, ui.root); bindEngine(mpv); }
     p.engine = mpv;
@@ -1466,6 +1467,7 @@ function onAction(act, data) {
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
+    P.pickMine = true; // arrête l'attente de lancement (playBest)
     P.view = null;
     showSourcesPanel();
     return;
@@ -1794,6 +1796,7 @@ export async function playBest(request, opener, opts = {}) {
   p.ranked = [...loaded.views];
   if (opts.picker || (!getAutoplay() && !opts.force)) { showSourcesPanel(); return; }
   ui.setLoading(p.meta.title || 'Lecture', 'Choix de la meilleure source…', loaderExtra(1));
+  const t0 = Date.now();
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
   // Salon : la version de l'hôte (empreinte) passe avant la « meilleure » source ; chacun lit avec SA source.
@@ -1803,28 +1806,27 @@ export async function playBest(request, opener, opts = {}) {
     return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw);
   };
   const good = (r) => !!r && (r.party === true || isGoodMatch(r));
-  let rec = recommend(loaded.views);
-  // Réponse partielle : on part tout de suite si la meilleure source disponible est une bonne correspondance (cache, langue
-  // préférée, 1080p ou mieux) ; sinon on attend le reste de la recherche, 20 s au plus.
-  let cur = loaded;
-  const t0 = Date.now();
-  while (cur.pending.length && !good(rec) && Date.now() - t0 < POLL_MAX_MS) {
-    ui.setLoading(p.meta.title || 'Lecture', describePending(cur.pending), loaderExtra(0));
-    await new Promise((r) => setTimeout(r, POLL_EVERY_MS));
-    if (!alive()) return;
-    const next = await pollSources(request, cur);
-    if (!alive()) return;
-    if (next !== cur) {
-      cur = next;
+  // Lancement sans attendre tous les addons : voir awaitLaunchable. Les addons restants alimentent le panneau Sources.
+  const { rec } = await awaitLaunchable(loaded, {
+    request,
+    since: t0,
+    readable: (views) => views.some((v) => v.playable && !v.client),
+    recommend,
+    good,
+    stop: () => !alive() || p.pickMine,
+    onUpdate: (next) => {
       p.views = next.views;
       p.pending = next.pending;
       p.loaded = next;
       p.ranked = [...next.views];
-      rec = recommend(next.views);
-    }
-  }
-  loaded.views = cur.views;
-  loaded.pending = cur.pending;
+    },
+    onWait: (next, r) => ui.setLoading(
+      p.meta.title || 'Lecture',
+      r ? describeLaunch(next.views.length, next.pending) : describePending(next.pending),
+      loaderExtra(r ? 1 : 0, { slow: true }),
+    ),
+  });
+  if (!alive() || p.pickMine) return;
   if (!rec) { showSourcesPanel(); return; }
   ui.setLoading(p.meta.title || 'Lecture', rec.reason, loaderExtra(2, { source: sourceLine(rec.view) + (rec.view.status === 'cached' ? ' ⚡' : '') }));
   await continueWith(rec.view, { resume: p.resumeMode, notice: rec.languageFallback ? rec.reason : '' });
