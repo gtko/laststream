@@ -548,6 +548,22 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
+  /** Historique « vu » du profil : films et séries vus (`watched` = films ou épisodes vus), les plus récents d'abord. */
+  router.get('/profiles/:id/watched', async (c) => {
+    const users = db();
+    const { profile } = await scopeOf(users, c, deps.secret, true);
+    const items = await users.watchedTitles(profile.id);
+    return sendJson(c, {
+      items: items.map((item) => ({
+        type: item.type,
+        tmdbId: item.tmdbId,
+        imdbId: item.imdbId,
+        watched: item.watched,
+        lastWatchedAt: item.lastWatchedAt,
+      })),
+    });
+  });
+
   /** `{ movie }` pour un film ; `{ episodes }` pour une série (épisodes avec progression, vus ou en cours). */
   router.get('/profiles/:id/watched/:type/:tmdbId', async (c) => {
     const users = db();
