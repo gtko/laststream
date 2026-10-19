@@ -3,7 +3,23 @@
  * il sert à l'instance (accumulateur), au Durable Object `Metrics` (stockage SQLite), au mode Node (mémoire) et aux
  * tests. Aucune donnée personnelle n'y entre : groupes de routes fixes, hôtes d'addons sans chemin ni paramètre, codes
  * d'erreur AllDebrid, préfixes de cache, et messages d'erreur épurés (voir `sanitizeErrorMessage`).
+ * Les compteurs par fournisseur et par jour (providers.ts) suivent le même chemin : accumulateur, lot, stockage.
  */
+
+import {
+  addProviderRow,
+  buildProviderReport,
+  dayOf,
+  isProvider,
+  isProviderEvent,
+  type ProviderEvent,
+  type ProviderName,
+  type ProviderReport,
+  type ProviderRow,
+  providerWindowStart,
+} from './providers.js';
+
+export * from './providers.js';
 
 export const BUCKET_MS = 5 * 60_000;
 export const RETENTION_MS = 7 * 24 * 3600_000;
@@ -34,6 +50,8 @@ export interface MetricsSink {
   alldebrid(op: AlldebridOp, errorCode: string | null): void;
   cache(prefix: string, hit: boolean): void;
   error(route: string, status: number, message: string): void;
+  /** Compteur par fournisseur et par jour (appel sortant, lecture de cache, fiche R2, 304). Hors liste : ignoré. */
+  provider(provider: ProviderName, event: ProviderEvent): void;
 }
 
 export const noopSink: MetricsSink = {
@@ -42,6 +60,7 @@ export const noopSink: MetricsSink = {
   alldebrid: () => undefined,
   cache: () => undefined,
   error: () => undefined,
+  provider: () => undefined,
 };
 
 export interface MetricRow {
@@ -60,6 +79,8 @@ export interface ErrorRecord {
 export interface MetricsBatch {
   rows: MetricRow[];
   errors: ErrorRecord[];
+  /** Compteurs par fournisseur et par jour (absent des lots sans fournisseur). */
+  providers?: ProviderRow[];
 }
 
 /** Service de métriques d'une plateforme : l'écriture passe par `sink`, la lecture par `report`. */
@@ -162,13 +183,14 @@ const MAX_ELEMENTS_PER_KIND = 100;
 export class MetricsAccumulator implements MetricsSink {
   private counters = new Map<string, MetricRow>();
   private errors: ErrorRecord[] = [];
+  private providerCounters = new Map<string, ProviderRow>();
   private readonly hosts = new Set<string>();
   private readonly elements = new Map<string, Set<string>>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
   isEmpty(): boolean {
-    return this.counters.size === 0 && this.errors.length === 0;
+    return this.counters.size === 0 && this.errors.length === 0 && this.providerCounters.size === 0;
   }
 
   private add(name: string, value = 1): void {
@@ -230,11 +252,18 @@ export class MetricsAccumulator implements MetricsSink {
     if (this.errors.length > MAX_ERRORS) this.errors.splice(0, this.errors.length - MAX_ERRORS);
   }
 
+  /** Compteur du jour UTC courant ; un nom ou un événement hors liste est ignoré. */
+  provider(provider: ProviderName, event: ProviderEvent): void {
+    if (!isProvider(provider) || !isProviderEvent(event)) return;
+    addProviderRow(this.providerCounters, { day: dayOf(this.now()), provider, event, value: 1 });
+  }
+
   /** Lot à envoyer ; l'accumulateur repart de zéro. */
   take(): MetricsBatch {
-    const batch: MetricsBatch = { rows: [...this.counters.values()], errors: this.errors };
+    const batch: MetricsBatch = { rows: [...this.counters.values()], errors: this.errors, providers: [...this.providerCounters.values()] };
     this.counters = new Map();
     this.errors = [];
+    this.providerCounters = new Map();
     return batch;
   }
 
@@ -246,6 +275,7 @@ export class MetricsAccumulator implements MetricsSink {
       if (existing === undefined) this.counters.set(key, { ...row });
       else existing.value += row.value;
     }
+    for (const row of batch.providers ?? []) addProviderRow(this.providerCounters, row);
     this.errors = [...batch.errors, ...this.errors].slice(-MAX_ERRORS);
   }
 }
@@ -253,6 +283,7 @@ export class MetricsAccumulator implements MetricsSink {
 /** Stockage en mémoire (mode Node, tests) : mêmes lots, même rétention que le Durable Object. */
 export class MemoryMetricsStore {
   private readonly rows = new Map<string, MetricRow>();
+  private readonly providerRows = new Map<string, ProviderRow>();
   private errors: ErrorRecord[] = [];
 
   constructor(private readonly now: () => number = Date.now) {}
@@ -264,14 +295,17 @@ export class MemoryMetricsStore {
       if (existing === undefined) this.rows.set(key, { ...row });
       else existing.value += row.value;
     }
+    for (const row of batch.providers ?? []) addProviderRow(this.providerRows, row);
     this.errors = [...this.errors, ...batch.errors].sort((a, b) => a.at - b.at).slice(-MAX_ERRORS);
     const limit = this.now() - RETENTION_MS;
     for (const [key, row] of this.rows) if (row.bucket < limit) this.rows.delete(key);
     this.errors = this.errors.filter((entry) => entry.at >= limit);
+    const windowStart = providerWindowStart(this.now());
+    for (const [key, row] of this.providerRows) if (row.day < windowStart) this.providerRows.delete(key);
   }
 
   report(range: MetricsRange): MetricsReport {
-    return buildReport([...this.rows.values()], this.errors, range, this.now());
+    return buildReport([...this.rows.values()], this.errors, range, this.now(), [...this.providerRows.values()]);
   }
 }
 
@@ -300,6 +334,8 @@ export interface MetricsReport {
   upstreams: { host: string; calls: number; failures: number; timeouts: number; avgMs: number | null }[];
   alldebrid: Record<'unlock' | 'magnet' | 'other', { ok: number; errors: Record<string, number> }>;
   caches: { prefix: string; hits: number; misses: number; hitRate: number | null }[];
+  /** Compteurs par fournisseur et par jour sur les PROVIDER_DAYS derniers jours (indépendants de `range`). */
+  providers: ProviderReport;
   errors: { at: string; route: string; status: number; message: string }[];
 }
 
@@ -346,8 +382,17 @@ function finishGroup(acc: GroupAcc): GroupReport {
 const isGroup = (value: string | undefined): value is RouteGroup => (ROUTE_GROUPS as readonly string[]).includes(value ?? '');
 const isStatusClass = (value: string | undefined): value is StatusClass => (STATUS_CLASSES as readonly string[]).includes(value ?? '');
 
-/** Rapport d'une période à partir des compteurs bruts. Fonction pure : même résultat en mémoire et dans le Durable Object. */
-export function buildReport(rows: readonly MetricRow[], errors: readonly ErrorRecord[], range: MetricsRange, now: number): MetricsReport {
+/**
+ * Rapport d'une période à partir des compteurs bruts (`providerRows` : compteurs par fournisseur et par jour). Fonction
+ * pure : même résultat en mémoire et dans le Durable Object.
+ */
+export function buildReport(
+  rows: readonly MetricRow[],
+  errors: readonly ErrorRecord[],
+  range: MetricsRange,
+  now: number,
+  providerRows: readonly ProviderRow[] = [],
+): MetricsReport {
   const { ms: spanMs, stepMs } = RANGES[range];
   const to = bucketOf(now) + BUCKET_MS;
   const from = to - spanMs;
@@ -417,6 +462,7 @@ export function buildReport(rows: readonly MetricRow[], errors: readonly ErrorRe
     caches: [...caches.entries()]
       .map(([prefix, c]) => ({ prefix, hits: c.hits, misses: c.misses, hitRate: c.hits + c.misses === 0 ? null : Math.round((c.hits / (c.hits + c.misses)) * 1000) / 1000 }))
       .sort((x, y) => x.prefix.localeCompare(y.prefix)),
+    providers: buildProviderReport(providerRows, now),
     errors: errors
       .filter((entry) => entry.at >= from)
       .slice(-MAX_ERRORS)

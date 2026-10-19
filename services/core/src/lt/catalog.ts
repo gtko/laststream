@@ -96,27 +96,40 @@ function toMeta(item: TmdbItem, imdbId: string): StremioMeta | null {
   return meta;
 }
 
+/** Page (1 à n) du catalogue correspondant à `skip` (20 éléments TMDB par page). */
+export function catalogPage(skip: number): number {
+  return Math.floor(skip / PAGE_SIZE) + 1;
+}
+
 /**
- * Métas d'une page du catalogue (20 éléments TMDB par page). Les ids IMDb sont résolus par lots, en cache
- * (durée TMDB). Doublons et éléments sans id IMDb sont retirés.
+ * Métas d'une page du catalogue, lues chez TMDB sans passer par le cache (le cron s'en sert pour rafraîchir les
+ * rangées). Les ids IMDb sont résolus par lots, en cache (durée TMDB). Doublons et éléments sans id IMDb sont retirés.
+ */
+export async function buildCatalogMetas(ctx: LtContext, token: string, def: CatalogDef, page: number): Promise<StremioMeta[]> {
+  const json = await tmdbGet(ctx, token, def.path, { page: String(page) });
+  const results: Record<string, unknown>[] = isRecord(json) && Array.isArray(json.results) ? json.results.filter(isRecord) : [];
+  const items = itemsOf(def, results);
+  const imdbIds = await mapBatched(items, EXTERNAL_IDS_BATCH, (item) => imdbIdOf(ctx, token, item));
+  const seen = new Set<string>();
+  const metas: StremioMeta[] = [];
+  items.forEach((item, index) => {
+    const imdbId = imdbIds[index];
+    if (imdbId === null || imdbId === undefined || seen.has(imdbId)) return;
+    const meta = toMeta(item, imdbId);
+    if (meta === null) return;
+    seen.add(imdbId);
+    metas.push(meta);
+  });
+  return metas;
+}
+
+/**
+ * Métas d'une page du catalogue (20 éléments TMDB par page), en cache (durée TMDB). Voir `buildCatalogMetas`.
  */
 export async function catalogMetas(ctx: LtContext, token: string, def: CatalogDef, skip: number): Promise<StremioMeta[]> {
-  const page = Math.floor(skip / PAGE_SIZE) + 1;
-  return ctx.state.cache.get(`catalog:${def.id}:${page}`, tmdbTtl(def.path), async () => {
-    const json = await tmdbGet(ctx, token, def.path, { page: String(page) });
-    const results: Record<string, unknown>[] = isRecord(json) && Array.isArray(json.results) ? json.results.filter(isRecord) : [];
-    const items = itemsOf(def, results);
-    const imdbIds = await mapBatched(items, EXTERNAL_IDS_BATCH, (item) => imdbIdOf(ctx, token, item));
-    const seen = new Set<string>();
-    const metas: StremioMeta[] = [];
-    items.forEach((item, index) => {
-      const imdbId = imdbIds[index];
-      if (imdbId === null || imdbId === undefined || seen.has(imdbId)) return;
-      const meta = toMeta(item, imdbId);
-      if (meta === null) return;
-      seen.add(imdbId);
-      metas.push(meta);
-    });
-    return metas;
+  const page = catalogPage(skip);
+  return ctx.state.cache.get(`catalog:${def.id}:${page}`, tmdbTtl(def.path), () => buildCatalogMetas(ctx, token, def, page), {
+    provider: 'tmdb',
+    swr: true,
   });
 }

@@ -10,6 +10,8 @@ import type { CacheAdmin } from '../admin/cache-types.js';
 import type { MetricsService } from '../metrics/core.js';
 import type { PartyBackend } from '../party/backend.js';
 import type { TvBlobStore } from '../lt/tv-build.js';
+import type { MetaBlobStore } from '../lt/meta.js';
+import type { RowBlobStore } from '../lt/rows.js';
 import type { SkipRepo, UserBackend } from '../user/repo.js';
 
 export type { UserBackend } from '../user/repo.js';
@@ -161,4 +163,8 @@ export interface Platform {
    * en arrière-plan quand le stockage est encore vide.
    */
   tvStore?: { blobs: TvBlobStore; requestRefresh(): void };
+  /** Stockage des fiches partagées (Workers : bucket R2 lastaddon-meta). Absent : chaque fiche est construite à la demande. */
+  metaBlobs?: MetaBlobStore;
+  /** Stockage des rangées d'accueil communes (Workers : même bucket, clés rows/). Absent : rangées calculées à la demande. */
+  rowBlobs?: RowBlobStore;
 }

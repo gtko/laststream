@@ -93,10 +93,13 @@ const CONFIG_XML = `<?xml version="1.0" encoding="utf-8"?>\n<Config>\n  <Port>96
 beforeEach(() => {
   clearLocalProwlarrCache();
   clearProwlarrDiscoveryCache();
+  // Mode serveur AllDebrid explicitement activé (opt-in) : les résultats ne doivent pas passer en mode client.
+  vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1');
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 describe('détection : clé API', () => {

@@ -9,6 +9,11 @@ export function setPlatform(next: Platform): void {
   active = next;
 }
 
+/** Vrai une fois la plateforme installée (un Cron Trigger peut s'exécuter avant toute requête de l'isolat). */
+export function platformInstalled(): boolean {
+  return active !== undefined;
+}
+
 /** Plateforme active. Erreur explicite si aucun point d'entrée ne l'a installée. */
 export function platform(): Platform {
   if (active === undefined) {

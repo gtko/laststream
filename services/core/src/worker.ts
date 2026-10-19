@@ -11,7 +11,7 @@ import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter } from './observability/report.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
-import { createWorkersPlatform, createWorkersTvAdmin, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
+import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
@@ -79,9 +79,14 @@ const worker = {
     }
   },
 
-  /** Cron Trigger (wrangler.jsonc, « triggers ») : reconstruit le catalogue TV et l'EPG réduit dans R2, en flux. */
+  /**
+   * Cron Trigger (wrangler.jsonc, « triggers », toutes les 6 h) : reconstruit le catalogue TV et l'EPG réduit dans R2, en
+   * flux ; précalcule les rangées d'accueil communes dans R2 (lt/rows.ts).
+   */
   scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
     ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
+    ensureWorkersPlatform(env);
+    ctx.waitUntil(runInRequest(ctx, () => refreshRowsFromEnv(env)));
   },
 };
 

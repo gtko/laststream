@@ -3,7 +3,8 @@ import { env, exports as workerExports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { STATS_MAX_PAGES, createKvCacheAdmin, createRemoteMetrics } from '../src/platform/workers/metrics.js';
-import { BUCKET_MS, FLUSH_INTERVAL_MS, MetricsAccumulator, RETENTION_MS, bucketOf, type MetricsBatch } from '../src/metrics/core.js';
+import { BUCKET_MS, DAY_MS, FLUSH_INTERVAL_MS, MetricsAccumulator, RETENTION_MS, bucketOf, dayOf, type MetricsBatch } from '../src/metrics/core.js';
+import { recordProviderEvent } from '../src/metrics/index.js';
 import type { WorkerEnv } from '../src/platform/workers/env.js';
 
 /**
@@ -164,6 +165,51 @@ describe('envoi groupé des métriques', () => {
   });
 });
 
+describe('compteurs par fournisseur', () => {
+  it('Durable Object : additionne par jour et par fournisseur, ne garde pas les jours hors fenêtre de 30 jours', async () => {
+    const stub = metricsStub();
+    const today = dayOf(Date.now());
+    await stub.ingest({
+      rows: [],
+      errors: [],
+      providers: [
+        { day: today, provider: 'tmdb', event: 'call', value: 3 },
+        { day: today, provider: 'tmdb', event: 'l1hit', value: 1 },
+        { day: today - 40 * DAY_MS, provider: 'tmdb', event: 'call', value: 50 },
+      ],
+    });
+    await stub.ingest({ rows: [], errors: [], providers: [{ day: today, provider: 'tmdb', event: 'call', value: 2 }] });
+    const report = await stub.report('1h');
+    expect(report.providers.totals).toEqual([expect.objectContaining({ provider: 'tmdb', calls: 5, l1Hits: 1, hitRate: 0.167 })]);
+    expect(report.providers.byDay.map((block: { day: string }) => block.day)).toEqual([new Date(today).toISOString().slice(0, 10)]);
+    const stored = await runInDurableObject(stub, (_instance, state) =>
+      Number(state.storage.sql.exec('SELECT COUNT(*) AS n FROM provider_daily WHERE day < ?', today - 29 * DAY_MS).one().n),
+    );
+    expect(stored).toBe(0);
+  });
+
+  it('envoi groupé : les compteurs par fournisseur partent dans le lot, au plus une fois par intervalle', async () => {
+    let now = 9_000_000;
+    const batches: MetricsBatch[] = [];
+    const namespace = { getByName: () => ({ ingest: (batch: MetricsBatch) => Promise.resolve(void batches.push(batch)) }) };
+    const pending: Promise<unknown>[] = [];
+    const service = createRemoteMetrics(namespace as never, (work) => pending.push(work), () => now);
+    for (let i = 0; i < 100; i += 1) {
+      service.sink.provider('tmdb', 'call');
+      service.flushIfDue?.();
+      now += 50;
+    }
+    await Promise.all(pending);
+    expect(batches).toHaveLength(1);
+    now += FLUSH_INTERVAL_MS;
+    service.flushIfDue?.();
+    await Promise.all(pending);
+    expect(batches).toHaveLength(2);
+    const total = batches.flatMap((batch) => batch.providers ?? []).filter((row) => row.provider === 'tmdb').reduce((sum, row) => sum + row.value, 0);
+    expect(total).toBe(100);
+  });
+});
+
 describe('statistiques KV', () => {
   it('comptage exact par préfixe', async () => {
     const namespace = workerEnv.METRICS;
@@ -228,8 +274,12 @@ describe('administration contre le vrai Worker', () => {
     for (let i = 0; i < 4; i += 1) await api('GET', '/health');
     await api('GET', '/manifest.json');
     await api('GET', '/abc/stream/movie/tt0133093.json');
+    // Compteur par fournisseur écrit par l'instance, lu par le propriétaire via le Durable Object.
+    recordProviderEvent('tvdb', 'call');
     const report = await api<any>('GET', '/admin/metrics?range=1h', { token });
     expect(report.status).toBe(200);
+    expect(report.body.providers.windowDays).toBe(30);
+    expect(report.body.providers.totals.find((entry: any) => entry.provider === 'tvdb')?.calls).toBeGreaterThanOrEqual(1);
     expect(report.body.groups.other.requests).toBeGreaterThanOrEqual(5);
     expect(report.body.groups.stream.requests).toBeGreaterThanOrEqual(1);
     expect(report.body.groups.user.requests).toBeGreaterThanOrEqual(5);

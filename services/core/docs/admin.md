@@ -56,10 +56,21 @@ Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_own
   upstreams: [{ host, calls, failures, timeouts, avgMs }],      // addons amont, par hôte (sans chemin ni jeton)
   alldebrid: { unlock|magnet|other: { ok, errors: { <code>: n } } },
   caches: [{ prefix, hits, misses, hitRate }],
+  providers: { windowDays: 30, from, to,                        // from/to : AAAA-MM-JJ UTC, inclus ; indépendant de range
+    byDay: [{ day, providers: [<compteurs>] }],                  // un bloc par jour ayant des compteurs
+    totals: [<compteurs>] },                                     // par fournisseur, sur la fenêtre
   errors: [{ at, route, status, message }] }                     // 100 dernières 5xx, route sans paramètre, message épuré
 ```
 
-Écriture non bloquante : chaque instance additionne en mémoire et envoie un lot au Durable Object `Metrics` au plus toutes les ~10 s (`ctx.waitUntil`). Un isolat arrêté perd au plus 10 s. Sous Node : mémoire du processus. Le CPU n'est pas mesuré.
+Compteurs par fournisseur (`<compteurs>`, fournisseur `tmdb | tvdb | openrouter | cinemeta | mdblist | fanart`) :
+`{ provider, calls, l1Hits, l2Hits, stale, coalesced, r2Hits, r2Misses, notModified, hitRate, r2HitRate }`.
+- `calls` : appels sortants (un `miss` du cache à deux niveaux ; MDBList compté à son appel HTTP).
+- `l1Hits` / `l2Hits` : lectures servies par la mémoire / le KV ; `stale` : valeur périmée servie ; `coalesced` : requête jointe à un appel en vol.
+- `r2Hits` / `r2Misses` : fiches lues / absentes du R2 ; `notModified` : réponses 304.
+- `hitRate` = (l1 + l2 + stale + coalesced) / (ces lectures + calls) ; un rafraîchissement en arrière-plan compte comme un appel. `r2HitRate` = r2Hits / (r2Hits + r2Misses). `null` sans lecture.
+- Limite : une lecture de cache sans fournisseur (entrée de mémoire seule) n'est pas comptée ; les lectures de cache MDBList n'ont pas d'étiquette, donc `hitRate` MDBList n'est pas significatif (seuls ses appels sont comptés).
+
+Écriture non bloquante : chaque instance additionne en mémoire et envoie un lot au Durable Object `Metrics` au plus toutes les ~10 s (`ctx.waitUntil`). Un isolat arrêté perd au plus 10 s. Sous Node : mémoire du processus. Le CPU n'est pas mesuré. Les compteurs par fournisseur sont conservés 30 jours (table `provider_daily`, jours anciens retirés au fil des envois).
 
 ## Caches (Workers)
 

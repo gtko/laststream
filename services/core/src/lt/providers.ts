@@ -1,3 +1,4 @@
+import { recordProviderEvent } from '../metrics/index.js';
 import { isRecord } from '../sources/http.js';
 import { getJson, keyDigest, LtError, type LtContext, ltRequest, recordAt, TTL, type TvdbVersion } from './context.js';
 
@@ -105,6 +106,7 @@ export async function tmdbGet(
   query.forEach((value, key) => url.searchParams.set(key, value));
   return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), async () =>
     slimTmdb(await getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }, undefined, { maxBytes: TMDB_MAX_BYTES })),
+    { provider: 'tmdb', swr: true },
   );
 }
 
@@ -184,6 +186,8 @@ export async function mdblistFetch(
 ): Promise<{ ratings: MdbRatings; released: string | null }> {
   const target = mdblistTarget(type, id);
   const url = `https://api.mdblist.com/${target.source}/${target.mdbType}/${encodeURIComponent(target.id)}?apikey=${encodeURIComponent(apiKey)}`;
+  // Point unique des appels sortants MDBList (cache et KV en amont) : compteur par fournisseur.
+  recordProviderEvent('mdblist', 'call');
   const res = await ltRequest(ctx, url);
   if (res.status === 429) throw new MdbRateLimited(mdblistRetryDelayMs(res.headers));
   if (!res.ok) throw new LtError(502, `upstream_${res.status}`);
@@ -423,6 +427,7 @@ export async function tvdbSeries(ctx: LtContext, apiKey: string, id: string, pin
     withTvdbToken(ctx, apiKey, pin, (version, token) =>
       version === 'v4' ? tvdbV4Series(ctx, token, id) : tvdbV3Series(ctx, token, id),
     ),
+    { provider: 'tvdb', swr: true },
   );
 }
 
@@ -546,5 +551,6 @@ export async function tvdbAiredEpisodes(
       if (rows.length > 0 || version !== 'v4') return rows;
       return tvdbAired(ctx, token, id, lang, version, 'official');
     }),
+    { provider: 'tvdb', swr: true },
   );
 }

@@ -1,6 +1,6 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeConfig } from '../src/config/codec.js';
 import type { AppDeps } from '../src/deps.js';
 import { newApp } from '../src/http/app-env.js';
@@ -12,6 +12,10 @@ import { registerPlayRoutes } from '../src/routes/play.js';
 import { AllDebridClient, AllDebridError, type ResolvedLink } from '../src/sources/alldebrid.js';
 import { TorrentCache } from '../src/torrent/fetch-torrent.js';
 import { serveApp } from './serve.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : ces scénarios débrident côté serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const SECRET = 'play-failover-route-secret';
 const API_KEY = 'AD-FAILOVER-KEY-SECRETE-456';

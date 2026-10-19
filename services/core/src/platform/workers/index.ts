@@ -7,6 +7,8 @@ import { createWorkersKvCache } from './kv-cache.js';
 import { createKvCacheAdmin, createRemoteMetrics } from './metrics.js';
 import { workersScheduler } from './scheduler.js';
 import { createR2TvBlobs, refreshTvFromEnv } from './tv-store.js';
+import { createR2MetaBlobs, createR2RowBlobs } from './meta-blobs.js';
+import { platformInstalled, setPlatform } from '../index.js';
 import { createWorkersUiAssets } from './ui-assets.js';
 import { createDurableObjectPartyBackend } from './party-backend.js';
 import { createDurableObjectUserBackend } from './user-backend.js';
@@ -14,12 +16,18 @@ import { createDurableObjectUserBackend } from './user-backend.js';
 export { runInRequest } from './scheduler.js';
 export { type WorkerEnv, workersRuntimeEnv } from './env.js';
 export { createWorkersTvAdmin, refreshTvFromEnv } from './tv-store.js';
+export { refreshRowsFromEnv, type RowsRefreshOptions } from './rows-refresh.js';
 export { UserStoreDO } from './user-store-do.js';
 export { PartyRoom } from './party-room.js';
 export { Metrics } from './metrics-do.js';
 
 /** Sous Workers : ni ffmpeg ni détection de segments ni proxy HLS ; miniatures par WebCodecs côté client (relais de plages). */
 export const workersCapabilities: Capabilities = { thumbs: false, rangeThumbs: true, skipDetect: false, tvHls: false, sharedState: true };
+
+/** Installe la plateforme Workers si aucune requête ne l'a encore fait (Cron Trigger d'un isolat neuf). */
+export function ensureWorkersPlatform(env: WorkerEnv): void {
+  if (!platformInstalled()) setPlatform(createWorkersPlatform(env));
+}
 
 /** Plateforme Workers : liaisons `env`, fetch, ctx.waitUntil, KV, Durable Object SQLite, Workers Assets. */
 export function createWorkersPlatform(env: WorkerEnv): Platform {
@@ -36,6 +44,8 @@ export function createWorkersPlatform(env: WorkerEnv): Platform {
     createUserBackend: () => createDurableObjectUserBackend(env.USER_STORE),
     createPartyBackend: () => createDurableObjectPartyBackend(env.PARTY_ROOM),
     uiAssets: createWorkersUiAssets(env.ASSETS),
+    metaBlobs: env.META === undefined ? undefined : createR2MetaBlobs(env.META),
+    rowBlobs: env.META === undefined ? undefined : createR2RowBlobs(env.META),
     tvStore:
       env.TV === undefined
         ? undefined

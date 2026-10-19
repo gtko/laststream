@@ -24,6 +24,7 @@ import { continueWatching, normalizeProgress } from './progress.js';
 import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
+import { registerDebridLinkRoutes } from './debrid-links.js';
 import type { UserBackend, UserRepo } from './repo.js';
 import { importStremioLibrary, StremioImportError } from './stremio.js';
 import {
@@ -752,6 +753,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   });
 
   registerSocialRoutes(router, deps, backend);
+  registerDebridLinkRoutes(router, deps, backend);
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');

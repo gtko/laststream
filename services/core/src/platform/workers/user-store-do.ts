@@ -3,6 +3,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
+import { MetaStore } from '../../user/meta-store.js';
 import { SkipSegmentStore } from '../../user/skip-segments.js';
 import { SocialStore } from '../../user/social-store.js';
 import type { SqlDb } from '../../user/sql.js';
@@ -20,6 +21,7 @@ const USER_METHODS = callableNames(UserStore.prototype);
 const SKIP_METHODS = callableNames(SkipSegmentStore.prototype);
 const SOCIAL_METHODS = callableNames(SocialStore.prototype);
 const ADMIN_METHODS = callableNames(AdminStore.prototype);
+const META_METHODS = callableNames(MetaStore.prototype);
 
 function dispatch(target: object, allowed: ReadonlySet<string>, method: string, args: unknown[]): unknown {
   if (!allowed.has(method)) throw new Error(`méthode inconnue : ${method}`);
@@ -37,6 +39,7 @@ export class UserStoreDO extends DurableObject {
   private readonly skips: SkipSegmentStore;
   private readonly socialStore: SocialStore;
   private readonly adminStore: AdminStore;
+  private readonly metaStore: MetaStore;
   private readonly db: SqlDb;
 
   constructor(ctx: DurableObjectState, env: unknown) {
@@ -52,6 +55,7 @@ export class UserStoreDO extends DurableObject {
     this.skips = new SkipSegmentStore(db);
     this.socialStore = new SocialStore(db);
     this.adminStore = new AdminStore(db);
+    this.metaStore = new MetaStore(db);
   }
 
   /** Appelle une méthode de UserStore. */
@@ -72,6 +76,11 @@ export class UserStoreDO extends DurableObject {
   /** Appelle une méthode d'AdminStore (administration : comptes, réglages, audit, signalements). Réservé aux routes /admin et aux salons. */
   manage(method: string, args: unknown[]): unknown {
     return dispatch(this.adminStore, ADMIN_METHODS, method, args);
+  }
+
+  /** Appelle une méthode de MetaStore (index des fiches partagées, R2). */
+  meta(method: string, args: unknown[]): unknown {
+    return dispatch(this.metaStore, META_METHODS, method, args);
   }
 
   /** Migration des données (route /__admin/, protégée par ADMIN_SECRET côté Worker) : voir admin/routes.ts. */

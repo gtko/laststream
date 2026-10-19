@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enrichHosterLinks } from '../src/engine/hosters-step.js';
 import type { Candidate } from '../src/engine/types.js';
 import { HostHealth } from '../src/play/hosts.js';
 import { AllDebridClient } from '../src/sources/alldebrid.js';
 import { HosterClient } from '../src/sources/hosters.js';
 import { cand } from './engine-fixtures.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : les hébergeurs sont vérifiés depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const API_KEY = 'AD-TEST-KEY-STEP';
 const LIVE = 'https://1fichier.com/live1';

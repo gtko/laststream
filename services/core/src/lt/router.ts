@@ -3,12 +3,15 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppDeps } from '../deps.js';
 import { type App, type AppEnv, type Ctx, newApp } from '../http/app-env.js';
 import { sendBody, sendJson } from '../http/respond.js';
+import { recordMetaEvent } from '../metrics/index.js';
 import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platform/index.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
+import { type RowRuntime, serveRow } from './rows.js';
 import { personWhy, recommend, why } from './ai.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { bodyOf, createLtContext, decodeFor, digest, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
+import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
 import { mdblistCached } from './mdblist.js';
 import { tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
 import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/media-url.js';
@@ -36,6 +39,8 @@ export function closeLtRoutes(app: App): void {
 const NO_STORE = 'no-store';
 /** Réponses GET réussies : cache privé (propre à l'utilisateur), 5 minutes. */
 const PRIVATE_CACHE = 'private, max-age=300';
+/** Durée de cache (s) d'une fiche partagée fraîche : au plus 5 minutes, sans dépasser son échéance. */
+const PRIVATE_CACHE_MAX_AGE_S = 300;
 /** Attente maximale d'une miniature demandée avant de répondre 202 (une image prend ~1 s, délai ffmpeg 8 s). */
 const THUMB_WAIT_MS = 9000;
 
@@ -183,6 +188,34 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     );
     cacheable(c);
     return sendJson(c, body);
+  });
+
+  // Fiche partagée d'un film ou d'une série (TMDB, TVDB, notes, casting, saisons et épisodes) : construite une fois,
+  // stockée dans R2 (sans R2 : construite à chaque demande), servie à tous les comptes et profils. ETag = empreinte du
+  // contenu ; If-None-Match identique : 304. Périmée : servie aussitôt, reconstruite en arrière-plan.
+  const metaRuntime = (): MetaRuntime => ({
+    ctx,
+    blobs: deps.metaBlobs ?? platform().metaBlobs,
+    index: () => backend.meta(),
+    now: () => Date.now(),
+    background: (work) => platform().scheduler.background(work),
+  });
+  lt.get('/meta/:type/:tmdbId', async (c) => {
+    const config = configOf(c);
+    const target = metaTargetOf(c.req.param('type'), c.req.param('tmdbId'));
+    const services: MetaServices = {
+      tmdbToken: config.services.tmdbToken,
+      mdblistApiKey: config.services.mdblistApiKey,
+      tvdbApiKey: config.services.tvdbApiKey,
+      tvdbPin: config.services.tvdbPin,
+    };
+    const result = await serveMetaFiche(metaRuntime(), services, target.type, target.tmdbId);
+    const remaining = Math.floor((result.expiresAt - Date.now()) / 1000);
+    c.header('ETag', result.etag);
+    c.header('Access-Control-Expose-Headers', 'ETag');
+    c.header('Cache-Control', result.stale ? 'private, no-cache' : `private, max-age=${Math.min(PRIVATE_CACHE_MAX_AGE_S, Math.max(0, remaining))}`);
+    if (ifNoneMatchHits(c.req.header('if-none-match'), result.etag)) return c.body(null, 304);
+    return c.body(result.body, 200, { 'Content-Type': 'application/json; charset=utf-8' });
   });
 
   // Segments de saut (intro, reprise, générique) : services externes, puis communauté, puis déduction de saison.
@@ -342,10 +375,30 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     await next();
   });
 
+  // Rangées d'accueil communes (première page) : lues dans R2 telles quelles, avec leur empreinte (cf. lt/rows.ts).
+  const rowRuntime = (): RowRuntime => ({
+    ctx,
+    blobs: deps.rowBlobs ?? platform().rowBlobs,
+    now: () => Date.now(),
+    background: (work) => platform().scheduler.background(work),
+  });
+
   const sendCatalog = async (c: Ctx, extra: string | undefined): Promise<Response> => {
     const token = serviceKey(configOf(c), 'tmdb');
     const def = findCatalog(c.req.param('type') ?? '', (c.req.param('idjson') ?? '').replace(/\.json$/, ''));
-    const metas = def === undefined ? [] : await catalogMetas(ctx, token, def, parseSkip(extra));
+    const skip = parseSkip(extra);
+    if (def !== undefined && skip === 0) {
+      const row = await serveRow(rowRuntime(), token, def);
+      c.header('ETag', row.etag);
+      c.header('Access-Control-Expose-Headers', 'ETag');
+      cacheable(c);
+      if (ifNoneMatchHits(c.req.header('if-none-match'), row.etag)) {
+        recordMetaEvent('304', 'rows');
+        return c.body(null, 304);
+      }
+      return c.body(row.body, 200, { 'Content-Type': 'application/json; charset=utf-8' });
+    }
+    const metas = def === undefined ? [] : await catalogMetas(ctx, token, def, skip);
     cacheable(c);
     return sendJson(c, { metas });
   };

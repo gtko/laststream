@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AllDebridClient, AllDebridError } from '../src/sources/alldebrid.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : ces tests exercent le client appelé depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const API_KEY = 'AD-TEST-KEY-NE-PAS-FUITER';
 const MINUTE = 60_000;

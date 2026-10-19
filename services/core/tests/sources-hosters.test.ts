@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AllDebridClient, AllDebridError } from '../src/sources/alldebrid.js';
 import { HosterClient } from '../src/sources/hosters.js';
 import { RESOLVE_ERROR_CODES } from '../src/play/failover.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : le client des hébergeurs est appelé depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 const API_KEY = 'AD-TEST-KEY-NE-PAS-FUITER';
 const HOUR = 3_600_000;

@@ -218,7 +218,7 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(upstream.callsTo('https://api.themoviedb.org/3/movie/500').length).toBe(2);
   });
 
-  it('TTL : détails 6 h, tendances et populaires 3 h, fournisseurs 12 h, MDBList 24 h, TVDB 12 h, IA 30 min et 7 jours', () => {
+  it('TTL : détails 6 h, tendances et populaires 3 h, fournisseurs 12 h, MDBList 24 h, TVDB 12 h, IA 24 h (lot vide 5 min) et 7 jours', () => {
     expect(tmdbTtl('movie/603')).toBe(6 * 3600e3);
     expect(tmdbTtl('movie/upcoming')).toBe(6 * 3600e3);
     expect(tmdbTtl('trending/all/week')).toBe(3 * 3600e3);
@@ -226,7 +226,8 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(tmdbTtl('movie/603/watch/providers')).toBe(12 * 3600e3);
     expect(TTL.mdb).toBe(24 * 3600e3);
     expect(TTL.tvdb).toBe(12 * 3600e3);
-    expect(TTL.aiRecommend).toBe(30 * 60e3);
+    expect(TTL.aiRecommend).toBe(24 * 3600e3);
+    expect(TTL.aiRecommendEmpty).toBe(5 * 60e3);
     expect(TTL.aiText).toBe(7 * 24 * 3600e3);
     expect(TTL.tvChannels).toBe(12 * 3600e3);
     expect(TTL.tvPartial).toBe(15 * 60e3);

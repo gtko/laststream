@@ -268,6 +268,8 @@ afterAll(async () => {
 
 beforeEach(() => {
   requests.length = 0;
+  // Mode serveur AllDebrid explicitement activé (opt-in) : les scénarios AllDebrid débrident côté serveur.
+  vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1');
 });
 
 afterEach(() => {

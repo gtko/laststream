@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryKvCache } from '../src/platform/memory-kv-cache.js';
 import { IssuedUrls } from '../src/play/issued.js';
 import { HostHealth } from '../src/play/hosts.js';
 import { PackStore } from '../src/play/packs.js';
 import { AllDebridClient } from '../src/sources/alldebrid.js';
 import { fetchTorrent, TorrentCache, type FetchedTorrent } from '../src/torrent/fetch-torrent.js';
+
+// Mode serveur AllDebrid explicitement activé (opt-in) : le client AllDebrid est appelé depuis le serveur.
+beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
+afterEach(() => vi.unstubAllEnvs());
 
 /**
  * Caches persistants partagés entre instances (Workers : KV). Deux « instances » = deux objets distincts qui ne

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { TtlCache } from '../src/cache/ttl-cache.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FetchFn } from '../src/sources/http.js';
 import {
   buildQueries,
@@ -8,7 +9,6 @@ import {
   stripAccents,
   stripPunctuation,
   yearMatches,
-  type TitleCache,
 } from '../src/sources/query-titles.js';
 import type { ContentRef } from '../src/types.js';
 
@@ -60,7 +60,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
   it('film : original, anglais et français dédupliqués, année de sortie ; jeton en Bearer, jamais dans l’URL', async () => {
     const { fetch, mock } = tmdb(duneTable());
 
-    const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants).toEqual({
       titles: ['Dune: Part Two', 'Dune : Deuxième Partie'],
@@ -79,7 +79,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
   it('série : name et original_name (dédupliqués), année de première diffusion', async () => {
     const { fetch } = tmdb(severanceTable());
 
-    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants).toEqual({ titles: ['Severance'], year: 2022, fr: 'Severance', en: 'Severance' });
   });
@@ -89,7 +89,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
 
     const variants = await getTitleVariants(MOVIE, {
       fetch,
-      cache: new Map(),
+      cache: new TtlCache(),
       fallbackTitle: { title: 'Dune Part Two', year: 2024 },
     });
 
@@ -98,7 +98,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
   });
 
   it('TMDB en erreur : repli sur fallbackTitle, sans lever, et résultat non mis en cache', async () => {
-    const cache: TitleCache = new Map();
+    const cache = new TtlCache();
     const failing = tmdb({ [`${API}/find/tt15239678?external_source=imdb_id`]: () => new Response('x', { status: 500 }) });
 
     const first = await getTitleVariants(MOVIE, {
@@ -121,7 +121,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
     const variants = await getTitleVariants(MOVIE, {
       tmdbToken: TOKEN,
       fetch,
-      cache: new Map(),
+      cache: new TtlCache(),
       fallbackTitle: { title: 'Dune Part Two' },
     });
 
@@ -134,7 +134,7 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
     const variants = await getTitleVariants(MOVIE, {
       tmdbToken: TOKEN,
       fetch,
-      cache: new Map(),
+      cache: new TtlCache(),
       fallbackTitle: { title: 'dune: part two' },
     });
 
@@ -142,24 +142,40 @@ describe('getTitleVariants : TMDB (en-US, fr-FR, original)', () => {
   });
 });
 
-describe('getTitleVariants : cache de 7 jours (horloge injectée)', () => {
-  it('résultat réutilisé pendant 7 jours, puis rechargé', async () => {
-    let clock = 1_700_000_000_000;
+describe('getTitleVariants : cache de 7 jours (horloge simulée)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('résultat réutilisé pendant 7 jours ; au-delà, servi périmé puis rechargé en arrière-plan', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_700_000_000_000);
     const { fetch, mock } = tmdb(duneTable());
-    const cache: TitleCache = new Map();
-    const options = { tmdbToken: TOKEN, fetch, cache, now: () => clock };
+    const cache = new TtlCache();
+    const options = { tmdbToken: TOKEN, fetch, cache };
 
     await getTitleVariants(MOVIE, options);
     expect(mock).toHaveBeenCalledTimes(3); // find, en-US, fr-FR
 
-    clock += SEVEN_DAYS_MS - 1;
+    vi.setSystemTime(Date.now() + SEVEN_DAYS_MS - 1);
     await getTitleVariants(MOVIE, options);
     expect(mock).toHaveBeenCalledTimes(3);
 
-    clock += 1; // exactement 7 jours : expiré
+    vi.setSystemTime(Date.now() + 1); // exactement 7 jours : périmé, servi puis rafraîchi
     const again = await getTitleVariants(MOVIE, options);
-    expect(mock).toHaveBeenCalledTimes(6);
     expect(again.titles).toEqual(['Dune: Part Two', 'Dune : Deuxième Partie']);
+    await vi.waitFor(() => expect(mock).toHaveBeenCalledTimes(6));
+  });
+});
+
+describe('getTitleVariants : requêtes simultanées', () => {
+  it('deux appels simultanés pour un même titre : une seule série de requêtes TMDB', async () => {
+    const { fetch, mock } = tmdb(duneTable());
+    const cache = new TtlCache();
+    const options = { tmdbToken: TOKEN, fetch, cache };
+
+    const [first, second] = await Promise.all([getTitleVariants(MOVIE, options), getTitleVariants(MOVIE, options)]);
+
+    expect(mock).toHaveBeenCalledTimes(3); // find, en-US, fr-FR
+    expect(second).toEqual(first);
   });
 });
 
@@ -319,7 +335,7 @@ describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêt
   it('série : alternative_titles.results en alias, dédupliqués et nettoyés ; titles ne grossit pas et ne sert pas aux requêtes', async () => {
     const { fetch, mock } = tmdb(frierenTable());
 
-    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants.aliases).toEqual(['Sousou no Frieren', 'Frieren, au-delà du voyage']);
     expect(variants.titles).toEqual(['葬送のフリーレン', "Frieren: Beyond Journey's End", 'Frieren : Au-delà du voyage']);
@@ -350,7 +366,7 @@ describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêt
         }),
     });
 
-    const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(MOVIE, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants.aliases).toEqual(['Dune 2', 'Dune Parte Dos']);
     expect(variants.titles).toEqual(['Dune: Part Two', 'Dune : Deuxième Partie']);
@@ -360,7 +376,7 @@ describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêt
     const many = Array.from({ length: 40 }, (_, index) => ({ iso_3166_1: 'XX', title: `Alias ${index + 1}`, type: '' }));
     const { fetch } = tmdb(frierenTable(many));
 
-    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants.aliases).toHaveLength(30);
     expect(variants.aliases?.[0]).toBe('Alias 1');
@@ -368,7 +384,7 @@ describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêt
   });
 
   it('aliases mis en cache avec les titres : un second appel les renvoie sans appel TMDB', async () => {
-    const cache: TitleCache = new Map();
+    const cache = new TtlCache();
     const first = tmdb(frierenTable());
     await getTitleVariants(FRIEREN, { tmdbToken: TOKEN, fetch: first.fetch, cache });
     const offline = tmdb({});
@@ -382,7 +398,7 @@ describe('getTitleVariants : titres alternatifs TMDB (aliases), hors des requêt
   it('sans alias TMDB : aucun champ aliases', async () => {
     const { fetch } = tmdb(severanceTable());
 
-    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new Map() });
+    const variants = await getTitleVariants(SERIES, { tmdbToken: TOKEN, fetch, cache: new TtlCache() });
 
     expect(variants).not.toHaveProperty('aliases');
   });
