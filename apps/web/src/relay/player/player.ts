@@ -86,6 +86,7 @@ export class GuestPlayer {
   /**
    * Ouvre le fichier et prépare le décodage sur `canvas`. Ne lit que les plages nécessaires.
    * Renvoie `{kind:'unsupported', message}` (sans lever d'erreur) si le navigateur ne peut pas décoder.
+   * Si seul le son est refusé, la vidéo se lit sans son : le plan porte alors `withoutAudio` et une `note`.
    */
   async load(reader: RangeReader, canvas: HTMLCanvasElement): Promise<PlaybackPlan> {
     this.unload();
@@ -95,13 +96,17 @@ export class GuestPlayer {
       media.close();
       return plan;
     }
+    if (plan.withoutAudio) {
+      media.audioSink = null;
+      media.audioConfig = null;
+    }
     try {
       this.setup(media, canvas);
     } catch (error) {
       this.unload();
       throw error;
     }
-    return { kind: 'native' };
+    return plan;
   }
 
   /** Lance la lecture (action utilisateur). */

@@ -309,6 +309,15 @@ describe('session invité', () => {
     hostClient.close();
   }, 15000);
 
+  it('son non pris en charge : lecture prête avec la note du lecteur (vidéo seule)', async () => {
+    const plan: PlaybackPlan = { kind: 'native', withoutAudio: true, note: 'Son non pris en charge par ce navigateur' };
+    const { guest, hostRelay } = await chain(plan);
+    await waitFor(() => guest.tick().phase === 'ready');
+    expect(guest.tick().note).toBe(plan.note);
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
   it('format non pris en charge : phase unsupported avec le message du lecteur', async () => {
     const plan: PlaybackPlan = { kind: 'unsupported', message: 'Format non pris en charge dans ce navigateur (codec hevc).' };
     const { guest, hostRelay } = await chain(plan);

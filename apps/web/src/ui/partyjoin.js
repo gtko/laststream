@@ -79,7 +79,8 @@ function refresh(root) {
   // Salon accepté (bienvenue reçue) : la phase n'est plus « joining » ni terminale.
   if (v.phase !== 'joining' && !TERMINAL.has(v.phase)) dropTokenFromUrl();
   const status = root.querySelector('[data-pj-status]');
-  status.textContent = v.message || PHASE_TEXT[v.phase] || '';
+  // La note (son non pris en charge) s'ajoute à la ligne d'état, sans remplacer le texte de la phase.
+  status.textContent = [v.message || PHASE_TEXT[v.phase] || '', v.note].filter(Boolean).join(' ');
   const form = root.querySelector('[data-pj-form]');
   if (TERMINAL.has(v.phase)) {
     stopSession();

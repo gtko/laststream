@@ -12,6 +12,7 @@ const AVC: VideoTrackInfo = {
 const HEVC: VideoTrackInfo = { codec: 'hevc', codecString: 'hvc1.1.6.L93.B0', width: 1920, height: 1080 };
 const AAC: AudioTrackInfo = { codec: 'aac', codecString: 'mp4a.40.2', sampleRate: 48000, numberOfChannels: 2 };
 const OPUS: AudioTrackInfo = { codec: 'opus', codecString: 'opus', sampleRate: 48000, numberOfChannels: 2 };
+const EAC3: AudioTrackInfo = { codec: 'eac3', codecString: 'ec-3', sampleRate: 48000, numberOfChannels: 6 };
 
 type Verdict = boolean | 'throw';
 
@@ -86,6 +87,19 @@ describe('checkSupport', () => {
     const result = await checkSupport({ video: AVC, audio: OPUS }, env);
     expect(result).toMatchObject({ ok: false, codec: 'Opus' });
     expect(result.ok === false && result.reason).toBe('Codec audio Opus non décodable dans ce navigateur.');
+  });
+
+  it('signale un son E-AC-3 refusé alors que la vidéo est décodable', async () => {
+    const env = mockEnv(
+      () => true,
+      (cfg) => cfg.codec !== 'ec-3',
+    );
+    const result = await checkSupport({ video: AVC, audio: EAC3 }, env);
+    expect(result).toEqual({
+      ok: false,
+      codec: 'E-AC-3',
+      reason: 'Codec audio E-AC-3 non décodable dans ce navigateur.',
+    });
   });
 
   it('traite une configuration rejetée (exception) comme non décodable', async () => {

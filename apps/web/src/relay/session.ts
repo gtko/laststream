@@ -149,6 +149,8 @@ export interface GuestRelayView {
   /** Position et durée du lecteur, en secondes. */
   position: number;
   duration: number;
+  /** Note discrète sur la lecture (ex. son non pris en charge), vide si aucune. */
+  note: string;
 }
 
 /** Ce que la session attend du lecteur invité (GuestPlayer la satisfait). */
@@ -178,7 +180,7 @@ export interface GuestRelayDeps {
   clearTimer?: (id: unknown) => void;
 }
 
-const EMPTY_VIEW: GuestRelayView = { phase: 'joining', message: '', rateBps: 0, bytesReceived: 0, playing: false, position: 0, duration: 0 };
+const EMPTY_VIEW: GuestRelayView = { phase: 'joining', message: '', rateBps: 0, bytesReceived: 0, playing: false, position: 0, duration: 0, note: '' };
 
 export class GuestRelaySession {
   private client: PartyClient | null = null;
@@ -363,6 +365,7 @@ export class GuestRelaySession {
         return;
       }
       this.setView('ready', '');
+      this.view = { ...this.view, note: plan.note ?? '' };
       this.syncRoom();
     } catch (err) {
       if (!this.isCurrent(seq)) return;
@@ -407,11 +410,11 @@ export class GuestRelaySession {
     this.range = null;
     this.player?.destroy();
     this.player = null;
-    this.view = { ...this.view, rateBps: 0, playing: false, position: 0, duration: 0 };
+    this.view = { ...this.view, rateBps: 0, playing: false, position: 0, duration: 0, note: '' };
   }
 
   private setView(phase: GuestPhase, message: string): void {
-    this.view = { ...this.view, phase, message };
+    this.view = { ...this.view, phase, message, note: '' };
   }
 
   /** Fin définitive pour cet invité : plus de lecture, plus de connexion au salon. */

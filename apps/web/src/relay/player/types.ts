@@ -46,8 +46,13 @@ export type SupportResult =
   | { ok: true; reason: null; codec: null }
   | { ok: false; reason: string; codec: string };
 
-/** Décision de lecture : décodage natif, ou format refusé avec un message à afficher. */
-export type PlaybackPlan = { kind: 'native' } | { kind: 'unsupported'; message: string };
+/**
+ * Décision de lecture. `native` : lecture avec WebCodecs ; `withoutAudio` : seule la vidéo est lue (son refusé),
+ * `note` est alors le message discret à afficher. `unsupported` : format refusé, avec un message à afficher.
+ */
+export type PlaybackPlan =
+  | { kind: 'native'; withoutAudio?: boolean; note?: string }
+  | { kind: 'unsupported'; message: string };
 
 export interface PlayerState {
   playing: boolean;
