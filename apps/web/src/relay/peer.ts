@@ -70,6 +70,8 @@ export interface HostOptions extends PeerOptions {
   maxUploadMbps?: number;
   /** Délai entre l'offre et la réponse appliquée, en ms (défaut 15 s) ; au-delà, la liaison est fermée. */
   answerTimeoutMs?: number;
+  /** Capacités de décodage annoncées par un invité (masque, voir `DECODE_CAPS`). */
+  onCaps?: (guestId: string, mask: number) => void;
 }
 
 /** Délai de réponse de l'invité, et nombre de candidats ICE retenus avant la réponse. */
@@ -200,6 +202,7 @@ export class RelayHost {
     const server: RangeServer = new RangeServer(this.source, channel, {
       ...this.opts.server,
       budget: this.budget,
+      onCaps: (mask) => this.opts.onCaps?.(guestId, mask),
       onIdle: () => this.dropServer(guestId, server),
       onAbuse: () => this.dropServer(guestId, server),
       onStats: (stats) => this.opts.onStats?.(guestId, stats),

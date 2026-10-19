@@ -9,6 +9,7 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { PartyClient, type SocketLike } from './client';
 import { PartyController, type PlayerLike } from './controller';
+import { compatWarning, fileCodecsOf, guestStatuses, pickCompatibleSource, type SourceLike } from './compat';
 import { fingerprintOf, pickByFingerprint, type FingerprintSource } from './fingerprint';
 import { partyErrorText } from './protocol';
 import type { RangeSource } from '../relay/host';
@@ -34,6 +35,8 @@ export interface SessionAdapter {
    * un magnet ou un proxy. Jamais affiché, jamais envoyé au salon, jamais journalisé.
    */
   relayUrl?: () => string | null;
+  /** Sources déjà chargées du titre (classées), pour proposer une source compatible avec tous les invités. */
+  sources?: () => readonly SourceLike[];
 }
 
 interface EngineLike {
@@ -115,6 +118,8 @@ class PartyBridge {
   /** Salon créé depuis la fiche (création différée) : l'interface copie le lien et ouvre le panneau. */
   onCreated: ((room: PartyRoom) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
+  /** Bascule la lecture sur une source déjà chargée, à la même position (fournie par le lecteur) ; vrai si elle a lieu. */
+  switcher: ((view: SourceLike) => boolean) | null = null;
   private listeners = new Set<Listener>();
   private announced = '';
   /** Partage de la lecture aux invités : session hôte active, et lien qu'elle sert (comparé, jamais affiché). */
@@ -255,6 +260,28 @@ class PartyBridge {
   /** Le navigateur de l'hôte ne peut pas lire ce lien (CORS) : le partage est en cours, mais les invités ne reçoivent rien. */
   relayRefused(): boolean {
     return this.relay !== null && this.refusedRelay;
+  }
+
+  /**
+   * Avertissement de compatibilité pour l'hôte (« 1 invité n’aura pas le son (DTS) »), ou null. Il n'existe que pendant le
+   * partage aux invités, et ne concerne que ceux qui ont annoncé leurs capacités de décodage.
+   */
+  guestWarning(): string | null {
+    const c = this.client;
+    const relay = this.relay;
+    const a = this.adapter?.() ?? null;
+    if (!c || !c.isHost || !relay || !a) return null;
+    return compatWarning(fileCodecsOf(a.view), guestStatuses(c.participants, relay.guestCaps()));
+  }
+
+  /** Passe la lecture à la meilleure source compatible avec tous les invités annoncés, à la même position. */
+  switchToCompatible(): 'switched' | 'none' {
+    const c = this.client;
+    const relay = this.relay;
+    const a = this.adapter?.() ?? null;
+    if (!c || !c.isHost || !relay || !a || !a.sources || !this.switcher) return 'none';
+    const pick = pickCompatibleSource(a.sources(), guestStatuses(c.participants, relay.guestCaps()), a.view?.index ?? null);
+    return pick && this.switcher(pick) ? 'switched' : 'none';
   }
 
   /**

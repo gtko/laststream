@@ -11,6 +11,9 @@
  *                                                                 flags bit 0 = dernier morceau de la requête
  *     ERR     [5][reqId u32][code u8]                             code = index dans RANGE_ERROR_CODES
  *
+ *   invité -> hôte (à l'ouverture du canal)
+ *     CAPS    [7][reqId u32 = 0][mask u32]                        bit i = DECODE_CAPS[i] : décodages que l'invité sait faire
+ *
  * Encodage et décodage purs (testés dans src/relay/protocol.test.ts). */
 
 /** Nom du DataChannel des plages (créé par l'hôte). */
@@ -27,6 +30,13 @@ export type RangeErrorCode = (typeof RANGE_ERROR_CODES)[number];
 
 /** Codes locaux (délais, annulation, fermeture) en plus des codes de l'hôte. */
 export type RelayErrorCode = RangeErrorCode | 'timeout' | 'cancelled' | 'closed' | 'unavailable' | 'protocol';
+
+/**
+ * Capacités de décodage annoncées par un invité (vidéo, puis audio). L'index sert de bit sur le fil : ne pas réordonner,
+ * ajouter en fin de liste.
+ */
+export const DECODE_CAPS = ['h264', 'hevc', 'av1', 'vp9', 'aac', 'opus', 'ac3', 'eac3', 'dts', 'flac'] as const;
+export type DecodeCap = (typeof DECODE_CAPS)[number];
 
 const MESSAGES: Record<RelayErrorCode, string> = {
   bad_request: 'Requête de plage invalide.',
@@ -80,9 +90,10 @@ export type RelayFrame =
   | { t: 'info'; reqId: number; size: number; mime?: string }
   | { t: 'data'; reqId: number; offset: number; fin: boolean; payload: Uint8Array }
   | { t: 'err'; reqId: number; code: RangeErrorCode }
-  | { t: 'cancel'; reqId: number };
+  | { t: 'cancel'; reqId: number }
+  | { t: 'caps'; mask: number };
 
-const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6 } as const;
+const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, caps: 7 } as const;
 const DATA_HEADER = 14;
 const utf8 = new TextEncoder();
 const utf8Strict = new TextDecoder('utf-8', { fatal: true });
@@ -125,6 +136,29 @@ export function encodeInfoReq(reqId: number): Uint8Array {
 
 export function encodeCancel(reqId: number): Uint8Array {
   return header(5, TYPE.cancel, reqId).out;
+}
+
+/** Bits (DECODE_CAPS) des capacités d'une liste ; les noms inconnus sont ignorés. */
+export function capsMask(caps: readonly string[]): number {
+  let mask = 0;
+  for (const cap of caps) {
+    const i = DECODE_CAPS.indexOf(cap as DecodeCap);
+    if (i >= 0) mask |= 1 << i;
+  }
+  return mask >>> 0;
+}
+
+/** Capacités d'un masque, dans l'ordre de DECODE_CAPS (les bits inconnus sont ignorés). */
+export function capsFromMask(mask: number): DecodeCap[] {
+  return DECODE_CAPS.filter((_, i) => (mask & (1 << i)) !== 0);
+}
+
+/** Annonce des capacités de décodage de l'invité (bits de DECODE_CAPS). */
+export function encodeCaps(mask: number): Uint8Array {
+  if (!Number.isInteger(mask) || mask < 0 || mask > 0xffffffff) throw new Error('masque hors bornes');
+  const { out, view } = header(9, TYPE.caps, 0);
+  view.setUint32(5, mask);
+  return out;
 }
 
 /** Réponse d'information ; un type trop long (> 255 octets) est omis. */
@@ -203,6 +237,8 @@ export function decodeFrame(buf: Uint8Array): RelayFrame | null {
     }
     case TYPE.cancel:
       return n === 5 ? { t: 'cancel', reqId } : null;
+    case TYPE.caps:
+      return n === 9 && reqId === 0 ? { t: 'caps', mask: view.getUint32(5) } : null;
     default:
       return null;
   }

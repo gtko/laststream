@@ -47,6 +47,8 @@ export interface RangeServerOptions {
   onAbuse?: () => void;
   /** Plafond de débit montant partagé par tous les liens d'un même hôte. */
   budget?: UploadBudget;
+  /** Capacités de décodage annoncées par l'invité à l'ouverture (masque, voir `DECODE_CAPS`). */
+  onCaps?: (mask: number) => void;
 }
 
 /** Délai d'inactivité d'un lien (2 min) et erreurs consécutives tolérées (20) avant coupure. */
@@ -106,6 +108,7 @@ export class RangeServer {
   private readonly onIdle: (() => void) | undefined;
   private readonly onAbuse: (() => void) | undefined;
   private readonly budget: UploadBudget | undefined;
+  private readonly onCaps: ((mask: number) => void) | undefined;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private errorStreak = 0;
 
@@ -126,6 +129,7 @@ export class RangeServer {
     this.onIdle = options.onIdle;
     this.onAbuse = options.onAbuse;
     this.budget = options.budget;
+    this.onCaps = options.onCaps;
     this.meter = new RateMeter(this.now);
     channel.bufferedAmountLowThreshold = this.lowWater;
     channel.addEventListener('message', this.onMessage);
@@ -174,6 +178,9 @@ export class RangeServer {
         break;
       case 'cancel':
         this.active.get(frame.reqId)?.abort();
+        break;
+      case 'caps':
+        this.onCaps?.(frame.mask);
         break;
       default:
         break;

@@ -220,6 +220,8 @@ function partyAdapter(p = P) {
     ready: !!(p.view && p.engine && p.mediaUrl && !p.failing && !p.resumeTimer),
     // Lien HTTP(S) lu directement par cet appareil (débridé ou direct d'addon) pour le partage aux invités ; jamais un torrent.
     relayUrl: () => (p.engine ? relayableUrl(p.mediaUrl, p.view ? p.view.stream : null) : null),
+    // Sources déjà chargées du titre, classées : le salon y cherche une source compatible avec tous les invités.
+    sources: () => p.ranked || p.views || [],
   };
 }
 
@@ -1877,8 +1879,21 @@ export function playSource(request, views, view, opener, opts = {}) {
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
 
+/** Salon : lecture d'une autre source déjà chargée du titre, à la position courante (choix de l'hôte). */
+function switchToView(view) {
+  const p = P;
+  if (!p || !p.engine || !p.view || !view || view.index === p.view.index) return false;
+  const st = p.engine.state();
+  p.attempts = 0;
+  p.tried = new Set();
+  ui.toast('Changement de source…');
+  playView(view, Math.max(0, st.time || 0));
+  return true;
+}
+
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.
 partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resume, force: true, prefer: o.prefer });
 partyBridge.adapter = () => partyAdapter();
+partyBridge.switcher = (view) => switchToView(view);
 
 export { formatClock };

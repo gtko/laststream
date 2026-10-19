@@ -14,7 +14,8 @@ import { endText, hostLostText, refusedText, relayErrorText, waitingHostText } f
 import { RangeClient } from './guest';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
 import type { RangeSource, UploadStats } from './host';
-import { RelayError, type ChannelLike } from './protocol';
+import { RelayError, capsMask, encodeCaps, type ChannelLike, type DecodeCap } from './protocol';
+import { detectDecodeCaps } from './player/detect';
 import type { PlaybackPlan, PlayerCallbacks, PlayerState, RangeReader, RoomState } from './player/types';
 
 let relayTurn: TurnConfig | null = null;
@@ -72,6 +73,8 @@ export class HostRelaySession {
   private readonly unsubscribe: () => void;
   /** Identifiants de connexion des invités du salon : seuls ceux-là sont admis à une liaison. */
   private guestIds = new Set<string>();
+  /** Capacités de décodage annoncées par chaque invité (masque DECODE_CAPS), par identifiant de pair. */
+  private readonly caps = new Map<string, number>();
   private closed = false;
 
   constructor(opts: HostRelayOptions) {
@@ -82,6 +85,9 @@ export class HostRelaySession {
       maxUploadMbps: opts.maxUploadMbps,
       onStats: (guestId, stats) => {
         this.uploads.set(guestId, stats);
+      },
+      onCaps: (guestId, mask) => {
+        if (this.guestIds.has(guestId)) this.caps.set(guestId, mask);
       },
     });
     const offParticipants = opts.client.on('participants', (list) => this.onParticipants(list));
@@ -100,11 +106,18 @@ export class HostRelaySession {
     for (const p of list) if (p.guest && p.peerId) ids.add(p.peerId);
     this.guestIds = ids;
     for (const id of this.host.guests) if (!ids.has(id)) this.host.drop(id);
+    for (const id of [...this.caps.keys()]) if (!ids.has(id)) this.caps.delete(id);
+  }
+
+  /** Capacités de décodage annoncées par les invités présents (masque DECODE_CAPS, par identifiant de pair). */
+  guestCaps(): ReadonlyMap<string, number> {
+    return new Map(this.caps);
   }
 
   /** Fin du salon : toutes les liaisons se ferment tout de suite, et plus aucun invité n'est admis. */
   private onEnd(): void {
     this.guestIds = new Set();
+    this.caps.clear();
     for (const id of this.host.guests) this.host.drop(id);
   }
 
@@ -171,6 +184,8 @@ export interface GuestRelayDeps {
   canvas: HTMLCanvasElement;
   /** Options de connexion pair à pair (tests, TURN). */
   peer?: PeerOptions;
+  /** Capacités de décodage de cet appareil (défaut : sonde WebCodecs, voir detectDecodeCaps). */
+  decodeCaps?: () => Promise<DecodeCap[]>;
   /** Échecs de connexion avant que le salon soit considéré comme refusé (défaut : 3). */
   maxRefusals?: number;
   /** Délai de connexion à l'hôte (ms). */
@@ -200,6 +215,8 @@ export class GuestRelaySession {
   /** Action locale en attente d'écho : révision du salon à ce moment, et fin de la fenêtre d'attente. */
   private pendingRev = -1;
   private pendingUntil = 0;
+  /** Masque des capacités de décodage de cet appareil, sondé une fois à la connexion au salon. */
+  private capsP: Promise<number> | null = null;
 
   constructor(private readonly deps: GuestRelayDeps) {}
 
@@ -213,6 +230,8 @@ export class GuestRelaySession {
       clearTimer: this.deps.clearTimer,
     });
     this.client = client;
+    const probe = this.deps.decodeCaps ?? (() => detectDecodeCaps());
+    this.capsP = probe().then(capsMask, () => 0);
     client.on('status', (st) => this.onStatus(st));
     client.on('welcome', () => {
       this.welcomed = true;
@@ -348,6 +367,14 @@ export class GuestRelaySession {
       const channel: ChannelLike = await relay.connect(this.deps.connectTimeoutMs ?? CONNECT_MS);
       if (!this.isCurrent(seq)) return;
       channel.addEventListener('close', () => this.onChannelClosed(seq));
+      // Capacités de décodage : annoncées à l'hôte sur ce canal, avant la première requête de plage.
+      const mask = await (this.capsP ?? Promise.resolve(0));
+      if (!this.isCurrent(seq)) return;
+      try {
+        channel.send(encodeCaps(mask));
+      } catch {
+        // Canal fermé pendant l'annonce : la liaison se rompra d'elle-même (onChannelClosed).
+      }
       const range = new RangeClient(channel, {
         onStats: (s) => {
           this.view = { ...this.view, bytesReceived: s.bytesReceived, rateBps: s.rateBps };

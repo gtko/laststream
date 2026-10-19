@@ -6,6 +6,7 @@ import { endText, refusedText } from '../party/join';
 import type { RangeSource } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
 import type { PeerOptions } from './peer';
+import { capsMask, type DecodeCap } from './protocol';
 import type { PlaybackPlan, PlayerCallbacks, RoomState } from './player/types';
 import { GuestRelaySession, HostRelaySession, partySignal, type GuestPlayerLike } from './session';
 
@@ -170,7 +171,7 @@ function sourceOf(bytes: Uint8Array): RangeSource {
 }
 
 /** Salon complet : hôte (h1) avec sa session de partage, invité (p1) avec sa session, lecteur factice. */
-async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000) {
+async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000, caps?: DecodeCap[]) {
   const room = new Room();
   const wire: { ch?: { host: MemoryChannel; guest: MemoryChannel } } = {};
   const bytes = bytesOf(size);
@@ -191,6 +192,7 @@ async function chain(plan: PlaybackPlan = { kind: 'native' }, size = 300_000) {
     canvas: {} as unknown as HTMLCanvasElement,
     peer: { createPc: pcFactory('guest', wire) },
     connectTimeoutMs: 3000,
+    decodeCaps: caps ? async () => caps : undefined,
   });
   guest.start();
   await flush();
@@ -240,6 +242,18 @@ describe('session hôte', () => {
 });
 
 describe('session invité', () => {
+  it('capacités de décodage : annoncées à l’hôte sur le canal, gardées tant que l’invité est présent, oubliées à son départ', async () => {
+    const { room, hostRelay, guest } = await chain({ kind: 'native' }, 300_000, ['h264', 'aac']);
+    await waitFor(() => guest.tick().phase === 'ready');
+    expect(hostRelay.guestCaps().get('p1')).toBe(capsMask(['h264', 'aac']));
+
+    room.get('h1')!.recv({ t: 'leave', user: 'bob' });
+    expect(hostRelay.guestCaps().size).toBe(0);
+
+    guest.destroy();
+    hostRelay.close();
+  }, 15000);
+
   it('salon -> hôte (WebRTC) -> plages -> lecteur, puis play/pause/seek relayés au salon et état du salon appliqué sans écho', async () => {
     const { room, hostRelay, guest, players, bytes } = await chain();
     await waitFor(() => guest.tick().phase === 'ready');
