@@ -52,6 +52,29 @@ export interface GuestPlayerOptions extends PlayerCallbacks {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi);
 
+/** Clé du volume de la watch party, mémorisé sur cet appareil (0 à 1). */
+export const PARTY_VOLUME_KEY = 'lastream-party-volume';
+
+/** Volume mémorisé ; absent, illisible ou stockage indisponible : plein volume. */
+function readStoredVolume(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem(PARTY_VOLUME_KEY);
+    if (raw === null || raw === undefined || raw.trim() === '') return 1;
+    const v = Number(raw);
+    return Number.isFinite(v) ? clamp(v, 0, 1) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function storeVolume(volume: number): void {
+  try {
+    globalThis.localStorage?.setItem(PARTY_VOLUME_KEY, String(volume));
+  } catch {
+    // Stockage indisponible (navigation privée, données bloquées) : le réglage vaut pour cette lecture seulement.
+  }
+}
+
 /**
  * Lecteur invité : décode vidéo (VideoDecoder -> canvas) et audio (AudioDecoder -> WebAudio).
  *
@@ -76,6 +99,11 @@ export class GuestPlayer {
   private vdec: VideoDecoder | null = null;
   private adec: AudioDecoder | null = null;
   private audioCtx: AudioContext | null = null;
+  /** Gain de sortie du son (volume et sourdine), créé avec le contexte audio. Chaque segment passe par lui. */
+  private gain: GainNode | null = null;
+  /** Volume (0 à 1), mémorisé sur l'appareil, et sourdine. */
+  private volume = readStoredVolume();
+  private muted = false;
   private readonly audioNodes = new Set<AudioBufferSourceNode>();
   private frames: VideoFrame[] = [];
   private shown: VideoFrame | null = null;
@@ -220,6 +248,31 @@ export class GuestPlayer {
     };
   }
 
+  /** Volume du son (0 à 1), mémorisé sur cet appareil. Prend effet tout de suite, pendant la lecture comprise. */
+  setVolume(volume: number): void {
+    this.volume = clamp(Number.isFinite(volume) ? volume : 1, 0, 1);
+    storeVolume(this.volume);
+    this.applyGain();
+  }
+
+  /** Sourdine : coupe le son sans toucher au volume mémorisé. */
+  setMuted(muted: boolean): void {
+    this.muted = !!muted;
+    this.applyGain();
+  }
+
+  getVolume(): number {
+    return this.volume;
+  }
+
+  isMuted(): boolean {
+    return this.muted;
+  }
+
+  private applyGain(): void {
+    if (this.gain) this.gain.gain.value = this.muted ? 0 : this.volume;
+  }
+
   /** Libère décodeurs, contexte audio et fichier. Le lecteur ne sert plus ensuite. */
   destroy(): void {
     this.destroyed = true;
@@ -252,6 +305,9 @@ export class GuestPlayer {
       this.audioCtx = new AudioContext();
       // Suspendu tant que la lecture n'a pas commencé : sinon le tampon déjà décodé jouerait pendant la pause.
       void this.audioCtx.suspend().catch(() => undefined);
+      this.gain = this.audioCtx.createGain();
+      this.gain.connect(this.audioCtx.destination);
+      this.applyGain();
       if (ac3 && media.audioTrack) {
         this.ac3Sink = new AudioSampleSink(media.audioTrack);
       } else {
@@ -304,6 +360,7 @@ export class GuestPlayer {
     this.ac3Sink = null;
     if (this.audioCtx) void this.audioCtx.close().catch(() => undefined);
     this.audioCtx = null;
+    this.gain = null;
     this.media?.close();
     this.media = null;
     this.canvas = null;
@@ -515,7 +572,7 @@ export class GuestPlayer {
       }
       const node = ctx.createBufferSource();
       node.buffer = buffer;
-      node.connect(ctx.destination);
+      node.connect(this.gain ?? ctx.destination);
       node.onended = () => {
         this.audioNodes.delete(node);
       };
