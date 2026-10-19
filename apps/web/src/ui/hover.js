@@ -109,10 +109,15 @@ export function openHover(tile) {
     if (meta) meta.innerHTML = hoverMeta(it, d);
     if (d.trailer) {
       const sb = hv.el.querySelector('[data-hcvid]');
-      if (sb) { sb.hidden = false; sb.dataset.vid = d.trailer; sb.dataset.vtitle = 'Bande-annonce : ' + it.name; }
+      if (sb) {
+        sb.hidden = false;
+        sb.dataset.vid = d.trailer;
+        sb.dataset.vtitle = 'Bande-annonce : ' + it.name;
+        if (d.trailerVO) sb.dataset.vo = '1'; else delete sb.dataset.vo;
+      }
       if (!REDUCE && !STILL) {
         const vbox = hv.el.querySelector('.hc-video');
-        vbox.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
+        vbox.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, d.trailerVO)) + '"></iframe>';
         const fr = vbox.querySelector('iframe');
         fr.addEventListener('load', () => {
           if (token !== hv.token) return;

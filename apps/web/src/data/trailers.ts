@@ -1,4 +1,4 @@
-import { getLangPrefs } from './langPrefs';
+import { getLangPrefs, LANG_NONE, LANG_VO } from './langPrefs';
 import { getVideoLang, type VideoLang } from './prefs';
 
 /** Vidéo TMDB (champs utiles). */
@@ -14,19 +14,38 @@ export interface TmdbVideo {
   iso_3166_1?: string | null;
 }
 
-/** Langue des bandes-annonces : le réglage de l'utilisateur. Point d'entrée unique, à rebrancher plus tard sur la langue audio. */
-export function trailerLang(): VideoLang {
-  // Langue audio principale des réglages « Audio et sous-titres » ; l'ancien réglage sert de repli (pays, langues non gérées).
-  const base = getVideoLang();
-  let lang = base.lang;
-  try { lang = getLangPrefs().audio || base.lang; } catch { /* réglage illisible : ancien réglage */ }
-  if (lang === base.lang) return base;
-  const country = ({ fr: base.country === 'CA' ? 'CA' : 'FR', en: 'US', es: 'ES', de: 'DE', it: 'IT', ja: 'JP', ko: 'KR', pt: 'BR' } as Record<string, string>)[lang] ?? lang.toUpperCase();
-  return { lang, tag: `${lang}-${country}`, country };
+/** Langue des bandes-annonces : la langue audio principale, et la secondaire quand c'est une langue précise. */
+export interface TrailerLang extends VideoLang {
+  /** Langue audio secondaire (code à deux lettres) ; absente pour la version originale, « aucune » ou la même langue. */
+  secondary?: string;
 }
 
-/** Valeur du paramètre TMDB `include_video_language` : la langue choisie, l'anglais, puis les vidéos sans langue. */
-export const includeVideoLanguages = (pref: VideoLang): string => `${pref.lang},en,null`;
+const COUNTRY: Record<string, string> = { fr: 'FR', en: 'US', es: 'ES', de: 'DE', it: 'IT', ja: 'JP', ko: 'KR', pt: 'BR' };
+
+/**
+ * Langue des bandes-annonces : langue audio principale et secondaire des réglages « Audio et sous-titres ». Sans réglage
+ * utilisable (version originale, « aucune »), c'est l'ancien réglage de langue qui sert ; la secondaire est alors absente.
+ */
+export function trailerLang(): TrailerLang {
+  const base = getVideoLang();
+  let lang = base.lang;
+  let secondary: string | undefined;
+  try {
+    const lp = getLangPrefs();
+    if (lp.audio && lp.audio !== LANG_VO && lp.audio !== LANG_NONE) lang = lp.audio;
+    if (lp.audio2 && lp.audio2 !== LANG_VO && lp.audio2 !== LANG_NONE && lp.audio2 !== lang) secondary = lp.audio2;
+  } catch { /* réglage illisible : ancien réglage */ }
+  const core: VideoLang = lang === base.lang ? base : { lang, tag: `${lang}-${COUNTRY[lang] ?? lang.toUpperCase()}`, country: COUNTRY[lang] ?? lang.toUpperCase() };
+  return secondary ? { ...core, secondary } : core;
+}
+
+/**
+ * Valeur du paramètre TMDB `include_video_language` : langue principale, secondaire (l'anglais à défaut), vidéos sans
+ * langue, anglais. Sans doublon.
+ */
+export function includeVideoLanguages(pref: TrailerLang): string {
+  return [pref.lang, pref.secondary ?? 'en', 'null', 'en'].filter((c, i, all) => all.indexOf(c) === i).join(',');
+}
 
 // ---- Marqueurs de titre ----
 // TMDB étiquette souvent mal la langue : ce que dit le nom de la vidéo (VF, VOSTFR…) prime sur `iso_639_1`.
@@ -49,11 +68,14 @@ const SUB_MARKERS: Partial<Record<string, RegExp>> = {
 /** Sous-titres annoncés en anglais : valent pour toutes les langues choisies. */
 const GENERIC_SUB = /\bsubtitles?\b|\bsubtitled\b/i;
 /** Hors choix principal : making-of, featurettes, extraits, bêtisiers, récapitulatifs. */
-const EXCLUDED = /behind the scenes|featurette|\bclips?\b|bloopers?|b[eê]tisier|\br[ée]cap\b|making[- ]of|coulisses|\bextraits?\b/i;
+const EXCLUDED = /behind the scenes|featurette|bloopers?|b[eê]tisier|\br[ée]cap\b|making[- ]of|coulisses|\bextraits?\b/i;
+/** Un nom « clip » exclut une bande-annonce ou un teaser (un clip typé « Clip » reste admis, en dernier). */
+const CLIP_NAME = /\bclips?\b/i;
 const TEASER = /\bteaser\b/i;
+const CANDIDATE_TYPES: readonly string[] = ['Trailer', 'Teaser', 'Clip'];
 
 /** Vrai si le nom annonce des sous-titres dans la langue choisie (VOSTFR, sous-titré, subtitled…). */
-function isSubtitled(v: TmdbVideo, pref: VideoLang): boolean {
+function isSubtitled(v: TmdbVideo, pref: TrailerLang): boolean {
   const name = v.name ?? '';
   return (SUB_MARKERS[pref.lang]?.test(name) ?? false) || GENERIC_SUB.test(name);
 }
@@ -65,33 +87,38 @@ export function audioLangOf(v: TmdbVideo): string | null {
   return dub ? dub[0] : v.iso_639_1 || null;
 }
 
-/** Groupe de langue : 0 doublé dans la langue choisie, 1 sous-titré dans cette langue, 2 anglais, 3 le reste. */
-function langGroup(v: TmdbVideo, pref: VideoLang): number {
+/**
+ * Groupe de langue (plus petit = mieux) : 0 doublé dans la langue principale, 1 sous-titré dans cette langue,
+ * 2 langue secondaire, 3 sans langue, 4 anglais, 5 autre langue.
+ */
+export function langGroup(v: TmdbVideo, pref: TrailerLang): number {
   if (isSubtitled(v, pref)) return 1;
   const audio = audioLangOf(v);
   if (audio === pref.lang) return 0;
-  return audio === 'en' ? 2 : 3;
+  if (pref.secondary && audio === pref.secondary) return 2;
+  if (!audio) return 3;
+  return audio === 'en' ? 4 : 5;
 }
 
-/** Nature : 0 bande-annonce, 1 teaser (un nom « Teaser » reste un teaser), 2 autre. */
+/** Nature : 0 bande-annonce, 1 teaser (un nom « Teaser » reste un teaser), 2 clip. */
 function kindRank(v: TmdbVideo): number {
   if (v.type === 'Teaser' || (v.type === 'Trailer' && TEASER.test(v.name ?? ''))) return 1;
   return v.type === 'Trailer' ? 0 : 2;
 }
 
 /**
- * Rang d'une vidéo (plus petit = meilleur) : d'abord le groupe de langue (doublé dans la langue choisie, sous-titré
- * dans cette langue, anglais, reste), puis la nature (bande-annonce, teaser, autre). Voir `compareVideos` pour les égalités.
+ * Rang d'une vidéo (plus petit = meilleur). Les clips passent toujours après les bandes-annonces et teasers ; pour
+ * ceux-ci, la langue prime (une VF teaser bat une bande-annonce anglaise), puis la nature (bande-annonce avant teaser).
  */
-export function videoTier(v: TmdbVideo, pref: VideoLang): number {
-  return langGroup(v, pref) * 3 + kindRank(v);
+export function videoTier(v: TmdbVideo, pref: TrailerLang): number {
+  return (v.type === 'Clip' ? 100 : 0) + langGroup(v, pref) * 3 + kindRank(v);
 }
 
 /**
  * Même rang : variante régionale correspondante (doublage seulement), puis « official », puis la plus récente,
  * puis la taille 1080.
  */
-export function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: VideoLang): number {
+export function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: TrailerLang): number {
   const t = videoTier(a, pref) - videoTier(b, pref);
   if (t) return t;
   const region = (v: TmdbVideo) => (langGroup(v, pref) === 0 && v.iso_3166_1 === pref.country ? 0 : 1);
@@ -103,25 +130,47 @@ export function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: VideoLang): numb
 
 const playable = (v: TmdbVideo): boolean => v.site === 'YouTube' && !!v.key;
 
-/** Vidéo pouvant être le choix principal : YouTube, bande-annonce ou teaser, hors making-of, featurettes et extraits. */
+/** Vidéo pouvant être le choix principal : YouTube, bande-annonce, teaser ou clip, hors making-of, featurettes et extraits. */
 export function isTrailerCandidate(v: TmdbVideo): boolean {
-  return playable(v) && (v.type === 'Trailer' || v.type === 'Teaser') && !EXCLUDED.test(v.name ?? '');
+  const name = v.name ?? '';
+  return playable(v) && CANDIDATE_TYPES.includes(v.type ?? '') && !EXCLUDED.test(name) && (v.type === 'Clip' || !CLIP_NAME.test(name));
+}
+
+/**
+ * Meilleure bande-annonce : clé YouTube, et vrai si elle n'est pas doublée dans la langue principale (version originale
+ * ou sous-titres). Clé vide s'il n'y a aucune vidéo utilisable.
+ */
+export function pickTrailer(videos: TmdbVideo[] | null | undefined, pref: TrailerLang): { key: string; vo: boolean } {
+  const pool = (videos ?? []).filter(isTrailerCandidate).sort((a, b) => compareVideos(a, b, pref));
+  const best = pool[0];
+  return best ? { key: best.key ?? '', vo: langGroup(best, pref) !== 0 } : { key: '', vo: false };
 }
 
 /** Clé YouTube de la meilleure bande-annonce (ou teaser, à défaut), vide s'il n'y en a pas. */
-export function pickTrailerKey(videos: TmdbVideo[] | null | undefined, pref: VideoLang): string {
-  const pool = (videos ?? []).filter(isTrailerCandidate);
-  pool.sort((a, b) => compareVideos(a, b, pref));
-  return pool[0]?.key ?? '';
+export function pickTrailerKey(videos: TmdbVideo[] | null | undefined, pref: TrailerLang): string {
+  return pickTrailer(videos, pref).key;
+}
+
+/** Vrai si la vidéo n'est pas doublée dans la langue principale (version originale ou sous-titres). */
+export function isVoVideo(v: TmdbVideo, pref: TrailerLang): boolean {
+  return langGroup(v, pref) !== 0;
 }
 
 /** Vrai si la liste contient une bande-annonce ou un teaser doublé dans la langue choisie (pas seulement sous-titré). */
-export function hasTrailerInLang(videos: TmdbVideo[] | null | undefined, pref: VideoLang): boolean {
+export function hasTrailerInLang(videos: TmdbVideo[] | null | undefined, pref: TrailerLang): boolean {
   return (videos ?? []).some((v) => isTrailerCandidate(v) && langGroup(v, pref) === 0);
 }
 
+/**
+ * Paramètres du lecteur YouTube pour les sous-titres : seulement quand la vidéo choisie n'est pas doublée dans la langue
+ * principale. Sinon, rien à ajouter (aucun sous-titre imposé).
+ */
+export function captionParams(vo: boolean, pref: VideoLang = trailerLang()): string {
+  return vo ? `hl=${pref.lang}&cc_lang_pref=${pref.lang}&cc_load_policy=1` : '';
+}
+
 /** Classement des vidéos pour la rangée « Bonus » : type d'abord, puis langue, région, official, date. */
-export function sortVideos<T extends TmdbVideo>(videos: T[], typeOrder: (v: T) => number, pref: VideoLang): T[] {
+export function sortVideos<T extends TmdbVideo>(videos: T[], typeOrder: (v: T) => number, pref: TrailerLang): T[] {
   return videos.slice().sort((a, b) => typeOrder(a) - typeOrder(b) || compareVideos(a, b, pref));
 }
 
@@ -129,7 +178,7 @@ export function sortVideos<T extends TmdbVideo>(videos: T[], typeOrder: (v: T) =
 const REGIONAL_TAGS: Partial<Record<string, readonly string[]>> = { fr: ['fr-FR', 'fr-CA', 'fr-BE', 'fr-CH'] };
 
 /** Étiquettes TMDB `language` interrogées explicitement pour un film sans bande-annonce dans la langue choisie. */
-export function trailerFallbackTags(pref: VideoLang): string[] {
+export function trailerFallbackTags(pref: TrailerLang): string[] {
   return [...(REGIONAL_TAGS[pref.lang] ?? [])];
 }
 
@@ -156,7 +205,7 @@ export async function completeVideos(
   list: TmdbVideo[],
   type: 'movie' | 'tv',
   id: string | number,
-  pref: VideoLang,
+  pref: TrailerLang,
   fetchVideos: VideosFetcher,
 ): Promise<TmdbVideo[]> {
   const include = includeVideoLanguages(pref);

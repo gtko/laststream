@@ -3,8 +3,8 @@ import { canonSummary } from '../data/series';
 import { canonical } from './seasons.js';
 import { tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
-import { sortVideos, trailerLang } from '../data/trailers';
-import { availOf, certLabel, certification, pickLogo, pickTrailer, register, toItem, videoLanguages, videosOf } from './catalog.js';
+import { isVoVideo, sortVideos, trailerLang } from '../data/trailers';
+import { availOf, certLabel, certification, pickLogo, register, toItem, trailerFields, videoLanguages, videosOf } from './catalog.js';
 import { IMG } from './constants.js';
 import { names } from './util.js';
 
@@ -32,10 +32,11 @@ export function buildModel(type, id, raw, en, canon) {
   const isTv = type === 'tv';
   const crew = (raw.credits && raw.credits.crew) || [];
   const uniq = (list) => Array.from(new Set(list));
+  const pref = trailerLang();
   const videos = sortVideos(((raw.videos && raw.videos.results) || [])
-    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], trailerLang())
+    .filter((v) => v.site === 'YouTube' && v.key && VIDEO_TYPE[v.type]), (v) => VIDEO_TYPE[v.type][1], pref)
     .slice(0, 14)
-    .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0] }));
+    .map((v) => ({ key: v.key, name: v.name || '', label: VIDEO_TYPE[v.type][0], vo: isVoVideo(v, pref) }));
   const recs = ((raw.recommendations && raw.recommendations.results) || []);
   const sims = ((raw.similar && raw.similar.results) || []);
   const recList = (recs.length ? recs : sims).filter((r) => r.poster_path && (r.release_date || r.first_air_date || '9999').slice(0, 10) <= new Date().toISOString().slice(0, 10)).slice(0, 20).map((r) => register(toItem(r, type)));
@@ -54,7 +55,7 @@ export function buildModel(type, id, raw, en, canon) {
     backdropPath: raw.backdrop_path || '',
     posterPath: raw.poster_path || '',
     logo: pickLogo(raw.images && raw.images.logos, 'w780'),
-    trailer: pickTrailer(raw.videos && raw.videos.results),
+    ...trailerFields(raw.videos && raw.videos.results),
     videos,
     genres: (raw.genres || []).map((g) => g.name),
     minutes: runtime,

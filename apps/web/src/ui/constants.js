@@ -14,7 +14,7 @@ export const TABS = [
   ['Profil', '', false],
 ];
 export const EMPTY_DETAIL = {
-  name: '', overview: '', tagline: '', logo: '', trailer: '', genres: [], minutes: 0, runtime: '',
+  name: '', overview: '', tagline: '', logo: '', trailer: '', trailerVO: false, genres: [], minutes: 0, runtime: '',
   cert: '', ratings: {}, vote: '',
 };
 export const DAY_MS = 864e5;

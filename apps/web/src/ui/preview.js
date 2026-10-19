@@ -1,6 +1,8 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
+import { captionParams } from '../data/trailers';
 import { getDetail } from './catalog.js';
 import { DWELL_MS, REDUCE, STILL } from './constants.js';
+import { ICON } from './icons.js';
 import { app } from './dom.js';
 import { state } from './state.js';
 import { esc } from './util.js';
@@ -38,12 +40,22 @@ export function whenPlaying(iframe, cb, delayMs = 2600, fallbackMs = 6000) {
   return () => { done = true; cleanup(); };
 }
 
+/** Bouton son (aperçu, fiche, survol) : icône haut-parleur barré quand muet, haut-parleur sinon. Même rendu partout. */
+export function paintSound(btn, muted) {
+  btn.innerHTML = muted ? ICON.mute : ICON.sound;
+  btn.setAttribute('aria-pressed', String(!muted));
+  btn.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+  btn.dataset.tip = muted ? 'Activer le son' : 'Couper le son';
+}
+
 export function ytSrc(key, extra) {
   return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(key) + '?' + extra;
 }
-export const ambientSrc = (key) =>
+/** Aperçu muet en boucle. `vo` : bande-annonce non doublée dans la langue principale, sous-titres dans cette langue. */
+export const ambientSrc = (key, vo) =>
   ytSrc(key, 'autoplay=1&mute=1&controls=0&loop=1&playlist=' + encodeURIComponent(key) +
-    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&cc_load_policy=0&fs=0&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
+    '&modestbranding=1&rel=0&playsinline=1&disablekb=1&iv_load_policy=3&' + (captionParams(!!vo) || 'cc_load_policy=0') +
+    '&fs=0&enablejsapi=1&origin=' + encodeURIComponent(location.origin));
 
 export function fitPreview(p) {
   const w0 = p.media.offsetWidth;
@@ -82,14 +94,13 @@ export async function startPreview(media) {
   stopPreview();
   const wrap = document.createElement('div');
   wrap.className = 'preview';
-  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer)) + '"></iframe>';
+  wrap.innerHTML = '<iframe title="Aperçu vidéo sans son" tabindex="-1" allow="autoplay; encrypted-media" src="' + esc(ambientSrc(d.trailer, d.trailerVO)) + '"></iframe>';
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'preview-sound';
+  btn.className = 'f-round preview-sound';
   btn.setAttribute('data-preview-sound', '');
-  btn.setAttribute('aria-pressed', 'false');
-  btn.setAttribute('aria-label', 'Activer le son');
-  btn.textContent = 'Son';
+  if (d.trailerVO) btn.dataset.vo = '1';
+  paintSound(btn, true);
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');

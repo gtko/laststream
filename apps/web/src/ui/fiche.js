@@ -194,7 +194,7 @@ export function ficheHTML(m) {
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
     (m.trailer
-      ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '" data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
+      ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '"' + (m.trailerVO ? ' data-vo="1"' : '') + ' data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
       : '') +
     libBtn(m) +
     partyBtn(m) +
@@ -228,7 +228,7 @@ export function ficheHTML(m) {
   }
   if (tabs.includes('extras')) {
     panels.push(fsec('extras', 'Bandes-annonces et bonus', '<ul class="vid-row" data-nav>' + m.videos.map((v) =>
-      '<li><button type="button" class="vid" data-vid="' + esc(v.key) + '" data-vtitle="' + esc(v.label) + '" aria-label="' + esc(v.label + ' : ' + v.name) + '">' +
+      '<li><button type="button" class="vid" data-vid="' + esc(v.key) + '"' + (v.vo ? ' data-vo="1"' : '') + ' data-vtitle="' + esc(v.label) + '" aria-label="' + esc(v.label + ' : ' + v.name) + '">' +
       '<span class="vid-th"><img src="https://img.youtube.com/vi/' + encodeURIComponent(v.key) + '/hqdefault.jpg" alt="" loading="lazy" decoding="async">' +
       '<span class="vid-play" aria-hidden="true">' + ICON.play + '</span></span>' +
       '<span class="vid-type">' + esc(v.label) + '</span><span class="vid-name">' + esc(v.name) + '</span></button></li>').join('') + '</ul>'));
