@@ -18,7 +18,7 @@ export const HERO_MS = 10000;
 export const HERO_MAX = 8;
 
 const playBtn = (it) => {
-  const resume = userStore.continueWatching(50).find((p) => p.key === it.key);
+  const resume = userStore.continueWatching().find((p) => p.key === it.key);
   const code = resume && resume.type === 'tv' && resume.season != null ? ' S' + resume.season + ' · É' + resume.episode : '';
   return '<button type="button" class="btn btn-primary" data-heroplay="' + esc(it.key) + '">' + ICON.play + '<span>' + (resume ? 'Reprendre' + code : 'Lecture') + '</span></button>';
 };
@@ -251,6 +251,11 @@ document.addEventListener('keydown', (e) => {
   if (!(t instanceof Element) || !hero.el.contains(t) || t.closest('input, textarea, select')) return;
   e.preventDefault();
   go(hero.i + (e.key === 'ArrowRight' ? 1 : -1), true);
+});
+
+// Fin de la bande-annonce de la diapositive affichée (preview.js) : titre suivant, avec ou sans le son.
+document.addEventListener('trailerend', (e) => {
+  if (hero.el && e.target instanceof Element && hero.el.contains(e.target)) go(hero.i + 1, true);
 });
 
 // Balayage tactile.

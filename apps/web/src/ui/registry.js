@@ -60,7 +60,7 @@ function watchedSources() {
   const seen = new Set();
   const out = [];
   const add = (e) => { if (e.key && e.title && !seen.has(e.key)) { seen.add(e.key); out.push({ key: e.key, type: e.type, id: e.id, title: e.title }); } };
-  userStore.continueWatching(50).forEach(add);
+  userStore.continueWatching().forEach(add);
   userStore.getLibrary().sort((a, b) => b.addedAt - a.addedAt).forEach((e) => add({ key: e.type + ':' + e.id, type: e.type, id: e.id, title: e.title }));
   return out;
 }

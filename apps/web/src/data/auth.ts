@@ -3,7 +3,7 @@ import { clearElevation } from './adminApi';
 import { emitDataEvent } from './events';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
 import { apiHiddenBackend } from './hiddenApi';
-import { startPresence, stopPresence } from './presence';
+import { startPresenceV2, stopPresenceV2 } from '../player/presenceV2';
 import { claimLocalConfig, clearLocalAccountData, CONFIG_SETTING_KEY, configForAccount, reconcileConfig } from './configSync';
 import { sectionAllowed } from './kid';
 import { applyPrefs, snapshotPrefs } from './prefsSync';
@@ -86,7 +86,7 @@ function useLocal(status: AuthStatus): AuthStatus {
   setUserStore(new LocalUserStore());
   store = null;
   setHiddenBackend(null);
-  stopPresence();
+  stopPresenceV2();
   auth.profile = null;
   auth.profiles = [];
   auth.status = status;
@@ -170,7 +170,7 @@ async function activate(profile: Profile): Promise<void> {
   setActiveProfile(profile.id);
   setHiddenBackend(apiHiddenBackend);
   await syncPrefsIn(profile.id);
-  startPresence(profile.id, !!profile.isKid);
+  startPresenceV2(!!profile.isKid);
   managerId = null;
   // Profil enfant : les jetons des profils adultes sont retirés, sortir de ce profil redemande le code parental.
   if (profile.isKid) auth.profiles.forEach((p) => { if (p.id !== profile.id) dropProfileToken(p.id); });

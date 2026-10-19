@@ -137,11 +137,13 @@ describe('menu Explorer : accessibilité', () => {
 });
 
 describe('menu du profil', () => {
-  it('compte propriétaire : Administration visible, avec Amis, Statistiques et Réglages', () => {
+  it('compte propriétaire : Administration visible, avec Statistiques et Réglages ; Amis est un bouton de la barre du haut', () => {
     setAccount(ADULT, true);
     mount(headerA());
     const items = labels('#nav-profile a, #nav-profile button');
-    expect(items).toEqual(expect.arrayContaining(['Amis', 'Statistiques', 'Réglages', 'Administration', 'Changer de profil', 'Se déconnecter']));
+    expect(items).toEqual(expect.arrayContaining(['Statistiques', 'Réglages', 'Administration', 'Changer de profil', 'Se déconnecter']));
+    expect(items).not.toContain('Amis');
+    expect($('.top-actions [data-soc-open]')).not.toBeNull();
     expect($('#nav-profile').textContent).toContain(userStore.currentProfile().name);
   });
 

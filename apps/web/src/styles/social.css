@@ -161,3 +161,105 @@ a.soc-name:hover { color: var(--accent); }
   .lp-party { width: 100%; top: auto; height: 62%; border-left: 0; border-top: 1px solid var(--line-2); }
 }
 @media (prefers-reduced-motion: reduce) { .wp-float { animation-duration: 1.2s; } }
+
+/* ---------- Barre latérale des amis (socialSidebar.js) ---------- */
+.ss { position: fixed; top: 0; right: 0; bottom: 0; z-index: 60; width: 320px; max-width: 100%; display: flex; flex-direction: column;
+  background: rgba(12, 11, 17, 0.97); border-left: 1px solid var(--line-2); color: var(--text); box-shadow: -18px 0 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); animation: ss-in 0.22s ease-out; }
+.ss[hidden] { display: none; }
+.ss [hidden] { display: none !important; }
+@keyframes ss-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ss { animation: none; } }
+@media (max-width: 767px) { .ss { left: 0; width: auto; border-left: 0; } }
+/* Lecteur ouvert (.lp, z-index 600) : la barre passe au-dessus pour rester lisible (bulle, « Regarder avec lui »).
+   Sous la vignette (650), le menu contextuel (700), les modales (800) et les toasts (900). Hors lecteur : inchangé. */
+body.lp-open .ss { z-index: 620; }
+.ss :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ss-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 18px 16px 12px; border-bottom: 1px solid var(--line); }
+.ss-title { flex: 1; min-width: 0; margin: 0; font-family: var(--ff-title); font-size: 19px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-title:focus { outline: none; }
+.ss-ibtn { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.08); color: var(--text); cursor: pointer; }
+.ss-ibtn:hover { background: rgba(255, 255, 255, 0.16); }
+.ss-ibtn svg { width: 20px; height: 20px; }
+.ss-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 22px; }
+#ss-home, #ss-friend, #ss-conv { display: flex; flex-direction: column; gap: 22px; }
+.ss-sec { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+.ss-sec-t { margin: 0; font-family: var(--ff-title); font-size: 15px; font-weight: 700; }
+.ss-hint { margin: 0; font-size: 13px; color: var(--dim); line-height: 1.45; }
+.ss-label { font-size: 13px; color: var(--dim); }
+.ss-sub { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-empty { margin: 0; padding: 14px; border-radius: 12px; background: var(--surface); color: var(--dim); font-size: 14px; line-height: 1.5; }
+.ss-link { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* En-tête : mon avatar, Nom#TAG (copie), statut */
+.ss-me { display: flex; align-items: center; gap: 12px; }
+.ss-me-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ss-handle { align-self: flex-start; max-width: 100%; padding: 2px 0; border: 0; background: none; color: var(--text); font-family: var(--ff-title); font-size: 17px; font-weight: 700; cursor: copy; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-handle:hover { color: var(--accent); }
+.ss-select, .ss-input { width: 100%; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: inherit; font-size: 15px; }
+.ss-select { cursor: pointer; }
+.ss-av { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--ff-title); font-weight: 800; color: var(--on-accent); }
+.ss-av-l { width: 56px; height: 56px; font-size: 22px; }
+
+/* Ajout d’ami et invitation */
+.ss-add { display: flex; flex-direction: column; gap: 8px; }
+.ss-add-row { display: flex; gap: 8px; }
+.ss-add-row .ss-input { flex: 1; }
+.ss-msg { margin: 0; min-height: 1.2em; font-size: 13px; color: var(--soft); }
+.ss-msg[data-tone="error"] { color: #ff7a7a; }
+.ss-invite #ss-inv-slot { display: flex; flex-direction: column; gap: 8px; }
+.ss-link-in { font-size: 13px; }
+
+/* Boutons */
+.ss-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ss-btn:hover { border-color: var(--accent); }
+.ss-btn:disabled { opacity: 0.55; cursor: default; }
+.ss-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.ss-btn-primary:hover { background: var(--accent-hover); }
+.ss-btn-danger { color: #ff7a7a; }
+.ss-btn-sm { padding: 5px 10px; font-size: 13px; }
+
+/* Groupes repliables et lignes */
+.ss-group { display: flex; flex-direction: column; gap: 8px; }
+.ss-group-h { margin: 0; }
+.ss-fold { width: 100%; display: flex; align-items: center; gap: 8px; padding: 4px 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; text-align: left; cursor: pointer; }
+.ss-fold:hover { color: var(--text); }
+.ss-chev { flex: none; display: inline-flex; width: 14px; height: 14px; transition: transform 0.18s ease; }
+.ss-chev svg { width: 14px; height: 14px; }
+.ss-fold[aria-expanded="true"] .ss-chev { transform: rotate(90deg); }
+.ss-group-t { flex: 1; min-width: 0; }
+.ss-count { font-style: normal; font-weight: 600; color: var(--dim); }
+.ss-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ss-item { margin: 0; }
+.ss-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; border: 1px solid transparent; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ss-row:hover, .ss-row:focus-visible { border-color: var(--line-2); background: var(--surface-2); }
+.ss-row-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ss-name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-thumb { flex: none; width: 40px; height: auto; aspect-ratio: 2 / 3; border-radius: 6px; object-fit: cover; background: var(--line-2); }
+.ss-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+.ss-dot.is-away { background: #f5b700; }
+.ss-dot.is-dnd { background: #ff5a36; }
+.ss-dot.is-offline { background: var(--dim); }
+.ss-clock { color: var(--soft); font-variant-numeric: tabular-nums; }
+.ss-req { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--surface); }
+.ss-req .ss-row-static { padding: 0; border: 0; background: none; }
+.ss-req .ss-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 52px; }
+
+/* Fiche ami */
+.ss-card-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.ss-card-id { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.ss-card-name { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-acts-main { display: flex; flex-wrap: wrap; gap: 8px; }
+.ss-lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ss-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ss-tile .card { width: 100%; }
+.ss-tile-acts { display: flex; flex-direction: column; gap: 4px; }
+.ss-tile-acts .ss-btn { width: 100%; }
+.ss-hist { gap: 4px; }
+.ss-hrow { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--surface); }
+.ss-placeholder { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--surface); }
+
+/* Bouton « Amis » de la barre du haut (toutes les vues) */
+.soc-open { position: relative; }
+.soc-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; box-sizing: border-box; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 800; line-height: 18px; text-align: center; pointer-events: none; }
+.soc-badge[hidden] { display: none; }

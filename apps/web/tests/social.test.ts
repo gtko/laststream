@@ -1,4 +1,4 @@
-// Fonctions sociales : inscription par invitation, tableau des invitations, amis, présence.
+// Fonctions sociales : inscription par invitation, tableau des invitations, présence (la barre des amis est testée dans socialSidebar.test.ts).
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -253,95 +253,6 @@ describe('Mes invitations', () => {
     routes = () => { throw new Error('réseau'); };
     await mod.refreshInvites();
     expect(document.getElementById('inv-slot')!.textContent).toContain('Invitations indisponibles');
-  });
-});
-
-// ---------- Amis ----------
-describe('page Amis', () => {
-  let friends: any;
-  let mod: typeof import('../src/ui/friends.js');
-  let authMod: typeof import('../src/data/auth');
-
-  beforeEach(async () => {
-    friends = {
-      friends: [
-        { username: 'zoe', avatarColor: '#3b82f6', status: 'offline', since: '2026-01-01' },
-        { username: 'amy', avatarColor: '#ff5a36', status: 'watching', since: '2026-01-01', watching: { type: 'series', tmdbId: 95396, title: 'Severance', season: 2, episode: 4 } },
-        { username: 'bob', avatarColor: '#22c55e', status: 'online', since: '2026-01-01' },
-      ],
-      incoming: [{ username: 'carl', avatarColor: '#ec4899', requestedAt: '2026-02-01' }],
-      outgoing: [{ username: 'dana', avatarColor: '#f5b700', requestedAt: '2026-02-02' }],
-    };
-    routes = (c) => {
-      if (c.method === 'GET' && c.path === '/user/friends') return json(friends);
-      if (c.method === 'POST' && c.path === '/user/friends/requests') {
-        if (c.body.username === 'inconnu') return json({ error: 'user_not_found' }, 404);
-        return json({ status: 'sent' }, 201);
-      }
-      if (c.path.startsWith('/user/friends/')) return new Response(null, { status: 204 });
-      return undefined;
-    };
-    authMod = await import('../src/data/auth');
-    authMod.auth.status = 'ready';
-    authMod.auth.profile = { id: 'p1', name: 'Greg', isKid: false } as any;
-    mod = await import('../src/ui/friends.js');
-    vi.stubGlobal('confirm', () => true);
-    window.confirm = () => true;
-    document.getElementById('detail')!.innerHTML = '';
-    mod.showFriends();
-    await tick(80);
-  });
-
-  const detail = () => document.getElementById('detail')!;
-
-  it('liste les amis avec leur présence, les en-train-de-regarder d’abord, et les demandes', () => {
-    const names = Array.from(detail().querySelectorAll('.soc-row .soc-name')).map((n) => n.textContent);
-    expect(names).toEqual(['carl', 'amy', 'bob', 'zoe', 'dana']);
-    const amy = detail().querySelector('[data-friend="amy"]')!;
-    expect(amy.textContent).toContain('Regarde « Severance » S2:É4');
-    expect(detail().querySelector('[data-friend="bob"]')!.textContent).toContain('En ligne');
-    expect(detail().querySelector('[data-friend="zoe"]')!.textContent).toContain('Hors ligne');
-    expect(detail().querySelector('[data-friend="carl"] [data-fr-accept]')).not.toBeNull();
-    expect(detail().querySelector('[data-friend="dana"]')!.textContent).toContain('Annuler');
-  });
-
-  it('accepter, refuser, annuler, retirer : les bons appels, puis la liste est rechargée', async () => {
-    const before = calls.filter((c) => c.path === '/user/friends').length;
-    (detail().querySelector('[data-fr-accept="carl"]') as HTMLElement).click();
-    await tick(60);
-    expect(calls.some((c) => c.method === 'POST' && c.path === '/user/friends/requests/carl/accept')).toBe(true);
-    (detail().querySelector('[data-fr-decline="dana"]') as HTMLElement).click();
-    await tick(60);
-    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/user/friends/requests/dana')).toBe(true);
-    (detail().querySelector('[data-fr-remove="zoe"]') as HTMLElement).click();
-    await tick(60);
-    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/user/friends/zoe')).toBe(true);
-    expect(calls.filter((c) => c.path === '/user/friends').length).toBe(before + 3);
-  });
-
-  it('ajoute un ami par pseudo exact ; pseudo inconnu : message', async () => {
-    const form = detail().querySelector<HTMLFormElement>('[data-fr-add]')!;
-    (form.elements.namedItem('username') as HTMLInputElement).value = '  Eve ';
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await tick(60);
-    expect(calls.find((c) => c.method === 'POST' && c.path === '/user/friends/requests')!.body).toEqual({ username: 'eve' });
-    expect(detail().querySelector('[data-fr-msg]')!.textContent).toContain('Demande envoyée à eve');
-    (form.elements.namedItem('username') as HTMLInputElement).value = 'inconnu';
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await tick(60);
-    expect(detail().querySelector('[data-fr-msg]')!.textContent).toContain('Aucun compte avec ce pseudo exact');
-    (form.elements.namedItem('username') as HTMLInputElement).value = '!!';
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await tick(30);
-    expect(detail().querySelector('[data-fr-msg]')!.textContent).toContain('Pseudo invalide');
-  });
-
-  it('profil enfant : la page est indisponible', async () => {
-    authMod.auth.profile = { id: 'k', name: 'Léo', isKid: true, kidMaxAge: 10 } as any;
-    detail().innerHTML = '';
-    mod.showFriends();
-    expect(detail().textContent).toContain('pas disponible sur un profil enfant');
-    expect(detail().querySelector('.soc-row')).toBeNull();
   });
 });
 

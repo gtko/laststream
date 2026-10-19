@@ -73,9 +73,13 @@ export async function refreshInvites() {
     data = 'error';
   }
   paint();
+  return data;
 }
 
 const find = (id) => (data && data !== 'error' ? data.invites.find((i) => i.id === id) : undefined);
+
+/** Premier lien encore utilisable (libre ou envoyé) : bloc « Inviter quelqu’un » de la barre latérale des amis. */
+export const usableInvite = () => (data && data !== 'error' ? data.invites.find((i) => i.state !== 'used') ?? null : null);
 const patch = (inv) => { data.invites = data.invites.map((i) => (i.id === inv.id ? { ...i, ...inv } : i)); };
 
 async function copyText(text) {

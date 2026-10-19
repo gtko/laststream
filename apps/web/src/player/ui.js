@@ -10,12 +10,14 @@ import { bindEpisodeFold } from './epfold.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
 import { createMiniView } from './miniview.js';
+import { createReactPanel, noteFlashEl, renderNoteMarkers } from './notesView';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
 const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks', speed: 'settings' };
 const REMAIN_KEY = 'laststream.player.remaining';
 const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
+const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>';
 
 function skeleton() {
   return '<video class="lp-video" playsinline></video>' +
@@ -45,7 +47,7 @@ function skeleton() {
     '<div class="lp-resume" role="dialog" aria-label="Reprise" hidden></div>' +
     '<div class="lp-bottom">' +
       '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
-        '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span></div>' +
+        '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span><span class="lp-notes"></span></div>' +
         '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
       '</div>' +
       '<div class="lp-row">' +
@@ -59,6 +61,7 @@ function skeleton() {
         '<div class="lp-grp lp-grp-r">' +
           tbtn('next', LI.next, 'Épisode suivant', ' data-role="next" hidden') +
           tbtn('panel:episodes', LI.list, 'Épisodes', ' data-role="episodes" hidden') +
+          tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" hidden') +
           tbtn('panel:tracks', LI.tracks, 'Audio et sous-titres') +
           tbtn('source', LI.source, 'Sources') +
           btn('fullscreen', LI.full, 'Plein écran (F)', ' data-role="full"') +
@@ -85,6 +88,18 @@ export function createPlayerUI(h) {
   const panel = q('.lp-panel');
   const seek = q('[data-seek]');
   const vs = q('.lp-vslider');
+  const reactBtn = q('[data-role="react"]');
+  // Bulles des notes (lecture) et popover « Réagir ici » (saisie) : ni l'un ni l'autre ne touche aux contrôles.
+  const flash = document.createElement('div');
+  flash.className = 'lp-nf-box';
+  flash.setAttribute('role', 'status');
+  flash.setAttribute('aria-live', 'polite');
+  let reactPos = 0;
+  const react = createReactPanel({
+    onPick: (kind, body) => { const pos = reactPos; api.closeReact(true); h.react({ pos, kind, body }); },
+    onCancel: () => api.closeReact(true),
+  });
+  root.append(flash, react.el);
   // Le panneau s’arrête au-dessus de la barre de contrôles : sa hauteur réelle est lue par le CSS (--lp-bar-h).
   const bottomBar = q('.lp-bottom');
   const syncBarHeight = () => root.style.setProperty('--lp-bar-h', bottomBar.offsetHeight + 'px');
@@ -107,7 +122,7 @@ export function createPlayerUI(h) {
     root.classList.add('is-ui');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (panelName || !last || last.paused || dragging || document.activeElement === vs || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
+      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
       root.classList.remove('is-ui');
     }, 3000);
   }
@@ -266,7 +281,7 @@ export function createPlayerUI(h) {
     },
     get panel() { return panelName; },
     show() { root.hidden = false; root.classList.add('is-ui'); wake(); },
-    hide() { root.hidden = true; api.closePanel(true); api.setPauseScreen(null); },
+    hide() { root.hidden = true; api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); flash.replaceChildren(); },
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
@@ -402,6 +417,35 @@ export function createPlayerUI(h) {
       el.dataset.key = key;
       markList = marks;
       el.innerHTML = marks.map((m) => '<i class="lp-mark lp-mark-' + m.kind + '" title="' + MARK_LABEL[m.kind] + '" style="left:' + m.from * 100 + '%;width:' + Math.max(0.4, (m.to - m.from) * 100) + '%"></i>').join('');
+    },
+    /** Marqueurs des notes sur la piste (groupes de `clusterNotes`) ; un clic amène la lecture à la note. */
+    setNoteMarkers(clusters) {
+      renderNoteMarkers(q('.lp-notes'), clusters, (pos) => h.seekTo(pos));
+    },
+    /** « Réagir ici » n'apparaît qu'avec le social disponible (jamais pour un profil enfant). */
+    setNotesAvailable(ok) {
+      reactBtn.hidden = !ok;
+      if (!ok) api.closeReact(false);
+    },
+    /** Bulle brève à la lecture d'une note : elle disparaît seule après ~4 s et ne capte pas les clics. */
+    showNoteFlash(note) {
+      const node = noteFlashEl(note);
+      flash.append(node);
+      while (flash.childElementCount > 3) flash.firstElementChild.remove();
+      setTimeout(() => node.remove(), 4000);
+    },
+    /** Popover « Réagir ici » pour la position `pos` (secondes), figée à l'ouverture. */
+    openReact(pos) {
+      reactPos = pos;
+      api.closePanel(true);
+      wake();
+      react.open(formatClock(pos));
+    },
+    /** Ferme le popover ; `back` rend le focus au bouton « Réagir ici ». */
+    closeReact(back) {
+      if (!react.isOpen()) return;
+      react.close();
+      if (back && !root.hidden) reactBtn.focus({ preventScroll: true });
     },
     setSeries(isSeries, hasNext) {
       q('[data-role="episodes"]').hidden = !isSeries;

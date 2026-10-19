@@ -28,6 +28,7 @@ import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { exploreMenuHTML, syncTopbar, topActionsHTML } from './topnav.js';
+import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
 import { renderTvRows } from './shows.js';
@@ -265,8 +266,8 @@ export function renderAI() {
     row(items.slice(0, HOME_ROW_COUNT).map((it) => posterCard(it)).join('')) + '</section>';
 }
 
-/** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant. */
-export const socialEnabled = () => isServerMode() && !isKidProfile();
+/** Amis et Watch parties : compte connecté seulement, jamais sur un profil enfant (voir socialButton.js). */
+export const socialEnabled = socialAvailable;
 
 // ---------- Accueil (style A · Cinéma) ----------
 /** Barre du haut : logo, cinq liens, menu Explorer ; à droite recherche, Watch parties, profil. */
@@ -401,7 +402,7 @@ export function recoSeed() {
  * le reste de l'accueil) ni les séries dont la carte a été retirée. Rien tant qu'il n'y en a pas.
  */
 function continueList() {
-  return keepVisible(userStore.continueWatching(50)).filter((p) => !isSeriesEnded(p)).slice(0, 10);
+  return keepVisible(userStore.continueWatching()).filter((p) => !isSeriesEnded(p));
 }
 
 export function continueSection() {

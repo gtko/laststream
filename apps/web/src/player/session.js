@@ -5,7 +5,10 @@ import { addonUrl, getBase, isConfigured } from '../data/config';
 import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
-import { pushPrefs } from '../data/auth';
+import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
+import { resumePosition } from '../data/watchWith';
+import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
+import { toast } from '../ui/dom.js';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
@@ -56,9 +59,14 @@ import { partyBridge } from '../party/bridge';
 import { fileCodecsOf } from '../party/compat';
 import { probeUrl as probeHeaderUrl } from '../party/headerCodecs';
 import { startWebAudio } from './webaudio/controller';
-import { setWatching } from '../data/presence';
+import { presenceTick, setPresenceMedia } from './presenceV2';
+import { createMessageBubble } from './messageBubble';
+import { openConversation } from '../ui/socialSidebar.js';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
+import { getNotes, postNote } from '../data/socialV2Api';
+import { getState as getSocialState, onNote, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
+import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
 const THUMBS_KEY = 'laststream.player.thumbs';
@@ -67,6 +75,8 @@ const AUTOSYNC_TARGET = 90;
 const AUTOSYNC_MIN = 25;
 
 let ui = null;
+/** Bulle des messages entrants (haut gauche), branchée au social : active pendant la lecture. */
+let bubble = null;
 let thumbs = null;
 /** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
 let feed = null;
@@ -272,6 +282,7 @@ function ensureUI() {
     thumbCancel: () => { if (thumbs) thumbs.cancel(); cancelAddonThumb(); },
     miniState,
     miniLayout: onMiniLayout,
+    react: postReact,
   });
   miniState.onChange(applyMini);
   // Bascule automatique entre débrideurs : « AllDebrid indisponible → TorBox ».
@@ -297,6 +308,7 @@ function ensureUI() {
   ui.video.autoPictureInPicture = storeGet(AUTOPIP_KEY) === '1';
   ui.setPipAvailable(html.supportsPip());
   document.addEventListener('keydown', onKey, true);
+  bubble = createMessageBubble(ui.root, { getState: getSocialState, subscribe: subscribeSocial, send: sendSocialMessage, openConversation });
   // Image dans l'image : pas de barre de titre, on déplace la fenêtre en glissant sur la vidéo (hors boutons et barre de lecture).
   ui.root.addEventListener('mousedown', (e) => {
     if (!shell || !shellPip || e.button !== 0) return;
@@ -502,6 +514,7 @@ function syncNative() {
 
 /** Crée la session et ouvre le lecteur tout de suite, sans source : l'écran de chargement prend le relais. */
 async function initSession(request, views, view, opts = {}) {
+  if (isDemo()) throw new Error(DEMO_BLOCKED_MSG); // mode démo : jamais de session de lecture
   ensureUI();
   resetMini();
   if (P) await teardown(true);
@@ -526,6 +539,11 @@ async function initSession(request, views, view, opts = {}) {
     poster: meta.posterPath || (model && model.posterPath) || '', backdrop: meta.backdropPath || (model && model.backdropPath) || '', title: request.name || meta.name || '',
     logo: (model && model.logo) || '', overview: (model && model.overview) || meta.overview || '',
   };
+  startNotes(P);
+  // Présence (titre regardé) et bulle des messages : ni l'une ni l'autre pour un profil enfant ou hors mode serveur.
+  const social = notesAllowed();
+  setPresenceMedia(social ? presenceMediaOf(P) : null);
+  if (social && bubble) bubble.start();
   document.body.classList.add('modal-open', 'lp-open');
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
@@ -545,9 +563,6 @@ async function initSession(request, views, view, opts = {}) {
   ui.show();
   ui.focusFirst();
   ui.setPartyAvailable(partyBridge.available());
-  if (request.id && Number.isFinite(Number(request.id))) {
-    setWatching({ type: request.type === 'tv' ? 'series' : 'movie', tmdbId: Number(request.id), title: request.name || '', ...(request.type === 'tv' && request.season != null ? { season: request.season, episode: request.episode } : {}) });
-  }
   clearInterval(tickTimer);
   tickTimer = setInterval(tick, 100);
   loadSideData(token);
@@ -567,6 +582,12 @@ function loaderExtra(step, over = {}) {
   };
 }
 
+/** Position de départ demandée : un nombre, ou le relevé d'un ami estimé à l'instant présent (« Regarder avec lui »). */
+function seekPositionOf(start) {
+  if (typeof start === 'number') return start;
+  return start && typeof start === 'object' ? resumePosition(start, Date.now()) : null;
+}
+
 /** Poursuit la session avec la source choisie : reprise éventuelle puis lecture. */
 function continueWith(view, opts = {}) {
   const p = P;
@@ -576,7 +597,9 @@ function continueWith(view, opts = {}) {
   const saved = userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
   const rd = resumeDecision(saved);
   const mode = opts.resume || 'ask';
-  if (typeof opts.startAt === 'number') return playView(view, opts.startAt);
+  const at = seekPositionOf(typeof opts.startAt === 'number' ? opts.startAt : p.seekStart);
+  p.seekStart = null; // appliquée une seule fois : une reprise ultérieure suit la progression, pas l'ancienne demande
+  if (typeof at === 'number') return playView(view, at);
   if (rd.prompt && mode === 'ask') {
     ui.setLoading(null);
     ui.setResume(rd.position);
@@ -588,6 +611,7 @@ function continueWith(view, opts = {}) {
 
 /** Lance le lecteur sur `view` (sources déjà connues, par exemple choisies dans un tiroir). */
 export async function startSession(request, views, view, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return undefined; }
   await initSession(request, views, view, opts);
   return continueWith(view, opts);
 }
@@ -1339,6 +1363,8 @@ function tick() {
   if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
+  notesTick(p, st);
+  presenceTick(st);
   partyBridge.tick(partyAdapter(p));
   // Sous-titres (100 ms).
   const s = p.subs;
@@ -1427,6 +1453,7 @@ function refreshUI(st) {
     ui.setPhase(P.phase);
   }
   ui.update(shell ? { ...s, fullscreen: shellFullscreen } : s, chapterMarks(P.segments, s.duration));
+  if (P.notes) refreshNoteMarkers(P.notes, s.duration);
 }
 
 // ---------- Progression ----------
@@ -1577,6 +1604,7 @@ function onAction(act, data) {
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
+  if (act === 'react') { openReactHere(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
@@ -1788,6 +1816,8 @@ function panelData(name) {
 
 function onKey(e) {
   if (!P || ui.root.hidden) return;
+  // Saisie d'une réaction ou d'une réponse dans une bulle : aucun raccourci du lecteur (Échap est géré par chaque champ).
+  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-bubble'))) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
@@ -1834,11 +1864,136 @@ function onKey(e) {
   }
 }
 
+// ---------- Notes de la timeline (Social v2) ----------
+
+/** Le social n'existe ni pour un profil enfant ni hors mode serveur. */
+const notesAllowed = () => isServerMode() && !isKidProfile();
+
+/** Média lu au format de la présence : film, ou série avec saison et épisode en cours. Null si le média n'est pas identifiable. */
+function presenceMediaOf(p) {
+  const id = Number(p.req.id);
+  if (!p.req.id || !Number.isFinite(id)) return null;
+  const series = p.req.type === 'tv';
+  const m = { type: series ? 'series' : 'movie', tmdbId: id, title: p.req.name || p.meta.title || '' };
+  if (p.imdb) m.imdbId = p.imdb;
+  if (p.meta.poster && p.meta.poster.startsWith('/')) m.poster = p.meta.poster;
+  if (series && p.cur.season != null) m.season = p.cur.season;
+  if (series && p.cur.episode != null) m.episode = p.cur.episode;
+  return m;
+}
+
+/** Média lu au format des notes (film, ou série avec saison et épisode). Null si le média n'est pas identifiable. */
+function noteMediaOf(p) {
+  const id = Number(p.req.id);
+  if (!p.req.id || !Number.isFinite(id)) return null;
+  if (p.req.type !== 'tv') return { type: 'movie', tmdbId: id };
+  if (p.cur.season == null || p.cur.episode == null) return null;
+  return { type: 'series', tmdbId: id, season: p.cur.season, episode: p.cur.episode };
+}
+
+/** Ajoute des notes à la liste (sans doublon d'identifiant) et signale le changement aux marqueurs. */
+function putNotes(nt, notes) {
+  nt.list = uniqueNotes([...nt.list, ...notes]);
+  nt.version += 1;
+}
+
+function removeNote(nt, id) {
+  nt.list = nt.list.filter((n) => n.id !== id);
+  nt.version += 1;
+}
+
+/** Charge les notes du média lu et écoute celles qui arrivent en direct. Erreurs silencieuses : la lecture n'en dépend pas. */
+function startNotes(p) {
+  const media = notesAllowed() ? noteMediaOf(p) : null;
+  if (!media) { ui.setNotesAvailable(false); return; }
+  const nt = { media, key: mediaKey(media), list: [], fired: new Set(), last: null, version: 0, renderKey: '', unsub: null };
+  p.notes = nt;
+  ui.setNotesAvailable(true);
+  nt.unsub = onNote((m, note) => {
+    if (p.notes !== nt || mediaKey(m) !== nt.key) return;
+    putNotes(nt, [note]);
+  });
+  getNotes(media).then(({ notes }) => {
+    if (p.notes === nt) putNotes(nt, notes);
+  }).catch(() => undefined);
+}
+
+/** Fin de session ou changement de média : désabonnement, marqueurs et popover retirés. */
+function stopNotes(p) {
+  const nt = p && p.notes;
+  if (!nt) return;
+  p.notes = null;
+  if (nt.unsub) nt.unsub();
+  ui.setNoteMarkers([]);
+  ui.setNotesAvailable(false);
+}
+
+/** Chaque relevé (100 ms) : les notes franchies par une lecture normale s'affichent ; un retour en arrière les relâche. */
+function notesTick(p, st) {
+  const nt = p.notes;
+  if (!nt) return;
+  const prev = nt.last;
+  nt.last = st.time;
+  if (prev === null) return;
+  for (const id of rearmed(prev, st.time, nt.list)) nt.fired.delete(id);
+  if (st.paused) return;
+  for (const n of crossing(prev, st.time, nt.list, { fired: nt.fired })) {
+    nt.fired.add(n.id);
+    ui.showNoteFlash(n);
+  }
+}
+
+/** Marqueurs redessinés seulement quand la liste ou la durée changent. */
+function refreshNoteMarkers(nt, duration) {
+  const dur = Number.isFinite(duration) ? duration : 0;
+  const key = nt.version + ':' + Math.round(dur);
+  if (key === nt.renderKey) return;
+  nt.renderKey = key;
+  ui.setNoteMarkers(clusterNotes(nt.list, dur));
+}
+
+/** « Réagir ici » : popover pour la position courante, figée à l'ouverture. */
+function openReactHere() {
+  if (!P || !P.view || !P.notes) return;
+  ui.openReact(P.engine.state().time);
+}
+
+/**
+ * Envoie une réaction à la position du popover. Si le profil connecté est connu, la note apparaît tout de suite (optimiste,
+ * avec sa bulle) puis est remplacée par celle du serveur ; en cas d'échec elle disparaît et un toast explique.
+ */
+function postReact({ pos, kind, body }) {
+  const p = P;
+  const nt = p && p.notes;
+  if (!nt) return;
+  const at = Math.round(Math.max(0, pos) * 10) / 10;
+  const me = getSocialState().me;
+  const tmp = me ? 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) : '';
+  if (me) {
+    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor }, pos: at, kind, body, createdAt: Date.now() };
+    putNotes(nt, [local]);
+    ui.showNoteFlash(local);
+  }
+  postNote({ ...nt.media, pos: at, kind, body }).then(({ note }) => {
+    if (p.notes !== nt) return;
+    if (tmp) removeNote(nt, tmp);
+    nt.fired.add(note.id);
+    putNotes(nt, [note]);
+    if (!tmp) ui.showNoteFlash(note);
+  }, (err) => {
+    if (p.notes !== nt) return;
+    if (tmp) removeNote(nt, tmp);
+    ui.toast(err && err.status === 429 ? 'Trop de réactions : réessaie dans une minute' : 'Réaction non envoyée, réessaie plus tard', 3500);
+  });
+}
+
 // ---------- Fermeture ----------
 
 async function teardown(silent) {
   const p = P;
   if (!p) return;
+  stopNotes(p);
+  if (bubble) bubble.stop();
   if (!silent) nativeMini = false;
   resetMini();
   saveProgress(true);
@@ -1855,7 +2010,7 @@ async function teardown(silent) {
   emitDataEvent({ kind: 'player' }); // l'accueil rattrape les changements faits pendant la lecture
   partyBridge.sessionClosed(silent);
   if (!silent) {
-    setWatching(null);
+    setPresenceMedia(null);
     if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (_) { /* ignoré */ } }
     ui.hide();
     document.body.classList.remove('modal-open', 'lp-open');
@@ -1887,10 +2042,12 @@ export const isPlayerOpen = () => !!P;
  * le sélecteur s'ouvre dans un panneau du lecteur. « Annuler » ramène à la fiche.
  */
 export async function playBest(request, opener, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : aucune recherche de source ni lecture
   const p = await initSession(request, [], null, { opener });
   const token = p.token;
   const alive = () => P && P.token === token;
   p.resumeMode = opts.resume || 'ask';
+  p.seekStart = opts.startAt ?? null;
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   let loaded = null;
   try {
@@ -1950,6 +2107,7 @@ export async function playBest(request, opener, opts = {}) {
 
 /** Lance une source choisie dans le sélecteur de la fiche. */
 export function playSource(request, views, view, opener, opts = {}) {
+  if (isDemo()) { toast(DEMO_BLOCKED_MSG); return Promise.resolve(); }
   return startSession(request, views, view, { opener, resume: opts.resume || 'ask' });
 }
 

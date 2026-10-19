@@ -194,7 +194,11 @@ export function normalizeLibraryEntry(x: unknown): LibraryEntry | null {
 }
 
 export class LocalUserStore implements UserStore {
+  /** `storage` : stockage de remplacement (mode démo : en mémoire) ; par défaut le localStorage du navigateur. */
+  constructor(private readonly storage?: Storage) {}
+
   private get ls(): Storage | undefined {
+    if (this.storage) return this.storage;
     try {
       return globalThis.localStorage;
     } catch {
@@ -287,7 +291,7 @@ export class LocalUserStore implements UserStore {
     emitDataEvent({ kind: 'continue', key });
   }
 
-  continueWatching(limit = 20): ProgressEntry[] {
+  continueWatching(limit = Infinity): ProgressEntry[] {
     const latest = new Map<string, ProgressEntry>();
     const hidden = new Set(this.hiddenKeys());
     Object.values(this.progressMap()).forEach((p) => {
