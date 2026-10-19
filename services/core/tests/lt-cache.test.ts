@@ -222,6 +222,7 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(tmdbTtl('movie/603')).toBe(6 * 3600e3);
     expect(tmdbTtl('movie/upcoming')).toBe(6 * 3600e3);
     expect(tmdbTtl('trending/all/week')).toBe(3 * 3600e3);
+    expect(tmdbTtl('trending/all/day')).toBe(3600e3);
     expect(tmdbTtl('tv/popular')).toBe(3 * 3600e3);
     expect(tmdbTtl('movie/603/watch/providers')).toBe(12 * 3600e3);
     expect(TTL.mdb).toBe(24 * 3600e3);

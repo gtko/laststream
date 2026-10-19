@@ -14,7 +14,7 @@ import { seriesEpisodes } from './episodes.js';
 import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
 import { mdblistCached } from './mdblist.js';
 import { tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
-import { isTopType, top10Page } from './top10.js';
+import { isTopType, top10Page, topWindowOf } from './top10.js';
 import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './detect/media-url.js';
 import type { AutoDetector } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
@@ -158,13 +158,15 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     return sendJson(c, body);
   });
 
-  // Top 10 de l'accueil : une page des tendances de la semaine (films ou séries), ne gardant que les titres disponibles
-  // dans la région (cf. lt/top10.ts). `page` : 1 à 500 ; `region` : code pays à deux lettres (FR par défaut).
+  // Top 10 de l'accueil (cf. lt/top10.ts) : `movie` / `tv` (tendances de la semaine) ou `all` (tendances du jour, films et
+  // séries mêlés : `window=day`, valeur par défaut de `all`). Ne gardent que les titres disponibles dans la région.
+  // `page` : 1 à 500 ; `region` : code pays à deux lettres (FR par défaut).
   lt.get('/top10/:type', async (c) => {
     const type = c.req.param('type');
     if (!isTopType(type)) throw new LtError(404, 'not_found');
-    const token = serviceKey(configOf(c), 'tmdb');
     const query = queryOf(c);
+    if (topWindowOf(type, query.window) === null) throw new LtError(400, 'bad_request');
+    const token = serviceKey(configOf(c), 'tmdb');
     const region = /^[A-Z]{2}$/.test(query.region ?? '') ? (query.region ?? 'FR') : 'FR';
     const requested = Number(query.page ?? '1');
     const page = Number.isInteger(requested) && requested >= 1 && requested <= 500 ? requested : 1;

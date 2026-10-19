@@ -125,7 +125,7 @@ const movieDetail = (id: number, dates: Array<{ type: number; release_date: stri
 const available = (id: number) => movieDetail(id, [{ type: 4, release_date: PAST }]);
 const unavailable = (id: number) => movieDetail(id, [{ type: 4, release_date: FUTURE }]);
 
-async function getTop(type: 'movie' | 'tv', query = 'region=FR&page=1'): Promise<Response> {
+async function getTop(type: string, query = 'region=FR&page=1'): Promise<Response> {
   const token = tokenFor({ tmdbToken: KEYS.tmdbToken });
   return fetch(`${running?.baseUrl ?? ''}/${token}/lt/top10/${type}?${query}`);
 }
@@ -259,5 +259,83 @@ describe('Top 10 : route /lt/top10/:type', () => {
     running = await startApp({ fetch: tmdbTop([], [], {}).fetch, lookupHost: fakeLookup() });
     const res = await fetch(`${running?.baseUrl ?? ''}/${tokenFor({ tmdbToken: KEYS.tmdbToken })}/lt/top10/person`);
     expect(res.status).toBe(404);
+  });
+});
+
+/** TMDB simulé pour la rangée du jour : `trending/all/day` (films et séries mêlés), détails par titre (`movie/…`, `tv/…`). */
+function tmdbDay(pages: unknown[][], details: Record<string, unknown>): MockUpstream {
+  const handlers: Record<string, Handler> = { [`${TMDB}/trending/all/day`]: listing(pages) };
+  for (const [path, body] of Object.entries(details)) handlers[`${TMDB}/${path}`] = () => json(body);
+  return mockUpstream(handlers);
+}
+
+/** Entrées de la tendance du jour : `media_type` donne le type, comme dans TMDB. */
+const dayMovie = (id: number) => ({ id, media_type: 'movie', title: `Film ${id}`, release_date: '2020-01-01', poster_path: '/p.jpg', vote_count: 900 });
+const dayTv = (id: number) => ({ id, media_type: 'tv', name: `Série ${id}`, first_air_date: '2020-01-01', poster_path: '/p.jpg', vote_count: 500 });
+
+/** Détail d'une série diffusée, ou pas encore diffusée. */
+const tvAired = (id: number) => ({ [`tv/${id}`]: { id, first_air_date: '2020-01-01' } });
+const tvFuture = (id: number) => ({ [`tv/${id}`]: { id, first_air_date: FUTURE } });
+
+describe('Top 10 : rangée du jour, route /lt/top10/all?window=day', () => {
+  it('films et séries mêlés dans l’ordre de popularité ; personnes écartées ; disponibilité vérifiée par type', async () => {
+    const upstream = tmdbDay(
+      [[dayMovie(8001), dayTv(8002), { id: 8003, media_type: 'person', name: 'Acteur' }, dayTv(8004), dayMovie(8005)]],
+      { ...available(8001), ...tvAired(8002), ...tvFuture(8004), ...unavailable(8005) },
+    );
+    running = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup() });
+    const res = await getTop('all', 'region=FR&page=1&window=day');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { page: number; raw: number; results: Array<{ id: number; media_type: string }> };
+    expect(body.results.map((r) => `${r.media_type}:${r.id}`)).toEqual(['movie:8001', 'tv:8002']);
+    expect(body).toMatchObject({ page: 1, raw: 5 });
+    // Moins de dix titres : la page 2 (vide) est lue aussi, puis la source est épuisée.
+    expect(upstream.callsTo(`${TMDB}/trending/all/day`)).toHaveLength(2);
+    expect(upstream.callsTo(`${TMDB}/trending/all/week`)).toHaveLength(0);
+    expect(upstream.callsTo(`${TMDB}/movie/8003`)).toHaveLength(0);
+    expect(upstream.callsTo(`${TMDB}/tv/8003`)).toHaveLength(0);
+  });
+
+  it('un film et une série de même numéro : deux titres distincts, chacun vérifié', async () => {
+    const upstream = tmdbDay([[dayMovie(9001), dayTv(9001)]], { ...available(9001), ...tvAired(9001) });
+    running = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup() });
+    const body = (await (await getTop('all', 'window=day')).json()) as { results: Array<{ id: number; media_type: string }> };
+    expect(body.results.map((r) => r.media_type)).toEqual(['movie', 'tv']);
+    expect(upstream.callsTo(`${TMDB}/movie/9001`)).toHaveLength(1);
+    expect(upstream.callsTo(`${TMDB}/tv/9001`)).toHaveLength(1);
+  });
+
+  it('dix titres exactement : indisponibles écartés, la page suivante complète la rangée, le reste n’est pas lu', async () => {
+    const page1 = Array.from({ length: 12 }, (_, i) => dayMovie(7100 + i));
+    const page2 = Array.from({ length: 6 }, (_, i) => dayTv(7200 + i));
+    const details: Record<string, unknown> = {};
+    for (let i = 0; i < 6; i++) Object.assign(details, available(7100 + i));
+    for (let i = 6; i < 12; i++) Object.assign(details, unavailable(7100 + i));
+    for (let i = 0; i < 6; i++) Object.assign(details, tvAired(7200 + i));
+    const upstream = tmdbDay([page1, page2], details);
+    running = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup() });
+    const body = (await (await getTop('all', 'window=day')).json()) as { raw: number; results: Array<{ id: number }> };
+    expect(body.results.map((r) => r.id)).toEqual([7100, 7101, 7102, 7103, 7104, 7105, 7200, 7201, 7202, 7203]);
+    expect(body.raw).toBe(18);
+    expect(upstream.callsTo(`${TMDB}/trending/all/day`)).toHaveLength(2);
+    expect(upstream.callsTo(`${TMDB}/tv/7205`)).toHaveLength(0);
+  });
+
+  it('fenêtre : all sans `window` ou avec `window=day` répond ; une autre fenêtre (all ou films) : 400', async () => {
+    running = await startApp({ fetch: tmdbDay([], {}).fetch, lookupHost: fakeLookup() });
+    expect((await getTop('all', 'region=FR')).status).toBe(200);
+    expect((await getTop('all', 'window=day')).status).toBe(200);
+    expect((await getTop('all', 'window=week')).status).toBe(400);
+    expect((await getTop('movie', 'window=day')).status).toBe(400);
+  });
+
+  it('cache : la même page du jour n’est lue qu’une fois chez TMDB pendant l’heure', async () => {
+    const upstream = tmdbDay([[dayMovie(8101)]], available(8101));
+    running = await startApp({ fetch: upstream.fetch, lookupHost: fakeLookup() });
+    await getTop('all', 'window=day');
+    const firstPass = upstream.callsTo(`${TMDB}/trending/all/day`).length;
+    expect(firstPass).toBeGreaterThan(0);
+    await getTop('all', 'window=day');
+    expect(upstream.callsTo(`${TMDB}/trending/all/day`)).toHaveLength(firstPass);
   });
 });

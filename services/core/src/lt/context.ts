@@ -27,6 +27,7 @@ import { createUrlSigner, type UrlSigner } from './signing.js';
 export const TTL = {
   tmdb: 6 * 3600e3, // détails et listes
   tmdbFast: 3 * 3600e3, // tendances et populaires
+  tmdbDay: 3600e3, // tendances du jour (Top 10 d'aujourd'hui) : une heure
   tmdbWatch: 12 * 3600e3, // fournisseurs de streaming
   mdb: 24 * 3600e3, // notes MDBList
   tvdb: 12 * 3600e3, // saisons TVDB

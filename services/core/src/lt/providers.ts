@@ -84,6 +84,7 @@ export function tmdbPublicParams(query: Record<string, string>): Record<string, 
 export function tmdbTtl(sub: string): number {
   const segments = sub.split('/');
   if (segments.includes('watch')) return TTL.tmdbWatch;
+  if (segments.includes('trending') && segments.includes('day')) return TTL.tmdbDay;
   if (segments.includes('trending') || segments.includes('popular')) return TTL.tmdbFast;
   return TTL.tmdb;
 }
