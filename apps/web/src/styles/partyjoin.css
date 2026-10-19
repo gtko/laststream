@@ -50,7 +50,61 @@
 }
 .pj-stage:fullscreen, .pj-stage:-webkit-full-screen { width: 100%; height: 100%; max-height: none; aspect-ratio: auto; border-radius: 0; }
 .pj-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
-.pj-player [data-pj-retry] { align-self: flex-start; }
+
+/* Salon rejoint (classe `is-joined`, posée par partyjoin.js) : le cadre prend la fenêtre, au format 16:9 centré dans la hauteur
+ * disponible ; l'invitation et le formulaire disparaissent ; l'en-tête tient sur une ligne. Avant de rejoindre, rien ne change. */
+.pj.is-joined {
+  --pj-head-h: 52px;
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.pj.is-joined .pj-note, .pj.is-joined .pj-form { display: none; }
+.pj.is-joined .pj-head {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  height: var(--pj-head-h);
+  padding: 0 16px;
+}
+.pj.is-joined .pj-title { flex: none; font-size: 18px; white-space: nowrap; }
+.pj.is-joined .pj-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj.is-joined .pj-head [data-pj-retry], .pj.is-joined .pj-head [data-pj-leave] { flex: none; width: auto; margin-left: auto; }
+.pj.is-joined .pj-head [data-pj-retry]:not([hidden]) + [data-pj-leave] { margin-left: 0; }
+.pj.is-joined .pj-player { position: relative; flex: 1 1 auto; min-height: 0; gap: 0; align-items: center; justify-content: center; }
+.pj.is-joined .pj-stage {
+  flex: none;
+  width: min(100%, calc((100vh - var(--pj-head-h)) * 16 / 9));
+  width: min(100%, calc((100dvh - var(--pj-head-h)) * 16 / 9));
+  height: auto;
+  max-height: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Plein écran : la règle du cadre (ci-dessus) ne doit pas bloquer le remplissage de l'écran. */
+.pj.is-joined .pj-stage:fullscreen, .pj.is-joined .pj-stage:-webkit-full-screen { width: 100%; height: 100%; max-height: none; aspect-ratio: auto; }
+/* Message d'état : toast au-dessus du cadre, hors mise en page ; il s'efface (data-fade) après TOAST_MS. Une alerte reste affichée. */
+.pj.is-joined .pj-msg {
+  position: absolute;
+  top: calc(var(--pj-head-h) + 12px);
+  left: 50%;
+  z-index: 4;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.pj.is-joined .pj-msg[data-fade="out"] { opacity: 0; }
 
 /* ---------- Commandes du cadre (guestplayer.js). Les règles sont préfixées `.gp` : elles l'emportent sur player.css. ---------- */
 .gp-host { cursor: auto; }
@@ -341,5 +395,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .gp::after, .gp .gp-ui, .gp .gp-subs { transition: none; }
+  .pj.is-joined .pj-msg { transition: none; }
   .gp .gc-fl { animation: none; }
 }
