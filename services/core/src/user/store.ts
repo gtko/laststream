@@ -653,7 +653,11 @@ export class UserStore {
       const row = this.db.prepare('SELECT pid FROM profiles WHERE id = ? AND account_id = ?').get(profileId, accountId) as
         | { pid: string | null }
         | undefined;
-      if (row?.pid) revokeLegacyFriendshipsOf(this.db, row.pid);
+      if (row?.pid) {
+        revokeLegacyFriendshipsOf(this.db, row.pid);
+        // Pas de clé étrangère sur profile_relations : son nettoyage est explicite.
+        this.db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(row.pid, row.pid);
+      }
       return this.db.prepare('DELETE FROM profiles WHERE id = ? AND account_id = ?').run(profileId, accountId).changes > 0;
     });
   }

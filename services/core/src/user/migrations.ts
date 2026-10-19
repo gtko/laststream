@@ -565,6 +565,48 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX profile_relations_target ON profile_relations (target_pid);
     `,
   },
+  {
+    version: 19,
+    name: 'préférences, relations par ami, blocages, signalements, demandes de rejoindre',
+    sql: `
+      -- Les relations par ami (favori, surnom, sourdine, masquage d'activité) vivent dans profile_relations (migration 18).
+
+      -- Préférences d'un profil : un objet JSON (contrat SocialPrefs). Les défauts s'appliquent à la lecture.
+      CREATE TABLE social_prefs (
+        profile_pid TEXT PRIMARY KEY REFERENCES profiles (pid) ON DELETE CASCADE,
+        prefs TEXT NOT NULL
+      );
+
+      -- Blocage orienté (blocker_pid bloque blocked_pid) : effet dans les deux sens, lu par les deux profils.
+      CREATE TABLE blocks (
+        blocker_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        blocked_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (blocker_pid, blocked_pid),
+        CHECK (blocker_pid <> blocked_pid)
+      );
+      CREATE INDEX blocks_blocked ON blocks (blocked_pid);
+
+      -- Signalements : sans clé étrangère, un signalement survit à la suppression de son auteur ou de sa cible.
+      CREATE TABLE reports (
+        id TEXT PRIMARY KEY,
+        reporter_pid TEXT NOT NULL,
+        target_pid TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'other')),
+        details TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      -- Demande de rejoindre le titre en cours d'un ami (requester → host). Une seule demande par paire.
+      CREATE TABLE join_requests (
+        requester_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (requester_pid, host_pid),
+        CHECK (requester_pid <> host_pid)
+      );
+    `,
+  },
 ];
 
 /**

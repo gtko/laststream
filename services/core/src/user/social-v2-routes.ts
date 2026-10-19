@@ -9,7 +9,7 @@ import { assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
-import type { FriendLiveView, FriendView, PresenceChange, SubjectView } from './social-v2-store.js';
+import type { FriendView, PresenceChange } from './social-v2-store.js';
 import { historyQuerySchema, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
 
@@ -64,17 +64,19 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
   const liveTickets = createRateLimiter(LIVE_TICKETS_PER_MINUTE, 60_000);
   const friendRequests = createRateLimiter(FRIEND_REQUESTS_PER_HOUR, 3_600_000);
 
-  /** Diffuse un changement de présence : amis (vue « ami ») puis foyer (vue « foyer »). */
+  /** Diffuse un changement de présence : une trame par vue distincte (préférences du profil vu appliquées par le store). */
   const announcePresence = (change: PresenceChange | undefined): void => {
-    if (change === undefined) return;
-    emitSocialEvent(deps.socialEvents, change.friends, { t: 'presence', friend: { ...change.subject, household: false } });
-    emitSocialEvent(deps.socialEvents, change.household, { t: 'presence', friend: { ...change.subject, household: true } });
+    for (const delivery of change?.deliveries ?? []) {
+      emitSocialEvent(deps.socialEvents, delivery.pids, { t: 'presence', friend: delivery.friend });
+    }
   };
 
-  /** Vue d'un profil telle qu'un ami la voit (drapeau « foyer » faux). Trames temps réel : sans réglages par profil. */
-  const asFriend = (view: SubjectView): FriendLiveView => ({ ...view, household: false });
-  /** Même vue en réponse REST : une amitié acceptée repart des réglages par défaut (pas de favori, pas de sourdine). */
-  const restFriend = (view: SubjectView): FriendView => ({ ...asFriend(view), favorite: false, muted: false });
+  /** Vue d'un ami (ou du foyer) telle que `viewer` la reçoit. Le lien vient d'être créé : absence = incohérence, 404. */
+  const friendViewFor = async (viewer: string, subject: string): Promise<FriendView> => {
+    const view = await social().friendViewOf(viewer, subject, Date.now());
+    if (view === undefined) throw new UserApiError(404, 'friend_not_found');
+    return view;
+  };
 
   // Moi
 
@@ -118,9 +120,11 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     if (outcome.result === 'already_requested') throw new UserApiError(409, 'already_requested');
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'friend_limit_reached');
     if (outcome.result === 'accepted') {
-      emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: asFriend(outcome.self) });
-      emitSocialEvent(deps.socialEvents, [outcome.self.pid], { t: 'friend', friend: asFriend(outcome.other) });
-      return sendJson(c, { friend: restFriend(outcome.other) }, 200);
+      const toOther = await friendViewFor(outcome.other.pid, me.pid);
+      const toMe = await friendViewFor(me.pid, outcome.other.pid);
+      emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: toOther });
+      emitSocialEvent(deps.socialEvents, [me.pid], { t: 'friend', friend: toMe });
+      return sendJson(c, { friend: toMe }, 200);
     }
     emitSocialEvent(deps.socialEvents, [outcome.outgoing.pid], { t: 'request', request: outcome.incoming });
     return sendJson(c, { request: outcome.outgoing }, 201);
@@ -133,9 +137,11 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     const outcome = await social().acceptRequest(me.pid, otherPid, Date.now());
     if (outcome.result === 'not_found') throw new UserApiError(404, 'request_not_found');
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'friend_limit_reached');
-    emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: asFriend(outcome.self) });
-    emitSocialEvent(deps.socialEvents, [outcome.self.pid], { t: 'friend', friend: asFriend(outcome.other) });
-    return sendJson(c, { friend: restFriend(outcome.other) });
+    const toOther = await friendViewFor(outcome.other.pid, me.pid);
+    const toMe = await friendViewFor(me.pid, outcome.other.pid);
+    emitSocialEvent(deps.socialEvents, [outcome.other.pid], { t: 'friend', friend: toOther });
+    emitSocialEvent(deps.socialEvents, [me.pid], { t: 'friend', friend: toMe });
+    return sendJson(c, { friend: toMe });
   });
 
   /**
@@ -178,9 +184,10 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     const me = await actor(c);
     const targetPid = pidParam(String(c.req.param('pid')), 'friend_not_found');
     const query = parseWith(historyQuerySchema, queryParams(c));
-    const items = await social().friendHistory(me.pid, targetPid, query.limit);
-    if (items === undefined) throw new UserApiError(404, 'friend_not_found');
-    return sendJson(c, { items });
+    const outcome = await social().friendHistory(me.pid, targetPid, query.limit);
+    if (outcome.result === 'unknown') throw new UserApiError(404, 'friend_not_found');
+    if (outcome.result === 'hidden') throw new UserApiError(403, 'hidden');
+    return sendJson(c, { items: outcome.items });
   });
 
   // Présence

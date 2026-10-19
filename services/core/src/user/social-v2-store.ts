@@ -44,6 +44,12 @@ export interface CustomStatus {
   expiresAt?: number;
 }
 
+/**
+ * Titre en cours vu par un autre profil. `pos` et `at` sont absents quand le profil ne partage pas sa position
+ * (préférence `watchWith` = « never »).
+ */
+export type WatchingView = Omit<Watching, 'pos' | 'at'> & Partial<Pick<Watching, 'pos' | 'at'>>;
+
 /** Vue d'un profil telle qu'un autre la voit, sans le drapeau « foyer » (posé par l'appelant). */
 export interface SubjectView {
   pid: string;
@@ -54,21 +60,62 @@ export interface SubjectView {
   /** Statut personnalisé en cours (non expiré). Identique pour tous les spectateurs. */
   customStatus?: CustomStatus;
   status: SeenStatus;
-  watching?: Watching;
-  /** Dernier battement (ms). Absent pour un profil invisible ou jamais vu. */
+  watching?: WatchingView;
+  /** Dernier battement (ms). Absent pour un profil invisible ou jamais vu, ou si l'activité est masquée. */
   lastSeen?: number;
 }
 
+/**
+ * Vue d'un ami ou d'un membre du foyer, du point de vue du profil agissant. `favorite`, `nickname` et `muted` viennent de la
+ * relation que le profil agissant a posée (PUT /friends/:pid/relation) ; faux et absents pour le foyer.
+ */
 export interface FriendView extends SubjectView {
   household: boolean;
-  /** Réglages que le profil agissant applique à cet ami (table profile_relations ; défauts false / absent). */
   favorite: boolean;
-  muted: boolean;
   nickname?: string;
+  muted: boolean;
 }
 
-/** Ami tel qu'il est diffusé en temps réel : sans les réglages propres au profil destinataire. */
-export type FriendLiveView = SubjectView & { household: boolean };
+/** Préférences d'un profil (contrat SocialPrefs, S2). */
+export interface SocialPrefs {
+  activityVisibility: 'friends' | 'favorites' | 'nobody';
+  watchWith: 'open' | 'ask' | 'never';
+  libraryVisibility: 'friends' | 'household' | 'private';
+  messagesFrom: 'friends' | 'favorites' | 'household';
+  historyVisible: boolean;
+  antiSpoiler: boolean;
+  playbackSocial: 'all' | 'messages' | 'cinema';
+  notify: { messages: boolean; requests: boolean; parties: boolean; friendStarts: boolean; vibrate: boolean; sound: boolean };
+}
+
+/** Valeurs par défaut des préférences (contrat S2). */
+export const DEFAULT_SOCIAL_PREFS: SocialPrefs = {
+  activityVisibility: 'friends',
+  watchWith: 'ask',
+  libraryVisibility: 'friends',
+  messagesFrom: 'friends',
+  historyVisible: true,
+  antiSpoiler: true,
+  playbackSocial: 'all',
+  notify: { messages: true, requests: true, parties: true, friendStarts: false, vibrate: false, sound: false },
+};
+
+/** Mise à jour partielle des préférences. */
+export type SocialPrefsPatch = Partial<Omit<SocialPrefs, 'notify'>> & { notify?: Partial<SocialPrefs['notify']> };
+
+/** Relation d'un profil vers un ami (PUT /friends/:pid/relation). `nickname` : `null` efface le surnom. */
+export interface RelationPatch {
+  favorite?: boolean;
+  nickname?: string | null;
+  muted?: boolean;
+  hideActivity?: boolean;
+}
+
+/** Changement de présence à remettre : une vue identique par groupe de destinataires (amis ou foyer, selon la vue). */
+export interface PresenceDelivery {
+  pids: string[];
+  friend: FriendView;
+}
 
 export interface FriendRequestView {
   pid: string;
@@ -168,12 +215,15 @@ export interface SharedLibraryItem {
   addedAt: string;
 }
 
-/** Changement de présence visible : vue du profil et destinataires (amis, puis foyer). */
+/** Changement de présence visible : une livraison par vue distincte (amis, puis foyer). */
 export interface PresenceChange {
-  subject: SubjectView;
-  friends: string[];
-  household: string[];
+  deliveries: PresenceDelivery[];
 }
+
+export type BlockOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'household' } | { result: 'ok'; unlinked: boolean };
+export type ReportOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'ok' };
+export type JoinOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'not_allowed' } | { result: 'ok'; from: FriendView };
+export type HistoryOutcome = { result: 'unknown' } | { result: 'hidden' } | { result: 'ok'; items: HistoryItem[] };
 
 export type RequestOutcome =
   | { result: 'not_found' }
@@ -230,14 +280,6 @@ interface ProfileRow {
   tag_changed_at: number | null;
 }
 
-/** Réglages qu'un profil applique à un ami (ligne de profile_relations ; absente = défauts). */
-interface RelationRow {
-  target_pid: string;
-  favorite: number;
-  nickname: string | null;
-  muted: number;
-}
-
 /** Pids des amis acceptés d'un profil (`other`). Trois paramètres : le pid, répété trois fois. */
 const FRIENDS_OF_SQL = `SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END AS other FROM profile_friendships f WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?)`;
 
@@ -277,9 +319,16 @@ export function seenStatusOf(row: PresenceRow | undefined, now: number): SeenSta
  * Titre en cours tel qu'il est stocké : seuls les champs du contrat, dans un ordre fixe (comparaison par chaîne). Une
  * saison et un épisode n'ont de sens que pour une série.
  */
-export function normalizeWatching(input: Watching): Watching {
+export function normalizeWatching(input: WatchingView): WatchingView {
   const series = input.type === 'series';
-  const out: Watching = { type: input.type, tmdbId: input.tmdbId, title: input.title, pos: input.pos, paused: input.paused, at: input.at };
+  const out: WatchingView = {
+    type: input.type,
+    tmdbId: input.tmdbId,
+    title: input.title,
+    ...(input.pos === undefined ? {} : { pos: input.pos }),
+    paused: input.paused,
+    ...(input.at === undefined ? {} : { at: input.at }),
+  };
   if (input.imdbId !== undefined) out.imdbId = input.imdbId;
   if (input.poster !== undefined) out.poster = input.poster;
   if (series && input.season !== undefined) out.season = input.season;
@@ -295,6 +344,29 @@ function parseStoredWatching(raw: string | null | undefined): Watching | undefin
   } catch {
     return undefined;
   }
+}
+
+/** Relation stockée (profile_relations) : entiers 0/1, surnom nul si absent. */
+interface RelationRow {
+  favorite: number;
+  nickname: string | null;
+  muted: number;
+  hide_activity: number;
+}
+
+function parseStoredPrefs(raw: string): Partial<SocialPrefs> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Partial<SocialPrefs>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Préférences complètes à partir d'une écriture partielle : ce qui manque prend la valeur par défaut. */
+function prefsFrom(input: Partial<SocialPrefs> | undefined): SocialPrefs {
+  const notify = { ...DEFAULT_SOCIAL_PREFS.notify, ...(input?.notify ?? {}) };
+  return { ...DEFAULT_SOCIAL_PREFS, ...(input ?? {}), notify };
 }
 
 function viewOf(row: ViewRow, now: number): SubjectView {
@@ -372,7 +444,7 @@ export interface NoteView {
 /** Cible d'un message refusée : soi-même (400), profil inconnu ou enfant (404), profil ni ami ni du foyer (403). */
 export type TargetError = 'self' | 'unknown' | 'not_friend';
 
-export type SendOutcome = { result: TargetError } | { result: 'limit_reached'; retryAfterSec: number } | { result: 'sent'; message: MessageView };
+export type SendOutcome = { result: TargetError | 'not_allowed' } | { result: 'limit_reached'; retryAfterSec: number } | { result: 'sent'; message: MessageView };
 export type MessagesOutcome = { result: TargetError } | { result: 'ok'; messages: MessageView[] };
 /** `count` : messages reçus qui viennent d'être marqués lus (0 : rien à faire, rien à notifier). */
 export type ReadOutcome = { result: TargetError } | { result: 'ok'; count: number; at: number };
@@ -567,14 +639,6 @@ export class SocialV2Store {
     });
   }
 
-  /** Réglages par profil (table profile_relations) : une entrée par ami ayant une ligne. */
-  private relationsOf(ownerPid: string): Map<string, RelationRow> {
-    const rows = this.db
-      .prepare('SELECT target_pid, favorite, nickname, muted FROM profile_relations WHERE owner_pid = ?')
-      .all(ownerPid) as unknown as RelationRow[];
-    return new Map(rows.map((row): [string, RelationRow] => [String(row.target_pid), row]));
-  }
-
   /** Vue complète d'un profil ; `household` = autre profil du même compte (pas d'amitié, pas de « depuis »). */
   private buildProfile(pid: string, viewerPid: string, now: number, household: boolean): SocialProfileView | undefined {
     const row = this.db
@@ -701,15 +765,234 @@ export class SocialV2Store {
     return row === undefined ? undefined : { status: row.status, watching: row.watching, updated_at: Number(row.updated_at) };
   }
 
-  /** Compare la présence avant écriture à l'état courant : rien si les autres voient la même chose (même statut vu, même titre). */
+  /**
+   * Compare la présence avant écriture à l'état courant : rien si les autres voient la même chose (même statut vu, même titre).
+   * Sinon, la vue de chaque destinataire (préférences du profil appliquées), regroupée par vue identique.
+   */
   private changeSince(pid: string, before: PresenceRow | undefined, now: number): PresenceChange | undefined {
     const after = this.presenceRow(pid);
     const seenChanged = seenStatusOf(before, now) !== seenStatusOf(after, now);
     const watchingChanged = (before?.watching ?? null) !== (after?.watching ?? null);
     if (!seenChanged && !watchingChanged) return undefined;
-    const subject = this.subjectView(pid, now);
-    if (subject === undefined) return undefined;
-    return { subject, ...this.audience(pid) };
+    const row = this.viewRow(pid);
+    if (row === undefined || row.handle_name === null) return undefined;
+    const { friends, household } = this.audience(pid);
+    const groups = new Map<string, PresenceDelivery>();
+    const addFor = (recipient: string, isHousehold: boolean): void => {
+      const friend = this.presentView(recipient, row, isHousehold, now);
+      const key = JSON.stringify(friend);
+      const group = groups.get(key);
+      if (group === undefined) groups.set(key, { pids: [recipient], friend });
+      else group.pids.push(recipient);
+    };
+    for (const recipient of friends) addFor(recipient, false);
+    for (const recipient of household) addFor(recipient, true);
+    return { deliveries: [...groups.values()] };
+  }
+
+  /** Ligne d'un profil non enfant avec sa présence (jointure), `undefined` si inconnu ou enfant. */
+  private viewRow(pid: string): ViewRow | undefined {
+    return this.db
+      .prepare(`SELECT ${VIEW_COLUMNS} FROM profiles p LEFT JOIN profile_presence pr ON pr.profile_pid = p.pid WHERE p.pid = ? AND p.is_kid = 0`)
+      .get(pid) as unknown as ViewRow | undefined;
+  }
+
+  /**
+   * Vue d'un profil pour `viewerPid`. Foyer : vue complète. Ami : `watching` et `lastSeen` retirés si l'activité n'est pas
+   * visible pour lui (activityVisibility « nobody », ou « favorites » sans être favori chez le profil vu) ; `pos` et `at`
+   * retirés si `watchWith` = « never ». Relation (favori, surnom, sourdine) : celle que `viewerPid` a posée.
+   */
+  private presentView(viewerPid: string, row: ViewRow, household: boolean, now: number): FriendView {
+    const view = viewOf(row, now);
+    if (household) return { ...view, household: true, favorite: false, muted: false };
+    const prefs = this.prefsOf(row.pid);
+    const relation = this.relationRow(viewerPid, row.pid);
+    const out: FriendView = {
+      ...view,
+      household: false,
+      favorite: relation !== undefined && Number(relation.favorite) === 1,
+      muted: relation !== undefined && Number(relation.muted) === 1,
+    };
+    if (relation?.nickname) out.nickname = relation.nickname;
+    const activityVisible = prefs.activityVisibility === 'friends' || (prefs.activityVisibility === 'favorites' && this.isFavoriteOf(row.pid, viewerPid));
+    if (!activityVisible) {
+      delete out.watching;
+      delete out.lastSeen;
+    } else if (out.watching !== undefined && prefs.watchWith === 'never') {
+      const shared = { ...out.watching };
+      delete shared.pos;
+      delete shared.at;
+      out.watching = shared;
+    }
+    return out;
+  }
+
+  /** Vue d'un ami ou d'un membre du foyer telle que `viewerPid` la reçoit. `undefined` s'il n'y a pas de lien (ou blocage). */
+  friendViewOf(viewerPid: string, subjectPid: string, now: number): FriendView | undefined {
+    const relation = this.relationOf(viewerPid, subjectPid);
+    if (relation === undefined) return undefined;
+    const row = this.viewRow(subjectPid);
+    return row === undefined || row.handle_name === null ? undefined : this.presentView(viewerPid, row, relation === 'household', now);
+  }
+
+  // Préférences et relations
+
+  /** Préférences d'un profil, défauts compris. */
+  prefsOf(pid: string): SocialPrefs {
+    const row = this.db.prepare('SELECT prefs FROM social_prefs WHERE profile_pid = ?').get(pid) as { prefs: string } | undefined;
+    return prefsFrom(row === undefined ? undefined : parseStoredPrefs(row.prefs));
+  }
+
+  /** Mise à jour partielle des préférences (PUT /prefs). Renvoie les préférences complètes. */
+  updatePrefs(pid: string, patch: SocialPrefsPatch): SocialPrefs {
+    return this.db.transaction((): SocialPrefs => {
+      const current = this.prefsOf(pid);
+      const next = prefsFrom({ ...current, ...patch, notify: { ...current.notify, ...(patch.notify ?? {}) } });
+      this.db
+        .prepare('INSERT INTO social_prefs (profile_pid, prefs) VALUES (?, ?) ON CONFLICT(profile_pid) DO UPDATE SET prefs = excluded.prefs')
+        .run(pid, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  private relationRow(ownerPid: string, targetPid: string): RelationRow | undefined {
+    return this.db
+      .prepare('SELECT favorite, nickname, muted, hide_activity FROM profile_relations WHERE owner_pid = ? AND target_pid = ?')
+      .get(ownerPid, targetPid) as RelationRow | undefined;
+  }
+
+  /** Le profil `ownerPid` a-t-il mis `targetPid` parmi ses favoris ? */
+  private isFavoriteOf(ownerPid: string, targetPid: string): boolean {
+    const row = this.relationRow(ownerPid, targetPid);
+    return row !== undefined && Number(row.favorite) === 1;
+  }
+
+  /**
+   * Relation du profil `ownerPid` vers un ami accepté (PUT /friends/:pid/relation). Renvoie la vue de l'ami pour
+   * `ownerPid`, ou `undefined` si `targetPid` n'est pas un ami (foyer compris : pas de relation à poser).
+   */
+  updateRelation(ownerPid: string, targetPid: string, patch: RelationPatch, now: number): FriendView | undefined {
+    return this.db.transaction((): FriendView | undefined => {
+      const { low, high } = pairOf(ownerPid, targetPid);
+      const friendship = this.db.prepare("SELECT 1 AS x FROM profile_friendships WHERE low_pid = ? AND high_pid = ? AND status = 'accepted'").get(low, high);
+      if (friendship === undefined || this.isBlockedEither(ownerPid, targetPid)) return undefined;
+      const current = this.relationRow(ownerPid, targetPid);
+      const favorite = patch.favorite ?? (current !== undefined && Number(current.favorite) === 1);
+      const muted = patch.muted ?? (current !== undefined && Number(current.muted) === 1);
+      const hideActivity = patch.hideActivity ?? (current !== undefined && Number(current.hide_activity) === 1);
+      const nickname = patch.nickname === undefined ? (current?.nickname ?? null) : patch.nickname;
+      this.db
+        .prepare(
+          `INSERT INTO profile_relations (owner_pid, target_pid, favorite, nickname, muted, hide_activity) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(owner_pid, target_pid) DO UPDATE SET favorite = excluded.favorite, nickname = excluded.nickname,
+             muted = excluded.muted, hide_activity = excluded.hide_activity`,
+        )
+        .run(ownerPid, targetPid, favorite ? 1 : 0, nickname, muted ? 1 : 0, hideActivity ? 1 : 0);
+      return this.friendViewOf(ownerPid, targetPid, now);
+    });
+  }
+
+  /** Vrai si `recipientPid` accepte les messages de `senderPid` (préférence messagesFrom ; le foyer passe toujours). */
+  private acceptsMessagesFrom(recipientPid: string, senderPid: string): boolean {
+    if (this.relationOf(senderPid, recipientPid) === 'household') return true;
+    const { messagesFrom } = this.prefsOf(recipientPid);
+    if (messagesFrom === 'household') return false;
+    if (messagesFrom === 'favorites') return this.isFavoriteOf(recipientPid, senderPid);
+    return true;
+  }
+
+  // Blocages et signalements
+
+  /** Vrai si l'un des deux profils a bloqué l'autre. */
+  isBlockedEither(a: string, b: string): boolean {
+    return this.db.prepare('SELECT 1 AS x FROM blocks WHERE (blocker_pid = ? AND blocked_pid = ?) OR (blocker_pid = ? AND blocked_pid = ?) LIMIT 1').get(a, b, b, a) !== undefined;
+  }
+
+  /**
+   * Bloque `targetPid` (POST /blocks/:pid). Retire l'amitié, acceptée ou en attente, et les demandes de rejoindre, dans les deux
+   * sens. Le foyer ne se bloque pas. `unlinked` : une amitié vient de tomber (à prévenir par WS).
+   */
+  blockProfile(blockerPid: string, targetPid: string, now: number): BlockOutcome {
+    return this.db.transaction((): BlockOutcome => {
+      if (blockerPid === targetPid) return { result: 'self' };
+      if (this.card(targetPid) === undefined) return { result: 'not_found' };
+      if (this.relationOf(blockerPid, targetPid) === 'household') return { result: 'household' };
+      this.db.prepare('INSERT OR IGNORE INTO blocks (blocker_pid, blocked_pid, created_at) VALUES (?, ?, ?)').run(blockerPid, targetPid, now);
+      const { low, high } = pairOf(blockerPid, targetPid);
+      const link = this.db.prepare('SELECT status FROM profile_friendships WHERE low_pid = ? AND high_pid = ?').get(low, high) as { status: string } | undefined;
+      if (link !== undefined) {
+        this.db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? AND high_pid = ?').run(low, high);
+        // Comme removeFriend : l'amitié legacy compte↔compte ne doit pas survivre au blocage.
+        if (link.status === 'accepted') revokeLegacyFriendship(this.db, blockerPid, targetPid);
+      }
+      this.db
+        .prepare('DELETE FROM join_requests WHERE (requester_pid = ? AND host_pid = ?) OR (requester_pid = ? AND host_pid = ?)')
+        .run(blockerPid, targetPid, targetPid, blockerPid);
+      return { result: 'ok', unlinked: link !== undefined };
+    });
+  }
+
+  /** Débloque (DELETE /blocks/:pid). `false` si ce profil n'était pas bloqué. L'amitié n'est pas rétablie. */
+  unblockProfile(blockerPid: string, targetPid: string): boolean {
+    return Number(this.db.prepare('DELETE FROM blocks WHERE blocker_pid = ? AND blocked_pid = ?').run(blockerPid, targetPid).changes) === 1;
+  }
+
+  /** Profils bloqués par `pid` (GET /blocks), du plus récent au plus ancien blocage. */
+  blockedOf(pid: string): { pid: string; handle: Handle }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.pid, p.handle_name, p.handle_tag FROM blocks b JOIN profiles p ON p.pid = b.blocked_pid
+          WHERE b.blocker_pid = ? AND p.is_kid = 0 AND p.handle_name IS NOT NULL AND p.handle_tag IS NOT NULL
+          ORDER BY b.created_at DESC`,
+      )
+      .all(pid) as unknown as { pid: string; handle_name: string; handle_tag: string }[];
+    return rows.map((row) => ({ pid: row.pid, handle: handleOf(row.handle_name, row.handle_tag) }));
+  }
+
+  /** Signalement (POST /reports). Ni amitié ni lien requis : tout profil non enfant peut être signalé. */
+  addReport(reporterPid: string, targetPid: string, reason: 'spam' | 'harassment' | 'other', details: string | undefined, now: number): ReportOutcome {
+    return this.db.transaction((): ReportOutcome => {
+      if (reporterPid === targetPid) return { result: 'self' };
+      if (this.card(targetPid) === undefined) return { result: 'not_found' };
+      this.db
+        .prepare('INSERT INTO reports (id, reporter_pid, target_pid, reason, details, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(randomUUID(), reporterPid, targetPid, reason, details ?? null, now);
+      return { result: 'ok' };
+    });
+  }
+
+  // Demandes de rejoindre
+
+  /**
+   * Demande de rejoindre le titre en cours de `hostPid` (POST /friends/:pid/join-request). Refusée si `hostPid` règle
+   * `watchWith` sur « never ». `from` : la vue de l'ami demandeur, telle que l'hôte la reçoit.
+   */
+  requestJoin(requesterPid: string, hostPid: string, now: number): JoinOutcome {
+    return this.db.transaction((): JoinOutcome => {
+      if (requesterPid === hostPid) return { result: 'self' };
+      if (this.relationOf(requesterPid, hostPid) === undefined) return { result: 'not_found' };
+      if (this.prefsOf(hostPid).watchWith === 'never') return { result: 'not_allowed' };
+      const from = this.friendViewOf(hostPid, requesterPid, now);
+      if (from === undefined) return { result: 'not_found' };
+      this.db
+        .prepare(
+          `INSERT INTO join_requests (requester_pid, host_pid, created_at) VALUES (?, ?, ?)
+           ON CONFLICT(requester_pid, host_pid) DO UPDATE SET created_at = excluded.created_at`,
+        )
+        .run(requesterPid, hostPid, now);
+      return { result: 'ok', from };
+    });
+  }
+
+  /**
+   * Réponse de l'hôte à une demande reçue de `requesterPid` (POST /join-requests/:pid). Consomme la demande. `false` si elle
+   * n'existe pas, ou si le lien entre les deux profils a disparu.
+   */
+  answerJoin(hostPid: string, requesterPid: string): boolean {
+    return this.db.transaction((): boolean => {
+      if (this.relationOf(hostPid, requesterPid) === undefined) return false;
+      return Number(this.db.prepare('DELETE FROM join_requests WHERE requester_pid = ? AND host_pid = ?').run(requesterPid, hostPid).changes) === 1;
+    });
   }
 
   /** Destinataires d'un changement de présence : amis acceptés, et autres profils du foyer (non enfants). */
@@ -778,17 +1061,9 @@ export class SocialV2Store {
       if (row.avatar !== null && row.avatar !== '') view.avatar = row.avatar;
       return view;
     };
-    // Réglages par ami (profile_relations) : défauts quand il n'y a pas de ligne.
-    const relations = this.relationsOf(pid);
-    const friendView = (row: ViewRow, household: boolean): FriendView => {
-      const relation = relations.get(row.pid);
-      const view: FriendView = { ...viewOf(row, now), household, favorite: Number(relation?.favorite ?? 0) === 1, muted: Number(relation?.muted ?? 0) === 1 };
-      if (relation?.nickname) view.nickname = relation.nickname;
-      return view;
-    };
     return {
-      friends: friends.map((row) => friendView(row, false)),
-      household: household.map((row) => friendView(row, true)),
+      friends: friends.map((row) => this.presentView(pid, row, false, now)),
+      household: household.map((row) => this.presentView(pid, row, true, now)),
       incoming: pending.filter((row) => row.requested_by !== pid).map(requestView),
       outgoing: pending.filter((row) => row.requested_by === pid).map(requestView),
     };
@@ -807,6 +1082,7 @@ export class SocialV2Store {
         | undefined;
       if (target === undefined || target.pid === null) return { result: 'not_found' };
       if (target.pid === pid) return { result: 'self' };
+      if (this.isBlockedEither(pid, target.pid)) return { result: 'not_found' };
       const requester = this.db.prepare('SELECT account_id FROM profiles WHERE pid = ?').get(pid) as { account_id: string } | undefined;
       if (requester === undefined) return { result: 'not_found' };
       if (target.account_id === requester.account_id) return { result: 'already_friends' };
@@ -897,6 +1173,7 @@ export class SocialV2Store {
     const viewer = this.db.prepare('SELECT account_id FROM profiles WHERE pid = ?').get(viewerPid) as { account_id: string } | undefined;
     if (viewer === undefined) return undefined;
     if (viewer.account_id === target.account_id) return 'household';
+    if (this.isBlockedEither(viewerPid, targetPid)) return undefined;
     const { low, high } = pairOf(viewerPid, targetPid);
     const friend = this.db.prepare("SELECT 1 AS x FROM profile_friendships WHERE low_pid = ? AND high_pid = ? AND status = 'accepted'").get(low, high);
     return friend === undefined ? undefined : 'friend';
@@ -917,6 +1194,8 @@ export class SocialV2Store {
   ): { items: SharedLibraryItem[]; total: number } | undefined {
     const relation = this.relationOf(viewerPid, targetPid);
     if (relation === undefined) return undefined;
+    // Préférence libraryVisibility du profil vu : hors « friends », un ami ne voit aucun titre (liste vide, lien maintenu).
+    if (relation === 'friend' && this.prefsOf(targetPid).libraryVisibility !== 'friends') return { items: [], total: 0 };
     const visibility = relation === 'household' ? '' : "AND li.visibility = 'friends'";
     const typeClause = type === undefined ? '' : 'AND li.type = ?';
     const base = `FROM library_items li JOIN profiles p ON p.id = li.profile_id
@@ -951,8 +1230,10 @@ export class SocialV2Store {
    * avec un identifiant TMDB sont listés (le contrat l'exige). Titre et affiche viennent de la bibliothèque si le titre
    * y figure. `undefined` si le lien n'existe pas.
    */
-  friendHistory(viewerPid: string, targetPid: string, limit: number): HistoryItem[] | undefined {
-    if (this.relationOf(viewerPid, targetPid) === undefined) return undefined;
+  friendHistory(viewerPid: string, targetPid: string, limit: number): HistoryOutcome {
+    const relation = this.relationOf(viewerPid, targetPid);
+    if (relation === undefined) return { result: 'unknown' };
+    if (relation === 'friend' && !this.prefsOf(targetPid).historyVisible) return { result: 'hidden' };
     const rows = this.db
       .prepare(
         `SELECT pg.type, pg.tmdb_id, pg.season, pg.episode, pg.position_sec, pg.duration_sec, pg.updated_at, pg.finished, li.title, li.poster
@@ -975,7 +1256,7 @@ export class SocialV2Store {
       title: string | null;
       poster: string | null;
     }[];
-    return rows.map((row) => {
+    const items = rows.map((row): HistoryItem => {
       const item: HistoryItem = {
         type: row.type,
         tmdbId: Number(row.tmdb_id),
@@ -992,6 +1273,7 @@ export class SocialV2Store {
       if (Number(row.duration_sec) > 0) item.duration = Number(row.duration_sec);
       return item;
     });
+    return { result: 'ok', items };
   }
 
   // Messages : conversations entre amis et foyer
@@ -1015,6 +1297,8 @@ export class SocialV2Store {
   private targetError(viewerPid: string, targetPid: string): TargetError | undefined {
     if (targetPid === viewerPid) return 'self';
     if (this.card(targetPid) === undefined) return 'unknown';
+    // Un blocage, dans un sens ou dans l'autre, rend le profil invisible : même réponse qu'un profil inconnu.
+    if (this.isBlockedEither(viewerPid, targetPid)) return 'unknown';
     return this.relationOf(viewerPid, targetPid) === undefined ? 'not_friend' : undefined;
   }
 
@@ -1072,6 +1356,7 @@ export class SocialV2Store {
     return this.db.transaction((): SendOutcome => {
       const failure = this.targetError(fromPid, toPid);
       if (failure !== undefined) return { result: failure };
+      if (!this.acceptsMessagesFrom(toPid, fromPid)) return { result: 'not_allowed' };
       const retryAfterSec = this.retryAfter(SENT_MESSAGES_SQL, fromPid, MESSAGES_PER_MINUTE, now);
       if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
       const id = randomUUID();

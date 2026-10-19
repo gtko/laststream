@@ -1,6 +1,6 @@
 import type { SocialEvent } from './social-v2-events.js';
 import {
-  type FriendLiveView,
+  type FriendView,
   type FriendRequestView,
   type Handle,
   type MediaRef,
@@ -49,11 +49,13 @@ export const SOCIAL_LIVE_BINARY_FRAME = 4003;
 export type LiveFrame =
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
-  | { t: 'presence'; friend: FriendLiveView }
+  | { t: 'presence'; friend: FriendView }
   | { t: 'request'; request: FriendRequestView }
-  | { t: 'friend'; friend: FriendLiveView }
+  | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -75,9 +77,10 @@ function subjectOut(view: SubjectView): SubjectView {
   return out;
 }
 
-/** Ami diffusé en direct : sans favori, surnom ni sourdine (propres au profil destinataire, absents des trames). */
-function friendOut(view: FriendLiveView): FriendLiveView {
-  return { ...subjectOut(view), household: view.household === true };
+function friendOut(view: FriendView): FriendView {
+  const out: FriendView = { ...subjectOut(view), household: view.household === true, favorite: view.favorite === true, muted: view.muted === true };
+  if (view.nickname !== undefined) out.nickname = view.nickname;
+  return out;
 }
 
 function requestOut(view: FriendRequestView): FriendRequestView {
@@ -123,6 +126,12 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'join_request':
+      return { t: 'join_request', from: friendOut(event.from) };
+    case 'join_answer':
+      return event.partyId === undefined
+        ? { t: 'join_answer', pid: event.pid, accept: event.accept }
+        : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
   }
 }
 

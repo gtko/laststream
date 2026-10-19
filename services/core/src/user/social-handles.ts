@@ -144,6 +144,9 @@ function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
   db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
+  db.prepare('DELETE FROM blocks WHERE blocker_pid = ? OR blocked_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM join_requests WHERE requester_pid = ? OR host_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM social_prefs WHERE profile_pid = ?').run(pid);
   db.prepare('UPDATE profiles SET pid = NULL, handle_name = NULL, handle_key = NULL, handle_tag = NULL WHERE id = ?').run(profileId);
 }
 
