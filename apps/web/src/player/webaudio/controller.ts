@@ -1,5 +1,4 @@
 import type { FileCodecs, SourceLike } from '../../party/compat';
-import { PUBLIC_BASE } from '../../data/config';
 import type { MediaCaps } from '../server';
 import type { WebAudioFallback, VideoLike } from './engine';
 import { DOLBY_HINT, NOTE_STALLED, isAc3Family, nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
@@ -17,7 +16,7 @@ export type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
 export interface SoundNoteLink { label: string; href: string }
 
 /** Source Dolby sans son : lien vers la page de téléchargement de l'app (affiché seulement en lecture web, voir `session.js`). */
-export const DOLBY_LINK: SoundNoteLink = { label: 'Télécharger l’app', href: PUBLIC_BASE };
+export const DOLBY_LINK: SoundNoteLink = { label: 'Télécharger l’app', href: 'https://laststream-www.gtux-prog.workers.dev/' };
 
 export interface WebAudioHost<V extends SourceLike = SourceLike> {
   video: VideoLike & { webkitAudioDecodedByteCount?: number };
