@@ -103,8 +103,8 @@ describe('révocation de l amitié legacy', () => {
 });
 
 describe('ticket du flux temps réel : usage unique', () => {
-  it('migration v20 en tête', () => {
-    expect(MIGRATIONS.at(-1)?.version).toBe(20);
+  it('la migration de tête est la plus haute version déclarée', () => {
+    expect(MIGRATIONS.at(-1)?.version).toBe(Math.max(...MIGRATIONS.map((migration) => migration.version)));
   });
 
   it('un nonce ne se consomme qu une fois, les échus sont purgés, un ticket échu est refusé', () => {
@@ -157,8 +157,8 @@ describe('validation', () => {
   it('affiche : TMDB en https ou chemin du site, sinon supprimée sans erreur', () => {
     const poster = (value: string): string | undefined => presenceSchema.parse(watching({ poster: value })).watching?.poster;
     expect(poster('https://image.tmdb.org/t/p/w500/a.jpg')).toBe('https://image.tmdb.org/t/p/w500/a.jpg');
-    expect(poster('/posters/a.jpg')).toBe('/posters/a.jpg');
-    for (const bad of ['http://image.tmdb.org/a.jpg', 'https://evil.example/a.jpg', '//evil.example/a.jpg', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'a.jpg', '']) {
+    expect(poster('/a.jpg')).toBe('/a.jpg');
+    for (const bad of ['/posters/a.jpg', '/a.jpg?x=1', '/a.gif', '/a.jpg\n', 'https://image.tmdb.org/other/a.jpg', 'http://image.tmdb.org/a.jpg', 'https://evil.example/a.jpg', '//evil.example/a.jpg', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'a.jpg', '']) {
       expect(poster(bad)).toBeUndefined();
     }
     expect(presenceSchema.safeParse(watching()).success).toBe(true);

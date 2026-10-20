@@ -54,8 +54,12 @@ type Fixture = ReturnType<typeof makeRoom>;
 function sent(effects: Effect[], to?: string): ServerMessage[] {
   return effects.flatMap((e) => (e.kind === 'send' && (to === undefined || e.to === to) ? [e.msg] : []));
 }
+/** Diffusions hors événements lisibles (`event`, testés à part par eventsOf) : les attentes existantes restent lisibles. */
 function broadcasts(effects: Effect[]): ServerMessage[] {
-  return effects.flatMap((e) => (e.kind === 'broadcast' ? [e.msg] : []));
+  return effects.flatMap((e) => (e.kind === 'broadcast' && e.msg.t !== 'event' ? [e.msg] : []));
+}
+function eventsOf(effects: Effect[]): ServerMessage[] {
+  return effects.flatMap((e) => (e.kind === 'broadcast' && e.msg.t === 'event' ? [e.msg] : []));
 }
 function errors(effects: Effect[]): string[] {
   return sent(effects).flatMap((m) => (m.t === 'error' ? [m.code] : []));
@@ -243,7 +247,7 @@ describe('modération', () => {
     joined(fx, 'a-host', 'a-bob');
     expect(broadcasts(fx.core.handle('a-host', msg({ t: 'transfer', user: 'bob' })))).toEqual([{ t: 'host', user: 'bob' }]);
     expect(errors(fx.core.handle('a-host', msg({ t: 'ctl', action: 'sync', pos: 1 })))).toEqual(['not_host']);
-    expect(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 1 }))).toHaveLength(1);
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 1 })))).toHaveLength(1);
     expect(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'sync', pos: 30 }))).toHaveLength(1);
   });
 
@@ -297,8 +301,15 @@ describe('modération', () => {
   it('réactions : seules les réactions prévues sont diffusées', () => {
     const fx = makeRoom();
     joined(fx, 'a-bob');
-    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🔥' })))).toEqual([{ t: 'react', user: 'bob', emoji: '🔥', at: T0 }]);
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🔥', pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji: '🔥', at: T0, pos: null }]);
     expect(errors(fx.core.handle('a-bob', msg({ t: 'react', emoji: '<script>' })))).toEqual(['invalid_reaction']);
+  });
+
+  it('réactions : 😱 et 🤯 sont prévues comme les autres', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-bob');
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '😱', pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji: '😱', at: T0, pos: null }]);
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🤯', pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji: '🤯', at: T0, pos: null }]);
   });
 
   it('fin du salon par l’hôte uniquement', () => {
@@ -682,5 +693,240 @@ describe('attente de tampon : lecture suspendue tant qu’un invité charge', ()
       maxMs: PARTY_WAIT_MAX_MS,
       resumeAhead: PARTY_RESUME_AHEAD_SEC,
     });
+  });
+});
+
+describe('watch party enrichie (S4)', () => {
+  const guestOf = (fx: Fixture, id: string, name: string): Member => ({ ...fx.member(`guest:${id}`, name), guest: true });
+  const VOTE_OPTIONS = [
+    { type: 'movie', tmdbId: 603, title: 'Matrix' },
+    { type: 'movie', tmdbId: 27205, title: 'Inception' },
+    { type: 'series', tmdbId: 1396, title: 'Breaking Bad' },
+  ];
+
+  it('réglages : hôte seul ; contrôle hôte refuse play, pause et seek des autres, la synchronisation de l’hôte reste ouverte', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'settings', control: 'host' })))).toEqual(['not_host']);
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'settings', control: 'host' })))).toEqual([
+      { t: 'settings', settings: { control: 'host', waitLate: 'always', reactions: 'float' }, by: 'host' },
+    ]);
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'play', pos: 5 })))).toEqual(['not_host']);
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'seek', pos: 5 })))).toEqual(['not_host']);
+    expect(fx.data.state.playing).toBe(false);
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'ctl', action: 'play', pos: 5 })))).toEqual([
+      { t: 'state', state: { playing: true, pos: 5, at: T0, rev: 1 }, serverTime: T0, by: 'host' },
+    ]);
+    // Contrôle libre rétabli : l'invité peut de nouveau mettre en pause.
+    fx.core.handle('a-host', msg({ t: 'settings', control: 'all' }));
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'pause', pos: 6 }))).map((m) => m.t)).toEqual(['state']);
+  });
+
+  it('attente de tampon : « désactivée » n’ouvre aucune attente ; « 10 s » fixe le délai annoncé', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    fx.core.handle('a-host', msg({ t: 'settings', waitLate: 'off' }));
+    const lea = fx.core.join(guestOf(fx, 'lea', 'Léa'));
+    expect(broadcasts(lea).some((m) => m.t === 'wait')).toBe(false);
+    expect(sent(lea, 'guest:lea').some((m) => m.t === 'wait')).toBe(false);
+    fx.core.handle('a-host', msg({ t: 'settings', waitLate: '10s' }));
+    const tom = fx.core.join(guestOf(fx, 'tom', 'Tom'));
+    expect(broadcasts(tom)).toContainEqual({ t: 'wait', who: ['Tom'], since: T0, maxMs: 10_000, resumeAhead: PARTY_RESUME_AHEAD_SEC });
+  });
+
+  it('réactions : « désactivées » refusé ; une réaction signée porte son auteur et la position du film', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.handle('a-host', msg({ t: 'settings', reactions: 'off' }));
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🔥', pos: null })))).toEqual(['reactions_off']);
+    fx.core.handle('a-host', msg({ t: 'settings', reactions: 'discreet' }));
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🔥', pos: 42.5 })))).toEqual([
+      { t: 'react', user: 'bob', by: 'bob', emoji: '🔥', at: T0, pos: 42.5 },
+    ]);
+  });
+
+  it('préparation : prêt, qualité et état diffusés au changement seulement ; présents au bienvenue ; retirés au départ', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'ready', ready: true, quality: '  1080p​ ' })))).toEqual([
+      { t: 'prep', user: 'bob', ready: true, quality: '1080p', status: 'searching' },
+    ]);
+    expect(fx.core.handle('a-bob', msg({ t: 'ready', ready: true, quality: '1080p' }))).toEqual([]);
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'status', status: 'buffering' })))).toEqual([
+      { t: 'prep', user: 'bob', ready: true, quality: '1080p', status: 'buffering' },
+    ]);
+    expect(fx.core.handle('a-bob', msg({ t: 'status', status: 'buffering' }))).toEqual([]);
+    const welcome = sent(fx.core.join(fx.member('a-tom')), 'a-tom')[0];
+    if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
+    expect(welcome.participants.find((p) => p.username === 'bob')).toMatchObject({ ready: true, quality: '1080p', status: 'buffering' });
+    expect(welcome.participants.find((p) => p.username === 'tom')).toMatchObject({ ready: false, quality: null, status: 'searching' });
+    expect(welcome.settings).toEqual({ control: 'all', waitLate: 'always', reactions: 'float' });
+    expect(welcome.countdownAt).toBeNull();
+    expect(welcome.vote).toBeNull();
+    fx.core.leave('a-bob', fx.core.members.get('a-bob')?.connId ?? '');
+    expect(fx.data.prep).not.toHaveProperty('a-bob');
+  });
+
+  it('démarrage : compte à rebours diffusé, lecture reprise à l’échéance (horloge simulée) ; réservé à l’hôte, une seule fois', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'start', countdown: 3 })))).toEqual(['not_host']);
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'start', countdown: 3 })))).toEqual([{ t: 'countdown', at: T0 + 3000, by: 'host' }]);
+    expect(fx.core.nextWake()).toBe(T0 + 3000);
+    fx.clock.now += 2000;
+    expect(fx.core.tick().effects).toEqual([]);
+    fx.clock.now += 1000;
+    expect(broadcasts(fx.core.tick().effects)).toEqual([
+      { t: 'countdown', at: null, by: 'host' },
+      { t: 'state', state: { playing: true, pos: 0, at: T0 + 3000, rev: 1 }, serverTime: T0 + 3000, by: 'host' },
+    ]);
+    expect(fx.data.countdownAt).toBeNull();
+    expect(errors(fx.core.handle('a-host', msg({ t: 'start', countdown: 3 })))).toEqual(['already_playing']);
+  });
+
+  it('une commande de lecture pendant le compte à rebours l’annule', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.handle('a-host', msg({ t: 'start', countdown: 5 }));
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'play', pos: 0 })))).toEqual([
+      { t: 'state', state: { playing: true, pos: 0, at: T0, rev: 1 }, serverTime: T0, by: 'bob' },
+      { t: 'countdown', at: null, by: 'bob' },
+    ]);
+    expect(fx.data.countdownAt).toBeNull();
+  });
+
+  it('vote du titre : ouvert par l’hôte, une voix par compte modifiable, fermé par l’hôte ; le titre le plus voté remplace le média', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob', 'a-tom');
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'vote_open', options: VOTE_OPTIONS })))).toEqual(['not_host']);
+    expect(broadcasts(fx.core.handle('a-host', msg({ t: 'vote_open', options: VOTE_OPTIONS })))).toEqual([
+      {
+        t: 'vote',
+        open: true,
+        options: [
+          { id: 'o0', type: 'movie', tmdbId: 603, title: 'Matrix', votes: 0 },
+          { id: 'o1', type: 'movie', tmdbId: 27205, title: 'Inception', votes: 0 },
+          { id: 'o2', type: 'series', tmdbId: 1396, title: 'Breaking Bad', votes: 0 },
+        ],
+      },
+    ]);
+    expect(errors(fx.core.handle('a-host', msg({ t: 'vote_open', options: VOTE_OPTIONS })))).toEqual(['vote_already_open']);
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'vote', optionId: 'o9' })))).toEqual(['invalid_option']);
+    const countsOf = (effects: Effect[]) => broadcasts(effects).flatMap((m) => (m.t === 'vote' ? m.options.map((o) => o.votes) : []));
+    expect(countsOf(fx.core.handle('a-bob', msg({ t: 'vote', optionId: 'o1' })))).toEqual([0, 1, 0]);
+    expect(countsOf(fx.core.handle('a-bob', msg({ t: 'vote', optionId: 'o2' })))).toEqual([0, 0, 1]);
+    expect(countsOf(fx.core.handle('a-tom', msg({ t: 'vote', optionId: 'o2' })))).toEqual([0, 0, 2]);
+    expect(errors(fx.core.handle('a-bob', msg({ t: 'vote_close' })))).toEqual(['not_host']);
+    const closed = fx.core.handle('a-host', msg({ t: 'vote_close' }));
+    expect(broadcasts(closed)).toEqual([
+      {
+        t: 'vote',
+        open: false,
+        options: [
+          { id: 'o0', type: 'movie', tmdbId: 603, title: 'Matrix', votes: 0 },
+          { id: 'o1', type: 'movie', tmdbId: 27205, title: 'Inception', votes: 0 },
+          { id: 'o2', type: 'series', tmdbId: 1396, title: 'Breaking Bad', votes: 2 },
+        ],
+      },
+    ]);
+    expect(sent(closed, 'a-tom')).toContainEqual({
+      t: 'media',
+      media: { type: 'series', tmdbId: 1396, imdbId: null, season: null, episode: null },
+      fingerprint: null,
+      state: { playing: false, pos: 0, at: T0, rev: 1 },
+      serverTime: T0,
+    });
+    expect(fx.data.meta.title).toBe('Breaking Bad');
+    expect(fx.data.vote).toBeNull();
+  });
+
+  it('vote : sans aucune voix, fermeture sans changement de titre ; à égalité, la première option proposée l’emporte', () => {
+    const empty = makeRoom();
+    joined(empty, 'a-host', 'a-bob');
+    empty.core.handle('a-host', msg({ t: 'vote_open', options: VOTE_OPTIONS }));
+    expect(sent(empty.core.handle('a-host', msg({ t: 'vote_close' })), 'a-bob').some((m) => m.t === 'media')).toBe(false);
+    expect(empty.data.meta.title).toBe('Severance');
+
+    const tie = makeRoom();
+    joined(tie, 'a-host', 'a-bob', 'a-tom');
+    tie.core.handle('a-host', msg({ t: 'vote_open', options: VOTE_OPTIONS }));
+    tie.core.handle('a-bob', msg({ t: 'vote', optionId: 'o1' }));
+    tie.core.handle('a-tom', msg({ t: 'vote', optionId: 'o2' }));
+    tie.core.handle('a-host', msg({ t: 'vote_close' }));
+    // Inception (o1) et Breaking Bad (o2) ont une voix chacun : la première proposée, Inception, l'emporte.
+    expect(tie.data.meta.media).toMatchObject({ type: 'movie', tmdbId: 27205 });
+  });
+
+  it('vote : un votant qui part retire sa voix ; un nouvel entrant voit le vote en cours au bienvenue', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.handle('a-host', msg({ t: 'vote_open', options: VOTE_OPTIONS.slice(0, 2) }));
+    fx.core.handle('a-bob', msg({ t: 'vote', optionId: 'o1' }));
+    const welcome = sent(fx.core.join(fx.member('a-tom')), 'a-tom')[0];
+    if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
+    expect(welcome.vote?.map((o) => o.votes)).toEqual([0, 1]);
+    const left = fx.core.leave('a-bob', fx.core.members.get('a-bob')?.connId ?? '');
+    expect(broadcasts(left)).toContainEqual({
+      t: 'vote',
+      open: true,
+      options: [
+        { id: 'o0', type: 'movie', tmdbId: 603, title: 'Matrix', votes: 0 },
+        { id: 'o1', type: 'movie', tmdbId: 27205, title: 'Inception', votes: 0 },
+      ],
+    });
+  });
+
+  it('chat : position du film jointe au message quand elle est connue, absente sinon', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'chat', text: 'Quelle scène', pos: 754.2 })))).toEqual([
+      { t: 'chat', line: expect.objectContaining({ from: 'bob', text: 'Quelle scène', pos: 754.2 }) },
+    ]);
+    const plain = broadcasts(fx.core.handle('a-bob', msg({ t: 'chat', text: 'ok', pos: null })))[0];
+    if (plain?.t !== 'chat') throw new Error('chat attendu');
+    expect(plain.line).not.toHaveProperty('pos');
+  });
+
+  it('événements lisibles : arrivée, lecture, pause, saut (écart signé en secondes) et départ', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    expect(eventsOf(fx.core.join(fx.member('a-bob')))).toEqual([{ t: 'event', kind: 'join', by: 'bob', pos: 0 }]);
+    expect(eventsOf(fx.core.handle('a-bob', msg({ t: 'ctl', action: 'play', pos: 5 })))).toEqual([{ t: 'event', kind: 'play', by: 'bob', pos: 5 }]);
+    fx.clock.now += 10_000;
+    expect(eventsOf(fx.core.handle('a-host', msg({ t: 'ctl', action: 'pause', pos: 15 })))).toEqual([{ t: 'event', kind: 'pause', by: 'host', pos: 15 }]);
+    expect(eventsOf(fx.core.handle('a-host', msg({ t: 'ctl', action: 'seek', pos: 4 })))).toEqual([{ t: 'event', kind: 'seek', by: 'host', pos: 4, delta: -11 }]);
+    expect(eventsOf(fx.core.leave('a-bob', fx.core.members.get('a-bob')?.connId ?? ''))).toEqual([{ t: 'event', kind: 'leave', by: 'bob', pos: 4 }]);
+    // Une synchronisation de l'hôte ne produit aucun événement.
+    expect(eventsOf(fx.core.handle('a-host', msg({ t: 'ctl', action: 'sync', pos: 40 })))).toEqual([]);
+  });
+
+  it('connexion : seul un compte connecté est « connecté » ; un invité ne l’est pas', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host', 'a-bob');
+    fx.core.join(guestOf(fx, 'lea', 'Léa'));
+    expect(fx.core.isConnected('a-bob')).toBe(true);
+    expect(fx.core.isConnected('guest:lea')).toBe(false);
+    expect(fx.core.isConnected('a-absent')).toBe(false);
+  });
+
+  it('messages S4 invalides refusés à l’analyse ; valeurs par défaut quand le champ est absent', () => {
+    const invalid = [
+      { t: 'settings', control: 'anarchy' },
+      { t: 'settings' },
+      { t: 'ready', ready: 'oui', quality: null },
+      { t: 'ready', ready: true, quality: 5 },
+      { t: 'status', status: 'pause' },
+      { t: 'start', countdown: 0 },
+      { t: 'start', countdown: 11 },
+      { t: 'vote_open', options: [{ type: 'movie', tmdbId: 1, title: 'A' }] },
+      { t: 'vote_open', options: [{ type: 'book', tmdbId: 1, title: 'A' }, { type: 'movie', tmdbId: 2, title: 'B' }] },
+      { t: 'vote', optionId: 'x'.repeat(17) },
+      { t: 'chat', text: 'hé', pos: '12' },
+    ];
+    for (const message of invalid) expect(parseClientMessage(JSON.stringify(message))).toBeUndefined();
+    expect(parseClientMessage(JSON.stringify({ t: 'start' }))).toEqual({ t: 'start', countdown: 5 });
+    expect(parseClientMessage(JSON.stringify({ t: 'ready', ready: true, quality: '  ' }))).toEqual({ t: 'ready', ready: true, quality: null });
+    expect(parseClientMessage(JSON.stringify({ t: 'chat', text: 'hé' }))).toEqual({ t: 'chat', text: 'hé', pos: null });
+    expect(parseClientMessage(JSON.stringify({ t: 'settings', waitLate: '10s' }))).toEqual({ t: 'settings', waitLate: '10s' });
   });
 });

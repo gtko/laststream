@@ -2,6 +2,7 @@ import { cleanReportText, filterChat } from './filter.js';
 import {
   CHAT_HISTORY,
   CLOSE,
+  DEFAULT_SETTINGS,
   GUEST_NAMES_MAX,
   INVITES_PER_WINDOW,
   INVITE_WINDOW_MS,
@@ -17,8 +18,9 @@ import {
   MAX_GUESTS,
   MAX_REPORTS,
   PARTY_RESUME_AHEAD_SEC,
-  PARTY_WAIT_MAX_MS,
+  type PartySettings,
   type Participant,
+  type PrepState,
   type StoredChatLine,
   type PlaybackState,
   REACTIONS,
@@ -29,6 +31,11 @@ import {
   type RoomInfo,
   type RtcRelay,
   type ServerMessage,
+  type VoteInput,
+  type VoteOption,
+  type VoteState,
+  type VoteView,
+  WAIT_LATE_MS,
 } from './protocol.js';
 import { GUEST_KEY_PREFIX } from './guest.js';
 import { canonicalName } from './names.js';
@@ -89,8 +96,18 @@ export function guestRefusal(check: JoinCheck): { code: number; reason: string }
 }
 
 /** Message `wait` : retardataires (vide = fin d'attente), début de l'attente (ms serveur) et seuils lus par les clients. */
-function waitView(who: string[], since: number): ServerMessage {
-  return { t: 'wait', who, since, maxMs: PARTY_WAIT_MAX_MS, resumeAhead: PARTY_RESUME_AHEAD_SEC };
+function waitView(who: string[], since: number, maxMs: number): ServerMessage {
+  return { t: 'wait', who, since, maxMs, resumeAhead: PARTY_RESUME_AHEAD_SEC };
+}
+
+/** Message de préparation d'un participant. */
+function prepMsg(user: string, prep: PrepState): ServerMessage {
+  return { t: 'prep', user, ready: prep.ready, quality: prep.quality, status: prep.status };
+}
+
+/** Publique d'une ligne de chat : pseudo, texte, instant et position (si connue). */
+function publicLine(line: StoredChatLine): ChatLine {
+  return { id: line.id, from: line.from, text: line.text, at: line.at, ...(line.pos === undefined ? {} : { pos: line.pos }) };
 }
 
 /** Fenêtres de débit par participant : `max` messages par `windowMs`. Au-delà de 2 fois la limite, la connexion est fermée. */
@@ -100,6 +117,9 @@ const LIMITS: Readonly<Record<string, { max: number; windowMs: number }>> = {
   ctl: { max: 30, windowMs: 10_000 },
   chat: { max: 5, windowMs: 10_000 },
   react: { max: 10, windowMs: 10_000 },
+  // Préparation (prêt, qualité, état) et votes : quelques changements par participant.
+  prep: { max: 20, windowMs: 10_000 },
+  vote: { max: 10, windowMs: 10_000 },
   report: { max: 5, windowMs: 60_000 },
   admin: { max: 20, windowMs: 10_000 },
   // Négociation WebRTC : quelques offres, réponses et candidats ICE par pair.
@@ -212,7 +232,62 @@ export class RoomCore {
     return 'ok';
   }
 
+  /** Réglages effectifs du salon (défauts si l'hôte n'en a pas encore fixé). */
+  settings(): PartySettings {
+    return this.data.settings ?? DEFAULT_SETTINGS;
+  }
+
+  /** Attente de tampon maximale (ms) selon le réglage `waitLate` ; 0 : aucune attente. */
+  private waitMaxMs(): number {
+    return WAIT_LATE_MS[this.settings().waitLate];
+  }
+
+  /** Préparation d'un compte (défaut : pas prêt, en recherche). */
+  private prepOf(accountId: string): PrepState {
+    return this.data.prep?.[accountId] ?? { ready: false, quality: null, status: 'searching' };
+  }
+
+  private setPrep(accountId: string, prep: PrepState): void {
+    this.data.prep = { ...(this.data.prep ?? {}), [accountId]: prep };
+    this.dirty.add('room');
+  }
+
+  /** Vue des voix d'un vote ouvert : chaque option avec son nombre de voix (les votants ne sont pas identifiés). */
+  private voteViews(vote: VoteState): VoteView[] {
+    const counts = new Map<string, number>();
+    for (const option of Object.values(vote.choices)) counts.set(option, (counts.get(option) ?? 0) + 1);
+    return vote.options.map((option) => ({ ...option, votes: counts.get(option.id) ?? 0 }));
+  }
+
+  /** Vote en cours (null hors vote), pour le bienvenue. */
+  private voteState(): VoteView[] | null {
+    const vote = this.data.vote;
+    return vote ? this.voteViews(vote) : null;
+  }
+
+  /** Retire l'état d'un participant qui part ou est exclu : préparation et choix de vote (diffusé si un vote est ouvert). */
+  private forgetParticipant(accountId: string): Effect[] {
+    const effects: Effect[] = [];
+    if (this.data.prep?.[accountId] !== undefined) {
+      const { [accountId]: _gone, ...rest } = this.data.prep;
+      void _gone;
+      this.data.prep = rest;
+      this.dirty.add('room');
+    }
+    const vote = this.data.vote;
+    if (vote && vote.choices[accountId] !== undefined) {
+      const { [accountId]: _choice, ...choices } = vote.choices;
+      void _choice;
+      const next: VoteState = { ...vote, choices };
+      this.data.vote = next;
+      this.dirty.add('room');
+      effects.push({ kind: 'broadcast', msg: { t: 'vote', options: this.voteViews(next), open: true } });
+    }
+    return effects;
+  }
+
   private participant(member: Member): Participant {
+    const prep = this.prepOf(member.accountId);
     return {
       username: member.username,
       avatarColor: member.avatarColor,
@@ -222,7 +297,16 @@ export class RoomCore {
       joinedAt: member.joinedAt,
       peerId: member.connId,
       ...(member.guest === true ? { guest: true as const } : {}),
+      ready: prep.ready,
+      quality: prep.quality,
+      status: prep.status,
     };
+  }
+
+  /** Vrai si un compte (et non un invité) est connecté au salon. */
+  isConnected(accountId: string): boolean {
+    const member = this.members.get(accountId);
+    return member !== undefined && member.guest !== true;
   }
 
   /** Accepte une connexion (après canJoin). Remplace une éventuelle connexion précédente du même compte. */
@@ -250,13 +334,24 @@ export class RoomCore {
         serverTime: now,
         participants: [...this.members.values()].map((m) => this.participant(m)),
         chat: this.chat.map(publicLine),
+        settings: this.settings(),
+        countdownAt: this.data.countdownAt ?? null,
+        vote: this.voteState(),
       },
     });
     // Un participant qui entre pendant une attente la reçoit, sauf si l'entrée vient de modifier l'attente (diffusée à tous).
     if (waitEffects.length === 0 && this.waitingIds().length > 0) effects.push({ kind: 'send', to: member.accountId, msg: this.waitMsg() });
     effects.push(...waitEffects);
-    if (previous === undefined) effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
+    if (previous === undefined) {
+      effects.push({ kind: 'broadcast', msg: { t: 'join', participant: this.participant(member) }, except: member.accountId });
+      effects.push({ kind: 'broadcast', msg: { t: 'event', kind: 'join', by: member.username, pos: this.positionNow(now) }, except: member.accountId });
+    }
     return effects;
+  }
+
+  /** Position attendue (s) à l'instant `now` (ms serveur), pour les événements lisibles. */
+  private positionNow(now: number): number {
+    return expectedPosition(this.data.state, now);
   }
 
   /** Déconnexion : sans effet si la connexion a déjà été remplacée par une plus récente. */
@@ -269,8 +364,14 @@ export class RoomCore {
     if (accountId === this.hostId) this.data.hostAbsentSince = now;
     if (this.members.size === 0) this.data.emptySince = now;
     this.dirty.add('room');
+    const forgotten = this.forgetParticipant(accountId);
     // Un retardataire parti ne retient plus la lecture.
-    return [{ kind: 'broadcast', msg: { t: 'leave', user: member.username } }, ...this.setBuffering(accountId, false, member.username)];
+    return [
+      { kind: 'broadcast', msg: { t: 'leave', user: member.username } },
+      { kind: 'broadcast', msg: { t: 'event', kind: 'leave', by: member.username, pos: this.positionNow(now) } },
+      ...forgotten,
+      ...this.setBuffering(accountId, false, member.username),
+    ];
   }
 
   /** Mémorise le pseudo d'un invité pour ses reconnexions, borné à GUEST_NAMES_MAX entrées (les plus anciennes sont oubliées). */
@@ -460,7 +561,7 @@ export class RoomCore {
   /** Échéance de l'attente de tampon (ms), ou null hors attente. */
   private waitDeadline(): number | null {
     const since = this.data.waitSince ?? null;
-    return since === null ? null : since + PARTY_WAIT_MAX_MS;
+    return since === null ? null : since + this.waitMaxMs();
   }
 
   /** Message d'attente : pseudos des retardataires présents (vide = fin d'attente). */
@@ -470,7 +571,7 @@ export class RoomCore {
       const name = this.members.get(id)?.username;
       if (name !== undefined) who.push(name);
     }
-    return waitView(who, this.data.waitSince ?? 0);
+    return waitView(who, this.data.waitSince ?? 0, this.waitMaxMs());
   }
 
   /**
@@ -478,6 +579,8 @@ export class RoomCore {
    * le dernier retardataire la ferme. Sans effet si l'ensemble ne change pas.
    */
   private setBuffering(accountId: string, buffering: boolean, by: string): Effect[] {
+    // Réglage « attente de tampon désactivée » : aucun participant ne retient la lecture.
+    if (buffering && this.waitMaxMs() === 0) return [];
     // Un retardataire retiré par le délai ne rouvre pas l'attente tant qu'il n'est ni prêt, ni parti, ni en seek.
     if (buffering && this.timedOutIds().includes(accountId)) return [];
     const waiting = this.waitingIds();
@@ -516,7 +619,7 @@ export class RoomCore {
     this.data.waitSince = null;
     this.data.heldByWait = false;
     this.dirty.add('room');
-    const effects: Effect[] = [{ kind: 'broadcast', msg: waitView([], since) }];
+    const effects: Effect[] = [{ kind: 'broadcast', msg: waitView([], since, this.waitMaxMs()) }];
     if (held) {
       this.data.state = this.nextState(true, this.data.state.pos);
       effects.push({ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: this.clock(), by } });
@@ -552,28 +655,39 @@ export class RoomCore {
       case 'sync':
         return [{ kind: 'send', to: accountId, msg: { t: 'state', state: this.data.state, serverTime: now, by: this.data.meta.hostName } }];
       case 'ctl': {
+        const action = message.action;
+        // Réglage « contrôle hôte seul » : play, pause et seek sont réservés à l'hôte (la synchronisation l'est déjà).
+        if (action !== 'sync' && this.settings().control === 'host' && !isHost) return this.err(accountId, 'not_host');
         const current = this.data.state;
+        const before = expectedPosition(current, now);
         const waiting = this.waitingIds().length > 0;
         // Un seek lève l'exclusion d'un retardataire retiré par le délai : il peut de nouveau retenir la lecture.
-        if (message.action === 'seek') this.forgetTimedOut(accountId);
-        if (message.action === 'sync') {
+        if (action === 'seek') this.forgetTimedOut(accountId);
+        if (action === 'sync') {
           // Rapport périodique de l'hôte (horloge de référence) : on ne rediffuse que si la position diffère de ce que les autres suivent.
           if (!isHost) return this.err(accountId, 'not_host');
           if (Math.abs(message.pos - expectedPosition(current, now)) <= HOST_SYNC_TOLERANCE_SEC) return [];
           // Correction de position pendant l'attente : la position suit, l'attente garde la reprise automatique.
           this.data.state = this.nextState(current.playing, message.pos);
-        } else if (waiting && message.action === 'play') {
+        } else if (waiting && action === 'play') {
           // Pendant une attente, la lecture demandée est différée : elle reprend à la fin de l'attente, pas tout de suite.
           this.data.state = this.nextState(false, message.pos);
           this.data.heldByWait = true;
         } else {
           // Lecture partagée : play, pause et seek viennent de n'importe quel participant (hôte ou invité).
-          this.data.state = this.nextState(message.action === 'seek' ? current.playing : message.action === 'play', message.pos);
+          this.data.state = this.nextState(action === 'seek' ? current.playing : action === 'play', message.pos);
           // Seule une pause explicite annule la reprise automatique de l'attente ; un saut (seek) déplace la position et la garde.
-          if (message.action === 'pause') this.data.heldByWait = false;
+          if (action === 'pause') this.data.heldByWait = false;
         }
         this.dirty.add('room');
-        return [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by: member.username } }];
+        const effects: Effect[] = [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by: member.username } }];
+        if (action !== 'sync') {
+          // Une commande de lecture annule un compte à rebours en cours, et se lit comme un événement.
+          effects.push(...this.cancelCountdown(member.username));
+          const delta = action === 'seek' ? Math.round((message.pos - before) * 10) / 10 : undefined;
+          effects.push({ kind: 'broadcast', msg: { t: 'event', kind: action, by: member.username, pos: message.pos, ...(delta === undefined ? {} : { delta }) } });
+        }
+        return effects;
       }
       case 'buf':
         // Tampon : un participant qui n'est pas prêt retient la lecture ; prêt, il la libère (voir setBuffering).
@@ -597,7 +711,14 @@ export class RoomCore {
         if (this.data.muted.includes(accountId)) return this.err(accountId, 'muted');
         const filtered = filterChat(message.text);
         if (!filtered.ok) return this.err(accountId, 'empty_message');
-        const line: StoredChatLine = { id: `${now.toString(36)}${(this.seq++).toString(36)}`, from: member.username, fromId: accountId, text: filtered.text, at: now };
+        const line: StoredChatLine = {
+          id: `${now.toString(36)}${(this.seq++).toString(36)}`,
+          from: member.username,
+          fromId: accountId,
+          text: filtered.text,
+          at: now,
+          ...(message.pos === null ? {} : { pos: message.pos }),
+        };
         this.chat.push(line);
         if (this.chat.length > CHAT_HISTORY) this.chat.splice(0, this.chat.length - CHAT_HISTORY);
         this.dirty.add('chat');
@@ -605,8 +726,81 @@ export class RoomCore {
       }
       case 'react': {
         if (this.data.muted.includes(accountId)) return this.err(accountId, 'muted');
+        if (this.settings().reactions === 'off') return this.err(accountId, 'reactions_off');
         if (!(REACTIONS as readonly string[]).includes(message.emoji)) return this.err(accountId, 'invalid_reaction');
-        return [{ kind: 'broadcast', msg: { t: 'react', user: member.username, emoji: message.emoji, at: now } }];
+        return [{ kind: 'broadcast', msg: { t: 'react', user: member.username, by: member.username, emoji: message.emoji, at: now, pos: message.pos } }];
+      }
+      case 'settings': {
+        if (!isHost) return this.err(accountId, 'not_host');
+        const patch: Partial<PartySettings> = {};
+        if (message.control !== undefined) patch.control = message.control;
+        if (message.waitLate !== undefined) patch.waitLate = message.waitLate;
+        if (message.reactions !== undefined) patch.reactions = message.reactions;
+        this.data.settings = { ...this.settings(), ...patch };
+        this.dirty.add('room');
+        const effects: Effect[] = [{ kind: 'broadcast', msg: { t: 'settings', settings: this.data.settings, by: member.username } }];
+        // Attente désactivée pendant une attente en cours : la lecture reprend tout de suite ; sinon la nouvelle échéance s'applique.
+        if (this.waitingIds().length > 0) {
+          if (this.waitMaxMs() === 0) effects.push(...this.closeWait(member.username));
+          else effects.push({ kind: 'broadcast', msg: this.waitMsg() });
+        }
+        return effects;
+      }
+      case 'ready': {
+        const before = this.prepOf(accountId);
+        if (before.ready === message.ready && before.quality === message.quality) return [];
+        const next: PrepState = { ready: message.ready, quality: message.quality, status: before.status };
+        this.setPrep(accountId, next);
+        return [{ kind: 'broadcast', msg: prepMsg(member.username, next) }];
+      }
+      case 'status': {
+        const before = this.prepOf(accountId);
+        if (before.status === message.status) return [];
+        const next: PrepState = { ...before, status: message.status };
+        this.setPrep(accountId, next);
+        return [{ kind: 'broadcast', msg: prepMsg(member.username, next) }];
+      }
+      case 'start': {
+        if (!isHost) return this.err(accountId, 'not_host');
+        if (this.data.state.playing) return this.err(accountId, 'already_playing');
+        const at = now + message.countdown * 1000;
+        this.data.countdownAt = at;
+        this.dirty.add('room');
+        return [{ kind: 'broadcast', msg: { t: 'countdown', at, by: member.username } }];
+      }
+      case 'vote_open': {
+        if (!isHost) return this.err(accountId, 'not_host');
+        if (this.data.vote) return this.err(accountId, 'vote_already_open');
+        const options: VoteOption[] = message.options.map((option, index) => ({ id: `o${index}`, ...option }));
+        const opened: VoteState = { options, choices: {} };
+        this.data.vote = opened;
+        this.dirty.add('room');
+        return [{ kind: 'broadcast', msg: { t: 'vote', options: this.voteViews(opened), open: true } }];
+      }
+      case 'vote': {
+        const vote = this.data.vote;
+        if (!vote) return this.err(accountId, 'no_vote');
+        if (!vote.options.some((option) => option.id === message.optionId)) return this.err(accountId, 'invalid_option');
+        const next: VoteState = { ...vote, choices: { ...vote.choices, [accountId]: message.optionId } };
+        this.data.vote = next;
+        this.dirty.add('room');
+        return [{ kind: 'broadcast', msg: { t: 'vote', options: this.voteViews(next), open: true } }];
+      }
+      case 'vote_close': {
+        if (!isHost) return this.err(accountId, 'not_host');
+        const vote = this.data.vote;
+        if (!vote) return this.err(accountId, 'no_vote');
+        const tally = this.voteViews(vote);
+        this.data.vote = null;
+        this.dirty.add('room');
+        const effects: Effect[] = [{ kind: 'broadcast', msg: { t: 'vote', options: tally, open: false } }];
+        // Le titre le plus voté remplace le média ; à égalité, la première option proposée. Sans aucune voix, rien ne change.
+        const total = tally.reduce((sum, option) => sum + option.votes, 0);
+        if (total > 0) {
+          const winner = tally.reduce((best, option) => (option.votes > best.votes ? option : best), tally[0] as VoteView);
+          effects.push(...this.cancelCountdown(member.username), ...this.changeTitle(winner));
+        }
+        return effects;
       }
       case 'report': {
         const line = this.chat.find((entry) => entry.id === message.messageId);
@@ -645,6 +839,8 @@ export class RoomCore {
         const effects: Effect[] = [
           { kind: 'close', to: target.accountId, code: CLOSE.kicked, reason: 'kicked' },
           { kind: 'broadcast', msg: { t: 'leave', user: target.username } },
+          { kind: 'broadcast', msg: { t: 'event', kind: 'leave', by: target.username, pos: this.positionNow(now) } },
+          ...this.forgetParticipant(target.accountId),
           // Un retardataire exclu ne retient plus la lecture.
           ...this.setBuffering(target.accountId, false, member.username),
         ];
@@ -697,6 +893,46 @@ export class RoomCore {
     }
   }
 
+  /** Annule le compte à rebours en cours (sans effet s'il n'y en a pas) et le signale à tous. */
+  private cancelCountdown(by: string): Effect[] {
+    if (this.data.countdownAt === null || this.data.countdownAt === undefined) return [];
+    this.data.countdownAt = null;
+    this.dirty.add('room');
+    return [{ kind: 'broadcast', msg: { t: 'countdown', at: null, by } }];
+  }
+
+  /**
+   * Lecture reprise au démarrage programmé ou à la fin du compte à rebours : différée si un participant retient encore la
+   * lecture (elle reprendra à la fin de l'attente).
+   */
+  private beginPlayback(by: string, now: number): Effect[] {
+    if (this.waitingIds().length > 0) {
+      this.data.heldByWait = true;
+      this.dirty.add('room');
+      return [];
+    }
+    this.data.state = this.nextState(true, expectedPosition(this.data.state, now));
+    this.data.heldByWait = false;
+    this.dirty.add('room');
+    return [{ kind: 'broadcast', msg: { t: 'state', state: this.data.state, serverTime: now, by } }];
+  }
+
+  /** Changement de titre (vote gagnant) : nouveau média, lecture remise à zéro en pause, empreinte effacée ; envoi par destinataire. */
+  private changeTitle(option: VoteInput): Effect[] {
+    const now = this.clock();
+    const { meta } = this.data;
+    meta.title = option.title;
+    meta.poster = null;
+    meta.media = { type: option.type, tmdbId: option.tmdbId, imdbId: null, season: null, episode: null };
+    meta.fingerprint = null;
+    this.data.state = this.nextState(false, 0);
+    this.data.heldByWait = false;
+    this.dirty.add('room');
+    // Un invité ne reçoit pas l'empreinte de version : envoi par destinataire, sans diffusion (comme un changement d'épisode).
+    const media: Extract<ServerMessage, { t: 'media' }> = { t: 'media', media: meta.media, fingerprint: null, state: this.data.state, serverTime: now };
+    return [...this.members.values()].map((m): Effect => ({ kind: 'send', to: m.accountId, msg: media }));
+  }
+
   private setHost(member: Member): void {
     this.data.meta.hostId = member.accountId;
     this.data.meta.hostName = member.username;
@@ -727,6 +963,9 @@ export class RoomCore {
       this.markTimedOut(this.waitingIds());
       effects.push(...this.closeWait(data.meta.hostName));
     }
+    // Compte à rebours écoulé : la lecture reprend (différée si un retardataire la retient encore).
+    const startAt = data.countdownAt ?? null;
+    if (startAt !== null && now >= startAt) effects.push(...this.cancelCountdown(data.meta.hostName), ...this.beginPlayback(data.meta.hostName, now));
     if (this.members.size === 0) {
       const since = data.emptySince ?? now;
       if (data.emptySince === null) {
@@ -764,12 +1003,9 @@ export class RoomCore {
     else if (!this.members.has(this.hostId)) wakes.push((data.hostAbsentSince ?? this.clock()) + HOST_GRACE_MS);
     const deadline = this.waitDeadline();
     if (deadline !== null) wakes.push(deadline);
+    if (typeof data.countdownAt === 'number') wakes.push(data.countdownAt);
     return Math.min(...wakes);
   }
-}
-
-function publicLine(line: StoredChatLine): ChatLine {
-  return { id: line.id, from: line.from, text: line.text, at: line.at };
 }
 
 /** Types de signalisation du maillage invité à invité (`data.m === 'mesh'`) ; tout autre type est refusé par le salon. */
@@ -788,7 +1024,14 @@ function rateKind(message: ClientMessage): string {
     case 'transfer':
     case 'end':
     case 'episode':
+    case 'settings':
+    case 'start':
+    case 'vote_open':
+    case 'vote_close':
       return 'admin';
+    case 'ready':
+    case 'status':
+      return 'prep';
     default:
       return message.t;
   }

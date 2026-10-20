@@ -7,6 +7,10 @@ import { createRateLimiter } from '../rate-limit.js';
 import type { UserBackend } from '../user/repo.js';
 import { userErrorHandler } from '../user/routes.js';
 import { assertUnlocked, sessionOf } from '../user/session.js';
+import { emitSocialEvent } from '../user/social-v2-events.js';
+import { convError } from '../user/social-v2-messages-routes.js';
+import { actorOf, pidParam } from '../user/social-v2-routes.js';
+import type { ConvScope } from '../user/social-v2-store.js';
 import type { PartyRoomRecord } from '../user/social-store.js';
 import type { ProfileRecord } from '../user/store.js';
 import { mediaTypeSchema, parseWith, UserApiError } from '../user/validation.js';
@@ -60,6 +64,9 @@ const createSchema = z.object({
 const inviteLinkSchema = z.object({ profileId: z.string().min(1).max(64), rotate: z.boolean().default(false) });
 const guestEntrySchema = z.object({ token: z.string().min(1).max(1024), name: z.string().min(1).max(200) });
 const joinSchema = z.object({ profileId: z.string().min(1).max(64) });
+const friendInviteSchema = z.object({ pid: z.string().min(1).max(64) });
+/** Titre d'invitation : 200 caractères au plus, sans caractère de contrôle (contrat du message `party`). */
+const inviteTitle = (title: string): string => [...title.replace(/\p{Cc}/gu, ' ').trim()].slice(0, 200).join('') || 'Salon';
 const listSchema = z.object({
   profileId: z.string().min(1).max(64).optional(),
   language: LANGUAGE.optional(),
@@ -97,6 +104,7 @@ function publicRow(record: PartyRoomRecord, info: RoomInfo) {
 export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBackend, party: PartyBackend | undefined): void {
   const users = () => backend.users();
   const social = () => backend.social();
+  const socialV2 = () => backend.socialV2();
   const reads = createRateLimiter(READ_LIMIT, WINDOW_MS);
   const writes = createRateLimiter(WRITE_LIMIT, WINDOW_MS);
 
@@ -132,6 +140,37 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (!ROOM_ID.test(id)) throw new UserApiError(404, 'room_not_found');
     return id;
   };
+
+  /**
+   * Invitation d'un ami à rejoindre le salon (`{ pid }`) : le demandeur est le profil social de l'en-tête `X-Profile-Id`, et
+   * doit être connecté au salon (un invité sans compte ne peut pas inviter). La cible doit être un ami ou un profil du foyer
+   * (règles de la messagerie : 400 self, 404 profile_not_found, 403 not_friend / not_allowed, blocage et `messagesFrom` compris).
+   * Crée un message v3 `kind: 'party'` `{ partyId, title }` dans le DM (conversation `dm:<pid>`), et diffuse `party_invite`
+   * (titre et identifiant du salon) à la cible.
+   */
+  async function inviteFriend(c: Ctx, id: string, raw: unknown): Promise<Response> {
+    const input = parseWith(friendInviteSchema, raw);
+    const me = await actorOf(c, users(), socialV2(), deps.secret);
+    const target = pidParam(input.pid, 'profile_not_found');
+    if (party === undefined) throw new UserApiError(501, 'party_unavailable');
+    const stub = party.room(id);
+    const info = await stub.info();
+    if (info === null) throw new UserApiError(404, 'room_not_found');
+    if (!(await stub.connected(me.accountId))) throw new UserApiError(403, 'not_member');
+    const title = inviteTitle(info.title);
+    const scope: ConvScope = { kind: 'dm', peer: target };
+    const outcome = await socialV2().sendConvMessage(me.pid, scope, { kind: 'party', body: '', party: { partyId: id, title } }, Date.now());
+    if (outcome.result === 'limit_reached') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
+    if (outcome.result !== 'sent') throw convError(scope, outcome.result);
+    for (const notice of outcome.notices) emitSocialEvent(deps.socialEvents, [notice.pid], { t: 'message', message: notice.payload });
+    emitSocialEvent(deps.socialEvents, [target], {
+      t: 'party_invite',
+      from: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor },
+      partyId: id,
+      title,
+    });
+    return sendJson(c, { message: outcome.message }, 201);
+  }
 
   /** Salons publics, du plus récent au plus ancien (comptes Laststream seulement ; profils enfants refusés). */
   router.get('/', async (c) => {
@@ -250,7 +289,10 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
   router.post('/:id/invite', async (c) => {
     const id = roomId(c);
     await sessionOf(users(), c);
-    const body = parseWith(joinSchema, c.get('body'));
+    const raw: unknown = c.get('body');
+    // `{ pid }` : invitation d'un ami (voir inviteFriend). Sinon, invitation d'un visiteur sans compte (`{ profileId }`).
+    if (typeof raw === 'object' && raw !== null && 'pid' in raw) return inviteFriend(c, id, raw);
+    const body = parseWith(joinSchema, raw);
     const { account, profile } = await profileFor(c, body.profileId);
     const stub = party.room(id);
     const info = await stub.info();

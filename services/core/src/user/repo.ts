@@ -3,6 +3,7 @@ import type { MetaStore } from './meta-store.js';
 import type { SkipSegmentStore } from './skip-segments.js';
 import type { SocialStore } from './social-store.js';
 import type { SocialV2Store } from './social-v2-store.js';
+import type { SocialV3Store } from './social-v3-store.js';
 import type { UserStore } from './store.js';
 
 /**
@@ -31,6 +32,9 @@ export type SocialRepo = AsyncRepo<SocialStore>;
 /** Social v2 par profil : handles Nom#TAG, amitiés et foyer entre profils, présence par profil, bibliothèque et historique. */
 export type SocialV2Repo = AsyncRepo<SocialV2Store>;
 
+/** Partage (S3b) : messages de partage multiples, liens publics, listes partagées. */
+export type SocialV3Repo = AsyncRepo<SocialV3Store>;
+
 /** Administration : comptes, réglages globaux, journal d'audit, réinitialisation de mot de passe, signalements. */
 export type AdminRepo = AsyncRepo<AdminStore>;
 
@@ -43,6 +47,7 @@ export interface UserBackend {
   skips(): SkipRepo;
   social(): SocialRepo;
   socialV2(): SocialV2Repo;
+  socialV3(): SocialV3Repo;
   admin(): AdminRepo;
   meta(): MetaRepo;
   /** Faux tant qu'aucune base n'existe (Node : fichier absent et jamais ouvert) : rien à lire, et lire n'en créerait pas. Absent = vrai. */

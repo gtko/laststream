@@ -144,6 +144,49 @@ Les ticket, mise à niveau et trames sont en mémoire : elles repartent de zéro
 - Un profil passé en enfant perd définitivement ses messages et ses notes.
 - Les événements ne sont ni stockés ni rejoués (voir Temps réel).
 
+### Social v3 : groupes, liens publics, limites et confidentialité
+
+Le contrat v3 (`docs/social-v3-contract.md`) est hors dépôt. Cette section décrit ce que le code applique, migration 23 comprise (table `rate_hits`, propriétaire des groupes).
+
+**Groupes** (`/user/social/groups*`)
+
+- Le créateur est le **propriétaire** : `Conversation.group.ownerPid` (nouveau champ, peut être le pid du profil qui lit). Seul lui renomme et ajoute ou retire des membres (`PUT /groups/:id` : 403 `owner_only` pour un autre membre, 404 `group_not_found` pour un non-membre).
+- Chacun peut partir (`DELETE /groups/:id/me`). Si le propriétaire part (ou que son profil est supprimé ou devient enfant), la propriété passe au plus ancien membre (`joined_at`, puis pid). Un groupe sans membre est supprimé. La migration 23 applique la même règle aux groupes existants.
+- À la création et à l'ajout, chaque membre ajouté doit être ami du propriétaire, accepter ses messages (préférence `messagesFrom` du membre ajouté) et ne pas être bloqué (dans un sens ou l'autre). Sinon 403 `not_allowed` avec `issues` = pids refusés ; `not_friend` garde la priorité si l'un des pids n'est pas un ami.
+- 429 `rate_limited` au-delà de 10 créations de groupe par heure et par profil.
+- **Blocage dans un groupe** : si A et B sont bloqués (dans un sens ou l'autre), A ne reçoit plus rien de B (événements `message`, `reaction`, `poll`, `typing`), `GET /conv/g:<id>/messages`, le dernier message et les non-lus de A ignorent les messages de B, et inversement. A ne peut pas réagir ni voter sur les messages de B (404). Personne n'est retiré du groupe.
+- **Membre sans lien** : pour un membre de groupe ou de liste partagée qui n'est ni ami ni du foyer (ou bloqué), la vue `FriendView` ne contient que `pid`, `handle`, `avatarColor`, `avatar`, avec `status: "offline"` : jamais de titre en cours, de `lastSeen` ni de statut personnalisé.
+
+**Conversations** (`/user/social/conv/*`)
+
+- `POST /conv/:conv/messages` avec `kind: "party"` : 400 `kind_not_allowed`. Seule `POST /party/:id/invite` crée une invitation de salon.
+- Frappe (`typing`) et réactions en DM : 403 `not_allowed` si le destinataire n'accepte pas les messages de l'expéditeur (`messagesFrom`) ; un blocage répond 404 `profile_not_found`.
+- Réactions : 429 `rate_limited` au-delà de 60 par minute et par profil ; 409 `too_many_reactions` au-delà de 6 emojis distincts d'un profil sur un même message (retirer un emoji reste permis).
+- `POST /join-requests/:pid` : `partyId` doit respecter `^[A-Za-z0-9_-]{4,64}$` (400 sinon).
+
+**Demandes de rejoindre et signalements**
+
+- `POST /friends/:pid/join-request` : 429 `rate_limited` au-delà de 5 demandes par tranche de 10 minutes vers le même ami. Une demande identique de moins de 60 s répond 204 comme avant, sans nouvel événement `join_request`.
+- `POST /reports` : 429 `rate_limited` au-delà de 10 signalements par jour et par profil.
+
+**Liens publics et listes partagées**
+
+| Méthode | Chemin | Effet | Réponse et erreurs |
+| --- | --- | --- | --- |
+| POST | `/share-links` | Crée un lien (30 par heure et par profil) | 201 `{ url, code, inviteCode? }` ; 429 `rate_limited` ou `invite_quota_reached` |
+| GET | `/share-links` | **Mes liens**, les plus récents d'abord, expirés compris | `{ links: [{ code, url, type, tmdbId, title, poster?, pos?, note?, inviteCode?, createdAt, expiresAt, expired }] }` |
+| GET | `/share-links/:code` | Lecture publique, sans session | 200 ; 404 `share_not_found` ; **410 `expired`** après 30 jours ; 429 `rate_limited` (60 par minute et par IP) ; **400 `ip_required`** si l'adresse du client est inconnue |
+| DELETE | `/share-links/:code` | Supprime mon lien et libère l'invitation qu'il réservait | 204 ; 404 `share_not_found` (inconnu ou pas de moi) |
+| POST | `/lists` | Crée une liste (10 par heure et par profil, 50 possédées au plus) | 429 `rate_limited` ou `list_limit_reached` |
+
+- Un lien expire 30 jours après sa création. À l'expiration (lecture, liste de mes liens ou création d'un nouveau lien), l'invitation réservée redevient libre (état `free`) si elle n'a pas été consommée.
+- La page `/t/:code` (repli de l'interface) est servie avec `Referrer-Policy: no-referrer` et `X-Robots-Tag: noindex`.
+- Images (`poster`, `still`, affiche du titre en cours) : un chemin TMDB strict (`^/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$`) ou une URL `https://image.tmdb.org/t/p/<taille>/<nom>.<ext>`, sans caractère de contrôle. Un titre ou un moment avec une autre valeur est refusé (400 `invalid_body`) ; une affiche de lien, de liste ou de titre en cours est retirée sans erreur.
+
+**Limites persistantes** : les limites ci-dessus sont comptées en SQL (fenêtre glissante, table `rate_hits` pour les réactions, demandes de rejoindre, groupes, listes, liens et lectures publiques ; table `reports` pour les signalements). Elles survivent au redémarrage et sont partagées entre instances. Pour les lectures publiques, seul un condensat de l'IP est stocké. La frappe (une notification par tiers de seconde) reste limitée en mémoire.
+
+**Identité retirée** : un profil qui devient enfant, ou qui est supprimé, perd toutes ses données sociales : activité, liens publics (invitation réservée libérée), listes possédées avec leurs éléments et membres, éléments ajoutés dans les listes des autres, appartenances aux listes et groupes, en plus des amitiés, messages, notes, blocages et préférences. `syncProfileIdentity` ne lève plus d'erreur de clé étrangère.
+
 ## 1. Parrainage (inscription par lien)
 
 L'inscription n'est possible qu'avec un lien de parrainage. Le tout premier compte d'un serveur vide s'inscrit sans lien (il devient propriétaire). `LASTADDON_ALLOW_SIGNUP=1` rouvre l'inscription libre : option réservée aux serveurs personnels, absente du Worker public.

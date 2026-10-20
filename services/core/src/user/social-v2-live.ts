@@ -1,11 +1,14 @@
+import type { ActivityItem } from './social-v2-activity.js';
 import type { SocialEvent } from './social-v2-events.js';
 import {
-  type FriendRequestView,
   type FriendView,
+  type FriendRequestView,
   type Handle,
   type MediaRef,
   type MessageView,
   type NoteView,
+  type PollView,
+  type ReactionView,
   type SubjectView,
   normalizeMedia,
   normalizeWatching,
@@ -53,7 +56,15 @@ export type LiveFrame =
   | { t: 'request'; request: FriendRequestView }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: NoteView };
+  | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'list'; listId: string }
+  | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
+  | { t: 'poll'; conv: string; poll: PollView }
+  | { t: 'typing'; conv: string; pid: string }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string }
+  | { t: 'activity'; item: ActivityItem };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -67,6 +78,8 @@ function handleOut(handle: Handle): Handle {
 
 function subjectOut(view: SubjectView): SubjectView {
   const out: SubjectView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, status: view.status };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  if (view.customStatus !== undefined) out.customStatus = { ...view.customStatus };
   // Hors ligne (dont le mode invisible) : jamais de titre en cours.
   if (view.status !== 'offline' && view.watching !== undefined) out.watching = normalizeWatching(view.watching);
   if (view.lastSeen !== undefined) out.lastSeen = view.lastSeen;
@@ -74,24 +87,67 @@ function subjectOut(view: SubjectView): SubjectView {
 }
 
 function friendOut(view: FriendView): FriendView {
-  return { ...subjectOut(view), household: view.household === true };
+  const out: FriendView = { ...subjectOut(view), household: view.household === true, favorite: view.favorite === true, muted: view.muted === true };
+  if (view.nickname !== undefined) out.nickname = view.nickname;
+  return out;
 }
 
 function requestOut(view: FriendRequestView): FriendRequestView {
-  return { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
+  const out: FriendRequestView = { pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, createdAt: view.createdAt };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
+  return out;
+}
+
+function reactionOut(view: ReactionView): ReactionView {
+  return { emoji: view.emoji, count: view.count, mine: view.mine };
+}
+
+function pollOut(view: PollView): PollView {
+  return {
+    id: view.id,
+    question: view.question,
+    closed: view.closed,
+    options: view.options.map((option) => ({ id: option.id, label: option.label, votes: option.votes, mine: option.mine })),
+  };
 }
 
 function messageOut(view: MessageView): MessageView {
-  const out: MessageView = { id: view.id, from: view.from, to: view.to, body: view.body, createdAt: view.createdAt };
+  const out: MessageView = {
+    id: view.id,
+    conv: view.conv,
+    from: view.from,
+    kind: view.kind,
+    body: view.body,
+    reactions: view.reactions.map(reactionOut),
+    createdAt: view.createdAt,
+  };
+  if (view.to !== undefined) out.to = view.to;
   if (view.context !== undefined) out.context = { ...normalizeMedia(view.context), ...(view.context.pos === undefined ? {} : { pos: view.context.pos }) };
+  if (view.title !== undefined) out.title = { ...view.title };
+  if (view.moment !== undefined) out.moment = { ...view.moment };
+  if (view.party !== undefined) out.party = { ...view.party };
+  if (view.poll !== undefined) out.poll = pollOut(view.poll);
+  if (view.replyTo !== undefined) out.replyTo = view.replyTo;
   if (view.readAt !== undefined) out.readAt = view.readAt;
   return out;
 }
 
+function activityOut(view: ActivityItem): ActivityItem {
+  const media: ActivityItem['media'] = { type: view.media.type, tmdbId: view.media.tmdbId, title: view.media.title };
+  if (view.media.poster !== undefined) media.poster = view.media.poster;
+  if (view.media.season !== undefined) media.season = view.media.season;
+  if (view.media.episode !== undefined) media.episode = view.media.episode;
+  const out: ActivityItem = { id: view.id, pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, kind: view.kind, media, at: view.at };
+  if (view.rating !== undefined) out.rating = view.rating;
+  return out;
+}
+
 function noteOut(view: NoteView): NoteView {
+  const author: NoteView['author'] = { pid: view.author.pid, handle: handleOut(view.author.handle), avatarColor: view.author.avatarColor };
+  if (view.author.avatar !== undefined) author.avatar = view.author.avatar;
   return {
     id: view.id,
-    author: { pid: view.author.pid, handle: handleOut(view.author.handle), avatarColor: view.author.avatarColor },
+    author,
     pos: view.pos,
     kind: view.kind,
     body: view.body,
@@ -116,6 +172,29 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'reaction':
+      return { t: 'reaction', conv: event.conv, id: event.id, reactions: event.reactions.map(reactionOut) };
+    case 'poll':
+      return { t: 'poll', conv: event.conv, poll: pollOut(event.poll) };
+    case 'typing':
+      return { t: 'typing', conv: event.conv, pid: event.pid };
+    case 'list':
+      return { t: 'list', listId: event.listId };
+    case 'join_request':
+      return { t: 'join_request', from: friendOut(event.from) };
+    case 'join_answer':
+      return event.partyId === undefined
+        ? { t: 'join_answer', pid: event.pid, accept: event.accept }
+        : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
+    case 'party_invite':
+      return {
+        t: 'party_invite',
+        from: { pid: event.from.pid, handle: handleOut(event.from.handle), avatarColor: event.from.avatarColor },
+        partyId: event.partyId,
+        title: event.title,
+      };
+    case 'activity':
+      return { t: 'activity', item: activityOut(event.item) };
   }
 }
 

@@ -536,6 +536,250 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 18,
+    name: 'profil social étendu (bio, statut, bannière, favoris, cooldown du tag), relations par profil',
+    sql: `
+      -- Champs du profil social (JSON, NULL = absent) : bio ≤ 140 car., statut personnalisé, bannière, favoris (≤ 4).
+      -- tag_changed_at : dernier changement de tag (ms) ; le cooldown de 30 jours s'y applique. Aucun NULL par défaut.
+      ALTER TABLE profiles ADD COLUMN bio TEXT;
+      ALTER TABLE profiles ADD COLUMN custom_status TEXT;
+      ALTER TABLE profiles ADD COLUMN banner TEXT;
+      ALTER TABLE profiles ADD COLUMN favorites TEXT;
+      ALTER TABLE profiles ADD COLUMN tag_changed_at INTEGER;
+
+      -- Date d'acceptation d'une amitié (ms) : « ami depuis ». Les amitiés déjà acceptées reçoivent leur date de demande.
+      ALTER TABLE profile_friendships ADD COLUMN accepted_at INTEGER;
+      UPDATE profile_friendships SET accepted_at = created_at WHERE status = 'accepted';
+
+      -- Réglages qu'un profil applique à un autre (favori, surnom, sourdine, activité masquée). Une ligne par couple ;
+      -- l'absence de ligne vaut les défauts (false, aucun surnom). Supprimée avec l'un des deux profils.
+      CREATE TABLE profile_relations (
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        target_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
+        nickname TEXT,
+        muted INTEGER NOT NULL DEFAULT 0 CHECK (muted IN (0, 1)),
+        hide_activity INTEGER NOT NULL DEFAULT 0 CHECK (hide_activity IN (0, 1)),
+        PRIMARY KEY (owner_pid, target_pid),
+        CHECK (owner_pid <> target_pid)
+      );
+      CREATE INDEX profile_relations_target ON profile_relations (target_pid);
+    `,
+  },
+  {
+    version: 19,
+    name: 'préférences, relations par ami, blocages, signalements, demandes de rejoindre',
+    sql: `
+      -- Les relations par ami (favori, surnom, sourdine, masquage d'activité) vivent dans profile_relations (migration 18).
+
+      -- Préférences d'un profil : un objet JSON (contrat SocialPrefs). Les défauts s'appliquent à la lecture.
+      CREATE TABLE social_prefs (
+        profile_pid TEXT PRIMARY KEY REFERENCES profiles (pid) ON DELETE CASCADE,
+        prefs TEXT NOT NULL
+      );
+
+      -- Blocage orienté (blocker_pid bloque blocked_pid) : effet dans les deux sens, lu par les deux profils.
+      CREATE TABLE blocks (
+        blocker_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        blocked_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (blocker_pid, blocked_pid),
+        CHECK (blocker_pid <> blocked_pid)
+      );
+      CREATE INDEX blocks_blocked ON blocks (blocked_pid);
+
+      -- Signalements : sans clé étrangère, un signalement survit à la suppression de son auteur ou de sa cible.
+      CREATE TABLE reports (
+        id TEXT PRIMARY KEY,
+        reporter_pid TEXT NOT NULL,
+        target_pid TEXT NOT NULL,
+        reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'other')),
+        details TEXT,
+        created_at INTEGER NOT NULL
+      );
+
+      -- Demande de rejoindre le titre en cours d'un ami (requester → host). Une seule demande par paire.
+      CREATE TABLE join_requests (
+        requester_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (requester_pid, host_pid),
+        CHECK (requester_pid <> host_pid)
+      );
+    `,
+  },
+  {
+    version: 20,
+    name: 'messages riches, réactions, sondages et groupes (social v3)',
+    sql: `
+      -- Groupes : membres = profils amis, lus à la date read_at (messages non lus = créés après). Groupe vide : supprimé.
+      CREATE TABLE social_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE social_group_members (
+        group_id TEXT NOT NULL REFERENCES social_groups (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        joined_at INTEGER NOT NULL,
+        read_at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, pid)
+      );
+      CREATE INDEX social_group_members_pid ON social_group_members (pid);
+
+      -- Messages : une conversation est soit un échange entre deux profils (to_pid), soit un groupe (group_id). kind porte
+      -- le type (texte, titre, moment, invitation de salon, sondage) ; payload (JSON) la charge hors texte.
+      -- Reconstruction de la table : to_pid devient facultatif (messages de groupe) et de nouvelles colonnes s'ajoutent.
+      CREATE TABLE messages_v3 (
+        id TEXT PRIMARY KEY,
+        from_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        to_pid TEXT REFERENCES profiles (pid) ON DELETE CASCADE,
+        group_id TEXT REFERENCES social_groups (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text', 'title', 'moment', 'party', 'poll')),
+        body TEXT NOT NULL,
+        context TEXT,
+        payload TEXT,
+        reply_to TEXT,
+        created_at INTEGER NOT NULL,
+        read_at INTEGER,
+        CHECK ((to_pid IS NULL) <> (group_id IS NULL)),
+        CHECK (from_pid <> to_pid)
+      );
+      INSERT INTO messages_v3 (rowid, id, from_pid, to_pid, kind, body, context, created_at, read_at)
+        SELECT rowid, id, from_pid, to_pid, 'text', body, context, created_at, read_at FROM messages;
+      DROP TABLE messages;
+      ALTER TABLE messages_v3 RENAME TO messages;
+      CREATE INDEX messages_pair ON messages (from_pid, to_pid, created_at);
+      CREATE INDEX messages_sent ON messages (from_pid, created_at);
+      CREATE INDEX messages_group ON messages (group_id, created_at);
+
+      -- Réactions : une par profil, emoji et message (la bascule supprime la ligne).
+      CREATE TABLE message_reactions (
+        message_id TEXT NOT NULL REFERENCES messages (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        emoji TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (message_id, pid, emoji)
+      );
+      CREATE INDEX message_reactions_message ON message_reactions (message_id, created_at);
+
+      -- Sondages : l'identifiant du sondage est celui de son message. Options ordonnées ; un vote unique par profil.
+      CREATE TABLE polls (
+        message_id TEXT PRIMARY KEY REFERENCES messages (id) ON DELETE CASCADE,
+        question TEXT NOT NULL,
+        closed INTEGER NOT NULL DEFAULT 0 CHECK (closed IN (0, 1))
+      );
+      CREATE TABLE poll_options (
+        id TEXT PRIMARY KEY,
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        label TEXT NOT NULL
+      );
+      CREATE INDEX poll_options_poll ON poll_options (poll_id, position);
+      CREATE TABLE poll_votes (
+        poll_id TEXT NOT NULL REFERENCES polls (message_id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        option_id TEXT NOT NULL REFERENCES poll_options (id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (poll_id, pid)
+      );
+    `,
+  },
+  {
+    version: 21,
+    name: 'activité des profils (débuts, fins, notes, favoris, listes, notes sur 5), un événement par titre et par jour',
+    sql: `
+      -- Événements d'activité d'un profil, vus par ses amis et son foyer. Titre et affiche figés à l'écriture ; saison et
+      -- épisode NULL pour un film. Le jour (UTC, AAAA-MM-JJ) et le genre forment la clé de dédoublonnage avec le titre.
+      CREATE TABLE activity (
+        id TEXT PRIMARY KEY,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'rated', 'noted', 'favorited', 'listed')),
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        title TEXT NOT NULL DEFAULT '',
+        poster TEXT,
+        rating REAL CHECK (rating IS NULL OR (rating >= 0.5 AND rating <= 5)),
+        day TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX activity_daily ON activity (pid, kind, type, tmdb_id, day);
+      CREATE INDEX activity_pid_at ON activity (pid, at);
+    `,
+  },
+  {
+    version: 22,
+    name: 'liens publics, listes partagées',
+    sql: `
+      -- Liens publics : code non devinable (16 octets aléatoires, 22 caractères), auteur (profil), titre, affiche (chemin ou
+      -- URL TMDB), position (seulement pour un moment), note facultative, invitation réservée facultative (invites.id).
+      CREATE TABLE share_links (
+        code TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        pos REAL,
+        note TEXT,
+        invite_id TEXT REFERENCES invites (id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX share_links_author ON share_links (author_pid, created_at);
+      CREATE INDEX share_links_invite ON share_links (invite_id);
+
+      -- Listes partagées : le propriétaire est aussi une ligne de membre ; les autres membres sont des amis du propriétaire.
+      CREATE TABLE shared_lists (
+        id TEXT PRIMARY KEY,
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX shared_lists_owner ON shared_lists (owner_pid);
+      CREATE TABLE shared_list_members (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        PRIMARY KEY (list_id, pid)
+      );
+      CREATE INDEX shared_list_members_pid ON shared_list_members (pid);
+      CREATE TABLE shared_list_items (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        added_by TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (list_id, type, tmdb_id)
+      );
+    `,
+  },
+  {
+    version: 23,
+    name: 'limites de débit persistantes, propriété des groupes',
+    sql: `
+      -- Limites de débit à fenêtre glissante : une ligne par action autorisée (seau, clé, instant en ms), purgée au-delà de
+      -- deux heures. Sans clé étrangère : une ligne expire d'elle-même.
+      CREATE TABLE rate_hits (
+        bucket TEXT NOT NULL,
+        key TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE INDEX rate_hits_key ON rate_hits (bucket, key, at);
+      CREATE INDEX rate_hits_at ON rate_hits (at);
+
+      -- Groupes : created_by est le propriétaire, toujours un membre. Un groupe sans membre est supprimé ; un propriétaire
+      -- parti avant ce correctif cède sa place au plus ancien membre.
+      DELETE FROM social_groups WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id);
+      UPDATE social_groups
+         SET created_by = (SELECT m.pid FROM social_group_members m WHERE m.group_id = social_groups.id ORDER BY m.joined_at, m.pid LIMIT 1)
+       WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id AND m.pid = social_groups.created_by);
+    `,
+  },
+  {
+    version: 24,
     name: 'annonces (bandeau public, fenêtre de dates) et éléments de la boîte de contrôle écartés',
     sql: `
       -- Annonces publiées par le propriétaire. Dates ISO 8601 UTC normalisées à l'écriture ; NULL = sans borne.
@@ -560,14 +804,14 @@ export const MIGRATIONS: readonly Migration[] = [
     `,
   },
   {
-    version: 19,
+    version: 25,
     name: 'invitations révoquées par l administration (date de révocation, NULL = lien valide)',
     sql: `
       ALTER TABLE invites ADD COLUMN revoked_at TEXT;
     `,
   },
   {
-    version: 20,
+    version: 26,
     name: 'sessions : user-agent à la connexion (200 car. max) et dernière activité (ms, écrite au plus toutes les 5 min)',
     sql: `
       -- NULL = user-agent absent ; last_seen_at NULL = jamais mise à jour (la date de connexion fait foi).

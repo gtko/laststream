@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { parseHandle } from './social-handles.js';
-import { MAX_MESSAGE_PAGE } from './social-v2-store.js';
+import { isValidHandleName, parseHandle } from './social-handles.js';
+import { type CustomStatus, type FavoriteView, MAX_MESSAGE_PAGE, MAX_PROFILE_FAVORITES, type ProfilePatch } from './social-v2-store.js';
 
 /** Schémas des routes sociales v2 (`/user/social/*`). Objets stricts : une clé inconnue est refusée. */
 
@@ -26,14 +26,25 @@ export const requestSchema = z.strictObject({
     .refine((value) => parseHandle(value) !== null, 'handle:format'),
 });
 
+/** Chemin TMDB seul (`/abc123.jpg`) ou URL du CDN d'images TMDB en https (`https://image.tmdb.org/t/p/w500/abc123.jpg`). */
+const TMDB_PATH_IMAGE = /^\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/;
+const TMDB_URL_IMAGE = /^https:\/\/image\.tmdb\.org\/t\/p\/\w+\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/;
+
 /**
- * Affiche acceptée : URL TMDB en https, ou chemin du site (`/…`, jamais `//` ni un antislash après `/`, qui désignent un autre hôte).
- * Toute autre valeur est supprimée sans erreur : le titre en cours reste accepté, sans affiche.
+ * Image acceptée : chemin TMDB strict ou URL du CDN TMDB, 500 caractères au plus, sans caractère de contrôle. Tout autre
+ * chemin du site, hôte, schéma ou paramètre est refusé.
  */
-function cleanPoster(value: string | undefined): string | undefined {
-  if (value === undefined || value.length > 500) return undefined;
-  if (value.startsWith('https://image.tmdb.org/')) return value;
-  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : undefined;
+export function isTmdbImageRef(value: string): boolean {
+  if (value.length > 500 || /\p{Cc}/u.test(value)) return false;
+  return TMDB_PATH_IMAGE.test(value) || TMDB_URL_IMAGE.test(value);
+}
+
+/**
+ * Affiche acceptée (voir `isTmdbImageRef`). Toute autre valeur est supprimée sans erreur : le titre en cours reste accepté,
+ * sans affiche.
+ */
+export function cleanPoster(value: string | undefined): string | undefined {
+  return value !== undefined && isTmdbImageRef(value) ? value : undefined;
 }
 
 const TMDB_ID = z.number().int().positive().max(1_000_000_000);
@@ -142,8 +153,66 @@ export const notesQuery = z.strictObject({
     .optional(),
 });
 
+// Activité (S5)
+
+/** Entier décimal de 1 à 3 chiffres, borné : pagination et nombre de tranches. */
+const SMALL_INT = z
+  .string()
+  .regex(/^\d{1,3}$/)
+  .transform(Number);
+
+/** `?before=<at ms>&limit=` : flux d'activité, 30 par défaut, 50 au plus. */
+export const activityQuery = z.strictObject({
+  before: z
+    .string()
+    .regex(/^\d{1,15}$/)
+    .transform(Number)
+    .optional(),
+  limit: SMALL_INT.pipe(z.number().int().min(1).max(50))
+    .optional()
+    .transform((value) => value ?? 30),
+});
+
+/** `?type&tmdbId&season&episode&buckets=` : carte de chaleur, 60 tranches par défaut, 200 au plus. */
+export const heatmapQuery = notesQuery.extend({
+  buckets: SMALL_INT.pipe(z.number().int().min(1).max(200))
+    .optional()
+    .transform((value) => value ?? 60),
+});
+
+/**
+ * `?since=<ms>` (exclu) et titre facultatif : `type` et `tmdbId` vont ensemble, saison et épisode facultatifs.
+ */
+export const missedQuery = z
+  .strictObject({
+    since: z
+      .string()
+      .regex(/^\d{1,15}$/)
+      .transform(Number),
+    type: z.enum(['movie', 'series']).optional(),
+    tmdbId: z
+      .string()
+      .regex(/^[1-9]\d{0,8}$/)
+      .transform(Number)
+      .optional(),
+    season: z
+      .string()
+      .regex(/^\d{1,5}$/)
+      .transform(Number)
+      .optional(),
+    episode: z
+      .string()
+      .regex(/^\d{1,5}$/)
+      .transform(Number)
+      .optional(),
+  })
+  .refine((query) => (query.type === undefined) === (query.tmdbId === undefined), 'media:incomplete');
+
 export const MESSAGE_MAX_CHARS = 1000;
 export const NOTE_TEXT_MAX_CHARS = 140;
+/** Bio du profil social, et texte du statut personnalisé (caractères). */
+export const BIO_MAX_CHARS = 140;
+export const STATUS_TEXT_MAX_CHARS = 60;
 
 const CONTROL_CHARACTER = /\p{Cc}/u;
 /** Découpage en graphèmes (un emoji composé, ZWJ, drapeau ou ton de peau, ne compte que pour un). */
@@ -183,4 +252,133 @@ export function cleanNoteBody(kind: 'text' | 'emoji', raw: string): { body: stri
   if (kind === 'text') return { body, issues: textIssues(body, NOTE_TEXT_MAX_CHARS, false) };
   if (body === '') return { body, issues: ['body:empty'] };
   return { body, issues: isSingleEmoji(body) ? [] : ['body:not_emoji'] };
+}
+
+// Profil social étendu (contrat S1)
+
+const TITLE_TYPE = z.enum(['movie', 'series']);
+/** Chemin d'une image TMDB (« /xxx.jpg »), jamais une URL absolue ni un chemin réseau (« //… »). */
+const BACKDROP_PATTERN = /^\/[A-Za-z0-9_-]{1,120}\.(?:jpg|jpeg|png|webp)$/i;
+const PROFILE_TITLE = z.string().trim().min(1).max(200);
+
+/** Favori du profil (`favorites` : ≤ 4, ordonnés). */
+const favoriteSchema = z.strictObject({
+  type: TITLE_TYPE,
+  tmdbId: TMDB_ID,
+  title: PROFILE_TITLE,
+  poster: z.string().max(500).optional(),
+});
+
+/**
+ * Corps de `PUT /user/social/profile` : tous les champs sont facultatifs ; `null` retire bio, statut ou bannière. Les
+ * textes et les dates sont vérifiés ensuite par `cleanProfilePatch`.
+ */
+export const profilePatchSchema = z.strictObject({
+  name: z
+    .string()
+    .trim()
+    .refine((value) => isValidHandleName(value), 'name:format')
+    .optional(),
+  avatarColor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+  bio: z.string().max(1000).nullable().optional(),
+  customStatus: z
+    .strictObject({
+      emoji: z.string().max(64).optional(),
+      text: z.string().max(300).optional(),
+      expiresAt: z.number().int().min(0).max(32_503_680_000_000).optional(),
+    })
+    .nullable()
+    .optional(),
+  banner: z
+    .strictObject({
+      type: TITLE_TYPE,
+      tmdbId: TMDB_ID,
+      backdrop: z.string().regex(BACKDROP_PATTERN),
+      title: PROFILE_TITLE,
+    })
+    .nullable()
+    .optional(),
+  favorites: z.array(favoriteSchema).max(MAX_PROFILE_FAVORITES).optional(),
+});
+
+/** Préfixe les problèmes de texte (`body:…`) par le nom du champ (`bio:…`). */
+function prefixed(field: string, problems: string[]): string[] {
+  return problems.map((problem) => problem.replace(/^body:/, `${field}:`));
+}
+
+/** Corps validé du profil social : la modification à appliquer, ou la liste des problèmes (chemins seulement). */
+export function cleanProfilePatch(input: z.output<typeof profilePatchSchema>, now: number): { patch: ProfilePatch; issues: string[] } {
+  const patch: ProfilePatch = {};
+  const issues: string[] = [];
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.avatarColor !== undefined) patch.avatarColor = input.avatarColor;
+
+  if (input.bio !== undefined) {
+    const bio = input.bio === null ? '' : input.bio.trim();
+    if (bio === '') patch.bio = null;
+    else {
+      const problems = prefixed('bio', textIssues(bio, BIO_MAX_CHARS, false));
+      issues.push(...problems);
+      if (problems.length === 0) patch.bio = bio;
+    }
+  }
+
+  if (input.customStatus !== undefined) {
+    if (input.customStatus === null) patch.customStatus = null;
+    else {
+      const before = issues.length;
+      const status: CustomStatus = {};
+      const emoji = (input.customStatus.emoji ?? '').trim();
+      const text = (input.customStatus.text ?? '').trim();
+      if (emoji !== '') {
+        if (isSingleEmoji(emoji)) status.emoji = emoji;
+        else issues.push('customStatus.emoji:not_emoji');
+      }
+      if (text !== '') {
+        const problems = prefixed('customStatus.text', textIssues(text, STATUS_TEXT_MAX_CHARS, false));
+        issues.push(...problems);
+        if (problems.length === 0) status.text = text;
+      }
+      if (input.customStatus.expiresAt !== undefined) {
+        if (input.customStatus.expiresAt > now) status.expiresAt = input.customStatus.expiresAt;
+        else issues.push('customStatus.expiresAt:past');
+      }
+      if (issues.length === before) {
+        if (status.emoji === undefined && status.text === undefined) issues.push('customStatus:empty');
+        else patch.customStatus = status;
+      }
+    }
+  }
+
+  if (input.banner !== undefined) {
+    if (input.banner === null) patch.banner = null;
+    else {
+      const problems = prefixed('banner.title', textIssues(input.banner.title, 200, false));
+      issues.push(...problems);
+      if (problems.length === 0) {
+        patch.banner = { tmdbId: input.banner.tmdbId, type: input.banner.type, backdrop: input.banner.backdrop, title: input.banner.title };
+      }
+    }
+  }
+
+  if (input.favorites !== undefined) {
+    const favorites: FavoriteView[] = [];
+    const seen = new Set<string>();
+    input.favorites.forEach((favorite, index) => {
+      const key = `${favorite.type}:${favorite.tmdbId}`;
+      if (seen.has(key)) issues.push(`favorites.${index}:duplicate`);
+      seen.add(key);
+      issues.push(...prefixed(`favorites.${index}.title`, textIssues(favorite.title, 200, false)));
+      const item: FavoriteView = { tmdbId: favorite.tmdbId, type: favorite.type, title: favorite.title };
+      const poster = cleanPoster(favorite.poster);
+      if (poster !== undefined) item.poster = poster;
+      favorites.push(item);
+    });
+    patch.favorites = favorites;
+  }
+
+  return { patch, issues };
 }

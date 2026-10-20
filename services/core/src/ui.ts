@@ -45,6 +45,18 @@ function withCacheHeaders(res: Response, pathname: string): Response {
   return new Response(res.body, { status: res.status, headers });
 }
 
+/** Page d'un lien public (`/t/:code`) : ni indexée, ni référente (le code ne doit pas fuiter dans l'en-tête Referer). */
+const SHARE_PAGE = /^\/t\/[^/]+\/?$/;
+
+/** Ajoute à la page d'un lien public `Referrer-Policy: no-referrer` et `X-Robots-Tag: noindex`. */
+function withSharePageHeaders(res: Response, pathname: string): Response {
+  if (!SHARE_PAGE.test(pathname)) return res;
+  const headers = new Headers(res.headers);
+  headers.set('Referrer-Policy', 'no-referrer');
+  headers.set('X-Robots-Tag', 'noindex');
+  return new Response(res.body, { status: res.status, headers });
+}
+
 /** Requête de navigation : GET ou HEAD, hors API, qui accepte du HTML. Les requêtes de scripts ou d'images n'en sont pas. */
 function isNavigation(c: Ctx): boolean {
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return false;
@@ -64,7 +76,7 @@ export function registerUiRoutes(app: App, ui: UiAssets): void {
     }
     const pathname = c.req.path;
     const file = await ui.serve(c.req.raw, pathname === '/' ? `/${UI_INDEX_FILE}` : pathname);
-    if (file !== null) return withCacheHeaders(file, pathname);
+    if (file !== null) return withSharePageHeaders(withCacheHeaders(file, pathname), pathname);
     if (!isNavigation(c)) {
       await next();
       return;
@@ -76,6 +88,6 @@ export function registerUiRoutes(app: App, ui: UiAssets): void {
     }
     const headers = new Headers(index.headers);
     headers.set('Cache-Control', 'no-cache');
-    return new Response(index.body, { status: index.status, headers });
+    return withSharePageHeaders(new Response(index.body, { status: index.status, headers }), pathname);
   });
 }

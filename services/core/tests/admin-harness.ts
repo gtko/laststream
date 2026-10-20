@@ -82,6 +82,7 @@ export function fakeParty(): PartyBackend & { rooms: Map<string, FakeRoom>; clos
   const rooms = new Map<string, FakeRoom>();
   const closures: { id: string; by: string | null }[] = [];
   const stub = (id: string): PartyRoomStub => ({
+    connected: () => Promise.resolve(false),
     init: (meta) => {
       if (rooms.has(id)) return Promise.resolve('exists');
       rooms.set(id, { meta, messages: [] });

@@ -2,6 +2,7 @@ import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
+import { announceActivity } from './social-v2-activity.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { actorOf } from './social-v2-routes.js';
 import { cleanNoteBody, noteSchema, notesQuery } from './social-v2-validation.js';
@@ -37,6 +38,7 @@ export function registerSocialV2NoteRoutes(router: App, deps: AppDeps, backend: 
     if (outcome.result === 'unknown') throw new UserApiError(404, 'profile_not_found');
     if (outcome.result === 'limit_reached') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     emitSocialEvent(deps.socialEvents, outcome.audience, { t: 'note', media, note: outcome.note });
+    if (outcome.activity !== undefined) await announceActivity(deps.socialEvents, social(), outcome.activity);
     return sendJson(c, { note: outcome.note }, 201);
   });
 

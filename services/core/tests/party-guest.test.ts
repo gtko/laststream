@@ -144,7 +144,8 @@ const msg = (value: unknown) => {
   return parsed;
 };
 const sent = (effects: Effect[], to: string): ServerMessage[] => effects.flatMap((e) => (e.kind === 'send' && e.to === to ? [e.msg] : []));
-const broadcasts = (effects: Effect[]): ServerMessage[] => effects.flatMap((e) => (e.kind === 'broadcast' ? [e.msg] : []));
+/** Diffusions hors événements lisibles (`event`, testés dans party-core.test.ts). */
+const broadcasts = (effects: Effect[]): ServerMessage[] => effects.flatMap((e) => (e.kind === 'broadcast' && e.msg.t !== 'event' ? [e.msg] : []));
 const errors = (effects: Effect[]): string[] => effects.flatMap((e) => (e.kind === 'send' && e.msg.t === 'error' ? [e.msg.code] : []));
 
 /** Un hôte (compte) et des membres joints. */
