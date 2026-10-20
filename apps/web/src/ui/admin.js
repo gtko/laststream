@@ -7,10 +7,10 @@ import * as api from '../data/adminApi';
 import { elevationExpiresAt, obtainElevation, setElevationPrompt } from '../data/adminApi';
 import { CursorPager, fmtInt, formatCountdown } from '../data/adminModel';
 import { closeAllLayers, confirmDialog, passwordDialog } from './admin-dialog.js';
-import { openPalette } from './admin-palette.js';
+import { defaultActions, installPaletteShortcuts, openPalette } from './admin-palette.js';
 import { adminErr, attempt } from './admin/common.js';
 import { elevationBoxHTML, pageHTML, statusHTML } from './admin/shell.js';
-import { findSection } from './admin/sections.js';
+import { findSection, SECTIONS } from './admin/sections.js';
 import { detailEl, toast } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { state } from './state.js';
@@ -23,6 +23,7 @@ const S = {
   ov: idle(), acc: idle(), accQuery: { q: '', status: '', order: 'newest', filter: 'all' }, accSel: new Set(), accPager: new CursorPager(),
   ref: idle(), inv: idle(), invStatus: 'active', online: idle(), perf: idle(), caches: idle(), purges: {}, tv: idle(), rooms: idle(), reports: idle(), repStatus: 'open',
   settings: idle(), audit: idle(), auditPager: new CursorPager(), auditAction: '',
+  health: idle(), traffic: idle(), live: idle(), inbox: idle(),
 };
 const REFRESH_MS = 30_000;
 const tokens = {};
@@ -66,6 +67,7 @@ function ctxOf(id) {
       toast,
       confirmDialog,
       elevate,
+      badges: updateShell,
     };
     ctxs.set(id, c);
   }
@@ -96,14 +98,17 @@ function loadSection(id, quiet) {
   return sec && sec.load ? sec.load(ctxOf(id), quiet) : undefined;
 }
 
+/** Affiche une section (false si l'identifiant n'existe pas). */
 function setSection(id) {
-  if (!findSection(id) || id === S.sec) return;
+  if (!findSection(id)) return false;
+  if (id === S.sec) return true;
   S.sec = id;
   updateNav();
   paint();
   loadSection(id, true);
   const h = detailEl.querySelector('#adm-h');
   if (h) h.focus({ preventScroll: true });
+  return true;
 }
 
 function updateNav() {
@@ -205,11 +210,35 @@ function onClick(e) {
   const nav = t.closest('[data-adm-sec]');
   if (nav) { e.preventDefault(); setSection(nav.dataset.admSec); return; }
   if (t.closest('[data-adm-reload]')) { e.preventDefault(); loadSection(S.sec, false); return; }
-  if (t.closest('[data-adm-palette]')) { openPalette(); return; }
+  if (t.closest('[data-adm-palette]')) { openPalette(paletteDeps()); return; }
   if (t.closest('[data-adm-elevate]')) { e.preventDefault(); elevate(); }
 }
 
 document.addEventListener('click', onClick);
+
+// ---------- Palette de commandes (Ctrl/Cmd+K, « / ») ----------
+/** Dépendances de la palette : sections, navigation, actions de la console. Ouvrir une fiche de compte passe par la section Comptes. */
+function paletteDeps() {
+  const go = (sid) => setSection(sid);
+  return {
+    sections: SECTIONS,
+    go,
+    openAccount: () => { setSection('accounts'); },
+    actions: defaultActions({ go }),
+    elevate: async () => { await obtainElevation(); syncElevation(); },
+  };
+}
+
+let stopShortcuts = null;
+/** Pose le raccourci de la palette ; il n'agit que sur la console et se retire en la quittant (voir hashchange). */
+function armShortcuts() {
+  if (stopShortcuts) stopShortcuts();
+  stopShortcuts = installPaletteShortcuts(() => { if (live()) openPalette(paletteDeps()); });
+}
+
+function disarmShortcuts() {
+  if (stopShortcuts) { stopShortcuts(); stopShortcuts = null; }
+}
 
 // ---------- Page ----------
 export function showAdmin() {
@@ -218,7 +247,12 @@ export function showAdmin() {
   state.kind = 'admin';
   document.title = 'Administration · Laststream';
   setElevationPrompt(({ error }) => passwordDialog({ error }));
-  if (!hooked) { hooked = true; window.addEventListener('hashchange', closeAllLayers); document.addEventListener('visibilitychange', onVisible); }
+  if (!hooked) {
+    hooked = true;
+    window.addEventListener('hashchange', closeAllLayers);
+    window.addEventListener('hashchange', () => { if (!/^#\/admin(\/|$)/.test(location.hash)) disarmShortcuts(); });
+    document.addEventListener('visibilitychange', onVisible);
+  }
   detailEl.innerHTML = pageHTML(S);
   const h1 = detailEl.querySelector('#adm-title');
   if (h1) h1.focus({ preventScroll: true });
@@ -226,6 +260,7 @@ export function showAdmin() {
   loadSection(S.sec, false);
   refreshShell();
   startRefresh();
+  armShortcuts();
 }
 
 /** État interne exposé aux tests. */

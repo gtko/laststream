@@ -88,7 +88,7 @@ describe('vue d’ensemble : balayage des comptes', () => {
     expect(html).toContain(fmtInt(250));
     expect(html).toContain(fmtInt(50));
     expect(html).toContain(`${fmtInt(5)} suspendu(s)`);
-    expect(html).not.toContain('Erreur');
+    expect(html).not.toContain('adm-error');
   });
 });
 

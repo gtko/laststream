@@ -1,4 +1,6 @@
-import type { AccountList, AdminAccount, GroupStats, Metrics, PurgeJob, ReferralNode, ServiceStatus } from './adminApi';
+import type {
+  AccountList, AdminAccount, GroupStats, Inbox, InboxItem, LiveFeedEntry, Metrics, PurgeJob, Range, ReferralNode, ServiceStatus, StatusReport,
+} from './adminApi';
 
 /* Fonctions pures de la console d'administration : accès, métriques, pagination, purge, parrainage, formats. */
 
@@ -230,4 +232,110 @@ const SERVICE_STATUS_LABEL: Record<ServiceStatus, string> = { ok: 'Opérationnel
 /** Libellé français d'un état de service ; une valeur inconnue donne « Inconnu ». */
 export function serviceStatusLabel(status: string | null | undefined): string {
   return typeof status === 'string' && Object.hasOwn(SERVICE_STATUS_LABEL, status) ? SERVICE_STATUS_LABEL[status as ServiceStatus] : 'Inconnu';
+}
+
+// ---- Centre de contrôle : santé des services, variations, « En direct », « À traiter » ----
+/** Ton visuel : opérationnel, dégradé, en panne, inconnu (classes CSS is-ok, is-warn, is-bad, is-neutral). */
+export type Tone = 'ok' | 'warn' | 'bad' | 'neutral';
+
+export const serviceTone = (status: string | null | undefined): Tone =>
+  status === 'ok' ? 'ok' : status === 'degraded' ? 'warn' : status === 'down' ? 'bad' : 'neutral';
+
+/** Services de la santé, dans l'ordre de la maquette (identifiants du rapport serveur). */
+export const HEALTH_IDS = ['api', 'accounts', 'kv', 'upstream', 'cron'] as const;
+const HEALTH_NAME: Record<(typeof HEALTH_IDS)[number], string> = {
+  api: 'API Worker', accounts: 'Base comptes', kv: 'Cache KV', upstream: 'Addons amont', cron: 'Cron TV',
+};
+
+export interface HealthTile { id: string; name: string; value: string; sub: string; statusLabel: string; tone: Tone }
+
+/** Une tuile par service, dans l'ordre fixe ; un service absent du rapport donne une tuile « Inconnu » (valeur « — »). */
+export function healthTiles(report: StatusReport | null | undefined): HealthTile[] {
+  const services = report && Array.isArray(report.services) ? report.services : [];
+  return HEALTH_IDS.map((id) => {
+    const s = services.find((x) => x.id === id);
+    const statusLabel = serviceStatusLabel(s ? s.status : 'unknown');
+    return {
+      id,
+      name: s && s.label ? s.label : HEALTH_NAME[id],
+      value: s && s.value ? s.value : '—',
+      sub: s && s.detail ? s.detail : statusLabel,
+      statusLabel,
+      tone: serviceTone(s ? s.status : null),
+    };
+  });
+}
+
+/** Variation en pourcentage (« +12 % », « −2 % ») ; chaîne vide si indisponible. Le signe moins est typographique. */
+export function fmtDelta(pct: number | null | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return '';
+  const r = Math.round(Math.abs(pct) * 10) / 10;
+  if (r === 0) return '0 %';
+  const txt = (r >= 10 ? Math.round(r) : r).toString().replace('.', ',');
+  return (pct > 0 ? '+' : '−') + txt + ' %';
+}
+
+/** Ton d'une variation : une hausse est bonne ou mauvaise selon l'indicateur (erreurs et latence : mauvaise). Sans variation : neutre. */
+export function deltaTone(pct: number | null | undefined, goodWhenUp: boolean): Tone {
+  if (pct == null || !Number.isFinite(pct) || pct === 0) return 'neutral';
+  return (pct > 0) === goodWhenUp ? 'ok' : 'bad';
+}
+
+/** Étiquettes de l'axe X d'une série : heure (1 h, 24 h) ou date (7 j). */
+export function seriesLabels(points: ReadonlyArray<{ t: number | string }>, range: Range): string[] {
+  return points.map((p) => {
+    const d = new Date(toMs(p.t));
+    if (!Number.isFinite(d.getTime())) return '';
+    return range === '7d'
+      ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+      : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  });
+}
+
+export interface FeedRow { at: string; label: string; target: string }
+
+/** Derniers événements (« En direct ») : heure HH:MM, libellé, cible facultative ; `max` entrées au plus. */
+export function feedRows(feed: LiveFeedEntry[] | null | undefined, max = 8): FeedRow[] {
+  return (Array.isArray(feed) ? feed : []).slice(0, max).map((e) => {
+    const t = toMs(e.at);
+    return {
+      at: Number.isFinite(t) ? new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—',
+      label: String(e.label ?? ''),
+      target: e.target ? String(e.target) : '',
+    };
+  });
+}
+
+/** Sévérités de « À traiter », de la plus grave à la moins grave. */
+export const INBOX_SEVERITY = [
+  { id: 'critical', label: 'Critique' },
+  { id: 'warn', label: 'À surveiller' },
+  { id: 'info', label: 'Pour information' },
+] as const;
+export type InboxSeverity = (typeof INBOX_SEVERITY)[number]['id'];
+
+/** Sévérité d'un item ; une valeur inconnue est traitée comme « information ». */
+export const inboxSeverity = (i: Pick<InboxItem, 'severity'>): InboxSeverity =>
+  INBOX_SEVERITY.some((g) => g.id === i.severity) ? (i.severity as InboxSeverity) : 'info';
+
+/** Items groupés par sévérité (ordre de INBOX_SEVERITY) ; les groupes vides sont omis. */
+export function inboxGroups(items: InboxItem[] | null | undefined): Array<{ id: InboxSeverity; label: string; items: InboxItem[] }> {
+  const list = Array.isArray(items) ? items : [];
+  return INBOX_SEVERITY.map((g) => ({ id: g.id, label: g.label, items: list.filter((i) => inboxSeverity(i) === g.id) }))
+    .filter((g) => g.items.length > 0);
+}
+
+/** Boîte sans l'item de clé `key` (retrait optimiste) : le total baisse d'un seulement si l'item y figurait. */
+export function inboxWithout(inbox: Inbox, key: string): Inbox {
+  const items = inbox.items.filter((i) => i.key !== key);
+  return { items, total: items.length < inbox.items.length ? Math.max(0, inbox.total - 1) : inbox.total };
+}
+
+const ROUTE_ALIAS: Record<string, string> = { metrics: 'performance' };
+
+/** Section de la console visée par la route d'une action (« #/admin/tasks » donne « tasks ») ; null pour une autre route. */
+export function routeSection(route: string | null | undefined): string | null {
+  const m = /^#?\/?admin\/([a-z-]+)\/?$/.exec(String(route ?? '').trim());
+  if (!m) return null;
+  return ROUTE_ALIAS[m[1]] ?? m[1];
 }
