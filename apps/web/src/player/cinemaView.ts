@@ -196,7 +196,7 @@ export function createCinemaSummary(onClose: () => void, onSeek: (pos: number) =
           const li = el('li');
           const b = el('button', 'lp-cs-note');
           b.type = 'button';
-          b.append(avatarEl(n.author.handle.name, n.author.avatarColor, 'lp-cs-av'), el('span', 'lp-cs-at', formatClock(n.pos)), el('span', 'lp-cs-t', n.body));
+          b.append(avatarEl(n.author.handle.name, n.author.avatarColor, 'lp-cs-av', n.author.avatar), el('span', 'lp-cs-at', formatClock(n.pos)), el('span', 'lp-cs-t', n.body));
           b.addEventListener('click', () => onSeek(n.pos));
           li.append(b);
           ul.append(li);

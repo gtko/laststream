@@ -20,7 +20,7 @@ export function activityText(it) {
 }
 
 function rowHTML(it) {
-  const who = { handle: it.handle, avatarColor: it.avatarColor };
+  const who = { handle: it.handle, avatarColor: it.avatarColor, avatar: it.avatar };
   const m = it.media || {};
   return '<li class="ss-item"><button type="button" class="ss-row" data-ss-act="open" data-pid="' + esc(it.pid) + '" data-fk="act:' + esc(it.id) + '">' +
     avatarHTML(who) + '<span class="ss-row-t"><span class="ss-name">' + nameHTML(who) + '</span>' +

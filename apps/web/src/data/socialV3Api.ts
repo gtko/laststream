@@ -101,7 +101,7 @@ export type ListItemInput = { type: MediaKind; tmdbId: number; title: string; po
 export type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
 export type ActivityMedia = { type: MediaKind; tmdbId: number; title: string; poster?: string; season?: number; episode?: number };
 export type ActivityItem = {
-  id: string; pid: string; handle: Handle; avatarColor: string; kind: ActivityKind;
+  id: string; pid: string; handle: Handle; avatarColor: string; avatar?: string; kind: ActivityKind;
   media: ActivityMedia; rating?: number; at: number;
 };
 /** Média visé par une requête d'agrégat : un film, ou un épisode d'une série. */

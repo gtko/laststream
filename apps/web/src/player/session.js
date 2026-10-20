@@ -2003,7 +2003,7 @@ function postReact({ pos, kind, body, also }) {
   const me = getSocialState().me;
   const tmp = me ? 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) : '';
   if (me) {
-    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor }, pos: at, kind, body, createdAt: Date.now() };
+    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor, ...(me.avatar ? { avatar: me.avatar } : {}) }, pos: at, kind, body, createdAt: Date.now() };
     putNotes(nt, [local]);
     ui.showNoteFlash(local);
   }

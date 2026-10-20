@@ -104,6 +104,8 @@ export interface GuestSession {
   name: string;
   /** Échéance, ISO 8601. */
   expiresAt: string;
+  /** Avatar choisi à l'entrée (fixé par le jeton de séance). */
+  avatar?: string;
 }
 
 const SESSION_KEY = 'ls.party.guest.';
@@ -137,7 +139,10 @@ export function loadGuestSession(roomId: string, now = Date.now(), storage = tab
       typeof value.sessionToken === 'string' && value.sessionToken.length >= TOKEN_MIN && value.sessionToken.length <= TOKEN_MAX &&
       typeof value.name === 'string' && cleanPseudo(value.name) !== null &&
       typeof value.expiresAt === 'string' && Date.parse(value.expiresAt) > now;
-    if (valid) return { sessionToken: value.sessionToken as string, name: value.name as string, expiresAt: value.expiresAt as string };
+    if (valid) {
+      const avatar = typeof value.avatar === 'string' && value.avatar.length <= 101 ? { avatar: value.avatar } : {};
+      return { sessionToken: value.sessionToken as string, name: value.name as string, expiresAt: value.expiresAt as string, ...avatar };
+    }
     storage?.removeItem(SESSION_KEY + roomId);
   } catch {
     // illisible ou stockage bloqué

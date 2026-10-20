@@ -21,11 +21,12 @@ function dotOf(n: Note, cls: string): HTMLElement {
   return d;
 }
 
-/** Avatar de repli : la lettre colorée (couleur validée). */
-export function avatarEl(name: string, color: string, cls: string): HTMLElement {
+/** Avatar : la lettre colorée (couleur validée) en repli ; l'illustration (data-avatar) est posée par avatar-art.js. */
+export function avatarEl(name: string, color: string, cls: string, avatar?: string): HTMLElement {
   const a = el('span', cls, initialOf(name));
   a.style.background = safeColor(color);
   a.setAttribute('aria-hidden', 'true');
+  if (typeof avatar === 'string' && avatar !== '' && avatar.length <= 200) a.dataset.avatar = avatar;
   return a;
 }
 
@@ -96,7 +97,7 @@ export function noteFlashEl(note: Note): HTMLElement {
   } else {
     const bub = el('span', 'lp-nf-b');
     bub.append(
-      avatarEl(note.author.handle.name, note.author.avatarColor, 'lp-nf-d'),
+      avatarEl(note.author.handle.name, note.author.avatarColor, 'lp-nf-d', note.author.avatar),
       el('b', 'lp-nf-w', note.author.handle.name), el('span', 'lp-nf-sep', '·'), el('span', 'lp-nf-t', note.body),
     );
     box.append(bub);

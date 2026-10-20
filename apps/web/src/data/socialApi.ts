@@ -245,7 +245,9 @@ export interface GuestEntry {
   sessionToken: string;
   expiresAt: string;
   name: string;
+  /** Avatar retenu par le serveur (absent : lettre sur la couleur des invités). */
+  avatar?: string;
 }
 /** Entrée d'un invité (sans compte) : jeton du lien + pseudo souhaité. */
-export const enterPartyAsGuest = (id: string, token: string, name: string) =>
-  call<GuestEntry>('/' + enc(id) + '/guest', { ...party, method: 'POST', body: { token, name }, anonymous: true });
+export const enterPartyAsGuest = (id: string, token: string, name: string, avatar?: string) =>
+  call<GuestEntry>('/' + enc(id) + '/guest', { ...party, method: 'POST', body: { token, name, ...(avatar ? { avatar } : {}) }, anonymous: true });

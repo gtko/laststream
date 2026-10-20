@@ -15,10 +15,10 @@ export type Watching = {
   pos: number; duration?: number; paused: boolean; at: number;
 };
 export type FriendView = {
-  pid: string; handle: Handle; avatarColor: string; household: boolean;
+  pid: string; handle: Handle; avatarColor: string; avatar?: string; household: boolean;
   status: SeenStatus; watching?: Watching; lastSeen?: number;
 };
-export type FriendRequest = { pid: string; handle: Handle; avatarColor: string; createdAt: number };
+export type FriendRequest = { pid: string; handle: Handle; avatarColor: string; avatar?: string; createdAt: number };
 export type MessageContext = { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number; pos?: number };
 export type Message = {
   id: string; from: string; to: string;
@@ -26,11 +26,11 @@ export type Message = {
   context?: MessageContext;
   createdAt: number; readAt?: number;
 };
-export type Conversation = { pid: string; handle: Handle; avatarColor: string; last?: Message; unread: number };
+export type Conversation = { pid: string; handle: Handle; avatarColor: string; avatar?: string; last?: Message; unread: number };
 export type MediaRef = { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number };
 export type Note = {
   id: string;
-  author: { pid: string; handle: Handle; avatarColor: string };
+  author: { pid: string; handle: Handle; avatarColor: string; avatar?: string };
   pos: number; kind: 'text' | 'emoji'; body: string;
   createdAt: number;
 };
@@ -40,7 +40,7 @@ export type HistoryItem = {
 };
 
 /** Profil connecté tel que le serveur le décrit (`GET /me`). */
-export type SocialMe = { pid: string; handle: Handle; status: Status; avatarColor: string };
+export type SocialMe = { pid: string; handle: Handle; status: Status; avatarColor: string; avatar?: string };
 export type FriendsResponse = { friends: FriendView[]; household: FriendView[]; incoming: FriendRequest[]; outgoing: FriendRequest[] };
 /** `POST /requests` : 201 `{ request }`, ou 200 `{ friend }` si l'autre m'avait déjà demandé. */
 export type RequestOutcome = { request: FriendRequest } | { friend: FriendView };
