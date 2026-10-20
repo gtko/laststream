@@ -8,6 +8,8 @@ import { addKidProfile, inviteAndRegister, type Member, PASSWORD, request, start
 const ROUTES: [string, string][] = [
   ['GET', '/admin/me'],
   ['GET', '/admin/accounts'],
+  ['GET', '/admin/accounts/export'],
+  ['GET', '/admin/online'],
   ['GET', '/admin/referrals'],
   ['GET', '/admin/settings'],
   ['GET', '/admin/metrics'],
