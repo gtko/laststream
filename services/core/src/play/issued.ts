@@ -12,7 +12,7 @@ import { createMemoryKvCache } from '../platform/memory-kv-cache.js';
  */
 
 /** Durée de vie d'une entrée : une séance de lecture longue, pas davantage. */
-export const ISSUED_TTL_MS = 6 * 3600e3;
+const ISSUED_TTL_MS = 6 * 3600e3;
 
 /** Normalise une URL (href) ; undefined si elle est invalide ou non http(s). */
 function hrefOf(raw: string): string | undefined {

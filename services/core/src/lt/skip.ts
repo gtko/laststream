@@ -3,11 +3,11 @@ import { isRecord } from '../sources/http.js';
 import { getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
 
 /** Types de segments : intro, reprise, générique de fin, post-générique, aperçu. */
-export type SkipKind = 'intro' | 'recap' | 'credits' | 'postcredits' | 'preview';
+type SkipKind = 'intro' | 'recap' | 'credits' | 'postcredits' | 'preview';
 /** Source d'un segment venu d'un service externe. */
-export type SkipSource = 'introdb' | 'skipdb' | 'aniskip' | 'animeskip';
+type SkipSource = 'introdb' | 'skipdb' | 'aniskip' | 'animeskip';
 /** Origine d'un segment : service externe, store communautaire local, détection automatique locale, ou déduction à partir de la saison. */
-export type SkipOrigin = SkipSource | 'community' | 'auto' | 'inferred';
+type SkipOrigin = SkipSource | 'community' | 'auto' | 'inferred';
 
 export interface SkipSegment {
   kind: SkipKind;

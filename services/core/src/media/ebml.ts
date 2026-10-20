@@ -8,13 +8,13 @@
  */
 
 /** Magic EBML (en-tête de tout fichier Matroska/WebM). */
-export const EBML_MAGIC = 0x1a45dfa3;
+const EBML_MAGIC = 0x1a45dfa3;
 
 /** Type de piste Matroska, réduit aux catégories utiles. */
-export type MkvTrackType = 'video' | 'audio' | 'subtitle' | 'other';
+type MkvTrackType = 'video' | 'audio' | 'subtitle' | 'other';
 
 /** Drapeaux de piste Matroska. Valeurs par défaut selon la spécification. */
-export interface MkvTrackFlags {
+interface MkvTrackFlags {
   enabled: boolean;
   default: boolean;
   forced: boolean;
@@ -24,7 +24,7 @@ export interface MkvTrackFlags {
 }
 
 /** Piste lue dans un TrackEntry (langue encore brute : ISO 639-2 et BCP 47 telles que stockées). */
-export interface MkvTrack {
+interface MkvTrack {
   number: number;
   type: MkvTrackType;
   codecId: string;

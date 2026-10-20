@@ -23,7 +23,7 @@ export type KidMaxAge = (typeof KID_MAX_AGES)[number];
 export type LibrarySort = 'added' | 'title';
 
 /** Sessions simultanées par compte : au-delà, la plus ancienne est supprimée. */
-export const MAX_SESSIONS_PER_ACCOUNT = 20;
+const MAX_SESSIONS_PER_ACCOUNT = 20;
 
 /** Intervalle minimal entre deux écritures de la dernière activité d'une session (pas d'écriture à chaque requête). */
 export const SESSION_TOUCH_INTERVAL_MS = 5 * 60_000;

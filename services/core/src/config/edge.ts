@@ -11,7 +11,7 @@ const CLIENT_IP_HEADER = 'x-laststream-client-ip';
 const MIN_SECRET_LENGTH = 16;
 
 /** LASTADDON_EDGE_SECRET : secret du relais de confiance (au moins 16 caractères). Absent ou trop court : aucun relais de confiance. */
-export function edgeSecret(): string | undefined {
+function edgeSecret(): string | undefined {
   const raw = runtimeEnv().get('LASTADDON_EDGE_SECRET')?.trim();
   return raw !== undefined && raw.length >= MIN_SECRET_LENGTH ? raw : undefined;
 }

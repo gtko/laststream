@@ -1,7 +1,7 @@
 import type { KvCache } from './types.js';
 
 /** Nombre maximal d'entrées par défaut : au-delà, les plus anciennes partent d'abord. */
-export const MEMORY_KV_MAX_ENTRIES = 10_000;
+const MEMORY_KV_MAX_ENTRIES = 10_000;
 
 /**
  * Cache en mémoire avec expiration (un par processus), borné en nombre d'entrées. `now` est injectable pour les tests.

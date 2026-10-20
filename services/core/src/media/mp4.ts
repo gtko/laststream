@@ -8,7 +8,7 @@
 const HEADER = 8;
 
 /** Boîte MP4 de premier niveau, vue depuis un buffer de début. Offsets absolus (base ajoutée). */
-export interface MoovLocation {
+interface MoovLocation {
   /** Offset absolu du début de la boîte moov (son en-tête). */
   offset: number;
   /** Taille déclarée. 0 = jusqu'à la fin du fichier (taille inconnue). */
@@ -71,7 +71,7 @@ export function findMoovOffset(buf: Buffer): number | undefined {
 }
 
 /** Piste MP4 lue dans trak, avec langue et codec bruts (fourcc). */
-export interface Mp4Track {
+interface Mp4Track {
   /** Type de handler : soun (audio), vide (vidéo), subt, text, sbtl… */
   handler: string;
   /** Code ISO 639-2 décodé depuis mdhd ('und' si absent ou invalide). */

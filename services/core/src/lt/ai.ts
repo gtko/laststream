@@ -159,7 +159,7 @@ async function personFacts(ctx: LtContext, token: string, id: string, lang: stri
   return { name, known };
 }
 
-export interface HistoryItem {
+interface HistoryItem {
   title: string;
   year: number | null;
   type: 'movie' | 'tv';

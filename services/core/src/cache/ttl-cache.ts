@@ -6,7 +6,7 @@ import type { KvCache } from '../platform/types.js';
 export const CACHE_MAX_ENTRIES = 10_000;
 export const CACHE_MAX_BYTES = 100 * 1024 * 1024;
 /** Durée du cache négatif : une 404 amont est mémorisée brièvement ; aucune autre erreur n'est mise en cache. */
-export const NEGATIVE_TTL_MS = 60e3;
+const NEGATIVE_TTL_MS = 60e3;
 /** Taille comptée pour une entrée négative (erreur mémorisée). */
 const NEGATIVE_BYTES = 256;
 /** Échec d'un rafraîchissement SWR : pas de nouvel essai pendant ce délai, la valeur périmée reste servie entre-temps. */

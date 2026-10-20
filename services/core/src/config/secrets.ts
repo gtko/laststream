@@ -2,7 +2,7 @@ import { isRecord } from '../sources/http.js';
 import type { Config } from './schema.js';
 
 /** Champs de `services` considérés comme secrets. `openrouterModel` est un nom de modèle, il n'est pas secret. */
-export const SERVICE_SECRET_FIELDS = [
+const SERVICE_SECRET_FIELDS = [
   'tmdbToken',
   'tmdbApiKey',
   'mdblistApiKey',
@@ -19,7 +19,7 @@ export const SERVICE_SECRET_FIELDS = [
 const LAST4_MIN_LENGTH = 12;
 
 /** Masque renvoyé à la place d'un secret : sa présence, et ses quatre derniers caractères si la clé est assez longue. */
-export interface SecretMask {
+interface SecretMask {
   set: true;
   last4?: string;
 }
@@ -29,7 +29,7 @@ function last4Label(value: string): string | undefined {
   return value.length >= LAST4_MIN_LENGTH ? `…${value.slice(-4)}` : undefined;
 }
 
-export function maskSecret(value: string): SecretMask {
+function maskSecret(value: string): SecretMask {
   const last4 = last4Label(value);
   return last4 === undefined ? { set: true } : { set: true, last4 };
 }

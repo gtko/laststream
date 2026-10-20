@@ -3,7 +3,7 @@ import type { AppEnv, Ctx } from '../http/app-env.js';
 import type { MaintenanceSetting } from '../user/app-settings.js';
 
 /** Durée de conservation en mémoire de l'état de maintenance (une requête sur ~5 s lit le Durable Object, pas chacune). */
-export const MAINTENANCE_CACHE_MS = 5_000;
+const MAINTENANCE_CACHE_MS = 5_000;
 const OFF: MaintenanceSetting = { enabled: false, message: '' };
 
 /** État de maintenance lu à travers un petit cache : l'écriture locale l'invalide tout de suite, les autres instances sous 5 s. */

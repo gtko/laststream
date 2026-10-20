@@ -4,7 +4,7 @@ import { UserApiError } from './validation.js';
 /** Séparation de clé : les sources TV ne se déchiffrent pas avec la clé des configurations. */
 export const TV_SOURCES_PURPOSE = 'tv-sources';
 
-export const MAX_TV_LISTS = 20;
+const MAX_TV_LISTS = 20;
 const MAX_URL = 2048;
 const MAX_NAME = 80;
 const MAX_ID = 64;

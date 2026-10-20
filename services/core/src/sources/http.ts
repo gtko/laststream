@@ -9,7 +9,7 @@ import { isNonPublicAddress } from './ip.js';
 export type FetchFn = typeof fetch;
 
 /** Délai par défaut d'une requête vers une source, en millisecondes. */
-export const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_TIMEOUT_MS = 8000;
 
 /** Options communes aux appels HTTP des sources. */
 export interface HttpOptions {
@@ -58,7 +58,7 @@ export function redactUrl(url: string): string {
 }
 
 /** Longueur minimale d'un secret masqué. Un secret plus court n'est jamais masqué (il abîmerait le message). */
-export const MIN_MASKED_SECRET_LENGTH = 6;
+const MIN_MASKED_SECRET_LENGTH = 6;
 const GENERIC_ERROR = 'erreur inattendue';
 
 /** Formes sous lesquelles un secret peut apparaître dans un message : brute, URL-encodée, base64, base64url. */
@@ -176,7 +176,7 @@ export async function checkOutboundUrl(
 export type { HostLookup };
 
 /** Résolution DNS réelle d'un hôte (client HTTP de la plateforme) : toutes les adresses renvoyées. */
-export function resolveHost(hostname: string): Promise<readonly string[]> {
+function resolveHost(hostname: string): Promise<readonly string[]> {
   return platform().http.resolveHost(hostname);
 }
 
@@ -205,7 +205,7 @@ export class SourceTooLargeError extends SourceError {
 }
 
 /** Lit le corps en octets en s'arrêtant dès que `maxBytes` est dépassé (SourceTooLargeError sans contenu). */
-export async function readBytesLimited(response: Response, maxBytes: number): Promise<Uint8Array> {
+async function readBytesLimited(response: Response, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length'));
   if (response.headers.get('content-length') !== null && declared > maxBytes) {
     await discardBody(response);
@@ -226,11 +226,6 @@ export async function readBytesLimited(response: Response, maxBytes: number): Pr
     chunks.push(value);
   }
   return Buffer.concat(chunks);
-}
-
-/** Lit le corps en texte UTF-8 en s'arrêtant dès que `maxBytes` est dépassé (SourceError sans contenu). */
-export async function readBodyLimited(response: Response, maxBytes: number): Promise<string> {
-  return new TextDecoder('utf-8').decode(await readBytesLimited(response, maxBytes));
 }
 
 /**

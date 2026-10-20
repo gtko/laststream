@@ -97,7 +97,7 @@ const IMAGE_REF = z
   .refine(isTmdbImageRef, 'image:format');
 
 /** Titre partagé (kind title). `rating` : note de l'expéditeur sur 5. */
-export const titleSchema = z.strictObject({
+const titleSchema = z.strictObject({
   type: MEDIA_TYPE,
   tmdbId: TMDB_ID,
   title: plainText(200),
@@ -107,7 +107,7 @@ export const titleSchema = z.strictObject({
 });
 
 /** Moment d'un titre (kind moment) : saison et épisode facultatifs (ignorés pour un film), position en secondes. */
-export const momentSchema = z.strictObject({
+const momentSchema = z.strictObject({
   type: MEDIA_TYPE,
   tmdbId: TMDB_ID,
   season: SEASON.optional(),
@@ -118,20 +118,20 @@ export const momentSchema = z.strictObject({
 });
 
 /** Invitation à un salon (kind party). Identifiant de salon : lettres, chiffres, `_` et `-`. */
-export const partySchema = z.strictObject({
+const partySchema = z.strictObject({
   partyId: z.string().regex(/^[A-Za-z0-9_-]{4,64}$/),
   title: plainText(200),
 });
 
 /** Sondage : question et 2 à 6 options distinctes (sans tenir compte de la casse). */
-export const pollSchema = z
+const pollSchema = z
   .strictObject({
     question: plainText(200),
     options: z.array(plainText(80)).min(2).max(6),
   })
   .refine((poll) => new Set(poll.options.map((option) => option.toLowerCase())).size === poll.options.length, 'options:duplicate');
 
-export const MESSAGE_KINDS = ['text', 'title', 'moment', 'party', 'poll'] as const;
+const MESSAGE_KINDS = ['text', 'title', 'moment', 'party', 'poll'] as const;
 
 /**
  * Corps de `POST /conv/:conv/messages`. La charge doit correspondre au kind : `title` pour `kind: "title"`, etc., et

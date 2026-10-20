@@ -15,15 +15,15 @@ import { createDurableObjectPartyBackend } from './party-backend.js';
 import { createDurableObjectUserBackend } from './user-backend.js';
 
 export { runInRequest } from './scheduler.js';
-export { type WorkerEnv, workersRuntimeEnv } from './env.js';
+export { type WorkerEnv } from './env.js';
 export { createWorkersTvAdmin, refreshTvFromEnv } from './tv-store.js';
-export { refreshRowsFromEnv, type RowsRefreshOptions } from './rows-refresh.js';
+export { refreshRowsFromEnv } from './rows-refresh.js';
 export { UserStoreDO } from './user-store-do.js';
 export { PartyRoom } from './party-room.js';
 export { Metrics } from './metrics-do.js';
 
 /** Sous Workers : ni ffmpeg, ni détection de segments, ni proxy HLS. */
-export const workersCapabilities: Capabilities = { thumbs: false, skipDetect: false, tvHls: false, sharedState: true };
+const workersCapabilities: Capabilities = { thumbs: false, skipDetect: false, tvHls: false, sharedState: true };
 
 /** Installe la plateforme Workers si aucune requête ne l'a encore fait (Cron Trigger d'un isolat neuf). */
 export function ensureWorkersPlatform(env: WorkerEnv): void {

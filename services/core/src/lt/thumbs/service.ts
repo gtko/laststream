@@ -33,9 +33,9 @@ export interface ThumbOptions {
   run?: Runner;
 }
 
-export const DEFAULT_TIMEOUT_MS = 8000;
-export const DEFAULT_IDLE_MS = 2 * 60e3;
-export const MAX_SOURCES = 8;
+const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_IDLE_MS = 2 * 60e3;
+const MAX_SOURCES = 8;
 /** Octets maximaux lus en amont pour une source (toutes images confondues). */
 const SOURCE_BYTE_BUDGET = 2 * 1024 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 256 * 1024;

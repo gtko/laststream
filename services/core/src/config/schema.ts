@@ -52,25 +52,21 @@ type MissingQuality = Exclude<SourceKind, Quality>;
 const _qualitiesCoverSourceKinds: [MissingQuality] extends [never] ? true : never = true;
 
 export const AGE_LIMIT_VALUES = ['none', 10, 12, 16, 18] as const;
-export type AgeLimit = (typeof AGE_LIMIT_VALUES)[number];
 
 export const MULTICHANNEL_VALUES = ['none', 'prefer5_1', 'require5_1', 'prefer7_1', 'require7_1'] as const;
 export type Multichannel = (typeof MULTICHANNEL_VALUES)[number];
 
 export const ATMOS_VALUES = ['none', 'prefer', 'require'] as const;
-export type Atmos = (typeof ATMOS_VALUES)[number];
 
 export const UNSUPPORTED_FORMAT_VALUES = ['DTS-HD', 'TrueHD', 'EAC3', 'Atmos'] as const;
 export type UnsupportedFormat = (typeof UNSUPPORTED_FORMAT_VALUES)[number];
 
 export const UNSUPPORTED_MODE_VALUES = ['exclude', 'deprioritize'] as const;
-export type UnsupportedMode = (typeof UNSUPPORTED_MODE_VALUES)[number];
 
 export const SORT_VALUES = ['default', 'heaviest', 'lightest'] as const;
 export type Sort = (typeof SORT_VALUES)[number];
 
 export const DISPLAY_TEMPLATE_VALUES = ['direct', 'netflix', 'compact', 'detaille'] as const;
-export type DisplayTemplate = (typeof DISPLAY_TEMPLATE_VALUES)[number];
 
 const PresetSchema = z
   .enum(PRESET_VALUES)
@@ -232,7 +228,7 @@ const TorznabSourceSchema = z.object({
 });
 
 /** Prowlarr : un point d'entrée, plusieurs indexeurs. `indexerIds` vide ou absent : tous les indexeurs torrent activés. */
-export const ProwlarrSourceSchema = z.object({
+const ProwlarrSourceSchema = z.object({
   enabled: EnabledSchema,
   type: z.literal('prowlarr'),
   name: z.string().trim().min(1).max(100),
@@ -246,7 +242,7 @@ export const ProwlarrSourceSchema = z.object({
 const JackettIndexerIdSchema = z.string().trim().regex(/^[A-Za-z0-9_.-]{1,100}$/);
 
 /** Jackett : `indexers` vaut 'all' (agrégation Jackett) ou la liste des identifiants à interroger. */
-export const JackettSourceSchema = z.object({
+const JackettSourceSchema = z.object({
   enabled: EnabledSchema,
   type: z.literal('jackett'),
   name: z.string().trim().min(1).max(100),
@@ -254,9 +250,6 @@ export const JackettSourceSchema = z.object({
   apiKey: z.string().min(1).max(500),
   indexers: z.union([z.literal('all'), z.array(JackettIndexerIdSchema).max(200)]).default('all'),
 });
-
-/** Corps de POST /config/indexers : une source Prowlarr ou Jackett. */
-export const IndexerSourceSchema = z.discriminatedUnion('type', [ProwlarrSourceSchema, JackettSourceSchema]);
 
 /** Clé de service facultative : libellé et description affichés dans /config/schema. */
 const serviceKey = (title: string, description: string) =>
@@ -316,7 +309,7 @@ const ServicesSchema = z
   })
   .prefault({});
 
-export const ConfigSchema = z.object({
+const ConfigSchema = z.object({
   services: ServicesSchema,
   languages: z
     .object({

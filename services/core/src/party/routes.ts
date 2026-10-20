@@ -32,7 +32,7 @@ import { signTicket } from './ticket.js';
 import { ROOM_ID } from './ws.js';
 
 /** Point de montage de l'API des salons. */
-export const PARTY_MOUNT = '/party';
+const PARTY_MOUNT = '/party';
 
 const READ_LIMIT = 120;
 const WRITE_LIMIT = 30;

@@ -2,7 +2,7 @@ import type { App, Ctx } from './http/app-env.js';
 import { originalUrl, sendJson } from './http/respond.js';
 
 /** Préfixe côté navigateur : /_ss/<chemin>?<requête> est relayé vers <serveur de streaming>/<chemin>?<requête>. */
-export const STREAM_PROXY_PREFIX = '/_ss';
+const STREAM_PROXY_PREFIX = '/_ss';
 /** Délai maximum pour recevoir les en-têtes de la réponse amont. Le corps d'un flux long n'a pas de délai global. */
 const HEADERS_TIMEOUT_MS = 60_000;
 /** En-têtes de la requête transmis en amont. Jamais de cookie, d'Authorization ni d'en-tête de profil. */

@@ -10,7 +10,7 @@ export interface AssetsFetcher {
 }
 
 /** Binding Rate Limiting de Workers (période de 10 ou 60 secondes seulement). */
-export interface RateLimitBinding {
+interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 

@@ -35,14 +35,13 @@ export const FLUSH_INTERVAL_MS = 10_000;
 /** Bornes hautes (ms) de l'histogramme de latence ; l'indice `LATENCY_BOUNDS_MS.length` est le dépassement. */
 export const LATENCY_BOUNDS_MS: readonly number[] = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000];
 
-export const ROUTE_GROUPS = ['stream', 'play', 'lt_tmdb', 'lt', 'user', 'party', 'ui', 'other'] as const;
+const ROUTE_GROUPS = ['stream', 'play', 'lt_tmdb', 'lt', 'user', 'party', 'ui', 'other'] as const;
 export type RouteGroup = (typeof ROUTE_GROUPS)[number];
-export type StatusClass = '2xx' | '3xx' | '4xx' | '5xx';
-export const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx'];
+type StatusClass = '2xx' | '3xx' | '4xx' | '5xx';
+const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx'];
 
 export const RANGES = { '1h': { ms: 3600_000, stepMs: BUCKET_MS }, '24h': { ms: 24 * 3600_000, stepMs: BUCKET_MS }, '7d': { ms: RETENTION_MS, stepMs: 3600_000 } } as const;
 export type MetricsRange = keyof typeof RANGES;
-export const isMetricsRange = (value: unknown): value is MetricsRange => typeof value === 'string' && Object.hasOwn(RANGES, value);
 
 export type AlldebridOp = 'unlock' | 'magnet' | 'other';
 export type UpstreamOutcome = 'ok' | 'fail' | 'timeout';
@@ -174,7 +173,7 @@ export function hostOf(rawUrl: string): string | undefined {
   }
 }
 
-export function statusClass(status: number): StatusClass {
+function statusClass(status: number): StatusClass {
   return status >= 500 ? '5xx' : status >= 400 ? '4xx' : status >= 300 ? '3xx' : '2xx';
 }
 
@@ -359,13 +358,13 @@ export class MemoryMetricsStore {
 
 // Rapport
 
-export interface LatencyStats {
+interface LatencyStats {
   p50: number | null;
   p95: number | null;
   avgMs: number | null;
 }
 
-export interface GroupReport extends LatencyStats {
+interface GroupReport extends LatencyStats {
   requests: number;
   status: Record<StatusClass, number>;
 }

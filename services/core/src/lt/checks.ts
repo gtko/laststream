@@ -17,7 +17,7 @@ export interface ServiceProbe {
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 /** Note de la sonde TheTVDB quand la clé est une clé legacy acceptée par l'API v3. */
-export const TVDB_LEGACY_NOTE = 'clé legacy (API v3)';
+const TVDB_LEGACY_NOTE = 'clé legacy (API v3)';
 
 /** Sondes des clés configurées uniquement. Chaque sonde appelle un point léger de chaque service. */
 export function serviceProbes(ctx: LtContext, config: Config): ServiceProbe[] {

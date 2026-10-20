@@ -18,8 +18,8 @@ import { ByteBudget, jobByteBudget, openSource, type SourceProxy } from './proxy
 import type { MediaTools } from './tools.js';
 
 /** Confiance d'un segment trouvé par empreinte audio, et par noir et silence de fin. */
-export const FINGERPRINT_CONFIDENCE = 0.8;
-export const FALLBACK_MIN_CONFIDENCE = 0.6;
+const FINGERPRINT_CONFIDENCE = 0.8;
+const FALLBACK_MIN_CONFIDENCE = 0.6;
 /** Longueurs retenues (secondes). */
 const INTRO_RANGE = { min: 15, max: 120 } as const;
 const CREDITS_RANGE = { min: 15, max: 300 } as const;

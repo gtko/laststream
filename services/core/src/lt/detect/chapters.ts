@@ -56,7 +56,7 @@ interface Chapter {
 }
 
 /** Chapitres d'une sortie `ffprobe -show_chapters -of json`. */
-export function parseChapters(json: unknown): Chapter[] {
+function parseChapters(json: unknown): Chapter[] {
   if (!isRecord(json) || !Array.isArray(json.chapters)) return [];
   const chapters: Chapter[] = [];
   for (const item of json.chapters) {

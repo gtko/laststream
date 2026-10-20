@@ -47,14 +47,14 @@ const IMDB_ID = /^tt\d{1,12}$/;
 const TMDB_ID = /^[1-9]\d{0,8}$/;
 
 /** Membre TVDB retenu dans la fiche (statut, saisons, dates de diffusion). */
-export interface MetaTvdb {
+interface MetaTvdb {
   status: string;
   seasonCount: number;
   nextAired: string;
   lastAired: string;
 }
 
-export interface MetaCast {
+interface MetaCast {
   id: number;
   name: string;
   character: string | null;
@@ -136,7 +136,7 @@ export interface MetaResult {
 }
 
 /** Clé R2 d'une fiche. */
-export function metaKey(type: MetaType, tmdbId: number): string {
+function metaKey(type: MetaType, tmdbId: number): string {
   return `meta/${type}/${tmdbId}.json`;
 }
 
@@ -249,7 +249,7 @@ async function episodesFor(ctx: LtContext, svc: MetaServices, tmdbToken: string,
 }
 
 /** Assemble la fiche d'un film ou d'une série à partir des sources amont. Erreur TMDB : propagée (rien n'est stocké). */
-export async function buildMetaFiche(
+async function buildMetaFiche(
   ctx: LtContext,
   svc: MetaServices,
   type: MetaType,

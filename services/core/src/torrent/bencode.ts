@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 /** Taille maximale d'un fichier .torrent accepté, en octets. */
 export const MAX_TORRENT_BYTES = 5 * 1024 * 1024;
 /** Profondeur maximale d'imbrication des listes et dictionnaires. */
-export const MAX_DEPTH = 32;
+const MAX_DEPTH = 32;
 /** Nombre maximal de fichiers d'un torrent multi-fichiers. */
 export const MAX_FILES = 20_000;
 

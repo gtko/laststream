@@ -7,11 +7,10 @@ import type { Handle } from './social-v2-store.js';
  */
 
 /** Genres d'événements : débuts et fins de lecture, notes posées, notes sur 5, favoris et listes. */
-export const ACTIVITY_KINDS = ['started', 'finished', 'rated', 'noted', 'favorited', 'listed'] as const;
-export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+export type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
 
 /** Titre d'un événement, figé à l'écriture. Saison et épisode absents pour un film. */
-export interface ActivityMedia {
+interface ActivityMedia {
   type: 'movie' | 'series';
   tmdbId: number;
   title: string;

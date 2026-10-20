@@ -21,7 +21,7 @@ export interface PackStoreOptions {
 }
 
 /** Un torrent mémorisé dans un instantané JSON. `remainingMs` : durée de vie restante au moment du export. */
-export interface PackSnapshotEntry {
+interface PackSnapshotEntry {
   infoHash: string;
   remainingMs: number;
   files: PackFile[];

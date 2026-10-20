@@ -4,7 +4,7 @@ import type { MediaTools } from './tools.js';
 /** Fréquence d'échantillonnage du PCM analysé (celle de Chromaprint). */
 export const RATE = 11025;
 /** Pas entre deux points d'empreinte, en échantillons (comme Chromaprint) et en secondes. */
-export const HOP = 1365;
+const HOP = 1365;
 export const ITEM_SECONDS = HOP / RATE;
 
 export type FingerprintMethod = 'chromaprint' | 'spectral';
@@ -97,7 +97,7 @@ function fft(re: Float64Array, im: Float64Array): void {
 }
 
 /** Niveau RMS (dBFS) de chaque tranche de `frame` échantillons. */
-export function rmsDb(pcm: Int16Array, frame = HOP): Float32Array {
+function rmsDb(pcm: Int16Array, frame = HOP): Float32Array {
   const count = Math.max(0, Math.floor(pcm.length / frame));
   const out = new Float32Array(count);
   for (let f = 0; f < count; f += 1) {

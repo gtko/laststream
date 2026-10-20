@@ -7,7 +7,7 @@ import type { SqlDb } from './sql.js';
  */
 
 /** Pays inconnu : absent, invalide, ou requête hors Cloudflare (serveur Node). */
-export const UNKNOWN_COUNTRY = 'XX';
+const UNKNOWN_COUNTRY = 'XX';
 /** Nombre minimal de lancements pour qu'un titre soit lisible (anonymat). */
 export const MIN_STARTS = 3;
 /** Durée de conservation des lignes, en jours. */

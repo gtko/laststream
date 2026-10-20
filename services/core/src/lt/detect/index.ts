@@ -4,10 +4,8 @@ import { analyzeEpisode, type AnalyzeDeps, type EpisodeRef, type Outcome } from 
 import { defaultLocalPolicy, type LocalUrlPolicy } from './media-url.js';
 import { locateTools, type MediaTools } from './tools.js';
 
-export { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './media-url.js';
-
 /** Débit maximal : jobs démarrés par minute. */
-export const MAX_JOBS_PER_MINUTE = 2;
+const MAX_JOBS_PER_MINUTE = 2;
 /** Appariements d'épisodes tentés par saison au plus (ensuite, seule l'empreinte de référence sert). */
 const MAX_PAIRINGS = 2;
 /** Durée de vie d'une URL de média rapportée (le lecteur la renouvelle à chaque lecture). */
@@ -27,13 +25,13 @@ export interface AutoDetectOptions {
   disabled?: boolean;
 }
 
-export interface Report {
+interface Report {
   target: SkipTarget;
   url: URL;
   duration: number;
 }
 
-export interface ReportResult {
+interface ReportResult {
   queued: boolean;
   /** Raison de l'absence de job : disabled, no_ffmpeg, known, retry_later, rate_limited, queue_full. */
   reason?: string;

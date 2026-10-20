@@ -17,7 +17,7 @@ import { fastEntry, M3uAccumulator, type Programme, XmltvIngest } from './tv-fee
  * chaînes retenues, fenêtre maintenant → +24 h. Le résultat tient dans R2 (voir TvBlobStore).
  */
 
-export const TV_SOURCES = {
+const TV_SOURCES = {
   freetv: 'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8',
   pluto: 'https://i.mjh.nz/PlutoTV/.channels.json',
   samsung: 'https://i.mjh.nz/SamsungTVPlus/.channels.json',
@@ -254,7 +254,7 @@ export async function buildEpgStreaming(wanted: ReadonlySet<string>, options: Tv
 }
 
 /** Réponse à une requête d'une page web : le flux répond-il avec CORS pour cette origine ? Inconnu (undefined) si injoignable. */
-export async function probeDirect(fetcher: typeof fetch, url: string, origin: string): Promise<boolean | undefined> {
+async function probeDirect(fetcher: typeof fetch, url: string, origin: string): Promise<boolean | undefined> {
   if (!url.startsWith('https://')) return false; // http : bloqué comme contenu mixte sur une page https
   try {
     const res = await fetcher(url, { headers: { ...HEADERS, origin }, redirect: 'follow', signal: AbortSignal.timeout(6000) });

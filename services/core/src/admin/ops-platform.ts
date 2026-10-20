@@ -18,19 +18,19 @@ import { type R2BucketName, R2_BUCKET_NAMES, type R2Usage, nextTvRun, r2UsageOf,
  */
 
 /** Délai unique d'une requête de test fournisseur (ms). */
-export const PROVIDER_TEST_TIMEOUT_MS = 4000;
+const PROVIDER_TEST_TIMEOUT_MS = 4000;
 /** Tests fournisseur par minute et par IP (limiteur dédié, en plus des limites générales de /admin). */
-export const PROVIDER_TEST_PER_MIN = 10;
+const PROVIDER_TEST_PER_MIN = 10;
 /** Durée de vie des statistiques de stockage (ms), par instance. */
-export const STORAGE_TTL_MS = 5 * 60_000;
+const STORAGE_TTL_MS = 5 * 60_000;
 /** Fournisseur refusé d'office : jamais d'appel AllDebrid depuis le serveur (compte suspendu pour appels depuis Cloudflare). */
 const ALLDEBRID = 'alldebrid';
 
 /** Erreur d'un test : délai, réseau, clé refusée (401/403), autre statut HTTP en échec. */
-export type ProviderTestError = 'timeout' | 'network' | 'rejected' | 'http';
+type ProviderTestError = 'timeout' | 'network' | 'rejected' | 'http';
 
 /** Résultat d'un test fournisseur. Jamais la clé, jamais le corps de la réponse. */
-export interface ProviderTest {
+interface ProviderTest {
   id: ProviderName;
   ok: boolean;
   /** Statut HTTP de la dernière réponse, ou null sans réponse (délai, réseau). */
@@ -41,7 +41,7 @@ export interface ProviderTest {
 
 type Send = (url: string, init?: RequestInit) => Promise<Response>;
 /** Requête légère d'un fournisseur (clé du serveur) : renvoie la réponse finale. */
-export type ProviderProbe = (send: Send) => Promise<Response>;
+type ProviderProbe = (send: Send) => Promise<Response>;
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TVDB_V4_BASE = 'https://api4.thetvdb.com/v4';
@@ -129,7 +129,7 @@ async function discard(response: Response): Promise<void> {
  * Exécute la requête légère d'un fournisseur sous un délai unique (4 s, y compris une éventuelle seconde requête).
  * Ne lève jamais : toute erreur devient un résultat. Ni la clé ni le corps de réponse ne sortent de cette fonction.
  */
-export async function runProviderTest(id: ProviderName, probe: ProviderProbe, fetchFn: typeof fetch): Promise<ProviderTest> {
+async function runProviderTest(id: ProviderName, probe: ProviderProbe, fetchFn: typeof fetch): Promise<ProviderTest> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVIDER_TEST_TIMEOUT_MS);
   const started = Date.now();
@@ -174,7 +174,7 @@ export function providerEntries(env: RuntimeEnv, health: Record<ProviderName, Pr
 }
 
 /** Statistiques de stockage : caches KV, buckets R2 (TV, META, AVATARS) et base SQLite du Durable Object. */
-export interface StorageReport {
+interface StorageReport {
   kv: { prefixes: { prefix: string; keys: number; exact: boolean; hitRate: number | null }[] };
   r2: ({ bucket: R2BucketName } & R2Usage)[];
   do: { sizeBytes: number | null; tables: { name: string; rows: number | null }[] };

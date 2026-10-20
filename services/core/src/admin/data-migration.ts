@@ -68,7 +68,7 @@ export function toWire(row: Record<string, unknown>, columns: readonly string[])
 }
 
 /** Empreinte d'une table : nombre de lignes et SHA-256 des lignes triées (colonnes par nom, BLOB en base64). */
-export async function digestTable(db: SqlDb, table: MigratedTable): Promise<TableDigest> {
+async function digestTable(db: SqlDb, table: MigratedTable): Promise<TableDigest> {
   const columns = columnsOf(db, table);
   const select = columns.map((name) => `"${name}"`).join(', ');
   const order = columns.map((_, index) => index + 1).join(', ');

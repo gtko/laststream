@@ -10,7 +10,7 @@ const IMDB_ID = /^tt\d+$/;
 const MAX_TITLE_LENGTH = 200;
 
 /** Nombre maximal de requêtes texte produites pour une recherche. */
-export const MAX_QUERIES = 8;
+const MAX_QUERIES = 8;
 /** Nombre maximal d'alias TMDB retenus (`TitleVariants.aliases`). */
 const MAX_ALIASES = 30;
 
@@ -353,14 +353,6 @@ export async function getTitleVariants(ref: ContentRef, opts: TitleVariantsOptio
   } catch {
     return finish({ titles: [] }, fallback);
   }
-}
-
-/** Titres à rechercher : `titles` si fourni, sinon le titre et l'année de `titleInfo` (rétrocompatibilité). */
-export function variantsFor(opts: { titles?: TitleVariants; titleInfo?: TitleInfo }): TitleVariants | undefined {
-  if (opts.titles !== undefined) return opts.titles;
-  if (opts.titleInfo === undefined) return undefined;
-  const { title, year } = opts.titleInfo;
-  return year === undefined ? { titles: [title] } : { titles: [title], year };
 }
 
 function pad2(value: number): string {

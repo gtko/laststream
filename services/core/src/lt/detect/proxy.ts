@@ -7,7 +7,7 @@ import { isLiteralSafe } from '../guard.js';
 import type { LocalUrlPolicy } from './media-url.js';
 
 /** Plafond d'octets téléchargés par job : 400 Mo par défaut (audio entrelacé avec la vidéo), LASTADDON_SKIP_DETECT_MAX_MB le règle. */
-export const DEFAULT_JOB_MB = 400;
+const DEFAULT_JOB_MB = 400;
 
 export function jobByteBudget(env: EnvLike = runtimeEnv().all()): number {
   const mb = Number(env.LASTADDON_SKIP_DETECT_MAX_MB);

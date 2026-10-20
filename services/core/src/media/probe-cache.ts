@@ -108,7 +108,7 @@ export class ProbeCache<T> {
 }
 
 /** Cache partagé par défaut pour les sondes média. */
-export const probeCache = new ProbeCache<MediaProbe>();
+const probeCache = new ProbeCache<MediaProbe>();
 
 /** Renvoie la sonde en cache pour `key`, ou exécute `fn` (appels concurrents partagés) et met le résultat en cache. */
 export function probeWithCache(

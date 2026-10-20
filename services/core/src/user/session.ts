@@ -8,7 +8,7 @@ import { UserApiError } from './validation.js';
 
 export const nowIso = (): string => new Date().toISOString();
 
-export function bearerToken(c: Ctx): string | undefined {
+function bearerToken(c: Ctx): string | undefined {
   const match = /^bearer\s+([A-Za-z0-9_-]{20,128})$/i.exec(c.req.header('authorization') ?? '');
   return match?.[1];
 }

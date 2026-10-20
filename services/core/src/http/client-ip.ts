@@ -1,7 +1,7 @@
 import type { Ctx } from './app-env.js';
 
 /** Adresse du client vue par l'hôte : socket entrante (adaptateur Node) ou IP fournie par Cloudflare ; undefined sinon (requête simulée). */
-export function socketAddress(c: Ctx): string | undefined {
+function socketAddress(c: Ctx): string | undefined {
   return c.env?.incoming?.socket?.remoteAddress ?? c.env?.clientIp;
 }
 

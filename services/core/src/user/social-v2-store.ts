@@ -25,7 +25,7 @@ import type { SqlDb } from './sql.js';
  */
 
 export type SocialStatus = 'online' | 'away' | 'dnd' | 'invisible';
-export type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
+type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
 
 export interface Handle {
   name: string;
@@ -101,7 +101,7 @@ export interface SocialPrefs {
 }
 
 /** Valeurs par défaut des préférences (contrat S2). */
-export const DEFAULT_SOCIAL_PREFS: SocialPrefs = {
+const DEFAULT_SOCIAL_PREFS: SocialPrefs = {
   activityVisibility: 'friends',
   watchWith: 'ask',
   libraryVisibility: 'friends',
@@ -127,7 +127,7 @@ export interface RelationPatch {
 }
 
 /** Changement de présence à remettre : une vue identique par groupe de destinataires (amis ou foyer, selon la vue). */
-export interface PresenceDelivery {
+interface PresenceDelivery {
   pids: string[];
   friend: FriendView;
 }
@@ -141,7 +141,7 @@ export interface FriendRequestView {
 }
 
 /** Bannière du profil : un titre TMDB (`backdrop` = chemin « /xxx.jpg »). */
-export interface BannerView {
+interface BannerView {
   tmdbId: number;
   type: 'movie' | 'series';
   backdrop: string;
@@ -211,7 +211,7 @@ export interface FriendsOverview {
   outgoing: FriendRequestView[];
 }
 
-export interface HistoryItem {
+interface HistoryItem {
   type: 'movie' | 'series';
   tmdbId: number;
   title?: string;
@@ -333,7 +333,7 @@ export function handleOf(name: string, tag: string): Handle {
  * Statut vu par les autres. Hors ligne si pas de battement depuis plus de PRESENCE_TTL_MS, si jamais vu (`updated_at`
  * à 0 après une déconnexion), ou en mode invisible. Sinon, le statut choisi.
  */
-export function seenStatusOf(row: PresenceRow | undefined, now: number): SeenStatus {
+function seenStatusOf(row: PresenceRow | undefined, now: number): SeenStatus {
   if (row === undefined || row.updated_at <= 0 || now - row.updated_at > PRESENCE_TTL_MS) return 'offline';
   if (row.status === 'invisible') return 'offline';
   return row.status as SeenStatus;
@@ -416,25 +416,25 @@ function pairOf(a: string, b: string): { low: string; high: string } {
 // Messages, groupes et notes
 
 /** Quotas d'écriture par profil auteur, sur une fenêtre glissante d'une minute (comptée en SQL sur created_at). */
-export const MESSAGES_PER_MINUTE = 30;
-export const NOTES_PER_MINUTE = 20;
+const MESSAGES_PER_MINUTE = 30;
+const NOTES_PER_MINUTE = 20;
 const WRITE_WINDOW_MS = 60_000;
 /** Messages renvoyés au plus par page, et notes renvoyées au plus pour un titre. */
 export const MAX_MESSAGE_PAGE = 50;
-export const MAX_NOTES_PER_MEDIA = 500;
+const MAX_NOTES_PER_MEDIA = 500;
 /** Membres d'un groupe, créateur compris, au plus. */
-export const MAX_GROUP_MEMBERS = 20;
+const MAX_GROUP_MEMBERS = 20;
 /** Groupes créés par un profil et par heure. */
-export const GROUPS_PER_HOUR = 10;
+const GROUPS_PER_HOUR = 10;
 /** Réactions posées ou retirées par un profil et par minute ; emojis distincts d'un profil sur un même message. */
-export const REACTIONS_PER_MINUTE = 60;
-export const MAX_EMOJIS_PER_MESSAGE = 6;
+const REACTIONS_PER_MINUTE = 60;
+const MAX_EMOJIS_PER_MESSAGE = 6;
 /** Demandes de rejoindre par paire (demandeur, hôte) et par tranche de 10 minutes ; délai sous lequel l'hôte n'est pas prévenu deux fois. */
-export const JOIN_REQUESTS_PER_WINDOW = 5;
+const JOIN_REQUESTS_PER_WINDOW = 5;
 const JOIN_WINDOW_MS = 10 * 60_000;
 const JOIN_NOTIFY_GAP_MS = 60_000;
 /** Signalements par profil et par jour. */
-export const REPORTS_PER_DAY = 10;
+const REPORTS_PER_DAY = 10;
 const DAY_MS = 24 * 60 * 60_000;
 const HOUR_MS = 60 * 60_000;
 
@@ -447,14 +447,14 @@ export interface MediaRef {
 }
 
 /** Contexte d'un message : titre et position (secondes) de la lecture au moment de l'envoi. */
-export interface MessageContext extends MediaRef {
+interface MessageContext extends MediaRef {
   pos?: number;
 }
 
 export type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
 
 /** Titre partagé (kind title). `rating` : note de l'expéditeur sur 5. */
-export interface TitleRef {
+interface TitleRef {
   type: 'movie' | 'series';
   tmdbId: number;
   title: string;
@@ -464,7 +464,7 @@ export interface TitleRef {
 }
 
 /** Moment d'un titre (kind moment). Saison et épisode ignorés pour un film. `still` : image TMDB. */
-export interface MomentRef {
+interface MomentRef {
   type: 'movie' | 'series';
   tmdbId: number;
   season?: number;
@@ -475,7 +475,7 @@ export interface MomentRef {
 }
 
 /** Invitation à un salon de visionnage (kind party). */
-export interface PartyRef {
+interface PartyRef {
   partyId: string;
   title: string;
 }
@@ -487,7 +487,7 @@ export interface ReactionView {
   mine: boolean;
 }
 
-export interface PollOptionView {
+interface PollOptionView {
   id: string;
   label: string;
   votes: number;
@@ -524,7 +524,7 @@ export interface MessageView {
 }
 
 /** Groupe vu par un profil membre : membres = les autres membres (le profil qui regarde n'y figure pas). */
-export interface GroupView {
+interface GroupView {
   id: string;
   name: string;
   /** Propriétaire du groupe (pid) : seul à renommer et à ajouter ou retirer des membres. Peut être le profil qui regarde. */
@@ -538,7 +538,7 @@ interface ConversationBase {
   unread: number;
 }
 
-export interface DirectConversationView extends ConversationBase {
+interface DirectConversationView extends ConversationBase {
   pid: string;
   handle: Handle;
   avatarColor: string;

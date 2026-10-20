@@ -76,7 +76,7 @@ export function verifyTicket(ticket: string, roomId: string, now: number, secret
 }
 
 /** Portée d'un ticket du flux social : le profil agissant, et lui seul. */
-export function liveScope(pid: string): string {
+function liveScope(pid: string): string {
   return `social-live:${pid}`;
 }
 

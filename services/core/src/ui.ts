@@ -2,7 +2,7 @@ import type { App, Ctx } from './http/app-env.js';
 import type { UiAssets } from './platform/index.js';
 
 /** Fichier d'entrée de l'interface : repli des routes de navigation, jamais mis en cache. */
-export const UI_INDEX_FILE = 'index.html';
+const UI_INDEX_FILE = 'index.html';
 /** Fichiers à revalider à chaque chargement (mise à jour de l'interface ou du service worker). */
 const NO_CACHE_FILES: readonly string[] = [UI_INDEX_FILE, 'service-worker.js'];
 /** Assets versionnés par leur nom, sous /assets/ : cache longue durée. */

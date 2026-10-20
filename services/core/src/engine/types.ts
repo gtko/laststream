@@ -110,7 +110,7 @@ export function isDirect(c: Candidate): boolean {
 const KNOWN_LANGS: ReadonlySet<string> = new Set<Lang>(['fr', 'en', 'es', 'de', 'it', 'multi', 'original']);
 
 /** Ensemble de langues : valeurs inconnues ignorées, `multi` compte comme `fr` + `original`. */
-export function expandLanguages(values: Iterable<string>): Set<Lang> {
+function expandLanguages(values: Iterable<string>): Set<Lang> {
   const langs = new Set<Lang>();
   for (const value of values) {
     if (KNOWN_LANGS.has(value)) langs.add(value as Lang);
@@ -141,7 +141,7 @@ export function rawNameTexts(c: Candidate): string[] {
 }
 
 /** Textes de recherche de mots : nom du stream et groupe de release. */
-export function nameTexts(c: Candidate): string[] {
+function nameTexts(c: Candidate): string[] {
   const group = c.parsed.group;
   return group === undefined ? rawNameTexts(c) : [...rawNameTexts(c), group];
 }

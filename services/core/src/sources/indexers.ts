@@ -1,27 +1,7 @@
-import { SourceError } from './http.js';
-
 /** Titre et année, pour la recherche texte de repli. */
 export interface TitleInfo {
   title: string;
   year?: number;
-}
-
-export function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new SourceError('réponse JSON invalide');
-  }
-}
-
-export function optionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed === '' ? undefined : trimmed;
-}
-
-export function nonNegativeNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 export function isMagnet(value: string | undefined): value is string {
@@ -49,7 +29,7 @@ function base32ToHex(value: string): string | undefined {
 }
 
 /** Info-hash BitTorrent (hex 40 ou base32 32) normalisé en hex 40 minuscules. */
-export function normalizeInfoHash(value: unknown): string | undefined {
+function normalizeInfoHash(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (/^[0-9a-f]{40}$/i.test(trimmed)) return trimmed.toLowerCase();

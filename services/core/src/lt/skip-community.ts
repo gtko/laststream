@@ -18,7 +18,7 @@ import { inferCredits, inferIntro, type Span } from './skip-infer.js';
 import { tmdbGet } from './providers.js';
 
 /** Recherches de voisins par requête (épisodes de la même saison, les plus proches d'abord). */
-export const SIBLING_LOOKUPS = 6;
+const SIBLING_LOOKUPS = 6;
 /** Confiance d'un segment déduit (ni vérifié ni voté). */
 const INFERRED_CONFIDENCE = 0.5;
 /** Longueur maximale d'un segment proposé, par type (secondes). */
@@ -39,7 +39,7 @@ const SKIPDB_TYPE: Partial<Record<CommunityKind, string>> = { intro: 'intro', re
 type Services = Config['services'];
 
 /** Proposition (ou vote négatif) validée. */
-export interface Submission {
+interface Submission {
   target: SkipTarget;
   kind: CommunityKind;
   start: number;
@@ -79,7 +79,7 @@ function secondsOf(runtimeMinutes: number | null | undefined): number | undefine
  * Corps de POST /skip/submit validé. Toute anomalie : 400 invalid_submission, sans écho de la valeur saisie.
  * Un segment va de 0 à la durée (début < fin ≤ durée) et ne dépasse pas sa limite par type.
  */
-export function parseSubmission(body: Record<string, unknown>): Submission {
+function parseSubmission(body: Record<string, unknown>): Submission {
   const invalid = (): never => {
     throw new LtError(400, 'invalid_submission');
   };

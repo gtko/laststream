@@ -3,7 +3,7 @@ import { MAX_INVITE_QUOTA } from '../user/social-store.js';
 import { MAX_MAINTENANCE_MESSAGE } from '../user/app-settings.js';
 
 /** Nombre maximal de comptes par action groupée (POST /admin/accounts/bulk). */
-export const MAX_BULK_ACCOUNTS = 100;
+const MAX_BULK_ACCOUNTS = 100;
 
 /** Schémas de l'API d'administration. */
 

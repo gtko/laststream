@@ -7,15 +7,15 @@ import { parseSafeUrl } from './guard.js';
  * cache.
  */
 
-export type Reliability = 'high' | 'low';
+type Reliability = 'high' | 'low';
 export type StreamSource = 'freetv' | 'iptvorg' | 'pluto' | 'samsung';
 
-export interface TvLanguage {
+interface TvLanguage {
   code: string;
   name: string;
 }
 
-export interface TvCategory {
+interface TvCategory {
   id: string;
   label: string;
 }
@@ -51,7 +51,7 @@ export interface TvChannel {
   alternatives: TvAlternative[];
 }
 
-export interface TvFacetItem {
+interface TvFacetItem {
   code: string;
   name: string;
   count: number;
@@ -131,7 +131,7 @@ export const DEFAULT_LIMIT = 100;
 export const MAX_LIMIT = 500;
 
 /** Catégories affichées (ids et libellés français). */
-export const CATEGORIES: readonly TvCategory[] = [
+const CATEGORIES: readonly TvCategory[] = [
   { id: 'actualites', label: 'Actualités' },
   { id: 'sport', label: 'Sport' },
   { id: 'cinema', label: 'Cinéma' },
@@ -226,7 +226,7 @@ const FR_LANGUAGES = new Intl.DisplayNames(['fr'], { type: 'language' });
 const FR_REGIONS = new Intl.DisplayNames(['fr'], { type: 'region' });
 const COLLATOR = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 
-export const stripAccents = (value: string): string => value.normalize('NFD').replace(/[̀-ͯ]/g, '');
+const stripAccents = (value: string): string => value.normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /** Clé de dédoublonnage des noms de chaînes (ASCII alphanumérique, marqueurs de qualité retirés). */
 export const normName = (name: string): string =>

@@ -70,11 +70,11 @@ import {
 } from './validation.js';
 
 /** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
-export const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
+const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
 const DEFAULT_KID_MAX_AGE: KidMaxAge = 12;
 /** Blocage du PIN : après 5 tentatives échouées, 5 minutes sans vérification. */
-export const PIN_MAX_FAILURES = 5;
-export const PIN_LOCK_MS = 5 * 60_000;
+const PIN_MAX_FAILURES = 5;
+const PIN_LOCK_MS = 5 * 60_000;
 const LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_LIMITS = { read: 300, write: 120, sensitive: 10, loginPerUsername: 10, authPerIp: 10 } as const;
 /** Connexion et inscription : tentatives par IP sur une fenêtre longue (freine la force brute). */

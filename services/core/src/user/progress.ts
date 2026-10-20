@@ -2,7 +2,7 @@ import type { MediaType, ProgressItem } from './store.js';
 import { UserApiError } from './validation.js';
 
 /** Un titre est terminé à partir de 90 % de sa durée. */
-export const FINISHED_RATIO = 0.9;
+const FINISHED_RATIO = 0.9;
 /** Nombre maximal d'épisodes parcourus pour trouver le prochain à proposer. */
 const NEXT_EPISODE_SCAN_LIMIT = 200;
 

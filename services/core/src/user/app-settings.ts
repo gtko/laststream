@@ -18,7 +18,7 @@ export interface AppSettings {
 
 export const MAX_MAINTENANCE_MESSAGE = 500;
 
-export const DEFAULT_APP_SETTINGS: AppSettings = {
+const DEFAULT_APP_SETTINGS: AppSettings = {
   inviteDefaultQuota: DEFAULT_INVITE_QUOTA,
   invitesOpen: true,
   maintenance: { enabled: false, message: '' },

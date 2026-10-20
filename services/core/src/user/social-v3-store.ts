@@ -16,16 +16,16 @@ import type { SqlDb } from './sql.js';
  */
 
 /** Membres d'une liste, propriétaire compris. */
-export const MAX_LIST_MEMBERS = 50;
+const MAX_LIST_MEMBERS = 50;
 /** Listes possédées par un profil, éléments par liste. */
-export const MAX_OWNED_LISTS = 50;
-export const MAX_LIST_ITEMS = 1000;
+const MAX_OWNED_LISTS = 50;
+const MAX_LIST_ITEMS = 1000;
 /** Durée de vie d'un lien public (ms) : au-delà, `GET` répond 410 et l'invitation réservée est libérée. */
-export const SHARE_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SHARE_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Liens publics créés par profil et par heure, listes créées par profil et par heure, lectures publiques par IP et par minute. */
-export const SHARE_LINKS_PER_HOUR = 30;
-export const LISTS_PER_HOUR = 10;
-export const PUBLIC_READS_PER_MINUTE = 60;
+const SHARE_LINKS_PER_HOUR = 30;
+const LISTS_PER_HOUR = 10;
+const PUBLIC_READS_PER_MINUTE = 60;
 const HOUR_MS = 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
 

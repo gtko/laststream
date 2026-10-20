@@ -23,7 +23,7 @@ import { tmdbGet } from './providers.js';
  */
 
 /** Rangées servies : films et séries (tendances de la semaine), ou les deux mêlés (tendances du jour). */
-export const TOP_TYPES = ['movie', 'tv', 'all'] as const;
+const TOP_TYPES = ['movie', 'tv', 'all'] as const;
 export type TopType = (typeof TOP_TYPES)[number];
 /** Type d'un titre une fois identifié : film ou série. */
 export type TopKind = 'movie' | 'tv';
@@ -277,7 +277,7 @@ async function listPage(ctx: LtContext, token: string, source: ListSource, page:
  * plus MAX_PAGES pages au total. Une page vide termine sa source. Chaque titre n'est vérifié qu'une fois, par lots de
  * CHECK_BATCH appels simultanés ; la lecture s'arrête dès que la rangée est pleine.
  */
-export async function buildTop10Page(ctx: LtContext, token: string, type: TopType, region: string, page: number, today: string): Promise<Top10Page> {
+async function buildTop10Page(ctx: LtContext, token: string, type: TopType, region: string, page: number, today: string): Promise<Top10Page> {
   // Un titre est identifié par son type et son numéro : un film et une série peuvent porter le même numéro TMDB.
   const checked = new Set<string>();
   const results: Json[] = [];

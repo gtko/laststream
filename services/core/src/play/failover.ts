@@ -5,7 +5,7 @@ import type { PlayCopy } from './token.js';
  * Codes d'erreur d'un résolveur : portés par la propriété `code` de l'erreur qu'il jette.
  * `no_copy` : la copie n'a pas de source utilisable (torrent privé absent du cache) ; la copie suivante est essayée.
  */
-export const RESOLVE_ERROR_CODES = [
+const RESOLVE_ERROR_CODES = [
   'not_cached',
   'dead_link',
   'host_unavailable',
@@ -32,9 +32,9 @@ export type ResolveFn = (copy: PlayCopy, signal: AbortSignal) => Promise<Resolve
 
 /** Motif d'échec d'une tentative : un code du résolveur, ou une interruption (délai, annulation). */
 type AttemptFailure = ResolveErrorCode | 'timeout' | 'aborted';
-export type AttemptOutcome = 'ok' | 'host_down' | AttemptFailure;
+type AttemptOutcome = 'ok' | 'host_down' | AttemptFailure;
 
-export interface Attempt {
+interface Attempt {
   index: number;
   outcome: AttemptOutcome;
 }
@@ -66,7 +66,7 @@ const DEFAULT_BUDGET_MS = 12_000;
 const GLOBAL_CODES: ReadonlySet<AttemptFailure> = new Set<AttemptFailure>(['invalid_key', 'subscription_expired', 'quota']);
 
 /** Vrai si la valeur est un code d'erreur de résolveur connu. */
-export function isResolveErrorCode(value: string): value is ResolveErrorCode {
+function isResolveErrorCode(value: string): value is ResolveErrorCode {
   return (RESOLVE_ERROR_CODES as readonly string[]).includes(value);
 }
 

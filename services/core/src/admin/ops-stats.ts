@@ -85,9 +85,9 @@ export function sqlStatsOf(db: SqlDb, sizeBytes: number | null): SqlStats {
 }
 
 /** Cron Trigger de la TV : toutes les 6 h, à heure pleine UTC (wrangler.jsonc, triggers). Garder aligné avec wrangler.jsonc. */
-export const TV_CRON_PERIOD_MS = 6 * 3600_000;
+const TV_CRON_PERIOD_MS = 6 * 3600_000;
 /** Retard toléré au-delà de la période avant de signaler un passage en retard. */
-export const TV_CRON_SLACK_MS = 3600_000;
+const TV_CRON_SLACK_MS = 3600_000;
 
 /** Prochain passage du cron, ISO 8601 : premier multiple de la période (UTC) strictement après `now`. */
 export function nextTvRun(now: number): string {

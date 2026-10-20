@@ -1014,7 +1014,7 @@ export class RoomCore {
 }
 
 /** Types de signalisation du maillage invité à invité (`data.m === 'mesh'`) ; tout autre type est refusé par le salon. */
-export const MESH_SIGNAL_TYPES: ReadonlySet<string> = new Set(['hello', 'offer', 'answer', 'ice']);
+const MESH_SIGNAL_TYPES: ReadonlySet<string> = new Set(['hello', 'offer', 'answer', 'ice']);
 
 /** Vrai si la signalisation relayée appartient au maillage (étiquette `m: 'mesh'`). */
 function isMeshSignal(message: ClientMessage): boolean {

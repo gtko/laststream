@@ -39,7 +39,7 @@ const ANIME_TIMEOUT_MS = 1_500;
  * sont gardés, et la requête ne reste pas bloquée (sources : collecte bornée ; torrents : lectures terminées ;
  * sonde : candidats déjà sondés).
  */
-export interface StageBudgets {
+interface StageBudgets {
   sources: number;
   torrents: number;
   probe: number;
@@ -189,7 +189,7 @@ const DEFAULT_SEASON_EPISODES = 10;
 const DEFAULT_COMPLETE_EPISODES = 50;
 
 /** Nombre d'épisodes couverts par un pack : sa saison, ou les saisons de l'intégrale (Cinemeta, sinon valeurs par défaut). */
-export function packEpisodeCount(scope: ReleaseScope, counts: ReadonlyMap<number, number>): number {
+function packEpisodeCount(scope: ReleaseScope, counts: ReadonlyMap<number, number>): number {
   if (scope.pack === 'season') {
     return (scope.season === undefined ? undefined : counts.get(scope.season)) ?? DEFAULT_SEASON_EPISODES;
   }

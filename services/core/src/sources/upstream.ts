@@ -37,11 +37,11 @@ export interface UpstreamTestResult extends SourceTestResult {
 }
 
 /** Durée de vie du manifest en cache : une heure. Seuls les succès sont gardés. */
-export const MANIFEST_CACHE_MS = 60 * 60 * 1000;
+const MANIFEST_CACHE_MS = 60 * 60 * 1000;
 const manifestCache = new LruCache<UpstreamManifestInfo>({ max: 64, ttlMs: MANIFEST_CACHE_MS, now: () => Date.now() });
 
 /** Cache négatif court : un manifest qui échoue n'est pas redemandé à chaque requête /stream. */
-export const MANIFEST_FAILURE_CACHE_MS = 60 * 1000;
+const MANIFEST_FAILURE_CACHE_MS = 60 * 1000;
 interface ManifestFailure {
   message: string;
   blocked: boolean;
@@ -112,7 +112,7 @@ function isJsonRecord(text: string): boolean {
  * 404 : oui, sauf si le corps est un JSON d'addon (ex. `{streams:[]}` = « rien pour ce titre », cas normal). Un corps
  * « error code: 10xx » ou une page de vérification est toujours un blocage, quel que soit le statut.
  */
-export function isBlockingResponse(status: number, text: string): boolean {
+function isBlockingResponse(status: number, text: string): boolean {
   if (status === 401 || status === 403 || status === 429 || status === 451 || status >= 500) return true;
   if (CLOUDFLARE_ERROR_BODY.test(text) || looksLikeChallenge(text)) return true;
   if (status === 404) return !isJsonRecord(text);

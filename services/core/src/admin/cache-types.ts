@@ -11,7 +11,7 @@ export interface CacheStat {
   exact: boolean;
 }
 
-export type PurgeStatus = 'running' | 'done' | 'failed';
+type PurgeStatus = 'running' | 'done' | 'failed';
 
 export interface PurgeJob {
   id: string;

@@ -21,7 +21,7 @@ export const HIDDEN_KEY = /^(movie|tv):\d{1,10}$/;
 const LEGACY_HIDDEN_CHUNKS = 12;
 
 /** « revoked » : lien révoqué par l'administration (jamais libre, jamais régénérable par le propriétaire). */
-export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
+type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 
 export interface InviteView {
   id: string;
@@ -47,9 +47,9 @@ export interface WatchingNow {
   episode: number | null;
 }
 
-export type FriendStatus = 'online' | 'watching' | 'offline';
+type FriendStatus = 'online' | 'watching' | 'offline';
 
-export interface FriendView {
+interface FriendView {
   username: string;
   avatarColor: string;
   avatar?: string;
@@ -58,7 +58,7 @@ export interface FriendView {
   since: string;
 }
 
-export interface FriendRequestView {
+interface FriendRequestView {
   username: string;
   avatarColor: string;
   avatar?: string;

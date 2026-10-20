@@ -41,7 +41,7 @@ const PRIVATE_CACHE_MAX_AGE_S = 300;
 const THUMB_WAIT_MS = 9000;
 
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
-export const ltErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
+const ltErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
   c.header('Cache-Control', NO_STORE);
   if (err instanceof LtError) {
     const status = err.status as ContentfulStatusCode;

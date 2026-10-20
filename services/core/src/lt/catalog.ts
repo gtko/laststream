@@ -97,7 +97,7 @@ function toMeta(item: TmdbItem, imdbId: string): StremioMeta | null {
 }
 
 /** Page (1 à n) du catalogue correspondant à `skip` (20 éléments TMDB par page). */
-export function catalogPage(skip: number): number {
+function catalogPage(skip: number): number {
   return Math.floor(skip / PAGE_SIZE) + 1;
 }
 

@@ -5,7 +5,6 @@ import {
   type Candidate,
   compileWords,
   type ContentMeta,
-  effectiveLanguages,
   infoHashOf,
   isDirect,
   languagesFor,
@@ -46,7 +45,7 @@ const W_KEPT = W_LANGUAGE * (LANGUAGE_MAX + 1); // radix 2 : 1 si non déclassé
 interface Scored {
   /** Faux si le flux porte un format audio non supporté, en mode « deprioritize » : il passe en fin de liste. */
   kept: boolean;
-  /** Niveau de langue (même échelle que `languageLevel`), plafonné à LANGUAGE_MAX. */
+  /** Niveau de langue (même échelle que `levelFor`), plafonné à LANGUAGE_MAX. */
   language: number;
   score: number;
 }
@@ -86,17 +85,6 @@ function levelFor(langs: ReadonlySet<Lang>, parsed: ParsedRelease, preferred: re
     return 2 + 2 * (preferred.length - 1 - index) + (exact ? 1 : 0);
   }
   return parsed.subsFr ? 1 : 0;
-}
-
-/**
- * Niveau de langue (entier) :
- * - match d'une langue préférée : 2 + 2 × (rang inversé) ; +1 pour une variante FR exacte.
- *   Plus tôt dans `preferred` = niveau plus haut, et une variante exacte passe devant un MULTi au même rang.
- * - sous-titres FR seuls : 1 (après tous les matchs de langue).
- * - sinon : 0.
- */
-export function languageLevel(parsed: ParsedRelease, preferred: readonly Lang[]): number {
-  return levelFor(effectiveLanguages(parsed), parsed, preferred);
 }
 
 function scoreParts(c: Candidate, ctx: ScoringContext): Scored {

@@ -7,7 +7,7 @@ import { SourceError, UnsafeTargetError } from '../../sources/http.js';
 import type { HostLookup, HttpClient, RawResponse, StreamRequestOptions } from '../types.js';
 
 /** Résolution DNS réelle d'un hôte : toutes les adresses renvoyées. */
-export async function resolveHost(hostname: string): Promise<string[]> {
+async function resolveHost(hostname: string): Promise<string[]> {
   const records = await lookup(hostname, { all: true, verbatim: true });
   return records.map((record) => record.address);
 }

@@ -9,13 +9,13 @@ import { isRecord, maskSecrets, SourceError, type SourceTestResult } from '../so
 import { testUpstream, type UpstreamManifestInfo } from '../sources/upstream.js';
 
 /** Type d'une source de la configuration. Seul `upstream` est interrogé : les autres types (anciens indexeurs) ne le sont plus. */
-export type SourceCheckType = Config['sources'][number]['type'];
+type SourceCheckType = Config['sources'][number]['type'];
 
 /**
  * Résultat du test d'une clé de service (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Jamais la clé. `note` est une
  * information non sensible (ex. version d'API TheTVDB retenue), absente le plus souvent.
  */
-export interface ServiceCheck {
+interface ServiceCheck {
   name: string;
   type: ServiceField;
   ok: boolean;
@@ -27,7 +27,7 @@ export interface ServiceCheck {
  * Résultat du test d'une source. `error` est absent quand la source répond. `manifest` : métadonnées publiques d'un addon
  * amont qui répond. `enabled: false` : source désactivée, non testée.
  */
-export interface SourceCheck {
+interface SourceCheck {
   name: string;
   type: SourceCheckType;
   ok: boolean;

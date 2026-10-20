@@ -9,16 +9,16 @@ import type { SqlDb, SqlParam, SqlRow } from './sql.js';
  * liste explicite de champs : ni hash de mot de passe ou de PIN, ni jeton, ni configuration chiffrée n'en sort.
  */
 
-export const MAX_AUDIT_ROWS = 10_000;
+const MAX_AUDIT_ROWS = 10_000;
 const MAX_TREE_ACCOUNTS = 5_000;
 const MAX_REPORT_ROWS = 2_000;
 export const RESET_TTL_MS = 24 * 3600_000;
 /** Un compte est « en ligne » si sa dernière présence date de moins de deux minutes. */
-export const ONLINE_WINDOW_MS = 2 * 60_000;
+const ONLINE_WINDOW_MS = 2 * 60_000;
 /** Un compte est « inactif » si sa dernière activité date de plus de trente jours, ou s'il n'en a jamais eu. */
 const INACTIVE_AFTER_MS = 30 * 24 * 3600_000;
 
-export type AccountStatus = 'active' | 'suspended';
+type AccountStatus = 'active' | 'suspended';
 
 /** Filtre de la liste des comptes (`all` : sans filtre). */
 export type AccountFilter = 'all' | 'online' | 'inactive30' | 'suspended' | 'noInvites';
@@ -56,7 +56,7 @@ export interface AdminAccount {
 }
 
 /** Session ouverte d'un compte. Ni empreinte ni jeton : `id` est un identifiant public dérivé (voir `sessionRef`). */
-export interface AdminSession {
+interface AdminSession {
   id: string;
   /** Libellé court de l'appareil (« Android · Chrome ») dérivé du user-agent de la connexion ; null si non reconnu. */
   device: string | null;
@@ -85,7 +85,7 @@ export interface AdminInvite {
   status: InviteStatus;
 }
 
-export type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
+type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
 
 /** Événement de la chronologie d'un compte. `detail` : complément lisible, jamais de secret ni de texte de message. */
 export interface TimelineEvent {
@@ -218,7 +218,7 @@ function adminWatching(raw: unknown): OnlineAccount['watching'] {
 }
 
 /** Identifiant public d'une session, dérivé de son empreinte stockée : il ne révèle ni l'empreinte ni le jeton. */
-export function sessionRef(tokenHash: string): string {
+function sessionRef(tokenHash: string): string {
   return hashSessionToken(tokenHash).slice(0, 24);
 }
 
@@ -268,7 +268,7 @@ function toReport(row: SqlRow): PartyReportRecord {
 }
 
 /** Niveau d'une annonce : information ou alerte. */
-export type AnnouncementLevel = 'info' | 'warning';
+type AnnouncementLevel = 'info' | 'warning';
 
 /** Annonce publiée par le propriétaire (bandeau). Dates ISO 8601 UTC ; null = sans borne. */
 export interface Announcement {

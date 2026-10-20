@@ -12,7 +12,7 @@ import type { ProviderHourRow } from '../../metrics/providers.js';
 import type { Metrics } from './metrics-do.js';
 
 /** Nom du Durable Object global des métriques. */
-export const METRICS_NAME = 'metrics';
+const METRICS_NAME = 'metrics';
 
 /** Surface RPC du Durable Object utilisée ici (types simples, indépendants du typage RPC générique). */
 interface MetricsRpc {

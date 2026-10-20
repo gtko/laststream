@@ -45,7 +45,7 @@ export const TTL = {
 
 
 /** Délai par défaut des appels vers les services (ms). */
-export const SERVICE_TIMEOUT_MS = 12000;
+const SERVICE_TIMEOUT_MS = 12000;
 
 /** Erreur HTTP de la couche lt : statut, code stable, et service concerné si pertinent. Jamais de clé. */
 export class LtError extends Error {
@@ -93,7 +93,7 @@ export function serviceKey(config: Config, name: ServiceName): string {
   return value;
 }
 
-export { CACHE_MAX_BYTES, CACHE_MAX_ENTRIES, NEGATIVE_TTL_MS, TtlCache } from '../cache/ttl-cache.js';
+export { CACHE_MAX_BYTES, CACHE_MAX_ENTRIES, TtlCache } from '../cache/ttl-cache.js';
 
 /** Version de l'API TheTVDB qui accepte une clé : v4 (clé personnelle) ou v3 (clé legacy). */
 export type TvdbVersion = 'v4' | 'v3';
@@ -102,7 +102,7 @@ export type TvdbVersion = 'v4' | 'v3';
  * État par application : cache borné et partagé, sessions TVDB (clé = empreinte de la clé API et du PIN), version
  * TVDB retenue par clé (évite un essai v4 voué à l'échec à chaque requête).
  */
-export interface LtState {
+interface LtState {
   cache: TtlCache;
   tvdbSessions: Map<string, { token: string; exp: number }>;
   tvdbVersions: Map<string, { version: TvdbVersion; exp: number }>;
@@ -127,7 +127,7 @@ export interface LtContext {
 }
 
 /** Appels MDBList sortants par minute (par instance sans limiteur partagé). */
-export const MDBLIST_CALLS_PER_MINUTE = 20;
+const MDBLIST_CALLS_PER_MINUTE = 20;
 
 function mdblistLocalLimiter(): () => Promise<boolean> {
   const limit = createRateLimiter(MDBLIST_CALLS_PER_MINUTE, 60e3);

@@ -8,10 +8,10 @@ import type { SqlDb } from './sql.js';
 
 /** Alphabet du tag : 31 symboles, sans 0 O 1 I L. 31^4 = 923 521 tags par nom. */
 export const HANDLE_TAG_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-export const HANDLE_TAG_LENGTH = 4;
+const HANDLE_TAG_LENGTH = 4;
 /** Alphabet base32 (RFC 4648) du pid : 16 caractères, soit 80 bits aléatoires. */
 export const PID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-export const PID_LENGTH = 16;
+const PID_LENGTH = 16;
 /** Nom de repli quand le nom du profil ne contient aucun caractère admis (ex. « ??? »). */
 export const FALLBACK_HANDLE_NAME = 'Profil';
 /** Tirages successifs tolérés avant abandon. Une collision répétée n'arrive pas en pratique. */
@@ -27,11 +27,11 @@ const HANDLE_TAG_INPUT_PATTERN = /^[0-9A-Za-z]{4}$/;
 export type RandomBytes = (bytes: Uint8Array) => void;
 
 /** Source par défaut : Web Crypto (disponible sous Node et sous les Workers). */
-export const cryptoRandomBytes: RandomBytes = (bytes) => {
+const cryptoRandomBytes: RandomBytes = (bytes) => {
   globalThis.crypto.getRandomValues(bytes);
 };
 
-export interface Handle {
+interface Handle {
   /** Nom d'affichage, casse conservée. */
   name: string;
   tag: string;
@@ -216,7 +216,7 @@ export function revokeLegacyFriendship(db: SqlDb, pidA: string, pidB: string): v
  * Révoque l'amitié legacy entre `pid` et chacun de ses amis v2 (acceptés ou en attente). À appeler avant la disparition
  * du profil (suppression, ou perte d'identité par passage en enfant), tant que son pid existe encore.
  */
-export function revokeLegacyFriendshipsOf(db: SqlDb, pid: string): void {
+function revokeLegacyFriendshipsOf(db: SqlDb, pid: string): void {
   const rows = db
     .prepare('SELECT CASE WHEN low_pid = ? THEN high_pid ELSE low_pid END AS other FROM profile_friendships WHERE low_pid = ? OR high_pid = ?')
     .all(pid, pid, pid) as { other: string }[];

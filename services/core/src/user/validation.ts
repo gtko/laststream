@@ -136,7 +136,7 @@ export const progressWriteSchema = z.object({
 });
 
 /** Nombre maximal d'épisodes dans une écriture « vu / non vu » (une saison entière tient largement). */
-export const MAX_WATCHED_EPISODES = 2000;
+const MAX_WATCHED_EPISODES = 2000;
 
 const EPISODE_REF = z.object({ season: SEASON_OR_EPISODE, episode: SEASON_OR_EPISODE });
 

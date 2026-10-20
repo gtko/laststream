@@ -1,4 +1,4 @@
-export interface Interval {
+interface Interval {
   start: number;
   end: number;
 }
@@ -14,7 +14,7 @@ const MIN_BLACK_SECONDS = 25;
 const END_TOLERANCE = 4;
 
 /** Intervalles d'une sortie ffmpeg (blackdetect : black_start/black_end, silencedetect : silence_start/silence_end). */
-export function parseIntervals(stderr: string, startKey: string, endKey: string, windowLength: number): Interval[] {
+function parseIntervals(stderr: string, startKey: string, endKey: string, windowLength: number): Interval[] {
   const intervals: Interval[] = [];
   let open: number | undefined;
   const pattern = new RegExp(`${startKey}[:=]\\s*(-?[\\d.]+)|${endKey}[:=]\\s*(-?[\\d.]+)`, 'g');

@@ -1,8 +1,7 @@
 import type { SqlDb } from './sql.js';
 
 /** Types de segments proposés par la communauté. Le générique de fin « credits » couvre aussi les films. */
-export const COMMUNITY_KINDS = ['intro', 'recap', 'credits', 'postcredits'] as const;
-export type CommunityKind = (typeof COMMUNITY_KINDS)[number];
+export type CommunityKind = 'intro' | 'recap' | 'credits' | 'postcredits';
 
 /** Une proposition masquée dès que ses votes négatifs dépassent ses votes positifs ; les segments détectés (auto) n'ont pas de votes. */
 const VISIBLE = "votes_down <= votes_up AND source <> 'auto'";

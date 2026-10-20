@@ -34,16 +34,3 @@ export function withServerServices(config: Config): Config {
   }
   return services === undefined ? config : { ...config, services };
 }
-
-/** Services disponibles côté serveur (booléens uniquement). */
-export function serverServicesConfigured(): Record<string, boolean> {
-  const env = runtimeEnv();
-  const has = (name: string): boolean => Boolean(env.get(name)?.trim());
-  return {
-    tmdb: has('TMDB_TOKEN'),
-    mdblist: has('MDBLIST_API_KEY'),
-    tvdb: has('TVDB_API_KEY'),
-    openrouter: has('OPENROUTER_API_KEY'),
-    fanart: has('FANART_API_KEY'),
-  };
-}

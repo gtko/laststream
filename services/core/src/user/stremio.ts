@@ -17,7 +17,7 @@ const IMDB_ID = /^tt\d{1,10}$/;
 /** video_id Stremio d'un épisode : « tt0944947:1:3 ». */
 const SERIES_VIDEO_ID = /^(tt\d{1,10}):(\d{1,4}):(\d{1,4})$/;
 /** Nombre maximal d'entrées traitées par import ; au-delà, les entrées sont ignorées et signalées (truncated). */
-export const MAX_IMPORT_ITEMS = 5000;
+const MAX_IMPORT_ITEMS = 5000;
 /** Statuts amont qui signifient des identifiants refusés (et non un service indisponible). */
 const AUTH_REJECTED_CODES: ReadonlySet<string> = new Set(['upstream_400', 'upstream_401', 'upstream_403']);
 
@@ -31,7 +31,7 @@ export class StremioImportError extends Error {
   }
 }
 
-export interface MappedLibraryEntry {
+interface MappedLibraryEntry {
   type: MediaType;
   imdbId: string;
   title: string;
@@ -39,7 +39,7 @@ export interface MappedLibraryEntry {
   addedAt: string;
 }
 
-export interface MappedProgressEntry {
+interface MappedProgressEntry {
   type: MediaType;
   imdbId: string;
   season: number;
@@ -49,7 +49,7 @@ export interface MappedProgressEntry {
   updatedAt: string;
 }
 
-export interface MappedStremioItems {
+interface MappedStremioItems {
   library: MappedLibraryEntry[];
   progress: MappedProgressEntry[];
   /** Entrées ignorées : supprimées, types non pris en charge, identifiants illisibles. */
@@ -75,7 +75,7 @@ async function stremioCall(ctx: LtContext, method: string, payload: Record<strin
 }
 
 /** Connexion Stremio puis lecture de la bibliothèque. Les erreurs n'exposent ni le corps ni les identifiants. */
-export async function fetchStremioLibrary(ctx: LtContext, email: string, password: string): Promise<unknown[]> {
+async function fetchStremioLibrary(ctx: LtContext, email: string, password: string): Promise<unknown[]> {
   let login: unknown;
   try {
     login = await stremioCall(ctx, 'login', { type: 'Login', email, password, facts: {} });
@@ -120,7 +120,7 @@ function posterOrNull(value: unknown): string | null {
  * Transforme les entrées libraryItem Stremio en bibliothèque et progression. Les temps Stremio sont en millisecondes.
  * Une série n'a de progression que si son video_id désigne un épisode de la même série.
  */
-export function mapStremioLibrary(items: readonly unknown[], now: string): MappedStremioItems {
+function mapStremioLibrary(items: readonly unknown[], now: string): MappedStremioItems {
   const library: MappedLibraryEntry[] = [];
   const progress: MappedProgressEntry[] = [];
   let skipped = 0;
@@ -195,7 +195,7 @@ async function mapLimit<T>(items: readonly T[], limit: number, work: (item: T) =
 }
 
 /** Identifiants TMDB des titres (clé `type:imdb`), quand un jeton TMDB est disponible. */
-export async function resolveTmdbIds(
+async function resolveTmdbIds(
   ctx: LtContext,
   token: string,
   titles: readonly { type: MediaType; imdbId: string }[],

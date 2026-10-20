@@ -20,9 +20,9 @@ import { MAX_TORRENT_BYTES, TorrentFormatError, parseTorrent, type TorrentFile }
 /** Délai par défaut (réponse et lecture complète du corps), en millisecondes. */
 export const TORRENT_FETCH_TIMEOUT_MS = 10_000;
 /** Durée de vie d'une entrée du cache, en millisecondes (6 h). */
-export const TORRENT_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
+const TORRENT_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
 /** Nombre maximal d'entrées du cache mémoire. */
-export const TORRENT_CACHE_MAX_ENTRIES = 200;
+const TORRENT_CACHE_MAX_ENTRIES = 200;
 
 const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 

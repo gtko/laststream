@@ -41,7 +41,7 @@ import {
 } from './validation.js';
 
 /** Point de montage de l'API d'administration. */
-export const ADMIN_MOUNT = '/admin';
+const ADMIN_MOUNT = '/admin';
 const WINDOW_MS = 60_000;
 /** Limites par IP et par minute (avant toute authentification) : lectures, écritures, ré-authentification. */
 const LIMITS = { read: 120, write: 30, elevate: 5 } as const;

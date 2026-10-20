@@ -14,12 +14,7 @@ import type { Platform } from '../types.js';
 export { createFsUiAssets, assertUiDir } from './ui-assets.js';
 export { createNodeAvatarAssets } from './avatar-assets.js';
 export { createMemoryKvCache } from './kv-cache.js';
-export { nodeRuntimeEnv } from './env.js';
-export { nodeHttpClient } from './http-client.js';
 export { nodeScheduler } from './scheduler.js';
-export { projectRoot } from './paths.js';
-export { openUserDb, userDbPath, USER_DB_FILE, wrapSqlite } from './user-db.js';
-export { createNodeUserBackend } from './user-backend.js';
 
 /** Plateforme Node : process.env, undici, timers, mémoire, fichiers. */
 export function createNodePlatform(): Platform {

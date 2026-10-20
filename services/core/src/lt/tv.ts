@@ -71,7 +71,7 @@ const NO_EPG: TvEpgData = { epg: new Map(), epgStats: [] };
 
 const stripBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 
-export function parseM3U(text: string): M3uEntry[] {
+function parseM3U(text: string): M3uEntry[] {
   const acc = new M3uAccumulator();
   for (const line of text.split(/\r?\n/)) acc.push(line);
   return acc.entries;

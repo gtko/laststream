@@ -25,7 +25,7 @@ const HOST_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(
  * Identifiant Stremio → ContentRef. Film : `tt1234567`. Épisode : `tt1234567:S:E`.
  * Renvoie undefined si le type n'est pas movie/series ou si l'identifiant ne correspond pas au type.
  */
-export function parseContentRef(type: string, id: string): ContentRef | undefined {
+function parseContentRef(type: string, id: string): ContentRef | undefined {
   if (type === 'movie') {
     return MOVIE_ID.test(id) ? { type: 'movie', id, imdbId: id } : undefined;
   }

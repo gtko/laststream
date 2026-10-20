@@ -5,7 +5,7 @@ import { type CustomStatus, type FavoriteView, MAX_MESSAGE_PAGE, MAX_PROFILE_FAV
 /** Schémas des routes sociales v2 (`/user/social/*`). Objets stricts : une clé inconnue est refusée. */
 
 /** Statuts choisis par l'utilisateur (`invisible` : vu hors ligne par les autres). */
-export const SOCIAL_STATUSES = ['online', 'away', 'dnd', 'invisible'] as const;
+const SOCIAL_STATUSES = ['online', 'away', 'dnd', 'invisible'] as const;
 
 /** Identifiant public d'un profil : 16 caractères base32 (voir social-handles.ts). */
 const PID_PATTERN = /^[A-Z2-7]{16}$/;
@@ -52,7 +52,7 @@ const SEASON = z.number().int().min(0).max(10_000);
 const EPISODE = z.number().int().min(0).max(10_000);
 
 /** Titre en cours de lecture (contrat `Watching`). Saison et épisode ignorés pour un film (voir store). */
-export const watchingSchema = z.strictObject({
+const watchingSchema = z.strictObject({
   type: z.enum(['movie', 'series']),
   tmdbId: TMDB_ID,
   imdbId: z
@@ -209,10 +209,10 @@ export const missedQuery = z
   .refine((query) => (query.type === undefined) === (query.tmdbId === undefined), 'media:incomplete');
 
 export const MESSAGE_MAX_CHARS = 1000;
-export const NOTE_TEXT_MAX_CHARS = 140;
+const NOTE_TEXT_MAX_CHARS = 140;
 /** Bio du profil social, et texte du statut personnalisé (caractères). */
-export const BIO_MAX_CHARS = 140;
-export const STATUS_TEXT_MAX_CHARS = 60;
+const BIO_MAX_CHARS = 140;
+const STATUS_TEXT_MAX_CHARS = 60;
 
 const CONTROL_CHARACTER = /\p{Cc}/u;
 /** Découpage en graphèmes (un emoji composé, ZWJ, drapeau ou ton de peau, ne compte que pour un). */

@@ -1,9 +1,9 @@
 import { median } from '../user/skip-segments.js';
 
 /** Écart maximal (secondes) entre deux épisodes pour que leurs segments concordent (position et durée). */
-export const AGREE_SECONDS = 5;
+const AGREE_SECONDS = 5;
 /** Nombre minimal d'épisodes de la saison (hors cible) qui doivent concorder. */
-export const MIN_AGREEING = 2;
+const MIN_AGREEING = 2;
 
 /**
  * Segment d'un épisode voisin. Intro : `a` = début, `b` = fin (secondes depuis le début). Générique : `a` et `b` sont

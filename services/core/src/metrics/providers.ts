@@ -7,7 +7,7 @@
 
 export const DAY_MS = 24 * 3600_000;
 /** Jours conservés (UTC), jour courant inclus. */
-export const PROVIDER_DAYS = 30;
+const PROVIDER_DAYS = 30;
 
 /**
  * Fournisseurs suivis. Liste fermée : un nom hors liste n'entre jamais dans le stockage. `rows` : rangées d'accueil
@@ -21,7 +21,7 @@ export type ProviderName = (typeof PROVIDERS)[number];
  * servie pendant un rafraîchissement ; `coalesced` requête jointe à un appel déjà en vol ; `r2hit` / `r2miss` fiche lue /
  * absente du R2 ; `304` réponse non modifiée.
  */
-export const PROVIDER_EVENTS = ['call', 'l1hit', 'l2hit', 'stale', 'coalesced', 'r2hit', 'r2miss', '304'] as const;
+const PROVIDER_EVENTS = ['call', 'l1hit', 'l2hit', 'stale', 'coalesced', 'r2hit', 'r2miss', '304'] as const;
 export type ProviderEvent = (typeof PROVIDER_EVENTS)[number];
 
 /** Compteur d'un (jour UTC, fournisseur, événement). `day` : début du jour UTC en ms epoch. */
@@ -137,11 +137,11 @@ export interface ProviderCounts {
   r2HitRate: number | null;
 }
 
-export interface ProviderEntry extends ProviderCounts {
+interface ProviderEntry extends ProviderCounts {
   provider: ProviderName;
 }
 
-export interface ProviderDayEntry {
+interface ProviderDayEntry {
   /** Jour UTC, AAAA-MM-JJ. */
   day: string;
   providers: ProviderEntry[];

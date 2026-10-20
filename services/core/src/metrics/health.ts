@@ -10,9 +10,9 @@ import { HOUR_MS, healthWindowStart, hourOf, isProvider, PROVIDERS, type Provide
 /** Fenêtre des taux, de la latence et du statut : 24 heures UTC, heure courante incluse (= nombre de points de la sparkline). */
 export const HEALTH_WINDOW_HOURS = 24;
 /** Taux de succès à partir duquel le statut est « ok » (fraction). */
-export const OK_RATE = 0.98;
+const OK_RATE = 0.98;
 /** Taux de succès à partir duquel le statut est « degraded » ; en dessous : « down ». */
-export const DEGRADED_RATE = 0.9;
+const DEGRADED_RATE = 0.9;
 /** Appels minimum sur la fenêtre pour qu'un fournisseur puisse être déclaré « down ». */
 export const DOWN_MIN_CALLS = 5;
 

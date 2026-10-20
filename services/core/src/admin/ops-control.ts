@@ -21,19 +21,19 @@ import { metricsQuery } from './validation.js';
  * Aucune donnée sensible : ni message de salon, ni détail d'audit, ni jeton, ni clé.
  */
 
-export type Health = 'ok' | 'degraded' | 'down' | 'unknown';
-export type Severity = 'info' | 'warn' | 'critical';
+type Health = 'ok' | 'degraded' | 'down' | 'unknown';
+type Severity = 'info' | 'warn' | 'critical';
 
 /** Seuils du centre de contrôle (à ajuster d'après l'usage réel). */
-export const API_5XX_DEGRADED = 0.01;
-export const API_5XX_DOWN = 0.1;
-export const API_P95_DEGRADED_MS = 2500;
-export const ACCOUNTS_LATENCY_DEGRADED_MS = 1000;
-export const KV_HIT_DEGRADED = 0.5;
-export const KV_HIT_DOWN = 0.2;
+const API_5XX_DEGRADED = 0.01;
+const API_5XX_DOWN = 0.1;
+const API_P95_DEGRADED_MS = 2500;
+const ACCOUNTS_LATENCY_DEGRADED_MS = 1000;
+const KV_HIT_DEGRADED = 0.5;
+const KV_HIT_DOWN = 0.2;
 /** Erreurs 5xx sur la dernière heure : au-delà du premier seuil, un élément « pic 5xx » ; au-delà du second, critique. */
-export const ERRORS_5XX_HOUR_WARN = 20;
-export const ERRORS_5XX_HOUR_CRITICAL = 100;
+const ERRORS_5XX_HOUR_WARN = 20;
+const ERRORS_5XX_HOUR_CRITICAL = 100;
 
 /** Bornes de lecture : signalements, comptes à scruter, salons vérifiés (les plus récents), fil d'événements. */
 const INBOX_LIMIT = 200;
@@ -42,7 +42,7 @@ const PARTY_CHECK_MAX = 50;
 const PARTY_PARALLEL = 10;
 const FEED_SIZE = 30;
 /** Durée de vie (ms, par instance) de la lecture `info()` d'un salon pour /live : même principe que le cache de /storage. */
-export const PARTY_INFO_TTL_MS = 15_000;
+const PARTY_INFO_TTL_MS = 15_000;
 
 const RANK: Record<Health, number> = { unknown: -1, ok: 0, degraded: 1, down: 2 };
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, warn: 1, info: 2 };
@@ -83,7 +83,7 @@ export interface ServiceState {
 }
 
 /** Lecture du cron TV : dernier passage (null : aucun) et retard calculé par tvOverdue. */
-export interface CronReading {
+interface CronReading {
   state: TvCronState | null;
   overdue: boolean;
 }
@@ -148,7 +148,7 @@ function cronService(cron: CronReading | undefined, now: number): ServiceState {
 }
 
 /** Service « comptes » : la base répond-elle, et en combien de temps (lecture des réglages). */
-export async function accountsService(admin: () => AdminRepo): Promise<ServiceState> {
+async function accountsService(admin: () => AdminRepo): Promise<ServiceState> {
   const base = { id: 'accounts' as const, label: 'Comptes' };
   const started = Date.now();
   try {

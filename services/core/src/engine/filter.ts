@@ -136,7 +136,7 @@ function languageAllowed(
 }
 
 /** Vrai si le candidat a au moins une langue préférée (multi compte comme fr + original). */
-export function matchesPreferred(c: Candidate, preferred: readonly Lang[], verifiedOnly: boolean): boolean {
+function matchesPreferred(c: Candidate, preferred: readonly Lang[], verifiedOnly: boolean): boolean {
   const langs = languagesFor(c, verifiedOnly);
   return preferred.some((lang) => langs.has(lang));
 }

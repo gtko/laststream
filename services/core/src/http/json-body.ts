@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { AppEnv } from './app-env.js';
 
 /** Erreur HTTP 4xx levée par un middleware : l'application la rend en réponse générique, sans contenu. */
-export class HttpError extends Error {
+class HttpError extends Error {
   constructor(readonly status: number) {
     super(`HTTP ${status}`);
     this.name = 'HttpError';

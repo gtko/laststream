@@ -7,9 +7,9 @@ import { tmdbGet, tvdbAiredEpisodes, type TvdbAiredEpisode, type TvdbLang } from
  * Structure canonique des saisons et épisodes d'une série. Source : TVDB (ordre de diffusion), groupe d'épisodes TMDB,
  * ou saisons TMDB telles quelles. Les spéciaux (saison 0) sont séparés et placés en fin de liste.
  */
-export type EpisodeSource = 'tvdb' | 'tmdb-group' | 'tmdb';
+type EpisodeSource = 'tvdb' | 'tmdb-group' | 'tmdb';
 
-export interface SeriesSeason {
+interface SeriesSeason {
   number: number;
   name: string;
   episodeCount: number;
@@ -83,7 +83,7 @@ const present = <T>(value: T | undefined): value is T => value !== undefined;
 /**
  * Valide l'identifiant TMDB et la langue (fr-FR par défaut). Entrée invalide : 404 not_found, comme les autres routes.
  */
-export function parseSeriesRequest(tmdbId: string, language: string | undefined): { tmdbId: string; language: string } {
+function parseSeriesRequest(tmdbId: string, language: string | undefined): { tmdbId: string; language: string } {
   const lang = language === undefined || language === '' ? DEFAULT_LANGUAGE : language;
   if (!TMDB_ID.test(tmdbId) || !LANGUAGE.test(lang)) throw new LtError(404, 'not_found');
   return { tmdbId, language: lang };
