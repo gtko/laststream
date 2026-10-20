@@ -204,13 +204,13 @@ export interface CreatePartyBody {
   maxParticipants?: number;
 }
 const party = { prefix: '/party' } as const;
-export const createParty = (body: CreatePartyBody) => call<{ room: PartyRoom }>('', { ...party, method: 'POST', body });
+export const createParty = (body: CreatePartyBody) => call<{ room: PartyRoom }>('', { ...party, method: 'POST', body, profileId: body.profileId });
 export const listParties = (profileId: string, o: { language?: string; limit?: number; cursor?: string | null } = {}) => {
   const q = new URLSearchParams({ profileId });
   if (o.language) q.set('language', o.language);
   if (o.limit) q.set('limit', String(o.limit));
   if (o.cursor) q.set('cursor', o.cursor);
-  return call<{ rooms: PartyListItem[]; nextCursor: string | null }>('?' + q.toString(), party);
+  return call<{ rooms: PartyListItem[]; nextCursor: string | null }>('?' + q.toString(), { ...party, profileId });
 };
 export const getParty = (id: string) => call<{ room: PartyRoom }>('/' + enc(id), party);
 export interface JoinTicket {
@@ -219,27 +219,27 @@ export interface JoinTicket {
   wsPath: string;
   room: PartyRoom;
 }
-export const joinParty = (id: string, profileId: string) => call<JoinTicket>('/' + enc(id) + '/join', { ...party, method: 'POST', body: { profileId } });
+export const joinParty = (id: string, profileId: string) => call<JoinTicket>('/' + enc(id) + '/join', { ...party, method: 'POST', body: { profileId }, profileId });
 export const endParty = (id: string) => call<void>('/' + enc(id), { ...party, method: 'DELETE' });
 /** Invitation d'un invité (sans compte) : jeton à placer dans le lien `#/party/join/<id>?t=<jeton>`. Réservé à l'hôte. */
 export interface PartyInvite {
   token: string;
   expiresAt: string;
 }
-export const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId } });
+export const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId }, profileId });
 /**
  * Lien d'invitation partagé du salon (hôte seulement) : un seul jeton multi-usage, non lié à un pseudo, valable jusqu'à la fin
  * du salon. `rotate` (« Nouveau lien ») invalide les liens précédents ; sans lui, le lien rendu est toujours le même.
  */
 export const createPartyInviteLink = (id: string, profileId: string, rotate = false) =>
-  call<PartyInvite>('/' + enc(id) + '/invite-link', { ...party, method: 'POST', body: { profileId, rotate } });
+  call<PartyInvite>('/' + enc(id) + '/invite-link', { ...party, method: 'POST', body: { profileId, rotate }, profileId });
 /**
  * Invitation ciblée d'un ami dans le salon (Social v3) : crée un message « invitation » dans la discussion directe et
  * notifie l'ami en temps réel. Réservé à un membre connecté au salon (compte, pas invité). `actorPid` : profil social agissant
  * (X-Profile-Id).
  */
 export const inviteFriendToParty = (id: string, pid: string, actorPid: string) =>
-  call<{ message: unknown }>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { pid }, headers: { 'x-profile-id': actorPid } });
+  call<{ message: unknown }>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { pid }, profileId: actorPid, headers: { 'x-profile-id': actorPid } });
 /** Séance d'un invité entré par le lien partagé : jeton individuel (à présenter à la WebSocket) et pseudo attribué (unique). */
 export interface GuestEntry {
   sessionToken: string;
