@@ -23,6 +23,7 @@ import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } fro
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
+import { bindSettingsNav, syncNav } from './settings-nav.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
@@ -221,6 +222,11 @@ function categories() {
   return CATEGORIES.filter((c) => ((c.id !== 'home' && c.id !== 'tv') || !isKidProfile()) && (main || (c.id !== 'server' && c.id !== 'sources')));
 }
 
+/** Pastilles du menu : uniquement des états réels (serveur injoignable ou non configuré). */
+function navBadges() {
+  return ed.error || !isConfigured() ? { server: ed.error ? 'serveur injoignable' : 'configuration manquante' } : {};
+}
+
 function pageHTML() {
   const cats = categories();
   const cat = (id) => cats.find((c) => c.id === id);
@@ -238,18 +244,15 @@ function pageHTML() {
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="set-head">' +
     '<p class="set-eyebrow">Laststream</p><h1 class="set-title" id="svc-title" tabindex="-1">Réglages</h1></header>' +
-    '<div class="set-layout">' + navHTML(cats, activeCat) + '<div class="set-main">' + panels + '</div></div><p class="set-foot">' + creditsLinkHTML() + '</p></article>';
+    '<div class="set-layout">' + navHTML(cats, activeCat, navBadges()) + '<div class="set-main">' + panels + '</div></div><p class="set-foot">' + creditsLinkHTML() + '</p></article>';
 }
 
 function setActive(id) {
   activeCat = id;
-  detailEl.querySelectorAll('[data-set-cat]').forEach((b) => {
-    const on = b.dataset.setCat === id;
-    b.setAttribute('aria-current', on ? 'true' : 'false');
-    const nav = b.closest('.set-nav');
-    if (on && nav && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = b.offsetLeft - (nav.clientWidth - b.offsetWidth) / 2;
-  });
+  syncNav(detailEl, id);
 }
+
+bindSettingsNav(detailEl, (id) => goCategory(id));
 
 /** Ancre : active la catégorie tout de suite (sans attendre le défilement) et amène son panneau en haut. */
 export function goCategory(id) {

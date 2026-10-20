@@ -31,23 +31,59 @@ export const SET_ICON = {
   back: svg('<path d="M15 5l-7 7 7 7"/>'),
 };
 
-/** Catégories de la navigation latérale (ordre = ordre des panneaux dans la page). */
-export const CATEGORIES = [
-  { id: 'account', label: 'Profil et compte', icon: 'user' },
-  { id: 'appearance', label: 'Apparence', icon: 'palette' },
-  { id: 'region', label: 'Langue et région', icon: 'globe' },
-  { id: 'playback', label: 'Lecture', icon: 'play' },
-  { id: 'audio', label: 'Audio et sous-titres', icon: 'subtitles' },
-  { id: 'home', label: 'Accueil et recommandations', icon: 'home' },
-  { id: 'tv', label: 'TV en direct', icon: 'tv' },
-  { id: 'server', label: 'Serveur lastAddon', icon: 'server' },
-  { id: 'sources', label: 'Sources', icon: 'layers' },
+/** Groupes de la navigation latérale (ordre d'affichage). Un groupe sans catégorie visible est masqué. */
+const NAV_GROUPS = [
+  { id: 'account', title: 'Compte et apparence' },
+  { id: 'playback', title: 'Lecture' },
+  { id: 'content', title: 'Contenu' },
+  { id: 'server', title: 'Serveur' },
 ];
 
-export function navHTML(cats, active) {
-  return '<nav class="set-nav" aria-label="Catégories de réglages"><ul>' + cats.map((c) =>
-    '<li data-nav><button type="button" class="set-nav-i" data-set-cat="' + c.id + '" aria-current="' + (c.id === active ? 'true' : 'false') + '">' +
-    SET_ICON[c.icon] + '<span>' + esc(c.label) + '</span></button></li>').join('') + '</ul></nav>';
+/** Catégories de la navigation latérale (ordre = ordre des panneaux dans la page). `short` : libellé du menu (une ligne), `label` : titre du panneau. */
+export const CATEGORIES = [
+  { id: 'account', group: 'account', label: 'Profil et compte', short: 'Profil', icon: 'user' },
+  { id: 'appearance', group: 'account', label: 'Apparence', short: 'Apparence', icon: 'palette' },
+  { id: 'region', group: 'account', label: 'Langue et région', short: 'Langue', icon: 'globe' },
+  { id: 'playback', group: 'playback', label: 'Lecture', short: 'Lecture', icon: 'play' },
+  { id: 'audio', group: 'playback', label: 'Audio et sous-titres', short: 'Audio', icon: 'subtitles' },
+  { id: 'home', group: 'content', label: 'Accueil et recommandations', short: 'Accueil', icon: 'home' },
+  { id: 'tv', group: 'content', label: 'TV en direct', short: 'TV en direct', icon: 'tv' },
+  { id: 'server', group: 'server', label: 'Serveur lastAddon', short: 'Serveur', icon: 'server' },
+  { id: 'sources', group: 'server', label: 'Sources', short: 'Sources', icon: 'layers' },
+];
+
+const CHEVRON = svg('<path d="M6 9l6 6 6-6"/>');
+
+/** Groupes non vides, dans l'ordre : [{ id, title, items }]. */
+function groupsOf(cats) {
+  return NAV_GROUPS.map((g) => ({ ...g, items: cats.filter((c) => c.group === g.id) })).filter((g) => g.items.length);
+}
+
+/**
+ * Menu des catégories : liste groupée (bureau, rail d'icônes en fenêtre étroite) et sélecteur déroulant (mobile).
+ * `badges` : { [idCatégorie]: texte } — pastille d'attention (point ambre) sur les données réelles seulement.
+ */
+export function navHTML(cats, active, badges) {
+  const bd = badges || {};
+  const groups = groupsOf(cats);
+  const idx = Math.max(0, cats.findIndex((c) => c.id === active));
+  const cur = cats[idx];
+  const list = groups.map((g) => '<li class="set-nav-g"><p class="set-nav-gt" id="set-g-' + g.id + '">' + esc(g.title) + '</p><ul aria-labelledby="set-g-' + g.id + '">' +
+    g.items.map((c) => {
+      const on = c.id === active;
+      const warn = bd[c.id];
+      return '<li data-nav><button type="button" class="set-nav-i" data-set-cat="' + c.id + '" data-tip="' + esc(c.label) + '" aria-label="' + esc(c.label + (warn ? ' (' + warn + ')' : '')) +
+        '" tabindex="' + (on ? '0' : '-1') + '" aria-current="' + (on ? 'true' : 'false') + '">' + SET_ICON[c.icon] + '<span class="set-nav-t">' + esc(c.short) + '</span>' +
+        (warn ? '<span class="set-nav-dot" aria-hidden="true"></span>' : '') + '</button></li>';
+    }).join('') + '</ul></li>').join('');
+  const opts = groups.map((g) => '<div role="group" aria-label="' + esc(g.title) + '"><p class="set-sel-gt" aria-hidden="true">' + esc(g.title) + '</p>' +
+    g.items.map((c) => '<button type="button" role="option" class="set-sel-o" data-set-opt="' + c.id + '" tabindex="-1" aria-label="' + esc(c.label + (bd[c.id] ? ' (' + bd[c.id] + ')' : '')) + '" aria-selected="' + (c.id === active ? 'true' : 'false') + '">' +
+      SET_ICON[c.icon] + '<span class="set-nav-t">' + esc(c.short) + '</span>' + (bd[c.id] ? '<span class="set-nav-dot" aria-hidden="true"></span>' : '') + '</button>').join('') + '</div>').join('');
+  return '<nav class="set-nav" aria-label="Catégories de réglages"><ul class="set-nav-list">' + list + '</ul>' +
+    '<div class="set-sel"><button type="button" class="set-sel-b" data-set-sel aria-haspopup="listbox" aria-expanded="false" aria-controls="set-sel-l">' +
+    '<span class="set-sel-ic" data-sel-ic>' + SET_ICON[cur.icon] + '</span><span class="set-nav-t" data-sel-name>' + esc(cur.short) + '</span>' +
+    '<span class="set-sel-n" data-sel-pos>' + (idx + 1) + ' sur ' + cats.length + '</span>' + CHEVRON + '</button>' +
+    '<div class="set-sel-l" id="set-sel-l" role="listbox" aria-label="Catégories de réglages" hidden>' + opts + '</div></div></nav>';
 }
 
 export function panelHTML(cat, desc, inner) {

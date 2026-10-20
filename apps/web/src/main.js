@@ -8,6 +8,7 @@ import './styles/app.css';
 import './styles/search.css';
 import './styles/collections.css';
 import './styles/settings.css';
+import './styles/settings-nav.css';
 import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/stats.css';

@@ -110,7 +110,8 @@ describe('profil principal : Réglages', () => {
   const cats = async () => {
     const { showSettings } = (await import('../src/ui/settings.js')) as any;
     await showSettings();
-    return Array.from(document.querySelectorAll('#detail [data-set-cat]')).map((b) => (b.textContent ?? '').trim());
+    // Libellé complet (data-tip) : le texte du menu est le libellé court (« Profil », « Serveur »…).
+    return Array.from(document.querySelectorAll('#detail .set-nav-list [data-set-cat]')).map((b) => b.getAttribute('data-tip') ?? '');
   };
   it('profil principal : Sources et Serveur lastAddon visibles, formulaire de clés présent', async () => {
     as2(true);

@@ -47,6 +47,92 @@ describe('navigation latérale', () => {
   });
 });
 
+describe('menu : libellés, groupes, clavier, sélecteur mobile', () => {
+  const navItems = () => Array.from(page().querySelectorAll('.set-nav-list [data-set-cat]')) as HTMLElement[];
+  const key = (el: Element, k: string) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+
+  it('affiche des libellés courts avec le libellé complet en title et aria-label', () => {
+    const profil = navItems()[0];
+    expect(profil.querySelector('.set-nav-t')!.textContent).toBe('Profil');
+    expect(profil.dataset.tip).toBe('Profil et compte');
+    expect(profil.hasAttribute('title')).toBe(false);
+    expect(profil.getAttribute('aria-label')).toContain('Profil et compte');
+    expect(page().querySelector('#set-h-account')!.textContent).toBe('Profil et compte');
+  });
+
+  it('range les catégories en 4 groupes titrés', () => {
+    const titles = Array.from(page().querySelectorAll('.set-nav-gt')).map((e) => e.textContent);
+    expect(titles).toEqual(['Compte et apparence', 'Lecture', 'Contenu', 'Serveur']);
+    expect(page().querySelector('.set-nav')!.getAttribute('aria-label')).toBe('Catégories de réglages');
+  });
+
+  it('masque un groupe vide', async () => {
+    const { navHTML, CATEGORIES } = await import('../src/ui/settings-ui.js');
+    const w = document.createElement('div');
+    w.innerHTML = navHTML(CATEGORIES.filter((c) => c.group !== 'server'), 'account');
+    expect(Array.from(w.querySelectorAll('.set-nav-gt')).map((e) => e.textContent)).toEqual(['Compte et apparence', 'Lecture', 'Contenu']);
+    expect(w.querySelectorAll('.set-nav-list [data-set-cat]').length).toBe(7);
+  });
+
+  it('pastille ambre seulement avec une donnée réelle', async () => {
+    const { navHTML, CATEGORIES } = await import('../src/ui/settings-ui.js');
+    const w = document.createElement('div');
+    w.innerHTML = navHTML(CATEGORIES, 'account');
+    expect(w.querySelector('.set-nav-dot')).toBeNull();
+    w.innerHTML = navHTML(CATEGORIES, 'account', { server: 'configuration manquante' });
+    expect(w.querySelectorAll('.set-nav-list .set-nav-dot').length).toBe(1);
+    expect(w.querySelector('[data-set-cat="server"]')!.getAttribute('aria-label')).toContain('configuration manquante');
+    expect(w.querySelector('[data-set-opt="server"]')!.getAttribute('aria-label')).toContain('configuration manquante');
+  });
+
+  it('tabindex itinérant : seule la catégorie active est dans l’ordre de tabulation', () => {
+    const tab = navItems().filter((i) => i.tabIndex === 0).map((i) => i.dataset.setCat);
+    expect(tab).toEqual(navItems().filter((i) => i.getAttribute('aria-current') === 'true').map((i) => i.dataset.setCat));
+  });
+
+  it('flèches avec boucle, Début et Fin déplacent le focus', () => {
+    const items = navItems();
+    items[0].focus();
+    key(items[0], 'ArrowUp');
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    key(document.activeElement!, 'ArrowDown');
+    expect(document.activeElement).toBe(items[0]);
+    key(items[0], 'End');
+    expect(document.activeElement).toBe(items[items.length - 1]);
+    key(document.activeElement!, 'Home');
+    expect(document.activeElement).toBe(items[0]);
+  });
+
+  it('le sélecteur mobile s’ouvre, affiche « n sur 9 » et choisit une catégorie', () => {
+    const btn = page().querySelector('[data-set-sel]') as HTMLElement;
+    expect(btn.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    click(btn);
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    const list = page().querySelector('.set-sel-l') as HTMLElement;
+    expect(list.getAttribute('role')).toBe('listbox');
+    expect(list.hidden).toBe(false);
+    click(list.querySelector('[data-set-opt="audio"]'));
+    expect(list.hidden).toBe(true);
+    expect(scrolled).toContain('set-p-audio');
+    expect(btn.querySelector('[data-sel-pos]')!.textContent).toBe('5 sur 9');
+    expect(btn.querySelector('[data-sel-name]')!.textContent).toBe('Audio');
+  });
+
+  it('le sélecteur mobile se ferme quand le focus le quitte', () => {
+    const btn = page().querySelector('[data-set-sel]') as HTMLElement;
+    const list = page().querySelector('.set-sel-l') as HTMLElement;
+    click(btn);
+    expect(list.hidden).toBe(false);
+    btn.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: list.querySelector('[data-set-opt]') }));
+    expect(list.hidden).toBe(false);
+    btn.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    expect(list.hidden).toBe(false);
+    btn.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.body }));
+    expect(list.hidden).toBe(true);
+  });
+});
+
 describe('interrupteurs', () => {
   it('basculent aria-checked et écrivent la même préférence que l’ancien bouton', async () => {
     const { getAutoplay, getSkipPref } = await import('../src/data/prefs');
