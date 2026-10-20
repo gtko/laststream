@@ -841,6 +841,20 @@ export class UserStore {
     return rows.map((row) => row.poster);
   }
 
+  /** Profils du compte qui ont un identifiant d'invité (sans limite de date). */
+  linkedProfileIdsOf(accountId: string): string[] {
+    const rows = this.db.prepare('SELECT profile_id FROM profile_logins WHERE account_id = ? ORDER BY created_at, profile_id').all(accountId) as {
+      profile_id: string;
+    }[];
+    return rows.map((row) => row.profile_id);
+  }
+
+  /** Identifiant de connexion de l'invité d'un profil, ou undefined si le profil n'en a pas. */
+  loginOfProfile(profileId: string): string | undefined {
+    const row = this.db.prepare('SELECT login FROM profile_logins WHERE profile_id = ?').get(profileId) as { login: string } | undefined;
+    return row?.login;
+  }
+
   /** Login de profil (identifiant de l'invité) : identifiants, compte et profil. Undefined si aucun. */
   profileLoginRecord(login: string): ProfileLoginRecord | undefined {
     const row = this.db

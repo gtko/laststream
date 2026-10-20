@@ -11,6 +11,7 @@ interface Created {
 
 interface ListBody {
   invites: { id: string; profileId: string; profileName: string; createdAt: string; expiresAt: string; state: string; usedAt?: string }[];
+  linkedProfileIds: string[];
 }
 
 interface CheckBody {
@@ -118,8 +119,8 @@ describe('création d’une invitation sur un profil du foyer', () => {
   });
 
   it('refuse un profil enfant, le profil principal, et un profil déjà doté d’un identifiant', async () => {
-    expect(await createInvite(kid)).toMatchObject({ status: 403, body: { error: 'kid_profile' } });
-    expect(await createInvite(alice.profile)).toMatchObject({ status: 403, body: { error: 'main_profile_invite' } });
+    expect(await createInvite(kid)).toMatchObject({ status: 400, body: { error: 'kid_profile' } });
+    expect(await createInvite(alice.profile)).toMatchObject({ status: 400, body: { error: 'principal_profile' } });
     await redeem((await linkForMarie()).token, 'marie.hub');
     expect(await createInvite(marie)).toMatchObject({ status: 409, body: { error: 'profile_has_login' } });
   });
@@ -330,6 +331,23 @@ describe('identifiants et inscription', () => {
   });
 });
 
+describe('liste : profils liés à un identifiant', () => {
+  it('linkedProfileIds : vide avant consommation, puis le profil invité', async () => {
+    expect((await listInvites()).body.linkedProfileIds).toEqual([]);
+    await redeem((await linkForMarie()).token, 'marie.hub');
+    expect((await listInvites()).body.linkedProfileIds).toEqual([marie]);
+  });
+
+  it('linkedProfileIds reste complet au-delà de la fenêtre de 30 jours, la liste des liens non', async () => {
+    await redeem((await linkForMarie()).token, 'marie.hub');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 31 * 24 * HOUR);
+    const list = await listInvites();
+    expect(list.body.invites).toEqual([]);
+    expect(list.body.linkedProfileIds).toEqual([marie]);
+  });
+});
+
 describe('révocation', () => {
   it('révoque un lien en attente ; un lien utilisé ne se révoque pas ; un id inconnu : 404', async () => {
     const link = await linkForMarie();
@@ -351,6 +369,67 @@ describe('révocation', () => {
     expect(list.body.invites).toEqual([
       expect.objectContaining({ id: link.id, profileId: marie, profileName: 'Marie', state: 'pending' }),
     ]);
+  });
+});
+
+describe('périmètre d’une session verrouillée : parrainage, amis, identité, profils', () => {
+  const denied = { error: 'profile_locked' };
+
+  it('parrainage et amis au niveau du compte : 403 profile_locked', async () => {
+    const token = await marieLoggedIn();
+    expect((await request<ErrorBody>(app, 'GET', '/user/invites', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'PUT', '/user/invites/x/sent', { token, body: { sent: true } })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'DELETE', '/user/invites/x', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'GET', '/user/friends', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'POST', '/user/friends/requests', { token, body: { username: 'bob' } })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'DELETE', '/user/friends/alice', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'GET', '/user/friends/alice/library', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'DELETE', '/user/presence', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'PUT', '/user/presence', { token, body: { invisible: true } })).body).toEqual(denied);
+  });
+
+  it('lien public avec invitation réservée refusé ; lien sans invitation et amis de profil autorisés, pour ce profil seulement', async () => {
+    const token = await marieLoggedIn();
+    const withInvite = await request<ErrorBody>(app, 'POST', '/user/social/share-links', {
+      token,
+      headers: { 'x-profile-id': marie },
+      body: { type: 'movie', tmdbId: 603, title: 'Matrix', withInvite: true },
+    });
+    expect(withInvite.status).toBe(403);
+    expect(withInvite.body).toEqual(denied);
+    const own = await request<ErrorBody>(app, 'POST', '/user/social/share-links', {
+      token,
+      headers: { 'x-profile-id': marie },
+      body: { type: 'movie', tmdbId: 603, title: 'Matrix', withInvite: false },
+    });
+    expect(own.status).toBe(201);
+    const mine = await request<{ links: unknown[] }>(app, 'GET', '/user/social/share-links', { token, headers: { 'x-profile-id': marie } });
+    expect(mine.status).toBe(200);
+    expect(mine.body.links).toHaveLength(1);
+    // Un autre profil du compte n'agit pas depuis cette session, ni en lecture ni en écriture.
+    const other = await request<ErrorBody>(app, 'GET', '/user/social/share-links', { token, headers: { 'x-profile-id': alice.profile } });
+    expect(other.body).toEqual(denied);
+    const friends = await request(app, 'GET', '/user/social/friends', { token, headers: { 'x-profile-id': marie } });
+    expect(friends.status).toBe(200);
+    const otherFriends = await request<ErrorBody>(app, 'GET', '/user/social/friends', { token, headers: { 'x-profile-id': alice.profile } });
+    expect(otherFriends.body).toEqual(denied);
+  });
+
+  it('/user/me : le login de l’invité remplace le pseudo du compte hôte', async () => {
+    const token = await marieLoggedIn();
+    const me = await meOf(token);
+    expect(me.body.account).toMatchObject({ username: 'marie.hub', isOwner: false, role: 'member' });
+    expect(me.body.lockedProfileId).toBe(marie);
+    expect(JSON.stringify(me.body)).not.toContain('alice');
+  });
+
+  it('/user/profiles : une session verrouillée ne liste que son profil ; le propriétaire voit tout le compte', async () => {
+    const token = await marieLoggedIn();
+    const list = await request<{ profiles: { id: string; isMainProfile: boolean; isAdminProfile: boolean }[] }>(app, 'GET', '/user/profiles', { token });
+    expect(list.body.profiles.map((p) => p.id)).toEqual([marie]);
+    expect(list.body.profiles[0]).toMatchObject({ isMainProfile: false, isAdminProfile: false });
+    const owner = await request<{ profiles: unknown[] }>(app, 'GET', '/user/profiles', { token: alice.token });
+    expect(owner.body.profiles).toHaveLength(4);
   });
 });
 

@@ -311,12 +311,30 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
-  /** `lockedProfileId` : profil auquel la session est verrouillée (invitation du foyer), sinon null. */
+  /**
+   * `lockedProfileId` : profil auquel la session est verrouillée (invitation du foyer), sinon null. Une session verrouillée
+   * ne voit pas le pseudo du compte hôte : son identifiant de connexion d'invité en tient lieu (rôle membre, pas de propriété).
+   */
   router.get('/me', async (c) => {
-    const session = await sessionOf(db(), c);
+    const users = db();
+    const session = await sessionOf(users, c);
+    if (session.lockedProfileId !== null) {
+      const profile = await users.findProfile(session.account.id, session.lockedProfileId);
+      const login = await users.loginOfProfile(session.lockedProfileId);
+      return sendJson(c, {
+        account: {
+          id: session.account.id,
+          username: login ?? '',
+          isOwner: false,
+          createdAt: profile?.createdAt ?? session.account.createdAt,
+          role: 'member',
+        },
+        lockedProfileId: session.lockedProfileId,
+      });
+    }
     return sendJson(c, {
       account: { ...session.account, role: session.account.isOwner ? 'owner' : 'member' },
-      lockedProfileId: session.lockedProfileId,
+      lockedProfileId: null,
     });
   });
 
@@ -351,12 +369,16 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   // Profils
 
   router.get('/profiles', async (c) => {
-    const { account } = await sessionOf(db(), c);
-    // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil).
-    const adminId = account.isOwner ? await backend.admin().adminProfileId() : null;
+    const session = await sessionOf(db(), c);
+    const { account } = session;
+    const locked = session.lockedProfileId;
+    // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil), jamais à une session invitée.
+    const adminId = account.isOwner && locked === null ? await backend.admin().adminProfileId() : null;
     // Profil principal : seul à gérer la configuration (sources, extensions, clés) ; les autres profils n'ont que leurs préférences.
-    const mainId = await backend.admin().mainProfileId(account.id);
-    const profiles = (await db().listProfiles(account.id)).map((p) => ({
+    // Session verrouillée sur un profil invité : seul ce profil est listé, sans rôle de principal.
+    const mainId = locked === null ? await backend.admin().mainProfileId(account.id) : null;
+    const visible = (await db().listProfiles(account.id)).filter((p) => locked === null || p.id === locked);
+    const profiles = visible.map((p) => ({
       ...publicProfile(p),
       isAdminProfile: adminId !== null && p.id === adminId,
       isMainProfile: mainId !== null && p.id === mainId,

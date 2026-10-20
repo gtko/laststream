@@ -27,23 +27,33 @@ export interface Actor {
   pid: string;
   handle: { name: string; tag: string; full: string };
   avatarColor: string;
+  /** Profil auquel la session est verrouillée (invitation du foyer) : seul ce profil agit, sinon null. */
+  lockedProfileId: string | null;
 }
 
 /**
  * Session et profil agissant (`X-Profile-Id`). Erreurs : 400 `profile_required` (en-tête absent), 404 `profile_not_found`,
- * 403 `kid_profile` (profil enfant), 403 `pin_required` (PIN non déverrouillé).
+ * 403 `kid_profile` (profil enfant), 403 `pin_required` (PIN non déverrouillé), 403 `profile_locked` (session verrouillée
+ * sur un autre profil que celui de l'en-tête).
  */
 export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, secret: string): Promise<Actor> {
   const session = await sessionOf(users, c);
   const profileId = c.req.header('x-profile-id');
   if (profileId === undefined || profileId === '') throw new UserApiError(400, 'profile_required');
+  if (session.lockedProfileId !== null && profileId !== session.lockedProfileId) throw new UserApiError(403, 'profile_locked');
   const profile = await users.findProfile(session.account.id, profileId);
   if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
   if (profile.isKid) throw new UserApiError(403, 'kid_profile');
   assertUnlocked(c, session, profile, secret);
   const identity = await social.identityOf(session.account.id, profile.id);
   if (identity === undefined || identity.pid === null || identity.handle === null) throw new UserApiError(404, 'profile_not_found');
-  return { accountId: session.account.id, pid: identity.pid, handle: identity.handle, avatarColor: profile.avatarColor };
+  return {
+    accountId: session.account.id,
+    pid: identity.pid,
+    handle: identity.handle,
+    avatarColor: profile.avatarColor,
+    lockedProfileId: session.lockedProfileId,
+  };
 }
 
 /** Pid d'un paramètre de route. Un pid mal formé équivaut à un pid inconnu. */

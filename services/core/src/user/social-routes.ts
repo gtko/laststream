@@ -1,4 +1,4 @@
-import type { App } from '../http/app-env.js';
+import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
@@ -30,11 +30,21 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
   const users = () => backend.users();
   const social = () => backend.social();
 
+  /**
+   * Session d'un compte, sans verrou : le parrainage et les amis sont au niveau du compte. Une session verrouillée sur un
+   * profil invité reçoit 403 profile_locked (les routes sociales au niveau profil, elles, restent ouvertes à ce profil).
+   */
+  const openAccountSession = async (c: Ctx) => {
+    const session = await sessionOf(users(), c);
+    assertNotLocked(session);
+    return session;
+  };
+
   // Parrainage
 
   /** Les liens du compte (créés à la volée jusqu'au quota) : code, état libre / envoyé / utilisé, pseudo du filleul. */
   router.get('/invites', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     return sendJson(c, await social().listInvites(account.id, nowIso()));
   });
 
@@ -45,7 +55,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
   });
 
   router.put('/invites/:id/sent', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const { sent } = parseWith(inviteSentSchema, c.get('body'));
     const result = await social().setInviteSent(account.id, String(c.req.param('id')), sent, nowIso());
     if (result === 'not_found') throw new UserApiError(404, 'invite_not_found');
@@ -58,7 +68,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
    * révoqué par l'administration (il ne se régénère pas).
    */
   router.delete('/invites/:id', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const result = await social().revokeInvite(account.id, String(c.req.param('id')), nowIso());
     if (result.result === 'not_found') throw new UserApiError(404, 'invite_not_found');
     if (result.result === 'used') throw new UserApiError(409, 'invite_used');
@@ -84,13 +94,13 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** `{ friends, incoming, outgoing }` : amis avec statut (online / watching / offline), demandes reçues et envoyées. */
   router.get('/friends', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     return sendJson(c, await social().listFriends(account.id, nowIso()));
   });
 
   /** Demande par pseudo exact. Si la personne avait déjà demandé, l'amitié est acceptée (`status: accepted`). */
   router.post('/friends/requests', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const { username } = parseWith(friendRequestSchema, c.get('body'));
     const result = await social().requestFriend(account.id, username, nowIso());
     switch (result) {
@@ -110,7 +120,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
   });
 
   router.post('/friends/requests/:username/accept', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const username = parseWith(usernameParam, c.req.param('username'));
     const result = await social().acceptFriend(account.id, username, nowIso());
     if (result === 'not_found') throw new UserApiError(404, 'request_not_found');
@@ -120,14 +130,14 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Refuse une demande reçue ou annule une demande envoyée. */
   router.delete('/friends/requests/:username', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const username = parseWith(usernameParam, c.req.param('username'));
     if (!(await social().declineFriend(account.id, username))) throw new UserApiError(404, 'request_not_found');
     return sendEmpty(c, 204);
   });
 
   router.delete('/friends/:username', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const username = parseWith(usernameParam, c.req.param('username'));
     if (!(await social().removeFriend(account.id, username))) throw new UserApiError(404, 'friend_not_found');
     return sendEmpty(c, 204);
@@ -135,7 +145,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Bibliothèque visible d'un ami (titres en visibilité « friends » des profils non enfants), paginée. */
   router.get('/friends/:username/library', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const username = parseWith(usernameParam, c.req.param('username'));
     const query = parseWith(friendLibraryQuery, queryParams(c));
     const page = await social().friendLibrary(account.id, username, query.type, query.limit, query.offset);
@@ -156,8 +166,8 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
     const body = parseWith(presenceSchema, c.get('body'));
     let profileId: string | null = null;
     let watching: WatchingNow | null = null;
-    // Session verrouillée sur un profil invité : elle ne parle que pour ce profil.
-    if (body.profileId !== undefined && session.lockedProfileId !== null && body.profileId !== session.lockedProfileId) {
+    // Session verrouillée sur un profil invité : elle ne parle que pour ce profil (pas de présence au niveau du compte).
+    if (session.lockedProfileId !== null && body.profileId !== session.lockedProfileId) {
       throw new UserApiError(403, 'profile_locked');
     }
     if (body.profileId !== undefined) {
@@ -184,7 +194,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Se déclarer hors ligne (fermeture de l'application). */
   router.delete('/presence', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     await social().clearPresence(account.id);
     return sendEmpty(c, 204);
   });

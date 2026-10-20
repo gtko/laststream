@@ -43,8 +43,8 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
     const account = session.account;
     const target = await store.findProfile(account.id, String(c.req.param('id')));
     if (target === undefined) throw new UserApiError(404, 'profile_not_found');
-    if (target.isKid) throw new UserApiError(403, 'kid_profile');
-    if ((await backend.admin().mainProfileId(account.id)) === target.id) throw new UserApiError(403, 'main_profile_invite');
+    if (target.isKid) throw new UserApiError(400, 'kid_profile');
+    if ((await backend.admin().mainProfileId(account.id)) === target.id) throw new UserApiError(400, 'principal_profile');
     // Créateur : un profil adulte du compte (en-tête X-Profile-Id), déverrouillé si son PIN l'exige.
     const actorId = c.req.header('x-profile-id');
     const actor = actorId === undefined ? undefined : await store.findProfile(account.id, actorId);
@@ -69,12 +69,16 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
     return sendJson(c, { id, token, expiresAt: iso(expiresAt) }, 201);
   });
 
-  /** Liens du compte créés sur les 30 derniers jours, avec leur état. */
+  /**
+   * Liens du compte créés sur les 30 derniers jours, avec leur état. `linkedProfileIds` : profils du compte qui ont déjà un
+   * identifiant d'invité (sans limite de date).
+   */
   router.get('/household-invites', async (c) => {
     const session = await sessionOf(users(), c);
     assertNotLocked(session);
     const now = Date.now();
     const rows = await users().listHouseholdInvites(session.account.id, householdListSinceMs(now));
+    const linkedProfileIds = await users().linkedProfileIdsOf(session.account.id);
     return sendJson(c, {
       invites: rows.map((row) => ({
         id: row.id,
@@ -85,6 +89,7 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
         state: householdStateOf(row, now),
         usedAt: row.usedAt === null ? undefined : iso(row.usedAt),
       })),
+      linkedProfileIds,
     });
   });
 
