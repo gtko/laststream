@@ -1,7 +1,7 @@
 import type { CacheEvent, CacheProvider } from '../cache/ttl-cache.js';
 import { setCacheListener } from '../cache/ttl-cache.js';
 import { platform } from '../platform/index.js';
-import { type MetricsSink, type MetricsService, noopSink } from './core.js';
+import { type MetricsSink, type MetricsService, type OutboundOutcome, noopSink } from './core.js';
 import type { ProviderEvent, ProviderName } from './providers.js';
 
 export * from './core.js';
@@ -23,6 +23,18 @@ export function metrics(): MetricsSink {
 /** Compteur par fournisseur (appel sortant, lecture de cache, fiche R2, 304). Sans effet hors plateforme de mesure. */
 export function recordProviderEvent(provider: ProviderName, event: ProviderEvent): void {
   metrics().provider(provider, event);
+}
+
+/**
+ * Appel sortant vers un fournisseur (issue et latence, santé par heure UTC). Sans effet hors plateforme de mesure.
+ * N'échoue jamais : la mesure ne change ni la requête utilisateur ni son résultat.
+ */
+export function recordOutbound(provider: ProviderName, outcome: OutboundOutcome, ms: number): void {
+  try {
+    metrics().outbound(provider, outcome, ms);
+  } catch {
+    // Mesure facultative.
+  }
 }
 
 /**

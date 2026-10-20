@@ -11,6 +11,10 @@ export function createMemoryMetrics(now: () => number = Date.now): MetricsServic
       store.ingest(sink.take());
       return Promise.resolve(store.report(range));
     },
+    providerHours: () => {
+      store.ingest(sink.take());
+      return Promise.resolve(store.providerHours());
+    },
     // Compactage périodique : l'accumulateur ne grossit pas si personne ne lit le rapport (rétention appliquée au passage).
     flushIfDue: () => {
       if (now() - lastFlush < FLUSH_INTERVAL_MS) return;

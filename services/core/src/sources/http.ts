@@ -1,5 +1,7 @@
 import { isIP } from 'node:net';
 import { isPublicMode } from '../config/runtime-env.js';
+import { recordOutbound } from '../metrics/index.js';
+import { providerOfUrl } from '../metrics/providers.js';
 import { platform, type HostLookup, type OutboundDispatcher } from '../platform/index.js';
 import { isNonPublicAddress } from './ip.js';
 
@@ -264,6 +266,8 @@ async function discardBody(response: Response): Promise<void> {
  * Sécurité : schéma http(s) seul ; redirections gérées à la main (redirect: 'manual'), au plus
  * MAX_REDIRECTS, chaque saut revalidé (checkOutboundUrl puis `guard` si fourni) ; corps limité à
  * `body.maxBytes` (défaut MAX_BODY_BYTES). Les erreurs sont des SourceError sans URL.
+ * Santé des fournisseurs : un appel vers une API de fournisseur mesuré est compté (réussi, ou échec : réseau, délai,
+ * statut 5xx). La mesure n'échoue jamais et ne change ni le résultat ni l'erreur de la requête.
  */
 export async function fetchBytes(
   fetchFn: FetchFn,
@@ -274,6 +278,8 @@ export async function fetchBytes(
 ): Promise<BytesResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const provider = providerOfUrl(url);
+  const started = Date.now();
   try {
     const publicMode = isPublicMode();
     // DNS contrôlé à la connexion (agent épinglé) : mode public ou garde active. Chaque saut repasse par là.
@@ -290,6 +296,7 @@ export async function fetchBytes(
       const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('location') : null;
       if (location === null) {
         const bytes = await readBytesLimited(response, body.maxBytes ?? MAX_BODY_BYTES);
+        if (provider !== undefined) recordOutbound(provider, response.status >= 500 ? 'fail' : 'ok', Date.now() - started);
         return { status: response.status, ok: response.ok, url: target, bytes, headers: response.headers };
       }
       await discardBody(response);
@@ -301,6 +308,8 @@ export async function fetchBytes(
   } catch (err) {
     if (err instanceof SourceError) throw err;
     if (isUnsafeTarget(err)) throw new UnsafeTargetError();
+    // Échec de transport (réseau, délai, lecture du corps interrompue) : compté comme échec du fournisseur.
+    if (provider !== undefined) recordOutbound(provider, 'fail', Date.now() - started);
     throw transportError(err, timeoutMs);
   } finally {
     clearTimeout(timer);

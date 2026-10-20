@@ -8,6 +8,7 @@ import {
   type MetricsReport,
   type MetricsService,
 } from '../../metrics/core.js';
+import type { ProviderHourRow } from '../../metrics/providers.js';
 import type { Metrics } from './metrics-do.js';
 
 /** Nom du Durable Object global des métriques. */
@@ -17,6 +18,7 @@ export const METRICS_NAME = 'metrics';
 interface MetricsRpc {
   ingest(batch: MetricsBatch): Promise<void>;
   report(range: MetricsRange): Promise<MetricsReport>;
+  providerHours(): Promise<ProviderHourRow[]>;
   startPurge(prefix: string): Promise<PurgeJob>;
   purgeJob(id: string): Promise<PurgeJob | undefined>;
   purgeJobs(): Promise<PurgeJob[]>;
@@ -55,6 +57,10 @@ export function createRemoteMetrics(
     async report(range) {
       await flush();
       return await rpc(namespace).report(range);
+    },
+    async providerHours() {
+      await flush();
+      return await rpc(namespace).providerHours();
     },
   };
 }

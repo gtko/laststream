@@ -2,6 +2,7 @@ import type { AppDeps } from '../deps.js';
 import type { App, Ctx } from '../http/app-env.js';
 import { sendJson } from '../http/respond.js';
 import type { MetricsService } from '../metrics/core.js';
+import { buildProviderHealth, type ProviderHealth } from '../metrics/health.js';
 import { isProvider, PROVIDERS, type ProviderName } from '../metrics/providers.js';
 import { type RuntimeEnv, platform, runtimeEnv } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
@@ -22,8 +23,6 @@ export const PROVIDER_TEST_TIMEOUT_MS = 4000;
 export const PROVIDER_TEST_PER_MIN = 10;
 /** Durée de vie des statistiques de stockage (ms), par instance. */
 export const STORAGE_TTL_MS = 5 * 60_000;
-/** Points de la sparkline de taux de succès (une par heure). */
-const SPARK_POINTS = 24;
 /** Fournisseur refusé d'office : jamais d'appel AllDebrid depuis le serveur (compte suspendu pour appels depuis Cloudflare). */
 const ALLDEBRID = 'alldebrid';
 
@@ -150,18 +149,18 @@ export async function runProviderTest(id: ProviderName, probe: ProviderProbe, fe
 }
 
 /**
- * Fournisseur de la liste : les champs de succès, latence, sparkline et dernier échec restent null et l'état unknown,
- * car les compteurs par fournisseur ne consignent ni les échecs ni les latences (voir metrics/providers.ts).
+ * Fournisseur de la liste : taux de succès, latence p95, sparkline, dernier échec et statut viennent de la santé mesurée
+ * sur les appels sortants (metrics/health.ts). Sans donnée, les champs sont null et le statut unknown.
  */
-function providerEntry(id: ProviderName, env: RuntimeEnv) {
+function providerEntry(id: ProviderName, env: RuntimeEnv, health: ProviderHealth) {
   return {
     id,
     label: LABELS[id],
-    successRate: null as number | null,
-    p95: null as number | null,
-    spark: Array.from({ length: SPARK_POINTS }, () => null as number | null),
-    lastFailureAt: null as string | null,
-    status: 'unknown' as 'ok' | 'degraded' | 'down' | 'unknown',
+    successRate: health.successRate,
+    p95: health.p95,
+    spark: health.spark,
+    lastFailureAt: health.lastFailureAt,
+    status: health.status,
     testable: PROBES[id](env) !== undefined,
   };
 }
@@ -224,7 +223,9 @@ export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
   router.get('/providers', async (c) => {
     await owner(c);
     const env = runtimeEnv();
-    return sendJson(c, { providers: PROVIDERS.map((id) => providerEntry(id, env)) });
+    const rows = (await settle(() => ctx.metrics()?.providerHours?.())) ?? [];
+    const health = buildProviderHealth(rows, Date.now());
+    return sendJson(c, { providers: PROVIDERS.map((id) => providerEntry(id, env, health[id])) });
   });
 
   /** Requête légère vers le fournisseur (clé du serveur) : audité, 10 par minute et par IP, délai de 4 s. */

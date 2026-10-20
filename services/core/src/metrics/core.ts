@@ -7,12 +7,16 @@
  */
 
 import {
+  addProviderHourRow,
   addProviderRow,
   buildProviderReport,
   dayOf,
+  healthWindowStart,
+  hourOf,
   isProvider,
   isProviderEvent,
   type ProviderEvent,
+  type ProviderHourRow,
   type ProviderName,
   type ProviderReport,
   type ProviderRow,
@@ -42,6 +46,8 @@ export const isMetricsRange = (value: unknown): value is MetricsRange => typeof 
 
 export type AlldebridOp = 'unlock' | 'magnet' | 'other';
 export type UpstreamOutcome = 'ok' | 'fail' | 'timeout';
+/** Issue d'un appel sortant vers un fournisseur : `ok` (réponse reçue, statut < 500), `fail` (réseau, délai, 5xx). */
+export type OutboundOutcome = 'ok' | 'fail';
 
 /** Point d'entrée des mesures : appels non bloquants et sans exception. */
 export interface MetricsSink {
@@ -52,6 +58,8 @@ export interface MetricsSink {
   error(route: string, status: number, message: string): void;
   /** Compteur par fournisseur et par jour (appel sortant, lecture de cache, fiche R2, 304). Hors liste : ignoré. */
   provider(provider: ProviderName, event: ProviderEvent): void;
+  /** Appel sortant vers un fournisseur : issue et latence (santé par heure UTC). Hors liste : ignoré. */
+  outbound(provider: ProviderName, outcome: OutboundOutcome, ms: number): void;
 }
 
 export const noopSink: MetricsSink = {
@@ -61,6 +69,7 @@ export const noopSink: MetricsSink = {
   cache: () => undefined,
   error: () => undefined,
   provider: () => undefined,
+  outbound: () => undefined,
 };
 
 export interface MetricRow {
@@ -81,12 +90,16 @@ export interface MetricsBatch {
   errors: ErrorRecord[];
   /** Compteurs par fournisseur et par jour (absent des lots sans fournisseur). */
   providers?: ProviderRow[];
+  /** Santé des fournisseurs par heure UTC (absent des lots sans appel sortant). */
+  health?: ProviderHourRow[];
 }
 
 /** Service de métriques d'une plateforme : l'écriture passe par `sink`, la lecture par `report`. */
 export interface MetricsService {
   sink: MetricsSink;
   report(range: MetricsRange): Promise<MetricsReport>;
+  /** Lignes horaires de santé des fournisseurs, sur la rétention (8 jours), heure courante incluse. */
+  providerHours?(): Promise<ProviderHourRow[]>;
   /** Envoie les compteurs de l'instance si le délai d'envoi groupé est écoulé (appelé en fin de requête). */
   flushIfDue?(): void;
   /** Envoie immédiatement les compteurs de l'instance (tests, lecture du rapport). */
@@ -184,13 +197,14 @@ export class MetricsAccumulator implements MetricsSink {
   private counters = new Map<string, MetricRow>();
   private errors: ErrorRecord[] = [];
   private providerCounters = new Map<string, ProviderRow>();
+  private healthRows = new Map<string, ProviderHourRow>();
   private readonly hosts = new Set<string>();
   private readonly elements = new Map<string, Set<string>>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
   isEmpty(): boolean {
-    return this.counters.size === 0 && this.errors.length === 0 && this.providerCounters.size === 0;
+    return this.counters.size === 0 && this.errors.length === 0 && this.providerCounters.size === 0 && this.healthRows.size === 0;
   }
 
   private add(name: string, value = 1): void {
@@ -258,16 +272,37 @@ export class MetricsAccumulator implements MetricsSink {
     addProviderRow(this.providerCounters, { day: dayOf(this.now()), provider, event, value: 1 });
   }
 
+  /**
+   * Appel sortant vers un fournisseur : réussi (latence ajoutée à l'histogramme) ou échec (date du dernier échec).
+   * Hors liste ou issue inconnue : ignoré. N'échoue jamais.
+   */
+  outbound(provider: ProviderName, outcome: OutboundOutcome, ms: number): void {
+    if (!isProvider(provider) || (outcome !== 'ok' && outcome !== 'fail')) return;
+    const now = this.now();
+    const latency = new Array<number>(LATENCY_BOUNDS_MS.length + 1).fill(0);
+    if (outcome === 'ok') latency[latencyIndex(Number.isFinite(ms) ? Math.max(0, ms) : Number.POSITIVE_INFINITY)] = 1;
+    addProviderHourRow(this.healthRows, {
+      hour: hourOf(now),
+      provider,
+      ok: outcome === 'ok' ? 1 : 0,
+      fail: outcome === 'fail' ? 1 : 0,
+      lastFailAt: outcome === 'fail' ? now : null,
+      latency,
+    });
+  }
+
   /** Lot à envoyer ; l'accumulateur repart de zéro. */
   take(): MetricsBatch {
     const batch: MetricsBatch = { rows: [...this.counters.values()], errors: this.errors, providers: [...this.providerCounters.values()] };
+    if (this.healthRows.size > 0) batch.health = [...this.healthRows.values()];
     this.counters = new Map();
     this.errors = [];
     this.providerCounters = new Map();
+    this.healthRows = new Map();
     return batch;
   }
 
-  /** Remet un lot non envoyé (échec d'envoi), dans la limite de MAX_ERRORS erreurs. */
+  /** Remet un lot non envoyé (échec d'envoi), dans la limite de MAX_ERRORS erreurs et de la rétention de santé. */
   restore(batch: MetricsBatch): void {
     for (const row of batch.rows) {
       const key = `${row.bucket}|${row.name}`;
@@ -276,6 +311,8 @@ export class MetricsAccumulator implements MetricsSink {
       else existing.value += row.value;
     }
     for (const row of batch.providers ?? []) addProviderRow(this.providerCounters, row);
+    const healthStart = healthWindowStart(this.now());
+    for (const row of batch.health ?? []) if (row.hour >= healthStart) addProviderHourRow(this.healthRows, row);
     this.errors = [...batch.errors, ...this.errors].slice(-MAX_ERRORS);
   }
 }
@@ -284,6 +321,7 @@ export class MetricsAccumulator implements MetricsSink {
 export class MemoryMetricsStore {
   private readonly rows = new Map<string, MetricRow>();
   private readonly providerRows = new Map<string, ProviderRow>();
+  private readonly healthRows = new Map<string, ProviderHourRow>();
   private errors: ErrorRecord[] = [];
 
   constructor(private readonly now: () => number = Date.now) {}
@@ -296,16 +334,25 @@ export class MemoryMetricsStore {
       else existing.value += row.value;
     }
     for (const row of batch.providers ?? []) addProviderRow(this.providerRows, row);
+    for (const row of batch.health ?? []) addProviderHourRow(this.healthRows, row);
     this.errors = [...this.errors, ...batch.errors].sort((a, b) => a.at - b.at).slice(-MAX_ERRORS);
     const limit = this.now() - RETENTION_MS;
     for (const [key, row] of this.rows) if (row.bucket < limit) this.rows.delete(key);
     this.errors = this.errors.filter((entry) => entry.at >= limit);
     const windowStart = providerWindowStart(this.now());
     for (const [key, row] of this.providerRows) if (row.day < windowStart) this.providerRows.delete(key);
+    const healthStart = healthWindowStart(this.now());
+    for (const [key, row] of this.healthRows) if (row.hour < healthStart) this.healthRows.delete(key);
   }
 
   report(range: MetricsRange): MetricsReport {
     return buildReport([...this.rows.values()], this.errors, range, this.now(), [...this.providerRows.values()]);
+  }
+
+  /** Lignes horaires de santé sur la rétention (copies). */
+  providerHours(): ProviderHourRow[] {
+    const start = healthWindowStart(this.now());
+    return [...this.healthRows.values()].filter((row) => row.hour >= start).map((row) => ({ ...row, latency: [...row.latency] }));
   }
 }
 
@@ -339,7 +386,8 @@ export interface MetricsReport {
   errors: { at: string; route: string; status: number; message: string }[];
 }
 
-function quantile(histogram: readonly number[], q: number): number | null {
+/** Quantile estimé (ms) d'un histogramme de LATENCY_BOUNDS_MS (interpolation dans la case) ; null sans mesure. */
+export function quantile(histogram: readonly number[], q: number): number | null {
   const total = histogram.reduce((sum, n) => sum + n, 0);
   if (total === 0) return null;
   const target = q * total;

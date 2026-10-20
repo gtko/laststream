@@ -5,12 +5,15 @@ import {
   type MetricsBatch,
   type MetricsRange,
   type MetricsReport,
+  LATENCY_BOUNDS_MS,
   MAX_ERRORS,
   RETENTION_MS,
   buildReport,
+  healthWindowStart,
   isProvider,
   isProviderEvent,
   type ProviderEvent,
+  type ProviderHourRow,
   type ProviderName,
   type ProviderRow,
   providerWindowStart,
@@ -23,6 +26,15 @@ const PURGE_STEP_OPS = 800;
 const PURGE_LIST_LIMIT = 100;
 const PRUNE_EVERY_MS = 10 * 60_000;
 const MAX_JOBS_KEPT = 20;
+
+/** Colonnes de l'histogramme de latence de santé (une par case de LATENCY_BOUNDS_MS, dépassement inclus). */
+const LATENCY_COLUMNS = Array.from({ length: LATENCY_BOUNDS_MS.length + 1 }, (_, index) => `lat${index}`);
+/** Santé des fournisseurs par heure UTC : appels réussis, échecs, dernier échec (0 = aucun), histogramme de latence. */
+const HEALTH_TABLE = `CREATE TABLE IF NOT EXISTS provider_hourly (
+        hour INTEGER NOT NULL, provider TEXT NOT NULL, ok INTEGER NOT NULL, fail INTEGER NOT NULL, last_fail INTEGER NOT NULL DEFAULT 0,
+        ${LATENCY_COLUMNS.map((column) => `${column} INTEGER NOT NULL DEFAULT 0`).join(', ')},
+        PRIMARY KEY (hour, provider)
+      ) WITHOUT ROWID;`;
 
 interface JobRow {
   id: string;
@@ -62,6 +74,7 @@ export class Metrics extends DurableObject {
       CREATE TABLE IF NOT EXISTS metrics (bucket INTEGER NOT NULL, name TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (bucket, name)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, route TEXT NOT NULL, status INTEGER NOT NULL, message TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS provider_daily (day INTEGER NOT NULL, provider TEXT NOT NULL, event TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (day, provider, event)) WITHOUT ROWID;
+      ${HEALTH_TABLE}
       CREATE TABLE IF NOT EXISTS purge_jobs (
         id TEXT PRIMARY KEY, prefix TEXT NOT NULL, status TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, cursor TEXT,
         started_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT
@@ -85,6 +98,22 @@ export class Metrics extends DurableObject {
       for (const row of batch.providers ?? []) {
         if (isProvider(row.provider) && isProviderEvent(row.event)) upsertProvider.run(row.day, row.provider, row.event, Math.round(row.value));
       }
+      const upsertHealth = this.db.prepare(
+        `INSERT INTO provider_hourly (hour, provider, ok, fail, last_fail, ${LATENCY_COLUMNS.join(', ')}) VALUES (${Array.from({ length: 5 + LATENCY_COLUMNS.length }, () => '?').join(', ')})
+         ON CONFLICT (hour, provider) DO UPDATE SET ok = ok + excluded.ok, fail = fail + excluded.fail, last_fail = MAX(last_fail, excluded.last_fail),
+         ${LATENCY_COLUMNS.map((column) => `${column} = ${column} + excluded.${column}`).join(', ')}`,
+      );
+      for (const row of batch.health ?? []) {
+        if (!isProvider(row.provider) || row.latency.length !== LATENCY_COLUMNS.length) continue;
+        upsertHealth.run(
+          row.hour,
+          row.provider,
+          Math.round(row.ok),
+          Math.round(row.fail),
+          Math.round(row.lastFailAt ?? 0),
+          ...row.latency.map((count) => Math.round(count)),
+        );
+      }
       const insert = this.db.prepare('INSERT INTO errors (at, route, status, message) VALUES (?, ?, ?, ?)');
       for (const error of batch.errors.slice(-MAX_ERRORS)) insert.run(error.at, error.route, error.status, error.message);
       this.db.prepare('DELETE FROM errors WHERE id <= (SELECT MAX(id) FROM errors) - ?').run(MAX_ERRORS);
@@ -95,7 +124,23 @@ export class Metrics extends DurableObject {
       this.db.prepare('DELETE FROM metrics WHERE bucket < ?').run(now - RETENTION_MS);
       this.db.prepare('DELETE FROM errors WHERE at < ?').run(now - RETENTION_MS);
       this.db.prepare('DELETE FROM provider_daily WHERE day < ?').run(providerWindowStart(now));
+      this.db.prepare('DELETE FROM provider_hourly WHERE hour < ?').run(healthWindowStart(now));
     }
+  }
+
+  /** Lignes horaires de santé des fournisseurs, sur la rétention (heure courante incluse). */
+  providerHours(now: number = Date.now()): ProviderHourRow[] {
+    const rows = this.db
+      .prepare(`SELECT hour, provider, ok, fail, last_fail, ${LATENCY_COLUMNS.join(', ')} FROM provider_hourly WHERE hour >= ?`)
+      .all(healthWindowStart(now));
+    return rows.map((row) => ({
+      hour: Number(row.hour),
+      provider: String(row.provider) as ProviderName,
+      ok: Number(row.ok),
+      fail: Number(row.fail),
+      lastFailAt: Number(row.last_fail) > 0 ? Number(row.last_fail) : null,
+      latency: LATENCY_COLUMNS.map((column) => Number(row[column])),
+    }));
   }
 
   report(range: MetricsRange, now: number = Date.now()): MetricsReport {
