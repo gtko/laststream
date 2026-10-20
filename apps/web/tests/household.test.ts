@@ -397,3 +397,24 @@ describe('liste « Invitations du foyer » : garde-fous', () => {
     expect(house.householdInvitesCard()).toContain('Chargement des invitations');
   });
 });
+
+describe('accès déjà créé (linkedProfileIds du serveur)', () => {
+  it('linkedProfileIds fait foi : « Son propre accès » et plus de bouton, sans invitation utilisée', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({ invites: [], linkedProfileIds: ['adult-sam'] });
+    await openEditorFor(ADULT);
+    await tick();
+    expect($('[data-hh-invite]')).toBeNull();
+    expect($('[data-hh-state]')!.textContent).toBe('Son propre accès');
+  });
+
+  it('linkedProfileIds sans ce profil fait foi, même si une invitation utilisée existe : le bouton reste', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({
+      invites: [{ id: 'i1', profileId: 'adult-sam', profileName: 'Sam', createdAt: future(-DAY), expiresAt: future(-HOUR), state: 'used', usedAt: future(-HOUR) }],
+      linkedProfileIds: [],
+    });
+    await openEditorFor(ADULT);
+    await tick();
+    expect($('[data-hh-invite]')).not.toBeNull();
+    expect($('[data-hh-state]')!.hidden).toBe(true);
+  });
+});
