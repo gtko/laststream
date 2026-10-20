@@ -165,6 +165,14 @@ function providerEntry(id: ProviderName, env: RuntimeEnv, health: ProviderHealth
   };
 }
 
+/**
+ * Liste des fournisseurs (GET /admin/providers), partagée avec le centre de contrôle : une seule construction, à partir de
+ * la santé mesurée (buildProviderHealth). Les mêmes entrées servent aux statuts et aux éléments de la boîte.
+ */
+export function providerEntries(env: RuntimeEnv, health: Record<ProviderName, ProviderHealth>) {
+  return PROVIDERS.map((id) => providerEntry(id, env, health[id]));
+}
+
 /** Statistiques de stockage : caches KV, buckets R2 (TV, META, AVATARS) et base SQLite du Durable Object. */
 export interface StorageReport {
   kv: { prefixes: { prefix: string; keys: number; exact: boolean; hitRate: number | null }[] };
@@ -225,7 +233,7 @@ export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
     const env = runtimeEnv();
     const rows = (await settle(() => ctx.metrics()?.providerHours?.())) ?? [];
     const health = buildProviderHealth(rows, Date.now());
-    return sendJson(c, { providers: PROVIDERS.map((id) => providerEntry(id, env, health[id])) });
+    return sendJson(c, { providers: providerEntries(env, health) });
   });
 
   /** Requête légère vers le fournisseur (clé du serveur) : audité, 10 par minute et par IP, délai de 4 s. */

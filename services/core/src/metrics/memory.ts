@@ -7,9 +7,9 @@ export function createMemoryMetrics(now: () => number = Date.now): MetricsServic
   let lastFlush = now();
   return {
     sink,
-    report: (range) => {
+    report: (range, endAt) => {
       store.ingest(sink.take());
-      return Promise.resolve(store.report(range));
+      return Promise.resolve(store.report(range, endAt));
     },
     providerHours: () => {
       store.ingest(sink.take());

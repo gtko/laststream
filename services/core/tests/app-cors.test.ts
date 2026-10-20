@@ -133,3 +133,26 @@ describe('CORS : sonde /health', () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 });
+
+describe('CORS : annonces publiques', () => {
+  it('GET /announcements est lisible depuis une autre origine (bandeau de l app)', async () => {
+    const res = await fetch(`${custom}/announcements`, { headers: { Origin: 'capacitor://localhost' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(await res.json()).toEqual({ announcements: [] });
+  });
+
+  it('le préflight GET de /announcements est accepté avec CORS ouvert', async () => {
+    const res = await fetch(`${custom}/announcements`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'capacitor://localhost', 'Access-Control-Request-Method': 'GET' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  it('les annonces d administration (/admin/*) n ont pas de CORS ouvert', async () => {
+    const res = await fetch(`${custom}/admin/announcements`, { headers: { Origin: 'capacitor://localhost' } });
+    expect(res.headers.get('access-control-allow-origin')).not.toBe('*');
+  });
+});

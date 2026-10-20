@@ -14,6 +14,7 @@ import { RESET_TTL_MS } from '../user/admin-store.js';
 import { MAX_INVITE_QUOTA } from '../user/social-store.js';
 import { isCachePrefix } from './cache-types.js';
 import { registerAnnouncementAdminRoutes } from './ops-announcements.js';
+import { registerControlRoutes } from './ops-control.js';
 import { registerOpsRoutes } from './ops-platform.js';
 import { ELEVATION_TTL_MS, signElevation, verifyElevation } from './elevation.js';
 import type { MaintenanceGate } from './maintenance.js';
@@ -537,6 +538,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
 
   registerAnnouncementAdminRoutes(router, { owner, audit, admin });
   registerOpsRoutes(router, { deps, owner, audit, metrics: metricsOf, caches: cachesOf });
+  registerControlRoutes(router, { deps, owner, admin, metrics: metricsOf, caches: cachesOf, party });
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');

@@ -57,6 +57,8 @@ const OPEN_CORS_PATHS: readonly RegExp[] = [
   /^\/manifest\.json$/,
   /^\/[^/]+\/manifest\.json$/,
   /^\/[^/]+\/stream\/[^/]+\/[^/]+$/,
+  // Annonces publiques (bandeau) : lues par l'app Capacitor depuis une autre origine ; aucune donnée sensible.
+  /^\/announcements$/,
 ];
 /** Avatars par collections (/avatars/*) : lecture publique en GET, sans limite de débit (une grille charge beaucoup d'images). */
 const OPEN_AVATAR_PATH = /^\/avatars\/.+$/;

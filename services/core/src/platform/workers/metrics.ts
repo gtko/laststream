@@ -17,7 +17,7 @@ export const METRICS_NAME = 'metrics';
 /** Surface RPC du Durable Object utilisée ici (types simples, indépendants du typage RPC générique). */
 interface MetricsRpc {
   ingest(batch: MetricsBatch): Promise<void>;
-  report(range: MetricsRange): Promise<MetricsReport>;
+  report(range: MetricsRange, endAt?: number): Promise<MetricsReport>;
   providerHours(): Promise<ProviderHourRow[]>;
   startPurge(prefix: string): Promise<PurgeJob>;
   purgeJob(id: string): Promise<PurgeJob | undefined>;
@@ -54,9 +54,9 @@ export function createRemoteMetrics(
     flushIfDue() {
       if (now() - lastFlush >= FLUSH_INTERVAL_MS && !acc.isEmpty()) background(flush());
     },
-    async report(range) {
+    async report(range, endAt) {
       await flush();
-      return await rpc(namespace).report(range);
+      return await rpc(namespace).report(range, endAt);
     },
     async providerHours() {
       await flush();

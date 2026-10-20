@@ -97,7 +97,8 @@ export interface MetricsBatch {
 /** Service de métriques d'une plateforme : l'écriture passe par `sink`, la lecture par `report`. */
 export interface MetricsService {
   sink: MetricsSink;
-  report(range: MetricsRange): Promise<MetricsReport>;
+  /** Rapport de la période finissant à `endAt` (ms ; défaut : maintenant). Sert à la période précédente (deltas). */
+  report(range: MetricsRange, endAt?: number): Promise<MetricsReport>;
   /** Lignes horaires de santé des fournisseurs, sur la rétention (8 jours), heure courante incluse. */
   providerHours?(): Promise<ProviderHourRow[]>;
   /** Envoie les compteurs de l'instance si le délai d'envoi groupé est écoulé (appelé en fin de requête). */
@@ -345,8 +346,8 @@ export class MemoryMetricsStore {
     for (const [key, row] of this.healthRows) if (row.hour < healthStart) this.healthRows.delete(key);
   }
 
-  report(range: MetricsRange): MetricsReport {
-    return buildReport([...this.rows.values()], this.errors, range, this.now(), [...this.providerRows.values()]);
+  report(range: MetricsRange, endAt: number = this.now()): MetricsReport {
+    return buildReport([...this.rows.values()], this.errors, range, endAt, [...this.providerRows.values()]);
   }
 
   /** Lignes horaires de santé sur la rétention (copies). */
