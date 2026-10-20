@@ -8,6 +8,7 @@ import { elevationExpiresAt, obtainElevation, setElevationPrompt } from '../data
 import { CursorPager, fmtInt, formatCountdown } from '../data/adminModel';
 import { closeAllLayers, confirmDialog, passwordDialog } from './admin-dialog.js';
 import { defaultActions, installPaletteShortcuts, openPalette } from './admin-palette.js';
+import { openAccount as openAccountDrawer } from './admin/account-drawer.js';
 import { adminErr, attempt } from './admin/common.js';
 import { elevationBoxHTML, pageHTML, statusHTML } from './admin/shell.js';
 import { findSection, SECTIONS } from './admin/sections.js';
@@ -217,13 +218,13 @@ function onClick(e) {
 document.addEventListener('click', onClick);
 
 // ---------- Palette de commandes (Ctrl/Cmd+K, « / ») ----------
-/** Dépendances de la palette : sections, navigation, actions de la console. Ouvrir une fiche de compte passe par la section Comptes. */
+/** Dépendances de la palette : sections, navigation, actions de la console, ouverture de la fiche d'un compte (panneau latéral). */
 function paletteDeps() {
   const go = (sid) => setSection(sid);
   return {
     sections: SECTIONS,
     go,
-    openAccount: () => { setSection('accounts'); },
+    openAccount: (id) => { openAccountDrawer(ctxOf('accounts'), id); },
     actions: defaultActions({ go }),
     elevate: async () => { await obtainElevation(); syncElevation(); },
   };

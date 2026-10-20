@@ -44,6 +44,7 @@ const DEFAULTS: Record<string, () => unknown> = {
   '/admin/inbox': () => ({ items: [], total: 0 }),
   '/admin/party/reports': () => ({ reports: [] }),
   '/admin/party/rooms': () => ({ rooms: [] }),
+  '/admin/accounts/a1': () => ({ account: ACC, profiles: [], libraryCount: 0, invitees: [], sessions: [], invites: [] }),
 };
 let calls: Array<{ path: string; method: string }> = [];
 let hiddenTab = false;
@@ -322,6 +323,22 @@ describe('palette de commandes dans la console', () => {
     ($('.adm-pal-layer [role=dialog]') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await settle();
     expect(adm.__admin.S.sec).toBe('audit');
+  });
+
+  it('« Ouvrir la fiche » d’un compte trouvé ouvre le panneau du compte', async () => {
+    await openSection('overview');
+    ctrlK();
+    const input = $('.adm-pal-input') as HTMLInputElement;
+    input.value = 'marine';
+    input.dispatchEvent(new Event('input'));
+    await new Promise((resolve) => setTimeout(resolve, 260)); // débounce de la recherche (minuterie réelle)
+    await settle();
+    expect($('.adm-pal-item.is-active .adm-pal-label')!.textContent).toBe('marine');
+    ($('.adm-pal-layer [role=dialog]') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await settle();
+    expect(callsTo('/admin/accounts/a1')).toHaveLength(1);
+    expect($('.adm-layer--drawer')).not.toBeNull();
+    ($('.adm-sheet-h [data-adm-close]') as HTMLElement).click();
   });
 
   it('après être sorti de la console, Ctrl+K n’ouvre plus la palette', async () => {
