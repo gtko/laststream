@@ -4,6 +4,7 @@
 .hh-back {
   --hh-ok: #19c3a6;
   --hh-ok-ink: #0c0b11;
+  --hh-soft: #ff9a80;
   position: fixed;
   inset: 0;
   z-index: 900;
@@ -19,6 +20,7 @@
   margin: 48px 48px 48px auto;
   width: min(470px, calc(100vw - 32px));
   max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
   overflow-y: auto;
   box-sizing: border-box;
   display: flex;
@@ -71,7 +73,7 @@
   animation: hhKey 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.6s both;
 }
 .hh-titles { flex: 1; min-width: 0; }
-.hh-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.hh-eyebrow { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--hh-soft); }
 .hh-title { margin: 4px 0 0; font-family: var(--ff-title); font-size: 24px; font-weight: 800; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .hh-x {
   flex: none;
@@ -146,14 +148,15 @@
   overflow: hidden;
 }
 .hh-link::placeholder { color: var(--dim); font-family: var(--ff-body); }
-.hh-copy { flex: none; min-width: 104px; padding: 0 16px; background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.hh-copy { flex: none; width: 104px; padding: 0 16px; background: var(--accent); color: var(--on-accent); font-weight: 700; }
 .hh-copy.is-done { background: var(--hh-ok); color: var(--hh-ok-ink); }
 .hh-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.hh-regen { margin-top: 8px; }
 .hh-soft { background: var(--line); border-color: var(--line); color: var(--text); }
 .hh-soft.is-done { background: var(--hh-ok); border-color: var(--hh-ok); color: var(--hh-ok-ink); font-weight: 700; }
 .hh-msg { margin: 8px 0 0; font-size: 13px; color: var(--dim); }
 .hh-msg:empty { display: none; }
-.hh-msg.is-error { color: var(--accent); }
+.hh-msg.is-error { color: var(--hh-soft); }
 
 /* Anneau de temps restant */
 .hh-time {
@@ -184,7 +187,7 @@
 
 /* Pied : deux colonnes égales */
 .hh-foot { margin-top: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.hh-revoke { border-color: rgba(255, 90, 54, 0.35); color: var(--accent); background: transparent; }
+.hh-revoke { border-color: #5a3030; color: var(--hh-soft); background: transparent; }
 .hh-done { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
 
 /* Indicateur dans l’éditeur d’un profil */
@@ -198,7 +201,7 @@
   background: var(--bg);
   border: 1px solid var(--line);
 }
-.hh-row-state { margin: 0; font-size: 13px; color: var(--accent); }
+.hh-row-state { margin: 0; font-size: 13px; color: var(--hh-soft); }
 .hh-row-btn { width: 100%; height: 48px; min-height: 48px; }
 
 /* Liste « Invitations du foyer » (réglages) */
@@ -220,7 +223,7 @@
 .hh-item-state { flex: 1; min-width: 0; color: var(--muted); }
 .hh-item.is-expired .hh-item-state,
 .hh-item.is-revoked .hh-item-state { color: var(--dim); }
-.hh-item-rev { color: var(--accent); }
+.hh-item-rev { color: var(--hh-soft); }
 
 @keyframes hhSlide {
   from { transform: translateX(48px); opacity: 0; }
@@ -239,6 +242,7 @@
     margin: 0;
     width: 100%;
     max-height: 92vh;
+    max-height: 92dvh;
     padding: 22px 16px calc(22px + env(safe-area-inset-bottom, 0px));
     border-radius: 22px 22px 0 0;
     border-bottom: 0;

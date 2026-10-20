@@ -34,6 +34,8 @@ export interface HouseholdInviteDto {
 
 export interface HouseholdInvitesDto {
   invites: HouseholdInviteDto[];
+  /** Profils du compte qui ont déjà leur propre identifiant (absent : serveur ancien, on déduit des invitations `used`). */
+  linkedProfileIds?: string[];
 }
 
 /** Réponse de l'ouverture d'un lien (sans consommer le lien). */
@@ -63,10 +65,10 @@ export interface HouseholdRedeemedDto {
 /** Codes d'erreur connus des routes foyer. Autre code (ou statut sans code) : `other`. */
 export type HouseholdErrorCode =
   | 'login_taken' | 'weak_password' | 'bad_login' | 'expired' | 'used' | 'revoked' | 'unknown'
-  | 'profile_locked' | 'rate_limited' | 'network';
+  | 'profile_locked' | 'profile_has_login' | 'rate_limited' | 'network';
 
 const KNOWN_CODES: ReadonlySet<string> = new Set<string>([
-  'login_taken', 'weak_password', 'bad_login', 'expired', 'used', 'revoked', 'unknown', 'profile_locked', 'rate_limited', 'network',
+  'login_taken', 'weak_password', 'bad_login', 'expired', 'used', 'revoked', 'unknown', 'profile_locked', 'profile_has_login', 'rate_limited', 'network',
 ]);
 
 /** Code d'erreur d'une route foyer, pour l'interface : `other` si l'erreur n'est pas une erreur API connue. */

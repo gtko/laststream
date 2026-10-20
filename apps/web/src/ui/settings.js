@@ -18,7 +18,7 @@ import { creditsHTML, errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
 import { invitesCard, refreshInvites } from './invites.js';
-import { householdInvitesCard, refreshHouseholdInvites } from './household.js';
+import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } from './household.js';
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
@@ -331,6 +331,7 @@ export async function showSettings() {
   ed.cfg = null;
   ed.schema = null;
   initSources([]);
+  resetHouseholdList();
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });

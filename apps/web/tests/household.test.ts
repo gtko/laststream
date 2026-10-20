@@ -2,6 +2,7 @@
 // liste « Invitations du foyer » (états) et visibilité : pas pour le profil principal ni un profil enfant, rien en session verrouillée.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as householdApi from '../src/data/householdApi';
+import { UserApiError } from '../src/data/userApi';
 import type { Profile } from '../src/data/userStore';
 
 vi.mock('../src/data/householdApi', async (importOriginal) => ({
@@ -42,6 +43,16 @@ function closeAll(): void {
   $<HTMLElement>('[data-hh-done]')?.click();
   $<HTMLElement>('[data-pfe-cancel]')?.click();
   $('.hh-back')?.remove();
+}
+
+/** Ouvre l’éditeur d’un profil par le chemin réel : Gérer les profils, puis la tuile. */
+async function openEditorFor(p: Profile): Promise<void> {
+  picker.openPicker();
+  $<HTMLElement>('[data-pf-manage]')!.click();
+  await tick();
+  $<HTMLElement>(`[data-pf="${p.id}"]`)!.click();
+  await tick();
+  expect($('.pf-editor')).not.toBeNull(); // sans éditeur ouvert, l'absence du bouton ne prouverait rien
 }
 
 beforeAll(async () => {
@@ -109,6 +120,7 @@ describe('panneau « Inviter sur ce profil »', () => {
     await tick();
     expect(writeText).toHaveBeenCalledWith(foyer.foyerLink(invites.shareBase(), TOKEN_A));
     expect($('[data-hh-copy]')!.textContent).toBe('Copié !');
+    expect($('[data-hh-msg]')!.textContent).toBe('Lien copié.');
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: undefined });
   });
 
@@ -209,6 +221,7 @@ describe('éditeur de profil : bouton et indicateur', () => {
     await openEditor(ADULT);
     await tick();
     expect($('[data-hh-state]')!.textContent).toBe('Son propre accès');
+    expect($('[data-hh-invite]')).toBeNull(); // le profil a déjà son accès : plus de bouton d’invitation
   });
 
   it('le bouton ouvre le panneau du profil', async () => {
@@ -226,6 +239,8 @@ describe('session verrouillée', () => {
     setAccount({ locked: true, active: ADULT });
     expect(authMod.isProfileLocked()).toBe(true);
     expect(authMod.canManageProfiles()).toBe(false);
+    const root = document.getElementById('auth');
+    if (root) root.innerHTML = '';
     picker.openPicker();
     expect($('[data-pf-manage]')).toBeNull();
     expect($('[data-pf-add]')).toBeNull();
@@ -235,5 +250,150 @@ describe('session verrouillée', () => {
   it('pas de carte « Invitations du foyer » dans les réglages', () => {
     setAccount({ locked: true, active: ADULT });
     expect(house.householdInvitesCard()).toBe('');
+  });
+
+  it('« Qui regarde ? » ne s’ouvre pas', () => {
+    setAccount({ locked: true, active: ADULT });
+    const root = document.getElementById('auth');
+    if (root) root.innerHTML = '';
+    picker.openPicker();
+    expect(document.querySelector('[data-pf]')).toBeNull();
+  });
+});
+
+describe('panneau : pendant la création, expiration, Nouveau lien', () => {
+  it('pendant la création, durées, « Nouveau lien » et Révoquer sont désactivés : aucune requête concurrente', async () => {
+    let resolveFirst!: (v: { id: string; token: string; expiresAt: string }) => void;
+    vi.mocked(householdApi.createHouseholdInvite).mockReturnValueOnce(new Promise((r) => { resolveFirst = r; }));
+    house.openHouseholdPanel(ADULT);
+    expect($<HTMLButtonElement>('[data-hh-ttl="24"]')!.disabled).toBe(true);
+    expect($<HTMLButtonElement>('[data-hh-regen]')!.disabled).toBe(true);
+    expect($<HTMLButtonElement>('[data-hh-revoke]')!.disabled).toBe(true);
+    $<HTMLElement>('[data-hh-ttl="24"]')!.click();
+    $<HTMLElement>('[data-hh-regen]')!.click();
+    expect(householdApi.createHouseholdInvite).toHaveBeenCalledTimes(1);
+    resolveFirst({ id: 'h1', token: TOKEN_A, expiresAt: future(3 * DAY) });
+    await tick();
+    expect($<HTMLButtonElement>('[data-hh-ttl="24"]')!.disabled).toBe(false);
+    expect($<HTMLButtonElement>('[data-hh-revoke]')!.disabled).toBe(false);
+  });
+
+  it('un clic sur la durée déjà active ne régénère rien ; « Nouveau lien » remplace le lien à la même durée', async () => {
+    vi.mocked(householdApi.createHouseholdInvite).mockResolvedValue({ id: 'h1', token: TOKEN_A, expiresAt: future(3 * DAY) });
+    house.openHouseholdPanel(ADULT);
+    await tick();
+    $<HTMLElement>('[data-hh-ttl="72"]')!.click();
+    await tick();
+    expect(householdApi.createHouseholdInvite).toHaveBeenCalledTimes(1);
+    $<HTMLElement>('[data-hh-regen]')!.click();
+    await tick();
+    expect(householdApi.createHouseholdInvite).toHaveBeenCalledTimes(2);
+    expect(householdApi.createHouseholdInvite).toHaveBeenLastCalledWith('adult-sam', 72);
+  });
+
+  it('lien expiré : copie, partage et révocation désactivés, « Nouveau lien » reste disponible', async () => {
+    vi.mocked(householdApi.createHouseholdInvite)
+      .mockResolvedValueOnce({ id: 'h1', token: TOKEN_A, expiresAt: future(-1000) })
+      .mockResolvedValueOnce({ id: 'h2', token: TOKEN_B, expiresAt: future(3 * DAY) });
+    house.openHouseholdPanel(ADULT);
+    await tick();
+    expect($<HTMLButtonElement>('[data-hh-copy]')!.disabled).toBe(true);
+    expect($<HTMLButtonElement>('[data-hh-revoke]')!.disabled).toBe(true);
+    expect($<HTMLButtonElement>('[data-hh-regen]')!.disabled).toBe(false);
+    expect($<HTMLInputElement>('[data-hh-link]')!.value).toBe('');
+    expect($('[data-hh-msg]')!.textContent).toContain('expiré');
+    $<HTMLElement>('[data-hh-regen]')!.click();
+    await tick();
+    expect($<HTMLInputElement>('[data-hh-link]')!.value).toBe(foyer.foyerLink(invites.shareBase(), TOKEN_B));
+  });
+
+  it('erreur « profile_has_login » : message clair, pas de lien', async () => {
+    vi.mocked(householdApi.createHouseholdInvite).mockRejectedValue(new UserApiError(409, 'profile_has_login'));
+    house.openHouseholdPanel(ADULT);
+    await tick();
+    expect($('[data-hh-msg]')!.textContent).toContain('déjà son propre accès');
+    expect($<HTMLInputElement>('[data-hh-link]')!.value).toBe('');
+  });
+});
+
+describe('panneau : focus, Escape, éditeur dessous', () => {
+  it('Escape ferme le panneau sans fermer l’éditeur, et rend le focus au bouton d’ouverture', async () => {
+    await openEditorFor(ADULT);
+    vi.mocked(householdApi.createHouseholdInvite).mockResolvedValue({ id: 'h1', token: TOKEN_A, expiresAt: future(3 * DAY) });
+    const opener = $<HTMLElement>('[data-hh-invite]')!;
+    opener.focus();
+    opener.click();
+    await tick();
+    expect($('.hh-back')).not.toBeNull();
+    expect($('.pf-back')!.hasAttribute('inert')).toBe(true);
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect($('.hh-back')).toBeNull();
+    expect($('.pf-editor')).not.toBeNull();
+    expect($('.pf-back')!.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('Tab reste dans le panneau : de la dernière à la première commande, et Maj+Tab en sens inverse', async () => {
+    vi.mocked(householdApi.createHouseholdInvite).mockResolvedValue({ id: 'h1', token: TOKEN_A, expiresAt: future(3 * DAY) });
+    house.openHouseholdPanel(ADULT);
+    await tick();
+    const first = $<HTMLElement>('.hh-x')!;
+    const last = $<HTMLElement>('[data-hh-done]')!;
+    last.focus();
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    expect(document.activeElement).toBe(first);
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('onChange n’est appelé à la fermeture que si un lien a été créé ou révoqué', async () => {
+    vi.mocked(householdApi.createHouseholdInvite).mockResolvedValue({ id: 'h1', token: TOKEN_A, expiresAt: future(3 * DAY) });
+    const onChange = vi.fn();
+    house.openHouseholdPanel(ADULT, { onChange });
+    await tick();
+    expect(onChange).not.toHaveBeenCalled();
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('liste « Invitations du foyer » : garde-fous', () => {
+  it('pas de carte ni de chargement pour un profil enfant ou sans serveur', async () => {
+    setAccount({ active: KID });
+    expect(house.householdInvitesCard()).toBe('');
+    expect(await house.refreshHouseholdInvites()).toBeNull();
+    setAccount();
+    authMod.auth.status = 'local';
+    expect(house.householdInvitesCard()).toBe('');
+    expect(await house.refreshHouseholdInvites()).toBeNull();
+    expect(householdApi.listHouseholdInvites).not.toHaveBeenCalled();
+    setAccount();
+  });
+
+  it('le bouton Révoquer de la liste est désactivé pendant l’appel', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({
+      invites: [{ id: 'i1', profileId: 'adult-sam', profileName: 'Sam', createdAt: future(-HOUR), expiresAt: future(2 * DAY), state: 'pending' }],
+    });
+    let finish!: () => void;
+    vi.mocked(householdApi.revokeHouseholdInvite).mockReturnValueOnce(new Promise<void>((r) => { finish = () => r(); }));
+    const detail = document.getElementById('detail')!;
+    detail.innerHTML = house.householdInvitesCard();
+    await house.refreshHouseholdInvites();
+    const btn = detail.querySelector<HTMLButtonElement>('[data-hh-list-revoke="i1"]')!;
+    btn.click();
+    await tick();
+    expect(householdApi.revokeHouseholdInvite).toHaveBeenCalledWith('i1');
+    expect(btn.disabled).toBe(true);
+    finish();
+    await tick();
+    detail.innerHTML = '';
+  });
+
+  it('resetHouseholdList vide la liste mémorisée : la carte repart en chargement', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({ invites: [] });
+    await house.refreshHouseholdInvites();
+    expect(house.householdInvitesCard()).toContain('Aucune invitation');
+    house.resetHouseholdList();
+    expect(house.householdInvitesCard()).toContain('Chargement des invitations');
   });
 });

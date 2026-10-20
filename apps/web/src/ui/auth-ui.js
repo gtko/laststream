@@ -1,6 +1,6 @@
 /* Comptes : écran de connexion, choix du profil (façon Netflix), clavier PIN, gestion des profils, mode enfant. */
 import {
-  auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, offlineWithoutSession, parentalProfile,
+  auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, isProfileLocked, offlineWithoutSession, parentalProfile,
   removeProfile, saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
@@ -243,6 +243,7 @@ function pickerHTML(note) {
 }
 
 export function openPicker(note) {
+  if (isProfileLocked()) return; // session verrouillée : jamais « Qui regarde ? »
   manage = false;
   show(pickerHTML(note));
   const first = el().querySelector('.pf');
@@ -341,7 +342,7 @@ export function pinPad({ title, profile = null, choices = null, onOk, onCancel =
 
 // ---------- Édition d'un profil ----------
 function editProfile(p) {
-  if (!mayManage()) return;
+  if (!mayManage() || isProfileLocked()) return;
   const open = (profile) => profileEditor(profile);
   if (p && p.hasPin && !hasValidToken(p.id)) {
     pinPad({ title: 'Code de ' + p.name, profile: p, onOk: async () => { hidePad(); open(p); } });
@@ -358,6 +359,7 @@ export { creditsHTML } from './avatar-picker.js';
  * profil enfant, puis les options existantes (âge, rubriques, code parental, PIN). Enregistrer / Supprimer en pied.
  */
 function profileEditor(p) {
+  if (isProfileLocked()) return;
   const isNew = !p;
   const cur = p || { name: '', avatarColor: COLORS[0], isKid: false, kidMaxAge: 12, hasPin: false };
   const node = document.createElement('div');
@@ -482,8 +484,9 @@ function profileEditor(p) {
   node.addEventListener('click', async (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
-    if (t.closest('[data-hh-invite]')) {
-      openHouseholdPanel(cur, { onChange: () => void paintProfileInviteRow(node.querySelector('[data-hh-row]'), cur) });
+    const inviteBtn = t.closest('[data-hh-invite]');
+    if (inviteBtn) {
+      openHouseholdPanel(cur, { opener: inviteBtn, onChange: () => void paintProfileInviteRow(node.querySelector('[data-hh-row]'), cur) });
       return;
     }
     if (t.closest('[data-pfe-cancel]') || t === node) { close(); return; }
