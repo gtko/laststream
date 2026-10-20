@@ -41,7 +41,7 @@
 .rf-accent { color: var(--accent, #ff5a36); }
 .rf-wordmark { display: inline-flex; align-items: center; gap: 10px; font-family: var(--ff-title, 'Sora', sans-serif); font-weight: 700; font-size: 20px; letter-spacing: -0.02em; }
 .rf-logo { width: 30px; height: 30px; }
-.rf-logo-big { font-family: var(--ff-title, 'Sora', sans-serif); font-weight: 800; font-size: 46px; letter-spacing: -0.04em; line-height: 1; }
+.rf-logo-big { font-family: var(--ff-title, 'Sora', sans-serif); font-weight: 800; font-size: clamp(28px, 9vw, 46px); letter-spacing: -0.04em; line-height: 1; }
 .rf-logo-big span { color: #f4f2f7; }
 .rf-logo-sm { font-size: 26px; }
 .rf-kicker { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #ffb36b; }
