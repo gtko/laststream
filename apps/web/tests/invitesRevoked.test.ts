@@ -14,7 +14,7 @@ vi.mock('../src/data/socialApi', async (importOriginal) => ({
 
 let inv: typeof import('../src/ui/invites.js');
 
-const BASE = { id: 'i1', code: 'abc123', createdAt: '2026-10-01T10:00:00.000Z', sentAt: null, usedAt: null, invitee: null };
+const BASE = { id: 'i1', code: 'abc123', createdAt: '2026-10-01T10:00:00.000Z', sentAt: null, usedAt: null, revokedAt: null, message: null, picks: [], expiresAt: null, number: 1001, invitee: null };
 const toastText = () => document.getElementById('toast')!.textContent ?? '';
 
 beforeAll(async () => {

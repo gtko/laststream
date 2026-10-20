@@ -9,6 +9,7 @@ vi.mock('../src/data/householdApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/data/householdApi')>()),
   createHouseholdInvite: vi.fn(),
   listHouseholdInvites: vi.fn(),
+  removeProfileLogin: vi.fn(),
   revokeHouseholdInvite: vi.fn(),
 }));
 
@@ -69,6 +70,7 @@ beforeEach(() => {
   vi.mocked(householdApi.createHouseholdInvite).mockReset();
   vi.mocked(householdApi.listHouseholdInvites).mockReset().mockResolvedValue({ invites: [] });
   vi.mocked(householdApi.revokeHouseholdInvite).mockReset().mockResolvedValue(undefined);
+  vi.mocked(householdApi.removeProfileLogin).mockReset().mockResolvedValue(undefined);
   setAccount();
 });
 
@@ -416,5 +418,88 @@ describe('accès déjà créé (linkedProfileIds du serveur)', () => {
     await tick();
     expect($('[data-hh-invite]')).not.toBeNull();
     expect($('[data-hh-state]')!.hidden).toBe(true);
+  });
+});
+
+describe('retrait de l’accès (« Retirer son accès »)', () => {
+  it('profil qui a son accès : bouton « Retirer son accès » et aide visibles, pas de bouton d’invitation', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({ invites: [], linkedProfileIds: ['adult-sam'] });
+    await openEditorFor(ADULT);
+    await tick();
+    expect($('[data-hh-unlink]')!.textContent).toBe('Retirer son accès');
+    expect($<HTMLElement>('[data-hh-unlink-box]')!.hidden).toBe(false);
+    expect($('.hh-row-help')!.textContent).toBe('Son profil et sa bibliothèque restent ; seul son identifiant est supprimé et ses appareils sont déconnectés.');
+    expect($('[data-hh-invite]')).toBeNull();
+  });
+
+  it('profil sans accès créé : rien à retirer', async () => {
+    await openEditorFor(ADULT);
+    await tick();
+    expect($<HTMLElement>('[data-hh-unlink-box]')!.hidden).toBe(true);
+    expect($('[data-hh-invite]')).not.toBeNull();
+  });
+
+  it('deux temps : le premier clic demande confirmation, le second retire l’accès, puis le bouton d’invitation revient', async () => {
+    vi.mocked(householdApi.listHouseholdInvites)
+      .mockResolvedValueOnce({ invites: [], linkedProfileIds: ['adult-sam'] })
+      .mockResolvedValue({ invites: [], linkedProfileIds: [] });
+    await openEditorFor(ADULT);
+    await tick();
+    $<HTMLElement>('[data-hh-unlink]')!.click();
+    await tick();
+    expect($('[data-hh-unlink]')!.textContent).toBe('Confirmer le retrait');
+    expect(householdApi.removeProfileLogin).not.toHaveBeenCalled();
+    $<HTMLElement>('[data-hh-unlink]')!.click();
+    await tick(40);
+    expect(householdApi.removeProfileLogin).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(householdApi.removeProfileLogin).mock.calls[0][0]).toBe('adult-sam');
+    expect($('[data-hh-invite]')).not.toBeNull();
+    expect($<HTMLElement>('[data-hh-unlink-box]')!.hidden).toBe(true);
+    expect($('[data-hh-state]')!.textContent).toBe('Accès retiré.');
+  });
+
+  it('erreur (code PIN demandé) : message clair dans la ligne, rien de retiré, bouton utilisable à nouveau', async () => {
+    vi.mocked(householdApi.listHouseholdInvites).mockResolvedValue({ invites: [], linkedProfileIds: ['adult-sam'] });
+    vi.mocked(householdApi.removeProfileLogin).mockRejectedValueOnce(new UserApiError(403, 'pin_required'));
+    await openEditorFor(ADULT);
+    await tick();
+    $<HTMLElement>('[data-hh-unlink]')!.click();
+    await tick();
+    $<HTMLElement>('[data-hh-unlink]')!.click();
+    await tick(40);
+    expect($('[data-hh-state]')!.textContent).toContain('Déverrouille ton profil avec ton code PIN');
+    expect(($('[data-hh-unlink]') as HTMLButtonElement).disabled).toBe(false);
+    expect($('[data-hh-unlink]')!.textContent).toBe('Retirer son accès');
+    expect($('[data-hh-unlink-box]')!.hasAttribute('hidden')).toBe(false);
+  });
+});
+
+describe('messages des codes d’erreur du foyer', () => {
+  it.each([
+    ['principal_profile', 'profil principal'],
+    ['kid_profile', 'profil enfant'],
+    ['adult_profile_required', 'profil adulte'],
+    ['pin_required', 'code PIN'],
+    ['invalid_body', 'recharge la page'],
+    ['profile_not_found', 'n’existe plus'],
+    ['no_login', 'd’accès à retirer'],
+    ['rate_limited', 'Trop de demandes'],
+    ['profile_has_login', 'son propre accès'],
+    ['profile_locked', 'verrouillée'],
+  ])('%s : texte dédié', (code, part) => {
+    expect(house.householdErrorText(new UserApiError(400, code))).toContain(part);
+  });
+
+  it('code inconnu ou erreur sans code : repli fourni par l’appelant, sinon générique', () => {
+    expect(house.householdErrorText(new UserApiError(418, 'teapot'), 'Lien non créé')).toBe('Lien non créé');
+    expect(house.householdErrorText(new Error('x'))).toBe('Action impossible : réessaie dans un instant.');
+  });
+
+  it('création du lien refusée (code PIN demandé) : le panneau dit de déverrouiller le profil', async () => {
+    vi.mocked(householdApi.createHouseholdInvite).mockRejectedValue(new UserApiError(403, 'pin_required'));
+    await openEditorFor(ADULT);
+    $<HTMLElement>('[data-hh-invite]')!.click();
+    await tick();
+    expect($('[data-hh-msg]')!.textContent).toContain('Déverrouille ton profil avec ton code PIN');
   });
 });

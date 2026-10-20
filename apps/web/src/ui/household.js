@@ -4,7 +4,7 @@
 import { auth, isKidProfile, isProfileLocked, isServerMode, managingProfileId, onAuthChange } from '../data/auth';
 import { foyerLink } from '../data/foyerLink';
 import {
-  createHouseholdInvite, householdErrorCode, listHouseholdInvites, revokeHouseholdInvite,
+  createHouseholdInvite, householdErrorCode, listHouseholdInvites, removeProfileLogin, revokeHouseholdInvite,
 } from '../data/householdApi';
 import { shareBase } from '../data/shareBase';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
@@ -66,11 +66,25 @@ function createLink(profileId, ttl) {
   return actor && actor !== auth.profile?.id ? createHouseholdInvite(profileId, ttl, actor) : createHouseholdInvite(profileId, ttl);
 }
 
+/** Messages des codes d’erreur des routes foyer (création du lien, retrait de l’accès). */
 const ERROR_TEXT = {
-  profile_locked: 'Cette session est verrouillée sur un profil : aucun lien ne peut être créé.',
+  profile_locked: 'Cette session est verrouillée sur un profil : cette action n’est pas disponible.',
   profile_has_login: 'Ce profil a déjà son propre accès : il ne peut plus recevoir d’invitation.',
+  principal_profile: 'Le profil principal du compte ne peut pas recevoir d’invitation.',
+  kid_profile: 'Un profil enfant ne peut pas recevoir d’invitation.',
+  adult_profile_required: 'Seul un profil adulte du compte peut inviter quelqu’un : choisis un profil adulte.',
+  pin_required: 'Déverrouille ton profil avec ton code PIN, puis réessaie.',
+  invalid_body: 'La demande n’a pas pu être envoyée : recharge la page et réessaie.',
+  profile_not_found: 'Ce profil n’existe plus : il a peut-être été supprimé.',
+  no_login: 'Ce profil n’a pas d’accès à retirer.',
+  rate_limited: 'Trop de demandes en peu de temps : réessaie dans quelques minutes.',
   network: 'Serveur injoignable : réessaie dans un instant.',
 };
+
+/** Message affiché pour une erreur des routes foyer : le texte du code connu, sinon `fallback`. */
+export function householdErrorText(err, fallback = 'Action impossible : réessaie dans un instant.') {
+  return ERROR_TEXT[householdErrorCode(err)] || fallback;
+}
 const WHEN_TEXT = {
   loading: 'Création du lien…',
   error: 'Pas de lien valide : crée un nouveau lien.',
@@ -217,9 +231,8 @@ async function requestLink(ttl) {
     if (panel !== current) return;
     current.invite = null;
     current.status = 'error';
-    const code = householdErrorCode(err);
-    if (code === 'profile_has_login') current.changed = true; // l’éditeur affichera « Son propre accès »
-    setMsg(ERROR_TEXT[code] || 'Lien non créé : réessaie dans un instant.', true);
+    if (householdErrorCode(err) === 'profile_has_login') current.changed = true; // l’éditeur affichera « Son propre accès »
+    setMsg(householdErrorText(err, 'Lien non créé : réessaie dans un instant.'), true);
     paint();
   }
 }
@@ -366,16 +379,42 @@ export function openHouseholdPanel(profile, opts = {}) {
 
 /* ---------- Indicateur dans l’éditeur d’un profil ---------- */
 
+const inviteButtonHTML = () => '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-invite>Inviter quelqu’un sur ce profil</button>';
+const UNLINK_LABEL = 'Retirer son accès';
+const UNLINK_CONFIRM = 'Confirmer le retrait';
+
 /** Ligne « Inviter » de l’éditeur d’un profil (chaîne vide si le profil n’est pas invitable). */
 export function profileInviteRowHTML(profile) {
   if (!canInviteOn(profile)) return '';
-  return '<div class="hh-row" data-hh-row>' +
-    '<p class="hh-row-state" data-hh-state role="status" hidden></p>' +
-    '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-invite>Inviter quelqu’un sur ce profil</button></div>';
+  return '<div class="hh-row" data-hh-row data-hh-profile="' + esc(profile.id) + '">' +
+    '<p class="hh-row-state" data-hh-state role="status" hidden></p>' + inviteButtonHTML() +
+    '<div data-hh-unlink-box hidden>' +
+    '<button type="button" class="btn btn-ghost hh-row-btn" data-hh-unlink>' + UNLINK_LABEL + '</button>' +
+    '<p class="hh-row-help">Son profil et sa bibliothèque restent ; seul son identifiant est supprimé et ses appareils sont déconnectés.</p>' +
+    '</div></div>';
+}
+
+/** Texte d’état de la ligne (vide = masqué). */
+function setRowState(row, text) {
+  const state = row.querySelector('[data-hh-state]');
+  if (!state) return;
+  state.textContent = text;
+  state.hidden = !text;
 }
 
 /**
- * Complète l’indicateur : « Son propre accès » (le bouton disparaît) si le profil a déjà un identifiant, sinon
+ * Ligne « Son propre accès » : le bouton d’invitation disparaît et « Retirer son accès » apparaît ; l’inverse après un retrait.
+ */
+function setOwnAccess(row, own) {
+  const invite = row.querySelector('[data-hh-invite]');
+  if (own && invite) invite.remove();
+  if (!own && !invite) row.querySelector('[data-hh-state]')?.insertAdjacentHTML('afterend', inviteButtonHTML());
+  const box = row.querySelector('[data-hh-unlink-box]');
+  if (box) box.hidden = !own;
+}
+
+/**
+ * Complète l’indicateur : « Son propre accès » (et « Retirer son accès ») si le profil a déjà un identifiant, sinon
  * « Invitation en attente · expire dans … ». `linkedProfileIds` du serveur fait foi ; à défaut, une invitation `used`.
  */
 export async function paintProfileInviteRow(row, profile) {
@@ -395,11 +434,55 @@ export async function paintProfileInviteRow(row, profile) {
     text = ''; // indicatif : sans lui, le bouton reste utile
   }
   if (!row.isConnected) return;
-  if (own) row.querySelector('[data-hh-invite]')?.remove();
-  const state = row.querySelector('[data-hh-state]');
-  if (!state) return;
-  state.textContent = text;
-  state.hidden = !text;
+  setOwnAccess(row, own);
+  setRowState(row, text);
+}
+
+/* ---------- Retrait de l’accès d’un profil (ligne de l’éditeur) ---------- */
+
+/** Délai après lequel le premier clic sur « Retirer son accès » n’attend plus de confirmation. */
+const ARM_MS = 6000;
+/** Bouton qui attend la confirmation (un seul à la fois) et minuterie qui le désarme. */
+let armed = null;
+let armTimer = 0;
+
+function disarmUnlink() {
+  clearTimeout(armTimer);
+  if (armed && armed.isConnected) armed.textContent = UNLINK_LABEL;
+  armed = null;
+}
+
+/**
+ * Retrait en deux temps, dans le bouton : le premier clic demande « Confirmer le retrait », le second retire l’accès
+ * (`DELETE /profiles/:id/login`), puis la ligne et la liste des invitations sont rafraîchies.
+ */
+async function unlinkFromRow(button) {
+  if (armed !== button) {
+    disarmUnlink();
+    armed = button;
+    button.textContent = UNLINK_CONFIRM;
+    armTimer = setTimeout(disarmUnlink, ARM_MS);
+    return;
+  }
+  disarmUnlink();
+  const row = button.closest('[data-hh-row]');
+  const profileId = row ? row.dataset.hhProfile : '';
+  if (!row || !profileId) return;
+  button.disabled = true;
+  // Même profil acteur que pour la création du lien : le profil géré, s’il diffère du profil actif.
+  const actor = managingProfileId();
+  let done = false;
+  try {
+    await removeProfileLogin(profileId, actor && actor !== auth.profile?.id ? actor : undefined);
+    done = true;
+  } catch (err) {
+    setRowState(row, householdErrorText(err, 'Retrait impossible : réessaie dans un instant.'));
+  }
+  button.disabled = false;
+  if (!done) return;
+  await refreshHouseholdInvites();
+  await paintProfileInviteRow(row, { id: profileId });
+  setRowState(row, 'Accès retiré.');
 }
 
 /* ---------- Liste « Invitations du foyer » (réglages) ---------- */
@@ -489,5 +572,7 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const rev = t.closest('[data-hh-list-revoke]');
   if (rev) { e.preventDefault(); void revokeFromList(rev.dataset.hhListRevoke, rev); return; }
+  const unlink = t.closest('[data-hh-unlink]');
+  if (unlink) { e.preventDefault(); void unlinkFromRow(unlink); return; }
   if (t.closest('[data-hh-reload]')) { e.preventDefault(); listData = null; void refreshHouseholdInvites(); }
 });

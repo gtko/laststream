@@ -36,21 +36,23 @@ export function withoutInvite(search: string, hash: string): { search: string; h
 
 /** Raison d'un billet qui ne vaut plus (réponse de la vérification). */
 export type InviteReason = 'expired' | 'used' | 'revoked' | 'unknown';
-/** Coup de cœur joint à un billet : une affiche et un fond (adresses https seulement, sinon absents). */
+/** Coup de cœur joint à un billet : identifiant en chaîne, une affiche et un fond (adresses https seulement, sinon chaîne vide). */
 export interface InvitePick { id: string; type: string; name: string; poster?: string | null; background?: string | null }
-/** Personne qui envoie le billet : pseudo, identifiant public et avatar (même forme que pour les profils). */
-export interface InviteInviter { name: string; handle?: string | { name?: string; tag?: string; full?: string } | null; avatar?: string | null }
+/** Parrain du billet : pseudo, identifiant public `Nom#TAG` (null si absent) et avatar (URL ou null). */
+export interface InviteInviter { name: string; handle: string | null; avatar: string | null }
 /**
- * Résultat de `GET /user/invites/check?code=` (contrat invitations v3, partie B). `inviter` est un objet pour un billet v3 ;
- * un serveur plus ancien ne renvoie qu'un pseudo (chaîne) et aucun des champs de billet.
+ * Résultat de `GET /user/invites/check?code=` (contrat invitations v3, partie B) : `{ valid: true, inviter, message, picks,
+ * expiresAt, number }` ou `{ valid: false, reason }`. `inviter` vaut null pour un billet de l'administrateur.
  */
 export interface InviteCheck {
   valid: boolean;
   reason?: InviteReason;
-  inviter?: InviteInviter | string | null;
+  inviter?: InviteInviter | null;
   message?: string | null;
   picks?: InvitePick[] | null;
-  expiresAt?: string | number | null;
+  /** Fin de validité du billet (ISO), ou null. */
+  expiresAt?: string | null;
+  /** Numéro de billet (1000 à 9999). */
   number?: number | null;
 }
 

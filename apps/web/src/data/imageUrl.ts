@@ -5,8 +5,17 @@
  */
 import { shareBase } from './shareBase';
 
-/** Hôtes d'images tiers autorisés, en https. */
-export const IMAGE_HOSTS: readonly string[] = ['image.tmdb.org', 'assets.fanart.tv'];
+/**
+ * Hôtes d'images tiers autorisés, en https : exactement la liste du serveur (lastaddon `image-hosts.ts`) : affiches TMDB,
+ * fonds fanart.tv, affiches des métadonnées Stremio (metahub).
+ */
+export const IMAGE_HOSTS: readonly string[] = [
+  'image.tmdb.org',
+  'assets.fanart.tv',
+  'images.metahub.space',
+  'episodes.metahub.space',
+  'live.metahub.space',
+];
 
 /** Forme générale : https, sans espace, guillemet, chevron ni antislash (la valeur finit dans un attribut HTML). */
 const HTTPS_SHAPE = /^https:\/\/[^\s"'<>\\]+$/;
@@ -28,12 +37,15 @@ export function serverImageOrigin(): string {
  */
 export function safeImageUrl(value: unknown, server: string = serverImageOrigin()): string {
   if (typeof value !== 'string' || !HTTPS_SHAPE.test(value)) return '';
-  let origin: string;
+  let url: URL;
   try {
-    origin = new URL(value).origin;
+    url = new URL(value);
   } catch {
     return '';
   }
+  // Pas d'identifiants dans l'adresse (le serveur les refuse aussi).
+  if (url.username !== '' || url.password !== '') return '';
+  const origin = url.origin;
   const hosted = IMAGE_HOSTS.some((host) => origin === 'https://' + host);
   return hosted || (server !== '' && origin === server) ? value : '';
 }

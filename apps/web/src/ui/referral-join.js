@@ -53,14 +53,12 @@ export function referralReasonText(reason) {
   }
 }
 
-/** Identifiant public du parrain : `Nom#TAG`. Le serveur peut renvoyer le handle complet, le seul tag, ou rien. */
+/** Identifiant public du parrain : `Nom#TAG` (le serveur l'envoie tel quel, ou null). Sans handle : aperçu `Nom#····`. */
 export function inviterHandle(inv) {
   const name = clip(inv && inv.name, NAME_TEXT_MAX);
-  const h = inv ? inv.handle : null;
-  if (typeof h === 'string' && h.includes('#')) return clip(h, 80);
-  if (typeof h === 'string' && h) return name + '#' + clip(h, 16);
-  if (h && typeof h === 'object' && typeof h.full === 'string') return clip(h.full, 80);
-  if (h && typeof h === 'object' && typeof h.tag === 'string') return name + '#' + clip(h.tag, 16);
+  const h = inv && typeof inv.handle === 'string' ? inv.handle : '';
+  if (h.includes('#')) return clip(h, 80);
+  if (h) return name + '#' + clip(h, 16);
   return name + '#····';
 }
 
@@ -98,8 +96,7 @@ export function strengthScore(p) {
 /** Données du billet telles que les écrans les lisent : tout passe ici, rien n'est lu brut ailleurs. */
 function normalizeTicket(t) {
   const c = t && typeof t === 'object' ? t : {};
-  const raw = c.inviter;
-  const inv = raw && typeof raw === 'object' ? raw : { name: str(raw) };
+  const inv = c.inviter && typeof c.inviter === 'object' ? c.inviter : {};
   const num = Number(c.number);
   return {
     name: clip(inv.name, NAME_TEXT_MAX),

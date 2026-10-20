@@ -78,7 +78,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls.length = 0;
-  list = [{ ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: '0039' }];
+  list = [{ ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: 1039 }];
   routes = serverRoutes;
   stubFetch();
   document.getElementById('detail')!.innerHTML = mod.invitesCard();
@@ -98,12 +98,28 @@ describe('enregistrement : réponse tardive, révisions', () => {
     // Le second état attend derrière le premier PUT : un seul PUT est parti.
     expect(puts()).toHaveLength(1);
     // Réponse tardive du premier PUT, qui ne contient que 550 : elle ne doit pas écraser 550 + 1399.
-    first.resolve(json({ invite: { ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: '0039', picks: [{ id: 550, type: 'movie', name: 'Fight Club', poster: null, background: null }] } }));
+    first.resolve(json({ invite: { ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: 1039, picks: [{ id: '550', type: 'movie', name: 'Fight Club', poster: '', background: '' }] } }));
     await tick(60);
     expect(puts()).toHaveLength(2);
-    expect(puts()[1].body.picks.map((p: any) => p.id)).toEqual([550, 1399]);
+    expect(puts()[1].body.picks.map((p: any) => p.id)).toEqual(['550', '1399']);
     expect($('.tk-picks-n')!.textContent).toBe('2 / 3');
     expect($('[data-tk-pick="series:1399"]')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('un coup de cœur part avec un identifiant en chaîne et des images vides, jamais null (le serveur refuse null et les nombres)', async () => {
+    list[0] = { ...list[0], picks: [{ id: '550', type: 'movie', name: 'Fight Club', poster: '', background: '' }] };
+    await mod.refreshInvites();
+    await tick(10);
+    click($('[data-tk-pick="series:1399"]'));
+    await tick(60);
+    expect(puts()).toHaveLength(1);
+    const picks = puts()[0].body.picks;
+    expect(picks.map((p: any) => p.id)).toEqual(['550', '1399']);
+    expect(picks[0].poster).toBe('');
+    for (const p of picks) {
+      expect(typeof p.poster).toBe('string');
+      expect(typeof p.background).toBe('string');
+    }
   });
 });
 
@@ -181,10 +197,10 @@ describe('coups de cœur : types', () => {
     const html = mod.invitesBodyHTML({
       quota: 4,
       invites: [{
-        ...BASE, id: 'i1', code: 'C1', state: 'free', number: '0001',
+        ...BASE, id: 'i1', code: 'C1', state: 'free', number: 1001,
         picks: [
-          { id: 7, type: 'anime', name: 'Titre gardé', poster: null, background: null },
-          { id: 8, type: 'x'.repeat(17), name: 'Titre écarté', poster: null, background: null },
+          { id: '7', type: 'anime', name: 'Titre gardé', poster: '', background: '' },
+          { id: '8', type: 'x'.repeat(17), name: 'Titre écarté', poster: '', background: '' },
         ],
       }],
     } as never);

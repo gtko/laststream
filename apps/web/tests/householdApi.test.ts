@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  checkHouseholdInvite, createHouseholdInvite, householdErrorCode, listHouseholdInvites, redeemHouseholdInvite, revokeHouseholdInvite,
+  checkHouseholdInvite, createHouseholdInvite, householdErrorCode, listHouseholdInvites, redeemHouseholdInvite, removeProfileLogin, revokeHouseholdInvite,
 } from '../src/data/householdApi';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { reloadSession, setActiveProfile, setSession } from '../src/data/session';
@@ -149,4 +149,39 @@ describe('ouverture et validation du lien (anonymes)', () => {
     expect(householdErrorCode(net)).toBe('network');
     expect(householdErrorCode(new Error('x'))).toBe('other');
   });
+});
+
+describe('retrait de l’accès (DELETE /user/profiles/:id/login)', () => {
+  it('204 sans corps : profil acteur par défaut (profil actif), jeton de session', async () => {
+    replies = [{ status: 204 }];
+    await expect(removeProfileLogin('inv-1')).resolves.toBeUndefined();
+    const c = calls[0];
+    expect(c.method).toBe('DELETE');
+    expect(c.url).toBe('/user/profiles/inv-1/login');
+    expect(c.headers['x-profile-id']).toBe('main-h');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('profil acteur explicite et identifiant encodé', async () => {
+    replies = [{ status: 204 }];
+    await removeProfileLogin('a/b', 'adulte-2');
+    expect(calls[0].url).toBe('/user/profiles/a%2Fb/login');
+    expect(calls[0].headers['x-profile-id']).toBe('adulte-2');
+  });
+
+  it('404 no_login : code propagé dans une erreur typée', async () => {
+    replies = [{ status: 404, body: { error: 'no_login' } }];
+    const err = await removeProfileLogin('inv-1').catch((e) => e);
+    expect(err).toBeInstanceOf(UserApiError);
+    expect(householdErrorCode(err)).toBe('no_login');
+  });
+});
+
+describe('codes d’erreur des routes foyer reconnus par l’interface', () => {
+  it.each(['principal_profile', 'kid_profile', 'adult_profile_required', 'pin_required', 'invalid_body', 'profile_not_found', 'no_login'])(
+    '%s est un code connu (et non « other »)',
+    (code) => {
+      expect(householdErrorCode(new UserApiError(400, code))).toBe(code);
+    },
+  );
 });

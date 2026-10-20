@@ -1,18 +1,23 @@
 import { call, type MediaKind, type Visibility } from './userApi';
+import type { InviteCheck } from './invite';
 
 /* Client des fonctions sociales de lastAddon (docs/social.md) : parrainage, amis, présence, partage de bibliothèque,
  * titres masqués et salons de visionnage. Seuls le pseudo et la couleur d'avatar sont exposés aux autres comptes. */
 
 // ---- Parrainage ----
 export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
-/** Coup de cœur d'un billet : un titre de la bibliothèque du parrain (3 au plus). Images : https seulement. */
+/**
+ * Coup de cœur d'un billet : un titre de la bibliothèque du parrain (3 au plus). L'identifiant est une chaîne (le serveur refuse
+ * un nombre). Affiche et fond : URL https, ou chaîne vide (jamais null).
+ */
 export interface InvitePick {
-  id: number | string;
+  id: string;
   type: MediaKind;
   name: string;
-  poster: string | null;
-  background: string | null;
+  poster: string;
+  background: string;
 }
+/** Billet tel que renvoyé par `GET /user/invites` et `PUT`/`DELETE /user/invites/:id` (enveloppé dans `invite` pour ces deux-ci). */
 export interface InviteDto {
   id: string;
   code: string;
@@ -20,8 +25,6 @@ export interface InviteDto {
   createdAt: string;
   sentAt: string | null;
   usedAt: string | null;
-  /** Pseudo du filleul (null : lien libre, ou compte supprimé). */
-  invitee: string | null;
   /** Date de révocation par l'administrateur (ISO), ou null : le lien ne fonctionne plus et n'est plus partageable. */
   revokedAt?: string | null;
   /** Mot du parrain (≤ 280 caractères), affiché sur la page d'arrivée du filleul. Absent des serveurs antérieurs. */
@@ -30,8 +33,10 @@ export interface InviteDto {
   picks?: InvitePick[];
   /** Fin de validité du billet envoyé (ISO) : envoi + 14 jours. Null tant que le billet est libre. */
   expiresAt?: string | null;
-  /** Numéro de billet affichable (4 chiffres, stable). Absent des serveurs antérieurs. */
-  number?: string | number | null;
+  /** Numéro de billet (entier de 1000 à 9999, stable pour un lien). Absent des serveurs antérieurs. */
+  number?: number | null;
+  /** Pseudo du filleul (null : lien libre, ou compte supprimé). */
+  invitee: string | null;
 }
 /** Corps de `PUT /user/invites/:id` : seuls les champs envoyés sont modifiés. */
 export interface InviteUpdate {
@@ -47,14 +52,14 @@ const enc = encodeURIComponent;
 export const getInvites = () => call<InvitesDto>('/invites');
 export const markInviteSent = (id: string, sent: boolean) => call<void>('/invites/' + enc(id) + '/sent', { method: 'PUT', body: { sent } });
 export const revokeInvite = (id: string) => call<{ invite: InviteDto }>('/invites/' + enc(id), { method: 'DELETE' });
-/** Mot et coups de cœur d'un billet (`PUT /user/invites/:id`). Accepte une invite nue ou enveloppée dans `invite`. */
+/** Mot et coups de cœur d'un billet (`PUT /user/invites/:id`, réponse `{ invite }`). Sans réponse (204), renvoie null. */
 export const updateInvite = async (id: string, body: InviteUpdate): Promise<InviteDto | null> => {
-  const res = await call<InviteDto | { invite: InviteDto } | undefined>('/invites/' + enc(id), { method: 'PUT', body });
-  if (!res) return null;
-  return 'invite' in res ? res.invite : res;
+  const res = await call<{ invite: InviteDto } | undefined>('/invites/' + enc(id), { method: 'PUT', body });
+  return res?.invite ?? null;
 };
+/** Vérification publique d'un lien (`GET /user/invites/check`) : valide avec le billet, ou `{ valid: false, reason }`. */
 export const checkInvite = (code: string) =>
-  call<{ valid: boolean; inviter: string | null }>('/invites/check?code=' + enc(code), { anonymous: true });
+  call<InviteCheck>('/invites/check?code=' + enc(code), { anonymous: true });
 export const setInviteQuota = (username: string, quota: number) =>
   call<{ username: string; quota: number }>('/accounts/' + enc(username) + '/invite-quota', { method: 'PUT', body: { quota } });
 

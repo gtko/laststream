@@ -27,10 +27,10 @@ const BASE = { createdAt: '2026-10-01T10:00:00.000Z', sentAt: null, usedAt: null
 
 function freshList(): void {
   list = [
-    { ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: '0039' },
-    { ...BASE, id: 'i2', code: 'SentCode2', state: 'sent', sentAt: '2026-10-15T10:00:00.000Z', expiresAt: future(9 * DAY - 60_000), number: '0040' },
-    { ...BASE, id: 'i3', code: 'UsedCode3', state: 'used', invitee: 'Noé', usedAt: '2026-10-12T10:00:00.000Z', number: '0041' },
-    { ...BASE, id: 'i4', code: 'FreeCode4', state: 'free', number: '0042' },
+    { ...BASE, id: 'i1', code: 'FreeCode1', state: 'free', number: 1039 },
+    { ...BASE, id: 'i2', code: 'SentCode2', state: 'sent', sentAt: '2026-10-15T10:00:00.000Z', expiresAt: future(9 * DAY - 60_000), number: 1040 },
+    { ...BASE, id: 'i3', code: 'UsedCode3', state: 'used', invitee: 'Noé', usedAt: '2026-10-12T10:00:00.000Z', number: 1041 },
+    { ...BASE, id: 'i4', code: 'FreeCode4', state: 'free', number: 1042 },
   ];
 }
 
@@ -92,14 +92,14 @@ describe('billets de parrainage', () => {
     const t = tickets();
     expect(t).toHaveLength(4);
     expect(t.map((b) => b.className.match(/tk-is-(\w+)/)![1])).toEqual(['free', 'sent', 'used', 'free']);
-    expect(t[0].textContent).toContain('Billet N° 0039');
+    expect(t[0].textContent).toContain('Billet N° 1039');
     expect(t[0].textContent).toContain('Offrir ce billet');
-    expect(t[1].textContent).toContain('Billet N° 0040');
+    expect(t[1].textContent).toContain('Billet N° 1040');
     expect(t[1].textContent).toContain('Envoyé · expire dans 9 j');
-    expect(t[2].textContent).toContain('Billet N° 0041');
+    expect(t[2].textContent).toContain('Billet N° 1041');
     expect(t[2].textContent).toContain('Validé');
     expect(t[2].textContent).toContain('Noé');
-    expect(t[3].textContent).toContain('Billet N° 0042');
+    expect(t[3].textContent).toContain('Billet N° 1042');
   });
 
   it('sélectionner un billet libre ouvre le composeur ; un billet validé montre le nom du filleul', async () => {
@@ -107,7 +107,7 @@ describe('billets de parrainage', () => {
     click(tickets()[3]);
     await tick(10);
     expect(tickets()[3].getAttribute('aria-pressed')).toBe('true');
-    expect($('#tk-compose-t')!.textContent).toContain('0042');
+    expect($('#tk-compose-t')!.textContent).toContain('1042');
     expect(msgField()).not.toBeNull();
     click(tickets()[2]);
     await tick(10);
@@ -145,7 +145,7 @@ describe('billets de parrainage', () => {
     expect(puts()).toHaveLength(3);
     const last = puts().at(-1)!.body;
     expect(last.message).toBe('Tu vas adorer.');
-    expect(last.picks.map((p: any) => p.id)).toEqual([550, 1399, 603]);
+    expect(last.picks.map((p: any) => p.id)).toEqual(['550', '1399', '603']);
     expect(last.picks[1].type).toBe('series');
     expect(last.picks[0].poster).toBe('https://image.tmdb.org/t/p/w342/fc.jpg');
     expect($('.tk-picks-n')!.textContent).toBe('3 / 3');
@@ -158,7 +158,7 @@ describe('billets de parrainage', () => {
 
     click($('[data-tk-pick="movie:550"]'));
     await tick();
-    expect(puts().at(-1)!.body.picks.map((p: any) => p.id)).toEqual([1399, 603]);
+    expect(puts().at(-1)!.body.picks.map((p: any) => p.id)).toEqual(['1399', '603']);
   });
 
   it('copier : le mot est enregistré avant le lien, puis le billet passe à « envoyé » (API existante)', async () => {
@@ -195,12 +195,49 @@ describe('billets de parrainage', () => {
     const html = mod.invitesBodyHTML({
       quota: 4,
       invites: [
-        { ...BASE, id: 'i9', code: 'X9', state: 'used', invitee: '<img src=x onerror="alert(1)">', number: '0099' },
-        { ...BASE, id: 'i8', code: 'X8', state: 'free', picks: [{ id: 1, type: 'movie', name: 'Titre', poster: 'http://insecure.example/x.jpg', background: null }] },
+        { ...BASE, id: 'i9', code: 'X9', state: 'used', invitee: '<img src=x onerror="alert(1)">', number: 1099 },
+        { ...BASE, id: 'i8', code: 'X8', state: 'free', picks: [{ id: '1', type: 'movie', name: 'Titre', poster: 'http://insecure.example/x.jpg', background: '' }] },
       ],
     } as never);
     expect(html).not.toContain('<img src=x');
     expect(html).not.toContain('insecure.example');
     expect(html).toContain('&lt;img src=x');
   });
+});
+
+describe('composeur : seules les affiches acceptées par le serveur', () => {
+  /** Ajoute des titres à la bibliothèque le temps d'un test, puis les retire (la bibliothèque est partagée par le fichier). */
+  function withLibrary(entries: Array<{ id: number; type: 'movie' | 'tv'; title: string; poster: string; addedAt: number }>, run: () => Promise<void>) {
+    return async () => {
+      for (const e of entries) userStore.addToLibrary(e);
+      try {
+        await run();
+      } finally {
+        for (const e of entries) userStore.removeFromLibrary(`${e.type}:${e.id}`);
+      }
+    };
+  }
+
+  it('un titre dont l’affiche n’est pas une adresse acceptée (vide, hôte inconnu) n’est pas proposé ; une affiche TMDB l’est', withLibrary(
+    [
+      { id: 880001, type: 'movie', title: 'Sans affiche', poster: '', addedAt: 2 },
+      { id: 880002, type: 'tv', title: 'Affiche étrangère', poster: 'https://evil.example/p.jpg', addedAt: 1 },
+    ],
+    async () => {
+      await mod.refreshInvites();
+      expect(document.querySelector('#detail [data-tk-pick="movie:880001"]')).toBeNull();
+      expect(document.querySelector('#detail [data-tk-pick="series:880002"]')).toBeNull();
+      expect(document.querySelector('#detail [data-tk-pick="movie:550"]')).not.toBeNull();
+    },
+  ));
+
+  it('une affiche metahub est acceptée : le titre est proposé avec son affiche en https', withLibrary(
+    [{ id: 880003, type: 'tv', title: 'Metahub', poster: 'https://images.metahub.space/poster/small/tt0944947/img', addedAt: 1 }],
+    async () => {
+      await mod.refreshInvites();
+      const pick = document.querySelector<HTMLElement>('#detail [data-tk-pick="series:880003"]');
+      expect(pick).not.toBeNull();
+      expect(pick!.querySelector('img')!.getAttribute('src')).toBe('https://images.metahub.space/poster/small/tt0944947/img');
+    },
+  ));
 });

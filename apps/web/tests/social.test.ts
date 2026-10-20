@@ -82,6 +82,8 @@ describe('textes des amis', () => {
 
 // ---------- Inscription par invitation ----------
 describe('écran d’inscription', () => {
+  /** Réponse de `GET /user/invites/check` pour un billet de l’administrateur valide (sans parrain) : formulaire classique. */
+  const ADMIN_TICKET = { valid: true, inviter: null, message: null, picks: [], expiresAt: null, number: 1001 };
   async function openAuth(url: string, check?: (c: Call) => Response | undefined) {
     history.replaceState(null, '', url);
     routes = (c) => check?.(c) ?? (c.path.startsWith('/user/login') ? json({ error: 'invalid_credentials' }, 401) : undefined);
@@ -95,10 +97,10 @@ describe('écran d’inscription', () => {
   }
   const overlay = () => $('#auth')!;
 
-  it('?invite= : « invité par alice », formulaire d’inscription, code envoyé au serveur', async () => {
-    await openAuth('/?invite=Kq3abcd', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: true, inviter: 'alice' }) : c.path === '/user/register' ? json({ account: { id: 'a', username: 'bob' } }, 201) : undefined));
+  it('?invite= : billet de l’administrateur (inviter null), formulaire d’inscription, code envoyé au serveur', async () => {
+    await openAuth('/?invite=Kq3abcd', (c) => (c.path.startsWith('/user/invites/check') ? json(ADMIN_TICKET) : c.path === '/user/register' ? json({ account: { id: 'a', username: 'bob' } }, 201) : undefined));
     expect(calls.find((c) => c.path.startsWith('/user/invites/check'))!.path).toBe('/user/invites/check?code=Kq3abcd');
-    expect(overlay().textContent).toContain('Invité par alice');
+    expect(overlay().textContent).toContain('Lien d’invitation valide');
     expect($('#auth-form', overlay())).not.toBeNull();
     expect($('input[name="bootstrap"]', overlay())).toBeNull();
     const form = $<HTMLFormElement>('#auth-form', overlay())!;
@@ -110,20 +112,22 @@ describe('écran d’inscription', () => {
     expect(reg.body).toEqual({ username: 'bob', password: 'motdepasse1', invite: 'Kq3abcd' });
   });
 
-  it('#/join/<code> est lu aussi', async () => {
-    await openAuth('/#/join/Zp9abcd', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: true, inviter: 'carl' }) : undefined));
+  it('#/join/<code> est lu aussi : billet d’un parrain (écran « Ta place est réservée »)', async () => {
+    const ticket = { valid: true, inviter: { name: 'carl', handle: 'carl#A1B2', avatar: null }, message: null, picks: [], expiresAt: null, number: 1003 };
+    await openAuth('/#/join/Zp9abcd', (c) => (c.path.startsWith('/user/invites/check') ? json(ticket) : undefined));
     expect(calls[0].path).toBe('/user/invites/check?code=Zp9abcd');
-    expect(overlay().textContent).toContain('Invité par carl');
+    expect(overlay().textContent).toContain('Ta place est réservée');
+    expect(overlay().textContent).toContain('carl#A1B2');
   });
 
-  it('lien invalide ou déjà utilisé : message clair, pas de formulaire', async () => {
-    await openAuth('/?invite=Dead1234', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: false, inviter: null }) : undefined));
-    expect(overlay().textContent).toContain('invalide, déjà utilisé ou révoqué');
+  it('lien inconnu : message clair (raison « unknown »), pas de formulaire d’inscription', async () => {
+    await openAuth('/?invite=Dead1234', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: false, reason: 'unknown' }) : undefined));
+    expect(overlay().textContent).toContain('Ce lien ne correspond à aucun billet');
     expect($('#auth-form', overlay())).toBeNull();
   });
 
   it('sans invitation : « Rejoindre Laststream » et aucun formulaire ; le code se saisit à la main', async () => {
-    await openAuth('/', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: c.path.endsWith('Good1234'), inviter: 'dana' }) : undefined));
+    await openAuth('/', (c) => (c.path.startsWith('/user/invites/check') ? (c.path.endsWith('Good1234') ? json(ADMIN_TICKET) : json({ valid: false, reason: 'unknown' })) : undefined));
     ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
     await tick();
     expect(overlay().textContent).toContain('Rejoindre Laststream');
@@ -132,7 +136,7 @@ describe('écran d’inscription', () => {
     (f.elements.namedItem('code') as HTMLInputElement).value = 'https://x.fr/?invite=Good1234';
     f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await tick(80);
-    expect(overlay().textContent).toContain('Invité par dana');
+    expect(overlay().textContent).toContain('Lien d’invitation valide');
     expect($('#auth-form', overlay())).not.toBeNull();
   });
 
@@ -155,7 +159,7 @@ describe('écran d’inscription', () => {
   });
 
   it('lien refusé à l’inscription (invite_invalid) : retour au message de lien invalide', async () => {
-    await openAuth('/?invite=Used1234', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: true, inviter: 'eve' }) : c.path === '/user/register' ? json({ error: 'invite_invalid' }, 403) : undefined));
+    await openAuth('/?invite=Used1234', (c) => (c.path.startsWith('/user/invites/check') ? json(ADMIN_TICKET) : c.path === '/user/register' ? json({ error: 'invite_invalid' }, 403) : undefined));
     const form = $<HTMLFormElement>('#auth-form', overlay())!;
     (form.elements.namedItem('username') as HTMLInputElement).value = 'bob';
     (form.elements.namedItem('password') as HTMLInputElement).value = 'motdepasse1';
@@ -170,7 +174,7 @@ describe('écran d’inscription', () => {
 describe('Mes invitations', () => {
   const inv = (id: string, code: string, state: string, invitee: string | null = null) => ({
     id, code, state, createdAt: '2026-01-01T00:00:00Z', sentAt: state === 'free' ? null : '2026-01-02T00:00:00Z', usedAt: state === 'used' ? '2026-01-03T00:00:00Z' : null, invitee,
-    number: '00' + (39 + Number(id.slice(1)) - 1), expiresAt: state === 'sent' ? new Date(Date.now() + 9 * 86400000 - 60000).toISOString() : null,
+    number: 1039 + Number(id.slice(1)) - 1, expiresAt: state === 'sent' ? new Date(Date.now() + 9 * 86400000 - 60000).toISOString() : null,
   });
   let mod: typeof import('../src/ui/invites.js');
   let authMod: typeof import('../src/data/auth');
@@ -206,8 +210,8 @@ describe('Mes invitations', () => {
     expect(rows()[2].textContent).toContain('bob');
     expect(rows()[0].textContent).toContain('Offrir ce billet');
     expect(rows()[1].textContent).toContain('Envoyé · expire dans 9 j');
-    expect(rows()[0].textContent).toContain('0039');
-    expect(rows()[3].textContent).toContain('0042');
+    expect(rows()[0].textContent).toContain('1039');
+    expect(rows()[3].textContent).toContain('1042');
     // Le billet libre ouvert propose le composeur ; le lien n'est plus affiché en clair.
     expect(document.querySelector('#detail #tk-msg')).not.toBeNull();
     expect(document.querySelector('#detail [data-inv-input]')).toBeNull();

@@ -79,8 +79,11 @@ export function expiryText(expiresAt, now = Date.now()) {
   return 'expire dans ' + Math.max(1, Math.ceil(ms / 60000)) + ' min';
 }
 
-/** Coup de cœur normalisé pour l'API : identifiant, type tel quel, nom, affiche et fond en https ou null. */
-const toPick = (p) => ({ id: p.id, type: p.type, name: String(p.name), poster: httpsUrl(p.poster), background: httpsUrl(p.background) });
+/**
+ * Coup de cœur normalisé pour l'API : identifiant en chaîne (le serveur refuse un nombre), type tel quel, nom, affiche et fond
+ * en https ou chaîne vide (le serveur refuse null).
+ */
+const toPick = (p) => ({ id: String(p.id), type: p.type, name: String(p.name), poster: httpsUrl(p.poster) || '', background: httpsUrl(p.background) || '' });
 /** Coups de cœur du billet, limités à 3. Un type inconnu du client est gardé tel quel (16 caractères au plus). */
 const picksOf = (inv) =>
   (Array.isArray(inv.picks) ? inv.picks : [])
@@ -96,9 +99,17 @@ function libraryPick(entry) {
   return { key: type + ':' + entry.id, id: entry.id, type, name: entry.title || 'Sans titre', poster, background: httpsUrl(known && known.backdrop) || poster };
 }
 
-/** Affiches du composeur : les plus récentes de la bibliothèque, puis les coups de cœur déjà choisis qui n'y figurent pas. */
+/**
+ * Affiches du composeur : les plus récentes de la bibliothèque dont l'affiche est une adresse acceptée par le serveur (sinon le
+ * PUT serait refusé), puis les coups de cœur déjà choisis qui n'y figurent pas.
+ */
 function pickOptions(picks) {
-  const lib = userStore.getLibrary().slice().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, PICK_GRID_MAX).map(libraryPick);
+  const lib = userStore.getLibrary()
+    .slice()
+    .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+    .map(libraryPick)
+    .filter((o) => o.poster)
+    .slice(0, PICK_GRID_MAX);
   const shown = new Set(lib.map((o) => o.key));
   return lib.concat(picks.filter((p) => !shown.has(pickKey(p))).map((p) => ({ ...p, key: pickKey(p) })));
 }

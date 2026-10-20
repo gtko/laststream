@@ -92,11 +92,11 @@ export async function checkInviteCode(raw) {
     const res = await checkInviteTicket(code);
     if (token !== inviteToken) return invite.status;
     invite.status = res.valid ? 'valid' : 'invalid';
-    // Billet de parrainage (v3) : `inviter` est un objet, et le billet porte son mot et ses coups de cœur. Un serveur plus
-    // ancien renvoie seulement un pseudo : le formulaire classique reste alors utilisé.
-    const named = res.valid && res.inviter ? res.inviter : null;
-    invite.ticket = named && typeof named === 'object' ? res : null;
-    invite.inviter = named ? (typeof named === 'object' ? named.name || '' : named) : '';
+    // Billet de parrainage (v3) : `inviter` est l'objet du parrain, et le billet porte son mot et ses coups de cœur. Sans
+    // parrain (billet de l'administrateur, `inviter: null`), le formulaire classique reste utilisé.
+    const inviter = res.valid && res.inviter ? res.inviter : null;
+    invite.ticket = inviter ? res : null;
+    invite.inviter = inviter ? inviter.name || '' : '';
     invite.reason = res.valid ? '' : res.reason || '';
   } catch {
     if (token === inviteToken) invite.status = 'unknown'; // serveur injoignable : le code sera vérifié à l'inscription
