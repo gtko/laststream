@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { auth, initAuth } from '../src/data/auth';
 import { socketUrl } from '../src/party/bridge';
+import { waitingHostText } from '../src/party/join';
 
 // Session de partage factice : la page n'a besoin que de sa phase, de son message et de ses actions.
 const shared = vi.hoisted(() => ({ session: null as any }));
@@ -141,27 +142,41 @@ describe('page invitée (sans compte)', () => {
   });
 
   it('message d’état : en salon, une information s’efface après quelques secondes ; une alerte reste affichée', async () => {
-    shared.session = null;
-    showPartyJoin('R1', 'abcdefgh12');
-    submit();
-    await vi.waitFor(() => expect(shared.session).not.toBeNull());
-    const status = (): HTMLElement => $('[data-pj-status]');
+    // Minuteries factices installées AVANT le rendu : le sondage (250 ms) et la minuterie d’effacement (4 s) en dépendent.
+    vi.useFakeTimers();
+    try {
+      shared.session = null;
+      showPartyJoin('R1', 'abcdefgh12');
+      submit();
+      await vi.waitFor(() => expect(shared.session).not.toBeNull());
+      const status = (): HTMLElement => $('[data-pj-status]');
+      const tick = async (ms: number): Promise<void> => {
+        await vi.advanceTimersByTimeAsync(ms);
+      };
 
-    shared.session.phase = 'waiting-host';
-    shared.session.message = 'En attente de l’hôte : test.';
-    await vi.waitFor(() => expect(status().textContent).toBe('En attente de l’hôte : test.'));
-    expect(status().dataset.fade).toBeUndefined();
-    await new Promise((r) => setTimeout(r, 4300));
-    expect(status().dataset.fade).toBe('out');
+      // Le texte « normal » de l’attente de l’hôte est une information ; tout autre texte en cette phase est une alerte.
+      shared.session.phase = 'waiting-host';
+      shared.session.message = waitingHostText();
+      await tick(300);
+      expect(status().textContent).toBe(waitingHostText());
+      expect(status().dataset.fade).toBeUndefined();
+      await tick(3000);
+      expect(status().dataset.fade).toBeUndefined();
+      await tick(1500);
+      expect(status().dataset.fade).toBe('out');
 
-    shared.session.phase = 'host-lost';
-    shared.session.message = 'Liaison avec l’hôte interrompue.';
-    await vi.waitFor(() => expect(status().textContent).toBe('Liaison avec l’hôte interrompue.'));
-    await new Promise((r) => setTimeout(r, 4300));
-    expect(status().dataset.fade).toBeUndefined();
-    expect(status().dataset.tone).toBe('warn');
-    expect($('[data-pj-retry]').hidden).toBe(false);
-  }, 20000);
+      shared.session.phase = 'host-lost';
+      shared.session.message = 'Liaison avec l’hôte interrompue.';
+      await tick(300);
+      expect(status().textContent).toBe('Liaison avec l’hôte interrompue.');
+      await tick(10000);
+      expect(status().dataset.fade).toBeUndefined();
+      expect(status().dataset.tone).toBe('warn');
+      expect($('[data-pj-retry]').hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('initialisation sans compte', () => {
