@@ -19,7 +19,8 @@ vi.mock('hls.js', () => {
 });
 
 type Show = {
-  id: number; name: string; poster: string; backdrop: string; airings: Airing[]; platform: string; next: { date: string } | null; aliases: string[];
+  id: number | string; name: string; poster: string; backdrop: string; airings: Airing[]; platform: string; next: { date: string } | null; aliases: string[];
+  epg?: boolean; icon?: string; category?: string;
   genres?: number[]; popularity?: number; overview?: string;
 };
 type Known = { id: number; name: string; poster: string; backdrop: string; aliases: string[] };
@@ -308,6 +309,51 @@ describe('« Prochaine diffusion » : carte de la fiche', () => {
     const plat = mountAll(nextCardInner({ next: null }, [], 'Prime Video', null, at(18, 0)));
     expect(plat.querySelector('.sf-next-big')!.textContent).toBe('Prime Video');
     expect(nextCardInner({ next: null }, [], '', null, at(18, 0))).toBe('');
+  });
+});
+
+// ---- Émission du guide sans fiche TMDB : affiche (image du guide ou fond typographique) et genre au guide ----
+describe('émission du guide sans fiche TMDB', () => {
+  const epg = (over: Partial<Show> = {}): Show => ({
+    id: 'epg:les-enquetes', name: 'Les Enquêtes', poster: '', backdrop: '', airings: [airing(TF1, 'Les Enquêtes', at(21, 0), at(22, 0))], platform: '', next: null,
+    aliases: [], epg: true, icon: 'https://img.example/enq.jpg', category: 'Magazine d’information', ...over,
+  });
+
+  it('affiche : image du guide rognée en 2:3, identifiant « epg: » pour la fiche', () => {
+    const card = mount(showCard(epg(), at(20, 0)));
+    expect(card.getAttribute('data-showopen')).toBe('epg:les-enquetes');
+    expect(card.querySelector('.card-media img')!.getAttribute('src')).toBe('https://img.example/enq.jpg');
+    expect(card.querySelector('.card-media img')!.getAttribute('style')).toContain('object-fit:cover');
+    expect(card.querySelector('.card-media')!.classList.contains('no-img')).toBe(false);
+  });
+
+  it('sans image du guide, ou avec une adresse qui n’est pas web : fond typographique', () => {
+    const none = mount(showCard(epg({ icon: '' }), at(20, 0)));
+    expect(none.querySelector('.card-media img')).toBeNull();
+    expect(none.querySelector('.card-media')!.classList.contains('no-img')).toBe(true);
+    expect(none.querySelector('.card-fallback .tp-title')!.textContent).toBe('Les Enquêtes');
+    const odd = mount(showCard(epg({ icon: 'javascript:alert(1)' }), at(20, 0)));
+    expect(odd.querySelector('.card-media img')).toBeNull();
+  });
+
+  it('échappe le titre et l’adresse de l’image', () => {
+    const card = mount(showCard(epg({ name: 'Q&A "<b>x</b>"', icon: 'https://img.example/a.jpg?x="><script>' }), at(20, 0)));
+    expect(card.querySelector('script')).toBeNull();
+    expect(card.querySelector('b')).toBeNull();
+    expect(card.querySelector('.card-title')!.textContent).toBe('Q&A "<b>x</b>"');
+    expect(card.querySelector('.card-media img')!.getAttribute('src')).toBe('https://img.example/a.jpg?x="><script>');
+  });
+
+  it('genre au guide : la catégorie range l’émission dans l’onglet correspondant', () => {
+    const table: Array<[string, number, string]> = [
+      ['Téléréalité', 10764, 'Téléréalité'], ['Talk-show', 10767, 'Talk-shows'], ['Jeu', 35, 'Divertissement'], ['Variétés', 35, 'Divertissement'],
+      ['Magazine d’information', 10763, 'Magazines et actu'], ['Documentaire', 99, 'Documentaires'],
+    ];
+    table.forEach(([cat, id, label]) => {
+      expect(genreTabs([epg({ category: cat })]), cat).toEqual([[id, label]]);
+    });
+    expect(ofGenre([epg({ category: 'Documentaire' })], 99)).toHaveLength(1);
+    expect(ofGenre([epg({ category: 'Documentaire' })], 35)).toEqual([]);
   });
 });
 

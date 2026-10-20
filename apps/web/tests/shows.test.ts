@@ -2,7 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { airingsFor, dayLabel, hhmm, localDate, matchKnown, primeTime, programKeys, SEED_SHOWS, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
+import { airingsFor, dayLabel, hhmm, isShowCategory, localDate, matchKnown, primeTime, programKeys, SEED_SHOWS, showKey, showName, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
+import { guideShows, type Guide, resetShowsCache, resolveSeed } from '../src/data/showsApi';
+// lastAddon se lit une fois, à l'import de config.ts : réglé avant les imports, comme au premier chargement de l'application.
+vi.hoisted(() => localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_sh-1' })));
 import { playBest } from '../src/player/session.js';
 import { state } from '../src/ui/state.js';
 // Lecture d'un épisode : on vérifie l'appel (sources, auto-lecture) sans lancer de vrai lecteur. Stubs complets (pas de
@@ -95,6 +98,14 @@ const ch = (id: string, name: string) => ({
   country: 'FR', languages: fra, categories: [{ id: 'generaliste', label: 'Généraliste' }], reliability: 'high', alternatives: [], sig: 'SIG_' + id.replace(/\W/g, ''),
 });
 const CHANNELS = [ch('fr:France3.fr', 'France 3'), ch('fr:M6.fr', 'M6'), ch('fr:TF1.fr', 'TF1')];
+/** Programmes ajoutés au guide par un test (dernier test du fichier : le guide est rechargé avec `resetShowsCache`). */
+type EpgRow = { channelId: string; start: number; stop: number; title: string; desc: string; icon: string; category: string };
+const extraEpg: EpgRow[] = [];
+/** Réponse de recherche TMDB, identique pour toute requête (comme une recherche approximative) : seuls les noms qui correspondent sont retenus. */
+const SEARCH_HITS = [
+  { id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.', genre_ids: [10764] },
+  { id: 3001, name: 'Le Grand Quiz du Dimanche', poster_path: '/gq.jpg', backdrop_path: '/gqb.jpg', popularity: 5, origin_country: ['FR'], overview: 'Quiz.', genre_ids: [] },
+];
 
 function primeAt(dayOffset: number): [number, number] {
   const d = new Date();
@@ -116,10 +127,11 @@ function mockFetch(url: string): Response {
       [0, 1].forEach((off) => {
         const [s, e] = primeAt(off);
         const title = id === 'fr:M6.fr' ? 'Top Chef - Saison 15 Episode 2' : 'Film du soir ' + id;
-        out.push({ channelId: id, start: s, stop: e, title, desc: 'Résumé.', icon: '', category: 'Divertissement' });
+        out.push({ channelId: id, start: s, stop: e, title, desc: 'Résumé.', icon: '', category: id === 'fr:M6.fr' ? 'Divertissement' : 'Film' });
       });
       if (id === 'fr:TF1.fr') out.push({ channelId: id, start: now - 1200, stop: now + 2400, title: 'La France a un incroyable talent - Saison 17 Episode 3', desc: 'Les auditions.', icon: '', category: 'Divertissement' });
     });
+    extraEpg.forEach((x) => { if (ids.includes(x.channelId)) out.push(x); });
     return json(out);
   }
   if (p.endsWith('/lt/tmdb/discover/tv')) {
@@ -142,9 +154,7 @@ function mockFetch(url: string): Response {
     };
     return json({ page: Number(u.searchParams.get('page') || 1), total_pages: 7, results: typed[Number(u.searchParams.get('page') || 1)] ?? [] });
   }
-  if (p.endsWith('/lt/tmdb/search/tv')) {
-    return json({ results: [{ id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.', genre_ids: [10764] }] });
-  }
+  if (p.endsWith('/lt/tmdb/search/tv')) return json({ results: SEARCH_HITS });
   const watch = /\/lt\/tmdb\/tv\/(\d+)\/watch\/providers$/.exec(p);
   if (watch) return json({ results: { FR: watch[1] === '1002' ? { flatrate: [{ provider_name: 'Prime Video', logo_path: '/pv.jpg', display_priority: 1 }], link: 'https://tmdb.example/x' } : {} } });
   const season = /\/lt\/tmdb\/tv\/(\d+)\/season\/(\d+)$/.exec(p);
@@ -186,6 +196,64 @@ it('ce soir : ignore les chaînes d’information et les créneaux sans données
     { channelId: 'G', start: at(21, 0), stop: at(23, 0), title: 'No Data' },
   ];
   expect(primeTime(progs, (p) => by.get(p.channelId), '2026-10-20')).toEqual([]);
+});
+
+describe('catégories du guide', () => {
+  it('reconnaît les émissions : divertissement, jeu, magazine, documentaire, talk-show, téléréalité, variétés…', () => {
+    ['Divertissement', 'DIVERTISSEMENT', 'Jeu', 'jeu', 'Magazine d’information', 'Magazine de l’art de vivre', 'Magazine de cinéma', 'News magazine',
+      'Documentaire', 'Talk-show', 'Talk Show', 'Téléréalité', 'Télé-réalité', 'Reality', 'Variétés', 'Émission', 'Game Show', 'Dating Show']
+      .forEach((c) => expect(isShowCategory(c), c).toBe(true));
+  });
+
+  it('écarte la fiction, l’information, la météo, le sport et les genres vides ou inconnus', () => {
+    ['Film', 'Cinéma', 'Cinema', 'Téléfilm', 'Série TV', 'Série d’animation', 'Série documentaire', 'Dessin animé', 'Jeunesse', 'Journal', 'Météo',
+      'Clips', 'Sport', 'Autre', 'Programme indéterminé', 'News', '', '   ', null, undefined]
+      .forEach((c) => expect(isShowCategory(c), String(c)).toBe(false));
+  });
+
+  it('nom et clé d’une émission du guide : première partie du titre, sans saison ni épisode', () => {
+    expect(showName('Koh-Lanta : La légende - Épisode 3')).toBe('Koh-Lanta');
+    expect(showName('LOL : qui rit, sort !')).toBe('LOL');
+    expect(showName('Top Chef - Saison 15 Episode 2')).toBe('Top Chef');
+    expect(showKey('Koh-Lanta : La légende')).toBe('koh lanta');
+    expect(showKey('La France a un incroyable talent - S17E3')).toBe('france a un incroyable talent');
+  });
+});
+
+describe('émissions du guide sans fiche TMDB', () => {
+  const T = 1_800_000_000;
+  const tf1: GuideChannel = { epgId: 'fr:TF1.fr', playId: 'fr:TF1.fr', name: 'TF1', logo: '', num: 1 };
+  const m6: GuideChannel = { epgId: 'fr:M6.fr', playId: null, name: 'M6', logo: '', num: 6 };
+  const guide = (programs: EpgProgram[]): Guide => {
+    const by = new Map([[tf1.epgId, tf1], [m6.epgId, m6]]);
+    return { channels: [tf1, m6], programs, channelOf: (p) => by.get(p.channelId), catalog: new Map(), at: T };
+  };
+
+  it('regroupe les diffusions par émission ; écarte les connues, les terminées et les autres genres', () => {
+    const out = guideShows(guide([
+      { channelId: 'fr:TF1.fr', start: T + 3600, stop: T + 7200, title: 'Jeu Test : la finale - Épisode 2', desc: 'Court.', icon: '', category: 'Jeu' },
+      { channelId: 'fr:M6.fr', start: T + 600, stop: T + 4000, title: 'Jeu Test - Épisode 3', desc: 'Une description plus longue.', icon: 'https://i.example/jt.png', category: 'Jeu' },
+      { channelId: 'fr:TF1.fr', start: T + 9000, stop: T + 12000, title: 'Jeu Test', desc: '', icon: '', category: 'Jeu' },
+      { channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Connue', desc: '', icon: '', category: 'Divertissement' },
+      { channelId: 'fr:TF1.fr', start: T - 7200, stop: T - 60, title: 'Terminée', desc: '', icon: '', category: 'Divertissement' },
+      { channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Un Film', desc: '', icon: '', category: 'Film' },
+      { channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Documentaire Nature', desc: '', icon: '', category: 'Documentaire' },
+    ]), [{ name: 'Connue' }], T);
+    expect(out.map((s) => s.name).sort()).toEqual(['Documentaire Nature', 'Jeu Test']);
+    const jt = out.find((s) => s.name === 'Jeu Test')!;
+    expect(jt).toMatchObject({
+      id: 'epg:jeu-test', epg: true, poster: '', backdrop: '', popularity: 0, genres: [], platform: '', next: null,
+      category: 'Jeu', icon: 'https://i.example/jt.png', overview: 'Une description plus longue.',
+    });
+    expect(jt.airings.map((a) => a.start)).toEqual([T + 600, T + 3600, T + 9000]); // triées par début
+    expect(jt.airings[0].channel.name).toBe('M6');
+    expect(out.find((s) => s.name === 'Documentaire Nature')!.id).toBe('epg:documentaire-nature');
+  });
+
+  it('une émission déjà connue sous un alias n’est pas reprise', () => {
+    const out = guideShows(guide([{ channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Jeu Test', desc: '', icon: '', category: 'Jeu' }]), [{ name: 'Autre', aliases: ['Jeu Test'] }], T);
+    expect(out).toEqual([]);
+  });
 });
 
 describe('émissions TV (interface)', () => {
@@ -238,6 +306,11 @@ describe('émissions TV (interface)', () => {
     const searched = calls.filter((c) => c.includes('/lt/tmdb/search/tv')).map((c) => new URL(c).searchParams.get('query'));
     expect(searched).toContain('Quotidien');
     expect(searched.length).toBeLessThanOrEqual(SEED_SHOWS.length); // une recherche par titre suivi, sauf ceux déjà connus
+  });
+
+  it('recherche d’une émission suivie : sans nom correspondant, aucune fiche (le premier résultat n’est pas pris au hasard)', async () => {
+    expect(await resolveSeed({ name: 'Quotidien' })).toBeNull();
+    expect(await resolveSeed({ name: 'Top Chef' })).toMatchObject({ id: 1003 });
   });
 
   it('page Émissions TV : à la télé / autres émissions', async () => {
@@ -443,5 +516,56 @@ describe('émissions TV (interface)', () => {
     expect(ids()).toHaveLength(7); // la liste complète reflète toutes les pages chargées
     expect(count()).toBe('7 émissions');
     expect(typedPages().slice(first)).toEqual(['4', '5', '6', '7']);
+  });
+
+  it('émissions du guide sans fiche TMDB : listées à la télé, fiche « epg: » ; une fiche TMDB si le nom correspond', async () => {
+    extraEpg.push(
+      { channelId: 'fr:M6.fr', start: now + 2 * 3600, stop: now + 3 * 3600, title: 'Les Enquêtes du soir - Épisode 4', desc: 'Une <i>enquête</i>.', icon: 'https://img.example/enq.jpg', category: 'Magazine d’information' },
+      { channelId: 'fr:TF1.fr', start: now + 30 * 3600, stop: now + 31 * 3600, title: 'Les Enquêtes du soir - Épisode 5', desc: '', icon: '', category: 'Magazine d’information' },
+      { channelId: 'fr:TF1.fr', start: now + 3600, stop: now + 2 * 3600, title: 'Le Grand Quiz du Dimanche', desc: 'Des questions.', icon: '', category: 'Jeu' },
+      { channelId: 'fr:TF1.fr', start: now + 4 * 3600, stop: now + 5 * 3600, title: 'Un Film Quelconque', desc: '', icon: '', category: 'Film' },
+      { channelId: 'fr:M6.fr', start: now - 2 * 3600, stop: now - 3600, title: 'Émission terminée', desc: '', icon: '', category: 'Divertissement' },
+    );
+    resetShowsCache();
+    location.hash = '#/';
+    await settle(100);
+    location.hash = '#/emissions';
+    await settle(600);
+    const page = document.querySelector('#detail .shows-page')!;
+    const tv = page.querySelector('#sv-tv-grid')!;
+    const enq = tv.querySelector<HTMLElement>('[data-showopen="epg:enquetes-du-soir"]')!;
+    expect(enq).not.toBeNull();
+    expect(enq.querySelector('.card-title')!.textContent).toBe('Les Enquêtes du soir');
+    expect(enq.querySelector('.card-media img')!.getAttribute('src')).toBe('https://img.example/enq.jpg'); // image du guide
+    expect(enq.querySelector('.card-meta')!.textContent).toMatch(/ · M6$/); // première diffusion : M6
+    // Le Grand Quiz porte le nom d'une émission TMDB : fiche TMDB. Film et programme terminé : absents.
+    expect(tv.querySelector('[data-showopen="3001"] .card-title')!.textContent).toBe('Le Grand Quiz du Dimanche');
+    expect(page.textContent).not.toContain('Un Film Quelconque');
+    expect(page.textContent).not.toContain('Émission terminée');
+    // Genres au guide : Magazine → « Magazines et actu » (nouvel onglet).
+    expect(Array.from(page.querySelectorAll('.sv-tab')).map((t) => t.textContent)).toEqual(['Tout', 'Téléréalité', 'Divertissement', 'Magazines et actu']);
+    const searched = calls.filter((c) => c.includes('/lt/tmdb/search/tv')).map((c) => new URL(c).searchParams.get('query'));
+    expect(searched).toEqual(expect.arrayContaining(['Le Grand Quiz du Dimanche', 'Les Enquêtes du soir']));
+    expect(searched).not.toContain('Un Film Quelconque');
+    enq.click();
+    await settle(100);
+    expect(location.hash).toBe('#/emission/epg:enquetes-du-soir');
+    await settle(500);
+    const f = document.querySelector('#detail .show-fiche')!;
+    expect(f.querySelector('#f-title')!.textContent).toBe('Les Enquêtes du soir');
+    expect(f.querySelector('.sf-kicker')!.textContent).toBe('Émission TV · Magazine d’information');
+    expect(f.querySelector('.sf-syn')!.textContent).toBe('Une <i>enquête</i>.'); // texte du guide échappé
+    expect(f.querySelector('.sf-syn i')).toBeNull();
+    expect(f.querySelector('.f-bg img')!.getAttribute('src')).toBe('https://img.example/enq.jpg');
+    expect(f.querySelector('#show-next')!.hasAttribute('hidden')).toBe(false);
+    expect(f.querySelector('#show-next')!.textContent).toContain('Prochaine diffusion');
+    expect(f.querySelectorAll('.sf-airs-list .sf-air')).toHaveLength(2);
+    expect(f.querySelector('#show-past')).toBeNull(); // pas d'épisodes ni de casting ni de fournisseurs sans fiche TMDB
+    expect(f.querySelector('#sf-h-cast')).toBeNull();
+    expect(f.querySelector('#show-where')).toBeNull();
+    expect(f.querySelector('.sf-actions [data-showwatch]')).toBeNull(); // pas de direct en cours
+    location.hash = '#/emission/epg:nexiste-pas';
+    await settle(300);
+    expect(document.querySelector('#detail')!.textContent).toContain('Cette émission n’est plus au programme.');
   });
 });

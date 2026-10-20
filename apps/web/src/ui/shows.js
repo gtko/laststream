@@ -2,7 +2,7 @@
  * et « Ce soir à la TV ». Les données viennent de TMDB et du guide TV (voir data/showsApi.ts). */
 import { isKidProfile } from '../data/auth';
 import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
-import { airingsFor, dayLabel, hhmm, isLiveNow, localDate, matchKnown, primeTime, progressPct, seedFor } from '../data/shows';
+import { airingsFor, dayLabel, foldText, hhmm, isLiveNow, localDate, matchKnown, primeTime, progressPct, seedFor } from '../data/shows';
 import { playBest } from '../player/session.js';
 import { register, toItem } from './catalog.js';
 import { GENRE_FR, IMG } from './constants.js';
@@ -36,13 +36,17 @@ export function showSub(s, now) {
   return s.platform || 'Émission';
 }
 
-/** Carte « Émissions du moment » : affiche 2:3 comme les autres rangées de posters, titre et diffusion dessous. */
+/** Image d'une émission du guide : seulement une adresse web (le guide peut en fournir de relatives ou vides). */
+const guideImg = (u) => (/^https?:\/\//.test(u || '') ? u : '');
+
+/** Carte « Émissions du moment » : affiche 2:3 comme les autres rangées de posters, titre et diffusion dessous.
+ * Émission du guide sans affiche : son image au guide (rognée en 2:3), sinon le fond typographique. */
 export function showCard(s, now) {
   const live = s.airings.length && isLiveNow(s.airings[0], now);
   const sub = showSub(s, now);
-  const src = IMG('w342', s.poster);
+  const src = s.epg ? guideImg(s.icon) : IMG('w342', s.poster);
   return '<button type="button" class="card tile show-card" data-showopen="' + esc(s.id) + '" aria-label="' + esc(s.name + ', ' + sub) + '">' +
-    '<span class="card-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') +
+    '<span class="card-media' + (src ? '' : ' no-img') + '">' + (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async"' + (s.epg ? ' style="object-fit:cover"' : '') + '>' : '') +
     fallbackHTML({ name: s.name, type: 'tv' }) +
     (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') + '</span>' +
     '<span class="card-title" aria-hidden="true">' + esc(s.name) + '</span><span class="card-meta" aria-hidden="true">' + esc(sub) + '</span></button>';
@@ -117,8 +121,15 @@ export function renderTvRows() {
 const DAY_SEC = 86400;
 /** Onglets de genre possibles (identifiant TMDB → libellé) ; seuls ceux présents parmi les émissions s'affichent. */
 const SHOW_TABS = [[10764, 'Téléréalité'], [10767, 'Talk-shows'], [35, 'Divertissement'], [10763, 'Magazines et actu'], [99, 'Documentaires'], [10751, 'Famille']];
+/** Onglet d'une émission du guide sans fiche TMDB, d'après sa catégorie au guide (texte XMLTV, FR ou EN), sans accents. */
+const EPG_TABS = [[/telerealite|realite|reality|dating/, 10764], [/talk/, 10767], [/divertissement|jeux?|game|varietes?/, 35], [/magazine|actu|news/, 10763], [/documentaire/, 99]];
+const epgGenres = (cat) => {
+  const c = foldText(cat);
+  const hit = EPG_TABS.find(([re]) => re.test(c));
+  return hit ? [hit[1]] : [];
+};
 /** Une entrée mise en cache avant le champ `genres` n'en a pas : elle n'appartient à aucun genre. */
-const genresOf = (s) => s.genres || [];
+const genresOf = (s) => (s.genres && s.genres.length ? s.genres : s.epg ? epgGenres(s.category) : []);
 const genreName = (s) => { const id = genresOf(s).find((g) => GENRE_FR[g]); return id ? GENRE_FR[id] : ''; };
 
 /** Onglets de genre présents parmi les émissions, dans l'ordre de SHOW_TABS : [identifiant, libellé]. */
@@ -427,8 +438,55 @@ function playEpisode(btn) {
   playBest({ type: 'tv', id: key.split(':')[1] || '', name, season, episode, key }, btn);
 }
 
+/**
+ * Fiche d'une émission du guide sans fiche TMDB (`#/emission/epg:<clé>`) : mêmes classes que la fiche TMDB, à partir des
+ * données du guide. Pas d'épisodes, de casting ni de fournisseurs (aucun identifiant TMDB), ni de « Me prévenir » (le suivi
+ * est indexé par identifiant TMDB numérique).
+ */
+async function showGuideShow(id) {
+  const token = state.token;
+  state.kind = 'show';
+  state.ficheKey = 'tv:' + id;
+  detailEl.innerHTML = ficheSkeleton(null);
+  const shell = detailEl.querySelector('.fiche');
+  if (shell) shell.focus({ preventScroll: true });
+  let s;
+  try {
+    s = (await loadShows()).shows.find((x) => x.epg && x.id === id);
+  } catch (_) {
+    if (token === state.token) detailEl.innerHTML = svcError('Cette émission n’a pas pu être chargée.');
+    return;
+  }
+  if (token !== state.token) return;
+  if (!s) { detailEl.innerHTML = svcError('Cette émission n’est plus au programme.'); return; }
+  const now = nowSec();
+  const first = s.airings[0];
+  const live = s.airings.find((a) => isLiveNow(a, now));
+  const liveCh = live && live.channel.playId ? live.channel : null;
+  const kicker = 'Émission TV' + (s.category ? ' · ' + s.category : '');
+  const meta = (first ? [first.channel.name, weekSlot(first.start)] : []).filter(Boolean).map((t) => '<li>' + esc(t) + '</li>').join('');
+  const actions = liveCh ? '<button type="button" class="btn btn-primary btn-pill" data-showwatch="' + esc(liveCh.playId) + '">' + ICON.play + '<span>Regarder en direct</span></button>' : '';
+  const nextHTML = nextCardInner({ next: null }, s.airings, '', null, now);
+  const hero = '<section class="sf-hero">' + ficheHeroShell(null, { backdrop: guideImg(s.icon) }) +
+    '<div class="sf-hero-in"><div class="sf-info"><p class="sf-kicker">' + esc(kicker) + '</p>' +
+    '<h1 class="sf-title" id="f-title" tabindex="-1">' + esc(s.name) + '</h1>' +
+    (meta ? '<ul class="sf-meta">' + meta + '</ul>' : '') +
+    (s.overview ? '<p class="sf-syn">' + esc(s.overview) + '</p>' : '') +
+    (actions ? '<div class="sf-actions" data-nav>' + actions + '</div>' : '') + '</div>' +
+    '<aside class="sf-next" id="show-next" aria-label="Prochaine diffusion"' + (nextHTML ? '' : ' hidden') + '>' + nextHTML + '</aside></div></section>';
+  const body = '<div class="sf-body"><section class="sf-sec sf-airs" aria-labelledby="sf-h-airs"><h2 class="sf-h" id="sf-h-airs">Prochaines diffusions</h2>' +
+    '<ul class="sf-airs-list" data-nav>' + s.airings.slice(0, 12).map((a) => airingRow(a, now, true)).join('') + '</ul></section></div>';
+  detailEl.innerHTML = topBar(true) +
+    '<article class="fiche show-fiche" aria-labelledby="f-title" data-key="' + esc('tv:' + id) + '" data-name="' + esc(s.name) + '">' + hero + body + '</article>';
+  document.title = s.name + ' · Laststream';
+  state.ficheName = s.name;
+  const h1 = detailEl.querySelector('#f-title');
+  if (h1) h1.focus({ preventScroll: true });
+}
+
 export async function showShow(id) {
   teardownFiche();
+  if (String(id).startsWith('epg:')) return showGuideShow(String(id));
   const token = state.token;
   state.kind = 'show';
   state.ficheKey = 'tv:' + id;

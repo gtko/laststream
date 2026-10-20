@@ -3,7 +3,7 @@
 import { tmdb, tvChannels, tvEpg, type Json, type TvChannel } from './lt';
 import { getRegion, getVideoLang } from './prefs';
 import {
-  SEED_SHOWS, airingsFor, titleKey, titleMatches, type Airing, type EpgProgram, type GuideChannel, type SeedShow,
+  SEED_SHOWS, airingsFor, isShowCategory, matchKnown, showKey, showName, titleKey, titleMatches, type Airing, type EpgProgram, type GuideChannel, type SeedShow,
 } from './shows';
 import { NATIONAL, langCode3, rankChannels } from './tvRank';
 
@@ -125,7 +125,7 @@ const typeQuery = (country: string, page: number): Promise<Json> => tmdb('discov
 });
 
 /** Titres d'une réponse discover, sans affiche (exclus) ni doublon (`seen`, complété au passage). */
-function takeNew(results: Json[], seen: Set<number>): TmdbShow[] {
+function takeNew(results: Json[], seen: Set<number | string>): TmdbShow[] {
   const out: TmdbShow[] = [];
   results.forEach((x) => {
     if (!x.poster_path || seen.has(x.id)) return;
@@ -144,7 +144,7 @@ export async function discoverShows(): Promise<{ shows: TmdbShow[]; cursor: Disc
   const pages = Array.from({ length: FIRST_PAGES }, (_, i) => typeQuery(country, i + 1));
   const genres = tmdb('discover/tv', { with_genres: SHOW_GENRES, with_origin_country: country, sort_by: 'popularity.desc', page: '1' });
   const settled = await Promise.allSettled([...pages, genres]);
-  const seen = new Set<number>();
+  const seen = new Set<number | string>();
   const shows: TmdbShow[] = [];
   let totalPages = 0;
   settled.forEach((r, i) => {
@@ -159,7 +159,14 @@ type SeedCache = Record<string, { at: number; show: TmdbShow | null }>;
 const readSeeds = (): SeedCache => { try { return JSON.parse(globalThis.localStorage?.getItem(SEED_KEY) || '{}') as SeedCache; } catch { return {}; } };
 const writeSeeds = (c: SeedCache): void => { try { globalThis.localStorage?.setItem(SEED_KEY, JSON.stringify(c)); } catch { /* stockage indisponible */ } };
 
-/** Émission TMDB d'un titre (recherche), mémorisée 30 jours ; préfère une émission du pays. */
+/** Mémorise le résultat d'une recherche (relu avant écriture : plusieurs recherches tournent en parallèle). */
+function rememberShow(key: string, show: TmdbShow | null): void {
+  const cache = readSeeds();
+  cache[key] = { at: Date.now(), show };
+  writeSeeds(cache);
+}
+
+/** Émission TMDB d'un titre (recherche), mémorisée 30 jours ; préfère une émission du pays. Sans résultat au même nom : null. */
 export async function resolveSeed(seed: SeedShow): Promise<TmdbShow | null> {
   const cache = readSeeds();
   const hit = cache[seed.name];
@@ -168,12 +175,26 @@ export async function resolveSeed(seed: SeedShow): Promise<TmdbShow | null> {
   const key = titleKey(seed.name);
   const region = getRegion().code;
   const results: Json[] = (j?.results ?? []).filter((r: Json) => r.poster_path);
+  // Un premier résultat sans rapport serait une autre émission : seuls les noms qui correspondent sont retenus.
   const named = results.filter((r) => titleMatches(r.name || '', seed.name, seed.aliases) || titleKey(r.name).startsWith(key));
-  const pool = named.length ? named : results;
-  const best = pool.find((r) => Array.isArray(r.origin_country) && r.origin_country.includes(region)) ?? pool[0];
+  const best = named.find((r) => Array.isArray(r.origin_country) && r.origin_country.includes(region)) ?? named[0];
   const show = best ? toShow(best) : null;
-  cache[seed.name] = { at: Date.now(), show };
-  writeSeeds(cache);
+  rememberShow(seed.name, show);
+  return show;
+}
+
+/** Émission TMDB d'un titre du guide sans fiche (recherche, mémorisée 30 jours) ; seul un résultat au même nom (name ou original_name) est retenu. */
+async function resolveGuideShow(title: string): Promise<TmdbShow | null> {
+  const key = 'guide:' + titleKey(title);
+  const hit = readSeeds()[key];
+  if (hit && Date.now() - hit.at < SEED_TTL_MS) return hit.show;
+  const j = await tmdb('search/tv', { query: title });
+  const region = getRegion().code;
+  const named: Json[] = (j?.results ?? []).filter((r: Json) => r.poster_path && (
+    titleMatches(title, r.name || '') || (!!r.original_name && titleMatches(title, r.original_name))));
+  const best = named.find((r) => Array.isArray(r.origin_country) && r.origin_country.includes(region)) ?? named[0];
+  const show = best ? toShow(best) : null;
+  rememberShow(key, show);
   return show;
 }
 
@@ -236,13 +257,53 @@ export async function pastEpisodes(detail: ShowDetail, today: string, max = 12):
 }
 
 // ---- Liste des émissions du moment ----
-export interface ShowEntry extends TmdbShow {
+export interface ShowEntry extends Omit<TmdbShow, 'id'> {
+  /** Identifiant TMDB ; `epg:<clé>` pour une émission du guide sans fiche TMDB (voir `epg`). */
+  id: number | string;
   aliases: string[];
   airings: Airing[];
   /** Plateforme connue pour une émission de streaming. */
   platform: string;
   /** Prochain épisode annoncé par TMDB (émissions sans diffusion au guide). */
   next: ShowEpisode | null;
+  /** Émission du guide sans fiche TMDB : `icon` (image du guide) et `category` (genre au guide) la décrivent. */
+  epg?: boolean;
+  icon?: string;
+  category?: string;
+}
+
+/**
+ * Émissions du guide sans fiche TMDB : programmes d'émission (voir isShowCategory) non terminés, diffusés sur une chaîne du
+ * guide, qui ne correspondent à aucune émission de `known`. Regroupés par titre (saison et épisode ignorés) ; `id` = `epg:<clé>`.
+ */
+export function guideShows(guide: Guide, known: readonly { name: string; aliases?: readonly string[] }[], now: number): ShowEntry[] {
+  interface Group { names: Map<string, number>; cats: Map<string, number>; icon: string; overview: string; airings: Airing[]; key: string }
+  const groups = new Map<string, Group>();
+  guide.programs.forEach((p) => {
+    if (p.stop <= now || !isShowCategory(p.category)) return;
+    const channel = guide.channelOf(p);
+    if (!channel || matchKnown(p.title, known)) return;
+    const key = showKey(p.title);
+    if (!key) return;
+    let g = groups.get(key);
+    if (!g) { g = { names: new Map(), cats: new Map(), icon: '', overview: '', airings: [], key }; groups.set(key, g); }
+    const name = showName(p.title);
+    g.names.set(name, (g.names.get(name) ?? 0) + 1);
+    const cat = (p.category ?? '').trim();
+    if (cat) g.cats.set(cat, (g.cats.get(cat) ?? 0) + 1);
+    if (!g.icon && p.icon) g.icon = p.icon;
+    if ((p.desc ?? '').length > g.overview.length) g.overview = p.desc ?? '';
+    g.airings.push({ channel, start: p.start, stop: p.stop, title: p.title, desc: p.desc ?? '', icon: p.icon ?? '', category: p.category ?? '' });
+  });
+  const mostFrequent = (m: Map<string, number>): string => [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
+  return [...groups.values()].map((g): ShowEntry => {
+    const name = mostFrequent(g.names);
+    return {
+      id: 'epg:' + g.key.replace(/ /g, '-'), name, poster: '', backdrop: '', overview: g.overview, popularity: 0, firstAir: '', genres: [],
+      aliases: [name], airings: g.airings.sort((a, b) => a.start - b.start || (a.channel.num ?? 99) - (b.channel.num ?? 99)), platform: '', next: null,
+      epg: true, icon: g.icon, category: mostFrequent(g.cats),
+    };
+  });
 }
 
 /** Liste des émissions du moment, avec le guide et la pagination de la source par type (« Voir plus »). */
@@ -307,12 +368,21 @@ export function loadShows(force = false): Promise<ShowsData> {
     const pending: SeedShow[] = [];
     SEED_SHOWS.forEach((seed) => {
       const known = [...byId.values()].find((e) => titleMatches(e.name, seed.name, seed.aliases));
-      if (known) { add(known, [seed.name, ...(seed.aliases ?? [])], seed.streaming ?? ''); return; }
+      // Entrée déjà ajoutée depuis TMDB : son identifiant est numérique.
+      if (known) { add(known as ShowEntry & TmdbShow, [seed.name, ...(seed.aliases ?? [])], seed.streaming ?? ''); return; }
       pending.push(seed);
     });
     const resolved = await mapLimit(pending, 4, resolveSeed);
     resolved.forEach((r, i) => {
       if (r.status === 'fulfilled' && r.value) add(r.value, [pending[i].name, ...(pending[i].aliases ?? [])], pending[i].streaming ?? '');
+    });
+    // Émissions du guide sans fiche : les 25 plus diffusées sont cherchées sur TMDB ; celles dont le nom correspond prennent sa fiche.
+    const guideOnly = guideShows(guide, [...byId.values()], now);
+    const toSearch = [...guideOnly].sort((a, b) => b.airings.length - a.airings.length).slice(0, 25);
+    const found = await mapLimit(toSearch, 4, (g) => resolveGuideShow(g.name));
+    const promoted = new Set<string>();
+    found.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value) { add(r.value, [toSearch[i].name]); promoted.add(String(toSearch[i].id)); }
     });
     const shows = [...byId.values()];
     shows.forEach((s) => { s.airings = airingsFor({ name: s.name, aliases: s.aliases }, guide.programs, guide.channelOf, now); });
@@ -320,8 +390,9 @@ export function loadShows(force = false): Promise<ShowsData> {
     const streaming = shows.filter((s) => !s.airings.length).sort((a, b) => Number(!!b.platform) - Number(!!a.platform) || b.popularity - a.popularity).slice(0, 8);
     const details = await mapLimit(streaming, 4, (s) => showDetail(s.id));
     details.forEach((r, i) => { if (r.status === 'fulfilled') streaming[i].next = r.value.next; });
-    sortShows(shows, now);
-    return { shows, guide, cursor: disc.cursor, hasMore: disc.cursor.next <= disc.cursor.totalPages };
+    const all = [...shows, ...guideOnly.filter((g) => !promoted.has(String(g.id)))];
+    sortShows(all, now);
+    return { shows: all, guide, cursor: disc.cursor, hasMore: disc.cursor.next <= disc.cursor.totalPages };
   })();
   p.catch(() => { if (showsCache && showsCache.p === p) showsCache = null; });
   showsCache = { at: Date.now(), p };

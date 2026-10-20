@@ -80,22 +80,58 @@ export const SEED_SHOWS: SeedShow[] = [
 
 const ARTICLES = new Set(['le', 'la', 'les', 'l', 'un', 'une', 'the', 'des']);
 
+/** Minuscules sans accents ni ponctuation, mots séparés par une espace : base des comparaisons de texte du guide. */
+export function foldText(s: unknown): string {
+  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 /** « La France a un incroyable talent » → « france a un incroyable talent » (sans accents, ponctuation ni article initial). */
 export function titleKey(s: unknown): string {
-  const words = String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const words = foldText(s).split(' ').filter(Boolean);
   while (words.length > 1 && ARTICLES.has(words[0])) words.shift();
   return words.join(' ');
 }
 
-/** Variantes normalisées d'un titre de programme : sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… */
-export function programKeys(raw: string): string[] {
+/** Titre de programme sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… ; `head` en est la première partie (avant « : » ou « - »). */
+function splitProgram(raw: string): { full: string; head: string } {
   let t = String(raw ?? '');
   t = t.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
   t = t.replace(/\b(?:s|saison|season)\s*\d+\s*(?:e|ep|episode|épisode)?\s*\d*\b/gi, ' ');
   t = t.replace(/\b(?:épisode|episode|ep\.?)\s*\d+(?:\s*\/\s*\d+)?/gi, ' ');
   t = t.replace(/\b(?:inédit|inedit|rediffusion|replay|en direct)\b/gi, ' ');
-  const head = t.split(/\s[:\-–—]\s|:\s|\s[-–—]\s/)[0];
-  return [...new Set([titleKey(t), titleKey(head)].filter(Boolean))];
+  return { full: t, head: t.split(/\s[:\-–—]\s|:\s|\s[-–—]\s/)[0] };
+}
+
+/** Variantes normalisées d'un titre de programme : sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… */
+export function programKeys(raw: string): string[] {
+  const { full, head } = splitProgram(raw);
+  return [...new Set([titleKey(full), titleKey(head)].filter(Boolean))];
+}
+
+/** Clé de regroupement d'une émission du guide : sa première partie normalisée (« Koh-Lanta : La légende » → « koh lanta »). */
+export function showKey(raw: string): string {
+  const { full, head } = splitProgram(raw);
+  return titleKey(head) || titleKey(full);
+}
+
+/** Nom d'affichage d'une émission du guide, casse d'origine (« Koh-Lanta : La légende - Épisode 3 » → « Koh-Lanta »). */
+export function showName(raw: string): string {
+  const { full, head } = splitProgram(raw);
+  return head.replace(/\s+/g, ' ').replace(/[\s:\-–—]+$/, '').trim() || full.replace(/\s+/g, ' ').trim();
+}
+
+const SHOW_CATEGORY = /\b(?:divertissement|jeux?|magazine|documentaire|talk|reality|varietes?|emissions?|game|dating)\b|realite/;
+const FICTION_CATEGORY = /\b(?:series?|telefilm|films?|cinema|animation|anime|dessin|jeunesse|enfants|clips?)\b/;
+
+/**
+ * Genre au guide (texte XMLTV, FR ou EN) d'une émission : divertissement, jeu, magazine, documentaire, talk-show, téléréalité,
+ * variétés… Faux pour la fiction (films, séries, animation, jeunesse), l’information, la météo, le sport, les genres inconnus
+ * et les genres vides. Un magazine reste une émission (« Magazine de cinéma ») ; une série documentaire n’en est pas une.
+ */
+export function isShowCategory(cat: string | null | undefined): boolean {
+  const c = foldText(cat);
+  if (!SHOW_CATEGORY.test(c)) return false;
+  return /\bmagazine/.test(c) || !FICTION_CATEGORY.test(c);
 }
 
 function distance(a: string, b: string): number {

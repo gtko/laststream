@@ -133,7 +133,7 @@ function parseRouteRaw() {
   if (h === '#/search') return { kind: 'search' };
   if (h === '#/calendar') return { kind: 'calendar' };
   if (h === '#/emissions') return { kind: 'shows' };
-  r = /^#\/emission\/(\d{1,9})$/.exec(h);
+  r = /^#\/emission\/(\d{1,9}|epg:[a-z0-9-]{1,200})$/.exec(h);
   if (r) return { kind: 'show', id: r[1] };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;
 }
