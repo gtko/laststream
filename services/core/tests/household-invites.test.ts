@@ -303,10 +303,10 @@ describe('session verrouillée', () => {
 
   it('la présence ne parle que pour le profil verrouillé', async () => {
     const token = await marieLoggedIn();
-    expect((await request<ErrorBody>(app, 'PUT', '/user/presence', { token, body: { profileId: alice.profile } })).body).toEqual({
-      error: 'profile_locked',
-    });
-    expect((await request(app, 'PUT', '/user/presence', { token, body: { profileId: marie } })).status).toBe(204);
+    expect(
+      (await request<ErrorBody>(app, 'PUT', '/user/social/presence', { token, headers: { 'x-profile-id': alice.profile }, body: {} })).body,
+    ).toEqual({ error: 'profile_locked' });
+    expect((await request(app, 'PUT', '/user/social/presence', { token, headers: { 'x-profile-id': marie }, body: {} })).status).toBe(204);
   });
 
   it('le verrou survit au renouvellement de session', async () => {
@@ -377,15 +377,17 @@ describe('périmètre d’une session verrouillée : parrainage, amis, identité
 
   it('parrainage et amis au niveau du compte : 403 profile_locked', async () => {
     const token = await marieLoggedIn();
+    // Un autre profil que celui du verrou (ici le principal) : refusé par la route v2, avant toute lecture du corps.
+    const other = { 'x-profile-id': alice.profile };
     expect((await request<ErrorBody>(app, 'GET', '/user/invites', { token })).body).toEqual(denied);
     expect((await request<ErrorBody>(app, 'PUT', '/user/invites/x/sent', { token, body: { sent: true } })).body).toEqual(denied);
     expect((await request<ErrorBody>(app, 'DELETE', '/user/invites/x', { token })).body).toEqual(denied);
-    expect((await request<ErrorBody>(app, 'GET', '/user/friends', { token })).body).toEqual(denied);
-    expect((await request<ErrorBody>(app, 'POST', '/user/friends/requests', { token, body: { username: 'bob' } })).body).toEqual(denied);
-    expect((await request<ErrorBody>(app, 'DELETE', '/user/friends/alice', { token })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'GET', '/user/social/friends', { token, headers: other })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'POST', '/user/social/requests', { token, headers: other, body: { handle: 'bob' } })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'DELETE', '/user/social/friends/AAAAAAAAAAAAAAAA', { token, headers: other })).body).toEqual(denied);
     expect((await request<ErrorBody>(app, 'GET', '/user/friends/alice/library', { token })).body).toEqual(denied);
-    expect((await request<ErrorBody>(app, 'DELETE', '/user/presence', { token })).body).toEqual(denied);
-    expect((await request<ErrorBody>(app, 'PUT', '/user/presence', { token, body: { invisible: true } })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'DELETE', '/user/social/presence', { token, headers: other })).body).toEqual(denied);
+    expect((await request<ErrorBody>(app, 'PUT', '/user/social/status', { token, headers: other, body: { status: 'invisible' } })).body).toEqual(denied);
   });
 
   it('lien public avec invitation réservée refusé ; lien sans invitation et amis de profil autorisés, pour ce profil seulement', async () => {

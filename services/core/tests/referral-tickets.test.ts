@@ -323,19 +323,17 @@ describe('inscription : amitié automatique (autoFriend)', () => {
     const bobToken = await loginAs(app, 'bob');
     const bobProfile = (await createProfileVia<{ id: string }>(app, bobToken, { name: 'Bob' })).body.id;
 
-    const accountFriends = (token: string) => request<{ friends: unknown[] }>(app, 'GET', '/user/friends', { token });
+    // Amitié de compte (table legacy) : elle n'apparaît côté v2 qu'une fois convertie en amitié de profil, à la création du
+    // premier profil adulte. La vue v2 par profil couvre donc les deux niveaux.
     const profileFriends = (token: string, profile: string) =>
       request<{ friends: unknown[] }>(app, 'GET', '/user/social/friends', { token, headers: { 'x-profile-id': profile } });
-    expect((await accountFriends(alice.token)).body.friends).toEqual([]);
-    expect((await accountFriends(bobToken)).body.friends).toEqual([]);
     expect((await profileFriends(alice.token, alice.profile)).body.friends).toEqual([]);
     expect((await profileFriends(bobToken, bobProfile)).body.friends).toEqual([]);
 
-    // Témoin : avec le comportement par défaut, le filleul devient ami du parrain (compte et profils).
+    // Témoin : avec le comportement par défaut, le filleul devient ami du parrain (profils).
     expect((await registerWith('carol', avecAmitie?.code ?? '')).status).toBe(201);
     const carolToken = await loginAs(app, 'carol');
     await createProfileVia(app, carolToken, { name: 'Carol' });
-    expect((await accountFriends(alice.token)).body.friends).toHaveLength(1);
     expect((await profileFriends(alice.token, alice.profile)).body.friends).toHaveLength(1);
     expect((await profileFriends(bobToken, bobProfile)).body.friends).toEqual([]);
   });
