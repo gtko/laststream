@@ -1,11 +1,11 @@
+import type { FrVariant, Lang } from '@laststream/protocol/language';
 import type { ReleaseScope } from './parse/scope.js';
 
 export type Resolution = '2160p' | '1080p' | '720p' | '480p' | 'SD' | 'unknown';
 export type SourceKind = 'REMUX' | 'BluRay' | 'WEB-DL' | 'WEBRip' | 'HDTV' | 'DVDRip' | 'CAM' | 'TS' | 'SCR' | 'unknown';
 export type Codec = 'HEVC' | 'AVC' | 'AV1' | 'unknown';
 export type Hdr = 'HDR10' | 'HDR10+' | 'DV' | 'HLG';
-export type Lang = 'fr' | 'en' | 'es' | 'de' | 'it' | 'multi' | 'original';
-export type FrVariant = 'VFF' | 'VFQ' | 'VF2' | 'TRUEFRENCH' | 'FRENCH' | 'VOSTFR' | 'SUBFRENCH';
+export type { FrVariant, Lang } from '@laststream/protocol/language';
 
 export interface ParsedRelease {
   resolution: Resolution;

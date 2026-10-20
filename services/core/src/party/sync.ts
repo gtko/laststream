@@ -1,4 +1,4 @@
-import type { PlaybackState } from './protocol.js';
+import { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset, expectedPosition } from '@laststream/protocol/sync';
 
 /**
  * Synchronisation de lecture par horloge serveur. L'état (`pos` à l'instant serveur `at`) permet à chacun de calculer
@@ -6,26 +6,7 @@ import type { PlaybackState } from './protocol.js';
  * avec les `ping` / `pong` (voir estimateOffset). Ces fonctions pures sont aussi celles que l'application doit appliquer.
  */
 
-/** Position attendue (secondes) à l'instant serveur `now` (ms). */
-export function expectedPosition(state: PlaybackState, now: number): number {
-  if (!state.playing) return state.pos;
-  return Math.max(0, state.pos + Math.max(0, now - state.at) / 1000);
-}
-
-/**
- * Décalage d'horloge client -> serveur (ms), estimé à partir d'un échange ping/pong : `t0` envoi, `t1` réception du
- * pong (horloge client), `serverTime` instant serveur de la réponse. On suppose l'aller et le retour symétriques.
- * Instant serveur estimé = `Date.now() + offset`. Garder l'échantillon au plus petit aller-retour (t1 - t0).
- */
-export function estimateOffset(t0: number, t1: number, serverTime: number): number {
-  return serverTime - (t0 + t1) / 2;
-}
-
 export type DriftAction = { kind: 'none' } | { kind: 'rate'; rate: number } | { kind: 'seek'; to: number };
-
-/** Seuils de correction de dérive (secondes). */
-export const DRIFT_IGNORE_SEC = 0.3;
-export const DRIFT_SEEK_SEC = 2;
 
 /**
  * Correction de dérive du lecteur local : moins de 0,3 s d'écart, rien ; jusqu'à 2 s, vitesse 0,95 (en avance) ou 1,05
@@ -38,3 +19,6 @@ export function driftAction(localPos: number, expected: number, playing: boolean
   if (!playing || abs >= DRIFT_SEEK_SEC) return { kind: 'seek', to: expected };
   return { kind: 'rate', rate: diff > 0 ? 0.95 : 1.05 };
 }
+
+// Position attendue et décalage d'horloge : source unique dans @laststream/protocol (partagée avec l'application).
+export { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset, expectedPosition };
