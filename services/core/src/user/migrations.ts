@@ -686,6 +686,30 @@ export const MIGRATIONS: readonly Migration[] = [
     `,
   },
   {
+    version: 21,
+    name: 'activité des profils (débuts, fins, notes, favoris, listes, notes sur 5), un événement par titre et par jour',
+    sql: `
+      -- Événements d'activité d'un profil, vus par ses amis et son foyer. Titre et affiche figés à l'écriture ; saison et
+      -- épisode NULL pour un film. Le jour (UTC, AAAA-MM-JJ) et le genre forment la clé de dédoublonnage avec le titre.
+      CREATE TABLE activity (
+        id TEXT PRIMARY KEY,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('started', 'finished', 'rated', 'noted', 'favorited', 'listed')),
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        season INTEGER,
+        episode INTEGER,
+        title TEXT NOT NULL DEFAULT '',
+        poster TEXT,
+        rating REAL CHECK (rating IS NULL OR (rating >= 0.5 AND rating <= 5)),
+        day TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE UNIQUE INDEX activity_daily ON activity (pid, kind, type, tmdb_id, day);
+      CREATE INDEX activity_pid_at ON activity (pid, at);
+    `,
+  },
+  {
     version: 22,
     name: 'liens publics, listes partagées',
     sql: `

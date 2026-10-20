@@ -142,6 +142,61 @@ export const notesQuery = z.strictObject({
     .optional(),
 });
 
+// Activité (S5)
+
+/** Entier décimal de 1 à 3 chiffres, borné : pagination et nombre de tranches. */
+const SMALL_INT = z
+  .string()
+  .regex(/^\d{1,3}$/)
+  .transform(Number);
+
+/** `?before=<at ms>&limit=` : flux d'activité, 30 par défaut, 50 au plus. */
+export const activityQuery = z.strictObject({
+  before: z
+    .string()
+    .regex(/^\d{1,15}$/)
+    .transform(Number)
+    .optional(),
+  limit: SMALL_INT.pipe(z.number().int().min(1).max(50))
+    .optional()
+    .transform((value) => value ?? 30),
+});
+
+/** `?type&tmdbId&season&episode&buckets=` : carte de chaleur, 60 tranches par défaut, 200 au plus. */
+export const heatmapQuery = notesQuery.extend({
+  buckets: SMALL_INT.pipe(z.number().int().min(1).max(200))
+    .optional()
+    .transform((value) => value ?? 60),
+});
+
+/**
+ * `?since=<ms>` (exclu) et titre facultatif : `type` et `tmdbId` vont ensemble, saison et épisode facultatifs.
+ */
+export const missedQuery = z
+  .strictObject({
+    since: z
+      .string()
+      .regex(/^\d{1,15}$/)
+      .transform(Number),
+    type: z.enum(['movie', 'series']).optional(),
+    tmdbId: z
+      .string()
+      .regex(/^[1-9]\d{0,8}$/)
+      .transform(Number)
+      .optional(),
+    season: z
+      .string()
+      .regex(/^\d{1,5}$/)
+      .transform(Number)
+      .optional(),
+    episode: z
+      .string()
+      .regex(/^\d{1,5}$/)
+      .transform(Number)
+      .optional(),
+  })
+  .refine((query) => (query.type === undefined) === (query.tmdbId === undefined), 'media:incomplete');
+
 export const MESSAGE_MAX_CHARS = 1000;
 export const NOTE_TEXT_MAX_CHARS = 140;
 /** Bio du profil social, et texte du statut personnalisé (caractères). */

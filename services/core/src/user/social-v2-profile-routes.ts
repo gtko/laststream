@@ -2,6 +2,7 @@ import type { App, Ctx } from '../http/app-env.js';
 import { sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
+import { announceActivity } from './social-v2-activity.js';
 import { actorOf, pidParam } from './social-v2-routes.js';
 import { cleanProfilePatch, profilePatchSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
@@ -38,7 +39,8 @@ export function registerSocialV2ProfileRoutes(router: App, deps: AppDeps, backen
     const now = Date.now();
     const { patch, issues } = cleanProfilePatch(parseWith(profilePatchSchema, c.get('body')), now);
     if (issues.length > 0) throw new UserApiError(400, 'invalid_body', issues);
-    await social().updateSocialProfile(me.pid, patch);
+    const activity = await social().updateSocialProfile(me.pid, patch, now);
+    for (const item of activity ?? []) await announceActivity(deps.socialEvents, social(), item);
     return sendJson(c, found(await social().profileOf(me.pid, now), 'profile_not_found'));
   });
 

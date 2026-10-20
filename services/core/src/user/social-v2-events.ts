@@ -1,3 +1,4 @@
+import type { ActivityItem } from './social-v2-activity.js';
 import type { FriendRequestView, FriendView, Handle, MediaRef, MessageView, NoteView, PollView, ReactionView } from './social-v2-store.js';
 
 /**
@@ -31,7 +32,9 @@ export type SocialEvent =
   | { t: 'join_request'; from: FriendView }
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
   /** Invitation à un salon de visionnage (watch party) : `from` = l'ami qui invite, destinataire seul. */
-  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string };
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string }
+  // Activité : destinataires fixés par activityLiveAudience (social-v2-activity.ts).
+  | { t: 'activity'; item: ActivityItem };
 
 /** Gestionnaire fourni par l'hôte. Appelé de façon synchrone ; ne doit ni attendre ni lever d'exception vers la requête. */
 export type SocialEventHandler = (profilePids: readonly string[], event: SocialEvent) => void;

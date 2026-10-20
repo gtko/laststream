@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { drawNewHandleTag, revokeLegacyFriendship, syncProfileIdentity } from './social-handles.js';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
+import {
+  type ActivityItem,
+  type ActivityKind,
+  type ActivityOptions,
+  activityAudienceFilter,
+  heatmapBuckets,
+  isActivityRating,
+  peerPidsFilter,
+  utcDay,
+} from './social-v2-activity.js';
 import type { SqlDb } from './sql.js';
 
 /**
@@ -578,7 +588,14 @@ export type UpdateGroupOutcome =
 export type AddNoteOutcome =
   | { result: 'unknown' }
   | { result: 'limit_reached'; retryAfterSec: number }
-  | { result: 'ok'; note: NoteView; audience: string[] };
+  | { result: 'ok'; note: NoteView; audience: string[]; activity?: ActivityItem };
+
+/** Résumé de ce qui a été manqué (`GET /user/social/missed`). */
+export interface MissedSummary {
+  messages: number;
+  byFriend: Array<{ pid: string; handle: Handle; count: number }>;
+  notes: NoteView[];
+}
 
 export interface NoteView {
   id: string;
@@ -720,6 +737,47 @@ function noteOf(row: NoteRow): NoteView {
   };
 }
 
+// Activité
+
+/** Ligne d'événement jointe à son auteur. */
+interface ActivityRow {
+  id: string;
+  pid: string;
+  kind: ActivityKind;
+  type: 'movie' | 'series';
+  tmdb_id: number;
+  season: number | null;
+  episode: number | null;
+  title: string;
+  poster: string | null;
+  rating: number | null;
+  at: number;
+  handle_name: string;
+  handle_tag: string;
+  avatar_color: string;
+}
+
+const ACTIVITY_COLUMNS =
+  'a.id, a.pid, a.kind, a.type, a.tmdb_id, a.season, a.episode, a.title, a.poster, a.rating, a.at, p.handle_name, p.handle_tag, p.avatar_color';
+
+function activityOf(row: ActivityRow): ActivityItem {
+  const media: ActivityItem['media'] = { type: row.type, tmdbId: Number(row.tmdb_id), title: row.title };
+  if (row.poster !== null && row.poster !== '') media.poster = row.poster;
+  if (row.type === 'series' && row.season !== null) media.season = Number(row.season);
+  if (row.type === 'series' && row.episode !== null) media.episode = Number(row.episode);
+  const item: ActivityItem = {
+    id: row.id,
+    pid: row.pid,
+    handle: handleOf(row.handle_name, row.handle_tag),
+    avatarColor: row.avatar_color,
+    kind: row.kind,
+    media,
+    at: Number(row.at),
+  };
+  if (row.rating !== null) item.rating = Number(row.rating);
+  return item;
+}
+
 export class SocialV2Store {
   constructor(private readonly db: SqlDb) {}
 
@@ -784,12 +842,12 @@ export class SocialV2Store {
    * Modifie le profil social (PUT /profile). Les champs absents restent inchangés ; `null` retire bio, statut ou
    * bannière. Un nouveau nom renomme aussi le handle (tag gardé sauf collision). Renvoie `false` si le profil est inconnu.
    */
-  updateSocialProfile(pid: string, patch: ProfilePatch): boolean {
-    return this.db.transaction((): boolean => {
-      const row = this.db.prepare('SELECT id, account_id FROM profiles WHERE pid = ? AND is_kid = 0').get(pid) as
-        | { id: string; account_id: string }
+  updateSocialProfile(pid: string, patch: ProfilePatch, now: number = Date.now()): ActivityItem[] | undefined {
+    return this.db.transaction((): ActivityItem[] | undefined => {
+      const row = this.db.prepare('SELECT id, account_id, favorites FROM profiles WHERE pid = ? AND is_kid = 0').get(pid) as
+        | { id: string; account_id: string; favorites: string | null }
         | undefined;
-      if (row === undefined) return false;
+      if (row === undefined) return undefined;
       if (patch.name !== undefined) {
         this.db.prepare('UPDATE profiles SET name = ? WHERE id = ?').run(patch.name, row.id);
         syncProfileIdentity(this.db, row.account_id, row.id, patch.name, false);
@@ -804,8 +862,20 @@ export class SocialV2Store {
       if (patch.banner !== undefined) {
         this.db.prepare('UPDATE profiles SET banner = ? WHERE id = ?').run(patch.banner === null ? null : JSON.stringify(patch.banner), row.id);
       }
-      if (patch.favorites !== undefined) this.db.prepare('UPDATE profiles SET favorites = ? WHERE id = ?').run(JSON.stringify(patch.favorites), row.id);
-      return true;
+      const activity: ActivityItem[] = [];
+      if (patch.favorites !== undefined) {
+        this.db.prepare('UPDATE profiles SET favorites = ? WHERE id = ?').run(JSON.stringify(patch.favorites), row.id);
+        // Activité « favorited » : un événement par favori ajouté (absent de la liste précédente), dédoublonné par titre et jour.
+        const before = new Set((parseStoredJson<FavoriteView[]>(row.favorites) ?? []).map((favorite) => `${favorite.type}|${favorite.tmdbId}`));
+        for (const favorite of patch.favorites) {
+          if (before.has(`${favorite.type}|${favorite.tmdbId}`)) continue;
+          const options: ActivityOptions = { title: favorite.title };
+          if (favorite.poster !== undefined) options.poster = favorite.poster;
+          const item = this.insertActivity(pid, 'favorited', { type: favorite.type, tmdbId: favorite.tmdbId }, options, now);
+          if (item !== undefined) activity.push(item);
+        }
+      }
+      return activity;
     });
   }
 
@@ -1007,8 +1077,7 @@ export class SocialV2Store {
       muted: relation !== undefined && Number(relation.muted) === 1,
     };
     if (relation?.nickname) out.nickname = relation.nickname;
-    const activityVisible = prefs.activityVisibility === 'friends' || (prefs.activityVisibility === 'favorites' && this.isFavoriteOf(row.pid, viewerPid));
-    if (!activityVisible) {
+    if (!this.activityVisibleTo(row.pid, viewerPid)) {
       delete out.watching;
       delete out.lastSeen;
     } else if (out.watching !== undefined && prefs.watchWith === 'never') {
@@ -1055,6 +1124,37 @@ export class SocialV2Store {
   }
 
   /** Le profil `ownerPid` a-t-il mis `targetPid` parmi ses favoris ? */
+  /**
+   * Un ami (`viewerPid`) voit-il l'activité de `posterPid` ? Préférence `activityVisibility` du profil vu (« friends », « favorites »
+   * : seulement ses favoris, « nobody ») et masquage `hideActivity` posé par lui sur cet ami. Le foyer voit tout (à tester avant).
+   */
+  private activityVisibleTo(posterPid: string, viewerPid: string): boolean {
+    const visibility = this.prefsOf(posterPid).activityVisibility;
+    if (visibility === 'nobody') return false;
+    if (visibility === 'favorites' && !this.isFavoriteOf(posterPid, viewerPid)) return false;
+    const hidden = this.relationRow(posterPid, viewerPid);
+    return hidden === undefined || Number(hidden.hide_activity) !== 1;
+  }
+
+  /**
+   * Destinataires du flux temps réel `{t:"activity"}` pour un événement : seulement un début de titre (`started`) d'un ami, vers
+   * les amis qui l'ont en favori et dont `notify.friendStarts` est vrai (défaut : faux), à condition que l'événement leur soit
+   * visible (préférences du profil, masquage) et qu'ils n'aient pas mis l'ami en sourdine.
+   */
+  activityLiveAudience(item: ActivityItem): string[] {
+    if (item.kind !== 'started') return [];
+    const friends = this.db.prepare(FRIENDS_OF_SQL).all(item.pid, item.pid, item.pid) as unknown as { other: string }[];
+    const audience: string[] = [];
+    for (const { other } of friends) {
+      if (this.isBlockedEither(item.pid, other)) continue;
+      const relation = this.relationRow(other, item.pid);
+      if (relation === undefined || Number(relation.favorite) !== 1 || Number(relation.muted) === 1) continue;
+      if (!this.prefsOf(other).notify.friendStarts) continue;
+      if (this.activityVisibleTo(item.pid, other)) audience.push(other);
+    }
+    return audience;
+  }
+
   private isFavoriteOf(ownerPid: string, targetPid: string): boolean {
     const row = this.relationRow(ownerPid, targetPid);
     return row !== undefined && Number(row.favorite) === 1;
@@ -1973,12 +2073,171 @@ export class SocialV2Store {
         body,
         createdAt: now,
       };
-      return { result: 'ok', note, audience: [...friends, ...household] };
+      // Activité « noted » : même transaction que la note, un événement par titre et par jour (voir insertActivity).
+      const activity = this.insertActivity(authorPid, 'noted', media, {}, now);
+      return activity === undefined
+        ? { result: 'ok', note, audience: [...friends, ...household] }
+        : { result: 'ok', note, audience: [...friends, ...household], activity };
     });
   }
 
   /** Supprime une note de son auteur. `false` si la note n'existe pas ou n'est pas à ce profil. */
   deleteNote(authorPid: string, noteId: string): boolean {
     return Number(this.db.prepare('DELETE FROM notes WHERE id = ? AND author_pid = ?').run(noteId, authorPid).changes) === 1;
+  }
+
+  // Activité, carte de chaleur, résumé
+
+  /**
+   * Écrit un événement d'activité du profil `pid` (débuts, fins, notes, notes sur 5, favoris, listes). Dédoublonnage : un
+   * seul événement par profil, genre, titre et jour (UTC). `undefined` si le profil n'a pas d'identité sociale (enfant), si
+   * la note sur 5 est invalide, ou si l'événement du jour existe déjà. Titre et affiche viennent de `options`, sinon de la
+   * bibliothèque du profil.
+   */
+  recordActivity(pid: string, kind: ActivityKind, media: MediaRef, options: ActivityOptions, now: number): ActivityItem | undefined {
+    return this.db.transaction(() => this.insertActivity(pid, kind, media, options, now));
+  }
+
+  /**
+   * Flux d'activité des amis et du foyer de `viewerPid`, du plus récent au plus ancien : `limit` au plus, antérieurs à
+   * `before` (ms) s'il est donné. Pagination : passer le `at` du dernier élément reçu (deux événements de la même
+   * milliseconde ne sont pas séparés). Le filtre d'audience est dans activityAudienceFilter.
+   */
+  activityFeed(viewerPid: string, before: number | undefined, limit: number): ActivityItem[] {
+    const audience = activityAudienceFilter(viewerPid);
+    const rows = this.db
+      .prepare(
+        `SELECT ${ACTIVITY_COLUMNS} FROM activity a
+           JOIN profiles p ON p.pid = a.pid
+           LEFT JOIN profile_presence pr ON pr.profile_pid = a.pid
+          WHERE ${audience.sql} AND a.at < ?
+          ORDER BY a.at DESC, a.id DESC
+          LIMIT ?`,
+      )
+      .all(...audience.params, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as ActivityRow[];
+    return rows.map((row) => activityOf(row));
+  }
+
+  /**
+   * Carte de chaleur des notes d'un titre visibles par `viewerPid` (les siennes, celles des amis et du foyer) : nombre de
+   * notes par tranche égale de la durée, `buckets` tranches. La durée est celle de la progression du spectateur sur ce
+   * titre ; à défaut, la plus grande position des notes visibles.
+   */
+  notesHeatmap(viewerPid: string, media: MediaRef, buckets: number): number[] {
+    const key = mediaKey(media);
+    const audience = this.noteAudience(viewerPid);
+    const positions = (
+      this.db
+        .prepare(`SELECT n.pos FROM notes n WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ? AND ${audience.sql}`)
+        .all(key.type, key.tmdbId, key.season, key.episode, ...audience.params) as { pos: number }[]
+    ).map((row) => Number(row.pos));
+    const known = this.db
+      .prepare(
+        `SELECT MAX(pg.duration_sec) AS d FROM progress pg JOIN profiles p ON p.id = pg.profile_id
+          WHERE p.pid = ? AND pg.type = ? AND pg.tmdb_id = ? AND pg.season = ? AND pg.episode = ?`,
+      )
+      .get(viewerPid, key.type, key.tmdbId, key.season, key.episode);
+    const ownDuration = Number(known?.d ?? 0);
+    const duration = ownDuration > 0 ? ownDuration : positions.reduce((max, pos) => Math.max(max, pos), 0);
+    return heatmapBuckets(positions, duration, buckets);
+  }
+
+  /**
+   * Ce qui a été manqué depuis `since` (ms, exclu) : messages reçus des amis et du foyer (total et par ami), et notes des
+   * amis et du foyer sur le titre `media` (aucune sans titre). Mes propres notes et mes messages envoyés n'y figurent pas.
+   */
+  missedSince(viewerPid: string, since: number, media: MediaRef | undefined): MissedSummary {
+    const peers = new Map(this.peersOf(viewerPid).map((peer) => [peer.pid, peer]));
+    const counts = this.db
+      .prepare('SELECT from_pid AS pid, COUNT(*) AS n FROM messages WHERE to_pid = ? AND created_at > ? GROUP BY from_pid')
+      .all(viewerPid, since) as { pid: string; n: number }[];
+    const byFriend = counts
+      .flatMap((row) => {
+        const peer = peers.get(row.pid);
+        return peer === undefined ? [] : [{ pid: peer.pid, handle: peer.handle, count: Number(row.n) }];
+      })
+      .sort((a, b) => b.count - a.count || a.handle.full.localeCompare(b.handle.full));
+    const messages = byFriend.reduce((sum, friend) => sum + friend.count, 0);
+    return { messages, byFriend, notes: media === undefined ? [] : this.missedNotes(viewerPid, since, media) };
+  }
+
+  /** Notes d'un titre visibles par `viewerPid` : les siennes, celles de ses amis et de son foyer (clause SQL sur `n`). */
+  private noteAudience(viewerPid: string): { sql: string; params: string[] } {
+    const peers = peerPidsFilter('n.author_pid', viewerPid);
+    return { sql: `(n.author_pid = ? OR ${peers.sql})`, params: [viewerPid, ...peers.params] };
+  }
+
+  /** Notes postées depuis `since` par les amis et le foyer de `viewerPid` sur le titre `media`, 500 au plus. */
+  private missedNotes(viewerPid: string, since: number, media: MediaRef): NoteView[] {
+    const key = mediaKey(media);
+    const peers = peerPidsFilter('n.author_pid', viewerPid);
+    const rows = this.db
+      .prepare(
+        `SELECT n.id, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color
+           FROM notes n JOIN profiles p ON p.pid = n.author_pid
+          WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ? AND n.created_at > ? AND ${peers.sql}
+          ORDER BY n.created_at, n.rowid
+          LIMIT ?`,
+      )
+      .all(key.type, key.tmdbId, key.season, key.episode, since, ...peers.params, MAX_NOTES_PER_MEDIA) as unknown as NoteRow[];
+    return rows.map((row) => noteOf(row));
+  }
+
+  /** Titre d'un média dans l'index des fiches partagées (meta_index), s'il y figure. */
+  private indexedTitleOf(media: MediaRef): string | undefined {
+    const row = this.db.prepare('SELECT title FROM meta_index WHERE type = ? AND tmdb_id = ?').get(media.type, media.tmdbId) as
+      | { title: string }
+      | undefined;
+    return row === undefined || row.title === '' ? undefined : row.title;
+  }
+
+  /** Titre et affiche d'un titre dans la bibliothèque du profil `pid` (entrée la plus récente), s'il y figure. */
+  private libraryTitleOf(pid: string, media: MediaRef): { title: string; poster: string | null } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT li.title, li.poster FROM library_items li JOIN profiles p ON p.id = li.profile_id
+          WHERE p.pid = ? AND li.type = ? AND li.tmdb_id = ? AND li.removed = 0
+          ORDER BY li.added_at DESC LIMIT 1`,
+      )
+      .get(pid, media.type, media.tmdbId) as { title: string; poster: string | null } | undefined;
+    return row === undefined ? undefined : { title: row.title, poster: row.poster };
+  }
+
+  /**
+   * Insertion d'un événement, sans transaction propre (appelée dans celle de addNote). L'index unique (pid, genre, type,
+   * tmdb_id, jour) dédoublonne : `undefined` si l'événement du jour existe déjà.
+   */
+  private insertActivity(pid: string, kind: ActivityKind, media: MediaRef, options: ActivityOptions, now: number): ActivityItem | undefined {
+    const author = this.card(pid);
+    if (author === undefined) return undefined;
+    if (options.rating !== undefined && !isActivityRating(options.rating)) return undefined;
+    const ref = normalizeMedia(media);
+    const known = this.libraryTitleOf(pid, ref);
+    // Titre absent de la bibliothèque et non fourni : l'index des fiches (meta_index) le connaît souvent ; l'affiche reste vide.
+    const indexed = options.title !== undefined || known !== undefined ? undefined : this.indexedTitleOf(ref);
+    const row: ActivityRow = {
+      id: randomUUID(),
+      pid,
+      kind,
+      type: ref.type,
+      tmdb_id: ref.tmdbId,
+      season: ref.type === 'series' ? (ref.season ?? null) : null,
+      episode: ref.type === 'series' ? (ref.episode ?? null) : null,
+      title: options.title ?? known?.title ?? indexed ?? '',
+      poster: options.poster ?? known?.poster ?? null,
+      rating: options.rating ?? null,
+      at: now,
+      handle_name: author.handle.name,
+      handle_tag: author.handle.tag,
+      avatar_color: author.avatarColor,
+    };
+    const inserted = this.db
+      .prepare(
+        `INSERT INTO activity (id, pid, kind, type, tmdb_id, season, episode, title, poster, rating, day, at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (pid, kind, type, tmdb_id, day) DO NOTHING`,
+      )
+      .run(row.id, row.pid, row.kind, row.type, row.tmdb_id, row.season, row.episode, row.title, row.poster, row.rating, utcDay(now), now);
+    return Number(inserted.changes) === 1 ? activityOf(row) : undefined;
   }
 }

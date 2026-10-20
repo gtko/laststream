@@ -7,17 +7,17 @@ import type { SqlDb } from '../src/user/sql.js';
 const tables = (db: SqlDb): string[] =>
   (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
 
-/** Versions présentes sur ce lot : 1 à 20 (social v2 puis v3 S1/S2/S3a), puis 22 (partage S3b). 21 est réservée à l'activité (S5). */
-const EXPECTED_VERSIONS = [...Array.from({ length: 20 }, (_, i) => i + 1), 22];
+/** Versions présentes : 1 à 22, contiguës (social v2 en 14 à 17, social v3 en 18 à 22). */
+const EXPECTED_VERSIONS = Array.from({ length: 22 }, (_, i) => i + 1);
 
-describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), partage S3b (22)', () => {
-  it('numérotation croissante, v13 = title_starts, social v2 en 14 à 17, partage en 22', () => {
+describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), social v3 (18 à 22)', () => {
+  it('numérotation continue, v13 = title_starts, social v2 en 14 à 17, social v3 en 18 à 22', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(EXPECTED_VERSIONS);
     expect(MIGRATIONS[12]?.name).toMatch(/^lancements de titres par pays/);
-    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 22]);
+    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22]);
   });
 
-  it('base déjà en v13 (déployée depuis main) : applique 14 à 17 et 22 sans toucher à title_starts', () => {
+  it('base déjà en v13 (déployée depuis main) : applique 14 à 22 sans toucher à title_starts', () => {
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     db.exec('PRAGMA foreign_keys = ON');
     migrate(db, MIGRATIONS.slice(0, 13));
@@ -41,7 +41,7 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), par
     expect(String(db.prepare("SELECT pid FROM profiles WHERE id = 'p1'").get()?.pid)).toMatch(/\S/);
   });
 
-  it('base vierge : 1 à 20, puis 22', () => {
+  it('base vierge : 1 à 22', () => {
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     migrate(db);
     expect(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(EXPECTED_VERSIONS.length);

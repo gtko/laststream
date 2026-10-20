@@ -25,6 +25,7 @@ import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
+import { recordProgressActivity, registerSocialV2ActivityRoutes } from './social-v2-activity-routes.js';
 import { registerSocialV2MessageRoutes } from './social-v2-messages-routes.js';
 import { registerSocialV2NoteRoutes } from './social-v2-notes-routes.js';
 import { registerSocialV2ProfileRoutes } from './social-v2-profile-routes.js';
@@ -492,15 +493,16 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const users = db();
     const { profile } = await scopeOf(users, c, deps.secret, true);
     const normalized = normalizeProgress(parseWith(progressWriteSchema, c.get('body')));
+    const ref = titleRef(normalized.tmdbId, normalized.imdbId);
+    const before = await users.progressEpisode(profile.id, normalized.type, ref, normalized.season, normalized.episode);
     await users.upsertProgress({ profileId: profile.id, ...normalized, updatedAt: nowIso(), country: countryCode(c.env?.country) });
-    const saved = await users.progressEpisode(
-      profile.id,
-      normalized.type,
-      titleRef(normalized.tmdbId, normalized.imdbId),
-      normalized.season,
-      normalized.episode,
-    );
+    const saved = await users.progressEpisode(profile.id, normalized.type, ref, normalized.season, normalized.episode);
     if (saved === undefined) throw new Error('progression introuvable après écriture');
+    // Activité (S5) : débuts et fins de lecture. Un titre sans identifiant TMDB n'en produit pas.
+    if (normalized.tmdbId !== null) {
+      const media = { type: normalized.type, tmdbId: normalized.tmdbId, season: normalized.season, episode: normalized.episode };
+      await recordProgressActivity(backend, deps, profile, media, before, saved, Date.now());
+    }
     return sendJson(c, { item: toProgressDto(saved) });
   });
 
@@ -784,6 +786,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   registerSocialV2MessageRoutes(router, deps, backend);
   registerSocialV2NoteRoutes(router, deps, backend);
   registerSocialV3Routes(router, deps, backend);
+  registerSocialV2ActivityRoutes(router, deps, backend);
   registerDebridLinkRoutes(router, deps, backend);
 
   router.all('*', () => {

@@ -5,6 +5,7 @@ import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import { createRateLimiter } from '../rate-limit.js';
 import type { UserBackend } from './repo.js';
+import { recordActivityOf } from './social-v2-activity-routes.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { convError } from './social-v2-messages-routes.js';
 import { actorOf, pidParam } from './social-v2-routes.js';
@@ -541,6 +542,16 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
     const outcome = await store().addItem(me.pid, id, defined({ type: input.type, tmdbId: input.tmdbId, title: input.title, poster: input.poster }), Date.now());
     if (outcome.result !== 'ok') throw listFailure(outcome.result);
     announceList(outcome.audience, id);
+    // Activité « listed » : un événement par titre et par jour, titre et affiche de la liste.
+    await recordActivityOf(
+      backend,
+      deps,
+      me.pid,
+      'listed',
+      { type: input.type, tmdbId: input.tmdbId },
+      defined({ title: input.title, poster: input.poster }),
+      Date.now(),
+    );
     return sendJson(c, { item: outcome.item }, 201);
   });
 
