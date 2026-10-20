@@ -57,3 +57,73 @@ describe('boîte de lancement', () => {
     expect(box.querySelector('input[name="friend"]')).toBeNull();
   });
 });
+
+describe('création différée (bridge) : rien ne reste armé après un échec', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  async function setup(err: unknown) {
+    const { partyBridge } = await import('../src/party/bridge');
+    const a: any = { ready: true };
+    partyBridge.leave();
+    vi.spyOn(partyBridge, 'available').mockReturnValue(true);
+    const create = vi.spyOn(partyBridge, 'create').mockRejectedValue(err);
+    partyBridge.adapter = () => a;
+    return { partyBridge, a, create };
+  }
+  it('pin_required annulé : plus de pending ni d’invitations, le viewReady suivant ne crée rien', async () => {
+    const { partyBridge, a, create } = await setup(new UserApiError(403, 'pin_required'));
+    let cancel = () => {};
+    partyBridge.onCreateError = (_e, _r, c) => { cancel = c; };
+    partyBridge.pending = { visibility: 'private' };
+    partyBridge.pendingInvites = ['p1'];
+    partyBridge.viewReady(a);
+    await flush();
+    expect(partyBridge.pending).toBeNull();
+    cancel();
+    expect(partyBridge.pendingInvites).toEqual([]);
+    partyBridge.viewReady(a);
+    await flush();
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  it('retry : réarme seulement si le lecteur est le même, sinon abandonne sans créer', async () => {
+    const { partyBridge, a, create } = await setup(new UserApiError(403, 'pin_required'));
+    let retry = () => {};
+    partyBridge.onCreateError = (_e, r) => { retry = r; };
+    partyBridge.pending = { visibility: 'private' };
+    partyBridge.pendingInvites = ['p1'];
+    partyBridge.viewReady(a);
+    await flush();
+    partyBridge.adapter = () => ({ ready: true }) as any;
+    retry();
+    await flush();
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(partyBridge.pendingInvites).toEqual([]);
+    expect(partyBridge.pending).toBeNull();
+  });
+  it('autre erreur : invitations vidées, leave() vide aussi', async () => {
+    const { partyBridge, a } = await setup(new UserApiError(0, 'network'));
+    partyBridge.onCreateError = null;
+    partyBridge.pending = { visibility: 'private' };
+    partyBridge.pendingInvites = ['p1'];
+    partyBridge.viewReady(a);
+    await flush();
+    expect(partyBridge.pendingInvites).toEqual([]);
+    partyBridge.pendingInvites = ['p2'];
+    partyBridge.leave();
+    expect(partyBridge.pendingInvites).toEqual([]);
+  });
+  it('handlePartyCreateError sans nouvel essai appelle cancel', async () => {
+    const { handlePartyCreateError } = await import('../src/ui/partyerrors.js');
+    const cancel = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await handlePartyCreateError(new UserApiError(403, 'pin_required'), { cancel, say: () => undefined });
+    expect(cancel).toHaveBeenCalled();
+  });
+  it('invitations après création : attendues derrière waitForHost', async () => {
+    const { partyBridge } = await import('../src/party/bridge');
+    await import('../src/ui/partylaunch.js');
+    const wait = vi.spyOn(partyBridge, 'waitForHost').mockResolvedValue(false);
+    partyBridge.onInvites!({ id: 'r' } as any, ['p1']);
+    await flush();
+    expect(wait).toHaveBeenCalled();
+  });
+});

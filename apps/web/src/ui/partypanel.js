@@ -551,7 +551,7 @@ async function onSubmit(e) {
       await inviteAfterCreate();
     } catch (err) {
       f.querySelector('[type=submit]').disabled = false;
-      void handlePartyCreateError(err, { retry: () => f.requestSubmit(), say: (t) => { if (msg) msg.textContent = t; } });
+      void handlePartyCreateError(err, { retry: () => { const cur = document.querySelector('[data-wp-create]'); if (cur instanceof HTMLFormElement) cur.requestSubmit(); }, say: (t) => { if (msg) msg.textContent = t; } });
     }
   }
 }

@@ -142,7 +142,7 @@ class PartyBridge {
   pendingInvites: string[] = [];
   onInvites: ((room: PartyRoom, pids: string[]) => void) | null = null;
   /** Création différée en échec : `retry` la relance (après saisie du code du profil, par exemple). */
-  onCreateError: ((err: unknown, retry: () => void) => void) | null = null;
+  onCreateError: ((err: unknown, retry: () => void, cancel: () => void) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
   /**
    * Bascule la lecture sur une source déjà chargée, à la même position ; `allow` filtre les sources de repli de cette
@@ -275,6 +275,7 @@ class PartyBridge {
     this.controller = null;
     this.room = null;
     this.pending = null;
+    this.pendingInvites = [];
     this.announced = '';
     this.readyDeclared = false;
     this.lobby = false;
@@ -518,8 +519,15 @@ class PartyBridge {
         this.emit();
       }, (err) => {
         this.lastError = partyCreateErrorText(err);
-        if (err instanceof UserApiError && err.code === 'pin_required') this.pending = { visibility };
-        this.onCreateError?.(err, () => this.viewReady(a));
+        const cancel = () => { this.pendingInvites = []; };
+        // Rien ne reste armé : seul un nouvel essai explicite (code du profil saisi) réarme la création, si le lecteur est toujours le même.
+        const retry = () => {
+          if (this.client || this.adapter?.() !== a || !a.ready) { cancel(); return; }
+          this.pending = { visibility };
+          this.viewReady(a);
+        };
+        if (!(err instanceof UserApiError && err.code === 'pin_required') || !this.onCreateError) cancel();
+        this.onCreateError?.(err, retry, cancel);
         this.emit();
       });
       return;

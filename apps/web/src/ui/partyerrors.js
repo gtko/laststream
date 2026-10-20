@@ -8,10 +8,10 @@ import { toast } from './dom.js';
 
 /**
  * @param {unknown} err
- * @param {{ retry?: () => void, say?: (text: string) => void }} [opts] `retry` : relance la création une fois le code saisi ;
+ * @param {{ retry?: () => void, cancel?: () => void, say?: (text: string) => void }} [opts] `retry` : relance la création une fois le code saisi ;
  *   `say` : où afficher le message (toast par défaut).
  */
-export async function handlePartyCreateError(err, { retry, say = toast } = {}) {
+export async function handlePartyCreateError(err, { retry, cancel, say = toast } = {}) {
   try { console.error('[watch party] création', err); } catch { /* ignoré */ }
   const text = partyCreateErrorText(err);
   if (err instanceof UserApiError && err.code === 'pin_required' && retry) {
@@ -19,9 +19,10 @@ export async function handlePartyCreateError(err, { retry, say = toast } = {}) {
     try { const id = userStore.currentProfile().id; profile = auth.profiles.find((p) => p.id === id); } catch { profile = undefined; }
     if (profile) {
       const { pinPad, hidePad } = await import('./auth-ui.js');
-      pinPad({ title: 'Code de ' + profile.name, profile, onOk: async () => { hidePad(); retry(); }, onCancel: () => say(text) });
+      pinPad({ title: 'Code de ' + profile.name, profile, onOk: async () => { hidePad(); retry(); }, onCancel: () => { if (cancel) cancel(); say(text); } });
       return;
     }
   }
+  if (cancel) cancel();
   say(text);
 }

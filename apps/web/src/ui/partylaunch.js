@@ -68,8 +68,8 @@ export function openPartyDialog(btn) {
 }
 
 // Salon créé à la volée (« Lancer tout de suite ») : amis choisis invités, échec expliqué (PIN redemandé si besoin).
-partyBridge.onInvites = (room, pids) => { void inviteMany(room.id, pids); };
-partyBridge.onCreateError = (err, retry) => { void handlePartyCreateError(err, { retry }); };
+partyBridge.onInvites = (room, pids) => { void partyBridge.waitForHost().then((ok) => { if (ok) return inviteMany(room.id, pids); }); };
+partyBridge.onCreateError = (err, retry, cancel) => { void handlePartyCreateError(err, { retry, cancel }); };
 
 modalBody.addEventListener('submit', (e) => {
   const f = e.target instanceof Element ? e.target.closest('[data-wp-launch]') : null;

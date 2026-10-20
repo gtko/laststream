@@ -460,7 +460,7 @@ export async function createLobbyFor(req, poster, visibility, from, invite = [])
   try {
     const room = await partyBridge.createLobby(req, poster || null, visibility);
     await openLobby(room.id, from);
-    await inviteMany(room.id, invite);
+    if (invite.length && (await partyBridge.waitForHost())) await inviteMany(room.id, invite);
   } catch (err) {
     void handlePartyCreateError(err, { retry: () => { void createLobbyFor(req, poster, visibility, from, invite); } });
   }
