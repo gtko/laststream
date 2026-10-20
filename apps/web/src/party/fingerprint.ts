@@ -63,7 +63,7 @@ export function matchScore(view: FingerprintSource, fp: Fingerprint | null | und
 }
 
 /** Score minimal pour préférer une source à « la meilleure » : au moins un nom quasi identique, ou une taille exacte avec un nom proche. */
-export const MATCH_MIN = 50;
+const MATCH_MIN = 50;
 
 /**
  * Version à lire pour suivre l'hôte : la source jouable qui correspond le mieux à l'empreinte (hash, puis nom et taille),

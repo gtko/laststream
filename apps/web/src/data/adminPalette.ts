@@ -1,10 +1,10 @@
 /* Palette de commandes de la console d'administration : logique pure (ni DOM, ni réseau).
  * Score flou insensible à la casse et aux accents, assemblage des groupes Comptes / Sections / Actions, navigation au clavier. */
 
-export type PaletteGroupId = 'accounts' | 'sections' | 'actions';
+type PaletteGroupId = 'accounts' | 'sections' | 'actions';
 
 /** Ordre et titres des groupes de résultats. */
-export const PALETTE_GROUPS: readonly { id: PaletteGroupId; title: string }[] = [
+const PALETTE_GROUPS: readonly { id: PaletteGroupId; title: string }[] = [
   { id: 'accounts', title: 'Comptes' },
   { id: 'sections', title: 'Sections' },
   { id: 'actions', title: 'Actions' },

@@ -19,7 +19,7 @@ export function stillFallback(img) {
 let bound = false;
 
 /** Installe l’écouteur d’erreurs (une seule fois). */
-export function bindStillFallback(root = globalThis.document) {
+function bindStillFallback(root = globalThis.document) {
   if (bound || !root) return;
   bound = true;
   root.addEventListener('error', (e) => {

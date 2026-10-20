@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "index.html",
+    "scripts/**",
+    "tools/**",
+    "tests/**",
+    "scripts/relay-e2e/**",
+    "scripts/web-audio-e2e/**",
+    "public/ls-sw.js",
+    "public/service-worker.js"
+  ],
+  "ignoreDependencies": [
+    "@capacitor/cli"
+  ],
+  "ignoreBinaries": [
+    "ffmpeg"
+  ]
+}

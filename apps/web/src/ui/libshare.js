@@ -114,4 +114,3 @@ detailEl.addEventListener('click', (e) => {
   if (all) { e.preventDefault(); setAll(all.dataset.libshare); }
 }, true);
 
-export const visibilityLoaded = () => loaded;

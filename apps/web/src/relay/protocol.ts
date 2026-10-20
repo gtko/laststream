@@ -30,7 +30,7 @@
 export const RELAY_CHANNEL_LABEL = 'ranges';
 export const CHUNK_BYTES = 64 * 1024;
 export const MAX_RANGE_BYTES = 8 * 1024 * 1024;
-export const MAX_MIME_BYTES = 255;
+const MAX_MIME_BYTES = 255;
 export const FLAG_FIN = 0x01;
 
 /** Codes envoyés par l'hôte (index = octet sur le fil : ne pas réordonner). */
@@ -119,7 +119,7 @@ export interface PieceInterval {
 const TYPE = { req: 1, infoReq: 2, info: 3, data: 4, err: 5, cancel: 6, caps: 7, meshReq: 32, mesh: 33, have: 34, locate: 35, located: 36, subs: 37 } as const;
 
 /** Intervalles au plus par instantané HAVE, longueur maximale d'un identifiant de fichier ou de pair. */
-export const MAX_HAVE_RANGES = 512;
+const MAX_HAVE_RANGES = 512;
 export const MAX_ID_BYTES = 64;
 const DATA_HEADER = 14;
 const utf8 = new TextEncoder();

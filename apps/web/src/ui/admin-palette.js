@@ -49,7 +49,7 @@ function messageOf(err) {
 }
 
 /** Recherche de comptes par défaut : listAccounts, limité à PALETTE_ACCOUNT_LIMIT. Le débounce est géré par la palette. */
-export function searchAccountsDefault(q) {
+function searchAccountsDefault(q) {
   return listAccounts({ q, limit: PALETTE_ACCOUNT_LIMIT }).then((r) => r.accounts || []);
 }
 

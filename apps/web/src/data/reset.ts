@@ -16,7 +16,7 @@ export function resetTokenFromLocation(search: string, hash: string, pathname = 
   return '';
 }
 
-export const MIN_PASSWORD = 8;
+const MIN_PASSWORD = 8;
 
 /** Message de validation du nouveau mot de passe, ou '' s'il convient. */
 export function passwordIssue(password: string, confirm: string): string {

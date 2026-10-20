@@ -4,7 +4,7 @@ import type { RoomState } from './types';
 export const DRIFT_SEEK_THRESHOLD_S = 0.5;
 
 /** Tolérance d'affichage : une image dont l'horodatage dépasse l'horloge de ce delta (s) attend encore. */
-export const FRAME_EPSILON_S = 0.005;
+const FRAME_EPSILON_S = 0.005;
 
 /**
  * Position attendue du salon à l'instant `nowMs` : si la lecture tourne, on extrapole depuis `room.at`.

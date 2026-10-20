@@ -54,8 +54,8 @@ export interface RangeServerOptions {
 }
 
 /** Délai d'inactivité d'un lien (2 min) et erreurs consécutives tolérées (20) avant coupure. */
-export const IDLE_TIMEOUT_MS = 120_000;
-export const MAX_CONSECUTIVE_ERRORS = 20;
+const IDLE_TIMEOUT_MS = 120_000;
+const MAX_CONSECUTIVE_ERRORS = 20;
 /** Débit montant par défaut de l'hôte, tous liens confondus, en mégabits par seconde. */
 export const DEFAULT_UPLOAD_MBPS = 60;
 

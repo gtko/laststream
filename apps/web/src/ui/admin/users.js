@@ -85,7 +85,7 @@ function accountsTable(accounts, sel) {
     '<thead>' + head + '</thead><tbody>' + rows + '</tbody></table></div>';
 }
 
-export function accountsHTML(S) {
+function accountsHTML(S) {
   const q = S.accQuery;
   const sel = S.accSel;
   return sectionHead('Comptes', 'Tous les comptes du serveur. Clique une ligne pour ouvrir la fiche ; coche plusieurs comptes pour agir en lot.',
@@ -278,7 +278,7 @@ function invitesCardHTML(S) {
   }), { desc: 'Révoque un lien actif pour qu’il ne serve plus. Les comptes déjà inscrits ne sont pas touchés.' });
 }
 
-export function invitesHTML(S) {
+function invitesHTML(S) {
   return sectionHead('Invitations et parrainages', 'Qui a invité qui, et les liens d’invitation émis par chaque compte.') +
     loaded(S.ref, (r) => (!r.roots.length ? empty('Aucun compte.') : admCard('Arbre de parrainage',
       '<p class="adm-count" role="status">' + fmtInt(r.total) + ' compte' + (r.total > 1 ? 's' : '') + ' · profondeur ' + treeDepth(r.roots) + (r.truncated ? ' · arbre tronqué par le serveur' : '') + '</p>' +
@@ -303,7 +303,7 @@ function bindInvites(root, ctx) {
 }
 
 // ---------- En ligne ----------
-export function onlineHTML(S) {
+function onlineHTML(S) {
   return sectionHead('En ligne', 'Comptes présents en ce moment. Actualisé toutes les 30 secondes quand l’onglet est visible.',
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') +
     loaded(S.online, (r) => {

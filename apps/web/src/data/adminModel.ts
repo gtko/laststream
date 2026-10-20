@@ -44,7 +44,7 @@ export function fmtAgo(v: unknown, now = Date.now()): string {
 }
 
 // ---- Métriques ----
-export const GROUP_LABEL: Record<string, string> = {
+const GROUP_LABEL: Record<string, string> = {
   stream: 'Flux', play: 'Lecture', lt_tmdb: 'Catalogue TMDB', lt: 'Catalogue', user: 'Comptes', party: 'Watch parties', ui: 'Interface', other: 'Autres',
 };
 export const STATUS_KEYS = ['2xx', '3xx', '4xx', '5xx'] as const;
@@ -106,7 +106,7 @@ export function upstreamRows(m: Pick<Metrics, 'upstreams'>) {
     .sort((a, b) => b.failures - a.failures || b.calls - a.calls);
 }
 
-export const ALLDEBRID_LABEL: Record<string, string> = { unlock: 'Déblocage de lien', magnet: 'Magnets', other: 'Autres appels' };
+const ALLDEBRID_LABEL: Record<string, string> = { unlock: 'Déblocage de lien', magnet: 'Magnets', other: 'Autres appels' };
 export function alldebridRows(m: Pick<Metrics, 'alldebrid'>) {
   return Object.entries(m.alldebrid ?? {}).map(([id, v]) => {
     const errors = Object.entries(v.errors ?? {}).map(([code, n]) => ({ code, n })).sort((a, b) => b.n - a.n);
@@ -161,7 +161,7 @@ export function treeDepth(roots: ReferralNode[]): number {
 
 // ---- Dates de filtre ----
 export const daysAgoIso = (days: number, now = Date.now()): string => new Date(now - days * 86_400_000).toISOString();
-export const isActiveWithin = (lastActivityAt: unknown, hours: number, now = Date.now()): boolean => {
+const isActiveWithin = (lastActivityAt: unknown, hours: number, now = Date.now()): boolean => {
   const t = toMs(lastActivityAt);
   return Number.isFinite(t) && now - t <= hours * 3_600_000;
 };
@@ -238,11 +238,11 @@ export function serviceStatusLabel(status: string | null | undefined): string {
 /** Ton visuel : opérationnel, dégradé, en panne, inconnu (classes CSS is-ok, is-warn, is-bad, is-neutral). */
 export type Tone = 'ok' | 'warn' | 'bad' | 'neutral';
 
-export const serviceTone = (status: string | null | undefined): Tone =>
+const serviceTone = (status: string | null | undefined): Tone =>
   status === 'ok' ? 'ok' : status === 'degraded' ? 'warn' : status === 'down' ? 'bad' : 'neutral';
 
 /** Services de la santé, dans l'ordre de la maquette (identifiants du rapport serveur). */
-export const HEALTH_IDS = ['api', 'accounts', 'kv', 'upstream', 'cron'] as const;
+const HEALTH_IDS = ['api', 'accounts', 'kv', 'upstream', 'cron'] as const;
 const HEALTH_NAME: Record<(typeof HEALTH_IDS)[number], string> = {
   api: 'API Worker', accounts: 'Base comptes', kv: 'Cache KV', upstream: 'Addons amont', cron: 'Cron TV',
 };
@@ -311,7 +311,7 @@ export function feedRows(feed: LiveFeedEntry[] | null | undefined, max = 8): Fee
 }
 
 /** Sévérités de « À traiter », de la plus grave à la moins grave. */
-export const INBOX_SEVERITY = [
+const INBOX_SEVERITY = [
   { id: 'critical', label: 'Critique' },
   { id: 'warn', label: 'À surveiller' },
   { id: 'info', label: 'Pour information' },

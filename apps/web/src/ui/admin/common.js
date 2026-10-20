@@ -86,17 +86,6 @@ export function kpi(label, value, hint, spark) {
     (hint ? '<span class="adm-kpi-h">' + esc(hint) + '</span>' : '') + (spark || '') + '</li>';
 }
 
-/** Page « bientôt » : section sans contenu encore, remplacée par son lot. */
-export function soonPage(title, desc) {
-  return sectionHead(title, desc) +
-    '<section class="adm-card adm-soon" aria-label="Bientôt disponible"><p class="adm-soon-t">Bientôt disponible</p><p class="adm-dim">Cette section sera complétée prochainement.</p></section>';
-}
-
-/** Carte « bientôt » à l’intérieur d’une page existante. */
-export function soonCard(title, note) {
-  return '<section class="adm-card adm-soon" aria-label="' + esc(title) + '"><h3 class="adm-soon-t">' + esc(title) + '</h3><p class="adm-dim">' + esc(note) + '</p></section>';
-}
-
 /** Pagination à curseur : boutons « Précédent » / « Suivant » (identifiants `which:prev|next`). */
 export function pager(id, hasPrev, hasNext) {
   return '<nav class="adm-pager" aria-label="Pagination" data-nav><button type="button" class="btn btn-ghost btn-sm" data-adm-page="' + id + ':prev"' + (hasPrev ? '' : ' disabled') + '>← Précédent</button>' +

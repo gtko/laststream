@@ -17,7 +17,7 @@ type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Réponse en erreur (HTTP ou `success:false`) → erreur typée. */
-export function classifyTorbox(status: number, body: unknown, now: number, retryAfter?: string): DebridError {
+function classifyTorbox(status: number, body: unknown, now: number, retryAfter?: string): DebridError {
   const code = isRec(body) && typeof body.error === 'string' ? body.error : isRec(body) && typeof body.detail === 'string' ? 'detail' : 'unknown';
   const text = JSON.stringify(isRec(body) ? { e: body.error, d: body.detail } : '').toUpperCase();
   if (status === 429) {

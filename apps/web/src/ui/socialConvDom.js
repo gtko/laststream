@@ -200,7 +200,7 @@ function reactionsEl(m, ctx) {
 }
 
 /** Barre de réactions (appui long ou survol) : emojis rapides, ↩ répondre, plus d'emojis. */
-export function reactionBar(m, ctx) {
+function reactionBar(m, ctx) {
   const bar = h('div', 'cvm-bar', null, { role: 'toolbar', 'aria-label': 'Réagir au message' });
   for (const r of QUICK_REACTIONS) {
     const mine = m.reactions.some((x) => x.emoji === r.emoji && x.mine);

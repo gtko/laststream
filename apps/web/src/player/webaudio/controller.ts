@@ -3,14 +3,13 @@ import type { MediaCaps } from '../server';
 import type { WebAudioFallback, VideoLike } from './engine';
 import { DOLBY_HINT, NOTE_STALLED, isAc3Family, nativeAudioSilent, pickReadableAlternative, type AudioPlan } from './policy';
 
-export { NOTE_STALLED };
 import { prepareWebAudio, type PrepareDeps, type PreparedAudio } from './prepare';
 
 /* Pilote le son de repli pour une lecture web directe : prépare le plan (CORS, codec), attache le moteur audio au moteur HTML,
  * affiche les notes (DTS, CORS) et propose une source au son lisible. Tout l'accès à l'interface passe par `WebAudioHost`
  * (injecté : testé sans DOM). */
 
-export type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
+type AudioMode = 'app' | 'unsupported' | 'cors' | 'error' | null;
 
 /** Lien joint à la note persistante (page de téléchargement de l'app). */
 export interface SoundNoteLink { label: string; href: string }
@@ -48,7 +47,7 @@ export interface WebAudioHandle {
 }
 
 /** Délai de lecture réelle avant de conclure que le navigateur est muet, et période de vérification (ms). */
-export const SILENCE_AFTER_S = 2.5;
+const SILENCE_AFTER_S = 2.5;
 const WATCH_MS = 1000;
 
 export async function startWebAudio<V extends SourceLike>(host: WebAudioHost<V>, input: WebAudioInput, deps: PrepareDeps = {}): Promise<WebAudioHandle> {

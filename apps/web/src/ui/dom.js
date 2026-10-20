@@ -8,7 +8,7 @@ export const modal = document.getElementById('modal');
 export const modalBox = modal.querySelector('.modal');
 export const modalBody = document.getElementById('modal-body');
 export const modalClose = document.getElementById('modal-close');
-export const toastEl = document.getElementById('toast');
+const toastEl = document.getElementById('toast');
 /** Message bref. `opts.action` ajoute un bouton (ex. « Annuler »), `opts.ms` règle la durée. */
 export function toast(msg, opts) {
   if (!toastEl) return;

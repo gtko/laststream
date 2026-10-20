@@ -32,7 +32,7 @@ export function codecLabel(codec: string): string {
   return LABELS[codec] ?? (codec ? codec.toUpperCase() : 'inconnu');
 }
 
-export function defaultCodecEnv(): CodecEnv {
+function defaultCodecEnv(): CodecEnv {
   return globalThis as unknown as CodecEnv;
 }
 

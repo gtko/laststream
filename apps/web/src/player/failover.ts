@@ -2,9 +2,9 @@ import { copySignature, type SourceView } from '../sources/info';
 
 /* Reprise automatique : ordre des sources à essayer et détection des blocages. Fonctions pures, testées. */
 
-export const STALL_LIMIT_MS = 15_000;
+const STALL_LIMIT_MS = 15_000;
 /** Délai avant la première image (le transcodage et le débridage à la demande démarrent plus lentement). */
-export const STARTUP_LIMIT_MS = 45_000;
+const STARTUP_LIMIT_MS = 45_000;
 
 /**
  * Sources à essayer après `current` : d'abord les copies équivalentes (même qualité, source, codec, langues),

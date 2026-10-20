@@ -16,15 +16,12 @@ import { MeshGuest, type MeshGuestOptions } from './mesh/guest';
 import { MeshHostState } from './mesh/hostState';
 import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
 import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport } from './peer';
-import { relayTurn, setRelayTurn } from './turnConfig';
+import { relayTurn } from './turnConfig';
 import type { RangeSource, UploadStats } from './host';
 import { RelayError, SubsAssembler, capsMask, decodeFrame, encodeCaps, encodeMeshReq, encodeSubs, toBytes, type ChannelLike, type DecodeCap } from './protocol';
 import { encodePartySubtitles, parsePartySubtitles, type PartySubtitleTrack } from '../party/subtitles';
 import { detectDecodeCaps } from './player/detect';
 import type { PlaybackPlan, PlayerCallbacks, PlayerState, PlayerStats, RangeReader, RoomState } from './player/types';
-
-/** TURN injecté (voir turnConfig.ts) : relu à chaque connexion, donc pris en compte pour les liaisons suivantes. */
-export { setRelayTurn };
 
 /** Délai avant une nouvelle tentative quand l'hôte ne lit pas encore (pas de partage en cours). */
 const RETRY_HOST_MS = 4000;
@@ -33,8 +30,8 @@ const CONNECT_MS = 10_000;
 /** Après une action locale, on attend l'écho du salon avant de recaler le lecteur (sinon l'état périmé la défait). */
 const ECHO_WAIT_MS = 1500;
 /** Reconnexion après une coupure de liaison (bascule de source côté hôte, réseau) : 1 s, puis double, 30 s au plus. */
-export const RECONNECT_BASE_MS = 1000;
-export const RECONNECT_MAX_MS = 30_000;
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 30_000;
 /** Pendant un format refusé : vérification de l'identifiant de fichier annoncé par l'hôte, sur la liaison restée ouverte. */
 export const HOLD_PROBE_MS = RECONNECT_MAX_MS;
 

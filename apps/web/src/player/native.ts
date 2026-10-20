@@ -38,7 +38,7 @@ export interface NativeSource {
   origins?: string[]; copies?: number;
 }
 
-export interface NativeEpisode {
+interface NativeEpisode {
   season: number; episode: number; title: string; still?: string; durationMin?: number;
   watched: boolean; progress: number; current: boolean; aired: boolean;
 }
@@ -51,7 +51,7 @@ export interface NativeEpisodes {
 
 export interface NativeTrack { id: number; label: string; lang: string; selected: boolean }
 
-export interface NativeEvents {
+interface NativeEvents {
   progress: { position: number; duration: number };
   state: { position: number; duration: number; paused: boolean; buffering: boolean; rate: number; ended?: boolean };
   tracks: { audio: NativeTrack[]; subs: NativeTrack[] };

@@ -10,20 +10,13 @@ import type { PlaybackState } from './sync';
 
 export {
   COUNTDOWN_DEFAULT_SEC,
-  COUNTDOWN_MIN_SEC,
-  CONTROL_MODES,
   CHAT_MAX_CHARS,
   DEFAULT_SETTINGS,
-  EVENT_KINDS,
   MAX_FRAME_BYTES,
   PARTY_RESUME_AHEAD_SEC,
   PARTY_WAIT_MAX_MS,
-  PREP_STATUSES,
   REACTIONS,
-  REACTION_MODES,
   VOTE_MAX_OPTIONS,
-  VOTE_MIN_OPTIONS,
-  WAIT_LATE_MODES,
 } from '@laststream/protocol/party';
 export type {
   ChatLine,

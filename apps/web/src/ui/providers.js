@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { esc } from './util.js';
 
 // ---------- Où regarder (TMDB / JustWatch, France) ----------
-export const providerPromises = new Map();
+const providerPromises = new Map();
 export function fetchProviders(type, id) {
   const key = type + ':' + id;
   if (!providerPromises.has(key)) {

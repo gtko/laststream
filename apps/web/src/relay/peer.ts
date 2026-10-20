@@ -8,8 +8,8 @@ import { DEFAULT_UPLOAD_MBPS, RangeServer, type RangeServerOptions, type RangeSo
 import type { MeshHostState } from './mesh/hostState';
 import { RELAY_CHANNEL_LABEL, RelayError, type ChannelLike } from './protocol';
 
-export const STUN_URL = 'stun:stun.cloudflare.com:3478';
-export const CONNECT_TIMEOUT_MS = 20_000;
+const STUN_URL = 'stun:stun.cloudflare.com:3478';
+const CONNECT_TIMEOUT_MS = 20_000;
 const MAX_SDP_CHARS = 32 * 1024;
 
 export interface TurnConfig {
@@ -78,8 +78,8 @@ export interface HostOptions extends PeerOptions {
 }
 
 /** Délai de réponse de l'invité, et nombre de candidats ICE retenus avant la réponse. */
-export const ANSWER_TIMEOUT_MS = 15_000;
-export const MAX_PENDING_ICE = 32;
+const ANSWER_TIMEOUT_MS = 15_000;
+const MAX_PENDING_ICE = 32;
 
 interface Deferred {
   promise: Promise<void>;

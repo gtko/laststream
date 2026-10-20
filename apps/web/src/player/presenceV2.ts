@@ -15,7 +15,7 @@ export const CHECK_MS = 5_000;
 /** Délai minimal entre deux envois provoqués par la lecture (pause, reprise, saut) : les rafales sont fusionnées. */
 export const DEBOUNCE_MS = 1_000;
 /** Écart toléré entre la position attendue et la position relevée : au-delà, c'est un saut (seek). */
-export const JUMP_S = 2;
+const JUMP_S = 2;
 
 /** Média lu, tel que la présence le décrit (film, ou série avec saison et épisode). */
 export interface MediaInfo {

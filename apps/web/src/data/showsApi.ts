@@ -40,7 +40,7 @@ async function fetchCatalog(country: string, language: string): Promise<LocalCh[
 }
 
 /** Chaînes principales : TNT numérotée (ou, pays sans table, les mieux classées), complétées par les numéros absents du catalogue. */
-export function mainChannels(catalog: LocalCh[], country: string): GuideChannel[] {
+function mainChannels(catalog: LocalCh[], country: string): GuideChannel[] {
   const ranked = rankChannels(catalog, country);
   const table = NATIONAL[country.toUpperCase()];
   if (!table) {
@@ -119,7 +119,7 @@ const FIRST_PAGES = 3;
 const MORE_PAGES = 2;
 
 /** Pagination de la source par type : page suivante à charger et nombre de pages annoncé par TMDB. */
-export interface DiscoverCursor { next: number; totalPages: number }
+interface DiscoverCursor { next: number; totalPages: number }
 
 const typeQuery = (country: string, page: number): Promise<Json> => tmdb('discover/tv', {
   with_type: SHOW_TYPES, with_origin_country: country, sort_by: 'popularity.desc', page: String(page),
@@ -140,7 +140,7 @@ function takeNew(results: Json[], seen: Set<number | string>): TmdbShow[] {
  * Émissions TMDB du pays (région réglée, France par défaut) : les premières pages de la source par type (actualités,
  * téléréalité, talk-shows, documentaires, par popularité) et une requête par genres. `cursor` indique la page suivante.
  */
-export async function discoverShows(): Promise<{ shows: TmdbShow[]; cursor: DiscoverCursor }> {
+async function discoverShows(): Promise<{ shows: TmdbShow[]; cursor: DiscoverCursor }> {
   const country = getRegion().code;
   const pages = Array.from({ length: FIRST_PAGES }, (_, i) => typeQuery(country, i + 1));
   const genres = tmdb('discover/tv', { with_genres: SHOW_GENRES, with_origin_country: country, sort_by: 'popularity.desc', page: '1' });
@@ -210,7 +210,7 @@ export interface ShowEpisode {
   overview: string;
 }
 /** Membre de la distribution (la première place du casting d'une émission est souvent son présentateur). */
-export interface ShowCast { id: number; name: string; role: string; photo: string }
+interface ShowCast { id: number; name: string; role: string; photo: string }
 export interface ShowDetail {
   id: number;
   name: string;

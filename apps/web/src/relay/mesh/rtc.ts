@@ -7,8 +7,8 @@
 import { buildIceServers, parseSignal, type PeerOptions, type RelaySignal, type SignalTransport } from '../peer';
 import type { ChannelLike } from '../protocol';
 
-export const MESH_CHANNEL_LABEL = 'mesh';
-export const MESH_CONNECT_TIMEOUT_MS = 12_000;
+const MESH_CHANNEL_LABEL = 'mesh';
+const MESH_CONNECT_TIMEOUT_MS = 12_000;
 const MAX_PENDING_ICE = 32;
 
 /** Transport de maillage au-dessus d'un transport de salon : étiquette `m:'mesh'` en émission, filtre en réception. */

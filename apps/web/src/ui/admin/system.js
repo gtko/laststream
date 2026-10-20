@@ -10,7 +10,7 @@ import { admCard, attempt, badge, bindPager, empty, loaded, pager, sectionHead, 
 import { loadInto } from './view-state.js';
 
 // ---------- Réglages du serveur ----------
-export function settingsHTML(S) {
+function settingsHTML(S) {
   return sectionHead('Réglages et maintenance', 'Ces réglages s’appliquent à tout le serveur et à tous les comptes.') +
     loaded(S.settings, (s) =>
       '<form id="adm-settings" class="set-form adm-settings" autocomplete="off">' +
@@ -56,8 +56,8 @@ function bindSettings(root, ctx) {
 }
 
 // ---------- Annonces ----------
-export const ANNOUNCEMENT_TITLE_MAX = 80;
-export const ANNOUNCEMENT_MESSAGE_MAX = 500;
+const ANNOUNCEMENT_TITLE_MAX = 80;
+const ANNOUNCEMENT_MESSAGE_MAX = 500;
 const LEVEL_LABEL = { info: 'Information', warning: 'Attention' };
 const STATE_BADGE = { active: ['Active', 'ok'], planned: ['Planifiée', ''], expired: ['Expirée', ''], off: ['Désactivée', ''] };
 
@@ -213,7 +213,7 @@ function detailText(d) {
   try { return JSON.stringify(d); } catch (_) { return '—'; }
 }
 
-export function auditHTML(S) {
+function auditHTML(S) {
   const filter = '<form class="adm-toolbar" data-adm-auditform data-nav><label class="adm-field adm-grow"><span class="sr-only">Filtrer par action</span><input class="set-input" name="action" value="' + esc(S.auditAction) + '" placeholder="Filtrer par action (ex. elevate.failed)" autocomplete="off" autocapitalize="none" data-adm-focus="audit:action"></label><button type="submit" class="btn btn-ghost btn-sm">Filtrer</button></form>';
   return sectionHead('Journal d’audit', 'Toutes les actions d’administration, y compris les ré-authentifications échouées. Jamais de mot de passe ni de jeton.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') + filter +
     loaded(S.audit, (r) => (!r.entries.length ? empty('Aucune entrée.') :

@@ -116,7 +116,7 @@ export function initSources(sources) {
   list.forEach((s, i) => { if (s.type === 'upstream' && s.url) setTimeout(() => { void loadInfo(s); void checkDaily(s); }, 150 * i); });
 }
 
-export function addSource(type) {
+function addSource(type) {
   syncFromDom();
   const s = toModel({ type: 'upstream', name: 'Addon amont', url: '' });
   s.open = true;
@@ -127,7 +127,7 @@ export function addSource(type) {
 }
 
 /** Lit les champs ouverts vers le modèle. */
-export function syncFromDom() {
+function syncFromDom() {
   detailEl.querySelectorAll('.src-card').forEach((card) => {
     const s = list.find((x) => x.id === card.dataset.srcid);
     if (!s) return;

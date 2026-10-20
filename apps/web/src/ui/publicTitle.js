@@ -24,7 +24,7 @@ function appBase() {
 }
 
 /** Ouvre la fiche dans l'application : rechargement pour repartir de la connexion normale (session et profil). */
-export function openInApp(view) {
+function openInApp(view) {
   const target = appBase() + M.ficheHash(view.type, view.tmdbId);
   try { history.replaceState(null, '', target); } catch { /* adresse inchangée */ }
   location.reload();

@@ -37,7 +37,7 @@ export function section(id, title, list, render, tag) {
     body + '</section>';
 }
 export const row = (inner) => '<div class="row">' + inner + '</div>';
-export function backBtn() {
+function backBtn() {
   return '<button type="button" class="f-round" data-back data-tip="Retour" aria-label="Retour à l’accueil">' + ICON.back + '</button>';
 }
 

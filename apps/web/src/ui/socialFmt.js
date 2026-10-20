@@ -8,7 +8,6 @@ import { esc } from './util.js';
 
 export const STATUS_OPTIONS = [['online', 'En ligne'], ['away', 'Absent'], ['dnd', 'Ne pas déranger'], ['invisible', 'Invisible']];
 export const SEEN_LABEL = { online: 'En ligne', away: 'Absent', dnd: 'Ne pas déranger', offline: 'Hors ligne' };
-export const PRES_COLOR = { online: '#3ddc84', away: '#f5b942', dnd: '#ff4d5e', offline: '#6f6a7d', invisible: '#6f6a7d' };
 
 export const ADD_ERRORS = {
   invalid_handle: 'Pseudo invalide : écris Nom#TAG (2 à 20 caractères, puis # et 4 caractères).',
@@ -75,13 +74,13 @@ export function ago(ts, now = Date.now()) {
 }
 
 /** Couleur d'avatar : seulement une couleur hexadécimale, sinon une couleur neutre. */
-export const colorOf = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : '#3b3750');
+const colorOf = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : '#3b3750');
 /** Nom#TAG complet. */
 export const nameOf = (p) => (p && p.handle && p.handle.full) || '?';
 /** Nom affiché : le surnom privé s'il existe, sinon le nom. */
 export const shortName = (p) => (p && (p.nickname || (p.handle && p.handle.name))) || '?';
-export const tagOf = (p) => (p && p.handle && p.handle.tag ? '#' + p.handle.tag : '');
-export const initialOf = (p) => (Array.from(shortName(p))[0] || '?').toUpperCase();
+const tagOf = (p) => (p && p.handle && p.handle.tag ? '#' + p.handle.tag : '');
+const initialOf = (p) => (Array.from(shortName(p))[0] || '?').toUpperCase();
 export const byName = (a, b) => shortName(a).localeCompare(shortName(b), 'fr');
 
 /** Nom et #TAG en HTML (le tag en gris). */
@@ -93,7 +92,7 @@ export function posterSrc(p) {
 }
 
 /** Couleur de repli d'une affiche sans image, stable pour un titre. */
-export function posterTint(title) {
+function posterTint(title) {
   const tints = ['#a0552a', '#2d5d73', '#3c4a5c', '#7a2e2e', '#2f5a3e', '#5b3a7a'];
   let h = 0;
   for (const c of String(title || '')) h = (h * 31 + c.codePointAt(0)) >>> 0;

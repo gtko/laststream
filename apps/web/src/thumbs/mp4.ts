@@ -151,7 +151,7 @@ function parseVideoTrack(b: Uint8Array, trak: Box): Tables | null {
 }
 
 /** Table des images clés (instant de présentation en s, position, taille), triée par instant. */
-export function buildKeyframes(t: Tables): { time: number; offset: number; size: number }[] {
+function buildKeyframes(t: Tables): { time: number; offset: number; size: number }[] {
   const sync: number[] = [];
   if (t.stss !== null) for (const n of t.stss) sync.push(n - 1);
   else for (let i = 0; i < t.sampleCount; i += 1) sync.push(i);

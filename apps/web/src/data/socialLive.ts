@@ -13,10 +13,10 @@ import type { ActivityItem, Poll, Reaction } from './socialV3Api';
 export const PING_EVERY_MS = 25_000;
 export const PONG_TIMEOUT_MS = 10_000;
 export const POLL_EVERY_MS = 20_000;
-export const BACKOFF_BASE_MS = 1_000;
-export const BACKOFF_MAX_MS = 60_000;
+const BACKOFF_BASE_MS = 1_000;
+const BACKOFF_MAX_MS = 60_000;
 /** Attente minimale après un ticket refusé en 429 (un Retry-After plus long prime). */
-export const RATE_LIMIT_MIN_WAIT_MS = 30_000;
+const RATE_LIMIT_MIN_WAIT_MS = 30_000;
 /** Fermeture 4000 : connexion remplacée par une autre du même profil (miroir de SOCIAL_LIVE_REPLACED côté serveur). */
 export const LIVE_REPLACED_CODE = 4000;
 

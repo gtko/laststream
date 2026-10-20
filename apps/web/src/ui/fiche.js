@@ -28,15 +28,11 @@ import { esc, fmtDate, fmtMin, plural, store } from './util.js';
 
 let ficheIO = null;
 // ---------- Fiche : rendu ----------
-export const sec = (id, title, inner, extra) =>
-  '<section class="f-sec" id="' + id + '" aria-labelledby="' + id + '-h"' + (extra || '') + '>' +
-  '<h2 class="f-sec-title" id="' + id + '-h">' + title + '</h2>' + inner + '</section>';
-
 export function ratingsHTML(m, r) {
   return ratingList(r, m.vote ? m.vote * 10 : 0);
 }
 
-export function metaLine(m) {
+function metaLine(m) {
   const out = [];
   if (m.year) out.push('<li>' + esc(m.year) + '</li>');
   if (m.cert) out.push('<li><span class="cert-badge" title="Classification ' + esc(getRegion().label) + '">' + esc(m.cert) + '</span></li>');
@@ -53,12 +49,10 @@ export function metaLine(m) {
   return out.join('');
 }
 
-export const personLink = (p) =>
+const personLink = (p) =>
   '<a href="#/person/' + esc(p.id) + '" data-person="' + esc(p.id) + '">' + esc(p.name) + '</a>';
 
-export const TAB_DEFS = { eps: 'Épisodes', sim: 'Similaires', cast: 'Casting', extras: 'Bonus', coll: 'Collection', infos: 'Infos' };
-
-export function tabsFor(m) {
+function tabsFor(m) {
   const t = [];
   if (m.type === 'tv' && m.seasons.length) t.push('eps');
   if (m.cast.length) t.push('cast');
@@ -88,19 +82,19 @@ export function nextToWatch(m) {
   return last ? { s: last.s, e: last.e, resume: true } : { s: list[0].season_number, e: 1, resume: false };
 }
 
-export function playText(m) {
+function playText(m) {
   const n = nextToWatch(m);
   return n ? (n.resume ? 'Reprendre · ' : 'Lecture ') + 'S' + n.s + ' É' + n.e : 'Lecture';
 }
 
-export const isUnreleased = (m) => isFuture(m.releaseFR);
+const isUnreleased = (m) => isFuture(m.releaseFR);
 export const getRemind = () => store('ls_remind') || [];
-export function remindBtn(m, cls, extra) {
+function remindBtn(m, cls, extra) {
   const on = getRemind().includes(m.key);
   return '<button type="button" class="' + cls + '" data-remind aria-pressed="' + on + '"' + (extra || '') + '>' + (on ? ICON.check : ICON.bell) +
     '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span></button>';
 }
-export function primaryBtn(m) {
+function primaryBtn(m) {
   if (m.cinemaSince) return followBtn(m.key, 'btn btn-primary btn-pill is-cinema', '', 'Me prévenir de la sortie en VOD');
   return isUnreleased(m)
     ? remindBtn(m, 'btn btn-primary btn-pill')
@@ -144,14 +138,14 @@ export function ficheSkeleton(it) {
     '</article>';
 }
 
-export const fsec = (name, title, inner) =>
+const fsec = (name, title, inner) =>
   '<section class="f-sec" id="f-p-' + name + '" aria-labelledby="f-p-' + name + '-h"><h2 class="f-sec-title" id="f-p-' + name + '-h">' + title + '</h2>' + inner + '</section>';
 
 /** « Watch party » : compte connecté, titre sorti (les profils enfants ne créent que des salons privés, dans la boîte de dialogue). */
 const partyBtn = (m) => (isServerMode() && !isUnreleased(m) && !m.cinemaSince
   ? '<button type="button" class="btn-round" data-wparty data-tip="Regarder en watch party" aria-label="Regarder en watch party">' + ICON.users + '</button>' : '');
 
-export const libBtn = (m) => {
+const libBtn = (m) => {
   const on = inLib(m.key);
   return '<button type="button" class="btn-round' + (on ? ' is-on' : '') + '" data-lib aria-pressed="' + on + '" data-tip="' + (on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream') +
     '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>';
@@ -172,7 +166,7 @@ const watchBtn = (m) => {
     '" aria-label="' + (on ? 'Marqué comme vu (retirer)' : 'Marquer comme vu') + '">' + ICON.check + '</button>';
 };
 
-export function ficheHTML(m) {
+function ficheHTML(m) {
   const tabs = tabsFor(m);
   const seasonN = (nextToWatch(m) || {}).s;
 
@@ -245,7 +239,7 @@ export function ficheHTML(m) {
     (m.cinemaSince ? followBtn(m.key, 'btn btn-primary', ' tabindex="-1"', 'Me prévenir de la sortie en VOD') : isUnreleased(m) ? remindBtn(m, 'btn btn-primary', ' tabindex="-1"') : '<button type="button" class="btn btn-primary" data-play tabindex="-1">' + ICON.play + '<span class="f-play-label">' + esc(playText(m)) + '</span></button>') + '</div>';
 }
 
-export function infosHTML(m) {
+function infosHTML(m) {
   const rows = [];
   const money = (n) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
   if (m.original && m.original !== m.name) rows.push(['Titre original', m.original]);
@@ -276,7 +270,7 @@ export function infosHTML(m) {
     '<p class="f-attrib">Disponibilités : JustWatch via TMDB</p></div>';
 }
 
-export function ficheError(type, id) {
+function ficheError(type, id) {
   return topBar(false) +
     '<article class="fiche f-error" tabindex="-1"><div class="state" role="alert"><p>Cette fiche n’a pas pu être chargée.</p>' +
     '<div class="f-actions"><button type="button" class="btn btn-primary" data-fretry="' + esc(type + ':' + id) + '">Réessayer</button>' +
@@ -300,7 +294,7 @@ export function teardownFiche() {
   ficheIO = null;
 }
 
-export function setupSticky() {
+function setupSticky() {
   const bar = detailEl.querySelector('#f-sticky');
   const actions = detailEl.querySelector('#f-actions');
   if (!bar || !actions || !('IntersectionObserver' in window)) return;
@@ -314,7 +308,7 @@ export function setupSticky() {
 }
 
 /** Cible de lecture de la fiche, comme pour le bouton « Lecture » : le film, ou l'épisode à suivre d'une série. */
-export function ficheRequest(m) {
+function ficheRequest(m) {
   let season = null;
   let episode = null;
   if (m.type === 'tv') {

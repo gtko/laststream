@@ -47,7 +47,7 @@ export function titleMatch(r, query) {
 }
 
 /** Score d'un résultat ; `today` au format AAAA-MM-JJ. */
-export function scoreResult(r, query, today) {
+function scoreResult(r, query, today) {
   const kind = kindOf(r);
   const pop = Number(r.popularity) || 0;
   const match = titleMatch(r, query);

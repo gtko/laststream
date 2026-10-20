@@ -6,7 +6,7 @@ import type { HiddenEntry } from './homeFilters';
  */
 
 export type HiddenType = 'all' | 'movie' | 'tv';
-export type HiddenSort = 'recent' | 'title' | 'year';
+type HiddenSort = 'recent' | 'title' | 'year';
 
 export interface HiddenViewOptions {
   /** Texte cherché dans le titre, sans accents ni casse. */

@@ -8,11 +8,10 @@ export { posLabel };
 export const MOMENT_STEP = 10;
 export const NOTE_MAX = 140;
 export const LIST_NAME_MAX = 40;
-export const SHARE_CODE_RE = /^[A-Za-z0-9_-]{10,64}$/;
 
 /** `tv` (interface) devient `series` (serveur) et inversement. */
-export const kindOf = (t) => (t === 'tv' || t === 'series' ? 'series' : 'movie');
-export const uiTypeOf = (t) => (t === 'series' || t === 'tv' ? 'tv' : 'movie');
+const kindOf = (t) => (t === 'tv' || t === 'series' ? 'series' : 'movie');
+const uiTypeOf = (t) => (t === 'series' || t === 'tv' ? 'tv' : 'movie');
 
 /** Média du partage normalisé : { type: 'movie'|'series', tmdbId, title, poster?, season?, episode? } ; null si inutilisable. */
 export function normalizeMedia(m) {
@@ -83,7 +82,7 @@ export function preselect(targets, to, conv) {
 }
 
 /** Corps `to` de POST /share. */
-export const toOf = (keys) => keys.map((k) => (k.startsWith('g:') ? { group: k.slice(2) } : { pid: k.slice(2) }));
+const toOf = (keys) => keys.map((k) => (k.startsWith('g:') ? { group: k.slice(2) } : { pid: k.slice(2) }));
 
 /** Pids d'amis visés (amis choisis et membres des groupes choisis, sans doublon), pour la watch party. */
 export function friendPids(targets, keys, mePid) {
@@ -107,14 +106,14 @@ export function sendLabel(targets, keys) {
 }
 
 /** Référence « titre » d'un message (TitleRef). */
-export function titleRefOf(media) {
+function titleRefOf(media) {
   const t = { type: media.type, tmdbId: media.tmdbId, title: media.title };
   if (media.poster) t.poster = media.poster;
   return t;
 }
 
 /** Référence « moment » d'un message (MomentRef). */
-export function momentRefOf(media, pos) {
+function momentRefOf(media, pos) {
   const m = { type: media.type, tmdbId: media.tmdbId, title: media.title, pos: shiftPos(pos, 0) };
   if (Number.isInteger(media.season)) m.season = media.season;
   if (Number.isInteger(media.episode)) m.episode = media.episode;
@@ -182,11 +181,6 @@ export function signupUrl(origin, code) {
 
 /** Texte « À 1:12:34 » du moment recommandé, ou '' pour un titre entier. */
 export const momentNote = (view) => (view && typeof view.pos === 'number' && view.pos > 0 ? 'Recommandé à partir de ' + posLabel(view.pos) : '');
-
-/** Membres d'une liste, sauf moi : « Léa, Hugo ». */
-export function memberNames(list, mePid) {
-  return (list.members || []).filter((m) => m.pid !== mePid).map((m) => m.nickname || m.handle.name).join(', ');
-}
 
 /** Nom de celui qui a ajouté un élément : « toi », le pseudo d'un membre, ou « un ancien membre ». */
 export function adderName(pid, list, mePid) {

@@ -48,7 +48,7 @@ function hide() {
   document.body.classList.remove('modal-open');
 }
 
-export const initialOfName = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
+const initialOfName = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
 
 /** Message lisible d'une erreur de l'API utilisateur. */
 export function errorText(err) {
@@ -79,7 +79,7 @@ const invite = { code: '', status: 'none', inviter: '', first: false, ticket: nu
 let inviteToken = 0;
 
 /** Vérifie le code auprès du serveur (sans session) : « invité par … » ou lien invalide. */
-export async function checkInviteCode(raw) {
+async function checkInviteCode(raw) {
   const code = normalizeInviteCode(raw);
   const token = ++inviteToken;
   invite.code = code;

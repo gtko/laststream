@@ -18,7 +18,7 @@ let nativeSubs = [];
 let tvSaved = []; // styles d'origine modifiés pendant la lecture mpv : restaurés dans l'ordre inverse
 
 /** Plugin Capacitor du lecteur natif (Android), ou null. */
-export function nativePlugin() {
+function nativePlugin() {
   try {
     const C = globalThis.Capacitor;
     if (C && typeof C.isNativePlatform === 'function' && C.isNativePlatform() && C.Plugins && C.Plugins.LaststreamPlayer) return C.Plugins.LaststreamPlayer;

@@ -15,10 +15,10 @@ export interface UpdateManifest {
   notes?: string;
 }
 
-export const MANIFEST_PATH = '/app/android/latest.json';
+const MANIFEST_PATH = '/app/android/latest.json';
 export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-export const CHECKED_KEY = 'laststream.update.checked';
-export const DISMISSED_KEY = 'laststream.update.dismissed';
+const CHECKED_KEY = 'laststream.update.checked';
+const DISMISSED_KEY = 'laststream.update.dismissed';
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -71,14 +71,14 @@ export function sizeLabel(bytes: number | undefined): string {
 
 // ---------- Plugin natif ----------
 
-export interface LaststreamUpdatePlugin {
+interface LaststreamUpdatePlugin {
   getVersion(): Promise<{ versionCode: number; versionName: string }>;
   canInstall(): Promise<{ allowed: boolean }>;
   install(options: { url: string; sha256: string; versionCode: number }): Promise<{ started: boolean }>;
   addListener(event: 'updateProgress', fn: (d: { percent: number }) => void): Promise<PluginListenerHandle>;
 }
 
-export const NativeUpdate = registerPlugin<LaststreamUpdatePlugin>('LaststreamUpdate');
+const NativeUpdate = registerPlugin<LaststreamUpdatePlugin>('LaststreamUpdate');
 
 export function updateSupported(): boolean {
   try { return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LaststreamUpdate'); } catch { return false; }
@@ -94,7 +94,7 @@ const readNumber = (k: string): number | null => {
 };
 const writeNumber = (k: string, n: number): void => { try { globalThis.localStorage?.setItem(k, String(n)); } catch { /* stockage indisponible */ } };
 
-export const lastChecked = (): number | null => readNumber(CHECKED_KEY);
+const lastChecked = (): number | null => readNumber(CHECKED_KEY);
 export const dismissedCode = (): number | null => readNumber(DISMISSED_KEY);
 export const dismiss = (m: UpdateManifest): void => writeNumber(DISMISSED_KEY, m.versionCode);
 

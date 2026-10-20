@@ -24,13 +24,13 @@ const AUDIO_CODEC: Array<[RegExp, string]> = [
   [/mp3/i, 'mp3'],
 ];
 
-export function videoCodecOf(info: LastStreamInfo | null, text: string): string[] | null {
+function videoCodecOf(info: LastStreamInfo | null, text: string): string[] | null {
   const src = (info?.codec && info.codec !== 'unknown' ? info.codec : '') + ' ' + text;
   for (const [re, names] of VIDEO_CODEC) if (re.test(src)) return names;
   return null;
 }
 
-export function audioCodecOf(info: LastStreamInfo | null, text: string): string | null {
+function audioCodecOf(info: LastStreamInfo | null, text: string): string | null {
   const src = (info?.audio ?? []).join(' ') + ' ' + text;
   for (const [re, name] of AUDIO_CODEC) if (re.test(src)) return name;
   return null;

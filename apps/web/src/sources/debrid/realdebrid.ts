@@ -16,7 +16,7 @@ const DAY = 24 * 3600_000;
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-export function classifyRd(status: number, body: unknown, now: number, retryAfter?: string): DebridError {
+function classifyRd(status: number, body: unknown, now: number, retryAfter?: string): DebridError {
   const err = isRec(body) && typeof body.error === 'string' ? body.error : 'unknown';
   if (status === 429 || err === 'too_many_requests') {
     const ra = Number(retryAfter);

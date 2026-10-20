@@ -1,4 +1,4 @@
-import { codecLabel, channelsLabel, langName, normalizeLang, type AudioTrack, type SubtitleTrack } from './tracks';
+import { codecLabel, langName, normalizeLang, type AudioTrack, type SubtitleTrack } from './tracks';
 
 /* Présentation des pistes : regroupement par langue (langue préférée d'abord), libellés lisibles, pastilles.
  * Fonctions pures, testées. */
@@ -12,7 +12,7 @@ export function variantOf(title: string | undefined | null): string {
   return m ? m[1].toUpperCase().replace('TRUEFRENCH', 'VF') : '';
 }
 
-export interface AudioItem {
+interface AudioItem {
   track: AudioTrack;
   /** Ligne principale : « Français (VFF) », « Japonais (VO) »… */
   label: string;
@@ -65,7 +65,7 @@ export function groupAudioTracks(tracks: readonly AudioTrack[], preferred: reado
 
 // ---------- Sous-titres ----------
 
-export interface SubtitleItem {
+interface SubtitleItem {
   track: SubtitleTrack;
   label: string;
   chips: string[];
@@ -73,7 +73,7 @@ export interface SubtitleItem {
   unsupported: string;
 }
 
-export interface SubtitleGroup {
+interface SubtitleGroup {
   lang: string;
   name: string;
   items: SubtitleItem[];
@@ -125,4 +125,3 @@ export function sectionSubtitleTracks(tracks: readonly SubtitleTrack[], preferre
   return out;
 }
 
-export { channelsLabel };

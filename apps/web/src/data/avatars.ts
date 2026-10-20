@@ -10,7 +10,7 @@ import { HERO_FAMILIES, HERO_FAMILY_IDS, type HeroFamily } from './heroes/render
 export type { HeroFamily } from './heroes/render';
 export { HERO_FAMILIES } from './heroes/render';
 
-export type AvatarFamily = 'personnages' | 'illustres' | 'robots' | 'fun';
+type AvatarFamily = 'personnages' | 'illustres' | 'robots' | 'fun';
 export type AvatarLicense = 'cc0' | 'cc-by' | 'libre';
 export type AvatarTab = 'heroes' | 'enfants' | AvatarFamily;
 
@@ -101,7 +101,7 @@ export const AVATAR_TABS: ReadonlyArray<{ id: AvatarTab; label: string }> = [
 ];
 
 /** Graines fixes : mêmes avatars à chaque ouverture (déterministe). */
-export const DEFAULT_SEEDS: readonly string[] = [
+const DEFAULT_SEEDS: readonly string[] = [
   'Mimi', 'Tigrou', 'Luna', 'Oscar', 'Zoe', 'Maya', 'Leo', 'Nina',
   'Pixel', 'Coco', 'Jade', 'Milo', 'Sacha', 'Lola', 'Noa', 'Felix',
 ];
@@ -111,7 +111,7 @@ export const AVATAR_BACKGROUNDS: readonly string[] = ['ff5a36', '7b5bf5', '19c3a
 
 /** Même format que le serveur (user/avatar.ts) : dicebear:<style>:<graine> (les Héros ont HERO_PATTERN). */
 export const AVATAR_PATTERN = /^dicebear:[a-z][a-z0-9-]{1,23}:[A-Za-z0-9_-]{1,40}$/;
-export const SEED_MAX = 40;
+const SEED_MAX = 40;
 
 /** Avatars « Héros » (générateur maison laststream-heroes) : hero:<famille>:<graine>, famille = heros | vilains | scifi | fantasy. */
 export const HERO_PATTERN = /^hero:(heros|vilains|scifi|fantasy):[A-Za-z0-9_-]{1,40}$/;

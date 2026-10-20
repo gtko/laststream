@@ -20,11 +20,11 @@ export interface ShellTransport {
   info: Record<string, string>;
 }
 
-export const MSG_SIGNAL = 1;
-export const MSG_INIT = 3;
-export const MSG_INVOKE = 6;
+const MSG_SIGNAL = 1;
+const MSG_INIT = 3;
+const MSG_INVOKE = 6;
 
-export interface WebviewLike {
+interface WebviewLike {
   postMessage(message: string): void;
   addEventListener(type: 'message', fn: (ev: { data: unknown }) => void): void;
   removeEventListener?(type: 'message', fn: (ev: { data: unknown }) => void): void;
@@ -175,10 +175,6 @@ export function announceShellReady(win: ShellWindow = asShellWindow()): Promise<
   return connectShell(win).then((t) => { if (t) t.send('app-ready'); return !!t; });
 }
 
-/** Erreur fatale au démarrage : la coque masque son écran de démarrage et la journalise. */
-export function reportShellError(message: string, win: ShellWindow = asShellWindow()): void {
-  void connectShell(win).then((t) => { if (t) t.send('app-error', message); });
-}
 
 /** Plein écran de la fenêtre (la coque agit sur la fenêtre, pas sur un élément de la page). */
 export function setShellFullscreen(t: ShellTransport, fullscreen: boolean): void {

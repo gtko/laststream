@@ -9,7 +9,7 @@ export type SortKey = 'recommended' | 'quality' | 'size' | 'bitrate';
 export const SORT_LABELS: Record<SortKey, string> = { recommended: 'Recommandé', quality: 'Qualité', size: 'Taille', bitrate: 'Débit' };
 export const SORT_KEYS: readonly SortKey[] = ['recommended', 'quality', 'size', 'bitrate'];
 
-export type LangFilter = 'fr' | 'vo' | 'multi';
+type LangFilter = 'fr' | 'vo' | 'multi';
 
 export interface SourceFilters {
   resolutions: ReadonlySet<QualityGroupKey>;

@@ -32,7 +32,7 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 86_400_000;
 
 /** Fenêtre « peut-être déjà en ligne » : les épisodes diffusés dans les 14 prochains jours sont lisibles. */
-export const SOON_WINDOW_DAYS = 14;
+const SOON_WINDOW_DAYS = 14;
 
 /** Un épisode sans date est considéré comme diffusé (les séries anciennes n'en ont pas toujours). */
 export function isAired(airDate: string, today: string = localDay(new Date())): boolean {
@@ -40,7 +40,7 @@ export function isAired(airDate: string, today: string = localDay(new Date())): 
 }
 
 /** Jours entre `today` et `airDate` (AAAA-MM-JJ) ; null si une des deux dates n'est pas exploitable. */
-export function daysUntil(airDate: string, today: string = localDay(new Date())): number | null {
+function daysUntil(airDate: string, today: string = localDay(new Date())): number | null {
   if (!ISO_DAY.test(airDate) || !ISO_DAY.test(today)) return null;
   const diff = Math.round((Date.parse(airDate) - Date.parse(today)) / DAY_MS);
   return Number.isFinite(diff) ? diff : null;

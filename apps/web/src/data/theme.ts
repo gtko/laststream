@@ -1,6 +1,6 @@
 /** Thèmes : même format de stockage que l'application précédente (`laststream.theme` = JSON {id, accent}). */
-export const THEME_STORAGE_KEY = 'laststream.theme';
-export const DEFAULT_THEME_ID = 'laststream';
+const THEME_STORAGE_KEY = 'laststream.theme';
+const DEFAULT_THEME_ID = 'laststream';
 export const CUSTOM_THEME_ID = 'custom';
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -35,7 +35,7 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-export function contrast(a: string, b: string): number {
+function contrast(a: string, b: string): number {
   const la = luminance(a);
   const lb = luminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
@@ -47,7 +47,7 @@ export function onAccent(accent: string, dark = '#0c0b11'): string {
 }
 
 /** Éclaircit l'accent de 11 % vers le blanc pour l'état survol. */
-export function hoverOf(accent: string): string {
+function hoverOf(accent: string): string {
   return '#' + rgb(accent).map((c) => Math.round(c + (255 - c) * 0.11).toString(16).padStart(2, '0')).join('');
 }
 

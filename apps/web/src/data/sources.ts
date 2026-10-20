@@ -2,7 +2,7 @@ import { addonUrl, ltUrl } from './config';
 import { tmdb } from './lt';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
-import { cachedRequest, requestJson } from './transport';
+import { requestJson } from './transport';
 
 /* Sources de lecture : récupération des streams lastAddon, tri par score, regroupement par qualité,
  * mesure du débit et choix de la source automatique. Fonctions pures testées dans tests/sources.test.ts. */
@@ -39,14 +39,6 @@ export async function imdbIdOf(type: 'movie' | 'tv', tmdbId: string | number): P
   return typeof data?.imdb_id === 'string' && data.imdb_id !== '' ? data.imdb_id : null;
 }
 
-/** Streams d'un titre : GET {base}/{config}/stream/{movie|series}/{id}.json. */
-export async function fetchStreams(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<Stream[]> {
-  const kind = type === 'tv' ? 'series' : 'movie';
-  const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
-  const url = addonUrl(`stream/${kind}/${id}.json`);
-  const res = await cachedRequest(url, () => requestJson<{ streams?: Stream[] }>(url), 60_000);
-  return Array.isArray(res?.streams) ? res.streams : [];
-}
 
 /** Résultat d'une recherche de sources : streams et sources encore en cours d'interrogation (réponse partielle de lastAddon). */
 export interface StreamsResult {
@@ -144,10 +136,6 @@ export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, se
 
 // ---------- Tri, regroupement ----------
 
-export function getStreamHttpUrl(stream: object): string | null {
-  const url = (stream as { url?: unknown }).url;
-  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
-}
 
 export function getQualityGroupKey(stream: object): QualityGroupKey {
   switch (getLaststream(stream)?.resolution) {
@@ -227,12 +215,12 @@ export function matchesLanguage(info: LastStreamInfo, lang: Lang, alsoAccept: re
 
 // ---------- Débit ----------
 
-export const BANDWIDTH_MEASURE_URL = 'https://speed.cloudflare.com/__down?bytes=8000000';
-export const BANDWIDTH_MEASURE_BYTES = 8_000_000;
-export const BANDWIDTH_MEASURE_MS = 3000;
-export const BANDWIDTH_MIN_MEASURE_BYTES = 65_536;
-export const BANDWIDTH_STORED_TTL_MS = 24 * 60 * 60 * 1000;
-export const BANDWIDTH_STORAGE_KEY = 'laststream.bandwidth.measured';
+const BANDWIDTH_MEASURE_URL = 'https://speed.cloudflare.com/__down?bytes=8000000';
+const BANDWIDTH_MEASURE_BYTES = 8_000_000;
+const BANDWIDTH_MEASURE_MS = 3000;
+const BANDWIDTH_MIN_MEASURE_BYTES = 65_536;
+const BANDWIDTH_STORED_TTL_MS = 24 * 60 * 60 * 1000;
+const BANDWIDTH_STORAGE_KEY = 'laststream.bandwidth.measured';
 /** Une source ne doit pas dépasser 80 % du débit retenu. */
 export const BANDWIDTH_HEADROOM = 0.8;
 
@@ -274,7 +262,7 @@ function writeStoredBandwidth(entry: StoredBandwidth): void {
  * Télécharge au plus 8 Mo en 3 s (flux lu morceau par morceau, puis annulé). Débit en kb/s,
  * ou null si trop peu d'octets ont été reçus ou si le téléchargement a échoué.
  */
-export async function measureDownloadKbps(): Promise<number | null> {
+async function measureDownloadKbps(): Promise<number | null> {
   if (typeof fetch !== 'function') return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), BANDWIDTH_MEASURE_MS);

@@ -4,7 +4,7 @@ import type { PlaybackPlan, SupportResult } from './types';
 
 export type { TrackSet } from './detect';
 
-export interface FallbackContext {
+interface FallbackContext {
   tracks: TrackSet;
   support: Extract<SupportResult, { ok: false }>;
 }

@@ -7,7 +7,7 @@ import { esc, fmtNum } from './util.js';
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>';
 
 /** Étoiles cliquables par demi-étoile. `value` : note actuelle (ou null). */
-export function starsHTML(value, key) {
+function starsHTML(value, key) {
   let out = '<span class="stars" role="radiogroup" aria-label="Ta note" data-stars="' + esc(key) + '">';
   for (let i = 1; i <= 5; i++) {
     const fill = value >= i ? 'full' : value >= i - 0.5 ? 'half' : '';
@@ -21,7 +21,7 @@ export function starsHTML(value, key) {
 export const starsText = (v) => '★'.repeat(Math.floor(v)) + (v % 1 ? '½' : '');
 
 /** Note possible une fois le titre vu, ou entamé à 50 % au moins. */
-export function canRate(key) {
+function canRate(key) {
   const [type] = key.split(':');
   if (type === 'movie' ? userStore.isWatched(key) : userStore.watchedEpisodes(key).length > 0) return true;
   const entry = userStore.continueWatching().find((p) => p.key === key) || userStore.getProgress(key);
@@ -36,7 +36,7 @@ function metaOf(key) {
 }
 
 /** Enregistre (ou retire, si on reclique la même note) ; affichage immédiat, retour arrière si refus. */
-export async function rate(key, value) {
+async function rate(key, value) {
   const cur = userStore.getRating(key);
   const next = cur === value ? null : value;
   const pending = userStore.setRating(metaOf(key), next);
@@ -86,7 +86,7 @@ export function paintTileRatings(root) {
 // ---------- Invite « Tu as aimé ? » ----------
 let popTimer = null;
 
-export function closeRatePrompt() {
+function closeRatePrompt() {
   clearTimeout(popTimer);
   document.querySelectorAll('.rate-pop').forEach((n) => n.remove());
 }

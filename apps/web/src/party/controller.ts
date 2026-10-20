@@ -26,15 +26,15 @@ export interface PlayerLike {
 
 export const HOST_SYNC_EVERY_MS = 5000;
 /** Écart de position, par rapport à ce que la lecture normale produirait, qui compte comme un saut (commande `seek`). */
-export const SEEK_JUMP_SEC = 1.5;
+const SEEK_JUMP_SEC = 1.5;
 /** Délai maximal laissé au lecteur pour prendre une action appliquée depuis le salon (au-delà, on re-mesure). */
-export const SETTLE_MS = 1500;
+const SETTLE_MS = 1500;
 /** Délai pendant lequel le suivi attend l'écho du salon à une commande locale. */
-export const ECHO_WAIT_MS = 1500;
+const ECHO_WAIT_MS = 1500;
 /** Tolérance de position qui termine l'application d'un saut. */
 const SEEK_DONE_SEC = 0.5;
 /** Intervalle minimal entre deux sauts envoyés : une touche maintenue ne doit pas saturer le débit du salon (au-delà, il ferme). */
-export const SEEK_SEND_EVERY_MS = 500;
+const SEEK_SEND_EVERY_MS = 500;
 const FOLLOW_EVERY_MS = 500;
 
 interface Measure {

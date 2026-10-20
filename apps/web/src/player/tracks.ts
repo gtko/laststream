@@ -63,7 +63,7 @@ export function codecLabel(codec: string | undefined): string {
   return CODEC_LABEL[c] ?? (c ? c.toUpperCase() : '');
 }
 
-export function channelsLabel(n: number | undefined): string {
+function channelsLabel(n: number | undefined): string {
   if (!n || n <= 0) return '';
   return ({ 1: 'Mono', 2: 'Stéréo', 6: '5.1', 7: '6.1', 8: '7.1' } as Record<number, string>)[n] ?? n + ' canaux';
 }

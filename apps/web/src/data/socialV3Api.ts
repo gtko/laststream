@@ -9,10 +9,10 @@ import type { Conversation, FriendView, Handle, Message, Note } from './socialV2
  * publique d'un lien partagé part sans session. Aucun texte n'est affiché ici. */
 
 // ---- S1 : profil ----
-export type CustomStatus = { emoji?: string; text?: string; expiresAt?: number };
-export type ProfileBanner = { tmdbId: number; type: MediaKind; backdrop: string; title: string };
-export type ProfileFavorite = { tmdbId: number; type: MediaKind; title: string; poster?: string };
-export type ProfileStats = { hoursWatched: number; notes: number; friends: number };
+type CustomStatus = { emoji?: string; text?: string; expiresAt?: number };
+type ProfileBanner = { tmdbId: number; type: MediaKind; backdrop: string; title: string };
+type ProfileFavorite = { tmdbId: number; type: MediaKind; title: string; poster?: string };
+type ProfileStats = { hoursWatched: number; notes: number; friends: number };
 /** Profil social étendu. `friendSince`, `commonTitles`, `mutualFriends` ne sont vus que par un autre profil ; `tagChangeableAt` que par moi. */
 export type SocialProfile = {
   pid: string; handle: Handle; avatarColor: string; avatar?: string;
@@ -28,12 +28,12 @@ export type ProfilePatch = {
 export type TagResult = { handle: Handle; tagChangeableAt?: number };
 
 // ---- S2 : préférences, relations, blocages, signalements, demandes de rejoindre ----
-export type ActivityVisibility = 'friends' | 'favorites' | 'nobody';
-export type WatchWith = 'open' | 'ask' | 'never';
-export type LibraryVisibility = 'friends' | 'household' | 'private';
-export type MessagesFrom = 'friends' | 'favorites' | 'household';
+type ActivityVisibility = 'friends' | 'favorites' | 'nobody';
+type WatchWith = 'open' | 'ask' | 'never';
+type LibraryVisibility = 'friends' | 'household' | 'private';
+type MessagesFrom = 'friends' | 'favorites' | 'household';
 export type PlaybackSocial = 'all' | 'messages' | 'cinema';
-export type NotifyPrefs = { messages: boolean; requests: boolean; parties: boolean; friendStarts: boolean; vibrate: boolean; sound: boolean };
+type NotifyPrefs = { messages: boolean; requests: boolean; parties: boolean; friendStarts: boolean; vibrate: boolean; sound: boolean };
 export type SocialPrefs = {
   activityVisibility: ActivityVisibility; watchWith: WatchWith; libraryVisibility: LibraryVisibility; messagesFrom: MessagesFrom;
   historyVisible: boolean; antiSpoiler: boolean; playbackSocial: PlaybackSocial; notify: NotifyPrefs;
@@ -51,16 +51,16 @@ export type FriendV3 = FriendView & { customStatus?: CustomStatus; favorite?: bo
 /** `PUT /friends/:pid/relation` : `nickname` ≤ 32 caractères, `null` pour l'effacer. */
 export type RelationPatch = { favorite?: boolean; nickname?: string | null; muted?: boolean; hideActivity?: boolean };
 export type BlockedPerson = { pid: string; handle: Handle };
-export type ReportReason = 'spam' | 'harassment' | 'other';
+type ReportReason = 'spam' | 'harassment' | 'other';
 export type ReportInput = { pid: string; reason: ReportReason; details?: string };
 export type JoinAnswer = { accept: boolean; partyId?: string };
 
 // ---- S3 : messages riches, réactions, sondages, groupes, partage, listes ----
-export type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
-export type TitleRef = { type: MediaKind; tmdbId: number; title: string; poster?: string; year?: number; rating?: number };
-export type MomentRef = { type: MediaKind; tmdbId: number; season?: number; episode?: number; title: string; pos: number; still?: string };
-export type PartyRef = { partyId: string; title: string };
-export type PollOption = { id: string; label: string; votes: number; mine: boolean };
+type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
+type TitleRef = { type: MediaKind; tmdbId: number; title: string; poster?: string; year?: number; rating?: number };
+type MomentRef = { type: MediaKind; tmdbId: number; season?: number; episode?: number; title: string; pos: number; still?: string };
+type PartyRef = { partyId: string; title: string };
+type PollOption = { id: string; label: string; votes: number; mine: boolean };
 export type Poll = { id: string; question: string; options: PollOption[]; closed: boolean };
 export type Reaction = { emoji: string; count: number; mine: boolean };
 /** Message v3 : `conv` est `dm:<pid>` ou `g:<id>`. Le `Message` v2 reste valable comme sous-ensemble. */
@@ -70,7 +70,7 @@ export type MessageV3 = Message & {
   reactions: Reaction[]; replyTo?: string;
 };
 /** `ownerPid` : le propriétaire (seul à renommer et à changer les membres). Absent d'un serveur plus ancien : personne n'est alors propriétaire côté client. */
-export type GroupInfo = { id: string; name: string; members: FriendV3[]; ownerPid?: string };
+type GroupInfo = { id: string; name: string; members: FriendV3[]; ownerPid?: string };
 /** Conversation v3 : une conversation directe ou un groupe (`group` présent). */
 export type ConversationV3 = Conversation & { conv: string; group?: GroupInfo };
 /** Corps de `POST /conv/:conv/messages`. `party` n'est plus envoyable par là : l'invitation passe par `POST /party/:id/invite {pid}`. */
@@ -79,7 +79,7 @@ export type NewMessage = {
   title?: TitleRef; moment?: MomentRef; party?: PartyRef;
   poll?: { question: string; options: string[] }; replyTo?: string;
 };
-export type ShareTarget = { pid: string } | { group: string };
+type ShareTarget = { pid: string } | { group: string };
 export type ShareInput = { to: ShareTarget[]; kind: 'title' | 'moment'; title?: TitleRef; moment?: MomentRef; body?: string };
 export type ShareLinkInput = { type: MediaKind; tmdbId: number; pos?: number; withInvite: boolean; note?: string };
 export type ShareLinkCreated = { url: string; code: string; inviteCode?: string };
@@ -93,13 +93,13 @@ export type MyShareLink = {
   inviteCode?: string; createdAt: number; expiresAt: number; expired: boolean;
 };
 export type ListSummary = { id: string; name: string; members: FriendV3[]; count: number };
-export type ListItem = { type: MediaKind; tmdbId: number; title: string; poster?: string; addedBy: string; addedAt: number };
+type ListItem = { type: MediaKind; tmdbId: number; title: string; poster?: string; addedBy: string; addedAt: number };
 export type ListDetail = { id: string; name: string; members: FriendV3[]; items: ListItem[] };
 export type ListItemInput = { type: MediaKind; tmdbId: number; title: string; poster?: string };
 
 // ---- S5 : activité et agrégats ----
-export type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
-export type ActivityMedia = { type: MediaKind; tmdbId: number; title: string; poster?: string; season?: number; episode?: number };
+type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
+type ActivityMedia = { type: MediaKind; tmdbId: number; title: string; poster?: string; season?: number; episode?: number };
 export type ActivityItem = {
   id: string; pid: string; handle: Handle; avatarColor: string; avatar?: string; kind: ActivityKind;
   media: ActivityMedia; rating?: number; at: number;

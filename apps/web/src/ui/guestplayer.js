@@ -8,10 +8,10 @@ import { formatClock } from '../player/progress';
 /** Les commandes se masquent après ce délai sans mouvement (souris, doigt, clavier) ; la pause les garde affichées. */
 export const IDLE_MS = 3000;
 /** Deux clics sur la vidéo à moins de ce délai : plein écran (le premier clic a déjà basculé la lecture). */
-export const DOUBLE_MS = 320;
+const DOUBLE_MS = 320;
 /** Pas des flèches et des boutons de saut, en secondes. */
-export const KEY_SEEK_S = 5;
-export const BUTTON_SEEK_S = 10;
+const KEY_SEEK_S = 5;
+const BUTTON_SEEK_S = 10;
 
 /** Lignes du panneau « i » : clé du champ, libellé. */
 const INFO_ROWS = [

@@ -24,7 +24,7 @@ const loadCollection = () => collectionPromise || (collectionPromise = import('@
 export const AVATAR_SCALE = 70;
 
 /** Le SVG occupe toute la tuile (width/height 100 %) ; le viewBox garde les proportions. */
-export const fitSvg = (svg) => svg.replace(/<svg\b([^>]*)>/, (_m, attrs) => '<svg' + attrs.replace(/\s(?:width|height)="[^"]*"/g, '') + ' width="100%" height="100%">');
+const fitSvg = (svg) => svg.replace(/<svg\b([^>]*)>/, (_m, attrs) => '<svg' + attrs.replace(/\s(?:width|height)="[^"]*"/g, '') + ' width="100%" height="100%">');
 
 /** SVG de l'avatar en URI data:, ou '' si la valeur est invalide / non autorisée / non générable. Mis en cache. */
 export async function avatarUri(value) {

@@ -86,7 +86,7 @@ export function reportErrorMessage(err) {
 }
 
 /** Titre d’un passage : catalogue, puis relevé de l’ami s’il regarde ce titre ; sinon chaîne vide. */
-export function titleOfContext(ctx, friend) {
+function titleOfContext(ctx, friend) {
   const it = state.byKey.get((ctx.type === 'series' ? 'tv' : 'movie') + ':' + ctx.tmdbId);
   if (it && it.name) return it.name;
   const w = friend && friend.watching;
@@ -95,7 +95,7 @@ export function titleOfContext(ctx, friend) {
 }
 
 /** Libellé du contexte : « à 12:34 dans Dune » ; « dans un titre » si le titre est inconnu. */
-export function contextLabel(ctx, title) {
+function contextLabel(ctx, title) {
   const at = typeof ctx.pos === 'number' && ctx.pos >= 0 ? 'à ' + posLabel(ctx.pos) + ' ' : '';
   return at + 'dans ' + (title || 'un titre');
 }

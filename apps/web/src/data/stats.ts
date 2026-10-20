@@ -11,7 +11,7 @@ import type { WatchedTitle } from './watchedHistory';
 /** Titres détaillés au plus par calcul : le reste est estimé (appels TMDB limités). */
 export const DETAIL_LIMIT = 50;
 /** Données TMDB gardées dans le navigateur : 30 jours, 300 titres au plus. */
-export const META_TTL_MS = 30 * 864e5;
+const META_TTL_MS = 30 * 864e5;
 export const META_CACHE_KEY = 'laststream.stats.meta';
 const META_CACHE_MAX = 300;
 const DEFAULT_MOVIE_MIN = 110;
@@ -21,8 +21,8 @@ const DAY_MS = 864e5;
 export const WEEKDAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'] as const;
 export const DAYPARTS = ['Matin', 'Après-midi', 'Soirée', 'Nuit'] as const;
 
-export type PersonRole = 'cast' | 'director' | 'creator';
-export interface PersonRef {
+type PersonRole = 'cast' | 'director' | 'creator';
+interface PersonRef {
   id: number;
   name: string;
   role: PersonRole;
@@ -181,7 +181,7 @@ export interface StatsInput {
   now: number;
 }
 
-export interface StatsTotals {
+interface StatsTotals {
   minutes: number;
   estimatedMinutes: number;
   movies: number;
@@ -193,7 +193,7 @@ export interface StatsTotals {
   detailed: number;
 }
 
-export interface PersonStat {
+interface PersonStat {
   id: number;
   name: string;
   role: PersonRole;
@@ -201,7 +201,7 @@ export interface PersonStat {
   minutes: number;
 }
 
-export interface SeriesStat {
+interface SeriesStat {
   key: string;
   name: string;
   watched: number;
@@ -210,7 +210,7 @@ export interface SeriesStat {
   minutes: number;
 }
 
-export interface LastWatch {
+interface LastWatch {
   key: string;
   type: 'movie' | 'tv';
   /** Nom du titre si ses données TMDB sont chargées, sinon null. */

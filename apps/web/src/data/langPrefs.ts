@@ -94,12 +94,6 @@ export function setLangPrefs(patch: Partial<LangPrefs>): LangPrefs {
   return next;
 }
 
-/** Libellé d'un code de langue des réglages. */
-export function langPrefLabel(c: string): string {
-  if (c === LANG_VO) return 'Version originale';
-  if (c === LANG_NONE) return 'Aucune';
-  return LANG_CHOICES.find(([k]) => k === c)?.[1] ?? c.toUpperCase();
-}
 
 /** Langue des sous-titres que ces réglages cherchent en premier (sert au classement des sous-titres externes). */
 export function wantedSubLang(lp: LangPrefs): string {

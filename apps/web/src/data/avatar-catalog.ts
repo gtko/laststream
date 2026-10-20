@@ -11,10 +11,10 @@ import { appFetch } from './crossFetch';
 import { isValidAvatar, parseColAvatar } from './avatars';
 import { userStore } from './userStore';
 
-export { COL_PATTERN, formatColAvatar, parseColAvatar, type ParsedColAvatar } from './avatars';
+import './avatars';
 
 /** Famille du catalogue (section du sélecteur). Ne pas confondre avec `AvatarFamily` de avatars.ts (onglets DiceBear). */
-export interface AvatarFamily { id: string; label: string }
+interface AvatarFamily { id: string; label: string }
 
 /** Collection : un jeu de personnages, ou un style d'un univers (voir `group`). */
 export interface AvatarCollection {
@@ -45,7 +45,7 @@ export interface Catalog {
   featured: string[];
 }
 
-export interface CatalogCharacter { id: string; name: string }
+interface CatalogCharacter { id: string; name: string }
 
 export interface CollectionCharacters { id: string; characters: CatalogCharacter[] }
 

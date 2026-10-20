@@ -7,7 +7,7 @@ const cache = new Map();
 const RECENT_DAYS = 150;
 
 /** { available, cinemaSince } d'un film ; une requête par film (détail avec dates de sortie et fournisseurs), mise en cache. */
-export function availability(id) {
+function availability(id) {
   if (!cache.has(id)) {
     const p = tmdb('movie/' + id, { append_to_response: 'release_dates,watch/providers' }).then(availOf);
     p.catch(() => cache.delete(id));
@@ -16,7 +16,6 @@ export function availability(id) {
   return cache.get(id);
 }
 
-export const seedAvailability = (id, a) => { if (!cache.has(id)) cache.set(id, Promise.resolve(a)); };
 
 const isRecentMovie = (it) => it.type === 'movie' && it.date && dayDiff(it.date) > -RECENT_DAYS;
 

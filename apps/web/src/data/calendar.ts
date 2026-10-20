@@ -45,7 +45,7 @@ export function monthGrid(year: number, month: number): Array<Array<{ date: stri
 export const episodeLabel = (season: number, episode: number): string => `S${season} É${episode}`;
 
 /** Types de sortie TMDB : 1 avant-première, 2 salles (limitée), 3 salles, 4 numérique, 5 physique, 6 télévision. */
-export function releaseLabel(type: number): string {
+function releaseLabel(type: number): string {
   if (type === 1 || type === 2 || type === 3) return 'Au cinéma';
   if (type === 4) return 'En streaming';
   if (type === 5) return 'En DVD / Blu-ray';

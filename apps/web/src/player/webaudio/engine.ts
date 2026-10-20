@@ -66,7 +66,7 @@ export interface FallbackOptions {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const HAVE_FUTURE_DATA = 3;
 /** Attente maximale du son avant d'abandonner (ms). */
-export const HOLD_TIMEOUT_MS = 10_000;
+const HOLD_TIMEOUT_MS = 10_000;
 
 export class WebAudioFallback {
   private readonly ctx: AudioContext;

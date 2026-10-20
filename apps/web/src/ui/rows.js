@@ -4,12 +4,12 @@ import { ICON } from './icons.js';
 import { state } from './state.js';
 
 // ---------- Rangées horizontales : glisser, molette, flèches ----------
-export const ROW_SEL = '.row,.cast-row,.vid-row';
+const ROW_SEL = '.row,.cast-row,.vid-row';
 let rowsRaf = 0;
 
 
 
-export function updateArrows(wrap) {
+function updateArrows(wrap) {
   const r = wrap.querySelector(ROW_SEL);
   if (!r) return;
   const max = r.scrollWidth - r.clientWidth;
@@ -40,7 +40,7 @@ export function keepRowState(slot, change, attr) {
   if (back) back.focus({ preventScroll: true });
 }
 
-export function decorateRows() {
+function decorateRows() {
   rowsRaf = 0;
   document.querySelectorAll(ROW_SEL).forEach((r) => {
     if (r.dataset.rw || !r.parentNode) return;
@@ -77,7 +77,7 @@ document.addEventListener('pointermove', (e) => {
   if (!state.dragRow.moved && Math.abs(dx) > 6) { state.dragRow.moved = true; state.dragRow.r.classList.add('is-dragging'); }
   if (state.dragRow.moved) { state.dragRow.r._wt = null; state.dragRow.r.scrollLeft = state.dragRow.sl - dx; e.preventDefault(); }
 });
-export const endDrag = () => {
+const endDrag = () => {
   if (!state.dragRow) return;
   if (state.dragRow.moved) { state.suppressClick = true; setTimeout(() => { state.suppressClick = false; }, 0); }
   state.dragRow.r.classList.remove('is-dragging');

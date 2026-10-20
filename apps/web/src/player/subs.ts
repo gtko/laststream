@@ -7,7 +7,7 @@ export interface Cue {
 }
 
 /** « 00:01:02,500 » ou « 1:02.5 » → secondes ; NaN si illisible. */
-export function parseTimestamp(raw: string): number {
+function parseTimestamp(raw: string): number {
   const m = /^\s*(?:(\d+):)?(\d{1,2}):(\d{1,2})(?:[.,](\d{1,3}))?\s*$/.exec(raw);
   if (!m) return NaN;
   const frac = m[4] ? Number('0.' + m[4].padEnd(3, '0')) : 0;
@@ -82,7 +82,7 @@ export function cueHtml(text: string): string {
 
 // ---------- Réglages ----------
 
-export type SubBackground = 'none' | 'shadow' | 'box';
+type SubBackground = 'none' | 'shadow' | 'box';
 
 export interface SubtitleStyle {
   /** Taille en % de la taille de base (50 à 200). */
@@ -98,7 +98,7 @@ export interface SubtitleStyle {
 }
 
 export const DEFAULT_SUB_STYLE: SubtitleStyle = { size: 100, position: 8, background: 'shadow', color: 'white', mode: 'auto', font: 'sans', edge: 'bottom' };
-export const SUB_STYLE_KEY = 'laststream.player.subtitles';
+const SUB_STYLE_KEY = 'laststream.player.subtitles';
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 

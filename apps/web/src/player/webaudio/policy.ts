@@ -28,12 +28,12 @@ export const DOLBY_HINT = 'Pour le son Dolby, ouvre Laststream dans Microsoft Ed
 const LABEL: Record<string, string> = { dts: 'DTS', truehd: 'TrueHD', ac3: 'AC-3', eac3: 'E-AC-3', aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', vorbis: 'Vorbis' };
 const label = (codec: string): string => LABEL[codec] ?? codec.toUpperCase();
 
-export function unsupportedNote(codec: string): string {
+function unsupportedNote(codec: string): string {
   return codec === 'dts' ? NOTE_DTS : 'Son ' + label(codec) + ' non pris en charge par le navigateur';
 }
 
 /** Codecs que mediabunny ne décode pas et que l'app n'essaie même pas. */
-export const NO_DECODER = new Set(['dts', 'truehd']);
+const NO_DECODER = new Set(['dts', 'truehd']);
 export const isAc3Family = (codec: string): boolean => codec === 'ac3' || codec === 'eac3';
 
 export interface AudioPlanInput {

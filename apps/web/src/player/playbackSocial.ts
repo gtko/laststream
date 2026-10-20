@@ -108,7 +108,7 @@ export function advanceBubble(q: BubbleQueue): BubbleQueue {
 }
 
 // ---- Carte de chaleur ----
-export type HeatLevel = 0 | 1 | 2 | 3;
+type HeatLevel = 0 | 1 | 2 | 3;
 export interface HeatBar { h: number; level: HeatLevel }
 
 /** Barres de la carte : hauteur en 0..1 (2 px minimum côté rendu) et teinte selon la part du maximum. Rien si tout est nul. */
@@ -137,7 +137,7 @@ export function isFuture(notePos: number, time: number, antiSpoiler: boolean): b
 // ---- « Un ami regarde aussi » ----
 export interface WatchMedia { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number }
 export interface WatchPeer { pid: string; name: string; color: string; pos: number }
-export const WATCH_FRESH_MS = 90_000;
+const WATCH_FRESH_MS = 90_000;
 
 /** Amis et foyer qui regardent le même film ou épisode, avec leur position estimée à `now` (jamais sans `pos`, jamais périmée). */
 export function friendsWatching(s: Pick<SocialState, 'friends' | 'household'>, media: WatchMedia | null, now: number, duration = 0): WatchPeer[] {

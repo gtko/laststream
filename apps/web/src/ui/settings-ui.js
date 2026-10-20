@@ -68,7 +68,7 @@ let uid = 0;
 const nextId = () => 'set-r' + (++uid);
 
 /** Interrupteur : bouton role=switch (la valeur est dans aria-checked). `attrs` : name, data-set-pref… */
-export function switchHTML(on, attrs, labelledBy) {
+function switchHTML(on, attrs, labelledBy) {
   return '<button type="button" class="set-switch" role="switch" data-set-toggle aria-checked="' + (on ? 'true' : 'false') + '"' +
     (labelledBy ? ' aria-labelledby="' + labelledBy + '"' : '') + (attrs ? ' ' + attrs : '') + '><span class="set-switch-k"></span></button>';
 }

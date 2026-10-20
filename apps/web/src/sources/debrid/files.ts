@@ -11,19 +11,19 @@ export interface FlatFile {
 
 const VIDEO_EXTENSIONS = new Set(['mkv', 'mp4', 'avi', 'mov', 'm4v', 'ts', 'webm']);
 
-export function isVideo(name: string): boolean {
+function isVideo(name: string): boolean {
   const dot = name.lastIndexOf('.');
   return dot > 0 && VIDEO_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
 /** Nom sans dossier, en minuscules, sans extension vidéo. */
-export function stemOf(name: string): string {
+function stemOf(name: string): string {
   const base = (name.split(/[\\/]/).pop() ?? name).trim().toLowerCase();
   return isVideo(base) ? base.slice(0, base.lastIndexOf('.')) : base;
 }
 
 /** Reconnaît SxxExx (S01E02, S1E2) et NxNN (1x02), sans faux positif sur S11E02 pour S01E02. */
-export function matchesEpisode(name: string, season: number, episode: number): boolean {
+function matchesEpisode(name: string, season: number, episode: number): boolean {
   const patterns = [
     new RegExp(`(?<![0-9a-z])s0*${season}e0*${episode}(?![0-9])`, 'i'),
     new RegExp(`(?<![0-9a-z])0*${season}x0*${episode}(?![0-9])`, 'i'),

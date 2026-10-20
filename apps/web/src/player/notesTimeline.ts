@@ -1,4 +1,4 @@
-import type { MediaRef, Note } from '../data/socialV2Api';
+import type { Note } from '../data/socialV2Api';
 
 /* Timeline des notes du lecteur (Social v2) : fonctions pures, sans DOM ni réseau.
  * `crossing` dit quelles notes une lecture normale vient de franchir ; `rearmed` relâche les notes d'une zone revisitée
@@ -7,9 +7,9 @@ import type { MediaRef, Note } from '../data/socialV2Api';
 /** Saut maximal (s) entre deux relevés pour compter comme une lecture normale : au-delà, c'est un seek ou un saut. */
 export const MAX_JUMP = 3;
 /** Retour en arrière minimal (s) qui relâche les notes de la zone revisitée. */
-export const REWIND_MIN = 0.5;
+const REWIND_MIN = 0.5;
 /** Distance (en % de la durée) en dessous de laquelle deux notes forment un même marqueur. */
-export const CLUSTER_GAP_PCT = 1;
+const CLUSTER_GAP_PCT = 1;
 /** Longueur maximale d'une note texte, en caractères (points de code). */
 export const NOTE_MAX = 140;
 /** Rangée d'emojis rapides du popover « Réagir ici ». */
@@ -18,7 +18,6 @@ export const QUICK_EMOJIS: readonly string[] = ['😂', '🔥', '😱', '❤️'
 export const FALLBACK_COLOR = '#94a3b8';
 
 export type NoteKind = Note['kind'];
-export type NoteMedia = Pick<MediaRef, 'type' | 'tmdbId' | 'season' | 'episode'>;
 
 export interface CrossingOptions {
   /** Saut maximal entre deux relevés (s) ; défaut MAX_JUMP. */

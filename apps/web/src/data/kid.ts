@@ -28,7 +28,7 @@ export function kidAllows(cert: string | null | undefined, maxAge: number): bool
 }
 
 /** Genres jeunesse TMDB : Animation 16, Famille 10751, Kids 10762 (séries). */
-export const KID_GENRES: readonly number[] = [16, 10751, 10762];
+const KID_GENRES: readonly number[] = [16, 10751, 10762];
 
 /** Un titre ne passe que s'il a au moins un genre jeunesse (genres inconnus : refusé). */
 export const kidGenreOk = (ids: readonly number[] | null | undefined): boolean =>

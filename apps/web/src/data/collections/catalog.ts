@@ -22,8 +22,8 @@ export interface Catalog {
 
 export const CREDIT = 'Collections inspirées de Focale (MIT) et Kaptain';
 export const SERVICES_CATEGORY = 'collection-ERFS5GWK';
-export const SPOTLIGHT_CATEGORY = 'collection-SPOTLIGHTS';
-export const DISCOVER_CATEGORY = 'collection-UGED6TEZ';
+const SPOTLIGHT_CATEGORY = 'collection-SPOTLIGHTS';
+const DISCOVER_CATEGORY = 'collection-UGED6TEZ';
 /** Rangées d'accueil : catégories qui tournent (hors services, vedette et découvrir, déjà montrés ailleurs). */
 const ROTATING_EXCLUDED = new Set([SERVICES_CATEGORY, SPOTLIGHT_CATEGORY, DISCOVER_CATEGORY]);
 
@@ -32,7 +32,7 @@ const KINDS = new Set(['DISCOVER', 'LIST', 'COLLECTION', 'COMPANY']);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object';
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 /** Adresse d'image : http(s) seulement (pas de data:, javascript:…). */
-export const httpUrl = (v: unknown): string | undefined => (typeof v === 'string' && /^https?:\/\//i.test(v) ? v : undefined);
+const httpUrl = (v: unknown): string | undefined => (typeof v === 'string' && /^https?:\/\//i.test(v) ? v : undefined);
 
 function cleanSource(raw: unknown): Source | null {
   if (!isObj(raw) || !KINDS.has(String(raw.kind))) return null; // trakt, addon : ignorés
@@ -139,7 +139,7 @@ export function featuredFolders(cat: Catalog, now: Date = new Date()): Folder[] 
 }
 
 /** Entier stable pour un jour (yyyymmdd local). */
-export const daySeed = (d: Date = new Date()): number => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+const daySeed = (d: Date = new Date()): number => d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
 
 /** Générateur déterministe (mulberry32). */
 function rng(seed: number): () => number {
@@ -153,7 +153,7 @@ function rng(seed: number): () => number {
   };
 }
 
-export function seededShuffle<T>(items: readonly T[], seed: number): T[] {
+function seededShuffle<T>(items: readonly T[], seed: number): T[] {
   const a = items.slice();
   const r = rng(seed);
   for (let i = a.length - 1; i > 0; i -= 1) {
@@ -187,12 +187,12 @@ export function serviceFolders(cat: Catalog): Folder[] {
 }
 
 /** Dossiers de la page Découvrir, dans l'ordre de l'interface (art seul pour « Pour vous » et « Meilleures séries »). */
-export const DISCOVER_ORDER = ['folder-25429024', 'folder-9D1C5A0D', 'folder-c2fa6b78', 'folder-F5BC0453', 'folder-4a9b21f7', 'folder-IHPHVHSB', 'folder-XUX2DKEX'];
+const DISCOVER_ORDER = ['folder-25429024', 'folder-9D1C5A0D', 'folder-c2fa6b78', 'folder-F5BC0453', 'folder-4a9b21f7', 'folder-IHPHVHSB', 'folder-XUX2DKEX'];
 export const FOR_YOU_ID = 'folder-25429024';
-export const BEST_SERIES_ID = 'folder-XUX2DKEX';
+const BEST_SERIES_ID = 'folder-XUX2DKEX';
 
 /** Source TMDB de remplacement pour « Meilleures séries » (la source d'origine est Trakt). */
-export const BEST_SERIES_SOURCE: Source = { kind: 'DISCOVER', media: 'tv', name: 'Meilleures séries', sort: 'vote_average.desc', filters: { voteCountGte: 500, withoutGenres: '16,10764,10767,10763' } };
+const BEST_SERIES_SOURCE: Source = { kind: 'DISCOVER', media: 'tv', name: 'Meilleures séries', sort: 'vote_average.desc', filters: { voteCountGte: 500, withoutGenres: '16,10764,10767,10763' } };
 
 /** Dossier ouvrable par #/collection/{id} : un dossier du hub, ou « Meilleures séries » (remplacé par une requête TMDB). « Pour vous » : null (recommandations). */
 export function folderById(cat: Catalog, id: string): Folder | null {

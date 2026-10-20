@@ -16,7 +16,7 @@ export interface Origin {
   logo?: string;
 }
 
-export interface LangBadge {
+interface LangBadge {
   label: string;
   verified: boolean;
 }
@@ -89,7 +89,7 @@ const SOURCE_TYPES: Array<[RegExp, string]> = [
   [/cam|telesync|\bts\b/i, 'CAM'],
 ];
 
-export function sourceTypeLabel(raw: string): string {
+function sourceTypeLabel(raw: string): string {
   const t = raw.trim();
   if (!t || /^unknown$/i.test(t)) return '';
   for (const [re, label] of SOURCE_TYPES) if (re.test(t)) return label;
@@ -215,7 +215,7 @@ export function formatDuration(sec: number | null): string {
   return h + ' h ' + String(m).padStart(2, '0');
 }
 
-export function statusLabelOf(status: SourceStatus): string {
+function statusLabelOf(status: SourceStatus): string {
   switch (status) {
     case 'cached': return 'Débridé · En cache ⚡';
     case 'uncached': return 'Débridé · À la demande';
@@ -224,7 +224,7 @@ export function statusLabelOf(status: SourceStatus): string {
 }
 
 /** Lien HTTP(S) lisible. Une source sans lien (torrent : infoHash seul) n'est jamais lue : pas de moteur torrent. */
-export const hasHttpUrl = (s: Stream): boolean => typeof s.url === 'string' && /^https?:\/\//i.test(s.url);
+const hasHttpUrl = (s: Stream): boolean => typeof s.url === 'string' && /^https?:\/\//i.test(s.url);
 
 /** Lien de lecture débridée de lastAddon : `/play/c/<jeton>` ou `/play/<infoHash>` (résolu par AllDebrid à la demande). */
 export const isDebridUrl = (url: unknown): boolean => typeof url === 'string' && /\/play\/(c\/[^/?#]+|[0-9a-f]{40})/i.test(url);

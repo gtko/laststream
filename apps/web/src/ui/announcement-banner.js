@@ -37,7 +37,7 @@ export function pickAnnouncement(list, dismissed) {
 }
 
 /** Vrai sur la console d'administration (#/admin, #/admin/…) : la bannière n'y apparaît pas. */
-export const isAdminRoute = (hash = location.hash) => ADMIN_ROUTE.test(hash);
+const isAdminRoute = (hash = location.hash) => ADMIN_ROUTE.test(hash);
 
 /** Hauteur de la bannière, écrite dans --ann-h sur :root : la barre du haut et la navigation s'en décalent (0 sans bannière). */
 const setBannerHeight = (doc, px) => { doc.documentElement.style.setProperty('--ann-h', px + 'px'); };

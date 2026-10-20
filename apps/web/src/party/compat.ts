@@ -34,7 +34,7 @@ export interface GuestStatus {
 /** Verdict pour un invité : tout va, le son ne passera pas, ou la vidéo ne peut pas être lue. */
 export type GuestVerdict = 'ok' | 'no-audio' | 'unplayable';
 
-export const CODEC_LABEL: Record<DecodeCap | 'truehd', string> = {
+const CODEC_LABEL: Record<DecodeCap | 'truehd', string> = {
   truehd: 'TrueHD',
   h264: 'H.264',
   hevc: 'HEVC',
@@ -91,7 +91,7 @@ export function parseSourceCodecs(text: string): FileCodecs {
 }
 
 /** Texte à analyser pour une source : nom de fichier, codec et son affichés, nom de fichier de l'addon. */
-export function sourceCodecText(view: SourceLike | null | undefined): string {
+function sourceCodecText(view: SourceLike | null | undefined): string {
   if (!view) return '';
   return [view.codec, view.audio, view.filename, view.stream?.behaviorHints?.filename].filter(Boolean).join(' ');
 }
@@ -154,7 +154,7 @@ export function audioKnown(view: SourceLike): boolean {
  * Source utilisable pour une bascule ou un repli : lisible sans torrent, avec au moins un codec connu, et sans
  * incompatibilité connue avec les invités annoncés (un invité sans annonce ne bloque rien).
  */
-export function isCompatibleFile(file: FileCodecs, guests: readonly GuestStatus[]): boolean {
+function isCompatibleFile(file: FileCodecs, guests: readonly GuestStatus[]): boolean {
   if (!file.video && !file.audio) return false;
   return guests.every((g) => g.caps === null || verdictOf(file, g.caps) === 'ok');
 }
@@ -168,7 +168,7 @@ export function isCompatibleSource(view: SourceLike, guests: readonly GuestStatu
 }
 
 /** Attend `p` au plus `ms` ms ; au-delà, `onTimeout` est appelé et le résultat est null. Un rejet donne null aussi. */
-export function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void = () => undefined): Promise<T | null> {
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => void = () => undefined): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => {

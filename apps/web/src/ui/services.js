@@ -12,7 +12,7 @@ import { observeTiles, posterCard, tileCard } from './tiles.js';
 import { esc } from './util.js';
 
 // ---------- Services de streaming ----------
-export const SERVICE_DEFS = [
+const SERVICE_DEFS = [
   { slug: 'netflix', label: 'Netflix', re: /^netflix/, color: '#E50914' },
   { slug: 'prime-video', label: 'Prime Video', re: /^(amazon )?prime video/, color: '#00A8E1' },
   { slug: 'disney-plus', label: 'Disney+', re: /^disney/, color: '#113CCF' },
@@ -29,7 +29,7 @@ export const SERVICE_DEFS = [
   { slug: 'pluto-tv', label: 'Pluto TV', re: /^pluto/, color: '#17151f' },
   { slug: 'molotov', label: 'Molotov', re: /^molotov/, color: '#17151f' },
 ];
-export const SERVICE_CANON = {
+const SERVICE_CANON = {
   netflix: /^netflix$/, 'prime-video': /^amazon prime video$/, 'disney-plus': /^disney plus$/, 'canal-plus': /^canal\+$/,
   'apple-tv-plus': /^apple tv(\+| plus)$/, max: /^(max|hbo max)$/, 'paramount-plus': /^paramount(\+| plus)$/, crunchyroll: /^crunchyroll$/,
 };
@@ -71,7 +71,7 @@ export function loadServices() {
   return servicesPromise;
 }
 
-export function svcTile(sv) {
+function svcTile(sv) {
   return '<button type="button" class="svc' + (sv.outline ? ' svc-outline' : '') + '" data-service="' + esc(sv.slug) + '" style="--svc:' + esc(sv.color) + '" aria-label="' + esc(sv.name) + '">' +
     (sv.logo ? '<img src="' + esc(sv.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="svc-name" aria-hidden="true">' + esc(sv.name) + '</span>') +
     '<span class="sr-only">' + esc(sv.name) + '</span></button>';
@@ -87,12 +87,12 @@ export async function renderServices() {
   } catch (_) { /* rangée absente si TMDB ne répond pas */ }
 }
 
-export const SVC_GENRES = [
+const SVC_GENRES = [
   ['Action', 28, 10759], ['Comédie', 35, 35], ['Drame', 18, 18], ['Science-fiction', 878, 10765], ['Thriller', 53, '80|9648'],
   ['Animation', 16, 16], ['Documentaire', 99, 99], ['Famille', 10751, 10751], ['Horreur', 27, null], ['Romance', 10749, null],
 ];
 
-export function svcRows(type) {
+function svcRows(type) {
   const isTv = type === 'tv';
   const today = new Date().toISOString().slice(0, 10);
   const dateKey = isTv ? 'first_air_date' : 'primary_release_date';
@@ -109,7 +109,7 @@ export function svcRows(type) {
   return rows;
 }
 
-export async function loadSvcRow(sec, sv, type, def, token) {
+async function loadSvcRow(sec, sv, type, def, token) {
   const isTv = type === 'tv';
   const params = Object.assign({
     ...releasedParams(type),

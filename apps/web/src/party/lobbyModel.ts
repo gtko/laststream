@@ -1,6 +1,6 @@
 import type { PartyParticipant } from '../data/socialApi';
 import {
-  COUNTDOWN_DEFAULT_SEC, type ControlMode, type EventKind, type PartySettings, type ReactionMode, type VoteView, type WaitLateMode,
+  COUNTDOWN_DEFAULT_SEC, type ControlMode, type EventKind, type ReactionMode, type VoteView, type WaitLateMode,
 } from './protocol';
 
 /* Modèle du salon d'attente et de l'affichage en lecture (Social v3) : fonctions pures, sans DOM ni réseau, testées. */
@@ -12,11 +12,6 @@ export const CONTROL_OPTIONS: ReadonlyArray<readonly [ControlMode, string]> = [[
 export const WAIT_LATE_OPTIONS: ReadonlyArray<readonly [WaitLateMode, string]> = [['off', 'Non'], ['10s', '10 s max'], ['always', 'Toujours']];
 export const REACTION_OPTIONS: ReadonlyArray<readonly [ReactionMode, string]> = [['float', 'Flottantes'], ['discreet', 'Discrètes'], ['off', 'Off']];
 
-/** Réglages d'un salon en une ligne (infobulle). */
-export function settingsLabel(s: PartySettings): string {
-  const find = <T extends string>(list: ReadonlyArray<readonly [T, string]>, v: T): string => (list.find(([k]) => k === v) ?? [v, v])[1];
-  return find(CONTROL_OPTIONS, s.control) + ' · ' + find(WAIT_LATE_OPTIONS, s.waitLate) + ' · ' + find(REACTION_OPTIONS, s.reactions);
-}
 
 /** Initiales d'un avatar sans illustration : une lettre pour un compte, deux pour un invité (comme la maquette). */
 export function initialsOf(name: string, guest = false): string {
@@ -26,7 +21,7 @@ export function initialsOf(name: string, guest = false): string {
 }
 
 /** Qualité exploitable : vide si la chaîne n'a ni lettre ni chiffre (« ? » d'une résolution inconnue). */
-export function knownQuality(q: unknown): string {
+function knownQuality(q: unknown): string {
   const t = typeof q === 'string' ? q.trim() : '';
   return /[\p{L}\p{N}]/u.test(t) ? t : '';
 }

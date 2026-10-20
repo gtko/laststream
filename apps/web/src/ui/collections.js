@@ -24,7 +24,7 @@ const HUB_PREVIEW = 12; // tuiles par catégorie dans la vue « Toutes »
 // ---------- Tuiles ----------
 
 /** Adresse d'un dossier : « Pour vous » ouvre nos recommandations. */
-export const folderHref = (f) => (f.id === FOR_YOU_ID ? '#/browse/ai' : '#/collection/' + f.id);
+const folderHref = (f) => (f.id === FOR_YOU_ID ? '#/browse/ai' : '#/collection/' + f.id);
 
 /**
  * Tuile paysage 16:9 : image de couverture, logo en surimpression (sinon le nom). Le GIF n'est PAS dans le HTML : il
@@ -64,7 +64,7 @@ export function stopGif() {
 }
 
 /** Charge et joue le GIF de la tuile ; remplace celui d'une autre tuile. */
-export function startGif(tile) {
+function startGif(tile) {
   if (REDUCE || STILL || !tile || !tile.dataset.gif) return;
   if (gifTile === tile) return;
   stopGif();
@@ -124,7 +124,7 @@ offs.push(listen(window, 'scroll', () => { if (gifTile) stopGif(); }, { passive:
 let catalogRef = null;
 
 /** Couverture cassée : fond TMDB d'un titre du dossier, sinon dégradé et nom. */
-export async function coverFallback(img) {
+async function coverFallback(img) {
   const tile = img.closest('.ct');
   if (!tile) return;
   const media = tile.querySelector('.ct-media');
@@ -165,7 +165,7 @@ window[GLOBAL_KEY] = () => { offs.forEach((off) => off()); stopGif(); };
  * Corps du hub : une section par catégorie (aperçu de HUB_PREVIEW tuiles en vue « Toutes »), ou la grille complète d'une
  * catégorie ou des résultats de recherche. Pur : prend le catalogue et l'état, rend du HTML.
  */
-export function hubBodyHTML(cat, st) {
+function hubBodyHTML(cat, st) {
   const q = (st.query || '').trim();
   const groups = searchCatalog(cat, { category: st.category, query: q });
   const count = groups.reduce((n, g) => n + g.folders.length, 0);
@@ -184,7 +184,7 @@ export function hubBodyHTML(cat, st) {
   return '<p class="sr-only" role="status" aria-live="polite">' + count + (count > 1 ? ' collections' : ' collection') + '</p>' + sections;
 }
 
-export function hubPillsHTML(cat, category) {
+function hubPillsHTML(cat, category) {
   const pill = (id, label) => '<button type="button" class="pill" data-hubcat="' + esc(id) + '" aria-pressed="' + String(category === id) + '">' + esc(label) + '</button>';
   return pill('all', 'Toutes') + cat.categories.map((c) => pill(c.id, c.title)).join('');
 }

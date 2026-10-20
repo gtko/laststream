@@ -141,7 +141,7 @@ function testButton(p, t) {
 
 /** Un fournisseur sans aucune donnée sur 24 h a l'état « Inconnu » : le libellé dit plutôt qu'il n'a pas été appelé. */
 const hasSpark = (p) => Array.isArray(p.spark) && p.spark.some((v) => typeof v === 'number' && Number.isFinite(v));
-export const providerStateLabel = (p) => (p.status === 'unknown' && !Number.isFinite(p.successRate) && !hasSpark(p) ? 'Aucun appel sur 24 h' : serviceStatusLabel(p.status));
+const providerStateLabel = (p) => (p.status === 'unknown' && !Number.isFinite(p.successRate) && !hasSpark(p) ? 'Aucun appel sur 24 h' : serviceStatusLabel(p.status));
 
 function testNote(t) {
   if (!t) return '';

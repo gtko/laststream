@@ -6,7 +6,7 @@ import { certLteFor } from './kid';
  * source TMDB, rangée réservée aux enfants ou aux adultes, saison). L'interface les charge à la demande, dans l'ordre.
  */
 
-export type RowKind = 'poster' | 'landscape' | 'top10' | 'logoCard';
+type RowKind = 'poster' | 'landscape' | 'top10' | 'logoCard';
 export type Params = Record<string, string>;
 
 export interface RowCtx {
@@ -19,7 +19,7 @@ export interface RowCtx {
   kidMaxAge: number | null;
 }
 
-export type Fetcher =
+type Fetcher =
   | { k: 'discover'; type: 'movie' | 'tv'; params: (c: RowCtx) => Params }
   | { k: 'list'; path: string; type?: 'movie' | 'tv' }
   /** Top 10 : tendances de la semaine filtrées côté serveur (titres disponibles dans la région, lt/top10.ts). */
@@ -53,9 +53,9 @@ export interface RowDef {
 export const MIN_ITEMS = 8;
 
 /** Genres « bruit » : actualités (10763), talk-shows (10767) et téléréalité (10764). */
-export const NOISE_GENRES: readonly number[] = [10763, 10767, 10764];
+const NOISE_GENRES: readonly number[] = [10763, 10767, 10764];
 /** Votes minimum pour une rangée générique : films 200, séries 100. */
-export const MIN_VOTES = { movie: 200, tv: 100 } as const;
+const MIN_VOTES = { movie: 200, tv: 100 } as const;
 
 /** Un titre de liste générique est écarté s'il relève du bruit (sauf rangée dédiée) ou s'il a trop peu de votes. */
 export function passesQuality(item: { type: 'movie' | 'tv'; genreIds?: number[]; votes?: number }): boolean {
@@ -69,7 +69,7 @@ export function pickSeed<T extends { key: string }>(candidates: T[], used: Reado
 }
 export const ROW_MAX = 20;
 /** Un titre apparaît au plus deux fois sur la page. */
-export const MAX_REPEAT = 2;
+const MAX_REPEAT = 2;
 
 export function makeCtx(region: string, kidMaxAge: number | null, now = new Date()): RowCtx {
   return { region, today: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`, month: now.getMonth() + 1, kidMaxAge };

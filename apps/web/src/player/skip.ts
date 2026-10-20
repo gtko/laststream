@@ -34,7 +34,7 @@ export function skipLabel(seg: Pick<SkipSegment, 'kind' | 'inferred'>): string {
   return SKIP_LABEL[seg.kind] + (seg.inferred ? ' ?' : '');
 }
 
-export const SKIP_LABEL: Record<SkipKind, string> = {
+const SKIP_LABEL: Record<SkipKind, string> = {
   intro: 'Passer l’intro', recap: 'Passer le récap', credits: 'Passer le générique', postcredits: 'Passer la scène post-générique', preview: 'Passer l’aperçu',
 };
 
@@ -43,12 +43,12 @@ export function activeSkip(segments: readonly SkipSegment[], t: number): SkipSeg
   return segments.find((s) => (s.kind === 'intro' || s.kind === 'recap' || s.kind === 'preview') && t >= s.start - 0.25 && t < s.end - 1) ?? null;
 }
 
-export const CREDITS_MIN_CONFIDENCE = 0.6;
+const CREDITS_MIN_CONFIDENCE = 0.6;
 /** Sans données fiables, la carte « épisode suivant » n'apparaît que dans les dernières secondes. */
-export const FALLBACK_TAIL_SECONDS = 25;
+const FALLBACK_TAIL_SECONDS = 25;
 
 /** Un générique n'est retenu que s'il est fiable (ni déduit, ni peu sûr) et commence dans les 15 % finaux (4 min au plus). */
-export function validCredits(seg: SkipSegment, duration: number): boolean {
+function validCredits(seg: SkipSegment, duration: number): boolean {
   if (seg.kind !== 'credits' || seg.inferred) return false;
   if (typeof seg.confidence === 'number' && seg.confidence < CREDITS_MIN_CONFIDENCE) return false;
   return seg.start >= duration - Math.min(duration * 0.15, 240) && seg.start < duration;
@@ -70,10 +70,10 @@ export interface NextCardState {
   ratio: number;
 }
 
-export const NEXT_COUNTDOWN = 10;
+const NEXT_COUNTDOWN = 10;
 
 /** Instant où le compte à rebours démarre : début du générique, ou fin de la scène post-générique si elle existe. */
-export function countdownStart(segments: readonly SkipSegment[], duration: number): number | null {
+function countdownStart(segments: readonly SkipSegment[], duration: number): number | null {
   const start = creditsStart(segments, duration);
   if (start === null) return null;
   const post = segments.find((s) => s.kind === 'postcredits' && s.start >= start - 1);
@@ -122,8 +122,8 @@ export function chapterMarks(segments: readonly SkipSegment[], duration: number)
 
 export const REPOLL_EVERY_MS = 30_000;
 export const REPOLL_MAX = 10;
-export const ANALYZE_MIN_SECONDS = 60;
-export const ANALYZE_MAX_SECONDS = 86_400;
+const ANALYZE_MIN_SECONDS = 60;
+const ANALYZE_MAX_SECONDS = 86_400;
 const STREAMING_SERVER_PORT = '11470';
 
 /** Adresse privée ou locale : boucle locale, réseau privé, lien local, nom sans point ou en .local. */
