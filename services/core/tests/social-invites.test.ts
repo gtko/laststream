@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RunningApp, startApp } from './lt-harness.js';
+import { as, personaOf } from './social-v2-harness.js';
 import { bootstrapOwner, type InviteBody, inviteAndRegister, type Member } from './social-harness.js';
 import { type AccountBody, type ErrorBody, PASSWORD, request } from './user-harness.js';
 
 interface FriendsBody {
-  friends: { username: string; status: string }[];
-  incoming: { username: string }[];
-  outgoing: { username: string }[];
+  friends: { handle: { name: string } }[];
+  incoming: unknown[];
+  outgoing: unknown[];
 }
+
+/** Amis vus par le profil principal d'un membre (API sociale v2, par pid). */
+const friendsOf = async (member: Member, name: string) => {
+  const me = await personaOf(app, member.token, member.profile, name);
+  return as<FriendsBody>(app, me, 'GET', '/user/social/friends');
+};
 
 let app: RunningApp;
 let alice: Member;
@@ -75,11 +82,11 @@ describe('parrainage : inscription par lien', () => {
 
   it('le filleul devient automatiquement ami du parrain (amitié acceptée des deux côtés)', async () => {
     const bob = await inviteAndRegister(app, alice, 'bob');
-    const mine = await request<FriendsBody>(app, 'GET', '/user/friends', { token: alice.token });
-    expect(mine.body.friends.map((f) => f.username)).toEqual(['bob']);
+    const mine = await friendsOf(alice, 'alice');
+    expect(mine.body.friends.map((f) => f.handle.name)).toEqual(['bob']);
     expect(mine.body.incoming).toEqual([]);
-    const his = await request<FriendsBody>(app, 'GET', '/user/friends', { token: bob.token });
-    expect(his.body.friends.map((f) => f.username)).toEqual(['alice']);
+    const his = await friendsOf(bob, 'bob');
+    expect(his.body.friends.map((f) => f.handle.name)).toEqual(['alice']);
   });
 
   it('quota de 4 : après 4 inscriptions plus aucun lien libre ; le propriétaire peut l’augmenter', async () => {
@@ -160,7 +167,6 @@ describe('parrainage : inscription par lien', () => {
 
   it('les routes de parrainage exigent une session', async () => {
     expect((await request(app, 'GET', '/user/invites')).status).toBe(401);
-    expect((await request(app, 'GET', '/user/friends')).status).toBe(401);
   });
 
   it('supprimer le compte du filleul laisse le lien « utilisé » sans pseudo', async () => {
@@ -169,7 +175,7 @@ describe('parrainage : inscription par lien', () => {
     const used = (await invites(alice)).body.invites.filter((invite) => invite.state === 'used');
     expect(used).toHaveLength(1);
     expect(used[0]?.invitee).toBeNull();
-    const friends = await request<FriendsBody>(app, 'GET', '/user/friends', { token: alice.token });
+    const friends = await friendsOf(alice, 'alice');
     expect(friends.body.friends).toEqual([]);
   });
 

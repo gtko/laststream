@@ -37,8 +37,7 @@ describe('watch party sous Node', () => {
     expect([501, 404]).toContain(res.status);
   });
 
-  it('les autres routes sociales fonctionnent sous Node (amis, parrainage, masqués)', async () => {
-    expect((await request(app, 'GET', '/user/friends', { token: alice.token })).status).toBe(200);
+  it('les autres routes sociales fonctionnent sous Node (parrainage, masqués)', async () => {
     expect((await request(app, 'GET', '/user/invites', { token: alice.token })).status).toBe(200);
     expect((await request(app, 'GET', `/user/profiles/${alice.profile}/hidden`, { token: alice.token })).status).toBe(200);
   });

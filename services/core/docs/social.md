@@ -5,7 +5,7 @@ Fonctions sociales côté serveur : parrainage, amis, présence, bibliothèques 
 Deux générations coexistent :
 
 - **Social v2** (section suivante, routes `/user/social/*`) : l'entité sociale est le **profil**. C'est l'API à utiliser.
-- **v1** (sections 2 et 3, routes `/user/friends*` et `/user/presence`) : niveau compte, conservée pour compatibilité. Ses données ne sont pas synchronisées avec la v2.
+- **v1** : parrainage, visibilité de la bibliothèque, titres masqués et salons n'ont pas d'équivalent v2 et restent en v1. Les routes d'amis et de présence par compte (`/user/friends*` sauf la bibliothèque, `/user/presence`) ont été **retirées** : l'application passe par `/user/social`. Reste `GET /user/friends/:username/library`, à retirer après déploiement de l'application qui lit la bibliothèque d'un ami par pid (section 4).
 
 ## Conventions
 
@@ -132,7 +132,7 @@ Les ticket, mise à niveau et trames sont en mémoire : elles repartent de zéro
 
 ### Compatibilité v1
 
-- `/user/friends*` et `/user/presence` gardent leur forme (sections 2 et 3). Ils ne lisent et n'écrivent que `friendships` et `presence` (niveau compte), jamais `profile_friendships` ni `profile_presence`.
+- Les routes `/user/friends` (liste, demandes, acceptation, suppression) et `/user/presence` n'existent plus (sections 2 et 3). Les tables `friendships` et `presence` (niveau compte) servent encore au parrainage, à la bibliothèque v1 d'un ami et à l'administration.
 - Une amitié créée en v1 n'apparaît pas en v2, et réciproquement. Une présence v1 n'est pas visible en v2. Le contrat prévoyait un mappage des routes v1 sur le profil principal : il n'est pas implémenté.
 - Le parrainage (section 1) crée une amitié de compte uniquement : en v2, le filleul n'est pas ami du parrain tant que l'un des deux n'a pas envoyé de demande par handle.
 - La bibliothèque d'un ami a la même forme d'élément en v1 (`GET /user/friends/:username/library`) et en v2 (`GET /user/social/friends/:pid/library`). La visibilité `private` / `friends` vaut dans les deux cas.
@@ -232,46 +232,9 @@ Révoque un lien **non utilisé** : l'ancien code cesse de fonctionner et l'empl
 
 `{ "quota": 0..100 }` → `200 { "username", "quota" }`. `403 owner_only` pour tout autre compte, `404 account_not_found`. Réduire le quota supprime les liens libres en trop, jamais un lien utilisé.
 
-## 2. Amis (v1, compatibilité)
+## 2. Amis et présence (retirés)
 
-Routes au niveau du compte, sur la table `friendships`. Elles ne voient pas les amitiés de profil de la v2 (voir Social v2). Identifiés par **pseudo exact** (pas de recherche partielle).
-
-| Route | Effet |
-| --- | --- |
-| `GET /user/friends` | `{ friends, incoming, outgoing }` |
-| `POST /user/friends/requests` `{ "username" }` | Demande. `201 {status:"sent"}` ; `200 {status:"accepted"}` si l'autre avait déjà demandé |
-| `POST /user/friends/requests/:username/accept` | Accepte une demande reçue (`204`) |
-| `DELETE /user/friends/requests/:username` | Refuse une demande reçue ou annule une demande envoyée (`204`) |
-| `DELETE /user/friends/:username` | Supprime un ami (`204`) |
-
-Erreurs : `404 user_not_found`, `400 cannot_befriend_self`, `409 already_friends`, `409 request_pending`, `404 request_not_found`, `404 friend_not_found`, `429 friend_limit_reached` (200 amis, 50 demandes envoyées).
-
-Élément de `friends` :
-
-```json
-{ "username": "bob", "avatarColor": "#3b82f6", "status": "watching", "since": "…",
-  "watching": { "type": "series", "tmdbId": 1399, "imdbId": null, "title": "Game of Thrones", "season": 2, "episode": 4 } }
-```
-
-`status` : `online`, `watching` (titre dans `watching`) ou `offline`. `incoming` / `outgoing` : `{ username, avatarColor, requestedAt }`.
-
-## 3. Présence (v1, compatibilité)
-
-Table `presence` (niveau compte). La v2 utilise `PUT` et `DELETE /user/social/presence` et la table `profile_presence`.
-
-### `PUT /user/presence`
-
-Battement de cœur léger, à envoyer **toutes les 30 à 60 s** tant que l'application est ouverte (un seul UPSERT côté serveur) :
-
-```json
-{ "profileId": "<profil actif>", "watching": { "type": "series", "tmdbId": 1399, "title": "Game of Thrones", "season": 2, "episode": 4 }, "invisible": false }
-```
-
-- `watching` : `null` ou absent = simplement en ligne. `tmdbId` ou `imdbId` requis. Les amis voient « en train de regarder : titre ».
-- Sans nouveau battement pendant **90 s**, le compte apparaît hors ligne.
-- Un **profil enfant n'annonce jamais de titre** (seulement « en ligne »).
-- `invisible: true` : apparaît hors ligne à ses amis.
-- `DELETE /user/presence` (`204`) : hors ligne immédiat (fermeture de l'application).
+Les routes de v1 `GET /user/friends`, `POST /user/friends/requests`, `POST /user/friends/requests/:username/accept`, `DELETE /user/friends/requests/:username`, `DELETE /user/friends/:username`, `PUT /user/presence` et `DELETE /user/presence` ont été supprimées : plus aucun client ne les appelle. Utiliser `/user/social/friends`, `/user/social/requests` et `/user/social/presence` (Social v2). Le parrainage continue de créer une amitié de **compte** (table `friendships`).
 
 ## 4. Bibliothèques partagées
 
@@ -281,7 +244,7 @@ Chaque titre de bibliothèque porte `visibility` : `private` (défaut) ou `frien
 | --- | --- |
 | `PUT /user/profiles/:id/library/:type/:itemId/visibility` `{ "visibility" }` | Un titre (`204`, `404 library_item_not_found`) |
 | `PUT /user/profiles/:id/library/visibility` `{ "visibility", "type"? }` | Toute la bibliothèque, ou tous les films / séries : `200 { "updated": n }` |
-| `GET /user/friends/:username/library?type=&limit=&offset=` | Bibliothèque visible d'un ami (v1) |
+| `GET /user/friends/:username/library?type=&limit=&offset=` | Bibliothèque visible d'un ami (v1, **à retirer après déploiement de l'application** qui lit désormais `GET /user/social/friends/:pid/library`) |
 
 - Lecture d'un ami : titres en visibilité `friends` de ses profils **non enfants**, fusionnés sans doublon. `limit` 1 à 100 (défaut 50), `offset` ≥ 0. Réponse : `{ items: [{ type, tmdbId, imdbId, title, poster, addedAt }], total, limit, offset }`.
 - Un non-ami et un pseudo inconnu reçoivent la **même** réponse `404 friend_not_found` (l'existence des comptes n'est pas révélée).
@@ -296,7 +259,6 @@ Remplace les réglages découpés `homeHidden`, `homeHidden0..11` (plafond ≈ 4
 | `GET /user/profiles/:id/hidden?q=&limit=&cursor=` | Liste paginée, du plus récent au plus ancien |
 | `PUT /user/profiles/:id/hidden` | Masque des titres (500 par appel) → `{ "total" }` |
 | `POST /user/profiles/:id/hidden/remove` `{ "keys": [...] }` | Réaffiche (500 clés par appel) → `{ "removed" }` |
-| `DELETE /user/profiles/:id/hidden/:key` | Réaffiche un titre (`204`) |
 
 - `GET` : `limit` 1 à 500 (défaut 100) ; `q` filtre par titre (sous-chaîne, sans casse). Réponse `{ items: [{ key, title, poster, addedAt }], total, nextCursor }`. Pour la page suivante, renvoyer `cursor=<nextCursor>` ; `nextCursor: null` = fin. `total` tient compte de `q`.
 - `PUT` : `{ "entries": [{ "key", "title", "poster"?, "addedAt"? }] }` (`addedAt` en millisecondes ; absent = maintenant). Un titre déjà masqué garde sa date d'origine. `409 hidden_limit_reached` au-delà de 20 000 (rien n'est écrit).
