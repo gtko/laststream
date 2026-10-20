@@ -18,11 +18,22 @@ vi.mock('hls.js', () => {
   return { default: FakeHls };
 });
 
-type Show = { id: number; name: string; poster: string; backdrop: string; airings: Airing[]; platform: string; next: null; aliases: string[] };
+type Show = {
+  id: number; name: string; poster: string; backdrop: string; airings: Airing[]; platform: string; next: { date: string } | null; aliases: string[];
+  genres?: number[]; popularity?: number; overview?: string;
+};
 type Known = { id: number; name: string; poster: string; backdrop: string; aliases: string[] };
+type Hero = { show: Show; airing: Airing | null; tonight: boolean };
 
 let tonightTile: (a: Airing, known: Known | null, now: number) => string;
 let showCard: (s: Show, now: number) => string;
+let heroShow: (shows: Show[], now: number) => Hero | null;
+let heroHTML: (h: Hero, now: number) => string;
+let genreTabs: (shows: Show[]) => unknown[];
+let ofGenre: (shows: Show[], genre: 'all' | number) => Show[];
+let weekPicks: (shows: Show[], now: number, max?: number) => Show[];
+let nextCardInner: (d: unknown, airings: Airing[], platform: string, pr: unknown, now: number) => string;
+let dayWord: (sec: number, now: number) => string;
 
 beforeAll(async () => {
   // Le module lit le DOM de l'application au chargement : on monte la page d'accueil comme les autres tests d'interface.
@@ -31,9 +42,17 @@ beforeAll(async () => {
   const mod = await import('../src/ui/shows.js');
   tonightTile = mod.tonightTile;
   showCard = mod.showCard;
+  heroShow = mod.heroShow;
+  heroHTML = mod.heroHTML;
+  genreTabs = mod.genreTabs;
+  ofGenre = mod.ofGenre;
+  weekPicks = mod.weekPicks;
+  nextCardInner = mod.nextCardInner;
+  dayWord = mod.dayWord;
 });
 
 const at = (h: number, m: number) => new Date(2026, 9, 20, h, m).getTime() / 1000;
+const DAY = 86400;
 const TF1: GuideChannel = { epgId: 'fr:TF1.fr', playId: 'fr:TF1.fr', name: 'TF1', logo: 'https://logo.example/tf1.png', num: 1 };
 const M6: GuideChannel = { epgId: 'fr:M6.fr', playId: 'fr:M6.fr', name: 'M6', logo: '', num: 6 };
 const airing = (channel: GuideChannel, title: string, start: number, stop: number, category = 'Divertissement', icon = ''): Airing =>
@@ -149,3 +168,151 @@ describe('« Émissions du moment » : affiche', () => {
     expect(card.getAttribute('aria-label')).toBe('Q&A "<script>", Émission');
   });
 });
+
+// ---- Page « Émissions TV » : héros, onglets de genre, incontournables (fonctions pures, heure injectée) ----
+const show = (over: Partial<Show> = {}): Show => ({
+  id: 1, name: 'Émission', poster: '', backdrop: '/b.jpg', airings: [], platform: '', next: null, aliases: [], genres: [], popularity: 0, overview: 'Synopsis.', ...over,
+});
+
+describe('« L’émission de la soirée » : héros', () => {
+  it('prend la première émission (ordre de la page) diffusée entre 20 h 30 et 22 h, avec un fond', () => {
+    const shows: Show[] = [
+      show({ id: 1, name: 'Sans fond', backdrop: '', popularity: 999, airings: [airing(TF1, 'A', at(21, 0), at(22, 0))] }),
+      show({ id: 2, name: 'Demain', popularity: 90, airings: [airing(TF1, 'B', at(21, 0) + DAY, at(22, 0) + DAY)] }),
+      show({ id: 3, name: 'Tôt', popularity: 80, airings: [airing(M6, 'C', at(20, 0), at(20, 50))] }),
+      show({ id: 4, name: 'Ce soir', popularity: 10, airings: [airing(M6, 'D', at(21, 10), at(22, 45))] }),
+      show({ id: 5, name: 'Après 22 h', popularity: 70, airings: [airing(TF1, 'E', at(22, 0), at(23, 0))] }),
+    ];
+    const h = heroShow(shows, at(18, 0))!;
+    expect(h.show.id).toBe(4);
+    expect(h.tonight).toBe(true);
+    expect(h.airing!.title).toBe('D');
+  });
+
+  it('à défaut, la plus populaire avec un fond ; null sans aucun fond', () => {
+    const shows: Show[] = [
+      show({ id: 1, backdrop: '', popularity: 999 }),
+      show({ id: 2, popularity: 90, airings: [airing(TF1, 'B', at(21, 0) + DAY, at(22, 0) + DAY)] }),
+      show({ id: 3, popularity: 80 }),
+    ];
+    const h = heroShow(shows, at(18, 0))!;
+    expect(h.show.id).toBe(2);
+    expect(h.tonight).toBe(false);
+    expect(h.airing!.title).toBe('B');
+    expect(heroShow([show({ backdrop: '' })], at(18, 0))).toBeNull();
+  });
+
+  it('ce soir : surtitre, titre h1 (cible du focus), diffusion, fiche et suivi', () => {
+    const s = show({ id: 1003, name: 'Top Chef', overview: 'Cuisine.', airings: [airing(M6, 'Top Chef', at(21, 10), at(23, 15))] });
+    const root = mountAll(heroHTML({ show: s, airing: s.airings[0], tonight: true }, at(21, 0)));
+    expect(root.querySelector('.sv-kicker')!.textContent).toBe('L’émission de la soirée');
+    const h1 = root.querySelector('h1')!;
+    expect(h1.id).toBe('svc-title');
+    expect(h1.getAttribute('tabindex')).toBe('-1');
+    expect(h1.textContent).toBe('Top Chef');
+    expect(root.querySelector('.sv-hero-line')!.textContent).toBe('Ce soir 21:10 · M6 · 2 h 05');
+    expect(root.querySelector('.sv-hero-syn')!.textContent).toBe('Cuisine.');
+    expect(root.querySelector('img')!.getAttribute('src')).toBe('https://image.tmdb.org/t/p/w1280/b.jpg');
+    expect(root.querySelector('[data-showopen="1003"]')!.textContent).toContain('Voir la fiche');
+    expect(root.querySelector('[data-showwatch]')).toBeNull();
+    expect(root.querySelector('[data-follow="tv:1003"]')!.textContent).toContain('Me prévenir');
+  });
+
+  it('en direct : « Regarder en direct » à la place du suivi, ligne « En direct »', () => {
+    const s = show({ id: 1001, name: 'La France a un incroyable talent', airings: [airing(TF1, 'LFAT', at(21, 10), at(23, 15))] });
+    const root = mountAll(heroHTML({ show: s, airing: s.airings[0], tonight: true }, at(21, 30)));
+    expect(root.querySelector('.sv-hero-line')!.textContent).toBe('En direct · TF1 · 2 h 05');
+    expect(root.querySelector('[data-showwatch="fr:TF1.fr"]')!.textContent).toContain('Regarder en direct');
+    expect(root.querySelector('[data-follow]')).toBeNull();
+  });
+
+  it('à la une : sans diffusion ce soir, la ligne reprend la plateforme et le prochain épisode', () => {
+    const s = show({ id: 1002, name: 'LOL : qui rit, sort !', platform: 'Prime Video', next: { date: '2026-10-25' } });
+    const root = mountAll(heroHTML({ show: s, airing: null, tonight: false }, at(21, 0)));
+    expect(root.querySelector('.sv-kicker')!.textContent).toBe('À la une');
+    expect(root.querySelector('.sv-hero-line')!.textContent).toContain('Prime Video');
+    expect(root.querySelector('.sv-hero-syn')!.textContent).toBe('Synopsis.');
+  });
+});
+
+describe('onglets de genre et incontournables', () => {
+  it('onglets : seulement les genres présents, dans l’ordre voulu ; filtre par genre', () => {
+    const shows: Show[] = [
+      show({ id: 1, genres: [10764, 18] }),
+      show({ id: 2, genres: [35] }),
+      show({ id: 3, genres: [] }),
+      show({ id: 4, genres: undefined }), // entrée mise en cache avant le champ genres
+    ];
+    expect(genreTabs(shows)).toEqual([[10764, 'Téléréalité'], [35, 'Divertissement']]);
+    expect(ofGenre(shows, 'all')).toHaveLength(4);
+    expect(ofGenre(shows, 10764).map((s) => s.id)).toEqual([1]);
+    expect(ofGenre(shows, 99)).toEqual([]);
+  });
+
+  it('incontournables : les plus populaires avec une diffusion ou un épisode dans les 7 jours, six au plus', () => {
+    const now = at(21, 0);
+    const soon = show({ id: 1, popularity: 5, airings: [airing(TF1, 'A', now + 3 * DAY, now + 3 * DAY + 3600)] });
+    const far = show({ id: 2, popularity: 99, airings: [airing(TF1, 'B', now + 9 * DAY, now + 9 * DAY + 3600)] });
+    const next = show({ id: 3, popularity: 50, next: { date: '2026-10-22' } });
+    const past = show({ id: 4, popularity: 70, next: { date: '2026-10-10' } });
+    expect(weekPicks([far, soon, next, past], now).map((s) => s.id)).toEqual([3, 1]);
+    const many = Array.from({ length: 8 }, (_, i) => show({ id: 10 + i, popularity: i, airings: [airing(TF1, 'X', now + DAY, now + DAY + 3600)] }));
+    expect(weekPicks(many, now)).toHaveLength(6);
+  });
+});
+
+describe('« Prochaine diffusion » : carte de la fiche', () => {
+  const prov = (flat: string[], free: string[]) => ({
+    flatrate: flat.map((name) => ({ name, logo: '' })), free: free.map((name) => ({ name, logo: '' })), rent: [], buy: [], link: '',
+  });
+
+  it('ce soir : jour, heure, chaîne, canal, durée et délai', () => {
+    const a = airing(TF1, 'Talk', at(21, 10), at(23, 15));
+    const root = mountAll(nextCardInner({ next: null }, [a], '', null, at(18, 0)));
+    expect(root.querySelector('.sf-next-k')!.textContent).toBe('Prochaine diffusion');
+    expect(root.querySelector('.sf-next-big')!.textContent).toBe('Ce soir 21:10');
+    expect(root.querySelector('.sf-next-sub')!.textContent).toBe('TF1 · canal 1 · 2 h 05');
+    expect(root.querySelector('.sf-next-acc')!.textContent).toBe('Dans 3 h 10 min');
+    expect(root.querySelector('.sf-bar')).toBeNull();
+    expect(root.querySelector('.sf-next-where')).toBeNull();
+  });
+
+  it('en direct : heure de fin et barre de progression', () => {
+    const a = airing(TF1, 'Talk', at(21, 10), at(23, 15));
+    const root = mountAll(nextCardInner({ next: null }, [a], '', null, at(21, 30)));
+    expect(root.querySelector('.sf-next-acc')!.textContent).toBe('En direct jusqu’à 23:15');
+    expect(root.querySelector('.sf-bar > span')!.getAttribute('style')).toBe('width:16%');
+  });
+
+  it('demain et plus tard : « Demain » ou jour de la semaine ; replay selon les fournisseurs', () => {
+    const now = at(18, 0);
+    const tomorrow = airing(M6, 'Talk', at(21, 10) + DAY, at(22, 0) + DAY);
+    const r1 = mountAll(nextCardInner({ next: null }, [tomorrow], '', prov([], ['TF1+']), now));
+    expect(r1.querySelector('.sf-next-big')!.textContent).toBe('Demain 21:10');
+    expect(r1.querySelector('.sf-next-sub')!.textContent).toBe('M6 · canal 6 · 50 min');
+    expect(r1.querySelector('.sf-next-where')!.textContent).toBe('Replay sur TF1+');
+    const later = airing(M6, 'Talk', at(21, 10) + 3 * DAY, at(22, 0) + 3 * DAY);
+    const r2 = mountAll(nextCardInner({ next: null }, [later], '', null, now));
+    expect(r2.querySelector('.sf-next-big')!.textContent).toMatch(/^(Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche) \d{1,2} 21:10$/);
+    expect(dayWord(at(21, 10), at(9, 0))).toBe('Ce soir');
+    expect(dayWord(at(9, 30), at(8, 0))).toBe('Aujourd’hui');
+  });
+
+  it('sans diffusion : nouvel épisode avec la plateforme, plateforme seule, sinon carte vide', () => {
+    const next = { season: 3, episode: 1, name: 'Nouvelle saison', date: '2026-10-25', still: '', runtime: 0, overview: '' };
+    const r = mountAll(nextCardInner({ next }, [], 'Prime Video', prov(['Prime Video'], []), at(18, 0)));
+    expect(r.querySelector('.sf-next-k')!.textContent).toBe('Nouvel épisode');
+    expect(r.querySelector('.sf-next-big')!.textContent).toBe('25 octobre');
+    expect(r.querySelector('.sf-next-sub')!.textContent).toBe('S3 · É1');
+    expect(r.querySelector('.sf-next-where')!.textContent).toBe('Streaming sur Prime Video');
+    const plat = mountAll(nextCardInner({ next: null }, [], 'Prime Video', null, at(18, 0)));
+    expect(plat.querySelector('.sf-next-big')!.textContent).toBe('Prime Video');
+    expect(nextCardInner({ next: null }, [], '', null, at(18, 0))).toBe('');
+  });
+});
+
+/** Monte un HTML de section complet (pas une carte) et renvoie son conteneur. */
+function mountAll(html: string): HTMLElement {
+  document.body.innerHTML = '<div id="host">' + html + '</div>';
+  return document.getElementById('host') as HTMLElement;
+}
