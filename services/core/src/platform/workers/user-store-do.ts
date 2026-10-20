@@ -1,6 +1,7 @@
 import type { DurableObjectState, WebSocket as CfWebSocket } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
+import { type SqlStats, sqlStatsOf } from '../../admin/ops-stats.js';
 import { createRateLimiter } from '../../rate-limit.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
@@ -141,6 +142,17 @@ export class UserStoreDO extends DurableObject {
   /** Migration des données (route /__admin/, protégée par ADMIN_SECRET côté Worker) : voir admin/routes.ts. */
   admin(operation: AdminOperation): Promise<unknown> {
     return runAdminOperation(this.db, operation, this.socialStore);
+  }
+
+  /** Taille de la base SQLite et lignes par table, pour /admin/storage (lecture seule ; taille null si indisponible). */
+  opsSqlStats(): SqlStats {
+    let sizeBytes: number | null;
+    try {
+      sizeBytes = this.ctx.storage.sql.databaseSize;
+    } catch {
+      sizeBytes = null;
+    }
+    return sqlStatsOf(this.db, sizeBytes);
   }
 
   // Flux temps réel social (GET /user/social/live)

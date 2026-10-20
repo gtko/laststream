@@ -2,6 +2,7 @@ import type { AllDebridClient } from './sources/alldebrid.js';
 import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { ThumbOptions } from './lt/thumbs/index.js';
 import type { CacheAdmin, TvAdmin } from './admin/cache-types.js';
+import type { OpsPorts } from './admin/ops-stats.js';
 import type { MetricsService } from './metrics/core.js';
 import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { LocalProwlarrProvider } from './sources/local-prowlarr.js';
@@ -41,6 +42,8 @@ export interface AppDeps {
   adminRateLimits?: Partial<{ read: number; write: number; elevate: number }>;
   /** API TV d'administration (dernier cron, relance). Absente : les routes /admin/tv répondent 501. */
   tvAdmin?: TvAdmin;
+  /** Ports d'exploitation (Workers : buckets R2 en lecture, base SQLite du Durable Object). Absents : stockage « indisponible » (null). */
+  ops?: OpsPorts;
   /** Limites /user/* par minute : lectures et écritures par IP, routes sensibles par IP, et /login par nom d'utilisateur ; authPerIp : tentatives /login et /register par IP sur 15 minutes. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   /**

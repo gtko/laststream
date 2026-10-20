@@ -13,6 +13,7 @@ import { parseWith, UserApiError } from '../user/validation.js';
 import { RESET_TTL_MS } from '../user/admin-store.js';
 import { isCachePrefix } from './cache-types.js';
 import { registerAnnouncementAdminRoutes } from './ops-announcements.js';
+import { registerOpsRoutes } from './ops-platform.js';
 import { ELEVATION_TTL_MS, signElevation, verifyElevation } from './elevation.js';
 import type { MaintenanceGate } from './maintenance.js';
 import {
@@ -432,6 +433,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   });
 
   registerAnnouncementAdminRoutes(router, { owner, audit, admin });
+  registerOpsRoutes(router, { deps, owner, audit, metrics: metricsOf, caches: cachesOf });
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');
