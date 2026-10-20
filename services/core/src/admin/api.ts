@@ -27,6 +27,7 @@ import {
   reportIdParam,
   reportListQuery,
   roomIdParam,
+  sessionIdParam,
   settingsPatch,
 } from './validation.js';
 
@@ -198,6 +199,18 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     const target = await targetAccount(c);
     await audit(session, 'account.revoke_sessions', target.username, { accountId: target.id });
     await users().deleteAllSessions(target.id);
+    return sendEmpty(c, 204);
+  });
+
+  /** Révoque une session du compte (identifiant `sessions[].id` du détail). 404 si elle n'appartient pas à ce compte. */
+  router.delete('/accounts/:id/sessions/:sid', async (c) => {
+    const session = await owner(c);
+    elevated(c, session);
+    const target = await targetAccount(c);
+    const sessionId = parseWith(sessionIdParam, c.req.param('sid'));
+    if (!(await admin().hasSession(target.id, sessionId))) throw new UserApiError(404, 'session_not_found');
+    await audit(session, 'account.session.revoke', target.username, { accountId: target.id, sessionId });
+    await admin().revokeSession(target.id, sessionId);
     return sendEmpty(c, 204);
   });
 

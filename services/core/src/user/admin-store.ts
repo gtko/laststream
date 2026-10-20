@@ -1,4 +1,5 @@
 import { type AppSettings, readAppSettings, writeAppSettings } from './app-settings.js';
+import { hashSessionToken } from './crypto.js';
 import type { SqlDb, SqlParam, SqlRow } from './sql.js';
 
 /**
@@ -11,6 +12,8 @@ export const MAX_AUDIT_ROWS = 10_000;
 const MAX_TREE_ACCOUNTS = 5_000;
 const MAX_REPORT_ROWS = 2_000;
 export const RESET_TTL_MS = 24 * 3600_000;
+/** Un compte est « en ligne » si sa dernière présence date de moins de deux minutes. */
+export const ONLINE_WINDOW_MS = 2 * 60_000;
 
 export type AccountStatus = 'active' | 'suspended';
 
@@ -25,10 +28,25 @@ export interface AdminAccount {
   referrer: string | null;
   /** Dernière trace d'activité (présence, connexion, progression), ou null. */
   lastActivityAt: string | null;
+  /** Présence (battement de cœur) de moins de deux minutes. */
+  online: boolean;
+  /** Sessions ouvertes et non expirées. */
+  sessionCount: number;
   profileCount: number;
   libraryCount: number;
   inviteQuota: number;
   invitesUsed: number;
+}
+
+/** Session ouverte d'un compte. Ni empreinte ni jeton : `id` est un identifiant public dérivé (voir `sessionRef`). */
+export interface AdminSession {
+  id: string;
+  /** User-agent enregistré à la connexion : aucun n'est stocké aujourd'hui, donc toujours null. */
+  device: string | null;
+  createdAt: string;
+  /** Pas de suivi par session : la dernière activité connue est celle de la connexion. */
+  lastSeenAt: string;
+  expiresAt: string;
 }
 
 export interface AccountListQuery {
@@ -47,8 +65,9 @@ export interface AccountListQuery {
 export interface AdminAccountDetail {
   account: AdminAccount;
   profiles: { id: string; name: string; isKid: boolean; hasPin: boolean; createdAt: string; libraryCount: number }[];
-  invitees: { username: string; usedAt: string | null }[];
-  sessions: number;
+  libraryCount: number;
+  invitees: { id: string; username: string; usedAt: string | null }[];
+  sessions: AdminSession[];
 }
 
 export interface ReferralNode {
@@ -99,21 +118,37 @@ export interface RegisteredRoom {
 
 const LIKE_ESCAPE = /[\\%_]/g;
 
+/** Colonnes d'un compte. Premier paramètre lié : l'instant courant (ISO), pour ne compter que les sessions non expirées. */
 const ACCOUNT_COLUMNS = `
   a.id, a.username, a.is_owner, a.created_at, a.suspended_at, a.invite_quota,
   (SELECT ia.username FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id LIMIT 1) AS referrer,
   (SELECT COUNT(*) FROM profiles p WHERE p.account_id = a.id) AS profile_count,
   (SELECT COUNT(*) FROM library_items l JOIN profiles p ON p.id = l.profile_id WHERE p.account_id = a.id AND l.removed = 0) AS library_count,
   (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL) AS invites_used,
+  (SELECT seen_at FROM presence WHERE account_id = a.id) AS seen_at,
+  (SELECT COUNT(*) FROM sessions s WHERE s.account_id = a.id AND s.expires_at > ?) AS session_count,
   MAX(
     COALESCE((SELECT seen_at FROM presence WHERE account_id = a.id), ''),
     COALESCE((SELECT MAX(created_at) FROM sessions WHERE account_id = a.id), ''),
     COALESCE((SELECT MAX(pr.updated_at) FROM progress pr JOIN profiles p ON p.id = pr.profile_id WHERE p.account_id = a.id), '')
   ) AS last_activity`;
 
-function toAdminAccount(row: SqlRow): AdminAccount {
+/** Identifiant public d'une session, dérivé de son empreinte stockée : il ne révèle ni l'empreinte ni le jeton. */
+export function sessionRef(tokenHash: string): string {
+  return hashSessionToken(tokenHash).slice(0, 24);
+}
+
+/** Empreinte stockée de la session désignée par son identifiant public, parmi celles du compte (hors prototype : pas exposée au RPC). */
+function sessionHashOf(db: SqlDb, accountId: string, sessionId: string): string | undefined {
+  const rows = db.prepare('SELECT token_hash FROM sessions WHERE account_id = ?').all(accountId);
+  const row = rows.find((candidate) => sessionRef(String(candidate.token_hash)) === sessionId);
+  return row === undefined ? undefined : String(row.token_hash);
+}
+
+function toAdminAccount(row: SqlRow, nowMs: number): AdminAccount {
   const suspendedAt = row.suspended_at === null || row.suspended_at === undefined ? null : String(row.suspended_at);
   const activity = String(row.last_activity ?? '');
+  const seen = row.seen_at === null || row.seen_at === undefined ? null : String(row.seen_at);
   return {
     id: String(row.id),
     username: String(row.username),
@@ -123,6 +158,8 @@ function toAdminAccount(row: SqlRow): AdminAccount {
     suspendedAt,
     referrer: row.referrer === null || row.referrer === undefined ? null : String(row.referrer),
     lastActivityAt: activity === '' ? null : activity,
+    online: seen !== null && nowMs - Date.parse(seen) < ONLINE_WINDOW_MS,
+    sessionCount: Number(row.session_count),
     profileCount: Number(row.profile_count),
     libraryCount: Number(row.library_count),
     inviteQuota: Number(row.invite_quota),
@@ -185,17 +222,19 @@ export class AdminStore {
       }
     }
     const pagedFilter = paged.length === 0 ? '' : ` WHERE ${paged.join(' AND ')}`;
+    const nowMs = Date.now();
     const rows = this.db
       .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${pagedFilter} ORDER BY a.created_at ${newest ? 'DESC' : 'ASC'}, a.id ${newest ? 'DESC' : 'ASC'} LIMIT ?`)
-      .all(...pagedParams, query.limit + 1);
-    const accounts = rows.slice(0, query.limit).map(toAdminAccount);
+      .all(new Date(nowMs).toISOString(), ...pagedParams, query.limit + 1);
+    const accounts = rows.slice(0, query.limit).map((row) => toAdminAccount(row, nowMs));
     const last = accounts[accounts.length - 1];
     return { accounts, nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null, total };
   }
 
   accountById(id: string): AdminAccount | undefined {
-    const row = this.db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.id = ?`).get(id);
-    return row === undefined ? undefined : toAdminAccount(row);
+    const nowMs = Date.now();
+    const row = this.db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a WHERE a.id = ?`).get(new Date(nowMs).toISOString(), id);
+    return row === undefined ? undefined : toAdminAccount(row, nowMs);
   }
 
   accountDetail(id: string): AdminAccountDetail | undefined {
@@ -217,11 +256,33 @@ export class AdminStore {
         libraryCount: Number(row.library_count),
       }));
     const invitees = this.db
-      .prepare('SELECT a.username, i.used_at FROM invites i JOIN accounts a ON a.id = i.used_by WHERE i.inviter_id = ? ORDER BY i.used_at')
+      .prepare('SELECT a.id, a.username, i.used_at FROM invites i JOIN accounts a ON a.id = i.used_by WHERE i.inviter_id = ? ORDER BY i.used_at')
       .all(id)
-      .map((row) => ({ username: String(row.username), usedAt: row.used_at === null ? null : String(row.used_at) }));
-    const sessions = Number(this.db.prepare('SELECT COUNT(*) AS n FROM sessions WHERE account_id = ?').get(id)?.n ?? 0);
-    return { account, profiles, invitees, sessions };
+      .map((row) => ({ id: String(row.id), username: String(row.username), usedAt: row.used_at === null ? null : String(row.used_at) }));
+    const sessions = this.db
+      .prepare('SELECT token_hash, created_at, expires_at FROM sessions WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC')
+      .all(id, new Date().toISOString())
+      .map((row): AdminSession => ({
+        id: sessionRef(String(row.token_hash)),
+        device: null,
+        createdAt: String(row.created_at),
+        lastSeenAt: String(row.created_at),
+        expiresAt: String(row.expires_at),
+      }));
+    return { account, profiles, libraryCount: account.libraryCount, invitees, sessions };
+  }
+
+  /** Vrai si la session (identifiant public) appartient au compte, expirée ou non. */
+  hasSession(accountId: string, sessionId: string): boolean {
+    return sessionHashOf(this.db, accountId, sessionId) !== undefined;
+  }
+
+  /** Révoque une session du compte. `false` si elle ne lui appartient pas. */
+  revokeSession(accountId: string, sessionId: string): boolean {
+    const tokenHash = sessionHashOf(this.db, accountId, sessionId);
+    if (tokenHash === undefined) return false;
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND token_hash = ?').run(accountId, tokenHash);
+    return true;
   }
 
   /** Forêt de parrainage : racines = comptes sans parrain (premier compte, liens « système »). */

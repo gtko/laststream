@@ -86,8 +86,11 @@ describe('/admin : comptes', () => {
     expect(detail.body.account.username).toBe('bob');
     expect(detail.body.profiles).toHaveLength(2);
     expect(detail.body.profiles.some((p: any) => p.isKid)).toBe(true);
-    expect(detail.body.invitees.map((i: any) => i.username)).toEqual(['carol']);
-    expect(detail.body.sessions).toBeGreaterThan(0);
+    expect(detail.body.invitees).toEqual([{ id: await idOf(rig, 'carol'), username: 'carol', usedAt: expect.any(String) }]);
+    expect(detail.body.sessions).toEqual([
+      { id: expect.stringMatching(/^[0-9a-f]{24}$/), device: null, createdAt: expect.any(String), lastSeenAt: expect.any(String), expiresAt: expect.any(String) },
+    ]);
+    expect(detail.body.account).toMatchObject({ online: false, sessionCount: 1 });
     expect(JSON.stringify(detail.body)).not.toMatch(SENSITIVE);
     expect((await rig.call('GET', `/admin/accounts/${crypto.randomUUID()}`)).status).toBe(404);
     expect((await rig.call('GET', '/admin/accounts/pas-un-uuid')).status).toBe(400);
@@ -147,6 +150,57 @@ describe('/admin : comptes', () => {
     expect((await request(rig.app, 'GET', '/user/me', { token: second.body.token })).status).toBe(401);
     // Le compte reste utilisable : une nouvelle connexion réussit.
     expect((await request(rig.app, 'POST', '/user/login', { body: { username: 'carol', password: PASSWORD } })).status).toBe(200);
+  });
+
+  it('révocation unitaire d\'une session : élévation exigée, 404 hors du compte, audit', async () => {
+    const carolId = await idOf(rig, 'carol');
+    const bobId = await idOf(rig, 'bob');
+    const second = await request<{ token: string }>(rig.app, 'POST', '/user/login', { body: { username: 'carol', password: PASSWORD } });
+    const before = (await rig.call<any>('GET', `/admin/accounts/${carolId}`)).body.sessions as { id: string }[];
+    expect(before).toHaveLength(2);
+    const [target] = before;
+    const path = `/admin/accounts/${carolId}/sessions/${target.id}`;
+
+    expect((await rig.call('DELETE', path)).status).toBe(403);
+    // Session de carol désignée sous le compte de bob, identifiant inconnu, identifiant mal formé : refusés, rien révoqué.
+    expect((await rig.call('DELETE', `/admin/accounts/${bobId}/sessions/${target.id}`, { elevation: await rig.elevate() })).status).toBe(404);
+    expect((await rig.call('DELETE', `/admin/accounts/${carolId}/sessions/${'0'.repeat(24)}`, { elevation: await rig.elevate() })).status).toBe(404);
+    expect((await rig.call('DELETE', `/admin/accounts/${carolId}/sessions/pas-une-session`, { elevation: await rig.elevate() })).status).toBe(400);
+    expect((await rig.call<any>('GET', `/admin/accounts/${carolId}`)).body.sessions).toHaveLength(2);
+
+    expect((await rig.call('DELETE', path, { elevation: await rig.elevate() })).status).toBe(204);
+    const after = (await rig.call<any>('GET', `/admin/accounts/${carolId}`)).body.sessions as { id: string }[];
+    expect(after.map((s) => s.id)).not.toContain(target.id);
+    expect(after).toHaveLength(1);
+    // Exactement une des deux sessions reste ouverte ; une seconde révocation de la même session donne 404.
+    const statuses = await Promise.all([carol.token, second.body.token].map(async (token) => (await request(rig.app, 'GET', '/user/me', { token })).status));
+    expect(statuses.sort()).toEqual([200, 401]);
+    expect((await rig.call('DELETE', path, { elevation: await rig.elevate() })).status).toBe(404);
+
+    const audit = await rig.call<{ entries: any[] }>('GET', '/admin/audit?action=account.session.revoke');
+    expect(audit.body.entries).toHaveLength(1);
+    expect(audit.body.entries[0]).toMatchObject({ actor: 'alice', target: 'carol', detail: { accountId: carolId, sessionId: target.id } });
+    expect(JSON.stringify(audit.body)).not.toMatch(SENSITIVE);
+  });
+
+  it('compteurs : sessions ouvertes et présence (deux minutes)', async () => {
+    const carolId = await idOf(rig, 'carol');
+    await request(rig.app, 'POST', '/user/login', { body: { username: 'carol', password: PASSWORD } });
+    const row = (await rig.call<{ accounts: any[] }>('GET', '/admin/accounts?q=carol')).body.accounts[0];
+    expect(row).toMatchObject({ username: 'carol', online: false, sessionCount: 2 });
+
+    await rig.backend.social().setPresence(carolId, carol.profile, null, false, new Date().toISOString());
+    expect((await rig.call<any>('GET', `/admin/accounts/${carolId}`)).body.account).toMatchObject({ online: true, sessionCount: 2 });
+    expect((await rig.call<{ accounts: any[] }>('GET', '/admin/accounts?q=carol')).body.accounts[0].online).toBe(true);
+
+    await rig.backend.social().setPresence(carolId, carol.profile, null, false, new Date(Date.now() - 3 * 60_000).toISOString());
+    expect((await rig.call<any>('GET', `/admin/accounts/${carolId}`)).body.account.online).toBe(false);
+  });
+
+  it('bibliothèque du compte dans le détail', async () => {
+    const bobId = await idOf(rig, 'bob');
+    await request(rig.app, 'PUT', `/user/profiles/${bob.profile}/library/movie/603`, { token: bob.token, body: { title: 'Matrix' } });
+    expect((await rig.call<any>('GET', `/admin/accounts/${bobId}`)).body.libraryCount).toBe(1);
   });
 
   it('suppression : compte et données disparus, élévation exigée', async () => {

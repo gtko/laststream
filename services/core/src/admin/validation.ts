@@ -18,6 +18,9 @@ const ISO_DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:
 
 export const accountIdParam = z.string().uuid();
 
+/** Identifiant public d'une session (24 caractères hexadécimaux, voir `sessionRef`). */
+export const sessionIdParam = z.string().regex(/^[0-9a-f]{24}$/);
+
 export const accountListQuery = z.object({
   q: z.string().trim().max(32).optional(),
   status: z.enum(['active', 'suspended']).optional(),
