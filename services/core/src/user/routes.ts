@@ -21,7 +21,8 @@ import {
   verifySecret,
 } from './crypto.js';
 import { continueWatching, normalizeProgress } from './progress.js';
-import { assertUnlocked, nowIso, profileOf, scopeOf, sessionOf } from './session.js';
+import { assertNotLocked, assertUnlocked, nowIso, profileOf, SESSION_TTL_MS, scopeOf, sessionOf } from './session.js';
+import { registerHouseholdRoutes } from './household-routes.js';
 import { countryCode } from './title-starts.js';
 import { parseTvSources, TV_SOURCES_PURPOSE } from './tv-sources.js';
 import { registerSocialRoutes } from './social-routes.js';
@@ -45,7 +46,7 @@ import {
 } from './store.js';
 import {
   createProfileSchema,
-  credentialsSchema,
+  loginSchema,
   registerSchema,
   deleteAccountSchema,
   passwordResetSchema,
@@ -69,8 +70,6 @@ import {
   assertAvatarAllowed,
 } from './validation.js';
 
-/** Session de connexion : 180 jours, renouvelée (rotation) par POST /user/refresh. */
-const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
 const DEFAULT_KID_MAX_AGE: KidMaxAge = 12;
 /** Blocage du PIN : après 5 tentatives échouées, 5 minutes sans vérification. */
 const PIN_MAX_FAILURES = 5;
@@ -94,6 +93,7 @@ const SENSITIVE_ROUTES: readonly { method: string; path: RegExp }[] = [
   { method: 'DELETE', path: /^\/account$/ },
   { method: 'POST', path: /^\/profiles\/[^/]+\/unlock$/ },
   { method: 'POST', path: /^\/profiles\/[^/]+\/import\/stremio$/ },
+  { method: 'POST', path: /^\/household-invites\/redeem$/ },
 ];
 
 /** Point de montage de l'API utilisateur. */
@@ -219,13 +219,31 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
       throw new UserApiError(403, 'bootstrap_token_invalid');
     }
     const passwordHash = await hashSecret(body.password);
-    const result = await users.createAccount({ username: body.username, passwordHash, allowSignup, inviteCode: body.invite, now: nowIso() });
-    if (!result.ok) throw new UserApiError(result.reason === 'username_taken' ? 409 : 403, result.reason);
+    const result = await users.createAccount({
+      username: body.username,
+      passwordHash,
+      allowSignup,
+      inviteCode: body.invite,
+      autoFriend: body.autoFriend,
+      now: nowIso(),
+    });
+    if (!result.ok) {
+      const status = result.reason === 'username_taken' ? 409 : result.reason === 'invite_expired' ? 410 : 403;
+      throw new UserApiError(status, result.reason);
+    }
     return sendJson(c, { account: result.account }, 201);
   });
 
+  /** Ouvre une session (libre, ou verrouillée sur un profil invité du foyer) et renvoie son jeton. */
+  async function issueSession(c: Ctx, users: UserRepo, accountId: string, profileId: string | null = null) {
+    const token = generateSessionToken();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+    await users.startSession(accountId, hashSessionToken(token), nowIso(), expiresAt, c.req.header('user-agent'), profileId);
+    return sendJson(c, { token, expiresAt });
+  }
+
   router.post('/login', async (c) => {
-    const body = parseWith(credentialsSchema, c.get('body'));
+    const body = parseWith(loginSchema, c.get('body'));
     if (deps.authLimiter === undefined) {
       const byUser = loginByUsername(body.username);
       if (!byUser.allowed) throw new UserApiError(429, 'rate_limited', undefined, byUser.retryAfterSec);
@@ -234,21 +252,33 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     }
     const users = db();
     const record = await users.findAccountRecord(body.username);
-    // Même coût de calcul que pour un compte existant : le délai ne révèle pas si le nom existe.
-    if (record === undefined) await hashSecret(body.password);
-    const valid = record !== undefined && (await verifySecret(body.password, record.passwordHash));
-    if (record === undefined || !valid) throw new UserApiError(401, 'invalid_credentials');
-    // Compte suspendu par l'administration (révélé seulement à qui connaît le mot de passe).
-    if (record.suspended) throw new UserApiError(403, 'account_suspended');
-    // Maintenance : seul le propriétaire peut se connecter (pour rouvrir le service depuis /admin).
-    if (!record.isOwner && maintenance !== undefined) {
+    if (record !== undefined) {
+      const valid = await verifySecret(body.password, record.passwordHash);
+      if (!valid) throw new UserApiError(401, 'invalid_credentials');
+      // Compte suspendu par l'administration (révélé seulement à qui connaît le mot de passe).
+      if (record.suspended) throw new UserApiError(403, 'account_suspended');
+      // Maintenance : seul le propriétaire peut se connecter (pour rouvrir le service depuis /admin).
+      if (!record.isOwner && maintenance !== undefined) {
+        const state = await maintenance.current();
+        if (state.enabled) return maintenanceResponse(c, state);
+      }
+      return issueSession(c, users, record.id);
+    }
+    // Pas de compte à ce nom : identifiant d'invité du foyer (session verrouillée sur son profil). Même coût de calcul
+    // que pour un compte existant : le délai ne révèle pas si le nom existe.
+    const invited = await users.profileLoginRecord(body.username);
+    if (invited === undefined) {
+      await hashSecret(body.password);
+      throw new UserApiError(401, 'invalid_credentials');
+    }
+    if (!(await verifySecret(body.password, invited.passwordHash))) throw new UserApiError(401, 'invalid_credentials');
+    if (invited.suspended) throw new UserApiError(403, 'account_suspended');
+    // Maintenance : tout identifiant d'invité attend la fin de la maintenance (seul le propriétaire se connecte).
+    if (maintenance !== undefined) {
       const state = await maintenance.current();
       if (state.enabled) return maintenanceResponse(c, state);
     }
-    const token = generateSessionToken();
-    const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    await users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt, c.req.header('user-agent'));
-    return sendJson(c, { token, expiresAt });
+    return issueSession(c, users, invited.accountId, invited.profileId);
   });
 
   /** Réinitialisation du mot de passe par lien à usage unique (émis par l'administration, valable 24 h) ; révoque toutes les sessions. */
@@ -284,21 +314,50 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
+  /**
+   * Déconnecte les autres sessions du compte. Depuis une session verrouillée sur un profil invité, seules les sessions de ce
+   * profil sont révoquées (l'hôte et les autres profils ne sont pas touchés).
+   */
   router.post('/logout-all', async (c) => {
     const users = db();
-    await users.deleteAllSessions((await sessionOf(users, c)).account.id);
+    const session = await sessionOf(users, c);
+    if (session.lockedProfileId !== null) await users.deleteProfileSessions(session.account.id, session.lockedProfileId);
+    else await users.deleteAllSessions(session.account.id);
     return sendEmpty(c, 204);
   });
 
+  /**
+   * `lockedProfileId` : profil auquel la session est verrouillée (invitation du foyer), sinon null. Une session verrouillée
+   * ne voit pas le pseudo du compte hôte : son identifiant de connexion d'invité en tient lieu (rôle membre, pas de propriété).
+   */
   router.get('/me', async (c) => {
-    const { account } = await sessionOf(db(), c);
-    return sendJson(c, { account: { ...account, role: account.isOwner ? 'owner' : 'member' } });
+    const users = db();
+    const session = await sessionOf(users, c);
+    if (session.lockedProfileId !== null) {
+      const profile = await users.findProfile(session.account.id, session.lockedProfileId);
+      const login = await users.loginOfProfile(session.lockedProfileId);
+      return sendJson(c, {
+        account: {
+          id: session.account.id,
+          username: login ?? '',
+          isOwner: false,
+          createdAt: profile?.createdAt ?? session.account.createdAt,
+          role: 'member',
+        },
+        lockedProfileId: session.lockedProfileId,
+      });
+    }
+    return sendJson(c, {
+      account: { ...session.account, role: session.account.isOwner ? 'owner' : 'member' },
+      lockedProfileId: null,
+    });
   });
 
   /** Change le mot de passe ; révoque les autres sessions. Le mot de passe actuel est exigé. */
   router.post('/password', async (c) => {
     const users = db();
     const session = await sessionOf(users, c);
+    assertNotLocked(session);
     const body = parseWith(passwordChangeSchema, c.get('body'));
     const record = await users.accountRecordById(session.account.id);
     if (record === undefined || !(await verifySecret(body.current, record.passwordHash))) {
@@ -312,6 +371,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   router.delete('/account', async (c) => {
     const users = db();
     const session = await sessionOf(users, c);
+    assertNotLocked(session);
     const body = parseWith(deleteAccountSchema, c.get('body'));
     const record = await users.accountRecordById(session.account.id);
     if (record === undefined || !(await verifySecret(body.password, record.passwordHash))) {
@@ -324,12 +384,16 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   // Profils
 
   router.get('/profiles', async (c) => {
-    const { account } = await sessionOf(db(), c);
-    // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil).
-    const adminId = account.isOwner ? await backend.admin().adminProfileId() : null;
+    const session = await sessionOf(db(), c);
+    const { account } = session;
+    const locked = session.lockedProfileId;
+    // Profil administrateur : annoncé au seul compte propriétaire (l'administration exige ce profil), jamais à une session invitée.
+    const adminId = account.isOwner && locked === null ? await backend.admin().adminProfileId() : null;
     // Profil principal : seul à gérer la configuration (sources, extensions, clés) ; les autres profils n'ont que leurs préférences.
-    const mainId = await backend.admin().mainProfileId(account.id);
-    const profiles = (await db().listProfiles(account.id)).map((p) => ({
+    // Session verrouillée sur un profil invité : seul ce profil est listé, sans rôle de principal.
+    const mainId = locked === null ? await backend.admin().mainProfileId(account.id) : null;
+    const visible = (await db().listProfiles(account.id)).filter((p) => locked === null || p.id === locked);
+    const profiles = visible.map((p) => ({
       ...publicProfile(p),
       isAdminProfile: adminId !== null && p.id === adminId,
       isMainProfile: mainId !== null && p.id === mainId,
@@ -344,6 +408,8 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
    */
   async function managerOf(users: UserRepo, c: Ctx, allowFirst: boolean) {
     const session = await sessionOf(users, c);
+    // Session verrouillée sur un profil invité : aucune gestion de profils, même pour le premier.
+    assertNotLocked(session);
     if (allowFirst && (await users.listProfiles(session.account.id)).length === 0) return session;
     const mainId = await backend.admin().mainProfileId(session.account.id);
     const actorId = c.req.header('x-profile-id');
@@ -380,6 +446,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const rawBody = c.get('body');
     const keys = rawBody !== null && typeof rawBody === 'object' ? Object.keys(rawBody) : [];
     const session = await sessionOf(users, c);
+    assertNotLocked(session);
     const profile = await profileOf(users, session.account, c);
     const account = session.account;
     // Exception : un profil adulte change son propre code PIN (jeton de son profil exigé) ; le reste passe par le principal.
@@ -788,6 +855,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   registerSocialV3Routes(router, deps, backend);
   registerSocialV2ActivityRoutes(router, deps, backend);
   registerDebridLinkRoutes(router, deps, backend);
+  registerHouseholdRoutes(router, deps, backend);
 
   router.all('*', () => {
     throw new UserApiError(404, 'not_found');

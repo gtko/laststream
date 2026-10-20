@@ -240,11 +240,14 @@ function principalPidOf(db: SqlDb, accountId: string): string | undefined {
  */
 export function linkInvitedPrincipals(db: SqlDb, accountId: string, now: number): void {
   const pairs: { inviter: string; invitee: string }[] = [];
-  const invitedBy = db.prepare('SELECT inviter_id FROM invites WHERE used_by = ? AND inviter_id IS NOT NULL').get(accountId) as
-    | { inviter_id: string }
-    | undefined;
+  // Un lien inscrit sans amitié automatique (auto_friend = 0, billet v28) ne lie pas les profils.
+  const invitedBy = db
+    .prepare('SELECT inviter_id FROM invites WHERE used_by = ? AND inviter_id IS NOT NULL AND auto_friend = 1')
+    .get(accountId) as { inviter_id: string } | undefined;
   if (invitedBy !== undefined) pairs.push({ inviter: invitedBy.inviter_id, invitee: accountId });
-  const invitees = db.prepare('SELECT used_by FROM invites WHERE inviter_id = ? AND used_by IS NOT NULL').all(accountId) as { used_by: string }[];
+  const invitees = db
+    .prepare('SELECT used_by FROM invites WHERE inviter_id = ? AND used_by IS NOT NULL AND auto_friend = 1')
+    .all(accountId) as { used_by: string }[];
   for (const row of invitees) pairs.push({ inviter: accountId, invitee: row.used_by });
   for (const { inviter, invitee } of pairs) {
     const a = principalPidOf(db, inviter);

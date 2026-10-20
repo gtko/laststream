@@ -158,10 +158,12 @@ describe('parrainage : inscription par lien', () => {
 
   it('vérification publique d’un lien : valide avec le pseudo du parrain, invalide une fois utilisé', async () => {
     const code = (await invites(alice)).body.invites[0]?.code ?? '';
-    expect((await request(app, 'GET', `/user/invites/check?code=${code}`)).body).toEqual({ valid: true, inviter: 'alice' });
+    const shown = (await request<{ valid: boolean; inviter: { name: string; handle: string; avatar: string | null } }>(app, 'GET', `/user/invites/check?code=${code}`)).body;
+    expect(shown).toMatchObject({ valid: true, inviter: { name: 'alice', avatar: null } });
+    expect(shown.inviter.handle).toMatch(/^alice#[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/);
     await register('bob', code);
-    expect((await request(app, 'GET', `/user/invites/check?code=${code}`)).body).toEqual({ valid: false, inviter: null });
-    expect((await request(app, 'GET', '/user/invites/check?code=inconnu-inconnu')).body).toEqual({ valid: false, inviter: null });
+    expect((await request(app, 'GET', `/user/invites/check?code=${code}`)).body).toEqual({ valid: false, reason: 'used' });
+    expect((await request(app, 'GET', '/user/invites/check?code=inconnu-inconnu')).body).toEqual({ valid: false, reason: 'unknown' });
     expect((await request(app, 'GET', '/user/invites/check')).status).toBe(400);
   });
 

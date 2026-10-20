@@ -7,7 +7,7 @@ import { createRateLimiter } from '../rate-limit.js';
 import type { UserBackend } from '../user/repo.js';
 import { guestAvatarOf } from '../user/avatar.js';
 import { userErrorHandler } from '../user/routes.js';
-import { assertUnlocked, sessionOf } from '../user/session.js';
+import { assertProfileAccess, assertUnlocked, sessionOf } from '../user/session.js';
 import { emitSocialEvent } from '../user/social-v2-events.js';
 import { convError } from '../user/social-v2-messages-routes.js';
 import { actorOf, pidParam } from '../user/social-v2-routes.js';
@@ -130,9 +130,11 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
   /** Profil choisi par le client (appartient au compte, déverrouillé si protégé par PIN). */
   async function profileFor(c: Ctx, profileId: string): Promise<{ account: Awaited<ReturnType<typeof sessionOf>>['account']; profile: ProfileRecord }> {
     const session = await sessionOf(users(), c);
+    // Session verrouillée sur un profil invité : seul ce profil, sans PIN à saisir (même règle que scopeOf).
+    assertProfileAccess(session, profileId);
     const profile = await users().findProfile(session.account.id, profileId);
     if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
-    assertUnlocked(c, session, profile, deps.secret);
+    if (session.lockedProfileId === null) assertUnlocked(c, session, profile, deps.secret);
     return { account: session.account, profile };
   }
 
@@ -178,6 +180,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     const query = parseWith(listSchema, queryParams(c));
     const session = await sessionOf(users(), c);
     if (query.profileId !== undefined) {
+      assertProfileAccess(session, query.profileId);
       const profile = await users().findProfile(session.account.id, query.profileId);
       if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
       if (profile.isKid) throw new UserApiError(403, 'kid_profile');
@@ -251,6 +254,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     const id = roomId(c);
     const session = await sessionOf(users(), c);
     const query = parseWith(infoQuerySchema, queryParams(c));
+    if (query.profileId !== undefined) assertProfileAccess(session, query.profileId);
     const info = await party.room(id).info();
     if (info === null) throw new UserApiError(404, 'room_not_found');
     if (info.visibility === 'public' && query.profileId !== undefined) {

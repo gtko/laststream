@@ -1,8 +1,8 @@
-import type { App } from '../http/app-env.js';
+import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
-import { nowIso, scopeOf, sessionOf } from './session.js';
+import { assertNotLocked, nowIso, scopeOf, sessionOf } from './session.js';
 import { MAX_HIDDEN_PER_PROFILE } from './social-store.js';
 import {
   bulkVisibilitySchema,
@@ -13,6 +13,7 @@ import {
   inviteCodeQuery,
   inviteQuotaSchema,
   inviteSentSchema,
+  inviteTicketSchema,
   usernameParam,
   visibilitySchema,
 } from './social-validation.js';
@@ -27,22 +28,49 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
   const users = () => backend.users();
   const social = () => backend.social();
 
+  /**
+   * Session d'un compte, sans verrou : le parrainage et les amis sont au niveau du compte. Une session verrouillée sur un
+   * profil invité reçoit 403 profile_locked (les routes sociales au niveau profil, elles, restent ouvertes à ce profil).
+   */
+  const openAccountSession = async (c: Ctx) => {
+    const session = await sessionOf(users(), c);
+    assertNotLocked(session);
+    return session;
+  };
+
   // Parrainage
 
   /** Les liens du compte (créés à la volée jusqu'au quota) : code, état libre / envoyé / utilisé, pseudo du filleul. */
   router.get('/invites', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     return sendJson(c, await social().listInvites(account.id, nowIso()));
   });
 
-  /** Vérifie un lien avant l'inscription (sans session) : `{ valid, inviter }`. */
+  /**
+   * Vérifie un lien avant l'inscription (sans session) : `{ valid: true, inviter, message, picks, expiresAt, number }`, ou
+   * `{ valid: false, reason }` (`expired`, `used`, `revoked`, `unknown`).
+   */
   router.get('/invites/check', async (c) => {
     const { code } = parseWith(inviteCodeQuery, queryParams(c));
-    return sendJson(c, await social().inviteInfo(code));
+    return sendJson(c, await social().inviteInfo(code, nowIso()));
   });
 
+  /**
+   * Message (280 caractères au plus) et coups de cœur (3 au plus) d'un billet du propriétaire ; un champ absent reste
+   * inchangé, `''` ou `[]` efface. 409 `invite_used` si le billet est utilisé.
+   */
+  router.put('/invites/:id', async (c) => {
+    const { account } = await openAccountSession(c);
+    const body = parseWith(inviteTicketSchema, c.get('body'));
+    const result = await social().updateTicket(account.id, String(c.req.param('id')), body);
+    if (result.result === 'not_found') throw new UserApiError(404, 'invite_not_found');
+    if (result.result === 'used') throw new UserApiError(409, 'invite_used');
+    return sendJson(c, { invite: result.invite });
+  });
+
+  /** Marque le billet « envoyé » : l'échéance est posée à maintenant + 14 jours. `sent: false` le remet libre. */
   router.put('/invites/:id/sent', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const { sent } = parseWith(inviteSentSchema, c.get('body'));
     const result = await social().setInviteSent(account.id, String(c.req.param('id')), sent, nowIso());
     if (result === 'not_found') throw new UserApiError(404, 'invite_not_found');
@@ -55,7 +83,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
    * révoqué par l'administration (il ne se régénère pas).
    */
   router.delete('/invites/:id', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const result = await social().revokeInvite(account.id, String(c.req.param('id')), nowIso());
     if (result.result === 'not_found') throw new UserApiError(404, 'invite_not_found');
     if (result.result === 'used') throw new UserApiError(409, 'invite_used');
@@ -66,7 +94,9 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Quota de liens d'un compte : propriétaire uniquement. */
   router.put('/accounts/:username/invite-quota', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const session = await sessionOf(users(), c);
+    assertNotLocked(session);
+    const { account } = session;
     if (!account.isOwner) throw new UserApiError(403, 'owner_only');
     const username = parseWith(usernameParam, c.req.param('username'));
     const { quota } = parseWith(inviteQuotaSchema, c.get('body'));
@@ -80,7 +110,7 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Bibliothèque visible d'un ami (titres en visibilité « friends » des profils non enfants), paginée. */
   router.get('/friends/:username/library', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const { account } = await openAccountSession(c);
     const username = parseWith(usernameParam, c.req.param('username'));
     const query = parseWith(friendLibraryQuery, queryParams(c));
     const page = await social().friendLibrary(account.id, username, query.type, query.limit, query.offset);

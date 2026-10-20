@@ -7,7 +7,7 @@ import { platform, runtimeEnv } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { generateSessionToken, hashSessionToken, verifySecret } from '../user/crypto.js';
 import type { AdminRepo, UserBackend, UserRepo } from '../user/repo.js';
-import { assertUnlocked, nowIso, type Session, sessionOf } from '../user/session.js';
+import { assertNotLocked, assertUnlocked, nowIso, type Session, sessionOf } from '../user/session.js';
 import { userErrorHandler } from '../user/routes.js';
 import { parseWith, UserApiError } from '../user/validation.js';
 import { RESET_TTL_MS } from '../user/admin-store.js';
@@ -91,6 +91,8 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
    */
   async function owner(c: Ctx): Promise<Session> {
     const session = await sessionOf(users(), c);
+    // Session verrouillée sur un profil invité (même compte propriétaire) : jamais d'administration.
+    assertNotLocked(session);
     if (!session.account.isOwner) throw new UserApiError(403, 'owner_only');
     const profileId = c.req.header('x-profile-id');
     if (profileId === undefined) throw new UserApiError(403, 'admin_profile_required');

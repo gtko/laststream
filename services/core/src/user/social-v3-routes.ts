@@ -454,6 +454,8 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   router.post('/social/share-links', async (c) => {
     const me = await actor(c);
     const input = parseWith(shareLinkSchema, c.get('body'));
+    // Une invitation réservée appartient au compte (parrainage) : refusée depuis une session verrouillée sur un profil invité.
+    if (input.withInvite && me.lockedProfileId !== null) throw new UserApiError(403, 'profile_locked');
     const note = cleanShareNote(input.note);
     if (note.issues.length > 0) throw invalid(note.issues);
     const title = input.title ?? (await store().titleOfMedia(input.type, input.tmdbId));

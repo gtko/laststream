@@ -5,7 +5,7 @@ import { signLiveTicket } from '../party/ticket.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { parseHandle } from './social-handles.js';
 import type { SocialV2Repo, UserBackend, UserRepo } from './repo.js';
-import { assertUnlocked, sessionOf } from './session.js';
+import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
@@ -27,22 +27,27 @@ export interface Actor {
   pid: string;
   handle: { name: string; tag: string; full: string };
   avatarColor: string;
+  /** Profil auquel la session est verrouillée (invitation du foyer) : seul ce profil agit, sinon null. */
+  lockedProfileId: string | null;
   /** Avatar illustré du profil (`col:…`, `dicebear:…`, `hero:…`), absent : la lettre sur la couleur. */
   avatar?: string;
 }
 
 /**
  * Session et profil agissant (`X-Profile-Id`). Erreurs : 400 `profile_required` (en-tête absent), 404 `profile_not_found`,
- * 403 `kid_profile` (profil enfant), 403 `pin_required` (PIN non déverrouillé).
+ * 403 `kid_profile` (profil enfant), 403 `pin_required` (PIN non déverrouillé), 403 `profile_locked` (session verrouillée
+ * sur un autre profil que celui de l'en-tête).
  */
 export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, secret: string): Promise<Actor> {
   const session = await sessionOf(users, c);
   const profileId = c.req.header('x-profile-id');
   if (profileId === undefined || profileId === '') throw new UserApiError(400, 'profile_required');
+  assertProfileAccess(session, profileId);
   const profile = await users.findProfile(session.account.id, profileId);
   if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
   if (profile.isKid) throw new UserApiError(403, 'kid_profile');
-  assertUnlocked(c, session, profile, secret);
+  // Session verrouillée sur ce profil : pas de PIN à saisir (même règle que scopeOf).
+  if (session.lockedProfileId === null) assertUnlocked(c, session, profile, secret);
   const identity = await social.identityOf(session.account.id, profile.id);
   if (identity === undefined || identity.pid === null || identity.handle === null) throw new UserApiError(404, 'profile_not_found');
   return {
@@ -51,6 +56,7 @@ export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, sec
     handle: identity.handle,
     avatarColor: profile.avatarColor,
     ...(profile.avatar ? { avatar: profile.avatar } : {}),
+    lockedProfileId: session.lockedProfileId,
   };
 }
 

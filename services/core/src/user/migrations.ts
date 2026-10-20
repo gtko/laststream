@@ -819,6 +819,46 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
     `,
   },
+  {
+    version: 27,
+    name: 'invitations sur un profil du foyer (jeton haché), logins de profil, sessions verrouillées sur un profil',
+    sql: `
+      CREATE TABLE household_invites (
+        id TEXT PRIMARY KEY,                 -- id court aléatoire (pour l'UI)
+        token_hash TEXT NOT NULL UNIQUE,     -- sha256(jeton) ; le jeton clair n'est jamais stocké
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        created_by_profile TEXT,             -- profil qui a créé le lien
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER, used_login TEXT,
+        revoked_at INTEGER
+      );
+      CREATE TABLE profile_logins (
+        login TEXT PRIMARY KEY,              -- identifiant normalisé (minuscules, trim), même règles que accounts.username + '@' permis
+        password_hash TEXT NOT NULL,         -- même algorithme que les comptes
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL
+      );
+      -- Non NULL = session verrouillée sur ce profil. (Pas de commentaire après le dernier point-virgule : le SQLite du
+      -- Durable Object refuse un fragment sans instruction.)
+      ALTER TABLE sessions ADD COLUMN profile_id TEXT;
+    `,
+  },
+  {
+    version: 28,
+    name: 'billets de parrainage : message, coups de cœur (JSON), échéance à l envoi, amitié automatique à l inscription',
+    sql: `
+      -- Message du billet (280 caractères au plus) et coups de cœur (JSON, 3 au plus : [{id, type, name, poster, background}]).
+      ALTER TABLE invites ADD COLUMN message TEXT;
+      ALTER TABLE invites ADD COLUMN picks TEXT;
+      -- Échéance (ms epoch) posée à l envoi : sent_at + 14 jours. NULL = non envoyé (ou envoyé avant la v28, sans échéance).
+      ALTER TABLE invites ADD COLUMN expires_at INTEGER;
+      -- 0 : inscription sans amitié automatique (register avec autoFriend=false). Les liens existants restent à 1.
+      ALTER TABLE invites ADD COLUMN auto_friend INTEGER NOT NULL DEFAULT 1 CHECK (auto_friend IN (0, 1));
+    `,
+  },
 ];
 
 /**

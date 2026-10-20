@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { SqlDb } from './sql.js';
 
 /**
@@ -10,6 +10,10 @@ import type { SqlDb } from './sql.js';
 /** Liens de parrainage par compte, par défaut ; le propriétaire peut l'ajuster (0 à MAX_INVITE_QUOTA). */
 export const DEFAULT_INVITE_QUOTA = 4;
 export const MAX_INVITE_QUOTA = 100;
+/** Billets de parrainage : message de 280 caractères au plus, 3 coups de cœur au plus, échéance 14 jours après l'envoi. */
+export const TICKET_MESSAGE_MAX = 280;
+export const TICKET_PICKS_MAX = 3;
+const TICKET_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 /** Une présence plus ancienne que ce délai est « hors ligne » (le client envoie un battement toutes les 30 à 60 s). */
 export const PRESENCE_TTL_MS = 90_000;
 export const MAX_FRIENDS = 200;
@@ -23,6 +27,15 @@ const LEGACY_HIDDEN_CHUNKS = 12;
 /** « revoked » : lien révoqué par l'administration (jamais libre, jamais régénérable par le propriétaire). */
 type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 
+/** Coup de cœur joint à un billet : affiche et fond en URL https (ou vides). */
+export interface TicketPick {
+  id: string;
+  type: string;
+  name: string;
+  poster: string;
+  background: string;
+}
+
 export interface InviteView {
   id: string;
   code: string;
@@ -32,9 +45,30 @@ export interface InviteView {
   usedAt: string | null;
   /** Date de révocation par l'administration (ISO), ou null. */
   revokedAt: string | null;
+  /** Message du billet, ou null. */
+  message: string | null;
+  /** Coups de cœur du billet (3 au plus, tableau vide si aucun). */
+  picks: TicketPick[];
+  /** Échéance du billet envoyé (ISO), ou null tant qu'il n'est pas envoyé. */
+  expiresAt: string | null;
+  /** Numéro de billet à 4 chiffres (1000 à 9999) : stable pour un lien, unique parmi les liens de son compte. */
+  number: number;
   /** Pseudo du filleul (null si le lien n'est pas utilisé ou si le compte a été supprimé). */
   invitee: string | null;
 }
+
+/** Vérification publique d'un lien (`GET /user/invites/check`) : valide avec le billet, ou invalide avec sa raison. */
+export type InviteCheck =
+  | {
+      valid: true;
+      /** Profil principal du parrain (null pour une invitation de l'administration). */
+      inviter: { name: string; handle: string | null; avatar: string | null } | null;
+      message: string | null;
+      picks: TicketPick[];
+      expiresAt: string | null;
+      number: number;
+    }
+  | { valid: false; reason: 'expired' | 'used' | 'revoked' | 'unknown' };
 
 export type Visibility = 'private' | 'friends';
 
@@ -122,10 +156,24 @@ interface InviteRow {
   used_by: string | null;
   used_at: string | null;
   revoked_at: string | null;
+  message: string | null;
+  picks: string | null;
+  expires_at: number | null;
   invitee: string | null;
 }
 
-function toInvite(row: InviteRow): InviteView {
+/** Coups de cœur d'un billet, lus depuis le JSON stocké (tableau vide si absent ou illisible). */
+function parsePicks(raw: string | null): TicketPick[] {
+  if (raw === null) return [];
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value) ? (value as TicketPick[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function toInvite(row: InviteRow, number: number): InviteView {
   const state: InviteState =
     row.used_at !== null ? 'used' : row.revoked_at !== null ? 'revoked' : row.sent_at !== null ? 'sent' : 'free';
   return {
@@ -136,27 +184,55 @@ function toInvite(row: InviteRow): InviteView {
     sentAt: row.sent_at,
     usedAt: row.used_at,
     revokedAt: row.revoked_at,
+    message: row.message,
+    picks: parsePicks(row.picks),
+    expiresAt: row.expires_at === null ? null : new Date(Number(row.expires_at)).toISOString(),
+    number,
     invitee: row.invitee,
   };
+}
+
+/**
+ * Numéros de billet des liens d'un compte (`inviterId` NULL : invitations de l'administration), par identifiant de lien.
+ * Chaque numéro (1000 à 9999) dérive de l'identifiant du lien (SHA-256). Deux liens du même compte qui tombent sur le
+ * même numéro : le plus ancien (ordre d'insertion) le garde, l'autre prend le numéro libre suivant. Un lien garde donc
+ * son numéro tant que les liens plus anciens du compte restent en place.
+ */
+function ticketNumbersOf(db: SqlDb, inviterId: string | null): Map<string, number> {
+  const rows = db.prepare('SELECT id FROM invites WHERE inviter_id IS ? ORDER BY rowid').all(inviterId) as { id: string }[];
+  const taken = new Set<number>();
+  const numbers = new Map<string, number>();
+  for (const { id } of rows) {
+    let number = 1000 + (parseInt(createHash('sha256').update(id).digest('hex').slice(0, 8), 16) % 9000);
+    while (taken.has(number)) number = number === 9999 ? 1000 : number + 1;
+    taken.add(number);
+    numbers.set(id, number);
+  }
+  return numbers;
 }
 
 export type RedeemResult = { ok: true; inviterId: string | null } | { ok: false };
 
 /**
- * Consomme un lien dans la transaction d'inscription (appelée par UserStore.createAccount) : le lien doit exister et être
- * libre ; il est marqué utilisé par le nouveau compte, qui devient ami de son parrain (amitié acceptée d'emblée).
+ * Consomme un lien dans la transaction d'inscription (appelée par UserStore.createAccount) : le lien doit exister, être
+ * libre et non expiré ; il est marqué utilisé par le nouveau compte. Avec `autoFriend` (défaut), le nouveau compte devient
+ * ami de son parrain (amitié acceptée d'emblée) ; sans, aucune amitié n'est créée, ni ici ni au premier profil adulte.
  */
-export function redeemInvite(db: SqlDb, code: string, newAccountId: string, now: string): RedeemResult {
-  const row = db.prepare('SELECT id, inviter_id, used_at, revoked_at FROM invites WHERE code = ?').get(code) as
-    | { id: string; inviter_id: string | null; used_at: string | null; revoked_at: string | null }
+export function redeemInvite(db: SqlDb, code: string, newAccountId: string, now: string, autoFriend = true): RedeemResult {
+  const row = db.prepare('SELECT id, inviter_id, used_at, revoked_at, expires_at FROM invites WHERE code = ?').get(code) as
+    | { id: string; inviter_id: string | null; used_at: string | null; revoked_at: string | null; expires_at: number | null }
     | undefined;
   if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { ok: false };
+  const nowMs = Date.parse(now);
+  if (row.expires_at !== null && Number(row.expires_at) <= nowMs) return { ok: false };
   // « used_at IS NULL » dans l'UPDATE : un seul inscrit gagne, même si deux requêtes arrivent ensemble.
   const changed = db
-    .prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL')
-    .run(newAccountId, now, row.id);
+    .prepare(
+      'UPDATE invites SET used_by = ?, used_at = ?, auto_friend = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?)',
+    )
+    .run(newAccountId, now, autoFriend ? 1 : 0, row.id, nowMs);
   if (Number(changed.changes) !== 1) return { ok: false };
-  if (row.inviter_id !== null) {
+  if (autoFriend && row.inviter_id !== null) {
     const { low, high } = pair(row.inviter_id, newAccountId);
     db.prepare(
       `INSERT INTO friendships (low_id, high_id, requested_by, status, created_at, accepted_at) VALUES (?, ?, ?, 'accepted', ?, ?)
@@ -194,12 +270,13 @@ export class SocialStore {
    */
   listInvites(accountId: string, now: string): { quota: number; invites: InviteView[] } {
     return this.db.transaction(() => {
+      this.releaseExpiredTickets(accountId, Date.parse(now));
       const quotaRow = this.db.prepare('SELECT invite_quota FROM accounts WHERE id = ?').get(accountId) as { invite_quota: number } | undefined;
       const quota = quotaRow === undefined ? 0 : Number(quotaRow.invite_quota);
       const select = () =>
         this.db
           .prepare(
-            `SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, u.username AS invitee
+            `SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, i.message, i.picks, i.expires_at, u.username AS invitee
              FROM invites i LEFT JOIN accounts u ON u.id = i.used_by
              WHERE i.inviter_id = ? ORDER BY i.rowid`,
           )
@@ -219,17 +296,79 @@ export class SocialStore {
         }
         rows = select();
       }
-      return { quota, invites: rows.map(toInvite) };
+      const numbers = ticketNumbersOf(this.db, accountId);
+      return { quota, invites: rows.map((row) => toInvite(row, numbers.get(row.id) ?? 0)) };
     });
   }
 
-  /** Marque un lien « envoyé » (ou le remet « libre ») : purement indicatif pour le tableau de bord. */
+  /**
+   * Libère les billets du compte envoyés, expirés et non utilisés : nouveau code libre, échéance, message et coups de cœur
+   * effacés (même logique que releaseExpiredInvites des liens publics). Un lien révoqué par l'administration ne se libère pas.
+   */
+  private releaseExpiredTickets(accountId: string, nowMs: number): void {
+    const expired = this.db
+      .prepare(
+        'SELECT id FROM invites WHERE inviter_id = ? AND expires_at IS NOT NULL AND expires_at <= ? AND used_at IS NULL AND revoked_at IS NULL',
+      )
+      .all(accountId, nowMs) as { id: string }[];
+    for (const { id } of expired) {
+      this.db
+        .prepare('UPDATE invites SET code = ?, sent_at = NULL, expires_at = NULL, message = NULL, picks = NULL WHERE id = ?')
+        .run(generateInviteCode(), id);
+    }
+  }
+
+  /** Un lien du compte, vu comme `GET /user/invites` (numéro compris), ou `undefined`. */
+  private inviteView(accountId: string, inviteId: string): InviteView | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, i.message, i.picks, i.expires_at, u.username AS invitee
+         FROM invites i LEFT JOIN accounts u ON u.id = i.used_by
+         WHERE i.id = ? AND i.inviter_id = ?`,
+      )
+      .get(inviteId, accountId) as unknown as InviteRow | undefined;
+    if (row === undefined) return undefined;
+    return toInvite(row, ticketNumbersOf(this.db, accountId).get(inviteId) ?? 0);
+  }
+
+  /**
+   * Marque un billet « envoyé » (échéance dans 14 jours) ou le remet « libre » (échéance effacée). Un billet déjà envoyé
+   * reçoit une nouvelle échéance. Le message et les coups de cœur ne changent pas.
+   */
   setInviteSent(accountId: string, inviteId: string, sent: boolean, now: string): 'ok' | 'not_found' | 'used' {
     const row = this.db.prepare('SELECT used_at FROM invites WHERE id = ? AND inviter_id = ?').get(inviteId, accountId) as { used_at: string | null } | undefined;
     if (row === undefined) return 'not_found';
     if (row.used_at !== null) return 'used';
-    this.db.prepare('UPDATE invites SET sent_at = ? WHERE id = ?').run(sent ? now : null, inviteId);
+    this.db
+      .prepare('UPDATE invites SET sent_at = ?, expires_at = ? WHERE id = ?')
+      .run(sent ? now : null, sent ? Date.parse(now) + TICKET_TTL_MS : null, inviteId);
     return 'ok';
+  }
+
+  /**
+   * Met à jour le message et les coups de cœur d'un billet du compte : `undefined` = inchangé, `''` ou `[]` = effacé.
+   * Un billet utilisé ne se modifie plus.
+   */
+  updateTicket(
+    accountId: string,
+    inviteId: string,
+    fields: { message?: string; picks?: TicketPick[] },
+  ): { result: 'ok'; invite: InviteView } | { result: 'not_found' } | { result: 'used' } {
+    return this.db.transaction(() => {
+      const row = this.db.prepare('SELECT used_at FROM invites WHERE id = ? AND inviter_id = ?').get(inviteId, accountId) as
+        | { used_at: string | null }
+        | undefined;
+      if (row === undefined) return { result: 'not_found' as const };
+      if (row.used_at !== null) return { result: 'used' as const };
+      if (fields.message !== undefined) {
+        this.db.prepare('UPDATE invites SET message = ? WHERE id = ?').run(fields.message === '' ? null : fields.message, inviteId);
+      }
+      if (fields.picks !== undefined) {
+        this.db.prepare('UPDATE invites SET picks = ? WHERE id = ?').run(fields.picks.length === 0 ? null : JSON.stringify(fields.picks), inviteId);
+      }
+      const invite = this.inviteView(accountId, inviteId);
+      return invite === undefined ? { result: 'not_found' as const } : { result: 'ok' as const, invite };
+    });
   }
 
   /**
@@ -244,11 +383,11 @@ export class SocialStore {
       if (row === undefined) return { result: 'not_found' as const };
       if (row.used_at !== null) return { result: 'used' as const };
       if (row.revoked_at !== null) return { result: 'revoked' as const };
-      this.db.prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL WHERE id = ?').run(generateInviteCode(), now, inviteId);
-      const fresh = this.db
-        .prepare('SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, NULL AS invitee FROM invites i WHERE i.id = ?')
-        .get(inviteId) as unknown as InviteRow;
-      return { result: 'ok' as const, invite: toInvite(fresh) };
+      this.db
+        .prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL, expires_at = NULL WHERE id = ?')
+        .run(generateInviteCode(), now, inviteId);
+      const fresh = this.inviteView(accountId, inviteId);
+      return fresh === undefined ? { result: 'not_found' as const } : { result: 'ok' as const, invite: fresh };
     });
   }
 
@@ -258,13 +397,49 @@ export class SocialStore {
     return Number(changed.changes) === 1 ? { username, quota } : undefined;
   }
 
-  /** Vérifie un lien avant l'inscription : valide s'il existe et n'est pas utilisé. Ne révèle que le pseudo du parrain. */
-  inviteInfo(code: string): { valid: boolean; inviter: string | null } {
+  /**
+   * Vérifie un lien avant l'inscription (sans session). Valide s'il existe, n'est ni utilisé, ni révoqué, ni expiré ; ne
+   * révèle que le profil principal du parrain (nom, handle, avatar) et le contenu du billet.
+   */
+  inviteInfo(code: string, now: string): InviteCheck {
     const row = this.db
-      .prepare('SELECT i.used_at, i.revoked_at, a.username AS inviter FROM invites i LEFT JOIN accounts a ON a.id = i.inviter_id WHERE i.code = ?')
-      .get(code) as { used_at: string | null; revoked_at: string | null; inviter: string | null } | undefined;
-    if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { valid: false, inviter: null };
-    return { valid: true, inviter: row.inviter };
+      .prepare('SELECT id, inviter_id, message, picks, expires_at, used_at, revoked_at FROM invites WHERE code = ?')
+      .get(code) as
+      | {
+          id: string;
+          inviter_id: string | null;
+          message: string | null;
+          picks: string | null;
+          expires_at: number | null;
+          used_at: string | null;
+          revoked_at: string | null;
+        }
+      | undefined;
+    if (row === undefined) return { valid: false, reason: 'unknown' };
+    if (row.used_at !== null) return { valid: false, reason: 'used' };
+    if (row.revoked_at !== null) return { valid: false, reason: 'revoked' };
+    if (row.expires_at !== null && Number(row.expires_at) <= Date.parse(now)) return { valid: false, reason: 'expired' };
+    return {
+      valid: true,
+      inviter: row.inviter_id === null ? null : this.inviterOf(row.inviter_id),
+      message: row.message,
+      picks: parsePicks(row.picks),
+      expiresAt: row.expires_at === null ? null : new Date(Number(row.expires_at)).toISOString(),
+      number: ticketNumbersOf(this.db, row.inviter_id).get(row.id) ?? 0,
+    };
+  }
+
+  /** Profil principal d'un parrain (premier profil non enfant) : nom, handle `Nom#TAG`, avatar. Sans profil : pseudo du compte. */
+  private inviterOf(accountId: string): { name: string; handle: string | null; avatar: string | null } {
+    const profile = this.db
+      .prepare('SELECT name, avatar, handle_name, handle_tag FROM profiles WHERE account_id = ? AND is_kid = 0 ORDER BY created_at, id LIMIT 1')
+      .get(accountId) as { name: string; avatar: string | null; handle_name: string | null; handle_tag: string | null } | undefined;
+    if (profile !== undefined) {
+      const handle = profile.handle_name !== null && profile.handle_tag !== null ? `${profile.handle_name}#${profile.handle_tag}` : null;
+      return { name: profile.name, handle, avatar: profile.avatar ?? null };
+    }
+    const account = this.db.prepare('SELECT username FROM accounts WHERE id = ?').get(accountId) as { username: string } | undefined;
+    return { name: account?.username ?? '', handle: null, avatar: null };
   }
 
   /** Invitation « système » (administration) : sans parrain, donc sans amitié à l'inscription. */

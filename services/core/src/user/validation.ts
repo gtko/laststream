@@ -77,11 +77,25 @@ const TMDB_ID = z.number().int().positive().max(1_000_000_000);
 
 export const credentialsSchema = z.object({ username: USERNAME, password: PASSWORD });
 
+/** Identifiant de connexion : nom de compte, ou identifiant d'invité du foyer (« @ » permis). */
+export const LOGIN_NAME_PATTERN = /^[a-z0-9][a-z0-9_.@-]{2,31}$/;
+export const loginSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(LOGIN_NAME_PATTERN, 'nom : 3 à 32 caractères (a-z, 0-9, _ . - @)'),
+  password: PASSWORD,
+});
+
 /** Code d'un lien de parrainage (22 caractères base64url ; plage large pour ne rien révéler du format). */
 export const INVITE_CODE = z.string().trim().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/);
 
-/** Inscription : identifiants + lien de parrainage (absent seulement pour le tout premier compte). */
-export const registerSchema = credentialsSchema.extend({ invite: INVITE_CODE.optional() });
+/**
+ * Inscription : identifiants + lien de parrainage (absent seulement pour le tout premier compte). `autoFriend` (défaut
+ * true) : avec un lien, devenir ami du parrain ; false : aucune amitié n'est créée.
+ */
+export const registerSchema = credentialsSchema.extend({ invite: INVITE_CODE.optional(), autoFriend: z.boolean().default(true) });
 
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1).max(40),
@@ -189,3 +203,17 @@ export const stremioImportSchema = z.object({
 export const titleIdParam = z.union([z.string().regex(/^\d{1,10}$/), z.string().regex(/^tt\d{1,10}$/)]);
 
 export const tmdbIdParam = z.string().regex(/^\d{1,10}$/).transform(Number).pipe(TMDB_ID);
+
+/** Invitation sur un profil du foyer : durée facultative (24, 72 ou 168 heures ; 72 par défaut). */
+export const householdInviteSchema = z.object({ ttlHours: z.literal([24, 72, 168]).optional() });
+
+/** Ouverture d'un lien (vérification anonyme) : jeton en paramètre de requête. */
+export const householdCheckQuery = z.object({ token: z.string().min(1).max(64) });
+
+/** Consommation d'un lien (anonyme) : jeton, identifiant et mot de passe de l'invité, nom facultatif. Formats vérifiés par la route. */
+export const householdRedeemSchema = z.object({
+  token: z.string().min(1).max(64),
+  login: z.string().max(64),
+  password: z.string().max(256),
+  name: z.string().trim().max(40).optional(),
+});

@@ -77,7 +77,7 @@ function sendQuietly(ws: CfWebSocket, frame: string): void {
 }
 
 /** Méthodes des stores jamais exposées en RPC (internes ou propres à l'hôte). */
-const HIDDEN = new Set(['constructor', 'transaction', 'close', 'updateProfileFields', 'createSession']);
+const HIDDEN = new Set(['constructor', 'transaction', 'close', 'updateProfileFields', 'createSession', 'openSession']);
 
 function callableNames(prototype: object): Set<string> {
   return new Set(Object.getOwnPropertyNames(prototype).filter((name) => !HIDDEN.has(name)));
