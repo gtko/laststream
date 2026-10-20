@@ -18,6 +18,18 @@ const ISO_DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:
 
 export const accountIdParam = z.string().uuid();
 
+/** Identifiant d'un lien d'invitation (UUID). */
+export const inviteIdParam = z.string().uuid();
+
+/** Liste des invitations : statut facultatif (toutes par défaut), 100 par page au plus 500. */
+export const inviteListQuery = z.object({
+  status: z.enum(['active', 'used', 'expired', 'revoked']).optional(),
+  limit: intParam(1, 500, 100),
+});
+
+/** Chronologie d'un compte : 50 événements par défaut, 200 au plus. */
+export const timelineQuery = z.object({ limit: intParam(1, 200, 50) });
+
 /** Identifiant public d'une session (24 caractères hexadécimaux, voir `sessionRef`). */
 export const sessionIdParam = z.string().regex(/^[0-9a-f]{24}$/);
 

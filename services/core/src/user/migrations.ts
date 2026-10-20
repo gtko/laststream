@@ -559,6 +559,13 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 19,
+    name: 'invitations révoquées par l administration (date de révocation, NULL = lien valide)',
+    sql: `
+      ALTER TABLE invites ADD COLUMN revoked_at TEXT;
+    `,
+  },
 ];
 
 /**

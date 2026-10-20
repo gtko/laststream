@@ -140,12 +140,14 @@ export type RedeemResult = { ok: true; inviterId: string | null } | { ok: false 
  * libre ; il est marqué utilisé par le nouveau compte, qui devient ami de son parrain (amitié acceptée d'emblée).
  */
 export function redeemInvite(db: SqlDb, code: string, newAccountId: string, now: string): RedeemResult {
-  const row = db.prepare('SELECT id, inviter_id, used_at FROM invites WHERE code = ?').get(code) as
-    | { id: string; inviter_id: string | null; used_at: string | null }
+  const row = db.prepare('SELECT id, inviter_id, used_at, revoked_at FROM invites WHERE code = ?').get(code) as
+    | { id: string; inviter_id: string | null; used_at: string | null; revoked_at: string | null }
     | undefined;
-  if (row === undefined || row.used_at !== null) return { ok: false };
+  if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { ok: false };
   // « used_at IS NULL » dans l'UPDATE : un seul inscrit gagne, même si deux requêtes arrivent ensemble.
-  const changed = db.prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE id = ? AND used_at IS NULL').run(newAccountId, now, row.id);
+  const changed = db
+    .prepare('UPDATE invites SET used_by = ?, used_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL')
+    .run(newAccountId, now, row.id);
   if (Number(changed.changes) !== 1) return { ok: false };
   if (row.inviter_id !== null) {
     const { low, high } = pair(row.inviter_id, newAccountId);
@@ -222,13 +224,18 @@ export class SocialStore {
     return 'ok';
   }
 
-  /** Révoque un lien non utilisé : l'ancien code cesse de fonctionner et l'emplacement reçoit un nouveau code libre. */
+  /**
+   * Révoque un lien non utilisé : l'ancien code cesse de fonctionner et l'emplacement reçoit un nouveau code libre. Le
+   * nouveau code n'est pas révoqué, même si l'administration avait révoqué l'ancien (revoked_at remis à NULL).
+   */
   revokeInvite(accountId: string, inviteId: string, now: string): { result: 'ok'; invite: InviteView } | { result: 'not_found' | 'used' } {
     return this.db.transaction(() => {
       const row = this.db.prepare('SELECT used_at FROM invites WHERE id = ? AND inviter_id = ?').get(inviteId, accountId) as { used_at: string | null } | undefined;
       if (row === undefined) return { result: 'not_found' as const };
       if (row.used_at !== null) return { result: 'used' as const };
-      this.db.prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL WHERE id = ?').run(generateInviteCode(), now, inviteId);
+      this.db
+        .prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL, revoked_at = NULL WHERE id = ?')
+        .run(generateInviteCode(), now, inviteId);
       const fresh = this.db
         .prepare('SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, NULL AS invitee FROM invites i WHERE i.id = ?')
         .get(inviteId) as unknown as InviteRow;
@@ -245,9 +252,9 @@ export class SocialStore {
   /** Vérifie un lien avant l'inscription : valide s'il existe et n'est pas utilisé. Ne révèle que le pseudo du parrain. */
   inviteInfo(code: string): { valid: boolean; inviter: string | null } {
     const row = this.db
-      .prepare('SELECT i.used_at, a.username AS inviter FROM invites i LEFT JOIN accounts a ON a.id = i.inviter_id WHERE i.code = ?')
-      .get(code) as { used_at: string | null; inviter: string | null } | undefined;
-    if (row === undefined || row.used_at !== null) return { valid: false, inviter: null };
+      .prepare('SELECT i.used_at, i.revoked_at, a.username AS inviter FROM invites i LEFT JOIN accounts a ON a.id = i.inviter_id WHERE i.code = ?')
+      .get(code) as { used_at: string | null; revoked_at: string | null; inviter: string | null } | undefined;
+    if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { valid: false, inviter: null };
     return { valid: true, inviter: row.inviter };
   }
 

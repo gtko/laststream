@@ -49,6 +49,35 @@ export interface AdminSession {
   expiresAt: string;
 }
 
+/** Statut d'une invitation. `expired` est réservé : aucun lien n'a d'échéance aujourd'hui. */
+export type InviteStatus = 'active' | 'used' | 'expired' | 'revoked';
+
+/** Lien d'invitation, vue d'administration : identifiant et état, jamais le code. */
+export interface AdminInvite {
+  id: string;
+  /** Nul pour une invitation « système » (créée par l'administration, sans parrain). */
+  ownerId: string | null;
+  ownerUsername: string | null;
+  createdAt: string;
+  /** Toujours nul : les liens n'ont pas d'échéance. */
+  expiresAt: string | null;
+  usedAt: string | null;
+  /** Compte inscrit avec le lien ; nul si ce compte a été supprimé depuis. */
+  usedBy: string | null;
+  usedByUsername: string | null;
+  status: InviteStatus;
+}
+
+export type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
+
+/** Événement de la chronologie d'un compte. `detail` : complément lisible, jamais de secret ni de texte de message. */
+export interface TimelineEvent {
+  at: string;
+  kind: TimelineKind;
+  label: string;
+  detail?: string;
+}
+
 export interface AccountListQuery {
   /** Fragment du pseudo (insensible à la casse). */
   q?: string;
@@ -68,6 +97,8 @@ export interface AdminAccountDetail {
   libraryCount: number;
   invitees: { id: string; username: string; usedAt: string | null }[];
   sessions: AdminSession[];
+  /** Liens d'invitation du compte (ceux qu'il a créés), récents d'abord. */
+  invites: AdminInvite[];
 }
 
 export interface ReferralNode {
@@ -215,6 +246,67 @@ function toAnnouncement(row: SqlRow): Announcement {
   };
 }
 
+/** Libellés des actions du journal d'audit dans la chronologie d'un compte. Action absente de la liste : affichée telle quelle. */
+const AUDIT_LABELS: Readonly<Partial<Record<string, string>>> = {
+  'account.suspend': 'Compte suspendu',
+  'account.reactivate': 'Compte réactivé',
+  'account.delete': 'Compte supprimé',
+  'account.invite_quota': 'Quota d’invitations modifié',
+  'account.revoke_sessions': 'Sessions révoquées',
+  'account.session.revoke': 'Session révoquée',
+  'account.reset_link': 'Lien de réinitialisation créé',
+  'admin.profile': 'Profil administrateur désigné',
+  elevate: 'Ré-authentification',
+  'elevate.failed': 'Échec de ré-authentification',
+  'invite.revoke': 'Invitation révoquée',
+  'party.close_room': 'Salon fermé',
+  'report.ignore': 'Signalement ignoré',
+  'report.delete_message': 'Message signalé supprimé',
+  'report.suspend_author': 'Auteur signalé suspendu',
+  'settings.update': 'Réglages modifiés',
+  'cache.purge': 'Purge de cache',
+  'tv.rerun': 'Relance de la TV',
+};
+
+/** Colonnes d'un lien d'invitation, avec le pseudo du parrain et celui du filleul (jointures facultatives). */
+const INVITE_SELECT = `SELECT i.id, i.inviter_id, o.username AS owner_username, i.created_at, i.used_at, i.used_by, u.username AS used_by_username, i.revoked_at
+  FROM invites i LEFT JOIN accounts o ON o.id = i.inviter_id LEFT JOIN accounts u ON u.id = i.used_by`;
+
+/** Clause WHERE de chaque statut d'invitation. `expired` ne correspond à rien : aucun lien n'a d'échéance. */
+const INVITE_STATUS_SQL: Readonly<Record<InviteStatus, string>> = {
+  active: 'i.used_at IS NULL AND i.revoked_at IS NULL',
+  used: 'i.used_at IS NOT NULL',
+  revoked: 'i.used_at IS NULL AND i.revoked_at IS NOT NULL',
+  expired: '1 = 0',
+};
+
+function textOrNull(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+function toAdminInvite(row: SqlRow): AdminInvite {
+  const usedAt = textOrNull(row.used_at);
+  const revokedAt = textOrNull(row.revoked_at);
+  let status: InviteStatus = 'active';
+  if (usedAt !== null) status = 'used';
+  else if (revokedAt !== null) status = 'revoked';
+  return {
+    id: String(row.id),
+    ownerId: textOrNull(row.inviter_id),
+    ownerUsername: textOrNull(row.owner_username),
+    createdAt: String(row.created_at),
+    expiresAt: null,
+    usedAt,
+    usedBy: textOrNull(row.used_by),
+    usedByUsername: textOrNull(row.used_by_username),
+    status,
+  };
+}
+
+function timelineEvent(at: string, kind: TimelineKind, label: string, detail?: string): TimelineEvent {
+  return detail === undefined ? { at, kind, label } : { at, kind, label, detail };
+}
+
 export class AdminStore {
   constructor(private readonly db: SqlDb) {}
 
@@ -301,7 +393,8 @@ export class AdminStore {
         lastSeenAt: String(row.created_at),
         expiresAt: String(row.expires_at),
       }));
-    return { account, profiles, libraryCount: account.libraryCount, invitees, sessions };
+    const invites = this.db.prepare(`${INVITE_SELECT} WHERE i.inviter_id = ? ORDER BY i.created_at DESC, i.rowid DESC`).all(id).map(toAdminInvite);
+    return { account, profiles, libraryCount: account.libraryCount, invitees, sessions, invites };
   }
 
   /** Vrai si la session (identifiant public) appartient au compte, expirée ou non. */
@@ -411,6 +504,81 @@ export class AdminStore {
       .prepare("INSERT INTO app_settings (key, value) VALUES ('admin_profile_id', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
       .run(JSON.stringify(profileId));
     return true;
+  }
+
+  // Invitations
+
+  /** Invitations (toutes, ou d'un statut), récentes d'abord. Jamais le code. */
+  listInvites(query: { status?: InviteStatus; limit: number }): AdminInvite[] {
+    const where = query.status === undefined ? '' : ` WHERE ${INVITE_STATUS_SQL[query.status]}`;
+    return this.db
+      .prepare(`${INVITE_SELECT}${where} ORDER BY i.created_at DESC, i.rowid DESC LIMIT ?`)
+      .all(query.limit)
+      .map(toAdminInvite);
+  }
+
+  inviteById(id: string): AdminInvite | undefined {
+    const row = this.db.prepare(`${INVITE_SELECT} WHERE i.id = ?`).get(id);
+    return row === undefined ? undefined : toAdminInvite(row);
+  }
+
+  /** Révoque une invitation ni utilisée ni déjà révoquée : son lien n'est plus accepté à l'inscription. `false` sinon. */
+  revokeInvite(id: string, now: string): boolean {
+    return this.db.prepare('UPDATE invites SET revoked_at = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL').run(now, id).changes !== 0;
+  }
+
+  // Chronologie
+
+  /**
+   * Chronologie d'un compte, récent d'abord, au plus `limit` événements : journal d'audit où il est acteur, cible ou
+   * « accountId » ; inscription ; invitations créées et utilisées ; connexions ouvertes ; salons créés ; signalements.
+   * Aucun texte de message ni secret. Undefined si le compte n'existe pas.
+   */
+  accountTimeline(accountId: string, limit: number): TimelineEvent[] | undefined {
+    const account = this.accountById(accountId);
+    if (account === undefined) return undefined;
+    const audit = this.db
+      .prepare(
+        `SELECT at, actor_id, actor_name, action FROM admin_audit
+         WHERE actor_id = ? OR target = ? OR (detail IS NOT NULL AND json_extract(detail, '$.accountId') = ?)
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(accountId, account.username, accountId, limit)
+      .map((row) => {
+        const action = String(row.action);
+        const actor = row.actor_id === accountId ? undefined : `par ${String(row.actor_name)}`;
+        return timelineEvent(String(row.at), 'audit', AUDIT_LABELS[action] ?? action, actor);
+      });
+    const created = this.db
+      .prepare('SELECT created_at FROM invites WHERE inviter_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'invite', 'Invitation créée'));
+    const used = this.db
+      .prepare(
+        `SELECT i.used_at, u.username AS invitee FROM invites i LEFT JOIN accounts u ON u.id = i.used_by
+         WHERE i.inviter_id = ? AND i.used_at IS NOT NULL ORDER BY i.used_at DESC LIMIT ?`,
+      )
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.used_at), 'invite', 'Invitation utilisée', textOrNull(row.invitee) ?? 'compte supprimé'));
+    const sessions = this.db
+      .prepare('SELECT created_at FROM sessions WHERE account_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'session', 'Connexion'));
+    const rooms = this.db
+      .prepare('SELECT title, created_at FROM party_rooms WHERE host_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(accountId, limit)
+      .map((row) => timelineEvent(String(row.created_at), 'party', 'Salon créé', String(row.title)));
+    // Signalements : `at` est en millisecondes (epoch), comme dans la file des signalements.
+    const reports = this.db
+      .prepare('SELECT at, by_name, against_id, against_name, reason FROM party_reports WHERE against_id = ? OR by_name = ? ORDER BY id DESC LIMIT ?')
+      .all(accountId, account.username, limit)
+      .map((row) => {
+        const at = new Date(Number(row.at)).toISOString();
+        if (row.against_id === accountId) return timelineEvent(at, 'party', 'Signalé dans un salon', textOrNull(row.reason) ?? undefined);
+        return timelineEvent(at, 'party', 'Signalement envoyé', `contre ${String(row.against_name)}`);
+      });
+    const signup = timelineEvent(account.createdAt, 'signup', 'Inscription', account.referrer === null ? 'sans parrain' : `parrainé par ${account.referrer}`);
+    return [signup, ...audit, ...created, ...used, ...sessions, ...rooms, ...reports].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, limit);
   }
 
   // Journal d'audit

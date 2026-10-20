@@ -433,8 +433,11 @@ export class UserStore {
       if (invite && !settings.invitesOpen) return { ok: false, reason: 'invites_closed' };
       if (this.findAccountRecord(input.username) !== undefined) return { ok: false, reason: 'username_taken' };
       if (invite && input.inviteCode !== undefined) {
-        const row = this.db.prepare('SELECT used_at FROM invites WHERE code = ?').get(input.inviteCode) as { used_at: string | null } | undefined;
-        if (row === undefined || row.used_at !== null) return { ok: false, reason: 'invite_invalid' };
+        // Lien inconnu, déjà utilisé ou révoqué par l'administration : refusé de la même façon.
+        const row = this.db.prepare('SELECT used_at, revoked_at FROM invites WHERE code = ?').get(input.inviteCode) as
+          | { used_at: string | null; revoked_at: string | null }
+          | undefined;
+        if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { ok: false, reason: 'invite_invalid' };
       }
       const account: Account = {
         id: randomUUID(),

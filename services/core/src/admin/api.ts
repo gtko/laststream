@@ -22,6 +22,8 @@ import {
   auditQuery,
   cacheQuery,
   elevateBody,
+  inviteIdParam,
+  inviteListQuery,
   inviteQuotaBody,
   metricsQuery,
   purgeIdParam,
@@ -31,6 +33,7 @@ import {
   roomIdParam,
   sessionIdParam,
   settingsPatch,
+  timelineQuery,
 } from './validation.js';
 
 /** Point de montage de l'API d'administration. */
@@ -168,6 +171,16 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     return sendJson(c, detail);
   });
 
+  /** Chronologie du compte, récent d'abord : audit, inscription, invitations, connexions, salons, signalements. */
+  router.get('/accounts/:id/timeline', async (c) => {
+    await owner(c);
+    const id = parseWith(accountIdParam, c.req.param('id'));
+    const { limit } = parseWith(timelineQuery, queryParams(c));
+    const events = await admin().accountTimeline(id, limit);
+    if (events === undefined) throw new UserApiError(404, 'account_not_found');
+    return sendJson(c, { events });
+  });
+
   router.put('/accounts/:id/invite-quota', async (c) => {
     const session = await owner(c);
     const target = await targetAccount(c);
@@ -248,6 +261,29 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     await admin().createPasswordReset(target.id, hashSessionToken(token), new Date(now).toISOString(), expiresAt);
     const base = (runtimeEnv().get('LASTADDON_PUBLIC_URL') ?? new URL(c.req.url).origin).replace(/\/+$/, '');
     return sendJson(c, { token, expiresAt, url: `${base}/reset-password?token=${token}` }, 201);
+  });
+
+  // Invitations (liens de parrainage ; jamais de code dans les réponses)
+
+  /** Toutes les invitations, ou celles d'un statut, récentes d'abord. */
+  router.get('/invites', async (c) => {
+    await owner(c);
+    const { status, limit } = parseWith(inviteListQuery, queryParams(c));
+    return sendJson(c, { invites: await admin().listInvites({ status, limit }) });
+  });
+
+  /** Révoque une invitation active : son lien n'est plus accepté à l'inscription. 409 si elle est utilisée ou déjà révoquée. */
+  router.delete('/invites/:id', async (c) => {
+    const session = await owner(c);
+    elevated(c, session);
+    const id = parseWith(inviteIdParam, c.req.param('id'));
+    const invite = await admin().inviteById(id);
+    if (invite === undefined) throw new UserApiError(404, 'invite_not_found');
+    if (invite.status !== 'active') throw new UserApiError(409, 'invite_not_active');
+    await audit(session, 'invite.revoke', invite.ownerUsername, { inviteId: id, ownerId: invite.ownerId });
+    // Course perdue (inscription ou autre révocation entre-temps) : le lien n'est plus actif.
+    if (!(await admin().revokeInvite(id, nowIso()))) throw new UserApiError(409, 'invite_not_active');
+    return sendEmpty(c, 204);
   });
 
   // Réglages globaux

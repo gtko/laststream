@@ -20,7 +20,8 @@ Erreurs : `403 elevation_required` (absent/invalide), `403 elevation_expired` (�
 | Route | Effet |
 |---|---|
 | `GET /admin/accounts?q&status=active\|suspended&referrer&createdFrom&createdTo&order=newest\|oldest&limit&cursor` | Liste paginée : `{ accounts, nextCursor, total }`. Chaque compte : `id, username, isOwner, createdAt, status, suspendedAt, referrer, lastActivityAt, profileCount, libraryCount, inviteQuota, invitesUsed`. `q` : fragment de pseudo. |
-| `GET /admin/accounts/:id` | Détail : `account`, `profiles` (nom, enfant, PIN oui/non, bibliothèque), `invitees`, `sessions`. |
+| `GET /admin/accounts/:id` | Détail : `account`, `profiles` (nom, enfant, PIN oui/non, bibliothèque), `invitees`, `sessions`, `invites` (liens créés par le compte : `id, ownerId, ownerUsername, createdAt, expiresAt, usedAt, usedBy, usedByUsername, status`, jamais le code). |
+| `GET /admin/accounts/:id/timeline?limit` | Chronologie, récent d'abord (50 par défaut, 200 max) : `{ events: [{ at, kind, label, detail? }] }` avec `kind` = `audit` (actions du journal où le compte est acteur ou cible), `signup`, `invite` (créée, utilisée), `session` (connexion), `party` (salon créé, signalements). |
 | `GET /admin/referrals` | Arbre de parrainage `{ roots: [{ id, username, createdAt, status, children }], total, truncated }`. |
 | `PUT /admin/accounts/:id/invite-quota` `{ quota }` | Quota de liens (0 à 100). |
 | `POST /admin/accounts/:id/suspend` **[élév.]** | Suspend : connexion refusée (`403 account_suspended`), sessions révoquées et refusées. |
@@ -28,6 +29,8 @@ Erreurs : `403 elevation_required` (absent/invalide), `403 elevation_expired` (�
 | `POST /admin/accounts/:id/revoke-sessions` **[élév.]** | Révoque toutes les sessions (`204`). |
 | `DELETE /admin/accounts/:id` **[élév.]** | Supprime le compte et ses données, ferme ses salons (`204`). |
 | `POST /admin/accounts/:id/reset-link` **[élév.]** | Lien à usage unique, 24 h : `{ token, expiresAt, url }` (`201`). Le jeton n'est montré qu'ici ; un nouveau lien remplace le précédent. |
+| `GET /admin/invites?status=active\|used\|expired\|revoked&limit` | Toutes les invitations (500 max, 100 par défaut) : `{ invites }`, récentes d'abord, avec `ownerUsername` (nul pour une invitation « système »). `expired` ne renvoie rien : aucun lien n'a d'échéance. |
+| `DELETE /admin/invites/:id` **[élév.]** | Révoque une invitation active (`204`) : son lien est refusé à l'inscription (`403 invite_invalid`) et sur `GET /user/invites/check`. `409 invite_not_active` si elle est utilisée ou déjà révoquée, `404` si inconnue. Le propriétaire qui régénère ce lien obtient un code neuf, valide. |
 
 Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_owner`).
 
