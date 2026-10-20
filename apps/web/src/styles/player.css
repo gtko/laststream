@@ -70,7 +70,6 @@
 .lp-loading { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; background: rgba(0, 0, 0, 0.62); padding: 24px; pointer-events: none; }
 .lp-loading[hidden] { display: none; }
 .lp-spin { width: 54px; height: 54px; border-radius: 50%; border: 4px solid rgba(255, 255, 255, 0.2); border-top-color: var(--accent); animation: lp-rot 0.9s linear infinite; }
-.lp-load-title { margin: 8px 0 0; font-family: var(--ff-title); font-weight: 800; font-size: 22px; }
 .lp-load-msg { margin: 0; font-size: 15px; color: var(--muted); max-width: 520px; }
 .lp.is-buffering::selection { background: transparent; }
 .lp.is-buffering .lp-time::after { content: " · chargement…"; color: var(--dim); font-weight: 600; }
@@ -140,7 +139,6 @@
 .lp-opt-detail { font-size: 12px; color: var(--dim); font-weight: 600; }
 .lp-empty { margin: 6px 12px; font-size: 14px; line-height: 1.5; color: var(--dim); }
 .lp-wide { margin: 10px 12px 0; }
-.lp-seasons { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 8px 10px; }
 .lp-chip { min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .lp-chip:hover, .lp-chip:focus-visible { border-color: var(--accent); color: var(--text); outline: none; }
 .lp-chip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
@@ -149,10 +147,6 @@
 .lp-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 700; color: var(--soft); flex-wrap: wrap; }
 .lp-step, .lp-seg { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .lp-val { min-width: 62px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text); }
-.lp-info { padding: 6px 22px 22px; overflow-y: auto; }
-.lp-info dl { margin: 0; display: flex; flex-direction: column; gap: 14px; }
-.lp-info dt { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim); }
-.lp-info dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; word-break: break-word; }
 
 @media (max-width: 700px) {
   .lp-time { width: 100%; margin: 0 0 0 6px; order: 5; }
@@ -198,8 +192,6 @@ body.lp-open .toast { z-index: 900; }
 .q-SD, .q-other { background: var(--dim); }
 .s-type { font-size: 14px; font-weight: 800; color: var(--soft); }
 .s-hdr { padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; border: 1px solid currentColor; color: #6ec6ff; }
-.s-hdr-DV { color: #c79bff; }
-.s-hdr-HDR10p { color: #ffd166; }
 .s-codec { font-size: 12px; font-weight: 700; color: var(--dim); }
 .s-status { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; border: 1px solid var(--line-2); color: var(--muted); }
 .st-cached { color: #4ade80; border-color: rgba(74, 222, 128, 0.5); background: rgba(74, 222, 128, 0.08); }
@@ -210,7 +202,6 @@ body.lp-open .toast { z-index: 900; }
 .s-lang.is-verified { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
 .s-l3 { font-size: 13px; font-weight: 600; color: var(--muted); gap: 2px 6px; }
 .s-l3 i { font-style: normal; opacity: 0.5; }
-.s-trk { color: var(--dim); }
 .s-l4 { font-size: 12px; color: var(--dim); flex-wrap: nowrap; }
 .s-file { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .s-grp { flex: none; padding: 1px 8px; border-radius: 6px; border: 1px solid var(--line-2); font-weight: 700; }
