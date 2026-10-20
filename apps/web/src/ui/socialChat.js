@@ -37,6 +37,54 @@ export function sendErrorMessage(err) {
   return 'Message non envoyé. Réessaie.';
 }
 
+const unreachable = (err) => err && (err.status === 0 || err.code === 'network');
+
+/**
+ * Message d’une création ou d’une modification de groupe. 403 `not_allowed` : `issues` liste les pids qui n’acceptent pas
+ * les messages de groupe (`nameOf(pid)` donne leur nom) ; 403 `owner_only` : seul le propriétaire modifie ; 429 : trop de demandes.
+ */
+export function groupErrorMessage(err, nameOf = (pid) => pid) {
+  const status = err ? err.status : undefined;
+  const code = err ? err.code : '';
+  if (status === 403 && code === 'not_allowed') {
+    const names = (Array.isArray(err.issues) ? err.issues : []).map((p) => String(nameOf(p) || 'Quelqu’un'));
+    if (names.length === 1) return names[0] + ' n’accepte pas les messages de groupe.';
+    if (names.length > 1) return names.slice(0, -1).join(', ') + ' et ' + names[names.length - 1] + ' n’acceptent pas les messages de groupe.';
+    return 'Une personne choisie n’accepte pas les messages de groupe.';
+  }
+  if (status === 403 && code === 'owner_only') return 'Seul le propriétaire du groupe peut le modifier.';
+  if (status === 403) return 'Tu ne peux ajouter que tes amis.';
+  if (status === 404) return 'Ce groupe n’existe plus.';
+  if (status === 429) return 'Trop de groupes ou de modifications d’un coup : réessaie dans quelques minutes.';
+  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
+  return 'Le groupe n’a pas pu être modifié. Réessaie.';
+}
+
+/** Message d’une réaction refusée (409 : 6 emojis différents au plus ; 429 : trop vite ; 403 / 404 : plus possible ici). */
+export function reactionErrorMessage(err) {
+  const status = err ? err.status : undefined;
+  if (status === 409) return 'Six emojis différents au maximum par message.';
+  if (status === 429) return 'Trop de réactions d’un coup : patiente un instant.';
+  if (status === 403 || status === 404) return 'Tu ne peux plus réagir ici.';
+  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
+  return 'Réaction non envoyée.';
+}
+
+/** Message d’une demande de rejoindre refusée (429 : trop de demandes). */
+export function joinErrorMessage(err) {
+  if (err && err.status === 429) return 'Trop de demandes d’un coup : réessaie dans quelques minutes.';
+  if (err && err.status === 403) return 'Cette personne n’accepte pas cette demande.';
+  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
+  return 'Demande non envoyée. Réessaie.';
+}
+
+/** Message d’un signalement refusé (429 : trop de signalements). */
+export function reportErrorMessage(err) {
+  if (err && err.status === 429) return 'Trop de signalements d’un coup : réessaie plus tard.';
+  if (unreachable(err)) return 'Serveur injoignable pour le moment.';
+  return 'Signalement non envoyé. Réessaie.';
+}
+
 /** Titre d’un passage : catalogue, puis relevé de l’ami s’il regarde ce titre ; sinon chaîne vide. */
 export function titleOfContext(ctx, friend) {
   const it = state.byKey.get((ctx.type === 'series' ? 'tv' : 'movie') + ':' + ctx.tmdbId);

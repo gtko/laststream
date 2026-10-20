@@ -10,13 +10,17 @@ import { bindEpisodeFold } from './epfold.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
 import { createMiniView } from './miniview.js';
-import { createReactPanel, noteFlashEl, renderNoteMarkers } from './notesView';
+import { createReactPanel, fadeFutureMarkers, noteFlashEl, renderNoteMarkers } from './notesView';
+import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './cinemaView';
+import { bucketAt } from './playbackSocial';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
 const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks', speed: 'settings' };
 const REMAIN_KEY = 'laststream.player.remaining';
 const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
+const CINEMA_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 9.3-5M18 8c0 7 3 9 3 9H9M13.7 21a2 2 0 0 1-3.4 0M3 3l18 18"/></svg>';
+const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14"/></svg>';
 const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>';
 
 function skeleton() {
@@ -46,6 +50,7 @@ function skeleton() {
     '<div class="lp-endrow" hidden></div>' +
     '<div class="lp-resume" role="dialog" aria-label="Reprise" hidden></div>' +
     '<div class="lp-bottom">' +
+      '<div class="lp-heat" aria-hidden="true" hidden></div>' +
       '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span><span class="lp-notes"></span></div>' +
         '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
@@ -62,12 +67,15 @@ function skeleton() {
           tbtn('next', LI.next, 'Épisode suivant', ' data-role="next" hidden') +
           tbtn('panel:episodes', LI.list, 'Épisodes', ' data-role="episodes" hidden') +
           tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" hidden') +
+          btn('share', SHARE_ICON, 'Partager', ' data-role="share" hidden') +
+          btn('cinema', CINEMA_ICON, 'Mode cinéma : couper le social', ' data-role="cinema" hidden aria-haspopup="dialog"') +
           tbtn('panel:tracks', LI.tracks, 'Audio et sous-titres') +
           tbtn('source', LI.source, 'Sources') +
           btn('fullscreen', LI.full, 'Plein écran (F)', ' data-role="full"') +
         '</div>' +
       '</div>' +
     '</div>' +
+    '<div class="lp-watchchip" hidden><span class="lp-wc-av"></span><span class="lp-wc-t"></span><button type="button" class="lp-wc-go" data-act="catch-up"></button></div>' +
     '<aside class="lp-panel" hidden aria-label="Panneau"></aside>' +
     '<div class="lp-toast" role="status" aria-live="polite"><span class="lp-toast-t"></span><button type="button" class="lp-toast-a" hidden></button></div>';
 }
@@ -95,11 +103,22 @@ export function createPlayerUI(h) {
   flash.setAttribute('role', 'status');
   flash.setAttribute('aria-live', 'polite');
   let reactPos = 0;
+  const flashTimers = new Set();
   const react = createReactPanel({
-    onPick: (kind, body) => { const pos = reactPos; api.closeReact(true); h.react({ pos, kind, body }); },
+    onPick: (kind, body, also) => { const pos = reactPos; api.closeReact(true); h.react({ pos, kind, body, also }); },
     onCancel: () => api.closeReact(true),
   });
-  root.append(flash, react.el);
+  const cinemaBtn = q('[data-role="cinema"]');
+  const cinemaMenu = createCinemaMenu({
+    onSwitch: (on) => h.cinema('switch', on),
+    onDuration: (d) => h.cinema('duration', d),
+    onToggle: (el) => h.cinema('toggle', el),
+    onClose: () => api.closeCinemaMenu(true),
+  });
+  const cinemaInd = createCinemaIndicator();
+  const cinemaSum = createCinemaSummary(() => { cinemaSum.hide(); }, (pos) => h.seekTo(pos));
+  const heat = q('.lp-heat');
+  root.append(flash, react.el, cinemaMenu.el, cinemaInd.el, cinemaSum.el);
   // Le panneau s’arrête au-dessus de la barre de contrôles : sa hauteur réelle est lue par le CSS (--lp-bar-h).
   const bottomBar = q('.lp-bottom');
   const syncBarHeight = () => root.style.setProperty('--lp-bar-h', bottomBar.offsetHeight + 'px');
@@ -122,7 +141,7 @@ export function createPlayerUI(h) {
     root.classList.add('is-ui');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
+      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
       root.classList.remove('is-ui');
     }, 3000);
   }
@@ -432,15 +451,79 @@ export function createPlayerUI(h) {
       const node = noteFlashEl(note);
       flash.append(node);
       while (flash.childElementCount > 3) flash.firstElementChild.remove();
-      setTimeout(() => node.remove(), 4000);
+      const t = setTimeout(() => { flashTimers.delete(t); node.remove(); }, 4000);
+      flashTimers.add(t);
     },
     /** Popover « Réagir ici » pour la position `pos` (secondes), figée à l'ouverture. */
-    openReact(pos) {
+    openReact(pos, opts) {
       reactPos = pos;
       api.closePanel(true);
+      api.closeCinemaMenu(false);
       wake();
-      react.open(formatClock(pos));
+      react.open(formatClock(pos), opts);
     },
+    // ---------- Social v3 : carte de chaleur, anti-spoiler, puce « regarde aussi », mode cinéma ----------
+    /** Carte de chaleur au-dessus de la barre : barres { h (0..1), level (0..3) } ; liste vide = masquée. */
+    setHeat(bars) {
+      heat.replaceChildren();
+      heat.hidden = !bars.length;
+      for (const b of bars) {
+        const i = document.createElement('i');
+        i.className = 'lp-heat-b lv' + b.level;
+        i.style.height = Math.max(2, Math.round(b.h * 22)) + 'px';
+        heat.append(i);
+      }
+    },
+    /** Position de lecture sur la carte (les tranches suivantes sont estompées si antiSpoiler) et marqueurs estompés. */
+    setSocialTime(time, duration, antiSpoiler) {
+      fadeFutureMarkers(q('.lp-notes'), time, antiSpoiler);
+      const bars = heat.children;
+      const at = antiSpoiler ? bucketAt(time, duration, bars.length) : bars.length;
+      for (let i = 0; i < bars.length; i++) bars[i].classList.toggle('is-future', antiSpoiler && i > at);
+    },
+    /** Classes de masquage du social (mode cinéma ou « messages seulement ») : voir social-player.css. */
+    setSocialHidden(hidden) {
+      for (const k of ['notes', 'markers', 'friendsPresence']) root.classList.toggle('lp-hide-' + k, hidden.has(k));
+    },
+    /** « X regarde aussi · 1:12:20 [Se caler sur elle] » ; null = retirée. */
+    setFriendChip(info) {
+      const chip = q('.lp-watchchip');
+      if (!info) { chip.hidden = true; return; }
+      const first = chip.hidden;
+      chip.hidden = false;
+      const av = q('.lp-wc-av');
+      av.textContent = info.initial;
+      av.style.background = info.color;
+      const t = q('.lp-wc-t');
+      t.textContent = '';
+      t.append(info.name + (info.more ? ' et ' + info.more + (info.more > 1 ? ' autres' : ' autre') : '') + ' regarde' + (info.more ? 'nt' : '') + ' aussi · ', Object.assign(document.createElement('b'), { textContent: formatClock(info.pos) }));
+      const go = q('.lp-wc-go');
+      go.textContent = 'Se caler sur elle';
+      go.setAttribute('aria-label', 'Se caler sur ' + info.name + ' à ' + formatClock(info.pos));
+      go.dataset.pos = String(info.pos);
+      if (first) chip.classList.add('is-in');
+    },
+    setSocialButtons({ cinema, share }) {
+      cinemaBtn.hidden = !cinema;
+      q('[data-role="share"]').hidden = !share;
+      if (!cinema) api.closeCinemaMenu(false);
+    },
+    setCinemaActive(on) {
+      cinemaBtn.classList.toggle('is-active', on);
+      cinemaBtn.setAttribute('aria-pressed', String(on));
+      cinemaBtn.setAttribute('aria-label', on ? 'Mode cinéma actif' : 'Mode cinéma : couper le social');
+    },
+    setCinemaIndicator(count) { cinemaInd.set(count); },
+    openCinemaMenu(model) { api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); },
+    renderCinemaMenu(model) { cinemaMenu.render(model); },
+    closeCinemaMenu(back) {
+      if (!cinemaMenu.isOpen()) return;
+      cinemaMenu.close();
+      if (back && !root.hidden) cinemaBtn.focus({ preventScroll: true });
+    },
+    isCinemaMenuOpen: () => cinemaMenu.isOpen(),
+    showCinemaSummary(s) { wake(); cinemaSum.show(s); },
+    hideCinemaSummary() { cinemaSum.hide(); },
     /** Ferme le popover ; `back` rend le focus au bouton « Réagir ici ». */
     closeReact(back) {
       if (!react.isOpen()) return;

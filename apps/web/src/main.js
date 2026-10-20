@@ -12,8 +12,12 @@ import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/stats.css';
 import './styles/social.css';
+import './styles/socialProfile.css';
 import './styles/chat.css';
+import './styles/convwin.css';
+import './styles/share.css';
 import './styles/partyjoin.css';
+import './styles/partylobby.css';
 import './styles/player.css';
 import './styles/player-ui.css';
 import './styles/player-panels.css';
@@ -22,6 +26,7 @@ import './styles/player-loading.css';
 import './styles/player-mini.css';
 import './styles/notes.css';
 import './styles/bubble.css';
+import './styles/social-player.css';
 import './styles/badges.css';
 import './styles/admin.css';
 import './styles/scrollbars.css';
@@ -39,6 +44,10 @@ import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
 import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from './ui/socialSidebar.js';
 import { createConversationRenderer } from './ui/socialChat.js';
+import { configureSocialConv } from './ui/socialConv.js';
+import './ui/socialProfile.js'; // enregistre openProfileEditor (F2) et la page #/social/profile
+import { configureShareDialog } from './ui/shareDialog.js';
+import { shareCodeFrom } from './ui/shareModel.js';
 import { createWatchWithHandler } from './data/watchWith';
 import { playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
@@ -52,6 +61,7 @@ import './ui/follows.js';
 import './ui/rate.js';
 import './ui/calendar.js';
 import './ui/sources-ui.js';
+import './ui/partylobby.js';
 import { announceShellReady } from './player/shell';
 import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
@@ -79,8 +89,16 @@ if (!demoMode) await ensureServerSetup();
 // Lien de réinitialisation du mot de passe (#/reset/<jeton>) : page publique, avant toute connexion.
 const resetTok = demoMode ? null : resetToken();
 if (resetTok) await runResetFlow(resetTok);
-// Invitation d'un salon (#/party/join/<id>?t=<jeton>) : page sans compte, ni /user/me ni écran de connexion.
-const joinPage = !demoMode && parseJoinHash(location.hash || '') !== null;
+// Lien de partage public (/t/<code> ou #/t/<code>) : page sans compte, comme l'invitation d'un salon.
+if (!demoMode && !resetTok) {
+  const code = shareCodeFrom(location.hash || '', location.pathname || '');
+  if (code && !/^#\/t\//.test(location.hash || '')) {
+    try { history.replaceState(null, '', location.pathname.replace(/\/t\/[^/]*\/?$/, '/') + location.search + '#/t/' + code); } catch (_) { /* adresse inchangée */ }
+  }
+}
+const sharePage = !demoMode && shareCodeFrom(location.hash || '', '') !== '';
+// Invitation d'un salon (#/party/join/<id>?t=<jeton>) ou lien public : page sans compte, ni /user/me ni écran de connexion.
+const joinPage = !demoMode && (parseJoinHash(location.hash || '') !== null || sharePage);
 if (!demoMode) await initAuth({ anonymous: joinPage });
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
@@ -94,6 +112,8 @@ applyTheme(readTheme()); // après la synchronisation des préférences du profi
 const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
 setConversationRenderer(createConversationRenderer({ launch: socialLaunch, toast }));
 setWatchWithHandler(createWatchWithHandler({ launch: socialLaunch, toast }));
+configureSocialConv({ launch: socialLaunch, toast }); // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
+configureShareDialog({ toast }); // fenêtre « Partager » Social v3 (hook openShareDialog)
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
 state.curHash = location.hash || '';
 const first = parseRoute();

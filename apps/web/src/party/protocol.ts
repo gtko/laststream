@@ -18,7 +18,36 @@ export interface ChatLine {
   from: string;
   text: string;
   at: number;
+  /** Position du film (s) au moment de l'envoi, si le serveur la fournit (Social v3). */
+  pos?: number;
 }
+
+/* Social v3 (S4) : réglages, préparation, compte à rebours, vote, événements. Miroir du protocole du serveur. */
+export const PREP_STATUSES = ['searching', 'ready', 'buffering'] as const;
+export type PrepStatus = (typeof PREP_STATUSES)[number];
+export const CONTROL_MODES = ['all', 'host'] as const;
+export type ControlMode = (typeof CONTROL_MODES)[number];
+export const WAIT_LATE_MODES = ['off', '10s', 'always'] as const;
+export type WaitLateMode = (typeof WAIT_LATE_MODES)[number];
+export const REACTION_MODES = ['float', 'discreet', 'off'] as const;
+export type ReactionMode = (typeof REACTION_MODES)[number];
+export interface PartySettings {
+  control: ControlMode;
+  waitLate: WaitLateMode;
+  reactions: ReactionMode;
+}
+/** Défauts du serveur (salon sans réglage, ou serveur antérieur). */
+export const DEFAULT_SETTINGS: PartySettings = { control: 'all', waitLate: 'always', reactions: 'float' };
+export const COUNTDOWN_DEFAULT_SEC = 5;
+export const COUNTDOWN_MIN_SEC = 1;
+export const VOTE_MIN_OPTIONS = 2;
+export const VOTE_MAX_OPTIONS = 6;
+export const EVENT_KINDS = ['pause', 'play', 'seek', 'join', 'leave'] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+/** Option d'un vote de titre proposée par l'hôte. */
+export interface VoteInput { type: 'movie' | 'series'; tmdbId: number; title: string }
+/** Option avec son identifiant et son nombre de voix (aucun votant n'est identifié). */
+export interface VoteView extends VoteInput { id: string; votes: number }
 
 export interface You {
   username: string;
@@ -29,14 +58,21 @@ export interface You {
 }
 
 export type ServerMsg =
-  | { t: 'welcome'; you: You; room: PartyRoom; state: PlaybackState; serverTime: number; participants: PartyParticipant[]; chat: ChatLine[] }
+  | { t: 'welcome'; you: You; room: PartyRoom; state: PlaybackState; serverTime: number; participants: PartyParticipant[]; chat: ChatLine[]; settings?: PartySettings; countdownAt?: number | null; vote?: VoteView[] | null }
   | { t: 'pong'; c: number; s: number }
   | { t: 'state'; state: PlaybackState; serverTime: number; by?: string }
   | { t: 'media'; media: PartyMedia; fingerprint?: Fingerprint | null; state: PlaybackState; serverTime: number }
   | { t: 'join'; participant: PartyParticipant }
   | { t: 'leave'; user: string }
   | { t: 'chat'; line: ChatLine }
-  | { t: 'react'; user: string; emoji: string; at: number }
+  /** Réaction signée (Social v3) : `by` = auteur, `pos` = position du film ; les serveurs antérieurs n'envoient que `user`. */
+  | { t: 'react'; user: string; by?: string; emoji: string; at: number; pos?: number | null }
+  | { t: 'settings'; settings: PartySettings; by?: string }
+  | { t: 'prep'; user: string; ready: boolean; quality: string | null; status: PrepStatus }
+  /** Compte à rebours : `at` = instant serveur (ms) où la lecture reprend ; null = annulé. */
+  | { t: 'countdown'; at: number | null; by?: string }
+  | { t: 'vote'; options: VoteView[]; open: boolean }
+  | { t: 'event'; kind: EventKind; by: string; pos: number; delta?: number }
   | { t: 'muted'; user: string; muted: boolean }
   | { t: 'host'; user: string }
   | { t: 'reported'; by?: string; against?: string; text?: string }
@@ -53,8 +89,15 @@ export type ClientMsg =
   | { t: 'sync' }
   | { t: 'ctl'; action: 'play' | 'pause' | 'seek' | 'sync'; pos: number }
   | { t: 'episode'; season: number; episode: number; fingerprint?: Fingerprint }
-  | { t: 'chat'; text: string }
-  | { t: 'react'; emoji: string }
+  | { t: 'chat'; text: string; pos?: number }
+  | { t: 'react'; emoji: string; pos?: number }
+  | { t: 'settings'; control?: ControlMode; waitLate?: WaitLateMode; reactions?: ReactionMode }
+  | { t: 'ready'; ready: boolean; quality: string | null }
+  | { t: 'status'; status: PrepStatus }
+  | { t: 'start'; countdown: number }
+  | { t: 'vote_open'; options: VoteInput[] }
+  | { t: 'vote'; optionId: string }
+  | { t: 'vote_close' }
   | { t: 'report'; messageId: string; reason?: string }
   | { t: 'mute'; user: string; muted: boolean }
   | { t: 'kick'; user: string }
@@ -63,7 +106,7 @@ export type ClientMsg =
   /** Tampon : `ready` = assez d'avance pour lire ; `ahead` = secondes de tampon devant la position (0 à 600). */
   | { t: 'buf'; ready: boolean; ahead: number };
 
-const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
+const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'settings', 'prep', 'countdown', 'vote', 'event', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
 
 /** Message serveur d'une trame texte, ou null si elle est illisible ou d'un type inconnu. */
 export function parseServerMessage(raw: unknown): ServerMsg | null {
@@ -118,6 +161,8 @@ export function partyErrorText(code: string): string {
     case 'cannot_target_self': return 'Action impossible sur toi-même.';
     case 'user_not_found': return 'Participant introuvable.';
     case 'not_series': return 'Ce salon ne lit pas une série.';
-    default: return 'Erreur du salon (' + code + ').';
+    case 'already_playing': return 'La lecture a déjà démarré.';
+    case 'vote_already_open': return 'Un vote est déjà ouvert.';
+    default: return ''; // type ou code inconnu (serveur plus ancien ou plus récent) : ignoré sans bruit
   }
 }

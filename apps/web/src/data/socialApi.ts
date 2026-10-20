@@ -164,6 +164,10 @@ export interface PartyParticipant {
   peerId?: string;
   /** Invité (lien d'invitation, sans compte). */
   guest?: boolean;
+  /** Préparation avant le départ (Social v3) : prêt, qualité choisie, état. Absents des serveurs antérieurs. */
+  ready?: boolean;
+  quality?: string | null;
+  status?: 'searching' | 'ready' | 'buffering';
 }
 export interface PartyRoom {
   id: string;
@@ -229,6 +233,13 @@ export const createPartyInvite = (id: string, profileId: string) => call<PartyIn
  */
 export const createPartyInviteLink = (id: string, profileId: string, rotate = false) =>
   call<PartyInvite>('/' + enc(id) + '/invite-link', { ...party, method: 'POST', body: { profileId, rotate } });
+/**
+ * Invitation ciblée d'un ami dans le salon (Social v3) : crée un message « invitation » dans la discussion directe et
+ * notifie l'ami en temps réel. Réservé à un membre connecté au salon (compte, pas invité). `actorPid` : profil social agissant
+ * (X-Profile-Id).
+ */
+export const inviteFriendToParty = (id: string, pid: string, actorPid: string) =>
+  call<{ message: unknown }>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { pid }, headers: { 'x-profile-id': actorPid } });
 /** Séance d'un invité entré par le lien partagé : jeton individuel (à présenter à la WebSocket) et pseudo attribué (unique). */
 export interface GuestEntry {
   sessionToken: string;

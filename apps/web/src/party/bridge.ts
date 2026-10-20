@@ -93,6 +93,13 @@ export function roomBodyOf(a: SessionAdapter, visibility: PartyVisibility, profi
   };
 }
 
+/** Corps de création d'un salon d'attente : le titre est connu, mais aucune lecture n'a démarré (donc pas d'empreinte de version). */
+export function lobbyBodyOf(req: { type: 'movie' | 'tv'; id: string; name: string; season?: number | null; episode?: number | null }, poster: string | null, visibility: PartyVisibility, profileId: string, language: string) {
+  const type = req.type === 'tv' ? 'series' : 'movie';
+  const media: PartyMedia = { type, tmdbId: Number(req.id), ...(type === 'series' ? { season: req.season ?? 1, episode: req.episode ?? 1 } : {}) };
+  return { profileId, visibility, title: req.name, poster, language, media };
+}
+
 /** Adaptateur moteur -> `PlayerLike` pour le contrôleur. */
 export function playerOf(a: SessionAdapter | null): PlayerLike | null {
   const e = a?.engine;
@@ -178,9 +185,37 @@ class PartyBridge {
     return room;
   }
 
+  /** Crée un salon d'attente (avant toute lecture) pour un titre et s'y connecte comme hôte ; la lecture démarre au départ du salon. */
+  async createLobby(req: { type: 'movie' | 'tv'; id: string; name: string; season?: number | null; episode?: number | null }, poster: string | null, visibility: PartyVisibility): Promise<PartyRoom> {
+    const kid = isKidProfile();
+    const profileId = userStore.currentProfile().id;
+    const lang = getLangPrefs().audio === 'original' ? 'fr' : getLangPrefs().audio;
+    const { room } = await createParty(lobbyBodyOf(req, poster, kid ? 'private' : visibility, profileId, lang));
+    await this.connect(room.id, profileId);
+    return room;
+  }
+
+  /** Position de lecture de ce lecteur (secondes), ou null s'il n'y a pas de lecture mesurable : jointe aux messages du chat et aux réactions. */
+  position(): number | null {
+    const a = this.adapter?.() ?? null;
+    if (!a || !a.ready || !a.engine) return null;
+    const t = a.engine.state().time;
+    return Number.isFinite(t) && t >= 0 ? t : null;
+  }
+
+  /** Lance la lecture du titre du salon avec la source la plus proche de l'hôte (départ du salon d'attente). */
+  async launchRoom(): Promise<void> {
+    const room = this.client?.room ?? this.room;
+    if (!room || !this.launcher) return;
+    const req = requestOfRoom(room, this.client?.room?.media ?? room.media);
+    if (!req) throw new UserApiError(0, 'media_unsupported');
+    await this.launcher(req, this.launchOptions());
+  }
+
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
-  async connect(roomId: string, profileId: string): Promise<void> {
-    this.leave();
+  async connect(roomId: string, profileId: string, lobby = false): Promise<void> {
+    this.leave(); // remet `lobby` à false : le drapeau se pose après, pour ne pas être perdu
+    this.lobby = lobby;
     this.endReason = '';
     this.profileId = profileId;
     const first = await joinParty(roomId, profileId);
@@ -202,12 +237,16 @@ class PartyBridge {
     client.on('host', () => { this.controller?.reset(); this.emit(); });
     client.on('media', (m) => this.onMedia(m));
     client.on('end', (reason) => { this.endReason = reason; this.emit(); });
-    client.on('error', (code) => { this.lastError = partyErrorText(code); this.emit(); });
+    client.on('error', (code) => { const text = partyErrorText(code); if (!text) return; this.lastError = text; this.emit(); });
     client.start();
     this.emit();
   }
 
   lastError = '';
+  /** Le salon d'attente est ouvert : un changement de titre (vote) n'y lance pas la lecture, elle démarre au départ. */
+  lobby = false;
+  /** Préparation déjà déclarée (prêt) pour la connexion en cours : posée au lancement d'une lecture hors salon d'attente. */
+  private readyDeclared = false;
 
   /** Rejoint un salon et lance la lecture du titre (ou de l'épisode) en cours, avec la source la plus proche de l'hôte. */
   async joinAndPlay(roomId: string, profileId: string): Promise<void> {
@@ -231,6 +270,8 @@ class PartyBridge {
     this.room = null;
     this.pending = null;
     this.announced = '';
+    this.readyDeclared = false;
+    this.lobby = false;
     this.stopRelay();
     if (c) c.close();
     this.emit();
@@ -448,6 +489,7 @@ class PartyBridge {
     this.controller?.reset();
     this.emit();
     const room = this.room;
+    if (this.lobby) return;
     if (!room || this.client?.isHost || !this.launcher) return;
     const a = this.adapter?.() ?? null;
     const sameEp = a && a.cur.season === (m.media.season ?? null) && a.cur.episode === (m.media.episode ?? null) && a.req.id === String(m.media.tmdbId);
@@ -468,6 +510,7 @@ class PartyBridge {
     const c = this.client;
     if (!c || !c.room) return;
     this.controller?.reset();
+    this.declareReady(c, a);
     if (c.isHost) {
       // Le lecteur de l'hôte vient de démarrer : son état s'aligne sur le salon à la prochaine mesure. Pas pour une bascule :
       // le salon garde la main (son état ne doit pas être écrasé par celui d'un lecteur qui repart).
@@ -484,6 +527,20 @@ class PartyBridge {
     } else {
       c.requestSync();
     }
+  }
+
+  /**
+   * Une lecture démarre pour ce participant : il se déclare prêt (le salon l'attend « en recherche » tant qu'il ne dit rien),
+   * avec la qualité de sa source. Une seule fois par connexion ; les serveurs antérieurs ignorent ces messages.
+   */
+  private declareReady(c: PartyClient, a: SessionAdapter): void {
+    if (this.readyDeclared) return;
+    // Serveur sans réglages v3 (pas de champ `settings` dans le welcome) : ces messages seraient refusés, on ne les envoie pas.
+    if (!c.v3) return;
+    this.readyDeclared = true;
+    const quality = (a.view as { quality?: unknown } | null)?.quality;
+    c.sendReady(true, typeof quality === 'string' && quality !== '' ? quality.slice(0, 40) : null);
+    c.sendStatus('ready');
   }
 
   /** Appelé à chaque pas de la boucle du lecteur (~100 ms). */

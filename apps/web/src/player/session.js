@@ -65,7 +65,16 @@ import { openConversation } from '../ui/socialSidebar.js';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
 import { getNotes, postNote } from '../data/socialV2Api';
-import { getState as getSocialState, onNote, sendMessage as sendSocialMessage, subscribe as subscribeSocial } from '../data/socialStore';
+import { getHeatmap, getMissed } from '../data/socialV3Api';
+import {
+  endCinema, getState as getSocialState, loadPrefs, onNote, sendMessage as sendSocialMessage, setCinemaHidden, startCinema,
+  subscribe as subscribeSocial,
+} from '../data/socialStore';
+import { openShareDialog } from '../ui/socialHooks.js';
+import {
+  cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy,
+  toggleElement, untilFor,
+} from './playbackSocial';
 import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
@@ -283,6 +292,7 @@ function ensureUI() {
     miniState,
     miniLayout: onMiniLayout,
     react: postReact,
+    cinema: onCinema,
   });
   miniState.onChange(applyMini);
   // Bascule automatique entre débrideurs : « AllDebrid indisponible → TorBox ».
@@ -308,7 +318,10 @@ function ensureUI() {
   ui.video.autoPictureInPicture = storeGet(AUTOPIP_KEY) === '1';
   ui.setPipAvailable(html.supportsPip());
   document.addEventListener('keydown', onKey, true);
-  bubble = createMessageBubble(ui.root, { getState: getSocialState, subscribe: subscribeSocial, send: sendSocialMessage, openConversation });
+  bubble = createMessageBubble(ui.root, {
+    getState: getSocialState, subscribe: subscribeSocial, send: sendSocialMessage, openConversation,
+    enabled: () => !socialHidden().has('bubbles'),
+  });
   // Image dans l'image : pas de barre de titre, on déplace la fenêtre en glissant sur la vidéo (hors boutons et barre de lecture).
   ui.root.addEventListener('mousedown', (e) => {
     if (!shell || !shellPip || e.button !== 0) return;
@@ -544,6 +557,7 @@ async function initSession(request, views, view, opts = {}) {
   const social = notesAllowed();
   setPresenceMedia(social ? presenceMediaOf(P) : null);
   if (social && bubble) bubble.start();
+  startSocialPlayback(P, social);
   document.body.classList.add('modal-open', 'lp-open');
   P.phase = nextPhase('ready', 'open');
   ui.setPhase(P.phase);
@@ -1364,6 +1378,7 @@ function tick() {
   const st = p.engine.state();
   tickN += 1;
   notesTick(p, st);
+  socialTick(p, st);
   presenceTick(st);
   partyBridge.tick(partyAdapter(p));
   // Sous-titres (100 ms).
@@ -1605,6 +1620,9 @@ function onAction(act, data) {
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
   if (act === 'react') { openReactHere(); return; }
+  if (act === 'cinema') { toggleCinemaMenu(); return; }
+  if (act === 'share') { shareHere(); return; }
+  if (act === 'catch-up') { catchUp(); return; }
   if (act === 'source') { showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
@@ -1913,6 +1931,7 @@ function startNotes(p) {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
     putNotes(nt, [note]);
   });
+  loadHeat(p);
   getNotes(media).then(({ notes }) => {
     if (p.notes === nt) putNotes(nt, notes);
   }).catch(() => undefined);
@@ -1925,6 +1944,8 @@ function stopNotes(p) {
   p.notes = null;
   if (nt.unsub) nt.unsub();
   ui.setNoteMarkers([]);
+  ui.setHeat([]);
+  ui.setFriendChip(null);
   ui.setNotesAvailable(false);
 }
 
@@ -1943,6 +1964,15 @@ function notesTick(p, st) {
   }
 }
 
+/** Carte de chaleur des réactions (60 tranches), rechargée après chaque note posée. Erreurs silencieuses. */
+function loadHeat(p) {
+  const nt = p.notes;
+  if (!nt) return;
+  getHeatmap({ ...nt.media, buckets: 60 }).then(({ buckets }) => {
+    if (p.notes === nt) ui.setHeat(heatBars(buckets));
+  }).catch(() => undefined);
+}
+
 /** Marqueurs redessinés seulement quand la liste ou la durée changent. */
 function refreshNoteMarkers(nt, duration) {
   const dur = Number.isFinite(duration) ? duration : 0;
@@ -1955,14 +1985,17 @@ function refreshNoteMarkers(nt, duration) {
 /** « Réagir ici » : popover pour la position courante, figée à l'ouverture. */
 function openReactHere() {
   if (!P || !P.view || !P.notes) return;
-  ui.openReact(P.engine.state().time);
+  ui.closeCinemaMenu(false);
+  const peer = bubble ? bubble.lastPeer() : null;
+  const friend = peer ? { pid: peer.pid, name: peer.who.replace(/#.*$/, '') } : null;
+  ui.openReact(P.engine.state().time, { friend, touch: isTouchLayout() });
 }
 
 /**
  * Envoie une réaction à la position du popover. Si le profil connecté est connu, la note apparaît tout de suite (optimiste,
  * avec sa bulle) puis est remplacée par celle du serveur ; en cas d'échec elle disparaît et un toast explique.
  */
-function postReact({ pos, kind, body }) {
+function postReact({ pos, kind, body, also }) {
   const p = P;
   const nt = p && p.notes;
   if (!nt) return;
@@ -1974,8 +2007,10 @@ function postReact({ pos, kind, body }) {
     putNotes(nt, [local]);
     ui.showNoteFlash(local);
   }
+  if (also) sendSocialMessage(also, body, { ...nt.media, pos: at }).catch(() => ui.toast('Message non envoyé, réessaie plus tard', 3500));
   postNote({ ...nt.media, pos: at, kind, body }).then(({ note }) => {
     if (p.notes !== nt) return;
+    loadHeat(p);
     if (tmp) removeNote(nt, tmp);
     nt.fired.add(note.id);
     putNotes(nt, [note]);
@@ -1987,6 +2022,161 @@ function postReact({ pos, kind, body }) {
   });
 }
 
+// ---------- Social pendant la lecture (Social v3) : mode cinéma, anti-spoiler, « regarde aussi » ----------
+
+/** Éléments sociaux masqués par le réglage « messages seulement » du profil (le mode cinéma s'y ajoute). */
+let quietHidden = [];
+let socialUnsub = null;
+let socialKey = '';
+let cinemaSince = null;
+let cinemaQuietEnd = false;
+let chipPid = '';
+const cinemaDraft = { duration: 'film', hidden: [] };
+
+const socialHidden = () => hiddenElements(getSocialState().cinema, Date.now(), quietHidden);
+const antiSpoilerOn = () => { const pr = getSocialState().prefs; return pr ? pr.antiSpoiler : true; };
+
+function startSocialPlayback(p, social) {
+  stopSocialPlayback(true);
+  ui.setSocialButtons({ cinema: social, share: social && !!presenceMediaOf(p) });
+  if (!social) return;
+  const c0 = getSocialState().cinema;
+  cinemaDraft.duration = 'film';
+  cinemaDraft.hidden = menuSelection(c0.hidden);
+  quietHidden = [];
+  socialKey = '';
+  cinemaSince = c0.active ? c0.since : null;
+  socialUnsub = subscribeSocial(onSocialChange);
+  const applyPolicy = (prefs) => {
+    if (P !== p) return;
+    const pol = startPolicy(prefs && prefs.playbackSocial);
+    quietHidden = pol.quiet;
+    if (pol.cinema && !getSocialState().cinema.active) startCinema('always', cinemaDraft.hidden);
+    onSocialChange(getSocialState());
+  };
+  const pr = getSocialState().prefs;
+  if (pr) applyPolicy(pr); else { onSocialChange(getSocialState()); loadPrefs().then(applyPolicy, () => undefined); }
+}
+
+/** Fin de session : abonnement retiré, mode cinéma levé sans résumé (les messages restent non lus dans la discussion). */
+function stopSocialPlayback(silent) {
+  if (socialUnsub) { socialUnsub(); socialUnsub = null; }
+  if (cinemaEndsOnTeardown(silent, getSocialState().cinema.active)) { cinemaQuietEnd = true; endCinema(); cinemaQuietEnd = false; }
+  cinemaSince = null;
+  quietHidden = [];
+  socialKey = '';
+  chipPid = '';
+  ui.setSocialHidden(new Set());
+  ui.setCinemaIndicator(null);
+  ui.setCinemaActive(false);
+  ui.closeCinemaMenu(false);
+  ui.hideCinemaSummary();
+  ui.setSocialButtons({ cinema: false, share: false });
+}
+
+/** Le store change : visibilité du social, indicateur, présence ; la fin du mode (échéance) déclenche le résumé. */
+function onSocialChange(st) {
+  const p = P;
+  if (!p) return;
+  const c = st.cinema;
+  if (c.active) cinemaSince = c.since;
+  else if (cinemaSince !== null) {
+    const since = cinemaSince;
+    cinemaSince = null;
+    if (!cinemaQuietEnd) showMissed(p, since);
+  }
+  const hidden = hiddenElements(c, Date.now(), quietHidden);
+  const key = [...hidden].sort().join(',') + '|' + c.active + '|' + (hidden.has('bubbles') ? c.count : 0);
+  if (key === socialKey) return;
+  socialKey = key;
+  ui.setSocialHidden(hidden);
+  ui.setCinemaActive(c.active);
+  ui.setCinemaIndicator(c.active ? (hidden.has('bubbles') ? c.count : 0) : null);
+  setPresenceMedia(notesAllowed() && !hidden.has('myPresence') ? presenceMediaOf(p) : null);
+  if (ui.isCinemaMenuOpen()) ui.renderCinemaMenu(cinemaModel());
+}
+
+/** Résumé de fin de mode : ce que les amis ont envoyé et posé depuis since. */
+function showMissed(p, since) {
+  const media = noteMediaOf(p);
+  if (!media) return;
+  getMissed({ ...media, since }).then((sum) => {
+    if (P !== p) return;
+    if (sum.messages > 0 || sum.notes.length > 0) ui.showCinemaSummary(sum);
+    else ui.toast('Mode cinéma terminé, rien de manqué', 3000);
+  }).catch(() => { if (P === p) ui.toast('Mode cinéma terminé', 3000); });
+}
+
+function cinemaModel() {
+  const c = getSocialState().cinema;
+  const st = P && P.engine ? P.engine.state() : null;
+  const left = st && Number.isFinite(st.duration) ? st.duration - st.time : 0;
+  return {
+    active: c.active,
+    duration: c.active ? durationOf(c.until) : cinemaDraft.duration,
+    hidden: c.active ? c.hidden : cinemaDraft.hidden,
+    remaining: remainingLabel(left),
+  };
+}
+
+function toggleCinemaMenu() {
+  if (!P || !P.view) return;
+  if (ui.isCinemaMenuOpen()) ui.closeCinemaMenu(true); else ui.openCinemaMenu(cinemaModel());
+}
+
+/** Rappels du menu du mode cinéma (interrupteur, durée, cases « Masquer »). */
+function onCinema(kind, v) {
+  const c = getSocialState().cinema;
+  if (kind === 'switch') {
+    if (v) startCinema(untilFor(cinemaDraft.duration, Date.now()), cinemaDraft.hidden);
+    else endCinema();
+  } else if (kind === 'duration') {
+    if (!c.active) cinemaDraft.duration = v;
+  } else if (kind === 'toggle') {
+    const next = toggleElement(c.active ? c.hidden : cinemaDraft.hidden, v);
+    cinemaDraft.hidden = next;
+    if (c.active) setCinemaHidden(next);
+  }
+  if (ui.isCinemaMenuOpen()) ui.renderCinemaMenu(cinemaModel());
+}
+
+/** Chaque relevé : fin du film levant le mode, position pour l'anti-spoiler, puce « regarde aussi » (≈ 1 s). */
+function socialTick(p, st) {
+  if (!p.notes) return;
+  const c = getSocialState().cinema;
+  if (c.active && filmEnded(c.until, st)) { endCinema(); return; }
+  ui.setSocialTime(st.time, st.duration, antiSpoilerOn());
+  if (tickN % 10 !== 0) return;
+  if (socialHidden().has('friendsPresence')) { ui.setFriendChip(null); chipPid = ''; return; }
+  const peers = friendsWatching(getSocialState(), presenceMediaOf(p), Date.now(), st.duration);
+  if (!peers.length) { ui.setFriendChip(null); chipPid = ''; return; }
+  const f = peers[0];
+  chipPid = f.pid;
+  ui.setFriendChip({ name: f.name, initial: initialOf(f.name), color: f.color, pos: f.pos, more: peers.length - 1 });
+}
+
+/** « Se caler sur elle » : saute à la position estimée de l'ami affiché. */
+function catchUp() {
+  if (!P || !P.view || !chipPid) return;
+  const st = P.engine.state();
+  const peer = friendsWatching(getSocialState(), presenceMediaOf(P), Date.now(), st.duration).find((x) => x.pid === chipPid);
+  if (!peer) { ui.toast('Cet ami ne regarde plus', 2500); return; }
+  seekTo(peer.pos);
+  ui.toast('Calé sur ' + peer.name, 2000);
+}
+
+/** Bouton « Partager » : ouvre la fenêtre du lot Partage (F4) sur le titre, à la position courante. */
+function shareHere() {
+  if (!P || !P.view) return;
+  const m = presenceMediaOf(P);
+  if (!m) return;
+  const media = { type: m.type, tmdbId: m.tmdbId, title: m.title };
+  if (m.poster) media.poster = m.poster;
+  if (m.season != null) media.season = m.season;
+  if (m.episode != null) media.episode = m.episode;
+  openShareDialog({ media, pos: Math.round(P.engine.state().time) });
+}
+
 // ---------- Fermeture ----------
 
 async function teardown(silent) {
@@ -1994,6 +2184,7 @@ async function teardown(silent) {
   if (!p) return;
   stopNotes(p);
   if (bubble) bubble.stop();
+  stopSocialPlayback(silent);
   if (!silent) nativeMini = false;
   resetMini();
   saveProgress(true);

@@ -1,7 +1,8 @@
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import {
-  CHAT_MAX, encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, PARTY_BUF_AHEAD_MAX_SEC, PARTY_RESUME_AHEAD_SEC, parseRtcFrame, parseServerMessage, REACTIONS,
-  type ChatLine, type ClientMsg, type ServerMsg, type You,
+  CHAT_MAX, COUNTDOWN_DEFAULT_SEC, DEFAULT_SETTINGS, encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, PARTY_BUF_AHEAD_MAX_SEC, PARTY_RESUME_AHEAD_SEC,
+  parseRtcFrame, parseServerMessage, REACTIONS,
+  type ChatLine, type ClientMsg, type EventKind, type PartySettings, type PrepStatus, type ServerMsg, type VoteInput, type VoteView, type You,
 } from './protocol';
 import { ClockEstimator, type PlaybackState } from './sync';
 
@@ -49,7 +50,15 @@ export interface ClientEvents {
   chat: ChatLine;
   /** Attente de tampon ouverte ou mise à jour (`PartyWait`), ou fermée (`null`). */
   wait: PartyWait | null;
-  react: { user: string; emoji: string; at: number };
+  /** Réaction : `by` = auteur (identique à `user` sur un serveur antérieur), `pos` = position du film si connue. */
+  react: { user: string; by: string; emoji: string; at: number; pos: number | null };
+  settings: PartySettings;
+  /** Compte à rebours de départ : instant serveur (ms) de reprise, ou null (annulé / terminé). */
+  countdown: number | null;
+  /** Vote du titre : options avec leurs voix, ou null à la fermeture. */
+  vote: VoteView[] | null;
+  /** Événement lisible (pause, reprise, saut, arrivée, départ). */
+  event: { kind: EventKind; by: string; pos: number; delta?: number };
   host: string;
   muted: { user: string; muted: boolean };
   reported: { by?: string; against?: string; text?: string };
@@ -73,6 +82,10 @@ export const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15_000] as const;
 /** Lignes de chat gardées en mémoire (l'historique reçu à la connexion compris). */
 export const CHAT_MEMORY_LINES = 200;
 
+/** Champ `pos` d'un message de chat ou de réaction : présent seulement pour une position valide. */
+const posField = (pos: number | null | undefined): { pos?: number } =>
+  typeof pos === 'number' && Number.isFinite(pos) && pos >= 0 ? { pos: Math.round(pos * 10) / 10 } : {};
+
 export class PartyClient {
   status: ClientStatus = 'idle';
   room: PartyRoom | null = null;
@@ -82,6 +95,14 @@ export class PartyClient {
   chat: ChatLine[] = [];
   /** Attente de tampon en cours (null hors attente). */
   waiting: PartyWait | null = null;
+  /** Réglages du salon (défauts d'un serveur antérieur). */
+  settings: PartySettings = { ...DEFAULT_SETTINGS };
+  /** Le serveur annonce les capacités v3 (le welcome porte `settings`). */
+  v3 = false;
+  /** Départ programmé (instant serveur, ms), null hors compte à rebours. */
+  countdownAt: number | null = null;
+  /** Vote du titre ouvert (options et voix), null hors vote. */
+  vote: VoteView[] | null = null;
   readonly clock = new ClockEstimator();
   /** Nombre de reconnexions réussies (reprise après coupure). */
   resumes = 0;
@@ -261,6 +282,10 @@ export class PartyClient {
         this.participants = msg.participants;
         this.chat = (msg.chat ?? []).slice(-CHAT_MEMORY_LINES);
         this.state = msg.state;
+        this.settings = { ...DEFAULT_SETTINGS, ...(msg.settings ?? {}) };
+        this.v3 = msg.settings !== undefined && msg.settings !== null;
+        this.countdownAt = typeof msg.countdownAt === 'number' ? msg.countdownAt : null;
+        this.vote = Array.isArray(msg.vote) ? msg.vote : null;
         this.setWaiting(null);
         this.emit('welcome', msg);
         this.emit('participants', this.participants);
@@ -308,7 +333,26 @@ export class PartyClient {
         break;
       }
       case 'react':
-        this.emit('react', { user: msg.user, emoji: msg.emoji, at: msg.at });
+        this.emit('react', { user: msg.user, by: typeof msg.by === 'string' ? msg.by : msg.user, emoji: msg.emoji, at: msg.at, pos: typeof msg.pos === 'number' ? msg.pos : null });
+        break;
+      case 'settings':
+        this.settings = { ...DEFAULT_SETTINGS, ...(msg.settings ?? {}) };
+        this.emit('settings', this.settings);
+        break;
+      case 'prep':
+        this.participants = this.participants.map((p) => (p.username === msg.user ? { ...p, ready: msg.ready, quality: msg.quality, status: msg.status } : p));
+        this.emit('participants', this.participants);
+        break;
+      case 'countdown':
+        this.countdownAt = typeof msg.at === 'number' ? msg.at : null;
+        this.emit('countdown', this.countdownAt);
+        break;
+      case 'vote':
+        this.vote = msg.open && Array.isArray(msg.options) ? msg.options : null;
+        this.emit('vote', this.vote);
+        break;
+      case 'event':
+        this.emit('event', { kind: msg.kind, by: msg.by, pos: msg.pos, ...(typeof msg.delta === 'number' ? { delta: msg.delta } : {}) });
         break;
       case 'muted':
         this.participants = this.participants.map((p) => (p.username === msg.user ? { ...p, muted: msg.muted } : p));
@@ -367,17 +411,41 @@ export class PartyClient {
   changeEpisode(season: number, episode: number, fingerprint?: Fingerprint): boolean {
     return this.isHost && this.raw({ t: 'episode', season, episode, ...(fingerprint ? { fingerprint } : {}) });
   }
-  /** Message du chat : espaces retirés, CHAT_MAX caractères au plus ; vide = rien n'est envoyé. */
-  sendChat(text: string): boolean {
+  /**
+   * Message du chat : espaces retirés, CHAT_MAX caractères au plus ; vide = rien n'est envoyé. `pos` : position du film (s),
+   * jointe seulement si elle est connue (un serveur antérieur ne la lit pas).
+   */
+  sendChat(text: string, pos?: number | null): boolean {
     const t = text.trim().slice(0, CHAT_MAX);
-    return t ? this.raw({ t: 'chat', text: t }) : false;
+    return t ? this.raw({ t: 'chat', text: t, ...posField(pos) }) : false;
   }
   /** Réaction : emoji de la liste du salon uniquement ; false sinon ou hors ligne. */
-  sendReact(emoji: string): boolean {
-    return (REACTIONS as readonly string[]).includes(emoji) && this.raw({ t: 'react', emoji });
+  sendReact(emoji: string, pos?: number | null): boolean {
+    return (REACTIONS as readonly string[]).includes(emoji) && this.raw({ t: 'react', emoji, ...posField(pos) });
   }
   /** Alias de `sendReact` (appels existants). */
-  react(emoji: string): boolean { return this.sendReact(emoji); }
+  react(emoji: string, pos?: number | null): boolean { return this.sendReact(emoji, pos); }
+  /** Réglages du salon (hôte seul) : seuls les champs donnés changent. */
+  sendSettings(patch: Partial<PartySettings>): boolean {
+    if (!this.isHost) return false;
+    const msg: ClientMsg = { t: 'settings' };
+    if (patch.control) msg.control = patch.control;
+    if (patch.waitLate) msg.waitLate = patch.waitLate;
+    if (patch.reactions) msg.reactions = patch.reactions;
+    return Object.keys(msg).length > 1 && this.raw(msg);
+  }
+  /** Préparation : prêt à lire (et qualité de la source choisie, ou null). */
+  sendReady(ready: boolean, quality: string | null = null): boolean { return this.v3 && this.raw({ t: 'ready', ready, quality }); }
+  /** État de recherche de source : cherche, prêt ou en tampon. */
+  sendStatus(status: PrepStatus): boolean { return this.v3 && this.raw({ t: 'status', status }); }
+  /** Départ (hôte seul) : la lecture reprend après `countdown` secondes (1 à 10). */
+  startPlayback(countdown: number = COUNTDOWN_DEFAULT_SEC): boolean {
+    return this.isHost && this.raw({ t: 'start', countdown: Math.min(10, Math.max(1, Math.round(countdown))) });
+  }
+  /** Vote du titre : l'hôte l'ouvre (2 à 6 options) et le ferme ; chacun choisit une option. */
+  openVote(options: readonly VoteInput[]): boolean { return this.isHost && this.raw({ t: 'vote_open', options: [...options] }); }
+  castVote(optionId: string): boolean { return this.raw({ t: 'vote', optionId }); }
+  closeVote(): boolean { return this.isHost && this.raw({ t: 'vote_close' }); }
   /**
    * Tampon local, envoyé au salon : `ready` = assez d'avance pour lire, `ahead` = secondes de tampon devant la position
    * (ramenées à 0..PARTY_BUF_AHEAD_MAX_SEC). Le salon retient la lecture tant qu'un participant n'est pas prêt.

@@ -1,48 +1,105 @@
 import { isKidProfile, isServerMode } from './auth';
 import { requireBase } from './config';
-import { UserApiError } from './userApi';
+import { UserApiError, type MediaKind } from './userApi';
 import * as api from './socialV2Api';
 import type {
   Conversation, FriendRequest, FriendView, FriendsResponse, MediaRef, Message, MessageContext, Note, RequestOutcome, SocialMe, Status,
 } from './socialV2Api';
+import * as v3 from './socialV3Api';
+import type {
+  ActivityItem, BlockedPerson, ConversationV3, FriendV3, JoinAnswer, ListDetail, ListItemInput, ListSummary, MediaQuery,
+  MessageV3, NewMessage, PrefsPatch, ProfilePatch, Reaction, RelationPatch, ReportInput, ShareInput, SocialPrefs,
+  SocialProfile, Poll, TagResult,
+} from './socialV3Api';
 import { createSocialLive, type LiveEvent, type LiveStatus, type SocialLive } from './socialLive';
 
-/* Store du Social v2 : moi, amis, foyer, demandes, conversations, messages chargés, non-lus, statut et badge.
- * Les événements du canal temps réel sont réduits ici ; les notes vont aux écouteurs `onNote`. Le social n'existe
- * jamais pour un profil enfant : `start()` ne fait rien dans ce cas, ni hors mode serveur (pas de session). */
+/* Store du Social v2 et v3 : moi, profil, préférences, amis, foyer, demandes, conversations directes et groupes, messages
+ * (DM en cache par pid, messages v3 par conversation), non-lus, saisie, statut, badge, listes partagées, activité et mode
+ * cinéma. Les événements du canal temps réel sont réduits ici ; les notes et les événements transitoires (réponse à une
+ * demande de rejoindre, invitation au salon) vont aux écouteurs. Le social n'existe jamais pour un profil enfant :
+ * `start()` ne fait rien dans ce cas, ni hors mode serveur (pas de session).
+ * Protection : chaque appel réseau n'écrit son résultat que si l'époque n'a pas changé (arrêt ou changement de profil). */
 
 export const MESSAGE_MAX = 1000;
+/** Une saisie disparaît 5 s après le dernier signal. */
+export const TYPING_MS = 5_000;
+/** Pas plus d'un envoi de saisie toutes les 3 s (le serveur limite à 1/3 s). */
+export const TYPING_SEND_MIN_MS = 3_000;
+const TYPING_MUTE_MS = 60_000;
 
 export type NoteListener = (media: MediaRef, note: Note) => void;
+export type JoinAnswerListener = (ev: { pid: string; accept: boolean; partyId?: string }) => void;
+export type PartyInviteListener = (ev: { from: FriendView; partyId: string; title: string }) => void;
+
+/** Échéance du mode cinéma : fin du film (levée par `endCinema`), epoch ms, ou toujours. */
+export type CinemaUntil = 'film' | 'always' | number;
+export const CINEMA_ELEMENTS = ['bubbles', 'notes', 'markers', 'friendsPresence', 'myPresence', 'partyRequests'] as const;
+export type CinemaElement = (typeof CINEMA_ELEMENTS)[number];
+/** Éléments masqués par défaut : les cases cochées de la maquette (bulles, notes, marqueurs). */
+export const DEFAULT_CINEMA_HIDDEN: CinemaElement[] = ['bubbles', 'notes', 'markers'];
+
+export interface CinemaState {
+  active: boolean;
+  until: CinemaUntil | null;
+  /** Début du mode (epoch ms) : borne du résumé `GET /missed`. */
+  since: number | null;
+  /** Éléments masqués pendant le mode. */
+  hidden: CinemaElement[];
+  /** Messages reçus pendant le mode, dans l'ordre d'arrivée. */
+  queue: MessageV3[];
+  /** Compteur de l'indicateur « N messages en attente » (= longueur de la file). */
+  count: number;
+}
 
 export interface SocialState {
   me: SocialMe | null;
   status: Status;
-  friends: FriendView[];
-  household: FriendView[];
+  friends: FriendV3[];
+  household: FriendV3[];
   incoming: FriendRequest[];
   outgoing: FriendRequest[];
   conversations: Conversation[];
-  /** Messages chargés, par pid du correspondant, chronologiques. */
+  /** Messages chargés, par pid du correspondant, chronologiques (v2). */
   messages: Record<string, Message[]>;
   live: LiveStatus;
-  /** Non-lus : somme des compteurs de conversation. */
+  /** Non-lus : somme des compteurs de conversations directes et de groupes. */
   unread: number;
   /** Badge : demandes entrantes + non-lus. */
   badge: number;
+  /** Groupes : conversations v3 dont `group` est présent. */
+  groups: ConversationV3[];
+  /** Messages v3 par conversation (`dm:<pid>` ou `g:<id>`), chronologiques ; seulement les conversations chargées. */
+  threads: Record<string, MessageV3[]>;
+  /** Saisie : conversation -> pid -> échéance (epoch ms). */
+  typing: Record<string, Record<string, number>>;
+  profile: SocialProfile | null;
+  prefs: SocialPrefs | null;
+  blocked: BlockedPerson[];
+  /** Demandes entrantes de rejoindre mon salon. */
+  joinRequests: FriendView[];
+  lists: ListSummary[];
+  listDetails: Record<string, ListDetail>;
+  activity: ActivityItem[];
+  cinema: CinemaState;
 }
 
 type Base = Omit<SocialState, 'unread' | 'badge'>;
 type Person = { handle: Conversation['handle']; avatarColor: string };
 
+export function initialCinemaState(): CinemaState {
+  return { active: false, until: null, since: null, hidden: [...DEFAULT_CINEMA_HIDDEN], queue: [], count: 0 };
+}
+
 export function initialSocialState(): SocialState {
   return withCounts({
     me: null, status: 'online', friends: [], household: [], incoming: [], outgoing: [], conversations: [], messages: {}, live: 'idle',
+    groups: [], threads: {}, typing: {}, profile: null, prefs: null, blocked: [], joinRequests: [], lists: [], listDetails: {},
+    activity: [], cinema: initialCinemaState(),
   });
 }
 
 function withCounts(b: Base): SocialState {
-  const unread = b.conversations.reduce((n, c) => n + c.unread, 0);
+  const unread = b.conversations.reduce((n, c) => n + c.unread, 0) + b.groups.reduce((n, g) => n + g.unread, 0);
   return { ...b, unread, badge: b.incoming.length + unread };
 }
 
@@ -56,7 +113,7 @@ function removeRequests(b: Base, pid: string): Base {
 }
 
 /** Range un ami dans le foyer ou dans les amis, selon `household` ; remplace la fiche précédente. */
-function placeFriend(b: Base, f: FriendView): Base {
+function placeFriend(b: Base, f: FriendV3): Base {
   const friends = removePid(b.friends, f.pid);
   const household = removePid(b.household, f.pid);
   return f.household
@@ -65,7 +122,7 @@ function placeFriend(b: Base, f: FriendView): Base {
 }
 
 /** Amis acceptés : la demande disparaît, la fiche ami est rangée. */
-function befriend(b: Base, f: FriendView): Base {
+function befriend(b: Base, f: FriendV3): Base {
   return placeFriend(removeRequests(b, f.pid), f);
 }
 
@@ -82,30 +139,111 @@ function findPerson(b: Base, pid: string): Person | undefined {
 
 const byLastDesc = (a: Conversation, b: Conversation): number => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
 
+/** Sépare, dans une même réponse, conversations directes et groupes. */
+function splitConversations(list: ConversationV3[]): { conversations: Conversation[]; groups: ConversationV3[] } {
+  return {
+    conversations: list.filter((c) => !c.group).sort(byLastDesc),
+    groups: list.filter((c) => c.group !== undefined).sort(byLastDesc),
+  };
+}
+
 /** Fusionne deux listes de messages par id (la seconde l'emporte), chronologique. */
-export function mergeMessages(a: Message[], b: Message[]): Message[] {
-  const map = new Map<string, Message>();
+export function mergeMessages<T extends Message>(a: T[], b: T[]): T[] {
+  const map = new Map<string, T>();
   for (const m of [...a, ...b]) map.set(m.id, m);
   return [...map.values()].sort((x, y) => x.createdAt - y.createdAt);
 }
 
-/** Un message entre moi et `peer` : cache des messages, dernier message, non-lus (seulement pour un message reçu, une fois). */
-function applyMessage(b: Base, m: Message): Base {
+/** Fusionne des entrées d'activité par id, la plus récente d'abord. */
+export function mergeActivity(a: ActivityItem[], b: ActivityItem[]): ActivityItem[] {
+  const map = new Map<string, ActivityItem>();
+  for (const x of [...a, ...b]) map.set(x.id, x);
+  return [...map.values()].sort((x, y) => y.at - x.at);
+}
+
+const dmConv = (pid: string): string => `dm:${pid}`;
+const groupConv = (id: string): string => `g:${id}`;
+export const isGroupConv = (conv: string): boolean => conv.startsWith('g:');
+
+/** Conversation d'un message : `conv` du serveur, ou `dm:<correspondant>` pour un message v2. */
+export function convOf(m: Message, me: string): string {
+  const c = (m as Partial<MessageV3>).conv;
+  if (typeof c === 'string' && c !== '') return c;
+  return dmConv(m.from === me ? m.to : m.from);
+}
+
+/** Forme v3 d'un message : conversation, type `text` et réactions vides par défaut. */
+export function toV3(m: Message, me: string): MessageV3 {
+  const x = m as Partial<MessageV3>;
+  return { ...m, conv: convOf(m, me), kind: x.kind ?? 'text', reactions: x.reactions ?? [] };
+}
+
+/** Remplace le message `id` d'une conversation chargée ; une conversation non chargée reste telle quelle. */
+function patchThread(threads: Record<string, MessageV3[]>, conv: string, fn: (m: MessageV3) => MessageV3): Record<string, MessageV3[]> {
+  const list = threads[conv];
+  return list ? { ...threads, [conv]: list.map(fn) } : threads;
+}
+
+/** Ajoute un message à une conversation chargée (sans effet si elle ne l'est pas). */
+function threadWith(threads: Record<string, MessageV3[]>, conv: string, m: MessageV3): Record<string, MessageV3[]> {
+  const cached = threads[conv];
+  return cached ? { ...threads, [conv]: mergeMessages(cached, [m]) } : threads;
+}
+
+function without<V>(rec: Record<string, V>, key: string): Record<string, V> {
+  const out = { ...rec };
+  delete out[key];
+  return out;
+}
+
+/** Mode cinéma actif à cet instant (une échéance en epoch ms passée le désactive). */
+export function cinemaOn(c: CinemaState, now: number): boolean {
+  return c.active && !(typeof c.until === 'number' && now >= c.until);
+}
+
+/** Mode cinéma : un message reçu pendant le mode entre dans la file (et compte), sans toucher aux non-lus. */
+function withQueue(b: Base, m: MessageV3, incoming: boolean, now: number): Base {
+  if (!incoming || !cinemaOn(b.cinema, now) || b.cinema.queue.some((x) => x.id === m.id)) return b;
+  const queue = [...b.cinema.queue, m];
+  return { ...b, cinema: { ...b.cinema, queue, count: queue.length } };
+}
+
+/** Un message (DM ou groupe) : cache, dernier message, non-lus (message reçu, une fois), file du mode cinéma. */
+function applyMessage(b: Base, m: Message, now: number): Base {
   const me = b.me?.pid ?? '';
+  const conv = convOf(m, me);
+  if (isGroupConv(conv)) return applyGroupMessage(b, m, me, now);
   const peer = m.from === me ? m.to : m.from;
   const cached = b.messages[peer];
   const duplicate = cached?.some((x) => x.id === m.id) ?? false;
   const messages = cached ? { ...b.messages, [peer]: mergeMessages(cached, [m]) } : b.messages;
-  const incoming = m.from !== me && !duplicate ? 1 : 0;
+  const incoming = m.from !== me && !duplicate;
   const known = b.conversations.find((c) => c.pid === peer);
   let conversations: Conversation[];
   if (known) {
-    conversations = b.conversations.map((c) => (c.pid === peer ? { ...c, last: m, unread: c.unread + incoming } : c));
+    conversations = b.conversations.map((c) => (c.pid === peer ? { ...c, last: m, unread: c.unread + (incoming ? 1 : 0) } : c));
   } else {
     const who = findPerson(b, peer);
-    conversations = who ? [...b.conversations, { pid: peer, handle: who.handle, avatarColor: who.avatarColor, last: m, unread: incoming }] : b.conversations;
+    conversations = who
+      ? [...b.conversations, { pid: peer, handle: who.handle, avatarColor: who.avatarColor, last: m, unread: incoming ? 1 : 0 }]
+      : b.conversations;
   }
-  return { ...b, messages, conversations: [...conversations].sort(byLastDesc) };
+  const v = toV3(m, me);
+  return withQueue({
+    ...b, messages, conversations: [...conversations].sort(byLastDesc), threads: threadWith(b.threads, conv, v),
+  }, v, incoming, now);
+}
+
+/** Un message de groupe : cache de la conversation, dernier message et non-lus du groupe connu. */
+function applyGroupMessage(b: Base, m: Message, me: string, now: number): Base {
+  const v = toV3(m, me);
+  const cached = b.threads[v.conv];
+  const duplicate = cached?.some((x) => x.id === m.id) ?? false;
+  const incoming = m.from !== me && !duplicate;
+  const groups = b.groups.some((g) => g.conv === v.conv)
+    ? b.groups.map((g) => (g.conv === v.conv ? { ...g, last: v, unread: g.unread + (incoming ? 1 : 0) } : g)).sort(byLastDesc)
+    : b.groups;
+  return withQueue({ ...b, groups, threads: threadWith(b.threads, v.conv, v) }, v, incoming, now);
 }
 
 /** Accusé de lecture reçu : `pid` a lu mes messages envoyés jusqu'à `at`. */
@@ -118,14 +256,37 @@ function markSentRead(messages: Record<string, Message[]>, me: string | undefine
   };
 }
 
+/** Saisie : enregistre l'échéance d'un membre pour une conversation. */
+export function setTyping(t: Record<string, Record<string, number>>, conv: string, pid: string, expiresAt: number): Record<string, Record<string, number>> {
+  return { ...t, [conv]: { ...(t[conv] ?? {}), [pid]: expiresAt } };
+}
+
+/** Retire les saisies échues à `now`. */
+export function pruneTyping(t: Record<string, Record<string, number>>, now: number): Record<string, Record<string, number>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const [conv, by] of Object.entries(t)) {
+    const kept = Object.fromEntries(Object.entries(by).filter(([, exp]) => exp > now));
+    if (Object.keys(kept).length > 0) out[conv] = kept;
+  }
+  return out;
+}
+
+/** Pids qui sont en train d'écrire dans cette conversation à `now`. */
+export function typingPids(s: SocialState, conv: string, now: number = Date.now()): string[] {
+  return Object.entries(s.typing[conv] ?? {}).filter(([, exp]) => exp > now).map(([pid]) => pid);
+}
+
 /**
- * Réduction d'un événement temps réel. Pur : renvoie un nouvel état. Les notes ne touchent pas à l'état (elles vont aux
- * écouteurs `onNote`) ; `pong` ne change rien.
+ * Réduction d'un événement temps réel. Pur : renvoie un nouvel état. Les notes, `list`, `join_answer` et `party_invite`
+ * ne touchent pas à l'état (ils vont aux écouteurs ou déclenchent un rechargement) ; `pong` ne change rien.
  */
-export function reduceLiveEvent(s: SocialState, ev: LiveEvent): SocialState {
+export function reduceLiveEvent(s: SocialState, ev: LiveEvent, now: number = Date.now()): SocialState {
   switch (ev.t) {
     case 'pong':
     case 'note':
+    case 'list':
+    case 'join_answer':
+    case 'party_invite':
       return s;
     case 'presence':
       return withCounts(placeFriend(s, ev.friend));
@@ -138,7 +299,18 @@ export function reduceLiveEvent(s: SocialState, ev: LiveEvent): SocialState {
     case 'read':
       return withCounts({ ...s, messages: markSentRead(s.messages, s.me?.pid, ev.pid, ev.at) });
     case 'message':
-      return withCounts(applyMessage(s, ev.message));
+      return withCounts(applyMessage(s, ev.message, now));
+    case 'typing':
+      if (ev.pid === s.me?.pid) return s;
+      return { ...s, typing: setTyping(pruneTyping(s.typing, now), ev.conv, ev.pid, now + TYPING_MS) };
+    case 'reaction':
+      return { ...s, threads: patchThread(s.threads, ev.conv, (m) => (m.id === ev.id ? { ...m, reactions: ev.reactions } : m)) };
+    case 'poll':
+      return { ...s, threads: patchThread(s.threads, ev.conv, (m) => (m.poll?.id === ev.poll.id ? { ...m, poll: ev.poll } : m)) };
+    case 'join_request':
+      return { ...s, joinRequests: upsertPid(s.joinRequests, ev.from) };
+    case 'activity':
+      return { ...s, activity: mergeActivity(s.activity, [ev.item]) };
   }
 }
 
@@ -146,15 +318,37 @@ export function reduceLiveEvent(s: SocialState, ev: LiveEvent): SocialState {
 let state: SocialState = initialSocialState();
 const subs = new Set<(s: SocialState) => void>();
 const noteSubs = new Set<NoteListener>();
+const joinAnswerSubs = new Set<JoinAnswerListener>();
+const partyInviteSubs = new Set<PartyInviteListener>();
 let live: SocialLive | null = null;
 /** Incrémenté à chaque démarrage et arrêt : une réponse réseau dont l'époque a changé est périmée et n'est pas écrite. */
 let epoch = 0;
+/** Minuteurs de saisie (retrait à 5 s) : annulés à l'arrêt. */
+const timers = new Set<ReturnType<typeof setTimeout>>();
+let cinemaTimer: ReturnType<typeof setTimeout> | null = null;
+/** Dernier envoi de saisie par conversation (limitation côté client). */
+const lastTypingSent = new Map<string, number>();
 
 function commit(next: SocialState): void {
   state = next;
   subs.forEach((f) => {
     try { f(state); } catch { /* un abonné ne casse pas le store */ }
   });
+}
+
+function later(fn: () => void, ms: number): void {
+  const t = setTimeout(() => { timers.delete(t); fn(); }, ms);
+  timers.add(t);
+}
+
+function clearTimers(): void {
+  timers.forEach((t) => clearTimeout(t));
+  timers.clear();
+}
+
+function clearCinemaTimer(): void {
+  if (cinemaTimer !== null) clearTimeout(cinemaTimer);
+  cinemaTimer = null;
 }
 
 export function getState(): SocialState {
@@ -172,16 +366,39 @@ export function onNote(cb: NoteListener): () => void {
   return () => { noteSubs.delete(cb); };
 }
 
+/** Écouteur des réponses à une demande de rejoindre (acceptée ou refusée). */
+export function onJoinAnswer(cb: JoinAnswerListener): () => void {
+  joinAnswerSubs.add(cb);
+  return () => { joinAnswerSubs.delete(cb); };
+}
+
+/** Écouteur des invitations ciblées à une watch party. */
+export function onPartyInvite(cb: PartyInviteListener): () => void {
+  partyInviteSubs.add(cb);
+  return () => { partyInviteSubs.delete(cb); };
+}
+
+/**
+ * Appel réseau : son résultat n'est appliqué que si l'époque n'a pas changé (arrêt ou changement de profil entre-temps).
+ * `apply` lit l'état courant, au moment où la réponse arrive.
+ */
+async function run<T>(req: () => Promise<T>, apply?: (r: T) => Partial<SocialState>): Promise<T> {
+  const e = epoch;
+  const r = await req();
+  if (epoch === e && apply) commit(withCounts({ ...state, ...apply(r) }));
+  return r;
+}
+
 /** Relit profil, amis et conversations. */
 export async function refresh(): Promise<void> {
   const e = epoch;
-  const [me, lists, convs] = await Promise.all([api.getMe(), api.getFriends(), api.getConversations()]);
+  const [me, lists, convs] = await Promise.all([api.getMe(), api.getFriends(), v3.listConversations()]);
   if (epoch !== e) return;
   commit(withCounts({
     ...withFriendLists(state, lists),
     me,
     status: me.status,
-    conversations: [...convs.conversations].sort(byLastDesc),
+    ...splitConversations(convs.conversations),
   }));
 }
 
@@ -189,9 +406,9 @@ export async function refresh(): Promise<void> {
 async function refreshLists(): Promise<void> {
   if (!state.me) return refresh();
   const e = epoch;
-  const [lists, convs] = await Promise.all([api.getFriends(), api.getConversations()]);
+  const [lists, convs] = await Promise.all([api.getFriends(), v3.listConversations()]);
   if (epoch !== e) return;
-  commit(withCounts({ ...withFriendLists(state, lists), conversations: [...convs.conversations].sort(byLastDesc) }));
+  commit(withCounts({ ...withFriendLists(state, lists), ...splitConversations(convs.conversations) }));
 }
 
 const resync = (): Promise<void> => refreshLists().catch(() => undefined);
@@ -236,9 +453,15 @@ export async function removeFriend(pid: string): Promise<void> {
   commit(withCounts({ ...state, friends: removePid(state.friends, pid), household: removePid(state.household, pid) }));
 }
 
-/** Range un message (envoyé ou reçu) ; relit les conversations si le correspondant est encore inconnu. */
+/** Range un message (envoyé ou reçu) ; relit les conversations si le correspondant ou le groupe est encore inconnu. */
 function receive(m: Message): void {
-  commit(withCounts(applyMessage(state, m)));
+  commit(withCounts(applyMessage(state, m, Date.now())));
+  const me = state.me?.pid ?? '';
+  const conv = convOf(m, me);
+  if (isGroupConv(conv)) {
+    if (!state.groups.some((g) => g.conv === conv)) void resync();
+    return;
+  }
   const peer = m.from === state.me?.pid ? m.to : m.from;
   if (!state.conversations.some((c) => c.pid === peer)) void resync();
 }
@@ -280,18 +503,248 @@ export async function loadMessages(pid: string, o: { before?: number; limit?: nu
   return merged;
 }
 
+// ---- Profil (S1) ----
+const withProfile = (p: SocialProfile): Partial<SocialState> => ({
+  profile: p,
+  me: state.me && { ...state.me, handle: p.handle, avatarColor: p.avatarColor },
+});
+
+/** Mon profil social étendu. */
+export const loadProfile = (): Promise<SocialProfile> => run(v3.getProfile, withProfile);
+
+/** Modifie le profil (corps partiel) ; le nom peut changer le handle. */
+export const saveProfile = (patch: ProfilePatch): Promise<SocialProfile> => run(() => v3.updateProfile(patch), withProfile);
+
+/** Tire un nouveau tag (30 jours entre deux tirages côté serveur). */
+export const rerollTag = (): Promise<TagResult> => run(v3.rerollTag, (r) => ({
+  me: state.me && { ...state.me, handle: r.handle },
+  profile: state.profile && { ...state.profile, handle: r.handle, tagChangeableAt: r.tagChangeableAt },
+}));
+
+// ---- Préférences (S2) ----
+export const loadPrefs = (): Promise<SocialPrefs> => run(v3.getPrefs, (p) => ({ prefs: p }));
+export const savePrefs = (patch: PrefsPatch): Promise<SocialPrefs> => run(() => v3.updatePrefs(patch), (p) => ({ prefs: p }));
+
+// ---- Relations, blocages, signalements, demandes de rejoindre (S2) ----
+/** Réglages d'un ami (favori, surnom, sourdine, activité) ; la fiche renvoyée remplace l'ancienne. */
+export const saveRelation = (pid: string, patch: RelationPatch): Promise<FriendV3> =>
+  run(() => v3.updateRelation(pid, patch), (f) => {
+    const prev = state.friends.find((x) => x.pid === pid) ?? state.household.find((x) => x.pid === pid);
+    return placeFriend(state, { ...prev, ...f });
+  });
+
+/** Bloque : l'amitié et les demandes disparaissent des deux côtés. */
+export const block = (pid: string): Promise<void> => run(() => v3.blockUser(pid), () => {
+  const who = findPerson(state, pid);
+  const already = state.blocked.some((x) => x.pid === pid);
+  return {
+    incoming: removePid(state.incoming, pid),
+    outgoing: removePid(state.outgoing, pid),
+    friends: removePid(state.friends, pid),
+    household: removePid(state.household, pid),
+    blocked: who && !already ? [...state.blocked, { pid, handle: who.handle }] : state.blocked,
+  };
+});
+
+export const unblock = (pid: string): Promise<void> => run(() => v3.unblockUser(pid), () => ({ blocked: removePid(state.blocked, pid) }));
+export const loadBlocks = (): Promise<BlockedPerson[]> => run(v3.getBlocks, (r) => ({ blocked: r.blocked })).then((r) => r.blocked);
+export const report = (input: ReportInput): Promise<void> => run(() => v3.reportUser(input));
+
+/** Demande à rejoindre le salon d'un ami. */
+export const requestJoin = (pid: string): Promise<void> => run(() => v3.requestJoin(pid));
+
+/** Répond à une demande de rejoindre : la demande disparaît de la liste. */
+export const answerJoin = (pid: string, answer: JoinAnswer): Promise<void> =>
+  run(() => v3.answerJoin(pid, answer), () => ({ joinRequests: removePid(state.joinRequests, pid) }));
+
+// ---- Conversations, groupes, messages v3 (S3) ----
+/** Groupe créé : il rejoint la liste des groupes. */
+export const createGroup = (name: string, members: string[]): Promise<ConversationV3> =>
+  run(() => v3.createGroup({ name, members }), (g) => ({
+    groups: [...state.groups.filter((x) => x.conv !== g.conv), g].sort(byLastDesc),
+  }));
+
+/** Renomme ou change les membres d'un groupe, puis relit les conversations. */
+export async function updateGroup(id: string, patch: { name?: string; add?: string[]; remove?: string[] }): Promise<void> {
+  const e = epoch;
+  await v3.updateGroup(id, patch);
+  if (epoch !== e) return;
+  await refreshLists();
+}
+
+/** Quitte un groupe : il disparaît avec ses messages chargés. */
+export const leaveGroup = (id: string): Promise<void> => run(() => v3.leaveGroup(id), () => {
+  const conv = groupConv(id);
+  return { groups: state.groups.filter((g) => g.conv !== conv), threads: without(state.threads, conv), typing: without(state.typing, conv) };
+});
+
+/** Charge les messages v3 d'une conversation (les plus récents, ou ceux d'avant `before`) et les fusionne. */
+export async function loadThread(conv: string, o: { before?: number; limit?: number } = {}): Promise<MessageV3[]> {
+  const e = epoch;
+  const { messages } = await v3.getConvMessages(conv, o);
+  if (epoch !== e) return [];
+  const merged = mergeMessages(state.threads[conv] ?? [], messages);
+  commit(withCounts({ ...state, threads: { ...state.threads, [conv]: merged } }));
+  return merged;
+}
+
+/**
+ * Envoie un message v3 dans une conversation. Un texte vide ou trop long est refusé sans appel réseau ; le corps est rogné.
+ * Le message reçu est rangé comme un message entrant (DM ou groupe) mais ne compte pas comme non-lu.
+ */
+export async function sendToConv(conv: string, input: NewMessage): Promise<MessageV3> {
+  // L'invitation à une watch party passe par POST /party/:id/invite : le serveur refuse `party` sur /conv.
+  if ((input.kind as string) === 'party') throw new UserApiError(400, 'invalid_kind');
+  const body = input.body?.trim();
+  if (body !== undefined && Array.from(body).length > MESSAGE_MAX) throw new UserApiError(400, 'invalid_body');
+  if (input.kind === 'text' && (body === undefined || body === '')) throw new UserApiError(400, 'invalid_body');
+  const e = epoch;
+  const { message } = await v3.sendConvMessage(conv, { ...input, ...(body !== undefined ? { body } : {}) });
+  if (epoch !== e) return message;
+  receive(message);
+  return message;
+}
+
+/** Marque une conversation lue : compteur à zéro. */
+export const markConvRead = (conv: string): Promise<void> => run(() => v3.markConvRead(conv), () => ({
+  conversations: state.conversations.map((c) => (dmConv(c.pid) === conv ? { ...c, unread: 0 } : c)),
+  groups: state.groups.map((g) => (g.conv === conv ? { ...g, unread: 0 } : g)),
+}));
+
+/** Bascule une réaction sur un message ; les réactions renvoyées par le serveur remplacent les anciennes. */
+export const react = (conv: string, id: string, emoji: string): Promise<Reaction[]> =>
+  run(() => v3.toggleReaction(conv, id, emoji), (r) => ({
+    threads: patchThread(state.threads, conv, (m) => (m.id === id ? { ...m, reactions: r.reactions } : m)),
+  })).then((r) => r.reactions);
+
+/** Vote dans un sondage ; le sondage renvoyé par le serveur remplace l'ancien. */
+export const vote = (conv: string, pollId: string, optionId: string): Promise<Poll> =>
+  run(() => v3.votePoll(conv, pollId, optionId), (r) => ({
+    threads: patchThread(state.threads, conv, (m) => (m.poll?.id === pollId ? { ...m, poll: r.poll } : m)),
+  })).then((r) => r.poll);
+
+/** Signale que je tape dans cette conversation ; au plus un envoi toutes les 3 s. Sans effet visible si l'appel échoue. */
+export function notifyTyping(conv: string): void {
+  const now = Date.now();
+  const last = lastTypingSent.get(conv);
+  if (last !== undefined && now - last < TYPING_SEND_MIN_MS) return;
+  lastTypingSent.set(conv, now);
+  // Frappe refusée (403 not_allowed, 404) : silencieux, et on cesse d'insister un moment.
+  void v3.sendTyping(conv).catch((e: { status?: number }) => {
+    if (e && (e.status === 403 || e.status === 404)) lastTypingSent.set(conv, Date.now() + TYPING_MUTE_MS);
+  });
+}
+
+/** Partage un titre ou un moment vers plusieurs destinations ; les messages renvoyés sont rangés comme les autres. */
+export async function share(input: ShareInput): Promise<MessageV3[]> {
+  const e = epoch;
+  const { messages } = await v3.shareTo(input);
+  if (epoch === e) messages.forEach((m) => receive(m));
+  return messages;
+}
+
+// ---- Listes partagées (S3) ----
+export const loadLists = (): Promise<ListSummary[]> => run(v3.getLists, (r) => ({ lists: r.lists })).then((r) => r.lists);
+export const createList = (name: string, members: string[]): Promise<ListSummary> =>
+  run(() => v3.createList({ name, members }), (l) => ({ lists: [...state.lists.filter((x) => x.id !== l.id), l] }));
+export const loadList = (id: string): Promise<ListDetail> =>
+  run(() => v3.getList(id), (d) => ({ listDetails: { ...state.listDetails, [id]: d } }));
+
+/** Mutation d'une liste, puis relecture du détail et du résumé (les réponses de mutation ne sont pas décrites). */
+async function mutateList(id: string, op: () => Promise<unknown>): Promise<void> {
+  const e = epoch;
+  await op();
+  if (epoch !== e) return;
+  await Promise.all([loadList(id), loadLists()]);
+}
+
+export const updateList = (id: string, patch: { name?: string; add?: string[]; remove?: string[] }): Promise<void> =>
+  mutateList(id, () => v3.updateList(id, patch));
+export const addToList = (id: string, item: ListItemInput): Promise<void> => mutateList(id, () => v3.addListItem(id, item));
+export const removeFromList = (id: string, type: MediaKind, tmdbId: number): Promise<void> =>
+  mutateList(id, () => v3.removeListItem(id, type, tmdbId));
+
+// ---- Activité (S5) ----
+/** Activité des amis, la plus récente d'abord ; fusionnée avec ce qui est déjà chargé. */
+export const loadActivity = (o: { before?: number; limit?: number } = {}): Promise<ActivityItem[]> =>
+  run(() => v3.getActivity(o), (r) => ({ activity: mergeActivity(state.activity, r.items) })).then(() => state.activity);
+
+// ---- Mode cinéma ----
+function sanitizeHidden(list: readonly string[]): CinemaElement[] {
+  const known = new Set<string>(CINEMA_ELEMENTS);
+  return [...new Set(list)].filter((x): x is CinemaElement => known.has(x));
+}
+
+/**
+ * Active le mode cinéma. Échéance `'film'` (levée par `endCinema`), epoch ms (fin automatique, une échéance déjà passée
+ * ne fait rien) ou `'always'`. `hidden` remplace les éléments masqués ; sinon les réglages précédents restent.
+ */
+export function startCinema(until: CinemaUntil, hidden?: readonly CinemaElement[]): void {
+  const now = Date.now();
+  if (typeof until === 'number' && until <= now) return;
+  clearCinemaTimer();
+  if (typeof until === 'number') cinemaTimer = setTimeout(() => { cinemaTimer = null; endCinema(); }, until - now);
+  commit(withCounts({
+    ...state,
+    cinema: {
+      active: true, until, since: now, hidden: hidden ? sanitizeHidden(hidden) : state.cinema.hidden, queue: [], count: 0,
+    },
+  }));
+}
+
+/**
+ * Termine le mode cinéma. Renvoie le début du mode (borne du résumé `getMissed`) et les messages reçus pendant le mode ;
+ * sans mode actif, rien. Les éléments masqués restent mémorisés pour la prochaine fois.
+ */
+export function endCinema(): { since: number | null; queue: MessageV3[] } {
+  clearCinemaTimer();
+  const { since, queue } = state.cinema;
+  commit(withCounts({ ...state, cinema: { ...state.cinema, active: false, until: null, since: null, queue: [], count: 0 } }));
+  return { since, queue };
+}
+
+/** Change les éléments masqués, sans toucher au mode lui-même. */
+export function setCinemaHidden(hidden: readonly CinemaElement[]): void {
+  commit(withCounts({ ...state, cinema: { ...state.cinema, hidden: sanitizeHidden(hidden) } }));
+}
+
+/** Demande de résumé : `since` et la requête de média pour `getMissed`, à partir du mode en cours. */
+export function cinemaMissedQuery(media: MediaQuery): { since: number; type: MediaKind; tmdbId: number; season?: number; episode?: number } | null {
+  const since = state.cinema.since;
+  return since === null ? null : { since, ...media };
+}
+
 function applyLive(ev: LiveEvent): void {
-  if (ev.t === 'note') {
-    noteSubs.forEach((cb) => {
-      try { cb(ev.media, ev.note); } catch { /* un écouteur ne casse pas le canal */ }
-    });
-    return;
+  switch (ev.t) {
+    case 'note':
+      noteSubs.forEach((cb) => {
+        try { cb(ev.media, ev.note); } catch { /* un écouteur ne casse pas le canal */ }
+      });
+      return;
+    case 'message':
+      receive(ev.message);
+      return;
+    case 'list':
+      if (state.listDetails[ev.listId]) void loadList(ev.listId).catch(() => undefined);
+      void loadLists().catch(() => undefined);
+      return;
+    case 'join_answer':
+      joinAnswerSubs.forEach((cb) => {
+        try { cb({ pid: ev.pid, accept: ev.accept, partyId: ev.partyId }); } catch { /* un écouteur ne casse pas le canal */ }
+      });
+      return;
+    case 'party_invite':
+      partyInviteSubs.forEach((cb) => {
+        try { cb({ from: ev.from, partyId: ev.partyId, title: ev.title }); } catch { /* un écouteur ne casse pas le canal */ }
+      });
+      return;
+    case 'typing':
+      commit(reduceLiveEvent(state, ev));
+      later(() => commit(withCounts({ ...state, typing: pruneTyping(state.typing, Date.now()) })), TYPING_MS);
+      return;
+    default:
+      commit(reduceLiveEvent(state, ev));
   }
-  if (ev.t === 'message') {
-    receive(ev.message);
-    return;
-  }
-  commit(reduceLiveEvent(state, ev));
 }
 
 /**
@@ -321,5 +774,8 @@ export function stop(): void {
   const l = live;
   live = null;
   l?.stop();
+  clearTimers();
+  clearCinemaTimer();
+  lastTypingSent.clear();
   commit(initialSocialState());
 }

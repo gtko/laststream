@@ -1,9 +1,11 @@
 import type { FriendRequest, FriendView, MediaRef, Message, Note } from './socialV2Api';
+import type { ActivityItem, Poll, Reaction } from './socialV3Api';
 
-/* Canal temps réel du Social v2 : une WebSocket par profil actif (ticket à 60 s, même mécanisme que les salons).
+/* Canal temps réel du Social v2 et v3 : une WebSocket par profil actif (ticket à 60 s, même mécanisme que les salons).
  * Ping toutes les 25 s, attente de pong (10 s), reconnexion avec backoff exponentiel plafonné. Tant que la WebSocket
  * ne fonctionne pas, repli sur un polling (`poll`, appelé toutes les 20 s) ; il s'arrête à la réouverture du canal.
- * Aucune dépendance au navigateur : socket, minuteurs et ticket sont injectés. */
+ * Aucune dépendance au navigateur : socket, minuteurs et ticket sont injectés.
+ * Le message v3 garde la forme `Message` ; les champs v3 (conv, kind, reactions) sont normalisés dans le store. */
 
 export const PING_EVERY_MS = 25_000;
 export const PONG_TIMEOUT_MS = 10_000;
@@ -22,7 +24,16 @@ export type LiveEvent =
   | { t: 'request'; request: FriendRequest }
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
-  | { t: 'note'; media: MediaRef; note: Note };
+  | { t: 'note'; media: MediaRef; note: Note }
+  /** Saisie d'un membre d'une conversation (`dm:<pid>` ou `g:<id>`). */
+  | { t: 'typing'; conv: string; pid: string }
+  | { t: 'reaction'; conv: string; id: string; reactions: Reaction[] }
+  | { t: 'poll'; conv: string; poll: Poll }
+  | { t: 'list'; listId: string }
+  | { t: 'join_request'; from: FriendView }
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
+  | { t: 'party_invite'; from: FriendView; partyId: string; title: string }
+  | { t: 'activity'; item: ActivityItem };
 
 /** Sous-ensemble de WebSocket utilisé ici (le vrai objet, ou un faux en test). */
 export interface LiveSocket {
@@ -96,6 +107,28 @@ export function parseLiveEvent(data: unknown): LiveEvent | null {
     case 'note':
       return isRec(v.media) && isRec(v.note) && typeof v.note.id === 'string'
         ? { t: 'note', media: v.media as unknown as MediaRef, note: v.note as unknown as Note } : null;
+    case 'typing':
+      return typeof v.conv === 'string' && typeof v.pid === 'string' ? { t: 'typing', conv: v.conv, pid: v.pid } : null;
+    case 'reaction':
+      return typeof v.conv === 'string' && typeof v.id === 'string' && Array.isArray(v.reactions)
+        ? { t: 'reaction', conv: v.conv, id: v.id, reactions: v.reactions as Reaction[] } : null;
+    case 'poll':
+      return typeof v.conv === 'string' && isRec(v.poll) && typeof v.poll.id === 'string'
+        ? { t: 'poll', conv: v.conv, poll: v.poll as unknown as Poll } : null;
+    case 'list':
+      return typeof v.listId === 'string' ? { t: 'list', listId: v.listId } : null;
+    case 'join_request':
+      return hasPid(v.from) ? { t: 'join_request', from: v.from as unknown as FriendView } : null;
+    case 'join_answer':
+      if (typeof v.pid !== 'string' || typeof v.accept !== 'boolean') return null;
+      return typeof v.partyId === 'string'
+        ? { t: 'join_answer', pid: v.pid, accept: v.accept, partyId: v.partyId }
+        : { t: 'join_answer', pid: v.pid, accept: v.accept };
+    case 'party_invite':
+      return hasPid(v.from) && typeof v.partyId === 'string' && typeof v.title === 'string'
+        ? { t: 'party_invite', from: v.from as unknown as FriendView, partyId: v.partyId, title: v.title } : null;
+    case 'activity':
+      return isRec(v.item) && typeof v.item.id === 'string' ? { t: 'activity', item: v.item as unknown as ActivityItem } : null;
     default:
       return null;
   }
