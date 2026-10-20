@@ -64,30 +64,7 @@
 .pf-kid { font-style: normal; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 2px 9px; margin-top: -4px; }
 .pin-back { position: fixed; inset: 0; z-index: 800; background: rgba(8, 7, 12, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
 .pin { width: min(360px, 100%); background: var(--surface); border: 1px solid var(--line-2); border-radius: 20px; padding: 26px 24px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-/* Éditeur de profil : fenêtre large et centrée ; en-tête et pied fixes, seul le corps défile (rien n'est coupé en haut). */
-.pin-back.pf-back { overflow: hidden; padding: 3vh 3vw; }
-.pf-editor { width: min(1040px, 94vw); max-height: 90vh; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-radius: 20px; overflow: hidden; }
-.pf-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 14px 24px; border-bottom: 1px solid var(--line-2); }
-.pf-title { margin: 0; font-family: var(--ff-title); font-size: 20px; font-weight: 800; }
-.pf-x { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--muted); background: transparent; }
-.pf-x:hover, .pf-x:focus-visible { color: var(--text); background: rgba(255, 255, 255, 0.1); }
-.pf-x svg { width: 20px; height: 20px; }
-.pf-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px 24px; }
 .pf-section-title { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 800; }
-.pf-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--line-2); }
-.pf-msg { min-height: 0; text-align: left; }
-.pf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.pf-actions .btn { min-height: 44px; }
-.pf-actions .pf-del { margin-right: auto; }
-/* Mobile (moins de 720 px) : une colonne, plein écran. */
-@media (max-width: 719px) {
-  .pin-back.pf-back { padding: 0; }
-  .pf-editor { width: 100%; max-height: none; height: 100%; border: 0; border-radius: 0; }
-  .pf-head { padding: 12px 10px 12px 16px; }
-  .pf-body { padding: 18px 16px; }
-  .pf-foot { padding: 12px 16px 16px; }
-  .pf-actions .btn:not(.pf-del) { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
-}
 .pin-title { font-family: var(--ff-title); font-size: 20px; font-weight: 800; text-align: center; }
 .pin-dots { display: flex; gap: 14px; }
 .pin-dots span { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); }

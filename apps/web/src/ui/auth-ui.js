@@ -1,23 +1,18 @@
 /* Comptes : écran de connexion, choix du profil (façon Netflix), clavier PIN, gestion des profils, mode enfant. */
 import {
   auth, canManageProfiles, chooseProfile, grantManager, hasValidToken, isProfileLocked, offlineWithoutSession, parentalProfile,
-  removeProfile, saveProfile, signIn, signOut, signUp, unlock,
+  signIn, signOut, signUp, unlock,
 } from '../data/auth';
-import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { checkInviteTicket, normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
 import { getBase, isOfficialBase } from '../data/config';
-import { KID_AGES, me as readMe, UserApiError } from '../data/userApi';
-import { isValidAvatar, parseColAvatar } from '../data/avatars';
-import { isKidAllowed, loadCatalog, recentAvatars } from '../data/avatar-catalog';
-import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
-import { closeAvatarStudio, describeAvatar, describeAvatarSync, openAvatarStudio } from './avatar-studio.js';
-import { openHouseholdPanel, paintProfileInviteRow, profileInviteRowHTML } from './household.js';
+import { me as readMe, UserApiError } from '../data/userApi';
+import { avatarAttrs } from './avatar-art.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
+import { openProfileEditor, PROFILE_COLORS as COLORS } from './profile-editor.js';
 import { mountReferral, referralReasonText } from './referral-join.js';
 import { esc } from './util.js';
 
-const COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#3b82f6', '#ec4899', '#22c55e', '#94a3b8'];
 /** Message de l'écran de connexion quand le serveur ne répond pas et qu'aucune session n'existe. */
 const OFFLINE_MSG = 'Serveur Laststream injoignable. Vérifie ta connexion puis réessaie.';
 
@@ -384,7 +379,8 @@ export function pinPad({ title, profile = null, choices = null, onOk, onCancel =
 // ---------- Édition d'un profil ----------
 function editProfile(p) {
   if (!mayManage() || isProfileLocked()) return;
-  const open = (profile) => profileEditor(profile);
+  // Page plein écran ; après un enregistrement ou une suppression, retour à « Gérer les profils ».
+  const open = (profile) => openProfileEditor(profile, { errorText, onDone: () => { manage = true; show(pickerHTML()); } });
   if (p && p.hasPin && !hasValidToken(p.id)) {
     pinPad({ title: 'Code de ' + p.name, profile: p, onOk: async () => { hidePad(); open(p); } });
     return;
@@ -394,204 +390,6 @@ function editProfile(p) {
 
 /** Crédits des illustrations : ré-exportés depuis avatar-picker.js (réglages). */
 export { creditsHTML } from './avatar-picker.js';
-
-/**
- * Éditeur de profil (maquette « Main ») : avatar actuel avec « Changer d'avatar » (studio), « Récemment utilisés », nom,
- * profil enfant, puis les options existantes (âge, rubriques, code parental, PIN). Enregistrer / Supprimer en pied.
- */
-function profileEditor(p) {
-  if (isProfileLocked()) return;
-  const isNew = !p;
-  const cur = p || { name: '', avatarColor: COLORS[0], isKid: false, kidMaxAge: 12, hasPin: false };
-  const node = document.createElement('div');
-  node.className = 'pin-back pf-back';
-  node.innerHTML = '<form class="pf-modal pf-editor pfe" role="dialog" aria-modal="true" aria-labelledby="pfe-title">' +
-    '<header class="pf-head"><h2 id="pfe-title" class="pf-title">' + (isNew ? 'Nouveau profil' : 'Modifier le profil') + '</h2>' +
-    '<button type="button" class="pf-x" data-pfe-cancel aria-label="Fermer" title="Fermer">' + ICON.close + '</button></header>' +
-    '<div class="pf-body pfe-body">' +
-    '<div class="pfe-avatar-row">' +
-    '<button type="button" class="pfe-avatar" data-pfe-studio tabindex="-1" aria-hidden="true"><span data-pfe-art></span><span class="pfe-badge">' + ICON.pencil + '</span></button>' +
-    '<div class="pfe-avatar-info"><span class="pfe-muted">Avatar actuel</span><span class="pfe-avatar-name" data-pfe-avname></span>' +
-    '<span class="pfe-muted" data-pfe-avsub></span>' +
-    '<button type="button" class="btn btn-primary pfe-change" data-pfe-studio>Changer d\'avatar</button></div></div>' +
-    '<div class="pfe-recent" data-pfe-recent hidden><span class="pfe-muted">Récemment utilisés</span><div class="pfe-recent-list" data-pfe-recent-list></div></div>' +
-    '<div class="pfe-color"><span class="pfe-muted" id="pfe-color-label">Couleur</span><div class="pfe-colors" role="group" aria-labelledby="pfe-color-label" data-pfe-colors>' +
-    COLORS.map((c) => '<button type="button" class="pfe-color-btn" data-pfe-color="' + c + '" aria-label="Couleur ' + c + '" aria-pressed="false" style="background:' + c + '"></button>').join('') + '</div></div>' +
-    '<label class="tv-field">Nom du profil<input type="text" name="name" maxlength="40" required value="' + esc(cur.name) + '"></label>' +
-    '<label class="pfe-kid"><span class="pfe-kid-text"><strong>Profil enfant</strong><small>Avatars et contenus adaptés aux enfants</small></span>' +
-    '<input type="checkbox" name="kid"' + (cur.isKid ? ' checked' : '') + '></label>' +
-    '<div class="pfe-kidwarn" data-pfe-kidwarn hidden role="alert"><p>Cet avatar n\'est pas disponible pour un profil enfant : choisis-en un autre.</p>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-pfe-kidpick>Choisir un avatar enfant</button></div>' +
-    '<div data-kidage' + (cur.isKid ? '' : ' hidden') + '><label class="tv-field">Âge maximal<select name="age">' + KID_AGES.map((a) =>
-      '<option value="' + a + '"' + (a === (cur.kidMaxAge || 12) ? ' selected' : '') + '>' + a + ' ans</option>').join('') + '</select></label>' +
-    '<fieldset class="pf-sections"><legend>Rubriques autorisées</legend>' + KID_SECTIONS.map(([id, label]) =>
-      '<label class="set-check"><input type="checkbox" name="sec" value="' + id + '"' + (sectionAllowed(cur.allowedCatalogs, id) ? ' checked' : '') + '> <span>' + esc(label) + '</span></label>').join('') + '</fieldset></div>' +
-    '<div data-parental' + (needsParentalCode(cur) ? '' : ' hidden') + '><p class="set-hint">Un profil enfant se quitte avec un code parental : celui du profil principal. Choisis-le maintenant (4 chiffres).</p>' +
-    '<label class="tv-field">Code parental (4 chiffres)<input type="password" name="parental" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off"></label></div>' +
-    '<label class="tv-field">Code PIN (4 chiffres)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" placeholder="' + (cur.hasPin ? 'Laisser vide pour garder' : 'Aucun') + '"></label>' +
-    (cur.hasPin ? '<label class="set-check"><input type="checkbox" name="nopin"> <span>Retirer le code PIN</span></label>' : '') +
-    profileInviteRowHTML(p) + '</div>' +
-    '<footer class="pf-foot"><p class="pin-msg pf-msg" id="pfe-msg" role="alert"></p>' +
-    '<div class="pf-actions">' + (isNew ? '' : '<button type="button" class="btn btn-ghost pf-del" data-pfe-delete>Supprimer le profil</button>') +
-    '<button type="submit" class="btn btn-primary">Enregistrer</button></div></footer>' +
-    '</form>';
-  document.body.appendChild(node);
-  void paintProfileInviteRow(node.querySelector('[data-hh-row]'), p);
-  const form = node.querySelector('form');
-  const msg = node.querySelector('#pfe-msg');
-  const kidBox = form.elements.kid;
-  const close = () => { closeAvatarStudio(); node.remove(); };
-  const state = { avatar: isValidAvatar(cur.avatar) ? cur.avatar : null, color: cur.avatarColor || COLORS[0] };
-
-  /** Avatar actuel : vignette sur la couleur du profil (ou initiale), nom et collection. */
-  const paintArt = () => {
-    const name = form.elements.name.value.trim();
-    node.querySelector('[data-pfe-art]').innerHTML = '<span class="pfe-avatar-art"' + avatarAttrs(state.avatar, state.color) + '>' +
-      (state.avatar ? '' : esc(initialOfName(name))) + '</span>';
-    hydrateAvatars(node);
-    const sync = describeAvatarSync(state.avatar);
-    node.querySelector('[data-pfe-avname]').textContent = sync.name;
-    node.querySelector('[data-pfe-avsub]').textContent = sync.sub;
-    const wanted = state.avatar;
-    void describeAvatar(wanted).then((d) => {
-      if (state.avatar !== wanted || !node.isConnected) return;
-      node.querySelector('[data-pfe-avname]').textContent = d.name;
-      node.querySelector('[data-pfe-avsub]').textContent = d.sub;
-    });
-  };
-
-  /** Couleur de repli : la pastille de la couleur courante est marquée. */
-  const paintColors = () => {
-    node.querySelectorAll('[data-pfe-color]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pfeColor.toLowerCase() === String(state.color).toLowerCase())));
-  };
-
-  /** Avatar d'un profil enfant : vérifié contre le catalogue ; avertit et propose le studio enfant si non autorisé. */
-  async function checkKid() {
-    const warn = node.querySelector('[data-pfe-kidwarn]');
-    if (!kidBox.checked || !state.avatar) { warn.hidden = true; return; }
-    let cat = null;
-    try { cat = await loadCatalog(); } catch { cat = null; }
-    if (!node.isConnected) return;
-    warn.hidden = !kidBox.checked || (cat ? isKidAllowed(cat, state.avatar) : !parseColAvatar(state.avatar));
-  }
-
-  const openStudio = (kidMode) => openAvatarStudio({
-    profile: { id: cur.id, name: form.elements.name.value.trim() },
-    kid: kidMode,
-    current: state.avatar,
-    color: state.color,
-    onPick: (value, color) => {
-      state.avatar = value;
-      if (color) state.color = color;
-      paintArt();
-      paintColors();
-      void checkKid();
-    },
-  });
-
-  // Récemment utilisés : les derniers choix de ce profil (rien pour un profil nouveau). Profil enfant : seulement les
-  // avatars autorisés ; catalogue indisponible, la rangée est masquée.
-  const recents = isNew ? [] : recentAvatars(cur.id);
-  async function renderRecents() {
-    let shown = recents;
-    if (kidBox.checked) {
-      let cat = null;
-      try { cat = await loadCatalog(); } catch { cat = null; }
-      if (!node.isConnected) return;
-      shown = !kidBox.checked ? recents : cat ? recents.filter((v) => isKidAllowed(cat, v)) : [];
-    }
-    node.querySelector('[data-pfe-recent]').hidden = shown.length === 0;
-    node.querySelector('[data-pfe-recent-list]').innerHTML = shown.map((v) =>
-      '<button type="button" class="pfe-recent-btn" data-pfe-recent="' + esc(v) + '" aria-label="' + esc(describeAvatarSync(v).name) + '">' +
-      '<span class="pfe-recent-art"' + avatarAttrs(v, '#94a3b8') + '></span></button>').join('');
-    hydrateAvatars(node);
-  }
-
-  form.elements.name.focus();
-  paintArt();
-  paintColors();
-  void renderRecents();
-  void checkKid();
-  form.addEventListener('input', (e) => {
-    if (e.target.name === 'name' && !state.avatar) paintArt();
-  });
-  form.addEventListener('change', (e) => {
-    if (e.target.name !== 'kid') return;
-    node.querySelector('[data-kidage]').hidden = !e.target.checked;
-    node.querySelector('[data-parental]').hidden = !(e.target.checked && needsParentalCode({ isKid: true }));
-    void renderRecents();
-    void checkKid();
-  });
-  node.addEventListener('click', async (e) => {
-    const t = e.target instanceof Element ? e.target : null;
-    if (!t) return;
-    const inviteBtn = t.closest('[data-hh-invite]');
-    if (inviteBtn) {
-      openHouseholdPanel(cur, { opener: inviteBtn, onChange: () => void paintProfileInviteRow(node.querySelector('[data-hh-row]'), cur) });
-      return;
-    }
-    if (t.closest('[data-pfe-cancel]') || t === node) { close(); return; }
-    if (t.closest('[data-pfe-studio]')) { openStudio(kidBox.checked); return; }
-    if (t.closest('[data-pfe-kidpick]')) { openStudio(true); return; }
-    const rb = t.closest('[data-pfe-recent]');
-    if (rb) { state.avatar = rb.dataset.pfeRecent; paintArt(); void checkKid(); return; }
-    const pc = t.closest('[data-pfe-color]');
-    if (pc) { state.color = pc.dataset.pfeColor; paintArt(); paintColors(); return; }
-    if (t.closest('[data-pfe-delete]')) {
-      if (!window.confirm('Supprimer le profil « ' + cur.name + ' » avec sa bibliothèque et sa progression ?')) return;
-      try { await removeProfile(cur.id); close(); manage = true; show(pickerHTML()); } catch (err) { msg.textContent = errorText(err); }
-    }
-  });
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = form.elements;
-    const input = { name: f.name.value.trim(), avatarColor: state.color, isKid: f.kid.checked };
-    if (input.isKid) {
-      input.kidMaxAge = Number(f.age.value);
-      const chosen = Array.from(form.querySelectorAll('input[name="sec"]:checked')).map((x) => x.value);
-      // Défaut (toutes les rubriques sauf la TV jeunesse) = liste vide.
-      const isDefault = chosen.length === KID_SECTIONS.length - 1 && !chosen.includes('tv');
-      input.allowedCatalogs = isDefault ? [] : chosen;
-    }
-    // Profil enfant : un avatar « collection » doit être autorisé (catalogue requis) ; sinon on bloque et on propose le studio enfant.
-    if (input.isKid && parseColAvatar(state.avatar)) {
-      let cat = null;
-      try { cat = await loadCatalog(); } catch { cat = null; }
-      if (!cat || !isKidAllowed(cat, state.avatar)) {
-        node.querySelector('[data-pfe-kidwarn]').hidden = false;
-        return;
-      }
-    }
-    if (state.avatar !== (cur.avatar || null)) input.avatar = state.avatar;
-    const pin = f.pin.value.trim();
-    if (pin && !/^\d{4}$/.test(pin)) { msg.textContent = 'Le code PIN compte 4 chiffres.'; return; }
-    const parental = f.parental ? f.parental.value.trim() : '';
-    const mustSetParental = input.isKid && needsParentalCode({ isKid: true });
-    if (mustSetParental && !/^\d{4}$/.test(parental)) { msg.textContent = 'Choisis un code parental à 4 chiffres : il protège la sortie du profil enfant.'; return; }
-    if (pin) input.pin = pin;
-    else if (f.nopin && f.nopin.checked) input.pin = null;
-    try {
-      // Pas encore de code parental : le profil principal en reçoit un avant que l'enfant soit créé ou modifié.
-      // Le PIN tout juste posé verrouille le principal : on le déverrouille aussitôt pour que la création de l'enfant passe.
-      if (mustSetParental) {
-        await saveProfile(parentalProfile().id, { pin: parental });
-        await unlock(parentalProfile().id, parental);
-      }
-      await saveProfile(isNew ? null : cur.id, input);
-      close();
-      manage = true;
-      show(pickerHTML());
-    } catch (err) {
-      msg.textContent = errorText(err);
-    }
-  });
-}
-
-/** Un profil enfant sans code parental défini : le profil principal doit en choisir un (modifier le principal lui-même exclu). */
-function needsParentalCode(profile) {
-  const m = parentalProfile();
-  return !!profile.isKid && !!m && !m.hasPin;
-}
 
 // ---------- Quitter un profil enfant ----------
 /**

@@ -1,8 +1,8 @@
-/* Studio d'avatars (ui/avatar-studio.js) et éditeur de profil revu (maquettes Studio, Collection, Mobile, Kid, Main).
+/* Studio d'avatars (ui/avatar-studio.js) (maquettes Studio, Collection, Mobile, Kid). L'éditeur de profil : profile-editor.css.
  * Desktop : rail 248 px à gauche, aperçu en tête de contenu. Mobile (< 720 px) : plein écran, rail en puces défilantes,
  * aperçu collé en bas. Couleurs : jetons de styles.css ; les teintes propres aux maquettes sont en dur. */
 
-.as-overlay [hidden], .pfe [hidden] { display: none !important; }
+.as-overlay [hidden] { display: none !important; }
 
 /* ---------- Studio : cadre et barre haute ---------- */
 .as-overlay { position: fixed; inset: 0; z-index: 900; background: var(--bg); color: var(--text); font-family: var(--ff-body); }
@@ -98,46 +98,6 @@
 
 /* ---------- Bas de page (mobile) et recherche rapide ---------- */
 .as-overlay .as-tile:active, .as-overlay .as-card:active { transform: scale(0.98); }
-
-/* ---------- Éditeur de profil (maquette Main) ---------- */
-.pfe { width: min(640px, 94vw); }
-.pfe-body { display: flex; flex-direction: column; gap: 20px; }
-.pfe-avatar-row { display: flex; align-items: center; gap: 24px; }
-.pfe-avatar { position: relative; width: 148px; height: 148px; flex: none; padding: 0; border: 0; border-radius: 32px; background: transparent; cursor: pointer; }
-.pfe-avatar-art { position: relative; display: grid; place-items: center; width: 148px; height: 148px; border-radius: 32px; background-color: var(--surface-2); background-size: cover; background-position: center; background-repeat: no-repeat; overflow: hidden; font-family: var(--ff-title); font-size: 56px; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
-.pfe-avatar-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.pfe-badge { position: absolute; right: -8px; bottom: -8px; width: 48px; height: 48px; border-radius: 24px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); border: 4px solid var(--surface); }
-.pfe-badge svg { width: 20px; height: 20px; }
-.pfe-avatar-info { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; flex: 1; }
-.pfe-avatar-name { font-family: var(--ff-title); font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
-.pfe-muted { font-size: 13px; color: var(--dim); }
-.pfe-change { margin-top: 6px; height: 44px; padding: 0 20px; border-radius: 22px; }
-.pfe-recent { display: flex; flex-direction: column; gap: 12px; }
-.pfe-recent-list { display: flex; flex-wrap: wrap; gap: 12px; }
-.pfe-recent-btn { width: 56px; height: 56px; flex: none; padding: 0; border: 0; border-radius: 16px; background: var(--surface-2); overflow: hidden; cursor: pointer; }
-.pfe-recent-btn:hover, .pfe-recent-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pfe-recent-art { display: block; position: relative; width: 56px; height: 56px; border-radius: 16px; background-size: cover; background-position: center; background-repeat: no-repeat; }
-.pfe-recent-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.pfe-color { display: flex; flex-direction: column; gap: 12px; }
-.pfe-colors { display: flex; flex-wrap: wrap; gap: 10px; }
-.pfe-color-btn { width: 32px; height: 32px; flex: none; padding: 0; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
-.pfe-color-btn:hover, .pfe-color-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pfe-color-btn[aria-pressed="true"] { border-color: var(--text); }
-.pfe-kid { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border-radius: 12px; background: var(--surface-2); font-size: 15px; cursor: pointer; }
-.pfe-kid-text { display: flex; flex-direction: column; gap: 2px; }
-.pfe-kid-text small { font-size: 13px; color: var(--dim); }
-.pfe-kid input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
-.pfe-kidwarn { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: #ff8a73; }
-.pfe-kidwarn p { margin: 0; font-size: 14px; }
-
-@media (max-width: 719px) {
-  .pfe { width: 100%; }
-  .pfe-avatar-row { gap: 16px; }
-  .pfe-avatar, .pfe-avatar-art { width: 116px; height: 116px; border-radius: 28px; }
-  .pfe-avatar-art { font-size: 44px; }
-  .pfe-avatar-name { font-size: 18px; }
-  .pfe-badge { width: 40px; height: 40px; border-radius: 20px; right: -6px; bottom: -6px; }
-}
 
 /* ---------- Mobile (< 720 px) : plein écran, rail en puces, aperçu collé en bas ---------- */
 @media (max-width: 719px) {
