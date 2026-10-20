@@ -1,8 +1,7 @@
 /* Tableau de bord « Mes invitations » (Réglages > Profil et compte) : les liens de parrainage du compte, avec leur état
  * (libre, envoyé, utilisé par …), copie, partage et révocation. Le propriétaire du serveur peut régler le quota d'un compte. */
 import { auth } from '../data/auth';
-import { getServedOrigin } from '../data/serverMode';
-import { PUBLIC_BASE, isAndroidApp } from '../data/config';
+import { shareBase } from '../data/shareBase';
 import { inviteLink } from '../data/invite';
 import { getInvites, markInviteSent, revokeInvite, setInviteQuota } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
@@ -14,13 +13,8 @@ import { esc } from './util.js';
 let data = null;
 let busy = false;
 
-/** Adresse sur laquelle les liens s'ouvrent : la page servie par lastAddon, sinon l'origine web, sinon le serveur Laststream. */
-export function shareBase() {
-  const served = getServedOrigin();
-  if (served) return served;
-  if (!isAndroidApp() && /^https?:$/.test(location.protocol)) return location.origin;
-  return PUBLIC_BASE;
-}
+/** Adresse des liens (voir data/shareBase.ts), réexportée pour les écrans qui importent les invitations. */
+export { shareBase };
 
 export const linkOf = (inv) => inviteLink(shareBase(), inv.code);
 

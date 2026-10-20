@@ -13,11 +13,12 @@ import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
-import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
+import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { creditsHTML, errorText, openLogin, openPicker } from './auth-ui.js';
 import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
 import { invitesCard, refreshInvites } from './invites.js';
+import { householdInvitesCard, refreshHouseholdInvites } from './household.js';
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
 } from './settings-ui.js';
@@ -79,8 +80,10 @@ function accountPanel() {
   const pr = auth.profile;
   return card('Compte et profils',
     rowHTML('Connecté en tant que', '', () => '<span class="set-val">' + esc(auth.username) + '</span>') +
-    rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span><button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>') +
-    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() + invitesCard() + data + card('Crédits des avatars', creditsHTML()) +
+    rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
+      (isProfileLocked() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>')) +
+    rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
+    (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data + card('Crédits des avatars', creditsHTML()) +
     card('Importer ma bibliothèque Stremio',
       '<form id="set-stremio" class="set-form" autocomplete="off">' +
       '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
@@ -212,7 +215,8 @@ let activeCat = 'account';
 let lockUntil = 0;
 
 function categories() {
-  const main = isMainProfile() && !isKidProfile();
+  // Session verrouillée (profil invité au foyer) : pas d'extensions (Sources) ni de serveur lastAddon.
+  const main = isMainProfile() && !isKidProfile() && !isProfileLocked();
   return CATEGORIES.filter((c) => ((c.id !== 'home' && c.id !== 'tv') || !isKidProfile()) && (main || (c.id !== 'server' && c.id !== 'sources')));
 }
 
@@ -330,7 +334,8 @@ export async function showSettings() {
   detailEl.innerHTML = pageHTML();
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
-  if (isServerMode()) refreshInvites();
+  if (isServerMode() && !isProfileLocked()) refreshInvites();
+  if (isServerMode()) void refreshHouseholdInvites();
   loadConfig();
 }
 

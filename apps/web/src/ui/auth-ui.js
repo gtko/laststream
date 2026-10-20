@@ -11,6 +11,7 @@ import { isValidAvatar, parseColAvatar } from '../data/avatars';
 import { isKidAllowed, loadCatalog, recentAvatars } from '../data/avatar-catalog';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { closeAvatarStudio, describeAvatar, describeAvatarSync, openAvatarStudio } from './avatar-studio.js';
+import { openHouseholdPanel, paintProfileInviteRow, profileInviteRowHTML } from './household.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
 import { esc } from './util.js';
@@ -386,12 +387,13 @@ function profileEditor(p) {
     '<label class="tv-field">Code parental (4 chiffres)<input type="password" name="parental" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off"></label></div>' +
     '<label class="tv-field">Code PIN (4 chiffres)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="off" placeholder="' + (cur.hasPin ? 'Laisser vide pour garder' : 'Aucun') + '"></label>' +
     (cur.hasPin ? '<label class="set-check"><input type="checkbox" name="nopin"> <span>Retirer le code PIN</span></label>' : '') +
-    '</div>' +
+    profileInviteRowHTML(p) + '</div>' +
     '<footer class="pf-foot"><p class="pin-msg pf-msg" id="pfe-msg" role="alert"></p>' +
     '<div class="pf-actions">' + (isNew ? '' : '<button type="button" class="btn btn-ghost pf-del" data-pfe-delete>Supprimer le profil</button>') +
     '<button type="submit" class="btn btn-primary">Enregistrer</button></div></footer>' +
     '</form>';
   document.body.appendChild(node);
+  void paintProfileInviteRow(node.querySelector('[data-hh-row]'), p);
   const form = node.querySelector('form');
   const msg = node.querySelector('#pfe-msg');
   const kidBox = form.elements.kid;
@@ -480,6 +482,10 @@ function profileEditor(p) {
   node.addEventListener('click', async (e) => {
     const t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    if (t.closest('[data-hh-invite]')) {
+      openHouseholdPanel(cur, { onChange: () => void paintProfileInviteRow(node.querySelector('[data-hh-row]'), cur) });
+      return;
+    }
     if (t.closest('[data-pfe-cancel]') || t === node) { close(); return; }
     if (t.closest('[data-pfe-studio]')) { openStudio(kidBox.checked); return; }
     if (t.closest('[data-pfe-kidpick]')) { openStudio(true); return; }

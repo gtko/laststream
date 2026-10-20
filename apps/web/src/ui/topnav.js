@@ -1,6 +1,6 @@
 /* Barre du haut (accueil adulte et enfant) : menu « Explorer », menu du profil, clavier, défilement.
  * Le rendu est fonctionnel : les appelants passent les indicateurs (enfant, amis, propriétaire, serveur). */
-import { isKidProfile, signOut } from '../data/auth';
+import { isKidProfile, isProfileLocked, signOut } from '../data/auth';
 import { userStore } from '../data/userStore';
 import { avatarAttrs } from './avatar-art.js';
 import { leaveKidProfile, openPicker } from './auth-ui.js';
@@ -47,7 +47,7 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
     kid ? '' : menuLink('#/stats', ' data-go', 'stats', 'Statistiques'),
     kid ? '' : menuLink('#/settings', ' data-go', 'gear', 'Réglages'),
     owner && !kid ? menuLink('#/admin', ' data-go', 'shield', 'Administration') : '',
-    server ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>Changer de profil</span></button>' : '',
+    server && !isProfileLocked() ? '<button type="button" class="nav-pop-item" data-nav-switch>' + ICON.switch + '<span>Changer de profil</span></button>' : '',
     server && !kid ? '<button type="button" class="nav-pop-item" data-nav-logout>' + ICON.logout + '<span>Se déconnecter</span></button>' : '',
   ].join('');
   return '<div class="top-actions">' +

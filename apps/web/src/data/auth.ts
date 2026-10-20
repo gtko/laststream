@@ -76,13 +76,15 @@ let managerId: string | null = null;
 export const grantManager = (id: string | null): void => { managerId = id; };
 /** Gérer les profils (créer, modifier, supprimer) : profil principal adulte actif, ou principal reconnu par son code. */
 export const canManageProfiles = (): boolean =>
-  auth.profiles.length === 0 || managerId !== null || (isServerMode() && !isKidProfile() && isMainProfile());
+  !auth.locked && (auth.profiles.length === 0 || managerId !== null || (isServerMode() && !isKidProfile() && isMainProfile()));
 /** Profil qui agit pour la gestion (en-tête X-Profile-Id), ou undefined pour le tout premier profil. */
 const managerActor = (): string | undefined => {
   if (managerId) return managerId;
   if (isServerMode() && !isKidProfile() && auth.profile) return auth.profile.id;
   return undefined;
 };
+/** Profil adulte qui gère les profils (en-tête X-Profile-Id), ou null. Peut différer du profil actif après une sortie de profil enfant. */
+export const managingProfileId = (): string | null => managerActor() ?? null;
 
 /** Accès à la console #/admin : propriétaire, session serveur active, profil adulte désigné administrateur. */
 export const canAdmin = (): boolean => isServerMode() && auth.isOwner && !isKidProfile() && isAdminProfile();
