@@ -15,6 +15,7 @@ import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { creditsLinkHTML } from './credits.js';
+import { modelComboHTML } from './model-combobox.js';
 import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
 import { appearancePanel } from './settings-appearance.js';
@@ -161,7 +162,7 @@ function serverPanelInner() {
   const choice = serverChoiceVisible();
   const base = getBase() || (android ? '' : DEFAULT_BASE);
   const services = serviceDefs().map(([k, title, desc]) => (k === 'openrouterModel'
-    ? stackInput(title, desc, 'type="text" name="svc.' + k + '" value="' + esc(sv[k] || 'openai/gpt-4o-mini') + '"')
+    ? fieldRow(title, desc, (id) => modelComboHTML(id, sv[k] || 'openai/gpt-4o-mini'), { stack: true })
     : stackInput(title, desc, 'type="password" autocomplete="off" name="svc.' + k + '" placeholder="' + esc(secretPlaceholder(sv[k])) + '"'))).join('');
   return card('Adresse', choice ? serverChoiceHTML() : stackInput('Adresse du serveur', 'Le serveur qui fournit le catalogue, les notes, la TV et les sources.',
     'type="url" name="base" value="' + esc(base) + '" placeholder="http://localhost:7000"') +
