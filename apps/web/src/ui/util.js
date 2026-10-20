@@ -1,8 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { userStore } from '../data/userStore';
 
-export const esc = (v) =>
-  String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+export { escapeHtml as esc } from '../data/format';
 export const fmtNum = (v, d) => {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n.toFixed(d).replace('.', ',') : '';

@@ -3,6 +3,7 @@
  * La fiche d'un compte s'ouvre dans un panneau latéral (account-drawer.js). */
 import '../../styles/admin-users.css';
 import * as api from '../../data/adminApi';
+import { pad2 } from '../../data/format';
 import { countDescendants, csvOfAccounts, fmtAgo, fmtDay, fmtInt, treeDepth } from '../../data/adminModel';
 import { confirmDialog } from '../admin-dialog.js';
 import { toast } from '../dom.js';
@@ -111,7 +112,6 @@ function downloadCsv(text, name) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-const pad2 = (n) => String(n).padStart(2, '0');
 const localDay = (d = new Date()) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
 
 /** Export CSV des comptes du filtre et de la recherche courants (fichier laststream-comptes-AAAA-MM-JJ.csv, BOM UTF-8 pour Excel). */

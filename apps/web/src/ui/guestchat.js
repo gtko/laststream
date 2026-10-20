@@ -4,6 +4,7 @@
  * Le port vient de GuestRelaySession.chatPort() (client du salon) ; rien d'autre (ni jeton, ni adresse) n'entre ici. */
 import { CHAT_MAX, REACTIONS } from '../party/protocol';
 import { LI } from '../player/icons.js';
+import { pad2 } from '../data/format';
 
 /** Lignes gardées à l'écran (miroir de CHAT_MEMORY_LINES du client). */
 export const CHAT_KEEP = 200;
@@ -14,8 +15,6 @@ export const FLOAT_MAX = 12;
 export const REACTION_BAR = REACTIONS.slice(0, 6);
 const CHAT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/></svg>';
-
-const pad2 = (n) => String(n).padStart(2, '0');
 
 /** Heure locale HH:MM d'un horodatage en millisecondes ; vide si illisible. */
 export function clockOf(at) {
