@@ -4,6 +4,7 @@
  * ni configuration d'addon (segment de chemin encodé), ni lien débridé, ni lien magnet, ni clé d'API.
  * Module pur (aucun import du SDK à l'exécution) : testé sous Node.
  */
+import { isIpLiteral, isLocalName, reduceHost, scrubPath } from '@laststream/protocol/scrub';
 import type { Breadcrumb, ErrorEvent, Event as SentryEvent, EventHint, Exception, RequestEventData, Stacktrace } from '@sentry/cloudflare';
 
 const REDACTED = '[redacted]';
@@ -12,19 +13,6 @@ const DEBRID_URL = '[debrid-url]';
 const MAGNET = '[magnet]';
 /** Profondeur maximale parcourue dans les contextes et données libres (protection contre les cycles). */
 const MAX_DEPTH = 8;
-/** Au-delà de cette longueur, un segment de chemin est une configuration d'addon (base64url, JSON…), quel que soit son charset. */
-const CONFIG_SEGMENT_MIN_LENGTH = 40;
-/** Hôtes gardés en origine seule hors du Worker : métadonnées, visuels, sous-titres et listes de notes. */
-const HOST_ALLOWLIST: ReadonlySet<string> = new Set([
-  'api.themoviedb.org',
-  'image.tmdb.org',
-  'api4.thetvdb.com',
-  'api.mdblist.com',
-  'v3-cinemeta.strem.io',
-]);
-/** Les workers.dev du projet (compte gtux-prog) sont gardés en origine seule. */
-const PROJECT_WORKERS_DEV = /\.gtux-prog\.workers\.dev$/;
-const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 /** Origine publique du Worker, posée à chaque requête (worker.ts) : ses propres URL gardent leur chemin épuré. */
 let workerOrigin: string | undefined;
 
@@ -53,31 +41,6 @@ const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
 /** Enregistre l'origine du Worker qui traite la requête courante (undefined : aucune requête). */
 export function setWorkerOrigin(origin: string | undefined): void {
   workerOrigin = origin;
-}
-
-function isConfigSegment(segment: string): boolean {
-  return segment.length > CONFIG_SEGMENT_MIN_LENGTH;
-}
-
-function scrubPath(pathname: string): string {
-  return pathname
-    .split('/')
-    .map((segment) => (isConfigSegment(segment) ? CONFIG : segment))
-    .join('/');
-}
-
-/** Adresse littérale IPv4 ou IPv6 (le nom d'hôte d'une URL IPv6 est entre crochets). */
-const isIpLiteral = (host: string): boolean => IPV4.test(host) || host.startsWith('[');
-/** localhost et les noms *.local (réseau local). */
-const isLocalName = (host: string): boolean => host === 'localhost' || host.endsWith('.local');
-
-/** Hors du Worker : [ip] pour une adresse littérale, origine seule si l'hôte est autorisé, sinon [host]. */
-function reduceHost(url: URL): string {
-  const host = url.hostname.toLowerCase();
-  if (isIpLiteral(host)) return '[ip]';
-  if (!host || isLocalName(host)) return '[host]';
-  if (HOST_ALLOWLIST.has(host) || PROJECT_WORKERS_DEV.test(host)) return url.origin;
-  return '[host]';
 }
 
 /** URL réduite à origine + chemin : sans identifiant, sans chaîne de requête, sans fragment, segments de config masqués. */
