@@ -10,7 +10,7 @@ import { closeAllLayers, confirmDialog, passwordDialog } from './admin-dialog.js
 import { closePalette, defaultActions, installPaletteShortcuts, openPalette } from './admin-palette.js';
 import { openAccount as openAccountDrawer } from './admin/account-drawer.js';
 import { adminErr, attempt } from './admin/common.js';
-import { elevationBoxHTML, pageHTML, statusHTML } from './admin/shell.js';
+import { badgeShown, elevationBoxHTML, pageHTML, statusHTML } from './admin/shell.js';
 import { findSection, SECTIONS } from './admin/sections.js';
 import { detailEl, toast } from './dom.js';
 import { teardownFiche } from './fiche.js';
@@ -166,8 +166,8 @@ function updateShell() {
   if (st && st.dataset.state !== String(S.status)) st.outerHTML = statusHTML(S.status);
   detailEl.querySelectorAll('[data-adm-badge]').forEach((b) => {
     const n = S.badges[b.dataset.admBadge];
-    b.hidden = n == null;
-    b.textContent = n == null ? '' : fmtInt(n);
+    b.hidden = !badgeShown(n);
+    b.textContent = badgeShown(n) ? fmtInt(n) : '';
   });
 }
 

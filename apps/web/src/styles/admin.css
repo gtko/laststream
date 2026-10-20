@@ -223,7 +223,8 @@
 .adm-layer code { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; padding: 1px 6px; border-radius: 6px; background: var(--adm-track); }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 1023px) { .adm-body { grid-template-columns: 200px minmax(0, 1fr); } }
+/* Entre 760 et 1023 px, la navigation fait 200 px : les libellés passent à la ligne plutôt que d'être tronqués. */
+@media (max-width: 1023px) { .adm-body { grid-template-columns: 200px minmax(0, 1fr); } .adm-navi-l { white-space: normal; } }
 @media (max-width: 759px) {
   .adm-top { padding: 10px 16px; gap: 10px; }
   .adm-search { flex-basis: 100%; order: 3; max-width: none; }

@@ -78,10 +78,10 @@ describe('rendu de la console', () => {
     await wait();
     const detail = document.getElementById('detail')!;
     expect(Array.from(detail.querySelectorAll('[data-adm-sec]')).map((b) => b.querySelector('.adm-navi-l')!.textContent)).toEqual([
-      'Tableau de bord', 'À traiter', 'Comptes', 'Invitations et parrainages', 'En ligne',
+      'Tableau de bord', 'À traiter', 'Comptes', 'Invitations', 'En ligne',
       'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées',
       'Watch parties', 'Modération',
-      'Réglages et maintenance', 'Annonces', 'Journal d’audit',
+      'Réglages', 'Annonces', 'Journal d’audit',
     ]);
     expect(detail.querySelectorAll('.adm-kpi')).toHaveLength(8);
     expect(detail.querySelector('[data-adm-badge="reports"]')!.textContent).toBe('2');

@@ -459,3 +459,29 @@ describe('fonctions pures du centre de contrôle', () => {
     expect(sections.SECTIONS.slice(0, 2).map((s: any) => s.label)).toEqual(['Tableau de bord', 'À traiter']);
   });
 });
+
+describe('tableau de bord : ligne du bas des tuiles et mini-courbes', () => {
+  it('détail absent ou identique au statut : pas de ligne du bas, le statut n’est écrit qu’une fois', async () => {
+    await openSection('overview', {
+      '/admin/status': () => ({ status: 'ok', services: [
+        { id: 'api', label: 'API Worker', status: 'ok', value: '90 ms', detail: 'Opérationnel' },
+        { id: 'kv', label: 'Cache KV', status: 'ok', value: '87 %', detail: '' },
+      ] }),
+    });
+    const tiles = $$('.adm-health-t');
+    expect(tiles[0].querySelector('.adm-health-st')!.textContent).toBe('Opérationnel');
+    expect(tiles[0].textContent!.split('Opérationnel').length - 1).toBe(1);
+    expect(tiles[0].querySelector('.adm-health-s')).toBeNull();
+    expect(tiles[1].querySelector('.adm-health-s')).toBeNull();
+  });
+
+  it('mini-courbes : une par KPI qui a une série (requêtes, 5xx, p95), aucune sans série', async () => {
+    await openSection('overview');
+    expect($$('.adm-kpi .adm-spark')).toHaveLength(3);
+    await openSection('overview', {
+      '/admin/overview-series': () => ({ points: [], deltas: { requests: null, errors5xx: null, p95: null } }),
+    });
+    expect($$('.adm-kpi .adm-spark')).toHaveLength(0);
+    expect($$('.adm-kpi')).toHaveLength(8);
+  });
+});

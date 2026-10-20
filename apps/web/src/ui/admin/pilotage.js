@@ -67,7 +67,7 @@ function healthHTML(d) {
       '<li class="adm-health-t is-' + t.tone + '">' +
       '<div class="adm-health-h"><span class="adm-health-n"><i class="adm-dot" aria-hidden="true"></i>' + esc(t.name) + '</span>' +
       '<span class="adm-health-st">' + esc(t.statusLabel) + '</span></div>' +
-      '<strong class="adm-health-v">' + esc(t.value) + '</strong><span class="adm-health-s">' + esc(t.sub) + '</span></li>').join('') + '</ul>') + '</section>';
+      '<strong class="adm-health-v">' + esc(t.value) + '</strong>' + (t.sub ? '<span class="adm-health-s">' + esc(t.sub) + '</span>' : '') + '</li>').join('') + '</ul>') + '</section>';
 }
 
 /** Une ligne de « À traiter » : pastille, titre, détail et âge, « Marquer vu » et l'action propre à l'item. */
@@ -145,16 +145,18 @@ function kpisHTML(ov, tr) {
   const accHint = (fn) => (o ? fn(o) : ov.status === 'error' ? 'Indisponible' : '');
   const traf = m ? null : pending(tr);
   const delta = (pct, goodWhenUp) => (pct == null || !Number.isFinite(pct) ? null : { text: fmtDelta(pct) + ' vs période précédente', tone: deltaTone(pct, goodWhenUp) });
+  // Mini-courbe seulement quand la série existe (au moins deux tranches) : sinon rien, pas de tracé vide.
+  const curve = (values, label, cls) => (pts.length >= 2 ? sparkline(values, label, cls) : '');
   return '<ul class="adm-kpis adm-kpis-dash" aria-label="Indicateurs">' +
     kpiCard('Comptes', acc((x) => fmtInt(x.total)), accHint((x) => (x.suspended != null ? fmtInt(x.suspended) + ' suspendu(s)' : ''))) +
     kpiCard('Actifs 24 h', acc((x) => (x.truncated ? '≥ ' : '') + fmtInt(x.active24)), accHint((x) => (x.truncated ? 'sur les ' + fmtInt(x.scanned) + ' derniers comptes' : 'dernière activité sur 24 h'))) +
     kpiCard('Inscriptions 7 j', acc((x) => fmtInt(x.signups7)), accHint(() => 'nouveaux comptes')) +
     kpiCard('Requêtes / min', m ? fmtRate(m.rpm) : traf, m ? fmtInt(m.requests) + ' sur ' + name : '', m ? delta(dl.requests, true) : null,
-      sparkline(pts.map((p) => p.requests), 'Requêtes par tranche, sur ' + name)) +
+      curve(pts.map((p) => p.requests), 'Requêtes par tranche, sur ' + name)) +
     kpiCard('Erreurs 5xx', m ? fmtPct(m.errorRate, 2) : traf, m ? 'réponses 5xx' : '', m ? delta(dl.errors5xx, false) : null,
-      sparkline(pts.map((p) => (p.requests > 0 ? p.errors5xx / p.requests : 0)), 'Taux d’erreur 5xx, sur ' + name, 'is-bad')) +
+      curve(pts.map((p) => (p.requests > 0 ? p.errors5xx / p.requests : 0)), 'Taux d’erreur 5xx, sur ' + name, 'is-bad')) +
     kpiCard('Latence p95', m ? fmtMs(m.p95) : traf, m ? 'médiane ' + fmtMs(m.p50) : '', m ? delta(dl.p95, false) : null,
-      sparkline(pts.map((p) => p.p95), 'Latence p95, sur ' + name, 'is-alt')) +
+      curve(pts.map((p) => p.p95), 'Latence p95, sur ' + name, 'is-alt')) +
     kpiCard('Salons actifs', acc((x) => (x.rooms != null ? fmtInt(x.rooms) : '—')), accHint((x) => (x.rooms == null ? 'indisponible' : ''))) +
     kpiCard('Signalements en attente', acc((x) => (x.reports != null ? fmtInt(x.reports) : '—')), accHint((x) => (x.reports == null ? 'indisponible' : ''))) +
     '</ul>';

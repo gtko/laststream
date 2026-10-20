@@ -131,10 +131,17 @@ function curveHTML(p) {
     '<path class="adm-curve-l" d="' + sparkPath(spark) + '"></path></svg>';
 }
 
+/** Sans clé configurée, « Tester » est désactivé : l'explication est dans le titre et, en texte visible, dans la cellule. */
+const NO_KEY = 'Clé non configurée';
+
 function testButton(p, t) {
   const id = esc(p.id);
-  return '<button type="button" class="btn btn-ghost btn-sm" data-adm-test="' + id + '" data-adm-focus="test:' + id + '"' + (isBusy(t) ? ' aria-busy="true"' : '') + (p.testable ? '' : ' disabled title="Pas de sonde configurée pour ce fournisseur sur ce serveur."') + '>Tester</button>';
+  return '<button type="button" class="btn btn-ghost btn-sm" data-adm-test="' + id + '" data-adm-focus="test:' + id + '"' + (isBusy(t) ? ' aria-busy="true"' : '') + (p.testable ? '' : ' disabled title="' + NO_KEY + '"') + '>Tester</button>';
 }
+
+/** Un fournisseur sans aucune donnée sur 24 h a l'état « Inconnu » : le libellé dit plutôt qu'il n'a pas été appelé. */
+const hasSpark = (p) => Array.isArray(p.spark) && p.spark.some((v) => typeof v === 'number' && Number.isFinite(v));
+export const providerStateLabel = (p) => (p.status === 'unknown' && !Number.isFinite(p.successRate) && !hasSpark(p) ? 'Aucun appel sur 24 h' : serviceStatusLabel(p.status));
 
 function testNote(t) {
   if (!t) return '';
@@ -166,12 +173,12 @@ export function sourcesHTML(S) {
       return list.length ? table('Fournisseurs amont', ['Fournisseur', 'État', { label: 'Succès', num: true }, { label: 'p95', num: true }, '24 h', 'Dernier échec', 'Test'],
         list.map((p) => ({ cells: [
           esc(p.label),
-          badge(serviceStatusLabel(p.status), PROVIDER_KIND[p.status]),
+          badge(providerStateLabel(p), PROVIDER_KIND[p.status]),
           esc(fmtPct(p.successRate, 1)),
           esc(fmtMs(p.p95)),
           curveHTML(p),
           esc(fmtDateTime(p.lastFailureAt)),
-          '<div class="adm-test-cell">' + testButton(p, pt.rows[p.id]) + '<span class="adm-test" role="status">' + testNote(pt.rows[p.id]) + '</span></div>',
+          '<div class="adm-test-cell">' + testButton(p, pt.rows[p.id]) + '<span class="adm-test" role="status">' + (testNote(pt.rows[p.id]) || (p.testable ? '' : '<span class="adm-dim">' + NO_KEY + '</span>')) + '</span></div>',
         ] })), 'is-sources') : empty('Aucun fournisseur amont.');
     }) +
     loaded(S.srcPerf, (m) => upstreamsCard(m));

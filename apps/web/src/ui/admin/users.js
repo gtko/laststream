@@ -341,7 +341,7 @@ export const usersSections = [
     load: (ctx, quiet) => ctx.fetch('acc', () => api.listAccounts({ ...ctx.S.accQuery, limit: ACCOUNT_PAGE, cursor: ctx.S.accPager.cursor }), quiet),
   },
   {
-    id: 'invites', group: 'users', label: 'Invitations et parrainages', icon: 'tree', render: invitesHTML, bind: bindInvites,
+    id: 'invites', group: 'users', label: 'Invitations', icon: 'tree', render: invitesHTML, bind: bindInvites,
     load: (ctx, quiet) => Promise.all([
       ctx.fetch('ref', () => api.getReferrals(), quiet),
       ctx.fetch('inv', () => api.listInvites({ status: ctx.S.invStatus || undefined }), quiet),

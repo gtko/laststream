@@ -44,7 +44,8 @@ describe('sources et addons : tableau', () => {
     expect(html).toContain('<td data-label="Succès" class="is-num">—</td>');
     expect(html).toContain('<td data-label="p95" class="is-num">—</td>');
     expect(html).toContain('<td data-label="Dernier échec">—</td>');
-    expect(html).toContain('Inconnu');
+    expect(html).toContain('Aucun appel sur 24 h');
+    expect(html).not.toContain('>Inconnu<');
     expect(html.match(/adm-curve is-ok/g)).toHaveLength(1);
     expect(html).not.toContain('adm-curve is-unknown');
   });
@@ -52,8 +53,16 @@ describe('sources et addons : tableau', () => {
   it('un fournisseur non testable : bouton Tester désactivé avec explication ; « Tester tout » désactivé sans cible', () => {
     const html = sourcesHTML(sources([provider({ testable: false })]));
     expect(html).toMatch(/<button[^>]*data-adm-test="tmdb"[^>]*disabled/);
+    expect(html).toMatch(/<button[^>]*data-adm-test="tmdb"[^>]*title="Clé non configurée"/);
+    expect(html).toContain('<span class="adm-dim">Clé non configurée</span>');
     const none = sourcesHTML(sources([provider({ testable: false })]));
     expect(none).toMatch(/<button[^>]*data-adm-testall[^>]*disabled/);
+  });
+
+  it('fournisseur testable : pas d’explication « Clé non configurée », bouton actif', () => {
+    const html = sourcesHTML(sources([provider({ testable: true })]));
+    expect(html).not.toContain('Clé non configurée');
+    expect(html).not.toMatch(/<button[^>]*data-adm-test="tmdb"[^>]*disabled/);
   });
 
   it('valeurs de fournisseur échappées', () => {

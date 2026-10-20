@@ -10,8 +10,12 @@ import { GROUPS, sectionsOf } from './sections.js';
 /** Compteur affiché à côté d’une entrée : à traiter, en ligne, signalements ouverts. */
 const BADGE_OF = { inbox: 'todo', online: 'online', moderation: 'reports' };
 
+/** Un compteur de navigation ne s’affiche qu’à partir de 1 : zéro, valeur inconnue ou absente masquent la pastille. */
+export const badgeShown = (n) => Number.isFinite(n) && n > 0;
+
 export function badgeHTML(key, n) {
-  return '<span class="adm-nbadge" data-adm-badge="' + key + '"' + (n == null ? ' hidden' : '') + '>' + (n == null ? '' : fmtInt(n)) + '</span>';
+  const shown = badgeShown(n);
+  return '<span class="adm-nbadge" data-adm-badge="' + key + '"' + (shown ? '' : ' hidden') + '>' + (shown ? fmtInt(n) : '') + '</span>';
 }
 
 /** Navigation : cinq espaces, leurs entrées ; l’entrée courante porte aria-current. Chaque entrée est un `li` (flèches du clavier). */

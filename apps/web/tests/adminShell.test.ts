@@ -67,10 +67,10 @@ describe('registre des sections', () => {
   it('libellés dans l’ordre de la navigation, espace par espace', () => {
     expect(sections.SECTIONS.map((s: any) => s.label)).toEqual([
       'Tableau de bord', 'À traiter',
-      'Comptes', 'Invitations et parrainages', 'En ligne',
+      'Comptes', 'Invitations', 'En ligne',
       'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées',
       'Watch parties', 'Modération',
-      'Réglages et maintenance', 'Annonces', 'Journal d’audit',
+      'Réglages', 'Annonces', 'Journal d’audit',
     ]);
   });
 });
@@ -87,12 +87,13 @@ describe('navigation groupée', () => {
     expect(current[0].getAttribute('data-adm-sec')).toBe('accounts');
   });
 
-  it('compteurs : valeur affichée (0 compris), masqué quand la valeur est inconnue', () => {
+  it('compteurs : valeur affichée au-dessus de zéro ; masqué quand la valeur vaut 0 ou est inconnue', () => {
     const w = render({ sec: 'overview', badges: { todo: 3, online: null, reports: 0 } });
     const badge = (k: string) => w.querySelector('[data-adm-badge="' + k + '"]') as HTMLElement;
     expect(badge('todo').hidden).toBe(false);
     expect(badge('todo').textContent).toBe('3');
-    expect(badge('reports').textContent).toBe('0');
+    expect(badge('reports').hidden).toBe(true);
+    expect(badge('reports').textContent).toBe('');
     expect(badge('online').hidden).toBe(true);
   });
 });

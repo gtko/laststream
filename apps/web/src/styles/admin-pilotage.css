@@ -68,6 +68,12 @@
 .adm-kpi-d.is-ok { color: var(--adm-ok-text); }
 .adm-kpi-d.is-bad { color: var(--adm-bad-text); }
 
+/* ---------- Chiffres clés du tableau de bord : huit tuiles en 4 colonnes (deux rangées pleines) ----------
+ * Une grille auto-fill de 180 px fait 5 colonnes sur bureau et laisse 3 trous sous 8 tuiles : le nombre de colonnes
+ * doit diviser 8. Deux colonnes sous 1024 px, quatre au-dessus. */
+.adm-kpis.adm-kpis-dash { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 1024px) { .adm-kpis.adm-kpis-dash { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 759px) {
   .adm-health { grid-template-columns: repeat(2, minmax(0, 1fr)); }

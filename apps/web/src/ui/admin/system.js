@@ -242,7 +242,7 @@ function bindAudit(root, ctx) {
 
 export const systemSections = [
   {
-    id: 'settings', group: 'system', label: 'Réglages et maintenance', icon: 'sliders', render: settingsHTML, bind: bindSettings,
+    id: 'settings', group: 'system', label: 'Réglages', icon: 'sliders', render: settingsHTML, bind: bindSettings,
     load: (ctx, quiet) => ctx.fetch('settings', () => api.getSettings(), quiet),
   },
   {

@@ -249,17 +249,21 @@ const HEALTH_NAME: Record<(typeof HEALTH_IDS)[number], string> = {
 
 export interface HealthTile { id: string; name: string; value: string; sub: string; statusLabel: string; tone: Tone }
 
-/** Une tuile par service, dans l'ordre fixe ; un service absent du rapport donne une tuile « Inconnu » (valeur « — »). */
+/**
+ * Une tuile par service, dans l'ordre fixe ; un service absent du rapport donne une tuile « Inconnu » (valeur « — »).
+ * `sub` : le détail donné par le serveur, ou chaîne vide (la ligne est alors masquée). Le statut n'est jamais répété en bas.
+ */
 export function healthTiles(report: StatusReport | null | undefined): HealthTile[] {
   const services = report && Array.isArray(report.services) ? report.services : [];
   return HEALTH_IDS.map((id) => {
     const s = services.find((x) => x.id === id);
     const statusLabel = serviceStatusLabel(s ? s.status : 'unknown');
+    const detail = s && typeof s.detail === 'string' ? s.detail.trim() : '';
     return {
       id,
       name: s && s.label ? s.label : HEALTH_NAME[id],
       value: s && s.value ? s.value : '—',
-      sub: s && s.detail ? s.detail : statusLabel,
+      sub: detail && detail !== statusLabel ? detail : '',
       statusLabel,
       tone: serviceTone(s ? s.status : null),
     };
