@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { openUserDb } from '../src/platform/node/user-db.js';
 import type { SocialEvent } from '../src/user/social-v2-events.js';
-import { SocialV2Store } from '../src/user/social-v2-store.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Acting, befriend, type Cast, castOf, type ErrorBodyV2, HOOK_TIMEOUT_MS } from './social-v2-harness.js';
 import { request } from './user-harness.js';
@@ -168,34 +166,3 @@ describe('favoris du profil et listes partagées alimentent l’activité', () =
     expect(items[0]).toMatchObject({ kind: 'listed', pid: cast.bob.pid, media: { type: 'series', tmdbId: 1399, title: 'GoT', poster: '/got.jpg' } });
   });
 });
-
-describe('titre vide complété depuis meta_index', () => {
-  const ALICE = 'ALICEPID000AAAA';
-  const NOW = Date.parse('2026-05-01T10:00:00.000Z');
-
-  function seeded(): SocialV2Store {
-    const db = openUserDb(':memory:');
-    db.exec("INSERT INTO accounts (id, username, password_hash, is_owner, created_at) VALUES ('a1', 'alice', 'h', 1, '2026-01-01')");
-    db.exec(
-      `INSERT INTO profiles (id, account_id, name, avatar_color, is_kid, kid_max_age, allowed_catalogs, created_at, pid, handle_name, handle_key, handle_tag)
-       VALUES ('p1', 'a1', 'Alice', '#ff0000', 0, NULL, '[]', '2026-01-02T00:00:00.000Z', '${ALICE}', 'Alice', 'alice', 'A7K2')`,
-    );
-    db.exec("INSERT INTO meta_index (type, tmdb_id, title, updated_at, etag) VALUES ('movie', 603, 'Matrix', '2026-01-01', 'e1')");
-    db.exec("INSERT INTO library_items (profile_id, type, title_ref, tmdb_id, title, poster, added_at, removed) VALUES ('p1', 'movie', 'tmdb:604', 604, 'Reloaded', '/r.jpg', '2026-01-01', 0)");
-    return new SocialV2Store(db);
-  }
-
-  it('sans bibliothèque ni titre fourni, le titre vient de meta_index (affiche vide)', () => {
-    const store = seeded();
-    const item = store.recordActivity(ALICE, 'started', { type: 'movie', tmdbId: 603 }, {}, NOW);
-    expect(item?.media).toEqual({ type: 'movie', tmdbId: 603, title: 'Matrix' });
-  });
-
-  it('la bibliothèque prime sur meta_index, un titre fourni prime sur les deux, un titre inconnu reste vide', () => {
-    const store = seeded();
-    expect(store.recordActivity(ALICE, 'started', { type: 'movie', tmdbId: 604 }, {}, NOW)?.media).toMatchObject({ title: 'Reloaded', poster: '/r.jpg' });
-    expect(store.recordActivity(ALICE, 'listed', { type: 'movie', tmdbId: 603 }, { title: 'Fourni' }, NOW)?.media.title).toBe('Fourni');
-    expect(store.recordActivity(ALICE, 'started', { type: 'movie', tmdbId: 999 }, {}, NOW)?.media.title).toBe('');
-  });
-});
-

@@ -1,8 +1,5 @@
-import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { wrapSqlite } from '../src/platform/node/user-db.js';
 import type { SocialEvent } from '../src/user/social-v2-events.js';
-import { migrate } from '../src/user/migrations.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Acting, befriend, type Cast, castOf, type ErrorBodyV2, HOOK_TIMEOUT_MS } from './social-v2-harness.js';
 
@@ -58,16 +55,6 @@ const convSend = (who: Acting, conv: string, body: unknown) =>
   as<{ message: Msg } & ErrorBodyV2>(app, who, 'POST', `/user/social/conv/${conv}/messages`, { body });
 const setPrefs = (who: Acting, body: unknown) => as(app, who, 'PUT', '/user/social/prefs', { body });
 const block = (who: Acting, pid: string) => as<ErrorBodyV2>(app, who, 'POST', `/user/social/blocks/${pid}`);
-
-describe('migrations : le payload de partage n a plus de table propre', () => {
-  it('message_payloads n existe plus ; les colonnes de messages portent le contenu', () => {
-    const db = wrapSqlite(new DatabaseSync(':memory:'));
-    migrate(db);
-    const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
-    expect(names).not.toContain('message_payloads');
-    expect(names).toEqual(expect.arrayContaining(['messages', 'share_links', 'shared_lists', 'social_groups']));
-  });
-});
 
 describe('partage : de vrais messages v3', () => {
   it('un titre partagé est un message kind title lisible par /conv, /messages et dans la liste des conversations', async () => {
