@@ -1,0 +1,113 @@
+/* Espace Utilisateurs de la console d'administration : filtres à compteurs, sélection et barre d'actions groupées, fiche compte
+ * (onglets, quota, sessions, activité), zone sensible, liste « En ligne ». Couleurs : jetons --adm-* (admin.css) et jetons globaux
+ * (styles.css) uniquement. Chargé par src/ui/admin/users.js. */
+
+/* ---------- Filtres à compteurs ---------- */
+.adm-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.adm-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font-size: 13px; font-weight: 700; white-space: nowrap; transition: background-color 0.15s, color 0.15s, border-color 0.15s; }
+.adm-chip:hover { border-color: var(--muted); color: var(--text); }
+.adm-chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+.adm-chip-n { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+
+/* ---------- Barre d'actions groupées ---------- */
+.adm-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.adm-bulk-n { font-size: 13.5px; font-weight: 800; margin-right: 4px; }
+.adm-bulk .btn { min-height: 34px; padding: 0 12px; font-size: 12.5px; }
+.adm-bulk .adm-bulk-quota { gap: 8px; }
+.adm-bulk .adm-bulk-quota .adm-field { flex-direction: row; align-items: center; gap: 8px; }
+.adm-bulk .adm-bulk-quota .set-input { width: 84px; min-height: 34px; padding: 0 10px; font-size: 13px; }
+.adm-bulk-clear { margin-left: auto; }
+
+/* ---------- Tableau des comptes ---------- */
+.adm-table th.adm-sel, .adm-table td.adm-sel { width: 44px; padding-left: 14px; padding-right: 6px; }
+.adm-sel input, .adm-accounts input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.adm-accounts tbody tr[data-adm-row] { cursor: pointer; }
+.adm-accounts tbody tr.is-selected td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.adm-accounts tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.adm-who { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.adm-who > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.adm-online { display: inline-flex; align-items: center; gap: 6px; color: var(--adm-ok-text); font-weight: 700; white-space: nowrap; }
+.adm-online-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--adm-ok); flex: none; }
+
+/* ---------- Avatars (initiale, couleur par pseudo) ---------- */
+.adm-av { width: 30px; height: 30px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-family: var(--ff-title); font-weight: 800; font-size: 12px; color: var(--on-accent); }
+.adm-av--0 { background: var(--adm-s1); }
+.adm-av--1 { background: var(--adm-s2); }
+.adm-av--2 { background: var(--adm-s3); }
+.adm-av--3 { background: var(--adm-warn); }
+.adm-av--lg { width: 52px; height: 52px; font-size: 20px; }
+
+/* ---------- Fiche compte : en-tête, onglets ---------- */
+.adm-who-h { display: flex; align-items: center; gap: 14px; }
+.adm-who-meta { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.adm-who-meta p { margin: 0; }
+.adm-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: thin; }
+.adm-tabs [role="tab"] { flex: none; min-height: 40px; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--dim); font-size: 13.5px; font-weight: 700; white-space: nowrap; box-shadow: inset 0 -2px 0 transparent; transition: color 0.15s; }
+.adm-tabs [role="tab"]:hover { color: var(--text); }
+.adm-tabs [role="tab"][aria-selected="true"] { color: var(--text); font-weight: 800; box-shadow: inset 0 -2px 0 var(--accent); }
+.adm-tabs [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.adm-tab-n { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.adm-tabpanel { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; min-width: 0; }
+
+/* ---------- Aperçu : tuiles, quota ---------- */
+.adm-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.adm-tile { padding: 12px; border-radius: 12px; background: var(--adm-well); min-width: 0; }
+.adm-tile-v { font-family: var(--ff-title); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.adm-tile-l { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.adm-quota { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.adm-quota-t { margin: 0; font-size: 13.5px; color: var(--soft); }
+.adm-stepper { display: inline-flex; align-items: center; gap: 12px; }
+.adm-step { width: 36px; height: 36px; border-radius: 9px; border: 1px solid var(--line-2); background: transparent; color: var(--text); font-size: 16px; font-weight: 800; transition: border-color 0.15s, color 0.15s; }
+.adm-step:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.adm-step:disabled { opacity: 0.4; cursor: not-allowed; }
+.adm-step-v { min-width: 24px; text-align: center; font-family: var(--ff-title); font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- Sessions ---------- */
+.adm-sess-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.adm-sess-h .adm-sub { margin-bottom: 0; }
+.adm-sesslist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.adm-sess { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.adm-sess-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.adm-sess-d { font-size: 13.5px; font-weight: 700; overflow-wrap: anywhere; }
+.adm-sess-main .adm-dim { font-size: 12px; }
+
+/* ---------- Invitations de la fiche ---------- */
+.adm-inv { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+/* ---------- Activité ---------- */
+.adm-tl-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.adm-tl { display: flex; gap: 10px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.adm-tl:last-child { border-bottom: 0; }
+.adm-tl-dot { flex: none; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--dim); }
+.adm-tl-dot.k-audit { background: var(--accent); }
+.adm-tl-dot.k-signup { background: var(--adm-s2); }
+.adm-tl-dot.k-invite { background: var(--adm-s3); }
+.adm-tl-dot.k-session { background: var(--adm-warn); }
+.adm-tl-dot.k-party { background: var(--adm-info-text); }
+.adm-tl-t { flex: 1; min-width: 0; color: var(--soft); overflow-wrap: anywhere; }
+.adm-tl-at { flex: none; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ---------- Zone sensible ---------- */
+.adm-zone { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--adm-bad) 6%, transparent); border: 1px solid color-mix(in srgb, var(--adm-bad) 40%, transparent); }
+.adm-zone h3 { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--adm-bad-soft); }
+.adm-zone .adm-actions { padding: 0; }
+.adm-zone .set-hint { margin: 0; }
+
+/* ---------- Téléphone : la barre et la fiche s'empilent ---------- */
+@media (max-width: 759px) {
+  .adm-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+  .adm-chip { flex: none; }
+  .adm-bulk { gap: 8px; padding: 10px; }
+  .adm-bulk-clear { margin-left: 0; }
+  .adm-bulk .adm-bulk-quota { width: 100%; }
+  .adm-bulk .adm-bulk-quota .set-input { width: 100px; }
+  .adm-table td.adm-sel { justify-content: flex-start; padding-bottom: 7px; }
+  .adm-table td.adm-sel::before { content: none; }
+  .adm-table td.adm-sel input { margin-left: 0; }
+  .adm-tiles { gap: 8px; }
+  .adm-tile { padding: 10px; }
+  .adm-tile-v { font-size: 18px; }
+  .adm-sess { flex-wrap: wrap; }
+  .adm-tl { flex-wrap: wrap; }
+  .adm-tl-at { width: 100%; padding-left: 18px; }
+}

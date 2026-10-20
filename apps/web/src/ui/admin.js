@@ -20,8 +20,8 @@ const idle = () => ({ status: 'idle', value: null, error: '' });
 const S = {
   sec: 'overview', range: '1h', updatedAt: 0,
   status: null, badges: { todo: null, online: null, reports: null },
-  ov: idle(), acc: idle(), accQuery: { q: '', status: '', order: 'newest' }, accPager: new CursorPager(),
-  ref: idle(), perf: idle(), caches: idle(), purges: {}, tv: idle(), rooms: idle(), reports: idle(), repStatus: 'open',
+  ov: idle(), acc: idle(), accQuery: { q: '', status: '', order: 'newest', filter: 'all' }, accSel: new Set(), accPager: new CursorPager(),
+  ref: idle(), inv: idle(), invStatus: 'active', online: idle(), perf: idle(), caches: idle(), purges: {}, tv: idle(), rooms: idle(), reports: idle(), repStatus: 'open',
   settings: idle(), audit: idle(), auditPager: new CursorPager(), auditAction: '',
 };
 const REFRESH_MS = 30_000;
