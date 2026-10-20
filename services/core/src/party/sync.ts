@@ -21,4 +21,4 @@ export function driftAction(localPos: number, expected: number, playing: boolean
 }
 
 // Position attendue et décalage d'horloge : source unique dans @laststream/protocol (partagée avec l'application).
-export { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset, expectedPosition };
+export { estimateOffset, expectedPosition };
