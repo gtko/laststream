@@ -33,6 +33,7 @@ import './styles/admin.css';
 import './styles/scrollbars.css';
 import './styles/avatar-studio.css';
 import './styles/profile-editor.css';
+import './styles/credits.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';

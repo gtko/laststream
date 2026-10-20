@@ -25,6 +25,7 @@ import { ICON } from './icons.js';
 import { renderLibrary } from './library.js';
 import { keepRowState } from './rows.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
+import { creditsLinkHTML } from './credits.js';
 import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { exploreMenuHTML, syncTopbar, topActionsHTML } from './topnav.js';
@@ -327,7 +328,7 @@ export function tabbar() {
 
 export const footer = () =>
   '<footer class="foot"><p>Données films et séries : TMDb. Ce produit utilise l’API TMDb mais n’est ni approuvé ni certifié par TMDb. ' +
-  'Notes : MDBList. Recommandations : OpenRouter.</p></footer>';
+  'Notes : MDBList. Recommandations : OpenRouter. ' + creditsLinkHTML() + '</p></footer>';
 
 export function skeletonView() {
   const cards = '<div class="row">' + '<span class="sk sk-card"></span>'.repeat(6) + '</div>';

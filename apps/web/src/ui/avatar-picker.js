@@ -3,17 +3,10 @@
  * d'avatars, onglet « Illustrés » > « Générés ». Déplacé ici pour que le studio et l'éditeur ne dépendent pas
  * l'un de l'autre (pas d'import circulaire avec auth-ui.js).
  */
-import { AVATAR_TABS, avatarCredits, HERO_FAMILIES, LICENSE_LABEL, LICENSE_URL, parseAvatar, parseColAvatar, parseHero, randomSeed, tabTiles } from '../data/avatars';
+import { AVATAR_TABS, HERO_FAMILIES, parseAvatar, parseColAvatar, parseHero, randomSeed, tabTiles } from '../data/avatars';
 import { avatarAttrs } from './avatar-art.js';
+import { creditsHTML } from './credits.js';
 import { esc } from './util.js';
-
-/** Crédits des illustrations (CC BY 4.0 et licences à attribution) : liste des illustrateurs et licences. */
-export function creditsHTML() {
-  return '<ul class="av-credits">' + avatarCredits().map((c) =>
-    '<li><strong>' + esc(c.creator) + '</strong> : ' + c.styles.map((st) => '<a href="' + esc(st.source) + '" target="_blank" rel="noopener noreferrer">' + esc(st.label) + '</a>').join(', ') +
-    ' · <a href="' + esc(LICENSE_URL[c.license]) + '" target="_blank" rel="noopener noreferrer">' + esc(LICENSE_LABEL[c.license]) + '</a></li>').join('') +
-    '</ul><p class="av-credits">Avatars « Héros » : dessins originaux laststream, générés en local.</p><p class="av-credits">Avatars générés avec <a href="https://www.dicebear.com" target="_blank" rel="noopener noreferrer">DiceBear</a> (MIT), en local sur ton appareil.</p>';
-}
 
 export function avatarPickerHTML() {
   return '<section class="pf-picker-avatars" aria-labelledby="pfe-av-title"><h3 class="pf-section-title" id="pfe-av-title">Avatar</h3>' +

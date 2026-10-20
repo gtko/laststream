@@ -291,7 +291,7 @@ describe('éditeur de profil : sélecteur d’avatars (dans le studio)', () => {
     expect(details.open).toBe(false);
     expect(details.querySelector('summary')!.textContent).toBe('Crédits des illustrations');
     expect(details.textContent).toContain('Lisa Wischofsky');
-    const ui = await import('../src/ui/auth-ui.js');
+    const ui = await import('../src/ui/credits.js');
     const html = ui.creditsHTML();
     expect(html).not.toContain('>source<');
     expect((html.match(/<li>/g) ?? []).length).toBe(avatarCredits().length);

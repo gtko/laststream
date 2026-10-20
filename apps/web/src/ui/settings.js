@@ -14,7 +14,8 @@ import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveThe
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
-import { creditsHTML, errorText, openLogin, openPicker } from './auth-ui.js';
+import { errorText, openLogin, openPicker } from './auth-ui.js';
+import { creditsLinkHTML } from './credits.js';
 import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
 import { invitesCard, refreshInvites } from './invites.js';
@@ -83,7 +84,7 @@ function accountPanel() {
     rowHTML('Profil actif', pr.isKid ? 'Profil enfant' : '', () => '<span class="set-val">' + esc(pr.name) + '</span>' +
       (isProfileLocked() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>')) +
     rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
-    (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data + card('Crédits des avatars', creditsHTML()) +
+    (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data +
     card('Importer ma bibliothèque Stremio',
       '<form id="set-stremio" class="set-form" autocomplete="off">' +
       '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
@@ -237,7 +238,7 @@ function pageHTML() {
   return topBar(false) +
     '<article class="svc-page set-page" aria-labelledby="svc-title"><header class="set-head">' +
     '<p class="set-eyebrow">Laststream</p><h1 class="set-title" id="svc-title" tabindex="-1">Réglages</h1></header>' +
-    '<div class="set-layout">' + navHTML(cats, activeCat) + '<div class="set-main">' + panels + '</div></div></article>';
+    '<div class="set-layout">' + navHTML(cats, activeCat) + '<div class="set-main">' + panels + '</div></div><p class="set-foot">' + creditsLinkHTML() + '</p></article>';
 }
 
 function setActive(id) {

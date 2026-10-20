@@ -452,8 +452,6 @@ function editProfile(p) {
   open(p);
 }
 
-/** Crédits des illustrations : ré-exportés depuis avatar-picker.js (réglages). */
-export { creditsHTML } from './avatar-picker.js';
 
 // ---------- Quitter un profil enfant ----------
 /**

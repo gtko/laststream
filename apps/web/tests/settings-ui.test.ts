@@ -187,3 +187,12 @@ describe('panneau « Audio et sous-titres »', () => {
     expect(sel('lang-subtitles').disabled).toBe(false);
   });
 });
+
+describe('pied de page Réglages', () => {
+  it('lien « Crédits » discret en bas de la page, plus de carte « Crédits des avatars »', () => {
+    const foot = page().querySelector('.set-foot [data-credits]') as HTMLElement;
+    expect(foot).not.toBeNull();
+    expect(foot.textContent).toBe('Crédits');
+    expect(page().textContent).not.toContain('Crédits des avatars');
+  });
+});
