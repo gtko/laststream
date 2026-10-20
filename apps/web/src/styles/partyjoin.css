@@ -406,3 +406,13 @@
   .pj.is-joined .pj-msg { transition: none; }
   .gp .gc-fl { animation: none; }
 }
+
+/* Choix d'avatar de l'invité (écran d'entrée) */
+.pj-avs { flex: 1 1 100%; min-width: 0; margin: 0; padding: 0; border: 0; }
+.pj-avs legend { padding: 0; margin-bottom: 8px; color: var(--soft); font-size: 14px; }
+.pj-avgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 8px; max-width: 560px; }
+.pj-av { display: block; padding: 3px; border: 2px solid transparent; border-radius: 14px; background: transparent; cursor: pointer; }
+.pj-av[aria-checked="true"] { border-color: var(--accent, #ff5a36); }
+.pj-av:focus-visible { outline: 2px solid var(--accent, #ff5a36); outline-offset: 2px; }
+.pj-avi { display: block; aspect-ratio: 1; border-radius: 10px; background-size: cover; background-position: center; }
+.pj.is-joined .pj-avs { display: none; }

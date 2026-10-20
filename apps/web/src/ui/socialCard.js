@@ -5,6 +5,7 @@
 import * as store from '../data/socialStore';
 import { getFriendHistory, getFriendLibrary } from '../data/socialV2Api';
 import { getFriendProfile } from '../data/socialV3Api';
+import { directPlayRequest } from './playRequest.js';
 import { posterPathOf } from '../data/serverUserStore';
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
@@ -43,20 +44,6 @@ function libTileHTML(x) {
     '<div class="ss-tile-acts"><button type="button" class="ss-btn ss-btn-sm" data-ss-act="lib-play" data-key="' + k + '" data-fk="lib-play:' + k + '">Lire</button>' +
     '<button type="button" class="ss-btn ss-btn-sm" data-ss-act="lib-save" data-key="' + k + '" data-fk="lib-save:' + k + '"' + (have ? ' disabled' : '') +
     ' aria-label="' + (have ? 'Déjà dans ma bibliothèque' : 'Ajouter à ma bibliothèque') + '">' + (have ? 'Ajouté' : 'Ajouter') + '</button></div></div>';
-}
-
-/** Cible de lecture directe : un film, ou l'épisode en cours / le premier d'une série. */
-function requestOf(key) {
-  const it = state.byKey.get(key);
-  if (!it) return null;
-  let season = null;
-  let episode = null;
-  if (it.type === 'tv') {
-    const cont = userStore.continueWatching().find((e) => e.type === 'tv' && e.id === it.id && e.season != null);
-    season = cont ? cont.season : 1;
-    episode = cont ? cont.episode : 1;
-  }
-  return { type: it.type, id: String(it.id), name: it.name, season, episode, key };
 }
 
 function sinceText(ts) {
@@ -359,7 +346,7 @@ export function createFriendCard(deps) {
       }
       case 'dlg-ok': return true; // le formulaire part via submit()
       case 'lib-play': {
-        const req = requestOf(el.dataset.key);
+        const req = directPlayRequest(el.dataset.key);
         if (req) playDirect(req, el);
         return true;
       }

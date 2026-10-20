@@ -2,16 +2,23 @@ import type { FriendRequest, FriendView, MediaRef, Message, Note } from './socia
 import type { ActivityItem, Poll, Reaction } from './socialV3Api';
 
 /* Canal temps réel du Social v2 et v3 : une WebSocket par profil actif (ticket à 60 s, même mécanisme que les salons).
- * Ping toutes les 25 s, attente de pong (10 s), reconnexion avec backoff exponentiel plafonné. Tant que la WebSocket
- * ne fonctionne pas, repli sur un polling (`poll`, appelé toutes les 20 s) ; il s'arrête à la réouverture du canal.
- * Aucune dépendance au navigateur : socket, minuteurs et ticket sont injectés.
+ * Ping toutes les 25 s, attente de pong (10 s), reconnexion avec backoff exponentiel plafonné à 60 s, avec gigue. Tant que
+ * la WebSocket ne fonctionne pas, repli sur un polling (`poll`, appelé toutes les 20 s) ; il s'arrête à la réouverture.
+ * Cas particuliers : ticket refusé en 429 → attente d'au moins 30 s (ou Retry-After) ; connexion remplacée (fermeture 4000,
+ * le serveur a ouvert une autre connexion pour ce profil) → pas de reconnexion automatique, repli polling jusqu'au retour
+ * au premier plan. Une seule connexion par instance : `start()` répété ou après `start()` ne rouvre rien.
+ * Aucune dépendance au navigateur : socket, minuteurs, ticket, aléa et retour au premier plan sont injectés.
  * Le message v3 garde la forme `Message` ; les champs v3 (conv, kind, reactions) sont normalisés dans le store. */
 
 export const PING_EVERY_MS = 25_000;
 export const PONG_TIMEOUT_MS = 10_000;
 export const POLL_EVERY_MS = 20_000;
 export const BACKOFF_BASE_MS = 1_000;
-export const BACKOFF_MAX_MS = 30_000;
+export const BACKOFF_MAX_MS = 60_000;
+/** Attente minimale après un ticket refusé en 429 (un Retry-After plus long prime). */
+export const RATE_LIMIT_MIN_WAIT_MS = 30_000;
+/** Fermeture 4000 : connexion remplacée par une autre du même profil (miroir de SOCIAL_LIVE_REPLACED côté serveur). */
+export const LIVE_REPLACED_CODE = 4000;
 
 export type LiveStatus = 'idle' | 'connecting' | 'open' | 'polling' | 'stopped';
 
@@ -59,6 +66,10 @@ export interface SocialLiveOptions {
   onStatus?: (s: LiveStatus) => void;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (id: unknown) => void;
+  /** Source d'aléa de la gigue du backoff (0 inclus, 1 exclu) ; défaut : Math.random. */
+  random?: () => number;
+  /** Abonnement au retour au premier plan ; défaut : visibilitychange du document. Renvoie la désinscription. */
+  onForeground?: (fn: () => void) => () => void;
 }
 
 export interface SocialLive {
@@ -67,10 +78,36 @@ export interface SocialLive {
   readonly status: LiveStatus;
 }
 
-/** Délai avant la tentative n (0, 1, 2…) : 1 s, 2 s, 4 s… plafonné à 30 s. */
-export function backoffDelay(attempt: number): number {
+/**
+ * Délai avant la tentative n (0, 1, 2…) : 1 s, 2 s, 4 s… plafonné à 60 s. Gigue (« moitié à totalité » du plafond) pour
+ * éviter que les clients coupés ensemble ne se reconnectent au même instant.
+ */
+export function backoffDelay(attempt: number, random: () => number = Math.random): number {
   const n = Math.min(Math.max(0, Math.floor(attempt)), 30);
-  return Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** n);
+  const ceiling = Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** n);
+  return Math.round(ceiling / 2 + (ceiling / 2) * random());
+}
+
+/**
+ * Attente imposée par l'erreur du ticket : un 429 (limite de tickets du profil) impose au moins 30 s, ou le Retry-After
+ * du serveur s'il est plus long. Toute autre erreur n'impose rien (0). Lit `status` et `retryAfterSec` (UserApiError).
+ */
+export function ticketRetryDelay(err: unknown): number {
+  if (typeof err !== 'object' || err === null) return 0;
+  const { status, retryAfterSec } = err as { status?: unknown; retryAfterSec?: unknown };
+  if (status !== 429) return 0;
+  const sec = typeof retryAfterSec === 'number' && Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec : 0;
+  return Math.max(RATE_LIMIT_MIN_WAIT_MS, sec * 1000);
+}
+
+/** Retour au premier plan du navigateur (visibilitychange) ; sans document (Node) : aucun abonnement. */
+function onVisibleSubscription(fn: () => void): () => void {
+  if (typeof document === 'undefined') return () => undefined;
+  const handler = (): void => {
+    if (document.visibilityState === 'visible') fn();
+  };
+  document.addEventListener('visibilitychange', handler);
+  return () => document.removeEventListener('visibilitychange', handler);
 }
 
 /** Adresse WebSocket d'un ticket : `wsPath` est relatif au serveur (http -> ws, https -> wss). Même règle que les salons. */
@@ -150,6 +187,11 @@ export function createSocialLive(o: SocialLiveOptions): SocialLive {
   let pingT: unknown = null;
   let pongT: unknown = null;
   let pollT: unknown = null;
+  /** Connexion remplacée (4000) : pas de reconnexion avant le retour au premier plan. */
+  let replaced = false;
+  let unsubscribeForeground: (() => void) | null = null;
+  const random = o.random ?? Math.random;
+  const subscribeForeground = o.onForeground ?? onVisibleSubscription;
 
   const clear = (t: unknown): null => {
     if (t !== null) clearTimer(t);
@@ -169,8 +211,8 @@ export function createSocialLive(o: SocialLiveOptions): SocialLive {
         if (g !== gen) return;
         bind(openSocket(socketUrl(o.baseUrl(), wsPath)));
       })
-      .catch(() => {
-        if (g === gen) onFailure();
+      .catch((err: unknown) => {
+        if (g === gen) onFailure(ticketRetryDelay(err));
       });
   }
 
@@ -190,16 +232,17 @@ export function createSocialLive(o: SocialLiveOptions): SocialLive {
       if (e.t === 'pong') pongT = clear(pongT);
       try { o.onEvent(e); } catch { /* un écouteur ne casse pas le canal */ }
     };
-    s.onclose = () => {
+    s.onclose = (ev) => {
       if (socket !== s) return;
       socket = null;
-      onFailure();
+      if ((ev as { code?: unknown } | undefined)?.code === LIVE_REPLACED_CODE) onReplaced();
+      else onFailure();
     };
     s.onerror = () => { /* la fermeture suit */ };
   }
 
-  /** Canal coupé ou muet : on ferme ce qui reste, on passe en repli polling et on planifie la reconnexion. */
-  function onFailure(): void {
+  /** Canal coupé ou muet : on ferme ce qui reste, on passe en repli polling et on planifie la reconnexion (`minDelayMs` en plus). */
+  function onFailure(minDelayMs = 0): void {
     pingT = clear(pingT);
     pongT = clear(pongT);
     const s = socket;
@@ -211,12 +254,30 @@ export function createSocialLive(o: SocialLiveOptions): SocialLive {
     if (!running) return;
     setStatus('polling');
     startPolling();
-    scheduleReconnect();
+    scheduleReconnect(minDelayMs);
   }
 
-  function scheduleReconnect(): void {
+  /** Connexion remplacée par une autre du même profil (4000) : aucune reconnexion ; polling jusqu'au retour au premier plan. */
+  function onReplaced(): void {
+    pingT = clear(pingT);
+    pongT = clear(pongT);
     reconnectT = clear(reconnectT);
-    const delay = backoffDelay(attempt);
+    replaced = true;
+    if (!running) return;
+    setStatus('polling');
+    startPolling();
+  }
+
+  /** Retour au premier plan : seule reprise après une connexion remplacée (une tentative, sans attendre le backoff). */
+  function onForeground(): void {
+    if (!running || !replaced || socket !== null) return;
+    replaced = false;
+    connect();
+  }
+
+  function scheduleReconnect(minDelayMs = 0): void {
+    reconnectT = clear(reconnectT);
+    const delay = Math.max(backoffDelay(attempt, random), minDelayMs);
     attempt += 1;
     const g = gen;
     reconnectT = setTimer(() => {
@@ -258,11 +319,16 @@ export function createSocialLive(o: SocialLiveOptions): SocialLive {
       if (running) return;
       running = true;
       attempt = 0;
+      replaced = false;
+      unsubscribeForeground = subscribeForeground(onForeground);
       connect();
     },
     stop(): void {
       running = false;
       gen += 1;
+      replaced = false;
+      unsubscribeForeground?.();
+      unsubscribeForeground = null;
       reconnectT = clear(reconnectT);
       pingT = clear(pingT);
       pongT = clear(pongT);

@@ -20,6 +20,7 @@ import { RelayError } from '../relay/protocol';
 import { HostRelaySession, type RelayStats } from '../relay/session';
 import { urlRangeSource } from '../relay/sources';
 import { buildPartySubtitles, type LoadedSubtitle } from './subtitles';
+import { partyCreateErrorText } from './createError';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -137,6 +138,11 @@ class PartyBridge {
   launcher: LaunchFn | null = null;
   /** Salon créé depuis la fiche (création différée) : l'interface copie le lien et ouvre le panneau. */
   onCreated: ((room: PartyRoom) => void) | null = null;
+  /** Amis à inviter dès la création du salon (choisis dans la boîte « Watch party » de la fiche). */
+  pendingInvites: string[] = [];
+  onInvites: ((room: PartyRoom, pids: string[]) => void) | null = null;
+  /** Création différée en échec : `retry` la relance (après saisie du code du profil, par exemple). */
+  onCreateError: ((err: unknown, retry: () => void, cancel: () => void) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
   /**
    * Bascule la lecture sur une source déjà chargée, à la même position ; `allow` filtre les sources de repli de cette
@@ -152,6 +158,8 @@ class PartyBridge {
   private refusedRelay = false;
   /** Codecs lus dans l'en-tête du fichier relayé, pour le relais `relay` (URL en mémoire seulement, jamais affichée). */
   private header: { relay: string; codecs: FileCodecs } | null = null;
+  /** Dernier titre vu par le lecteur (tick ou viewReady) : sert à ouvrir le partage dès qu'un invité arrive. Vidé à la fermeture du lecteur. */
+  private lastAdapter: SessionAdapter | null = null;
 
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -232,7 +240,7 @@ class PartyBridge {
     this.client = client;
     this.controller = new PartyController(client);
     client.on('status', () => this.emit());
-    client.on('participants', () => this.emit());
+    client.on('participants', () => this.onParticipants(client));
     client.on('welcome', (w) => { this.room = w.room; this.controller?.reset(); this.emit(); });
     client.on('host', () => { this.controller?.reset(); this.emit(); });
     client.on('media', (m) => this.onMedia(m));
@@ -269,6 +277,7 @@ class PartyBridge {
     this.controller = null;
     this.room = null;
     this.pending = null;
+    this.pendingInvites = [];
     this.announced = '';
     this.readyDeclared = false;
     this.lobby = false;
@@ -322,6 +331,18 @@ class PartyBridge {
   /** Le navigateur de l'hôte ne peut pas lire ce lien (CORS) : le partage est en cours, mais les invités ne reçoivent rien. */
   relayRefused(): boolean {
     return this.relay !== null && this.refusedRelay;
+  }
+
+  /**
+   * Hôte d'un salon avec au moins un invité, lecture prête, mais source sans lien relayable (torrent, proxy, lien protégé) : les
+   * invités ne peuvent pas recevoir la lecture. Faux hors de ce cas.
+   */
+  relayUnavailable(): boolean {
+    const c = this.client;
+    if (!c || !c.isHost || !c.participants.some((p) => p.guest)) return false;
+    const a = this.adapter?.() ?? null;
+    if (!a || !a.ready) return false;
+    return (a.relayUrl ? a.relayUrl() : null) === null;
   }
 
   /**
@@ -425,6 +446,15 @@ class PartyBridge {
   }
 
   /**
+   * Présence des participants changée : le partage s'ouvre ou se ferme tout de suite, sans attendre le pas suivant du lecteur.
+   * Sinon le `hello` d'un invité qui vient d'arriver serait ignoré (aucune session hôte pour l'admettre encore).
+   */
+  private onParticipants(client: PartyClient): void {
+    if (this.client === client && this.lastAdapter) this.syncRelay(this.lastAdapter);
+    this.emit();
+  }
+
+  /**
    * Partage de la lecture : une session hôte existe seulement quand un invité est présent et que la lecture de l'hôte passe
    * par un lien HTTP(S) lu directement (débridé ou direct d'addon). Elle est reprise si le lien change (épisode suivant), et
    * fermée dès que la condition tombe.
@@ -501,10 +531,29 @@ class PartyBridge {
   // ---- Appels du lecteur ----
   /** La source est chargée : création différée du salon (fiche), annonce du changement d'épisode (hôte), recalage (invité). */
   viewReady(a: SessionAdapter): void {
+    this.lastAdapter = a;
     if (this.pending && !this.client && this.available()) {
       const { visibility } = this.pending;
       this.pending = null;
-      this.create(a, visibility).then((room) => { this.onCreated?.(room); this.emit(); }, (err) => { this.lastError = err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Trois salons ouverts au plus.' : 'Création du salon impossible.'; this.emit(); });
+      this.create(a, visibility).then((room) => {
+        const pids = this.pendingInvites;
+        this.pendingInvites = [];
+        this.onCreated?.(room);
+        if (pids.length) this.onInvites?.(room, pids);
+        this.emit();
+      }, (err) => {
+        this.lastError = partyCreateErrorText(err);
+        const cancel = () => { this.pendingInvites = []; };
+        // Rien ne reste armé : seul un nouvel essai explicite (code du profil saisi) réarme la création, si le lecteur est toujours le même.
+        const retry = () => {
+          if (this.client || this.adapter?.() !== a || !a.ready) { cancel(); return; }
+          this.pending = { visibility };
+          this.viewReady(a);
+        };
+        if (!(err instanceof UserApiError && err.code === 'pin_required') || !this.onCreateError) cancel();
+        this.onCreateError?.(err, retry, cancel);
+        this.emit();
+      });
       return;
     }
     const c = this.client;
@@ -545,13 +594,18 @@ class PartyBridge {
 
   /** Appelé à chaque pas de la boucle du lecteur (~100 ms). */
   tick(a: SessionAdapter): void {
+    this.lastAdapter = a;
     if (!this.controller) return;
     this.controller.tick(playerOf(a));
     this.syncRelay(a);
   }
 
-  /** Le lecteur se ferme : sortir du salon (pas pour un simple changement d'épisode, `silent`). */
+  /**
+   * Le lecteur se ferme : sortir du salon (pas pour un simple changement d'épisode, `silent`). Son titre n'est plus partageable :
+   * le titre gardé ici ne doit plus ouvrir de relais (il pointerait vers un lien déjà fermé).
+   */
   sessionClosed(silent: boolean): void {
+    this.lastAdapter = null;
     if (!silent) this.leave();
   }
 }

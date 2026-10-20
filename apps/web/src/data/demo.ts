@@ -16,11 +16,10 @@ import { LocalUserStore, PROFILES_KEY, PROFILE_CURRENT_KEY, setUserStore, type P
  *  - lecture désactivée (voir `DEMO_BLOCKED_MSG`).
  */
 
-export { detectDemo, MemoryStorage };
+export { detectDemo };
 export type { DemoFlags };
 
 export const isDemo = (): boolean => demoState.flags.on;
-export const isDemoClean = (): boolean => demoState.flags.clean;
 /** Tests uniquement. */
 export function setDemoFlags(next: DemoFlags): void {
   demoState.flags = next;

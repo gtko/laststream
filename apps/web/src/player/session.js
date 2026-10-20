@@ -90,7 +90,7 @@ let thumbs = null;
 /** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
 let feed = null;
 let addonThumbs = false;
-/** Aperçu par plages (src/thumbs) : relais Cloudflare + WebCodecs, pour les liens débridés distants. */
+/** Aperçu par plages (src/thumbs) : lecture chez l'hébergeur + WebCodecs, pour les liens débridés distants. */
 let rangeFeed = null;
 let rangeLocal = null;
 let rangeStore = null;
@@ -2003,7 +2003,7 @@ function postReact({ pos, kind, body, also }) {
   const me = getSocialState().me;
   const tmp = me ? 'tmp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8) : '';
   if (me) {
-    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor }, pos: at, kind, body, createdAt: Date.now() };
+    const local = { id: tmp, author: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor, ...(me.avatar ? { avatar: me.avatar } : {}) }, pos: at, kind, body, createdAt: Date.now() };
     putNotes(nt, [local]);
     ui.showNoteFlash(local);
   }

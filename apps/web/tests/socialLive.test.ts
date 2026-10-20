@@ -1,7 +1,7 @@
 // Canal temps réel du Social v2 : URL, ping, pong, reconnexion avec backoff, repli polling, arrêt.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  backoffDelay, createSocialLive, parseLiveEvent, PING_EVERY_MS, PONG_TIMEOUT_MS, POLL_EVERY_MS, socketUrl,
+  backoffDelay, createSocialLive, LIVE_REPLACED_CODE, parseLiveEvent, PING_EVERY_MS, PONG_TIMEOUT_MS, POLL_EVERY_MS, socketUrl, ticketRetryDelay,
   type LiveEvent, type LiveSocket, type LiveStatus,
 } from '../src/data/socialLive';
 
@@ -18,6 +18,8 @@ class FakeSocket implements LiveSocket {
   open(): void { this.onopen?.(); }
   emit(data: unknown): void { this.onmessage?.({ data: typeof data === 'string' ? data : JSON.stringify(data) }); }
   drop(): void { this.onclose?.({ code: 1006 }); }
+  /** Fermeture par le serveur : connexion remplacée par une autre du même profil. */
+  replace(): void { this.onclose?.({ code: LIVE_REPLACED_CODE }); }
 }
 
 let sockets: FakeSocket[];
@@ -26,10 +28,13 @@ let polls: number;
 let events: LiveEvent[];
 let statuses: LiveStatus[];
 let ticketResult: () => Promise<{ wsPath: string }>;
+/** Retour au premier plan simulé : la dernière fonction abonnée (null une fois désinscrite). */
+let foreground: (() => void) | null;
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
-function make() {
+/** Canal avec gigue neutralisée (aléa à 1 : délai = plafond) pour garder des délais exacts. */
+function make(extra: { random?: () => number } = {}) {
   return createSocialLive({
     createTicket: () => { tickets += 1; return ticketResult(); },
     baseUrl: () => 'http://localhost:7000',
@@ -37,6 +42,9 @@ function make() {
     poll: async () => { polls += 1; },
     onEvent: (e) => { events.push(e); },
     onStatus: (s) => { statuses.push(s); },
+    random: () => 1,
+    onForeground: (fn) => { foreground = fn; return () => { foreground = null; }; },
+    ...extra,
   });
 }
 
@@ -47,6 +55,7 @@ beforeEach(() => {
   polls = 0;
   events = [];
   statuses = [];
+  foreground = null;
   ticketResult = async () => ({ wsPath: '/user/social/live?ticket=T' + tickets });
 });
 
@@ -56,9 +65,30 @@ afterEach(() => {
 });
 
 describe('fonctions pures', () => {
-  it('backoff exponentiel plafonné à 30 s', () => {
-    expect([0, 1, 2, 3, 4, 5, 6, 7].map(backoffDelay)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
-    expect(backoffDelay(500)).toBe(30000);
+  it('backoff exponentiel plafonné à 60 s (sans gigue : aléa à 1)', () => {
+    const exact = (attempt: number) => backoffDelay(attempt, () => 1);
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(exact)).toEqual([1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]);
+    expect(exact(500)).toBe(60000);
+  });
+
+  it('gigue : le délai tombe entre la moitié et la totalité du plafond', () => {
+    expect(backoffDelay(3, () => 0)).toBe(4000);
+    expect(backoffDelay(3, () => 0.5)).toBe(6000);
+    expect(backoffDelay(9, () => 0)).toBe(30000);
+    for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
+      const d = backoffDelay(6, () => r);
+      expect(d).toBeGreaterThanOrEqual(30000);
+      expect(d).toBeLessThanOrEqual(60000);
+    }
+  });
+
+  it('ticket refusé en 429 : au moins 30 s, ou Retry-After s’il est plus long ; autre erreur : rien', () => {
+    expect(ticketRetryDelay({ status: 429, retryAfterSec: 5 })).toBe(30000);
+    expect(ticketRetryDelay({ status: 429, retryAfterSec: 90 })).toBe(90000);
+    expect(ticketRetryDelay({ status: 429 })).toBe(30000);
+    expect(ticketRetryDelay({ status: 500, retryAfterSec: 90 })).toBe(0);
+    expect(ticketRetryDelay(new Error('reseau'))).toBe(0);
+    expect(ticketRetryDelay(undefined)).toBe(0);
   });
 
   it('adresse WebSocket relative au serveur (https -> wss, http -> ws)', () => {
@@ -230,6 +260,112 @@ describe('reconnexion et repli polling', () => {
   });
 });
 
+describe('connexion remplacée (4000) et ticket refusé (429)', () => {
+  it('remplacée : aucune reconnexion, polling tant que la page est en arrière-plan', async () => {
+    const live = make();
+    live.start();
+    await flush();
+    sockets[0].open();
+    sockets[0].replace();
+    expect(live.status).toBe('polling');
+    expect(polls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(tickets).toBe(1);
+    expect(sockets).toHaveLength(1);
+    expect(polls).toBeGreaterThan(1);
+    expect(live.status).toBe('polling');
+    live.stop();
+  });
+
+  it('remplacée puis retour au premier plan : une seule tentative immédiate, puis canal ouvert', async () => {
+    const live = make();
+    live.start();
+    await flush();
+    sockets[0].open();
+    sockets[0].replace();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(tickets).toBe(1);
+
+    foreground?.();
+    expect(tickets).toBe(2);
+    await flush();
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    expect(live.status).toBe('open');
+    live.stop();
+  });
+
+  it('retour au premier plan sans connexion remplacée : rien de nouveau', async () => {
+    const live = make();
+    live.start();
+    await flush();
+    sockets[0].open();
+    foreground?.();
+    await flush();
+    expect(tickets).toBe(1);
+    expect(sockets).toHaveLength(1);
+    live.stop();
+  });
+
+  it('une coupure ordinaire (pas 4000) reconnecte toujours avec backoff', async () => {
+    const live = make();
+    live.start();
+    await flush();
+    sockets[0].open();
+    sockets[0].drop();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(tickets).toBe(2);
+    live.stop();
+  });
+
+  it('ticket refusé en 429 : attend au moins 30 s, puis Retry-After s’il est plus long', async () => {
+    let retryAfterSec = 5;
+    ticketResult = async () => {
+      const err = Object.assign(new Error('rate_limited'), { status: 429, retryAfterSec });
+      throw err;
+    };
+    const live = make();
+    live.start();
+    await flush();
+    expect(tickets).toBe(1);
+    expect(live.status).toBe('polling');
+
+    // Retry-After de 5 s : le minimum de 30 s prime.
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(tickets).toBe(1);
+    retryAfterSec = 90;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(tickets).toBe(2);
+    // Le refus suivant annonce 90 s : plus long que le minimum, il prime.
+    await vi.advanceTimersByTimeAsync(89_999);
+    expect(tickets).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(tickets).toBe(3);
+    live.stop();
+  });
+
+  it('gigue réelle (aléa par défaut) : la reconnexion reste dans la fenêtre du backoff', async () => {
+    ticketResult = async () => { throw new Error('reseau'); };
+    const live = createSocialLive({
+      createTicket: () => { tickets += 1; return ticketResult(); },
+      baseUrl: () => 'http://localhost:7000',
+      openSocket: (url) => { const s = new FakeSocket(url); sockets.push(s); return s; },
+      poll: async () => undefined,
+      onEvent: () => undefined,
+      onForeground: () => () => undefined,
+    });
+    live.start();
+    await flush();
+    // Première tentative suivante : entre 500 ms (moitié de 1 s) et 1 s.
+    await vi.advanceTimersByTimeAsync(499);
+    expect(tickets).toBe(1);
+    await vi.advanceTimersByTimeAsync(501);
+    expect(tickets).toBe(2);
+    live.stop();
+  });
+});
+
 describe('arrêt', () => {
   it('stop ferme la WebSocket, coupe la reconnexion et le ping', async () => {
     const live = make();
@@ -239,6 +375,7 @@ describe('arrêt', () => {
     live.stop();
     expect(sockets[0].closed).toEqual([1000]);
     expect(live.status).toBe('stopped');
+    expect(foreground).toBeNull();
     sockets[0].drop();
     await vi.advanceTimersByTimeAsync(120_000);
     expect(tickets).toBe(1);

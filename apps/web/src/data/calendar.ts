@@ -1,5 +1,7 @@
 /** Calendrier des suivis : grille du mois, libellés de sortie, regroupement par jour. */
 
+import { pad2 } from './format';
+
 export interface CalEvent {
   /** AAAA-MM-JJ. */
   date: string;
@@ -23,8 +25,7 @@ export interface CalEvent {
   channelId?: string | null;
 }
 
-const pad = (n: number): string => String(n).padStart(2, '0');
-export const isoDate = (y: number, m: number, d: number): string => `${y}-${pad(m)}-${pad(d)}`;
+export const isoDate = (y: number, m: number, d: number): string => `${y}-${pad2(m)}-${pad2(d)}`;
 
 /** Grille du mois (semaines du lundi au dimanche). `month` de 1 à 12. */
 export function monthGrid(year: number, month: number): Array<Array<{ date: string; inMonth: boolean }>> {

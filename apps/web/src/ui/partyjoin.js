@@ -5,9 +5,11 @@ import { requireBase } from '../data/config';
 import { enterPartyAsGuest } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
 import { socketUrl } from '../party/bridge';
+import { GUEST_AVATARS, guestAvatarToSend, initialGuestAvatar, saveGuestAvatar } from '../party/guestAvatar';
 import { createBufferReporter, isUnderrun } from '../party/guestbuffer';
-import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
+import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession, waitingHostText } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
+import { avatarAttrs } from './avatar-art.js';
 import { detailEl } from './dom.js';
 import { createGuestChat } from './guestchat.js';
 import { createGuestControls } from './guestplayer.js';
@@ -162,7 +164,7 @@ function refresh(root) {
   const text = [v.message || (v.phase === 'ready' ? READY_TEXT : ''), v.note].filter(Boolean).join(' ');
   // Salon rejoint (hors fin de séance) : cadre plein écran et en-tête compact ; le message d'état devient un toast.
   root.classList.toggle('is-joined', !TERMINAL.has(v.phase));
-  paintStatus(root, text, WARN.has(v.phase));
+  paintStatus(root, text, WARN.has(v.phase) || (v.phase === 'waiting-host' && v.message !== waitingHostText()));
   const form = root.querySelector('[data-pj-form]');
   const submit = root.querySelector('[data-pj-join]');
   const leave = root.querySelector('[data-pj-leave]');
@@ -208,6 +210,17 @@ function roomWaitText(wait) {
 
 /** Lecteur de la lecture en cours, créé à chaque chargement (join, reconnexion, nouveau fichier) : son rapport de tampon repart
  * donc de l'attente. Un saut local l'y remet ; la fermeture du lecteur libère le salon. */
+/** Couleur de fond des avatars de la grille (les invités n'ont pas de couleur de profil). */
+const GRID_COLOR = '#64748b';
+
+/** Grille de choix d'avatar (boutons radio) ; l'illustration est posée par avatar-art.js sur [data-avatar]. */
+export function guestAvatarGridHTML(selected) {
+  return '<fieldset class="pj-avs" data-pj-avatars><legend>Ton avatar</legend><div class="pj-avgrid" role="radiogroup" aria-label="Avatar">' +
+    GUEST_AVATARS.map((value) => '<button type="button" role="radio" class="pj-av" data-pj-av="' + esc(value) + '" aria-checked="' + (value === selected ? 'true' : 'false') + '"' +
+      ' aria-label="Avatar ' + (GUEST_AVATARS.indexOf(value) + 1) + '"><span class="pj-avi"' + avatarAttrs(value, GRID_COLOR) + '></span></button>').join('') +
+    '</div></fieldset>';
+}
+
 function newPlayer(GuestPlayer, callbacks) {
   const reporter = createBufferReporter({
     send: (ready, ahead) => session?.sendBuffering(ready, ahead),
@@ -267,8 +280,10 @@ async function join(root, roomId, token) {
   if (!entry) {
     status.textContent = 'Entrée dans le salon…';
     try {
-      const res = await enterPartyAsGuest(roomId, token, name);
-      entry = { sessionToken: res.sessionToken, name: res.name, expiresAt: res.expiresAt };
+      const chosen = guestAvatarToSend(root.querySelector('[data-pj-av][aria-checked="true"]')?.getAttribute('data-pj-av'));
+      const res = await enterPartyAsGuest(roomId, token, name, chosen);
+      if (chosen) saveGuestAvatar(chosen);
+      entry = { sessionToken: res.sessionToken, name: res.name, expiresAt: res.expiresAt, ...(res.avatar ? { avatar: res.avatar } : chosen ? { avatar: chosen } : {}) };
       saveGuestSession(roomId, entry);
     } catch (err) {
       joining = false;
@@ -330,6 +345,7 @@ export function showPartyJoin(roomId, token) {
     '<p class="pj-note">Tu as reçu une invitation. Pas besoin de compte : choisis un pseudo et rejoins le salon.</p>' +
     '<form class="pj-form" data-pj-form autocomplete="off">' +
     '<label class="pj-field">Pseudo<input name="name" type="text" maxlength="32" autocomplete="nickname" value="' + esc(loadGuestSession(roomId)?.name || '') + '" required></label>' +
+    (loadGuestSession(roomId) ? '' : guestAvatarGridHTML(initialGuestAvatar())) +
     '<button type="submit" class="btn btn-primary" data-pj-join>Rejoindre</button></form>' +
     '<p class="pj-msg" role="status" data-pj-status></p>' +
     '<div class="pj-player" data-pj-player hidden>' +
@@ -355,6 +371,9 @@ export function showPartyJoin(roomId, token) {
     e.preventDefault();
     join(root, roomId, token);
   });
+  root.querySelectorAll('[data-pj-av]').forEach((b) => b.addEventListener('click', () => {
+    root.querySelectorAll('[data-pj-av]').forEach((o) => o.setAttribute('aria-checked', o === b ? 'true' : 'false'));
+  }));
   root.querySelector('[data-pj-retry]').addEventListener('click', () => session?.retry());
   root.querySelector('[data-pj-leave]').addEventListener('click', () => leave(root));
 }

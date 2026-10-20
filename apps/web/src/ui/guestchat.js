@@ -2,8 +2,9 @@
  * pastille de messages non lus tant qu'il est fermé, envoi (500 caractères au plus, Entrée), réactions emoji et affichage flottant
  * bref dans le cadre. Les messages sont posés en texte (textContent) : aucun balisage venu du salon n'est interprété.
  * Le port vient de GuestRelaySession.chatPort() (client du salon) ; rien d'autre (ni jeton, ni adresse) n'entre ici. */
-import { CHAT_MAX, REACTIONS } from '../party/protocol';
+import { CHAT_MAX_CHARS, REACTIONS } from '../party/protocol';
 import { LI } from '../player/icons.js';
+import { pad2 } from '../data/format';
 
 /** Lignes gardées à l'écran (miroir de CHAT_MEMORY_LINES du client). */
 export const CHAT_KEEP = 200;
@@ -14,8 +15,6 @@ export const FLOAT_MAX = 12;
 export const REACTION_BAR = REACTIONS.slice(0, 6);
 const CHAT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/></svg>';
-
-const pad2 = (n) => String(n).padStart(2, '0');
 
 /** Heure locale HH:MM d'un horodatage en millisecondes ; vide si illisible. */
 export function clockOf(at) {
@@ -31,7 +30,7 @@ function drawerHtml() {
     '<div class="gc-log" role="log" aria-live="polite" aria-label="Messages du salon"></div>' +
     '<div class="gc-react" role="group" aria-label="Réactions"></div>' +
     '<form class="gc-form" autocomplete="off">' +
-    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX + '" placeholder="Écrire un message" aria-label="Message" enterkeyhint="send">' +
+    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire un message" aria-label="Message" enterkeyhint="send">' +
     '<button type="submit" class="btn btn-primary btn-sm">Envoyer</button></form>' +
     '<p class="gc-status" role="status" hidden></p>';
 }
@@ -192,7 +191,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
       setStatus('Chat indisponible : rejoins le salon.');
       return;
     }
-    const text = input.value.trim().slice(0, CHAT_MAX);
+    const text = input.value.trim().slice(0, CHAT_MAX_CHARS);
     if (!text) return;
     if (port.sendChat(text)) {
       input.value = '';

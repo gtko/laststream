@@ -15,10 +15,11 @@ import {
   CONTROL_OPTIONS, countdownLeft, eventText, initialsOf, launchText, LOBBY_EMOJIS, prepView, qualityLabel, REACTION_OPTIONS, readySummary, readyText,
   startWithoutText, voteShare, WAIT_LATE_OPTIONS,
 } from '../party/lobbyModel';
-import { CHAT_MAX, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
+import { CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { handlePartyCreateError } from './partyerrors.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
@@ -375,7 +376,7 @@ const shellHTML = () =>
   '<div class="pl-emojis" data-pl-chatonly role="group" aria-label="Réactions rapides">' +
   LOBBY_EMOJIS.map((e) => '<button type="button" data-pl-emoji="' + e + '" aria-label="Envoyer ' + e + '">' + e + '</button>').join('') + '</div>' +
   '<form class="pl-send" data-pl-chatonly data-pl-send autocomplete="off"><label for="pl-input" class="sr-only">Message au salon</label>' +
-  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX + '" placeholder="Écrire au salon…" autocomplete="off">' +
+  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire au salon…" autocomplete="off">' +
   '<button type="submit" class="pl-send-b" aria-label="Envoyer">' + ICON.send + '</button></form></aside>' +
   '<div class="pl-live sr-only" role="status" aria-live="polite" data-pl-live></div>';
 
@@ -451,15 +452,26 @@ export async function openLobby(partyId, from) {
 }
 
 // ---------- Création depuis une fiche ----------
-/** Crée le salon d'attente d'un titre (hôte) puis l'ouvre. `req` : cible de lecture (type, id, name, season, episode). */
-export async function createLobbyFor(req, poster, visibility, from) {
+/**
+ * Crée le salon d'attente d'un titre (hôte) puis l'ouvre. `req` : cible de lecture (type, id, name, season, episode) ;
+ * `invite` : amis (pid) à inviter tout de suite. Un échec donne un message humain ; profil verrouillé : saisie du PIN puis nouvel essai.
+ */
+export async function createLobbyFor(req, poster, visibility, from, invite = []) {
   try {
     const room = await partyBridge.createLobby(req, poster || null, visibility);
     await openLobby(room.id, from);
+    if (invite.length && (await partyBridge.waitForHost())) await inviteMany(room.id, invite);
   } catch (err) {
-    toast(err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
-      : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment.');
+    void handlePartyCreateError(err, { retry: () => { void createLobbyFor(req, poster, visibility, from, invite); } });
   }
+}
+
+/** Invite plusieurs amis dans un salon dont on est membre ; un seul message récapitulatif. */
+export async function inviteMany(roomId, pids) {
+  if (!pids || !pids.length) return;
+  const done = await Promise.all(pids.map((pid) => inviteInto(roomId, pid)));
+  const n = done.filter(Boolean).length;
+  if (n) toast(n === 1 ? 'Invitation envoyée' : n + ' invitations envoyées');
 }
 
 // ---------- Invitation d'un ami ----------
@@ -475,8 +487,8 @@ export async function inviteToParty(pid) {
     }
     try {
       await partyBridge.create(a, 'private');
-    } catch {
-      toast('Création du salon impossible pour le moment.');
+    } catch (err) {
+      void handlePartyCreateError(err, { retry: () => { void inviteToParty(pid); } });
       return;
     }
     if (!(await partyBridge.waitForHost())) { toast('Salon créé, mais la connexion a échoué.'); return; }

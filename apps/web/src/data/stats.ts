@@ -5,6 +5,7 @@
  * comptent dans les totaux avec une durée estimée (médiane des titres détaillés).
  * Les dates ne sont que celles de la dernière lecture de chaque titre : les graphiques par mois ou par jour s'en contentent.
  */
+import { pad2 } from './format';
 import type { WatchedTitle } from './watchedHistory';
 
 /** Titres détaillés au plus par calcul : le reste est estimé (appels TMDB limités). */
@@ -102,12 +103,10 @@ export function pickDetailTargets(titles: readonly WatchedTitle[], limit: number
   return out;
 }
 
-const pad = (n: number): string => String(n).padStart(2, '0');
-
 /** Jour civil local « AAAA-MM-JJ » d'un instant. */
 export function localDayKey(ts: number): string {
   const d = new Date(ts);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** Numéro de jour (depuis l'époque, minuit UTC) d'une clé « AAAA-MM-JJ ». Deux jours consécutifs diffèrent de 1. */
@@ -144,7 +143,7 @@ export function lastMonths(now: number, count = 12): Array<{ key: string; month:
   const out: Array<{ key: string; month: number }> = [];
   for (let i = count - 1; i >= 0; i--) {
     const m = new Date(d.getFullYear(), d.getMonth() - i, 1);
-    out.push({ key: `${m.getFullYear()}-${pad(m.getMonth() + 1)}`, month: m.getMonth() });
+    out.push({ key: `${m.getFullYear()}-${pad2(m.getMonth() + 1)}`, month: m.getMonth() });
   }
   return out;
 }

@@ -95,7 +95,7 @@ describe('page invitée (sans compte)', () => {
     submit();
     await vi.waitFor(() => expect(shared.session).not.toBeNull());
     // Lien partagé : le jeton du lien ne sert qu'à l'entrée ; le WebSocket présente la séance, mémorisée dans l'onglet.
-    expect(entryPosts()).toEqual([{ token: 'abcdefgh12', name: 'Léa' }]);
+    expect(entryPosts()).toEqual([{ token: 'abcdefgh12', name: 'Léa', avatar: 'hero:heros:Aegis' }]);
     expect(socketUrl).toHaveBeenLastCalledWith('https://srv.example', '/party/R1/ws?t=sess-abcdefgh-0001&name=L%C3%A9a');
     expect(sessionStorage.getItem('ls.party.guest.R1')).not.toBeNull();
     shared.session.phase = 'ready';

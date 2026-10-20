@@ -90,6 +90,16 @@ export function waitingHostText(): string {
   return 'En attente de l’hôte : la lecture partagée démarre quand il lit le titre.';
 }
 
+/** Message de l’invité quand l’hôte a répondu mais que la liaison directe n’aboutit pas (réseau ou pare-feu) : nouvel essai. */
+export function directLinkText(): string {
+  return 'La liaison directe avec l’hôte n’aboutit pas (réseau ou pare-feu) : nouvel essai en cours.';
+}
+
+/** Message de l’invité quand l’hôte ne répond pas à plusieurs essais : sa source ne peut sans doute pas être partagée par lien. */
+export function hostNotSharingText(): string {
+  return 'L’hôte ne partage pas sa lecture : sa source ne peut peut-être pas être envoyée par lien (torrent ou lien protégé). Nouvel essai en cours.';
+}
+
 /** Message après « Quitter » : l’invité peut rejoindre à nouveau avec la même invitation. */
 export function leftText(): string {
   return 'Tu as quitté le salon.';
@@ -104,6 +114,8 @@ export interface GuestSession {
   name: string;
   /** Échéance, ISO 8601. */
   expiresAt: string;
+  /** Avatar choisi à l'entrée (fixé par le jeton de séance). */
+  avatar?: string;
 }
 
 const SESSION_KEY = 'ls.party.guest.';
@@ -137,7 +149,10 @@ export function loadGuestSession(roomId: string, now = Date.now(), storage = tab
       typeof value.sessionToken === 'string' && value.sessionToken.length >= TOKEN_MIN && value.sessionToken.length <= TOKEN_MAX &&
       typeof value.name === 'string' && cleanPseudo(value.name) !== null &&
       typeof value.expiresAt === 'string' && Date.parse(value.expiresAt) > now;
-    if (valid) return { sessionToken: value.sessionToken as string, name: value.name as string, expiresAt: value.expiresAt as string };
+    if (valid) {
+      const avatar = typeof value.avatar === 'string' && value.avatar.length <= 101 ? { avatar: value.avatar } : {};
+      return { sessionToken: value.sessionToken as string, name: value.name as string, expiresAt: value.expiresAt as string, ...avatar };
+    }
     storage?.removeItem(SESSION_KEY + roomId);
   } catch {
     // illisible ou stockage bloqué

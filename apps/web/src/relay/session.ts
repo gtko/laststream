@@ -10,19 +10,21 @@
 
 import { PartyClient, type ClientStatus, type PartyWait, type SocketLike } from '../party/client';
 import type { PartyParticipant } from '../data/socialApi';
-import { endText, hostLostText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
+import { directLinkText, endText, hostLostText, hostNotSharingText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
 import { RangeClient } from './guest';
 import { MeshGuest, type MeshGuestOptions } from './mesh/guest';
 import { MeshHostState } from './mesh/hostState';
 import { RtcConnector, meshTransport, type PeerConnector } from './mesh/rtc';
-import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport, type TurnConfig } from './peer';
+import { RelayGuest, RelayHost, buildIceServers, type PeerOptions, type RelaySignal, type SignalTransport } from './peer';
+import { relayTurn, setRelayTurn } from './turnConfig';
 import type { RangeSource, UploadStats } from './host';
 import { RelayError, SubsAssembler, capsMask, decodeFrame, encodeCaps, encodeMeshReq, encodeSubs, toBytes, type ChannelLike, type DecodeCap } from './protocol';
 import { encodePartySubtitles, parsePartySubtitles, type PartySubtitleTrack } from '../party/subtitles';
 import { detectDecodeCaps } from './player/detect';
 import type { PlaybackPlan, PlayerCallbacks, PlayerState, PlayerStats, RangeReader, RoomState } from './player/types';
 
-let relayTurn: TurnConfig | null = null;
+/** TURN injecté (voir turnConfig.ts) : relu à chaque connexion, donc pris en compte pour les liaisons suivantes. */
+export { setRelayTurn };
 
 /** Délai avant une nouvelle tentative quand l'hôte ne lit pas encore (pas de partage en cours). */
 const RETRY_HOST_MS = 4000;
@@ -35,11 +37,6 @@ export const RECONNECT_BASE_MS = 1000;
 export const RECONNECT_MAX_MS = 30_000;
 /** Pendant un format refusé : vérification de l'identifiant de fichier annoncé par l'hôte, sur la liaison restée ouverte. */
 export const HOLD_PROBE_MS = RECONNECT_MAX_MS;
-
-/** TURN facultatif, injecté par l'application (jamais en dur dans le code). `null` : STUN seul. */
-export function setRelayTurn(turn: TurnConfig | null): void {
-  relayTurn = turn;
-}
 
 /** Signalisation pair à pair relayée par le WebSocket du salon : `{type:'rtc',to,data}` en émission, `from` en réception. */
 export function partySignal(client: Pick<PartyClient, 'sendRtc' | 'on'>): SignalTransport {
@@ -267,6 +264,8 @@ export class GuestRelaySession {
   private roomSeen = false;
   private welcomed = false;
   private refusals = 0;
+  /** Tentatives de liaison consécutives sans aucune offre de l'hôte : le texte d'attente en tient compte (voir timeoutText). */
+  private silentAttempts = 0;
   /** Incrémenté à chaque changement de lecture : les étapes en retard se taisent. */
   private seq = 0;
   private stopped = false;
@@ -506,6 +505,7 @@ export class GuestRelaySession {
     if (this.roomSeen && peer === this.hostId) return;
     this.roomSeen = true;
     this.hostId = peer;
+    this.silentAttempts = 0;
     this.cancelRetry();
     this.teardownMedia();
     if (peer === null) this.setView('waiting-host', waitingHostText());
@@ -545,6 +545,7 @@ export class GuestRelaySession {
     try {
       const channel: ChannelLike = await relay.connect(this.deps.connectTimeoutMs ?? CONNECT_MS);
       if (!this.isCurrent(seq)) return;
+      this.silentAttempts = 0;
       this.listenSubtitles(channel);
       channel.addEventListener('close', () => this.onChannelClosed(seq));
       // Capacités de décodage : annoncées à l'hôte sur ce canal, avant la première requête de plage.
@@ -584,14 +585,27 @@ export class GuestRelaySession {
       if (!this.isCurrent(seq)) return;
       this.teardownMedia();
       if (err instanceof RelayError && err.code === 'timeout') {
-        // L'hôte ne lit pas encore (pas de partage) : on attend, et la liaison est recomposée automatiquement.
-        this.setView('waiting-host', waitingHostText());
+        // Pas de liaison : on attend, et la liaison est recomposée automatiquement. Le texte dit ce qu'on sait de l'hôte.
+        this.setView('waiting-host', this.timeoutText(relay.offered));
         this.scheduleRetry();
         return;
       }
       this.setView('host-lost', err instanceof RelayError ? relayErrorText(err.code) : relayErrorText('unknown'));
       this.scheduleReconnect();
     }
+  }
+
+  /**
+   * Texte d'attente après un délai de connexion. Offre reçue : l'hôte répond, mais la liaison directe n'aboutit pas (réseau,
+   * pare-feu). Aucune offre à deux tentatives de suite : l'hôte ne partage probablement pas sa source. Sinon : attente habituelle.
+   */
+  private timeoutText(offered: boolean): string {
+    if (offered) {
+      this.silentAttempts = 0;
+      return directLinkText();
+    }
+    this.silentAttempts += 1;
+    return this.silentAttempts >= 2 ? hostNotSharingText() : waitingHostText();
   }
 
   private otherGuests(client: PartyClient, self: string): string[] {

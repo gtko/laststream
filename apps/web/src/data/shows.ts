@@ -1,6 +1,8 @@
 /* Émissions TV : rapprochement des titres du guide TV (EPG) avec des émissions TMDB, prochaines diffusions, soirée.
  * Logique pure, testée ; les appels réseau sont dans showsApi.ts. */
 
+import { pad2 } from './format';
+
 export interface EpgProgram {
   channelId: string;
   start: number;
@@ -80,22 +82,70 @@ export const SEED_SHOWS: SeedShow[] = [
 
 const ARTICLES = new Set(['le', 'la', 'les', 'l', 'un', 'une', 'the', 'des']);
 
+/** Minuscules sans accents ni ponctuation, mots séparés par une espace : base des comparaisons de texte du guide. */
+export function foldText(s: unknown): string {
+  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 /** « La France a un incroyable talent » → « france a un incroyable talent » (sans accents, ponctuation ni article initial). */
 export function titleKey(s: unknown): string {
-  const words = String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const words = foldText(s).split(' ').filter(Boolean);
   while (words.length > 1 && ARTICLES.has(words[0])) words.shift();
   return words.join(' ');
 }
 
-/** Variantes normalisées d'un titre de programme : sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… */
-export function programKeys(raw: string): string[] {
+/** Titre de programme sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… ; `head` en est la première partie (avant « : » ou « - »). */
+function splitProgram(raw: string): { full: string; head: string } {
   let t = String(raw ?? '');
   t = t.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
   t = t.replace(/\b(?:s|saison|season)\s*\d+\s*(?:e|ep|episode|épisode)?\s*\d*\b/gi, ' ');
   t = t.replace(/\b(?:épisode|episode|ep\.?)\s*\d+(?:\s*\/\s*\d+)?/gi, ' ');
   t = t.replace(/\b(?:inédit|inedit|rediffusion|replay|en direct)\b/gi, ' ');
-  const head = t.split(/\s[:\-–—]\s|:\s|\s[-–—]\s/)[0];
-  return [...new Set([titleKey(t), titleKey(head)].filter(Boolean))];
+  return { full: t, head: t.split(/\s[:\-–—]\s|:\s|\s[-–—]\s/)[0] };
+}
+
+/** Variantes normalisées d'un titre de programme : sans « Saison 2 », « Épisode 5 », « S2E5 », parenthèses, « inédit »… */
+export function programKeys(raw: string): string[] {
+  const { full, head } = splitProgram(raw);
+  return [...new Set([titleKey(full), titleKey(head)].filter(Boolean))];
+}
+
+/** Premières parties de titre trop génériques pour nommer une émission : « Documentaire : Le Mont Blanc » garde son titre complet. */
+const GENERIC_HEADS = new Set(['documentaire', 'magazine', 'divertissement', 'meteo', 'programmes de la nuit', 'journal', 'reportage', 'emission', 'speciale', 'inedit', 'film', 'serie', 'jeu']);
+
+/** Partie du titre qui nomme l'émission : la première (avant « : » ou « - »), sauf si elle est générique : alors le titre complet. */
+function showPart(raw: string): string {
+  const { full, head } = splitProgram(raw);
+  return GENERIC_HEADS.has(titleKey(head)) ? full : head;
+}
+
+const tidy = (s: string): string => s.replace(/\s+/g, ' ').replace(/[\s:\-–—]+$/, '').trim();
+
+/** Clé de regroupement d'une émission du guide : sa partie nommante normalisée (« Koh-Lanta : La légende » → « koh lanta »). */
+export function showKey(raw: string): string {
+  return titleKey(showPart(raw)) || titleKey(splitProgram(raw).full);
+}
+
+/** Nom d'affichage d'une émission du guide, casse d'origine (« Koh-Lanta : La légende - Épisode 3 » → « Koh-Lanta »). */
+export function showName(raw: string): string {
+  return tidy(showPart(raw)) || tidy(splitProgram(raw).full);
+}
+
+/** Identifiant d'une émission du guide sans fiche TMDB, à partir de sa clé : `epg:` suivi de la clé, espaces en tirets. */
+export const epgIdOf = (key: string): string => 'epg:' + key.replace(/ /g, '-');
+
+const SHOW_CATEGORY = /\b(?:divertissement|jeux?|magazine|documentaire|talk|reality|varietes?|emissions?|game|dating)\b|realite/;
+const FICTION_CATEGORY = /\b(?:series?|telefilm|films?|cinema|animation|anime|dessin|jeunesse|enfants|clips?)\b/;
+
+/**
+ * Genre au guide (texte XMLTV, FR ou EN) d'une émission : divertissement, jeu, magazine, documentaire, talk-show, téléréalité,
+ * variétés… Faux pour la fiction (films, séries, animation, jeunesse), l’information, la météo, le sport, les genres inconnus
+ * et les genres vides. Un magazine reste une émission (« Magazine de cinéma ») ; une série documentaire n’en est pas une.
+ */
+export function isShowCategory(cat: string | null | undefined): boolean {
+  const c = foldText(cat);
+  if (!SHOW_CATEGORY.test(c)) return false;
+  return /\bmagazine/.test(c) || !FICTION_CATEGORY.test(c);
 }
 
 function distance(a: string, b: string): number {
@@ -137,9 +187,8 @@ export function airingsFor(
   return out.sort((a, b) => a.start - b.start || (a.channel.num ?? 99) - (b.channel.num ?? 99));
 }
 
-const pad = (n: number): string => String(n).padStart(2, '0');
-export const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-export const localDate = (sec: number): string => { const d = new Date(sec * 1000); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+export const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+export const localDate = (sec: number): string => { const d = new Date(sec * 1000); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
 
 /** Libellé relatif du jour : « Aujourd’hui », « Demain », « samedi 24 octobre ». */
 export function dayLabel(sec: number, nowSec: number): string {

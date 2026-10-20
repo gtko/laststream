@@ -3,6 +3,8 @@
  * ont un ; sinon badges maison : libellés, couleurs et pictogrammes originaux. Une valeur inconnue reste un texte
  * neutre (mêmes classes qu'avant). Fonctions pures, testées. */
 
+import { escapeHtml } from '../data/format';
+
 /** Données d'une source : libellés (picker) ou valeurs brutes lastAddon (h264, x265, DDP, DTS:X…). */
 export interface BadgeInfo {
   /** REMUX, BluRay, WEB-DL… */
@@ -88,9 +90,7 @@ const ICONS: Record<string, string> = {
   atmos: ICON_ORBIT, ch20: ICON_SPEAKER, ch51: ICON_SPEAKER, ch71: ICON_SPEAKER,
 };
 
-const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-/** Échappement pour le texte et les attributs (guillemets compris). */
-export const escapeHtml = (s: string): string => String(s).replace(/[&<>"']/g, (c) => ENTITIES[c]);
+export { escapeHtml };
 
 const match = (rules: readonly Rule[], text: string): Rule | null => rules.find((r) => r.re.test(text)) ?? null;
 

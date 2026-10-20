@@ -100,7 +100,7 @@ describe('bibliothèque d’un ami', () => {
   it('affiche ses titres visibles, « Ajouter à ma bibliothèque » et « Lire »', async () => {
     const f = await import('../src/ui/friends.js');
     const { userStore } = await import('../src/data/userStore');
-    routes = (c) => (c.path.startsWith('/user/friends/amy/library') ? json({
+    routes = (c) => (c.path.startsWith('/user/social/friends/AMYPID/library') ? json({
       items: [
         { type: 'movie', tmdbId: 603, imdbId: null, title: 'Matrix', poster: 'https://image.tmdb.org/t/p/w342/m.jpg', addedAt: '2026-01-01' },
         { type: 'series', tmdbId: 95396, imdbId: null, title: 'Severance', poster: null, addedAt: '2026-01-02' },
@@ -108,9 +108,9 @@ describe('bibliothèque d’un ami', () => {
       ], total: 3, limit: 50, offset: 0,
     }) : undefined);
     detail().innerHTML = '';
-    f.showFriendLibrary('amy');
+    f.showFriendLibrary('AMYPID');
     await tick(120);
-    expect(calls.find((c) => c.path.startsWith('/user/friends/amy/library'))!.path).toContain('limit=50');
+    expect(calls.find((c) => c.path.startsWith('/user/social/friends/AMYPID/library'))!.path).toContain('limit=50');
     const keys = Array.from(detail().querySelectorAll('[data-fr-key]')).map((e) => (e as HTMLElement).dataset.frKey);
     expect(keys).toEqual(['movie:603', 'tv:95396']); // sans identifiant TMDB : ignoré
     expect(detail().querySelector('[data-fr-play="movie:603"]')).not.toBeNull();
@@ -122,9 +122,9 @@ describe('bibliothèque d’un ami', () => {
 
   it('ami inconnu ou non-ami : même erreur, rien n’est affiché', async () => {
     const f = await import('../src/ui/friends.js');
-    routes = (c) => (c.path.startsWith('/user/friends/ghost/library') ? json({ error: 'friend_not_found' }, 404) : undefined);
+    routes = (c) => (c.path.startsWith('/user/social/friends/GHOSTPID/library') ? json({ error: 'friend_not_found' }, 404) : undefined);
     detail().innerHTML = '';
-    f.showFriendLibrary('ghost');
+    f.showFriendLibrary('GHOSTPID');
     await tick(120);
     expect(detail().querySelectorAll('[data-fr-key]')).toHaveLength(0);
   });

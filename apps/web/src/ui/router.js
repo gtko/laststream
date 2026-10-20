@@ -112,7 +112,7 @@ function parseRouteRaw() {
   if (h === '#/hidden') return { kind: 'hidden' };
   if (h === '#/stats') return { kind: 'stats' };
   if (h === '#/friends') return { kind: 'friends' };
-  r = /^#\/friend\/([a-z0-9_.-]{3,32})$/.exec(h);
+  r = /^#\/friend\/([A-Za-z0-9_-]{3,32})$/.exec(h);
   if (r) return { kind: 'friend', id: r[1] };
   if (h === '#/social/profile') return { kind: 'socialprofile' };
   const listId = listIdFrom(h);
@@ -133,7 +133,7 @@ function parseRouteRaw() {
   if (h === '#/search') return { kind: 'search' };
   if (h === '#/calendar') return { kind: 'calendar' };
   if (h === '#/emissions') return { kind: 'shows' };
-  r = /^#\/emission\/(\d{1,9})$/.exec(h);
+  r = /^#\/emission\/(\d{1,9}|epg:[a-z0-9-]{1,200})$/.exec(h);
   if (r) return { kind: 'show', id: r[1] };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;
 }

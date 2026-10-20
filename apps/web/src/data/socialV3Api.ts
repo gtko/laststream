@@ -1,4 +1,4 @@
-import { auth } from './auth';
+import { SOCIAL, social, withQuery } from './socialHttp';
 import { call, type MediaKind } from './userApi';
 import type { Conversation, FriendView, Handle, Message, Note } from './socialV2Api';
 
@@ -101,7 +101,7 @@ export type ListItemInput = { type: MediaKind; tmdbId: number; title: string; po
 export type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
 export type ActivityMedia = { type: MediaKind; tmdbId: number; title: string; poster?: string; season?: number; episode?: number };
 export type ActivityItem = {
-  id: string; pid: string; handle: Handle; avatarColor: string; kind: ActivityKind;
+  id: string; pid: string; handle: Handle; avatarColor: string; avatar?: string; kind: ActivityKind;
   media: ActivityMedia; rating?: number; at: number;
 };
 /** Média visé par une requête d'agrégat : un film, ou un épisode d'une série. */
@@ -109,22 +109,7 @@ export type MediaQuery = { type: MediaKind; tmdbId: number; season?: number; epi
 export type MissedSummary = { messages: number; byFriend: Array<{ pid: string; handle: Handle; count: number }>; notes: Note[] };
 
 // ---- Appels ----
-const SOCIAL = '/social';
 const enc = encodeURIComponent;
-
-/** Appel `/user/social<path>` au nom du profil actif : X-Profile-Id (exigé par le serveur), X-Profile-Token via `call`. */
-function social<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const pid = auth.profile?.id;
-  return call<T>(SOCIAL + path, { method, body, profileId: pid, headers: pid ? { 'x-profile-id': pid } : undefined });
-}
-
-/** Ajoute les paramètres renseignés (les `undefined` sont omis) à un chemin. */
-function withQuery(path: string, params: Record<string, string | number | undefined>): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, String(v));
-  const s = q.toString();
-  return s ? `${path}?${s}` : path;
-}
 
 const mediaParams = (q: MediaQuery) => ({ type: q.type, tmdbId: q.tmdbId, season: q.season, episode: q.episode });
 

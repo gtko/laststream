@@ -1,4 +1,4 @@
-/* Lecture d'un fichier distant par plages d'octets. Une plage = une requête ; aucune ne dépasse MAX_CHUNK (plafond du relais).
+/* Lecture d'un fichier distant par plages d'octets. Une plage = une requête ; aucune ne dépasse MAX_CHUNK.
  * Le début du fichier est lu une fois (HEAD_BYTES) et gardé : il suffit à la plupart des en-têtes MKV et à tous les « ftyp ». */
 
 export const MAX_CHUNK = 4 * 1024 * 1024;

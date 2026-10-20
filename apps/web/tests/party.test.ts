@@ -1,6 +1,6 @@
 // Watch party : synchronisation (fonctions pures), client de protocole (messages, reconnexion), contrôleur (lecture partagée),
 // choix de la version par empreinte, profils enfants.
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PartyClient, BACKOFF_MS, CHAT_MEMORY_LINES, PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
 import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, playerOf, requestOfRoom, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
 import { PartyController, HOST_SYNC_EVERY_MS, type PlayerLike } from '../src/party/controller';
@@ -8,6 +8,7 @@ import { fingerprintOf, matchScore, nameSimilarity, pickByFingerprint } from '..
 import { encodeClientMessage, parseServerMessage } from '../src/party/protocol';
 import { ClockEstimator, driftAction, estimateOffset, expectedPosition } from '../src/party/sync';
 import type { PartyRoom } from '../src/data/socialApi';
+import { relayTurn, setRelayTurn } from '../src/relay/turnConfig';
 
 // ---------- Synchronisation ----------
 describe('horloge et position attendue', () => {
@@ -29,11 +30,11 @@ describe('horloge et position attendue', () => {
 });
 
 describe('correction de dérive', () => {
-  it('sous 0,5 s : rien', () => {
-    expect(driftAction(100.3, 100, true)).toEqual({ kind: 'none' });
-    expect(driftAction(99.7, 100, true)).toEqual({ kind: 'none' });
+  it('sous 0,3 s : rien', () => {
+    expect(driftAction(100.2, 100, true)).toEqual({ kind: 'none' });
+    expect(driftAction(99.8, 100, true)).toEqual({ kind: 'none' });
   });
-  it('entre 0,5 s et 2 s : vitesse 0,95 (en avance) ou 1,05 (en retard)', () => {
+  it('entre 0,3 s et 2 s : vitesse 0,95 (en avance) ou 1,05 (en retard)', () => {
     expect(driftAction(101, 100, true)).toEqual({ kind: 'rate', rate: 0.95 });
     expect(driftAction(99, 100, true)).toEqual({ kind: 'rate', rate: 1.05 });
   });
@@ -41,8 +42,8 @@ describe('correction de dérive', () => {
     expect(driftAction(97, 100, true)).toEqual({ kind: 'seek', to: 100 });
     expect(driftAction(103, 100, true)).toEqual({ kind: 'seek', to: 100 });
   });
-  it('à l’arrêt : tout écart de 0,5 s fait sauter', () => {
-    expect(driftAction(100.6, 100, false)).toEqual({ kind: 'seek', to: 100 });
+  it('à l’arrêt : tout écart de 0,3 s fait sauter', () => {
+    expect(driftAction(100.4, 100, false)).toEqual({ kind: 'seek', to: 100 });
     expect(driftAction(100.2, 100, false)).toEqual({ kind: 'none' });
   });
   it('hystérésis : une vitesse corrective se poursuit jusqu’à 0,15 s', () => {
@@ -423,7 +424,7 @@ describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il appli
     p.t = 400; r.setNow(100_100); r.ctl.tick(p); // l'invité saute en avant pendant la lecture
     expect(r.sent()).toEqual([{ t: 'ctl', action: 'seek', pos: 400 }]);
     broadcast(r, { playing: true, pos: 400, rev: 1 }, 'bob');
-    r.setNow(100_500); r.ctl.tick(p); // au bon endroit : rien à faire
+    r.setNow(100_300); r.ctl.tick(p); // au bon endroit (écart 0,2 s, sous le seuil de 0,3 s) : rien à faire
     expect(r.sent()).toHaveLength(1);
     expect(p.calls).toEqual([]);
     r.setNow(101_200);
@@ -471,10 +472,10 @@ describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il appli
     expect(p.rate_).toBe(1);
   });
 
-  it('écart sous 0,5 s : on ne touche à rien', async () => {
+  it('écart sous 0,3 s : on ne touche à rien', async () => {
     const r = await room(false, { playing: true, pos: 100, at: 100_000 });
     const p = new FakePlayer();
-    p.paused_ = false; p.t = 100.4;
+    p.paused_ = false; p.t = 100.2;
     r.setNow(100_000);
     r.ctl.tick(p);
     expect(p.calls).toEqual([]);
@@ -809,5 +810,52 @@ describe('profil enfant : routes', () => {
     location.hash = '#/party/abc_123';
     expect(parseRoute()).toEqual({ kind: 'party', id: 'abc_123' });
     vi.doUnmock('../src/data/auth');
+  });
+});
+
+describe('client : TURN du welcome', () => {
+  const TURN = { urls: ['turn:turn.example.test:3478?transport=udp', 'turns:turn.example.test:443?transport=tcp'], username: 'user-turn-1', credential: 'cred-turn-1' };
+  afterEach(() => setRelayTurn(null));
+
+  /** Connexion et réception du welcome (avec ou sans `turn`). */
+  async function receive(host: boolean, over: Record<string, unknown>) {
+    const { client, sockets, flush } = setup(host ? 'alice' : 'bob', host);
+    client.start();
+    await flush();
+    sockets[0].open();
+    sockets[0].recv(welcome(host ? 'alice' : 'bob', host, over));
+    return sockets[0];
+  }
+
+  it('welcome avec TURN valide : identifiants retenus pour les liaisons WebRTC (invité)', async () => {
+    await receive(false, { turn: TURN });
+    expect(relayTurn).toEqual(TURN);
+  });
+
+  it('welcome avec TURN valide : retenu aussi pour l’hôte', async () => {
+    await receive(true, { turn: TURN });
+    expect(relayTurn).toEqual(TURN);
+  });
+
+  it.each([
+    ['liste d’URL vide', { ...TURN, urls: [] }],
+    ['URL non TURN (stun)', { ...TURN, urls: ['stun:stun.example.test:3478'] }],
+    ['URL en chaîne au lieu d’un tableau', { ...TURN, urls: 'turn:turn.example.test:3478' }],
+    ['identifiant absent', { urls: TURN.urls, credential: 'cred' }],
+    ['mot de passe vide', { ...TURN, credential: '' }],
+    ['identifiant de plus de 512 caractères', { ...TURN, username: 'u'.repeat(513) }],
+    ['valeur non objet', 'turn:turn.example.test:3478'],
+    ['null', null],
+  ])('welcome avec TURN invalide (%s) : ignoré', async (_label, turn) => {
+    await receive(false, { turn });
+    expect(relayTurn).toBeNull();
+  });
+
+  it('welcome sans TURN, ou avec un TURN invalide, ne retire pas le TURN déjà reçu', async () => {
+    const socket = await receive(false, { turn: TURN });
+    socket.recv(welcome('bob', false));
+    expect(relayTurn).toEqual(TURN);
+    socket.recv(welcome('bob', false, { turn: { urls: [], username: 'x', credential: 'y' } }));
+    expect(relayTurn).toEqual(TURN);
   });
 });

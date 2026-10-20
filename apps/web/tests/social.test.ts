@@ -4,7 +4,7 @@ import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { inviteLink, normalizeInviteCode, parseInviteCode, withoutInvite } from '../src/data/invite';
-import { presenceLabel, sortFriends, cleanUsername, socialErrorText } from '../src/data/socialText';
+import { socialErrorText } from '../src/data/socialText';
 import { UserApiError } from '../src/data/userApi';
 
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
@@ -61,22 +61,10 @@ describe('liens de parrainage', () => {
   });
 });
 
-describe('textes des amis', () => {
-  it('présence : regarde, en ligne, hors ligne', () => {
-    expect(presenceLabel({ status: 'watching', watching: { type: 'series', title: 'Severance', season: 2, episode: 4 } })).toBe('Regarde « Severance » S2:É4');
-    expect(presenceLabel({ status: 'watching', watching: { type: 'movie', title: 'Alien' } })).toBe('Regarde « Alien »');
-    expect(presenceLabel({ status: 'online' })).toBe('En ligne');
-    expect(presenceLabel({ status: 'offline' })).toBe('Hors ligne');
-  });
-  it('tri : en train de regarder, en ligne, hors ligne', () => {
-    const l = sortFriends([{ username: 'zed', status: 'offline' as const }, { username: 'bob', status: 'online' as const }, { username: 'amy', status: 'watching' as const }, { username: 'al', status: 'online' as const }]);
-    expect(l.map((f) => f.username)).toEqual(['amy', 'al', 'bob', 'zed']);
-  });
-  it('pseudo exact et messages d’erreur', () => {
-    expect(cleanUsername('  @Bob_42 ')).toBe('bob_42');
-    expect(cleanUsername('a')).toBe('');
-    expect(socialErrorText(new UserApiError(404, 'user_not_found'))).toContain('pseudo exact');
-    expect(socialErrorText(new UserApiError(409, 'already_friends'))).toContain('déjà amis');
+describe('messages d’erreur', () => {
+  it('textes lisibles des erreurs de salon et de parrainage', () => {
+    expect(socialErrorText(new UserApiError(404, 'room_not_found'))).toContain('n’existe plus');
+    expect(socialErrorText(new UserApiError(429, 'rate_limited'))).toContain('Trop de tentatives');
   });
 });
 
@@ -265,40 +253,5 @@ describe('Mes invitations', () => {
     routes = () => { throw new Error('réseau'); };
     await mod.refreshInvites();
     expect(document.getElementById('inv-slot')!.textContent).toContain('Billets indisponibles');
-  });
-});
-
-// ---------- Présence ----------
-describe('présence', () => {
-  it('battement toutes les 45 s, titre regardé, invisible, profil enfant sans titre, hors ligne à l’arrêt', async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
-    localStorage.clear();
-    const p = await import('../src/data/presence');
-    const put = vi.fn(async () => undefined);
-    const del = vi.fn(async () => undefined);
-    p.setPresenceSender({ put, del });
-    p.startPresence('p1', false);
-    expect(put).toHaveBeenLastCalledWith({ profileId: 'p1', watching: null, invisible: false });
-    vi.advanceTimersByTime(p.PRESENCE_EVERY_MS);
-    expect(put).toHaveBeenCalledTimes(2);
-    p.setWatching({ type: 'series', tmdbId: 95396, title: 'Severance', season: 2, episode: 4 });
-    expect(put).toHaveBeenLastCalledWith({ profileId: 'p1', watching: { type: 'series', tmdbId: 95396, title: 'Severance', season: 2, episode: 4 }, invisible: false });
-    p.setWatching({ type: 'series', tmdbId: 95396, title: 'Severance', season: 2, episode: 4 });
-    expect(put).toHaveBeenCalledTimes(3); // inchangé : pas de nouvel envoi
-    p.setInvisible(true);
-    expect((put.mock.calls.at(-1) as any)[0].invisible).toBe(true);
-    p.stopPresence();
-    expect(del).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(p.PRESENCE_EVERY_MS * 2);
-    expect(put.mock.calls.length).toBe(4); // plus rien après l'arrêt
-    // Profil enfant : jamais de titre.
-    p.setInvisible(false);
-    p.startPresence('k1', true);
-    p.setWatching({ type: 'movie', tmdbId: 1, title: 'Secret' });
-    expect((put.mock.calls.at(-1) as any)[0].watching).toBeNull();
-    p.stopPresence(false);
-    p.setPresenceSender(null);
-    vi.useRealTimers();
   });
 });

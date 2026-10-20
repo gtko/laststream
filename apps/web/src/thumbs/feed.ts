@@ -1,10 +1,10 @@
 /* Pont entre la librairie et ThumbFeed (src/player/thumbfeed.ts) : mêmes tranches de 30 s, mêmes précharge et annulation,
  * mais l'image d'une tranche vient du cache client, sinon d'une image clé lue par plages puis décodée (WebCodecs).
- * `register` obtient un jeton de relais et vérifie que le format et le codec sont gérés ; refus = pas de miniatures (silencieux). */
+ * `register` ouvre la source en lecture directe et vérifie que le format et le codec sont gérés ; refus = pas de miniatures (silencieux). */
 
 import { canDecode, decodeKeyframe, type CodecEnv } from './decode';
 import { openVideoIndex } from './index';
-import { directFetchRange, proxyFetchRange, RangeAuthError, type FetchFn } from './proxy';
+import { directFetchRange, RangeAuthError, type FetchFn } from './direct';
 import { MemoryThumbStore, thumbKey, type ThumbStore } from './store';
 import type { ByteSource, ByteSourceOptions } from './bytes';
 import type { VideoIndex } from './types';
@@ -90,15 +90,12 @@ function waitTurn(signal: AbortSignal, o: TurnOptions): Promise<void> {
 }
 
 export interface LocalSource {
-  /** Lien débridé lu. */
+  /** Lien débridé lu directement depuis l'appareil. */
   url: string;
-  /** Avec `token` et `base` : lecture par le relais (ancienne voie, abandonnée) ; sans eux : lecture directe depuis l'appareil. */
-  token?: string;
-  base?: string;
 }
 
 export interface LocalFeedOptions {
-  /** Demande un jeton de relais pour la source courante (lastAddon). null : source refusée. */
+  /** Lien à lire pour la source courante. null : source refusée. */
   resolve(signal: AbortSignal): Promise<LocalSource | null>;
   /** Identifiant stable de la source pour le cache (l'adresse de lecture, pas le lien débridé qui change). */
   sourceId: string;
@@ -141,7 +138,7 @@ export function makeLocalFeed(o: LocalFeedOptions): LocalFeed {
     opened = null;
     const s = await o.resolve(signal);
     if (s === null) return false;
-    const fetchRange = s.token !== undefined && s.base !== undefined ? proxyFetchRange({ url: s.url, token: s.token, base: s.base }, o.fetchFn) : directFetchRange(s.url, o.fetchFn);
+    const fetchRange = directFetchRange(s.url, o.fetchFn);
     const r = await openVideoIndex(fetchRange, o.source ?? {}, signal);
     if (r === null || !(await canDecode(r.index.info, o.env))) return false;
     opened = r;
@@ -191,7 +188,7 @@ export function makeLocalFeed(o: LocalFeedOptions): LocalFeed {
         await store.set(key, blob).catch(() => undefined);
         return reply(200, blob);
       } catch (e) {
-        // Jeton expiré ou refusé : ThumbFeed réenregistre la source une fois (réponse « unknown_source »).
+        // Lien expiré ou refusé : ThumbFeed réenregistre la source une fois (réponse « unknown_source »).
         if (e instanceof RangeAuthError) { opened = null; return reply(404, { error: 'unknown_source' }); }
         throw e;
       }

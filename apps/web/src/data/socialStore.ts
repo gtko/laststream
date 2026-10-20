@@ -2,6 +2,7 @@ import { isKidProfile, isServerMode } from './auth';
 import { requireBase } from './config';
 import { UserApiError, type MediaKind } from './userApi';
 import * as api from './socialV2Api';
+import { userStore } from './userStore';
 import type {
   Conversation, FriendRequest, FriendView, FriendsResponse, MediaRef, Message, MessageContext, Note, RequestOutcome, SocialMe, Status,
 } from './socialV2Api';
@@ -84,7 +85,7 @@ export interface SocialState {
 }
 
 type Base = Omit<SocialState, 'unread' | 'badge'>;
-type Person = { handle: Conversation['handle']; avatarColor: string };
+type Person = { handle: Conversation['handle']; avatarColor: string; avatar?: string };
 
 export function initialCinemaState(): CinemaState {
   return { active: false, until: null, since: null, hidden: [...DEFAULT_CINEMA_HIDDEN], queue: [], count: 0 };
@@ -134,7 +135,7 @@ function withFriendLists(b: Base, r: FriendsResponse): Base {
 function findPerson(b: Base, pid: string): Person | undefined {
   const f = b.friends.find((x) => x.pid === pid) ?? b.household.find((x) => x.pid === pid)
     ?? b.incoming.find((x) => x.pid === pid) ?? b.outgoing.find((x) => x.pid === pid);
-  return f ? { handle: f.handle, avatarColor: f.avatarColor } : undefined;
+  return f ? { handle: f.handle, avatarColor: f.avatarColor, ...(f.avatar ? { avatar: f.avatar } : {}) } : undefined;
 }
 
 const byLastDesc = (a: Conversation, b: Conversation): number => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
@@ -225,7 +226,7 @@ function applyMessage(b: Base, m: Message, now: number): Base {
   } else {
     const who = findPerson(b, peer);
     conversations = who
-      ? [...b.conversations, { pid: peer, handle: who.handle, avatarColor: who.avatarColor, last: m, unread: incoming ? 1 : 0 }]
+      ? [...b.conversations, { pid: peer, handle: who.handle, avatarColor: who.avatarColor, ...(who.avatar ? { avatar: who.avatar } : {}), last: m, unread: incoming ? 1 : 0 }]
       : b.conversations;
   }
   const v = toV3(m, me);
@@ -389,10 +390,26 @@ async function run<T>(req: () => Promise<T>, apply?: (r: T) => Partial<SocialSta
   return r;
 }
 
+/**
+ * Avatar du profil agissant : celui que renvoie le serveur, sinon celui du profil actif de l'appareil (même profil : le
+ * serveur et l'appareil décrivent la même personne), pour ne jamais retomber sur la lettre alors qu'un avatar existe.
+ */
+export function withLocalAvatar(me: SocialMe): SocialMe {
+  if (me.avatar) return me;
+  let local: unknown;
+  try {
+    local = userStore.currentProfile().avatar;
+  } catch {
+    local = undefined;
+  }
+  return typeof local === 'string' && local !== '' ? { ...me, avatar: local } : me;
+}
+
 /** Relit profil, amis et conversations. */
 export async function refresh(): Promise<void> {
   const e = epoch;
-  const [me, lists, convs] = await Promise.all([api.getMe(), api.getFriends(), v3.listConversations()]);
+  const [rawMe, lists, convs] = await Promise.all([api.getMe(), api.getFriends(), v3.listConversations()]);
+  const me = withLocalAvatar(rawMe);
   if (epoch !== e) return;
   commit(withCounts({
     ...withFriendLists(state, lists),
@@ -506,7 +523,7 @@ export async function loadMessages(pid: string, o: { before?: number; limit?: nu
 // ---- Profil (S1) ----
 const withProfile = (p: SocialProfile): Partial<SocialState> => ({
   profile: p,
-  me: state.me && { ...state.me, handle: p.handle, avatarColor: p.avatarColor },
+  me: state.me && { ...state.me, handle: p.handle, avatarColor: p.avatarColor, ...(p.avatar ? { avatar: p.avatar } : {}) },
 });
 
 /** Mon profil social étendu. */

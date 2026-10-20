@@ -4,13 +4,14 @@ import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
 import { joinLinkOf } from '../party/join';
 import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent, REACTION_OPTIONS, STAGE_EMOJIS, syncText, WAIT_LATE_OPTIONS } from '../party/lobbyModel';
-import { CHAT_MAX, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
+import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { handlePartyCreateError } from './partyerrors.js';
 
 let rootEl = null;
 let panel = null;
@@ -53,6 +54,9 @@ function rateHTML() {
   const guests = '<span data-wp-guests>' + n + '</span> invité' + (n > 1 ? 's' : '');
   if (partyBridge.relayRefused()) {
     return '<span class="wp-rate-warn" title="Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.">Partage bloqué</span> · ' + guests;
+  }
+  if (partyBridge.relayUnavailable()) {
+    return '<span class="wp-rate-warn" title="Cette source (torrent ou lien protégé) ne peut pas être envoyée aux invités par lien : choisis une source débridée ou un lien direct.">Partage impossible avec cette source</span> · ' + guests;
   }
   const s = partyBridge.relayStats();
   return (s ? '↑ ' + fmtRate(s.rateBps) : 'Partage inactif') + ' · ' + guests;
@@ -257,8 +261,8 @@ function roomHTML(c) {
     '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(chatLines(c), you, c.participants) + '</div>' +
     '<div class="wp-foot">' +
     '<div class="wp-react" role="group" aria-label="Réactions">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
-    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
-    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
+    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX_CHARS + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX_CHARS + '</span>' +
     '<button type="submit" class="btn btn-primary btn-sm" aria-label="Envoyer"' + (muted ? ' disabled' : '') + '>Envoyer</button></form></div>' +
     '</div></div>';
 }
@@ -340,7 +344,7 @@ function updateChars() {
   if (!panel) return;
   const input = panel.querySelector('input[name="text"]');
   const counter = panel.querySelector('[data-wp-chars]');
-  if (input && counter) counter.textContent = input.value.length + '/' + CHAT_MAX;
+  if (input && counter) counter.textContent = input.value.length + '/' + CHAT_MAX_CHARS;
 }
 
 /** Saisie dans le champ d’envoi : brouillon gardé entre deux rendus, compteur mis à jour. */
@@ -534,7 +538,7 @@ async function onSubmit(e) {
   e.stopPropagation();
   if (f.matches('[data-wp-send]')) {
     const c = partyBridge.client;
-    const text = f.elements.text.value.slice(0, CHAT_MAX);
+    const text = f.elements.text.value.slice(0, CHAT_MAX_CHARS);
     const pos = partyBridge.position();
     if (c && (pos === null ? c.sendChat(text) : c.sendChat(text, pos))) { chatDraft = ''; f.elements.text.value = ''; stickBottom = true; updateChars(); }
     return;
@@ -550,8 +554,7 @@ async function onSubmit(e) {
       await inviteAfterCreate();
     } catch (err) {
       f.querySelector('[type=submit]').disabled = false;
-      if (msg) msg.textContent = err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
-        : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment.';
+      void handlePartyCreateError(err, { retry: () => { const cur = document.querySelector('[data-wp-create]'); if (cur instanceof HTMLFormElement) cur.requestSubmit(); }, say: (t) => { if (msg) msg.textContent = t; } });
     }
   }
 }

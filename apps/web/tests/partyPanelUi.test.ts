@@ -116,6 +116,16 @@ describe('ligne de débit : compacte et secondaire', () => {
     expect(warn.textContent).toBe('Partage bloqué');
     expect(warn.title).toContain('les invités ne reçoivent pas la vidéo');
   });
+
+  it('source non relayable (torrent, lien protégé) avec des invités : « Partage impossible avec cette source » et le compte d’invités', () => {
+    vi.spyOn(partyBridge, 'relayUnavailable').mockReturnValue(true);
+    partyBridge.client = fakeClient(true, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    const warn = panelOf().querySelector('.wp-rate-warn') as HTMLElement;
+    expect(warn.textContent).toBe('Partage impossible avec cette source');
+    expect(warn.title).toContain('torrent ou lien protégé');
+    expect(panelOf().querySelector('[data-wp-guests]')!.textContent).toBe('2');
+  });
 });
 
 describe('bandeau de compatibilité', () => {
