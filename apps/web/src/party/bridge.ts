@@ -20,6 +20,7 @@ import { RelayError } from '../relay/protocol';
 import { HostRelaySession, type RelayStats } from '../relay/session';
 import { urlRangeSource } from '../relay/sources';
 import { buildPartySubtitles, type LoadedSubtitle } from './subtitles';
+import { partyCreateErrorText } from './createError';
 
 /* Lien entre le salon (client WebSocket, contrôleur de synchronisation) et le lecteur. Un seul salon actif à la fois.
  * Le lecteur (player/session.js) appelle `sessionOpened`, `viewReady`, `tick`, `sessionClosed` ; l'interface appelle
@@ -137,6 +138,11 @@ class PartyBridge {
   launcher: LaunchFn | null = null;
   /** Salon créé depuis la fiche (création différée) : l'interface copie le lien et ouvre le panneau. */
   onCreated: ((room: PartyRoom) => void) | null = null;
+  /** Amis à inviter dès la création du salon (choisis dans la boîte « Watch party » de la fiche). */
+  pendingInvites: string[] = [];
+  onInvites: ((room: PartyRoom, pids: string[]) => void) | null = null;
+  /** Création différée en échec : `retry` la relance (après saisie du code du profil, par exemple). */
+  onCreateError: ((err: unknown, retry: () => void) => void) | null = null;
   adapter: (() => SessionAdapter | null) | null = null;
   /**
    * Bascule la lecture sur une source déjà chargée, à la même position ; `allow` filtre les sources de repli de cette
@@ -504,7 +510,18 @@ class PartyBridge {
     if (this.pending && !this.client && this.available()) {
       const { visibility } = this.pending;
       this.pending = null;
-      this.create(a, visibility).then((room) => { this.onCreated?.(room); this.emit(); }, (err) => { this.lastError = err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Trois salons ouverts au plus.' : 'Création du salon impossible.'; this.emit(); });
+      this.create(a, visibility).then((room) => {
+        const pids = this.pendingInvites;
+        this.pendingInvites = [];
+        this.onCreated?.(room);
+        if (pids.length) this.onInvites?.(room, pids);
+        this.emit();
+      }, (err) => {
+        this.lastError = partyCreateErrorText(err);
+        if (err instanceof UserApiError && err.code === 'pin_required') this.pending = { visibility };
+        this.onCreateError?.(err, () => this.viewReady(a));
+        this.emit();
+      });
       return;
     }
     const c = this.client;

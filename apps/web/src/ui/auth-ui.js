@@ -274,7 +274,7 @@ async function pick(id) {
 // ---------- Clavier PIN ----------
 let pad = null;
 
-function hidePad() {
+export function hidePad() {
   if (pad && pad.node) pad.node.remove();
   if (pad && pad.onKey) document.removeEventListener('keydown', pad.onKey, true);
   pad = null;

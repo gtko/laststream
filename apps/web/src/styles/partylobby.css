@@ -305,3 +305,49 @@ body.has-party-lobby { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .pl-spin, .pl-count-n, .ps-event { animation: none; }
 }
+
+/* ---------- Boîte de lancement (fiche → Watch party) : carte du titre, visibilité, amis, départ ---------- */
+.modal.pld-modal { width: min(520px, 100%); }
+.pld { padding: 24px; display: flex; flex-direction: column; gap: 18px; font-family: var(--ff-body); }
+.pld-card { display: flex; align-items: center; gap: 14px; padding-right: 48px; }
+.pld-poster { flex: none; width: 64px; aspect-ratio: 2 / 3; border-radius: 10px; overflow: hidden; background: var(--pl-chip); display: grid; place-items: center; color: var(--dim); }
+.pld-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pld-card-t { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pld-name { font-family: var(--ff-title); font-weight: 800; font-size: 22px; line-height: 1.1; overflow-wrap: anywhere; }
+.pld-sub, .pld-note, .pld-empty { font-size: 13px; color: var(--muted); margin: 0; }
+.pld-fs { border: 0; margin: 0; padding: 0; min-width: 0; }
+.pld-fs legend { padding: 0; margin-bottom: 8px; }
+.pld-seg { display: flex; background: var(--bg); border: 1px solid var(--line-2); border-radius: 10px; padding: 3px; gap: 3px; }
+.pld-seg-o { flex: 1; position: relative; min-width: 0; cursor: pointer; }
+.pld-seg-o input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.pld-seg-o span { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 44px; padding: 4px 8px; border-radius: 7px; color: var(--muted); text-align: center; }
+.pld-seg-o b { font-size: 13px; font-weight: 700; }
+.pld-seg-o i { font-style: normal; font-size: 11px; color: var(--dim); }
+.pld-seg-o input:checked + span { background: var(--pl-chip-on); color: var(--text); }
+.pld-seg-o input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pld-sec { display: flex; flex-direction: column; gap: 8px; }
+.pld-friends { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.pld-friend { position: relative; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--pl-chip); cursor: pointer; }
+.pld-friend:hover { border-color: #3a3647; }
+.pld-friend-t { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
+.pld-friend-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pld-friend-t span { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pld-friend input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.pld-check { flex: none; width: 22px; height: 22px; border-radius: 7px; border: 2px solid #3a3647; display: grid; place-items: center; }
+.pld-friend input:checked ~ .pld-check { background: var(--accent); border-color: var(--accent); }
+.pld-friend input:checked ~ .pld-check::after { content: ''; width: 10px; height: 6px; border: solid var(--on-accent); border-width: 0 0 2.5px 2.5px; transform: rotate(-45deg) translate(1px, -1px); }
+.pld-friend:has(input:checked) { border-color: var(--accent); }
+.pld-friend:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pld-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.pld-actions .pl-btn { width: 100%; }
+.pld-link { align-self: center; min-height: 44px; padding: 0 12px; color: var(--soft); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.pld-link:hover { color: var(--text); }
+.pld button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 767px) {
+  .modal-backdrop:has(.pld-modal) { align-items: flex-end; padding: 0; }
+  .modal.pld-modal { width: 100%; max-height: 92vh; border-radius: 20px 20px 0 0; border-bottom: 0; animation: pld-up 0.22s ease-out; }
+  .pld { padding: 20px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .pld-friends { max-height: 30vh; }
+}
+@keyframes pld-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .modal.pld-modal { animation: none; } }

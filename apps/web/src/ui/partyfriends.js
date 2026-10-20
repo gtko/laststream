@@ -5,6 +5,7 @@ import { inviteFriendToParty } from '../data/socialApi';
 import { getState as socialState } from '../data/socialStore';
 import { UserApiError } from '../data/userApi';
 import { initialsOf } from '../party/lobbyModel';
+import { avatarAttrs } from './avatar-art.js';
 import { toast } from './dom.js';
 import { esc } from './util.js';
 
@@ -25,7 +26,7 @@ export function friendsListHTML(attr) {
   if (!friends.length) return '<p class="pl-empty">Aucun ami pour l’instant. Ajoute-en depuis la barre des amis.</p>';
   return '<ul class="pl-friends">' + friends.map((f) => {
     const done = invitedPids.has(f.pid);
-    return '<li class="pl-friend"><span class="pl-av" style="background:' + esc(f.avatarColor || '#94a3b8') + '" aria-hidden="true"><span class="pl-av-ini">' + esc(initialsOf(f.handle.name)) + '</span></span>' +
+    return '<li class="pl-friend"><span class="pl-av"' + avatarAttrs(f.avatar, f.avatarColor) + ' aria-hidden="true"><span class="pl-av-ini">' + esc(initialsOf(f.handle.name)) + '</span></span>' +
       '<span class="pl-friend-t"><b>' + esc(f.handle.full) + '</b><span>' + (f.status === 'offline' ? 'Hors ligne' : f.watching ? 'Regarde ' + esc(f.watching.title) : 'En ligne') + '</span></span>' +
       '<button type="button" class="pl-btn is-sec is-sm" data-' + attr + '="' + esc(f.pid) + '"' + (done ? ' disabled' : '') + '>' + (done ? 'Invité' : 'Inviter') + '</button></li>';
   }).join('') + '</ul>';

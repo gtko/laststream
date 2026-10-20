@@ -19,6 +19,7 @@ import { CHAT_MAX, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } fro
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { handlePartyCreateError } from './partyerrors.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
@@ -64,13 +65,6 @@ let opener = null;
 const isHost = () => !!(client && client.isHost);
 const myName = () => (client && client.you ? client.you.username : '');
 const sNow = () => (client ? client.serverNow() : Date.now());
-
-/** Diagnostic : code ou message de l'erreur, affiché entre parenthèses et écrit dans la console. */
-export function partyErrSuffix(err) {
-  try { console.error('[watch party] création', err); } catch { /* ignoré */ }
-  const code = err && (err.code || err.name || err.message);
-  return code ? ' (' + String(code).slice(0, 60) + ').' : '.';
-}
 
 // ---------- Rendu ----------
 const avatar = (p, size) => '<span class="pl-av' + (size ? ' is-' + size : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) + ' aria-hidden="true"><span class="pl-av-ini">' +
@@ -458,15 +452,26 @@ export async function openLobby(partyId, from) {
 }
 
 // ---------- Création depuis une fiche ----------
-/** Crée le salon d'attente d'un titre (hôte) puis l'ouvre. `req` : cible de lecture (type, id, name, season, episode). */
-export async function createLobbyFor(req, poster, visibility, from) {
+/**
+ * Crée le salon d'attente d'un titre (hôte) puis l'ouvre. `req` : cible de lecture (type, id, name, season, episode) ;
+ * `invite` : amis (pid) à inviter tout de suite. Un échec donne un message humain ; profil verrouillé : saisie du PIN puis nouvel essai.
+ */
+export async function createLobbyFor(req, poster, visibility, from, invite = []) {
   try {
     const room = await partyBridge.createLobby(req, poster || null, visibility);
     await openLobby(room.id, from);
+    await inviteMany(room.id, invite);
   } catch (err) {
-    toast(err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
-      : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment' + partyErrSuffix(err));
+    void handlePartyCreateError(err, { retry: () => { void createLobbyFor(req, poster, visibility, from, invite); } });
   }
+}
+
+/** Invite plusieurs amis dans un salon dont on est membre ; un seul message récapitulatif. */
+export async function inviteMany(roomId, pids) {
+  if (!pids || !pids.length) return;
+  const done = await Promise.all(pids.map((pid) => inviteInto(roomId, pid)));
+  const n = done.filter(Boolean).length;
+  if (n) toast(n === 1 ? 'Invitation envoyée' : n + ' invitations envoyées');
 }
 
 // ---------- Invitation d'un ami ----------
@@ -483,7 +488,7 @@ export async function inviteToParty(pid) {
     try {
       await partyBridge.create(a, 'private');
     } catch (err) {
-      toast('Création du salon impossible pour le moment' + partyErrSuffix(err));
+      void handlePartyCreateError(err, { retry: () => { void inviteToParty(pid); } });
       return;
     }
     if (!(await partyBridge.waitForHost())) { toast('Salon créé, mais la connexion a échoué.'); return; }
