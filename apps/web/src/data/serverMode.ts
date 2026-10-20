@@ -1,6 +1,6 @@
 import { appFetch } from './crossFetch';
 import { signOut } from './auth';
-import { getBase, getCustom, getMode, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings, type ServerMode } from './config';
+import { DEFAULT_BASE, getBase, getCustom, getMode, getSettings, isAndroidApp, PUBLIC_BASE, saveSettings, type ServerMode } from './config';
 import { isLanHost } from './lan';
 import { clearCache } from './transport';
 
@@ -8,6 +8,8 @@ import { clearCache } from './transport';
 export const PUBLIC_PROBE_MS = 5000;
 /** Délai laissé à une adresse locale enregistrée par l'ancien écran (hors de chez soi, elle ne répond pas). */
 const LAN_PROBE_MS = 3000;
+/** Délai laissé au lastAddon local (lancé avec le serveur de développement) avant de retomber sur le serveur public. */
+const DEV_LOCAL_PROBE_MS = 1500;
 
 export interface ServerContext {
   /** Application Android (Capacitor). */
@@ -27,6 +29,12 @@ let relaunch = (): void => location.reload();
 /** Relance l'application après un changement de serveur (injectable en test). */
 export function setRelaunch(fn: () => void): void {
   relaunch = fn;
+}
+
+/** Sonde du lastAddon local au premier lancement d'un navigateur vierge : active en développement seulement (injectable en test). */
+let devLocalProbe: boolean = import.meta.env.DEV;
+export function setDevLocalProbe(enabled: boolean): void {
+  devLocalProbe = enabled;
 }
 
 const currentContext = (): ServerContext => ({ native: isAndroidApp(), servedOrigin });
@@ -96,8 +104,15 @@ export async function prepareServer(): Promise<boolean> {
   if (ctx.native && next === PUBLIC_BASE && s.base === '' && !(await probeHealth(PUBLIC_BASE, PUBLIC_PROBE_MS))) return false;
   if (next !== s.base) saveSettings({ base: next });
   // Navigateur vierge hors lastAddon : si le serveur public répond, on s'y connecte (écran de connexion, pas « non configuré »).
-  if (!ctx.native && !ctx.servedOrigin && next === '' && (await probeHealth(PUBLIC_BASE, PUBLIC_PROBE_MS))) {
-    saveSettings({ mode: 'public', base: PUBLIC_BASE });
+  if (!ctx.native && !ctx.servedOrigin && next === '') {
+    // En développement, réglages encore vides : le lastAddon local (http://localhost:7000) d'abord, puis le serveur public.
+    const vierge = s.mode === undefined && s.base === '' && s.config === '' && !s.custom;
+    if (devLocalProbe && vierge && (await probeHealth(DEFAULT_BASE, DEV_LOCAL_PROBE_MS))) {
+      // Seule l'adresse est enregistrée, sans mode perso : hors lastAddon, le champ Adresse reste la source de vérité.
+      saveSettings({ base: DEFAULT_BASE });
+    } else if (await probeHealth(PUBLIC_BASE, PUBLIC_PROBE_MS)) {
+      saveSettings({ mode: 'public', base: PUBLIC_BASE });
+    }
   }
   return true;
 }

@@ -6,9 +6,9 @@ vi.mock('@capacitor/core', async (importOriginal) => {
   return { ...mod, Capacitor: { ...mod.Capacitor, isNativePlatform: () => cap.native } };
 });
 
-import { getSettings, PUBLIC_BASE, reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
+import { DEFAULT_BASE, getSettings, PUBLIC_BASE, reloadSettings, saveSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { reconcileConfig } from '../src/data/configSync';
-import { effectiveBase, isLocalHttpBase, prepareServer, setRelaunch, setServedOrigin, switchServer, type ServerContext } from '../src/data/serverMode';
+import { effectiveBase, isLocalHttpBase, prepareServer, setDevLocalProbe, setRelaunch, setServedOrigin, switchServer, type ServerContext } from '../src/data/serverMode';
 import { ensureServerSetup } from '../src/ui/server-setup.js';
 
 const LAN = 'http://192.168.1.20:7000';
@@ -41,6 +41,8 @@ beforeEach(() => {
   setServedOrigin(null);
   relaunch.mockClear();
   setRelaunch(relaunch);
+  // Sonde du lastAddon local désactivée par défaut : elle n'existe qu'en développement (vitest y est en DEV).
+  setDevLocalProbe(false);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -228,5 +230,51 @@ describe('première visite dans un navigateur vierge (hors lastAddon)', () => {
     stubFetch(down);
     expect(await prepareServer()).toBe(true);
     expect(getSettings().base).toBe('');
+  });
+});
+
+describe('développement : lastAddon local avant le serveur public (navigateur vierge)', () => {
+  beforeEach(() => { cap.native = false; setServedOrigin(null); setDevLocalProbe(true); localStorage.clear(); reloadSettings(); });
+  afterEach(() => { cap.native = true; setDevLocalProbe(false); vi.unstubAllGlobals(); });
+
+  it('le lastAddon local répond : son adresse est enregistrée (sans mode perso), le serveur public n’est pas sondé', async () => {
+    const f = stubFetch((url) => (url.startsWith(DEFAULT_BASE) ? health() : down()));
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings()).toMatchObject({ base: DEFAULT_BASE });
+    expect(getSettings().mode).toBeUndefined();
+    expect(getSettings().custom).toBe('');
+    expect(calls(f)).toEqual([`${DEFAULT_BASE}/health`]);
+  });
+
+  it('après la sonde locale, une adresse saisie à la main est gardée au démarrage suivant', async () => {
+    const f = stubFetch((url) => (url.startsWith(DEFAULT_BASE) ? health() : down()));
+    expect(await prepareServer()).toBe(true);
+    saveSettings({ base: PUBLIC_BASE });
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings().base).toBe(PUBLIC_BASE);
+    expect(calls(f)).toEqual([`${DEFAULT_BASE}/health`]);
+  });
+
+  it('le lastAddon local est muet : repli sur le serveur public', async () => {
+    const f = stubFetch((url) => (url.startsWith(PUBLIC_BASE) ? health() : down()));
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings()).toMatchObject({ mode: 'public', base: PUBLIC_BASE });
+    expect(calls(f)).toEqual([`${DEFAULT_BASE}/health`, `${PUBLIC_BASE}/health`]);
+  });
+
+  it('hors développement : le lastAddon local n’est pas sondé, comportement inchangé', async () => {
+    setDevLocalProbe(false);
+    const f = stubFetch(() => health());
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings()).toMatchObject({ mode: 'public', base: PUBLIC_BASE });
+    expect(calls(f)).toEqual([`${PUBLIC_BASE}/health`]);
+  });
+
+  it('réglages déjà enregistrés : le lastAddon local n’est pas sondé, comportement inchangé', async () => {
+    seed({ mode: 'public', base: '', config: '' });
+    const f = stubFetch(() => health());
+    expect(await prepareServer()).toBe(true);
+    expect(getSettings()).toMatchObject({ mode: 'public', base: PUBLIC_BASE });
+    expect(calls(f)).toEqual([`${PUBLIC_BASE}/health`]);
   });
 });
