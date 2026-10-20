@@ -9,6 +9,7 @@
  * alternant les sources pour qu'aucune ne domine. Les lots défilent source par source, puis page TMDB par page TMDB.
  */
 import { isKidProfile } from '../auth';
+import { pad2 } from '../format';
 import { homeFacts, keepVisible, type ItemFacts } from '../homeFilters';
 import { kidGenreOk } from '../kid';
 import { tmdb } from '../lt';
@@ -69,8 +70,7 @@ export const MAX_ROUNDS = 25;
 const WATCH_TYPES = 'flatrate|free|ads';
 const MIN_VOTES_BY_RATING: Record<Media, number> = { movie: 200, tv: 100 };
 
-const pad = (n: number) => String(n).padStart(2, '0');
-export const todayIso = (d: Date = new Date()): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const todayIso = (d: Date = new Date()): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 export const dateKey = (media: Media): string => (media === 'tv' ? 'first_air_date' : 'primary_release_date');
 
 /** Filtres d'une source -> paramètres discover de TMDB. Les titres non sortis sont exclus (borne haute = aujourd'hui). */

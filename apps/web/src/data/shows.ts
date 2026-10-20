@@ -1,6 +1,8 @@
 /* Émissions TV : rapprochement des titres du guide TV (EPG) avec des émissions TMDB, prochaines diffusions, soirée.
  * Logique pure, testée ; les appels réseau sont dans showsApi.ts. */
 
+import { pad2 } from './format';
+
 export interface EpgProgram {
   channelId: string;
   start: number;
@@ -185,9 +187,8 @@ export function airingsFor(
   return out.sort((a, b) => a.start - b.start || (a.channel.num ?? 99) - (b.channel.num ?? 99));
 }
 
-const pad = (n: number): string => String(n).padStart(2, '0');
-export const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-export const localDate = (sec: number): string => { const d = new Date(sec * 1000); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+export const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+export const localDate = (sec: number): string => { const d = new Date(sec * 1000); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
 
 /** Libellé relatif du jour : « Aujourd’hui », « Demain », « samedi 24 octobre ». */
 export function dayLabel(sec: number, nowSec: number): string {

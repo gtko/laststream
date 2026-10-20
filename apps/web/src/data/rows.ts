@@ -1,3 +1,4 @@
+import { pad2 } from './format';
 import { certLteFor } from './kid';
 
 /*
@@ -71,8 +72,7 @@ export const ROW_MAX = 20;
 export const MAX_REPEAT = 2;
 
 export function makeCtx(region: string, kidMaxAge: number | null, now = new Date()): RowCtx {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return { region, today: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`, month: now.getMonth() + 1, kidMaxAge };
+  return { region, today: `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`, month: now.getMonth() + 1, kidMaxAge };
 }
 
 const daysAgo = (today: string, n: number): string => new Date(Date.parse(today) - n * 864e5).toISOString().slice(0, 10);

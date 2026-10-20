@@ -1,4 +1,5 @@
 import { auth, isServerMode } from './auth';
+import { pad2 } from './format';
 import { getSettings, putSettings } from './userApi';
 import { userStore } from './userStore';
 
@@ -32,8 +33,7 @@ export interface DailyRecs {
 }
 
 export function todayLocal(d = new Date()): string {
-  const pad = (n: number): string => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** Réponse de /lt/recommend → liste compacte (sans doublon, avec affiche). */

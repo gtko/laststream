@@ -1,18 +1,17 @@
 /* Reprise de lecture : timecode et pourcentage vus, affichés sur les vignettes (épisodes, films, « Reprendre la lecture »). */
 import { SEEN_PROGRESS_RATIO } from '../data/seen';
+import { pad2 } from '../data/format';
 import { esc } from './util.js';
 
 const MIN_PCT = 2; // en deçà, rien n’est entamé
 const SEEN_PCT = Math.round(SEEN_PROGRESS_RATIO * 100); // à partir de là le titre est « vu »
-
-const pad = (n) => String(n).padStart(2, '0');
 
 /** Timecode : h:mm:ss à partir d’une heure, sinon mm:ss (secondes tronquées). */
 export function fmtTimecode(sec) {
   const s = Math.floor(sec);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s % 60);
+  return (h ? h + ':' + pad2(m) : pad2(m)) + ':' + pad2(s % 60);
 }
 
 /**
