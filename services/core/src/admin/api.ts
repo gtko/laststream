@@ -11,15 +11,18 @@ import { assertUnlocked, nowIso, type Session, sessionOf } from '../user/session
 import { userErrorHandler } from '../user/routes.js';
 import { parseWith, UserApiError } from '../user/validation.js';
 import { RESET_TTL_MS } from '../user/admin-store.js';
+import { MAX_INVITE_QUOTA } from '../user/social-store.js';
 import { isCachePrefix } from './cache-types.js';
 import { registerAnnouncementAdminRoutes } from './ops-announcements.js';
 import { registerOpsRoutes } from './ops-platform.js';
 import { ELEVATION_TTL_MS, signElevation, verifyElevation } from './elevation.js';
 import type { MaintenanceGate } from './maintenance.js';
 import {
+  accountExportQuery,
   accountIdParam,
   accountListQuery,
   auditQuery,
+  bulkAccountsBody,
   cacheQuery,
   elevateBody,
   inviteIdParam,
@@ -43,6 +46,8 @@ const WINDOW_MS = 60_000;
 const LIMITS = { read: 120, write: 30, elevate: 5 } as const;
 const ELEVATE_WINDOW_MS = 10 * 60_000;
 const ROOMS_LISTED = 200;
+/** Export des comptes : au-delà, la liste est tronquée (`truncated: true`). */
+const ACCOUNTS_EXPORT_MAX = 5000;
 const ROOM_PARALLEL = 10;
 
 /**
@@ -156,6 +161,68 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     await owner(c);
     const query = parseWith(accountListQuery, queryParams(c));
     return sendJson(c, await admin().listAccounts(query));
+  });
+
+  // Déclarées avant /accounts/:id (qui capturerait « export » et « bulk »).
+
+  /** Export des comptes (recherche et filtre de la liste), 5000 au plus. Lecture auditée : c'est une sortie de données personnelles. */
+  router.get('/accounts/export', async (c) => {
+    const session = await owner(c);
+    const query = parseWith(accountExportQuery, queryParams(c));
+    await audit(session, 'account.export', null, { filter: query.filter, q: query.q ?? null });
+    return sendJson(c, await admin().exportAccounts(query, ACCOUNTS_EXPORT_MAX));
+  });
+
+  /**
+   * Action groupée sur 100 comptes au plus : quota (absolu ou delta), révocation des sessions ou suspension. Élévation
+   * exigée. Un seul audit pour l'opération, écrit avant son exécution. Un compte en échec (inconnu, propriétaire à
+   * suspendre, quota hors bornes) est listé dans `failed` sans interrompre le lot.
+   */
+  router.post('/accounts/bulk', async (c) => {
+    const session = await owner(c);
+    elevated(c, session);
+    const body = parseWith(bulkAccountsBody, c.get('body'));
+    const ids = [...new Set(body.ids)];
+    await audit(session, 'account.bulk', null, {
+      action: body.action,
+      count: ids.length,
+      ...(body.quota === undefined ? {} : { quota: body.quota }),
+      ...(body.delta === undefined ? {} : { delta: body.delta }),
+      accountIds: ids,
+    });
+    let done = 0;
+    const failed: { id: string; error: string }[] = [];
+    for (const id of ids) {
+      const target = await admin().accountById(id);
+      if (target === undefined) {
+        failed.push({ id, error: 'account_not_found' });
+        continue;
+      }
+      if (body.action === 'suspend') {
+        if (target.isOwner || target.id === session.account.id) {
+          failed.push({ id, error: 'cannot_target_owner' });
+          continue;
+        }
+        await admin().setSuspended(target.id, true, nowIso());
+      } else if (body.action === 'revoke-sessions') {
+        await users().deleteAllSessions(target.id);
+      } else {
+        const quota = body.quota ?? target.inviteQuota + (body.delta ?? 0);
+        if (quota < 0 || quota > MAX_INVITE_QUOTA) {
+          failed.push({ id, error: 'quota_out_of_range' });
+          continue;
+        }
+        await admin().setInviteQuota(target.id, quota);
+      }
+      done += 1;
+    }
+    return sendJson(c, { done, failed });
+  });
+
+  /** Comptes présents (présence de moins de deux minutes), avec le titre en cours de lecture s'il existe. */
+  router.get('/online', async (c) => {
+    await owner(c);
+    return sendJson(c, { accounts: await admin().onlineAccounts() });
   });
 
   router.get('/referrals', async (c) => {

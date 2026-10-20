@@ -14,8 +14,24 @@ const MAX_REPORT_ROWS = 2_000;
 export const RESET_TTL_MS = 24 * 3600_000;
 /** Un compte est « en ligne » si sa dernière présence date de moins de deux minutes. */
 export const ONLINE_WINDOW_MS = 2 * 60_000;
+/** Un compte est « inactif » si sa dernière activité date de plus de trente jours, ou s'il n'en a jamais eu. */
+const INACTIVE_AFTER_MS = 30 * 24 * 3600_000;
 
 export type AccountStatus = 'active' | 'suspended';
+
+/** Filtre de la liste des comptes (`all` : sans filtre). */
+export type AccountFilter = 'all' | 'online' | 'inactive30' | 'suspended' | 'noInvites';
+
+/** Effectifs par filtre, sur l'ensemble des comptes (indépendants de la pagination, de la recherche et du filtre choisi). */
+export type AccountCounts = Record<AccountFilter, number>;
+
+/** Compte présent (présence de moins de deux minutes) et titre en cours de lecture, s'il existe. */
+export interface OnlineAccount {
+  id: string;
+  username: string;
+  lastSeenAt: string;
+  watching: { title: string; mediaType?: string } | null;
+}
 
 export interface AdminAccount {
   id: string;
@@ -82,6 +98,7 @@ export interface AccountListQuery {
   /** Fragment du pseudo (insensible à la casse). */
   q?: string;
   status?: AccountStatus;
+  filter?: AccountFilter;
   /** Pseudo exact du parrain. */
   referrer?: string;
   createdFrom?: string;
@@ -149,6 +166,13 @@ export interface RegisteredRoom {
 
 const LIKE_ESCAPE = /[\\%_]/g;
 
+/** Dernière activité d'un compte (ISO, chaîne vide si jamais) : présence, connexion, progression. Alias de table `a`. */
+const LAST_ACTIVITY_SQL = `MAX(
+    COALESCE((SELECT seen_at FROM presence WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(created_at) FROM sessions WHERE account_id = a.id), ''),
+    COALESCE((SELECT MAX(pr.updated_at) FROM progress pr JOIN profiles p ON p.id = pr.profile_id WHERE p.account_id = a.id), '')
+  )`;
+
 /** Colonnes d'un compte. Premier paramètre lié : l'instant courant (ISO), pour ne compter que les sessions non expirées. */
 const ACCOUNT_COLUMNS = `
   a.id, a.username, a.is_owner, a.created_at, a.suspended_at, a.invite_quota,
@@ -158,11 +182,39 @@ const ACCOUNT_COLUMNS = `
   (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL) AS invites_used,
   (SELECT seen_at FROM presence WHERE account_id = a.id) AS seen_at,
   (SELECT COUNT(*) FROM sessions s WHERE s.account_id = a.id AND s.expires_at > ?) AS session_count,
-  MAX(
-    COALESCE((SELECT seen_at FROM presence WHERE account_id = a.id), ''),
-    COALESCE((SELECT MAX(created_at) FROM sessions WHERE account_id = a.id), ''),
-    COALESCE((SELECT MAX(pr.updated_at) FROM progress pr JOIN profiles p ON p.id = pr.profile_id WHERE p.account_id = a.id), '')
-  ) AS last_activity`;
+  ${LAST_ACTIVITY_SQL} AS last_activity`;
+
+/**
+ * Condition SQL d'un filtre de liste (alias de table `a`) et ses paramètres liés, dans l'ordre ; `null` pour « tous ».
+ * Les effectifs et la liste s'appuient sur les mêmes conditions : un compteur égale le total du filtre correspondant.
+ */
+function accountFilterCondition(filter: AccountFilter, nowMs: number): { sql: string; params: SqlParam[] } | null {
+  switch (filter) {
+    case 'all':
+      return null;
+    case 'online':
+      return { sql: 'EXISTS (SELECT 1 FROM presence pr WHERE pr.account_id = a.id AND pr.seen_at > ?)', params: [new Date(nowMs - ONLINE_WINDOW_MS).toISOString()] };
+    case 'inactive30':
+      // Une chaîne vide (jamais d'activité) est inférieure à toute date : « jamais » est compté comme inactif.
+      return { sql: `(${LAST_ACTIVITY_SQL}) < ?`, params: [new Date(nowMs - INACTIVE_AFTER_MS).toISOString()] };
+    case 'suspended':
+      return { sql: 'a.suspended_at IS NOT NULL', params: [] };
+    case 'noInvites':
+      return { sql: '(a.invite_quota - (SELECT COUNT(*) FROM invites i WHERE i.inviter_id = a.id AND i.used_at IS NOT NULL)) <= 0', params: [] };
+  }
+}
+
+/** Titre en cours d'un compte (présence, JSON du battement de cœur) réduit à son titre et à son type ; null si absent ou illisible. */
+function adminWatching(raw: unknown): OnlineAccount['watching'] {
+  if (typeof raw !== 'string') return null;
+  try {
+    const value = JSON.parse(raw) as { title?: unknown; type?: unknown };
+    if (typeof value.title !== 'string') return null;
+    return typeof value.type === 'string' ? { title: value.title, mediaType: value.type } : { title: value.title };
+  } catch {
+    return null;
+  }
+}
 
 /** Identifiant public d'une session, dérivé de son empreinte stockée : il ne révèle ni l'empreinte ni le jeton. */
 export function sessionRef(tokenHash: string): string {
@@ -246,6 +298,49 @@ function toAnnouncement(row: SqlRow): Announcement {
   };
 }
 
+/** Conditions de la liste (recherche, statut, parrain, dates, filtre) et leurs paramètres liés, dans l'ordre du SQL. */
+function accountConditions(
+  query: Partial<Pick<AccountListQuery, 'q' | 'status' | 'referrer' | 'createdFrom' | 'createdTo' | 'filter'>>,
+  nowMs: number,
+): { where: string[]; params: SqlParam[] } {
+  const where: string[] = [];
+  const params: SqlParam[] = [];
+  if (query.q !== undefined && query.q !== '') {
+    where.push("a.username LIKE ? ESCAPE '\\'");
+    params.push(`%${query.q.toLowerCase().replace(LIKE_ESCAPE, '\\$&')}%`);
+  }
+  if (query.status === 'suspended') where.push('a.suspended_at IS NOT NULL');
+  if (query.status === 'active') where.push('a.suspended_at IS NULL');
+  if (query.referrer !== undefined) {
+    where.push('EXISTS (SELECT 1 FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id AND ia.username = ?)');
+    params.push(query.referrer);
+  }
+  if (query.createdFrom !== undefined) {
+    where.push('a.created_at >= ?');
+    params.push(query.createdFrom);
+  }
+  if (query.createdTo !== undefined) {
+    where.push('a.created_at <= ?');
+    params.push(query.createdTo);
+  }
+  const condition = query.filter === undefined ? null : accountFilterCondition(query.filter, nowMs);
+  if (condition !== null) {
+    where.push(condition.sql);
+    params.push(...condition.params);
+  }
+  return { where, params };
+}
+
+/** Effectifs de chaque filtre sur l'ensemble des comptes (une requête COUNT par filtre, mêmes conditions que la liste). */
+function accountCounts(db: SqlDb, nowMs: number): AccountCounts {
+  const countOf = (filter: AccountFilter): number => {
+    const condition = accountFilterCondition(filter, nowMs);
+    const where = condition === null ? '' : ` WHERE ${condition.sql}`;
+    return Number(db.prepare(`SELECT COUNT(*) AS n FROM accounts a${where}`).get(...(condition?.params ?? []))?.n ?? 0);
+  };
+  return { all: countOf('all'), online: countOf('online'), inactive30: countOf('inactive30'), suspended: countOf('suspended'), noInvites: countOf('noInvites') };
+}
+
 /** Libellés des actions du journal d'audit dans la chronologie d'un compte. Action absente de la liste : affichée telle quelle. */
 const AUDIT_LABELS: Readonly<Partial<Record<string, string>>> = {
   'account.suspend': 'Compte suspendu',
@@ -312,27 +407,13 @@ export class AdminStore {
 
   // Comptes
 
-  listAccounts(query: AccountListQuery): { accounts: AdminAccount[]; nextCursor: string | null; total: number } {
-    const where: string[] = [];
-    const params: SqlParam[] = [];
-    if (query.q !== undefined && query.q !== '') {
-      where.push("a.username LIKE ? ESCAPE '\\'");
-      params.push(`%${query.q.toLowerCase().replace(LIKE_ESCAPE, '\\$&')}%`);
-    }
-    if (query.status === 'suspended') where.push('a.suspended_at IS NOT NULL');
-    if (query.status === 'active') where.push('a.suspended_at IS NULL');
-    if (query.referrer !== undefined) {
-      where.push('EXISTS (SELECT 1 FROM invites i JOIN accounts ia ON ia.id = i.inviter_id WHERE i.used_by = a.id AND ia.username = ?)');
-      params.push(query.referrer);
-    }
-    if (query.createdFrom !== undefined) {
-      where.push('a.created_at >= ?');
-      params.push(query.createdFrom);
-    }
-    if (query.createdTo !== undefined) {
-      where.push('a.created_at <= ?');
-      params.push(query.createdTo);
-    }
+  /**
+   * Liste paginée (filtre, recherche, statut, parrain, dates) avec le total du filtre et les effectifs de tous les filtres
+   * (`counts`, sur l'ensemble des comptes).
+   */
+  listAccounts(query: AccountListQuery): { accounts: AdminAccount[]; nextCursor: string | null; total: number; counts: AccountCounts } {
+    const nowMs = Date.now();
+    const { where, params } = accountConditions(query, nowMs);
     const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
     const total = Number(this.db.prepare(`SELECT COUNT(*) AS n FROM accounts a${filter}`).get(...params)?.n ?? 0);
     const newest = query.order === 'newest';
@@ -346,13 +427,40 @@ export class AdminStore {
       }
     }
     const pagedFilter = paged.length === 0 ? '' : ` WHERE ${paged.join(' AND ')}`;
-    const nowMs = Date.now();
     const rows = this.db
       .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${pagedFilter} ORDER BY a.created_at ${newest ? 'DESC' : 'ASC'}, a.id ${newest ? 'DESC' : 'ASC'} LIMIT ?`)
       .all(new Date(nowMs).toISOString(), ...pagedParams, query.limit + 1);
     const accounts = rows.slice(0, query.limit).map((row) => toAdminAccount(row, nowMs));
     const last = accounts[accounts.length - 1];
-    return { accounts, nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null, total };
+    return {
+      accounts,
+      nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null,
+      total,
+      counts: accountCounts(this.db, nowMs),
+    };
+  }
+
+  /**
+   * Export des comptes (même recherche et même filtre que la liste, les plus récents d'abord) : au plus `max` comptes ;
+   * `truncated` si d'autres correspondent.
+   */
+  exportAccounts(query: { q?: string; filter: AccountFilter }, max: number): { accounts: AdminAccount[]; truncated: boolean } {
+    const nowMs = Date.now();
+    const { where, params } = accountConditions(query, nowMs);
+    const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
+    const rows = this.db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM accounts a${filter} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`)
+      .all(new Date(nowMs).toISOString(), ...params, max + 1);
+    return { accounts: rows.slice(0, max).map((row) => toAdminAccount(row, nowMs)), truncated: rows.length > max };
+  }
+
+  /** Comptes présents (présence de moins de deux minutes), le plus récemment vu d'abord, avec le titre en cours s'il existe. */
+  onlineAccounts(): OnlineAccount[] {
+    const since = new Date(Date.now() - ONLINE_WINDOW_MS).toISOString();
+    return this.db
+      .prepare('SELECT a.id, a.username, pr.seen_at, pr.watching FROM presence pr JOIN accounts a ON a.id = pr.account_id WHERE pr.seen_at > ? ORDER BY pr.seen_at DESC, a.id')
+      .all(since)
+      .map((row) => ({ id: String(row.id), username: String(row.username), lastSeenAt: String(row.seen_at), watching: adminWatching(row.watching) }));
   }
 
   accountById(id: string): AdminAccount | undefined {

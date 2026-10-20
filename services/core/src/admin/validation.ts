@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { MAX_INVITE_QUOTA } from '../user/social-store.js';
 import { MAX_MAINTENANCE_MESSAGE } from '../user/app-settings.js';
 
+/** Nombre maximal de comptes par action groupée (POST /admin/accounts/bulk). */
+export const MAX_BULK_ACCOUNTS = 100;
+
 /** Schémas de l'API d'administration. */
 
 const intParam = (min: number, max: number, fallback: number) =>
@@ -33,9 +36,13 @@ export const timelineQuery = z.object({ limit: intParam(1, 200, 50) });
 /** Identifiant public d'une session (24 caractères hexadécimaux, voir `sessionRef`). */
 export const sessionIdParam = z.string().regex(/^[0-9a-f]{24}$/);
 
+/** Filtre de la liste des comptes : tous, en ligne, inactifs depuis 30 jours (ou jamais), suspendus, sans invitation disponible. */
+const accountFilter = z.enum(['all', 'online', 'inactive30', 'suspended', 'noInvites']);
+
 export const accountListQuery = z.object({
   q: z.string().trim().max(32).optional(),
   status: z.enum(['active', 'suspended']).optional(),
+  filter: accountFilter.default('all'),
   referrer: USERNAME.optional(),
   createdFrom: ISO_DATE.optional(),
   createdTo: ISO_DATE.optional(),
@@ -43,6 +50,23 @@ export const accountListQuery = z.object({
   limit: intParam(1, 100, 25),
   cursor: z.string().max(120).optional(),
 });
+
+export const accountExportQuery = z.object({
+  q: z.string().trim().max(32).optional(),
+  filter: accountFilter.default('all'),
+});
+
+/** Action groupée : quota (absolu ou delta, exactement un des deux), révocation des sessions ou suspension. */
+export const bulkAccountsBody = z
+  .object({
+    ids: z.array(accountIdParam).min(1).max(MAX_BULK_ACCOUNTS),
+    action: z.enum(['quota', 'revoke-sessions', 'suspend']),
+    quota: z.number().int().min(0).max(MAX_INVITE_QUOTA).optional(),
+    delta: z.number().int().min(-MAX_INVITE_QUOTA).max(MAX_INVITE_QUOTA).optional(),
+  })
+  .strict()
+  .refine((body) => body.action !== 'quota' || (body.quota === undefined) !== (body.delta === undefined), 'quota_ou_delta')
+  .refine((body) => body.action === 'quota' || (body.quota === undefined && body.delta === undefined), 'quota_pour_action_quota');
 
 export const inviteQuotaBody = z.object({ quota: z.number().int().min(0).max(MAX_INVITE_QUOTA) });
 
