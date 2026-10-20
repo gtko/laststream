@@ -21,7 +21,7 @@
   font: inherit; text-align: left; cursor: pointer; transition: transform 0.2s ease;
 }
 .tk-ticket:hover { transform: translateY(-4px); }
-.tk-ticket:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.tk-ticket:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .tk-ticket[aria-pressed="true"] {
   box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--text), 0 24px 50px -20px rgba(255, 90, 54, 0.7);
 }
@@ -82,7 +82,7 @@
   resize: none; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line-2);
   background: var(--bg); color: var(--text); font: inherit; font-size: 15px; line-height: 1.5;
 }
-.tk-msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tk-msg:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .tk-count { font-size: 12px; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
 .tk-note { margin: 0; font-size: 12px; color: var(--dim); }
 .tk-actions { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -90,7 +90,7 @@
   flex: 1 1 140px; min-height: 48px; padding: 0 20px; border-radius: 14px; border: 0;
   background: var(--line); color: var(--text); font: inherit; font-weight: 600; font-size: 15px; cursor: pointer;
 }
-.tk-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tk-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .tk-btn-primary { background: var(--accent); color: var(--on-accent); font-weight: 700; }
 .tk-btn-primary:hover { background: var(--accent-hover); }
 .tk-btn-danger { background: transparent; border: 1px solid var(--tk-danger-line); color: var(--tk-danger-text); }
@@ -108,7 +108,7 @@
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 .tk-pick:hover { transform: translateY(-3px); }
-.tk-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tk-pick:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .tk-pick.is-on { border-color: var(--accent); }
 .tk-pick[aria-disabled="true"], .tk-pick:disabled { opacity: 0.45; cursor: not-allowed; }
 .tk-pick:disabled:hover { transform: none; }

@@ -66,7 +66,7 @@
 .lp-react-emo { display: flex; justify-content: space-between; gap: 4px; }
 .lp-react-e, .lp-react-e2, .lp-react-more { width: 40px; height: 40px; min-width: 0; border-radius: 10px; border: 0; background: #24212e; font-size: 22px; }
 .lp-react-more { display: grid; place-items: center; padding: 0; color: #c9c4d6; font-size: 16px; line-height: 1; cursor: pointer; }
-.lp-react-more:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.lp-react-more:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-react-e2 { cursor: pointer; padding: 0; }
 .lp-react-emo2[hidden] { display: none; }
 .lp-react-note { display: none; }
@@ -81,7 +81,7 @@
 .lp-react-also input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .lp-react-cb { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 2px solid #6f6a7d; color: transparent; font-size: 11px; font-weight: 800; box-sizing: border-box; }
 .lp-react-also input:checked + .lp-react-cb { background: var(--accent); border-color: var(--accent); color: #0c0b11; }
-.lp-react-also input:focus-visible + .lp-react-cb { outline: 3px solid var(--accent); outline-offset: 2px; }
+.lp-react-also input:focus-visible + .lp-react-cb { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 
 /* Éventail d'emojis (tactile) : pilule de boutons ronds, « Note » ouvre le champ. */
 .lp-react.is-fan:not(.is-note) { right: 16px; bottom: calc(var(--lp-bar-h, 80px) + 4px); width: auto; flex-direction: row; gap: 2px; padding: 4px; border-radius: 26px; background: rgba(23, 21, 31, 0.94); }
@@ -127,7 +127,7 @@
 }
 .lp-cm-op.is-on.lp-cm-op:not(.lp-cm-chk) { background: #24212e; }
 .lp-cm-op:disabled { opacity: 0.5; cursor: default; }
-.lp-cm-op:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+.lp-cm-op:focus-visible { outline: var(--focus-ring-key); outline-offset: -2px; }
 .lp-cm-opt { flex: 1; min-width: 0; }
 /* Cases « Masquer » : deux colonnes dans un menu de 440 px (colonne de droite un peu plus large), libellés sur une seule ligne. */
 .lp-cm-chk { gap: 8px; padding: 0 6px; }
@@ -166,7 +166,7 @@
 .lp-cs-empty { color: #a19dae; }
 .lp-cs-friends li { color: #c9c4d6; font-size: 13px; }
 .lp-cs-note { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0 8px; border: 0; border-radius: 10px; background: #24212e; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
-.lp-cs-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.lp-cs-note:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-cs-body ul { display: flex; flex-direction: column; gap: 4px; }
 .lp-cs-av { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 28%; color: #fff; font-family: Sora, sans-serif; font-weight: 800; font-size: 11px; }
 .lp-cs-at { flex: none; color: #a19dae; font-variant-numeric: tabular-nums; }

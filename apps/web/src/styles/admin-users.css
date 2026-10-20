@@ -45,7 +45,7 @@
 .adm-tabs [role="tab"] { flex: none; min-height: 40px; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--dim); font-size: 13.5px; font-weight: 700; white-space: nowrap; box-shadow: inset 0 -2px 0 transparent; transition: color 0.15s; }
 .adm-tabs [role="tab"]:hover { color: var(--text); }
 .adm-tabs [role="tab"][aria-selected="true"] { color: var(--text); font-weight: 800; box-shadow: inset 0 -2px 0 var(--accent); }
-.adm-tabs [role="tab"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.adm-tabs [role="tab"]:focus-visible { outline: var(--focus-ring-key); outline-offset: -2px; }
 .adm-tab-n { opacity: 0.7; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .adm-tabpanel { display: flex; flex-direction: column; gap: 8px; padding-top: 6px; min-width: 0; }
 

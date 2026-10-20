@@ -76,7 +76,7 @@
 @media (max-width: 700px) { .lp-cols { grid-template-columns: 1fr; overflow-y: auto; } .lp-col { border-left: 0; overflow: visible; } }
 .lp-eps-bar { padding: 4px 18px 10px; }
 .lp-select { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-weight: 700; }
-.lp-select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.lp-select:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 
 /* Barre de position : lu = corail, tampon = blanc 30 %, reste = blanc 15 % ; les segments (intro, récap, générique)
  * sont de fins repères AU-DESSUS de la barre, jamais des blocs dans la progression. */

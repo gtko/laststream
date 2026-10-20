@@ -15,7 +15,7 @@
 
 .hid-tile { position: relative; min-width: 0; }
 .hid-card { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.hid-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 12px; }
+.hid-card:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); border-radius: 12px; }
 .hid-media { position: relative; display: block; width: 100%; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 10px; background: var(--line-2); border: 2px solid transparent; transition: border-color 0.15s, box-shadow 0.15s; }
 .hid-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .hid-media.no-img { background: linear-gradient(160deg, #2a2735, #17151f); }

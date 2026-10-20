@@ -7,7 +7,7 @@
 .set-check { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; color: var(--soft); cursor: pointer; }
 .set-check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .tv-field select, .tv-field input[type="number"] { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; }
-.tv-field select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.tv-field select:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 .set-tests { display: flex; flex-direction: column; gap: 4px; }
 .set-test { font-size: 14px; color: var(--soft); }
 .set-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--soft); margin-right: 4px; vertical-align: middle; }
@@ -53,6 +53,9 @@
 .pf-av { position: relative; width: 112px; height: 112px; border-radius: 22px; display: grid; place-items: center; font-family: var(--ff-title); font-size: 46px; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); border: 3px solid transparent; transition: transform 0.15s, border-color 0.15s; }
 .pf:hover .pf-av, .pf:focus-visible .pf-av { transform: scale(1.06); border-color: var(--text); }
 .pf:hover, .pf:focus-visible { color: var(--text); }
+/* Anneau autour de l'avatar (même rayon, écart 3px), pas autour de toute la tuile. */
+.pf:focus-visible { outline: none; }
+.pf:focus-visible .pf-av { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .pf-add .pf-av { background: var(--surface); color: var(--muted); border: 2px dashed var(--line-2); font-size: 40px; }
 .pf-lock, .pf-edit { position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; }
 .pf-lock svg, .pf-edit svg { width: 16px; height: 16px; }
@@ -135,7 +138,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 
 /* ---------- Cartes « Pourquoi tu vas aimer » : déploiement vers le haut ---------- */
 .f-why.is-live { position: relative; padding: 0; gap: 0; cursor: default; }
-.f-why.is-live:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.f-why.is-live:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .f-why-inner { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 12px 16px; border-radius: 14px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; transition: max-height 0.32s ease, background-color 0.2s; }
 .f-why.is-open .f-why-inner { background: rgba(23, 21, 31, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.12); margin: -1px; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35); }
 .f-why.is-open .f-why-text { display: block; -webkit-line-clamp: unset; overflow: visible; }
@@ -213,7 +216,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .star .half { position: absolute; top: 0; bottom: 0; width: 50%; z-index: 1; }
 .star .half.l { left: 0; }
 .star .half.r { right: 0; }
-.star .half:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+.star .half:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); border-radius: 4px; }
 .rate-pop { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 350; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 16px; padding: 14px 20px; border-radius: 18px; background: rgba(23, 21, 31, 0.95); max-width: calc(100vw - 24px); box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55); }
 .rate-q { font-weight: 700; font-size: 15px; }
 .t-rating { position: absolute; left: 8px; bottom: 34px; z-index: 2; padding: 3px 9px; border-radius: 999px; background: rgba(12, 11, 17, 0.82); font-size: 12px; font-weight: 800; color: var(--accent); }
@@ -298,7 +301,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .soon-item { position: relative; flex: 0 0 340px; width: 340px; min-width: 0; }
 .soon-card { display: block; width: 100%; border-radius: 12px; transition: transform 0.2s; }
 .soon-card:hover, .soon-card:focus-visible { transform: scale(1.02); outline: none; }
-.soon-card:focus-visible .soon { outline: 3px solid var(--accent); outline-offset: -3px; }
+.soon-card:focus-visible .soon { outline: var(--focus-ring-key); outline-offset: -3px; }
 .soon-item .soon-bell { bottom: 12px; }
 .cal-agenda-list .soon-item { flex: none; width: 100%; max-width: 360px; }
 @media (max-width: 640px) { .soon-item { flex-basis: 260px; width: 260px; } .soon-code { font-size: 22px; } }

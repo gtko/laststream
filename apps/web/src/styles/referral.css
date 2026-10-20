@@ -95,7 +95,7 @@
 .rf-back:disabled { opacity: 0.5; cursor: progress; }
 .rf-arrow { transition: transform 0.18s ease; }
 .rf-cta:hover .rf-arrow { transform: translateX(3px); }
-.rf-cta:focus-visible, .rf-link:focus-visible, .rf-back:focus-visible, .rf-check input:focus-visible { outline: 2px solid var(--accent, #ff5a36); outline-offset: 3px; }
+.rf-cta:focus-visible, .rf-link:focus-visible, .rf-back:focus-visible, .rf-check input:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 
 .rf-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .rf-field > label { font-size: 13px; font-weight: 600; color: var(--muted, #c9c4d6); }

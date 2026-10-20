@@ -55,6 +55,7 @@ import { parseJoinHash } from './party/join';
 import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
 import './ui/scrollbars.js';
+import './ui/focusRing.js';
 import './ui/rows.js';
 import './ui/ctxmenu.js';
 import './ui/hover.js';

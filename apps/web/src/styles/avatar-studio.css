@@ -19,7 +19,7 @@
 .as-count { margin-left: auto; font-size: 13px; color: var(--dim); white-space: nowrap; }
 .as-banner { flex: none; margin: 0; padding: 12px 32px; background: #10261f; color: #8fe0c4; font-size: 14px; }
 .as-body { flex: 1; min-height: 0; display: flex; }
-.as-overlay :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+.as-overlay :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .as-h2, .as-h3 { outline: none; }
 
 /* ---------- Rail des familles ---------- */

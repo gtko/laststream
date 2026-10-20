@@ -11,7 +11,7 @@
   pointer-events: auto; cursor: pointer;
 }
 .lp-note:focus { outline: none; }
-.lp-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.lp-note:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-note-dot {
   position: absolute; inset: 0; box-sizing: border-box; border-radius: 50%;
   border: 2px solid rgba(12, 11, 17, 0.9); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
@@ -93,7 +93,7 @@
   flex: 1 1 180px; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px;
   border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit;
 }
-.lp-react-in:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.lp-react-in:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 .lp-react-c { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .lp-react-send { min-height: 44px; }
 @media (max-width: 640px) {

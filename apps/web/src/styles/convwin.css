@@ -16,7 +16,7 @@ body.lp-open .cvw-root { z-index: 619; }
 .cvw-root > * { pointer-events: auto; }
 .cvw-root *, .cvd-veil *, .cvl * { box-sizing: border-box; }
 :where(.cvw-root, .cvd-veil, .cvl) button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-.cvw-root :focus-visible, .cvd-veil :focus-visible, .cvl :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cvw-root :focus-visible, .cvd-veil :focus-visible, .cvl :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .cvw-slot { display: flex; }
 .cvw-panel { position: relative; width: 440px; height: min(640px, calc(100dvh - 24px)); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-bottom: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45); animation: cvw-in 0.18s ease-out; }
 @keyframes cvw-in { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }

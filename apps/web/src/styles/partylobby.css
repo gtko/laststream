@@ -41,7 +41,8 @@ body.has-party-lobby { overflow: hidden; }
 .pl-btn.is-sm { height: 34px; padding: 0 12px; }
 .pl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .pl-btn svg, .pl-ico svg { width: auto; height: auto; }
-.pl button:focus-visible, .pl input:focus-visible, .pl [tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pl button:focus-visible, .pl [tabindex]:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.pl input:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 
 /* Participants */
 .pl-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
@@ -186,7 +187,7 @@ body.has-party-lobby { overflow: hidden; }
 .ps-btn:first-of-type { margin-left: 6px; }
 .ps-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .ps-btn svg { width: 16px; height: 16px; }
-.ps-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ps-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .ps-event { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 9; max-width: calc(100% - 520px); min-width: 0; height: 40px; padding: 0 14px 0 8px; border-radius: 20px; display: flex; align-items: center; gap: 8px;
   background: rgba(23, 21, 31, 0.9); font-size: 13px; color: var(--text); animation: ps-drop 0.25s ease-out; }
 .ps-event .wp-av { width: 24px; height: 24px; font-size: 11px; }
@@ -236,7 +237,8 @@ body.has-party-lobby { overflow: hidden; }
 .wp-head-invite { padding: 0 12px; }
 .wp-head-menu { width: 34px; display: grid; place-items: center; padding: 0; }
 .wp-head-btn:hover, .wp-head-menu[aria-expanded="true"] { background: #33303f; }
-.wp-head-btn:focus-visible, .wp-send input:focus-visible, .wp-send .btn:focus-visible, .wp-react button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wp-head-btn:focus-visible, .wp-send .btn:focus-visible, .wp-react button:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.wp-send input:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 .wp-menu[hidden] { display: none; }
 .wp-menu { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #24212e; max-height: 55%; overflow-y: auto; background: #12101a; }
 @media (min-width: 768px) {
@@ -324,9 +326,9 @@ body.has-party-lobby { overflow: hidden; }
 .pld-seg-o b { font-size: 13px; font-weight: 700; }
 .pld-seg-o i { font-style: normal; font-size: 11px; color: var(--dim); }
 .pld-seg-o input:checked + span { background: var(--pl-chip-on); color: var(--text); }
-.pld-seg-o input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pld-seg-o input:focus-visible + span { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .pld-sec { display: flex; flex-direction: column; gap: 8px; }
-.pld-friends { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.pld-friends { list-style: none; margin: 0; padding: 3px; max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .pld-friend { position: relative; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--pl-chip); cursor: pointer; }
 .pld-friend:hover { border-color: #3a3647; }
 .pld-friend-t { flex: 1; min-width: 0; display: flex; flex-direction: column; font-size: 13px; }
@@ -337,12 +339,12 @@ body.has-party-lobby { overflow: hidden; }
 .pld-friend input:checked ~ .pld-check { background: var(--accent); border-color: var(--accent); }
 .pld-friend input:checked ~ .pld-check::after { content: ''; width: 10px; height: 6px; border: solid var(--on-accent); border-width: 0 0 2.5px 2.5px; transform: rotate(-45deg) translate(1px, -1px); }
 .pld-friend:has(input:checked) { border-color: var(--accent); }
-.pld-friend:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pld-friend:has(input:focus-visible) { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .pld-actions { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .pld-actions .pl-btn { width: 100%; }
 .pld-link { align-self: center; min-height: 44px; padding: 0 12px; color: var(--soft); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .pld-link:hover { color: var(--text); }
-.pld button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pld button:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 @media (max-width: 767px) {
   .modal-backdrop:has(.pld-modal) { align-items: flex-end; padding: 0; }
   .modal.pld-modal { width: 100%; max-height: 92vh; border-radius: 20px 20px 0 0; border-bottom: 0; animation: pld-up 0.22s ease-out; }

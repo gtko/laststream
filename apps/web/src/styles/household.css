@@ -38,7 +38,7 @@
 
 .hh-panel :focus-visible,
 .hh-row :focus-visible,
-.hh-list :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hh-list :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 
 /* En-tête : avatar avec pastille clé, nom du profil, fermer */
 .hh-head { display: flex; align-items: center; gap: 16px; }

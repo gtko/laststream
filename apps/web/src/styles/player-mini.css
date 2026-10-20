@@ -9,7 +9,7 @@
   transition: box-shadow 0.18s, transform 0.18s;
 }
 .lp.is-mini:hover { box-shadow: 0 18px 52px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.2); }
-.lp.is-mini:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.lp.is-mini:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp.is-mini.is-dragging { cursor: grabbing; transition: none; }
 .lp.is-mini.is-dragging .lp-video { pointer-events: none; }
 .lp.is-mini.is-mpv.is-video { background: transparent; }
@@ -28,7 +28,7 @@
 }
 .lp-mini-btn svg { width: 20px; height: 20px; }
 .lp-mini-btn:hover { background: rgba(12, 11, 17, 0.92); }
-.lp-mini-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.lp-mini-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .lp-mini-close { top: 8px; right: 8px; }
 .lp-mini-expand { top: 8px; right: 52px; }
 .lp-mini-play { top: 50%; left: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; }
