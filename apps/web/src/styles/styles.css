@@ -21,6 +21,10 @@
   /* Boutons, tuiles, cases : anneau au clavier seulement (data-input="kbd", ui/focusRing.js). Champs de texte : toujours. */
   --focus-ring-key: none;
   --focus-ring-field: var(--focus-ring);
+  --input-border: #6b6680; /* contour des champs : contraste >= 3:1 sur --bg */
+  --danger: #ff8f80;
+  --danger-text: #ffc2b8;
+  --danger-bg: rgba(255, 90, 54, 0.12);
   --ff-title: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --ff-body: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --gutter: 64px;

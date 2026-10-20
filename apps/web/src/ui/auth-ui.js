@@ -150,18 +150,39 @@ async function createFromReferral({ username, password, autoFriend }) {
   }
 }
 
+const EYE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.1 10.1 0 0 1 12 19C5.6 19 2 12 2 12a18 18 0 0 1 5.1-5.9M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a18 18 0 0 1-2.2 3.2M1 1l22 22"/><path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"/></svg>';
+const ALERT_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 7v6M12 17h.01"/></svg>';
+const SPIN_SVG = '<svg class="auth-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 3a9 9 0 1 1-9 9"/></svg>';
+const BACK_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>';
+
+/** Message de l'écran : une erreur (icône) ou une information neutre (vérification du lien). Vide : le bloc reste en place, invisible. */
+function msgHTML(text, info) {
+  return '<p class="auth-msg' + (info ? ' is-info' : '') + '" id="auth-msg" role="alert">' + (text ? (info ? '' : ALERT_SVG) + '<span>' + esc(text) + '</span>' : '') + '</p>';
+}
+
+/** Champ : label au-dessus, saisie de 48 px ; `toggle` ajoute le bouton œil (mot de passe). */
+function fieldHTML(o) {
+  const id = 'auth-f-' + o.name;
+  return '<div class="auth-field"><label class="auth-label" for="' + id + '">' + o.label + '</label><span class="auth-input">' +
+    '<input id="' + id + '" type="' + o.type + '" name="' + o.name + '" autocomplete="' + o.auto + '"' + (o.attrs || '') + (o.invalid ? ' aria-invalid="true" aria-describedby="auth-msg"' : '') + '>' +
+    (o.toggle ? '<button type="button" class="auth-eye" data-pw-toggle aria-label="Afficher le mot de passe">' + EYE_SVG + '</button>' : '') + '</span></div>';
+}
+
 /** Étape 1 de « Rejoindre Laststream » : coller le lien (ou le code), puis valider. Le lien est vérifié auprès du serveur. */
 function inviteCodeHTML(msg) {
   const st = invite.status;
-  const note = msg || (st === 'invalid'
+  const checking = !msg && st === 'checking';
+  const err = msg || (st === 'invalid'
     ? (referralReasonText(invite.reason) || 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.')
-    : st === 'checking' ? 'Vérification du lien…' : '');
-  return '<form class="tv-form auth-form auth-invite" data-invite-form>' +
-    '<label class="tv-field">Colle ton lien ou code d’invitation<input type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(st === 'invalid' ? '' : invite.code) + '"></label>' +
-    '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(note) + '</p>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Valider</button></div>' +
-    '<p class="tv-form-note">Le lien entier ou seulement son code : les deux fonctionnent.</p></form>' +
-    (isOfficialBase(getBase()) ? '' : '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>');
+    : '');
+  return '<form class="auth-form auth-invite" data-invite-form>' +
+    fieldHTML({ label: 'Colle ton lien ou code d’invitation', type: 'text', name: 'code', auto: 'off', invalid: !!err,
+      attrs: ' autocapitalize="none" spellcheck="false" placeholder="Lien ou code d’invitation" value="' + esc(st === 'invalid' ? '' : invite.code) + '"' }) +
+    msgHTML(checking ? 'Vérification du lien…' : err, checking) +
+    '<p class="auth-note">Le lien entier ou seulement son code : les deux fonctionnent.</p>' +
+    '<button type="submit" class="btn btn-primary auth-btn">Valider</button></form>' +
+    (isOfficialBase(getBase()) ? '' : '<button type="button" class="link-btn auth-link" data-invite-first>C’est le premier compte de ce serveur</button>');
 }
 
 /** Étape 2 : l'invitation est reconnue (qui invite). Rien à afficher pour le premier compte du serveur. */
@@ -173,34 +194,37 @@ function inviteStatusHTML() {
 
 /** Nom d’utilisateur et mot de passe ; à l’inscription, le jeton d’amorçage du premier compte si le serveur l’exige. */
 function credentialsFormHTML(reg, msg) {
-  return '<form id="auth-form" class="tv-form auth-form" autocomplete="on">' +
-    '<label class="tv-field">Nom d’utilisateur<input type="text" name="username" autocomplete="username" autocapitalize="none" required value=""></label>' +
-    '<label class="tv-field">Mot de passe<input type="password" name="password" autocomplete="' + (reg ? 'new-password' : 'current-password') + '" required></label>' +
-    (reg && invite.first ? '<label class="tv-field">Jeton d’amorçage (premier compte, si le serveur l’exige)<input type="password" name="bootstrap" autocomplete="off"></label>' : '') +
-    '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(msg || '') + '</p>' +
-    '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">' + (reg ? 'Créer mon compte' : 'Se connecter') + '</button></div></form>';
+  return '<form id="auth-form" class="auth-form" autocomplete="on">' +
+    fieldHTML({ label: 'Nom d’utilisateur', type: 'text', name: 'username', auto: 'username', attrs: ' autocapitalize="none" placeholder="ex. camille" required' }) +
+    fieldHTML({ label: 'Mot de passe', type: 'password', name: 'password', auto: reg ? 'new-password' : 'current-password', attrs: ' required', toggle: true }) +
+    (reg && invite.first ? fieldHTML({ label: 'Jeton d’amorçage (premier compte, si le serveur l’exige)', type: 'password', name: 'bootstrap', auto: 'off' }) : '') +
+    msgHTML(msg) +
+    '<button type="submit" class="btn btn-primary auth-btn" data-auth-submit>' + (reg ? 'Créer mon compte' : 'Se connecter') + '</button></form>';
 }
 
-/** Vue « Connexion » (par défaut) : le formulaire, puis « Pas encore de compte ? » pour ouvrir l’invitation. */
+/** Titre et sous-titre court d'une vue. */
+const headHTML = (title, lead) => '<div class="auth-head"><h1 class="auth-title">' + title + '</h1><p class="auth-lead">' + lead + '</p></div>';
+
+/** Vue « Connexion » (par défaut) : le formulaire, « ou », puis « Pas encore de compte ? » pour ouvrir l’invitation. */
 function loginViewHTML(msg) {
-  return '<h1 class="auth-title">Connexion</h1>' + credentialsFormHTML(false, msg) +
-    '<section class="auth-new" aria-labelledby="auth-new-title"><h2 class="auth-sub" id="auth-new-title">Pas encore de compte ?</h2>' +
-    '<p class="tv-form-note">Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.</p>' +
-    '<button type="button" class="btn auth-new-btn" data-auth-mode="invite">J’ai un lien d’invitation</button></section>';
+  return headHTML('Connexion', 'Retrouve tes profils, ta bibliothèque et ta progression.') + credentialsFormHTML(false, msg) +
+    '<div class="auth-sep" aria-hidden="true">ou</div>' +
+    '<section class="auth-new" aria-labelledby="auth-new-title"><p class="auth-note" id="auth-new-title">Pas encore de compte ? Les comptes se créent sur invitation : demande un lien à un ami déjà inscrit.</p>' +
+    '<button type="button" class="btn auth-btn auth-btn-alt" data-auth-mode="invite">J’ai un lien d’invitation</button></section>';
 }
 
 /** Vue « Rejoindre Laststream » : coller le lien (étape 1), puis créer son compte (étape 2). */
 function inviteViewHTML(msg) {
   const ready = invite.first || invite.status === 'valid' || invite.status === 'unknown';
-  return '<h1 class="auth-title">Rejoindre Laststream</h1>' +
+  return headHTML('Rejoindre Laststream', ready ? 'Choisis ton nom d’utilisateur et ton mot de passe.' : 'Colle le lien que ton ami t’a envoyé pour créer ton compte.') +
     (ready ? inviteStatusHTML() + credentialsFormHTML(true, msg) : inviteCodeHTML(msg)) +
-    '<button type="button" class="link-btn" data-auth-mode="login">← J’ai déjà un compte</button>';
+    '<button type="button" class="auth-back" data-auth-mode="login">' + BACK_SVG + 'J’ai déjà un compte</button>';
 }
 
 function loginHTML(msg) {
   const body = mode === 'invite' ? inviteViewHTML(msg) : loginViewHTML(msg);
-  return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' + body +
-    (isOfficialBase(getBase()) ? '' : '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>') +
+  return '<div class="auth-card auth-panel"><div class="auth-brand">' + brand() + '</div>' + body +
+    (isOfficialBase(getBase()) ? '' : '<p class="auth-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>') +
     '</div>';
 }
 
@@ -228,23 +252,63 @@ function setMode(next) {
   if (next === 'invite' && invite.status !== 'checking') invite.status = 'none';
 }
 
+/** Envoi en cours : bouton désactivé avec chargeur, champs en lecture seule, formulaire occupé (aria-busy). */
+function setBusy(form, on) {
+  form.setAttribute('aria-busy', String(on));
+  form.querySelectorAll('input').forEach((i) => { i.readOnly = on; });
+  const alt = el().querySelector('.auth-btn-alt');
+  if (alt) alt.disabled = on;
+  const btn = form.querySelector('[data-auth-submit]');
+  if (!btn) return;
+  btn.disabled = on;
+  if (on) {
+    btn.dataset.label = btn.textContent;
+    btn.innerHTML = SPIN_SVG + (mode === 'invite' ? 'Création du compte…' : 'Connexion en cours…');
+  } else if (btn.dataset.label) btn.textContent = btn.dataset.label;
+}
+
+/** Erreur de saisie ou d'identifiants (4xx de validation) : les champs sont fautifs. Réseau coupé, 5xx, limitation : non. */
+const isInputError = (err) => err instanceof UserApiError && err.status >= 400 && err.status < 500 && err.status !== 429 && !['rate_limited', 'network', 'pin_locked'].includes(err.code);
+
+/** Affiche l'erreur ; pour une erreur de saisie, marque les champs (aria-invalid) et remet le focus sur le premier. */
+function showFormError(form, err) {
+  const msg = el().querySelector('#auth-msg');
+  if (msg) msg.innerHTML = ALERT_SVG + '<span>' + esc(errorText(err)) + '</span>';
+  if (!isInputError(err)) return;
+  const fields = [...form.querySelectorAll('input[name="username"], input[name="password"]')];
+  fields.forEach((i) => { i.setAttribute('aria-invalid', 'true'); i.setAttribute('aria-describedby', 'auth-msg'); });
+  if (fields[0]) fields[0].focus();
+}
+
+/** Remet les champs mot de passe masqués (type password) avant l'envoi : le gestionnaire de mots de passe doit les reconnaître. */
+function maskPasswords(form) {
+  form.querySelectorAll('[data-pw-toggle]').forEach((eye) => {
+    const input = eye.parentElement && eye.parentElement.querySelector('input');
+    if (input) input.type = 'password';
+    eye.innerHTML = EYE_SVG;
+    eye.setAttribute('aria-label', 'Afficher le mot de passe');
+  });
+}
+
 async function submitLogin(form) {
   const f = form.elements;
   const msg = el().querySelector('#auth-msg');
-  const btn = form.querySelector('[type=submit]');
-  btn.disabled = true;
-  if (msg) msg.textContent = '';
+  if (msg) msg.innerHTML = '';
+  form.querySelectorAll('[aria-invalid]').forEach((i) => { i.removeAttribute('aria-invalid'); i.removeAttribute('aria-describedby'); });
+  const values = { username: f.username.value, password: f.password.value, bootstrap: f.bootstrap && f.bootstrap.value };
+  maskPasswords(form);
+  setBusy(form, true);
   try {
     if (mode === 'invite') {
-      await signUp(f.username.value, f.password.value, f.bootstrap && f.bootstrap.value, invite.first ? '' : invite.code);
+      await signUp(values.username, values.password, values.bootstrap, invite.first ? '' : invite.code);
       forgetInviteInUrl();
       invite.code = ''; invite.status = 'none';
-    } else await signIn(f.username.value, f.password.value);
+    } else await signIn(values.username, values.password);
     route();
   } catch (err) {
-    btn.disabled = false;
+    setBusy(form, false);
     if (err instanceof UserApiError && err.code === 'invite_invalid') { invite.status = 'invalid'; invite.first = false; showLogin(errorText(err)); return; }
-    if (msg) msg.textContent = errorText(err);
+    showFormError(form, err);
   }
 }
 
@@ -432,6 +496,16 @@ export function openLogin() {
 document.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || !t.closest('#auth')) return;
+  const eye = t.closest('[data-pw-toggle]');
+  if (eye) {
+    const input = eye.parentElement && eye.parentElement.querySelector('input');
+    if (!input) return;
+    const reveal = input.type === 'password';
+    input.type = reveal ? 'text' : 'password';
+    eye.innerHTML = reveal ? EYE_OFF_SVG : EYE_SVG;
+    eye.setAttribute('aria-label', reveal ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+    return;
+  }
   const m = t.closest('[data-auth-mode]');
   if (m) { setMode(m.dataset.authMode); showLogin(); return; }
   if (t.closest('[data-invite-first]')) { invite.first = true; showLogin(); return; }

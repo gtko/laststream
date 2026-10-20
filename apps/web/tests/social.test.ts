@@ -201,6 +201,116 @@ describe('écran d’inscription', () => {
     expect(overlay().textContent).toContain('C’est le premier compte de ce serveur');
     expect(overlay().textContent).toContain('Le compte vit sur ton serveur lastAddon');
   });
+
+  it('serveur officiel : le mot « serveur » n’apparaît ni en Connexion ni en Rejoindre (champs et notes compris)', async () => {
+    setServer(PUBLIC_BASE);
+    await openAuth('/');
+    expect(overlay().textContent).not.toMatch(/serveur/i);
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
+    await tick();
+    expect(overlay().textContent).not.toMatch(/serveur/i);
+  });
+
+  it('bouton œil : bascule le champ mot de passe et son libellé accessible', async () => {
+    await openAuth('/');
+    const input = $<HTMLInputElement>('input[name="password"]', overlay())!;
+    const eye = $<HTMLButtonElement>('[data-pw-toggle]', overlay())!;
+    expect(input.type).toBe('password');
+    expect(eye.getAttribute('aria-label')).toBe('Afficher le mot de passe');
+    expect(eye.type).toBe('button');
+    eye.click();
+    expect(input.type).toBe('text');
+    expect(eye.getAttribute('aria-label')).toBe('Masquer le mot de passe');
+    eye.click();
+    expect(input.type).toBe('password');
+    expect(eye.getAttribute('aria-label')).toBe('Afficher le mot de passe');
+    // Le bouton est hors du label : le nom accessible du champ reste « Mot de passe ».
+    expect($('label[for="auth-f-password"]', overlay())!.textContent).toBe('Mot de passe');
+    expect(input.id).toBe('auth-f-password');
+    // Œil ouvert puis envoi : le champ revient en type password (gestionnaire de mots de passe, rien de lisible après une erreur).
+    routes = (c) => (c.path === '/user/login' ? json({ error: 'invalid_credentials' }, 401) : undefined);
+    eye.click();
+    expect(input.type).toBe('text');
+    const form = $<HTMLFormElement>('#auth-form', overlay())!;
+    (form.elements.namedItem('username') as HTMLInputElement).value = 'camille';
+    input.value = 'faux';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await tick(80);
+    expect(input.type).toBe('password');
+    expect(eye.getAttribute('aria-label')).toBe('Afficher le mot de passe');
+  });
+
+  it('erreur hors saisie (serveur 500) : message affiché, sans aria-invalid ni déplacement du focus', async () => {
+    await openAuth('/', (c) => (c.path === '/user/login' ? json({ error: 'internal' }, 500) : undefined));
+    const form = $<HTMLFormElement>('#auth-form', overlay())!;
+    const user = form.elements.namedItem('username') as HTMLInputElement;
+    user.value = 'camille';
+    (form.elements.namedItem('password') as HTMLInputElement).value = 'motdepasse1';
+    const btn = $<HTMLButtonElement>('[data-auth-submit]', overlay())!;
+    btn.focus();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await tick(80);
+    expect($('#auth-msg', overlay())!.textContent).toContain('Erreur (internal)');
+    expect(user.hasAttribute('aria-invalid')).toBe(false);
+    expect(document.activeElement).not.toBe(user);
+  });
+
+  it('identifiants refusés : message en alerte, champs aria-invalid, focus sur le premier, bouton rétabli', async () => {
+    await openAuth('/', (c) => (c.path === '/user/login' ? json({ error: 'invalid_credentials' }, 401) : undefined));
+    const form = $<HTMLFormElement>('#auth-form', overlay())!;
+    expect($('#auth-msg', overlay())!.getAttribute('role')).toBe('alert');
+    expect($('#auth-msg', overlay())!.textContent).toBe('');
+    const user = form.elements.namedItem('username') as HTMLInputElement;
+    const pass = form.elements.namedItem('password') as HTMLInputElement;
+    user.value = 'camille';
+    pass.value = 'faux';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await tick(80);
+    expect($('#auth-msg', overlay())!.textContent).toBe('Nom d’utilisateur ou mot de passe incorrect.');
+    expect($('#auth-msg svg', overlay())).not.toBeNull();
+    expect(user.getAttribute('aria-invalid')).toBe('true');
+    expect(pass.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(user);
+    expect(form.getAttribute('aria-busy')).toBe('false');
+    const btn = $<HTMLButtonElement>('[data-auth-submit]', overlay())!;
+    expect(btn.disabled).toBe(false);
+    expect(btn.textContent).toBe('Se connecter');
+    expect(user.readOnly).toBe(false);
+  });
+
+  it('connexion en cours : bouton désactivé « Connexion en cours… », formulaire occupé, champs en lecture seule, invitation désactivée', async () => {
+    await openAuth('/');
+    let release: (r: Response) => void = () => undefined;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { release = r; })));
+    const form = $<HTMLFormElement>('#auth-form', overlay())!;
+    (form.elements.namedItem('username') as HTMLInputElement).value = 'camille';
+    (form.elements.namedItem('password') as HTMLInputElement).value = 'motdepasse1';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await tick(10);
+    const btn = $<HTMLButtonElement>('[data-auth-submit]', overlay())!;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe('Connexion en cours…');
+    expect($('.auth-spin', btn)).not.toBeNull();
+    expect(form.getAttribute('aria-busy')).toBe('true');
+    expect((form.elements.namedItem('username') as HTMLInputElement).readOnly).toBe(true);
+    expect((form.elements.namedItem('password') as HTMLInputElement).readOnly).toBe(true);
+    expect($<HTMLButtonElement>('[data-auth-mode="invite"]', overlay())!.disabled).toBe(true);
+    release(json({ error: 'invalid_credentials' }, 401));
+    await tick(80);
+    expect($<HTMLButtonElement>('[data-auth-mode="invite"]', overlay())!.disabled).toBe(false);
+  });
+
+  it('lien invalide saisi : message en alerte et champ du code aria-invalid', async () => {
+    await openAuth('/', (c) => (c.path.startsWith('/user/invites/check') ? json({ valid: false, reason: 'unknown' }) : undefined));
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
+    await tick();
+    const f = $<HTMLFormElement>('[data-invite-form]', overlay())!;
+    (f.elements.namedItem('code') as HTMLInputElement).value = 'Dead1234';
+    f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await tick(80);
+    expect($('input[name="code"]', overlay())!.getAttribute('aria-invalid')).toBe('true');
+    expect($('#auth-msg', overlay())!.textContent).toContain('Ce lien ne correspond à aucun billet');
+  });
 });
 
 // ---------- Billets de parrainage (« Mes billets de parrainage ») ----------
