@@ -375,7 +375,7 @@ export function mountProfileEditor(root, deps) {
 
   const favsBox = zone('favs', h('div', { class: 'spf-favs', role: 'list', 'aria-label': 'Mes favoris' }), () => {
     const tiles = draft.favorites.map((f, i) => favTile(f, i));
-    if (draft.favorites.length < FAVORITES_MAX) tiles.push(h('button', { type: 'button', class: 'spf-fav spf-fav--add', 'aria-label': 'Ajouter un favori', on: { click: addFav } }, icon('plus', 'spf-ic spf-ic--lg')));
+    for (let k = draft.favorites.length; k < FAVORITES_MAX; k++) tiles.push(h('button', { type: 'button', class: 'spf-fav spf-fav--add', 'aria-label': 'Ajouter un favori', on: { click: addFav } }, icon('plus', 'spf-ic spf-ic--lg')));
     return tiles;
   });
   function addFav() {

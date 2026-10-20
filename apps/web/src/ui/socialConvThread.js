@@ -605,7 +605,9 @@ export function createThread(o) {
         b.addEventListener('click', watchWith);
         sugg.append(b);
       }
-      const p = h('button', 'cvw-chip', 'Proposer une watch party', { type: 'button' });
+      const p = h('button', 'cvw-chip', null, { type: 'button' });
+      p.innerHTML = SVG.party;
+      p.append('Proposer une watch party');
       p.addEventListener('click', () => inviteToParty(inf.pid));
       sugg.append(p);
     } else {

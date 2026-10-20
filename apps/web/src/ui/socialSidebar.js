@@ -249,6 +249,24 @@ function restoreFocusIn(box, key) {
 
 function syncOpeners(open) {
   document.querySelectorAll('[data-soc-open]').forEach((b) => b.setAttribute('aria-expanded', String(open)));
+  syncTabCurrent(open);
+}
+
+/** Mobile : l'onglet « Amis » de la barre du bas est l'onglet actif tant que la page Amis est ouverte (l'ancien reprend ensuite). */
+function syncTabCurrent(open) {
+  document.querySelectorAll('.tabbar .tab[data-soc-open]').forEach((amis) => {
+    const bar = amis.closest('.tabbar');
+    if (!bar) return;
+    if (open && root && root.classList.contains('ss-tabbed')) {
+      if (amis.dataset.ssWas === 'amis') return;
+      bar.querySelectorAll('.tab.is-current').forEach((t) => { t.classList.remove('is-current'); t.dataset.ssWas = '1'; });
+      amis.classList.add('is-current');
+      amis.dataset.ssWas = 'amis';
+    } else {
+      if (amis.dataset.ssWas === 'amis') { amis.classList.remove('is-current'); delete amis.dataset.ssWas; }
+      bar.querySelectorAll('.tab[data-ss-was="1"]').forEach((t) => { t.classList.add('is-current'); delete t.dataset.ssWas; });
+    }
+  });
 }
 
 /** Point d'entrée du focus : l'onglet courant sur la liste, le titre dans une sous-vue. */
@@ -457,7 +475,7 @@ function paintConversation() {
 
 /** La barre de navigation du bas est-elle affichée ? Alors la page « Amis » s'arrête au-dessus d'elle (mobile). */
 function syncTabbed() {
-  const bar = document.querySelector('#app:not([hidden]) .tabbar');
+  const bar = document.querySelector('#app:not([hidden]) .tabbar, #detail:not([hidden]) .tabbar');
   root.classList.toggle('ss-tabbed', !!bar);
 }
 
@@ -467,8 +485,9 @@ export function openSidebar() {
   const prev = document.activeElement;
   lastOpener = prev instanceof HTMLElement && !root.contains(prev) ? prev : null;
   root.hidden = false;
-  syncOpeners(true);
+  document.body.classList.add('ss-open');
   syncTabbed();
+  syncOpeners(true);
   view = { name: 'list' };
   paintView();
   setTab(tab);
@@ -484,6 +503,7 @@ export function closeSidebar() {
   leaveMessages();
   if (card) card.close();
   root.hidden = true;
+  document.body.classList.remove('ss-open');
   view = { name: 'list' };
   filterQ = '';
   const q = $('#ss-add-in');
@@ -633,6 +653,7 @@ export function mountSocialSidebar() {
   root.addEventListener('touchmove', onTouchMove, { passive: true });
   root.addEventListener('touchend', onTouchEnd, { passive: true });
   document.addEventListener('click', onOpenerClick);
+  window.addEventListener('hashchange', onHashChange);
   store.subscribe(onStore);
   if (typeof store.onJoinAnswer === 'function') offJoinAnswer = store.onJoinAnswer(onJoinAnswer);
   onAuthChange(syncSocial);
@@ -654,6 +675,12 @@ function closeStatusMenu() {
   const b = $('#ss-status-btn');
   if (m) m.hidden = true;
   if (b) b.setAttribute('aria-expanded', 'false');
+}
+
+/** Mobile : la page « Amis » plein écran se ferme dès que l'adresse change (sauf #/friends). Bureau : la barre reste ouverte. */
+function onHashChange() {
+  if (!isSidebarOpen() || location.hash === '#/friends') return;
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches) closeSidebar();
 }
 
 function onOpenerClick(e) {
