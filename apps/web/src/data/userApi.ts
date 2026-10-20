@@ -172,7 +172,8 @@ export const logout = () => call<void>('/logout', { method: 'POST' });
 /** Page publique de réinitialisation : le jeton vient d'un lien généré par le propriétaire (24 h, usage unique). */
 export const passwordReset = (token: string, password: string) =>
   call<void>('/password-reset', { method: 'POST', body: { token, password }, anonymous: true });
-export const me = (timeoutMs?: number) => call<{ account: AccountDto }>('/me', { timeoutMs });
+/** Session courante. `lockedProfileId` : profil sur lequel la session est verrouillée (invitation au foyer), sinon null. */
+export const me = (timeoutMs?: number) => call<{ account: AccountDto; lockedProfileId?: string | null }>('/me', { timeoutMs });
 
 // ---- Profils ----
 export const listProfiles = () => call<{ profiles: ProfileDto[] }>('/profiles');

@@ -1,5 +1,5 @@
 /* Laststream : point d'entrée. Interface du prototype portée en modules ES, backend lastAddon.
- * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public).
+ * Routes : #/ (accueil), #/movie/{id}, #/tv/{id}, #/person/{id}, #/services, #/service/{slug}, #/collections[/{catégorie}], #/collection/{id}, #/discover, #/library, #/hidden, #/stats, #/friends, #/friend/{pseudo}, #/parties, #/party/{id}, #/tv-live, #/emissions, #/emission/{id}, #/calendar, #/settings, #/admin (propriétaire), #/reset/{jeton} (public), #/foyer/{jeton} (invitation au foyer, sans compte).
  * ?still désactive les aperçus vidéo. */
 import './demoBoot'; // premier module : en démo, stockage du navigateur remplacé par la mémoire avant toute lecture
 import { initSentry } from './observability/sentry';
@@ -52,6 +52,7 @@ import { shareCodeFrom } from './ui/shareModel.js';
 import { createWatchWithHandler } from './data/watchWith';
 import { playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
+import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
 import './ui/scrollbars.js';
 import './ui/rows.js';
@@ -98,8 +99,10 @@ if (!demoMode && !resetTok) {
   }
 }
 const sharePage = !demoMode && shareCodeFrom(location.hash || '', '') !== '';
-// Invitation d'un salon (#/party/join/<id>?t=<jeton>) ou lien public : page sans compte, ni /user/me ni écran de connexion.
-const joinPage = !demoMode && (parseJoinHash(location.hash || '') !== null || sharePage);
+// Invitation au foyer (#/foyer/<jeton>) : page sans compte, comme l'invitation d'un salon.
+const foyerTok = demoMode ? null : parseFoyerToken(location.hash || '');
+// Invitation d'un salon (#/party/join/<id>?t=<jeton>), lien public ou invitation au foyer : page sans compte, ni /user/me ni écran de connexion.
+const joinPage = !demoMode && (parseJoinHash(location.hash || '') !== null || sharePage || foyerTok !== null);
 if (!demoMode) await initAuth({ anonymous: joinPage });
 // Titres importés résolus en arrière-plan : la bibliothèque se redessine quand ils arrivent.
 if (userStore.subscribe) userStore.subscribe(() => { renderLibrary(); if (state.kind === 'library') renderLibraryPage(); });
@@ -124,6 +127,14 @@ if (first && first.kind !== 'friends') {
   app.hidden = true;
   detailEl.hidden = false;
   showView(first);
+}
+// Invitation au foyer : écran sans compte dans la vue détail, chargé seulement à l'ouverture de ce lien.
+if (foyerTok !== null) {
+  state.inDetail = true;
+  app.hidden = true;
+  detailEl.hidden = false;
+  const { mountFoyerJoin } = await import('./ui/foyer-join.js');
+  mountFoyerJoin(detailEl, foyerTok);
 }
 // La coque Windows garde son écran de démarrage jusqu'à `app-ready` : dès que l'accueil est affiché (ou après 8 s au plus).
 Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(() => { announceShellReady(); });

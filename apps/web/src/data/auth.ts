@@ -32,9 +32,14 @@ export const auth = {
   accountId: '',
   /** Propriétaire du serveur (peut régler les quotas d'invitation). */
   isOwner: false,
+  /** Session verrouillée sur un profil invité au foyer (`lockedProfileId` de /user/me) : pas de sélecteur de profils. */
+  locked: false,
   profiles: [] as Profile[],
   profile: null as Profile | null,
 };
+
+/** La session est verrouillée sur un profil (invitation au foyer) : l'interface masque la gestion des profils et du compte. */
+export const isProfileLocked = (): boolean => auth.locked;
 
 let store: ServerUserStore | null = null;
 const listeners = new Set<() => void>();
@@ -112,11 +117,15 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
   // de connexion au lieu du mode local. Seule l'adresse est nécessaire (la config est générée ensuite pour un compte neuf).
   // Serveur injoignable : /user/me échoue et le statut reste 'offline'.
   if (!getBase()) saveSettings({ base: PUBLIC_BASE, mode: 'public' });
+  let lockedId: string | null;
   try {
-    const { account } = await api.me(4000);
+    const me = await api.me(4000);
+    const account = me.account;
+    lockedId = me.lockedProfileId ?? null;
     auth.username = account.username;
     auth.accountId = account.id;
-    auth.isOwner = account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner);
+    // Session verrouillée : jamais les droits de propriétaire du compte.
+    auth.isOwner = !lockedId && (account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner));
     // Session restaurée : la config locale n'est gardée que si elle appartient à ce compte.
     claimLocalConfig(account.username, true);
   } catch (err) {
@@ -127,15 +136,41 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
     if (err instanceof UserApiError && err.status === 404) return useLocal('local'); // serveur sans API /user
     return useLocal('offline');
   }
-  return loadProfiles();
+  return loadProfiles(lockedId);
 }
 
-export async function loadProfiles(): Promise<AuthStatus> {
+/** Profil verrouillé de la session courante (`lockedProfileId` de /user/me), ou null. Une erreur réseau compte comme non verrouillée. */
+async function readLockedProfile(): Promise<string | null> {
+  try {
+    return (await api.me(4000)).lockedProfileId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Charge les profils puis choisit le profil actif. `known` : profil verrouillé déjà lu (`undefined` : lu ici via /user/me).
+ * Session verrouillée : ce profil est activé directement, jamais le sélecteur « Qui regarde ? ».
+ */
+export async function loadProfiles(known?: string | null): Promise<AuthStatus> {
   try {
     const { profiles } = await api.listProfiles();
     auth.profiles = profiles.map(profileFromDto);
   } catch {
     return useLocal('offline');
+  }
+  const lockedId = known !== undefined ? known : await readLockedProfile();
+  auth.locked = lockedId !== null;
+  if (lockedId !== null) {
+    const locked = auth.profiles.find((p) => p.id === lockedId);
+    if (!locked) {
+      // Profil verrouillé supprimé entre-temps : la session n'a plus de profil à ouvrir.
+      clearSession();
+      auth.locked = false;
+      return useLocal('needs-login');
+    }
+    await activate(locked);
+    return auth.status;
   }
   const s = getSession();
   const saved = s?.profileId ? auth.profiles.find((p) => p.id === s.profileId) : undefined;
@@ -274,6 +309,33 @@ export async function signUp(username: string, password: string, bootstrapToken?
   return signIn(username, password);
 }
 
+/**
+ * Session renvoyée par la validation d'une invitation au foyer (`redeemHouseholdInvite`) : enregistrée comme après `signIn`,
+ * puis l'app démarre sur le profil invité (session verrouillée). Le pseudo est celui du compte (lu via /user/me) : la réponse
+ * de redeem ne le donne pas, et l'identifiant saisi par l'invité est celui du profil.
+ */
+export async function adoptSession(s: { token: string; expiresAt: string; profileId: string }): Promise<AuthStatus> {
+  // Le jeton doit être en place avant /user/me (lecture du compte) ; le pseudo n'est connu qu'après cette lecture.
+  setSession(s.token, s.expiresAt, '');
+  let username = '';
+  let accountId = '';
+  let lockedId = s.profileId;
+  try {
+    const me = await api.me(4000);
+    username = me.account.username;
+    accountId = me.account.id;
+    lockedId = me.lockedProfileId ?? s.profileId;
+  } catch {
+    // Compte illisible : pseudo vide, et la config locale n'est pas reprise (claimLocalConfig ci-dessous).
+  }
+  setSession(s.token, s.expiresAt, username);
+  auth.username = username;
+  auth.accountId = accountId;
+  auth.isOwner = false; // session verrouillée : jamais les droits de propriétaire
+  claimLocalConfig(username);
+  return loadProfiles(lockedId);
+}
+
 export async function signOut(silent = false): Promise<void> {
   if (!silent) await api.logout().catch(() => undefined);
   clearSession();
@@ -282,6 +344,7 @@ export async function signOut(silent = false): Promise<void> {
   dropSyncedLists();
   managerId = null;
   auth.isOwner = false;
+  auth.locked = false;
   auth.username = '';
   auth.accountId = '';
   useLocal('needs-login');
