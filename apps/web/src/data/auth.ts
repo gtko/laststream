@@ -330,12 +330,20 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
   } catch {
     // Compte illisible : pseudo vide, et la config locale n'est pas reprise (claimLocalConfig ci-dessous).
   }
-  setSession(s.token, s.expiresAt, username);
-  auth.username = username;
-  auth.accountId = accountId;
-  auth.isOwner = false; // session verrouillée : jamais les droits de propriétaire
-  claimLocalConfig(username);
-  return loadProfiles(lockedId);
+  try {
+    setSession(s.token, s.expiresAt, username);
+    auth.username = username;
+    auth.accountId = accountId;
+    auth.isOwner = false; // session verrouillée : jamais les droits de propriétaire
+    claimLocalConfig(username);
+    const status = await loadProfiles(lockedId);
+    if (status !== 'ready') throw new Error('adoptSession : session non ouverte (' + status + ')');
+    return status;
+  } catch (err) {
+    // Le lien est déjà consommé : une session à moitié ouverte ne reste pas en place.
+    clearSession();
+    throw err;
+  }
 }
 
 export async function signOut(silent = false): Promise<void> {

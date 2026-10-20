@@ -20,14 +20,15 @@ const LINK_STATES = ['expired', 'used', 'revoked', 'unknown'];
 const BACKDROP_MAX = 12;
 const CONFETTI = 14;
 const CONFETTI_COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#ff9a80'];
-/** Jauge du mot de passe (indicative) : libellé et couleur selon le score de 0 à 4. */
-const STRENGTH = [
-  { label: 'Choisis un mot de passe', color: '#a19dae' },
-  { label: 'Faible', color: '#ef6b4a' },
-  { label: 'Correct', color: '#f5b700' },
-  { label: 'Solide', color: '#19c3a6' },
-  { label: 'Excellent', color: '#19c3a6' },
-];
+/** Jauge du mot de passe (indicative) : libellé selon le score de 0 à 4. Les couleurs sont dans foyer.css (`data-level`). */
+const STRENGTH_LABELS = ['Choisis un mot de passe', 'Faible', 'Correct', 'Solide', 'Excellent'];
+/** Numéro d'écran courant : un résultat d'API qui arrive après un changement d'écran est ignoré. */
+let currentScreen = 0;
+let screenSeq = 0;
+const nextScreen = () => {
+  currentScreen = ++screenSeq;
+  return currentScreen;
+};
 /** Trois arguments du foyer affichés à l'arrivée. */
 const PILLS = [
   { label: 'Ton propre mot de passe', body: '<rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path>' },
@@ -80,7 +81,10 @@ export function remainingText(expiresAt, now = Date.now()) {
 /** Adresse d'image acceptée : https seulement (fanart et affiches viennent de sites tiers), sinon ''. */
 const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>\\]+$/.test(u) ? u : '');
 const backdropUrls = (list) => (Array.isArray(list) ? list : []).map(httpsUrl).filter(Boolean).slice(0, BACKDROP_MAX);
-const initialOf = (name) => String(name || '').trim().slice(0, 1).toUpperCase() || '?';
+/** Premier caractère (point de code entier, pas une unité de code UTF-16), en majuscule. */
+const initialOf = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
+/** Texte limité à `n` caractères (points de code entiers) : un nom prérempli ne dépasse jamais la longueur acceptée. */
+const clip = (s, n) => Array.from(String(s || '')).slice(0, n).join('');
 const hostName = (c) => (c && c.inviter && c.inviter.name) || '';
 const profileName = (c) => (c && c.profile && c.profile.name) || '';
 
@@ -139,6 +143,7 @@ function goHome() {
 
 /** Remplace le contenu de la vue, pose le focus sur le titre et branche les actions de l'écran. */
 function paint(ctx, html, bind) {
+  nextScreen();
   ctx.root.innerHTML = html;
   if (bind) bind(ctx.root);
   const title = ctx.root.querySelector('#fj-title');
@@ -148,7 +153,8 @@ function paint(ctx, html, bind) {
 
 /** Vérifie le lien (sans le consommer) puis affiche l'arrivée, ou l'écran d'erreur de son état. */
 function start(ctx) {
-  ctx.root.innerHTML = '<section class="fj-page fj-page--state" aria-busy="true"><div class="fj-center"><p class="fj-loading" role="status">Vérification du lien…</p></div></section>';
+  nextScreen();
+  ctx.root.innerHTML ='<section class="fj-page fj-page--state" aria-busy="true"><div class="fj-center"><p class="fj-loading" role="status">Vérification du lien…</p></div></section>';
   checkHouseholdInvite(ctx.token).then(
     (res) => {
       const c = res && typeof res === 'object' ? res : {};
@@ -224,7 +230,7 @@ function showError(ctx, state) {
 function showForm(ctx) {
   const c = ctx.check;
   const host = hostName(c);
-  const prof = profileName(c) || 'Nouveau profil';
+  const prof = clip(profileName(c), NAME_MAX) || 'Nouveau profil';
   const html = '<section class="fj-page fj-page--form" aria-label="Créer mon accès">' +
     bannerHTML(c.backdrops, 'fj-banner--form') +
     '<div class="fj-bar">' +
@@ -237,7 +243,7 @@ function showForm(ctx) {
       '<h1 id="fj-title" class="fj-h1 fj-h1--form" tabindex="-1">Crée ton accès</h1>' +
       '<p class="fj-sub">Profil <strong>' + esc(prof) + '</strong>' + (host ? ' · foyer de ' + esc(host) : '') + '</p>' +
       '<div class="fj-field"><label for="fj-name">Nom du profil</label>' +
-        '<input id="fj-name" class="fj-input" name="name" type="text" maxlength="' + NAME_MAX + '" autocomplete="off" value="' + esc(profileName(c)) + '" aria-describedby="fj-name-err">' +
+        '<input id="fj-name" class="fj-input" name="name" type="text" maxlength="' + NAME_MAX + '" autocomplete="off" value="' + esc(clip(profileName(c), NAME_MAX)) + '" aria-describedby="fj-name-err">' +
         '<p id="fj-name-err" class="fj-err" hidden></p></div>' +
       '<div class="fj-field"><label for="fj-login">Identifiant de connexion (e-mail ou pseudo)</label>' +
         '<input id="fj-login" class="fj-input" name="login" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="toi@exemple.fr" aria-describedby="fj-login-err">' +
@@ -248,7 +254,7 @@ function showForm(ctx) {
           '<button type="button" class="fj-eye" data-fj-eye aria-label="Afficher le mot de passe" aria-pressed="false" aria-controls="fj-pwd">' + EYE + '</button>' +
         '</div>' +
         '<div class="fj-gauge" aria-hidden="true"><span class="fj-seg"></span><span class="fj-seg"></span><span class="fj-seg"></span><span class="fj-seg"></span></div>' +
-        '<p id="fj-pwd-hint" class="fj-strength"><span class="fj-strength-label" aria-live="polite">' + esc(STRENGTH[0].label) + '</span><span class="fj-dim">Jamais visible par ' + esc(host || 'la personne qui t’invite') + '</span></p>' +
+        '<p id="fj-pwd-hint" class="fj-strength"><span class="fj-strength-label" data-level="0" aria-live="polite">' + esc(STRENGTH_LABELS[0]) + '</span><span class="fj-dim">Jamais visible par ' + esc(host || 'la personne qui t’invite') + '</span></p>' +
         '<p id="fj-pwd-err" class="fj-err" hidden></p></div>' +
       '<div class="fj-field fj-field--check"><label class="fj-check" for="fj-cgu"><input id="fj-cgu" name="cgu" type="checkbox" aria-describedby="fj-cgu-err"><span>J’accepte les conditions d’utilisation</span></label>' +
         '<p id="fj-cgu-err" class="fj-err" hidden></p></div>' +
@@ -288,27 +294,47 @@ function setErr(root, field, text) {
   if (input) input.setAttribute('aria-invalid', text ? 'true' : 'false');
 }
 
-function setMsg(root, text, withLogin) {
+function setMsg(root, text) {
   const msg = root.querySelector('#fj-msg');
   if (!msg) return;
   msg.textContent = text;
   msg.hidden = !text;
-  if (text && withLogin) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'fj-link';
-    btn.textContent = 'Aller à la connexion';
-    btn.addEventListener('click', goHome);
-    msg.append(' ', btn);
-  }
 }
 
+/** Envoi en cours : le bouton et Retour sont figés (un retour d'écran pendant l'envoi relâcherait le lien). */
 function setBusy(root, busy) {
   const btn = root.querySelector('[data-fj-submit]');
+  const back = root.querySelector('[data-fj-back]');
+  if (back) back.disabled = busy;
   if (!btn) return;
   btn.disabled = busy;
   btn.setAttribute('aria-busy', String(busy));
   btn.querySelector('.fj-cta-label').textContent = busy ? 'Création de l’accès…' : 'Entrer dans le foyer';
+}
+
+/**
+ * Accès créé mais session non ouverte : le lien est consommé, donc « Entrer dans le foyer » ne doit plus renvoyer le formulaire.
+ * Le bouton est remplacé par « Aller à la connexion ».
+ */
+function showLoginOnly(root, text) {
+  const btn = root.querySelector('[data-fj-submit]');
+  if (btn) {
+    btn.hidden = true;
+    btn.disabled = true;
+  }
+  setMsg(root, text);
+  const form = root.querySelector('[data-fj-form]');
+  let go = root.querySelector('[data-fj-login]');
+  if (!go && form) {
+    go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'fj-cta fj-cta--block';
+    go.setAttribute('data-fj-login', '');
+    go.textContent = 'Aller à la connexion';
+    go.addEventListener('click', goHome);
+    form.append(go);
+  }
+  go?.focus();
 }
 
 function bindForm(ctx, root) {
@@ -320,9 +346,13 @@ function bindForm(ctx, root) {
   const refresh = () => {
     const v = readForm(root);
     const score = passwordScore(v.pwd);
-    segs.forEach((s, i) => { s.style.background = i < score ? STRENGTH[score].color : '#24212e'; });
-    label.textContent = STRENGTH[score].label;
-    label.style.color = STRENGTH[score].color;
+    segs.forEach((s, i) => s.classList.toggle('is-on', i < score));
+    form.dataset.level = String(score);
+    // Le libellé n'est réécrit qu'au changement de palier : le lecteur d'écran n'annonce pas chaque frappe.
+    if (label.dataset.level !== String(score)) {
+      label.dataset.level = String(score);
+      label.textContent = STRENGTH_LABELS[score];
+    }
     form.classList.toggle('is-ready', Object.keys(validateForm(v)).length === 0);
   };
   form.addEventListener('input', (ev) => {
@@ -354,9 +384,11 @@ async function submitForm(ctx, root) {
   setMsg(root, '');
   const first = fields.find((f) => errors[f]);
   if (first) {
-    root.querySelector('#fj-' + first).focus();
+    root.querySelector('#fj-' + first)?.focus();
     return;
   }
+  // Écran de l'envoi : si la page a changé pendant l'attente, la réponse n'est plus affichée ni appliquée.
+  const screen = currentScreen;
   ctx.busy = true;
   setBusy(root, true);
   let res;
@@ -364,37 +396,41 @@ async function submitForm(ctx, root) {
     res = await redeemHouseholdInvite({ token: ctx.token, login: v.login, password: v.pwd, name: v.name });
   } catch (err) {
     ctx.busy = false;
+    if (screen !== currentScreen) return;
     setBusy(root, false);
     redeemFailed(ctx, root, householdErrorCode(err));
     return;
   }
+  if (screen !== currentScreen) return;
   try {
     await adoptSession({ token: res.token, expiresAt: res.expiresAt, profileId: res.profileId });
   } catch (_) {
-    // L'accès est créé : seule la connexion automatique a échoué, l'invité se connecte avec son identifiant.
     ctx.busy = false;
-    setBusy(root, false);
-    setMsg(root, 'Ton accès est créé, mais la connexion automatique a échoué. Connecte-toi avec ton identifiant.', true);
+    if (screen !== currentScreen) return;
+    // L'accès est créé et le lien consommé : pas de nouvel envoi, seulement un passage par la connexion.
+    showLoginOnly(root, 'Ton accès est créé, connecte-toi avec ton identifiant.');
     return;
   }
   ctx.busy = false;
+  if (screen !== currentScreen) return;
   showWelcome(ctx, v.name || profileName(ctx.check));
 }
 
 /** Refus de `redeem` : erreur sous le champ concerné, ou message du formulaire, ou écran d'erreur si le lien a changé d'état. */
 function redeemFailed(ctx, root, code) {
+  const focusSubmit = () => root.querySelector('[data-fj-submit]')?.focus();
   switch (code) {
     case 'login_taken':
       setErr(root, 'login', 'Cet identifiant est déjà pris. Choisis-en un autre.');
-      root.querySelector('#fj-login').focus();
+      root.querySelector('#fj-login')?.focus();
       return;
     case 'bad_login':
       setErr(root, 'login', 'Cet identifiant n’est pas valide : e-mail ou pseudo.');
-      root.querySelector('#fj-login').focus();
+      root.querySelector('#fj-login')?.focus();
       return;
     case 'weak_password':
       setErr(root, 'pwd', 'Ce mot de passe est trop faible. Choisis-en un plus long.');
-      root.querySelector('#fj-pwd').focus();
+      root.querySelector('#fj-pwd')?.focus();
       return;
     case 'expired':
     case 'used':
@@ -404,15 +440,19 @@ function redeemFailed(ctx, root, code) {
       return;
     case 'profile_locked':
       setMsg(root, 'Ce profil est déjà rattaché à un identifiant.');
+      focusSubmit();
       return;
     case 'rate_limited':
       setMsg(root, 'Trop de tentatives. Réessaie dans quelques minutes.');
+      focusSubmit();
       return;
     case 'network':
       setMsg(root, 'lastAddon est injoignable. Vérifie ta connexion, puis réessaie.');
+      focusSubmit();
       return;
     default:
       setMsg(root, 'Une erreur est survenue. Réessaie.');
+      focusSubmit();
   }
 }
 

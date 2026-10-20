@@ -157,3 +157,54 @@ describe('invitation au foyer : écrans d’erreur', () => {
     expect(text('[data-fj-action]')).toBe('Réessayer');
   });
 });
+
+describe('invitation au foyer : envoi interrompu', () => {
+  it('pendant l’envoi, Retour est figé ; un résultat arrivé après un changement d’écran est ignoré', async () => {
+    await arrival();
+    let finish!: (v: { token: string; expiresAt: string; profileId: string }) => void;
+    vi.mocked(redeemHouseholdInvite).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    fillForm();
+    submit();
+    await vi.waitFor(() => expect(redeemHouseholdInvite).toHaveBeenCalledTimes(1));
+    expect((root.querySelector('[data-fj-back]') as HTMLButtonElement).disabled).toBe(true);
+    // le lien est rouvert pendant l'envoi : la page d'arrivée remplace le formulaire
+    vi.mocked(checkHouseholdInvite).mockResolvedValueOnce(OK_CHECK);
+    mountFoyerJoin(root, TOKEN);
+    await vi.waitFor(() => expect(root.querySelector('[data-fj-create]')).not.toBeNull());
+    finish({ token: 'sess-late', expiresAt: '2099-01-01T00:00:00.000Z', profileId: 'prof-sam' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(adoptSession).not.toHaveBeenCalled();
+    expect(h1()).toBe('Grégoire te garde une place à la maison.');
+  });
+
+  it('redeem réussi mais session non ouverte : « Entrer dans le foyer » ne revient pas, « Aller à la connexion » le remplace', async () => {
+    await arrival();
+    vi.mocked(redeemHouseholdInvite).mockResolvedValueOnce({ token: 'sess-token', expiresAt: '2099-01-01T00:00:00.000Z', profileId: 'prof-sam' });
+    vi.mocked(adoptSession).mockRejectedValueOnce(new Error('offline'));
+    fillForm();
+    submit();
+    await vi.waitFor(() => expect(text('#fj-msg')).toBe('Ton accès est créé, connecte-toi avec ton identifiant.'));
+    const submitBtn = root.querySelector('[data-fj-submit]') as HTMLButtonElement;
+    expect(submitBtn.hidden).toBe(true);
+    expect(submitBtn.disabled).toBe(true);
+    expect(text('[data-fj-login]')).toBe('Aller à la connexion');
+    expect(redeemHouseholdInvite).toHaveBeenCalledTimes(1);
+  });
+
+  it('erreur réseau à l’envoi : formulaire réactivé, focus sur « Entrer dans le foyer »', async () => {
+    await arrival();
+    vi.mocked(redeemHouseholdInvite).mockRejectedValueOnce(new UserApiError(0, 'network'));
+    fillForm();
+    submit();
+    await vi.waitFor(() => expect(text('#fj-msg')).toContain('injoignable'));
+    const submitBtn = root.querySelector('[data-fj-submit]') as HTMLButtonElement;
+    expect(submitBtn.disabled).toBe(false);
+    expect(document.activeElement).toBe(submitBtn);
+  });
+
+  it('nom prérempli limité à 32 caractères', async () => {
+    await arrival({ ...OK_CHECK, profile: { name: 'x'.repeat(40), avatar: null } });
+    click('[data-fj-create]');
+    expect(field('fj-name').value.length).toBe(32);
+  });
+});

@@ -17,6 +17,12 @@
 }
 .fj-page [hidden] { display: none !important; }
 .fj-page svg { flex: none; }
+/* Couleurs de la jauge du mot de passe (niveaux 1 à 4) : une seule définition, reprise par les segments et le libellé. */
+.fj-page {
+  --fj-warn: #ef6b4a;
+  --fj-mid: #f5b700;
+  --fj-good: #19c3a6;
+}
 
 /* ---------- Arrivée : mur de fanart, arche, titre, bouton ---------- */
 .fj-wall { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -302,6 +308,7 @@
   cursor: pointer;
 }
 .fj-back svg { width: 20px; height: 20px; }
+.fj-back:disabled { opacity: 0.5; cursor: progress; }
 .fj-bar-spacer { width: 44px; }
 .fj-steps { display: flex; align-items: center; gap: 6px; margin: 0; }
 .fj-steps span { display: block; width: 18px; height: 6px; border-radius: 3px; background: rgba(244, 242, 247, 0.25); }
@@ -336,7 +343,7 @@
   font-size: 16px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.fj-input::placeholder { color: #6f6a7e; }
+.fj-input::placeholder { color: var(--dim); }
 .fj-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255, 90, 54, 0.18); }
 .fj-input[aria-invalid="true"] { border-color: #ef6b4a; }
 .fj-pwd-wrap { position: relative; }
@@ -358,9 +365,16 @@
 }
 .fj-eye svg { width: 20px; height: 20px; }
 .fj-gauge { display: flex; gap: 6px; margin-top: 4px; }
-.fj-seg { flex: 1; height: 5px; border-radius: 3px; background: #24212e; transition: background-color 0.3s ease; }
+.fj-seg { flex: 1; height: 5px; border-radius: 3px; background: var(--line); transition: background-color 0.3s ease; }
+.fj-seg.is-on { background: var(--fj-good); }
+.fj-form[data-level="1"] .fj-seg.is-on { background: var(--fj-warn); }
+.fj-form[data-level="2"] .fj-seg.is-on { background: var(--fj-mid); }
 .fj-strength { display: flex; justify-content: space-between; gap: 12px; margin: 0; font-size: 12px; }
 .fj-strength-label { font-weight: 700; color: var(--dim); }
+.fj-form[data-level="1"] .fj-strength-label { color: var(--fj-warn); }
+.fj-form[data-level="2"] .fj-strength-label { color: var(--fj-mid); }
+.fj-form[data-level="3"] .fj-strength-label,
+.fj-form[data-level="4"] .fj-strength-label { color: var(--fj-good); }
 .fj-dim { color: var(--dim); text-align: right; overflow-wrap: anywhere; }
 .fj-err { margin: 0; font-size: 13px; line-height: 1.4; color: #ef6b4a; }
 .fj-field--check { gap: 4px; margin-top: 4px; }
@@ -371,16 +385,6 @@
 .fj-form .fj-cta--submit:hover { transform: none; box-shadow: none; }
 .fj-form.is-ready .fj-cta--submit:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -12px rgba(255, 90, 54, 0.8); }
 .fj-msg { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #ef6b4a; overflow-wrap: anywhere; }
-.fj-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
 
 /* ---------- Bienvenue : anneau conique, confettis ---------- */
 .fj-page--welcome .fj-center { justify-content: flex-start; padding-top: 70px; }
@@ -459,6 +463,12 @@
   .fj-rows { left: -260px; top: -120px; width: 1100px; height: 800px; }
   .fj-lead { font-size: 15px; }
   .fj-pills { gap: 8px; }
+  /* Voile sombre sous la mention d'expiration : lisible même sur une fanart claire. */
+  .fj-expiry {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(12, 11, 17, 0.72);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
