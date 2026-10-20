@@ -24,8 +24,10 @@ export interface DownloadStats {
 export interface RangeClientOptions {
   /** Délai sans trame de l'hôte avant abandon de la requête (ms). */
   timeoutMs?: number;
-  /** Reprises par requête après busy, source ou délai. */
+  /** Reprises par requête après délai dépassé (défaut 2). */
   retries?: number;
+  /** Reprises après busy ou source, passagers côté hôte (défaut 6, ou `retries` si seul celui-ci est fourni). */
+  busyRetries?: number;
   /** Attente avant la n-ième reprise : n × retryDelayMs. */
   retryDelayMs?: number;
   /** Taille d'une requête REQ (≤ 8 Mo). */
@@ -95,6 +97,7 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
 export class RangeClient {
   private readonly timeoutMs: number;
   private readonly retries: number;
+  private readonly busyRetries: number;
   private readonly retryDelayMs: number;
   private readonly requestBytes: number;
   private readonly cache: RangeCache;
@@ -117,6 +120,7 @@ export class RangeClient {
   constructor(private readonly channel: ChannelLike, options: RangeClientOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.retries = options.retries ?? 2;
+    this.busyRetries = options.busyRetries ?? options.retries ?? 6;
     this.retryDelayMs = options.retryDelayMs ?? 500;
     this.requestBytes = Math.min(options.requestBytes ?? 4 * 1024 * 1024, MAX_RANGE_BYTES);
     this.cache = new RangeCache(options.cacheBytes ?? 16 * 1024 * 1024);
@@ -209,14 +213,23 @@ export class RangeClient {
     }, signal);
   }
 
-  /** Reprises : seules les erreurs réessayables (busy, source, timeout) sont rejouées, avec attente croissante. */
+  /**
+   * Reprises : seules les erreurs réessayables (busy, source, timeout) sont rejouées, avec attente croissante.
+   * Délai dépassé : au plus `retries` ; busy et source : au plus `busyRetries`.
+   */
   private async retry<T>(attempt: () => Promise<T>, signal?: AbortSignal): Promise<T> {
-    for (let n = 0; ; n += 1) {
+    const used: Record<'timeout' | 'passing', number> = { timeout: 0, passing: 0 };
+    let waits = 0;
+    for (;;) {
       try {
         return await attempt();
       } catch (err) {
-        if (!(err instanceof RelayError) || !err.retryable || n >= this.retries || this.closed || signal?.aborted) throw err;
-        await pause(this.retryDelayMs * (n + 1), signal);
+        if (!(err instanceof RelayError) || !err.retryable || this.closed || signal?.aborted) throw err;
+        const kind = err.code === 'timeout' ? 'timeout' : 'passing';
+        if (used[kind] >= (kind === 'timeout' ? this.retries : this.busyRetries)) throw err;
+        used[kind] += 1;
+        waits += 1;
+        await pause(this.retryDelayMs * waits, signal);
       }
     }
   }

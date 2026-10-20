@@ -1,13 +1,33 @@
 // Source de plage du lien débridé : en-têtes Range, tailles, refus des réponses sans plage, erreurs sans URL.
 import { describe, expect, it, vi } from 'vitest';
 import type { HttpFn, HttpRequest, HttpResponse } from '../sources/debrid/http';
+import { DebridError } from '../sources/debrid/types';
 import { RelayError } from './protocol';
-import { parseContentRange, urlRangeSource } from './sources';
+import { MAX_SOURCE_READS, parseContentRange, urlRangeSource } from './sources';
 
 const LINK = 'https://example.invalid/file/abc.mkv?token=SECRET';
 
 function reply(status: number, headers: Record<string, string> = {}, body = new Uint8Array(0)): HttpResponse {
   return { status, headers, body };
+}
+
+/** Transport lent : mesure le pic de lectures simultanées et l'ordre d'arrivée des plages (`bytes=a-b`, réponse 206). */
+function slowRanges(delayMs: number): { http: HttpFn; peak: () => number; order: number[] } {
+  let inFlight = 0;
+  let peak = 0;
+  const order: number[] = [];
+  const http: HttpFn = async (req) => {
+    const range = req.headers?.Range ?? '';
+    const start = Number(/^bytes=(\d+)-/.exec(range)?.[1]);
+    const end = Number(/-(\d+)$/.exec(range)?.[1]);
+    order.push(start);
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, delayMs));
+    inFlight -= 1;
+    return reply(206, { 'content-range': `bytes ${start}-${end}/1000` }, new Uint8Array(end - start + 1).fill(start % 256));
+  };
+  return { http, peak: () => peak, order };
 }
 
 async function codeOf(p: Promise<unknown>): Promise<string> {
@@ -131,5 +151,63 @@ describe('urlRangeSource', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('codes du transport et file de lectures', () => {
+  it('pont natif saturé (DebridError busy) : code busy, pas source', async () => {
+    const http: HttpFn = async () => {
+      throw new DebridError('busy', 'unsupported');
+    };
+    expect(await codeOf(urlRangeSource({ url: LINK, http }).read(0, 5))).toBe('busy');
+  });
+
+  it('CDN qui limite les connexions (429, 503) : busy ; autre statut hors 206 : source', async () => {
+    for (const status of [429, 503]) {
+      const http: HttpFn = async () => reply(status);
+      expect(await codeOf(urlRangeSource({ url: LINK, http }).read(0, 5))).toBe('busy');
+    }
+    const other: HttpFn = async () => reply(500);
+    expect(await codeOf(urlRangeSource({ url: LINK, http: other }).read(0, 5))).toBe('source');
+  });
+
+  it('plus de lectures que maxConcurrent : au plus 2 en cours, file FIFO, toutes aboutissent', async () => {
+    const t = slowRanges(10);
+    const src = urlRangeSource({ url: LINK, http: t.http, maxConcurrent: 2 });
+    const outs = await Promise.all([0, 10, 20, 30, 40].map((s) => src.read(s, s + 10)));
+    expect(t.peak()).toBe(2);
+    expect(t.order).toEqual([0, 10, 20, 30, 40]);
+    expect(outs.map((o) => o[0])).toEqual([0, 10, 20, 30, 40]);
+  });
+
+  it('sans maxConcurrent : MAX_SOURCE_READS lectures simultanées au plus', async () => {
+    const t = slowRanges(10);
+    const src = urlRangeSource({ url: LINK, http: t.http });
+    await Promise.all([0, 10, 20, 30, 40].map((s) => src.read(s, s + 10)));
+    expect(t.peak()).toBe(MAX_SOURCE_READS);
+  });
+
+  it('lecture en attente annulée : quitte la file, rejetée cancelled, sans appel au transport', async () => {
+    const t = slowRanges(20);
+    const src = urlRangeSource({ url: LINK, http: t.http, maxConcurrent: 1 });
+    const ctl = new AbortController();
+    const first = src.read(0, 10);
+    const waiting = src.read(10, 20, ctl.signal);
+    ctl.abort();
+    expect(await codeOf(waiting)).toBe('cancelled');
+    expect(await codeOf(first)).toBe('ok');
+    expect(t.order).toEqual([0]);
+  });
+
+  it('une lecture qui échoue libère sa place pour la suivante', async () => {
+    let calls = 0;
+    const http: HttpFn = async () => {
+      calls += 1;
+      return calls === 1 ? reply(500) : reply(206, {}, new Uint8Array(10));
+    };
+    const src = urlRangeSource({ url: LINK, http, maxConcurrent: 1 });
+    const [a, b] = await Promise.allSettled([src.read(0, 10), src.read(10, 20)]);
+    expect(a).toMatchObject({ status: 'rejected', reason: { code: 'source' } });
+    expect(b.status).toBe('fulfilled');
   });
 });

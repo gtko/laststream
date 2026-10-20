@@ -1,6 +1,6 @@
 // Hôte (RangeServer) et invité (RangeClient) reliés par un canal en mémoire : plages exactes, découpage, contrôle de flux,
 // annulation, occupation, erreurs propagées sans URL, reprises, délais, cache, limites et statistiques.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RangeClient, type DownloadStats } from './guest';
 import { RangeServer, type RangeSource, type UploadStats } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
@@ -203,6 +203,24 @@ describe('occupation et erreurs', () => {
     const got = await client.read(0, 2 * MIB);
     expect(mismatches(got, bytes)).toBe(0);
     expect(calls.reads).toBe(3);
+  });
+
+  it('source momentanément en échec (4 fois) : les reprises par défaut finissent la lecture', async () => {
+    const bytes = seededBytes(10_000, 17);
+    const { source, calls } = fakeSource(bytes, { failReads: 4 });
+    const { client } = link(source);
+    const got = await client.read(0, bytes.byteLength);
+    expect(mismatches(got, bytes)).toBe(0);
+    expect(calls.reads).toBe(5);
+  });
+
+  it('délai dépassé : limité à retries (2 requêtes), même avec busyRetries plus grand', async () => {
+    const [, guestCh] = memoryChannelPair(0);
+    const sent = vi.spyOn(guestCh, 'send');
+    const client = new RangeClient(guestCh, { timeoutMs: 10, retries: 1, busyRetries: 6, retryDelayMs: 1 });
+    await expect(client.read(0, 100)).rejects.toMatchObject({ code: 'timeout' });
+    const reqs = sent.mock.calls.map(([frame]) => decodeFrame(frame)).filter((f) => f?.t === 'req');
+    expect(reqs).toHaveLength(2);
   });
 
   it('hors du fichier : out_of_range, sans reprise', async () => {

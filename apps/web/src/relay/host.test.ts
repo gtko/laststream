@@ -1,8 +1,9 @@
-// Lien de l'hôte : délai d'inactivité, coupure après 20 erreurs consécutives, plafond de débit montant partagé.
+// Lien de l'hôte : délai d'inactivité, coupure après 20 erreurs consécutives, plafond de débit montant partagé, codes d'erreur.
 import { describe, expect, it } from 'vitest';
+import { RangeClient } from './guest';
 import { DEFAULT_UPLOAD_MBPS, RangeServer, UploadBudget, mbpsToBytesPerSec, type RangeSource } from './host';
 import { memoryChannelPair } from './memory';
-import { encodeInfoReq, encodeReq } from './protocol';
+import { RelayError, encodeInfoReq, encodeReq } from './protocol';
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -50,6 +51,38 @@ describe('lien hôte : erreurs consécutives', () => {
     guestCh.send(encodeReq(300, 10, 5));
     await wait(10);
     expect(abuse).toBe(1);
+    server.close();
+  });
+});
+
+describe('lien hôte : code d’erreur de la taille', () => {
+  it.each(['unshareable', 'busy'] as const)('taille refusée en %s : l’invité reçoit ce code, pas source', async (code) => {
+    const [hostCh, guestCh] = memoryChannelPair(0);
+    const refused: RangeSource = {
+      size: async () => {
+        throw new RelayError(code);
+      },
+      read: async () => new Uint8Array(0),
+    };
+    const server = new RangeServer(refused, hostCh);
+    const client = new RangeClient(guestCh, { retries: 0 });
+    await expect(client.size()).rejects.toMatchObject({ code });
+    client.close();
+    server.close();
+  });
+
+  it('erreur quelconque de la source : code source, comme avant', async () => {
+    const [hostCh, guestCh] = memoryChannelPair(0);
+    const broken: RangeSource = {
+      size: async () => {
+        throw new Error('réseau');
+      },
+      read: async () => new Uint8Array(0),
+    };
+    const server = new RangeServer(broken, hostCh);
+    const client = new RangeClient(guestCh, { retries: 0 });
+    await expect(client.size()).rejects.toMatchObject({ code: 'source' });
+    client.close();
     server.close();
   });
 });

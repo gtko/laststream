@@ -88,6 +88,11 @@ export class UploadBudget {
 
 const MIB = 1024 * 1024;
 
+/** Code à transmettre à l'invité : celui d'un `RelayError` connu (RANGE_ERROR_CODES), sinon `source`. */
+function rangeCodeOf(err: unknown): RangeErrorCode {
+  return err instanceof RelayError && (RANGE_ERROR_CODES as readonly string[]).includes(err.code) ? (err.code as RangeErrorCode) : 'source';
+}
+
 /** Sert les requêtes de plage reçues sur `channel`. Un serveur par canal ; `close()` coupe tout sans fermer le canal. */
 export class RangeServer {
   private readonly maxConcurrent: number;
@@ -197,8 +202,8 @@ export class RangeServer {
       const size = await this.sizeOf();
       this.sendFrame(encodeInfo(reqId, size, this.source.mime));
       this.errorStreak = 0;
-    } catch {
-      this.fail(reqId, 'source');
+    } catch (err) {
+      this.fail(reqId, rangeCodeOf(err));
     }
   }
 
@@ -214,10 +219,7 @@ export class RangeServer {
       await this.pump(reqId, start, end, ctl.signal);
       this.errorStreak = 0;
     } catch (err) {
-      if (!ctl.signal.aborted) {
-        const known = err instanceof RelayError && (RANGE_ERROR_CODES as readonly string[]).includes(err.code);
-        this.fail(reqId, known ? (err as RelayError).code as RangeErrorCode : 'source');
-      }
+      if (!ctl.signal.aborted) this.fail(reqId, rangeCodeOf(err));
     } finally {
       this.active.delete(reqId);
       this.emit(true);

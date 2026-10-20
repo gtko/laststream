@@ -8,6 +8,7 @@
 
 import { browserFetchHttp, capacitorHttp, nativeKind, shellHttp, type HttpFn, type HttpRequest, type HttpResponse, type NativeKind } from '../sources/debrid/http';
 import { shellRangeHttp } from '../sources/debrid/nativeRange';
+import { DebridError } from '../sources/debrid/types';
 import type { RangeSource } from './host';
 import { RelayError } from './protocol';
 
@@ -26,7 +27,12 @@ export interface UrlSourceOptions {
   /** Transport (défaut : selon la plateforme). */
   http?: HttpFn;
   mime?: string;
+  /** Lectures simultanées sur ce lien (défaut `MAX_SOURCE_READS`) ; les suivantes attendent leur tour. */
+  maxConcurrent?: number;
 }
+
+/** Lectures simultanées par défaut sur un lien : le pont natif de la coque refuse au-delà de 6 requêtes à la fois. */
+export const MAX_SOURCE_READS = 3;
 
 /** `Content-Range: bytes a-b/total` → bornes et taille totale. */
 export function parseContentRange(raw: string | undefined): { start: number; end: number; total: number | null } | null {
@@ -35,14 +41,53 @@ export function parseContentRange(raw: string | undefined): { start: number; end
   return { start: Number(m[1]), end: Number(m[2]), total: m[3] === '*' ? null : Number(m[3]) };
 }
 
-/** Appel HTTP ; toute erreur de transport devient un `RelayError` sans contenu. Sur le navigateur (`fetch`), une requête
- *  qui échoue (CORS refusé par la source, en pratique) est `unshareable` : le lien ne peut pas être lu depuis le web. */
+/** Appel HTTP ; toute erreur de transport devient un `RelayError` sans contenu. Pont natif saturé (`busy`) → `busy`.
+ *  Sur le navigateur (`fetch`), une requête qui échoue (CORS refusé par la source, en pratique) est `unshareable` : le lien
+ *  ne peut pas être lu depuis le web. */
 async function call(http: HttpFn, req: HttpRequest, web: boolean): Promise<HttpResponse> {
   try {
     return await http(req);
-  } catch {
+  } catch (err) {
     if (req.signal?.aborted) throw new RelayError('cancelled');
+    if (err instanceof DebridError && err.code === 'busy') throw new RelayError('busy');
     throw new RelayError(web ? 'unshareable' : 'source');
+  }
+}
+
+/** Admission des lectures d'un lien : au plus `max` en cours, les autres attendent dans une file FIFO. */
+class ReadGate {
+  private active = 0;
+  private readonly queue: Array<() => void> = [];
+
+  constructor(private readonly max: number) {}
+
+  /** Attend une place. Une attente annulée quitte la file et rejette `cancelled`. */
+  enter(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new RelayError('cancelled'));
+    if (this.active < this.max) {
+      this.active += 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      const granted = (): void => {
+        signal?.removeEventListener('abort', cancel);
+        resolve();
+      };
+      const cancel = (): void => {
+        const i = this.queue.indexOf(granted);
+        if (i >= 0) this.queue.splice(i, 1);
+        reject(new RelayError('cancelled'));
+      };
+      this.queue.push(granted);
+      signal?.addEventListener('abort', cancel, { once: true });
+    });
+  }
+
+  /** Libère une place : la première lecture en attente la prend aussitôt. */
+  leave(): void {
+    const next = this.queue.shift();
+    if (next) next();
+    else this.active -= 1;
   }
 }
 
@@ -57,6 +102,7 @@ export function urlRangeSource(opts: UrlSourceOptions): RangeSource {
   const http = opts.http ?? rangeTransport();
   // Transport du navigateur (ni coque, ni Capacitor) : un échec de lecture y vient en pratique du CORS de la source.
   const web = opts.http === undefined && nativeKind() === null;
+  const gate = new ReadGate(Math.max(1, opts.maxConcurrent ?? MAX_SOURCE_READS));
   const { url } = opts;
   let sizeP: Promise<number> | null = null;
 
@@ -89,21 +135,28 @@ export function urlRangeSource(opts: UrlSourceOptions): RangeSource {
     },
     async read(start: number, end: number, signal?: AbortSignal): Promise<Uint8Array> {
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end <= start) throw new RelayError('bad_request');
-      const res = await call(http, {
-        url,
-        method: 'GET',
-        headers: { Range: `bytes=${start}-${end - 1}` },
-        timeoutMs: TIMEOUT_MS,
-        signal,
-      }, web);
-      if (res.status !== 206) throw new RelayError('source');
-      const cr = res.headers['content-range'];
-      if (cr !== undefined) {
-        const parsed = parseContentRange(cr);
-        if (!parsed || parsed.start !== start) throw new RelayError('source');
+      await gate.enter(signal);
+      try {
+        const res = await call(http, {
+          url,
+          method: 'GET',
+          headers: { Range: `bytes=${start}-${end - 1}` },
+          timeoutMs: TIMEOUT_MS,
+          signal,
+        }, web);
+        // 429 / 503 : le CDN limite les connexions simultanées. Passager, donc réessayable côté invité.
+        if (res.status === 429 || res.status === 503) throw new RelayError('busy');
+        if (res.status !== 206) throw new RelayError('source');
+        const cr = res.headers['content-range'];
+        if (cr !== undefined) {
+          const parsed = parseContentRange(cr);
+          if (!parsed || parsed.start !== start) throw new RelayError('source');
+        }
+        if (!res.body || res.body.byteLength !== end - start) throw new RelayError('source');
+        return res.body;
+      } finally {
+        gate.leave();
       }
-      if (!res.body || res.body.byteLength !== end - start) throw new RelayError('source');
-      return res.body;
     },
   };
 }
