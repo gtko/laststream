@@ -1,6 +1,6 @@
 // Console d'administration, page Performance : tableau « Appels par fournisseur » (totaux 30 j), absent sans `providers`, valeurs échappées.
 import { describe, expect, it } from 'vitest';
-import { performanceHTML } from '../src/ui/admin-views.js';
+import { performanceHTML } from '../src/ui/admin/platform.js';
 
 const stats = { requests: 10, status: { '2xx': 10, '3xx': 0, '4xx': 0, '5xx': 0 }, p50: 40, p95: 90, avgMs: 45 };
 const metrics = {

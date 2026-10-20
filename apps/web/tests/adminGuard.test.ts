@@ -49,7 +49,7 @@ describe('garde #/admin', () => {
 });
 
 describe('rendu de la console', () => {
-  it('navigation à 10 sections, vue d’ensemble, tableau des comptes et panneau de détail', async () => {
+  it('navigation groupée en 5 espaces, vue d’ensemble, tableau des comptes et panneau de détail', async () => {
     const acct = { id: 'a1', username: 'alice', isOwner: false, createdAt: '2026-01-01T00:00:00Z', status: 'active', suspendedAt: null, referrer: 'greg', lastActivityAt: new Date().toISOString(), profileCount: 2, libraryCount: 5, inviteQuota: 4, invitesUsed: 1, online: false, sessionCount: 1 };
     const grp = { requests: 100, status: { '2xx': 95, '3xx': 0, '4xx': 3, '5xx': 2 }, p50: 40, p95: 200, avgMs: 60 };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -77,10 +77,15 @@ describe('rendu de la console', () => {
     const wait = (ms = 200) => new Promise((r) => setTimeout(r, ms));
     await wait();
     const detail = document.getElementById('detail')!;
-    expect(Array.from(detail.querySelectorAll('[data-adm-sec]')).map((b) => b.textContent)).toEqual([
-      'Vue d’ensemble', 'Comptes', 'Parrainages', 'Performance', 'Caches', 'TV', 'Watch parties', 'Modération', 'Réglages du serveur', 'Journal',
+    expect(Array.from(detail.querySelectorAll('[data-adm-sec]')).map((b) => b.querySelector('.adm-navi-l')!.textContent)).toEqual([
+      'Tableau de bord', 'À traiter', 'Comptes', 'Invitations et parrainages', 'En ligne',
+      'Sources et addons', 'Performance', 'Caches et stockage', 'Tâches planifiées',
+      'Watch parties', 'Modération',
+      'Réglages et maintenance', 'Annonces', 'Journal d’audit',
     ]);
     expect(detail.querySelectorAll('.adm-kpi')).toHaveLength(8);
+    expect(detail.querySelector('[data-adm-badge="reports"]')!.textContent).toBe('2');
+    expect(detail.querySelector('[data-adm-badge="todo"]')!.hasAttribute('hidden')).toBe(true);
     expect(detail.textContent).toContain('Signalements en attente');
     (detail.querySelector('[data-adm-sec="accounts"]') as HTMLElement).click();
     await wait();

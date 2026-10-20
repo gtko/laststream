@@ -15,6 +15,8 @@ let pending: Promise<void> | null = null;
 
 export const clearElevation = (): void => { elevation = null; };
 export const hasElevation = (now = Date.now()): boolean => elevation !== null && elevation.expiresAt - 5000 > now;
+/** Instant (ms) d'expiration de l'élévation en cours, ou null si elle manque ou va expirer (même marge que hasElevation). */
+export const elevationExpiresAt = (now = Date.now()): number | null => (elevation && hasElevation(now) ? elevation.expiresAt : null);
 export const setElevationPrompt = (p: ElevationPrompt | null): void => { prompt = p; };
 
 export interface AdminOptions {

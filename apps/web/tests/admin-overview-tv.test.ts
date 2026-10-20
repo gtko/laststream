@@ -6,7 +6,9 @@ import * as admin from '../src/data/adminApi';
 import type { AccountList, Metrics } from '../src/data/adminApi';
 import { ACCOUNT_PAGE_LIMIT, ACCOUNT_SCAN_PAGES, fmtInt, fmtMs, scanAccounts } from '../src/data/adminModel';
 import { UserApiError } from '../src/data/userApi';
-import { adminErr, overviewHTML, performanceHTML, tvHTML } from '../src/ui/admin-views.js';
+import { adminErr } from '../src/ui/admin/common.js';
+import { overviewHTML } from '../src/ui/admin/pilotage.js';
+import { performanceHTML, tasksHTML } from '../src/ui/admin/platform.js';
 
 interface Call { url: string; method: string }
 let calls: Call[] = [];
@@ -97,7 +99,7 @@ describe('page TV : dernier passage du cron', () => {
   };
 
   it('affiche date, durée, chaînes, programmes, EPG et erreur', () => {
-    const html = tvHTML({ tv: { status: 'ready', error: '', value: { lastCron } } });
+    const html = tasksHTML({ tv: { status: 'ready', error: '', value: { lastCron } } });
     expect(html).toContain('Dernier passage');
     expect(html).toContain('Début');
     expect(html).toContain(fmtMs(252_000));
@@ -112,13 +114,13 @@ describe('page TV : dernier passage du cron', () => {
 
   it('un échec du passage est visible (code d’erreur, réussi : non)', () => {
     const failed = { ...lastCron, ok: false, channels: null, programmes: null, epgOk: false, error: 'construction_echouee' };
-    const html = tvHTML({ tv: { status: 'ready', error: '', value: { lastCron: failed } } });
+    const html = tasksHTML({ tv: { status: 'ready', error: '', value: { lastCron: failed } } });
     expect(html).toContain('construction_echouee');
     expect(html).toContain('Réussi');
   });
 
   it('aucun passage enregistré : message clair, pas d’erreur', () => {
-    const html = tvHTML({ tv: { status: 'ready', error: '', value: { lastCron: null } } });
+    const html = tasksHTML({ tv: { status: 'ready', error: '', value: { lastCron: null } } });
     expect(html).toContain('Aucun passage enregistré.');
   });
 
