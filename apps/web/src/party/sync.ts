@@ -1,28 +1,11 @@
-/* Synchronisation de lecture par horloge serveur (protocole docs/social.md, §6). L'état d'un salon est une position `pos`
+import { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset } from '@laststream/protocol/sync';
+
+/* Synchronisation de lecture par horloge serveur (protocole docs/social.md, §6). Position attendue, décalage d'horloge et
+ * seuils communs : @laststream/protocol. Ici : estimateur d'horloge et correction de dérive du lecteur. L'état d'un salon est une position `pos`
  * (secondes) à l'instant serveur `at` (ms) ; la position attendue s'en déduit à tout instant. Fonctions pures, testées. */
 
-export interface PlaybackState {
-  playing: boolean;
-  /** Position en secondes à l'instant serveur `at`. */
-  pos: number;
-  /** Instant serveur (ms). */
-  at: number;
-  rev?: number;
-}
-
-/** Position attendue (secondes) à l'instant serveur `now` (ms). */
-export function expectedPosition(state: PlaybackState, now: number): number {
-  if (!state.playing) return state.pos;
-  return Math.max(0, state.pos + Math.max(0, now - state.at) / 1000);
-}
-
-/**
- * Décalage d'horloge client -> serveur (ms) d'un échange ping/pong : `t0` envoi et `t1` réception (horloge client),
- * `serverTime` instant serveur de la réponse. Instant serveur estimé = `Date.now() + offset`.
- */
-export function estimateOffset(t0: number, t1: number, serverTime: number): number {
-  return serverTime - (t0 + t1) / 2;
-}
+export type { PlaybackState } from '@laststream/protocol/party';
+export { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset, expectedPosition } from '@laststream/protocol/sync';
 
 /** Garde l'échantillon au plus petit aller-retour (le plus fiable). */
 export class ClockEstimator {
@@ -41,12 +24,8 @@ export class ClockEstimator {
 
 export type DriftAction = { kind: 'none' } | { kind: 'rate'; rate: number } | { kind: 'seek'; to: number };
 
-/** Écart toléré avant toute correction (secondes) : même seuil que le serveur (docs/social.md §6). */
-export const DRIFT_IGNORE_SEC = 0.3;
 /** Écart toléré tant qu'une vitesse corrective est en cours (hystérésis : on finit de rattraper). */
 export const DRIFT_SETTLE_SEC = 0.15;
-/** À partir de cet écart, on saute au lieu de rattraper. */
-export const DRIFT_SEEK_SEC = 2;
 /** Vitesses correctives. */
 export const RATE_SLOW = 0.95;
 export const RATE_FAST = 1.05;

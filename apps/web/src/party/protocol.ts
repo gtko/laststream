@@ -1,54 +1,44 @@
+import { MAX_FRAME_BYTES } from '@laststream/protocol/party';
+import type { ChatLine, ControlMode, EventKind, PartySettings, PrepStatus, ReactionMode, VoteInput, VoteView, WaitLateMode } from '@laststream/protocol/party';
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import type { PlaybackState } from './sync';
 
 /* Messages JSON du salon (WebSocket /party/:id/ws), une trame = un message de 4 Ko au plus.
- * Constantes communes avec lastaddon (src/party/protocol.ts) : tests/fixtures/party-contract.json, vérifié par partyContract.test.ts. */
+ * Constantes et objets échangés : source unique dans @laststream/protocol (partagée avec lastaddon). Les unions ServerMsg /
+ * ClientMsg restent propres à l'application : tolérantes (champs optionnels d'un serveur ancien) et typées avec les
+ * modèles de l'interface (socialApi). */
 
-export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯'] as const;
-export const CHAT_MAX_CHARS = 500;
-export const MAX_FRAME_BYTES = 4096;
-/** Attente de tampon (miroir du serveur) : avance (s) à partir de laquelle un participant se déclare prêt. */
-export const PARTY_RESUME_AHEAD_SEC = 10;
-/** Attente de tampon (miroir du serveur) : délai maximal (ms) avant reprise sans les retardataires. */
-export const PARTY_WAIT_MAX_MS = 45_000;
+export {
+  COUNTDOWN_DEFAULT_SEC,
+  COUNTDOWN_MIN_SEC,
+  CONTROL_MODES,
+  CHAT_MAX_CHARS,
+  DEFAULT_SETTINGS,
+  EVENT_KINDS,
+  MAX_FRAME_BYTES,
+  PARTY_RESUME_AHEAD_SEC,
+  PARTY_WAIT_MAX_MS,
+  PREP_STATUSES,
+  REACTIONS,
+  REACTION_MODES,
+  VOTE_MAX_OPTIONS,
+  VOTE_MIN_OPTIONS,
+  WAIT_LATE_MODES,
+} from '@laststream/protocol/party';
+export type {
+  ChatLine,
+  ControlMode,
+  EventKind,
+  PartySettings,
+  PrepStatus,
+  ReactionMode,
+  VoteInput,
+  VoteView,
+  WaitLateMode,
+} from '@laststream/protocol/party';
+
 /** Avance de tampon acceptée par le serveur (secondes) ; au-delà, le client la ramène à cette valeur. */
 export const PARTY_BUF_AHEAD_MAX_SEC = 600;
-
-export interface ChatLine {
-  id: string;
-  from: string;
-  text: string;
-  at: number;
-  /** Position du film (s) au moment de l'envoi, si le serveur la fournit (Social v3). */
-  pos?: number;
-}
-
-/* Social v3 (S4) : réglages, préparation, compte à rebours, vote, événements. Miroir du protocole du serveur. */
-export const PREP_STATUSES = ['searching', 'ready', 'buffering'] as const;
-export type PrepStatus = (typeof PREP_STATUSES)[number];
-export const CONTROL_MODES = ['all', 'host'] as const;
-export type ControlMode = (typeof CONTROL_MODES)[number];
-export const WAIT_LATE_MODES = ['off', '10s', 'always'] as const;
-export type WaitLateMode = (typeof WAIT_LATE_MODES)[number];
-export const REACTION_MODES = ['float', 'discreet', 'off'] as const;
-export type ReactionMode = (typeof REACTION_MODES)[number];
-export interface PartySettings {
-  control: ControlMode;
-  waitLate: WaitLateMode;
-  reactions: ReactionMode;
-}
-/** Défauts du serveur (salon sans réglage, ou serveur antérieur). */
-export const DEFAULT_SETTINGS: PartySettings = { control: 'all', waitLate: 'always', reactions: 'float' };
-export const COUNTDOWN_DEFAULT_SEC = 5;
-export const COUNTDOWN_MIN_SEC = 1;
-export const VOTE_MIN_OPTIONS = 2;
-export const VOTE_MAX_OPTIONS = 6;
-export const EVENT_KINDS = ['pause', 'play', 'seek', 'join', 'leave'] as const;
-export type EventKind = (typeof EVENT_KINDS)[number];
-/** Option d'un vote de titre proposée par l'hôte. */
-export interface VoteInput { type: 'movie' | 'series'; tmdbId: number; title: string }
-/** Option avec son identifiant et son nombre de voix (aucun votant n'est identifié). */
-export interface VoteView extends VoteInput { id: string; votes: number }
 
 export interface You {
   username: string;
