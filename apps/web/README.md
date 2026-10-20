@@ -46,7 +46,6 @@ src/ui/                 interface (JavaScript, DOM par gabarits de chaînes comm
   library.js, tv.js + player.js (TV en direct, hls.js), tiles.js / rows.js / ratings.js (tuiles, rangées),
   preview.js + hover.js (aperçus vidéo), ctxmenu.js, modal.js, sources-ui.js (tiroir Sources + lecteur),
   settings.js, events.js (délégation des clics et du clavier)
-tools/port-prototype.mjs  script ponctuel ayant découpé app.js du prototype en modules (historique)
 tests/                  vitest
 ```
 
