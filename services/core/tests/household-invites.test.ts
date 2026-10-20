@@ -153,7 +153,7 @@ describe('vérification d’un lien (sans le consommer)', () => {
   it('ok, avec le profil invité, le créateur et les affiches de sa bibliothèque', async () => {
     await request(app, 'PUT', `/user/profiles/${alice.profile}/library/movie/603`, {
       token: alice.token,
-      body: { title: 'Matrix', poster: 'https://image.test/matrix.jpg' },
+      body: { title: 'Matrix', poster: 'https://image.tmdb.org/t/p/w500/matrix.jpg' },
     });
     const link = await linkForMarie();
     const res = await check(link.token);
@@ -161,7 +161,7 @@ describe('vérification d’un lien (sans le consommer)', () => {
     expect(res.body.state).toBe('ok');
     expect(res.body.profile).toMatchObject({ name: 'Marie' });
     expect(res.body.inviter).toMatchObject({ name: 'alice' });
-    expect(res.body.backdrops).toEqual(['https://image.test/matrix.jpg']);
+    expect(res.body.backdrops).toEqual(['https://image.tmdb.org/t/p/w500/matrix.jpg']);
     expect(res.body.expiresAt).toBe(link.expiresAt);
     // Vérifier ne consomme rien : le lien reste utilisable.
     expect((await check(link.token)).body.state).toBe('ok');

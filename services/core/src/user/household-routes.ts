@@ -3,10 +3,12 @@ import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { generateSessionToken, hashSecret, hashSessionToken } from './crypto.js';
+import { isAllowedImageUrl } from './image-hosts.js';
 import {
   generateHouseholdId,
   generateHouseholdToken,
   HOUSEHOLD_DEFAULT_TTL_HOURS,
+  HOUSEHOLD_TOKEN_PATTERN,
   householdCheckStateOf,
   householdListSinceMs,
   householdStateOf,
@@ -93,6 +95,25 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
     });
   });
 
+  /**
+   * Retire l'identifiant d'invité d'un profil (contrat A, « Routes ») : la connexion par cet identifiant n'est plus possible
+   * et ses sessions verrouillées tombent, en une transaction. Créateur : profil adulte du compte (X-Profile-Id), déverrouillé
+   * si son PIN l'exige. 404 `no_login` si le profil n'a pas d'identifiant.
+   */
+  router.delete('/profiles/:id/login', async (c) => {
+    const store = users();
+    const session = await sessionOf(store, c);
+    assertNotLocked(session);
+    const target = await store.findProfile(session.account.id, String(c.req.param('id')));
+    if (target === undefined) throw new UserApiError(404, 'profile_not_found');
+    const actorId = c.req.header('x-profile-id');
+    const actor = actorId === undefined ? undefined : await store.findProfile(session.account.id, actorId);
+    if (actor === undefined || actor.isKid) throw new UserApiError(403, 'adult_profile_required');
+    assertUnlocked(c, session, actor, deps.secret);
+    if (!(await store.deleteProfileLogin(session.account.id, target.id))) throw new UserApiError(404, 'no_login');
+    return sendEmpty(c, 204);
+  });
+
   /** Révoque un lien du compte. Un identifiant déjà créé à partir du lien reste valable. */
   router.delete('/household-invites/:id', async (c) => {
     const session = await sessionOf(users(), c);
@@ -111,10 +132,12 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
     const found = await users().householdInviteByTokenHash(hashSessionToken(token));
     if (found === undefined) return sendJson(c, { state: 'unknown', backdrops: [] });
     const state = householdCheckStateOf(found, Date.now());
-    // Affiches de la bibliothèque du créateur (12 au plus) : seulement pour un lien utilisable et un créateur encore présent.
+    // Lien non utilisable (utilisé, révoqué, expiré) : seul l'état est renvoyé, ni nom, ni avatar, ni échéance.
+    if (state !== 'ok') return sendJson(c, { state, backdrops: [] });
+    // Affiches de la bibliothèque du créateur (12 au plus, hôtes d'image autorisés seulement) : pour un créateur encore présent.
     const backdrops =
-      state === 'ok' && found.createdByProfile !== null && found.inviterName !== null
-        ? await users().householdBackdrops(found.createdByProfile, 12)
+      found.createdByProfile !== null && found.inviterName !== null
+        ? (await users().householdBackdrops(found.createdByProfile, 60)).filter(isAllowedImageUrl).slice(0, 12)
         : [];
     return sendJson(c, {
       state,
@@ -132,6 +155,8 @@ export function registerHouseholdRoutes(router: App, deps: AppDeps, backend: Use
    */
   router.post('/household-invites/redeem', async (c) => {
     const body = parseWith(householdRedeemSchema, c.get('body'));
+    // Forme du jeton vérifiée avant tout calcul coûteux (scrypt) : un jeton mal formé ne correspond à aucun lien.
+    if (!HOUSEHOLD_TOKEN_PATTERN.test(body.token)) throw new UserApiError(404, 'unknown');
     const login = body.login.trim().toLowerCase();
     if (!LOGIN_NAME_PATTERN.test(login)) throw new UserApiError(400, 'bad_login');
     if (body.password.length < PASSWORD_MIN || body.password.length > PASSWORD_MAX) throw new UserApiError(400, 'weak_password');

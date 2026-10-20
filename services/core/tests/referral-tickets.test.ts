@@ -53,8 +53,8 @@ type CheckBody =
 
 const DAY = 24 * 3600 * 1000;
 const NOW = Date.parse('2026-10-20T12:00:00.000Z');
-const PICK: Pick = { id: 'tt0111161', type: 'movie', name: 'Les Évadés', poster: 'https://img.example.com/evades.jpg', background: '' };
-const PICK_2: Pick = { id: '278', type: 'movie', name: 'Shawshank', poster: '', background: 'https://img.example.com/fond.jpg' };
+const PICK: Pick = { id: 'tt0111161', type: 'movie', name: 'Les Évadés', poster: 'https://image.tmdb.org/t/p/w500/evades.jpg', background: '' };
+const PICK_2: Pick = { id: '278', type: 'movie', name: 'Shawshank', poster: '', background: 'https://assets.fanart.tv/fond.jpg' };
 const HANDLE_TAG = /^alice#[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{4}$/;
 
 let app: RunningApp;
@@ -149,8 +149,11 @@ describe('PUT /user/invites/:id : message et coups de cœur', () => {
     const ticket = await firstFree();
     const four = [PICK, PICK_2, { ...PICK, id: '3' }, { ...PICK, id: '4' }];
     expect((await putTicket(ticket.id, { picks: four })).status).toBe(400);
-    expect((await putTicket(ticket.id, { picks: [{ ...PICK, poster: 'http://img.example.com/a.jpg' }] })).status).toBe(400);
+    expect((await putTicket(ticket.id, { picks: [{ ...PICK, poster: 'http://image.tmdb.org/t/p/w500/a.jpg' }] })).status).toBe(400);
     expect((await putTicket(ticket.id, { picks: [{ ...PICK, background: 'javascript:alert(1)' }] })).status).toBe(400);
+    // Hôte d'image non autorisé et chemin relatif : refusés (l'app n'a pas de proxy d'images).
+    expect((await putTicket(ticket.id, { picks: [{ ...PICK, poster: 'https://img.example.com/a.jpg' }] })).status).toBe(400);
+    expect((await putTicket(ticket.id, { picks: [{ ...PICK, background: '/t/p/w500/a.jpg' }] })).status).toBe(400);
     expect((await putTicket(ticket.id, { picks: [{ ...PICK, name: '   ' }] })).status).toBe(400);
     expect((await putTicket(ticket.id, { picks: [{ ...PICK, id: 'x'.repeat(65) }] })).status).toBe(400);
     expect((await putTicket(ticket.id, { picks: [{ type: 'movie', name: 'Sans id', poster: '', background: '' }] })).status).toBe(400);

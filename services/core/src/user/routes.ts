@@ -315,9 +315,15 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     return sendEmpty(c, 204);
   });
 
+  /**
+   * Déconnecte les autres sessions du compte. Depuis une session verrouillée sur un profil invité, seules les sessions de ce
+   * profil sont révoquées (l'hôte et les autres profils ne sont pas touchés).
+   */
   router.post('/logout-all', async (c) => {
     const users = db();
-    await users.deleteAllSessions((await sessionOf(users, c)).account.id);
+    const session = await sessionOf(users, c);
+    if (session.lockedProfileId !== null) await users.deleteProfileSessions(session.account.id, session.lockedProfileId);
+    else await users.deleteAllSessions(session.account.id);
     return sendEmpty(c, 204);
   });
 

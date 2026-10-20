@@ -31,7 +31,7 @@ export const KID_MAX_AGES = [10, 12, 16, 18] as const;
 export type KidMaxAge = (typeof KID_MAX_AGES)[number];
 export type LibrarySort = 'added' | 'title';
 
-/** Sessions simultanées par compte : au-delà, la plus ancienne est supprimée. */
+/** Sessions simultanées par compte (libres) et par profil verrouillé : au-delà, la plus ancienne est supprimée. */
 export const MAX_SESSIONS_PER_ACCOUNT = 20;
 
 /** Intervalle minimal entre deux écritures de la dernière activité d'une session (pas d'écriture à chaque requête). */
@@ -508,16 +508,20 @@ export class UserStore {
     this.transaction(() => this.openSession(accountId, tokenHash, now, expiresAt, userAgent, profileId ?? null));
   }
 
-  /** Corps de startSession, à appeler dans une transaction. */
+  /**
+   * Corps de startSession, à appeler dans une transaction. Le plafond et l'éviction se comptent par (compte, profil
+   * verrouillé) : une session libre (profile_id NULL) ne compte ni n'évince jamais une session verrouillée, et
+   * réciproquement.
+   */
   private openSession(accountId: string, tokenHash: string, now: string, expiresAt: string, userAgent: string | null | undefined, profileId: string | null): void {
     this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
     this.createSession(accountId, tokenHash, now, expiresAt, userAgent, profileId);
     this.db
       .prepare(
-        `DELETE FROM sessions WHERE account_id = ? AND rowid NOT IN (
-           SELECT rowid FROM sessions WHERE account_id = ? ORDER BY rowid DESC LIMIT ?)`,
+        `DELETE FROM sessions WHERE account_id = ? AND profile_id IS ? AND rowid NOT IN (
+           SELECT rowid FROM sessions WHERE account_id = ? AND profile_id IS ? ORDER BY rowid DESC LIMIT ?)`,
       )
-      .run(accountId, accountId, MAX_SESSIONS_PER_ACCOUNT);
+      .run(accountId, profileId, accountId, profileId, MAX_SESSIONS_PER_ACCOUNT);
   }
 
   private createSession(
@@ -566,6 +570,11 @@ export class UserStore {
 
   deleteAllSessions(accountId: string): void {
     this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
+  }
+
+  /** Révoque les sessions verrouillées sur un profil (et seulement celles-là) : « déconnecter partout » depuis ce profil. */
+  deleteProfileSessions(accountId: string, profileId: string): void {
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND profile_id = ?').run(accountId, profileId);
   }
 
   /** Rotation : remplace une session valide par une nouvelle (qui garde son éventuel profil verrouillé). False si l'ancienne n'était plus valide. */
@@ -632,6 +641,29 @@ export class UserStore {
       this.updateProfileFields(accountId, profileId, fields);
       if (pinHash !== undefined) this.setPin(accountId, profileId, pinHash);
       syncProfileIdentity(this.db, accountId, profileId, fields.name, fields.isKid);
+      // Un profil enfant n'a pas d'identifiant d'invité : passer en enfant retire le login et les sessions verrouillées.
+      if (fields.isKid) this.removeProfileLogin(profileId);
+    });
+  }
+
+  /**
+   * Retire l'identifiant d'invité d'un profil et toutes ses sessions verrouillées. Renvoie vrai si un identifiant existait.
+   * À appeler dans une transaction.
+   */
+  private removeProfileLogin(profileId: string): boolean {
+    this.db.prepare('DELETE FROM sessions WHERE profile_id = ?').run(profileId);
+    return Number(this.db.prepare('DELETE FROM profile_logins WHERE profile_id = ?').run(profileId).changes) > 0;
+  }
+
+  /**
+   * Supprime l'identifiant d'invité d'un profil du compte, avec ses sessions verrouillées, en une transaction. Le lien du
+   * foyer déjà utilisé reste utilisé. False (rien écrit) si le profil n'a pas d'identifiant.
+   */
+  deleteProfileLogin(accountId: string, profileId: string): boolean {
+    return this.transaction((): boolean => {
+      const row = this.db.prepare('SELECT 1 AS n FROM profile_logins WHERE profile_id = ? AND account_id = ?').get(profileId, accountId);
+      if (row === undefined) return false;
+      return this.removeProfileLogin(profileId);
     });
   }
 

@@ -43,6 +43,14 @@ export function assertNotLocked(session: Session): void {
   if (session.lockedProfileId !== null) throw new UserApiError(403, 'profile_locked');
 }
 
+/**
+ * Refuse un profil autre que celui auquel la session est verrouillée (403 profile_locked). Une session libre accepte tout
+ * profil du compte (les autres contrôles restent à faire par la route).
+ */
+export function assertProfileAccess(session: Session, profileId: string): void {
+  if (session.lockedProfileId !== null && session.lockedProfileId !== profileId) throw new UserApiError(403, 'profile_locked');
+}
+
 export async function profileOf(store: UserRepo, account: Account, c: Ctx): Promise<ProfileRecord> {
   const profile = await store.findProfile(account.id, String(c.req.param('id')));
   if (profile === undefined) throw new UserApiError(404, 'profile_not_found');
@@ -75,9 +83,7 @@ export function assertUnlocked(c: Ctx, session: Session, profile: ProfileRecord,
  */
 export async function scopeOf(store: UserRepo, c: Ctx, secret: string, unlock: boolean): Promise<Scope> {
   const session = await sessionOf(store, c);
-  if (session.lockedProfileId !== null && session.lockedProfileId !== String(c.req.param('id'))) {
-    throw new UserApiError(403, 'profile_locked');
-  }
+  assertProfileAccess(session, String(c.req.param('id')));
   const profile = await profileOf(store, session.account, c);
   if (unlock && session.lockedProfileId === null) assertUnlocked(c, session, profile, secret);
   return { ...session, profile };

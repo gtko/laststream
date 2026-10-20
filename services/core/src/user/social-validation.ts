@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isAllowedImageUrl } from './image-hosts.js';
 import { HIDDEN_KEY, MAX_INVITE_QUOTA, TICKET_MESSAGE_MAX, TICKET_PICKS_MAX } from './social-store.js';
 import { INVITE_CODE } from './validation.js';
 
@@ -15,27 +16,19 @@ export const inviteCodeQuery = z.object({ code: INVITE_CODE });
 export const inviteSentSchema = z.object({ sent: z.boolean() });
 export const inviteQuotaSchema = z.object({ quota: z.number().int().min(0).max(MAX_INVITE_QUOTA) });
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-/** Adresse https absolue, ou chaîne vide (pas d'affiche ni de fond). */
-const httpsUrlOrEmpty = z
+/** Affiche ou fond : vide, ou URL https sur un hôte d'image autorisé (voir image-hosts.ts). */
+const imageUrlOrEmpty = z
   .string()
   .max(2048)
-  .refine((value) => value === '' || isHttpsUrl(value), 'https_url');
+  .refine((value) => value === '' || isAllowedImageUrl(value), 'image_host');
 
-/** Coup de cœur d'un billet : id, type et nom courts ; affiche et fond en https ou vides. */
+/** Coup de cœur d'un billet : id, type et nom courts ; affiche et fond vides ou sur un hôte d'image autorisé. */
 const ticketPickSchema = z.object({
   id: z.string().trim().min(1).max(64),
   type: z.string().trim().min(1).max(20),
   name: z.string().trim().min(1).max(200),
-  poster: httpsUrlOrEmpty.default(''),
-  background: httpsUrlOrEmpty.default(''),
+  poster: imageUrlOrEmpty.default(''),
+  background: imageUrlOrEmpty.default(''),
 });
 
 /** Billet : message (280 caractères au plus, comptés en caractères et non en unités de code) et 3 coups de cœur au plus. Un champ absent reste inchangé. */
