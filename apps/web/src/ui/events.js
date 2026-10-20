@@ -21,6 +21,8 @@ import { go, goBack, openItem, route } from './router.js';
 import { buildSvcRows } from './services.js';
 import { openSources, playFrom } from './sources-ui.js';
 import { openPartyDialog } from './partylaunch.js';
+import { openShareDialog } from './socialHooks.js';
+import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
@@ -253,6 +255,12 @@ document.addEventListener('click', (e) => {
   const sh = t.closest('[data-share]');
   if (sh) {
     e.preventDefault();
+    // Fiche d'un titre, compte connecté : fenêtre « Partager » (amis, groupes, lien public, listes partagées).
+    const fm = state.kind === 'fiche' ? state.model : null;
+    if (fm && socialAvailable()) {
+      openShareDialog({ media: { type: fm.type === 'tv' ? 'series' : 'movie', tmdbId: Number(fm.id), title: fm.name, poster: fm.posterPath || undefined } });
+      return;
+    }
     const url = location.href;
     const done = () => toast('Lien copié');
     if (navigator.clipboard && navigator.clipboard.writeText) {
