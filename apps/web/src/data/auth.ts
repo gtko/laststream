@@ -306,8 +306,8 @@ export async function signIn(username: string, password: string): Promise<AuthSt
   return loadProfiles();
 }
 
-export async function signUp(username: string, password: string, bootstrapToken?: string, invite?: string): Promise<AuthStatus> {
-  await api.register(username, password, bootstrapToken || undefined, invite || undefined);
+export async function signUp(username: string, password: string, bootstrapToken?: string, invite?: string, autoFriend?: boolean): Promise<AuthStatus> {
+  await api.register(username, password, bootstrapToken || undefined, invite || undefined, autoFriend);
   return signIn(username, password);
 }
 

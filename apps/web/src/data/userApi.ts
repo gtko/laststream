@@ -163,8 +163,9 @@ export async function call<T>(path: string, o: CallOptions = {}): Promise<T> {
 }
 
 // ---- Comptes ----
-export const register = (username: string, password: string, bootstrapToken?: string, invite?: string) =>
-  call<{ account: AccountDto }>('/register', { method: 'POST', body: { username, password, ...(invite ? { invite } : {}) }, anonymous: true, bootstrapToken });
+/** `autoFriend` (billet de parrainage) : absent = comportement serveur par défaut (amitié créée), false = pas d'amitié. */
+export const register = (username: string, password: string, bootstrapToken?: string, invite?: string, autoFriend?: boolean) =>
+  call<{ account: AccountDto }>('/register', { method: 'POST', body: { username, password, ...(invite ? { invite } : {}), ...(autoFriend === undefined ? {} : { autoFriend }) }, anonymous: true, bootstrapToken });
 export const login = (username: string, password: string) =>
   call<{ token: string; expiresAt: string }>('/login', { method: 'POST', body: { username, password }, anonymous: true });
 export const refresh = () => call<{ token: string; expiresAt: string }>('/refresh', { method: 'POST' });

@@ -4,9 +4,8 @@ import {
   removeProfile, saveProfile, signIn, signOut, signUp, unlock,
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
-import { normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
-import { checkInvite } from '../data/socialApi';
-import { KID_AGES, UserApiError } from '../data/userApi';
+import { checkInviteTicket, normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
+import { KID_AGES, me as readMe, UserApiError } from '../data/userApi';
 import { isValidAvatar, parseColAvatar } from '../data/avatars';
 import { isKidAllowed, loadCatalog, recentAvatars } from '../data/avatar-catalog';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
@@ -14,6 +13,7 @@ import { closeAvatarStudio, describeAvatar, describeAvatarSync, openAvatarStudio
 import { openHouseholdPanel, paintProfileInviteRow, profileInviteRowHTML } from './household.js';
 import { brand } from './fragments.js';
 import { ICON } from './icons.js';
+import { mountReferral, referralReasonText } from './referral-join.js';
 import { esc } from './util.js';
 
 const COLORS = ['#ff5a36', '#7b5bf5', '#19c3a6', '#f5b700', '#3b82f6', '#ec4899', '#22c55e', '#94a3b8'];
@@ -75,7 +75,7 @@ export function errorText(err) {
 
 // ---------- Connexion / création de compte ----------
 /** Lien de parrainage : `?invite=<code>` ou `#/join/<code>` dans l'adresse, sinon code saisi à la main. */
-const invite = { code: '', status: 'none', inviter: '', first: false };
+const invite = { code: '', status: 'none', inviter: '', first: false, ticket: null, reason: '' };
 let inviteToken = 0;
 
 /** Vérifie le code auprès du serveur (sans session) : « invité par … » ou lien invalide. */
@@ -84,13 +84,20 @@ export async function checkInviteCode(raw) {
   const token = ++inviteToken;
   invite.code = code;
   invite.inviter = '';
+  invite.ticket = null;
+  invite.reason = '';
   if (!code) { invite.status = raw && raw.trim() ? 'invalid' : 'none'; return invite.status; }
   invite.status = 'checking';
   try {
-    const res = await checkInvite(code);
+    const res = await checkInviteTicket(code);
     if (token !== inviteToken) return invite.status;
     invite.status = res.valid ? 'valid' : 'invalid';
-    invite.inviter = res.valid && res.inviter ? res.inviter : '';
+    // Billet de parrainage (v3) : `inviter` est un objet, et le billet porte son mot et ses coups de cœur. Un serveur plus
+    // ancien renvoie seulement un pseudo : le formulaire classique reste alors utilisé.
+    const named = res.valid && res.inviter ? res.inviter : null;
+    invite.ticket = named && typeof named === 'object' ? res : null;
+    invite.inviter = named ? (typeof named === 'object' ? named.name || '' : named) : '';
+    invite.reason = res.valid ? '' : res.reason || '';
   } catch {
     if (token === inviteToken) invite.status = 'unknown'; // serveur injoignable : le code sera vérifié à l'inscription
   }
@@ -105,6 +112,8 @@ export function readInviteFromLocation() {
   const code = parseInviteCode(location.search, location.hash);
   invite.first = false;
   invite.inviter = '';
+  invite.ticket = null;
+  invite.reason = '';
   invite.code = code;
   invite.status = code ? 'checking' : 'none';
   mode = code ? 'invite' : 'login';
@@ -116,11 +125,40 @@ function forgetInviteInUrl() {
   try { history.replaceState(null, '', location.pathname + rest.search + rest.hash); } catch (_) { /* adresse inchangée */ }
 }
 
+/** Billet de parrainage : l'écran d'arrivée remplace l'overlay. Un billet qui ne vaut plus renvoie à la saisie du code. */
+function showReferral() {
+  const r = el();
+  r.hidden = false;
+  document.body.classList.add('modal-open');
+  mountReferral(r, {
+    ticket: invite.ticket,
+    create: createFromReferral,
+    message: errorText,
+    onGone: (reason) => { invite.status = 'invalid'; invite.reason = reason || ''; invite.ticket = null; showLogin(); },
+    onEnter: () => route(),
+  });
+}
+
+/** Création du compte avec le billet (code et choix d'amitié), puis session. Résout avec le handle connu du serveur, ou ''. */
+async function createFromReferral({ username, password, autoFriend }) {
+  await signUp(username, password, undefined, invite.code, autoFriend);
+  forgetInviteInUrl();
+  invite.code = '';
+  invite.status = 'none';
+  invite.ticket = null;
+  try {
+    const { account } = await readMe(4000);
+    return account && typeof account.handle === 'string' ? account.handle : '';
+  } catch {
+    return '';
+  }
+}
+
 /** Étape 1 de « Rejoindre Laststream » : coller le lien (ou le code), puis valider. Le lien est vérifié auprès du serveur. */
 function inviteCodeHTML(msg) {
   const st = invite.status;
   const note = msg || (st === 'invalid'
-    ? 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.'
+    ? (referralReasonText(invite.reason) || 'Ce lien d’invitation est invalide, déjà utilisé ou révoqué. Demande un nouveau lien à la personne qui t’invite.')
     : st === 'checking' ? 'Vérification du lien…' : '');
   return '<form class="tv-form auth-form auth-invite" data-invite-form>' +
     '<label class="tv-field">Colle ton lien ou code d’invitation<input type="text" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(st === 'invalid' ? '' : invite.code) + '"></label>' +
@@ -171,6 +209,8 @@ function loginHTML(msg) {
 }
 
 function showLogin(msg) {
+  // Billet de parrainage valide : « Ta place est réservée », puis compte, puis bienvenue (referral-join.js).
+  if (mode === 'invite' && invite.status === 'valid' && invite.ticket) { showReferral(); return; }
   show(loginHTML(msg));
   const u = el().querySelector('input[name="username"]') || el().querySelector('input[name="code"]');
   if (u) u.focus();
