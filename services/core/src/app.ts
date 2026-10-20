@@ -23,6 +23,7 @@ import { registerTestRoutes } from './routes/test.js';
 import { registerPartyRoutes } from './party/routes.js';
 import { registerUserRoutes } from './user/routes.js';
 import { registerAdminRoutes } from './admin/api.js';
+import { registerPublicAnnouncementRoute } from './admin/ops-announcements.js';
 import { createMaintenanceGate, maintenanceMiddleware } from './admin/maintenance.js';
 import { metricsMiddleware } from './metrics/middleware.js';
 import { installCacheCounters } from './metrics/index.js';
@@ -220,6 +221,7 @@ export function createApp(deps: AppDeps): App {
   app.use('*', rateLimit((c) => CONFIG_PATH.test(c.req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use('*', rateLimit((c) => LT_WRITE_PATH.test(c.req.path) && c.req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
   app.use('*', rateLimit((c) => c.req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(c.req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
+  app.use('*', rateLimit((c) => c.req.method === 'GET' && c.req.path === '/announcements', createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
   app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
   app.get('/health', (c) => sendJson(c, { ok: true }));
@@ -269,6 +271,7 @@ export function createApp(deps: AppDeps): App {
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
   registerAdminRoutes(app, deps, backend, maintenance, party);
+  registerPublicAnnouncementRoute(app, backend);
   // Avatars par collections : R2 sous Workers, dossier ou relais sous Node. Avant l'interface web (pas de repli sur index.html).
   const avatars = platform().avatarAssets;
   if (avatars !== undefined) registerAvatarRoutes(app, avatars);

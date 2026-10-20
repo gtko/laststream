@@ -534,6 +534,31 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX live_ticket_nonces_expiry ON live_ticket_nonces (expires_at);
     `,
   },
+  {
+    version: 18,
+    name: 'annonces (bandeau public, fenêtre de dates) et éléments de la boîte de contrôle écartés',
+    sql: `
+      -- Annonces publiées par le propriétaire. Dates ISO 8601 UTC normalisées à l'écriture ; NULL = sans borne.
+      CREATE TABLE announcements (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('info', 'warning')),
+        starts_at TEXT,
+        ends_at TEXT,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX announcements_active ON announcements (active, starts_at, ends_at);
+
+      -- Éléments de la boîte de contrôle écartés par l'administrateur : une clé stable par élément (« report:<id> »…).
+      CREATE TABLE inbox_dismissed (
+        key TEXT PRIMARY KEY,
+        dismissed_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

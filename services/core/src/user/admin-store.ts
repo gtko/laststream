@@ -183,6 +183,38 @@ function toReport(row: SqlRow): PartyReportRecord {
   };
 }
 
+/** Niveau d'une annonce : information ou alerte. */
+export type AnnouncementLevel = 'info' | 'warning';
+
+/** Annonce publiée par le propriétaire (bandeau). Dates ISO 8601 UTC ; null = sans borne. */
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  level: AnnouncementLevel;
+  startsAt: string | null;
+  endsAt: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const ANNOUNCEMENT_COLUMNS = 'id, title, message, level, starts_at, ends_at, active, created_at, updated_at';
+
+function toAnnouncement(row: SqlRow): Announcement {
+  return {
+    id: String(row.id),
+    title: String(row.title),
+    message: String(row.message),
+    level: String(row.level) as AnnouncementLevel,
+    startsAt: row.starts_at === null || row.starts_at === undefined ? null : String(row.starts_at),
+    endsAt: row.ends_at === null || row.ends_at === undefined ? null : String(row.ends_at),
+    active: Number(row.active) === 1,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
 export class AdminStore {
   constructor(private readonly db: SqlDb) {}
 
@@ -513,5 +545,56 @@ export class AdminStore {
   /** Salons dont l'hôte est ce compte (à fermer avant la suppression du compte). */
   roomIdsOfHost(hostId: string): string[] {
     return this.db.prepare('SELECT id FROM party_rooms WHERE host_id = ?').all(hostId).map((row) => String(row.id));
+  }
+
+  // Annonces (bandeau d'information)
+
+  listAnnouncements(): Announcement[] {
+    return this.db.prepare(`SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements ORDER BY created_at DESC, id DESC`).all().map(toAnnouncement);
+  }
+
+  announcementById(id: string): Announcement | undefined {
+    const row = this.db.prepare(`SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements WHERE id = ?`).get(id);
+    return row === undefined ? undefined : toAnnouncement(row);
+  }
+
+  /** Annonces actives dont la fenêtre contient `now` (bornes incluses ; une borne NULL n'est pas testée). */
+  listActiveAnnouncements(now: string): Announcement[] {
+    return this.db
+      .prepare(
+        `SELECT ${ANNOUNCEMENT_COLUMNS} FROM announcements
+         WHERE active = 1 AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at >= ?)
+         ORDER BY created_at DESC, id DESC`,
+      )
+      .all(now, now)
+      .map(toAnnouncement);
+  }
+
+  createAnnouncement(record: Announcement): void {
+    this.db
+      .prepare(`INSERT INTO announcements (${ANNOUNCEMENT_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(record.id, record.title, record.message, record.level, record.startsAt, record.endsAt, record.active ? 1 : 0, record.createdAt, record.updatedAt);
+  }
+
+  /** Réécrit les champs modifiables d'une annonce (identifiant et date de création inchangés). `false` si elle n'existe pas. */
+  updateAnnouncement(record: Announcement): boolean {
+    return this.db
+      .prepare('UPDATE announcements SET title = ?, message = ?, level = ?, starts_at = ?, ends_at = ?, active = ?, updated_at = ? WHERE id = ?')
+      .run(record.title, record.message, record.level, record.startsAt, record.endsAt, record.active ? 1 : 0, record.updatedAt, record.id).changes !== 0;
+  }
+
+  deleteAnnouncement(id: string): boolean {
+    return this.db.prepare('DELETE FROM announcements WHERE id = ?').run(id).changes !== 0;
+  }
+
+  // Boîte de contrôle : éléments écartés
+
+  /** Écarte un élément de la boîte (idempotent : la première date d'écartement est conservée). */
+  dismissInbox(key: string, now: string): void {
+    this.db.prepare('INSERT INTO inbox_dismissed (key, dismissed_at) VALUES (?, ?) ON CONFLICT (key) DO NOTHING').run(key, now);
+  }
+
+  listDismissedKeys(): string[] {
+    return this.db.prepare('SELECT key FROM inbox_dismissed').all().map((row) => String(row.key));
   }
 }
