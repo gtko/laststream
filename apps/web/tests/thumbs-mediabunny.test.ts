@@ -275,7 +275,7 @@ describe('openVideoIndex : repli sur mediabunny', () => {
     expect(await openVideoIndex(fileOf(1 << 20).fetchRange, { headBytes: 4096 })).toBeNull();
   });
 
-  it('refus du relais (RangeAuthError) pendant le démuxeur maison : relancé, pas avalé', async () => {
+  it('refus de la source (RangeAuthError) pendant le démuxeur maison : relancé, pas avalé', async () => {
     await expect(openVideoIndex(boxFile(() => new RangeAuthError()).fetchRange, { headBytes: 4096 })).rejects.toBeInstanceOf(RangeAuthError);
   });
 

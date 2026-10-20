@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ByteSource, avcCodecString, av1CodecString, canDecode, decodeKeyframe, hashText, hevcCodecString, makeLocalFeed, MemoryThumbStore, openVideoIndex,
-  proxyFetchRange, proxyRangeUrl, readId, readSize, thumbKey, THUMB_QUALITY, totalFromContentRange, webCodecsAvailable,
+  directFetchRange, readId, readSize, thumbKey, THUMB_QUALITY, totalFromContentRange, webCodecsAvailable,
   type CodecEnv, type FetchFn, type FetchRange, type VideoIndex } from '../src/thumbs';
 import { ThumbFeed } from '../src/player/thumbfeed';
 import { thumbSource } from '../src/player/thumbs';
@@ -276,37 +276,34 @@ describe('WebCodecs simulé', () => {
   });
 });
 
-/** Le Worker en miniature : lit s/e dans l'URL et sert la plage du fichier (206 + Content-Range). */
+/** Serveur de plages en miniature : lit l'en-tête Range (bytes=s-e) et sert la plage du fichier (206 + Content-Range). */
 function workerFetch(file: Uint8Array, calls: string[], status = 206): FetchFn {
-  return async (url) => {
+  return async (url, init) => {
     calls.push(url);
     if (status !== 206) return { status, headers: new Headers(), arrayBuffer: async () => new ArrayBuffer(0) };
-    const q = new URL(url).searchParams;
-    const s = Number(q.get('s'));
-    const e = Math.min(Number(q.get('e')), file.length - 1);
+    const m = /bytes=(\d+)-(\d+)/.exec(init?.headers?.Range ?? '');
+    const s = Number(m?.[1] ?? 0);
+    const e = Math.min(Number(m?.[2] ?? file.length - 1), file.length - 1);
     if (s >= file.length) return { status: 416, headers: new Headers({ 'content-range': `bytes */${file.length}` }), arrayBuffer: async () => new ArrayBuffer(0) };
     const body = file.slice(s, e + 1);
     return { status: 206, headers: new Headers({ 'content-range': `bytes ${s}-${e}/${file.length}` }), arrayBuffer: async () => body.buffer };
   };
 }
 
-describe('relais et pont ThumbFeed', () => {
-  const src = { url: 'https://abc.debrid.it/f.mkv', token: '123.tok', base: 'https://edge.test' };
+describe('pont ThumbFeed et lecture par plages', () => {
+  const src = { url: 'https://abc.debrid.it/f.mkv' };
 
-  it('URL du relais et Content-Range', () => {
-    const u = new URL(proxyRangeUrl(src, 10, 99));
-    expect(u.origin + u.pathname).toBe('https://edge.test/__laststream/range');
-    expect(Object.fromEntries(u.searchParams)).toEqual({ u: src.url, s: '10', e: '99', t: '123.tok' });
+  it('Content-Range', () => {
     expect(totalFromContentRange('bytes 0-9/1234')).toBe(1234);
     expect(totalFromContentRange('bytes */77')).toBe(77);
     expect(totalFromContentRange(null)).toBeNull();
   });
 
-  it('lit un MP4 à travers le relais', async () => {
+  it('lit un MP4 par plages (en-tête Range, sans relais)', async () => {
     const calls: string[] = [];
-    const r = await openVideoIndex(proxyFetchRange(src, workerFetch(fixture('h264.mp4'), calls)));
+    const r = await openVideoIndex(directFetchRange(src.url, workerFetch(fixture('h264.mp4'), calls)));
     expect(r!.index.keyframeCount).toBe(5);
-    expect(calls.every((c) => c.startsWith('https://edge.test/__laststream/range?'))).toBe(true);
+    expect(calls.every((c) => c === src.url)).toBe(true);
   });
 
   it('miniature d\'une tranche : décodée, mise en cache, relue sans réseau ; au-delà de la durée : introuvable', async () => {
@@ -333,7 +330,7 @@ describe('relais et pont ThumbFeed', () => {
     expect(hashText('x')).toBe(hashText('x'));
   });
 
-  it('jeton refusé : « unknown_source » pour que ThumbFeed réenregistre ; codec non pris en charge : pas de miniatures', async () => {
+  it('source refusée (401) : « unknown_source » pour que ThumbFeed réenregistre ; codec non pris en charge : pas de miniatures', async () => {
     const file = fixture('h264.mp4');
     const calls: string[] = [];
     let status = 206;
