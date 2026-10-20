@@ -28,6 +28,7 @@ import './styles/notes.css';
 import './styles/bubble.css';
 import './styles/social-player.css';
 import './styles/badges.css';
+import './styles/shows.css';
 import './styles/admin.css';
 import './styles/scrollbars.css';
 import './styles/avatar-studio.css';

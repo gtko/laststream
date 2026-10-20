@@ -99,11 +99,14 @@ export interface TmdbShow {
   overview: string;
   popularity: number;
   firstAir: string;
+  /** Identifiants de genres TMDB (`genre_ids` des résultats discover/search) ; `[]` si absents. */
+  genres: number[];
 }
 
 const toShow = (r: Json): TmdbShow => ({
   id: r.id, name: r.name || r.original_name || '', poster: r.poster_path || '', backdrop: r.backdrop_path || '',
   overview: r.overview || '', popularity: Number(r.popularity) || 0, firstAir: String(r.first_air_date || ''),
+  genres: Array.isArray(r.genre_ids) ? r.genre_ids.map(Number) : [],
 });
 
 /** Téléréalité, talk-shows, actualités, et humour/talk dans la langue du pays, par popularité. */
@@ -152,7 +155,18 @@ export async function resolveSeed(seed: SeedShow): Promise<TmdbShow | null> {
   return show;
 }
 
-export interface ShowEpisode { season: number; episode: number; name: string; date: string; still: string }
+export interface ShowEpisode {
+  season: number;
+  episode: number;
+  name: string;
+  date: string;
+  still: string;
+  /** Durée en minutes (0 si inconnue). */
+  runtime: number;
+  overview: string;
+}
+/** Membre de la distribution (la première place du casting d'une émission est souvent son présentateur). */
+export interface ShowCast { id: number; name: string; role: string; photo: string }
 export interface ShowDetail {
   id: number;
   name: string;
@@ -161,17 +175,25 @@ export interface ShowDetail {
   backdrop: string;
   status: string;
   networks: string[];
+  /** Noms des genres TMDB, dans la langue de la requête. */
+  genres: string[];
+  /** Huit premiers acteurs au plus (`credits`) ; `photo` est le chemin TMDB, à passer à IMG. */
+  cast: ShowCast[];
   next: ShowEpisode | null;
   last: ShowEpisode | null;
   seasons: Array<{ number: number; air: string; count: number }>;
 }
-const ep = (e: Json): ShowEpisode | null => (e ? { season: e.season_number, episode: e.episode_number, name: e.name || '', date: String(e.air_date || ''), still: e.still_path || '' } : null);
+const ep = (e: Json, season: number = e?.season_number): ShowEpisode | null => (e
+  ? { season, episode: e.episode_number, name: e.name || '', date: String(e.air_date || ''), still: e.still_path || '', runtime: Number(e.runtime) || 0, overview: e.overview || '' }
+  : null);
 
 export async function showDetail(id: number | string): Promise<ShowDetail> {
-  const d = await tmdb('tv/' + id);
+  const d = await tmdb('tv/' + id, { append_to_response: 'credits' });
   return {
     id: Number(id), name: d.name || '', overview: d.overview || '', poster: d.poster_path || '', backdrop: d.backdrop_path || '', status: d.status || '',
     networks: (d.networks ?? []).map((n: Json) => n.name).filter(Boolean),
+    genres: (d.genres ?? []).map((g: Json) => g.name).filter(Boolean),
+    cast: ((d.credits && d.credits.cast) || []).slice(0, 8).map((p: Json): ShowCast => ({ id: p.id, name: p.name || '', role: p.character || '', photo: p.profile_path || '' })),
     next: ep(d.next_episode_to_air), last: ep(d.last_episode_to_air),
     seasons: (d.seasons ?? []).filter((s: Json) => s.season_number > 0).map((s: Json) => ({ number: s.season_number, air: s.air_date || '', count: s.episode_count || 0 })),
   };
@@ -184,7 +206,7 @@ export async function pastEpisodes(detail: ShowDetail, today: string, max = 12):
   for (const s of started.slice(0, 2)) {
     try {
       const j = await tmdb('tv/' + detail.id + '/season/' + s.number);
-      (j?.episodes ?? []).forEach((e: Json) => { if (e.air_date && e.air_date <= today) out.push({ season: s.number, episode: e.episode_number, name: e.name || '', date: e.air_date, still: e.still_path || '' }); });
+      (j?.episodes ?? []).forEach((e: Json) => { const x = ep(e, s.number); if (x && x.date && x.date <= today) out.push(x); });
     } catch { /* saison indisponible */ }
     if (out.length >= max) break;
   }

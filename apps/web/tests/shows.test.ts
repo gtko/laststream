@@ -3,6 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { airingsFor, dayLabel, hhmm, localDate, matchKnown, primeTime, programKeys, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
+import { playBest } from '../src/player/session.js';
+import { state } from '../src/ui/state.js';
+// Lecture d'un épisode : on vérifie l'appel (sources, auto-lecture) sans lancer de vrai lecteur. Stubs complets (pas de
+// importOriginal) : le vrai module tire les rangées et la fiche dans un cycle d'imports qui garde le vrai playBest.
+vi.mock('../src/player/session.js', () => ({
+  playBest: vi.fn(async () => undefined),
+  closePlayer: () => undefined,
+  isPlayerOpen: () => false,
+}));
 
 const hlsLoads: string[] = [];
 vi.mock('hls.js', () => {
@@ -115,22 +124,34 @@ function mockFetch(url: string): Response {
   }
   if (p.endsWith('/lt/tmdb/discover/tv')) {
     return json({ results: [
-      { id: 1001, name: 'La France a un incroyable talent', poster_path: '/lf.jpg', backdrop_path: '/lfb.jpg', popularity: 80, overview: 'Le télécrochet.' },
-      { id: 1002, name: 'LOL : qui rit, sort !', poster_path: '/lol.jpg', backdrop_path: '/lolb.jpg', popularity: 60, overview: 'Qui rit sort.' },
+      { id: 1001, name: 'La France a un incroyable talent', poster_path: '/lf.jpg', backdrop_path: '/lfb.jpg', popularity: 80, overview: 'Le télécrochet.', genre_ids: [10764] },
+      { id: 1002, name: 'LOL : qui rit, sort !', poster_path: '/lol.jpg', backdrop_path: '/lolb.jpg', popularity: 60, overview: 'Qui rit sort.', genre_ids: [35] },
     ] });
   }
   if (p.endsWith('/lt/tmdb/search/tv')) {
-    return json({ results: [{ id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.' }] });
+    return json({ results: [{ id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.', genre_ids: [10764] }] });
   }
   const watch = /\/lt\/tmdb\/tv\/(\d+)\/watch\/providers$/.exec(p);
   if (watch) return json({ results: { FR: watch[1] === '1002' ? { flatrate: [{ provider_name: 'Prime Video', logo_path: '/pv.jpg', display_priority: 1 }], link: 'https://tmdb.example/x' } : {} } });
   const season = /\/lt\/tmdb\/tv\/(\d+)\/season\/(\d+)$/.exec(p);
-  if (season) return json({ episodes: [{ episode_number: 1, name: 'Auditions 1', air_date: '2026-09-01' }, { episode_number: 2, name: 'Auditions 2', air_date: '2026-09-08' }, { episode_number: 3, name: 'Futur', air_date: '2999-01-01' }] });
+  if (season) return json({ episodes: [
+    { episode_number: 1, name: 'Auditions 1', air_date: '2026-09-01', runtime: 0, overview: '', still_path: null },
+    { episode_number: 2, name: 'Auditions 2', air_date: '2026-09-08', runtime: 52, overview: 'Deuxième.', still_path: '/s2.jpg' },
+    { episode_number: 3, name: 'Futur', air_date: '2999-01-01', runtime: 50, overview: '', still_path: null },
+  ] });
   const tvd = /\/lt\/tmdb\/tv\/(\d+)$/.exec(p);
   if (tvd) {
     const next = tvd[1] === '1002' ? { air_date: new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10), season_number: 3, episode_number: 1, name: 'Nouvelle saison' } : null;
+    const last = tvd[1] === '1002' ? { air_date: '2026-09-08', season_number: 1, episode_number: 2, name: 'Auditions 2', runtime: 52 } : null;
+    const genres = { 1001: [{ id: 10764, name: 'Téléréalité' }], 1002: [{ id: 35, name: 'Divertissement' }] }[tvd[1]] || [];
+    // Animateur en premier (rôle d'hôte) : « Présenté par » ; la seconde n'a pas de photo : initiales.
+    const credits = tvd[1] === '1001' ? { cast: [
+      { id: 11, name: 'Animateur Test', character: 'Himself - Host', profile_path: '/a.jpg' },
+      { id: 12, name: 'Chroniqueuse Test', character: 'Himself - Jury', profile_path: null },
+    ] } : { cast: [] };
     return json({ id: Number(tvd[1]), name: { 1001: 'La France a un incroyable talent', 1002: 'LOL : qui rit, sort !', 1003: 'Top Chef' }[tvd[1]] || 'Série', overview: 'Synopsis de l’émission.', poster_path: '/p.jpg', backdrop_path: '/b.jpg',
-      status: 'En cours', networks: [{ name: tvd[1] === '1002' ? 'Prime Video' : 'TF1' }], next_episode_to_air: next, seasons: [{ season_number: 1, air_date: '2026-01-01', episode_count: 10 }] });
+      status: 'Returning Series', networks: [{ name: tvd[1] === '1002' ? 'Prime Video' : 'TF1' }], genres, credits, next_episode_to_air: next, last_episode_to_air: last,
+      seasons: [{ season_number: 1, air_date: '2026-01-01', episode_count: 10 }] });
   }
   if (p.includes('/lt/series/')) return json({ error: 'not_found' }, 404);
   if (p.includes('/lt/tmdb/')) return json({ results: [] });
@@ -197,23 +218,40 @@ describe('émissions TV (interface)', () => {
     const grids = page.querySelectorAll('.lib-grid');
     expect(Array.from(grids[0].querySelectorAll('.show-card')).map((c) => c.getAttribute('data-showopen'))).toEqual(expect.arrayContaining(['1001', '1003']));
     expect(grids[1].querySelector('[data-showopen="1002"]')).not.toBeNull();
+    // Héros : une des émissions connues avec fond (selon l'heure, la soirée ou la plus populaire) ; son titre reçoit le focus.
+    const hero = page.querySelector('.sv-hero')!;
+    expect(hero.querySelector('.sv-kicker')).not.toBeNull();
+    expect(['La France a un incroyable talent', 'Top Chef']).toContain(hero.querySelector('#svc-title')!.textContent);
+    expect(hero.querySelector('[data-showopen]')).not.toBeNull();
+    expect(page.querySelector('.sv-top [data-showopen="1001"]')).not.toBeNull(); // Top 10 : sections 3 à 5 présentes
     (page.querySelector('[data-showopen="1001"]') as HTMLElement).click();
     await settle(100);
     expect(location.hash).toBe('#/emission/1001');
   });
+
 
   it('fiche d’une émission : prochaines diffusions, direct, épisodes précédents, suivre, lecture', async () => {
     await settle(700);
     const d = document.querySelector('#detail .show-fiche')!;
     expect(d).not.toBeNull();
     expect(d.querySelector('#f-title')!.textContent).toBe('La France a un incroyable talent');
-    const air = d.querySelector('.show-air.is-live')!;
+    expect(d.querySelector('.sf-kicker')!.textContent).toBe('Émission TV · Téléréalité');
+    const meta = d.querySelector('.sf-hero .sf-meta')!.textContent!;
+    expect(meta).toContain('TF1');
+    expect(meta).toContain('En cours');
+    expect(meta).toContain('Présenté par Animateur Test');
+    const air = d.querySelector('.sf-airs-list .sf-air.is-live')!;
     expect(air.textContent).toContain('TF1');
-    expect(air.textContent).toContain('En direct maintenant');
+    expect(air.textContent).toContain('En direct');
     expect(air.querySelector('.progress')).not.toBeNull();
-    expect(d.querySelector('.show-past .show-ep')!.textContent).toContain('Auditions 2'); // le plus récent d'abord
-    expect(d.querySelector('.show-past')!.textContent).not.toContain('Futur');
+    expect(d.querySelector('.sf-past .sf-ep')!.textContent).toContain('Auditions 2'); // le plus récent d'abord
+    expect(d.querySelector('#show-past')!.textContent).not.toContain('Futur');
     expect(d.querySelector('[data-follow="tv:1001"]')).not.toBeNull();
+    // Bouton principal de la fiche en direct : « Regarder en direct » (data-showwatch), pas de « Revoir ».
+    const main = d.querySelector('.sf-hero [data-showwatch]') as HTMLElement;
+    expect(main.textContent).toContain('Regarder en direct');
+    expect(main.dataset.showwatch).toBe('fr:TF1.fr');
+    expect(d.querySelector('.sf-hero [data-showep]')).toBeNull();
     (air.querySelector('[data-showwatch]') as HTMLElement).click();
     await settle(400);
     const player = document.getElementById('player') as HTMLElement;
@@ -227,11 +265,66 @@ describe('émissions TV (interface)', () => {
     location.hash = '#/emission/1002';
     await settle(700);
     const d = document.querySelector('#detail .show-fiche')!;
-    const next = d.querySelector('#show-next')!;
-    expect(next.textContent).toContain('Disponible sur Prime Video');
+    const next = d.querySelector('#show-next') as HTMLElement;
+    expect(next.hidden).toBe(false);
     expect(next.textContent).toContain('Nouvel épisode');
+    expect(next.textContent).toContain('Streaming sur Prime Video');
     expect(d.querySelector('#show-where')!.textContent).toContain('Disponible sur');
-    expect(d.querySelector('.show-air')).toBeNull();
+    expect(d.querySelector('.sf-air')).toBeNull();
+    expect(d.querySelector('.sf-airs .row-msg')!.textContent).toContain('Aucune diffusion annoncée');
+    // Pas de direct : le bouton principal reprend le dernier épisode diffusé (sources de cet épisode).
+    expect(d.querySelector('.sf-hero [data-showwatch]')).toBeNull();
+    expect(d.querySelector('.sf-hero [data-showep="1:2"]')!.textContent).toContain('Revoir le dernier épisode');
+    expect(d.querySelector('.sf-hero [data-follow="tv:1002"]')).not.toBeNull();
+  });
+
+  it('épisode passé : la vignette et « Revoir » lancent playBest pour cet épisode', async () => {
+    const d = document.querySelector('#detail .show-fiche')!;
+    const card = d.querySelector('#show-past [data-showep="1:2"]') as HTMLElement;
+    expect(card.tagName).toBe('BUTTON');
+    expect(card.textContent).toContain('S1 · É2');
+    expect(card.textContent).toContain('52 min'); // durée du 2e épisode
+    expect(card.querySelector('img')!.getAttribute('src')).toContain('/s2.jpg');
+    card.click();
+    await settle(20);
+    expect(playBest).toHaveBeenCalledTimes(1);
+    const [req, opener] = vi.mocked(playBest).mock.calls[0];
+    expect(req).toMatchObject({ type: 'tv', id: '1002', season: 1, episode: 2, key: 'tv:1002', name: 'LOL : qui rit, sort !' });
+    expect(opener).toBe(card);
+    expect(location.hash).toBe('#/emission/1002'); // la fiche reste ouverte
+    // Un survol réécrit state.ficheName : le nom transmis doit venir de la fiche (data-name), pas de ce champ global.
+    Object.assign(state, { ficheName: 'Nom écrasé par un survol' });
+    (d.querySelector('.sf-hero [data-showep="1:2"]') as HTMLElement).click();
+    await settle(20);
+    expect(playBest).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(playBest).mock.calls[1][0]).toMatchObject({ type: 'tv', id: '1002', season: 1, episode: 2, name: 'LOL : qui rit, sort !' });
+  });
+
+  it('présentation : avatars (photo ou initiales) et présentateur de la fiche', async () => {
+    location.hash = '#/emission/1002';
+    await settle(700);
+    expect(document.querySelector('#detail .show-fiche #sf-h-cast')).toBeNull(); // aucun casting pour cette émission
+    location.hash = '#/emission/1001';
+    await settle(700);
+    const page = document.querySelector('#detail .show-fiche')!;
+    const people = Array.from(page.querySelectorAll('.sf-cast .sf-person'));
+    expect(page.querySelector('#sf-h-cast')!.textContent).toBe('Présentation');
+    expect(people.map((p) => p.querySelector('.sf-pn')!.textContent)).toEqual(['Animateur Test', 'Chroniqueuse Test']);
+    expect(people[0].querySelector('.sf-pr')!.textContent).toBe('Himself - Host');
+    expect(people[0].querySelector('.sf-av img')!.getAttribute('src')).toContain('/a.jpg');
+    expect(people[1].querySelector('.sf-av')!.textContent).toBe('CT');
+    expect(page.querySelector('.sf-hero .sf-meta')!.textContent).toContain('Présenté par Animateur Test');
+  });
+
+  it('carte « Prochaine diffusion » : heure de fin et chaîne en direct, barre de progression', () => {
+    const d = document.querySelector('#detail .show-fiche')!;
+    const card = d.querySelector('#show-next') as HTMLElement;
+    expect(card.hidden).toBe(false);
+    expect(card.textContent).toContain('Prochaine diffusion');
+    expect(card.textContent).toContain('TF1 · canal');
+    expect(card.textContent).toContain('En direct jusqu’à ' + hhmm(now + 2400));
+    expect(card.querySelector('.sf-bar > span')).not.toBeNull();
+    expect(card.textContent).not.toContain('Streaming sur'); // TMDB ne donne aucun fournisseur pour cette émission
   });
 
   it('calendrier : diffusions TV des émissions suivies avec puce « TV »', async () => {
@@ -249,5 +342,31 @@ describe('émissions TV (interface)', () => {
     chip.click();
     await settle(100);
     expect(document.querySelector('#detail .cal-ev.kind-airing')).toBeNull();
+  });
+
+  it('page Émissions TV : onglets de genre filtrent les sections, sans appel réseau', async () => {
+    location.hash = '#/emissions';
+    await settle(500);
+    const tabs = Array.from(document.querySelectorAll<HTMLElement>('#detail .sv-tab'));
+    expect(tabs.map((t) => t.textContent)).toEqual(['Tout', 'Téléréalité', 'Divertissement']);
+    expect(tabs[0].getAttribute('aria-pressed')).toBe('true');
+    const zoneIds = () => Array.from(document.querySelectorAll('#detail #sv-zone [data-showopen]')).map((c) => c.getAttribute('data-showopen'));
+    expect(zoneIds()).toEqual(expect.arrayContaining(['1001', '1002', '1003']));
+    const before = calls.length;
+    tabs[1].click(); // Téléréalité : LOL (divertissement) disparaît des sections, les deux autres restent
+    await settle(50);
+    expect(tabs[1].getAttribute('aria-pressed')).toBe('true');
+    expect(tabs[0].getAttribute('aria-pressed')).toBe('false');
+    expect(zoneIds()).toEqual(expect.arrayContaining(['1001', '1003']));
+    expect(zoneIds()).not.toContain('1002');
+    expect(calls.length).toBe(before);
+    tabs[2].click(); // Divertissement : seulement LOL
+    await settle(50);
+    expect(zoneIds().length).toBeGreaterThan(0);
+    expect(zoneIds().every((id) => id === '1002')).toBe(true);
+    tabs[0].click();
+    await settle(50);
+    expect(zoneIds()).toEqual(expect.arrayContaining(['1001', '1002', '1003']));
+    expect(document.querySelector('#detail .sv-hero #svc-title')).not.toBeNull(); // le héros ne change pas avec le filtre
   });
 });
