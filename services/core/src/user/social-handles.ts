@@ -143,6 +143,13 @@ function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
   db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
   db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM message_reactions WHERE pid = ?').run(pid);
+  db.prepare('DELETE FROM poll_votes WHERE pid = ?').run(pid);
+  // Groupe dont ce profil était le seul membre : supprimé ; les autres gardent leurs membres.
+  db.prepare(
+    'DELETE FROM social_groups WHERE id IN (SELECT group_id FROM social_group_members WHERE pid = ?) AND NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id AND m.pid <> ?)',
+  ).run(pid, pid);
+  db.prepare('DELETE FROM social_group_members WHERE pid = ?').run(pid);
   db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
   db.prepare('DELETE FROM blocks WHERE blocker_pid = ? OR blocked_pid = ?').run(pid, pid);
   db.prepare('DELETE FROM join_requests WHERE requester_pid = ? OR host_pid = ?').run(pid, pid);

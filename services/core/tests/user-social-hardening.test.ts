@@ -103,8 +103,8 @@ describe('révocation de l amitié legacy', () => {
 });
 
 describe('ticket du flux temps réel : usage unique', () => {
-  it('migration v19 en tête', () => {
-    expect(MIGRATIONS.at(-1)?.version).toBe(19);
+  it('la migration de tête est la plus haute version déclarée', () => {
+    expect(MIGRATIONS.at(-1)?.version).toBe(Math.max(...MIGRATIONS.map((migration) => migration.version)));
   });
 
   it('un nonce ne se consomme qu une fois, les échus sont purgés, un ticket échu est refusé', () => {

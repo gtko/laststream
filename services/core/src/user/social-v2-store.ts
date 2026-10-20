@@ -4,9 +4,10 @@ import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-st
 import type { SqlDb } from './sql.js';
 
 /**
- * Données sociales par profil (v2) : identité (handle `Nom#TAG`, pid), amitiés entre profils, présence, bibliothèque
- * partagée et historique des amis. Même base que UserStore (SQLite Node ou Durable Object) ; toutes les requêtes sont
- * paramétrées. Les profils sont désignés par leur `pid` public : l'id interne ne sort jamais de ce module.
+ * Données sociales par profil (v2, messages et groupes v3) : identité (handle `Nom#TAG`, pid), amitiés entre profils,
+ * présence, bibliothèque partagée, historique des amis, messages (DM, groupes, réactions, sondages) et notes. Même base
+ * que UserStore (SQLite Node ou Durable Object) ; toutes les requêtes sont paramétrées. Les profils sont désignés par leur
+ * `pid` public : l'id interne ne sort jamais de ce module.
  *
  * Foyer : les autres profils non enfants du même compte. Ils sont visibles sans demande, et voient toute la bibliothèque
  * et l'historique l'un de l'autre. Un ami n'accède qu'aux titres en visibilité « friends » et à l'historique.
@@ -389,7 +390,7 @@ function pairOf(a: string, b: string): { low: string; high: string } {
   return a < b ? { low: a, high: b } : { low: b, high: a };
 }
 
-// Messages et notes
+// Messages, groupes et notes
 
 /** Quotas d'écriture par profil auteur, sur une fenêtre glissante d'une minute (comptée en SQL sur created_at). */
 export const MESSAGES_PER_MINUTE = 30;
@@ -398,6 +399,8 @@ const WRITE_WINDOW_MS = 60_000;
 /** Messages renvoyés au plus par page, et notes renvoyées au plus pour un titre. */
 export const MAX_MESSAGE_PAGE = 50;
 export const MAX_NOTES_PER_MEDIA = 500;
+/** Membres d'un groupe, créateur compris, au plus. */
+export const MAX_GROUP_MEMBERS = 20;
 
 /** Référence à un titre (contrat `MediaRef`). Saison et épisode ignorés pour un film. */
 export interface MediaRef {
@@ -412,25 +415,163 @@ export interface MessageContext extends MediaRef {
   pos?: number;
 }
 
+export type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
+
+/** Titre partagé (kind title). `rating` : note de l'expéditeur sur 5. */
+export interface TitleRef {
+  type: 'movie' | 'series';
+  tmdbId: number;
+  title: string;
+  poster?: string;
+  year?: number;
+  rating?: number;
+}
+
+/** Moment d'un titre (kind moment). Saison et épisode ignorés pour un film. `still` : image TMDB. */
+export interface MomentRef {
+  type: 'movie' | 'series';
+  tmdbId: number;
+  season?: number;
+  episode?: number;
+  title: string;
+  pos: number;
+  still?: string;
+}
+
+/** Invitation à un salon de visionnage (kind party). */
+export interface PartyRef {
+  partyId: string;
+  title: string;
+}
+
+export interface ReactionView {
+  emoji: string;
+  count: number;
+  /** Posée par le profil qui regarde. */
+  mine: boolean;
+}
+
+export interface PollOptionView {
+  id: string;
+  label: string;
+  votes: number;
+  mine: boolean;
+}
+
+export interface PollView {
+  /** Identifiant du sondage : celui de son message. */
+  id: string;
+  question: string;
+  options: PollOptionView[];
+  closed: boolean;
+}
+
+/** Message vu par un profil. `conv` : conversation vue de ce profil (« dm:<pid de l'autre> » ou « g:<id> »). */
 export interface MessageView {
   id: string;
+  conv: string;
   /** Pid de l'expéditeur. */
   from: string;
-  /** Pid du destinataire. */
-  to: string;
+  /** Pid du destinataire ; absent pour un message de groupe. */
+  to?: string;
+  kind: MessageKind;
   body: string;
   context?: MessageContext;
+  title?: TitleRef;
+  moment?: MomentRef;
+  party?: PartyRef;
+  poll?: PollView;
+  reactions: ReactionView[];
+  replyTo?: string;
   createdAt: number;
   readAt?: number;
 }
 
-export interface ConversationView {
-  pid: string;
-  handle: Handle;
-  avatarColor: string;
+/** Groupe vu par un profil membre : membres = les autres membres (le profil qui regarde n'y figure pas). */
+export interface GroupView {
+  id: string;
+  name: string;
+  members: FriendView[];
+}
+
+interface ConversationBase {
+  conv: string;
   last?: MessageView;
   unread: number;
 }
+
+export interface DirectConversationView extends ConversationBase {
+  pid: string;
+  handle: Handle;
+  avatarColor: string;
+}
+
+export interface GroupConversationView extends ConversationBase {
+  group: GroupView;
+}
+
+export type ConversationView = DirectConversationView | GroupConversationView;
+
+/** Conversation côté serveur : un échange avec un profil, ou un groupe. */
+export type ConvScope = { kind: 'dm'; peer: string } | { kind: 'group'; id: string };
+
+/** Refus d'accès à une conversation : soi-même (400), inconnu ou groupe non visible (404), ni ami ni foyer (403). */
+export type ConvError = 'self' | 'unknown' | 'not_friend';
+type ConvAccess = 'ok' | ConvError;
+
+/** Identifiant de conversation tel qu'un profil le voit : « dm:<pid de l'autre> » ou « g:<id> ». */
+export function convKey(scope: ConvScope): string {
+  return scope.kind === 'dm' ? `dm:${scope.peer}` : `g:${scope.id}`;
+}
+
+/** Conversation vue par un destinataire : un DM se voit depuis l'expéditeur (« dm:<expéditeur> »), un groupe ne change pas. */
+function recipientScope(sender: string, scope: ConvScope): ConvScope {
+  return scope.kind === 'dm' ? { kind: 'dm', peer: sender } : scope;
+}
+
+/** Contenu d'un message à écrire (validé en amont). `context` : message texte d'un DM (v2) seulement. */
+export interface NewMessage {
+  kind: MessageKind;
+  body: string;
+  context?: MessageContext;
+  title?: TitleRef;
+  moment?: MomentRef;
+  party?: PartyRef;
+  poll?: { question: string; options: string[] };
+  replyTo?: string;
+}
+
+export interface Notice<T> {
+  /** Destinataire (pid). */
+  pid: string;
+  /** Conversation vue du destinataire. */
+  conv: string;
+  payload: T;
+}
+
+export type MessagesOutcome = { result: ConvError } | { result: 'ok'; messages: MessageView[] };
+export type SendOutcome =
+  | { result: ConvError | 'reply_unknown' | 'not_allowed' }
+  | { result: 'limit_reached'; retryAfterSec: number }
+  | { result: 'sent'; message: MessageView; notices: Notice<MessageView>[] };
+/** `count` : messages (DM) ou nombre de non-lus (groupe) qui viennent d'être lus. `peer` : l'expéditeur des messages lus, en DM. */
+export type ReadOutcome = { result: ConvError } | { result: 'ok'; count: number; at: number; peer?: string };
+export type ReactionOutcome =
+  | { result: ConvError | 'message_not_found' }
+  | { result: 'ok'; reactions: ReactionView[]; notices: Notice<ReactionView[]>[] };
+export type VoteOutcome =
+  | { result: ConvError | 'poll_not_found' | 'option_unknown' | 'poll_closed' | 'already_voted' }
+  | { result: 'ok'; poll: PollView; notices: Notice<PollView>[] };
+export type TypingOutcome = { result: ConvError } | { result: 'ok'; notices: Notice<null>[] };
+export type CreateGroupOutcome = { result: 'self' | 'not_friend' } | { result: 'ok'; conversation: GroupConversationView };
+export type UpdateGroupOutcome =
+  | { result: 'self' | 'not_friend' | 'unknown' | 'full' }
+  | { result: 'ok'; conversation: GroupConversationView };
+
+export type AddNoteOutcome =
+  | { result: 'unknown' }
+  | { result: 'limit_reached'; retryAfterSec: number }
+  | { result: 'ok'; note: NoteView; audience: string[] };
 
 export interface NoteView {
   id: string;
@@ -440,18 +581,6 @@ export interface NoteView {
   body: string;
   createdAt: number;
 }
-
-/** Cible d'un message refusée : soi-même (400), profil inconnu ou enfant (404), profil ni ami ni du foyer (403). */
-export type TargetError = 'self' | 'unknown' | 'not_friend';
-
-export type SendOutcome = { result: TargetError | 'not_allowed' } | { result: 'limit_reached'; retryAfterSec: number } | { result: 'sent'; message: MessageView };
-export type MessagesOutcome = { result: TargetError } | { result: 'ok'; messages: MessageView[] };
-/** `count` : messages reçus qui viennent d'être marqués lus (0 : rien à faire, rien à notifier). */
-export type ReadOutcome = { result: TargetError } | { result: 'ok'; count: number; at: number };
-export type AddNoteOutcome =
-  | { result: 'unknown' }
-  | { result: 'limit_reached'; retryAfterSec: number }
-  | { result: 'ok'; note: NoteView; audience: string[] };
 
 /** Référence normalisée : saison et épisode gardés seulement pour une série. */
 export function normalizeMedia(input: MediaRef): MediaRef {
@@ -475,27 +604,85 @@ function contextOf(input: MessageContext): MessageContext {
   return out;
 }
 
+/** Charge hors texte d'un message (titre, moment ou invitation), telle qu'elle est stockée ; un film n'a ni saison ni épisode. */
+function payloadOf(input: NewMessage): string | null {
+  if (input.kind === 'title' && input.title !== undefined) return JSON.stringify(input.title);
+  if (input.kind === 'moment' && input.moment !== undefined) {
+    const moment: MomentRef = { ...input.moment };
+    if (moment.type === 'movie') {
+      delete moment.season;
+      delete moment.episode;
+    }
+    return JSON.stringify(moment);
+  }
+  if (input.kind === 'party' && input.party !== undefined) return JSON.stringify(input.party);
+  return null;
+}
+
 interface MessageRow {
   id: string;
   from_pid: string;
-  to_pid: string;
+  to_pid: string | null;
+  group_id: string | null;
+  kind: MessageKind;
   body: string;
   context: string | null;
+  payload: string | null;
+  reply_to: string | null;
   created_at: number;
   read_at: number | null;
 }
 
-const MESSAGE_COLUMNS = 'id, from_pid, to_pid, body, context, created_at, read_at';
+const MESSAGE_COLUMNS = 'id, from_pid, to_pid, group_id, kind, body, context, payload, reply_to, created_at, read_at';
 
-function messageOf(row: MessageRow): MessageView {
-  const view: MessageView = { id: row.id, from: row.from_pid, to: row.to_pid, body: row.body, createdAt: Number(row.created_at) };
-  if (row.context !== null) {
-    try {
-      view.context = JSON.parse(row.context) as MessageContext;
-    } catch {
-      // Contexte illisible : le message reste lisible sans lui.
-    }
+const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM messages WHERE from_pid = ? AND created_at > ?';
+/** Notes comptées par le journal des créations : une suppression ne libère pas de place dans le quota. */
+const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM note_creations WHERE author_pid = ? AND created_at > ?';
+
+/** Clause des messages d'une conversation (alias `m`) et ses paramètres. */
+function scopeSql(scope: ConvScope, viewer: string): { sql: string; params: string[] } {
+  if (scope.kind === 'group') return { sql: 'm.group_id = ?', params: [scope.id] };
+  return {
+    sql: '((m.from_pid = ? AND m.to_pid = ?) OR (m.from_pid = ? AND m.to_pid = ?))',
+    params: [viewer, scope.peer, scope.peer, viewer],
+  };
+}
+
+/** `?, ?, …` pour une liste de paramètres. */
+function marks(values: readonly string[]): string {
+  return values.map(() => '?').join(', ');
+}
+
+function parseJson<T>(raw: string | null): T | undefined {
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    // Contenu illisible : le message reste lisible sans cette charge.
+    return undefined;
   }
+}
+
+/** Vue d'un message pour `viewer`. Les réactions et le sondage sont déjà calculés pour lui. */
+function toMessageView(viewer: string, row: MessageRow, reactions: ReactionView[], poll: PollView | undefined): MessageView {
+  const conv = row.group_id !== null ? `g:${row.group_id}` : `dm:${row.from_pid === viewer ? String(row.to_pid) : row.from_pid}`;
+  const view: MessageView = { id: row.id, conv, from: row.from_pid, kind: row.kind, body: row.body, reactions, createdAt: Number(row.created_at) };
+  if (row.to_pid !== null) view.to = row.to_pid;
+  const context = parseJson<MessageContext>(row.context);
+  if (context !== undefined) view.context = context;
+  if (row.kind === 'title') {
+    const title = parseJson<TitleRef>(row.payload);
+    if (title !== undefined) view.title = title;
+  } else if (row.kind === 'moment') {
+    const moment = parseJson<MomentRef>(row.payload);
+    if (moment !== undefined) view.moment = moment;
+  } else if (row.kind === 'party') {
+    const party = parseJson<PartyRef>(row.payload);
+    if (party !== undefined) view.party = party;
+  } else if (row.kind === 'poll' && poll !== undefined) {
+    view.poll = poll;
+  }
+  if (row.reply_to !== null) view.replyTo = row.reply_to;
   if (row.read_at !== null) view.readAt = Number(row.read_at);
   return view;
 }
@@ -525,10 +712,6 @@ function noteOf(row: NoteRow): NoteView {
     createdAt: Number(row.created_at),
   };
 }
-
-const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM messages WHERE from_pid = ? AND created_at > ?';
-/** Notes comptées par le journal des créations : une suppression ne libère pas de place dans le quota. */
-const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM note_creations WHERE author_pid = ? AND created_at > ?';
 
 export class SocialV2Store {
   constructor(private readonly db: SqlDb) {}
@@ -1276,7 +1459,7 @@ export class SocialV2Store {
     return { result: 'ok', items };
   }
 
-  // Messages : conversations entre amis et foyer
+  // Conversations : accès, lecture des messages et des réactions
 
   /** Amis acceptés et autres profils du foyer, joignables en message. */
   private peersOf(pid: string): Card[] {
@@ -1293,17 +1476,391 @@ export class SocialV2Store {
     return rows.map((row) => ({ pid: row.pid, handle: handleOf(row.handle_name, row.handle_tag), avatarColor: row.avatar_color }));
   }
 
-  /** Cible d'un message : `undefined` si `targetPid` est joignable (ami ou foyer), sinon la raison du refus. */
-  private targetError(viewerPid: string, targetPid: string): TargetError | undefined {
-    if (targetPid === viewerPid) return 'self';
-    if (this.card(targetPid) === undefined) return 'unknown';
+  /** Accès de `viewer` à une conversation : `ok`, ou la raison du refus. Un groupe n'est visible que de ses membres. */
+  private accessOf(viewer: string, scope: ConvScope): ConvAccess {
+    if (scope.kind === 'group') return this.isMember(viewer, scope.id) ? 'ok' : 'unknown';
+    if (scope.peer === viewer) return 'self';
+    if (this.card(scope.peer) === undefined) return 'unknown';
     // Un blocage, dans un sens ou dans l'autre, rend le profil invisible : même réponse qu'un profil inconnu.
-    if (this.isBlockedEither(viewerPid, targetPid)) return 'unknown';
-    return this.relationOf(viewerPid, targetPid) === undefined ? 'not_friend' : undefined;
+    if (this.isBlockedEither(viewer, scope.peer)) return 'unknown';
+    return this.relationOf(viewer, scope.peer) === undefined ? 'not_friend' : 'ok';
+  }
+
+  private isMember(pid: string, groupId: string): boolean {
+    return this.db.prepare('SELECT 1 AS x FROM social_group_members WHERE group_id = ? AND pid = ?').get(groupId, pid) !== undefined;
+  }
+
+  private memberCount(groupId: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM social_group_members WHERE group_id = ?').get(groupId);
+    return Number(row?.n ?? 0);
+  }
+
+  /** Destinataires d'un événement de conversation, hors auteur : le pair (DM), ou les membres non enfants (groupe). */
+  private recipientsOf(viewer: string, scope: ConvScope): string[] {
+    if (scope.kind === 'dm') return [scope.peer];
+    return this.db
+      .prepare(
+        `SELECT m.pid FROM social_group_members m JOIN profiles p ON p.pid = m.pid
+          WHERE m.group_id = ? AND m.pid <> ? AND p.is_kid = 0 ORDER BY m.joined_at, m.pid`,
+      )
+      .all(scope.id, viewer)
+      .map((row) => String(row.pid));
+  }
+
+  /** Vrai si le message `messageId` existe dans la conversation `scope`. */
+  private inScope(messageId: string, viewer: string, scope: ConvScope): boolean {
+    const s = scopeSql(scope, viewer);
+    return this.db.prepare(`SELECT 1 AS x FROM messages m WHERE m.id = ? AND ${s.sql}`).get(messageId, ...s.params) !== undefined;
+  }
+
+  /** Réactions de chaque message de `ids`, vues par `viewer`. Une entrée par emoji, dans l'ordre de première pose. */
+  private reactionsFor(viewer: string, ids: string[]): Map<string, ReactionView[]> {
+    const out = new Map<string, ReactionView[]>();
+    if (ids.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, emoji, COUNT(*) AS n, MAX(CASE WHEN pid = ? THEN 1 ELSE 0 END) AS mine
+           FROM message_reactions WHERE message_id IN (${marks(ids)})
+          GROUP BY message_id, emoji ORDER BY message_id, MIN(created_at), emoji`,
+      )
+      .all(viewer, ...ids);
+    for (const row of rows) {
+      const id = String(row.message_id);
+      const list = out.get(id) ?? [];
+      list.push({ emoji: String(row.emoji), count: Number(row.n), mine: Number(row.mine) === 1 });
+      out.set(id, list);
+    }
+    return out;
+  }
+
+  /** Sondages de `ids`, vus par `viewer` : votes par option, option choisie par lui. */
+  private pollsFor(viewer: string, ids: string[]): Map<string, PollView> {
+    const out = new Map<string, PollView>();
+    if (ids.length === 0) return out;
+    const rows = this.db
+      .prepare(
+        `SELECT p.message_id, p.question, p.closed, o.id, o.label,
+                (SELECT COUNT(*) FROM poll_votes v WHERE v.option_id = o.id) AS votes,
+                (SELECT COUNT(*) FROM poll_votes v WHERE v.option_id = o.id AND v.pid = ?) AS mine
+           FROM polls p JOIN poll_options o ON o.poll_id = p.message_id
+          WHERE p.message_id IN (${marks(ids)})
+          ORDER BY o.position`,
+      )
+      .all(viewer, ...ids);
+    for (const row of rows) {
+      const id = String(row.message_id);
+      let poll = out.get(id);
+      if (poll === undefined) {
+        poll = { id, question: String(row.question), options: [], closed: Number(row.closed) === 1 };
+        out.set(id, poll);
+      }
+      poll.options.push({ id: String(row.id), label: String(row.label), votes: Number(row.votes), mine: Number(row.mine) === 1 });
+    }
+    return out;
+  }
+
+  /** Vue d'un message pour `viewer` (réactions et sondage compris). */
+  private messageViewOf(viewer: string, row: MessageRow): MessageView {
+    const reactions = this.reactionsFor(viewer, [row.id]).get(row.id) ?? [];
+    return toMessageView(viewer, row, reactions, this.pollsFor(viewer, [row.id]).get(row.id));
+  }
+
+  /** Vues de plusieurs messages (une seule requête par type de donnée), dans l'ordre reçu. */
+  private messageViewsOf(viewer: string, rows: MessageRow[]): MessageView[] {
+    const ids = rows.map((row) => row.id);
+    const reactions = this.reactionsFor(viewer, ids);
+    const polls = this.pollsFor(viewer, ids);
+    return rows.map((row) => toMessageView(viewer, row, reactions.get(row.id) ?? [], polls.get(row.id)));
+  }
+
+  private rowOf(id: string): MessageRow | undefined {
+    return this.db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = ?`).get(id) as unknown as MessageRow | undefined;
+  }
+
+  private lastOf(viewer: string, scope: ConvScope): MessageView | undefined {
+    const s = scopeSql(scope, viewer);
+    const row = this.db
+      .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages m WHERE ${s.sql} ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1`)
+      .get(...s.params) as unknown as MessageRow | undefined;
+    return row === undefined ? undefined : this.messageViewOf(viewer, row);
+  }
+
+  /** Non-lus de `viewer` dans la conversation : messages reçus non lus (DM), ou messages postés depuis sa dernière lecture (groupe). */
+  private unreadOf(viewer: string, scope: ConvScope): number {
+    if (scope.kind === 'dm') {
+      const row = this.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL').get(scope.peer, viewer);
+      return Number(row?.n ?? 0);
+    }
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM messages m JOIN social_group_members g ON g.group_id = m.group_id AND g.pid = ?
+          WHERE m.group_id = ? AND m.from_pid <> ? AND m.created_at > g.read_at`,
+      )
+      .get(viewer, scope.id, viewer);
+    return Number(row?.n ?? 0);
+  }
+
+  /** Vue d'un groupe pour un de ses membres : membres (sans lui), dernier message et non-lus. */
+  private groupConversation(viewer: string, groupId: string, name: string, now: number): GroupConversationView {
+    const memberRows = this.db
+      .prepare(
+        `SELECT m.pid FROM social_group_members m JOIN profiles p ON p.pid = m.pid
+          WHERE m.group_id = ? AND m.pid <> ? AND p.is_kid = 0 ORDER BY m.joined_at, m.pid`,
+      )
+      .all(groupId, viewer);
+    const members: FriendView[] = [];
+    for (const row of memberRows) {
+      const pid = String(row.pid);
+      const memberRow = this.db
+        .prepare(`SELECT ${VIEW_COLUMNS} FROM profiles p LEFT JOIN profile_presence pr ON pr.profile_pid = p.pid WHERE p.pid = ? AND p.is_kid = 0`)
+        .get(pid) as unknown as ViewRow | undefined;
+      if (memberRow !== undefined && memberRow.handle_name !== null) members.push(this.presentView(viewer, memberRow, this.relationOf(viewer, pid) === 'household', now));
+    }
+    const scope: ConvScope = { kind: 'group', id: groupId };
+    const view: GroupConversationView = { conv: convKey(scope), group: { id: groupId, name, members }, unread: this.unreadOf(viewer, scope) };
+    const last = this.lastOf(viewer, scope);
+    if (last !== undefined) view.last = last;
+    return view;
   }
 
   /**
-   * Secondes avant le prochain envoi permis, ou `undefined` si le quota de la minute n'est pas atteint. `sql` compte les
+   * Conversations : amis et foyer, puis groupes dont on est membre, avec le dernier message et le nombre de non-lus. Les
+   * plus récentes d'abord, puis par nom.
+   */
+  conversations(pid: string, now: number): ConversationView[] {
+    const items: { view: ConversationView; name: string; tag: string; at: number }[] = [];
+    for (const peer of this.peersOf(pid)) {
+      const scope: ConvScope = { kind: 'dm', peer: peer.pid };
+      const view: DirectConversationView = {
+        conv: convKey(scope),
+        pid: peer.pid,
+        handle: peer.handle,
+        avatarColor: peer.avatarColor,
+        unread: this.unreadOf(pid, scope),
+      };
+      const last = this.lastOf(pid, scope);
+      if (last !== undefined) view.last = last;
+      items.push({ view, name: peer.handle.name, tag: peer.handle.tag, at: last?.createdAt ?? 0 });
+    }
+    const groups = this.db
+      .prepare('SELECT g.id, g.name FROM social_group_members m JOIN social_groups g ON g.id = m.group_id WHERE m.pid = ?')
+      .all(pid);
+    for (const row of groups) {
+      const view = this.groupConversation(pid, String(row.id), String(row.name), now);
+      items.push({ view, name: view.group.name, tag: '', at: view.last?.createdAt ?? 0 });
+    }
+    return items
+      .sort((a, b) => b.at - a.at || a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.tag.localeCompare(b.tag))
+      .map((item) => item.view);
+  }
+
+  /**
+   * Messages d'une conversation, du plus ancien au plus récent : `limit` au plus, antérieurs à `before` (ms) s'il est donné.
+   */
+  convMessages(viewer: string, scope: ConvScope, before: number | undefined, limit: number): MessagesOutcome {
+    const access = this.accessOf(viewer, scope);
+    if (access !== 'ok') return { result: access };
+    const s = scopeSql(scope, viewer);
+    const rows = this.db
+      .prepare(
+        `SELECT ${MESSAGE_COLUMNS} FROM messages m
+          WHERE ${s.sql} AND m.created_at < ?
+          ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`,
+      )
+      .all(...s.params, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as MessageRow[];
+    return { result: 'ok', messages: this.messageViewsOf(viewer, rows).reverse() };
+  }
+
+  /**
+   * Envoi d'un message dans la conversation. Refusé (sans rien écrire) si la cible n'est pas accessible, si l'expéditeur
+   * a déjà envoyé 30 messages dans la dernière minute, ou si la réponse vise un message hors de la conversation.
+   * `notices` : une vue par destinataire (le pair, ou les membres sauf l'expéditeur).
+   */
+  sendConvMessage(viewer: string, scope: ConvScope, input: NewMessage, now: number): SendOutcome {
+    return this.db.transaction((): SendOutcome => {
+      const access = this.accessOf(viewer, scope);
+      if (access !== 'ok') return { result: access };
+      if (scope.kind === 'dm' && !this.acceptsMessagesFrom(scope.peer, viewer)) return { result: 'not_allowed' };
+      const retryAfterSec = this.retryAfter(SENT_MESSAGES_SQL, viewer, MESSAGES_PER_MINUTE, now);
+      if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
+      if (input.replyTo !== undefined && !this.inScope(input.replyTo, viewer, scope)) return { result: 'reply_unknown' };
+      const dm = scope.kind === 'dm';
+      const row: MessageRow = {
+        id: randomUUID(),
+        from_pid: viewer,
+        to_pid: dm ? scope.peer : null,
+        group_id: dm ? null : scope.id,
+        kind: input.kind,
+        body: input.body,
+        context: input.context === undefined ? null : JSON.stringify(contextOf(input.context)),
+        payload: payloadOf(input),
+        reply_to: input.replyTo ?? null,
+        created_at: now,
+        read_at: null,
+      };
+      this.db
+        .prepare(
+          `INSERT INTO messages (id, from_pid, to_pid, group_id, kind, body, context, payload, reply_to, created_at, read_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        )
+        .run(row.id, row.from_pid, row.to_pid, row.group_id, row.kind, row.body, row.context, row.payload, row.reply_to, row.created_at);
+      if (input.kind === 'poll' && input.poll !== undefined) {
+        this.db.prepare('INSERT INTO polls (message_id, question, closed) VALUES (?, ?, 0)').run(row.id, input.poll.question);
+        input.poll.options.forEach((label, position) => {
+          this.db
+            .prepare('INSERT INTO poll_options (id, poll_id, position, label) VALUES (?, ?, ?, ?)')
+            .run(randomUUID(), row.id, position, label);
+        });
+      }
+      const notices = this.recipientsOf(viewer, scope).map(
+        (pid): Notice<MessageView> => ({ pid, conv: convKey(recipientScope(viewer, scope)), payload: this.messageViewOf(pid, row) }),
+      );
+      return { result: 'sent', message: this.messageViewOf(viewer, row), notices };
+    });
+  }
+
+  /**
+   * Marque lu. DM : les messages reçus de l'autre profil (`count`, `peer`). Groupe : le moment de lecture du membre ;
+   * `count` = messages postés depuis sa lecture précédente.
+   */
+  readConv(viewer: string, scope: ConvScope, now: number): ReadOutcome {
+    return this.db.transaction((): ReadOutcome => {
+      const access = this.accessOf(viewer, scope);
+      if (access !== 'ok') return { result: access };
+      if (scope.kind === 'dm') {
+        const changes = this.db
+          .prepare('UPDATE messages SET read_at = ? WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL')
+          .run(now, scope.peer, viewer).changes;
+        return { result: 'ok', count: Number(changes), at: now, peer: scope.peer };
+      }
+      const count = this.unreadOf(viewer, scope);
+      this.db.prepare('UPDATE social_group_members SET read_at = ? WHERE group_id = ? AND pid = ?').run(now, scope.id, viewer);
+      return { result: 'ok', count, at: now };
+    });
+  }
+
+  /** Bascule une réaction (pose si absente, retire si présente) sur un message de la conversation. */
+  toggleReaction(viewer: string, scope: ConvScope, messageId: string, emoji: string, now: number): ReactionOutcome {
+    return this.db.transaction((): ReactionOutcome => {
+      const access = this.accessOf(viewer, scope);
+      if (access !== 'ok') return { result: access };
+      if (!this.inScope(messageId, viewer, scope)) return { result: 'message_not_found' };
+      const existing = this.db
+        .prepare('SELECT 1 AS x FROM message_reactions WHERE message_id = ? AND pid = ? AND emoji = ?')
+        .get(messageId, viewer, emoji);
+      if (existing !== undefined) {
+        this.db.prepare('DELETE FROM message_reactions WHERE message_id = ? AND pid = ? AND emoji = ?').run(messageId, viewer, emoji);
+      } else {
+        this.db
+          .prepare('INSERT INTO message_reactions (message_id, pid, emoji, created_at) VALUES (?, ?, ?, ?)')
+          .run(messageId, viewer, emoji, now);
+      }
+      const notices = this.recipientsOf(viewer, scope).map(
+        (pid): Notice<ReactionView[]> => ({
+          pid,
+          conv: convKey(recipientScope(viewer, scope)),
+          payload: this.reactionsFor(pid, [messageId]).get(messageId) ?? [],
+        }),
+      );
+      return { result: 'ok', reactions: this.reactionsFor(viewer, [messageId]).get(messageId) ?? [], notices };
+    });
+  }
+
+  /** Vote d'un profil pour une option d'un sondage : un seul vote par profil et par sondage. */
+  votePoll(viewer: string, scope: ConvScope, pollId: string, optionId: string, now: number): VoteOutcome {
+    return this.db.transaction((): VoteOutcome => {
+      const access = this.accessOf(viewer, scope);
+      if (access !== 'ok') return { result: access };
+      const s = scopeSql(scope, viewer);
+      const poll = this.db
+        .prepare(`SELECT p.closed FROM polls p JOIN messages m ON m.id = p.message_id WHERE p.message_id = ? AND ${s.sql}`)
+        .get(pollId, ...s.params) as { closed: number } | undefined;
+      if (poll === undefined) return { result: 'poll_not_found' };
+      if (this.db.prepare('SELECT 1 AS x FROM poll_options WHERE id = ? AND poll_id = ?').get(optionId, pollId) === undefined) {
+        return { result: 'option_unknown' };
+      }
+      if (Number(poll.closed) === 1) return { result: 'poll_closed' };
+      if (this.db.prepare('SELECT 1 AS x FROM poll_votes WHERE poll_id = ? AND pid = ?').get(pollId, viewer) !== undefined) {
+        return { result: 'already_voted' };
+      }
+      this.db
+        .prepare('INSERT INTO poll_votes (poll_id, pid, option_id, created_at) VALUES (?, ?, ?, ?)')
+        .run(pollId, viewer, optionId, now);
+      const own = this.pollsFor(viewer, [pollId]).get(pollId);
+      if (own === undefined) return { result: 'poll_not_found' };
+      const notices: Notice<PollView>[] = [];
+      for (const pid of this.recipientsOf(viewer, scope)) {
+        const view = this.pollsFor(pid, [pollId]).get(pollId);
+        if (view !== undefined) notices.push({ pid, conv: convKey(recipientScope(viewer, scope)), payload: view });
+      }
+      return { result: 'ok', poll: own, notices };
+    });
+  }
+
+  /** Frappe « en train d'écrire » : destinataires de la conversation (sans lui-même). */
+  typingNotices(viewer: string, scope: ConvScope): TypingOutcome {
+    const access = this.accessOf(viewer, scope);
+    if (access !== 'ok') return { result: access };
+    const conv = convKey(recipientScope(viewer, scope));
+    return { result: 'ok', notices: this.recipientsOf(viewer, scope).map((pid) => ({ pid, conv, payload: null })) };
+  }
+
+  // Groupes
+
+  /**
+   * Crée un groupe. Membres = amis acceptés du créateur (pas le foyer), distincts, sans lui-même. Le créateur est membre
+   * et lit le groupe dès maintenant.
+   */
+  createGroup(viewer: string, name: string, memberPids: string[], now: number): CreateGroupOutcome {
+    return this.db.transaction((): CreateGroupOutcome => {
+      if (memberPids.includes(viewer)) return { result: 'self' };
+      for (const pid of memberPids) {
+        if (this.relationOf(viewer, pid) !== 'friend') return { result: 'not_friend' };
+      }
+      const id = randomUUID();
+      this.db.prepare('INSERT INTO social_groups (id, name, created_by, created_at) VALUES (?, ?, ?, ?)').run(id, name, viewer, now);
+      for (const pid of [viewer, ...memberPids]) {
+        this.db.prepare('INSERT INTO social_group_members (group_id, pid, joined_at, read_at) VALUES (?, ?, ?, ?)').run(id, pid, now, now);
+      }
+      return { result: 'ok', conversation: this.groupConversation(viewer, id, name, now) };
+    });
+  }
+
+  /**
+   * Modifie un groupe (nom, ajouts d'amis, retraits de membres). Réservé aux membres. Un ajout qui dépasse 20 membres est
+   * refusé (`full`). Retirer soi-même passe par `leaveGroup`.
+   */
+  updateGroup(viewer: string, groupId: string, patch: { name?: string; add?: string[]; remove?: string[] }, now: number): UpdateGroupOutcome {
+    return this.db.transaction((): UpdateGroupOutcome => {
+      if (!this.isMember(viewer, groupId)) return { result: 'unknown' };
+      if (patch.add?.includes(viewer) || patch.remove?.includes(viewer)) return { result: 'self' };
+      const toAdd = (patch.add ?? []).filter((pid) => !this.isMember(pid, groupId));
+      for (const pid of toAdd) {
+        if (this.relationOf(viewer, pid) !== 'friend') return { result: 'not_friend' };
+      }
+      const toRemove = (patch.remove ?? []).filter((pid) => this.isMember(pid, groupId));
+      if (this.memberCount(groupId) + toAdd.length - toRemove.length > MAX_GROUP_MEMBERS) return { result: 'full' };
+      if (patch.name !== undefined) this.db.prepare('UPDATE social_groups SET name = ? WHERE id = ?').run(patch.name, groupId);
+      for (const pid of toRemove) this.db.prepare('DELETE FROM social_group_members WHERE group_id = ? AND pid = ?').run(groupId, pid);
+      for (const pid of toAdd) {
+        this.db.prepare('INSERT INTO social_group_members (group_id, pid, joined_at, read_at) VALUES (?, ?, ?, ?)').run(groupId, pid, now, now);
+      }
+      const row = this.db.prepare('SELECT name FROM social_groups WHERE id = ?').get(groupId);
+      return { result: 'ok', conversation: this.groupConversation(viewer, groupId, String(row?.name ?? ''), now) };
+    });
+  }
+
+  /** Quitte un groupe. Le dernier membre qui part supprime le groupe. `false` si l'on n'en est pas membre. */
+  leaveGroup(viewer: string, groupId: string): boolean {
+    return this.db.transaction(() => {
+      if (!this.isMember(viewer, groupId)) return false;
+      this.db.prepare('DELETE FROM social_group_members WHERE group_id = ? AND pid = ?').run(groupId, viewer);
+      if (this.memberCount(groupId) === 0) this.db.prepare('DELETE FROM social_groups WHERE id = ?').run(groupId);
+      return true;
+    });
+  }
+
+  /** Secondes avant le prochain envoi permis, ou `undefined` si le quota de la minute n'est pas atteint. `sql` compte les
    * envois de la fenêtre (paramètres : pid, début de fenêtre) et donne le plus ancien, qui libère une place à son expiration.
    */
   private retryAfter(sql: string, pid: string, limit: number, now: number): number | undefined {
@@ -1311,73 +1868,6 @@ export class SocialV2Store {
     if (Number(row?.n ?? 0) < limit) return undefined;
     const oldest = Number(row?.oldest ?? now);
     return Math.max(1, Math.ceil((oldest + WRITE_WINDOW_MS - now) / 1000));
-  }
-
-  /** Conversations : amis et foyer, avec le dernier message et le nombre de non-lus. Les plus récentes d'abord, puis par nom. */
-  conversations(pid: string): ConversationView[] {
-    const views = this.peersOf(pid).map((peer): ConversationView => {
-      const last = this.db
-        .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE (from_pid = ? AND to_pid = ?) OR (from_pid = ? AND to_pid = ?) ORDER BY created_at DESC, rowid DESC LIMIT 1`)
-        .get(pid, peer.pid, peer.pid, pid);
-      const unread = this.db.prepare('SELECT COUNT(*) AS n FROM messages WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL').get(peer.pid, pid);
-      const view: ConversationView = { pid: peer.pid, handle: peer.handle, avatarColor: peer.avatarColor, unread: Number(unread?.n ?? 0) };
-      if (last !== undefined) view.last = messageOf(last as unknown as MessageRow);
-      return view;
-    });
-    return views.sort((a, b) => {
-      const byRecency = (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
-      if (byRecency !== 0) return byRecency;
-      return a.handle.name.toLowerCase().localeCompare(b.handle.name.toLowerCase()) || a.handle.tag.localeCompare(b.handle.tag);
-    });
-  }
-
-  /**
-   * Messages échangés avec `targetPid` (dans les deux sens), du plus ancien au plus récent : `limit` au plus, antérieurs à
-   * `before` (ms) s'il est donné.
-   */
-  messagesWith(viewerPid: string, targetPid: string, before: number | undefined, limit: number): MessagesOutcome {
-    const failure = this.targetError(viewerPid, targetPid);
-    if (failure !== undefined) return { result: failure };
-    const rows = this.db
-      .prepare(
-        `SELECT ${MESSAGE_COLUMNS} FROM messages
-          WHERE ((from_pid = ? AND to_pid = ?) OR (from_pid = ? AND to_pid = ?)) AND created_at < ?
-          ORDER BY created_at DESC, rowid DESC LIMIT ?`,
-      )
-      .all(viewerPid, targetPid, targetPid, viewerPid, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as MessageRow[];
-    return { result: 'ok', messages: rows.reverse().map((row) => messageOf(row)) };
-  }
-
-  /**
-   * Envoi d'un message au profil `toPid`. Refusé (sans rien écrire) si la cible n'est pas joignable ou si l'expéditeur a
-   * déjà envoyé 30 messages dans la dernière minute.
-   */
-  sendMessage(fromPid: string, toPid: string, body: string, context: MessageContext | undefined, now: number): SendOutcome {
-    return this.db.transaction((): SendOutcome => {
-      const failure = this.targetError(fromPid, toPid);
-      if (failure !== undefined) return { result: failure };
-      if (!this.acceptsMessagesFrom(toPid, fromPid)) return { result: 'not_allowed' };
-      const retryAfterSec = this.retryAfter(SENT_MESSAGES_SQL, fromPid, MESSAGES_PER_MINUTE, now);
-      if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
-      const id = randomUUID();
-      const stored = context === undefined ? null : JSON.stringify(contextOf(context));
-      this.db
-        .prepare('INSERT INTO messages (id, from_pid, to_pid, body, context, created_at, read_at) VALUES (?, ?, ?, ?, ?, ?, NULL)')
-        .run(id, fromPid, toPid, body, stored, now);
-      return { result: 'sent', message: messageOf({ id, from_pid: fromPid, to_pid: toPid, body, context: stored, created_at: now, read_at: null }) };
-    });
-  }
-
-  /** Marque lus les messages reçus de `fromPid`. `count` : ceux qui viennent de l'être. */
-  readFrom(viewerPid: string, fromPid: string, now: number): ReadOutcome {
-    return this.db.transaction((): ReadOutcome => {
-      const failure = this.targetError(viewerPid, fromPid);
-      if (failure !== undefined) return { result: failure };
-      const changes = this.db
-        .prepare('UPDATE messages SET read_at = ? WHERE from_pid = ? AND to_pid = ? AND read_at IS NULL')
-        .run(now, fromPid, viewerPid).changes;
-      return { result: 'ok', count: Number(changes), at: now };
-    });
   }
 
   // Notes : sur un titre, à une position
