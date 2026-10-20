@@ -1,0 +1,15 @@
+{
+  // Points d'entrée réels : serveur Node, Worker Cloudflare, bundle mono-fichier, scripts, tests (Node et Workers).
+  "entry": [
+    "src/server.ts",
+    "src/worker.ts",
+    "src/bundle.ts",
+    "scripts/**/*.{ts,mjs}",
+    "tests/**/*.ts",
+    "tests-workers/**/*.ts"
+  ],
+  "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "tests/**/*.ts", "tests-workers/**/*.ts"],
+  "ignore": [".claude/**", "dist/**", "dist-bundle/**", "worker-ui/**"],
+  // `cloudflare:workers` est un module virtuel fourni par le runtime Workers, pas un paquet npm.
+  "ignoreDependencies": ["cloudflare", "cloudflare:workers"]
+}
