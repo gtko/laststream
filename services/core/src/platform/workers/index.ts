@@ -22,8 +22,8 @@ export { UserStoreDO } from './user-store-do.js';
 export { PartyRoom } from './party-room.js';
 export { Metrics } from './metrics-do.js';
 
-/** Sous Workers : ni ffmpeg ni détection de segments ni proxy HLS ; miniatures par WebCodecs côté client (relais de plages). */
-export const workersCapabilities: Capabilities = { thumbs: false, rangeThumbs: true, skipDetect: false, tvHls: false, sharedState: true };
+/** Sous Workers : ni ffmpeg, ni détection de segments, ni proxy HLS. */
+export const workersCapabilities: Capabilities = { thumbs: false, skipDetect: false, tvHls: false, sharedState: true };
 
 /** Installe la plateforme Workers si aucune requête ne l'a encore fait (Cron Trigger d'un isolat neuf). */
 export function ensureWorkersPlatform(env: WorkerEnv): void {

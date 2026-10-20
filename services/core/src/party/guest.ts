@@ -10,7 +10,7 @@ import { stripInvisible } from './text.js';
  * HMAC-SHA256 (WebCrypto) avec une clé dérivée du secret du Worker par HKDF, `info` propre à ce jeton : aucun autre jeton
  * (ticket, élévation, jeton de flux) ne peut être rejoué comme jeton invité.
  *
- * Module portable, WebCrypto seulement (ni `node:*` ni Buffer), comme range-token.ts : il tourne à l'identique sous Node
+ * Module portable, WebCrypto seulement (ni `node:*` ni Buffer) : il tourne à l'identique sous Node
  * et sous Cloudflare Workers.
  */
 

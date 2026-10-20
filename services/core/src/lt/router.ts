@@ -8,8 +8,7 @@ import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platf
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { type RowRuntime, serveRow } from './rows.js';
 import { personWhy, recommend, why } from './ai.js';
-import { createRateLimiter } from '../rate-limit.js';
-import { bodyOf, createLtContext, decodeFor, digest, LtError, type LtContext, queryOf, serviceKey } from './context.js';
+import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
 import { mdblistCached } from './mdblist.js';
@@ -19,11 +18,7 @@ import { MAX_REPORT_DURATION, MIN_REPORT_DURATION, validateMediaUrl } from './de
 import type { AutoDetector } from './detect/index.js';
 import { parseSkipTarget } from './skip.js';
 import { createSkipCommunity } from './skip-community.js';
-import { issuedUrls } from '../play/issued.js';
 import type { FrameResult, Registration } from './thumbs/index.js';
-import { parseDebridUrl, rangeHostPatterns } from './thumbs/range-hosts.js';
-import { signRangeToken } from './thumbs/range-token.js';
-import { resolveThumbSource } from './thumbs/source.js';
 import { parseTvQuery, signTvUrl, tvChannels, tvEpg, tvFacets, tvHls, tvImport, tvStats } from './tv.js';
 import type { TvAlternative, TvChannel } from './tv-catalog.js';
 
@@ -44,19 +39,6 @@ const PRIVATE_CACHE = 'private, max-age=300';
 const PRIVATE_CACHE_MAX_AGE_S = 300;
 /** Attente maximale d'une miniature demandée avant de répondre 202 (une image prend ~1 s, délai ffmpeg 8 s). */
 const THUMB_WAIT_MS = 9000;
-
-/** Secret et base du relais de plages : option explicite (`null` désactive), sinon variables d'environnement. */
-function rangeProxyOf(deps: AppDeps): { secret: string; base: string } | null {
-  if (deps.rangeProxy !== undefined) return deps.rangeProxy;
-  const env = runtimeEnv();
-  const secret = env.get('LASTADDON_RANGE_SECRET')?.trim() ?? '';
-  const base = (env.get('LASTADDON_RANGE_BASE') ?? '').trim().replace(/\/+$/, '');
-  return secret !== '' && /^https:\/\//.test(base) ? { secret, base } : null;
-}
-
-/** Signatures de liens débridés directs (/range-source) : au plus 20 par minute et par configuration (en plus de la limite par IP des écritures lt). */
-const RANGE_SOURCE_LIMIT = 20;
-const RANGE_SOURCE_WINDOW_S = 60;
 
 /** Erreurs des routes lt : `{ error: code }` (+ `service` si une clé manque). Aucun détail amont. */
 export const ltErrorHandler: ErrorHandler<AppEnv> = (err, c) => {
@@ -117,13 +99,6 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   const community = createSkipCommunity(ctx, openStore, detector ?? undefined);
   // Miniatures de la barre (ffmpeg, cache disque) : désactivées sans LASTADDON_FFMPEG valide, ou si la plateforme n'a pas ffmpeg.
   const thumbs: ThumbPort = capabilities.thumbs ? (platform().localMedia?.createThumbs(deps.thumbs) ?? DISABLED_THUMBS) : DISABLED_THUMBS;
-  // Miniatures décodées côté client : le Worker relaie les plages, ce serveur n'émet que le jeton HMAC (secret jamais exposé).
-  const range = capabilities.rangeThumbs ? rangeProxyOf(deps) : null;
-  const rangeIssued = (): ReturnType<typeof issuedUrls> => deps.thumbs?.issued ?? issuedUrls();
-  // Limite de débit des liens débridés directs : binding partagé (Workers) ou compteur en mémoire.
-  const localRangeLimit = createRateLimiter(RANGE_SOURCE_LIMIT, RANGE_SOURCE_WINDOW_S * 1000);
-  const rangeSourceAllowed = (key: string): Promise<boolean> =>
-    deps.rangeLimiter !== undefined ? deps.rangeLimiter(key) : Promise.resolve(localRangeLimit(key).allowed);
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';
   const configOf = (c: Ctx) => decodeFor(deps, tokenOf(c));
@@ -146,7 +121,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
         openrouter: services.openrouterApiKey !== undefined,
         fanart: services.fanartApiKey !== undefined,
       },
-      capabilities: { thumbs: thumbs.enabled, rangeThumbs: range !== null, tvHls: capabilities.tvHls },
+      capabilities: { thumbs: thumbs.enabled, tvHls: capabilities.tvHls },
     });
   });
 
@@ -287,28 +262,6 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     const registration = await thumbs.register(body.url, body.duration, body.start);
     if (registration === null) throw new LtError(400, 'invalid_source');
     return sendJson(c, registration);
-  });
-
-  // Source de miniatures décodées côté client (WebCodecs) : même liste d'URL autorisées que /thumbs, mais seules les
-  // adresses https publiques (liens débridés) sont acceptées ; la réponse porte le lien lu, un jeton de relais et la base du Worker.
-  lt.post('/range-source', async (c) => {
-    configOf(c);
-    if (range === null) throw new LtError(501, 'range_disabled');
-    const body = bodyOf(c);
-    const source = await resolveThumbSource(body.url, rangeIssued(), deps.thumbs?.allowLocal);
-    let url = source !== null && source.target.protocol === 'https:' ? source.target.href : undefined;
-    if (url === undefined) {
-      // Lien débridé renvoyé directement par un addon externe : signé s'il est d'un domaine autorisé, avec limite de débit par configuration.
-      const debrid = parseDebridUrl(body.url, rangeHostPatterns(runtimeEnv().get('LASTADDON_RANGE_HOSTS')));
-      if (debrid === null) throw new LtError(400, 'invalid_source');
-      if (!(await rangeSourceAllowed(digest(tokenOf(c))))) {
-        c.header('Retry-After', String(RANGE_SOURCE_WINDOW_S));
-        throw new LtError(429, 'rate_limited');
-      }
-      url = debrid.href;
-    }
-    const { token, exp } = await signRangeToken(range.secret, url);
-    return sendJson(c, { url, token, exp, base: range.base });
   });
 
   lt.get('/thumbs/:key/:indexwebp{[^/]+\\.webp}', async (c) => {

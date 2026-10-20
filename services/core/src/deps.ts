@@ -65,17 +65,6 @@ export interface AppDeps {
   skipDetect?: AutoDetectOptions;
   /** Miniatures de la barre (ffmpeg, cache, origines locales autorisées en plus) : réglages de test. */
   thumbs?: ThumbOptions;
-  /**
-   * Relais de plages Cloudflare pour les miniatures décodées côté client (WebCodecs) : secret HMAC partagé avec le Worker
-   * (LASTADDON_RANGE_SECRET) et base publique du Worker (LASTADDON_RANGE_BASE). Absent : variables d'environnement ;
-   * sans secret, la fonctionnalité est désactivée.
-   */
-  rangeProxy?: { secret: string; base: string } | null;
-  /**
-   * Limiteur partagé entre instances des signatures de liens débridés directs (/lt/range-source), clé = empreinte de la
-   * configuration. Absent : compteur en mémoire (20 par minute et par configuration). `true` = autorisé.
-   */
-  rangeLimiter?: (key: string) => Promise<boolean>;
   /** Stockage des fiches partagées (tests ; Workers : R2 par la plateforme). Absent : fiches construites à chaque demande. */
   metaBlobs?: MetaBlobStore;
   /** Stockage des rangées d'accueil communes (tests ; Workers : R2 par la plateforme). Absent : rangées calculées à la demande. */

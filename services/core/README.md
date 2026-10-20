@@ -680,19 +680,17 @@ Le même code tourne sur Node et sur Cloudflare Workers (`src/worker.ts`, config
 
 | Besoin | Node | Workers |
 | --- | --- | --- |
-| Variables | `process.env` | variables et secrets du Worker (`RANGE_SECRET` lu comme `LASTADDON_RANGE_SECRET`, `EDGE_SECRET` comme `LASTADDON_EDGE_SECRET`) |
+| Variables | `process.env` | variables et secrets du Worker (`EDGE_SECRET` lu comme `LASTADDON_EDGE_SECRET`) |
 | Données utilisateur | SQLite local (`node:sqlite`) | Durable Object SQLite `UserStoreDO` (objet global « users », appelé en RPC) |
 | Caches partagés | mémoire du processus | KV (`CACHE`) : statuts et liens AllDebrid, fichiers des packs, URL émises, .torrent privés, hébergeurs en panne |
 | Tâches d'arrière-plan | timers | `ctx.waitUntil` |
 | Interface web | dossier (`LASTADDON_UI_DIR`) | Workers Assets (`worker-ui/`, build de laststream-app) |
 | IP du client | socket | `CF-Connecting-IP` |
-| ffmpeg (miniatures serveur, détection des segments de saut), proxy HLS TV | oui | non ; miniatures par relais de plages (WebCodecs côté client) |
+| ffmpeg (miniatures serveur, détection des segments de saut), proxy HLS TV | oui | non (miniatures lues sur l'appareil) |
 
 **Stockage.** `UserStore` et `SkipSegmentStore` sont synchrones et ne dépendent que de `SqlDb` (`src/user/sql.ts`) : `node:sqlite` sous Node, le SQLite du Durable Object sous Workers (transactions par `transactionSync`). Le code applicatif n'appelle que les dépôts asynchrones `UserRepo` / `SkipRepo` (`src/user/repo.ts`), fournis par `platform().createUserBackend()`. Limite : un seul Durable Object traite toutes les requêtes une à la fois (quelques centaines par seconde, 10 Go) ; au-delà, partitionner par compte. Les limites de débit restent en mémoire, par isolat.
 
-**Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `RANGE_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Facultatifs, relais TURN de la watch party (Cloudflare Realtime TURN, identifiants de 24 h remis à chaque participant) : `TURN_KEY_ID` et `TURN_KEY_API_TOKEN` ; absents, la watch party reste en STUN seul. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
-
-**Miniatures (`POST /lt/range-source`).** Le jeton de relais est émis pour une URL émise par `/play`, et aussi pour tout lien https d'un domaine débrid autorisé (`*.debrid.it`, `*.alldebrid.com`, surchargeable par `LASTADDON_RANGE_HOSTS`, même liste que le Worker de relais), car les addons externes renvoient directement des liens AllDebrid. Ces derniers sont limités à 20 par minute et par configuration (binding `RANGE_LIMITER`). Tout autre domaine reste refusé (`400 invalid_source`).
+**Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Facultatifs, relais TURN de la watch party (Cloudflare Realtime TURN, identifiants de 24 h remis à chaque participant) : `TURN_KEY_ID` et `TURN_KEY_API_TOKEN` ; absents, la watch party reste en STUN seul. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
 
 ### TV en direct sur Workers (Cron + R2)
 

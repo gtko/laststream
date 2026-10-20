@@ -29,10 +29,8 @@
   "vars": {
     // Valeurs de test, jamais des secrets réels.
     "LASTADDON_SECRET": "lt-test-secret-with-more-than-32-chars",
-    "RANGE_SECRET": "range-test-secret-0123456789",
     "ADMIN_SECRET": "admin-test-secret-with-more-than-32-chars",
     "LASTADDON_PUBLIC": "1",
-    "LASTADDON_PUBLIC_URL": "https://lastaddon-test.example.com",
-    "LASTADDON_RANGE_BASE": "https://relay.example.com"
+    "LASTADDON_PUBLIC_URL": "https://lastaddon-test.example.com"
   }
 }

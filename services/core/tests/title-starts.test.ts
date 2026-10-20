@@ -244,7 +244,6 @@ describe('route PUT /user/profiles/:id/progress : pays transmis par l’hôte', 
       userDbPath: file,
       userRateLimits: DEFAULT_USER_RATE_LIMITS,
       thumbs: { ffmpeg: null },
-      rangeProxy: null,
     });
     const send = async (method: string, path: string, body: unknown, token?: string, country?: string): Promise<Response> => {
       const headers: Record<string, string> = { 'content-type': 'application/json' };
