@@ -19,7 +19,7 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (String(url).includes('/user/invites/check')) {
       checks.push(String(url));
-      return json({ valid: true, inviter: 'alice' });
+      return json({ valid: true, inviter: { name: 'alice', handle: 'alice#K7QD', avatar: null }, message: null, picks: [], expiresAt: null, number: 4242 });
     }
     return json({ error: 'not_found' }, 404);
   }));
@@ -46,7 +46,7 @@ describe('écran de connexion', () => {
     expect(checks).toHaveLength(0);
   });
 
-  it('le bouton ouvre « Rejoindre Laststream » ; un lien collé est vérifié et ouvre la création de compte', async () => {
+  it('le bouton ouvre « Rejoindre Laststream » ; un lien collé est vérifié et ouvre le billet puis la création de compte', async () => {
     history.replaceState(null, '', '/');
     const ui = await import('../src/ui/auth-ui.js');
     ui.readInviteFromLocation();
@@ -62,21 +62,25 @@ describe('écran de connexion', () => {
     input.dispatchEvent(new Event('paste', { bubbles: true }));
     await tick();
     expect(checks.some((c) => c.endsWith('/user/invites/check?code=Kq3abcd'))).toBe(true);
-    expect(overlay.textContent).toContain('Invité par alice');
-    expect($('#auth-form', overlay)).not.toBeNull();
+    // Billet valide : écran « Ta place est réservée », puis « Créer mon compte » ouvre le formulaire.
+    expect(overlay.textContent).toContain('Ta place est réservée.');
+    expect(overlay.textContent).toContain('alice#K7QD');
+    ($('[data-rf-create]', overlay) as HTMLElement).click();
+    expect($('#rf-form', overlay)).not.toBeNull();
   });
 
-  it('?invite=abcd ouvre directement « Rejoindre Laststream », avec l’invitation reconnue', async () => {
+  it('?invite=abcd ouvre directement le billet « Ta place est réservée », puis la création de compte', async () => {
     history.replaceState(null, '', '/?invite=abcd');
     const ui = await import('../src/ui/auth-ui.js');
     ui.readInviteFromLocation();
     void ui.runAuthFlow();
     await tick();
     const overlay = $('#auth')!;
-    expect($('h1', overlay)!.textContent).toBe('Rejoindre Laststream');
+    expect($('h1', overlay)!.textContent).toBe('Ta place est réservée.');
     expect(checks).toEqual(['http://localhost:7000/user/invites/check?code=abcd']);
-    expect(overlay.textContent).toContain('Invité par alice');
-    expect($('#auth-form', overlay)).not.toBeNull();
+    expect(overlay.textContent).toContain('alice#K7QD');
+    ($('[data-rf-create]', overlay) as HTMLElement).click();
+    expect($('#rf-form', overlay)).not.toBeNull();
     expect($('input[name="bootstrap"]', overlay)).toBeNull();
   });
 
