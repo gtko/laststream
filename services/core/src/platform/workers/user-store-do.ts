@@ -17,6 +17,7 @@ import {
   SOCIAL_LIVE_BINARY_FRAME,
   SOCIAL_LIVE_EXP_HEADER,
   SOCIAL_LIVE_FRAME_TOO_LARGE,
+  SOCIAL_LIVE_MAX_PER_PID,
   SOCIAL_LIVE_NONCE_HEADER,
   SOCIAL_LIVE_PID_HEADER,
   SOCIAL_LIVE_RATE_LIMITED,
@@ -36,9 +37,25 @@ declare const WebSocketPair: new () => { 0: CfWebSocket; 1: CfWebSocket };
 const LIVE_FRAMES_PER_MINUTE = 30;
 const liveFrameLimit = createRateLimiter(LIVE_FRAMES_PER_MINUTE, 60_000);
 
-/** Données attachées à chaque socket du flux social (survivent à l'hibernation). */
+/**
+ * Données attachées à chaque socket du flux social (survivent à l'hibernation). Ordre d'ouverture : `openedAt` (ms) puis
+ * `seq` (départage des connexions ouvertes dans la même milliseconde). `evicted` : fermée par éviction, plus recomptée.
+ */
 interface LiveAttachment {
   pid: string;
+  openedAt: number;
+  seq: number;
+  evicted?: boolean;
+}
+
+/** Ferme une connexion évincée (la plus ancienne du profil) ; elle n'est plus comptée même si elle reste listée. */
+function evictLive(ws: CfWebSocket, attachment: LiveAttachment): void {
+  try {
+    ws.serializeAttachment({ ...attachment, evicted: true });
+  } catch {
+    // déjà fermée
+  }
+  closeQuietly(ws, SOCIAL_LIVE_REPLACED, 'replaced');
 }
 
 /** Ferme sans lever : la socket peut déjà être fermée. */
@@ -94,6 +111,8 @@ export class UserStoreDO extends DurableObject {
   private readonly adminStore: AdminStore;
   private readonly metaStore: MetaStore;
   private readonly db: SqlDb;
+  /** Rang d'ouverture des connexions de cette instance (départage, voir LiveAttachment). */
+  private liveSeq = 0;
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env as never);
@@ -167,8 +186,9 @@ export class UserStoreDO extends DurableObject {
   // Flux temps réel social (GET /user/social/live)
 
   /**
-   * Mise à niveau du flux social. Le Worker a déjà vérifié le ticket et posé l'en-tête interne du profil. Une seule
-   * connexion par profil : la nouvelle ferme l'ancienne (4000). API d'hibernation : une socket est étiquetée par son pid.
+   * Mise à niveau du flux social. Le Worker a déjà vérifié le ticket et posé l'en-tête interne du profil. Jusqu'à
+   * SOCIAL_LIVE_MAX_PER_PID connexions par profil ; au-delà, les plus anciennes sont fermées (4000). API d'hibernation :
+   * une socket est étiquetée par son pid.
    */
   fetch(request: Request): Response {
     const pid = request.headers.get(SOCIAL_LIVE_PID_HEADER);
@@ -185,11 +205,17 @@ export class UserStoreDO extends DurableObject {
     if (nonce === null || !consumeLiveTicketNonce(this.db, nonce, exp, Date.now())) {
       return new Response(JSON.stringify({ error: 'invalid_ticket' }), { status: 401, headers: { 'content-type': 'application/json' } });
     }
-    for (const old of this.ctx.getWebSockets(pid)) closeQuietly(old, SOCIAL_LIVE_REPLACED, 'replaced');
+    // Place pour la nouvelle : au plus MAX - 1 connexions gardées ; les plus anciennes du profil sont évincées (4000).
+    const kept = this.ctx
+      .getWebSockets(pid)
+      .map((ws) => ({ ws, attachment: ws.deserializeAttachment() as LiveAttachment | null }))
+      .filter((entry): entry is { ws: CfWebSocket; attachment: LiveAttachment } => entry.attachment !== null && entry.attachment.evicted !== true)
+      .sort((a, b) => a.attachment.openedAt - b.attachment.openedAt || a.attachment.seq - b.attachment.seq);
+    for (const { ws, attachment } of kept.slice(0, Math.max(0, kept.length - (SOCIAL_LIVE_MAX_PER_PID - 1)))) evictLive(ws, attachment);
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    const attachment: LiveAttachment = { pid };
+    const attachment: LiveAttachment = { pid, openedAt: Date.now(), seq: ++this.liveSeq };
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [pid]);
     return new Response(null, { status: 101, webSocket: client } as ResponseInit);

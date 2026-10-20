@@ -198,18 +198,45 @@ describe('flux temps réel social (WebSocket)', () => {
     bobSocket.close();
   }, TEST_TIMEOUT_MS);
 
-  it('une seule connexion par profil : la plus ancienne se ferme (4000), la nouvelle reçoit', async () => {
+  it('deux connexions du même profil cohabitent : toutes deux reçoivent la diffusion, aucune ne se ferme', async () => {
     const alice = await persona('alice');
     const bob = await persona('bob');
-    const first = (await liveSocket(bob)).peer;
+    const phone = (await liveSocket(bob)).peer;
+    const laptop = (await liveSocket(bob)).peer;
     const aliceSocket = (await liveSocket(alice)).peer;
-    const second = (await liveSocket(bob)).peer;
-    expect(await first.whenClosed()).toMatchObject({ code: 4000 });
 
     expect((await api('POST', '/user/social/requests', { ...acting(alice), body: { handle: bob.full } })).status).toBe(201);
-    expect((await second.type('request')).request.pid).toBe(alice.pid);
+    expect((await phone.type('request')).request.pid).toBe(alice.pid);
+    expect((await laptop.type('request')).request.pid).toBe(alice.pid);
+
+    // Toujours ouvertes : elles répondent encore aux pings.
+    phone.send({ t: 'ping' });
+    laptop.send({ t: 'ping' });
+    expect(await phone.type('pong')).toEqual({ t: 'pong' });
+    expect(await laptop.type('pong')).toEqual({ t: 'pong' });
+    expect(phone.closed).toBeUndefined();
+    expect(laptop.closed).toBeUndefined();
     aliceSocket.close();
-    second.close();
+    phone.close();
+    laptop.close();
+  }, TEST_TIMEOUT_MS);
+
+  it('au-delà de cinq connexions du profil, la plus ancienne se ferme (4000) ; les autres restent ouvertes et reçoivent', async () => {
+    const alice = await persona('alice');
+    const bob = await persona('bob');
+    const bobSockets: Peer[] = [];
+    for (let i = 0; i < 5; i += 1) bobSockets.push((await liveSocket(bob)).peer);
+    // Sixième connexion : la plus ancienne (la première ouverte) est évincée.
+    const sixth = (await liveSocket(bob)).peer;
+    expect(await bobSockets[0].whenClosed()).toMatchObject({ code: 4000 });
+
+    const aliceSocket = (await liveSocket(alice)).peer;
+    expect((await api('POST', '/user/social/requests', { ...acting(alice), body: { handle: bob.full } })).status).toBe(201);
+    for (const socket of [...bobSockets.slice(1), sixth]) expect((await socket.type('request')).request.pid).toBe(alice.pid);
+    for (const socket of bobSockets.slice(1)) expect(socket.closed).toBeUndefined();
+    expect(sixth.closed).toBeUndefined();
+    aliceSocket.close();
+    for (const socket of [...bobSockets.slice(1), sixth]) socket.close();
   }, TEST_TIMEOUT_MS);
 
   it('trames invalides ignorées, trame trop grosse fermée (4013), débit dépassé fermé (4008)', async () => {

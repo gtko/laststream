@@ -33,8 +33,13 @@ export const SOCIAL_LIVE_NONCE_HEADER = 'x-social-live-nonce';
 export const SOCIAL_LIVE_EXP_HEADER = 'x-social-live-exp';
 /** Taille maximale d'une trame client, en caractères. Au-delà, la connexion est fermée (4013). */
 export const SOCIAL_LIVE_MAX_FRAME_CHARS = 1024;
-/** Code de fermeture d'une connexion remplacée par une plus récente du même profil. */
+/** Code de fermeture d'une connexion remplacée : au-delà de SOCIAL_LIVE_MAX_PER_PID, la plus ancienne du profil est fermée. */
 export const SOCIAL_LIVE_REPLACED = 4000;
+/**
+ * Connexions simultanées par profil (appareils ou onglets). La nouvelle connexion ferme la plus ancienne (4000) seulement
+ * au-delà de ce nombre : deux onglets d'un même profil cohabitent sans se déconnecter mutuellement.
+ */
+export const SOCIAL_LIVE_MAX_PER_PID = 5;
 /** Code de fermeture d'une connexion qui dépasse le débit de trames autorisé. */
 export const SOCIAL_LIVE_RATE_LIMITED = 4008;
 /**
