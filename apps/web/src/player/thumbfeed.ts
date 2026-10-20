@@ -38,12 +38,6 @@ export function serverHasThumbs(health: unknown): boolean {
   return caps?.thumbs === true;
 }
 
-/** Capacité annoncée par GET /lt/health : le relais de plages (Worker Cloudflare + jeton) est configuré. */
-export function serverHasRangeThumbs(health: unknown): boolean {
-  const caps = (health as { capabilities?: { rangeThumbs?: unknown } } | null | undefined)?.capabilities;
-  return caps?.rangeThumbs === true;
-}
-
 export interface FeedDeps {
   /** Enregistre la source courante auprès du serveur ; renvoie la clé, ou null si elle est refusée. */
   register(signal: AbortSignal): Promise<string | null>;

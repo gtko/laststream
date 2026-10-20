@@ -1,10 +1,10 @@
-/* Lecture de plages à travers le relais Cloudflare (GET /__laststream/range?u=&s=&e=&t=) ou directement (source avec CORS). */
+/* Lecture de plages directement depuis l'appareil (en-tête Range) : chez l'hébergeur débridé, avec l'IP de la lecture, ou sur un serveur local. */
 
 import type { FetchRange, RangeResponse } from './bytes';
 
 export type FetchFn = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<Pick<Response, 'status' | 'headers' | 'arrayBuffer'>>;
 
-/** Le relais refuse le jeton (expiré, invalide) : l'appelant demande une nouvelle source. */
+/** La source refuse la lecture (401, 403 : lien expiré) : l'appelant demande une nouvelle source. */
 export class RangeAuthError extends Error {
   constructor() { super('range_auth'); }
 }
@@ -20,24 +20,6 @@ async function toResult(res: Pick<Response, 'status' | 'headers' | 'arrayBuffer'
   if (res.status === 401 || res.status === 403) throw new RangeAuthError();
   if (res.status !== 206) throw new Error(`range_http_${res.status}`);
   return { data: new Uint8Array(await res.arrayBuffer()), total: totalFromContentRange(res.headers.get('content-range')) };
-}
-
-export interface ProxyTarget {
-  /** Base du Worker (https://laststream….workers.dev), sans barre finale. */
-  base: string;
-  /** Lien débridé réellement lu. */
-  url: string;
-  /** Jeton HMAC émis par lastAddon pour ce lien. */
-  token: string;
-}
-
-export function proxyRangeUrl(p: ProxyTarget, start: number, endInclusive: number): string {
-  const q = new URLSearchParams({ u: p.url, s: String(start), e: String(endInclusive), t: p.token });
-  return `${p.base.replace(/\/+$/, '')}/__laststream/range?${q.toString()}`;
-}
-
-export function proxyFetchRange(p: ProxyTarget, fetchFn: FetchFn): FetchRange {
-  return async (start, end, signal) => toResult(await fetchFn(proxyRangeUrl(p, start, end), { signal }));
 }
 
 /** Lecture directe avec l'en-tête Range (serveur local ou source qui envoie du CORS). */

@@ -10,16 +10,16 @@ import {
 import { ThumbFeed } from '../src/player/thumbfeed';
 
 /** Adresses factices : aucune URL débridée réelle. */
-const SOURCE = { url: 'https://debrid.example.test/d/fake-link.mp4', token: 'fake.token', base: 'https://edge.example.test' };
+const SOURCE = { url: 'https://debrid.example.test/d/fake-link.mp4' };
 const mp4 = (): Uint8Array => new Uint8Array(readFileSync(new URL('./fixtures/h264.mp4', import.meta.url)));
 
-/** Le Worker en miniature : sert la plage demandée (s, e) du fichier, avec Content-Range. */
+/** Serveur de plages en miniature : sert la plage demandée (en-tête Range) du fichier, avec Content-Range. */
 function rangeServer(file: Uint8Array, calls: string[]): FetchFn {
-  return async (url) => {
+  return async (url, init) => {
     calls.push(url);
-    const q = new URL(url).searchParams;
-    const s = Number(q.get('s'));
-    const e = Math.min(Number(q.get('e')), file.length - 1);
+    const m = /bytes=(\d+)-(\d+)/.exec(init?.headers?.Range ?? '');
+    const s = Number(m?.[1] ?? 0);
+    const e = Math.min(Number(m?.[2] ?? file.length - 1), file.length - 1);
     if (s >= file.length) return { status: 416, headers: new Headers({ 'content-range': `bytes */${file.length}` }), arrayBuffer: async () => new ArrayBuffer(0) };
     const body = file.slice(s, e + 1);
     return { status: 206, headers: new Headers({ 'content-range': `bytes ${s}-${e}/${file.length}` }), arrayBuffer: async () => body.buffer };

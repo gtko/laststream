@@ -49,7 +49,7 @@ describe('garde réseau : liste blanche', () => {
   it('refuse flux, TV HLS, comptes, écritures et toute route inconnue', () => {
     expect(demoAllows(`${BASE}/CFG/lt/tv/hls?u=x`, 'GET', b)).toBe(false);
     expect(demoAllows(`${BASE}/CFG/stream/movie/tt1.json`, 'GET', b)).toBe(false);
-    expect(demoAllows(`${BASE}/CFG/lt/range-source`, 'POST', b)).toBe(false);
+    expect(demoAllows(`${BASE}/CFG/lt/thumbs`, 'POST', b)).toBe(false);
     expect(demoAllows(`${BASE}/CFG/lt/tmdb/trending/movie/week`, 'POST', b)).toBe(false);
     expect(demoAllows(`${BASE}/CFG/lt/thumbs/k/1.webp`, 'GET', b)).toBe(false);
     for (const p of ['user/me', 'party/rooms', 'admin/x', 'config/encode', 'health', 'CFG/catalog/movie/top.json', 'CFG/manifest.json']) {
@@ -157,7 +157,7 @@ describe('mode démo démarré', () => {
     await expect(fetch(`${BASE}/CFG/stream/movie/tt1.json`)).rejects.toThrow();
     await expect(fetch(`${BASE}/user/me`, { headers: { authorization: 'Bearer SECRET-TOKEN' } })).rejects.toThrow();
     await expect(fetch(`${BASE}//user/me`)).rejects.toThrow();
-    await expect(fetch(`${BASE}/CFG/lt/range-source`, { method: 'POST', body: '{}' })).rejects.toThrow();
+    await expect(fetch(`${BASE}/CFG/lt/thumbs`, { method: 'POST', body: '{}' })).rejects.toThrow();
     await expect(fetch(new Request(`${BASE}/CFG/lt/tmdb/trending/movie/week`, { method: 'POST', body: '{}' }))).rejects.toThrow();
     await expect(fetch(new Request(`${BASE}/CFG/lt/tmdb/trending/movie/week`), { method: 'POST', body: '{}' })).rejects.toThrow();
     expect(fetchMock).not.toHaveBeenCalled();

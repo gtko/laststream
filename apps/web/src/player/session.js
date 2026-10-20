@@ -90,7 +90,7 @@ let thumbs = null;
 /** Aperçu mpv : images ffmpeg de lastAddon (une par 30 s) ; `addonThumbs` = capacité annoncée par le serveur. */
 let feed = null;
 let addonThumbs = false;
-/** Aperçu par plages (src/thumbs) : relais Cloudflare + WebCodecs, pour les liens débridés distants. */
+/** Aperçu par plages (src/thumbs) : lecture chez l'hébergeur + WebCodecs, pour les liens débridés distants. */
 let rangeFeed = null;
 let rangeLocal = null;
 let rangeStore = null;

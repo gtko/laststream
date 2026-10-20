@@ -107,13 +107,13 @@ export interface ThumbSourceInput {
   forceHls?: boolean;
   /** lastAddon annonce qu'il sait générer des miniatures (ffmpeg disponible). */
   addon?: boolean;
-  /** Lien débridé https distant, WebCodecs disponible et relais de plages annoncé par lastAddon : miniatures décodées ici (src/thumbs). */
+  /** Lien débridé https distant et WebCodecs disponible : miniatures décodées ici (src/thumbs), lues chez l'hébergeur. */
   range?: boolean;
 }
 
 /**
  * D'où viennent les images d'aperçu selon le moteur :
- * - lien débridé distant (toutes plateformes) : src/thumbs, démultiplexage par plages via le relais Cloudflare + WebCodecs, sans ffmpeg ;
+ * - lien débridé distant (toutes plateformes) : src/thumbs, démultiplexage par plages lues chez l'hébergeur + WebCodecs, sans ffmpeg ;
  * - lecture directe : le fichier lui-même (le navigateur sait le lire) ;
  * - HLS : une seconde session du serveur, basse résolution ;
  * - mpv : le fichier n'est souvent pas décodable par la WebView (MKV/HEVC/AV1/DTS) → images générées par ffmpeg côté lastAddon
