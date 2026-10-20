@@ -4,6 +4,9 @@ import { showHidden } from './hidden.js';
 import { showStats } from './stats.js';
 import { showFriendLibrary } from './friends.js';
 import { openSidebar } from './socialSidebar.js';
+import { showSharedList } from './sharedList.js';
+import { showShareLink } from './publicTitle.js';
+import { listIdFrom, shareCodeFrom } from './shareModel.js';
 import { showParties, showParty } from './parties.js';
 import { showPartyJoin, teardownPartyJoin } from './partyjoin.js';
 import { parseJoinHash } from '../party/join';
@@ -54,6 +57,8 @@ export function showView(r) {
   else if (r.kind === 'friends') openSidebar();
   else if (r.kind === 'friend') showFriendLibrary(r.id);
   else if (r.kind === 'parties') showParties();
+  else if (r.kind === 'list') showSharedList(r.id);
+  else if (r.kind === 'sharelink') showShareLink(r.code);
   else if (r.kind === 'party') showParty(r.id);
   else if (r.kind === 'partyjoin') showPartyJoin(r.id, r.token);
   else if (r.kind === 'settings') showSettings();
@@ -82,7 +87,7 @@ export function parseRoute() {
     return null;
   }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -107,6 +112,11 @@ function parseRouteRaw() {
   if (h === '#/friends') return { kind: 'friends' };
   r = /^#\/friend\/([a-z0-9_.-]{3,32})$/.exec(h);
   if (r) return { kind: 'friend', id: r[1] };
+  const listId = listIdFrom(h);
+  if (listId) return { kind: 'list', id: listId };
+  // Lien public d'un titre recommandé : #/t/<code> (ou /t/<code> servi par le Worker), sans session.
+  const shareCode = shareCodeFrom(h, '');
+  if (shareCode) return { kind: 'sharelink', code: shareCode };
   if (h === '#/parties') return { kind: 'parties' };
   r = /^#\/party\/([A-Za-z0-9_-]{1,64})$/.exec(h);
   if (r) return { kind: 'party', id: r[1] };
