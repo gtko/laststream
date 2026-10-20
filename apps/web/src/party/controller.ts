@@ -70,6 +70,8 @@ export class PartyController {
   private lastSeekSent = 0;
   /** L'hôte vient de lancer son lecteur (ou de créer le salon) : à la première mesure, le salon s'aligne sur lui. */
   private alignOnStart = false;
+  /** Dernier écart mesuré entre ce lecteur et le salon (secondes, signé), pour « Synchronisés · écart » ; null avant la première mesure. */
+  drift: number | null = null;
   /** Dernières commandes appliquées au lecteur local (inspection par les tests). */
   readonly applied: string[] = [];
 
@@ -82,6 +84,7 @@ export class PartyController {
     this.pending = null;
     this.seekDue = null;
     this.correcting = false;
+    this.drift = null;
   }
 
   /** Lecteur de l'hôte démarré (ou salon créé) : l'état de son lecteur devient celui du salon à la prochaine mesure. */
@@ -179,6 +182,7 @@ export class PartyController {
     const expected = expectedPosition(st, this.client.serverNow());
     const dur = p.duration();
     const target = dur > 0 ? Math.min(expected, Math.max(0, dur - 0.5)) : expected;
+    this.drift = p.buffering() ? this.drift : p.time() - target;
     if (!st.playing) {
       const seekTo = Math.abs(p.time() - target) >= 0.5 ? target : null;
       if (p.paused() && seekTo === null) {

@@ -3,12 +3,14 @@
 import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
 import { joinLinkOf } from '../party/join';
-import { CHAT_MAX, PARTY_WAIT_MAX_MS, partyErrorText, REACTIONS } from '../party/protocol';
+import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent, REACTION_OPTIONS, STAGE_EMOJIS, syncText, WAIT_LATE_OPTIONS } from '../party/lobbyModel';
+import { CHAT_MAX, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
+import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
 
 let rootEl = null;
 let panel = null;
@@ -33,6 +35,11 @@ let replaying = false;
 /** Au prochain rendu, défiler tout en bas (après un envoi ou à l'ouverture du chat). */
 let stickBottom = false;
 let renderQueued = false;
+/** Bandeau des participants (haut gauche du lecteur) et bandeau d'événement (haut centre) ; événements lisibles du salon pour le chat. */
+let band = null;
+let eventEl = null;
+let eventTimer = 0;
+let sysLines = [];
 
 const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
@@ -100,15 +107,9 @@ export function avatarIsLight(color) {
   return (lum + 0.05) / 0.0545 > 1.05 / (lum + 0.05);
 }
 
-/** Initiale du pseudo (un caractère, en majuscule). */
-const initialOf = (name) => {
-  const ch = Array.from(String(name ?? '').trim())[0];
-  return ch ? ch.toLocaleUpperCase('fr') : '?';
-};
-
 /** Avatar rond : l’illustration si elle est en cache (sinon hydratée par avatar-art), sur la couleur du participant ; l’initiale par-dessus. */
 const avatarHTML = (p) => '<span class="wp-av' + (avatarIsLight(p.avatarColor) ? ' is-light' : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) +
-  ' aria-hidden="true"><span class="wp-av-ini">' + esc(initialOf(p.username)) + '</span></span>';
+  ' aria-hidden="true"><span class="wp-av-ini">' + esc(initialsOf(p.username, !!p.guest)) + '</span></span>';
 
 /** Liste des participants. `waitWho` : pseudos retardés par le tampon (pastille « Tampon », prime sur le reste). */
 export function participantsHTML(list, you, youHost, verdicts = new Map(), waitWho = []) {
@@ -136,14 +137,34 @@ export function timeHTML(at) {
   return '<time class="wp-time" datetime="' + esc(d.toISOString()) + '">' + hh + ':' + mm + '</time>';
 }
 
-export function chatHTML(lines, you) {
+/**
+ * Horodatage d’une ligne : la position du film (« 1:12:34 ») quand le salon la fournit, sinon l’heure locale. L’élément
+ * garde la classe `wp-time`.
+ */
+export function stampHTML(l) {
+  if (l && typeof l.pos === 'number' && Number.isFinite(l.pos)) {
+    return '<time class="wp-time is-film" title="Position dans le film">' + esc(formatTimecode(l.pos)) + '</time>';
+  }
+  return timeHTML(l && l.at);
+}
+
+/** Lignes du chat : messages (avatar, pseudo, horodatage film) et événements du salon (`sys`). `people` : participants pour les avatars. */
+export function chatHTML(lines, you, people = []) {
   if (!lines.length) return '<p class="wp-empty">Aucun message pour l’instant.</p>';
   return lines.map((l) => {
+    if (l.sys) return '<p class="wp-sys">' + esc(l.text) + '</p>';
     const mine = you && l.from === you.username;
-    return '<p class="wp-line' + (mine ? ' is-mine' : '') + '" data-wp-line="' + esc(l.id) + '">' + timeHTML(l.at) +
-      '<b>' + esc(l.from) + '</b> <span>' + esc(l.text) + '</span>' +
+    const who = people.find((p) => p.username === l.from) || { username: l.from };
+    return '<p class="wp-line' + (mine ? ' is-mine' : '') + '" data-wp-line="' + esc(l.id) + '">' + avatarHTML(who) +
+      '<span class="wp-body"><b>' + esc(mine ? 'Moi' : l.from) + '</b> ' + stampHTML(l) + '<span class="wp-text">' + esc(l.text) + '</span></span>' +
       (mine ? '' : '<button type="button" class="wp-flag" data-wp-report="' + esc(l.id) + '" aria-label="Signaler ce message" title="Signaler">⚑</button>') + '</p>';
   }).join('');
+}
+
+/** Chat affiché : l’historique du salon et les événements lisibles, dans l’ordre du temps. */
+function chatLines(c) {
+  if (!sysLines.length) return c.chat;
+  return [...c.chat, ...sysLines].sort((a, b) => (a.at || 0) - (b.at || 0));
 }
 
 /** Bandeau d’attente de tampon : retardataires (« Léa, Tom »), spinner et compte à rebours. Vide hors attente. */
@@ -170,6 +191,21 @@ function chatHeadHTML() {
   const badge = !chatOpen && unread > 0 ? '<span class="wp-unread" data-wp-unread>' + (unread > 1 ? unread + ' nouveaux messages' : '1 nouveau message') + '</span>' : '';
   return '<button type="button" class="wp-sub wp-chat-toggle" data-wp-chat-toggle aria-expanded="' + (chatOpen ? 'true' : 'false') + '" aria-controls="wp-chat-body">' +
     'Chat' + badge + '<span class="wp-caret" aria-hidden="true">' + (chatOpen ? '▾' : '▸') + '</span></button>';
+}
+
+/** Invitation ciblée d'un ami (réservée aux comptes : ni profil enfant, ni invité). */
+function friendsHTML(c) {
+  if (isKidProfile() || !c.room || (c.you && c.you.guest)) return '';
+  return '<details class="wp-more-box" data-wp-friends><summary>Inviter des amis</summary>' + friendsListHTML('wp-friend') + '</details>';
+}
+
+/** Réglages du salon (hôte) : trois groupes de choix, comme le salon d’attente. */
+function settingsHTML(c) {
+  const s = { ...DEFAULT_SETTINGS, ...(c.settings || {}) };
+  const group = (name, label, options) => '<div class="wp-set"><span class="wp-set-l">' + label + '</span><div class="wp-seg" role="radiogroup" aria-label="' + label + '">' +
+    options.map(([v, t]) => '<button type="button" role="radio" aria-checked="' + (s[name] === v ? 'true' : 'false') + '" class="' + (s[name] === v ? 'on' : '') + '" data-wp-set="' + name + '" data-value="' + v + '">' + esc(t) + '</button>').join('') + '</div></div>';
+  return '<details class="wp-more-box" data-wp-settings><summary>Réglages du salon</summary>' +
+    group('control', 'Qui contrôle la lecture', CONTROL_OPTIONS) + group('waitLate', 'Attendre les retardataires', WAIT_LATE_OPTIONS) + group('reactions', 'Réactions à l’écran', REACTION_OPTIONS) + '</details>';
 }
 
 function createHTML() {
@@ -202,15 +238,15 @@ function roomHTML(c) {
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
     '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
     '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul>' +
-    (inviter ? inviteHTML() : '') +
+    (inviter ? inviteHTML() : '') + friendsHTML(c) + (host ? settingsHTML(c) : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
     '<div class="wp-chatsec">' + chatHeadHTML() +
     '<div class="wp-chat-body" id="wp-chat-body" data-wp-chat-body' + (chatOpen ? '' : ' hidden') + '>' +
-    '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(c.chat, you) + '</div>' +
+    '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(chatLines(c), you, c.participants) + '</div>' +
     '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
     '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
     '<button type="submit" class="btn btn-primary btn-sm"' + (you && you.muted ? ' disabled' : '') + '>Envoyer</button></form>' +
-    '<div class="wp-react" role="group" aria-label="Réactions">' + REACTIONS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
+    '<div class="wp-react" role="group" aria-label="Réactions">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
     '</div></div>';
 }
 
@@ -218,6 +254,7 @@ function render() {
   if (!panel) return;
   panel.hidden = !open;
   rootEl.classList.toggle('has-party-panel', open);
+  renderBand();
   if (!open) return;
   const c = partyBridge.client;
   const typing = panel.contains(document.activeElement) && document.activeElement.name === 'text';
@@ -287,15 +324,73 @@ function updateCountdown() {
   if (el && w) el.textContent = countdownText(w);
 }
 
-function floatReaction(emoji, user) {
+/** Réaction signée : l’avatar de son auteur à côté de l’emoji, qui monte puis s’efface. Réglage « discrètes » : plus petite ; « off » : rien. */
+function floatReaction(c, r) {
   if (!floats) return;
+  const mode = (c.settings && c.settings.reactions) || 'float';
+  if (mode === 'off') return;
+  const by = r.by || r.user;
+  const who = (c.participants || []).find((p) => p.username === by) || { username: by };
   const s = document.createElement('span');
-  s.className = 'wp-float';
+  s.className = 'wp-float ps-float' + (mode === 'discreet' ? ' is-discreet' : '');
   s.style.left = 8 + Math.random() * 80 + '%';
-  s.textContent = emoji;
-  s.title = user;
+  s.title = by;
+  s.innerHTML = avatarHTML(who).replace('class="wp-av', 'class="wp-av ps-float-av') + '<span class="ps-float-e"></span>';
+  s.querySelector('.ps-float-e').textContent = r.emoji;
   floats.appendChild(s);
   setTimeout(() => s.remove(), 3200);
+}
+
+/** Bandeau d’événement (« Hugo a reculé de 10 s · pour tout le monde »), quelques secondes ; le texte passe par textContent. */
+function showEvent(c, ev) {
+  if (!eventEl || !isPlaybackEvent(ev.kind)) return;
+  const who = (c.participants || []).find((p) => p.username === ev.by) || { username: ev.by };
+  eventEl.innerHTML = avatarHTML(who) + '<span class="ps-event-t"></span>';
+  eventEl.querySelector('.ps-event-t').textContent = eventText(ev) + ' · pour tout le monde';
+  eventEl.hidden = false;
+  clearTimeout(eventTimer);
+  eventTimer = setTimeout(() => { eventEl.hidden = true; }, 4000);
+}
+
+/** Événement du salon : bandeau pour la lecture, et ligne discrète dans le chat. */
+function onEvent(c, ev) {
+  showEvent(c, ev);
+  const text = eventText(ev);
+  if (!text) return;
+  sysLines.push({ sys: true, id: 'sys-' + Date.now() + '-' + sysLines.length, text, at: Date.now() });
+  if (sysLines.length > 100) sysLines.shift();
+  renderSoon();
+}
+
+/** Bandeau des participants (haut gauche) : avatars, « N en salle », écart de synchronisation, micro bientôt, masquer le chat. */
+function renderBand() {
+  if (!band) return;
+  const c = partyBridge.client;
+  const live = !!c && c.status !== 'idle' && c.status !== 'closed' && !!c.room;
+  band.hidden = !live;
+  if (eventEl && !live) eventEl.hidden = true;
+  if (!live) return;
+  const list = c.participants || [];
+  const shown = list.slice(0, 4);
+  const more = list.length - shown.length;
+  const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
+  band.innerHTML = '<div class="ps-avs" aria-hidden="true">' + shown.map((p) => avatarHTML(p).replace('class="wp-av', 'class="wp-av ps-av')).join('') +
+    (more > 0 ? '<span class="wp-av ps-av ps-more">+' + more + '</span>' : '') + '</div>' +
+    '<div class="ps-info"><div class="ps-n">' + list.length + ' en salle</div><div class="ps-sync' + (sync.ok ? '' : ' is-off') + '" data-ps-sync role="status">' + esc(sync.text) + '</div></div>' +
+    '<button type="button" class="ps-btn" disabled aria-label="Micro (bientôt disponible)" title="Micro : bientôt">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M4 4l16 16"/></svg></button>' +
+    '<button type="button" class="ps-btn" data-ps-chat aria-pressed="' + (open ? 'true' : 'false') + '" aria-label="' + (open ? 'Masquer la discussion' : 'Afficher la discussion') + '" title="' + (open ? 'Masquer la discussion' : 'Afficher la discussion') + '">' +
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>';
+}
+
+/** Met à jour seulement la ligne de synchronisation (chaque seconde). */
+function updateSync() {
+  if (!band || band.hidden) return;
+  const el = band.querySelector('[data-ps-sync]');
+  if (!el) return;
+  const sync = syncText(partyBridge.controller ? partyBridge.controller.drift : null);
+  if (el.textContent !== sync.text) el.textContent = sync.text;
+  el.classList.toggle('is-off', !sync.ok);
 }
 
 /** Rafraîchit seulement les compteurs (sans reconstruire le panneau) : débit montant, nombre d'invités et bandeau de compatibilité. */
@@ -325,6 +420,8 @@ function attach() {
   const c = partyBridge.client;
   if (c === attached) return;
   attached = c;
+  sysLines = [];
+  invitedPids.clear();
   lastInviteUrl = '';
   createdHere = false;
   inviteCopied = false;
@@ -341,7 +438,10 @@ function attach() {
   c.on('wait', () => renderSoon());
   c.on('removed', () => render());
   c.on('linkRenewed', () => { void renewLinkAfterKick(); });
-  c.on('react', (r) => floatReaction(r.emoji, r.user));
+  c.on('react', (r) => floatReaction(c, r));
+  c.on('event', (ev) => onEvent(c, ev));
+  c.on('settings', () => renderSoon());
+  c.on('participants', () => renderSoon());
   c.on('host', (user) => { toast(user + ' est maintenant l’hôte'); render(); });
   c.on('muted', () => render());
   c.on('reported', (r) => { if (r.against) toast('Signalement reçu : ' + r.against); else toast('Message signalé, merci'); });
@@ -361,6 +461,15 @@ export function mountPartyPanel(root, opts) {
   floats = document.createElement('div');
   floats.className = 'lp-party-floats';
   floats.setAttribute('aria-hidden', 'true');
+  band = document.createElement('div');
+  band.className = 'ps-band';
+  band.hidden = true;
+  eventEl = document.createElement('div');
+  eventEl.className = 'ps-event';
+  eventEl.setAttribute('role', 'status');
+  eventEl.hidden = true;
+  root.appendChild(band);
+  root.appendChild(eventEl);
   root.appendChild(floats);
   root.appendChild(panel);
   partyBridge.onChange(() => { attach(); render(); });
@@ -368,7 +477,8 @@ export function mountPartyPanel(root, opts) {
   panel.addEventListener('click', onClick);
   panel.addEventListener('submit', onSubmit);
   panel.addEventListener('input', onInput);
-  setInterval(() => { updateRelayLine(); updateCountdown(); }, 1000);
+  band.addEventListener('click', onBandClick);
+  setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);
 }
 
 export function togglePartyPanel(force) {
@@ -388,7 +498,8 @@ async function onSubmit(e) {
   if (f.matches('[data-wp-send]')) {
     const c = partyBridge.client;
     const text = f.elements.text.value.slice(0, CHAT_MAX);
-    if (c && c.sendChat(text)) { chatDraft = ''; f.elements.text.value = ''; stickBottom = true; updateChars(); }
+    const pos = partyBridge.position();
+    if (c && (pos === null ? c.sendChat(text) : c.sendChat(text, pos))) { chatDraft = ''; f.elements.text.value = ''; stickBottom = true; updateChars(); }
     return;
   }
   if (f.matches('[data-wp-create]')) {
@@ -504,6 +615,12 @@ async function inviteAfterCreate() {
   render();
 }
 
+/** Bandeau : « Masquer / Afficher la discussion » (le micro est désactivé, bientôt). */
+function onBandClick(e) {
+  const t = e.target instanceof Element ? e.target : null;
+  if (t && t.closest('[data-ps-chat]')) togglePartyPanel();
+}
+
 function onClick(e) {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
@@ -522,7 +639,19 @@ function onClick(e) {
     return;
   }
   const react = t.closest('[data-wp-react]');
-  if (react && c) { c.sendReact(react.dataset.wpReact); return; }
+  if (react && c) {
+    const pos = partyBridge.position();
+    if (pos === null) c.sendReact(react.dataset.wpReact); else c.sendReact(react.dataset.wpReact, pos);
+    return;
+  }
+  const set = t.closest('[data-wp-set]');
+  if (set && c) { c.sendSettings({ [set.dataset.wpSet]: set.dataset.value }); return; }
+  const friend = t.closest('[data-wp-friend]');
+  if (friend && c && c.room) {
+    friend.disabled = true;
+    void inviteInto(c.room.id, friend.dataset.wpFriend).then((ok) => { if (ok) toast('Invitation envoyée'); render(); });
+    return;
+  }
   const mute = t.closest('[data-wp-mute]');
   if (mute && c) { c.mute(mute.dataset.wpMute, mute.dataset.muted !== '1'); return; }
   const host = t.closest('[data-wp-host]');
