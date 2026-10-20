@@ -6,9 +6,10 @@ import { openConversation } from './socialHooks.js';
 import { openDialog } from './socialConvDialog.js';
 import { SVG, avatarEl, h, iconBtn } from './socialConvDom.js';
 import {
-  GROUP_MEMBERS_MAX, GROUP_MEMBERS_MIN, GROUP_NAME_MAX, convInfo, dmConv, fold, getActiveConv, listTime, onActiveConv, pollShare,
+  GROUP_MEMBERS_MAX, GROUP_MEMBERS_MIN, GROUP_NAME_MAX, convInfo, dmConv, fold, getActiveConv, listTime, onActiveConv, personName, pollShare,
   pollTotal, previewOf, typingText,
 } from './socialConvModel.js';
+import { groupErrorMessage } from './socialChat.js';
 
 /** Boîte « Nouveau groupe » : nom (≤ 40) et 2 à 19 amis. Ouvre le groupe créé. */
 export function openGroupDialog(opener, toast) {
@@ -47,7 +48,7 @@ export function openGroupDialog(opener, toast) {
     onConfirm: async () => {
       let conv;
       try { conv = await store.createGroup(nameEl.value.trim(), [...picked]); } catch (e) {
-        throw new Error(e && e.status === 403 ? 'Tu ne peux ajouter que tes amis.' : 'Le groupe n’a pas pu être créé. Réessaie.');
+        throw new Error(groupErrorMessage(e, (pid) => personName(pid, store.getState())));
       }
       if (toast) toast('Groupe créé.');
       openConversation(conv.conv);
@@ -57,7 +58,7 @@ export function openGroupDialog(opener, toast) {
 
 /** Avatar de ligne : un avatar pour un ami, deux avatars superposés pour un groupe. */
 function rowAvatar(inf) {
-  if (inf.kind === 'dm') return avatarEl({ name: inf.name, avatarColor: inf.avatarColor, avatar: inf.avatar }, 42, inf.status);
+  if (inf.kind === 'dm') return avatarEl({ name: inf.name, avatarColor: inf.avatarColor, avatar: inf.avatar }, 42, inf.known ? inf.status : '');
   const wrap = h('span', 'cv-stack is-list', null, { 'aria-hidden': 'true' });
   inf.members.slice(0, 2).forEach((m, i) => {
     const a = avatarEl({ name: m.handle.name, avatarColor: m.avatarColor, avatar: m.avatar }, 28);

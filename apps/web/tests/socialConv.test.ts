@@ -174,3 +174,38 @@ describe('fenêtre ancrée', () => {
     expect(store.vote).toHaveBeenCalledWith('dm:p1', 'pl', 'a');
   });
 });
+
+describe('groupe : actions réservées au propriétaire', () => {
+  const menuLabels = async (ownerPid: string) => {
+    setStore([]);
+    h.st.groups[0].group.ownerPid = ownerPid;
+    h.st.threads['g:1'] = [];
+    openConversation('g:1');
+    await flush();
+    (document.querySelector('[aria-label="Actions du groupe"]') as HTMLButtonElement).click();
+    return Array.from(document.querySelectorAll('.cvw-menu-it')).map((b) => b.textContent);
+  };
+
+  it('le propriétaire renomme, gère les membres et quitte', async () => {
+    const labels = await menuLabels('me');
+    expect(labels).toEqual(expect.arrayContaining(['Renommer le groupe', 'Gérer les membres', 'Quitter le groupe']));
+  });
+
+  it('un simple membre ne peut que quitter (sans renommer ni gérer les membres)', async () => {
+    const labels = await menuLabels('p1');
+    expect(labels).toContain('Quitter le groupe');
+    expect(labels).not.toContain('Renommer le groupe');
+    expect(labels).not.toContain('Gérer les membres');
+  });
+
+  it('un membre inconnu (ni ami ni foyer) n’affiche pas « Hors ligne » en discussion directe', async () => {
+    setStore([]);
+    h.st.conversations.push({ pid: 'z9', handle: fr('z9', 'Zoé').handle, avatarColor: '#000', unread: 0, last: null });
+    h.st.threads['dm:z9'] = [];
+    openConversation('dm:z9');
+    await flush();
+    const panel = document.querySelector('.cvw-panel')!;
+    expect(panel.querySelector('.cvw-name')?.textContent).toContain('Zoé');
+    expect(panel.querySelector('.cvw-sub')?.textContent).toBe('');
+  });
+});

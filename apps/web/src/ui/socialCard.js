@@ -11,6 +11,7 @@ import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { SI } from './socialIcons.js';
+import { joinErrorMessage, reportErrorMessage } from './socialChat.js';
 import { inviteToParty, openShareDialog } from './socialHooks.js';
 import {
   ago, avatarHTML, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf, posterBox, progressPct, shortName, socialErrorMessage,
@@ -72,13 +73,13 @@ export function createFriendCard(deps) {
 
   const friend = () => (c.pid ? deps.findFriend(c.pid) : null);
 
-  async function act(fn, ok) {
+  async function act(fn, ok, failText) {
     try {
       const r = await Promise.resolve().then(fn);
       if (ok) deps.toast(typeof ok === 'function' ? ok(r) : ok);
       return true;
     } catch (err) {
-      deps.toast(err instanceof UserApiError && err.status === 403 ? 'Cette personne n’accepte pas cette demande.' : socialErrorMessage(err));
+      deps.toast(failText ? failText(err) : err instanceof UserApiError && err.status === 403 ? 'Cette personne n’accepte pas cette demande.' : socialErrorMessage(err));
       return false;
     }
   }
@@ -295,7 +296,7 @@ export function createFriendCard(deps) {
       await act(async () => {
         await store.report({ pid: f.pid, reason, ...(details ? { details } : {}) });
         await store.block(f.pid);
-      }, shortName(f) + ' est bloqué et signalé.');
+      }, shortName(f) + ' est bloqué et signalé.', (err) => (err && err.status === 429 ? reportErrorMessage(err) : socialErrorMessage(err)));
     }
     return true;
   }
@@ -326,7 +327,7 @@ export function createFriendCard(deps) {
         return true;
       case 'c-join':
         if (f) {
-          act(() => store.requestJoin(f.pid), 'Demande envoyée à ' + shortName(f));
+          act(() => store.requestJoin(f.pid), 'Demande envoyée à ' + shortName(f), joinErrorMessage);
         }
         return true;
       case 'c-share':

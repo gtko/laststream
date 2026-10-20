@@ -159,3 +159,14 @@ body.shd-open { overflow: hidden; }
 .pt-hint { margin: 0; font-size: 12px; color: var(--dim); }
 .pt-err { display: flex; flex-direction: column; gap: 12px; align-items: center; color: var(--soft); }
 @media (max-width: 767px) { .pt-card { flex-direction: column; padding: 18px; gap: 18px; } .pt-poster { width: 56%; align-self: center; } .pt-title { font-size: 26px; } .pt-btns .btn { width: 100%; justify-content: center; } }
+
+/* Mes liens (repliable) */
+.shd-mine { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.shd-mine-b { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 0; background: none; border: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.shd-mine-b[aria-expanded="true"] .shd-mine-c { transform: rotate(180deg); }
+.shd-mine-l { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.shd-mine-r { display: flex; align-items: center; gap: 8px; }
+.shd-mine-r.is-expired .shd-mine-n { opacity: .6; }
+.shd-mine-t { flex: 1; min-width: 0; }
+.shd-mine-n { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shd-mine-s, .shd-mine-x { font-size: 12px; color: var(--dim); }

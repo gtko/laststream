@@ -69,12 +69,13 @@ export type MessageV3 = Message & {
   title?: TitleRef; moment?: MomentRef; party?: PartyRef; poll?: Poll;
   reactions: Reaction[]; replyTo?: string;
 };
-export type GroupInfo = { id: string; name: string; members: FriendV3[] };
+/** `ownerPid` : le propriétaire (seul à renommer et à changer les membres). Absent d'un serveur plus ancien : personne n'est alors propriétaire côté client. */
+export type GroupInfo = { id: string; name: string; members: FriendV3[]; ownerPid?: string };
 /** Conversation v3 : une conversation directe ou un groupe (`group` présent). */
 export type ConversationV3 = Conversation & { conv: string; group?: GroupInfo };
-/** Corps de `POST /conv/:conv/messages`. */
+/** Corps de `POST /conv/:conv/messages`. `party` n'est plus envoyable par là : l'invitation passe par `POST /party/:id/invite {pid}`. */
 export type NewMessage = {
-  kind: MessageKind; body?: string;
+  kind: Exclude<MessageKind, 'party'>; body?: string;
   title?: TitleRef; moment?: MomentRef; party?: PartyRef;
   poll?: { question: string; options: string[] }; replyTo?: string;
 };
@@ -85,6 +86,11 @@ export type ShareLinkCreated = { url: string; code: string; inviteCode?: string 
 export type ShareLinkView = {
   type: MediaKind; tmdbId: number; title: string; poster: string; pos?: number;
   from: { handle: Handle; avatarColor: string }; note?: string; inviteCode?: string;
+};
+/** Un de mes liens publics (`GET /share-links`) ; `expired` vaut true après 30 jours. */
+export type MyShareLink = {
+  code: string; url: string; type: MediaKind; tmdbId: number; title: string; poster?: string; pos?: number; note?: string;
+  inviteCode?: string; createdAt: number; expiresAt: number; expired: boolean;
 };
 export type ListSummary = { id: string; name: string; members: FriendV3[]; count: number };
 export type ListItem = { type: MediaKind; tmdbId: number; title: string; poster?: string; addedBy: string; addedAt: number };
@@ -169,6 +175,10 @@ export const shareTo = (input: ShareInput) => social<{ messages: MessageV3[] }>(
 export const createShareLink = (input: ShareLinkInput) => social<ShareLinkCreated>('POST', '/share-links', input);
 /** Lecture publique d'un lien : sans session ni profil. */
 export const getShareLink = (code: string) => call<ShareLinkView>(`${SOCIAL}/share-links/${enc(code)}`, { anonymous: true });
+/** Mes liens publics, les plus récents d'abord, expirés compris. */
+export const getMyShareLinks = () => social<{ links: MyShareLink[] }>('GET', '/share-links');
+/** Révoque un de mes liens (204) ; 404 `share_not_found` s'il n'existe plus. */
+export const revokeShareLink = (code: string) => social<void>('DELETE', `/share-links/${enc(code)}`);
 
 // ---- S3 : listes partagées ----
 export const getLists = () => social<{ lists: ListSummary[] }>('GET', '/lists');

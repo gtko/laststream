@@ -58,6 +58,7 @@ export function convInfo(conv, s) {
     if (!g || !g.group) return null;
     return {
       conv, kind: 'group', id: g.group.id, name: g.group.name, members: g.group.members || [], unread: g.unread || 0, last: g.last || null,
+      ownerPid: g.group.ownerPid || '', owner: !!(g.group.ownerPid && s.me && s.me.pid === g.group.ownerPid),
     };
   }
   const pid = conv.slice(3);
@@ -68,8 +69,29 @@ export function convInfo(conv, s) {
   return {
     conv, kind: 'dm', pid, name: (f && f.nickname) || p.handle.name, tag: p.handle.tag, handle: p.handle,
     avatar: f && f.avatar, avatarColor: p.avatarColor, status: f ? f.status : 'offline', watching: f ? f.watching : undefined,
+    known: !!f,
     household: !!(f && f.household), unread: c ? c.unread : 0, last: c ? c.last || null : null, friend: f,
   };
+}
+
+/**
+ * Une présence n'a de sens que pour un ami ou un membre du foyer. Un membre de groupe qui n'est ni l'un ni l'autre arrive du serveur
+ * en « offline » sans activité : afficher « Hors ligne » serait trompeur, on n'affiche que son nom.
+ */
+export function hasPresence(pid, s) {
+  return !!findFriend(s, pid);
+}
+
+/** Nom d'une personne connue du client (ami, membre de groupe, correspondant), ou « Quelqu'un ». */
+export function personName(pid, s) {
+  const f = findFriend(s, pid);
+  if (f) return f.nickname || f.handle.name;
+  for (const g of s.groups || []) {
+    const m = g.group && (g.group.members || []).find((x) => x.pid === pid);
+    if (m) return m.nickname || m.handle.name;
+  }
+  const c = (s.conversations || []).find((x) => x.pid === pid);
+  return c ? c.handle.name : 'Quelqu’un';
 }
 
 /** Nom affiché de l'auteur d'un message : « Toi », le membre du groupe, ou l'interlocuteur. */

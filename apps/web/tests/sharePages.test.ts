@@ -113,3 +113,23 @@ describe('page d’une liste partagée', () => {
     expect(h.detail.querySelector('[role="alert"]')!.textContent).toContain('n’existe pas');
   });
 });
+
+describe('page publique d’un lien : erreurs', () => {
+  beforeEach(() => { h.detail.innerHTML = ''; vi.clearAllMocks(); });
+
+  it('410 : « Ce lien a expiré », sans bouton Réessayer', async () => {
+    (api.getShareLink as any).mockRejectedValueOnce({ status: 410, code: 'expired' });
+    showShareLink('AbCdEfGhIjKlMn');
+    await flush();
+    expect(h.detail.textContent).toContain('Ce lien a expiré');
+    expect(h.detail.querySelector('button')).toBeNull();
+  });
+
+  it('429 : invite à réessayer plus tard, avec le bouton Réessayer', async () => {
+    (api.getShareLink as any).mockRejectedValueOnce({ status: 429, code: 'rate_limited' });
+    showShareLink('AbCdEfGhIjKlMn');
+    await flush();
+    expect(h.detail.textContent).toContain('réessaie plus tard');
+    expect(h.detail.querySelector('button')).not.toBeNull();
+  });
+});

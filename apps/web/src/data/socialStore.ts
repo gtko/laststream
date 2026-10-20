@@ -25,6 +25,7 @@ export const MESSAGE_MAX = 1000;
 export const TYPING_MS = 5_000;
 /** Pas plus d'un envoi de saisie toutes les 3 s (le serveur limite à 1/3 s). */
 export const TYPING_SEND_MIN_MS = 3_000;
+const TYPING_MUTE_MS = 60_000;
 
 export type NoteListener = (media: MediaRef, note: Note) => void;
 export type JoinAnswerListener = (ev: { pid: string; accept: boolean; partyId?: string }) => void;
@@ -592,6 +593,8 @@ export async function loadThread(conv: string, o: { before?: number; limit?: num
  * Le message reçu est rangé comme un message entrant (DM ou groupe) mais ne compte pas comme non-lu.
  */
 export async function sendToConv(conv: string, input: NewMessage): Promise<MessageV3> {
+  // L'invitation à une watch party passe par POST /party/:id/invite : le serveur refuse `party` sur /conv.
+  if ((input.kind as string) === 'party') throw new UserApiError(400, 'invalid_kind');
   const body = input.body?.trim();
   if (body !== undefined && Array.from(body).length > MESSAGE_MAX) throw new UserApiError(400, 'invalid_body');
   if (input.kind === 'text' && (body === undefined || body === '')) throw new UserApiError(400, 'invalid_body');
@@ -626,7 +629,10 @@ export function notifyTyping(conv: string): void {
   const last = lastTypingSent.get(conv);
   if (last !== undefined && now - last < TYPING_SEND_MIN_MS) return;
   lastTypingSent.set(conv, now);
-  void v3.sendTyping(conv).catch(() => undefined);
+  // Frappe refusée (403 not_allowed, 404) : silencieux, et on cesse d'insister un moment.
+  void v3.sendTyping(conv).catch((e: { status?: number }) => {
+    if (e && (e.status === 403 || e.status === 404)) lastTypingSent.set(conv, Date.now() + TYPING_MUTE_MS);
+  });
 }
 
 /** Partage un titre ou un moment vers plusieurs destinations ; les messages renvoyés sont rangés comme les autres. */

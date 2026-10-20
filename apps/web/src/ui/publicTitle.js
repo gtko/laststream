@@ -11,8 +11,9 @@ import * as M from './shareModel.js';
 let token = 0;
 
 function errorText(e) {
+  if (e && e.status === 410) return 'Ce lien a expiré.';
   if (e && e.status === 404) return 'Ce lien n’existe pas ou n’est plus valide.';
-  if (e && e.status === 429) return 'Trop de demandes pour le moment : réessaie dans une minute.';
+  if (e && e.status === 429) return 'Trop de visites pour le moment : réessaie plus tard.';
   if (e && (e.status === 0 || e.code === 'network')) return 'Serveur injoignable pour le moment.';
   return 'Ce lien ne peut pas s’afficher pour le moment.';
 }
@@ -94,7 +95,9 @@ export function showShareLink(code) {
       body.textContent = '';
       const msg = h('div', 'pt-err', null, { role: 'alert' });
       msg.append(h('p', null, errorText(e)));
-      if (!e || e.status !== 404) {
+      if (e && e.status === 410) msg.append(h('p', 'pt-hint', 'Les liens de partage sont valables 30 jours : demande à la personne de t’en envoyer un nouveau.'));
+      // Un lien introuvable ou expiré ne reviendra pas : pas de bouton « Réessayer ».
+      if (!e || (e.status !== 404 && e.status !== 410)) {
         const retry = h('button', 'btn btn-primary', 'Réessayer', { type: 'button' });
         retry.addEventListener('click', load);
         msg.append(retry);

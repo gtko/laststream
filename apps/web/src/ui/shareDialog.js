@@ -3,7 +3,7 @@
  * socialHooks ; main.js appelle configureShareDialog({ toast }). Tout texte venant du serveur passe par textContent. */
 import { Capacitor } from '@capacitor/core';
 import * as store from '../data/socialStore';
-import { createShareLink } from '../data/socialV3Api';
+import { createShareLink, getMyShareLinks, revokeShareLink } from '../data/socialV3Api';
 import { getInvites } from '../data/socialApi';
 import { tmdb } from '../data/lt';
 import { registerSocialHook, inviteToParty } from './socialHooks.js';
@@ -589,6 +589,74 @@ export function openShareDialog(opts) {
     return [lab, ta];
   }
 
+  // ---------- Mes liens (repliable) : copier, révoquer ----------
+  function myLinksSection() {
+    const wrap = h('div', 'shd-mine');
+    const toggle = h('button', 'shd-mine-b', null, { type: 'button', 'aria-expanded': 'false' });
+    toggle.append(h('span', null, 'Mes liens'), h('span', 'shd-mine-c', '▾', { 'aria-hidden': 'true' }));
+    const list = h('div', 'shd-mine-l', null, { role: 'list', 'aria-label': 'Mes liens de partage' });
+    list.hidden = true;
+    const info = h('p', 'shd-note', '', { role: 'status' });
+    wrap.append(toggle, list, info);
+    let loaded = false;
+    let items = [];
+
+    const paint = () => {
+      list.textContent = '';
+      if (!items.length) { info.textContent = 'Tu n’as pas encore créé de lien.'; return; }
+      info.textContent = '';
+      for (const l of items) {
+        const r = M.linkRow(l);
+        const row = h('div', 'shd-mine-r' + (r.expired ? ' is-expired' : ''), null, { role: 'listitem' });
+        const tx = h('div', 'shd-mine-t');
+        tx.append(h('div', 'shd-mine-n', r.title), h('div', 'shd-mine-s', r.sub));
+        row.append(tx);
+        if (!r.expired) {
+          const cp = h('button', 'shd-btn is-sec is-s', 'Copier', { type: 'button', 'aria-label': 'Copier le lien ' + r.title });
+          cp.addEventListener('click', async () => { toastFn((await copyText(l.url)) ? 'Lien copié' : 'Copie impossible : ouvre le lien et copie-le'); });
+          row.append(cp);
+        } else {
+          row.append(h('span', 'shd-mine-x', 'Expiré'));
+        }
+        const rv = h('button', 'shd-btn is-sec is-s', 'Révoquer', { type: 'button', 'aria-label': 'Révoquer le lien ' + r.title });
+        rv.addEventListener('click', async () => {
+          rv.disabled = true;
+          try {
+            await revokeShareLink(l.code);
+          } catch (e) {
+            if (!e || e.status !== 404) { rv.disabled = false; toastFn(M.linksErrorText(e, 'revoke')); return; }
+          }
+          items = items.filter((x) => x.code !== l.code);
+          if (st.link && st.link.code === l.code) { st.link = null; st.linkKey = ''; paintLink(); }
+          toastFn('Lien révoqué');
+          if (alive) paint();
+        });
+        row.append(rv);
+        list.append(row);
+      }
+    };
+    const load = async () => {
+      info.textContent = 'Chargement de tes liens…';
+      try {
+        const r = await getMyShareLinks();
+        items = Array.isArray(r && r.links) ? r.links : [];
+        loaded = true;
+        if (alive) paint();
+      } catch (e) {
+        if (alive) info.textContent = M.linksErrorText(e, 'list');
+      }
+    };
+    toggle.addEventListener('click', () => {
+      const open = toggle.getAttribute('aria-expanded') !== 'true';
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      list.hidden = !open;
+      info.hidden = !open;
+      if (open && !loaded) void load();
+    });
+    info.hidden = true;
+    return wrap;
+  }
+
   function buildDesktop() {
     const id = 'shd-t-' + Date.now();
     box.removeAttribute('aria-label');
@@ -656,7 +724,7 @@ export function openShareDialog(opts) {
     inv.append(makeSwitch('Joindre une invitation'), invTxt);
     const priv = h('p', 'shd-note', 'Le lien montre la fiche et ta recommandation, jamais ta position ni ta bibliothèque, sauf « ce moment ».');
     ui.lists = h('div', 'shd-chips');
-    right.append(lk, shares, ui.qr, inv, priv, h('div', 'shd-lb shd-lb-2', 'Ajouter à une liste partagée'), ui.lists);
+    right.append(lk, shares, ui.qr, inv, priv, h('div', 'shd-lb shd-lb-2', 'Ajouter à une liste partagée'), ui.lists, myLinksSection());
 
     cols.append(left, right);
     box.append(head, cols);
@@ -719,7 +787,7 @@ export function openShareDialog(opts) {
     const lst = act(ICO.list, 'Liste partagée', 'Ajouter à une liste', () => showListsView());
     ui.listSub = lst.subEl;
     acts.append(party.b, copyWrap, sys.b, lst.b);
-    box.append(acts);
+    box.append(acts, myLinksSection());
     ui.inviteHint = null;
     ui.firstFocus = null;
     ui.mobileLists = lst.b;

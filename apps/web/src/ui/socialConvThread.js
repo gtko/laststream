@@ -7,12 +7,12 @@ import { createWatchWithHandler, playAt } from '../data/watchWith';
 import { userStore } from '../data/userStore';
 import { posterPathOf } from '../data/serverUserStore';
 import { inviteToParty, openPartyLobby, openShareDialog } from './socialHooks.js';
-import { sendErrorMessage } from './socialChat.js';
+import { groupErrorMessage, reactionErrorMessage, sendErrorMessage } from './socialChat.js';
 import { openDialog } from './socialConvDialog.js';
 import { SVG, avatarEl, h, iconBtn, messageRow } from './socialConvDom.js';
 import {
-  EMOJI_TABS, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, POLL_OPTION_MAX, POLL_QUESTION_MAX, authorName, convInfo, loadRecentEmojis,
-  messageText, pushRecentEmoji, timeline, typingText, watchingLine,
+  EMOJI_TABS, GROUP_MEMBERS_MAX, GROUP_NAME_MAX, POLL_OPTIONS_MAX, POLL_OPTIONS_MIN, POLL_OPTION_MAX, POLL_QUESTION_MAX, authorName, convInfo, loadRecentEmojis,
+  messageText, personName, pushRecentEmoji, timeline, typingText, watchingLine,
 } from './socialConvModel.js';
 
 const PAGE = 30;
@@ -92,16 +92,18 @@ export function createThread(o) {
     let sub;
     if (!inf) sub = '';
     else if (inf.kind === 'group') sub = inf.members.length + 1 + ' membres';
-    else sub = watching || (inf.status === 'offline' ? 'Hors ligne' : 'En ligne');
+    // Ni ami ni foyer : pas de présence connue, donc pas de « Hors ligne » trompeur.
+    else sub = watching || (!inf.known ? '' : inf.status === 'offline' ? 'Hors ligne' : 'En ligne');
     const name = inf ? inf.name : 'Discussion';
-    const sig = [conv, name, inf && inf.tag, sub, inf && inf.avatarColor, inf && inf.status, !!watching, mobile].join('|');
+    const shownStatus = inf && inf.known ? inf.status : '';
+    const sig = [conv, name, inf && inf.tag, sub, inf && inf.avatarColor, shownStatus, !!watching, mobile, inf && inf.owner, inf && inf.kind === 'group' ? inf.members.length : ''].join('|');
     if (sig === headSig) return;
     headSig = sig;
     head.textContent = '';
     el.setAttribute('aria-label', 'Discussion avec ' + name);
     if (mobile) head.append(iconBtn('cvw-ico is-big', 'Retour', SVG.back, () => o.onClose()));
     if (inf && inf.kind === 'group') head.append(groupAvatars(inf));
-    else head.append(avatarEl(inf ? { name, avatarColor: inf.avatarColor, avatar: inf.avatar } : { name }, mobile ? 38 : 36, inf ? inf.status : ''));
+    else head.append(avatarEl(inf ? { name, avatarColor: inf.avatarColor, avatar: inf.avatar } : { name }, mobile ? 38 : 36, shownStatus));
     const who = h('div', 'cvw-who');
     const title = h('div', 'cvw-name', name);
     if (inf && inf.tag && !mobile) title.append(h('span', 'cvw-tag', '#' + inf.tag));
@@ -119,6 +121,11 @@ export function createThread(o) {
       head.append(more2);
     } else {
       if (inf && inf.kind === 'dm') head.append(iconBtn('cvw-ico', 'Lancer une watch party avec ' + name, SVG.party, () => inviteToParty(inf.pid)));
+      if (inf && inf.kind === 'group') {
+        const grp = iconBtn('cvw-ico', 'Actions du groupe', SVG.more, (e) => openMenu(e.currentTarget, headerActions()));
+        grp.setAttribute('aria-haspopup', 'menu');
+        head.append(grp);
+      }
       if (o.onMinimize) head.append(iconBtn('cvw-ico', 'Réduire', SVG.min, () => o.onMinimize()));
       head.append(iconBtn('cvw-ico', 'Fermer la discussion', SVG.close, () => o.onClose()));
     }
@@ -147,12 +154,94 @@ export function createThread(o) {
     acts.push({ label: 'Créer un sondage', run: () => openPollDialog() });
     acts.push({ label: 'Partager un titre', run: () => openShareDialog({ media: null, conv }) });
     if (inf && inf.kind === 'group') {
-      acts.push({
-        label: 'Quitter le groupe',
-        run: () => store.leaveGroup(inf.id).then(() => o.onClose(), (e) => deps.toast(errText(e))),
-      });
+      // Renommer et changer les membres : réservé au propriétaire. Quitter : pour tous.
+      if (inf.owner) {
+        acts.push({ label: 'Renommer le groupe', run: () => openRenameDialog(inf) });
+        acts.push({ label: 'Gérer les membres', run: () => openMembersDialog(inf) });
+      }
+      acts.push({ label: 'Quitter le groupe', run: () => (inf.owner ? openLeaveDialog(inf) : leaveNow(inf)) });
     }
     return acts;
+  }
+
+  // ---------- Groupe : renommer, membres, quitter ----------
+  const nameOfPid = (pid) => personName(pid, store.getState());
+  const groupError = (e) => groupErrorMessage(e, nameOfPid);
+
+  function leaveNow(inf) {
+    return store.leaveGroup(inf.id).then(() => o.onClose(), (e) => deps.toast(groupError(e)));
+  }
+
+  /** Le propriétaire est prévenu : en partant, la propriété passe au plus ancien membre. */
+  function openLeaveDialog(inf) {
+    openDialog({
+      title: 'Quitter le groupe', confirmLabel: 'Quitter le groupe', opener: plusBtn,
+      build(body, ctl) {
+        body.append(h('p', 'cvd-hint', 'Tu es le propriétaire de « ' + inf.name + ' ». En partant, la propriété passe au plus ancien membre du groupe.'));
+        ctl.setValid(true);
+      },
+      onConfirm: async () => {
+        try { await store.leaveGroup(inf.id); } catch (e) { throw new Error(groupError(e)); }
+        o.onClose();
+      },
+    });
+  }
+
+  function openRenameDialog(inf) {
+    let nameEl = null;
+    openDialog({
+      title: 'Renommer le groupe', confirmLabel: 'Renommer', opener: plusBtn,
+      build(body, ctl) {
+        nameEl = h('input', 'cvd-input', null, { type: 'text', maxlength: GROUP_NAME_MAX, 'aria-label': 'Nom du groupe' });
+        nameEl.value = inf.name;
+        body.append(nameEl);
+        const check = () => { const v = nameEl.value.trim(); ctl.setValid(v !== '' && v !== inf.name); };
+        nameEl.addEventListener('input', check);
+        check();
+      },
+      onConfirm: async () => {
+        try { await store.updateGroup(inf.id, { name: nameEl.value.trim() }); } catch (e) { throw new Error(groupError(e)); }
+      },
+    });
+  }
+
+  /** Cases cochées = membres du groupe : décocher retire, cocher un ami l'ajoute. Les personnes qui ne sont ni amis ni foyer n'ont que leur nom. */
+  function openMembersDialog(inf) {
+    const s = store.getState();
+    const current = new Set(inf.members.map((m) => m.pid));
+    const picked = new Set(current);
+    const people = [...inf.members];
+    for (const f of [...s.friends, ...s.household]) if (!current.has(f.pid) && f.pid !== myPid()) people.push(f);
+    openDialog({
+      title: 'Membres du groupe', confirmLabel: 'Enregistrer', opener: plusBtn,
+      build(body, ctl) {
+        const hint = h('p', 'cvd-hint', '');
+        const list = h('div', 'cvd-people', null, { role: 'group', 'aria-label': 'Membres du groupe' });
+        const check = () => {
+          const n = picked.size;
+          const changed = people.some((p) => picked.has(p.pid) !== current.has(p.pid));
+          hint.textContent = n + ' autre' + (n > 1 ? 's' : '') + ' membre' + (n > 1 ? 's' : '') + ' (jusqu’à ' + GROUP_MEMBERS_MAX + ')';
+          ctl.setValid(changed && n >= 1 && n <= GROUP_MEMBERS_MAX);
+        };
+        for (const f of people) {
+          const label = h('label', 'cvd-person');
+          const cb = h('input', null, null, { type: 'checkbox' });
+          cb.checked = picked.has(f.pid);
+          cb.addEventListener('change', () => { if (cb.checked) picked.add(f.pid); else picked.delete(f.pid); check(); });
+          label.append(cb, avatarEl({ name: f.handle.name, avatarColor: f.avatarColor, avatar: f.avatar }, 28), h('span', null, f.nickname || f.handle.name));
+          list.append(label);
+        }
+        body.append(list, hint);
+        check();
+      },
+      onConfirm: async () => {
+        const add = [...picked].filter((p) => !current.has(p));
+        const remove = [...current].filter((p) => !picked.has(p));
+        try {
+          await store.updateGroup(inf.id, { ...(add.length ? { add } : {}), ...(remove.length ? { remove } : {}) });
+        } catch (e) { throw new Error(groupError(e)); }
+      },
+    });
   }
 
   // ---------- Menu contextuel simple ----------
@@ -248,7 +337,11 @@ export function createThread(o) {
     joinParty(id) { openPartyLobby(id); },
     react(m, emoji) {
       barFor = null;
-      store.react(conv, m.id, emoji).catch((e) => deps.toast(errText(e)));
+      // Refus (409 trop d'emojis, 429, 403 / 404) : l'état affiché reste celui du serveur (aucune réaction fantôme), toast discret.
+      store.react(conv, m.id, emoji).catch((e) => {
+        deps.toast(reactionErrorMessage(e));
+        if (alive) { lastState = store.getState(); repaintLog(true); }
+      });
       repaintLog(true);
     },
     vote(m, optionId) {

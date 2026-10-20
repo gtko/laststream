@@ -194,3 +194,33 @@ export function adderName(pid, list, mePid) {
   const m = (list.members || []).find((x) => x.pid === pid);
   return m ? m.nickname || m.handle.name : 'un ancien membre';
 }
+
+// ---- Mes liens publics (section « Mes liens » de la fenêtre Partager) ----
+
+const dayMonth = (ms) => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+/**
+ * Textes d'une ligne de « Mes liens » : titre (avec le moment s'il y en a un) et ligne d'état.
+ * Un lien expiré (`expired`, ou `expiresAt` passé) n'est plus lisible : on l'indique et on ne propose que « Révoquer ».
+ */
+export function linkRow(l, now = Date.now()) {
+  const expired = !!l.expired || (Number.isFinite(l.expiresAt) && l.expiresAt <= now);
+  const at = typeof l.pos === 'number' && l.pos > 0 ? ' · à ' + posLabel(l.pos) : '';
+  const made = Number.isFinite(l.createdAt) ? 'Créé le ' + dayMonth(l.createdAt) : '';
+  const left = !expired && Number.isFinite(l.expiresAt)
+    ? 'expire le ' + dayMonth(l.expiresAt)
+    : '';
+  return {
+    title: (l.title || 'Lien') + at,
+    sub: expired ? [made, 'expiré'].filter(Boolean).join(' · ') : [made, left].filter(Boolean).join(' · '),
+    expired,
+  };
+}
+
+/** Message d'une erreur sur « Mes liens » (lecture ou révocation). */
+export function linksErrorText(e, action) {
+  if (e && e.status === 404 && action === 'revoke') return 'Ce lien n’existe déjà plus.';
+  if (e && e.status === 429) return 'Trop de demandes d’un coup : réessaie dans une minute.';
+  if (e && (e.status === 0 || e.code === 'network')) return 'Serveur injoignable pour le moment.';
+  return action === 'revoke' ? 'Impossible de révoquer le lien pour le moment.' : 'Tes liens ne peuvent pas s’afficher pour le moment.';
+}

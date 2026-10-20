@@ -543,3 +543,25 @@ describe('abonnés et démarrage', () => {
     expect(getState().conversations).toHaveLength(1);
   });
 });
+
+describe('règles serveur durcies', () => {
+  it('« party » n’est plus envoyable par /conv : refus local, aucun appel réseau', async () => {
+    await startConnected();
+    const before = calls.length;
+    await expect(sendToConv('dm:p1', { kind: 'party', party: { partyId: 'x', title: 'Dune' } } as any)).rejects.toMatchObject({ status: 400 });
+    expect(calls.length).toBe(before);
+  });
+
+  it('frappe refusée (403) : silencieuse, puis plus d’insistance pendant un moment', async () => {
+    await startConnected();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2030, 0, 1, 12, 0, 0));
+    routes['POST /user/social/conv/dm%3Ap1/typing'] = () => ({ status: 403, body: { error: 'not_allowed' } });
+    notifyTyping('dm:p1');
+    await vi.advanceTimersByTimeAsync(0);
+    vi.setSystemTime(new Date(2030, 0, 1, 12, 0, 10));
+    notifyTyping('dm:p1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callsTo('POST', '/user/social/conv/dm%3Ap1/typing')).toHaveLength(1);
+  });
+});
