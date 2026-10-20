@@ -167,6 +167,39 @@ describe('bandeau d’attente : masqué hors attente', () => {
   });
 });
 
+describe('en-tête du salon et menu « … »', () => {
+  it('titre « Salon de l’hôte », film dessous ; menu replié par défaut, « … » et Échap le basculent', () => {
+    partyBridge.client = fakeClient(true, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('.wp-title')!.textContent).toBe('Salon de alice');
+    expect(panelOf().querySelector('.wp-film')!.textContent).toBe('Severance');
+    const menu = () => panelOf().querySelector('#wp-menu') as HTMLElement;
+    const btn = () => panelOf().querySelector('[data-wp-menu]') as HTMLElement;
+    expect(btn().getAttribute('aria-label')).toBe('Réglages du salon');
+    expect(btn().getAttribute('aria-expanded')).toBe('false');
+    expect(menu().hidden).toBe(true);
+    btn().click();
+    expect(menu().hidden).toBe(false);
+    expect(btn().getAttribute('aria-expanded')).toBe('true');
+    expect(menu().querySelector('[data-wp-leave]')).not.toBeNull();
+    expect(menu().querySelector('[data-wp-end]')).not.toBeNull();
+    expect(menu().querySelectorAll('.wp-user')).toHaveLength(4);
+    panelOf().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(menu().hidden).toBe(true);
+    expect(btn().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('« Inviter » ouvre le menu sur l’invitation ; le bouton d’envoi est nommé « Envoyer »', () => {
+    partyBridge.client = fakeClient(true, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    (panelOf().querySelector('[data-wp-open-invite]') as HTMLElement).click();
+    expect((panelOf().querySelector('#wp-menu') as HTMLElement).hidden).toBe(false);
+    expect(document.activeElement).toBe(panelOf().querySelector('[data-wp-invite]'));
+    expect(panelOf().querySelector('[data-wp-send] [type=submit]')!.getAttribute('aria-label')).toBe('Envoyer');
+    (panelOf().querySelector('[data-wp-menu]') as HTMLElement).click();
+  });
+});
+
 /** Client de salon avec bus d’événements : les écouteurs du panneau reçoivent ce que `emit` envoie, comme le vrai client. */
 const busClient = (isHost: boolean, participants: Participant[]): any => {
   const handlers = new Map<string, Array<(p?: unknown) => void>>();

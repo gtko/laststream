@@ -131,7 +131,7 @@
 .lp-cm-opt { flex: 1; min-width: 0; }
 /* Cases « Masquer » : deux colonnes dans un menu de 440 px (colonne de droite un peu plus large), libellés sur une seule ligne. */
 .lp-cm-chk { gap: 8px; padding: 0 6px; }
-.lp-cm-chk .lp-cm-opt { font-size: 13px; }
+.lp-cm-chk .lp-cm-opt { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-cm-rem { color: #a19dae; font-size: 12px; }
 .lp-cm-rd { flex: none; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 2px solid #6f6a7d; }
 .lp-cm-op.is-on .lp-cm-rd { border: 6px solid var(--accent); }

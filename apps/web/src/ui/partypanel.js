@@ -30,6 +30,8 @@ let inviteCopied = false;
 let copiedTimer = 0;
 /** Chat repliable (ouvert par défaut), messages des autres reçus pendant qu'il est replié, et historique de connexion en cours. */
 let chatOpen = true;
+/** Menu « … » du salon (participants, lien, réglages) déplié : l'état vit ici, le panneau est reconstruit à chaque rendu. */
+let menuOpen = false;
 let unread = 0;
 let replaying = false;
 /** Au prochain rendu, défiler tout en bas (après un envoi ou à l'ouverture du chat). */
@@ -231,22 +233,33 @@ function roomHTML(c) {
   const status = c.status === 'open' ? '' : '<p class="wp-status" role="status">' + (c.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
   const room = c.room;
   const wait = c.waiting && Array.isArray(c.waiting.who) && c.waiting.who.length ? c.waiting : null;
-  return '<div class="wp-head"><h3 class="wp-title">' + esc(room ? room.title : 'Salon') + '</h3>' +
-    '<span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span></div>' + status +
-    '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
+  const hostName = (c.participants.find((p) => p.host) || {}).username;
+  const menu =
+    '<section class="wp-menu" id="wp-menu" data-wp-menubox aria-label="Réglages du salon"' + (menuOpen ? '' : ' hidden') + '>' +
+    '<div class="wp-actions"><span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span>' +
+    (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
     '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
     (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
-    '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
     '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul>' +
     (inviter ? inviteHTML() : '') + friendsHTML(c) + (host ? settingsHTML(c) : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
+    '</section>';
+  const muted = !!(you && you.muted);
+  return '<div class="wp-head"><div class="wp-head-t"><h3 class="wp-title">' + esc(hostName ? 'Salon de ' + hostName : 'Salon') + '</h3>' +
+    '<p class="wp-film">' + esc(room ? room.title : '') + '</p></div>' +
+    (inviter ? '<button type="button" class="wp-head-btn wp-head-invite" data-wp-open-invite>Inviter</button>' : '') +
+    '<button type="button" class="wp-head-btn wp-head-menu" data-wp-menu aria-label="Réglages du salon" aria-expanded="' + (menuOpen ? 'true' : 'false') + '" aria-controls="wp-menu">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>' + status +
+    menu +
+    '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
     '<div class="wp-chatsec">' + chatHeadHTML() +
     '<div class="wp-chat-body" id="wp-chat-body" data-wp-chat-body' + (chatOpen ? '' : ' hidden') + '>' +
     '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(chatLines(c), you, c.participants) + '</div>' +
-    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (you && you.muted ? 'Tu es muet' : 'Écrire un message') + '"' + (you && you.muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
-    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
-    '<button type="submit" class="btn btn-primary btn-sm"' + (you && you.muted ? ' disabled' : '') + '>Envoyer</button></form>' +
+    '<div class="wp-foot">' +
     '<div class="wp-react" role="group" aria-label="Réactions">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
+    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
+    '<button type="submit" class="btn btn-primary btn-sm" aria-label="Envoyer"' + (muted ? ' disabled' : '') + '>Envoyer</button></form></div>' +
     '</div></div>';
 }
 
@@ -292,6 +305,28 @@ function onChatLine(c, line) {
   const me = c.you ? c.you.username : null;
   if (!replaying && !chatOpen && line.from !== me) unread += 1;
   renderSoon();
+}
+
+/** Déplie ou replie le menu « … ». `focusSel` : élément du menu à focaliser ; sinon `refocus` rend le focus au bouton « … » à la fermeture. */
+function setMenu(on, refocus, focusSel) {
+  menuOpen = on;
+  render();
+  if (!panel) return;
+  if (on && focusSel) {
+    const el = panel.querySelector(focusSel);
+    if (el) { el.scrollIntoView({ block: 'nearest' }); el.focus(); }
+  } else if (refocus) {
+    const b = panel.querySelector('[data-wp-menu]');
+    if (b) b.focus();
+  }
+}
+
+/** Échap replie le menu « … » (et rend le focus à son bouton) sans fermer le lecteur. */
+function onKeyDown(e) {
+  if (e.key !== 'Escape' || !menuOpen) return;
+  e.stopPropagation();
+  e.preventDefault();
+  setMenu(false, true);
 }
 
 function toggleChat() {
@@ -426,6 +461,7 @@ function attach() {
   createdHere = false;
   inviteCopied = false;
   chatOpen = true;
+  menuOpen = false;
   unread = 0;
   stickBottom = false;
   if (!c) return;
@@ -477,6 +513,7 @@ export function mountPartyPanel(root, opts) {
   panel.addEventListener('click', onClick);
   panel.addEventListener('submit', onSubmit);
   panel.addEventListener('input', onInput);
+  panel.addEventListener('keydown', onKeyDown);
   band.addEventListener('click', onBandClick);
   setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);
 }
@@ -627,6 +664,8 @@ function onClick(e) {
   e.stopPropagation();
   const c = partyBridge.client;
   if (t.closest('[data-wp-close]')) { togglePartyPanel(false); return; }
+  if (t.closest('[data-wp-menu]')) { setMenu(!menuOpen, true); return; }
+  if (t.closest('[data-wp-open-invite]')) { setMenu(true, false, '[data-wp-invite]'); return; }
   if (t.closest('[data-wp-invite]') && c) { void invite(); return; }
   if (t.closest('[data-wp-newlink]') && c) { void invite(true); return; }
   if (t.closest('[data-wp-compat]') && c) { void switchCompatible(); return; }

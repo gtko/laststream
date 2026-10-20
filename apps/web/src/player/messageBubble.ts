@@ -309,7 +309,14 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   function onDocKey(e: KeyboardEvent): void {
     if (e.key !== 'r' && e.key !== 'R') return;
     if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
-    if (root.hidden || replying || isTyping(e.target) || otherUiOpen()) return;
+    if (root.hidden || isTyping(e.target) || otherUiOpen()) return;
+    if (replying) {
+      // Brouillon laissé puis Tab hors de la carte : `replying` reste vrai, R ramène le focus dans le champ.
+      if (root.contains(document.activeElement)) return;
+      e.preventDefault();
+      input.focus({ preventScroll: true });
+      return;
+    }
     e.preventDefault();
     openReply();
   }

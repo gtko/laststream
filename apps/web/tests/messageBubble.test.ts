@@ -212,6 +212,20 @@ describe('bulle dans le lecteur', () => {
     other.remove();
   });
 
+  it('brouillon laissé puis focus hors de la carte (Tab) : R ramène le focus dans le champ', () => {
+    push(incoming(msg('m9', 'amy', 'me', 'Salut')));
+    keyOnDocument('r');
+    const input = $<HTMLInputElement>('.lp-bubble-in')!;
+    input.value = 'brouillon';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.blur();
+    expect(document.activeElement).not.toBe(input);
+    expect(bubble.isReplying()).toBe(true);
+    keyOnDocument('r');
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('brouillon');
+  });
+
   it('Échap annule la réponse sans rien envoyer et referme la bulle', () => {
     push(incoming(msg('m9', 'amy', 'me', 'Salut')));
     keyOnDocument('R');

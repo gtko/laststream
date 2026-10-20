@@ -141,6 +141,15 @@ describe('modèle du salon d’attente', () => {
     expect(prepView({}).state).toBe('ready');
   });
 
+  it('qualité inconnue (« ? ») : jamais affichée, ni annoncée au salon', () => {
+    expect(prepView({ ready: true, quality: '?' }).label).toBe('Prêt');
+    expect(prepView({ ready: true, quality: ' ? ', guest: true }).label).toBe('Prêt · via le lien');
+    expect(prepView({ ready: true, quality: '…' }).label).toBe('Prêt');
+    expect(qualityLabel({ quality: '?' })).toBe('');
+    expect(qualityLabel({ quality: '?', hdr: ['HDR10'] })).toBe('HDR10');
+    expect(qualityLabel({ quality: '1080p' })).toBe('1080p');
+  });
+
   it('résumé : « 3 prêts sur 4 », bouton « Démarrer sans Hugo »', () => {
     const list = [
       { username: 'Greg', ready: true, status: 'ready' as const }, { username: 'Léa', ready: true, status: 'ready' as const },

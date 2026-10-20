@@ -25,12 +25,18 @@ export function initialsOf(name: string, guest = false): string {
   return chars.slice(0, guest ? 2 : 1).join('').toLocaleUpperCase('fr');
 }
 
+/** Qualité exploitable : vide si la chaîne n'a ni lettre ni chiffre (« ? » d'une résolution inconnue). */
+export function knownQuality(q: unknown): string {
+  const t = typeof q === 'string' ? q.trim() : '';
+  return /[\p{L}\p{N}]/u.test(t) ? t : '';
+}
+
 /**
  * État de préparation d'un participant. Un invité (lien partagé) ne déclare rien : il est « Prêt · via le lien ». Un
  * serveur antérieur n'envoie aucun état : tout le monde est prêt.
  */
 export function prepView(p: Pick<PartyParticipant, 'ready' | 'quality' | 'status' | 'guest'>): PrepView {
-  const quality = typeof p.quality === 'string' && p.quality.trim() !== '' ? p.quality.trim() : '';
+  const quality = knownQuality(p.quality);
   if (p.status === 'buffering') return { state: 'buffering', label: 'Tampon en cours…' };
   if (p.status === 'searching') return { state: 'searching', label: 'Cherche une source…' };
   if (p.ready === false) return { state: 'searching', label: 'Pas encore prêt' };
@@ -41,7 +47,7 @@ export function prepView(p: Pick<PartyParticipant, 'ready' | 'quality' | 'status
 /** Qualité annoncée au salon pour la source choisie : « 4K HDR », « 1080p » (40 caractères au plus, comme le serveur). */
 export function qualityLabel(view: { quality?: string | null; hdr?: readonly string[] | null } | null | undefined): string {
   if (!view) return '';
-  const q = typeof view.quality === 'string' ? view.quality.trim() : '';
+  const q = knownQuality(view.quality);
   const hdr = Array.isArray(view.hdr) && typeof view.hdr[0] === 'string' ? view.hdr[0].trim() : '';
   return [q, hdr].filter(Boolean).join(' ').slice(0, 40);
 }
