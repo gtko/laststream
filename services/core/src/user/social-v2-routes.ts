@@ -29,6 +29,8 @@ export interface Actor {
   avatarColor: string;
   /** Profil auquel la session est verrouillée (invitation du foyer) : seul ce profil agit, sinon null. */
   lockedProfileId: string | null;
+  /** Avatar illustré du profil (`col:…`, `dicebear:…`, `hero:…`), absent : la lettre sur la couleur. */
+  avatar?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, sec
     pid: identity.pid,
     handle: identity.handle,
     avatarColor: profile.avatarColor,
+    ...(profile.avatar ? { avatar: profile.avatar } : {}),
     lockedProfileId: session.lockedProfileId,
   };
 }
@@ -91,10 +94,10 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
 
   // Moi
 
-  /** `{ pid, handle, status, avatarColor }` : le profil agissant et son statut choisi. */
+  /** `{ pid, handle, status, avatarColor, avatar? }` : le profil agissant et son statut choisi. */
   router.get('/social/me', async (c) => {
     const me = await actor(c);
-    return sendJson(c, { pid: me.pid, handle: me.handle, status: await social().statusOf(me.pid), avatarColor: me.avatarColor });
+    return sendJson(c, { pid: me.pid, handle: me.handle, status: await social().statusOf(me.pid), avatarColor: me.avatarColor, ...(me.avatar ? { avatar: me.avatar } : {}) });
   });
 
   /** Statut choisi (`online`, `away`, `dnd`, `invisible`). Diffusé aux amis et au foyer si la présence visible change. */

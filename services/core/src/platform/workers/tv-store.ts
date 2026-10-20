@@ -98,9 +98,8 @@ export async function refreshTvFromEnv(env: WorkerEnv, options: { probe: boolean
   if ((await env.CACHE.get(LOCK_KEY)) !== null) return undefined;
   await env.CACHE.put(LOCK_KEY, String(Date.now()), { expirationTtl: LOCK_TTL_S });
   try {
-    const origin = typeof env.LASTADDON_RANGE_BASE === 'string' ? env.LASTADDON_RANGE_BASE : undefined;
     const blobs = createR2TvBlobs(bucket);
-    return await recordTvRun(blobs, () => refreshTv(blobs, { countries: countriesOf(env), probe: options.probe, probeOrigin: origin }));
+    return await recordTvRun(blobs, () => refreshTv(blobs, { countries: countriesOf(env), probe: options.probe }));
   } finally {
     await env.CACHE.delete(LOCK_KEY).catch(() => undefined);
   }

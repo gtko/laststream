@@ -1,45 +1,9 @@
-import { SourceError, maskSecrets } from './http.js';
-
-/** Indexeur découvert via Prowlarr ou Jackett, déjà filtré (torrent, activé ou configuré). Jamais de clé ni d'URL. */
-export interface IndexerInfo {
-  id: number | string;
-  name: string;
-  protocol: 'torrent';
-  enabled: boolean;
-  privacy: IndexerPrivacy;
-  supportsImdb: boolean;
-  supportsTvdb: boolean;
-  supportsSeason: boolean;
-  /** Recherche par IMDb disponible pour les films. */
-  movieImdb: boolean;
-  /** Recherche par IMDb disponible pour les séries. */
-  tvImdb: boolean;
-}
-
-export type IndexerPrivacy = 'public' | 'private' | 'semiPrivate';
+import { SourceError } from './http.js';
 
 /** Titre et année, pour la recherche texte de repli. */
 export interface TitleInfo {
   title: string;
   year?: number;
-}
-
-/** Délai maximal par requête vers Prowlarr ou Jackett, en millisecondes. */
-export const INDEXER_REQUEST_TIMEOUT_MS = 10_000;
-const MAX_ERROR_CODE_LENGTH = 120;
-
-/** URL d'un point d'API : le chemin est ajouté à la base (préfixe de reverse proxy conservé). */
-export function endpointUrl(baseUrl: string, path: string, params?: URLSearchParams): string {
-  let url: URL;
-  try {
-    url = new URL(baseUrl);
-  } catch {
-    throw new SourceError('URL source invalide');
-  }
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}${path}`;
-  url.search = params?.toString() ?? '';
-  url.hash = '';
-  return url.toString();
 }
 
 export function parseJson(text: string): unknown {
@@ -58,12 +22,6 @@ export function optionalString(value: unknown): string | undefined {
 
 export function nonNegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
-/** Message d'échec sûr pour l'historique de santé : sans clé, sans URL, tronqué. */
-export function describeFailure(err: unknown, apiKey: string): string {
-  const detail = err instanceof SourceError ? err.message : 'erreur inattendue';
-  return maskSecrets(detail, [apiKey]).slice(0, MAX_ERROR_CODE_LENGTH);
 }
 
 export function isMagnet(value: string | undefined): value is string {

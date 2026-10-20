@@ -1,16 +1,13 @@
-import { createHash } from 'node:crypto';
 import type { App, Ctx } from '../http/app-env.js';
 import { sendJson, queryParams } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
-import type { AppDeps, DebridClient } from '../deps.js';
+import type { AppDeps } from '../deps.js';
 import { isEdgeRequest } from '../config/edge.js';
-import { platform, sharedKvCache } from '../platform/index.js';
+import { platform } from '../platform/index.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
-import { AllDebridClient, serverSideDebridBlocked } from '../sources/alldebrid.js';
-import { HosterClient } from '../sources/hosters.js';
 import type { DeviceFetchEntry } from '../sources/device-fetch.js';
 import { warmUpstreamManifest } from '../sources/upstream.js';
 import { issuedUrls } from '../play/issued.js';
@@ -76,15 +73,10 @@ export function publicBaseUrl(req: RequestLike, edge = false): string {
 }
 
 /**
- * Mode « client » : le serveur n'appelle jamais AllDebrid (compte sanctionné pour des appels depuis des IP de serveurs).
- * Les torrents sont livrés sans lien ; l'appareil vérifie le cache et débride avec sa propre clé, depuis son IP.
+ * Le serveur n'appelle jamais AllDebrid (compte sanctionné pour des appels depuis des IP de serveurs). Les torrents sont
+ * livrés sans lien ; l'appareil vérifie le cache et débride avec sa propre clé, depuis son IP.
  */
-const clientMode = (): boolean => serverSideDebridBlocked();
-
-const noticeOf = (config: Config): { notice?: string; debrid?: 'client'; onlyCached?: boolean } =>
-  clientMode()
-    ? { debrid: 'client', onlyCached: config.onlyCached }
-    : {};
+const noticeOf = (config: Config): { debrid: 'client'; onlyCached: boolean } => ({ debrid: 'client', onlyCached: config.onlyCached });
 
 /** Addons bloqués pour le serveur : l'appareil les interroge lui-même (champ absent quand il n'y en a pas). */
 const deviceOf = (c: Ctx, result: { deviceFetch?: DeviceFetchEntry[] }): { deviceFetch?: DeviceFetchEntry[] } => {
@@ -105,35 +97,6 @@ const notYetDigitalOf = (result: { notYetDigital?: boolean; digitalDate?: string
  * Configuration invalide : 400 sans détail. Type ou identifiant hors format : liste vide.
  */
 export function registerStreamRoutes(app: App, deps: AppDeps): void {
-  // Clients debrid mis en cache par empreinte de clé : le cache de disponibilité survit entre requêtes.
-  const clients = new Map<string, DebridClient>();
-  // Clients des hébergeurs (liens AllDebrid) : un par clé, construit sur le client debrid de cette clé.
-  const hosterClients = new Map<string, HosterClient>();
-
-  const keyOf = (apiKey: string): string => createHash('sha256').update(apiKey, 'utf8').digest('hex');
-
-  const debridFor = (apiKey: string): DebridClient => {
-    const cacheKey = keyOf(apiKey);
-    let client = clients.get(cacheKey);
-    if (client === undefined) {
-      client = deps.alldebridFactory
-        ? deps.alldebridFactory(apiKey)
-        : new AllDebridClient(apiKey, { fetch: deps.fetch, kv: sharedKvCache('alldebrid') });
-      clients.set(cacheKey, client);
-    }
-    return client;
-  };
-
-  const hostersFor = (apiKey: string): HosterClient => {
-    const cacheKey = keyOf(apiKey);
-    let hosters = hosterClients.get(cacheKey);
-    if (hosters === undefined) {
-      hosters = new HosterClient(debridFor(apiKey));
-      hosterClients.set(cacheKey, hosters);
-    }
-    return hosters;
-  };
-
   /** Configuration de l'URL, ou la réponse 400 à renvoyer. */
   const configOf = (c: Ctx): Config | Response => {
     try {
@@ -149,26 +112,16 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
   // État partagé de lecture (packs, hébergeurs en panne, torrents) : créé ici, la plateforme étant installée.
   const playState = defaultPlayState();
 
-  const contextOf = (c: Ctx, config: Config, wait: PipelineContext['wait']): PipelineContext => {
-    const client = clientMode();
-    // Mode client : ni client AllDebrid ni hébergeurs (le catalogue d'hébergeurs est aussi un appel AllDebrid).
-    const apiKey = client ? undefined : config.debrid?.apiKey;
-    return {
-      debridMode: client ? 'client' : 'server',
-      deliverTorrents: queryParams(c).torrents === '1',
-      playBaseUrl: publicBaseUrl(c.req, isEdgeRequest(c)),
-      configToken: c.req.param('config') as string,
-      secret: deps.secret,
-      fetch: deps.fetch,
-      debrid: apiKey === undefined ? undefined : debridFor(apiKey),
-      hosters: apiKey === undefined ? undefined : hostersFor(apiKey),
-      hostHealth: playState.hostHealth,
-      torrentCache: playState.torrentCache,
-      packStore: playState.packStore,
-      localProwlarr: deps.localProwlarr,
-      wait,
-    };
-  };
+  const contextOf = (c: Ctx, wait: PipelineContext['wait']): PipelineContext => ({
+    deliverTorrents: queryParams(c).torrents === '1',
+    playBaseUrl: publicBaseUrl(c.req, isEdgeRequest(c)),
+    configToken: c.req.param('config') as string,
+    secret: deps.secret,
+    fetch: deps.fetch,
+    torrentCache: playState.torrentCache,
+    packStore: playState.packStore,
+    wait,
+  });
 
   /**
    * GET /:config/stream/:type/:id.json. Les indexeurs lents ne retardent pas la réponse : passé l'échéance douce, les
@@ -187,7 +140,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     if (deps.fetch === undefined) {
       for (const source of config.sources) if (source.type === 'upstream' && source.enabled !== false) warmUpstreamManifest(source);
     }
-    const result = await getStreams(config, ref, contextOf(c, config, queryParams(c).wait === 'full' ? 'full' : 'soft'));
+    const result = await getStreams(config, ref, contextOf(c, queryParams(c).wait === 'full' ? 'full' : 'soft'));
     // Registre des URL émises (miniatures) : écrit après la réponse, sans la retarder.
     platform().scheduler.background(issuedUrls().noteStreams(result.streams));
     if (result.partial === true) {
@@ -204,6 +157,6 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
     c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
     const ref = parseContentRef(c.req.param('type'), c.req.param('id').replace(/\.json$/, ''));
     if (ref === undefined) return sendJson(c, { pending: [], count: 0 });
-    return sendJson(c, await getStreamsStatus(config, ref, contextOf(c, config, 'soft')));
+    return sendJson(c, await getStreamsStatus(config, ref, contextOf(c, 'soft')));
   });
 }

@@ -22,6 +22,7 @@ interface CallOptions {
   body?: unknown;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- corps JSON de test non typés */
 async function call(method: string, path: string, options: CallOptions = {}): Promise<{ status: number; body: Record<string, any> }> {
   const headers: Record<string, string> = { ...(options.headers ?? {}) };
   if (options.ip !== undefined) headers['cf-connecting-ip'] = options.ip;
@@ -31,6 +32,7 @@ async function call(method: string, path: string, options: CallOptions = {}): Pr
   return { status: res.status, body: text === '' ? {} : (JSON.parse(text) as Record<string, any>) };
 }
 
+/* eslint-enable @typescript-eslint/no-explicit-any */
 /** Compte neuf (invitation système), profil et jeton : en-têtes d'un profil agissant. */
 async function owner(prefix: string): Promise<Record<string, string>> {
   const name = `${prefix}${++counter}x${Math.floor(Math.random() * 1e6)}`.toLowerCase().slice(0, 30);

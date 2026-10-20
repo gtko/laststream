@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { scrubSecrets } from '../src/routes/test.js';
-import { maskSecrets, type FetchFn } from '../src/sources/http.js';
-import { testTorznab } from '../src/sources/torznab.js';
+import { maskSecrets } from '../src/sources/http.js';
 
 const KEY = 'k/ey+123456';
 const ENCODED = encodeURIComponent(KEY);
@@ -38,16 +37,5 @@ describe('scrubSecrets : formes brute, URL-encodée et base64', () => {
 
   it('maskSecrets masque tous les secrets longs d un message', () => {
     expect(maskSecrets(`${KEY} / ${BASE64}`, [KEY, 'autre-secret-long'])).toBe('*** / ***');
-  });
-});
-
-describe('testTorznab : la clé n apparaît pas dans les erreurs de l indexeur', () => {
-  it('masque la clé encodée en base64 renvoyée par l indexeur', async () => {
-    const xml = `<?xml version="1.0"?><error code="100" description="clé ${BASE64} refusée"/>`;
-    const fetch = vi.fn(async () => new Response(xml, { status: 200 })) as unknown as FetchFn;
-    const result = await testTorznab({ name: 'Idx', baseUrl: 'https://idx.example.com', apiKey: KEY }, { fetch });
-    expect(result.ok).toBe(false);
-    expect(result.error).not.toContain(BASE64);
-    expect(result.error).toContain('***');
   });
 });

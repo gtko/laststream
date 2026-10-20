@@ -33,8 +33,13 @@ export const SOCIAL_LIVE_NONCE_HEADER = 'x-social-live-nonce';
 export const SOCIAL_LIVE_EXP_HEADER = 'x-social-live-exp';
 /** Taille maximale d'une trame client, en caractères. Au-delà, la connexion est fermée (4013). */
 export const SOCIAL_LIVE_MAX_FRAME_CHARS = 1024;
-/** Code de fermeture d'une connexion remplacée par une plus récente du même profil. */
+/** Code de fermeture d'une connexion remplacée : au-delà de SOCIAL_LIVE_MAX_PER_PID, la plus ancienne du profil est fermée. */
 export const SOCIAL_LIVE_REPLACED = 4000;
+/**
+ * Connexions simultanées par profil (appareils ou onglets). La nouvelle connexion ferme la plus ancienne (4000) seulement
+ * au-delà de ce nombre : deux onglets d'un même profil cohabitent sans se déconnecter mutuellement.
+ */
+export const SOCIAL_LIVE_MAX_PER_PID = 5;
 /** Code de fermeture d'une connexion qui dépasse le débit de trames autorisé. */
 export const SOCIAL_LIVE_RATE_LIMITED = 4008;
 /**
@@ -63,7 +68,7 @@ export type LiveFrame =
   | { t: 'typing'; conv: string; pid: string }
   | { t: 'join_request'; from: FriendView }
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
-  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string }
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string; avatar?: string }; partyId: string; title: string }
   | { t: 'activity'; item: ActivityItem };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
@@ -138,6 +143,7 @@ function activityOut(view: ActivityItem): ActivityItem {
   if (view.media.season !== undefined) media.season = view.media.season;
   if (view.media.episode !== undefined) media.episode = view.media.episode;
   const out: ActivityItem = { id: view.id, pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, kind: view.kind, media, at: view.at };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
   if (view.rating !== undefined) out.rating = view.rating;
   return out;
 }
@@ -189,7 +195,12 @@ export function liveFrame(event: SocialEvent): LiveFrame {
     case 'party_invite':
       return {
         t: 'party_invite',
-        from: { pid: event.from.pid, handle: handleOut(event.from.handle), avatarColor: event.from.avatarColor },
+        from: {
+          pid: event.from.pid,
+          handle: handleOut(event.from.handle),
+          avatarColor: event.from.avatarColor,
+          ...(event.from.avatar !== undefined ? { avatar: event.from.avatar } : {}),
+        },
         partyId: event.partyId,
         title: event.title,
       };

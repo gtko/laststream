@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { type Identity, TICKET_TTL_MS } from './protocol.js';
-import { AVATAR_PATTERN } from '../user/avatar.js';
+import { isAvatarValue } from '../user/avatar.js';
 
 /**
  * Tickets de connexion WebSocket. Un navigateur ne peut pas poser d'en-tête Authorization sur une WebSocket et le jeton
@@ -71,7 +71,7 @@ export function verifyTicket(ticket: string, roomId: string, now: number, secret
   ) {
     return undefined;
   }
-  const avatar = typeof payload.avatar === 'string' && AVATAR_PATTERN.test(payload.avatar) ? { avatar: payload.avatar } : {};
+  const avatar = typeof payload.avatar === 'string' && isAvatarValue(payload.avatar) ? { avatar: payload.avatar } : {};
   return { accountId: payload.accountId, username: payload.username, avatarColor: payload.avatarColor, ...avatar };
 }
 

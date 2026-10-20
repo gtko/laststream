@@ -3,7 +3,7 @@ import { isAllowedImageUrl } from './image-hosts.js';
 import { HIDDEN_KEY, MAX_INVITE_QUOTA, TICKET_MESSAGE_MAX, TICKET_PICKS_MAX } from './social-store.js';
 import { INVITE_CODE } from './validation.js';
 
-/** Schémas des routes sociales (parrainage, amis, présence, visibilité, titres masqués). */
+/** Schémas des routes sociales (parrainage, bibliothèque d'un ami, visibilité, titres masqués). */
 
 /** Pseudo exact (même format que l'inscription ; comparé en minuscules). */
 export const usernameParam = z
@@ -38,28 +38,6 @@ export const inviteTicketSchema = z.object({
     .refine((value) => [...value].length <= TICKET_MESSAGE_MAX, 'message_too_long')
     .optional(),
   picks: z.array(ticketPickSchema).max(TICKET_PICKS_MAX).optional(),
-});
-
-export const friendRequestSchema = z.object({ username: usernameParam });
-
-const TITLE = z.string().trim().min(1).max(200);
-
-export const presenceSchema = z.object({
-  /** Profil utilisé : un profil enfant n'annonce jamais de titre. Défaut : aucun (présence « en ligne » seulement). */
-  profileId: z.string().min(1).max(64).optional(),
-  watching: z
-    .object({
-      type: z.enum(['movie', 'series']),
-      tmdbId: z.number().int().positive().max(1_000_000_000).optional(),
-      imdbId: z.string().regex(/^tt\d{1,10}$/).optional(),
-      title: TITLE,
-      season: z.number().int().min(0).max(10_000).optional(),
-      episode: z.number().int().min(0).max(10_000).optional(),
-    })
-    .nullable()
-    .optional(),
-  /** Mode invisible : le compte apparaît hors ligne à ses amis. */
-  invisible: z.boolean().default(false),
 });
 
 export const visibilitySchema = z.object({ visibility: z.enum(['private', 'friends']) });
@@ -104,4 +82,3 @@ export const hiddenWriteSchema = z.object({
 });
 
 export const hiddenRemoveSchema = z.object({ keys: z.array(hiddenKey).min(1).max(500) });
-export const hiddenKeyParam = hiddenKey;

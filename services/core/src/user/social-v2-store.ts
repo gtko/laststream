@@ -807,10 +807,11 @@ interface ActivityRow {
   handle_name: string;
   handle_tag: string;
   avatar_color: string;
+  avatar?: string | null;
 }
 
 const ACTIVITY_COLUMNS =
-  'a.id, a.pid, a.kind, a.type, a.tmdb_id, a.season, a.episode, a.title, a.poster, a.rating, a.at, p.handle_name, p.handle_tag, p.avatar_color';
+  'a.id, a.pid, a.kind, a.type, a.tmdb_id, a.season, a.episode, a.title, a.poster, a.rating, a.at, p.handle_name, p.handle_tag, p.avatar_color, p.avatar';
 
 function activityOf(row: ActivityRow): ActivityItem {
   const media: ActivityItem['media'] = { type: row.type, tmdbId: Number(row.tmdb_id), title: row.title };
@@ -826,6 +827,7 @@ function activityOf(row: ActivityRow): ActivityItem {
     media,
     at: Number(row.at),
   };
+  if (row.avatar !== undefined && row.avatar !== null && row.avatar !== '') item.avatar = row.avatar;
   if (row.rating !== null) item.rating = Number(row.rating);
   return item;
 }
@@ -1641,15 +1643,20 @@ export class SocialV2Store {
   private peersOf(pid: string): Card[] {
     const rows = this.db
       .prepare(
-        `SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color FROM profile_friendships f
+        `SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color, p.avatar FROM profile_friendships f
            JOIN profiles p ON p.pid = CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
           WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?) AND p.is_kid = 0
          UNION
-         SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color FROM profiles p
+         SELECT p.pid, p.handle_name, p.handle_tag, p.avatar_color, p.avatar FROM profiles p
           WHERE p.account_id = (SELECT account_id FROM profiles WHERE pid = ?) AND p.pid <> ? AND p.is_kid = 0 AND p.pid IS NOT NULL`,
       )
-      .all(pid, pid, pid, pid, pid) as unknown as { pid: string; handle_name: string; handle_tag: string; avatar_color: string }[];
-    return rows.map((row) => ({ pid: row.pid, handle: handleOf(row.handle_name, row.handle_tag), avatarColor: row.avatar_color }));
+      .all(pid, pid, pid, pid, pid) as unknown as { pid: string; handle_name: string; handle_tag: string; avatar_color: string; avatar: string | null }[];
+    return rows.map((row) => ({
+      pid: row.pid,
+      handle: handleOf(row.handle_name, row.handle_tag),
+      avatarColor: row.avatar_color,
+      ...(row.avatar !== null && row.avatar !== '' ? { avatar: row.avatar } : {}),
+    }));
   }
 
   /** Accès de `viewer` à une conversation : `ok`, ou la raison du refus. Un groupe n'est visible que de ses membres. */
@@ -2282,7 +2289,7 @@ export class SocialV2Store {
     const peers = peerPidsFilter('n.author_pid', viewerPid);
     const rows = this.db
       .prepare(
-        `SELECT n.id, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color
+        `SELECT n.id, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color, p.avatar
            FROM notes n JOIN profiles p ON p.pid = n.author_pid
           WHERE n.type = ? AND n.tmdb_id = ? AND n.season = ? AND n.episode = ? AND n.created_at > ? AND ${peers.sql}
           ORDER BY n.created_at, n.rowid
@@ -2339,6 +2346,7 @@ export class SocialV2Store {
       handle_name: author.handle.name,
       handle_tag: author.handle.tag,
       avatar_color: author.avatarColor,
+      avatar: author.avatar ?? null,
     };
     const inserted = this.db
       .prepare(

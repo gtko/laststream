@@ -1,4 +1,5 @@
 import { GUEST_NAME_MAX, GUEST_SESSION_MS, type Identity } from './protocol.js';
+import { guestAvatarOf } from '../user/avatar.js';
 import { stripInvisible } from './text.js';
 
 /**
@@ -9,7 +10,7 @@ import { stripInvisible } from './text.js';
  * HMAC-SHA256 (WebCrypto) avec une clé dérivée du secret du Worker par HKDF, `info` propre à ce jeton : aucun autre jeton
  * (ticket, élévation, jeton de flux) ne peut être rejoué comme jeton invité.
  *
- * Module portable, WebCrypto seulement (ni `node:*` ni Buffer), comme range-token.ts : il tourne à l'identique sous Node
+ * Module portable, WebCrypto seulement (ni `node:*` ni Buffer) : il tourne à l'identique sous Node
  * et sous Cloudflare Workers.
  */
 
@@ -31,6 +32,8 @@ interface GuestPayload {
   roomId: string;
   gid: string;
   exp: number;
+  /** Avatar choisi à l'entrée (liste blanche, voir guestAvatarOf) ; absent : la lettre sur la couleur fixe. */
+  av?: string;
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -70,9 +73,9 @@ export function newGuestId(): string {
  * Émet un jeton d'invité pour ce salon, valable GUEST_SESSION_MS à partir de `now` (ms). `options` fixe l'identifiant
  * (jeton de séance délivré à l'entrée par le lien partagé) et/ou l'échéance (au plus la fin du salon).
  */
-export async function signGuestToken(roomId: string, now: number, secret: string, options: { gid?: string; exp?: number } = {}): Promise<GuestToken> {
+export async function signGuestToken(roomId: string, now: number, secret: string, options: { gid?: string; exp?: number; avatar?: string } = {}): Promise<GuestToken> {
   const exp = options.exp ?? now + GUEST_SESSION_MS;
-  const payload: GuestPayload = { purpose: PURPOSE, roomId, gid: options.gid ?? newGuestId(), exp };
+  const payload: GuestPayload = { purpose: PURPOSE, roomId, gid: options.gid ?? newGuestId(), exp, ...(options.avatar !== undefined ? { av: options.avatar } : {}) };
   const body = base64url(encoder.encode(JSON.stringify(payload)));
   const signature = new Uint8Array(await crypto.subtle.sign('HMAC', await macKey(secret, 'sign'), encoder.encode(body)));
   return { token: `${body}.${base64url(signature)}`, expiresAt: new Date(exp).toISOString() };
@@ -82,7 +85,7 @@ export async function signGuestToken(roomId: string, now: number, secret: string
  * Identifiant d'invité porté par un jeton authentique, non expiré et émis pour ce salon ; sinon `undefined` (aucune
  * exception). La signature est vérifiée en temps constant par WebCrypto.
  */
-export async function verifyGuestToken(token: string, roomId: string, now: number, secret: string): Promise<{ guestId: string } | undefined> {
+export async function verifyGuestToken(token: string, roomId: string, now: number, secret: string): Promise<{ guestId: string; avatar?: string } | undefined> {
   if (token.length > MAX_TOKEN_CHARS) return undefined;
   const dot = token.indexOf('.');
   if (dot <= 0 || dot !== token.lastIndexOf('.')) return undefined;
@@ -109,7 +112,8 @@ export async function verifyGuestToken(token: string, roomId: string, now: numbe
   ) {
     return undefined;
   }
-  return { guestId: payload.gid };
+  const avatar = guestAvatarOf(payload.av);
+  return { guestId: payload.gid, ...(avatar !== undefined ? { avatar } : {}) };
 }
 
 /**
@@ -124,8 +128,8 @@ export function cleanGuestName(raw: string | null): string | undefined {
 }
 
 /** Identité d'un invité dans le salon : clé `guest:<id>`, pseudo nettoyé, drapeau `guest`. */
-export function guestIdentity(guestId: string, username: string): Identity {
-  return { accountId: `${GUEST_KEY_PREFIX}${guestId}`, username, avatarColor: GUEST_COLOR, guest: true };
+export function guestIdentity(guestId: string, username: string, avatar?: string): Identity {
+  return { accountId: `${GUEST_KEY_PREFIX}${guestId}`, username, avatarColor: GUEST_COLOR, ...(avatar !== undefined ? { avatar } : {}), guest: true };
 }
 
 interface LinkPayload {

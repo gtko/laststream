@@ -1,6 +1,6 @@
 # lastAddon
 
-Addon Stremio agrégateur de streams pour Laststream. Il interroge en parallèle les addons Stremio amont configurés par l'utilisateur (leur seule source : ils débrident eux-mêmes, la clé du débrideur est dans l'addon, par exemple Lumio), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, qualités, tailles, débit, formats audio, limite d'âge), regroupe les copies d'une même release, les classe, puis les renvoie à Stremio. Avec AllDebrid, il indique quels torrents sont déjà en cache, débride la lecture à la demande en passant à la copie suivante en cas d'échec, et peut proposer les liens d'hébergeurs débridés.
+Addon Stremio agrégateur de streams pour Laststream. Il interroge en parallèle les addons Stremio amont configurés par l'utilisateur (leur seule source : ils débrident eux-mêmes, la clé du débrideur est dans l'addon, par exemple Lumio), filtre les résultats selon les préférences de l'utilisateur (langues, résolutions, qualités, tailles, débit, formats audio, limite d'âge), regroupe les copies d'une même release, les classe, puis les renvoie à Stremio. Il ne débride jamais côté serveur : les torrents sont livrés à l'appareil, qui débride lui-même avec sa propre clé AllDebrid.
 
 ## Prérequis
 
@@ -61,7 +61,7 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_TRUST_PROXY` | `0` | Mettre `1` seulement derrière un reverse proxy de confiance : `X-Forwarded-Proto` et `X-Forwarded-Host` servent alors à construire les liens de lecture. Sans cela, ces en-têtes sont ignorés. |
 | `LASTADDON_EDGE_SECRET` | aucun | Secret (16 caractères minimum) partagé avec un relais de confiance, par exemple un Worker Cloudflare. Une requête portant ce secret dans `X-Laststream-Edge` est crue sur `X-Laststream-Client-IP` (IP réelle du client, donc limitation par client) et sur `X-Forwarded-Proto`/`X-Forwarded-Host`. Sans secret valide, ces en-têtes sont ignorés. |
 | `TMDB_TOKEN`, `MDBLIST_API_KEY`, `TVDB_API_KEY` (+ `TVDB_PIN`), `OPENROUTER_API_KEY`, `FANART_API_KEY` | aucun | Clés de services **du serveur**, partagées par tous les comptes (secrets Worker : `wrangler secret put`). La clé de la configuration d'un utilisateur prime ; sinon repli sur celle du serveur. Jamais renvoyées au client ni journalisées ; `/lt/health` annonce seulement des booléens. Aucune clé de débrideur côté serveur. |
-| `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL saisies dans les sources (upstream, Torznab, Prowlarr, Jackett) ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
+| `LASTADDON_PUBLIC` | `0` | Mettre `1` pour exposer le serveur sur Internet (mode public). Les URL des addons amont saisies dans la configuration ne peuvent plus pointer vers une adresse privée, de boucle locale ou de lien local (voir « Sécurité »). Exige `LASTADDON_PUBLIC_URL`. |
 | `LASTADDON_FFMPEG` / `LASTADDON_FFPROBE` | PATH | Binaires de la détection locale des segments de saut (voir « Segments de saut détectés localement »). Sans eux : PATH, puis `bin/` à côté de l'application. `LASTADDON_SKIP_DETECT=0` désactive la détection ; `LASTADDON_SKIP_DETECT_MAX_MB` (400) plafonne les octets lus par job. |
 | `LASTADDON_ALLOWED_ORIGINS` | `http://localhost:8089,http://localhost:8080` | Origines (liste séparée par des virgules) autorisées en CORS sur les endpoints `/config/*` et `/user/*`. Les routes manifest et stream restent ouvertes (`*`). |
 | `LASTADDON_DATA_DIR` | `./data` | Dossier de la base SQLite des données utilisateur (`laststream.db`). Relatif à la racine du projet. Voir « Données utilisateur ». |
@@ -70,26 +70,11 @@ Les variables peuvent être passées dans l'environnement ou dans un fichier `.e
 | `LASTADDON_ENV_FILE` | `.env` à la racine du projet | Emplacement du fichier `.env` (secret). Chemin absolu conseillé pour une application packagée. Voir « Distribution ». |
 | `LASTADDON_ALLOW_SIGNUP` | `0` | Mettre `1` pour ouvrir l'inscription libre (serveur perso). Sinon seul le premier compte s'inscrit sans lien ; les suivants exigent un lien de parrainage (voir [docs/social.md](docs/social.md)). |
 | `LASTADDON_BOOTSTRAP_TOKEN` | aucun | Si défini, le premier compte exige l'en-tête `X-Bootstrap-Token` avec cette valeur. Voir « Données utilisateur ». |
-| `LASTADDON_LEGACY_INDEXERS` | `0` | Mettre `1` pour réactiver les anciennes sources torrent : Torznab, Prowlarr, Jackett, détection du Prowlarr local et routes `/config/indexers`. Désactivé par défaut (voir « Anciennes sources torrent »). Réservé au mode serveur perso. |
-| `LASTADDON_PROWLARR_AUTO` | `1` (`0` en mode public), seulement avec `LASTADDON_LEGACY_INDEXERS=1` | Détection d'un Prowlarr local. `0` la désactive. En mode public (`LASTADDON_PUBLIC=1`), elle n'est active que si `1` est défini explicitement. Sans effet si la configuration a des sources (voir « Prowlarr local »). |
-| `LASTADDON_PROWLARR_URL` | `http://localhost:9696` | Base du Prowlarr local à interroger. Remplace l'adresse par défaut. |
-| `LASTADDON_PROWLARR_KEY` | aucun | Clé API du Prowlarr local. Prioritaire sur le fichier de configuration. Lue une seule fois au démarrage, jamais renvoyée ni journalisée. |
-| `LASTADDON_PROWLARR_CONFIG_PATH` | `C:\ProgramData\Prowlarr\config.xml` (Windows), `~/.config/Prowlarr/config.xml` (Linux) | Fichier `config.xml` de Prowlarr, dont la balise `<ApiKey>` sert de clé si `LASTADDON_PROWLARR_KEY` est absente. |
 | `PORT` | `7000` | Port d'écoute HTTP. |
 
 **Important :** si `LASTADDON_SECRET` change, toutes les configurations déjà chiffrées (et donc toutes les URL de manifest installées) deviennent invalides, ainsi que les liens `/play/c` déjà émis. Sauvegardez cette valeur. Ne la committez jamais : `.env` est dans `.gitignore`.
 
-Les clés API (sources Torznab, Prowlarr, Jackett, debrid, services) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur d'indexeur. La clé du Prowlarr local n'est pas dans la configuration : elle n'apparaît dans aucune réponse, ni dans `/config/*`, ni dans les erreurs.
-
-### Anciennes sources torrent (désactivées)
-
-Les seules sources de Laststream sont les addons Stremio amont (`type: "upstream"`). Les sources `torznab`, `prowlarr` et `jackett`, le Prowlarr local détecté (`autoProwlarr` et `localProwlarr`, faux par défaut) et les routes `/config/indexers` restent dans le code mais sont **inactifs** : une configuration qui en contient les accepte, sans jamais les interroger, tant que `LASTADDON_LEGACY_INDEXERS=1` n'est pas défini. Le débridage dans Laststream est une option avancée. Le mode serveur est **opt-in** : il faut définir `LASTADDON_DEBRID_SERVER_SIDE=1` et une clé `debrid` dans la configuration. Par défaut (variable absente ou différente de `1`), le serveur n'appelle jamais AllDebrid : c'est le mode client, où les torrents sans lien ne sont livrés que si l'appareil ajoute `?torrents=1` à la requête `/stream` (il a alors sa propre clé). Sans cela, un résultat sans URL lisible (infoHash seul) n'est jamais renvoyé. Les sections « Prowlarr local » et « Prowlarr et Jackett » ci-dessous décrivent ce mode hérité.
-
-### Prowlarr local (mode hérité)
-
-Détection automatique, sans rien saisir : si la configuration n'a aucune source, le serveur utilise un Prowlarr installé sur la même machine (par défaut `http://localhost:9696`). La clé API est lue dans `LASTADDON_PROWLARR_KEY`, sinon dans le `config.xml` de Prowlarr. L'instance est validée par un appel à `GET /api/v1/indexer` (délai 3 s), et le résultat est mis en cache 60 secondes. Les sources explicites ne sont jamais remplacées. Pour désactiver ce repli pour une configuration donnée, réglez « Utiliser le Prowlarr local détecté » sur faux (`autoProwlarr: false`).
-
-`/config/schema` et `/config/test` indiquent la présence du Prowlarr local dans `localProwlarr` : `{"detected": true, "indexers": 12, "label": "Prowlarr local détecté (12 indexeurs)"}`, sans URL ni clé.
+Les clés API (debrid, services) sont contenues dans la configuration. Le serveur ne les journalise jamais, ne les renvoie jamais, et masque celles qui apparaîtraient dans un message d'erreur.
 
 ## Endpoints
 
@@ -100,12 +85,10 @@ Détection automatique, sans rien saisir : si la configuration n'a aucune source
 | GET | `/:config/manifest.json` | Manifest Stremio pour une configuration chiffrée. Avec `services.tmdbToken`, annonce aussi des catalogues. |
 | GET | `/:config/stream/:type/:id.json` | Liste de streams Stremio pour un film ou un épisode |
 | GET | `/:config/play/c/:token` | Lecture d'un jeton de copies : essai des copies dans l'ordre (failover), `302` vers le premier lien résolu |
-| GET | `/:config/play/:infoHash/:fileIdx?` | Lecture débridée d'un torrent (forme historique) : redirection `302` vers le lien AllDebrid |
 | GET | `/config/schema` | JSON Schema de la configuration, plus la liste des préréglages (`presets`) |
 | POST | `/config/encode` | Valide une configuration JSON et renvoie `{"config":"..."}` (chiffrée). Forme `{previous, config}` pour ne pas ressaisir les clés |
 | POST | `/config/decode` | Déchiffre `{"config":"..."}` pour le configurateur : chaque secret est remplacé par `{"set":true,"last4":"…xxxx"}`, jamais par sa valeur |
-| POST | `/config/test` | Teste chaque source, le compte AllDebrid et les services d'une configuration (JSON brut, non chiffré) |
-| POST | `/config/indexers` | Liste les indexeurs d'une source Prowlarr ou Jackett (voir « Prowlarr et Jackett ») |
+| POST | `/config/test` | Teste chaque source amont et les services d'une configuration (JSON brut, non chiffré) |
 
 Les routes manifest et stream renvoient `Access-Control-Allow-Origin: *`, comme les lectures GET `lt` et catalogues. Les endpoints `/config/*` n'acceptent que les origines de `LASTADDON_ALLOWED_ORIGINS`. Les autres routes, dont `/play`, n'envoient aucun en-tête CORS.
 
@@ -119,36 +102,20 @@ Les routes manifest et stream renvoient `Access-Control-Allow-Origin: *`, comme 
 
 ### `GET /:config/play/c/:token`
 
-Lecture d'un flux dont le jeton porte la liste ordonnée de ses copies (voir « Groupement des copies et lecture »). Le jeton est émis par le moteur ; il est signé, pas chiffré.
+Lecture d'un jeton de copies à lien direct, essayées dans l'ordre (voir « Groupement des copies et lecture »). Le moteur n'émet plus de jeton : cette route ne sert qu'aux jetons déjà émis. Le jeton est signé, pas chiffré.
 
 - Réponse `302` : `Location` pointe vers le lien résolu. Réponse jamais mise en cache (`Cache-Control: no-store`).
 - Échec : une page HTML en français, ou un JSON `{"error":"play_failed","reason":"...","message":"..."}` si `Accept` demande du JSON. Le statut dépend de la raison (tableau ci-dessous).
 - `400` `{"error":"invalid_token"}` si le jeton est malformé ou signé avec une autre clé ; `400` `{"error":"invalid_config"}` si la configuration est illisible.
 
-### `GET /:config/play/:infoHash/:fileIdx?`
-
-Forme historique, pour un torrent isolé. Paramètres optionnels `?s=S&e=E` pour un épisode (durée et sélection du fichier vidéo), `?filename=NOM&size=OCTETS` pour le nom et la taille attendus du fichier (ajoutés par le moteur avec un index de fichier). Le fichier est choisi par nom attendu, puis taille attendue, puis épisode, et l'index n'est retenu que si sa taille correspond. Réponses :
-
-| Statut | Cas |
-| --- | --- |
-| `302` | Lien AllDebrid prêt : `Location` pointe vers le fichier débridé |
-| `400` | Hash ou index de fichier invalide, ou configuration invalide |
-| `404` | Configuration sans debrid |
-| `503` | Torrent pas encore prêt chez AllDebrid (`Retry-After: 5`) |
-| autre | Statut de la raison d'échec (voir tableau des raisons) |
-
-Cette réponse n'est jamais mise en cache (`Cache-Control: no-store`).
-
 ### `POST /config/test`
 
-Corps : une configuration JSON brute (non chiffrée). Chaque source, le compte AllDebrid et les services renseignés sont testés en parallèle.
+Corps : une configuration JSON brute (non chiffrée). Chaque source amont et les services renseignés sont testés en parallèle. Une source d'un ancien type (`torznab`, `prowlarr`, `jackett`) n'est jamais interrogée et est rapportée en erreur.
 
 ```json
 {
   "sources": [
-    { "name": "Mon addon", "type": "upstream", "ok": true },
-    { "name": "Indexeur", "type": "torznab", "ok": false, "error": "Source \"Indexeur\" : erreur Torznab : ..." },
-    { "name": "AllDebrid", "type": "alldebrid", "ok": true }
+    { "name": "Mon addon", "type": "upstream", "ok": true }
   ],
   "services": [
     { "name": "TMDB (jeton v4)", "type": "tmdbToken", "ok": true }
@@ -182,10 +149,7 @@ Fichier `config.json` (les clés sont des espaces réservés, à remplacer par v
   "size": { "minGb": 0.5, "maxGb": 30, "perResolution": { "1080p": { "maxGb": 15 } } },
   "maxResults": 30,
   "sources": [
-    { "type": "upstream", "name": "Mon addon", "url": "https://exemple.com/stream" },
-    { "type": "torznab", "name": "Indexeur", "baseUrl": "https://indexeur.example.com/api", "apiKey": "VOTRE_CLE", "categories": [2000, 5000] },
-    { "type": "prowlarr", "name": "Prowlarr", "baseUrl": "https://prowlarr.example.com", "apiKey": "VOTRE_CLE" },
-    { "type": "jackett", "name": "Jackett", "baseUrl": "https://jackett.example.com", "apiKey": "VOTRE_CLE", "indexers": "all" }
+    { "type": "upstream", "name": "Mon addon", "url": "https://exemple.com/stream" }
   ],
   "debrid": { "service": "alldebrid", "apiKey": "VOTRE_CLE" },
   "onlyCached": false,
@@ -294,7 +258,7 @@ Tous les champs ci-dessous sont facultatifs. Les valeurs entre parenthèses sont
 | `filters.bannedWords` | tableau de chaînes (`[]`) | Les flux dont le nom contient un de ces mots (mot entier) sont retirés |
 | `filters.preferredWords` | tableau de chaînes (`[]`) | Les flux dont le nom contient un de ces mots remontent dans le classement |
 | `filters.directVerifiedOnly` | booléen (`false`) | Ne garde que les liens directs dont la disponibilité a été vérifiée |
-| `filters.includeHosterLinks` | booléen (`true`) | Inclut les liens d'hébergeurs débridés par AllDebrid (voir « Liens d'hébergeurs ») |
+| `filters.includeHosterLinks` | booléen (`true`) | Conservé pour la compatibilité des configurations : sans effet, le serveur ne contrôle plus les liens d'hébergeurs. |
 
 **Audio** (`audio`)
 
@@ -320,18 +284,16 @@ Tous les champs ci-dessous sont facultatifs. Les valeurs entre parenthèses sont
 | Champ | Type | Description |
 | --- | --- | --- |
 | `sources` | tableau de sources (`[]`) | Sources à interroger (voir ci-dessous) |
-| `debrid` | `{"service":"alldebrid","apiKey":"..."}` (aucun) | Service debrid optionnel |
-| `onlyCached` | booléen (`false`) | Ne garder que les torrents déjà en cache debrid et les URL directes. Sans debrid, seules les URL directes restent. |
+| `debrid` | `{"service":"alldebrid","apiKey":"..."}` (aucun) | Clé AllDebrid utilisée par l'appareil : le serveur ne l'appelle jamais. Un torrent n'est livré sans lien qu'à un appareil qui ajoute `?torrents=1`. |
+| `onlyCached` | booléen (`false`) | Ne garder que les torrents déjà en cache debrid et les URL directes. Le serveur ne vérifie pas le cache : ce filtre est appliqué par l'appareil. |
 | `preset` | `essentiel`, `zen`, `cinephile`, `nomade` (aucun) | Préréglage de départ (voir « Préréglages ») |
-| `services.tmdbToken` | chaîne (aucun) | Jeton de lecture TMDB (API v4). Sert aux métadonnées (durée, certification, date de sortie), aux titres FR et EN, et aux catalogues. Sans lui, la limite d'âge exclut tous les flux et la recherche des indexeurs par titre est désactivée. |
+| `services.tmdbToken` | chaîne (aucun) | Jeton de lecture TMDB (API v4). Sert aux métadonnées (durée, certification, date de sortie), aux titres FR et EN, et aux catalogues. Sans lui, la limite d'âge exclut tous les flux. |
 | `services.tmdbApiKey`, `services.mdblistApiKey`, `services.tvdbApiKey`, `services.openrouterApiKey`, `services.fanartApiKey`, `services.openrouterModel` | chaînes facultatives (`openai/gpt-4o-mini` pour le modèle) | Clés des services annexes, utilisées par les routes `lt` (non détaillées ici) |
 
 Chaque source est discriminée par son champ `type` :
 
 - `{"type":"upstream","name":"...","url":"https://..."}` : addon Stremio ou API HTTP en amont. L'URL peut être la base de l'addon ou celle de son `manifest.json`.
-- `{"type":"torznab","name":"...","baseUrl":"https://...","apiKey":"...","categories":[2000]}` : indexeur Torznab (Jackett, Prowlarr ou compatible). `categories` est optionnel.
-- `{"type":"prowlarr","name":"...","baseUrl":"https://...","apiKey":"...","indexerIds":[1,2],"categories":[2000]}` : une instance Prowlarr, plusieurs indexeurs. `indexerIds` et `categories` sont optionnels ; sans `indexerIds`, tous les indexeurs torrent activés sont interrogés.
-- `{"type":"jackett","name":"...","baseUrl":"https://...","apiKey":"...","indexers":"all"}` : une instance Jackett. `indexers` vaut `"all"` (défaut) ou une liste d'identifiants d'indexeurs.
+- Les types `torznab`, `prowlarr` et `jackett` restent acceptés pour la compatibilité des configurations existantes, mais ne sont plus interrogés : leurs sources sont ignorées par la collecte.
 
 Chaque source accepte `"enabled"` (défaut `true`, libellé « Activée »). Une source à `false` est ignorée partout : collecte et `POST /config/test`. **L'ordre de `sources` est la priorité** : la première source est la plus prioritaire. Elle départage les scores égaux (avant la taille, en tri par défaut), et, parmi des releases identiques, la copie la plus prioritaire se lit en premier (cachées d'abord, puis priorité de source, puis seeders).
 
@@ -356,11 +318,11 @@ Plusieurs sources peuvent renvoyer la même release. Le moteur les regroupe en u
 - **Ce qui rapproche deux copies** : un même infoHash (et le même index de fichier), une même URL directe, un même nom normalisé (sans extension vidéo, casse et ponctuation ignorées), ou une taille identique à ±0,5 % près avec le même groupe de release et la même résolution.
 - **Représentant** : la copie cachée d'abord, puis celle qui a le plus de seeders, puis le lien direct. Ses métadonnées sont fusionnées avec celles des autres copies (langues, audio, HDR, variante FR).
 - **Ordre des copies** : cachées d'abord, puis seeders décroissants, puis liens directs en fin de liste. Le segment « N copies » de l'affichage Détaillé n'apparaît qu'à partir de 2.
-- **Jeton de lecture** : les flux torrent et les liens d'hébergeurs débridés portent leurs copies dans un jeton `/play/c/:token`. Le jeton est signé (HMAC, clé dérivée de `LASTADDON_SECRET`) mais **pas chiffré** : son contenu est lisible par qui détient l'URL. Il ne contient ni clé API, ni passkey, ni configuration. Huit copies au plus par jeton (64 au décodage), 4 Ko au plus. Un lien direct ordinaire n'entre pas dans le jeton : il reste une URL directe.
-- **Basculement** : à la lecture, les copies sont essayées une à une dans l'ordre, dans le budget `play.budgetMs` (12 s par défaut). Chaque tentative reçoit le temps restant. Une erreur propre à la copie passe à la suivante ; une erreur globale (clé, abonnement, quota) ou le dépassement du budget arrête tout. Un hébergeur signalé indisponible est marqué en panne pendant 1 h, et ses copies sont sautées.
-- **Contrôles avant débridage** : une date de sortie future renvoie `not_released` ; une certification connue au-dessus de la limite d'âge de la configuration renvoie `age_limit`. Aucun appel au debrid n'est fait dans ces cas.
-- **Sans debrid** (défaut) : les copies torrent et les liens d'hébergeurs sont ignorés, sans message d'erreur. Seuls les liens directs restent lisibles.
-- **Torrents privés** : un .torrent privé est mis en cache par guid de release (6 h). Au débridage, ses octets sont envoyés à AllDebrid comme fichier (`POST /v4/magnet/upload/file`), jamais comme magnet public. Si les octets ne sont plus en cache, la copie vaut `no_copy`. Limite actuelle : un torrent privé sans guid n'est pas mis en cache et est résolu par son infoHash (voir « Torrents sans infoHash et torrents privés »).
+- **Jeton de lecture** : le moteur n'émet plus de jeton `/play/c/:token`. Les torrents sont livrés à l'appareil (sans URL, avec `?torrents=1`) et les liens directs restent des URL directes. Un jeton émis avant cette version reste lisible : il est signé (HMAC, clé dérivée de `LASTADDON_SECRET`), pas chiffré, et ne contient ni clé API, ni passkey, ni configuration.
+- **Basculement** : à la lecture, les copies à lien direct sont essayées une à une dans l'ordre, dans le budget `play.budgetMs` (12 s par défaut). Chaque tentative reçoit le temps restant. Une copie au schéma non http(s) passe à la suivante ; le dépassement du budget arrête tout. Un hôte signalé en panne est marqué pendant 1 h, et ses copies sont sautées.
+- **Contrôles avant lecture** : une date de sortie future renvoie `not_released` ; une certification connue au-dessus de la limite d'âge de la configuration renvoie `age_limit`. Aucune lecture n'est tentée dans ces cas.
+- **Torrents** : jamais lus par `/play` ; l'appareil les résout lui-même avec `?torrents=1`. Seuls les liens directs restent lisibles côté serveur.
+- **Torrents privés** : leurs octets ne peuvent pas être transmis à un débrideur depuis le serveur, donc un torrent privé n'est jamais livré à l'appareil.
 
 Raisons d'échec de `/play/c`, avec leur statut HTTP et leur titre affiché (texte en français, fixe, sans donnée de la requête) :
 
@@ -384,7 +346,7 @@ Raisons d'échec de `/play/c`, avec leur statut HTTP et leur titre affiché (tex
 
 Les langues annoncées par le nom de release ne sont pas toujours celles de la piste audio. Pour les meilleurs candidats, le serveur lit l'en-tête du fichier et relève les pistes audio réelles.
 
-- **Ce qui est sondé** : les liens directs http(s), et les torrents cachés chez AllDebrid (leur lien est alors obtenu pour la sonde). Un torrent non caché n'est pas sondé. **Sans AllDebrid, seuls les liens directs sont sondés.**
+- **Ce qui est sondé** : les liens directs http(s) uniquement. Un torrent n'est jamais sondé côté serveur.
 - **Comment** : requêtes HTTP `Range` sur les conteneurs MKV/WebM (EBML) et MP4/MOV. L'en-tête (3 Mo) suffit en général ; pour un MP4 dont l'index est en fin de fichier, une requête complémentaire de 2 Mo au plus est faite. Le fichier n'est jamais téléchargé en entier. Chaque requête a un délai de 4 s ; trois sondes tournent en parallèle, dans un budget global de 4 s.
 - **Quels candidats** : `audio.probeTopN` (défaut 5, de 0 à 20) premiers candidats éligibles, dans l'ordre du classement. `0` désactive la sonde. Les candidats qui partagent une même copie ne sont sondés qu'une fois.
 - **Affichage** : les langues vérifiées s'affichent avec leur drapeau, suivies de `✓` ; les langues seulement annoncées sont suffixées de `?` (Détaillé, Compact) ou de « (annoncé) » (Netflix). Deux langues vérifiées ou plus ajoutent `multi`.
@@ -403,7 +365,7 @@ Les langues annoncées par le nom de release ne sont pas toujours celles de la p
 - **Formats non supportés** (`audio.unsupportedFormats`) : DTS-HD, TrueHD, EAC3 (DD+, DDP, E-AC-3) et Atmos sont détectés dans le nom de release. `exclude` retire les flux concernés ; `deprioritize` (défaut) les met en fin de liste.
 - **3D** : écartée par défaut (`filters.allow3d`), par mot entier dans le nom (3D, SBS, HSBS, HOU).
 - **Mots bannis et mots préférés** (`filters.bannedWords`, `filters.preferredWords`) : correspondance par mot entier, séparateurs espace, point, tiret ou souligné acceptés. Un mot préféré remonte le flux dans le classement par défaut, après la langue, la résolution et la source.
-- **Liens vérifiés** (`filters.directVerifiedOnly`) : ne garde que les liens directs dont la disponibilité a été vérifiée, soit par AllDebrid (liens d'hébergeurs), soit par une sonde réussie.
+- **Liens vérifiés** (`filters.directVerifiedOnly`) : ne garde que les liens directs dont la disponibilité a été vérifiée par une sonde réussie.
 - **Tri** (`sort`) :
   - `default` : score composite (flux non déclassés, langue, résolution, source, préférences audio et mots, HDR, cache), puis la plus petite taille, puis le plus grand nombre de seeders.
   - `heaviest` : niveau de langue, puis le plus lourd d'abord, puis score et seeders.
@@ -411,49 +373,19 @@ Les langues annoncées par le nom de release ne sont pas toujours celles de la p
   - Une taille inconnue passe toujours en dernier.
   - Les flux déclassés (format non supporté en mode `deprioritize`) passent après tous les autres.
 
-### Liens d'hébergeurs (AllDebrid)
-
-AllDebrid débride aussi les liens des hébergeurs qu'il prend en charge. Cette fonctionnalité demande un `debrid` configuré.
-
-- **Catalogue** : `GET /v4/user/hosts`, gardé 12 h. Un lien relève d'un hébergeur par son domaine (sous-domaines compris) ou par une expression régulière du catalogue. Aucun hébergeur n'est codé en dur.
-- **Contrôle** (`POST /v4/link/infos`) : 8 liens au plus par requête, par lots de 20, dans un budget de 5 s. Un lien mort est retiré. Un lien vivant reçoit son nom de fichier, sa taille et son hébergeur, et est marqué vérifié. Un hébergeur signalé en panne est écarté sans contrôle.
-- **Débridage à la lecture** (`/play/c`) : `POST /v4/link/unlock`. Si le lien est différé, `POST /v4/link/delayed` est interrogé une fois par seconde, dans un budget de 10 s par défaut (60 s au maximum) ; sans lien à l'issue, la copie est en `not_ready`, donc passe à la suivante. Si l'hébergeur propose des flux, le meilleur (par qualité) est demandé via `POST /v4/link/streaming`, avec repli sur le lien direct.
-- **Option « Inclure les liens directs (hébergeurs) »** (`filters.includeHosterLinks`, vraie par défaut) : quand elle est fausse, les liens d'hébergeur sont retirés avant le groupement. Les liens directs ordinaires (hors catalogue AllDebrid) restent des liens directs.
-- Dans l'affichage, un lien d'hébergeur s'affiche « Lien direct · <hébergeur> », avec le nom fourni par AllDebrid.
-
-### Prowlarr et Jackett (mode hérité)
-
-- **Types de source** : `prowlarr` (une instance, plusieurs indexeurs) et `jackett` (une instance, tous les indexeurs configurés ou une liste). Les indexeurs Torznab isolés restent pris en charge (`torznab`).
-- **Découverte** : `POST /config/indexers` avec la source en JSON brut (non chiffré) renvoie les indexeurs disponibles :
-
-  ```json
-  {
-    "indexers": [
-      { "id": 1, "name": "Mon indexeur", "protocol": "torrent", "privacy": "private", "enabled": true, "health": { "status": "ok", "avgLatencyMs": 820 } }
-    ]
-  }
-  ```
-
-  Seuls les indexeurs torrent activés sont listés pour Prowlarr ; Jackett ne liste que les indexeurs configurés. `health.status` vaut `ok`, `slow` (latence moyenne au-delà de 5 s sur les 10 dernières requêtes), `error` (la dernière requête a échoué) ou `unknown` (jamais interrogé). Aucune clé ni URL n'est renvoyée. Erreurs : `400 invalid_config` (chemins et messages seulement), `413 payload_too_large` au-delà de 16 Ko, `502 indexers_unavailable` si la découverte échoue.
-- **Recherche Prowlarr** : `GET /api/v1/search`, clé dans l'en-tête `X-Api-Key`. Les indexeurs qui acceptent la recherche par identifiant IMDb reçoivent une requête par identifiant, qui porte aussi le titre (et le TVDB si connu) ; pour une série, la saison et l'épisode s'y ajoutent si l'indexeur accepte la recherche par saison. Les packs et l'intégrale sont demandés en texte à tous les indexeurs, et la requête texte « Titre SxxEyy » seulement à ceux qui n'acceptent pas l'identifiant. Les autres reçoivent une recherche texte par titre, une par variante de titre. Les catégories par défaut sont 2000 (films) et 5000 (séries).
-- **Recherche Jackett** : une requête Torznab par cible (`all`, ou chaque identifiant de la liste), sur `/api/v2.0/indexers/<cible>/results/torznab`.
-- **Titres FR et EN** : pour la recherche texte, les titres français et anglais viennent de TMDB (cache 7 jours). Sans `services.tmdbToken`, aucune requête texte n'est lancée. Au plus 8 requêtes texte sont construites par contenu, avec l'année filtrée dans les résultats.
-- **Budgets** : 3 requêtes en parallèle au plus, 12 s pour la recherche entière, 10 s par requête.
-
 ### Torrents sans infoHash et torrents privés
 
 - Un release sans infoHash ni magnet, mais avec un lien `.torrent` HTTP(S), est lu : jusqu'à 12 liens par requête, 3 lectures en parallèle, 10 s de délai chacune. L'infoHash et les fichiers du pack sont extraits. Un lien qui redirige vers un magnet est accepté directement.
 - Le lien `.torrent` peut contenir une passkey : il reste en mémoire et n'est jamais renvoyé dans une réponse.
-- Le flag `private` du .torrent est lu. Les octets d'un torrent privé sont gardés 6 h, par guid de release (200 entrées au plus). Au débridage, ils sont envoyés à AllDebrid comme fichier, jamais comme magnet public.
-- **Limite actuelle** : la garantie ci-dessus suppose un guid. Un torrent privé sans guid n'a pas d'octets en cache et est résolu par son infoHash, comme un torrent public. Un release Prowlarr ou Torznab fournit normalement un guid.
+- Le flag `private` du .torrent est lu. Les octets d'un torrent privé sont gardés 6 h, par guid de release (200 entrées au plus). Ils ne sont jamais envoyés à un débrideur par le serveur.
 
 ### Robustesse
 
-- **Isolation** : chaque étape du pipeline (métadonnées, titres, collecte, lecture des .torrent, sonde, hébergeurs, classement) est isolée. Un échec désactive son étape sans faire échouer la requête. Une erreur de source n'est jamais renvoyée à Stremio.
+- **Isolation** : chaque étape du pipeline (métadonnées, titres, collecte, lecture des .torrent, sonde, classement) est isolée. Un échec désactive son étape sans faire échouer la requête. Une erreur de source n'est jamais renvoyée à Stremio.
 - **Cache des résultats** : LRU de 200 entrées, durée de vie 5 minutes. La clé dépend de la configuration (hachée), du contenu et de la base de lecture. Un résultat où une source a échoué n'est pas mis en cache.
-- **Autres caches** : métadonnées TMDB 6 h ; titres TMDB 7 jours ; .torrent 6 h (200 entrées) ; sondes audio 30 jours (5 000 entrées) ; catalogue des hébergeurs AllDebrid 12 h ; statut « cache » AllDebrid (voir « Méthode de cache-check AllDebrid »).
-- **Hôtes en panne** : un hébergeur qui renvoie `host_unavailable` pendant une lecture est marqué en panne pendant 1 h. Ses copies sont sautées par le failover, et ses liens sont écartés sans contrôle au calcul des streams.
-- **Apprentissage des packs** : les fichiers d'un torrent sont mémorisés dès qu'ils sont connus (lecture du .torrent, ou liste des fichiers chez AllDebrid), jusqu'à 2 000 torrents pendant 30 jours. Pour un épisode de série, le fichier correspondant du pack est retrouvé et remplace le fichier indiqué par la copie. Ce magasin est en mémoire : il est vidé au redémarrage.
+- **Autres caches** : métadonnées TMDB 6 h ; titres TMDB 7 jours ; .torrent 6 h (200 entrées) ; sondes audio 30 jours (5 000 entrées).
+- **Hôtes en panne** : un hôte qui renvoie `host_unavailable` pendant une lecture est marqué en panne pendant 1 h. Ses copies sont sautées par le failover.
+- **Apprentissage des packs** : les fichiers d'un torrent sont mémorisés dès qu'ils sont connus (lecture du .torrent), jusqu'à 2 000 torrents pendant 30 jours. Pour un épisode de série, le fichier correspondant du pack est retrouvé et remplace le fichier indiqué par la copie. Ce magasin est en mémoire : il est vidé au redémarrage.
 - **Remappage anime : partiel.** Le module `src/anime/mapping.ts` (table de correspondance anime vers IMDb, TVDB et TMDB, lecture de la liste de correspondances et des groupes d'épisodes TMDB) est couvert par `tests/anime-mapping.test.ts`, et le pipeline sait l'utiliser (`animeMapper`), mais **le serveur ne l'injecte pas** : aucun numéro absolu n'est remappé aujourd'hui. Les releases en numérotation absolue (« Titre - 05 ») ne sont donc pas écartées faute de remappage, et les requêtes Prowlarr « Titre 05 » ne sont pas envoyées.
 
 ### Segments de saut détectés localement
@@ -515,7 +447,7 @@ Le gabarit ne change ni les URL, ni les champs `behaviorHints` et `laststream`. 
 ### Champs d'un stream
 
 - `name` et `description` : selon le gabarit ci-dessus.
-- `url` : pour un lien direct, l'URL d'origine ; pour un torrent ou un hébergeur quand un debrid est configuré, l'URL `/:config/play/c/:token`. Absent en P2P.
+- `url` : l'URL d'origine d'un lien direct. Absente pour un torrent, livré à l'appareil avec son infoHash.
 - `infoHash`, `fileIdx`, `sources` : présents en P2P, sans debrid.
 - `behaviorHints` : `filename`, `videoSize` (octets), `bingeGroup` (`lastaddon|<résolution>|<variante>|<source>`, par exemple `lastaddon|1080p|vff|WEB-DL`), `notWebReady` (HEVC, AV1, REMUX, ou audio DTS/TrueHD). Les en-têtes d'une URL directe amont sont recopiés quand ils existent.
 - `laststream` : données structurées pour les clients. Jamais d'URL, de guid ni de lien débridé.
@@ -567,32 +499,12 @@ Pour une requête de streams, le pipeline (`src/pipeline.ts`) enchaîne les éta
 1. **Métadonnées** (en parallèle) : certification FR, date de sortie et durée (TMDB, avec Cinemeta en repli pour la durée), titres FR et EN (TMDB). Une lecture en échec laisse sa valeur inconnue.
 2. **Collecte** : toutes les sources sont interrogées en parallèle. Une source en erreur est ignorée ; les autres résultats sont conservés.
 3. **Fichiers .torrent** : les liens `.torrent` sans infoHash sont lus (voir « Torrents sans infoHash et torrents privés »). Les copies d'un même infoHash venues de plusieurs indexeurs sont fusionnées.
-4. **Parsing et premier filtre** : résolution, source, codec, HDR, audio, canaux, langues, variante FR, taille, seeders et infoHash sont analysés. Le premier filtre applique résolutions, tags exclus, qualités, tailles, débit, limite d'âge, non-sortis, 3D, mots bannis, formats audio et langues (avec repli). Les exigences qui dépendent d'AllDebrid ou de la sonde sont appliquées à l'étape 9.
-5. **Liens d'hébergeurs** : retirés ici si `filters.includeHosterLinks` est faux.
-6. **Groupement** des copies (voir « Groupement des copies et lecture »).
-7. **Statut « cache »** : avec un debrid, les infoHash des premiers groupes classés (8 au plus, copies comprises) sont interrogés auprès d'AllDebrid.
-8. **Contrôle des liens d'hébergeurs** : 8 liens au plus, budget de 5 s. Les liens morts sont retirés, les hôtes en panne écartés.
-9. **Classement** et limite par résolution, puis **sonde audio** des `audio.probeTopN` premiers candidats éligibles, puis **second filtre** (langues vérifiées, cache seul, liens vérifiés) et second classement.
+4. **Parsing et premier filtre** : résolution, source, codec, HDR, audio, canaux, langues, variante FR, taille, seeders et infoHash sont analysés. Le premier filtre applique résolutions, tags exclus, qualités, tailles, débit, limite d'âge, non-sortis, 3D, mots bannis, formats audio et langues (avec repli). Les exigences qui dépendent de la sonde sont appliquées à l'étape 6.
+5. **Groupement** des copies (voir « Groupement des copies et lecture »).
+6. **Classement** et limite par résolution, puis **sonde audio** des `audio.probeTopN` premiers candidats éligibles, puis **second filtre** (langues vérifiées, cache seul, liens vérifiés) et second classement.
 10. **Apprentissage des packs** (épisodes trouvés dans un pack connu), puis **formatage** selon le gabarit, tronqué à `maxResults`.
 
 Le résultat complet est gardé 5 minutes dans un cache LRU, sauf si une source a échoué.
-
-### Méthode de cache-check AllDebrid
-
-L'état « en cache » est déterminé par un contrôle sans téléchargement :
-
-La documentation AllDebrid ne décrit aucun endpoint de disponibilité instantanée : le contrôle passe donc par l'ajout du magnet au compte.
-
-1. Les 8 premiers infoHash du classement (sans URL directe, sans doublon) sont envoyés par lots de 20 à `POST /v4/magnet/upload`, après lecture de la liste des magnets du compte (`POST /v4.1/magnet/status` sans id).
-2. Un magnet dont la réponse est `ready` est en cache : il est marqué `cached`.
-3. Un magnet non prêt n'est supprimé (`POST /v4/magnet/delete`, 3 à la fois) que si son id était absent de la liste lue juste avant l'envoi. Un magnet déjà présent (téléchargement en cours de l'utilisateur) ou utilisé par une résolution en cours n'est jamais supprimé. Il est considéré comme non caché.
-4. Une erreur, une liste de compte illisible, ou un hash absent de la réponse vaut « non caché » (et n'est pas renouvelé pendant 30 s). Une erreur n'interrompt jamais la requête.
-5. Le résultat est mis en cache par client : 6 heures pour un hash caché, 30 minutes pour un hash non caché.
-6. Après HTTP 429 ou 503, aucun appel à AllDebrid n'est fait pendant le délai indiqué par `Retry-After` (30 s par défaut, plafonné à 10 minutes) ; les contrôles renvoient « inconnu » sans nouvel essai.
-
-Les magnets prêts restent dans le compte AllDebrid. Un hash déjà en cache n'y est pas téléchargé, mais il apparaît dans la liste des torrents du compte.
-
-Lorsque `onlyCached` est vrai, seuls les streams cachés et les URL directes sont gardés. **Sans debrid configuré**, aucun stream P2P n'est cachable : seules les URL directes restent.
 
 ## Données utilisateur (`/user/*`)
 
@@ -680,19 +592,17 @@ Le même code tourne sur Node et sur Cloudflare Workers (`src/worker.ts`, config
 
 | Besoin | Node | Workers |
 | --- | --- | --- |
-| Variables | `process.env` | variables et secrets du Worker (`RANGE_SECRET` lu comme `LASTADDON_RANGE_SECRET`, `EDGE_SECRET` comme `LASTADDON_EDGE_SECRET`) |
+| Variables | `process.env` | variables et secrets du Worker (`EDGE_SECRET` lu comme `LASTADDON_EDGE_SECRET`) |
 | Données utilisateur | SQLite local (`node:sqlite`) | Durable Object SQLite `UserStoreDO` (objet global « users », appelé en RPC) |
-| Caches partagés | mémoire du processus | KV (`CACHE`) : statuts et liens AllDebrid, fichiers des packs, URL émises, .torrent privés, hébergeurs en panne |
+| Caches partagés | mémoire du processus | KV (`CACHE`) : fichiers des packs, URL émises, .torrent privés, hébergeurs en panne |
 | Tâches d'arrière-plan | timers | `ctx.waitUntil` |
 | Interface web | dossier (`LASTADDON_UI_DIR`) | Workers Assets (`worker-ui/`, build de laststream-app) |
 | IP du client | socket | `CF-Connecting-IP` |
-| ffmpeg (miniatures serveur, détection des segments de saut), proxy HLS TV | oui | non ; miniatures par relais de plages (WebCodecs côté client) |
+| ffmpeg (miniatures serveur, détection des segments de saut), proxy HLS TV | oui | non (miniatures lues sur l'appareil) |
 
 **Stockage.** `UserStore` et `SkipSegmentStore` sont synchrones et ne dépendent que de `SqlDb` (`src/user/sql.ts`) : `node:sqlite` sous Node, le SQLite du Durable Object sous Workers (transactions par `transactionSync`). Le code applicatif n'appelle que les dépôts asynchrones `UserRepo` / `SkipRepo` (`src/user/repo.ts`), fournis par `platform().createUserBackend()`. Limite : un seul Durable Object traite toutes les requêtes une à la fois (quelques centaines par seconde, 10 Go) ; au-delà, partitionner par compte. Les limites de débit restent en mémoire, par isolat.
 
-**Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `RANGE_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
-
-**Miniatures (`POST /lt/range-source`).** Le jeton de relais est émis pour une URL émise par `/play`, et aussi pour tout lien https d'un domaine débrid autorisé (`*.debrid.it`, `*.alldebrid.com`, surchargeable par `LASTADDON_RANGE_HOSTS`, même liste que le Worker de relais), car les addons externes renvoient directement des liens AllDebrid. Ces derniers sont limités à 20 par minute et par configuration (binding `RANGE_LIMITER`). Tout autre domaine reste refusé (`400 invalid_source`).
+**Déploiement.** Secrets (stdin, jamais affichés) : `LASTADDON_SECRET`, `EDGE_SECRET`, et `LASTADDON_BOOTSTRAP_TOKEN` pour protéger le premier compte. Facultatifs, relais TURN de la watch party (Cloudflare Realtime TURN, identifiants de 24 h remis à chaque participant) : `TURN_KEY_ID` et `TURN_KEY_API_TOKEN` ; absents, la watch party reste en STUN seul. Puis `npm run deploy:worker` (option `--ui <dossier>` ou `LASTADDON_UI_SOURCE` pour le build de l'interface). Tests : `npm run test:workers`.
 
 ### TV en direct sur Workers (Cron + R2)
 
@@ -713,7 +623,7 @@ Connexion et inscription : binding Rate Limiting (`AUTH_LIMITER_IP`, `AUTH_LIMIT
 
 ## Sécurité
 
-**Risque SSRF.** Les URL des sources (addons amont, indexeurs Torznab, Prowlarr, Jackett) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
+**Risque SSRF.** Les URL des sources (addons amont) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :
 
 - schémas `http` et `https` uniquement ;
 - redirections gérées à la main (`redirect: manual`) : au plus 3, chaque saut est revalidé ;
@@ -730,7 +640,7 @@ Connexion et inscription : binding Rate Limiting (`AUTH_LIMITER_IP`, `AUTH_LIMIT
 npm test
 ```
 
-Hors smoke test (ci-dessous), les tests n'effectuent aucun appel réseau : les sources, Cinemeta, TMDB, AllDebrid et les sondes sont simulés par un `fetch` injecté dans les dépendances. Les clés de test sont factices.
+Les tests n'effectuent aucun appel réseau : les sources, Cinemeta, TMDB et les sondes sont simulés par un `fetch` injecté dans les dépendances. Les clés de test sont factices.
 
 | Fichier | Couverture |
 | --- | --- |
@@ -738,32 +648,12 @@ Hors smoke test (ci-dessous), les tests n'effectuent aucun appel réseau : les s
 | `tests/app.test.ts`, `tests/app-cors.test.ts`, `tests/http-layer.test.ts` | Endpoints HTTP, validation d'entrée, CORS, socle Hono (corps JSON, ETag, 404, IP du client) |
 | `tests/platform.test.ts` | Plateforme Node : variables d'exécution, cache KV, planificateur, fichiers de l'interface |
 | `tests/parse-*.test.ts` | Parseurs (vidéo, taille, seeders, langues) et intégration `parseRelease` / `parseRawStream` |
-| `tests/sources-*.test.ts`, `tests/alldebrid.test.ts`, `tests/routes-indexers.test.ts` | Sources amont, Torznab, Prowlarr, Jackett, client AllDebrid, `POST /config/indexers` |
-| `tests/engine-*.test.ts`, `tests/pipeline-v2.test.ts` | Filtre, filtres v2, déduplication, groupement des copies, classement, formatage, gabarits, sonde, hébergeurs, Cinemeta, TMDB, pipeline |
+| `tests/sources-*.test.ts` | Sources amont, collecte, partage des sources |
+| `tests/engine-*.test.ts`, `tests/pipeline-v2.test.ts` | Filtre, filtres v2, groupement des copies, classement, formatage, gabarits, sonde, Cinemeta, TMDB, pipeline |
 | `tests/play*.test.ts` | Endpoint de lecture, jeton de copies, failover, raisons d'échec, hôtes en panne, packs |
 | `tests/media-*.test.ts`, `tests/torrent-*.test.ts` | Sonde MKV/MP4, cache de sondes, pistes audio, lecture des .torrent |
-| `tests/cache-lru.test.ts`, `tests/anime-mapping.test.ts`, `tests/indexer-health.test.ts` | Cache LRU, remappage anime (module seul), santé des indexeurs |
+| `tests/cache-lru.test.ts`, `tests/anime-mapping.test.ts` | Cache LRU, remappage anime (module seul) |
 | `tests/e2e.test.ts` | Parcours complet sur un serveur réel : agrégation, cache debrid, série, config chiffrée, journalisation |
-
-### Smoke test live (optionnel)
-
-`tests/live.test.ts` interroge de vrais services. Il est ignoré si les variables ne sont pas définies :
-
-- `ALLDEBRID_API_KEY` : vérifie la clé et le cache-check sur le hash public de Big Buck Bunny (`dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c`).
-- `TORZNAB_URL` et `TORZNAB_KEY` : vérifie que l'indexeur répond à `t=caps`.
-
-```bash
-# bash
-ALLDEBRID_API_KEY=... TORZNAB_URL=https://... TORZNAB_KEY=... npm test -- tests/live.test.ts
-```
-
-```powershell
-# PowerShell
-$env:ALLDEBRID_API_KEY = "..."; $env:TORZNAB_URL = "https://..."; $env:TORZNAB_KEY = "..."
-npm test -- tests/live.test.ts
-```
-
-Le test n'affiche ni la clé ni les réponses brutes. Il ajoute un magnet au compte AllDebrid pendant le contrôle.
 
 ## Structure du projet
 
@@ -778,7 +668,7 @@ src/
   http/              socle Hono commun : types d'application, corps JSON (64 ko), ETag, 404/500, IP du client
   worker.ts          point d'entrée Cloudflare Workers (installe la plateforme Workers, sert createApp())
   platform/          interfaces d'hôte : RuntimeEnv, KvCache, HttpClient, Scheduler, Capabilities, UiAssets, UserBackend (+ node/, workers/)
-  deps.ts            dépendances injectées (secret, allowPlain, fetch, client AllDebrid)
+  deps.ts            dépendances injectées (secret, allowPlain, fetch)
   pipeline.ts        getStreams() : orchestration du pipeline (métadonnées, collecte, groupement, cache, sonde, formatage)
   types.ts           types partagés (RawStream, ParsedRelease, StremioStream, ContentRef)
   cache/
@@ -802,15 +692,7 @@ src/
   sources/
     collect.ts       interrogation parallèle des sources, erreurs isolées
     upstream.ts      addons Stremio amont
-    torznab.ts       indexeurs Torznab
-    prowlarr.ts      Prowlarr : découverte des indexeurs, recherche par capacité
-    jackett.ts       Jackett : découverte et recherche Torznab
-    indexers.ts      types et utilitaires communs aux indexeurs
-    indexer-health.ts  santé des indexeurs (ok, slow, error)
     query-titles.ts  titres FR et EN (TMDB) et requêtes texte
-    query-merge.ts   requêtes bornées, fusion sans doublon
-    alldebrid.ts     client AllDebrid (cache-check, résolution, clé API)
-    hosters.ts       hébergeurs AllDebrid : catalogue, contrôle, débridage
     http.ts          fetch avec délai, masquage des URL et des secrets, agent DNS épinglé
   torrent/
     fetch-torrent.ts lecture des .torrent (cache par guid, octets des torrents privés)
@@ -822,13 +704,10 @@ src/
     score.ts         classement et tris
     audio.ts         canaux, Atmos, formats audio non supportés
     probe-step.ts    étape de sonde audio
-    hosters-step.ts  contrôle des liens d'hébergeurs
     tmdb-meta.ts     certification FR, date de sortie, durée (TMDB)
     cinemeta.ts      durées (Cinemeta, avec cache)
     templates.ts     gabarits d'affichage (Détaillé, Netflix, Compact, Direct)
     format.ts        formatage des streams Stremio, jetons /play/c, objet laststream
-    dedupe.ts        déduplication (ancienne version, utilisée par runEngine)
-    index.ts         barrel du moteur et runEngine (variante pure, sans groupement ni sonde)
     types.ts         candidats, rangs, métadonnées de contenu
   play/
     token.ts         jeton signé des copies (/play/c)
@@ -843,8 +722,7 @@ src/
   routes/
     stream.ts        GET /:config/stream/:type/:id.json
     test.ts          POST /config/test
-    play.ts          GET /:config/play/c/:token et GET /:config/play/:infoHash/:fileIdx?
-    indexers.ts      POST /config/indexers
+    play.ts          GET /:config/play/c/:token
 tests/               voir la section Tests
 ```
 

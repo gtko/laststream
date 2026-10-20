@@ -34,7 +34,7 @@ describe('titres masqués (table par profil)', () => {
     expect(res.body.total).toBe(3);
     expect(res.body.items.map((i) => i.key)).toEqual(['movie:3', 'tv:2', 'movie:1']);
     expect(res.body.nextCursor).toBeNull();
-    expect((await request(app, 'DELETE', `${base()}/tv:2`, { token: alice.token })).status).toBe(204);
+    expect((await request(app, 'POST', `${base()}/remove`, { token: alice.token, body: { keys: ['tv:2'] } })).status).toBe(200);
     const removed = await request<{ removed: number }>(app, 'POST', `${base()}/remove`, { token: alice.token, body: { keys: ['movie:1', 'movie:999'] } });
     expect(removed.body.removed).toBe(1);
     expect((await page()).body.items.map((i) => i.key)).toEqual(['movie:3']);

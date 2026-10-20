@@ -28,7 +28,6 @@ function appFor(env: WorkerEnv): App {
   setPlatform(platform);
   const secret = secretFromEnv();
   if (secret === undefined) throw new Error('LASTADDON_SECRET manquant : wrangler secret put LASTADDON_SECRET');
-  const rangeLimit = env.RANGE_LIMITER;
   const mdbLimit = env.MDBLIST_LIMITER;
   const tvAdmin = createWorkersTvAdmin(env);
   app = createApp({
@@ -36,7 +35,6 @@ function appFor(env: WorkerEnv): App {
     allowPlain: isPlainAllowed(),
     ui: platform.uiAssets,
     authLimiter: authLimiterFrom(env),
-    rangeLimiter: rangeLimit === undefined ? undefined : async (key) => (await rangeLimit.limit({ key })).success,
     mdblistLimiter: mdbLimit === undefined ? undefined : async () => (await mdbLimit.limit({ key: 'mdblist' })).success,
     ops: createWorkersOpsPorts(env),
     // Flux temps réel : chaque écriture sociale est diffusée par le Durable Object des données (travail d'arrière-plan).

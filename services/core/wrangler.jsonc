@@ -35,8 +35,6 @@
   "ratelimits": [
     { "name": "AUTH_LIMITER_IP", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
     { "name": "AUTH_LIMITER_USER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
-    // Signature de liens débridés directs (POST /lt/range-source) : 20 par minute et par configuration.
-    { "name": "RANGE_LIMITER", "namespace_id": "1003", "simple": { "limit": 20, "period": 60 } },
     // Appels sortants vers MDBList (clé partagée, quota quotidien) : 20 par minute au total, quel que soit le compte.
     { "name": "MDBLIST_LIMITER", "namespace_id": "1004", "simple": { "limit": 20, "period": 60 } }
   ],
@@ -68,15 +66,14 @@
   "vars": {
     // Mode public : adresses privées refusées pour les URL saisies (SSRF) ; la base publique sert aux liens /play.
     // AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel AllDebrid depuis Cloudflare.
-    "LASTADDON_DEBRID_SERVER_SIDE": "0",
     "LASTADDON_PUBLIC": "1",
     "LASTADDON_PUBLIC_URL": "https://lastaddon-core.gtux-prog.workers.dev",
-    // Plus de relais de plages (LASTADDON_RANGE_BASE retiré) : l'appareil lit les miniatures directement chez l'hébergeur
-    // débridé, avec son IP, comme la lecture. Aucune requête vers AllDebrid ni ses hôtes ne part de Cloudflare.
+    // Aucune requête vers AllDebrid ni ses hôtes ne part de Cloudflare : miniatures et lecture passent par l'appareil, avec son IP.
     // Origines autorisées pour /config, /user et les écritures lt (en plus de l'origine du Worker).
     "LASTADDON_ALLOWED_ORIGINS": "https://lastaddon-core.gtux-prog.workers.dev,https://laststream.gtux-prog.workers.dev,https://localhost,http://localhost,capacitor://localhost"
   }
-  // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, RANGE_SECRET, EDGE_SECRET,
+  // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, EDGE_SECRET,
   // ADMIN_SECRET (route /__admin/ de migration des données ; `wrangler secret delete ADMIN_SECRET` la ferme),
   // et LASTADDON_BOOTSTRAP_TOKEN si le premier compte doit être protégé. SENTRY_DSN : remontée des erreurs (absent = aucune).
+  // TURN_KEY_ID et TURN_KEY_API_TOKEN : relais TURN de la watch party (Cloudflare Realtime TURN) ; absents = STUN seul (src/party/turn.ts).
 }

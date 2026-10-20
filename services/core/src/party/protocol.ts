@@ -305,10 +305,17 @@ export interface RtcRelay {
   data: Record<string, unknown>;
 }
 
+/** Identifiants TURN éphémères (Cloudflare Realtime) : relais des liaisons WebRTC, remis à chaque participant dans `welcome`. */
+export interface TurnCredentials {
+  urls: string[];
+  username: string;
+  credential: string;
+}
+
 // Serveur -> client
 
 export type ServerMessage =
-  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean; peerId: string }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[]; settings: PartySettings; countdownAt: number | null; vote: VoteView[] | null }
+  | { t: 'welcome'; you: { username: string; host: boolean; muted: boolean; peerId: string }; room: Omit<RoomInfo, 'participants'>; state: PlaybackState; serverTime: number; participants: Participant[]; chat: ChatLine[]; settings: PartySettings; countdownAt: number | null; vote: VoteView[] | null; turn?: TurnCredentials }
   | { t: 'pong'; c: number; s: number }
   | { t: 'state'; state: PlaybackState; serverTime: number; by: string }
   | { t: 'media'; media: PartyMedia; fingerprint: Fingerprint | null; state: PlaybackState; serverTime: number }

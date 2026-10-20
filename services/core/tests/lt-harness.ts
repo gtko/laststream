@@ -2,7 +2,6 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { closeApp, createApp } from '../src/app.js';
 import type { AppDeps } from '../src/deps.js';
-import type { LocalProwlarr } from '../src/sources/local-prowlarr.js';
 import { DEFAULT_USER_RATE_LIMITS, SECRET, type RunningApp } from './harness-core.js';
 import { serveApp } from './serve.js';
 
@@ -17,14 +16,10 @@ export async function startApp(options: {
   userDbPath?: string;
   /** Limites /user/* par minute : élevées par défaut, pour que les tests fonctionnels ne soient pas bridés. */
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
-  /** Prowlarr local simulé (absent : aucun Prowlarr local). */
-  localProwlarr?: () => Promise<LocalProwlarr | null>;
   /** Détection automatique des segments de saut (binaires, URL locales autorisées, budget). */
   skipDetect?: AppDeps['skipDetect'];
   /** Miniatures de la barre (ffmpeg, cache, origines locales de test). */
   thumbs?: AppDeps['thumbs'];
-  /** Relais de plages (secret + base du Worker) : `null` par défaut, jamais lu dans l'environnement pendant les tests. */
-  rangeProxy?: AppDeps['rangeProxy'];
   /** Dépendances supplémentaires (administration : métriques, caches, TV, salons, limites). */
   extra?: Partial<AppDeps>;
 }): Promise<RunningApp> {
@@ -35,10 +30,8 @@ export async function startApp(options: {
     lookupHost: options.lookupHost,
     userDbPath: options.userDbPath ?? ':memory:',
     userRateLimits: options.userRateLimits ?? DEFAULT_USER_RATE_LIMITS,
-    localProwlarr: options.localProwlarr,
     skipDetect: options.skipDetect,
     thumbs: options.thumbs ?? { ffmpeg: null },
-    rangeProxy: options.rangeProxy ?? null,
     ...options.extra,
   });
   const server: Server = serveApp(app);

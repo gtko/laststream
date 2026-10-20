@@ -110,8 +110,6 @@ export interface Capabilities {
   skipDetect: boolean;
   /** Proxy HLS des chaînes TV. */
   tvHls: boolean;
-  /** Miniatures décodées côté client (WebCodecs) via le relais de plages Cloudflare (jeton HMAC émis par ce serveur). */
-  rangeThumbs: boolean;
   /**
    * Les instances ne partagent pas leur mémoire (Workers : un isolat par région, éphémère) : les états qui doivent
    * survivre à une instance (statuts AllDebrid, packs, URL émises, torrents privés) passent par un `KvCache` partagé.
