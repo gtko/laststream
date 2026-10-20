@@ -5,7 +5,7 @@ import { trackLang } from './tracks';
  * Choix du moteur de lecture : lecteur natif Android (libVLC), mpv (coque Windows), lecture directe HTML5, ou HLS via le serveur de streaming.
  * Logique pure (capacités du navigateur injectées), testée. */
 
-export type EngineKind = 'mpv' | 'native' | 'direct' | 'hls';
+type EngineKind = 'mpv' | 'native' | 'direct' | 'hls';
 
 export interface EngineChoice {
   engine: EngineKind;

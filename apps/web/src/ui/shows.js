@@ -24,13 +24,13 @@ const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 /** Libellé court de la prochaine diffusion : « En direct · TF1 », « Aujourd’hui 21:10 · TF1 ». */
-export function airingLabel(a, now) {
+function airingLabel(a, now) {
   const chan = a.channel.name;
   return isLiveNow(a, now) ? 'En direct · ' + chan : dayLabel(a.start, now) + ' ' + hhmm(a.start) + ' · ' + chan;
 }
 
 /** Ligne de sous-titre d'une carte d'émission. */
-export function showSub(s, now) {
+function showSub(s, now) {
   if (s.airings.length) return airingLabel(s.airings[0], now);
   if (s.next && s.next.date) return (s.platform ? s.platform + ' · ' : '') + 'épisode le ' + shortDate(s.next.date);
   return s.platform || 'Émission';
@@ -598,7 +598,7 @@ export async function showShow(id) {
 }
 
 // ---------- Lecture en direct d'une chaîne ----------
-export async function watchChannel(playId, opener) {
+async function watchChannel(playId, opener) {
   let guide;
   try { guide = await loadGuide(); } catch (_) { return; }
   const raw = guide.catalog.get(playId);

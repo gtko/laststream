@@ -29,7 +29,7 @@ export function setRelaunch(fn: () => void): void {
   relaunch = fn;
 }
 
-export const currentContext = (): ServerContext => ({ native: isAndroidApp(), servedOrigin });
+const currentContext = (): ServerContext => ({ native: isAndroidApp(), servedOrigin });
 
 /** Le choix Laststream / perso a un sens : application Android ou page servie par lastAddon. */
 export const serverChoiceVisible = (ctx: ServerContext = currentContext()): boolean => ctx.native || ctx.servedOrigin !== null;

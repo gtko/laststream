@@ -3,7 +3,7 @@ import { isNativePlayer, nativeFetch } from './native';
 /* Client du serveur de streaming Stremio (HLS, probe, proxy, sous-titres ; jamais de torrent : les sources passent par un débrideur).
  * Protocole repris de stremio-video (withStreamingServer, fetchVideoParams, buildProxyUrl). */
 
-export const DEFAULT_SERVER = 'http://127.0.0.1:11470';
+const DEFAULT_SERVER = 'http://127.0.0.1:11470';
 export const SERVER_STORAGE_KEY = 'laststream.streamingServer';
 
 let shellAddress = '';
@@ -13,7 +13,7 @@ export function setShellServerAddress(addr: string): void {
 }
 
 /** Chemin du relais same-origin vers le serveur de streaming (voir vite.config.ts). */
-export const PROXY_PATH = '/_ss';
+const PROXY_PATH = '/_ss';
 
 function customBase(): string {
   let custom = '';
@@ -69,7 +69,7 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
 }
 
 let aliveCache: { at: number; ok: boolean } | null = null;
-export function resetServerCache(): void { aliveCache = null; resolved = ''; }
+function resetServerCache(): void { aliveCache = null; resolved = ''; }
 
 /** Réponse du dernier sondage, sans réseau : vrai si le serveur répondait, ou si une adresse est réglée et pas encore sondée. */
 export function serverLikelyUp(): boolean {

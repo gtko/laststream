@@ -13,7 +13,7 @@ import { connectShell, type ShellTransport } from '../../player/shell';
 import type { HttpFn, HttpRequest, HttpResponse } from './http';
 import { DebridError } from './types';
 
-export interface NativeRangeCaps {
+interface NativeRangeCaps {
   /** Taille maximale d'un morceau, en caractères base64. */
   maxChunk: number;
   /** Taille maximale d'une plage par requête, en octets. */
@@ -85,7 +85,7 @@ function parseCaps(payload: unknown): NativeRangeCaps | null {
 }
 
 /** Capacités annoncées par la coque, sondées une fois par transport ; null si la coque ne répond pas à temps ou ne les annonce pas. */
-export function nativeRangeCaps(t: ShellTransport, timeoutMs = CAPS_TIMEOUT_MS): Promise<NativeRangeCaps | null> {
+function nativeRangeCaps(t: ShellTransport, timeoutMs = CAPS_TIMEOUT_MS): Promise<NativeRangeCaps | null> {
   const ch = channelOf(t);
   if (ch.caps) return ch.caps;
   const probe = new Promise<NativeRangeCaps | null>((resolve) => {

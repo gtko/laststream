@@ -55,7 +55,7 @@ export class MemoryThumbStore implements ThumbStore {
 const DB_NAME = 'laststream-thumbs';
 const STORE = 'frames';
 /** Images gardées au plus (≈ 3 Ko chacune) : de quoi couvrir plusieurs films de 3 h. */
-export const IDB_CAPACITY = 4000;
+const IDB_CAPACITY = 4000;
 
 function request<T>(r: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });

@@ -2329,4 +2329,3 @@ partyBridge.launcher = (request, o) => playBest(request, null, { resume: o.resum
 partyBridge.adapter = () => partyAdapter();
 partyBridge.switcher = (view, allow) => switchToView(view, allow);
 
-export { formatClock };

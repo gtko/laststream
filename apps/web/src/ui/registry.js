@@ -26,7 +26,7 @@ const AHEAD_PX = 700; // environ deux rangées d'avance
 const probes = new Map();
 
 /** Vérifie une fois (avec une valeur impossible) que lastAddon applique bien le paramètre ; sinon la rangée est masquée. */
-export function supports(param) {
+function supports(param) {
   const spec = PROBES[param];
   if (!spec) return Promise.resolve(true); // paramètre historique de la liste blanche
   if (!probes.has(param)) {
@@ -37,7 +37,7 @@ export function supports(param) {
   return probes.get(param);
 }
 
-export async function rowAvailable(def) {
+async function rowAvailable(def) {
   if (!def.needs || !def.needs.length) return true;
   return (await Promise.all(def.needs.map(supports))).every(Boolean);
 }

@@ -3,10 +3,10 @@
 import { validateHandle } from '../data/socialV2Api';
 
 export const BIO_MAX = 140;
-export const STATUS_TEXT_MAX = 60;
+const STATUS_TEXT_MAX = 60;
 export const FAVORITES_MAX = 4;
-export const HOUR_MS = 3_600_000;
-export const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 /** Couleurs d'avatar proposées (maquette). */
 export const COLORS = [['#ff5a36', 'Corail'], ['#7b5cff', 'Violet'], ['#1f9d77', 'Vert'], ['#3b82c4', 'Bleu'], ['#e0912f', 'Ambre'], ['#c2417f', 'Rose']];
@@ -26,14 +26,6 @@ export function charCount(s) {
   const t = String(s || '');
   if (typeof Intl !== 'undefined' && Intl.Segmenter) return Array.from(new Intl.Segmenter('fr', { granularity: 'grapheme' }).segment(t)).length;
   return Array.from(t).length;
-}
-
-/** Coupe un texte à `max` caractères (graphèmes). */
-export function clip(s, max) {
-  const t = String(s || '');
-  if (charCount(t) <= max) return t;
-  if (typeof Intl !== 'undefined' && Intl.Segmenter) return Array.from(new Intl.Segmenter('fr', { granularity: 'grapheme' }).segment(t)).slice(0, max).map((x) => x.segment).join('');
-  return Array.from(t).slice(0, max).join('');
 }
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -63,7 +55,7 @@ export function makeDraft(profile, prefs, status, avatar) {
 export const cloneDraft = clone;
 
 /** Échéance (epoch ms) d'un choix « dans 4 h » / « ce soir » / « jamais » ; undefined pour jamais. */
-export function expiryAt(choice, now = Date.now()) {
+function expiryAt(choice, now = Date.now()) {
   if (choice === '4h') return now + 4 * HOUR_MS;
   if (choice === 'tonight') {
     const d = new Date(now);
@@ -132,8 +124,6 @@ export function diffDraft(base, draft, now = Date.now()) {
   if (Object.keys(prefs).length) out.prefs = prefs;
   return out;
 }
-
-export const isDirty = (base, draft, now = Date.now()) => Object.keys(diffDraft(base, draft, now)).length > 0;
 
 /** Temps restant avant le prochain tirage de tag : { locked, ms, label }. */
 export function tagCooldown(profile, now = Date.now()) {

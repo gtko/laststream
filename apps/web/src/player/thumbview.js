@@ -1,7 +1,7 @@
 /* Aperçu d'image au survol de la barre : une vidéo secondaire muette, sur la même source, est déplacée à l'instant survolé
  * (cadence limitée, pointeur au repos) et dessinée dans un canevas ; les images sont gardées par seau de 10 s.
  * Affichage seulement : on ne lit jamais les pixels, un canevas « teinté » ne gêne donc pas. Ne bloque jamais la lecture. */
-import { BUCKET_SECONDS, FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek } from './thumbs';
+import { FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek } from './thumbs';
 
 const W = 240;
 const H = 135;
@@ -170,4 +170,3 @@ export class Thumbs {
   destroy() { this.reset(); }
 }
 
-export { BUCKET_SECONDS };

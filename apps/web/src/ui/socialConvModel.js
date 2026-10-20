@@ -18,7 +18,7 @@ export const EMOJI_TABS = [
   { id: 'faces', label: 'Visages', list: ['😍', '🥲', '😴', '🤔', '😮', '🙌', '👍', '😀', '😁', '😅', '😎', '🥹', '😬', '🙄', '😤', '🤗', '😇', '🥳', '😏', '🫠', '😶', '🤭'] },
   { id: 'react', label: 'Réactions', list: ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭', '💯', '👎', '🙏', '💔', '🤣', '😢', '😡', '🤩', '🫶', '✨', '🎉', '💪', '🤝', '🥵', '🤌'] },
 ];
-export const RECENT_EMOJIS_DEFAULT = ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭'];
+const RECENT_EMOJIS_DEFAULT = ['🔥', '😂', '😱', '🤯', '❤️', '👏', '😭'];
 
 export const GROUP_NAME_MAX = 40;
 export const GROUP_MEMBERS_MIN = 2;
@@ -33,8 +33,8 @@ export const MAX_TABS = 4;
 export const MOBILE_MAX = 767;
 
 export const dmConv = (pid) => 'dm:' + pid;
-export const isGroup = (conv) => typeof conv === 'string' && conv.startsWith('g:');
-export const isConvId = (conv) => typeof conv === 'string' && /^(dm|g):.+/.test(conv);
+const isGroup = (conv) => typeof conv === 'string' && conv.startsWith('g:');
+const isConvId = (conv) => typeof conv === 'string' && /^(dm|g):.+/.test(conv);
 /** Accepte « dm:<pid> », « g:<id> » ou un pid seul (ancien appel de la barre). */
 export const normalizeConv = (x) => (isConvId(x) ? x : typeof x === 'string' && x ? dmConv(x) : '');
 

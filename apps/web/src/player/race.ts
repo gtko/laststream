@@ -1,14 +1,14 @@
 /* Course entre candidats pour la préparation d'une lecture (lien, sonde, session HLS) : délai doux, délai dur, plafond total.
  * Logique pure (minuteries injectées par setTimeout), testée avec des fausses horloges. */
 
-export const SOFT_MS = 6_000;
-export const HARD_MS = 12_000;
-export const TOTAL_MS = 25_000;
-export const MAX_FAILURES = 3;
-export const MAX_ATTEMPTS = 5;
-export const MAX_PARALLEL = 2;
+const SOFT_MS = 6_000;
+const HARD_MS = 12_000;
+const TOTAL_MS = 25_000;
+const MAX_FAILURES = 3;
+const MAX_ATTEMPTS = 5;
+const MAX_PARALLEL = 2;
 
-export type FailureReason = 'timeout' | 'error' | 'lost';
+type FailureReason = 'timeout' | 'error' | 'lost';
 
 export interface Failure<C> {
   candidate: C;

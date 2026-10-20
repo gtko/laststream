@@ -1,7 +1,7 @@
 import { langName, normalizeLang, type SubtitleTrack } from './tracks';
 
 /** Mots d'un nom de release (« Show.S01E03.1080p.WEB-DL.x264-GRP » → show, s01e03, 1080p, web, dl, x264, grp). */
-export function releaseTokens(name: string): string[] {
+function releaseTokens(name: string): string[] {
   return name.toLowerCase().replace(/\.(srt|ass|ssa|vtt|sub|mkv|mp4|avi)$/i, '').split(/[^a-z0-9]+/).filter((t) => t.length > 1);
 }
 
@@ -18,7 +18,7 @@ export function releaseSimilarity(a: string, b: string): number {
 /* Sous-titres externes : réponses des ressources `subtitles` Stremio (lastAddon, OpenSubtitles) → pistes.
  * Fonctions pures pour la normalisation, deux appels réseau tolérants aux pannes. */
 
-export const OPENSUBTITLES_BASE = 'https://opensubtitles-v3.strem.io';
+const OPENSUBTITLES_BASE = 'https://opensubtitles-v3.strem.io';
 
 export interface ExternalSubtitleQuery {
   type: 'movie' | 'series';

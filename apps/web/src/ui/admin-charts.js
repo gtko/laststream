@@ -10,7 +10,7 @@ const PAD = { l: 46, r: 10, t: 10, b: 24 };
 const num = (n) => Math.round(n * 10) / 10;
 
 /** Valeur « ronde » au-dessus du max, pour une échelle lisible. */
-export function niceMax(max) {
+function niceMax(max) {
   if (!(max > 0)) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(max)));
   const f = max / p;

@@ -21,7 +21,7 @@ export function configureShareDialog(d) { if (d && typeof d.toast === 'function'
 
 const svg = (inner, size = 16, sw = 2) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" aria-hidden="true">${inner}</svg>`;
-export const ICO = {
+const ICO = {
   search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
   check: svg('<path d="m5 12 5 5 9-10"/>', 10, 3.5),
   party: svg('<rect x="3" y="5" width="18" height="12" rx="2"/><path d="m10 9 4 2-4 2z" fill="currentColor"/>'),
@@ -36,7 +36,7 @@ export const ICO = {
 };
 
 /** Copie dans le presse-papiers ; false si le navigateur refuse. */
-export async function copyText(text) {
+async function copyText(text) {
   if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
     try { await navigator.clipboard.writeText(text); return true; } catch { /* repli ci-dessous */ }
   }
@@ -58,7 +58,7 @@ export async function copyText(text) {
  * Partage du système : plugin Capacitor Share s'il est présent (Android), sinon navigator.share, sinon copie du lien.
  * Renvoie 'native' | 'web' | 'copied' | 'cancelled' | 'failed'.
  */
-export async function nativeShare({ title, text, url }) {
+async function nativeShare({ title, text, url }) {
   const plug = Capacitor && Capacitor.Plugins ? Capacitor.Plugins.Share : null;
   if (plug && typeof plug.share === 'function') {
     try { await plug.share({ title, text, url, dialogTitle: 'Partager' }); return 'native'; } catch (e) {

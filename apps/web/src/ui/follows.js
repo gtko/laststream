@@ -6,7 +6,7 @@ import { ICON } from './icons.js';
 import { registerCtxItems, state } from './state.js';
 
 /** Métadonnées d'une clé `movie:1` / `tv:2` / `person:3` : élément connu, fiche ouverte, ou attributs du bouton. */
-export function followMeta(key, btn) {
+function followMeta(key, btn) {
   const [type, idStr] = key.split(':');
   const id = Number(idStr);
   if (type === 'person') {
@@ -26,7 +26,7 @@ export function followBtn(key, cls, extra, offLabel) {
     (/(^|\s)btn(\s|$)/.test(cls) ? '<span class="f-follow-label">' + (on ? 'Suivi' : offLabel || 'Suivre') + '</span>' : '') + '</button>';
 }
 
-export function refreshFollowUI() {
+function refreshFollowUI() {
   document.querySelectorAll('[data-follow]').forEach((b) => {
     const on = userStore.isFollowing(b.dataset.follow);
     b.setAttribute('aria-pressed', String(on));
@@ -40,7 +40,7 @@ export function refreshFollowUI() {
 }
 
 /** Bascule le suivi : affichage immédiat, annulé si le serveur refuse. */
-export async function toggleFollow(key, btn) {
+async function toggleFollow(key, btn) {
   const meta = followMeta(key, btn);
   const on = !userStore.isFollowing(key);
   const pending = userStore.setFollow(meta, on);

@@ -10,7 +10,6 @@
  *    appelle `update` environ une fois par seconde : c'est ce rythme qui cadence le battement. */
 import { PARTY_RESUME_AHEAD_SEC } from './protocol';
 
-export { PARTY_RESUME_AHEAD_SEC };
 
 /** Tampon (s) sous lequel la lecture en cours se met en attente. */
 export const BUFFER_UNDERRUN_SEC = 2;

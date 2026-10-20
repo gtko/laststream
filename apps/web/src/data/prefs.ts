@@ -17,13 +17,13 @@ function write(key: string, value: string): void {
 }
 
 // ---- Lecture automatique de la meilleure source ----
-export const AUTOPLAY_STORAGE_KEY = 'laststream.autoplay';
+const AUTOPLAY_STORAGE_KEY = 'laststream.autoplay';
 /** Activée par défaut : seule la valeur '0' la désactive. */
 export const getAutoplay = (): boolean => read(AUTOPLAY_STORAGE_KEY) !== '0';
 export const setAutoplay = (enabled: boolean): void => write(AUTOPLAY_STORAGE_KEY, enabled ? '1' : '0');
 
 // ---- Débit ----
-export const BANDWIDTH_SETTING_KEY = 'laststream.bandwidth.setting';
+const BANDWIDTH_SETTING_KEY = 'laststream.bandwidth.setting';
 export const BANDWIDTH_PRESETS_MBPS: readonly number[] = [2, 5, 10, 20, 50, 100];
 export type BandwidthSetting = 'auto' | number;
 
@@ -38,8 +38,8 @@ export const setBandwidthSetting = (value: BandwidthSetting): void =>
 
 // ---- Sauts automatiques (intro, récap, épisode suivant) ----
 export type SkipPrefName = 'intro' | 'recap' | 'nextEpisode';
-export const SKIP_PREF_DEFAULTS: Readonly<Record<SkipPrefName, boolean>> = { intro: false, recap: false, nextEpisode: true };
-export const skipPrefKey = (name: SkipPrefName): string => `laststream.skip.${name}`;
+const SKIP_PREF_DEFAULTS: Readonly<Record<SkipPrefName, boolean>> = { intro: false, recap: false, nextEpisode: true };
+const skipPrefKey = (name: SkipPrefName): string => `laststream.skip.${name}`;
 export function getSkipPref(name: SkipPrefName): boolean {
   const raw = read(skipPrefKey(name));
   return raw === null ? SKIP_PREF_DEFAULTS[name] : raw === '1';
@@ -47,7 +47,7 @@ export function getSkipPref(name: SkipPrefName): boolean {
 export const setSkipPref = (name: SkipPrefName, enabled: boolean): void => write(skipPrefKey(name), enabled ? '1' : '0');
 
 // ---- Lancer la lecture après la bande-annonce (fiche) ----
-export const TRAILER_AUTOPLAY_KEY = 'laststream.trailerAutoplay';
+const TRAILER_AUTOPLAY_KEY = 'laststream.trailerAutoplay';
 /** Réglage explicite, ou undefined tant qu'il n'a jamais été réglé (le défaut dépend du profil : voir getTrailerAutoplay). */
 export const getTrailerAutoplayStored = (): boolean | undefined => {
   const raw = read(TRAILER_AUTOPLAY_KEY);
@@ -64,7 +64,7 @@ export const getTrailerAutoplay = (kid: boolean): boolean => {
 };
 
 // ---- Région (watch_region, region, classification) ----
-export const REGION_STORAGE_KEY = 'laststream.region';
+const REGION_STORAGE_KEY = 'laststream.region';
 export interface Region {
   code: string;
   label: string;
@@ -78,7 +78,7 @@ export const REGIONS: readonly Region[] = [
   { code: 'CA', label: 'Canada', where: 'au Canada' },
   { code: 'LU', label: 'Luxembourg', where: 'au Luxembourg' },
 ];
-export const DEFAULT_REGION = 'FR';
+const DEFAULT_REGION = 'FR';
 
 export function getRegion(): Region {
   const code = read(REGION_STORAGE_KEY);
@@ -89,7 +89,7 @@ export const setRegion = (code: string): void => {
 };
 
 // ---- Langue des bandes-annonces et des textes TMDB ----
-export const VIDEO_LANG_KEY = 'laststream.videolang';
+const VIDEO_LANG_KEY = 'laststream.videolang';
 export const VIDEO_LANGS: ReadonlyArray<readonly [string, string]> = [
   ['fr', 'Français'], ['en', 'English'], ['es', 'Español'], ['de', 'Deutsch'], ['it', 'Italiano'],
 ];

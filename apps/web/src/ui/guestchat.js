@@ -7,10 +7,10 @@ import { LI } from '../player/icons.js';
 import { pad2 } from '../data/format';
 
 /** Lignes gardées à l'écran (miroir de CHAT_MEMORY_LINES du client). */
-export const CHAT_KEEP = 200;
+const CHAT_KEEP = 200;
 /** Durée d'un emoji flottant (ms) et nombre maximal à l'écran. */
 export const FLOAT_MS = 1800;
-export const FLOAT_MAX = 12;
+const FLOAT_MAX = 12;
 /** Barre de réactions : les six premières de la liste du salon. */
 export const REACTION_BAR = REACTIONS.slice(0, 6);
 const CHAT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">' +

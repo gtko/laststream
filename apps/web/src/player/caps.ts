@@ -26,4 +26,4 @@ export function browserCaps(): MediaCaps {
 /** Coque Windows (mpv) ou application Android (libVLC) : le lecteur lit tout, aucune règle de lecture directe. */
 export const inShell = (): boolean => isShellEnvironment() || isNativePlayer();
 
-export function resetCapsCache(): void { cached = null; }
+function resetCapsCache(): void { cached = null; }

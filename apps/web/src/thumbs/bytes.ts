@@ -2,7 +2,7 @@
  * Le début du fichier est lu une fois (HEAD_BYTES) et gardé : il suffit à la plupart des en-têtes MKV et à tous les « ftyp ». */
 
 export const MAX_CHUNK = 4 * 1024 * 1024;
-export const HEAD_BYTES = 256 * 1024;
+const HEAD_BYTES = 256 * 1024;
 
 export interface RangeResponse {
   data: Uint8Array;

@@ -76,9 +76,9 @@ export interface ClientEvents {
 
 type Handler<K extends keyof ClientEvents> = (payload: ClientEvents[K]) => void;
 
-export const PING_BURST = 5;
-export const PING_BURST_MS = 250;
-export const PING_EVERY_MS = 25_000;
+const PING_BURST = 5;
+const PING_BURST_MS = 250;
+const PING_EVERY_MS = 25_000;
 export const PONG_TIMEOUT_MS = 10_000;
 export const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15_000] as const;
 /** Lignes de chat gardées en mémoire (l'historique reçu à la connexion compris). */
@@ -90,7 +90,7 @@ const isTurnUrl = (u: unknown): u is string => typeof u === 'string' && /^turns?
 const isTurnCredential = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= MAX_TURN_CREDENTIAL;
 
 /** TURN valide du `welcome`, ou undefined (absent ou mal formé : ignoré sans bruit, sans effacer le précédent). */
-export function parseWelcomeTurn(raw: unknown): TurnConfig | undefined {
+function parseWelcomeTurn(raw: unknown): TurnConfig | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const { urls, username, credential } = raw as Record<string, unknown>;
   if (!Array.isArray(urls) || urls.length === 0 || !urls.every(isTurnUrl)) return undefined;

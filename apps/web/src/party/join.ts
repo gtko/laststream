@@ -7,7 +7,7 @@ export interface JoinRoute {
   token: string;
 }
 
-export const PSEUDO_MAX = 32;
+const PSEUDO_MAX = 32;
 const TOKEN_MIN = 8;
 const TOKEN_MAX = 512;
 

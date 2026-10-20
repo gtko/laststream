@@ -11,24 +11,24 @@ import { state } from './state.js';
 import { esc } from './util.js';
 
 /** [libellé, id film, id série] (null : le genre n'existe pas pour ce type). */
-export const DISCOVER_GENRES = [
+const DISCOVER_GENRES = [
   ['Action', 28, 10759], ['Aventure', 12, 10759], ['Animation', 16, 16], ['Comédie', 35, 35], ['Crime', 80, 80],
   ['Documentaire', 99, 99], ['Drame', 18, 18], ['Famille', 10751, 10751], ['Fantastique', 14, 10765], ['Guerre', 10752, 10768],
   ['Histoire', 36, null], ['Horreur', 27, null], ['Musique', 10402, null], ['Mystère', 9648, 9648], ['Romance', 10749, null],
   ['Science-fiction', 878, 10765], ['Thriller', 53, null], ['Western', 37, 37],
 ];
-export const DISCOVER_DECADES = [['', 'Toutes'], ['2020', '2020 à aujourd’hui'], ['2010', 'Années 2010'], ['2000', 'Années 2000'], ['1990', 'Années 1990'],
+const DISCOVER_DECADES = [['', 'Toutes'], ['2020', '2020 à aujourd’hui'], ['2010', 'Années 2010'], ['2000', 'Années 2000'], ['1990', 'Années 1990'],
   ['1980', 'Années 1980'], ['1970', 'Années 1970'], ['before', 'Avant 1970']];
-export const DISCOVER_COUNTRIES = [['', 'Tous'], ['FR', 'France'], ['US', 'États-Unis'], ['GB', 'Royaume-Uni'], ['CA', 'Canada'], ['DE', 'Allemagne'],
+const DISCOVER_COUNTRIES = [['', 'Tous'], ['FR', 'France'], ['US', 'États-Unis'], ['GB', 'Royaume-Uni'], ['CA', 'Canada'], ['DE', 'Allemagne'],
   ['ES', 'Espagne'], ['IT', 'Italie'], ['JP', 'Japon'], ['KR', 'Corée du Sud'], ['CN', 'Chine'], ['IN', 'Inde'], ['SE', 'Suède'], ['MX', 'Mexique'], ['BR', 'Brésil']];
-export const DISCOVER_RATINGS = [['', 'Toutes'], ['6', '6 et plus'], ['7', '7 et plus'], ['8', '8 et plus']];
+const DISCOVER_RATINGS = [['', 'Toutes'], ['6', '6 et plus'], ['7', '7 et plus'], ['8', '8 et plus']];
 
 const select = (id, label, options, value) =>
   '<label class="dc-field" for="' + id + '"><span>' + esc(label) + '</span><select id="' + id + '" data-dc="' + id + '">' +
   options.map(([v, l]) => '<option value="' + esc(v) + '"' + (String(v) === String(value) ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>';
 
 /** Sélection de l'interface -> paramètres du moteur (pur, testable). */
-export function selectionToQuery(sel) {
+function selectionToQuery(sel) {
   const genre = DISCOVER_GENRES.find(([, m, t]) => String(sel.media === 'tv' ? t : m) === String(sel.genre));
   return {
     media: sel.media === 'tv' ? 'tv' : 'movie',

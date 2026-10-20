@@ -4,7 +4,7 @@
 import { formatHero, HERO_SEEDS, parseHero } from '../data/avatars';
 
 /** Nombre d'avatars proposés dans la grille de l'écran d'entrée. */
-export const GUEST_AVATAR_COUNT = 24;
+const GUEST_AVATAR_COUNT = 24;
 
 /** Avatars proposés (famille « heros »), dans un ordre fixe. */
 export const GUEST_AVATARS: readonly string[] = HERO_SEEDS.slice(0, GUEST_AVATAR_COUNT).map((seed) => formatHero('heros', seed));

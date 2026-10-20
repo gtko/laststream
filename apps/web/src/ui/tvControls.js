@@ -102,7 +102,7 @@ export function hlsSubtitleOptions(h) {
   return [opt(NONE, 'Désactivés', cur < 0)].concat(list.map((t, i) => opt(i, langOr(t.lang, t.name, 'Sous-titres'), i === cur)));
 }
 
-export function levelLabel(l) {
+function levelLabel(l) {
   if (l && l.height) return l.height + 'p';
   if (l && l.bitrate) return Math.round(l.bitrate / 1000) + ' kb/s';
   return 'Niveau';
@@ -201,7 +201,7 @@ export function techFromTracks(list) {
 }
 
 /** Fournisseur de la chaîne, tel qu'affiché dans le panneau « Infos ». */
-export function sourceLabel(c) {
+function sourceLabel(c) {
   if (!c || !c.source) return '';
   return c.source === 'user' ? 'Ma playlist' : String(c.source);
 }
@@ -271,7 +271,7 @@ export function trackRow(o, kind) {
 }
 
 /** Lignes d'une colonne : les doublons (deux « Français » sans autre indice) sont numérotés. */
-export function trackRows(list, kind) {
+function trackRows(list, kind) {
   const rows = (list || []).map((o) => trackRow(o, kind));
   const seen = new Map();
   rows.forEach((r) => {
@@ -284,7 +284,7 @@ export function trackRows(list, kind) {
 }
 
 /** Détail d'un niveau de qualité (« Full HD », « HD »…) d'après sa hauteur. */
-export function qualityDetail(label) {
+function qualityDetail(label) {
   const m = /^(\d{3,4})p$/.exec(String(label));
   const h = m ? Number(m[1]) : 0;
   if (!h) return label === 'Auto' ? 'Selon la connexion' : '';

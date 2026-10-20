@@ -4,7 +4,7 @@ import { normText } from './tvRank';
 
 export type ChipId = 'all' | 'fav' | 'box' | 'news' | 'sport' | 'kids' | 'cinema' | 'music' | 'fun' | 'docs';
 
-export const CHIPS: ReadonlyArray<{ id: ChipId; label: string }> = [
+const CHIPS: ReadonlyArray<{ id: ChipId; label: string }> = [
   { id: 'all', label: 'Toutes' },
   { id: 'fav', label: 'Favoris' },
   { id: 'box', label: 'Box' },
@@ -42,7 +42,7 @@ const RULES: Array<[ChipId, RegExp]> = [
 const isBox = (c: PanelChannel): boolean => !!(c.box || c.boxOnly || c.source === 'box');
 
 /** Puces auxquelles appartient une chaîne (hors « Toutes » et « Favoris », qui dépendent de l'utilisateur). */
-export function chipsOf(c: PanelChannel): Set<ChipId> {
+function chipsOf(c: PanelChannel): Set<ChipId> {
   const out = new Set<ChipId>();
   if (isBox(c)) out.add('box');
   const labels = (c.categories ?? []).flatMap((k) => [k.id, k.label]).concat(c.cat, c.group).map((s) => normText(s)).filter(Boolean);
@@ -59,7 +59,7 @@ export interface ChannelQuery {
 const tokens = (q: string): string[] => String(q ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9+]+/).map((t) => normText(t)).filter(Boolean);
 
 /** Rang d'une chaîne pour une recherche : 0 = numéro exact, 1 = nom qui commence par la saisie, 2 = contient, -1 = écartée. */
-export function searchRank(c: PanelChannel, q: string): number {
+function searchRank(c: PanelChannel, q: string): number {
   const toks = tokens(q);
   if (!toks.length) return 2;
   const name = normText(c.name);

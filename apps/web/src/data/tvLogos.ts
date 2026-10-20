@@ -48,13 +48,13 @@ export function logoKey(name: unknown): string {
 }
 
 /** Clé d'un identifiant de guide (« France2.fr », « fr:TF1.fr ») : sans préfixe ni suffixe de pays. */
-export function idKey(id: unknown): string {
+function idKey(id: unknown): string {
   const raw = String(id ?? '').replace(/^[a-z]{2,6}:/i, '').replace(/\.[a-z]{2}$/i, '');
   return logoKey(raw);
 }
 
 /** Clés d'une chaîne, de la plus fiable à la moins fiable. */
-export function keysOf(c: LogoChannel): string[] {
+function keysOf(c: LogoChannel): string[] {
   const out: string[] = [];
   const add = (k: string) => { if (k && !out.includes(k)) out.push(k); };
   add(logoKey(c.name));

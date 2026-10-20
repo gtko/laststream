@@ -9,9 +9,9 @@ import { MemoryThumbStore, thumbKey, type ThumbStore } from './store';
 import type { ByteSource, ByteSourceOptions } from './bytes';
 import type { VideoIndex } from './types';
 
-export const LOCAL_SLICE_SECONDS = 30;
+const LOCAL_SLICE_SECONDS = 30;
 /** Décodages simultanés : le décodeur matériel est partagé avec la lecture. */
-export const LOCAL_MAX_PARALLEL = 2;
+const LOCAL_MAX_PARALLEL = 2;
 /** Délai maximal d'attente d'un moment calme avant de lancer une tranche quand même. */
 export const IDLE_TIMEOUT_MS = 2000;
 /** Délai du repli setTimeout quand requestIdleCallback n'existe pas. */
@@ -89,7 +89,7 @@ function waitTurn(signal: AbortSignal, o: TurnOptions): Promise<void> {
   });
 }
 
-export interface LocalSource {
+interface LocalSource {
   /** Lien débridé lu directement depuis l'appareil. */
   url: string;
 }

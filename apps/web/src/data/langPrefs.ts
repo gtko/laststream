@@ -95,7 +95,7 @@ export function setLangPrefs(patch: Partial<LangPrefs>): LangPrefs {
 }
 
 /** Libellé d'un code de langue des réglages. */
-export function langPrefLabel(c: string): string {
+function langPrefLabel(c: string): string {
   if (c === LANG_VO) return 'Version originale';
   if (c === LANG_NONE) return 'Aucune';
   return LANG_CHOICES.find(([k]) => k === c)?.[1] ?? c.toUpperCase();

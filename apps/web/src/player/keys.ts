@@ -25,7 +25,7 @@ export interface KeyContext {
 }
 
 export const SEEK_STEP = 10;
-export const VOLUME_STEP = 0.05;
+const VOLUME_STEP = 0.05;
 
 export function keyToAction(key: string, ctx: KeyContext, mods: { ctrl?: boolean; alt?: boolean; meta?: boolean; shift?: boolean } = {}): KeyAction | null {
   if (mods.ctrl || mods.alt || mods.meta) return null;

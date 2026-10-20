@@ -24,10 +24,10 @@ export function mulberry32(seed: number): Rng {
   };
 }
 
-export const pick = <T>(r: Rng, list: readonly T[]): T => list[Math.floor(r() * list.length)] as T;
+const pick = <T>(r: Rng, list: readonly T[]): T => list[Math.floor(r() * list.length)] as T;
 
 /** Tirage pondéré : liste de [valeur, poids]. */
-export function pickW<T>(r: Rng, list: ReadonlyArray<readonly [T, number]>): T {
+function pickW<T>(r: Rng, list: ReadonlyArray<readonly [T, number]>): T {
   const total = list.reduce((s, [, w]) => s + w, 0);
   let x = r() * total;
   for (const [v, w] of list) {

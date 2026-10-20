@@ -9,7 +9,7 @@ import { state } from './state.js';
 import { card, chipHTML, chipsHTML } from './settings-ui.js';
 
 /** Retire un titre de l'accueil, avec annulation dans le message. */
-export function hideFromHome(key, title, poster) {
+function hideFromHome(key, title, poster) {
   if (isKidProfile()) return;
   if (!hideTitle({ key, title: title || key, poster: poster || '' })) {
     toast('Liste pleine : réaffiche des titres dans les réglages');

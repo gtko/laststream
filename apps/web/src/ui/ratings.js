@@ -3,10 +3,10 @@ import { certLabel } from './catalog.js';
 import { esc, fmtNum } from './util.js';
 
 // ---------- Notes : puces avec icône et couleur de chaque source (SVG/CSS en ligne) ----------
-export const NB = ' ';
-export const pct = (v) => Math.round(v) + NB + '%';
-export const SVG = (inner, cls) => '<svg class="ri ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + inner + '</svg>';
-export const RICON = {
+const NB = ' ';
+const pct = (v) => Math.round(v) + NB + '%';
+const SVG = (inner, cls) => '<svg class="ri ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + inner + '</svg>';
+const RICON = {
   imdb: () => '<span class="rb rb-imdb" aria-hidden="true">IMDb</span>',
   tomato: (v) => (v >= 60
     ? SVG('<circle cx="12" cy="14" r="8.6" fill="#FA320A"/><path d="M12 7.2c-.9-2.3-3.1-3-4.9-2 1.2.2 2 .9 2.4 1.9-1.5-.5-3.1-.1-4 1 2.2.4 3.6.2 4.5-.6.5.9 1.1 1 2 1zM12 7.2c.9-2.3 3.1-3 4.9-2-1.2.2-2 .9-2.4 1.9 1.5-.5 3.1-.1 4 1-2.2.4-3.6.2-4.5-.6z" fill="#0AC855"/>')
@@ -19,7 +19,7 @@ export const RICON = {
   trakt: () => SVG('<circle cx="12" cy="12" r="10.5" fill="#ED1C24"/><path d="M7.2 12.2l3.1 3.1 6.5-6.5M10.3 15.3L7 12M12.9 8.4l-3 3" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'),
 };
 
-export function rateChip(label, icon, score) {
+function rateChip(label, icon, score) {
   return '<li class="rate" title="' + esc(label) + '"><span class="sr-only">' + esc(label) + ' : </span>' + icon +
     (score ? '<strong>' + score + '</strong>' : '') + '</li>';
 }

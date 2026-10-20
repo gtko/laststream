@@ -14,7 +14,7 @@ export * from './feed';
 export * from './direct';
 export * from './store';
 export * from './types';
-export { openMkv, readId, readSize } from './mkv';
+export { readId, readSize } from './mkv';
 export { openMp4 } from './mp4';
 
 /** Démultiplexage maison : MKV si l'en-tête EBML est là, sinon MP4. null si le conteneur ou le codec n'est pas reconnu. */

@@ -28,7 +28,7 @@ function shell(title, eyebrow, body, tools = '') {
 const message = (text) => '<p class="row-msg" role="status">' + esc(text) + '</p>';
 
 // ---------- Liste des salons publics ----------
-export function roomCardHTML(r) {
+function roomCardHTML(r) {
   const full = r.participants >= r.maxParticipants;
   return '<li class="wp-card" data-room="' + esc(r.id) + '">' +
     '<span class="wp-poster' + (r.poster ? '' : ' no-img') + '">' + (r.poster ? '<img src="' + esc(IMG('w185', r.poster)) + '" alt="" loading="lazy" decoding="async">' : '') + '</span>' +
@@ -118,7 +118,7 @@ export async function showParty(id) {
 }
 
 /** Clic sur « Rejoindre » : connexion au salon puis lecture avec la source de l'utilisateur. */
-export async function joinFromPage(id, btn) {
+async function joinFromPage(id, btn) {
   const msg = detailEl.querySelector('[data-wp-msg]');
   btn.disabled = true;
   if (msg) msg.textContent = 'Connexion au salon…';

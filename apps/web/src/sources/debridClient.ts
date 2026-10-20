@@ -14,7 +14,7 @@
  *  - erreur de compte (suspendu, quota, clé invalide) : fournisseur indisponible jusqu'à l'heure indiquée et bascule automatique. */
 
 import { createAllDebrid } from './debrid/alldebrid';
-import { createHttp, nativeKind, webBlocked, type HttpFn, type NativeKind } from './debrid/http';
+import { createHttp, nativeKind, webBlocked, type NativeKind } from './debrid/http';
 import { createRealDebrid } from './debrid/realdebrid';
 import { createTorbox } from './debrid/torbox';
 import {
@@ -23,15 +23,15 @@ import {
 } from './debrid/types';
 import { forgetSharedLink, getSharedLink, publishSharedLink, sourceKeyFor } from './sharedLinks';
 
-export { PROVIDER_IDS, PROVIDER_LABEL, DebridError };
-export type { ClientCopy, FileHint, ProviderId, ProviderStatus, ResolvedLink };
+export { PROVIDER_LABEL, DebridError };
+export type { ClientCopy, ProviderId, ProviderStatus };
 
 const SETTINGS_KEY = 'laststream.debrid.v1';
 const STATE_KEY = 'laststream.debrid.state.v1';
 /** Sources torrent vérifiées par titre (les N meilleures) : chaque vérification AllDebrid ajoute des magnets au compte. */
 export const CHECK_TOP_N = 8;
-export const POSITIVE_TTL_MS = 6 * 3600_000;
-export const NEGATIVE_TTL_MS = 30 * 60_000;
+const POSITIVE_TTL_MS = 6 * 3600_000;
+const NEGATIVE_TTL_MS = 30 * 60_000;
 const RESOLVE_TTL_MS = 3600_000;
 /** Copies d'une même source essayées chez un fournisseur avant de passer au suivant. */
 const MAX_COPIES_TRIED = 3;
@@ -70,7 +70,7 @@ const normalizeOrder = (order: unknown): ProviderId[] => {
   return [...out, ...PROVIDER_IDS.filter((id) => !seen.has(id))];
 };
 
-export function readSettings(store: KeyValueStore): DebridSettings {
+function readSettings(store: KeyValueStore): DebridSettings {
   try {
     const raw = JSON.parse(store.getItem(SETTINGS_KEY) ?? 'null') as { keys?: Record<string, unknown>; order?: unknown } | null;
     const keys: DebridSettings['keys'] = {};
@@ -108,7 +108,7 @@ export class MemoryStatusStore implements StatusStore {
 const DB_NAME = 'laststream-debrid';
 const DB_STORE = 'status';
 
-export class IdbStatusStore implements StatusStore {
+class IdbStatusStore implements StatusStore {
   private db: Promise<IDBDatabase | null> | null = null;
   private readonly fallback = new MemoryStatusStore();
 
@@ -480,9 +480,8 @@ export function debrid(): DebridManager {
 }
 
 /** Remplace l'instance partagée (tests). */
-export function setDebridManager(m: DebridManager | null): void { shared = m; }
+function setDebridManager(m: DebridManager | null): void { shared = m; }
 
-export type { HttpFn };
 
 /** Libellé de fournisseur affiché dans le sélecteur : « TorBox », « AllDebrid + TorBox ». */
-export const providersLabel = (ids: readonly ProviderId[]): string => ids.map((id) => PROVIDER_LABEL[id]).join(' + ');
+const providersLabel = (ids: readonly ProviderId[]): string => ids.map((id) => PROVIDER_LABEL[id]).join(' + ');

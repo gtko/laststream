@@ -4,10 +4,10 @@
 
 import { normText } from './tvRank';
 
-export const GUIDE_KEY = 'ls_tv_guide';
-export const GUIDE_WINDOW_SEC = 24 * 3600;
+const GUIDE_KEY = 'ls_tv_guide';
+const GUIDE_WINDOW_SEC = 24 * 3600;
 
-export interface GuideProg { start: number; stop: number; title: string; desc: string }
+interface GuideProg { start: number; stop: number; title: string; desc: string }
 /** Programmes compacts : [début, fin, titre, description]. */
 export type GuideTuple = [number, number, string, string];
 export interface GuideData { at: number; progs: Record<string, GuideTuple[]> }
@@ -125,7 +125,7 @@ export function matchGuide(targets: readonly GuideTarget[], g: ParsedGuide, desc
 const isGzip = (b: Uint8Array): boolean => b.length > 2 && b[0] === 0x1f && b[1] === 0x8b;
 
 /** Texte du document (gzip décompressé en flux) par morceaux d'environ 1 Mo. */
-export async function* textChunks(bytes: Uint8Array, size = 1 << 20): AsyncGenerator<string> {
+async function* textChunks(bytes: Uint8Array, size = 1 << 20): AsyncGenerator<string> {
   const dec = new TextDecoder();
   if (isGzip(bytes)) {
     if (typeof DecompressionStream === 'undefined') throw new Error('gzip_unsupported');
@@ -151,7 +151,7 @@ export async function guideFromBytes(bytes: Uint8Array, targets: readonly GuideT
 
 let cache: GuideData | null | undefined;
 
-export function loadGuide(): GuideData | null {
+function loadGuide(): GuideData | null {
   if (cache !== undefined) return cache;
   try {
     const raw = localStorage.getItem(GUIDE_KEY);

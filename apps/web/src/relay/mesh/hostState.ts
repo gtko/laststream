@@ -142,7 +142,7 @@ export class MeshHostState {
 }
 
 /** Décode une trame reçue d'un canal, utile aux tests. */
-export function frameOf(data: unknown): RelayFrame | null {
+function frameOf(data: unknown): RelayFrame | null {
   const bytes = toBytes(data);
   return bytes ? decodeFrame(bytes) : null;
 }

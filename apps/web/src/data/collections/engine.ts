@@ -18,7 +18,7 @@ import { getRegion } from '../prefs';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type Media = 'movie' | 'tv';
-export type SourceKind = 'DISCOVER' | 'LIST' | 'COLLECTION' | 'COMPANY';
+type SourceKind = 'DISCOVER' | 'LIST' | 'COLLECTION' | 'COMPANY';
 export type SortKey = 'default' | 'popularity' | 'rating' | 'recent';
 
 /** Filtres d'une source, avec les noms du catalogue d'origine. */
@@ -62,16 +62,16 @@ export interface Folder {
 }
 
 /** Titre TMDB brut, avec son type garanti. */
-export type RawTitle = Record<string, any> & { media_type: Media; id: number };
+type RawTitle = Record<string, any> & { media_type: Media; id: number };
 
-export const CONCURRENCY = 3;
+const CONCURRENCY = 3;
 /** Nombre maximal de tours (pages TMDB) par source : 25 pages, soit 500 titres. */
-export const MAX_ROUNDS = 25;
+const MAX_ROUNDS = 25;
 const WATCH_TYPES = 'flatrate|free|ads';
 const MIN_VOTES_BY_RATING: Record<Media, number> = { movie: 200, tv: 100 };
 
-export const todayIso = (d: Date = new Date()): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-export const dateKey = (media: Media): string => (media === 'tv' ? 'first_air_date' : 'primary_release_date');
+const todayIso = (d: Date = new Date()): string => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const dateKey = (media: Media): string => (media === 'tv' ? 'first_air_date' : 'primary_release_date');
 
 /** Filtres d'une source -> paramètres discover de TMDB. Les titres non sortis sont exclus (borne haute = aujourd'hui). */
 export function mapFilters(f: SourceFilters = {}, media: Media, region: string, today: string = todayIso()): Record<string, string> {
@@ -104,7 +104,7 @@ export function mapFilters(f: SourceFilters = {}, media: Media, region: string, 
 }
 
 /** Tri TMDB d'une source ; les valeurs propres au catalogue (original, rank…) donnent la popularité. */
-export function sourceSort(sort: string | undefined, media: Media): string {
+function sourceSort(sort: string | undefined, media: Media): string {
   const m = /^(popularity|vote_average|vote_count|revenue|primary_release_date|first_air_date)\.(asc|desc)$/.exec(sort ?? '');
   if (m) return /date$/.test(m[1]) ? `${dateKey(media)}.${m[2]}` : sort!;
   if (sort === 'released') return `${dateKey(media)}.desc`;
@@ -167,7 +167,7 @@ export function newCtx(o: { sort?: SortKey; media?: Media | 'all' } = {}): Resol
 }
 
 /** Titre réduit à ce que lisent les filtres de l'accueil. */
-export interface LightTitle extends ItemFacts {
+interface LightTitle extends ItemFacts {
   r: RawTitle;
   type: Media;
   id: number;
@@ -193,7 +193,7 @@ export interface Resolved {
 /** Les listes TMDB (route list/{id}) ne sont pas ouvertes sur certains serveurs : on le retient pour la session. */
 let listBroken = false;
 export const resetListSupport = (): void => { listBroken = false; };
-export const listUnsupported = (): boolean => listBroken;
+const listUnsupported = (): boolean => listBroken;
 
 const sourceKey = (folderId: string, i: number) => `${folderId}#${i}`;
 
@@ -236,7 +236,7 @@ export function interleave<T>(lists: T[][]): T[] {
   return out;
 }
 
-export function sortTitles(items: RawTitle[], sort: SortKey): RawTitle[] {
+function sortTitles(items: RawTitle[], sort: SortKey): RawTitle[] {
   if (sort === 'default') return items;
   const by: Record<Exclude<SortKey, 'default'>, (r: RawTitle) => number | string> = {
     popularity: (r) => r.popularity ?? 0,

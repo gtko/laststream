@@ -5,7 +5,7 @@
 /** Écart audio/vidéo au-delà duquel on se recale (secondes, strictement supérieur). */
 export const DRIFT_RESYNC_S = 0.08;
 /** Au-delà de cet écart, un seul relevé suffit pour se recaler (sinon il en faut deux de suite : currentTime est quantifié par image). */
-export const DRIFT_HARD_S = 0.25;
+const DRIFT_HARD_S = 0.25;
 /** Son décodé d'avance nécessaire pour démarrer ou reprendre (secondes). Sous ce seuil, le lecteur attend. */
 export const START_AHEAD_S = 3;
 /** Son décodé d'avance sous lequel la lecture s'interrompt (« chargement du son »). */
@@ -17,7 +17,7 @@ export const LOOKAHEAD_S = 1;
 /** Compressé préchargé en avant de la position de décodage, en secondes de média. */
 export const PREFETCH_TARGET_S = 30;
 /** Deux segments dont les horodatages diffèrent de moins que cela sont considérés comme jointifs (secondes). */
-export const CONTIGUOUS_EPS_S = 0.002;
+const CONTIGUOUS_EPS_S = 0.002;
 
 export interface Anchor {
   /** Position média (s) à l'instant `ctx`. */

@@ -2,16 +2,16 @@
  * Ici : arrondi à la tranche, précharge autour du curseur, annulation des demandes périmées, cache d'URL d'images.
  * Logique pure, dépendances injectées (fetch, création d'URL d'objet), testée. */
 
-export const SLICE_SECONDS = 30;
+const SLICE_SECONDS = 30;
 /** Images gardées en mémoire (≈ 3 Ko chacune). */
 export const FEED_CACHE = 60;
 /** Tranches préchargées de part et d'autre du curseur. */
-export const PRELOAD_RADIUS = 2;
+const PRELOAD_RADIUS = 2;
 /** Requêtes en vol au plus (le navigateur n'en traite qu'environ six par hôte). */
 export const MAX_PARALLEL = 3;
 /** Délai avant de redemander une image que le serveur n'a pas encore finie (réponse 202). */
-export const PENDING_RETRY_MS = 1200;
-export const MAX_PENDING_RETRIES = 5;
+const PENDING_RETRY_MS = 1200;
+const MAX_PENDING_RETRIES = 5;
 /** Échecs consécutifs après lesquels on renonce aux aperçus pour la source courante. */
 export const MAX_FEED_FAILURES = 5;
 

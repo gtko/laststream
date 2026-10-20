@@ -25,7 +25,7 @@ export interface PrepareInput {
 }
 
 /** Délai maximal pour lire l'en-tête (codec de la piste son) : au-delà, la source est jugée trop lente. */
-export const HEADER_TIMEOUT_MS = 10_000;
+const HEADER_TIMEOUT_MS = 10_000;
 
 export interface PrepareDeps {
   headerTimeoutMs?: number;

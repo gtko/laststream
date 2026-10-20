@@ -16,19 +16,19 @@ export interface MiniLayout {
 }
 
 export const MINI_MARGIN = 24;
-export const MINI_MIN = 280;
-export const MINI_MAX = 480;
-export const MINI_VW = 0.22;
-export const MOBILE_BREAKPOINT = 640;
+const MINI_MIN = 280;
+const MINI_MAX = 480;
+const MINI_VW = 0.22;
+const MOBILE_BREAKPOINT = 640;
 export const BAR_HEIGHT = 72;
 export const MINI_RADIUS = 12;
-export const CORNERS: readonly Corner[] = ['tl', 'tr', 'bl', 'br'];
-export const DEFAULT_CORNER: Corner = 'br';
+const CORNERS: readonly Corner[] = ['tl', 'tr', 'bl', 'br'];
+const DEFAULT_CORNER: Corner = 'br';
 export const CORNER_KEY = 'laststream.player.miniCorner';
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
-export const isCorner = (v: unknown): v is Corner => typeof v === 'string' && (CORNERS as readonly string[]).includes(v);
+const isCorner = (v: unknown): v is Corner => typeof v === 'string' && (CORNERS as readonly string[]).includes(v);
 
 /** Barre mobile : fenêtre de moins de 640 px. */
 export const isBarLayout = (winWidth: number): boolean => winWidth < MOBILE_BREAKPOINT;
@@ -126,7 +126,7 @@ export function holeClipFor(el: Rect, hole: Rect, radius = MINI_RADIUS): string 
 }
 
 /** Position relative d'un rectangle dans un autre (marge de la vidéo dans la barre mobile). */
-export const relativeTo = (r: Rect, origin: Rect): Rect => ({ ...r, left: r.left - origin.left, top: r.top - origin.top });
+const relativeTo = (r: Rect, origin: Rect): Rect => ({ ...r, left: r.left - origin.left, top: r.top - origin.top });
 
 // ---------- Contrôleur d'état ----------
 

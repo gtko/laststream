@@ -45,7 +45,7 @@ export async function servedByLastAddon(timeoutMs = 2500): Promise<boolean> {
  * Compte neuf (ou navigateur vierge) : génère la config par défaut (langue fr, aucun addon ; les clés de services
  * viennent du serveur) en chiffrant une config vide côté serveur. Renvoie true si une config locale existe ensuite.
  */
-export async function ensureDefaultConfig(): Promise<boolean> {
+async function ensureDefaultConfig(): Promise<boolean> {
   if (getConfig()) return true;
   if (!getBase()) return false;
   try {
@@ -86,7 +86,7 @@ export async function reconcileConfig(
   return 'pulled';
 }
 
-export function getConfigOwner(): string {
+function getConfigOwner(): string {
   try { return globalThis.localStorage?.getItem(CONFIG_OWNER_KEY) ?? ''; } catch { return ''; }
 }
 

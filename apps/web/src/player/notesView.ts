@@ -106,14 +106,14 @@ export function noteFlashEl(note: Note): HTMLElement {
 }
 
 /** Emojis supplémentaires derrière le « + » (la rangée rapide reste QUICK_EMOJIS). */
-export const MORE_EMOJIS: readonly string[] = ['👍', '😮', '😢', '🥹', '😍', '🙌', '💀', '🍿'];
+const MORE_EMOJIS: readonly string[] = ['👍', '😮', '😢', '🥹', '😍', '🙌', '💀', '🍿'];
 /** Éventail tactile : les cinq premiers emojis rapides (maquette Android). */
-export const FAN_COUNT = 5;
+const FAN_COUNT = 5;
 const EMOJI_LABEL: Record<string, string> = {
   '😂': 'rire', '🔥': 'feu', '😱': 'choc', '😭': 'larmes', '❤️': 'cœur', '👏': 'bravo', '🤯': 'esprit soufflé',
 };
 
-export interface ReactOpenOptions {
+interface ReactOpenOptions {
   /** Ami à qui proposer « Aussi envoyer à X en message » ; absent = la case n'existe pas. */
   friend?: { pid: string; name: string } | null;
   /** Version tactile : éventail d'emojis, le champ texte s'ouvre avec « Note ». */

@@ -15,9 +15,9 @@ import { nationalEntry, normText } from './tvRank';
 
 export const FREEBOX_PLAYLIST_URL = 'http://mafreebox.freebox.fr/freeboxtv/playlist.m3u';
 /** Commande IPC de la coque (même signal de réponse que `native-http`). */
-export const BOX_COMMAND = 'native-box-playlist';
-export const MAX_PLAYLIST_BYTES = 20 * 1024 * 1024;
-export const REFRESH_EVERY_MS = 24 * 3600 * 1000;
+const BOX_COMMAND = 'native-box-playlist';
+const MAX_PLAYLIST_BYTES = 20 * 1024 * 1024;
+const REFRESH_EVERY_MS = 24 * 3600 * 1000;
 
 export type QualityKey = 'hd' | 'auto' | 'standard' | 'low';
 export const QUALITY_LABELS: Record<QualityKey, string> = { hd: 'HD', auto: 'Auto', standard: 'Standard', low: 'Bas débit' };
@@ -94,7 +94,7 @@ export function parseTitle(raw: string): { num: number; name: string; label: str
   return { num, name, label };
 }
 
-export function isLocalStream(url: string): boolean {
+function isLocalStream(url: string): boolean {
   try { return isLanHost(new URL(url).hostname); } catch { return false; }
 }
 
@@ -163,7 +163,7 @@ export function pickQuality(ch: Pick<BoxChannel, 'qualities'>, pref: QualityKey 
 
 // ---------- Playlists enregistrées ----------
 
-export type BoxKind = 'freebox' | 'url' | 'file';
+type BoxKind = 'freebox' | 'url' | 'file';
 
 export interface BoxList {
   id: string;
@@ -236,8 +236,8 @@ export function activeChannels(lists: readonly BoxList[]): BoxChannel[] {
 
 export const newListId = (): string => `pl${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 
-export const BOX_KEY = 'ls_tv_boxes';
-export const BOX_QUALITY_KEY = 'ls_tv_box_quality';
+const BOX_KEY = 'ls_tv_boxes';
+const BOX_QUALITY_KEY = 'ls_tv_box_quality';
 
 export function loadLists(): BoxList[] {
   try {
@@ -267,7 +267,7 @@ export function setBoxQuality(q: QualityKey): void {
 interface Named { name?: string; epgId?: string; id?: string }
 
 /** Clé de rapprochement : entrée de la TNT officielle si la chaîne en est une (« France 2 », « France2.fr »), sinon nom normalisé. */
-export function matchKey(c: Named): string {
+function matchKey(c: Named): string {
   const e = nationalEntry(c, 'FR');
   if (e) return `n${e.num}`;
   const k = normText(c.name);
@@ -384,7 +384,7 @@ export interface BoxTransport {
   fetchHttp: HttpFn;
 }
 
-export function defaultTransport(): BoxTransport {
+function defaultTransport(): BoxTransport {
   const native = isShellEnvironment() ? shellHttp(() => connectShell(), BOX_COMMAND) : capacitorNative() ? capacitorHttp() : null;
   return { native, fetchHttp: browserFetchHttp() };
 }

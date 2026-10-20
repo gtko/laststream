@@ -18,7 +18,7 @@ function pump() {
 }
 
 /** Retrouve l'affiche d'un titre (une seule requête par titre, mise en cache). */
-export function resolvePoster(it) {
+function resolvePoster(it) {
   if (!done.has(it.key)) {
     done.set(it.key, new Promise((resolve) => {
       queue.push(async () => {

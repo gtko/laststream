@@ -1,9 +1,9 @@
 /* Progression de lecture : cadence d'enregistrement, reprise, seuil « vu ». Fonctions pures, testées. */
 
-export const SAVE_EVERY_MS = 10_000;
-export const WATCHED_RATIO = 0.9;
-export const RESUME_MIN_RATIO = 0.02;
-export const RESUME_MAX_RATIO = 0.95;
+const SAVE_EVERY_MS = 10_000;
+const WATCHED_RATIO = 0.9;
+const RESUME_MIN_RATIO = 0.02;
+const RESUME_MAX_RATIO = 0.95;
 
 export function shouldSave(now: number, lastSavedAt: number, force: boolean, duration: number): boolean {
   if (!Number.isFinite(duration) || duration <= 0) return false;

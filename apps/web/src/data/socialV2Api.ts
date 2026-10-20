@@ -7,7 +7,7 @@ import { UserApiError, type MediaKind } from './userApi';
  * reste de /user. Aucun texte n'est affiché ici. */
 
 export type Status = 'online' | 'away' | 'dnd' | 'invisible';
-export type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
+type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
 export type Handle = { name: string; tag: string; full: string };
 export type Watching = {
   type: 'movie' | 'series'; tmdbId: number; imdbId?: string; title: string;
@@ -45,7 +45,7 @@ export type FriendsResponse = { friends: FriendView[]; household: FriendView[]; 
 /** `POST /requests` : 201 `{ request }`, ou 200 `{ friend }` si l'autre m'avait déjà demandé. */
 export type RequestOutcome = { request: FriendRequest } | { friend: FriendView };
 /** Élément de bibliothèque d'un ami : même forme que l'ancienne route `/user/friends/:username/library`. */
-export type LibraryItem = {
+type LibraryItem = {
   type: MediaKind; tmdbId: number | null; imdbId: string | null;
   title: string; poster: string | null; addedAt: string;
 };
@@ -55,7 +55,7 @@ export type NewNote = MediaRef & { pos: number; kind: 'text' | 'emoji'; body: st
 const enc = encodeURIComponent;
 
 /** Chiffres et lettres sans équivoque (pas de 0, O, 1, I, L) : 31 symboles, 4 par tag. */
-export const TAG_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+const TAG_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const TAG_LENGTH = 4;
 const NAME_MIN = 2;
 const NAME_MAX = 20;

@@ -7,7 +7,7 @@ export interface TitleMemory {
   sub?: string;
 }
 
-export const MEMORY_KEY = 'laststream.player.memory';
+const MEMORY_KEY = 'laststream.player.memory';
 const MAX_ENTRIES = 300;
 
 function readAll(): Record<string, TitleMemory> {
@@ -45,7 +45,7 @@ export interface SubSync {
   rate: number;
 }
 
-export const SYNC_KEY = 'laststream.player.subsync';
+const SYNC_KEY = 'laststream.player.subsync';
 
 /** Clé d'un fichier : nom + taille (deux releases différentes ne partagent pas leur calage). */
 export function fileKey(filename: string, size: number): string {
@@ -79,7 +79,7 @@ export function setSubSync(file: string, subKey: string, sync: SubSync): void {
 
 // ---------- Sources lentes ou en échec, par titre (24 h) ----------
 
-export const BAD_KEY = 'laststream.player.badsources';
+const BAD_KEY = 'laststream.player.badsources';
 export const BAD_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface BadEntry { reason: string; at: number }

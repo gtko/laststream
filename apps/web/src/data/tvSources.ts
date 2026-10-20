@@ -85,7 +85,7 @@ let refreshing: Promise<void> | null = null;
 const reachKey = (ls: readonly BoxList[]): string => ls.map((l) => `${l.id}:${getBoxReach(l.id)}`).join('|');
 
 /** Guide XMLTV des playlists actives qui en déclarent un : lu en flux sur l'appareil, gardé de maintenant à +24 h. */
-export async function refreshGuides(cur: readonly BoxList[], tr?: BoxTransport): Promise<void> {
+async function refreshGuides(cur: readonly BoxList[], tr?: BoxTransport): Promise<void> {
   const withGuide = cur.filter((l) => l.enabled && l.guideUrl);
   if (!withGuide.length) { saveGuide(null); return; }
   const merged: GuideData = { at: Date.now(), progs: {} };

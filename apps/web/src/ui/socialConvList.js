@@ -12,7 +12,7 @@ import {
 import { groupErrorMessage } from './socialChat.js';
 
 /** Boîte « Nouveau groupe » : nom (≤ 40) et 2 à 19 amis. Ouvre le groupe créé. */
-export function openGroupDialog(opener, toast) {
+function openGroupDialog(opener, toast) {
   let nameEl = null;
   const picked = new Set();
   openDialog({

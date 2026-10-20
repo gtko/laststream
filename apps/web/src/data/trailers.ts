@@ -104,7 +104,7 @@ export function audioLangOf(v: TmdbVideo): string | null {
  * Groupe de langue (plus petit = mieux) : 0 doublé dans la langue principale, 1 sous-titré dans cette langue,
  * 2 langue secondaire, 3 sans langue, 4 anglais, 5 autre langue.
  */
-export function langGroup(v: TmdbVideo, pref: TrailerLang): number {
+function langGroup(v: TmdbVideo, pref: TrailerLang): number {
   if (isSubtitled(v, pref)) return 1;
   const audio = audioLangOf(v);
   if (audio === pref.lang) return 0;
@@ -142,7 +142,7 @@ export function titleScore(v: TmdbVideo, pref: TrailerLang): number {
  * Même rang : meilleur score du titre, puis variante régionale correspondante (doublage seulement), puis « official »,
  * puis la plus récente, puis la taille 1080.
  */
-export function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: TrailerLang): number {
+function compareVideos(a: TmdbVideo, b: TmdbVideo, pref: TrailerLang): number {
   const t = videoTier(a, pref) - videoTier(b, pref);
   if (t) return t;
   const region = (v: TmdbVideo) => (langGroup(v, pref) === 0 && v.iso_3166_1 === pref.country ? 0 : 1);

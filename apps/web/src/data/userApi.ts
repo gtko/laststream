@@ -167,7 +167,7 @@ export const register = (username: string, password: string, bootstrapToken?: st
   call<{ account: AccountDto }>('/register', { method: 'POST', body: { username, password, ...(invite ? { invite } : {}) }, anonymous: true, bootstrapToken });
 export const login = (username: string, password: string) =>
   call<{ token: string; expiresAt: string }>('/login', { method: 'POST', body: { username, password }, anonymous: true });
-export const refresh = () => call<{ token: string; expiresAt: string }>('/refresh', { method: 'POST' });
+const refresh = () => call<{ token: string; expiresAt: string }>('/refresh', { method: 'POST' });
 export const logout = () => call<void>('/logout', { method: 'POST' });
 /** Page publique de réinitialisation : le jeton vient d'un lien généré par le propriétaire (24 h, usage unique). */
 export const passwordReset = (token: string, password: string) =>
@@ -189,7 +189,7 @@ export const deleteProfile = (id: string, actor?: string) =>
   call<void>('/profiles/' + encodeURIComponent(id), { method: 'DELETE', ...asActor(actor) });
 export const unlockProfile = (id: string, pin: string) =>
   call<{ token: string; expiresAt: string }>('/profiles/' + encodeURIComponent(id) + '/unlock', { method: 'POST', body: { pin } });
-export const lockProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id) + '/lock', { method: 'POST' });
+const lockProfile = (id: string) => call<void>('/profiles/' + encodeURIComponent(id) + '/lock', { method: 'POST' });
 
 // ---- Suivis et notes ----
 export type FollowKind = MediaKind | 'person';

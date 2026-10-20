@@ -15,7 +15,7 @@ import { RelayError } from './protocol';
 const TIMEOUT_MS = 30_000;
 
 /** Transport HTTP de la plateforme courante (même détection que les débrideurs). */
-export function rangeTransport(kind: NativeKind = nativeKind()): HttpFn {
+function rangeTransport(kind: NativeKind = nativeKind()): HttpFn {
   if (kind === 'shell') return shellRangeHttp(shellHttp());
   if (kind === 'capacitor') return capacitorHttp();
   return browserFetchHttp();

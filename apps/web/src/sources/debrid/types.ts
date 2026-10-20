@@ -76,7 +76,7 @@ export interface ClientCopy {
   size?: number;
 }
 
-export const HASH_RE = /^[0-9a-f]{40}$/;
+const HASH_RE = /^[0-9a-f]{40}$/;
 export const normalizeHash = (value: string): string | null => {
   const h = value.trim().toLowerCase();
   return HASH_RE.test(h) ? h : null;

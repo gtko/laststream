@@ -7,7 +7,7 @@ import { esc } from '../util.js';
 import { attempt, badge, empty, loaded, sectionHead, table } from './common.js';
 
 // ---------- Watch parties ----------
-export function partiesHTML(S) {
+function partiesHTML(S) {
   return sectionHead('Watch parties', 'Salons ouverts en ce moment, privés compris.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') +
     loaded(S.rooms, (r) => (!r.rooms.length ? empty('Aucun salon actif.') :
       table('Salons actifs', ['Titre', 'Hôte', { label: 'Participants', num: true }, 'Visibilité', 'Ouvert', 'Action'],
@@ -28,7 +28,7 @@ function bindParties(root, ctx) {
 // ---------- Modération ----------
 const REPORT_TABS = [['open', 'À traiter'], ['deleted', 'Supprimés'], ['suspended', 'Auteur suspendu'], ['ignored', 'Ignorés']];
 
-export function moderationHTML(S) {
+function moderationHTML(S) {
   const tabs = '<div class="pills" role="group" aria-label="Statut des signalements" data-nav>' + REPORT_TABS.map(([v, l]) =>
     '<button type="button" class="pill" data-adm-repstatus="' + v + '" data-adm-focus="rep:' + v + '" aria-pressed="' + (S.repStatus === v) + '">' + l + '</button>').join('') + '</div>';
   return sectionHead('Modération', 'Messages de salon signalés par les participants.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') + tabs +

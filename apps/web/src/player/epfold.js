@@ -5,7 +5,7 @@ const MS = 150;
 let openKey = null;
 const timers = new WeakMap();
 
-export const epKey = (season, episode) => season + ':' + episode;
+const epKey = (season, episode) => season + ':' + episode;
 export const isEpFolded = (season, episode) => openKey !== null && openKey === epKey(season, episode);
 
 const reduceMotion = () => !!globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches;

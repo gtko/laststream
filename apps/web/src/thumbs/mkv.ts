@@ -138,7 +138,7 @@ function parseCues(b: Uint8Array, track: number, scaleNs: number, segmentData: n
 interface Block { track: number; timecode: number; keyframe: boolean | null; data: Uint8Array }
 
 /** Contenu d'un (Simple)Block : piste, décalage de temps, drapeau d'image clé (SimpleBlock) et première trame. */
-export function parseBlock(body: Uint8Array, simple: boolean): Block | null {
+function parseBlock(body: Uint8Array, simple: boolean): Block | null {
   const t = readSize(body, 0);
   if (t === null || t.value < 0 || body.length < t.len + 3) return null;
   const p = t.len;

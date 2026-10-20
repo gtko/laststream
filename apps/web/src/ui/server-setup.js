@@ -21,7 +21,7 @@ function html(value, msg, ok) {
 }
 
 /** Affiche l'écran jusqu'à ce qu'une adresse joignable soit enregistrée (PUBLIC_BASE pré-rempli). */
-export function runServerSetup() {
+function runServerSetup() {
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'srv-setup';

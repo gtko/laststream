@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Le dépôt @laststream/protocol (dépendance github:gtko/laststream-protocol) est privé : git doit s'authentifier
+      # avant `npm ci`. Le secret PROTOCOL_READ_TOKEN (token GitHub en lecture seule sur gtko/laststream-protocol)
+      # doit être créé dans le dépôt : Settings > Secrets and variables > Actions.
+      - name: Accès git au dépôt privé @laststream/protocol
+        env:
+          PROTOCOL_READ_TOKEN: ${{ secrets.PROTOCOL_READ_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${PROTOCOL_READ_TOKEN}@github.com/gtko/laststream-protocol".insteadOf "https://github.com/gtko/laststream-protocol"
+          git config --global url."https://x-access-token:${PROTOCOL_READ_TOKEN}@github.com/gtko/laststream-protocol".insteadOf "ssh://git@github.com/gtko/laststream-protocol"
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Code mort (knip)
+        run: npm run knip

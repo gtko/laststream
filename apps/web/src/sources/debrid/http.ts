@@ -35,7 +35,7 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 
 export { debridHostAllowed, parseDebridUrl } from './hosts';
 
-export const textOf = (res: HttpResponse): string => new TextDecoder().decode(res.body);
+const textOf = (res: HttpResponse): string => new TextDecoder().decode(res.body);
 
 export function jsonOf(res: HttpResponse): unknown {
   try { return JSON.parse(textOf(res)); } catch { return undefined; }
@@ -238,7 +238,7 @@ export function webBlocked(needsNative: boolean, native: NativeKind = nativeKind
 
 // ---------- Lecture de plages (miniatures) ----------
 
-export interface RangeReply { status: number; headers: { get(name: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }
+interface RangeReply { status: number; headers: { get(name: string): string | null }; arrayBuffer(): Promise<ArrayBuffer> }
 export type RangeFetchFn = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<RangeReply>;
 
 /** Lecture de plages : `native-range` sur Windows quand la coque l'annonce (repli `native-http`) ; CapacitorHttp sur Android. */

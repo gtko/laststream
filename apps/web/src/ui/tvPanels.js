@@ -9,7 +9,7 @@ import { tracksModel } from './tvControls.js';
 import { esc } from './util.js';
 
 /** Hauteur d'une ligne de la liste des chaînes (px à 15 px de police) : fixe, pour fenêtrer. */
-export const ROW_H = 68;
+const ROW_H = 68;
 
 const shellHead = (title, sub, extra) => '<div class="pn-top"><div class="pn-ttl"><h2 id="pn-title">' + esc(title) + '</h2>' +
   (sub ? '<p class="pn-sub">' + esc(sub) + '</p>' : '') + '</div>' + (extra || '') +
@@ -32,7 +32,7 @@ function colHTML(id, title, rows, kind, empty) {
 }
 
 /** Contenu du panneau « Audio et sous-titres » : deux colonnes, puis la ligne « Qualité » s'il y a plusieurs niveaux. */
-export function tracksHTML(model, channelName) {
+function tracksHTML(model, channelName) {
   const q = model.quality.length
     ? '<section class="tp-quality" data-col="quality"><h3 id="tp-h-quality">Qualité</h3><div class="tp-chips" role="radiogroup" aria-labelledby="tp-h-quality">' +
       model.quality.map((r) => '<button type="button" class="tp-chip' + (r.selected ? ' is-on' : '') + '" role="radio" aria-checked="' + (r.selected ? 'true' : 'false') +

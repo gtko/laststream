@@ -29,7 +29,7 @@ const codeOf = (e: unknown): string => {
 const DAY = 24 * 3600_000;
 
 /** Heure de fin indiquée dans un message (« jusqu'au 19/10/2026 03:10 », date ISO), sinon undefined. */
-export function untilFromMessage(message: unknown, now: number): number | undefined {
+function untilFromMessage(message: unknown, now: number): number | undefined {
   if (typeof message !== 'string') return undefined;
   const iso = /(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(message);
   if (iso) { const t = Date.parse(`${iso[1]}T${iso[2]}:00`); if (Number.isFinite(t) && t > now) return t; }
@@ -42,7 +42,7 @@ export function untilFromMessage(message: unknown, now: number): number | undefi
 }
 
 /** Code d'erreur AllDebrid → nature et état de compte. */
-export function classifyError(code: string, message: unknown, now: number): DebridError {
+function classifyError(code: string, message: unknown, now: number): DebridError {
   if (/^AUTH_(USER_BANNED|BLOCKED)$|SUSPEND|BANNED/.test(code)) {
     return new DebridError(code, 'account', { state: 'suspended', until: untilFromMessage(message, now) ?? now + 6 * 3600_000 });
   }

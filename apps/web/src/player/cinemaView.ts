@@ -15,7 +15,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
   return node;
 };
 
-export interface CinemaModel {
+interface CinemaModel {
   active: boolean;
   duration: CinemaDuration;
   hidden: readonly CinemaElement[];

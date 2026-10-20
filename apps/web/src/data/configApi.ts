@@ -34,7 +34,7 @@ export async function decodeConfig(encoded: string, base: string = requireBase()
   }
 }
 
-export interface CheckResult {
+interface CheckResult {
   name: string;
   type: string;
   ok: boolean;
@@ -61,7 +61,7 @@ export const isMask = (v: unknown): v is SecretMask =>
  * Corps de POST /config/encode construit depuis le formulaire. Un champ secret vide est omis : avec `previous`,
  * le serveur garde alors la valeur précédente.
  */
-export function pruneEmpty<T>(value: T): T | undefined {
+function pruneEmpty<T>(value: T): T | undefined {
   if (Array.isArray(value)) return value.map((v) => pruneEmpty(v)).filter((v) => v !== undefined) as unknown as T;
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {};

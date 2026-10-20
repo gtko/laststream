@@ -1,13 +1,13 @@
 /* Aperçu d'image sur la barre de position : seaux de 10 s, cache LRU, cadence des déplacements. Logique pure, testée. */
 
 export const BUCKET_SECONDS = 10;
-export const CACHE_FRAMES = 120;
+const CACHE_FRAMES = 120;
 /** Intervalle minimal entre deux déplacements de la vidéo d'aperçu. */
 export const MIN_SEEK_INTERVAL_MS = 150;
 /** Le pointeur doit être resté immobile ce temps avant de demander une image. */
 export const REST_MS = 90;
 /** En dessous de ce débit connu, pas d'aperçu : il concurrencerait la lecture. */
-export const MIN_BANDWIDTH_KBPS = 4000;
+const MIN_BANDWIDTH_KBPS = 4000;
 
 export const bucketOf = (t: number, size = BUCKET_SECONDS): number => Math.max(0, Math.floor(t / size));
 

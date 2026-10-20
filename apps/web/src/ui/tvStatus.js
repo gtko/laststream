@@ -6,7 +6,7 @@
 export const AUDIO_ONLY_MS = 5000;
 
 /** Raisons courtes d'un échec de chaîne. */
-export const REASONS = {
+const REASONS = {
   network: 'Problème réseau',
   refused: 'Flux refusé (accès ou CORS)',
   format: 'Format non pris en charge',

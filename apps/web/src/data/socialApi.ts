@@ -5,7 +5,7 @@ import { call, type MediaKind, type Visibility } from './userApi';
  * Les amis, la présence et la bibliothèque d'un ami passent par socialV2Api.ts (par pid) ; ne rien rajouter ici de ce côté. */
 
 // ---- Parrainage ----
-export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
+type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 export interface InviteDto {
   id: string;
   code: string;
@@ -157,7 +157,7 @@ export interface PartyInvite {
   token: string;
   expiresAt: string;
 }
-export const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId }, profileId });
+const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId }, profileId });
 /**
  * Lien d'invitation partagé du salon (hôte seulement) : un seul jeton multi-usage, non lié à un pseudo, valable jusqu'à la fin
  * du salon. `rotate` (« Nouveau lien ») invalide les liens précédents ; sans lui, le lien rendu est toujours le même.

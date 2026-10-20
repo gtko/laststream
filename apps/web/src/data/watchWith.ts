@@ -23,12 +23,12 @@ export type WatchPoint = Pick<Watching, 'pos' | 'duration' | 'paused' | 'at'>;
  * `resume: 'none'` ignore la progression propre de l'utilisateur. `startAt` est la position de départ (secondes), ou le
  * relevé de l'ami : sa position est alors estimée au moment où le lecteur démarre (`resumePosition`), pas au clic.
  */
-export interface PlayOpts {
+interface PlayOpts {
   resume: 'none';
   startAt: number | WatchPoint;
 }
 
-export type Launch = (request: PlayRequest, opener: Element | null, opts: PlayOpts) => unknown;
+type Launch = (request: PlayRequest, opener: Element | null, opts: PlayOpts) => unknown;
 
 /** Média référencé par un relevé de lecture ou un contexte de message. */
 export interface MediaRef {

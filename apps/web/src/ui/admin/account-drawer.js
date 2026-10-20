@@ -9,7 +9,7 @@ import { shareBase } from '../invites.js';
 import { esc } from '../util.js';
 import { adminErr, attempt, badge, empty, statusBadge } from './common.js';
 
-export const TABS = [['overview', 'Aperçu'], ['sessions', 'Sessions'], ['invites', 'Invitations'], ['activity', 'Activité']];
+const TABS = [['overview', 'Aperçu'], ['sessions', 'Sessions'], ['invites', 'Invitations'], ['activity', 'Activité']];
 const INVITE_LABEL = { active: ['Actif', 'ok'], used: ['Utilisé'], expired: ['Expiré'], revoked: ['Révoqué', 'warn'] };
 const TIMELINE_KINDS = ['audit', 'signup', 'invite', 'session', 'party'];
 const QUOTA_MIN = 0;

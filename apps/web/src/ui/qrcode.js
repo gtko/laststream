@@ -4,7 +4,6 @@
 
 const ECC_PER_BLOCK_M = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26];
 const BLOCKS_M = [0, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5];
-export const QR_MAX_BYTES = 213;
 
 const utf8 = (s) => Array.from(new TextEncoder().encode(String(s)));
 

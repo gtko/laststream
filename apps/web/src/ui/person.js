@@ -16,15 +16,15 @@ import { state } from './state.js';
 import { observeTiles, tileCard } from './tiles.js';
 import { esc, fmtDate, fmtNum, plural } from './util.js';
 
-export const personCache = new Map();
-export const NOISE_GENRES = [10767, 10763];
-export const isSelf = (c) => /\b(self|himself|herself|lui-même|elle-même|soi-même|archive|archives|footage|uncredited|non crédité)\b/i.test(c || '');
-export const DEPT_FR = {
+const personCache = new Map();
+const NOISE_GENRES = [10767, 10763];
+const isSelf = (c) => /\b(self|himself|herself|lui-même|elle-même|soi-même|archive|archives|footage|uncredited|non crédité)\b/i.test(c || '');
+const DEPT_FR = {
   Acting: ['Acteur', 'Actrice'], Directing: ['Réalisateur', 'Réalisatrice'], Writing: ['Scénariste', 'Scénariste'], Production: ['Producteur', 'Productrice'],
   Sound: ['Compositeur', 'Compositrice'], Camera: ['Chef opérateur', 'Cheffe opératrice'], Editing: ['Monteur', 'Monteuse'], Creator: ['Créateur', 'Créatrice'],
 };
 
-export function fetchPerson(id) {
+function fetchPerson(id) {
   if (!personCache.has(id)) {
     const p = (async () => {
       const raw = await tmdb('person/' + id, { append_to_response: 'combined_credits,images,external_ids,tagged_images' });
@@ -39,7 +39,7 @@ export function fetchPerson(id) {
   return personCache.get(id);
 }
 
-export function personEntries(raw) {
+function personEntries(raw) {
   const cc = raw.combined_credits || {};
   const map = new Map();
   const get = (c) => {
@@ -75,7 +75,7 @@ export function personEntries(raw) {
   return Array.from(map.values());
 }
 
-export const ageOf = (b, d) => {
+const ageOf = (b, d) => {
   const s = new Date(b + 'T00:00:00');
   const e = d ? new Date(d + 'T00:00:00') : new Date();
   let a = e.getFullYear() - s.getFullYear();
@@ -84,7 +84,7 @@ export const ageOf = (b, d) => {
   return a;
 };
 
-export function personRoles(raw, entries) {
+function personRoles(raw, entries) {
   const g = raw.gender === 1 ? 1 : 0;
   const out = [];
   const add = (x) => { if (x && !out.includes(x)) out.push(x); };
@@ -96,14 +96,14 @@ export function personRoles(raw, entries) {
   return out.filter(Boolean).join(' · ');
 }
 
-export const byDateDesc = (a, b) => String(b.date || '9999').localeCompare(String(a.date || '9999'));
+const byDateDesc = (a, b) => String(b.date || '9999').localeCompare(String(a.date || '9999'));
 
-export function ppRow(id, title, list, optsFn) {
+function ppRow(id, title, list, optsFn) {
   if (!list.length) return '';
   return section(id, title, list, (l) => row(l.map((e) => tileCard(e.it, optsFn ? optsFn(e) : {})).join('')));
 }
 
-export function ppLinks(x) {
+function ppLinks(x) {
   const out = [];
   if (x.imdb_id) out.push('<a class="pp-link" href="https://www.imdb.com/name/' + esc(x.imdb_id) + '" target="_blank" rel="noopener noreferrer" aria-label="IMDb (nouvel onglet)"><span class="rb rb-imdb" aria-hidden="true">IMDb</span></a>');
   if (x.instagram_id) out.push('<a class="pp-link" href="https://www.instagram.com/' + esc(x.instagram_id) + '" target="_blank" rel="noopener noreferrer" aria-label="Instagram (nouvel onglet)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor"/></svg></a>');
@@ -111,7 +111,7 @@ export function ppLinks(x) {
   return out.join('');
 }
 
-export function filmoRows(pp) {
+function filmoRows(pp) {
   let l = pp.entries.slice();
   const f = pp.filter;
   if (f === 'movie' || f === 'tv') l = l.filter((e) => e.it.type === f);

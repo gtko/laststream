@@ -23,9 +23,9 @@ import { createSocialLive, type LiveEvent, type LiveStatus, type SocialLive } fr
 
 export const MESSAGE_MAX = 1000;
 /** Une saisie disparaît 5 s après le dernier signal. */
-export const TYPING_MS = 5_000;
+const TYPING_MS = 5_000;
 /** Pas plus d'un envoi de saisie toutes les 3 s (le serveur limite à 1/3 s). */
-export const TYPING_SEND_MIN_MS = 3_000;
+const TYPING_SEND_MIN_MS = 3_000;
 const TYPING_MUTE_MS = 60_000;
 
 export type NoteListener = (media: MediaRef, note: Note) => void;
@@ -164,7 +164,7 @@ export function mergeActivity(a: ActivityItem[], b: ActivityItem[]): ActivityIte
 
 const dmConv = (pid: string): string => `dm:${pid}`;
 const groupConv = (id: string): string => `g:${id}`;
-export const isGroupConv = (conv: string): boolean => conv.startsWith('g:');
+const isGroupConv = (conv: string): boolean => conv.startsWith('g:');
 
 /** Conversation d'un message : `conv` du serveur, ou `dm:<correspondant>` pour un message v2. */
 export function convOf(m: Message, me: string): string {
@@ -564,7 +564,7 @@ export const block = (pid: string): Promise<void> => run(() => v3.blockUser(pid)
 });
 
 export const unblock = (pid: string): Promise<void> => run(() => v3.unblockUser(pid), () => ({ blocked: removePid(state.blocked, pid) }));
-export const loadBlocks = (): Promise<BlockedPerson[]> => run(v3.getBlocks, (r) => ({ blocked: r.blocked })).then((r) => r.blocked);
+const loadBlocks = (): Promise<BlockedPerson[]> => run(v3.getBlocks, (r) => ({ blocked: r.blocked })).then((r) => r.blocked);
 export const report = (input: ReportInput): Promise<void> => run(() => v3.reportUser(input));
 
 /** Demande à rejoindre le salon d'un ami. */
