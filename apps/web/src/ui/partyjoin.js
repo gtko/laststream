@@ -7,7 +7,7 @@ import { UserApiError } from '../data/userApi';
 import { socketUrl } from '../party/bridge';
 import { GUEST_AVATARS, guestAvatarToSend, initialGuestAvatar, saveGuestAvatar } from '../party/guestAvatar';
 import { createBufferReporter, isUnderrun } from '../party/guestbuffer';
-import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession } from '../party/join';
+import { cleanPseudo, clearGuestSession, entryErrorText, guestWsPath, hashWithoutToken, loadGuestSession, saveGuestSession, waitingHostText } from '../party/join';
 import { GuestRelaySession } from '../relay/session';
 import { avatarAttrs } from './avatar-art.js';
 import { detailEl } from './dom.js';
@@ -164,7 +164,7 @@ function refresh(root) {
   const text = [v.message || (v.phase === 'ready' ? READY_TEXT : ''), v.note].filter(Boolean).join(' ');
   // Salon rejoint (hors fin de séance) : cadre plein écran et en-tête compact ; le message d'état devient un toast.
   root.classList.toggle('is-joined', !TERMINAL.has(v.phase));
-  paintStatus(root, text, WARN.has(v.phase));
+  paintStatus(root, text, WARN.has(v.phase) || (v.phase === 'waiting-host' && v.message !== waitingHostText()));
   const form = root.querySelector('[data-pj-form]');
   const submit = root.querySelector('[data-pj-join]');
   const leave = root.querySelector('[data-pj-leave]');

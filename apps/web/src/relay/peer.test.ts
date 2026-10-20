@@ -125,6 +125,20 @@ describe('poignée de main et lecture', () => {
     expect(err).toBeInstanceOf(RelayError);
     expect((err as RelayError).code).toBe('timeout');
   });
+
+  it('offered : vrai si l’hôte a envoyé une offre pendant la tentative, même sans liaison ; remis à faux à chaque nouvelle tentative', async () => {
+    const bus = signalBus();
+    const guest = new RelayGuest('host', bus('guest'), { createPc: () => new FakePc('guest', {}) as unknown as RTCPeerConnection });
+    expect(guest.offered).toBe(false);
+    const first = guest.connect(40).catch((e: unknown) => e);
+    bus('host').send('guest', { t: 'offer', sdp: 'OFFER' });
+    expect(((await first) as RelayError).code).toBe('timeout');
+    expect(guest.offered).toBe(true);
+    const second = guest.connect(20).catch((e: unknown) => e);
+    expect(guest.offered).toBe(false);
+    expect(((await second) as RelayError).code).toBe('timeout');
+    expect(guest.offered).toBe(false);
+  });
 });
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

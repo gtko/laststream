@@ -1,6 +1,6 @@
 // Watch party : synchronisation (fonctions pures), client de protocole (messages, reconnexion), contrôleur (lecture partagée),
 // choix de la version par empreinte, profils enfants.
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PartyClient, BACKOFF_MS, CHAT_MEMORY_LINES, PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
 import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, playerOf, requestOfRoom, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
 import { PartyController, HOST_SYNC_EVERY_MS, type PlayerLike } from '../src/party/controller';
@@ -8,6 +8,7 @@ import { fingerprintOf, matchScore, nameSimilarity, pickByFingerprint } from '..
 import { encodeClientMessage, parseServerMessage } from '../src/party/protocol';
 import { ClockEstimator, driftAction, estimateOffset, expectedPosition } from '../src/party/sync';
 import type { PartyRoom } from '../src/data/socialApi';
+import { relayTurn, setRelayTurn } from '../src/relay/turnConfig';
 
 // ---------- Synchronisation ----------
 describe('horloge et position attendue', () => {
@@ -809,5 +810,52 @@ describe('profil enfant : routes', () => {
     location.hash = '#/party/abc_123';
     expect(parseRoute()).toEqual({ kind: 'party', id: 'abc_123' });
     vi.doUnmock('../src/data/auth');
+  });
+});
+
+describe('client : TURN du welcome', () => {
+  const TURN = { urls: ['turn:turn.example.test:3478?transport=udp', 'turns:turn.example.test:443?transport=tcp'], username: 'user-turn-1', credential: 'cred-turn-1' };
+  afterEach(() => setRelayTurn(null));
+
+  /** Connexion et réception du welcome (avec ou sans `turn`). */
+  async function receive(host: boolean, over: Record<string, unknown>) {
+    const { client, sockets, flush } = setup(host ? 'alice' : 'bob', host);
+    client.start();
+    await flush();
+    sockets[0].open();
+    sockets[0].recv(welcome(host ? 'alice' : 'bob', host, over));
+    return sockets[0];
+  }
+
+  it('welcome avec TURN valide : identifiants retenus pour les liaisons WebRTC (invité)', async () => {
+    await receive(false, { turn: TURN });
+    expect(relayTurn).toEqual(TURN);
+  });
+
+  it('welcome avec TURN valide : retenu aussi pour l’hôte', async () => {
+    await receive(true, { turn: TURN });
+    expect(relayTurn).toEqual(TURN);
+  });
+
+  it.each([
+    ['liste d’URL vide', { ...TURN, urls: [] }],
+    ['URL non TURN (stun)', { ...TURN, urls: ['stun:stun.example.test:3478'] }],
+    ['URL en chaîne au lieu d’un tableau', { ...TURN, urls: 'turn:turn.example.test:3478' }],
+    ['identifiant absent', { urls: TURN.urls, credential: 'cred' }],
+    ['mot de passe vide', { ...TURN, credential: '' }],
+    ['identifiant de plus de 512 caractères', { ...TURN, username: 'u'.repeat(513) }],
+    ['valeur non objet', 'turn:turn.example.test:3478'],
+    ['null', null],
+  ])('welcome avec TURN invalide (%s) : ignoré', async (_label, turn) => {
+    await receive(false, { turn });
+    expect(relayTurn).toBeNull();
+  });
+
+  it('welcome sans TURN, ou avec un TURN invalide, ne retire pas le TURN déjà reçu', async () => {
+    const socket = await receive(false, { turn: TURN });
+    socket.recv(welcome('bob', false));
+    expect(relayTurn).toEqual(TURN);
+    socket.recv(welcome('bob', false, { turn: { urls: [], username: 'x', credential: 'y' } }));
+    expect(relayTurn).toEqual(TURN);
   });
 });

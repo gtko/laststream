@@ -55,6 +55,9 @@ function rateHTML() {
   if (partyBridge.relayRefused()) {
     return '<span class="wp-rate-warn" title="Ce lien ne peut pas être partagé depuis le navigateur : les invités ne reçoivent pas la vidéo.">Partage bloqué</span> · ' + guests;
   }
+  if (partyBridge.relayUnavailable()) {
+    return '<span class="wp-rate-warn" title="Cette source (torrent ou lien protégé) ne peut pas être envoyée aux invités par lien : choisis une source débridée ou un lien direct.">Partage impossible avec cette source</span> · ' + guests;
+  }
   const s = partyBridge.relayStats();
   return (s ? '↑ ' + fmtRate(s.rateBps) : 'Partage inactif') + ' · ' + guests;
 }

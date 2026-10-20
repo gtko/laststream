@@ -5,6 +5,8 @@ import {
   type ChatLine, type ClientMsg, type EventKind, type PartySettings, type PrepStatus, type ServerMsg, type VoteInput, type VoteView, type You,
 } from './protocol';
 import { ClockEstimator, type PlaybackState } from './sync';
+import type { TurnConfig } from '../relay/peer';
+import { setRelayTurn } from '../relay/turnConfig';
 
 /* Constantes d'attente de tampon, miroirs du serveur (réexportées pour les écrans et les tests). */
 export { PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS } from './protocol';
@@ -81,6 +83,20 @@ export const PONG_TIMEOUT_MS = 10_000;
 export const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15_000] as const;
 /** Lignes de chat gardées en mémoire (l'historique reçu à la connexion compris). */
 export const CHAT_MEMORY_LINES = 200;
+
+/** Relais TURN du `welcome` : URL `turn:`/`turns:` (au moins une), identifiant et mot de passe de 1 à 512 caractères. */
+const MAX_TURN_CREDENTIAL = 512;
+const isTurnUrl = (u: unknown): u is string => typeof u === 'string' && /^turns?:/.test(u);
+const isTurnCredential = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= MAX_TURN_CREDENTIAL;
+
+/** TURN valide du `welcome`, ou undefined (absent ou mal formé : ignoré sans bruit, sans effacer le précédent). */
+export function parseWelcomeTurn(raw: unknown): TurnConfig | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const { urls, username, credential } = raw as Record<string, unknown>;
+  if (!Array.isArray(urls) || urls.length === 0 || !urls.every(isTurnUrl)) return undefined;
+  if (!isTurnCredential(username) || !isTurnCredential(credential)) return undefined;
+  return { urls, username, credential };
+}
 
 /** Champ `pos` d'un message de chat ou de réaction : présent seulement pour une position valide. */
 const posField = (pos: number | null | undefined): { pos?: number } =>
@@ -287,6 +303,9 @@ export class PartyClient {
         this.countdownAt = typeof msg.countdownAt === 'number' ? msg.countdownAt : null;
         this.vote = Array.isArray(msg.vote) ? msg.vote : null;
         this.setWaiting(null);
+        // Relais TURN (serveur récent) : retenu seulement s'il est valide ; un welcome sans TURN ne retire pas celui déjà reçu.
+        const turn = parseWelcomeTurn('turn' in msg ? msg.turn : undefined);
+        if (turn !== undefined) setRelayTurn(turn);
         this.emit('welcome', msg);
         this.emit('participants', this.participants);
         this.emit('state', msg.state);

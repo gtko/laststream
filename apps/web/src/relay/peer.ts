@@ -263,6 +263,8 @@ export class RelayGuest {
   private pc: RTCPeerConnection | null = null;
   private remote: Deferred | null = null;
   private unsubscribe: (() => void) | null = null;
+  /** Une offre de l'hôte a été reçue depuis le dernier `connect()` (la liaison a pu être tentée sans aboutir). */
+  private offerSeen = false;
 
   constructor(
     private readonly hostId: string,
@@ -270,9 +272,15 @@ export class RelayGuest {
     private readonly opts: PeerOptions = {},
   ) {}
 
+  /** Vrai si l'hôte a répondu par une offre pendant le dernier `connect()`, même si la liaison ne s'est pas ouverte. */
+  get offered(): boolean {
+    return this.offerSeen;
+  }
+
   /** Demande la connexion à l'hôte ; rejette avec `timeout` ou `unavailable`. */
   connect(timeoutMs = CONNECT_TIMEOUT_MS): Promise<ChannelLike> {
     this.close();
+    this.offerSeen = false;
     return new Promise<ChannelLike>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => finish(new RelayError('timeout')), timeoutMs);
@@ -309,6 +317,7 @@ export class RelayGuest {
     const s = parseSignal(raw);
     if (!s) return;
     if (s.t === 'offer') {
+      this.offerSeen = true;
       const pc = makePc(this.opts);
       const remote = deferred();
       this.pc = pc;

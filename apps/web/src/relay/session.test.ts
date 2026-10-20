@@ -2,7 +2,7 @@
 // simulé (WebSocket factices reliés en mémoire, signalisation `rtc` relayée) et des connexions WebRTC factices.
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../party/client';
-import { endText, leftText, refusedText } from '../party/join';
+import { directLinkText, endText, hostNotSharingText, leftText, refusedText, waitingHostText } from '../party/join';
 import { PIECE_SHIFT } from './mesh/pieces';
 import type { RangeSource } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
@@ -565,6 +565,40 @@ describe('session invité : sous-titres de l’hôte', () => {
     guest.destroy();
     hostRelay.close();
   });
+});
+
+describe('session invité : attente de l’hôte', () => {
+  /** Invité seul dans le salon simulé : l'hôte n'y est pas, aucune liaison ne s'ouvre ; chaque tentative expire vite. */
+  async function lonelyGuest(connectTimeoutMs = 40) {
+    const room = new Room();
+    const guest = new GuestRelaySession({
+      connect: async () => room.socket('p1'),
+      createPlayer: (cb) => fakePlayer(cb, { kind: 'native' }).player,
+      canvas: {} as unknown as HTMLCanvasElement,
+      peer: { createPc: pcFactory('guest', {}) },
+      connectTimeoutMs,
+    });
+    guest.start();
+    await flush();
+    room.get('p1')!.recv(welcome('bob', false));
+    return { room, guest };
+  }
+
+  it('hôte qui répond (offre reçue) mais liaison qui n’aboutit pas : attente avec le texte de la liaison directe', async () => {
+    const { room, guest } = await lonelyGuest();
+    room.get('p1')!.recv({ type: 'rtc', from: 'h1', data: { t: 'offer', sdp: 'OFFER' } });
+    await waitFor(() => guest.tick().message === directLinkText());
+    expect(guest.tick().phase).toBe('waiting-host');
+    guest.destroy();
+  }, 15000);
+
+  it('aucune offre à deux tentatives de suite : « l’hôte ne partage pas sa lecture », et l’essai continue', async () => {
+    const { guest } = await lonelyGuest();
+    await waitFor(() => guest.tick().message === waitingHostText());
+    await waitFor(() => guest.tick().message === hostNotSharingText(), 8000);
+    expect(guest.tick().phase).toBe('waiting-host');
+    guest.destroy();
+  }, 15000);
 });
 
 describe('session invité : chat du salon', () => {
