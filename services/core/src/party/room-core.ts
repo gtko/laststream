@@ -31,6 +31,7 @@ import {
   type RoomInfo,
   type RtcRelay,
   type ServerMessage,
+  type TurnCredentials,
   type VoteInput,
   type VoteOption,
   type VoteState,
@@ -309,8 +310,11 @@ export class RoomCore {
     return member !== undefined && member.guest !== true;
   }
 
-  /** Accepte une connexion (après canJoin). Remplace une éventuelle connexion précédente du même compte. */
-  join(member: Member): Effect[] {
+  /**
+   * Accepte une connexion (après canJoin). Remplace une éventuelle connexion précédente du même compte. `turn` : identifiants
+   * TURN obtenus par le Durable Object (voir turn.ts), joints au seul `welcome` de ce participant ; absents : rien n'est ajouté.
+   */
+  join(member: Member, turn: TurnCredentials | null = null): Effect[] {
     const effects: Effect[] = [];
     // Une ancienne connexion du même compte est fermée par l'hôte du cœur (code CLOSE.replaced) avant cet appel.
     const previous = this.members.get(member.accountId);
@@ -337,6 +341,7 @@ export class RoomCore {
         settings: this.settings(),
         countdownAt: this.data.countdownAt ?? null,
         vote: this.voteState(),
+        ...(turn === null ? {} : { turn }),
       },
     });
     // Un participant qui entre pendant une attente la reçoit, sauf si l'entrée vient de modifier l'attente (diffusée à tous).

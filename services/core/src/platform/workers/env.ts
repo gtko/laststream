@@ -41,6 +41,9 @@ export interface WorkerEnv {
   AVATARS?: R2Bucket;
   /** DSN Sentry (secret) : absent, aucune remontée d'erreur. */
   SENTRY_DSN?: string;
+  /** Relais TURN Cloudflare Realtime (secrets) : identifiant de clé et jeton d'API ; absents, la watch party reste en STUN seul (voir src/party/turn.ts). */
+  TURN_KEY_ID?: string;
+  TURN_KEY_API_TOKEN?: string;
   /** Autres liaisons : variables (chaînes) et secrets. */
   [name: string]: unknown;
 }

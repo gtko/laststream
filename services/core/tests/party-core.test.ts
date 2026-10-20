@@ -128,6 +128,29 @@ describe('salon : rejoindre et contrôles', () => {
     expect(broadcasts(effects)).toEqual([{ t: 'join', participant: expect.objectContaining({ username: 'bob' }) }]);
   });
 
+  it('bienvenue avec TURN : identifiants joints au seul message du participant, jamais diffusés', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    const turn = { urls: ['turns:turn.example.test:5349?transport=tcp'], username: 'user-turn-1', credential: 'cred-turn-secret' };
+    const effects = fx.core.join(fx.member('a-bob'), turn);
+    const welcome = sent(effects, 'a-bob')[0];
+    if (welcome?.t !== 'welcome') throw new Error('welcome attendu');
+    expect(welcome.turn).toEqual(turn);
+    expect(JSON.stringify(broadcasts(effects))).not.toContain('cred-turn-secret');
+    expect(sent(effects, 'a-host')).toEqual([]);
+  });
+
+  it('bienvenue sans TURN (null ou absent) : aucun champ turn, la réponse reste identique', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-host');
+    const withNull = sent(fx.core.join(fx.member('a-bob'), null), 'a-bob')[0];
+    const withDefault = sent(fx.core.join(fx.member('a-tom')), 'a-tom')[0];
+    if (withNull?.t !== 'welcome' || withDefault?.t !== 'welcome') throw new Error('welcome attendu');
+    expect(withNull).not.toHaveProperty('turn');
+    expect(withDefault).not.toHaveProperty('turn');
+    expect(Object.keys(withNull).sort()).toEqual(Object.keys(withDefault).sort());
+  });
+
   it('play, pause et seek viennent de tout participant ; seul l’hôte change d’épisode et envoie le rapport de position', () => {
     const fx = makeRoom();
     joined(fx, 'a-host', 'a-bob');

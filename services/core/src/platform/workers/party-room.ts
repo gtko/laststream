@@ -18,6 +18,7 @@ import {
 } from '../../party/protocol.js';
 import { type Effect, type EntryVerdict, type InviteVerdict, type JoinCheck, type LinkVerdict, type Member, RoomCore, guestRefusal } from '../../party/room-core.js';
 import { refusedSocket } from '../../party/refuse.js';
+import { type TurnEnv, fetchTurnIce } from '../../party/turn.js';
 import { USER_STORE_NAME } from './user-backend.js';
 import type { UserStoreDO } from './user-store-do.js';
 
@@ -178,6 +179,10 @@ export class PartyRoom extends DurableObject {
 
   /** Mise à niveau acceptée : entre dans le salon, en remplaçant l'éventuelle connexion précédente du même identifiant. */
   private async accept(core: RoomCore, identity: Identity): Promise<Response> {
+    // Identifiants TURN (appel réseau borné, mis en cache) obtenus avant toute modification du salon.
+    const turn = await fetchTurnIce(this.env as TurnEnv);
+    // Le salon a pu prendre fin pendant cet appel : pas de connexion vers un état effacé.
+    if (this.core === undefined) return refusedSocket(CLOSE.ended, 'ended');
     // Une nouvelle connexion remplace l'ancienne du même compte.
     for (const old of this.socketsOf(identity.accountId)) old.close(CLOSE.replaced, 'replaced');
 
@@ -188,7 +193,7 @@ export class PartyRoom extends DurableObject {
     this.ctx.acceptWebSocket(server as never);
     server.serializeAttachment(attachment);
     const member: Member = { ...attachment };
-    await this.apply(core.join(member));
+    await this.apply(core.join(member, turn));
     return new Response(null, { status: 101, webSocket: client } as ResponseInit);
   }
 

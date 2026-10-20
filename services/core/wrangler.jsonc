@@ -79,4 +79,5 @@
   // Secrets (wrangler secret put, jamais dans ce fichier) : LASTADDON_SECRET, RANGE_SECRET, EDGE_SECRET,
   // ADMIN_SECRET (route /__admin/ de migration des données ; `wrangler secret delete ADMIN_SECRET` la ferme),
   // et LASTADDON_BOOTSTRAP_TOKEN si le premier compte doit être protégé. SENTRY_DSN : remontée des erreurs (absent = aucune).
+  // TURN_KEY_ID et TURN_KEY_API_TOKEN : relais TURN de la watch party (Cloudflare Realtime TURN) ; absents = STUN seul (src/party/turn.ts).
 }
