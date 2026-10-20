@@ -88,10 +88,10 @@ describe('invitation au foyer : arrivée', () => {
   });
 
   it('fanart : seules les adresses https sont affichées', async () => {
-    await arrival({ ...OK_CHECK, backdrops: ['javascript:alert(1)', 'http://img.example/a.jpg', 'https://img.example/b.jpg'] });
+    await arrival({ ...OK_CHECK, backdrops: ['javascript:alert(1)', 'http://img.example/a.jpg', 'https://assets.fanart.tv/fanart/b.jpg'] });
     const srcs = Array.from(root.querySelectorAll<HTMLImageElement>('.fj-tile')).map((img) => img.getAttribute('src'));
     expect(srcs.length).toBeGreaterThan(0);
-    expect(new Set(srcs)).toEqual(new Set(['https://img.example/b.jpg']));
+    expect(new Set(srcs)).toEqual(new Set(['https://assets.fanart.tv/fanart/b.jpg']));
   });
 
   it('sans fanart : fond de repli, aucune image', async () => {

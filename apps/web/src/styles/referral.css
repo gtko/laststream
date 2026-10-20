@@ -155,14 +155,15 @@
 .rf-stage { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 32px; min-height: 100%; box-sizing: border-box; padding: 96px 20px 40px; }
 .rf-copy { display: flex; flex-direction: column; min-width: 0; }
 .rf-note { display: flex; gap: 14px; align-items: flex-start; margin-top: 4px; padding: 16px 18px; border-radius: 20px; background: rgba(23, 21, 31, 0.85); border: 1px solid #2e2a3a; }
+.rf-note > div { min-width: 0; }
 .rf-note-who { margin: 0 0 4px; font-size: 13px; color: #a19dae; }
 .rf-note-who strong { color: #f4f2f7; }
-.rf-note-msg { margin: 0; font-size: 17px; line-height: 1.5; color: #f4f2f7; }
+.rf-note-msg { margin: 0; font-size: 17px; line-height: 1.5; color: #f4f2f7; overflow-wrap: anywhere; min-width: 0; }
 .rf-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 28px; }
 .rf-visual { position: relative; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .rf-ticket-wrap { width: min(500px, 100%); perspective: 900px; animation: rfIn 1.3s cubic-bezier(0.2, 0.8, 0.2, 1) 1.1s both; }
 .rf-ticket {
-  position: relative; height: 190px; padding: 22px 26px; overflow: hidden; border-radius: 22px;
+  position: relative; min-height: 190px; padding: 22px 110px 22px 26px; overflow: hidden; border-radius: 22px;
   display: flex; flex-direction: column; justify-content: space-between;
   background: linear-gradient(120deg, #ff5a36, #ff8a4c 55%, #ffc078); color: #0c0b11;
   box-shadow: 0 50px 100px -30px rgba(255, 90, 54, 0.6), 0 30px 60px -30px rgba(0, 0, 0, 0.9);
@@ -204,9 +205,9 @@
   position: relative; display: flex; align-items: center; height: 74px; margin-top: 8px; overflow: hidden; border-radius: 16px;
   background: linear-gradient(120deg, #ff5a36, #ff8a4c 60%, #ffc078); color: #0c0b11;
 }
-.rf-mini-text { flex-grow: 1; padding: 0 16px; }
+.rf-mini-text { flex-grow: 1; min-width: 0; padding: 0 16px; }
 .rf-mini-text span { font-size: 10px; font-weight: 800; letter-spacing: 0.2em; }
-.rf-mini-text strong { display: block; margin-top: 4px; font-family: var(--ff-title, 'Sora', sans-serif); font-size: 15px; }
+.rf-mini-text strong { display: block; min-width: 0; margin-top: 4px; font-family: var(--ff-title, 'Sora', sans-serif); font-size: 15px; overflow-wrap: anywhere; }
 .rf-mini-stub { width: 70px; align-self: stretch; border-left: 2px dashed rgba(12, 11, 17, 0.4); background: repeating-linear-gradient(to bottom, #0c0b11 0 2px, transparent 2px 5px, #0c0b11 5px 6px, transparent 6px 9px) center / 30px 46px no-repeat; }
 .rf-form { margin-top: 4px; }
 .rf-form .rf-field:first-of-type { margin-top: 12px; }
@@ -214,7 +215,7 @@
 /* Bienvenue */
 .rf-torn { position: relative; display: flex; width: min(300px, 100%); height: 130px; margin: 0 auto; }
 .rf-torn-main {
-  flex: 0 0 230px; display: flex; flex-direction: column; justify-content: space-between; padding: 18px; text-align: left;
+  flex: 0 0 77%; max-width: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 18px; text-align: left;
   border-radius: 18px 0 0 18px; background: linear-gradient(120deg, #ff5a36, #ff8a4c); color: #0c0b11;
   box-shadow: 0 30px 60px -24px rgba(255, 90, 54, 0.7);
 }
@@ -232,7 +233,7 @@
 }
 .rf-friend { background: var(--surface, #17151f); border: 1px solid var(--line, #24212e); }
 .rf-friend > div { flex: 1; min-width: 0; }
-.rf-friend strong { display: block; font-size: 15px; }
+.rf-friend strong { display: block; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
 .rf-friend > div > span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #a19dae; }
 .rf-next { margin-top: 14px; gap: 14px; background: linear-gradient(120deg, rgba(255, 90, 54, 0.16), rgba(123, 91, 245, 0.12)); border: 1px solid #3a2a30; }
 .rf-next > div { display: flex; flex-direction: column; gap: 2px; text-align: left; }
@@ -246,10 +247,11 @@
 .rf-next-tickets i:nth-child(4) { left: 28px; top: 8px; background: #ffd28a; transform: rotate(12deg); animation-delay: 2.1s; }
 .rf-column--center .rf-cta--block { margin-top: 24px; }
 
-/* Mouvement réduit : rien ne bouge, les rideaux et le billet qui se déchire sont masqués */
+/* Mouvement réduit : rien ne bouge. Les rideaux sont masqués ; le talon du billet reste visible, déjà déchiré (position finale, statique). */
 @media (prefers-reduced-motion: reduce) {
   .rf-page *, .rf-page *::before, .rf-page *::after { animation: none !important; transition: none !important; }
-  .rf-curtain, .rf-torn-stub.rf-tear { display: none; }
+  .rf-curtain { display: none; }
+  .rf-torn-stub.rf-tear { transform: translate(12px, 10px) rotate(8deg); }
 }
 
 /* Écrans larges : arrivée en deux colonnes, billet à droite */
@@ -261,7 +263,7 @@
   }
   .rf-h1 { margin-top: 16px; }
   .rf-ticket-wrap { width: 100%; max-width: 500px; }
-  .rf-ticket { height: 240px; padding: 26px 30px; }
+  .rf-ticket { min-height: 240px; padding: 26px 124px 26px 30px; }
   .rf-ticket-bot { gap: 24px; }
   .rf-fan-title { max-width: none; }
   .rf-visual { align-items: flex-start; }

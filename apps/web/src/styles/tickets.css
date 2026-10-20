@@ -49,8 +49,10 @@
   transform: rotate(-90deg); font-family: var(--ff-title); font-weight: 800; font-size: 13px;
   letter-spacing: 0.2em; text-transform: uppercase; white-space: nowrap;
 }
+/* Fond réel de la carte des billets (attribut data-tk-card posé par invites.js) : les encoches prennent sa couleur. */
+.set-card[data-tk-card] { --tk-card-bg: var(--surface); background: var(--tk-card-bg); }
 .tk-notch {
-  position: absolute; right: 68px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+  position: absolute; right: 68px; width: 20px; height: 20px; border-radius: 50%; background: var(--tk-card-bg, var(--surface));
 }
 .tk-notch-t { top: -11px; }
 .tk-notch-b { bottom: -11px; }
@@ -95,7 +97,9 @@
 
 .tk-picks-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .tk-picks-t { font-family: var(--ff-title); font-weight: 700; font-size: 16px; color: var(--text); }
-.tk-picks-n { font-size: 13px; font-weight: 700; color: var(--tk-danger-text); font-variant-numeric: tabular-nums; }
+.tk-picks-n { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tk-picks-n.is-full { color: var(--tk-danger-text); }
+.tk-note-warn { color: var(--tk-danger-text); }
 .tk-status { min-height: 1.2em; margin: 0; font-size: 13px; color: var(--accent-hover); }
 .tk-grid-picks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .tk-pick {
@@ -106,7 +110,8 @@
 .tk-pick:hover { transform: translateY(-3px); }
 .tk-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tk-pick.is-on { border-color: var(--accent); }
-.tk-pick[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+.tk-pick[aria-disabled="true"], .tk-pick:disabled { opacity: 0.45; cursor: not-allowed; }
+.tk-pick:disabled:hover { transform: none; }
 .tk-pick img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .tk-noimg {
   display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;

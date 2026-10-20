@@ -5,6 +5,7 @@
 import '../styles/foyer.css';
 import { adoptSession } from '../data/auth';
 import { checkHouseholdInvite, householdErrorCode, redeemHouseholdInvite } from '../data/householdApi';
+import { safeImageUrl } from '../data/imageUrl';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { esc } from './util.js';
 
@@ -78,9 +79,8 @@ export function remainingText(expiresAt, now = Date.now()) {
   return m + ' min';
 }
 
-/** Adresse d'image acceptée : https seulement (fanart et affiches viennent de sites tiers), sinon ''. */
-const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>\\]+$/.test(u) ? u : '');
-const backdropUrls = (list) => (Array.isArray(list) ? list : []).map(httpsUrl).filter(Boolean).slice(0, BACKDROP_MAX);
+/** Fonds acceptés : même règle que les billets (https, hôte autorisé, voir data/imageUrl.ts), les autres sont écartés. */
+const backdropUrls = (list) => (Array.isArray(list) ? list : []).map((u) => safeImageUrl(u)).filter(Boolean).slice(0, BACKDROP_MAX);
 /** Premier caractère (point de code entier, pas une unité de code UTF-16), en majuscule. */
 const initialOf = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
 /** Texte limité à `n` caractères (points de code entiers) : un nom prérempli ne dépasse jamais la longueur acceptée. */

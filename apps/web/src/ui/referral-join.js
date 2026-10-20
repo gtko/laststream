@@ -3,6 +3,7 @@
  * passe par esc() ; une image n'est affichée que si son adresse est en https (sinon un dégradé de repli, jamais d'image inventée).
  * Le mot de passe reste dans le formulaire : il n'est ni journalisé ni stocké ici. Animations CSS seulement (referral.css). */
 import '../styles/referral.css';
+import { safeImageUrl } from '../data/imageUrl';
 import { avatarAttrs, hydrateAvatars } from './avatar-art.js';
 import { esc } from './util.js';
 
@@ -15,8 +16,18 @@ const PWD_MIN = 8;
 const PICKS_MAX = 3;
 const MESSAGE_MAX = 280;
 const DUST = 14;
-/** Codes qui signifient « ce billet ne sert plus » : retour à la saisie du code, avec la raison. */
-const GONE = ['invite_invalid', 'expired', 'used', 'revoked', 'unknown'];
+/** Nom d'utilisateur : a-z, 0-9, _ . - uniquement (en minuscules, après normalisation). */
+const NAME_RE = /^[a-z0-9_.-]+$/;
+/**
+ * Codes qui signifient « ce billet ne sert plus » : retour à la saisie du code, avec la raison affichée (raison '' = générique).
+ * Les codes `invite_*` sont ceux du serveur ; les noms courts restent acceptés.
+ */
+const GONE_REASON = new Map([
+  ['invite_expired', 'expired'], ['expired', 'expired'],
+  ['invite_used', 'used'], ['used', 'used'],
+  ['invite_revoked', 'revoked'], ['revoked', 'revoked'],
+  ['invite_invalid', ''], ['unknown', 'unknown'],
+]);
 const STRENGTH = ['Choisis un mot de passe', 'Faible', 'Correct', 'Solide', 'Excellent'];
 
 function icon(size, body, cls = '') {
@@ -29,8 +40,6 @@ const LOGO = '<svg class="rf-logo" viewBox="0 0 32 32" aria-hidden="true" focusa
 const str = (v) => (typeof v === 'string' ? v : '');
 /** Texte limité à `n` caractères (points de code entiers, pas d'unités UTF-16 coupées). */
 const clip = (s, n) => Array.from(str(s)).slice(0, n).join('');
-/** Adresse d'image acceptée : https seulement, sinon ''. */
-export const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>\\]+$/.test(u) ? u : '');
 const initialOf = (name) => (Array.from(str(name).trim())[0] || '?').toUpperCase();
 
 /** Copie des raisons d'un billet qui ne vaut plus, affichée à l'écran de saisie du code. Vide si la raison est inconnue. */
@@ -60,10 +69,17 @@ export function previewHandle(name) {
   return (clip(str(name).trim().replace(/\s+/g, ''), NAME_MAX) || 'Toi') + '#····';
 }
 
+/** Instant en millisecondes : chaîne ISO, ou nombre (chaîne numérique aussi ; moins de 1e11 = secondes). NaN si illisible. */
+function toEpochMs(v) {
+  if (v === null || v === undefined || v === '') return NaN;
+  if (typeof v === 'number') return v < 1e11 ? v * 1000 : v;
+  if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v.trim())) return toEpochMs(Number(v.trim()));
+  return Date.parse(String(v));
+}
+
 /** Date d'échéance lisible (« 3 nov. »), ou '' si elle est absente ou illisible. */
 export function expiryText(v) {
-  if (v === null || v === undefined || v === '') return '';
-  const ms = typeof v === 'number' ? v : Date.parse(String(v));
+  const ms = toEpochMs(v);
   if (!Number.isFinite(ms)) return '';
   return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
@@ -91,7 +107,7 @@ function normalizeTicket(t) {
     avatar: typeof inv.avatar === 'string' ? inv.avatar : null,
     message: clip(c.message, MESSAGE_MAX),
     picks: (Array.isArray(c.picks) ? c.picks : []).filter((p) => p && typeof p === 'object').slice(0, PICKS_MAX).map((p) => ({
-      name: clip(p.name, 120), poster: httpsUrl(p.poster), background: httpsUrl(p.background),
+      name: clip(p.name, 120), poster: safeImageUrl(p.poster), background: safeImageUrl(p.background),
     })),
     number: Number.isInteger(num) && num >= 0 ? String(num).padStart(4, '0') : '····',
     expiresAt: c.expiresAt,
@@ -109,7 +125,7 @@ function avatarHTML(name, avatar, cls) {
 function backdropHTML(picks, cls) {
   const src = (picks.find((p) => p.background) || {}).background || (picks.find((p) => p.poster) || {}).poster || '';
   return '<div class="rf-backdrop ' + cls + '" aria-hidden="true">' +
-    (src ? '<img class="rf-backdrop-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async" data-rf-img="backdrop">' : '') + '</div>';
+    (src ? '<img class="rf-backdrop-img" src="' + esc(src) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-rf-img="backdrop">' : '') + '</div>';
 }
 
 /** Trois affiches en éventail. Sans adresse https, la carte affiche le titre sur un dégradé. */
@@ -117,7 +133,7 @@ function fanHTML(picks) {
   const slots = ['rf-fan-a', 'rf-fan-b', 'rf-fan-c'];
   return picks.map((p, i) => '<figure class="rf-poster ' + slots[i] + (p.poster ? '' : ' rf-poster--plain') + '">' +
     (p.poster
-      ? '<img src="' + esc(p.poster) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" data-rf-img="poster">'
+      ? '<img src="' + esc(p.poster) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-rf-img="poster">'
       : '<span class="rf-poster-name">' + esc(p.name) + '</span>') +
     '</figure>').join('');
 }
@@ -260,9 +276,13 @@ function paintStrength(page, value) {
   }
 }
 
+/** Nom saisi, normalisé comme envoyé : sans espaces autour, en minuscules. */
+const normalizeName = (s) => str(s).trim().toLowerCase();
+
 /** Erreur de saisie locale (avant tout envoi) : champ à reprendre et message. Les règles du serveur (`register`) restent la référence. */
 function validate(v) {
-  if (Array.from(v.username).length < NAME_MIN || Array.from(v.username).length > NAME_MAX) {
+  const len = Array.from(v.username).length;
+  if (len < NAME_MIN || len > NAME_MAX || !NAME_RE.test(v.username)) {
     return { field: '#rf-name', text: 'Nom : 3 à 32 caractères (a-z, 0-9, _ . -).' };
   }
   if (Array.from(v.password).length < PWD_MIN) return { field: '#rf-pwd', text: 'Mot de passe : 8 caractères minimum.' };
@@ -291,7 +311,7 @@ function setBusy(page, busy) {
 async function submitAccount(ctx, page) {
   if (ctx.busy) return;
   const v = {
-    username: page.querySelector('#rf-name').value.trim(),
+    username: normalizeName(page.querySelector('#rf-name').value),
     password: page.querySelector('#rf-pwd').value,
     autoFriend: page.querySelector('input[name="autoFriend"]').checked,
   };
@@ -312,8 +332,8 @@ async function submitAccount(ctx, page) {
     if (seq !== ctx.seq) return;
     setBusy(page, false);
     const code = err && err.code;
-    if (GONE.includes(code)) {
-      ctx.onGone(code === 'invite_invalid' ? '' : code);
+    if (GONE_REASON.has(code)) {
+      ctx.onGone(GONE_REASON.get(code));
       return;
     }
     setMsg(page, ctx.message(err));

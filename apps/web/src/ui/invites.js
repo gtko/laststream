@@ -4,6 +4,7 @@
 import '../styles/tickets.css';
 import { auth } from '../data/auth';
 import { shareBase } from '../data/shareBase';
+import { safeImageUrl } from '../data/imageUrl';
 import { inviteLink } from '../data/invite';
 import { getInvites, markInviteSent, revokeInvite, setInviteQuota, updateInvite } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
@@ -34,8 +35,17 @@ let selectedId = null;
 const drafts = new Map();
 /** Enregistrements (PUT) mis en file : ils partent l'un après l'autre. */
 let chain = Promise.resolve(true);
+/** Révision locale par billet : elle monte à chaque modification (mot, coup de cœur). Une réponse de PUT ne s'applique que si elle n'a pas bougé. */
+const revs = new Map();
+/** Enregistrement en file par billet : révision visée et promesse. Un état déjà en file (même révision) n'est pas renvoyé. */
+const queued = new Map();
+/** Serveur sans personnalisation (PUT 404 ou 405) : composeur en lecture seule, copie et partage restent possibles. */
+let personalisationOff = false;
 /** Vrai entre l'ouverture de la carte et l'arrivée des données : les billets se distribuent alors, pas à chaque redessin. */
 let dealPending = false;
+
+const revOf = (id) => revs.get(id) || 0;
+const bump = (id) => revs.set(id, revOf(id) + 1);
 
 /** Adresse des liens (voir data/shareBase.ts), réexportée pour les écrans qui importent les invitations. */
 export { shareBase };
@@ -44,8 +54,8 @@ export const linkOf = (inv) => inviteLink(shareBase(), inv.code);
 
 /** Révoqué par l'administrateur (état `revoked`, ou date `revokedAt` renseignée). */
 const isRevoked = (inv) => inv.state === 'revoked' || !!inv.revokedAt;
-/** Adresse d'image acceptée : https seulement (affiches et fonds viennent de sites tiers), sinon null. */
-const httpsUrl = (u) => (typeof u === 'string' && /^https:\/\/[^\s"'<>\\]+$/.test(u) ? u : null);
+/** Adresse d'image acceptée (https, hôte autorisé : voir data/imageUrl.ts), sinon null. */
+const httpsUrl = (u) => safeImageUrl(u) || null;
 const pickKey = (p) => p.type + ':' + p.id;
 const initialOf = (name) => (Array.from(String(name || '').trim())[0] || '?').toUpperCase();
 const shortDate = (iso) => (iso ? fmtShort(iso) : '');
@@ -69,12 +79,12 @@ export function expiryText(expiresAt, now = Date.now()) {
   return 'expire dans ' + Math.max(1, Math.ceil(ms / 60000)) + ' min';
 }
 
-/** Coup de cœur normalisé pour l'API : identifiant, type serveur (movie | series), nom, affiche et fond en https ou null. */
+/** Coup de cœur normalisé pour l'API : identifiant, type tel quel, nom, affiche et fond en https ou null. */
 const toPick = (p) => ({ id: p.id, type: p.type, name: String(p.name), poster: httpsUrl(p.poster), background: httpsUrl(p.background) });
-/** Coups de cœur du billet, filtrés et limités à 3. */
+/** Coups de cœur du billet, limités à 3. Un type inconnu du client est gardé tel quel (16 caractères au plus). */
 const picksOf = (inv) =>
   (Array.isArray(inv.picks) ? inv.picks : [])
-    .filter((p) => p && p.id != null && (p.type === 'movie' || p.type === 'series') && typeof p.name === 'string')
+    .filter((p) => p && p.id != null && typeof p.type === 'string' && p.type.length > 0 && p.type.length <= 16 && typeof p.name === 'string')
     .slice(0, PICKS_MAX)
     .map(toPick);
 
@@ -99,7 +109,7 @@ function ticketView(inv, index) {
   if (isRevoked(inv)) return { kind: 'revoked', num, head: 'Révoqué', sub: 'Par l’administrateur', stub: 'Révoqué' };
   if (inv.state === 'used') {
     const since = shortDate(inv.usedAt);
-    return { kind: 'used', num, head: inv.invitee || 'Compte supprimé', sub: 'Validé' + (since ? ' · amis depuis le ' + since : ''), stub: 'Validé' };
+    return { kind: 'used', num, head: inv.invitee || 'Compte supprimé', sub: since ? 'Validé le ' + since : 'Validé', stub: 'Validé' };
   }
   if (inv.state === 'sent') {
     const exp = expiryText(inv.expiresAt);
@@ -120,32 +130,37 @@ function ticketHTML(inv, index, selected, deal) {
     (v.kind === 'free' ? '<span class="tk-shine" aria-hidden="true"></span>' : '') + '</button>';
 }
 
-function pickHTML(o, picks) {
+function pickHTML(o, picks, off) {
   const on = picks.some((p) => pickKey(p) === o.key);
   const full = picks.length >= PICKS_MAX;
   const key = esc(o.key);
   const img = o.poster
-    ? '<img src="' + esc(o.poster) + '" alt="" loading="lazy" decoding="async">'
+    ? '<img src="' + esc(o.poster) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
     : '<span class="tk-noimg" aria-hidden="true">' + esc(initialOf(o.name)) + '</span>';
   return '<button type="button" class="tk-pick' + (on ? ' is-on' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '"' +
-    (full && !on ? ' aria-disabled="true"' : '') + ' aria-label="' + esc(o.name) + '" data-tk-pick="' + key + '" data-tk-focus="pick:' + key + '">' + img +
+    (off ? ' disabled' : full && !on ? ' aria-disabled="true"' : '') + ' aria-label="' + esc(o.name) + '" data-tk-pick="' + key + '" data-tk-focus="pick:' + key + '">' + img +
     '<span class="tk-check" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span></button>';
 }
 
 /** Composeur d'un billet libre : mot (à gauche), coups de cœur (à droite), copier ou partager. */
 function composerHTML(inv, index) {
   const id = esc(inv.id);
-  const msg = messageOf(inv);
+  const off = personalisationOff;
+  // Serveur sans personnalisation : on affiche ce qu'il a, pas le brouillon qui ne peut pas être enregistré.
+  const msg = off ? (typeof inv.message === 'string' ? inv.message : '') : messageOf(inv);
   const picks = picksOf(inv);
   const options = pickOptions(picks);
   const grid = options.length
-    ? '<div class="tk-grid-picks" role="group" aria-label="Coups de cœur">' + options.map((o) => pickHTML(o, picks)).join('') + '</div>'
+    ? '<div class="tk-grid-picks" role="group" aria-label="Coups de cœur">' + options.map((o) => pickHTML(o, picks, off)).join('') + '</div>'
     : '<p class="tk-note">Ajoute des films ou séries à ta bibliothèque pour les proposer ici.</p>';
+  const warn = off
+    ? '<p class="tk-note tk-note-warn" role="status">Personnalisation indisponible : ce serveur ne sait pas encore enregistrer le mot ni les coups de cœur. Copier et Partager fonctionnent quand même.</p>'
+    : '';
   return '<section class="tk-compose" aria-labelledby="tk-compose-t">' +
     '<div class="tk-compose-l">' +
-      '<h3 class="tk-compose-t" id="tk-compose-t">Personnalise le billet N° ' + esc(ticketNumber(inv, index)) + '</h3>' +
+      '<h3 class="tk-compose-t" id="tk-compose-t">Personnalise le billet N° ' + esc(ticketNumber(inv, index)) + '</h3>' + warn +
       '<label class="tk-label" for="tk-msg">Ton mot, affiché sur sa page d’arrivée</label>' +
-      '<textarea id="tk-msg" class="tk-msg" rows="3" maxlength="' + MESSAGE_MAX + '" data-tk-msg="' + id + '" data-tk-focus="msg" aria-describedby="tk-msg-count">' + esc(msg) + '</textarea>' +
+      '<textarea id="tk-msg" class="tk-msg" rows="3" maxlength="' + MESSAGE_MAX + '" data-tk-msg="' + id + '" data-tk-focus="msg" aria-describedby="tk-msg-count"' + (off ? ' readonly' : '') + '>' + esc(msg) + '</textarea>' +
       '<div class="tk-count" id="tk-msg-count">' + msg.length + ' / ' + MESSAGE_MAX + '</div>' +
       '<div class="tk-actions"><button type="button" class="tk-btn tk-btn-primary" data-tk-copy="' + id + '" data-tk-focus="copy">Copier le lien</button>' +
       '<button type="button" class="tk-btn" data-tk-share="' + id + '" data-tk-focus="share">Partager…</button></div>' +
@@ -153,7 +168,7 @@ function composerHTML(inv, index) {
     '</div>' +
     '<div class="tk-compose-r">' +
       '<div class="tk-picks-h"><span class="tk-picks-t">Tes 3 coups de cœur à lui faire découvrir</span>' +
-      '<span class="tk-picks-n" aria-live="polite">' + picks.length + ' / ' + PICKS_MAX + '</span></div>' +
+      '<span class="tk-picks-n' + (picks.length >= PICKS_MAX ? ' is-full' : '') + '" aria-live="polite">' + picks.length + ' / ' + PICKS_MAX + '</span></div>' +
       '<p class="tk-status" id="tk-pick-status" role="status"></p>' +
       grid +
       '<p class="tk-note">Tirés de ta bibliothèque · fanart HD affiché en fond de son invitation</p>' +
@@ -171,7 +186,7 @@ function panelHTML(inv, index) {
   if (inv.state === 'used') {
     const who = inv.invitee ? esc(inv.invitee) + ' a validé ce billet' : 'Billet validé (compte supprimé)';
     const since = shortDate(inv.usedAt);
-    const facts = ['Billet N° ' + esc(ticketNumber(inv, index)), since ? 'validé le ' + since : '', inv.invitee ? 'vous êtes amis' : ''].filter(Boolean).join(' · ');
+    const facts = ['Billet N° ' + esc(ticketNumber(inv, index)), since ? 'Validé le ' + since : ''].filter(Boolean).join(' · ');
     return '<section class="tk-panel tk-panel-used" aria-live="polite"><span class="tk-avatar" aria-hidden="true">' + esc(initialOf(inv.invitee)) + '</span>' +
       '<div class="tk-panel-b"><p class="tk-panel-t">' + who + '</p><p class="tk-panel-d">' + facts + '</p></div></section>';
   }
@@ -219,7 +234,7 @@ export function invitesBodyHTML(d) {
     : '';
   const summary = list.length
     ? '<p class="set-hint">' + used + ' billet' + (used > 1 ? 's' : '') + ' validé' + (used > 1 ? 's' : '') + ' sur ' + list.length +
-      '. Chaque billet ne sert qu’une fois ; ton filleul devient automatiquement ton ami.</p>'
+      '. Chaque billet ne sert qu’une fois. Ton filleul pourra devenir ton ami en un clic.</p>'
     : '<p class="set-hint">Aucun billet pour le moment.</p>';
   return summary + inviteTicketsHTML(list) + owner;
 }
@@ -227,16 +242,23 @@ export function invitesBodyHTML(d) {
 /** Carte du panneau « Profil et compte » ; le contenu se met à jour sans redessiner la page. */
 export function invitesCard() {
   dealPending = true;
-  return card('Mes billets de parrainage', '<div id="inv-slot">' + invitesBodyHTML(data) + '</div>', { desc: 'Invite tes proches avec un billet personnel : un mot et trois coups de cœur.' });
+  // Chaque ouverture des réglages retente la personnalisation (le serveur a pu être mis à jour).
+  personalisationOff = false;
+  return card('Mes billets de parrainage', '<div id="inv-slot">' + invitesBodyHTML(data) + '</div>', {
+    desc: 'Invite tes proches avec un billet personnel : un mot et trois coups de cœur.',
+    attrs: 'data-tk-card',
+  });
 }
 
-/** Redessine le panneau. `focus` (valeur de `data-tk-focus`) rend le focus à cet élément quand il est dans le panneau. */
+/** Redessine le panneau. `focus` (valeur de `data-tk-focus`) rend le focus à cet élément ; sans valeur, le focus déjà dans le panneau est gardé. */
 function paint(focus) {
   const slot = detailEl.querySelector('#inv-slot');
   if (!slot) return;
+  const active = slot.contains(document.activeElement) ? document.activeElement.dataset.tkFocus : undefined;
   slot.innerHTML = invitesBodyHTML(data);
-  if (focus) {
-    const el = Array.from(slot.querySelectorAll('[data-tk-focus]')).find((n) => n.dataset.tkFocus === focus);
+  const target = focus || active;
+  if (target) {
+    const el = Array.from(slot.querySelectorAll('[data-tk-focus]')).find((n) => n.dataset.tkFocus === target);
     if (el) el.focus({ preventScroll: true });
   }
 }
@@ -339,31 +361,76 @@ export async function applyQuota(user, quota) {
   }
 }
 
-/** Enregistre mot et coups de cœur d'un billet libre (PUT /user/invites/:id), à la suite des enregistrements en cours. */
+/**
+ * Enregistre mot et coups de cœur d'un billet libre (PUT /user/invites/:id), à la suite des enregistrements en cours.
+ * Un état déjà en file (même révision) n'est pas renvoyé : un seul PUT en vol ou en attente par état et par billet.
+ */
 function saveDraft(id) {
-  const next = chain.then(() => doSave(id));
-  chain = next.catch(() => false);
-  return next;
+  const rev = revOf(id);
+  const pending = queued.get(id);
+  if (pending && pending.rev === rev) return pending.promise;
+  const entry = { rev, promise: null };
+  entry.promise = chain.then(() => doSave(id)).then((ok) => {
+    // Échec : l'état n'est plus en file, un nouveau copier ou un nouveau blur peut réessayer.
+    if (!ok && queued.get(id) === entry) queued.delete(id);
+    return ok;
+  });
+  queued.set(id, entry);
+  chain = entry.promise.catch(() => false);
+  return entry.promise;
 }
 
+/**
+ * Envoie l'état courant du billet. La réponse du serveur ne s'applique que si le billet n'a pas été modifié entre-temps :
+ * sinon la modification locale est plus récente, et le PUT suivant (déjà en file) l'enverra.
+ */
 async function doSave(id) {
   const inv = find(id);
-  if (!inv || inv.state !== 'free' || isRevoked(inv)) return true;
+  if (!inv || inv.state !== 'free' || isRevoked(inv) || personalisationOff) return true;
+  const rev = revOf(id);
   const message = messageOf(inv).slice(0, MESSAGE_MAX);
   const picks = picksOf(inv);
   try {
-    await updateInvite(id, { message, picks });
-    patch({ id, message, picks });
-    if (drafts.get(id) === message) drafts.delete(id);
+    const srv = await updateInvite(id, { message, picks });
+    if (revOf(id) === rev) {
+      if (srv && typeof srv === 'object') {
+        patch({ id, message: typeof srv.message === 'string' ? srv.message : message, picks: Array.isArray(srv.picks) ? picksOf(srv) : picks });
+      }
+      drafts.delete(id);
+    }
     return true;
-  } catch {
+  } catch (err) {
+    // Serveur ancien : pas de personnalisation, le billet reste copiable tel quel.
+    if (err instanceof UserApiError && (err.status === 404 || err.status === 405)) {
+      personalisationOff = true;
+      paint();
+      return true;
+    }
     toast('Billet non enregistré : réessaie');
+    if (revOf(id) === rev) await reloadTicket(id);
     return false;
   }
 }
 
+/** Après un échec, le billet reprend l'état du serveur (pas d'ancien tableau de coups de cœur rétabli). Une modification plus récente l'emporte. */
+async function reloadTicket(id) {
+  const rev = revOf(id);
+  let fresh;
+  try {
+    fresh = await getInvites();
+  } catch {
+    return;
+  }
+  if (revOf(id) !== rev || !data || data === 'error' || !fresh || !Array.isArray(fresh.invites)) return;
+  const server = fresh.invites.find((i) => i.id === id);
+  if (!server) return;
+  data.invites = data.invites.map((i) => (i.id === id ? server : i));
+  paint();
+}
+
 /** Avant de copier ou partager : le mot tapé est enregistré, pour que le filleul voie ce qu'on a écrit. */
 async function flush(id) {
+  if (personalisationOff) return true;
   const inv = find(id);
   if (inv && dirty(inv)) return saveDraft(id);
   await chain;
@@ -394,7 +461,7 @@ function setPickStatus(text) {
 /** Ajoute ou retire un coup de cœur du billet ouvert ; au-delà de 3, le choix est refusé sans appel réseau. */
 async function togglePick(key) {
   const inv = find(selectedId);
-  if (!inv || inv.state !== 'free' || isRevoked(inv)) return;
+  if (!inv || inv.state !== 'free' || isRevoked(inv) || personalisationOff) return;
   const id = inv.id;
   const picks = picksOf(inv);
   let next;
@@ -409,13 +476,11 @@ async function togglePick(key) {
     if (!option) return;
     next = picks.concat([toPick(option)]);
   }
-  const focus = 'pick:' + key;
+  bump(id);
   patch({ id, picks: next });
-  paint(focus);
-  if (!(await saveDraft(id))) {
-    patch({ id, picks });
-    paint(focus);
-  }
+  paint('pick:' + key);
+  // Échec : doSave recharge l'état du serveur ; l'ancien tableau n'est pas rétabli ici.
+  await saveDraft(id);
 }
 
 detailEl.addEventListener('click', async (e) => {
@@ -445,6 +510,7 @@ detailEl.addEventListener('input', (e) => {
   const field = e.target instanceof HTMLTextAreaElement && e.target.dataset.tkMsg ? e.target : null;
   if (!field) return;
   if (field.value.length > MESSAGE_MAX) field.value = field.value.slice(0, MESSAGE_MAX);
+  bump(field.dataset.tkMsg);
   drafts.set(field.dataset.tkMsg, field.value);
   const count = field.parentElement && field.parentElement.querySelector('.tk-count');
   if (count) count.textContent = field.value.length + ' / ' + MESSAGE_MAX;

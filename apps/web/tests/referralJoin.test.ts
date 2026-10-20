@@ -3,6 +3,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { clearSession } from '../src/data/session';
+import { expiryText } from '../src/ui/referral-join.js';
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 /** Attend une condition : l'inscription enchaîne plusieurs appels réseau. */
@@ -27,7 +28,7 @@ const TICKET = {
   inviter: { name: 'Grégoire', handle: 'Grégoire#X8MV', avatar: null },
   message: 'Tu vas adorer la page d’accueil, crois-moi.',
   picks: [
-    { id: 'orbite', type: 'series', name: 'Orbite', poster: 'https://img.example.com/orbite.jpg', background: null },
+    { id: 'orbite', type: 'series', name: 'Orbite', poster: 'https://image.tmdb.org/t/p/w342/orbite.jpg', background: null },
     { id: 'lunes', type: 'movie', name: 'Les Deux Lunes', poster: 'http://insecure.example.com/lunes.jpg', background: null },
     { id: 'aurore', type: 'movie', name: 'Aurore', poster: null, background: null },
   ],
@@ -223,5 +224,79 @@ describe('billet de parrainage : billets qui ne valent plus', () => {
     expect($('h1', overlay)!.textContent).toBe('Rejoindre Laststream');
     expect($('[data-rf-create]', overlay)).toBeNull();
     expect($('#rf-form', overlay)).toBeNull();
+  });
+});
+
+describe('billet de parrainage : images', () => {
+  it('images sans référent et en chargement différé', async () => {
+    routes = signupRoutes();
+    const overlay = await openInvite('/?invite=Kq3abcd');
+    await until(() => !!$('.rf-page--arrival', overlay));
+    const poster = $('.rf-poster img', overlay)!;
+    expect(poster.getAttribute('referrerpolicy')).toBe('no-referrer');
+    expect(poster.getAttribute('loading')).toBe('lazy');
+    expect($('img.rf-backdrop-img', overlay)!.getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  it('affiches et fonds d’un autre hôte que TMDB / fanart.tv ne s’affichent pas', async () => {
+    routes = (c) => (c.path.startsWith('/user/invites/check')
+      ? json({ ...TICKET, picks: [{ id: 'x', type: 'movie', name: 'Pirate', poster: 'https://evil.example/p.jpg', background: 'https://evil.example/b.jpg' }] })
+      : signupRoutes()(c));
+    const overlay = await openInvite('/?invite=Evil0001');
+    await until(() => !!$('.rf-page--arrival', overlay));
+    expect(overlay.querySelector('img[src*="evil.example"]')).toBeNull();
+    expect(overlay.querySelector('.rf-backdrop-img')).toBeNull();
+    expect(overlay.querySelectorAll('.rf-poster--plain')).toHaveLength(1);
+  });
+});
+
+describe('billet de parrainage : date d’échéance', () => {
+  it('chaîne ISO, nombre en secondes ou en millisecondes : même date ; absente ou illisible : rien', () => {
+    const ms = Date.parse('2026-11-03T00:00:00Z');
+    const expected = new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    expect(expiryText('2026-11-03T00:00:00Z')).toBe(expected);
+    expect(expiryText(ms)).toBe(expected);
+    expect(expiryText(ms / 1000)).toBe(expected);
+    expect(expiryText(String(ms / 1000))).toBe(expected);
+    expect(expiryText(null)).toBe('');
+    expect(expiryText('pas une date')).toBe('');
+  });
+});
+
+describe('billet de parrainage : codes du serveur à l’inscription', () => {
+  it.each([
+    ['invite_expired', 'a expiré'],
+    ['invite_used', 'déjà été utilisé'],
+    ['invite_revoked', 'a été annulé'],
+  ] as Array<[string, string]>)('inscription refusée (%s) : retour à l’écran du code, avec la raison', async (code, text) => {
+    routes = (c) => (c.path === '/user/register' ? json({ error: code }, 403) : signupRoutes()(c));
+    const overlay = await openInvite('/?invite=Kq3abcd');
+    await openForm(overlay);
+    fill(overlay, 'sam', 'motdepasse1');
+    submitForm(overlay);
+    await until(() => overlay.textContent!.includes(text));
+    expect($('#rf-form', overlay)).toBeNull();
+  });
+});
+
+describe('billet de parrainage : nom d’utilisateur', () => {
+  it('espaces retirés et minuscules avant l’envoi', async () => {
+    routes = signupRoutes('sam#K7QD');
+    const overlay = await openInvite('/?invite=Kq3abcd');
+    await openForm(overlay);
+    fill(overlay, '  Sam.Dupont ', 'motdepasse1');
+    submitForm(overlay);
+    await until(() => $('h1', overlay)?.textContent === 'Tu es dans la salle, sam.dupont');
+    expect(calls.find((c) => c.path === '/user/register')!.body.username).toBe('sam.dupont');
+  });
+
+  it('caractère interdit : message de nom, aucun envoi', async () => {
+    routes = signupRoutes();
+    const overlay = await openInvite('/?invite=Kq3abcd');
+    await openForm(overlay);
+    fill(overlay, 'Élodie', 'motdepasse1');
+    submitForm(overlay);
+    expect($('#rf-msg', overlay)!.textContent).toBe('Nom : 3 à 32 caractères (a-z, 0-9, _ . -).');
+    expect(calls.some((c) => c.path === '/user/register')).toBe(false);
   });
 });
