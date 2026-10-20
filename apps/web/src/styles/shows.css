@@ -30,6 +30,8 @@
 .sv-zone { display: flex; flex-direction: column; gap: 44px; padding: 28px 0 96px; }
 .sv-sec { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .sv-zone .lib-grid { padding: 16px var(--gutter) 0; }
+.shows-count { margin-left: 10px; font-size: 14px; font-weight: 400; opacity: 0.6; }
+.shows-more { display: flex; justify-content: center; padding: 20px var(--gutter) 0; }
 
 /* Incontournables : tuiles paysage 16:10 */
 .sv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 20px 18px; padding: 16px var(--gutter) 0; }
