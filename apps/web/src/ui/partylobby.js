@@ -1,0 +1,680 @@
+/* Salon d'attente d'une watch party (Social v3, lot F6) : plein écran avant le départ. Bandeau du titre, participants (avatar,
+ * état prêt, qualité, recherche de source), tuile « Inviter », réglages de l'hôte, vote du titre, discussion, puis départ avec
+ * compte à rebours ; à zéro, chacun lance la lecture avec SA source (voir partyBridge.launchRoom).
+ * Possède aussi les points d'entrée partagés `inviteToParty` et `openPartyLobby` (socialHooks.js).
+ * Tout texte venu d'un participant passe par esc() ; l'interface est entièrement accessible au clavier. */
+import { isKidProfile, isServerMode } from '../data/auth';
+import { tmdb } from '../data/lt';
+import { onPartyInvite, subscribe as socialSubscribe } from '../data/socialStore';
+import { UserApiError } from '../data/userApi';
+import { userStore } from '../data/userStore';
+import { partyBridge } from '../party/bridge';
+import { pickByFingerprint } from '../party/fingerprint';
+import { joinLinkOf } from '../party/join';
+import {
+  CONTROL_OPTIONS, countdownLeft, eventText, initialsOf, launchText, LOBBY_EMOJIS, prepView, qualityLabel, REACTION_OPTIONS, readySummary, readyText,
+  startWithoutText, voteShare, WAIT_LATE_OPTIONS,
+} from '../party/lobbyModel';
+import { CHAT_MAX, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
+import { loadSources, pollSources } from '../sources/load';
+import { avatarAttrs } from './avatar-art.js';
+import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { IMG } from './constants.js';
+import { toast } from './dom.js';
+import { shareBase } from './invites.js';
+import { registerSocialHook } from './socialHooks.js';
+import { togglePartyPanel } from './partypanel.js';
+import { esc } from './util.js';
+
+const MAX_PARTICIPANTS_FALLBACK = 20;
+const GUEST_SLOTS = 4;
+const SEARCH_POLL_MAX = 8;
+const SEARCH_POLL_MS = 2000;
+
+const ICON = {
+  back: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
+  plus: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  link: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  play: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>',
+  send: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+};
+
+/** Vue du salon d'attente (null : fermé). */
+let root = null;
+let client = null;
+let offs = [];
+let tab = 'chat';
+let chatDraft = '';
+let linkCopied = false;
+let copiedTimer = 0;
+let linkBusy = false;
+let renderQueued = false;
+let countTimer = 0;
+let launched = false;
+let myVote = '';
+let lastVoteOptions = [];
+let feed = [];
+let prep = { phase: 'idle', quality: '' };
+let prepRun = 0;
+let picker = null;
+let socialOff = null;
+let opener = null;
+
+const isHost = () => !!(client && client.isHost);
+const myName = () => (client && client.you ? client.you.username : '');
+const sNow = () => (client ? client.serverNow() : Date.now());
+
+// ---------- Rendu ----------
+const avatar = (p, size) => '<span class="pl-av' + (size ? ' is-' + size : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) + ' aria-hidden="true"><span class="pl-av-ini">' +
+  esc(initialsOf(p.username, !!p.guest)) + '</span></span>';
+
+function participantCard(p) {
+  const me = p.username === myName();
+  const v = prepView(p.guest ? { ...p, ready: true, status: p.status === 'buffering' ? 'buffering' : 'ready' } : p);
+  const tags = (p.host ? '<span class="pl-tag is-host">· hôte</span>' : '') + (p.guest ? '<span class="pl-tag">· invité</span>' : '');
+  const stateIcon = v.state === 'ready' ? ICON.check : '<span class="pl-spin" aria-hidden="true"></span>';
+  const tools = isHost() && !me && !p.host
+    ? '<span class="pl-card-tools"><button type="button" class="pl-mini" data-pl-host="' + esc(p.username) + '">Céder l’hôte</button>' +
+      '<button type="button" class="pl-mini is-danger" data-pl-kick="' + esc(p.username) + '">Exclure</button></span>'
+    : '';
+  return '<li class="pl-card' + (p.host ? ' is-host' : '') + '">' + avatar(p, 'lg') +
+    '<span class="pl-card-name">' + esc(p.username) + (me ? ' <span class="pl-tag">(toi)</span>' : '') + tags + '</span>' +
+    '<span class="pl-state is-' + v.state + '">' + stateIcon + '<span>' + esc(v.label) + '</span></span>' + tools + '</li>';
+}
+
+function seg(name, label, options, current, host) {
+  return '<div class="pl-set"><div class="pl-lb" id="pl-set-' + name + '">' + esc(label) + '</div>' +
+    '<div class="pl-seg" role="radiogroup" aria-labelledby="pl-set-' + name + '">' +
+    options.map(([value, text]) => '<button type="button" role="radio" class="' + (value === current ? 'on' : '') + '" aria-checked="' + (value === current ? 'true' : 'false') + '"' +
+      ' data-pl-set="' + name + '" data-value="' + value + '" tabindex="' + (value === current ? '0' : '-1') + '"' + (host ? '' : ' disabled') + '>' + esc(text) + '</button>').join('') +
+    '</div></div>';
+}
+
+function linkBoxHTML() {
+  if (!isHost()) return '<div class="pl-link is-empty"><span class="pl-link-note">Les réglages et le départ sont à l’hôte.</span></div>';
+  const guests = client.participants.filter((p) => p.guest).length;
+  const slots = Math.max(0, GUEST_SLOTS - guests);
+  let shown = 'lien d’invitation';
+  try { shown = new URL(shareBase()).host + '/…'; } catch { /* base relative : libellé générique */ }
+  return '<div class="pl-link">' + ICON.link + '<span class="pl-link-t">' + esc(shown) + '</span>' +
+    '<span class="pl-link-note">sans compte : ' + slots + ' place' + (slots > 1 ? 's' : '') + ', 12 h</span>' +
+    '<button type="button" class="pl-btn is-sec is-sm" data-pl-copy>' + (linkCopied ? 'Copié' : 'Copier') + '</button></div>';
+}
+
+function footerHTML(sum) {
+  const left = countdownLeft(client.countdownAt, sNow());
+  if (!isHost()) {
+    return linkBoxHTML() + (left !== null ? '' : '<p class="pl-wait" role="status">En attente du départ par ' + esc(client.room ? client.room.host : 'l’hôte') + '…</p>');
+  }
+  const waiting = sum.waiting;
+  const counting = left !== null;
+  const without = waiting.length > 0 && !counting
+    ? '<button type="button" class="pl-btn is-sec is-lg" data-pl-start-now>' + esc(startWithoutText(waiting)) + '</button>' : '';
+  return linkBoxHTML() + without +
+    '<button type="button" class="pl-btn is-pri is-lg is-xl" data-pl-start' + (waiting.length > 0 || counting ? ' disabled' : '') +
+    (waiting.length > 0 ? ' title="En attente de ' + esc(waiting.join(', ')) + '"' : '') + '>' + ICON.play + esc(counting ? 'Départ dans ' + left + ' s' : launchText(COUNTDOWN_DEFAULT_SEC)) + '</button>';
+}
+
+function mainHTML() {
+  const room = client.room;
+  const list = client.participants;
+  const sum = readySummary(list.map((p) => (p.guest ? { ...p, ready: true, status: 'ready' } : p)));
+  const max = room && room.maxParticipants ? room.maxParticipants : MAX_PARTICIPANTS_FALLBACK;
+  const host = isHost();
+  const poster = room && room.poster ? IMG('w780', room.poster) : '';
+  const media = room ? room.media : null;
+  const ep = media && media.type === 'series' && media.season != null ? ' · S' + media.season + ' É' + media.episode : '';
+  const status = client.status === 'open' ? '' : '<p class="pl-conn" role="status">' + (client.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
+  const cards = list.map(participantCard).join('');
+  const invite = '<li class="pl-card-wrap"><button type="button" class="pl-card is-invite" data-pl-invite-tile aria-label="Inviter des amis"><span class="pl-invite-plus">' + ICON.plus + '</span><span class="pl-card-name">Inviter</span></button></li>';
+  const s = client.settings;
+  return '<header class="pl-hero"' + (poster ? ' style="--pl-poster:url(&quot;' + esc(poster) + '&quot;)"' : '') + '>' +
+    '<div class="pl-hero-top"><button type="button" class="pl-ico" data-pl-leave aria-label="Quitter le salon">' + ICON.back + '</button>' +
+    '<span class="pl-pill"><span class="pl-dot" aria-hidden="true"></span>Salon de ' + esc(room ? room.host : '…') + ' · ' + (room && room.visibility === 'public' ? 'public' : 'privé') + '</span>' +
+    '<span class="pl-grow"></span>' + (host ? '<button type="button" class="pl-btn is-sec is-glass" data-pl-change>Changer de titre</button>' : '') + '</div>' +
+    '<div class="pl-hero-bot"><div class="pl-lb is-soft">Watch party · salon d’attente</div>' +
+    '<h1 class="pl-title" id="pl-title" tabindex="-1">' + esc(room ? room.title : 'Salon') + esc(ep) + '</h1>' +
+    '<p class="pl-sub">Chacun lit avec sa propre source' + (room && room.language ? ' · ' + esc(String(room.language).toUpperCase()) + ' conseillé par l’hôte' : '') + '</p></div></header>' +
+    '<section class="pl-body">' + status +
+    '<div class="pl-row"><div class="pl-lb pl-grow">Participants · ' + list.length + ' / ' + max + '</div><span class="pl-ready" aria-live="polite">' + esc(readyText(sum)) + '</span></div>' +
+    '<ul class="pl-grid" aria-label="Participants">' + cards + invite + '</ul>' + prepNoteHTML() +
+    '<div class="pl-sets">' + seg('control', 'Qui contrôle la lecture', CONTROL_OPTIONS, s.control, host) +
+    seg('waitLate', 'Attendre les retardataires', WAIT_LATE_OPTIONS, s.waitLate, host) +
+    seg('reactions', 'Réactions à l’écran', REACTION_OPTIONS, s.reactions, host) + '</div>' +
+    '<div class="pl-foot">' + footerHTML(sum) + '</div></section>' + countdownHTML();
+}
+
+function prepNoteHTML() {
+  if (prep.phase === 'none') {
+    return '<p class="pl-note" role="status">Aucune source trouvée pour ce titre sur cet appareil. <button type="button" class="pl-link-btn" data-pl-retry>Réessayer</button></p>';
+  }
+  return '';
+}
+
+function countdownHTML() {
+  const left = countdownLeft(client.countdownAt, sNow());
+  if (left === null) return '';
+  return '<div class="pl-count" role="status" aria-live="assertive"><div class="pl-count-n">' + left + '</div><div class="pl-count-t">La lecture démarre…</div></div>';
+}
+
+// ---------- Discussion ----------
+function chatItem(line) {
+  const author = client.participants.find((p) => p.username === line.from) || { username: line.from };
+  const mine = line.from === myName();
+  return '<div class="pl-msg' + (mine ? ' is-mine' : '') + '" data-pl-line="' + esc(line.id) + '">' + avatar(author) +
+    '<div><b>' + esc(mine ? 'Moi' : line.from) + '</b>' + (author.guest ? ' <span class="pl-tag">invité</span>' : '') + '<div class="pl-msg-t">' + esc(line.text) + '</div></div></div>';
+}
+
+function voteHTML() {
+  const options = client.vote;
+  if (!options) return '';
+  const host = isHost();
+  return '<div class="pl-vote" role="group" aria-label="Vote du titre"><div class="pl-vote-h">' + esc((client.room ? client.room.host : 'L’hôte') + ' propose de voter le film') + '</div>' +
+    options.map((o) => {
+      const share = voteShare(o, options);
+      return '<button type="button" class="pl-vote-o' + (o.id === myVote ? ' is-mine' : '') + '" data-pl-vote="' + esc(o.id) + '" aria-pressed="' + (o.id === myVote ? 'true' : 'false') + '">' +
+        '<span class="pl-vote-bar" style="width:' + share + '%"></span><span class="pl-vote-t">' + esc(o.title) + '</span><b>' + o.votes + '</b></button>';
+    }).join('') + (host ? '<button type="button" class="pl-btn is-sec is-sm" data-pl-vote-close>Clore le vote</button>' : '') + '</div>';
+}
+
+function feedHTML() {
+  const items = feed.map((it) => (it.kind === 'sys' ? '<div class="pl-sys">' + esc(it.text) + '</div>' : chatItem(it.line))).join('');
+  return (items || '<p class="pl-empty">Aucun message pour l’instant.</p>') + voteHTML();
+}
+
+function sideBodyHTML() {
+  return tab === 'friends' ? friendsListHTML('pl-friend') : feedHTML();
+}
+
+function paintSide() {
+  if (!root) return;
+  const body = root.querySelector('[data-pl-feed]');
+  if (!body) return;
+  const stick = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+  body.innerHTML = sideBodyHTML();
+  if (stick || tab === 'chat') body.scrollTop = body.scrollHeight;
+  root.querySelectorAll('[data-pl-tab]').forEach((b) => {
+    const on = b.dataset.plTab === tab;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    b.tabIndex = on ? 0 : -1;
+  });
+  const chatOnly = root.querySelectorAll('[data-pl-chatonly]');
+  chatOnly.forEach((el) => { el.hidden = tab !== 'chat'; });
+}
+
+function paintMain() {
+  if (!root || !client) return;
+  const main = root.querySelector('[data-pl-main]');
+  if (!main) return;
+  const keep = main.contains(document.activeElement) ? focusKey(document.activeElement) : '';
+  const scroll = main.scrollTop;
+  main.innerHTML = mainHTML();
+  main.scrollTop = scroll;
+  if (keep) restoreFocus(main, keep);
+}
+
+/** Repère stable d'un contrôle du salon, pour lui rendre le focus après un nouveau rendu. */
+function focusKey(el) {
+  for (const a of ['plSet', 'plStart', 'plStartNow', 'plCopy', 'plInviteTile', 'plChange', 'plLeave', 'plRetry']) {
+    if (el.dataset && a in el.dataset) return '[data-' + a.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()) + ']' + (a === 'plSet' ? '[data-value="' + el.dataset.value + '"]' : '');
+  }
+  return '';
+}
+function restoreFocus(main, sel) {
+  const target = main.querySelector(sel);
+  if (target && !target.disabled) target.focus({ preventScroll: true });
+}
+
+function render() {
+  if (!root || !client) return;
+  paintMain();
+  paintSide();
+}
+
+function renderSoon() {
+  if (renderQueued) return;
+  renderQueued = true;
+  const run = () => { renderQueued = false; render(); };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run); else setTimeout(run, 16);
+}
+
+// ---------- Fil de discussion ----------
+const pushSys = (text) => { feed.push({ kind: 'sys', text, at: Date.now() }); feed = feed.slice(-200); };
+
+function seedFeed() {
+  feed = client.chat.map((line) => ({ kind: 'chat', line, at: line.at }));
+}
+
+// ---------- Préparation (recherche de source) ----------
+/** Cherche la source de ce participant (celle de l'hôte si son empreinte est connue) puis se déclare prêt avec sa qualité. */
+async function prepare() {
+  const run = ++prepRun;
+  const c = client;
+  if (!c || !c.room) return;
+  const alive = () => run === prepRun && client === c && root;
+  prep = { phase: 'searching', quality: '' };
+  c.sendReady(false, null);
+  c.sendStatus('searching');
+  const req = roomRequest();
+  if (!req) { prep = { phase: 'none', quality: '' }; renderSoon(); return; }
+  let view = null;
+  try {
+    let loaded = await loadSources(req);
+    for (let i = 0; i < SEARCH_POLL_MAX && !loaded.views.length && loaded.pending.length && alive(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, SEARCH_POLL_MS));
+      loaded = await pollSources(req, loaded);
+    }
+    view = pickByFingerprint(loaded.views, c.room.fingerprint) || loaded.views[0] || null;
+  } catch { view = null; }
+  if (!alive()) return;
+  if (!view) { prep = { phase: 'none', quality: '' }; renderSoon(); return; }
+  const quality = qualityLabel(view);
+  prep = { phase: 'ready', quality };
+  c.sendReady(true, quality || null);
+  c.sendStatus('ready');
+  renderSoon();
+}
+
+function roomRequest() {
+  const room = client && client.room;
+  if (!room || room.media.tmdbId == null) return null;
+  const type = room.media.type === 'series' ? 'tv' : 'movie';
+  return { type, id: String(room.media.tmdbId), name: room.title, season: type === 'tv' ? room.media.season ?? 1 : null, episode: type === 'tv' ? room.media.episode ?? 1 : null, key: type + ':' + room.media.tmdbId };
+}
+
+// ---------- Départ ----------
+function tickCountdown() {
+  if (!root || !client) return;
+  const left = countdownLeft(client.countdownAt, sNow());
+  if (left === null) return;
+  if (left <= 0) { launch(); return; }
+  renderSoon();
+}
+
+function syncCountdownTimer() {
+  const counting = client && client.countdownAt !== null;
+  if (counting && !countTimer) countTimer = setInterval(tickCountdown, 250);
+  if (!counting && countTimer) { clearInterval(countTimer); countTimer = 0; }
+}
+
+/** Fin du compte à rebours (ou salon déjà en lecture) : le salon d'attente se ferme et chacun lance sa lecture. */
+function launch() {
+  if (launched || !client) return;
+  launched = true;
+  closeLobby(true);
+  togglePartyPanel(true);
+  partyBridge.launchRoom().catch((err) => {
+    toast(err && err.code === 'media_unsupported' ? 'Ce salon ne peut pas être lu depuis cette application.' : 'Lancement de la lecture impossible.');
+  });
+}
+
+// ---------- Liaison avec le salon ----------
+function bind(c) {
+  const on = (event, fn) => { offs.push(c.on(event, fn)); };
+  on('welcome', () => {
+    seedFeed();
+    if (c.state && c.state.playing) { launch(); return; }
+    void prepare();
+    syncCountdownTimer();
+    renderSoon();
+  });
+  on('participants', () => renderSoon());
+  on('settings', () => renderSoon());
+  on('countdown', (at) => {
+    if (at === null && c.state && c.state.playing) { launch(); return; }
+    syncCountdownTimer();
+    if (at !== null) pushSys('Départ dans quelques secondes…');
+    renderSoon();
+  });
+  on('state', (st) => { if (st && st.playing && c.countdownAt === null && c.status === 'open') launch(); });
+  on('chat', (line) => { if (!feed.some((f) => f.kind === 'chat' && f.line.id === line.id)) feed.push({ kind: 'chat', line, at: line.at }); renderSoon(); });
+  on('removed', ({ messageId }) => { feed = feed.filter((f) => !(f.kind === 'chat' && f.line.id === messageId)); renderSoon(); });
+  on('event', (ev) => {
+    if (ev.kind === 'join') {
+      const who = c.participants.find((p) => p.username === ev.by);
+      pushSys(ev.by + (who && who.guest ? ' a rejoint par le lien' : ' a rejoint le salon'));
+    } else if (ev.kind === 'leave') pushSys(eventText(ev));
+    renderSoon();
+  });
+  on('vote', (options) => {
+    if (options) lastVoteOptions = options;
+    if (!options) myVote = '';
+    renderSoon();
+  });
+  on('media', ({ media }) => {
+    // Vote clos : le salon change de titre. Le titre vient des options du vote ; la recherche de source repart.
+    const won = lastVoteOptions.find((o) => o.tmdbId === media.tmdbId && (o.type === media.type));
+    if (c.room && won) c.room = { ...c.room, title: won.title, poster: null };
+    pushSys('Le titre est maintenant « ' + (won ? won.title : c.room ? c.room.title : '…') + ' »');
+    void prepare();
+    renderSoon();
+  });
+  on('host', () => renderSoon());
+  on('status', () => renderSoon());
+  on('error', (code) => toast(partyErrorText(code)));
+  on('end', (reason) => {
+    toast(reason === 'kicked' ? 'Tu as été exclu du salon.' : reason === 'ended' ? 'Le salon est terminé.' : 'Salon fermé.');
+    closeLobby(false);
+  });
+}
+
+function unbind() {
+  offs.forEach((off) => off());
+  offs = [];
+}
+
+// ---------- Ouverture et fermeture ----------
+const shellHTML = () =>
+  '<div class="pl-main" data-pl-main></div>' +
+  '<aside class="pl-side" aria-label="Discussion du salon">' +
+  '<div role="tablist" class="pl-tabs" aria-label="Discussion et invitations">' +
+  '<button type="button" role="tab" id="pl-tab-chat" data-pl-tab="chat" aria-selected="true" aria-controls="pl-panel">Discussion</button>' +
+  '<button type="button" role="tab" id="pl-tab-friends" data-pl-tab="friends" aria-selected="false" aria-controls="pl-panel" tabindex="-1">Inviter des amis</button></div>' +
+  '<div class="pl-feed" id="pl-panel" role="tabpanel" data-pl-feed tabindex="0" aria-live="polite"></div>' +
+  '<div class="pl-emojis" data-pl-chatonly role="group" aria-label="Réactions rapides">' +
+  LOBBY_EMOJIS.map((e) => '<button type="button" data-pl-emoji="' + e + '" aria-label="Envoyer ' + e + '">' + e + '</button>').join('') + '</div>' +
+  '<form class="pl-send" data-pl-chatonly data-pl-send autocomplete="off"><label for="pl-input" class="sr-only">Message au salon</label>' +
+  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX + '" placeholder="Écrire au salon…" autocomplete="off">' +
+  '<button type="submit" class="pl-send-b" aria-label="Envoyer">' + ICON.send + '</button></form></aside>' +
+  '<div class="pl-live sr-only" role="status" aria-live="polite" data-pl-live></div>';
+
+function mount() {
+  root = document.createElement('div');
+  root.className = 'pl';
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-modal', 'true');
+  root.setAttribute('aria-labelledby', 'pl-title');
+  root.innerHTML = shellHTML();
+  document.body.appendChild(root);
+  document.body.classList.add('has-party-lobby');
+  root.addEventListener('click', onClick);
+  root.addEventListener('submit', onSubmit);
+  root.addEventListener('keydown', onKey);
+  root.addEventListener('input', onInput);
+  socialOff = socialSubscribe(() => { if (tab === 'friends') paintSide(); });
+}
+
+function closeLobby(keepClient) {
+  clearInterval(countTimer);
+  countTimer = 0;
+  prepRun += 1;
+  unbind();
+  closePicker();
+  if (socialOff) { socialOff(); socialOff = null; }
+  if (root) { root.remove(); root = null; }
+  document.body.classList.remove('has-party-lobby');
+  partyBridge.lobby = false;
+  if (!keepClient) { client = null; partyBridge.leave(); }
+  else client = null;
+  if (opener && opener.isConnected && !keepClient) opener.focus({ preventScroll: true });
+  opener = null;
+}
+
+/** Ouvre le salon d'attente d'une watch party (connexion au salon si besoin). Rien pour un profil enfant ou hors compte. */
+export async function openLobby(partyId, from) {
+  if (isKidProfile() || !isServerMode()) return;
+  if (root) closeLobby(true);
+  launched = false;
+  tab = 'chat';
+  chatDraft = '';
+  myVote = '';
+  lastVoteOptions = [];
+  invitedPids.clear();
+  prep = { phase: 'idle', quality: '' };
+  opener = from instanceof HTMLElement ? from : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  partyBridge.lobby = true;
+  const current = partyBridge.client;
+  if (!(current && current.room && current.room.id === partyId && current.status !== 'closed')) {
+    try {
+      await partyBridge.connect(partyId, userStore.currentProfile().id);
+    } catch (err) {
+      partyBridge.lobby = false;
+      toast(err instanceof UserApiError && err.code === 'room_full' ? 'Le salon est complet.' : 'Impossible de rejoindre le salon.');
+      return;
+    }
+  }
+  client = partyBridge.client;
+  if (!client) { partyBridge.lobby = false; return; }
+  mount();
+  bind(client);
+  // Une connexion déjà ouverte a reçu sa bienvenue : le salon d'attente démarre sans la réécouter.
+  if (client.you) {
+    seedFeed();
+    if (client.state && client.state.playing && client.countdownAt === null) { launch(); return; }
+    void prepare();
+    syncCountdownTimer();
+  }
+  render();
+  const title = root.querySelector('#pl-title');
+  if (title) title.focus({ preventScroll: true });
+}
+
+// ---------- Création depuis une fiche ----------
+/** Crée le salon d'attente d'un titre (hôte) puis l'ouvre. `req` : cible de lecture (type, id, name, season, episode). */
+export async function createLobbyFor(req, poster, visibility, from) {
+  try {
+    const room = await partyBridge.createLobby(req, poster || null, visibility);
+    await openLobby(room.id, from);
+  } catch (err) {
+    toast(err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
+      : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment.');
+  }
+}
+
+// ---------- Invitation d'un ami ----------
+/** Point d'entrée partagé : invite `pid` dans ma watch party active, ou en crée une sur le titre en cours de lecture. */
+export async function inviteToParty(pid) {
+  if (isKidProfile() || !isServerMode()) return;
+  let c = partyBridge.client;
+  if (!(c && c.room && partyBridge.isActive())) {
+    const a = partyBridge.adapter ? partyBridge.adapter() : null;
+    if (!a || !a.ready || !partyBridge.available()) {
+      toast('Lance un titre depuis sa fiche (Watch party), puis invite tes amis.');
+      return;
+    }
+    try {
+      await partyBridge.create(a, 'private');
+    } catch {
+      toast('Création du salon impossible pour le moment.');
+      return;
+    }
+    if (!(await partyBridge.waitForHost())) { toast('Salon créé, mais la connexion a échoué.'); return; }
+    c = partyBridge.client;
+  }
+  if (!c || !c.room) return;
+  if (await inviteInto(c.room.id, pid)) toast('Invitation envoyée');
+}
+
+// ---------- Vote du titre (sélecteur de l'hôte) ----------
+function openPicker() {
+  if (!root || picker || !isHost()) return;
+  const room = client.room;
+  const first = room && room.media.tmdbId != null ? [{ type: room.media.type, tmdbId: room.media.tmdbId, title: room.title }] : [];
+  picker = { options: first, results: [], query: '', busy: false, seq: 0 };
+  const el = document.createElement('div');
+  el.className = 'pl-pick';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-labelledby', 'pl-pick-t');
+  el.innerHTML = '<div class="pl-pick-box"><h2 id="pl-pick-t">Changer de titre</h2>' +
+    '<p class="pl-note">Choisis 2 à ' + VOTE_MAX_OPTIONS + ' titres : le salon vote, le plus voté est lu.</p>' +
+    '<form data-pl-pick-form role="search"><label for="pl-pick-q" class="sr-only">Chercher un film ou une série</label>' +
+    '<input id="pl-pick-q" type="search" placeholder="Chercher un film ou une série…" autocomplete="off"><button type="submit" class="pl-btn is-sec">Chercher</button></form>' +
+    '<ul class="pl-pick-res" data-pl-pick-res aria-label="Résultats"></ul>' +
+    '<div class="pl-lb">Options du vote</div><ul class="pl-pick-sel" data-pl-pick-sel></ul>' +
+    '<div class="pl-pick-act"><button type="button" class="pl-btn is-sec" data-pl-pick-cancel>Annuler</button>' +
+    '<button type="button" class="pl-btn is-pri" data-pl-pick-go>Lancer le vote</button></div></div>';
+  root.appendChild(el);
+  picker.el = el;
+  paintPicker();
+  el.querySelector('#pl-pick-q').focus();
+}
+
+function closePicker() {
+  if (!picker) return;
+  picker.el.remove();
+  picker = null;
+  const b = root && root.querySelector('[data-pl-change]');
+  if (b) b.focus({ preventScroll: true });
+}
+
+function paintPicker() {
+  if (!picker) return;
+  const res = picker.el.querySelector('[data-pl-pick-res]');
+  res.innerHTML = picker.results.length
+    ? picker.results.map((r, i) => '<li><button type="button" class="pl-pick-r" data-pl-pick-add="' + i + '"' + (picker.options.length >= VOTE_MAX_OPTIONS ? ' disabled' : '') + '>' +
+      '<span>' + esc(r.title) + '</span><span class="pl-tag">' + (r.type === 'series' ? 'Série' : 'Film') + (r.year ? ' · ' + esc(r.year) : '') + '</span></button></li>').join('')
+    : '<li class="pl-empty">' + (picker.busy ? 'Recherche…' : picker.query ? 'Aucun résultat.' : '') + '</li>';
+  picker.el.querySelector('[data-pl-pick-sel]').innerHTML = picker.options.map((o, i) =>
+    '<li><span>' + esc(o.title) + '</span><button type="button" class="pl-mini" data-pl-pick-del="' + i + '" aria-label="Retirer ' + esc(o.title) + '">Retirer</button></li>').join('');
+  picker.el.querySelector('[data-pl-pick-go]').disabled = picker.options.length < 2;
+}
+
+async function pickerSearch(query) {
+  if (!picker) return;
+  const q = query.trim();
+  picker.query = q;
+  const seq = ++picker.seq;
+  if (!q) { picker.results = []; paintPicker(); return; }
+  picker.busy = true;
+  paintPicker();
+  let rows = [];
+  try {
+    const out = await tmdb('search/multi', { query: q, page: 1 });
+    rows = Array.isArray(out && out.results) ? out.results : [];
+  } catch { rows = []; }
+  if (!picker || seq !== picker.seq) return;
+  picker.busy = false;
+  picker.results = rows.filter((r) => (r.media_type === 'movie' || r.media_type === 'tv') && Number.isInteger(r.id) && (r.title || r.name)).slice(0, 8).map((r) => ({
+    type: r.media_type === 'tv' ? 'series' : 'movie', tmdbId: r.id, title: String(r.title || r.name), year: String(r.release_date || r.first_air_date || '').slice(0, 4),
+  }));
+  paintPicker();
+}
+
+// ---------- Événements ----------
+function onInput(e) {
+  const f = e.target;
+  if (f instanceof HTMLInputElement && f.name === 'text') chatDraft = f.value;
+}
+
+async function copyInvite() {
+  if (linkBusy || !isHost()) return;
+  linkBusy = true;
+  try {
+    const inv = await partyBridge.createInvite(false);
+    const url = joinLinkOf(shareBase(), inv.roomId, inv.token);
+    try {
+      await navigator.clipboard.writeText(url);
+      linkCopied = true;
+      clearTimeout(copiedTimer);
+      copiedTimer = setTimeout(() => { linkCopied = false; renderSoon(); }, 2000);
+      toast('Lien d’invitation copié');
+    } catch {
+      toast('Copie impossible : ' + url, { ms: 6000 });
+    }
+  } catch {
+    toast('Invitation impossible pour le moment.');
+  }
+  linkBusy = false;
+  renderSoon();
+}
+
+function onClick(e) {
+  const t = e.target instanceof Element ? e.target : null;
+  if (!t || !client) return;
+  if (t.closest('[data-pl-leave]')) {
+    if (isHost() ? window.confirm('Fermer le salon d’attente pour tout le monde ?') : true) {
+      const host = isHost();
+      closeLobby(false);
+      if (host) toast('Salon fermé'); else toast('Tu as quitté le salon');
+    }
+    return;
+  }
+  const tabBtn = t.closest('[data-pl-tab]');
+  if (tabBtn) { tab = tabBtn.dataset.plTab; paintSide(); return; }
+  if (t.closest('[data-pl-invite-tile]')) { tab = 'friends'; paintSide(); const b = root.querySelector('#pl-tab-friends'); if (b) b.focus(); return; }
+  if (t.closest('[data-pl-copy]')) { void copyInvite(); return; }
+  if (t.closest('[data-pl-retry]')) { void prepare(); renderSoon(); return; }
+  if (t.closest('[data-pl-start]')) { client.startPlayback(COUNTDOWN_DEFAULT_SEC); return; }
+  if (t.closest('[data-pl-start-now]')) { client.startPlayback(1); return; }
+  if (t.closest('[data-pl-change]')) { openPicker(); return; }
+  const set = t.closest('[data-pl-set]');
+  if (set && isHost()) { client.sendSettings({ [set.dataset.plSet]: set.dataset.value }); return; }
+  const emoji = t.closest('[data-pl-emoji]');
+  if (emoji) { client.sendReact(emoji.dataset.plEmoji, partyBridge.position()); return; }
+  const vote = t.closest('[data-pl-vote]');
+  if (vote) { myVote = vote.dataset.plVote; client.castVote(myVote); renderSoon(); return; }
+  if (t.closest('[data-pl-vote-close]')) { client.closeVote(); return; }
+  const friend = t.closest('[data-pl-friend]');
+  if (friend) {
+    const pid = friend.dataset.plFriend;
+    friend.disabled = true;
+    void inviteInto(client.room.id, pid).then(() => paintSide());
+    return;
+  }
+  const kick = t.closest('[data-pl-kick]');
+  if (kick) { if (window.confirm('Exclure ' + kick.dataset.plKick + ' du salon ?')) client.kick(kick.dataset.plKick); return; }
+  const host = t.closest('[data-pl-host]');
+  if (host) { if (window.confirm('Céder le rôle d’hôte à ' + host.dataset.plHost + ' ?')) client.transfer(host.dataset.plHost); return; }
+  // Sélecteur de titre
+  if (t.closest('[data-pl-pick-cancel]')) { closePicker(); return; }
+  const add = t.closest('[data-pl-pick-add]');
+  if (add && picker) {
+    const r = picker.results[Number(add.dataset.plPickAdd)];
+    if (r && picker.options.length < VOTE_MAX_OPTIONS && !picker.options.some((o) => o.tmdbId === r.tmdbId && o.type === r.type)) picker.options.push({ type: r.type, tmdbId: r.tmdbId, title: r.title });
+    paintPicker();
+    return;
+  }
+  const del = t.closest('[data-pl-pick-del]');
+  if (del && picker) { picker.options.splice(Number(del.dataset.plPickDel), 1); paintPicker(); return; }
+  if (t.closest('[data-pl-pick-go]') && picker) {
+    const options = picker.options.map((o) => ({ type: o.type, tmdbId: o.tmdbId, title: o.title }));
+    if (options.length >= 2 && client.openVote(options)) { closePicker(); tab = 'chat'; paintSide(); }
+  }
+}
+
+function onSubmit(e) {
+  const f = e.target;
+  if (!(f instanceof HTMLFormElement) || !client) return;
+  e.preventDefault();
+  if (f.matches('[data-pl-send]')) {
+    const input = f.elements.text;
+    if (client.sendChat(input.value, partyBridge.position())) { chatDraft = ''; input.value = ''; }
+    return;
+  }
+  if (f.matches('[data-pl-pick-form]')) void pickerSearch(f.querySelector('input').value);
+}
+
+/** Flèches dans un groupe de boutons radio (réglages) ou d'onglets ; Échap ferme le sélecteur de titre. */
+function onKey(e) {
+  if (e.key === 'Escape' && picker) { e.stopPropagation(); closePicker(); return; }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const t = e.target instanceof Element ? e.target : null;
+  const group = t && t.closest('[role="radiogroup"], [role="tablist"]');
+  if (!group || !t) return;
+  const items = [...group.querySelectorAll('[role="radio"]:not(:disabled), [role="tab"]')];
+  const i = items.indexOf(t);
+  if (i < 0) return;
+  e.preventDefault();
+  const next = items[(i + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length];
+  next.focus();
+  next.click();
+}
+
+// ---------- Invitations reçues ----------
+let inviteOff = null;
+function listenInvites() {
+  if (inviteOff) return;
+  inviteOff = onPartyInvite((ev) => {
+    if (isKidProfile()) return;
+    toast(ev.from.handle.full + ' t’invite à rejoindre « ' + ev.title + ' »', { ms: 9000, action: { label: 'Rejoindre', run: () => { void openLobby(ev.partyId); } } });
+  });
+}
+
+registerSocialHook('inviteToParty', (pid) => { void inviteToParty(pid); });
+registerSocialHook('openPartyLobby', (partyId) => { void openLobby(partyId); });
+listenInvites();
+
+/** Pour les tests : état interne du salon d'attente. */
+export const isLobbyOpen = () => root !== null;

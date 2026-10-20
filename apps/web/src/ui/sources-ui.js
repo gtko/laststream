@@ -8,7 +8,7 @@ import { hv } from './hover.js';
 import { state } from './state.js';
 
 /** Cible de lecture d'après le bouton « Lecture » (fiche, épisode, aperçu au survol) ; null si le titre est inconnu. */
-function requestFrom(btn) {
+export function requestFrom(btn) {
   const hc = btn.closest('#hovercard');
   let type; let id; let name; let season = null; let episode = null;
   const ep = btn.closest('.ep');
