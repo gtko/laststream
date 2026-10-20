@@ -156,7 +156,6 @@ describe('GET /stream : champ deviceFetch', () => {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   });
-  beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '0'));
   afterEach(() => vi.unstubAllEnvs());
 
   const plain = (config: Record<string, unknown>): string => Buffer.from(JSON.stringify(config), 'utf8').toString('base64url');

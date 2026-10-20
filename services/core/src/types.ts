@@ -55,8 +55,6 @@ export interface RawStream {
   indexers?: string[];
   /** Addon amont d'où vient le flux (nom du manifest ou de la source, logo si connu). Absent pour un indexeur. */
   origin?: { name: string; logo?: string };
-  /** Vrai si le flux vient du Prowlarr local détecté (et non d'une source explicite). */
-  viaLocalProwlarr?: boolean;
   /**
    * Lien de téléchargement du .torrent (proxifié par Prowlarr, parfois avec une passkey ou une clé API).
    * SECRET : gardé en mémoire seulement. Ne jamais le recopier dans une réponse Stremio, un journal ou un message
@@ -96,9 +94,9 @@ export interface ContentRef {
   episode?: number;
 }
 
-/** Provenance d'un flux, pour l'affichage : un addon amont, un indexeur, ou un indexeur du Prowlarr local. */
+/** Provenance d'un flux, pour l'affichage : un addon amont ou un indexeur. */
 export interface StreamOrigin {
-  kind: 'addon' | 'indexer' | 'prowlarr-local';
+  kind: 'addon' | 'indexer';
   name: string;
   logo?: string;
 }

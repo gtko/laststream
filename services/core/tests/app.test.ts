@@ -116,9 +116,4 @@ describe("routes de streams, test et lecture (validation d'entrée)", () => {
     expect(((await res.json()) as { error: string }).error).toBe('invalid_config');
   });
 
-  it('GET /:config/play/:infoHash répond 400 à un hash invalide', async () => {
-    const res = await fetch(`${baseUrl}/abcdef/play/0123456789abcdef`);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'invalid_hash' });
-  });
 });

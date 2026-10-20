@@ -5,7 +5,7 @@ import { createApp } from '../src/app.js';
 import { serveApp } from './serve.js';
 
 /*
- * Mode « client » (LASTADDON_DEBRID_SERVER_SIDE=0) : /stream livre les torrents sans lien, l'appareil débride lui-même.
+ * Mode « client » (seul mode) : /stream livre les torrents sans lien, l'appareil débride lui-même.
  * Le serveur ne contacte jamais AllDebrid : le fetch simulé journalise chaque hôte appelé et le test exige zéro appel.
  */
 
@@ -50,7 +50,6 @@ afterAll(async () => {
 });
 beforeEach(() => {
   hosts.length = 0;
-  vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '0');
 });
 afterEach(() => vi.unstubAllEnvs());
 

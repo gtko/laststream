@@ -1,14 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- corps JSON de tests */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { metricsService } from '../src/metrics/index.js';
 import { platform } from '../src/platform/index.js';
-import { AllDebridClient } from '../src/sources/alldebrid.js';
 import { fetchUpstream } from '../src/sources/upstream.js';
 import { startAdmin } from './admin-harness.js';
 
-// Mode serveur AllDebrid explicitement activé (opt-in) : le client AllDebrid est appelé depuis le serveur.
-beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
-afterEach(() => vi.unstubAllEnvs());
 
 const metrics = () => {
   const service = metricsService();
@@ -35,24 +31,6 @@ describe('points de mesure (plateforme Node)', () => {
     expect((entry?.failures ?? 0) - (before?.failures ?? 0)).toBe(1);
     expect((entry?.timeouts ?? 0) - (before?.timeouts ?? 0)).toBe(1);
     expect(JSON.stringify(report.upstreams)).not.toContain('TOKENSECRET');
-  });
-
-  it('AllDebrid : succès et erreurs par code, par opération', async () => {
-    const before = (await metrics().report('1h')).alldebrid;
-    const answers: Response[] = [
-      jsonResponse({ status: 'success', data: { link: 'https://x' } }),
-      jsonResponse({ status: 'error', error: { code: 'LINK_HOST_NOT_SUPPORTED', message: 'non' } }),
-      jsonResponse({ status: 'error', error: { code: 'MAGNET_INVALID_URI', message: 'non' } }),
-    ];
-    const client = new AllDebridClient('cle-de-test-123456', { fetch: () => Promise.resolve(answers.shift() as Response) });
-    await client.call('POST', '/v4/link/unlock', new URLSearchParams([['link', 'https://hoster/x']]));
-    await expect(client.call('POST', '/v4/link/unlock', new URLSearchParams([['link', 'https://hoster/y']]))).rejects.toThrow();
-    await expect(client.call('POST', '/v4/magnet/upload', new URLSearchParams([['magnets[]', 'a'.repeat(40)]]))).rejects.toThrow();
-    const after = (await metrics().report('1h')).alldebrid;
-    expect(after.unlock.ok - before.unlock.ok).toBe(1);
-    expect(Object.values(after.unlock.errors).reduce((a, b) => a + b, 0) - Object.values(before.unlock.errors).reduce((a, b) => a + b, 0)).toBe(1);
-    expect(Object.values(after.magnet.errors).reduce((a, b) => a + b, 0) - Object.values(before.magnet.errors).reduce((a, b) => a + b, 0)).toBe(1);
-    expect(JSON.stringify(after)).not.toContain('cle-de-test');
   });
 
   it('caches : succès et échecs de lecture comptés par préfixe', async () => {

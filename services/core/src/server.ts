@@ -1,15 +1,13 @@
-import { readFileSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { parseCliArgs, type CliOptions } from './cli.js';
-import { assertStartupEnv, configuredPublicUrl, configuredStreamingServer, configuredUiDir, isPublicMode, legacyIndexersEnabled } from './config/runtime-env.js';
+import { assertStartupEnv, configuredPublicUrl, configuredStreamingServer, configuredUiDir, isPublicMode } from './config/runtime-env.js';
 import { isPlainAllowed } from './config/secret.js';
 import { type RuntimeEnv, setPlatform } from './platform/index.js';
 import { assertUiDir, createNodePlatform } from './platform/node/index.js';
 import { getSecret, loadEnvFile } from './platform/node/secret-file.js';
-import { detectLocalProwlarr, type LocalProwlarrIo, localProwlarrEnabled } from './sources/local-prowlarr.js';
 import { sameOriginsFor } from './ui.js';
 
 const DEFAULT_PORT = 7000;
@@ -70,15 +68,9 @@ export function start(argv: readonly string[] = process.argv.slice(2)): void {
     console.error(err instanceof Error ? err.message : 'configuration invalide');
     process.exit(1);
   }
-  const localIo: LocalProwlarrIo = {
-    env: env.all(),
-    readFile: (path) => readFileSync(path, 'utf8'),
-    homeDir: homedir(),
-  };
   const app = createApp({
     secret,
     allowPlain: isPlainAllowed(),
-    ...(legacyIndexersEnabled() ? { localProwlarr: () => detectLocalProwlarr(localIo) } : {}),
     uiDir,
     uiOrigins,
     streamingServer,
@@ -88,16 +80,6 @@ export function start(argv: readonly string[] = process.argv.slice(2)): void {
   }
   if (isPublicMode()) {
     console.warn('LASTADDON_PUBLIC=1 : mode public actif (adresses privées refusées pour les URL des sources).');
-  }
-  if (legacyIndexersEnabled() && localProwlarrEnabled(env.all())) {
-    // Lit la clé une seule fois au démarrage ; le résultat ne contient que le nombre d'indexeurs, jamais la clé.
-    void detectLocalProwlarr(localIo).then((local) =>
-      console.log(
-        local === null
-          ? 'Aucun Prowlarr local détecté.'
-          : `Prowlarr local détecté (${local.indexerCount} indexeurs), utilisé si aucune source n'est configurée.`,
-      ),
-    );
   }
   const server = serve({ fetch: app.fetch, port, overrideGlobalObjects: false }, () => {
     console.log(`lastAddon en écoute sur http://localhost:${port}`);

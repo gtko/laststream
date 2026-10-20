@@ -4,7 +4,7 @@ import { withServerServices } from './config/server-services.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { edgeTrust } from './config/edge.js';
-import { allowedOrigins, configuredStreamingServer, isTrustProxy, legacyIndexersEnabled } from './config/runtime-env.js';
+import { allowedOrigins, configuredStreamingServer, isTrustProxy } from './config/runtime-env.js';
 import { maskConfig, mergeSecrets } from './config/secrets.js';
 import type { AppDeps } from './deps.js';
 import { type App, type AppEnv, type Ctx, newApp } from './http/app-env.js';
@@ -15,8 +15,6 @@ import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
 import { platform, runtimeEnv } from './platform/index.js';
-import { localProwlarrStatusOf } from './sources/local-prowlarr.js';
-import { registerIndexerRoutes } from './routes/indexers.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
@@ -232,10 +230,7 @@ export function createApp(deps: AppDeps): App {
 
   app.get('/:config/manifest.json', (c) => sendJson(c, manifestFor(deps, c.req.param('config'))));
 
-  app.get('/config/schema', async (c) => {
-    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr);
-    return sendJson(c, { ...configJsonSchema(), presets: presetCatalog(), localProwlarr });
-  });
+  app.get('/config/schema', (c) => sendJson(c, { ...configJsonSchema(), presets: presetCatalog() }));
 
   app.post('/config/encode', (c) => {
     try {
@@ -267,8 +262,6 @@ export function createApp(deps: AppDeps): App {
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps, backend);
-  // Routes de gestion des indexeurs : seulement avec LASTADDON_LEGACY_INDEXERS=1 (les addons Stremio sont l'unique source par défaut).
-  if (legacyIndexersEnabled()) registerIndexerRoutes(app, deps);
   registerUserRoutes(app, deps, backend, maintenance);
   const party = deps.party ?? platform().createPartyBackend?.();
   registerPartyRoutes(app, deps, backend, party);
