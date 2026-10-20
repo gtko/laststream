@@ -2,7 +2,7 @@ import type { App } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
-import { nowIso, scopeOf, sessionOf } from './session.js';
+import { assertNotLocked, nowIso, scopeOf, sessionOf } from './session.js';
 import { MAX_HIDDEN_PER_PROFILE, type WatchingNow } from './social-store.js';
 import {
   bulkVisibilitySchema,
@@ -69,7 +69,9 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
 
   /** Quota de liens d'un compte : propriétaire uniquement. */
   router.put('/accounts/:username/invite-quota', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const session = await sessionOf(users(), c);
+    assertNotLocked(session);
+    const { account } = session;
     if (!account.isOwner) throw new UserApiError(403, 'owner_only');
     const username = parseWith(usernameParam, c.req.param('username'));
     const { quota } = parseWith(inviteQuotaSchema, c.get('body'));
@@ -149,10 +151,15 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
    * Un profil enfant n'annonce jamais de titre. `invisible: true` apparaît hors ligne.
    */
   router.put('/presence', async (c) => {
-    const { account } = await sessionOf(users(), c);
+    const session = await sessionOf(users(), c);
+    const { account } = session;
     const body = parseWith(presenceSchema, c.get('body'));
     let profileId: string | null = null;
     let watching: WatchingNow | null = null;
+    // Session verrouillée sur un profil invité : elle ne parle que pour ce profil.
+    if (body.profileId !== undefined && session.lockedProfileId !== null && body.profileId !== session.lockedProfileId) {
+      throw new UserApiError(403, 'profile_locked');
+    }
     if (body.profileId !== undefined) {
       const profile = await users().findProfile(account.id, body.profileId);
       if (profile === undefined) throw new UserApiError(404, 'profile_not_found');

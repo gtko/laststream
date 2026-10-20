@@ -819,6 +819,33 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
     `,
   },
+  {
+    version: 27,
+    name: 'invitations sur un profil du foyer (jeton haché), logins de profil, sessions verrouillées sur un profil',
+    sql: `
+      CREATE TABLE household_invites (
+        id TEXT PRIMARY KEY,                 -- id court aléatoire (pour l'UI)
+        token_hash TEXT NOT NULL UNIQUE,     -- sha256(jeton) ; le jeton clair n'est jamais stocké
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        created_by_profile TEXT,             -- profil qui a créé le lien
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER, used_login TEXT,
+        revoked_at INTEGER
+      );
+      CREATE TABLE profile_logins (
+        login TEXT PRIMARY KEY,              -- identifiant normalisé (minuscules, trim), même règles que accounts.username + '@' permis
+        password_hash TEXT NOT NULL,         -- même algorithme que les comptes
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        profile_id TEXT NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL
+      );
+      -- Non NULL = session verrouillée sur ce profil. (Pas de commentaire après le dernier point-virgule : le SQLite du
+      -- Durable Object refuse un fragment sans instruction.)
+      ALTER TABLE sessions ADD COLUMN profile_id TEXT;
+    `,
+  },
 ];
 
 /**

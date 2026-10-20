@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
+import {
+  type HouseholdCreateResult,
+  type HouseholdInviteRow,
+  type HouseholdInviteView,
+  type HouseholdInviteWrite,
+  type HouseholdRedeemInput,
+  type HouseholdRedeemResult,
+  type ProfileLoginRecord,
+} from './household.js';
 import { storedUserAgent } from './session-device.js';
 import { linkInvitedPrincipals, purgeSocialData, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
@@ -47,6 +56,9 @@ export interface AccountRecord extends Account {
   /** Compte suspendu par l'administration : connexion et sessions refusées. */
   suspended: boolean;
 }
+
+/** Compte d'une session valide, et profil auquel la session est verrouillée (null = session libre). */
+export type SessionAccount = Account & { lockedProfileId: string | null };
 
 /** Profil tel que vu par le client : aucun secret, aucun compteur de PIN. */
 export interface Profile {
@@ -435,7 +447,11 @@ export class UserStore {
       const settings = readAppSettings(this.db);
       // Inscriptions par lien fermées par l'administration (le tout premier compte n'est jamais concerné).
       if (invite && !settings.invitesOpen) return { ok: false, reason: 'invites_closed' };
+      // Un identifiant de profil du foyer (login d'invité) réserve aussi le nom : un seul espace de noms.
       if (this.findAccountRecord(input.username) !== undefined) return { ok: false, reason: 'username_taken' };
+      if (this.db.prepare('SELECT 1 AS n FROM profile_logins WHERE login = ?').get(input.username) !== undefined) {
+        return { ok: false, reason: 'username_taken' };
+      }
       if (invite && input.inviteCode !== undefined) {
         // Lien inconnu, déjà utilisé ou révoqué par l'administration : refusé de la même façon.
         const row = this.db.prepare('SELECT used_at, revoked_at FROM invites WHERE code = ?').get(input.inviteCode) as
@@ -479,43 +495,60 @@ export class UserStore {
    * sessions : la plus ancienne (ordre d'insertion) est supprimée au-delà. `userAgent` (en-tête de la requête) est
    * conservé tronqué, pour la fiche administrateur.
    */
-  startSession(accountId: string, tokenHash: string, now: string, expiresAt: string, userAgent?: string | null): void {
-    this.transaction(() => {
-      this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
-      this.createSession(accountId, tokenHash, now, expiresAt, userAgent);
-      this.db
-        .prepare(
-          `DELETE FROM sessions WHERE account_id = ? AND rowid NOT IN (
-             SELECT rowid FROM sessions WHERE account_id = ? ORDER BY rowid DESC LIMIT ?)`,
-        )
-        .run(accountId, accountId, MAX_SESSIONS_PER_ACCOUNT);
-    });
+  /**
+   * Ouvre une session. Les sessions expirées sont purgées et le compte garde au plus MAX_SESSIONS_PER_ACCOUNT
+   * sessions : la plus ancienne (ordre d'insertion) est supprimée au-delà. `userAgent` (en-tête de la requête) est
+   * conservé tronqué, pour la fiche administrateur. `profileId` : session verrouillée sur ce profil (invitation).
+   */
+  startSession(accountId: string, tokenHash: string, now: string, expiresAt: string, userAgent?: string | null, profileId?: string | null): void {
+    this.transaction(() => this.openSession(accountId, tokenHash, now, expiresAt, userAgent, profileId ?? null));
   }
 
-  private createSession(accountId: string, tokenHash: string, createdAt: string, expiresAt: string, userAgent?: string | null): void {
+  /** Corps de startSession, à appeler dans une transaction. */
+  private openSession(accountId: string, tokenHash: string, now: string, expiresAt: string, userAgent: string | null | undefined, profileId: string | null): void {
+    this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
+    this.createSession(accountId, tokenHash, now, expiresAt, userAgent, profileId);
     this.db
-      .prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)')
-      .run(tokenHash, accountId, createdAt, expiresAt, storedUserAgent(userAgent));
+      .prepare(
+        `DELETE FROM sessions WHERE account_id = ? AND rowid NOT IN (
+           SELECT rowid FROM sessions WHERE account_id = ? ORDER BY rowid DESC LIMIT ?)`,
+      )
+      .run(accountId, accountId, MAX_SESSIONS_PER_ACCOUNT);
+  }
+
+  private createSession(
+    accountId: string,
+    tokenHash: string,
+    createdAt: string,
+    expiresAt: string,
+    userAgent?: string | null,
+    profileId: string | null = null,
+  ): void {
+    this.db
+      .prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at, user_agent, profile_id) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(tokenHash, accountId, createdAt, expiresAt, storedUserAgent(userAgent), profileId);
   }
 
   /**
-   * Compte lié à une session valide (non expirée), ou undefined. Met aussi la dernière activité de la session à jour,
-   * au plus une fois toutes les SESSION_TOUCH_INTERVAL_MS : aucune écriture tant que l'intervalle n'est pas écoulé.
+   * Compte lié à une session valide (non expirée), ou undefined, avec le profil verrouillé de la session. Met aussi la
+   * dernière activité de la session à jour, au plus une fois toutes les SESSION_TOUCH_INTERVAL_MS. Une session
+   * verrouillée sur un profil supprimé n'est plus valide.
    */
-  accountForSession(tokenHash: string, now: string): Account | undefined {
+  accountForSession(tokenHash: string, now: string): SessionAccount | undefined {
     const row = this.db
       .prepare(
-        `SELECT a.id, a.username, a.is_owner, a.created_at, s.last_seen_at
+        `SELECT a.id, a.username, a.is_owner, a.created_at, s.last_seen_at, s.profile_id
          FROM sessions s JOIN accounts a ON a.id = s.account_id
-         WHERE s.token_hash = ? AND s.expires_at > ? AND a.suspended_at IS NULL`,
+         WHERE s.token_hash = ? AND s.expires_at > ? AND a.suspended_at IS NULL
+           AND (s.profile_id IS NULL OR EXISTS (SELECT 1 FROM profiles p WHERE p.id = s.profile_id))`,
       )
-      .get(tokenHash, now) as (Omit<AccountRow, 'password_hash'> & { last_seen_at: number | null }) | undefined;
+      .get(tokenHash, now) as (Omit<AccountRow, 'password_hash'> & { last_seen_at: number | null; profile_id: string | null }) | undefined;
     if (row === undefined) return undefined;
     const nowMs = Date.parse(now);
     if (row.last_seen_at === null || nowMs - Number(row.last_seen_at) >= SESSION_TOUCH_INTERVAL_MS) {
       this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(nowMs, tokenHash);
     }
-    return toAccount(row);
+    return { ...toAccount(row), lockedProfileId: row.profile_id ?? null };
   }
 
   deleteSession(tokenHash: string): void {
@@ -531,14 +564,15 @@ export class UserStore {
     this.db.prepare('DELETE FROM sessions WHERE account_id = ?').run(accountId);
   }
 
-  /** Rotation : remplace une session valide par une nouvelle. False si l'ancienne n'était plus valide. */
+  /** Rotation : remplace une session valide par une nouvelle (qui garde son éventuel profil verrouillé). False si l'ancienne n'était plus valide. */
   rotateSession(oldHash: string, newHash: string, accountId: string, now: string, expiresAt: string, userAgent?: string | null): boolean {
     return this.transaction(() => {
-      const removed = this.db
-        .prepare('DELETE FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?')
-        .run(oldHash, accountId, now);
-      if (removed.changes === 0) return false;
-      this.createSession(accountId, newHash, now, expiresAt, userAgent);
+      const old = this.db
+        .prepare('SELECT profile_id FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?')
+        .get(oldHash, accountId, now) as { profile_id: string | null } | undefined;
+      if (old === undefined) return false;
+      this.db.prepare('DELETE FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?').run(oldHash, accountId, now);
+      this.createSession(accountId, newHash, now, expiresAt, userAgent, old.profile_id ?? null);
       return true;
     });
   }
@@ -671,8 +705,221 @@ export class UserStore {
       const row = this.db.prepare('SELECT pid FROM profiles WHERE id = ? AND account_id = ?').get(profileId, accountId) as
         | { pid: string | null }
         | undefined;
-      if (row?.pid) purgeSocialData(this.db, row.pid);
+      if (row === undefined) return false;
+      if (row.pid) purgeSocialData(this.db, row.pid);
+      // Login du profil (invité du foyer) et sessions verrouillées dessus : retirés avec lui (sessions : pas de clé étrangère).
+      this.db.prepare('DELETE FROM sessions WHERE profile_id = ?').run(profileId);
+      this.db.prepare('DELETE FROM profile_logins WHERE profile_id = ?').run(profileId);
       return this.db.prepare('DELETE FROM profiles WHERE id = ? AND account_id = ?').run(profileId, accountId).changes > 0;
+    });
+  }
+
+  // Invitations sur un profil du foyer (migration 27) : le jeton clair n'arrive jamais ici, seule son empreinte est reçue.
+
+  /**
+   * Crée un lien pour un profil. Le lien actif précédent du profil (non utilisé, non révoqué, non expiré) est révoqué dans
+   * la même transaction. Refus `profile_has_login` si le profil a déjà un identifiant : rien n'est écrit.
+   */
+  createHouseholdInvite(write: HouseholdInviteWrite): HouseholdCreateResult {
+    return this.transaction((): HouseholdCreateResult => {
+      if (this.db.prepare('SELECT 1 AS n FROM profile_logins WHERE profile_id = ?').get(write.profileId) !== undefined) {
+        return { ok: false, reason: 'profile_has_login' };
+      }
+      this.db
+        .prepare('UPDATE household_invites SET revoked_at = ? WHERE profile_id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?')
+        .run(write.createdAt, write.profileId, write.createdAt);
+      this.db
+        .prepare(
+          `INSERT INTO household_invites (id, token_hash, account_id, profile_id, created_by_profile, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(write.id, write.tokenHash, write.accountId, write.profileId, write.createdByProfile, write.createdAt, write.expiresAt);
+      return { ok: true };
+    });
+  }
+
+  /** Liens du compte créés depuis `since` (ms), les plus récents d'abord, avec le nom du profil invité. */
+  listHouseholdInvites(accountId: string, since: number): HouseholdInviteRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT h.id, h.profile_id, p.name AS profile_name, h.created_at, h.expires_at, h.used_at, h.revoked_at
+         FROM household_invites h JOIN profiles p ON p.id = h.profile_id
+         WHERE h.account_id = ? AND h.created_at >= ?
+         ORDER BY h.created_at DESC, h.id`,
+      )
+      .all(accountId, since) as unknown as {
+      id: string;
+      profile_id: string;
+      profile_name: string;
+      created_at: number;
+      expires_at: number;
+      used_at: number | null;
+      revoked_at: number | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      profileId: row.profile_id,
+      profileName: row.profile_name,
+      createdAt: Number(row.created_at),
+      expiresAt: Number(row.expires_at),
+      usedAt: row.used_at === null ? null : Number(row.used_at),
+      revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+    }));
+  }
+
+  /** Révoque un lien du compte (pose revoked_at ; un login déjà créé reste valable). `used` si le lien a servi. */
+  revokeHouseholdInvite(accountId: string, inviteId: string, now: number): 'ok' | 'not_found' | 'used' {
+    return this.transaction((): 'ok' | 'not_found' | 'used' => {
+      const row = this.db.prepare('SELECT used_at, revoked_at FROM household_invites WHERE id = ? AND account_id = ?').get(inviteId, accountId) as
+        | { used_at: number | null; revoked_at: number | null }
+        | undefined;
+      if (row === undefined) return 'not_found';
+      if (row.used_at !== null) return 'used';
+      if (row.revoked_at === null) {
+        this.db.prepare('UPDATE household_invites SET revoked_at = ? WHERE id = ?').run(now, inviteId);
+      }
+      return 'ok';
+    });
+  }
+
+  /** Lien vu par l'empreinte de son jeton, avec le profil invité et le créateur (même compte). Undefined si inconnu. */
+  householdInviteByTokenHash(tokenHash: string): HouseholdInviteView | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT h.id, h.account_id, h.profile_id, h.created_by_profile, h.expires_at, h.used_at, h.revoked_at,
+                p.name AS profile_name, p.avatar AS profile_avatar, p.avatar_color AS profile_color,
+                c.name AS inviter_name, c.avatar AS inviter_avatar, c.avatar_color AS inviter_color
+         FROM household_invites h
+         JOIN profiles p ON p.id = h.profile_id
+         LEFT JOIN profiles c ON c.id = h.created_by_profile AND c.account_id = h.account_id
+         WHERE h.token_hash = ?`,
+      )
+      .get(tokenHash) as
+      | {
+          id: string;
+          account_id: string;
+          profile_id: string;
+          created_by_profile: string | null;
+          expires_at: number;
+          used_at: number | null;
+          revoked_at: number | null;
+          profile_name: string;
+          profile_avatar: string | null;
+          profile_color: string;
+          inviter_name: string | null;
+          inviter_avatar: string | null;
+          inviter_color: string | null;
+        }
+      | undefined;
+    if (row === undefined) return undefined;
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      profileId: row.profile_id,
+      profileName: row.profile_name,
+      profileAvatar: row.profile_avatar ?? null,
+      profileAvatarColor: row.profile_color,
+      createdByProfile: row.created_by_profile,
+      inviterName: row.inviter_name,
+      inviterAvatar: row.inviter_avatar ?? null,
+      inviterAvatarColor: row.inviter_color,
+      expiresAt: Number(row.expires_at),
+      usedAt: row.used_at === null ? null : Number(row.used_at),
+      revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+    };
+  }
+
+  /** Jusqu'à `limit` affiches non vides de la bibliothèque du profil (les plus récemment ajoutées d'abord). */
+  householdBackdrops(profileId: string, limit: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT poster FROM library_items
+         WHERE profile_id = ? AND removed = 0 AND poster IS NOT NULL AND poster <> ''
+         ORDER BY added_at DESC, title_ref LIMIT ?`,
+      )
+      .all(profileId, limit) as { poster: string }[];
+    return rows.map((row) => row.poster);
+  }
+
+  /** Login de profil (identifiant de l'invité) : identifiants, compte et profil. Undefined si aucun. */
+  profileLoginRecord(login: string): ProfileLoginRecord | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT pl.login, pl.password_hash, pl.account_id, pl.profile_id, a.is_owner, a.suspended_at
+         FROM profile_logins pl JOIN accounts a ON a.id = pl.account_id
+         WHERE pl.login = ?`,
+      )
+      .get(login) as
+      | { login: string; password_hash: string; account_id: string; profile_id: string; is_owner: number; suspended_at: string | null }
+      | undefined;
+    if (row === undefined) return undefined;
+    return {
+      login: row.login,
+      passwordHash: row.password_hash,
+      accountId: row.account_id,
+      profileId: row.profile_id,
+      isOwner: Number(row.is_owner) === 1,
+      suspended: row.suspended_at != null,
+    };
+  }
+
+  /**
+   * Consommation d'un lien (transaction unique) : vérifie l'état, refuse un identifiant déjà pris (compte ou login de
+   * profil), crée le login, marque le lien utilisé et ouvre la session verrouillée sur le profil. Un nom donné renomme le
+   * profil. Rien n'est écrit en cas de refus.
+   */
+  redeemHouseholdInvite(input: HouseholdRedeemInput): HouseholdRedeemResult {
+    return this.transaction((): HouseholdRedeemResult => {
+      const row = this.db
+        .prepare(
+          `SELECT h.id, h.account_id, h.profile_id, h.expires_at, h.used_at, h.revoked_at, a.suspended_at
+           FROM household_invites h JOIN accounts a ON a.id = h.account_id
+           WHERE h.token_hash = ?`,
+        )
+        .get(input.tokenHash) as
+        | {
+            id: string;
+            account_id: string;
+            profile_id: string;
+            expires_at: number;
+            used_at: number | null;
+            revoked_at: number | null;
+            suspended_at: string | null;
+          }
+        | undefined;
+      if (row === undefined) return { ok: false, reason: 'unknown' };
+      if (row.used_at !== null) return { ok: false, reason: 'used' };
+      if (row.revoked_at !== null) return { ok: false, reason: 'revoked' };
+      if (Number(row.expires_at) <= input.now) return { ok: false, reason: 'expired' };
+      if (row.suspended_at != null) return { ok: false, reason: 'account_suspended' };
+      const taken = this.db
+        .prepare('SELECT 1 AS n FROM accounts WHERE username = ? UNION ALL SELECT 1 AS n FROM profile_logins WHERE login = ?')
+        .get(input.login, input.login);
+      if (taken !== undefined) return { ok: false, reason: 'login_taken' };
+      // Défensif : un profil ne reçoit qu'un identifiant (la création d'un lien le refuse déjà).
+      if (this.db.prepare('SELECT 1 AS n FROM profile_logins WHERE profile_id = ?').get(row.profile_id) !== undefined) {
+        return { ok: false, reason: 'used' };
+      }
+      const consumed = this.db
+        .prepare('UPDATE household_invites SET used_at = ?, used_login = ? WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL')
+        .run(input.now, input.login, row.id);
+      if (consumed.changes === 0) return { ok: false, reason: 'used' };
+      this.db
+        .prepare('INSERT INTO profile_logins (login, password_hash, account_id, profile_id, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(input.login, input.passwordHash, row.account_id, row.profile_id, input.now);
+      if (input.name !== null) {
+        this.db.prepare('UPDATE profiles SET name = ? WHERE id = ? AND account_id = ?').run(input.name, row.profile_id, row.account_id);
+        syncProfileIdentity(this.db, row.account_id, row.profile_id, input.name, false);
+      }
+      this.openSession(
+        row.account_id,
+        input.sessionHash,
+        new Date(input.now).toISOString(),
+        input.sessionExpiresAt,
+        input.userAgent,
+        row.profile_id,
+      );
+      return { ok: true, accountId: row.account_id, profileId: row.profile_id };
     });
   }
 
