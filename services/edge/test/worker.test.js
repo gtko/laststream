@@ -73,6 +73,12 @@ describe('enregistrement', () => {
   it('GET refusé (405)', async () => {
     assert.equal((await call(makeEnv(), '/__laststream/register')).status, 405);
   });
+  it('relais de plages supprimé : /__laststream/range renvoie 404 sans appel amont', async () => {
+    const core = coreBinding(() => new Response('amont', { status: 200 }));
+    const r = await call(makeEnv(undefined, core), '/__laststream/range?u=x&s=0&e=1&t=y');
+    assert.equal(r.status, 404);
+    assert.equal(core.calls.length, 0);
+  });
 });
 
 describe('chemins interdits', () => {

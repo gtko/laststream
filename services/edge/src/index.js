@@ -2,8 +2,6 @@
 // Repli optionnel vers le lastAddon du PC par un tunnel rapide cloudflared (dont l'URL change), uniquement si core renvoie 5xx
 // et qu'un tunnel est enregistré (POST /__laststream/register, secret partagé, KV LASTSTREAM_ROUTE). Désactivable : TUNNEL_FALLBACK=0.
 
-import { handleRange, RANGE_PATH } from './range.js';
-
 const ROUTE_KEY = 'tunnel';
 const REGISTER_PATH = '/__laststream/register';
 const MAX_REGISTER_BYTES = 1024;
@@ -286,7 +284,6 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === REGISTER_PATH) return register(request, env);
-    // Coupé : lire les fichiers AllDebrid depuis des IP Cloudflare a fait suspendre le compte. Réactivable par RANGE_ENABLED=1.
     // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
     const file = env.APP_FILES && appFile(pathname);
     if (file) {
@@ -309,10 +306,6 @@ export default {
       }
       headers.set('content-length', String(obj.size));
       return new Response(request.method === 'HEAD' ? null : obj.body, { status: 200, headers });
-    }
-    if (pathname === RANGE_PATH) {
-      if (env.RANGE_ENABLED !== '1') return json(410, { error: 'range_disabled', message: 'Relais de miniatures désactivé.' });
-      return handleRange(request, env);
     }
     if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
     return relay(request, env);
