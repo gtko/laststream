@@ -5,7 +5,7 @@ import { createMemoryKvCache } from '../platform/memory-kv-cache.js';
 /**
  * Registre des URL de lecture que lastAddon a lui-même émises ou résolues (flux directs rendus au client, liens débridés
  * vers lesquels /play redirige). Les miniatures de la barre n'acceptent que ces URL (en plus du serveur de streaming
- * local) : un client ne peut donc pas faire lire une adresse arbitraire à ffmpeg ni au relais de plages.
+ * local) : un client ne peut donc pas faire lire une adresse arbitraire à ffmpeg.
  *
  * Le registre vit dans un `KvCache` de la plateforme (mémoire sous Node, KV sous Workers) : sous Workers, /stream,
  * /play et la route de miniatures peuvent être servis par des instances différentes.

@@ -107,9 +107,17 @@ describe('lt/health', () => {
     expect(JSON.parse(body)).toEqual({
       ok: true,
       configured: { tmdb: true, mdblist: false, tvdb: false, openrouter: false, fanart: true },
-      capabilities: { thumbs: false, rangeThumbs: false, tvHls: true },
+      capabilities: { thumbs: false, tvHls: true },
     });
     expect(body).not.toContain(KEYS.tmdbToken);
+  });
+  it('relais de plages supprimé : POST /lt/range-source répond 404', async () => {
+    const res = await fetch(`${app.baseUrl}/${tokenFor({})}/lt/range-source`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://a.debrid.it/dl/z.mkv' }),
+    });
+    expect(res.status).toBe(404);
   });
 });
 

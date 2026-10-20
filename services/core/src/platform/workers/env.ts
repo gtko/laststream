@@ -29,8 +29,6 @@ export interface WorkerEnv {
   /** Limite de connexion/inscription par IP et par nom d'utilisateur (absentes : compteurs en mémoire). */
   AUTH_LIMITER_IP?: RateLimitBinding;
   AUTH_LIMITER_USER?: RateLimitBinding;
-  /** Limite des signatures de liens débridés directs (/lt/range-source), par configuration. */
-  RANGE_LIMITER?: RateLimitBinding;
   /** Limite globale des appels sortants vers MDBList. */
   MDBLIST_LIMITER?: RateLimitBinding;
   /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */
@@ -49,11 +47,10 @@ export interface WorkerEnv {
 }
 
 /**
- * Noms de secrets du Worker → variables lues par l'application. Les secrets du Worker portent le nom court
- * (`RANGE_SECRET`, `EDGE_SECRET`), comme dans le Worker de relais ; l'application lit les noms LASTADDON_*.
+ * Noms de secrets du Worker → variables lues par l'application. Le secret du Worker porte le nom court (`EDGE_SECRET`),
+ * comme dans le Worker de relais ; l'application lit le nom LASTADDON_EDGE_SECRET.
  */
 const ALIASES: Readonly<Record<string, string>> = {
-  LASTADDON_RANGE_SECRET: 'RANGE_SECRET',
   LASTADDON_EDGE_SECRET: 'EDGE_SECRET',
 };
 

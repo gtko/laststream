@@ -23,8 +23,6 @@ export async function startApp(options: {
   skipDetect?: AppDeps['skipDetect'];
   /** Miniatures de la barre (ffmpeg, cache, origines locales de test). */
   thumbs?: AppDeps['thumbs'];
-  /** Relais de plages (secret + base du Worker) : `null` par défaut, jamais lu dans l'environnement pendant les tests. */
-  rangeProxy?: AppDeps['rangeProxy'];
   /** Dépendances supplémentaires (administration : métriques, caches, TV, salons, limites). */
   extra?: Partial<AppDeps>;
 }): Promise<RunningApp> {
@@ -38,7 +36,6 @@ export async function startApp(options: {
     localProwlarr: options.localProwlarr,
     skipDetect: options.skipDetect,
     thumbs: options.thumbs ?? { ffmpeg: null },
-    rangeProxy: options.rangeProxy ?? null,
     ...options.extra,
   });
   const server: Server = serveApp(app);

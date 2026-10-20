@@ -28,11 +28,11 @@ describe('plateforme Node : variables d\'exécution', () => {
 
   it('setPlatform remplace la plateforme active', () => {
     const original = platform();
-    const replacement = { ...createNodePlatform(), capabilities: { thumbs: false, rangeThumbs: false, skipDetect: false, tvHls: false, sharedState: false } };
+    const replacement = { ...createNodePlatform(), capabilities: { thumbs: false, skipDetect: false, tvHls: false, sharedState: false } };
     setPlatform(replacement);
     expect(platform().capabilities.tvHls).toBe(false);
     setPlatform(original);
-    expect(platform().capabilities).toEqual({ thumbs: true, rangeThumbs: true, skipDetect: true, tvHls: true, sharedState: false });
+    expect(platform().capabilities).toEqual({ thumbs: true, skipDetect: true, tvHls: true, sharedState: false });
   });
 });
 

@@ -33,7 +33,6 @@ export function startApp(options: {
   userRateLimits?: Partial<{ read: number; write: number; sensitive: number; loginPerUsername: number; authPerIp: number }>;
   skipDetect?: AppDeps['skipDetect'];
   thumbs?: AppDeps['thumbs'];
-  rangeProxy?: AppDeps['rangeProxy'];
   /** Dépendances supplémentaires (administration : métriques, caches, TV, salons, limites). */
   extra?: Partial<AppDeps>;
 }): Promise<RunningApp> {
@@ -44,7 +43,6 @@ export function startApp(options: {
     fetch: options.fetch,
     lookupHost: options.lookupHost,
     userRateLimits: options.userRateLimits ?? DEFAULT_USER_RATE_LIMITS,
-    rangeProxy: options.rangeProxy ?? null,
     userBackend: createDurableObjectUserBackend((env as unknown as WorkerEnv).USER_STORE, `test-${crypto.randomUUID()}`),
     ...options.extra,
   });

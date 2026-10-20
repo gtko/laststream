@@ -324,7 +324,7 @@ describe('5. limites de débit persistantes', () => {
 
 describe('6. lecture publique d’un lien : adresse IP', () => {
   it('sans adresse IP connue : 400 ip_required (jamais mutualisé sous « inconnu »)', async () => {
-    const local = createApp({ secret: 'ip-test-secret', allowPlain: false, userDbPath: ':memory:', thumbs: { ffmpeg: null }, rangeProxy: null });
+    const local = createApp({ secret: 'ip-test-secret', allowPlain: false, userDbPath: ':memory:', thumbs: { ffmpeg: null } });
     try {
       const res = await local.request('/user/social/share-links/abcdefghijklmnop');
       expect(res.status).toBe(400);
