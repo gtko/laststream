@@ -3,13 +3,14 @@
 import { tmdb, tvChannels, tvEpg, type Json, type TvChannel } from './lt';
 import { getRegion, getVideoLang } from './prefs';
 import {
-  SEED_SHOWS, airingsFor, isShowCategory, matchKnown, showKey, showName, titleKey, titleMatches, type Airing, type EpgProgram, type GuideChannel, type SeedShow,
+  SEED_SHOWS, airingsFor, epgIdOf, isShowCategory, matchKnown, showKey, showName, titleKey, titleMatches, type Airing, type EpgProgram, type GuideChannel, type SeedShow,
 } from './shows';
 import { NATIONAL, langCode3, rankChannels } from './tvRank';
 
 const GUIDE_TTL_MS = 10 * 60 * 1000;
 const SEED_TTL_MS = 30 * 24 * 3600 * 1000;
-const SEED_KEY = 'laststream.shows.seeds';
+/** v2 : les entrées de la v1 pouvaient venir du repli « premier résultat » ; elles sont ignorées et réinterrogées. */
+const SEED_KEY = 'laststream.shows.seeds.v2';
 const GUIDE_HOURS = 40;
 const SLICE_SEC = 8 * 3600;
 const MAIN_FALLBACK = 25;
@@ -299,7 +300,7 @@ export function guideShows(guide: Guide, known: readonly { name: string; aliases
   return [...groups.values()].map((g): ShowEntry => {
     const name = mostFrequent(g.names);
     return {
-      id: 'epg:' + g.key.replace(/ /g, '-'), name, poster: '', backdrop: '', overview: g.overview, popularity: 0, firstAir: '', genres: [],
+      id: epgIdOf(g.key), name, poster: '', backdrop: '', overview: g.overview, popularity: 0, firstAir: '', genres: [],
       aliases: [name], airings: g.airings.sort((a, b) => a.start - b.start || (a.channel.num ?? 99) - (b.channel.num ?? 99)), platform: '', next: null,
       epg: true, icon: g.icon, category: mostFrequent(g.cats),
     };

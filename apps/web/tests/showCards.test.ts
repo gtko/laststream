@@ -26,7 +26,7 @@ type Show = {
 type Known = { id: number; name: string; poster: string; backdrop: string; aliases: string[] };
 type Hero = { show: Show; airing: Airing | null; tonight: boolean };
 
-let tonightTile: (a: Airing, known: Known | null, now: number) => string;
+let tonightTile: (a: Airing, known: Known | null, now: number, epgIds?: Set<string>) => string;
 let showCard: (s: Show, now: number) => string;
 let heroShow: (shows: Show[], now: number) => Hero | null;
 let heroHTML: (h: Hero, now: number) => string;
@@ -67,6 +67,33 @@ function mount(html: string): HTMLElement {
   document.body.appendChild(host);
   return host.querySelector('.card') as HTMLElement;
 }
+
+describe('« Ce soir à la TV » : émission du guide sans fiche TMDB', () => {
+  const now = at(21, 30);
+  const epgIds = new Set(['epg:enquetes-du-soir']);
+
+  it('émission (genre d’émission) présente au guide : ouvre sa fiche epg, même clé que le guide', () => {
+    const card = mount(tonightTile(airing(TF1, 'Les Enquêtes du soir - Épisode 4', now - 600, now + 3600, 'Magazine d’information', 'https://img.example/enq.jpg'), null, now, epgIds));
+    expect(card.getAttribute('data-showopen')).toBe('epg:enquetes-du-soir');
+    expect(card.hasAttribute('data-showwatch')).toBe(false);
+  });
+
+  it('film, série ou émission absente du guide : direct de la chaîne', () => {
+    const film = mount(tonightTile(airing(TF1, 'Les Enquêtes du soir', now - 600, now + 3600, 'Film'), null, now, epgIds));
+    expect(film.getAttribute('data-showwatch')).toBe('fr:TF1.fr');
+    expect(film.hasAttribute('data-showopen')).toBe(false);
+    const serie = mount(tonightTile(airing(TF1, 'Les Enquêtes du soir', now - 600, now + 3600, 'Série TV'), null, now, epgIds));
+    expect(serie.getAttribute('data-showwatch')).toBe('fr:TF1.fr');
+    const absent = mount(tonightTile(airing(TF1, 'Autre Émission', now - 600, now + 3600, 'Divertissement'), null, now, epgIds));
+    expect(absent.getAttribute('data-showwatch')).toBe('fr:TF1.fr');
+  });
+
+  it('émission connue de TMDB : sa fiche TMDB, jamais celle du guide', () => {
+    const lf: Known = { id: 1001, name: 'La France a un incroyable talent', poster: '/lf.jpg', backdrop: '/lfb.jpg', aliases: [] };
+    const card = mount(tonightTile(airing(TF1, 'La France a un incroyable talent', now - 600, now + 3600, 'Divertissement'), lf, now, new Set(['epg:la-france-a-un-incroyable-talent'])));
+    expect(card.getAttribute('data-showopen')).toBe('1001');
+  });
+});
 
 describe('« Ce soir à la TV » : carte paysage', () => {
   it('heure en grand, durée, chaîne en pastille, titre et genre', () => {

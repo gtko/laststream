@@ -4,6 +4,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { airingsFor, dayLabel, hhmm, isShowCategory, localDate, matchKnown, primeTime, programKeys, SEED_SHOWS, showKey, showName, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
 import { guideShows, type Guide, resetShowsCache, resolveSeed } from '../src/data/showsApi';
+import { clearCache } from '../src/data/transport';
 // lastAddon se lit une fois, à l'import de config.ts : réglé avant les imports, comme au premier chargement de l'application.
 vi.hoisted(() => localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_sh-1' })));
 import { playBest } from '../src/player/session.js';
@@ -101,6 +102,8 @@ const CHANNELS = [ch('fr:France3.fr', 'France 3'), ch('fr:M6.fr', 'M6'), ch('fr:
 /** Programmes ajoutés au guide par un test (dernier test du fichier : le guide est rechargé avec `resetShowsCache`). */
 type EpgRow = { channelId: string; start: number; stop: number; title: string; desc: string; icon: string; category: string };
 const extraEpg: EpgRow[] = [];
+/** Porte des pages « Voir plus » (null : pas de retenue). */
+let moreGate: Promise<void> | null = null;
 /** Réponse de recherche TMDB, identique pour toute requête (comme une recherche approximative) : seuls les noms qui correspondent sont retenus. */
 const SEARCH_HITS = [
   { id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.', genre_ids: [10764] },
@@ -250,6 +253,17 @@ describe('émissions du guide sans fiche TMDB', () => {
     expect(out.find((s) => s.name === 'Documentaire Nature')!.id).toBe('epg:documentaire-nature');
   });
 
+  it('titre générique avant « : » (Documentaire…) : le titre complet nomme l’émission', () => {
+    expect(showName('Documentaire : Le Mont Blanc')).toBe('Documentaire : Le Mont Blanc');
+    expect(showKey('Documentaire : Les volcans')).toBe('documentaire les volcans');
+    const out = guideShows(guide([
+      { channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Documentaire : Le Mont Blanc', desc: '', icon: '', category: 'Documentaire' },
+      { channelId: 'fr:TF1.fr', start: T + 1000, stop: T + 1800, title: 'Documentaire : Les volcans', desc: '', icon: '', category: 'Documentaire' },
+    ]), [], T);
+    expect(out.map((s) => s.name).sort()).toEqual(['Documentaire : Le Mont Blanc', 'Documentaire : Les volcans']);
+    expect(out.map((s) => s.id).sort()).toEqual(['epg:documentaire-le-mont-blanc', 'epg:documentaire-les-volcans']);
+  });
+
   it('une émission déjà connue sous un alias n’est pas reprise', () => {
     const out = guideShows(guide([{ channelId: 'fr:TF1.fr', start: T + 100, stop: T + 900, title: 'Jeu Test', desc: '', icon: '', category: 'Jeu' }]), [{ name: 'Autre', aliases: ['Jeu Test'] }], T);
     expect(out).toEqual([]);
@@ -261,7 +275,12 @@ describe('émissions TV (interface)', () => {
     const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
     document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
     localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_sh-1' }));
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => mockFetch(String(url))));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      // « Voir plus » (pages 4 et suivantes) : la requête est notée, la réponse retenue tant que le test tient la porte.
+      const res = mockFetch(String(url));
+      if (moreGate && /with_type=1%7C3%7C5%7C0/.test(String(url)) && Number(new URL(String(url)).searchParams.get('page')) >= 4) await moreGate;
+      return res;
+    }));
     window.scrollTo = () => undefined;
     Element.prototype.scrollIntoView = () => undefined;
     await import('../src/main.js');
@@ -311,6 +330,14 @@ describe('émissions TV (interface)', () => {
   it('recherche d’une émission suivie : sans nom correspondant, aucune fiche (le premier résultat n’est pas pris au hasard)', async () => {
     expect(await resolveSeed({ name: 'Quotidien' })).toBeNull();
     expect(await resolveSeed({ name: 'Top Chef' })).toMatchObject({ id: 1003 });
+  });
+
+  it('cache des recherches : une entrée de l’ancienne clé est ignorée et la recherche reprend', async () => {
+    const stale = { at: Date.now(), show: { id: 9999, name: 'Repli du premier résultat', poster: '/x.jpg', backdrop: '', overview: '', popularity: 1, firstAir: '', genres: [] } };
+    localStorage.setItem('laststream.shows.seeds', JSON.stringify({ 'Le Grand Quiz du Dimanche': stale }));
+    expect(await resolveSeed({ name: 'Le Grand Quiz du Dimanche' })).toMatchObject({ id: 3001 });
+    const v2 = JSON.parse(localStorage.getItem('laststream.shows.seeds.v2') || '{}');
+    expect(v2['Le Grand Quiz du Dimanche']).toMatchObject({ show: { id: 3001 } });
   });
 
   it('page Émissions TV : à la télé / autres émissions', async () => {
@@ -567,5 +594,41 @@ describe('émissions TV (interface)', () => {
     location.hash = '#/emission/epg:nexiste-pas';
     await settle(300);
     expect(document.querySelector('#detail')!.textContent).toContain('Cette émission n’est plus au programme.');
+  });
+
+  it('page Émissions TV : un clic sur un genre pendant « Voir plus » garde le bouton occupé, sans doublon', async () => {
+    resetShowsCache();
+    location.hash = '#/';
+    await settle(100);
+    location.hash = '#/emissions';
+    await settle(600);
+    const zone = document.querySelector('#detail #sv-zone')!;
+    const typedPages = () => calls.filter((c) => c.includes('with_type=1%7C3%7C5%7C0')).map((c) => new URL(c).searchParams.get('page'));
+    const before = typedPages().length;
+    clearCache(); // les pages 4 et 5 sont dans le cache client depuis le test « Voir plus » : elles doivent repartir sur le réseau
+    let release: () => void = () => undefined;
+    moreGate = new Promise<void>((resolve) => { release = () => resolve(); });
+    (zone.querySelector('#sv-more') as HTMLElement).click();
+    await settle(50);
+    expect(typedPages().slice(before)).toEqual(['4', '5']); // chargement en cours
+    const tab = Array.from(document.querySelectorAll<HTMLElement>('#detail .sv-tab')).find((t) => t.textContent === 'Téléréalité')!;
+    tab.click(); // la zone est redessinée pendant le chargement
+    await settle(50);
+    const busy = zone.querySelector<HTMLButtonElement>('#sv-more')!;
+    expect(busy).not.toBeNull();
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toBe('Chargement…');
+    busy.click(); // ignoré : aucun second chargement
+    await settle(50);
+    release();
+    moreGate = null;
+    await settle(300);
+    expect(typedPages().slice(before)).toEqual(['4', '5']);
+    const ids = Array.from(zone.querySelectorAll('#sv-stream-grid .show-card')).map((c) => c.getAttribute('data-showopen'));
+    expect(ids).toEqual(['2005']); // Téléréalité seulement, une seule fois
+    expect(new Set(ids).size).toBe(ids.length);
+    const more = zone.querySelector<HTMLButtonElement>('#sv-more')!;
+    expect(more.disabled).toBe(false);
+    expect(more.textContent).toBe('Voir plus d’émissions');
   });
 });

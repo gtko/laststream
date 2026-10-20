@@ -2,7 +2,7 @@
  * et « Ce soir à la TV ». Les données viennent de TMDB et du guide TV (voir data/showsApi.ts). */
 import { isKidProfile } from '../data/auth';
 import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
-import { airingsFor, dayLabel, foldText, hhmm, isLiveNow, localDate, matchKnown, primeTime, progressPct, seedFor } from '../data/shows';
+import { airingsFor, dayLabel, epgIdOf, foldText, hhmm, isLiveNow, isShowCategory, localDate, matchKnown, primeTime, progressPct, seedFor, showKey } from '../data/shows';
 import { playBest } from '../player/session.js';
 import { register, toItem } from './catalog.js';
 import { GENRE_FR, IMG } from './constants.js';
@@ -72,12 +72,15 @@ async function renderShowsRow() {
  * si elle est connue, sinon image du guide, sinon fond typographique. Chaîne en haut à gauche, heure et durée en grand,
  * titre et genre en bas ; « En direct » et progression si l'émission est en cours à `now` (secondes).
  */
-export function tonightTile(a, known, now) {
+export function tonightTile(a, known, now, epgIds = new Set()) {
   const live = isLiveNow(a, now);
+  // Émission du guide sans fiche TMDB (genre d'émission, entrée présente) : sa fiche ; les autres programmes gardent le direct.
+  const epgId = !known && isShowCategory(a.category) ? epgIdOf(showKey(a.title)) : '';
+  const onGuide = !!epgId && epgIds.has(epgId);
   const img = known && known.backdrop ? IMG('w780', known.backdrop) : a.icon || '';
   const ch = a.channel;
   const dur = fmtMin(Math.round((a.stop - a.start) / 60));
-  const attrs = known ? ' data-showopen="' + esc(known.id) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
+  const attrs = known ? ' data-showopen="' + esc(known.id) + '"' : onGuide ? ' data-showopen="' + esc(epgId) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
   const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? ', en direct' : '');
   const chan = '<span class="tn-chan">' + (ch.num ? '<b class="ch-num">' + esc(String(ch.num)) + '</b>' : '') +
     (ch.logo ? '<img class="tn-logo" src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="tn-name">' + esc(ch.name) + '</span>') + '</span>';
@@ -103,9 +106,12 @@ async function renderTonightRow() {
   const fresh = document.getElementById('tonight-slot');
   if (!fresh || prime.length < 3) return;
   const known = listed ? listed.shows : [];
+  // Émissions TMDB d'un côté ; émissions du guide sans fiche de l'autre (identifiants `epg:`, fiche ouverte depuis la carte).
+  const tmdbShows = known.filter((s) => !s.epg);
+  const epgIds = new Set(known.filter((s) => s.epg).map((s) => s.id));
   fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + (late ? 'Demain soir à la TV' : 'Ce soir à la TV') +
     ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + '<div class="row" data-nav>' +
-    prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, known.map((k) => ({ ...k, aliases: k.aliases }))), now)).join('') + '</div></section>';
+    prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, tmdbShows), now, epgIds)).join('') + '</div></section>';
 }
 
 /** Rangées « Ce soir à la TV » et « Émissions du moment » de l'accueil (silencieuses en cas d'échec). */
@@ -220,6 +226,8 @@ function topItem(s, n) {
 const MORE_LABEL = 'Voir plus d’émissions';
 /** « 124 émissions », « 1 émission ». */
 const countLabel = (n) => n + (n > 1 ? ' émissions' : ' émission');
+/** « Voir plus » en cours (module) : tant que le chargement dure, un clic (y compris sur une zone redessinée) ne relance rien. */
+let moreLoading = false;
 
 /**
  * Sections 3 à 5 (filtrées par genre) : incontournables, top 10, « À la télé », « Toutes les émissions » (celles sans
@@ -254,6 +262,7 @@ function tabsHTML(tabs, genre) {
 
 export async function showShowsPage() {
   teardownFiche();
+  moreLoading = false; // une page quittée pendant « Voir plus » ne doit pas bloquer la suivante
   const token = state.token;
   state.kind = 'shows';
   document.title = 'Émissions TV · Laststream';
@@ -280,13 +289,6 @@ export async function showShowsPage() {
   const bar = detailEl.querySelector('.sv-tabs');
   const zone = detailEl.querySelector('#sv-zone');
   if (bar && zone) {
-    bar.addEventListener('click', (e) => {
-      const b = e.target instanceof Element ? e.target.closest('[data-genre]') : null;
-      if (!b) return;
-      genre = b.dataset.genre === 'all' ? 'all' : Number(b.dataset.genre);
-      bar.querySelectorAll('[data-genre]').forEach((t) => t.setAttribute('aria-pressed', String(t === b)));
-      zone.innerHTML = zoneHTML(data.shows, genre, nowSec(), more);
-    });
     // « Voir plus » : clic délégué sur la zone (redessinée à chaque genre). Les cartes ajoutées suivent le genre actif.
     const setMoreBusy = (busy) => {
       const btn = zone.querySelector('#sv-more');
@@ -294,13 +296,25 @@ export async function showShowsPage() {
       btn.disabled = busy;
       if (busy) { btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Chargement…'; } else { btn.removeAttribute('aria-busy'); btn.textContent = MORE_LABEL; }
     };
+    bar.addEventListener('click', (e) => {
+      const b = e.target instanceof Element ? e.target.closest('[data-genre]') : null;
+      if (!b) return;
+      genre = b.dataset.genre === 'all' ? 'all' : Number(b.dataset.genre);
+      bar.querySelectorAll('[data-genre]').forEach((t) => t.setAttribute('aria-pressed', String(t === b)));
+      zone.innerHTML = zoneHTML(data.shows, genre, nowSec(), more);
+      // Un « Voir plus » encore en cours reste occupé dans la zone redessinée (le bouton neuf n'est pas relancé).
+      if (moreLoading) setMoreBusy(true);
+    });
     const loadMore = async () => {
+      moreLoading = true;
       setMoreBusy(true);
       let r;
       try { r = await loadMoreShows(); } catch (_) {
+        moreLoading = false;
         if (token === state.token) { setMoreBusy(false); zone.querySelector('#sv-more')?.focus({ preventScroll: true }); }
         return;
       }
+      moreLoading = false;
       if (token !== state.token) return;
       const at = nowSec();
       const grid = zone.querySelector('#sv-stream-grid');
@@ -323,7 +337,7 @@ export async function showShowsPage() {
     };
     zone.addEventListener('click', (e) => {
       const btn = e.target instanceof Element ? e.target.closest('#sv-more') : null;
-      if (btn && !btn.disabled) loadMore();
+      if (btn && !btn.disabled && !moreLoading) loadMore();
     });
   }
   const h1 = detailEl.querySelector('#svc-title');

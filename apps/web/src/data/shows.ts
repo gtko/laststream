@@ -108,17 +108,29 @@ export function programKeys(raw: string): string[] {
   return [...new Set([titleKey(full), titleKey(head)].filter(Boolean))];
 }
 
-/** Clé de regroupement d'une émission du guide : sa première partie normalisée (« Koh-Lanta : La légende » → « koh lanta »). */
-export function showKey(raw: string): string {
+/** Premières parties de titre trop génériques pour nommer une émission : « Documentaire : Le Mont Blanc » garde son titre complet. */
+const GENERIC_HEADS = new Set(['documentaire', 'magazine', 'divertissement', 'meteo', 'programmes de la nuit', 'journal', 'reportage', 'emission', 'speciale', 'inedit', 'film', 'serie', 'jeu']);
+
+/** Partie du titre qui nomme l'émission : la première (avant « : » ou « - »), sauf si elle est générique : alors le titre complet. */
+function showPart(raw: string): string {
   const { full, head } = splitProgram(raw);
-  return titleKey(head) || titleKey(full);
+  return GENERIC_HEADS.has(titleKey(head)) ? full : head;
+}
+
+const tidy = (s: string): string => s.replace(/\s+/g, ' ').replace(/[\s:\-–—]+$/, '').trim();
+
+/** Clé de regroupement d'une émission du guide : sa partie nommante normalisée (« Koh-Lanta : La légende » → « koh lanta »). */
+export function showKey(raw: string): string {
+  return titleKey(showPart(raw)) || titleKey(splitProgram(raw).full);
 }
 
 /** Nom d'affichage d'une émission du guide, casse d'origine (« Koh-Lanta : La légende - Épisode 3 » → « Koh-Lanta »). */
 export function showName(raw: string): string {
-  const { full, head } = splitProgram(raw);
-  return head.replace(/\s+/g, ' ').replace(/[\s:\-–—]+$/, '').trim() || full.replace(/\s+/g, ' ').trim();
+  return tidy(showPart(raw)) || tidy(splitProgram(raw).full);
 }
+
+/** Identifiant d'une émission du guide sans fiche TMDB, à partir de sa clé : `epg:` suivi de la clé, espaces en tirets. */
+export const epgIdOf = (key: string): string => 'epg:' + key.replace(/ /g, '-');
 
 const SHOW_CATEGORY = /\b(?:divertissement|jeux?|magazine|documentaire|talk|reality|varietes?|emissions?|game|dating)\b|realite/;
 const FICTION_CATEGORY = /\b(?:series?|telefilm|films?|cinema|animation|anime|dessin|jeunesse|enfants|clips?)\b/;
