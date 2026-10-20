@@ -1,10 +1,11 @@
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import type { PlaybackState } from './sync';
 
-/* Messages JSON du salon (WebSocket /party/:id/ws), une trame = un message de 4 Ko au plus. */
+/* Messages JSON du salon (WebSocket /party/:id/ws), une trame = un message de 4 Ko au plus.
+ * Constantes communes avec lastaddon (src/party/protocol.ts) : tests/fixtures/party-contract.json, vérifié par partyContract.test.ts. */
 
-export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉'] as const;
-export const CHAT_MAX = 500;
+export const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏', '🔥', '🎉', '😱', '🤯'] as const;
+export const CHAT_MAX_CHARS = 500;
 export const MAX_FRAME_BYTES = 4096;
 /** Attente de tampon (miroir du serveur) : avance (s) à partir de laquelle un participant se déclare prêt. */
 export const PARTY_RESUME_AHEAD_SEC = 10;
@@ -75,7 +76,7 @@ export type ServerMsg =
   | { t: 'event'; kind: EventKind; by: string; pos: number; delta?: number }
   | { t: 'muted'; user: string; muted: boolean }
   | { t: 'host'; user: string }
-  | { t: 'reported'; by?: string; against?: string; text?: string }
+  | { t: 'reported'; messageId?: string; by?: string; against?: string; text?: string }
   | { t: 'removed'; messageId: string }
   /** Attente de tampon : pseudos des retardataires, début (ms serveur), délai maximal et avance de reprise (s) ; `who` vide = fin. */
   | { t: 'wait'; who: string[]; since: number; maxMs: number; resumeAhead?: number }
@@ -90,7 +91,7 @@ export type ClientMsg =
   | { t: 'ctl'; action: 'play' | 'pause' | 'seek' | 'sync'; pos: number }
   | { t: 'episode'; season: number; episode: number; fingerprint?: Fingerprint }
   | { t: 'chat'; text: string; pos?: number }
-  | { t: 'react'; emoji: string; pos?: number }
+  | { t: 'react'; emoji: string; pos?: number | null }
   | { t: 'settings'; control?: ControlMode; waitLate?: WaitLateMode; reactions?: ReactionMode }
   | { t: 'ready'; ready: boolean; quality: string | null }
   | { t: 'status'; status: PrepStatus }
@@ -98,7 +99,7 @@ export type ClientMsg =
   | { t: 'vote_open'; options: VoteInput[] }
   | { t: 'vote'; optionId: string }
   | { t: 'vote_close' }
-  | { t: 'report'; messageId: string; reason?: string }
+  | { t: 'report'; messageId: string; reason?: string | null }
   | { t: 'mute'; user: string; muted: boolean }
   | { t: 'kick'; user: string }
   | { t: 'transfer'; user: string }

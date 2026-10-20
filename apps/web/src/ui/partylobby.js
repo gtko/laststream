@@ -15,7 +15,7 @@ import {
   CONTROL_OPTIONS, countdownLeft, eventText, initialsOf, launchText, LOBBY_EMOJIS, prepView, qualityLabel, REACTION_OPTIONS, readySummary, readyText,
   startWithoutText, voteShare, WAIT_LATE_OPTIONS,
 } from '../party/lobbyModel';
-import { CHAT_MAX, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
+import { CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
@@ -376,7 +376,7 @@ const shellHTML = () =>
   '<div class="pl-emojis" data-pl-chatonly role="group" aria-label="Réactions rapides">' +
   LOBBY_EMOJIS.map((e) => '<button type="button" data-pl-emoji="' + e + '" aria-label="Envoyer ' + e + '">' + e + '</button>').join('') + '</div>' +
   '<form class="pl-send" data-pl-chatonly data-pl-send autocomplete="off"><label for="pl-input" class="sr-only">Message au salon</label>' +
-  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX + '" placeholder="Écrire au salon…" autocomplete="off">' +
+  '<input id="pl-input" name="text" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire au salon…" autocomplete="off">' +
   '<button type="submit" class="pl-send-b" aria-label="Envoyer">' + ICON.send + '</button></form></aside>' +
   '<div class="pl-live sr-only" role="status" aria-live="polite" data-pl-live></div>';
 

@@ -2,7 +2,7 @@
  * pastille de messages non lus tant qu'il est fermé, envoi (500 caractères au plus, Entrée), réactions emoji et affichage flottant
  * bref dans le cadre. Les messages sont posés en texte (textContent) : aucun balisage venu du salon n'est interprété.
  * Le port vient de GuestRelaySession.chatPort() (client du salon) ; rien d'autre (ni jeton, ni adresse) n'entre ici. */
-import { CHAT_MAX, REACTIONS } from '../party/protocol';
+import { CHAT_MAX_CHARS, REACTIONS } from '../party/protocol';
 import { LI } from '../player/icons.js';
 
 /** Lignes gardées à l'écran (miroir de CHAT_MEMORY_LINES du client). */
@@ -31,7 +31,7 @@ function drawerHtml() {
     '<div class="gc-log" role="log" aria-live="polite" aria-label="Messages du salon"></div>' +
     '<div class="gc-react" role="group" aria-label="Réactions"></div>' +
     '<form class="gc-form" autocomplete="off">' +
-    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX + '" placeholder="Écrire un message" aria-label="Message" enterkeyhint="send">' +
+    '<input class="gc-input" type="text" name="message" maxlength="' + CHAT_MAX_CHARS + '" placeholder="Écrire un message" aria-label="Message" enterkeyhint="send">' +
     '<button type="submit" class="btn btn-primary btn-sm">Envoyer</button></form>' +
     '<p class="gc-status" role="status" hidden></p>';
 }
@@ -192,7 +192,7 @@ export function createGuestChat(controls, { onOpen } = {}) {
       setStatus('Chat indisponible : rejoins le salon.');
       return;
     }
-    const text = input.value.trim().slice(0, CHAT_MAX);
+    const text = input.value.trim().slice(0, CHAT_MAX_CHARS);
     if (!text) return;
     if (port.sendChat(text)) {
       input.value = '';

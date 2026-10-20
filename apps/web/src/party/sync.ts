@@ -41,8 +41,8 @@ export class ClockEstimator {
 
 export type DriftAction = { kind: 'none' } | { kind: 'rate'; rate: number } | { kind: 'seek'; to: number };
 
-/** Écart toléré avant toute correction (secondes). */
-export const DRIFT_IGNORE_SEC = 0.5;
+/** Écart toléré avant toute correction (secondes) : même seuil que le serveur (docs/social.md §6). */
+export const DRIFT_IGNORE_SEC = 0.3;
 /** Écart toléré tant qu'une vitesse corrective est en cours (hystérésis : on finit de rattraper). */
 export const DRIFT_SETTLE_SEC = 0.15;
 /** À partir de cet écart, on saute au lieu de rattraper. */
@@ -59,8 +59,8 @@ export interface DriftOptions {
 }
 
 /**
- * Correction de dérive du lecteur local : moins de 0,5 s d'écart, rien ; jusqu'à 2 s, vitesse 0,95 (en avance) ou 1,05
- * (en retard) ; au-delà, saut à la position attendue. À l'arrêt, tout écart de 0,5 s ou plus fait sauter. Sans vitesse
+ * Correction de dérive du lecteur local : moins de 0,3 s d'écart, rien ; jusqu'à 2 s, vitesse 0,95 (en avance) ou 1,05
+ * (en retard) ; au-delà, saut à la position attendue. À l'arrêt, tout écart de 0,3 s ou plus fait sauter. Sans vitesse
  * réglable (lecteur natif), un écart d'au moins 1 s est corrigé par un saut, en dessous on ne touche à rien.
  */
 export function driftAction(localPos: number, expected: number, playing: boolean, opts: DriftOptions = {}): DriftAction {

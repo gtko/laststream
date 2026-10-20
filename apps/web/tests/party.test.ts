@@ -29,11 +29,11 @@ describe('horloge et position attendue', () => {
 });
 
 describe('correction de dérive', () => {
-  it('sous 0,5 s : rien', () => {
-    expect(driftAction(100.3, 100, true)).toEqual({ kind: 'none' });
-    expect(driftAction(99.7, 100, true)).toEqual({ kind: 'none' });
+  it('sous 0,3 s : rien', () => {
+    expect(driftAction(100.2, 100, true)).toEqual({ kind: 'none' });
+    expect(driftAction(99.8, 100, true)).toEqual({ kind: 'none' });
   });
-  it('entre 0,5 s et 2 s : vitesse 0,95 (en avance) ou 1,05 (en retard)', () => {
+  it('entre 0,3 s et 2 s : vitesse 0,95 (en avance) ou 1,05 (en retard)', () => {
     expect(driftAction(101, 100, true)).toEqual({ kind: 'rate', rate: 0.95 });
     expect(driftAction(99, 100, true)).toEqual({ kind: 'rate', rate: 1.05 });
   });
@@ -41,8 +41,8 @@ describe('correction de dérive', () => {
     expect(driftAction(97, 100, true)).toEqual({ kind: 'seek', to: 100 });
     expect(driftAction(103, 100, true)).toEqual({ kind: 'seek', to: 100 });
   });
-  it('à l’arrêt : tout écart de 0,5 s fait sauter', () => {
-    expect(driftAction(100.6, 100, false)).toEqual({ kind: 'seek', to: 100 });
+  it('à l’arrêt : tout écart de 0,3 s fait sauter', () => {
+    expect(driftAction(100.4, 100, false)).toEqual({ kind: 'seek', to: 100 });
     expect(driftAction(100.2, 100, false)).toEqual({ kind: 'none' });
   });
   it('hystérésis : une vitesse corrective se poursuit jusqu’à 0,15 s', () => {
@@ -423,7 +423,7 @@ describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il appli
     p.t = 400; r.setNow(100_100); r.ctl.tick(p); // l'invité saute en avant pendant la lecture
     expect(r.sent()).toEqual([{ t: 'ctl', action: 'seek', pos: 400 }]);
     broadcast(r, { playing: true, pos: 400, rev: 1 }, 'bob');
-    r.setNow(100_500); r.ctl.tick(p); // au bon endroit : rien à faire
+    r.setNow(100_300); r.ctl.tick(p); // au bon endroit (écart 0,2 s, sous le seuil de 0,3 s) : rien à faire
     expect(r.sent()).toHaveLength(1);
     expect(p.calls).toEqual([]);
     r.setNow(101_200);
@@ -471,10 +471,10 @@ describe('contrôleur : l’invité pilote aussi, sans renvoyer ce qu’il appli
     expect(p.rate_).toBe(1);
   });
 
-  it('écart sous 0,5 s : on ne touche à rien', async () => {
+  it('écart sous 0,3 s : on ne touche à rien', async () => {
     const r = await room(false, { playing: true, pos: 100, at: 100_000 });
     const p = new FakePlayer();
-    p.paused_ = false; p.t = 100.4;
+    p.paused_ = false; p.t = 100.2;
     r.setNow(100_000);
     r.ctl.tick(p);
     expect(p.calls).toEqual([]);
