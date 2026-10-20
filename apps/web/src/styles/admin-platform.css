@@ -1,0 +1,54 @@
+/* Console d'administration, espaces Plateforme et Système : sources et addons, performance, caches et stockage, tâches, annonces.
+ * Couleurs : jetons --adm-* (définis dans admin.css, sur .adm-shell) et jetons globaux de styles.css ; aucune valeur en dur. */
+
+/* ---------- Performance : sélecteur de période en segments ---------- */
+.adm-perf-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.adm-perf-bar .adm-live { margin-left: auto; }
+.adm-seg { display: inline-flex; max-width: 100%; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); }
+.adm-seg-b { min-height: 32px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
+.adm-seg-b:hover { color: var(--text); }
+.adm-seg-b[aria-pressed="true"] { background: var(--line-2); color: var(--text); }
+.adm-seg-b:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Pastilles et états ---------- */
+.adm-badge.is-bad { background: color-mix(in srgb, var(--adm-bad) 16%, transparent); color: var(--adm-bad-text); }
+.adm-sec-t { margin: 10px 0 0; font-family: var(--ff-title); font-size: 17px; font-weight: 700; color: var(--text); }
+.adm-note { margin-top: -4px; color: var(--adm-warn-text); }
+
+/* ---------- Sources : courbe 24 h, tests ---------- */
+.adm-curve { display: block; width: 160px; max-width: 100%; height: 24px; overflow: visible; }
+.adm-curve-l { fill: none; stroke: var(--dim); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.adm-curve.is-ok .adm-curve-l { stroke: var(--adm-ok); }
+.adm-curve.is-warn .adm-curve-l { stroke: var(--adm-warn); }
+.adm-curve.is-bad .adm-curve-l { stroke: var(--adm-bad); }
+.adm-test-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 150px; }
+.adm-test { display: inline-flex; align-items: center; gap: 8px; min-height: 18px; font-size: 12.5px; color: var(--dim); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.adm-test:empty { display: none; }
+.adm-test-r { font-weight: 700; overflow-wrap: anywhere; }
+.adm-test-r.is-ok { color: var(--adm-ok-text); }
+.adm-test-r.is-bad { color: var(--adm-bad-text); }
+.adm-spin { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: adm-spin 0.8s linear infinite; }
+@keyframes adm-spin { to { transform: rotate(360deg); } }
+.adm-table .adm-test-cell .btn[aria-busy="true"] { opacity: 0.7; }
+
+/* ---------- Caches, stockage, purges ---------- */
+.adm-prog-cell { min-width: 160px; }
+.adm-prog-cell .adm-progress { margin-top: 0; }
+.adm-jobs td code { white-space: nowrap; }
+
+/* ---------- Annonces ---------- */
+.adm-ann-t { display: block; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.adm-ann-m { display: block; margin-top: 2px; max-width: 52ch; line-height: 1.4; overflow-wrap: anywhere; }
+.adm-row-act { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-ann-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.adm-ann-form .adm-field > span { font-weight: 700; color: var(--muted); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 759px) {
+  .adm-perf-bar .adm-live { margin-left: 0; width: 100%; }
+  .adm-seg { display: flex; }
+  .adm-seg-b { flex: 1 1 0; }
+  .adm-test-cell { align-items: stretch; min-width: 0; }
+  .adm-row-act { justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { .adm-spin { animation: none; } }

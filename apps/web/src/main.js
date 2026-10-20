@@ -57,6 +57,7 @@ import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
 import { initUpdateBanner } from './ui/update-banner.js';
+import { initAnnouncementBanner } from './ui/announcement-banner.js';
 import { isDemo, setDemoFlags, startDemo } from './data/demo';
 
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
@@ -108,3 +109,5 @@ Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(()
 setTimeout(() => { announceShellReady(); }, 8000);
 // Application Android : bannière « Mise à jour disponible » (sans effet ailleurs).
 initUpdateBanner();
+// Annonces publiques : bannière refermable, appel réseau sans bloquer l'affichage (jamais sur #/admin).
+initAnnouncementBanner();

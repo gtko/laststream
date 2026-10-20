@@ -140,7 +140,7 @@ export interface ProviderTestResult { id: string; ok: boolean; status: number | 
 export interface StorageReport {
   kv: { prefixes: Array<{ prefix: string; keys: number; exact: boolean; hitRate: number | null }> };
   r2: Array<{ bucket: 'TV' | 'META' | 'AVATARS'; objects: number | null; bytes: number | null; truncated: boolean }>;
-  do: { sizeBytes: number | null; tables: Array<{ name: string; rows: number }> };
+  do: { sizeBytes: number | null; tables: Array<{ name: string; rows: number | null }> };
   cachedAt: string;
 }
 export interface TasksReport {
@@ -152,7 +152,8 @@ export interface Announcement {
   id: string; title: string; message: string; level: AnnouncementLevel; startsAt: string | null; endsAt: string | null;
   active: boolean; createdAt: string; updatedAt: string;
 }
-export interface AnnouncementInput { title: string; message: string; level: AnnouncementLevel; startsAt?: string | null; endsAt?: string | null }
+/** Corps d'une création ou d'un patch : `active` (activer / désactiver) est accepté par le serveur sur les deux. */
+export interface AnnouncementInput { title: string; message: string; level: AnnouncementLevel; startsAt?: string | null; endsAt?: string | null; active?: boolean }
 export interface ReferralNode { id: string; username: string; createdAt: string; status: string; children: ReferralNode[] }
 export interface Settings { inviteDefaultQuota: number; invitesOpen: boolean; maintenance: { enabled: boolean; message: string } }
 export type Range = '1h' | '24h' | '7d';
