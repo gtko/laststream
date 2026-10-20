@@ -1,5 +1,5 @@
-import { auth } from './auth';
-import { call, UserApiError, type MediaKind } from './userApi';
+import { social, withQuery } from './socialHttp';
+import { UserApiError, type MediaKind } from './userApi';
 
 /* Client typé de l'API sociale v2 (`/user/social/*`, contrat docs/social-v2-contract.md) : profils, amis et demandes,
  * présence, messages, notes, ticket du canal temps réel. Le profil agissant est le profil actif : son identifiant part en
@@ -52,7 +52,6 @@ export type LibraryItem = {
 export type FriendLibrary = { items: LibraryItem[]; total?: number; limit?: number; offset?: number };
 export type NewNote = MediaRef & { pos: number; kind: 'text' | 'emoji'; body: string };
 
-const SOCIAL = '/social';
 const enc = encodeURIComponent;
 
 /** Chiffres et lettres sans équivoque (pas de 0, O, 1, I, L) : 31 symboles, 4 par tag. */
@@ -79,23 +78,6 @@ export function validateHandle(input: string): Handle | null {
   return { name, tag, full: `${name}#${tag}` };
 }
 
-/**
- * Appel `/user/social<path>` au nom du profil actif : X-Profile-Id (sans lui le serveur répond 400 `profile_required`),
- * et X-Profile-Token si ce profil a un PIN valable. Même mécanisme que `adminCall` et `asActor`.
- */
-function social<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  const pid = auth.profile?.id;
-  return call<T>(SOCIAL + path, { method, body, profileId: pid, headers: pid ? { 'x-profile-id': pid } : undefined });
-}
-
-/** Ajoute les paramètres renseignés (les `undefined` sont omis) à un chemin. */
-function withQuery(path: string, params: Record<string, string | number | undefined>): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined) q.set(k, String(v));
-  const s = q.toString();
-  return s ? `${path}?${s}` : path;
-}
-
 // ---- Profil et statut ----
 export const getMe = () => social<SocialMe>('GET', '/me');
 export const putStatus = (status: Status) => social<{ status: Status }>('PUT', '/status', { status });
@@ -112,7 +94,9 @@ export const acceptFriendRequest = (pid: string) => social<{ friend: FriendView 
 /** Refuse une demande reçue ou annule une demande envoyée. */
 export const declineFriendRequest = (pid: string) => social<void>('DELETE', `/requests/${enc(pid)}`);
 export const removeFriend = (pid: string) => social<void>('DELETE', `/friends/${enc(pid)}`);
-export const getFriendLibrary = (pid: string) => social<FriendLibrary>('GET', `/friends/${enc(pid)}/library`);
+/** Bibliothèque partagée d'un ami (ou du foyer) ; `type`, `limit` et `offset` sont facultatifs (pagination serveur). */
+export const getFriendLibrary = (pid: string, o: { type?: 'movie' | 'series'; limit?: number; offset?: number } = {}) =>
+  social<FriendLibrary>('GET', withQuery(`/friends/${enc(pid)}/library`, { type: o.type, limit: o.limit, offset: o.offset }));
 /** Historique récent d'un ami ; `limit` borné entre 1 et 50 (défaut 20). */
 export const getFriendHistory = (pid: string, limit = 20) => {
   const n = Math.min(50, Math.max(1, Math.floor(limit)));

@@ -112,7 +112,7 @@ function parseRouteRaw() {
   if (h === '#/hidden') return { kind: 'hidden' };
   if (h === '#/stats') return { kind: 'stats' };
   if (h === '#/friends') return { kind: 'friends' };
-  r = /^#\/friend\/([a-z0-9_.-]{3,32})$/.exec(h);
+  r = /^#\/friend\/([A-Za-z0-9_-]{3,32})$/.exec(h);
   if (r) return { kind: 'friend', id: r[1] };
   if (h === '#/social/profile') return { kind: 'socialprofile' };
   const listId = listIdFrom(h);

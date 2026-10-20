@@ -1,7 +1,8 @@
 import { call, type MediaKind, type Visibility } from './userApi';
 
-/* Client des fonctions sociales de lastAddon (docs/social.md) : parrainage, amis, présence, partage de bibliothèque,
- * titres masqués et salons de visionnage. Seuls le pseudo et la couleur d'avatar sont exposés aux autres comptes. */
+/* Ce qui reste de l'API sociale « v1 » de lastAddon (docs/social.md) et n'a pas d'équivalent dans /user/social (v2/v3) :
+ * parrainage (liens d'invitation), visibilité des titres de la bibliothèque, titres masqués et salons de visionnage (REST).
+ * Les amis, la présence et la bibliothèque d'un ami passent par socialV2Api.ts (par pid) ; ne rien rajouter ici de ce côté. */
 
 // ---- Parrainage ----
 export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
@@ -31,82 +32,12 @@ export const checkInvite = (code: string) =>
 export const setInviteQuota = (username: string, quota: number) =>
   call<{ username: string; quota: number }>('/accounts/' + enc(username) + '/invite-quota', { method: 'PUT', body: { quota } });
 
-// ---- Amis ----
-export type FriendStatus = 'online' | 'watching' | 'offline';
-export interface Watching {
-  type: MediaKind;
-  tmdbId?: number | null;
-  imdbId?: string | null;
-  title: string;
-  season?: number | null;
-  episode?: number | null;
-}
-export interface FriendDto {
-  username: string;
-  avatarColor: string;
-  avatar?: string;
-  status: FriendStatus;
-  since: string;
-  watching?: Watching | null;
-}
-export interface FriendRequestDto {
-  username: string;
-  avatarColor: string;
-  avatar?: string;
-  requestedAt: string;
-}
-export interface FriendsDto {
-  friends: FriendDto[];
-  incoming: FriendRequestDto[];
-  outgoing: FriendRequestDto[];
-}
-
-export const getFriends = () => call<FriendsDto>('/friends');
-export const requestFriend = (username: string) =>
-  call<{ status: 'sent' | 'accepted' }>('/friends/requests', { method: 'POST', body: { username } });
-export const acceptFriend = (username: string) => call<void>('/friends/requests/' + enc(username) + '/accept', { method: 'POST' });
-/** Refuse une demande reçue ou annule une demande envoyée. */
-export const dropFriendRequest = (username: string) => call<void>('/friends/requests/' + enc(username), { method: 'DELETE' });
-export const removeFriend = (username: string) => call<void>('/friends/' + enc(username), { method: 'DELETE' });
-
-// ---- Présence ----
-export interface PresenceBody {
-  profileId: string;
-  watching?: { type: MediaKind; tmdbId: number; title: string; season?: number; episode?: number } | null;
-  invisible?: boolean;
-}
-export const putPresence = (body: PresenceBody) => call<unknown>('/presence', { method: 'PUT', body, timeoutMs: 6000 });
-export const deletePresence = () => call<void>('/presence', { method: 'DELETE', timeoutMs: 4000 });
-
-// ---- Bibliothèques partagées ----
+// ---- Visibilité des titres de la bibliothèque ----
 const PF = (id: string) => '/profiles/' + enc(id);
 export const setItemVisibility = (profileId: string, type: MediaKind, itemId: number | string, visibility: Visibility) =>
   call<void>(`${PF(profileId)}/library/${type}/${enc(String(itemId))}/visibility`, { method: 'PUT', body: { visibility }, profileId });
 export const setAllVisibility = (profileId: string, visibility: Visibility, type?: MediaKind) =>
   call<{ updated: number }>(PF(profileId) + '/library/visibility', { method: 'PUT', body: { visibility, ...(type ? { type } : {}) }, profileId });
-
-export interface FriendLibraryItem {
-  type: MediaKind;
-  tmdbId: number | null;
-  imdbId: string | null;
-  title: string;
-  poster: string | null;
-  addedAt: string;
-}
-export interface FriendLibraryDto {
-  items: FriendLibraryItem[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-export const getFriendLibrary = (username: string, o: { type?: MediaKind; limit?: number; offset?: number } = {}) => {
-  const q = new URLSearchParams();
-  if (o.type) q.set('type', o.type);
-  if (o.limit) q.set('limit', String(o.limit));
-  if (o.offset) q.set('offset', String(o.offset));
-  const qs = q.toString();
-  return call<FriendLibraryDto>('/friends/' + enc(username) + '/library' + (qs ? '?' + qs : ''));
-};
 
 // ---- Titres masqués (par profil) ----
 export interface HiddenItemDto {
