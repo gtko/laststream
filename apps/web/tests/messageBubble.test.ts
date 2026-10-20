@@ -121,6 +121,15 @@ describe('bulle dans le lecteur', () => {
     expect($('.lp-bubble-txt')!.textContent).toBe('On regarde ensemble ce soir ?');
   });
 
+  it('avatar réel de l’ami posé via data-avatar, repli lettre colorée sans avatar', () => {
+    push({ friends: [{ ...AMY, avatar: 'col:c1:ch2' } as never], ...incoming(msg('m3', 'amy', 'me', 'Hello')) });
+    const av = $('.lp-bubble-av')!;
+    expect(av.dataset.avatar).toBe('col:c1:ch2');
+    expect(av.textContent).toBe('A');
+    expect(av.style.backgroundColor).not.toBe('');
+    expect(senderOf({ ...state, friends: [AMY] }, 'amy').avatar).toBeUndefined();
+  });
+
   it('rendu en texte : aucun élément créé à partir du contenu du message', () => {
     push(incoming(msg('m2', 'amy', 'me', '<img src=x onerror="alert(1)"><b class="x">gras</b>')));
     expect($('.lp-bubble img')).toBeNull();

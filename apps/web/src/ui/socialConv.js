@@ -3,7 +3,7 @@
  * plein écran, une seule discussion. Le module enregistre openConversation et renderConversationList dans socialHooks ;
  * main.js appelle configureSocialConv({ launch, toast }) une fois la lecture disponible. */
 import * as store from '../data/socialStore';
-import { auth } from '../data/auth';
+import { auth, onAuthChange } from '../data/auth';
 import { registerSocialHook } from './socialHooks.js';
 import { socialAvailable } from './socialButton.js';
 import { renderConversationList } from './socialConvList.js';
@@ -23,6 +23,8 @@ let unsub = null;
 let mql = null;
 let observers = [];
 let restored = false;
+let offAuth = null;
+let authPid = null;
 
 const profileId = () => (auth.profile ? auth.profile.id : '');
 const isMobile = () => (mql ? mql.matches : (typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAX));
@@ -182,6 +184,8 @@ export function openConversation(arg) {
 export function resetSocialConv() {
   closeAll();
   restored = false;
+  if (offAuth) { offAuth(); offAuth = null; }
+  authPid = null;
   if (mql && onMql) mql.removeEventListener('change', onMql);
   mql = null;
 }
@@ -223,7 +227,19 @@ export function configureSocialConv(d) {
     mql = window.matchMedia('(max-width: ' + MOBILE_MAX + 'px)');
     mql.addEventListener('change', onMql);
   }
+  authPid = profileId();
+  if (!offAuth) offAuth = onAuthChange(onAuth);
   if (socialAvailable()) restore();
+}
+
+/** Changement de profil (adulte vers adulte compris) : fenêtres et onglets du profil quitté sont fermés, ceux du nouveau restaurés. */
+function onAuth() {
+  const pid = profileId();
+  if (pid === authPid) return;
+  authPid = pid;
+  closeAll(); // détruit le fil (et son intervalle), désabonne le store, vide fenêtre et onglets
+  restored = false;
+  if (pid && socialAvailable()) restore();
 }
 
 registerSocialHook('openConversation', openConversation);

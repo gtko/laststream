@@ -213,8 +213,9 @@ class PartyBridge {
   }
 
   /** Rejoint un salon existant (le lecteur est lancé par l'appelant si besoin, voir `joinAndPlay`). */
-  async connect(roomId: string, profileId: string): Promise<void> {
-    this.leave();
+  async connect(roomId: string, profileId: string, lobby = false): Promise<void> {
+    this.leave(); // remet `lobby` à false : le drapeau se pose après, pour ne pas être perdu
+    this.lobby = lobby;
     this.endReason = '';
     this.profileId = profileId;
     const first = await joinParty(roomId, profileId);
@@ -236,7 +237,7 @@ class PartyBridge {
     client.on('host', () => { this.controller?.reset(); this.emit(); });
     client.on('media', (m) => this.onMedia(m));
     client.on('end', (reason) => { this.endReason = reason; this.emit(); });
-    client.on('error', (code) => { this.lastError = partyErrorText(code); this.emit(); });
+    client.on('error', (code) => { const text = partyErrorText(code); if (!text) return; this.lastError = text; this.emit(); });
     client.start();
     this.emit();
   }
@@ -534,6 +535,8 @@ class PartyBridge {
    */
   private declareReady(c: PartyClient, a: SessionAdapter): void {
     if (this.readyDeclared) return;
+    // Serveur sans réglages v3 (pas de champ `settings` dans le welcome) : ces messages seraient refusés, on ne les envoie pas.
+    if (!c.v3) return;
     this.readyDeclared = true;
     const quality = (a.view as { quality?: unknown } | null)?.quality;
     c.sendReady(true, typeof quality === 'string' && quality !== '' ? quality.slice(0, 40) : null);

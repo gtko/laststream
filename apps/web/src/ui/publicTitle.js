@@ -32,7 +32,7 @@ export function openInApp(view) {
 function card(view) {
   const art = h('article', 'pt-card', null, { 'aria-labelledby': 'pt-title' });
   const p = h('div', 'pt-poster');
-  const src = posterSrc(view.poster) || (typeof view.poster === 'string' && /^https:\/\//.test(view.poster) ? view.poster : '');
+  const src = posterSrc(view.poster);
   if (src) {
     const img = h('img', null, null, { alt: '', loading: 'eager' });
     img.src = src;

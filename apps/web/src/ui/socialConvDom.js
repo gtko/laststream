@@ -1,11 +1,10 @@
 /* Discussions Social v3 (lot F3) : fabriques DOM partagées (icônes, avatar, boutons) et rendu d'un message (bulle, carte
  * « titre », carte « moment », invitation, sondage, réactions, citation). Tout texte passe par textContent. */
-import { posterUrlOf } from '../data/serverUserStore';
+import { safeTmdbImage } from './safeImg.js';
 import {
   QUICK_REACTIONS, authorName, colorOf, hhmm, initialOf, messageText, pollShare, pollTotal, posLabel, STATUS_COLOR,
 } from './socialConvModel.js';
 
-const STILL_BASE = 'https://image.tmdb.org/t/p/w500';
 
 export const SVG = {
   close: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
@@ -56,14 +55,10 @@ export function avatarEl(p, size, dotStatus) {
 
 /** URL d'affiche : https telle quelle, chemin TMDB converti ; sinon ''. */
 export function posterSrc(p) {
-  if (typeof p !== 'string') return '';
-  if (/^https:\/\//.test(p)) return p;
-  return p.startsWith('/') ? posterUrlOf(p) || '' : '';
+  return safeTmdbImage(p, 'w342') || '';
 }
 export function stillSrc(p) {
-  if (typeof p !== 'string') return '';
-  if (/^https:\/\//.test(p)) return p;
-  return p.startsWith('/') ? STILL_BASE + p : '';
+  return safeTmdbImage(p, 'w500') || '';
 }
 
 /** Affiche (image) ou, sans image, tuile d'initiales. */

@@ -163,6 +163,6 @@ export function partyErrorText(code: string): string {
     case 'not_series': return 'Ce salon ne lit pas une série.';
     case 'already_playing': return 'La lecture a déjà démarré.';
     case 'vote_already_open': return 'Un vote est déjà ouvert.';
-    default: return 'Erreur du salon (' + code + ').';
+    default: return ''; // type ou code inconnu (serveur plus ancien ou plus récent) : ignoré sans bruit
   }
 }

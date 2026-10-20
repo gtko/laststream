@@ -9,7 +9,7 @@ import * as store from '../data/socialStore';
 import { UserApiError } from '../data/userApi';
 import { openAvatarStudio } from './avatar-studio.js';
 import { hydrateAvatars } from './avatar-art.js';
-import { IMG } from './constants.js';
+import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
 import {
@@ -92,7 +92,10 @@ function avatarEl(cls, name, avatar, color) {
   return el;
 }
 
-const backdropUrl = (p) => (p ? IMG('w780', p) : '');
+const IMG = (size, p) => safeTmdbImage(p, size) || '';
+const backdropUrl = (p) => IMG('w780', p);
+/** `background-image` sûr : seule une image TMDB validée y entre (jamais une URL brute du serveur). */
+const bgOf = (size, p, pre = '') => { const u = cssUrl(IMG(size, p)); return u ? pre + u : ''; };
 const posterBg = (f) => POSTER_BGS[Math.abs(Number(f.tmdbId) || 0) % POSTER_BGS.length];
 
 /**
@@ -230,7 +233,7 @@ export function mountProfileEditor(root, deps) {
         const year = '';
         const thumb = h('span', { class: 'spf-th' });
         const img = m.poster ? IMG('w92', m.poster) : '';
-        if (img) thumb.style.backgroundImage = 'url("' + img + '")';
+        if (img) thumb.style.backgroundImage = cssUrl(img);
         return h('button', { type: 'button', class: 'spf-r', on: { click: () => { onPick(m); close(); } } }, thumb,
           h('span', { class: 'spf-rt' }, h('b', { text: m.title }), h('small', { text: (m.type === 'series' ? 'Série' : 'Film') + year })));
       }));
@@ -358,7 +361,7 @@ export function mountProfileEditor(root, deps) {
   const bannerEl0 = h('div', { class: 'spf-bn' });
   const bannerBox = zone('banner', bannerEl0, () => {
     const b = draft.banner;
-    bannerEl0.style.backgroundImage = b && b.backdrop ? 'linear-gradient(90deg,rgba(12,11,17,.75),rgba(12,11,17,.2)),url("' + backdropUrl(b.backdrop) + '")' : '';
+    bannerEl0.style.backgroundImage = b && b.backdrop ? bgOf('w780', b.backdrop, 'linear-gradient(90deg,rgba(12,11,17,.75),rgba(12,11,17,.2)),') : '';
     return [
       h('span', { class: 'spf-bn-t', text: b ? b.title : 'Aucune bannière' }),
       h('span', { class: 'spf-row' },
@@ -393,7 +396,7 @@ export function mountProfileEditor(root, deps) {
     const t = h('div', { class: 'spf-fav' + (reorder ? ' is-reorder' : ''), role: 'listitem', tabindex: '0', draggable: 'true', 'data-i': i,
       'aria-label': f.title + ', favori ' + (i + 1) + ' sur ' + draft.favorites.length + '. Alt et flèches pour réordonner.' });
     t.style.background = posterBg(f);
-    if (f.poster) { t.style.backgroundImage = 'url("' + IMG('w185', f.poster) + '")'; t.classList.add('has-img'); } else t.append(h('span', { class: 'spf-fav-t', text: f.title }));
+    if (bgOf('w185', f.poster)) { t.style.backgroundImage = bgOf('w185', f.poster); t.classList.add('has-img'); } else t.append(h('span', { class: 'spf-fav-t', text: f.title }));
     const act = (cls, label, ic, fn) => h('button', { type: 'button', class: 'spf-fa ' + cls, 'aria-label': label, on: { click: (e) => { e.stopPropagation(); fn(); } } }, icon(ic));
     t.append(
       act('spf-fa-rm', 'Retirer ' + f.title, 'close', () => { draft.favorites = draft.favorites.filter((_, k) => k !== i); reorderIdx = -1; touched(); }),
@@ -419,7 +422,7 @@ export function mountProfileEditor(root, deps) {
     const name = draft.name.trim() || profile.handle.name;
     const stText = draft.statusText.trim();
     const bannerEl = h('div', { class: 'spf-prev-bn' });
-    if (draft.banner && draft.banner.backdrop) bannerEl.style.backgroundImage = 'url("' + backdropUrl(draft.banner.backdrop) + '")';
+    if (draft.banner && draft.banner.backdrop) bannerEl.style.backgroundImage = bgOf('w780', draft.banner.backdrop);
     const av = avatarEl('spf-av spf-av--md', name, draft.avatar, draft.avatarColor);
     if (draft.presence !== 'invisible') av.append(h('i', { class: 'spf-pdot', style: 'background:' + pres[2] }));
     const stats = profile.stats;
@@ -433,7 +436,7 @@ export function mountProfileEditor(root, deps) {
           h('div', { class: 'spf-prev-f' }, ...Array.from({ length: FAVORITES_MAX }, (_, i) => {
             const f = draft.favorites[i];
             const c = h('div', { class: 'spf-pf' + (f ? '' : ' empty'), title: f ? f.title : null });
-            if (f) { c.style.background = posterBg(f); if (f.poster) c.style.backgroundImage = 'url("' + IMG('w154', f.poster) + '")'; else c.textContent = f.title; }
+            if (f) { c.style.background = posterBg(f); if (bgOf('w154', f.poster)) c.style.backgroundImage = bgOf('w154', f.poster); else c.textContent = f.title; }
             return c;
           })),
           stats ? h('div', { class: 'spf-prev-st' }, h('span', {}, h('b', { text: String(stats.hoursWatched) }), ' h vues'), h('span', {}, h('b', { text: String(stats.notes) }), ' notes'), h('span', {}, h('b', { text: String(stats.friends) }), ' amis')) : null)),
@@ -570,7 +573,7 @@ export function mountProfileEditor(root, deps) {
       zone('herocap', h('div', { class: 'spf-hero-cap' }), () => {
         const b = draft.banner;
         const bn = page.querySelector('.spf-hero-bn');
-        if (bn) bn.style.backgroundImage = b && b.backdrop ? 'url("' + backdropUrl(b.backdrop) + '")' : '';
+        if (bn) bn.style.backgroundImage = b && b.backdrop ? bgOf('w780', b.backdrop) : '';
         return b ? ['Bannière : ' + b.title, ' ', btn('spf-chip spf-chip--sm', 'Retirer', () => { draft.banner = null; touched(); })] : 'Aucune bannière';
       }));
     // La bannière du héros se repeint avec la zone 'banner' (même source).

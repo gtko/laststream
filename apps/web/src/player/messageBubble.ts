@@ -63,12 +63,14 @@ export function knownMessages(s: SocialState): Message[] {
   return [...byId.values()];
 }
 
+const avatarOf = (a: unknown): string | undefined => (typeof a === 'string' && a !== '' && a.length <= 200 ? a : undefined);
+
 /** Nom et couleur d'un correspondant : amis et foyer, puis conversations ; repli si inconnu. */
-export function senderOf(s: SocialState, pid: string): { who: string; color: string } {
+export function senderOf(s: SocialState, pid: string): { who: string; color: string; avatar?: string } {
   const f = [...s.friends, ...s.household].find((x) => x.pid === pid);
-  if (f) return { who: f.handle.full, color: safeColor(f.avatarColor) };
+  if (f) return { who: f.handle.full, color: safeColor(f.avatarColor), avatar: avatarOf(f.avatar) };
   const c = s.conversations.find((x) => x.pid === pid);
-  if (c) return { who: c.handle.full, color: safeColor(c.avatarColor) };
+  if (c) return { who: c.handle.full, color: safeColor(c.avatarColor), avatar: avatarOf((c as { avatar?: unknown }).avatar) };
   return { who: 'Un ami', color: FALLBACK_COLOR };
 }
 
@@ -189,8 +191,12 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
 
   function paintAvatar(node: HTMLElement, pid: string): string {
     const from = senderOf(deps.getState(), pid);
-    node.style.background = from.color;
-    node.textContent = initialOf(from.who);
+    node.style.backgroundImage = '';
+    node.style.backgroundColor = from.color;
+    node.textContent = initialOf(from.who); // repli : lettre sur la couleur, tant que l'illustration n'est pas posée
+    for (const k of ['art', 'artPending', 'artFailed']) delete node.dataset[k];
+    // L'illustration réelle (collection d'avatars) est posée par avatar-art.js sur tout élément [data-avatar].
+    if (from.avatar) node.dataset.avatar = from.avatar; else delete node.dataset.avatar;
     return from.who;
   }
 

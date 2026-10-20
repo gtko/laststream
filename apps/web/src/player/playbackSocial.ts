@@ -59,6 +59,14 @@ export function toggleElement(list: readonly CinemaElement[], el: CinemaElement)
 }
 
 /** Le mode « jusqu'à la fin du film » prend fin quand la lecture est terminée ou à moins d'une seconde de la fin. */
+/**
+ * Fin de session du lecteur : le mode cinéma est levé à la vraie fermeture, pas au changement d'épisode (`silent`), où la
+ * séance continue.
+ */
+export function cinemaEndsOnTeardown(silent: boolean, active: boolean): boolean {
+  return !silent && active;
+}
+
 export function filmEnded(until: CinemaUntil | null, st: { time: number; duration: number; ended?: boolean }): boolean {
   if (until !== 'film') return false;
   if (st.ended) return true;

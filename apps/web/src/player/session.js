@@ -72,7 +72,7 @@ import {
 } from '../data/socialStore';
 import { openShareDialog } from '../ui/socialHooks.js';
 import {
-  durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy,
+  cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy,
   toggleElement, untilFor,
 } from './playbackSocial';
 import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
@@ -2061,7 +2061,7 @@ function startSocialPlayback(p, social) {
 /** Fin de session : abonnement retiré, mode cinéma levé sans résumé (les messages restent non lus dans la discussion). */
 function stopSocialPlayback(silent) {
   if (socialUnsub) { socialUnsub(); socialUnsub = null; }
-  if (!silent && getSocialState().cinema.active) { cinemaQuietEnd = true; endCinema(); cinemaQuietEnd = false; }
+  if (cinemaEndsOnTeardown(silent, getSocialState().cinema.active)) { cinemaQuietEnd = true; endCinema(); cinemaQuietEnd = false; }
   cinemaSince = null;
   quietHidden = [];
   socialKey = '';

@@ -97,6 +97,8 @@ export class PartyClient {
   waiting: PartyWait | null = null;
   /** Réglages du salon (défauts d'un serveur antérieur). */
   settings: PartySettings = { ...DEFAULT_SETTINGS };
+  /** Le serveur annonce les capacités v3 (le welcome porte `settings`). */
+  v3 = false;
   /** Départ programmé (instant serveur, ms), null hors compte à rebours. */
   countdownAt: number | null = null;
   /** Vote du titre ouvert (options et voix), null hors vote. */
@@ -281,6 +283,7 @@ export class PartyClient {
         this.chat = (msg.chat ?? []).slice(-CHAT_MEMORY_LINES);
         this.state = msg.state;
         this.settings = { ...DEFAULT_SETTINGS, ...(msg.settings ?? {}) };
+        this.v3 = msg.settings !== undefined && msg.settings !== null;
         this.countdownAt = typeof msg.countdownAt === 'number' ? msg.countdownAt : null;
         this.vote = Array.isArray(msg.vote) ? msg.vote : null;
         this.setWaiting(null);
@@ -432,9 +435,9 @@ export class PartyClient {
     return Object.keys(msg).length > 1 && this.raw(msg);
   }
   /** Préparation : prêt à lire (et qualité de la source choisie, ou null). */
-  sendReady(ready: boolean, quality: string | null = null): boolean { return this.raw({ t: 'ready', ready, quality }); }
+  sendReady(ready: boolean, quality: string | null = null): boolean { return this.v3 && this.raw({ t: 'ready', ready, quality }); }
   /** État de recherche de source : cherche, prêt ou en tampon. */
-  sendStatus(status: PrepStatus): boolean { return this.raw({ t: 'status', status }); }
+  sendStatus(status: PrepStatus): boolean { return this.v3 && this.raw({ t: 'status', status }); }
   /** Départ (hôte seul) : la lecture reprend après `countdown` secondes (1 à 10). */
   startPlayback(countdown: number = COUNTDOWN_DEFAULT_SEC): boolean {
     return this.isHost && this.raw({ t: 'start', countdown: Math.min(10, Math.max(1, Math.round(countdown))) });

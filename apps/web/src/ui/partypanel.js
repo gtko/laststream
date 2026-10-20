@@ -445,7 +445,7 @@ function attach() {
   c.on('host', (user) => { toast(user + ' est maintenant l’hôte'); render(); });
   c.on('muted', () => render());
   c.on('reported', (r) => { if (r.against) toast('Signalement reçu : ' + r.against); else toast('Message signalé, merci'); });
-  c.on('error', (code) => toast(partyErrorText(code)));
+  c.on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
   c.on('end', (reason) => { toast(endText(reason)); render(); });
 }
 

@@ -9,7 +9,7 @@ import { posterPathOf } from '../data/serverUserStore';
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
-import { IMG } from './constants.js';
+import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { SI } from './socialIcons.js';
 import { inviteToParty, openShareDialog } from './socialHooks.js';
 import {
@@ -23,7 +23,6 @@ import { esc } from './util.js';
 
 const TABS = [['recent', 'Récemment'], ['lib', 'Bibliothèque'], ['notes', 'Ses notes']];
 const REASONS = [['spam', 'Spam'], ['harassment', 'Harcèlement'], ['other', 'Autre']];
-const BACKDROP_OK = /^https:\/\/image\.tmdb\.org\/t\/p\/\w+\/[\w.-]+$/;
 
 const pathOf = (p) => (p ? posterPathOf(p) || (p.startsWith('/') ? p : '') : '');
 
@@ -198,9 +197,9 @@ export function createFriendCard(deps) {
     box.innerHTML = cardHTML(f);
     const p = c.profile && c.profile !== 'error' ? c.profile : null;
     if (p && p.banner && p.banner.backdrop) {
-      const url = IMG('w780', p.banner.backdrop);
+      const url = safeTmdbImage(p.banner.backdrop, 'w780') || '';
       const el = box.querySelector('[data-banner]');
-      if (el && BACKDROP_OK.test(url)) el.style.backgroundImage = 'linear-gradient(0deg, rgba(23,21,31,.55), rgba(23,21,31,0)), url("' + url + '")';
+      if (el && url) el.style.backgroundImage = 'linear-gradient(0deg, rgba(23,21,31,.55), rgba(23,21,31,0)), ' + cssUrl(url);
     }
     if (c.tab === 'lib') observeTiles(box);
     if (keep) {

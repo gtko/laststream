@@ -111,8 +111,8 @@ applyTheme(readTheme()); // après la synchronisation des préférences du profi
 const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
 setConversationRenderer(createConversationRenderer({ launch: socialLaunch, toast }));
 setWatchWithHandler(createWatchWithHandler({ launch: socialLaunch, toast }));
-configureSocialConv({ launch: socialLaunch, toast });
-configureShareDialog({ toast }); // fenêtre « Partager » Social v3 (hook openShareDialog) // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
+configureSocialConv({ launch: socialLaunch, toast }); // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
+configureShareDialog({ toast }); // fenêtre « Partager » Social v3 (hook openShareDialog)
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
 state.curHash = location.hash || '';
 const first = parseRoute();

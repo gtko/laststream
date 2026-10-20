@@ -1,7 +1,7 @@
 /* Aides d'affichage partagées par la barre latérale des amis, la fiche ami et le fil d'activité (Social v3, lot F1) :
  * formats de durée, noms, avatars (rendu par collections avec repli lettre colorée), affiches. Tout texte venant du serveur
  * ou de l'utilisateur passe par esc() ; la couleur d'avatar est filtrée (aucun texte serveur dans un style). */
-import { posterUrlOf } from '../data/serverUserStore';
+import { safeTmdbImage } from './safeImg.js';
 import { UserApiError } from '../data/userApi';
 import { avatarAttrs } from './avatar-art.js';
 import { esc } from './util.js';
@@ -89,9 +89,7 @@ export const nameHTML = (p) => esc(shortName(p)) + (tagOf(p) ? '<span class="ss-
 
 /** Affiche d'une source : URL https telle quelle, chemin TMDB converti ; sinon rien. */
 export function posterSrc(p) {
-  if (typeof p !== 'string') return '';
-  if (/^https:\/\//.test(p)) return p;
-  return p.startsWith('/') ? posterUrlOf(p) || '' : '';
+  return safeTmdbImage(p, 'w342') || '';
 }
 
 /** Couleur de repli d'une affiche sans image, stable pour un titre. */

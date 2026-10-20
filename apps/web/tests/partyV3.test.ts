@@ -22,7 +22,7 @@ class FakeSocket implements SocketLike {
 const ROOM = { id: 'r1', visibility: 'private', title: 'Dune', poster: null, language: 'fr', media: { type: 'movie', tmdbId: 693134 }, fingerprint: null, host: 'alice', participants: 2, maxParticipants: 20, createdAt: '2026-01-01T00:00:00Z' };
 const welcome = (me: string, host: boolean, over: Record<string, unknown> = {}) => ({
   t: 'welcome', you: { username: me, host, muted: false }, room: ROOM, state: { playing: false, pos: 0, at: 1000, rev: 1 }, serverTime: 1000,
-  participants: [{ username: 'alice', host: true, ready: true, quality: '4K HDR', status: 'ready' }, { username: 'bob', ready: false, quality: null, status: 'searching' }], chat: [], ...over,
+  participants: [{ username: 'alice', host: true, ready: true, quality: '4K HDR', status: 'ready' }, { username: 'bob', ready: false, quality: null, status: 'searching' }], chat: [], settings: DEFAULT_SETTINGS, ...over,
 });
 
 async function connect(me = 'bob', host = false, over: Record<string, unknown> = {}) {

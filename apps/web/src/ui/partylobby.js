@@ -3,7 +3,7 @@
  * compte à rebours ; à zéro, chacun lance la lecture avec SA source (voir partyBridge.launchRoom).
  * Possède aussi les points d'entrée partagés `inviteToParty` et `openPartyLobby` (socialHooks.js).
  * Tout texte venu d'un participant passe par esc() ; l'interface est entièrement accessible au clavier. */
-import { isKidProfile, isServerMode } from '../data/auth';
+import { auth, isKidProfile, isServerMode, onAuthChange } from '../data/auth';
 import { tmdb } from '../data/lt';
 import { onPartyInvite, subscribe as socialSubscribe } from '../data/socialStore';
 import { UserApiError } from '../data/userApi';
@@ -19,7 +19,7 @@ import { CHAT_MAX, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } fro
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
-import { IMG } from './constants.js';
+import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
 import { registerSocialHook } from './socialHooks.js';
@@ -122,14 +122,14 @@ function mainHTML() {
   const sum = readySummary(list.map((p) => (p.guest ? { ...p, ready: true, status: 'ready' } : p)));
   const max = room && room.maxParticipants ? room.maxParticipants : MAX_PARTICIPANTS_FALLBACK;
   const host = isHost();
-  const poster = room && room.poster ? IMG('w780', room.poster) : '';
+  const poster = room && room.poster ? cssUrl(safeTmdbImage(room.poster, 'w780')) : '';
   const media = room ? room.media : null;
   const ep = media && media.type === 'series' && media.season != null ? ' · S' + media.season + ' É' + media.episode : '';
   const status = client.status === 'open' ? '' : '<p class="pl-conn" role="status">' + (client.status === 'closed' ? 'Déconnecté du salon.' : 'Connexion au salon… reprise automatique.') + '</p>';
   const cards = list.map(participantCard).join('');
   const invite = '<li class="pl-card-wrap"><button type="button" class="pl-card is-invite" data-pl-invite-tile aria-label="Inviter des amis"><span class="pl-invite-plus">' + ICON.plus + '</span><span class="pl-card-name">Inviter</span></button></li>';
   const s = client.settings;
-  return '<header class="pl-hero"' + (poster ? ' style="--pl-poster:url(&quot;' + esc(poster) + '&quot;)"' : '') + '>' +
+  return '<header class="pl-hero"' + (poster ? ' style="--pl-poster:' + poster.replace(/"/g, '&quot;') + '"' : '') + '>' +
     '<div class="pl-hero-top"><button type="button" class="pl-ico" data-pl-leave aria-label="Quitter le salon">' + ICON.back + '</button>' +
     '<span class="pl-pill"><span class="pl-dot" aria-hidden="true"></span>Salon de ' + esc(room ? room.host : '…') + ' · ' + (room && room.visibility === 'public' ? 'public' : 'privé') + '</span>' +
     '<span class="pl-grow"></span>' + (host ? '<button type="button" class="pl-btn is-sec is-glass" data-pl-change>Changer de titre</button>' : '') + '</div>' +
@@ -352,7 +352,7 @@ function bind(c) {
   });
   on('host', () => renderSoon());
   on('status', () => renderSoon());
-  on('error', (code) => toast(partyErrorText(code)));
+  on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
   on('end', (reason) => {
     toast(reason === 'kicked' ? 'Tu as été exclu du salon.' : reason === 'ended' ? 'Le salon est terminé.' : 'Salon fermé.');
     closeLobby(false);
@@ -423,11 +423,11 @@ export async function openLobby(partyId, from) {
   invitedPids.clear();
   prep = { phase: 'idle', quality: '' };
   opener = from instanceof HTMLElement ? from : (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  partyBridge.lobby = true;
   const current = partyBridge.client;
-  if (!(current && current.room && current.room.id === partyId && current.status !== 'closed')) {
+  if (current && current.room && current.room.id === partyId && current.status !== 'closed') partyBridge.lobby = true;
+  else {
     try {
-      await partyBridge.connect(partyId, userStore.currentProfile().id);
+      await partyBridge.connect(partyId, userStore.currentProfile().id, true);
     } catch (err) {
       partyBridge.lobby = false;
       toast(err instanceof UserApiError && err.code === 'room_full' ? 'Le salon est complet.' : 'Impossible de rejoindre le salon.');
@@ -675,6 +675,15 @@ function listenInvites() {
 registerSocialHook('inviteToParty', (pid) => { void inviteToParty(pid); });
 registerSocialHook('openPartyLobby', (partyId) => { void openLobby(partyId); });
 listenInvites();
+
+// Changement de profil (adulte vers adulte compris) : le salon d'attente du profil quitté est fermé et sa connexion coupée.
+let lobbyPid = auth.profile ? auth.profile.id : '';
+onAuthChange(() => {
+  const pid = auth.profile ? auth.profile.id : '';
+  if (pid === lobbyPid) return;
+  lobbyPid = pid;
+  if (root || partyBridge.client) closeLobby(false);
+});
 
 /** Pour les tests : état interne du salon d'attente. */
 export const isLobbyOpen = () => root !== null;
