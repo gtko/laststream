@@ -61,7 +61,8 @@ export type LiveFrame =
   | { t: 'poll'; conv: string; poll: PollView }
   | { t: 'typing'; conv: string; pid: string }
   | { t: 'join_request'; from: FriendView }
-  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string };
+  | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
 export interface LiveEnvelope {
@@ -173,8 +174,13 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return event.partyId === undefined
         ? { t: 'join_answer', pid: event.pid, accept: event.accept }
         : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
-    case 'list':
-      return { t: 'list', listId: event.listId };
+    case 'party_invite':
+      return {
+        t: 'party_invite',
+        from: { pid: event.from.pid, handle: handleOut(event.from.handle), avatarColor: event.from.avatarColor },
+        partyId: event.partyId,
+        title: event.title,
+      };
   }
 }
 

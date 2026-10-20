@@ -14,6 +14,8 @@ export interface PartyRoomStub {
   check(accountId: string): Promise<JoinCheck | 'closed'>;
   /** Droit d'émettre une invitation (hôte connecté, moins de quatre invités, débit du salon) ; compté si `ok`. */
   invite(requesterId: string): Promise<InviteVerdict>;
+  /** Vrai si ce compte (et non un invité) est connecté au salon : seul un membre peut inviter un ami à le rejoindre. */
+  connected(accountId: string): Promise<boolean>;
   /** Lien d'invitation partagé : génération courante et échéance (hôte connecté) ; `rotate` invalide les liens précédents. */
   inviteLink(requesterId: string, rotate: boolean): Promise<LinkVerdict>;
   /** Entrée d'un invité par le lien partagé (génération du lien, salon plein, débit) ; attribue un pseudo unique. */

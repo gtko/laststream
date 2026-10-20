@@ -108,6 +108,11 @@ export class PartyRoom extends DurableObject {
     return this.core === undefined ? 'not_found' : this.core.inviteVerdict(requesterId);
   }
 
+  /** Vrai si ce compte (non invité) est connecté au salon (voir RoomCore.isConnected). */
+  connected(accountId: string): boolean {
+    return this.core?.isConnected(accountId) ?? false;
+  }
+
   /** Lien d'invitation partagé (voir RoomCore.inviteLink). */
   async inviteLink(requesterId: string, rotate: boolean): Promise<LinkVerdict> {
     const core = this.core;

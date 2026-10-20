@@ -100,6 +100,16 @@ describe('formes JSON du contrat', () => {
     expect(frameFor(ALICE_PID, { t: 'friend', friend: { ...bob, household: false } })).toEqual({ t: 'friend', friend: { ...bob, household: false } });
   });
 
+  it('invitation à un salon : { t, from, partyId, title } ; l’auteur n’expose que pid, pseudo et couleur', () => {
+    const from = { pid: BOB_PID, handle: bob.handle, avatarColor: bob.avatarColor };
+    expect(frameFor(ALICE_PID, { t: 'party_invite', from, partyId: 'room-0123456789abcdef', title: 'Severance' })).toEqual({
+      t: 'party_invite',
+      from: { pid: BOB_PID, handle: { name: 'bob', tag: 'A7K2', full: 'bob#A7K2' }, avatarColor: '#3366ff' },
+      partyId: 'room-0123456789abcdef',
+      title: 'Severance',
+    });
+  });
+
   it('note : { t, media, note } ; saison et épisode gardés pour une série seulement', () => {
     const series = frameFor(BOB_PID, {
       t: 'note',
