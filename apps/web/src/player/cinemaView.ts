@@ -186,7 +186,7 @@ export function createCinemaSummary(onClose: () => void, onSeek: (pos: number) =
       if (!noMsg) {
         body.append(el('p', 'lp-cs-line', s.messages + (s.messages > 1 ? ' messages reçus' : ' message reçu')));
         const ul = el('ul', 'lp-cs-friends');
-        for (const f of s.byFriend) ul.append(el('li', '', f.handle.full + ' : ' + f.count));
+        for (const f of s.byFriend) ul.append(el('li', '', f.handle.name + ' : ' + f.count));
         if (ul.childElementCount) body.append(ul);
       }
       if (!noNotes) {

@@ -92,10 +92,19 @@
 .lp-react.is-fan:not(.is-note) .lp-react-note { display: block; height: 44px; padding: 0 12px; border: 0; border-radius: 22px; background: none; color: #c9c4d6; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .lp-react.is-fan .lp-react-e.is-extra { display: none; }
 
+/* ---------- Bouton « Réagir ici » (maquette) : pastille orange, smiley ; carré 44 px en tactile (plus bas) ---------- */
+.lp-tbtn[data-role="react"] { position: relative; display: flex; height: 40px; min-height: 0; padding: 0 14px; border-radius: 12px; background: #ff5a36; color: #0c0b11; font-weight: 700; gap: 8px; }
+/* L'infobulle (data-tip) s'affiche au-dessus du bouton, comme les autres boutons de la barre, sans recouvrir le libellé. */
+.lp-tbtn[data-role="react"][data-tip]:hover::after, .lp-tbtn[data-role="react"][data-tip]:focus-visible::after { top: auto; bottom: calc(100% + 10px); }
+.lp-tbtn[data-role="react"][hidden] { display: none; }
+.lp-tbtn[data-role="react"]:hover { background: #ff5a36; filter: brightness(1.08); }
+.lp-tbtn[data-role="react"]:focus-visible { box-shadow: 0 0 0 2px #fff; }
+.lp-tbtn[data-role="react"] svg { flex: none; width: 18px; height: 18px; }
+
 /* ---------- Mode cinéma ---------- */
 .lp-btn.is-active[data-role="cinema"] { background: var(--accent); color: #0c0b11; }
 .lp-cinema-menu {
-  position: absolute; right: 150px; bottom: calc(var(--lp-bar-h, 110px) + 8px); z-index: 8; box-sizing: border-box; width: 400px;
+  position: absolute; right: 150px; bottom: calc(var(--lp-bar-h, 110px) + 8px); z-index: 8; box-sizing: border-box; width: 440px;
   max-width: calc(100% - 32px); display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px;
   background: #17151f; border: 1px solid #33303f; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
 }
@@ -111,7 +120,7 @@
 .lp-cm-switch:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 .lp-cm-lb { font-family: Sora, sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #a19dae; }
 .lp-cm-durs { display: flex; flex-direction: column; gap: 2px; }
-.lp-cm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+.lp-cm-grid { display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); gap: 2px 6px; }
 .lp-cm-op {
   display: flex; align-items: center; gap: 12px; box-sizing: border-box; width: 100%; min-height: 44px; padding: 0 10px; border: 0;
   border-radius: 10px; background: none; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
@@ -120,6 +129,9 @@
 .lp-cm-op:disabled { opacity: 0.5; cursor: default; }
 .lp-cm-op:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
 .lp-cm-opt { flex: 1; min-width: 0; }
+/* Cases « Masquer » : deux colonnes dans un menu de 440 px (colonne de droite un peu plus large), libellés sur une seule ligne. */
+.lp-cm-chk { gap: 8px; padding: 0 6px; }
+.lp-cm-chk .lp-cm-opt { font-size: 13px; }
 .lp-cm-rem { color: #a19dae; font-size: 12px; }
 .lp-cm-rd { flex: none; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 2px solid #6f6a7d; }
 .lp-cm-op.is-on .lp-cm-rd { border: 6px solid var(--accent); }
@@ -135,6 +147,8 @@
 .lp-cinema-ind[hidden] { display: none; }
 .lp-ci-icon { display: grid; }
 .lp.is-mini .lp-cinema-ind { display: none; }
+/* Barre du haut visible : l'indicateur descend sous ses boutons (comme la puce « regarde aussi », ci-dessous). */
+.lp.is-ui .lp-cinema-ind { top: 72px; }
 /* La puce « regarde aussi » descend sous l'indicateur pour ne pas le chevaucher. */
 .lp:has(.lp-cinema-ind:not([hidden])) .lp-watchchip { top: 66px; }
 .lp.is-ui:has(.lp-cinema-ind:not([hidden])) .lp-watchchip { top: 116px; }
@@ -170,7 +184,10 @@
   .lp-cinema-menu { right: 16px; width: min(400px, calc(100% - 32px)); max-height: calc(100% - 100px); overflow-y: auto; }
   .lp-cm-grid { grid-template-columns: 1fr; }
   .lp-cinema-ind, .lp-watchchip { top: 14px; right: 14px; }
-  .lp.is-ui .lp-watchchip { top: 64px; }
+  .lp.is-ui .lp-watchchip, .lp.is-ui .lp-cinema-ind { top: 64px; }
+  .lp-tbtn[data-role="react"] { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 12px; }
+  .lp-tbtn[data-role="react"] span { display: none; }
+  .lp-tbtn[data-role="react"] svg { width: 20px; height: 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .lp-nf.is-emoji { animation: none; }

@@ -217,6 +217,14 @@ describe('menu du mode cinéma', () => {
   });
 });
 
+describe('indicateur du mode cinéma', () => {
+  it('« Mode cinéma · N messages en attente », « Mode cinéma » seul à zéro, singulier à un', () => {
+    expect(indicatorText(0)).toBe('Mode cinéma');
+    expect(indicatorText(1)).toBe('Mode cinéma · 1 message en attente');
+    expect(indicatorText(3)).toBe('Mode cinéma · 3 messages en attente');
+  });
+});
+
 describe('résumé de fin de mode', () => {
   it('texte en textContent, notes cliquables vers leur position', () => {
     const onSeek = vi.fn();
@@ -232,7 +240,8 @@ describe('résumé de fin de mode', () => {
     expect(sum.isOpen()).toBe(true);
     expect(sum.el.querySelector('img')).toBeNull();
     expect(sum.el.textContent).toContain('3 messages reçus');
-    expect(sum.el.textContent).toContain('Léa#1 : 3');
+    expect(sum.el.textContent).toContain('Léa : 3');
+    expect(sum.el.textContent).not.toContain('#1');
     (sum.el.querySelector('.lp-cs-note') as HTMLElement).click();
     expect(onSeek).toHaveBeenCalledWith(90);
     sum.show({ messages: 0, byFriend: [], notes: [] });

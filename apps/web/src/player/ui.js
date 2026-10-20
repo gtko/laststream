@@ -21,7 +21,8 @@ const REMAIN_KEY = 'laststream.player.remaining';
 const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
 const CINEMA_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 9.3-5M18 8c0 7 3 9 3 9H9M13.7 21a2 2 0 0 1-3.4 0M3 3l18 18"/></svg>';
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14"/></svg>';
-const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/></svg>';
+// Smiley de la maquette « Réagir ici » (18 px en bouton plein, 20 px en tactile : voir social-player.css).
+const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>';
 
 function skeleton() {
   return '<video class="lp-video" playsinline></video>' +
@@ -66,7 +67,7 @@ function skeleton() {
         '<div class="lp-grp lp-grp-r">' +
           tbtn('next', LI.next, 'Épisode suivant', ' data-role="next" hidden') +
           tbtn('panel:episodes', LI.list, 'Épisodes', ' data-role="episodes" hidden') +
-          tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" hidden') +
+          tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" aria-label="Réagir ici" data-tip="Réagir ici" hidden') +
           btn('share', SHARE_ICON, 'Partager', ' data-role="share" hidden') +
           btn('cinema', CINEMA_ICON, 'Mode cinéma : couper le social', ' data-role="cinema" hidden aria-haspopup="dialog"') +
           tbtn('panel:tracks', LI.tracks, 'Audio et sous-titres') +

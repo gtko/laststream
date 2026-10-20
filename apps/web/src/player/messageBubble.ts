@@ -65,12 +65,12 @@ export function knownMessages(s: SocialState): Message[] {
 
 const avatarOf = (a: unknown): string | undefined => (typeof a === 'string' && a !== '' && a.length <= 200 ? a : undefined);
 
-/** Nom et couleur d'un correspondant : amis et foyer, puis conversations ; repli si inconnu. */
+/** Nom et couleur d'un correspondant : amis et foyer, puis conversations ; repli si inconnu. Le nom est sans étiquette `#TAG`. */
 export function senderOf(s: SocialState, pid: string): { who: string; color: string; avatar?: string } {
   const f = [...s.friends, ...s.household].find((x) => x.pid === pid);
-  if (f) return { who: f.handle.full, color: safeColor(f.avatarColor), avatar: avatarOf(f.avatar) };
+  if (f) return { who: f.handle.name, color: safeColor(f.avatarColor), avatar: avatarOf(f.avatar) };
   const c = s.conversations.find((x) => x.pid === pid);
-  if (c) return { who: c.handle.full, color: safeColor(c.avatarColor), avatar: avatarOf((c as { avatar?: unknown }).avatar) };
+  if (c) return { who: c.handle.name, color: safeColor(c.avatarColor), avatar: avatarOf((c as { avatar?: unknown }).avatar) };
   return { who: 'Un ami', color: FALLBACK_COLOR };
 }
 
@@ -186,8 +186,13 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
     clearTimeout(hideTimer);
     hideTimer = undefined;
   };
-  /** Une réponse en cours, ou le pointeur sur la bulle, ou le focus dedans : la bulle reste. */
-  const locked = (): boolean => replying || hovering || root.contains(document.activeElement) && document.activeElement !== document.body;
+  /**
+   * Ce qui retient la bulle : le pointeur dessus, un envoi en cours, le focus dans la carte ou un brouillon écrit. Calculé
+   * sur l'état réel (pas sur un drapeau resté à vrai) : sans rien de cela, le délai court et la bulle se ferme.
+   */
+  const locked = (): boolean => hovering || sending || root.contains(document.activeElement) || input.value.trim() !== '';
+  /** Vrai si la bulle peut apparaître : pas en mode cinéma (`enabled`), pas en « Ne pas déranger ». */
+  const allowed = (s: SocialState): boolean => (!deps.enabled || deps.enabled()) && s.status !== 'dnd';
 
   function paintAvatar(node: HTMLElement, pid: string): string {
     const from = senderOf(deps.getState(), pid);
@@ -204,7 +209,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
     const n = q.next[0];
     stackEl.hidden = !n || q.current === null;
     if (!n) return;
-    stackWho.textContent = paintAvatar(stackAv, n.from).replace(/#.*$/, '');
+    stackWho.textContent = paintAvatar(stackAv, n.from);
     stackTxt.textContent = truncateText(n.body, 60);
     replay(stackEl, 'is-in');
   }
@@ -226,7 +231,19 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   function armTimer(): void {
     clearTimer();
     if (locked()) return;
-    hideTimer = setTimeout(() => hide(), BUBBLE_MS);
+    hideTimer = setTimeout(() => {
+      hideTimer = undefined;
+      // Retenue entre-temps (survol, focus, brouillon) : la bulle reste, le délai repartira au relâchement.
+      if (!locked()) hide();
+    }, BUBBLE_MS);
+  }
+
+  /** Plus rien ne retient la bulle : le champ se referme et le délai repart. */
+  function relax(): void {
+    if (locked()) return;
+    replying = false;
+    showForm(false);
+    if (q.current) armTimer();
   }
 
   function render(m: Message): void {
@@ -234,7 +251,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
     who.textContent = name;
     when.textContent = touch() ? 'toucher pour répondre' : 'à l’instant';
     text.textContent = truncateText(m.body);
-    input.placeholder = 'Répondre à ' + name.replace(/#.*$/, '') + '…';
+    input.placeholder = 'Répondre à ' + name + '…';
     lastFrom = m.from;
     vig.hidden = false;
     root.hidden = false;
@@ -253,6 +270,14 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
       render(q.current);
       return;
     }
+    conceal();
+  }
+
+  /** Retire la bulle et sa file sans attendre (mode cinéma, « Ne pas déranger », arrêt) : délai, survol et réponse sont levés. */
+  function conceal(): void {
+    clearTimer();
+    endReply();
+    hovering = false;
     q = emptyQueue();
     vig.hidden = true;
     root.hidden = true;
@@ -298,6 +323,11 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
       if (m.createdAt < since - RECENT_MS || !shouldShowBubble(m, s.me, s.status)) continue;
       fresh.push(m);
     }
+    // Mode cinéma ou « Ne pas déranger » : une bulle déjà affichée s'efface tout de suite, sans attendre son délai.
+    if (!allowed(s)) {
+      if (q.current) conceal();
+      return;
+    }
     if (!fresh.length) return;
     fresh.sort((a, b) => a.createdAt - b.createdAt);
     // Un lot : seul le plus récent compte (une seule place), les anciens du lot ne s'empilent pas.
@@ -330,8 +360,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   });
   card.addEventListener('mouseleave', () => {
     hovering = false;
-    if (!replying && input.value === '' && !root.contains(document.activeElement)) showForm(false);
-    if (q.current) armTimer();
+    relax();
   });
   card.addEventListener('focusin', () => {
     clearTimer();
@@ -340,7 +369,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
   card.addEventListener('focusout', (e) => {
     const to = (e as FocusEvent).relatedTarget;
     if (to instanceof Node && card.contains(to)) return;
-    if (!replying && !hovering && input.value === '') { showForm(false); if (q.current) armTimer(); }
+    relax();
   });
 
   main.addEventListener('click', () => {
@@ -398,13 +427,7 @@ export function createMessageBubble(host: HTMLElement, deps: BubbleDeps): Messag
       unsub = null;
       document.removeEventListener('keydown', onDocKey);
       seen = new Set();
-      q = emptyQueue();
-      clearTimer();
-      endReply();
-      hovering = false;
-      vig.hidden = true;
-      root.hidden = true;
-      stackEl.hidden = true;
+      conceal();
     },
     isReplying: () => replying,
     lastPeer() {

@@ -36,7 +36,7 @@ function cardOf(notes: readonly Note[], clock: string): HTMLElement {
   box.append(el('span', 'lp-nc-h', clock));
   for (const n of notes.slice(0, 3)) {
     const row = el('span', 'lp-nc-r' + (n.kind === 'emoji' ? ' is-emoji' : ''));
-    row.append(dotOf(n, 'lp-nc-d'), el('span', 'lp-nc-w', n.author.handle.full), el('span', 'lp-nc-t', n.body));
+    row.append(dotOf(n, 'lp-nc-d'), el('span', 'lp-nc-w', n.author.handle.name), el('span', 'lp-nc-t', n.body));
     box.append(row);
   }
   if (notes.length > 3) box.append(el('span', 'lp-nc-m', '+ ' + (notes.length - 3) + ' autres'));
@@ -46,8 +46,8 @@ function cardOf(notes: readonly Note[], clock: string): HTMLElement {
 /** Libellé accessible d'un marqueur : heure et contenu de la première note du groupe. */
 function labelOf(notes: readonly Note[], clock: string): string {
   const first = notes[0];
-  if (notes.length === 1) return 'Réaction de ' + first.author.handle.full + ' à ' + clock + ' : ' + first.body;
-  return notes.length + ' réactions à ' + clock + ', la première de ' + first.author.handle.full;
+  if (notes.length === 1) return 'Réaction de ' + first.author.handle.name + ' à ' + clock + ' : ' + first.body;
+  return notes.length + ' réactions à ' + clock + ', la première de ' + first.author.handle.name;
 }
 
 /** Marqueur rond d'un groupe, placé à sa position sur la barre ; un clic (ou Entrée au clavier) amène la lecture à la note. */
@@ -92,7 +92,7 @@ export function fadeFutureMarkers(container: HTMLElement, time: number, antiSpoi
 export function noteFlashEl(note: Note): HTMLElement {
   const box = el('div', 'lp-nf ' + (note.kind === 'emoji' ? 'is-emoji' : 'is-text'));
   if (note.kind === 'emoji') {
-    box.append(el('span', 'lp-nf-e', note.body), el('span', 'lp-nf-w', note.author.handle.full));
+    box.append(el('span', 'lp-nf-e', note.body), el('span', 'lp-nf-w', note.author.handle.name));
   } else {
     const bub = el('span', 'lp-nf-b');
     bub.append(

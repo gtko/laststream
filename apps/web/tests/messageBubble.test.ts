@@ -43,7 +43,7 @@ describe('décision', () => {
 
   it('expéditeur : ami puis conversation, couleur validée, repli si inconnu', () => {
     const s: SocialState = { ...initialSocialState(), me: ME, friends: [{ ...AMY, avatarColor: 'url(x)' }] };
-    expect(senderOf(s, 'amy')).toEqual({ who: 'Amy#B2C3', color: '#94a3b8' });
+    expect(senderOf(s, 'amy')).toEqual({ who: 'Amy', color: '#94a3b8' });
     expect(senderOf(s, 'inconnu')).toEqual({ who: 'Un ami', color: '#94a3b8' });
   });
 
@@ -117,7 +117,7 @@ describe('bulle dans le lecteur', () => {
     expect($('.lp-bubble')!.hidden).toBe(true);
     push(incoming(msg('m1', 'amy', 'me', 'On regarde ensemble ce soir ?')));
     expect($('.lp-bubble')!.hidden).toBe(false);
-    expect($('.lp-bubble-who')!.textContent).toBe('Amy#B2C3');
+    expect($('.lp-bubble-who')!.textContent).toBe('Amy');
     expect($('.lp-bubble-txt')!.textContent).toBe('On regarde ensemble ce soir ?');
   });
 
@@ -331,6 +331,7 @@ describe('bulle Social v3', () => {
     });
     expect($('.lp-bubble-txt')!.textContent).toBe('Premier');
     expect($('.lp-bubble-stack')!.hidden).toBe(false);
+    expect($('.lp-bubble-stack .lp-bubble-who')!.textContent).toBe('Amy');
     expect($('.lp-bubble-stack-txt')!.textContent).toBe('Deuxième');
     vi.advanceTimersByTime(BUBBLE_MS);
     expect($('.lp-bubble-txt')!.textContent).toBe('Deuxième');
@@ -352,6 +353,70 @@ describe('bulle Social v3', () => {
     expect($('.lp-bubble-vig')!.hasAttribute('hidden')).toBe(true);
     push(incoming(msg('v1', 'amy', 'me', 'Salut')));
     expect($('.lp-bubble-vig')!.hasAttribute('hidden')).toBe(false);
-    expect(bubble.lastPeer()).toEqual({ pid: 'amy', who: 'Amy#B2C3' });
+    expect(bubble.lastPeer()).toEqual({ pid: 'amy', who: 'Amy' });
+  });
+  it('une réponse abandonnée sans texte : le focus parti, le délai repart et la bulle se ferme', () => {
+    mount();
+    vi.useFakeTimers();
+    push(incoming(msg('f1', 'amy', 'me', 'Salut')));
+    keyOnDocument('r');
+    const input = $<HTMLInputElement>('.lp-bubble-in')!;
+    expect(document.activeElement).toBe(input);
+    vi.advanceTimersByTime(BUBBLE_MS * 2);
+    expect($('.lp-bubble')!.hidden).toBe(false); // retenue tant que le champ a le focus
+    input.blur();
+    expect($<HTMLFormElement>('.lp-bubble-form')!.hidden).toBe(true);
+    vi.advanceTimersByTime(BUBBLE_MS);
+    expect($('.lp-bubble')!.hidden).toBe(true);
+    expect($('.lp-bubble-vig')!.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('un brouillon non envoyé retient la bulle, même une fois le focus parti', () => {
+    mount();
+    vi.useFakeTimers();
+    push(incoming(msg('d1', 'amy', 'me', 'Salut')));
+    keyOnDocument('r');
+    const input = $<HTMLInputElement>('.lp-bubble-in')!;
+    input.value = 'à tout de suite';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.blur();
+    vi.advanceTimersByTime(BUBBLE_MS * 2);
+    expect($('.lp-bubble')!.hidden).toBe(false);
+  });
+
+  it('mode cinéma activé pendant la bulle : la bulle et son ombre disparaissent tout de suite, même survolées', () => {
+    let on = true;
+    mount({ enabled: () => on });
+    vi.useFakeTimers();
+    push(incoming(msg('c3', 'amy', 'me', 'Salut')));
+    $('.lp-bubble-card')!.dispatchEvent(new MouseEvent('mouseenter'));
+    expect($('.lp-bubble')!.hidden).toBe(false);
+    on = false;
+    push({});
+    expect($('.lp-bubble')!.hidden).toBe(true);
+    expect($('.lp-bubble-vig')!.hasAttribute('hidden')).toBe(true);
+  });
+
+  it('« Ne pas déranger » activé pendant la bulle : elle disparaît tout de suite', () => {
+    mount();
+    push(incoming(msg('n1', 'amy', 'me', 'Salut')));
+    expect($('.lp-bubble')!.hidden).toBe(false);
+    push({ status: 'dnd' });
+    expect($('.lp-bubble')!.hidden).toBe(true);
+  });
+
+  it('survol interrompu par le mode cinéma : à la fin du mode, le délai reprend (pas de survol fantôme)', () => {
+    let on = true;
+    mount({ enabled: () => on });
+    vi.useFakeTimers();
+    push(incoming(msg('k2', 'amy', 'me', 'Salut')));
+    $('.lp-bubble-card')!.dispatchEvent(new MouseEvent('mouseenter'));
+    on = false;
+    push({});
+    on = true;
+    push(incoming(msg('k3', 'amy', 'me', 'Encore', NOW + 2)));
+    expect($('.lp-bubble')!.hidden).toBe(false);
+    vi.advanceTimersByTime(BUBBLE_MS);
+    expect($('.lp-bubble')!.hidden).toBe(true);
   });
 });

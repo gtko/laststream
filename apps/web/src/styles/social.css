@@ -309,6 +309,8 @@ body.lp-open .ss { z-index: 620; }
 .ss-inv-t b { font-size: 14px; color: var(--text); }
 .ss-fab { position: absolute; right: 16px; bottom: 16px; z-index: 4; height: 52px; padding: 0 18px; border: 0; border-radius: 16px; background: var(--text); color: var(--bg); font-weight: 700; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); cursor: pointer; }
 .ss-fab svg { width: 18px; height: 18px; }
+/* `.ss button` (plus haut) impose `color: inherit` à tous les boutons : ce sélecteur plus précis garde le libellé sombre sur le fond clair. */
+.ss .ss-fab { color: var(--bg); }
 
 /* Fiche ami */
 #ss-friend { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 28px; position: relative; }

@@ -192,7 +192,9 @@ describe('rendu DOM', () => {
     const card = container.querySelector('.lp-note-card') as HTMLElement;
     expect(card.querySelectorAll('.lp-nc-w')).toHaveLength(3);
     expect(card.querySelector('.lp-nc-m')?.textContent).toBe('+ 1 autres');
-    expect(card.querySelector('.lp-nc-w')?.textContent).toBe('Lou#B2C3');
+    expect(card.querySelector('.lp-nc-w')?.textContent).toBe('Lou');
+    expect(container.querySelector('.lp-note')?.getAttribute('aria-label')).toContain('Lou');
+    expect(container.textContent).not.toContain('#B2C3');
   });
 
   it('la bulle de lecture rend emoji ou texte sans HTML', () => {
@@ -201,6 +203,8 @@ describe('rendu DOM', () => {
     expect(text.textContent).toContain('<img src=x onerror="alert(2)">');
     const emoji = noteFlashEl(note('b', 10, { kind: 'emoji', body: '👍' }));
     expect(emoji.querySelector('.lp-nf-e')?.textContent).toBe('👍');
+    expect(emoji.querySelector('.lp-nf-w')?.textContent).toBe('Lou');
+    expect(emoji.textContent).not.toContain('#');
   });
 
   it('le popover envoie un emoji, un texte valide, et ferme à Échap', () => {
