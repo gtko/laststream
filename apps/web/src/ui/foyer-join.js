@@ -55,7 +55,7 @@ const EYE = icon(20, '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"
 const LOGO = '<svg class="fj-logo" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="9" fill="#ff5a36"></rect><path d="M11 8.5 L24 16 L11 23.5Z" fill="#0c0b11"></path><rect x="8" y="12.2" width="18" height="1.6" fill="#ff5a36"></rect><rect x="8" y="15.2" width="18" height="1.6" fill="#ff5a36"></rect><rect x="8" y="18.2" width="18" height="1.6" fill="#ff5a36"></rect></svg>';
 
 /** Score du mot de passe (0 à 4), même grille que la maquette : longueur, mélange de types, signes. */
-export function passwordScore(p) {
+function passwordScore(p) {
   if (!p) return 0;
   let score = 0;
   if (p.length >= 8) score++;
@@ -66,7 +66,7 @@ export function passwordScore(p) {
 }
 
 /** Temps restant avant `expiresAt` (« 2 j 23 h », « 5 h 12 min », « 40 min »), ou '' si la date est absente ou passée. */
-export function remainingText(expiresAt, now = Date.now()) {
+function remainingText(expiresAt, now = Date.now()) {
   const end = Date.parse(expiresAt);
   if (!Number.isFinite(end)) return '';
   const min = Math.floor((end - now) / 60000);

@@ -21,7 +21,7 @@ export const IMAGE_HOSTS: readonly string[] = [
 const HTTPS_SHAPE = /^https:\/\/[^\s"'<>\\]+$/;
 
 /** Origine https du serveur de l'app (là où vivent ses liens et ses images), '' sinon. */
-export function serverImageOrigin(): string {
+function serverImageOrigin(): string {
   try {
     const url = new URL(shareBase());
     return url.protocol === 'https:' ? url.origin : '';

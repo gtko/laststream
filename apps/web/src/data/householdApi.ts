@@ -6,11 +6,11 @@ import { call, UserApiError } from './userApi';
  * Les erreurs sont des `UserApiError` dont `code` est le code serveur (`login_taken`, `expired`…). */
 
 export type HouseholdTtlHours = 24 | 72 | 168;
-export type HouseholdInviteState = 'pending' | 'used' | 'expired' | 'revoked';
-export type HouseholdCheckState = 'ok' | 'expired' | 'used' | 'revoked' | 'unknown';
+type HouseholdInviteState = 'pending' | 'used' | 'expired' | 'revoked';
+type HouseholdCheckState = 'ok' | 'expired' | 'used' | 'revoked' | 'unknown';
 
 /** Pseudo et avatar d'une personne affichée sur la page d'invitation (même forme que les profils). */
-export interface HouseholdPersonDto {
+interface HouseholdPersonDto {
   name: string;
   avatar?: string | null;
 }
@@ -22,7 +22,7 @@ export interface HouseholdInviteCreatedDto {
   expiresAt: string;
 }
 
-export interface HouseholdInviteDto {
+interface HouseholdInviteDto {
   id: string;
   profileId: string;
   profileName: string;

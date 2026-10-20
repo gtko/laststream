@@ -1,17 +1,16 @@
 import { call, type MediaKind, type Visibility } from './userApi';
-import type { InviteCheck } from './invite';
 
 /* Ce qui reste de l'API sociale « v1 » de lastAddon (docs/social.md) et n'a pas d'équivalent dans /user/social (v2/v3) :
  * parrainage (liens d'invitation), visibilité des titres de la bibliothèque, titres masqués et salons de visionnage (REST).
  * Les amis, la présence et la bibliothèque d'un ami passent par socialV2Api.ts (par pid) ; ne rien rajouter ici de ce côté. */
 
 // ---- Parrainage ----
-export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
+type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 /**
  * Coup de cœur d'un billet : un titre de la bibliothèque du parrain (3 au plus). L'identifiant est une chaîne (le serveur refuse
  * un nombre). Affiche et fond : URL https, ou chaîne vide (jamais null).
  */
-export interface InvitePick {
+interface InvitePick {
   id: string;
   type: MediaKind;
   name: string;
@@ -58,9 +57,6 @@ export const updateInvite = async (id: string, body: InviteUpdate): Promise<Invi
   const res = await call<{ invite: InviteDto } | undefined>('/invites/' + enc(id), { method: 'PUT', body });
   return res?.invite ?? null;
 };
-/** Vérification publique d'un lien (`GET /user/invites/check`) : valide avec le billet, ou `{ valid: false, reason }`. */
-export const checkInvite = (code: string) =>
-  call<InviteCheck>('/invites/check?code=' + enc(code), { anonymous: true });
 export const setInviteQuota = (username: string, quota: number) =>
   call<{ username: string; quota: number }>('/accounts/' + enc(username) + '/invite-quota', { method: 'PUT', body: { quota } });
 

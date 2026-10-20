@@ -35,16 +35,16 @@ export function withoutInvite(search: string, hash: string): { search: string; h
 }
 
 /** Raison d'un billet qui ne vaut plus (réponse de la vérification). */
-export type InviteReason = 'expired' | 'used' | 'revoked' | 'unknown';
+type InviteReason = 'expired' | 'used' | 'revoked' | 'unknown';
 /** Coup de cœur joint à un billet : identifiant en chaîne, une affiche et un fond (adresses https seulement, sinon chaîne vide). */
-export interface InvitePick { id: string; type: string; name: string; poster?: string | null; background?: string | null }
+interface InvitePick { id: string; type: string; name: string; poster?: string | null; background?: string | null }
 /** Parrain du billet : pseudo, identifiant public `Nom#TAG` (null si absent) et avatar (URL ou null). */
-export interface InviteInviter { name: string; handle: string | null; avatar: string | null }
+interface InviteInviter { name: string; handle: string | null; avatar: string | null }
 /**
  * Résultat de `GET /user/invites/check?code=` (contrat invitations v3, partie B) : `{ valid: true, inviter, message, picks,
  * expiresAt, number }` ou `{ valid: false, reason }`. `inviter` vaut null pour un billet de l'administrateur.
  */
-export interface InviteCheck {
+interface InviteCheck {
   valid: boolean;
   reason?: InviteReason;
   inviter?: InviteInviter | null;

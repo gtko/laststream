@@ -54,7 +54,7 @@ export function referralReasonText(reason) {
 }
 
 /** Identifiant public du parrain : `Nom#TAG` (le serveur l'envoie tel quel, ou null). Sans handle : aperçu `Nom#····`. */
-export function inviterHandle(inv) {
+function inviterHandle(inv) {
   const name = clip(inv && inv.name, NAME_TEXT_MAX);
   const h = inv && typeof inv.handle === 'string' ? inv.handle : '';
   if (h.includes('#')) return clip(h, 80);
@@ -63,7 +63,7 @@ export function inviterHandle(inv) {
 }
 
 /** Aperçu du handle pendant la saisie : `Nom#····` tant que le serveur n'a pas attribué le vrai tag. */
-export function previewHandle(name) {
+function previewHandle(name) {
   return (clip(str(name).trim().replace(/\s+/g, ''), NAME_MAX) || 'Toi') + '#····';
 }
 
@@ -83,7 +83,7 @@ export function expiryText(v) {
 }
 
 /** Score du mot de passe (0 à 4) : longueur, mélange de types, signes. Indicatif, comme dans la maquette. */
-export function strengthScore(p) {
+function strengthScore(p) {
   if (!p) return 0;
   let score = 0;
   if (p.length >= 8) score++;
