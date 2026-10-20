@@ -30,7 +30,7 @@ const FR_VARIANT_RANK: Record<FrVariant, number> = {
   SUBFRENCH: 0,
 };
 
-/** Union-find (compression de chemin), même principe que dedupe.ts. */
+/** Union-find (compression de chemin). */
 class DisjointSet {
   private readonly parent: number[];
 

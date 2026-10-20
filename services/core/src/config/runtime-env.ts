@@ -111,12 +111,3 @@ export function allowedOrigins(): string[] {
     .map((origin) => origin.trim())
     .filter((origin) => origin !== '');
 }
-
-/**
- * LASTADDON_LEGACY_INDEXERS=1 : réactive les anciennes sources torrent (Prowlarr, Jackett, Torznab, Prowlarr local détecté
- * et routes /config/indexers). Désactivé par défaut : les seules sources de Laststream sont les addons Stremio amont, qui
- * débrident eux-mêmes. Réservé au mode serveur perso.
- */
-export function legacyIndexersEnabled(): boolean {
-  return runtimeEnv().get('LASTADDON_LEGACY_INDEXERS') === '1';
-}

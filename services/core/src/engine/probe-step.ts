@@ -2,10 +2,8 @@
  * Étape de sonde du moteur : lit l'audio réel des meilleurs candidats éligibles, puis enrichit leurs langues et
  * pistes vérifiées. Le cache de sondes est injectable (défaut : cache partagé de 30 jours).
  *
- * Éligibilité, dans l'ordre du classement :
- * - lien direct http(s) : sondé tel quel ;
- * - candidat `cached` avec infoHash, quand un débrideur est fourni : le lien est obtenu par debrid.resolve, et
- *   seulement si la sonde n'est pas déjà en cache.
+ * Éligibilité, dans l'ordre du classement : seuls les liens directs http(s) sont sondés tels quels. Le serveur n'appelle
+ * jamais AllDebrid : les candidats sans lien direct ne sont pas sondés.
  *
  * Règles :
  * - topN : nombre de candidats éligibles à sonder. topN <= 0 ne fait rien. Les candidats de même clé de cache
@@ -19,13 +17,12 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { ResolveOptions, ResolvedLink } from '../sources/alldebrid.js';
 import type { FetchFn } from '../sources/http.js';
 import { type MediaProbe, probeMedia } from '../media/probe.js';
 import { type ProbeCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
 import type { AudioTrack } from '../media/tracks.js';
 import type { Lang } from '../types.js';
-import { type Ranked, type VerifiedAudio, fileIdxOf, infoHashOf, isDirect, sizeOf } from './types.js';
+import { type Ranked, type VerifiedAudio, fileIdxOf, infoHashOf, isDirect } from './types.js';
 
 /** Sondes simultanées au plus. */
 const PROBE_CONCURRENCY = 3;
@@ -41,15 +38,8 @@ const CHANNEL_LAYOUTS: ReadonlyMap<number, string> = new Map([
   [8, '7.1'],
 ]);
 
-/** Débrideur minimal : seule la résolution d'un lien caché sert ici (AllDebridClient la fournit). */
-export interface ProbeDebrid {
-  resolve(infoHash: string, fileIdx?: number, opts?: ResolveOptions): Promise<ResolvedLink>;
-}
-
 /** Options de l'étape. Seul `topN` est obligatoire. */
 export interface EnrichWithProbeOptions {
-  /** Débrideur pour les candidats cachés. Sans lui, seuls les liens directs sont éligibles. */
-  debrid?: ProbeDebrid;
   /** Nombre de candidats éligibles à sonder. 0 désactive l'étape. */
   topN: number;
   /** Sonde injectable (tests). Défaut : probeMedia. */
@@ -60,10 +50,6 @@ export interface EnrichWithProbeOptions {
   fetch?: FetchFn;
   /** Budget global de l'étape, en millisecondes. Défaut : 4000. */
   budgetMs?: number;
-  /** Saison transmise au débrideur pour choisir le fichier. */
-  season?: number;
-  /** Épisode transmis au débrideur pour choisir le fichier. */
-  episode?: number;
 }
 
 /** Ce qu'il faut pour sonder un candidat : clé de cache, et lien à sonder (obtenu seulement si la sonde manque). */
@@ -96,8 +82,8 @@ function isLang(value: string): value is Lang {
   return LANGS.has(value);
 }
 
-/** Plan de sonde d'un candidat, ou undefined s'il n'est pas éligible. */
-function planOf(c: Ranked, opts: EnrichWithProbeOptions): Plan | undefined {
+/** Plan de sonde d'un candidat, ou undefined s'il n'est pas éligible (seul un lien direct l'est). */
+function planOf(c: Ranked): Plan | undefined {
   const hash = infoHashOf(c);
   const fileIdx = fileIdxOf(c);
   if (isDirect(c)) {
@@ -105,20 +91,7 @@ function planOf(c: Ranked, opts: EnrichWithProbeOptions): Plan | undefined {
     if (!isHttpUrl(url)) return undefined;
     return { key: hash === undefined ? sha256(url) : probeCacheKey(hash, fileIdx), link: async () => url };
   }
-  const debrid = opts.debrid;
-  if (debrid === undefined || c.cached !== true || hash === undefined) return undefined;
-  return {
-    key: probeCacheKey(hash, fileIdx),
-    link: async () => {
-      const resolved = await debrid.resolve(hash, fileIdx, {
-        season: opts.season,
-        episode: opts.episode,
-        filename: c.raw.filename || c.raw.title,
-        size: sizeOf(c),
-      });
-      return resolved.url;
-    },
-  };
+  return undefined;
 }
 
 /** Groupes des candidats éligibles, dans l'ordre du classement, limités à topN candidats. */
@@ -126,7 +99,7 @@ function planJobs(ranked: readonly Ranked[], opts: EnrichWithProbeOptions): Job[
   const jobs = new Map<string, Job>();
   let picked = 0;
   for (let index = 0; index < ranked.length && picked < opts.topN; index += 1) {
-    const plan = planOf(ranked[index], opts);
+    const plan = planOf(ranked[index]);
     if (plan === undefined) continue;
     picked += 1;
     const job = jobs.get(plan.key) ?? { plan, members: [] };

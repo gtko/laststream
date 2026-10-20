@@ -1,14 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createMemoryKvCache } from '../src/platform/memory-kv-cache.js';
 import { IssuedUrls } from '../src/play/issued.js';
 import { HostHealth } from '../src/play/hosts.js';
 import { PackStore } from '../src/play/packs.js';
-import { AllDebridClient } from '../src/sources/alldebrid.js';
 import { fetchTorrent, TorrentCache, type FetchedTorrent } from '../src/torrent/fetch-torrent.js';
 
-// Mode serveur AllDebrid explicitement activé (opt-in) : le client AllDebrid est appelé depuis le serveur.
-beforeEach(() => vi.stubEnv('LASTADDON_DEBRID_SERVER_SIDE', '1'));
-afterEach(() => vi.unstubAllEnvs());
 
 /**
  * Caches persistants partagés entre instances (Workers : KV). Deux « instances » = deux objets distincts qui ne
@@ -16,102 +12,6 @@ afterEach(() => vi.unstubAllEnvs());
  */
 
 const HASH = 'a'.repeat(40);
-const API_KEY = 'AD-TEST-KEY-NE-PAS-FUITER';
-
-interface Call {
-  path: string;
-  form: URLSearchParams;
-}
-
-/** AllDebrid simulé : magnet prêt, un fichier, déblocage d'un lien. */
-function fakeAllDebrid(): { fetch: typeof fetch; calls: Call[] } {
-  const calls: Call[] = [];
-  const reply = (data: unknown): Response =>
-    new Response(JSON.stringify({ status: 'success', data }), { headers: { 'content-type': 'application/json' } });
-  const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
-    const form = init?.body instanceof URLSearchParams ? init.body : new URLSearchParams();
-    calls.push({ path: url.pathname, form });
-    switch (url.pathname) {
-      case '/v4/magnet/upload':
-        return reply({ magnets: [{ magnet: `magnet:?xt=urn:btih:${HASH}`, hash: HASH, name: 'x', size: 1, ready: true, id: 7 }] });
-      case '/v4.1/magnet/status':
-        return reply({ magnets: [] });
-      case '/v4/magnet/files':
-        return reply({ magnets: [{ id: 7, files: [{ n: 'movie.mkv', s: 5000, l: 'locked-1' }] }] });
-      case '/v4/link/unlock':
-        return reply({ link: 'https://dl.example.com/movie.mkv', filename: 'movie.mkv', filesize: 5000 });
-      default:
-        return reply({ message: 'ok' });
-    }
-  };
-  return { fetch: fetchImpl as unknown as typeof fetch, calls };
-}
-
-describe('AllDebrid : statuts et liens partagés entre instances', () => {
-  it('le statut « prêt » appris par une instance évite l\'envoi du magnet par une autre', async () => {
-    const kv = createMemoryKvCache();
-    const first = fakeAllDebrid();
-    const second = fakeAllDebrid();
-    const a = new AllDebridClient(API_KEY, { fetch: first.fetch, kv });
-    const b = new AllDebridClient(API_KEY, { fetch: second.fetch, kv });
-    expect((await a.checkCached([HASH])).get(HASH)).toBe(true);
-    expect(first.calls.some((call) => call.path === '/v4/magnet/upload')).toBe(true);
-    expect((await b.checkCached([HASH])).get(HASH)).toBe(true);
-    expect(second.calls).toEqual([]);
-  });
-
-  it('le lien résolu par une instance est servi à une autre sans appel AllDebrid', async () => {
-    const kv = createMemoryKvCache();
-    const first = fakeAllDebrid();
-    const second = fakeAllDebrid();
-    const a = new AllDebridClient(API_KEY, { fetch: first.fetch, kv });
-    const b = new AllDebridClient(API_KEY, { fetch: second.fetch, kv });
-    const link = await a.resolve(HASH, undefined, { sleep: async () => {} });
-    expect(link.url).toBe('https://dl.example.com/movie.mkv');
-    expect(await b.resolve(HASH, undefined, { sleep: async () => {} })).toEqual(link);
-    expect(second.calls).toEqual([]);
-  });
-
-  it('les entrées sont propres à la clé API : un autre compte ne lit pas le cache', async () => {
-    const kv = createMemoryKvCache();
-    const first = fakeAllDebrid();
-    const other = fakeAllDebrid();
-    await new AllDebridClient(API_KEY, { fetch: first.fetch, kv }).checkCached([HASH]);
-    await new AllDebridClient('AUTRE-CLE-API', { fetch: other.fetch, kv }).checkCached([HASH]);
-    expect(other.calls.some((call) => call.path === '/v4/magnet/upload')).toBe(true);
-  });
-
-  it('aucune clé API dans les clés ni les valeurs du cache partagé', async () => {
-    const stored: string[] = [];
-    const inner = createMemoryKvCache();
-    const kv = {
-      ...inner,
-      set: (key: string, value: string, ttl?: number) => {
-        stored.push(key, value);
-        return inner.set(key, value, ttl);
-      },
-    };
-    const fake = fakeAllDebrid();
-    const client = new AllDebridClient(API_KEY, { fetch: fake.fetch, kv });
-    await client.checkCached([HASH]);
-    await client.resolve(HASH, undefined, { sleep: async () => {} });
-    expect(stored.length).toBeGreaterThan(0);
-    expect(stored.join('\n')).not.toContain(API_KEY);
-  });
-
-  it('un cache partagé illisible est ignoré', async () => {
-    const broken = {
-      get: () => Promise.reject(new Error('KV indisponible')),
-      set: () => Promise.reject(new Error('KV indisponible')),
-      delete: () => Promise.reject(new Error('KV indisponible')),
-    };
-    const fake = fakeAllDebrid();
-    const client = new AllDebridClient(API_KEY, { fetch: fake.fetch, kv: broken });
-    expect((await client.checkCached([HASH])).get(HASH)).toBe(true);
-    expect((await client.resolve(HASH, undefined, { sleep: async () => {} })).filename).toBe('movie.mkv');
-  });
-});
 
 describe('URL émises partagées entre instances', () => {
   it('une URL notée par une instance est connue d\'une autre, ainsi que le lien débridé d\'un /play', async () => {

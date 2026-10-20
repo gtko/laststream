@@ -5,24 +5,11 @@ import { type Config, ConfigValidationError, parseConfig } from '../config/schem
 import type { AppDeps } from '../deps.js';
 import { serviceProbes, type ServiceField, type ServiceProbe } from '../lt/checks.js';
 import { createLtContext, LtError } from '../lt/context.js';
-import { AllDebridClient } from '../sources/alldebrid.js';
-import { LOCAL_PROWLARR_NAME, localProwlarrStatusOf } from '../sources/local-prowlarr.js';
-import { defaultIndexerHealth, type HealthStatus } from '../sources/indexer-health.js';
-import { discoverJackettIndexers } from '../sources/jackett.js';
-import type { IndexerInfo } from '../sources/indexers.js';
 import { isRecord, maskSecrets, SourceError, type SourceTestResult } from '../sources/http.js';
-import { discoverProwlarrIndexers } from '../sources/prowlarr.js';
-import { testTorznab } from '../sources/torznab.js';
 import { testUpstream, type UpstreamManifestInfo } from '../sources/upstream.js';
 
-export type SourceCheckType = 'upstream' | 'torznab' | 'alldebrid' | 'prowlarr' | 'jackett' | 'prowlarr-local';
-
-/** Statut d'un indexeur (Prowlarr, Jackett) : issu de la santé en mémoire, jamais de clé ni d'URL. */
-export interface IndexerCheck {
-  id: string;
-  name: string;
-  status: HealthStatus | 'unknown';
-}
+/** Type d'une source de la configuration. Seul `upstream` est interrogé : les autres types (anciens indexeurs) ne le sont plus. */
+export type SourceCheckType = Config['sources'][number]['type'];
 
 /**
  * Résultat du test d'une clé de service (TMDB, MDBList, TVDB, OpenRouter, Fanart.tv). Jamais la clé. `note` est une
@@ -37,27 +24,25 @@ export interface ServiceCheck {
 }
 
 /**
- * Résultat du test d'une source. `error` est absent quand la source répond. `indexers` : Prowlarr et Jackett.
- * `manifest` : métadonnées publiques d'un addon amont qui répond. `enabled: false` : source désactivée, non testée.
+ * Résultat du test d'une source. `error` est absent quand la source répond. `manifest` : métadonnées publiques d'un addon
+ * amont qui répond. `enabled: false` : source désactivée, non testée.
  */
 export interface SourceCheck {
   name: string;
   type: SourceCheckType;
   ok: boolean;
   error?: string;
-  indexers?: IndexerCheck[];
   manifest?: UpstreamManifestInfo;
   enabled?: boolean;
-  /** `prowlarr-local` : rang parmi les sources configurées. */
-  position?: number | null;
 }
 
 /** Libellé d'une source désactivée : elle n'est pas interrogée. */
 const DISABLED_LABEL = 'désactivée';
+/** Libellé d'une source d'un type retiré (anciens indexeurs) : elle n'est jamais interrogée. */
+const RETIRED_LABEL = 'source retirée, non interrogée';
 
 type SourceConfig = Config['sources'][number];
 
-const ALLDEBRID_NAME = 'AllDebrid';
 const UNEXPECTED_ERROR = 'erreur inattendue';
 
 /**
@@ -111,48 +96,15 @@ async function settle(
   return check;
 }
 
-/** Statut courant d'un indexeur d'après la santé en mémoire ; « unknown » s'il n'a jamais été interrogé. */
-function indexerStatus(source: string, indexerId: number | string): HealthStatus | 'unknown' {
-  return defaultIndexerHealth.get(source, indexerId)?.status ?? 'unknown';
-}
-
-/** Découverte des indexeurs d'une source Prowlarr ou Jackett : succès avec statuts, ou échec sûr. */
-async function settleIndexers(
-  name: string,
-  type: 'prowlarr' | 'jackett',
-  discover: () => Promise<IndexerInfo[]>,
-  secrets: readonly string[],
-): Promise<SourceCheck> {
-  let indexers: IndexerInfo[];
-  try {
-    indexers = await discover();
-  } catch (err) {
-    const message = err instanceof SourceError ? err.message : UNEXPECTED_ERROR;
-    return { name, type, ok: false, error: scrubSecrets(message, secrets) };
-  }
-  const statuses = indexers.map((indexer) => ({
-    id: String(indexer.id),
-    name: indexer.name,
-    status: indexerStatus(name, indexer.id),
-  }));
-  return { name, type, ok: true, indexers: statuses };
-}
-
-/** Teste une source selon son type. Ne lève jamais. Une source désactivée n'est pas interrogée. */
+/** Teste une source selon son type. Ne lève jamais. Une source désactivée ou d'un type retiré n'est pas interrogée. */
 function checkSource(source: SourceConfig, fetchOpts: { fetch?: typeof fetch }, secrets: readonly string[]): Promise<SourceCheck> {
   if (source.enabled === false) {
     return Promise.resolve({ name: source.name, type: source.type, enabled: false, ok: false, error: DISABLED_LABEL });
   }
-  switch (source.type) {
-    case 'upstream':
-      return settle(source.name, 'upstream', () => testUpstream(source, fetchOpts), secrets);
-    case 'torznab':
-      return settle(source.name, 'torznab', () => testTorznab(source, fetchOpts), secrets);
-    case 'prowlarr':
-      return settleIndexers(source.name, 'prowlarr', () => discoverProwlarrIndexers(source, fetchOpts), secrets);
-    case 'jackett':
-      return settleIndexers(source.name, 'jackett', () => discoverJackettIndexers(source, fetchOpts), secrets);
+  if (source.type !== 'upstream') {
+    return Promise.resolve({ name: source.name, type: source.type, ok: false, error: RETIRED_LABEL });
   }
+  return settle(source.name, 'upstream', () => testUpstream(source, fetchOpts), secrets);
 }
 
 type Parsed = { config: Config } | { issues: readonly string[] };
@@ -182,8 +134,8 @@ function parseBody(input: unknown, deps: AppDeps): Parsed {
 }
 
 /**
- * POST /config/test : configuration JSON non chiffrée. Teste chaque source (upstream, Torznab) et le compte
- * debrid en parallèle. Réponse : `{ sources: [{ name, type, ok, error? }] }`.
+ * POST /config/test : configuration JSON non chiffrée. Teste chaque source amont et chaque service en parallèle.
+ * Réponse : `{ sources: [{ name, type, ok, error? }], services: [...] }`.
  */
 export function registerTestRoutes(app: App, deps: AppDeps): void {
   app.post('/config/test', async (c) => {
@@ -195,49 +147,10 @@ export function registerTestRoutes(app: App, deps: AppDeps): void {
     const secrets = secretsOf(config);
     const fetchOpts = { fetch: deps.fetch };
 
-    const sourceChecks = config.sources.map((source) => checkSource(source, fetchOpts, secrets));
-    const apiKey = config.debrid?.apiKey;
-    const debridCheck =
-      apiKey === undefined
-        ? []
-        : [
-            settle(
-              ALLDEBRID_NAME,
-              'alldebrid',
-              async () => {
-                const client = deps.alldebridFactory
-                  ? deps.alldebridFactory(apiKey)
-                  : new AllDebridClient(apiKey, fetchOpts);
-                const check = await client.checkApiKey();
-                return check.ok ? { ok: true } : { ok: false, error: check.error ?? UNEXPECTED_ERROR };
-              },
-              secrets,
-            ),
-          ];
-
-    const sources = await Promise.all([...sourceChecks, ...debridCheck]);
-    const localProwlarr = await localProwlarrStatusOf(deps.localProwlarr, config);
-    // Entrée virtuelle « Prowlarr local » : statuts des indexeurs détectés (ou désactivée), à la suite des sources.
-    if (localProwlarr.source !== undefined && deps.localProwlarr !== undefined) {
-      const entry = localProwlarr.source;
-      if (!entry.enabled) {
-        sources.push({ name: entry.name, type: 'prowlarr-local', enabled: false, position: entry.position, ok: false, error: DISABLED_LABEL });
-      } else {
-        const local = await deps.localProwlarr().catch(() => null);
-        if (local !== null) {
-          const check = await settleIndexers(
-            LOCAL_PROWLARR_NAME,
-            'prowlarr',
-            () => discoverProwlarrIndexers({ name: LOCAL_PROWLARR_NAME, baseUrl: local.baseUrl, apiKey: local.apiKey }, fetchOpts),
-            [...secrets, local.apiKey],
-          );
-          sources.push({ ...check, name: entry.name, type: 'prowlarr-local', enabled: true, position: entry.position });
-        }
-      }
-    }
+    const sources = await Promise.all(config.sources.map((source) => checkSource(source, fetchOpts, secrets)));
     const ltContext = createLtContext(deps);
     const services = await Promise.all(serviceProbes(ltContext, config).map((probe) => probeService(probe, secrets)));
     c.header('Cache-Control', 'no-store');
-    return sendJson(c, { sources, services, localProwlarr });
+    return sendJson(c, { sources, services });
   });
 }
