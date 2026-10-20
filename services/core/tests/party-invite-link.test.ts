@@ -368,6 +368,22 @@ describe('API REST : lien partagé et entrée des invités', () => {
     expect(Date.parse(a.body.expiresAt)).toBeLessThanOrEqual(Date.now() + GUEST_SESSION_MS);
   });
 
+  it('avatar de l’invité : liste blanche, repris par le jeton de séance (WebSocket), refusé sinon (400 invalid_avatar)', async () => {
+    const id = await createRoom();
+    const token = (await link(id)).body.token as string;
+    const post = (avatar: unknown, name = 'Léa') => request<any>(app, 'POST', `/party/${id}/guest`, { body: { token, name, avatar } });
+    const ok = await post('hero:heros:Aegis');
+    expect(ok.status).toBe(201);
+    expect(ok.body.avatar).toBe('hero:heros:Aegis');
+    for (const bad of ['https://evil.example/a.png', 'javascript:alert(1)', 'col:inconnue:x', 'x'.repeat(150)]) {
+      const res = await post(bad, 'Tom');
+      expect(res.status).toBe(400);
+    }
+    const none = await post(undefined, 'Zoé');
+    expect(none.status).toBe(201);
+    expect(none.body).not.toHaveProperty('avatar');
+  });
+
   it('« Nouveau lien » : l’ancien lien est refusé (403 invite_revoked), le nouveau fonctionne', async () => {
     const id = await createRoom();
     const old = (await link(id)).body.token;

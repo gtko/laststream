@@ -5,6 +5,7 @@ import { type App, type Ctx, newApp } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { createRateLimiter } from '../rate-limit.js';
 import type { UserBackend } from '../user/repo.js';
+import { guestAvatarOf } from '../user/avatar.js';
 import { userErrorHandler } from '../user/routes.js';
 import { assertUnlocked, sessionOf } from '../user/session.js';
 import { emitSocialEvent } from '../user/social-v2-events.js';
@@ -62,7 +63,7 @@ const createSchema = z.object({
 });
 
 const inviteLinkSchema = z.object({ profileId: z.string().min(1).max(64), rotate: z.boolean().default(false) });
-const guestEntrySchema = z.object({ token: z.string().min(1).max(1024), name: z.string().min(1).max(200) });
+const guestEntrySchema = z.object({ token: z.string().min(1).max(1024), name: z.string().min(1).max(200), avatar: z.string().max(101).optional() });
 const joinSchema = z.object({ profileId: z.string().min(1).max(64) });
 const friendInviteSchema = z.object({ pid: z.string().min(1).max(64) });
 /** Titre d'invitation : 200 caractères au plus, sans caractère de contrôle (contrat du message `party`). */
@@ -165,7 +166,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     for (const notice of outcome.notices) emitSocialEvent(deps.socialEvents, [notice.pid], { t: 'message', message: notice.payload });
     emitSocialEvent(deps.socialEvents, [target], {
       t: 'party_invite',
-      from: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor },
+      from: { pid: me.pid, handle: me.handle, avatarColor: me.avatarColor, ...(me.avatar ? { avatar: me.avatar } : {}) },
       partyId: id,
       title,
     });
@@ -345,6 +346,8 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (link === undefined) throw new UserApiError(403, 'invite_invalid');
     const wanted = cleanGuestName(body.name);
     if (wanted === undefined) throw new UserApiError(400, 'invalid_name');
+    const avatar = body.avatar === undefined || body.avatar === '' ? undefined : guestAvatarOf(body.avatar);
+    if (body.avatar !== undefined && body.avatar !== '' && avatar === undefined) throw new UserApiError(400, 'invalid_avatar');
     const guestId = newGuestId();
     const verdict = await party.room(id).enterGuest(guestId, wanted, link.epoch);
     if (!verdict.ok) {
@@ -355,8 +358,8 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
       if (verdict.reason === 'name_taken') throw new UserApiError(409, 'name_taken');
       throw new UserApiError(409, verdict.reason);
     }
-    const session = await signGuestToken(id, now, deps.secret, { gid: guestId, exp: Math.min(now + GUEST_SESSION_MS, verdict.exp) });
-    return sendJson(c, { sessionToken: session.token, expiresAt: session.expiresAt, name: verdict.name }, 201);
+    const session = await signGuestToken(id, now, deps.secret, { gid: guestId, exp: Math.min(now + GUEST_SESSION_MS, verdict.exp), ...(avatar !== undefined ? { avatar } : {}) });
+    return sendJson(c, { sessionToken: session.token, expiresAt: session.expiresAt, name: verdict.name, ...(avatar !== undefined ? { avatar } : {}) }, 201);
   });
 
   /** Termine le salon : l'hôte (ou le propriétaire du serveur). */

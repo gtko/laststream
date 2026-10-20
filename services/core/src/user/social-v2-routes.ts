@@ -27,6 +27,8 @@ export interface Actor {
   pid: string;
   handle: { name: string; tag: string; full: string };
   avatarColor: string;
+  /** Avatar illustré du profil (`col:…`, `dicebear:…`, `hero:…`), absent : la lettre sur la couleur. */
+  avatar?: string;
 }
 
 /**
@@ -43,7 +45,13 @@ export async function actorOf(c: Ctx, users: UserRepo, social: SocialV2Repo, sec
   assertUnlocked(c, session, profile, secret);
   const identity = await social.identityOf(session.account.id, profile.id);
   if (identity === undefined || identity.pid === null || identity.handle === null) throw new UserApiError(404, 'profile_not_found');
-  return { accountId: session.account.id, pid: identity.pid, handle: identity.handle, avatarColor: profile.avatarColor };
+  return {
+    accountId: session.account.id,
+    pid: identity.pid,
+    handle: identity.handle,
+    avatarColor: profile.avatarColor,
+    ...(profile.avatar ? { avatar: profile.avatar } : {}),
+  };
 }
 
 /** Pid d'un paramètre de route. Un pid mal formé équivaut à un pid inconnu. */
@@ -80,10 +88,10 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
 
   // Moi
 
-  /** `{ pid, handle, status, avatarColor }` : le profil agissant et son statut choisi. */
+  /** `{ pid, handle, status, avatarColor, avatar? }` : le profil agissant et son statut choisi. */
   router.get('/social/me', async (c) => {
     const me = await actor(c);
-    return sendJson(c, { pid: me.pid, handle: me.handle, status: await social().statusOf(me.pid), avatarColor: me.avatarColor });
+    return sendJson(c, { pid: me.pid, handle: me.handle, status: await social().statusOf(me.pid), avatarColor: me.avatarColor, ...(me.avatar ? { avatar: me.avatar } : {}) });
   });
 
   /** Statut choisi (`online`, `away`, `dnd`, `invisible`). Diffusé aux amis et au foyer si la présence visible change. */

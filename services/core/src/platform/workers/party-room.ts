@@ -1,7 +1,7 @@
 import type { DurableObjectNamespace, DurableObjectState, WebSocket as CfWebSocket } from '@cloudflare/workers-types';
 import { DurableObject } from 'cloudflare:workers';
 import { IDENTITY_HEADER } from '../../party/backend.js';
-import { AVATAR_PATTERN } from '../../user/avatar.js';
+import { isAvatarValue } from '../../user/avatar.js';
 import {
   CLOSE,
   type Identity,
@@ -38,7 +38,7 @@ function decodeIdentity(header: string | null): Identity | undefined {
   try {
     const value = JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as Partial<Identity>;
     if (typeof value.accountId === 'string' && typeof value.username === 'string' && typeof value.avatarColor === 'string') {
-      const avatar = typeof value.avatar === 'string' && AVATAR_PATTERN.test(value.avatar) ? { avatar: value.avatar } : {};
+      const avatar = typeof value.avatar === 'string' && isAvatarValue(value.avatar) ? { avatar: value.avatar } : {};
       const guest = value.guest === true ? { guest: true as const } : {};
       return { accountId: value.accountId, username: value.username, avatarColor: value.avatarColor, ...avatar, ...guest };
     }

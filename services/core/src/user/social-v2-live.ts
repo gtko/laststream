@@ -68,7 +68,7 @@ export type LiveFrame =
   | { t: 'typing'; conv: string; pid: string }
   | { t: 'join_request'; from: FriendView }
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
-  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string }; partyId: string; title: string }
+  | { t: 'party_invite'; from: { pid: string; handle: Handle; avatarColor: string; avatar?: string }; partyId: string; title: string }
   | { t: 'activity'; item: ActivityItem };
 
 /** Trame à remettre à un profil : sa destination et le texte JSON exact. */
@@ -143,6 +143,7 @@ function activityOut(view: ActivityItem): ActivityItem {
   if (view.media.season !== undefined) media.season = view.media.season;
   if (view.media.episode !== undefined) media.episode = view.media.episode;
   const out: ActivityItem = { id: view.id, pid: view.pid, handle: handleOut(view.handle), avatarColor: view.avatarColor, kind: view.kind, media, at: view.at };
+  if (view.avatar !== undefined) out.avatar = view.avatar;
   if (view.rating !== undefined) out.rating = view.rating;
   return out;
 }
@@ -194,7 +195,12 @@ export function liveFrame(event: SocialEvent): LiveFrame {
     case 'party_invite':
       return {
         t: 'party_invite',
-        from: { pid: event.from.pid, handle: handleOut(event.from.handle), avatarColor: event.from.avatarColor },
+        from: {
+          pid: event.from.pid,
+          handle: handleOut(event.from.handle),
+          avatarColor: event.from.avatarColor,
+          ...(event.from.avatar !== undefined ? { avatar: event.from.avatar } : {}),
+        },
         partyId: event.partyId,
         title: event.title,
       };

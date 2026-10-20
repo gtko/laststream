@@ -26,6 +26,8 @@ export interface ActivityItem {
   pid: string;
   handle: Handle;
   avatarColor: string;
+  /** Avatar illustré du profil, absent : la lettre sur la couleur. */
+  avatar?: string;
   kind: ActivityKind;
   media: ActivityMedia;
   rating?: number;

@@ -49,7 +49,7 @@ export async function handlePartyWs(
     if (verified === undefined) return refusedSocket(CLOSE.expired, 'expired');
     const name = cleanGuestName(url.searchParams.get('name'));
     if (name === undefined) return json(400, { error: 'invalid_name' });
-    identity = guestIdentity(verified.guestId, name);
+    identity = guestIdentity(verified.guestId, name, verified.avatar);
   }
   if (identity === undefined) return json(401, { error: 'invalid_ticket' });
   const headers = new Headers(request.headers);
