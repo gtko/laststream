@@ -68,7 +68,6 @@
   "vars": {
     // Mode public : adresses privées refusées pour les URL saisies (SSRF) ; la base publique sert aux liens /play.
     // AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel AllDebrid depuis Cloudflare.
-    "LASTADDON_DEBRID_SERVER_SIDE": "0",
     "LASTADDON_PUBLIC": "1",
     "LASTADDON_PUBLIC_URL": "https://lastaddon-core.gtux-prog.workers.dev",
     // Plus de relais de plages (LASTADDON_RANGE_BASE retiré) : l'appareil lit les miniatures directement chez l'hébergeur
