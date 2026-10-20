@@ -174,7 +174,7 @@ describe('profil social : chiffres, points communs, avatar', () => {
   });
 
   it('avatar existant exposé sur le profil, sur l’ami et sur la note', () => {
-    const { db, users, social, greg, bob } = setup();
+    const { users, social, greg, bob } = setup();
     befriend(social, greg, bob, T0);
     users.updateProfile('a1', greg.id, { ...editable('Greg'), avatar: 'dicebear:adventurer:abc123' });
     expect(social.profileOf(greg.pid, T0)?.avatar).toBe('dicebear:adventurer:abc123');
