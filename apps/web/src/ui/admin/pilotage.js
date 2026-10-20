@@ -1,6 +1,6 @@
-/* Espace Pilotage : tableau de bord (santé des services, chiffres clés, trafic, « En direct » rafraîchi toutes les 30 s)
- * et « À traiter » (liste des actions, groupée par sévérité). Chaque donnée se charge à part (ctx.fetch) : un échec
- * d'un appel n'empêche pas l'affichage des autres. */
+/* Espace Pilotage : tableau de bord (santé des services, chiffres clés, trafic, « En direct »)
+ * et « À traiter » (liste des actions, groupée par sévérité). La santé, « À traiter » et « En direct » viennent du relevé
+ * unique de la coquille (admin.js, toutes les 30 s) ; comptes et trafic se chargent ici (ctx.fetch), un à un. */
 import '../../styles/admin-pilotage.css';
 import * as api from '../../data/adminApi';
 import {
@@ -12,7 +12,6 @@ import { confirmDialog } from '../admin-dialog.js';
 import { esc } from '../util.js';
 import { admCard, adminErr, attempt, empty, loaded, sectionHead } from './common.js';
 
-const LIVE_MS = 30_000;
 const TODO_PREVIEW = 4;
 const RANGES = [['1h', '1 h'], ['24h', '24 h'], ['7d', '7 j']];
 const RANGE_NAME = { '1h': '1 heure', '24h': '24 heures', '7d': '7 jours' };
@@ -23,8 +22,6 @@ const IDLE = { status: 'idle', value: null, error: '' };
 
 // État propre à la vue (la donnée elle-même vit dans S, via ctx.fetch).
 let dashRange = '24h';
-let liveAt = 0;
-let liveTimer = 0;
 
 // ---------- Chargement ----------
 /** Vue d'ensemble : comptes (balayage des plus récents : total, actifs 24 h, suspendus), inscriptions sur 7 jours, maintenance, salons, signalements. */
@@ -55,34 +52,10 @@ async function fetchTraffic(range) {
   };
 }
 
-/** « En direct » : le relevé sert aussi d'horodatage affiché dans l'en-tête. */
-async function fetchLive() {
-  const v = await api.getLive();
-  liveAt = Date.now();
-  return v;
-}
-
+/** Santé, « À traiter » et « En direct » sont relevés par la coquille (admin.js) : le tableau de bord ne les recharge pas. */
 function loadOverview(ctx, quiet) {
-  ctx.fetch('health', () => api.getStatus(), quiet);
   ctx.fetch('ov', fetchOverview, quiet);
   ctx.fetch('traffic', () => fetchTraffic(dashRange), quiet);
-  ctx.fetch('live', fetchLive, quiet);
-  ctx.fetch('inbox', () => api.getInbox(), quiet);
-}
-
-// ---------- « En direct » : rafraîchi toutes les 30 s, seulement section affichée et onglet visible ----------
-function startLive(ctx) {
-  if (liveTimer) return;
-  liveTimer = setInterval(() => {
-    if (!ctx.isCurrent()) { stopLive(); return; }
-    if (document.hidden) return;
-    ctx.fetch('live', fetchLive, true);
-  }, LIVE_MS);
-}
-
-/** Arrête le rafraîchissement de « En direct » (appelé quand la section n'est plus affichée ; exporté pour les tests). */
-export function stopLive() {
-  if (liveTimer) { clearInterval(liveTimer); liveTimer = 0; }
 }
 
 // ---------- Rendu : tableau de bord ----------
@@ -104,7 +77,7 @@ function todoItemHTML(i) {
   return '<li class="adm-todo"><span class="adm-todo-k ' + (SEV_CLASS[inboxSeverity(i)] || '') + '" aria-hidden="true">' + esc(KIND_MARK[i.kind] || '•') + '</span>' +
     '<div class="adm-todo-b"><span class="adm-todo-t">' + esc(i.title) + '</span><span class="adm-todo-s">' + esc(i.detail) + esc(at) + '</span></div>' +
     '<div class="adm-todo-a"><button type="button" class="btn btn-ghost btn-sm" data-adm-inbox-seen="' + k + '">Marquer vu</button>' +
-    '<button type="button" class="btn btn-primary btn-sm" data-adm-inbox-act="' + k + '">' + esc(i.action && i.action.label ? i.action.label : 'Ouvrir') + '</button></li>';
+    '<button type="button" class="btn btn-primary btn-sm" data-adm-inbox-act="' + k + '">' + esc(i.action && i.action.label ? i.action.label : 'Ouvrir') + '</button></div></li>';
 }
 
 /** Liste groupée par sévérité ; `limit` borne le nombre d'items affichés (aperçu du tableau de bord). */
@@ -214,7 +187,7 @@ function trafficHTML(d) {
 export function overviewHTML(S) {
   const at = (k) => S[k] || IDLE;
   const ov = at('ov');
-  const updated = liveAt ? '<p class="adm-live" role="status">Dernier relevé « En direct » : ' + new Date(liveAt).toLocaleTimeString('fr-FR') + ' · actualisé toutes les 30 s.</p>' : '';
+  const updated = S.liveAt ? '<p class="adm-live" role="status">Dernier relevé « En direct » : ' + new Date(S.liveAt).toLocaleTimeString('fr-FR') + ' · actualisé toutes les 30 s.</p>' : '';
   return sectionHead('Tableau de bord', 'Ce qui demande ton attention, puis l’état du serveur en un coup d’œil.',
     '<div class="adm-head-tools"><div class="pills adm-ranges" role="group" aria-label="Période" data-nav>' + RANGES.map(([v, l]) => pill(v, l)).join('') + '</div>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button></div>') +
@@ -293,7 +266,6 @@ function bindOverview(root, ctx) {
   }));
   root.querySelectorAll('[data-adm-go]').forEach((b) => b.addEventListener('click', (e) => { e.preventDefault(); ctx.go(b.dataset.admGo); }));
   bindInbox(root, ctx);
-  startLive(ctx);
 }
 
 export const pilotageSections = [

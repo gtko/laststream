@@ -14,7 +14,7 @@
 #set-la { display: flex; flex-direction: column; gap: var(--set-gap); }
 
 /* ---------- Navigation latérale ---------- */
-.set-nav { position: sticky; top: 84px; }
+.set-nav { position: sticky; top: calc(84px + var(--ann-h, 0px)); }
 .set-nav ul { display: flex; flex-direction: column; gap: 2px; }
 .set-nav-i { position: relative; width: 100%; min-height: 46px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-radius: 12px; text-align: left; font-size: 14.5px; font-weight: 700; line-height: 1.2; color: var(--muted); transition: background-color 0.15s, color 0.15s; }
 .set-nav-i svg { width: 20px; height: 20px; color: var(--dim); transition: color 0.15s; }

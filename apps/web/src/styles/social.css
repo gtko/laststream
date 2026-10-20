@@ -19,7 +19,7 @@
 .inv-row.is-sent .inv-state { color: #f5b700; }
 .inv-row.is-used .inv-state { color: var(--dim); }
 .inv-link { min-width: 0; width: 100%; text-overflow: ellipsis; font-size: 13px; }
-.inv-link.is-used { color: var(--dim); font-size: 13px; }
+.inv-link.is-used, .inv-link.is-revoked { color: var(--dim); font-size: 13px; }
 .inv-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .inv-quota { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
 .inv-quota-f { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

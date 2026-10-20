@@ -15,10 +15,10 @@ export function settingsHTML(S) {
     loaded(S.settings, (s) =>
       '<form id="adm-settings" class="set-form adm-settings" autocomplete="off">' +
       '<p class="adm-banner is-warn" role="note"><strong>Attention.</strong> Fermer les inscriptions bloque les nouveaux comptes (les liens ne sont pas consommés). Activer la maintenance fait répondre « 503 » à tout le monde sauf toi : tous les utilisateurs perdent l’accès tant qu’elle est active.</p>' +
-      admCard('Inscriptions', fieldRow('Quota par défaut', 'Nombre de liens d’invitation donné aux nouveaux comptes (0 à 100). Les comptes existants gardent le leur.', (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" name="quota" min="0" max="100" value="' + esc(s.inviteDefaultQuota) + '" required>') +
+      admCard('Inscriptions', fieldRow('Quota par défaut', 'Nombre de liens d’invitation donné aux nouveaux comptes (0 à 100). Les comptes existants gardent le leur.', (id) => '<input class="set-input set-input-sm" id="' + id + '" type="number" name="quota" min="0" max="100" value="' + esc(s.inviteDefaultQuota) + '" required data-adm-focus="set:quota">') +
         switchRow('Inscriptions par invitation ouvertes', 'Désactivé : les liens d’invitation sont refusés.', !!s.invitesOpen, 'name="invitesOpen"')) +
       admCard('Mode maintenance', switchRow('Activer la maintenance', 'Le serveur répond 503 à tous sauf à l’administration. Exige ton mot de passe.', !!s.maintenance.enabled, 'name="maintenance"') +
-        fieldRow('Message affiché', 'Montré aux utilisateurs pendant la maintenance.', (id) => '<textarea class="set-input adm-textarea" id="' + id + '" name="message" rows="3" maxlength="300">' + esc(s.maintenance.message || '') + '</textarea>', { stack: true }),
+        fieldRow('Message affiché', 'Montré aux utilisateurs pendant la maintenance.', (id) => '<textarea class="set-input adm-textarea" id="' + id + '" name="message" rows="3" maxlength="300" data-adm-focus="set:message">' + esc(s.maintenance.message || '') + '</textarea>', { stack: true }),
       { aside: s.maintenance.enabled ? badge('Maintenance active', 'warn') : '' }) +
       '<p class="set-msg" id="adm-settings-msg" role="status"></p><div class="set-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div></form>');
 }
@@ -120,12 +120,12 @@ function formHTML(a) {
   const levelOptions = Object.entries(LEVEL_LABEL).map(([k, l]) => '<option value="' + k + '"' + ((v.level || 'info') === k ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
   return admCard(a ? 'Modifier l’annonce' : 'Nouvelle annonce',
     '<form id="adm-ann-form" class="adm-form" data-ann-id="' + esc(a ? a.id : '') + '" novalidate>' +
-    '<label class="adm-field"><span>Titre</span><input class="set-input" name="title" maxlength="' + ANNOUNCEMENT_TITLE_MAX + '" required autocomplete="off" value="' + esc(v.title || '') + '"></label>' +
-    '<label class="adm-field"><span>Message</span><textarea class="set-input adm-textarea" name="message" rows="3" maxlength="' + ANNOUNCEMENT_MESSAGE_MAX + '" required>' + esc(v.message || '') + '</textarea></label>' +
-    '<label class="adm-field"><span>Niveau</span><select class="set-input" name="level">' + levelOptions + '</select></label>' +
+    '<label class="adm-field"><span>Titre</span><input class="set-input" name="title" maxlength="' + ANNOUNCEMENT_TITLE_MAX + '" required autocomplete="off" value="' + esc(v.title || '') + '" data-adm-focus="ann:title"></label>' +
+    '<label class="adm-field"><span>Message</span><textarea class="set-input adm-textarea" name="message" rows="3" maxlength="' + ANNOUNCEMENT_MESSAGE_MAX + '" required data-adm-focus="ann:message">' + esc(v.message || '') + '</textarea></label>' +
+    '<label class="adm-field"><span>Niveau</span><select class="set-input" name="level" data-adm-focus="ann:level">' + levelOptions + '</select></label>' +
     '<div class="adm-ann-dates">' +
-    '<label class="adm-field"><span>Début (facultatif)</span><input class="set-input" type="datetime-local" name="startsAt" value="' + esc(toLocalInput(v.startsAt)) + '"></label>' +
-    '<label class="adm-field"><span>Fin (facultatif)</span><input class="set-input" type="datetime-local" name="endsAt" value="' + esc(toLocalInput(v.endsAt)) + '"></label>' +
+    '<label class="adm-field"><span>Début (facultatif)</span><input class="set-input" type="datetime-local" name="startsAt" value="' + esc(toLocalInput(v.startsAt)) + '" data-adm-focus="ann:startsAt"></label>' +
+    '<label class="adm-field"><span>Fin (facultatif)</span><input class="set-input" type="datetime-local" name="endsAt" value="' + esc(toLocalInput(v.endsAt)) + '" data-adm-focus="ann:endsAt"></label>' +
     '</div>' +
     '<p class="adm-dim">Sans début, l’annonce part dès qu’elle est active. Sans fin, elle reste affichée.</p>' +
     '<p class="set-msg" id="adm-ann-msg" role="status"></p>' +
@@ -214,7 +214,7 @@ function detailText(d) {
 }
 
 export function auditHTML(S) {
-  const filter = '<form class="adm-toolbar" data-adm-auditform data-nav><label class="adm-field adm-grow"><span class="sr-only">Filtrer par action</span><input class="set-input" name="action" value="' + esc(S.auditAction) + '" placeholder="Filtrer par action (ex. elevate.failed)" autocomplete="off" autocapitalize="none"></label><button type="submit" class="btn btn-ghost btn-sm">Filtrer</button></form>';
+  const filter = '<form class="adm-toolbar" data-adm-auditform data-nav><label class="adm-field adm-grow"><span class="sr-only">Filtrer par action</span><input class="set-input" name="action" value="' + esc(S.auditAction) + '" placeholder="Filtrer par action (ex. elevate.failed)" autocomplete="off" autocapitalize="none" data-adm-focus="audit:action"></label><button type="submit" class="btn btn-ghost btn-sm">Filtrer</button></form>';
   return sectionHead('Journal d’audit', 'Toutes les actions d’administration, y compris les ré-authentifications échouées. Jamais de mot de passe ni de jeton.', '<button type="button" class="btn btn-ghost btn-sm" data-adm-reload>Actualiser</button>') + filter +
     loaded(S.audit, (r) => (!r.entries.length ? empty('Aucune entrée.') :
       table('Journal d’audit', ['Date', 'Acteur', 'Action', 'Cible', 'Détail'],

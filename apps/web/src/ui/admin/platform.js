@@ -218,9 +218,12 @@ function bindSources(root, ctx) {
     runProviderTests(ctx, [b.dataset.admTest]);
   }));
   const all = root.querySelector('[data-adm-testall]');
-  if (all) all.addEventListener('click', () => {
+  if (all) all.addEventListener('click', async () => {
     const ids = testableIds(ctx.S);
-    if (ids.length) runProviderTests(ctx, ids);
+    if (!ids.length) return;
+    // Une seule élévation pour toute la série : le mot de passe est demandé avant le premier test (annulé : rien ne part).
+    if (!(await attempt(() => api.ensureElevation(), ctx.toast))) return;
+    runProviderTests(ctx, ids);
   });
 }
 

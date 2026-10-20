@@ -39,6 +39,9 @@ export function pickAnnouncement(list, dismissed) {
 /** Vrai sur la console d'administration (#/admin, #/admin/…) : la bannière n'y apparaît pas. */
 export const isAdminRoute = (hash = location.hash) => ADMIN_ROUTE.test(hash);
 
+/** Hauteur de la bannière, écrite dans --ann-h sur :root : la barre du haut et la navigation s'en décalent (0 sans bannière). */
+const setBannerHeight = (doc, px) => { doc.documentElement.style.setProperty('--ann-h', px + 'px'); };
+
 function bannerEl(a, onClose) {
   const warning = a.level === 'warning';
   const root = document.createElement('section');
@@ -84,7 +87,14 @@ export async function initAnnouncementBanner(deps = {}) {
   if (!Array.isArray(list) || !list.length) return null;
 
   let el = null;
-  const remove = () => { if (el) { el.remove(); el = null; } };
+  // La hauteur suit la bannière (texte qui se replie, rotation) ; elle revient à 0 quand la bannière disparaît.
+  const ro = typeof globalThis.ResizeObserver === 'function'
+    ? new globalThis.ResizeObserver(() => { if (el) setBannerHeight(doc, el.offsetHeight); })
+    : null;
+  const remove = () => {
+    if (el) { if (ro) ro.unobserve(el); el.remove(); el = null; }
+    setBannerHeight(doc, 0);
+  };
   const place = () => {
     remove();
     if (isAdminRoute()) return;
@@ -92,6 +102,8 @@ export async function initAnnouncementBanner(deps = {}) {
     if (!next) return;
     el = bannerEl(next, () => { rememberDismissed(next.id, storage); place(); });
     doc.body.prepend(el);
+    setBannerHeight(doc, el.offsetHeight);
+    if (ro) ro.observe(el);
   };
   const onHash = () => {
     if (isAdminRoute()) remove();

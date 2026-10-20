@@ -122,6 +122,47 @@ describe('élévation puis réessai', () => {
   });
 });
 
+describe('élévation : annonces, test de fournisseur, série « Tester tout »', () => {
+  it('création d’annonce : 403 elevation_required, mot de passe, puis réessai avec le jeton', async () => {
+    handler = (c) => {
+      if (c.url.endsWith('/admin/elevate')) return json({ token: 'E-ANN', expiresAt: future() });
+      return c.headers['x-admin-elevation'] === 'E-ANN' ? json({ id: 'n1', title: 'T' }) : json({ error: 'elevation_required' }, 403);
+    };
+    const prompt = vi.fn(async () => 'pw');
+    admin.setElevationPrompt(prompt);
+    await admin.createAnnouncement({ title: 'T', message: 'M', level: 'info' });
+    expect(prompt).toHaveBeenCalledTimes(1);
+    const last = calls.at(-1)!;
+    expect(last.method).toBe('POST');
+    expect(last.url).toContain('/admin/announcements');
+    expect(last.headers['x-admin-elevation']).toBe('E-ANN');
+  });
+
+  it('« Tester tout » : ensureElevation demande le mot de passe une fois, les tests partent avec le jeton', async () => {
+    handler = (c) => {
+      if (c.url.endsWith('/admin/elevate')) return json({ token: 'E-SER', expiresAt: future() });
+      return c.headers['x-admin-elevation'] === 'E-SER' ? json({ id: 'tmdb', ok: true, latencyMs: 12 }) : json({ error: 'elevation_required' }, 403);
+    };
+    const prompt = vi.fn(async () => 'pw');
+    admin.setElevationPrompt(prompt);
+    await admin.ensureElevation();
+    await Promise.all([admin.testProvider('tmdb'), admin.testProvider('alldebrid')]);
+    expect(prompt).toHaveBeenCalledTimes(1);
+    const tests = calls.filter((c) => c.url.includes('/providers/'));
+    expect(tests).toHaveLength(2);
+    expect(tests.every((c) => c.headers['x-admin-elevation'] === 'E-SER')).toBe(true);
+    await admin.ensureElevation();
+    expect(prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('« Tester tout » annulé : aucun test ne part', async () => {
+    admin.clearElevation();
+    admin.setElevationPrompt(async () => null);
+    await expect(admin.ensureElevation()).rejects.toMatchObject({ code: 'cancelled' });
+    expect(calls.filter((c) => c.url.includes('/providers/'))).toHaveLength(0);
+  });
+});
+
 describe('formatage des métriques', () => {
   const group = (requests: number, s5: number, p50: number, p95: number) => ({ requests, status: { '2xx': requests - s5, '3xx': 0, '4xx': 0, '5xx': s5 }, p50, p95, avgMs: p50 });
   const metrics = {

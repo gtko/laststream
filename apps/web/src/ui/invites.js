@@ -24,20 +24,26 @@ export function shareBase() {
 
 export const linkOf = (inv) => inviteLink(shareBase(), inv.code);
 
-const STATE_LABEL = { free: 'Libre', sent: 'Envoyé', used: 'Utilisé' };
+const STATE_LABEL = { free: 'Libre', sent: 'Envoyé', used: 'Utilisé', revoked: 'Révoqué' };
+/** Révoqué par l'administrateur (état `revoked`, ou date `revokedAt` renseignée). */
+const isRevoked = (inv) => inv.state === 'revoked' || !!inv.revokedAt;
 
 export function inviteRowHTML(inv) {
   const used = inv.state === 'used';
+  // Révoqué par l'administrateur : ni lien, ni copie, ni partage, ni régénération.
+  const revoked = isRevoked(inv);
   const who = used ? (inv.invitee ? 'par ' + esc(inv.invitee) : '(compte supprimé)') : '';
+  let link;
+  if (used) link = '<span class="inv-link is-used">Lien consommé</span>';
+  else if (revoked) link = '<span class="inv-link is-revoked">Révoqué par l\'administrateur</span>';
+  else link = '<input class="set-input inv-link" type="text" readonly value="' + esc(linkOf(inv)) + '" aria-label="Lien d’invitation" data-inv-input>';
+  const actions = used || revoked ? '' : '<span class="inv-btns"><button type="button" class="btn btn-ghost btn-sm" data-inv-copy="' + esc(inv.id) + '">Copier</button>' +
+    '<button type="button" class="btn btn-ghost btn-sm" data-inv-share="' + esc(inv.id) + '">Partager</button>' +
+    (inv.state === 'sent' ? '<button type="button" class="btn btn-ghost btn-sm" data-inv-unsent="' + esc(inv.id) + '">Remettre en libre</button>' : '') +
+    '<button type="button" class="btn btn-ghost btn-sm" data-inv-revoke="' + esc(inv.id) + '">Révoquer</button></span>';
   return '<li class="inv-row is-' + inv.state + '" data-inv-row="' + esc(inv.id) + '">' +
     '<span class="inv-state">' + STATE_LABEL[inv.state] + (who ? ' <em>' + who + '</em>' : '') + '</span>' +
-    (used ? '<span class="inv-link is-used">Lien consommé</span>'
-      : '<input class="set-input inv-link" type="text" readonly value="' + esc(linkOf(inv)) + '" aria-label="Lien d’invitation" data-inv-input>') +
-    (used ? '' : '<span class="inv-btns"><button type="button" class="btn btn-ghost btn-sm" data-inv-copy="' + esc(inv.id) + '">Copier</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-inv-share="' + esc(inv.id) + '">Partager</button>' +
-      (inv.state === 'sent' ? '<button type="button" class="btn btn-ghost btn-sm" data-inv-unsent="' + esc(inv.id) + '">Remettre en libre</button>' : '') +
-      '<button type="button" class="btn btn-ghost btn-sm" data-inv-revoke="' + esc(inv.id) + '">Révoquer</button></span>') +
-    '</li>';
+    link + actions + '</li>';
 }
 
 export function invitesBodyHTML(d) {
@@ -79,7 +85,7 @@ export async function refreshInvites() {
 const find = (id) => (data && data !== 'error' ? data.invites.find((i) => i.id === id) : undefined);
 
 /** Premier lien encore utilisable (libre ou envoyé) : bloc « Inviter quelqu’un » de la barre latérale des amis. */
-export const usableInvite = () => (data && data !== 'error' ? data.invites.find((i) => i.state !== 'used') ?? null : null);
+export const usableInvite = () => (data && data !== 'error' ? data.invites.find((i) => i.state !== 'used' && !isRevoked(i)) ?? null : null);
 const patch = (inv) => { data.invites = data.invites.map((i) => (i.id === inv.id ? { ...i, ...inv } : i)); };
 
 async function copyText(text) {
@@ -135,8 +141,10 @@ export async function revokeOne(id) {
     toast('Lien révoqué : un nouveau lien est disponible');
     return true;
   } catch (err) {
-    toast(err instanceof UserApiError && err.code === 'invite_used' ? 'Ce lien est déjà utilisé' : 'Révocation impossible');
-    if (err instanceof UserApiError && err.code === 'invite_used') refreshInvites();
+    const code = err instanceof UserApiError ? err.code : '';
+    if (code === 'invite_revoked') toast('Ce lien a été révoqué par l’administrateur : il ne peut plus être régénéré.');
+    else toast(code === 'invite_used' ? 'Ce lien est déjà utilisé' : 'Révocation impossible');
+    if (code === 'invite_used' || code === 'invite_revoked') refreshInvites();
     return false;
   }
 }

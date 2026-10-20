@@ -1,6 +1,6 @@
 // Bannière des annonces (application utilisateur) : première annonce non fermée, fermeture mémorisée (50 au plus), absente sur
 // #/admin, erreur réseau sans effet, texte échappé (jamais de HTML), stockage indisponible toléré.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DISMISSED_KEY, initAnnouncementBanner, pickAnnouncement, readDismissed, rememberDismissed,
 } from '../src/ui/announcement-banner.js';
@@ -82,6 +82,20 @@ describe('bannière', () => {
     document.body.innerHTML = '<div id="app"></div>';
     await initAnnouncementBanner({ load: load([A]) });
     expect(banners()).toHaveLength(0);
+  });
+
+  it('hauteur publiée dans --ann-h pendant l’affichage, remise à 0 à la fermeture', async () => {
+    const spy = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(48);
+    try {
+      await initAnnouncementBanner({ load: load([A]) });
+      expect(document.documentElement.style.getPropertyValue('--ann-h')).toBe('48px');
+      banners()[0].querySelector<HTMLButtonElement>('.ann-close')!.click();
+      await settle();
+      expect(banners()).toHaveLength(0);
+      expect(document.documentElement.style.getPropertyValue('--ann-h')).toBe('0px');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('jamais sur #/admin ; réapparaît en quittant la console', async () => {

@@ -7,7 +7,7 @@ import * as api from '../data/adminApi';
 import { elevationExpiresAt, obtainElevation, setElevationPrompt } from '../data/adminApi';
 import { CursorPager, fmtInt, formatCountdown } from '../data/adminModel';
 import { closeAllLayers, confirmDialog, passwordDialog } from './admin-dialog.js';
-import { defaultActions, installPaletteShortcuts, openPalette } from './admin-palette.js';
+import { closePalette, defaultActions, installPaletteShortcuts, openPalette } from './admin-palette.js';
 import { openAccount as openAccountDrawer } from './admin/account-drawer.js';
 import { adminErr, attempt } from './admin/common.js';
 import { elevationBoxHTML, pageHTML, statusHTML } from './admin/shell.js';
@@ -24,22 +24,45 @@ const S = {
   ov: idle(), acc: idle(), accQuery: { q: '', status: '', order: 'newest', filter: 'all' }, accSel: new Set(), accPager: new CursorPager(),
   ref: idle(), inv: idle(), invStatus: 'active', online: idle(), perf: idle(), caches: idle(), purges: {}, tv: idle(), rooms: idle(), reports: idle(), repStatus: 'open',
   settings: idle(), audit: idle(), auditPager: new CursorPager(), auditAction: '',
-  health: idle(), traffic: idle(), live: idle(), inbox: idle(),
+  health: idle(), traffic: idle(), live: idle(), inbox: idle(), liveAt: 0,
 };
 const REFRESH_MS = 30_000;
+/** Sections dont le contenu dépend du relevé de la coquille (santé, « À traiter », « En direct »). */
+const SHELL_SECTIONS = new Set(['overview', 'inbox']);
 const tokens = {};
 const ctxs = new Map();
 let refreshTimer = 0;
 let tickTimer = 0;
 let hooked = false;
+let deferred = false;
 
 const content = () => detailEl.querySelector('#adm-content');
 const live = () => state.kind === 'admin' && !!content();
+const FIELD = 'input, textarea, select';
+const isField = (root, node) => node instanceof HTMLElement && root.contains(node) && node.matches(FIELD);
+
+/** Valeurs saisies des champs `data-adm-focus` de la section, pour les reprendre après un repeint automatique. */
+function keepFields(el) {
+  const kept = new Map();
+  el.querySelectorAll('[data-adm-focus]').forEach((n) => {
+    if (isField(el, n)) kept.set(n.dataset.admFocus, { value: n.value, checked: n.checked });
+  });
+  return kept;
+}
+
+function restoreFields(el, kept) {
+  el.querySelectorAll('[data-adm-focus]').forEach((n) => {
+    const k = kept.get(n.dataset.admFocus);
+    if (!k || !isField(el, n)) return;
+    if (n.type === 'checkbox' || n.type === 'radio') n.checked = k.checked;
+    else n.value = k.value;
+  });
+}
 
 /** Charge une donnée pour une section : `quiet` garde l'affichage actuel pendant l'actualisation (pas de « Chargement… »). */
 async function fetchKey(id, key, fn, quiet) {
   const token = (tokens[key] = (tokens[key] || 0) + 1);
-  if (!quiet || S[key].status !== 'ready') { S[key] = { status: 'loading', value: null, error: '' }; if (S.sec === id) paint(); }
+  if (!quiet || S[key].status !== 'ready') { S[key] = { status: 'loading', value: null, error: '' }; if (S.sec === id) paint(quiet); }
   try {
     const value = await fn();
     if (token !== tokens[key]) return;
@@ -49,7 +72,7 @@ async function fetchKey(id, key, fn, quiet) {
     if (token !== tokens[key]) return;
     S[key] = { status: 'error', value: null, error: adminErr(err) };
   }
-  if (S.sec === id) paint();
+  if (S.sec === id) paint(quiet);
 }
 
 /** Contexte donné aux sections : état, rafraîchissement, messages, navigation, confirmation, élévation. */
@@ -75,16 +98,24 @@ function ctxOf(id) {
   return c;
 }
 
-/** Dessine la section courante, puis la lie. Le focus sur un élément `data-adm-focus` est rétabli après le rendu. */
-function paint() {
+/**
+ * Dessine la section courante, puis la lie. Le focus sur un élément `data-adm-focus` est rétabli après le rendu.
+ * `auto` : rafraîchissement automatique. Il ne repeint pas pendant qu'un champ de la section a le focus (le repeint
+ * attend la sortie du champ) et reprend les valeurs saisies. Un repeint manuel ou après action reste immédiat.
+ */
+function paint(auto = false) {
   const el = content();
   if (!el || !live()) return;
   const sec = findSection(S.sec);
   if (!sec) return;
-  const scroll = window.scrollY;
   const active = document.activeElement;
+  if (auto && isField(el, active)) { deferred = true; return; }
+  deferred = false;
+  const scroll = window.scrollY;
   const focusKey = active instanceof HTMLElement && el.contains(active) ? active.dataset.admFocus || '' : '';
+  const kept = auto ? keepFields(el) : null;
   el.innerHTML = sec.render(S);
+  if (kept) restoreFields(el, kept);
   if (sec.bind) sec.bind(el, ctxOf(sec.id));
   if (focusKey) {
     const n = Array.from(el.querySelectorAll('[data-adm-focus]')).find((x) => x.dataset.admFocus === focusKey);
@@ -93,6 +124,14 @@ function paint() {
   window.scrollTo(0, scroll);
   syncElevation();
 }
+
+/** Repeint automatique reporté : il a lieu dès que le focus quitte les champs de la section. */
+function onFocusOut() {
+  if (!deferred) return;
+  setTimeout(() => { if (deferred && live()) paint(true); }, 0);
+}
+
+document.addEventListener('focusout', onFocusOut);
 
 function loadSection(id, quiet) {
   const sec = findSection(id);
@@ -132,12 +171,21 @@ function updateShell() {
   });
 }
 
-/** État du serveur et compteurs : un échec donne « Inconnu » et masque le compteur concerné. */
+/**
+ * Relevé unique de la coquille (toutes les 30 s, à l'ouverture et sur « Actualiser ») : état du serveur, « À traiter »,
+ * « En direct » et compteurs. Les sections (tableau de bord, « À traiter ») lisent S.health, S.inbox et S.live sans les
+ * recharger. Un échec d'un appel n'empêche pas les autres ; l'état du serveur devient « Inconnu » et le compteur disparaît.
+ */
 async function refreshShell() {
   const [status, inbox, online, reports] = await Promise.allSettled([api.getStatus(), api.getInbox(), api.getLive(), api.listReports('open')]);
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const keyOf = (r) => (r.status === 'fulfilled' ? { status: 'ready', value: r.value, error: '' } : { status: 'error', value: null, error: adminErr(r.reason) });
   const report = val(status);
   S.status = report && typeof report.status === 'string' ? report.status : 'unknown';
+  S.health = keyOf(status);
+  S.inbox = keyOf(inbox);
+  S.live = keyOf(online);
+  if (online.status === 'fulfilled') S.liveAt = Date.now();
   const inb = val(inbox);
   const on = val(online);
   const rep = val(reports);
@@ -147,6 +195,7 @@ async function refreshShell() {
     reports: rep && Array.isArray(rep.reports) ? rep.reports.length : null,
   };
   updateShell();
+  if (SHELL_SECTIONS.has(S.sec)) paint(true);
 }
 
 // ---------- Élévation : puce et compte à rebours ----------
@@ -210,7 +259,7 @@ function onClick(e) {
   if (!t || !t.closest('.adm-shell')) return;
   const nav = t.closest('[data-adm-sec]');
   if (nav) { e.preventDefault(); setSection(nav.dataset.admSec); return; }
-  if (t.closest('[data-adm-reload]')) { e.preventDefault(); loadSection(S.sec, false); return; }
+  if (t.closest('[data-adm-reload]')) { e.preventDefault(); refreshShell(); loadSection(S.sec, false); return; }
   if (t.closest('[data-adm-palette]')) { openPalette(paletteDeps()); return; }
   if (t.closest('[data-adm-elevate]')) { e.preventDefault(); elevate(); }
 }
@@ -231,13 +280,17 @@ function paletteDeps() {
 }
 
 let stopShortcuts = null;
-/** Pose le raccourci de la palette ; il n'agit que sur la console et se retire en la quittant (voir hashchange). */
+/** Pose le raccourci de la palette ; il n'agit que sur la console, hors calque ouvert (confirmation, fiche), et se retire en la quittant. */
 function armShortcuts() {
   if (stopShortcuts) stopShortcuts();
-  stopShortcuts = installPaletteShortcuts(() => { if (live()) openPalette(paletteDeps()); });
+  stopShortcuts = installPaletteShortcuts(
+    () => { if (live()) openPalette(paletteDeps()); },
+    () => live() && !document.querySelector('.adm-layer'),
+  );
 }
 
 function disarmShortcuts() {
+  closePalette();
   if (stopShortcuts) { stopShortcuts(); stopShortcuts = null; }
 }
 
@@ -251,7 +304,11 @@ export function showAdmin() {
   if (!hooked) {
     hooked = true;
     window.addEventListener('hashchange', closeAllLayers);
-    window.addEventListener('hashchange', () => { if (!/^#\/admin(\/|$)/.test(location.hash)) disarmShortcuts(); });
+    window.addEventListener('hashchange', () => {
+      if (/^#\/admin(\/|$)/.test(location.hash)) return;
+      closePalette();
+      disarmShortcuts();
+    });
     document.addEventListener('visibilitychange', onVisible);
   }
   detailEl.innerHTML = pageHTML(S);

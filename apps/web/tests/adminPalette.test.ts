@@ -310,4 +310,28 @@ describe('raccourcis globaux', () => {
     expect(openFn).toHaveBeenCalledTimes(2);
     document.body.innerHTML = '';
   });
+
+  it('champs role=textbox ou combobox, et contenteditable : « / » ne l’ouvre pas', () => {
+    const openFn = vi.fn();
+    const dispose = installPaletteShortcuts(openFn);
+    for (const attrs of [{ role: 'textbox' }, { role: 'combobox' }, { contenteditable: 'true' }, { contenteditable: '' }]) {
+      const node = document.createElement('div');
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      document.body.append(node);
+      node.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }));
+      node.remove();
+    }
+    expect(openFn).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it('canOpen faux : ni ouverture ni interception de la touche', () => {
+    const openFn = vi.fn();
+    const dispose = installPaletteShortcuts(openFn, () => false);
+    const ev = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(ev);
+    expect(openFn).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+    dispose();
+  });
 });

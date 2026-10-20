@@ -42,9 +42,9 @@ function filtersHTML(S) {
 
 function searchHTML(q) {
   return '<form class="adm-toolbar" data-adm-accsearch role="search" data-nav>' +
-    '<label class="adm-field adm-grow"><span class="sr-only">Rechercher un pseudo</span><input class="set-input" type="search" name="q" value="' + esc(q.q) + '" placeholder="Rechercher un pseudo" autocomplete="off" autocapitalize="none"></label>' +
-    '<label class="adm-field"><span class="sr-only">Statut</span><select class="set-input" name="status"><option value="">Tous les statuts</option><option value="active"' + (q.status === 'active' ? ' selected' : '') + '>Actifs</option><option value="suspended"' + (q.status === 'suspended' ? ' selected' : '') + '>Suspendus</option></select></label>' +
-    '<label class="adm-field"><span class="sr-only">Ordre</span><select class="set-input" name="order"><option value="newest"' + (q.order === 'newest' ? ' selected' : '') + '>Plus récents</option><option value="oldest"' + (q.order === 'oldest' ? ' selected' : '') + '>Plus anciens</option></select></label>' +
+    '<label class="adm-field adm-grow"><span class="sr-only">Rechercher un pseudo</span><input class="set-input" type="search" name="q" value="' + esc(q.q) + '" placeholder="Rechercher un pseudo" autocomplete="off" autocapitalize="none" data-adm-focus="acc:q"></label>' +
+    '<label class="adm-field"><span class="sr-only">Statut</span><select class="set-input" name="status" data-adm-focus="acc:status"><option value="">Tous les statuts</option><option value="active"' + (q.status === 'active' ? ' selected' : '') + '>Actifs</option><option value="suspended"' + (q.status === 'suspended' ? ' selected' : '') + '>Suspendus</option></select></label>' +
+    '<label class="adm-field"><span class="sr-only">Ordre</span><select class="set-input" name="order" data-adm-focus="acc:order"><option value="newest"' + (q.order === 'newest' ? ' selected' : '') + '>Plus récents</option><option value="oldest"' + (q.order === 'oldest' ? ' selected' : '') + '>Plus anciens</option></select></label>' +
     '<button type="submit" class="btn btn-primary btn-sm">Rechercher</button></form>';
 }
 
@@ -56,7 +56,7 @@ function bulkBarHTML(n) {
     '<span class="adm-bulk-n" aria-live="polite">' + plural(n, 'sélectionné') + '</span>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="1"' + dis + '>+1 invitation</button>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="quota" data-delta="-1"' + dis + '>−1 invitation</button>' +
-    '<form class="adm-inline adm-bulk-quota" data-adm-bulk-quota><label class="adm-field">Quota<input class="set-input set-input-sm" type="number" name="quota" min="0" max="100" step="1" required' + dis + '></label>' +
+    '<form class="adm-inline adm-bulk-quota" data-adm-bulk-quota><label class="adm-field">Quota<input class="set-input set-input-sm" type="number" name="quota" min="0" max="100" step="1" required data-adm-focus="bulk:quota"' + dis + '></label>' +
     '<button type="submit" class="btn btn-ghost btn-sm"' + dis + '>Définir</button></form>' +
     '<button type="button" class="btn btn-ghost btn-sm" data-adm-bulk="revoke-sessions"' + dis + '>Révoquer les sessions</button>' +
     '<button type="button" class="btn btn-danger btn-sm" data-adm-bulk="suspend"' + dis + '>Suspendre</button>' +
@@ -141,9 +141,12 @@ async function runBulk(ctx, body, confirm) {
   bulkBusy = false;
   if (ok && res) {
     const failed = Array.isArray(res.failed) ? res.failed : [];
+    const skipped = Array.isArray(res.skipped) ? res.skipped : [];
     const head = (BULK_LABEL[body.action] || 'Action') + ' : ' + fmtInt(res.done ?? 0) + ' sur ' + fmtInt(ids.length);
     const detail = failed.map((f) => nameOf(S, f.id) + ' (' + (BULK_ERROR[f.error] || 'erreur') + ')').join(', ');
-    toast(failed.length ? head + ' · ' + plural(failed.length, 'échec') + ' : ' + detail : head + '.', { ms: failed.length ? 7000 : 3000 });
+    const skippedNote = skipped.length ? ' · ' + (skipped.length === 1 ? 'propriétaire ignoré' : fmtInt(skipped.length) + ' propriétaires ignorés') : '';
+    const end = failed.length ? ' · ' + plural(failed.length, 'échec') + ' : ' + detail : '.';
+    toast(head + skippedNote + end, { ms: failed.length || skipped.length ? 7000 : 3000 });
     S.accSel.clear();
     failed.forEach((f) => S.accSel.add(f.id));
     ctx.paint();

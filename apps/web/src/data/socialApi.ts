@@ -4,7 +4,7 @@ import { call, type MediaKind, type Visibility } from './userApi';
  * titres masqués et salons de visionnage. Seuls le pseudo et la couleur d'avatar sont exposés aux autres comptes. */
 
 // ---- Parrainage ----
-export type InviteState = 'free' | 'sent' | 'used';
+export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 export interface InviteDto {
   id: string;
   code: string;
@@ -14,6 +14,8 @@ export interface InviteDto {
   usedAt: string | null;
   /** Pseudo du filleul (null : lien libre, ou compte supprimé). */
   invitee: string | null;
+  /** Date de révocation par l'administrateur (ISO), ou null : le lien ne fonctionne plus et n'est plus partageable. */
+  revokedAt?: string | null;
 }
 export interface InvitesDto {
   quota: number;

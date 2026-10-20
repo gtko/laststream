@@ -64,6 +64,11 @@ export function obtainElevation(): Promise<void> {
   return pending;
 }
 
+/** Élévation pour une série d'actions : le mot de passe est demandé une fois, avant le premier appel (sans rien demander si le jeton est valable). */
+export async function ensureElevation(): Promise<void> {
+  if (!hasElevation()) await obtainElevation();
+}
+
 const needsElevation = (err: unknown): boolean =>
   err instanceof UserApiError && err.status === 403 && (err.code === 'elevation_required' || err.code === 'elevation_expired');
 
@@ -113,7 +118,8 @@ export interface AccountDetail {
 export type BulkAction = 'quota' | 'revoke-sessions' | 'suspend';
 /** Action groupée sur au plus 100 comptes [élév.]. `quota` prend `quota` ou `delta`. */
 export interface BulkBody { ids: string[]; action: BulkAction; quota?: number; delta?: number }
-export interface BulkResult { done: number; failed: Array<{ id: string; error: string }> }
+/** `skipped` : comptes ignorés sans échec (le propriétaire ne peut être ni suspendu ni modifié en lot). */
+export interface BulkResult { done: number; failed: Array<{ id: string; error: string }>; skipped?: Array<{ id: string; reason: 'owner' }> }
 export interface AccountExport { accounts: AdminAccount[]; truncated: boolean }
 export type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
 export interface TimelineEvent { at: string; kind: TimelineKind; label: string; detail?: string }
@@ -236,13 +242,13 @@ export const getOverviewSeries = (range: Range = '24h') => adminCall<OverviewSer
 
 // ---- Sources, stockage, tâches ----
 export const listProviders = () => adminCall<{ providers: ProviderStatus[] }>('/providers');
-export const testProvider = (id: string) => adminCall<ProviderTestResult>('/providers/' + E(id) + '/test', { method: 'POST' });
+export const testProvider = (id: string) => adminAction<ProviderTestResult>('/providers/' + E(id) + '/test', { method: 'POST' });
 export const getStorage = () => adminCall<StorageReport>('/storage');
 export const getTasks = () => adminCall<TasksReport>('/tasks');
 
 // ---- Annonces (écritures auditées, sans élévation) ----
 export const listAnnouncements = () => adminCall<{ announcements: Announcement[] }>('/announcements');
-export const createAnnouncement = (body: AnnouncementInput) => adminCall<Announcement>('/announcements', { method: 'POST', body });
+export const createAnnouncement = (body: AnnouncementInput) => adminAction<Announcement>('/announcements', { method: 'POST', body });
 export const updateAnnouncement = (id: string, patch: Partial<AnnouncementInput>) =>
-  adminCall<Announcement>('/announcements/' + E(id), { method: 'PUT', body: patch });
-export const deleteAnnouncement = (id: string) => adminCall<void>('/announcements/' + E(id), { method: 'DELETE' });
+  adminAction<Announcement>('/announcements/' + E(id), { method: 'PUT', body: patch });
+export const deleteAnnouncement = (id: string) => adminAction<void>('/announcements/' + E(id), { method: 'DELETE' });

@@ -54,10 +54,13 @@ export function loaded(d, render) {
   return render(d.value);
 }
 
+/** Sous 760 px, le tableau devient des cartes empilées (admin.css) : rien ne défile, donc le conteneur n'a pas à être focusable. */
+const stackedCards = () => typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 759px)').matches;
+
 /** Tableau à colonnes ; `heads` : libellés ou { label, num }. Sous 760 px, chaque ligne devient une carte (data-label). */
 export function table(caption, heads, rows, cls) {
   if (!rows.length) return '';
-  return '<div class="adm-table-wrap ' + (cls || '') + '" role="region" aria-label="' + esc(caption) + '" tabindex="0"><table class="adm-table"><caption class="sr-only">' + esc(caption) + '</caption><thead><tr>' +
+  return '<div class="adm-table-wrap ' + (cls || '') + '" role="region" aria-label="' + esc(caption) + '"' + (stackedCards() ? '' : ' tabindex="0"') + '><table class="adm-table"><caption class="sr-only">' + esc(caption) + '</caption><thead><tr>' +
     heads.map((h) => '<th scope="col"' + (h.num ? ' class="is-num"' : '') + '>' + esc(h.label || h) + '</th>').join('') + '</tr></thead><tbody>' +
     rows.map((r) => '<tr' + (r.attrs ? ' ' + r.attrs : '') + '>' + r.cells.map((c, i) => {
       const h = heads[i];

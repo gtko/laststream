@@ -109,7 +109,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  pilotage.stopLive();
   adm.__admin.stopTick();
 });
 
@@ -273,22 +272,39 @@ describe('En direct', () => {
     expect(document.querySelector('.adm-kpis-dash')!.textContent).toContain('Signalements en attente');
   });
 
-  it('rafraîchi toutes les 30 s seulement quand la section est affichée et l’onglet visible', async () => {
-    await openSection('overview');
-    const live = () => calls.filter((c) => c.path === '/admin/live').length;
+  it('un cycle de 30 s : un seul appel à /admin/live, ouverture du tableau de bord comprise', async () => {
+    stub();
+    asOwner();
+    adm.__admin.S.sec = 'overview';
+    adm.showAdmin();
+    await settle();
+    const live = () => callsTo('/admin/live').length;
+    expect(live()).toBe(1);
 
-    // Section affichée, onglet visible : la coquille (compteurs) et « En direct » interrogent /admin/live.
+    calls = [];
     vi.advanceTimersByTime(30_000);
     await settle();
-    expect(live()).toBe(2);
+    expect(live()).toBe(1);
+    expect(callsTo('/admin/status')).toHaveLength(1);
+    expect(callsTo('/admin/inbox')).toHaveLength(1);
+  });
+
+  it('rafraîchi toutes les 30 s seulement quand la section est affichée et l’onglet visible', async () => {
+    await openSection('overview');
+    const live = () => callsTo('/admin/live').length;
+
+    // Section affichée, onglet visible : la coquille interroge /admin/live une fois par cycle.
+    vi.advanceTimersByTime(30_000);
+    await settle();
+    expect(live()).toBe(1);
 
     // Onglet masqué : plus aucune actualisation.
     hiddenTab = true;
     vi.advanceTimersByTime(30_000);
     await settle();
-    expect(live()).toBe(2);
+    expect(live()).toBe(1);
 
-    // Onglet visible, autre section : seule la coquille continue.
+    // Onglet visible, autre section : la coquille continue, un appel par cycle.
     hiddenTab = false;
     adm.__admin.setSection('accounts');
     await settle();
@@ -296,6 +312,27 @@ describe('En direct', () => {
     vi.advanceTimersByTime(30_000);
     await settle();
     expect(live()).toBe(1);
+  });
+
+  it('une saisie en cours n’est pas repeinte par le rafraîchissement automatique ; sinon la valeur est reprise', async () => {
+    await openSection('accounts');
+    const detail = document.getElementById('detail') as HTMLElement;
+    detail.hidden = false; // le focus ne va pas sur un élément caché (attribut hidden de index.html)
+    try {
+      const input = $('[data-adm-focus="acc:q"]') as HTMLInputElement;
+      input.value = 'ali';
+      input.focus();
+      expect(document.activeElement).toBe(input);
+      adm.__admin.paint(true);
+      expect($('[data-adm-focus="acc:q"]')).toBe(input);
+      expect(input.value).toBe('ali');
+
+      input.blur();
+      adm.__admin.paint(true);
+      expect(($('[data-adm-focus="acc:q"]') as HTMLInputElement).value).toBe('ali');
+    } finally {
+      detail.hidden = true;
+    }
   });
 });
 
@@ -347,6 +384,29 @@ describe('palette de commandes dans la console', () => {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     ctrlK();
     expect($('.adm-pal-layer')).toBeNull();
+  });
+
+  it('quitter la console ferme une palette ouverte', async () => {
+    await openSection('overview');
+    ctrlK();
+    expect($('.adm-pal-layer')).not.toBeNull();
+    location.hash = '#/';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect($('.adm-pal-layer')).toBeNull();
+  });
+
+  it('Ctrl+K et « / » ne l’ouvrent pas quand un calque (confirmation, fiche) est ouvert', async () => {
+    await openSection('overview');
+    const layer = document.createElement('div');
+    layer.className = 'adm-layer';
+    document.body.append(layer);
+    ctrlK();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }));
+    expect($('.adm-pal-layer')).toBeNull();
+    layer.remove();
+    ctrlK();
+    expect($('.adm-pal-layer')).not.toBeNull();
+    ($('.adm-pal-input') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   });
 });
 

@@ -30,7 +30,16 @@ const el = (tag, attrs = {}, text) => {
   return node;
 };
 
-const isEditable = (node) => !!node && (node.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName));
+const EDITABLE_TAGS = ['INPUT', 'TEXTAREA', 'SELECT'];
+const EDITABLE_ROLES = ['textbox', 'combobox'];
+
+/** Champ où l'on tape (saisie, liste, rôle textbox ou combobox, contenteditable) : « / » et Ctrl+K n'ouvrent pas la palette. */
+const isEditable = (node) => {
+  if (!node || typeof node.getAttribute !== 'function') return false;
+  const ce = node.getAttribute('contenteditable');
+  return node.isContentEditable === true || (ce !== null && ce.toLowerCase() !== 'false') ||
+    EDITABLE_TAGS.includes(node.tagName) || EDITABLE_ROLES.includes(node.getAttribute('role'));
+};
 
 /** Message lisible d'une erreur : les codes techniques (snake_case) deviennent un message générique. */
 function messageOf(err) {
@@ -421,12 +430,13 @@ export function closePalette() {
 }
 
 /**
- * Pose le raccourci global (Ctrl/Cmd+K, « / » hors champ) qui appelle `openFn`. Renvoie la fonction qui retire l'écouteur.
+ * Pose le raccourci global (Ctrl/Cmd+K, « / » hors champ) qui appelle `openFn`. `canOpen()` (facultatif) dit si la palette
+ * peut s'ouvrir maintenant ; sinon la touche n'est pas interceptée. Renvoie la fonction qui retire l'écouteur.
  */
-export function installPaletteShortcuts(openFn) {
+export function installPaletteShortcuts(openFn, canOpen = () => true) {
   const onKeyDown = (e) => {
     const inField = isEditable(e.target) || isEditable(document.activeElement);
-    if (!isPaletteShortcut(e, inField)) return;
+    if (!isPaletteShortcut(e, inField) || !canOpen()) return;
     e.preventDefault();
     openFn();
   };

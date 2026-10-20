@@ -204,6 +204,23 @@ describe('comptes : sélection et actions groupées', () => {
     expect(kept).toEqual(['a2']);
   });
 
+  it('propriétaire ignoré : le toast le signale, sans le compter comme échec', async () => {
+    stubApi({
+      'POST /admin/accounts/bulk': () => json({ done: 1, failed: [], skipped: [{ id: 'a1', reason: 'owner' }] }),
+    });
+    open('accounts');
+    await settle();
+    const box = document.querySelector('[data-adm-sel="a2"]') as HTMLInputElement;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await settle();
+    (document.querySelector('[data-adm-bulk="quota"][data-delta="1"]') as HTMLElement).click();
+    await settle();
+    expect(pathCalls('POST', '/admin/accounts/bulk')).toHaveLength(1);
+    expect(toastText()).toContain('propriétaire ignoré');
+    expect(toastText()).not.toContain('échec');
+  });
+
   it('annuler la confirmation n’envoie rien', async () => {
     open('accounts');
     await settle();
