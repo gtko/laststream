@@ -56,6 +56,7 @@ export type LiveFrame =
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
   | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'list'; listId: string }
   | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
   | { t: 'poll'; conv: string; poll: PollView }
   | { t: 'typing'; conv: string; pid: string }
@@ -164,12 +165,16 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'poll', conv: event.conv, poll: pollOut(event.poll) };
     case 'typing':
       return { t: 'typing', conv: event.conv, pid: event.pid };
+    case 'list':
+      return { t: 'list', listId: event.listId };
     case 'join_request':
       return { t: 'join_request', from: friendOut(event.from) };
     case 'join_answer':
       return event.partyId === undefined
         ? { t: 'join_answer', pid: event.pid, accept: event.accept }
         : { t: 'join_answer', pid: event.pid, accept: event.accept, partyId: event.partyId };
+    case 'list':
+      return { t: 'list', listId: event.listId };
   }
 }
 

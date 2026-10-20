@@ -7,14 +7,17 @@ import type { SqlDb } from '../src/user/sql.js';
 const tables = (db: SqlDb): string[] =>
   (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
 
-describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17)', () => {
-  it('numérotation continue, v13 = title_starts, social v2 en 14 à 17, social v3 en 18 à 20', () => {
-    expect(MIGRATIONS.map((m) => m.version)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+/** Versions présentes sur ce lot : 1 à 20 (social v2 puis v3 S1/S2/S3a), puis 22 (partage S3b). 21 est réservée à l'activité (S5). */
+const EXPECTED_VERSIONS = [...Array.from({ length: 20 }, (_, i) => i + 1), 22];
+
+describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), partage S3b (22)', () => {
+  it('numérotation croissante, v13 = title_starts, social v2 en 14 à 17, partage en 22', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual(EXPECTED_VERSIONS);
     expect(MIGRATIONS[12]?.name).toMatch(/^lancements de titres par pays/);
-    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20]);
+    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 22]);
   });
 
-  it('base déjà en v13 (déployée depuis main) : applique 14 à 17 sans toucher à title_starts', () => {
+  it('base déjà en v13 (déployée depuis main) : applique 14 à 17 et 22 sans toucher à title_starts', () => {
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     db.exec('PRAGMA foreign_keys = ON');
     migrate(db, MIGRATIONS.slice(0, 13));
@@ -30,16 +33,18 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17)', ()
     expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => (r as { version: number }).version)).toEqual(
       MIGRATIONS.map((m) => m.version),
     );
-    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(20);
-    expect(tables(db)).toEqual(expect.arrayContaining(['title_starts', 'profile_friendships', 'profile_presence', 'messages', 'notes', 'note_creations', 'live_ticket_nonces']));
+    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(22);
+    expect(tables(db)).toEqual(
+      expect.arrayContaining(['title_starts', 'profile_friendships', 'profile_presence', 'messages', 'notes', 'note_creations', 'live_ticket_nonces', 'share_links', 'shared_lists']),
+    );
     expect(db.prepare('SELECT n FROM title_starts').get()?.n).toBe(3);
     expect(String(db.prepare("SELECT pid FROM profiles WHERE id = 'p1'").get()?.pid)).toMatch(/\S/);
   });
 
-  it('base vierge : 1 à 20', () => {
+  it('base vierge : 1 à 20, puis 22', () => {
     const db = wrapSqlite(new DatabaseSync(':memory:'));
     migrate(db);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(20);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get()?.n).toBe(EXPECTED_VERSIONS.length);
     expect(tables(db)).toEqual(expect.arrayContaining(['title_starts', 'live_ticket_nonces']));
   });
 
@@ -63,6 +68,6 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17)', ()
       { id: 'm2', to_pid: 'PPPPPPPPPPPPPPPP', group_id: null, kind: 'text', body: 'deux', context: '{"type":"movie","tmdbId":603}', created_at: 2000, read_at: 2500 },
     ]);
     expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(20);
+    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(Math.max(...MIGRATIONS.map((m) => m.version)));
   });
 });

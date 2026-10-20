@@ -142,10 +142,13 @@ export interface FavoriteView {
   poster?: string;
 }
 
-/** Chiffres du profil : heures regardées (une décimale), notes posées, amis acceptés. */
+/**
+ * Chiffres du profil : heures regardées (une décimale), notes posées, amis acceptés. `hoursWatched` et `notes` sont absents
+ * quand le profil vu masque son historique (`historyVisible` faux) à un ami : seul le foyer et le profil lui-même les voient.
+ */
 export interface ProfileStats {
-  hoursWatched: number;
-  notes: number;
+  hoursWatched?: number;
+  notes?: number;
   friends: number;
 }
 
@@ -555,6 +558,10 @@ export type SendOutcome =
   | { result: 'limit_reached'; retryAfterSec: number }
   | { result: 'sent'; message: MessageView; notices: Notice<MessageView>[] };
 /** `count` : messages (DM) ou nombre de non-lus (groupe) qui viennent d'être lus. `peer` : l'expéditeur des messages lus, en DM. */
+export type ShareConvOutcome =
+  | { result: ConvError | 'not_allowed'; scope: ConvScope }
+  | { result: 'limit_reached'; retryAfterSec: number }
+  | { result: 'sent'; sent: { message: MessageView; notices: Notice<MessageView>[] }[] };
 export type ReadOutcome = { result: ConvError } | { result: 'ok'; count: number; at: number; peer?: string };
 export type ReactionOutcome =
   | { result: ConvError | 'message_not_found' }
@@ -838,6 +845,9 @@ export class SocialV2Store {
       favorites: parseStoredJson<FavoriteView[]>(row.favorites) ?? [],
       stats: this.statsOf(row.id, pid),
     };
+    if (pid !== viewerPid && !household && !this.prefsOf(pid).historyVisible) {
+      view.stats = { friends: view.stats.friends };
+    }
     if (row.avatar !== null && row.avatar !== '') view.avatar = row.avatar;
     if (row.bio !== null && row.bio !== '') view.bio = row.bio;
     const customStatus = activeCustomStatus(row.custom_status, now);
@@ -1600,6 +1610,18 @@ export class SocialV2Store {
     return Number(row?.n ?? 0);
   }
 
+  /**
+   * Vue d'un profil non enfant telle que `viewer` la reçoit (activité, relation et préférences appliquées), même sans amitié :
+   * membre d'un groupe ou d'une liste partagée. `household` : même compte que `viewer`.
+   */
+  memberView(viewer: string, pid: string, now: number): FriendView | undefined {
+    const row = this.db
+      .prepare(`SELECT ${VIEW_COLUMNS} FROM profiles p LEFT JOIN profile_presence pr ON pr.profile_pid = p.pid WHERE p.pid = ? AND p.is_kid = 0`)
+      .get(pid) as unknown as ViewRow | undefined;
+    if (row === undefined || row.handle_name === null) return undefined;
+    return this.presentView(viewer, row, this.relationOf(viewer, pid) === 'household', now);
+  }
+
   /** Vue d'un groupe pour un de ses membres : membres (sans lui), dernier message et non-lus. */
   private groupConversation(viewer: string, groupId: string, name: string, now: number): GroupConversationView {
     const memberRows = this.db
@@ -1611,10 +1633,8 @@ export class SocialV2Store {
     const members: FriendView[] = [];
     for (const row of memberRows) {
       const pid = String(row.pid);
-      const memberRow = this.db
-        .prepare(`SELECT ${VIEW_COLUMNS} FROM profiles p LEFT JOIN profile_presence pr ON pr.profile_pid = p.pid WHERE p.pid = ? AND p.is_kid = 0`)
-        .get(pid) as unknown as ViewRow | undefined;
-      if (memberRow !== undefined && memberRow.handle_name !== null) members.push(this.presentView(viewer, memberRow, this.relationOf(viewer, pid) === 'household', now));
+      const member = this.memberView(viewer, pid, now);
+      if (member !== undefined) members.push(member);
     }
     const scope: ConvScope = { kind: 'group', id: groupId };
     const view: GroupConversationView = { conv: convKey(scope), group: { id: groupId, name, members }, unread: this.unreadOf(viewer, scope) };
@@ -1684,6 +1704,34 @@ export class SocialV2Store {
       const retryAfterSec = this.retryAfter(SENT_MESSAGES_SQL, viewer, MESSAGES_PER_MINUTE, now);
       if (retryAfterSec !== undefined) return { result: 'limit_reached', retryAfterSec };
       if (input.replyTo !== undefined && !this.inScope(input.replyTo, viewer, scope)) return { result: 'reply_unknown' };
+      return { result: 'sent', ...this.insertConvMessage(viewer, scope, input, now) };
+    });
+  }
+
+  /**
+   * Partage d'un titre ou d'un moment (`input.kind` = « title » ou « moment ») à plusieurs conversations (amis, foyer,
+   * groupes) : un vrai message v3 par destinataire, tout ou rien (un seul refus annule l'envoi). Mêmes contrôles qu'un
+   * envoi simple (accès, blocage, `messagesFrom`) ; le quota de 30 messages par minute compte chaque destinataire.
+   */
+  shareConv(viewer: string, scopes: readonly ConvScope[], input: NewMessage, now: number): ShareConvOutcome {
+    return this.db.transaction((): ShareConvOutcome => {
+      for (const scope of scopes) {
+        const access = this.accessOf(viewer, scope);
+        if (access !== 'ok') return { result: access, scope };
+        if (scope.kind === 'dm' && !this.acceptsMessagesFrom(scope.peer, viewer)) return { result: 'not_allowed', scope };
+      }
+      const recent = this.db.prepare(SENT_MESSAGES_SQL).get(viewer, now - WRITE_WINDOW_MS);
+      if (Number(recent?.n ?? 0) + scopes.length > MESSAGES_PER_MINUTE) {
+        const oldest = Number(recent?.oldest ?? now);
+        return { result: 'limit_reached', retryAfterSec: Math.max(1, Math.ceil((oldest + WRITE_WINDOW_MS - now) / 1000)) };
+      }
+      return { result: 'sent', sent: scopes.map((scope) => this.insertConvMessage(viewer, scope, input, now)) };
+    });
+  }
+
+  /** Écrit un message dans une conversation déjà contrôlée (à appeler dans une transaction). */
+  private insertConvMessage(viewer: string, scope: ConvScope, input: NewMessage, now: number): { message: MessageView; notices: Notice<MessageView>[] } {
+    {
       const dm = scope.kind === 'dm';
       const row: MessageRow = {
         id: randomUUID(),
@@ -1715,8 +1763,8 @@ export class SocialV2Store {
       const notices = this.recipientsOf(viewer, scope).map(
         (pid): Notice<MessageView> => ({ pid, conv: convKey(recipientScope(viewer, scope)), payload: this.messageViewOf(pid, row) }),
       );
-      return { result: 'sent', message: this.messageViewOf(viewer, row), notices };
-    });
+      return { message: this.messageViewOf(viewer, row), notices };
+    }
   }
 
   /**

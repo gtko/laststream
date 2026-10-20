@@ -23,6 +23,8 @@ export type SocialEvent =
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
   | { t: 'note'; media: MediaRef; note: NoteView }
+  /** Liste partagée modifiée (contenu, membres, suppression) : chaque membre la relit. */
+  | { t: 'list'; listId: string }
   | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
   | { t: 'poll'; conv: string; poll: PollView }
   | { t: 'typing'; conv: string; pid: string }

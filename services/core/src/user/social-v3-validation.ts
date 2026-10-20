@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConvScope, MessageKind } from './social-v2-store.js';
-import { cleanMessageBody, isPid, MESSAGE_MAX_CHARS } from './social-v2-validation.js';
+import { cleanMessageBody, cleanNoteBody, isPid, MESSAGE_MAX_CHARS } from './social-v2-validation.js';
 
 /** Schémas des routes S2 (préférences, relations, blocages, signalements, demandes de rejoindre). Objets stricts. */
 
@@ -207,3 +207,90 @@ export const groupUpdateSchema = z
       ctx.addIssue({ code: 'custom', path: ['add'], message: 'overlap' });
     }
   });
+
+/* ---- Partage, liens publics et listes partagées (S3b) : `/user/social/share`, `/share-links`, `/lists` ---- */
+
+const TITLE = z.string().trim().min(1).max(200);
+const LIST_NAME = z.string().trim().min(1).max(40);
+const PID = z.string().refine(isPid, 'pid:format');
+
+/** Affiche ou image acceptée : URL TMDB en https, ou chemin du site (`/…`). Toute autre valeur est retirée sans erreur. */
+export function cleanPoster(value: string | undefined): string | undefined {
+  if (value === undefined || value.length > 500) return undefined;
+  if (value.startsWith('https://image.tmdb.org/')) return value;
+  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : undefined;
+}
+
+const POSTER = z
+  .string()
+  .optional()
+  .transform((value) => cleanPoster(value));
+
+/** Destinataire : un ami (`pid`) ou un groupe (`group` : identifiant de groupe, S3a). */
+const RECIPIENT = z.union([z.strictObject({ pid: PID }), z.strictObject({ group: z.string().refine(isGroupId, 'group:format') })]);
+
+/** Corps de `POST /share`. La cohérence kind / titre / moment est vérifiée par la route. */
+export const shareSchema = z.strictObject({
+  to: z.array(RECIPIENT).min(1).max(20),
+  kind: z.enum(['title', 'moment']),
+  title: titleSchema.optional(),
+  moment: momentSchema.optional(),
+  body: z.string().max(4000).optional(),
+});
+
+/**
+ * Corps de `POST /share-links`. `title` est facultatif : sans lui, la route reprend le titre de l'index des fiches (meta_index).
+ * `pos` ne se donne que pour un moment ; la note est vérifiée ensuite (`cleanNoteBody`, 140 caractères).
+ */
+export const shareLinkSchema = z.strictObject({
+  type: MEDIA_TYPE,
+  tmdbId: TMDB_ID,
+  title: TITLE.optional(),
+  poster: POSTER,
+  pos: POSITION.optional(),
+  withInvite: z.boolean(),
+  note: z.string().max(400).optional(),
+});
+
+/** Code d'un lien public : 10 à 64 caractères base64url (le code produit en fait 22). */
+export const SHARE_CODE = /^[A-Za-z0-9_-]{10,64}$/;
+
+/** Corps de `POST /lists` : nom et amis membres (le propriétaire est ajouté par le serveur). */
+export const listCreateSchema = z.strictObject({
+  name: LIST_NAME,
+  members: z.array(PID).max(49).optional(),
+});
+
+/** Corps de `PUT /lists/:id` : renommer, ajouter et retirer des membres (propriétaire seulement). */
+export const listUpdateSchema = z.strictObject({
+  name: LIST_NAME.optional(),
+  add: z.array(PID).max(49).optional(),
+  remove: z.array(PID).max(49).optional(),
+});
+
+/** Corps de `POST /lists/:id/items` : un titre à ajouter à la liste. */
+export const listItemSchema = z.strictObject({
+  type: MEDIA_TYPE,
+  tmdbId: TMDB_ID,
+  title: TITLE,
+  poster: POSTER,
+});
+
+/** Identifiant de liste dans une URL : 1 à 64 caractères alphanumériques ou tirets (sinon, liste inconnue). */
+export const LIST_ID = /^[A-Za-z0-9-]{1,64}$/;
+
+/** Paramètres `:type/:tmdbId` d'un élément de liste ; saison et épisode ne sont pas utilisés. */
+export const listItemKeySchema = z.strictObject({
+  type: MEDIA_TYPE,
+  tmdbId: z
+    .string()
+    .regex(/^[1-9]\d{0,8}$/)
+    .transform(Number),
+});
+
+/** Texte d'une note de lien public : nettoyé et vérifié (140 caractères, sans contrôle), ou absent. */
+export function cleanShareNote(raw: string | undefined): { note?: string; issues: string[] } {
+  if (raw === undefined || raw.trim() === '') return { issues: [] };
+  const cleaned = cleanNoteBody('text', raw);
+  return cleaned.issues.length > 0 ? { issues: cleaned.issues } : { note: cleaned.body, issues: [] };
+}

@@ -685,6 +685,53 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 22,
+    name: 'liens publics, listes partagées',
+    sql: `
+      -- Liens publics : code non devinable (16 octets aléatoires, 22 caractères), auteur (profil), titre, affiche (chemin ou
+      -- URL TMDB), position (seulement pour un moment), note facultative, invitation réservée facultative (invites.id).
+      CREATE TABLE share_links (
+        code TEXT PRIMARY KEY,
+        author_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        pos REAL,
+        note TEXT,
+        invite_id TEXT REFERENCES invites (id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX share_links_author ON share_links (author_pid, created_at);
+      CREATE INDEX share_links_invite ON share_links (invite_id);
+
+      -- Listes partagées : le propriétaire est aussi une ligne de membre ; les autres membres sont des amis du propriétaire.
+      CREATE TABLE shared_lists (
+        id TEXT PRIMARY KEY,
+        owner_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX shared_lists_owner ON shared_lists (owner_pid);
+      CREATE TABLE shared_list_members (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        PRIMARY KEY (list_id, pid)
+      );
+      CREATE INDEX shared_list_members_pid ON shared_list_members (pid);
+      CREATE TABLE shared_list_items (
+        list_id TEXT NOT NULL REFERENCES shared_lists (id) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        added_by TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY (list_id, type, tmdb_id)
+      );
+    `,
+  },
 ];
 
 /**
