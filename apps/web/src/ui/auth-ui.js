@@ -5,6 +5,7 @@ import {
 } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { checkInviteTicket, normalizeInviteCode, parseInviteCode, withoutInvite } from '../data/invite';
+import { getBase, isOfficialBase } from '../data/config';
 import { KID_AGES, me as readMe, UserApiError } from '../data/userApi';
 import { isValidAvatar, parseColAvatar } from '../data/avatars';
 import { isKidAllowed, loadCatalog, recentAvatars } from '../data/avatar-catalog';
@@ -165,7 +166,7 @@ function inviteCodeHTML(msg) {
     '<p class="tv-form-msg" id="auth-msg" role="alert">' + esc(note) + '</p>' +
     '<div class="tv-form-actions"><button type="submit" class="btn btn-primary">Valider</button></div>' +
     '<p class="tv-form-note">Le lien entier ou seulement son code : les deux fonctionnent.</p></form>' +
-    '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>';
+    (isOfficialBase(getBase()) ? '' : '<button type="button" class="link-btn" data-invite-first>C’est le premier compte de ce serveur</button>');
 }
 
 /** Étape 2 : l'invitation est reconnue (qui invite). Rien à afficher pour le premier compte du serveur. */
@@ -204,7 +205,7 @@ function inviteViewHTML(msg) {
 function loginHTML(msg) {
   const body = mode === 'invite' ? inviteViewHTML(msg) : loginViewHTML(msg);
   return '<div class="auth-card"><div class="auth-brand">' + brand() + '</div>' + body +
-    '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>' +
+    (isOfficialBase(getBase()) ? '' : '<p class="tv-form-note">Le compte vit sur ton serveur lastAddon : profils, bibliothèque et progression y sont enregistrés.</p>') +
     '</div>';
 }
 

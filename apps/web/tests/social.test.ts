@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
+import { isOfficialBase, PUBLIC_BASE, reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { inviteLink, normalizeInviteCode, parseInviteCode, withoutInvite } from '../src/data/invite';
 import { socialErrorText } from '../src/data/socialText';
 import { UserApiError } from '../src/data/userApi';
@@ -10,6 +10,11 @@ import { UserApiError } from '../src/data/userApi';
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 const $ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T | null;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+/** Choisit le serveur lastAddon (stockage relu, comme au démarrage de l'application). */
+const setServer = (base: string): void => {
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base, config: 'x' }));
+  reloadSettings();
+};
 
 interface Call { method: string; url: string; path: string; body: any }
 const calls: Call[] = [];
@@ -68,6 +73,22 @@ describe('messages d’erreur', () => {
   });
 });
 
+describe('serveur officiel', () => {
+  it('reconnaît seulement la racine du serveur Laststream officiel', () => {
+    expect(isOfficialBase(PUBLIC_BASE)).toBe(true);
+    expect(isOfficialBase(`${PUBLIC_BASE}/`)).toBe(true);
+    expect(isOfficialBase('  https://lastaddon-core.gtux-prog.workers.dev//  ')).toBe(true);
+    expect(isOfficialBase('https://LASTADDON-CORE.gtux-prog.workers.dev')).toBe(true);
+    expect(isOfficialBase('https://localhost')).toBe(false);
+    expect(isOfficialBase('http://localhost:7000')).toBe(false);
+    expect(isOfficialBase('http://laststream.gtux-prog.workers.dev')).toBe(false);
+    expect(isOfficialBase('https://laststream.gtux-prog.workers.dev.evil.example')).toBe(false);
+    expect(isOfficialBase('https://laststream.gtux-prog.workers.dev/perso')).toBe(false);
+    expect(isOfficialBase('')).toBe(false);
+    expect(isOfficialBase('n’importe quoi')).toBe(false);
+  });
+});
+
 // ---------- Inscription par invitation ----------
 describe('écran d’inscription', () => {
   /** Réponse de `GET /user/invites/check` pour un billet de l’administrateur valide (sans parrain) : formulaire classique. */
@@ -84,6 +105,7 @@ describe('écran d’inscription', () => {
     return ui;
   }
   const overlay = () => $('#auth')!;
+  beforeEach(() => setServer('http://localhost:7000'));
 
   it('?invite= : billet de l’administrateur (inviter null), formulaire d’inscription, code envoyé au serveur', async () => {
     await openAuth('/?invite=Kq3abcd', (c) => (c.path.startsWith('/user/invites/check') ? json(ADMIN_TICKET) : c.path === '/user/register' ? json({ account: { id: 'a', username: 'bob' } }, 201) : undefined));
@@ -155,6 +177,29 @@ describe('écran d’inscription', () => {
     await tick(80);
     expect(overlay().textContent).toContain('invalide, déjà utilisé ou révoqué');
     expect($('#auth-form', overlay())).toBeNull();
+  });
+
+  it('serveur officiel : ni « C’est le premier compte de ce serveur » ni la note du compte, en Connexion comme en Rejoindre', async () => {
+    setServer(PUBLIC_BASE);
+    await openAuth('/');
+    expect(overlay().textContent).not.toContain('Le compte vit sur ton serveur');
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
+    await tick();
+    expect(overlay().textContent).toContain('Rejoindre Laststream');
+    expect($('[data-invite-first]', overlay())).toBeNull();
+    expect(overlay().textContent).not.toContain('C’est le premier compte de ce serveur');
+    expect(overlay().textContent).not.toContain('Le compte vit sur ton serveur');
+  });
+
+  it('serveur perso : « C’est le premier compte de ce serveur » et la note du compte, en Connexion comme en Rejoindre', async () => {
+    setServer('https://mon-serveur.example.org');
+    await openAuth('/');
+    expect(overlay().textContent).toContain('Le compte vit sur ton serveur lastAddon');
+    ($('[data-auth-mode="invite"]', overlay()) as HTMLElement).click();
+    await tick();
+    expect($('[data-invite-first]', overlay())).not.toBeNull();
+    expect(overlay().textContent).toContain('C’est le premier compte de ce serveur');
+    expect(overlay().textContent).toContain('Le compte vit sur ton serveur lastAddon');
   });
 });
 
