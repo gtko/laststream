@@ -81,15 +81,76 @@ export async function adminAction<T>(path: string, o: AdminOptions = {}): Promis
 export interface AdminAccount {
   id: string; username: string; isOwner: boolean; createdAt: string; status: 'active' | 'suspended'; suspendedAt: string | null;
   referrer: string | null; lastActivityAt: string | null; profileCount: number; libraryCount: number; inviteQuota: number; invitesUsed: number;
+  /** Présence < 2 min. `lastActivityAt` reste la dernière activité. */
+  online: boolean; sessionCount: number;
 }
-export interface AccountList { accounts: AdminAccount[]; nextCursor: string | null; total: number }
-export interface AccountQuery { q?: string; status?: string; referrer?: string; createdFrom?: string; createdTo?: string; order?: 'newest' | 'oldest'; limit?: number; cursor?: string | null }
+/** Filtres de la liste des comptes. */
+export type AccountFilter = 'all' | 'online' | 'inactive30' | 'suspended' | 'noInvites';
+/** Totaux par filtre, indépendants de la pagination et du filtre courant. */
+export type AccountCounts = Record<AccountFilter, number>;
+export interface AccountList { accounts: AdminAccount[]; nextCursor: string | null; total: number; counts: AccountCounts }
+export interface AccountQuery { q?: string; filter?: AccountFilter; status?: string; referrer?: string; createdFrom?: string; createdTo?: string; order?: 'newest' | 'oldest'; limit?: number; cursor?: string | null }
+/** Session ouverte d'un compte : jamais de hash ni de jeton. */
+export interface AdminSession { id: string; device: string | null; createdAt: string; lastSeenAt: string; expiresAt: string }
+/** Filleul : compte créé avec un lien d'invitation de ce compte. */
+export interface AdminInvitee { id: string; username: string; usedAt: string | null }
+export type InviteStatus = 'active' | 'used' | 'expired' | 'revoked';
+/** Lien d'invitation (jamais le code ni le jeton). */
+export interface AdminInvite {
+  id: string; ownerId: string; ownerUsername: string; createdAt: string; expiresAt: string | null;
+  usedAt: string | null; usedBy: string | null; status: InviteStatus;
+}
 export interface AccountDetail {
   account: AdminAccount;
   profiles: Array<{ id?: string; name: string; isKid?: boolean; kid?: boolean; hasPin?: boolean; pin?: boolean; libraryCount?: number; library?: number }>;
-  invitees: Array<{ id?: string; username: string; createdAt?: string }>;
-  sessions: Array<{ id?: string; createdAt?: string; lastSeenAt?: string; expiresAt?: string }>;
+  libraryCount: number;
+  invitees: AdminInvitee[];
+  sessions: AdminSession[];
+  invites: AdminInvite[];
 }
+export type BulkAction = 'quota' | 'revoke-sessions' | 'suspend';
+/** Action groupée sur au plus 100 comptes [élév.]. `quota` prend `quota` ou `delta`. */
+export interface BulkBody { ids: string[]; action: BulkAction; quota?: number; delta?: number }
+export interface BulkResult { done: number; failed: Array<{ id: string; error: string }> }
+export interface AccountExport { accounts: AdminAccount[]; truncated: boolean }
+export type TimelineKind = 'audit' | 'signup' | 'invite' | 'session' | 'party';
+export interface TimelineEvent { at: string; kind: TimelineKind; label: string; detail?: string }
+export interface OnlineAccount { id: string; username: string; lastSeenAt: string; watching: { title: string; mediaType?: string } | null }
+export type ServiceStatus = 'ok' | 'degraded' | 'down' | 'unknown';
+export interface ServiceEntry { id: 'api' | 'accounts' | 'kv' | 'upstream' | 'cron'; label: string; status: ServiceStatus; value: string; detail?: string }
+export interface StatusReport { status: 'ok' | 'degraded' | 'down'; services: ServiceEntry[] }
+export type InboxKind = 'report' | 'provider' | 'errors5xx' | 'quota' | 'cron' | 'purge';
+export interface InboxItem {
+  key: string; kind: InboxKind; severity: 'info' | 'warn' | 'critical'; title: string; detail: string; at: string | null;
+  action: { label: string; route: string; call?: 'tv-rerun' };
+}
+export interface Inbox { items: InboxItem[]; total: number }
+export interface LiveFeedEntry { at: string; kind: 'audit' | 'signup' | 'party'; label: string; target?: string }
+export interface LiveSnapshot { online: number; watching: number; parties: number; feed: LiveFeedEntry[] }
+export interface OverviewPoint { t: string; requests: number; errors5xx: number; p95: number }
+/** Variations en % contre la période précédente ; null si indisponibles. */
+export interface OverviewSeries { points: OverviewPoint[]; deltas: { requests: number | null; errors5xx: number | null; p95: number | null } }
+export interface ProviderStatus {
+  id: string; label: string; successRate: number | null; p95: number | null; spark: Array<number | null>;
+  lastFailureAt: string | null; status: ServiceStatus; testable: boolean;
+}
+export interface ProviderTestResult { id: string; ok: boolean; status: number | null; latencyMs: number; error?: string }
+export interface StorageReport {
+  kv: { prefixes: Array<{ prefix: string; keys: number; exact: boolean; hitRate: number | null }> };
+  r2: Array<{ bucket: 'TV' | 'META' | 'AVATARS'; objects: number | null; bytes: number | null; truncated: boolean }>;
+  do: { sizeBytes: number | null; tables: Array<{ name: string; rows: number }> };
+  cachedAt: string;
+}
+export interface TasksReport {
+  tv: { lastCron: unknown; nextRunAt: string | null; overdue: boolean };
+  purges: Array<PurgeJob & { progress: number | null }>;
+}
+export type AnnouncementLevel = 'info' | 'warning';
+export interface Announcement {
+  id: string; title: string; message: string; level: AnnouncementLevel; startsAt: string | null; endsAt: string | null;
+  active: boolean; createdAt: string; updatedAt: string;
+}
+export interface AnnouncementInput { title: string; message: string; level: AnnouncementLevel; startsAt?: string | null; endsAt?: string | null }
 export interface ReferralNode { id: string; username: string; createdAt: string; status: string; children: ReferralNode[] }
 export interface Settings { inviteDefaultQuota: number; invitesOpen: boolean; maintenance: { enabled: boolean; message: string } }
 export type Range = '1h' | '24h' | '7d';
@@ -150,3 +211,35 @@ export const reportAction = (id: string, action: 'delete' | 'suspend' | 'ignore'
   call2<unknown>('/party/reports/' + E(id) + '/action', { method: 'POST', body: { action } }, action === 'suspend');
 export const listAudit = (q: { limit?: number; before?: string | null; action?: string } = {}) =>
   adminCall<{ entries: AuditEntry[]; nextBefore: string | null }>('/audit', { query: { ...q } as AdminOptions['query'] });
+
+// ---- Comptes (vue détaillée, actions groupées, export, présence) ----
+export const revokeSession = (id: string, sid: string) => adminAction<void>('/accounts/' + E(id) + '/sessions/' + E(sid), { method: 'DELETE' });
+export const bulkAccounts = (body: BulkBody) => adminAction<BulkResult>('/accounts/bulk', { method: 'POST', body });
+export const exportAccounts = (q: { filter?: AccountFilter; q?: string } = {}) =>
+  adminCall<AccountExport>('/accounts/export', { query: { ...q } as AdminOptions['query'] });
+export const getTimeline = (id: string, limit?: number) =>
+  adminCall<{ events: TimelineEvent[] }>('/accounts/' + E(id) + '/timeline', { query: { limit } });
+export const listInvites = (q: { status?: InviteStatus; limit?: number } = {}) =>
+  adminCall<{ invites: AdminInvite[] }>('/invites', { query: { ...q } as AdminOptions['query'] });
+export const revokeInvite = (id: string) => adminAction<void>('/invites/' + E(id), { method: 'DELETE' });
+export const listOnline = () => adminCall<{ accounts: OnlineAccount[] }>('/online');
+
+// ---- Centre de contrôle ----
+export const getStatus = () => adminCall<StatusReport>('/status');
+export const getInbox = () => adminCall<Inbox>('/inbox');
+export const dismissInbox = (key: string) => adminCall<{ ok: boolean }>('/inbox/' + E(key) + '/dismiss', { method: 'POST' });
+export const getLive = () => adminCall<LiveSnapshot>('/live');
+export const getOverviewSeries = (range: Range = '24h') => adminCall<OverviewSeries>('/overview-series', { query: { range } });
+
+// ---- Sources, stockage, tâches ----
+export const listProviders = () => adminCall<{ providers: ProviderStatus[] }>('/providers');
+export const testProvider = (id: string) => adminCall<ProviderTestResult>('/providers/' + E(id) + '/test', { method: 'POST' });
+export const getStorage = () => adminCall<StorageReport>('/storage');
+export const getTasks = () => adminCall<TasksReport>('/tasks');
+
+// ---- Annonces (écritures auditées, sans élévation) ----
+export const listAnnouncements = () => adminCall<{ announcements: Announcement[] }>('/announcements');
+export const createAnnouncement = (body: AnnouncementInput) => adminCall<Announcement>('/announcements', { method: 'POST', body });
+export const updateAnnouncement = (id: string, patch: Partial<AnnouncementInput>) =>
+  adminCall<Announcement>('/announcements/' + E(id), { method: 'PUT', body: patch });
+export const deleteAnnouncement = (id: string) => adminCall<void>('/announcements/' + E(id), { method: 'DELETE' });

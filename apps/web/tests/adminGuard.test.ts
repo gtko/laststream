@@ -50,13 +50,18 @@ describe('garde #/admin', () => {
 
 describe('rendu de la console', () => {
   it('navigation à 10 sections, vue d’ensemble, tableau des comptes et panneau de détail', async () => {
-    const acct = { id: 'a1', username: 'alice', isOwner: false, createdAt: '2026-01-01T00:00:00Z', status: 'active', suspendedAt: null, referrer: 'greg', lastActivityAt: new Date().toISOString(), profileCount: 2, libraryCount: 5, inviteQuota: 4, invitesUsed: 1 };
+    const acct = { id: 'a1', username: 'alice', isOwner: false, createdAt: '2026-01-01T00:00:00Z', status: 'active', suspendedAt: null, referrer: 'greg', lastActivityAt: new Date().toISOString(), profileCount: 2, libraryCount: 5, inviteQuota: 4, invitesUsed: 1, online: false, sessionCount: 1 };
     const grp = { requests: 100, status: { '2xx': 95, '3xx': 0, '4xx': 3, '5xx': 2 }, p50: 40, p95: 200, avgMs: 60 };
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = new URL(String(url));
       const j = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
-      if (u.pathname === '/admin/accounts') return j({ accounts: [acct], nextCursor: null, total: 1 });
-      if (u.pathname === '/admin/accounts/a1') return j({ account: acct, profiles: [{ name: 'Alice', isKid: false, hasPin: false, libraryCount: 5 }], invitees: [], sessions: [] });
+      if (u.pathname === '/admin/accounts') return j({ accounts: [acct], nextCursor: null, total: 1, counts: { all: 1, online: 0, inactive30: 0, suspended: 0, noInvites: 0 } });
+      if (u.pathname === '/admin/accounts/a1') return j({
+        account: acct, profiles: [{ name: 'Alice', isKid: false, hasPin: false, libraryCount: 5 }], libraryCount: 5,
+        invitees: [{ id: 'i1', username: 'bob', usedAt: '2026-02-01T10:00:00Z' }],
+        sessions: [{ id: 's1', device: 'Firefox · Windows', createdAt: '2026-03-01T08:00:00Z', lastSeenAt: new Date().toISOString(), expiresAt: '2026-04-01T08:00:00Z' }],
+        invites: [],
+      });
       if (u.pathname === '/admin/metrics') return j({ range: '24h', from: 0, to: 86400, stepSec: 300, totals: grp, groups: { ui: grp }, series: [{ t: 1, requests: 5, errors5xx: 0, p95: 100 }, { t: 2, requests: 9, errors5xx: 1, p95: 150 }], upstreams: [], alldebrid: {}, caches: [], errors: [] });
       if (u.pathname === '/admin/party/rooms') return j({ rooms: [] });
       if (u.pathname === '/admin/party/reports') return j({ reports: [{}, {}] });

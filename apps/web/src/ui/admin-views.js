@@ -142,8 +142,8 @@ export function accountDetailHTML(d, link, busy) {
     (a.suspendedAt ? '<div><dt>Suspendu le</dt><dd>' + esc(fmtDateTime(a.suspendedAt)) + '</dd></div>' : '') + '</dl>' +
     '<h4 class="adm-sub">Profils</h4>' + list(d.profiles, 'Aucun profil.', (p) => '<li>' + esc(p.name) + ((p.isKid ?? p.kid) ? ' ' + badge('Enfant') : '') + ((p.hasPin ?? p.pin) ? ' ' + badge('PIN') : '') +
       ' <span class="adm-dim">' + fmtInt(p.libraryCount ?? p.library ?? 0) + ' titre(s)</span></li>') +
-    '<h4 class="adm-sub">Filleuls</h4>' + list(d.invitees, 'Aucun filleul.', (i) => '<li>' + esc(i.username) + (i.createdAt ? ' <span class="adm-dim">' + esc(fmtDay(i.createdAt)) + '</span>' : '') + '</li>') +
-    '<h4 class="adm-sub">Sessions</h4>' + list(d.sessions, 'Aucune session ouverte.', (s) => '<li>' + (s.createdAt ? 'ouverte ' + esc(fmtAgo(s.createdAt)) : 'session') + (s.lastSeenAt ? ' <span class="adm-dim">vue ' + esc(fmtAgo(s.lastSeenAt)) + '</span>' : '') + '</li>') +
+    '<h4 class="adm-sub">Filleuls</h4>' + list(d.invitees, 'Aucun filleul.', (i) => '<li>' + esc(i.username) + (i.usedAt ? ' <span class="adm-dim">inscrit le ' + esc(fmtDay(i.usedAt)) + '</span>' : '') + '</li>') +
+    '<h4 class="adm-sub">Sessions</h4>' + list(d.sessions, 'Aucune session ouverte.', (s) => '<li>' + esc(s.device || 'Appareil inconnu') + ' <span class="adm-dim">· créée le ' + esc(fmtDay(s.createdAt)) + ' · dernière activité ' + esc(fmtAgo(s.lastSeenAt)) + '</span></li>') +
     '<h4 class="adm-sub">Quota d’invitations</h4>' +
     '<form class="adm-inline" data-adm-quota="' + esc(a.id) + '"><label class="adm-field"><span class="sr-only">Quota de liens</span><input class="set-input set-input-sm" type="number" name="quota" min="0" max="100" value="' + esc(a.inviteQuota) + '" required></label>' +
     '<span class="adm-dim">' + fmtInt(a.invitesUsed) + ' utilisée(s)</span><button type="submit" class="btn btn-ghost btn-sm"' + dis + '>Enregistrer</button></form>' +

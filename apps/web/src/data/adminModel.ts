@@ -1,4 +1,4 @@
-import type { AccountList, GroupStats, Metrics, PurgeJob, ReferralNode } from './adminApi';
+import type { AccountList, AdminAccount, GroupStats, Metrics, PurgeJob, ReferralNode, ServiceStatus } from './adminApi';
 
 /* Fonctions pures de la console d'administration : accès, métriques, pagination, purge, parrainage, formats. */
 
@@ -189,4 +189,45 @@ export async function scanAccounts(page: (cursor: string | null) => Promise<Acco
     }
     current = await page(current.nextCursor);
   }
+}
+
+// ---- Export CSV des comptes ----
+const CSV_HEADERS = [
+  'Identifiant', 'Pseudo', 'Statut', 'Créé le', 'Dernière activité', 'Suspendu le', 'Parrain',
+  'Profils', 'Bibliothèque', 'Quota d’invitations', 'Invitations utilisées', 'Sessions', 'En ligne',
+];
+
+/** Neutralise une cellule qu'un tableur lirait comme une formule (=, +, -, @, tabulation, retour chariot) en la préfixant d'une apostrophe. */
+export function neutralizeFormula(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? '\'' + v : v;
+}
+
+/** Cellule CSV : neutralisée puis entre guillemets si elle contient une virgule, un guillemet ou un saut de ligne (les guillemets sont doublés). */
+export function csvCell(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  const s = neutralizeFormula(String(v));
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/** CSV (RFC 4180, fins de ligne CRLF) des comptes fournis, dans leur ordre. */
+export function csvOfAccounts(accounts: readonly AdminAccount[]): string {
+  const rows = accounts.map((a) => [
+    a.id, a.username, a.status, a.createdAt, a.lastActivityAt, a.suspendedAt, a.referrer,
+    a.profileCount, a.libraryCount, a.inviteQuota, a.invitesUsed, a.sessionCount, a.online ? 'oui' : 'non',
+  ]);
+  return [CSV_HEADERS, ...rows].map((r) => r.map(csvCell).join(',') + '\r\n').join('');
+}
+
+// ---- Compte à rebours (élévation) ----
+/** « mm:ss » à partir de millisecondes, tronqué à la seconde ; 0, négatif ou non fini donne 00:00. Les minutes peuvent dépasser 59. */
+export function formatCountdown(ms: number): string {
+  const total = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0;
+  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+}
+
+// ---- Centre de contrôle : libellés d'état ----
+const SERVICE_STATUS_LABEL: Record<ServiceStatus, string> = { ok: 'Opérationnel', degraded: 'Dégradé', down: 'En panne', unknown: 'Inconnu' };
+/** Libellé français d'un état de service ; une valeur inconnue donne « Inconnu ». */
+export function serviceStatusLabel(status: string | null | undefined): string {
+  return typeof status === 'string' && Object.hasOwn(SERVICE_STATUS_LABEL, status) ? SERVICE_STATUS_LABEL[status as ServiceStatus] : 'Inconnu';
 }

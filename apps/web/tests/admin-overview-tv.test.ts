@@ -19,7 +19,7 @@ const account = (i: number): Account => ({
   id: `acc-${i}`, username: `user${i}`, isOwner: i === 0, createdAt: '2026-01-01T00:00:00.000Z',
   status: i % 50 === 0 ? 'suspended' : 'active', suspendedAt: null, referrer: null,
   lastActivityAt: i % 5 === 0 ? '2026-10-19T08:00:00.000Z' : '2026-09-01T00:00:00.000Z',
-  profileCount: 1, libraryCount: 0, inviteQuota: 0, invitesUsed: 0,
+  profileCount: 1, libraryCount: 0, inviteQuota: 0, invitesUsed: 0, online: false, sessionCount: 0,
 });
 
 /** Réponse de GET /admin/accounts : même contrat que le serveur (limit de 1 à 100, sinon 400 invalid_body ; curseur = offset). */
