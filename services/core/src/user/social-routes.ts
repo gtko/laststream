@@ -15,6 +15,7 @@ import {
   inviteCodeQuery,
   inviteQuotaSchema,
   inviteSentSchema,
+  inviteTicketSchema,
   presenceSchema,
   usernameParam,
   visibilitySchema,
@@ -48,12 +49,29 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
     return sendJson(c, await social().listInvites(account.id, nowIso()));
   });
 
-  /** Vérifie un lien avant l'inscription (sans session) : `{ valid, inviter }`. */
+  /**
+   * Vérifie un lien avant l'inscription (sans session) : `{ valid: true, inviter, message, picks, expiresAt, number }`, ou
+   * `{ valid: false, reason }` (`expired`, `used`, `revoked`, `unknown`).
+   */
   router.get('/invites/check', async (c) => {
     const { code } = parseWith(inviteCodeQuery, queryParams(c));
-    return sendJson(c, await social().inviteInfo(code));
+    return sendJson(c, await social().inviteInfo(code, nowIso()));
   });
 
+  /**
+   * Message (280 caractères au plus) et coups de cœur (3 au plus) d'un billet du propriétaire ; un champ absent reste
+   * inchangé, `''` ou `[]` efface. 409 `invite_used` si le billet est utilisé.
+   */
+  router.put('/invites/:id', async (c) => {
+    const { account } = await openAccountSession(c);
+    const body = parseWith(inviteTicketSchema, c.get('body'));
+    const result = await social().updateTicket(account.id, String(c.req.param('id')), body);
+    if (result.result === 'not_found') throw new UserApiError(404, 'invite_not_found');
+    if (result.result === 'used') throw new UserApiError(409, 'invite_used');
+    return sendJson(c, { invite: result.invite });
+  });
+
+  /** Marque le billet « envoyé » : l'échéance est posée à maintenant + 14 jours. `sent: false` le remet libre. */
   router.put('/invites/:id/sent', async (c) => {
     const { account } = await openAccountSession(c);
     const { sent } = parseWith(inviteSentSchema, c.get('body'));

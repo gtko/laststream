@@ -309,7 +309,7 @@ interface SettingRow {
 
 export type CreateAccountResult =
   | { ok: true; account: Account }
-  | { ok: false; reason: 'signup_disabled' | 'username_taken' | 'invite_invalid' | 'invites_closed' };
+  | { ok: false; reason: 'signup_disabled' | 'username_taken' | 'invite_invalid' | 'invite_expired' | 'invites_closed' };
 
 function toAccount(row: Omit<AccountRow, 'password_hash'>): Account {
   return { id: row.id, username: row.username, isOwner: row.is_owner === 1, createdAt: row.created_at };
@@ -438,6 +438,8 @@ export class UserStore {
     allowSignup: boolean;
     /** Code d'un lien de parrainage : consommé dans la même transaction, le filleul devient ami du parrain. */
     inviteCode?: string;
+    /** Avec un lien : false = aucune amitié créée (ni compte, ni profils). Défaut : true. */
+    autoFriend?: boolean;
     now: string;
   }): CreateAccountResult {
     return this.transaction((): CreateAccountResult => {
@@ -454,10 +456,12 @@ export class UserStore {
       }
       if (invite && input.inviteCode !== undefined) {
         // Lien inconnu, déjà utilisé ou révoqué par l'administration : refusé de la même façon.
-        const row = this.db.prepare('SELECT used_at, revoked_at FROM invites WHERE code = ?').get(input.inviteCode) as
-          | { used_at: string | null; revoked_at: string | null }
+        const row = this.db.prepare('SELECT used_at, revoked_at, expires_at FROM invites WHERE code = ?').get(input.inviteCode) as
+          | { used_at: string | null; revoked_at: string | null; expires_at: number | null }
           | undefined;
         if (row === undefined || row.used_at !== null || row.revoked_at !== null) return { ok: false, reason: 'invite_invalid' };
+        // Billet envoyé il y a plus de 14 jours et non utilisé : refusé (le propriétaire le libère à sa prochaine consultation).
+        if (row.expires_at !== null && Number(row.expires_at) <= Date.parse(input.now)) return { ok: false, reason: 'invite_expired' };
       }
       const account: Account = {
         id: randomUUID(),
@@ -468,7 +472,7 @@ export class UserStore {
       this.db
         .prepare('INSERT INTO accounts (id, username, password_hash, is_owner, created_at, invite_quota) VALUES (?, ?, ?, ?, ?, ?)')
         .run(account.id, account.username, input.passwordHash, isFirst ? 1 : 0, account.createdAt, settings.inviteDefaultQuota);
-      if (invite && input.inviteCode !== undefined && !redeemInvite(this.db, input.inviteCode, account.id, input.now).ok) {
+      if (invite && input.inviteCode !== undefined && !redeemInvite(this.db, input.inviteCode, account.id, input.now, input.autoFriend !== false).ok) {
         throw new Error('lien de parrainage consommé en cours d\'inscription'); // annule la transaction (inatteignable : synchrone)
       }
       return { ok: true, account };

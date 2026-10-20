@@ -846,6 +846,19 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE sessions ADD COLUMN profile_id TEXT;
     `,
   },
+  {
+    version: 28,
+    name: 'billets de parrainage : message, coups de cœur (JSON), échéance à l envoi, amitié automatique à l inscription',
+    sql: `
+      -- Message du billet (280 caractères au plus) et coups de cœur (JSON, 3 au plus : [{id, type, name, poster, background}]).
+      ALTER TABLE invites ADD COLUMN message TEXT;
+      ALTER TABLE invites ADD COLUMN picks TEXT;
+      -- Échéance (ms epoch) posée à l envoi : sent_at + 14 jours. NULL = non envoyé (ou envoyé avant la v28, sans échéance).
+      ALTER TABLE invites ADD COLUMN expires_at INTEGER;
+      -- 0 : inscription sans amitié automatique (register avec autoFriend=false). Les liens existants restent à 1.
+      ALTER TABLE invites ADD COLUMN auto_friend INTEGER NOT NULL DEFAULT 1 CHECK (auto_friend IN (0, 1));
+    `,
+  },
 ];
 
 /**

@@ -220,8 +220,18 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
       throw new UserApiError(403, 'bootstrap_token_invalid');
     }
     const passwordHash = await hashSecret(body.password);
-    const result = await users.createAccount({ username: body.username, passwordHash, allowSignup, inviteCode: body.invite, now: nowIso() });
-    if (!result.ok) throw new UserApiError(result.reason === 'username_taken' ? 409 : 403, result.reason);
+    const result = await users.createAccount({
+      username: body.username,
+      passwordHash,
+      allowSignup,
+      inviteCode: body.invite,
+      autoFriend: body.autoFriend,
+      now: nowIso(),
+    });
+    if (!result.ok) {
+      const status = result.reason === 'username_taken' ? 409 : result.reason === 'invite_expired' ? 410 : 403;
+      throw new UserApiError(status, result.reason);
+    }
     return sendJson(c, { account: result.account }, 201);
   });
 

@@ -80,7 +80,7 @@ describe('/admin : invitations', () => {
     expect(listed.body.invites.find((invite) => invite.id === system.id)).toMatchObject({ ownerId: null, ownerUsername: null, status: 'active' });
 
     expect((await rig.call('DELETE', `/admin/invites/${system.id}`, { elevation: await rig.elevate() })).status).toBe(204);
-    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${system.code}`)).body).toEqual({ valid: false, inviter: null });
+    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${system.code}`)).body).toEqual({ valid: false, reason: 'revoked' });
   });
 
   it('révocation : élévation exigée, 404, 400, 409 si utilisée ou déjà révoquée, 204, audit', async () => {
@@ -119,10 +119,10 @@ describe('/admin : invitations', () => {
   it('lien révoqué refusé à l\'inscription (vérification et inscription), sans compte créé', async () => {
     const free = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites.find((invite) => invite.state === 'free');
     expect(free).toBeDefined();
-    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: true, inviter: 'alice' });
+    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toMatchObject({ valid: true, inviter: { name: 'alice' } });
 
     expect((await rig.call('DELETE', `/admin/invites/${free.id}`, { elevation: await rig.elevate() })).status).toBe(204);
-    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: false, inviter: null });
+    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: false, reason: 'revoked' });
     const refused = await request<{ error: string }>(rig.app, 'POST', '/user/register', { body: { username: 'erin', password: PASSWORD, invite: free.code } });
     expect(refused.status).toBe(403);
     expect(refused.body.error).toBe('invite_invalid');
@@ -142,7 +142,7 @@ describe('/admin : invitations', () => {
     const regenerated = await request<{ error: string }>(rig.app, 'DELETE', `/user/invites/${free.id}`, { token: rig.owner.token });
     expect(regenerated.status).toBe(409);
     expect(regenerated.body.error).toBe('invite_revoked');
-    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: false, inviter: null });
+    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: false, reason: 'revoked' });
     const after = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites.find((invite) => invite.id === free.id);
     expect(after).toMatchObject({ state: 'revoked', code: free.code, revokedAt: revoked.revokedAt });
   });

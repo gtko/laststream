@@ -91,8 +91,11 @@ export const loginSchema = z.object({
 /** Code d'un lien de parrainage (22 caractères base64url ; plage large pour ne rien révéler du format). */
 export const INVITE_CODE = z.string().trim().min(8).max(64).regex(/^[A-Za-z0-9_-]+$/);
 
-/** Inscription : identifiants + lien de parrainage (absent seulement pour le tout premier compte). */
-export const registerSchema = credentialsSchema.extend({ invite: INVITE_CODE.optional() });
+/**
+ * Inscription : identifiants + lien de parrainage (absent seulement pour le tout premier compte). `autoFriend` (défaut
+ * true) : avec un lien, devenir ami du parrain ; false : aucune amitié n'est créée.
+ */
+export const registerSchema = credentialsSchema.extend({ invite: INVITE_CODE.optional(), autoFriend: z.boolean().default(true) });
 
 export const createProfileSchema = z.object({
   name: z.string().trim().min(1).max(40),
