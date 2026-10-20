@@ -11,6 +11,7 @@ import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { partyErrSuffix } from './partylobby.js';
 
 let rootEl = null;
 let panel = null;
@@ -551,7 +552,7 @@ async function onSubmit(e) {
     } catch (err) {
       f.querySelector('[type=submit]').disabled = false;
       if (msg) msg.textContent = err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
-        : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment.';
+        : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment' + partyErrSuffix(err);
     }
   }
 }

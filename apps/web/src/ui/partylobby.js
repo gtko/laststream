@@ -65,6 +65,13 @@ const isHost = () => !!(client && client.isHost);
 const myName = () => (client && client.you ? client.you.username : '');
 const sNow = () => (client ? client.serverNow() : Date.now());
 
+/** Diagnostic : code ou message de l'erreur, affiché entre parenthèses et écrit dans la console. */
+export function partyErrSuffix(err) {
+  try { console.error('[watch party] création', err); } catch { /* ignoré */ }
+  const code = err && (err.code || err.name || err.message);
+  return code ? ' (' + String(code).slice(0, 60) + ').' : '.';
+}
+
 // ---------- Rendu ----------
 const avatar = (p, size) => '<span class="pl-av' + (size ? ' is-' + size : '') + '"' + avatarAttrs(p.avatar, p.avatarColor) + ' aria-hidden="true"><span class="pl-av-ini">' +
   esc(initialsOf(p.username, !!p.guest)) + '</span></span>';
@@ -458,7 +465,7 @@ export async function createLobbyFor(req, poster, visibility, from) {
     await openLobby(room.id, from);
   } catch (err) {
     toast(err instanceof UserApiError && err.code === 'too_many_rooms' ? 'Tu as déjà trois salons ouverts : termine-en un d’abord.'
-      : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment.');
+      : err instanceof UserApiError && err.code === 'kid_profile' ? 'Un profil enfant ne crée que des salons privés.' : 'Création du salon impossible pour le moment' + partyErrSuffix(err));
   }
 }
 
@@ -475,8 +482,8 @@ export async function inviteToParty(pid) {
     }
     try {
       await partyBridge.create(a, 'private');
-    } catch {
-      toast('Création du salon impossible pour le moment.');
+    } catch (err) {
+      toast('Création du salon impossible pour le moment' + partyErrSuffix(err));
       return;
     }
     if (!(await partyBridge.waitForHost())) { toast('Salon créé, mais la connexion a échoué.'); return; }
