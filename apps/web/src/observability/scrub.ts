@@ -10,10 +10,8 @@
  *  - Fil d'Ariane fetch/xhr vers un hôte tiers : seulement l'hôte et le statut. Clics, saisies et console écartés.
  *  - Écartés : bruit du navigateur (ResizeObserver), annulations (AbortError), lecture média attendue (source absente,
  *    lecture interrompue ou bloquée par le navigateur), erreurs venant d'extensions navigateur. */
+import { isIpLiteral, isLocalName, reduceHost, scrubPath } from '@laststream/protocol/scrub';
 import type { Breadcrumb, ErrorEvent, Exception } from '@sentry/browser';
-
-/** Au-delà de cette longueur, un segment de chemin est une configuration (base64 ou JSON) : jamais envoyé. */
-export const MAX_SEGMENT = 40;
 
 const DEBRID = /alldebrid|real-?debrid|torbox|premiumize/i;
 const MEDIA_FILE = /\.(m3u8|mkv|mp4)$/i;
@@ -27,16 +25,6 @@ const DEBRID_PARAM = /\b((?:all|real)-?debrid\w*|torbox|premiumize|debridoptions
 const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
 const SECRET = /(["']?\b(?:apikey|api_key|token|password|passwd|secret)\b["']?\s*[=:]\s*["']?)[^\s&"',;}]+/gi;
 const EXTENSION = /^(?:chrome|moz|safari|safari-web|ms-browser|edge)-extension:\/\//i;
-/** Seuls ces hôtes sont gardés (hôte seul) hors de l'application ; les workers.dev du projet aussi. */
-const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
-  'api.themoviedb.org',
-  'image.tmdb.org',
-  'api4.thetvdb.com',
-  'api.mdblist.com',
-  'v3-cinemeta.strem.io',
-]);
-const PROJECT_WORKERS_DEV = /\.gtux-prog\.workers\.dev$/;
-const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 /** Catégories de fil d'Ariane écartées : clics, saisies et console. */
 const NO_BREADCRUMB: ReadonlySet<string> = new Set(['ui.click', 'ui.input', 'console']);
 
@@ -52,31 +40,12 @@ const MAX_DEPTH = 20;
 
 const currentOrigin = (): string => (typeof location === 'undefined' ? '' : location.origin);
 
-/** Chemin : les segments trop longs (configurations d'addon) sont remplacés. */
-function scrubPath(path: string): string {
-  return path.split('/').map((segment) => (segment.length > MAX_SEGMENT ? '[config]' : segment)).join('/');
-}
-
 /** Fragment (routes #/…) : jeton de réinitialisation et pseudo d'ami masqués, paramètres après « ? » retirés. */
 function scrubHash(hash: string): string {
   if (!hash) return '';
   if (/^#\/reset\/.+/.test(hash)) return '#/reset/[jeton]';
   if (/^#\/friend\/.+/.test(hash)) return '#/friend/[pseudo]';
   return scrubPath(hash.replace(/\?.*$/, ''));
-}
-
-/** Adresse littérale IPv4 ou IPv6 (le nom d'hôte d'une URL IPv6 est entre crochets). */
-const isIpLiteral = (host: string): boolean => IPV4.test(host) || host.startsWith('[');
-/** localhost et les noms *.local (réseau local). */
-const isLocalName = (host: string): boolean => host === 'localhost' || host.endsWith('.local');
-
-/** Hors de l'application : [ip] pour une adresse littérale, hôte seul s'il est autorisé, sinon [host]. */
-function reduceHost(url: URL): string {
-  const host = url.hostname.toLowerCase();
-  if (isIpLiteral(host)) return '[ip]';
-  if (!host || isLocalName(host)) return '[host]';
-  if (ALLOWED_HOSTS.has(host) || PROJECT_WORKERS_DEV.test(host)) return `${url.protocol}//${url.host}`;
-  return '[host]';
 }
 
 /** Adresse absolue ou relative à l'application → forme sûre ; null si elle ne doit jamais être envoyée. */

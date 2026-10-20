@@ -1,3 +1,4 @@
+import { parseLanguages } from '@laststream/protocol/language';
 import type { DeviceTarget } from '../data/sources';
 import type { Lang, Resolution, Stream } from '../data/stream';
 import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_ADDON_COMMAND, shellHttp, type HttpFn } from './debrid/http';
@@ -73,23 +74,6 @@ const SOURCES: Array<[RegExp, string]> = [
   [/hdtv/i, 'HDTV'], [/dvd/i, 'DVDRip'], [/\bcam\b|hdcam/i, 'CAM'], [/\bts\b|telesync/i, 'TS'],
 ];
 
-function languagesOf(t: string): { languages: Lang[]; frVariant?: string } {
-  const langs = new Set<Lang>();
-  let frVariant: string | undefined;
-  if (/multi/i.test(t)) langs.add('multi');
-  if (/vostfr|subfrench/i.test(t)) { frVariant = 'VOSTFR'; langs.add('original'); }
-  else if (/truefrench/i.test(t)) { frVariant = 'TRUEFRENCH'; langs.add('fr'); }
-  else if (/\bvff\b/i.test(t)) { frVariant = 'VFF'; langs.add('fr'); }
-  else if (/\bvfq\b/i.test(t)) { frVariant = 'VFQ'; langs.add('fr'); }
-  else if (/\bvf2?\b|\bfrench\b|\bfr\b|🇫🇷/i.test(t)) langs.add('fr');
-  if (/\bspanish\b|\bespa|🇪🇸/i.test(t)) langs.add('es');
-  if (/\bgerman\b|\bdeutsch\b|🇩🇪/i.test(t)) langs.add('de');
-  if (/\bitalian\b|🇮🇹/i.test(t)) langs.add('it');
-  if (/\benglish\b|\beng\b|🇬🇧|🇺🇸/i.test(t)) langs.add('en');
-  if (!langs.size) langs.add('original');
-  return { languages: [...langs], ...(frVariant ? { frVariant } : {}) };
-}
-
 function sizeOf(t: string, hints: Record<string, unknown>): number | undefined {
   if (typeof hints.videoSize === 'number' && hints.videoSize > 0) return hints.videoSize;
   const m = /(\d+(?:[.,]\d+)?)\s*(tb|to|gb|go|mb|mo)\b/i.exec(t);
@@ -125,7 +109,8 @@ export function normalizeDeviceStream(raw: unknown, addonId: string): Stream | n
   const source = SOURCES.find(([re]) => re.test(text))?.[1] ?? 'unknown';
   const codec = /av1/i.test(text) ? 'AV1' : /hevc|x265|h\.?265/i.test(text) ? 'HEVC' : /x264|h\.?264|avc/i.test(text) ? 'AVC' : 'unknown';
   const hdr = [/dolby.?vision|\bdv\b/i.test(text) ? 'DV' : '', /hdr10\+/i.test(text) ? 'HDR10+' : /hdr/i.test(text) ? 'HDR10' : ''].filter(Boolean);
-  const { languages, frVariant } = languagesOf(text);
+  // Parseur unique partagé avec le serveur (@laststream/protocol) : mêmes langues et variante que les flux du serveur.
+  const { languages, frVariant } = parseLanguages(text);
   const sizeBytes = sizeOf(text, hints);
   const seeders = seedersOf(text);
   // « En cache » seulement si l'addon le signale (⚡ ou [RD+]) : un lien HTTP direct n'est pas un lien débridé en cache.
