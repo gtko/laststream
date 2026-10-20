@@ -134,30 +134,6 @@ function allocateTag(db: SqlDb, key: string, profileId: string, random: RandomBy
 }
 
 /**
- * Retire l'identité sociale d'un profil devenu enfant : ses amitiés, sa présence, ses messages et ses notes disparaissent
- * avec elle (les clés étrangères sur pid interdiraient sinon de vider le pid).
- */
-function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
-  revokeLegacyFriendshipsOf(db, pid);
-  db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? OR high_pid = ?').run(pid, pid);
-  db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
-  db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(pid, pid);
-  db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
-  db.prepare('DELETE FROM message_reactions WHERE pid = ?').run(pid);
-  db.prepare('DELETE FROM poll_votes WHERE pid = ?').run(pid);
-  // Groupe dont ce profil était le seul membre : supprimé ; les autres gardent leurs membres.
-  db.prepare(
-    'DELETE FROM social_groups WHERE id IN (SELECT group_id FROM social_group_members WHERE pid = ?) AND NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id AND m.pid <> ?)',
-  ).run(pid, pid);
-  db.prepare('DELETE FROM social_group_members WHERE pid = ?').run(pid);
-  db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
-  db.prepare('DELETE FROM blocks WHERE blocker_pid = ? OR blocked_pid = ?').run(pid, pid);
-  db.prepare('DELETE FROM join_requests WHERE requester_pid = ? OR host_pid = ?').run(pid, pid);
-  db.prepare('DELETE FROM social_prefs WHERE profile_pid = ?').run(pid);
-  db.prepare('UPDATE profiles SET pid = NULL, handle_name = NULL, handle_key = NULL, handle_tag = NULL WHERE id = ?').run(profileId);
-}
-
-/**
  * Nouveau tag pour un profil déjà identifié (changement volontaire) : différent de l'actuel et non pris pour ce nom
  * normalisé. Renvoie le tag sans l'écrire ; l'appelant l'enregistre dans sa propre transaction.
  */
@@ -283,3 +259,65 @@ export function linkInvitedPrincipals(db: SqlDb, accountId: string, now: number)
     ).run(low, high, a, now, now);
   }
 }
+
+/**
+ * Après le départ d'un membre d'un groupe (ligne déjà retirée) : le groupe devenu vide est supprimé ; si le membre parti
+ * en était le propriétaire (`created_by`), la propriété passe au plus ancien membre restant.
+ */
+export function settleGroupAfterLeave(db: SqlDb, groupId: string, leaverPid: string): void {
+  const first = db
+    .prepare('SELECT pid FROM social_group_members WHERE group_id = ? ORDER BY joined_at, pid LIMIT 1')
+    .get(groupId) as { pid: string } | undefined;
+  if (first === undefined) {
+    db.prepare('DELETE FROM social_groups WHERE id = ?').run(groupId);
+    return;
+  }
+  db.prepare('UPDATE social_groups SET created_by = ? WHERE id = ? AND created_by = ?').run(first.pid, groupId, leaverPid);
+}
+
+/**
+ * Supprime toutes les données sociales qui référencent le pid d'un profil (clés étrangères sur `profiles(pid)`, migrations
+ * 14 à 22) : amitiés, présence, relations, messages, réactions, votes, notes, blocages, demandes de rejoindre, préférences,
+ * activité, liens publics (l'invitation réservée est libérée), listes partagées possédées (avec leurs éléments et membres),
+ * éléments ajoutés et appartenances aux listes d'autrui, appartenances aux groupes (groupe vide supprimé, propriété
+ * transmise au plus ancien membre). À appeler avant de vider ou supprimer le pid.
+ */
+export function purgeSocialData(db: SqlDb, pid: string): void {
+  revokeLegacyFriendshipsOf(db, pid);
+  db.prepare('DELETE FROM profile_friendships WHERE low_pid = ? OR high_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM profile_presence WHERE profile_pid = ?').run(pid);
+  db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM messages WHERE from_pid = ? OR to_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM message_reactions WHERE pid = ?').run(pid);
+  db.prepare('DELETE FROM poll_votes WHERE pid = ?').run(pid);
+  db.prepare('DELETE FROM activity WHERE pid = ?').run(pid);
+  // Liens publics : l'invitation réservée par un lien non consommé redevient libre.
+  db.prepare(
+    'UPDATE invites SET sent_at = NULL WHERE used_at IS NULL AND id IN (SELECT invite_id FROM share_links WHERE author_pid = ? AND invite_id IS NOT NULL)',
+  ).run(pid);
+  db.prepare('DELETE FROM share_links WHERE author_pid = ?').run(pid);
+  // Listes partagées : celles que ce profil possède disparaissent avec leurs éléments et leurs membres.
+  db.prepare('DELETE FROM shared_list_items WHERE list_id IN (SELECT id FROM shared_lists WHERE owner_pid = ?)').run(pid);
+  db.prepare('DELETE FROM shared_list_members WHERE list_id IN (SELECT id FROM shared_lists WHERE owner_pid = ?)').run(pid);
+  db.prepare('DELETE FROM shared_lists WHERE owner_pid = ?').run(pid);
+  db.prepare('DELETE FROM shared_list_items WHERE added_by = ?').run(pid);
+  db.prepare('DELETE FROM shared_list_members WHERE pid = ?').run(pid);
+  const groups = db.prepare('SELECT group_id FROM social_group_members WHERE pid = ?').all(pid) as { group_id: string }[];
+  db.prepare('DELETE FROM social_group_members WHERE pid = ?').run(pid);
+  for (const group of groups) settleGroupAfterLeave(db, group.group_id, pid);
+  db.prepare('DELETE FROM notes WHERE author_pid = ?').run(pid);
+  db.prepare('DELETE FROM blocks WHERE blocker_pid = ? OR blocked_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM join_requests WHERE requester_pid = ? OR host_pid = ?').run(pid, pid);
+  db.prepare('DELETE FROM social_prefs WHERE profile_pid = ?').run(pid);
+}
+
+/**
+ * Retire l'identité sociale d'un profil devenu enfant : toutes ses données sociales disparaissent (voir `purgeSocialData` ;
+ * les clés étrangères sur pid interdiraient sinon de vider le pid), puis le pid et le handle sont mis à NULL.
+ */
+function clearIdentity(db: SqlDb, profileId: string, pid: string): void {
+  purgeSocialData(db, pid);
+  db.prepare('UPDATE profiles SET pid = NULL, handle_name = NULL, handle_key = NULL, handle_tag = NULL WHERE id = ?').run(profileId);
+}
+
+

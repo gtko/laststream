@@ -94,7 +94,7 @@ function registerPrefsRoutes(router: App, deps: AppDeps, backend: UserBackend): 
 
   /**
    * Signale un profil : `{ pid, reason: 'spam'|'harassment'|'other', details? (≤ 500) }`. 201 sans corps. 400 `self`,
-   * 404 `profile_not_found` (pid inconnu ou mal formé).
+   * 404 `profile_not_found` (pid inconnu ou mal formé), 429 `rate_limited` au-delà de 10 signalements par jour et par profil.
    */
   router.post('/social/reports', async (c) => {
     const me = await actor(c);
@@ -103,14 +103,17 @@ function registerPrefsRoutes(router: App, deps: AppDeps, backend: UserBackend): 
     const outcome = await social().addReport(me.pid, input.pid, input.reason, input.details, Date.now());
     if (outcome.result === 'self') throw new UserApiError(400, 'self');
     if (outcome.result === 'not_found') throw new UserApiError(404, 'profile_not_found');
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     return c.body(null, 201);
   });
 
   // Demandes de rejoindre
 
   /**
-   * Demande à rejoindre le titre en cours de l'ami `:pid`. 204. L'ami reçoit `join_request` (vue du demandeur). 403
-   * `not_allowed` si l'ami a désactivé le partage de lecture (`watchWith` = « never »). 404 `friend_not_found` sans lien.
+   * Demande à rejoindre le titre en cours de l'ami `:pid`. 204. L'ami reçoit `join_request` (vue du demandeur), sauf si une
+   * demande identique date de moins d'une minute (204 quand même, sans événement). 403 `not_allowed` si l'ami a désactivé le
+   * partage de lecture (`watchWith` = « never »). 404 `friend_not_found` sans lien. 429 `rate_limited` au-delà de 5 demandes
+   * par tranche de 10 minutes vers le même ami.
    */
   router.post('/social/friends/:pid/join-request', async (c) => {
     const me = await actor(c);
@@ -119,7 +122,8 @@ function registerPrefsRoutes(router: App, deps: AppDeps, backend: UserBackend): 
     if (outcome.result === 'self') throw new UserApiError(400, 'self');
     if (outcome.result === 'not_found') throw new UserApiError(404, 'friend_not_found');
     if (outcome.result === 'not_allowed') throw new UserApiError(403, 'not_allowed');
-    emitSocialEvent(deps.socialEvents, [hostPid], { t: 'join_request', from: outcome.from });
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
+    if (outcome.fresh) emitSocialEvent(deps.socialEvents, [hostPid], { t: 'join_request', from: outcome.from });
     return sendEmpty(c, 204);
   });
 
@@ -185,11 +189,13 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
   /**
    * Envoi dans la conversation : texte (1 à 1000 caractères), titre, moment, invitation de salon ou sondage (2 à 6 options),
    * avec une réponse facultative. 201 `{ message }`. 429 au-delà de 30 par minute. Chaque destinataire reçoit sa vue.
+   * 400 `kind_not_allowed` pour `kind: "party"` : seule `POST /party/:id/invite` crée une invitation de salon.
    */
   router.post('/social/conv/:conv/messages', async (c) => {
     const me = await actor(c);
     const scope = scopeOf(c);
     const input = parseWith(convMessageSchema, c.get('body'));
+    if (input.kind === 'party') throw new UserApiError(400, 'kind_not_allowed');
     const { body, issues } = cleanConvBody(input.kind, input.body ?? '');
     if (issues.length > 0) throw new UserApiError(400, 'invalid_body', issues);
     const outcome = await social().sendConvMessage(
@@ -219,7 +225,9 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
 
   /**
    * Bascule ma réaction `emoji` sur un message (posée si absente, retirée si présente). 200 `{ reactions }` : les réactions
-   * du message vues par moi. Les autres membres reçoivent `reaction` avec leur propre vue (`mine`).
+   * du message vues par moi. Les autres membres reçoivent `reaction` avec leur propre vue (`mine`). 429 `rate_limited` au-delà
+   * de 60 par minute ; 409 `too_many_reactions` au-delà de 6 emojis distincts de ma part sur le message ; 403 `not_allowed` en DM
+   * si l'autre profil n'accepte pas mes messages (`messagesFrom`).
    */
   router.post('/social/conv/:conv/messages/:id/reactions', async (c) => {
     const me = await actor(c);
@@ -229,6 +237,8 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
     if (!isSingleEmoji(input.emoji)) throw new UserApiError(400, 'invalid_body', ['emoji:not_emoji']);
     const outcome = await social().toggleReaction(me.pid, scope, messageId, input.emoji, Date.now());
     if (outcome.result === 'message_not_found') throw new UserApiError(404, 'message_not_found');
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
+    if (outcome.result === 'too_many_emojis') throw new UserApiError(409, 'too_many_reactions');
     if (outcome.result !== 'ok') throw convError(scope, outcome.result);
     for (const notice of outcome.notices) {
       emitSocialEvent(deps.socialEvents, [notice.pid], { t: 'reaction', conv: notice.conv, id: messageId, reactions: notice.payload });
@@ -275,8 +285,10 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
   // Groupes
 
   /**
-   * Crée un groupe : `{ name, members }` (2 à 19 amis, en plus de moi). 201 `Conversation` (le groupe, vu par moi). 403
-   * `not_friend` si un membre n'est pas mon ami.
+   * Crée un groupe dont je suis propriétaire (`group.ownerPid`) : `{ name, members }` (2 à 19 amis, en plus de moi). 201
+   * `Conversation` (le groupe, vu par moi). 403 `not_friend` si un membre n'est pas mon ami ; 403 `not_allowed` (`issues` :
+   * pids refusés) si un membre n'accepte pas mes messages (`messagesFrom`) ou est en relation de blocage avec moi ; 429
+   * `rate_limited` au-delà de 10 créations par heure.
    */
   router.post('/social/groups', async (c) => {
     const me = await actor(c);
@@ -284,14 +296,17 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
     const outcome = await social().createGroup(me.pid, input.name, input.members, Date.now());
     if (outcome.result === 'self') throw new UserApiError(400, 'self');
     if (outcome.result === 'not_friend') throw new UserApiError(403, 'not_friend');
+    if (outcome.result === 'not_allowed') throw new UserApiError(403, 'not_allowed', outcome.refused);
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     if (outcome.result !== 'ok') throw new UserApiError(400, 'invalid_body');
     return sendJson(c, outcome.conversation, 201);
   });
 
   /**
-   * Modifie un groupe dont je suis membre : `{ name?, add?, remove? }`. `add` : amis seulement (403 `not_friend`) ; 409
-   * `group_full` au-delà de 20 membres. `remove` : autres membres (moi-même : 400 `self`, pour quitter voir DELETE).
-   * 200 `Conversation`. 404 `group_not_found` si je n'en suis pas membre.
+   * Modifie un groupe dont je suis le propriétaire : `{ name?, add?, remove? }`. 403 `owner_only` pour un autre membre. `add` :
+   * amis du propriétaire (403 `not_friend`) qui acceptent ses messages et ne sont pas bloqués (403 `not_allowed`, `issues` :
+   * pids refusés) ; 409 `group_full` au-delà de 20 membres. `remove` : autres membres (moi-même : 400 `self`, pour quitter voir
+   * DELETE). 200 `Conversation`. 404 `group_not_found` si je n'en suis pas membre.
    */
   router.put('/social/groups/:id', async (c) => {
     const me = await actor(c);
@@ -299,14 +314,19 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
     const input = parseWith(groupUpdateSchema, c.get('body'));
     const outcome = await social().updateGroup(me.pid, groupId, input, Date.now());
     if (outcome.result === 'unknown') throw new UserApiError(404, 'group_not_found');
+    if (outcome.result === 'owner_only') throw new UserApiError(403, 'owner_only');
     if (outcome.result === 'self') throw new UserApiError(400, 'self');
     if (outcome.result === 'not_friend') throw new UserApiError(403, 'not_friend');
+    if (outcome.result === 'not_allowed') throw new UserApiError(403, 'not_allowed', outcome.refused);
     if (outcome.result === 'full') throw new UserApiError(409, 'group_full');
     if (outcome.result !== 'ok') throw new UserApiError(400, 'invalid_body');
     return sendJson(c, outcome.conversation);
   });
 
-  /** Quitte le groupe. 204. Le dernier membre qui part supprime le groupe. 404 `group_not_found` si je n'en suis pas membre. */
+  /**
+   * Quitte le groupe (chacun peut partir). 204. Le dernier membre qui part supprime le groupe ; si je suis le propriétaire, la
+   * propriété passe au plus ancien membre. 404 `group_not_found` si je n'en suis pas membre.
+   */
   router.delete('/social/groups/:id/me', async (c) => {
     const me = await actor(c);
     const groupId = groupOf(c);
@@ -334,11 +354,6 @@ function shareMessage(input: ShareInput): { kind: 'title' | 'moment'; body: stri
   if (input.title !== undefined) throw invalid(['title:kind_mismatch']);
   return { kind: 'moment', body: '', moment: input.moment };
 }
-
-/** Liens publics créés par profil et par heure (au-delà : 429). */
-const SHARE_LINKS_PER_HOUR = 30;
-/** Lectures publiques d'un lien par adresse IP et par minute (au-delà : 429). */
-const PUBLIC_SHARE_READS_PER_MINUTE = 60;
 
 /** Retire les clés à `undefined` (un champ facultatif absent n'est pas une valeur). */
 function defined<T extends object>(value: T): T {
@@ -378,8 +393,6 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   const socialV2 = () => backend.socialV2();
   const store = () => backend.socialV3();
   const actor = (c: Ctx) => actorOf(c, users(), socialV2(), deps.secret);
-  const linkWrites = createRateLimiter(SHARE_LINKS_PER_HOUR, 3_600_000);
-  const publicReads = createRateLimiter(PUBLIC_SHARE_READS_PER_MINUTE, 60_000);
 
   /** Diffuse une modification de liste à son audience (membres avant et après la modification). */
   const announceList = (audience: readonly string[], listId: string): void => {
@@ -435,12 +448,11 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   /**
    * Crée un lien public vers un titre (ou un moment si `pos` est donné). `title` facultatif : sans lui, le titre de l'index
    * des fiches. `withInvite` réserve un emplacement d'invitation libre du compte (consommé seulement à l'inscription).
-   * 201 `{ url, code, inviteCode? }` ; 429 `invite_quota_reached` si plus d'emplacement, 429 `rate_limited`, 400 `title_required`.
+   * 201 `{ url, code, inviteCode? }` ; 429 `invite_quota_reached` si plus d'emplacement, 429 `rate_limited` (30 liens par heure
+   * et par profil, compté en base), 400 `title_required`. Un lien expire au bout de 30 jours.
    */
   router.post('/social/share-links', async (c) => {
     const me = await actor(c);
-    const verdict = linkWrites(me.pid);
-    if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     const input = parseWith(shareLinkSchema, c.get('body'));
     const note = cleanShareNote(input.note);
     if (note.issues.length > 0) throw invalid(note.issues);
@@ -461,6 +473,7 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
       Date.now(),
     );
     if (outcome.result === 'invite_quota_reached') throw new UserApiError(429, 'invite_quota_reached');
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     const url = `${new URL(c.req.url).origin}/t/${outcome.code}`;
     return sendJson(c, defined({ url, code: outcome.code, inviteCode: outcome.inviteCode }), 201);
   });
@@ -468,16 +481,40 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   /**
    * Lien public, sans session : `{ type, tmdbId, title, poster?, pos?, from: { handle, avatarColor }, note?, inviteCode? }`.
    * Aucun pid de l'auteur, aucune bibliothèque ; `pos` seulement pour un moment, `inviteCode` seulement tant qu'il est libre.
-   * 404 `share_not_found` ; 429 `rate_limited` par adresse IP.
+   * 404 `share_not_found` ; 410 `expired` au-delà de 30 jours ; 429 `rate_limited` par adresse IP (60 par minute, compté en
+   * base) ; 400 `ip_required` si l'adresse du client est inconnue (les requêtes sans adresse ne sont pas mutualisées).
    */
   router.get('/social/share-links/:code', async (c) => {
-    const verdict = publicReads(c.get('ip') ?? 'inconnu');
-    if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
+    const ip = c.get('ip');
+    if (ip === undefined || ip === '') throw new UserApiError(400, 'ip_required');
+    const now = Date.now();
+    const retryAfterSec = await store().consumePublicRead(ip, now);
+    if (retryAfterSec !== undefined) throw new UserApiError(429, 'rate_limited', undefined, retryAfterSec);
     const code = String(c.req.param('code'));
     if (!SHARE_CODE.test(code)) throw new UserApiError(404, 'share_not_found');
-    const view = await store().shareLinkByCode(code);
+    const view = await store().shareLinkByCode(code, now);
     if (view === undefined) throw new UserApiError(404, 'share_not_found');
+    if (view === 'expired') throw new UserApiError(410, 'expired');
     return sendJson(c, view);
+  });
+
+  /**
+   * Mes liens publics (profil agissant) : `{ links: [{ code, url, type, tmdbId, title, poster?, pos?, note?, inviteCode?,
+   * createdAt, expiresAt, expired }] }`, les plus récents d'abord, expirés compris (`expired: true`).
+   */
+  router.get('/social/share-links', async (c) => {
+    const me = await actor(c);
+    const origin = new URL(c.req.url).origin;
+    const links = await store().ownShareLinks(me.pid, Date.now());
+    return sendJson(c, { links: links.map((link) => ({ ...link, url: `${origin}/t/${link.code}` })) });
+  });
+
+  /** Supprime mon lien public `:code` et libère l'invitation qu'il réservait. 204 ; 404 `share_not_found` (inconnu ou pas de moi). */
+  router.delete('/social/share-links/:code', async (c) => {
+    const me = await actor(c);
+    const code = String(c.req.param('code'));
+    if (!SHARE_CODE.test(code) || !(await store().deleteShareLink(me.pid, code))) throw new UserApiError(404, 'share_not_found');
+    return sendEmpty(c, 204);
   });
 
   // Listes partagées
@@ -490,12 +527,14 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
 
   /**
    * Crée une liste (je suis propriétaire) avec des amis membres. 201 : la liste (`{ id, name, members, items }`).
-   * 403 `not_friend`, 404 `profile_not_found`, 429 `list_limit_reached`.
+   * 403 `not_friend`, 404 `profile_not_found`, 429 `list_limit_reached` (50 listes possédées), 429 `rate_limited` (10 créations
+   * par heure et par profil).
    */
   router.post('/social/lists', async (c) => {
     const me = await actor(c);
     const input = parseWith(listCreateSchema, c.get('body'));
     const outcome = await store().createList(me.pid, input.name, input.members ?? [], Date.now());
+    if (outcome.result === 'rate_limited') throw new UserApiError(429, 'rate_limited', undefined, outcome.retryAfterSec);
     if (outcome.result !== 'ok') throw listFailure(outcome.result);
     announceList(outcome.audience, outcome.list.id);
     return sendJson(c, outcome.list, 201);

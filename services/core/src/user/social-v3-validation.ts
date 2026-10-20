@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConvScope, MessageKind } from './social-v2-store.js';
-import { cleanMessageBody, cleanNoteBody, isPid, MESSAGE_MAX_CHARS } from './social-v2-validation.js';
+import { cleanMessageBody, cleanNoteBody, cleanPoster, isPid, isTmdbImageRef, MESSAGE_MAX_CHARS } from './social-v2-validation.js';
 
 /** Schémas des routes S2 (préférences, relations, blocages, signalements, demandes de rejoindre). Objets stricts. */
 
@@ -43,7 +43,7 @@ export const reportSchema = z.strictObject({
 /** `POST /join-requests/:pid` : réponse de l'hôte. `partyId` : salon à rejoindre, facultatif. */
 export const joinAnswerSchema = z.strictObject({
   accept: z.boolean(),
-  partyId: z.string().trim().min(1).max(64).optional(),
+  partyId: z.string().regex(/^[A-Za-z0-9_-]{4,64}$/).optional(),
 });
 
 /**
@@ -90,15 +90,11 @@ const EPISODE = z.number().int().min(0).max(10_000);
 const POSITION = z.number().min(0).max(10_000_000);
 const MEDIA_TYPE = z.enum(['movie', 'series']);
 
-/** Image TMDB : URL https du CDN TMDB, ou chemin du site (`/…`, jamais `//` ni un antislash après `/`). */
-function isImageRef(value: string): boolean {
-  if (value.startsWith('https://image.tmdb.org/')) return true;
-  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\');
-}
+/** Image TMDB stricte (chemin `/abc.jpg` ou URL du CDN TMDB), sans caractère de contrôle. */
 const IMAGE_REF = z
   .string()
   .max(500)
-  .refine(isImageRef, 'image:format');
+  .refine(isTmdbImageRef, 'image:format');
 
 /** Titre partagé (kind title). `rating` : note de l'expéditeur sur 5. */
 export const titleSchema = z.strictObject({
@@ -214,13 +210,7 @@ const TITLE = z.string().trim().min(1).max(200);
 const LIST_NAME = z.string().trim().min(1).max(40);
 const PID = z.string().refine(isPid, 'pid:format');
 
-/** Affiche ou image acceptée : URL TMDB en https, ou chemin du site (`/…`). Toute autre valeur est retirée sans erreur. */
-export function cleanPoster(value: string | undefined): string | undefined {
-  if (value === undefined || value.length > 500) return undefined;
-  if (value.startsWith('https://image.tmdb.org/')) return value;
-  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : undefined;
-}
-
+/** Affiche ou image acceptée : chemin TMDB strict ou URL du CDN TMDB (voir `isTmdbImageRef`). Toute autre valeur est retirée sans erreur. */
 const POSTER = z
   .string()
   .optional()

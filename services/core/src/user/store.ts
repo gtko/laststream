@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
-import { linkInvitedPrincipals, revokeLegacyFriendshipsOf, syncProfileIdentity } from './social-handles.js';
+import { linkInvitedPrincipals, purgeSocialData, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
 import {
@@ -649,15 +649,13 @@ export class UserStore {
 
   deleteProfile(accountId: string, profileId: string): boolean {
     return this.transaction(() => {
-      // Profil principal supprimé : ses amitiés legacy compte↔compte tombent avec lui (avant la cascade sur son pid).
+      // Profil supprimé : ses données sociales sont retirées explicitement (amitiés legacy compte↔compte, relations, groupes
+      // vides supprimés et propriété transmise, listes, liens publics et invitation réservée), avant la ligne du profil. Les
+      // clés étrangères sur pid (ON DELETE CASCADE) cascaderaient aussi, mais ne règlent ni les groupes ni les invitations.
       const row = this.db.prepare('SELECT pid FROM profiles WHERE id = ? AND account_id = ?').get(profileId, accountId) as
         | { pid: string | null }
         | undefined;
-      if (row?.pid) {
-        revokeLegacyFriendshipsOf(this.db, row.pid);
-        // Pas de clé étrangère sur profile_relations : son nettoyage est explicite.
-        this.db.prepare('DELETE FROM profile_relations WHERE owner_pid = ? OR target_pid = ?').run(row.pid, row.pid);
-      }
+      if (row?.pid) purgeSocialData(this.db, row.pid);
       return this.db.prepare('DELETE FROM profiles WHERE id = ? AND account_id = ?').run(profileId, accountId).changes > 0;
     });
   }

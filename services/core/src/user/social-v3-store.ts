@@ -1,4 +1,5 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { consumeRate, rateRetryAfter, recordRateHit } from './rate-hits.js';
 import { generateInviteCode } from './social-store.js';
 import { handleOf, type FriendView, type Handle, SocialV2Store } from './social-v2-store.js';
 import type { SqlDb } from './sql.js';
@@ -19,6 +20,14 @@ export const MAX_LIST_MEMBERS = 50;
 /** Listes possédées par un profil, éléments par liste. */
 export const MAX_OWNED_LISTS = 50;
 export const MAX_LIST_ITEMS = 1000;
+/** Durée de vie d'un lien public (ms) : au-delà, `GET` répond 410 et l'invitation réservée est libérée. */
+export const SHARE_LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Liens publics créés par profil et par heure, listes créées par profil et par heure, lectures publiques par IP et par minute. */
+export const SHARE_LINKS_PER_HOUR = 30;
+export const LISTS_PER_HOUR = 10;
+export const PUBLIC_READS_PER_MINUTE = 60;
+const HOUR_MS = 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
 
 export interface ShareLinkInput {
   type: 'movie' | 'series';
@@ -42,7 +51,25 @@ export interface ShareLinkView {
   inviteCode?: string;
 }
 
-export type ShareLinkOutcome = { result: 'invite_quota_reached' } | { result: 'ok'; code: string; inviteCode?: string };
+export type ShareLinkOutcome =
+  | { result: 'invite_quota_reached' }
+  | { result: 'rate_limited'; retryAfterSec: number }
+  | { result: 'ok'; code: string; inviteCode?: string };
+
+/** Lien public vu par son auteur (`GET /share-links`). `inviteCode` : invitation réservée, tant qu'elle n'est pas consommée. */
+export interface OwnShareLinkView {
+  code: string;
+  type: 'movie' | 'series';
+  tmdbId: number;
+  title: string;
+  poster?: string;
+  pos?: number;
+  note?: string;
+  inviteCode?: string;
+  createdAt: number;
+  expiresAt: number;
+  expired: boolean;
+}
 
 export interface SharedItemView {
   type: 'movie' | 'series';
@@ -77,7 +104,8 @@ export interface ListItemInput {
 /** Résultat d'une écriture sur une liste. `audience` : profils à prévenir (membres avant et après la modification). */
 export type ListWrite<T extends object = object> =
   | ({ result: 'ok'; audience: string[] } & T)
-  | { result: 'not_found' | 'owner_only' | 'unknown' | 'not_friend' | 'too_many_members' | 'list_limit_reached' | 'list_full' | 'item_exists' | 'item_not_found' };
+  | { result: 'not_found' | 'owner_only' | 'unknown' | 'not_friend' | 'too_many_members' | 'list_limit_reached' | 'list_full' | 'item_exists' | 'item_not_found' }
+  | { result: 'rate_limited'; retryAfterSec: number };
 
 interface ListRow {
   id: string;
@@ -126,6 +154,10 @@ export class SocialV3Store {
    */
   createShareLink(accountId: string, authorPid: string, input: ShareLinkInput, now: number): ShareLinkOutcome {
     return this.db.transaction((): ShareLinkOutcome => {
+      // 30 liens par heure et par profil (compté en SQL). Les liens expirés rendent d'abord leur invitation.
+      const retryAfterSec = rateRetryAfter(this.db, 'share_link', authorPid, SHARE_LINKS_PER_HOUR, HOUR_MS, now);
+      if (retryAfterSec !== undefined) return { result: 'rate_limited', retryAfterSec };
+      this.releaseExpiredInvites(now);
       let inviteId: string | null = null;
       let inviteCode: string | undefined;
       if (input.withInvite) {
@@ -152,18 +184,95 @@ export class SocialV3Store {
           inviteId,
           now,
         );
+      recordRateHit(this.db, 'share_link', authorPid, now);
       return inviteCode === undefined ? { result: 'ok', code } : { result: 'ok', code, inviteCode };
     });
   }
 
   /**
-   * Lien public par son code, sans session. `undefined` si inconnu. L'invitation n'est donnée que si elle n'a pas encore
-   * été consommée (inscription faite) ; son code reste celui de l'emplacement, à jour après une révocation.
+   * Limite de lecture publique par adresse IP (60 par minute, persistante). Seul un condensat de l'adresse est gardé.
+   * Renvoie les secondes d'attente si la limite est atteinte, sinon `undefined` (la lecture est comptée).
    */
-  shareLinkByCode(code: string): ShareLinkView | undefined {
+  consumePublicRead(ip: string, now: number): number | undefined {
+    const key = createHash('sha256').update(ip).digest('hex').slice(0, 32);
+    return consumeRate(this.db, 'share_read', key, PUBLIC_READS_PER_MINUTE, MINUTE_MS, now);
+  }
+
+  /** Rend leur invitation (état « envoyé » levé si non consommée) aux liens expirés qui en réservaient une. */
+  private releaseExpiredInvites(now: number): void {
+    const limit = now - SHARE_LINK_TTL_MS;
+    this.db
+      .prepare(
+        'UPDATE invites SET sent_at = NULL WHERE used_at IS NULL AND id IN (SELECT invite_id FROM share_links WHERE invite_id IS NOT NULL AND created_at <= ?)',
+      )
+      .run(limit);
+    this.db.prepare('UPDATE share_links SET invite_id = NULL WHERE invite_id IS NOT NULL AND created_at <= ?').run(limit);
+  }
+
+  /** Mes liens publics (le profil `authorPid`), les plus récents d'abord, expirés compris (marqués `expired`). */
+  ownShareLinks(authorPid: string, now: number): OwnShareLinkView[] {
+    return this.db.transaction((): OwnShareLinkView[] => {
+      this.releaseExpiredInvites(now);
+      const rows = this.db
+        .prepare(
+          `SELECT s.code, s.type, s.tmdb_id, s.title, s.poster, s.pos, s.note, s.created_at, i.code AS invite_code, i.used_at AS invite_used_at
+             FROM share_links s LEFT JOIN invites i ON i.id = s.invite_id
+            WHERE s.author_pid = ? ORDER BY s.created_at DESC, s.rowid DESC`,
+        )
+        .all(authorPid) as unknown as {
+        code: string;
+        type: 'movie' | 'series';
+        tmdb_id: number;
+        title: string;
+        poster: string | null;
+        pos: number | null;
+        note: string | null;
+        created_at: number;
+        invite_code: string | null;
+        invite_used_at: string | null;
+      }[];
+      return rows.map((row) => {
+        const createdAt = Number(row.created_at);
+        const view: OwnShareLinkView = {
+          code: row.code,
+          type: row.type,
+          tmdbId: Number(row.tmdb_id),
+          title: row.title,
+          createdAt,
+          expiresAt: createdAt + SHARE_LINK_TTL_MS,
+          expired: now - createdAt >= SHARE_LINK_TTL_MS,
+        };
+        if (row.poster !== null) view.poster = row.poster;
+        if (row.pos !== null) view.pos = Number(row.pos);
+        if (row.note !== null) view.note = row.note;
+        if (row.invite_code !== null && row.invite_used_at === null) view.inviteCode = row.invite_code;
+        return view;
+      });
+    });
+  }
+
+  /** Supprime un lien public de son auteur et libère son invitation réservée (si non consommée). `false` si le lien n'existe pas ou n'est pas à lui. */
+  deleteShareLink(authorPid: string, code: string): boolean {
+    return this.db.transaction((): boolean => {
+      const row = this.db.prepare('SELECT invite_id FROM share_links WHERE code = ? AND author_pid = ?').get(code, authorPid) as unknown as
+        | { invite_id: string | null }
+        | undefined;
+      if (row === undefined) return false;
+      if (row.invite_id !== null) this.db.prepare('UPDATE invites SET sent_at = NULL WHERE id = ? AND used_at IS NULL').run(row.invite_id);
+      this.db.prepare('DELETE FROM share_links WHERE code = ?').run(code);
+      return true;
+    });
+  }
+
+  /**
+   * Lien public par son code, sans session. `undefined` si inconnu, `'expired'` au-delà de 30 jours (l'invitation réservée est
+   * alors libérée). L'invitation n'est donnée que si elle n'a pas encore été consommée (inscription faite) ; son code
+   * reste celui de l'emplacement, à jour après une révocation.
+   */
+  shareLinkByCode(code: string, now: number): ShareLinkView | 'expired' | undefined {
     const row = this.db
       .prepare(
-        `SELECT s.type, s.tmdb_id, s.title, s.poster, s.pos, s.note, p.handle_name, p.handle_tag, p.avatar_color,
+        `SELECT s.type, s.tmdb_id, s.title, s.poster, s.pos, s.note, s.created_at, p.handle_name, p.handle_tag, p.avatar_color,
                 i.code AS invite_code, i.used_at AS invite_used_at
          FROM share_links s
          JOIN profiles p ON p.pid = s.author_pid
@@ -178,6 +287,7 @@ export class SocialV3Store {
           poster: string | null;
           pos: number | null;
           note: string | null;
+          created_at: number;
           handle_name: string;
           handle_tag: string;
           avatar_color: string;
@@ -186,6 +296,10 @@ export class SocialV3Store {
         }
       | undefined;
     if (row === undefined) return undefined;
+    if (now - Number(row.created_at) >= SHARE_LINK_TTL_MS) {
+      this.releaseExpiredInvites(now);
+      return 'expired';
+    }
     const view: ShareLinkView = {
       type: row.type,
       tmdbId: Number(row.tmdb_id),
@@ -257,6 +371,8 @@ export class SocialV3Store {
       if (extra.length + 1 > MAX_LIST_MEMBERS) return { result: 'too_many_members' };
       const refusal = this.checkFriends(ownerPid, extra);
       if (refusal !== undefined) return { result: refusal };
+      const retryAfterSec = consumeRate(this.db, 'list_create', ownerPid, LISTS_PER_HOUR, HOUR_MS, now);
+      if (retryAfterSec !== undefined) return { result: 'rate_limited', retryAfterSec };
       const id = randomUUID();
       this.db.prepare('INSERT INTO shared_lists (id, owner_pid, name, created_at) VALUES (?, ?, ?, ?)').run(id, ownerPid, name, now);
       this.db.prepare('INSERT INTO shared_list_members (list_id, pid) VALUES (?, ?)').run(id, ownerPid);

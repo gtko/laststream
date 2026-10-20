@@ -756,6 +756,28 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 23,
+    name: 'limites de débit persistantes, propriété des groupes',
+    sql: `
+      -- Limites de débit à fenêtre glissante : une ligne par action autorisée (seau, clé, instant en ms), purgée au-delà de
+      -- deux heures. Sans clé étrangère : une ligne expire d'elle-même.
+      CREATE TABLE rate_hits (
+        bucket TEXT NOT NULL,
+        key TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE INDEX rate_hits_key ON rate_hits (bucket, key, at);
+      CREATE INDEX rate_hits_at ON rate_hits (at);
+
+      -- Groupes : created_by est le propriétaire, toujours un membre. Un groupe sans membre est supprimé ; un propriétaire
+      -- parti avant ce correctif cède sa place au plus ancien membre.
+      DELETE FROM social_groups WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id);
+      UPDATE social_groups
+         SET created_by = (SELECT m.pid FROM social_group_members m WHERE m.group_id = social_groups.id ORDER BY m.joined_at, m.pid LIMIT 1)
+       WHERE NOT EXISTS (SELECT 1 FROM social_group_members m WHERE m.group_id = social_groups.id AND m.pid = social_groups.created_by);
+    `,
+  },
 ];
 
 /**

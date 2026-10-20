@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { drawNewHandleTag, revokeLegacyFriendship, syncProfileIdentity } from './social-handles.js';
+import { consumeRate } from './rate-hits.js';
+import { drawNewHandleTag, revokeLegacyFriendship, settleGroupAfterLeave, syncProfileIdentity } from './social-handles.js';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
 import {
   type ActivityItem,
@@ -238,8 +239,14 @@ export interface PresenceChange {
 }
 
 export type BlockOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'household' } | { result: 'ok'; unlinked: boolean };
-export type ReportOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'ok' };
-export type JoinOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'not_allowed' } | { result: 'ok'; from: FriendView };
+export type ReportOutcome = { result: 'self' } | { result: 'not_found' } | { result: 'rate_limited'; retryAfterSec: number } | { result: 'ok' };
+/** `fresh` : faux si une demande identique date de moins d'une minute (l'hôte n'est pas prévenu une seconde fois). */
+export type JoinOutcome =
+  | { result: 'self' }
+  | { result: 'not_found' }
+  | { result: 'not_allowed' }
+  | { result: 'rate_limited'; retryAfterSec: number }
+  | { result: 'ok'; from: FriendView; fresh: boolean };
 export type HistoryOutcome = { result: 'unknown' } | { result: 'hidden' } | { result: 'ok'; items: HistoryItem[] };
 
 export type RequestOutcome =
@@ -417,6 +424,19 @@ export const MAX_MESSAGE_PAGE = 50;
 export const MAX_NOTES_PER_MEDIA = 500;
 /** Membres d'un groupe, créateur compris, au plus. */
 export const MAX_GROUP_MEMBERS = 20;
+/** Groupes créés par un profil et par heure. */
+export const GROUPS_PER_HOUR = 10;
+/** Réactions posées ou retirées par un profil et par minute ; emojis distincts d'un profil sur un même message. */
+export const REACTIONS_PER_MINUTE = 60;
+export const MAX_EMOJIS_PER_MESSAGE = 6;
+/** Demandes de rejoindre par paire (demandeur, hôte) et par tranche de 10 minutes ; délai sous lequel l'hôte n'est pas prévenu deux fois. */
+export const JOIN_REQUESTS_PER_WINDOW = 5;
+const JOIN_WINDOW_MS = 10 * 60_000;
+const JOIN_NOTIFY_GAP_MS = 60_000;
+/** Signalements par profil et par jour. */
+export const REPORTS_PER_DAY = 10;
+const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
 
 /** Référence à un titre (contrat `MediaRef`). Saison et épisode ignorés pour un film. */
 export interface MediaRef {
@@ -507,6 +527,8 @@ export interface MessageView {
 export interface GroupView {
   id: string;
   name: string;
+  /** Propriétaire du groupe (pid) : seul à renommer et à ajouter ou retirer des membres. Peut être le profil qui regarde. */
+  ownerPid: string;
   members: FriendView[];
 }
 
@@ -577,15 +599,22 @@ export type ShareConvOutcome =
   | { result: 'sent'; sent: { message: MessageView; notices: Notice<MessageView>[] }[] };
 export type ReadOutcome = { result: ConvError } | { result: 'ok'; count: number; at: number; peer?: string };
 export type ReactionOutcome =
-  | { result: ConvError | 'message_not_found' }
+  | { result: ConvError | 'message_not_found' | 'not_allowed' | 'too_many_emojis' }
+  | { result: 'rate_limited'; retryAfterSec: number }
   | { result: 'ok'; reactions: ReactionView[]; notices: Notice<ReactionView[]>[] };
 export type VoteOutcome =
   | { result: ConvError | 'poll_not_found' | 'option_unknown' | 'poll_closed' | 'already_voted' }
   | { result: 'ok'; poll: PollView; notices: Notice<PollView>[] };
-export type TypingOutcome = { result: ConvError } | { result: 'ok'; notices: Notice<null>[] };
-export type CreateGroupOutcome = { result: 'self' | 'not_friend' } | { result: 'ok'; conversation: GroupConversationView };
+export type TypingOutcome = { result: ConvError | 'not_allowed' } | { result: 'ok'; notices: Notice<null>[] };
+/** `refused` : pids qui n'acceptent pas les messages du créateur (préférence `messagesFrom`) ou en relation de blocage avec lui. */
+export type CreateGroupOutcome =
+  | { result: 'self' | 'not_friend' }
+  | { result: 'not_allowed'; refused: string[] }
+  | { result: 'rate_limited'; retryAfterSec: number }
+  | { result: 'ok'; conversation: GroupConversationView };
 export type UpdateGroupOutcome =
-  | { result: 'self' | 'not_friend' | 'unknown' | 'full' }
+  | { result: 'self' | 'not_friend' | 'unknown' | 'full' | 'owner_only' }
+  | { result: 'not_allowed'; refused: string[] }
   | { result: 'ok'; conversation: GroupConversationView };
 
 export type AddNoteOutcome =
@@ -666,9 +695,14 @@ const SENT_MESSAGES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM 
 /** Notes comptées par le journal des créations : une suppression ne libère pas de place dans le quota. */
 const SENT_NOTES_SQL = 'SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM note_creations WHERE author_pid = ? AND created_at > ?';
 
+/** Auteur d'un message (alias `m`) sans blocage avec le lecteur : paramètres (lecteur, lecteur). */
+const NOT_BLOCKED_AUTHOR_SQL =
+  'NOT EXISTS (SELECT 1 FROM blocks bk WHERE (bk.blocker_pid = ? AND bk.blocked_pid = m.from_pid) OR (bk.blocker_pid = m.from_pid AND bk.blocked_pid = ?))';
+
 /** Clause des messages d'une conversation (alias `m`) et ses paramètres. */
 function scopeSql(scope: ConvScope, viewer: string): { sql: string; params: string[] } {
-  if (scope.kind === 'group') return { sql: 'm.group_id = ?', params: [scope.id] };
+  // Groupe : les messages d'un profil en relation de blocage avec `viewer` (dans un sens ou l'autre) restent invisibles pour lui.
+  if (scope.kind === 'group') return { sql: `m.group_id = ? AND ${NOT_BLOCKED_AUTHOR_SQL}`, params: [scope.id, viewer, viewer] };
   return {
     sql: '((m.from_pid = ? AND m.to_pid = ?) OR (m.from_pid = ? AND m.to_pid = ?))',
     params: [viewer, scope.peer, scope.peer, viewer],
@@ -688,6 +722,21 @@ function parseJson<T>(raw: string | null): T | undefined {
     // Contenu illisible : le message reste lisible sans cette charge.
     return undefined;
   }
+}
+
+/** Vue d'un membre de groupe ou de liste qui n'est ni ami ni du foyer : pid, handle, avatar et couleur, hors ligne. */
+function strangerView(row: ViewRow): FriendView {
+  const view: FriendView = {
+    pid: row.pid,
+    handle: handleOf(row.handle_name, row.handle_tag),
+    avatarColor: row.avatar_color,
+    status: 'offline',
+    household: false,
+    favorite: false,
+    muted: false,
+  };
+  if (row.avatar !== null && row.avatar !== '') view.avatar = row.avatar;
+  return view;
 }
 
 /** Vue d'un message pour `viewer`. Les réactions et le sondage sont déjà calculés pour lui. */
@@ -1252,6 +1301,11 @@ export class SocialV2Store {
     return this.db.transaction((): ReportOutcome => {
       if (reporterPid === targetPid) return { result: 'self' };
       if (this.card(targetPid) === undefined) return { result: 'not_found' };
+      // 10 signalements par jour et par profil, comptés dans la table des signalements elle-même (elle survit aux suppressions).
+      const sent = this.db.prepare('SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM reports WHERE reporter_pid = ? AND created_at > ?').get(reporterPid, now - DAY_MS);
+      if (Number(sent?.n ?? 0) >= REPORTS_PER_DAY) {
+        return { result: 'rate_limited', retryAfterSec: Math.max(1, Math.ceil((Number(sent?.oldest ?? now) + DAY_MS - now) / 1000)) };
+      }
       this.db
         .prepare('INSERT INTO reports (id, reporter_pid, target_pid, reason, details, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(randomUUID(), reporterPid, targetPid, reason, details ?? null, now);
@@ -1272,13 +1326,20 @@ export class SocialV2Store {
       if (this.prefsOf(hostPid).watchWith === 'never') return { result: 'not_allowed' };
       const from = this.friendViewOf(hostPid, requesterPid, now);
       if (from === undefined) return { result: 'not_found' };
-      this.db
-        .prepare(
-          `INSERT INTO join_requests (requester_pid, host_pid, created_at) VALUES (?, ?, ?)
-           ON CONFLICT(requester_pid, host_pid) DO UPDATE SET created_at = excluded.created_at`,
-        )
-        .run(requesterPid, hostPid, now);
-      return { result: 'ok', from };
+      const retryAfterSec = consumeRate(this.db, 'join_request', `${requesterPid}|${hostPid}`, JOIN_REQUESTS_PER_WINDOW, JOIN_WINDOW_MS, now);
+      if (retryAfterSec !== undefined) return { result: 'rate_limited', retryAfterSec };
+      // Une demande identique de moins d'une minute reste en place, sans nouvelle notification à l'hôte.
+      const existing = this.db.prepare('SELECT created_at FROM join_requests WHERE requester_pid = ? AND host_pid = ?').get(requesterPid, hostPid);
+      const fresh = existing === undefined || now - Number(existing.created_at) >= JOIN_NOTIFY_GAP_MS;
+      if (fresh) {
+        this.db
+          .prepare(
+            `INSERT INTO join_requests (requester_pid, host_pid, created_at) VALUES (?, ?, ?)
+             ON CONFLICT(requester_pid, host_pid) DO UPDATE SET created_at = excluded.created_at`,
+          )
+          .run(requesterPid, hostPid, now);
+      }
+      return { result: 'ok', from, fresh };
     });
   }
 
@@ -1616,9 +1677,11 @@ export class SocialV2Store {
     return this.db
       .prepare(
         `SELECT m.pid FROM social_group_members m JOIN profiles p ON p.pid = m.pid
-          WHERE m.group_id = ? AND m.pid <> ? AND p.is_kid = 0 ORDER BY m.joined_at, m.pid`,
+          WHERE m.group_id = ? AND m.pid <> ? AND p.is_kid = 0
+            AND NOT EXISTS (SELECT 1 FROM blocks bk WHERE (bk.blocker_pid = ? AND bk.blocked_pid = m.pid) OR (bk.blocker_pid = m.pid AND bk.blocked_pid = ?))
+          ORDER BY m.joined_at, m.pid`,
       )
-      .all(scope.id, viewer)
+      .all(scope.id, viewer, viewer, viewer)
       .map((row) => String(row.pid));
   }
 
@@ -1709,9 +1772,9 @@ export class SocialV2Store {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS n FROM messages m JOIN social_group_members g ON g.group_id = m.group_id AND g.pid = ?
-          WHERE m.group_id = ? AND m.from_pid <> ? AND m.created_at > g.read_at`,
+          WHERE m.group_id = ? AND m.from_pid <> ? AND m.created_at > g.read_at AND ${NOT_BLOCKED_AUTHOR_SQL}`,
       )
-      .get(viewer, scope.id, viewer);
+      .get(viewer, scope.id, viewer, viewer, viewer);
     return Number(row?.n ?? 0);
   }
 
@@ -1724,7 +1787,10 @@ export class SocialV2Store {
       .prepare(`SELECT ${VIEW_COLUMNS} FROM profiles p LEFT JOIN profile_presence pr ON pr.profile_pid = p.pid WHERE p.pid = ? AND p.is_kid = 0`)
       .get(pid) as unknown as ViewRow | undefined;
     if (row === undefined || row.handle_name === null) return undefined;
-    return this.presentView(viewer, row, this.relationOf(viewer, pid) === 'household', now);
+    const relation = this.relationOf(viewer, pid);
+    // Ni ami ni foyer (ou en relation de blocage) : identité publique seulement, jamais de présence ni de titre en cours.
+    if (relation === undefined) return strangerView(row);
+    return this.presentView(viewer, row, relation === 'household', now);
   }
 
   /** Vue d'un groupe pour un de ses membres : membres (sans lui), dernier message et non-lus. */
@@ -1742,7 +1808,12 @@ export class SocialV2Store {
       if (member !== undefined) members.push(member);
     }
     const scope: ConvScope = { kind: 'group', id: groupId };
-    const view: GroupConversationView = { conv: convKey(scope), group: { id: groupId, name, members }, unread: this.unreadOf(viewer, scope) };
+    const owner = this.db.prepare('SELECT created_by FROM social_groups WHERE id = ?').get(groupId);
+    const view: GroupConversationView = {
+      conv: convKey(scope),
+      group: { id: groupId, name, ownerPid: String(owner?.created_by ?? ''), members },
+      unread: this.unreadOf(viewer, scope),
+    };
     const last = this.lastOf(viewer, scope);
     if (last !== undefined) view.last = last;
     return view;
@@ -1898,9 +1969,16 @@ export class SocialV2Store {
       const access = this.accessOf(viewer, scope);
       if (access !== 'ok') return { result: access };
       if (!this.inScope(messageId, viewer, scope)) return { result: 'message_not_found' };
+      if (scope.kind === 'dm' && !this.acceptsMessagesFrom(scope.peer, viewer)) return { result: 'not_allowed' };
       const existing = this.db
         .prepare('SELECT 1 AS x FROM message_reactions WHERE message_id = ? AND pid = ? AND emoji = ?')
         .get(messageId, viewer, emoji);
+      if (existing === undefined) {
+        const distinct = this.db.prepare('SELECT COUNT(*) AS n FROM message_reactions WHERE message_id = ? AND pid = ?').get(messageId, viewer);
+        if (Number(distinct?.n ?? 0) >= MAX_EMOJIS_PER_MESSAGE) return { result: 'too_many_emojis' };
+      }
+      const retryAfterSec = consumeRate(this.db, 'reaction', viewer, REACTIONS_PER_MINUTE, WRITE_WINDOW_MS, now);
+      if (retryAfterSec !== undefined) return { result: 'rate_limited', retryAfterSec };
       if (existing !== undefined) {
         this.db.prepare('DELETE FROM message_reactions WHERE message_id = ? AND pid = ? AND emoji = ?').run(messageId, viewer, emoji);
       } else {
@@ -1954,6 +2032,7 @@ export class SocialV2Store {
   typingNotices(viewer: string, scope: ConvScope): TypingOutcome {
     const access = this.accessOf(viewer, scope);
     if (access !== 'ok') return { result: access };
+    if (scope.kind === 'dm' && !this.acceptsMessagesFrom(scope.peer, viewer)) return { result: 'not_allowed' };
     const conv = convKey(recipientScope(viewer, scope));
     return { result: 'ok', notices: this.recipientsOf(viewer, scope).map((pid) => ({ pid, conv, payload: null })) };
   }
@@ -1961,15 +2040,34 @@ export class SocialV2Store {
   // Groupes
 
   /**
-   * Crée un groupe. Membres = amis acceptés du créateur (pas le foyer), distincts, sans lui-même. Le créateur est membre
-   * et lit le groupe dès maintenant.
+   * Vérifie des profils à ajouter à un groupe dont `owner` est propriétaire : amis acceptés du propriétaire (pas le foyer),
+   * qui acceptent ses messages (préférence `messagesFrom`) et sans blocage avec lui. `not_friend` prime sur `not_allowed`
+   * (dont `refused` liste les pids). `undefined` : tous conviennent.
+   */
+  private inviteRefusal(owner: string, pids: readonly string[]): { result: 'not_friend' } | { result: 'not_allowed'; refused: string[] } | undefined {
+    const refused: string[] = [];
+    let notFriend = false;
+    for (const pid of pids) {
+      if (this.isBlockedEither(owner, pid)) refused.push(pid);
+      else if (this.relationOf(owner, pid) !== 'friend') notFriend = true;
+      else if (!this.acceptsMessagesFrom(pid, owner)) refused.push(pid);
+    }
+    if (notFriend) return { result: 'not_friend' };
+    return refused.length > 0 ? { result: 'not_allowed', refused } : undefined;
+  }
+
+  /**
+   * Crée un groupe dont le créateur est propriétaire. Membres = amis acceptés du créateur (pas le foyer), distincts, sans
+   * lui-même, qui acceptent ses messages et ne sont pas bloqués (sinon `not_allowed`, avec les pids refusés). 10 créations
+   * par heure et par profil. Le créateur est membre et lit le groupe dès maintenant.
    */
   createGroup(viewer: string, name: string, memberPids: string[], now: number): CreateGroupOutcome {
     return this.db.transaction((): CreateGroupOutcome => {
       if (memberPids.includes(viewer)) return { result: 'self' };
-      for (const pid of memberPids) {
-        if (this.relationOf(viewer, pid) !== 'friend') return { result: 'not_friend' };
-      }
+      const refusal = this.inviteRefusal(viewer, memberPids);
+      if (refusal !== undefined) return refusal;
+      const retryAfterSec = consumeRate(this.db, 'group_create', viewer, GROUPS_PER_HOUR, HOUR_MS, now);
+      if (retryAfterSec !== undefined) return { result: 'rate_limited', retryAfterSec };
       const id = randomUUID();
       this.db.prepare('INSERT INTO social_groups (id, name, created_by, created_at) VALUES (?, ?, ?, ?)').run(id, name, viewer, now);
       for (const pid of [viewer, ...memberPids]) {
@@ -1980,17 +2078,20 @@ export class SocialV2Store {
   }
 
   /**
-   * Modifie un groupe (nom, ajouts d'amis, retraits de membres). Réservé aux membres. Un ajout qui dépasse 20 membres est
-   * refusé (`full`). Retirer soi-même passe par `leaveGroup`.
+   * Modifie un groupe (nom, ajouts, retraits) : réservé au propriétaire (`owner_only` pour un autre membre ; `unknown` pour
+   * un non-membre). Un ajout suit les règles de la création (ami du propriétaire, accepte ses messages, pas de blocage) ;
+   * au-delà de 20 membres : `full`. Se retirer soi-même passe par `leaveGroup`.
    */
   updateGroup(viewer: string, groupId: string, patch: { name?: string; add?: string[]; remove?: string[] }, now: number): UpdateGroupOutcome {
     return this.db.transaction((): UpdateGroupOutcome => {
       if (!this.isMember(viewer, groupId)) return { result: 'unknown' };
+      const group = this.db.prepare('SELECT name, created_by FROM social_groups WHERE id = ?').get(groupId);
+      if (group === undefined) return { result: 'unknown' };
+      if (String(group.created_by) !== viewer) return { result: 'owner_only' };
       if (patch.add?.includes(viewer) || patch.remove?.includes(viewer)) return { result: 'self' };
       const toAdd = (patch.add ?? []).filter((pid) => !this.isMember(pid, groupId));
-      for (const pid of toAdd) {
-        if (this.relationOf(viewer, pid) !== 'friend') return { result: 'not_friend' };
-      }
+      const refusal = this.inviteRefusal(viewer, toAdd);
+      if (refusal !== undefined) return refusal;
       const toRemove = (patch.remove ?? []).filter((pid) => this.isMember(pid, groupId));
       if (this.memberCount(groupId) + toAdd.length - toRemove.length > MAX_GROUP_MEMBERS) return { result: 'full' };
       if (patch.name !== undefined) this.db.prepare('UPDATE social_groups SET name = ? WHERE id = ?').run(patch.name, groupId);
@@ -1998,17 +2099,20 @@ export class SocialV2Store {
       for (const pid of toAdd) {
         this.db.prepare('INSERT INTO social_group_members (group_id, pid, joined_at, read_at) VALUES (?, ?, ?, ?)').run(groupId, pid, now, now);
       }
-      const row = this.db.prepare('SELECT name FROM social_groups WHERE id = ?').get(groupId);
-      return { result: 'ok', conversation: this.groupConversation(viewer, groupId, String(row?.name ?? ''), now) };
+      const name = patch.name ?? String(group.name);
+      return { result: 'ok', conversation: this.groupConversation(viewer, groupId, name, now) };
     });
   }
 
-  /** Quitte un groupe. Le dernier membre qui part supprime le groupe. `false` si l'on n'en est pas membre. */
+  /**
+   * Quitte un groupe (chacun peut partir). Le dernier membre qui part supprime le groupe ; si le propriétaire part, la
+   * propriété passe au plus ancien membre restant. `false` si l'on n'en est pas membre.
+   */
   leaveGroup(viewer: string, groupId: string): boolean {
     return this.db.transaction(() => {
       if (!this.isMember(viewer, groupId)) return false;
       this.db.prepare('DELETE FROM social_group_members WHERE group_id = ? AND pid = ?').run(groupId, viewer);
-      if (this.memberCount(groupId) === 0) this.db.prepare('DELETE FROM social_groups WHERE id = ?').run(groupId);
+      settleGroupAfterLeave(this.db, groupId, viewer);
       return true;
     });
   }

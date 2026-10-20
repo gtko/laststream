@@ -19,7 +19,7 @@ interface GroupMessage {
 interface ConversationBody {
   conv: string;
   pid?: string;
-  group?: { id: string; name: string; members: { pid: string; household: boolean }[] };
+  group?: { id: string; name: string; ownerPid: string; members: { pid: string; household: boolean }[] };
   last?: GroupMessage;
   unread: number;
 }
@@ -191,9 +191,13 @@ describe('modification (PUT /user/social/groups/:id)', () => {
   it('nom, retrait et ajout d’un ami ; ajout d’un non-ami refusé ; soi-même et corps vide refusés', async () => {
     const id = await makeGroup();
 
-    const renamed = await updateGroup(cast.carol, id, { name: 'Ciné' });
+    const foreign = await updateGroup(cast.carol, id, { name: 'Ciné' });
+    expect(foreign.status).toBe(403);
+    expect(foreign.body.error).toBe('owner_only');
+    const renamed = await updateGroup(cast.alice, id, { name: 'Ciné' });
     expect(renamed.status).toBe(200);
     expect(renamed.body.group?.name).toBe('Ciné');
+    expect(renamed.body.group?.ownerPid).toBe(cast.alice.pid);
 
     const removed = await updateGroup(cast.alice, id, { remove: [cast.carol.pid] });
     expect(removed.status).toBe(200);

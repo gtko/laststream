@@ -165,10 +165,10 @@ describe('charges riches (titre, moment, invitation, sondage)', () => {
     expect(res.body.message.body).toBe('Ici !');
   });
 
-  it('invitation de salon : identifiant et titre', async () => {
+  it('invitation de salon : refusée par /conv (400 kind_not_allowed), seule POST /party/:id/invite en crée', async () => {
     const res = await sendConv(cast.alice, dm(cast.bob.pid), { kind: 'party', party: { partyId: 'abcd1234', title: 'Soirée' } });
-    expect(res.status).toBe(201);
-    expect(res.body.message.party).toEqual({ partyId: 'abcd1234', title: 'Soirée' });
+    expect(res.status).toBe(400);
+    expect((res.body as unknown as { error: string }).error).toBe('kind_not_allowed');
   });
 
   it('charges invalides refusées (400), sans rien écrire : charge absente, hors kind, champs inconnus, bornes, images, sondage', async () => {

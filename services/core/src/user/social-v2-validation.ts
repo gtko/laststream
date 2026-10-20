@@ -26,14 +26,25 @@ export const requestSchema = z.strictObject({
     .refine((value) => parseHandle(value) !== null, 'handle:format'),
 });
 
+/** Chemin TMDB seul (`/abc123.jpg`) ou URL du CDN d'images TMDB en https (`https://image.tmdb.org/t/p/w500/abc123.jpg`). */
+const TMDB_PATH_IMAGE = /^\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/;
+const TMDB_URL_IMAGE = /^https:\/\/image\.tmdb\.org\/t\/p\/\w+\/[A-Za-z0-9_-]+\.(jpg|jpeg|png|webp)$/;
+
 /**
- * Affiche acceptée : URL TMDB en https, ou chemin du site (`/…`, jamais `//` ni un antislash après `/`, qui désignent un autre hôte).
- * Toute autre valeur est supprimée sans erreur : le titre en cours reste accepté, sans affiche.
+ * Image acceptée : chemin TMDB strict ou URL du CDN TMDB, 500 caractères au plus, sans caractère de contrôle. Tout autre
+ * chemin du site, hôte, schéma ou paramètre est refusé.
  */
-function cleanPoster(value: string | undefined): string | undefined {
-  if (value === undefined || value.length > 500) return undefined;
-  if (value.startsWith('https://image.tmdb.org/')) return value;
-  return value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\') ? value : undefined;
+export function isTmdbImageRef(value: string): boolean {
+  if (value.length > 500 || /\p{Cc}/u.test(value)) return false;
+  return TMDB_PATH_IMAGE.test(value) || TMDB_URL_IMAGE.test(value);
+}
+
+/**
+ * Affiche acceptée (voir `isTmdbImageRef`). Toute autre valeur est supprimée sans erreur : le titre en cours reste accepté,
+ * sans affiche.
+ */
+export function cleanPoster(value: string | undefined): string | undefined {
+  return value !== undefined && isTmdbImageRef(value) ? value : undefined;
 }
 
 const TMDB_ID = z.number().int().positive().max(1_000_000_000);
