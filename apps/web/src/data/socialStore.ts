@@ -564,7 +564,6 @@ export const block = (pid: string): Promise<void> => run(() => v3.blockUser(pid)
 });
 
 export const unblock = (pid: string): Promise<void> => run(() => v3.unblockUser(pid), () => ({ blocked: removePid(state.blocked, pid) }));
-const loadBlocks = (): Promise<BlockedPerson[]> => run(v3.getBlocks, (r) => ({ blocked: r.blocked })).then((r) => r.blocked);
 export const report = (input: ReportInput): Promise<void> => run(() => v3.reportUser(input));
 
 /** Demande à rejoindre le salon d'un ami. */

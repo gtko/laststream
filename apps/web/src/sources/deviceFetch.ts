@@ -1,6 +1,6 @@
 import { parseLanguages } from '@laststream/protocol/language';
 import type { DeviceTarget } from '../data/sources';
-import type { Lang, Resolution, Stream } from '../data/stream';
+import type { Resolution, Stream } from '../data/stream';
 import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_ADDON_COMMAND, shellHttp, type HttpFn } from './debrid/http';
 
 /* Repli « via l'appareil » : quand un addon refuse l'IP de lastAddon (Cloudflare), le serveur renvoie son URL /stream
@@ -20,7 +20,7 @@ const GENERIC_ADDON_NAMES = ['addon amont', 'torznab', 'source', ''];
 /** Nom du manifest des addons déjà lus dans cette session (clé : `addonKey`). */
 const knownAddonNames = new Map<string, string>();
 
-export const isGenericAddonName = (name: string): boolean => GENERIC_ADDON_NAMES.includes(name.trim().toLowerCase());
+const isGenericAddonName = (name: string): boolean => GENERIC_ADDON_NAMES.includes(name.trim().toLowerCase());
 
 /** Adresse de l'addon sans `manifest.json` ni `/stream/…` (le préfixe de configuration est gardé). Vide si invalide. */
 function addonKey(raw: string): string {

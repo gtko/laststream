@@ -157,7 +157,6 @@ export interface PartyInvite {
   token: string;
   expiresAt: string;
 }
-const createPartyInvite = (id: string, profileId: string) => call<PartyInvite>('/' + enc(id) + '/invite', { ...party, method: 'POST', body: { profileId }, profileId });
 /**
  * Lien d'invitation partagé du salon (hôte seulement) : un seul jeton multi-usage, non lié à un pseudo, valable jusqu'à la fin
  * du salon. `rotate` (« Nouveau lien ») invalide les liens précédents ; sans lui, le lien rendu est toujours le même.

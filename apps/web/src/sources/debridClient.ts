@@ -479,9 +479,5 @@ export function debrid(): DebridManager {
   return shared;
 }
 
-/** Remplace l'instance partagée (tests). */
-function setDebridManager(m: DebridManager | null): void { shared = m; }
 
 
-/** Libellé de fournisseur affiché dans le sélecteur : « TorBox », « AllDebrid + TorBox ». */
-const providersLabel = (ids: readonly ProviderId[]): string => ids.map((id) => PROVIDER_LABEL[id]).join(' + ');

@@ -1,18 +1,19 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "src/main.js",
     "index.html",
     "scripts/**",
     "tools/**",
     "tests/**",
-    "vite.config.ts",
     "scripts/relay-e2e/**",
     "scripts/web-audio-e2e/**",
     "public/ls-sw.js",
     "public/service-worker.js"
   ],
-  "ignore": [".claude/**", "dist/**", "android/**"],
-  "ignoreDependencies": ["@capacitor/cli"],
-  "ignoreBinaries": ["ffmpeg"]
+  "ignoreDependencies": [
+    "@capacitor/cli"
+  ],
+  "ignoreBinaries": [
+    "ffmpeg"
+  ]
 }

@@ -125,8 +125,6 @@ export function holeClipFor(el: Rect, hole: Rect, radius = MINI_RADIUS): string 
   return holeClipPath({ width: el.width, height: el.height }, { ...hole, left: hole.left - el.left, top: hole.top - el.top }, radius);
 }
 
-/** Position relative d'un rectangle dans un autre (marge de la vidéo dans la barre mobile). */
-const relativeTo = (r: Rect, origin: Rect): Rect => ({ ...r, left: r.left - origin.left, top: r.top - origin.top });
 
 // ---------- Contrôleur d'état ----------
 

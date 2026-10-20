@@ -193,7 +193,6 @@ export interface Resolved {
 /** Les listes TMDB (route list/{id}) ne sont pas ouvertes sur certains serveurs : on le retient pour la session. */
 let listBroken = false;
 export const resetListSupport = (): void => { listBroken = false; };
-const listUnsupported = (): boolean => listBroken;
 
 const sourceKey = (folderId: string, i: number) => `${folderId}#${i}`;
 

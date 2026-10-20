@@ -1,6 +1,6 @@
 /* Aperçu d'image sur la barre de position : seaux de 10 s, cache LRU, cadence des déplacements. Logique pure, testée. */
 
-export const BUCKET_SECONDS = 10;
+const BUCKET_SECONDS = 10;
 const CACHE_FRAMES = 120;
 /** Intervalle minimal entre deux déplacements de la vidéo d'aperçu. */
 export const MIN_SEEK_INTERVAL_MS = 150;

@@ -7,7 +7,7 @@
  *  - morceau en cours chez un invité (premier à le demander) : les suivants attendent un court instant plutôt que de le
  *    redemander à l'hôte (drapeau « pending »). */
 
-import { MAX_ID_BYTES, decodeFrame, encodeLocated, encodeMesh, toBytes, type ChannelLike, type RelayFrame } from '../protocol';
+import { MAX_ID_BYTES, encodeLocated, encodeMesh, type ChannelLike, type RelayFrame } from '../protocol';
 import type { RangeSource } from '../host';
 import { PIECE_BYTES, PIECE_SHIFT, fromIntervals, pieceBounds, pieceCount, sha256 } from './pieces';
 
@@ -141,8 +141,3 @@ export class MeshHostState {
   }
 }
 
-/** Décode une trame reçue d'un canal, utile aux tests. */
-function frameOf(data: unknown): RelayFrame | null {
-  const bytes = toBytes(data);
-  return bytes ? decodeFrame(bytes) : null;
-}

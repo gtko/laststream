@@ -175,10 +175,6 @@ export function announceShellReady(win: ShellWindow = asShellWindow()): Promise<
   return connectShell(win).then((t) => { if (t) t.send('app-ready'); return !!t; });
 }
 
-/** Erreur fatale au démarrage : la coque masque son écran de démarrage et la journalise. */
-function reportShellError(message: string, win: ShellWindow = asShellWindow()): void {
-  void connectShell(win).then((t) => { if (t) t.send('app-error', message); });
-}
 
 /** Plein écran de la fenêtre (la coque agit sur la fenêtre, pas sur un élément de la page). */
 export function setShellFullscreen(t: ShellTransport, fullscreen: boolean): void {

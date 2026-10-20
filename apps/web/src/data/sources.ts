@@ -2,7 +2,7 @@ import { addonUrl, ltUrl } from './config';
 import { tmdb } from './lt';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
-import { cachedRequest, requestJson } from './transport';
+import { requestJson } from './transport';
 
 /* Sources de lecture : récupération des streams lastAddon, tri par score, regroupement par qualité,
  * mesure du débit et choix de la source automatique. Fonctions pures testées dans tests/sources.test.ts. */
@@ -39,14 +39,6 @@ export async function imdbIdOf(type: 'movie' | 'tv', tmdbId: string | number): P
   return typeof data?.imdb_id === 'string' && data.imdb_id !== '' ? data.imdb_id : null;
 }
 
-/** Streams d'un titre : GET {base}/{config}/stream/{movie|series}/{id}.json. */
-async function fetchStreams(type: 'movie' | 'tv', imdbId: string, season?: number | null, episode?: number | null): Promise<Stream[]> {
-  const kind = type === 'tv' ? 'series' : 'movie';
-  const id = type === 'tv' ? stremioId(imdbId, season ?? 1, episode ?? 1) : imdbId;
-  const url = addonUrl(`stream/${kind}/${id}.json`);
-  const res = await cachedRequest(url, () => requestJson<{ streams?: Stream[] }>(url), 60_000);
-  return Array.isArray(res?.streams) ? res.streams : [];
-}
 
 /** Résultat d'une recherche de sources : streams et sources encore en cours d'interrogation (réponse partielle de lastAddon). */
 export interface StreamsResult {
@@ -144,10 +136,6 @@ export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, se
 
 // ---------- Tri, regroupement ----------
 
-function getStreamHttpUrl(stream: object): string | null {
-  const url = (stream as { url?: unknown }).url;
-  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : null;
-}
 
 export function getQualityGroupKey(stream: object): QualityGroupKey {
   switch (getLaststream(stream)?.resolution) {

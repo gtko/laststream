@@ -1,5 +1,5 @@
 /* Calques du costume : buste, armure, cape / col, emblème de poitrine, casques et couvre-chefs. */
-import type { ArmorId, CapeId, Ctx, EmblemId, HeadgearId } from './types';
+import type { ArmorId, Ctx, EmblemId } from './types';
 import { circ, f, ln, p, both } from './svg';
 import { darken, lighten, n2 } from './util';
 

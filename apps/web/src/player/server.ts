@@ -69,7 +69,6 @@ async function getJson<T>(url: string, timeoutMs = 8000, init?: RequestInit): Pr
 }
 
 let aliveCache: { at: number; ok: boolean } | null = null;
-function resetServerCache(): void { aliveCache = null; resolved = ''; }
 
 /** Réponse du dernier sondage, sans réseau : vrai si le serveur répondait, ou si une adresse est réglée et pas encore sondée. */
 export function serverLikelyUp(): boolean {

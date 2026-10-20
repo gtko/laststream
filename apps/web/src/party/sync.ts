@@ -5,7 +5,7 @@ import { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset } from '@laststream/pr
  * (secondes) à l'instant serveur `at` (ms) ; la position attendue s'en déduit à tout instant. Fonctions pures, testées. */
 
 export type { PlaybackState } from '@laststream/protocol/party';
-export { DRIFT_IGNORE_SEC, DRIFT_SEEK_SEC, estimateOffset, expectedPosition } from '@laststream/protocol/sync';
+export { estimateOffset, expectedPosition } from '@laststream/protocol/sync';
 
 /** Garde l'échantillon au plus petit aller-retour (le plus fiable). */
 export class ClockEstimator {
@@ -25,10 +25,10 @@ export class ClockEstimator {
 export type DriftAction = { kind: 'none' } | { kind: 'rate'; rate: number } | { kind: 'seek'; to: number };
 
 /** Écart toléré tant qu'une vitesse corrective est en cours (hystérésis : on finit de rattraper). */
-export const DRIFT_SETTLE_SEC = 0.15;
+const DRIFT_SETTLE_SEC = 0.15;
 /** Vitesses correctives. */
-export const RATE_SLOW = 0.95;
-export const RATE_FAST = 1.05;
+const RATE_SLOW = 0.95;
+const RATE_FAST = 1.05;
 
 export interface DriftOptions {
   /** La vitesse de lecture est réglable (sinon la correction passe par des sauts). */

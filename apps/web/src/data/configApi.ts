@@ -57,24 +57,6 @@ export async function testConfig(encoded: string, base: string = requireBase()):
 export const isMask = (v: unknown): v is SecretMask =>
   typeof v === 'object' && v !== null && (v as { set?: unknown }).set === true;
 
-/**
- * Corps de POST /config/encode construit depuis le formulaire. Un champ secret vide est omis : avec `previous`,
- * le serveur garde alors la valeur précédente.
- */
-function pruneEmpty<T>(value: T): T | undefined {
-  if (Array.isArray(value)) return value.map((v) => pruneEmpty(v)).filter((v) => v !== undefined) as unknown as T;
-  if (value && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const p = pruneEmpty(v);
-      if (p !== undefined) out[k] = p;
-    }
-    return out as T;
-  }
-  if (typeof value === 'string' && value.trim() === '') return undefined;
-  if (typeof value === 'number' && Number.isNaN(value)) return undefined;
-  return value;
-}
 
 export interface SourceProbe {
   ok: boolean;
