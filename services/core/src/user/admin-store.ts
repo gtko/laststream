@@ -1,5 +1,6 @@
 import { type AppSettings, readAppSettings, writeAppSettings } from './app-settings.js';
 import { hashSessionToken } from './crypto.js';
+import { deviceLabel } from './session-device.js';
 import type { SqlDb, SqlParam, SqlRow } from './sql.js';
 
 /**
@@ -57,10 +58,10 @@ export interface AdminAccount {
 /** Session ouverte d'un compte. Ni empreinte ni jeton : `id` est un identifiant public dérivé (voir `sessionRef`). */
 export interface AdminSession {
   id: string;
-  /** User-agent enregistré à la connexion : aucun n'est stocké aujourd'hui, donc toujours null. */
+  /** Libellé court de l'appareil (« Android · Chrome ») dérivé du user-agent de la connexion ; null si non reconnu. */
   device: string | null;
   createdAt: string;
-  /** Pas de suivi par session : la dernière activité connue est celle de la connexion. */
+  /** Dernière activité écrite au plus toutes les 5 min ; la date de connexion tant qu'elle n'a pas été écrite. */
   lastSeenAt: string;
   expiresAt: string;
 }
@@ -501,13 +502,15 @@ export class AdminStore {
       .all(id)
       .map((row) => ({ id: String(row.id), username: String(row.username), usedAt: row.used_at === null ? null : String(row.used_at) }));
     const sessions = this.db
-      .prepare('SELECT token_hash, created_at, expires_at FROM sessions WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC')
+      .prepare(
+        'SELECT token_hash, created_at, expires_at, user_agent, last_seen_at FROM sessions WHERE account_id = ? AND expires_at > ? ORDER BY created_at DESC',
+      )
       .all(id, new Date().toISOString())
       .map((row): AdminSession => ({
         id: sessionRef(String(row.token_hash)),
-        device: null,
+        device: deviceLabel(row.user_agent === null ? null : String(row.user_agent)),
         createdAt: String(row.created_at),
-        lastSeenAt: String(row.created_at),
+        lastSeenAt: row.last_seen_at === null ? String(row.created_at) : new Date(Number(row.last_seen_at)).toISOString(),
         expiresAt: String(row.expires_at),
       }));
     const invites = this.db.prepare(`${INVITE_SELECT} WHERE i.inviter_id = ? ORDER BY i.created_at DESC, i.rowid DESC`).all(id).map(toAdminInvite);

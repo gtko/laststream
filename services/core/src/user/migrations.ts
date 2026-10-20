@@ -566,6 +566,15 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE invites ADD COLUMN revoked_at TEXT;
     `,
   },
+  {
+    version: 20,
+    name: 'sessions : user-agent à la connexion (200 car. max) et dernière activité (ms, écrite au plus toutes les 5 min)',
+    sql: `
+      -- NULL = user-agent absent ; last_seen_at NULL = jamais mise à jour (la date de connexion fait foi).
+      ALTER TABLE sessions ADD COLUMN user_agent TEXT;
+      ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
+    `,
+  },
 ];
 
 /**

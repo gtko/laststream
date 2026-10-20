@@ -244,7 +244,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     }
     const token = generateSessionToken();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    await users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt);
+    await users.startSession(record.id, hashSessionToken(token), nowIso(), expiresAt, c.req.header('user-agent'));
     return sendJson(c, { token, expiresAt });
   });
 
@@ -270,7 +270,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const token = generateSessionToken();
     const now = nowIso();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-    const rotated = await users.rotateSession(session.tokenHash, hashSessionToken(token), session.account.id, now, expiresAt);
+    const rotated = await users.rotateSession(session.tokenHash, hashSessionToken(token), session.account.id, now, expiresAt, c.req.header('user-agent'));
     if (!rotated) throw new UserApiError(401, 'unauthorized');
     return sendJson(c, { token, expiresAt });
   });

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readAppSettings } from './app-settings.js';
+import { storedUserAgent } from './session-device.js';
 import { linkInvitedPrincipals, revokeLegacyFriendshipsOf, syncProfileIdentity } from './social-handles.js';
 import { redeemInvite } from './social-store.js';
 import type { SqlDb } from './sql.js';
@@ -23,6 +24,9 @@ export type LibrarySort = 'added' | 'title';
 
 /** Sessions simultanées par compte : au-delà, la plus ancienne est supprimée. */
 export const MAX_SESSIONS_PER_ACCOUNT = 20;
+
+/** Intervalle minimal entre deux écritures de la dernière activité d'une session (pas d'écriture à chaque requête). */
+export const SESSION_TOUCH_INTERVAL_MS = 5 * 60_000;
 
 /** Référence d'un titre : `tmdb:<id>` si l'identifiant TMDB est connu, sinon `imdb:<tt…>`. */
 export function titleRef(tmdbId: number | null, imdbId: string | null): string {
@@ -472,12 +476,13 @@ export class UserStore {
 
   /**
    * Ouvre une session. Les sessions expirées sont purgées et le compte garde au plus MAX_SESSIONS_PER_ACCOUNT
-   * sessions : la plus ancienne (ordre d'insertion) est supprimée au-delà.
+   * sessions : la plus ancienne (ordre d'insertion) est supprimée au-delà. `userAgent` (en-tête de la requête) est
+   * conservé tronqué, pour la fiche administrateur.
    */
-  startSession(accountId: string, tokenHash: string, now: string, expiresAt: string): void {
+  startSession(accountId: string, tokenHash: string, now: string, expiresAt: string, userAgent?: string | null): void {
     this.transaction(() => {
       this.db.prepare('DELETE FROM sessions WHERE account_id = ? AND expires_at <= ?').run(accountId, now);
-      this.createSession(accountId, tokenHash, now, expiresAt);
+      this.createSession(accountId, tokenHash, now, expiresAt, userAgent);
       this.db
         .prepare(
           `DELETE FROM sessions WHERE account_id = ? AND rowid NOT IN (
@@ -487,22 +492,30 @@ export class UserStore {
     });
   }
 
-  private createSession(accountId: string, tokenHash: string, createdAt: string, expiresAt: string): void {
+  private createSession(accountId: string, tokenHash: string, createdAt: string, expiresAt: string, userAgent?: string | null): void {
     this.db
-      .prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(tokenHash, accountId, createdAt, expiresAt);
+      .prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at, user_agent) VALUES (?, ?, ?, ?, ?)')
+      .run(tokenHash, accountId, createdAt, expiresAt, storedUserAgent(userAgent));
   }
 
-  /** Compte lié à une session valide (non expirée), ou undefined. */
+  /**
+   * Compte lié à une session valide (non expirée), ou undefined. Met aussi la dernière activité de la session à jour,
+   * au plus une fois toutes les SESSION_TOUCH_INTERVAL_MS : aucune écriture tant que l'intervalle n'est pas écoulé.
+   */
   accountForSession(tokenHash: string, now: string): Account | undefined {
     const row = this.db
       .prepare(
-        `SELECT a.id, a.username, a.is_owner, a.created_at
+        `SELECT a.id, a.username, a.is_owner, a.created_at, s.last_seen_at
          FROM sessions s JOIN accounts a ON a.id = s.account_id
          WHERE s.token_hash = ? AND s.expires_at > ? AND a.suspended_at IS NULL`,
       )
-      .get(tokenHash, now) as Omit<AccountRow, 'password_hash'> | undefined;
-    return row === undefined ? undefined : toAccount(row);
+      .get(tokenHash, now) as (Omit<AccountRow, 'password_hash'> & { last_seen_at: number | null }) | undefined;
+    if (row === undefined) return undefined;
+    const nowMs = Date.parse(now);
+    if (row.last_seen_at === null || nowMs - Number(row.last_seen_at) >= SESSION_TOUCH_INTERVAL_MS) {
+      this.db.prepare('UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?').run(nowMs, tokenHash);
+    }
+    return toAccount(row);
   }
 
   deleteSession(tokenHash: string): void {
@@ -519,13 +532,13 @@ export class UserStore {
   }
 
   /** Rotation : remplace une session valide par une nouvelle. False si l'ancienne n'était plus valide. */
-  rotateSession(oldHash: string, newHash: string, accountId: string, now: string, expiresAt: string): boolean {
+  rotateSession(oldHash: string, newHash: string, accountId: string, now: string, expiresAt: string, userAgent?: string | null): boolean {
     return this.transaction(() => {
       const removed = this.db
         .prepare('DELETE FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?')
         .run(oldHash, accountId, now);
       if (removed.changes === 0) return false;
-      this.createSession(accountId, newHash, now, expiresAt);
+      this.createSession(accountId, newHash, now, expiresAt, userAgent);
       return true;
     });
   }
