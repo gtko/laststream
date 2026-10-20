@@ -38,6 +38,7 @@ function adminSecret(): string {
   return secret;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- script ad hoc, réponses JSON non typées
 async function call(secret: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; data: any }> {
   const response = await fetch(`${baseUrl}/__admin/${path}`, {
     method,
