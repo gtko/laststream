@@ -1,7 +1,7 @@
 /* Émissions TV : page #/emissions, fiche d'une émission (#/emission/{id}), rangées d'accueil « Émissions du moment »
  * et « Ce soir à la TV ». Les données viennent de TMDB et du guide TV (voir data/showsApi.ts). */
 import { isKidProfile } from '../data/auth';
-import { loadGuide, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
+import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
 import { airingsFor, dayLabel, hhmm, isLiveNow, localDate, matchKnown, primeTime, progressPct, seedFor } from '../data/shows';
 import { playBest } from '../player/session.js';
 import { register, toItem } from './catalog.js';
@@ -206,23 +206,32 @@ function topItem(s, n) {
     fallbackHTML({ name: s.name, type: 'tv' }) + '</span></button>';
 }
 
-/** Sections 3 à 5 (filtrées par genre) : incontournables, top 10, « À la télé », « En streaming ». */
-function zoneHTML(shows, genre, now) {
+const MORE_LABEL = 'Voir plus d’émissions';
+/** « 124 émissions », « 1 émission ». */
+const countLabel = (n) => n + (n > 1 ? ' émissions' : ' émission');
+
+/**
+ * Sections 3 à 5 (filtrées par genre) : incontournables, top 10, « À la télé », « Toutes les émissions » (celles sans
+ * diffusion annoncée, avec leur compte et le bouton « Voir plus » tant que TMDB a des pages suivantes).
+ */
+function zoneHTML(shows, genre, now, more) {
   const list = ofGenre(shows, genre);
   const week = weekPicks(list, now);
   const top = [...list].sort((a, b) => b.popularity - a.popularity).slice(0, 10);
   const onTv = list.filter((s) => s.airings.length);
   const stream = list.filter((s) => !s.airings.length);
-  const head = (id, title) => '<h2 class="row-title shows-h" id="' + id + '">' + esc(title) + '</h2>';
-  const grid = (items, empty) => '<div class="lib-grid" data-nav>' + (items.length ? items.map((s) => showCard(s, now)).join('') : '<p class="row-msg">' + empty + '</p>') + '</div>';
+  const head = (id, title, extra = '') => '<h2 class="row-title shows-h" id="' + id + '">' + esc(title) + extra + '</h2>';
+  const grid = (id, items, empty) => '<div class="lib-grid" id="' + id + '" data-nav>' + (items.length ? items.map((s) => showCard(s, now)).join('') : '<p class="row-msg">' + empty + '</p>') + '</div>';
+  const count = ' <span class="shows-count" id="sv-stream-count">' + esc(countLabel(stream.length)) + '</span>';
+  const moreBtn = more ? '<div class="shows-more"><button type="button" class="btn btn-ghost btn-pill" id="sv-more">' + esc(MORE_LABEL) + '</button></div>' : '';
   return (week.length ? '<section class="sv-sec" aria-labelledby="sv-h-week">' + head('sv-h-week', 'Les incontournables de la semaine') +
     '<div class="sv-grid" data-nav>' + week.map((s) => weekTile(s, now)).join('') + '</div></section>' : '') +
     (top.length ? '<section class="sv-sec" aria-labelledby="sv-h-top">' + head('sv-h-top', 'Top 10 des émissions') +
       '<div class="sv-top" data-nav>' + top.map((s, i) => topItem(s, i + 1)).join('') + '</div></section>' : '') +
     '<section class="sv-sec" aria-labelledby="sv-h-tv">' + head('sv-h-tv', 'À la télé') +
-    grid(onTv, 'Aucune de ces émissions n’est annoncée au guide TV pour le moment.') + '</section>' +
-    '<section class="sv-sec" aria-labelledby="sv-h-stream">' + head('sv-h-stream', 'En streaming') +
-    grid(stream, 'Rien d’autre pour le moment.') + '</section>';
+    grid('sv-tv-grid', onTv, 'Aucune de ces émissions n’est annoncée au guide TV pour le moment.') + '</section>' +
+    '<section class="sv-sec" aria-labelledby="sv-h-stream">' + head('sv-h-stream', 'Toutes les émissions', count) +
+    grid('sv-stream-grid', stream, 'Rien d’autre pour le moment.') + moreBtn + '</section>';
 }
 
 /** Onglets de genre (boutons à état `aria-pressed`) : « Tout » puis les genres présents. */
@@ -248,13 +257,14 @@ export async function showShowsPage() {
   const hero = heroShow(data.shows, now);
   const tabs = genreTabs(data.shows);
   let genre = 'all';
+  let more = data.hasMore;
   const head = hero ? heroHTML(hero, now)
     : '<header class="svc-head svc-head-plain"><div class="svc-head-t">' +
       '<h1 class="svc-title" id="svc-title" tabindex="-1">Émissions TV</h1>' +
       '<p class="svc-eyebrow">Divertissement, jeux, talk-shows et téléréalité : quand et où les regarder</p></div></header>';
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page shows-page" aria-labelledby="svc-title">' + head + (tabs.length ? tabsHTML(tabs, genre) : '') +
-    '<div class="sv-zone" id="sv-zone">' + zoneHTML(data.shows, genre, now) + '</div></article>';
+    '<div class="sv-zone" id="sv-zone">' + zoneHTML(data.shows, genre, now, more) + '</div></article>';
   // Un clic sur un genre redessine seulement la zone filtrée, sans nouvel appel réseau.
   const bar = detailEl.querySelector('.sv-tabs');
   const zone = detailEl.querySelector('#sv-zone');
@@ -264,7 +274,45 @@ export async function showShowsPage() {
       if (!b) return;
       genre = b.dataset.genre === 'all' ? 'all' : Number(b.dataset.genre);
       bar.querySelectorAll('[data-genre]').forEach((t) => t.setAttribute('aria-pressed', String(t === b)));
-      zone.innerHTML = zoneHTML(data.shows, genre, nowSec());
+      zone.innerHTML = zoneHTML(data.shows, genre, nowSec(), more);
+    });
+    // « Voir plus » : clic délégué sur la zone (redessinée à chaque genre). Les cartes ajoutées suivent le genre actif.
+    const setMoreBusy = (busy) => {
+      const btn = zone.querySelector('#sv-more');
+      if (!btn) return;
+      btn.disabled = busy;
+      if (busy) { btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Chargement…'; } else { btn.removeAttribute('aria-busy'); btn.textContent = MORE_LABEL; }
+    };
+    const loadMore = async () => {
+      setMoreBusy(true);
+      let r;
+      try { r = await loadMoreShows(); } catch (_) {
+        if (token === state.token) { setMoreBusy(false); zone.querySelector('#sv-more')?.focus({ preventScroll: true }); }
+        return;
+      }
+      if (token !== state.token) return;
+      const at = nowSec();
+      const grid = zone.querySelector('#sv-stream-grid');
+      const fresh = ofGenre(r.added, genre).filter((s) => !s.airings.length);
+      if (grid && fresh.length) {
+        grid.querySelector('.row-msg')?.remove();
+        grid.insertAdjacentHTML('beforeend', fresh.map((s) => showCard(s, at)).join(''));
+      }
+      const count = zone.querySelector('#sv-stream-count');
+      if (count) count.textContent = countLabel(ofGenre(data.shows, genre).filter((s) => !s.airings.length).length);
+      more = r.hasMore;
+      if (more) {
+        setMoreBusy(false);
+        zone.querySelector('#sv-more')?.focus({ preventScroll: true });
+      } else {
+        zone.querySelector('.shows-more')?.remove();
+        const cards = grid ? grid.querySelectorAll('.show-card') : [];
+        cards[cards.length - fresh.length]?.focus({ preventScroll: true });
+      }
+    };
+    zone.addEventListener('click', (e) => {
+      const btn = e.target instanceof Element ? e.target.closest('#sv-more') : null;
+      if (btn && !btn.disabled) loadMore();
     });
   }
   const h1 = detailEl.querySelector('#svc-title');

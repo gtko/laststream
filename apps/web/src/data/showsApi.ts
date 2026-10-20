@@ -109,28 +109,50 @@ const toShow = (r: Json): TmdbShow => ({
   genres: Array.isArray(r.genre_ids) ? r.genre_ids.map(Number) : [],
 });
 
-/** Téléréalité, talk-shows, actualités, et humour/talk dans la langue du pays, par popularité. */
-export async function discoverShows(): Promise<TmdbShow[]> {
-  const lang = getVideoLang().lang;
-  const base = { sort_by: 'popularity.desc', with_original_language: lang, 'vote_count.gte': '5' };
-  const calls = [
-    tmdb('discover/tv', { ...base, with_genres: '10764|10767|10763' }),
-    tmdb('discover/tv', { ...base, with_genres: '35,10767' }),
-    tmdb('discover/tv', { ...base, with_genres: '35,10764' }),
-    tmdb('discover/tv', { ...base, with_genres: '10764|10767|10763', page: 2 }),
-  ];
-  const settled = await Promise.allSettled(calls);
-  const seen = new Set<number>();
+/** Types de programme TMDB (`with_type` de discover/tv) : 1 actualités, 3 téléréalité, 5 talk-shows, 0 documentaires. */
+const SHOW_TYPES = '1|3|5|0';
+/** Genres TMDB des émissions classées autrement (téléréalité, talk-show, actualités) : une requête complémentaire. */
+const SHOW_GENRES = '10764|10767|10763';
+/** Pages de la source par type au premier chargement (20 titres par page), puis MORE_PAGES pages à chaque « Voir plus ». */
+const FIRST_PAGES = 3;
+const MORE_PAGES = 2;
+
+/** Pagination de la source par type : page suivante à charger et nombre de pages annoncé par TMDB. */
+export interface DiscoverCursor { next: number; totalPages: number }
+
+const typeQuery = (country: string, page: number): Promise<Json> => tmdb('discover/tv', {
+  with_type: SHOW_TYPES, with_origin_country: country, sort_by: 'popularity.desc', page: String(page),
+});
+
+/** Titres d'une réponse discover, sans affiche (exclus) ni doublon (`seen`, complété au passage). */
+function takeNew(results: Json[], seen: Set<number>): TmdbShow[] {
   const out: TmdbShow[] = [];
-  settled.forEach((r) => {
-    if (r.status !== 'fulfilled') return;
-    (r.value?.results ?? []).forEach((x: Json) => {
-      if (!x.poster_path || seen.has(x.id)) return;
-      seen.add(x.id);
-      out.push(toShow(x));
-    });
+  results.forEach((x) => {
+    if (!x.poster_path || seen.has(x.id)) return;
+    seen.add(x.id);
+    out.push(toShow(x));
   });
   return out;
+}
+
+/**
+ * Émissions TMDB du pays (région réglée, France par défaut) : les premières pages de la source par type (actualités,
+ * téléréalité, talk-shows, documentaires, par popularité) et une requête par genres. `cursor` indique la page suivante.
+ */
+export async function discoverShows(): Promise<{ shows: TmdbShow[]; cursor: DiscoverCursor }> {
+  const country = getRegion().code;
+  const pages = Array.from({ length: FIRST_PAGES }, (_, i) => typeQuery(country, i + 1));
+  const genres = tmdb('discover/tv', { with_genres: SHOW_GENRES, with_origin_country: country, sort_by: 'popularity.desc', page: '1' });
+  const settled = await Promise.allSettled([...pages, genres]);
+  const seen = new Set<number>();
+  const shows: TmdbShow[] = [];
+  let totalPages = 0;
+  settled.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    if (i < FIRST_PAGES) totalPages = Math.max(totalPages, Number(r.value?.total_pages) || 0);
+    shows.push(...takeNew(r.value?.results ?? [], seen));
+  });
+  return { shows, cursor: { next: FIRST_PAGES + 1, totalPages } };
 }
 
 type SeedCache = Record<string, { at: number; show: TmdbShow | null }>;
@@ -223,7 +245,29 @@ export interface ShowEntry extends TmdbShow {
   next: ShowEpisode | null;
 }
 
-let showsCache: { at: number; p: Promise<{ shows: ShowEntry[]; guide: Guide }> } | null = null;
+/** Liste des émissions du moment, avec le guide et la pagination de la source par type (« Voir plus »). */
+export interface ShowsData {
+  shows: ShowEntry[];
+  guide: Guide;
+  cursor: DiscoverCursor;
+  /** Une page suivante de la source par type peut-elle être chargée ? */
+  hasMore: boolean;
+}
+
+/** Rang d'affichage : en direct, puis diffusions à venir, puis prochain épisode TMDB, puis le reste par popularité. */
+const rankShow = (s: ShowEntry, now: number, today: string): number => {
+  const live = s.airings.find((a) => a.start <= now && now < a.stop);
+  if (live) return 0;
+  if (s.airings.length) return s.airings[0].start - now + 1;
+  if (s.next && s.next.date >= today) return 1e9 + Date.parse(s.next.date) / 1000;
+  return 2e9 - s.popularity;
+};
+const sortShows = (shows: ShowEntry[], now: number): void => {
+  const today = new Date(now * 1000).toISOString().slice(0, 10);
+  shows.sort((a, b) => rankShow(a, now, today) - rankShow(b, now, today) || b.popularity - a.popularity);
+};
+
+let showsCache: { at: number; p: Promise<ShowsData> } | null = null;
 
 async function mapLimit<T, R>(items: readonly T[], n: number, fn: (x: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
   const out: PromiseSettledResult<R>[] = new Array(items.length);
@@ -242,12 +286,13 @@ async function mapLimit<T, R>(items: readonly T[], n: number, fn: (x: T) => Prom
  * Émissions du moment : émissions TMDB populaires + liste d'émissions suivies d'office, chacune avec ses prochaines
  * diffusions trouvées au guide ; les émissions de streaming reçoivent leur prochain épisode TMDB.
  */
-export function loadShows(force = false): Promise<{ shows: ShowEntry[]; guide: Guide }> {
+export function loadShows(force = false): Promise<ShowsData> {
   if (!force && showsCache && Date.now() - showsCache.at < GUIDE_TTL_MS) return showsCache.p;
-  const p = (async () => {
+  const p = (async (): Promise<ShowsData> => {
     const [guideR, discR] = await Promise.allSettled([loadGuide(force), discoverShows()]);
     const guide: Guide = guideR.status === 'fulfilled' ? guideR.value : { channels: [], programs: [], channelOf: () => undefined, catalog: new Map(), at: Date.now() };
-    const discovered = discR.status === 'fulfilled' ? discR.value : [];
+    const disc = discR.status === 'fulfilled' ? discR.value : { shows: [] as TmdbShow[], cursor: { next: 1, totalPages: 0 } };
+    const discovered = disc.shows;
     const now = Math.floor(Date.now() / 1000);
     const byId = new Map<number, ShowEntry>();
     const add = (s: TmdbShow, aliases: string[], platform = ''): ShowEntry => {
@@ -258,13 +303,12 @@ export function loadShows(force = false): Promise<{ shows: ShowEntry[]; guide: G
       return e;
     };
     discovered.forEach((s) => add(s, []));
-    // Émissions suivies d'office : rapprochées d'une émission déjà connue, sinon cherchées sur TMDB si elles passent au guide.
+    // Émissions suivies d'office : rapprochées d'une émission déjà connue, sinon cherchées sur TMDB (toujours ; résultat mis en cache 30 jours).
     const pending: SeedShow[] = [];
     SEED_SHOWS.forEach((seed) => {
       const known = [...byId.values()].find((e) => titleMatches(e.name, seed.name, seed.aliases));
       if (known) { add(known, [seed.name, ...(seed.aliases ?? [])], seed.streaming ?? ''); return; }
-      const onAir = airingsFor(seed, guide.programs, guide.channelOf, now).length > 0;
-      if (onAir || seed.streaming) pending.push(seed);
+      pending.push(seed);
     });
     const resolved = await mapLimit(pending, 4, resolveSeed);
     resolved.forEach((r, i) => {
@@ -276,19 +320,57 @@ export function loadShows(force = false): Promise<{ shows: ShowEntry[]; guide: G
     const streaming = shows.filter((s) => !s.airings.length).sort((a, b) => Number(!!b.platform) - Number(!!a.platform) || b.popularity - a.popularity).slice(0, 8);
     const details = await mapLimit(streaming, 4, (s) => showDetail(s.id));
     details.forEach((r, i) => { if (r.status === 'fulfilled') streaming[i].next = r.value.next; });
-    const today = new Date(now * 1000).toISOString().slice(0, 10);
-    const rank = (s: ShowEntry): number => {
-      const live = s.airings.find((a) => a.start <= now && now < a.stop);
-      if (live) return 0;
-      if (s.airings.length) return s.airings[0].start - now + 1;
-      if (s.next && s.next.date >= today) return 1e9 + Date.parse(s.next.date) / 1000;
-      return 2e9 - s.popularity;
-    };
-    shows.sort((a, b) => rank(a) - rank(b) || b.popularity - a.popularity);
-    return { shows, guide };
+    sortShows(shows, now);
+    return { shows, guide, cursor: disc.cursor, hasMore: disc.cursor.next <= disc.cursor.totalPages };
   })();
   p.catch(() => { if (showsCache && showsCache.p === p) showsCache = null; });
   showsCache = { at: Date.now(), p };
+  return p;
+}
+
+/** Résultat de « Voir plus » : émissions ajoutées à la liste (ordre de popularité TMDB) et page suivante disponible. */
+export interface MoreShows { added: ShowEntry[]; hasMore: boolean }
+
+let moreP: Promise<MoreShows> | null = null;
+
+/**
+ * « Voir plus » : charge les deux pages suivantes de la source par type, les ajoute à la liste en cours (sans doublon,
+ * puis triée comme le reste) et renvoie les nouvelles entrées. Un seul chargement à la fois. `hasMore` est faux quand TMDB
+ * n'annonce plus de page. En cas d'échec, rien n'est ajouté et la même page sera retentée au prochain appel.
+ */
+export function loadMoreShows(): Promise<MoreShows> {
+  if (moreP) return moreP;
+  const p = (async (): Promise<MoreShows> => {
+    // Liste en cours, même si son cache a expiré pendant l'affichage : la pagination reprend là où elle s'est arrêtée.
+    const data = await (showsCache ? showsCache.p : loadShows());
+    const { cursor, guide } = data;
+    const count = Math.min(MORE_PAGES, cursor.totalPages - cursor.next + 1);
+    if (count <= 0) { data.hasMore = false; return { added: [], hasMore: false }; }
+    const country = getRegion().code;
+    const settled = await Promise.allSettled(Array.from({ length: count }, (_, i) => typeQuery(country, cursor.next + i)));
+    // Pages prises dans l'ordre, jusqu'à la première en échec.
+    const seen = new Set(data.shows.map((s) => s.id));
+    const fresh: TmdbShow[] = [];
+    let done = 0;
+    for (const r of settled) {
+      if (r.status !== 'fulfilled') break;
+      done += 1;
+      fresh.push(...takeNew(r.value?.results ?? [], seen));
+    }
+    if (!done) throw (settled[0] as PromiseRejectedResult).reason;
+    const now = Math.floor(Date.now() / 1000);
+    const added: ShowEntry[] = fresh.map((s) => ({
+      ...s, aliases: [], airings: airingsFor({ name: s.name }, guide.programs, guide.channelOf, now), platform: '', next: null,
+    }));
+    cursor.next += done;
+    data.shows.push(...added);
+    sortShows(data.shows, now);
+    data.hasMore = cursor.next <= cursor.totalPages;
+    return { added, hasMore: data.hasMore };
+  })();
+  moreP = p;
+  const clear = (): void => { if (moreP === p) moreP = null; };
+  p.then(clear, clear);
   return p;
 }
 

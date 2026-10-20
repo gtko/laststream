@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { airingsFor, dayLabel, hhmm, localDate, matchKnown, primeTime, programKeys, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
+import { airingsFor, dayLabel, hhmm, localDate, matchKnown, primeTime, programKeys, SEED_SHOWS, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
 import { playBest } from '../src/player/session.js';
 import { state } from '../src/ui/state.js';
 // Lecture d'un épisode : on vérifie l'appel (sources, auto-lecture) sans lancer de vrai lecteur. Stubs complets (pas de
@@ -123,10 +123,24 @@ function mockFetch(url: string): Response {
     return json(out);
   }
   if (p.endsWith('/lt/tmdb/discover/tv')) {
-    return json({ results: [
-      { id: 1001, name: 'La France a un incroyable talent', poster_path: '/lf.jpg', backdrop_path: '/lfb.jpg', popularity: 80, overview: 'Le télécrochet.', genre_ids: [10764] },
-      { id: 1002, name: 'LOL : qui rit, sort !', poster_path: '/lol.jpg', backdrop_path: '/lolb.jpg', popularity: 60, overview: 'Qui rit sort.', genre_ids: [35] },
-    ] });
+    const LF = { id: 1001, name: 'La France a un incroyable talent', poster_path: '/lf.jpg', backdrop_path: '/lfb.jpg', popularity: 80, overview: 'Le télécrochet.', genre_ids: [10764] };
+    const LOL = { id: 1002, name: 'LOL : qui rit, sort !', poster_path: '/lol.jpg', backdrop_path: '/lolb.jpg', popularity: 60, overview: 'Qui rit sort.', genre_ids: [35] };
+    // Requête par genres (sans type) : une seule page, déjà connue.
+    if (!u.searchParams.has('with_type')) return json({ page: 1, total_pages: 1, results: [LF, LOL] });
+    // Source par type : sept pages (trois au premier chargement, puis deux à chaque « Voir plus »). 2003 sans affiche : exclu.
+    const show = (id: number, name: string, popularity: number, genres: number[], extra: Record<string, unknown> = {}) => ({
+      id, name, poster_path: '/p' + id + '.jpg', backdrop_path: null, popularity, overview: 'Émission.', genre_ids: genres, ...extra,
+    });
+    const typed: Record<number, unknown[]> = {
+      1: [LF, LOL],
+      2: [show(2002, 'Émission sans genre', 20, [])],
+      3: [LOL, show(2003, 'Sans affiche', 15, [35], { poster_path: null })],
+      4: [show(2001, 'Émission divertissante', 12, [35]), show(2004, 'Autre divertissement', 9, [35])],
+      5: [show(2004, 'Autre divertissement', 9, [35]), show(2005, 'Téléréalité en plus', 8, [10764])],
+      6: [show(2006, 'Divertissement bis', 7, [35])],
+      7: [show(2007, 'Téléréalité bis', 6, [10764])],
+    };
+    return json({ page: Number(u.searchParams.get('page') || 1), total_pages: 7, results: typed[Number(u.searchParams.get('page') || 1)] ?? [] });
   }
   if (p.endsWith('/lt/tmdb/search/tv')) {
     return json({ results: [{ id: 1003, name: 'Top Chef', poster_path: '/tc.jpg', backdrop_path: '/tcb.jpg', popularity: 30, origin_country: ['FR'], overview: 'Cuisine.', genre_ids: [10764] }] });
@@ -186,6 +200,22 @@ describe('émissions TV (interface)', () => {
     await settle(1800);
   });
 
+  it('requêtes de découverte : source par type (pays, popularité, pages 1 à 3) et requête par genres', () => {
+    const disc = calls.filter((c) => c.includes('/lt/tmdb/discover/tv')).map((c) => new URL(c).searchParams);
+    const typed = disc.filter((q) => q.get('with_type') === '1|3|5|0'); // les autres rangées de l'accueil n'ont pas ce type
+    expect(typed.map((q) => q.get('page'))).toEqual(['1', '2', '3']);
+    typed.forEach((q) => {
+      expect(q.get('with_type')).toBe('1|3|5|0'); // actualités, téléréalité, talk-shows, documentaires
+      expect(q.get('with_origin_country')).toBe('FR');
+      expect(q.get('sort_by')).toBe('popularity.desc');
+      expect(q.has('vote_count.gte')).toBe(false); // plus de seuil de votes
+      expect(q.has('with_original_language')).toBe(false);
+    });
+    const byGenre = disc.filter((q) => q.get('with_genres') === '10764|10767|10763');
+    expect(byGenre.map((q) => q.get('page'))).toEqual(['1']);
+    expect(byGenre[0].get('with_origin_country')).toBe('FR');
+  });
+
   it('accueil : entrée de menu, « Ce soir à la TV » et « Émissions du moment »', () => {
     const app = document.getElementById('app')!;
     expect(app.querySelector('.nav [data-showsnav]')).not.toBeNull();
@@ -204,8 +234,10 @@ describe('émissions TV (interface)', () => {
     const nums = Array.from(app.querySelectorAll('#ce-soir .ch-num')).map((n) => Number(n.textContent));
     expect(nums.slice(0, 3)).toEqual([1, 2, 3]); // ordre officiel des chaînes
     expect(nums).toContain(6);
-    const rate = calls.filter((c) => c.includes('/lt/tmdb/search/tv')).length;
-    expect(rate).toBeLessThanOrEqual(2); // seules les émissions présentes au guide sont cherchées
+    // Les émissions suivies d'office sont cherchées sur TMDB même sans diffusion au guide (« Quotidien » n'est pas au guide).
+    const searched = calls.filter((c) => c.includes('/lt/tmdb/search/tv')).map((c) => new URL(c).searchParams.get('query'));
+    expect(searched).toContain('Quotidien');
+    expect(searched.length).toBeLessThanOrEqual(SEED_SHOWS.length); // une recherche par titre suivi, sauf ceux déjà connus
   });
 
   it('page Émissions TV : à la télé / autres émissions', async () => {
@@ -224,6 +256,11 @@ describe('émissions TV (interface)', () => {
     expect(['La France a un incroyable talent', 'Top Chef']).toContain(hero.querySelector('#svc-title')!.textContent);
     expect(hero.querySelector('[data-showopen]')).not.toBeNull();
     expect(page.querySelector('.sv-top [data-showopen="1001"]')).not.toBeNull(); // Top 10 : sections 3 à 5 présentes
+    // Section « Toutes les émissions » (sans diffusion annoncée) : titre, compte discret, bouton « Voir plus » (TMDB a des pages suivantes).
+    expect(page.querySelector('#sv-h-stream')!.textContent).toContain('Toutes les émissions');
+    expect(page.querySelector('#sv-stream-count')!.textContent).toBe('2 émissions');
+    expect(Array.from(page.querySelectorAll('#sv-stream-grid .show-card')).map((c) => c.getAttribute('data-showopen')).sort()).toEqual(['1002', '2002']);
+    expect(page.querySelector('#sv-more')!.textContent).toBe('Voir plus d’émissions');
     (page.querySelector('[data-showopen="1001"]') as HTMLElement).click();
     await settle(100);
     expect(location.hash).toBe('#/emission/1001');
@@ -368,5 +405,43 @@ describe('émissions TV (interface)', () => {
     await settle(50);
     expect(zoneIds()).toEqual(expect.arrayContaining(['1001', '1002', '1003']));
     expect(document.querySelector('#detail .sv-hero #svc-title')).not.toBeNull(); // le héros ne change pas avec le filtre
+  });
+
+  it('page Émissions TV : « Voir plus » ajoute les pages suivantes sans doublon, en suivant le genre actif', async () => {
+    location.hash = '#/';
+    await settle(100);
+    location.hash = '#/emissions';
+    await settle(500);
+    const page = document.querySelector('#detail .shows-page')!;
+    const ids = () => Array.from(page.querySelectorAll('#sv-stream-grid .show-card')).map((c) => c.getAttribute('data-showopen'));
+    const count = () => page.querySelector('#sv-stream-count')!.textContent;
+    const tab = (label: string) => Array.from(document.querySelectorAll<HTMLElement>('#detail .sv-tab')).find((t) => t.textContent === label)!;
+    const typedPages = () => calls.filter((c) => c.includes('with_type=1%7C3%7C5%7C0')).map((c) => new URL(c).searchParams.get('page'));
+    const first = typedPages().length;
+    expect(page.querySelector('#sv-more')).not.toBeNull();
+    (page.querySelector('#sv-more') as HTMLElement).click();
+    await settle(200);
+    expect(typedPages().slice(first)).toEqual(['4', '5']); // deux pages suivantes, sans nouveau premier chargement
+    expect(ids()).toHaveLength(5); // 2004 figure sur les pages 4 et 5 : une seule carte
+    expect(ids()).toEqual(expect.arrayContaining(['1002', '2002', '2001', '2004', '2005']));
+    expect(count()).toBe('5 émissions');
+    expect(page.querySelector('#sv-more')).not.toBeNull(); // pages 6 et 7 restent à charger
+    // Téléréalité : seule l'émission de ce genre reste ; « Voir plus » ajoute la page 7 (2007), pas la 6 (divertissement).
+    tab('Téléréalité').click();
+    await settle(50);
+    expect(ids()).toEqual(['2005']);
+    expect(count()).toBe('1 émission');
+    (page.querySelector('#sv-more') as HTMLElement).click();
+    await settle(200);
+    expect(ids()).toEqual(expect.arrayContaining(['2005', '2007']));
+    expect(ids()).not.toContain('2006');
+    expect(count()).toBe('2 émissions');
+    expect(page.querySelector('#sv-more')).toBeNull(); // plus de page chez TMDB : bouton masqué
+    expect(page.querySelector('.shows-more')).toBeNull();
+    tab('Tout').click();
+    await settle(50);
+    expect(ids()).toHaveLength(7); // la liste complète reflète toutes les pages chargées
+    expect(count()).toBe('7 émissions');
+    expect(typedPages().slice(first)).toEqual(['4', '5', '6', '7']);
   });
 });
