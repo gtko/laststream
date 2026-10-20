@@ -9,6 +9,7 @@ import './styles/search.css';
 import './styles/collections.css';
 import './styles/settings.css';
 import './styles/settings-nav.css';
+import './styles/settings-appearance.css';
 import './styles/homeprefs.css';
 import './styles/hidden.css';
 import './styles/stats.css';

@@ -35,7 +35,8 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-function contrast(a: string, b: string): number {
+/** Rapport de contraste WCAG entre deux couleurs #RRGGBB (1 à 21). */
+export function contrastRatio(a: string, b: string): number {
   const la = luminance(a);
   const lb = luminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
@@ -43,7 +44,7 @@ function contrast(a: string, b: string): number {
 
 /** Texte sur l'accent : le fond sombre du thème tant qu'il tient 4,5:1, sinon blanc. */
 export function onAccent(accent: string, dark = '#0c0b11'): string {
-  return contrast(accent, dark) >= 4.5 ? dark : '#ffffff';
+  return contrastRatio(accent, dark) >= 4.5 ? dark : '#ffffff';
 }
 
 /** Éclaircit l'accent de 11 % vers le blanc pour l'état survol. */

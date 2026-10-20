@@ -80,16 +80,7 @@ select.set-input { appearance: none; -webkit-appearance: none; padding-right: 40
 .set-chip[data-ban-genre][aria-checked="true"] .set-chip-l { text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: var(--accent); }
 .set-chip:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 
-/* ---------- Thèmes ---------- */
-.set-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.set-theme { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1.5px solid var(--line-2); background: var(--bg); color: var(--muted); font-size: 14px; font-weight: 700; line-height: 1.2; text-align: left; transition: border-color 0.15s, background-color 0.15s, color 0.15s; }
-.set-theme:hover { border-color: var(--muted); color: var(--text); }
-.set-theme[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
-.set-theme:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
-.set-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
-.set-dot-custom { background: conic-gradient(#ff5a36, #fbbf24, #4ade80, #38bdf8, #a78bfa, #ff5a36); }
-.set-color input { width: 52px; height: 34px; border: 0; background: none; padding: 0; cursor: pointer; }
-.set-color input:disabled { opacity: 0.35; cursor: not-allowed; }
+/* Thèmes et couleur personnalisée : settings-appearance.css. */
 
 /* ---------- Divers ---------- */
 .set-badge { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); color: var(--muted); font-size: 12.5px; font-weight: 700; line-height: 1; white-space: nowrap; }
@@ -119,7 +110,6 @@ select.set-input { appearance: none; -webkit-appearance: none; padding-right: 40
   .set-row:not(.is-stack):has(.set-input, .btn) { flex-direction: column; align-items: stretch; gap: 10px; }
   .set-row:not(.is-stack) .set-row-c .set-input { width: 100%; }
   .set-row:not(.is-stack) .set-row-c .set-input-sm { width: 100%; text-align: left; }
-  .set-themes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .set-savebar { flex-direction: column; align-items: stretch; gap: 10px; bottom: 10px; }
   .set-panel-h h2 { font-size: 20px; }
 }

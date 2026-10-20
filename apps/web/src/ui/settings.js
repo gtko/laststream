@@ -10,7 +10,6 @@ import {
   setAutoplay, setBandwidthSetting, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
-import { applyTheme, CUSTOM_THEME_ID, isHexColor, PRESETS, readTheme, resolveTheme, saveTheme } from '../data/theme';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
@@ -18,6 +17,7 @@ import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { creditsLinkHTML } from './credits.js';
 import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
+import { appearancePanel } from './settings-appearance.js';
 import { invitesCard, refreshInvites } from './invites.js';
 import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } from './household.js';
 import {
@@ -92,15 +92,6 @@ function accountPanel() {
       stackInput('E-mail Stremio', '', 'type="email" name="email" required autocomplete="off"') +
       stackInput('Mot de passe Stremio', '', 'type="password" name="password" required autocomplete="off"') +
       msgP('set-st-msg') + actions('<button type="submit" class="btn btn-primary">Importer</button>') + '</form>');
-}
-
-function appearancePanel() {
-  const th = readTheme();
-  const themes = '<div class="set-themes" role="group" aria-label="Thème" data-nav>' +
-    PRESETS.map((p) => '<button type="button" class="set-theme" data-set-theme="' + p.id + '" aria-pressed="' + (th.id === p.id) + '"><span class="set-dot" style="background:' + p.accent + '"></span>' + esc(p.label) + '</button>').join('') +
-    '<button type="button" class="set-theme" data-set-theme="custom" aria-pressed="' + (th.id === CUSTOM_THEME_ID) + '"><span class="set-dot set-dot-custom"></span>Personnalisé</button></div>';
-  return card('Thème', '<div class="set-row is-stack"><div class="set-row-t"><span class="set-row-l">Couleur de l’application</span><span class="set-row-d">Choisis une palette ou compose ta propre couleur d’accent.</span></div><div class="set-row-c">' + themes + '</div></div>' +
-    fieldRow('Couleur d’accent', 'Disponible avec le thème Personnalisé.', (id) => '<span class="set-color"><input type="color" id="' + id + '" data-set-color value="' + esc(th.accent.toLowerCase()) + '"' + (th.id === CUSTOM_THEME_ID ? '' : ' disabled') + '></span>'));
 }
 
 function regionPanel() {
@@ -513,20 +504,6 @@ detailEl.addEventListener('click', async (e) => {
   if (srvMode) { e.preventDefault(); chooseServerMode(srvMode.dataset.setSrvmode); return; }
   const test = t.closest('[data-set-test]');
   if (test) { e.preventDefault(); runTest(test.dataset.setTest, test); return; }
-  const th = t.closest('[data-set-theme]');
-  if (th) {
-    e.preventDefault();
-    const id = th.dataset.setTheme;
-    const cur = readTheme();
-    const theme = id === CUSTOM_THEME_ID ? resolveTheme(CUSTOM_THEME_ID, isHexColor(cur.accent) ? cur.accent : '#ff5a36') : resolveTheme(id, null);
-    saveTheme(theme);
-    applyTheme(theme);
-    pushPrefs();
-    detailEl.querySelectorAll('[data-set-theme]').forEach((b) => b.setAttribute('aria-pressed', String(b === th)));
-    const color = detailEl.querySelector('[data-set-color]');
-    if (color) { color.disabled = theme.id !== CUSTOM_THEME_ID; color.value = theme.accent.toLowerCase(); }
-    return;
-  }
   if (t.closest('[data-set-bw]')) {
     e.preventDefault();
     const msg = detailEl.querySelector('#set-bw-msg');
@@ -570,15 +547,6 @@ detailEl.addEventListener('change', (e) => {
     clearCache();
     toast('Région mise à jour : rechargement…');
     setTimeout(() => location.reload(), 600);
-  }
-});
-
-detailEl.addEventListener('input', (e) => {
-  const t = e.target;
-  if (t instanceof HTMLInputElement && t.dataset.setColor !== undefined && isHexColor(t.value)) {
-    const theme = resolveTheme(CUSTOM_THEME_ID, t.value);
-    saveTheme(theme);
-    applyTheme(theme);
   }
 });
 
