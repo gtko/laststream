@@ -1,8 +1,8 @@
 {
-  "notes": "Correctif : l'app se rouvre normalement (interface chargée depuis le serveur). Lecteur Android : PiP, mini-lecteur, sources détaillées, commandes en icônes",
-  "url": "https://laststream.gtux-prog.workers.dev/app/android/laststream-2026101902.apk",
-  "versionCode": 2026101902,
-  "versionName": "2026.10.19.2",
-  "size": 47783919,
-  "sha256": "deb19c7795727c98177dd6627631c330d79e25e75e06c39a1f2c447b9a2e9b9e"
+  "versionCode": 2026102001,
+  "versionName": "2026.10.20.1",
+  "url": "https://laststream.gtux-prog.workers.dev/app/android/laststream-2026102001.apk",
+  "sha256": "9892395373e242227803c540380c130872a1eed5cb3731937159ce304b9abecf",
+  "size": 47937731,
+  "notes": "Social v3 : amis, bulles de messages dans le lecteur, réactions, watch party"
 }
