@@ -21,6 +21,16 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Dépendance privée @laststream/protocol (github:gtko/laststream-protocol, dépôt PRIVÉ) : git doit pouvoir
+      # la lire. Le secret PROTOCOL_READ_TOKEN (token lecture seule sur ce dépôt) doit être créé dans le repo
+      # (Settings > Secrets and variables > Actions) ; sans lui, npm ci échoue à la résolution de la dépendance.
+      - name: Autoriser la lecture du dépôt protocole privé
+        env:
+          PROTOCOL_READ_TOKEN: ${{ secrets.PROTOCOL_READ_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${PROTOCOL_READ_TOKEN}@github.com/gtko/laststream-protocol".insteadOf "https://github.com/gtko/laststream-protocol"
+          git config --global url."https://x-access-token:${PROTOCOL_READ_TOKEN}@github.com/gtko/laststream-protocol".insteadOf "ssh://git@github.com/gtko/laststream-protocol"
+
       - run: npm ci
 
       - run: npm run typecheck
