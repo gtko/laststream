@@ -305,6 +305,13 @@ describe('modération', () => {
     expect(errors(fx.core.handle('a-bob', msg({ t: 'react', emoji: '<script>' })))).toEqual(['invalid_reaction']);
   });
 
+  it('réactions : 😱 et 🤯 sont prévues comme les autres', () => {
+    const fx = makeRoom();
+    joined(fx, 'a-bob');
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '😱', pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji: '😱', at: T0, pos: null }]);
+    expect(broadcasts(fx.core.handle('a-bob', msg({ t: 'react', emoji: '🤯', pos: null })))).toEqual([{ t: 'react', user: 'bob', by: 'bob', emoji: '🤯', at: T0, pos: null }]);
+  });
+
   it('fin du salon par l’hôte uniquement', () => {
     const fx = makeRoom();
     joined(fx, 'a-host', 'a-bob');

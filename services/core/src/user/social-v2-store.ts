@@ -114,7 +114,10 @@ export const DEFAULT_SOCIAL_PREFS: SocialPrefs = {
 /** Mise à jour partielle des préférences. */
 export type SocialPrefsPatch = Partial<Omit<SocialPrefs, 'notify'>> & { notify?: Partial<SocialPrefs['notify']> };
 
-/** Relation d'un profil vers un ami (PUT /friends/:pid/relation). `nickname` : `null` efface le surnom. */
+/**
+ * Relation d'un profil vers un ami (PUT /friends/:pid/relation). `nickname` : `null` efface le surnom. `hideActivity` : le profil
+ * ne voit plus l'activité de cet ami dans son flux ni en temps réel (la présence reste visible).
+ */
 export interface RelationPatch {
   favorite?: boolean;
   nickname?: string | null;
@@ -1126,20 +1129,21 @@ export class SocialV2Store {
   /** Le profil `ownerPid` a-t-il mis `targetPid` parmi ses favoris ? */
   /**
    * Un ami (`viewerPid`) voit-il l'activité de `posterPid` ? Préférence `activityVisibility` du profil vu (« friends », « favorites »
-   * : seulement ses favoris, « nobody ») et masquage `hideActivity` posé par lui sur cet ami. Le foyer voit tout (à tester avant).
+   * : seulement ses favoris, « nobody »). Ne tient pas compte de `hideActivity` : ce masquage est côté spectateur (flux et temps
+   * réel), la présence et le `watching` restent visibles.
    */
   private activityVisibleTo(posterPid: string, viewerPid: string): boolean {
     const visibility = this.prefsOf(posterPid).activityVisibility;
     if (visibility === 'nobody') return false;
     if (visibility === 'favorites' && !this.isFavoriteOf(posterPid, viewerPid)) return false;
-    const hidden = this.relationRow(posterPid, viewerPid);
-    return hidden === undefined || Number(hidden.hide_activity) !== 1;
+    return true;
   }
 
   /**
    * Destinataires du flux temps réel `{t:"activity"}` pour un événement : seulement un début de titre (`started`) d'un ami, vers
    * les amis qui l'ont en favori et dont `notify.friendStarts` est vrai (défaut : faux), à condition que l'événement leur soit
-   * visible (préférences du profil, masquage) et qu'ils n'aient pas mis l'ami en sourdine.
+   * visible (préférences du profil) et qu'ils n'aient ni mis l'ami en sourdine ni masqué son activité (`hideActivity` posé par
+   * le destinataire sur cet ami).
    */
   activityLiveAudience(item: ActivityItem): string[] {
     if (item.kind !== 'started') return [];
@@ -1149,6 +1153,7 @@ export class SocialV2Store {
       if (this.isBlockedEither(item.pid, other)) continue;
       const relation = this.relationRow(other, item.pid);
       if (relation === undefined || Number(relation.favorite) !== 1 || Number(relation.muted) === 1) continue;
+      if (Number(relation.hide_activity) === 1) continue;
       if (!this.prefsOf(other).notify.friendStarts) continue;
       if (this.activityVisibleTo(item.pid, other)) audience.push(other);
     }

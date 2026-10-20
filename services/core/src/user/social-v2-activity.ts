@@ -100,9 +100,9 @@ export function peerPidsFilter(column: string, viewerPid: string): { sql: string
  * Filtre d'audience de l'activité : les événements que `viewerPid` voit. Amis acceptés et foyer, jamais les siens, jamais
  * ceux d'un profil en statut « invisible » (vu hors ligne par les autres). Pour un ami (le foyer voit tout) s'ajoutent les
  * réglages de S2 : préférence `activityVisibility` du profil vu (« friends » ; « favorites » : seulement ses favoris ;
- * « nobody »), masquage `hideActivity` posé par ce profil sur le spectateur, et sourdine (`muted`) posée par le spectateur
- * sur ce profil. La requête doit avoir `activity AS a` et `profile_presence AS pr` (LEFT JOIN sur `pr.profile_pid = a.pid`).
- * Les paramètres se lient dans l'ordre de `params`.
+ * « nobody »), masquage `hideActivity` posé par le spectateur sur ce profil (il ne veut plus voir cet ami dans son flux),
+ * et sourdine (`muted`) posée par le spectateur sur ce profil. La requête doit avoir `activity AS a` et `profile_presence AS pr`
+ * (LEFT JOIN sur `pr.profile_pid = a.pid`). Les paramètres se lient dans l'ordre de `params`.
  */
 export function activityAudienceFilter(viewerPid: string): { sql: string; params: string[] } {
   const peers = peerPidsFilter('a.pid', viewerPid);
@@ -114,7 +114,7 @@ export function activityAudienceFilter(viewerPid: string): { sql: string; params
               OR (
                 ${visibility} NOT IN ('favorites', 'nobody')
                 OR (${visibility} = 'favorites' AND EXISTS (SELECT 1 FROM profile_relations fav WHERE fav.owner_pid = a.pid AND fav.target_pid = ? AND fav.favorite = 1))
-              ) AND NOT EXISTS (SELECT 1 FROM profile_relations hide WHERE hide.owner_pid = a.pid AND hide.target_pid = ? AND hide.hide_activity = 1)
+              ) AND NOT EXISTS (SELECT 1 FROM profile_relations hide WHERE hide.owner_pid = ? AND hide.target_pid = a.pid AND hide.hide_activity = 1)
             )`;
   return { sql, params: [...peers.params, viewerPid, viewerPid, viewerPid, viewerPid, viewerPid] };
 }

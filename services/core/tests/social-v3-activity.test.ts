@@ -74,14 +74,28 @@ describe('flux d’activité : préférences et relations de S2', () => {
     expect(await tmdbIds(cast.bob)).toEqual([101, 102]);
   });
 
-  it('hideActivity (posé par alice sur bob) masque son activité à bob seulement', async () => {
+  it('hideActivity (posé par alice sur bob) retire l’activité de bob du flux d’alice, et seulement celui-là', async () => {
     await befriend(app, cast.alice, cast.carol);
-    await startTitle(cast.alice, 201);
+    await startTitle(cast.bob, 201);
+    expect(await tmdbIds(cast.alice)).toEqual([201]);
     await relation(cast.alice, cast.bob.pid, { hideActivity: true });
-    expect(await tmdbIds(cast.bob)).toEqual([]);
-    expect(await tmdbIds(cast.carol)).toEqual([201]);
+    expect(await tmdbIds(cast.alice)).toEqual([]);
+    // Le sens inverse n’est pas touché : bob voit toujours alice, et carol aussi.
+    await startTitle(cast.alice, 202);
+    expect(await tmdbIds(cast.bob)).toEqual([202]);
+    expect(await tmdbIds(cast.carol)).toEqual([202]);
     await relation(cast.alice, cast.bob.pid, { hideActivity: false });
-    expect(await tmdbIds(cast.bob)).toEqual([201]);
+    expect(await tmdbIds(cast.alice)).toEqual([201]);
+  });
+
+  it('hideActivity ne touche pas à la présence : alice voit toujours le « regarde en ce moment » de bob', async () => {
+    await as(app, cast.bob, 'PUT', '/user/social/presence', {
+      body: { watching: { type: 'movie', tmdbId: 201, title: 'Film', pos: 100, duration: 7200, paused: false, at: Date.now() } },
+    });
+    await relation(cast.bob, cast.alice.pid, { hideActivity: true });
+    await relation(cast.alice, cast.bob.pid, { hideActivity: true });
+    const friends = (await as<{ friends: { pid: string; watching?: { title: string } }[] }>(app, cast.alice, 'GET', '/user/social/friends')).body.friends;
+    expect(friends.find((friend) => friend.pid === cast.bob.pid)?.watching?.title).toBe('Film');
   });
 
   it('muted (posé par bob sur alice) retire l’activité d’alice de son flux', async () => {
@@ -119,9 +133,10 @@ describe('temps réel {t:"activity"} : favoris et notify.friendStarts', () => {
     await setPrefs(cast.alice, { activityVisibility: 'nobody' });
     await startTitle(cast.alice, 411);
     await setPrefs(cast.alice, { activityVisibility: 'friends' });
-    await relation(cast.alice, cast.bob.pid, { hideActivity: true });
+    // Bob masque l’activité d’alice : il ne reçoit plus son début de titre en direct.
+    await relation(cast.bob, cast.alice.pid, { hideActivity: true });
     await startTitle(cast.alice, 412);
-    await relation(cast.alice, cast.bob.pid, { hideActivity: false });
+    await relation(cast.bob, cast.alice.pid, { hideActivity: false });
     await relation(cast.bob, cast.alice.pid, { muted: true });
     await startTitle(cast.alice, 413);
     expect(activityEvents()).toHaveLength(0);
