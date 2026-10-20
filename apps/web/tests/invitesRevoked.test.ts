@@ -29,37 +29,36 @@ beforeEach(() => {
   vi.mocked(socialApi.revokeInvite).mockReset();
 });
 
-describe('liens d’invitation révoqués par l’administrateur', () => {
-  it('révoqué : motif affiché, aucune action ni champ de lien', () => {
-    const html = inv.inviteRowHTML({ ...BASE, state: 'free', revokedAt: '2026-10-19T08:00:00.000Z' });
-    expect(html).toContain('Révoqué par l\'administrateur');
-    for (const marker of ['data-inv-input', 'data-inv-copy', 'data-inv-share', 'data-inv-revoke', 'data-inv-unsent']) {
-      expect(html).not.toContain(marker);
-    }
+// Actions d'un billet : copier, partager, annuler, composeur (mot). Un billet révoqué n'en offre aucune.
+const ACTIONS = ['data-tk-copy', 'data-tk-share', 'data-tk-revoke', 'id="tk-msg"'];
+const bodyOf = (invite: Record<string, unknown>) => inv.invitesBodyHTML({ quota: 4, invites: [invite] } as never);
+
+describe('billets révoqués par l’administrateur', () => {
+  it('révoqué : motif affiché, aucune action ni composeur', () => {
+    const html = bodyOf({ ...BASE, state: 'free', revokedAt: '2026-10-19T08:00:00.000Z' });
+    expect(html).toContain('Révoqué par l’administrateur');
+    for (const marker of ACTIONS) expect(html).not.toContain(marker);
   });
 
-  it('envoyé puis révoqué : pas de « Remettre en libre » non plus', () => {
-    const html = inv.inviteRowHTML({ ...BASE, state: 'sent', revokedAt: '2026-10-19T08:00:00.000Z' });
-    expect(html).toContain('Révoqué par l\'administrateur');
-    expect(html).not.toContain('data-inv-unsent');
+  it('envoyé puis révoqué : pas d’annulation ni de copie non plus', () => {
+    const html = bodyOf({ ...BASE, state: 'sent', revokedAt: '2026-10-19T08:00:00.000Z' });
+    expect(html).toContain('Révoqué par l’administrateur');
+    expect(html).not.toContain('Annuler le billet');
+    expect(html).not.toContain('data-tk-copy');
   });
 
   it('état « revoked » : même rendu que la révocation par date', () => {
-    const html = inv.inviteRowHTML({ ...BASE, state: 'revoked', revokedAt: null });
+    const html = bodyOf({ ...BASE, state: 'revoked', revokedAt: null });
     expect(html).toContain('Révoqué');
-    expect(html).toContain('Révoqué par l\'administrateur');
-    for (const marker of ['data-inv-input', 'data-inv-copy', 'data-inv-share', 'data-inv-revoke']) {
-      expect(html).not.toContain(marker);
-    }
+    expect(html).toContain('Révoqué par l’administrateur');
+    for (const marker of ACTIONS) expect(html).not.toContain(marker);
   });
 
-  it('non révoqué (revokedAt absent ou null) : lien, copie, partage et révocation comme avant', () => {
+  it('non révoqué (revokedAt absent ou null) : composeur, copie, partage et annulation comme avant', () => {
     for (const extra of [{}, { revokedAt: null }]) {
-      const html = inv.inviteRowHTML({ ...BASE, state: 'free', ...extra });
-      expect(html).not.toContain('Révoqué par l\'administrateur');
-      for (const marker of ['data-inv-input', 'data-inv-copy', 'data-inv-share', 'data-inv-revoke']) {
-        expect(html).toContain(marker);
-      }
+      const html = bodyOf({ ...BASE, state: 'free', ...extra });
+      expect(html).not.toContain('Révoqué par l’administrateur');
+      for (const marker of ['data-tk-copy', 'data-tk-share', 'id="tk-msg"']) expect(html).toContain(marker);
     }
   });
 

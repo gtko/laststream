@@ -5,6 +5,14 @@ import { call, type MediaKind, type Visibility } from './userApi';
 
 // ---- Parrainage ----
 export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
+/** Coup de cœur d'un billet : un titre de la bibliothèque du parrain (3 au plus). Images : https seulement. */
+export interface InvitePick {
+  id: number | string;
+  type: MediaKind;
+  name: string;
+  poster: string | null;
+  background: string | null;
+}
 export interface InviteDto {
   id: string;
   code: string;
@@ -16,6 +24,19 @@ export interface InviteDto {
   invitee: string | null;
   /** Date de révocation par l'administrateur (ISO), ou null : le lien ne fonctionne plus et n'est plus partageable. */
   revokedAt?: string | null;
+  /** Mot du parrain (≤ 280 caractères), affiché sur la page d'arrivée du filleul. Absent des serveurs antérieurs. */
+  message?: string | null;
+  /** Coups de cœur (≤ 3). Absent des serveurs antérieurs : tenu pour une liste vide. */
+  picks?: InvitePick[];
+  /** Fin de validité du billet envoyé (ISO) : envoi + 14 jours. Null tant que le billet est libre. */
+  expiresAt?: string | null;
+  /** Numéro de billet affichable (4 chiffres, stable). Absent des serveurs antérieurs. */
+  number?: string | number | null;
+}
+/** Corps de `PUT /user/invites/:id` : seuls les champs envoyés sont modifiés. */
+export interface InviteUpdate {
+  message?: string;
+  picks?: InvitePick[];
 }
 export interface InvitesDto {
   quota: number;
@@ -26,6 +47,12 @@ const enc = encodeURIComponent;
 export const getInvites = () => call<InvitesDto>('/invites');
 export const markInviteSent = (id: string, sent: boolean) => call<void>('/invites/' + enc(id) + '/sent', { method: 'PUT', body: { sent } });
 export const revokeInvite = (id: string) => call<{ invite: InviteDto }>('/invites/' + enc(id), { method: 'DELETE' });
+/** Mot et coups de cœur d'un billet (`PUT /user/invites/:id`). Accepte une invite nue ou enveloppée dans `invite`. */
+export const updateInvite = async (id: string, body: InviteUpdate): Promise<InviteDto | null> => {
+  const res = await call<InviteDto | { invite: InviteDto } | undefined>('/invites/' + enc(id), { method: 'PUT', body });
+  if (!res) return null;
+  return 'invite' in res ? res.invite : res;
+};
 export const checkInvite = (code: string) =>
   call<{ valid: boolean; inviter: string | null }>('/invites/check?code=' + enc(code), { anonymous: true });
 export const setInviteQuota = (username: string, quota: number) =>

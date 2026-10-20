@@ -166,9 +166,12 @@ describe('écran d’inscription', () => {
   });
 });
 
-// ---------- Tableau « Mes invitations » ----------
+// ---------- Billets de parrainage (« Mes billets de parrainage ») ----------
 describe('Mes invitations', () => {
-  const inv = (id: string, code: string, state: string, invitee: string | null = null) => ({ id, code, state, createdAt: '2026-01-01T00:00:00Z', sentAt: state === 'free' ? null : '2026-01-02T00:00:00Z', usedAt: state === 'used' ? '2026-01-03T00:00:00Z' : null, invitee });
+  const inv = (id: string, code: string, state: string, invitee: string | null = null) => ({
+    id, code, state, createdAt: '2026-01-01T00:00:00Z', sentAt: state === 'free' ? null : '2026-01-02T00:00:00Z', usedAt: state === 'used' ? '2026-01-03T00:00:00Z' : null, invitee,
+    number: '00' + (39 + Number(id.slice(1)) - 1), expiresAt: state === 'sent' ? new Date(Date.now() + 9 * 86400000 - 60000).toISOString() : null,
+  });
   let mod: typeof import('../src/ui/invites.js');
   let authMod: typeof import('../src/data/auth');
   let list: ReturnType<typeof inv>[];
@@ -193,27 +196,30 @@ describe('Mes invitations', () => {
     window.confirm = () => true;
   });
 
-  const rows = () => Array.from(document.querySelectorAll('#detail .inv-row')) as HTMLElement[];
+  const rows = () => Array.from(document.querySelectorAll('#detail .tk-ticket')) as HTMLElement[];
 
-  it('affiche les 4 liens avec leur état (libre, envoyé, utilisé par le filleul)', async () => {
+  it('affiche 4 billets avec leur état (libre, envoyé, validé par le filleul) et leur numéro', async () => {
     await mod.refreshInvites();
     expect(rows()).toHaveLength(4);
-    expect(rows().map((r) => r.className.match(/is-(free|sent|used)/)![1])).toEqual(['free', 'sent', 'used', 'free']);
-    expect(rows()[2].textContent).toContain('Utilisé');
-    expect(rows()[2].textContent).toContain('par bob');
-    expect(rows()[2].querySelector('[data-inv-revoke],[data-inv-copy],[data-inv-share]')).toBeNull();
-    expect(rows()[0].textContent).toContain('Libre');
-    expect(rows()[1].textContent).toContain('Envoyé');
-    expect((rows()[0].querySelector('[data-inv-input]') as HTMLInputElement).value).toContain('/?invite=FreeCode1');
+    expect(rows().map((r) => r.className.match(/tk-is-(free|sent|used)/)![1])).toEqual(['free', 'sent', 'used', 'free']);
+    expect(rows()[2].textContent).toContain('Validé');
+    expect(rows()[2].textContent).toContain('bob');
+    expect(rows()[0].textContent).toContain('Offrir ce billet');
+    expect(rows()[1].textContent).toContain('Envoyé · expire dans 9 j');
+    expect(rows()[0].textContent).toContain('0039');
+    expect(rows()[3].textContent).toContain('0042');
+    // Le billet libre ouvert propose le composeur ; le lien n'est plus affiché en clair.
+    expect(document.querySelector('#detail #tk-msg')).not.toBeNull();
+    expect(document.querySelector('#detail [data-inv-input]')).toBeNull();
   });
 
   it('Copier met le lien dans le presse-papiers et marque « envoyé »', async () => {
     await mod.refreshInvites();
-    (rows()[0].querySelector('[data-inv-copy]') as HTMLElement).click();
+    (document.querySelector('#detail [data-tk-copy]') as HTMLElement).click();
     await tick(60);
     expect((navigator.clipboard.writeText as any).mock.calls[0][0]).toMatch(/\/\?invite=FreeCode1$/);
     expect(calls.find((c) => c.path === '/user/invites/i1/sent')!.body).toEqual({ sent: true });
-    expect(rows()[0].className).toContain('is-sent');
+    expect(rows()[0].className).toContain('tk-is-sent');
   });
 
   it('Partager utilise navigator.share quand il existe, sinon copie', async () => {
@@ -232,7 +238,9 @@ describe('Mes invitations', () => {
     await mod.refreshInvites();
     expect(await mod.revokeOne('i1')).toBe(true);
     expect(calls.some((c) => c.method === 'DELETE' && c.path === '/user/invites/i1')).toBe(true);
-    expect((rows()[0].querySelector('[data-inv-input]') as HTMLInputElement).value).toContain('NewCode99');
+    expect(rows()[0].className).toContain('tk-is-free');
+    expect(await mod.copyInvite('i1')).toBe(true); // le billet annulé porte un nouveau lien
+    expect((navigator.clipboard.writeText as any).mock.calls.at(-1)[0]).toMatch(/\/\?invite=NewCode99$/);
     expect(await mod.revokeOne('i3')).toBe(false);
     expect(calls.some((c) => c.path === '/user/invites/i3')).toBe(false); // refusé sans appel : déjà utilisé
   });
@@ -252,7 +260,7 @@ describe('Mes invitations', () => {
   it('serveur injoignable : message et bouton Réessayer', async () => {
     routes = () => { throw new Error('réseau'); };
     await mod.refreshInvites();
-    expect(document.getElementById('inv-slot')!.textContent).toContain('Invitations indisponibles');
+    expect(document.getElementById('inv-slot')!.textContent).toContain('Billets indisponibles');
   });
 });
 
