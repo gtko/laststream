@@ -1,8 +1,9 @@
-/* Bibliothèque partagée d'un ami (#/friend/<pseudo>) : ses titres partagés, avec « Ajouter à ma bibliothèque » et lecture directe.
+/* Bibliothèque partagée d'un ami (#/friend/<pid>) : ses titres partagés, avec « Ajouter à ma bibliothèque » et lecture directe.
  * La liste des amis, les demandes et la présence ne sont plus ici : elles vivent dans la barre latérale (socialSidebar.js,
  * ouverte par #/friends et par le bouton Amis de la barre du haut). */
 import { isKidProfile, isServerMode } from '../data/auth';
-import { getFriendLibrary } from '../data/socialApi';
+import * as store from '../data/socialStore';
+import { getFriendLibrary } from '../data/socialV2Api';
 import { posterPathOf } from '../data/serverUserStore';
 import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
@@ -10,6 +11,7 @@ import { detailEl, toast } from './dom.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
 import { infiniteList } from './infinite.js';
+import { directPlayRequest } from './playRequest.js';
 import { playDirect } from './sources-ui.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
@@ -22,7 +24,7 @@ function unavailable(title) {
 
 // ---------- Bibliothèque d'un ami ----------
 const FPAGE = 50;
-let fview = { name: '', type: 'all' };
+let fview = { pid: '', name: '', type: 'all' };
 
 const itemOf = (x) => {
   const type = x.type === 'series' ? 'tv' : 'movie';
@@ -49,7 +51,7 @@ function renderFriendLibrary() {
     host: box,
     key: location.hash + '|' + fview.type,
     load: async (page) => {
-      const res = await getFriendLibrary(fview.name, { type, limit: FPAGE, offset: (page - 1) * FPAGE });
+      const res = await getFriendLibrary(fview.pid, { type, limit: FPAGE, offset: (page - 1) * FPAGE });
       const items = res.items.filter((x) => x.tmdbId != null);
       if (page === 1 && !items.length) return { html: '<p class="row-msg">' + esc(fview.name) + ' n’a rien partagé' + (type ? ' dans ce filtre' : ' pour l’instant') + '.</p>', done: true };
       return { html: items.map(friendTile).join(''), done: res.offset + res.items.length >= res.total || !res.items.length };
@@ -59,12 +61,20 @@ function renderFriendLibrary() {
   return list.ready;
 }
 
-export function showFriendLibrary(username) {
+/** Nom affiché d'un ami, d'après la barre latérale (le pid seul n'est pas lisible). */
+function nameOfPid(pid) {
+  const s = store.getState();
+  const f = s.friends.find((x) => x.pid === pid) || s.household.find((x) => x.pid === pid);
+  return f ? f.nickname || f.handle.name : 'Un ami';
+}
+
+export function showFriendLibrary(pid) {
   teardownFiche();
   state.kind = 'friend';
+  const username = nameOfPid(pid);
   document.title = username + ' · Laststream';
   if (!isServerMode() || isKidProfile()) { detailEl.innerHTML = unavailable(username); return; }
-  fview = { name: username, type: 'all' };
+  fview = { pid, name: username, type: 'all' };
   detailEl.innerHTML = topBar(false) +
     '<article class="svc-page soc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<p class="svc-eyebrow">Bibliothèque partagée</p><h1 class="svc-title" id="svc-title" tabindex="-1">' + esc(username) + '</h1>' +
@@ -74,20 +84,6 @@ export function showFriendLibrary(username) {
   const h1 = detailEl.querySelector('#svc-title');
   if (h1) h1.focus({ preventScroll: true });
   renderFriendLibrary();
-}
-
-/** Cible de lecture directe : un film, ou l'épisode en cours / le premier d'une série. */
-function requestOf(key) {
-  const it = state.byKey.get(key);
-  if (!it) return null;
-  let season = null;
-  let episode = null;
-  if (it.type === 'tv') {
-    const cont = userStore.continueWatching().find((e) => e.type === 'tv' && e.id === it.id && e.season != null);
-    season = cont ? cont.season : 1;
-    episode = cont ? cont.episode : 1;
-  }
-  return { type: it.type, id: String(it.id), name: it.name, season, episode, key };
 }
 
 // ---------- Événements ----------
@@ -110,7 +106,7 @@ detailEl.addEventListener('click', (e) => {
   const play = t.closest('[data-fr-play]');
   if (play) {
     e.preventDefault();
-    const req = requestOf(play.dataset.frPlay);
+    const req = directPlayRequest(play.dataset.frPlay);
     if (req) playDirect(req, play);
   }
 });
