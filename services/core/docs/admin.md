@@ -30,7 +30,7 @@ Erreurs : `403 elevation_required` (absent/invalide), `403 elevation_expired` (�
 | `DELETE /admin/accounts/:id` **[élév.]** | Supprime le compte et ses données, ferme ses salons (`204`). |
 | `POST /admin/accounts/:id/reset-link` **[élév.]** | Lien à usage unique, 24 h : `{ token, expiresAt, url }` (`201`). Le jeton n'est montré qu'ici ; un nouveau lien remplace le précédent. |
 | `GET /admin/invites?status=active\|used\|expired\|revoked&limit` | Toutes les invitations (500 max, 100 par défaut) : `{ invites }`, récentes d'abord, avec `ownerUsername` (nul pour une invitation « système »). `expired` ne renvoie rien : aucun lien n'a d'échéance. |
-| `DELETE /admin/invites/:id` **[élév.]** | Révoque une invitation active (`204`) : son lien est refusé à l'inscription (`403 invite_invalid`) et sur `GET /user/invites/check`. `409 invite_not_active` si elle est utilisée ou déjà révoquée, `404` si inconnue. Le propriétaire qui régénère ce lien obtient un code neuf, valide. |
+| `DELETE /admin/invites/:id` **[élév.]** | Révoque une invitation active (`204`) : son lien est refusé à l'inscription (`403 invite_invalid`) et sur `GET /user/invites/check`. `409 invite_not_active` si elle est utilisée ou déjà révoquée, `404` si inconnue. Le propriétaire ne peut plus régénérer ce lien (`409 invite_revoked` sur `DELETE /user/invites/:id`) ; il reste listé avec `state: "revoked"` et `revokedAt`. |
 
 Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_owner`).
 

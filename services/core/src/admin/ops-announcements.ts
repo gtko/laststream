@@ -8,14 +8,19 @@ import { nowIso, type Session } from '../user/session.js';
 import { parseWith, UserApiError } from '../user/validation.js';
 
 /**
- * Annonces (bandeau d'information) et boîte de contrôle : routes d'administration réservées au propriétaire (écritures
- * auditées, sans ré-authentification), et lecture publique GET /announcements qui ne renvoie que les champs d'affichage
- * des annonces actives dans leur fenêtre. Montées par admin/api.ts (sous /admin) et app.ts (public).
+ * Annonces (bandeau d'information) et boîte de contrôle : routes d'administration réservées au propriétaire. Les écritures
+ * sur les annonces (POST, PUT, DELETE) exigent en plus une ré-authentification récente (élévation) et sont auditées ; la
+ * boîte de contrôle n'exige que le propriétaire. Lecture publique GET /announcements : seuls les champs d'affichage des
+ * annonces actives dans leur fenêtre. Montées par admin/api.ts (sous /admin) et app.ts (public).
  */
 
-/** Ce que ces routes reprennent de admin/api.ts : contrôle du propriétaire, journal d'audit, dépôt d'administration. */
+/**
+ * Ce que ces routes reprennent de admin/api.ts : contrôle du propriétaire, élévation (ré-authentification récente), journal
+ * d'audit, dépôt d'administration.
+ */
 export interface AdminOps {
   owner(c: Ctx): Promise<Session>;
+  elevated(c: Ctx, session: Session): void;
   audit(session: Session, action: string, target: string | null, detail?: Record<string, unknown> | null): Promise<void>;
   admin(): AdminRepo;
 }
@@ -77,7 +82,10 @@ function publicView(announcement: Announcement): Pick<Announcement, 'id' | 'titl
   return { id: announcement.id, title: announcement.title, message: announcement.message, level: announcement.level };
 }
 
-/** Routes d'administration des annonces et de la boîte de contrôle (propriétaire ; chaque écriture est auditée). */
+/**
+ * Routes d'administration des annonces (propriétaire et élévation pour les écritures) et de la boîte de contrôle (propriétaire).
+ * Chaque écriture est auditée.
+ */
 export function registerAnnouncementAdminRoutes(router: App, ops: AdminOps): void {
   const store = (): AdminRepo => ops.admin();
 
@@ -88,6 +96,7 @@ export function registerAnnouncementAdminRoutes(router: App, ops: AdminOps): voi
 
   router.post('/announcements', async (c) => {
     const session = await ops.owner(c);
+    ops.elevated(c, session);
     const body = parseWith(announcementCreateBody, c.get('body'));
     const now = nowIso();
     const record: Announcement = {
@@ -109,6 +118,7 @@ export function registerAnnouncementAdminRoutes(router: App, ops: AdminOps): voi
   /** Patch partiel : un champ absent garde sa valeur ; `startsAt` ou `endsAt` à null efface la borne. */
   router.put('/announcements/:id', async (c) => {
     const session = await ops.owner(c);
+    ops.elevated(c, session);
     const id = parseWith(announcementIdParam, c.req.param('id'));
     const patch = parseWith(announcementPatchBody, c.get('body'));
     const current = await store().announcementById(id);
@@ -131,6 +141,7 @@ export function registerAnnouncementAdminRoutes(router: App, ops: AdminOps): voi
 
   router.delete('/announcements/:id', async (c) => {
     const session = await ops.owner(c);
+    ops.elevated(c, session);
     const id = parseWith(announcementIdParam, c.req.param('id'));
     const current = await store().announcementById(id);
     if (current === undefined) throw new UserApiError(404, 'announcement_not_found');

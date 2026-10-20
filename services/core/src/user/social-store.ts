@@ -20,7 +20,8 @@ export const HIDDEN_KEY = /^(movie|tv):\d{1,10}$/;
 /** Anciens réglages de l'accueil : `homeHidden` (nombre de morceaux) puis `homeHidden0`… `homeHidden11`. */
 const LEGACY_HIDDEN_CHUNKS = 12;
 
-export type InviteState = 'free' | 'sent' | 'used';
+/** « revoked » : lien révoqué par l'administration (jamais libre, jamais régénérable par le propriétaire). */
+export type InviteState = 'free' | 'sent' | 'used' | 'revoked';
 
 export interface InviteView {
   id: string;
@@ -29,6 +30,8 @@ export interface InviteView {
   createdAt: string;
   sentAt: string | null;
   usedAt: string | null;
+  /** Date de révocation par l'administration (ISO), ou null. */
+  revokedAt: string | null;
   /** Pseudo du filleul (null si le lien n'est pas utilisé ou si le compte a été supprimé). */
   invitee: string | null;
 }
@@ -118,17 +121,21 @@ interface InviteRow {
   sent_at: string | null;
   used_by: string | null;
   used_at: string | null;
+  revoked_at: string | null;
   invitee: string | null;
 }
 
 function toInvite(row: InviteRow): InviteView {
+  const state: InviteState =
+    row.used_at !== null ? 'used' : row.revoked_at !== null ? 'revoked' : row.sent_at !== null ? 'sent' : 'free';
   return {
     id: row.id,
     code: row.code,
-    state: row.used_at !== null ? 'used' : row.sent_at !== null ? 'sent' : 'free',
+    state,
     createdAt: row.created_at,
     sentAt: row.sent_at,
     usedAt: row.used_at,
+    revokedAt: row.revoked_at,
     invitee: row.invitee,
   };
 }
@@ -192,7 +199,7 @@ export class SocialStore {
       const select = () =>
         this.db
           .prepare(
-            `SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, u.username AS invitee
+            `SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, u.username AS invitee
              FROM invites i LEFT JOIN accounts u ON u.id = i.used_by
              WHERE i.inviter_id = ? ORDER BY i.rowid`,
           )
@@ -204,8 +211,9 @@ export class SocialStore {
             this.db.prepare('INSERT INTO invites (id, code, inviter_id, created_at) VALUES (?, ?, ?, ?)').run(randomUUID(), generateInviteCode(), accountId, now);
           }
         } else {
-          // Quota réduit : supprimer d'abord les liens libres (les derniers créés), sans toucher aux liens utilisés.
-          const free = rows.filter((row) => row.used_at === null);
+          // Quota réduit : supprimer d'abord les liens libres (les derniers créés). Un lien utilisé ou révoqué par
+          // l'administration compte comme consommé : il n'est jamais supprimé ici.
+          const free = rows.filter((row) => row.used_at === null && row.revoked_at === null);
           const surplus = Math.min(rows.length - quota, free.length);
           for (const row of free.slice(free.length - surplus)) this.db.prepare('DELETE FROM invites WHERE id = ?').run(row.id);
         }
@@ -225,19 +233,20 @@ export class SocialStore {
   }
 
   /**
-   * Révoque un lien non utilisé : l'ancien code cesse de fonctionner et l'emplacement reçoit un nouveau code libre. Le
-   * nouveau code n'est pas révoqué, même si l'administration avait révoqué l'ancien (revoked_at remis à NULL).
+   * Régénère un lien non utilisé : l'ancien code cesse de fonctionner et l'emplacement reçoit un nouveau code libre.
+   * Un lien révoqué par l'administration ne se régénère pas (« revoked ») : sa révocation reste en place.
    */
-  revokeInvite(accountId: string, inviteId: string, now: string): { result: 'ok'; invite: InviteView } | { result: 'not_found' | 'used' } {
+  revokeInvite(accountId: string, inviteId: string, now: string): { result: 'ok'; invite: InviteView } | { result: 'not_found' | 'used' | 'revoked' } {
     return this.db.transaction(() => {
-      const row = this.db.prepare('SELECT used_at FROM invites WHERE id = ? AND inviter_id = ?').get(inviteId, accountId) as { used_at: string | null } | undefined;
+      const row = this.db.prepare('SELECT used_at, revoked_at FROM invites WHERE id = ? AND inviter_id = ?').get(inviteId, accountId) as
+        | { used_at: string | null; revoked_at: string | null }
+        | undefined;
       if (row === undefined) return { result: 'not_found' as const };
       if (row.used_at !== null) return { result: 'used' as const };
-      this.db
-        .prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL, revoked_at = NULL WHERE id = ?')
-        .run(generateInviteCode(), now, inviteId);
+      if (row.revoked_at !== null) return { result: 'revoked' as const };
+      this.db.prepare('UPDATE invites SET code = ?, created_at = ?, sent_at = NULL WHERE id = ?').run(generateInviteCode(), now, inviteId);
       const fresh = this.db
-        .prepare('SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, NULL AS invitee FROM invites i WHERE i.id = ?')
+        .prepare('SELECT i.id, i.code, i.created_at, i.sent_at, i.used_by, i.used_at, i.revoked_at, NULL AS invitee FROM invites i WHERE i.id = ?')
         .get(inviteId) as unknown as InviteRow;
       return { result: 'ok' as const, invite: toInvite(fresh) };
     });

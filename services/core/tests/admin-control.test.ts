@@ -306,6 +306,36 @@ describe('/admin : centre de contrôle (accès)', () => {
     expect(text).not.toContain('Salon privé');
   });
 
+  it('live : la lecture info() d’un salon est gardée 15 s par instance (pas de nouvelle lecture à chaque /live)', async () => {
+    const base = fakeParty();
+    let infoCalls = 0;
+    const party = {
+      ...base,
+      room: (id: string) => {
+        const stub = base.room(id);
+        return {
+          ...stub,
+          info: () => {
+            infoCalls += 1;
+            return stub.info();
+          },
+        };
+      },
+    };
+    rig = await startAdmin({ party, metrics: createMemoryMetrics() });
+    const hostId = await idOf(rig, 'alice');
+    await rig.backend.social().addPartyRoom({ id: 'salon-cache', hostId, visibility: 'public', title: 'Cache', poster: null, language: 'fr', mediaType: 'movie', createdAt: new Date().toISOString() });
+    await base.room('salon-cache').init(roomMeta('salon-cache', hostId, 'alice'));
+
+    const first = await rig.call<any>('GET', '/admin/live');
+    expect(first.body.parties).toBe(1);
+    const readsAfterFirst = infoCalls;
+    expect(readsAfterFirst).toBeGreaterThan(0);
+    const second = await rig.call<any>('GET', '/admin/live');
+    expect(second.body.parties).toBe(1);
+    expect(infoCalls).toBe(readsAfterFirst);
+  });
+
   it('courbes : deltas en % vs la période précédente de même durée', async () => {
     let shift = 0;
     const metrics = createMemoryMetrics(() => Date.now() + shift);

@@ -129,19 +129,33 @@ describe('/admin : invitations', () => {
     expect((await rig.call<any>('GET', '/admin/accounts?q=erin')).body.total).toBe(0);
   });
 
-  it('régénération par le propriétaire : l’ancien code est mort, le nouveau lien libre fonctionne', async () => {
+  it('révoqué par l’administration : listé avec revokedAt, ni libre ni régénérable par le propriétaire (409)', async () => {
     const free = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites.find((invite) => invite.state === 'free');
     expect((await rig.call('DELETE', `/admin/invites/${free.id}`, { elevation: await rig.elevate() })).status).toBe(204);
 
-    const regenerated = await request<{ invite: { id: string; code: string } }>(rig.app, 'DELETE', `/user/invites/${free.id}`, { token: rig.owner.token });
-    expect(regenerated.status).toBe(200);
-    expect(regenerated.body.invite.id).toBe(free.id);
-    expect(regenerated.body.invite.code).not.toBe(free.code);
-    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${regenerated.body.invite.code}`)).body).toEqual({ valid: true, inviter: 'alice' });
-    const joined = await request<{ account: { username: string } }>(rig.app, 'POST', '/user/register', {
-      body: { username: 'erin', password: PASSWORD, invite: regenerated.body.invite.code },
-    });
-    expect(joined.status).toBe(201);
+    const listed = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites;
+    const revoked = listed.find((invite) => invite.id === free.id);
+    expect(revoked).toMatchObject({ id: free.id, code: free.code, state: 'revoked' });
+    expect(Number.isNaN(Date.parse(revoked.revokedAt))).toBe(false);
+    expect(listed.filter((invite) => invite.state === 'free')).toHaveLength(2);
+
+    const regenerated = await request<{ error: string }>(rig.app, 'DELETE', `/user/invites/${free.id}`, { token: rig.owner.token });
+    expect(regenerated.status).toBe(409);
+    expect(regenerated.body.error).toBe('invite_revoked');
+    expect((await request<any>(rig.app, 'GET', `/user/invites/check?code=${free.code}`)).body).toEqual({ valid: false, inviter: null });
+    const after = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites.find((invite) => invite.id === free.id);
+    expect(after).toMatchObject({ state: 'revoked', code: free.code, revokedAt: revoked.revokedAt });
+  });
+
+  it('quota réduit après révocation : le lien révoqué compte comme consommé et n’est jamais supprimé', async () => {
+    const free = (await request<{ invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body.invites.find((invite) => invite.state === 'free');
+    expect((await rig.call('DELETE', `/admin/invites/${free.id}`, { elevation: await rig.elevate() })).status).toBe(204);
+
+    // Quota 4 -> 2 : deux liens libres en trop, supprimés ; le lien utilisé et le lien révoqué restent.
+    expect((await request(rig.app, 'PUT', '/user/accounts/alice/invite-quota', { token: rig.owner.token, body: { quota: 2 } })).status).toBe(200);
+    const listed = (await request<{ quota: number; invites: any[] }>(rig.app, 'GET', '/user/invites', { token: rig.owner.token })).body;
+    expect(listed.invites.map((invite) => invite.state).sort()).toEqual(['revoked', 'used']);
+    expect(listed.invites.find((invite) => invite.id === free.id)).toMatchObject({ state: 'revoked', code: free.code });
   });
 
   it('accès : 401 sans session, 403 pour un autre compte, rien de modifié', async () => {

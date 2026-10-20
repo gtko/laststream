@@ -64,7 +64,7 @@ describe('/admin/accounts/bulk', () => {
       body: { ids: [await idOf(rig, 'bob'), await idOf(rig, 'dave')], action: 'quota', quota: 2 },
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ done: 2, failed: [] });
+    expect(res.body).toEqual({ done: 2, failed: [], skipped: [] });
     expect(await quotaOf(rig, 'bob')).toBe(2);
     expect(await quotaOf(rig, 'dave')).toBe(2);
     // Un quota absolu hors bornes est refusé par la validation (400), rien n'est écrit.
@@ -77,13 +77,13 @@ describe('/admin/accounts/bulk', () => {
     const daveId = await idOf(rig, 'dave');
     // 4 + 97 = 101 : hors bornes pour bob ; dave (4) n'est pas concerné.
     const over = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation: await rig.elevate(), body: { ids: [bobId], action: 'quota', delta: 97 } });
-    expect(over.body).toEqual({ done: 0, failed: [{ id: bobId, error: 'quota_out_of_range' }] });
+    expect(over.body).toEqual({ done: 0, failed: [{ id: bobId, error: 'quota_out_of_range' }], skipped: [] });
     expect(await quotaOf(rig, 'bob')).toBe(4);
 
     // Lot mixte : bob (4 - 4 = 0) et dave (4 - 4 = 0) passent ; un troisième compte inconnu échoue.
     const unknown = crypto.randomUUID();
     const mixed = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation: await rig.elevate(), body: { ids: [bobId, unknown, daveId], action: 'quota', delta: -4 } });
-    expect(mixed.body).toEqual({ done: 2, failed: [{ id: unknown, error: 'account_not_found' }] });
+    expect(mixed.body).toEqual({ done: 2, failed: [{ id: unknown, error: 'account_not_found' }], skipped: [] });
     expect(await quotaOf(rig, 'bob')).toBe(0);
     expect(await quotaOf(rig, 'dave')).toBe(0);
 
@@ -107,21 +107,21 @@ describe('/admin/accounts/bulk', () => {
       elevation: await rig.elevate(),
       body: { ids: [await idOf(rig, 'bob'), await idOf(rig, 'carol')], action: 'revoke-sessions' },
     });
-    expect(res.body).toEqual({ done: 2, failed: [] });
+    expect(res.body).toEqual({ done: 2, failed: [], skipped: [] });
     expect((await request(rig.app, 'GET', '/user/me', { token: bob.token })).status).toBe(401);
     expect((await request(rig.app, 'GET', '/user/me', { token: carol.token })).status).toBe(401);
     expect((await request(rig.app, 'GET', '/user/me', { token: dave.token })).status).toBe(200);
     expect((await request(rig.app, 'POST', '/user/login', { body: { username: 'bob', password: PASSWORD } })).status).toBe(200);
   });
 
-  it('suspension : le propriétaire est refusé (cannot_target_owner), les autres suspendus, sessions révoquées', async () => {
+  it('suspension : le propriétaire est ignoré (skipped), les autres suspendus, sessions révoquées', async () => {
     const ownerId = await idOf(rig, 'alice');
     const res = await rig.call<any>('POST', '/admin/accounts/bulk', {
       elevation: await rig.elevate(),
       body: { ids: [ownerId, await idOf(rig, 'bob'), await idOf(rig, 'dave')], action: 'suspend' },
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ done: 2, failed: [{ id: ownerId, error: 'cannot_target_owner' }] });
+    expect(res.body).toEqual({ done: 2, failed: [], skipped: [{ id: ownerId, reason: 'owner' }] });
     expect((await request(rig.app, 'GET', '/user/me', { token: bob.token })).status).toBe(401);
     expect((await request(rig.app, 'POST', '/user/login', { body: { username: 'dave', password: PASSWORD } })).status).toBe(403);
     expect((await rig.call<any>('GET', '/admin/accounts?filter=suspended')).body.total).toBe(2);
@@ -129,9 +129,30 @@ describe('/admin/accounts/bulk', () => {
     expect((await request(rig.app, 'GET', '/user/me', { token: rig.owner.token })).status).toBe(200);
   });
 
-  it('suspension : le compte qui agit ne peut pas se suspendre lui-même', async () => {
+  it('suspension : le compte qui agit ne peut pas se suspendre lui-même (skipped)', async () => {
     const res = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation: await rig.elevate(), body: { ids: [await idOf(rig, 'alice')], action: 'suspend' } });
-    expect(res.body).toEqual({ done: 0, failed: [{ id: await idOf(rig, 'alice'), error: 'cannot_target_owner' }] });
+    expect(res.body).toEqual({ done: 0, failed: [], skipped: [{ id: await idOf(rig, 'alice'), reason: 'owner' }] });
+  });
+
+  it('propriétaire ignoré par toutes les actions (quota, sessions, suspension) : listé dans skipped, rien modifié', async () => {
+    const ownerId = await idOf(rig, 'alice');
+    const ids = [ownerId, await idOf(rig, 'bob')];
+    const elevation = await rig.elevate();
+    const ownerQuota = await quotaOf(rig, 'alice');
+
+    const quota = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation, body: { ids, action: 'quota', quota: 1 } });
+    expect(quota.body).toEqual({ done: 1, failed: [], skipped: [{ id: ownerId, reason: 'owner' }] });
+    expect(await quotaOf(rig, 'alice')).toBe(ownerQuota);
+    expect(await quotaOf(rig, 'bob')).toBe(1);
+
+    const sessions = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation, body: { ids, action: 'revoke-sessions' } });
+    expect(sessions.body).toEqual({ done: 1, failed: [], skipped: [{ id: ownerId, reason: 'owner' }] });
+    expect((await request(rig.app, 'GET', '/user/me', { token: rig.owner.token })).status).toBe(200);
+    expect((await request(rig.app, 'GET', '/user/me', { token: bob.token })).status).toBe(401);
+
+    const suspended = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation, body: { ids: [ownerId], action: 'suspend' } });
+    expect(suspended.body).toEqual({ done: 0, failed: [], skipped: [{ id: ownerId, reason: 'owner' }] });
+    expect((await rig.call<any>('GET', `/admin/accounts/${ownerId}`)).body.account.status).toBe('active');
   });
 
   it('identifiants : mal formé ou liste vide en 400 ; compte inconnu en échec', async () => {
@@ -140,7 +161,7 @@ describe('/admin/accounts/bulk', () => {
     expect((await rig.call('POST', '/admin/accounts/bulk', { elevation, body: { ids: [], action: 'revoke-sessions' } })).status).toBe(400);
     const unknown = crypto.randomUUID();
     const res = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation, body: { ids: [unknown], action: 'revoke-sessions' } });
-    expect(res.body).toEqual({ done: 0, failed: [{ id: unknown, error: 'account_not_found' }] });
+    expect(res.body).toEqual({ done: 0, failed: [{ id: unknown, error: 'account_not_found' }], skipped: [] });
   });
 
   it('plafond : 100 identifiants au plus, 101 refusés (400) sans rien traiter', async () => {
@@ -156,7 +177,7 @@ describe('/admin/accounts/bulk', () => {
   it('doublons : un compte n\'est traité qu\'une fois', async () => {
     const bobId = await idOf(rig, 'bob');
     const res = await rig.call<any>('POST', '/admin/accounts/bulk', { elevation: await rig.elevate(), body: { ids: [bobId, bobId], action: 'quota', quota: 3 } });
-    expect(res.body).toEqual({ done: 1, failed: [] });
+    expect(res.body).toEqual({ done: 1, failed: [], skipped: [] });
     expect(await quotaOf(rig, 'bob')).toBe(3);
   });
 

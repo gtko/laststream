@@ -194,6 +194,7 @@ async function settle<T>(read: () => Promise<T> | T | undefined): Promise<T | un
 export interface OpsRouteContext {
   deps: AppDeps;
   owner(c: Ctx): Promise<Session>;
+  elevated(c: Ctx, session: Session): void;
   audit(session: Session, action: string, target: string | null, detail?: Record<string, unknown> | null): Promise<void>;
   metrics(): MetricsService | undefined;
   caches(): CacheAdmin | undefined;
@@ -201,7 +202,7 @@ export interface OpsRouteContext {
 
 /** Routes /admin/providers, /admin/storage et /admin/tasks, toutes réservées au propriétaire (gardes de api.ts). */
 export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
-  const { deps, owner, audit } = ctx;
+  const { deps, owner, elevated, audit } = ctx;
   const testLimiter = createRateLimiter(PROVIDER_TEST_PER_MIN, 60_000);
   let storage: { at: number; report: StorageReport } | undefined;
 
@@ -236,9 +237,10 @@ export function registerOpsRoutes(router: App, ctx: OpsRouteContext): void {
     return sendJson(c, { providers: providerEntries(env, health) });
   });
 
-  /** Requête légère vers le fournisseur (clé du serveur) : audité, 10 par minute et par IP, délai de 4 s. */
+  /** Requête légère vers le fournisseur (clé du serveur) : élévation, audité, 10 par minute et par IP, délai de 4 s. */
   router.post('/providers/:id/test', async (c) => {
     const session = await owner(c);
+    elevated(c, session);
     const id = c.req.param('id');
     if (id === ALLDEBRID) throw new UserApiError(400, 'not_testable');
     if (!isProvider(id)) throw new UserApiError(404, 'provider_not_found');

@@ -176,8 +176,9 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
 
   /**
    * Action groupée sur 100 comptes au plus : quota (absolu ou delta), révocation des sessions ou suspension. Élévation
-   * exigée. Un seul audit pour l'opération, écrit avant son exécution. Un compte en échec (inconnu, propriétaire à
-   * suspendre, quota hors bornes) est listé dans `failed` sans interrompre le lot.
+   * exigée. Un seul audit pour l'opération, écrit avant son exécution. Le compte propriétaire n'est traité par aucune
+   * action : il est listé dans `skipped` (raison « owner »). Un compte en échec (inconnu, quota hors bornes) est listé dans
+   * `failed` sans interrompre le lot.
    */
   router.post('/accounts/bulk', async (c) => {
     const session = await owner(c);
@@ -193,17 +194,18 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     });
     let done = 0;
     const failed: { id: string; error: string }[] = [];
+    const skipped: { id: string; reason: 'owner' }[] = [];
     for (const id of ids) {
       const target = await admin().accountById(id);
       if (target === undefined) {
         failed.push({ id, error: 'account_not_found' });
         continue;
       }
+      if (target.isOwner || target.id === session.account.id) {
+        skipped.push({ id, reason: 'owner' });
+        continue;
+      }
       if (body.action === 'suspend') {
-        if (target.isOwner || target.id === session.account.id) {
-          failed.push({ id, error: 'cannot_target_owner' });
-          continue;
-        }
         await admin().setSuspended(target.id, true, nowIso());
       } else if (body.action === 'revoke-sessions') {
         await users().deleteAllSessions(target.id);
@@ -217,7 +219,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
       }
       done += 1;
     }
-    return sendJson(c, { done, failed });
+    return sendJson(c, { done, failed, skipped });
   });
 
   /** Comptes présents (présence de moins de deux minutes), avec le titre en cours de lecture s'il existe. */
@@ -340,7 +342,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     return sendJson(c, { invites: await admin().listInvites({ status, limit }) });
   });
 
-  /** Révoque une invitation active : son lien n'est plus accepté à l'inscription. 409 si elle est utilisée ou déjà révoquée. */
+  /** Révoque une invitation active : son lien n'est plus accepté à l'inscription, et le propriétaire ne peut plus le régénérer. 409 si elle est utilisée ou déjà révoquée. */
   router.delete('/invites/:id', async (c) => {
     const session = await owner(c);
     elevated(c, session);
@@ -536,8 +538,8 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     return sendJson(c, await admin().listAudit(query));
   });
 
-  registerAnnouncementAdminRoutes(router, { owner, audit, admin });
-  registerOpsRoutes(router, { deps, owner, audit, metrics: metricsOf, caches: cachesOf });
+  registerAnnouncementAdminRoutes(router, { owner, elevated, audit, admin });
+  registerOpsRoutes(router, { deps, owner, elevated, audit, metrics: metricsOf, caches: cachesOf });
   registerControlRoutes(router, { deps, owner, admin, metrics: metricsOf, caches: cachesOf, party });
 
   router.all('*', () => {

@@ -83,16 +83,28 @@ describe('/admin/providers', () => {
 });
 
 describe('POST /admin/providers/:id/test : gardes et refus', () => {
+  it('propriétaire sans élévation (ou jeton invalide) : 403 elevation_required, aucun appel fournisseur ni audit', async () => {
+    const fake = fakeFetch(() => new Response('{}', { status: 200 }));
+    rig = await startAdmin({ fetch: fake.fn });
+    const missing = await rig.call<any>('POST', '/admin/providers/cinemeta/test');
+    expect(missing.status).toBe(403);
+    expect(missing.body.error).toBe('elevation_required');
+    const forged = await rig.call<any>('POST', '/admin/providers/cinemeta/test', { elevation: 'jeton-invente' });
+    expect(forged.body.error).toBe('elevation_required');
+    expect(fake.calls).toHaveLength(0);
+    expect((await rig.call<any>('GET', '/admin/audit?action=provider.test')).body.entries).toEqual([]);
+  });
+
   it('fournisseur inconnu 404 ; AllDebrid et fournisseurs sans clé refusés 400, sans aucun appel', async () => {
     const fake = fakeFetch(() => new Response('{}', { status: 200 }));
     rig = await startAdmin({ fetch: fake.fn });
-    expect((await rig.call<any>('POST', '/admin/providers/inconnu/test')).body.error).toBe('provider_not_found');
-    expect((await rig.call('POST', '/admin/providers/inconnu/test')).status).toBe(404);
-    const alldebrid = await rig.call<any>('POST', '/admin/providers/alldebrid/test');
+    expect((await rig.call<any>('POST', '/admin/providers/inconnu/test', { elevation: await rig.elevate() })).body.error).toBe('provider_not_found');
+    expect((await rig.call('POST', '/admin/providers/inconnu/test', { elevation: await rig.elevate() })).status).toBe(404);
+    const alldebrid = await rig.call<any>('POST', '/admin/providers/alldebrid/test', { elevation: await rig.elevate() });
     expect(alldebrid.status).toBe(400);
     expect(alldebrid.body.error).toBe('not_testable');
-    expect((await rig.call('POST', '/admin/providers/rows/test')).status).toBe(400);
-    expect((await rig.call('POST', '/admin/providers/tmdb/test')).status).toBe(400);
+    expect((await rig.call('POST', '/admin/providers/rows/test', { elevation: await rig.elevate() })).status).toBe(400);
+    expect((await rig.call('POST', '/admin/providers/tmdb/test', { elevation: await rig.elevate() })).status).toBe(400);
     expect(fake.calls).toHaveLength(0);
   });
 
@@ -100,7 +112,7 @@ describe('POST /admin/providers/:id/test : gardes et refus', () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'or-cle-secrete-abcdef123456');
     const fake = fakeFetch(() => new Response('{"data":{"label":"or-cle-secrete-abcdef123456"}}', { status: 200 }));
     rig = await startAdmin({ fetch: fake.fn });
-    const res = await rig.call<any>('POST', '/admin/providers/openrouter/test');
+    const res = await rig.call<any>('POST', '/admin/providers/openrouter/test', { elevation: await rig.elevate() });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ id: 'openrouter', ok: true, status: 200, latencyMs: expect.any(Number) });
     expect(JSON.stringify(res.body)).not.toContain('or-cle-secrete');
@@ -115,7 +127,7 @@ describe('POST /admin/providers/:id/test : gardes et refus', () => {
   it('cinemeta (public) sans clé : requête GET vers Cinemeta', async () => {
     const fake = fakeFetch(() => new Response('{}', { status: 200 }));
     rig = await startAdmin({ fetch: fake.fn });
-    const res = await rig.call<any>('POST', '/admin/providers/cinemeta/test');
+    const res = await rig.call<any>('POST', '/admin/providers/cinemeta/test', { elevation: await rig.elevate() });
     expect(res.body).toMatchObject({ id: 'cinemeta', ok: true, status: 200 });
     expect(fake.calls[0]?.url).toBe('https://v3-cinemeta.strem.io/meta/movie/tt0133093.json');
     expect(fake.calls[0]?.init.method ?? 'GET').toBe('GET');
@@ -129,11 +141,11 @@ describe('POST /admin/providers/:id/test : gardes et refus', () => {
       return new Response('', { status });
     });
     rig = await startAdmin({ fetch: fake.fn });
-    expect((await rig.call<any>('POST', '/admin/providers/fanart/test')).body).toMatchObject({ ok: false, status: 401, error: 'rejected' });
+    expect((await rig.call<any>('POST', '/admin/providers/fanart/test', { elevation: await rig.elevate() })).body).toMatchObject({ ok: false, status: 401, error: 'rejected' });
     status = 500;
-    expect((await rig.call<any>('POST', '/admin/providers/fanart/test')).body).toMatchObject({ ok: false, status: 500, error: 'http' });
+    expect((await rig.call<any>('POST', '/admin/providers/fanart/test', { elevation: await rig.elevate() })).body).toMatchObject({ ok: false, status: 500, error: 'http' });
     status = -1;
-    const network = await rig.call<any>('POST', '/admin/providers/fanart/test');
+    const network = await rig.call<any>('POST', '/admin/providers/fanart/test', { elevation: await rig.elevate() });
     expect(network.body).toMatchObject({ ok: false, status: null, error: 'network' });
     expect(JSON.stringify(network.body)).not.toContain('fanart-cle');
   });
@@ -144,21 +156,21 @@ describe('POST /admin/providers/:id/test : gardes et refus', () => {
     let v4Status = 401;
     const fake = fakeFetch((url) => new Response('{}', { status: url.includes('api4.') ? v4Status : 200 }));
     rig = await startAdmin({ fetch: fake.fn });
-    const legacy = await rig.call<any>('POST', '/admin/providers/tvdb/test');
+    const legacy = await rig.call<any>('POST', '/admin/providers/tvdb/test', { elevation: await rig.elevate() });
     expect(legacy.body).toMatchObject({ id: 'tvdb', ok: true, status: 200 });
     expect(fake.calls.map((call) => call.url)).toEqual(['https://api4.thetvdb.com/v4/login', 'https://api.thetvdb.com/login']);
     expect(JSON.parse(String(fake.calls[0]?.init.body))).toEqual({ apikey: 'tvdb-legacy-0123456789abcdef', pin: '1234' });
     expect(JSON.parse(String(fake.calls[1]?.init.body))).toEqual({ apikey: 'tvdb-legacy-0123456789abcdef' });
     v4Status = 200;
     fake.calls.length = 0;
-    const v4 = await rig.call<any>('POST', '/admin/providers/tvdb/test');
+    const v4 = await rig.call<any>('POST', '/admin/providers/tvdb/test', { elevation: await rig.elevate() });
     expect(v4.body).toMatchObject({ ok: true, status: 200 });
     expect(fake.calls).toHaveLength(1);
   });
 
   it('délai dépassé (4 s) : timeout, sans statut', async () => {
     rig = await startAdmin({ fetch: hangingFetch() });
-    const res = await rig.call<any>('POST', '/admin/providers/cinemeta/test');
+    const res = await rig.call<any>('POST', '/admin/providers/cinemeta/test', { elevation: await rig.elevate() });
     expect(res.body).toMatchObject({ id: 'cinemeta', ok: false, status: null, error: 'timeout' });
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(3900);
     expect(res.body.latencyMs).toBeLessThan(8000);
@@ -167,8 +179,8 @@ describe('POST /admin/providers/:id/test : gardes et refus', () => {
   it('10 tests par minute et par IP, le 11e répond 429', async () => {
     const fake = fakeFetch(() => new Response('{}', { status: 200 }));
     rig = await startAdmin({ fetch: fake.fn });
-    for (let i = 0; i < 10; i += 1) expect((await rig.call('POST', '/admin/providers/cinemeta/test')).status).toBe(200);
-    const limited = await rig.call<any>('POST', '/admin/providers/cinemeta/test');
+    for (let i = 0; i < 10; i += 1) expect((await rig.call('POST', '/admin/providers/cinemeta/test', { elevation: await rig.elevate() })).status).toBe(200);
+    const limited = await rig.call<any>('POST', '/admin/providers/cinemeta/test', { elevation: await rig.elevate() });
     expect(limited.status).toBe(429);
     expect(limited.body.error).toBe('rate_limited');
     expect(fake.calls).toHaveLength(10);

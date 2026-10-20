@@ -409,9 +409,10 @@ export class AdminStore {
 
   /**
    * Liste paginée (filtre, recherche, statut, parrain, dates) avec le total du filtre et les effectifs de tous les filtres
-   * (`counts`, sur l'ensemble des comptes).
+   * (`counts`, sur l'ensemble des comptes : cinq requêtes de comptage). `withCounts: false` les saute, pour les lectures
+   * d'exploitation qui n'affichent pas les effectifs (`counts` vaut alors undefined).
    */
-  listAccounts(query: AccountListQuery): { accounts: AdminAccount[]; nextCursor: string | null; total: number; counts: AccountCounts } {
+  listAccounts(query: AccountListQuery, options: { withCounts?: boolean } = {}): { accounts: AdminAccount[]; nextCursor: string | null; total: number; counts?: AccountCounts } {
     const nowMs = Date.now();
     const { where, params } = accountConditions(query, nowMs);
     const filter = where.length === 0 ? '' : ` WHERE ${where.join(' AND ')}`;
@@ -436,8 +437,16 @@ export class AdminStore {
       accounts,
       nextCursor: rows.length > query.limit && last !== undefined ? `${last.createdAt}|${last.id}` : null,
       total,
-      counts: accountCounts(this.db, nowMs),
+      counts: options.withCounts === false ? undefined : accountCounts(this.db, nowMs),
     };
+  }
+
+  /** Derniers comptes créés, les plus récents d'abord : identifiant, pseudo et date de création seulement (fil d'activité). */
+  recentAccounts(limit: number): Pick<AdminAccount, 'id' | 'username' | 'createdAt'>[] {
+    return this.db
+      .prepare('SELECT a.id, a.username, a.created_at FROM accounts a ORDER BY a.created_at DESC, a.id DESC LIMIT ?')
+      .all(limit)
+      .map((row) => ({ id: String(row.id), username: String(row.username), createdAt: String(row.created_at) }));
   }
 
   /**

@@ -16,7 +16,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 describe('annonces : gestion par le propriétaire', () => {
   it('création, lecture, modification partielle et suppression, chacune auditée', async () => {
     const r = (rig = await startAdmin());
-    const created = await r.call<any>('POST', '/admin/announcements', { body: { title: 'Maintenance', message: 'Coupure mardi soir', level: 'warning' } });
+    const elevation = await r.elevate();
+    const created = await r.call<any>('POST', '/admin/announcements', { elevation, body: { title: 'Maintenance', message: 'Coupure mardi soir', level: 'warning' } });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ title: 'Maintenance', message: 'Coupure mardi soir', level: 'warning', startsAt: null, endsAt: null, active: true });
     expect(created.body.id).toMatch(UUID);
@@ -26,14 +27,14 @@ describe('annonces : gestion par le propriétaire', () => {
     expect(list.status).toBe(200);
     expect(list.body.announcements.map((a: any) => a.id)).toEqual([id]);
 
-    const renamed = await r.call<any>('PUT', `/admin/announcements/${id}`, { body: { title: 'Maintenance reportée' } });
+    const renamed = await r.call<any>('PUT', `/admin/announcements/${id}`, { elevation, body: { title: 'Maintenance reportée' } });
     expect(renamed.status).toBe(200);
     expect(renamed.body).toMatchObject({ title: 'Maintenance reportée', message: 'Coupure mardi soir', level: 'warning', active: true });
 
-    const deactivated = await r.call<any>('PUT', `/admin/announcements/${id}`, { body: { active: false } });
+    const deactivated = await r.call<any>('PUT', `/admin/announcements/${id}`, { elevation, body: { active: false } });
     expect(deactivated.body.active).toBe(false);
 
-    expect((await r.call('DELETE', `/admin/announcements/${id}`)).status).toBe(204);
+    expect((await r.call('DELETE', `/admin/announcements/${id}`, { elevation })).status).toBe(204);
     expect((await r.call<any>('GET', '/admin/announcements')).body.announcements).toEqual([]);
 
     const audit = await r.call<any>('GET', '/admin/audit?limit=50');
@@ -46,6 +47,7 @@ describe('annonces : gestion par le propriétaire', () => {
   it('dates ISO normalisées en UTC à l’écriture', async () => {
     const r = (rig = await startAdmin());
     const res = await r.call<any>('POST', '/admin/announcements', {
+      elevation: await r.elevate(),
       body: { title: 'Fuseau', message: 'Heure locale', level: 'info', startsAt: '2026-10-20T12:00:00+02:00', endsAt: '2026-10-21' },
     });
     expect(res.status).toBe(201);
@@ -56,7 +58,8 @@ describe('annonces : gestion par le propriétaire', () => {
   it('validation : bornes de longueur, niveau, dates, champs inconnus, fenêtre inversée et patch vide refusés', async () => {
     const r = (rig = await startAdmin());
     const base = { title: 'x', message: 'y', level: 'info' };
-    const post = (body: unknown) => r.call<any>('POST', '/admin/announcements', { body });
+    const elevation = await r.elevate();
+    const post = (body: unknown) => r.call<any>('POST', '/admin/announcements', { elevation, body });
 
     expect((await post({ ...base, title: 'a'.repeat(80) })).status).toBe(201);
     expect((await post({ ...base, title: 'a'.repeat(81) })).status).toBe(400);
@@ -74,11 +77,11 @@ describe('annonces : gestion par le propriétaire', () => {
     expect(made.status).toBe(201);
     const id: string = made.body.id;
     // La fin ne peut pas rejoindre ou dépasser le début déjà enregistré.
-    expect((await r.call('PUT', `/admin/announcements/${id}`, { body: { endsAt: '2026-10-20T10:00:00Z' } })).status).toBe(400);
-    expect((await r.call('PUT', `/admin/announcements/${id}`, { body: {} })).status).toBe(400);
-    expect((await r.call('PUT', `/admin/announcements/${crypto.randomUUID()}`, { body: { active: true } })).status).toBe(404);
-    expect((await r.call('PUT', '/admin/announcements/pas-un-identifiant', { body: { active: true } })).status).toBe(400);
-    expect((await r.call('DELETE', `/admin/announcements/${crypto.randomUUID()}`)).status).toBe(404);
+    expect((await r.call('PUT', `/admin/announcements/${id}`, { elevation, body: { endsAt: '2026-10-20T10:00:00Z' } })).status).toBe(400);
+    expect((await r.call('PUT', `/admin/announcements/${id}`, { elevation, body: {} })).status).toBe(400);
+    expect((await r.call('PUT', `/admin/announcements/${crypto.randomUUID()}`, { elevation, body: { active: true } })).status).toBe(404);
+    expect((await r.call('PUT', '/admin/announcements/pas-un-identifiant', { elevation, body: { active: true } })).status).toBe(400);
+    expect((await r.call('DELETE', `/admin/announcements/${crypto.randomUUID()}`, { elevation })).status).toBe(404);
   });
 });
 
@@ -102,14 +105,33 @@ describe('annonces et boîte de contrôle : accès réservé au propriétaire', 
     expect((await r.call<any>('GET', '/admin/announcements')).body.announcements).toEqual([]);
     expect(await r.backend.admin().listDismissedKeys()).toEqual([]);
   });
+
+  it('propriétaire sans élévation : 403 elevation_required sur POST, PUT et DELETE, sans rien écrire', async () => {
+    const r = (rig = await startAdmin());
+    const made = await r.call<any>('POST', '/admin/announcements', { elevation: await r.elevate(), body: { title: 'Gardée', message: 'Intacte', level: 'info' } });
+    const id: string = made.body.id;
+    const writes: [string, string, unknown?][] = [
+      ['POST', '/admin/announcements', { title: 'Sans élévation', message: 'm', level: 'info' }],
+      ['PUT', `/admin/announcements/${id}`, { title: 'Modifiée' }],
+      ['DELETE', `/admin/announcements/${id}`],
+    ];
+    for (const [method, path, body] of writes) {
+      const res = await r.call<any>(method, path, { body });
+      expect(res.status, `${method} ${path} sans élévation`).toBe(403);
+      expect(res.body.error).toBe('elevation_required');
+    }
+    const listed = (await r.call<any>('GET', '/admin/announcements')).body.announcements;
+    expect(listed).toEqual([expect.objectContaining({ id, title: 'Gardée', message: 'Intacte' })]);
+  });
 });
 
 describe('lecture publique GET /announcements', () => {
   it('ne renvoie que les annonces actives dans leur fenêtre, et seulement quatre champs', async () => {
     const r = (rig = await startAdmin());
     const now = Date.now();
+    const elevation = await r.elevate();
     const make = (title: string, extra: Record<string, unknown> = {}) =>
-      r.call<any>('POST', '/admin/announcements', { body: { title, message: `${title} : message`, level: 'info', ...extra } });
+      r.call<any>('POST', '/admin/announcements', { elevation, body: { title, message: `${title} : message`, level: 'info', ...extra } });
     const noBounds = await make('sans-bornes');
     const inWindow = await make('en-cours', { startsAt: iso(now - HOUR), endsAt: iso(now + HOUR) });
     const openEnd = await make('depuis-hier', { startsAt: iso(now - 24 * HOUR), endsAt: null });
@@ -132,7 +154,7 @@ describe('lecture publique GET /announcements', () => {
   it('une annonce disparaît dès que sa fin est passée', async () => {
     const r = (rig = await startAdmin());
     const endsAt = Date.now() + 2_500;
-    await r.call('POST', '/admin/announcements', { body: { title: 'Éphémère', message: 'Court', level: 'info', endsAt: iso(endsAt) } });
+    await r.call('POST', '/admin/announcements', { elevation: await r.elevate(), body: { title: 'Éphémère', message: 'Court', level: 'info', endsAt: iso(endsAt) } });
     expect((await request<any>(r.app, 'GET', '/announcements')).body.announcements).toHaveLength(1);
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, endsAt - Date.now()) + 50));
     expect((await request<any>(r.app, 'GET', '/announcements')).body.announcements).toEqual([]);

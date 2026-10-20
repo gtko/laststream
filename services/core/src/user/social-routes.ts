@@ -53,12 +53,16 @@ export function registerSocialRoutes(router: App, deps: AppDeps, backend: UserBa
     return sendEmpty(c, 204);
   });
 
-  /** Révoque un lien non utilisé : l'ancien code est mort, l'emplacement reçoit un nouveau lien libre. */
+  /**
+   * Régénère un lien non utilisé : l'ancien code est mort, l'emplacement reçoit un nouveau lien libre. 409 si le lien a été
+   * révoqué par l'administration (il ne se régénère pas).
+   */
   router.delete('/invites/:id', async (c) => {
     const { account } = await sessionOf(users(), c);
     const result = await social().revokeInvite(account.id, String(c.req.param('id')), nowIso());
     if (result.result === 'not_found') throw new UserApiError(404, 'invite_not_found');
     if (result.result === 'used') throw new UserApiError(409, 'invite_used');
+    if (result.result === 'revoked') throw new UserApiError(409, 'invite_revoked');
     if (result.result !== 'ok') throw new UserApiError(404, 'invite_not_found');
     return sendJson(c, { invite: result.invite });
   });

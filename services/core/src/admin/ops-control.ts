@@ -41,6 +41,8 @@ const QUOTA_SCAN_LIMIT = 500;
 const PARTY_CHECK_MAX = 50;
 const PARTY_PARALLEL = 10;
 const FEED_SIZE = 30;
+/** Durée de vie (ms, par instance) de la lecture `info()` d'un salon pour /live : même principe que le cache de /storage. */
+export const PARTY_INFO_TTL_MS = 15_000;
 
 const RANK: Record<Health, number> = { unknown: -1, ok: 0, degraded: 1, down: 2 };
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, warn: 1, info: 2 };
@@ -338,7 +340,11 @@ const AUDIT_LABELS = new Map<string, string>([
 ]);
 
 /** Fil des 30 derniers événements (journal d'audit, inscriptions, salons créés), récent d'abord. Aucun détail d'audit. */
-export function feedOf(audit: readonly AuditEntry[], signups: readonly AdminAccount[], rooms: readonly RegisteredRoom[]): FeedEvent[] {
+export function feedOf(
+  audit: readonly AuditEntry[],
+  signups: readonly Pick<AdminAccount, 'username' | 'createdAt'>[],
+  rooms: readonly RegisteredRoom[],
+): FeedEvent[] {
   const events: FeedEvent[] = [
     ...audit.map((entry): FeedEvent => ({ at: entry.at, kind: 'audit', label: AUDIT_LABELS.get(entry.action) ?? entry.action, ...(entry.target === null ? {} : { target: entry.target }) })),
     ...signups.map((account): FeedEvent => ({ at: account.createdAt, kind: 'signup', label: 'Nouvelle inscription', target: account.username })),
@@ -347,15 +353,27 @@ export function feedOf(audit: readonly AuditEntry[], signups: readonly AdminAcco
   return events.sort((a, b) => timeOf(b.at) - timeOf(a.at)).slice(0, FEED_SIZE);
 }
 
-/** Salons vivants parmi ceux de l'annuaire (un salon dont la lecture échoue n'est pas compté). */
-async function liveParties(party: PartyBackend | undefined, rooms: readonly RegisteredRoom[]): Promise<number> {
+/** Lecture `info()` d'un salon mise en cache (horodatage et résultat), propre à une instance. */
+type PartyInfoCache = Map<string, { at: number; alive: boolean }>;
+
+/**
+ * Salons vivants parmi ceux de l'annuaire (un salon dont la lecture échoue n'est pas compté). Le résultat de `info()` est
+ * gardé PARTY_INFO_TTL_MS par salon : une lecture répétée de /live n'interroge pas à nouveau chaque salon.
+ */
+async function liveParties(party: PartyBackend | undefined, rooms: readonly RegisteredRoom[], cache: PartyInfoCache, now: number): Promise<number> {
   if (party === undefined) return 0;
+  for (const [id, entry] of cache) if (now - entry.at >= PARTY_INFO_TTL_MS) cache.delete(id);
   const alive = async (room: RegisteredRoom): Promise<boolean> => {
+    const hit = cache.get(room.id);
+    if (hit !== undefined) return hit.alive;
+    let flag: boolean;
     try {
-      return (await party.room(room.id).info()) !== null;
+      flag = (await party.room(room.id).info()) !== null;
     } catch {
-      return false;
+      flag = false;
     }
+    cache.set(room.id, { at: now, alive: flag });
+    return flag;
   };
   let live = 0;
   for (let start = 0; start < rooms.length; start += PARTY_PARALLEL) {
@@ -427,6 +445,8 @@ async function cronReading(deps: AppDeps, now: number): Promise<CronReading | un
 /** Routes du centre de contrôle, réservées au propriétaire (gardes de api.ts). */
 export function registerControlRoutes(router: App, ctx: ControlRouteContext): void {
   const { deps, owner, admin, metrics, caches, party } = ctx;
+  /** Lectures `info()` des salons pour /live, gardées PARTY_INFO_TTL_MS par instance. */
+  const partyInfo: PartyInfoCache = new Map();
 
   /** État des services (API, comptes, caches, fournisseurs, cron TV) et statut global. */
   router.get('/status', async (c) => {
@@ -448,7 +468,7 @@ export function registerControlRoutes(router: App, ctx: ControlRouteContext): vo
     const [reports, report, quota, cron, purges, dismissed, providers] = await Promise.all([
       attempt(() => admin().listReports('open', INBOX_LIMIT)),
       attempt(async () => metrics()?.report('1h')),
-      attempt(() => admin().listAccounts({ filter: 'noInvites', order: 'newest', limit: QUOTA_SCAN_LIMIT })),
+      attempt(() => admin().listAccounts({ filter: 'noInvites', order: 'newest', limit: QUOTA_SCAN_LIMIT }, { withCounts: false })),
       cronReading(deps, now),
       attempt(async () => caches()?.purgeJobs()),
       attempt(() => admin().listDismissedKeys()),
@@ -476,15 +496,15 @@ export function registerControlRoutes(router: App, ctx: ControlRouteContext): vo
       attempt(() => admin().onlineAccounts()),
       attempt(() => admin().listAudit({ limit: FEED_SIZE })),
       attempt(() => admin().listRegisteredRooms(PARTY_CHECK_MAX)),
-      attempt(() => admin().listAccounts({ order: 'newest', limit: FEED_SIZE })),
+      attempt(() => admin().recentAccounts(FEED_SIZE)),
     ]);
     const present: OnlineAccount[] = online ?? [];
     const roomList = rooms ?? [];
     return sendJson(c, {
       online: present.length,
       watching: present.filter((account) => account.watching !== null).length,
-      parties: await liveParties(party, roomList),
-      feed: feedOf(audit?.entries ?? [], signups?.accounts ?? [], roomList),
+      parties: await liveParties(party, roomList, partyInfo, Date.now()),
+      feed: feedOf(audit?.entries ?? [], signups ?? [], roomList),
     });
   });
 
