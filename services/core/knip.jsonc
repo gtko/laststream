@@ -10,6 +10,6 @@
   ],
   "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "tests/**/*.ts", "tests-workers/**/*.ts"],
   "ignore": [".claude/**", "dist/**", "dist-bundle/**", "worker-ui/**"],
-  // `cloudflare:workers` est un module virtuel fourni par le runtime Workers, pas un paquet npm.
-  "ignoreDependencies": ["cloudflare", "cloudflare:workers"]
+  // `cloudflare:workers` est un module virtuel fourni par le runtime Workers, pas un paquet npm (knip le nomme « cloudflare »).
+  "ignoreDependencies": ["cloudflare"]
 }

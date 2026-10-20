@@ -123,7 +123,7 @@ function expandLanguages(values: Iterable<string>): Set<Lang> {
 }
 
 /** Langues effectives : `multi` compte comme `fr` + `original`. */
-export function effectiveLanguages(parsed: ParsedRelease): Set<Lang> {
+function effectiveLanguages(parsed: ParsedRelease): Set<Lang> {
   return expandLanguages(parsed.languages);
 }
 
