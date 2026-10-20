@@ -4,7 +4,7 @@ import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
 import { joinLinkOf } from '../party/join';
 import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent, REACTION_OPTIONS, STAGE_EMOJIS, syncText, WAIT_LATE_OPTIONS } from '../party/lobbyModel';
-import { CHAT_MAX, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
+import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
 import { shareBase } from './invites.js';
@@ -261,8 +261,8 @@ function roomHTML(c) {
     '<div class="wp-chat" data-wp-chat role="log" aria-live="polite">' + chatHTML(chatLines(c), you, c.participants) + '</div>' +
     '<div class="wp-foot">' +
     '<div class="wp-react" role="group" aria-label="Réactions">' + STAGE_EMOJIS.map((e) => '<button type="button" data-wp-react="' + e + '" aria-label="Réaction ' + e + '">' + e + '</button>').join('') + '</div>' +
-    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
-    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX + '</span>' +
+    '<form class="wp-send" data-wp-send><input type="text" name="text" maxlength="' + CHAT_MAX_CHARS + '" autocomplete="off" aria-label="Message" placeholder="' + (muted ? 'Tu es muet' : 'Écrire… (Entrée pour envoyer)') + '"' + (muted ? ' disabled' : '') + ' value="' + esc(chatDraft) + '">' +
+    '<span class="wp-chars" data-wp-chars>' + chatDraft.length + '/' + CHAT_MAX_CHARS + '</span>' +
     '<button type="submit" class="btn btn-primary btn-sm" aria-label="Envoyer"' + (muted ? ' disabled' : '') + '>Envoyer</button></form></div>' +
     '</div></div>';
 }
@@ -344,7 +344,7 @@ function updateChars() {
   if (!panel) return;
   const input = panel.querySelector('input[name="text"]');
   const counter = panel.querySelector('[data-wp-chars]');
-  if (input && counter) counter.textContent = input.value.length + '/' + CHAT_MAX;
+  if (input && counter) counter.textContent = input.value.length + '/' + CHAT_MAX_CHARS;
 }
 
 /** Saisie dans le champ d’envoi : brouillon gardé entre deux rendus, compteur mis à jour. */
@@ -538,7 +538,7 @@ async function onSubmit(e) {
   e.stopPropagation();
   if (f.matches('[data-wp-send]')) {
     const c = partyBridge.client;
-    const text = f.elements.text.value.slice(0, CHAT_MAX);
+    const text = f.elements.text.value.slice(0, CHAT_MAX_CHARS);
     const pos = partyBridge.position();
     if (c && (pos === null ? c.sendChat(text) : c.sendChat(text, pos))) { chatDraft = ''; f.elements.text.value = ''; stickBottom = true; updateChars(); }
     return;

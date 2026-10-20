@@ -1,6 +1,6 @@
 import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
 import {
-  CHAT_MAX, COUNTDOWN_DEFAULT_SEC, DEFAULT_SETTINGS, encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, PARTY_BUF_AHEAD_MAX_SEC, PARTY_RESUME_AHEAD_SEC,
+  CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, DEFAULT_SETTINGS, encodeClientMessage, FINAL_CLOSE_CODES, MAX_FRAME_BYTES, PARTY_BUF_AHEAD_MAX_SEC, PARTY_RESUME_AHEAD_SEC,
   parseRtcFrame, parseServerMessage, REACTIONS,
   type ChatLine, type ClientMsg, type EventKind, type PartySettings, type PrepStatus, type ServerMsg, type VoteInput, type VoteView, type You,
 } from './protocol';
@@ -431,11 +431,11 @@ export class PartyClient {
     return this.isHost && this.raw({ t: 'episode', season, episode, ...(fingerprint ? { fingerprint } : {}) });
   }
   /**
-   * Message du chat : espaces retirés, CHAT_MAX caractères au plus ; vide = rien n'est envoyé. `pos` : position du film (s),
+   * Message du chat : espaces retirés, CHAT_MAX_CHARS caractères au plus ; vide = rien n'est envoyé. `pos` : position du film (s),
    * jointe seulement si elle est connue (un serveur antérieur ne la lit pas).
    */
   sendChat(text: string, pos?: number | null): boolean {
-    const t = text.trim().slice(0, CHAT_MAX);
+    const t = text.trim().slice(0, CHAT_MAX_CHARS);
     return t ? this.raw({ t: 'chat', text: t, ...posField(pos) }) : false;
   }
   /** Réaction : emoji de la liste du salon uniquement ; false sinon ou hors ligne. */
