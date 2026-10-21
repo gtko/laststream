@@ -54,7 +54,7 @@ function skeleton() {
       '<div class="lp-heat" aria-hidden="true" hidden></div>' +
       '<div class="lp-seek" data-seek role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">' +
         '<div class="lp-track"><span class="lp-buf"></span><span class="lp-played"></span><span class="lp-marks"></span><span class="lp-notes"></span></div>' +
-        '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" width="240" height="135" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
+        '<span class="lp-thumb"></span><span class="lp-hover" hidden><canvas class="lp-hover-c" hidden></canvas><img class="lp-hover-i" alt="" hidden><b class="lp-hover-t"></b><i class="lp-hover-s"></i></span>' +
       '</div>' +
       '<div class="lp-row">' +
         '<div class="lp-grp">' +

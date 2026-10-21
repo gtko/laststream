@@ -1,10 +1,7 @@
 /* Aperçu d'image au survol de la barre : une vidéo secondaire muette, sur la même source, est déplacée à l'instant survolé
  * (cadence limitée, pointeur au repos) et dessinée dans un canevas ; les images sont gardées par seau de 10 s.
  * Affichage seulement : on ne lit jamais les pixels, un canevas « teinté » ne gêne donc pas. Ne bloque jamais la lecture. */
-import { FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek } from './thumbs';
-
-const W = 240;
-const H = 135;
+import { FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek, thumbSize } from './thumbs';
 
 export class Thumbs {
   /**
@@ -77,8 +74,12 @@ export class Thumbs {
 
   hideCanvas() { this.canvas.hidden = true; }
 
+  /** Dessine une image gardée à sa taille propre (ratio de la vidéo) ; le canevas visible prend la même taille. */
   draw(src) {
-    try { this.ctx.drawImage(src, 0, 0, W, H); } catch (_) { /* image non dessinable : on garde la précédente */ }
+    const { width: w, height: h } = src;
+    if (this.canvas.width !== w) this.canvas.width = w;
+    if (this.canvas.height !== h) this.canvas.height = h;
+    try { this.ctx.drawImage(src, 0, 0, w, h); } catch (_) { /* image non dessinable : on garde la précédente */ }
   }
 
   async tick() {
@@ -149,11 +150,12 @@ export class Thumbs {
     this.pending = null;
     if (!v || b === null) return;
     // Image prise dans un canevas hors écran, gardée pour ce seau.
+    const { w, h } = thumbSize(v.videoWidth, v.videoHeight);
     const c = document.createElement('canvas');
-    c.width = W;
-    c.height = H;
+    c.width = w;
+    c.height = h;
     try {
-      c.getContext('2d').drawImage(v, 0, 0, W, H);
+      c.getContext('2d').drawImage(v, 0, 0, w, h);
     } catch (_) {
       return;
     }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bucketOf, bucketTime, clampTooltip, FrameCache, MIN_SEEK_INTERVAL_MS, REST_MS, shouldSeek, thumbsAllowed, thumbSource, THUMB_HLS_WIDTH } from '../src/player/thumbs';
+import { bucketOf, bucketTime, clampTooltip, FrameCache, MIN_SEEK_INTERVAL_MS, REST_MS, shouldSeek, thumbsAllowed, thumbSize, thumbSource, THUMB_HLS_WIDTH } from '../src/player/thumbs';
 
 describe('aperçu sur la barre : seaux et cache', () => {
   it('seaux de 10 s et instant demandé (milieu, jamais au-delà de la fin)', () => {
@@ -130,6 +130,21 @@ describe('aperçu sur la barre : URL HLS légère', () => {
   });
 });
 
+describe('aperçu sur la barre : taille au ratio de la vidéo (ODY-191)', () => {
+  it('16:9, 4:3 et 2.39:1 gardent 240 px de large sans étirement', () => {
+    expect(thumbSize(1920, 1080)).toEqual({ w: 240, h: 135 });
+    expect(thumbSize(1440, 1080)).toEqual({ w: 240, h: 180 });
+    expect(thumbSize(1920, 804)).toEqual({ w: 240, h: 101 });
+  });
+  it('vidéo verticale : hauteur plafonnée, largeur réduite au même ratio', () => {
+    expect(thumbSize(1080, 1920)).toEqual({ w: 101, h: 180 });
+  });
+  it('ratio inconnu (métadonnées pas encore chargées) : 16:9', () => {
+    expect(thumbSize(0, 0)).toEqual({ w: 240, h: 135 });
+    expect(thumbSize(NaN, 1080)).toEqual({ w: 240, h: 135 });
+  });
+});
+
 describe('Thumbs : débounce, annulation, masquage', () => {
   async function make(allowed = true) {
     const { Thumbs } = await import('../src/player/thumbview.js');
@@ -189,5 +204,20 @@ describe('Thumbs : débounce, annulation, masquage', () => {
     expect(source).toHaveBeenCalledTimes(1);
     t.reset();
     expect(t.dead).toBe(false);
+  });
+
+  it('onSeeked : l’image gardée et le canevas visible suivent le ratio de la vidéo (4:3)', async () => {
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage: vi.fn() } as any);
+    try {
+      const { t, canvas } = await make();
+      t.video = { videoWidth: 1440, videoHeight: 1080 } as any;
+      t.pending = 3;
+      t.target = { t: 35, bucket: 3 };
+      t.onSeeked();
+      const kept = t.cache.nearest(3)!.value as HTMLCanvasElement;
+      expect([kept.width, kept.height]).toEqual([240, 180]);
+      expect([canvas.width, canvas.height]).toEqual([240, 180]);
+      expect(canvas.hidden).toBe(false);
+    } finally { spy.mockRestore(); }
   });
 });

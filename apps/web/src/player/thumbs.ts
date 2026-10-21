@@ -91,6 +91,19 @@ export function clampTooltip(center: number, barWidth: number, tipWidth: number)
   return Math.min(Math.max(center, half), Math.max(half, barWidth - half));
 }
 
+/** Boîte de l'aperçu : 240 px de large (16:9 par défaut, 135 px), hauteur plafonnée pour les vidéos verticales. */
+const THUMB_W = 240;
+const THUMB_H = 135;
+const THUMB_MAX_H = 180;
+
+/** Dimensions du canevas d'aperçu au ratio de la vidéo (jamais d'étirement) ; 16:9 tant que le ratio est inconnu. */
+export function thumbSize(videoWidth: number, videoHeight: number): { w: number; h: number } {
+  if (!(videoWidth > 0) || !(videoHeight > 0)) return { w: THUMB_W, h: THUMB_H };
+  const h = Math.round((THUMB_W * videoHeight) / videoWidth);
+  if (h <= THUMB_MAX_H) return { w: THUMB_W, h: Math.max(1, h) };
+  return { w: Math.max(1, Math.round((THUMB_MAX_H * videoWidth) / videoHeight)), h: THUMB_MAX_H };
+}
+
 /** Largeur demandée au serveur pour la session HLS réservée aux aperçus (légère : une image 240x135 suffit). */
 export const THUMB_HLS_WIDTH = 320;
 /** Après ce nombre d'échecs de lecture, on renonce aux aperçus pour la source courante (repli silencieux). */
