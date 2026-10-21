@@ -867,6 +867,20 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE progress ADD COLUMN manual INTEGER NOT NULL DEFAULT 0 CHECK (manual IN (0, 1));
     `,
   },
+  {
+    version: 30,
+    name: 'compte Molotov du compte (jetons et profil chiffrés, une ligne par compte)',
+    sql: `
+      -- Session Molotov du compte : jetons (idToken, refreshToken) et profil (identité, rang) chiffrés côté serveur
+      -- (AES-256-GCM, base64url), jamais en clair en base. La ligne suit le compte (suppression en cascade).
+      CREATE TABLE molotov_accounts (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+        tokens TEXT NOT NULL,
+        profile TEXT,
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

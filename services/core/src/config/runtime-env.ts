@@ -70,6 +70,14 @@ export function isTrustProxy(): boolean {
 }
 
 /**
+ * LASTADDON_MOLOTOV_RELAY=0 : relais serveur Molotov désactivé (mode « appel direct depuis l'appareil » seul).
+ * Actif par défaut ; toute autre valeur laisse le relais actif.
+ */
+export function isMolotovRelayEnabled(): boolean {
+  return runtimeEnv().get('LASTADDON_MOLOTOV_RELAY') !== '0';
+}
+
+/**
  * Valide une base publique (URL absolue, http ou https uniquement) et la renvoie sans slash final.
  * Le message d'erreur ne contient jamais la valeur saisie.
  */
