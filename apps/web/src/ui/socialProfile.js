@@ -87,7 +87,7 @@ const initialOf = (name) => (String(name || '?').trim().slice(0, 1) || '?').toUp
 /** Pastille d'avatar (initiale sur la couleur, illustration posée par hydrateAvatars). */
 function avatarEl(cls, name, avatar, color) {
   const el = h('span', { class: cls, text: initialOf(name) });
-  el.style.background = color;
+  el.style.backgroundColor = color;
   if (avatar) { el.dataset.avatar = avatar; void hydrateAvatars(el); }
   return el;
 }
@@ -395,7 +395,7 @@ export function mountProfileEditor(root, deps) {
     const reorder = reorderIdx === i;
     const t = h('div', { class: 'spf-fav' + (reorder ? ' is-reorder' : ''), role: 'listitem', tabindex: '0', draggable: 'true', 'data-i': i,
       'aria-label': f.title + ', favori ' + (i + 1) + ' sur ' + draft.favorites.length + '. Alt et flèches pour réordonner.' });
-    t.style.background = posterBg(f);
+    t.style.backgroundColor = posterBg(f);
     if (bgOf('w185', f.poster)) { t.style.backgroundImage = bgOf('w185', f.poster); t.classList.add('has-img'); } else t.append(h('span', { class: 'spf-fav-t', text: f.title }));
     const act = (cls, label, ic, fn) => h('button', { type: 'button', class: 'spf-fa ' + cls, 'aria-label': label, on: { click: (e) => { e.stopPropagation(); fn(); } } }, icon(ic));
     t.append(...[
@@ -436,7 +436,7 @@ export function mountProfileEditor(root, deps) {
           h('div', { class: 'spf-prev-f' }, ...Array.from({ length: FAVORITES_MAX }, (_, i) => {
             const f = draft.favorites[i];
             const c = h('div', { class: 'spf-pf' + (f ? '' : ' empty'), title: f ? f.title : null });
-            if (f) { c.style.background = posterBg(f); if (bgOf('w154', f.poster)) c.style.backgroundImage = bgOf('w154', f.poster); else c.textContent = f.title; }
+            if (f) { c.style.backgroundColor = posterBg(f); if (bgOf('w154', f.poster)) c.style.backgroundImage = bgOf('w154', f.poster); else c.textContent = f.title; }
             return c;
           })),
           stats ? h('div', { class: 'spf-prev-st' }, h('span', {}, h('b', { text: String(stats.hoursWatched) }), ' h vues'), h('span', {}, h('b', { text: String(stats.notes) }), ' notes'), h('span', {}, h('b', { text: String(stats.friends) }), ' amis')) : null)),

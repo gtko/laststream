@@ -293,6 +293,15 @@ describe('formulaire du profil social', () => {
     expect(q('.spf-exp').textContent).not.toContain('null');
   });
 
+  it('pose la couleur des vignettes sans raccourci background (cadrage cover/center du CSS conservé)', () => {
+    mount(profile({ favorites: [fav(1), fav(2)] }));
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('.spf-fav[data-i], .spf-pf:not(.empty)'))) {
+      expect(el.style.backgroundColor).not.toBe('');
+      expect(el.style.backgroundSize).toBe('');
+      expect(el.style.backgroundPosition).toBe('');
+    }
+  });
+
   it('affiche les textes utilisateur comme du texte', () => {
     mount(profile({ bio: '<img src=x onerror=alert(1)>', favorites: [fav(1, '<b>Gras</b>')] }));
     expect(root.querySelector('img')).toBeNull();
