@@ -225,6 +225,7 @@ describe('composeur : seules les affiches acceptées par le serveur', () => {
     ],
     async () => {
       await mod.refreshInvites();
+      click(tickets()[0]);
       expect(document.querySelector('#detail [data-tk-pick="movie:880001"]')).toBeNull();
       expect(document.querySelector('#detail [data-tk-pick="series:880002"]')).toBeNull();
       expect(document.querySelector('#detail [data-tk-pick="movie:550"]')).not.toBeNull();
@@ -235,6 +236,7 @@ describe('composeur : seules les affiches acceptées par le serveur', () => {
     [{ id: 880003, type: 'tv', title: 'Metahub', poster: 'https://images.metahub.space/poster/small/tt0944947/img', addedAt: 1 }],
     async () => {
       await mod.refreshInvites();
+      click(tickets()[0]);
       const pick = document.querySelector<HTMLElement>('#detail [data-tk-pick="series:880003"]');
       expect(pick).not.toBeNull();
       expect(pick!.querySelector('img')!.getAttribute('src')).toBe('https://images.metahub.space/poster/small/tt0944947/img');

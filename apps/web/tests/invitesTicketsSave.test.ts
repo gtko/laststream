@@ -61,6 +61,8 @@ const click = (el: Element | null) => {
   if (!el) throw new Error('élément introuvable');
   (el as HTMLElement).click();
 };
+// Aucun billet n'est présélectionné : on choisit le billet libre pour ouvrir son composeur.
+const openTicket = () => click($('[data-tk-sel="i1"]'));
 const typeInto = (el: HTMLTextAreaElement, text: string) => {
   el.value = text;
   el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -91,6 +93,7 @@ describe('enregistrement : réponse tardive, révisions', () => {
     routes = (c) => (c.method === 'PUT' && puts().length === 1 ? first.promise : serverRoutes(c));
     await mod.refreshInvites();
     await tick(10);
+    openTicket();
     click($('[data-tk-pick="movie:550"]'));
     await tick();
     click($('[data-tk-pick="series:1399"]'));
@@ -110,6 +113,7 @@ describe('enregistrement : réponse tardive, révisions', () => {
     list[0] = { ...list[0], picks: [{ id: '550', type: 'movie', name: 'Fight Club', poster: '', background: '' }] };
     await mod.refreshInvites();
     await tick(10);
+    openTicket();
     click($('[data-tk-pick="series:1399"]'));
     await tick(60);
     expect(puts()).toHaveLength(1);
@@ -129,6 +133,7 @@ describe('enregistrement : échec et serveur ancien', () => {
     await mod.refreshInvites();
     calls.length = 0;
     await tick(10);
+    openTicket();
     click($('[data-tk-pick="movie:550"]'));
     await tick(80);
     expect(puts()).toHaveLength(1);
@@ -142,6 +147,7 @@ describe('enregistrement : échec et serveur ancien', () => {
     routes = (c) => (c.method === 'PUT' && c.path === '/user/invites/i1' ? json({ error: 'not_found' }, 404) : serverRoutes(c));
     await mod.refreshInvites();
     await tick(10);
+    openTicket();
     click($('[data-tk-pick="movie:550"]'));
     await tick(60);
     expect(puts()).toHaveLength(1);
@@ -157,6 +163,7 @@ describe('enregistrement : échec et serveur ancien', () => {
     routes = (c) => (c.method === 'PUT' && c.path === '/user/invites/i1' ? json({ error: 'not_found' }, status) : serverRoutes(c));
     await mod.refreshInvites();
     await tick(10);
+    openTicket();
     typeInto(msgField()!, 'Bienvenue !');
     click($('[data-tk-copy]'));
     await tick(80);
@@ -178,6 +185,7 @@ describe('enregistrement : un seul PUT par état', () => {
     routes = (c) => (c.method === 'PUT' && c.path === '/user/invites/i1' ? pending.promise : serverRoutes(c));
     await mod.refreshInvites();
     await tick(10);
+    openTicket();
     typeInto(msgField()!, 'Salut');
     msgField()!.dispatchEvent(new Event('change', { bubbles: true }));
     await tick();
@@ -193,17 +201,17 @@ describe('enregistrement : un seul PUT par état', () => {
 });
 
 describe('coups de cœur : types', () => {
-  it('un type inconnu (16 caractères au plus) est gardé tel quel ; un type trop long est écarté', () => {
-    const html = mod.invitesBodyHTML({
-      quota: 4,
-      invites: [{
-        ...BASE, id: 'i1', code: 'C1', state: 'free', number: 1001,
-        picks: [
-          { id: '7', type: 'anime', name: 'Titre gardé', poster: '', background: '' },
-          { id: '8', type: 'x'.repeat(17), name: 'Titre écarté', poster: '', background: '' },
-        ],
-      }],
-    } as never);
+  it('un type inconnu (16 caractères au plus) est gardé tel quel ; un type trop long est écarté', async () => {
+    list = [{
+      ...BASE, id: 'i1', code: 'C1', state: 'free', number: 1001,
+      picks: [
+        { id: '7', type: 'anime', name: 'Titre gardé', poster: '', background: '' },
+        { id: '8', type: 'x'.repeat(17), name: 'Titre écarté', poster: '', background: '' },
+      ],
+    }];
+    await mod.refreshInvites();
+    openTicket();
+    const html = document.getElementById('detail')!.innerHTML;
     expect(html).toMatch(/tk-pick is-on"[^>]*data-tk-pick="anime:7"/);
     expect(html).toContain('aria-live="polite">1 / 3<');
     expect(html).not.toContain('Titre écarté');

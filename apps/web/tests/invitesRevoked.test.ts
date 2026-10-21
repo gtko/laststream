@@ -54,9 +54,26 @@ describe('billets révoqués par l’administrateur', () => {
     for (const marker of ACTIONS) expect(html).not.toContain(marker);
   });
 
-  it('non révoqué (revokedAt absent ou null) : composeur, copie, partage et annulation comme avant', () => {
+  it('révoqué : billet non cliquable (aria-disabled), aucun panneau à l’activation', async () => {
+    vi.mocked(socialApi.getInvites).mockResolvedValue({ quota: 1, invites: [{ ...BASE, state: 'free', revokedAt: '2026-10-19T08:00:00.000Z' }] } as never);
+    document.getElementById('detail')!.innerHTML = inv.invitesCard();
+    await inv.refreshInvites();
+    const t = document.querySelector<HTMLElement>('#detail .tk-ticket')!;
+    expect(t.getAttribute('aria-disabled')).toBe('true');
+    expect(t.hasAttribute('aria-pressed')).toBe(false);
+    expect(t.className).toContain('tk-is-revoked');
+    t.click();
+    expect(document.querySelector('#detail [data-tk-pane]')).toBeNull();
+  });
+
+  it('non révoqué (revokedAt absent ou null) : composeur, copie, partage et annulation comme avant, une fois le billet choisi', async () => {
     for (const extra of [{}, { revokedAt: null }]) {
-      const html = bodyOf({ ...BASE, state: 'free', ...extra });
+      vi.mocked(socialApi.getInvites).mockResolvedValue({ quota: 1, invites: [{ ...BASE, state: 'free', ...extra }] } as never);
+      document.getElementById('detail')!.innerHTML = inv.invitesCard();
+      await inv.refreshInvites();
+      expect(document.getElementById('detail')!.innerHTML).not.toContain('id="tk-msg"');
+      document.querySelector<HTMLElement>('#detail [data-tk-sel="i1"]')!.click();
+      const html = document.getElementById('detail')!.innerHTML;
       expect(html).not.toContain('Révoqué par l’administrateur');
       for (const marker of ['data-tk-copy', 'data-tk-share', 'id="tk-msg"']) expect(html).toContain(marker);
     }

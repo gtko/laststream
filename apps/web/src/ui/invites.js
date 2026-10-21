@@ -114,28 +114,64 @@ function pickOptions(picks) {
   return lib.concat(picks.filter((p) => !shown.has(pickKey(p))).map((p) => ({ ...p, key: pickKey(p) })));
 }
 
-/** État visuel d'un billet : libellés et classe de couleur. */
+/** Icônes d'état (le texte dit toujours l'état : la couleur et l'icône ne sont qu'un renfort). */
+const icon = (d) => '<svg class="tk-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + d + '</svg>';
+const ICONS = {
+  free: icon('<path d="M12 5v14M5 12h14"></path>'),
+  sent: icon('<path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path>'),
+  used: icon('<path d="M20 6 9 17l-5-5"></path>'),
+  revoked: icon('<circle cx="12" cy="12" r="9"></circle><path d="m5.6 5.6 12.8 12.8"></path>'),
+};
+const CHEVRON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg>';
+const CLOSE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"></path></svg>';
+/** Légende sous la rangée : un libellé par état. */
+const LEGEND = [
+  ['free', 'Disponible'],
+  ['sent', 'Envoyé, en attente'],
+  ['used', 'Validé'],
+  ['revoked', 'Révoqué'],
+];
+
+/** Carte repliée par défaut ; ouverte ou repliée, l'état est mémorisé sur l'appareil. */
+const OPEN_KEY = 'ls_tickets_open';
+const readOpen = () => { try { return globalThis.localStorage?.getItem(OPEN_KEY) === '1'; } catch { return false; } };
+const writeOpen = (on) => { try { globalThis.localStorage?.setItem(OPEN_KEY, on ? '1' : '0'); } catch { /* stockage indisponible : l'état n'est pas gardé */ } };
+let cardOpen = false;
+/** Écran étroit (≤ 640 px) : billets en carrousel, personnalisation en feuille du bas. */
+const SHEET_MQ = '(max-width: 640px)';
+const media = (q) => (typeof window.matchMedia === 'function' ? window.matchMedia(q).matches : false);
+const isSheet = () => media(SHEET_MQ);
+/** Au-delà, les points de position laissent la place au seul texte « Billet n sur N ». */
+const DOTS_MAX = 8;
+/** Miniatures de l'en-tête replié. */
+const MINIS_MAX = 8;
+
+/** État visuel d'un billet : libellés, classe de couleur et libellé lu par les lecteurs d'écran. */
 function ticketView(inv, index) {
   const num = ticketNumber(inv, index);
-  if (isRevoked(inv)) return { kind: 'revoked', num, head: 'Révoqué', sub: 'Par l’administrateur', stub: 'Révoqué' };
+  if (isRevoked(inv)) return { kind: 'revoked', num, head: 'Révoqué', sub: 'Par l’administrateur', stub: 'Révoqué', aria: 'Révoqué par l’administrateur, ne peut plus être envoyé' };
   if (inv.state === 'used') {
     const since = shortDate(inv.usedAt);
-    return { kind: 'used', num, head: inv.invitee || 'Compte supprimé', sub: since ? 'Validé le ' + since : 'Validé', stub: 'Validé' };
+    const who = inv.invitee || 'Compte supprimé';
+    return { kind: 'used', num, head: who, sub: since ? 'Validé le ' + since : 'Validé', stub: 'Validé', aria: 'Validé par ' + who + (since ? ' le ' + since : '') };
   }
   if (inv.state === 'sent') {
     const exp = expiryText(inv.expiresAt);
-    return { kind: 'sent', num, head: 'En attente', sub: 'Envoyé' + (exp ? ' · ' + exp : ''), stub: 'En route' };
+    return { kind: 'sent', num, head: 'En attente', sub: 'Envoyé' + (exp ? ' · ' + exp : ''), stub: 'En route', aria: 'Envoyé, en attente' + (exp ? ', ' + exp : '') };
   }
-  return { kind: 'free', num, head: 'Offrir ce billet', sub: 'Une place pour un ami', stub: 'Admis' };
+  return { kind: 'free', num, head: 'Offrir ce billet', sub: 'Une place pour un ami', stub: 'Admis', aria: 'Disponible, à offrir' };
 }
 
+/** Billet (design d'origine : dégradé, encoches, talon). Un billet révoqué reste lisible au clavier mais ne s'ouvre pas. */
 function ticketHTML(inv, index, selected, deal) {
   const v = ticketView(inv, index);
   const id = esc(inv.id);
-  return '<button type="button" class="tk-ticket tk-is-' + v.kind + (deal ? ' tk-deal' : '') + '" data-tk-sel="' + id + '" data-tk-focus="ticket:' + id + '"' +
-    ' aria-pressed="' + (selected ? 'true' : 'false') + '" aria-label="' + esc('Billet ' + v.num + ' : ' + v.head) + '">' +
+  const off = v.kind === 'revoked';
+  return '<button type="button" class="tk-ticket tk-is-' + v.kind + (deal ? ' tk-deal' : '') + '"' + (off ? '' : ' data-tk-sel="' + id + '"') +
+    ' data-tk-ticket data-tk-focus="ticket:' + id + '"' + (off ? ' aria-disabled="true"' : ' aria-pressed="' + (selected ? 'true' : 'false') + '"') +
+    ' aria-label="' + esc('Billet ' + v.num + ' · ' + v.aria) + '">' +
     '<span class="tk-main"><span class="tk-num">Billet N° ' + esc(v.num) + '</span><span class="tk-head">' + esc(v.head) + '</span>' +
-    '<span class="tk-sub">' + esc(v.sub) + '</span></span>' +
+    '<span class="tk-sub">' + ICONS[v.kind] + esc(v.sub) + '</span></span>' +
     '<span class="tk-stub"><span class="tk-stub-t">' + esc(v.stub) + '</span></span>' +
     '<span class="tk-notch tk-notch-t" aria-hidden="true"></span><span class="tk-notch tk-notch-b" aria-hidden="true"></span>' +
     (v.kind === 'free' ? '<span class="tk-shine" aria-hidden="true"></span>' : '') + '</button>';
@@ -153,8 +189,11 @@ function pickHTML(o, picks, off) {
     '<span class="tk-check" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span></button>';
 }
 
-/** Composeur d'un billet libre : mot (à gauche), coups de cœur (à droite), copier ou partager. */
-function composerHTML(inv, index) {
+/**
+ * Composeur d'un billet libre : mot (à gauche), coups de cœur (à droite), copier ou partager. `sheet` : feuille du bas (mobile),
+ * fenêtre modale dont Copier et Partager restent collés en bas.
+ */
+function composerHTML(inv, index, sheet) {
   const id = esc(inv.id);
   const off = personalisationOff;
   // Serveur sans personnalisation : on affiche ce qu'il a, pas le brouillon qui ne peut pas être enregistré.
@@ -167,7 +206,9 @@ function composerHTML(inv, index) {
   const warn = off
     ? '<p class="tk-note tk-note-warn" role="status">Personnalisation indisponible : ce serveur ne sait pas encore enregistrer le mot ni les coups de cœur. Copier et Partager fonctionnent quand même.</p>'
     : '';
-  return '<section class="tk-compose" aria-labelledby="tk-compose-t">' +
+  return (sheet ? '<div class="tk-scrim" data-tk-close aria-hidden="true"></div>' : '') +
+    '<section class="tk-compose' + (sheet ? ' is-sheet' : '') + '" aria-labelledby="tk-compose-t"' + (sheet ? ' role="dialog" aria-modal="true" data-tk-sheet' : '') + '>' +
+    '<button type="button" class="tk-close" data-tk-close data-tk-focus="close" aria-label="Fermer">' + CLOSE + '</button>' +
     '<div class="tk-compose-l">' +
       '<h3 class="tk-compose-t" id="tk-compose-t">Personnalise le billet N° ' + esc(ticketNumber(inv, index)) + '</h3>' + warn +
       '<label class="tk-label" for="tk-msg">Ton mot, affiché sur sa page d’arrivée</label>' +
@@ -187,13 +228,13 @@ function composerHTML(inv, index) {
 }
 
 /** Panneau du billet ouvert : composeur (libre), nom du filleul (validé), relance ou annulation (envoyé), rien (révoqué). */
-function panelHTML(inv, index) {
+function panelHTML(inv, index, sheet) {
   const id = esc(inv.id);
   if (isRevoked(inv)) {
     return '<section class="tk-panel tk-panel-revoked" aria-live="polite"><div class="tk-panel-b">' +
       '<p class="tk-panel-t">Révoqué par l’administrateur</p><p class="tk-panel-d">Ce billet ne peut plus être envoyé.</p></div></section>';
   }
-  if (inv.state === 'free') return composerHTML(inv, index);
+  if (inv.state === 'free') return composerHTML(inv, index, sheet);
   if (inv.state === 'used') {
     const who = inv.invitee ? esc(inv.invitee) + ' a validé ce billet' : 'Billet validé (compte supprimé)';
     const since = shortDate(inv.usedAt);
@@ -215,63 +256,199 @@ function panelHTML(inv, index) {
   return '';
 }
 
-/** Billet ouvert : celui choisi, sinon le premier libre, sinon le premier billet. Met à jour `selectedId`. */
+/** Billet ouvert : seulement celui que l'on a choisi (aucun n'est présélectionné). Oublie un choix qui n'existe plus. */
 function currentSelection(list) {
-  let sel = list.find((i) => i.id === selectedId);
-  if (!sel) sel = list.find((i) => i.state === 'free' && !isRevoked(i)) || list.find((i) => !isRevoked(i)) || list[0];
-  selectedId = sel ? sel.id : null;
-  return sel || null;
+  const sel = selectedId == null ? null : list.find((i) => i.id === selectedId) || null;
+  if (!sel) selectedId = null;
+  return sel;
 }
 
+const plural = (n, word) => n + ' ' + word + (n > 1 ? 's' : '');
+
+/** Résumé de l'en-tête : « 4 billets disponibles · 0 validé » (les envoyés s'ajoutent s'il y en a). */
+function summaryText(list) {
+  if (!list.length) return 'Aucun billet pour le moment';
+  const free = list.filter((i) => i.state === 'free' && !isRevoked(i)).length;
+  const sent = list.filter((i) => i.state === 'sent' && !isRevoked(i)).length;
+  const used = list.filter((i) => i.state === 'used').length;
+  const parts = [free ? plural(free, 'billet') + ' disponible' + (free > 1 ? 's' : '') : 'Aucun billet disponible'];
+  if (sent) parts.push(plural(sent, 'envoyé'));
+  parts.push(plural(used, 'validé'));
+  return parts.join(' · ');
+}
+
+/** Miniatures de l'en-tête replié : le design des billets en petit, coloré par état (décoratif, le résumé dit tout). */
+function minisHTML(list) {
+  if (!list.length) return '';
+  const minis = list.slice(0, MINIS_MAX).map((inv, n) => '<span class="tk-mini tk-is-' + ticketView(inv, n).kind + '"></span>').join('');
+  const more = list.length > MINIS_MAX ? '<span class="tk-mini-more">+' + (list.length - MINIS_MAX) + '</span>' : '';
+  return '<span class="tk-minis" aria-hidden="true">' + minis + more + '</span>';
+}
+
+/** En-tête de la carte : bouton d'accordéon (titre, résumé, miniatures, chevron). */
+function foldHeadHTML(d) {
+  const list = d && d !== 'error' ? d.invites : null;
+  const sub = d === null ? 'Chargement des billets…' : list ? summaryText(list) : 'Billets indisponibles pour le moment';
+  return '<h3 class="tk-fold-hd"><button type="button" class="tk-fold" id="tk-fold-b" aria-expanded="' + (cardOpen ? 'true' : 'false') + '" aria-controls="tk-fold-r" data-tk-fold data-tk-focus="fold">' +
+    '<span class="tk-fold-t"><span class="tk-fold-h">Mes billets de parrainage</span><span class="tk-fold-s">' + esc(sub) + '</span></span>' +
+    (list ? minisHTML(list) : '') + '<span class="tk-fold-c">' + CHEVRON + '</span></button></h3>';
+}
+
+/** Rangée de billets (grille ; carrousel sur mobile), points de position, légende, puis le panneau du billet choisi. */
 function inviteTicketsHTML(list) {
   const deal = dealPending;
   dealPending = false;
   const sel = currentSelection(list);
-  return '<div class="tk-grid" role="group" aria-label="Billets de parrainage">' +
-    list.map((inv, n) => ticketHTML(inv, n, !!sel && inv.id === sel.id, deal)).join('') + '</div>' +
-    (sel ? panelHTML(sel, list.indexOf(sel)) : '');
+  const at = sel ? list.indexOf(sel) : -1;
+  const n = list.length;
+  const sheet = !!sel && sel.state === 'free' && !isRevoked(sel) && isSheet();
+  const dots = n > 1
+    ? '<div class="tk-dots">' + (n <= DOTS_MAX ? '<span class="tk-dots-i" aria-hidden="true">' + list.map((_, i) => '<span class="tk-dot' + (i === 0 ? ' is-on' : '') + '"></span>').join('') + '</span>' : '') +
+      '<span class="tk-dots-t' + (n <= DOTS_MAX ? ' sr-only' : '') + '" data-tk-pos>Billet 1 sur ' + n + '</span></div>'
+    : '';
+  const legend = '<ul class="tk-legend" aria-label="États des billets">' +
+    LEGEND.map(([k, t]) => '<li><span class="tk-mini tk-is-' + k + '" aria-hidden="true"></span>' + ICONS[k] + '<span>' + t + '</span></li>').join('') + '</ul>';
+  // Seule la rangée est un conteneur de requête : un conteneur englobant ferait de la carte le bloc de référence de la feuille du bas (position: fixed).
+  return '<div class="tk-row-wrap"><div class="tk-row" role="group" aria-label="Billets de parrainage" data-tk-row>' +
+    list.map((inv, i) => ticketHTML(inv, i, i === at, deal)).join('') + '</div></div>' + dots + legend +
+    (sel ? '<div class="tk-pane' + (sheet ? ' is-sheet-host' : '') + '" data-tk-pane data-tk-at="' + at + '">' + panelHTML(sel, at, sheet) + '</div>' : '');
 }
 
+/** Corps de la carte : en-tête repliable et région (chargement, erreur, ou billets). */
 export function invitesBodyHTML(d) {
+  return foldHeadHTML(d) + '<div class="tk-fold-r" id="tk-fold-r" role="region" aria-labelledby="tk-fold-b"' + (cardOpen ? '' : ' hidden') + '>' +
+    '<div class="tk-fold-in">' + regionHTML(d) + '</div></div>';
+}
+
+function regionHTML(d) {
   if (d === null) return '<p class="set-hint" role="status">Chargement des billets…</p>';
   if (d === 'error') return '<p class="set-hint" role="alert">Billets indisponibles : le serveur ne répond pas. <button type="button" class="link-btn" data-inv-reload>Réessayer</button></p>';
   const list = d.invites;
-  const used = list.filter((i) => i.state === 'used').length;
   const owner = auth.isOwner
     ? '<form class="inv-quota" data-inv-quota><label class="set-row-d" for="inv-q-user">Quota d’un compte (propriétaire du serveur)</label>' +
       '<span class="inv-quota-f"><input class="set-input set-input-sm" id="inv-q-user" name="user" type="text" placeholder="pseudo" value="' + esc(auth.username) + '" autocapitalize="none" required>' +
       '<input class="set-input set-input-sm" name="quota" type="number" min="0" max="100" value="' + d.quota + '" aria-label="Nombre de billets" required>' +
       '<button type="submit" class="btn btn-ghost btn-sm">Appliquer</button></span></form>'
     : '';
-  const summary = list.length
-    ? '<p class="set-hint">' + used + ' billet' + (used > 1 ? 's' : '') + ' validé' + (used > 1 ? 's' : '') + ' sur ' + list.length +
-      '. Chaque billet ne sert qu’une fois. Ton filleul pourra devenir ton ami en un clic.</p>'
+  const help = list.length
+    ? '<p class="tk-help">Invite tes proches avec un billet personnel : un mot et trois coups de cœur. Choisis un billet disponible pour le personnaliser. ' +
+      'Chaque billet ne sert qu’une fois ; ton filleul pourra devenir ton ami en un clic.</p>'
     : '<p class="set-hint">Aucun billet pour le moment.</p>';
-  return summary + inviteTicketsHTML(list) + owner;
+  return help + (list.length ? inviteTicketsHTML(list) : '') + owner;
 }
 
-/** Carte du panneau « Profil et compte » ; le contenu se met à jour sans redessiner la page. */
+/** Carte du panneau « Profil et compte » ; le contenu se met à jour sans redessiner la page. Repliée par défaut, aucun billet choisi. */
 export function invitesCard() {
   dealPending = true;
+  // Un redessin de la page ne déclenche pas le `change` d'un champ remplacé : on enregistre les mots en cours avant de fermer le composeur.
+  if (data && data !== 'error' && Array.isArray(data.invites)) {
+    for (const inv of data.invites) if (dirty(inv)) saveDraft(inv.id).catch(() => {});
+  }
   // Chaque ouverture des réglages retente la personnalisation (le serveur a pu être mis à jour).
   personalisationOff = false;
-  return card('Mes billets de parrainage', '<div id="inv-slot">' + invitesBodyHTML(data) + '</div>', {
-    desc: 'Invite tes proches avec un billet personnel : un mot et trois coups de cœur.',
-    attrs: 'data-tk-card',
-  });
+  selectedId = null;
+  cardOpen = readOpen();
+  return card('', '<div id="inv-slot">' + invitesBodyHTML(data) + '</div>', { attrs: 'data-tk-card' });
 }
 
-/** Redessine le panneau. `focus` (valeur de `data-tk-focus`) rend le focus à cet élément ; sans valeur, le focus déjà dans le panneau est gardé. */
+/** Pointe du panneau (bureau) sous le billet choisi, mesurée sur la mise en page réelle. */
+function placePointer(slot) {
+  const pane = slot.querySelector('[data-tk-pane]');
+  const ticket = pane && slot.querySelector('.tk-ticket[aria-pressed="true"]');
+  if (!pane || !ticket) return;
+  const p = pane.getBoundingClientRect();
+  const t = ticket.getBoundingClientRect();
+  if (!p.width || !t.width) return;
+  const x = Math.min(p.width - 28, Math.max(28, t.left + t.width / 2 - p.left));
+  pane.style.setProperty('--tk-ptr', Math.round(x) + 'px');
+}
+
+/** Points de position du carrousel (mobile) : billet le plus proche du bord gauche, ou le dernier en fin de défilement. */
+function syncDots(slot, row) {
+  const items = Array.from(row.querySelectorAll('[data-tk-ticket]'));
+  if (!items.length) return;
+  const max = row.scrollWidth - row.clientWidth;
+  let n = 0;
+  if (max > 0 && row.scrollLeft >= max - 2) n = items.length - 1;
+  else {
+    const base = items[0].offsetLeft;
+    let best = Infinity;
+    items.forEach((el, i) => {
+      const gap = Math.abs(el.offsetLeft - base - row.scrollLeft);
+      if (gap < best) { best = gap; n = i; }
+    });
+  }
+  slot.querySelectorAll('.tk-dot').forEach((dot, i) => dot.classList.toggle('is-on', i === n));
+  const pos = slot.querySelector('[data-tk-pos]');
+  const text = 'Billet ' + (n + 1) + ' sur ' + items.length;
+  if (pos && pos.textContent !== text) pos.textContent = text;
+}
+
+/**
+ * Redessine le panneau. `focus` (valeur de `data-tk-focus`) rend le focus à cet élément ; sans valeur, le focus déjà dans le panneau est gardé.
+ * La position du carrousel est conservée ; une feuille du bas ouverte reçoit le focus (fenêtre modale).
+ */
 function paint(focus) {
   const slot = detailEl.querySelector('#inv-slot');
   if (!slot) return;
   const active = slot.contains(document.activeElement) ? document.activeElement.dataset.tkFocus : undefined;
+  const oldRow = slot.querySelector('[data-tk-row]');
+  const x = oldRow ? oldRow.scrollLeft : 0;
   slot.innerHTML = invitesBodyHTML(data);
+  const row = slot.querySelector('[data-tk-row]');
+  if (row) {
+    if (x) row.scrollLeft = x;
+    syncDots(slot, row);
+  }
+  placePointer(slot);
   const target = focus || active;
   if (target) {
     const el = Array.from(slot.querySelectorAll('[data-tk-focus]')).find((n) => n.dataset.tkFocus === target);
     if (el) el.focus({ preventScroll: true });
   }
+  const sheet = slot.querySelector('[data-tk-sheet]');
+  if (sheet && !sheet.contains(document.activeElement)) {
+    const close = sheet.querySelector('.tk-close');
+    if (close) close.focus({ preventScroll: true });
+  }
+}
+
+/** Ouvre ou replie la carte (accordéon) sans redessiner : le focus reste sur l'en-tête. */
+let foldAnim = null;
+function toggleCard() {
+  const slot = detailEl.querySelector('#inv-slot');
+  const btn = slot && slot.querySelector('[data-tk-fold]');
+  const region = slot && slot.querySelector('#tk-fold-r');
+  if (!btn || !region) return;
+  cardOpen = !cardOpen;
+  writeOpen(cardOpen);
+  btn.setAttribute('aria-expanded', cardOpen ? 'true' : 'false');
+  const open = cardOpen;
+  if (foldAnim) { const prev = foldAnim; foldAnim = null; prev.cancel(); }
+  region.style.overflow = '';
+  if (open) region.hidden = false;
+  if (open) {
+    placePointer(slot);
+    const row = slot.querySelector('[data-tk-row]');
+    if (row) syncDots(slot, row);
+  }
+  if (typeof region.animate !== 'function' || media('(prefers-reduced-motion: reduce)')) {
+    region.hidden = !open;
+    return;
+  }
+  const h = region.scrollHeight;
+  region.style.overflow = 'hidden';
+  const anim = region.animate(
+    [{ height: (open ? 0 : h) + 'px', opacity: open ? 0 : 1 }, { height: (open ? h : 0) + 'px', opacity: open ? 1 : 0 }],
+    { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+  );
+  foldAnim = anim;
+  anim.onfinish = () => {
+    if (foldAnim !== anim) return;
+    foldAnim = null;
+    region.style.overflow = '';
+    if (!open) region.hidden = true;
+  };
 }
 
 /** Charge les invitations du compte (à l'ouverture des réglages). */
@@ -458,10 +635,33 @@ async function shareTicket(id) {
   return shareInvite(id);
 }
 
+/** Choisit un billet (son panneau s'ouvre) ; choisi à nouveau, il se referme. Un billet révoqué ne s'ouvre pas. */
 function selectTicket(id) {
-  if (id === selectedId || !find(id)) return;
+  const inv = find(id);
+  if (!inv || isRevoked(inv)) return;
+  if (id === selectedId) { closePanel(); return; }
   selectedId = id;
   paint('ticket:' + id);
+}
+
+/** Ferme le panneau ou la feuille du bas ; le mot tapé est enregistré et le focus revient au billet. */
+function closePanel() {
+  const id = selectedId;
+  if (id == null) return;
+  const inv = find(id);
+  if (inv && !personalisationOff && dirty(inv)) saveDraft(id).catch(() => {});
+  selectedId = null;
+  paint('ticket:' + id);
+}
+
+/** Tab reste dans la feuille du bas (fenêtre modale). */
+function trapTab(e, sheet) {
+  const items = Array.from(sheet.querySelectorAll('button:not([disabled]), textarea, input, [href]'));
+  if (!items.length) return;
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
 function setPickStatus(text) {
@@ -497,6 +697,8 @@ async function togglePick(key) {
 detailEl.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
+  if (t.closest('[data-tk-fold]')) { toggleCard(); return; }
+  if (t.closest('[data-tk-close]')) { closePanel(); return; }
   const sel = t.closest('[data-tk-sel]');
   if (sel) { selectTicket(sel.dataset.tkSel); return; }
   const pick = t.closest('[data-tk-pick]');
@@ -531,8 +733,61 @@ detailEl.addEventListener('change', (e) => {
   const field = e.target instanceof HTMLTextAreaElement && e.target.dataset.tkMsg ? e.target : null;
   if (!field) return;
   const inv = find(field.dataset.tkMsg);
-  if (inv && dirty(inv)) saveDraft(inv.id);
+  if (inv && dirty(inv)) saveDraft(inv.id).catch(() => {});
 });
+
+const ROW_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+
+/** Clavier : Échap ferme le panneau ou la feuille, Tab reste dans la feuille, flèches (Début, Fin) dans la rangée de billets. */
+detailEl.addEventListener('keydown', (e) => {
+  const t = e.target instanceof Element ? e.target : null;
+  const slot = t && t.closest('#inv-slot');
+  if (!slot) return;
+  if (e.key === 'Escape' && cardOpen && selectedId != null) {
+    // Avant la navigation globale (events.js), qui reviendrait à la page précédente.
+    e.preventDefault();
+    e.stopPropagation();
+    closePanel();
+    return;
+  }
+  const sheet = t.closest('[data-tk-sheet]');
+  if (e.key === 'Tab' && sheet) { trapTab(e, sheet); return; }
+  if (!ROW_KEYS.includes(e.key) || e.altKey || e.ctrlKey || e.metaKey || !t.matches('[data-tk-ticket]')) return;
+  const all = Array.from(slot.querySelectorAll('[data-tk-ticket]'));
+  const i = all.indexOf(t);
+  const j = e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : i + (e.key === 'ArrowRight' ? 1 : -1);
+  e.preventDefault();
+  e.stopPropagation();
+  const next = all[Math.max(0, Math.min(all.length - 1, j))];
+  if (next && next !== t) next.focus();
+});
+
+/** Défilement du carrousel : points de position et pointe du panneau suivent (une fois par image). */
+let scrollFrame = 0;
+detailEl.addEventListener('scroll', (e) => {
+  const row = e.target instanceof Element && e.target.matches('[data-tk-row]') ? e.target : null;
+  if (!row || scrollFrame) return;
+  const run = () => {
+    scrollFrame = 0;
+    const slot = row.closest('#inv-slot');
+    if (!slot) return;
+    syncDots(slot, row);
+    placePointer(slot);
+  };
+  if (typeof requestAnimationFrame === 'function') scrollFrame = requestAnimationFrame(run);
+  else run();
+}, { capture: true, passive: true });
+
+/** Redimensionnement : la pointe se recale ; en passant le seuil mobile, le composeur bascule entre panneau et feuille du bas. */
+if (typeof window.matchMedia === 'function') {
+  const mq = window.matchMedia(SHEET_MQ);
+  const onChange = () => { if (selectedId != null) paint(); };
+  if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+}
+window.addEventListener('resize', () => {
+  const slot = detailEl.querySelector('#inv-slot');
+  if (slot) placePointer(slot);
+}, { passive: true });
 
 detailEl.addEventListener('submit', (e) => {
   const f = e.target instanceof Element ? e.target.closest('[data-inv-quota]') : null;

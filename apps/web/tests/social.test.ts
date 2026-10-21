@@ -355,13 +355,23 @@ describe('Mes invitations', () => {
     expect(rows()[1].textContent).toContain('Envoyé · expire dans 9 j');
     expect(rows()[0].textContent).toContain('1039');
     expect(rows()[3].textContent).toContain('1042');
-    // Le billet libre ouvert propose le composeur ; le lien n'est plus affiché en clair.
+    // Carte repliée par défaut, aucun billet présélectionné : pas de composeur tant qu'on n'a pas choisi un billet libre.
+    expect(document.querySelector('#detail #tk-fold-b')!.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('#detail #tk-msg')).toBeNull();
+    (document.querySelector('#detail #tk-fold-b') as HTMLElement).click();
+    expect(document.querySelector('#detail #tk-fold-b')!.getAttribute('aria-expanded')).toBe('true');
+    rows()[0].click();
+    await tick(10);
+    // Le billet libre choisi propose le composeur ; le lien n'est plus affiché en clair.
     expect(document.querySelector('#detail #tk-msg')).not.toBeNull();
     expect(document.querySelector('#detail [data-inv-input]')).toBeNull();
   });
 
   it('Copier met le lien dans le presse-papiers et marque « envoyé »', async () => {
     await mod.refreshInvites();
+    (document.querySelector('#detail #tk-fold-b') as HTMLElement).click();
+    rows()[0].click();
+    await tick(10);
     (document.querySelector('#detail [data-tk-copy]') as HTMLElement).click();
     await tick(60);
     expect((navigator.clipboard.writeText as any).mock.calls[0][0]).toMatch(/\/\?invite=FreeCode1$/);
