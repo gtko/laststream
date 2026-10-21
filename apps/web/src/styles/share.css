@@ -6,7 +6,7 @@
   background: rgba(8, 7, 12, 0.72); font-family: var(--ff-body); font-size: 14px; color: var(--text);
 }
 .shd-veil *, .shd-veil *::before, .shd-veil *::after { box-sizing: border-box; }
-.shd-veil button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.shd-veil :where(button) { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .shd-veil button:disabled { cursor: default; }
 .shd-veil input, .shd-veil textarea { font: inherit; color: var(--text); }
 .shd-veil :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
