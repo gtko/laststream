@@ -3,7 +3,7 @@
 import { validateHandle } from '../data/socialV2Api';
 
 export const BIO_MAX = 140;
-const STATUS_TEXT_MAX = 60;
+export const STATUS_TEXT_MAX = 60;
 export const FAVORITES_MAX = 4;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -12,6 +12,8 @@ const DAY_MS = 86_400_000;
 export const COLORS = [['#ff5a36', 'Corail'], ['#7b5cff', 'Violet'], ['#1f9d77', 'Vert'], ['#3b82c4', 'Bleu'], ['#e0912f', 'Ambre'], ['#c2417f', 'Rose']];
 export const PRESENCE = [['online', 'En ligne', '#3ddc84'], ['away', 'Absent', '#f5b700'], ['dnd', 'Ne pas déranger', '#ff5a6a'], ['invisible', 'Invisible', '#6b6778']];
 export const EXPIRIES = [['4h', 'dans 4 h'], ['tonight', 'ce soir'], ['never', 'jamais']];
+/** Emojis proposés pour le statut personnalisé (écran Profil et éditeur de la sidebar). */
+export const EMOJIS = ['🍿', '🎬', '🎥', '📺', '🛋️', '🌙', '☕', '🎧', '😴', '🤩', '😎', '🥳', '🤔', '🔥', '❤️', '👀', '🧠', '👾', '🚀', '🦇', '🧙', '🐉', '🎮', '🌧️'];
 
 export const PREF_CHOICES = {
   activityVisibility: [['friends', 'Amis'], ['favorites', 'Favoris'], ['nobody', 'Personne']],
@@ -79,7 +81,7 @@ export function validateDraft(d) {
 const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Statut personnalisé à envoyer : objet, ou null pour l'effacer. */
-function customStatusOf(d, now) {
+export function customStatusOf(d, now) {
   const text = d.statusText.trim();
   if (!d.emoji && !text) return null;
   const out = {};

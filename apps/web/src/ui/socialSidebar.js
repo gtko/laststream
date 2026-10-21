@@ -18,6 +18,7 @@ import {
 } from './socialFmt.js';
 import { inviteToParty, openConversation as openConvHook, openProfileEditor, renderConversationList } from './socialHooks.js';
 import { SI } from './socialIcons.js';
+import { openStatusEditor } from './socialStatusEditor.js';
 import { paintSocialBadges, socialAvailable } from './socialButton.js';
 import { esc } from './util.js';
 
@@ -151,7 +152,7 @@ function shellHTML() {
     '<button type="button" class="ss-stat" id="ss-status-btn" data-ss-act="status-menu" aria-haspopup="menu" aria-expanded="false"></button>' +
     '<div class="ss-menu ss-stat-menu" id="ss-status-menu" role="menu" aria-label="Mon statut" hidden>' +
     STATUS_OPTIONS.map(([v, l]) => '<button type="button" role="menuitemradio" aria-checked="false" class="ss-mi" data-ss-act="set-status" data-status="' + v + '">' + l + '</button>').join('') +
-    '<div class="ss-mi-sep" role="separator"></div><button type="button" role="menuitem" class="ss-mi" data-ss-act="profile">Statut personnalisé…</button></div></div>' +
+    '<div class="ss-mi-sep" role="separator"></div><button type="button" role="menuitem" class="ss-mi" data-ss-act="status-edit">Statut personnalisé…</button></div></div>' +
     '<button type="button" class="ss-ico ss-d-only" data-ss-act="profile" aria-label="Paramètres sociaux">' + SI.gear + '</button>' +
     '<button type="button" class="ss-ico ss-d-only" data-ss-act="close" aria-label="Fermer la liste des amis">' + SI.close + '</button>' +
     '<button type="button" class="ss-go ss-m-only" data-ss-act="profile" aria-label="Modifier mon profil social">' + SI.chevRight + '</button></section>' +
@@ -793,6 +794,7 @@ function onClick(e) {
     case 'watch': watchWith(findFriend(pid)); break;
     case 'party': inviteFriend(findFriend(pid)); break;
     case 'profile': closeStatusMenu(); openProfileEditor(); break;
+    case 'status-edit': closeStatusMenu(); openStatusEditor(root, $('#ss-status-btn')); break;
     case 'status-menu': {
       const m = $('#ss-status-menu');
       m.hidden = !m.hidden;

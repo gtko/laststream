@@ -13,13 +13,12 @@ import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
 import {
-  BIO_MAX, COLORS, EXPIRIES, FAVORITES_MAX, PREF_CHOICES, PRESENCE, addFavorite, charCount,
+  BIO_MAX, COLORS, EMOJIS, EXPIRIES, FAVORITES_MAX, PREF_CHOICES, PRESENCE, addFavorite, charCount,
   cloneDraft, diffDraft, makeDraft, mediaOf, moveItem, tagCooldown, validateDraft,
 } from './socialProfileModel.js';
 import { registerSocialHook } from './socialHooks.js';
 import { state as uiState } from './state.js';
 
-const EMOJIS = ['🍿', '🎬', '🎥', '📺', '🛋️', '🌙', '☕', '🎧', '😴', '🤩', '😎', '🥳', '🤔', '🔥', '❤️', '👀', '🧠', '👾', '🚀', '🦇', '🧙', '🐉', '🎮', '🌧️'];
 const POSTER_BGS = ['#3a2a1c', '#1f3b5c', '#5c1f2e', '#1f4a3a', '#3b2a5c', '#5c4a1f'];
 const TAG_COOLDOWN_NOTE = 'Changer de tag : une fois par mois, tes amis restent tes amis.';
 const MOBILE_Q = '(max-width: 767px)';

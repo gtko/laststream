@@ -358,6 +358,28 @@ body.lp-open .ss { z-index: 620; }
 .ss-dlg-t { margin: 0; font-family: var(--ff-title); font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
 .ss-dlg-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .ss-input { width: 100%; min-width: 0; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 14px; resize: vertical; }
+/* Éditeur du statut personnalisé (ODY-174) */
+.ss-se { max-width: 380px; }
+.ss-se-field { display: flex; flex-direction: column; gap: 8px; }
+.ss-se-lb { font-size: 12px; font-weight: 700; color: var(--muted); }
+.ss-se-row { display: flex; gap: 8px; }
+.ss-se-input { flex: 1; height: 44px; font-size: 15px; }
+.ss-se-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.ss-se-count { align-self: flex-end; }
+.ss-se-emoji-wrap { position: relative; flex: none; }
+.ss-se-emoji { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); font-size: 20px; cursor: pointer; }
+.ss-se-pop { position: absolute; z-index: 2; top: 48px; left: 0; width: 236px; display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-radius: 12px; background: var(--line); border: 1px solid #33303f; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+.ss-se-e { width: 36px; height: 36px; border: 0; border-radius: 8px; background: none; font-size: 20px; cursor: pointer; }
+.ss-se-e:hover, .ss-se-e:focus-visible { background: #2f2b3b; }
+.ss-se-e--none { width: auto; padding: 0 10px; font-size: 12px; color: var(--muted); }
+.ss-se-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ss-se-chip { height: 44px; padding: 0 16px; border: 0; border-radius: 22px; background: var(--line); color: var(--text); font-size: 13px; font-weight: 700; cursor: pointer; }
+.ss-se-chip.on { background: #2f2b3b; outline: 2px solid var(--accent); }
+.ss-se-err { margin: 0; font-size: 13px; color: #ff8a95; }
+.ss-se-sp { flex: 1; }
+.ss-se-clear { background: none; color: #ff8a95; }
+.ss-se .ss-btn2 { height: 44px; }
+.ss-se [hidden] { display: none; }
 .ss-fs { border: 0; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; }
 .ss-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
 

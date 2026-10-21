@@ -186,13 +186,26 @@ describe('en-tête et statut', () => {
     expect($('#ss-status-menu')!.hidden).toBe(true);
   });
 
-  it('réglages (engrenage) et « Statut personnalisé… » ouvrent l’édition du profil (F2)', () => {
+  it('réglages (engrenage) ouvrent l’édition du profil (F2)', () => {
     sb.openSidebar();
     clickEl('.ss-me > [data-ss-act="profile"].ss-d-only');
     expect(hooks.openProfileEditor).toHaveBeenCalledTimes(1);
+  });
+
+  it('« Statut personnalisé… » ouvre l’éditeur de statut, pas l’écran Profil (ODY-174)', () => {
+    setSocial({ profile: { customStatus: { emoji: '🍿', text: 'Soirée SF' } } });
+    sb.openSidebar();
     clickEl('#ss-status-btn');
-    clickEl('#ss-status-menu [data-ss-act="profile"]');
-    expect(hooks.openProfileEditor).toHaveBeenCalledTimes(2);
+    clickEl('#ss-status-menu [data-ss-act="status-edit"]');
+    expect(hooks.openProfileEditor).not.toHaveBeenCalled();
+    expect($('#ss-status-menu')!.hidden).toBe(true);
+    const input = $<HTMLInputElement>('#ss-se-text')!;
+    expect(input.value).toBe('Soirée SF');
+    expect(document.activeElement).toBe(input);
+    pressKey(input, 'Escape');
+    expect($('#ss-se-text')).toBeNull();
+    expect(document.activeElement).toBe($('#ss-status-btn'));
+    expect(sb.isSidebarOpen()).toBe(true);
   });
 
   it('copier le Nom#TAG', async () => {
