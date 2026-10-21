@@ -81,7 +81,6 @@ function mockFetch(url: string, init?: RequestInit): Response {
     recCalls.push(String(init?.body));
     return json({ items: Array.from({ length: 55 }, (_, i) => ({ id: 900 + i, media_type: i % 3 ? 'movie' : 'tv', title: 'Reco ' + i, name: 'Reco ' + i, poster_path: '/r' + i + '.jpg', reason_fr: 'Raison ' + i, release_date: '2024-05-05', first_air_date: '2024-05-05' })) });
   }
-  if (u.pathname.endsWith('/lt/why')) return json({ text: 'Parce que.' });
   if (u.pathname.endsWith('/lt/tv/facets')) return json({ countries: [{ id: 'FR', name: 'France', count: 3 }, { id: 'CH', count: 1 }], languages: { fr: 3, de: 1 }, categories: [{ id: 'news', label: 'Info', count: 2 }, { id: 'sport', label: 'Sport', count: 1 }] });
   if (u.pathname.endsWith('/lt/tv/channels')) {
     return json([
@@ -239,6 +238,9 @@ describe('interface portée', () => {
     location.hash = '#/movie/100';
     await settle(300);
     const detail = document.getElementById('detail')!;
+    // Plus de bloc IA « Pourquoi tu vas aimer » : ni encart, ni appel de génération à l'ouverture de la fiche.
+    expect(detail.querySelector('#f-why')).toBeNull();
+    expect(calls.some((url) => url.includes('/lt/why'))).toBe(false);
     const follow = detail.querySelector('[data-follow="movie:100"]') as HTMLElement;
     expect(follow.getAttribute('aria-pressed')).toBe('false');
     follow.click();

@@ -12,7 +12,7 @@ import { countdown, isFuture } from './dates.js';
 import { detailEl } from './dom.js';
 import { fetchFull } from './ficheModel.js';
 import { inProgressRef } from './epFocus.js';
-import { fillCollection, fillNext, fillRatings, fillWhy, loadSeason } from './ficheSections.js';
+import { fillCollection, fillNext, fillRatings, loadSeason } from './ficheSections.js';
 import { topBar } from './fragments.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
@@ -183,8 +183,6 @@ function ficheHTML(m) {
     '<div class="f-prov" id="f-prov" data-nav></div>' +
     '<div class="f-syn" data-nav><p class="f-ov">' + esc(m.overview || 'Pas de synopsis disponible.') + '</p>' +
     (m.overview.length > 150 ? '<button type="button" class="link-btn" data-more>Plus</button>' : '') + '</div>' +
-    '<div class="f-why glass" id="f-why" hidden><p class="f-why-head">Pourquoi tu vas aimer <span class="ia-tag">IA</span></p>' +
-    '<p class="f-why-text" id="f-why-text"></p></div>' +
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
     (m.trailer
@@ -365,7 +363,6 @@ export async function showFiche(type, id) {
   heroVideoSetup(m, trailerPlayFor(m, token));
   fillRatings(m, token);
   fillProviders(m, token);
-  fillWhy(m, token);
   if (m.collection) fillCollection(m, token);
   if (m.type === 'tv') {
     fillNext(m, token);

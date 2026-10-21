@@ -154,7 +154,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 @media (max-width: 1023px) { .hero-dots { right: var(--gutter); bottom: 22px; } .hero-arrow { display: none; } }
 @media (max-width: 640px) { .hero-dots { left: 16px; right: 16px; bottom: 18px; justify-content: center; } .hero-dot { min-width: 30px; height: 30px; } }
 
-/* ---------- Cartes « Pourquoi tu vas aimer » : déploiement vers le haut ---------- */
+/* ---------- Cartes « En deux mots » : déploiement vers le haut ---------- */
 .f-why.is-live { position: relative; padding: 0; gap: 0; cursor: default; }
 .f-why.is-live:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .f-why-inner { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 12px 16px; border-radius: 14px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; transition: max-height 0.32s ease, background-color 0.2s; }

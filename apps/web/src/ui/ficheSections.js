@@ -3,8 +3,7 @@ import { seasonEpisodes } from './seasons.js';
 import { countdownText, isPlaceholderTitle, isSoonPlayable, playableBadge, soonBell, soonInnerHTML } from './soon.js';
 import { userStore } from '../data/userStore';
 import { refreshWatchedUI } from './watched.js';
-import { setupWhy } from './why.js';
-import { api, tmdb, why } from '../data/lt';
+import { api, tmdb } from '../data/lt';
 import { register, toItem } from './catalog.js';
 import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } from './epFocus.js';
 import { detailEl } from './dom.js';
@@ -37,17 +36,6 @@ export async function fillRatings(m, token) {
   if (token !== state.token) return;
   slot.innerHTML = ratingsHTML(m, r);
   if (!slot.innerHTML) slot.hidden = true;
-}
-
-export async function fillWhy(m, token) {
-  if (!m.overview && !m.genres.length) return;
-  try {
-    const j = await why(m.type, m.id);
-    if (token !== state.token || !j.text) return;
-    detailEl.querySelector('#f-why-text').textContent = j.text;
-    detailEl.querySelector('#f-why').hidden = false;
-    setupWhy(detailEl.querySelector('#f-why'));
-  } catch (_) { /* section masquée en cas d'erreur */ }
 }
 
 export async function fillCollection(m, token) {

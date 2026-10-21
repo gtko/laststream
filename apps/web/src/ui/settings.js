@@ -37,7 +37,7 @@ const SERVICE_FALLBACK = {
   mdblistApiKey: ['Clé MDBList', 'Notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'],
   tvdbApiKey: ['Clé TheTVDB', 'Saisons et prochain épisode des séries.'],
   tvdbPin: ['PIN d’abonné TVDB', 'Seulement pour une clé v4 personnelle.'],
-  openrouterApiKey: ['Clé OpenRouter', 'Recommandations IA et « Pourquoi tu vas aimer ».'],
+  openrouterApiKey: ['Clé OpenRouter', 'Recommandations IA et textes sur les personnes.'],
   openrouterModel: ['Modèle OpenRouter', 'Identifiant du modèle utilisé pour les textes.'],
   fanartApiKey: ['Clé Fanart.tv', 'Facultative.'],
   introdbApiKey: ['Clé IntroDB', 'Segments intro, reprise et générique.'],

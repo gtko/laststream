@@ -1,4 +1,4 @@
-/* Cartes « Pourquoi tu vas aimer » / « En deux mots » : texte limité à 2 lignes, déployé vers le haut au survol,
+/* Cartes « En deux mots » : texte limité à 2 lignes, déployé vers le haut au survol,
  * au focus clavier (Entrée / Espace) ou au toucher, sans décaler les boutons situés dessous. */
 
 export function setupWhy(card) {

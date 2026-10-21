@@ -134,8 +134,6 @@ export interface RecommendOptions {
 /** Le modèle IA peut prendre du temps : délai plus long que les autres appels (60 s). */
 export const recommend = (history: HistoryEntry[], liked: HistoryEntry[], opts: RecommendOptions = {}) =>
   postLt('recommend', { history, liked, ...opts }, { timeoutMs: 60_000 });
-export const why = (type: 'movie' | 'tv', tmdbId: number | string, language = 'fr-FR') =>
-  postLt<{ text: string }>('why', { type, tmdbId: Number(tmdbId), language });
 export const personWhy = (tmdbId: number | string, language = 'fr-FR') =>
   postLt<{ text: string }>('person-why', { tmdbId: Number(tmdbId), language });
 
