@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Fiche série mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Sora:wght@600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c0b11;color:#f4f2f7;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+h1,h2,h3,h4,p,ul{margin:0;padding:0}ul{list-style:none}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;border-radius:10px;border:0;font:600 15px 'Plus Jakarta Sans',system-ui,sans-serif;position:relative;overflow:hidden;white-space:nowrap;color:#f4f2f7;background:none}
+.btn-p{background:#ff5a36;color:#0c0b11}.btn-g{background:rgba(255,255,255,.14)}
+.btn-s{min-height:48px;padding:0 14px;font-size:14px}
+.ib{width:44px;height:44px;border-radius:50%;background:rgba(12,11,17,.6);border:0;color:#f4f2f7;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
+.dlb{width:44px;height:44px;border-radius:50%;border:1.5px solid #6b6680;display:inline-flex;align-items:center;justify-content:center;position:relative;color:#f4f2f7;background:none;padding:0;flex:none}
+.dlb.q{border-color:#2a2735;color:#a19dae}.dlb.ok{border-color:#6fd8a8;color:#6fd8a8}.dlb.er{border-color:#ff8f80;color:#ff8f80}.dlb.pg{border-color:transparent}
+.rg{position:absolute;left:0;top:0;width:44px;height:44px;transform:rotate(-90deg)}
+.rt{fill:none;stroke:#2a2735;stroke-width:3}.rp{fill:none;stroke:#ff5a36;stroke-width:3;stroke-linecap:round}
+.tabbar{position:absolute;left:0;right:0;bottom:0;height:72px;display:flex;align-items:center;justify-content:space-around;background:#0c0b11;border-top:1px solid #24212e}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:56px;height:52px;font-size:11px;font-weight:500;color:#a19dae;position:relative;text-decoration:none}
+.tab .ic{width:22px;height:22px}
+.ep{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #24212e}
+.still{width:112px;height:63px;border-radius:8px;flex:none}
+.et{font-size:14px;font-weight:600;line-height:1.3}.em{font-size:12px;color:#a19dae;margin-top:2px}
+.tabs{display:flex;gap:20px;border-bottom:1px solid #24212e;padding:0 16px}
+.tabs a{padding:12px 0;font-size:14px;font-weight:600;color:#a19dae;text-decoration:none}
+.tabs a.cur{color:#f4f2f7;box-shadow:inset 0 -2px 0 #ff5a36}
+</style>
+</helmet>
+<div style="position:relative;width:390px;height:844px;overflow:hidden;background:#0c0b11">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 4v11m0 0l-4-4m4 4l4-4M5 19h14"></path></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"></path></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"></path></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"></path></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"></path></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v4l3 2"></path></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17h.01"></path></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"></path></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4 4"></path></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.5"></circle><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6M16 6.5a3.5 3.5 0 0 1 0 6.5M18 14.2c1.9.8 3 2.6 3 5.8"></path></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"></path></symbol>
+</defs></svg>
+
+<div style="height:210px;background:#2f6f73;position:relative">
+<button class="ib" style="position:absolute;left:12px;top:12px" aria-label="Retour"><svg class="ic" aria-hidden="true"><use href="#i-back"></use></svg></button>
+<div style="position:absolute;left:0;right:0;bottom:0;height:110px;background:rgba(12,11,17,.72)"></div>
+<div style="position:absolute;left:16px;right:16px;bottom:12px;display:flex;flex-direction:column;gap:6px">
+<h1 style="font:700 26px/1.1 'Sora',system-ui,sans-serif">Nuits de Lisbonne</h1>
+<p style="font-size:13px;color:#c9c4d6">2023 · 3 saisons · Drame, Policier · 16+</p>
+</div>
+</div>
+
+<div style="padding:14px 16px 12px;display:flex;gap:8px">
+<button class="btn btn-p" style="flex:1 1 0"><svg class="ic" aria-hidden="true"><use href="#i-play"></use></svg>Reprendre S2 · E3</button>
+<button class="ib" style="background:rgba(255,255,255,.14)" aria-label="Ajouter à Ma liste"><svg class="ic" aria-hidden="true"><use href="#i-plus"></use></svg></button>
+</div>
+
+<nav class="tabs" aria-label="Sections de la fiche"><a class="cur" href="#">Épisodes</a><a href="#">Distribution</a><a href="#">Extras</a><a href="#">Similaires</a></nav>
+
+<div style="padding:12px 16px 0;display:flex;align-items:center;justify-content:space-between;gap:8px">
+<button class="btn btn-g btn-s" style="padding:0 12px">Saison 2<svg class="ic" style="width:16px;height:16px" aria-hidden="true"><use href="#i-chev"></use></svg></button>
+<button class="btn btn-g btn-s"><svg class="ic" style="width:18px;height:18px" aria-hidden="true"><use href="#i-dl"></use></svg>Saison · 14,8 Go</button>
+</div>
+
+<ul style="padding:4px 16px 0">
+<li class="ep"><div class="still" style="background:#3b4a6b"></div><div style="flex:1;min-width:0"><p class="et">1. Le quai de nuit</p><p class="em">48 min · 1,9 Go</p></div>
+<button class="dlb ok" aria-label="Téléchargé : Le quai de nuit, ouvrir le menu"><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg></button></li>
+<li class="ep"><div class="still" style="background:#5b3a6b"></div><div style="flex:1;min-width:0"><p class="et">2. Ceux qui restent</p><p class="em">51 min · 2,0 Go</p></div>
+<button class="dlb ok" aria-label="Téléchargé : Ceux qui restent, ouvrir le menu"><svg class="ic" aria-hidden="true"><use href="#i-check"></use></svg></button></li>
+<li class="ep"><div class="still" style="background:#7a4a2f"></div><div style="flex:1;min-width:0"><p class="et">3. La clé du consul</p><p class="em" style="color:#ffc2b8">62 % · 1,2 Go sur 1,9 Go</p></div>
+<button class="dlb pg" aria-label="En cours, 62 %, mettre en pause"><svg class="rg" viewBox="0 0 44 44" aria-hidden="true"><circle class="rt" cx="22" cy="22" r="19"></circle><circle class="rp" cx="22" cy="22" r="19" stroke-dasharray="119.4" stroke-dashoffset="45.4"></circle></svg><svg class="ic" aria-hidden="true"><use href="#i-pause"></use></svg></button></li>
+<li class="ep"><div class="still" style="background:#2a2338"></div><div style="flex:1;min-width:0"><p class="et">4. Marée basse</p><p class="em">49 min · 1,9 Go · en attente</p></div>
+<button class="dlb q" aria-label="En attente, annuler"><svg class="ic" aria-hidden="true"><use href="#i-clock"></use></svg></button></li>
+<li class="ep"><div class="still" style="background:#3b4a6b"></div><div style="flex:1;min-width:0"><p class="et">5. Le dernier tramway</p><p class="em">52 min · 2,1 Go</p></div>
+<button class="dlb" aria-label="Télécharger : Le dernier tramway"><svg class="ic" aria-hidden="true"><use href="#i-dl"></use></svg></button></li>
+<li class="ep" style="border-bottom:0"><div class="still" style="background:#5b3a6b"></div><div style="flex:1;min-width:0"><p class="et">6. Les héritiers</p><p class="em" style="color:#ffc2b8">Échec : lien expiré</p></div>
+<button class="dlb er" aria-label="Erreur, réessayer"><svg class="ic" aria-hidden="true"><use href="#i-alert"></use></svg></button></li>
+</ul>
+
+<nav class="tabbar" aria-label="Navigation principale">
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-home"></use></svg>Accueil</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-search"></use></svg>Rechercher</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-users"></use></svg>Amis</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-list"></use></svg>Ma liste</a>
+<a class="tab" href="#"><svg class="ic" aria-hidden="true"><use href="#i-dl"></use></svg>Téléchargés<span style="position:absolute;top:0;right:2px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#ff5a36;color:#0c0b11;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">2</span></a>
+</nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

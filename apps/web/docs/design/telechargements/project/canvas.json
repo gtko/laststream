@@ -1,0 +1,51 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-21T18:10:00Z" },
+  "title": "Laststream — Téléchargements hors ligne",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 1180, "title": "Guide : états, règles, plateformes", "expand": "fill" },
+    "mobile-fiche-film.dc.html": { "x": 0, "y": 1600, "w": 390, "h": 844, "title": "Mobile · Fiche film" },
+    "mobile-fiche-serie.dc.html": { "x": 470, "y": 1600, "w": 390, "h": 844, "title": "Mobile · Fiche série, épisodes" },
+    "mobile-choix-qualite.dc.html": { "x": 940, "y": 1600, "w": 390, "h": 844, "title": "Mobile · Choix qualité et langues" },
+    "mobile-telechargements.dc.html": { "x": 1410, "y": 1600, "w": 390, "h": 844, "title": "Mobile · Écran Téléchargements" },
+    "mobile-erreur.dc.html": { "x": 1880, "y": 1600, "w": 390, "h": 844, "title": "Mobile · Erreur et reprise" },
+    "mobile-vide.dc.html": { "x": 0, "y": 2564, "w": 390, "h": 844, "title": "Mobile · État vide" },
+    "mobile-hors-ligne.dc.html": { "x": 470, "y": 2564, "w": 390, "h": 844, "title": "Mobile · Hors ligne" },
+    "mobile-quota.dc.html": { "x": 940, "y": 2564, "w": 390, "h": 844, "title": "Mobile · Quota atteint" },
+    "mobile-suppression.dc.html": { "x": 1410, "y": 2564, "w": 390, "h": 844, "title": "Mobile · Suppression" },
+    "mobile-reglages.dc.html": { "x": 1880, "y": 2564, "w": 390, "h": 844, "title": "Mobile · Réglages de stockage" },
+    "desktop-fiche.dc.html": { "x": 0, "y": 3900, "w": 1280, "h": 860, "title": "Desktop · Fiche", "expand": "fill" },
+    "desktop-telechargements.dc.html": { "x": 1360, "y": 3900, "w": 1280, "h": 860, "title": "Desktop · Téléchargements (Windows)", "expand": "fill" },
+    "desktop-etats.dc.html": { "x": 2720, "y": 3900, "w": 1280, "h": 860, "title": "Desktop · Vide, erreur, quota, suppression", "expand": "fill" },
+    "web-telechargements.dc.html": { "x": 0, "y": 4880, "w": 1280, "h": 860, "title": "Web · Téléchargements (navigateur)", "expand": "fill" },
+    "tv-telechargements.dc.html": { "x": 1360, "y": 4880, "w": 1280, "h": 720, "title": "TV · Téléchargements (D-pad)" },
+    "tv-fiche.dc.html": { "x": 2720, "y": 4880, "w": 1280, "h": 720, "title": "TV · Fiche (D-pad)" }
+  },
+  "order": [
+    "Main.dc.html",
+    "mobile-fiche-film.dc.html",
+    "mobile-fiche-serie.dc.html",
+    "mobile-choix-qualite.dc.html",
+    "mobile-telechargements.dc.html",
+    "mobile-erreur.dc.html",
+    "mobile-vide.dc.html",
+    "mobile-hors-ligne.dc.html",
+    "mobile-quota.dc.html",
+    "mobile-suppression.dc.html",
+    "mobile-reglages.dc.html",
+    "desktop-fiche.dc.html",
+    "desktop-telechargements.dc.html",
+    "desktop-etats.dc.html",
+    "web-telechargements.dc.html",
+    "tv-telechargements.dc.html",
+    "tv-fiche.dc.html"
+  ],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "Téléchargements hors ligne — ODY-197", "kind": "title1", "maxW": 1440 },
+    "t2": { "x": 0, "y": 1340, "text": "Mobile (Android, web mobile) — 390 × 844", "kind": "title1", "maxW": 2270 },
+    "t3": { "x": 0, "y": 3640, "text": "Desktop (Windows), web et TV", "kind": "title1", "maxW": 4000 }
+  },
+  "designSystems": []
+}
