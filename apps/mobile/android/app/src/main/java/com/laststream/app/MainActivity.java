@@ -6,6 +6,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.laststream.app.downloads.DownloadsPlugin;
 import com.laststream.app.player.LaststreamPlayerPlugin;
 import com.laststream.app.player.MiniPlayer;
 import com.laststream.app.update.AppUpdatePlugin;
@@ -15,6 +16,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(LaststreamPlayerPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(DownloadsPlugin.class);
         super.onCreate(savedInstanceState);
         // Bord à bord : le fond sombre passe sous les barres système, le contenu s'arrête à leurs limites.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);

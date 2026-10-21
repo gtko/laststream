@@ -44,6 +44,13 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|layoutDirection|density|fontScale|colorMode"
             android:exported="false" />
 
+        <!-- Téléchargements hors ligne (ODY-200) : service de premier plan, arrêté avec la tâche. -->
+        <service
+            android:name=".downloads.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="true" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -62,4 +69,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Mise à jour en un tap : ouvre l'installeur système pour l'APK téléchargé (LaststreamUpdate). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Téléchargements hors ligne : service de premier plan de type dataSync + notification de progression (API 33+). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

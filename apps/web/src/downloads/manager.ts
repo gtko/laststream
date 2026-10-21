@@ -24,14 +24,23 @@ import {
   type LinkResolver,
   type ResolvedFile,
   type SpaceInfo,
+  type TransferParams,
   type TransferProgress,
 } from './types';
+
+/**
+ * Transfert propre à une plateforme (ex. service Android en arrière-plan), à la place de `fetchChunks`. Il écrit lui-même le fichier :
+ * il lit le point de reprise par `sink.size()`, respecte `maxBytes` (`quota_exceeded`) et lève des `DownloadError`.
+ */
+export type TransferFn = (p: TransferParams, item: { id: string; title: string }) => Promise<TransferProgress>;
 
 export interface DownloadManagerOptions {
   resolver: LinkResolver;
   http: HttpFn;
   store: DownloadStore;
   index: DownloadIndex;
+  /** Transfert de la plateforme ; sans lui, `fetchChunks` lit par plages via `http`. */
+  transfer?: TransferFn;
   now?: () => number;
   concurrency?: number;
   chunkSize?: number;
@@ -112,6 +121,7 @@ export class DownloadManager {
   private readonly http: HttpFn;
   private readonly store: DownloadStore;
   private readonly index: DownloadIndex;
+  private readonly transfer: TransferFn | undefined;
   private readonly now: () => number;
   private readonly chunkSize: number;
   private readonly maxResolves: number;
@@ -140,6 +150,7 @@ export class DownloadManager {
     this.http = opts.http;
     this.store = opts.store;
     this.index = opts.index;
+    this.transfer = opts.transfer;
     this.now = opts.now ?? (() => Date.now());
     this.chunkSize = opts.chunkSize ?? DEFAULT_CHUNK_SIZE;
     this.maxResolves = opts.maxResolves ?? MAX_RESOLVES;
@@ -401,7 +412,7 @@ export class DownloadManager {
         const item = this.items.get(id);
         if (!item) return;
         try {
-          const res = await fetchChunks({
+          const params: TransferParams = {
             http: this.http,
             sink,
             url: link.file.url,
@@ -413,7 +424,8 @@ export class DownloadManager {
               link.etag = p.etag;
               this.progress(id, s, p, link.file);
             },
-          });
+          };
+          const res = this.transfer ? await this.runPlatformTransfer(this.transfer, params, item, s) : await fetchChunks(params);
           if (signal.aborted) return;
           try {
             await raw.finalize();
@@ -452,6 +464,36 @@ export class DownloadManager {
       }
     } finally {
       await this.closeSink(raw);
+    }
+  }
+
+  /**
+   * Transfert de la plateforme : il écrit sans passer par `guard`, donc l'espace occupé suit l'avancement ici, et la limite
+   * restante lui est donnée (`maxBytes`, taille maximale du fichier) ; un dépassement met l'élément en pause pour quota.
+   */
+  private async runPlatformTransfer(transfer: TransferFn, params: TransferParams, item: DownloadItem, s: Session): Promise<TransferProgress> {
+    let last = await params.sink.size();
+    const track = (bytesDone: number): void => {
+      this.used = Math.max(0, this.used + bytesDone - last);
+      last = bytesDone;
+    };
+    try {
+      const res = await transfer(
+        {
+          ...params,
+          maxBytes: this.limitBytes === null ? undefined : Math.max(0, last + this.limitBytes - this.used),
+          onProgress: async (p) => {
+            track(p.bytesDone);
+            await params.onProgress(p);
+          },
+        },
+        { id: item.id, title: item.title },
+      );
+      track(res.bytesDone);
+      return res;
+    } catch (err) {
+      if (err instanceof DownloadError && err.code === 'quota_exceeded') s.quota = true;
+      throw err;
     }
   }
 

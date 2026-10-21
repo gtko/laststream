@@ -167,6 +167,8 @@ export interface TransferParams {
    */
   etag?: string;
   signal: AbortSignal;
+  /** Taille maximale du fichier (octets) quand une limite d'espace est choisie ; un transfert de plateforme la respecte (`quota_exceeded`). */
+  maxBytes?: number;
   /** Appelée après chaque morceau écrit. */
   onProgress(p: TransferProgress): void | Promise<void>;
 }
