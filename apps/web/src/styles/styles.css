@@ -56,6 +56,9 @@ ul { padding: 0; list-style: none; }
 svg { flex: none; width: 22px; height: 22px; }
 :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: var(--focus-ring-field); }
+/* Un seul anneau par champ (ODY-210). Champ composé = conteneur visible + input nu : le focus se dessine sur le conteneur (bordure accent), jamais sur l'input interne. */
+:is(.search-bar, .shd-search, .ss-addbox, .auth-input, .as-search) :is(input, textarea):focus-visible { outline: none; }
+:is(.search-bar, .shd-search, .ss-addbox, .auth-input, .as-search):focus-within { border-color: var(--accent); }
 .sr-only { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: -1px; padding: 0; border: 0; }
 [hidden] { display: none !important; }
 body.modal-open { overflow: hidden; }

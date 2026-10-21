@@ -55,7 +55,7 @@
 /* ---------- Champs ---------- */
 .set-input { width: 100%; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); font: inherit; font-size: 15px; transition: border-color 0.15s; }
 .set-input:hover { border-color: #3a3646; }
-.set-input:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); border-color: var(--accent); }
+.set-input:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 .set-input::placeholder { color: var(--dim); }
 select.set-input { appearance: none; -webkit-appearance: none; padding-right: 40px; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a19dae' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 18px; }
 .set-row:not(.is-stack) .set-row-c .set-input { width: auto; min-width: 220px; }

@@ -38,6 +38,10 @@
 .shd-opts { display: flex; flex-direction: column; gap: 8px; }
 .shd-opt { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--shd-pill); }
 .shd-opt.is-on { border-color: var(--accent); }
+/* Option focalisée au clavier : l'anneau est sur la ligne (conteneur), pas sur le bouton interne, qui doublerait la bordure .is-on. */
+@supports selector(:has(*)) { .shd-veil .shd-opt-main:focus-visible { outline: none; } }
+.shd-opt:has(> .shd-opt-main:focus-visible) { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.shd-opt.is-on:has(> .shd-opt-main:focus-visible) { outline-offset: -1px; }
 .shd-opt-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; }
 .shd-opt-txt { display: flex; flex-direction: column; min-width: 0; }
 .shd-opt-t { font-weight: 700; }
