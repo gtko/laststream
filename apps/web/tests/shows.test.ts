@@ -472,7 +472,7 @@ describe('émissions TV (interface)', () => {
     await settle(700);
     const chip = document.querySelector('#detail [data-calkind="airing"]') as HTMLElement;
     expect(chip.textContent).toBe('TV');
-    const ev = document.querySelector('#detail .cal-ev.kind-airing') as HTMLElement;
+    const ev = document.querySelector('#detail .cal-ev.kind-airing [data-showopen]') as HTMLElement;
     expect(ev).not.toBeNull();
     expect(ev.title).toMatch(/^\d{2}:\d{2} · TF1 · La France a un incroyable talent$/);
     expect(ev.getAttribute('data-showopen')).toBe('1001');

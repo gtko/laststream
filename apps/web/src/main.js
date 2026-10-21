@@ -5,6 +5,7 @@ import './demoBoot'; // premier module : en démo, stockage du navigateur rempla
 import { initSentry } from './observability/sentry';
 import './styles/styles.css';
 import './styles/app.css';
+import './styles/calendar.css';
 import './styles/search.css';
 import './styles/collections.css';
 import './styles/settings.css';
