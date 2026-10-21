@@ -176,7 +176,7 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     expect(missing.headers.get('cache-control')).toBe('no-store');
     const invalid = await fetch(`${app.baseUrl}/not-a-config/lt/health`);
     expect(invalid.headers.get('cache-control')).toBe('no-store');
-    const post = await fetch(`${app.baseUrl}/${tokenFor({})}/lt/why`, postJson({ title: 'Dune' }));
+    const post = await fetch(`${app.baseUrl}/${tokenFor({})}/lt/person-why`, postJson({}));
     expect(post.headers.get('cache-control')).toBe('no-store');
   });
 
@@ -247,16 +247,18 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
         calls += 1;
         return json({ choices: [{ message: { content: 'Texte par identifiant.' } }] });
       },
-      'https://api.themoviedb.org/3/movie/438631': () => json({ title: 'Dune', release_date: '2021-09-15', overview: 'Résumé TMDB', genres: [] }),
-      'https://api.themoviedb.org/3/movie/1': () => json({ title: 'Autre', release_date: '1999-01-01', overview: '', genres: [] }),
+      'https://api.themoviedb.org/3/person/438631': () => json({ name: 'Denis Villeneuve' }),
+      'https://api.themoviedb.org/3/person/438631/combined_credits': () => json({ cast: [] }),
+      'https://api.themoviedb.org/3/person/1': () => json({ name: 'Autre' }),
+      'https://api.themoviedb.org/3/person/1/combined_credits': () => json({ cast: [] }),
     });
     const aiApp = await startApp({ fetch: aiUpstream.fetch, lookupHost: fakeLookup() });
     try {
-      const path = `${aiApp.baseUrl}/${fullToken()}/lt/why`;
-      await fetch(path, postJson({ type: 'movie', tmdbId: 438631, overview: 'Résumé A' }));
-      await fetch(path, postJson({ type: 'movie', tmdbId: 438631, overview: 'Résumé B' }));
+      const path = `${aiApp.baseUrl}/${fullToken()}/lt/person-why`;
+      await fetch(path, postJson({ tmdbId: 438631, name: 'Nom A' }));
+      await fetch(path, postJson({ tmdbId: 438631, name: 'Nom B' }));
       expect(calls).toBe(1);
-      await fetch(path, postJson({ type: 'movie', tmdbId: 1 }));
+      await fetch(path, postJson({ tmdbId: 1 }));
       expect(calls).toBe(2);
     } finally {
       await aiApp.close();
@@ -280,11 +282,12 @@ describe('lectures lt : cache privé, erreurs sans cache, clés par service', ()
     const aiUpstream = mockUpstream({
       'https://openrouter.ai/api/v1/chat/completions': () =>
         json({ choices: [{ message: { content: `<img src=x onerror=alert(1)>Film ${BEL}culte` } }] }),
-      'https://api.themoviedb.org/3/movie/438631': () => json({ title: 'Dune', release_date: '2021-09-15', overview: '', genres: [] }),
+      'https://api.themoviedb.org/3/person/438631': () => json({ name: 'Denis Villeneuve' }),
+      'https://api.themoviedb.org/3/person/438631/combined_credits': () => json({ cast: [] }),
     });
     const aiApp = await startApp({ fetch: aiUpstream.fetch, lookupHost: fakeLookup() });
     try {
-      const res = await fetch(`${aiApp.baseUrl}/${fullToken()}/lt/why`, postJson({ type: 'movie', tmdbId: 438631 }));
+      const res = await fetch(`${aiApp.baseUrl}/${fullToken()}/lt/person-why`, postJson({ tmdbId: 438631 }));
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ text: 'Film culte' });
     } finally {

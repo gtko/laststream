@@ -83,13 +83,13 @@ describe('lt : services non configurés', () => {
       error: 'service_not_configured',
       service: 'tvdb',
     });
-    const why = await fetch(`${app.baseUrl}/${empty}/lt/why`, {
+    const personWhy = await fetch(`${app.baseUrl}/${empty}/lt/person-why`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: 'Matrix' }),
+      body: JSON.stringify({ tmdbId: 603 }),
     });
-    expect(why.status).toBe(404);
-    expect(await why.json()).toEqual({ error: 'service_not_configured', service: 'openrouter' });
+    expect(personWhy.status).toBe(404);
+    expect(await personWhy.json()).toEqual({ error: 'service_not_configured', service: 'openrouter' });
   });
 
   it('configuration illisible : 400 invalid_config', async () => {

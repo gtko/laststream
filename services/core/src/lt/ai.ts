@@ -6,11 +6,6 @@ import { tmdbGet } from './providers.js';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const AI_TIMEOUT_MS = 25000;
 
-const WHY_SYSTEM =
-  'Tu es un critique de cinéma et de séries. En 2 à 3 phrases en français (60 mots maximum), ' +
-  'explique pourquoi ce titre vaut le coup d’être regardé : ambiance, points forts, public visé. ' +
-  'Sans spoiler, sans formule de politesse, sans titre, sans guillemets, sans markdown.';
-
 const PERSON_SYSTEM =
   'Tu es un critique de cinéma. En 2 phrases en français (50 mots maximum), résume le style et les temps forts de la carrière ' +
   'de cette personnalité du cinéma ou des séries à partir des titres fournis. Sans formule de politesse, sans guillemets, sans markdown, ' +
@@ -108,32 +103,6 @@ async function tmdbLookup(ctx: LtContext, token: string, sub: string, lang: stri
     if (err instanceof LtError && err.code === 'upstream_404') throw new LtError(404, 'not_found');
     throw err;
   }
-}
-
-interface TitleFacts {
-  title: string;
-  year: string;
-  overview: string;
-  genres: string;
-}
-
-/** Titre, année, synopsis et genres d'un film ou d'une série, dans la langue demandée. */
-async function titleFacts(ctx: LtContext, token: string, kind: 'movie' | 'tv', id: string, lang: string): Promise<TitleFacts> {
-  const json = await tmdbLookup(ctx, token, `${kind}/${id}`, lang);
-  const data = isRecord(json) ? json : {};
-  const title = tmdbText(kind === 'tv' ? data.name : data.title, 120);
-  if (title === '') throw new LtError(404, 'not_found');
-  const date = tmdbText(kind === 'tv' ? data.first_air_date : data.release_date, 10);
-  const genres = (Array.isArray(data.genres) ? data.genres.filter(isRecord) : [])
-    .slice(0, 6)
-    .map((genre) => tmdbText(genre.name, 40))
-    .filter((name) => name !== '');
-  return {
-    title,
-    year: /^\d{4}/.exec(date)?.[0] ?? '',
-    overview: tmdbText(data.overview, 900),
-    genres: genres.join(', '),
-  };
 }
 
 interface PersonFacts {
@@ -507,34 +476,6 @@ export async function recommend(ctx: LtContext, config: Config, body: Record<str
     { provider: 'openrouter', swr: true },
   );
   return { items: shared.items.filter((hit) => !isExcluded(hit, exclude)).slice(0, count) };
-}
-
-/**
- * « Pourquoi tu vas aimer » : 2 à 3 phrases en français pour un titre. Corps accepté : `type` (movie ou tv), `tmdbId`,
- * `language` (défaut fr-FR). Titre, année, synopsis et genres viennent de TMDB. Cache partagé de 7 jours par
- * `${type}:${tmdbId}:${language}`, seulement en cas de réponse réussie.
- */
-export async function why(ctx: LtContext, config: Config, body: Record<string, unknown>): Promise<{ text: string }> {
-  const ai = aiSettings(config);
-  const kind = body.type === 'tv' ? 'tv' : body.type === 'movie' ? 'movie' : null;
-  if (kind === null) throw new LtError(400, 'bad_request');
-  const { id, lang } = tmdbRef(body);
-  const token = serviceKey(config, 'tmdb');
-  return ctx.state.cache.get(`why:${kind}:${id}:${lang}`, TTL.aiText, async () => {
-    const facts = await titleFacts(ctx, token, kind, id, lang);
-    const raw = await complete(ctx, ai, {
-      temperature: 0.6,
-      max_tokens: 220,
-      messages: [
-        { role: 'system', content: WHY_SYSTEM },
-        {
-          role: 'user',
-          content: `Titre : ${facts.title}${facts.year ? ' (' + facts.year + ')' : ''}\nGenres : ${facts.genres || 'inconnus'}\nSynopsis : ${facts.overview || 'non fourni'}`,
-        },
-      ],
-    });
-    return { text: cleanText(raw, 600) };
-  }, { provider: 'openrouter', swr: true });
 }
 
 /**

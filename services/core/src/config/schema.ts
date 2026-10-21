@@ -277,7 +277,7 @@ const ServicesSchema = z
     ),
     openrouterApiKey: serviceKey(
       'Clé OpenRouter',
-      'Clé OpenRouter : recommandations IA et textes « Pourquoi tu vas aimer » (facturés par OpenRouter).',
+      'Clé OpenRouter : recommandations IA et textes sur les personnes (facturés par OpenRouter).',
     ),
     openrouterModel: z
       .string()

@@ -115,9 +115,9 @@ describe('CORS des routes lt', () => {
   });
 
   it('POST lt : origine autorisée renvoyée, origine inconnue sans en-tête ACAO', async () => {
-    const allowed = await fetch(`${app.baseUrl}/${token()}/lt/why`, postJson({}, { origin: 'http://localhost:8089' }));
+    const allowed = await fetch(`${app.baseUrl}/${token()}/lt/person-why`, postJson({}, { origin: 'http://localhost:8089' }));
     expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:8089');
-    const foreign = await fetch(`${app.baseUrl}/${token()}/lt/why`, postJson({}, { origin: 'https://evil.example' }));
+    const foreign = await fetch(`${app.baseUrl}/${token()}/lt/person-why`, postJson({}, { origin: 'https://evil.example' }));
     expect(foreign.headers.get('access-control-allow-origin')).toBeNull();
   });
 
@@ -127,7 +127,7 @@ describe('CORS des routes lt', () => {
       headers: { Origin: 'https://anywhere.example', 'Access-Control-Request-Method': 'GET' },
     });
     expect(get.headers.get('access-control-allow-origin')).toBe('*');
-    const post = await fetch(`${app.baseUrl}/${token()}/lt/why`, {
+    const post = await fetch(`${app.baseUrl}/${token()}/lt/person-why`, {
       method: 'OPTIONS',
       headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' },
     });
@@ -143,10 +143,10 @@ describe('limite de débit des POST lt', () => {
       const token = tokenFor({ openrouterApiKey: KEYS.openrouterApiKey });
       const statuses: number[] = [];
       for (let i = 0; i < 30; i++) {
-        statuses.push((await fetch(`${app.baseUrl}/${token}/lt/why`, postJson({ title: '' }))).status);
+        statuses.push((await fetch(`${app.baseUrl}/${token}/lt/person-why`, postJson({}))).status);
       }
       expect(statuses.every((s) => s === 400)).toBe(true);
-      const blocked = await fetch(`${app.baseUrl}/${token}/lt/why`, postJson({ title: '' }));
+      const blocked = await fetch(`${app.baseUrl}/${token}/lt/person-why`, postJson({}));
       expect(blocked.status).toBe(429);
       expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
       expect(await blocked.json()).toEqual({ error: 'rate_limited' });

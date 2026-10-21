@@ -7,7 +7,7 @@ import { recordMetaEvent } from '../metrics/index.js';
 import { platform, runtimeEnv, type ThumbPort, type UserBackend } from '../platform/index.js';
 import { catalogMetas, findCatalog, parseSkip } from './catalog.js';
 import { type RowRuntime, serveRow } from './rows.js';
-import { personWhy, recommend, why } from './ai.js';
+import { personWhy, recommend } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
 import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
@@ -279,8 +279,6 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.post('/recommend', async (c) => sendJson(c, await recommend(ctx, configOf(c), bodyOf(c))));
-
-  lt.post('/why', async (c) => sendJson(c, await why(ctx, configOf(c), bodyOf(c))));
 
   lt.post('/person-why', async (c) => sendJson(c, await personWhy(ctx, configOf(c), bodyOf(c))));
 
