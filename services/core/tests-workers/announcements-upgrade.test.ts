@@ -16,9 +16,9 @@ const JSON_HEADERS = { 'content-type': 'application/json' };
 
 /**
  * Base de production : schéma des migrations 1 à 23 (social v3), puis code actuel au démarrage du Durable Object. Les
- * objets des migrations 24 à 28 (annonces, boîte écartée, invitations révoquées, sessions UA, invitations du foyer,
- * billets de parrainage) sont retirés, la table des versions est ramenée à 23, puis `migrate` est rejoué comme au
- * constructeur du Durable Object.
+ * objets des migrations 24 à 29 (annonces, boîte écartée, invitations révoquées, sessions UA, invitations du foyer,
+ * billets de parrainage, marquage « vu » manuel) sont retirés, la table des versions est ramenée à 23, puis `migrate`
+ * est rejoué comme au constructeur du Durable Object.
  */
 function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
   return runInDurableObject(stub, (_instance: UserStoreDO, state) => {
@@ -35,6 +35,7 @@ function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
     sql.exec('ALTER TABLE invites DROP COLUMN expires_at');
     sql.exec('ALTER TABLE invites DROP COLUMN picks');
     sql.exec('ALTER TABLE invites DROP COLUMN message');
+    sql.exec('ALTER TABLE progress DROP COLUMN manual');
     sql.exec('DELETE FROM schema_migrations WHERE version >= 24');
   });
 }
@@ -73,7 +74,7 @@ describe('base migrée jusqu’à 23 (social v3), puis code actuel : annonces so
     const stub = workerEnv.USER_STORE.getByName(USER_STORE_NAME);
     await rollBackTo23(stub);
     await restartWithCurrentCode(stub);
-    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 28 }, (_, i) => i + 1));
+    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 29 }, (_, i) => i + 1));
 
     // Diagnostic direct de la méthode RPC : son erreur réelle (message) apparaît ici si elle échoue.
     const backend = createDurableObjectUserBackend(workerEnv.USER_STORE, USER_STORE_NAME);

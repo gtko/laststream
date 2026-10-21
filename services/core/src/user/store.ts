@@ -1043,15 +1043,16 @@ export class UserStore {
     const starts = country !== undefined && !accountHasProgress(this.db, write.profileId, write.type, ref);
     this.db
       .prepare(
-        `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished, manual)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
          ON CONFLICT(profile_id, type, title_ref, season, episode) DO UPDATE SET
            tmdb_id = COALESCE(excluded.tmdb_id, progress.tmdb_id),
            imdb_id = COALESCE(excluded.imdb_id, progress.imdb_id),
            position_sec = excluded.position_sec,
            duration_sec = excluded.duration_sec,
            updated_at = excluded.updated_at,
-           finished = excluded.finished
+           finished = excluded.finished,
+           manual = 0
          WHERE excluded.updated_at >= progress.updated_at`,
       )
       .run(
@@ -1144,17 +1145,21 @@ export class UserStore {
    * Marque des épisodes (ou un film) vus ou non vus, en une transaction. Vu : la ligne est créée si absente, sinon
    * passe à terminée, et sa position se règle sur la durée connue (0 si inconnue). Non vu : seules les lignes terminées
    * sont retirées, une lecture en cours n'est pas touchée. Idempotent.
+   * Un marquage est manuel (`manual`) : il n'alimente pas l'historique des amis. Une ligne déjà terminée par une vraie
+   * lecture garde son statut réel et sa date (le re-marquage n'en fait pas un visionnage récent) ; une lecture en cours
+   * marquée vue devient un marquage manuel.
    */
   setWatched(write: WatchedWrite): void {
     const ref = titleRef(write.tmdbId, write.imdbId);
     const mark = this.db.prepare(
-      `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1)
+      `INSERT INTO progress (profile_id, type, title_ref, tmdb_id, imdb_id, season, episode, position_sec, duration_sec, updated_at, finished, manual)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 1, 1)
        ON CONFLICT(profile_id, type, title_ref, season, episode) DO UPDATE SET
          tmdb_id = COALESCE(excluded.tmdb_id, progress.tmdb_id),
          imdb_id = COALESCE(excluded.imdb_id, progress.imdb_id),
          position_sec = CASE WHEN progress.duration_sec > 0 THEN progress.duration_sec ELSE 0 END,
-         updated_at = excluded.updated_at,
+         updated_at = CASE WHEN progress.finished = 1 THEN progress.updated_at ELSE excluded.updated_at END,
+         manual = CASE WHEN progress.finished = 1 THEN progress.manual ELSE 1 END,
          finished = 1`,
     );
     const unmark = this.db.prepare(

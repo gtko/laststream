@@ -859,6 +859,14 @@ export const MIGRATIONS: readonly Migration[] = [
       ALTER TABLE invites ADD COLUMN auto_friend INTEGER NOT NULL DEFAULT 1 CHECK (auto_friend IN (0, 1));
     `,
   },
+  {
+    version: 29,
+    name: 'marquage « vu » manuel : colonne manual sur la progression, hors historique des amis',
+    sql: `
+      -- 1 : ligne écrite par un marquage « vu » à la main (PUT /watched) ; 0 : lecture réelle. L'historique des amis ignore les 1.
+      ALTER TABLE progress ADD COLUMN manual INTEGER NOT NULL DEFAULT 0 CHECK (manual IN (0, 1));
+    `,
+  },
 ];
 
 /**

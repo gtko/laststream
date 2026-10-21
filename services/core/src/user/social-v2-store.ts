@@ -1590,6 +1590,9 @@ export class SocialV2Store {
    * Historique de lecture d'un profil, du plus récent au plus ancien, un élément par épisode ou film. Seuls les titres
    * avec un identifiant TMDB sont listés (le contrat l'exige). Titre et affiche viennent de la bibliothèque si le titre
    * y figure. `undefined` si le lien n'existe pas.
+   * Un marquage « vu » à la main (`manual`, ODY-207) n'y figure pas : ce n'est pas un visionnage récent. Les anciennes
+   * lignes d'un tel marquage (antérieures à la migration 29) sont terminées sans durée : elles sont exclues aussi, car
+   * un visionnage terminé a toujours une durée connue (cf. isFinished).
    */
   friendHistory(viewerPid: string, targetPid: string, limit: number): HistoryOutcome {
     const relation = this.relationOf(viewerPid, targetPid);
@@ -1602,6 +1605,7 @@ export class SocialV2Store {
          JOIN profiles p ON p.id = pg.profile_id
          LEFT JOIN library_items li ON li.profile_id = pg.profile_id AND li.type = pg.type AND li.title_ref = pg.title_ref
          WHERE p.pid = ? AND p.is_kid = 0 AND pg.tmdb_id IS NOT NULL
+           AND pg.manual = 0 AND NOT (pg.finished = 1 AND pg.duration_sec = 0)
          ORDER BY pg.updated_at DESC, pg.season DESC, pg.episode DESC
          LIMIT ?`,
       )
