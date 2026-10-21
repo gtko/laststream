@@ -35,7 +35,7 @@ import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
 import { MiniState, minimizeExits } from './mini';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
-import { formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
+import { isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
 import { backStep, connectShell, setShellFullscreen, setShellPip, startShellDrag } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
@@ -302,6 +302,7 @@ function ensureUI() {
     miniState,
     miniLayout: onMiniLayout,
     react: postReact,
+    markSend: (kind, start, end) => sendSegment(kind, start, end, false),
     cinema: onCinema,
   });
   miniState.onChange(applyMini);
@@ -539,6 +540,7 @@ function syncNative() {
 async function initSession(request, views, view, opts = {}) {
   if (isDemo()) throw new Error(DEMO_BLOCKED_MSG); // mode démo : jamais de session de lecture
   ensureUI();
+  ui.closeMark(false);
   resetMini();
   if (P) await teardown(true);
   const token = Symbol('session');
@@ -552,7 +554,7 @@ async function initSession(request, views, view, opts = {}) {
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
     notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false, pickMine: false,
-    mark: { state: 'idle', kind: 'intro', start: 0 }, aspect: 'contain',
+    aspect: 'contain',
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
   const meta = appState.byKey.get(request.key) || {};
@@ -657,6 +659,7 @@ function loadSideData(token) {
   (async () => {
     try {
       if (!p.imdb) p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
+      if (alive()) ui.setMarkAvailable(markAllowed(p));
       if (p.imdb && isConfigured()) {
         const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);
         if (alive()) {
@@ -983,6 +986,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.reloading = false;
   ui.setPipAvailable(p.engine.supportsPip());
   ui.setSeries(p.req.type === 'tv', !!nextRef());
+  ui.setMarkAvailable(markAllowed(p));
   if (cand && cand.direct) toastBusy(p, 'Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
   if (p.notice) { toastBusy(p, p.notice, 6000); p.notice = ''; }
   refreshUI();
@@ -1656,6 +1660,7 @@ function playEpisode(season, episode) {
   const p = P;
   if (!p || guestBlocked()) return Promise.resolve();
   ui.closePanel(true);
+  ui.closeMark(false); // le segment en cours de marquage appartient à l'épisode qu'on quitte
   const info = (p.episodes.get(season) || []).find((e) => e.episode === episode);
   // Identifiant de flux de la structure canonique : même numérotation que l'épisode affiché (progression « vu » inchangée).
   const streamId = (info && info.streamId) || null;
@@ -1665,6 +1670,9 @@ function playEpisode(season, episode) {
 /** Message quand un épisode pas encore diffusé n'a aucune source (la recherche décide de la lecture). */
 const notYetAiredMessage = (iso) => 'Pas encore disponible — diffusion le ' +
   new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+/** Le marquage d'un segment demande un épisode identifié (IMDb) et un lastAddon configuré. */
+const markAllowed = (p) => !!p.imdb && isConfigured();
 
 function submitTarget() {
   const p = P;
@@ -1799,14 +1807,7 @@ function onAction(act, data) {
       ensureEpisodes(from.season).then(() => ui.revealEpisode(from.episode));
       break;
     }
-    case 'mark-kind': P.mark.kind = data.val; ui.refreshPanel(); break;
-    case 'mark-start': P.mark = { ...P.mark, state: 'start', start: st.time }; ui.toast('Début noté à ' + formatClock(st.time)); ui.refreshPanel(); break;
-    case 'mark-cancel': P.mark.state = 'idle'; ui.refreshPanel(); break;
-    case 'mark-end': {
-      const m = P.mark;
-      sendSegment(m.kind, m.start, st.time, false).then((ok) => { if (ok) { P.mark.state = 'idle'; ui.refreshPanel(); } });
-      break;
-    }
+    case 'mark-open': ui.openMark(); break;
     default: break;
   }
 }
@@ -1868,7 +1869,7 @@ function panelData(name) {
     if (p.audioMode) rows.push(['Son', { html: '<b class="lp-tag ' + (p.audioMode === 'app' ? 'is-sync' : 'is-warn') + '">' + (p.audioMode === 'app' ? 'Décodé par l’app' : 'Sans son') + '</b>' }]);
     return {
       rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', thumbsAvailable: thumbSourceOf(p).mode !== 'none', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
-      canMark: !!p.imdb && isConfigured(), mark: { ...p.mark, at: formatClock(st.time), startLabel: formatClock(p.mark.start) },
+      canMark: markAllowed(p),
     };
   }
   if (name === 'episodes') {
@@ -1918,7 +1919,7 @@ function panelData(name) {
 function onKey(e) {
   if (!P || ui.root.hidden) return;
   // Saisie d'une réaction ou d'une réponse dans une bulle : aucun raccourci du lecteur (Échap est géré par chaque champ).
-  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-bubble'))) return;
+  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-bubble') || e.target.closest('.lp-mk') || e.target.closest('.lp-mk-h'))) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
@@ -1928,6 +1929,8 @@ function onKey(e) {
     if ((e.key === 'i' || e.key === 'I') && !field && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat) { e.preventDefault(); e.stopImmediatePropagation(); expandPlayer(); }
     return;
   }
+  // Échap referme d'abord le marquage de segment (poignées sur la barre).
+  if (e.key === 'Escape' && ui.isMarkOpen()) { e.preventDefault(); e.stopImmediatePropagation(); ui.closeMark(true); return; }
   const typing = !!(t && t.closest('input[type="text"], textarea, select'));
   const onButton = !!(t && t.closest('button'));
   // Le sélecteur de sources (dans un panneau) gère lui-même ses flèches ; Échap le ferme.

@@ -13,6 +13,7 @@ import { createMiniView } from './miniview.js';
 import { createReactPanel, fadeFutureMarkers, noteFlashEl, renderNoteMarkers } from './notesView';
 import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './cinemaView';
 import { bucketAt } from './playbackSocial';
+import { createMarkBar } from './markbar';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
@@ -20,6 +21,8 @@ const PANEL_ALIAS = { audio: 'tracks', subtitles: 'tracks', speed: 'settings' };
 const REMAIN_KEY = 'laststream.player.remaining';
 const MARK_LABEL = { intro: 'Intro', recap: 'Récap', credits: 'Générique', postcredits: 'Scène post-générique', preview: 'Aperçu' };
 const CINEMA_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9M12.4 3.4l3.1 4M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+// Crochets [ ] : début et fin d'un segment à marquer sur la barre.
+const MARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H5v16h3M16 4h3v16h-3M9 12h6"/></svg>';
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14"/></svg>';
 // Smiley de la maquette « Réagir ici » (18 px en bouton plein, 20 px en tactile : voir social-player.css).
 const REACT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>';
@@ -67,6 +70,7 @@ function skeleton() {
         '<div class="lp-grp lp-grp-r">' +
           tbtn('next', LI.next, 'Épisode suivant', ' data-role="next" hidden') +
           tbtn('panel:episodes', LI.list, 'Épisodes', ' data-role="episodes" hidden') +
+          btn('mark-open', MARK_ICON, 'Marquer un segment (intro, récap, générique)', ' data-role="mark" hidden') +
           tbtn('react', REACT_ICON, 'Réagir ici', ' data-role="react" aria-label="Réagir ici" data-tip="Réagir ici" hidden') +
           btn('share', SHARE_ICON, 'Partager', ' data-role="share" hidden') +
           btn('cinema', CINEMA_ICON, 'Mode cinéma : couper le social', ' data-role="cinema" hidden aria-haspopup="dialog"') +
@@ -116,6 +120,26 @@ export function createPlayerUI(h) {
     onToggle: (el) => h.cinema('toggle', el),
     onClose: () => api.closeCinemaMenu(true),
   });
+  const markBtn = q('[data-role="mark"]');
+  const mark = createMarkBar({
+    getTime: () => (last ? last.time : 0),
+    getDuration: () => (last ? last.duration : 0),
+    onSend: (kind, start, end) => h.markSend(kind, start, end),
+    onScrub: (t) => {
+      if (!last || !last.duration) return;
+      showHover(t / last.duration, t);
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(hideHover, 1300);
+    },
+    onScrubEnd: (t) => { hideHover(); h.seekTo(t); },
+    onClose: (back) => { wake(); if (back && !root.hidden && !markBtn.hidden) markBtn.focus({ preventScroll: true }); },
+  });
+  // La couche des poignées est une sœur de la barre (les enfants d'un slider ARIA sont ignorés des lecteurs d'écran).
+  const seekWrap = document.createElement('div');
+  seekWrap.className = 'lp-seekwrap';
+  seek.replaceWith(seekWrap);
+  seekWrap.append(seek, mark.layer);
+  root.append(mark.pop);
   const cinemaInd = createCinemaIndicator();
   const cinemaSum = createCinemaSummary(() => { cinemaSum.hide(); }, (pos) => h.seekTo(pos));
   const heat = q('.lp-heat');
@@ -142,7 +166,7 @@ export function createPlayerUI(h) {
     root.classList.add('is-ui');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
+      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || mark.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
       root.classList.remove('is-ui');
     }, 3000);
   }
@@ -301,14 +325,14 @@ export function createPlayerUI(h) {
     },
     get panel() { return panelName; },
     show() { root.hidden = false; root.classList.add('is-ui'); wake(); },
-    hide() { root.hidden = true; api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); flash.replaceChildren(); },
+    hide() { root.hidden = true; api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); flash.replaceChildren(); },
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
     setHeading(title, sub) { q('.lp-title').textContent = title || ''; q('.lp-sub').textContent = sub || ''; mini.setTitle(title, sub); },
     /** Mini-lecteur : vignette en bas à droite (ou barre mobile) à la place du plein écran. */
     setMini(on) {
-      if (on) { api.closePanel(true); mini.enter(); } else mini.leave();
+      if (on) { api.closeMark(false); api.closePanel(true); mini.enter(); } else mini.leave();
     },
     /** Reprend la géométrie du mini-lecteur (moteur mpv choisi ou quitté pendant la réduction). */
     relayoutMini() { mini.relayout(); },
@@ -447,6 +471,22 @@ export function createPlayerUI(h) {
       reactBtn.hidden = !ok;
       if (!ok) api.closeReact(false);
     },
+    /** Le marquage de segment n'existe qu'avec un épisode identifié et un serveur configuré. */
+    setMarkAvailable(ok) {
+      markBtn.hidden = !ok;
+      if (!ok) api.closeMark(false);
+    },
+    /** Ouvre le marquage sur la barre : poignées de début et de fin, type, Envoyer. */
+    openMark() {
+      if (!last || !Number.isFinite(last.duration) || last.duration <= 0) return;
+      api.closePanel(true);
+      api.closeReact(false);
+      api.closeCinemaMenu(false);
+      wake();
+      mark.open(last.time);
+    },
+    closeMark(back) { mark.close(back); },
+    isMarkOpen: () => mark.isOpen(),
     /** Bulle brève à la lecture d'une note : elle disparaît seule après ~4 s et ne capte pas les clics. */
     showNoteFlash(note) {
       const node = noteFlashEl(note);
@@ -458,6 +498,7 @@ export function createPlayerUI(h) {
     /** Popover « Réagir ici » pour la position `pos` (secondes), figée à l'ouverture. */
     openReact(pos, opts) {
       reactPos = pos;
+      api.closeMark(false);
       api.closePanel(true);
       api.closeCinemaMenu(false);
       wake();
@@ -515,7 +556,7 @@ export function createPlayerUI(h) {
       cinemaBtn.setAttribute('aria-label', on ? 'Mode cinéma actif' : 'Mode cinéma : couper le social');
     },
     setCinemaIndicator(count) { cinemaInd.set(count); },
-    openCinemaMenu(model) { api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); },
+    openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); },
     renderCinemaMenu(model) { cinemaMenu.render(model); },
     closeCinemaMenu(back) {
       if (!cinemaMenu.isOpen()) return;
@@ -630,6 +671,7 @@ export function createPlayerUI(h) {
     },
     openPanel(name) {
       const real = PANEL_ALIAS[name] || name;
+      api.closeMark(false);
       if (name === 'audio' || name === 'subtitles') focusCol = name === 'audio' ? 'audio' : 'subs';
       panelName = real;
       panel.hidden = false;

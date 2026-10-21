@@ -27,6 +27,7 @@ import './styles/tv-panels.css';
 import './styles/player-loading.css';
 import './styles/player-mini.css';
 import './styles/notes.css';
+import './styles/segment-mark.css';
 import './styles/bubble.css';
 import './styles/social-player.css';
 import './styles/badges.css';
