@@ -61,7 +61,7 @@ export function errorText(err) {
     case 'invalid_pin': return 'Code incorrect.';
     case 'pin_locked': return 'Trop d’essais : profil bloqué.' + wait;
     case 'rate_limited': return 'Trop de tentatives.' + wait;
-    case 'stremio_login_failed': return 'Connexion Stremio refusée : vérifie l’e-mail et le mot de passe.';
+    case 'stremio_login_failed': return 'Identifiants refusés par Stremio : rien n’a été ajouté. Vérifie l’e-mail et le mot de passe.';
     case 'invalid_config': return 'Configuration lastAddon invalide : enregistre-la d’abord dans les réglages.';
     case 'avatar_not_allowed_for_kid': return 'Cet avatar n’est pas autorisé sur un profil enfant : choisis-en un autre.';
     case 'invalid_avatar': return 'Cet avatar n’est plus disponible : choisis-en un autre.';

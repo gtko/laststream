@@ -12,7 +12,7 @@ import {
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
-import { auth, canAdmin, importFromStremio, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
+import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { creditsLinkHTML } from './credits.js';
 import { modelComboHTML } from './model-combobox.js';
@@ -20,6 +20,7 @@ import { homePanelHTML } from './homeprefs.js';
 import { tvPanelHTML } from './settings-tv.js';
 import { appearancePanel } from './settings-appearance.js';
 import { invitesCard, refreshInvites } from './invites.js';
+import { stremioImportCard } from './stremio-import.js';
 import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } from './household.js';
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
@@ -87,12 +88,7 @@ function accountPanel() {
       (isProfileLocked() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>')) +
     rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
     (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data +
-    card('Importer ma bibliothèque Stremio',
-      '<form id="set-stremio" class="set-form" autocomplete="off">' +
-      '<p class="set-hint">Ajoute à ce profil les films et séries de ta bibliothèque Stremio. Les identifiants sont envoyés à ton serveur lastAddon pour l’import, sans être conservés.</p>' +
-      stackInput('E-mail Stremio', '', 'type="email" name="email" required autocomplete="off"') +
-      stackInput('Mot de passe Stremio', '', 'type="password" name="password" required autocomplete="off"') +
-      msgP('set-st-msg') + actions('<button type="submit" class="btn btn-primary">Importer</button>') + '</form>');
+    stremioImportCard();
 }
 
 function regionPanel() {
@@ -552,26 +548,6 @@ detailEl.addEventListener('change', (e) => {
 });
 
 detailEl.addEventListener('submit', async (e) => {
-  if (e.target && e.target.id === 'set-stremio') {
-    e.preventDefault();
-    const f = e.target.elements;
-    const msg = detailEl.querySelector('#set-st-msg');
-    const btn = e.target.querySelector('[type=submit]');
-    btn.disabled = true;
-    msg.textContent = 'Import en cours (peut prendre un moment)…';
-    try {
-      const res = await importFromStremio(f.email.value.trim(), f.password.value, getConfig());
-      f.password.value = '';
-      const n = ['imported', 'added', 'count', 'library'].map((k) => res[k]).find((v) => typeof v === 'number');
-      msg.textContent = n != null ? n + ' titre(s) importé(s).' : 'Import terminé.';
-      toast('Bibliothèque Stremio importée');
-    } catch (err) {
-      msg.textContent = errorText(err);
-    } finally {
-      btn.disabled = false;
-    }
-    return;
-  }
   if (e.target && e.target.id === 'set-parental') {
     e.preventDefault();
     const pin = e.target.elements.pin.value.trim();

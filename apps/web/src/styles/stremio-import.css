@@ -1,0 +1,49 @@
+/* Carte « Importer ma bibliothèque Stremio » : repliable, confidentialité, étapes, résultat, erreurs. Jetons de styles.css. */
+.si-card { padding: 0 20px; }
+.si-h { margin: 0; }
+.si-toggle { width: 100%; min-height: 56px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t c" "s c"; column-gap: 12px; align-items: center; padding: 12px 0; text-align: left; color: var(--text); }
+.si-t { grid-area: t; font-family: var(--ff-title); font-size: 16px; font-weight: 700; }
+.si-sum { grid-area: s; font-size: 13px; color: var(--dim); }
+.si-chev { grid-area: c; color: var(--muted); transition: transform 0.2s ease; }
+.si-card[data-open="true"] .si-chev { transform: rotate(180deg); }
+.si-toggle:focus-visible, .si-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.si-toggle:focus:not(:focus-visible), .si-eye:focus:not(:focus-visible) { outline: none; }
+.si-body { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 0.22s ease, visibility 0s linear 0.22s; }
+.si-card[data-open="true"] .si-body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows 0.22s ease, visibility 0s; }
+.si-body-in { overflow: hidden; min-height: 0; }
+.si-card[data-open="true"] .si-body-in { padding-bottom: 12px; }
+.si-priv { display: flex; gap: 12px; padding: 12px 14px; margin-bottom: 8px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); }
+.si-lock { flex: none; color: var(--accent); margin-top: 1px; }
+.si-priv-t { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--text); }
+.si-priv ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.si-alert { margin: 8px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid #e5484d; background: rgba(229, 72, 77, 0.12); color: var(--text); font-size: 14px; line-height: 1.45; }
+.si-alert[hidden], .si-steps-w[hidden], .si-result[hidden], .si-form[hidden], .si-retry[hidden], .si-submit[hidden] { display: none; }
+.si-pwd { position: relative; display: block; width: 100%; }
+.si-pwd .set-input { padding-right: 52px; }
+.si-eye { position: absolute; top: 0; right: 0; width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); }
+.si-eye[aria-pressed="true"] { color: var(--accent); }
+.set-input[aria-invalid="true"] { border-color: #e5484d; }
+.set-input[readonly] { opacity: 0.7; }
+.si-steps { list-style: none; margin: 12px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--dim); }
+.si-steps li { display: flex; align-items: center; gap: 10px; }
+.si-steps li::before { content: ''; flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); }
+.si-steps li[data-state="active"] { color: var(--text); font-weight: 700; }
+.si-steps li[data-state="active"]::before { border-color: var(--accent); border-top-color: transparent; animation: si-spin 0.9s linear infinite; }
+.si-steps li[data-state="done"] { color: var(--muted); }
+.si-steps li[data-state="done"]::before { border-color: var(--accent); background: var(--accent); }
+.si-bar { position: relative; height: 4px; border-radius: 4px; overflow: hidden; background: var(--line-2); margin-bottom: 8px; }
+.si-bar i { position: absolute; top: 0; bottom: 0; width: 35%; border-radius: 4px; background: var(--accent); animation: si-slide 1.3s ease-in-out infinite; }
+.si-result { padding: 8px 0; }
+.si-result-t { margin: 0 0 8px; font-family: var(--ff-title); font-size: 18px; font-weight: 700; color: var(--text); outline: none; }
+.si-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.si-actions .btn { min-height: 44px; }
+@keyframes si-spin { to { transform: rotate(360deg); } }
+@keyframes si-slide { 0% { left: -35%; } 100% { left: 100%; } }
+@media (max-width: 600px) {
+  .si-actions .btn { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .si-body, .si-card[data-open="true"] .si-body, .si-chev { transition: none; }
+  .si-steps li[data-state="active"]::before, .si-bar i { animation: none; }
+  .si-bar i { left: 0; width: 100%; opacity: 0.5; }
+}

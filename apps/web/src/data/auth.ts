@@ -401,7 +401,8 @@ export const adultsWithPin = (): Profile[] => { const m = parentalProfile(); ret
 export async function importFromStremio(email: string, password: string, config: string): Promise<Record<string, unknown>> {
   if (!auth.profile) throw new UserApiError(0, 'no_profile');
   const res = await api.importStremio(auth.profile.id, email, password, config || undefined);
-  await store?.hydrate();
+  // L'import serveur a réussi : un échec de relecture (réseau) ne doit pas passer pour un échec d'import.
+  await store?.hydrate().catch(() => undefined);
   return res;
 }
 
