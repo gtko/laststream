@@ -283,6 +283,16 @@ describe('formulaire du profil social', () => {
     expect(h.store.saveProfile).toHaveBeenCalledWith({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark' } });
   });
 
+  it("n'écrit jamais le texte « null » (favoris, puces du statut personnalisé)", () => {
+    mount(profile({ favorites: [fav(1), fav(2), fav(3)], customStatus: { emoji: '🍿', text: 'x' } }));
+    expect(q('.spf-favs').textContent).not.toContain('null');
+    expect(q('.spf-exp').textContent).not.toContain('null');
+    expect(root.textContent).not.toContain('null');
+    mount(profile({ customStatus: { emoji: '🍿', text: 'x', expiresAt: Date.now() + DAY } }));
+    expect(q('.spf-exp').textContent).toContain('Efface le');
+    expect(q('.spf-exp').textContent).not.toContain('null');
+  });
+
   it('affiche les textes utilisateur comme du texte', () => {
     mount(profile({ bio: '<img src=x onerror=alert(1)>', favorites: [fav(1, '<b>Gras</b>')] }));
     expect(root.querySelector('img')).toBeNull();

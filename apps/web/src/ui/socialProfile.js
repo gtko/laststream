@@ -128,7 +128,7 @@ export function mountProfileEditor(root, deps) {
   const touched = () => { formError = ''; paint('head', 'preview', 'banner', 'favs'); };
 
   /** Zone repeinte à la demande : container + fonction de rendu. */
-  const zone = (name, el, render) => { dyn[name] = () => { el.replaceChildren(...[].concat(render())); }; dyn[name](); return el; };
+  const zone = (name, el, render) => { dyn[name] = () => { el.replaceChildren(...[].concat(render()).filter(Boolean)); }; dyn[name](); return el; };
 
   // ---------- Contrôles ----------
   /** Interrupteur (role switch) lié à un chemin de préférence. */
@@ -398,10 +398,10 @@ export function mountProfileEditor(root, deps) {
     t.style.background = posterBg(f);
     if (bgOf('w185', f.poster)) { t.style.backgroundImage = bgOf('w185', f.poster); t.classList.add('has-img'); } else t.append(h('span', { class: 'spf-fav-t', text: f.title }));
     const act = (cls, label, ic, fn) => h('button', { type: 'button', class: 'spf-fa ' + cls, 'aria-label': label, on: { click: (e) => { e.stopPropagation(); fn(); } } }, icon(ic));
-    t.append(
+    t.append(...[
       act('spf-fa-rm', 'Retirer ' + f.title, 'close', () => { draft.favorites = draft.favorites.filter((_, k) => k !== i); reorderIdx = -1; touched(); }),
       i > 0 ? act('spf-fa-l', 'Déplacer ' + f.title + ' vers la gauche', 'back', () => moveFav(i, i - 1)) : null,
-      i < draft.favorites.length - 1 ? act('spf-fa-r', 'Déplacer ' + f.title + ' vers la droite', 'chev', () => moveFav(i, i + 1)) : null);
+      i < draft.favorites.length - 1 ? act('spf-fa-r', 'Déplacer ' + f.title + ' vers la droite', 'chev', () => moveFav(i, i + 1)) : null].filter(Boolean));
     t.addEventListener('keydown', (e) => {
       if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); moveFav(i, i - 1); } else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); moveFav(i, i + 1); } else if (e.key === 'Delete') { e.preventDefault(); draft.favorites = draft.favorites.filter((_, k) => k !== i); touched(); } else if (e.key === 'Escape' && reorderIdx !== -1) { reorderIdx = -1; paint('favs'); }
     });
