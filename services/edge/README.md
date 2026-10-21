@@ -15,3 +15,11 @@ Worker Cloudflare `laststream` (https://laststream.gtux-prog.workers.dev) : adre
 
 Secrets (jamais dans le dépôt) : `wrangler secret put REGISTER_SECRET` et `wrangler secret put EDGE_SECRET` (valeurs lues sur stdin depuis
 `%APPDATA%\Laststream\tunnel.secret` et `edge.secret`). Déploiement : `npx wrangler deploy`. Tests : `npm test`.
+
+## Garde de sortie
+
+- Ce Worker ne contacte **jamais** AllDebrid (`alldebrid.<tld>`, TLD multi-labels compris) ni `*.debrid.it` : un appel serveur depuis une IP Cloudflare a fait suspendre le compte. Ces appels se font côté appareil uniquement.
+- La garde (`src/egress-guard.js`) contrôle l'hôte de chaque appel sortant du repli tunnel. Le repli envoie en mode `redirect: 'manual'` : une redirection n'est donc pas suivie par le Worker, elle est rendue telle quelle au client, qui l'ouvre lui-même (aucun rapport). Le mode `follow` ne serait pas protégé contre une redirection (le fetch natif la suit avant la garde) : le repli ne l'utilise jamais. Un hôte interdit n'est jamais contacté : le client reçoit la réponse de repli habituelle (5xx de `lastaddon-core` ou page d'attente), sans détail.
+- Chaque refus est journalisé (ligne JSON `server_side_debrid_call_blocked` avec l'hôte bloqué, le déclencheur et l'identifiant de requête). Si le secret `SENTRY_DSN` est posé, il est aussi remonté à Sentry, avec l'hôte seulement : jamais l'URL, le chemin, la requête ni les en-têtes.
+- `SENTRY_DSN` est optionnel et ne doit jamais être écrit dans le dépôt : `npx wrangler secret put SENTRY_DSN` (valeur saisie à l'invite).
+- `test/egress-guard.test.js` échoue si un fichier de `src/` nomme ces hôtes en dehors de `egress-guard.js`.

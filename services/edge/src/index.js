@@ -1,6 +1,9 @@
 // Adresse publique fixe de Laststream : relaie toutes les routes vers le Worker « lastaddon-core » (Service Binding CORE).
 // Repli optionnel vers le lastAddon du PC par un tunnel rapide cloudflared (dont l'URL change), uniquement si core renvoie 5xx
 // et qu'un tunnel est enregistré (POST /__laststream/register, secret partagé, KV LASTSTREAM_ROUTE). Désactivable : TUNNEL_FALLBACK=0.
+// Garde de sortie (egress-guard.js) : aucun appel vers un hôte interdit depuis ce Worker, rapport journal et Sentry.
+
+import { DebridEgressBlockedError, guardedFetch, hostOf, isDebridHost, reportBlockedDebrid } from './egress-guard.js';
 
 const ROUTE_KEY = 'tunnel';
 const REGISTER_PATH = '/__laststream/register';
@@ -61,7 +64,7 @@ export function parseTunnelUrl(raw) {
     return null;
   }
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '') return null;
-  if (!TUNNEL_HOST.test(url.hostname)) return null;
+  if (isDebridHost(url.hostname) || !TUNNEL_HOST.test(url.hostname)) return null;
   return url.origin;
 }
 
@@ -80,7 +83,10 @@ export async function secretsMatch(given, expected) {
   return diff === 0;
 }
 
-async function register(request, env) {
+/** Identifiant de requête pour les journaux : cf-ray (tronqué) ou UUID aléatoire. */
+const requestIdOf = (request) => (request.headers.get('cf-ray') ?? '').slice(0, 64) || crypto.randomUUID();
+
+async function register(request, env, ctx) {
   if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' }, { allow: 'POST' });
   if (!(await secretsMatch(request.headers.get('x-register-secret'), env.REGISTER_SECRET))) {
     return json(401, { error: 'unauthorized' });
@@ -94,7 +100,13 @@ async function register(request, env) {
     return json(400, { error: 'invalid_json' });
   }
   const origin = parseTunnelUrl(body?.url);
-  if (origin === null) return json(400, { error: 'invalid_tunnel_url' });
+  if (origin === null) {
+    const host = hostOf(body?.url);
+    if (host !== null && isDebridHost(host)) {
+      reportBlockedDebrid({ host, trigger: 'tunnel-register', requestId: requestIdOf(request) }, env, ctx);
+    }
+    return json(400, { error: 'invalid_tunnel_url' });
+  }
   await env.LASTSTREAM_ROUTE.put(ROUTE_KEY, JSON.stringify({ url: origin, registeredAt: new Date().toISOString() }));
   return json(200, { ok: true });
 }
@@ -172,6 +184,8 @@ async function forward(send, { retries, idempotent, downStatus, env }) {
     try {
       upstream = await send();
     } catch (error) {
+      // Destination refusée par la garde : aucun nouvel essai.
+      if (error instanceof DebridEgressBlockedError) throw error;
       detail = String(error?.message ?? error).slice(0, 120);
       continue;
     }
@@ -190,7 +204,7 @@ async function forward(send, { retries, idempotent, downStatus, env }) {
   return { response: null, detail };
 }
 
-async function relay(request, env) {
+async function relay(request, env, ctx) {
   const url = new URL(request.url);
   if (isBlockedPath(url.pathname)) {
     return json(403, { error: 'forbidden_path', message: 'Le relais TV HLS ne passe pas par ce domaine.' });
@@ -248,18 +262,32 @@ async function relay(request, env) {
     const origin = parseTunnelUrl(stored?.url);
     if (origin !== null) {
       const target = `${origin}${url.pathname}${url.search}`;
-      const tunnel = await forward(() => fetch(target, { method: request.method, headers, body, redirect: 'manual' }), {
-        retries,
-        idempotent,
-        downStatus: TUNNEL_DOWN_STATUS,
-        env,
-      });
-      if (tunnel.response !== null && (tunnel.response.status < 500 || core.response === null)) {
-        await core.response?.body?.cancel();
-        return passthrough(tunnel.response);
+      const requestId = requestIdOf(request);
+      let tunnel = null;
+      try {
+        tunnel = await forward(
+          () =>
+            guardedFetch(fetch, target, {
+              init: { method: request.method, headers, body, redirect: 'manual' },
+              trigger: 'tunnel-fallback',
+              env,
+              ctx,
+              requestId,
+            }),
+          { retries, idempotent, downStatus: TUNNEL_DOWN_STATUS, env },
+        );
+      } catch (error) {
+        // Destination refusée par la garde de sortie : pas de repli, et le détail n'est pas exposé au client.
+        if (!(error instanceof DebridEgressBlockedError)) throw error;
       }
-      await tunnel.response?.body?.cancel();
-      detail = `${detail} ; tunnel : ${tunnel.detail ?? `statut ${tunnel.response?.status}`}`;
+      if (tunnel !== null) {
+        if (tunnel.response !== null && (tunnel.response.status < 500 || core.response === null)) {
+          await core.response?.body?.cancel();
+          return passthrough(tunnel.response);
+        }
+        await tunnel.response?.body?.cancel();
+        detail = `${detail} ; tunnel : ${tunnel.detail ?? `statut ${tunnel.response?.status}`}`;
+      }
     }
   }
 
@@ -281,9 +309,9 @@ function appFile(pathname) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname === REGISTER_PATH) return register(request, env);
+    if (pathname === REGISTER_PATH) return register(request, env, ctx);
     // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
     const file = env.APP_FILES && appFile(pathname);
     if (file) {
@@ -308,6 +336,6 @@ export default {
       return new Response(request.method === 'HEAD' ? null : obj.body, { status: 200, headers });
     }
     if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
-    return relay(request, env);
+    return relay(request, env, ctx);
   },
 };

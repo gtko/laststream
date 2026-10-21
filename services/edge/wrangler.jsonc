@@ -6,6 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": false },
+  // Secret optionnel, hors de ce fichier : SENTRY_DSN (wrangler secret put SENTRY_DSN) remonte les appels sortants refusés par la garde.
   // Application : Worker « lastaddon-core » appelé par Service Binding (toutes les routes).
   "services": [{ "binding": "CORE", "service": "lastaddon-core" }],
   "vars": {
