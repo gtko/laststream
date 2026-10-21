@@ -1,0 +1,14 @@
+{
+  "refs": {
+    "tmdbToken": "op://Private/Stremio API/TMDB_TOKEN",
+    "tmdbApiKey": "op://Private/Stremio API/TMDB_API_KEY",
+    "mdblistApiKey": "op://Private/Stremio API/MDBLIST_API_KEY",
+    "tvdbApiKey": "op://Private/Stremio API/TVDB_API_KEY",
+    "tvdbPin": "op://Private/Stremio API/TVDB_PIN",
+    "openrouterApiKey": "op://Private/Stremio API/OPENROUTER_API_KEY",
+    "fanartApiKey": "op://Private/Stremio API/FANART_API_KEY",
+    "introdbApiKey": "op://Private/Stremio API/INTRODB_API_KEY",
+    "skipdbApiKey": "op://Private/Stremio API/SKIPDB_API_KEY",
+    "animeskipClientId": "op://Private/Stremio API/ANIMESKIP_CLIENT_ID"
+  }
+}

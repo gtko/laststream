@@ -48,6 +48,43 @@ curl http://localhost:7000/health
 | `npm run test:workers` | Tests dans le runtime Workers (workerd) : stores sur le Durable Object, routes `/user` (voir « Cloudflare Workers ») |
 | `npm run deploy:worker` | Copie le build de l'interface dans `worker-ui/` puis `wrangler deploy` (Worker `lastaddon-core`) |
 | `npm run bundle` | Bundle mono-fichier `dist-bundle/lastaddon.cjs` (voir « Distribution ») |
+| `npm run seed:demo` | Compte de démonstration local `demo` / `demo` dans la base locale (voir « Compte démo avec toutes les clés ») |
+
+## Compte démo avec toutes les clés
+
+`npm run seed:demo -- --with-keys` crée ou remet à zéro le compte local `demo` et lui applique les clés de services
+(TMDB, MDBList, TheTVDB, OpenRouter, Fanart.tv, IntroDB, SkipDB, Anime Skip) lues dans 1Password. Il sert à tester
+l'addon avec toutes les clés, sans les saisir à la main.
+
+Prérequis :
+
+- CLI 1Password `op` installée et connectée (`op signin`, ou application 1Password ouverte avec l'intégration CLI) ;
+- l'item `Stremio API` contient un champ par clé, dont les noms sont donnés dans `scripts/demo-keys.map.json` ;
+- serveur local lancé (`npm run dev`) : le script y lance le test de configuration. Sans lui, le test est ignoré ;
+- `LASTADDON_SECRET` présent (dans l'environnement ou dans `.env`) : le serveur le génère au premier lancement.
+
+Commande :
+
+```bash
+npm run seed:demo -- --with-keys
+```
+
+Variables facultatives : `LASTADDON_OP_VAULT` (coffre, `Private` par défaut), `LASTADDON_SEED_URL` (serveur local,
+`http://127.0.0.1:<PORT>` par défaut).
+
+Garde-fous :
+
+- le script n'agit que sur un serveur local (`localhost`, `127.0.0.1` ou `[::1]`) et refuse tout autre hôte, dont `*.workers.dev` ;
+- la base écrite doit se trouver dans `LASTADDON_DATA_DIR` (ou `data/`) ; le script refuse tout autre emplacement ;
+- aucune valeur de clé n'est affichée, journalisée ni écrite dans le dépôt : le script affiche seulement les noms des
+  services configurés et ignorés, et le résultat du test (OK ou échec) ;
+- un champ absent de l'item est ignoré avec un avertissement qui ne cite que son nom ;
+- la configuration est chiffrée avec `LASTADDON_SECRET` comme celle des comptes réels ; les clés AllDebrid n'y entrent jamais ;
+- ne jamais lancer ce script contre la production : le mot de passe du compte `demo` est public.
+- le script refuse de suivre une redirection lors du test de configuration (une redirection vers un hôte distant ferait sortir la configuration chiffrée de la machine) ;
+- la lecture d'une clé par `op read` attend jusqu'à 60 s (premier déverrouillage biométrique de 1Password).
+
+Après la fusion de la pull request : le commit `f35ce4e` (compte local de démo) n'existe que sur le `main` local de ce dépôt et a été repris dans la branche. Réaligner alors le `main` local sur `origin/main` (`git fetch && git reset --hard origin/main`, jamais `git push`) pour ne pas pousser un commit équivalent.
 
 ## Variables d'environnement
 

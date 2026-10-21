@@ -11,5 +11,7 @@
   "project": ["src/**/*.ts", "scripts/**/*.{ts,mjs}", "tests/**/*.ts", "tests-workers/**/*.ts"],
   "ignore": [".claude/**", "dist/**", "dist-bundle/**", "worker-ui/**"],
   // `cloudflare:workers` est un module virtuel fourni par le runtime Workers, pas un paquet npm (knip le nomme « cloudflare »).
-  "ignoreDependencies": ["cloudflare"]
+  "ignoreDependencies": ["cloudflare"],
+  // `op` : CLI 1Password lancée par scripts/seed-demo-keys.ts (--with-keys). Binaire externe, pas un paquet npm.
+  "ignoreBinaries": ["op"]
 }

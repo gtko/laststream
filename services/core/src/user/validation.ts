@@ -85,7 +85,8 @@ export const loginSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(LOGIN_NAME_PATTERN, 'nom : 3 à 32 caractères (a-z, 0-9, _ . - @)'),
-  password: PASSWORD,
+  // Pas de longueur minimale à la connexion : le mot de passe est comparé au hash ; la règle des 8 caractères vaut à la création.
+  password: z.string().min(1).max(256),
 });
 
 /** Code d'un lien de parrainage (22 caractères base64url ; plage large pour ne rien révéler du format). */
