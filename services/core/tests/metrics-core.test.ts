@@ -192,17 +192,18 @@ describe('upstreams, AllDebrid, erreurs', () => {
     ]);
   });
 
-  it('AllDebrid : succès et erreurs par code et par opération', () => {
-    const acc = new MetricsAccumulator(() => T0);
-    acc.alldebrid('unlock', null);
-    acc.alldebrid('unlock', null);
-    acc.alldebrid('unlock', 'LINK_HOST_NOT_SUPPORTED');
-    acc.alldebrid('magnet', 'MAGNET_INVALID_URI');
-    acc.alldebrid('magnet', 'not_ready');
-    acc.alldebrid('magnet', 'avec espace');
-    const report = buildReport(acc.take().rows, [], '1h', T0);
+  it('AllDebrid : forme stable du rapport (zéro sans donnée) et lignes antérieures lues par code et par opération', () => {
+    const empty = buildReport([], [], '1h', T0);
+    expect(empty.alldebrid).toEqual({ unlock: { ok: 0, errors: {} }, magnet: { ok: 0, errors: {} }, other: { ok: 0, errors: {} } });
+    const rows = [
+      { bucket: T0, name: 'ad|unlock|ok', value: 2 },
+      { bucket: T0, name: 'ad|unlock|err|LINK_HOST_NOT_SUPPORTED', value: 1 },
+      { bucket: T0, name: 'ad|magnet|err|MAGNET_INVALID_URI', value: 1 },
+      { bucket: T0, name: 'ad|magnet|err|not_ready', value: 1 },
+    ];
+    const report = buildReport(rows, [], '1h', T0);
     expect(report.alldebrid.unlock).toEqual({ ok: 2, errors: { LINK_HOST_NOT_SUPPORTED: 1 } });
-    expect(report.alldebrid.magnet.errors).toEqual({ MAGNET_INVALID_URI: 1, not_ready: 1, autre: 1 });
+    expect(report.alldebrid.magnet.errors).toEqual({ MAGNET_INVALID_URI: 1, not_ready: 1 });
   });
 
   it('garde les 100 dernières erreurs 5xx, les plus récentes d\'abord, sans donnée sensible', () => {

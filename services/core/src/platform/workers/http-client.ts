@@ -1,3 +1,4 @@
+import { assertNotDebrid } from '../../egress/debrid-guard.js';
 import { isLiteralSafe } from '../../lt/guard.js';
 import { UnsafeTargetError } from '../../sources/http.js';
 import type { HttpClient } from '../types.js';
@@ -36,6 +37,7 @@ function assertSafe(input: Parameters<typeof fetch>[0]): void {
   } catch {
     throw new UnsafeTargetError();
   }
+  assertNotDebrid(url, 'http-client');
   if (!isLiteralSafe(url)) throw new UnsafeTargetError();
 }
 

@@ -52,7 +52,7 @@ export function fakeCacheAdmin(counts: Partial<Record<CachePrefix, number>> = {}
   return {
     jobs,
     counts: state,
-    stats: () => Promise.resolve(['issued', 'packs', 'hosts', 'torrents', 'alldebrid'].map((prefix): CacheStat => ({ prefix, keys: state[prefix] ?? 0, exact: true }))),
+    stats: () => Promise.resolve(['issued', 'packs', 'hosts', 'torrents'].map((prefix): CacheStat => ({ prefix, keys: state[prefix] ?? 0, exact: true }))),
     startPurge: (prefix) => {
       const running = jobs.find((job) => job.prefix === prefix && job.status === 'running');
       if (running !== undefined) return Promise.resolve(running);

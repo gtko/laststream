@@ -1,8 +1,8 @@
 /**
  * Métriques d'exploitation : agrégation par tranche de 5 minutes, rétention 7 jours. Ce module est pur (aucune E/S) :
  * il sert à l'instance (accumulateur), au Durable Object `Metrics` (stockage SQLite), au mode Node (mémoire) et aux
- * tests. Aucune donnée personnelle n'y entre : groupes de routes fixes, hôtes d'addons sans chemin ni paramètre, codes
- * d'erreur AllDebrid, préfixes de cache, et messages d'erreur épurés (voir `sanitizeErrorMessage`).
+ * tests. Aucune donnée personnelle n'y entre : groupes de routes fixes, hôtes d'addons sans chemin ni paramètre,
+ * préfixes de cache, et messages d'erreur épurés (voir `sanitizeErrorMessage`).
  * Les compteurs par fournisseur et par jour (providers.ts) suivent le même chemin : accumulateur, lot, stockage.
  */
 
@@ -43,7 +43,6 @@ const STATUS_CLASSES: readonly StatusClass[] = ['2xx', '3xx', '4xx', '5xx'];
 export const RANGES = { '1h': { ms: 3600_000, stepMs: BUCKET_MS }, '24h': { ms: 24 * 3600_000, stepMs: BUCKET_MS }, '7d': { ms: RETENTION_MS, stepMs: 3600_000 } } as const;
 export type MetricsRange = keyof typeof RANGES;
 
-export type AlldebridOp = 'unlock' | 'magnet' | 'other';
 export type UpstreamOutcome = 'ok' | 'fail' | 'timeout';
 /** Issue d'un appel sortant vers un fournisseur : `ok` (réponse reçue, statut < 500), `fail` (réseau, délai, 5xx). */
 export type OutboundOutcome = 'ok' | 'fail';
@@ -52,7 +51,6 @@ export type OutboundOutcome = 'ok' | 'fail';
 export interface MetricsSink {
   request(group: RouteGroup, status: number, ms: number): void;
   upstream(host: string, outcome: UpstreamOutcome, ms: number): void;
-  alldebrid(op: AlldebridOp, errorCode: string | null): void;
   cache(prefix: string, hit: boolean): void;
   error(route: string, status: number, message: string): void;
   /** Compteur par fournisseur et par jour (appel sortant, lecture de cache, fiche R2, 304). Hors liste : ignoré. */
@@ -64,7 +62,6 @@ export interface MetricsSink {
 export const noopSink: MetricsSink = {
   request: () => undefined,
   upstream: () => undefined,
-  alldebrid: () => undefined,
   cache: () => undefined,
   error: () => undefined,
   provider: () => undefined,
@@ -247,15 +244,6 @@ export class MetricsAccumulator implements MetricsSink {
     this.add(`up|${host}|ms`, Math.max(0, Math.round(ms)));
   }
 
-  alldebrid(op: AlldebridOp, errorCode: string | null): void {
-    if (errorCode === null) {
-      this.add(`ad|${op}|ok`);
-      return;
-    }
-    const code = SAFE_NAME.test(errorCode) && this.allowed('adcode', errorCode) ? errorCode : 'autre';
-    this.add(`ad|${op}|err|${code}`);
-  }
-
   cache(prefix: string, hit: boolean): void {
     const safe = /^[a-z0-9_-]{1,32}$/.test(prefix) && this.allowed('cache', prefix) ? prefix : 'autre';
     this.add(`ch|${safe}|${hit ? 'hit' : 'miss'}`);
@@ -379,6 +367,7 @@ export interface MetricsReport {
   /** Une entrée par pas de temps (début de tranche) : requêtes, erreurs 5xx, p95 global. */
   series: { t: string; requests: number; errors5xx: number; p95: number | null }[];
   upstreams: { host: string; calls: number; failures: number; timeouts: number; avgMs: number | null }[];
+  /** Forme conservée pour l'administration : le serveur n'enregistre plus d'appel AllDebrid. Seules les lignes antérieures, dans la rétention, sont lues. */
   alldebrid: Record<'unlock' | 'magnet' | 'other', { ok: number; errors: Record<string, number> }>;
   caches: { prefix: string; hits: number; misses: number; hitRate: number | null }[];
   /** Compteurs par fournisseur et par jour sur les PROVIDER_DAYS derniers jours (indépendants de `range`). */

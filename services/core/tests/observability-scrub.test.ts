@@ -162,11 +162,11 @@ describe('beforeSendFilter : erreurs', () => {
     expect(beforeSendFilter({ type: undefined }, hint({ statusCode: 429 }))).toBeNull();
   });
 
-  it('écarte l\'abandon côté client (AbortError) et server_side_disabled', () => {
+  it("écarte l'abandon côté client (AbortError) mais remonte server_side_disabled (appel de débridage serveur bloqué)", () => {
     const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
-    const disabled = Object.assign(new Error('AllDebrid désactivé côté serveur'), { name: 'AllDebridError', code: 'server_side_disabled' });
+    const disabled = Object.assign(new Error('appel serveur vers un hôte de débridage bloqué'), { name: 'DebridEgressBlockedError', code: 'server_side_disabled' });
     expect(beforeSendFilter({ type: undefined }, hint(abort))).toBeNull();
-    expect(beforeSendFilter({ type: undefined }, hint(disabled))).toBeNull();
+    expect(beforeSendFilter({ type: undefined }, hint(disabled))).not.toBeNull();
   });
 
   it('écarte un événement dont l\'exception est un AbortError, même sans hint', () => {
@@ -294,7 +294,7 @@ describe('isExpectedError', () => {
   it('reconnaît les erreurs attendues et seulement celles-là', () => {
     expect(isExpectedError(Object.assign(new Error('x'), { status: 403 }))).toBe(true);
     expect(isExpectedError({ name: 'AbortError' })).toBe(true);
-    expect(isExpectedError({ code: 'server_side_disabled' })).toBe(true);
+    expect(isExpectedError({ code: 'server_side_disabled' })).toBe(false);
     expect(isExpectedError(new Error('inattendue'))).toBe(false);
     expect(isExpectedError(Object.assign(new Error('x'), { status: 503 }))).toBe(false);
     expect(isExpectedError('chaîne')).toBe(false);

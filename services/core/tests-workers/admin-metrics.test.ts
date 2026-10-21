@@ -38,7 +38,6 @@ describe('Durable Object Metrics', () => {
           for (let i = 0; i < 30; i += 1) acc.request('stream', 200, 20);
           for (let i = 0; i < 3; i += 1) acc.request('stream', 502, 1500);
           acc.upstream('addon.example', 'ok', 100);
-          acc.alldebrid('unlock', null);
           acc.cache('packs', true);
         }, now),
       );
@@ -51,7 +50,7 @@ describe('Durable Object Metrics', () => {
     expect(report.groups.stream.p50).toBeLessThanOrEqual(25);
     expect(report.groups.stream.p95).toBeGreaterThan(1000);
     expect(report.upstreams).toEqual([{ host: 'addon.example', calls: 3, failures: 0, timeouts: 0, avgMs: 100 }]);
-    expect(report.alldebrid.unlock.ok).toBe(3);
+    expect(report.alldebrid.unlock).toEqual({ ok: 0, errors: {} });
     expect(report.caches).toEqual([{ prefix: 'packs', hits: 3, misses: 0, hitRate: 1 }]);
     const points = report.series.filter((point: any) => point.requests > 0);
     expect(points.map((point: any) => point.requests)).toEqual([1, 99]);
@@ -218,7 +217,7 @@ describe('statistiques KV', () => {
     const tag = crypto.randomUUID().slice(0, 8);
     for (let i = 0; i < 7; i += 1) await workerEnv.CACHE.put(`torrents:${tag}:${i}`, '1');
     const stats = await admin.stats();
-    expect(stats.map((stat) => stat.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents', 'alldebrid']);
+    expect(stats.map((stat) => stat.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents']);
     const torrents = stats.find((stat) => stat.prefix === 'torrents');
     expect(torrents?.exact).toBe(true);
     expect(torrents?.keys).toBeGreaterThanOrEqual(7);
@@ -237,7 +236,7 @@ describe('statistiques KV', () => {
     if (namespace === undefined) throw new Error('liaison METRICS absente');
     const stats = await createKvCacheAdmin(kv as never, namespace).stats();
     expect(stats.every((stat) => !stat.exact && stat.keys === STATS_MAX_PAGES * 1000)).toBe(true);
-    expect(calls).toBe(5 * STATS_MAX_PAGES);
+    expect(calls).toBe(4 * STATS_MAX_PAGES);
   });
 });
 
@@ -288,7 +287,7 @@ describe('administration contre le vrai Worker', () => {
 
     const caches = await api<any>('GET', '/admin/caches', { token });
     expect(caches.status).toBe(200);
-    expect(caches.body.caches.map((c: any) => c.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents', 'alldebrid']);
+    expect(caches.body.caches.map((c: any) => c.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents']);
 
     // Maintenance de bout en bout : active, puis rouverte par le propriétaire.
     const elevation = (await api<{ token: string }>('POST', '/admin/elevate', { token, body: { password: PASSWORD } })).body.token;

@@ -17,6 +17,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { assertNotDebrid, DebridEgressBlockedError, isDebridResolverUrl } from '../egress/debrid-guard.js';
 import type { FetchFn } from '../sources/http.js';
 import { type MediaProbe, probeMedia } from '../media/probe.js';
 import { type ProbeCache, probeCacheKey, probeWithCache } from '../media/probe-cache.js';
@@ -89,6 +90,16 @@ function planOf(c: Ranked): Plan | undefined {
   if (isDirect(c)) {
     const url = c.raw.url ?? '';
     if (!isHttpUrl(url)) return undefined;
+    // Jamais de sonde vers un hôte de débridage depuis le serveur : écarté et signalé par la garde de sortie.
+    try {
+      assertNotDebrid(url, 'probe');
+    } catch (error) {
+      if (error instanceof DebridEgressBlockedError) return undefined;
+      throw error;
+    }
+    // Pas de sonde d'un lien de résolution de débrideur (StremThru, ElfHosted, /resolve/<débrideur>/…) : il serait débridé
+    // chez le tiers avec l'IP du serveur. Le candidat reste proposé, sans vérification audio.
+    if (isDebridResolverUrl(url)) return undefined;
     return { key: hash === undefined ? sha256(url) : probeCacheKey(hash, fileIdx), link: async () => url };
   }
   return undefined;

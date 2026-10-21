@@ -28,7 +28,7 @@
     { "tag": "v3", "new_sqlite_classes": ["Metrics"] }
   ],
 
-  // Caches persistants partagés entre instances : statut AllDebrid, packs, URL émises, torrents privés, hébergeurs.
+  // Caches persistants partagés entre instances : packs, URL émises, torrents privés, hébergeurs.
   "kv_namespaces": [{ "binding": "CACHE", "id": "ec421766c5b74c5cac6f3cd76d4f7adf" }],
 
   // Limites de connexion/inscription (binding Rate Limiting, partagé par emplacement). La période ne peut valoir que 10 ou 60 s :

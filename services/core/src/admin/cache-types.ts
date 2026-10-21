@@ -1,5 +1,5 @@
 /** Préfixes (espaces de noms) des caches KV partagés : seuls ceux-là sont comptés et purgeables. */
-export const CACHE_PREFIXES = ['issued', 'packs', 'hosts', 'torrents', 'alldebrid'] as const;
+export const CACHE_PREFIXES = ['issued', 'packs', 'hosts', 'torrents'] as const;
 export type CachePrefix = (typeof CACHE_PREFIXES)[number];
 export const isCachePrefix = (value: unknown): value is CachePrefix => (CACHE_PREFIXES as readonly unknown[]).includes(value);
 

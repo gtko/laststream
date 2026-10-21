@@ -1,3 +1,4 @@
+import './egress/install.js';
 import * as Sentry from '@sentry/cloudflare';
 import type { ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import { ADMIN_PREFIX, handleAdmin } from './admin/routes.js';
@@ -6,6 +7,7 @@ import { createApp, MANIFEST } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
+import { DebridEgressBlockedError, runWithEgressContext, SERVER_SIDE_DISABLED, setDebridBlockReporter } from './egress/debrid-guard.js';
 import { workerSentryOptions } from './observability/options.js';
 import { setWorkerOrigin } from './observability/scrub.js';
 import { setUnhandledErrorReporter } from './observability/report.js';
@@ -55,53 +57,77 @@ function authLimiterFrom(env: WorkerEnv): AppDeps['authLimiter'] {
   };
 }
 
+// Garde de sortie : posée par le premier import (egress/install.ts), avant tout autre module de l'isolat (Worker et
+// Durable Objects) : le fetch global refuse un hôte de débridage avant l'envoi, redirections comprises.
+// Appel bloqué : événement Sentry de niveau error (hôte, déclencheur, identifiant de requête ; ni URL ni clé). Sans SENTRY_DSN, le SDK n'envoie rien.
+setDebridBlockReporter((error) => {
+  Sentry.withScope((scope) => {
+    scope.setLevel('error');
+    scope.setTags({ blocked_host: error.host, egress_trigger: error.trigger, request_id: error.requestId ?? 'none' });
+    scope.setFingerprint(['server_side_debrid_call']);
+    Sentry.captureException(error);
+  });
+});
+
 // Erreurs 500 de l'application (routes, middlewares) : remontées à Sentry. Sans SENTRY_DSN, le SDK n'envoie rien.
-setUnhandledErrorReporter((error) => Sentry.captureException(error));
+// Un appel de débridage bloqué est déjà remonté par la garde : pas de second événement.
+setUnhandledErrorReporter((error) => {
+  if (!(error instanceof DebridEgressBlockedError)) Sentry.captureException(error);
+});
+
+/** Traite une requête (hors contexte de sortie : voir `worker.fetch`). */
+async function handleFetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
+  // Origine du Worker pour la supervision : ses propres URL gardent leur chemin épuré, les autres sont réduites à l'hôte.
+  setWorkerOrigin(new URL(request.url).origin);
+  if (new URL(request.url).pathname.startsWith(ADMIN_PREFIX)) {
+    const secret = typeof env.ADMIN_SECRET === 'string' ? env.ADMIN_SECRET : undefined;
+    return handleAdmin(request, secret, (operation) => env.USER_STORE.getByName(USER_STORE_NAME).admin(operation));
+  }
+  try {
+    const handler = appFor(env);
+    const clientIp = request.headers.get('cf-connecting-ip') ?? undefined;
+    // WebSocket d'un salon : traitée avant l'application (une réponse 101 ne traverse aucun middleware).
+    if (PARTY_WS_PATH.test(new URL(request.url).pathname)) {
+      const secret = secretFromEnv();
+      if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
+      return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp });
+    }
+    // Flux temps réel social : ticket vérifié ici, connexion acceptée par le Durable Object des données.
+    if (new URL(request.url).pathname === SOCIAL_LIVE_PATH) {
+      const secret = secretFromEnv();
+      if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
+      // Types des requêtes Workers (même pont que party-backend.ts) : le stub accepte la mise à niveau de UserStoreDO.fetch.
+      const users = env.USER_STORE.getByName(USER_STORE_NAME) as unknown as { fetch(forwarded: Request): Promise<Response> };
+      return await handleSocialLiveWs(request, { secret, ip: clientIp, forward: (forwarded) => users.fetch(forwarded) });
+    }
+    // Pays Cloudflare (request.cf, absent des types DOM) : « XX » si inconnu.
+    const country = countryCode((request as { cf?: { country?: unknown } }).cf?.country);
+    return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp, country }, ctx)));
+  } catch (err) {
+    // Appel de débridage bloqué (déjà signalé par la garde) : 502 explicite. Sinon, configuration absente ou invalide :
+    // remontée à Sentry, puis message générique, jamais de valeur.
+    if (err instanceof DebridEgressBlockedError) return Response.json({ error: SERVER_SIDE_DISABLED }, { status: 502 });
+    Sentry.captureException(err);
+    console.error('[worker] erreur de démarrage', err instanceof Error ? err.name : 'inconnue');
+    return Response.json({ error: 'worker_misconfigured' }, { status: 500 });
+  }
+}
 
 const worker = {
-  async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
-    // Origine du Worker pour la supervision : ses propres URL gardent leur chemin épuré, les autres sont réduites à l'hôte.
-    setWorkerOrigin(new URL(request.url).origin);
-    if (new URL(request.url).pathname.startsWith(ADMIN_PREFIX)) {
-      const secret = typeof env.ADMIN_SECRET === 'string' ? env.ADMIN_SECRET : undefined;
-      return handleAdmin(request, secret, (operation) => env.USER_STORE.getByName(USER_STORE_NAME).admin(operation));
-    }
-    try {
-      const handler = appFor(env);
-      const clientIp = request.headers.get('cf-connecting-ip') ?? undefined;
-      // WebSocket d'un salon : traitée avant l'application (une réponse 101 ne traverse aucun middleware).
-      if (PARTY_WS_PATH.test(new URL(request.url).pathname)) {
-        const secret = secretFromEnv();
-        if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
-        return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp });
-      }
-      // Flux temps réel social : ticket vérifié ici, connexion acceptée par le Durable Object des données.
-      if (new URL(request.url).pathname === SOCIAL_LIVE_PATH) {
-        const secret = secretFromEnv();
-        if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
-        // Types des requêtes Workers (même pont que party-backend.ts) : le stub accepte la mise à niveau de UserStoreDO.fetch.
-        const users = env.USER_STORE.getByName(USER_STORE_NAME) as unknown as { fetch(forwarded: Request): Promise<Response> };
-        return await handleSocialLiveWs(request, { secret, ip: clientIp, forward: (forwarded) => users.fetch(forwarded) });
-      }
-      // Pays Cloudflare (request.cf, absent des types DOM) : « XX » si inconnu.
-      const country = countryCode((request as { cf?: { country?: unknown } }).cf?.country);
-      return await runInRequest(ctx, () => Promise.resolve(handler.fetch(request, { clientIp, country }, ctx)));
-    } catch (err) {
-      // Configuration absente ou invalide : remontée à Sentry, puis message générique, jamais de valeur.
-      Sentry.captureException(err);
-      console.error('[worker] erreur de démarrage', err instanceof Error ? err.name : 'inconnue');
-      return Response.json({ error: 'worker_misconfigured' }, { status: 500 });
-    }
-  },
+  fetch: (request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> =>
+    // Garde de sortie : un appel bloqué pendant la requête est rattaché à son identifiant (cf-ray).
+    runWithEgressContext({ trigger: 'request', requestId: request.headers.get('cf-ray') ?? crypto.randomUUID() }, () => handleFetch(request, env, ctx)),
 
   /**
    * Cron Trigger (wrangler.jsonc, « triggers », toutes les 6 h) : reconstruit le catalogue TV et l'EPG réduit dans R2, en
    * flux ; précalcule les rangées d'accueil communes dans R2 (lt/rows.ts).
    */
   scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
-    ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
-    ensureWorkersPlatform(env);
-    ctx.waitUntil(runInRequest(ctx, () => refreshRowsFromEnv(env)));
+    runWithEgressContext({ trigger: 'cron', requestId: `cron-${crypto.randomUUID()}` }, () => {
+      ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
+      ensureWorkersPlatform(env);
+      ctx.waitUntil(runInRequest(ctx, () => refreshRowsFromEnv(env)));
+    });
   },
 };
 

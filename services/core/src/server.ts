@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
+import { installEgressGuard } from './egress/debrid-guard.js';
 import { parseCliArgs, type CliOptions } from './cli.js';
 import { assertStartupEnv, configuredPublicUrl, configuredStreamingServer, configuredUiDir, isPublicMode } from './config/runtime-env.js';
 import { isPlainAllowed } from './config/secret.js';
@@ -43,6 +44,8 @@ function applyCliOptions(options: CliOptions, env: RuntimeEnv): void {
  * `LASTADDON_READY port=<n>` : les applications packagées attendent cette ligne.
  */
 export function start(argv: readonly string[] = process.argv.slice(2)): void {
+  // Aucun appel serveur vers AllDebrid ni un hôte de débridage : le débridage se fait sur l'appareil.
+  installEgressGuard();
   const nodePlatform = createNodePlatform();
   setPlatform(nodePlatform);
   const env = nodePlatform.env;

@@ -1,3 +1,4 @@
+import { guardedFetch } from '../egress/debrid-guard.js';
 import { scanJson, scanJsonArray, scanLines } from './json-stream.js';
 import {
   buildCatalog,
@@ -185,7 +186,7 @@ async function loadFast(fetcher: typeof fetch, url: string, source: 'pluto' | 's
 
 /** Catalogue : toutes les sources en parallèle ; une source en échec est absente (catalogue partiel). */
 export async function buildCatalogStreaming(options: TvBuildOptions = {}): Promise<TvCatalog> {
-  const fetcher = options.fetch ?? fetch;
+  const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const countries = new Set((options.countries ?? DEFAULT_TV_COUNTRIES).map((code) => code.toUpperCase()));
   const [iptv, freetv, pluto, samsung] = await Promise.allSettled([
     loadIptvOrg(fetcher, countries),
@@ -237,7 +238,7 @@ async function ingestEpgSource(fetcher: typeof fetch, url: string, ingest: Xmltv
 
 /** EPG réduit : chaînes retenues, de maintenant (moins 30 min) à +24 h. Toutes les sources en échec : exception. */
 export async function buildEpgStreaming(wanted: ReadonlySet<string>, options: TvBuildOptions = {}): Promise<EpgSnapshot> {
-  const fetcher = options.fetch ?? fetch;
+  const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const nowMs = (options.now ?? Date.now)();
   const now = Math.floor(nowMs / 1000);
   const store = new Map<string, Programme[]>();
@@ -281,7 +282,7 @@ export async function applyDirect(
   previous: ProbeSnapshot | undefined,
   options: TvBuildOptions,
 ): Promise<ProbeSnapshot> {
-  const fetcher = options.fetch ?? fetch;
+  const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const nowSec = Math.floor((options.now ?? Date.now)() / 1000);
   const ttl = options.probeTtlSec ?? 24 * 3600;
   const results: ProbeSnapshot['results'] = {};

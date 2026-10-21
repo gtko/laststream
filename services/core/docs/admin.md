@@ -57,7 +57,7 @@ Le propriétaire ne peut ni se suspendre ni se supprimer (`403 cannot_target_own
   totals / groups.{stream,play,lt_tmdb,lt,user,party,ui,other}: { requests, status:{2xx,3xx,4xx,5xx}, p50, p95, avgMs },
   series: [{ t, requests, errors5xx, p95 }],
   upstreams: [{ host, calls, failures, timeouts, avgMs }],      // addons amont, par hôte (sans chemin ni jeton)
-  alldebrid: { unlock|magnet|other: { ok, errors: { <code>: n } } },
+  alldebrid: { unlock|magnet|other: { ok, errors: { <code>: n } } },   // forme stable, sans donnée nouvelle : le serveur n'appelle jamais AllDebrid
   caches: [{ prefix, hits, misses, hitRate }],
   providers: { windowDays: 30, from, to,                        // from/to : AAAA-MM-JJ UTC, inclus ; indépendant de range
     byDay: [{ day, providers: [<compteurs>] }],                  // un bloc par jour ayant des compteurs
@@ -77,7 +77,7 @@ Compteurs par fournisseur (`<compteurs>`, fournisseur `tmdb | tvdb | openrouter 
 
 ## Caches (Workers)
 
-- `GET /admin/caches?range=24h` → `{ caches: [{ prefix, keys, exact, hits, misses, hitRate }] }`. Préfixes : `issued, packs, hosts, torrents, alldebrid`. Le nombre de clés vient d'un `list` KV borné à 10 pages de 1000 : au-delà, `exact: false` et `keys` est un minimum.
+- `GET /admin/caches?range=24h` → `{ caches: [{ prefix, keys, exact, hits, misses, hitRate }] }`. Préfixes : `issued, packs, hosts, torrents`. Le nombre de clés vient d'un `list` KV borné à 10 pages de 1000 : au-delà, `exact: false` et `keys` est un minimum.
 - `POST /admin/caches/:prefix/purge` **[élév.]** → `202` + job `{ id, prefix, status: running|done|failed, deleted, startedAt, updatedAt, error }`. Purge asynchrone par lots (alarme du Durable Object), reprise automatique. `404 unknown_cache` pour un préfixe inconnu.
 - `GET /admin/caches/purges` et `GET /admin/caches/purges/:id` : progression.
 - Sous Node : `501 cache_admin_unavailable`.

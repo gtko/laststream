@@ -27,8 +27,6 @@ const SECRET_HEADER_NAME = /token|key|secret/i;
 const DROPPED_KEY =
   /body|cookie|query|token|secret|authorization|x-profile-id|connecting-ip|forwarded-for|real-ip|true-client-ip|api[_-]?key|ip_address|^ip$|^email$|^env$|^vars$/i;
 const DEBRID_HOST = /alldebrid|real-?debrid|torbox|premiumize/i;
-/** Erreurs applicatives attendues (voir `isExpectedError`). */
-const EXPECTED_CODES: ReadonlySet<string> = new Set(['server_side_disabled']);
 
 const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/gi;
 const MAGNET_IN_TEXT = /magnet:[^\s"'<>]*/gi;
@@ -163,16 +161,15 @@ function scrubEvent<E extends SentryEvent>(event: E): E {
 }
 
 /**
- * Erreur attendue, à ne pas remonter : 4xx applicatifs, abandon côté client (AbortError), AllDebrid désactivé côté
- * serveur (`server_side_disabled`).
+ * Erreur attendue, à ne pas remonter : 4xx applicatifs et abandon côté client (AbortError). `server_side_disabled`
+ * (appel serveur vers un hôte de débridage bloqué, egress/debrid-guard.ts) n'est JAMAIS attendue : elle est remontée.
  */
 export function isExpectedError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const record = error as Record<string, unknown>;
   const status = record.status ?? record.statusCode;
   if (typeof status === 'number' && status >= 400 && status < 500) return true;
-  if (record.name === 'AbortError') return true;
-  return typeof record.code === 'string' && EXPECTED_CODES.has(record.code);
+  return record.name === 'AbortError';
 }
 
 function hasAbortException(event: SentryEvent): boolean {

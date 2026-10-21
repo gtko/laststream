@@ -1,3 +1,4 @@
+import { assertNotDebrid, DebridEgressBlockedError, guardedFetch } from '../egress/debrid-guard.js';
 import { pruneStreams, type TvCatalog } from './tv-catalog.js';
 
 /**
@@ -82,13 +83,17 @@ function looksLikePage(bytes: Uint8Array, type: string): boolean {
   return first === '<' || first === '{';
 }
 
-/** AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel vers ses hôtes, jamais. */
-const FORBIDDEN_HOST = /(^|\.)(alldebrid\.[a-z]+|debrid\.it)$/i;
+/**
+ * AllDebrid suspend les comptes appelés depuis des IP de serveurs : aucun appel vers ses hôtes, jamais. La garde de
+ * sortie (egress/debrid-guard.ts) refuse et signale l'incident à Sentry ; le flux reste sans verdict.
+ */
 const forbidden = (href: string): boolean => {
   try {
-    return FORBIDDEN_HOST.test(new URL(href).hostname);
-  } catch {
+    assertNotDebrid(href, 'tv-health');
     return false;
+  } catch (error) {
+    if (error instanceof DebridEgressBlockedError) return true;
+    throw error;
   }
 };
 
@@ -137,8 +142,11 @@ async function inspect(fetcher: typeof fetch, url: string, depth: number): Promi
 /** Verdict d'un flux : ok, down (échec franc, délai, DNS, manifeste vide ou page d'erreur), unknown (refus d'accès). */
 export async function checkStream(fetcher: typeof fetch, url: string): Promise<StreamVerdict> {
   try {
-    return await inspect(fetcher, url, 0);
+    // Garde de sortie : chaque saut (redirections comprises) est contrôlé avant l'envoi.
+    return await inspect(guardedFetch(fetcher, 'tv-health'), url, 0);
   } catch (error) {
+    // Hôte de débridage refusé par la garde (déjà signalé) : le flux n'est pas en cause.
+    if (error instanceof DebridEgressBlockedError) return 'unknown';
     // Limite de sous-requêtes du Worker atteinte : ce n'est pas la faute du flux.
     return /subrequest/i.test(error instanceof Error ? error.message : '') ? 'unknown' : 'down';
   }

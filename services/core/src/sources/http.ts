@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { isPublicMode } from '../config/runtime-env.js';
 import { recordOutbound } from '../metrics/index.js';
+import { assertNotDebrid, DebridEgressBlockedError } from '../egress/debrid-guard.js';
 import { providerOfUrl } from '../metrics/providers.js';
 import { platform, type HostLookup, type OutboundDispatcher } from '../platform/index.js';
 import { isNonPublicAddress } from './ip.js';
@@ -281,6 +282,8 @@ export async function fetchBytes(
     const dispatcher = body.dispatcher ?? (publicMode || body.guard !== undefined ? defaultPinnedAgent() : undefined);
     let target = url;
     for (let redirects = 0; ; redirects++) {
+      // Garde de sortie : jamais d'hôte de débridage, y compris par redirection (contrôlé avant l'envoi de chaque saut).
+      assertNotDebrid(target, 'fetch-bytes');
       // Avec agent épinglé : IP littérales contrôlées ici, noms résolus et contrôlés à la connexion.
       await checkOutboundUrl(target, publicMode || dispatcher !== undefined, resolveHost, true);
       if (body.guard !== undefined) await body.guard(new URL(target));
@@ -301,7 +304,7 @@ export async function fetchBytes(
       target = resolveLocation(location, target);
     }
   } catch (err) {
-    if (err instanceof SourceError) throw err;
+    if (err instanceof SourceError || err instanceof DebridEgressBlockedError) throw err;
     if (isUnsafeTarget(err)) throw new UnsafeTargetError();
     // Échec de transport (réseau, délai, lecture du corps interrompue) : compté comme échec du fournisseur.
     if (provider !== undefined) recordOutbound(provider, 'fail', Date.now() - started);

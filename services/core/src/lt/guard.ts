@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { isDebridHost } from '../egress/debrid-guard.js';
 import { isNonPublicAddress } from '../sources/ip.js';
 import { UnsafeTargetError, type UrlGuard } from '../sources/http.js';
 
@@ -13,12 +14,13 @@ function bareHost(url: URL): string {
 
 /**
  * Contrôle synchrone : http(s), hôte non vide, ni nom local (localhost, *.local, *.internal),
- * ni adresse IP littérale non publique. Ne résout pas le DNS.
+ * ni adresse IP littérale non publique, ni hôte de débridage (jamais joint depuis le serveur : egress/debrid-guard.ts).
+ * Ne résout pas le DNS.
  */
 export function isLiteralSafe(url: URL): boolean {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
   const host = bareHost(url);
-  if (host === '' || LOCAL_NAME.test(host)) return false;
+  if (host === '' || LOCAL_NAME.test(host) || isDebridHost(host)) return false;
   if (isIP(host) !== 0 && isNonPublicAddress(host)) return false;
   return true;
 }

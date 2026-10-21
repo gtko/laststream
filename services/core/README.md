@@ -671,6 +671,14 @@ Connexion et inscription : binding Rate Limiting (`AUTH_LIMITER_IP`, `AUTH_LIMIT
 
 **Autres protections.** Les endpoints `/config/*` acceptent le CORS uniquement pour `LASTADDON_ALLOWED_ORIGINS` et sont limités à 30 requêtes par minute et par IP (compteur en mémoire, par processus). Les messages d'erreur masquent les clés API sous leurs formes brute, URL-encodée et base64. Les jetons `/play/c` sont signés avec une clé dérivée de `LASTADDON_SECRET` ; ils ne contiennent ni clé API ni passkey. Les URL de téléchargement des indexeurs (qui peuvent porter une passkey) ne sont jamais renvoyées.
 
+### Garde de sortie (AllDebrid interdit côté serveur)
+
+AllDebrid suspend les comptes appelés depuis des IP de serveurs. Le serveur, Worker `lastaddon-core` compris, ne contacte donc jamais AllDebrid ni les hôtes `*.debrid.it` : le débridage, la lecture et les miniatures passent par l'appareil, avec son IP et sa propre clé.
+
+- Toute tentative d'envoi vers AllDebrid ou `*.debrid.it` est bloquée avant l'envoi : elle échoue avec le code `server_side_disabled`.
+- Chaque blocage émet un événement Sentry de niveau `error`.
+- Le test `tests/no-server-debrid.test.ts` veille à ce qu'aucun code de `src/` ne réintroduise un appel vers AllDebrid côté serveur.
+
 ## Tests
 
 ```bash
