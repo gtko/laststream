@@ -372,7 +372,7 @@ const rowSection = (id, title, inner, link) =>
   '<section class="row-section" id="' + id + '" aria-labelledby="h-' + id + '"><h2 class="row-title" id="h-' + id + '">' + esc(title) + (link || '') + '</h2>' + inner + '</section>';
 const rowLink = (href, label) => ' <a class="row-link" href="' + esc(href) + '" data-go>' + esc(label) + '</a>';
 
-/** « En vedette » : 8 dossiers en tuiles larges, visuels versionnés tous les 14 jours. */
+/** « En vedette » : 8 dossiers en tuiles larges, ordre qui tourne chaque jour, visuels versionnés tous les 14 jours. */
 export async function renderFeatured(now) {
   if (isKidProfile()) return false;
   try {

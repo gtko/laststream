@@ -14,7 +14,7 @@ vi.mock('../src/data/lt', () => ({
 }));
 
 import {
-  buildCatalog, featuredFolders, folderById, rotatingRows, searchCatalog, spotlightArtVersion, versionArt, discoverFolders, normalizeText,
+  buildCatalog, featuredDayIndex, featuredFolders, folderById, rotatingRows, searchCatalog, spotlightArtVersion, versionArt, discoverFolders, normalizeText,
 } from '../src/data/collections/catalog';
 import {
   buildDiscoverFolder, buildRequest, interleave, mapFilters, newCtx, resetListSupport, resolveFolder, resolveUntil, usableSources,
@@ -265,7 +265,7 @@ describe('catalogue et rotations', () => {
     expect(searchCatalog(cat, { query: 'zzz' })).toEqual([]);
   });
 
-  it('visuels « En vedette » : cycle de 14 jours, version posée sur les adresses', () => {
+  it('visuels « En vedette » : version par cycle de 14 jours, posée sur les adresses', () => {
     expect(spotlightArtVersion(new Date(Date.UTC(2026, 9, 3)))).toBe('0');
     expect(spotlightArtVersion(new Date(Date.UTC(2026, 9, 16, 12)))).toBe('1');
     expect(spotlightArtVersion(new Date(Date.UTC(2026, 9, 30, 12)))).toBe('2');
@@ -274,11 +274,15 @@ describe('catalogue et rotations', () => {
     expect(v.cover).toBe('https://raw.githubusercontent.com/x/y/main/art/spotlights/A/cover.png?v=3');
     expect(v.gif).toBe('https://raw.githubusercontent.com/x/y/main/art/spotlights/A/hover.png?v=3'); // l’ancienne version est remplacée
     expect(versionArt(cat.byId.get('svc-netflix')!, '3').cover).toBe('https://img.example/n.webp'); // hors spotlights : inchangé
-    const week1 = featuredFolders(cat, new Date(Date.UTC(2026, 9, 5)));
-    const week3 = featuredFolders(cat, new Date(Date.UTC(2026, 9, 17, 12)));
-    expect(week1.map((f) => f.id)).toEqual(['sp-A', 'sp-B', 'sp-C']);
-    expect(week3.map((f) => f.id)).toEqual(['sp-B', 'sp-C', 'sp-A']); // l’ordre tourne à chaque cycle
-    expect(week3[0].cover).toMatch(/\?v=1$/);
+    const ids = (d: Date) => featuredFolders(cat, d).map((f) => f.id);
+    expect(featuredDayIndex(new Date(2026, 9, 2))).toBe(0);
+    expect(featuredDayIndex(new Date(2026, 8, 1))).toBe(0); // avant l'ancre
+    expect(ids(new Date(2026, 9, 3, 8))).toEqual(['sp-B', 'sp-C', 'sp-A']);
+    expect(ids(new Date(2026, 9, 3, 23, 59))).toEqual(ids(new Date(2026, 9, 3, 0, 1))); // stable toute la journée
+    expect(ids(new Date(2026, 9, 4))).toEqual(['sp-C', 'sp-A', 'sp-B']); // l'ordre tourne chaque jour
+    expect(ids(new Date(2026, 9, 5))).toEqual(['sp-A', 'sp-B', 'sp-C']); // et boucle après 3 dossiers (8 en réel)
+    expect(featuredFolders(cat, new Date(2026, 9, 4))[0].cover).toMatch(/\?v=0$/); // visuels : même version dans le cycle
+    expect(featuredFolders(cat, new Date(2026, 9, 17, 12))[0].cover).toMatch(/\?v=1$/);
   });
 
   it('rangées du jour : choix stable dans la journée, variable d’un jour à l’autre, sans services ni vedette', () => {

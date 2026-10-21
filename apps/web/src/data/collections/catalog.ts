@@ -1,6 +1,6 @@
 /*
  * Catalogue de collections : chargement à la demande (import dynamique du JSON, ~900 Ko), recherche du hub,
- * rotation quotidienne des rangées d'accueil et rotation tous les 14 jours des visuels « En vedette ».
+ * rotation quotidienne des rangées d'accueil et de l'ordre « En vedette » (les visuels sont versionnés tous les 14 jours).
  * Collections inspirées de Focale (MIT, © 2026 Shika34, voir LICENSE-FOCALE.txt) et Kaptain.
  */
 import type { Folder, Source } from './engine';
@@ -128,12 +128,20 @@ export function versionArt(folder: Folder, version: string): Folder {
   return { ...folder, cover: v(folder.cover), gif: v(folder.gif), logo: v(folder.logo), hero: v(folder.hero) };
 }
 
-/** Les dossiers « En vedette » : visuels versionnés ; l'ordre tourne d'un cran à chaque cycle de 14 jours. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Numéro du jour calendaire local depuis l'ancre (0 avant) : stable toute la journée, +1 à minuit local. */
+export function featuredDayIndex(now: Date = new Date()): number {
+  const localDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.max(0, Math.round((localDay - CYCLE_ANCHOR_MS) / DAY_MS));
+}
+
+/** Les dossiers « En vedette » : visuels versionnés (cycle de 14 jours, le cache n'est forcé que si les visuels changent) ; l'ordre tourne d'un cran chaque jour. */
 export function featuredFolders(cat: Catalog, now: Date = new Date()): Folder[] {
   const spot = cat.categories.find((c) => c.id === SPOTLIGHT_CATEGORY);
   if (!spot) return [];
   const version = spotlightArtVersion(now);
-  const shift = spot.folders.length ? Number(version) % spot.folders.length : 0;
+  const shift = spot.folders.length ? featuredDayIndex(now) % spot.folders.length : 0;
   const rotated = spot.folders.slice(shift).concat(spot.folders.slice(0, shift));
   return rotated.map((f) => versionArt(f, version));
 }
