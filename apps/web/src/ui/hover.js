@@ -140,6 +140,7 @@ export function openHover(tile) {
 
 export function hoverTileOf(target) {
   if (!(target instanceof Element)) return null;
+  if (target.closest('.t-more, .t-remove')) return null; // ✕ et ••• : pas d'aperçu de la carte (ODY-177)
   const t = target.closest('[data-tile]');
   return t && t.dataset.tile && !t.closest('.ctxmenu') ? t : null;
 }
@@ -152,6 +153,8 @@ export function scheduleHover(tile, ms) {
   hv.openTimer = setTimeout(() => {
     hv.openTimer = null;
     if (state.dragRow && state.dragRow.moved) return;
+    if (!tile.isConnected) return;
+    if (tile.classList.contains('is-icon-hover')) { scheduleHover(tile, ms); return; } // souris sur ✕ / ••• : pas d'aperçu
     openHover(tile);
   }, ms);
 }
@@ -162,6 +165,31 @@ function prefetchHover(tile) {
   const it = state.byKey.get(tile.dataset.tile);
   if (it) getDetail(it, { ratings: true }).catch(() => null);
 }
+
+// ✕ et ••• : la carte perd son survol (classe is-icon-hover : zoom, ▶, liseré) tant que la souris reste sur l'icône. Sans le
+// zoom, l'icône se décale de quelques pixels et la souris peut se retrouver à côté : la zone de l'icône zoomée est gardée.
+let iconHold = null;
+function releaseIconHold() {
+  if (iconHold) iconHold.card.classList.remove('is-icon-hover');
+  iconHold = null;
+}
+export function trackIconHover(x, y, target) {
+  const icon = target instanceof Element ? target.closest('.t-more, .t-remove') : null;
+  const card = icon && icon.closest('.card');
+  if (card) {
+    if (!iconHold || iconHold.icon !== icon) {
+      if (iconHold && iconHold.card !== card) releaseIconHold();
+      iconHold = { card, icon, rect: icon.getBoundingClientRect() };
+      card.classList.add('is-icon-hover');
+    }
+    return;
+  }
+  if (!iconHold) return;
+  const r = iconHold.rect;
+  if (!iconHold.card.isConnected || x < r.left || x > r.right || y < r.top || y > r.bottom) releaseIconHold();
+}
+document.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') trackIconHover(e.clientX, e.clientY, e.target); });
+document.documentElement.addEventListener('mouseleave', releaseIconHold);
 
 document.addEventListener('pointerover', (e) => {
   if (e.pointerType !== 'mouse' || !finePointer() || !(e.target instanceof Element)) return;
@@ -199,7 +227,7 @@ document.addEventListener('pointerdown', (e) => {
   if (e.target instanceof Element && e.target.closest('#hovercard')) return;
   if (hv.el || hv.openTimer) closeHover();
 });
-window.addEventListener('scroll', () => { if (hv.el || hv.openTimer) closeHover(); }, { passive: true });
+window.addEventListener('scroll', () => { releaseIconHold(); if (hv.el || hv.openTimer) closeHover(); }, { passive: true });
 document.addEventListener('focusin', (e) => {
   if (!finePointer()) return;
   const tile = hoverTileOf(e.target);

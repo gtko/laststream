@@ -192,6 +192,10 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .card:hover .t-remove, .card:focus-visible .t-remove { opacity: 1; }
 @media (hover: none) { .t-remove { opacity: 1; } }
 .cont-card .cont-new { left: 44px; } /* à droite du bouton fermer, en haut à gauche */
+/* ODY-177 : la souris sur ✕ ou ••• ne déclenche pas le survol de la carte (zoom, liseré, ▶ central, classe posée par hover.js) ; les icônes restent visibles et cliquables. */
+.card.is-icon-hover:not(:focus-visible) { transform: none; }
+.card.is-icon-hover:not(:focus-visible) .card-media { outline: none; }
+.cont-card.is-icon-hover:not(:focus-visible) .cont-play { opacity: 0; }
 .toast.has-action { pointer-events: auto; display: flex; align-items: center; gap: 16px; }
 .toast-action { color: var(--accent); font-weight: 800; padding: 6px 4px; }
 .toast-action:hover { text-decoration: underline; }
