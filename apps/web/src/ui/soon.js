@@ -66,12 +66,12 @@ export function soonBell(tvKey) {
 
 /**
  * Carte autonome (calendrier, rangée des suivis). Diffusion dans les 14 prochains jours : un clic lance la recherche de
- * sources de cet épisode ; sinon (au-delà, sans date) un clic ouvre la fiche de la série, comme avant.
+ * sources de cet épisode ; sinon (au-delà, ce soir, sans date) un clic ouvre la fiche de la série sur cet épisode.
  */
 export function soonItemHTML(o, tvKey) {
   const base = (o.name || '') + ', S' + o.season + ' épisode ' + o.episode + ', ';
   if (!isSoonPlayable(o.airDate)) {
-    return '<div class="soon-item"><button type="button" class="soon-card" data-open="' + esc(tvKey) + '" aria-label="' + esc(base + countdownText(o.airDate)) + '">' + soonInnerHTML(o) + '</button>' + soonBell(tvKey) + '</div>';
+    return '<div class="soon-item"><button type="button" class="soon-card" data-open="' + esc(tvKey) + '" data-open-season="' + esc(o.season) + '" data-open-episode="' + esc(o.episode) + '" aria-label="' + esc(base + countdownText(o.airDate)) + '">' + soonInnerHTML(o) + '</button>' + soonBell(tvKey) + '</div>';
   }
   return '<div class="soon-item"><button type="button" class="soon-card" data-play data-play-key="' + esc(tvKey) + '" data-name="' + esc(o.name || '') +
     '" data-play-season="' + esc(o.season) + '" data-play-episode="' + esc(o.episode) + '" data-air="' + esc(o.airDate) + '" aria-label="' + esc(base + playableBadge(o.airDate)) + '">' +

@@ -86,7 +86,7 @@ export async function fillNext(m, token) {
   slot.innerHTML = 'Prochain épisode : ' + (label ? '<strong>' + esc(label) + '</strong> ' : '') + 'le ' + esc(fmtDate(date));
 }
 
-export async function loadSeason(m, n, token) {
+export async function loadSeason(m, n, token, wantEp) {
   const list = detailEl.querySelector('#f-eplist');
   if (!list) return;
   detailEl.querySelectorAll('[data-season]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.season) === n)));
@@ -152,6 +152,15 @@ export async function loadSeason(m, n, token) {
   // Saison de l’épisode à regarder : la carte (en cours, sinon prochain non vu, sinon dernier diffusé) est centrée, sans animation.
   const at = inProgressRef(m.key) || nextToWatch(m);
   const target = at && at.s === n ? focusEpisode(eps, { today, isSeen: (ep) => userStore.isWatched(m.key, n, ep), inProgress: (ep) => hasResume(m.key, n, ep) }) : null;
-  const card = target != null ? list.querySelector('.ep[data-ep="' + n + ':' + target + '"]') : null;
+  // Épisode visé par l'adresse (carte des suivis, lien) : prioritaire, mis en évidence et amené à l'écran.
+  const wanted = wantEp != null ? list.querySelector('.ep[data-ep="' + n + ':' + wantEp + '"]') : null;
+  const card = wanted || (target != null ? list.querySelector('.ep[data-ep="' + n + ':' + target + '"]') : null);
   if (card) scrollToCard(list, card); else list.scrollLeft = 0;
+  if (wanted) {
+    wanted.classList.add('is-target');
+    list.scrollIntoView({ block: 'center' });
+    // Épisode lisible : son bouton ; carte « Bientôt » (sans bouton) : la cloche, seul élément focalisable.
+    const btn = wanted.querySelector('button.ep-main') || wanted.querySelector('.soon-bell');
+    if (btn) btn.focus({ preventScroll: true });
+  }
 }

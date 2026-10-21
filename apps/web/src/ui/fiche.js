@@ -327,7 +327,8 @@ function trailerPlayFor(m, token) {
   });
 }
 
-export async function showFiche(type, id) {
+/** `target` ({ s, e }) : série ouverte sur la saison de cet épisode, épisode centré et mis en évidence. */
+export async function showFiche(type, id, target = null) {
   const key = type + ':' + id;
   teardownFiche();
   state.kind = 'fiche';
@@ -366,7 +367,8 @@ export async function showFiche(type, id) {
   if (m.collection) fillCollection(m, token);
   if (m.type === 'tv') {
     fillNext(m, token);
-    const n = inProgressRef(m.key) || nextToWatch(m);
-    if (n) loadSeason(m, n.s, token);
+    const wanted = target && m.seasons.some((s) => s.season_number === target.s) ? target : null;
+    const n = wanted ? { s: wanted.s } : inProgressRef(m.key) || nextToWatch(m);
+    if (n) loadSeason(m, n.s, token, wanted ? wanted.e : undefined);
   }
 }

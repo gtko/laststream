@@ -306,7 +306,7 @@ document.addEventListener('click', (e) => {
   const op = t.closest('[data-open],[data-info]');
   if (op) {
     e.preventDefault();
-    openItem(op.dataset.open || op.dataset.info, op);
+    openItem(op.dataset.open || op.dataset.info, op, op.dataset.openSeason ? { season: op.dataset.openSeason, episode: op.dataset.openEpisode } : undefined);
   }
 });
 

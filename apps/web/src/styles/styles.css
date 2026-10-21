@@ -550,6 +550,7 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
 .ep-main:hover .ep-still { outline: 2px solid var(--dim); outline-offset: -2px; }
 .ep-main:focus-visible .ep-still { outline: var(--focus-ring-key); outline-offset: -2px; }
 .ep.is-next .ep-main:not(:focus-visible) .ep-still { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ep.is-target .ep-main:not(:focus-visible) .ep-still, .ep.is-target .soon { outline: 3px solid var(--accent); outline-offset: -3px; }
 .ep.is-next .ep-title::after { content: 'À suivre'; margin-left: 8px; padding: 2px 7px; border-radius: 5px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 2px; }
 .ep-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, 0.22); }
 .ep-bar > span { display: block; height: 100%; background: var(--accent); }

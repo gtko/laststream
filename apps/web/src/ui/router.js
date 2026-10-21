@@ -18,6 +18,7 @@ import { showAiBrowse } from './recs-ui.js';
 import { showSearch } from './search.js';
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
+import { ficheHash, parseFicheHash } from './ficheRoute.js';
 import { closeHover } from './hover.js';
 import { renderContinue } from './home.js';
 import { notifyHomeChange } from '../data/homeFilters';
@@ -72,7 +73,7 @@ export function showView(r) {
   else if (r.kind === 'tvlive') showTvLive();
   else if (r.kind === 'shows') showShowsPage();
   else if (r.kind === 'show') showShow(r.id);
-  else showFiche(r.type, r.id);
+  else showFiche(r.type, r.id, r.season != null ? { s: r.season, e: r.episode } : null);
 }
 export function applyRestore() {
   if (state.restoreY == null) return;
@@ -96,9 +97,9 @@ export function parseRoute() {
 
 function parseRouteRaw() {
   const h = location.hash || '';
-  let r = /^#\/(movie|tv)\/(\d{1,9})$/.exec(h);
-  if (r) return { kind: 'fiche', type: r[1], id: r[2] };
-  r = /^#\/service\/([a-z0-9-]{1,40})$/.exec(h);
+  const fiche = parseFicheHash(h);
+  if (fiche) return { kind: 'fiche', ...fiche };
+  let r = /^#\/service\/([a-z0-9-]{1,40})$/.exec(h);
   if (r) return { kind: 'service', slug: r[1] };
   r = /^#\/person\/(\d{1,9})$/.exec(h);
   if (r) return { kind: 'person', id: r[1] };
@@ -188,10 +189,11 @@ export function route() {
   }
 }
 
-export function openItem(key, opener) {
+/** Ouvre la fiche d'un titre ; `ep` ({ season, episode }) : série ouverte sur cet épisode. */
+export function openItem(key, opener, ep) {
   const it = state.byKey.get(key);
   if (!it) return;
-  go('#/' + it.type + '/' + it.id, opener);
+  go(ficheHash(it.type, it.id, ep), opener);
 }
 
 export function goBack() {
