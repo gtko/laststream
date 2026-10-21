@@ -14,6 +14,8 @@ export interface EngineChoice {
   /** Phrase courte pour l'écran de chargement et la fiche d'infos. */
   label: string;
   reason: string;
+  /** Lecture hors ligne que le navigateur ne peut pas assurer (conteneur) : la session affiche ce message au lieu de lancer la lecture. */
+  unsupported?: string;
 }
 
 export interface EngineInput {
@@ -32,6 +34,8 @@ export interface EngineInput {
   preferredLang?: string;
   /** `video.audioTracks` existe : le navigateur peut changer de piste en lecture directe. */
   audioTracksSupported?: boolean;
+  /** Fichier téléchargé lu depuis cet appareil (ODY-203) : aucun serveur de streaming, aucun transcodage. */
+  local?: { name: string; container?: string };
 }
 
 export interface PlayOptions {
@@ -80,12 +84,33 @@ export function guessWebPlayable(name: string, notWebReady: boolean): boolean {
   return /\.(mp4|m4v|webm)$/i.test(clean);
 }
 
+/** Extensions de conteneur lues par `<video>` sans conversion (les codecs se vérifient à la lecture). */
+const WEB_LOCAL_CONTAINERS = ['mp4', 'm4v', 'mov', 'webm'];
+
+/**
+ * Un fichier téléchargé peut-il être lu par le navigateur (lecture hors ligne, sans sonde ni serveur) ? Seul le conteneur se juge d'avance :
+ * MKV seulement pour les navigateurs Chromium ; les autres (AVI, TS…) jamais. Les codecs (HEVC…) se révèlent au chargement du fichier.
+ */
+export function localWebVerdict(container: string, caps: MediaCaps): { ok: true } | { ok: false; reason: string } {
+  const c = container.toLowerCase();
+  if (!c || WEB_LOCAL_CONTAINERS.includes(c)) return { ok: true };
+  if (c === 'mkv' && caps.formats.includes('matroska,webm')) return { ok: true };
+  return { ok: false, reason: 'Ce navigateur ne lit pas les fichiers ' + c.toUpperCase() + '.' };
+}
+
 export function chooseEngine(i: EngineInput): EngineChoice {
   if (i.native) {
     return { engine: 'native', viaServer: false, label: 'libVLC (lecteur natif Android)', reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
   }
   if (i.shell) {
     return { engine: 'mpv', viaServer: false, label: 'mpv (application Windows)', reason: 'Coque Windows détectée : mpv lit tous les formats.' };
+  }
+  if (i.local) {
+    const v = localWebVerdict(i.local.container || (/\.([a-z0-9]{2,5})$/i.exec(i.local.name)?.[1] ?? ''), i.caps);
+    const label = 'lecture hors ligne';
+    return v.ok
+      ? { engine: 'direct', viaServer: false, label, reason: 'Fichier téléchargé, lu depuis cet appareil.' }
+      : { engine: 'direct', viaServer: false, label, reason: v.reason, unsupported: v.reason };
   }
   const playable = i.forceTranscoding ? false : i.probe ? canPlayProbe(i.probe, i.caps, { preferredLang: i.preferredLang, audioTracksSupported: i.audioTracksSupported }) : guessWebPlayable(i.name, i.notWebReady);
   if (playable || !i.serverUp) {

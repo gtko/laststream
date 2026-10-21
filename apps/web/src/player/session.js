@@ -22,7 +22,9 @@ import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
 import { clientCopiesOf, isClientStream, originSummary } from '../sources/info';
+import { offlineSourceFor } from '../downloads/offline';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
+import { APP_DOWNLOAD_URL, currentOs } from './appDownload';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
@@ -35,6 +37,7 @@ import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
 import { MiniState, minimizeExits } from './mini';
+import { isOfflineView, offlineFailureView, offlineView } from './offlinePlay';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
@@ -555,7 +558,7 @@ async function initSession(request, views, view, opts = {}) {
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
     notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false, pickMine: false,
-    aspect: 'contain',
+    aspect: 'contain', local: null, localFailed: false,
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
   const meta = appState.byKey.get(request.key) || {};
@@ -882,6 +885,7 @@ async function playView(view, startAt) {
   clearTimeout(p.learnShowTimer);
   clearTimeout(p.learnNativeTimer);
   p.failing = false;
+  p.localFailed = false;
   p.autoNexting = false;
   p.analyzed = false;
   p.hint = null;
@@ -900,6 +904,7 @@ async function playView(view, startAt) {
   p.phase = nextPhase(p.phase, 'open');
   ui.setPhase(p.phase);
   const line = (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : '');
+  if (isOfflineView(view)) { await playLocal(p, view, startAt, stale); return; }
   ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', loaderExtra(2, { source: line(view) }));
   // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
   // par candidat, 25 s ou 3 échecs au total).
@@ -940,6 +945,62 @@ async function playView(view, startAt) {
   }
 }
 
+/**
+ * Fichier téléchargé (ODY-203) : ni course de sources, ni sonde, ni serveur de streaming. Le moteur de la plateforme ouvre l'adresse locale
+ * (URL d'objet pour le navigateur, `file://` pour libVLC, chemin pour mpv).
+ */
+async function playLocal(p, view, startAt, stale) {
+  try {
+    const sh = await connectShell();
+    const native = !sh && isNativePlayer();
+    const choice = chooseEngine({
+      shell: !!sh, native, serverUp: false, probe: null, caps: getCaps(), notWebReady: false, name: view.filename || p.local.url,
+      local: { name: view.filename, container: view.container },
+    });
+    if (stale()) return;
+    if (choice.unsupported) { localFailure('container', choice.unsupported); return; }
+    await startPlan(p, { shell: sh, media: { url: p.local.url, up: false, base: '' }, probe: null, choice, conversion: 'none', hlsUrl: null, hlsId: '', direct: false }, startAt, stale, null);
+  } catch (err) {
+    if (!stale()) localFailure('error', err && err.message);
+  }
+}
+
+function releaseLocal(p) {
+  if (!p || !p.local) return;
+  try { p.local.release(); } catch (_) { /* ignoré */ }
+  p.local = null;
+}
+
+/** Le fichier téléchargé ne se lit pas : message clair (et proposition d'ouvrir dans l'app, ou de lire en streaming s'il y a du réseau). */
+function localFailure(kind, reason) {
+  const p = P;
+  if (!p || p.localFailed) return;
+  p.localFailed = true;
+  p.failing = true;
+  try { p.engine.pause(); } catch (_) { /* ignoré */ }
+  if (p.engine.kind === 'native') p.engine.closeNow();
+  expandPlayer();
+  ui.setLoading(null);
+  const platform = shell ? 'shell' : isNativePlayer() ? 'android' : 'web';
+  const v = offlineFailureView({ kind, reason, platform, os: currentOs(), online: navigator.onLine !== false });
+  ui.setError(v.title, v.text, v.actions);
+}
+
+/** Abandonne le fichier téléchargé pour chercher une source en streaming (bouton « Lire en streaming » ou « Sources »). */
+function streamInstead(opts = { force: true }) {
+  const p = P;
+  if (!p) return;
+  if (navigator.onLine === false) { ui.toast('Aucune connexion : seul le fichier téléchargé est disponible', 4000); return; }
+  const at = p.engine ? p.engine.state().time : 0;
+  if (p.engine && p.engine.kind === 'native') p.engine.closeNow(); else if (p.engine) { try { p.engine.destroy(); } catch (_) { /* ignoré */ } }
+  releaseLocal(p);
+  Object.assign(p, { localFailed: false, failing: false, attempts: 0, tried: new Set(), view: null, views: [], ranked: [], pending: [], seekStart: at > 5 ? at : null, resumeMode: p.resumeMode || 'ask' });
+  ui.setError(null);
+  ui.root.classList.add('is-searching');
+  ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  searchAndPlay(p, p.req, opts).catch(() => undefined);
+}
+
 /** Charge la source préparée dans le moteur choisi. */
 async function startPlan(p, plan, startAt, stale, cand) {
   const { shell, media, probe, choice } = plan;
@@ -950,7 +1011,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.probe = probe;
   p.probeTracks = parseProbe(probe);
   p.choice = choice;
-  refreshAddonThumbs();
+  if (!isOfflineView(p.view)) refreshAddonThumbs();
   p.conversion = plan.conversion;
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
@@ -1037,6 +1098,7 @@ function failover(reason) {
   const p = P;
   if (!p || p.failing) return;
   p.failing = true;
+  if (isOfflineView(p.view)) { localFailure(/media-error:[34]\b/.test(reason) ? 'video' : /bloquée|trop de temps/.test(reason) ? 'stalled' : 'error', reason); return; }
   const time = p.engine ? p.engine.state().time : 0;
   const options = failoverOrder(fallbackPool(p), p.view, p.tried);
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
@@ -1057,6 +1119,8 @@ function failover(reason) {
 
 function onReady() {
   if (!P) return;
+  // Fichier téléchargé que le navigateur ouvre sans décoder l'image (HEVC, AV1 sans matériel) : message explicite au lieu d'un écran noir.
+  if (isOfflineView(P.view) && P.engine.kind === 'html' && ui.video.videoWidth === 0) { localFailure('video'); return; }
   if (P.engine.kind === 'native') { ensureExternalSubs(true); scheduleNativeApply(); return; } // pistes appliquées une fois la liste connue
   if (!P.defaultsDone) setTimeout(() => P && applyDefaultTracks(true), 700);
 }
@@ -1131,7 +1195,7 @@ function toastBusy(p, msg, ms, action) {
 /** Passage en transcodage (HLS, toutes les pistes audio), depuis le panneau Audio ou le message du mode apprentissage. */
 function forceTranscoding() {
   const p = P;
-  if (!p) return;
+  if (!p || isOfflineView(p.view)) return; // fichier téléchargé : pas de transcodage
   p.forceHls = true;
   ui.closePanel(true);
   ui.toast('Passage en transcodage…');
@@ -1227,7 +1291,9 @@ async function ensureExternalSubs(auto, force) {
   const view = p.view;
   try {
     let params = null;
-    if (p.mediaUrl && (await serverAlive())) params = await fetchOpenSubParams(p.mediaUrl);
+    // Fichier téléchargé : sous-titres de l'addon seulement s'il y a du réseau (jamais le serveur de streaming).
+    if (isOfflineView(view) && navigator.onLine === false) return;
+    if (p.mediaUrl && !isOfflineView(view) && (await serverAlive())) params = await fetchOpenSubParams(p.mediaUrl);
     const id = p.imdb ? (p.req.type === 'tv' ? episodeStreamId(p.imdb, p.req.season, p.req.episode, p.req.streamId) : p.imdb) : '';
     if (!id) return;
     const type = p.req.type === 'tv' ? 'series' : 'movie';
@@ -1286,7 +1352,7 @@ async function selectSubtitle(id, quiet) {
     // Les sous-titres extraits par le serveur gardent l'heure du fichier d'origine, dont le premier paquet n'est pas toujours à 0.
     if (track.origin === 'embedded') s.shift = -p.probeTracks.startTime;
     try {
-      const up = await serverAlive();
+      const up = !isOfflineView(p.view) && (await serverAlive());
       const base = serverBase();
       const via = up && track.origin === 'external' ? subtitlesVttUrl(base, track.url) : track.url;
       let text = '';
@@ -1350,7 +1416,7 @@ async function selectSecondary(id) {
   }
   if (track.origin === 'embedded') s.shift2 = -p.probeTracks.startTime;
   try {
-    const up = await serverAlive();
+    const up = !isOfflineView(p.view) && (await serverAlive());
     const via = up && track.origin === 'external' ? subtitlesVttUrl(serverBase(), track.url) : track.url;
     let text = '';
     try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
@@ -1518,7 +1584,7 @@ function tick() {
 /** Une fois par épisode, lastAddon reçoit le lien lu pour analyser l'épisode (intro, générique). Les erreurs sont ignorées. */
 function maybeAnalyze(st) {
   const p = P;
-  if (p.analyzed || !p.imdb || !isConfigured() || st.time < 3 || !validAnalyzeDuration(st.duration)) return;
+  if (p.analyzed || isOfflineView(p.view) || !p.imdb || !isConfigured() || st.time < 3 || !validAnalyzeDuration(st.duration)) return;
   const played = typeof p.view.stream.url === 'string' && /^https?:/i.test(p.view.stream.url) ? p.view.stream.url : p.mediaUrl;
   const url = analyzeUrl(played, serverBase()) || analyzeUrl(p.mediaUrl, serverBase());
   p.analyzed = true;
@@ -1711,7 +1777,9 @@ function onAction(act, data) {
   if (act === 'cinema') { toggleCinemaMenu(); return; }
   if (act === 'share') { shareHere(); return; }
   if (act === 'catch-up') { catchUp(); return; }
-  if (act === 'source') { showSourcesPanel(); return; }
+  if (act === 'app-download') { window.open(APP_DOWNLOAD_URL, '_blank', 'noopener'); return; }
+  if (act === 'stream') { streamInstead({ force: true }); return; }
+  if (act === 'source') { if (isOfflineView(P.view)) streamInstead({ picker: true }); else showSourcesPanel(); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
     P.pickMine = true; // arrête l'attente de lancement (playBest)
@@ -1905,7 +1973,7 @@ function panelData(name) {
     if (p.choice) rows.push(['Pourquoi ce moteur', p.choice.reason]);
     // Le serveur de streaming ne sert plus qu'à la conversion HLS (web) : sinon, lecture directe du lien débridé.
     if (p.debridVia) rows.push(['Débridé par', p.debridVia]);
-    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : 'Non utilisé · lecture directe du lien débridé']);
+    rows.push(['Serveur de streaming', p.choice && p.choice.viaServer ? serverBase() : isOfflineView(p.view) ? 'Non utilisé · fichier téléchargé' : 'Non utilisé · lecture directe du lien débridé']);
     const m = p.model;
     return {
       title, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview, rating: m && m.vote ? Number(m.vote).toFixed(1) + ' / 10' : '',
@@ -2283,6 +2351,7 @@ async function teardown(silent) {
   if (rangeFeed) rangeFeed.reset();
   stopWebAudio(p);
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
+  releaseLocal(p);
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
   emitDataEvent({ kind: 'player' }); // l'accueil rattrape les changements faits pendant la lecture
@@ -2322,11 +2391,44 @@ export const isPlayerOpen = () => !!P;
 export async function playBest(request, opener, opts = {}) {
   if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : aucune recherche de source ni lecture
   const p = await initSession(request, [], null, { opener });
-  const token = p.token;
-  const alive = () => P && P.token === token;
   p.resumeMode = opts.resume || 'ask';
   p.seekStart = opts.startAt ?? null;
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
+  if (!opts.prefer && !opts.picker && (await playDownloaded(p, request))) return;
+  await searchAndPlay(p, request, opts);
+}
+
+/** Lit la copie téléchargée du titre si elle existe et se lit sur cette plateforme ; faux sinon (la recherche de sources prend le relais). */
+async function playDownloaded(p, request) {
+  const token = p.token;
+  let src = null;
+  try {
+    const sh = await connectShell();
+    const platform = sh ? 'shell' : isNativePlayer() ? 'android' : 'web';
+    src = await offlineSourceFor(platform, { key: request.key, season: request.season, episode: request.episode });
+  } catch (_) { src = null; }
+  if (!src) return false;
+  if (!P || P.token !== token) { src.release(); return true; }
+  p.local = src;
+  // Progression distante rattrapée seulement avec du réseau (la locale suffit à reprendre hors ligne).
+  if (userStore.loadProgress && navigator.onLine !== false) {
+    await Promise.race([Promise.resolve(userStore.loadProgress(request.key)).catch(() => undefined), new Promise((r) => setTimeout(r, 1500))]);
+    if (!P || P.token !== token) return true;
+  }
+  const view = offlineView(src);
+  p.views = [view];
+  p.ranked = [view];
+  p.pending = [];
+  ui.setLoading(p.meta.title || 'Lecture', 'Lecture du fichier téléchargé…', loaderExtra(2, { source: 'Téléchargé · hors ligne', steps: ['Fichier téléchargé trouvé', 'Lecture depuis l’appareil', 'Préparation du fichier'] }));
+  await continueWith(view, { resume: p.resumeMode });
+  return true;
+}
+
+/** Recherche des sources, choix de la meilleure et lancement (écran de chargement du lecteur). */
+async function searchAndPlay(p, request, opts) {
+  const token = p.token;
+  const alive = () => P && P.token === token;
   let loaded = null;
   try {
     if (userStore.loadProgress) await userStore.loadProgress(request.key);
