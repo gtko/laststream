@@ -378,12 +378,13 @@ export class DebridManager {
    * Lien de lecture pour une source (une ou plusieurs copies : hash + fichier). Ordre : fournisseurs qui l'ont en cache (priorité),
    * puis les autres disponibles. Erreur de compte : fournisseur marqué indisponible, essai du suivant ; `onSwitch` signale la bascule.
    * `skipShared` : débloque sur l'appareil sans lire le lien partagé ni le mémo (cas d'un lien partagé en échec).
+   * `skipPublish` : ne republie pas le lien vers le serveur (téléchargements hors ligne : aucune requête serveur, ODY-198).
    */
   async resolve(
     copies: readonly ClientCopy[],
     episode: { season?: number; episode?: number } = {},
     signal?: AbortSignal,
-    options: { skipShared?: boolean } = {},
+    options: { skipShared?: boolean; skipPublish?: boolean } = {},
   ): Promise<ClientResolved> {
     const list = copies.filter((c) => normalizeHash(c.infoHash) !== null).slice(0, MAX_COPIES_TRIED + 2);
     if (list.length === 0) throw new DebridError('invalid_hash', 'content');
@@ -412,7 +413,7 @@ export class DebridManager {
           const link = await this.provider(id).resolve(copy.infoHash, hint, signal);
           // Partage avec les autres appareils du compte : publication sans attente, un échec n'a aucune conséquence.
           const sharedKey = sourceKeyFor(copy);
-          if (sharedKey) void publishSharedLink(sharedKey, link.url);
+          if (sharedKey && !options.skipPublish) void publishSharedLink(sharedKey, link.url);
           // Un fournisseur qui a servi un lien : sa disponibilité est confirmée, et le hash est « en cache » chez lui.
           if (this.health[id]) { delete this.health[id]; this.saveHealth(); }
           const value: ClientResolved = { ...link, provider: id, ...(skipped ? { switchedFrom: skipped } : {}) };
