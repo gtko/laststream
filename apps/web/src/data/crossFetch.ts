@@ -43,3 +43,32 @@ export async function appFetch(url: string, init: RequestInit = {}): Promise<Res
   if (!out.has('content-type')) out.set('content-type', 'application/json');
   return new Response(text, { status: r.status, headers: out });
 }
+
+/**
+ * Variante binaire : la réponse est renvoyée en octets bruts (licence DRM).
+ * Le pont natif rend le corps en base64 : sans cette variante, les octets seraient décodés en texte puis ré-encodés,
+ * ce qui corrompt la licence.
+ */
+export async function appFetchBinary(url: string, init: RequestInit = {}): Promise<ArrayBuffer> {
+  if (!needsNativeHttp(url)) {
+    const res = await fetch(url, init);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.arrayBuffer();
+  }
+  if (init.signal?.aborted) throw abortError();
+  const headers: Record<string, string> = {};
+  new Headers(init.headers).forEach((v, k) => { headers[k] = v; });
+  let data: unknown;
+  if (typeof init.body === 'string') {
+    try { data = JSON.parse(init.body); } catch { data = init.body; }
+  }
+  const r = await CapacitorHttp.request({
+    url, method: (init.method ?? 'GET').toUpperCase(), headers, data,
+    connectTimeout: NATIVE_TIMEOUT_MS, readTimeout: NATIVE_TIMEOUT_MS, responseType: 'arraybuffer',
+  });
+  if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}`);
+  const binary = atob(typeof r.data === 'string' ? r.data : '');
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out.buffer;
+}

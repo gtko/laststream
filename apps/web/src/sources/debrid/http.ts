@@ -14,7 +14,7 @@ import { parseDebridUrl } from './hosts';
 
 export interface HttpRequest {
   url: string;
-  method?: 'GET' | 'POST' | 'DELETE' | 'HEAD';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD';
   headers?: Record<string, string>;
   /** Corps texte : formulaire urlencodé ou JSON (selon Content-Type). */
   body?: string;

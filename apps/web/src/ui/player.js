@@ -3,6 +3,8 @@ import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
 import { tvHlsUrl } from '../data/lt';
 import { toast } from './dom.js';
 import { getBoxReach } from '../data/tvBox';
+import { MOLOTOV_WEB_URL } from '../data/molotovApi';
+import { destroyMolotov, startMolotovPlayback } from '../player/molotov';
 import { LI } from '../player/icons.js';
 import { stopPreview } from './preview.js';
 import { exitExternalFullscreen, externalControls, externalKind, externalSample, startExternal, stopExternal } from './tvExternal.js';
@@ -116,6 +118,7 @@ export function destroyStream() {
   clearTimeout(tv.stallTimer);
   clearInterval(tv.watchTimer);
   stopExternal();
+  destroyMolotov();
   if (tv.hls) { try { tv.hls.destroy(); } catch (_) { /* déjà détruit */ } tv.hls = null; }
   videoEl.removeAttribute('src');
   try { videoEl.load(); } catch (_) { /* ignoré */ }
@@ -234,7 +237,7 @@ export function startStream() {
   if (!c) return;
   const token = ++tv.playToken;
   tv.attempt = 0;
-  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [], box: c.box, boxOnly: !!c.boxOnly, num: c.num });
+  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [], box: c.box, boxOnly: !!c.boxOnly, num: c.num, molotovId: c.molotovId });
   updateBanner();
   wakeUi();
   if (tv.info) renderInfo();
@@ -275,6 +278,8 @@ function tryStream(c, token) {
   destroyStream();
   perrEl.hidden = true;
   setStatus({ type: 'connect' });
+  // Chaîne Molotov : ce n'est pas un flux HLS mais un manifeste DASH protégé (Widevine) : lecteur dédié.
+  if (c.molotovId) { startMolotov(c, token); return; }
   // Index de la source tentée : sourcesOf() renvoie de nouveaux objets à chaque appel, on ne peut pas comparer par identité.
   const idx = tv.attempt;
   const cur = sourcesOf(c)[idx];
@@ -351,6 +356,41 @@ function tryStream(c, token) {
     if (token !== tv.playToken || tv.attempt !== idx) { if (playerEl.hidden) stopExternal(); return; }
     if (ok) clearTimeout(tv.stallTimer); else viaPage();
   }).catch(() => viaPage());
+}
+
+/**
+ * Échec de lecture Molotov : message clair (plateforme sans CDM, DRM absent, réseau) et renvoi vers l'application
+ * Molotov dans le navigateur : la coque Windows ne sait pas lire un flux DASH protégé (ni WebView2 ni libmpv n'ont
+ * de CDM Widevine).
+ */
+function molotovFail(token, c, reason) {
+  if (token !== tv.playToken) return;
+  playFail(token, reason, c);
+  const actions = perrEl.querySelector('div');
+  if (!actions || actions.querySelector('[data-molotov-web]')) return;
+  const link = document.createElement('a');
+  link.className = 'btn btn-ghost btn-sm';
+  link.href = MOLOTOV_WEB_URL;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = 'Ouvrir Molotov dans le navigateur';
+  link.setAttribute('data-molotov-web', '1');
+  actions.insertBefore(link, actions.firstChild);
+}
+
+/** Lecture d'une chaîne Molotov : manifeste DASH + licence Widevine (Shaka Player), heartbeat de progression. */
+function startMolotov(c, token) {
+  tv.stallTimer = setTimeout(() => molotovFail(token, c, 'network'), 30000);
+  startMolotovPlayback({
+    channelId: c.molotovId,
+    mediaElement: videoEl,
+    onError: (reason) => {
+      if (reason === 'unsupported') molotovFail(token, c, 'molotov');
+      else if (reason === 'no_widevine') molotovFail(token, c, 'molotov_drm');
+      else molotovFail(token, c, reason === 'network' ? 'network' : 'read');
+    },
+    onReady: () => { clearTimeout(tv.stallTimer); },
+  }).catch(() => molotovFail(token, c, 'read'));
 }
 
 // ---------- Panneau « Infos » ----------

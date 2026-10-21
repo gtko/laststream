@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion Google — Laststream</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; color: #e8e8ea; background: #14151a; }
+    main { max-width: 32rem; padding: 2rem; text-align: center; }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 .5rem; }
+    p { margin: 0; opacity: .75; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Connexion à Google…</h1>
+    <p id="msg">Cette fenêtre peut être fermée.</p>
+  </main>
+  <script>
+    /* Page de retour OAuth (implicit flow) : le jeton revient dans le fragment (#id_token=…).
+     * Il est renvoyé à l'application par postMessage ; si aucun opener n'est joignable (onglet séparé, WebView native),
+     * il est déposé dans le stockage local de l'origine, que l'application vient chercher. */
+    (function () {
+      var title = document.getElementById('title');
+      var msg = document.getElementById('msg');
+      var params = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      var idToken = params.get('id_token') || '';
+      var error = params.get('error') || '';
+      var state = params.get('state') || '';
+      var origin = location.origin;
+
+      /* Le fragment porte le jeton : il est effacé de l'URL et de l'historique dès la lecture. */
+      try {
+        if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+      } catch (_) { /* historique indisponible */ }
+
+      if (idToken || error) {
+        /* Stockage de session uniquement : le jeton ne doit pas survivre à la fenêtre de connexion. */
+        try {
+          sessionStorage.setItem('ls_molotov_google_pending', JSON.stringify({ idToken: idToken, error: error, state: state, at: Date.now() }));
+        } catch (_) { /* stockage indisponible */ }
+      }
+
+      var sent = false;
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({ type: 'laststream:molotov-google', idToken: idToken, error: error, state: state }, origin);
+          sent = true;
+        }
+      } catch (_) { /* opener inaccessible */ }
+
+      if (idToken) {
+        title.textContent = 'Connexion réussie';
+        msg.textContent = sent ? 'Reviens à Laststream : la connexion se termine.' : 'Reviens à Laststream pour terminer la connexion.';
+      } else if (error) {
+        title.textContent = 'Connexion refusée';
+        msg.textContent = 'Google a refusé la connexion (' + error + ').';
+      } else {
+        title.textContent = 'Connexion impossible';
+        msg.textContent = 'Aucun jeton reçu de Google.';
+      }
+    })();
+  </script>
+</body>
+</html>
