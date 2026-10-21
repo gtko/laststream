@@ -139,8 +139,12 @@
 .lp-ep-more:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .lp-ep-row.is-open .lp-ep-more svg { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .lp-ep-row, .lp-ep-syn, .lp-ep-seen, .lp-ep-more svg { transition: none; } }
-.lp-eps-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 12px 18px 18px; border-top: 1px solid var(--line); }
-.lp-step { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lp-eps-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 12px 18px 18px; border-top: 1px solid var(--line); background: rgb(17, 15, 24); }
+.lp-step { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.lp-eps-foot .lp-chip { min-height: 36px; padding: 0 12px; font-size: 13px; }
+.lp-eps-foot .lp-chip-icon { width: 36px; padding: 0; display: grid; place-items: center; flex: none; }
+.lp-eps-foot .lp-chip-icon svg { width: 16px; height: 16px; }
+@media (max-width: 360px) { .lp-eps-foot { padding-inline: 12px; } .lp-eps-foot .lp-chip { padding: 0 9px; font-size: 12px; } }
 
 /* Infos */
 .lp-info-t { margin: 0 0 4px; font-family: var(--ff-title); font-size: 24px; font-weight: 800; text-transform: none; letter-spacing: -0.01em; color: var(--text); }

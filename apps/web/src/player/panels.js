@@ -131,8 +131,10 @@ export function episodesHtml(d) {
       '<div class="lp-eps-tools"><input class="lp-search" type="text" inputmode="search" placeholder="Chercher un épisode" aria-label="Chercher un épisode" value="' + esc(d.query || '') + '" data-input="epsearch">' +
         chip('ep-next-unseen', {}, 'Prochain non vu') + '</div></div>' +
     '<div class="lp-list lp-eps" role="menu">' + rows + '</div>' +
-    '<div class="lp-eps-foot">' + chip('ep-season-seen', { season: d.season }, 'Marquer la saison comme vue') +
-      '<span class="lp-step">' + (i > 0 ? chip('season', { season: seasons[i - 1] }, '← Saison ' + seasons[i - 1]) : '') + (i >= 0 && i < seasons.length - 1 ? chip('season', { season: seasons[i + 1] }, 'Saison ' + seasons[i + 1] + ' →') : '') + '</span></div>';
+    '<div class="lp-eps-foot">' +
+      '<span class="lp-step">' + (i > 0 ? chip('season', { season: seasons[i - 1] }, '← Saison ' + seasons[i - 1]) : '') + (i >= 0 && i < seasons.length - 1 ? chip('season', { season: seasons[i + 1] }, 'Saison ' + seasons[i + 1] + ' →') : '') + '</span>' +
+      // Bouton compact (icône seule) : le libellé complet reste en infobulle et pour les lecteurs d'écran.
+      '<button type="button" class="lp-chip lp-chip-icon" data-act="ep-season-seen" data-season="' + d.season + '" title="Marquer la saison comme vue" aria-label="Marquer la saison comme vue">' + LI.check + '</button></div>';
 }
 
 // ---------- Réglages et qualité ----------
