@@ -14,7 +14,8 @@ import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
-import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, recommendFor, sourceLangFor } from '../sources/load';
+import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, recommendFor, sourceLangFor, webCompatContext } from '../sources/load';
+import { failoverCandidates, webCompatOf } from '../sources/webCompat';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
@@ -2350,9 +2351,11 @@ export async function playBest(request, opener, opts = {}) {
   const bw = await measureBandwidthKbps().catch(() => null);
   if (!alive()) return;
   // Salon : la version de l'hôte (empreinte) passe avant la « meilleure » source ; chacun lit avec SA source.
+  const compatCtx = webCompatContext();
   const recommend = (views) => {
     const usable = withoutBad(p, views);
-    const same = opts.prefer ? opts.prefer(usable) : null;
+    // Navigateur : la version de l'hôte n'est suivie que si elle passe ici (sinon la meilleure source compatible).
+    const same = opts.prefer ? opts.prefer(usable.filter((v) => webCompatOf(v, compatCtx).level === 'ok')) : null;
     return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined);
   };
   const good = (r) => !!r && (r.party === true || isGoodMatch(r));
@@ -2360,7 +2363,7 @@ export async function playBest(request, opener, opts = {}) {
   const { rec } = await awaitLaunchable(loaded, {
     request,
     since: t0,
-    readable: (views) => views.some((v) => v.playable && !v.client),
+    readable: (views) => views.some((v) => v.playable && !v.client && webCompatOf(v, compatCtx).level === 'ok'),
     recommend,
     good,
     stop: () => !alive() || p.pickMine,
@@ -2407,7 +2410,9 @@ function switchToView(view, allow) {
 
 /** Sources pouvant servir au repli : celles qu'autorise la bascule en cours, sinon toutes les sources classées. */
 function fallbackPool(p) {
-  return p.fallbackFilter ? p.ranked.filter((v) => p.fallbackFilter(v)) : p.ranked;
+  const pool = p.fallbackFilter ? p.ranked.filter((v) => p.fallbackFilter(v)) : p.ranked;
+  // Reprise automatique : comme au premier choix, jamais une source dont la vidéo ou le son ne passe pas dans le navigateur.
+  return failoverCandidates(pool, p.view, webCompatContext());
 }
 
 // Salon (watch party) : le pont lance les épisodes demandés par l'hôte avec la source la plus proche de son empreinte.

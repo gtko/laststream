@@ -5,7 +5,9 @@ import { modalBody } from '../ui/dom.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
 import { countByGroup, countOrigins, filtersActive, groupViews, NO_FILTERS, SORT_KEYS, SORT_LABELS, applyFilters, sortViews } from './rank';
-import { knownBandwidthKbps, loadSources, recommendFor, watchSources } from './load';
+import { knownBandwidthKbps, loadSources, recommendFor, watchSources, webCompatContext } from './load';
+import { webCompatOf } from './webCompat';
+import { appOffer, currentOs } from '../player/appDownload';
 import { bitDepthOf, codecBadges, fitBadge } from './badges';
 import { describePending } from './rank';
 import { isShellEnvironment } from '../player/shell';
@@ -67,20 +69,42 @@ function itemHtml(v, opts) {
     : v.releaseGroup ? '<span class="s-grp">' + esc(v.releaseGroup) + '</span>' : '';
 
   const warn = v.notWebReady && !nativePlayer() ? '<span class="s-warn">Transcodage probable</span>' : '';
-  const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '');
-  return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable ? '' : ' disabled') + '>' +
+  // Navigateur seul : une source dont la vidéo ou le son ne passe pas reste visible, grisée et non sélectionnable, avec son motif.
+  const compat = webCompatOf(v, compatCtx || webCompatContext());
+  const blocked = compat.level === 'blocked';
+  const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '') + (blocked ? ' is-incompatible' : '');
+  return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable && !blocked ? '' : ' disabled') + '>' +
     (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
     (opts.current ? '<span class="s-cur">En cours de lecture</span>' : '') +
     '<span class="s-l1">' + l1.join('') + web + st + fit + warn + '</span>' +
     (l2 ? '<span class="s-l2">' + l2 + '</span>' : '') +
     (l3.length ? '<span class="s-l3">' + l3.join('<i aria-hidden="true">·</i>') + '</span>' : '') +
     (l4 ? '<span class="s-l4">' + l4 + '</span>' : '') +
+    (compat.level === 'ok' ? '' : '<span class="s-l4 s-compat is-' + compat.level + '">' + esc(compat.reason) + '</span>') +
     (v.playable ? '' : '<span class="s-l4">Aucun lien lisible.</span>') + '</button></li>';
+}
+
+/** Contexte de compatibilité web, calculé une fois par rendu. */
+let compatCtx = null;
+
+/** Navigateur seul, recherche terminée, sources lisibles mais aucune ne passe : explique et propose l'app de l'OS détecté. */
+function noCompatibleHtml(views, s) {
+  if (s.rec || s.pending.length || s.bwPending) return '';
+  const ctx = compatCtx || webCompatContext();
+  if (!ctx.web) return '';
+  const levels = views.filter((v) => v.playable).map((v) => webCompatOf(v, ctx).level);
+  if (!levels.length || levels.includes('ok')) return '';
+  const offer = appOffer(currentOs());
+  const manual = levels.includes('check') ? ' Tu peux tenter à la main une source au son Dolby.' : '';
+  return '<div class="s-nocompat" role="status"><b>Aucune source ne se lit correctement dans ce navigateur.</b>' + esc(manual) +
+    '<span>' + esc(offer.text) + '</span>' +
+    (offer.link ? '<a class="s-nocompat-link" href="' + esc(offer.link.href) + '" target="_blank" rel="noopener noreferrer">' + esc(offer.link.label) + '</a>' : '') + '</div>';
 }
 
 function render() {
   const s = session;
   if (!s) return;
+  compatCtx = webCompatContext();
   const { views, filters, sort } = s;
   const counts = countByGroup(views);
   const origins = countOrigins(views);
@@ -108,6 +132,7 @@ function render() {
   // Recherche partielle : indication discrète (la liste se complète seule), puis « +N sources » un instant.
   if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
   else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
+  body += noCompatibleHtml(views, s);
   if (rec) body +='<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
   else if (s.bwPending) body += '<p class="s-note">Mesure de ta connexion pour choisir la meilleure source…</p>';
   const groups = groupViews(rest);

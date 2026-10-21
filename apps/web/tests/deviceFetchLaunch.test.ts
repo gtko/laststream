@@ -45,6 +45,8 @@ function settle(start: LoadedSources): Promise<LoadedSources> {
 }
 
 beforeEach(() => {
+  // jsdom n'annonce aucun codec : on se fait passer pour Chromium (H.264 lu), sans quoi la source x264 est jugée illisible (ODY-189).
+  vi.stubGlobal('chrome', {});
   localStorage.clear();
   localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: 'http://localhost:7000', config: 'CFG' }));
   reloadSettings();

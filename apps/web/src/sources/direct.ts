@@ -100,6 +100,14 @@ export function appAudioOf(stream: Stream, info: LastStreamInfo | null, caps: Me
   return null;
 }
 
+/** Extension du conteneur que le navigateur ne lit pas (« mkv » hors Chromium, « avi »…), ou chaîne vide s'il le lit ou si elle est inconnue. */
+export function unreadableContainer(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): string {
+  const hints = stream.behaviorHints ?? {};
+  const ext = containerOf(String(hints.filename ?? info?.filename ?? stream.url ?? ''));
+  const ok = ext === '' || ext === 'mp4' || ext === 'm4v' || ext === 'webm' || (ext === 'mkv' && caps.formats.some((f) => f.includes('matroska')));
+  return ok ? '' : ext;
+}
+
 /** Lecture directe si conteneur, vidéo et audio sont pris en charge ; conversion sinon ; inconnu sans métadonnées. */
 export function webPlayback(stream: Stream, info: LastStreamInfo | null, caps: MediaCaps): WebPlayback {
   const c = conversionOf(stream, info, caps);

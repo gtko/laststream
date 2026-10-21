@@ -217,6 +217,14 @@ body.lp-open .toast { z-index: 900; }
 .s-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: lp-rot 0.9s linear infinite; flex: none; }
 @media (prefers-reduced-motion: reduce) { .s-spin { animation-duration: 3s; } }
 .s-web-video { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+.src2.is-incompatible:disabled { opacity: 1; }
+.src2.is-incompatible > :not(.s-compat) { opacity: 0.55; filter: grayscale(1); }
+.s-compat { font-size: 12px; font-weight: 700; color: var(--soft); }
+.s-compat.is-blocked { color: #f87171; }
+.s-compat.is-check { color: #fbbf24; }
+.s-nocompat { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 0; padding: 10px 14px; border-radius: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); font-size: 13px; color: var(--soft); }
+.s-nocompat b { color: var(--text); }
+.s-nocompat-link { color: var(--accent); font-weight: 800; text-decoration: underline; }
 
 /* Origines des sources (addon Stremio) */
 .s-orig { display: inline-flex; flex-wrap: wrap; gap: 4px; }

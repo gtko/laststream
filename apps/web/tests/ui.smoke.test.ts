@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+// jsdom n'annonce aucun codec : on se fait passer pour Chromium (H.264 lu), sans quoi toute source AVC est jugée illisible (ODY-189).
+vi.stubGlobal('chrome', {});
+
 const ITEMS = Array.from({ length: 40 }, (_, i) => ({
   id: 100 + i, media_type: i % 2 ? 'tv' : 'movie', title: 'Film ' + i, name: 'Série ' + i,
   poster_path: '/p' + i + '.jpg', backdrop_path: '/b' + i + '.jpg', release_date: '2025-01-01', first_air_date: '2025-01-01',
