@@ -72,7 +72,8 @@
 .as-link:hover { color: #ffb19e; }
 .as-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
 .as-card { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line-2); color: var(--text); text-align: left; font: inherit; cursor: pointer; min-width: 0; }
-.as-card:hover, .as-card:focus-visible { border-color: var(--accent); }
+.as-card:hover { border-color: var(--dim); }
+.as-card:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .as-card-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .as-card-n { font-size: 12px; color: var(--dim); }
 .as-mosaic { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }

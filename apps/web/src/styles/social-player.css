@@ -81,7 +81,7 @@
 .lp-react-also input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .lp-react-cb { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 2px solid #6f6a7d; color: transparent; font-size: 11px; font-weight: 800; box-sizing: border-box; }
 .lp-react-also input:checked + .lp-react-cb { background: var(--accent); border-color: var(--accent); color: #0c0b11; }
-.lp-react-also input:focus-visible + .lp-react-cb { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
+.lp-react-also input:focus-visible + .lp-react-cb { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 
 /* Éventail d'emojis (tactile) : pilule de boutons ronds, « Note » ouvre le champ. */
 .lp-react.is-fan:not(.is-note) { right: 16px; bottom: calc(var(--lp-bar-h, 80px) + 4px); width: auto; flex-direction: row; gap: 2px; padding: 4px; border-radius: 26px; background: rgba(23, 21, 31, 0.94); }

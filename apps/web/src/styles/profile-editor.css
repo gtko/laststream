@@ -10,7 +10,9 @@
 .pfe { min-height: 100%; display: flex; flex-direction: column; }
 
 /* Anneau de focus : fin, au clavier seulement, qui suit l'arrondi de l'élément. */
-.pfe-page :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.pfe-page :focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+/* Champs de texte : anneau toujours visible, comme partout (styles.css) ; cases et boutons restent au clavier seulement. */
+.pfe-page input:not([type="checkbox"]):not([type="radio"]):focus-visible, .pfe-page textarea:focus-visible, .pfe-page select:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }
 .pfe-page :focus:not(:focus-visible) { outline: none; }
 
 /* ---------- En-tête ---------- */
