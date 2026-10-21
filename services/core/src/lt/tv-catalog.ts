@@ -624,6 +624,52 @@ export function buildCatalog(input: CatalogInput): TvCatalog {
 }
 
 /**
+ * Retire du catalogue les flux dont l'URL est dans `dead` (test de santé, tv-health.ts) : un flux principal mort cède
+ * la place au premier repli vivant ; une chaîne sans flux vivant disparaît. Compteurs et facettes sont recalculés.
+ * Modifie `catalog` en place ; rend le nombre de chaînes retirées.
+ */
+export function pruneStreams(catalog: TvCatalog, dead: ReadonlySet<string>): number {
+  if (dead.size === 0) return 0;
+  const channels: TvChannel[] = [];
+  const search: string[] = [];
+  const counts: Record<StreamSource, number> = { freetv: 0, iptvorg: 0, pluto: 0, samsung: 0 };
+  const reliability: Record<Reliability, number> = { high: 0, low: 0 };
+  catalog.channels.forEach((channel, index) => {
+    const alternatives = channel.alternatives.filter((alt) => !dead.has(alt.url));
+    let kept = channel;
+    if (dead.has(channel.url)) {
+      const [next, ...rest] = alternatives;
+      if (next === undefined) return;
+      kept = {
+        ...channel,
+        url: next.url,
+        source: next.source,
+        fast: next.source === 'pluto' || next.source === 'samsung',
+        quality: next.quality,
+        reliability: next.reliability,
+        flaky: next.reliability === 'low',
+        alternatives: rest,
+      };
+      if (next.direct === undefined) delete kept.direct;
+      else kept.direct = next.direct;
+    } else {
+      kept.alternatives = alternatives;
+    }
+    channels.push(kept);
+    search.push(catalog.search[index] ?? '');
+    counts[kept.source as StreamSource] += 1;
+    reliability[kept.reliability] += 1;
+  });
+  const removed = catalog.channels.length - channels.length;
+  catalog.channels = channels;
+  catalog.search = search;
+  catalog.counts = counts;
+  catalog.reliability = reliability;
+  catalog.facets = facetsOf(channels);
+  return removed;
+}
+
+/**
  * Chaînes filtrées (pays ISO2, langue ISO 639-3, catégorie, source, recherche). Sans `page` ni `limit` : tout le
  * catalogue. Sinon : la page demandée (100 par défaut).
  */

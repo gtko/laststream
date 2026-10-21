@@ -9,6 +9,7 @@ import {
   tvgEpgId,
 } from './tv-catalog.js';
 import { fastEntry, M3uAccumulator, type Programme, XmltvIngest } from './tv-feed.js';
+import { applyHealth, type HealthMap, type HealthOptions } from './tv-health.js';
 
 /**
  * Construction du catalogue TV et de l'EPG sur Cloudflare Workers (Cron Trigger), en flux : aucune source n'est lue en
@@ -59,6 +60,8 @@ export interface EpgSnapshot {
 export interface ProbeSnapshot {
   v: 1;
   results: Record<string, [0 | 1, number]>;
+  /** Test de santé des flux (tv-health.ts) : url → [échecs consécutifs, date du dernier contrôle en s]. */
+  health?: HealthMap;
 }
 
 export interface TvBuildOptions {
@@ -74,6 +77,8 @@ export interface TvBuildOptions {
   now?: () => number;
   /** Réutilisation des sondages : durée de validité (s). */
   probeTtlSec?: number;
+  /** Réglages du test de santé des flux (seuil, budget…). Les contrôles ne tournent qu'avec `probe`. */
+  health?: Omit<HealthOptions, 'fetch' | 'now' | 'check'>;
 }
 
 const HEADERS = { 'user-agent': 'Mozilla/5.0 Laststream', accept: '*/*' };
@@ -335,6 +340,8 @@ export interface RefreshResult {
   channels: number;
   programmes: number;
   epgOk: boolean;
+  /** Chaînes retirées du catalogue par le test de santé des flux. */
+  removed?: number;
 }
 
 /**
@@ -345,6 +352,9 @@ export async function refreshTv(store: TvBlobStore, options: TvBuildOptions = {}
   const catalog = await buildCatalogStreaming(options);
   const previous = parse<ProbeSnapshot>(await store.get(TV_KEYS.probe));
   const probes = await applyDirect(catalog, previous, options);
+  const health = await applyHealth(catalog, previous?.health, { ...options.health, fetch: options.fetch, now: options.now, check: options.probe === true });
+  probes.health = health.health;
+  console.log(`[tv] santé des flux : ${health.checked} contrôlés, ${health.dead} flux écartés, ${health.removed} chaînes retirées${health.tripped ? ' (disjoncteur : pannes de ce passage ignorées)' : ''}`);
   const builtAt = (options.now ?? Date.now)();
   const snapshot: CatalogSnapshot = { v: 1, builtAt, catalog };
   await store.put(TV_KEYS.catalog, JSON.stringify(snapshot));
@@ -359,7 +369,7 @@ export async function refreshTv(store: TvBlobStore, options: TvBuildOptions = {}
   } catch {
     // ancien EPG conservé
   }
-  return { channels: catalog.channels.length, programmes, epgOk };
+  return { channels: catalog.channels.length, programmes, epgOk, removed: health.removed };
 }
 
 export { parse as parseSnapshot };

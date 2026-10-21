@@ -242,6 +242,9 @@ describe('construction du catalogue et de l’EPG en flux', () => {
     expect(by('RTBF')?.direct).toBeUndefined(); // 403 : inconnu
     expect(written.has(TV_KEYS.epg)).toBe(true);
     expect(written.has(TV_KEYS.probe)).toBe(true);
+    const probe = JSON.parse(written.get(TV_KEYS.probe) ?? '{}') as { health?: Record<string, [number, number]> };
+    expect(probe.health?.['https://m6.example/m6.m3u8']).toEqual([1, now / 1000]); // manifeste sans segment : un échec, pas encore retirée
+    expect(result.removed).toBe(0);
 
     // Deuxième passage : les sondages récents sont réutilisés (aucune nouvelle requête vers les flux).
     calls.length = 0;

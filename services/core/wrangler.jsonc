@@ -8,7 +8,8 @@
   "workers_dev": true,
   "preview_urls": false,
   // Plan payant : jusqu'à 30 s de CPU par requête (scrypt ≈ 72 ms à la connexion, analyse des sources).
-  "limits": { "cpu_ms": 30000 },
+  // Sous-requêtes : le Cron TV sonde les flux (CORS puis santé, tv-health.ts), soit plusieurs milliers de fetch par passage.
+  "limits": { "cpu_ms": 30000, "subrequests": 10000 },
   "observability": { "enabled": true },
 
   // Données utilisateur : un Durable Object SQLite global nommé « users » (voir src/platform/workers/user-store-do.ts).
