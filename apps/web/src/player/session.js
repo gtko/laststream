@@ -14,7 +14,7 @@ import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
-import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, preferredLang, recommendFor } from '../sources/load';
+import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, recommendFor, sourceLangFor } from '../sources/load';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
@@ -28,6 +28,7 @@ import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
 import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
 import { autoSubsToast } from './langPolicy';
+import { learnAnnouncement, manualSubPlan, secondaryFailureMsg } from './langAnnounce';
 import { TrackApplier } from './trackApply';
 import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
@@ -116,7 +117,16 @@ const miniState = new MiniState({
 /** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
 function audioPreference() {
   const mem = P ? getMemory(P.req.key) : {};
-  return [mem.audio, preferredLang()].filter(Boolean);
+  const origin = P ? originalLangOf(P) : '';
+  const want = sourceLangFor(getLangPrefs(), origin);
+  // Origine inconnue : comme avant, une langue apprise que les sources n'annoncent pas vise « original » (pas « multi »).
+  return [mem.audio, want === 'multi' && !origin ? 'original' : want].filter(Boolean);
+}
+
+/** Langue d'origine du titre (code à deux lettres), '' si inconnue. */
+function originalLangOf(p) {
+  const origName = p.model && p.model.origLang ? String(p.model.origLang) : '';
+  return origName ? langFromTitle(origName) || normalizeLang(origName) : '';
 }
 
 const seLabel = (r) => (r.season != null ? 'S' + r.season + ':É' + r.episode : '');
@@ -860,7 +870,13 @@ async function playView(view, startAt) {
   p.defaultsDone = false;
   p.applier.reset();
   p.autoToast = false;
+  p.learnToast = false;
+  p.extSettled = false;
+  p.toastBusyUntil = 0;
   clearTimeout(p.nativeApplyTimer);
+  clearTimeout(p.learnTimer);
+  clearTimeout(p.learnShowTimer);
+  clearTimeout(p.learnNativeTimer);
   p.failing = false;
   p.autoNexting = false;
   p.analyzed = false;
@@ -923,6 +939,7 @@ async function playView(view, startAt) {
 /** Charge la source préparée dans le moteur choisi. */
 async function startPlan(p, plan, startAt, stale, cand) {
   const { shell, media, probe, choice } = plan;
+  p.directNotified = !!(cand && cand.direct);
   p.mediaUrl = media.url;
   p.mediaBase = media.base;
   p.mediaUp = !!media.up;
@@ -966,8 +983,8 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.reloading = false;
   ui.setPipAvailable(p.engine.supportsPip());
   ui.setSeries(p.req.type === 'tv', !!nextRef());
-  if (cand && cand.direct) ui.toast('Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
-  if (p.notice) { ui.toast(p.notice, 6000); p.notice = ''; }
+  if (cand && cand.direct) toastBusy(p, 'Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
+  if (p.notice) { toastBusy(p, p.notice, 6000); p.notice = ''; }
   refreshUI();
   partyBridge.viewReady(partyAdapter(p));
   p.partySwitch = false;
@@ -1066,10 +1083,9 @@ function effectiveSubMode() {
 function trackContext() {
   const p = P;
   const mem = getMemory(p.req.key);
-  const origName = p.model && p.model.origLang ? String(p.model.origLang) : '';
   const lp = getLangPrefs();
   return {
-    originalLang: origName ? langFromTitle(origName) || normalizeLang(origName) : '',
+    originalLang: originalLangOf(p),
     unknownAudioLang: p.view && p.view.hasFrench && lp.audio === 'fr' ? 'fr' : '',
     alwaysSubs: effectiveSubMode() === 'always',
     rememberedAudio: mem.audio || '',
@@ -1098,7 +1114,54 @@ function announceAuto(pick) {
   const msg = autoSubsToast(pick);
   if (!msg) return;
   p.autoToast = true;
-  ui.toast(msg, 4500);
+  toastBusy(p, msg, 4500);
+}
+
+/** Message qui occupe l'unique emplacement de toast : l'annonce du mode apprentissage attend qu'il soit passé. */
+function toastBusy(p, msg, ms, action) {
+  p.toastBusyUntil = Date.now() + ms;
+  ui.toast(msg, ms, action);
+}
+
+/** Passage en transcodage (HLS, toutes les pistes audio), depuis le panneau Audio ou le message du mode apprentissage. */
+function forceTranscoding() {
+  const p = P;
+  if (!p) return;
+  p.forceHls = true;
+  ui.closePanel(true);
+  ui.toast('Passage en transcodage…');
+  p.tried = new Set();
+  const st = p.engine.state();
+  playView(p.view, st.time > 5 ? st.time : 0);
+}
+
+/** Action « Transcodage » d'un message sur la langue audio non modifiable ; aucune si on est déjà en transcodage. */
+const transcodeAction = () => (P && !P.forceHls ? { label: 'Transcodage', run: forceTranscoding } : undefined);
+
+/**
+ * Mode apprentissage : un seul message groupé par lecture (langue audio ou sous-titres absents, second sous-titre indisponible,
+ * audio non modifiable), même sans sous-titres activés. Attend la fin de la recherche des sous-titres externes (sinon « pas de
+ * sous-titres » serait faux) et le passage des toasts de démarrage.
+ */
+function announceLearn() {
+  const p = P;
+  if (!p || p.learnToast || !p.applier.pick) return;
+  const lp = getLangPrefs();
+  const audioUnknown = lp.learn && p.engine.kind === 'html' && !p.engine.audioTracks().length;
+  const view = p.view;
+  const a = learnAnnouncement(p.applier.pick, lp, { engineKind: p.engine.kind, audioUnknown, subsOff: !lp.subsOn, extSettled: !!p.extSettled, probeAudio: p.probeTracks.audio, directNotified: !!p.directNotified });
+  if (a.wait) return;
+  p.learnToast = true;
+  if (!a.msg) return;
+  const show = () => { if (P === p && p.view === view) ui.toast(a.msg, 6000, a.offerTranscode ? transcodeAction() : undefined); };
+  const wait = (p.toastBusyUntil || 0) - Date.now();
+  if (wait > 0) { clearTimeout(p.learnShowTimer); p.learnShowTimer = setTimeout(show, wait + 100); } else show();
+}
+
+/** Filet : si la recherche externe ne conclut jamais, on annonce quand même après 10 s. */
+function armLearnTimer(p) {
+  clearTimeout(p.learnTimer);
+  p.learnTimer = setTimeout(() => { if (P === p) { p.extSettled = true; announceLearn(); } }, 10000);
 }
 
 /** Piste audio et sous-titres initiaux d'après les langues du profil, une seule fois par source (quand le moteur a annoncé ses pistes). */
@@ -1115,7 +1178,9 @@ function applyDefaultTracks(force) {
   p.audioLang = audioLang;
   p.autoAppliedAt = Date.now();
   announceAuto(pick);
+  armLearnTimer(p);
   ensureExternalSubs(true);
+  announceLearn();
 }
 
 /** Sous-titres externes arrivés après le démarrage : complètent ce qui manquait, sans rien changer à un choix déjà fait. */
@@ -1124,6 +1189,7 @@ function lateTracks() {
   if (!p || !p.defaultsDone) return;
   const pick = p.applier.late(p.engine.audioTracks(), p.engine.kind === 'native' ? p.engine.subtitleTracks() : allSubtitleTracks(), getLangPrefs(), trackContext(), trackSink());
   if (pick) { p.autoAppliedAt = Date.now(); announceAuto(pick); }
+  announceLearn();
 }
 
 /** Lecteur natif Android : la liste des pistes n'est complète qu'un instant après le début ; on applique une fois, sans double sous-titre. */
@@ -1141,6 +1207,8 @@ function scheduleNativeApply() {
     p.audioLang = pick ? pick.audioLang : '';
     p.autoAppliedAt = Date.now();
     announceAuto(pick);
+    armLearnTimer(p);
+    announceLearn();
   }, 700);
 }
 
@@ -1166,7 +1234,17 @@ async function ensureExternalSubs(auto, force) {
     if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, wantedSubLang(getLangPrefs()))); return; }
     if (auto && p.defaultsDone) lateTracks();
   } finally {
-    if (P && P.token === token) { p.subs.loading = false; ui.refreshPanel(); }
+    if (P && P.token === token) {
+      p.subs.loading = false;
+      ui.refreshPanel();
+      if (P.view === view && !p.extSettled) {
+        // Natif : les sous-titres ajoutés n'apparaissent dans la liste du lecteur qu'un instant plus tard ; on ne conclut qu'alors.
+        if (p.engine.kind === 'native') {
+          clearTimeout(p.learnNativeTimer);
+          p.learnNativeTimer = setTimeout(() => { if (P === p && p.view === view) { p.extSettled = true; announceLearn(); } }, 1500);
+        } else { p.extSettled = true; announceLearn(); }
+      }
+    }
   }
 }
 
@@ -1245,13 +1323,14 @@ async function selectSecondary(id) {
   const track = tracks.find((t) => t.id === id);
   if (!track) return;
   const first = tracks.find((t) => t.id === s.selectedId);
+  const fail = (kind) => { if (P === p && s.secondaryId === id) { s.secondaryId = null; ui.toast(secondaryFailureMsg(kind), 5000); } };
   s.secondaryId = id;
   s.cues2 = [];
   s.native2 = false;
   s.shift2 = 0;
   s.swapped = false;
   if (track.origin === 'embedded' && !track.url) {
-    if (!(p.engine.supportsSecondary && p.engine.supportsSecondary())) { s.secondaryId = null; return; }
+    if (!(p.engine.supportsSecondary && p.engine.supportsSecondary())) { fail('unsupported'); return; }
     s.native2 = true;
     if (first && first.origin === 'embedded' && !first.url && s.native) {
       // Les deux pistes sont affichées par mpv : le second sous-titre y est en haut, donc la langue apprise.
@@ -1272,10 +1351,10 @@ async function selectSecondary(id) {
     try { text = await (await fetch(via)).text(); } catch (_) { text = await (await fetch(track.url)).text(); }
     if (P === p && s.secondaryId === id) {
       s.cues2 = parseSubtitles(text, track.url);
-      if (!s.cues2.length) s.secondaryId = null;
+      if (!s.cues2.length) fail('empty');
     }
   } catch (_) {
-    if (P === p && s.secondaryId === id) s.secondaryId = null;
+    fail('load');
   }
   ui.refreshPanel();
 }
@@ -1552,7 +1631,7 @@ function showSourcesPanel(reasons = []) {
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
   openSourcePicker(p.req, null, {
-    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons,
+    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons, originalLang: originalLangOf(p),
     onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
       // Choix manuel : la bascule salon et son filtre de repli ne s'appliquent plus.
@@ -1664,19 +1743,23 @@ function onAction(act, data) {
       const t = P.engine.audioTracks().find((x) => x.id === data.id);
       if (t && t.lang) remember(P.req.key, { audio: t.lang });
       P.applier.markManual();
-      P.engine.setAudioTrack(data.id);
+      if (!t || P.engine.setAudioTrack(data.id) === false) { ui.toast('Langue audio non modifiable avec cette source', 6000, transcodeAction()); break; }
       P.watch.reset(Date.now());
       setTimeout(() => ui.refreshPanel(), 200);
-      ui.toast('Audio : ' + (t ? t.label : ''));
+      ui.toast('Audio : ' + t.label);
       break;
     }
-    case 'force-hls': P.forceHls = true; ui.closePanel(true); ui.toast('Passage en transcodage…'); P.tried = new Set(); playView(P.view, st.time > 5 ? st.time : 0); break;
+    case 'force-hls': forceTranscoding(); break;
     case 'sub': {
       const t = data.id ? allSubtitleTracks().find((x) => x.id === data.id) : null;
       remember(P.req.key, { sub: t ? t.lang || 'off' : 'off' });
       P.applier.markManual();
+      // Mode apprentissage : le second sous-titre (langue principale) reste, sauf si l'on choisit « off » ou la langue principale.
+      const plan = manualSubPlan(allSubtitleTracks(), getLangPrefs(), data.id || null, trackContext().canSecondary, !!s.secondaryId);
       clearSecondary();
       selectSubtitle(data.id || null);
+      if (plan.secondaryId) selectSecondary(plan.secondaryId);
+      if (plan.toast) ui.toast(plan.toast, 4500);
       break;
     }
     case 'subsearch': ensureExternalSubs(false, true); break;
@@ -2267,7 +2350,7 @@ export async function playBest(request, opener, opts = {}) {
   const recommend = (views) => {
     const usable = withoutBad(p, views);
     const same = opts.prefer ? opts.prefer(usable) : null;
-    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw);
+    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined);
   };
   const good = (r) => !!r && (r.party === true || isGoodMatch(r));
   // Lancement sans attendre tous les addons : voir awaitLaunchable. Les addons restants alimentent le panneau Sources.

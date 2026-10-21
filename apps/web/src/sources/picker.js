@@ -136,13 +136,14 @@ function showMessage(msg) {
 
 /**
  * Ouvre le sélecteur. `opts.onPick(view)` est appelé au choix d'une source ; `opts.views` évite de recharger (changement de
- * source en cours de lecture) ; `opts.currentIndex` marque la source en cours.
+ * source en cours de lecture) ; `opts.currentIndex` marque la source en cours ; `opts.originalLang` (code à deux lettres, si connu)
+ * oriente le classement quand la langue apprise est celle du titre.
  */
 export async function openSourcePicker(request, opener, opts) {
   if (session && session.stop) session.stop();
   const token = Symbol('picker');
   const host = opts.host || modalBody;
-  session = { token, host, notice: opts.notice || [], pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, bw: null, bwPending: false };
+  session = { token, host, notice: opts.notice || [], pending: opts.pending || [], added: 0, stop: null, request, views: opts.views || [], filters: { ...NO_FILTERS, resolutions: new Set(), langs: new Set() }, sort: 'recommended', rec: null, currentIndex: opts.currentIndex ?? null, onPick: opts.onPick, originalLang: opts.originalLang || undefined, bw: null, bwPending: false };
   const skeleton = '<div class="drawer">' + (opts.host ? '' : '<h2 id="modal-title" class="drawer-title">Sources</h2>') + '<ul class="drawer-list" aria-hidden="true"><li class="sk sk-src"></li><li class="sk sk-src"></li><li class="sk sk-src"></li></ul></div>';
   if (opts.host) { host.innerHTML = skeleton; bindHost(host); } else openModal(skeleton, opener, 'is-drawer is-sources');
   const alive = () => session && session.token === token;
@@ -173,7 +174,7 @@ export async function openSourcePicker(request, opener, opts) {
       session.views = next.views;
       session.pending = next.pending;
       session.added = added;
-      session.rec = recommendFor(session.views, session.bw);
+      session.rec = recommendFor(session.views, session.bw, session.originalLang);
       render();
       clearTimeout(clearAdded);
       if (!next.pending.length) clearAdded = setTimeout(() => { if (alive()) { session.added = 0; render(); } }, 4000);
@@ -181,7 +182,7 @@ export async function openSourcePicker(request, opener, opts) {
   }
   session.bw = known;
   session.bwPending = known === null;
-  session.rec = recommendFor(session.views, known);
+  session.rec = recommendFor(session.views, known, session.originalLang);
   render();
   const first = host.querySelector('.is-rec') || host.querySelector('[data-src]:not([disabled])');
   if (first) first.focus({ preventScroll: true });
@@ -190,7 +191,7 @@ export async function openSourcePicker(request, opener, opts) {
     if (!alive()) return;
     session.bw = kbps;
     session.bwPending = false;
-    session.rec = recommendFor(session.views, kbps);
+    session.rec = recommendFor(session.views, kbps, session.originalLang);
     render();
   }
 }
@@ -212,7 +213,7 @@ async function remeasure() {
   if (!session || session.token !== token) return;
   session.bw = kbps;
   session.bwPending = false;
-  session.rec = recommendFor(session.views, kbps);
+  session.rec = recommendFor(session.views, kbps, session.originalLang);
   render();
 }
 

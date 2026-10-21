@@ -1,4 +1,4 @@
-import { getLangPrefs, LANG_VO } from '../data/langPrefs';
+import { getLangPrefs, LANG_VO, type LangPrefs } from '../data/langPrefs';
 import { getBandwidthSetting } from '../data/prefs';
 import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { DeviceTarget } from '../data/sources';
@@ -299,15 +299,20 @@ export async function awaitLaunchable(start: LoadedSources, opts: LaunchOptions)
 const SUPPORTED: readonly Lang[] = ['fr', 'en', 'es', 'de', 'it'];
 
 /**
- * Langue audio visée pour le classement des sources : la langue apprise en mode apprentissage, sinon la langue audio
- * principale des réglages « Audio et sous-titres » (reprend l'ancienne langue des bandes-annonces tant que rien n'est choisi).
- * Une langue que les sources n'annoncent pas (japonais…) ou « version originale » vise les sources en VO.
+ * Langue visée par le classement des sources, selon les préférences de langue :
+ * - langue (apprise ou principale) que les sources annoncent (fr, en, es, de, it) : elle-même ;
+ * - « version originale » : `original` ;
+ * - langue apprise que les sources n'annoncent pas (japonais, coréen…) : `original` si le titre est dans cette langue
+ *   (`originalLang`, code à deux lettres), sinon `multi` (les sources multi-audio portent la langue apprise) ;
+ * - langue principale non gérée hors apprentissage : `original`.
  */
-export function preferredLang(): Lang {
-  const lp = getLangPrefs();
-  const want = lp.learn && lp.learnLang !== lp.audio ? lp.learnLang : lp.audio;
+export function sourceLangFor(lp: LangPrefs, originalLang?: string): Lang {
+  const learning = lp.learn && lp.learnLang !== lp.audio;
+  const want = learning ? lp.learnLang : lp.audio;
   if (want === LANG_VO) return 'original';
-  return SUPPORTED.includes(want as Lang) ? (want as Lang) : 'original';
+  if (SUPPORTED.includes(want as Lang)) return want as Lang;
+  if (!learning) return 'original';
+  return originalLang?.trim().toLowerCase() === want ? 'original' : 'multi';
 }
 
 /** Mode apprentissage : les sources en VO ou multi-audio ne sont pas pénalisées (elles portent l'audio de la langue apprise). */
@@ -315,12 +320,13 @@ function alsoAccepted(): readonly Lang[] {
   return getLangPrefs().learn ? ['original', 'multi'] : [];
 }
 
-export function recommendFor(views: readonly SourceView[], bwKbps: number | null): Recommendation | null {
+/** `originalLang` : langue d'origine du titre (code à deux lettres) quand elle est connue ; sinon omise. */
+export function recommendFor(views: readonly SourceView[], bwKbps: number | null, originalLang?: string): Recommendation | null {
   // Hôte déjà refusé (CORS) par la sonde du moteur audio : son son ne peut plus être décodé par l'app.
   const checked = views.map((v) => (v.appAudio === 'app' && rangeDenied(v.stream?.url) ? { ...v, appAudio: 'unsupported' as const } : v));
   // Navigateur sans Dolby natif : le son AC-3 / E-AC-3 est décodé par l'app, une source AAC / Opus de résolution proche le vaut mieux.
   const web = !inShell();
-  return recommend(checked, bwKbps, preferredLang(), { preferDirect: web, preferAac: web && browserCaps().dolbyNative !== true, alsoAccept: alsoAccepted() });
+  return recommend(checked, bwKbps, sourceLangFor(getLangPrefs(), originalLang), { preferDirect: web, preferAac: web && browserCaps().dolbyNative !== true, alsoAccept: alsoAccepted() });
 }
 
 /** Débit connu sans mesurer (réglage fixe ou mesure récente), sinon null. */

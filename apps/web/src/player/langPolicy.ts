@@ -43,6 +43,12 @@ export interface TrackPick {
   audioLang: string;
   subLang: string;
   secondaryLang: string;
+  /** Mode apprentissage sans piste audio dans la langue apprise : repli sur une autre piste. */
+  learnAudioMissing: boolean;
+  /** Mode apprentissage sans sous-titre dans la langue apprise : la langue principale seule. */
+  learnSubMissing: boolean;
+  /** Une piste de la langue principale aurait été le second sous-titre, mais le moteur (`canSecondary`) l'a refusée. */
+  secondaryBlocked: boolean;
 }
 
 /** Résout un code de préférence (`vo`, `fr`…) en code de langue de piste ; `''` pour « version originale » inconnue. */
@@ -106,6 +112,27 @@ function bestSub(tracks: readonly SubtitleTrack[], lang: string, wantForced: boo
   return best;
 }
 
+/** Langue principale (code), `fr` à défaut. */
+const mainOf = (prefs: LangPrefs): string => normalizeLang(prefs.audio) || 'fr';
+
+/** Mode apprentissage actif : une langue apprise, distincte de la langue principale. */
+const learnOn = (prefs: LangPrefs): boolean => {
+  const learned = normalizeLang(prefs.learnLang);
+  return prefs.learn && !!learned && learned !== mainOf(prefs);
+};
+
+/**
+ * Second sous-titre du mode apprentissage : piste de la langue principale, distincte du premier. `blocked` : une telle piste
+ * existe mais le moteur (`canSecondary`) ne peut pas l'afficher en même temps.
+ */
+function secondaryOf(subTracks: readonly SubtitleTrack[], prefs: LangPrefs, first: SubtitleTrack | null, canSecondary?: (t: SubtitleTrack) => boolean): { track: SubtitleTrack | null; blocked: boolean } {
+  const main = mainOf(prefs);
+  if (!first || !learnOn(prefs) || tl(first) === main) return { track: null, blocked: false };
+  const exclude = new Set([first.id]);
+  const track = bestSub(subTracks, main, false, exclude, canSecondary);
+  return { track, blocked: !track && bestSub(subTracks, main, false, exclude) !== null };
+}
+
 /**
  * Choisit audio, sous-titre et second sous-titre.
  * - Audio : langue principale si présente (sinon secondaire — version originale par défaut —, sinon la meilleure disponible).
@@ -113,11 +140,12 @@ function bestSub(tracks: readonly SubtitleTrack[], lang: string, wantForced: boo
  * - Sinon, si les sous-titres sont activés : la langue choisie (pistes internes d'abord, puis externes déjà chargées ;
  *   « Full » avant « Forced », SDH seulement s'il n'y a rien d'autre).
  * - Mode apprentissage : audio dans la langue apprise (sinon secondaire, sinon principale), sous-titre appris + sous-titre
- *   dans la langue principale en second.
+ *   dans la langue principale en second. « Jamais » : aucun sous-titre, l'audio reste dans la langue apprise. Un sous-titre
+ *   mémorisé (choix manuel) remplace seulement le premier ; le second est recalculé.
  */
 export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readonly SubtitleTrack[], prefs: LangPrefs, ctx: TrackContext = {}): TrackPick {
-  const main = normalizeLang(prefs.audio) || 'fr';
-  const learn = prefs.learn && normalizeLang(prefs.learnLang) !== main && !!normalizeLang(prefs.learnLang);
+  const main = mainOf(prefs);
+  const learn = learnOn(prefs);
   const learned = normalizeLang(prefs.learnLang);
   const order = learn ? [prefs.learnLang, prefs.audio2, prefs.audio] : [prefs.audio, prefs.audio2];
   let audio: AudioTrack | null = ctx.rememberedAudio ? audioFor(ctx.rememberedAudio, audioTracks, prefs, ctx) : null;
@@ -130,23 +158,41 @@ export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readon
   const audioLang = audio ? tl(audio) || ctx.unknownAudioLang || '' : '';
 
   const none = new Set<string>();
-  const out: TrackPick = { audioId: audio ? audio.id : null, subId: null, secondarySubId: null, audioLang, subLang: '', secondaryLang: '' };
+  const out: TrackPick = {
+    audioId: audio ? audio.id : null, subId: null, secondarySubId: null, audioLang, subLang: '', secondaryLang: '',
+    learnAudioMissing: learn && audioFor(prefs.learnLang, audioTracks, prefs, ctx) === null,
+    learnSubMissing: learn && bestSub(subTracks, learned, false, none) === null,
+    secondaryBlocked: false,
+  };
   const take = (t: SubtitleTrack | null, slot: 'sub' | 'secondary'): void => {
     if (!t) return;
     if (slot === 'sub') { out.subId = t.id; out.subLang = tl(t); } else { out.secondarySubId = t.id; out.secondaryLang = tl(t); }
   };
+  /** Second sous-titre (mode apprentissage) d'après le premier sous-titre choisi. */
+  const takeSecond = (first: SubtitleTrack | null): void => {
+    const second = secondaryOf(subTracks, prefs, first, ctx.canSecondary);
+    take(second.track, 'secondary');
+    out.secondaryBlocked = second.blocked;
+  };
 
   if (ctx.rememberedSub) {
-    if (ctx.rememberedSub !== 'off') take(bestSub(subTracks, ctx.rememberedSub, false, none), 'sub');
+    // Choix manuel : remplace le premier sous-titre ; en apprentissage, le second (langue principale) reste calculé.
+    if (ctx.rememberedSub === 'off') return out;
+    const first = bestSub(subTracks, ctx.rememberedSub, false, none);
+    take(first, 'sub');
+    takeSecond(first);
     return out;
   }
 
   if (learn) {
+    if (!prefs.subsOn) return out; // « Jamais » l'emporte : aucun sous-titre, l'audio reste dans la langue apprise
     const first = bestSub(subTracks, learned, false, none);
-    take(first, 'sub');
-    const second = bestSub(subTracks, main, false, new Set(first ? [first.id] : []), ctx.canSecondary);
-    if (first) take(second, 'secondary');
-    else take(bestSub(subTracks, main, false, none), 'sub'); // pas de sous-titres appris : le français seul
+    if (first) {
+      take(first, 'sub');
+      takeSecond(first);
+    } else {
+      take(bestSub(subTracks, main, false, none), 'sub'); // pas de sous-titres appris : le français seul
+    }
     return out;
   }
 
@@ -164,11 +210,57 @@ export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readon
 /** « Sous-titres français activés (audio : japonais) » ; vide si rien n'a été activé. */
 export function autoSubsToast(pick: TrackPick): string {
   if (!pick.subLang) return '';
-  const adj: Record<string, string> = {
-    fr: 'français', en: 'anglais', ja: 'japonais', es: 'espagnols', de: 'allemands', it: 'italiens', ko: 'coréens', pt: 'portugais', zh: 'chinois', ru: 'russes', ar: 'arabes', nl: 'néerlandais', pl: 'polonais', tr: 'turcs', sv: 'suédois',
-  };
-  const sub = (l: string): string => adj[l] ?? langName(l).toLowerCase();
-  const audio = pick.audioLang ? langName(pick.audioLang).toLowerCase() : '';
-  const both = pick.secondaryLang ? 'Sous-titres ' + sub(pick.subLang) + ' et ' + sub(pick.secondaryLang) + ' activés' : 'Sous-titres ' + sub(pick.subLang) + ' activés';
+  const audio = pick.audioLang ? audioName(pick.audioLang) : '';
+  const both = pick.secondaryLang ? 'Sous-titres ' + subAdj(pick.subLang) + ' et ' + subAdj(pick.secondaryLang) + ' activés' : 'Sous-titres ' + subAdj(pick.subLang) + ' activés';
   return both + (audio ? ' (audio : ' + audio + ')' : '');
 }
+
+/** Noms de langue accordés avec « sous-titres » (pluriel) ; à défaut, le nom de la langue en minuscules. */
+const ADJ: Record<string, string> = {
+  fr: 'français', en: 'anglais', ja: 'japonais', es: 'espagnols', de: 'allemands', it: 'italiens', ko: 'coréens', pt: 'portugais', zh: 'chinois', ru: 'russes', ar: 'arabes', nl: 'néerlandais', pl: 'polonais', tr: 'turcs', sv: 'suédois',
+};
+
+/** Nom d'une langue dans un message sur les sous-titres (« japonais », « espagnols »). */
+const subAdj = (code: string): string => ADJ[code] ?? langName(code).toLowerCase();
+
+/** Nom d'une langue dans un message sur l'audio, au singulier (« japonais », « espagnol »). */
+const audioName = (code: string): string => langName(code).toLowerCase();
+
+/**
+ * Second sous-titre à appliquer quand l'utilisateur choisit lui-même le sous-titre principal (`firstId`, `null` : « off »).
+ * Mode apprentissage seulement. `null` si rien ne convient : pas de langue principale distincte, ou second refusé par le moteur.
+ */
+export function secondaryFor(subTracks: readonly SubtitleTrack[], prefs: LangPrefs, firstId: string | null, canSecondary?: (t: SubtitleTrack) => boolean): string | null {
+  if (firstId === null) return null;
+  const first = subTracks.find((t) => t.id === firstId) ?? null;
+  return secondaryOf(subTracks, prefs, first, canSecondary).track?.id ?? null;
+}
+
+/** Options du message d'apprentissage : moteur courant, langue audio non modifiable, sous-titres désactivés (« Jamais »). */
+interface LearnNoticeOpts {
+  /** Moteur de lecture (`native` : libVLC Android, qui n'affiche qu'un sous-titre à la fois). */
+  engineKind?: string;
+  /** La source ne permet pas de changer la langue audio. */
+  audioUnknown?: boolean;
+  /** Sous-titres désactivés : aucun message sur les sous-titres. */
+  subsOff?: boolean;
+}
+
+/** Message unique du mode apprentissage, fragments joints par « · » ; '' s'il n'y a rien à dire. */
+export function learnNotice(pick: TrackPick, prefs: LangPrefs, opts: LearnNoticeOpts = {}): string {
+  const learned = normalizeLang(prefs.learnLang);
+  const parts: string[] = [];
+  if (pick.learnAudioMissing) parts.push(`Pas d'audio ${audioName(learned)}` + (pick.audioLang ? ` : audio ${audioName(pick.audioLang)}` : ''));
+  if (pick.learnSubMissing && !opts.subsOff) parts.push(`Pas de sous-titres ${subAdj(learned)}` + (pick.subLang ? ` : ${subAdj(pick.subLang)} seuls` : ''));
+  if (pick.secondaryBlocked && !opts.subsOff) {
+    parts.push(opts.engineKind === 'native' ? `Un seul sous-titre sur ce lecteur : ${subAdj(pick.subLang || learned)} seuls` : 'Second sous-titre indisponible (sous-titres intégrés)');
+  }
+  if (opts.audioUnknown) parts.push('Langue audio non modifiable avec cette source');
+  return parts.join(' · ');
+}
+
+/* Messages sur le second sous-titre, affichés par session.js. */
+export const SECONDARY_OFF_MSG = 'Second sous-titre retiré';
+export const SECONDARY_UNSUPPORTED_MSG = 'Second sous-titre non pris en charge ici';
+export const SECONDARY_EMPTY_MSG = 'Second sous-titre vide ou illisible';
+export const SECONDARY_LOAD_FAIL_MSG = 'Impossible de charger le second sous-titre';

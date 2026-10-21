@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_LANG_PREFS, type LangPrefs } from '../src/data/langPrefs';
-import { autoSubsToast, langCode, pickTracks } from '../src/player/langPolicy';
+import { autoSubsToast, langCode, learnNotice, pickTracks, secondaryFor, SECONDARY_EMPTY_MSG, SECONDARY_LOAD_FAIL_MSG, SECONDARY_OFF_MSG, SECONDARY_UNSUPPORTED_MSG } from '../src/player/langPolicy';
 import { trackLang, type AudioTrack, type SubtitleTrack } from '../src/player/tracks';
 
 const a = (id: string, lang: string, over: Partial<AudioTrack> = {}): AudioTrack => ({
@@ -213,6 +213,100 @@ describe('pickTracks : mode apprentissage', () => {
     const r = pickTracks(audio, [s('sja', 'jpn'), s('sfr', 'fre')], prefs({ learn: true, learnLang: 'ja' }));
     expect(r).toMatchObject({ audioId: 'ja', subId: 'sja', secondarySubId: 'sfr' });
   });
+
+  it('absence d’audio dans la langue apprise : learnAudioMissing, faux si elle existe', () => {
+    expect(pickTracks([a('fr', 'fre'), a('ja', 'jpn')], subs, learn)).toMatchObject({ learnAudioMissing: true, audioId: 'ja' });
+    expect(pickTracks(audio, subs, learn).learnAudioMissing).toBe(false);
+  });
+
+  it('absence de sous-titres dans la langue apprise : learnSubMissing, faux si elle existe', () => {
+    expect(pickTracks(audio, [s('sfr', 'fre')], learn)).toMatchObject({ learnSubMissing: true, subId: 'sfr' });
+    expect(pickTracks(audio, subs, learn).learnSubMissing).toBe(false);
+  });
+
+  it('second sous-titre refusé par le moteur : secondaryBlocked, faux sans refus', () => {
+    expect(pickTracks(audio, subs, learn, { canSecondary: () => false })).toMatchObject({ subId: 'sen', secondarySubId: null, secondaryBlocked: true });
+    expect(pickTracks(audio, subs, learn).secondaryBlocked).toBe(false);
+  });
+
+  it('« Jamais » en apprentissage : aucun sous-titre, l’audio reste dans la langue apprise', () => {
+    expect(pickTracks(audio, subs, prefs({ learn: true, learnLang: 'en', subsOn: false }))).toMatchObject({ audioId: 'en', audioLang: 'en', subId: null, secondarySubId: null });
+  });
+
+  it('sous-titre mémorisé en langue principale : pas de second sous-titre', () => {
+    expect(pickTracks(audio, subs, learn, { rememberedSub: 'fr' })).toMatchObject({ subId: 'sfr', secondarySubId: null, secondaryBlocked: false });
+  });
+});
+
+describe('secondaryFor : choix manuel du sous-titre principal', () => {
+  const learn = prefs({ learn: true, learnLang: 'en' });
+  const subs = [s('sfr', 'fre'), s('sen', 'eng')];
+
+  it('« off » : aucun second sous-titre', () => {
+    expect(secondaryFor(subs, learn, null)).toBeNull();
+  });
+  it('langue principale choisie : pas de doublon', () => {
+    expect(secondaryFor(subs, learn, 'sfr')).toBeNull();
+  });
+  it('choix normal en apprentissage : second en langue principale', () => {
+    expect(secondaryFor(subs, learn, 'sen')).toBe('sfr');
+  });
+  it('hors apprentissage, ou second refusé par le moteur : aucun', () => {
+    expect(secondaryFor(subs, prefs(), 'sen')).toBeNull();
+    expect(secondaryFor(subs, learn, 'sen', () => false)).toBeNull();
+  });
+});
+
+describe('learnNotice : message du mode apprentissage', () => {
+  const ja = prefs({ learn: true, learnLang: 'ja' });
+  const jaSub = s('sja', 'jpn');
+  const frSub = s('sfr', 'fre');
+
+  it('audio appris absent : repli nommé', () => {
+    expect(learnNotice(pickTracks([a('fr', 'fre'), a('en', 'eng')], [jaSub, frSub], ja), ja)).toBe('Pas d\'audio japonais : audio anglais');
+  });
+  it('sous-titres appris absents : langue principale seule', () => {
+    expect(learnNotice(pickTracks([a('ja', 'jpn')], [frSub], ja), ja)).toBe('Pas de sous-titres japonais : français seuls');
+  });
+  it('sous-titres appris absents et aucun sous-titre en langue principale : pas de « seuls » inventé', () => {
+    expect(learnNotice(pickTracks([a('ja', 'jpn')], [], ja), ja)).toBe('Pas de sous-titres japonais');
+  });
+  it('sous-titres appris absents, sous-titre mémorisé dans une autre langue : cette langue-là est nommée', () => {
+    const r = pickTracks([a('ja', 'jpn')], [frSub, s('sen', 'eng')], ja, { rememberedSub: 'en' });
+    expect(r.subLang).toBe('en');
+    expect(learnNotice(r, ja)).toBe('Pas de sous-titres japonais : anglais seuls');
+  });
+  it('moteur natif : un seul sous-titre', () => {
+    const r = pickTracks([a('ja', 'jpn')], [jaSub, frSub], ja, { canSecondary: () => false });
+    expect(learnNotice(r, ja, { engineKind: 'native' })).toBe('Un seul sous-titre sur ce lecteur : japonais seuls');
+  });
+  it('HTML5 / HLS avec sous-titres intégrés : second indisponible', () => {
+    const r = pickTracks([a('ja', 'jpn')], [jaSub, frSub], ja, { canSecondary: () => false });
+    expect(learnNotice(r, ja, { engineKind: 'html5' })).toBe('Second sous-titre indisponible (sous-titres intégrés)');
+  });
+  it('langue audio non modifiable avec cette source', () => {
+    expect(learnNotice(pickTracks([a('ja', 'jpn')], [jaSub], ja), ja, { audioUnknown: true })).toBe('Langue audio non modifiable avec cette source');
+  });
+  it('plusieurs fragments joints dans un seul message', () => {
+    expect(learnNotice(pickTracks([a('fr', 'fre'), a('en', 'eng')], [frSub], ja), ja)).toBe('Pas d\'audio japonais : audio anglais · Pas de sous-titres japonais : français seuls');
+  });
+  it('« Jamais » : aucun message sur les sous-titres', () => {
+    expect(learnNotice(pickTracks([a('fr', 'fre'), a('en', 'eng')], [frSub], ja), ja, { subsOff: true })).toBe('Pas d\'audio japonais : audio anglais');
+  });
+  it('rien à dire : chaîne vide', () => {
+    expect(learnNotice(pickTracks([a('ja', 'jpn')], [jaSub, frSub], ja), ja)).toBe('');
+  });
+});
+
+describe('messages du second sous-titre', () => {
+  it('textes exacts affichés par session.js', () => {
+    expect([SECONDARY_OFF_MSG, SECONDARY_UNSUPPORTED_MSG, SECONDARY_EMPTY_MSG, SECONDARY_LOAD_FAIL_MSG]).toEqual([
+      'Second sous-titre retiré',
+      'Second sous-titre non pris en charge ici',
+      'Second sous-titre vide ou illisible',
+      'Impossible de charger le second sous-titre',
+    ]);
+  });
 });
 
 describe('message au démarrage', () => {
@@ -239,9 +333,12 @@ describe('pickTracks : mémoire du titre', () => {
   it('audio mémorisé absent du fichier : préférences du profil', () => {
     expect(pickTracks(audio, subs, prefs(), { rememberedAudio: 'ko' }).audioId).toBe('fr');
   });
-  it('sous-titres mémorisés « off » ou dans une langue : un seul sous-titre, sans second', () => {
+  it('sous-titres mémorisés « off » : aucun ; hors apprentissage, une langue mémorisée reste seule', () => {
     expect(pickTracks(audio, subs, prefs({ learn: true }), { rememberedSub: 'off' })).toMatchObject({ subId: null, secondarySubId: null });
-    expect(pickTracks(audio, subs, prefs({ learn: true }), { rememberedSub: 'en' })).toMatchObject({ subId: 'sen', secondarySubId: null });
+    expect(pickTracks(audio, subs, prefs(), { rememberedSub: 'en' })).toMatchObject({ subId: 'sen', secondarySubId: null });
+  });
+  it('sous-titre mémorisé en apprentissage : il remplace le premier, le second en langue principale reste calculé', () => {
+    expect(pickTracks(audio, subs, prefs({ learn: true }), { rememberedSub: 'en' })).toMatchObject({ subId: 'sen', secondarySubId: 'sfr' });
   });
   it('langues annoncées sur trois lettres par le lecteur natif', () => {
     const r = pickTracks([a('x', 'eng')], [s('y', 'fra')], prefs({ audio: 'en' }));

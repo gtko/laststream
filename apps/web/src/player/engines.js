@@ -191,11 +191,14 @@ export class HtmlEngine extends Emitter {
     return [];
   }
 
+  /** `false` quand la source n'expose aucune liste de pistes audio (le changement de langue n'a alors aucun effet). */
   setAudioTrack(id) {
     const i = Number(id);
-    if (this.hls && this.hls.audioTracks && this.hls.audioTracks.length) { this.hls.audioTrack = i; return; }
+    if (this.hls && this.hls.audioTracks && this.hls.audioTracks.length) { this.hls.audioTrack = i; return true; }
     const al = this.video.audioTracks;
-    if (al) for (let k = 0; k < al.length; k++) al[k].enabled = k === i;
+    if (!al || !al.length) return false;
+    for (let k = 0; k < al.length; k++) al[k].enabled = k === i;
+    return true;
   }
 
   /** Sous-titres proposés par le flux HLS (le serveur de streaming les expose en WebVTT). */
