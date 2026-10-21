@@ -30,6 +30,7 @@ import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from '
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
 import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, normalizeCanonical } from './episodes';
 import { fetchExternalSubtitles } from './extsubs';
+import { beginSubsLoad, endSubsLoad, isCurrentSubsLoad, resetSubsLoad } from './subsLoad';
 import { autoSubsToast } from './langPolicy';
 import { learnAnnouncement, manualSubPlan, secondaryFailureMsg } from './langAnnounce';
 import { TrackApplier } from './trackApply';
@@ -553,7 +554,7 @@ async function initSession(request, views, view, opts = {}) {
     view, tried: new Set(), attempts: 0, engine: html, choice: null, probe: null, probeTracks: parseProbe(null), mediaUrl: '',
     segments: [], nextDismissed: false, lastSave: 0, watchedMarked: false, finished: false,
     subs: {
-      external: [], loadedFor: null, loading: false, selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '',
+      external: [], loadedFor: null, loading: false, loadSeq: 0, selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '',
       style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
@@ -891,7 +892,8 @@ async function playView(view, startAt) {
   p.hint = null;
   p.startAt = startAt || 0;
   const s = p.subs;
-  Object.assign(s, { selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], nativeCues: [], native: false, loadedFor: null, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
+  Object.assign(s, { selectedId: null, secondaryId: null, cues2: [], native2: false, shift2: 0, swapped: false, cues: [], nativeCues: [], native: false, external: [], offset: 0, rate: 1, rateId: 'none', shift: 0, rateHint: '', syncKey: '' });
+  resetSubsLoad(s); // le chargement des sous-titres de l'ancienne source est périmé : celui de la nouvelle doit pouvoir démarrer
   stopAutoSync();
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();
@@ -1284,8 +1286,9 @@ function scheduleNativeApply() {
 /** Sous-titres externes (lastAddon, OpenSubtitles) ; `force` relance la recherche à la demande. */
 async function ensureExternalSubs(auto, force) {
   const p = P;
-  if (!p || p.subs.loading || (!force && p.subs.loadedFor === p.view.index)) return;
-  p.subs.loading = true;
+  if (!p) return;
+  const loadSeq = beginSubsLoad(p.subs, p.view.index, force);
+  if (loadSeq === null) return;
   ui.refreshPanel();
   const token = p.token;
   const view = p.view;
@@ -1299,14 +1302,13 @@ async function ensureExternalSubs(auto, force) {
     const type = p.req.type === 'tv' ? 'series' : 'movie';
     const addon = isConfigured() ? addonUrl('subtitles/' + type + '/' + id + '.json') : null;
     const list = await fetchExternalSubtitles({ type, id, hash: params && params.hash, size: (params && params.size) || view.sizeBytes || null, filename: view.filename }, addon, wantedSubLang(getLangPrefs()));
-    if (!P || P.token !== token || P.view !== view) return;
+    if (!P || P.token !== token || P.view !== view || !isCurrentSubsLoad(p.subs, loadSeq)) return;
     p.subs.external = list;
     p.subs.loadedFor = view.index;
     if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, wantedSubLang(getLangPrefs()))); return; }
     if (auto && p.defaultsDone) lateTracks();
   } finally {
-    if (P && P.token === token) {
-      p.subs.loading = false;
+    if (P && P.token === token && endSubsLoad(p.subs, loadSeq)) {
       ui.refreshPanel();
       if (P.view === view && !p.extSettled) {
         // Natif : les sous-titres ajoutés n'apparaissent dans la liste du lecteur qu'un instant plus tard ; on ne conclut qu'alors.
