@@ -69,6 +69,54 @@ a.soc-name:hover { color: var(--accent); }
 .wp-t { font-family: var(--ff-title); font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-m { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wp-more { margin-top: 14px; }
+/* Page « Watch parties » : en-tête, filtres, cartes, état vide */
+.wp-head { align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+.wp-intro { margin: 0; max-width: 560px; font-size: 15px; line-height: 1.5; color: var(--soft); }
+.wp-head-acts { display: flex; flex-wrap: wrap; gap: 10px; }
+.wp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.wp-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.wp-filters .pill { min-height: 44px; }
+.wp-seg { display: inline-flex; border: 1.5px solid #3a3646; border-radius: 999px; overflow: hidden; }
+.wp-seg-btn { min-height: 41px; padding: 0 16px; font-weight: 700; font-size: 14px; color: var(--muted); background: transparent; }
+.wp-seg-btn:hover { color: #fff; }
+.wp-seg-btn[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.wp-count { margin-left: auto; font-size: 14px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.wp-refresh { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1.5px solid #3a3646; background: transparent; color: var(--soft); }
+.wp-refresh:hover { border-color: var(--muted); color: #fff; }
+.wp-refresh svg { width: 20px; height: 20px; }
+.wp-list { grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); }
+.wp-list .wp-card { align-items: flex-start; }
+.wp-list .wp-poster { width: 76px; }
+.wp-list .wp-info { gap: 6px; }
+.wp-list .wp-t { font-size: 17px; }
+.wp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wp-chip { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--line-2); color: var(--soft); }
+.wp-list .wp-m { display: flex; align-items: center; gap: 8px; }
+.wp-host { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wp-gauge { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); }
+.wp-bar { flex: 1; height: 5px; border-radius: 999px; background: var(--line-2); overflow: hidden; }
+.wp-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.wp-n { flex: none; font-variant-numeric: tabular-nums; }
+.wp-join { width: 100%; min-height: 44px; margin-top: 4px; }
+.wp-card-friend { border-color: var(--accent); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--surface)), var(--surface) 70%); }
+.wp-pastille { align-self: flex-start; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--accent); color: var(--on-accent); }
+.wp-card-friend .wp-av { width: 22px; height: 22px; font-size: 11px; background: var(--accent); color: var(--on-accent); }
+.wp-skel .wp-card { min-height: 128px; animation: wp-pulse 1.4s ease-in-out infinite; }
+@keyframes wp-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .wp-skel .wp-card { animation: none; } }
+.wp-empty-box { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; text-align: center; border: 2px dashed var(--line-2); border-radius: 18px; }
+.wp-empty-box h2 { margin: 0; font-family: var(--ff-title); font-size: 22px; }
+.wp-empty-box p { margin: 0; max-width: 460px; font-size: 15px; line-height: 1.5; color: var(--soft); }
+.wp-empty-ico { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--line-2); color: var(--soft); }
+.wp-empty-ico svg { width: 28px; height: 28px; }
+.wp-empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+@media (max-width: 720px) {
+  .wp-head { flex-direction: column; align-items: stretch; }
+  .wp-head-acts .btn { flex: 1 1 100%; }
+  .wp-count { margin-left: 0; }
+  .wp-seg { max-width: 100%; }
+  .wp-empty-acts .btn { flex: 1 1 100%; }
+}
 .wp-big { max-width: 640px; align-items: flex-start; padding: 16px; }
 .wp-big .wp-poster { width: 110px; }
 .wp-big .wp-t { white-space: normal; font-size: 20px; }

@@ -1,7 +1,7 @@
 // Bibliothèques partagées, bibliothèque d'un ami, salons publics et panneau de la watch party.
 import fs from 'node:fs';
 import path from 'node:path';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 
 const tick = (ms = 40) => new Promise((r) => setTimeout(r, ms));
@@ -145,14 +145,13 @@ describe('salons publics', () => {
     const cards = detail().querySelectorAll('.wp-card');
     expect(cards).toHaveLength(2);
     expect(cards[0].textContent).toContain('Severance');
-    expect(cards[0].textContent).toContain('Hôte : alice · 3/20 participants');
+    expect(cards[0].textContent).toContain('Hôte : alice · ouvert il y a');
+    expect(cards[0].textContent).toContain('3/20 participants');
     expect(cards[0].textContent).toContain('Français');
     expect(cards[0].querySelector('img')!.getAttribute('src')).toContain('/s.jpg');
     expect(cards[1].textContent).toContain('Complet');
     expect(detail().querySelector('[data-wp-more]')).not.toBeNull();
-    const sel = detail().querySelector('[data-wp-lang]') as HTMLSelectElement;
-    sel.value = 'en';
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    (detail().querySelector('[data-wp-lang="en"]') as HTMLButtonElement).click();
     await tick(80);
     expect(calls.filter((c) => c.path.startsWith('/party?')).at(-1)!.path).toContain('language=en');
   });
@@ -216,6 +215,109 @@ describe('salons publics', () => {
     detail().innerHTML = '';
     await p.showParty('zzz');
     expect(detail().textContent).toContain('Ce salon n’existe plus');
+  });
+});
+
+describe('page Watch parties (refonte)', () => {
+  const room = (o: Record<string, unknown>) => ({ id: 'r', title: 'T', poster: null, language: 'fr', mediaType: 'movie', host: 'zed', participants: 1, maxParticipants: 8, createdAt: new Date().toISOString(), ...o });
+  const open = async (rooms: unknown[], friends: unknown[] = []) => {
+    const { getState } = await import('../src/data/socialStore');
+    getState().friends = friends as any;
+    routes = (c) => (c.path.startsWith('/party?') ? json({ rooms, nextCursor: null }) : undefined);
+    const p = await import('../src/ui/parties.js');
+    detail().innerHTML = '';
+    p.showParties();
+    await tick(120);
+    return p;
+  };
+  // Les filtres survivent à la navigation : on les remet à zéro entre les tests.
+  afterEach(() => {
+    (detail().querySelector('[data-wp-kind=""]') as HTMLButtonElement | null)?.click();
+    (detail().querySelector('[data-wp-lang=""]') as HTMLButtonElement | null)?.click();
+  });
+
+  it('filtre Type côté client, sans nouvel appel réseau', async () => {
+    await open([room({ id: 'a', title: 'Alien', mediaType: 'movie' }), room({ id: 'b', title: 'Severance', mediaType: 'series' })]);
+    const n = calls.filter((c) => c.path.startsWith('/party?')).length;
+    (detail().querySelector('[data-wp-kind="series"]') as HTMLButtonElement).click();
+    expect(detail().querySelectorAll('.wp-card')).toHaveLength(1);
+    expect(detail().textContent).toContain('Severance');
+    expect(detail().querySelector('#wp-count')!.textContent).toBe('1 salon ouvert');
+    expect(detail().querySelector('[data-wp-kind="series"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(calls.filter((c) => c.path.startsWith('/party?'))).toHaveLength(n);
+    (detail().querySelector('[data-wp-kind=""]') as HTMLButtonElement).click();
+    expect(detail().querySelectorAll('.wp-card')).toHaveLength(2);
+  });
+
+  it('« Chez tes amis » : hôte = ami (casse et accents ignorés), sans doublon dans les salons publics', async () => {
+    const friend = { pid: 'F1', handle: { name: 'Zoé', full: 'Zoé#1234' }, status: 'online' };
+    await open([room({ id: 'a', title: 'Chez Zoe', host: 'zoe' }), room({ id: 'b', title: 'Public', host: 'bob' })], [friend]);
+    const friends = detail().querySelector('.wp-friends')!;
+    expect(friends.querySelectorAll('.wp-card')).toHaveLength(1);
+    expect(friends.textContent).toContain('Ton ami est dedans');
+    expect(friends.textContent).toContain('Chez Zoe');
+    expect(detail().querySelectorAll('.wp-card')).toHaveLength(2);
+    expect(detail().querySelectorAll('[data-room="a"]')).toHaveLength(1);
+    expect(detail().querySelector('.wp-friends [data-room="b"]')).toBeNull();
+  });
+
+  it('section amis masquée quand aucun hôte n’est un ami', async () => {
+    await open([room({ id: 'b', host: 'bob' })], [{ pid: 'F1', handle: { name: 'Zoé', full: 'Zoé#1234' }, status: 'online' }]);
+    expect(detail().querySelector('.wp-friends')).toBeNull();
+  });
+
+  it('état vide : message, « Créer » via openCreateParty et « Voir mes amis »', async () => {
+    const p = await open([]);
+    expect(detail().textContent).toContain('Aucun salon ouvert pour le moment');
+    expect(detail().textContent).toContain('Chacun lit avec sa propre source');
+    expect(detail().querySelector('a[href="#/friends"]')).not.toBeNull();
+    (detail().querySelector('.wp-empty-box [data-wp-create]') as HTMLButtonElement).click();
+    expect(location.hash).toBe('#/discover');
+    location.hash = '';
+    await tick(20);
+    expect(typeof p.openCreateParty).toBe('function');
+  });
+
+  it('état vide filtré : « Voir tous les salons » remet les filtres à zéro', async () => {
+    await open([room({ id: 'a', mediaType: 'movie' })]);
+    (detail().querySelector('[data-wp-kind="series"]') as HTMLButtonElement).click();
+    expect(detail().textContent).toContain('Aucun salon en Séries pour le moment');
+    expect(detail().querySelector('.wp-empty-box [data-wp-create]')).not.toBeNull();
+    (detail().querySelector('[data-wp-clear]') as HTMLButtonElement).click();
+    expect(detail().querySelectorAll('.wp-card')).toHaveLength(1);
+    expect(detail().querySelector('[data-wp-kind=""]')!.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('salon complet : bouton désactivé, pas de lien', async () => {
+    await open([room({ id: 'f', participants: 8, maxParticipants: 8 })]);
+    const btn = detail().querySelector('.wp-card .wp-join') as HTMLButtonElement;
+    expect(btn.tagName).toBe('BUTTON');
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toBe('Complet');
+    expect(detail().querySelector('a[href="#/party/f"]')).toBeNull();
+  });
+
+  it('course entre chargements : une réponse tardive ne remplace pas la dernière langue', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const first = new Promise<Response>((res) => { release = res; });
+    routes = (c) => (c.path.startsWith('/party?') && !c.path.includes('language=en') ? (first as unknown as Response) : c.path.includes('language=en') ? json({ rooms: [room({ id: 'e', title: 'English One', language: 'en' })], nextCursor: null }) : undefined);
+    const p = await import('../src/ui/parties.js');
+    detail().innerHTML = '';
+    p.showParties();
+    await tick(20);
+    (detail().querySelector('[data-wp-lang="en"]') as HTMLButtonElement).click();
+    await tick(60);
+    release(json({ rooms: [room({ id: 'f', title: 'Vieux Français', language: 'fr' })], nextCursor: null }));
+    await tick(60);
+    expect(detail().textContent).toContain('English One');
+    expect(detail().textContent).not.toContain('Vieux Français');
+  });
+
+  it('titre et hôte sont échappés', async () => {
+    await open([room({ id: 'x', title: '<img src=x onerror=alert(1)>', host: '<b>h</b>' })]);
+    expect(detail().querySelector('.wp-card img[src="x"]')).toBeNull();
+    expect(detail().querySelector('.wp-card b')).toBeNull();
+    expect(detail().querySelector('.wp-t')!.textContent).toBe('<img src=x onerror=alert(1)>');
   });
 });
 
