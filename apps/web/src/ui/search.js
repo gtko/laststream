@@ -1,8 +1,9 @@
 /* Recherche (#/search) : champ dans la barre du haut (barre de navigation conservée), meilleur résultat en bandeau,
  * filtres, puis grilles de jaquettes Films / Séries et rangée Personnalités (searchRank.js).
- * Les deux premières pages sont classées ensemble, puis les suivantes sont ajoutées en fin de groupe par défilement infini.
+ * Les deux premières pages sont classées ensemble ; chaque section n'affiche d'abord que ses premiers résultats (searchPaging.js),
+ * un bouton « Charger plus » par section affiche le lot suivant et va chercher les pages suivantes au besoin.
  * Profil enfant : genres jeunesse uniquement, pas de personnalités. */
-import { infiniteList, stopInfinite } from './infinite.js';
+import { stopInfinite } from './infinite.js';
 import { applyRestore } from './router.js';
 import { filterAvailable } from './avail.js';
 import { todayStr } from './dates.js';
@@ -21,11 +22,11 @@ import { observeTiles, posterCard } from './tiles.js';
 import { mainNavHTML, topActionsHTML } from './topnav.js';
 import { esc, plural } from './util.js';
 import { kindOf, rankResults, resultKey, splitBanned, titleMatch } from './searchRank.js';
+import { MAX_PAGES_PER_CLICK, hasMore, moreLabel, needsMore, sectionLimit } from './searchPaging.js';
 import { homeFacts, isBannedGenre } from '../data/homeFilters';
 
 const DEBOUNCE_MS = 300;
 const RECENT_MAX = 8;
-const PEOPLE_MAX = 12;
 const BEST_MIN_SCORE = 60; // correspondance exacte ou préfixe du titre
 const RECENT_BASE = 'laststream.search.recent';
 const PILLS = [['all', 'Tout'], ['movie', 'Films'], ['tv', 'Séries'], ['people', 'Personnalités']];
@@ -36,7 +37,7 @@ const BAR_ID = '-search';
 
 let timer = null;
 let seq = 0; // jeton de la dernière recherche lancée : une réponse plus ancienne est ignorée
-let session = null; // { q, token, media, held, people, raw, seen, next, total, done, best, filter, shown }
+let session = null; // { q, token, media, held, people, raw, seen, next, total, done, best, filter, shown, lots, gen, loading, failed }
 
 /** Champ de recherche de la barre du haut (remplace la loupe). */
 const searchFieldHTML = (q) =>
@@ -101,7 +102,7 @@ async function run(raw) {
   session = null;
   state.searchQ = q;
   if (q.length < 2) { paintEmpty(my); return; }
-  const s = { q, token: my, media: [], held: [], people: [], raw: new Map(), seen: new Set(), next: 3, total: 1, done: false, best: null, filter: 'all', shown: false };
+  const s = { q, token: my, media: [], held: [], people: [], raw: new Map(), seen: new Set(), next: 3, total: 1, done: false, best: null, filter: 'all', shown: false, lots: freshLots(), gen: 0, loading: false, failed: null };
   session = s;
   paintLoading();
   let a;
@@ -116,7 +117,7 @@ async function run(raw) {
   s.total = Math.max(1, Number(a.total_pages) || 1);
   s.done = s.total < 3;
   const first = [...(a.results || []), ...(s.total > 1 ? b.results || [] : [])];
-  s.media = await ingest(s, first, true);
+  s.media = await ingest(s, first);
   if (!isLive(s)) return;
   releaseBanned(s);
   s.best = pickBest(s);
@@ -126,7 +127,7 @@ async function run(raw) {
 }
 
 /** Ajoute un lot de résultats bruts : dédoublonnage, classement, filtres, disponibilité. Renvoie les titres, classés. */
-async function ingest(s, raws, first) {
+async function ingest(s, raws) {
   const kid = isKidProfile();
   const fresh = [];
   for (const r of raws || []) {
@@ -138,7 +139,7 @@ async function ingest(s, raws, first) {
     fresh.push(r);
   }
   const ranked = rankResults(fresh, s.q, { today: todayStr() });
-  if (first) s.people = kid ? [] : ranked.filter((r) => kindOf(r) === 'person').slice(0, PEOPLE_MAX);
+  if (!kid) s.people.push(...ranked.filter((r) => kindOf(r) === 'person'));
   const media = filterResults(ranked, kid);
   const { keep, banned } = splitBanned(await filterAvailable(media.map((r) => register(toItem(r, r.media_type)))), (it) => isBannedGenre(it));
   s.held.push(...banned); // genres bannis : en fin de liste, ajoutés quand la dernière page est reçue
@@ -162,9 +163,9 @@ function pickBest(s) {
   return raw && titleMatch(raw, s.q) >= BEST_MIN_SCORE ? first : null;
 }
 
-/** Page suivante du défilement infini : une page par appel ; les pages en échec sont rejouées. Les titres sont ajoutés à leur groupe. */
-async function loadMore(s) {
-  if (s.done || !isLive(s)) return { html: '', done: true };
+/** Charge la page suivante et l'ajoute aux résultats chargés (rien n'est dessiné ici). Renvoie false s'il n'y a plus rien à charger ; les pages en échec sont rejouées. */
+async function fetchNext(s) {
+  if (s.done || !isLive(s)) return false;
   const page = s.next;
   s.next += 1;
   let json;
@@ -174,24 +175,27 @@ async function loadMore(s) {
     s.next = page;
     throw e;
   }
-  if (!isLive(s)) return { html: '', done: true };
+  if (!isLive(s)) return false;
   s.total = Number(json.total_pages) || s.total;
-  const items = await ingest(s, json.results, false);
-  if (!isLive(s)) return { html: '', done: true };
+  const items = await ingest(s, json.results);
+  if (!isLive(s)) return false;
   s.media.push(...items);
   s.done = s.next > s.total;
-  const tail = releaseBanned(s);
-  if (s.done && !s.media.length && !s.people.length) { paintNone(s); return { html: '', done: true }; }
-  updateCounts(s);
-  if (s.done) setStatus(statusText(s));
-  appendGroups(s, [...items, ...tail]);
-  return { html: '', done: s.done };
+  releaseBanned(s);
+  if (s.done && !s.media.length && !s.people.length) { paintNone(s); return false; }
+  return true;
 }
 
 const inFilter = (it, f) => f === 'all' || (f === 'movie' && it.type === 'movie') || (f === 'tv' && it.type === 'tv');
 /** Le meilleur résultat a sa propre carte dans la vue « Tout » : il n'est pas répété dans les groupes. */
 const visibleInGrid = (s, it) => inFilter(it, s.filter) && !(s.filter === 'all' && s.best && it.key === s.best.key);
 const gridItems = (s) => s.media.filter((it) => visibleInGrid(s, it));
+const freshLots = () => ({ movie: 0, tv: 0, people: 0 });
+/** Résultats chargés d'une section (Films, Séries ou Personnalités), tous les lots confondus. */
+const sectionItems = (s, kind) => (kind === 'people' ? s.people : gridItems(s).filter((it) => it.type === kind));
+const limitOf = (s, kind) => sectionLimit(kind, s.filter, s.lots[kind]);
+/** Nombre affiché à côté d'un filtre : suivi de « + » tant que d'autres pages peuvent encore compléter la liste. */
+const countText = (s, n) => String(n) + (s.done ? '' : '+');
 
 function counts(s) {
   const movie = s.media.filter((it) => it.type === 'movie').length;
@@ -200,7 +204,7 @@ function counts(s) {
 
 const statusText = (s) => {
   const n = s.media.length + s.people.length;
-  return n ? plural(n, 'résultat', 'résultats') + ' pour « ' + s.q + ' »' : 'Aucun résultat pour « ' + s.q + ' »';
+  return n ? (s.done ? '' : 'Au moins ') + plural(n, 'résultat', 'résultats') + ' pour « ' + s.q + ' »' : 'Aucun résultat pour « ' + s.q + ' »';
 };
 
 function setStatus(text) {
@@ -218,17 +222,28 @@ function emptyMsg(s) {
 }
 
 /** Groupe « Films » ou « Séries » : titre, puis grille dense de jaquettes. */
-function groupHtml(kind, inner) {
+function groupHtml(kind, inner, s) {
   return '<section class="srch-group" id="srch-sec-' + kind + '" aria-labelledby="srch-h-' + kind + '">' +
     '<h2 class="row-title" id="srch-h-' + kind + '">' + GROUP_TITLE[kind] + '</h2>' +
-    '<div class="srch-grid" id="srch-grid-' + kind + '" data-nav>' + inner + '</div></section>';
+    '<div class="srch-grid" id="srch-grid-' + kind + '" data-nav>' + inner + '</div>' + moreHtml(s, kind) + '</section>';
+}
+
+/** Bouton « Charger plus » d'une section : absent quand tout est affiché et que la liste est finie. */
+function moreHtml(s, kind) {
+  const loaded = sectionItems(s, kind).length;
+  const limit = limitOf(s, kind);
+  if (!hasMore(loaded, limit, s.done)) return '';
+  const busy = s.loading;
+  const label = busy ? 'Chargement…' : s.failed === kind ? 'Réessayer' : moreLabel(loaded, limit, s.done);
+  return '<div class="srch-more" data-nav><button type="button" class="btn btn-ghost srch-more-btn" data-more="' + kind + '"' +
+    (busy ? ' aria-disabled="true" aria-busy="true"' : '') + '>' + esc(label) + '</button></div>';
 }
 
 function filtersHtml(s) {
   const c = counts(s);
   return PILLS.filter(([f]) => !(f === 'people' && isKidProfile())).map(([f, label]) =>
     '<button type="button" class="pill" data-filter="' + f + '" aria-pressed="' + (s.filter === f) + '">' + label +
-    ' <span class="srch-n" data-count="' + f + '">' + c[f] + '</span></button>').join('');
+    ' <span class="srch-n" data-count="' + f + '">' + countText(s, c[f]) + '</span></button>').join('');
 }
 
 /** Meilleur résultat en bandeau compact : vignette, titre, méta, synopsis court, bouton. */
@@ -260,9 +275,9 @@ function personHtml(p) {
 /** Rangée « Personnalités » (dernier groupe), seulement s'il y en a ; hors profil enfant. */
 function peopleHtml(s) {
   if (isKidProfile() || (s.filter !== 'all' && s.filter !== 'people')) return '';
-  if (!s.people.length) return s.filter === 'people' ? '<p class="row-msg" data-empty>Aucune personnalité pour cette recherche.</p>' : '';
+  if (!s.people.length && (s.filter === 'all' || s.done)) return s.filter === 'people' ? '<p class="row-msg" data-empty>Aucune personnalité pour cette recherche.</p>' : '';
   return '<section class="srch-people row-section" id="srch-people" aria-labelledby="srch-people-h"><h2 class="row-title" id="srch-people-h">Personnalités</h2>' +
-    '<ul class="cast-row srch-cast" data-nav>' + s.people.map(personHtml).join('') + '</ul></section>';
+    '<ul class="cast-row srch-cast" data-nav>' + s.people.slice(0, limitOf(s, 'people')).map(personHtml).join('') + '</ul>' + moreHtml(s, 'people') + '</section>';
 }
 
 /** Haut de page : meilleur résultat (vue « Tout ») et filtres. */
@@ -273,15 +288,15 @@ function topHtml(s) {
 
 /** Groupes visibles selon le filtre : Films, Séries (grilles), puis Personnalités. */
 function groupsHtml(s) {
-  const items = gridItems(s);
   const kinds = s.filter === 'all' ? KINDS : KINDS.filter((k) => k === s.filter);
   let h = '';
   for (const k of kinds) {
-    const list = items.filter((it) => it.type === k);
-    if (list.length) h += groupHtml(k, list.map((it) => posterCard(it)).join(''));
-    else if (s.filter !== 'all') h += groupHtml(k, emptyMsg(s));
+    const list = sectionItems(s, k);
+    // Vue « Tout » : une section sans résultat chargé n'apparaît que si d'autres pages peuvent encore en apporter.
+    if (list.length) h += groupHtml(k, list.slice(0, limitOf(s, k)).map((it) => posterCard(it)).join(''), s);
+    else if (s.filter !== 'all' || !s.done) h += groupHtml(k, emptyMsg(s), s);
   }
-  if (s.filter === 'all' && !items.length) h += emptyMsg(s);
+  if (s.filter === 'all' && s.done && !gridItems(s).length) h += emptyMsg(s);
   return h + peopleHtml(s);
 }
 
@@ -290,34 +305,12 @@ function bodyHtml(s) {
     '<div class="srch-groups" id="srch-groups">' + groupsHtml(s) + '</div>';
 }
 
-/** Ajoute les titres visibles à leur groupe (Films, Séries), créé au besoin dans l'ordre Films, Séries, Personnalités. */
-function appendGroups(s, items) {
-  const wrap = groupsEl();
-  const add = items.filter((it) => visibleInGrid(s, it));
-  if (!wrap || !add.length) return;
-  wrap.querySelectorAll('[data-empty]').forEach((n) => n.remove());
-  for (const k of KINDS) {
-    const list = add.filter((it) => it.type === k);
-    if (!list.length) continue;
-    let grid = wrap.querySelector('#srch-grid-' + k);
-    if (!grid) {
-      const tpl = document.createElement('template');
-      tpl.innerHTML = groupHtml(k, '');
-      const sec = tpl.content.firstElementChild;
-      wrap.insertBefore(sec, wrap.querySelector(k === 'movie' ? '#srch-sec-tv, #srch-people' : '#srch-people'));
-      grid = sec.querySelector('.srch-grid');
-    }
-    grid.insertAdjacentHTML('beforeend', list.map((it) => posterCard(it)).join(''));
-  }
-}
-
 function paintSession(s) {
   const body = bodyEl();
   if (!body) return;
   s.shown = true;
   body.innerHTML = bodyHtml(s);
   observeTiles(body);
-  infiniteList({ host: groupsEl(), load: () => loadMore(s), after: (h) => observeTiles(h) });
   setStatus(statusText(s));
   applyRestore();
 }
@@ -389,6 +382,9 @@ function setFilter(f) {
   const s = session;
   if (!s || !s.shown || f === s.filter) return;
   s.filter = f;
+  s.lots = freshLots();
+  s.gen += 1;
+  s.failed = null;
   const top = detailEl.querySelector('#srch-top');
   const wrap = groupsEl();
   if (!top || !wrap) return;
@@ -402,7 +398,56 @@ function setFilter(f) {
 
 function updateCounts(s) {
   const c = counts(s);
-  detailEl.querySelectorAll('[data-count]').forEach((el) => { el.textContent = String(c[el.dataset.count] ?? ''); });
+  detailEl.querySelectorAll('[data-count]').forEach((el) => { el.textContent = countText(s, c[el.dataset.count] ?? ''); });
+}
+
+/** Redessine les sections après un clic sur « Charger plus » ; le focus passe au premier résultat ajouté (ou reste sur le bouton s'il n'y en a pas). */
+function repaintGroups(s, kind, prevCount, keyboard) {
+  const wrap = groupsEl();
+  if (!wrap || !isLive(s)) return;
+  wrap.innerHTML = groupsHtml(s);
+  observeTiles(wrap);
+  updateCounts(s);
+  if (prevCount == null) return; // le filtre a changé pendant le chargement : rien à annoncer ni à focaliser
+  const shown = Math.min(sectionItems(s, kind).length, limitOf(s, kind));
+  setStatus(s.failed === kind ? 'Chargement impossible, réessaie' : (GROUP_TITLE[kind] || 'Personnalités') + ' : ' + plural(shown, 'résultat affiché', 'résultats affichés'));
+  const list = wrap.querySelector(kind === 'people' ? '#srch-people .srch-cast' : '#srch-grid-' + kind);
+  const fresh = list && list.children[prevCount];
+  const inside = (el) => (el && (el.matches('button, a[href]') ? el : el.querySelector('button, a[href]'))) || null;
+  // Premier résultat ajouté, sinon le bouton ; sans bouton (liste finie), dernier résultat de la section, son titre, puis le filtre actif.
+  const heading = wrap.querySelector(kind === 'people' ? '#srch-people-h' : '#srch-h-' + kind);
+  if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
+  const target = inside(fresh) || wrap.querySelector('[data-more="' + kind + '"]') || inside(list && list.lastElementChild) || heading ||
+    detailEl.querySelector('.srch-filters [aria-pressed="true"]');
+  if (target) target.focus({ preventScroll: !keyboard });
+}
+
+/** « Charger plus » d'une section : affiche le lot suivant, après avoir chargé les pages manquantes si besoin. */
+async function showMore(kind, keyboard) {
+  const s = session;
+  if (!s || !s.shown || s.loading || !isLive(s)) return;
+  s.failed = null;
+  const gen = s.gen;
+  const prevCount = Math.min(sectionItems(s, kind).length, limitOf(s, kind));
+  const nextLimit = sectionLimit(kind, s.filter, s.lots[kind] + 1);
+  if (needsMore(sectionItems(s, kind).length, nextLimit, s.done)) {
+    s.loading = true;
+    const btn = detailEl.querySelector('[data-more="' + kind + '"]');
+    if (btn) { btn.setAttribute('aria-disabled', 'true'); btn.setAttribute('aria-busy', 'true'); btn.textContent = 'Chargement…'; }
+    try {
+      for (let i = 0; i < MAX_PAGES_PER_CLICK && needsMore(sectionItems(s, kind).length, nextLimit, s.done); i += 1) {
+        if (!(await fetchNext(s))) break;
+      }
+    } catch (_) {
+      s.failed = kind;
+    }
+    s.loading = false;
+    if (!isLive(s)) return;
+    if (s.gen !== gen) { repaintGroups(s, kind, null, keyboard); return; }
+    if (s.failed) { repaintGroups(s, kind, prevCount, keyboard); return; }
+  }
+  s.lots[kind] += 1;
+  repaintGroups(s, kind, prevCount, keyboard);
 }
 
 // ---------- Recherches récentes (par profil, en local) ----------
@@ -486,6 +531,8 @@ detailEl.addEventListener('click', (e) => {
     searchNow('');
     return;
   }
+  const more = t.closest('[data-more]');
+  if (more && detailEl.contains(more)) { showMore(more.dataset.more, e.detail === 0); return; }
   if (t.closest('[data-search-retry]')) { session = null; run(state.searchQ); }
 });
 

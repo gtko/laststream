@@ -122,3 +122,8 @@
 @media (max-width: 760px) {
   .search-topbar .search-form { flex: 1 1 auto; width: auto; min-width: 0; }
 }
+
+/* Bouton « Charger plus » sous chaque section (ODY-215). */
+.srch-more { display: flex; justify-content: center; padding: 4px 0 0; }
+.srch-more-btn { min-height: 44px; padding: 0 22px; font-size: 15px; }
+.srch-more-btn[aria-disabled="true"] { opacity: 0.7; cursor: progress; }
