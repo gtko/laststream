@@ -389,6 +389,28 @@ body.lp-open .ss { z-index: 620; }
 .ss-c-panel { padding: 8px 10px; }
 .ss-hist { gap: 2px; }
 .ss-hrow { display: flex; gap: 12px; align-items: center; padding: 6px 8px; }
+/* Notes d'un ami (ODY-221) */
+.ss-notes { display: flex; flex-direction: column; gap: 8px; }
+.ss-nlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ss-note { display: flex; flex-direction: column; border-radius: 14px; background: var(--line); }
+.ss-note-open, .ss-note-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 10px; border: 0; border-radius: 14px; background: none; color: inherit; text-align: left; }
+.ss-note-open { cursor: pointer; }
+.ss-note-open:hover, .ss-note-open:focus-visible { background: #2f2b3b; }
+.ss-poster-n { width: 48px; height: 72px; padding: 4px; font-size: 7px; }
+.ss-note-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ss-note-title { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.ss-note-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ss-note-body { font-size: 14px; overflow-wrap: anywhere; }
+.ss-note-body.is-emoji { font-size: 32px; line-height: 1.1; }
+.ss-note-body.is-hidden { font-style: italic; font-size: 13px; color: var(--muted); }
+.ss-note-go { align-self: center; flex: none; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.ss-note-acts, .ss-note-edit .ss-dlg-acts { display: flex; gap: 8px; }
+.ss-note-acts { padding: 0 10px 10px; }
+.ss-note-acts .ss-btn2, .ss-note-edit .ss-btn2, .ss-notes-more, .ss-notes .ss-dlg .ss-btn2 { min-height: 44px; }
+.ss-note-edit { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.ss-note-edit .ss-input { height: 44px; }
+.ss-note-err { margin: 0; font-size: 12px; color: #ff8a95; }
+.ss-notes .ss-dlg-bk { position: fixed; }
 .ss-lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .ss-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ss-tile .card { width: 100%; }

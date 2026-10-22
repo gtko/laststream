@@ -34,6 +34,8 @@ export type Note = {
   pos: number; kind: 'text' | 'emoji'; body: string;
   createdAt: number;
 };
+/** Note d'un ami avec son média ; `hidden` : contenu masqué par l'anti-spoiler (corps vide). */
+type FriendNote = Note & { media: MediaRef; hidden?: true };
 export type HistoryItem = {
   type: 'movie' | 'series'; tmdbId: number; title?: string; poster?: string;
   season?: number; episode?: number; pos: number; duration?: number; watched: boolean; updatedAt: number;
@@ -130,6 +132,9 @@ export const postNote = (n: NewNote) =>
 export const updateNote = (id: string, n: { kind: Note['kind']; body: string }) =>
   social<{ note: Note }>('PATCH', `/notes/${enc(id)}`, { kind: n.kind, body: n.body });
 export const deleteNote = (id: string) => social<void>('DELETE', `/notes/${enc(id)}`);
+/** Notes posées par un ami (ou par soi : son propre pid), plus récentes d'abord ; `before` = createdAt (ms) de la dernière reçue. */
+export const getFriendNotes = (pid: string, o: { limit?: number; before?: number } = {}) =>
+  social<{ notes: FriendNote[] }>('GET', withQuery(`/friends/${enc(pid)}/notes`, { limit: o.limit, before: o.before }));
 
 // ---- Canal temps réel ----
 /** Ticket HMAC valable 60 s : à redemander à chaque tentative de connexion. */

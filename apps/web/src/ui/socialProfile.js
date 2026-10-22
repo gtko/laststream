@@ -8,6 +8,7 @@ import { tmdb } from '../data/lt';
 import * as store from '../data/socialStore';
 import { UserApiError } from '../data/userApi';
 import { openAvatarStudio } from './avatar-studio.js';
+import { createFriendNotes } from './friendNotes.js';
 import { hydrateAvatars } from './avatar-art.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
 import { detailEl, toast } from './dom.js';
@@ -554,6 +555,22 @@ export function mountProfileEditor(root, deps) {
   const bioField = h('div', {}, h('label', { class: 'spf-lb', for: 'spf-bio' }, 'Bio ', bioCount), bioInput);
   const identityRows = [h('div', { class: 'spf-nt' }, nameField, tagField), tagNote, copyBtn, bioField];
   const statusRows = [presence, h('div', {}, h('label', { class: 'spf-lb', for: 'spf-st', text: 'Statut personnalisé' }), h('div', { class: 'spf-row spf-nowrap' }, emojiBtn, stInput), statusErr, expiry)];
+  // « Mes notes » (ODY-221) : la même liste que la fiche d'un ami, pour mon propre pid, avec Modifier / Supprimer.
+  let notesCount = profile.stats ? profile.stats.notes : null;
+  const notesLabel = () => 'Mes notes' + (notesCount === null ? '' : ' · ' + notesCount);
+  const notesHost = h('div', { class: 'spf-notes', id: 'spf-notes', hidden: true });
+  const myNotes = createFriendNotes({
+    toast,
+    myPid: () => profile.pid,
+    onDeleted: () => { if (notesCount !== null) { notesCount = Math.max(0, notesCount - 1); notesBtn.textContent = notesLabel(); } },
+  });
+  const notesBtn = btn('spf-btn spf-sec', notesLabel(), () => {
+    notesHost.hidden = !notesHost.hidden;
+    notesBtn.setAttribute('aria-expanded', String(!notesHost.hidden));
+    if (!notesHost.hidden && !myNotes.loaded) { myNotes.bind(notesHost); void myNotes.load(profile.pid); }
+  }, { 'aria-expanded': 'false', 'aria-controls': 'spf-notes' });
+  cleanups.push(() => myNotes.reset());
+  const notesBlock = h('div', {}, notesBtn, notesHost);
   const favBlock = h('div', {}, h('div', { class: 'spf-lbline' }, h('span', { class: mobile ? 'spf-lbu' : 'spf-lb', text: 'Mes 4 favoris' }), mobile ? h('span', { class: 'spf-hint', text: 'Appui long pour réordonner' }) : null), favsBox, favsErr);
 
   if (!mobile) {
@@ -563,6 +580,7 @@ export function mountProfileEditor(root, deps) {
           h('div', { class: 'spf-idrow' }, avatarBox, h('div', { class: 'spf-col' }, swatches, avatarBtns)), ...identityRows),
         h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: 'Statut et vitrine' }), ...statusRows,
           h('div', {}, h('span', { class: 'spf-lb', text: 'Bannière (une image de film)' }), bannerBox), favBlock),
+        h('section', { class: 'spf-card' }, notesBlock),
         prefsZone),
       previewBox));
   } else {
@@ -583,6 +601,7 @@ export function mountProfileEditor(root, deps) {
       h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Identité' }), ...identityRows),
       h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Statut' }), ...statusRows),
       h('section', { class: 'spf-sec' }, favBlock),
+      h('section', { class: 'spf-sec' }, notesBlock),
       prefsZone);
     bannerBox.hidden = true;
     paint('herocap');

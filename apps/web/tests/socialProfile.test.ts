@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   saveAuthProfile: vi.fn(),
   tmdb: vi.fn(),
   studio: vi.fn(),
+  notes: { opts: null as null | { onDeleted?: () => void } },
 }));
 
 vi.mock('../src/data/socialStore', () => h.store);
@@ -28,6 +29,9 @@ vi.mock('../src/data/lt', () => ({ tmdb: h.tmdb }));
 vi.mock('../src/ui/avatar-studio.js', () => ({ openAvatarStudio: h.studio }));
 vi.mock('../src/ui/avatar-art.js', () => ({ hydrateAvatars: vi.fn() }));
 vi.mock('../src/ui/dom.js', () => ({ detailEl: document.createElement('div'), toast: vi.fn() }));
+vi.mock('../src/ui/friendNotes.js', () => ({
+  createFriendNotes: (o: { onDeleted?: () => void }) => { h.notes.opts = o; return { bind: vi.fn(), load: vi.fn(), reset: vi.fn(), loaded: false }; },
+}));
 vi.mock('../src/ui/state.js', () => ({ state: { depth: 0 } }));
 
 import { UserApiError } from '../src/data/userApi';
@@ -145,6 +149,15 @@ describe('formulaire du profil social', () => {
     expect(q('.spf-dirty').hidden).toBe(true);
     expect(root.textContent).not.toContain('Désactiver mon profil social');
     expect(q('.spf-count').textContent).toBe('· 9/140');
+  });
+
+  it('Mes notes : aria-controls vers la liste, compteur décrémenté après une suppression', () => {
+    mount();
+    const btn = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === 'Mes notes · 87') as HTMLButtonElement;
+    expect(btn.getAttribute('aria-controls')).toBe('spf-notes');
+    expect(q('#spf-notes')).not.toBeNull();
+    h.notes.opts!.onDeleted!();
+    expect(btn.textContent).toBe('Mes notes · 86');
   });
 
   it('signale les modifications non enregistrées et envoie seulement le diff', async () => {

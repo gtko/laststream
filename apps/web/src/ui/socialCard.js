@@ -19,6 +19,7 @@ import {
   ago, avatarHTML, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf, posterBox, progressPct, shortName, socialErrorMessage,
   watchLine,
 } from './socialFmt.js';
+import { createFriendNotes } from './friendNotes.js';
 import { playDirect } from './sources-ui.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
@@ -58,6 +59,15 @@ function sinceText(ts) {
 export function createFriendCard(deps) {
   const { box, root } = deps;
   const c = { pid: null, tab: 'recent', menu: false, profile: null, lib: { status: 'loading', items: [] }, hist: { status: 'loading', items: [] }, seq: 0, dialog: null };
+
+  c.notes = createFriendNotes({
+    toast: deps.toast,
+    myPid: () => (store.getState().me || {}).pid || '',
+    onDeleted: () => {
+      const st = c.profile && c.profile !== 'error' ? c.profile.stats : null;
+      if (st && st.notes > 0) { st.notes -= 1; paint(); }
+    },
+  });
 
   const friend = () => (c.pid ? deps.findFriend(c.pid) : null);
 
@@ -142,11 +152,8 @@ export function createFriendCard(deps) {
       '<button type="button" class="ss-btn2 ss-sec ss-lib-all" data-ss-act="m-library" data-fk="lib-all">Voir toute sa bibliothèque</button>';
   }
 
-  function notesHTML() {
-    const n = c.profile && c.profile.stats ? c.profile.stats.notes : null;
-    return '<p class="ss-empty">' + (n != null ? esc(String(n)) + ' note' + (n > 1 ? 's' : '') + ' posée' + (n > 1 ? 's' : '') + ' sur la timeline des titres. ' : '') +
-      'Ses notes apparaissent pendant la lecture, au moment du film où il les a posées.</p>';
-  }
+  /** Conteneur de la liste des notes (friendNotes.js la monte après chaque rendu de la fiche). */
+  const notesHTML = () => '<div data-notes-host></div>';
 
   function cardHTML(f) {
     const p = c.profile && c.profile !== 'error' ? c.profile : null;
@@ -196,6 +203,7 @@ export function createFriendCard(deps) {
       if (el && url) el.style.backgroundImage = 'linear-gradient(0deg, rgba(23,21,31,.55), rgba(23,21,31,0)), ' + cssUrl(url);
     }
     if (c.tab === 'lib') observeTiles(box);
+    if (c.tab === 'notes') mountNotes();
     if (keep) {
       const el = Array.from(box.querySelectorAll('[data-fk]')).find((x) => x.getAttribute('data-fk') === keep);
       if (el) el.focus({ preventScroll: true });
@@ -203,9 +211,20 @@ export function createFriendCard(deps) {
     return true;
   }
 
+  // ---------- Notes ----------
+
+  /** Monte la liste des notes dans la fiche ; elle se charge à la première ouverture de l'onglet (annulée par reset()). */
+  function mountNotes() {
+    const el = box.querySelector('[data-notes-host]');
+    if (!el || !c.pid) return;
+    c.notes.bind(el);
+    if (!c.notes.loaded) c.notes.load(c.pid);
+  }
+
   // ---------- Chargement ----------
 
   function load(pid) {
+    c.notes.reset();
     const seq = ++c.seq;
     const ok = () => seq === c.seq && c.pid === pid;
     c.lib = { status: 'loading', items: [] };
@@ -385,6 +404,7 @@ export function createFriendCard(deps) {
     },
     close() {
       closeDialog(false);
+      c.notes.reset();
       c.pid = null;
       c.menu = false;
       c.seq++;

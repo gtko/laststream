@@ -49,6 +49,7 @@ vi.mock('../src/data/socialV2Api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/data/socialV2Api')>()),
   getFriendLibrary: vi.fn(),
   getFriendHistory: vi.fn(),
+  getFriendNotes: vi.fn(),
 }));
 
 vi.mock('../src/data/socialV3Api', async (importOriginal) => ({
@@ -565,8 +566,12 @@ describe('fiche ami', () => {
     expect(document.querySelectorAll('#ss-friend [data-ss-act="lib-play"]')).toHaveLength(1);
     expect($('#ss-friend')!.textContent).not.toContain('Sans TMDB');
     expect($('[data-tab="lib"]')!.getAttribute('aria-selected')).toBe('true');
+    vi.mocked(v2.getFriendNotes).mockResolvedValue({ notes: [] });
     clickEl('[data-tab="notes"]');
-    expect($('#ss-friend .ss-c-panel')!.textContent).toContain('38 notes');
+    expect($('#ss-friend .ss-c-panel')!.textContent).toContain('Chargement');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(v2.getFriendNotes).toHaveBeenCalledTimes(1);
+    expect($('#ss-friend .ss-c-panel')!.textContent).toContain('Aucune note pour l’instant.');
   });
 
   it('« Regarder avec … » (hook) et « Demander à rejoindre » (requestJoin)', async () => {

@@ -17,6 +17,8 @@ const impl = {
   inviteToParty: (_pid) => {},
   /** F6 — ouvre le salon d'attente d'une watch party. */
   openPartyLobby: (_partyId) => {},
+  /** ODY-221 — lance la lecture normale (playBest) d'une cible `request` avec `opts` ({ resume, startAt }) ; branchée par main.js. */
+  launchPlayback: (_request, _opener, _opts) => undefined,
 };
 
 /** Un lot enregistre son implémentation au démarrage de son module : registerSocialHook('openShareDialog', fn). */
@@ -31,3 +33,4 @@ export const renderConversationList = (...a) => impl.renderConversationList(...a
 export const openShareDialog = (...a) => impl.openShareDialog(...a);
 export const inviteToParty = (...a) => impl.inviteToParty(...a);
 export const openPartyLobby = (...a) => impl.openPartyLobby(...a);
+export const launchPlayback = (...a) => impl.launchPlayback(...a);

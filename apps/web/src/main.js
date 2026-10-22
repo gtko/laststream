@@ -55,6 +55,7 @@ import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from
 import { createConversationRenderer } from './ui/socialChat.js';
 import { configureSocialConv } from './ui/socialConv.js';
 import './ui/socialProfile.js'; // enregistre openProfileEditor (F2) et la page #/social/profile
+import { registerSocialHook } from './ui/socialHooks.js';
 import { configureShareDialog } from './ui/shareDialog.js';
 import { shareCodeFrom } from './ui/shareModel.js';
 import { createWatchWithHandler } from './data/watchWith';
@@ -128,6 +129,7 @@ applyTheme(readTheme()); // après la synchronisation des préférences du profi
 const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
 setConversationRenderer(createConversationRenderer({ launch: socialLaunch, toast }));
 setWatchWithHandler(createWatchWithHandler({ launch: socialLaunch, toast }));
+registerSocialHook('launchPlayback', socialLaunch); // notes d'un ami (ODY-221) : ouvre le titre à la position de la note
 configureSocialConv({ launch: socialLaunch, toast }); // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
 configureShareDialog({ toast }); // fenêtre « Partager » Social v3 (hook openShareDialog)
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
