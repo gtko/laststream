@@ -188,7 +188,30 @@ export const KID_ROWS: RowDef[] = [
   { id: 'kid-netflix', title: 'Netflix jeunesse', kind: 'landscape', kid: true, section: 'plateformes', fetch: { k: 'provider', slug: 'netflix', type: 'both' } },
 ];
 
-export const rowById = (id: string): RowDef | undefined => [...ADULT_ROWS, ...KID_ROWS].find((r) => r.id === id);
+/** Pages du menu principal (Films, Séries, Documentaires) : rangées propres à la page, absentes de l'accueil. */
+const HUB_EXTRA_ROWS: RowDef[] = [
+  { ...tv('tv-drama', 'Séries dramatiques', () => ({ with_genres: '18' })) },
+  { ...tv('tv-crime', 'Séries policières', () => ({ with_genres: '80' })) },
+  { ...tv('tv-comedy', 'Séries comiques', () => ({ with_genres: '35' })) },
+  { ...tv('tv-scifi', 'Science-fiction et fantastique', () => ({ with_genres: '10765' })) },
+  { ...movie('docs-recent', 'Documentaires récents', (c) => ({ with_genres: '99', sort_by: 'primary_release_date.desc', 'primary_release_date.lte': c.today, 'primary_release_date.gte': daysAgo(c.today, 1100) })) },
+  { ...movie('docs-fr', 'Documentaires français', () => ({ with_genres: '99', with_original_language: 'fr' })) },
+  { ...movie('docs-crime', 'Enquêtes et faits divers', () => ({ with_genres: '99,80' })) },
+  { ...movie('docs-history', 'Histoire', () => ({ with_genres: '99,36' })) },
+  { ...movie('docs-music', 'Musique', () => ({ with_genres: '99,10402' })) },
+  { ...tv('docuseries-crime', 'Docu-séries : enquêtes', () => ({ with_genres: '99,80', 'vote_count.gte': '50' })) },
+];
+
+export type HubId = 'films' | 'series' | 'documentaires';
+
+/** Rangées de chaque page du menu principal, dans l'ordre d'affichage. */
+export const HUBS: Record<HubId, { title: string; rows: readonly string[] }> = {
+  films: { title: 'Films', rows: ['films', 'top-films', 'cinema', 'critics', 'blockbusters', 'fr-cinema', 'action', 'comedy', 'drama', 'thrillers', 'scifi', 'horror', 'gems'] },
+  series: { title: 'Séries', rows: ['series', 'top-series', 'fr-series', 'tv-drama', 'tv-crime', 'tv-comedy', 'tv-scifi', 'ended', 'miniseries', 'korean', 'anime'] },
+  documentaires: { title: 'Documentaires', rows: ['docs', 'docuseries', 'docs-recent', 'docs-fr', 'docs-crime', 'docs-history', 'docs-music', 'docuseries-crime'] },
+};
+
+export const rowById = (id: string): RowDef | undefined => [...ADULT_ROWS, ...KID_ROWS, ...HUB_EXTRA_ROWS].find((r) => r.id === id);
 
 /** Rangées à afficher pour le profil, dans l'ordre (saison et rubriques autorisées appliquées). */
 export function activeRows(c: RowCtx, kid: boolean, sectionOk: (id: string) => boolean): RowDef[] {

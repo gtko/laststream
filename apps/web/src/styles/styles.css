@@ -250,6 +250,7 @@ body.modal-open { overflow: hidden; }
 .nav-pop a, .nav-pop-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: none; color: var(--soft); font: inherit; font-size: 14px; font-weight: 500; text-align: left; white-space: nowrap; cursor: pointer; }
 .nav-pop a:hover, .nav-pop a:focus-visible, .nav-pop-item:hover, .nav-pop-item:focus-visible { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .nav-pop svg { width: 18px; height: 18px; flex: none; color: var(--accent); }
+.nav-pop a[aria-current="page"] { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .nav-pop-who { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px 10px; margin-bottom: 6px; border-bottom: 1px solid var(--line-2); color: var(--text); font-weight: 700; }
 .nav-pop-sub { font-size: 12px; font-weight: 500; color: var(--dim); }
 .nav-avatar { border: 0; cursor: pointer; }
@@ -315,7 +316,7 @@ body.modal-open { overflow: hidden; }
   .s-a .rows { margin-top: 40px; }
 }
 
-/* ---------- Navigation : Explorer reprend Direct et Ma liste sous 1100 px ---------- */
+/* ---------- Navigation : Explorer reprend Séries, Films, Direct, Émissions TV et Documentaires sous 1100 px ---------- */
 @media (max-width: 1099px) {
   .s-a .nav-wide { display: none; }
   .nav-pop-compact { display: grid; }
@@ -323,7 +324,10 @@ body.modal-open { overflow: hidden; }
 
 /* ---------- Tabbar jusqu'à 760 px : la barre du haut ne garde que logo, recherche et profil ---------- */
 @media (max-width: 760px) {
-  .s-a .nav, .s-a .nav-party { display: none; }
+  .s-a .nav > a, .s-a .nav-party { display: none; }
+  /* Le menu Explorer reste dans la barre et s’ouvre sur toute la largeur, sous la barre. */
+  .s-a .nav .nav-drop { position: static; }
+  .s-a .nav-pop-explore { left: var(--gutter); right: var(--gutter); width: auto; transform: none; }
   .s-a .topbar { gap: 12px; }
   .tabbar { display: flex; }
   .foot { padding-bottom: 110px; }

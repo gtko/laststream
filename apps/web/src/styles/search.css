@@ -113,3 +113,12 @@
   .srch-best-title { font-size: 17px; }
   .srch-best-desc { display: none; }
 }
+
+/* Barre de la page Recherche : le champ prend de la place, les cinq entrées du menu principal passent dans Explorer sous 1400 px. */
+@media (max-width: 1399px) {
+  .search-topbar .nav-wide { display: none; }
+  .search-topbar .nav-pop-compact { display: grid; }
+}
+@media (max-width: 760px) {
+  .search-topbar .search-form { flex: 1 1 auto; width: auto; min-width: 0; }
+}

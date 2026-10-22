@@ -29,7 +29,7 @@ import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { creditsLinkHTML } from './credits.js';
 import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
-import { exploreMenuHTML, syncTopbar, topActionsHTML } from './topnav.js';
+import { mainNavHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
 import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
@@ -273,16 +273,10 @@ export function renderAI() {
 export const socialEnabled = socialAvailable;
 
 // ---------- Accueil (style A · Cinéma) ----------
-/** Barre du haut : logo, cinq liens, menu Explorer ; à droite recherche, Watch parties, profil. */
+/** Barre du haut : logo (accueil), Séries, Films, Direct, Émissions TV, Documentaires, menu Explorer ; à droite recherche, Watch parties, profil. */
 export function headerA() {
   return '<header class="topbar">' + brand() +
-    '<nav class="nav" aria-label="Principale">' +
-    '<a href="#/" data-noop class="is-current" aria-current="page">Accueil</a>' +
-    '<a href="#films" data-scroll="films">Films</a>' +
-    '<a href="#series" data-scroll="series">Séries</a>' +
-    '<a href="#/tv-live" data-tvlive class="nav-wide">Direct</a>' +
-    '<a href="#/library" data-libnav class="nav-wide">Ma liste</a>' +
-    exploreMenuHTML() + '</nav>' +
+    '<nav class="nav" aria-label="Principale">' + mainNavHTML() + '</nav>' +
     topActionsHTML({ kid: isKidProfile(), social: socialEnabled(), server: isServerMode(), owner: canAdmin() }) + '</header>';
 }
 

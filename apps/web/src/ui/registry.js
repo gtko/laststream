@@ -305,6 +305,44 @@ export function startRegistry(opts = {}) {
   pump();
 }
 
+/**
+ * Pages du menu principal (Films, Séries, Documentaires) : charge les rangées `ids` l'une après l'autre dans `slot`, sans toucher
+ * au chargement progressif de l'accueil. S'arrête dès que `alive()` est faux (page quittée). Renvoie le nombre de rangées affichées.
+ */
+export async function loadHubRows(ids, slot, alive) {
+  const ctx = makeCtx(getRegion().code, kidMaxAge());
+  const appear = new Appearances();
+  let prev = new Set();
+  let shown = 0;
+  for (const id of ids) {
+    if (!alive()) return shown;
+    const def = rowById(id);
+    if (!def || (def.when && !def.when(ctx))) continue;
+    try {
+      if (!(await rowAvailable(def))) continue;
+      const res = await fillRow(
+        async (page) => (alive() ? resolveHomeRow(def, page, ctx) : null),
+        def.kind === 'top10' ? TOP_COUNT : ROW_MAX,
+        async (fresh) => {
+          const open = fresh.filter((it) => appear.canShow(it.key) && !prev.has(it.key));
+          return def.fetch.k === 'top10' ? open : filterAvailable(open, { cinema: def.cinema });
+        },
+      );
+      if (!alive()) return shown;
+      if (!res || res.items.length < (def.minItems || MIN_ITEMS)) continue;
+      res.items.forEach((it) => appear.commit(it.key));
+      prev = new Set(res.items.map((it) => it.key));
+      const holder = document.createElement('div');
+      holder.innerHTML = renderDef(def, res.title, res.items);
+      const el = holder.firstElementChild;
+      slot.append(el);
+      observeTiles(el);
+      shown += 1;
+    } catch (_) { /* rangée absente */ }
+  }
+  return shown;
+}
+
 // ---------- « Tout voir » ----------
 
 export const browseAllowed = (id) => {

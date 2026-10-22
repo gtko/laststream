@@ -18,7 +18,7 @@ import { tabbar } from './home.js';
 import { ICON } from './icons.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
-import { exploreMenuHTML, topActionsHTML } from './topnav.js';
+import { mainNavHTML, topActionsHTML } from './topnav.js';
 import { esc, plural } from './util.js';
 import { kindOf, rankResults, resultKey, splitBanned, titleMatch } from './searchRank.js';
 import { homeFacts, isBannedGenre } from '../data/homeFilters';
@@ -47,13 +47,13 @@ const searchFieldHTML = (q) =>
   '<button type="button" class="search-clear" data-search-clear aria-label="Effacer la recherche"' + (q ? '' : ' hidden') + '>' + ICON.close + '</button>' +
   '</div></form>';
 
-/** Barre du haut de la page Recherche : logo, liens de l'app, champ, puis profil (même contenu que l'accueil, sans Accueil/Films/Séries). */
+/** Barre du haut de la page Recherche : logo, liens de l'app, champ, puis profil (même menu que l'accueil). */
 function topbarHTML(q) {
   const kid = isKidProfile();
   const server = isServerMode();
   const nav = kid
     ? '<a href="#/library" data-libnav>Mes favoris</a>' + (kidSection('tv') ? '<a href="#/tv-live" data-tvlive>TV jeunesse</a>' : '')
-    : '<a href="#/tv-live" data-tvlive class="nav-wide">Direct</a><a href="#/library" data-libnav class="nav-wide">Ma liste</a>' + exploreMenuHTML(BAR_ID);
+    : mainNavHTML({ idSuffix: BAR_ID });
   return '<header class="topbar search-topbar">' + brand() +
     '<nav class="nav" aria-label="Principale">' + nav + '</nav>' +
     topActionsHTML({ kid, social: server && !kid, server, owner: canAdmin(), search: searchFieldHTML(q), idSuffix: BAR_ID }) + '</header>';

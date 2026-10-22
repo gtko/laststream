@@ -49,7 +49,7 @@ document.addEventListener('click', (e) => {
   }
   if (t.closest('[data-noop]')) {
     e.preventDefault();
-    if (state.inDetail && t.closest('[data-noop]').classList.contains('brand')) goBack();
+    if (state.inDetail && t.closest('[data-noop]').classList.contains('brand')) location.hash = '#/'; // le logo ramène toujours à l’accueil, quelle que soit la profondeur
     return;
   }
   if (t.closest('[data-retry]')) {
@@ -141,8 +141,6 @@ document.addEventListener('click', (e) => {
   }
   const svcT = t.closest('[data-service]');
   if (svcT) { e.preventDefault(); go('#/service/' + svcT.dataset.service, svcT); return; }
-  const svcs = t.closest('[data-svcs]');
-  if (svcs) { e.preventDefault(); go('#/services', svcs); return; }
   const svcType = t.closest('[data-svctype]');
   if (svcType) {
     e.preventDefault();

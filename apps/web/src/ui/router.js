@@ -30,6 +30,7 @@ import { closePlayer } from './player.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { showCollection, showCollections } from './collections.js';
 import { showDiscover } from './discover.js';
+import { showHub } from './hubs.js';
 import { showService, showServices } from './services.js';
 import { showSettings } from './settings.js';
 import { state } from './state.js';
@@ -74,6 +75,7 @@ export function showView(r) {
   else if (r.kind === 'tvlive') showTvLive();
   else if (r.kind === 'shows') showShowsPage();
   else if (r.kind === 'show') showShow(r.id);
+  else if (r.kind === 'hub') showHub(r.id);
   else if (r.kind === 'downloads') showDownloads();
   else showFiche(r.type, r.id, r.season != null ? { s: r.season, e: r.episode } : null);
 }
@@ -92,7 +94,7 @@ export function parseRoute() {
     return null;
   }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -137,6 +139,8 @@ function parseRouteRaw() {
   if (h === '#/search') return { kind: 'search' };
   if (h === '#/calendar') return { kind: 'calendar' };
   if (h === '#/emissions') return { kind: 'shows' };
+  r = /^#\/(films|series|documentaires)$/.exec(h);
+  if (r) return { kind: 'hub', id: r[1] };
   r = /^#\/emission\/(\d{1,9}|epg:[a-z0-9-]{1,200})$/.exec(h);
   if (r) return { kind: 'show', id: r[1] };
   return h === '#/tv-live' ? { kind: 'tvlive' } : null;

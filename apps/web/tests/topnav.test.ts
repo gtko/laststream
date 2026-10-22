@@ -9,12 +9,13 @@ import { userStore } from '../src/data/userStore';
 let headerA: () => string;
 let headerKids: () => string;
 let syncTopbar: () => void;
+let mainNavHTML: (opts?: { current?: string; idSuffix?: string }) => string;
 beforeAll(async () => {
   const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
   document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
   ({ headerA } = await import('../src/ui/home.js'));
   ({ headerKids } = await import('../src/ui/kids.js'));
-  ({ syncTopbar } = await import('../src/ui/topnav.js'));
+  ({ syncTopbar, mainNavHTML } = await import('../src/ui/topnav.js'));
 });
 
 const $ =<T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -48,19 +49,31 @@ afterEach(() => {
 });
 
 describe('barre du haut : liens', () => {
-  it('garde cinq liens principaux à la première ligne', () => {
-    expect(labels('.topbar .nav > a')).toEqual(['Accueil', 'Films', 'Séries', 'Direct', 'Ma liste']);
-    expect($('.topbar .nav > a.is-current').textContent).toBe('Accueil');
+  it('menu principal : Séries, Films, Direct, Émissions TV, Documentaires (le logo ramène à l’accueil)', () => {
+    expect(labels('.topbar .nav > a')).toEqual(['Séries', 'Films', 'Direct', 'Émissions TV', 'Documentaires']);
+    expect($$('.topbar .nav > a').map((a) => a.getAttribute('href'))).toEqual(['#/series', '#/films', '#/tv-live', '#/emissions', '#/documentaires']);
+    expect($('.topbar .nav > a.is-current')).toBeNull(); // accueil : aucune entrée active
+    expect($('.brand').getAttribute('href')).toBe('#/');
   });
 
-  it('menu Explorer : cinq entrées (Collections, Découvrir, Services, Émissions TV, Calendrier)', () => {
-    expect(labels('#nav-explore .nav-pop-list:not(.nav-pop-compact) a')).toEqual(['Collections', 'Découvrir', 'Services', 'Émissions TV', 'Calendrier']);
-    expect($$('#nav-explore .nav-pop-list:not(.nav-pop-compact) svg')).toHaveLength(5);
+  it('menu Explorer : Ma liste, Collections, Découvrir, Calendrier ; plus de Services', () => {
+    const items = labels('#nav-explore .nav-pop-list:not(.nav-pop-compact) a');
+    expect(items).toEqual(['Ma liste', 'Collections', 'Découvrir', 'Calendrier']);
+    expect(items).not.toContain('Services');
+    expect($$('#nav-explore .nav-pop-list:not(.nav-pop-compact) svg')).toHaveLength(4);
+    expect($('#nav-explore [href="#/services"]')).toBeNull();
   });
 
-  it('Direct et Ma liste restent accessibles dans Explorer pour les écrans étroits', () => {
-    expect(labels('#nav-explore .nav-pop-compact a')).toEqual(['Direct', 'Ma liste']);
-    expect($$('.nav-wide')).toHaveLength(2);
+  it('les cinq entrées principales restent accessibles dans Explorer pour les écrans étroits', () => {
+    expect(labels('#nav-explore .nav-pop-compact a')).toEqual(['Séries', 'Films', 'Direct', 'Émissions TV', 'Documentaires']);
+    expect($$('.nav-wide')).toHaveLength(5);
+  });
+
+  it('la page affichée est marquée (aria-current) dans la barre et dans Explorer', () => {
+    mount('<header class="topbar"><nav class="nav">' + mainNavHTML({ current: 'films' }) + '</nav></header>');
+    expect(labels('.nav > a.is-current')).toEqual(['Films']);
+    expect($('.nav > a.is-current').getAttribute('aria-current')).toBe('page');
+    expect(labels('.nav-pop-compact a[aria-current="page"]')).toEqual(['Films']);
   });
 
   it('Watch parties seulement pour un compte connecté hors profil enfant', () => {
@@ -97,17 +110,17 @@ describe('menu Explorer : accessibilité', () => {
 
   it('les flèches parcourent les entrées ; flèche bas sur le bouton ouvre le menu', () => {
     const trigger = $('.nav-drop-btn');
-    // Ordre affiché (sans CSS en jsdom) : Direct, Ma liste en tête, puis les cinq entrées.
+    // Ordre affiché (sans CSS en jsdom) : les cinq entrées du menu principal en tête, puis Ma liste, Collections, Découvrir, Calendrier.
     trigger.focus();
     press(trigger, 'ArrowDown');
     expect($('#nav-explore').hidden).toBe(false);
+    expect(document.activeElement!.textContent).toContain('Séries');
+    press(document.activeElement!, 'ArrowDown');
+    expect(document.activeElement!.textContent).toContain('Films');
+    press(document.activeElement!, 'ArrowDown');
     expect(document.activeElement!.textContent).toContain('Direct');
-    press(document.activeElement!, 'ArrowDown');
-    expect(document.activeElement!.textContent).toContain('Ma liste');
-    press(document.activeElement!, 'ArrowDown');
-    expect(document.activeElement!.textContent).toContain('Collections');
     press(document.activeElement!, 'ArrowUp');
-    expect(document.activeElement!.textContent).toContain('Ma liste');
+    expect(document.activeElement!.textContent).toContain('Films');
     press(document.activeElement!, 'ArrowUp');
     press(document.activeElement!, 'ArrowUp'); // boucle : au-delà de la première entrée, on revient à la dernière
     expect(document.activeElement!.textContent).toContain('Calendrier');
@@ -193,6 +206,7 @@ describe('profil enfant', () => {
     expect(text).not.toContain('Découvrir');
     expect(text).not.toContain('Calendrier');
     expect(text).not.toContain('Collections');
+    expect(text).not.toContain('Documentaires');
   });
 });
 

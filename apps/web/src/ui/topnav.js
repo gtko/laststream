@@ -15,20 +15,40 @@ const TOP_DROP = '.topbar [data-drop]';
 const menuLink = (href, attrs, icon, label) =>
   '<a href="' + href + '"' + attrs + '>' + ICON[icon] + '<span>' + label + '</span></a>';
 
-/** Menu « Explorer » : cinq entrées en colonnes ; sous 1100 px, Direct et Ma liste s'y ajoutent (classe nav-pop-compact). */
-export function exploreMenuHTML(idSuffix = '') {
+/** Menu principal : [identifiant, adresse, attributs du lien, icône, libellé]. Les services de streaming restent dans Collections. */
+const MAIN_NAV = [
+  ['series', '#/series', ' data-go', 'layers', 'Séries'],
+  ['films', '#/films', ' data-go', 'film', 'Films'],
+  ['direct', '#/tv-live', ' data-tvlive', 'play', 'Direct'],
+  ['emissions', '#/emissions', ' data-showsnav', 'tv', 'Émissions TV'],
+  ['documentaires', '#/documentaires', ' data-go', 'info', 'Documentaires'],
+];
+
+/** Attributs d'état du lien de la page affichée (`current` : identifiant de MAIN_NAV). */
+const currentAttrs = (id, current) => (id === current ? ' aria-current="page"' : '');
+
+/** Menu « Explorer » : les entrées hors menu principal ; sous 1100 px, les cinq entrées du menu principal s'y ajoutent (classe nav-pop-compact). */
+function exploreMenuHTML(idSuffix, current) {
   const compact = '<ul class="nav-pop-list nav-pop-compact">' +
-    '<li>' + menuLink('#/tv-live', ' data-tvlive', 'play', 'Direct') + '</li>' +
-    '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li></ul>';
+    MAIN_NAV.map(([id, href, attrs, icon, label]) => '<li>' + menuLink(href, attrs + currentAttrs(id, current), icon, label) + '</li>').join('') + '</ul>';
   const main = '<ul class="nav-pop-list">' +
+    '<li>' + menuLink('#/library', ' data-libnav', 'list', 'Ma liste') + '</li>' +
     '<li>' + menuLink('#/collections', ' data-go', 'grid', 'Collections') + '</li>' +
     '<li>' + menuLink('#/discover', ' data-go', 'compass', 'Découvrir') + '</li>' +
-    '<li>' + menuLink('#/services', ' data-svcs', 'layers', 'Services') + '</li>' +
-    '<li>' + menuLink('#/emissions', ' data-showsnav', 'tv', 'Émissions TV') + '</li>' +
     '<li>' + menuLink('#/calendar', ' data-calnav', 'calendar', 'Calendrier') + '</li></ul>';
   return '<div class="nav-drop" data-drop>' +
     '<button type="button" class="nav-drop-btn" data-drop-btn aria-expanded="false" aria-controls="nav-explore' + idSuffix + '">Explorer' + ICON.chev + '</button>' +
     '<div class="nav-pop nav-pop-explore" id="nav-explore' + idSuffix + '" hidden>' + main + compact + '</div></div>';
+}
+
+/**
+ * Liens de la barre du haut (adulte) : Séries, Films, Direct, Émissions TV, Documentaires, puis le menu « Explorer ».
+ * `current` : identifiant de l'entrée de la page affichée (soulignée, aria-current), vide sur l'accueil (le logo y ramène).
+ */
+export function mainNavHTML({ current = '', idSuffix = '' } = {}) {
+  return MAIN_NAV.map(([id, href, attrs, , label]) =>
+    '<a href="' + href + '"' + attrs + ' class="nav-wide' + (id === current ? ' is-current' : '') + '"' + currentAttrs(id, current) + '>' + label + '</a>').join('') +
+    exploreMenuHTML(idSuffix, current);
 }
 
 /** Bouton « Watch parties » (comptes connectés hors profil enfant). */

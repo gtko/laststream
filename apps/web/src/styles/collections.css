@@ -108,3 +108,11 @@
   .ct, .ct-gif { transition: none; }
   .ct:hover, .ct:focus-visible { transform: none; }
 }
+
+/* ---------- Pages du menu principal : Séries, Films, Documentaires (hubs.js) ---------- */
+.hub-root { min-height: 100vh; }
+.hub-page { min-width: 0; max-width: 2400px; margin: 0 auto; }
+.hub-title { margin: 0; padding: calc(var(--topbar-h, 76px) + 20px) var(--gutter) 0; font-family: var(--ff-title); font-size: clamp(28px, 3.4vw, 44px); font-weight: 800; letter-spacing: -0.02em; outline: none; }
+.hub-page .hub-rows { margin-top: 24px; }
+.hub-sk { display: flex; flex-direction: column; gap: 12px; padding: 0 var(--gutter) 110px; overflow: hidden; }
+.hub-sk .row { display: flex; gap: 12px; }
