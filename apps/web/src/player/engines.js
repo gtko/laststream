@@ -7,6 +7,7 @@ import { nativeAudioTracks, nativeSubtitleTracks } from './native';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
 import { marginProps, mpvMargins, sameMargins, ZERO_MARGINS } from './mini';
 import { PageHole } from './minihole.js';
+import { getBufferLevel, hlsBuffer, mpvBufferProps } from './bufferLevel';
 
 class Emitter {
   constructor() { this.ls = new Map(); }
@@ -67,6 +68,7 @@ export class HtmlEngine extends Emitter {
     const v = this.video;
     this.pendingStart = startAt || 0;
     if (!hls) {
+      v.preload = 'auto';
       v.src = url;
       safePlay(v);
       return;
@@ -75,7 +77,7 @@ export class HtmlEngine extends Emitter {
     if (H && H.isSupported()) {
       const h = new H({
         startPosition: startAt > 0 ? startAt : -1,
-        maxBufferLength: 40,
+        ...hlsBuffer(getBufferLevel()),
         manifestLoadingMaxRetry: 3,
         levelLoadingMaxRetry: 4,
         fragLoadingMaxRetry: 5,
@@ -104,6 +106,7 @@ export class HtmlEngine extends Emitter {
       h.loadSource(url);
       h.attachMedia(v);
     } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+      v.preload = 'auto';
       v.src = url;
       safePlay(v);
     } else {
@@ -352,6 +355,8 @@ export class MpvEngine extends Emitter {
     // Pas de transparence ici : elle arrive avec la première image (showVideo).
     // La syntaxe de loadfile dépend de la version de mpv, annoncée juste après l'observation de `mpv-version`.
     if (!this.version) await new Promise((r) => setTimeout(r, 400));
+    // Mémoire tampon (réglage « Mémoire tampon ») : mpv la lit à l'ouverture du fichier, donc elle part avant le loadfile.
+    mpvBufferProps(getBufferLevel()).forEach(([name, value]) => this.ipc.send('mpv-set-prop', [name, value]));
     this.ipc.send('mpv-command', ['loadfile', ...loadfileArgs(url, startAt || 0, mpvVersionAtLeast(this.version || '0.0', '0.39'))]);
     this.ipc.send('mpv-set-prop', ['sid', 'no']);
     this.ipc.send('mpv-set-prop', ['secondary-sid', 'no']);

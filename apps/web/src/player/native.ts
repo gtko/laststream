@@ -25,6 +25,8 @@ export interface NativeOpenOptions {
   episodes?: NativeEpisodes | null;
   /** Durée du fichier en secondes, quand la sonde l'a donnée : repli pour la progression si libVLC ne la fournit pas (0 : inconnue). */
   durationSec?: number;
+  /** Mise en tampon réseau de libVLC, en ms (réglage « Mémoire tampon »). */
+  networkCachingMs?: number;
 }
 
 /** Source du panneau natif. `label` et `detail` restent servis tels quels (anciennes versions du lecteur) ; les champs suivants,

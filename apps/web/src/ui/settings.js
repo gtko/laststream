@@ -10,6 +10,7 @@ import {
   setAutoplay, setBandwidthSetting, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
+import { getBufferLevel, setBufferLevel } from '../player/bufferLevel';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
@@ -115,6 +116,9 @@ function playbackPanel() {
         BANDWIDTH_PRESETS_MBPS.map((n) => '<option value="' + n + '"' + (bw === n ? ' selected' : '') + '>' + n + ' Mb/s</option>').join('') + '</select>') +
       rowHTML('Mesurer maintenant', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-bw>Tester ma connexion</button>') +
       msgP('set-bw-msg', mbps ? 'Dernière mesure : ' + mbps : '')) +
+    card('Mémoire tampon',
+      fieldRow('Taille de la mémoire tampon', 'Sur cet appareil. Un tampon plus grand évite les saccades de chargement sur une source lente, mais utilise plus de mémoire et, sur Android, retarde le démarrage et les sauts de quelques secondes (jusqu’à 30 s en Maximum). Appliqué à la prochaine lecture.', (id) =>
+        '<select class="set-input" id="' + id + '" data-set-pref="buffer-level">' + BUFFER_CHOICES.map(([c, l]) => '<option value="' + c + '"' + (c === getBufferLevel() ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>')) +
     card('Séries et épisodes',
       switchRow('Passer l’intro', 'Saute le générique d’ouverture quand il est repéré.', getSkipPref('intro'), 'data-set-pref="skip-intro"') +
       switchRow('Passer le récapitulatif', 'Saute le « précédemment » quand il est repéré.', getSkipPref('recap'), 'data-set-pref="skip-recap"') +
@@ -124,6 +128,9 @@ function playbackPanel() {
 
 const langOptions = (value, extra) => extra.map(([c, l]) => [c, l]).concat(LANG_CHOICES).map(([c, l]) => '<option value="' + c + '"' + (c === value ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
 const langSelect = (pref, value, extra, disabled) => (id) => '<select class="set-input" id="' + id + '" data-set-pref="' + pref + '"' + (disabled ? ' disabled' : '') + '>' + langOptions(value, extra) + '</select>';
+
+/** Niveaux de la mémoire tampon : valeurs du contrat partagé (voir player/bufferLevel.ts). */
+const BUFFER_CHOICES = [['standard', 'Standard'], ['large', 'Grand'], ['max', 'Maximum']];
 
 /** Langues audio et sous-titres du profil : appliquées au démarrage de chaque lecture (voir player/langPolicy.ts). */
 function audioPanel() {
@@ -535,6 +542,7 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'lang-audio2') setLangPrefs({ audio2: t.value });
   else if (p === 'lang-subtitles') setLangPrefs({ subs: t.value });
   else if (p === 'lang-learnlang') setLangPrefs({ learnLang: t.value });
+  else if (p === 'buffer-level') setBufferLevel(t.value);
   else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
   else if (p === 'videolang') {
     setVideoLang(t.value);

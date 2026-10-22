@@ -45,6 +45,7 @@ import { isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
 import { backStep, connectShell, setShellFullscreen, setShellPip, startShellDrag } from './shell';
 import { activeSkip, analyzeUrl, autoSkipEnabled, buildSubmission, chapterMarks, movieEndRow, nextEpisodeCard, normalizeSkip, shouldRepoll, validAnalyzeDuration } from './skip';
+import { getBufferLevel, vlcNetworkCachingMs } from './bufferLevel';
 import {
   embeddedSubtitleUrl, fetchOpenSubParams, fetchProbe, hlsMasterUrl, hlsQuery, newSessionId, proxyUrl,
   SERVER_STORAGE_KEY as SERVER_KEY, serverAlive, serverBase, setShellServerAddress, subtitlesVttUrl,
@@ -523,6 +524,8 @@ function nativeOptions() {
     subtitle: headingFor(p)[1],
     // Durée du fichier (sonde) : le lecteur natif la garde en repli pour sauvegarder la progression.
     durationSec: p.probeTracks.durationSec || 0,
+    // Mémoire tampon réseau de libVLC, selon le réglage « Mémoire tampon » de cet appareil.
+    networkCachingMs: vlcNetworkCachingMs(getBufferLevel()),
     preferredAudioLang: audioPreference()[0] || '',
     preferredSubLang: mem.sub || wantedSubLang(getLangPrefs()) || '',
     subMode: mem.sub ? 'always' : effectiveSubMode(),

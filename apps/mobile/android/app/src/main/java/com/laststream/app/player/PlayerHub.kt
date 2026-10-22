@@ -20,6 +20,8 @@ data class OpenRequest(
     val headers: Map<String, String> = emptyMap(),
     val sources: List<SourceItem> = emptyList(),
     val episodes: EpisodesData? = null,
+    /** Mise en tampon réseau de libVLC, en ms (réglage « Mémoire tampon » : standard 3000, grand 8000, maximum 30000). */
+    val networkCachingMs: Int = 3000,
 ) {
     companion object {
         fun fromJson(o: JSONObject): OpenRequest? {
@@ -38,6 +40,7 @@ data class OpenRequest(
                 nextEpisode = parseNext(o.optJSONObject("nextEpisode")),
                 sources = parseSources(o.optJSONArray("sources")),
                 episodes = parseEpisodes(o.optJSONObject("episodes")),
+                networkCachingMs = o.optInt("networkCachingMs", 3000).coerceIn(1000, 60000),
                 headers = o.optJSONObject("headers")?.let { h -> h.keys().asSequence().associateWith { k -> h.optString(k) } } ?: emptyMap(),
             )
         }

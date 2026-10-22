@@ -147,6 +147,7 @@ class PlaybackCore private constructor(private val appContext: Context, val vlc:
         return try {
             val m = Media(vlc, Uri.parse(r.url))
             m.setHWDecoderEnabled(true, false)
+            m.addOption(":network-caching=${r.networkCachingMs}")
             if (r.startPosition >= 1.0) m.addOption(":start-time=${r.startPosition}")
             r.headers.forEach { (k, v) ->
                 when (k.lowercase()) {

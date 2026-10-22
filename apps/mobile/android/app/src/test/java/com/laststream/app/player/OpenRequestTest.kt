@@ -59,4 +59,11 @@ class OpenRequestTest {
         assertNull(OpenRequest.fromJson(JSONObject("""{"url":"u"}"""))!!.episodes)
         assertNull(OpenRequest.parseEpisodes(JSONObject("""{"seasons":[],"items":[]}""")))
     }
+
+    @Test fun networkCachingDefaultsAndBounds() {
+        assertEquals(3000, OpenRequest.fromJson(JSONObject("""{"url":"u"}"""))!!.networkCachingMs)
+        assertEquals(20000, OpenRequest.fromJson(JSONObject("""{"url":"u","networkCachingMs":20000}"""))!!.networkCachingMs)
+        assertEquals(60000, OpenRequest.fromJson(JSONObject("""{"url":"u","networkCachingMs":999999}"""))!!.networkCachingMs)
+        assertEquals(1000, OpenRequest.fromJson(JSONObject("""{"url":"u","networkCachingMs":5}"""))!!.networkCachingMs)
+    }
 }
