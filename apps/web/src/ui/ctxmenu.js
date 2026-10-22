@@ -21,6 +21,7 @@ import { state } from './state.js';
 import { getFavs } from './tv.js';
 import { mark } from './watched.js';
 import { esc } from './util.js';
+import { setOpenState } from './disclosure.js';
 
 const LONG_PRESS_MS = 500;
 let pressTimer = null;
@@ -32,7 +33,7 @@ export function closeCtx(restoreFocus) {
   const m = state.ctxMenu;
   if (!m) return;
   const opener = m._opener;
-  if (m._more) m._more.classList.remove('is-open');
+  if (m._more) setOpenState(m._more, false);
   m.remove();
   state.ctxMenu = null;
   if (restoreFocus && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
@@ -195,7 +196,16 @@ function personItems(t) {
   return items;
 }
 
+/** Menu « … » de la fiche : « Ne plus proposer sur l'accueil » (ou « Proposer à nouveau » quand le titre est masqué). Profil enfant : aucune entrée. */
+function ficheItems(t) {
+  const m = t.model;
+  if (!m || isKidProfile()) return [];
+  const hidden = isHiddenKey(m.key);
+  return [{ id: 'hide', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) }];
+}
+
 export function ctxItems(t) {
+  if (t.kind === 'fiche') return ficheItems(t);
   if (t.kind === 'title') return titleItems(t);
   if (t.kind === 'episode') return episodeItems(t);
   if (t.kind === 'channel') return channelItems(t);
@@ -275,7 +285,19 @@ document.addEventListener('click', (e) => {
     if (state.ctxMenu && state.ctxMenu._more === more) { closeCtx(true); return; }
     const r = more.getBoundingClientRect();
     openCtx(t, r.left, r.bottom + 4);
-    if (state.ctxMenu) { state.ctxMenu._more = more; more.classList.add('is-open'); }
+    if (state.ctxMenu) { state.ctxMenu._more = more; setOpenState(more, true); }
+    return;
+  }
+  const fm = el.closest('[data-fiche-more]');
+  if (fm) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Second appui sur « … » : referme le menu qu'il a ouvert (ODY-217).
+    if (state.ctxMenu && state.ctxMenu._more === fm) { closeCtx(true); return; }
+    if (!state.model) return;
+    const r = fm.getBoundingClientRect();
+    openCtx({ kind: 'fiche', el: fm, model: state.model }, r.left, r.bottom + 6);
+    if (state.ctxMenu) { state.ctxMenu._more = fm; setOpenState(fm, true); }
     return;
   }
   const rm = el.closest('[data-continue-remove]');

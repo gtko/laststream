@@ -5,7 +5,6 @@ import {
 } from '../data/homeFilters';
 import { isKidProfile } from '../data/auth';
 import { toast } from './dom.js';
-import { state } from './state.js';
 import { card, chipHTML, chipsHTML } from './settings-ui.js';
 
 /** Retire un titre de l'accueil, avec annulation dans le message. */
@@ -94,14 +93,5 @@ document.addEventListener('click', (e) => {
     refreshHome(panel);
     toast('Genres réinitialisés');
     return;
-  }
-  const hd = t.closest('[data-hide-title]');
-  if (hd) {
-    e.preventDefault();
-    const m = state.model;
-    if (!m) return;
-    toggleHidden(m.key, m.name, m.posterPath);
-    hd.setAttribute('aria-pressed', String(isHiddenKey(m.key)));
-    hd.classList.toggle('is-on', isHiddenKey(m.key));
   }
 });

@@ -3,7 +3,6 @@ import { stopInfinite } from './infinite.js';
 import { followBtn } from './follows.js';
 import { ficheRateHTML } from './rate.js';
 import { userStore } from '../data/userStore';
-import { isHiddenKey } from '../data/homeFilters';
 import { isKidProfile, isServerMode, kidMaxAge } from '../data/auth';
 import { kidAllows } from '../data/kid';
 import { getRegion } from '../data/prefs';
@@ -152,14 +151,9 @@ const libBtn = (m) => {
     '" aria-label="' + (on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream') + '">' + (on ? ICON.check : ICON.list) + '</button>';
 };
 
-/** « Ne plus proposer » : bouton discret, retire le titre de l'accueil (réglable depuis les réglages du profil). */
-// Bouton à bascule : libellé fixe, état porté par aria-pressed (« Réafficher » quand le titre est masqué).
-const hideBtn = (m) => {
-  if (isKidProfile()) return '';
-  const hidden = isHiddenKey(m.key);
-  return '<button type="button" class="btn btn-ghost btn-sm home-hide' + (hidden ? ' is-on' : '') + '" data-hide-title aria-pressed="' + hidden + '">' +
-    'Ne plus proposer sur l’accueil</button>';
-};
+/** Menu « … » de la fiche : « Ne plus proposer sur l'accueil » y est rangé (menu contextuel de l'app, voir ctxmenu.js). Absent du profil enfant, dont l'accueil est déjà filtré. */
+const moreBtn = () => (isKidProfile() ? ''
+  : '<button type="button" class="btn-round f-more" data-fiche-more aria-haspopup="menu" aria-expanded="false" data-tip="Plus d’actions" aria-label="Plus d’actions">' + ICON.dots + '</button>');
 
 const watchBtn = (m) => {
   const on = userStore.isWatched(m.key);
@@ -196,7 +190,7 @@ function ficheHTML(m) {
     (m.cinemaSince
       ? '<button type="button" class="btn-round" data-sources-open data-tip="Voir les sources" aria-label="Voir les sources">' + ICON.list + '</button>' // sur demande seulement : aucune vérification automatique
       : followBtn(m.key, 'btn-round')) +
-    hideBtn(m) +
+    moreBtn() +
     '</div><div class="f-rate" id="f-rate" data-nav>' + ficheRateHTML(m) + '</div></div>';
 
   const panels = [];

@@ -396,7 +396,7 @@ export function onNavKey(e) {
 document.addEventListener('keydown', (e) => {
   if (playerKey(e)) { e.preventDefault(); return; }
   if (!playerEl.hidden) return;
-  if (e.key === 'Escape' && state.ctxMenu) { e.preventDefault(); closeCtx(); return; }
+  if (e.key === 'Escape' && state.ctxMenu) { e.preventDefault(); closeCtx(true); return; }
   if (e.key === 'Escape' && hv.el) { e.preventDefault(); closeHover(); return; }
   if (e.key === 'Enter' && e.target instanceof Element && e.target.matches('[data-tvprog]')) {
     e.preventDefault();
