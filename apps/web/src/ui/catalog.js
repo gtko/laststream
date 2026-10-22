@@ -1,7 +1,8 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { hasProviders, movieAvailability, releasedByDate } from '../data/released';
 import { dayDiff, todayStr } from './dates.js';
-import { completeVideos, includeVideoLanguages, pickTrailer as pickFromVideos, trailerLang } from '../data/trailers';
+import { completeVideos, includeVideoLanguages, pickTrailers, trailerLang } from '../data/trailers';
+import { isTrailerFailed } from '../data/trailerHealth';
 import { api, tmdb } from '../data/lt';
 import { getRegion } from '../data/prefs';
 import { EMPTY_DETAIL, GENRE_FR, IMG } from './constants.js';
@@ -55,8 +56,10 @@ export function pickLogo(logos, size) {
 
 /** Champs « bande-annonce » d'un détail : clé YouTube, et vrai si elle n'est pas doublée dans la langue choisie (VO). */
 export function trailerFields(videos) {
-  const t = pickFromVideos(videos, trailerLang());
-  return { trailer: t.key, trailerVO: t.vo };
+  // Candidates ordonnées, hors vidéos en échec sur cet appareil (voir trailerFallback.js).
+  const trailers = pickTrailers(videos, trailerLang(), 8).filter((t) => !isTrailerFailed(t.key)).slice(0, 5);
+  const first = trailers[0];
+  return { trailer: first ? first.key : '', trailerVO: first ? first.vo : false, trailers };
 }
 
 export function certification(raw, type) {

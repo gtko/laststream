@@ -7,6 +7,7 @@ import { ICON } from './icons.js';
 import { inLib } from './library.js';
 import { ambientSrc, postYT, whenPlaying } from './preview.js';
 import { textFade } from './playback.js';
+import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { compactRates } from './ratings.js';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
@@ -37,6 +38,8 @@ export function closeHover() {
   hv.openTimer = hv.closeTimer = null;
   hv.token++;
   if (hv.unfade) { hv.unfade(); hv.unfade = null; }
+  if (hv.unguard) { hv.unguard(); hv.unguard = null; }
+  if (hv.unplay) { hv.unplay(); hv.unplay = null; }
   if (hv.el) {
     const el = hv.el;
     hv.el = null;
@@ -128,10 +131,36 @@ export function openHover(tile) {
           postYT(fr, 'mute');
           postYT(fr, 'playVideo');
           // Affichée seulement une fois la lecture lancée et les surimpressions YouTube (titre, boutons) disparues.
-          whenPlaying(fr, () => { if (token === hv.token) vbox.classList.add('is-on'); });
+          hv.unplay = whenPlaying(fr, () => { if (token === hv.token) vbox.classList.add('is-on'); });
           // Les textes de la carte s'estompent pendant la lecture effective (voir playback.js).
           hv.unfade = textFade(hv.el, fr);
         }, { once: true });
+        // Vidéo indisponible : candidate suivante ; plus aucune, l'aperçu et le bouton son disparaissent.
+        hv.unguard = guardAmbient(fr, d, d.trailer, {
+          srcFor: (k) => ambientSrc(k),
+          onSwap: (next) => {
+            if (hv.unplay) { hv.unplay(); hv.unplay = null; }
+            vbox.classList.remove('is-on');
+            if (!sb) return;
+            sb.dataset.vid = next.key;
+            if (next.vo) sb.dataset.vo = '1'; else delete sb.dataset.vo;
+          },
+          onReload: () => {
+            if (token !== hv.token) return;
+            postYT(fr, 'mute');
+            postYT(fr, 'playVideo');
+            if (hv.unplay) hv.unplay();
+            hv.unplay = whenPlaying(fr, () => { if (token === hv.token) vbox.classList.add('is-on'); });
+          },
+          onExhausted: () => {
+            if (hv.unplay) { hv.unplay(); hv.unplay = null; }
+            if (token !== hv.token) return;
+            if (hv.unfade) { hv.unfade(); hv.unfade = null; }
+            vbox.classList.remove('is-on');
+            vbox.innerHTML = '';
+            hideTrailerButtons(hv.el);
+          },
+        });
       }
     }
     placeHover(hv.el, anchor);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   audioLangOf, captionParams, completeVideos, hasTrailerInLang, includeVideoLanguages, isTrailerCandidate, isVoVideo, mergeVideos,
-  pickTrailer, pickTrailerKey, titleScore, trailerFallbackTags, trailerLang, type TmdbVideo, type TrailerLang, videoTier,
+  pickTrailer, pickTrailerKey, pickTrailers, titleScore, trailerFallbackTags, trailerLang, type TmdbVideo, type TrailerLang, videoTier,
 } from '../src/data/trailers';
 
 const fr = { lang: 'fr', tag: 'fr-FR', country: 'FR' };
@@ -276,5 +276,29 @@ describe('listes TMDB réelles (fr) : promo, VOST, plateforme', () => {
     expect(titleScore(v({ name: 'Bande-annonce officielle | Disney+' }), fr)).toBe(2);
     expect(titleScore(v({ name: 'Official Trailer' }), fr)).toBe(0 + 3);
     expect(titleScore(v({ name: 'Trailer' }), fr)).toBe(0);
+  });
+});
+
+describe('pickTrailers', () => {
+  const list = [v({ key: 'a', name: 'Official Trailer' }), v({ key: 'b', name: 'Trailer 2' }), v({ key: 'c', name: 'Final Trailer' })];
+  it('premier élément identique à pickTrailer', () => {
+    expect(pickTrailers(list, fr)[0]).toEqual(pickTrailer(list, fr));
+  });
+  it('ne répète pas une même clé', () => {
+    const dup = [...list, v({ key: 'a', name: 'Official Trailer (copie)' })];
+    const keys = pickTrailers(dup, fr).map((t) => t.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.length).toBe(3);
+  });
+  it('ignore les clés vides', () => {
+    expect(pickTrailers([v({ key: '' }), ...list], fr).every((t) => t.key !== '')).toBe(true);
+  });
+  it('tronque à limit', () => {
+    expect(pickTrailers(list, fr, 2)).toHaveLength(2);
+    expect(pickTrailers(list, fr, 1)).toHaveLength(1);
+  });
+  it('liste vide ou absente : rien', () => {
+    expect(pickTrailers([], fr)).toEqual([]);
+    expect(pickTrailers(null, fr)).toEqual([]);
   });
 });

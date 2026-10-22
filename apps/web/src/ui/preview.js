@@ -5,6 +5,7 @@ import { DWELL_MS, REDUCE, STILL } from './constants.js';
 import { ICON } from './icons.js';
 import { app } from './dom.js';
 import { textFade } from './playback.js';
+import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { state } from './state.js';
 import { esc } from './util.js';
 
@@ -130,6 +131,7 @@ export function stopPreview() {
   if (p.ro) p.ro.disconnect();
   if (p.unfade) p.unfade();
   if (p.unend) p.unend();
+  if (p.unguard) p.unguard();
   p.wrap.remove();
   p.btn.remove();
 }
@@ -155,7 +157,7 @@ export async function startPreview(media) {
   media.appendChild(wrap);
   media.appendChild(btn);
   const iframe = wrap.querySelector('iframe');
-  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null, unend: null };
+  const p = { media, wrap, btn, iframe, muted: true, vo: !!d.trailerVO, ro: null, unfade: null, unend: null, unguard: null };
   state.preview = p;
   p.ro = new ResizeObserver(() => fitPreview(p));
   p.ro.observe(media);
@@ -164,7 +166,6 @@ export async function startPreview(media) {
     if (state.preview !== p) return;
     postYT(iframe, 'mute');
     postYT(iframe, 'playVideo');
-    requestAnimationFrame(() => wrap.classList.add('is-on'));
     // Accueil : les textes de la diapositive s'estompent pendant la lecture effective (grille : rien à estomper).
     p.unfade = textFade(media.closest('.hero-slide'), iframe);
     if (carousel) {
@@ -173,6 +174,27 @@ export async function startPreview(media) {
       });
     }
   }, { once: true });
+  // L'aperçu n'apparaît qu'une fois la lecture lancée : l'écran d'erreur de YouTube ne se voit jamais. Vidéo indisponible :
+  // candidate suivante ; plus aucune, l'aperçu disparaît (le visuel reste) et les boutons « Bande-annonce » aussi.
+  p.unguard = guardAmbient(iframe, d, d.trailer, {
+    srcFor: (k) => ambientSrc(k, !carousel),
+    onReveal: () => { if (state.preview === p) requestAnimationFrame(() => wrap.classList.add('is-on')); },
+    onSwap: (next) => {
+      wrap.classList.remove('is-on');
+      p.vo = !!next.vo;
+      if (next.vo) btn.dataset.vo = '1'; else delete btn.dataset.vo;
+    },
+    onReload: () => {
+      if (state.preview !== p) return;
+      postYT(iframe, 'mute');
+      postYT(iframe, 'playVideo');
+    },
+    onExhausted: () => {
+      if (state.preview !== p) return;
+      stopPreview();
+      hideTrailerButtons(media.closest('.hero-slide') || media);
+    },
+  });
 }
 
 export function cancelDwell() {

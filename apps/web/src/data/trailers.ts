@@ -166,9 +166,25 @@ export function isTrailerCandidate(v: TmdbVideo): boolean {
  * ou sous-titres). Clé vide s'il n'y a aucune vidéo utilisable.
  */
 export function pickTrailer(videos: TmdbVideo[] | null | undefined, pref: TrailerLang): { key: string; vo: boolean } {
+  return pickTrailers(videos, pref, 1)[0] ?? { key: '', vo: false };
+}
+
+/**
+ * Bandes-annonces candidates, de la meilleure à la moins bonne (même tri que pickTrailer), sans doublon de clé, au plus
+ * `limit` : sert de repli quand une vidéo est indisponible (bloquée dans le pays, intégration interdite).
+ */
+export function pickTrailers(videos: TmdbVideo[] | null | undefined, pref: TrailerLang, limit = 5): Array<{ key: string; vo: boolean }> {
   const pool = (videos ?? []).filter(isTrailerCandidate).sort((a, b) => compareVideos(a, b, pref));
-  const best = pool[0];
-  return best ? { key: best.key ?? '', vo: langGroup(best, pref) !== 0 } : { key: '', vo: false };
+  const seen = new Set<string>();
+  const out: Array<{ key: string; vo: boolean }> = [];
+  for (const v of pool) {
+    const key = v.key ?? '';
+    if (out.length >= limit) break;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, vo: langGroup(v, pref) !== 0 });
+  }
+  return out;
 }
 
 /** Clé YouTube de la meilleure bande-annonce (ou teaser, à défaut), vide s'il n'y en a pas. */
