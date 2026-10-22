@@ -8,15 +8,15 @@ import { Capacitor } from '@capacitor/core';
 import { matchesLanguage, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
 import type { Lang } from '../data/stream';
 import type { SourceView } from '../sources/info';
-import { knownBandwidthKbps, loadSources, recommendFor, type SourceRequest } from '../sources/load';
+import { loadSources, type SourceRequest } from '../sources/load';
 import { isShellEnvironment } from '../player/shell';
 import { createAndroidDownloads } from './android';
 import { createDownloadIndex } from './index';
 import { DownloadManager, type TransferFn } from './manager';
 import { bindDownloadLimit, clearPurgePending, getDownloadSettings, isCellular, isPurgePending, setDownloadSettings } from './settings';
 import { isAddonLinkUrl } from './linkHosts';
-import { createStreamResolver, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
-import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
+import { createStreamResolver, findMatch, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
+import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadRef, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
 import { createWebDownloadHttp } from './webHttp';
 import { reportDownloadEvent } from './report';
 import { createShellDownloadStore } from './shellStore';
@@ -217,15 +217,24 @@ const requestOf = (t: DownloadTarget): SourceRequest => ({
   episode: t.episode ?? null,
 });
 
+/** Liste de sources gardée un moment par titre : « Choisir une autre source » repart d'elle, sans nouvelle recherche. */
+const VIEWS_TTL_MS = 10 * 60 * 1000;
+const loadedViews = new Map<string, { at: number; views: readonly SourceView[] }>();
+
 /**
  * Sources téléchargeables du titre : HLS, liens hors de la politique de la plateforme et torrents sans débrideur exclus.
- * Une erreur de chargement devient une erreur réseau réessayable.
+ * Une erreur de chargement devient une erreur réseau réessayable. `reuse` repart de la liste gardée si elle est récente.
  */
-async function downloadableViews(t: DownloadTarget): Promise<readonly SourceView[]> {
+async function downloadableViews(t: DownloadTarget, reuse = false): Promise<readonly SourceView[]> {
+  const id = downloadIdFor(t);
+  const kept = loadedViews.get(id);
+  if (reuse && kept && Date.now() - kept.at < VIEWS_TTL_MS) return kept.views;
   try {
     const loaded = await loadSources(requestOf(t));
     const policy = linkPolicy();
-    return loaded.views.filter((v) => isDownloadable(v, policy));
+    const views = loaded.views.filter((v) => isDownloadable(v, policy));
+    loadedViews.set(id, { at: Date.now(), views });
+    return views;
   } catch (err) {
     throw new DownloadError('network', true, err);
   }
@@ -247,24 +256,105 @@ function narrow(views: readonly SourceView[], quality: string | undefined, langs
     const same = pool.filter((v) => matchesAny(v, langs));
     if (same.length > 0) pool = same;
   }
-  return pool;
+  return rankViews(pool);
+}
+
+const groupRank = (g: string): number => {
+  const i = QUALITY_GROUP_ORDER.indexOf(g as QualityGroupKey);
+  return i < 0 ? QUALITY_GROUP_ORDER.length : i;
+};
+
+/**
+ * Classement simple, sans sondage de lecture ni mesure de débit : résolution la plus haute d'abord, langue préférée
+ * (mémorisée, à défaut le français) d'abord, puis score déjà calculé, puis taille la plus légère.
+ */
+function rankViews(views: readonly SourceView[]): SourceView[] {
+  const kept = getDownloadSettings().langs;
+  const langs = kept && kept.length > 0 ? kept : ['fr'];
+  return [...views].sort((a, b) =>
+    groupRank(a.group) - groupRank(b.group)
+    || Number(matchesAny(b, langs)) - Number(matchesAny(a, langs))
+    || (b.score || 0) - (a.score || 0)
+    || a.sizeBytes - b.sizeBytes);
+}
+
+/** Une source proposée sur la feuille « Télécharger » : de quoi l'afficher, et la source elle-même pour la lancer. */
+export interface SourceChoice {
+  /** Identifiant stable dans la liste (position d'origine de la source). */
+  key: string;
+  group: QualityGroupKey;
+  /** Badge de qualité : 4K, 1080p… */
+  quality: string;
+  /** REMUX, WEB-DL… (vide si inconnu). */
+  sourceType: string;
+  codec: string;
+  audio: string;
+  /** Codes de langue (`fr`, `multi`…). */
+  langs: string[];
+  /** Addon où la source a été trouvée (vide si inconnu). */
+  origin: string;
+  sizeBytes: number;
+  view: SourceView;
+}
+
+const choiceOf = (v: SourceView): SourceChoice => ({
+  key: String(v.index),
+  group: v.group,
+  quality: v.quality,
+  sourceType: v.sourceType,
+  codec: v.codec,
+  audio: v.audio,
+  langs: langsOfView(v),
+  origin: v.origins[0]?.name ?? '',
+  sizeBytes: v.sizeBytes,
+  view: v,
+});
+
+/**
+ * Sources proposées sur la feuille, classées simplement (`rankViews`). `exclude` retire la source qui vient d'échouer et
+ * repart de la liste gardée du titre : pas de nouvelle recherche.
+ */
+export async function listSourceChoices(t: DownloadTarget, opts: { exclude?: DownloadRef['match'] } = {}): Promise<SourceChoice[]> {
+  const views = await downloadableViews(t, opts.exclude !== undefined);
+  const failed = opts.exclude ? findMatch(views, opts.exclude) : undefined;
+  return rankViews(failed ? views.filter((v) => v !== failed) : views).map(choiceOf);
 }
 
 /**
- * Ajoute le titre à la file. Choix : qualité et langues données (mémorisées ensuite) ou mémorisées ; sinon la source
- * recommandée. Lève `DownloadError('network')` hors Wi-Fi quand « Wi-Fi seulement » est actif et que la connexion est mobile ;
- * `DownloadError('content')` quand rien n'est téléchargeable ; `quota_exceeded` si la limite d'espace serait dépassée.
+ * Source présélectionnée : la qualité mémorisée si elle existe encore, sinon la meilleure du classement. Une source plus
+ * grosse que l'espace libre (`freeBytes`, null : sans limite) n'est jamais présélectionnée.
  */
-export async function requestDownload(t: DownloadTarget, choice?: { quality?: string; langs?: string[] }): Promise<DownloadItem> {
+export function recommendedChoice(choices: readonly SourceChoice[], freeBytes: number | null): SourceChoice | null {
+  const fits = choices.filter((c) => freeBytes === null || c.sizeBytes <= freeBytes);
+  const kept = getDownloadSettings().quality;
+  return (kept ? fits.find((c) => c.group === kept) : undefined) ?? fits[0] ?? null;
+}
+
+/**
+ * Ajoute le titre à la file. Choix : une source de la feuille (`source`) ; ou une qualité et des langues ; ou les réglages
+ * mémorisés, la source la mieux classée étant alors prise. Le choix devient le choix mémorisé. Lève `DownloadError('network')`
+ * hors Wi-Fi quand « Wi-Fi seulement » est actif et que la connexion est mobile ; `DownloadError('content')` quand rien n'est
+ * téléchargeable ; `quota_exceeded` si la limite d'espace serait dépassée.
+ */
+export async function requestDownload(t: DownloadTarget, choice?: { quality?: string; langs?: string[]; source?: SourceChoice }): Promise<DownloadItem> {
   const settings = getDownloadSettings();
   if (settings.wifiOnly && isCellular()) throw new DownloadError('network', true);
   const manager = await getDownloads();
   if (!manager) throw new DownloadError('store_failed', false);
-  const quality = choice ? choice.quality : settings.quality;
-  const langs = choice ? choice.langs : settings.langs;
-  const pool = narrow(await downloadableViews(t), quality, langs);
-  if (pool.length === 0) throw new DownloadError('content', false);
-  const pick = recommendFor(pool, knownBandwidthKbps())?.view ?? pool[0];
+  let pick: SourceView;
+  let quality: string | undefined;
+  let langs: string[] | undefined;
+  if (choice?.source) {
+    pick = choice.source.view;
+    quality = pick.group;
+    langs = choice.source.langs;
+  } else {
+    quality = choice ? choice.quality : settings.quality;
+    langs = choice ? choice.langs : settings.langs;
+    const pool = narrow(await downloadableViews(t), quality, langs);
+    if (pool.length === 0) throw new DownloadError('content', false);
+    pick = pool[0];
+  }
   const source: DownloadSource = {
     ...streamToSource(pick, t),
     ...(quality ? { quality } : {}),
@@ -279,23 +369,8 @@ export async function requestDownload(t: DownloadTarget, choice?: { quality?: st
     ...(pick.sizeBytes > 0 ? { estimatedSize: pick.sizeBytes } : {}),
   });
   // Le choix fait sur la feuille devient le choix mémorisé.
-  if (choice) setDownloadSettings({ quality: choice.quality ?? '', langs: choice.langs ?? [] });
+  if (choice) setDownloadSettings({ quality: quality ?? '', langs: langs ?? [] });
   return item;
-}
-
-/** Choix proposés sur la feuille qualité : une entrée par qualité et jeu de langues, téléchargeables seulement. */
-export async function previewChoices(t: DownloadTarget): Promise<Array<{ quality: string; langs: string[]; sizeBytes: number }>> {
-  const seen = new Map<string, { quality: string; langs: string[]; sizeBytes: number }>();
-  for (const v of await downloadableViews(t)) {
-    const langs = langsOfView(v);
-    const key = `${v.group}|${langs.join('+')}`;
-    if (!seen.has(key)) seen.set(key, { quality: v.group, langs, sizeBytes: v.sizeBytes });
-  }
-  const rank = (q: string): number => {
-    const i = QUALITY_GROUP_ORDER.indexOf(q as QualityGroupKey);
-    return i < 0 ? QUALITY_GROUP_ORDER.length : i;
-  };
-  return [...seen.values()].sort((a, b) => rank(a.quality) - rank(b.quality) || a.langs.join('+').localeCompare(b.langs.join('+')));
 }
 
 /** Abonnement à la liste : appelle `fn` aussitôt avec la liste courante. No-op si les téléchargements sont indisponibles. */
@@ -341,6 +416,7 @@ function dropManager(): void {
   starting = null;
   index = null;
   webStore = null;
+  loadedViews.clear();
   bindDownloadLimit(null);
 }
 

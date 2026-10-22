@@ -2,7 +2,7 @@
  * qualité et de langues, titre téléchargé, suppression, espace plein, détail d'une erreur), entrées de navigation.
  * Aucune URL n'est jamais affichée : seuls des libellés traduits (viewModel) et des tailles. Tout texte passe par esc(). */
 import { isKidProfile } from '../data/auth';
-import { downloadIdFor, getDownloads, getSpace, listDownloads, platformAvailability, previewChoices, requestDownload, subscribeDownloads } from '../downloads/service';
+import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, platformAvailability, recommendedChoice, requestDownload, subscribeDownloads } from '../downloads/service';
 import { getDownloadSettings, isCellular, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
 import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/viewModel';
 import { playBest } from '../player/session.js';
@@ -387,8 +387,12 @@ export function openErrorSheet(item, opener, onChange) {
     render: (body, close) => {
       body.innerHTML = '<ul class="dl-sheet-hints"><li>Réseau coupé : reprise automatique au retour du réseau.</li>' +
         '<li>Espace insuffisant : libère de la place ou augmente la limite.</li><li>Fichier inaccessible : supprime-le et relance.</li></ul>' +
-        '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-retry', 'Réessayer', 'retry') + btnHTML('dl-btn-d', ' data-dl-del', 'Supprimer le téléchargement') + '</div>';
+        '<div class="dl-sheet-acts">' + btnHTML('btn-primary', ' data-dl-retry', 'Réessayer', 'retry') +
+        (item.source && item.source.ref ? btnHTML('btn-ghost', ' data-dl-other', 'Choisir une autre source') : '') +
+        btnHTML('dl-btn-d', ' data-dl-del', 'Supprimer le téléchargement') + '</div>';
       body.querySelector('[data-dl-retry]').addEventListener('click', () => { close(); void retryItem(item.id); });
+      const other = body.querySelector('[data-dl-other]');
+      if (other) other.addEventListener('click', () => { close(true); void chooseAnotherSource(item, opener); });
       body.querySelector('[data-dl-del]').addEventListener('click', () => confirmRemove(item, opener, onChange));
     },
   });
@@ -425,82 +429,112 @@ export async function openSpaceFullSheet(opener) {
   });
 }
 
-const QUALITY_HINT = (i, n) => (i === 0 ? 'Recommandé' : i === n - 1 ? 'Pour économiser l’espace' : 'Plus léger');
-/** Libellés lisibles des groupes de qualité : `previewChoices` renvoie la clé de groupe (2160p, 1080p…). */
+/** Libellés lisibles des groupes de qualité : `SourceChoice.group` est la clé de groupe (2160p, 1080p…). */
 const QUALITY_NAME = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+/** Sources montrées d'abord par résolution ; les autres se déplient (« Voir N autres sources »). */
+const SHOWN_PER_GROUP = 3;
 const langName = (code) => {
   const n = names('language', code);
   return n ? n.charAt(0).toLowerCase() + n.slice(1) : code;
 };
-/** Libellé d'une langue : « Audio français » ; « multi » et « original » ne sont pas des codes de langue ISO. */
-const langTitle = (code) => (code === 'multi' ? 'Multi-audio' : code === 'original' ? 'Version originale' : 'Audio ' + langName(code));
+/** Libellé d'une langue : « audio français » ; « multi » et « original » ne sont pas des codes de langue ISO. */
+const langTitle = (code) => (code === 'multi' ? 'multi-audio' : code === 'original' ? 'version originale' : 'audio ' + langName(code));
+/** « 1080p · WEB-DL · H.265 » */
+const choiceTitle = (c) => [c.quality, c.sourceType, c.codec].filter(Boolean).join(' · ');
+/** « Audio français · AAC 5.1 · via Torrentio » */
+const choiceSub = (c) => {
+  const langs = c.langs.map(langTitle).join(' + ');
+  return [langs ? langs.charAt(0).toUpperCase() + langs.slice(1) : '', c.audio, c.origin ? 'via ' + c.origin : ''].filter(Boolean).join(' · ');
+};
 
-/** Feuille « Télécharger » : qualité et langues, au premier téléchargement (mémorisées ensuite). */
-function openChoiceSheet(t, opener) {
-  const settings = getDownloadSettings();
+const SEARCHING = '<p class="dl-sheet-load" role="status"><span class="dl-spin" aria-hidden="true"></span>Recherche des sources…</p>';
+const cancelHTML = () => '<div class="dl-sheet-acts">' + btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', 'Annuler') + '</div>';
+
+/**
+ * Feuille « Télécharger » : état de recherche visible (avec « Annuler »), puis la liste des sources par résolution, avec
+ * taille, langue, audio et origine. Une source est présélectionnée (qualité mémorisée, espace libre), le choix reste libre ;
+ * celles qui dépassent l'espace libre sont grisées avec le motif. `exclude` : source à ne pas reproposer (elle vient d'échouer).
+ * Résout `{ source }` pour la source choisie, ou null si la feuille est fermée.
+ */
+function openChoiceSheet(t, opener, { exclude = null } = {}) {
   return new Promise((resolve) => {
     let picked = null;
     openSheet({
-      title: 'Télécharger',
+      title: exclude ? 'Choisir une autre source' : 'Télécharger',
       sub: t.name + (t.season != null ? ' · ' + epCode(t.season, t.episode) : ''),
       opener,
       onClose: () => resolve(picked),
       render: (body, close) => {
-        body.innerHTML = '<p class="dl-sheet-load" role="status">Recherche des fichiers téléchargeables…</p>';
-        Promise.all([previewChoices(t), getSpace()]).then(([choices, space]) => {
+        body.innerHTML = SEARCHING + cancelHTML();
+        Promise.all([listSourceChoices(t, exclude ? { exclude } : {}), getSpace()]).then(([choices, space]) => {
           if (!body.isConnected) return;
           if (!choices.length) {
-            body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(errorMessage('content')) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close', 'Fermer') + '</div>';
+            body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(exclude ? 'Aucune autre source n’est disponible pour ce titre.' : errorMessage('content')) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
             body.querySelector('button').focus();
             return;
           }
-          const qualities = [...new Set(choices.map((c) => c.quality))];
-          const langs = [...new Set(choices.flatMap((c) => c.langs))];
-          let q = qualities.includes(settings.quality) ? settings.quality : qualities[0];
-          const remembered = (settings.langs || []).filter((l) => langs.includes(l));
-          const on = new Set(remembered.length ? remembered : (choices.find((c) => c.quality === q) || choices[0]).langs);
-          const sizeOf = (qq) => {
-            const same = choices.filter((c) => c.quality === qq);
-            const hit = same.find((c) => c.langs.some((l) => on.has(l))) || same[0];
-            return hit ? hit.sizeBytes : 0;
+          const free = space && space.limit != null ? Math.max(0, space.limit - space.used) : null;
+          const tooBig = (c) => free !== null && c.sizeBytes > free;
+          const byKey = new Map(choices.map((c) => [c.key, c]));
+          const first = recommendedChoice(choices, free);
+          const recommendedKey = first ? first.key : null;
+          let selected = recommendedKey;
+          const groups = [];
+          for (const c of choices) {
+            const g = groups.find((x) => x.key === c.group);
+            if (g) g.items.push(c); else groups.push({ key: c.group, items: [c] });
+          }
+          const rowHTML = (c, hidden) => '<button type="button" class="dl-opt dl-src' + (tooBig(c) ? ' is-off' : '') + '" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false"' +
+            (tooBig(c) ? ' disabled aria-disabled="true"' : '') + (hidden ? ' hidden' : '') + '>' +
+            '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(choiceTitle(c)) +
+            (c.key === recommendedKey ? ' <span class="dl-tag">Recommandé</span>' : '') + '</span>' +
+            '<span class="dl-opt-s">' + esc(tooBig(c) ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c)) + '</span></span>' +
+            '<span class="dl-opt-v">' + esc(c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue') + '</span></button>';
+          const groupHTML = (g) => {
+            // La source présélectionnée reste toujours visible, même au-delà des premières.
+            const shown = Math.max(SHOWN_PER_GROUP, g.items.findIndex((c) => c.key === recommendedKey) + 1);
+            return '<p class="dl-sheet-h" id="dl-g-' + esc(g.key) + '">' + esc(QUALITY_NAME[g.key] || g.key) + '</p>' +
+              '<div class="dl-opts" role="radiogroup" aria-labelledby="dl-g-' + esc(g.key) + '">' +
+              g.items.map((c, j) => rowHTML(c, j >= shown)).join('') + '</div>' +
+              (g.items.length > shown ? '<button type="button" class="dl-more" data-dl-more="' + esc(g.key) + '" aria-expanded="false">Voir ' + (g.items.length - shown) + (g.items.length - shown > 1 ? ' autres sources' : ' autre source') + '</button>' : '');
           };
-          const free = space && space.limit != null ? 'Espace libre : ' + formatBytes(Math.max(0, space.limit - space.used)) + ' sur ta limite de ' + formatBytes(space.limit)
+          const freeLine = space && space.limit != null ? 'Espace libre : ' + formatBytes(free) + ' sur ta limite de ' + formatBytes(space.limit)
             : space ? formatBytes(space.used) + ' utilisés · sans limite' : '';
-          body.innerHTML = '<p class="dl-sheet-h" id="dl-q-h">Qualité</p><div class="dl-opts" role="radiogroup" aria-labelledby="dl-q-h">' +
-            qualities.map((qq, i) => '<button type="button" class="dl-opt" role="radio" data-dl-q="' + esc(qq) + '" aria-checked="' + (qq === q) + '">' +
-              '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(QUALITY_NAME[qq] || qq) + '</span><span class="dl-opt-s">' + esc(QUALITY_HINT(i, qualities.length)) + '</span></span>' +
-              '<span class="dl-opt-v">' + esc(sizeOf(qq) ? formatBytes(sizeOf(qq)) : '') + '</span></button>').join('') + '</div>' +
-            (langs.length ? '<p class="dl-sheet-h" id="dl-l-h">Audio et sous-titres</p><div class="dl-opts" role="group" aria-labelledby="dl-l-h">' +
-              langs.map((l) => '<button type="button" class="dl-opt" role="checkbox" data-dl-l="' + esc(l) + '" aria-checked="' + on.has(l) + '">' +
-                '<span class="dl-chk" aria-hidden="true">' + DL_ICON.check + '</span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(langTitle(l)) + '</span></span></button>').join('') + '</div>' : '') +
-            (free ? '<p class="dl-sheet-note">' + esc(free) + '</p>' : '') +
-            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus>' + DL_ICON.dl + '<span data-dl-go-l></span></button>' +
+          const allOff = choices.every(tooBig);
+          body.innerHTML = '<p class="dl-sheet-note" role="status">' + esc(choices.length + (choices.length > 1 ? ' sources trouvées' : ' source trouvée') + ' · à toi de choisir') + '</p>' +
+            groups.map(groupHTML).join('') +
+            (freeLine ? '<p class="dl-sheet-note">' + esc(freeLine) + '</p>' : '') +
+            (allOff ? '<p class="dl-sheet-p" role="alert">' + esc('Aucune source ne tient dans ton espace libre.') + ' <a href="#/downloads" data-dl-manage data-dl-close>Gérer l’espace</a></p>' : '') +
+            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus' + (selected ? '' : ' disabled') + '>' + DL_ICON.dl + '<span data-dl-go-l></span></button>' +
             btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
           const sync = () => {
-            body.querySelectorAll('[data-dl-q]').forEach((b) => {
-              b.setAttribute('aria-checked', String(b.dataset.dlQ === q));
-              const v = b.querySelector('.dl-opt-v');
-              const n = sizeOf(b.dataset.dlQ);
-              v.textContent = n ? formatBytes(n) : '';
-            });
-            body.querySelectorAll('[data-dl-l]').forEach((b) => b.setAttribute('aria-checked', String(on.has(b.dataset.dlL))));
-            const n = sizeOf(q);
-            body.querySelector('[data-dl-go-l]').textContent = 'Télécharger' + (n ? ' · ' + formatBytes(n) : '');
+            body.querySelectorAll('[data-dl-src]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.dlSrc === selected)));
+            const c = selected ? byKey.get(selected) : null;
+            const go = body.querySelector('[data-dl-go]');
+            go.disabled = !c;
+            body.querySelector('[data-dl-go-l]').textContent = 'Télécharger' + (c && c.sizeBytes ? ' · ' + formatBytes(c.sizeBytes) : '');
           };
           body.addEventListener('click', (e) => {
-            const b = e.target instanceof Element ? e.target.closest('[data-dl-q], [data-dl-l], [data-dl-go]') : null;
-            if (!b) return;
-            if (b.dataset.dlQ != null) q = b.dataset.dlQ;
-            else if (b.dataset.dlL != null) { if (on.has(b.dataset.dlL)) on.delete(b.dataset.dlL); else on.add(b.dataset.dlL); }
-            else { picked = { quality: q, langs: [...on] }; close(true); return; }
+            const b = e.target instanceof Element ? e.target.closest('[data-dl-src], [data-dl-more], [data-dl-go]') : null;
+            if (!b || b.disabled) return;
+            if (b.dataset.dlSrc != null) selected = b.dataset.dlSrc;
+            else if (b.dataset.dlMore != null) {
+              const revealed = Array.from(b.previousElementSibling.querySelectorAll('[hidden]'));
+              revealed.forEach((r) => { r.hidden = false; });
+              b.remove();
+              // Le bouton qui avait le focus disparaît : le focus passe à la première source dévoilée (clavier, télécommande).
+              const next = revealed.find((r) => !r.disabled) || revealed[0];
+              if (next) next.focus({ preventScroll: true });
+              return;
+            } else { picked = { source: byKey.get(selected) }; close(true); return; }
             sync();
           });
           sync();
-          body.querySelector('[data-dl-go]').focus({ preventScroll: true });
+          (body.querySelector('[data-dl-go]:not([disabled])') || body.querySelector('[data-dl-close]')).focus({ preventScroll: true });
         }).catch((err) => {
           if (!body.isConnected) return;
           const code = err && err.code ? err.code : 'network';
-          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(errorMessage(code)) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close', 'Fermer') + '</div>';
+          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(errorMessage(code)) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
           body.querySelector('button').focus();
         });
       },
@@ -508,18 +542,21 @@ function openChoiceSheet(t, opener) {
   });
 }
 
-/** Lance un téléchargement : feuille de choix la première fois, puis choix mémorisés. Erreurs traduites en toast. */
+/** Lance un téléchargement : la feuille liste les sources trouvées et l'utilisateur choisit. Erreurs traduites en toast. */
 export async function startDownload(t, opener) {
   const s = getDownloadSettings();
   if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
   const space = await getSpace();
   if (space && space.full) { await openSpaceFullSheet(opener); return; }
-  let choice;
-  if (!s.asked) {
-    choice = await openChoiceSheet(t, opener);
-    if (!choice) return;
-    setDownloadSettings({ asked: true });
-  }
+  const choice = await openChoiceSheet(t, opener);
+  if (!choice) return;
+  setDownloadSettings({ asked: true });
+  await enqueueChoice(t, choice, opener);
+}
+
+/** Ajoute la source choisie à la file ; limite d'espace et réseau traduits en feuille ou en toast. */
+async function enqueueChoice(t, choice, opener) {
+  const s = getDownloadSettings();
   try {
     await requestDownload(t, choice);
     if (opener && opener.isConnected) opener.focus({ preventScroll: true });
@@ -529,6 +566,23 @@ export async function startDownload(t, opener) {
     if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
     toast(errorMessage(code || 'resolve_failed'));
   }
+}
+
+/**
+ * Source en échec : propose les autres sources du titre (même liste, sans nouvelle recherche), sans la source en échec.
+ * Le téléchargement en erreur est remplacé seulement une fois la nouvelle source choisie.
+ */
+async function chooseAnotherSource(item, opener) {
+  const ref = item.source && item.source.ref;
+  if (!ref) return;
+  const t = { key: ref.key, type: ref.type, id: ref.id, name: ref.name, ...(ref.season !== undefined ? { season: ref.season } : {}), ...(ref.episode !== undefined ? { episode: ref.episode } : {}) };
+  // Même contrôle que startDownload, avant de supprimer : l'item en erreur ne doit pas disparaître si l'ajout est refusé.
+  if (getDownloadSettings().wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+  const choice = await openChoiceSheet(t, opener, { exclude: ref.match });
+  if (!choice) return;
+  const m = await manager();
+  if (m) await m.remove(item.id);
+  await enqueueChoice(t, choice, opener);
 }
 
 /** Geste sur un bouton ou une pastille, selon l'état peint. */

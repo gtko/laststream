@@ -21,7 +21,8 @@ vi.mock('../src/downloads/service', () => ({
   platformAvailability: () => h.s.avail,
   getDownloads: vi.fn(() => Promise.resolve(h.s.manager)),
   downloadIdFor: (t: { key: string; season?: number; episode?: number }) => (t.season !== undefined && t.episode !== undefined ? `${t.key}:${t.season}:${t.episode}` : t.key),
-  previewChoices: vi.fn(() => Promise.resolve([])),
+  listSourceChoices: vi.fn(() => Promise.resolve([])),
+  recommendedChoice: (choices: Array<{ sizeBytes: number }>, free: number | null) => choices.find((c) => free === null || c.sizeBytes <= free) ?? null,
   requestDownload: vi.fn(() => Promise.resolve({})),
   subscribeDownloads: vi.fn((fn: (items: unknown[]) => void) => {
     h.s.listener = fn;
@@ -48,6 +49,7 @@ beforeEach(() => {
   h.s.avail = { ok: true };
   h.s.items = [];
   h.s.manager = h.mgr;
+  h.s.space = { used: 1, limit: 10, ratio: 0.1, warn: false, full: false };
   h.s.listener = null;
   Object.values(h.mgr).forEach((f) => f.mockClear());
   h.s.unsub.mockClear();
@@ -180,25 +182,143 @@ describe('pastille ronde d’un épisode', () => {
     expect(document.activeElement).toBe(opener);
   });
 
-  it('feuille de choix : groupe 2160p affiché « 4K », langues en français, « multi » lisible', async () => {
+  const GB = 1024 ** 3;
+  const choice = (key: string, group: string, quality: string, sizeBytes: number, extra: Record<string, unknown> = {}) => ({
+    key, group, quality, sourceType: 'WEB-DL', codec: '', audio: 'AAC 5.1', langs: ['fr'], origin: 'Torrentio', sizeBytes, view: { index: Number(key) }, ...extra,
+  });
+  const target = { key: 'movie:1', type: 'movie', id: '1', name: 'Le Phare' };
+  const openChoices = async (choices: unknown[], space: unknown = { used: 0, limit: null, ratio: 0, warn: false, full: false }) => {
     const svc = await import('../src/downloads/service');
-    vi.mocked(svc.previewChoices).mockResolvedValueOnce([
-      { quality: '2160p', langs: ['fr', 'multi'], sizeBytes: 2 * 1024 ** 3 },
-      { quality: '1080p', langs: ['fr'], sizeBytes: 1024 ** 3 },
-    ] as never);
+    h.s.space = space;
+    vi.mocked(svc.listSourceChoices).mockResolvedValueOnce(choices as never);
     const ui = await import('../src/ui/downloadBtn.js');
     detail().innerHTML = '<button id="opener">x</button>';
     const opener = document.getElementById('opener') as HTMLButtonElement;
-    void ui.startDownload({ key: 'movie:1', type: 'movie', id: '1', name: 'Le Phare' }, opener);
+    const done = ui.startDownload(target, opener);
+    return { svc, ui, opener, done };
+  };
+  const escape = () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  it('feuille : la recherche est visible tout de suite, avec « Annuler », même quand la question est déjà posée', async () => {
+    const svc = await import('../src/downloads/service');
+    vi.mocked(svc.requestDownload).mockClear();
+    let release: (v: never) => void = () => undefined;
+    vi.mocked(svc.listSourceChoices).mockReturnValueOnce(new Promise((r) => { release = r as never; }));
+    const { setDownloadSettings } = await import('../src/downloads/settings');
+    setDownloadSettings({ asked: true });
+    const ui = await import('../src/ui/downloadBtn.js');
+    detail().innerHTML = '<button id="opener">x</button>';
+    void ui.startDownload(target, document.getElementById('opener') as HTMLElement);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    expect(sheet.querySelector('[role="status"]')!.textContent).toContain('Recherche des sources…');
+    const cancel = Array.from(sheet.querySelectorAll('button')).find((b) => b.textContent === 'Annuler')!;
+    cancel.click();
+    expect(document.querySelector('.dl-layer')).toBeNull();
+    release([] as never); // résultat tardif après annulation : rien ne se dessine
+    await flush();
+    expect(document.querySelector('.dl-sheet')).toBeNull();
+    expect(svc.requestDownload).not.toHaveBeenCalled();
+  });
+
+  it('feuille : sources par résolution (4K, 1080p…), taille, langue, origine ; recommandée présélectionnée', async () => {
+    const { done } = await openChoices([
+      choice('0', '2160p', '4K', 20 * GB),
+      choice('1', '1080p', '1080p', 4 * GB, { langs: ['fr'], origin: 'Lumio' }),
+      choice('2', '1080p', '1080p', 3 * GB, { langs: ['multi'] }),
+    ]);
     await flush();
     await flush();
     const sheet = document.querySelector('.dl-sheet') as HTMLElement;
-    expect(sheet.querySelector('[data-dl-q="2160p"] .dl-opt-l')!.textContent).toBe('4K');
-    expect(sheet.querySelector('[data-dl-q="1080p"] .dl-opt-l')!.textContent).toBe('1080p');
-    const langs = Array.from(sheet.querySelectorAll('[data-dl-l] .dl-opt-l')).map((n) => n.textContent);
-    expect(langs).toEqual(['Audio français', 'Multi-audio']);
-    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(Array.from(sheet.querySelectorAll('.dl-sheet-h')).map((n) => n.textContent)).toEqual(['4K', '1080p']);
+    const first = sheet.querySelector('[data-dl-src="0"]')!;
+    expect(first.textContent).toContain('20 Go');
+    expect(first.textContent).toContain('Recommandé');
+    expect(first.getAttribute('aria-checked')).toBe('true');
+    const second = sheet.querySelector('[data-dl-src="1"]')!;
+    expect(second.textContent).toContain('Audio français');
+    expect(second.textContent).toContain('via Lumio');
+    expect(sheet.querySelector('[data-dl-src="2"]')!.textContent).toContain('Multi-audio');
+    escape();
+    await done;
     expect(document.querySelector('.dl-layer')).toBeNull();
+  });
+
+  it('feuille : une source plus grosse que l’espace libre est grisée avec le motif et jamais présélectionnée', async () => {
+    const { done } = await openChoices([
+      choice('0', '2160p', '4K', 20 * GB),
+      choice('1', '1080p', '1080p', 4 * GB),
+    ], { used: 5 * GB, limit: 10 * GB, ratio: 0.5, warn: false, full: false });
+    await flush();
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const big = sheet.querySelector('[data-dl-src="0"]') as HTMLButtonElement;
+    expect(big.disabled).toBe(true);
+    expect(big.textContent).toContain('Trop grand pour ton espace libre');
+    expect(big.getAttribute('aria-checked')).toBe('false');
+    expect(sheet.querySelector('[data-dl-src="1"]')!.getAttribute('aria-checked')).toBe('true');
+    expect(sheet.textContent).toContain('Espace libre : 5 Go');
+    escape();
+    await done;
+  });
+
+  it('feuille : choisir une source puis « Télécharger » lance cette source, sans refaire de recherche', async () => {
+    const svc = await import('../src/downloads/service');
+    vi.mocked(svc.requestDownload).mockClear();
+    vi.mocked(svc.listSourceChoices).mockClear();
+    const { done } = await openChoices([choice('0', '1080p', '1080p', 4 * GB), choice('1', '720p', '720p', GB)]);
+    await flush();
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    (sheet.querySelector('[data-dl-src="1"]') as HTMLElement).click();
+    expect(sheet.querySelector('[data-dl-go-l]')!.textContent).toBe('Télécharger · 1 Go');
+    (sheet.querySelector('[data-dl-go]') as HTMLElement).click();
+    await done;
+    expect(svc.requestDownload).toHaveBeenCalledTimes(1);
+    const [, arg] = vi.mocked(svc.requestDownload).mock.calls[0] as unknown as [unknown, { source: { key: string } }];
+    expect(arg.source.key).toBe('1');
+    expect(svc.listSourceChoices).toHaveBeenCalledTimes(1);
+  });
+
+  it('feuille : au-delà de trois sources par résolution, « Voir N autres » déplie ; aucune source : message', async () => {
+    const many = ['0', '1', '2', '3', '4'].map((k, i) => choice(k, '1080p', '1080p', (i + 1) * GB));
+    const { done } = await openChoices(many);
+    await flush();
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    expect(sheet.querySelectorAll('[data-dl-src]:not([hidden])')).toHaveLength(3);
+    (sheet.querySelector('[data-dl-more]') as HTMLElement).click();
+    expect(document.activeElement).toBe(sheet.querySelector('[data-dl-src="3"]'));
+    expect(sheet.querySelectorAll('[data-dl-src]:not([hidden])')).toHaveLength(5);
+    escape();
+    await done;
+    const second = await openChoices([]);
+    await flush();
+    await flush();
+    expect(document.querySelector('.dl-sheet [role="alert"]')!.textContent!.length).toBeGreaterThan(5);
+    escape();
+    await second.done;
+  });
+
+  it('source en échec : « Choisir une autre source » liste les autres, puis remplace le téléchargement en erreur', async () => {
+    const svc = await import('../src/downloads/service');
+    vi.mocked(svc.requestDownload).mockClear();
+    const ui = await import('../src/ui/downloadBtn.js');
+    const match = { filename: 'a.mkv', size: GB };
+    const failed = { ...item('movie:1', 'error', { error: { code: 'resolve_failed' } }), source: { copies: [], ref: { type: 'movie', id: '1', name: 'Le Phare', key: 'movie:1', match } } };
+    h.s.space = { used: 0, limit: null, ratio: 0, warn: false, full: false };
+    vi.mocked(svc.listSourceChoices).mockResolvedValueOnce([choice('1', '720p', '720p', GB)] as never);
+    detail().innerHTML = '<button id="opener">x</button>';
+    ui.openErrorSheet(failed, document.getElementById('opener'), () => undefined);
+    (document.querySelector('[data-dl-other]') as HTMLElement).click();
+    await flush();
+    await flush();
+    expect(svc.listSourceChoices).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'movie:1' }), { exclude: match });
+    (document.querySelector('[data-dl-go]') as HTMLElement).click();
+    await flush();
+    await flush();
+    await vi.waitFor(() => expect(h.mgr.remove).toHaveBeenCalledWith('movie:1'));
+    await vi.waitFor(() => expect(svc.requestDownload).toHaveBeenCalledTimes(1));
   });
 });
 

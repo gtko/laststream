@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TransferFn } from '../src/downloads/manager';
 import {
-  downloadIdFor, getSpace, listDownloads, platformAvailability, previewChoices, purgeAll, registerDownloadPlatform,
+  downloadIdFor, getSpace, listDownloads, listSourceChoices, platformAvailability, purgeAll, recommendedChoice, registerDownloadPlatform,
   requestDownload, resetDownloadsForTests, subscribeDownloads, type DownloadTarget,
 } from '../src/downloads/service';
 import { getDownloadSettings, setDownloadSettings } from '../src/downloads/settings';
@@ -181,17 +181,60 @@ describe('feuille des choix', () => {
     registerDownloadPlatform({ store: fakeStore(), transfer: waitingTransfer });
   });
 
-  it('une entrée par qualité et jeu de langues, classées, sans flux HLS', async () => {
+  it('une entrée par source téléchargeable, classées par résolution puis langue, sans flux HLS', async () => {
     state.views = [
       viewOf(httpStream({ resolution: '720p', languages: ['en'], filename: 'a', size: GB }), 0),
-      viewOf(httpStream({ resolution: '1080p', languages: ['fr'], filename: 'b', size: 2 * GB }), 1),
+      viewOf(httpStream({ resolution: '1080p', languages: ['en'], filename: 'b', size: 2 * GB }), 1),
       viewOf(httpStream({ resolution: '1080p', languages: ['fr'], filename: 'c', size: 3 * GB }), 2),
       viewOf(httpStream({ resolution: '2160p', languages: ['fr'], url: HLS_URL, filename: 'd' }), 3),
     ];
-    expect(await previewChoices(MOVIE)).toEqual([
-      { quality: '1080p', langs: ['fr'], sizeBytes: 2 * GB },
-      { quality: '720p', langs: ['en'], sizeBytes: GB },
+    const choices = await listSourceChoices(MOVIE);
+    expect(choices.map((c) => [c.key, c.group, c.sizeBytes])).toEqual([
+      ['2', '1080p', 3 * GB], // le français passe avant la version anglaise, à résolution égale
+      ['1', '1080p', 2 * GB],
+      ['0', '720p', GB],
     ]);
+  });
+
+  it('aucun sondage : une seule recherche, et la liste gardée sert à « autre source »', async () => {
+    state.views = [
+      viewOf(httpStream({ resolution: '1080p', filename: 'a.mkv', size: GB, origin: 'Lumio' }), 0),
+      viewOf(httpStream({ resolution: '720p', filename: 'b.mkv', size: GB / 2 }), 1),
+    ];
+    const first = await listSourceChoices(MOVIE);
+    expect(first).toHaveLength(2);
+    expect(state.loadCalls).toBe(1);
+    const next = await listSourceChoices(MOVIE, { exclude: { filename: 'a.mkv', size: GB, addon: 'Lumio' } });
+    expect(next.map((c) => c.key)).toEqual(['1']);
+    expect(state.loadCalls).toBe(1);
+  });
+
+  it('source choisie : lancée telle quelle (pas la mieux classée), et mémorisée', async () => {
+    state.views = [
+      viewOf(httpStream({ resolution: '1080p', languages: ['fr'], filename: 'a.mkv', size: 4 * GB }), 0),
+      viewOf(httpStream({ resolution: '720p', languages: ['en'], filename: 'b.mkv', size: GB }), 1),
+    ];
+    const choices = await listSourceChoices(MOVIE);
+    const item = await requestDownload(MOVIE, { source: choices[1] });
+    expect(item.source.ref?.match.filename).toBe('b.mkv');
+    expect(item.estimatedSize).toBe(GB);
+    expect(getDownloadSettings()).toMatchObject({ quality: '720p', langs: ['en'] });
+  });
+
+  it('présélection : qualité mémorisée si elle existe, sinon la meilleure ; jamais une source plus grosse que l’espace libre', async () => {
+    state.views = [
+      viewOf(httpStream({ resolution: '2160p', filename: 'a', size: 20 * GB }), 0),
+      viewOf(httpStream({ resolution: '1080p', filename: 'b', size: 4 * GB }), 1),
+      viewOf(httpStream({ resolution: '720p', filename: 'c', size: GB }), 2),
+    ];
+    const choices = await listSourceChoices(MOVIE);
+    expect(recommendedChoice(choices, null)?.group).toBe('2160p');
+    expect(recommendedChoice(choices, 10 * GB)?.group).toBe('1080p');
+    expect(recommendedChoice(choices, GB / 2)).toBeNull();
+    setDownloadSettings({ quality: '720p' });
+    expect(recommendedChoice(choices, null)?.group).toBe('720p');
+    setDownloadSettings({ quality: '2160p' });
+    expect(recommendedChoice(choices, 10 * GB)?.group).toBe('1080p'); // la mémorisée ne tient pas : repli sur ce qui tient
   });
 });
 
@@ -208,7 +251,7 @@ describe('liens hors de la politique web', () => {
       viewOf(httpStream({ url: 'https://192.168.1.20/films/dune.mkv', resolution: '720p', filename: 'b.mkv', size: GB }), 1),
       viewOf(httpStream({ url: 'https://localhost:8080/films/dune.mkv', resolution: '2160p', filename: 'c.mkv', size: GB }), 2),
     ];
-    expect(await previewChoices(MOVIE)).toEqual([]);
+    expect(await listSourceChoices(MOVIE)).toEqual([]);
     await expect(requestDownload(MOVIE)).rejects.toMatchObject({ code: 'content' });
     expect(listDownloads()).toEqual([]);
     expect(transfers).toEqual([]);
