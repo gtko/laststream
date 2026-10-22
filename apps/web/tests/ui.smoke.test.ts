@@ -184,6 +184,27 @@ describe('interface portée', () => {
     expect(JSON.parse(localStorage.getItem('laststream.library') || '[]')).toHaveLength(1);
   });
 
+  it('menu contextuel : un second appui sur « … » referme le menu qu’il a ouvert (ODY-217)', async () => {
+    location.hash = '#/';
+    await settle(200);
+    const tile = document.querySelector('#app #films [data-tile]') as HTMLElement;
+    const more = document.createElement('span');
+    more.className = 't-more';
+    tile.append(more);
+    more.click();
+    expect(document.querySelector('.ctxmenu')).not.toBeNull();
+    expect(more.classList.contains('is-open')).toBe(true);
+    more.click(); // le même « … » : referme, ne rouvre pas aussitôt
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+    expect(more.classList.contains('is-open')).toBe(false);
+    more.click();
+    expect(document.querySelector('.ctxmenu')).not.toBeNull();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(document.querySelector('.ctxmenu')).toBeNull();
+    expect(more.classList.contains('is-open')).toBe(false);
+    more.remove();
+  });
+
   it('IA : une seule liste de 50+ titres par jour, réutilisée ensuite', async () => {
     const { loadAI } = await import('../src/ui/home.js');
     const { state } = await import('../src/ui/state.js');

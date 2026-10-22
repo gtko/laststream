@@ -99,6 +99,7 @@
 .lp-tbtn[data-role="react"][hidden] { display: none; }
 .lp-tbtn[data-role="react"]:hover { background: #ff5a36; filter: brightness(1.08); }
 .lp-tbtn[data-role="react"]:focus-visible { box-shadow: 0 0 0 2px #fff; }
+.lp-tbtn[data-role="react"][aria-expanded="true"] { box-shadow: 0 0 0 2px #fff; }
 .lp-tbtn[data-role="react"] svg { flex: none; width: 18px; height: 18px; }
 
 /* ---------- Mode cinéma ---------- */

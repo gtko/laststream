@@ -32,6 +32,7 @@ export function closeCtx(restoreFocus) {
   const m = state.ctxMenu;
   if (!m) return;
   const opener = m._opener;
+  if (m._more) m._more.classList.remove('is-open');
   m.remove();
   state.ctxMenu = null;
   if (restoreFocus && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
@@ -269,7 +270,12 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     const t = ctxTarget(more.closest('[data-tile]'));
-    if (t) { const r = more.getBoundingClientRect(); openCtx(t, r.left, r.bottom + 4); }
+    if (!t) return;
+    // Second appui sur « … » : referme le menu qu'il a ouvert (sans quoi la capture le rouvrirait aussitôt).
+    if (state.ctxMenu && state.ctxMenu._more === more) { closeCtx(true); return; }
+    const r = more.getBoundingClientRect();
+    openCtx(t, r.left, r.bottom + 4);
+    if (state.ctxMenu) { state.ctxMenu._more = more; more.classList.add('is-open'); }
     return;
   }
   const rm = el.closest('[data-continue-remove]');

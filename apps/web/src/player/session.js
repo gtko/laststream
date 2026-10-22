@@ -78,6 +78,7 @@ import {
   subscribe as subscribeSocial,
 } from '../data/socialStore';
 import { openShareDialog } from '../ui/socialHooks.js';
+import { toggleOpen } from '../ui/disclosure.js';
 import {
   cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy,
   toggleElement, untilFor,
@@ -1795,13 +1796,13 @@ function onAction(act, data) {
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
-  if (act === 'react') { openReactHere(); return; }
+  if (act === 'react') { toggleOpen(ui.isReactOpen, openReactHere, () => ui.closeReact(true)); return; }
   if (act === 'cinema') { toggleCinemaMenu(); return; }
   if (act === 'share') { shareHere(); return; }
   if (act === 'catch-up') { catchUp(); return; }
   if (act === 'app-download') { window.open(APP_DOWNLOAD_URL, '_blank', 'noopener'); return; }
   if (act === 'stream') { streamInstead({ force: true }); return; }
-  if (act === 'source') { if (isOfflineView(P.view)) streamInstead({ picker: true }); else showSourcesPanel(); return; }
+  if (act === 'source') { toggleOpen(() => ui.panel === 'sources', () => { if (isOfflineView(P.view)) streamInstead({ picker: true }); else showSourcesPanel(); }, () => ui.closePanel()); return; }
   if (act === 'choose-myself') {
     if (P.race) { P.race.cancel(); P.race = null; }
     P.pickMine = true; // arrête l'attente de lancement (playBest)
@@ -1898,7 +1899,7 @@ function onAction(act, data) {
       ensureEpisodes(from.season).then(() => ui.revealEpisode(from.episode));
       break;
     }
-    case 'mark-open': ui.openMark(); break;
+    case 'mark-open': toggleOpen(ui.isMarkOpen, () => ui.openMark(), () => ui.closeMark(true)); break;
     default: break;
   }
 }

@@ -3,6 +3,7 @@
  * panneaux latéraux (épisodes ; audio et sous-titres sur deux colonnes ; vitesse ; infos), écran de pause.
  * Aucune logique de lecture ici : tout passe par les gestionnaires `h` fournis par session.js. */
 import { esc } from '../ui/util.js';
+import { setOpenState } from '../ui/disclosure.js';
 import { LI } from './icons.js';
 import { clampTooltip } from './thumbs';
 import { episodesHtml, head, infoHtml, settingsHtml, tracksHtml } from './panels.js';
@@ -132,7 +133,7 @@ export function createPlayerUI(h) {
       previewTimer = setTimeout(hideHover, 1300);
     },
     onScrubEnd: (t) => { hideHover(); h.seekTo(t); },
-    onClose: (back) => { wake(); if (back && !root.hidden && !markBtn.hidden) markBtn.focus({ preventScroll: true }); },
+    onClose: (back) => { wake(); syncOpeners(); if (back && !root.hidden && !markBtn.hidden) markBtn.focus({ preventScroll: true }); },
   });
   // La couche des poignées est une sœur de la barre (les enfants d'un slider ARIA sont ignorés des lecteurs d'écran).
   const seekWrap = document.createElement('div');
@@ -311,6 +312,23 @@ export function createPlayerUI(h) {
     if (e.target instanceof HTMLDetailsElement) h.action('style-open', { open: e.target.open ? '1' : '0' });
   }, true);
 
+  // Boutons d'ouverture de la barre : `aria-expanded` et style actif suivent ce qu'ils ont ouvert (ODY-217).
+  const openerBtns = Array.from(root.querySelectorAll('[data-act^="panel:"], [data-act="info"], [data-act="source"], [data-act="mark-open"], [data-act="react"], [data-act="cinema"]'));
+  function syncOpeners() {
+    for (const b of openerBtns) {
+      const act = b.dataset.act;
+      let open = false;
+      if (act.startsWith('panel:')) open = panelName === (PANEL_ALIAS[act.slice(6)] || act.slice(6));
+      else if (act === 'info') open = panelName === 'info';
+      else if (act === 'source') open = panelName === 'sources';
+      else if (act === 'mark-open') open = mark.isOpen();
+      else if (act === 'react') open = react.isOpen();
+      else if (act === 'cinema') open = cinemaMenu.isOpen();
+      setOpenState(b, open);
+    }
+  }
+  syncOpeners();
+
   const api = {
     root,
     video,
@@ -484,9 +502,11 @@ export function createPlayerUI(h) {
       api.closeCinemaMenu(false);
       wake();
       mark.open(last.time);
+      syncOpeners();
     },
     closeMark(back) { mark.close(back); },
     isMarkOpen: () => mark.isOpen(),
+    isReactOpen: () => react.isOpen(),
     /** Bulle brève à la lecture d'une note : elle disparaît seule après ~4 s et ne capte pas les clics. */
     showNoteFlash(note) {
       const node = noteFlashEl(note);
@@ -503,6 +523,7 @@ export function createPlayerUI(h) {
       api.closeCinemaMenu(false);
       wake();
       react.open(formatClock(pos), opts);
+      syncOpeners();
     },
     // ---------- Social v3 : carte de chaleur, anti-spoiler, puce « regarde aussi », mode cinéma ----------
     /** Carte de chaleur au-dessus de la barre : barres { h (0..1), level (0..3) } ; liste vide = masquée. */
@@ -556,11 +577,12 @@ export function createPlayerUI(h) {
       cinemaBtn.setAttribute('aria-label', on ? 'Mode cinéma actif' : 'Mode cinéma : couper le social');
     },
     setCinemaIndicator(count) { cinemaInd.set(count); },
-    openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); },
+    openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); syncOpeners(); },
     renderCinemaMenu(model) { cinemaMenu.render(model); },
     closeCinemaMenu(back) {
       if (!cinemaMenu.isOpen()) return;
       cinemaMenu.close();
+      syncOpeners();
       if (back && !root.hidden) cinemaBtn.focus({ preventScroll: true });
     },
     isCinemaMenuOpen: () => cinemaMenu.isOpen(),
@@ -570,6 +592,7 @@ export function createPlayerUI(h) {
     closeReact(back) {
       if (!react.isOpen()) return;
       react.close();
+      syncOpeners();
       if (back && !root.hidden) reactBtn.focus({ preventScroll: true });
     },
     setSeries(isSeries, hasNext) {
@@ -678,6 +701,7 @@ export function createPlayerUI(h) {
       root.classList.add('has-panel', 'is-ui');
       h.panelOpened(real);
       renderPanel();
+      syncOpeners();
       if (real === 'tracks') api.focusColumn(focusCol);
       else {
         const first = panel.querySelector('.is-on') || panel.querySelector('button:not([disabled])');
@@ -697,6 +721,7 @@ export function createPlayerUI(h) {
       syncBarHeight();
       root.classList.add('has-panel', 'is-ui');
       panel.innerHTML = head(title) + '<div class="lp-host"></div>';
+      syncOpeners();
       return panel.querySelector('.lp-host');
     },
     refreshPanel() { if (panelName) renderPanel(); },
@@ -708,6 +733,7 @@ export function createPlayerUI(h) {
       panel.innerHTML = '';
       panel.className = 'lp-panel';
       root.classList.remove('has-panel');
+      syncOpeners();
       if (!silent) { api.focusFirst(); if (h.panelClosed) h.panelClosed(was); }
     },
     /** Déplacement au clavier / à la télécommande dans le panneau ouvert. */

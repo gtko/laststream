@@ -25,6 +25,9 @@
 .lp-tbtn[hidden] { display: none; }
 .lp-tbtn:hover, .lp-tbtn:focus-visible { background: rgba(255, 255, 255, 0.14); outline: none; }
 .lp-tbtn:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+/* Bouton d'ouverture dont le panneau est ouvert (ODY-217) : un second appui le referme. */
+.lp-btn[aria-expanded="true"] { color: var(--accent); }
+.lp-tbtn[aria-expanded="true"]:not([data-role="react"]) { background: rgba(255, 255, 255, 0.14); color: var(--accent); }
 @media (max-width: 900px) { .lp-tbtn span { display: none; } }
 .lp-sub { font-size: 15px; color: var(--soft); }
 
