@@ -83,7 +83,9 @@
 .sf-meta { display: flex; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; font-size: 15px; font-weight: 600; color: var(--soft); }
 .sf-meta li + li::before { content: '·'; margin: 0 10px; color: var(--dim); }
 .sf-syn { margin: 0; font-size: 16px; line-height: 1.55; color: var(--soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6); }
-.sf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 6px; }
+.sf-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; max-width: 100%; margin-top: 6px; }
+/* Trois boutons de même hauteur sur une ligne : gabarit compact (comme .f-actions) pour tenir dans la colonne d'infos */
+.sf-actions .btn-pill { flex: 0 1 auto; min-width: 0; min-height: 52px; padding: 0 24px; font-size: 16px; }
 
 /* Carte « Prochaine diffusion » : surface translucide, rayon 16 px */
 .sf-next { position: relative; z-index: 2; flex: 0 1 340px; width: 340px; max-width: 100%; box-sizing: border-box; padding: 22px 24px; border-radius: 16px; background: color-mix(in srgb, var(--surface) 82%, transparent); border: 1px solid var(--line); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
@@ -144,12 +146,20 @@
 .sf-pn { max-width: 100%; font-size: 14px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .sf-pr { max-width: 100%; font-size: 12px; line-height: 1.3; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Tablette étroite : grille régulière, action principale pleine largeur, les deux secondaires à parts égales */
+@media (min-width: 641px) and (max-width: 1200px) {
+  .sf-actions:has(> :nth-child(2)) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .sf-actions:has(> :nth-child(2)) .btn-pill { width: 100%; }
+  .sf-actions:has(> :nth-child(2)) .btn-primary { grid-column: 1 / -1; }
+}
+
 @media (max-width: 640px) {
   .sf-hero { min-height: 0; padding: 120px var(--gutter) 28px; }
   .sf-hero .f-bg, .sf-hero .f-scrim { height: auto; }
   .sf-hero-in { gap: 22px; }
   .sf-info, .sf-next { flex-basis: 100%; width: 100%; }
   .sf-title { font-size: 40px; }
+  .sf-actions { flex-wrap: wrap; }
   .sf-actions .btn-pill { flex: 1 1 100%; justify-content: center; }
   .sf-body { gap: 36px; padding: 28px var(--gutter) 120px; }
   .sf-airs, .sf-past { flex: 1 1 100%; max-width: none; }
