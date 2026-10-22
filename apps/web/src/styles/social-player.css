@@ -93,7 +93,7 @@
 .lp-react.is-fan .lp-react-e.is-extra { display: none; }
 
 /* ---------- Bouton « Réagir ici » (maquette) : pastille orange, smiley ; carré 44 px en tactile (plus bas) ---------- */
-.lp-tbtn[data-role="react"] { position: relative; display: flex; height: 40px; min-height: 0; padding: 0 14px; border-radius: 12px; background: #ff5a36; color: #0c0b11; font-weight: 700; gap: 8px; }
+.lp-tbtn[data-role="react"] { position: relative; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px; min-height: 0; padding: 0 14px; border-radius: 12px; background: #ff5a36; color: #0c0b11; font-weight: 700; gap: 8px; }
 /* L'infobulle (data-tip) s'affiche au-dessus du bouton, comme les autres boutons de la barre, sans recouvrir le libellé. */
 .lp-tbtn[data-role="react"][data-tip]:hover::after, .lp-tbtn[data-role="react"][data-tip]:focus-visible::after { top: auto; bottom: calc(100% + 10px); }
 .lp-tbtn[data-role="react"][hidden] { display: none; }
@@ -101,6 +101,7 @@
 .lp-tbtn[data-role="react"]:focus-visible { box-shadow: 0 0 0 2px #fff; }
 .lp-tbtn[data-role="react"][aria-expanded="true"] { box-shadow: 0 0 0 2px #fff; }
 .lp-tbtn[data-role="react"] svg { flex: none; width: 18px; height: 18px; }
+.lp-tbtn[data-role="react"] span { line-height: 1; white-space: nowrap; }
 
 /* ---------- Mode cinéma ---------- */
 .lp-btn.is-active[data-role="cinema"] { background: var(--accent); color: #0c0b11; }
