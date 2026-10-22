@@ -359,9 +359,8 @@ function tryStream(c, token) {
 }
 
 /**
- * Échec de lecture Molotov : message clair (plateforme sans CDM, DRM absent, réseau) et renvoi vers l'application
- * Molotov dans le navigateur : la coque Windows ne sait pas lire un flux DASH protégé (ni WebView2 ni libmpv n'ont
- * de CDM Widevine).
+ * Échec de lecture Molotov : message clair (module Widevine absent, DRM, réseau) et renvoi vers l'application
+ * Molotov dans le navigateur, où le module Widevine est toujours disponible.
  */
 function molotovFail(token, c, reason) {
   if (token !== tv.playToken) return;

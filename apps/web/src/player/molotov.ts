@@ -5,7 +5,6 @@ import {
   postMolotovLicense,
   type MolotovPlay,
 } from '../data/molotovApi';
-import { isShellEnvironment } from './shell';
 import type { ShakaModule, ShakaPlayer } from 'shaka-player/dist/shaka-player.compiled.js';
 
 /* Lecture Molotov : DASH + Widevine (Shaka Player).
@@ -39,11 +38,12 @@ let current: MolotovPlay | null = null;
 let generation = 0;
 
 /**
- * La plateforme sait-elle lire un flux Molotov ? La coque Windows n'a ni CDM Widevine (ni WebView2 ni libmpv n'en
- * embarquent) : ni le manifeste DASH ni la licence ne peuvent y passer.
+ * La plateforme sait-elle lire un flux Molotov ? Toutes le peuvent a priori : le vrai garde est la présence d'un
+ * CDM Widevine (`widevineAvailable`), vérifiée à l'exécution. La coque Windows l'embarque via WebView2 (le CDM est
+ * présent dans le runtime EdgeWebView) ; le lecteur natif (libmpv) n'est pas utilisé pour ces flux.
  */
 function molotovPlatformSupported(): boolean {
-  return !isShellEnvironment();
+  return true;
 }
 
 /** Le navigateur expose-t-il un CDM Widevine ? (EME : `requestMediaKeySystemAccess`). */

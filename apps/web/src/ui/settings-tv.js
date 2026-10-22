@@ -113,15 +113,18 @@ function molotovCardHTML() {
     : !st ? 'État inconnu'
       : connected ? 'Connecté' + (st.tier ? ' — ' + st.tier : '') + (st.channelCount != null ? ' — ' + st.channelCount + ' chaînes' : '')
         : 'Déconnecté';
-  const actions = connected
-    ? '<button type="button" class="btn btn-ghost btn-sm" data-molotov-disconnect>Déconnecter</button>'
-    : molotov.form ? molotovFormHTML()
-      : '<button type="button" class="btn btn-primary btn-sm" data-molotov-connect>Connecter un compte Molotov</button>';
+  const edit = canEdit();
+  const actions = !edit
+    ? '<p class="set-msg">La connexion Molotov est gérée par le profil principal.</p>'
+    : connected
+      ? '<button type="button" class="btn btn-ghost btn-sm" data-molotov-disconnect>Déconnecter</button>'
+      : molotov.form ? molotovFormHTML()
+        : '<button type="button" class="btn btn-primary btn-sm" data-molotov-connect>Connecter un compte Molotov</button>';
   return card('Molotov - TV française',
-    rowHTML('Compte Molotov', state, () => actions, { stack: !connected && molotov.form }) +
+    rowHTML('Compte Molotov', state, () => actions, { stack: !edit || (!connected && molotov.form) }) +
     rowHTML('Appels vers Molotov', molotovWay() === 'direct' ? 'Direct depuis cet appareil : les jetons ne quittent pas l\'appareil.' : 'Via le relais du serveur : un navigateur ne peut pas appeler l\'API Molotov (CORS).', () => '') +
     '<p class="set-msg" id="molotov-msg" role="status">' + esc(molotov.msg) + '</p>',
-    { desc: 'Connecte un compte Molotov : ses chaînes s\'ajoutent à la TV en direct. La lecture DASH (Widevine) marche dans le navigateur et l\'application Android, pas dans l\'application Windows.' });
+    { desc: 'Connecte un compte Molotov : ses chaînes s\'ajoutent à la TV en direct. La lecture DASH (Widevine) marche là où un module Widevine est disponible : navigateurs, Android et Windows (WebView).' });
 }
 
 let molotovTimer = 0;
