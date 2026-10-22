@@ -96,6 +96,8 @@ export class WebAudioFallback {
   private _volume: number;
   private _muted: boolean;
   private readonly listeners: Array<[string, () => void]> = [];
+  /** Réveil du contexte au premier geste (fenêtre globale) : retiré à la destruction, sinon il tient le moteur jusqu'au geste. */
+  private readonly wakeListeners: Array<[string, () => void]> = [];
   private readonly counters = { chunksScheduled: 0, gaps: 0, late: 0, resyncs: 0, seeks: 0, holds: 0, maxDriftMs: 0, driftMs: 0, errors: 0 };
 
   constructor(private readonly video: VideoLike, private readonly source: AudioSource, sampleRate: number, private readonly opts: FallbackOptions = {}) {
@@ -118,6 +120,7 @@ export class WebAudioFallback {
     for (const ev of ['pointerdown', 'keydown']) {
       const wake = (): void => { void this.ctx.resume().catch(() => undefined); };
       globalThis.addEventListener?.(ev, wake, { once: true, capture: true });
+      this.wakeListeners.push([ev, wake]);
     }
   }
 
@@ -177,6 +180,8 @@ export class WebAudioFallback {
     this.seekTimer = null;
     for (const [ev, fn] of this.listeners) this.video.removeEventListener(ev, fn);
     this.listeners.length = 0;
+    for (const [ev, fn] of this.wakeListeners) globalThis.removeEventListener?.(ev, fn, { capture: true });
+    this.wakeListeners.length = 0;
     this.stopNodes();
     this.queue.length = 0;
     this.queuedBytes = 0;

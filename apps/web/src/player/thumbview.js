@@ -1,7 +1,7 @@
 /* Aperçu d'image au survol de la barre : une vidéo secondaire muette, sur la même source, est déplacée à l'instant survolé
  * (cadence limitée, pointeur au repos) et dessinée dans un canevas ; les images sont gardées par seau de 10 s.
  * Affichage seulement : on ne lit jamais les pixels, un canevas « teinté » ne gêne donc pas. Ne bloque jamais la lecture. */
-import { FrameCache, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek, thumbSize } from './thumbs';
+import { FrameCache, IDLE_TEARDOWN_HLS_MS, IDLE_TEARDOWN_MS, MAX_THUMB_FAILURES, REST_MS, bucketOf, bucketTime, shouldSeek, thumbSize } from './thumbs';
 
 export class Thumbs {
   /**
@@ -20,6 +20,7 @@ export class Thumbs {
     this.lastSeekAt = 0;
     this.pending = null; // seau en cours de chargement
     this.timer = null;
+    this.idleTimer = null; // détruit la vidéo d'aperçu quand la barre n'est plus survolée
     this.ready = false;
     this.gen = 0;
     this.failures = 0;
@@ -37,6 +38,8 @@ export class Thumbs {
   }
 
   teardownVideo() {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = null;
     if (this.hls) { try { this.hls.destroy(); } catch (_) { /* déjà détruit */ } this.hls = null; }
     if (this.video) {
       try { this.video.pause(); } catch (_) { /* ignoré */ }
@@ -55,6 +58,8 @@ export class Thumbs {
     const bucket = bucketOf(t);
     if (!this.target || this.target.bucket !== bucket) this.lastMoveAt = now;
     this.target = { t, bucket };
+    clearTimeout(this.idleTimer);
+    this.idleTimer = null;
     const near = this.cache.nearest(bucket);
     if (near) this.draw(near.value);
     this.canvas.hidden = !near;
@@ -70,6 +75,16 @@ export class Thumbs {
     this.timer = null;
     this.pending = null;
     this.canvas.hidden = true;
+    // Même sans vidéo encore : une ouverture en cours (source en attente) est alors abandonnée par release().
+    // En HLS, chaque recréation ouvre une session du serveur : on garde la vidéo plus longtemps.
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.release(), this.hls ? IDLE_TEARDOWN_HLS_MS : IDLE_TEARDOWN_MS);
+  }
+
+  /** Barre au repos depuis un moment : plus de seconde lecture en parallèle ; les images gardées restent (cache borné). */
+  release() {
+    this.gen += 1; // une ouverture en cours (source, hls.js) est abandonnée
+    this.teardownVideo();
   }
 
   hideCanvas() { this.canvas.hidden = true; }
@@ -112,13 +127,14 @@ export class Thumbs {
     v.style.cssText = 'position:absolute;width:2px;height:2px;opacity:0;pointer-events:none;left:-9px;top:-9px';
     document.body.appendChild(v);
     this.video = v;
-    v.addEventListener('seeked', () => this.onSeeked());
-    v.addEventListener('error', () => { this.pending = null; this.fail(); });
+    // Un évènement tardif d'une vidéo déjà détruite ne touche ni l'état ni le compteur d'échecs de la suivante.
+    v.addEventListener('seeked', () => { if (v === this.video) this.onSeeked(); });
+    v.addEventListener('error', () => { if (v !== this.video) return; this.pending = null; this.fail(); });
     if (src.hls) {
       try {
         const H = (await import('hls.js')).default;
-        if (gen !== this.gen) { v.remove(); this.video = null; return false; }
-        if (!H.isSupported()) { v.remove(); this.video = null; return false; }
+        if (gen !== this.gen) { v.remove(); if (this.video === v) this.video = null; return false; }
+        if (!H.isSupported()) { v.remove(); if (this.video === v) this.video = null; return false; }
         const h = new H({ maxBufferLength: 2, maxMaxBufferLength: 4, startLevel: 0, capLevelToPlayerSize: true, enableWorker: true, subtitleDisplay: false });
         this.hls = h;
         h.on(H.Events.ERROR, (_e, d) => { if (d && d.fatal) { this.pending = null; this.fail(true); } });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bucketOf, bucketTime, clampTooltip, FrameCache, MIN_SEEK_INTERVAL_MS, REST_MS, shouldSeek, thumbsAllowed, thumbSize, thumbSource, THUMB_HLS_WIDTH } from '../src/player/thumbs';
+import { bucketOf, bucketTime, CACHE_FRAMES, clampTooltip, FrameCache, IDLE_TEARDOWN_MS, MIN_SEEK_INTERVAL_MS, REST_MS, shouldSeek, thumbsAllowed, thumbSize, thumbSource, THUMB_HLS_WIDTH } from '../src/player/thumbs';
 
 describe('aperçu sur la barre : seaux et cache', () => {
   it('seaux de 10 s et instant demandé (milieu, jamais au-delà de la fin)', () => {
@@ -35,12 +35,13 @@ describe('aperçu sur la barre : seaux et cache', () => {
     expect(c.nearest(0)).toBeNull();
   });
 
-  it('capacité par défaut : 120 images', () => {
+  it('capacité par défaut bornée (ODY-239) : 60 images, jamais plus quelle que soit la durée du survol', () => {
     const c = new FrameCache<number>();
-    for (let i = 0; i < 200; i++) c.set(i, i);
-    expect(c.size).toBe(120);
-    expect(c.has(79)).toBe(false);
-    expect(c.has(80)).toBe(true);
+    for (let i = 0; i < 2000; i++) c.set(i, i);
+    expect(c.size).toBe(CACHE_FRAMES);
+    expect(CACHE_FRAMES).toBe(60);
+    expect(c.has(1939)).toBe(false);
+    expect(c.has(1940)).toBe(true);
   });
 });
 
@@ -187,6 +188,73 @@ describe('Thumbs : débounce, annulation, masquage', () => {
     t.cancel();
     await vi.advanceTimersByTimeAsync(600);
     expect(source).not.toHaveBeenCalled();
+  });
+
+  it('ODY-239 : la vidéo d’aperçu est détruite quand la barre n’est plus survolée, et recréée au survol suivant', async () => {
+    const { t, source } = await make();
+    t.request(100);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(document.querySelectorAll('video')).toHaveLength(1);
+    t.cancel();
+    await vi.advanceTimersByTimeAsync(IDLE_TEARDOWN_MS - 100);
+    expect(document.querySelectorAll('video')).toHaveLength(1); // un aller-retour rapide ne détruit rien
+    await vi.advanceTimersByTimeAsync(200);
+    expect(document.querySelectorAll('video')).toHaveLength(0);
+    expect(t.video).toBeNull();
+    expect(t.idleTimer).toBeNull();
+    t.request(400);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(document.querySelectorAll('video')).toHaveLength(1);
+    expect(source).toHaveBeenCalledTimes(2);
+  });
+
+  it('ODY-239 : un nouveau survol avant le délai garde la même vidéo', async () => {
+    const { t, source } = await make();
+    t.request(100);
+    await vi.advanceTimersByTimeAsync(600);
+    t.cancel();
+    await vi.advanceTimersByTimeAsync(IDLE_TEARDOWN_MS - 1000);
+    t.request(200);
+    await vi.advanceTimersByTimeAsync(IDLE_TEARDOWN_MS * 2);
+    expect(document.querySelectorAll('video')).toHaveLength(1); // survol actif : jamais détruite
+    expect(source).toHaveBeenCalledTimes(1);
+  });
+
+  it('ODY-239 : survol qui s’arrête pendant l’attente de la source : la vidéo créée ensuite est quand même détruite', async () => {
+    const { Thumbs } = await import('../src/player/thumbview.js');
+    const canvas = document.createElement('canvas');
+    (canvas as any).getContext = () => ({ drawImage: () => {} });
+    let resolve!: (v: { url: string; hls: boolean }) => void;
+    const source = vi.fn(() => new Promise<{ url: string; hls: boolean }>((r) => { resolve = r; }));
+    const t = new Thumbs(canvas, { allowed: () => true, duration: () => 1400, source });
+    t.request(100);
+    await vi.advanceTimersByTimeAsync(300); // tick lancé, source en attente
+    t.cancel(); // le pointeur quitte la barre avant la réponse
+    resolve({ url: 'http://x/a.mp4', hls: false });
+    await vi.advanceTimersByTimeAsync(IDLE_TEARDOWN_MS + 100);
+    expect(document.querySelectorAll('video')).toHaveLength(0);
+    expect(t.video).toBeNull();
+  });
+
+  it('ODY-239 : un évènement tardif d’une vidéo détruite ne compte pas comme un échec de la suivante', async () => {
+    const { t } = await make();
+    t.request(100);
+    await vi.advanceTimersByTimeAsync(600);
+    const old = document.querySelector('video') as HTMLVideoElement;
+    t.release();
+    for (let i = 0; i < 5; i++) old.dispatchEvent(new Event('error'));
+    expect(t.failures).toBe(0);
+    expect(t.dead).toBe(false);
+  });
+
+  it('ODY-239 : destroy() ne laisse ni vidéo ni minuterie', async () => {
+    const { t } = await make();
+    t.request(100);
+    await vi.advanceTimersByTimeAsync(600);
+    t.cancel();
+    t.destroy();
+    expect(document.querySelectorAll('video')).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('erreurs de lecture répétées : on abandonne la source et on masque, sans réessayer', async () => {

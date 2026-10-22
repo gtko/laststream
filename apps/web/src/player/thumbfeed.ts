@@ -79,6 +79,8 @@ export class ThumbFeed {
 
   get targetIndex(): number { return this.target; }
   get inFlight(): number { return this.loading.size; }
+  /** Images gardées en mémoire (au plus FEED_CACHE). */
+  get cached(): number { return this.images.size; }
 
   /**
    * Le pointeur est à `time` : renvoie l'image de la tranche (si prête) et lance le chargement de la tranche et de ses voisines.

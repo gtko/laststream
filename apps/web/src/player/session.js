@@ -58,6 +58,7 @@ import { groupAudioTracks, sectionSubtitleTracks } from './trackgroups';
 import { nextPhase, shouldBeReady } from './phase';
 import { Thumbs } from './thumbview.js';
 import { thumbsAllowed, thumbSource } from './thumbs';
+import { MEMORY_EVERY_TICKS, MemoryWatch, memorySnapshot } from './memoryProbe';
 import { ThumbFeed, serverHasThumbs } from './thumbfeed';
 import { debrid, PROVIDER_LABEL } from '../sources/debridClient';
 import { createRangeFetch, parseDebridUrl } from '../sources/debrid/http';
@@ -604,6 +605,7 @@ async function initSession(request, views, view, opts = {}) {
   ui.focusFirst();
   ui.setPartyAvailable(partyBridge.available());
   clearInterval(tickTimer);
+  memoryWatch.reset();
   tickTimer = setInterval(tick, 100);
   loadSideData(token);
   updatePauseScreen();
@@ -1569,11 +1571,26 @@ function clipTick(p, st) {
 }
 
 let tickN = 0;
+const memoryWatch = new MemoryWatch();
+
+/** Journal de debug (console.debug, repris par Sentry en fil d'Ariane) : tas JS et collections du lecteur, toutes les 5 min de lecture. */
+function logMemory(p) {
+  const s = p.subs;
+  const snap = memorySnapshot({
+    thumbFrames: thumbs ? thumbs.cache.size : 0, thumbVideo: thumbs && thumbs.video ? 1 : 0,
+    feedImages: (feed ? feed.cached : 0) + (rangeFeed ? rangeFeed.cached : 0), notes: p.notes ? p.notes.list.length : 0, cues: s.cues.length + s.cues2.length,
+  });
+  const growth = memoryWatch.growthMb(snap);
+  if (memoryWatch.suspicious(snap)) console.warn('[player] mémoire : le tas a grossi de ' + growth + ' Mo depuis le début de la lecture', snap);
+  else console.debug('[player] mémoire', snap, growth === null ? '' : '(+' + growth + ' Mo)');
+}
+
 function tick() {
   const p = P;
   if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
+  if (tickN % MEMORY_EVERY_TICKS === 0) logMemory(p);
   clipTick(p, st);
   notesTick(p, st);
   socialTick(p, st);
@@ -1627,7 +1644,7 @@ function tick() {
           ...nextCardLabels(part, info),
         });
       }
-      if (!ep) ensureEpisodes(nx.season);
+      if (!ep && !p.episodesLoading && !p.episodesError) ensureEpisodes(nx.season); // une demande à la fois : pas une par seconde
       if (card.countdown === 0 && !p.autoNexting && !partyBridge.guestLocked()) { p.autoNexting = true; playEpisode(nx.season, nx.episode); }
     } else ui.setNextCard(null);
     ui.setEndRow(!mini && p.req.type === 'movie' && !p.endDismissed && movieEndRow(p.segments, st.time, st.duration));
@@ -2465,6 +2482,7 @@ async function teardown(silent) {
   saveProgress(true);
   clearInterval(tickTimer);
   clearTimeout(p.resumeTimer);
+  if (p.race) { p.race.cancel(); p.race = null; } // fermeture pendant « Préparation du lien » : les candidats ne courent plus
   stopAutoSync();
   if (thumbs) thumbs.reset();
   if (feed) feed.reset();

@@ -151,4 +151,22 @@ describe('aperçu mpv : chargement des images', () => {
     expect(h.feed.imageFor(0)).toBeNull();
     expect(FEED_CACHE).toBeGreaterThan(10);
   });
+
+  it('ODY-239 : après des centaines de survols le cache reste borné et chaque image évincée est révoquée (pas de fuite d’URL d’objet)', async () => {
+    const h = harness();
+    let made = 0;
+    for (let step = 0; step < 300; step += 1) {
+      h.feed.request(step * 30, 100000);
+      await tick();
+      for (const c of h.calls.splice(0)) if (!c.signal.aborted) { c.resolve(200); made += 1; }
+      await tick();
+      expect(h.feed.cached).toBeLessThanOrEqual(FEED_CACHE);
+    }
+    expect(made).toBeGreaterThan(FEED_CACHE);
+    expect(h.feed.cached).toBe(FEED_CACHE);
+    expect(h.revoked.length).toBe(made - h.feed.cached);
+    h.feed.reset();
+    expect(h.feed.cached).toBe(0);
+    expect(h.revoked.length).toBe(made);
+  });
 });

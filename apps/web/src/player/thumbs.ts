@@ -1,7 +1,12 @@
 /* Aperçu d'image sur la barre de position : seaux de 10 s, cache LRU, cadence des déplacements. Logique pure, testée. */
 
 const BUCKET_SECONDS = 10;
-const CACHE_FRAMES = 120;
+/** Images gardées au plus (canevas ≈ 130 Ko chacun) : ≈ 8 Mo, de quoi couvrir 10 min autour du curseur. */
+export const CACHE_FRAMES = 60;
+/** Pointeur parti de la barre depuis ce temps : la vidéo d'aperçu (décodeur, connexion, tampon) est détruite, recréée au prochain survol. */
+export const IDLE_TEARDOWN_MS = 8000;
+/** Idem en HLS : chaque recréation ouvre une nouvelle session côté serveur (démarrage de transcodage), on la garde plus longtemps. */
+export const IDLE_TEARDOWN_HLS_MS = 45000;
 /** Intervalle minimal entre deux déplacements de la vidéo d'aperçu. */
 export const MIN_SEEK_INTERVAL_MS = 150;
 /** Le pointeur doit être resté immobile ce temps avant de demander une image. */

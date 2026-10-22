@@ -86,6 +86,14 @@ function skeleton() {
     '<div class="lp-toast" role="status" aria-live="polite"><span class="lp-toast-t"></span><button type="button" class="lp-toast-a" hidden></button></div>';
 }
 
+/** Remplace le contenu d'un bouton-icône seulement s'il diffère : pas de nœuds SVG recréés à chaque relevé. */
+const iconOf = new WeakMap();
+function setIcon(el, html) {
+  if (iconOf.get(el) === html) return;
+  iconOf.set(el, html);
+  el.innerHTML = html;
+}
+
 export function createPlayerUI(h) {
   const root = document.createElement('div');
   root.className = 'lp is-ui';
@@ -453,12 +461,13 @@ export function createPlayerUI(h) {
         const stt = st.paused ? 'paused' : 'playing';
         if (b.dataset.state !== stt) { b.dataset.state = stt; b.innerHTML = st.paused ? LI.play : LI.pause; }
       }
-      q('[data-role="mute"]').innerHTML = st.muted || st.volume === 0 ? LI.mute : LI.vol;
+      // Icônes réécrites seulement quand elles changent (cette fonction tourne ≈ 3 fois par seconde pendant des heures).
+      setIcon(q('[data-role="mute"]'), st.muted || st.volume === 0 ? LI.mute : LI.vol);
       if (document.activeElement !== vs) vs.value = String(Math.round((st.muted ? 0 : st.volume) * 100));
       root.classList.toggle('is-buffering', !!st.buffering);
       root.classList.toggle('is-sound-wait', !!st.soundWait);
       root.classList.toggle('is-paused', !!st.paused);
-      q('[data-role="full"]').innerHTML = (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full;
+      setIcon(q('[data-role="full"]'), (st.fullscreen !== undefined ? st.fullscreen : document.fullscreenElement === root) ? LI.fullExit : LI.full);
       q('[data-role="pip"]').classList.toggle('is-active', !!st.pip);
       if (st.paused) root.classList.add('is-ui');
       // Écran de pause : après 8 s à l'arrêt (hors panneau ouvert).
