@@ -5,13 +5,13 @@ import { progressResume } from './resume.js';
 
 /**
  * Image d’une carte d’épisode : still (URL complète ou chemin TMDB), sinon le fond de la série (à assombrir, avec le
- * numéro en surimpression), sinon aucune image (dégradé + numéro).
+ * numéro en surimpression), sinon l’affiche (de la saison, sinon de la série), sinon aucune image (dégradé + numéro).
  * @returns {{ src: string, fallback: boolean }}
  */
-export function episodeImage(still, backdropPath, size = 'w500') {
+export function episodeImage(still, backdropPath, size = 'w500', posterPath = '') {
   const src = IMG(size, still);
   if (src) return { src, fallback: false };
-  return { src: IMG('w780', backdropPath), fallback: true };
+  return { src: IMG('w780', backdropPath) || IMG('w500', posterPath), fallback: true };
 }
 
 /**

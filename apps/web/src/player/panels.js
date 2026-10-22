@@ -7,6 +7,7 @@ import { offsetLabel } from './subs';
 import { RATE_CHOICES } from './subsync';
 import { isEpFolded } from './epfold.js';
 import { localDay } from './episodes';
+import { partLabel } from '../data/episodeParts';
 import '../ui/epStill.js'; // repli des vignettes cassées (écouteur global)
 
 export const head = (title, sub) => '<div class="lp-panel-head"><div><h2>' + esc(title) + '</h2>' + (sub ? '<p class="lp-panel-sub">' + esc(sub) + '</p>' : '') + '</div>' +
@@ -102,9 +103,10 @@ export function episodesHtml(d) {
           : { text: 'Bientôt', tip: 'Diffusion TV le ' + fmtDate(ep.airDate), now: false };
     // Repli si la vignette est absente ou ne charge pas : fond de la série (flouté, assombri), sinon dégradé ; numéro en surimpression.
     const fb = !ep.still;
-    const src = ep.still || d.backdrop || '';
+    const bg = d.backdrop || d.poster || '';
+    const src = ep.still || bg;
     const still = '<span class="lp-ep-still' + (fb ? ' is-fb' : '') + '">' +
-      (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async" data-still' + (ep.still && d.backdrop ? ' data-fb="' + esc(d.backdrop) + '"' : '') + '>' : '') +
+      (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async" data-still' + (ep.still && bg ? ' data-fb="' + esc(bg) + '"' : '') + '>' : '') +
       '<span class="lp-ep-num" aria-hidden="true">É' + ep.episode + '</span>' +
       (on ? '<span class="lp-ep-now">En cours</span>' : '') +
       (pill ? '<span class="lp-ep-soon' + (pill.now ? ' is-today' : '') + '" title="' + esc(pill.tip) + '">' + esc(pill.text) + '</span>' : '') +
@@ -116,7 +118,7 @@ export function episodesHtml(d) {
     const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="Afficher le synopsis complet" title="Plus">' + LI.mini + '</button>' : '';
     return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (open ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
       '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (open ? '' : ' disabled') + '>' + still +
-        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + esc(ep.name || 'Épisode ' + ep.episode) + '</span>' +
+        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + (ep.part ? '<span class="lp-ep-part">' + esc(partLabel(ep.part)) + '</span> · ' : '') + esc((ep.part ? ep.part.title : ep.name) || 'Épisode ' + ep.episode) + '</span>' +
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
       seen + more +
       '</div>';

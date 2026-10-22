@@ -129,6 +129,8 @@
 .sf-ep:focus-visible .sf-ep-media { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
 .sf-ep:focus-visible { outline: none; }
 .sf-ep-fb { font-family: var(--ff-title); font-weight: 800; font-size: 18px; color: var(--muted); }
+.sf-ep-media.is-fb > img, .sf-ep:hover .sf-ep-media.is-fb > img { filter: brightness(0.42) saturate(0.7) blur(3px); transform: scale(1.08); }
+.sf-ep-media.is-fb .sf-ep-fb { position: relative; z-index: 1; color: rgba(255, 255, 255, 0.92); text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
 .sf-ep-dur { position: absolute; right: 8px; bottom: 8px; z-index: 1; padding: 2px 8px; border-radius: 6px; background: rgba(12, 11, 17, 0.82); font-size: 12px; font-weight: 700; color: var(--text); }
 .sf-ep-code { font-size: 12px; font-weight: 700; color: var(--accent); }
 .sf-ep-title { font-size: 15px; font-weight: 700; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

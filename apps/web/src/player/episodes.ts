@@ -1,4 +1,5 @@
 /* Saisons et épisodes pour le panneau du lecteur : réponse canonique de lastAddon (/lt/series/:tmdbId/episodes) ou saison TMDB. */
+import { episodeParts, partLabel, type EpisodePart } from '../data/episodeParts';
 
 export interface EpisodeInfo {
   episode: number;
@@ -13,6 +14,8 @@ export interface EpisodeInfo {
   playable: boolean;
   /** Identifiant de flux `<imdb>:<saison>:<épisode>` selon la numérotation du serveur ; absent si l'IMDb est inconnu. */
   streamId?: string;
+  /** Partie d'une émission diffusée en plusieurs épisodes (« Partie 1/2 »), d'après le titre. */
+  part?: EpisodePart;
 }
 
 export interface SeasonInfo {
@@ -72,6 +75,36 @@ export function autoNextEpisode(
   return !info || info.aired ? next : null;
 }
 
+/** Marque les épisodes qui sont les parties d'une même émission (la liste est celle d'une saison, triée). */
+export function markParts(list: EpisodeInfo[]): EpisodeInfo[] {
+  episodeParts(list).forEach((part, i) => { if (part) list[i].part = part; });
+  return list;
+}
+
+/**
+ * Partie suivante de la même émission quand l'épisode donné n'en est pas la dernière (« Partie 1/2 » → « Partie 2/2 ») :
+ * la suite directe, à lancer sans que la lecture ne paraisse coupée.
+ */
+export function nextPart(episodes: readonly EpisodeInfo[] | undefined, episode: number): EpisodeInfo | null {
+  const cur = episodes?.find((e) => e.episode === episode);
+  if (!cur?.part || cur.part.index >= cur.part.total) return null;
+  const next = episodes!.find((e) => e.episode === episode + 1);
+  return next?.part && next.part.index === cur.part.index + 1 ? next : null;
+}
+
+/**
+ * Libellés de la carte de fin d'épisode. `continues` : l'épisode suivant est la suite directe de l'épisode en cours
+ * (« Partie 1/2 » → « Partie 2/2 ») ; sinon c'est un épisode ordinaire, qui garde « Épisode suivant » même s'il est
+ * lui-même la première partie d'une autre émission.
+ */
+export function nextCardLabels(continues: boolean, next: Pick<EpisodeInfo, 'part'> | undefined): { kicker: string; playLabel: string } {
+  const part = next?.part;
+  if (!part) return { kicker: '', playLabel: '' };
+  return continues
+    ? { kicker: `${partLabel(part)} · suite de l’émission`, playLabel: `Lire la partie ${part.index}` }
+    : { kicker: `Épisode suivant · ${partLabel(part)}`, playLabel: '' };
+}
+
 /** Réponse canonique `{ seasons: [{ number, episodeCount }], episodes: [{ season, episode, name… }] }` ; null si inexploitable. */
 export function normalizeCanonical(resp: unknown, today: string = localDay(new Date())): CanonicalSeries | null {
   const r = resp as { seasons?: unknown; episodes?: unknown } | null;
@@ -91,6 +124,7 @@ export function normalizeCanonical(resp: unknown, today: string = localDay(new D
     episodes.set(e.season, list);
   }
   episodes.forEach((list) => list.sort((a, b) => a.episode - b.episode));
+  episodes.forEach(markParts);
   const seasons = [...episodes.entries()].map(([season, list]) => ({ season, count: list.length })).sort((a, b) => a.season - b.season);
   return seasons.length ? { seasons, episodes } : null;
 }

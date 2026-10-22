@@ -28,7 +28,8 @@ import { APP_DOWNLOAD_URL, currentOs } from './appDownload';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
-import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, normalizeCanonical } from './episodes';
+import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, markParts, nextCardLabels, nextPart, normalizeCanonical } from './episodes';
+import { partLabel } from '../data/episodeParts';
 import { fetchExternalSubtitles } from './extsubs';
 import { beginSubsLoad, endSubsLoad, isCurrentSubsLoad, resetSubsLoad } from './subsLoad';
 import { autoSubsToast } from './langPolicy';
@@ -141,7 +142,9 @@ function headingFor(p) {
   if (p.req.season == null) return [p.meta.title || p.req.name || '', ''];
   const eps = p.episodes.get(p.cur.season);
   const ep = eps && eps.find((e) => e.episode === p.cur.episode);
-  return [p.meta.title || p.req.name || '', seLabel(p.cur) + (ep && ep.name ? ' « ' + ep.name + ' »' : '')];
+  // Émission en plusieurs parties : titre de l'épisode sans son « (1) », puis « Partie 1/2 ».
+  const name = ep && ep.part ? ep.part.title : ep && ep.name;
+  return [p.meta.title || p.req.name || '', seLabel(p.cur) + (name ? ' « ' + name + ' »' : '') + (ep && ep.part ? ' · ' + partLabel(ep.part) : '')];
 }
 
 const sourceLine = (v) => [v.quality, v.langs.map((l) => l.label).join('/'), v.provider, originSummary(v.origins, 1)].filter(Boolean).join(' · ');
@@ -712,10 +715,10 @@ async function ensureEpisodes(season, reveal) {
       const d = await tmdb('tv/' + p.req.id + '/season/' + s);
       if (P !== p) return;
       const today = localDay(new Date());
-      p.episodes.set(s, (d.episodes || []).map((e) => ({
+      p.episodes.set(s, markParts((d.episodes || []).map((e) => ({
         episode: e.episode_number, name: e.name || '', runtime: e.runtime || null, overview: e.overview || '', still: IMG('w300', e.still_path),
         airDate: e.air_date || '', aired: isAired(e.air_date || '', today), playable: isPlayable(e.air_date || '', today),
-      })));
+      }))));
     } catch (_) { if (P === p) p.episodesError = true; } // pas mis en cache : rouvrir le panneau réessaie
     if (P === p) p.episodesLoading = false;
   } else p.episodesLoading = false;
@@ -735,6 +738,12 @@ function updatePauseScreen() {
   const ep = eps && eps.find((e) => e.episode === p.cur.episode);
   const [title, sub] = headingFor(p);
   ui.setPauseScreen({ title, logo: p.meta.logo, episode: sub, synopsis: (ep && ep.overview) || p.meta.overview || '', backdrop: p.meta.backdrop ? IMG('w1280', p.meta.backdrop) : '' });
+}
+
+/** `nx` est la partie suivante de l'émission en cours (« Partie 1/2 » → « Partie 2/2 »). */
+function continuesPart(p, nx) {
+  const next = nx.season === p.cur.season ? nextPart(p.episodes.get(nx.season), p.cur.episode) : null;
+  return !!next && next.episode === nx.episode;
 }
 
 const nextRef = () => (P && P.req.type === 'tv' && P.cur.season != null ? nextEpisode(P.seasons, { season: P.cur.season, episode: P.cur.episode }) : null);
@@ -1514,7 +1523,9 @@ function onEnded() {
   markWatched();
   if (partyBridge.guestLocked()) return; // en salon, c'est l'hôte qui passe à l'épisode suivant
   const nx = autoNextEpisode(nextRef(), p.episodes); // jamais vers un épisode pas encore diffusé : lancement manuel
-  if (nx && getSkipPref('nextEpisode')) { playEpisode(nx.season, nx.episode); return; }
+  // Fin d'une partie d'émission : la suite enchaîne même sans le réglage « épisode suivant », sauf si la carte a été refusée.
+  const part = nx && !miniState.mini && continuesPart(p, nx) && !p.nextDismissed;
+  if (nx && (getSkipPref('nextEpisode') || part)) { playEpisode(nx.season, nx.episode); return; }
   p.finished = true;
   const key = p.req.key;
   closePlayer();
@@ -1567,11 +1578,20 @@ function tick() {
     const mini = miniState.mini;
     ui.setSkip(!mini && seg && p.skipped !== seg.start ? seg : null);
     const nx = autoNextEpisode(nextRef(), p.episodes); // épisode non diffusé : ni carte ni enchaînement automatique
-    const card = nextEpisodeCard(p.segments, st.time, st.duration, !!nx, getSkipPref('nextEpisode'));
+    const part = !!nx && continuesPart(p, nx);
+    const card = nextEpisodeCard(p.segments, st.time, st.duration, !!nx, getSkipPref('nextEpisode') || (part && !mini));
     if (card.show && !p.nextDismissed && nx) {
       const ep = p.episodes.get(nx.season);
       const info = ep && ep.find((e) => e.episode === nx.episode);
-      if (!mini) ui.setNextCard({ title: 'S' + nx.season + ':É' + nx.episode + (info && info.name ? ' « ' + info.name + ' »' : ''), still: info ? info.still : '', countdown: card.countdown, ratio: card.ratio });
+      const name = info && (info.part ? info.part.title : info.name);
+      const bg = p.meta.backdrop ? IMG('w780', p.meta.backdrop) : p.meta.poster ? IMG('w342', p.meta.poster) : '';
+      if (!mini) {
+        ui.setNextCard({
+          title: 'S' + nx.season + ':É' + nx.episode + (name ? ' « ' + name + ' »' : ''), still: (info && info.still) || bg, countdown: card.countdown, ratio: card.ratio,
+          // Suite directe d'une émission : on le dit, pour que la fin de la partie 1 ne passe pas pour un épisode coupé.
+          ...nextCardLabels(part, info),
+        });
+      }
       if (!ep) ensureEpisodes(nx.season);
       if (card.countdown === 0 && !p.autoNexting && !partyBridge.guestLocked()) { p.autoNexting = true; playEpisode(nx.season, nx.episode); }
     } else ui.setNextCard(null);
@@ -1951,7 +1971,7 @@ function panelData(name) {
     });
     return {
       seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, error: !!p.episodesError, current: p.cur, query: p.epQuery,
-      logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w780', p.meta.backdrop) : '', title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
+      logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w780', p.meta.backdrop) : '', poster: p.meta.poster ? IMG('w342', p.meta.poster) : '', title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
     };
   }
   if (name === 'info') {

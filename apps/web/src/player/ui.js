@@ -594,7 +594,7 @@ export function createPlayerUI(h) {
     setNextCard(card) {
       const el = q('.lp-next');
       if (!card) { el.hidden = true; el.dataset.key = ''; return; }
-      const key = [card.title, card.still, card.countdown].join('|');
+      const key = [card.title, card.still, card.countdown, card.kicker].join('|');
       if (el.dataset.key !== key) {
         el.dataset.key = key;
         const r = 20;
@@ -603,8 +603,8 @@ export function createPlayerUI(h) {
           ? '<span class="lp-ring" aria-label="Lancement dans ' + card.countdown + ' secondes"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="' + r + '" class="lp-ring-bg"/><circle cx="24" cy="24" r="' + r + '" class="lp-ring-fg" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - card.ratio)).toFixed(1) + '" transform="rotate(-90 24 24)"/></svg><b>' + card.countdown + '</b></span>'
           : '';
         el.innerHTML = '<span class="lp-next-still">' + (card.still ? '<img src="' + esc(card.still) + '" alt="">' : '') + ring + '</span>' +
-          '<div class="lp-next-body"><p class="lp-next-k">Épisode suivant</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
-          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="Lire maintenant l’épisode suivant">' + LI.next + 'Lire maintenant</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="Regarder le générique">Générique</button></div></div>';
+          '<div class="lp-next-body"><p class="lp-next-k">' + esc(card.kicker || 'Épisode suivant') + '</p><p class="lp-next-t">' + esc(card.title) + '</p>' +
+          '<div class="lp-next-actions"><button type="button" class="btn btn-primary" data-act="next" aria-label="Lire maintenant ' + (card.playLabel ? 'la partie suivante' : 'l’épisode suivant') + '">' + LI.next + esc(card.playLabel || 'Lire maintenant') + '</button><button type="button" class="btn btn-ghost" data-act="next-dismiss" aria-label="Regarder le générique">Générique</button></div></div>';
       }
       el.hidden = false;
     },

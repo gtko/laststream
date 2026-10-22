@@ -3,6 +3,7 @@
 import { isKidProfile } from '../data/auth';
 import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
 import { airingsFor, dayLabel, epgIdOf, foldText, hhmm, isLiveNow, isShowCategory, localDate, matchKnown, primeTime, progressPct, seedFor, showKey } from '../data/shows';
+import { episodeParts, partLabel } from '../data/episodeParts';
 import { playBest } from '../player/session.js';
 import { register, toItem } from './catalog.js';
 import { GENRE_FR, IMG } from './constants.js';
@@ -416,18 +417,23 @@ function airingRow(a, now, hasPlay) {
 }
 
 /** Épisodes précédents : grille de vignettes 16:9 ; chaque carte est un bouton qui lance la recherche de sources de l'épisode. */
-function pastHTML(list) {
+function pastHTML(list, d) {
   if (!list.length) return '<p class="row-msg">Aucun épisode précédent trouvé.</p>';
-  return '<div class="sf-eps" data-nav>' + list.slice(0, 8).map((e) => {
-    const src = IMG('w300', e.still);
-    const code = 'S' + e.season + ' · É' + e.episode;
+  // Parties d'une même émission (« Émission 3 (1) » / « (2) ») détectées sur toute la liste, avant de couper à 8.
+  const parts = episodeParts(list);
+  return '<div class="sf-eps" data-nav>' + list.slice(0, 8).map((e, i) => {
+    // Sans vignette : fond de la série, sinon affiche (jamais une case grise), assombri avec le code en surimpression.
+    const own = IMG('w300', e.still);
+    const src = own || IMG('w300', d.backdrop) || IMG('w342', d.poster);
+    const code = 'S' + e.season + ' · É' + e.episode + (parts[i] ? ' · ' + partLabel(parts[i]) : '');
     const dur = fmtMin(e.runtime);
+    const title = parts[i] ? parts[i].title : e.name;
     return '<button type="button" class="sf-ep" data-showep="' + e.season + ':' + e.episode + '">' +
-      '<span class="sf-ep-media' + (src ? '' : ' no-img') + '" aria-hidden="true">' +
-      (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '<span class="sf-ep-fb" aria-hidden="true">' + esc(code) + '</span>') +
+      '<span class="sf-ep-media' + (src ? '' : ' no-img') + (src && !own ? ' is-fb' : '') + '" aria-hidden="true">' +
+      (src ? '<img src="' + esc(src) + '" alt="" loading="lazy" decoding="async">' : '') + (own ? '' : '<span class="sf-ep-fb" aria-hidden="true">' + esc('É' + e.episode) + '</span>') +
       (dur ? '<span class="sf-ep-dur">' + esc(dur) + '</span>' : '') + '</span>' +
       '<span class="sf-ep-code">' + esc(code + ' · ' + shortDay(e.date)) + '</span>' +
-      '<span class="sf-ep-title">' + esc(e.name || 'Épisode ' + e.episode) + '</span></button>';
+      '<span class="sf-ep-title">' + esc(title || 'Épisode ' + e.episode) + '</span></button>';
   }).join('') + '</div>';
 }
 
@@ -576,7 +582,7 @@ export async function showShow(id) {
   if (h1) h1.focus({ preventScroll: true });
   pastEpisodes(d, today).then((list) => {
     const box = detailEl.querySelector('#show-past');
-    if (box && token === state.token) box.innerHTML = pastHTML(list);
+    if (box && token === state.token) box.innerHTML = pastHTML(list, d);
   }).catch(() => {
     const box = detailEl.querySelector('#show-past');
     if (box && token === state.token) box.innerHTML = '<p class="row-msg">Les épisodes n’ont pas pu être chargés.</p>';

@@ -9,6 +9,7 @@ import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } fr
 import { detailEl } from './dom.js';
 import { markNext, nextToWatch, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
+import { episodeParts, partLabel } from '../data/episodeParts';
 import './epStill.js';
 import { state } from './state.js';
 import { observeTiles, posterCard } from './tiles.js';
@@ -109,17 +110,21 @@ export async function loadSeason(m, n, token, wantEp) {
     list.innerHTML = '<li class="row-msg">Aucun épisode renseigné pour cette saison.</li>';
     return;
   }
-  list.innerHTML = eps.map((e) => {
+  // Émission en plusieurs parties : « Partie 1/2 » dans la ligne de détails de chaque carte.
+  const parts = episodeParts(eps.map((e) => ({ episode: e.episode_number, name: e.name || '' })));
+  list.innerHTML = eps.map((e, idx) => {
     const code = 'É' + e.episode_number;
+    const part = parts[idx];
     const sk = m.key + ':' + n + ':' + e.episode_number;
     const done = userStore.isWatched(m.key, n, e.episode_number);
     const future = e.air_date && e.air_date > today;
     // Diffusion dans les 14 prochains jours : « peut-être déjà en ligne », lisible ; au-delà, carte « Bientôt ».
     const soonPlayable = future && playableSoon(e.air_date, today);
-    const img = episodeImage(e.still_path, m.backdropPath);
+    const poster = data.poster_path || m.posterPath;
+    const img = episodeImage(e.still_path, m.backdropPath, 'w500', poster);
     // Vignette qui ne charge pas : repli sur le fond de la série (jamais d’image cassée, voir epStill.js).
-    const bgFb = img.fallback ? '' : episodeImage('', m.backdropPath).src;
-    const meta = [e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
+    const bgFb = img.fallback ? '' : episodeImage('', m.backdropPath, 'w500', poster).src;
+    const meta = [part ? partLabel(part) : '', e.runtime ? fmtMin(e.runtime) : '', e.air_date ? fmtDate(e.air_date) : ''].filter(Boolean).join(' · ');
     if (future && !soonPlayable) {
       const real = !isPlaceholderTitle(e.name);
       return '<li class="ep is-soon" data-ep="' + n + ':' + e.episode_number + '">' +
