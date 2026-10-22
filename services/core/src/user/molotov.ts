@@ -31,11 +31,15 @@ const MOLOTOV_ORIGIN = 'https://app.molotov.tv';
 export const MOLOTOV_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.7778.96 Electron/42.0.0 Safari/537.36 Molotov/8.0.3';
 
-/** Identifiants de poste : persistants pour la durée du process (l'API les renseigne après la connexion). */
-const DEVICE_ID = randomUUID();
-const SESSION_ID = randomUUID();
+/**
+ * Identifiants de poste : persistants pour la durée de l'isolat (l'API les renseigne après la connexion).
+ * Tirés à la première requête, jamais au chargement du module : les Workers interdisent
+ * toute génération aléatoire en portée globale (erreur Cloudflare 10021).
+ */
+let deviceId: string | undefined;
+let sessionId: string | undefined;
 
-/** En-têtes `x-*` d'identité client, communs à tous les appels. */
+/** En-têtes `x-*` d'identité client fixes (sans les identifiants de poste, voir `clientHeaders`). */
 export const MOLOTOV_HEADERS: Readonly<Record<string, string>> = {
   'x-application-id': 'molotov',
   'x-client-version': '6.17.1-hotfix.3',
@@ -47,10 +51,14 @@ export const MOLOTOV_HEADERS: Readonly<Record<string, string>> = {
   'x-drm-scheme': 'widevine',
   'x-supported-streaming-protocols': 'hls,dash',
   'x-supported-codecs-list': 'avc',
-  'x-device-id': DEVICE_ID,
-  'x-ad-id': DEVICE_ID,
-  'x-session-id': SESSION_ID,
 };
+
+/** En-têtes d'identité client complets, identifiants de poste compris (générés au premier appel). */
+export function clientHeaders(): Record<string, string> {
+  deviceId ??= randomUUID();
+  sessionId ??= randomUUID();
+  return { ...MOLOTOV_HEADERS, 'x-device-id': deviceId, 'x-ad-id': deviceId, 'x-session-id': sessionId };
+}
 
 /** Usage de chiffrement des jetons : lié au compte (une valeur ne se rejoue pas ailleurs). */
 const TOKENS_PURPOSE = 'molotov';
@@ -231,7 +239,7 @@ function profilePurpose(accountId: string): string {
 /** En-têtes d'un appel authentifié : identité client, origine de l'app web et jeton de session. */
 function molotovHeaders(tokens: MolotovTokens, extra: Record<string, string> = {}): Record<string, string> {
   return {
-    ...MOLOTOV_HEADERS,
+    ...clientHeaders(),
     'User-Agent': MOLOTOV_UA,
     Origin: MOLOTOV_ORIGIN,
     Referer: `${MOLOTOV_ORIGIN}/`,
@@ -379,7 +387,7 @@ async function exchangeGoogleToken(fetchFn: FetchFn, googleToken: string): Promi
     {
       method: 'PUT',
       headers: {
-        ...MOLOTOV_HEADERS,
+        ...clientHeaders(),
         'User-Agent': MOLOTOV_UA,
         Origin: MOLOTOV_ORIGIN,
         Referer: `${MOLOTOV_ORIGIN}/`,
