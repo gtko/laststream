@@ -102,7 +102,9 @@ Réponse de `/vapi/asset/v1` (champs **à plat**, pas sous `configuration`) :
 |---|---|---|
 | Web (Chrome/Edge) | ✅ | EME + lecteur DASH (Shaka.js) |
 | Android (WebView Capacitor) | ✅ | idem (WebView = Chromium + Widevine) |
-| Windows (shell Rust : WebView2 + libmpv) | ❌ | ni WebView2 ni libmpv n'ont de CDM Widevine → catalogue + deep-link navigateur |
+| Windows (shell Rust : WebView2 + libmpv) | ✅ | WebView2 embarque le CDM Widevine (présent dans le runtime EdgeWebView, vérifié sur machine réelle) ; lecture via Shaka dans la WebView. libmpv n'est pas utilisé pour ces flux. Le garde réel est la **détection EME à l'exécution** (`navigator.requestMediaKeySystemAccess('com.widevine.alpha')`) : sans module Widevine, le lecteur renvoie `no_widevine` et propose le navigateur. |
+
+> Molotov y arrive de son côté avec un fork Electron « +wvcus » (CDM Widevine intégré) ; notre coque s'appuie sur le CDM d'EdgeWebView, présent par défaut.
 
 ## 7. CORS (contrainte structurante)
 
