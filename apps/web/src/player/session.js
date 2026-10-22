@@ -14,7 +14,7 @@ import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
-import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, webCompatContext } from '../sources/load';
+import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, requestKey, sourceLangFor, viewFromStream, webCompatContext } from '../sources/load';
 import { failoverCandidates, webCompatOf } from '../sources/webCompat';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
@@ -40,6 +40,7 @@ import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
 import { MiniState, minimizeExits } from './mini';
 import { isOfflineView, offlineFailureView, offlineView } from './offlinePlay';
+import { MEMORY_INDEX, forgetLaunch, launchUsable, reconcileLaunch, recallLaunch, rememberLaunch } from './launchCache';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
 import { isWatched, nextEpisode, resumeDecision, shouldSave } from './progress';
 import { NativePlayer, isNativePlayer, toNativeEpisodes, toNativeSegments, toNativeSources, toNativeSubtitles } from './native';
@@ -497,12 +498,13 @@ function nativeLists() {
 /** Sources trouvées après le démarrage : le panneau natif se complète. */
 async function pollMoreSources(p) {
   const token = p.token;
+  const seq = (p.pollSeq = (p.pollSeq || 0) + 1); // une seule boucle à la fois (la fusion de la liste mémorisée en relance une)
   let cur = p.loaded;
   for (let i = 0; cur && cur.pending && cur.pending.length && i < 8; i += 1) {
     await new Promise((r) => setTimeout(r, POLL_EVERY_MS));
-    if (!P || P.token !== token) return;
+    if (!P || P.token !== token || p.pollSeq !== seq) return;
     const next = await pollSources(p.req, cur).catch(() => cur);
-    if (!P || P.token !== token) return;
+    if (!P || P.token !== token || p.pollSeq !== seq) return;
     if (next !== cur) {
       cur = next;
       p.views = next.views;
@@ -917,7 +919,7 @@ async function playView(view, startAt) {
   ui.setPhase(p.phase);
   const line = (v) => sourceLine(v) + (v.status === 'cached' ? ' ⚡' : '');
   if (isOfflineView(view)) { await playLocal(p, view, startAt, stale); return; }
-  ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', loaderExtra(2, { source: line(view) }));
+  ui.setLoading(p.meta.title || 'Lecture', 'Préparation du lien…', loaderExtra(2, { source: line(view), ...(p.memStart ? { steps: MEMORY_STEPS } : {}) }));
   // Course : la source choisie démarre seule ; passé 6 s, la suivante part en parallèle, la première prête gagne (12 s au plus
   // par candidat, 25 s ou 3 échecs au total).
   const race = raceCandidates({
@@ -926,7 +928,7 @@ async function playView(view, startAt) {
     run: (cand, signal) => prepareWithLocalFallback(p, cand, signal),
     onProgress: ({ attempt, max, slow, candidate }) => {
       if (stale() || !slow) return;
-      p.view = candidate.view;
+      p.view = listed(p, candidate.view);
       const msg = 'Ça prend du temps… ' + (candidate.direct ? 'essai en lecture directe' : 'essai d’une autre source') + ' (' + attempt + '/' + max + ')';
       ui.setLoading(p.meta.title || 'Lecture', msg, loaderExtra(2, { source: line(candidate.view), slow: true }));
     },
@@ -938,6 +940,8 @@ async function playView(view, startAt) {
   } catch (err) {
     if (stale() || (err && err.kind === 'cancelled')) return;
     p.race = null;
+    // Source mémorisée morte ou trop lente : recherche complète, sans erreur visible (la source n'est pas marquée mauvaise : son lien a pu expirer).
+    if (p.memStart) { searchInstead(p, startAt); return; }
     const failures = (err && err.failures) || [];
     failures.forEach((f) => markBad(badKey(p), sourceKey(f.candidate.view), f.message));
     p.view = null;
@@ -947,7 +951,8 @@ async function playView(view, startAt) {
   if (stale()) return;
   p.race = null;
   recordRace(p, win);
-  p.view = win.candidate.view;
+  // La liste complète a pu arriver pendant la course : la vue mémorisée est remplacée par sa fiche de la liste (mêmes indices que le panneau).
+  p.view = listed(p, win.candidate.view);
   p.tried.add(p.view.index);
   try {
     await startPlan(p, win.value, startAt, stale, win.candidate);
@@ -1058,6 +1063,11 @@ async function startPlan(p, plan, startAt, stale, cand) {
   }
   if (stale()) return;
   p.reloading = false;
+  p.memStart = false;
+  // Relance (ODY-206) : la source qui vient de démarrer est mémorisée pour la prochaine fois (choix manuel compris), sauf en salon.
+  if (!isOfflineView(p.view) && !p.noLaunchCache && !p.partySwitch) {
+    rememberLaunch(requestKey(p.req), { source: sourceKey(p.view), stream: p.view.stream, imdb: p.imdb || p.req.imdb || '', lang: launchLang(p) });
+  }
   ui.setPipAvailable(p.engine.supportsPip());
   ui.setSeries(p.req.type === 'tv', !!nextRef());
   ui.setMarkAvailable(markAllowed(p));
@@ -1113,6 +1123,9 @@ function failover(reason) {
   if (isOfflineView(p.view)) { localFailure(/media-error:[34]\b/.test(reason) ? 'video' : /bloquée|trop de temps/.test(reason) ? 'stalled' : 'error', reason); return; }
   const time = p.engine ? p.engine.state().time : 0;
   const options = failoverOrder(fallbackPool(p), p.view, p.tried);
+  // Une source en échec n'est plus rejouée à la relance ; démarrée depuis la mémoire sans autre choix connu : recherche complète.
+  forgetLaunch(requestKey(p.req), sourceKey(p.view));
+  if (p.fromCache && (!options.length || p.attempts >= MAX_ATTEMPTS)) { searchInstead(p, time > 5 ? time : p.startAt || 0); return; }
   if (!options.length || p.attempts >= MAX_ATTEMPTS) {
     try { p.engine.pause(); } catch (_) { /* ignoré */ }
     if (p.engine.kind === 'native') p.engine.closeNow();
@@ -2439,6 +2452,8 @@ export async function playBest(request, opener, opts = {}) {
   p.stopAt = typeof opts.stopAt === 'number' && typeof opts.startAt === 'number' && opts.stopAt > opts.startAt ? opts.stopAt : undefined;
   p.stopFrom = typeof opts.startAt === 'number' ? opts.startAt : 0;
   p.clipArmed = false;
+  p.launchOpts = opts;
+  p.noLaunchCache = !!opts.prefer; // salon : chacun suit la version de l'hôte, sans toucher à la source mémorisée
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
   if (!opts.prefer && !opts.picker && (await playDownloaded(p, request))) return;
@@ -2471,10 +2486,100 @@ async function playDownloaded(p, request) {
   return true;
 }
 
+const MEMORY_STEPS = ['Dernière source retrouvée', 'Choix de la meilleure source', 'Préparation du lien'];
+
+/** Fiche de `view` dans la liste chargée (même source), sinon `view` : la vue reconstruite de la mémoire n'a pas l'indice du panneau. */
+const listed = (p, view) => p.views.find((v) => sourceKey(v) === sourceKey(view)) || view;
+
+/** Langue de source visée par les préférences : une source mémorisée sous une autre langue n'est plus la bonne. */
+const launchLang = (p) => sourceLangFor(getLangPrefs(), originalLangOf(p) || undefined);
+
+/**
+ * Relance (ODY-206) : reprend directement la source mémorisée pour cet épisode (6 h, même appareil), sans la recherche ni le choix.
+ * Vrai si la lecture est lancée avec elle ; faux (aucun effet) si rien n'est mémorisé ou si la source n'est plus valable (voir
+ * `launchUsable`) : la recherche complète prend le relais. La liste des sources se charge en arrière-plan (panneau « Sources »,
+ * repli) ; un échec de la source mémorisée retombe sur la recherche complète (voir `searchInstead`).
+ */
+async function playRemembered(p, request) {
+  const token = p.token;
+  const episode = requestKey(request);
+  const entry = recallLaunch(episode, launchLang(p));
+  if (!entry) return false;
+  let view;
+  try {
+    view = { ...viewFromStream(entry.stream), index: MEMORY_INDEX };
+    const ok = sourceKey(view) === entry.source
+      && launchUsable(view, { compat: webCompatContext(), hasDebrid: debrid().hasAny(), bad: new Set(badSources(badKey(p)).keys()), keyOf: sourceKey });
+    if (!ok) { forgetLaunch(episode); return false; }
+  } catch (_) { forgetLaunch(episode); return false; } // entrée illisible : recherche complète
+  // Progression distante rattrapée (1,5 s au plus) pour reprendre là où l'on s'était arrêté.
+  if (userStore.loadProgress && navigator.onLine !== false) {
+    await Promise.race([Promise.resolve(userStore.loadProgress(request.key)).catch(() => undefined), new Promise((r) => setTimeout(r, 1500))]);
+  }
+  if (!P || P.token !== token) return true;
+  request.imdb = request.imdb || entry.imdb;
+  p.imdb = p.imdb || entry.imdb;
+  p.views = [view];
+  p.ranked = [view];
+  p.pending = [];
+  p.memStart = true; // jusqu'au premier démarrage réussi
+  p.fromCache = true; // jusqu'à l'arrivée de la liste complète
+  p.cacheMerge = view;
+  ui.setLoading(p.meta.title || 'Lecture', 'Reprise de la dernière source…', loaderExtra(2, { source: sourceLine(view) + (view.status === 'cached' ? ' ⚡' : ''), steps: MEMORY_STEPS }));
+  const started = continueWith(view, { resume: p.resumeMode });
+  loadSources(request).then((loaded) => mergeRemembered(p, loaded)).catch(() => undefined);
+  await started;
+  return true;
+}
+
+/** La liste complète arrive pendant (ou après) la lecture de la source mémorisée : panneau « Sources » et repli la voient. */
+function mergeRemembered(p, loaded) {
+  if (!P || P.token !== p.token || !p.cacheMerge) return;
+  const mine = p.cacheMerge;
+  p.cacheMerge = null;
+  p.req.imdb = p.req.imdb || loaded.imdb;
+  p.imdb = p.imdb || loaded.imdb;
+  p.fromCache = false;
+  const r = reconcileLaunch(mine, loaded.views, sourceKey, p.tried);
+  if (p.view === mine) p.view = r.view;
+  p.tried = r.tried;
+  p.views = loaded.views;
+  p.pending = loaded.pending;
+  p.loaded = loaded;
+  p.ranked = [...loaded.views];
+  syncNative();
+  pollMoreSources(p);
+}
+
+/** Repli silencieux : la source mémorisée n'a pas démarré, recherche complète comme au premier lancement (reprise à `startAt`). */
+function searchInstead(p, startAt) {
+  forgetLaunch(requestKey(p.req));
+  p.fromCache = false;
+  p.memStart = false;
+  p.cacheMerge = null;
+  p.failing = false;
+  p.seekStart = typeof startAt === 'number' ? startAt : null;
+  p.view = null;
+  p.views = [];
+  p.ranked = [];
+  p.pending = [];
+  p.tried = new Set();
+  p.attempts = 0;
+  if (p.engine) {
+    try { p.engine.pause(); } catch (_) { /* ignoré */ }
+    if (p.engine.kind === 'native') p.engine.closeNow(); // sinon l'image figée du lecteur natif reste sous le chargeur
+  }
+  ui.root.classList.add('is-searching');
+  ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
+  return searchAndPlay(p, p.req, { ...p.launchOpts, noCache: true });
+}
+
 /** Recherche des sources, choix de la meilleure et lancement (écran de chargement du lecteur). */
 async function searchAndPlay(p, request, opts) {
   const token = p.token;
   const alive = () => P && P.token === token;
+  if (!opts.noCache && !p.noLaunchCache && !opts.picker && (getAutoplay() || opts.force) && (await playRemembered(p, request))) return;
+  if (!alive()) return;
   let loaded = null;
   try {
     if (userStore.loadProgress) await userStore.loadProgress(request.key);

@@ -9,8 +9,8 @@ import { encodeConfig } from './configApi';
 export const CONFIG_SETTING_KEY = 'lastaddonConfig';
 /** Compte (nom d'utilisateur) à qui appartient la config lastAddon gardée dans ce navigateur. */
 export const CONFIG_OWNER_KEY = 'laststream.configOwner';
-/** Caches locaux liés à un compte (filtres d'accueil, recommandations) : effacés à la déconnexion. */
-const ACCOUNT_CACHE_PREFIXES = ['laststream.homeFilters.', 'laststream.aiRecs.'];
+/** Caches locaux liés à un compte (filtres d'accueil, recommandations, source mémorisée à la relance) : effacés à la déconnexion. */
+const ACCOUNT_CACHE_PREFIXES = ['laststream.homeFilters.', 'laststream.aiRecs.', 'laststream.player.launch.'];
 const MAX_VALUE_BYTES = 4096;
 
 /** Valeur à envoyer au profil, ou null si la config est vide ou trop volumineuse pour le serveur. */
@@ -104,6 +104,11 @@ function setConfigOwner(username: string): void {
 export function clearLocalAccountData(): void {
   saveSettings({ config: '' });
   setConfigOwner('');
+  clearAccountCaches();
+}
+
+/** Efface les caches locaux d'un compte (voir `ACCOUNT_CACHE_PREFIXES`). */
+function clearAccountCaches(): void {
   try {
     const s = globalThis.localStorage;
     if (!s) return;
@@ -121,6 +126,9 @@ export function clearLocalAccountData(): void {
  */
 export function claimLocalConfig(username: string, adoptUnowned = false): void {
   const owner = getConfigOwner();
-  if (owner !== username && !(owner === '' && adoptUnowned)) saveSettings({ config: '' });
+  if (owner !== username && !(owner === '' && adoptUnowned)) {
+    saveSettings({ config: '' });
+    clearAccountCaches(); // la source mémorisée peut porter l'URL (donc la config) de l'ancien compte
+  }
   setConfigOwner(username);
 }

@@ -125,6 +125,11 @@ function startDeviceFetch(key: string, targets: readonly DeviceTarget[], now = D
   return state;
 }
 
+/** Fiche d'une source déjà connue (relance d'un épisode, ODY-206) : mêmes capacités web que dans `fetchSources`, sans contrôle du cache débrideur. */
+export function viewFromStream(stream: Stream): SourceView {
+  return withWebPlayback(toSourceViews([stream]), inShell() ? null : browserCaps(), { appAudio: !inShell() && !serverLikelyUp() })[0];
+}
+
 async function fetchSources(req: SourceRequest, retry: boolean): Promise<LoadedSources> {
   const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
   if (!imdb) throw new Error('no-imdb');
