@@ -151,6 +151,8 @@ const connectSchema = z
     message: 'idToken, refreshToken ou googleToken requis',
   });
 
+const signinSchema = z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(256) });
+
 const playSchema = z.object({ channelId: z.string().trim().min(1).max(128) });
 
 const licenseSchema = z.object({
@@ -409,6 +411,46 @@ async function exchangeGoogleToken(fetchFn: FetchFn, googleToken: string): Promi
 }
 
 /**
+ * Connexion par email et mot de passe (`PUT /signin`) : même identité client que les autres appels, sans `Authorization`
+ * (aucune session encore). Un refus amont (identifiants incorrects) devient `401 invalid_credentials` ; une réponse sans
+ * jeton (flux de vérification en deux étapes, `401 mfa_required`) est signalée telle quelle ; panne ou 5xx : `502`.
+ */
+async function signinMolotov(fetchFn: FetchFn, email: string, password: string): Promise<MolotovTokens> {
+  let status: number;
+  let ok: boolean;
+  let bytes: Uint8Array;
+  try {
+    const result = await fetchBytes(
+      fetchFn,
+      `${MOLOTOV_API}/signin`,
+      {
+        method: 'PUT',
+        headers: {
+          ...clientHeaders(),
+          'User-Agent': MOLOTOV_UA,
+          Origin: MOLOTOV_ORIGIN,
+          Referer: `${MOLOTOV_ORIGIN}/`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      },
+      UPSTREAM_TIMEOUT_MS,
+      { maxBytes: 256 * 1024 },
+    );
+    status = result.status;
+    ok = result.ok;
+    bytes = result.bytes;
+  } catch {
+    throw new UserApiError(502, 'molotov_unavailable');
+  }
+  if (status >= 400 && status < 500) throw new UserApiError(401, 'invalid_credentials');
+  if (!ok) throw new UserApiError(502, 'molotov_unavailable');
+  const parsed = tokensSchema.safeParse(parseJsonBytes(bytes));
+  if (!parsed.success) throw new UserApiError(401, 'mfa_required');
+  return parsed.data;
+}
+
+/**
  * Extraction du catalogue : parcours défensif du document PAPI. Les objets porteurs d'un identifiant de chaîne et
  * d'un nom deviennent des chaînes ; tout le reste est ignoré. La forme exacte du document n'étant pas figée, le
  * parcours accepte les variantes usuelles des noms de champs.
@@ -613,6 +655,34 @@ function storeCatalogue(accountId: string, channels: MolotovChannel[], fetchedAt
   catalogues.set(accountId, { channels, fetchedAt });
 }
 
+/** État de la connexion (jamais les jetons) : même corps pour `GET /account/molotov` et `POST /account/molotov/signin`. */
+function statusBody(
+  account: { profile: MolotovProfile | null } | undefined,
+  updatedAt: number | null,
+): {
+  connected: boolean;
+  tier: string | null;
+  userId: string | null;
+  profileId: string | null;
+  email: string | null;
+  channelCount: number;
+  updatedAt: number | null;
+} {
+  if (account === undefined) {
+    return { connected: false, tier: null, userId: null, profileId: null, email: null, channelCount: 0, updatedAt: null };
+  }
+  const profile = account.profile;
+  return {
+    connected: true,
+    tier: profile?.tier ?? null,
+    userId: profile?.userId ?? null,
+    profileId: profile?.profileId ?? null,
+    email: profile?.email ?? null,
+    channelCount: profile?.channelCount ?? 0,
+    updatedAt,
+  };
+}
+
 /**
  * Routes du compte Molotov (montées sous /user). Toutes exigent une session valide et le profil principal, sauf le
  * relais JSON qui exige seulement la session (l'app web appelle le relais depuis une page non gérée). Les réponses
@@ -633,19 +703,7 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     const row = await users().getMolotovAccount(session.account.id);
     const account = readAccount(row, deps.secret, session.account.id);
     c.header('Cache-Control', 'no-store');
-    if (account === undefined) {
-      return sendJson(c, { connected: false, tier: null, userId: null, profileId: null, email: null, channelCount: 0, updatedAt: null });
-    }
-    const profile = account.profile;
-    return sendJson(c, {
-      connected: true,
-      tier: profile?.tier ?? null,
-      userId: profile?.userId ?? null,
-      profileId: profile?.profileId ?? null,
-      email: profile?.email ?? null,
-      channelCount: profile?.channelCount ?? 0,
-      updatedAt: row?.updatedAt ?? null,
-    });
+    return sendJson(c, statusBody(account, row?.updatedAt ?? null));
   });
 
   /**
@@ -669,6 +727,24 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     if (profile !== null) await state.saveProfile(profile);
     c.header('Cache-Control', 'no-store');
     return sendJson(c, { ok: true });
+  });
+
+  /**
+   * POST /user/account/molotov/signin : connexion par email et mot de passe (aucun client id Google). Le serveur échange
+   * les identifiants contre une session Molotov (`PUT /signin`), la stocke chiffrée et répond avec le même état que
+   * `GET /account/molotov`. Ni le mot de passe ni les jetons ne sont journalisés ni renvoyés.
+   */
+  router.post('/account/molotov/signin', async (c) => {
+    const session = await principalSession(users(), c, deps, backend);
+    const body = parseWith(signinSchema, c.get('body'));
+    const tokens = await signinMolotov(fetchFn(), body.email, body.password);
+    await saveAccount(users(), deps.secret, session.account.id, tokens, null);
+    const state = await molotovState(users(), deps.secret, session.account.id);
+    const profile = await fetchProfile(fetchFn(), state);
+    if (profile !== null) await state.saveProfile(profile);
+    const row = await users().getMolotovAccount(session.account.id);
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, statusBody({ profile: state.profile }, row?.updatedAt ?? null));
   });
 
   /** DELETE /user/account/molotov : déconnexion (la ligne disparaît, vérifié après écriture). */

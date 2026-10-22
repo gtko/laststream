@@ -75,6 +75,8 @@ describe('compte Molotov', () => {
   let binaryBodies: Uint8Array[] = [];
   /** Nombre d'appels à `/papi/v1/config` : le premier renvoie 401 (session expirée). */
   let configCalls = 0;
+  /** Réponse de `PUT /signin`, pilotée par les tests (identifiants acceptés, refusés, ou vérification en deux étapes). */
+  let signinReply: () => Response = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
 
   beforeAll(async () => {
     upstream = mockUpstream({
@@ -87,6 +89,7 @@ describe('compte Molotov', () => {
       [`${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license`]: () => new Response(LICENSE_BYTES, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
       [`${MOLOTOV_API}/refresh`]: () => json({ idToken: NEW_ID_TOKEN, refreshToken: NEW_REFRESH_TOKEN }),
       [`${MOLOTOV_API}/oauth/google`]: () => json({ error: 'invalid_google_client' }, 400),
+      [`${MOLOTOV_API}/signin`]: () => signinReply(),
       [`${MOLOTOV_API}/papi/v1/config`]: () => {
         configCalls += 1;
         return configCalls === 1 ? json({ error: 'expired' }, 401) : json({ ok: true });
@@ -271,6 +274,60 @@ describe('compte Molotov', () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('google_token_rejected');
+  });
+
+  it('connexion par email/mot de passe : session enregistrée, profil amont récupéré', async () => {
+    signinReply = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+    const res = await request<StatusBody>(rig.app, 'POST', '/user/account/molotov/signin', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { email: 'alice@example.test', password: 'mot-de-passe' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.body.connected).toBe(true);
+    expect(res.body.email).toBe('alice@example.test');
+    expect(res.body.tier).toBe('premium');
+    expect(res.body.userId).toBe('user-1');
+    expect(res.body.updatedAt).toBeGreaterThan(0);
+    expect(JSON.stringify(res.body)).not.toContain(ID_TOKEN);
+    const signin = upstream.callsTo(`${MOLOTOV_API}/signin`).at(-1);
+    expect(signin?.method).toBe('PUT');
+    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(signin?.headers['content-type']).toBe('application/json');
+    expect(signin?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
+    expect(signin?.headers['origin']).toBe('https://app.molotov.tv');
+    expect(signin?.headers['authorization']).toBeUndefined();
+    const profile = upstream.callsTo(`${MOLOTOV_API}/profile`).at(-1);
+    expect(profile?.headers['authorization']).toBe(`Bearer ${ID_TOKEN}`);
+  });
+
+  it('identifiants invalides : 401 invalid_credentials, aucune ligne de compte', async () => {
+    await request(rig.app, 'DELETE', '/user/account/molotov', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    signinReply = () => json({ code: 'INVALID_USERNAME_PASSWORD' }, 401);
+    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { email: 'alice@example.test', password: 'faux' },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_credentials');
+    expect(await storedRow()).toBeNull();
+  });
+
+  it('réponse sans jeton (vérification en deux étapes) : 401 mfa_required', async () => {
+    signinReply = () => json({ type: 'MFA' });
+    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { email: 'alice@example.test', password: 'mot-de-passe' },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('mfa_required');
+    expect(await storedRow()).toBeNull();
   });
 
   it('relais : chemin hors liste refusé, URL absolue refusée, en-têtes x-* et Authorization relayés', async () => {

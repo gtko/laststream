@@ -40,32 +40,20 @@ Referer: https://app.molotov.tv/
 
 ## 3. Authentification
 
-### 3.1 Google (flux implicit, comme Molotov)
+La voie retenue pour connecter un compte est **l'email + mot de passe** (formulaire de la carte « Molotov » de l'app,
+sans client id Google) :
 
 ```
-GET https://accounts.google.com/o/oauth2/v2/auth
-  client_id     = <client id Google de LastStream>
-  redirect_uri  = <origine de l'app>/oauth/google.html
-  response_type = id_token token
-  scope         = openid profile email
-  prompt        = consent
-```
-
-`oauth/google.html` = page statique de l'app (comme `/auth.html` de Molotov) qui renvoie l'`id_token` à l'opener via `postMessage`.
-
-> ⚠️ Le `client_id` Google de LastStream doit être créé par le propriétaire (Web + URI de redirection autorisé). Il n'existe pas dans le dépôt : fourni par configuration (`VITE_MOLOTOV_GOOGLE_CLIENT_ID` ou réglage utilisateur).
-
-### 3.2 Échange → session Molotov
-
-```
-PUT https://api-eu.fubo.tv/oauth/google
+PUT https://api-eu.fubo.tv/signin
 Content-Type: application/json
-{ "token": "<id_token Google>" }
+{ "email": "<email Molotov>", "password": "<mot de passe Molotov>" }
 → 200 { "idToken": "<JWT Molotov>", "refreshToken": "<JWT Molotov>" }
 ```
 
 Le `idToken` Molotov est le `Authorization: Bearer …` de **toutes** les requêtes API.
 Refresh : `POST https://api-eu.fubo.tv/refresh` (avec le `refreshToken`).
+
+> Note : la voie OAuth Google (`PUT /oauth/google` avec un `googleToken`) reste implémentée côté serveur mais n'est pas exposée dans l'UI.
 
 ## 4. API utile
 
@@ -140,6 +128,7 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 |---|---|---|
 | `GET` | `/user/account/molotov` | `{ connected, tier, userId, profileId, email, channelCount, updatedAt }` (`updatedAt` en ms epoch) |
 | `PUT` | `/user/account/molotov` | `{ idToken, refreshToken }` **ou** `{ googleToken }` (le serveur fait alors l'échange) → `{ ok: true }` (tokens chiffrés au repos) |
+| `POST` | `/user/account/molotov/signin` | `{ email, password }` → même état que `GET` (le serveur fait l'amont `PUT /signin`, corps `{email, password}`, **sans** `Authorization`) |
 | `DELETE` | `/user/account/molotov` | `{ ok: true }` (déconnexion) |
 | `GET` | `/user/account/molotov/credentials` | `{ idToken, refreshToken, expiresAt }` (usage appareil direct ; chiffré en transit par le TLS du worker) |
 | `GET` | `/user/account/molotov/channels` | `{ channels: [{ id, name, callSign, logo, group, live, program }], fetchedAt, rawChannelCount }` (compact, cache ~5 min) |
@@ -149,14 +138,14 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 | `GET` | `/user/account/molotov/relay?path=…&query=…` | relais JSON vers `api-eu.fubo.tv` (usage web ; allow-list de chemins, `query` encodée à part) |
 
 Erreurs notables : `400 google_token_rejected` (l'API Molotov refuse le client id Google), `400 unsupported_path`,
-`400 invalid_body`, `403 main_profile_required`, `403 relay_disabled`, `401 invalid_session`, `502 molotov_unavailable`.
+`400 invalid_body`, `401 invalid_credentials` et `401 mfa_required` (signin : identifiants refusés, ou vérification en
+deux étapes non gérée), `403 main_profile_required`, `403 relay_disabled`, `401 invalid_session`, `502 molotov_unavailable`.
 
 ## 9. Configuration
 
 | Nom | Où | Rôle |
 |---|---|---|
 | `LASTADDON_MOLOTOV_RELAY` | secret/variable `lastaddon-core` | active le relais serveur (`1` par défaut). `0` ⇒ relais désactivé (mode « appareil direct » seul). |
-| `VITE_MOLOTOV_GOOGLE_CLIENT_ID` | build `laststream-app` | client id Google (OAuth). Peut être surchargé par un réglage utilisateur. |
 
 Secrets : aucun nouveau secret fort requis (les tokens Molotov sont chiffrés avec `LASTADDON_SECRET`).
 
