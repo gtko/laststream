@@ -3,6 +3,7 @@
  * bibliothèque, surnom, favori, sourdine, activité masquée, retirer, bloquer et signaler avec confirmation). Les données
  * viennent du store (relations, blocages) et de l'API (profil, bibliothèque, historique) ; tout texte passe par esc(). */
 import * as store from '../data/socialStore';
+import { nothingToShow, usable } from '../data/friendLibraryView';
 import { getFriendHistory, getFriendLibrary } from '../data/socialV2Api';
 import { getFriendProfile } from '../data/socialV3Api';
 import { directPlayRequest } from './playRequest.js';
@@ -90,11 +91,14 @@ export function createFriendCard(deps) {
       '<p class="ss-c-hint">« Regarder avec ' + name + ' » démarre seul à ' + esc(clock(livePos(w) + 7)) + ' avec ta source. « Demander à rejoindre » propose à ' + name + ' une watch party synchronisée.</p></section>';
   }
 
+  /** Rien à montrer (réglage « Ma bibliothèque » de l'ami fermé pour moi, ou aucun titre partagé) : ni onglet ni entrée de menu. */
+  const libHidden = () => nothingToShow(c.lib);
+
   function menuHTML(f) {
     const item = (act2, label, cls = '') => '<button type="button" role="menuitem" class="ss-mi ' + cls + '" data-ss-act="' + act2 + '" data-fk="' + act2 + '">' + label + '</button>';
     return '<div role="menu" class="ss-menu" aria-label="Plus d’actions">' +
       item('m-party', 'Inviter dans ma watch party') +
-      item('m-library', 'Voir sa bibliothèque complète') +
+      (libHidden() ? '' : item('m-library', 'Voir sa bibliothèque complète')) +
       item('m-nick', 'Surnom privé…') +
       item('m-fav', f.favorite ? 'Retirer des favoris' : 'Mettre en favori (en haut)') +
       item('m-mute', f.muted ? 'Réactiver ses notifications' : 'Couper ses notifications') +
@@ -129,12 +133,13 @@ export function createFriendCard(deps) {
     const l = c.lib;
     if (l.status === 'loading') return '<p class="ss-empty" role="status">Chargement…</p>';
     if (l.status === 'error') return '<p class="ss-empty" role="alert">Bibliothèque indisponible. <button type="button" class="ss-link" data-ss-act="lib-retry">Réessayer</button></p>';
-    const shown = l.items.filter((x) => x.tmdbId != null);
+    const shown = usable(l.items);
     if (!shown.length) {
       const f = friend();
       return '<p class="ss-empty">' + esc(f ? shortName(f) : 'Cet ami') + ' n’a rien partagé pour l’instant.</p>';
     }
-    return '<div class="ss-lib-grid">' + shown.map(libTileHTML).join('') + '</div>';
+    return '<div class="ss-lib-grid">' + shown.map(libTileHTML).join('') + '</div>' +
+      '<button type="button" class="ss-btn2 ss-sec ss-lib-all" data-ss-act="m-library" data-fk="lib-all">Voir toute sa bibliothèque</button>';
   }
 
   function notesHTML() {
@@ -152,10 +157,11 @@ export function createFriendCard(deps) {
     if (p && p.friendSince) bits.push(sinceText(p.friendSince));
     if (p && p.commonTitles) bits.push(p.commonTitles + ' titre' + (p.commonTitles > 1 ? 's' : '') + ' en commun');
     if (!bits.length && f.household) bits.push('Profil de ce compte');
-    const libCount = c.lib.status === 'ok' ? c.lib.items.filter((x) => x.tmdbId != null).length : null;
+    const libCount = c.lib.status === 'ok' ? (c.lib.total || 0) > c.lib.items.length ? c.lib.total : usable(c.lib.items).length : null;
     const notesCount = p && p.stats ? p.stats.notes : null;
     const counts = { recent: '', lib: libCount != null ? ' · ' + libCount : '', notes: notesCount != null ? ' · ' + notesCount : '' };
-    const tabs = '<div role="tablist" class="ss-c-tabs" aria-label="Contenu de la fiche">' + TABS.map(([id, label]) =>
+    if (c.tab === 'lib' && libHidden()) c.tab = 'recent';
+    const tabs = '<div role="tablist" class="ss-c-tabs" aria-label="Contenu de la fiche">' + TABS.filter(([id]) => id !== 'lib' || !libHidden()).map(([id, label]) =>
       '<button type="button" role="tab" id="ss-ct-' + id + '" class="ss-c-tab" aria-selected="' + (c.tab === id) + '" tabindex="' + (c.tab === id ? '0' : '-1') +
       '" data-ss-act="c-tab" data-tab="' + id + '" data-fk="c-tab:' + id + '">' + label + esc(counts[id]) + '</button>').join('') + '</div>';
     const body = c.tab === 'lib' ? libHTML() : c.tab === 'notes' ? notesHTML() : recentHTML();
@@ -210,7 +216,7 @@ export function createFriendCard(deps) {
       () => { if (ok()) { c.profile = 'error'; paint(); } },
     );
     Promise.resolve().then(() => getFriendLibrary(pid)).then(
-      (res) => { if (ok()) { c.lib = { status: 'ok', items: (res && res.items) || [] }; paint(); } },
+      (res) => { if (ok()) { c.lib = { status: 'ok', items: (res && res.items) || [], total: res && res.total }; paint(); } },
       () => { if (ok()) { c.lib = { status: 'error', items: [] }; paint(); } },
     );
     Promise.resolve().then(() => getFriendHistory(pid, 20)).then(

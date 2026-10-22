@@ -98,7 +98,7 @@ describe('visibilité de la bibliothèque', () => {
 
 describe('bibliothèque d’un ami', () => {
   it('affiche ses titres visibles, « Ajouter à ma bibliothèque » et « Lire »', async () => {
-    const f = await import('../src/ui/friends.js');
+    const f = await import('../src/ui/friendLibrary.js');
     const { userStore } = await import('../src/data/userStore');
     routes = (c) => (c.path.startsWith('/user/social/friends/AMYPID/library') ? json({
       items: [
@@ -110,7 +110,7 @@ describe('bibliothèque d’un ami', () => {
     detail().innerHTML = '';
     f.showFriendLibrary('AMYPID');
     await tick(120);
-    expect(calls.find((c) => c.path.startsWith('/user/social/friends/AMYPID/library'))!.path).toContain('limit=50');
+    expect(calls.find((c) => c.path.startsWith('/user/social/friends/AMYPID/library'))!.path).toContain('limit=100');
     const keys = Array.from(detail().querySelectorAll('[data-fr-key]')).map((e) => (e as HTMLElement).dataset.frKey);
     expect(keys).toEqual(['movie:603', 'tv:95396']); // sans identifiant TMDB : ignoré
     expect(detail().querySelector('[data-fr-play="movie:603"]')).not.toBeNull();
@@ -121,12 +121,14 @@ describe('bibliothèque d’un ami', () => {
   });
 
   it('ami inconnu ou non-ami : même erreur, rien n’est affiché', async () => {
-    const f = await import('../src/ui/friends.js');
+    const f = await import('../src/ui/friendLibrary.js');
     routes = (c) => (c.path.startsWith('/user/social/friends/GHOSTPID/library') ? json({ error: 'friend_not_found' }, 404) : undefined);
     detail().innerHTML = '';
     f.showFriendLibrary('GHOSTPID');
     await tick(120);
     expect(detail().querySelectorAll('[data-fr-key]')).toHaveLength(0);
+    expect(detail().querySelector('#fl-body')!.textContent).toContain('n’est pas partagée avec toi');
+    expect(detail().querySelector('[role="alert"]')).toBeNull();
   });
 });
 

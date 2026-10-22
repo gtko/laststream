@@ -16,6 +16,7 @@ import './styles/hidden.css';
 import './styles/stats.css';
 import './styles/social.css';
 import './styles/socialProfile.css';
+import './styles/friendLibrary.css';
 import './styles/chat.css';
 import './styles/convwin.css';
 import './styles/share.css';

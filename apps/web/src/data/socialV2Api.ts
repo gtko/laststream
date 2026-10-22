@@ -45,7 +45,7 @@ export type FriendsResponse = { friends: FriendView[]; household: FriendView[]; 
 /** `POST /requests` : 201 `{ request }`, ou 200 `{ friend }` si l'autre m'avait déjà demandé. */
 export type RequestOutcome = { request: FriendRequest } | { friend: FriendView };
 /** Élément de bibliothèque d'un ami : même forme que l'ancienne route `/user/friends/:username/library`. */
-type LibraryItem = {
+export type LibraryItem = {
   type: MediaKind; tmdbId: number | null; imdbId: string | null;
   title: string; poster: string | null; addedAt: string;
 };

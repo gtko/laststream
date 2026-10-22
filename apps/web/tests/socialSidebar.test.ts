@@ -625,6 +625,33 @@ describe('fiche ami', () => {
     expect(hooks.inviteToParty).toHaveBeenCalledWith('f2');
   });
 
+  it('« Voir sa bibliothèque complète » ferme la barre et ouvre #/friend/<pid>', async () => {
+    await openCard();
+    clickEl('#ss-friend [data-ss-act="c-menu"]');
+    clickEl('[data-ss-act="m-library"]');
+    expect(location.hash).toBe('#/friend/f2');
+    expect(sb.isSidebarOpen()).toBe(false);
+  });
+
+  it('bibliothèque non visible pour moi (aucun titre) : ni onglet ni entrée de menu, sans erreur', async () => {
+    vi.mocked(v2.getFriendLibrary).mockResolvedValue({ items: [], total: 0 });
+    await openCard();
+    const tabs = Array.from(document.querySelectorAll('#ss-friend [role="tab"]')).map((t) => t.textContent);
+    expect(tabs).toEqual(['Récemment', 'Ses notes · 38']);
+    clickEl('#ss-friend [data-ss-act="c-menu"]');
+    const items = Array.from(document.querySelectorAll('#ss-friend [role="menuitem"]')).map((i) => i.textContent);
+    expect(items).not.toContain('Voir sa bibliothèque complète');
+    expect(items).toContain('Inviter dans ma watch party');
+    expect($('#ss-friend [role="alert"]')).toBeNull();
+  });
+
+  it('l’onglet Bibliothèque propose « Voir toute sa bibliothèque »', async () => {
+    await openCard();
+    clickEl('[data-tab="lib"]');
+    clickEl('#ss-friend [data-fk="lib-all"]');
+    expect(location.hash).toBe('#/friend/f2');
+  });
+
   it('surnom privé : dialogue, puis saveRelation', async () => {
     await openCard();
     clickEl('#ss-friend [data-ss-act="c-menu"]');

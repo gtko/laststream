@@ -2,7 +2,7 @@
 import { showCalendar } from './calendar.js';
 import { showHidden } from './hidden.js';
 import { showStats } from './stats.js';
-import { showFriendLibrary } from './friends.js';
+import { showFriendLibrary } from './friendLibrary.js';
 import { openSidebar } from './socialSidebar.js';
 import { showSharedList } from './sharedList.js';
 import { showShareLink } from './publicTitle.js';
