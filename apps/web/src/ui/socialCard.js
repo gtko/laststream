@@ -4,6 +4,9 @@
  * viennent du store (relations, blocages) et de l'API (profil, bibliothèque, historique) ; tout texte passe par esc(). */
 import * as store from '../data/socialStore';
 import { nothingToShow, usable } from '../data/friendLibraryView';
+import { enrichHistory, fallbackTitle } from '../data/friendHistoryView';
+import { tmdb } from '../data/lt';
+import { createTitleResolver } from '../data/titleResolver';
 import { getFriendHistory, getFriendLibrary } from '../data/socialV2Api';
 import { getFriendProfile } from '../data/socialV3Api';
 import { directPlayRequest } from './playRequest.js';
@@ -67,6 +70,14 @@ export function createFriendCard(deps) {
     onDeleted: () => {
       const st = c.profile && c.profile !== 'error' ? c.profile.stats : null;
       if (st && st.notes > 0) { st.notes -= 1; paint(); }
+    },
+  });
+
+  /** Titre déjà connu de l'app (catalogue, bibliothèque) → mémoire locale → TMDB (ODY-220). */
+  const resolveTitle = createTitleResolver((kind, id) => tmdb(kind + '/' + id), {
+    known: (kind, id) => {
+      const it = state.byKey.get(kind + ':' + id);
+      return it && it.name && it.name !== 'Sans titre' ? { title: it.name, poster: it.posterPath || '' } : null;
     },
   });
 
@@ -135,7 +146,7 @@ export function createFriendCard(deps) {
       const code = episodeCode(x);
       const state2 = x.watched ? 'Terminé' : 'En cours · ' + clock(x.pos);
       const when = ago(x.updatedAt);
-      return '<li class="ss-hrow">' + posterBox(x.poster, x.title, 'ss-poster-s') + '<span class="ss-row-t"><span class="ss-name">' + esc(x.title || 'Sans titre') + (code ? ' · ' + esc(code) : '') + '</span>' +
+      return '<li class="ss-hrow">' + posterBox(x.poster, x.title, 'ss-poster-s') + '<span class="ss-row-t"><span class="ss-name">' + esc(x.title || fallbackTitle(x)) + (code ? ' · ' + esc(code) : '') + '</span>' +
         '<span class="ss-sub">' + esc(state2 + (when ? ' · il y a ' + when : '')) + '</span></span></li>';
     }).join('') + '</ul>';
   }
@@ -243,6 +254,8 @@ export function createFriendCard(deps) {
       () => { if (ok()) { c.lib = { status: 'error', items: [] }; paint(); } },
     );
     Promise.resolve().then(() => getFriendHistory(pid, 20)).then(
+      (res) => enrichHistory((res && res.items) || [], resolveTitle).then((items) => ({ items })),
+    ).then(
       (res) => { if (ok()) { c.hist = { status: 'ok', items: (res && res.items) || [] }; paint(); } },
       (err) => { if (ok()) { c.hist = { status: err instanceof UserApiError && err.code === 'hidden' ? 'hidden' : 'error', items: [] }; paint(); } },
     );
