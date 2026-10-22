@@ -18,6 +18,7 @@ import {
 import { CHAT_MAX_CHARS, COUNTDOWN_DEFAULT_SEC, VOTE_MAX_OPTIONS, partyErrorText } from '../party/protocol';
 import { loadSources, pollSources } from '../sources/load';
 import { avatarAttrs } from './avatar-art.js';
+import { openPartyCreate } from './partyCreate.js';
 import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
 import { handlePartyCreateError } from './partyerrors.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
@@ -481,8 +482,12 @@ export async function inviteToParty(pid) {
   let c = partyBridge.client;
   if (!(c && c.room && partyBridge.isActive())) {
     const a = partyBridge.adapter ? partyBridge.adapter() : null;
-    if (!a || !a.ready || !partyBridge.available()) {
-      toast('Lance un titre depuis sa fiche (Watch party), puis invite tes amis.');
+    if (!partyBridge.available()) {
+      toast('Connecte-toi à ton compte Laststream pour lancer une watch party.');
+      return;
+    }
+    if (!a || !a.ready) {
+      openPartyCreate(pid, createLobbyFor);
       return;
     }
     try {

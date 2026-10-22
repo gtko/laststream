@@ -221,6 +221,28 @@ body.lp-open .cvw-root.is-sheet { z-index: 630; }
 .cvd-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .cvd-foot .cvm-btn { height: 36px; padding: 0 14px; font-size: 13px; }
 
+/* « Proposer une watch party » : recherche d'un titre, puis saison / épisode et visibilité (ODY-173). */
+.wpc-search { display: flex; flex-direction: column; gap: 8px; }
+.wpc-status { min-height: 16px; }
+.wpc-res { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
+.wpc-r, .wpc-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 8px; border-radius: 10px; text-align: left; }
+.wpc-r:hover { background: var(--cv-card); }
+.wpc-card { background: var(--cv-card); }
+.wpc-poster { flex: none; width: 40px; height: 60px; border-radius: 6px; overflow: hidden; background: var(--cv-pill); }
+.wpc-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wpc-card-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wpc-card-t b { font-size: 14px; overflow-wrap: anywhere; }
+.wpc-chosen { display: flex; flex-direction: column; gap: 12px; }
+.wpc-change { height: 32px; padding: 0 12px; font-size: 12px; }
+.wpc-eps { display: flex; gap: 8px; }
+.wpc-eps select { flex: 1; min-width: 0; }
+.wpc-vis { display: flex; gap: 8px; }
+.wpc-vis-o { flex: 1; display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line-2); cursor: pointer; }
+.wpc-vis-o:has(input:checked) { border-color: var(--accent); background: var(--cv-card); }
+.wpc-vis-o input { margin-top: 3px; accent-color: var(--accent); }
+.wpc-vis-o span { display: flex; flex-direction: column; font-size: 13px; }
+.wpc-vis-o i { font-style: normal; font-size: 12px; color: var(--dim); }
+
 @media (max-width: 767px) {
   .cvw-root:not(.is-sheet) { display: none; }
 }
