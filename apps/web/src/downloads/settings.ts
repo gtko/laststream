@@ -17,6 +17,8 @@ const KEY = {
   asked: `${PREFIX}asked`,
   /** Marqueur posé à la déconnexion : les téléchargements du compte sont à effacer avant toute reprise (voir service.ts). */
   purge: `${PREFIX}purge`,
+  /** Compte propriétaire des téléchargements de l'appareil (serveur + pseudo), voir `claimDownloads` (service.ts). */
+  owner: `${PREFIX}owner`,
 } as const;
 /** Valeur écrite pour « sans limite ». */
 const NO_LIMIT = 'none';
@@ -119,6 +121,37 @@ export function isPurgePending(): boolean {
 /** Efface le marqueur une fois la purge terminée. */
 export function clearPurgePending(): void {
   write(KEY.purge, null);
+}
+
+/** Compte propriétaire des téléchargements (serveur et pseudo), ou null : aucun propriétaire mémorisé. */
+export function getDownloadsOwner(): string | null {
+  return read(KEY.owner) || null;
+}
+
+/** Mémorise le compte propriétaire des téléchargements ; null l'oublie. */
+export function setDownloadsOwner(owner: string | null): void {
+  write(KEY.owner, owner || null);
+}
+
+/**
+ * Connexion de `identity` (serveur et pseudo du compte ; vide : compte inconnu) : les téléchargements gardés sur l'appareil ne
+ * servent que leur propriétaire. Synchrone (rien ne se lit entre la connexion et la décision) ; vrai si une purge est à faire.
+ * - même compte : rien ne change (une 401 suivie d'une reconnexion au même compte garde tout) ;
+ * - sans propriétaire mémorisé : `adoptUnowned` (session restaurée) le donne à ce compte ; sinon (connexion) purge, car on ne
+ *   sait pas à qui appartiennent des fichiers antérieurs au suivi du propriétaire ;
+ * - autre compte ou autre serveur : le marqueur de purge est posé (la lecture hors ligne est bloquée) et le nouveau propriétaire
+ *   mémorisé ; l'appelant lance alors `purgeForOwnerChange` (service.ts).
+ */
+export function claimDownloadsOwner(identity: string, adoptUnowned = false): boolean {
+  const owner = getDownloadsOwner();
+  if (identity !== '' && owner === identity) return false;
+  if (identity !== '' && owner === null && adoptUnowned) {
+    setDownloadsOwner(identity);
+    return false;
+  }
+  markPurgePending();
+  setDownloadsOwner(identity || null);
+  return true;
 }
 
 /** Connexion mobile facturée à l'usage. Faux quand le navigateur ne dit pas le type de connexion. */

@@ -97,12 +97,15 @@ function linkPolicy(): LinkPolicy {
   return usesNativeTransfer() ? nativeLinkPolicy : isAddonLinkUrl;
 }
 
+/** Purge d'un changement de compte en cours : la liste reste vide et le gestionnaire n'est servi qu'une fois la purge finie. */
+let ownerGate: Promise<void> | null = null;
+
 /** Diffuse la liste courante aux abonnés et la garde en cache synchrone. */
 function publish(items: readonly DownloadItem[]): void {
-  cache = items;
+  cache = ownerGate || isPurgePending() ? [] : items;
   for (const fn of [...listeners]) {
     try {
-      fn(items);
+      fn(cache);
     } catch {
       /* un abonné défaillant n'empêche pas les autres */
     }
@@ -194,7 +197,9 @@ function startManager(purge: boolean): Promise<DownloadManager | null> {
 
 /** Gestionnaire, créé une fois (lazy) ; null si les téléchargements ne sont pas disponibles sur cet appareil. */
 export function getDownloads(): Promise<DownloadManager | null> {
-  return startManager(false);
+  // Marqueur posé mais purge pas encore lancée (import différé de auth.ts) : un gestionnaire déjà là ne sert pas l'ancien compte.
+  if (!ownerGate && isPurgePending()) void purgeForOwnerChange();
+  return ownerGate ? ownerGate.then(() => startManager(false)) : startManager(false);
 }
 
 export function downloadIdFor(t: DownloadTarget): string {
@@ -296,7 +301,7 @@ export function subscribeDownloads(fn: (items: readonly DownloadItem[]) => void)
   if (!platformAvailability().ok) return () => undefined;
   listeners.add(fn);
   void getDownloads();
-  fn(cache);
+  fn(isPurgePending() ? [] : cache);
   return () => {
     listeners.delete(fn);
   };
@@ -304,7 +309,7 @@ export function subscribeDownloads(fn: (items: readonly DownloadItem[]) => void)
 
 /** Liste courante connue (synchrone) ; vide avant l'initialisation. */
 export function listDownloads(): readonly DownloadItem[] {
-  return cache;
+  return isPurgePending() ? [] : cache;
 }
 
 export async function getSpace(): Promise<SpaceInfo | null> {
@@ -361,8 +366,23 @@ export async function purgeAll(): Promise<void> {
   }
 }
 
+/**
+ * Changement de compte ou de serveur (`claimDownloadsOwner` a posé le marqueur de purge) : masque la liste, bloque
+ * `getDownloads` jusqu'à la fin de la purge, puis efface les téléchargements de l'ancien compte. Ne lève jamais.
+ */
+export function purgeForOwnerChange(): Promise<void> {
+  cache = [];
+  const previous = ownerGate;
+  const gate: Promise<void> = (previous ? previous.then(() => purgeAll()) : purgeAll()).finally(() => {
+    if (ownerGate === gate) ownerGate = null;
+  });
+  ownerGate = gate;
+  return gate;
+}
+
 /** Réinitialise tout l'état du module (tests seulement). */
 export function resetDownloadsForTests(): void {
+  ownerGate = null;
   dropManager();
   registered = null;
   cache = [];

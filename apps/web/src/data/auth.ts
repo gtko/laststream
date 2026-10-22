@@ -1,4 +1,4 @@
-import { getBase, getConfig, PUBLIC_BASE, saveSettings } from './config';
+import { getBase, getConfig, isOfficialBase, PUBLIC_BASE, saveSettings } from './config';
 import { clearElevation } from './adminApi';
 import { emitDataEvent } from './events';
 import { applyAccountFilters, loadServerHidden, setFiltersPusher, setHiddenBackend } from './homeFilters';
@@ -16,7 +16,7 @@ import { dropSyncedLists, pushTvSources, reconcileTvSources, refreshAll, setTvSo
 import * as api from './userApi';
 import { authEvents, UserApiError, type ProfileDto, type ProfileInput } from './userApi';
 import { LocalUserStore, setUserStore, type Profile } from './userStore';
-import { markPurgePending } from '../downloads/settings';
+import { claimDownloadsOwner, markPurgePending, setDownloadsOwner } from '../downloads/settings';
 
 /*
  * Orchestration des comptes : détection de l'API /user, connexion, choix du profil, bascule du `userStore`
@@ -131,6 +131,7 @@ export async function initAuth(opts: { anonymous?: boolean } = {}): Promise<Auth
     auth.isOwner = !lockedId && (account.role ? account.role === 'owner' : !!(account.isAdmin || account.isOwner));
     // Session restaurée : la config locale n'est gardée que si elle appartient à ce compte.
     claimLocalConfig(account.username, true);
+    claimDownloads(account.username, true);
   } catch (err) {
     if (err instanceof UserApiError && err.status === 401) {
       if (getSession()) clearSession();
@@ -304,6 +305,7 @@ export async function signIn(username: string, password: string): Promise<AuthSt
   api.me(4000).then(({ account }) => { if (auth.username === name) auth.accountId = account.id; }).catch(() => undefined);
   // Un autre compte ne réutilise jamais la config locale (URL d'addons, clés) d'un compte précédent.
   claimLocalConfig(name);
+  claimDownloads(name);
   return loadProfiles();
 }
 
@@ -337,6 +339,7 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
     auth.accountId = accountId;
     auth.isOwner = false; // session verrouillée : jamais les droits de propriétaire
     claimLocalConfig(username);
+    claimDownloads(username);
     const status = await loadProfiles(lockedId);
     if (status !== 'ready') throw new Error('adoptSession : session non ouverte (' + status + ')');
     return status;
@@ -347,10 +350,33 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
   }
 }
 
+/** Serveur du compte, stable d'un lancement à l'autre : le serveur officiel (ses deux adresses) et un lastAddon local (port variable) comptent pour un. */
+function serverKey(base: string): string {
+  if (isOfficialBase(base)) return 'laststream';
+  try {
+    const u = new URL(base);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname) ? 'local' : u.origin;
+  } catch {
+    return base;
+  }
+}
+
+/**
+ * Les téléchargements de l'appareil ne servent que leur propriétaire (ODY-231) : un autre compte, ou le même pseudo sur un
+ * autre serveur, les efface (voir `claimDownloadsOwner`). Le marqueur est posé tout de suite ; l'effacement suit, sans attente.
+ */
+function claimDownloads(username: string, adoptUnowned = false): void {
+  if (!claimDownloadsOwner(username ? `${serverKey(getBase())}|${username}` : '', adoptUnowned)) return;
+  void import('../downloads/service').then((m) => m.purgeForOwnerChange()).catch(() => undefined);
+}
+
 export async function signOut(silent = false): Promise<void> {
   // Déconnexion explicite seulement : le marqueur est posé avant tout `await` et survit au rechargement qui suit.
   // Une 401 silencieuse (`onUnauthorized`) ne purge pas les téléchargements.
-  if (!silent) markPurgePending();
+  if (!silent) {
+    markPurgePending();
+    setDownloadsOwner(null);
+  }
   if (!silent) await api.logout().catch(() => undefined);
   clearSession();
   clearElevation();

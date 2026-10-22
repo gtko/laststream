@@ -85,7 +85,7 @@ import { isDemo, setDemoFlags, startDemo } from './data/demo';
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
 // Déconnexion explicite suivie d'un rechargement : la purge des téléchargements du compte précédent se termine ici.
-if (isPurgePending()) void import('./downloads/service').then((m) => m.purgeAll()).catch(() => undefined);
+if (isPurgePending()) void import('./downloads/service').then((m) => m.purgeForOwnerChange()).catch(() => undefined);
 
 // App Windows (ou toute page servie par lastAddon lui-même) : serveur = origine de la page, quel que soit le port
 // choisi au démarrage, sauf si l'utilisateur a choisi un serveur perso. Déclaré avant la résolution du serveur.
