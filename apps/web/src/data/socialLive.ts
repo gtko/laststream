@@ -32,6 +32,8 @@ export type LiveEvent =
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
   | { t: 'note'; media: MediaRef; note: Note }
+  /** Note supprimée par son auteur. */
+  | { t: 'note_removed'; media: MediaRef; id: string }
   /** Saisie d'un membre d'une conversation (`dm:<pid>` ou `g:<id>`). */
   | { t: 'typing'; conv: string; pid: string }
   | { t: 'reaction'; conv: string; id: string; reactions: Reaction[] }
@@ -144,6 +146,8 @@ export function parseLiveEvent(data: unknown): LiveEvent | null {
     case 'note':
       return isRec(v.media) && isRec(v.note) && typeof v.note.id === 'string'
         ? { t: 'note', media: v.media as unknown as MediaRef, note: v.note as unknown as Note } : null;
+    case 'note_removed':
+      return isRec(v.media) && typeof v.id === 'string' && v.id !== '' ? { t: 'note_removed', media: v.media as unknown as MediaRef, id: v.id } : null;
     case 'typing':
       return typeof v.conv === 'string' && typeof v.pid === 'string' ? { t: 'typing', conv: v.conv, pid: v.pid } : null;
     case 'reaction':

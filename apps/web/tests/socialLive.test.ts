@@ -113,6 +113,17 @@ describe('fonctions pures', () => {
     expect(parseLiveEvent({ t: 'presence', friend: {} })).toBeNull();
     expect(parseLiveEvent({ t: 'read', pid: 'p9' })).toBeNull();
   });
+
+  it('note_removed : accepté avec le média et un identifiant, refusé sans l’un des deux', () => {
+    const media = { type: 'movie', tmdbId: 603 };
+    expect(parseLiveEvent({ t: 'note_removed', media, id: 'n1' })).toEqual({ t: 'note_removed', media, id: 'n1' });
+    expect(parseLiveEvent(JSON.stringify({ t: 'note_removed', media, id: 'n1' }))).toEqual({ t: 'note_removed', media, id: 'n1' });
+    expect(parseLiveEvent({ t: 'note_removed', media })).toBeNull();
+    expect(parseLiveEvent({ t: 'note_removed', media, id: '' })).toBeNull();
+    expect(parseLiveEvent({ t: 'note_removed', media, id: 42 })).toBeNull();
+    expect(parseLiveEvent({ t: 'note_removed', id: 'n1' })).toBeNull();
+    expect(parseLiveEvent({ t: 'note_removed', media: 'movie', id: 'n1' })).toBeNull();
+  });
 });
 
 describe('connexion et ping', () => {

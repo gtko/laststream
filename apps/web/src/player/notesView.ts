@@ -51,10 +51,24 @@ function labelOf(notes: readonly Note[], clock: string): string {
   return notes.length + ' réactions à ' + clock + ', la première de ' + first.author.handle.name;
 }
 
-/** Marqueur rond d'un groupe, placé à sa position sur la barre ; un clic (ou Entrée au clavier) amène la lecture à la note. */
-function markerOf(c: NoteCluster, onSeek: (pos: number) => void): HTMLButtonElement {
+/** Gestion de ses propres notes : `mine` reconnaît les notes du profil actif ; `onMenu` ouvre le menu ancré au marqueur. */
+export interface OwnNotes {
+  mine: (n: Note) => boolean;
+  onMenu: (anchor: HTMLButtonElement, notes: Note[]) => void;
+}
+
+/** Notes du profil actif déjà enregistrées (les notes optimistes `tmp-` ne sont pas encore modifiables). */
+const editable = (own: OwnNotes, notes: readonly Note[]): Note[] => notes.filter((n) => own.mine(n) && !n.id.startsWith('tmp-'));
+
+/**
+ * Marqueur rond d'un groupe, placé à sa position sur la barre ; un clic (ou Entrée au clavier) amène la lecture à la note.
+ * Si le groupe contient des notes du profil actif, ce même clic ouvre aussi le menu Modifier / Supprimer ; les notes des
+ * autres gardent l'aperçu seul.
+ */
+function markerOf(c: NoteCluster, onSeek: (pos: number) => void, own?: OwnNotes): HTMLButtonElement {
   const first = c.notes[0];
   const clock = formatClock(first.pos);
+  const mine = own ? editable(own, c.notes) : [];
   const b = el('button', 'lp-note' + (c.pct < 12 ? ' is-left' : c.pct > 88 ? ' is-right' : '') + (c.notes.length > 1 ? ' is-multi' : ''));
   b.type = 'button';
   b.style.left = c.pct.toFixed(3) + '%';
@@ -65,15 +79,39 @@ function markerOf(c: NoteCluster, onSeek: (pos: number) => void): HTMLButtonElem
   b.append(dotOf(first, 'lp-note-dot'));
   if (c.notes.length > 1) b.append(el('b', 'lp-note-n', String(c.notes.length)));
   b.append(cardOf(c.notes, clock));
-  b.addEventListener('click', () => onSeek(first.pos));
+  if (own && mine.length) {
+    b.classList.add('is-mine');
+    b.dataset.label += mine.length > 1 ? ' — ' + mine.length + ' sont les tiennes : modifier ou supprimer' : ' — la tienne : modifier ou supprimer';
+    b.setAttribute('aria-label', b.dataset.label);
+    b.setAttribute('aria-haspopup', 'dialog');
+  }
+  b.addEventListener('click', () => {
+    onSeek(first.pos);
+    if (own && mine.length) own.onMenu(b, mine);
+  });
   // L'appui ne remonte pas à la barre [data-seek], qui capturerait le pointeur et lancerait un glissement de lecture.
   b.addEventListener('pointerdown', (e) => e.stopPropagation());
   return b;
 }
 
+/** Marqueur de position `pos` (valeur de `data-pos`), à défaut le plus proche en position ; null s'il n'y a aucun marqueur. */
+export function nearestMarker(markers: readonly HTMLElement[], pos: string): HTMLElement | null {
+  const exact = markers.find((m) => m.dataset.pos === pos);
+  if (exact) return exact;
+  const at = Number(pos);
+  if (pos === '' || !Number.isFinite(at)) return null;
+  let best: HTMLElement | null = null;
+  let gap = Infinity;
+  for (const m of markers) {
+    const d = Math.abs(Number(m.dataset.pos) - at);
+    if (d < gap) { gap = d; best = m; }
+  }
+  return best;
+}
+
 /** Remplace les marqueurs du conteneur (la couche `.lp-notes` de la piste) par ceux des groupes donnés. */
-export function renderNoteMarkers(container: HTMLElement, clusters: readonly NoteCluster[], onSeek: (pos: number) => void): void {
-  container.replaceChildren(...clusters.map((c) => markerOf(c, onSeek)));
+export function renderNoteMarkers(container: HTMLElement, clusters: readonly NoteCluster[], onSeek: (pos: number) => void, own?: OwnNotes): void {
+  container.replaceChildren(...clusters.map((c) => markerOf(c, onSeek, own)));
 }
 
 /**
@@ -246,5 +284,208 @@ export function createReactPanel(opts: { onPick: (kind: NoteKind, body: string, 
     },
     close() { root.hidden = true; },
     isOpen: () => !root.hidden,
+  };
+}
+
+export interface NoteMenuOptions {
+  /** Enregistre le nouveau contenu (corps déjà validé par `noteBody`) ; l'horodatage ne change jamais. */
+  onEdit: (id: string, kind: NoteKind, body: string) => void;
+  /** Supprime la note, après confirmation dans le menu. */
+  onDelete: (id: string) => void;
+  /** Le menu demande sa fermeture (Échap, clic ailleurs, action faite) ; `back` : rendre le focus au marqueur. */
+  onClose: (back: boolean) => void;
+}
+
+export interface NoteMenu {
+  el: HTMLElement;
+  /** Ouvre le menu des notes `notes` (les miennes du groupe), ancré au marqueur `anchor` dans l'hôte `host`. */
+  open(anchor: HTMLElement, notes: readonly Note[], host?: HTMLElement): void;
+  /** Met à jour avec les notes à jour (édition ou suppression en direct) ; ferme le menu s'il ne reste rien à gérer. */
+  refresh(all: readonly Note[]): void;
+  close(): void;
+  isOpen(): boolean;
+  /** Position (s) de la première note du groupe ouvert, pour retrouver le marqueur après un nouveau rendu. */
+  anchorPos(): string;
+}
+
+type MenuView = { kind: 'list' } | { kind: 'edit'; id: string } | { kind: 'confirm'; id: string };
+
+/**
+ * Menu d'un marqueur contenant mes réactions : liste (Modifier / Supprimer), édition (emojis rapides + champ texte, l'heure
+ * ne change pas, Annuler / Enregistrer) et suppression en deux appuis (« Supprimer cette réaction ? » Annuler / Confirmer).
+ * Un seul menu à la fois ; Échap ou un clic ailleurs le ferme. Tout texte utilisateur passe par textContent.
+ */
+export function createNoteMenu(opts: NoteMenuOptions): NoteMenu {
+  const root = el('div', 'lp-notemenu');
+  root.setAttribute('role', 'dialog');
+  root.setAttribute('aria-label', 'Mes réactions');
+  root.hidden = true;
+
+  let notes: Note[] = [];
+  let view: MenuView = { kind: 'list' };
+  let pos = '';
+  let open = false;
+
+  const find = (id: string): Note | undefined => notes.find((n) => n.id === id);
+  const clockOf = (n: Note): string => formatClock(n.pos);
+  const dismiss = (back: boolean): void => {
+    if (open) opts.onClose(back);
+  };
+  const outside = (e: Event): void => {
+    const t = e.target;
+    // Seul un clic sur mon propre repère est épargné (il rouvre ou bascule le menu) ; un clic sur celui d'un autre ferme.
+    if (!(t instanceof Element) || root.contains(t) || t.closest('.lp-note.is-mine')) return;
+    dismiss(false);
+  };
+  const btn = (cls: string, text: string, label?: string): HTMLButtonElement => {
+    const b = el('button', cls, text);
+    b.type = 'button';
+    if (label) b.setAttribute('aria-label', label);
+    return b;
+  };
+
+  function renderList(): void {
+    root.replaceChildren(el('p', 'lp-nm-t', notes.length > 1 ? 'Mes réactions' : 'Ma réaction'));
+    for (const n of notes) {
+      const row = el('div', 'lp-nm-row');
+      const what = n.kind === 'emoji' ? n.body : '« ' + n.body + ' »';
+      row.append(el('span', 'lp-nm-w' + (n.kind === 'emoji' ? ' is-emoji' : ''), n.body), el('span', 'lp-nm-c', clockOf(n)));
+      const edit = btn('lp-nm-b', 'Modifier', 'Modifier ma réaction ' + what + ' à ' + clockOf(n));
+      edit.addEventListener('click', () => { view = { kind: 'edit', id: n.id }; render(); });
+      const del = btn('lp-nm-b is-danger', 'Supprimer', 'Supprimer ma réaction ' + what + ' à ' + clockOf(n));
+      del.addEventListener('click', () => { view = { kind: 'confirm', id: n.id }; render(); });
+      row.append(edit, del);
+      root.append(row);
+    }
+    const first = root.querySelector<HTMLElement>('.lp-nm-b');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function renderConfirm(n: Note): void {
+    const cancel = btn('lp-nm-b', 'Annuler');
+    cancel.addEventListener('click', () => { view = { kind: 'list' }; render(); });
+    const ok = btn('lp-nm-b is-danger', 'Confirmer', 'Confirmer la suppression de ma réaction à ' + clockOf(n));
+    ok.addEventListener('click', () => { opts.onDelete(n.id); dismiss(true); });
+    const acts = el('div', 'lp-nm-acts');
+    acts.append(cancel, ok);
+    const ask = el('p', 'lp-nm-t', 'Supprimer cette réaction ?');
+    ask.setAttribute('role', 'alert');
+    root.replaceChildren(ask, el('p', 'lp-nm-sub', n.body), acts);
+    cancel.focus({ preventScroll: true });
+  }
+
+  function renderEdit(n: Note): void {
+    let kind: NoteKind = n.kind;
+    let body = n.body;
+    const title = el('p', 'lp-nm-t');
+    title.append('Modifier la réaction à ', el('b', 'lp-nm-clock', clockOf(n)));
+
+    const emojis = el('div', 'lp-react-emo');
+    emojis.setAttribute('role', 'group');
+    emojis.setAttribute('aria-label', 'Choisir un emoji');
+    const form = el('form', 'lp-react-f');
+    const input = el('input', 'lp-react-in');
+    input.type = 'text';
+    input.maxLength = NOTE_MAX;
+    input.autocomplete = 'off';
+    input.value = n.kind === 'text' ? n.body : '';
+    input.placeholder = 'Ou une note (' + NOTE_MAX + ')';
+    input.setAttribute('aria-label', 'Note texte, ' + NOTE_MAX + ' caractères au plus');
+    const count = el('span', 'lp-react-c');
+    const save = el('button', 'lp-nm-b is-primary', 'Enregistrer');
+    save.type = 'submit';
+    const cancel = btn('lp-nm-b', 'Annuler');
+    cancel.addEventListener('click', () => { view = { kind: 'list' }; render(); });
+    const acts = el('div', 'lp-nm-acts');
+    acts.append(cancel, save);
+
+    const picks: Array<[string, HTMLButtonElement]> = [];
+    const sync = (): void => {
+      count.textContent = noteLength(input.value) + ' / ' + NOTE_MAX;
+      for (const [e, b] of picks) b.setAttribute('aria-pressed', String(kind === 'emoji' && body === e));
+      const next = noteBody(kind, body);
+      save.disabled = next === null || (kind === n.kind && next === n.body);
+    };
+    for (const e of QUICK_EMOJIS) {
+      const b = btn('lp-react-e', e, 'Choisir ' + (EMOJI_LABEL[e] ? EMOJI_LABEL[e] + ' ' : '') + e);
+      b.addEventListener('click', () => { kind = 'emoji'; body = e; input.value = ''; sync(); });
+      picks.push([e, b]);
+      emojis.append(b);
+    }
+    input.addEventListener('input', () => { kind = 'text'; body = input.value; sync(); });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const next = noteBody(kind, body);
+      if (next === null || (kind === n.kind && next === n.body)) return;
+      opts.onEdit(n.id, kind, next);
+      dismiss(true);
+    });
+    // Annuler et Enregistrer sont dans le formulaire pour que Entrée enregistre depuis le champ.
+    form.append(input, count, acts);
+    sync();
+    root.replaceChildren(title, emojis, form);
+    const pressed = picks.find(([e]) => kind === 'emoji' && body === e);
+    (pressed ? pressed[1] : input).focus({ preventScroll: true });
+  }
+
+  function render(): void {
+    const n = view.kind === 'list' ? null : find(view.id);
+    if (view.kind !== 'list' && !n) view = { kind: 'list' };
+    if (view.kind === 'edit' && n) renderEdit(n);
+    else if (view.kind === 'confirm' && n) renderConfirm(n);
+    else renderList();
+  }
+
+  // Échap ferme le menu sans atteindre les raccourcis du lecteur.
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    dismiss(true);
+  });
+  // L'appui dans le menu ne lance pas un glissement de la barre.
+  root.addEventListener('pointerdown', (e) => e.stopPropagation());
+
+  return {
+    el: root,
+    open(anchor, mine, host) {
+      notes = [...mine];
+      view = { kind: 'list' };
+      pos = anchor.dataset.pos ?? '';
+      if (!open) document.addEventListener('pointerdown', outside, true);
+      open = true;
+      root.hidden = false;
+      render();
+      // Ancré au marqueur (hors petit écran, où le CSS le met en pleine largeur).
+      const h = host ? host.getBoundingClientRect() : null;
+      if (host && h && h.width > 640) {
+        const a = anchor.getBoundingClientRect();
+        const w = root.offsetWidth || 320;
+        root.style.left = Math.round(Math.min(Math.max(8, a.left + a.width / 2 - h.left - w / 2), Math.max(8, h.width - w - 8))) + 'px';
+        root.style.right = 'auto';
+      } else {
+        root.style.left = '';
+        root.style.right = '';
+      }
+    },
+    refresh(all) {
+      if (!open) return;
+      const byId = new Map(all.map((n) => [n.id, n]));
+      const next = notes.map((n) => byId.get(n.id)).filter((n): n is Note => !!n);
+      if (!next.length) { dismiss(false); return; }
+      const changed = next.length !== notes.length || next.some((n, i) => n !== notes[i]);
+      if (!changed) return;
+      notes = next;
+      // Une édition ou une confirmation en cours n'est pas écrasée par la mise à jour d'une autre note.
+      if (view.kind === 'list' || !find(view.id)) { view = { kind: 'list' }; render(); }
+    },
+    close() {
+      if (open) document.removeEventListener('pointerdown', outside, true);
+      open = false;
+      root.hidden = true;
+      root.replaceChildren();
+    },
+    isOpen: () => open,
+    anchorPos: () => pos,
   };
 }

@@ -11,7 +11,7 @@ import { bindEpisodeFold } from './epfold.js';
 import { formatClock } from './progress';
 import { skipLabel } from './skip';
 import { createMiniView } from './miniview.js';
-import { createReactPanel, fadeFutureMarkers, noteFlashEl, renderNoteMarkers } from './notesView';
+import { createNoteMenu, createReactPanel, fadeFutureMarkers, nearestMarker, noteFlashEl, renderNoteMarkers } from './notesView';
 import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './cinemaView';
 import { bucketAt } from './playbackSocial';
 import { createMarkBar } from './markbar';
@@ -114,6 +114,17 @@ export function createPlayerUI(h) {
     onPick: (kind, body, also) => { const pos = reactPos; api.closeReact(true); h.react({ pos, kind, body, also }); },
     onCancel: () => api.closeReact(true),
   });
+  /** Rend le focus au marqueur de la note à `pos` ; si elle n'existe plus (note supprimée), au marqueur le plus proche, sinon au bouton de lecture. */
+  function focusNoteMarker(pos) {
+    const target = nearestMarker([...root.querySelectorAll('.lp-note')], pos);
+    const fallback = target || q('[data-role="play"]') || seek;
+    if (fallback) fallback.focus({ preventScroll: true });
+  }
+  const noteMenu = createNoteMenu({
+    onEdit: (id, kind, body) => h.editNote(id, kind, body),
+    onDelete: (id) => h.deleteNote(id),
+    onClose: (back) => api.closeNoteMenu(back),
+  });
   const cinemaBtn = q('[data-role="cinema"]');
   const cinemaMenu = createCinemaMenu({
     onSwitch: (on) => h.cinema('switch', on),
@@ -144,7 +155,7 @@ export function createPlayerUI(h) {
   const cinemaInd = createCinemaIndicator();
   const cinemaSum = createCinemaSummary(() => { cinemaSum.hide(); }, (pos) => h.seekTo(pos));
   const heat = q('.lp-heat');
-  root.append(flash, react.el, cinemaMenu.el, cinemaInd.el, cinemaSum.el);
+  root.append(flash, react.el, noteMenu.el, cinemaMenu.el, cinemaInd.el, cinemaSum.el);
   // Le panneau s’arrête au-dessus de la barre de contrôles : sa hauteur réelle est lue par le CSS (--lp-bar-h).
   const bottomBar = q('.lp-bottom');
   const syncBarHeight = () => root.style.setProperty('--lp-bar-h', bottomBar.offsetHeight + 'px');
@@ -167,7 +178,7 @@ export function createPlayerUI(h) {
     root.classList.add('is-ui');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || mark.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
+      if (panelName || !last || last.paused || dragging || document.activeElement === vs || react.isOpen() || noteMenu.isOpen() || mark.isOpen() || cinemaMenu.isOpen() || !q('.lp-resume').hidden || !q('.lp-error').hidden) return;
       root.classList.remove('is-ui');
     }, 3000);
   }
@@ -343,7 +354,7 @@ export function createPlayerUI(h) {
     },
     get panel() { return panelName; },
     show() { root.hidden = false; root.classList.add('is-ui'); wake(); },
-    hide() { root.hidden = true; api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); flash.replaceChildren(); },
+    hide() { root.hidden = true; api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); api.closeNoteMenu(false); flash.replaceChildren(); },
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },
@@ -482,7 +493,22 @@ export function createPlayerUI(h) {
     },
     /** Marqueurs des notes sur la piste (groupes de `clusterNotes`) ; un clic amène la lecture à la note. */
     setNoteMarkers(clusters) {
-      renderNoteMarkers(q('.lp-notes'), clusters, (pos) => h.seekTo(pos));
+      const own = {
+        mine: (n) => n.author.pid === h.myPid(),
+        onMenu: (anchor, notes) => {
+          if (noteMenu.isOpen() && noteMenu.anchorPos() === anchor.dataset.pos) { api.closeNoteMenu(false); return; }
+          api.closeMark(false); api.closePanel(true); api.closeReact(false); api.closeCinemaMenu(false);
+          wake();
+          noteMenu.open(anchor, notes, root);
+          syncOpeners();
+        },
+      };
+      const layer = q('.lp-notes');
+      // Le rendu remplace tous les repères : le focus d'un repère (clavier, lecteur d'écran) est rendu au même repère, ou au plus proche.
+      const keep = layer.contains(document.activeElement) ? document.activeElement.dataset.pos : null;
+      renderNoteMarkers(layer, clusters, (pos) => h.seekTo(pos), own);
+      if (keep != null) focusNoteMarker(keep);
+      if (noteMenu.isOpen()) noteMenu.refresh(clusters.flatMap((c) => c.notes));
     },
     /** « Réagir ici » n'apparaît qu'avec le social disponible (jamais pour un profil enfant). */
     setNotesAvailable(ok) {
@@ -496,6 +522,7 @@ export function createPlayerUI(h) {
     },
     /** Ouvre le marquage sur la barre : poignées de début et de fin, type, Envoyer. */
     openMark() {
+      api.closeNoteMenu(false);
       if (!last || !Number.isFinite(last.duration) || last.duration <= 0) return;
       api.closePanel(true);
       api.closeReact(false);
@@ -517,6 +544,7 @@ export function createPlayerUI(h) {
     },
     /** Popover « Réagir ici » pour la position `pos` (secondes), figée à l'ouverture. */
     openReact(pos, opts) {
+      api.closeNoteMenu(false);
       reactPos = pos;
       api.closeMark(false);
       api.closePanel(true);
@@ -577,7 +605,7 @@ export function createPlayerUI(h) {
       cinemaBtn.setAttribute('aria-label', on ? 'Mode cinéma actif' : 'Mode cinéma : couper le social');
     },
     setCinemaIndicator(count) { cinemaInd.set(count); },
-    openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); wake(); cinemaMenu.open(model); syncOpeners(); },
+    openCinemaMenu(model) { api.closeMark(false); api.closePanel(true); api.closeReact(false); api.closeNoteMenu(false); wake(); cinemaMenu.open(model); syncOpeners(); },
     renderCinemaMenu(model) { cinemaMenu.render(model); },
     closeCinemaMenu(back) {
       if (!cinemaMenu.isOpen()) return;
@@ -588,6 +616,14 @@ export function createPlayerUI(h) {
     isCinemaMenuOpen: () => cinemaMenu.isOpen(),
     showCinemaSummary(s) { wake(); cinemaSum.show(s); },
     hideCinemaSummary() { cinemaSum.hide(); },
+    /** Ferme le menu Modifier / Supprimer ; `back` rend le focus au marqueur de la note. */
+    closeNoteMenu(back) {
+      if (!noteMenu.isOpen()) return;
+      const pos = noteMenu.anchorPos();
+      noteMenu.close();
+      syncOpeners();
+      if (back && !root.hidden) focusNoteMarker(pos);
+    },
     /** Ferme le popover ; `back` rend le focus au bouton « Réagir ici ». */
     closeReact(back) {
       if (!react.isOpen()) return;

@@ -1,10 +1,12 @@
 // Notes de la timeline du lecteur (Social v2, lot 4a) : franchissement, retour en arrière, regroupement sur la barre,
 // validation des corps de note, et rendu DOM (texte échappé, marqueurs, popover « Réagir ici »).
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  MAX_JUMP, NOTE_MAX, QUICK_EMOJIS, clusterNotes, crossing, isEmoji, markerPct, mediaKey, noteBody, rearmed, safeColor, uniqueNotes,
+  MAX_JUMP, NOTE_MAX, QUICK_EMOJIS, clusterNotes, crossing, isEmoji, markerPct, mediaKey, noteBody, rearmed, safeColor, uniqueNotes, upsertNotes,
 } from '../src/player/notesTimeline';
-import { createReactPanel, noteFlashEl, renderNoteMarkers } from '../src/player/notesView';
+import {
+  createNoteMenu, createReactPanel, nearestMarker, noteFlashEl, renderNoteMarkers, type NoteMenu, type OwnNotes,
+} from '../src/player/notesView';
 import type { Note } from '../src/data/socialV2Api';
 
 const note = (id: string, pos: number, extra: Partial<Note> = {}): Note => ({
@@ -117,6 +119,13 @@ describe('validation des notes et des couleurs', () => {
     expect(mediaKey({ type: 'movie', tmdbId: '603', season: null })).toBe('movie:603::');
   });
 
+  it('mediaKey traite une saison ou un épisode absent d’une série comme 0 (le serveur les omet à 0)', () => {
+    expect(mediaKey({ type: 'series', tmdbId: 1, episode: 5 })).toBe('series:1:0:5');
+    expect(mediaKey({ type: 'series', tmdbId: 1, episode: 5 })).toBe(mediaKey({ type: 'series', tmdbId: 1, season: 0, episode: 5 }));
+    expect(mediaKey({ type: 'series', tmdbId: 1, season: 2 })).toBe('series:1:2:0');
+    expect(mediaKey({ type: 'movie', tmdbId: 603, season: 0, episode: 0 })).toBe('movie:603::');
+  });
+
   it('noteBody rogne un texte et refuse le vide ou plus de 140 caractères', () => {
     expect(NOTE_MAX).toBe(140);
     expect(noteBody('text', '  salut  ')).toBe('salut');
@@ -143,6 +152,22 @@ describe('validation des notes et des couleurs', () => {
     expect(safeColor('red')).not.toBe('red');
     expect(safeColor('#fff;background:url(http://x)')).not.toContain('url');
     expect(safeColor(undefined)).not.toBe('');
+  });
+});
+
+describe('upsertNotes : ajout et édition sans doublon', () => {
+  it('une note de même identifiant remplace l’ancienne, les autres sont gardées, triées par position', () => {
+    const list = [note('a', 30), note('b', 10)];
+    const out = upsertNotes(list, [note('a', 30, { kind: 'emoji', body: '🔥' })]);
+    expect(out.map((n) => n.id)).toEqual(['b', 'a']);
+    expect(out[1]).toMatchObject({ kind: 'emoji', body: '🔥', pos: 30 });
+  });
+
+  it('ajoute les notes nouvelles sans modifier la liste d’origine', () => {
+    const list = [note('a', 20)];
+    const out = upsertNotes(list, [note('b', 5)]);
+    expect(out.map((n) => n.id)).toEqual(['b', 'a']);
+    expect(list.map((n) => n.id)).toEqual(['a']);
   });
 });
 
@@ -242,5 +267,222 @@ describe('rendu DOM', () => {
     panel.close();
     expect(panel.isOpen()).toBe(false);
     panel.el.remove();
+  });
+});
+
+/** Notes de l'utilisateur courant (auteur `me`), pour le marquage « mes réactions ». */
+const MINE = { pid: 'me', handle: { name: 'Moi', tag: 'AAAA', full: 'Moi#AAAA' }, avatarColor: '#7b5bf5' };
+const mineNote = (id: string, pos: number): Note => note(id, pos, { author: MINE });
+const ownNotes = (onMenu: OwnNotes['onMenu']): OwnNotes => ({ mine: (n) => n.author.pid === 'me', onMenu });
+
+describe('nearestMarker : focus rendu après un nouveau rendu des repères', () => {
+  const marker = (pos: string): HTMLElement => {
+    const b = document.createElement('button');
+    b.dataset.pos = pos;
+    return b;
+  };
+
+  it('retrouve le repère de même position', () => {
+    const a = marker('10'), b = marker('42.5');
+    expect(nearestMarker([a, b], '42.5')).toBe(b);
+  });
+
+  it('retombe sur le repère le plus proche quand le sien a disparu', () => {
+    const a = marker('10'), b = marker('60');
+    expect(nearestMarker([a, b], '50')).toBe(b);
+    expect(nearestMarker([a, b], '20')).toBe(a);
+  });
+
+  it('renvoie null sans repère ou sans position valable', () => {
+    expect(nearestMarker([], '10')).toBeNull();
+    expect(nearestMarker([marker('10')], '')).toBeNull();
+    expect(nearestMarker([marker('10')], 'x')).toBeNull();
+  });
+});
+
+describe('marqueurs de ses propres réactions', () => {
+  it('sans own, ou pour les notes d’un autre : ni is-mine ni menu, le clic amène seulement à la note', () => {
+    const onSeek = vi.fn();
+    const onMenu = vi.fn();
+    const plain = document.createElement('div');
+    renderNoteMarkers(plain, clusterNotes([mineNote('m', 10)], 1000), onSeek);
+    const others = document.createElement('div');
+    renderNoteMarkers(others, clusterNotes([note('a', 10)], 1000), onSeek, ownNotes(onMenu));
+    for (const box of [plain, others]) {
+      const marker = box.querySelector('.lp-note') as HTMLButtonElement;
+      expect(marker.classList.contains('is-mine')).toBe(false);
+      expect(marker.hasAttribute('aria-haspopup')).toBe(false);
+      marker.click();
+    }
+    expect(onSeek).toHaveBeenCalledTimes(2);
+    expect(onMenu).not.toHaveBeenCalled();
+  });
+
+  it('avec mes notes : un clic amène à la note et ouvre le menu sur mes réactions', () => {
+    const onSeek = vi.fn();
+    const onMenu = vi.fn();
+    const container = document.createElement('div');
+    renderNoteMarkers(container, clusterNotes([mineNote('m', 10)], 1000), onSeek, ownNotes(onMenu));
+    const marker = container.querySelector('.lp-note') as HTMLButtonElement;
+    expect(marker.classList.contains('is-mine')).toBe(true);
+    expect(marker.getAttribute('aria-label')).toContain('la tienne');
+    marker.click();
+    expect(onSeek).toHaveBeenCalledWith(10);
+    expect(onMenu).toHaveBeenCalledTimes(1);
+    expect(onMenu).toHaveBeenCalledWith(marker, [expect.objectContaining({ id: 'm' })]);
+  });
+
+  it('une note optimiste tmp- n’est pas modifiable : pas de marque ni de menu', () => {
+    const onMenu = vi.fn();
+    const container = document.createElement('div');
+    renderNoteMarkers(container, clusterNotes([mineNote('tmp-1', 10)], 1000), () => undefined, ownNotes(onMenu));
+    const marker = container.querySelector('.lp-note') as HTMLButtonElement;
+    expect(marker.classList.contains('is-mine')).toBe(false);
+    marker.click();
+    expect(onMenu).not.toHaveBeenCalled();
+  });
+
+  it('dans un groupe mêlé, le menu ne reçoit que mes notes enregistrées', () => {
+    const onMenu = vi.fn();
+    const container = document.createElement('div');
+    const cluster = clusterNotes([mineNote('tmp-1', 10), mineNote('m', 10.4), note('a', 10.6)], 1000);
+    renderNoteMarkers(container, cluster, () => undefined, ownNotes(onMenu));
+    const marker = container.querySelector('.lp-note') as HTMLButtonElement;
+    expect(marker.classList.contains('is-mine')).toBe(true);
+    marker.click();
+    expect(onMenu).toHaveBeenCalledWith(marker, [expect.objectContaining({ id: 'm' })]);
+  });
+});
+
+describe('menu de ses réactions : modifier et supprimer', () => {
+  const mounted: Array<{ menu: NoteMenu; host: HTMLElement }> = [];
+  afterEach(() => {
+    for (const { menu, host } of mounted.splice(0)) {
+      menu.close();
+      host.remove();
+    }
+  });
+
+  /** Monte le menu dans le document, ouvert sur `notes`, avec des gestionnaires espions. */
+  function mount(notes: Note[]) {
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const onClose = vi.fn();
+    const menu = createNoteMenu({ onEdit, onDelete, onClose });
+    const host = document.createElement('div');
+    const anchor = document.createElement('button');
+    anchor.dataset.pos = '10';
+    host.append(anchor, menu.el);
+    document.body.append(host);
+    mounted.push({ menu, host });
+    menu.open(anchor, notes);
+    return { menu, onEdit, onDelete, onClose };
+  }
+
+  /** Bouton du menu dont le texte est exactement `text`. */
+  const btn = (root: HTMLElement, text: string): HTMLButtonElement => {
+    const found = Array.from(root.querySelectorAll('button')).find((b) => b.textContent === text);
+    if (!found) throw new Error('bouton absent : ' + text);
+    return found;
+  };
+
+  it('Modifier, un emoji, puis Enregistrer appelle onEdit avec l’id, le genre et le corps', () => {
+    const { menu, onEdit } = mount([mineNote('m1', 10)]);
+    btn(menu.el, 'Modifier').click();
+    btn(menu.el, '🔥').click();
+    btn(menu.el, 'Enregistrer').click();
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith('m1', 'emoji', '🔥');
+  });
+
+  it('Modifier un texte : la correction est enregistrée rognée, Enregistrer reste inactif sans changement', () => {
+    const { menu, onEdit } = mount([mineNote('m1', 10)]);
+    btn(menu.el, 'Modifier').click();
+    const input = menu.el.querySelector('input') as HTMLInputElement;
+    const save = btn(menu.el, 'Enregistrer');
+    expect(input.value).toBe('bien vu');
+    expect(save.disabled).toBe(true);
+    input.value = '  très bien  ';
+    input.dispatchEvent(new Event('input'));
+    expect(save.disabled).toBe(false);
+    save.click();
+    expect(onEdit).toHaveBeenCalledWith('m1', 'text', 'très bien');
+  });
+
+  it('Supprimer seul ne supprime rien : c’est Confirmer qui appelle onDelete, puis le menu se ferme', () => {
+    const { menu, onDelete, onClose } = mount([mineNote('m1', 10)]);
+    btn(menu.el, 'Supprimer').click();
+    expect(menu.el.textContent).toContain('Supprimer cette réaction ?');
+    expect(onDelete).not.toHaveBeenCalled();
+    btn(menu.el, 'Confirmer').click();
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onDelete).toHaveBeenCalledWith('m1');
+    expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it('Annuler dans la confirmation revient à la liste sans supprimer', () => {
+    const { menu, onDelete } = mount([mineNote('m1', 10)]);
+    btn(menu.el, 'Supprimer').click();
+    btn(menu.el, 'Annuler').click();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(menu.el.textContent).not.toContain('Supprimer cette réaction ?');
+    expect(menu.el.querySelector('.lp-nm-b')?.textContent).toBe('Modifier');
+  });
+
+  it('Annuler dans l’édition revient à la liste sans enregistrer', () => {
+    const { menu, onEdit } = mount([mineNote('m1', 10)]);
+    btn(menu.el, 'Modifier').click();
+    btn(menu.el, 'Annuler').click();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(menu.el.querySelector('.lp-nm-b')?.textContent).toBe('Modifier');
+  });
+
+  it('Échap ferme le menu (onClose appelé avec back = true)', () => {
+    const { menu, onClose } = mount([mineNote('m1', 10)]);
+    menu.el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith(true);
+  });
+
+  it('refresh demande la fermeture (onClose, sans retour) quand il ne reste aucune de mes notes', () => {
+    const { menu, onClose } = mount([mineNote('m1', 10)]);
+    menu.refresh([note('autre', 12)]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it('refresh reste en vue d’édition quand une autre note du même groupe change', () => {
+    const m1 = mineNote('m1', 10);
+    const m2 = mineNote('m2', 10.4);
+    const { menu, onClose } = mount([m1, m2]);
+    btn(menu.el, 'Modifier').click();
+    const input = menu.el.querySelector('input') as HTMLInputElement;
+    input.value = 'en cours';
+    input.dispatchEvent(new Event('input'));
+    menu.refresh([m1, { ...m2, body: 'changé' }]);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(menu.el.querySelector('input')).toBe(input);
+    expect(input.value).toBe('en cours');
+    expect(menu.el.querySelector('.lp-nm-clock')).not.toBeNull();
+  });
+
+  it('un clic sur le repère d’une autre personne ferme le menu, pas sur un de mes repères', () => {
+    const { menu, onClose } = mount([mineNote('m1', 10)]);
+    const mine = document.createElement('button');
+    mine.className = 'lp-note is-mine';
+    const other = document.createElement('button');
+    other.className = 'lp-note';
+    document.body.append(mine, other);
+    try {
+      mine.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      expect(onClose).not.toHaveBeenCalled();
+      other.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledWith(false);
+    } finally {
+      mine.remove();
+      other.remove();
+      menu.close();
+    }
   });
 });

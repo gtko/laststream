@@ -73,10 +73,10 @@ import { createMessageBubble } from './messageBubble';
 import { openConversation } from '../ui/socialSidebar.js';
 import { mountPartyPanel, togglePartyPanel } from '../ui/partypanel.js';
 import { knownBandwidthKbps } from '../sources/load';
-import { getNotes, postNote } from '../data/socialV2Api';
+import { deleteNote, getNotes, postNote, updateNote } from '../data/socialV2Api';
 import { getHeatmap, getMissed } from '../data/socialV3Api';
 import {
-  endCinema, getState as getSocialState, loadPrefs, onNote, sendMessage as sendSocialMessage, setCinemaHidden, startCinema,
+  endCinema, getState as getSocialState, loadPrefs, onNote, onNoteRemoved, sendMessage as sendSocialMessage, setCinemaHidden, startCinema,
   subscribe as subscribeSocial,
 } from '../data/socialStore';
 import { openShareDialog } from '../ui/socialHooks.js';
@@ -85,7 +85,7 @@ import {
   cinemaEndsOnTeardown, durationOf, filmEnded, friendsWatching, heatBars, hiddenElements, initialOf, isTouchLayout, menuSelection, remainingLabel, startPolicy,
   toggleElement, untilFor,
 } from './playbackSocial';
-import { clusterNotes, crossing, mediaKey, rearmed, uniqueNotes } from './notesTimeline';
+import { clusterNotes, crossing, mediaKey, rearmed, upsertNotes } from './notesTimeline';
 
 const AUTOPIP_KEY = 'laststream.player.autopip';
 const THUMBS_KEY = 'laststream.player.thumbs';
@@ -310,6 +310,9 @@ function ensureUI() {
     miniState,
     miniLayout: onMiniLayout,
     react: postReact,
+    myPid: () => { const me = getSocialState().me; return me ? me.pid : null; },
+    editNote: editReaction,
+    deleteNote: deleteReaction,
     markSend: (kind, start, end) => sendSegment(kind, start, end, false),
     cinema: onCinema,
   });
@@ -2042,7 +2045,7 @@ function panelData(name) {
 function onKey(e) {
   if (!P || ui.root.hidden) return;
   // Saisie d'une réaction ou d'une réponse dans une bulle : aucun raccourci du lecteur (Échap est géré par chaque champ).
-  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-bubble') || e.target.closest('.lp-mk') || e.target.closest('.lp-mk-h'))) return;
+  if (e.target instanceof Element && (e.target.closest('.lp-react') || e.target.closest('.lp-notemenu') || e.target.closest('.lp-bubble') || e.target.closest('.lp-mk') || e.target.closest('.lp-mk-h'))) return;
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
@@ -2118,9 +2121,9 @@ function noteMediaOf(p) {
   return { type: 'series', tmdbId: id, season: p.cur.season, episode: p.cur.episode };
 }
 
-/** Ajoute des notes à la liste (sans doublon d'identifiant) et signale le changement aux marqueurs. */
+/** Ajoute des notes à la liste (une note de même identifiant remplace l'ancienne : édition) et signale le changement aux marqueurs. */
 function putNotes(nt, notes) {
-  nt.list = uniqueNotes([...nt.list, ...notes]);
+  nt.list = upsertNotes(nt.list, notes);
   nt.version += 1;
 }
 
@@ -2140,6 +2143,13 @@ function startNotes(p) {
     if (p.notes !== nt || mediaKey(m) !== nt.key) return;
     putNotes(nt, [note]);
   });
+  const unsubRemoved = onNoteRemoved((m, id) => {
+    if (p.notes !== nt || mediaKey(m) !== nt.key || !nt.list.some((n) => n.id === id)) return;
+    removeNote(nt, id);
+    loadHeat(p);
+  });
+  const unsubNote = nt.unsub;
+  nt.unsub = () => { unsubNote(); unsubRemoved(); };
   loadHeat(p);
   getNotes(media).then(({ notes }) => {
     if (p.notes === nt) putNotes(nt, notes);
@@ -2228,6 +2238,51 @@ function postReact({ pos, kind, body, also }) {
     if (p.notes !== nt) return;
     if (tmp) removeNote(nt, tmp);
     ui.toast(err && err.status === 429 ? 'Trop de réactions : réessaie dans une minute' : 'Réaction non envoyée, réessaie plus tard', 3500);
+  });
+}
+
+/** Échec d'une modification ou d'une suppression : note absente côté serveur → retrait local, sinon retour en arrière. */
+const noteGone = (err) => !!err && err.status === 404 && err.code === 'note_not_found';
+
+/**
+ * Modifie le contenu (emoji ou texte) d'une de mes réactions ; l'horodatage ne change pas. Mise à jour optimiste, retour
+ * arrière et toast en cas d'échec. La bulle n'est pas rejouée après une édition.
+ */
+function editReaction(id, kind, body) {
+  const p = P;
+  const nt = p && p.notes;
+  const prev = nt && nt.list.find((n) => n.id === id);
+  if (!nt || !prev) return;
+  const optimistic = { ...prev, kind, body };
+  putNotes(nt, [optimistic]);
+  nt.fired.add(id);
+  updateNote(id, { kind, body }).then((res) => {
+    if (p.notes !== nt) return;
+    if (res && res.note && res.note.id === id) putNotes(nt, [res.note]);
+    loadHeat(p);
+  }, (err) => {
+    if (p.notes !== nt) return;
+    if (noteGone(err)) { removeNote(nt, id); loadHeat(p); ui.toast('Réaction introuvable', 3500); return; }
+    // Retour arrière seulement si la note est encore la version optimiste : une modification plus récente n'est pas écrasée.
+    if (nt.list.find((n) => n.id === id) === optimistic) putNotes(nt, [prev]);
+    ui.toast('Modification non enregistrée, réessaie plus tard', 3500);
+  });
+}
+
+/** Supprime une de mes réactions (déjà confirmée dans le menu) : retrait immédiat, remise en place si le serveur refuse. */
+function deleteReaction(id) {
+  const p = P;
+  const nt = p && p.notes;
+  const prev = nt && nt.list.find((n) => n.id === id);
+  if (!nt || !prev) return;
+  removeNote(nt, id);
+  deleteNote(id).then(() => {
+    if (p.notes === nt) loadHeat(p);
+  }, (err) => {
+    if (p.notes !== nt) return;
+    if (noteGone(err)) { loadHeat(p); ui.toast('Réaction introuvable', 3500); return; }
+    putNotes(nt, [prev]);
+    ui.toast('Suppression non enregistrée, réessaie plus tard', 3500);
   });
 }
 

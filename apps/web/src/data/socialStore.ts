@@ -29,6 +29,7 @@ const TYPING_SEND_MIN_MS = 3_000;
 const TYPING_MUTE_MS = 60_000;
 
 export type NoteListener = (media: MediaRef, note: Note) => void;
+export type NoteRemovedListener = (media: MediaRef, id: string) => void;
 export type JoinAnswerListener = (ev: { pid: string; accept: boolean; partyId?: string }) => void;
 export type PartyInviteListener = (ev: { from: FriendView; partyId: string; title: string }) => void;
 
@@ -285,6 +286,7 @@ export function reduceLiveEvent(s: SocialState, ev: LiveEvent, now: number = Dat
   switch (ev.t) {
     case 'pong':
     case 'note':
+    case 'note_removed':
     case 'list':
     case 'join_answer':
     case 'party_invite':
@@ -319,6 +321,7 @@ export function reduceLiveEvent(s: SocialState, ev: LiveEvent, now: number = Dat
 let state: SocialState = initialSocialState();
 const subs = new Set<(s: SocialState) => void>();
 const noteSubs = new Set<NoteListener>();
+const noteRemovedSubs = new Set<NoteRemovedListener>();
 const joinAnswerSubs = new Set<JoinAnswerListener>();
 const partyInviteSubs = new Set<PartyInviteListener>();
 let live: SocialLive | null = null;
@@ -365,6 +368,12 @@ export function subscribe(fn: (s: SocialState) => void): () => void {
 export function onNote(cb: NoteListener): () => void {
   noteSubs.add(cb);
   return () => { noteSubs.delete(cb); };
+}
+
+/** Écouteur des notes supprimées en direct (par leur auteur). */
+export function onNoteRemoved(cb: NoteRemovedListener): () => void {
+  noteRemovedSubs.add(cb);
+  return () => { noteRemovedSubs.delete(cb); };
 }
 
 /** Écouteur des réponses à une demande de rejoindre (acceptée ou refusée). */
@@ -735,6 +744,11 @@ function applyLive(ev: LiveEvent): void {
     case 'note':
       noteSubs.forEach((cb) => {
         try { cb(ev.media, ev.note); } catch { /* un écouteur ne casse pas le canal */ }
+      });
+      return;
+    case 'note_removed':
+      noteRemovedSubs.forEach((cb) => {
+        try { cb(ev.media, ev.id); } catch { /* un écouteur ne casse pas le canal */ }
       });
       return;
     case 'message':

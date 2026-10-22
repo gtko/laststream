@@ -32,9 +32,13 @@ export interface NoteCluster {
   notes: Note[];
 }
 
-/** Clé stable d'un média (film ou épisode), pour filtrer les notes en direct sur le média lu. */
+/**
+ * Clé stable d'un média (film ou épisode), pour filtrer les notes en direct sur le média lu. Pour une série, saison et
+ * épisode absents valent 0 : le serveur les omet quand ils valent 0, la clé doit rester la même des deux côtés.
+ */
 export function mediaKey(m: { type: string; tmdbId: number | string; season?: number | null; episode?: number | null }): string {
-  return `${m.type}:${Number(m.tmdbId)}:${m.season ?? ''}:${m.episode ?? ''}`;
+  if (m.type === 'series') return `${m.type}:${Number(m.tmdbId)}:${Number(m.season ?? 0)}:${Number(m.episode ?? 0)}`;
+  return `${m.type}:${Number(m.tmdbId)}::`;
 }
 
 /** Notes sans doublon d'identifiant (la première occurrence gagne), triées par position. */
@@ -42,6 +46,14 @@ export function uniqueNotes(notes: readonly Note[]): Note[] {
   const seen = new Map<string, Note>();
   for (const n of notes) if (!seen.has(n.id)) seen.set(n.id, n);
   return [...seen.values()].sort((a, b) => a.pos - b.pos);
+}
+
+/** Ajoute des notes à la liste ; une note de même identifiant REMPLACE l'ancienne (édition). Triées par position. */
+export function upsertNotes(list: readonly Note[], incoming: readonly Note[]): Note[] {
+  const byId = new Map<string, Note>();
+  for (const n of list) byId.set(n.id, n);
+  for (const n of incoming) byId.set(n.id, n);
+  return [...byId.values()].sort((a, b) => a.pos - b.pos);
 }
 
 /**

@@ -247,6 +247,20 @@ describe('endpoints /user/social', () => {
     expect(sent[3]).toMatchObject({ method: 'DELETE', url: 'http://localhost:7000/user/social/notes/n1' });
   });
 
+  it('modifie une note : PATCH sur /notes/:id avec seulement kind et body, identifiant encodé', async () => {
+    reply = () => json({ note: { id: 'n1' } });
+    expect(await api.updateNote('n1', { kind: 'emoji', body: '🔥' })).toEqual({ note: { id: 'n1' } });
+    expect(sent[0]).toMatchObject({
+      method: 'PATCH', url: 'http://localhost:7000/user/social/notes/n1', body: { kind: 'emoji', body: '🔥' },
+    });
+    expect(Object.keys(sent[0].body).sort()).toEqual(['body', 'kind']);
+
+    await api.updateNote('a/b c', { kind: 'text', body: 'corrigé' });
+    expect(sent[1]).toMatchObject({
+      method: 'PATCH', url: 'http://localhost:7000/user/social/notes/a%2Fb%20c', body: { kind: 'text', body: 'corrigé' },
+    });
+  });
+
   it('ticket du canal temps réel', async () => {
     reply = () => json({ wsPath: '/user/social/live?ticket=T' });
     expect(await api.createLiveTicket()).toEqual({ wsPath: '/user/social/live?ticket=T' });

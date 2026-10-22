@@ -126,6 +126,9 @@ export const postNote = (n: NewNote) =>
   social<{ note: Note }>('POST', '/notes', {
     type: n.type, tmdbId: n.tmdbId, season: n.season, episode: n.episode, pos: n.pos, kind: n.kind, body: n.body,
   });
+/** Modifie le contenu (emoji ou texte) d'une de ses notes ; l'horodatage ne change jamais. 404 `note_not_found` si elle n'est pas à soi. */
+export const updateNote = (id: string, n: { kind: Note['kind']; body: string }) =>
+  social<{ note: Note }>('PATCH', `/notes/${enc(id)}`, { kind: n.kind, body: n.body });
 export const deleteNote = (id: string) => social<void>('DELETE', `/notes/${enc(id)}`);
 
 // ---- Canal temps réel ----

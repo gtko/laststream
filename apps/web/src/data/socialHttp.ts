@@ -10,7 +10,7 @@ export const SOCIAL = '/social';
  * Appel `/user/social<path>` au nom du profil actif : X-Profile-Id (sans lui le serveur répond 400 `profile_required`),
  * et X-Profile-Token si ce profil a un PIN valable. Même mécanisme que `adminCall` et `asActor`.
  */
-export function social<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export function social<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const pid = auth.profile?.id;
   return call<T>(SOCIAL + path, { method, body, profileId: pid, headers: pid ? { 'x-profile-id': pid } : undefined });
 }
