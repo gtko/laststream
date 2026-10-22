@@ -122,6 +122,22 @@ export const noteEditSchema = z.strictObject({
   body: z.string().max(1000),
 });
 
+/** `?before=<createdAt ms>&limit=` des notes d'un ami : 1 à 50, 30 par défaut ; `before` exclu. */
+export const friendNotesQuery = z.strictObject({
+  before: z
+    .string()
+    .regex(/^\d{1,15}$/)
+    .transform(Number)
+    .optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(50))
+    .optional()
+    .transform((value) => value ?? 30),
+});
+
 /** `?before=<createdAt ms>&limit=` : page de messages, 50 au plus (50 par défaut). */
 export const messagesQuery = z.strictObject({
   before: z

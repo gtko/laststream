@@ -644,6 +644,17 @@ export interface NoteView {
   createdAt: number;
 }
 
+/**
+ * Note vue par un autre profil (ami ou foyer) : son titre, et `hidden` (corps vide) quand l'anti-spoiler du lecteur la
+ * masque. Les notes du lecteur lui-même ne sont jamais masquées.
+ */
+interface FriendNoteView extends NoteView {
+  media: MediaRef;
+  hidden?: true;
+}
+
+export type FriendNotesOutcome = { result: 'unknown' } | { result: 'hidden' } | { result: 'ok'; notes: FriendNoteView[] };
+
 /** Référence normalisée : saison et épisode gardés seulement pour une série. */
 export function normalizeMedia(input: MediaRef): MediaRef {
   const out: MediaRef = { type: input.type, tmdbId: input.tmdbId };
@@ -811,6 +822,16 @@ function mediaOfNote(row: NoteKeyRow): MediaRef {
     if (Number(row.episode) !== 0) media.episode = Number(row.episode);
   }
   return media;
+}
+
+/** Note jointe à son titre : type, identifiant TMDB, saison et épisode stockés (0 pour un film). */
+interface FriendNoteRow extends NoteRow, NoteKeyRow {}
+
+/** Progression du lecteur sur un titre exact : nombre de lignes, terminé (0/1), position en secondes. */
+interface SeenRow {
+  n: number;
+  finished: number | null;
+  position: number | null;
 }
 
 // Activité
@@ -2262,6 +2283,59 @@ export class SocialV2Store {
       const { friends, household } = this.audience(authorPid);
       return { media: mediaOfNote(row), audience: [...friends, ...household] };
     });
+  }
+
+  /**
+   * Notes d'un profil visibles par `viewerPid` (`GET /social/friends/:pid/notes`) : du plus récent au plus ancien, `before`
+   * (createdAt en ms) exclu. Mêmes liens que l'historique : `unknown` sans lien, `hidden` pour un ami dont l'historique est
+   * masqué. Anti-spoiler : hors de ses propres notes, si le lecteur l'a activé, une note reste masquée (`hidden`, corps vide)
+   * tant que sa progression sur ce titre exact n'atteint pas la position de la note (voir `spoilerHides`).
+   */
+  friendNotes(viewerPid: string, targetPid: string, before: number | undefined, limit: number): FriendNotesOutcome {
+    const relation = this.relationOf(viewerPid, targetPid);
+    if (relation === undefined) return { result: 'unknown' };
+    if (relation === 'friend' && !this.prefsOf(targetPid).historyVisible) return { result: 'hidden' };
+    const guarded = targetPid !== viewerPid && this.prefsOf(viewerPid).antiSpoiler;
+    // Curseur sur created_at seul : des notes au même instant à la frontière de deux pages peuvent être sautées (accepté).
+    const cursor = before === undefined ? '' : 'AND n.created_at < ?';
+    const params = before === undefined ? [targetPid, limit] : [targetPid, before, limit];
+    const rows = this.db
+      .prepare(
+        `SELECT n.id, n.type, n.tmdb_id, n.season, n.episode, n.pos, n.kind, n.body, n.created_at, p.pid, p.handle_name, p.handle_tag, p.avatar_color, p.avatar
+           FROM notes n JOIN profiles p ON p.pid = n.author_pid
+          WHERE n.author_pid = ? ${cursor}
+          ORDER BY n.created_at DESC, n.rowid DESC
+          LIMIT ?`,
+      )
+      .all(...params) as unknown as FriendNoteRow[];
+    const seen = new Map<string, SeenRow>();
+    const notes = rows.map((row): FriendNoteView => {
+      const note: FriendNoteView = { ...noteOf(row), media: mediaOfNote(row) };
+      return guarded && this.spoilerHides(viewerPid, row, seen) ? { ...note, body: '', hidden: true } : note;
+    });
+    return { result: 'ok', notes };
+  }
+
+  /**
+   * Vrai si l'anti-spoiler masque la note `row` au lecteur : aucune progression sur ce titre exact (type, TMDB, saison,
+   * épisode), ou progression non terminée et position inférieure à `pos − 1` s. `seen` mémorise les titres déjà lus.
+   */
+  private spoilerHides(viewerPid: string, row: FriendNoteRow, seen: Map<string, SeenRow>): boolean {
+    const key = `${row.type}|${row.tmdb_id}|${row.season}|${row.episode}`;
+    let progress = seen.get(key);
+    if (progress === undefined) {
+      progress = this.db
+        .prepare(
+          `SELECT COUNT(*) AS n, MAX(pg.finished) AS finished, MAX(pg.position_sec) AS position
+             FROM progress pg JOIN profiles p ON p.id = pg.profile_id
+            WHERE p.pid = ? AND p.is_kid = 0 AND pg.type = ? AND pg.tmdb_id = ? AND pg.season = ? AND pg.episode = ?`,
+        )
+        .get(viewerPid, row.type, row.tmdb_id, row.season, row.episode) as unknown as SeenRow;
+      seen.set(key, progress);
+    }
+    if (Number(progress.n) === 0) return true;
+    if (Number(progress.finished) === 1) return false;
+    return Number(progress.position) < Number(row.pos) - 1;
   }
 
   // Activité, carte de chaleur, résumé

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SocialEvent } from '../src/user/social-v2-events.js';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Acting, befriend, type Cast, castOf, type ErrorBodyV2, HOOK_TIMEOUT_MS } from './social-v2-harness.js';
+import { request } from './user-harness.js';
 
 interface NoteBody {
   id: string;
@@ -331,5 +332,210 @@ describe('événements temps réel (gestionnaire injecté)', () => {
     emitted.length = 0;
     expect((await remove(cast.bob, seriesId)).status).toBe(204);
     expect(emitted[0]?.event).toEqual({ t: 'note_removed', media: { type: 'series', tmdbId: 1399 }, id: seriesId });
+  });
+});
+
+/** Note telle qu'un autre profil la lit : titre, et `hidden` quand l'anti-spoiler la masque. */
+interface FriendNoteBody extends NoteBody {
+  media: { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number };
+  hidden?: true;
+}
+
+const friendNotes = (who: Acting, pid: string, query = '') =>
+  as<{ notes: FriendNoteBody[] } & ErrorBodyV2>(app, who, 'GET', `/user/social/friends/${pid}/notes${query}`);
+const setPrefs = (who: Acting, body: Record<string, unknown>) => as<ErrorBodyV2>(app, who, 'PUT', '/user/social/prefs', { body });
+const spoilersOff = (who: Acting) => setPrefs(who, { antiSpoiler: false });
+const writeProgress = (who: Acting, body: Record<string, unknown>) => request(app, 'PUT', `/user/profiles/${who.profile}/progress`, { token: who.token, body });
+/** Progression sur S2E4 de « Game of Thrones » (la note de `episodeNote` est à 754 s). */
+const EPISODE_PROGRESS = { type: 'series', tmdbId: 1399, season: 2, episode: 4, durationSec: 3600 };
+/** Date de création de la note la plus ancienne d'une page (curseur `before`). */
+const oldest = (notes: FriendNoteBody[]): number => notes[notes.length - 1]?.createdAt ?? 0;
+
+describe('notes d’un ami (GET /user/social/friends/:pid/notes)', () => {
+  it('un ami voit les notes d’un ami, du plus récent au plus ancien, avec leur titre', async () => {
+    await spoilersOff(cast.alice);
+    at(1_000);
+    await post(cast.bob, episodeNote({ pos: 10, body: 'premier' }));
+    at(2_000);
+    await post(cast.bob, { type: 'movie', tmdbId: 438631, pos: 5, kind: 'emoji', body: EMOJI });
+    at(3_000);
+    await post(cast.bob, episodeNote({ pos: 20, body: 'dernier' }));
+
+    const res = await friendNotes(cast.alice, cast.bob.pid);
+    expect(res.status).toBe(200);
+    expect(res.body.notes.map((n) => n.body)).toEqual(['dernier', EMOJI, 'premier']);
+    expect(res.body.notes[0]).toMatchObject({
+      kind: 'text',
+      pos: 20,
+      createdAt: START + 3_000,
+      author: { pid: cast.bob.pid, handle: { name: 'bob' } },
+      media: { type: 'series', tmdbId: 1399, season: 2, episode: 4 },
+    });
+    expect(res.body.notes[1]?.media).toEqual({ type: 'movie', tmdbId: 438631 });
+    expect(res.body.notes.some((n) => n.hidden === true)).toBe(false);
+  });
+
+  it('même instant : la note écrite en dernier passe en premier', async () => {
+    await spoilersOff(cast.alice);
+    at(5_000);
+    await post(cast.bob, episodeNote({ body: 'écrite d’abord' }));
+    await post(cast.bob, episodeNote({ body: 'écrite ensuite' }));
+    const res = await friendNotes(cast.alice, cast.bob.pid);
+    expect(res.body.notes.map((n) => n.body)).toEqual(['écrite ensuite', 'écrite d’abord']);
+  });
+
+  it('pagination : ?limit= (1 à 50, 30 par défaut) et ?before= (createdAt exclu) ; valeurs incorrectes refusées', async () => {
+    await spoilersOff(cast.alice);
+    // 31 notes de bob, réparties sur deux minutes pour rester sous le quota de 20 par minute.
+    for (let i = 0; i < 31; i++) {
+      at(i < 20 ? 1_000 + i : 61_000 + i);
+      await post(cast.bob, episodeNote({ body: `n${i}` }));
+    }
+    const first = await friendNotes(cast.alice, cast.bob.pid, '?limit=2');
+    expect(first.body.notes.map((n) => n.body)).toEqual(['n30', 'n29']);
+    const second = await friendNotes(cast.alice, cast.bob.pid, `?limit=2&before=${oldest(first.body.notes)}`);
+    expect(second.body.notes.map((n) => n.body)).toEqual(['n28', 'n27']);
+
+    const page = await friendNotes(cast.alice, cast.bob.pid);
+    expect(page.body.notes).toHaveLength(30);
+    expect(page.body.notes.map((n) => n.body)).not.toContain('n0');
+    expect((await friendNotes(cast.alice, cast.bob.pid, '?limit=50')).body.notes).toHaveLength(31);
+    for (const query of ['?limit=0', '?limit=51', '?limit=abc', '?before=-1', '?before=x', '?extra=1']) {
+      const res = await friendNotes(cast.alice, cast.bob.pid, query);
+      expect(res.status, query).toBe(400);
+      expect(res.body.error, query).toBe('invalid_body');
+    }
+  });
+
+  it('lien absent, pid inconnu ou mal formé : 404 friend_not_found', async () => {
+    await post(cast.bob, episodeNote());
+    const stranger = await friendNotes(cast.carol, cast.bob.pid);
+    expect(stranger.status).toBe(404);
+    expect(stranger.body.error).toBe('friend_not_found');
+    for (const pid of ['nope', 'AAAAAAAAAAAAAAAA']) {
+      const res = await friendNotes(cast.alice, pid);
+      expect(res.status, pid).toBe(404);
+      expect(res.body.error, pid).toBe('friend_not_found');
+    }
+  });
+
+  it('profil bloqué, dans un sens comme dans l’autre : 404 friend_not_found, aucune note ne sort', async () => {
+    await spoilersOff(cast.alice);
+    await spoilersOff(cast.bob);
+    await post(cast.bob, episodeNote({ body: 'de bob' }));
+    await post(cast.alice, episodeNote({ body: 'd’alice' }));
+    expect((await friendNotes(cast.alice, cast.bob.pid)).status).toBe(200);
+
+    expect((await as(app, cast.alice, 'POST', `/user/social/blocks/${cast.bob.pid}`)).status).toBe(204);
+    for (const [who, other] of [
+      [cast.alice, cast.bob],
+      [cast.bob, cast.alice],
+    ] as const) {
+      const res = await friendNotes(who, other.pid);
+      expect(res.status, `${who.name} lit ${other.name}`).toBe(404);
+      expect(res.body.error).toBe('friend_not_found');
+    }
+  });
+
+  it('bloqué par l’ami (sens inverse) : 404 friend_not_found', async () => {
+    await post(cast.alice, episodeNote());
+    expect((await as(app, cast.bob, 'POST', `/user/social/blocks/${cast.alice.pid}`)).status).toBe(204);
+    const res = await friendNotes(cast.alice, cast.bob.pid);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('friend_not_found');
+    expect((await friendNotes(cast.bob, cast.alice.pid)).status).toBe(404);
+  });
+
+  it('profil enfant : en cible (son identifiant de profil) 404 friend_not_found, en lecteur 403 kid_profile', async () => {
+    const target = await friendNotes(cast.alice, cast.kid.profile);
+    expect(target.status).toBe(404);
+    expect(target.body.error).toBe('friend_not_found');
+    const viewer = await friendNotes(cast.kid, cast.bob.pid);
+    expect(viewer.status).toBe(403);
+    expect(viewer.body.error).toBe('kid_profile');
+  });
+
+  it('série sans saison ni épisode précisés : media sans saison ni épisode (comme les événements de note)', async () => {
+    await spoilersOff(cast.alice);
+    await post(cast.bob, { type: 'series', tmdbId: 1399, pos: 12, kind: 'text', body: 'série entière' });
+    await post(cast.bob, { type: 'series', tmdbId: 1399, season: 2, pos: 12, kind: 'text', body: 'saison' });
+    const notes = (await friendNotes(cast.alice, cast.bob.pid)).body.notes;
+    expect(notes.map((n) => n.media)).toEqual([
+      { type: 'series', tmdbId: 1399, season: 2 },
+      { type: 'series', tmdbId: 1399 },
+    ]);
+  });
+
+  it('historique masqué (historyVisible faux) : 403 hidden pour un ami ; le foyer et soi-même les voient', async () => {
+    await spoilersOff(cast.alice2);
+    at(1_000);
+    await post(cast.alice, episodeNote({ body: 'foyer' }));
+    await setPrefs(cast.alice, { historyVisible: false });
+
+    const friend = await friendNotes(cast.bob, cast.alice.pid);
+    expect(friend.status).toBe(403);
+    expect(friend.body.error).toBe('hidden');
+    expect((await friendNotes(cast.alice2, cast.alice.pid)).body.notes.map((n) => n.body)).toEqual(['foyer']);
+    expect((await friendNotes(cast.alice, cast.alice.pid)).body.notes.map((n) => n.body)).toEqual(['foyer']);
+  });
+});
+
+describe('anti-spoiler sur les notes d’un ami', () => {
+  const postBobNote = async (over: Record<string, unknown> = {}) => (await post(cast.bob, episodeNote({ body: 'Quel twist', ...over }))).body.note.id;
+  const bobNotesSeenByAlice = async () => (await friendNotes(cast.alice, cast.bob.pid)).body.notes;
+
+  it('sans progression sur le titre : hidden et corps vide (le contenu ne sort pas)', async () => {
+    at(1_000);
+    const id = await postBobNote();
+    const res = await friendNotes(cast.alice, cast.bob.pid);
+    expect(res.body.notes).toEqual([expect.objectContaining({ id, body: '', hidden: true, pos: 754, kind: 'text' })]);
+    expect(JSON.stringify(res.body)).not.toContain('Quel twist');
+  });
+
+  it('progression insuffisante : visible à partir de pos − 1 ; une autre saison ou un autre épisode ne compte pas', async () => {
+    at(1_000);
+    await postBobNote();
+    await writeProgress(cast.alice, { ...EPISODE_PROGRESS, positionSec: 752 });
+    expect(await bobNotesSeenByAlice()).toEqual([expect.objectContaining({ body: '', hidden: true })]);
+    await writeProgress(cast.alice, { ...EPISODE_PROGRESS, episode: 5, positionSec: 3000 });
+    expect(await bobNotesSeenByAlice()).toEqual([expect.objectContaining({ body: '', hidden: true })]);
+    await writeProgress(cast.alice, { ...EPISODE_PROGRESS, positionSec: 753 });
+    const seen = (await bobNotesSeenByAlice())[0];
+    expect(seen?.body).toBe('Quel twist');
+    expect(seen).not.toHaveProperty('hidden');
+  });
+
+  it('titre terminé : visible même si la position du lecteur est sous celle de la note', async () => {
+    at(1_000);
+    await postBobNote();
+    await writeProgress(cast.alice, { ...EPISODE_PROGRESS, positionSec: 450, durationSec: 500 });
+    expect((await bobNotesSeenByAlice())[0]?.body).toBe('Quel twist');
+  });
+
+  it('film : même règle sur la progression du film', async () => {
+    at(1_000);
+    await post(cast.bob, { type: 'movie', tmdbId: 438631, pos: 60, kind: 'text', body: 'Dune' });
+    const movieNotes = async () => (await friendNotes(cast.alice, cast.bob.pid)).body.notes;
+    expect(await movieNotes()).toEqual([expect.objectContaining({ body: '', hidden: true })]);
+    await writeProgress(cast.alice, { type: 'movie', tmdbId: 438631, positionSec: 58, durationSec: 7200 });
+    expect(await movieNotes()).toEqual([expect.objectContaining({ body: '', hidden: true })]);
+    await writeProgress(cast.alice, { type: 'movie', tmdbId: 438631, positionSec: 59, durationSec: 7200 });
+    expect((await movieNotes())[0]?.body).toBe('Dune');
+  });
+
+  it('anti-spoiler désactivé : visible ; mes notes jamais masquées ; le foyer subit la règle', async () => {
+    at(1_000);
+    await postBobNote();
+    await setPrefs(cast.alice, { antiSpoiler: false });
+    expect((await bobNotesSeenByAlice())[0]?.body).toBe('Quel twist');
+    await setPrefs(cast.alice, { antiSpoiler: true });
+
+    await post(cast.alice, episodeNote({ body: 'mienne' }));
+    const mine = (await friendNotes(cast.alice, cast.alice.pid)).body.notes;
+    expect(mine).toEqual([expect.objectContaining({ body: 'mienne' })]);
+    expect(mine[0]).not.toHaveProperty('hidden');
+
+    const household = (await friendNotes(cast.alice2, cast.alice.pid)).body.notes;
+    expect(household[0]).toMatchObject({ body: '', hidden: true });
   });
 });

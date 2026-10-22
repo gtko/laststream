@@ -4,8 +4,8 @@ import type { AppDeps } from '../deps.js';
 import type { UserBackend } from './repo.js';
 import { announceActivity } from './social-v2-activity.js';
 import { emitSocialEvent } from './social-v2-events.js';
-import { actorOf } from './social-v2-routes.js';
-import { cleanNoteBody, noteEditSchema, noteSchema, notesQuery } from './social-v2-validation.js';
+import { actorOf, pidParam } from './social-v2-routes.js';
+import { cleanNoteBody, friendNotesQuery, noteEditSchema, noteSchema, notesQuery } from './social-v2-validation.js';
 import { normalizeMedia } from './social-v2-store.js';
 import { parseWith, UserApiError } from './validation.js';
 
@@ -69,5 +69,20 @@ export function registerSocialV2NoteRoutes(router: App, deps: AppDeps, backend: 
     if (removed === undefined) throw new UserApiError(404, 'note_not_found');
     emitSocialEvent(deps.socialEvents, removed.audience, { t: 'note_removed', media: removed.media, id });
     return sendEmpty(c, 204);
+  });
+
+  /**
+   * Notes d'un ami ou d'un membre du foyer (ou les miennes), du plus récent au plus ancien : `{ notes }` (`?limit=` 1 à 50,
+   * 30 par défaut ; `?before=` createdAt ms exclu). 404 `friend_not_found` sans lien ; 403 `hidden` si l'historique de
+   * l'ami est masqué. Une note masquée par l'anti-spoiler sort avec `hidden: true` et un corps vide.
+   */
+  router.get('/social/friends/:pid/notes', async (c) => {
+    const me = await actor(c);
+    const targetPid = pidParam(String(c.req.param('pid')), 'friend_not_found');
+    const query = parseWith(friendNotesQuery, queryParams(c));
+    const outcome = await social().friendNotes(me.pid, targetPid, query.before, query.limit);
+    if (outcome.result === 'unknown') throw new UserApiError(404, 'friend_not_found');
+    if (outcome.result === 'hidden') throw new UserApiError(403, 'hidden');
+    return sendJson(c, { notes: outcome.notes });
   });
 }

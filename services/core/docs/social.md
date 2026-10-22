@@ -75,6 +75,7 @@ Réponses : JSON. Erreurs : `{ "error": "<code>" }` (+ `issues` pour `invalid_bo
 | GET | `/notes?type&tmdbId&season&episode` | Notes d'un titre : les miennes, celles des amis et du foyer | `{ notes }` |
 | POST | `/notes` `{ type, tmdbId, season?, episode?, pos, kind, body }` | Pose une note à une position | 201 `{ note }` ; 400 `invalid_body`, 429 `rate_limited` |
 | PATCH | `/notes/:id` `{ kind, body }` | Modifie le texte ou l'emoji d'une note (auteur seulement ; position, date et titre inchangés, hors quota) | 200 `{ note }` ; 400 `invalid_body`, 404 `note_not_found` |
+| GET | `/friends/:pid/notes?limit&before` | Notes d'un ami ou du foyer (ou les miennes), du plus récent au plus ancien ; `limit` de 1 à 50 (30 par défaut), `before` = createdAt en ms, exclu. Chaque note porte `media` (`{ type, tmdbId, season?, episode? }`, saison et épisode pour une série). Anti-spoiler : hors de mes propres notes, si mon `antiSpoiler` est vrai et que ma progression sur ce titre exact (type, TMDB, saison, épisode) n'est pas terminée et n'atteint pas `pos − 1` s (ou n'existe pas), la note sort avec `hidden: true` et `body: ""` | `{ notes }` ; 404 `friend_not_found` ; 403 `hidden` pour un ami dont `historyVisible` est faux (le foyer et soi-même voient toujours) |
 | DELETE | `/notes/:id` | Supprime une note (auteur seulement) | 204 ; 404 `note_not_found` |
 
 ### Temps réel (WebSocket)
