@@ -22,9 +22,11 @@
 .lp-sub:empty { display: none; }
 
 .lp-btn {
-  position: relative; flex: none; width: 48px; height: 48px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  position: relative; flex: none; width: 48px; height: 48px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center;
   color: var(--text); background: transparent; border: 0; cursor: pointer; transition: background-color 0.18s, transform 0.15s;
 }
+/* Icône toujours centrée, même hors de #lsplayer (infos de la TV en direct) : taille par défaut à faible spécificité. */
+:where(.lp-btn) > svg { width: 24px; height: 24px; display: block; flex: none; }
 .lp-btn:hover { background: rgba(255, 255, 255, 0.16); }
 .lp-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); background: rgba(255, 255, 255, 0.16); }
 .lp-btn.is-active { color: var(--accent); }

@@ -423,7 +423,7 @@ function renderInfo() {
     ? '<dl class="pi-tech">' + m.tech.map(([k, v]) => '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('') + '</dl>'
     : '';
   setHtml(infoEl, '<div class="pi-head">' + logo + '<div><p class="pi-num">' + (m.number ? 'Chaîne ' + esc(m.number) : 'Chaîne') + '</p>' +
-    '<h2 class="pi-name">' + esc(m.name) + '</h2></div><button type="button" class="lp-btn" data-pinfo-close aria-label="Fermer les infos">&times;</button></div>' +
+    '<h2 class="pi-name">' + esc(m.name) + '</h2></div><button type="button" class="lp-btn" data-pinfo-close aria-label="Fermer les infos">' + LI.close + '</button></div>' +
     now + next + tech);
 }
 

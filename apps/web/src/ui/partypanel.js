@@ -7,6 +7,7 @@ import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent
 import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
 import { toast } from './dom.js';
+import { LI } from '../player/icons.js';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
@@ -279,7 +280,7 @@ function render() {
   const chatBox = panel.querySelector('[data-wp-chat]');
   const keepScroll = stickBottom || (chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true);
   stickBottom = false;
-  panel.innerHTML = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">×</button>' + (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
+  panel.innerHTML = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">' + LI.close + '</button>' + (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
     (partyBridge.endReason ? '<p class="wp-msg" role="alert">' + esc(endText(partyBridge.endReason)) + '</p>' : '') +
     (partyBridge.lastError ? '<p class="wp-msg" role="alert">' + esc(partyBridge.lastError) + '</p>' : '');
   const box = panel.querySelector('[data-wp-chat]');
