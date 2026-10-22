@@ -320,6 +320,7 @@ export const profilePatchSchema = z.strictObject({
       tmdbId: TMDB_ID,
       backdrop: z.string().regex(BACKDROP_PATTERN),
       title: PROFILE_TITLE,
+      posY: z.number().int().min(0).max(100).optional(),
     })
     .nullable()
     .optional(),
@@ -381,7 +382,8 @@ export function cleanProfilePatch(input: z.output<typeof profilePatchSchema>, no
       const problems = prefixed('banner.title', textIssues(input.banner.title, 200, false));
       issues.push(...problems);
       if (problems.length === 0) {
-        patch.banner = { tmdbId: input.banner.tmdbId, type: input.banner.type, backdrop: input.banner.backdrop, title: input.banner.title };
+        const { tmdbId, type, backdrop, title, posY } = input.banner;
+        patch.banner = { tmdbId, type, backdrop, title, ...(posY !== undefined && posY !== 50 ? { posY } : {}) };
       }
     }
   }

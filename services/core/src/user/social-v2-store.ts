@@ -140,12 +140,13 @@ export interface FriendRequestView {
   createdAt: number;
 }
 
-/** Bannière du profil : un titre TMDB (`backdrop` = chemin « /xxx.jpg »). */
+/** Bannière du profil : un titre TMDB (`backdrop` = chemin « /xxx.jpg »), cadrée par `posY` (% vertical, 50 si absent). */
 interface BannerView {
   tmdbId: number;
   type: 'movie' | 'series';
   backdrop: string;
   title: string;
+  posY?: number;
 }
 
 /** Favori du profil (≤ 4, ordonnés). */

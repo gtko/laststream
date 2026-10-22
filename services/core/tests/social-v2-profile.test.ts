@@ -107,6 +107,18 @@ describe('lecture et écriture du profil (GET / PUT /user/social/profile)', () =
     const banner = await write(cast.alice, { banner: { type: 'series', tmdbId: 5, backdrop: '/abc123.jpg', title: 'Série' } });
     expect((banner.body as SocialProfileView).banner).toEqual({ type: 'series', tmdbId: 5, backdrop: '/abc123.jpg', title: 'Série' });
   });
+
+  it('bannière : cadrage vertical entier de 0 à 100, relu tel quel, le centre (50) n’est pas stocké', async () => {
+    const banner = { type: 'series', tmdbId: 5, backdrop: '/abc123.jpg', title: 'Série' };
+    for (const posY of [-1, 101, 12.5, '30']) expect((await write(cast.alice, { banner: { ...banner, posY } })).status).toBe(400);
+    const framed = await write(cast.alice, { banner: { ...banner, posY: 20 } });
+    expect((framed.body as SocialProfileView).banner).toEqual({ ...banner, posY: 20 });
+    expect(((await read(cast.alice)).body as SocialProfileView).banner).toEqual({ ...banner, posY: 20 });
+    const edge = await write(cast.alice, { banner: { ...banner, posY: 0 } });
+    expect((edge.body as SocialProfileView).banner).toEqual({ ...banner, posY: 0 });
+    const centred = await write(cast.alice, { banner: { ...banner, posY: 50 } });
+    expect((centred.body as SocialProfileView).banner).toEqual(banner);
+  });
 });
 
 describe('changement de tag (POST /user/social/profile/tag)', () => {
