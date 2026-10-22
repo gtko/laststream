@@ -4,6 +4,7 @@ import { isKidProfile } from '../data/auth';
 import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '../data/showsApi';
 import { airingsFor, dayLabel, epgIdOf, foldText, hhmm, isLiveNow, isShowCategory, localDate, matchKnown, primeTime, progressPct, seedFor, showKey } from '../data/shows';
 import { episodeParts, partLabel } from '../data/episodeParts';
+import { favAirings } from '../data/tvFavRow';
 import { playBest } from '../player/session.js';
 import { register, toItem } from './catalog.js';
 import { GENRE_FR, IMG } from './constants.js';
@@ -18,7 +19,7 @@ import { fetchProviders, providersHTML } from './providers.js';
 import { go } from './router.js';
 import { state } from './state.js';
 import { fallbackHTML } from './typo.js';
-import { normChannel, tv } from './tv.js';
+import { ensureEpg, epgKey, favSnaps, getFavs, logoOf, normChannel, tv } from './tv.js';
 import { esc, fmtMin } from './util.js';
 
 const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
@@ -74,7 +75,7 @@ async function renderShowsRow() {
  * jamais étirée ni rognée), sinon logo de la chaîne sur plaque blanche (repli typographique si le logo ne charge pas), sinon fond typographique. Seuls « En direct » et la progression
  * (émission en cours à `now`, en secondes) restent sur l'image ; chaîne, heure, durée, titre et genre sont dans le bloc dessous.
  */
-export function tonightTile(a, known, now, epgIds = new Set()) {
+export function tonightTile(a, known, now, epgIds = new Set(), play = false) {
   const live = isLiveNow(a, now);
   // Émission du guide sans fiche TMDB (genre d'émission, entrée présente) : sa fiche ; les autres programmes gardent le direct.
   const epgId = !known && isShowCategory(a.category) ? epgIdOf(showKey(a.title)) : '';
@@ -83,7 +84,8 @@ export function tonightTile(a, known, now, epgIds = new Set()) {
   const img = backdrop || a.icon || '';
   const ch = a.channel;
   const dur = fmtMin(Math.round((a.stop - a.start) / 60));
-  const attrs = known ? ' data-showopen="' + esc(known.id) + '"' : onGuide ? ' data-showopen="' + esc(epgId) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
+  // Rangée des chaînes favorites : la carte lance toujours le direct de la chaîne (lecteur, favoris pour zapper).
+  const attrs = play ? ' data-tvplay="' + esc(ch.playId) + '" data-tvctx="favs"' : known ? ' data-showopen="' + esc(known.id) + '"' : onGuide ? ' data-showopen="' + esc(epgId) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
   const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? ', en direct' : '');
   const chan = '<span class="tn-chan">' + (ch.num ? '<b class="ch-num">' + esc(String(ch.num)) + '</b>' : '') +
     (ch.logo ? '<img class="tn-logo" src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="tn-name">' + esc(ch.name) + '</span>') + '</span>';
@@ -99,24 +101,68 @@ export function tonightTile(a, known, now, epgIds = new Set()) {
     '<span class="tn-title">' + esc(a.title) + '</span>' + (a.category ? '<span class="tn-sub">' + esc(a.category) + '</span>' : '') + '</span></button>';
 }
 
+/** Chaînes favorites du profil actif (les plus récentes d'abord) : chaîne du catalogue chargé, sinon son instantané. */
+function favoriteChannels() {
+  const snaps = favSnaps();
+  const find = (id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.boxOnly.find((c) => c.id === id) || tv.molotov.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]));
+  return getFavs().slice().reverse().map(find).filter(Boolean);
+}
+
+/** Programme en cours de chaque chaîne favorite (guide demandé pour elles seules : aucune n'est forcément au guide principal). */
+async function favoriteAirings(now) {
+  const chs = favoriteChannels().slice(0, FAV_FETCH_MAX); // seules FAV_ROW_MAX cartes s'affichent : pas de 2e requête de guide
+  if (!chs.length) return [];
+  await ensureEpg(chs);
+  const sources = chs.map((c) => ({
+    channel: { epgId: epgKey(c), playId: c.id, name: c.name, logo: logoOf(c), num: c.num || null },
+    progs: tv.epg.get(epgKey(c)) || [],
+  }));
+  const airings = favAirings(sources, now);
+  // Liste de zapping du lecteur ouvert depuis la rangée : les chaînes affichées, dans l'ordre.
+  tv.favHome = airings.map((a) => chs.find((c) => c.id === a.channel.playId));
+  return airings;
+}
+
+const FAV_FETCH_MAX = 24;
+let tonightToken = 0;
+
 async function renderTonightRow() {
   const slot = document.getElementById('tonight-slot');
   if (!slot) return;
-  const [guide, listed] = await Promise.all([loadGuide(), loadShows().catch(() => null)]);
+  const token = ++tonightToken;
   const now = nowSec();
-  const late = new Date().getHours() >= 23;
-  const date = localDate(late ? now + 86400 : now);
-  const prime = primeTime(guide.programs, guide.channelOf, date);
+  const [guide, listed, favs] = await Promise.all([loadGuide().catch(() => null), loadShows().catch(() => null), favoriteAirings(now).catch(() => [])]);
   const fresh = document.getElementById('tonight-slot');
-  if (!fresh || prime.length < 3) return;
+  if (!fresh || token !== tonightToken) return;
   const known = listed ? listed.shows : [];
   // Émissions TMDB d'un côté ; émissions du guide sans fiche de l'autre (identifiants `epg:`, fiche ouverte depuis la carte).
   const tmdbShows = known.filter((s) => !s.epg);
   const epgIds = new Set(known.filter((s) => s.epg).map((s) => s.id));
+  if (favs.length) {
+    // Le lecteur ouvert depuis une carte rend le focus à celle-ci à sa fermeture : on la retrouve après le nouveau rendu.
+    const openedId = tv.opener && fresh.contains(tv.opener) ? tv.opener.dataset.tvplay : '';
+    fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">Tes chaînes favorites' +
+      ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + '<div class="row" data-nav>' +
+      favs.map((a) => tonightTile(a, matchKnown(a.title, tmdbShows), now, epgIds, true)).join('') + '</div></section>';
+    if (openedId) tv.opener = Array.from(fresh.querySelectorAll('[data-tvplay]')).find((el) => el.dataset.tvplay === openedId) || null;
+    return;
+  }
+  if (!guide) return;
+  const late = new Date().getHours() >= 23;
+  const date = localDate(late ? now + 86400 : now);
+  const prime = primeTime(guide.programs, guide.channelOf, date);
+  if (prime.length < 3) return;
+  // Sans favori : la sélection du soir, avec une invitation à en choisir (étoile du guide TV).
   fresh.innerHTML = '<section class="row-section" id="ce-soir" aria-labelledby="h-ce-soir"><h2 class="row-title" id="h-ce-soir">' + (late ? 'Demain soir à la TV' : 'Ce soir à la TV') +
-    ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' + '<div class="row" data-nav>' +
+    ' <a class="row-link" href="#/tv-live" data-tvlive>Guide TV</a></h2>' +
+    '<p class="row-hint">' + (getFavs().length ? 'Le guide ne donne pas encore de programme pour tes chaînes favorites : voici la sélection du soir.' : 'Mets des chaînes en favori (étoile du guide TV) pour voir ici ce qui passe dessus.') + '</p>' + '<div class="row" data-nav>' +
     prime.slice(0, 16).map((a) => tonightTile(a, matchKnown(a.title, tmdbShows), now, epgIds)).join('') + '</div></section>';
 }
+
+// Une chaîne ajoutée ou retirée des favoris (guide, panneau du lecteur) met la rangée à jour sans recharger l'accueil.
+window.addEventListener('ls:tv-favs', () => {
+  if (document.getElementById('tonight-slot') && state.status === 'ready' && !isKidProfile()) renderTonightRow().catch(() => {});
+});
 
 /** Rangées « Ce soir à la TV » et « Émissions du moment » de l'accueil (silencieuses en cas d'échec). */
 export function renderTvRows() {

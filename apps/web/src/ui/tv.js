@@ -20,8 +20,8 @@ import { state } from './state.js';
 import { esc, names, store } from './util.js';
 
 export const tv = {
-  user: [], epg: new Map(), epgReq: new Set(), w0: 0,
-  cat: 'Toutes', list: [], shown: 0, homeList: [], play: null,
+  user: [], epg: new Map(), epgReq: new Set(), epgPending: new Map(), w0: 0,
+  cat: 'Toutes', list: [], shown: 0, homeList: [], favHome: [], play: null,
   hls: null, hlsPromise: null, bannerTimer: null, stallTimer: null, playToken: 0, attempt: 0, info: false, opener: null, io: null,
   // Signal d'état du lecteur (tvStatus.js), son minuteur, et chaînes en échec pendant cette session (ids).
   status: initialStatus(), statusTimer: 0, failed: new Set(),
@@ -222,7 +222,7 @@ export function tvWindow() {
   const now = Math.floor(Date.now() / 1000);
   const w0 = Math.floor((now - 1800) / 1800) * 1800;
   if (!tv.w0 || w0 - tv.w0 >= 3600) {
-    if (tv.w0) { tv.epg.clear(); tv.epgReq.clear(); }
+    if (tv.w0) { tv.epg.clear(); tv.epgReq.clear(); tv.epgPending.clear(); }
     tv.w0 = w0;
   }
   return tv.w0;
@@ -317,7 +317,8 @@ export async function loadFacets() {
 
 export async function ensureEpg(chs) {
   const w0 = tvWindow();
-  const all = Array.from(new Set(chs.map(epgKey).filter((k) => k && !tv.epgReq.has(k))));
+  const wanted = Array.from(new Set(chs.map(epgKey).filter(Boolean)));
+  const all = wanted.filter((k) => !tv.epgReq.has(k));
   all.forEach((k) => tv.epgReq.add(k));
   // Guide XMLTV de l'utilisateur : lu sur l'appareil, jamais demandé au serveur.
   const keys = all.filter((k) => {
@@ -328,12 +329,17 @@ export async function ensureEpg(chs) {
   const jobs = [];
   for (let i = 0; i < keys.length; i += 40) {
     const part = keys.slice(i, i + 40);
-    jobs.push(tvEpg(part, w0, w0 + EPG_H * 3600)
+    const job = tvEpg(part, w0, w0 + EPG_H * 3600)
       .then((list) => {
         part.forEach((k) => { if (!tv.epg.has(k)) tv.epg.set(k, []); });
         list.forEach((p) => tv.epg.get(p.channelId) && tv.epg.get(p.channelId).push(p));
-      }).catch(() => { part.forEach((k) => tv.epgReq.delete(k)); }));
+      }).catch(() => { part.forEach((k) => tv.epgReq.delete(k)); })
+      .finally(() => { part.forEach((k) => { if (tv.epgPending.get(k) === job) tv.epgPending.delete(k); }); });
+    part.forEach((k) => tv.epgPending.set(k, job));
+    jobs.push(job);
   }
+  // Les chaînes déjà demandées par un autre appel (accueil, grille) : on attend aussi leur réponse, sans la redemander.
+  wanted.forEach((k) => { const p = tv.epgPending.get(k); if (p && !jobs.includes(p)) jobs.push(p); });
   await Promise.all(jobs);
 }
 
@@ -653,6 +659,7 @@ export function toggleFav(id) {
   } else delete snaps[id];
   store(favStorageKey(auth.profile && auth.profile.id), list);
   store(FAV_SNAP_KEY, snaps);
+  window.dispatchEvent(new Event('ls:tv-favs'));
   return on;
 }
 

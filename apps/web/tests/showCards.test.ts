@@ -26,7 +26,7 @@ type Show = {
 type Known = { id: number; name: string; poster: string; backdrop: string; aliases: string[] };
 type Hero = { show: Show; airing: Airing | null; tonight: boolean };
 
-let tonightTile: (a: Airing, known: Known | null, now: number, epgIds?: Set<string>) => string;
+let tonightTile: (a: Airing, known: Known | null, now: number, epgIds?: Set<string>, play?: boolean) => string;
 let showCard: (s: Show, now: number) => string;
 let heroShow: (shows: Show[], now: number) => Hero | null;
 let heroHTML: (h: Hero, now: number) => string;
@@ -92,6 +92,18 @@ describe('« Ce soir à la TV » : émission du guide sans fiche TMDB', () => {
     const lf: Known = { id: 1001, name: 'La France a un incroyable talent', poster: '/lf.jpg', backdrop: '/lfb.jpg', aliases: [] };
     const card = mount(tonightTile(airing(TF1, 'La France a un incroyable talent', now - 600, now + 3600, 'Divertissement'), lf, now, new Set(['epg:la-france-a-un-incroyable-talent'])));
     expect(card.getAttribute('data-showopen')).toBe('1001');
+  });
+});
+
+describe('« Ce soir à la TV » : carte d’une chaîne favorite', () => {
+  it('lance le direct de la chaîne dans le lecteur, même pour une émission connue de TMDB', () => {
+    const now = at(21, 30);
+    const lf: Known = { id: 1001, name: 'Zone interdite', poster: '/z.jpg', backdrop: '/zb.jpg', aliases: [] };
+    const card = mount(tonightTile(airing(M6, 'Zone interdite', now - 600, now + 3600), lf, now, new Set(), true));
+    expect(card.getAttribute('data-tvplay')).toBe('fr:M6.fr');
+    expect(card.getAttribute('data-tvctx')).toBe('favs');
+    expect(card.hasAttribute('data-showopen')).toBe(false);
+    expect(card.hasAttribute('data-showwatch')).toBe(false);
   });
 });
 

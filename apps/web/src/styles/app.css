@@ -410,6 +410,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .tonight-card .card-media:has(> .tn-plate:not(.no-img)) > .card-fallback { display: none; } /* plaque chargée : pas de repli typographique */
 .tn-plate { position: absolute; inset: 0; display: grid; place-items: center; }
 .tn-plate img { display: block; max-width: 56%; max-height: 42%; padding: 10px 18px; border-radius: 12px; background: #fff; object-fit: contain; box-sizing: content-box; }
+.row-hint { margin: -4px 0 10px; font-size: 13px; color: var(--dim); }
 .tn-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 4px 0; text-align: left; }
 .tn-when { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--muted); }
 .tn-chan { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin-right: auto; }

@@ -95,6 +95,18 @@ describe('TV en direct', () => {
     expect(page.querySelector('#tv-filters select[name="language"]')).not.toBeNull();
   });
 
+  it('ensureEpg attend aussi la requête de guide déjà partie pour la même chaîne', async () => {
+    const tvMod = await import('../src/ui/tv.js');
+    tvMod.tv.epg.clear();
+    tvMod.tv.epgReq.clear();
+    tvMod.tv.epgPending.clear();
+    const c = { id: 'fr:TF1.fr', name: 'TF1', source: 'freetv' };
+    const first = tvMod.ensureEpg([c]);
+    await tvMod.ensureEpg([c]); // 2e appel : ne redemande rien mais n'attend pas moins que le 1er
+    expect(tvMod.tv.epg.get('fr:TF1.fr')?.length).toBe(1);
+    await first;
+  });
+
   it('retombe sur la liste complète si le serveur refuse quand même le filtre de langue', async () => {
     const tvMod = await import('../src/ui/tv.js');
     const r = await tvMod.fetchChannels({ country: 'FR', language: 'fr', page: 1, limit: 500 }, { country: 'FR', language: 'fra', reliable: true }, 'Toutes');

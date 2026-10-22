@@ -62,11 +62,11 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const id = tp.dataset.tvplay;
     const last = store('ls_tv_last');
-    const c = allChannels().find((x) => x.id === id) || (last && last.id === id ? last : null);
+    const c = allChannels().find((x) => x.id === id) || tv.favHome.find((x) => x.id === id) || (last && last.id === id ? last : null);
     if (!c) return;
     // Chaîne d'une playlist illisible ici (navigateur, ou box hors du réseau local) : on explique pourquoi.
     if (boxLocked(c)) { toast(boxStatus(c).note); return; }
-    const list = tp.dataset.tvctx === 'home' ? tv.homeList : tp.closest('.tv-page') ? tv.list : [c];
+    const list = tp.dataset.tvctx === 'home' ? tv.homeList : tp.dataset.tvctx === 'favs' ? tv.favHome : tp.closest('.tv-page') ? tv.list : [c];
     openPlayer(c, list, tp);
     return;
   }
