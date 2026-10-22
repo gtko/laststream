@@ -15,6 +15,9 @@ const WEB_DOWNLOAD_MESSAGES: Record<DownloadErrorCode, string> = {
     'Le navigateur n’a plus de place pour ce téléchargement. Supprime des téléchargements ou libère de l’espace : ce qui est déjà téléchargé reste intact et le téléchargement pourra reprendre.',
   store_failed:
     'Le navigateur refuse d’enregistrer ce téléchargement (navigation privée ou stockage désactivé ?). Essaie hors navigation privée.',
+  store_denied: 'Le navigateur refuse l’écriture de ce téléchargement. Essaie hors navigation privée.',
+  store_folder: 'Le stockage du navigateur est introuvable. Recharge la page puis réessaie.',
+  store_timeout: 'Le stockage du navigateur n’a pas répondu à temps. Réessaie : le téléchargement reprend là où il s’est arrêté.',
   cancelled: 'Téléchargement annulé.',
 };
 

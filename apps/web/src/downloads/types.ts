@@ -22,6 +22,9 @@ export type DownloadErrorCode =
   | 'quota_exceeded' // limite d'espace choisie par l'utilisateur
   | 'store_full' // le stockage de l'appareil est plein
   | 'store_failed' // écriture ou lecture du stockage impossible
+  | 'store_denied' // coque Windows : le système refuse l'écriture (antivirus, droits, fichier ouvert ailleurs)
+  | 'store_folder' // coque Windows : dossier de téléchargement introuvable ou protégé en écriture
+  | 'store_timeout' // coque Windows : le disque ou la coque n'a pas répondu à temps
   | 'cancelled';
 
 export class DownloadError extends Error {

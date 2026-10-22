@@ -1,12 +1,15 @@
 /* Magasin Windows (ODY-201) : chaque fichier vit dans le dossier de téléchargement de la coque (laststream-shell-ng), qui fait
  * toute l'E/S. Le JS ne fournit jamais de chemin : la coque le construit à partir de l'identifiant (commandes `download-*`).
- * Erreurs : `store_full` → 'store_full', tout le reste → 'store_failed' (message = code, jamais de chemin).
+ * Erreurs (le message ne porte que le code de la coque, jamais de chemin) : `store_full` → 'store_full', `io` → 'store_denied',
+ * `no_folder` → 'store_folder', délai ou pont muet → 'store_timeout', le reste → 'store_failed'.
  *
  * Corrélation : la réponse porte le nom de la méthode, sans identifiant de requête. Une seule commande est donc en vol à la fois
- * (file), et seule la réponse de la commande en attente est acceptée. Un délai dépassé coupe le pont : aucune commande ne part
- * tant que la réponse tardive de la commande coupée n'est pas arrivée (sinon elle serait attribuée à la suivante). */
+ * (file), et seule la réponse de la commande en attente est acceptée. Un délai dépassé laisse une réponse « orpheline » attendue :
+ * une commande d'une AUTRE méthode part quand même (sa réponse ne peut pas être confondue), mais une commande de la même méthode
+ * attend que la réponse tardive soit arrivée (sinon elle lui serait attribuée), au plus `ORPHAN_WAIT_MS`. Ainsi « Réessayer » ne
+ * reste jamais bloqué par un pont coupé. */
 import { connectShell, isShellEnvironment, type ShellTransport } from '../player/shell';
-import { DownloadError, type DownloadSink, type DownloadStore } from './types';
+import { DownloadError, type DownloadErrorCode, type DownloadSink, type DownloadStore } from './types';
 
 type GetShell = () => Promise<ShellTransport | null>;
 /** Transport injecté (tests) ou fabrique du transport (défaut : pont réel de la coque, s'il existe). */
@@ -15,6 +18,14 @@ type ShellSource = ShellTransport | GetShell;
 type Reply = Record<string, unknown>;
 
 const CALL_TIMEOUT_MS = 30_000;
+/** Opérations longues : écrire 8 Mio sous un antivirus, supprimer ou finaliser (`sync_data` d'un fichier de plusieurs Go). */
+const METHOD_TIMEOUT_MS: Record<string, number> = {
+  'download-write': 120_000,
+  'download-remove': 120_000,
+  'download-finalize': 15 * 60_000,
+};
+/** Attente maximale de la réponse tardive d'une commande coupée par un délai, avant de renoncer à une commande de même méthode. */
+const ORPHAN_WAIT_MS = 60_000;
 /** Le choix d'un dossier attend l'utilisateur : délai long. */
 const PICK_TIMEOUT_MS = 10 * 60_000;
 const PROBE_TIMEOUT_MS = 2_500;
@@ -41,9 +52,10 @@ interface Pending {
 
 interface Bridge {
   pending: Pending | null;
-  /** Commande coupée par un délai : sa réponse tardive remet le pont en service. */
-  orphan: string | null;
-  broken: boolean;
+  /** Commandes coupées par un délai, par méthode : leurs réponses tardives sont encore attendues (et ignorées). */
+  orphans: Map<string, number>;
+  /** Commandes de même méthode qu'une orpheline : réveillées à chaque réponse tardive reçue. */
+  waiters: Set<() => void>;
   /** Chemins finalisés pendant cette connexion (identifiant → chemin renvoyé par `download-finalize`). */
   paths: Map<string, string>;
   queue: Promise<unknown>;
@@ -59,30 +71,53 @@ function onReply(b: Bridge, name: string, payload: unknown): void {
     p.resolve(payload);
     return;
   }
-  if (b.orphan === name) {
-    b.orphan = null;
-    b.broken = false;
+  const late = b.orphans.get(name) ?? 0;
+  if (late > 0) {
+    if (late === 1) b.orphans.delete(name);
+    else b.orphans.set(name, late - 1);
+    for (const wake of [...b.waiters]) wake();
   }
 }
 
 function bridgeOf(t: ShellTransport): Bridge {
   const known = bridges.get(t);
   if (known) return known;
-  const b: Bridge = { pending: null, orphan: null, broken: false, paths: new Map(), queue: Promise.resolve() };
+  const b: Bridge = { pending: null, orphans: new Map(), waiters: new Set(), paths: new Map(), queue: Promise.resolve() };
   for (const name of REPLIES) t.on(name, (payload) => onReply(b, name, payload));
   bridges.set(t, b);
   return b;
 }
 
+const timeoutError = (cause: string): DownloadError => new DownloadError('store_timeout', false, cause);
+
+/** Attend (au plus `ORPHAN_WAIT_MS`) que plus aucune réponse tardive de `method` ne soit attendue ; faux si elle ne vient pas. */
+function orphansCleared(b: Bridge, method: string): Promise<boolean> {
+  if (!b.orphans.has(method)) return Promise.resolve(true);
+  return new Promise<boolean>((resolve) => {
+    const done = (ok: boolean): void => {
+      clearTimeout(timer);
+      b.waiters.delete(check);
+      resolve(ok);
+    };
+    const check = (): void => {
+      if (!b.orphans.has(method)) done(true);
+    };
+    const timer = setTimeout(() => done(false), ORPHAN_WAIT_MS);
+    b.waiters.add(check);
+  });
+}
+
 /** Une commande, après les précédentes. Résout la réponse brute de la coque (`{ok, ...}`). */
-function call(t: ShellTransport, method: string, params?: object, timeoutMs = CALL_TIMEOUT_MS): Promise<unknown> {
+function call(
+  t: ShellTransport,
+  method: string,
+  params?: object,
+  timeoutMs = METHOD_TIMEOUT_MS[method] ?? CALL_TIMEOUT_MS,
+): Promise<unknown> {
   const b = bridgeOf(t);
-  const run = (): Promise<unknown> =>
-    new Promise<unknown>((resolve, reject) => {
-      if (b.broken) {
-        reject(new DownloadError('store_failed', false));
-        return;
-      }
+  const run = async (): Promise<unknown> => {
+    if (!(await orphansCleared(b, method))) throw timeoutError('orphan');
+    return new Promise<unknown>((resolve, reject) => {
       const pending: Pending = {
         method,
         resolve: (payload) => {
@@ -93,9 +128,8 @@ function call(t: ShellTransport, method: string, params?: object, timeoutMs = CA
       const timer = setTimeout(() => {
         if (b.pending !== pending) return;
         b.pending = null;
-        b.orphan = method;
-        b.broken = true;
-        reject(new DownloadError('store_failed', false));
+        b.orphans.set(method, (b.orphans.get(method) ?? 0) + 1);
+        reject(timeoutError('timeout'));
       }, timeoutMs);
       b.pending = pending;
       try {
@@ -106,6 +140,7 @@ function call(t: ShellTransport, method: string, params?: object, timeoutMs = CA
         reject(new DownloadError('store_failed', false));
       }
     });
+  };
   const result = b.queue.then(run);
   b.queue = result.catch(() => undefined);
   return result;
@@ -116,10 +151,13 @@ const codeOf = (raw: unknown): string | undefined => {
   return typeof c === 'string' ? c : undefined;
 };
 
+/** Code de la coque → code du gestionnaire : ce que l'utilisateur peut corriger garde sa propre cause. */
+const SHELL_CODES: Record<string, DownloadErrorCode> = { store_full: 'store_full', io: 'store_denied', no_folder: 'store_folder' };
+
 /** Erreur de stockage pour une réponse `{ok: false}` : seul le code est gardé (jamais de message, donc jamais de chemin). */
 function failure(raw: unknown): DownloadError {
   const code = codeOf(raw);
-  return new DownloadError(code === 'store_full' ? 'store_full' : 'store_failed', false, code);
+  return new DownloadError((code !== undefined && SHELL_CODES[code]) || 'store_failed', false, code);
 }
 
 /** Réponse `{ok: true, ...}`, sinon erreur de stockage. */

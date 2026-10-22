@@ -426,6 +426,74 @@ describe('DownloadManager : lien périmé et erreurs de résolution', () => {
     expect(t.resolver.calls).toBe(2);
   });
 
+  it('écriture refusée en cours de route (ODY-240) : la cause reste précise, Réessayer reprend à l’octet écrit', async () => {
+    const host = fakeHost(SIZE);
+    const logs: Array<[string, Record<string, string | number> | undefined]> = [];
+    const t = setup(host);
+    // Le journal complet (données comprises) est lu sur le gestionnaire réel.
+    const manager = new DownloadManager({
+      resolver: t.resolver,
+      http: host.http,
+      store: t.store.store,
+      index: t.index,
+      chunkSize: CHUNK,
+      sleep: async () => undefined,
+      onLog: (event, data) => {
+        logs.push([event, data]);
+      },
+    });
+    const open = t.store.store.open.bind(t.store.store);
+    let refuse = true;
+    t.store.store.open = async (fileId) => {
+      const sink = await open(fileId);
+      const write = sink.write.bind(sink);
+      sink.write = async (offset, chunk) => {
+        if (refuse && offset >= 2 * CHUNK) throw new DownloadError('store_denied', false, 'io');
+        await write(offset, chunk);
+      };
+      return sink;
+    };
+    const id = idOf(REQ.metaId);
+    await manager.init();
+    await manager.enqueue({ ...REQ, source: SOURCE });
+    await until(() => expect(manager.get(id)?.state).toBe('error'));
+
+    expect(manager.get(id)?.error?.code).toBe('store_denied');
+    expect(t.store.bytes(id).length).toBe(2 * CHUNK);
+    const failed = logs.find(([event]) => event === 'failed');
+    expect(failed?.[1]).toMatchObject({ code: 'store_denied', detail: 'io', bytes: 2 * CHUNK, total: SIZE });
+
+    refuse = false;
+    host.starts.length = 0;
+    manager.retry(id);
+    await until(() => expect(manager.get(id)?.state).toBe('done'));
+    expect(manager.get(id)?.error).toBeUndefined();
+    // Reprise au premier octet manquant, jamais depuis zéro.
+    expect(host.starts[0]).toBe(2 * CHUNK);
+    expect([...t.store.bytes(id)]).toEqual([...host.file]);
+    expect(manager.get(id)?.attempts).toBe(0);
+  });
+
+  it('un magasin muet (store_timeout) puis rétabli : Réessayer aboutit', async () => {
+    const host = fakeHost(SIZE);
+    const t = setup(host);
+    const open = t.store.store.open.bind(t.store.store);
+    let calls = 0;
+    t.store.store.open = async (fileId) => {
+      calls += 1;
+      if (calls === 1) throw new DownloadError('store_timeout', false, 'timeout');
+      return open(fileId);
+    };
+    const id = idOf(REQ.metaId);
+    await t.manager.init();
+    await t.manager.enqueue({ ...REQ, source: SOURCE });
+    await until(() => expect(t.manager.get(id)?.state).toBe('error'));
+    expect(t.manager.get(id)?.error?.code).toBe('store_timeout');
+
+    t.manager.retry(id);
+    await until(() => expect(t.manager.get(id)?.state).toBe('done'));
+  });
+
   it('DebridError transitoire : attente de 2 s (sleep injecté), puis succès', async () => {
     const host = fakeHost(SIZE);
     const t = setup(host, { failures: [new DebridError('rate_limited', 'transient')] });

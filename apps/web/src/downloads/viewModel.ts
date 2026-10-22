@@ -53,6 +53,9 @@ const ERRORS: Record<DownloadErrorCode, string> = {
   quota_exceeded: 'Limite d’espace atteinte. Augmente la limite ou supprime des téléchargements.',
   store_full: 'Le stockage de l’appareil est plein.',
   store_failed: 'Impossible d’écrire le fichier sur l’appareil.',
+  store_denied: 'Windows refuse l’écriture du fichier (antivirus, droits ou fichier ouvert ailleurs). Autorise le dossier de téléchargement dans ton antivirus, puis réessaie.',
+  store_folder: 'Le dossier de téléchargement est introuvable ou protégé en écriture. Vérifie qu’il existe et qu’il est accessible, puis réessaie.',
+  store_timeout: 'Le disque n’a pas répondu à temps (disque lent ou antivirus). Réessaie : le téléchargement reprend là où il s’est arrêté.',
   cancelled: 'Téléchargement annulé.',
 };
 

@@ -335,7 +335,7 @@ describe('magasin de la coque : fichier', () => {
     expect(await store.usage()).toEqual({ used: 5, available: FREE });
   });
 
-  it('délai dépassé : store_failed, puis pont coupé jusqu’à la réponse tardive', async () => {
+  it('délai dépassé : store_timeout ; une autre méthode repart tout de suite, la même attend la réponse tardive', async () => {
     vi.useFakeTimers();
     const disk: Disk = new Map();
     const inner = diskHandler(disk);
@@ -351,16 +351,81 @@ describe('magasin de la coque : fichier', () => {
     });
     const store = createShellDownloadStore(shell.transport);
     const sink = await store.open('d1');
-    const pending = expect(sink.write(0, bytes(1, 2))).rejects.toMatchObject({ code: 'store_failed' });
-    await vi.advanceTimersByTimeAsync(30_000);
+    const pending = expect(sink.write(0, bytes(1, 2))).rejects.toMatchObject({ code: 'store_timeout' });
+    await vi.advanceTimersByTimeAsync(120_000);
     await pending;
 
+    // Une méthode différente de la commande coupée n'est pas bloquée (« Réessayer » rouvre le fichier et relit la taille).
     const before = shell.sent.length;
-    await expect(store.size('d1')).rejects.toMatchObject({ code: 'store_failed' });
-    expect(shell.sent.length).toBe(before);
-
-    shell.emit('download-write', held);
     expect(await store.size('d1')).toBe(2);
+    expect(shell.sent.length).toBe(before + 1);
+
+    // La même méthode attend la réponse tardive pour ne pas la lui attribuer.
+    const retried = sink.write(0, bytes(1, 2));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(shell.sent.length).toBe(before + 1);
+    shell.emit('download-write', held);
+    await retried;
+    expect(shell.sent.length).toBe(before + 2);
+    expect(await store.size('d1')).toBe(2);
+  });
+
+  it('réponse tardive jamais reçue : la même méthode abandonne après l’attente, en store_timeout', async () => {
+    vi.useFakeTimers();
+    const inner = diskHandler(new Map());
+    const shell = fakeShell((event, a) => (event === 'download-write' ? SILENT : inner(event, a)));
+    const store = createShellDownloadStore(shell.transport);
+    const sink = await store.open('d2');
+    const first = sink.write(0, bytes(1)).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(await first).toMatchObject({ code: 'store_timeout' });
+
+    const second = sink.write(0, bytes(1)).catch((err: unknown) => err);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(await second).toMatchObject({ code: 'store_timeout' });
+    // Rien n'est parti pour la seconde écriture, et le pont reste utilisable pour le reste.
+    expect(shell.sent.filter((s) => s.event === 'download-write')).toHaveLength(1);
+    expect(await store.size('d2')).toBe(0);
+  });
+
+  it('finalize d’un gros fichier : pas coupé à 30 s, la coque peut synchroniser plusieurs Go', async () => {
+    vi.useFakeTimers();
+    const inner = diskHandler(new Map());
+    let release: (() => void) | undefined;
+    const shell = fakeShell((event, a) => {
+      if (event === 'download-finalize') {
+        release = () => shell.emit('download-finalize', { ok: true, path: 'C:\v\dl-big.mkv', size: 3 });
+        return SILENT;
+      }
+      return inner(event, a);
+    });
+    const store = createShellDownloadStore(shell.transport);
+    const sink = await store.open('big');
+    const done = sink.finalize();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    release?.();
+    await expect(done).resolves.toBeUndefined();
+  });
+
+  it('codes de la coque : io → store_denied, no_folder → store_folder, disque plein → store_full, le reste → store_failed', async () => {
+    const reply: { current: unknown } = { current: { ok: false, code: 'io', message: 'file operation failed' } };
+    const shell = fakeShell((event) => (event === 'download-open' ? { ok: true, size: 0 } : reply.current));
+    const sink = await createShellDownloadStore(shell.transport).open('c1');
+    const expectations: Array<[string, string]> = [
+      ['io', 'store_denied'],
+      ['no_folder', 'store_folder'],
+      ['store_full', 'store_full'],
+      ['bad_range', 'store_failed'],
+      ['too_large', 'store_failed'],
+    ];
+    for (const [code, mapped] of expectations) {
+      reply.current = { ok: false, code, message: `échec sur ${FOLDER}` };
+      const err = await sink.write(0, bytes(1)).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(DownloadError);
+      expect(err).toMatchObject({ code: mapped, cause: code });
+      // Le message ne porte jamais le chemin renvoyé par la coque.
+      expect((err as Error).message).not.toContain('Videos');
+    }
   });
 
   it('sans transport (hors coque) : store_failed, rien n’est touché', async () => {
@@ -429,10 +494,10 @@ describe('dossier et disponibilité', () => {
     const probe = isShellDownloadStoreAvailable(getShell);
     await vi.advanceTimersByTimeAsync(2_500);
     expect(await probe).toBe(false);
-    // Le choix expire à son délai long : la file se libère, et la sonde attendue n'est jamais partie.
+    // Le choix expire à son délai long : la file se libère (la sonde, d'une autre méthode, part alors sans bloquer le pont).
     await vi.advanceTimersByTimeAsync(10 * 60_000);
-    expect(await picked).toMatchObject({ code: 'store_failed' });
-    expect(shell.sent.map((s) => s.event)).toEqual(['download-folder-pick']);
+    expect(await picked).toMatchObject({ code: 'store_timeout' });
+    expect(shell.sent.map((s) => s.event)).toEqual(['download-folder-pick', 'download-folder-get']);
   });
 
   it('branchement de la coque en erreur : erreur de stockage, jamais une erreur brute', async () => {

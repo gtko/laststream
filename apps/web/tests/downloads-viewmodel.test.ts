@@ -48,7 +48,7 @@ describe('espace', () => {
 
 describe('messages d’erreur', () => {
   it('chaque code a un message français, sans URL ni clé', () => {
-    const codes: DownloadErrorCode[] = ['link_expired', 'resolve_failed', 'account', 'content', 'network', 'range_mismatch', 'quota_exceeded', 'store_full', 'store_failed', 'cancelled'];
+    const codes: DownloadErrorCode[] = ['link_expired', 'resolve_failed', 'account', 'content', 'network', 'range_mismatch', 'quota_exceeded', 'store_full', 'store_failed', 'store_denied', 'store_folder', 'store_timeout', 'cancelled'];
     for (const code of codes) {
       const message = errorMessage(code);
       expect(message.length).toBeGreaterThan(5);

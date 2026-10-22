@@ -181,6 +181,9 @@ describe('webDownloadErrorMessage : un message par code', () => {
     quota_exceeded: true,
     store_full: true,
     store_failed: true,
+    store_denied: true,
+    store_folder: true,
+    store_timeout: true,
     cancelled: true,
   };
 

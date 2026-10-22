@@ -100,9 +100,17 @@ function resolveErrorCode(err: unknown): DownloadErrorCode {
   return 'resolve_failed';
 }
 
+const STORE_CODES: readonly DownloadErrorCode[] = ['store_full', 'store_failed', 'store_denied', 'store_folder', 'store_timeout'];
+
 /** Code d'une erreur du stockage. */
 function storeErrorCode(err: unknown): DownloadErrorCode {
-  return err instanceof DownloadError && (err.code === 'store_full' || err.code === 'store_failed') ? err.code : 'store_failed';
+  return err instanceof DownloadError && STORE_CODES.includes(err.code) ? err.code : 'store_failed';
+}
+
+/** Cause brute d'une erreur du magasin (code de la coque ou du plugin) : un mot court, jamais un chemin ni un lien. */
+function causeOf(err: unknown): string | undefined {
+  const cause = err instanceof DownloadError ? err.cause : undefined;
+  return typeof cause === 'string' && /^[a-z_]{1,32}$/.test(cause) ? cause : undefined;
 }
 
 /** Attente réelle : se termine à l'échéance ou dès l'interruption, sans laisser d'écouteur sur le signal. */
@@ -402,7 +410,7 @@ export class DownloadManager {
           try {
             raw = await this.store.open(id);
           } catch (err) {
-            if (!signal.aborted) this.fail(id, s, storeErrorCode(err));
+            if (!signal.aborted) this.fail(id, s, storeErrorCode(err), err);
             return;
           }
           if (signal.aborted) return;
@@ -430,7 +438,7 @@ export class DownloadManager {
           try {
             await raw.finalize();
           } catch (err) {
-            if (!signal.aborted) this.fail(id, s, storeErrorCode(err));
+            if (!signal.aborted) this.fail(id, s, storeErrorCode(err), err);
             return;
           }
           if (signal.aborted) return;
@@ -455,7 +463,7 @@ export class DownloadManager {
               this.fail(id, s, 'network');
               return;
             }
-            this.fail(id, s, err.code);
+            this.fail(id, s, err.code, err);
             return;
           }
           this.fail(id, s, s.storeFailed ? 'store_failed' : 'network');
@@ -599,12 +607,13 @@ export class DownloadManager {
     }, this.now()));
   }
 
-  private fail(id: string, s: Session, code: DownloadErrorCode): void {
+  private fail(id: string, s: Session, code: DownloadErrorCode, err?: unknown): void {
     if (s.controller.signal.aborted) return;
     const cur = this.items.get(id);
     if (!cur || cur.state !== 'running') return;
     this.links.delete(id);
-    this.log('failed', { code });
+    const detail = causeOf(err);
+    this.log('failed', { code, ...(detail ? { detail } : {}), bytes: cur.bytesDone, ...(cur.bytesTotal ? { total: cur.bytesTotal } : {}) });
     this.put(transition(cur, 'error', { error: { code } }, this.now()));
   }
 

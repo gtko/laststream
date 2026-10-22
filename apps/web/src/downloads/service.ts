@@ -18,6 +18,7 @@ import { isAddonLinkUrl } from './linkHosts';
 import { createStreamResolver, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
 import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
 import { createWebDownloadHttp } from './webHttp';
+import { reportDownloadEvent } from './report';
 import { createShellDownloadStore } from './shellStore';
 import { createWebDownloadStore, type WebDownloadStore } from './webStore';
 
@@ -167,6 +168,7 @@ async function build(purge: boolean): Promise<DownloadManager | null> {
     index: idx,
     transfer,
     limitBytes: getDownloadSettings().limitBytes,
+    onLog: (event, data) => reportDownloadEvent(platformKind(), event, data),
   });
   unsubscribe = created.subscribe(publish);
   bindDownloadLimit((bytes) => created.setLimit(bytes));
