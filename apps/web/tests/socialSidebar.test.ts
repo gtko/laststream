@@ -295,12 +295,28 @@ describe('groupes', () => {
     sb.openSidebar();
     const card = $('[data-group="watching"] .ss-wcard')!;
     expect(card.textContent).toContain('Severance');
-    expect(card.textContent).toContain('S02E03 · 34:12');
-    expect(card.textContent).toContain('1:08:24');
+    expect(card.textContent).toContain('S02E03 · reste 35 min');
+    expect(card.querySelector('.ss-times')!.textContent).toBe('34:121:08:24');
     expect(card.querySelector<HTMLElement>('.ss-bar-t i')!.style.width).toBe('50%');
+    expect(card.querySelector('[role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('50');
     expect(card.querySelector('[data-ss-act="watch"]')!.textContent).toBe('Regarder avec Amy');
     expect(card.querySelector('[aria-label="Écrire à Amy"]')).not.toBeNull();
     expect(card.querySelector('[aria-label="Plus d’actions"]')).not.toBeNull();
+  });
+
+  it('carte : en pause, pictogramme pause et ancienneté de l’arrêt ; en lecture, pastille « En lecture »', () => {
+    setSocial({ friends: [friend('f2', 'Amy', { watching: watching({ paused: true, movedAt: Date.now() - 4 * 60_000 }) })] });
+    sb.openSidebar();
+    let card = $('[data-group="watching"] .ss-wcard')!;
+    expect(card.classList.contains('is-paused')).toBe(true);
+    expect(card.querySelector('.ss-state')!.textContent).toBe('En pause · 4 min');
+    expect(card.querySelector('.ss-state svg')).not.toBeNull();
+    expect(card.querySelector('.ss-live')).toBeNull();
+    setSocial({ friends: [friend('f2', 'Amy', { watching: watching({ paused: false, at: Date.now() }) })] });
+    card = $('[data-group="watching"] .ss-wcard')!;
+    expect(card.classList.contains('is-paused')).toBe(false);
+    expect(card.querySelector('.ss-state')!.textContent).toBe('En lecture');
+    expect(card.querySelector('.ss-live')).not.toBeNull();
   });
 
   it('un ami qui regarde mais en « ne pas déranger » reste une ligne simple avec l’affiche', () => {

@@ -14,7 +14,7 @@ import { createFriendCard } from './socialCard.js';
 import { activityHTML } from './socialActivity.js';
 import {
   ADD_ERRORS, STATUS_OPTIONS, SEEN_LABEL, ago, avatarHTML, byName, clock, customStatusText, episodeCode, livePos, nameHTML, nameOf,
-  posterBox, progressPct, shortName, socialErrorMessage, watchLine,
+  posterBox, progressPct, remainingLabel, shortName, socialErrorMessage, watchLine, watchState,
 } from './socialFmt.js';
 import { inviteToParty, openConversation as openConvHook, openProfileEditor, renderConversationList } from './socialHooks.js';
 import { SI } from './socialIcons.js';
@@ -61,20 +61,24 @@ function friendRowHTML(f) {
     (w ? posterBox(w.poster, w.title, 'ss-poster-s') : '') + '</button></div>' + swipeActs(pid) + '</li>';
 }
 
-/** Carte riche d'un ami en ligne qui regarde un titre : progression, « Regarder avec … », écrire, plus d'actions. */
+/** Carte riche d'un ami en ligne qui regarde un titre : état (lecture / pause), affiche, progression, « Regarder avec … », écrire, plus d'actions. */
 function watchCardHTML(f) {
   const pid = esc(f.pid);
   const w = f.watching;
   const pct = progressPct(w);
-  const end = w.duration ? clock(w.duration) : '';
-  return '<li class="ss-item"><div class="ss-wcard">' +
+  const st = watchState(w);
+  const left = [episodeCode(w), remainingLabel(w)].filter(Boolean).join(' · ');
+  return '<li class="ss-item"><div class="ss-wcard' + (st.paused ? ' is-paused' : '') + '">' +
     '<button type="button" class="ss-wcard-top" data-ss-act="open" data-pid="' + pid + '" data-fk="open:' + pid + '">' +
-    avatarHTML(f, 'ss-av-m', f.status) +
-    '<span class="ss-row-t"><span class="ss-name">' + nameHTML(f) + '</span><span class="ss-sub ss-playing">' + SI.play +
-    '<span class="ss-ell">' + esc(w.title) + '</span><span class="ss-m-only"> · ' + esc(clock(livePos(w))) + '</span></span></span>' +
-    posterBox(w.poster, w.title, 'ss-poster-m') + '</button>' +
-    '<p class="ss-prog"><span>' + esc([episodeCode(w), clock(livePos(w))].filter(Boolean).join(' · ')) + '</span>' +
-    '<span class="ss-bar-t" aria-hidden="true"><i style="width:' + pct + '%"></i></span><span>' + esc(end) + '</span></p>' +
+    '<span class="ss-whead">' + avatarHTML(f, 'ss-av-m', f.status) +
+    '<span class="ss-row-t"><span class="ss-name">' + nameHTML(f) + '</span>' +
+    '<span class="ss-sub ss-state ' + (st.paused ? 'is-paused' : 'is-playing') + '">' + (st.paused ? SI.pause : '<i class="ss-live" aria-hidden="true"></i>') +
+    '<span class="ss-ell">' + esc(st.label) + '</span></span></span></span>' +
+    '<span class="ss-wbody">' + posterBox(w.poster, w.title, 'ss-poster-l') +
+    '<span class="ss-wmeta"><span class="ss-wtitle">' + esc(w.title) + '</span>' +
+    (left ? '<span class="ss-wep">' + esc(left) + '</span>' : '') +
+    '<span class="ss-bar-t" role="progressbar" aria-label="Progression" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></span>' +
+    '<span class="ss-times"><span>' + esc(clock(w.duration ? Math.min(livePos(w), Number(w.duration)) : livePos(w))) + '</span><span>' + esc(w.duration ? clock(w.duration) : '') + '</span></span></span></span></button>' +
     '<div class="ss-wcard-acts"><button type="button" class="ss-btn2 ss-pri" data-ss-act="watch" data-pid="' + pid + '" data-fk="watch:' + pid + '">' + SI.play +
     'Regarder avec ' + esc(shortName(f)) + '</button>' +
     '<button type="button" class="ss-ico" data-ss-act="message" data-pid="' + pid + '" data-fk="msg:' + pid + '" aria-label="Écrire à ' + esc(shortName(f)) + '">' + SI.chat + '</button>' +

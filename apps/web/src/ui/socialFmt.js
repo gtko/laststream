@@ -56,6 +56,22 @@ export function watchLine(w) {
   return [episodeCode(w), clock(livePos(w)), w.paused ? 'en pause' : ''].filter(Boolean).join(' · ');
 }
 
+/** Temps restant avant la fin : « reste 34 min », « reste 1 h 05 » ; chaîne vide si la durée est inconnue. */
+export function remainingLabel(w) {
+  const d = Number(w.duration) || 0;
+  if (d <= 0) return '';
+  const min = Math.ceil(Math.max(0, d - livePos(w)) / 60);
+  if (min < 1) return 'terminé';
+  return min < 60 ? 'reste ' + min + ' min' : 'reste ' + Math.floor(min / 60) + ' h ' + pad(min % 60);
+}
+
+/** État de la lecture d'un ami : « En lecture », ou « En pause » avec l'ancienneté de l'arrêt (`movedAt`) à partir d'une minute. */
+export function watchState(w, now = Date.now()) {
+  if (!w.paused) return { paused: false, label: 'En lecture' };
+  const since = w.movedAt && now - w.movedAt >= 60000 ? ago(w.movedAt, now) : '';
+  return { paused: true, label: since ? 'En pause · ' + since : 'En pause' };
+}
+
 /** Part de la durée déjà vue, en pourcentage entier (0 si la durée est inconnue). */
 export function progressPct(w) {
   const d = Number(w.duration) || 0;
