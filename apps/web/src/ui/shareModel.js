@@ -12,6 +12,9 @@ export const CLIP_MAX_SEC = 300;
 export const NOTE_MAX = 140;
 export const LIST_NAME_MAX = 40;
 
+/** Chemin d'image TMDB (`/abc.jpg`), seule forme acceptée dans le message. */
+const TMDB_PATH = /^\/[\w-]+\.(?:jpe?g|png|webp)$/i;
+
 /** `tv` (interface) devient `series` (serveur) et inversement. */
 const kindOf = (t) => (t === 'tv' || t === 'series' ? 'series' : 'movie');
 const uiTypeOf = (t) => (t === 'series' || t === 'tv' ? 'tv' : 'movie');
@@ -24,6 +27,7 @@ export function normalizeMedia(m) {
   if (!Number.isInteger(tmdbId) || tmdbId <= 0 || !title) return null;
   const out = { type: kindOf(m.type), tmdbId, title };
   if (typeof m.poster === 'string' && m.poster) out.poster = m.poster;
+  if (typeof m.backdrop === 'string' && m.backdrop) out.backdrop = m.backdrop;
   if (Number.isInteger(m.season)) out.season = m.season;
   if (Number.isInteger(m.episode)) out.episode = m.episode;
   return out;
@@ -171,6 +175,8 @@ function momentRefOf(media, pos, end) {
   if (end !== undefined) m.end = shiftPos(end, 0);
   if (Number.isInteger(media.season)) m.season = media.season;
   if (Number.isInteger(media.episode)) m.episode = media.episode;
+  // Visuel de la carte : le fond du titre s'il est connu (sinon le destinataire le retrouve par l'identifiant).
+  if (typeof media.backdrop === 'string' && TMDB_PATH.test(media.backdrop)) m.still = media.backdrop;
   return m;
 }
 

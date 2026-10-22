@@ -2463,6 +2463,7 @@ function shareHere() {
   if (!m) return;
   const media = { type: m.type, tmdbId: m.tmdbId, title: m.title };
   if (m.poster) media.poster = m.poster;
+  if (typeof P.meta.backdrop === 'string' && P.meta.backdrop.startsWith('/')) media.backdrop = P.meta.backdrop;
   if (m.season != null) media.season = m.season;
   if (m.episode != null) media.episode = m.episode;
   const st = P.engine.state();

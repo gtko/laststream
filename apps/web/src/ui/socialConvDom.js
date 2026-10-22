@@ -1,6 +1,7 @@
 /* Discussions Social v3 (lot F3) : fabriques DOM partagées (icônes, avatar, boutons) et rendu d'un message (bulle, carte
  * « titre », carte « moment », invitation, sondage, réactions, citation). Tout texte passe par textContent. */
 import { safeTmdbImage } from './safeImg.js';
+import { resolveArt } from './socialArt.js';
 import {
   QUICK_REACTIONS, authorName, colorOf, hhmm, initialOf, messageText, pollShare, pollTotal, posLabel, STATUS_COLOR,
 } from './socialConvModel.js';
@@ -61,19 +62,39 @@ export function stillSrc(p) {
   return safeTmdbImage(p, 'w500') || '';
 }
 
-/** Affiche (image) ou, sans image, tuile d'initiales. */
-function posterEl(src, title, w, hgt) {
+/** Pose une image dans `box` (avant le reste du contenu) ; `onError` quand elle ne charge pas. */
+function putImage(box, url, onError) {
+  const img = h('img', null, null, { alt: '', loading: 'lazy' });
+  img.src = url;
+  img.addEventListener('error', () => { img.remove(); if (onError) onError(); });
+  box.prepend(img);
+  return img;
+}
+
+/**
+ * Affiche (image) ou, sans image, tuile du titre. Sans image valable, l'affiche est retrouvée par l'identifiant du titre
+ * (ODY-244) ; la tuile du titre reste le repli.
+ * @param {string|undefined} src affiche du message
+ * @param {{ type?: string, tmdbId?: number }} [ref] titre, pour retrouver l'affiche
+ */
+function posterEl(src, title, w, hgt, ref) {
   const wrap = h('div', 'cvm-poster');
   wrap.style.width = w + 'px';
   wrap.style.height = hgt + 'px';
+  wrap.textContent = title || '';
+  const resolved = (tried) => {
+    if (!ref) return;
+    resolveArt(ref.type, ref.tmdbId).then((a) => {
+      const u = posterSrc(a.poster);
+      if (u && u !== tried && !wrap.querySelector('img')) { wrap.textContent = ''; putImage(wrap, u, () => { wrap.textContent = title || ''; }); }
+    });
+  };
   const url = posterSrc(src);
   if (url) {
-    const img = h('img', null, null, { alt: '', loading: 'lazy' });
-    img.src = url;
-    img.addEventListener('error', () => { img.remove(); wrap.textContent = title || ''; });
-    wrap.append(img);
+    wrap.textContent = '';
+    putImage(wrap, url, () => { wrap.textContent = title || ''; resolved(url); });
   } else {
-    wrap.textContent = title || '';
+    resolved('');
   }
   return wrap;
 }
@@ -91,7 +112,7 @@ const btn = (cls, text, onClick) => {
 function titleCard(m, mine, ctx) {
   const t = m.title;
   const card = h('div', 'cvm-card cvm-title');
-  card.append(posterEl(t.poster, t.title, 54, 80));
+  card.append(posterEl(t.poster, t.title, 54, 80, t));
   const col = h('div', 'cvm-card-col');
   const who = authorName(m.from, ctx.info, ctx.s);
   col.append(h('div', 'cvm-card-kicker', mine ? 'Tu recommandes' : (who === 'Toi' ? 'Recommandé' : who + ' te recommande')));
@@ -116,14 +137,24 @@ function momentCard(m, ctx) {
   const mo = m.moment;
   const card = h('div', 'cvm-card cvm-moment');
   const shot = h('div', 'cvm-shot');
+  // Repli : dégradé et titre (jamais un fond uni), remplacé par l'image dès qu'on en a une. Sans `still` dans le message
+  // (anciens messages, envoi sans visuel), le fond du titre est retrouvé par son identifiant (ODY-244).
+  const empty = h('span', 'cvm-shot-empty', mo.title);
+  shot.classList.add('is-empty');
+  shot.append(empty);
+  const show = (u, onError) => putImage(shot, u, () => { if (!shot.querySelector('img')) shot.classList.add('is-empty'); if (onError) onError(); });
+  const shown = (u) => { shot.classList.remove('is-empty'); return show(u); };
+  const resolved = (tried) => resolveArt(mo.type, mo.tmdbId).then((a) => {
+    const back = stillSrc(a.backdrop);
+    const u = back && back !== tried ? back : posterSrc(a.poster);
+    if (u && u !== tried && !shot.querySelector('img')) shown(u);
+  });
   const url = stillSrc(mo.still);
   if (url) {
-    const img = h('img', null, null, { alt: '', loading: 'lazy' });
-    img.src = url;
-    img.addEventListener('error', () => img.remove());
-    shot.append(img);
+    shot.classList.remove('is-empty');
+    show(url, () => resolved(url));
   } else {
-    shot.append(h('span', 'cvm-shot-empty', mo.title));
+    resolved('');
   }
   const chip = h('span', 'cvm-chip');
   chip.innerHTML = SVG.play;
