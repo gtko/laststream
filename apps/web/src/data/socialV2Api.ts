@@ -13,6 +13,8 @@ export type Watching = {
   type: 'movie' | 'series'; tmdbId: number; imdbId?: string; title: string;
   season?: number; episode?: number; poster?: string;
   pos: number; duration?: number; paused: boolean; at: number;
+  /** Dernier instant (ms, horloge serveur) où la lecture a avancé ; absent d'un ancien serveur. */
+  movedAt?: number;
 };
 export type FriendView = {
   pid: string; handle: Handle; avatarColor: string; avatar?: string; household: boolean;

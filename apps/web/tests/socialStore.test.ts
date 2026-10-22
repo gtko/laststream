@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { auth } from '../src/data/auth';
 import {
-  accept, decline, getState, initialSocialState, loadMessages, markRead, mergeMessages, onNote, reduceLiveEvent, refresh, removeFriend,
-  sendMessage, sendRequest, setMyAvatar, myAvatar, setStatus, start, stop, subscribe, type SocialState,
+  accept, decline, expireIdleWatching, getState, initialSocialState, loadMessages, markRead, mergeMessages, onNote, reduceLiveEvent, refresh, removeFriend,
+  sendMessage, sendRequest, setMyAvatar, myAvatar, setStatus, start, stop, subscribe, WATCHING_IDLE_MS, type SocialState,
 } from '../src/data/socialStore';
 import { setUserStore } from '../src/data/userStore';
 import { convInfo } from '../src/ui/socialConvModel.js';
@@ -109,6 +109,30 @@ describe('reduceLiveEvent', () => {
   });
 });
 
+describe('expireIdleWatching', () => {
+  const t0 = 1_000_000;
+  const watching = (movedAt?: number) => ({ type: 'movie' as const, tmdbId: 1, title: 'Dune', pos: 5, paused: true, at: t0, ...(movedAt === undefined ? {} : { movedAt }) });
+
+  it('retire le titre au-delà de 10 min sans avancer, amis et foyer, sans toucher au reste', () => {
+    const s = {
+      ...withMe(),
+      friends: [friend('a', { watching: watching(t0) }), friend('b', { watching: watching(t0 + 300_000) })],
+      household: [friend('c', { watching: watching(t0), household: true })],
+    };
+    expect(expireIdleWatching(s, t0 + WATCHING_IDLE_MS)).toBe(s);
+    const out = expireIdleWatching(s, t0 + WATCHING_IDLE_MS + 1);
+    expect(out.friends[0].watching).toBeUndefined();
+    expect(out.friends[0].status).toBe('online');
+    expect(out.friends[1]).toBe(s.friends[1]);
+    expect(out.household[0].watching).toBeUndefined();
+  });
+
+  it('un ancien serveur sans movedAt : inchangé', () => {
+    const s = { ...withMe(), friends: [friend('a', { watching: watching() })] };
+    expect(expireIdleWatching(s, t0 + 10 * WATCHING_IDLE_MS)).toBe(s);
+  });
+});
+
 describe('mergeMessages', () => {
   it('fusionne par id, chronologique', () => {
     const a = [msg('m2', 'p1', 'me', 200)];
@@ -200,6 +224,26 @@ describe('démarrage et temps réel', () => {
     expect(s.badge).toBe(3);
     expect(s.live).toBe('open');
     expect(FakeWS.instances[0].url).toBe('ws://localhost:7000/user/social/live?ticket=T');
+  });
+
+  it('lecture figée : l’ami quitte « regarde » sans événement après 10 min, et y revient à la reprise', async () => {
+    const t0 = Date.parse('2026-05-01T10:00:00Z');
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      vi.setSystemTime(t0);
+      const w = (movedAt: number) => ({ type: 'movie' as const, tmdbId: 1, title: 'Dune', pos: 10, paused: true, at: t0, movedAt });
+      routes['GET /user/social/friends'] = () => ({ body: { friends: [friend('p1', { watching: w(t0) })], household: [], incoming: [], outgoing: [] } });
+      const ws = await startConnected();
+      expect(getState().friends[0].watching?.title).toBe('Dune');
+      vi.setSystemTime(t0 + WATCHING_IDLE_MS);
+      vi.advanceTimersByTime(30_000);
+      expect(getState().friends[0].watching).toBeUndefined();
+      expect(getState().friends[0].status).toBe('online');
+      ws.emit({ t: 'presence', friend: friend('p1', { watching: w(t0 + WATCHING_IDLE_MS + 40_000) }) });
+      expect(getState().friends[0].watching?.title).toBe('Dune');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('applique les événements du canal et transmet les notes aux écouteurs', async () => {

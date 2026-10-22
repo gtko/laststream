@@ -139,6 +139,24 @@ function findPerson(b: Base, pid: string): Person | undefined {
   return f ? { handle: f.handle, avatarColor: f.avatarColor, ...(f.avatar ? { avatar: f.avatar } : {}) } : undefined;
 }
 
+/** Une lecture dont la position n'avance plus depuis ce délai n'est plus « en train de regarder » (même seuil que le serveur). */
+export const WATCHING_IDLE_MS = 10 * 60_000;
+/** Pas de la réévaluation : la carte disparaît sans nouvel événement du serveur. */
+const IDLE_CHECK_MS = 30_000;
+
+/** Retire `watching` des amis et du foyer dont la lecture est figée depuis plus de WATCHING_IDLE_MS (sans `movedAt` : inchangé). */
+export function expireIdleWatching(s: SocialState, now: number = Date.now()): SocialState {
+  const idle = (f: FriendV3): boolean => f.watching?.movedAt !== undefined && now - f.watching.movedAt > WATCHING_IDLE_MS;
+  if (!s.friends.some(idle) && !s.household.some(idle)) return s;
+  const strip = (f: FriendV3): FriendV3 => {
+    if (!idle(f)) return f;
+    const out = { ...f };
+    delete out.watching;
+    return out;
+  };
+  return { ...s, friends: s.friends.map(strip), household: s.household.map(strip) };
+}
+
 const byLastDesc = (a: Conversation, b: Conversation): number => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
 
 /** Sépare, dans une même réponse, conversations directes et groupes. */
@@ -330,6 +348,7 @@ let epoch = 0;
 /** Minuteurs de saisie (retrait à 5 s) : annulés à l'arrêt. */
 const timers = new Set<ReturnType<typeof setTimeout>>();
 let cinemaTimer: ReturnType<typeof setTimeout> | null = null;
+let idleTimer: ReturnType<typeof setInterval> | null = null;
 /** Dernier envoi de saisie par conversation (limitation côté client). */
 const lastTypingSent = new Map<string, number>();
 
@@ -820,6 +839,10 @@ export function start(): void {
     },
   });
   live.start();
+  idleTimer = setInterval(() => {
+    const next = expireIdleWatching(state);
+    if (next !== state) commit(next);
+  }, IDLE_CHECK_MS);
 }
 
 /** Arrête le temps réel et vide l'état (déconnexion, changement de profil : rien ne doit fuir d'un profil à l'autre). */
@@ -828,6 +851,8 @@ export function stop(): void {
   const l = live;
   live = null;
   l?.stop();
+  if (idleTimer !== null) clearInterval(idleTimer);
+  idleTimer = null;
   clearTimers();
   clearCinemaTimer();
   lastTypingSent.clear();
