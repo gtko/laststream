@@ -18,3 +18,15 @@ export function isAddonLinkUrl(url: URL): boolean {
   // Sans point, c'est un nom local (NAS, machine du réseau).
   return host.includes('.');
 }
+
+/**
+ * Lien accepté par le transfert natif (Android, coque avec transfert, ODY-232) : les règles ci-dessus, sans identifiants dans l'URL
+ * et sur le port https par défaut seulement. Le transfert natif n'a pas le garde-fou du navigateur (CORS, réseau privé) : un lien d'addon
+ * ne doit pas faire lire un service du réseau local ou un port inattendu. Le code natif réapplique ces règles à chaque redirection
+ * (DownloadLogic.kt) et refuse les noms qui se résolvent vers une adresse privée.
+ */
+export function isNativeLinkUrl(url: URL): boolean {
+  if (!isAddonLinkUrl(url)) return false;
+  if (url.username !== '' || url.password !== '') return false;
+  return url.port === '' || url.port === '443';
+}

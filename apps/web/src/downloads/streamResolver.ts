@@ -9,7 +9,7 @@
 import { debrid, type DebridManager } from '../sources/debridClient';
 import { clientCopiesOf, type SourceView } from '../sources/info';
 import { refreshSources, type SourceRequest } from '../sources/load';
-import { isAddonLinkUrl } from './linkHosts';
+import { isAddonLinkUrl, isNativeLinkUrl } from './linkHosts';
 import { debridLinkResolver } from './resolver';
 import { DownloadError, type DownloadRef, type DownloadSource, type LinkResolver, type ResolvedFile } from './types';
 
@@ -35,8 +35,8 @@ export interface StreamResolverDeps {
 /** Vrai si le lien peut être téléchargé par la plateforme (hôte, schéma). */
 export type LinkPolicy = (url: URL) => boolean;
 
-/** Transfert natif (Android, coque avec transfert) : tout lien http(s) direct est accepté. */
-export const isDirectHttpLink: LinkPolicy = (url) => url.protocol === 'http:' || url.protocol === 'https:';
+/** Transfert natif (Android, coque avec transfert) : https public sur le port par défaut, comme le web (ODY-232). */
+export const nativeLinkPolicy: LinkPolicy = isNativeLinkUrl;
 
 /** Tolérance sur la taille (1 % ou un octet) : une même vidéo peut être annoncée à quelques octets près. */
 const sizeClose = (a: number, b: number): boolean => Math.abs(a - b) <= Math.max(1, b * 0.01);

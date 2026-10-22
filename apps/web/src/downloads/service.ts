@@ -15,7 +15,7 @@ import { createDownloadIndex } from './index';
 import { DownloadManager, type TransferFn } from './manager';
 import { bindDownloadLimit, clearPurgePending, getDownloadSettings, isCellular, isPurgePending, setDownloadSettings } from './settings';
 import { isAddonLinkUrl } from './linkHosts';
-import { createStreamResolver, isDirectHttpLink, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
+import { createStreamResolver, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
 import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
 import { createWebDownloadHttp } from './webHttp';
 import { createShellDownloadStore } from './shellStore';
@@ -91,10 +91,10 @@ function usesNativeTransfer(): boolean {
 
 /**
  * Hôtes acceptés pour les liens des addons. Web : hôtes publics https (linkHosts.ts), comme le transport HTTP.
- * Transfert natif : http(s) direct, comme avant (à resserrer si rien ne casse, voir le rapport).
+ * Transfert natif : https public sur le port par défaut, sans identifiants (ODY-232) ; le code natif le revérifie.
  */
 function linkPolicy(): LinkPolicy {
-  return usesNativeTransfer() ? isDirectHttpLink : isAddonLinkUrl;
+  return usesNativeTransfer() ? nativeLinkPolicy : isAddonLinkUrl;
 }
 
 /** Diffuse la liste courante aux abonnés et la garde en cache synchrone. */

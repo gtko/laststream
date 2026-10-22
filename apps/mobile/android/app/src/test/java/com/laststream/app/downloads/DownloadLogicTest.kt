@@ -69,18 +69,65 @@ class DownloadLogicTest {
         assertFalse(TransferException("content").retryable)
     }
 
+    private fun u(raw: String) = java.net.URL(raw)
+    private fun ip(vararg b: Int) = java.net.InetAddress.getByAddress(ByteArray(b.size) { b[it].toByte() })
+
     @Test fun urlAndRedirectRules() {
-        assertTrue(DownloadLogic.isUrlAllowed("https", "h.example", false))
-        assertFalse(DownloadLogic.isUrlAllowed("http", "h.example", false))
-        assertTrue(DownloadLogic.isUrlAllowed("http", "localhost", true))
-        assertFalse(DownloadLogic.isUrlAllowed("ftp", "h.example", true))
-        assertFalse(DownloadLogic.isUrlAllowed("https", "", false))
-        assertTrue(DownloadLogic.isRedirectAllowed("https", "https", "b.example", false))
+        assertTrue(DownloadLogic.isUrlAllowed(u("https://h.example/f"), false))
+        assertFalse(DownloadLogic.isUrlAllowed(u("http://h.example/f"), false))
+        assertTrue(DownloadLogic.isUrlAllowed(u("http://localhost:8080/f"), true))
+        assertFalse(DownloadLogic.isUrlAllowed(u("ftp://h.example/f"), true))
+        assertFalse(DownloadLogic.isUrlAllowed("https", "", -1, null, false))
+        assertTrue(DownloadLogic.isRedirectAllowed(u("https://a.example/"), u("https://b.example/x"), false))
         // jamais de rétrogradation, même quand http est toléré (tests)
-        assertFalse(DownloadLogic.isRedirectAllowed("https", "http", "b.example", true))
-        assertFalse(DownloadLogic.isRedirectAllowed("https", "http", "b.example", false))
-        assertFalse(DownloadLogic.isRedirectAllowed("http", "http", "b.example", false))
-        assertTrue(DownloadLogic.isRedirectAllowed("http", "http", "b.example", true))
+        assertFalse(DownloadLogic.isRedirectAllowed(u("https://a.example/"), u("http://b.example/"), true))
+        assertFalse(DownloadLogic.isRedirectAllowed(u("https://a.example/"), u("http://b.example/"), false))
+        assertFalse(DownloadLogic.isRedirectAllowed(u("http://a.example/"), u("http://b.example/"), false))
+        assertTrue(DownloadLogic.isRedirectAllowed(u("http://a.example/"), u("http://b.example/"), true))
+    }
+
+    @Test fun onlyDefaultHttpsPortWithoutCredentialsIsAllowed() {
+        assertTrue(DownloadLogic.isUrlAllowed(u("https://cdn.example.com/f"), false))
+        assertTrue(DownloadLogic.isUrlAllowed(u("https://cdn.example.com:443/f"), false))
+        for (raw in listOf("https://cdn.example.com:8443/f", "https://cdn.example.com:80/f", "https://cdn.example.com:22/f", "https://u:p@cdn.example.com/f", "https://u@cdn.example.com/f")) {
+            assertFalse(raw, DownloadLogic.isUrlAllowed(u(raw), false))
+        }
+    }
+
+    @Test fun localAndLiteralHostsAreRefused() {
+        for (raw in listOf(
+            "https://127.0.0.1/f", "https://10.0.0.5/f", "https://192.168.1.2/f", "https://172.16.0.1/f", "https://169.254.169.254/latest/meta-data",
+            "https://100.64.0.1/f", "https://8.8.8.8/f", "https://[::1]/f", "https://[fe80::1]/f", "https://[fd00::1]/f", "https://[::ffff:127.0.0.1]/f",
+            "https://localhost/f", "https://localhost./f", "https://LOCALHOST/f", "https://nas.local/f", "https://svc.internal/f", "https://app.localhost/f", "https://nas/f",
+            "https://2130706433/f", "https://0x7f000001/f", "https://0x7f.0.0.1/f", "https://0177.0.0.1/f", "https://127.1/f", "https://127.0.0.1./f",
+        )) {
+            assertFalse(raw, DownloadLogic.isUrlAllowed(u(raw), false))
+        }
+        for (host in listOf("a_b.example.com", "-a.example.com", "a..example.com", ".example.com", "exa mple.com", "")) {
+            assertFalse(host, DownloadLogic.isPublicHostName(host))
+        }
+        for (host in listOf("cdn.example.com", "CDN.Example.Test", "a-b.c-d.example.org", "xn--bcher-kva.example", "cdn.example.com.")) {
+            assertTrue(host, DownloadLogic.isPublicHostName(host))
+        }
+    }
+
+    @Test fun nonPublicResolvedAddressesAreRefused() {
+        val refused = listOf(
+            ip(127, 0, 0, 1), ip(127, 8, 8, 8), ip(0, 0, 0, 0), ip(10, 0, 0, 1), ip(172, 16, 0, 1), ip(172, 31, 255, 255), ip(192, 168, 0, 1),
+            ip(169, 254, 169, 254), ip(100, 64, 0, 1), ip(100, 127, 255, 255), ip(224, 0, 0, 1), ip(255, 255, 255, 255), ip(240, 0, 0, 1),
+            ip(192, 0, 0, 1), ip(192, 0, 2, 1), ip(198, 18, 0, 1), ip(198, 51, 100, 1), ip(203, 0, 113, 1),
+            java.net.InetAddress.getByName("::1"), java.net.InetAddress.getByName("::"), java.net.InetAddress.getByName("fe80::1"),
+            java.net.InetAddress.getByName("fd12:3456::1"), java.net.InetAddress.getByName("fc00::1"), java.net.InetAddress.getByName("ff02::1"),
+            java.net.InetAddress.getByName("::ffff:10.0.0.1"), java.net.InetAddress.getByName("64:ff9b::7f00:1"), java.net.InetAddress.getByName("2002:c0a8:101::1"),
+            java.net.InetAddress.getByName("2001:db8::1"), java.net.InetAddress.getByName("::7f00:1"), java.net.InetAddress.getByName("::a00:5"),
+            java.net.InetAddress.getByName("2001:0:4136:e378:8000:63bf:3fff:fdd2"), java.net.InetAddress.getByName("64:ff9b:1::1"),
+        )
+        for (a in refused) assertFalse(a.toString(), DownloadLogic.isPublicAddress(a))
+        val accepted = listOf(
+            ip(8, 8, 8, 8), ip(93, 184, 216, 34), ip(172, 15, 255, 255), ip(172, 32, 0, 1), ip(100, 63, 255, 255), ip(100, 128, 0, 1),
+            java.net.InetAddress.getByName("2606:4700:4700::1111"), java.net.InetAddress.getByName("2a00:1450:4007::200e"),
+        )
+        for (a in accepted) assertTrue(a.toString(), DownloadLogic.isPublicAddress(a))
     }
 
     @Test fun idleNotificationDuringGraceHasNoStalePercent() {

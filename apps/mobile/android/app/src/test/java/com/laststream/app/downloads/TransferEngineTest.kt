@@ -1,6 +1,7 @@
 package com.laststream.app.downloads
 
 import java.io.File
+import java.net.InetAddress
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 import org.junit.After
@@ -253,6 +254,77 @@ class TransferEngineTest {
         on("/file") { ex -> ex.responseHeaders.put("Location", "http://127.0.0.1:1/x"); send(ex, 302, ByteArray(0)) }
         expectCode("content") { run(req(), TransferEngine(files, allowInsecure = false)) }
         assertEquals(0, requests.get())
+    }
+
+    // --- Cibles autorisées (ODY-232) : jamais le réseau local, ni par le lien de départ ni par une redirection ---
+
+    private fun ipv4(vararg b: Int): InetAddress = InetAddress.getByAddress(ByteArray(4) { b[it].toByte() })
+    private val publicIp = ipv4(93, 184, 216, 34)
+
+    /** Moteur strict (https public seulement), résolveur injecté qui compte ses appels : aucune connexion réelle n'est possible. */
+    private fun strictEngine(calls: AtomicInteger, answer: (String) -> List<InetAddress>) =
+        TransferEngine(files, allowInsecure = false, resolver = { host -> calls.incrementAndGet(); answer(host) })
+
+    @Test fun strictEngineRefusesLocalLiteralAndUnexpectedTargetsBeforeResolvingOrConnecting() {
+        val calls = AtomicInteger()
+        val strict = strictEngine(calls) { listOf(publicIp) }
+        for (raw in listOf(
+            "http://cdn.example.com/f", "https://127.0.0.1/f", "https://192.168.1.2/f", "https://169.254.169.254/f", "https://[::1]/f", "https://localhost/f",
+            "https://nas.local/f", "https://nas/f", "https://2130706433/f", "https://cdn.example.com:8443/f", "https://u:p@cdn.example.com/f",
+        )) {
+            expectCode("content") { run(TransferRequest(id, "$raw?token=$token"), strict) }
+        }
+        assertEquals(0, calls.get())
+        assertEquals(0L, files.size(id))
+    }
+
+    @Test fun publicNameResolvingToPrivateAddressIsContentWithoutAnyConnection() {
+        for (bad in listOf(ipv4(127, 0, 0, 1), ipv4(10, 1, 2, 3), ipv4(192, 168, 1, 20), ipv4(169, 254, 169, 254), InetAddress.getByName("::1"), InetAddress.getByName("fd00::1"))) {
+            val calls = AtomicInteger()
+            val strict = strictEngine(calls) { listOf(publicIp, bad) } // une seule adresse privée parmi les réponses suffit à refuser
+            expectCode("content") { run(TransferRequest(id, "https://cdn.example.com/f?token=$token"), strict) }
+            assertEquals(1, calls.get())
+        }
+    }
+
+    @Test fun unresolvableNameIsNetwork() {
+        val strict = strictEngine(AtomicInteger()) { throw java.net.UnknownHostException("cdn.example.com") }
+        expectCode("network") { run(TransferRequest(id, "https://cdn.example.com/f?token=$token"), strict) }
+        val empty = strictEngine(AtomicInteger()) { emptyList() }
+        expectCode("network") { run(TransferRequest(id, "https://cdn.example.com/f?token=$token"), empty) }
+    }
+
+    @Test fun redirectToLocalNetworkIsRefusedAndNeverRequested() {
+        val hits = AtomicInteger()
+        on("/start") { ex -> ex.responseHeaders.put("Location", "http://localhost:${server.port}/internal?token=$token"); send(ex, 302, ByteArray(0)) }
+        on("/internal") { ex -> hits.incrementAndGet(); send(ex, 200, content) }
+        // Le départ (127.0.0.1) est présenté comme public ; la redirection vers « localhost » se résout vers le loopback.
+        val e = TransferEngine(files, allowInsecure = true, checkAddresses = true, resolver = { host ->
+            if (host == "127.0.0.1") listOf(publicIp) else listOf(InetAddress.getByName("127.0.0.1"))
+        })
+        expectCode("content") { run(req("/start"), e) }
+        assertEquals(1, requests.get())
+        assertEquals(0, hits.get())
+        assertEquals(0L, files.size(id))
+    }
+
+    @Test fun redirectToLiteralPrivateAddressIsRefused() {
+        for (target in listOf("http://10.0.0.5/x", "http://192.168.1.2:8080/x", "http://169.254.169.254/latest", "http://[::1]/x")) {
+            requests.set(0)
+            on("/start") { ex -> ex.responseHeaders.put("Location", target); send(ex, 302, ByteArray(0)) }
+            val e = TransferEngine(files, allowInsecure = true, checkAddresses = true, resolver = { host ->
+                if (host == "127.0.0.1") listOf(publicIp) else listOf(InetAddress.getByName(host.removePrefix("[").removeSuffix("]")))
+            })
+            expectCode("content") { run(req("/start"), e) }
+            assertEquals(target, 1, requests.get())
+        }
+    }
+
+    @Test fun redirectBetweenPublicHostsIsStillFollowed() {
+        serveFile("/final")
+        on("/start") { ex -> ex.responseHeaders.put("Location", "http://localhost:${server.port}/final?token=$token"); send(ex, 302, ByteArray(0)) }
+        val e = TransferEngine(files, allowInsecure = true, checkAddresses = true, resolver = { listOf(publicIp) })
+        assertEquals(content.size.toLong(), run(req("/start"), e).bytesDone)
     }
 
     @Test fun maxBytesDeclaredTotalIsQuotaExceededWithoutWriting() {

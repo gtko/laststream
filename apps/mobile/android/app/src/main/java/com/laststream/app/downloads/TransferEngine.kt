@@ -2,6 +2,7 @@ package com.laststream.app.downloads
 
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.InetAddress
 import java.net.URL
 
 /** Erreur d'un transfert : le message est le code seul, jamais l'URL ni un message système (qui peut la contenir). */
@@ -30,13 +31,23 @@ data class TransferResult(val bytesDone: Long, val bytesTotal: Long? = null, val
  * (`Range: bytes=<offset>-`), écrit en flux dans le `.part` (jamais le corps entier en mémoire), classe chaque réponse en code
  * d'erreur. Redirections suivies à la main : https obligatoire, jamais de rétrogradation vers http. JVM pur.
  *
- * @param allowInsecure autorise http (tests locaux uniquement).
+ * Cibles autorisées (ODY-232) : un lien d'addon ne doit pas faire lire le réseau local par l'appareil. Chaque adresse (départ et chaque
+ * redirection) doit être en https, sur le port 443, sans identifiants, avec un nom de domaine public, et ce nom ne doit se résoudre
+ * vers aucune adresse privée, loopback ou lien local. Refus = `content`. Limite connue : la connexion refait sa propre résolution DNS
+ * juste après la vérification (un DNS malveillant pourrait répondre autrement la seconde fois) ; seule la vérification préalable est possible
+ * avec HttpURLConnection sans casser le SNI/le certificat.
+ *
+ * @param allowInsecure autorise http, tout port et tout hôte (tests locaux uniquement).
+ * @param checkAddresses vérifie les adresses résolues (par défaut : sauf si `allowInsecure`).
+ * @param resolver résolution DNS d'un nom d'hôte (injectable pour les tests).
  * @param clock horloge en millisecondes (injectable pour tester la limitation des évènements de progression).
  */
 class TransferEngine(
     private val files: DownloadFiles,
     private val allowInsecure: Boolean = false,
     private val clock: () -> Long = { System.currentTimeMillis() },
+    private val checkAddresses: Boolean = !allowInsecure,
+    private val resolver: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
 ) {
     companion object {
         const val BUFFER_SIZE = 256 * 1024
@@ -69,7 +80,7 @@ class TransferEngine(
         registerAbort: ((() -> Unit)?) -> Unit = {},
     ): TransferResult {
         val start = try { URL(req.url) } catch (_: Exception) { fail(DownloadCode.CONTENT) }
-        if (!DownloadLogic.isUrlAllowed(start.protocol, start.host, allowInsecure)) fail(DownloadCode.CONTENT)
+        if (!DownloadLogic.isUrlAllowed(start, allowInsecure)) fail(DownloadCode.CONTENT)
 
         var bytesTotal = req.bytesTotal
         var etag = req.etag
@@ -229,11 +240,20 @@ class TransferEngine(
         }
     }
 
+    /** Refuse (`content`) un hôte qui se résout vers une adresse non publique ; `network` si le nom ne se résout pas. */
+    private fun checkResolved(url: URL, cancelled: () -> Boolean) {
+        if (!checkAddresses) return
+        val addresses = try { resolver(url.host.removePrefix("[").removeSuffix("]")) } catch (_: Exception) { netFail(cancelled) }
+        if (addresses.isEmpty()) netFail(cancelled)
+        if (!addresses.all { DownloadLogic.isPublicAddress(it) }) fail(DownloadCode.CONTENT)
+    }
+
     /** Ouvre la connexion en suivant les redirections à la main (5 au plus). Toute erreur devient un code sans URL. */
     private fun connect(startUrl: String, offset: Long, cancelled: () -> Boolean, registerAbort: ((() -> Unit)?) -> Unit): HttpURLConnection {
         var url = try { URL(startUrl) } catch (_: Exception) { fail(DownloadCode.CONTENT) }
         var hops = 0
         while (true) {
+            checkResolved(url, cancelled)
             val conn = try { url.openConnection() as HttpURLConnection } catch (_: Exception) { netFail(cancelled) }
             // Hors du thread appelant : sur certaines implémentations disconnect() attend la lecture en cours (jamais bloquer cancel()).
             registerAbort { Thread { try { conn.disconnect() } catch (_: Exception) { } }.apply { isDaemon = true }.start() }
@@ -251,7 +271,7 @@ class TransferEngine(
             conn.disconnect()
             if (location.isNullOrBlank() || ++hops > MAX_REDIRECTS) fail(DownloadCode.CONTENT)
             val next = try { URL(url, location) } catch (_: Exception) { fail(DownloadCode.CONTENT) }
-            if (!DownloadLogic.isRedirectAllowed(url.protocol, next.protocol, next.host, allowInsecure)) fail(DownloadCode.CONTENT)
+            if (!DownloadLogic.isRedirectAllowed(url, next, allowInsecure)) fail(DownloadCode.CONTENT)
             url = next
         }
     }

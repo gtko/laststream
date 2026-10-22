@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { DebridManager } from '../src/sources/debridClient';
 import type { SourceView } from '../src/sources/info';
 import type { SourceRequest } from '../src/sources/load';
-import { createStreamResolver, findMatch, isDirectHttpLink, isDownloadable, isHlsUrl, streamToSource } from '../src/downloads/streamResolver';
+import { createStreamResolver, findMatch, nativeLinkPolicy, isDownloadable, isHlsUrl, streamToSource } from '../src/downloads/streamResolver';
 import { DownloadError, type DownloadSource } from '../src/downloads/types';
 import { HLS_URL, HTTP_URL, clientStream, httpStream, viewOf } from './downloads-fixtures';
 
@@ -88,9 +88,11 @@ describe('flux téléchargeable', () => {
     }
   });
 
-  it('transfert natif : la politique de la plateforme (http(s) direct) est celle qui s’applique', () => {
+  it('transfert natif : la politique de la plateforme (https public, port par défaut) est celle qui s’applique', () => {
     const lan = viewOf(httpStream({ url: 'http://192.168.1.20/films/dune.mkv' }));
-    expect(isDownloadable(lan, isDirectHttpLink)).toBe(true);
+    expect(isDownloadable(lan, nativeLinkPolicy)).toBe(false);
+    const cdn = viewOf(httpStream({ url: 'https://cdn.example.test/films/dune.mkv' }));
+    expect(isDownloadable(cdn, nativeLinkPolicy)).toBe(true);
   });
 });
 
@@ -179,10 +181,16 @@ describe('createStreamResolver : lien retrouvé par la référence', () => {
     expect((err as Error).message).not.toContain('192.168');
   });
 
-  it('avec la politique native, le même lien http est accepté', async () => {
+  it('avec la politique native, le même lien http local est aussi refusé (« content »)', async () => {
     const hit = viewOf(httpStream({ url: 'http://192.168.1.20/films/Dune.mkv', filename: 'Dune.mkv' }));
-    const resolver = createStreamResolver({ refresh: async () => ({ views: [hit] }), linkPolicy: isDirectHttpLink });
-    await expect(resolver.resolve(streamToSource(hit, MOVIE), signal())).resolves.toMatchObject({ url: 'http://192.168.1.20/films/Dune.mkv' });
+    const resolver = createStreamResolver({ refresh: async () => ({ views: [hit] }), linkPolicy: nativeLinkPolicy });
+    await expect(resolver.resolve(streamToSource(hit, MOVIE), signal())).rejects.toMatchObject({ code: 'content', retryable: false });
+  });
+
+  it('avec la politique native, un lien https public est accepté', async () => {
+    const hit = viewOf(httpStream({ url: 'https://cdn.example.test/films/Dune.mkv', filename: 'Dune.mkv' }));
+    const resolver = createStreamResolver({ refresh: async () => ({ views: [hit] }), linkPolicy: nativeLinkPolicy });
+    await expect(resolver.resolve(streamToSource(hit, MOVIE), signal())).resolves.toMatchObject({ url: 'https://cdn.example.test/films/Dune.mkv' });
   });
 
   it('sans copies ni référence : erreur « content »', async () => {
