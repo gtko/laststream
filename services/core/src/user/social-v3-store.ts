@@ -35,6 +35,7 @@ export interface ShareLinkInput {
   title: string;
   poster?: string;
   pos?: number;
+  end?: number;
   note?: string;
   withInvite: boolean;
 }
@@ -46,6 +47,7 @@ export interface ShareLinkView {
   title: string;
   poster?: string;
   pos?: number;
+  end?: number;
   from: { handle: Handle; avatarColor: string };
   note?: string;
   inviteCode?: string;
@@ -64,6 +66,7 @@ export interface OwnShareLinkView {
   title: string;
   poster?: string;
   pos?: number;
+  end?: number;
   note?: string;
   inviteCode?: string;
   createdAt: number;
@@ -170,7 +173,7 @@ export class SocialV3Store {
       const code = randomBytes(16).toString('base64url');
       this.db
         .prepare(
-          'INSERT INTO share_links (code, author_pid, type, tmdb_id, title, poster, pos, note, invite_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'INSERT INTO share_links (code, author_pid, type, tmdb_id, title, poster, pos, end_pos, note, invite_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         )
         .run(
           code,
@@ -180,6 +183,7 @@ export class SocialV3Store {
           input.title,
           input.poster ?? null,
           input.pos ?? null,
+          input.end ?? null,
           input.note ?? null,
           inviteId,
           now,
@@ -215,7 +219,7 @@ export class SocialV3Store {
       this.releaseExpiredInvites(now);
       const rows = this.db
         .prepare(
-          `SELECT s.code, s.type, s.tmdb_id, s.title, s.poster, s.pos, s.note, s.created_at, i.code AS invite_code, i.used_at AS invite_used_at
+          `SELECT s.code, s.type, s.tmdb_id, s.title, s.poster, s.pos, s.end_pos, s.note, s.created_at, i.code AS invite_code, i.used_at AS invite_used_at
              FROM share_links s LEFT JOIN invites i ON i.id = s.invite_id
             WHERE s.author_pid = ? ORDER BY s.created_at DESC, s.rowid DESC`,
         )
@@ -226,6 +230,7 @@ export class SocialV3Store {
         title: string;
         poster: string | null;
         pos: number | null;
+        end_pos: number | null;
         note: string | null;
         created_at: number;
         invite_code: string | null;
@@ -244,6 +249,7 @@ export class SocialV3Store {
         };
         if (row.poster !== null) view.poster = row.poster;
         if (row.pos !== null) view.pos = Number(row.pos);
+        if (row.end_pos !== null) view.end = Number(row.end_pos);
         if (row.note !== null) view.note = row.note;
         if (row.invite_code !== null && row.invite_used_at === null) view.inviteCode = row.invite_code;
         return view;
@@ -272,7 +278,7 @@ export class SocialV3Store {
   shareLinkByCode(code: string, now: number): ShareLinkView | 'expired' | undefined {
     const row = this.db
       .prepare(
-        `SELECT s.type, s.tmdb_id, s.title, s.poster, s.pos, s.note, s.created_at, p.handle_name, p.handle_tag, p.avatar_color,
+        `SELECT s.type, s.tmdb_id, s.title, s.poster, s.pos, s.end_pos, s.note, s.created_at, p.handle_name, p.handle_tag, p.avatar_color,
                 i.code AS invite_code, i.used_at AS invite_used_at
          FROM share_links s
          JOIN profiles p ON p.pid = s.author_pid
@@ -286,6 +292,7 @@ export class SocialV3Store {
           title: string;
           poster: string | null;
           pos: number | null;
+          end_pos: number | null;
           note: string | null;
           created_at: number;
           handle_name: string;
@@ -308,6 +315,7 @@ export class SocialV3Store {
     };
     if (row.poster !== null) view.poster = row.poster;
     if (row.pos !== null) view.pos = Number(row.pos);
+    if (row.end_pos !== null) view.end = Number(row.end_pos);
     if (row.note !== null) view.note = row.note;
     if (row.invite_code !== null && row.invite_used_at === null) view.inviteCode = row.invite_code;
     return view;

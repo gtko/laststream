@@ -469,6 +469,7 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
         title,
         poster: input.poster,
         pos: input.pos,
+        end: input.end,
         note: note.note,
         withInvite: input.withInvite,
       }),
@@ -481,7 +482,7 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   });
 
   /**
-   * Lien public, sans session : `{ type, tmdbId, title, poster?, pos?, from: { handle, avatarColor }, note?, inviteCode? }`.
+   * Lien public, sans session : `{ type, tmdbId, title, poster?, pos?, end?, from: { handle, avatarColor }, note?, inviteCode? }`.
    * Aucun pid de l'auteur, aucune bibliothèque ; `pos` seulement pour un moment, `inviteCode` seulement tant qu'il est libre.
    * 404 `share_not_found` ; 410 `expired` au-delà de 30 jours ; 429 `rate_limited` par adresse IP (60 par minute, compté en
    * base) ; 400 `ip_required` si l'adresse du client est inconnue (les requêtes sans adresse ne sont pas mutualisées).
@@ -501,7 +502,7 @@ function registerShareRoutes(router: App, deps: AppDeps, backend: UserBackend): 
   });
 
   /**
-   * Mes liens publics (profil agissant) : `{ links: [{ code, url, type, tmdbId, title, poster?, pos?, note?, inviteCode?,
+   * Mes liens publics (profil agissant) : `{ links: [{ code, url, type, tmdbId, title, poster?, pos?, end?, note?, inviteCode?,
    * createdAt, expiresAt, expired }] }`, les plus récents d'abord, expirés compris (`expired: true`).
    */
   router.get('/social/share-links', async (c) => {

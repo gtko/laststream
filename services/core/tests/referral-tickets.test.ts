@@ -101,7 +101,7 @@ describe('migration v28 : colonnes des billets, base existante préservée', () 
 
     const columns = (db.prepare('PRAGMA table_info(invites)').all() as { name: string }[]).map((column) => column.name);
     expect(columns).toEqual(expect.arrayContaining(['message', 'picks', 'expires_at', 'auto_friend']));
-    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(30);
+    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(31);
     expect(db.prepare("SELECT message, picks, expires_at, auto_friend FROM invites WHERE id = 'i1'").get()).toEqual({
       message: null,
       picks: null,

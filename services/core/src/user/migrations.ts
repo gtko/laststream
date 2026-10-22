@@ -881,6 +881,14 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 31,
+    name: 'liens publics : fin d un extrait (end_pos)',
+    sql: `
+      -- Fin (secondes) d'un extrait partagé par lien public ; NULL = moment à position unique ou titre entier.
+      ALTER TABLE share_links ADD COLUMN end_pos REAL;
+    `,
+  },
 ];
 
 /**

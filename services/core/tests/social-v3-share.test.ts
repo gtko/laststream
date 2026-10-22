@@ -26,6 +26,7 @@ interface PublicLink {
   title: string;
   poster?: string;
   pos?: number;
+  end?: number;
   from: { handle: { name: string; tag: string; full: string }; avatarColor: string };
   note?: string;
   inviteCode?: string;
@@ -95,6 +96,43 @@ describe('partage à des amis', () => {
       pos: 754.5,
       still: '/still.jpg',
     });
+  });
+
+  it('un extrait partagé porte sa fin : pos et end dans le message, puis dans la boîte du destinataire', async () => {
+    const res = await as<MessageBody>(app, cast.alice, 'POST', '/user/social/share', {
+      body: {
+        to: [{ pid: cast.bob.pid }],
+        kind: 'moment',
+        moment: { type: 'series', tmdbId: 1399, season: 1, episode: 2, title: 'Game of Thrones', pos: 754, end: 790 },
+      },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.messages[0]?.moment).toMatchObject({ pos: 754, end: 790 });
+
+    const inbox = await as<MessageBody>(app, cast.bob, 'GET', `/user/social/messages/${cast.alice.pid}`);
+    expect(inbox.body.messages[0]?.moment).toMatchObject({ pos: 754, end: 790 });
+  });
+
+  it('un extrait doit finir après sa position et durer 300 s au plus (1 s au moins)', async () => {
+    const share = (end: number) =>
+      as<{ error: string; issues?: string[] }>(app, cast.alice, 'POST', '/user/social/share', {
+        body: { to: [{ pid: cast.bob.pid }], kind: 'moment', moment: { type: 'movie', tmdbId: 603, title: 'Matrix', pos: 100, end } },
+      });
+    expect((await share(100)).status).toBe(400);
+    expect((await share(99)).status).toBe(400);
+    const tooLong = await share(401);
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body.issues).toEqual(['moment.end:custom']);
+    expect((await share(101)).status).toBe(201);
+    expect((await share(400)).status).toBe(201);
+  });
+
+  it('un moment sans fin ne porte pas de clé end', async () => {
+    const res = await as<MessageBody>(app, cast.alice, 'POST', '/user/social/share', {
+      body: { to: [{ pid: cast.bob.pid }], kind: 'moment', moment: { type: 'movie', tmdbId: 603, title: 'Matrix', pos: 100 } },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.messages[0]?.moment).not.toHaveProperty('end');
   });
 
   it('un non-ami est refusé et rien n’est envoyé ; soi-même est refusé', async () => {
@@ -188,6 +226,46 @@ describe('liens publics', () => {
     const moment = await as<LinkCreated>(app, owner, 'POST', '/user/social/share-links', { body: { ...MATRIX, pos: 1234, withInvite: false } });
     const momentView = await request<PublicLink>(app, 'GET', `/user/social/share-links/${moment.body.code}`);
     expect(momentView.body.pos).toBe(1234);
+  });
+
+  it('un extrait publie sa fin, dans la vue publique et dans mes liens', async () => {
+    const created = await as<LinkCreated>(app, owner, 'POST', '/user/social/share-links', { body: { ...MATRIX, pos: 1234, end: 1290, withInvite: false } });
+    expect(created.status).toBe(201);
+
+    const view = await request<PublicLink>(app, 'GET', `/user/social/share-links/${created.body.code}`);
+    expect(view.status).toBe(200);
+    expect(view.body).toMatchObject({ pos: 1234, end: 1290 });
+
+    const mine = await as<{ links: (PublicLink & { code: string })[] }>(app, owner, 'GET', '/user/social/share-links');
+    expect(mine.status).toBe(200);
+    expect(mine.body.links.find((link) => link.code === created.body.code)).toMatchObject({ pos: 1234, end: 1290 });
+  });
+
+  it('une fin exige une position et un extrait de 1 s à 5 min ; un lien sans fin n’a pas de clé end', async () => {
+    const withoutPos = await as<{ error: string; issues?: string[] }>(app, owner, 'POST', '/user/social/share-links', {
+      body: { ...MATRIX, end: 1290, withInvite: false },
+    });
+    expect(withoutPos.status).toBe(400);
+    expect(withoutPos.body.issues).toEqual(['end:custom']);
+
+    for (const end of [1234, 1200]) {
+      const res = await as<{ issues?: string[] }>(app, owner, 'POST', '/user/social/share-links', { body: { ...MATRIX, pos: 1234, end, withInvite: false } });
+      expect(res.status).toBe(400);
+      expect(res.body.issues).toEqual(['end:custom']);
+    }
+    const tooLong = await as<{ issues?: string[] }>(app, owner, 'POST', '/user/social/share-links', {
+      body: { ...MATRIX, pos: 1000, end: 1301, withInvite: false },
+    });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.body.issues).toEqual(['end:custom']);
+
+    const plain = await as<LinkCreated>(app, owner, 'POST', '/user/social/share-links', { body: { ...MATRIX, pos: 1000, withInvite: false } });
+    expect(plain.status).toBe(201);
+    const view = await request<PublicLink>(app, 'GET', `/user/social/share-links/${plain.body.code}`);
+    expect(view.body).toMatchObject({ pos: 1000 });
+    expect(view.body).not.toHaveProperty('end');
+    const mine = await as<{ links: (PublicLink & { code: string })[] }>(app, owner, 'GET', '/user/social/share-links');
+    expect(mine.body.links.find((link) => link.code === plain.body.code)).not.toHaveProperty('end');
   });
 
   it('le titre vient de l’index des fiches quand le corps n’en donne pas', async () => {

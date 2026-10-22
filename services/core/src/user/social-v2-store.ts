@@ -471,6 +471,8 @@ interface MomentRef {
   episode?: number;
   title: string;
   pos: number;
+  /** Fin d'un extrait (secondes) ; absente pour un moment à position unique. */
+  end?: number;
   still?: string;
 }
 

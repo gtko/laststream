@@ -88,6 +88,13 @@ const TMDB_ID = z.number().int().positive().max(1_000_000_000);
 const SEASON = z.number().int().min(0).max(10_000);
 const EPISODE = z.number().int().min(0).max(10_000);
 const POSITION = z.number().min(0).max(10_000_000);
+
+/** Durée d'un extrait (secondes) : au moins 1 s, au plus 5 min. */
+const CLIP_MIN_SEC = 1;
+const CLIP_MAX_SEC = 300;
+/** Vrai si `end` est absente ou une fin d'extrait valable après `pos`. */
+const clipOk = (pos: number | undefined, end: number | undefined): boolean =>
+  end === undefined || (pos !== undefined && end - pos >= CLIP_MIN_SEC && end - pos <= CLIP_MAX_SEC);
 const MEDIA_TYPE = z.enum(['movie', 'series']);
 
 /** Image TMDB stricte (chemin `/abc.jpg` ou URL du CDN TMDB), sans caractère de contrôle. */
@@ -106,16 +113,19 @@ const titleSchema = z.strictObject({
   rating: z.number().min(0).max(5).optional(),
 });
 
-/** Moment d'un titre (kind moment) : saison et épisode facultatifs (ignorés pour un film), position en secondes. */
-const momentSchema = z.strictObject({
-  type: MEDIA_TYPE,
-  tmdbId: TMDB_ID,
-  season: SEASON.optional(),
-  episode: EPISODE.optional(),
-  title: plainText(200),
-  pos: POSITION,
-  still: IMAGE_REF.optional(),
-});
+/** Moment d'un titre (kind moment) : saison et épisode facultatifs (ignorés pour un film), position en secondes ; `end` : fin d'un extrait (1 s à 5 min après `pos`). */
+const momentSchema = z
+  .strictObject({
+    type: MEDIA_TYPE,
+    tmdbId: TMDB_ID,
+    season: SEASON.optional(),
+    episode: EPISODE.optional(),
+    title: plainText(200),
+    pos: POSITION,
+    end: POSITION.optional(),
+    still: IMAGE_REF.optional(),
+  })
+  .refine((moment) => clipOk(moment.pos, moment.end), { message: 'end:range', path: ['end'] });
 
 /** Invitation à un salon (kind party). Identifiant de salon : lettres, chiffres, `_` et `-`. */
 const partySchema = z.strictObject({
@@ -230,17 +240,20 @@ export const shareSchema = z.strictObject({
 
 /**
  * Corps de `POST /share-links`. `title` est facultatif : sans lui, la route reprend le titre de l'index des fiches (meta_index).
- * `pos` ne se donne que pour un moment ; la note est vérifiée ensuite (`cleanNoteBody`, 140 caractères).
+ * `pos` ne se donne que pour un moment, `end` (fin d'un extrait) qu'avec `pos` ; la note est vérifiée ensuite (`cleanNoteBody`, 140 caractères).
  */
-export const shareLinkSchema = z.strictObject({
-  type: MEDIA_TYPE,
-  tmdbId: TMDB_ID,
-  title: TITLE.optional(),
-  poster: POSTER,
-  pos: POSITION.optional(),
-  withInvite: z.boolean(),
-  note: z.string().max(400).optional(),
-});
+export const shareLinkSchema = z
+  .strictObject({
+    type: MEDIA_TYPE,
+    tmdbId: TMDB_ID,
+    title: TITLE.optional(),
+    poster: POSTER,
+    pos: POSITION.optional(),
+    end: POSITION.optional(),
+    withInvite: z.boolean(),
+    note: z.string().max(400).optional(),
+  })
+  .refine((link) => clipOk(link.pos, link.end), { message: 'end:range', path: ['end'] });
 
 /** Code d'un lien public : 10 à 64 caractères base64url (le code produit en fait 22). */
 export const SHARE_CODE = /^[A-Za-z0-9_-]{10,64}$/;
