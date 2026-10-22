@@ -1,4 +1,4 @@
-import { appFetch, appFetchBinary } from './crossFetch';
+import { appFetchBinary } from './crossFetch';
 import { requireBase } from './config';
 import { getSession } from './session';
 import { call } from './userApi';
@@ -312,45 +312,18 @@ function fail(reply: UpstreamReply, what: string): never {
   throw new MolotovError(reply.status, json?.error || 'http_' + reply.status, json?.message || what);
 }
 
-/**
- * Échange d'un jeton Google contre une session Molotov (`PUT /oauth/google`, contrat §3.2).
- * Direct depuis l'appareil quand c'est possible ; sinon le serveur fait l'échange et chiffre la session.
- * L'API ne valide que les clients Google connus : un `aud` inconnu est refusé, l'erreur est propagée telle quelle.
- */
-export async function exchangeGoogleToken(googleIdToken: string): Promise<{ idToken: string; refreshToken: string }> {
-  if (directHttp()) {
-    try {
-      const reply = await directUpstream('/oauth/google', { method: 'PUT', body: { token: googleIdToken } });
-      if (reply.status >= 400) fail(reply, 'Échange Google refusé.');
-      const json = reply.json as { idToken?: string; refreshToken?: string } | null;
-      if (!json || !json.idToken || !json.refreshToken) throw new MolotovError(502, 'exchange_failed', 'Réponse Molotov inattendue.');
-      return { idToken: json.idToken, refreshToken: json.refreshToken };
-    } catch (err) {
-      // Pont natif indisponible ou appel bloqué : le serveur prend le relais.
-      if (!(err instanceof MolotovTransportError)) throw err;
-    }
-  }
-  const res = await appFetch(requireBase() + '/user/account/molotov', {
-    method: 'PUT',
-    headers: { accept: 'application/json', 'content-type': 'application/json', ...sessionHeaders(), ...profileHeaders() },
-    body: JSON.stringify({ googleToken: googleIdToken }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new MolotovError(res.status, 'exchange_failed', text.slice(0, 200));
-  }
-  const creds = await getMolotovCredentials();
-  return { idToken: creds.idToken, refreshToken: creds.refreshToken };
-}
-
 // ---------- Routes serveur (contrat §8) ----------
 
 /** État de la connexion Molotov du compte. */
 export const getMolotovStatus = () => call<MolotovStatus>('/account/molotov', { headers: profileHeaders() });
 
-/** Enregistre les jetons Molotov (issus de l'échange Google) : ils sont chiffrés au repos par le serveur. */
+/** Enregistre les jetons Molotov (après rafraîchissement) : ils sont chiffrés au repos par le serveur. */
 export const connectMolotov = (tokens: { idToken: string; refreshToken: string }) =>
   call<{ ok: boolean }>('/account/molotov', { method: 'PUT', body: tokens, headers: profileHeaders() });
+
+/** Connexion par email et mot de passe : le serveur échange les identifiants contre une session Molotov. */
+export const signinMolotov = (body: { email: string; password: string }) =>
+  call<MolotovStatus>('/account/molotov/signin', { method: 'POST', body, headers: profileHeaders() });
 
 /** Déconnexion : le serveur oublie les jetons. */
 export const disconnectMolotov = () => call<{ ok: boolean }>('/account/molotov', { method: 'DELETE', headers: profileHeaders() });

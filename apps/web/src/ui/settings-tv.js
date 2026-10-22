@@ -7,10 +7,7 @@ import {
 } from '../data/tvBox';
 import { addList, BOX_CHANGED, getLists, refreshAll, removeList, updateList } from '../data/tvSources';
 import { getMolotovStatus, molotovWay } from '../data/molotovApi';
-import {
-  beginMolotovAuth, connectMolotovWithGoogle, connectMolotovWithToken, disconnectMolotovAccount, MolotovAuthError,
-  molotovGoogleClientId, pickupMolotovAuth, setMolotovGoogleClientId,
-} from '../data/molotovAuth';
+import { connectMolotovWithPassword, disconnectMolotovAccount, MolotovAuthError } from '../data/molotovAuth';
 import { isMainProfile, isServerMode } from '../data/auth';
 import { card, fieldRow, rowHTML } from './settings-ui.js';
 import { detailEl } from './dom.js';
@@ -85,13 +82,13 @@ const rerender = () => {
 
 // ---------- Molotov (TV française) ----------
 
-/** État de la connexion Molotov, redessiné à chaque changement. */
-const molotov = { status: null, loading: false, msg: '', tab: false };
+/** État de la connexion Molotov, redessiné à chaque changement. `draft` garde la saisie du formulaire entre les rendus. */
+const molotov = { status: null, loading: false, msg: '', form: false, draft: { email: '', password: '' } };
 
 const molotovErrorText = (err) => {
   if (err instanceof MolotovAuthError) {
-    if (err.code === 'no_client_id') return 'Aucun client id Google : configure VITE_MOLOTOV_GOOGLE_CLIENT_ID ou renseigne-le ci-dessous.';
-    if (err.code === 'popup_blocked') return 'Fenêtre de connexion bloquée : autorise les pop-up, ou ouvre la connexion dans un onglet.';
+    if (err.code === 'invalid_credentials') return 'Email ou mot de passe Molotov incorrect.';
+    if (err.code === 'mfa_required') return 'La connexion Molotov demande une vérification en deux étapes : non gérée pour l’instant.';
     return err.message;
   }
   if (err && err.status === 404) return 'Ce serveur ne gère pas encore Molotov.';
@@ -99,29 +96,32 @@ const molotovErrorText = (err) => {
   return err instanceof Error ? err.message : 'Connexion Molotov impossible.';
 };
 
-/** Carte « Molotov » : état de la connexion, connexion (Google), déconnexion, client id Google. */
+/** Mini-formulaire de connexion par email et mot de passe : la saisie vit dans `molotov.draft` (les rendus la reprennent). */
+function molotovFormHTML() {
+  return '<div class="set-actions">' +
+    '<input class="set-input" type="email" placeholder="Email Molotov" aria-label="Email Molotov" autocomplete="username" spellcheck="false" value="' + esc(molotov.draft.email) + '" data-molotov-email>' +
+    '<input class="set-input" type="password" placeholder="Mot de passe Molotov" aria-label="Mot de passe Molotov" autocomplete="current-password" value="' + esc(molotov.draft.password) + '" data-molotov-password>' +
+    '<button type="button" class="btn btn-primary btn-sm" data-molotov-signin>Se connecter</button>' +
+    '</div>';
+}
+
+/** Carte « Molotov » : état de la connexion, connexion par email et mot de passe, déconnexion. */
 function molotovCardHTML() {
   const st = molotov.status;
   const connected = !!(st && st.connected);
-  const state = molotov.loading ? 'Lecture du compte…'
+  const state = molotov.loading ? 'Lecture du compte.'
     : !st ? 'État inconnu'
-      : connected ? 'Connecté' + (st.tier ? ' · ' + st.tier : '') + (st.channelCount != null ? ' · ' + st.channelCount + ' chaînes' : '')
+      : connected ? 'Connecté' + (st.tier ? ' — ' + st.tier : '') + (st.channelCount != null ? ' — ' + st.channelCount + ' chaînes' : '')
         : 'Déconnecté';
   const actions = connected
     ? '<button type="button" class="btn btn-ghost btn-sm" data-molotov-disconnect>Déconnecter</button>'
-    : '<button type="button" class="btn btn-primary btn-sm" data-molotov-connect>Connecter un compte Molotov</button>';
-  const tab = molotov.tab
-    ? '<div class="set-actions"><button type="button" class="btn btn-ghost btn-sm" data-molotov-tab>Ouvrir la connexion dans un onglet</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-molotov-pickup>J’ai terminé</button></div>'
-    : '';
-  return card('Molotov — TV française',
-    rowHTML('Compte Molotov', state, () => actions) +
-    rowHTML('Appels vers Molotov', molotovWay() === 'direct' ? 'Direct depuis cet appareil : les jetons ne quittent pas l’appareil.' : 'Via le relais du serveur : un navigateur ne peut pas appeler l’API Molotov (CORS).', () => '') +
-    fieldRow('Client id Google', 'Facultatif si VITE_MOLOTOV_GOOGLE_CLIENT_ID est défini au build. Le compte Molotov doit reconnaître ce client id.',
-      (id) => '<input class="set-input" id="' + id + '" type="text" value="' + esc(molotovGoogleClientId()) + '" data-molotov-client-id autocomplete="off" spellcheck="false">', { stack: true }) +
-    tab +
+    : molotov.form ? molotovFormHTML()
+      : '<button type="button" class="btn btn-primary btn-sm" data-molotov-connect>Connecter un compte Molotov</button>';
+  return card('Molotov - TV française',
+    rowHTML('Compte Molotov', state, () => actions, { stack: !connected && molotov.form }) +
+    rowHTML('Appels vers Molotov', molotovWay() === 'direct' ? 'Direct depuis cet appareil : les jetons ne quittent pas l\'appareil.' : 'Via le relais du serveur : un navigateur ne peut pas appeler l\'API Molotov (CORS).', () => '') +
     '<p class="set-msg" id="molotov-msg" role="status">' + esc(molotov.msg) + '</p>',
-    { desc: 'Connecte un compte Molotov : ses chaînes s’ajoutent à la TV en direct. La lecture DASH (Widevine) marche dans le navigateur et l’application Android, pas dans l’application Windows.' });
+    { desc: 'Connecte un compte Molotov : ses chaînes s\'ajoutent à la TV en direct. La lecture DASH (Widevine) marche dans le navigateur et l\'application Android, pas dans l\'application Windows.' });
 }
 
 let molotovTimer = 0;
@@ -145,31 +145,22 @@ async function loadMolotovStatus() {
   }
 }
 
-async function molotovConnect() {
-  molotov.loading = true;
-  molotov.msg = 'Connexion à Google…';
-  molotov.tab = false;
-  rerender();
-  try {
-    molotov.status = await connectMolotovWithGoogle();
-    molotov.msg = 'Compte Molotov connecté.';
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-    if (err instanceof MolotovAuthError && err.code === 'popup_blocked') molotov.tab = true;
-  } finally {
-    molotov.loading = false;
+/** Connexion par email et mot de passe (formulaire de la carte). */
+async function molotovSignin() {
+  const email = molotov.draft.email.trim();
+  const password = molotov.draft.password;
+  if (!email || !password) {
+    molotov.msg = 'Renseigne ton email et ton mot de passe Molotov.';
     rerender();
+    return;
   }
-}
-
-/** Reprise d'une connexion faite dans un onglet (fenêtre pop-up bloquée, WebView native). */
-async function molotovPickup() {
   molotov.loading = true;
-  molotov.msg = 'Récupération de la connexion…';
+  molotov.msg = 'Connexion à Molotov.';
   rerender();
   try {
-    molotov.status = await connectMolotovWithToken(pickupMolotovAuth());
-    molotov.tab = false;
+    molotov.status = await connectMolotovWithPassword(email, password);
+    molotov.form = false;
+    molotov.draft = { email: '', password: '' };
     molotov.msg = 'Compte Molotov connecté.';
   } catch (err) {
     molotov.msg = molotovErrorText(err);
@@ -177,18 +168,6 @@ async function molotovPickup() {
     molotov.loading = false;
     rerender();
   }
-}
-
-/** Ouvre l'autorisation Google dans un onglet (le jeton sera déposé par la page de retour). */
-function molotovOpenTab() {
-  try {
-    const { url } = beginMolotovAuth();
-    window.open(url, '_blank', 'noopener');
-    molotov.msg = 'Connexion ouverte dans un onglet : reviens ici puis clique sur « J’ai terminé ».';
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-  }
-  rerender();
 }
 
 async function molotovDisconnect() {
@@ -254,10 +233,9 @@ async function importFile(file) {
 detailEl.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
-  if (t.closest('[data-molotov-connect]')) { e.preventDefault(); molotovConnect(); return; }
+  if (t.closest('[data-molotov-connect]')) { e.preventDefault(); molotov.form = true; molotov.msg = ''; rerender(); return; }
+  if (t.closest('[data-molotov-signin]')) { e.preventDefault(); molotovSignin(); return; }
   if (t.closest('[data-molotov-disconnect]')) { e.preventDefault(); molotovDisconnect(); return; }
-  if (t.closest('[data-molotov-tab]')) { e.preventDefault(); molotovOpenTab(); return; }
-  if (t.closest('[data-molotov-pickup]')) { e.preventDefault(); molotovPickup(); return; }
   if (t.closest('[data-box-detect]')) { e.preventDefault(); detect(); return; }
   if (t.closest('[data-box-add]')) { e.preventDefault(); add(); return; }
   const tog = t.closest('[data-box-toggle]');
@@ -268,15 +246,16 @@ detailEl.addEventListener('click', (e) => {
   if (rm) { e.preventDefault(); removeList(rm.dataset.boxRemove); say('Playlist retirée.'); }
 });
 
+detailEl.addEventListener('input', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || !t.closest('.set-page')) return;
+  if (t.dataset.molotovEmail !== undefined) { molotov.draft.email = t.value; return; }
+  if (t.dataset.molotovPassword !== undefined) { molotov.draft.password = t.value; return; }
+});
+
 detailEl.addEventListener('change', (e) => {
   const t = e.target;
   if (!(t instanceof HTMLElement) || !t.closest('.set-page')) return;
-  if (t instanceof HTMLInputElement && t.dataset.molotovClientId !== undefined) {
-    setMolotovGoogleClientId(t.value);
-    molotov.msg = t.value.trim() ? 'Client id Google enregistré sur cet appareil.' : 'Client id Google retiré.';
-    rerender();
-    return;
-  }
   if (t instanceof HTMLInputElement && t.dataset.boxFile !== undefined) { importFile(t.files && t.files[0]); t.value = ''; return; }
   if (t instanceof HTMLInputElement && t.dataset.boxRename) { const n = t.value.trim().slice(0, 60); if (n) updateList(t.dataset.boxRename, { name: n }); return; }
   if (t instanceof HTMLSelectElement && t.dataset.boxQuality !== undefined) { setBoxQuality(t.value); window.dispatchEvent(new Event(BOX_CHANGED)); }

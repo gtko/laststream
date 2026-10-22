@@ -1,104 +1,65 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  beginMolotovAuth, googleAuthUrl, MOLOTOV_CLIENT_ID_KEY, MolotovAuthError, molotovGoogleClientId, requestGoogleIdToken,
-  setMolotovGoogleClientId,
-} from '../src/data/molotovAuth';
+import { connectMolotovWithPassword, MolotovAuthError } from '../src/data/molotovAuth';
+import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
+import { reloadSession, setActiveProfile, setSession } from '../src/data/session';
 
-/* Connexion Google du client Molotov : URL d'autorisation, échange par postMessage (popup), fenêtre bloquée.
- * Aucun vrai client id n'est nécessaire : le réglage utilisateur suffit. */
+/* Connexion du client Molotov par email et mot de passe : `POST /user/account/molotov/signin` et refus parlants. */
 
-const CLIENT_ID = '123.apps.googleusercontent.test';
+describe('connexion par email et mot de passe', () => {
+  const BASE = 'http://srv.test';
+  const SESSION_TOKEN = 'tok-session-' + 'z'.repeat(24);
+  type Reply = { status?: number; body?: unknown };
+  let replies: Reply[] = [];
+  let calls: Array<{ method: string; url: string; headers: Record<string, string>; body: string }> = [];
 
-beforeEach(() => {
-  localStorage.clear();
-  setMolotovGoogleClientId(CLIENT_ID);
-});
-
-afterEach(() => { vi.restoreAllMocks(); });
-
-describe('client id Google', () => {
-  it('le réglage utilisateur prime sur la variable de build', () => {
-    expect(molotovGoogleClientId()).toBe(CLIENT_ID);
-  });
-
-  it('un réglage vide retire la surcharge', () => {
-    setMolotovGoogleClientId('');
-    expect(molotovGoogleClientId()).not.toBe(CLIENT_ID);
-    expect(localStorage.getItem(MOLOTOV_CLIENT_ID_KEY)).toBeNull();
-  });
-
-  it('URL d’autorisation : implicit flow, page de retour de l’app, état', () => {
-    const url = new URL(googleAuthUrl(CLIENT_ID, 'state-1'));
-    expect(url.origin).toBe('https://accounts.google.com');
-    expect(url.pathname).toBe('/o/oauth2/v2/auth');
-    expect(url.searchParams.get('client_id')).toBe(CLIENT_ID);
-    expect(url.searchParams.get('response_type')).toBe('id_token token');
-    expect(url.searchParams.get('scope')).toBe('openid profile email');
-    expect(url.searchParams.get('prompt')).toBe('consent');
-    expect(url.searchParams.get('state')).toBe('state-1');
-    expect(url.searchParams.get('redirect_uri')).toBe(location.origin + '/oauth/google.html');
-  });
-});
-
-describe('popup Google', () => {
-  it('renvoie l’id_token reçu par postMessage', async () => {
-    let opened = '';
-    const popup = { closed: false };
-    vi.spyOn(window, 'open').mockImplementation(((url: string) => { opened = url; return popup; }) as unknown as typeof window.open);
-    const pending = requestGoogleIdToken();
-    const state = new URL(opened).searchParams.get('state') ?? '';
-    window.dispatchEvent(new MessageEvent('message', {
-      origin: location.origin,
-      source: popup as unknown as MessageEventSource,
-      data: { type: 'laststream:molotov-google', idToken: 'google-id-token', state },
-    }));
-    await expect(pending).resolves.toBe('google-id-token');
-  });
-
-  it('un message d’une autre fenêtre est ignoré', async () => {
-    let opened = '';
-    const popup = { closed: false };
-    vi.spyOn(window, 'open').mockImplementation(((url: string) => { opened = url; return popup; }) as unknown as typeof window.open);
-    const pending = requestGoogleIdToken(2000);
-    const state = new URL(opened).searchParams.get('state') ?? '';
-    window.dispatchEvent(new MessageEvent('message', {
-      origin: location.origin,
-      source: { closed: false } as unknown as MessageEventSource,
-      data: { type: 'laststream:molotov-google', idToken: 'jeton-volé', state },
-    }));
-    await expect(pending).rejects.toThrow(MolotovAuthError);
-  });
-
-  it('une fenêtre bloquée est signalée (repli sur un onglet)', () => {
-    vi.spyOn(window, 'open').mockImplementation((() => null) as unknown as typeof window.open);
-    expect(() => requestGoogleIdToken()).toThrow(MolotovAuthError);
-    try {
-      requestGoogleIdToken();
-    } catch (err) {
-      expect((err as MolotovAuthError).code).toBe('popup_blocked');
-    }
-  });
-
-  it('sans client id configuré : message explicite, aucune exception opaque', () => {
-    setMolotovGoogleClientId('');
+  beforeEach(() => {
     localStorage.clear();
-    expect(() => beginMolotovAuth()).toThrow(MolotovAuthError);
-    try {
-      beginMolotovAuth();
-    } catch (err) {
-      expect((err as MolotovAuthError).code).toBe('no_client_id');
-      expect((err as MolotovAuthError).message).toContain('VITE_MOLOTOV_GOOGLE_CLIENT_ID');
-    }
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ base: BASE, config: '' }));
+    reloadSettings();
+    reloadSession();
+    setSession(SESSION_TOKEN, new Date(Date.now() + 3e9).toISOString(), 'hote');
+    setActiveProfile('main-m');
+    replies = [];
+    calls = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({
+        method: init?.method ?? 'GET',
+        url: String(url).replace(BASE, ''),
+        headers: Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>)),
+        body: String(init?.body ?? ''),
+      });
+      const next = replies.shift();
+      return new Response(JSON.stringify(next?.body ?? {}), { status: next?.status ?? 200, headers: { 'content-type': 'application/json' } });
+    }));
   });
 
-  it('un message d’une autre origine est ignoré', async () => {
-    const popup = { closed: false };
-    vi.spyOn(window, 'open').mockImplementation((() => popup) as unknown as typeof window.open);
-    const pending = requestGoogleIdToken(1500);
-    window.dispatchEvent(new MessageEvent('message', {
-      origin: 'https://piege.example',
-      data: { type: 'laststream:molotov-google', idToken: 'volé' },
-    }));
-    await expect(pending).rejects.toThrow(/expirée|fermée/);
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('connexion OK : POST /account/molotov/signin avec email et mot de passe', async () => {
+    replies = [{ body: { connected: true, tier: 'premium', email: 'alice@example.test', channelCount: 12 } }];
+    const st = await connectMolotovWithPassword('alice@example.test', 'mot-de-passe');
+    expect(st.connected).toBe(true);
+    expect(st.tier).toBe('premium');
+    expect(st.email).toBe('alice@example.test');
+    const c = calls[0];
+    expect(c.method).toBe('POST');
+    expect(c.url).toBe('/user/account/molotov/signin');
+    expect(JSON.parse(c.body)).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('identifiants invalides : MolotovAuthError invalid_credentials', async () => {
+    replies = [{ status: 401, body: { error: 'invalid_credentials' } }];
+    const err = await connectMolotovWithPassword('alice@example.test', 'faux').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MolotovAuthError);
+    expect((err as MolotovAuthError).code).toBe('invalid_credentials');
+  });
+
+  it('vérification en deux étapes : MolotovAuthError mfa_required', async () => {
+    replies = [{ status: 401, body: { error: 'mfa_required' } }];
+    const err = await connectMolotovWithPassword('alice@example.test', 'mot-de-passe').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MolotovAuthError);
+    expect((err as MolotovAuthError).code).toBe('mfa_required');
   });
 });
