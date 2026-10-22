@@ -8,7 +8,7 @@ import {
 import { addList, BOX_CHANGED, getLists, refreshAll, removeList, updateList } from '../data/tvSources';
 import { getMolotovStatus, molotovWay } from '../data/molotovApi';
 import { connectMolotovWithPassword, disconnectMolotovAccount, MolotovAuthError } from '../data/molotovAuth';
-import { isMainProfile, isServerMode } from '../data/auth';
+import { auth, isMainProfile, isServerMode } from '../data/auth';
 import { card, fieldRow, rowHTML } from './settings-ui.js';
 import { detailEl } from './dom.js';
 import { esc } from './util.js';
@@ -105,6 +105,19 @@ function molotovFormHTML() {
     '</div>';
 }
 
+/**
+ * La gestion du compte Molotov est réservée au profil principal (le serveur refuse les autres, `main_profile_required`).
+ * Message vide = le formulaire est permis ; sinon le message nomme le profil à utiliser. `canEdit()` seul ne suffit pas :
+ * sans profil actif, il renvoie `true` alors que la requête partira sans `x-profile-id`.
+ */
+function molotovProfileNote() {
+  if (!isServerMode()) return '';
+  if (auth.profile?.isMainProfile === true) return '';
+  const main = auth.profiles.find((p) => p.isMainProfile === true);
+  const here = auth.profile ? 'Tu es sur « ' + auth.profile.name + ' ».' : 'Aucun profil actif.';
+  return 'La connexion Molotov est gérée par le profil principal' + (main ? ' (« ' + main.name + ' »)' : '') + '. ' + here;
+}
+
 /** Carte « Molotov » : état de la connexion, connexion par email et mot de passe, déconnexion. */
 function molotovCardHTML() {
   const st = molotov.status;
@@ -113,9 +126,10 @@ function molotovCardHTML() {
     : !st ? 'État inconnu'
       : connected ? 'Connecté' + (st.tier ? ' — ' + st.tier : '') + (st.channelCount != null ? ' — ' + st.channelCount + ' chaînes' : '')
         : 'Déconnecté';
-  const edit = canEdit();
+  const note = molotovProfileNote();
+  const edit = canEdit() && note === '';
   const actions = !edit
-    ? '<p class="set-msg">La connexion Molotov est gérée par le profil principal.</p>'
+    ? '<p class="set-msg">' + esc(note || 'La connexion Molotov est gérée par le profil principal.') + '</p>'
     : connected
       ? '<button type="button" class="btn btn-ghost btn-sm" data-molotov-disconnect>Déconnecter</button>'
       : molotov.form ? molotovFormHTML()

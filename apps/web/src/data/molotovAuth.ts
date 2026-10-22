@@ -42,7 +42,14 @@ export async function connectMolotovWithPassword(email: string, password: string
       throw new MolotovAuthError('invalid_credentials', 'Email ou mot de passe Molotov incorrect.');
     }
     if (err instanceof UserApiError && err.status === 403) {
-      throw new MolotovAuthError('server', 'La connexion Molotov est réservée au profil principal.');
+      // Un 403 recouvre trois refus du serveur : les distinguer évite de renvoyer l'utilisateur au mauvais endroit.
+      if (err.code === 'profile_locked') {
+        throw new MolotovAuthError('server', 'Cette session est verrouillée sur un profil invité : reconnecte-toi avec le compte principal.');
+      }
+      if (err.code === 'pin_required') {
+        throw new MolotovAuthError('server', 'Ce profil est protégé par un code : déverrouille-le avant de connecter Molotov.');
+      }
+      throw new MolotovAuthError('server', 'La connexion Molotov est gérée par le profil principal du compte (refus du serveur : ' + (err.code || 'inconnu') + ').');
     }
     if (err instanceof UserApiError && err.status === 404) {
       throw new MolotovAuthError('server', 'Ce serveur ne gère pas encore la connexion Molotov par mot de passe.');
