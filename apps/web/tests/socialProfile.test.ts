@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
     loadProfile: vi.fn(),
     loadPrefs: vi.fn(),
     getState: vi.fn(() => ({ status: 'online' })),
+    myAvatar: vi.fn((): string | null => null),
+    setMyAvatar: vi.fn(),
   },
   saveAuthProfile: vi.fn(),
   tmdb: vi.fn(),
@@ -236,6 +238,15 @@ describe('formulaire du profil social', () => {
     expect(h.store.setStatus).toHaveBeenCalledWith('away');
     expect(h.saveAuthProfile).toHaveBeenCalledWith('p1', { avatar: 'col:pokemon:pikachu' });
     expect(h.store.saveProfile).toHaveBeenCalledWith({ avatarColor: '#ffd9cf' });
+    // ODY-169 : le store (sidebar, chat) est informé du nouvel avatar sans rechargement.
+    expect(h.store.setMyAvatar).toHaveBeenCalledWith('col:pokemon:pikachu');
+  });
+
+  it('ODY-169 : l’éditeur part de l’avatar du store (comme la sidebar), pas du profil local', () => {
+    h.store.myAvatar.mockReturnValueOnce('hero:heros:Aegis');
+    const ed = mount();
+    expect(ed.draft.avatar).toBe('hero:heros:Aegis');
+    expect(ed.isDirty()).toBe(false);
   });
 
   it('garde en brouillon ce que le serveur a refusé', async () => {

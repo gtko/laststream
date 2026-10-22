@@ -104,7 +104,8 @@ const posterBg = (f) => POSTER_BGS[Math.abs(Number(f.tmdbId) || 0) % POSTER_BGS.
  */
 export function mountProfileEditor(root, deps) {
   let profile = deps.profile;
-  const baseAvatar = auth.profile ? auth.profile.avatar : null;
+  // Même source que la sidebar et le chat (store.me) ; le profil local ne sert que si le store n'a pas encore de « moi ».
+  const baseAvatar = store.myAvatar() || (auth.profile ? auth.profile.avatar : null);
   let base = makeDraft(profile, deps.prefs, deps.status, baseAvatar);
   let draft = cloneDraft(base);
   let mobile = isMobile();
@@ -568,7 +569,7 @@ export function mountProfileEditor(root, deps) {
         const fresh = makeDraft(profile, base.prefs, base.presence, base.avatar);
         for (const k of ['name', 'avatarColor', 'bio', 'emoji', 'statusText', 'expiry', 'expiresAt', 'banner', 'favorites']) { nextBase[k] = fresh[k]; draft[k] = plain(fresh[k]); }
       } else if (r.key === 'prefs') { nextBase.prefs = plain(r.value); draft.prefs = plain(r.value); } else if (r.key === 'presence') nextBase.presence = draft.presence;
-      else if (r.key === 'avatar') nextBase.avatar = draft.avatar;
+      else if (r.key === 'avatar') { nextBase.avatar = draft.avatar; if (!auth.profile || auth.profile.id === pid) store.setMyAvatar(draft.avatar); }
     }
     base = nextBase;
     busy = false;

@@ -96,7 +96,8 @@ export function createThread(o) {
     else sub = watching || (!inf.known ? '' : inf.status === 'offline' ? 'Hors ligne' : 'En ligne');
     const name = inf ? inf.name : 'Discussion';
     const shownStatus = inf && inf.known ? inf.status : '';
-    const sig = [conv, name, inf && inf.tag, sub, inf && inf.avatarColor, shownStatus, !!watching, mobile, inf && inf.owner, inf && inf.kind === 'group' ? inf.members.length : ''].join('|');
+    const avatars = inf && inf.kind === 'group' ? inf.members.slice(0, 2).map((m) => (m.avatar || '') + (m.avatarColor || '')).join(',') : inf && inf.avatar;
+    const sig = [conv, name, inf && inf.tag, sub, inf && inf.avatarColor, avatars, shownStatus, !!watching, mobile, inf && inf.owner, inf && inf.kind === 'group' ? inf.members.length : ''].join('|');
     if (sig === headSig) return;
     headSig = sig;
     head.textContent = '';

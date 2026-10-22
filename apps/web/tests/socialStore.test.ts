@@ -4,8 +4,10 @@ import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { auth } from '../src/data/auth';
 import {
   accept, decline, getState, initialSocialState, loadMessages, markRead, mergeMessages, onNote, reduceLiveEvent, refresh, removeFriend,
-  sendMessage, sendRequest, setStatus, start, stop, subscribe, type SocialState,
+  sendMessage, sendRequest, setMyAvatar, myAvatar, setStatus, start, stop, subscribe, type SocialState,
 } from '../src/data/socialStore';
+import { setUserStore } from '../src/data/userStore';
+import { convInfo } from '../src/ui/socialConvModel.js';
 import type { FriendRequest, FriendView, Handle, Message, Note, SocialMe } from '../src/data/socialV2Api';
 
 const H = (name: string, tag: string): Handle => ({ name, tag, full: `${name}#${tag}` });
@@ -396,5 +398,47 @@ describe('réponses périmées (arrêt ou changement de profil pendant un appel 
     release();
     expect(await pending).toEqual([]);
     expect(getState().messages).toEqual({});
+  });
+});
+
+// ---------- ODY-169 : un seul avatar pour « moi » (sidebar, chat, écran de profil) ----------
+describe('avatar de « moi » : source unique', () => {
+  const COL = 'col:pokemon:pikachu';
+  const localProfile: { id: string; name: string; avatar: string | null } = { id: 'p1', name: 'Greg', avatar: 'hero:heros:Aegis' };
+  beforeEach(() => {
+    localProfile.avatar = 'hero:heros:Aegis';
+    setUserStore({ currentProfile: () => localProfile } as any);
+  });
+
+  it('setMyAvatar publie le nouvel avatar dans me et profile, aligne le profil local et prévient les abonnés', async () => {
+    await startConnected();
+    expect(myAvatar()).toBe('hero:heros:Aegis');
+    const seen: Array<string | undefined> = [];
+    const off = subscribe((s) => seen.push(s.me?.avatar));
+    setMyAvatar(COL);
+    off();
+    expect(myAvatar()).toBe(COL);
+    expect(getState().me?.avatar).toBe(COL);
+    expect(localProfile.avatar).toBe(COL);
+    expect(seen).toEqual([COL]);
+  });
+
+  it('retirer l’avatar ne ressort pas l’ancien au refresh suivant', async () => {
+    await startConnected();
+    setMyAvatar(null);
+    expect(myAvatar()).toBeNull();
+    expect(localProfile.avatar).toBeNull();
+    await refresh();
+    expect(myAvatar()).toBeNull();
+  });
+
+  it('convInfo : dans un groupe, mon avatar vient de me et non de la copie en cache du membre', () => {
+    const me = { ...ME, avatar: COL, avatarColor: '#222' };
+    const stale = { pid: 'me', handle: ME.handle, avatarColor: '#111', avatar: 'hero:heros:Aegis' };
+    const other = { pid: 'p1', handle: H('p1', 'B2C3'), avatarColor: '#a00' };
+    const s = { ...initialSocialState(), me, groups: [{ conv: 'g:1', unread: 0, group: { id: '1', name: 'G', ownerPid: 'p1', members: [stale, other] } }] } as any;
+    const inf = convInfo('g:1', s) as any;
+    expect(inf.members[0]).toMatchObject({ pid: 'me', avatar: COL, avatarColor: '#222' });
+    expect(inf.members[1]).toBe(other);
   });
 });

@@ -414,6 +414,30 @@ export function withLocalAvatar(me: SocialMe): SocialMe {
   return typeof local === 'string' && local !== '' ? { ...me, avatar: local } : me;
 }
 
+/**
+ * Source unique de mon avatar : `state.me` (sidebar, en-tête et listes des discussions, écran « Mon profil social »).
+ * À appeler dès que l'avatar du profil actif change : le profil local de l'appareil est aligné (sinon `withLocalAvatar`
+ * ressortirait l'ancien avatar au prochain `refresh`) et l'état est publié, sans recharger l'app.
+ */
+export function setMyAvatar(avatar: string | null): void {
+  const next = typeof avatar === 'string' && avatar !== '' ? avatar : undefined;
+  try {
+    userStore.currentProfile().avatar = next ?? null;
+  } catch {
+    /* pas de profil local : l'état du store suffit */
+  }
+  const withAvatar = <T extends { avatar?: string }>(x: T): T => {
+    const { avatar: _old, ...rest } = x;
+    return (next ? { ...rest, avatar: next } : rest) as T;
+  };
+  commit({ ...state, me: state.me && withAvatar(state.me), profile: state.profile && withAvatar(state.profile) });
+}
+
+/** Mon avatar tel que l'affichent la sidebar et le chat (jamais l'avatar local brut de l'écran de profil). */
+export function myAvatar(): string | null {
+  return state.me?.avatar ?? null;
+}
+
 /** Relit profil, amis et conversations. */
 export async function refresh(): Promise<void> {
   const e = epoch;

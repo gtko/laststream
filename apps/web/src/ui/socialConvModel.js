@@ -47,6 +47,9 @@ export const fold = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, 
 
 const findFriend = (s, pid) => s.friends.find((f) => f.pid === pid) || s.household.find((f) => f.pid === pid) || null;
 
+/** Mon propre avatar (couleur comprise) vient de `me`, pas de la copie mise en cache dans les membres du groupe. */
+const withMyAvatar = (m, me) => (me && m.pid === me.pid ? { ...m, avatarColor: me.avatarColor, avatar: me.avatar } : m);
+
 /**
  * Description d'une conversation depuis l'état du store, ou null si elle est inconnue (ami retiré, groupe quitté).
  * DM : { kind:'dm', pid, name, tag, avatar, avatarColor, status, watching, household, unread, last, friend }.
@@ -57,7 +60,7 @@ export function convInfo(conv, s) {
     const g = s.groups.find((x) => x.conv === conv);
     if (!g || !g.group) return null;
     return {
-      conv, kind: 'group', id: g.group.id, name: g.group.name, members: g.group.members || [], unread: g.unread || 0, last: g.last || null,
+      conv, kind: 'group', id: g.group.id, name: g.group.name, members: (g.group.members || []).map((m) => withMyAvatar(m, s.me)), unread: g.unread || 0, last: g.last || null,
       ownerPid: g.group.ownerPid || '', owner: !!(g.group.ownerPid && s.me && s.me.pid === g.group.ownerPid),
     };
   }
