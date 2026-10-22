@@ -9,6 +9,7 @@ import { matchesLanguage, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../d
 import type { Lang } from '../data/stream';
 import type { SourceView } from '../sources/info';
 import { loadSources, type SourceRequest } from '../sources/load';
+import { currentCapHeight, overCap } from '../sources/resolutionCap';
 import { isShellEnvironment } from '../player/shell';
 import { createAndroidDownloads } from './android';
 import { createDownloadIndex } from './index';
@@ -322,12 +323,16 @@ export async function listSourceChoices(t: DownloadTarget, opts: { exclude?: Dow
 
 /**
  * Source présélectionnée : la qualité mémorisée si elle existe encore, sinon la meilleure du classement. Une source plus
- * grosse que l'espace libre (`freeBytes`, null : sans limite) n'est jamais présélectionnée.
+ * grosse que l'espace libre (`freeBytes`, null : sans limite) n'est jamais présélectionnée, ni une source au-dessus du
+ * plafond de résolution (ODY-236) tant qu'une autre convient ; le choix libre reste possible.
  */
 export function recommendedChoice(choices: readonly SourceChoice[], freeBytes: number | null): SourceChoice | null {
   const fits = choices.filter((c) => freeBytes === null || c.sizeBytes <= freeBytes);
+  const cap = currentCapHeight();
+  const underCap = fits.filter((c) => !overCap(c.group, cap));
+  const pool = underCap.length > 0 ? underCap : fits;
   const kept = getDownloadSettings().quality;
-  return (kept ? fits.find((c) => c.group === kept) : undefined) ?? fits[0] ?? null;
+  return (kept ? pool.find((c) => c.group === kept) : undefined) ?? pool[0] ?? null;
 }
 
 /**

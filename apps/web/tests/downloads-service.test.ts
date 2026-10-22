@@ -6,6 +6,7 @@ import {
   downloadIdFor, getSpace, listDownloads, listSourceChoices, platformAvailability, purgeAll, recommendedChoice, registerDownloadPlatform,
   requestDownload, resetDownloadsForTests, subscribeDownloads, type DownloadTarget,
 } from '../src/downloads/service';
+import { setResolutionCap } from '../src/data/prefs';
 import { getDownloadSettings, setDownloadSettings } from '../src/downloads/settings';
 import { DownloadError, type DownloadStore, type SpaceInfo } from '../src/downloads/types';
 import type { SourceView } from '../src/sources/info';
@@ -235,6 +236,22 @@ describe('feuille des choix', () => {
     expect(recommendedChoice(choices, null)?.group).toBe('720p');
     setDownloadSettings({ quality: '2160p' });
     expect(recommendedChoice(choices, 10 * GB)?.group).toBe('1080p'); // la mémorisée ne tient pas : repli sur ce qui tient
+  });
+
+  it('présélection : le plafond de résolution (ODY-236) écarte la 4K tant qu’une autre convient, sans la retirer de la liste', async () => {
+    state.views = [
+      viewOf(httpStream({ resolution: '2160p', filename: 'a', size: 20 * GB }), 0),
+      viewOf(httpStream({ resolution: '1080p', filename: 'b', size: 4 * GB }), 1),
+    ];
+    const choices = await listSourceChoices(MOVIE);
+    setResolutionCap('1080p');
+    try {
+      expect(choices).toHaveLength(2);
+      expect(recommendedChoice(choices, null)?.group).toBe('1080p');
+      expect(recommendedChoice([choices[0]], null)?.group).toBe('2160p'); // rien d'autre : le plafond ne bloque pas
+    } finally {
+      setResolutionCap('auto');
+    }
   });
 });
 
