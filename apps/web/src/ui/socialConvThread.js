@@ -332,7 +332,7 @@ export function createThread(o) {
       if (opener && opener.isConnected) opener.blur();
     },
     playMoment(mo, opener) {
-      playAt(deps, { type: mo.type, tmdbId: mo.tmdbId, title: mo.title, season: mo.season, episode: mo.episode }, typeof mo.pos === 'number' ? mo.pos : 0, opener);
+      playAt(deps, { type: mo.type, tmdbId: mo.tmdbId, title: mo.title, season: mo.season, episode: mo.episode }, typeof mo.pos === 'number' ? mo.pos : 0, opener, typeof mo.end === 'number' ? mo.end : undefined);
     },
     joinParty(id) { openPartyLobby(id); },
     react(m, emoji) {

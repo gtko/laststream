@@ -108,7 +108,7 @@ export function authorName(pid, info, s) {
 export function messageText(m) {
   switch (m.kind) {
     case 'title': return m.title ? m.title.title : 'un titre';
-    case 'moment': return m.moment ? m.moment.title + ' à ' + posLabel(m.moment.pos) : 'un moment';
+    case 'moment': return m.moment ? m.moment.title + (typeof m.moment.end === 'number' && m.moment.end > m.moment.pos ? ' de ' + posLabel(m.moment.pos) + ' à ' + posLabel(m.moment.end) : ' à ' + posLabel(m.moment.pos)) : 'un moment';
     case 'party': return m.party ? 'Watch party : ' + m.party.title : 'Watch party';
     case 'poll': return m.poll ? 'Sondage : ' + m.poll.question : 'Sondage';
     default: return m.body || '';

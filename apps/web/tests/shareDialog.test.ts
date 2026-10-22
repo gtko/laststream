@@ -26,6 +26,7 @@ import * as api from '../src/data/socialV3Api';
 import { qrMatrix, rsRemainder, formatBits } from '../src/ui/qrcode.js';
 import * as M from '../src/ui/shareModel.js';
 import { openShareDialog, closeShareDialog, configureShareDialog } from '../src/ui/shareDialog.js';
+import { messageText } from '../src/ui/socialConvModel.js';
 import { registerSocialHook } from '../src/ui/socialHooks.js';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -325,5 +326,248 @@ describe('fenêtre Partager', () => {
     (q('.shd-btn.is-pri') as HTMLElement).click();
     await flush();
     expect((store.share as any).mock.calls[0][0]).toMatchObject({ kind: 'title', body: 'ok', to: [{ pid: 'p1' }] });
+  });
+
+  describe('extrait', () => {
+    const clipRadio = () => q('[data-opt="clip"]');
+    const handle = (w: string) => q(`[data-h="${w}"]`);
+    const keydown = (el: HTMLElement, k: string, shiftKey = false) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, shiftKey, bubbles: true, cancelable: true }));
+
+    it('l’option « Un extrait » n’apparaît qu’avec une durée connue', async () => {
+      openShareDialog({ media, pos: 100 });
+      await flush();
+      expect(document.querySelectorAll('[role="radio"]').length).toBe(2);
+      expect(clipRadio()).toBeNull();
+      closeShareDialog();
+      openShareDialog({ media, pos: 100, duration: 7200 });
+      await flush();
+      expect(Array.from(document.querySelectorAll('[role="radio"]')).map((r) => r.getAttribute('data-opt'))).toEqual(['moment', 'clip', 'title']);
+      expect(q('.shd-clip')).toBeNull(); // dépliée seulement une fois choisie
+    });
+
+    it('se déplie : début = position, fin = +30 s, poignées ARIA, en-tête et bouton d’envoi', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      expect(q('.shd-clip')).not.toBeNull();
+      expect(document.activeElement).toBe(clipRadio());
+      expect(handle('start').getAttribute('role')).toBe('slider');
+      expect(handle('start').getAttribute('aria-label')).toBe('Début de l’extrait');
+      expect(handle('end').getAttribute('aria-label')).toBe('Fin de l’extrait');
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('2472');
+      expect(handle('start').getAttribute('aria-valuetext')).toBe('41:12');
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('2502');
+      expect(handle('end').getAttribute('aria-valuemax')).toBe('7200');
+      expect(q('.shd-sub').textContent).toBe('Extrait · 0:30 · de 41:12 à 41:42');
+      expect(q('.shd-clip-pill').textContent).toBe('Durée 0:30');
+      expect(q('.shd-clip-scale').textContent).toContain('Durée du titre 2:00:00');
+      key('p:p1').click();
+      expect((q('.shd-btn.is-pri') as HTMLButtonElement).textContent).toBe('Envoyer l’extrait à Léa');
+    });
+
+    it('flèches (±1 s, Maj ±10 s), Home / End, et l’autre poignée suit au-delà de 5 min', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      keydown(handle('end'), 'ArrowRight');
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('2503');
+      keydown(handle('end'), 'ArrowRight', true);
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('2513');
+      keydown(handle('start'), 'ArrowLeft');
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('2471');
+      keydown(handle('start'), 'End'); // dernier début possible : fin − 1 s
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('2512');
+      keydown(handle('end'), 'End'); // fin = durée, le début suit pour tenir en 5 min
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('7200');
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('6900');
+      expect(q('.shd-sub').textContent).toBe('Extrait · 5:00 · de 1:55:00 à 2:00:00');
+      keydown(handle('start'), 'Home');
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('0');
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('300');
+    });
+
+    it('glisser une poignée au pointeur et saisir un temps', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      const bar = q('.shd-clip-bar');
+      bar.getBoundingClientRect = () => ({ left: 0, width: 1000, top: 0, height: 64, right: 1000, bottom: 64, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      handle('end').dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+      handle('end').dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 500 }));
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('3600');
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('3300'); // la fenêtre glisse
+      handle('end').dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
+      handle('end').dispatchEvent(new MouseEvent('pointermove', { bubbles: true, clientX: 900 }));
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('3600'); // plus de glissement
+      const inp = q('#shd-clip-start') as HTMLInputElement;
+      inp.value = '55:30';
+      inp.dispatchEvent(new Event('change'));
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('3330');
+      inp.value = 'abc';
+      inp.dispatchEvent(new Event('change'));
+      expect(inp.value).toBe('55:30');
+      expect(q('.shd-status').textContent).toContain('illisible');
+      (q('.shd-clip-fb[aria-label^="Fin"]') as HTMLElement).click(); // − 1 s sur la fin
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('3599');
+    });
+
+    it('« Prendre la position actuelle » remet le début à la position d’ouverture', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      keydown(handle('start'), 'ArrowLeft', true);
+      keydown(handle('end'), 'ArrowRight', true);
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('2462');
+      (Array.from(document.querySelectorAll('.shd-clip-acts .shd-btn')).find((b) => b.textContent === 'Prendre la position actuelle') as HTMLElement).click();
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('2472');
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('2522'); // même durée (50 s)
+    });
+
+    it('envoie le moment avec la fin, puis le lien avec pos et end', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      keydown(handle('end'), 'ArrowRight', true);
+      key('p:p1').click();
+      (q('.shd-btn.is-pri') as HTMLButtonElement).click();
+      await flush();
+      expect(store.share).toHaveBeenCalledWith({
+        to: [{ pid: 'p1' }], kind: 'moment',
+        moment: { type: 'movie', tmdbId: 438631, title: 'Dune : Deuxième partie', pos: 2472, end: 2512 },
+      });
+      expect(q('[role="dialog"]')).toBeNull();
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      (Array.from(document.querySelectorAll('.shd-btn')).find((b) => b.textContent === 'Copier') as HTMLElement).click();
+      await flush();
+      expect(api.createShareLink).toHaveBeenCalledWith({ type: 'movie', tmdbId: 438631, pos: 2472, end: 2502, withInvite: true });
+    });
+
+    it('revenir à « Ce moment » n’envoie plus de fin', async () => {
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      q('[data-opt="moment"]').click();
+      expect(q('.shd-clip')).toBeNull();
+      key('p:p1').click();
+      (q('.shd-btn.is-pri') as HTMLButtonElement).click();
+      await flush();
+      expect((store.share as any).mock.calls[0][0].moment).toEqual({ type: 'movie', tmdbId: 438631, title: 'Dune : Deuxième partie', pos: 2472 });
+    });
+
+    it('mobile : trois puces et éditeur d’extrait', async () => {
+      mq(true);
+      openShareDialog({ media, pos: 2472, duration: 7200 });
+      await flush();
+      expect(Array.from(document.querySelectorAll('.shd-modes [role="radio"]')).map((b) => b.textContent)).toEqual(['Ce moment', 'Un extrait', 'Le titre']);
+      expect(q('.shd-pill')).toBeNull();
+      clipRadio().click();
+      expect(q('.shd-sub').textContent).toBe('Extrait · 0:30 · de 41:12 à 41:42');
+      expect(q('.shd-clip')).not.toBeNull();
+      key('p:p1').click();
+      (q('.shd-btn.is-pri') as HTMLElement).click();
+      await flush();
+      expect((store.share as any).mock.calls[0][0].moment).toMatchObject({ pos: 2472, end: 2502 });
+    });
+
+    it('début proche de la fin du titre : la plage reste dans la durée', async () => {
+      openShareDialog({ media, pos: 7195, duration: 7200 });
+      await flush();
+      clipRadio().click();
+      expect(handle('start').getAttribute('aria-valuenow')).toBe('7195');
+      expect(handle('end').getAttribute('aria-valuenow')).toBe('7200');
+    });
+  });
+});
+
+describe('extrait partagé (modèle)', () => {
+  const media = M.normalizeMedia({ type: 'movie', tmdbId: 5, title: 'Dune', poster: '/p.jpg' })!;
+  const ep = M.normalizeMedia({ type: 'tv', tmdbId: 9, title: 'Dark', season: 1, episode: 2 })!;
+
+  it('bornes : 1 s minimum, 5 min maximum', () => {
+    expect([M.CLIP_MIN_SEC, M.CLIP_MAX_SEC]).toEqual([1, 300]);
+    expect(M.clampClip(100, 130, 7200)).toEqual({ start: 100, end: 130 });
+    expect(M.clampClip(100, 100, 7200, 'start')).toEqual({ start: 100, end: 101 });
+    expect(M.clampClip(100, 100, 7200, 'end')).toEqual({ start: 99, end: 100 });
+    expect(M.clampClip(0, 0, 7200, 'end')).toEqual({ start: 0, end: 1 });
+    expect(M.clampClip(7200, 7200, 7200, 'start')).toEqual({ start: 7199, end: 7200 });
+  });
+  it('au-delà de 5 min l’autre poignée suit (la fenêtre glisse)', () => {
+    expect(M.clampClip(100, 1000, 7200, 'end')).toEqual({ start: 700, end: 1000 });
+    expect(M.clampClip(100, 1000, 7200, 'start')).toEqual({ start: 100, end: 400 });
+    expect(M.clampClip(100, 1000, 7200)).toEqual({ start: 700, end: 1000 });
+    expect(M.clampClip(500, 100, 7200)).toEqual({ start: 200, end: 500 }); // inversés : remis dans l’ordre, le début s’ajuste
+  });
+  it('début et fin bornés à [0, durée] et arrondis', () => {
+    expect(M.clampClip(-50, 20, 600, 'start')).toEqual({ start: 0, end: 20 });
+    expect(M.clampClip(590, 9999, 600, 'end')).toEqual({ start: 590, end: 600 });
+    expect(M.clampClip(10.4, 20.6, 600)).toEqual({ start: 10, end: 21 });
+    expect(M.clampClip(0, 5, 0)).toEqual({ start: 0, end: 0 }); // durée inconnue : rien de valable
+  });
+  it('lit un temps saisi', () => {
+    expect(M.parseTimecode('41:12')).toBe(2472);
+    expect(M.parseTimecode(' 1:02:03 ')).toBe(3723);
+    expect(M.parseTimecode('0:05')).toBe(5);
+    expect(M.parseTimecode('90')).toBe(90);
+    for (const bad of ['', '  ', 'abc', '1:75', '1:2:3:4', '-5', '1:xx', null, undefined]) expect(M.parseTimecode(bad as any)).toBeNull();
+  });
+  it('libellés', () => {
+    expect(M.clipLabel(2472, 2523)).toBe('41:12 → 42:03');
+    expect(M.shareText(media, 2472, 'clip', 2523)).toBe('Dune de 41:12 à 42:03 sur Laststream');
+    expect(M.shareText(media, 2472, 'clip')).toBe('Dune sur Laststream'); // sans fin valable : le titre
+    expect(M.shareText(media, 2472, 'moment')).toBe('Dune à 41:12 sur Laststream');
+    expect(M.sendLabel([{ key: 'p:a', name: 'Léa' } as any], ['p:a'], true)).toBe('Envoyer l’extrait à Léa');
+    expect(M.sendLabel([], [], true)).toBe('Envoyer l’extrait');
+  });
+  it('un extrait se partage s’il a une plage de 1 s à 5 min dans la durée', () => {
+    expect(M.canShareClip(media, 100, 130, 7200)).toBe(true);
+    expect(M.canShareClip(media, 100, 101, 7200)).toBe(true);
+    expect(M.canShareClip(media, 100, 400, 7200)).toBe(true);
+    expect(M.canShareClip(media, 100, 401, 7200)).toBe(false);
+    expect(M.canShareClip(media, 100, 100, 7200)).toBe(false);
+    expect(M.canShareClip(media, 100, 7300, 7200)).toBe(false);
+    expect(M.canShareClip(media, 100, 130, 0)).toBe(false);
+    expect(M.canShareClip(media, 100, 130, undefined as any)).toBe(false);
+    expect(M.canShareClip({ ...media, type: 'series' }, 100, 130, 7200)).toBe(false); // série sans épisode
+    expect(M.canShareClip(ep, 100, 130, 2700)).toBe(true);
+  });
+  it('corps de /share avec et sans fin', () => {
+    const base = { keys: ['p:a'], media, pos: 2472 };
+    expect(M.buildShareInput({ ...base, mode: 'clip', end: 2523 })).toEqual({
+      to: [{ pid: 'a' }], kind: 'moment', moment: { type: 'movie', tmdbId: 5, title: 'Dune', pos: 2472, end: 2523 },
+    });
+    expect(M.buildShareInput({ ...base, mode: 'moment', end: 2523 })).toEqual({
+      to: [{ pid: 'a' }], kind: 'moment', moment: { type: 'movie', tmdbId: 5, title: 'Dune', pos: 2472 },
+    });
+    expect(M.buildShareInput({ ...base, mode: 'clip', end: 2472 })!.kind).toBe('title'); // plage vide : le titre
+    expect(M.buildShareInput({ ...base, mode: 'clip', end: 3000 })!.kind).toBe('title'); // plus de 5 min
+    expect(M.buildShareInput({ ...base, mode: 'clip' })!.kind).toBe('title');
+  });
+  it('corps de /share-links : end seulement avec pos, clés de cache distinctes', () => {
+    const clip = M.buildLinkInput({ media, mode: 'clip', pos: 2472, end: 2523, withInvite: false });
+    expect(clip).toEqual({ type: 'movie', tmdbId: 5, withInvite: false, pos: 2472, end: 2523 });
+    const moment = M.buildLinkInput({ media, mode: 'moment', pos: 2472, end: 2523, withInvite: false });
+    expect(moment.end).toBeUndefined();
+    expect(moment.pos).toBe(2472);
+    const title = M.buildLinkInput({ media, mode: 'title', pos: 2472, end: 2523, withInvite: false });
+    expect(title.pos).toBeUndefined();
+    expect(title.end).toBeUndefined();
+    expect(M.buildLinkInput({ media, mode: 'clip', pos: 2472, end: 2999, withInvite: false }).end).toBeUndefined();
+    const keys = new Set([M.linkKey(clip), M.linkKey(moment), M.linkKey(title), M.linkKey({ ...clip, end: 2524 })]);
+    expect(keys.size).toBe(4);
+    expect(M.linkKey(clip)).toBe(M.linkKey({ ...clip }));
+  });
+  it('« Mes liens », page publique et discussion affichent la plage', () => {
+    expect(M.linkRow({ title: 'Dune', pos: 2472, end: 2523 }, 0).title).toBe('Dune · de 41:12 à 42:03');
+    expect(M.linkRow({ title: 'Dune', pos: 2472 }, 0).title).toBe('Dune · à 41:12');
+    expect(M.linkRow({ title: 'Dune' }, 0).title).toBe('Dune');
+    expect(M.momentNote({ pos: 2472, end: 2523 })).toBe('Recommandé de 41:12 à 42:03');
+    expect(M.momentNote({ pos: 0, end: 30 })).toBe('Recommandé de 0:00 à 0:30');
+    expect(M.momentNote({ pos: 2472 })).toBe('Recommandé à partir de 41:12');
+    expect(M.momentNote({ pos: 0 })).toBe('');
+    expect(M.momentNote(null as any)).toBe('');
+    expect(messageText({ kind: 'moment', moment: { title: 'Dune', pos: 2472, end: 2523 } } as any)).toBe('Dune de 41:12 à 42:03');
+    expect(messageText({ kind: 'moment', moment: { title: 'Dune', pos: 2472 } } as any)).toBe('Dune à 41:12');
   });
 });

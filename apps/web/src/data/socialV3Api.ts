@@ -58,7 +58,7 @@ export type JoinAnswer = { accept: boolean; partyId?: string };
 // ---- S3 : messages riches, réactions, sondages, groupes, partage, listes ----
 type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
 type TitleRef = { type: MediaKind; tmdbId: number; title: string; poster?: string; year?: number; rating?: number };
-type MomentRef = { type: MediaKind; tmdbId: number; season?: number; episode?: number; title: string; pos: number; still?: string };
+type MomentRef = { type: MediaKind; tmdbId: number; season?: number; episode?: number; title: string; pos: number; end?: number; still?: string };
 type PartyRef = { partyId: string; title: string };
 type PollOption = { id: string; label: string; votes: number; mine: boolean };
 export type Poll = { id: string; question: string; options: PollOption[]; closed: boolean };
@@ -81,15 +81,15 @@ export type NewMessage = {
 };
 type ShareTarget = { pid: string } | { group: string };
 export type ShareInput = { to: ShareTarget[]; kind: 'title' | 'moment'; title?: TitleRef; moment?: MomentRef; body?: string };
-export type ShareLinkInput = { type: MediaKind; tmdbId: number; pos?: number; withInvite: boolean; note?: string };
+export type ShareLinkInput = { type: MediaKind; tmdbId: number; pos?: number; end?: number; withInvite: boolean; note?: string };
 export type ShareLinkCreated = { url: string; code: string; inviteCode?: string };
 export type ShareLinkView = {
-  type: MediaKind; tmdbId: number; title: string; poster: string; pos?: number;
+  type: MediaKind; tmdbId: number; title: string; poster: string; pos?: number; end?: number;
   from: { handle: Handle; avatarColor: string }; note?: string; inviteCode?: string;
 };
 /** Un de mes liens publics (`GET /share-links`) ; `expired` vaut true après 30 jours. */
 export type MyShareLink = {
-  code: string; url: string; type: MediaKind; tmdbId: number; title: string; poster?: string; pos?: number; note?: string;
+  code: string; url: string; type: MediaKind; tmdbId: number; title: string; poster?: string; pos?: number; end?: number; note?: string;
   inviteCode?: string; createdAt: number; expiresAt: number; expired: boolean;
 };
 export type ListSummary = { id: string; name: string; members: FriendV3[]; count: number };

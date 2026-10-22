@@ -6,6 +6,9 @@ export { posLabel };
 
 /** Pas de réglage du moment partagé (secondes). */
 export const MOMENT_STEP = 10;
+/** Durée d'un extrait partagé : au moins 1 s, au plus 5 min (règle du serveur : 1 ≤ fin − début ≤ 300). */
+export const CLIP_MIN_SEC = 1;
+export const CLIP_MAX_SEC = 300;
 export const NOTE_MAX = 140;
 export const LIST_NAME_MAX = 40;
 
@@ -30,6 +33,55 @@ export function normalizeMedia(m) {
 export function canShareMoment(media, pos) {
   if (!media || typeof pos !== 'number' || !(pos >= 0) || !Number.isFinite(pos)) return false;
   return media.type === 'movie' || (Number.isInteger(media.season) && Number.isInteger(media.episode));
+}
+
+const clampInt = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
+
+/** Un extrait a une plage valable : début et fin entiers, 1 s ≤ fin − début ≤ 300 s. */
+const clipRangeOk = (start, end) => Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end - start >= CLIP_MIN_SEC && end - start <= CLIP_MAX_SEC;
+
+/**
+ * Plage d'extrait valable et bornée à [0, durée]. `moved` ('start' | 'end') est la poignée que l'utilisateur déplace :
+ * l'autre suit pour garder 1 s ≤ durée ≤ 300 s (la fenêtre glisse). Sans `moved`, le début s'ajuste (début et fin inversés
+ * sont d'abord remis dans l'ordre). Durée inférieure à 1 s : plage vide { start: 0, end: durée entière }.
+ */
+export function clampClip(start, end, duration, moved) {
+  const dur = Math.max(0, Math.floor(Number(duration) || 0));
+  if (dur < CLIP_MIN_SEC) return { start: 0, end: dur };
+  let s = clampInt(start, 0, dur);
+  let e = clampInt(end, 0, dur);
+  if (!moved && e < s) [s, e] = [e, s];
+  if (moved === 'start') {
+    if (e - s < CLIP_MIN_SEC) e = s + CLIP_MIN_SEC;
+    if (e > dur) { e = dur; s = dur - CLIP_MIN_SEC; }
+    if (e - s > CLIP_MAX_SEC) e = s + CLIP_MAX_SEC;
+  } else {
+    if (e - s < CLIP_MIN_SEC) s = e - CLIP_MIN_SEC;
+    if (s < 0) { s = 0; e = CLIP_MIN_SEC; }
+    if (e - s > CLIP_MAX_SEC) s = e - CLIP_MAX_SEC;
+  }
+  return { start: s, end: e };
+}
+
+/** Temps saisi (« 41:12 », « 1:02:03 », ou des secondes seules) en secondes entières ; null si illisible. */
+export function parseTimecode(str) {
+  const t = String(str === undefined || str === null ? '' : str).trim();
+  if (!t) return null;
+  const parts = t.split(':');
+  if (parts.length > 3 || !parts.every((x) => /^\d{1,6}$/.test(x))) return null;
+  const n = parts.map(Number);
+  if (n.length > 1 && n.slice(1).some((x) => x > 59)) return null;
+  return n.reduce((acc, x) => acc * 60 + x, 0);
+}
+
+/** « 41:12 → 42:03 ». */
+export const clipLabel = (start, end) => posLabel(start) + ' → ' + posLabel(end);
+
+/** Un extrait se partage si le moment de départ se partage, que la plage est valable (1 s à 5 min) et tient dans la durée connue. */
+export function canShareClip(media, start, end, duration) {
+  if (!canShareMoment(media, start)) return false;
+  if (!(typeof duration === 'number' && Number.isFinite(duration) && duration >= CLIP_MIN_SEC)) return false;
+  return clipRangeOk(start, end) && end <= Math.floor(duration);
 }
 
 /** Position décalée de `delta` secondes, jamais négative, arrondie à la seconde. */
@@ -96,13 +148,14 @@ export function friendPids(targets, keys, mePid) {
 }
 
 /** Libellé du bouton d'envoi : « Envoyer à Léa et Hugo », « Envoyer à Léa, Hugo et 2 autres ». */
-export function sendLabel(targets, keys) {
+export function sendLabel(targets, keys, clip = false) {
   const names = targets.filter((t) => keys.includes(t.key)).map((t) => t.name);
-  if (!names.length) return 'Envoyer';
-  if (names.length === 1) return 'Envoyer à ' + names[0];
-  if (names.length === 2) return 'Envoyer à ' + names[0] + ' et ' + names[1];
+  const send = clip ? 'Envoyer l’extrait' : 'Envoyer';
+  if (!names.length) return send;
+  if (names.length === 1) return send + ' à ' + names[0];
+  if (names.length === 2) return send + ' à ' + names[0] + ' et ' + names[1];
   const rest = names.length - 2;
-  return 'Envoyer à ' + names[0] + ', ' + names[1] + ' et ' + rest + ' autre' + (rest > 1 ? 's' : '');
+  return send + ' à ' + names[0] + ', ' + names[1] + ' et ' + rest + ' autre' + (rest > 1 ? 's' : '');
 }
 
 /** Référence « titre » d'un message (TitleRef). */
@@ -113,37 +166,46 @@ function titleRefOf(media) {
 }
 
 /** Référence « moment » d'un message (MomentRef). */
-function momentRefOf(media, pos) {
+function momentRefOf(media, pos, end) {
   const m = { type: media.type, tmdbId: media.tmdbId, title: media.title, pos: shiftPos(pos, 0) };
+  if (end !== undefined) m.end = shiftPos(end, 0);
   if (Number.isInteger(media.season)) m.season = media.season;
   if (Number.isInteger(media.episode)) m.episode = media.episode;
   return m;
 }
 
-/** Corps de POST /share. `mode` : 'moment' ou 'title'. Renvoie null s'il n'y a pas de destinataire ou de contenu valable. */
-export function buildShareInput({ keys, media, mode, pos, body }) {
+/** Mode 'clip' utilisable : moment partageable et plage de 1 s à 5 min (la durée du titre est vérifiée par la fenêtre). */
+const clipOk = (media, pos, end) => canShareMoment(media, pos) && clipRangeOk(shiftPos(pos, 0), typeof end === 'number' ? shiftPos(end, 0) : NaN);
+
+/**
+ * Corps de POST /share. `mode` : 'moment', 'clip' (extrait : `pos` à `end`) ou 'title'. Renvoie null s'il n'y a pas de destinataire ou de contenu valable.
+ * @param {{ keys: string[], media: any, mode?: string, pos?: number, end?: number, body?: string }} o
+ */
+export function buildShareInput({ keys, media, mode, pos, end, body }) {
   if (!keys.length || !media) return null;
   const text = String(body || '').trim();
   const extra = text ? { body: text.slice(0, 1000) } : {};
   if (mode === 'moment' && canShareMoment(media, pos)) return { to: toOf(keys), kind: 'moment', moment: momentRefOf(media, pos), ...extra };
+  if (mode === 'clip' && clipOk(media, pos, end)) return { to: toOf(keys), kind: 'moment', moment: momentRefOf(media, pos, end), ...extra };
   return { to: toOf(keys), kind: 'title', title: titleRefOf(media), ...extra };
 }
 
 /**
  * Corps de POST /share-links.
- * @param {{ media: any, mode?: string, pos?: number, withInvite?: boolean, note?: string }} o
- * @returns {{ type: string, tmdbId: number, withInvite: boolean, pos?: number, note?: string }}
+ * @param {{ media: any, mode?: string, pos?: number, end?: number, withInvite?: boolean, note?: string }} o
+ * @returns {{ type: string, tmdbId: number, withInvite: boolean, pos?: number, end?: number, note?: string }}
  */
-export function buildLinkInput({ media, mode, pos, withInvite, note }) {
+export function buildLinkInput({ media, mode, pos, end, withInvite, note }) {
   const out = { type: media.type, tmdbId: media.tmdbId, withInvite: !!withInvite };
   if (mode === 'moment' && canShareMoment(media, pos)) out.pos = shiftPos(pos, 0);
+  if (mode === 'clip' && clipOk(media, pos, end)) { out.pos = shiftPos(pos, 0); out.end = shiftPos(end, 0); }
   const n = String(note || '').trim();
   if (n) out.note = n.slice(0, NOTE_MAX);
   return out;
 }
 
 /** Clé de cache d'un lien créé : le même choix redonne le même lien (sans réserver une autre invitation). */
-export const linkKey = (o) => [o.type, o.tmdbId, o.pos === undefined ? '' : o.pos, o.withInvite ? 1 : 0, o.note || ''].join('|');
+export const linkKey = (o) => [o.type, o.tmdbId, o.pos === undefined ? '' : o.pos, o.end === undefined ? '' : o.end, o.withInvite ? 1 : 0, o.note || ''].join('|');
 
 /** Invitations libres du compte, depuis la réponse de /invites. */
 export const freeInvites = (d) => (d && Array.isArray(d.invites) ? d.invites.filter((i) => i.state === 'free').length : 0);
@@ -151,7 +213,8 @@ export const freeInvites = (d) => (d && Array.isArray(d.invites) ? d.invites.fil
 export const invitesText = (n) => (n > 0 ? 'Il en reste ' + n + '.' : 'Il ne t’en reste plus.');
 
 /** Texte qui accompagne le lien dans un message, un e-mail ou le partage système. */
-export function shareText(media, pos, mode) {
+export function shareText(media, pos, mode, end) {
+  if (mode === 'clip' && clipOk(media, pos, end)) return media.title + ' de ' + posLabel(pos) + ' à ' + posLabel(end) + ' sur Laststream';
   return mode === 'moment' && canShareMoment(media, pos)
     ? media.title + ' à ' + posLabel(pos) + ' sur Laststream'
     : media.title + ' sur Laststream';
@@ -179,8 +242,12 @@ export function signupUrl(origin, code) {
   return String(origin).replace(/\/+$/, '') + '/?invite=' + encodeURIComponent(code);
 }
 
-/** Texte « À 1:12:34 » du moment recommandé, ou '' pour un titre entier. */
-export const momentNote = (view) => (view && typeof view.pos === 'number' && view.pos > 0 ? 'Recommandé à partir de ' + posLabel(view.pos) : '');
+/** Texte « Recommandé de X à Y » (extrait) ou « À partir de 1:12:34 » du moment recommandé, ou '' pour un titre entier. */
+export function momentNote(view) {
+  if (!view || typeof view.pos !== 'number') return '';
+  if (typeof view.end === 'number' && view.end > view.pos) return 'Recommandé de ' + posLabel(view.pos) + ' à ' + posLabel(view.end);
+  return view.pos > 0 ? 'Recommandé à partir de ' + posLabel(view.pos) : '';
+}
 
 /** Nom de celui qui a ajouté un élément : « toi », le pseudo d'un membre, ou « un ancien membre ». */
 export function adderName(pid, list, mePid) {
@@ -199,7 +266,9 @@ const dayMonth = (ms) => new Date(ms).toLocaleDateString('fr-FR', { day: 'numeri
  */
 export function linkRow(l, now = Date.now()) {
   const expired = !!l.expired || (Number.isFinite(l.expiresAt) && l.expiresAt <= now);
-  const at = typeof l.pos === 'number' && l.pos > 0 ? ' · à ' + posLabel(l.pos) : '';
+  const at = typeof l.pos === 'number' && typeof l.end === 'number' && l.end > l.pos
+    ? ' · de ' + posLabel(l.pos) + ' à ' + posLabel(l.end)
+    : typeof l.pos === 'number' && l.pos > 0 ? ' · à ' + posLabel(l.pos) : '';
   const made = Number.isFinite(l.createdAt) ? 'Créé le ' + dayMonth(l.createdAt) : '';
   const left = !expired && Number.isFinite(l.expiresAt)
     ? 'expire le ' + dayMonth(l.expiresAt)

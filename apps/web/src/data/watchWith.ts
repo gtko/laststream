@@ -26,6 +26,8 @@ export type WatchPoint = Pick<Watching, 'pos' | 'duration' | 'paused' | 'at'>;
 interface PlayOpts {
   resume: 'none';
   startAt: number | WatchPoint;
+  /** Fin d'un extrait partagé (secondes) : le lecteur se met en pause une fois arrivé là. */
+  stopAt?: number;
 }
 
 type Launch = (request: PlayRequest, opener: Element | null, opts: PlayOpts) => unknown;
@@ -81,9 +83,9 @@ export function playRequestOf(m: MediaRef): PlayRequest | null {
 
 /**
  * Ouvre un média à `startAt` (secondes, ou relevé d'un ami) par le flux normal. Renvoie false (et affiche un toast) si le
- * média n'a pas de cible. Une erreur de lancement, synchrone ou non, affiche un toast ; elle ne remonte pas.
+ * média n'a pas de cible. `stopAt` (extrait partagé) fait mettre la lecture en pause à cette position. Une erreur de lancement, synchrone ou non, affiche un toast ; elle ne remonte pas.
  */
-export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number | WatchPoint, opener: Element | null = null): boolean {
+export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number | WatchPoint, opener: Element | null = null, stopAt?: number): boolean {
   const request = playRequestOf(media);
   if (!request) {
     deps.toast(NOT_OPENABLE);
@@ -91,7 +93,10 @@ export function playAt(deps: PlaybackDeps, media: MediaRef, startAt: number | Wa
   }
   const start = typeof startAt === 'number' ? (Number.isFinite(startAt) && startAt > 0 ? startAt : 0) : startAt;
   try {
-    const started = deps.launch(request, opener, { resume: 'none', startAt: start });
+    const opts: PlayOpts = { resume: 'none', startAt: start };
+    // Extrait : l'arrêt n'a de sens que pour une position de départ chiffrée et une fin située après elle.
+    if (typeof start === 'number' && typeof stopAt === 'number' && Number.isFinite(stopAt) && stopAt > start) opts.stopAt = stopAt;
+    const started = deps.launch(request, opener, opts);
     Promise.resolve(started).catch(() => deps.toast(LAUNCH_ERROR));
   } catch {
     deps.toast(LAUNCH_ERROR);
@@ -116,4 +121,23 @@ export function createWatchWithHandler(deps: PlaybackDeps): (friend: FriendView 
     const point: WatchPoint = { pos: w.pos, at: w.at, paused: w.paused, duration: w.duration };
     playAt(deps, { type: w.type, tmdbId: w.tmdbId, title: w.title, imdbId: w.imdbId, season: w.season, episode: w.episode }, point, null);
   };
+}
+
+/** Au-delà de la fin d'un extrait de cet écart (secondes), la lecture est considérée comme sautée plutôt qu'arrivée à la fin. */
+const CLIP_SKIP_SEC = 5;
+
+/** Décision d'un tick pour l'arrêt d'un extrait partagé. */
+export type ClipStep = { action: 'wait' | 'stop' | 'cancel'; armed: boolean };
+
+/**
+ * Où en est l'extrait à l'instant `time` (secondes) : 'wait' (pas encore à la fin), 'stop' (fin atteinte : une seule pause),
+ * 'cancel' (retour avant le début après l'avoir atteint : l'utilisateur a quitté l'extrait). `armed` devient vrai dès que la
+ * lecture est au début (à 2 s près) ; avant, un temps plus petit est juste le chargement.
+ */
+export function clipStep(g: { from: number; stopAt: number; armed: boolean }, time: number): ClipStep {
+  if (!Number.isFinite(time)) return { action: 'wait', armed: g.armed };
+  if (time < g.from - 2) return { action: g.armed ? 'cancel' : 'wait', armed: g.armed };
+  // Un saut bien au-delà de la fin (l'ami continue le film après l'extrait) n'arrête rien : l'extrait est abandonné.
+  if (time >= g.stopAt + CLIP_SKIP_SEC) return { action: 'cancel', armed: true };
+  return { action: time >= g.stopAt ? 'stop' : 'wait', armed: true };
 }

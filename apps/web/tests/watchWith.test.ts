@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { FriendView, Watching } from '../src/data/socialV2Api';
 import {
-  createWatchWithHandler, LAUNCH_ERROR, NOT_OPENABLE, playAt, playRequestOf, resumePosition, type WatchPoint,
+  clipStep, createWatchWithHandler, LAUNCH_ERROR, NOT_OPENABLE, playAt, playRequestOf, resumePosition, type WatchPoint,
 } from '../src/data/watchWith';
 
 const watching = (over: Partial<Watching> = {}): Watching => ({
@@ -91,6 +91,21 @@ describe('playAt', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
+  it('extrait : transmet stopAt à côté de startAt', () => {
+    const launch = fakeLaunch();
+    expect(playAt({ launch, toast: vi.fn() }, { type: 'movie', tmdbId: 5, title: 'Dune' }, 2472, null, 2523)).toBe(true);
+    expect(launch).toHaveBeenCalledWith(expect.objectContaining({ key: 'movie:5' }), null, { resume: 'none', startAt: 2472, stopAt: 2523 });
+  });
+
+  it('extrait : stopAt invalide (avant le début, NaN) ou relevé d’ami ignoré', () => {
+    const launch = fakeLaunch();
+    const toast = vi.fn();
+    playAt({ launch, toast }, { type: 'movie', tmdbId: 5 }, 100, null, 100);
+    playAt({ launch, toast }, { type: 'movie', tmdbId: 5 }, 100, null, Number.NaN);
+    playAt({ launch, toast }, { type: 'movie', tmdbId: 5 }, { pos: 10, paused: true, at: 0 }, null, 500);
+    for (const c of launch.mock.calls) expect(c[2]).not.toHaveProperty('stopAt');
+  });
+
   it('série sans épisode : toast, rien ne se lance', () => {
     const launch = fakeLaunch();
     const toast = vi.fn();
@@ -167,5 +182,30 @@ describe('createWatchWithHandler', () => {
     const { startAt } = launch.mock.calls[0][2] as { startAt: WatchPoint };
     expect(launch.mock.calls[0][2]).toEqual({ resume: 'none', startAt: { pos: 42, at: 0, paused: true, duration: undefined } });
     expect(resumePosition(startAt, 999_999)).toBe(42);
+  });
+});
+
+describe('clipStep (arrêt de fin d’extrait)', () => {
+  const g = (armed = false) => ({ from: 2472, stopAt: 2523, armed });
+  it('attend pendant le chargement (temps avant le début, pas encore armé)', () => {
+    expect(clipStep(g(), 0)).toEqual({ action: 'wait', armed: false });
+  });
+  it('s’arme au début (à 2 s près) puis attend jusqu’à la fin', () => {
+    expect(clipStep(g(), 2471)).toEqual({ action: 'wait', armed: true });
+    expect(clipStep(g(true), 2500)).toEqual({ action: 'wait', armed: true });
+  });
+  it('s’arrête à la fin, même si le tick tombe un peu après', () => {
+    expect(clipStep(g(true), 2523)).toEqual({ action: 'stop', armed: true });
+    expect(clipStep(g(), 2526)).toEqual({ action: 'stop', armed: true });
+  });
+  it('abandonne l’extrait si l’utilisateur saute bien au-delà de la fin', () => {
+    expect(clipStep(g(true), 3000)).toEqual({ action: 'cancel', armed: true });
+    expect(clipStep(g(), 3000)).toEqual({ action: 'cancel', armed: true });
+  });
+  it('annule si l’utilisateur revient avant le début après l’avoir atteint', () => {
+    expect(clipStep(g(true), 100)).toEqual({ action: 'cancel', armed: true });
+  });
+  it('ignore un temps illisible', () => {
+    expect(clipStep(g(true), Number.NaN)).toEqual({ action: 'wait', armed: true });
   });
 });

@@ -132,7 +132,8 @@ function momentCard(m, ctx) {
   card.append(shot);
   const body = h('div', 'cvm-moment-body');
   if (m.body) body.append(h('div', 'cvm-moment-text', m.body));
-  const link = h('button', 'cvm-moment-link', mo.title + ' · ouvrir à ' + posLabel(mo.pos), { type: 'button', title: 'Ouvrir ce passage dans le lecteur' });
+  const range = typeof mo.end === 'number' && mo.end > mo.pos ? ' de ' + posLabel(mo.pos) + ' à ' + posLabel(mo.end) : ' à ' + posLabel(mo.pos);
+  const link = h('button', 'cvm-moment-link', mo.title + ' · ouvrir' + range, { type: 'button', title: 'Ouvrir ce passage dans le lecteur' });
   link.addEventListener('click', (e) => ctx.act.playMoment(mo, e.currentTarget));
   body.append(link);
   card.append(body);

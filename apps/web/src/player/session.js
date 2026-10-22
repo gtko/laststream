@@ -6,7 +6,7 @@ import { streamingServerFor } from '../data/lan';
 import { api, postLt, skipSegments, tmdb, ltHealth } from '../data/lt';
 import { ltUrl } from '../data/config';
 import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
-import { resumePosition } from '../data/watchWith';
+import { clipStep, resumePosition } from '../data/watchWith';
 import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
 import { toast } from '../ui/dom.js';
 import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
@@ -1535,12 +1535,30 @@ function onEnded() {
 
 // ---------- Boucle périodique ----------
 
+/**
+ * Fin d'un extrait partagé : met la lecture en pause une seule fois à `p.stopAt`. L'extrait n'est « armé » qu'une fois la
+ * lecture arrivée au début ; un retour en arrière avant le début, ou un salon (watch party), l'annule. Un autre titre ouvre
+ * une autre session, donc sans arrêt.
+ */
+function clipTick(p, st) {
+  if (p.stopAt === undefined) return;
+  if (partyBridge.isActive()) { p.stopAt = undefined; return; }
+  const step = clipStep({ from: p.stopFrom, stopAt: p.stopAt, armed: p.clipArmed }, st.time);
+  p.clipArmed = step.armed;
+  if (step.action === 'cancel') { p.stopAt = undefined; return; }
+  if (step.action === 'wait') return;
+  p.stopAt = undefined;
+  try { p.engine.pause(); } catch (_) { /* ignoré */ }
+  ui.toast('Fin de l’extrait', 3000);
+}
+
 let tickN = 0;
 function tick() {
   const p = P;
   if (!p || !p.engine || !p.view) return;
   const st = p.engine.state();
   tickN += 1;
+  clipTick(p, st);
   notesTick(p, st);
   socialTick(p, st);
   presenceTick(st);
@@ -2352,7 +2370,8 @@ function shareHere() {
   if (m.poster) media.poster = m.poster;
   if (m.season != null) media.season = m.season;
   if (m.episode != null) media.episode = m.episode;
-  openShareDialog({ media, pos: Math.round(P.engine.state().time) });
+  const st = P.engine.state();
+  openShareDialog({ media, pos: Math.round(st.time), duration: Number.isFinite(st.duration) && st.duration > 0 ? Math.floor(st.duration) : undefined });
 }
 
 // ---------- Fermeture ----------
@@ -2416,6 +2435,10 @@ export async function playBest(request, opener, opts = {}) {
   const p = await initSession(request, [], null, { opener });
   p.resumeMode = opts.resume || 'ask';
   p.seekStart = opts.startAt ?? null;
+  // Extrait partagé : arrêt unique à `stopAt` (clipTick), seulement avec une position de départ chiffrée.
+  p.stopAt = typeof opts.stopAt === 'number' && typeof opts.startAt === 'number' && opts.stopAt > opts.startAt ? opts.stopAt : undefined;
+  p.stopFrom = typeof opts.startAt === 'number' ? opts.startAt : 0;
+  p.clipArmed = false;
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
   if (!opts.prefer && !opts.picker && (await playDownloaded(p, request))) return;

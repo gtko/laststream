@@ -95,6 +95,7 @@ export function closeShareDialog() { if (current) current.close(); }
 
 /**
  * Hook `openShareDialog`. opts = { media: {type, tmdbId, title, poster?, season?, episode?} | null, pos?: number,
+ * duration?: number (durée du titre en secondes : sans elle, pas d'option « Un extrait »),
  * to?: string[] (pids présélectionnés), conv?: string ("dm:<pid>" ou "g:<id>" présélectionné) }.
  * Sans média, un sélecteur de titre s'affiche d'abord.
  */
@@ -110,6 +111,16 @@ export function openShareDialog(opts) {
     lists: store.getState().lists || [], added: new Set(), preDone: false, view: 'main',
   };
   st.mode = M.canShareMoment(st.media, st.pos) ? 'moment' : 'title';
+  // Extrait : début = position actuelle, fin = début + 30 s (bornée à la durée). Durée inconnue : pas d'extrait.
+  st.duration = typeof o.duration === 'number' && Number.isFinite(o.duration) && o.duration >= M.CLIP_MIN_SEC ? Math.floor(o.duration) : 0;
+  st.initPos = st.pos;
+  st.clipStart = 0;
+  st.clipEnd = 0;
+  if (st.duration) {
+    const c0 = M.clampClip(st.pos || 0, (st.pos || 0) + 30, st.duration, 'start');
+    st.clipStart = c0.start;
+    st.clipEnd = c0.end;
+  }
   const ui = {};
   let alive = true;
 
@@ -224,8 +235,14 @@ export function openShareDialog(opts) {
   }
 
   const canMoment = () => M.canShareMoment(st.media, st.pos);
+  const canClip = () => canMoment() && st.duration >= M.CLIP_MIN_SEC;
+  /** Début et fin de ce qui part selon le mode (moment : `pos` seul ; extrait : la plage choisie). */
+  const posNow = () => (st.mode === 'clip' ? st.clipStart : st.pos);
+  const endNow = () => (st.mode === 'clip' ? st.clipEnd : undefined);
+  const clipSub = () => 'Extrait · ' + M.posLabel(st.clipEnd - st.clipStart) + ' · de ' + M.posLabel(st.clipStart) + ' à ' + M.posLabel(st.clipEnd);
   const subLine = () => {
     if (!st.media) return '';
+    if (st.mode === 'clip') return clipSub();
     if (st.mode === 'moment') return 'Tu en es à ' + M.posLabel(st.pos);
     return st.media.type === 'series' ? 'Série' : 'Film';
   };
@@ -241,25 +258,29 @@ export function openShareDialog(opts) {
 
   function setMode(mode) {
     if (mode === 'moment' && !canMoment()) return;
+    if (mode === 'clip' && !canClip()) return;
     st.mode = mode;
     paintOpts();
     paintHeader();
     paintInvite();
+    paintSend();
   }
 
   function paintOpts() {
     if (!ui.opts) return;
     ui.opts.textContent = '';
+    ui.clip = null;
+    if (mobile && canClip()) { paintChips(); return; }
     const mk = (id, title, hint, extra) => {
       const on = st.mode === id;
-      const row = h('div', 'shd-opt' + (on ? ' is-on' : ''));
-      const main = h('button', 'shd-opt-main', null, { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false' });
+      const row = h('div', 'shd-opt' + (on ? ' is-on' : '') + (extra && id === 'clip' ? ' has-clip' : ''));
+      const main = h('button', 'shd-opt-main', null, { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', 'data-opt': id });
       main.append(h('span', 'shd-rd' + (on ? ' on' : ''), null, { 'aria-hidden': 'true' }), (() => {
         const c = h('span', 'shd-opt-txt');
         c.append(h('span', 'shd-opt-t', title), h('span', 'shd-opt-h', hint));
         return c;
       })());
-      main.addEventListener('click', () => setMode(id));
+      main.addEventListener('click', () => pickMode(id));
       row.append(main);
       if (extra) row.append(extra);
       return row;
@@ -274,16 +295,194 @@ export function openShareDialog(opts) {
       step.append(minus, ' · ', val, ' · ', plus);
       ui.opts.append(mk('moment', 'Ce moment précis', 'S’ouvre chez eux à ' + M.posLabel(st.pos), step));
     }
+    if (canClip()) ui.opts.append(mk('clip', 'Un extrait', 'Choisis un début et une fin (5 min max)', st.mode === 'clip' ? buildClip() : null));
     ui.opts.append(mk('title', 'Le titre', canMoment() ? 'Depuis le début' : 'La fiche, avec ton conseil'));
     ui.opts.setAttribute('role', 'radiogroup');
     ui.opts.setAttribute('aria-label', 'Ce que tu partages');
+    paintClip();
+  }
+
+  function pickMode(id) {
+    setMode(id);
+    const again = ui.opts && ui.opts.querySelector('[data-opt="' + id + '"]');
+    if (again) again.focus();
+  }
+
+  /** Mobile avec extrait possible : trois puces « Ce moment / Un extrait / Le titre », l'éditeur d'extrait en dessous. */
+  function paintChips() {
+    const chips = h('div', 'shd-chips shd-modes', null, { role: 'radiogroup', 'aria-label': 'Ce que tu partages' });
+    for (const [id, label] of [['moment', 'Ce moment'], ['clip', 'Un extrait'], ['title', 'Le titre']]) {
+      const on = st.mode === id;
+      const b = h('button', 'shd-chip' + (on ? ' is-done' : ''), label, { type: 'button', role: 'radio', 'aria-checked': on ? 'true' : 'false', 'data-opt': id });
+      b.addEventListener('click', () => pickMode(id));
+      chips.append(b);
+    }
+    ui.opts.append(chips);
+    if (st.mode === 'clip') ui.opts.append(buildClip());
+    paintClip();
+  }
+
+  // ---------- Éditeur d'extrait : frise, poignées, champs ----------
+  const timeAt = (clientX) => {
+    const r = ui.clip.bar.getBoundingClientRect();
+    if (!r.width) return null;
+    return Math.round(Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * st.duration);
+  };
+
+  /** Déplace une poignée ('start' | 'end') ; l'autre suit si la plage sort de 1 s à 5 min. */
+  function setClip(which, v) {
+    const r = which === 'start' ? M.clampClip(v, st.clipEnd, st.duration, 'start') : M.clampClip(st.clipStart, v, st.duration, 'end');
+    st.clipStart = r.start;
+    st.clipEnd = r.end;
+    paintClip();
+    paintHeader();
+  }
+
+  function onHandleKey(which, e) {
+    const big = e.shiftKey ? 10 : 1;
+    const cur = which === 'start' ? st.clipStart : st.clipEnd;
+    let to;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') to = cur - big;
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') to = cur + big;
+    else if (e.key === 'Home') to = which === 'start' ? 0 : st.clipStart + M.CLIP_MIN_SEC;
+    else if (e.key === 'End') to = which === 'start' ? st.clipEnd - M.CLIP_MIN_SEC : st.duration;
+    else return;
+    e.preventDefault();
+    setClip(which, to);
+  }
+
+  function buildClip() {
+    const c = {};
+    ui.clip = c;
+    const wrap = h('div', 'shd-clip');
+    const bar = h('div', 'shd-clip-bar');
+    const img = posterSrc(st.media && st.media.poster);
+    if (img) bar.style.backgroundImage = 'url("' + String(img).replace(/["\\\r\n]/g, '') + '")';
+    c.bar = bar;
+    c.shadeL = h('div', 'shd-clip-shade', null, { 'aria-hidden': 'true' });
+    c.shadeR = h('div', 'shd-clip-shade', null, { 'aria-hidden': 'true' });
+    c.frame = h('div', 'shd-clip-frame', null, { 'aria-hidden': 'true' });
+    c.head = h('div', 'shd-clip-ph', null, { 'aria-hidden': 'true' });
+    const drags = {};
+    const handle = (which, label) => {
+      const el = h('div', 'shd-clip-h', null, { role: 'slider', tabindex: '0', 'aria-label': label, 'aria-orientation': 'horizontal', 'data-h': which });
+      let dragging = false;
+      const begin = (e) => {
+        e.preventDefault();
+        dragging = true;
+        try { el.setPointerCapture(e.pointerId); } catch { /* sans capture, le suivi reste sur la poignée */ }
+        el.focus();
+      };
+      const stop = (e) => {
+        dragging = false;
+        try { el.releasePointerCapture(e.pointerId); } catch { /* déjà relâché */ }
+      };
+      el.addEventListener('pointerdown', begin);
+      el.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const t = timeAt(e.clientX);
+        if (t !== null) setClip(which, t);
+      });
+      el.addEventListener('pointerup', stop);
+      el.addEventListener('pointercancel', stop);
+      el.addEventListener('keydown', (e) => onHandleKey(which, e));
+      drags[which] = begin;
+      return el;
+    };
+    c.hs = handle('start', 'Début de l’extrait');
+    c.he = handle('end', 'Fin de l’extrait');
+    // Clic sur la frise : la poignée la plus proche saute là et se laisse glisser.
+    bar.addEventListener('pointerdown', (e) => {
+      if (e.target !== bar) return;
+      const t = timeAt(e.clientX);
+      if (t === null) return;
+      const which = Math.abs(t - st.clipStart) <= Math.abs(t - st.clipEnd) ? 'start' : 'end';
+      setClip(which, t);
+      drags[which](e);
+    });
+    bar.append(c.shadeL, c.shadeR, c.frame, c.head, c.hs, c.he);
+    const scale = h('div', 'shd-clip-scale');
+    scale.append(h('span', null, '0:00'), h('span', null, 'Durée du titre ' + M.posLabel(st.duration)));
+    wrap.append(bar, scale);
+
+    const fields = h('div', 'shd-clip-fields');
+    const field = (which, label) => {
+      const f = h('div', 'shd-clip-f');
+      const id = 'shd-clip-' + which;
+      const inp = h('input', 'shd-clip-fi', null, { id, type: 'text', autocomplete: 'off', spellcheck: 'false', 'aria-label': label });
+      const stepBtn = (d) => h('button', 'shd-clip-fb', d < 0 ? '−' : '+', { type: 'button', 'aria-label': label + ' : ' + (d < 0 ? 'reculer' : 'avancer') + ' d’une seconde' });
+      const minus = stepBtn(-1);
+      const plus = stepBtn(1);
+      const cur = () => (which === 'start' ? st.clipStart : st.clipEnd);
+      minus.addEventListener('click', () => setClip(which, cur() - 1));
+      plus.addEventListener('click', () => setClip(which, cur() + 1));
+      inp.addEventListener('change', () => {
+        const t = M.parseTimecode(inp.value);
+        if (t === null) { paintClip(); say('Temps illisible : écris par exemple 41:12 ou 1:02:03.', 'error'); return; }
+        say('');
+        setClip(which, t);
+      });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.dispatchEvent(new Event('change')); } });
+      const row = h('div', 'shd-clip-fr');
+      row.append(minus, inp, plus);
+      f.append(h('label', 'shd-clip-fl', label, { for: id }), row);
+      c['in_' + which] = inp;
+      return f;
+    };
+    fields.append(field('start', 'Début'), field('end', 'Fin'));
+    c.pill = h('span', 'shd-clip-pill');
+    fields.append(c.pill);
+    wrap.append(fields);
+
+    const acts = h('div', 'shd-clip-acts');
+    const now = h('button', 'shd-btn is-sec is-s', 'Prendre la position actuelle', { type: 'button' });
+    now.addEventListener('click', () => {
+      const len = st.clipEnd - st.clipStart;
+      const from = st.initPos || 0;
+      const r = M.clampClip(from, from + len, st.duration, 'start');
+      st.clipStart = r.start;
+      st.clipEnd = r.end;
+      paintClip();
+      paintHeader();
+    });
+    acts.append(now);
+    wrap.append(acts);
+    return wrap;
+  }
+
+  function paintClip() {
+    const c = ui.clip;
+    if (!c || !st.duration) return;
+    const d = st.duration;
+    const pc = (v) => (v / d) * 100;
+    c.frame.style.left = pc(st.clipStart) + '%';
+    c.frame.style.width = pc(st.clipEnd - st.clipStart) + '%';
+    c.shadeL.style.left = '0';
+    c.shadeL.style.width = pc(st.clipStart) + '%';
+    c.shadeR.style.left = pc(st.clipEnd) + '%';
+    c.shadeR.style.width = 100 - pc(st.clipEnd) + '%';
+    const ph = typeof st.initPos === 'number' && st.initPos <= d;
+    c.head.hidden = !ph;
+    if (ph) c.head.style.left = pc(st.initPos) + '%';
+    const setH = (el, v, min, max) => {
+      el.style.left = pc(v) + '%';
+      el.setAttribute('aria-valuemin', String(min));
+      el.setAttribute('aria-valuemax', String(max));
+      el.setAttribute('aria-valuenow', String(v));
+      el.setAttribute('aria-valuetext', M.posLabel(v));
+    };
+    setH(c.hs, st.clipStart, 0, st.clipEnd - M.CLIP_MIN_SEC);
+    setH(c.he, st.clipEnd, st.clipStart + M.CLIP_MIN_SEC, d);
+    c.in_start.value = M.posLabel(st.clipStart);
+    c.in_end.value = M.posLabel(st.clipEnd);
+    c.pill.textContent = 'Durée ' + M.posLabel(st.clipEnd - st.clipStart);
   }
   function focusStep(i) { const b = ui.opts && ui.opts.querySelectorAll('.shd-step-b')[i]; if (b) b.focus(); }
 
   function paintSend() {
     const t = targets();
     const none = st.keys.length === 0;
-    const label = M.sendLabel(t, st.keys);
+    const label = M.sendLabel(t, st.keys, st.mode === 'clip');
     if (ui.send) { ui.send.textContent = mobile ? 'Envoyer' : label; ui.send.disabled = none || st.busy; ui.send.setAttribute('aria-label', label); }
     if (ui.party) ui.party.disabled = none;
     if (ui.partyRow) ui.partyRow.disabled = none;
@@ -292,7 +491,8 @@ export function openShareDialog(opts) {
   // ---------- Actions ----------
   async function send() {
     if (st.busy || !st.keys.length) return;
-    const input = M.buildShareInput({ keys: st.keys, media: st.media, mode: st.mode, pos: st.pos, body: st.body });
+    const input = M.buildShareInput({ keys: st.keys, media: st.media, mode: st.mode, pos: posNow(), end: endNow(), body: st.body });
+    if (st.mode === 'clip' && !M.canShareClip(st.media, st.clipStart, st.clipEnd, st.duration)) { say('Choisis un extrait de 1 s à 5 min.', 'error'); return; }
     if (!input) return;
     st.busy = true;
     paintSend();
@@ -319,7 +519,7 @@ export function openShareDialog(opts) {
 
   async function ensureLink() {
     if (!st.media) return null;
-    const input = M.buildLinkInput({ media: st.media, mode: st.mode, pos: st.pos, withInvite: st.withInvite && st.invitesLeft !== 0, note: st.body });
+    const input = M.buildLinkInput({ media: st.media, mode: st.mode, pos: posNow(), end: endNow(), withInvite: st.withInvite && st.invitesLeft !== 0, note: st.body });
     const key = M.linkKey(input);
     if (st.link && st.linkKey === key) return st.link;
     try {
@@ -350,7 +550,7 @@ export function openShareDialog(opts) {
     toastFn(ok ? 'Lien copié' : 'Copie impossible : sélectionne le lien et copie-le');
     if (ui.linkInput) { ui.linkInput.focus(); ui.linkInput.select(); }
   }
-  const textFor = () => (st.media ? M.shareText(st.media, st.pos, st.mode) : 'Laststream');
+  const textFor = () => (st.media ? M.shareText(st.media, posNow(), st.mode, endNow()) : 'Laststream');
   async function viaSms() { const l = await ensureLink(); if (l) openExternal('sms:?&body=' + encodeURIComponent(textFor() + ' ' + l.url)); }
   async function viaMail() {
     const l = await ensureLink();
@@ -722,7 +922,7 @@ export function openShareDialog(opts) {
     const invTxt = h('div', 'shd-opt-txt');
     invTxt.append(h('div', 'shd-opt-t', 'Joindre une invitation'), ui.inviteHint);
     inv.append(makeSwitch('Joindre une invitation'), invTxt);
-    const priv = h('p', 'shd-note', 'Le lien montre la fiche et ta recommandation, jamais ta position ni ta bibliothèque, sauf « ce moment ».');
+    const priv = h('p', 'shd-note', 'Le lien montre la fiche et ta recommandation, jamais ta position ni ta bibliothèque, sauf « ce moment » ou « un extrait ».');
     ui.lists = h('div', 'shd-chips');
     right.append(lk, shares, ui.qr, inv, priv, h('div', 'shd-lb shd-lb-2', 'Ajouter à une liste partagée'), ui.lists, myLinksSection());
 
@@ -742,7 +942,9 @@ export function openShareDialog(opts) {
     ui.sub = h('div', 'shd-sub');
     hc.append(ui.titleEl, ui.sub);
     head.append(hc);
-    if (canMoment()) {
+    if (canClip()) {
+      head.append(iconBtn('shd-x', 'Fermer', SVG.close, close));
+    } else if (canMoment()) {
       const sw = h('button', 'shd-pill', st.mode === 'moment' ? 'Le titre' : 'Ce moment', { type: 'button' });
       sw.addEventListener('click', () => {
         setMode(st.mode === 'moment' ? 'title' : 'moment');
@@ -754,6 +956,7 @@ export function openShareDialog(opts) {
     }
     box.append(head);
     ui.opts = null;
+    if (canClip()) { ui.opts = h('div', 'shd-opts'); box.append(ui.opts); }
     box.append(h('div', 'shd-lb', 'Amis'));
     ui.grid = h('div', 'shd-grid is-row', null, { role: 'group', 'aria-label': 'Amis et groupes' });
     box.append(ui.grid);
