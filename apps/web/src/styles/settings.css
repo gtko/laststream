@@ -66,6 +66,7 @@ select.set-input { appearance: none; -webkit-appearance: none; padding-right: 40
 .set-switch-k { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); transition: transform 0.18s ease; }
 .set-switch[aria-checked="true"] { background: var(--accent); }
 .set-switch[aria-checked="true"] .set-switch-k { transform: translateX(20px); }
+.set-switch:disabled, .set-input:disabled { opacity: 0.45; cursor: not-allowed; }
 .set-switch:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); border-radius: 999px; }
 
 /* ---------- Puces à cocher (langues, résolutions, genres) ---------- */

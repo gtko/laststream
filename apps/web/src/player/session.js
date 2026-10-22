@@ -9,7 +9,8 @@ import { isKidProfile, isServerMode, pushPrefs } from '../data/auth';
 import { clipStep, resumePosition } from '../data/watchWith';
 import { DEMO_BLOCKED_MSG, isDemo } from '../data/demo';
 import { toast } from '../ui/dom.js';
-import { getLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
+import { getLangPrefs, resolveLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
+import { isAnime } from '../data/anime';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
@@ -125,10 +126,21 @@ const miniState = new MiniState({
   setItem: (k, v) => storeSet(k, v),
 });
 
+/** Le titre est-il un anime ? Fiche complète (TMDB) d'abord, sinon l'élément de catalogue d'où la lecture est lancée. */
+function isAnimeTitle(p) {
+  const m = p.model;
+  const it = appState.byKey.get(p.req.key);
+  return isAnime(m && { genreIds: m.genreIds, originalLanguage: m.origLangCode, originCountry: m.originCountry }) || isAnime(it);
+}
+
+/** Réglages de langue d'un titre : section Anime pour un anime (si activée), réglages généraux sinon. */
+const langPrefsOf = (p) => resolveLangPrefs(getLangPrefs(), !!p && isAnimeTitle(p));
+const activeLangPrefs = () => langPrefsOf(P);
+
 /** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
 function audioPreference() {
   const mem = P ? getMemory(P.req.key) : {};
-  return audioLangsFor(getLangPrefs(), mem.audio, P ? originalLangOf(P) : '');
+  return audioLangsFor(activeLangPrefs(), mem.audio, P ? originalLangOf(P) : '');
 }
 
 /** Langue d'origine du titre (code à deux lettres), '' si inconnue. */
@@ -534,7 +546,7 @@ function nativeOptions() {
     // Mémoire tampon réseau de libVLC, selon le réglage « Mémoire tampon » de cet appareil.
     networkCachingMs: vlcNetworkCachingMs(getBufferLevel()),
     preferredAudioLang: audioPreference()[0] || '',
-    preferredSubLang: mem.sub || wantedSubLang(getLangPrefs()) || '',
+    preferredSubLang: mem.sub || wantedSubLang(activeLangPrefs()) || '',
     subMode: mem.sub ? 'always' : effectiveSubMode(),
     skipSegments: toNativeSegments(p.segments),
     ...nativeLists(),
@@ -1175,7 +1187,7 @@ function allSubtitleTracks() {
 
 /** Mode des sous-titres en vigueur : l'interrupteur des réglages (source de vérité) puis « Auto / Toujours » du panneau. */
 function effectiveSubMode() {
-  if (!getLangPrefs().subsOn) return 'off';
+  if (!activeLangPrefs().subsOn) return 'off';
   return P && P.subs.style.mode === 'always' ? 'always' : 'auto';
 }
 
@@ -1183,10 +1195,10 @@ function effectiveSubMode() {
 function trackContext() {
   const p = P;
   const mem = getMemory(p.req.key);
-  const lp = getLangPrefs();
+  const lp = activeLangPrefs();
   return {
     originalLang: originalLangOf(p),
-    unknownAudioLang: p.view && p.view.hasFrench && lp.audio === 'fr' ? 'fr' : '',
+    unknownAudioLang: p.view && p.view.hasFrench && (lp.audio === 'fr' || lp.native === 'fr') ? 'fr' : '',
     alwaysSubs: effectiveSubMode() === 'always',
     rememberedAudio: mem.audio || '',
     rememberedSub: mem.sub || '',
@@ -1208,9 +1220,10 @@ function trackSink() {
 function announceAuto(pick) {
   const p = P;
   if (!p || !pick || p.autoToast) return;
-  const main = normalizeLang(getLangPrefs().audio);
+  const lp = activeLangPrefs();
+  const main = normalizeLang(lp.native || lp.audio);
   // Sous-titres forcés d'un audio dans la langue principale : rien à annoncer.
-  if (pick.audioLang && pick.audioLang === main && !getLangPrefs().learn && effectiveSubMode() !== 'always') return;
+  if (pick.audioLang && pick.audioLang === main && !lp.learn && !lp.subsAlways && effectiveSubMode() !== 'always') return;
   const msg = autoSubsToast(pick);
   if (!msg) return;
   p.autoToast = true;
@@ -1246,7 +1259,7 @@ const transcodeAction = () => (P && !P.forceHls ? { label: 'Transcodage', run: f
 function announceLearn() {
   const p = P;
   if (!p || p.learnToast || !p.applier.pick) return;
-  const lp = getLangPrefs();
+  const lp = activeLangPrefs();
   const audioUnknown = lp.learn && p.engine.kind === 'html' && !p.engine.audioTracks().length;
   const view = p.view;
   const a = learnAnnouncement(p.applier.pick, lp, { engineKind: p.engine.kind, audioUnknown, subsOff: !lp.subsOn, extSettled: !!p.extSettled, probeAudio: p.probeTracks.audio, directNotified: !!p.directNotified });
@@ -1272,7 +1285,7 @@ function applyDefaultTracks(force) {
   const subs = allSubtitleTracks();
   if (!audio.length && !subs.length && !force) return;
   p.defaultsDone = true;
-  const pick = p.applier.apply(audio, subs, getLangPrefs(), trackContext(), trackSink(), true);
+  const pick = p.applier.apply(audio, subs, activeLangPrefs(), trackContext(), trackSink(), true);
   let audioLang = pick ? pick.audioLang : '';
   if (!audio.length) audioLang = p.view.hasFrench ? 'fr' : '';
   p.audioLang = audioLang;
@@ -1287,7 +1300,7 @@ function applyDefaultTracks(force) {
 function lateTracks() {
   const p = P;
   if (!p || !p.defaultsDone) return;
-  const pick = p.applier.late(p.engine.audioTracks(), p.engine.kind === 'native' ? p.engine.subtitleTracks() : allSubtitleTracks(), getLangPrefs(), trackContext(), trackSink());
+  const pick = p.applier.late(p.engine.audioTracks(), p.engine.kind === 'native' ? p.engine.subtitleTracks() : allSubtitleTracks(), activeLangPrefs(), trackContext(), trackSink());
   if (pick) { p.autoAppliedAt = Date.now(); announceAuto(pick); }
   announceLearn();
 }
@@ -1303,7 +1316,7 @@ function scheduleNativeApply() {
     const subs = p.engine.subtitleTracks();
     if (!audio.length && !subs.length) return;
     p.defaultsDone = true;
-    const pick = p.applier.apply(audio, subs, getLangPrefs(), trackContext(), trackSink(), true);
+    const pick = p.applier.apply(audio, subs, activeLangPrefs(), trackContext(), trackSink(), true);
     p.audioLang = pick ? pick.audioLang : '';
     p.autoAppliedAt = Date.now();
     announceAuto(pick);
@@ -1330,11 +1343,11 @@ async function ensureExternalSubs(auto, force) {
     if (!id) return;
     const type = p.req.type === 'tv' ? 'series' : 'movie';
     const addon = isConfigured() ? addonUrl('subtitles/' + type + '/' + id + '.json') : null;
-    const list = await fetchExternalSubtitles({ type, id, hash: params && params.hash, size: (params && params.size) || view.sizeBytes || null, filename: view.filename }, addon, wantedSubLang(getLangPrefs()));
+    const list = await fetchExternalSubtitles({ type, id, hash: params && params.hash, size: (params && params.size) || view.sizeBytes || null, filename: view.filename }, addon, wantedSubLang(activeLangPrefs()));
     if (!P || P.token !== token || P.view !== view || !isCurrentSubsLoad(p.subs, loadSeq)) return;
     p.subs.external = list;
     p.subs.loadedFor = view.index;
-    if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, wantedSubLang(getLangPrefs()))); return; }
+    if (p.engine.kind === 'native') { p.engine.addSubtitles(toNativeSubtitles(list, wantedSubLang(activeLangPrefs()))); return; }
     if (auto && p.defaultsDone) lateTracks();
   } finally {
     if (P && P.token === token && endSubsLoad(p.subs, loadSeq)) {
@@ -1777,7 +1790,7 @@ function showSourcesPanel(reasons = []) {
   ui.root.classList.remove('is-searching');
   const host = ui.mountPanel('sources', 'Sources');
   openSourcePicker(p.req, null, {
-    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons, originalLang: originalLangOf(p),
+    host, views: p.views, pending: p.pending || [], imdb: p.imdb, currentIndex: p.view ? p.view.index : null, notice: reasons, originalLang: originalLangOf(p), lp: langPrefsOf(p),
     onPick: (view, views) => {
       if (!P || P.token !== p.token) return;
       // Choix manuel : la bascule salon et son filtre de repli ne s'appliquent plus.
@@ -1907,7 +1920,7 @@ function onAction(act, data) {
       remember(P.req.key, { sub: t ? t.lang || 'off' : 'off' });
       P.applier.markManual();
       // Mode apprentissage : le second sous-titre (langue principale) reste, sauf si l'on choisit « off » ou la langue principale.
-      const plan = manualSubPlan(allSubtitleTracks(), getLangPrefs(), data.id || null, trackContext().canSecondary, !!s.secondaryId);
+      const plan = manualSubPlan(allSubtitleTracks(), activeLangPrefs(), data.id || null, trackContext().canSecondary, !!s.secondaryId);
       clearSecondary();
       selectSubtitle(data.id || null);
       if (plan.secondaryId) selectSecondary(plan.secondaryId);
@@ -1996,7 +2009,7 @@ function panelData(name) {
         canTranscode: !tracks.length && !hasApi && p.choice && p.choice.engine === 'direct',
       },
       subs: {
-        sections: sectionSubtitleTracks(subTracks, [wantedSubLang(getLangPrefs())], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
+        sections: sectionSubtitleTracks(subTracks, [wantedSubLang(activeLangPrefs())], titles), selectedId: s.selectedId, offset: s.offset, rate: s.rateId, rateHint: s.rateHint,
         style: { ...s.style, mode: effectiveSubMode() }, styleOpen: s.styleOpen, loading: s.loading,
         sync: {
           canAuto: !!s.selectedId && cues.length > 0 && sup.ok && p.engine.kind === 'html', reason: !s.selectedId ? 'Choisis d’abord une piste de sous-titres.' : !cues.length ? 'Pas de texte à caler pour cette piste.' : sup.reason || (p.engine.kind !== 'html' ? 'Indisponible avec mpv.' : ''),
@@ -2577,7 +2590,7 @@ const MEMORY_STEPS = ['Dernière source retrouvée', 'Choix de la meilleure sour
 const listed = (p, view) => p.views.find((v) => sourceKey(v) === sourceKey(view)) || view;
 
 /** Langue de source visée par les préférences : une source mémorisée sous une autre langue n'est plus la bonne. */
-const launchLang = (p) => sourceLangFor(getLangPrefs(), originalLangOf(p) || undefined);
+const launchLang = (p) => sourceLangFor(langPrefsOf(p), originalLangOf(p) || undefined);
 
 /**
  * Relance (ODY-206) : reprend directement la source mémorisée pour cet épisode (6 h, même appareil), sans la recherche ni le choix.
@@ -2694,7 +2707,7 @@ async function searchAndPlay(p, request, opts) {
     const usable = withoutBad(p, views);
     // Navigateur : la version de l'hôte n'est suivie que si elle passe ici (sinon la meilleure source compatible).
     const same = opts.prefer ? opts.prefer(usable.filter((v) => webCompatOf(v, compatCtx).level === 'ok')) : null;
-    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined);
+    return same ? { view: same, reason: 'Même version que l’hôte du salon', party: true } : recommendFor(usable, bw, originalLangOf(p) || undefined, undefined, langPrefsOf(p));
   };
   const good = (r) => !!r && (r.party === true || isGoodMatch(r));
   // Lancement sans attendre tous les addons : voir awaitLaunchable. Les addons restants alimentent le panneau Sources.

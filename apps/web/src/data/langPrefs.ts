@@ -16,6 +16,22 @@ export const LANG_NONE = 'none';
 /** Sous-titres dans la langue audio principale. */
 export const LANG_MAIN = 'main';
 
+/** Réglages propres aux animes (voir `isAnime`) : remplacent les réglages généraux pour ces titres seulement. */
+export interface AnimePrefs {
+  /** Interrupteur : désactivé, les animes suivent les réglages généraux. */
+  on: boolean;
+  /** Audio visé : `fr` (VF), `ja` (VO japonaise), `vo` (langue d'origine du titre), `en`. */
+  audio: string;
+  /** Sous-titres : `none`, `fr`, `en` ou `forced` (forcés de ma langue seulement). */
+  subs: string;
+  /** Sous-titres seulement si l'audio n'est pas dans ma langue (langue audio principale générale). */
+  ifForeign: boolean;
+}
+
+export const ANIME_AUDIO_CHOICES: ReadonlyArray<readonly [string, string]> = [['fr', 'Français (VF)'], ['ja', 'Japonais (VO)'], [LANG_VO, 'Langue d’origine'], ['en', 'Anglais']];
+export const ANIME_SUBS_CHOICES: ReadonlyArray<readonly [string, string]> = [['none', 'Aucun'], ['fr', 'Français'], ['en', 'Anglais'], ['forced', 'Forcés seulement']];
+const DEFAULT_ANIME_PREFS: AnimePrefs = { on: false, audio: 'ja', subs: 'fr', ifForeign: true };
+
 export interface LangPrefs {
   /** Langue audio principale (code à deux lettres). */
   audio: string;
@@ -28,9 +44,11 @@ export interface LangPrefs {
   /** Mode apprentissage : audio et sous-titres dans la langue apprise, doublés de la langue principale. */
   learn: boolean;
   learnLang: string;
+  /** Réglages des animes. */
+  anime: AnimePrefs;
 }
 
-export const DEFAULT_LANG_PREFS: LangPrefs = { audio: 'fr', audio2: LANG_VO, subsOn: true, subs: LANG_MAIN, learn: false, learnLang: 'en' };
+export const DEFAULT_LANG_PREFS: LangPrefs = { audio: 'fr', audio2: LANG_VO, subsOn: true, subs: LANG_MAIN, learn: false, learnLang: 'en', anime: DEFAULT_ANIME_PREFS };
 
 /** Langues proposées (code, libellé), dans l'ordre d'affichage. */
 export const LANG_CHOICES: ReadonlyArray<readonly [string, string]> = [
@@ -47,6 +65,21 @@ const code = (raw: unknown, fallback: string, extra: readonly string[] = []): st
   return KNOWN.has(c) ? c : fallback;
 };
 
+const oneOf = (raw: unknown, choices: ReadonlyArray<readonly [string, string]>, fallback: string): string => {
+  const t = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return choices.some(([c]) => c === t) ? t : fallback;
+};
+
+function normalizeAnime(x: unknown, base: AnimePrefs): AnimePrefs {
+  const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+  return {
+    on: typeof o.on === 'boolean' ? o.on : base.on,
+    audio: oneOf(o.audio, ANIME_AUDIO_CHOICES, base.audio),
+    subs: oneOf(o.subs, ANIME_SUBS_CHOICES, base.subs),
+    ifForeign: typeof o.ifForeign === 'boolean' ? o.ifForeign : base.ifForeign,
+  };
+}
+
 /** Réglages valides à partir de n'importe quelle valeur (champs inconnus ignorés, défauts pour le reste). */
 export function normalizeLangPrefs(x: unknown, base: LangPrefs = DEFAULT_LANG_PREFS): LangPrefs {
   const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
@@ -57,6 +90,7 @@ export function normalizeLangPrefs(x: unknown, base: LangPrefs = DEFAULT_LANG_PR
     subs: code(o.subs, base.subs, [LANG_MAIN]),
     learn: typeof o.learn === 'boolean' ? o.learn : base.learn,
     learnLang: code(o.learnLang, base.learnLang),
+    anime: normalizeAnime(o.anime, base.anime),
   };
 }
 
@@ -99,4 +133,44 @@ export function setLangPrefs(patch: Partial<LangPrefs>): LangPrefs {
 export function wantedSubLang(lp: LangPrefs): string {
   if (lp.learn && lp.learnLang !== lp.audio) return lp.learnLang;
   return lp.subs === LANG_MAIN ? lp.audio : lp.subs;
+}
+
+/** Enregistre (fusionne) les réglages des animes seulement. */
+export function setAnimePrefs(patch: Partial<AnimePrefs>): LangPrefs {
+  return setLangPrefs({ anime: { ...getLangPrefs().anime, ...patch } });
+}
+
+/**
+ * Réglages effectifs pour un titre : pour un anime dont les réglages sont activés, l'audio, les sous-titres et la langue
+ * de l'utilisateur viennent de la section Anime (mode apprentissage ignoré) ; sinon les réglages généraux, tels quels.
+ * Les champs ajoutés sont lus par `pickTracks` ; le reste (classement des sources, sous-titres externes) lit les champs de base.
+ */
+export interface EffectiveLangPrefs extends LangPrefs {
+  /** Anime : ma langue (audio principal général), distincte de l'audio visé. */
+  native?: string;
+  /** Anime : sous-titres même quand l'audio est dans ma langue. */
+  subsAlways?: boolean;
+  /** Anime : sous-titres forcés de ma langue seulement. */
+  forcedOnly?: boolean;
+  /** Anime : aucun sous-titre. */
+  noSubs?: boolean;
+}
+
+export function resolveLangPrefs(lp: LangPrefs, anime: boolean): EffectiveLangPrefs {
+  const a = lp.anime;
+  if (!anime || !a.on) return lp;
+  const native = lp.audio === LANG_VO ? 'fr' : lp.audio;
+  const subs = a.subs === 'fr' || a.subs === 'en' ? a.subs : native;
+  return {
+    ...lp,
+    audio: a.audio,
+    audio2: a.audio === lp.audio ? lp.audio2 : lp.audio,
+    subsOn: a.subs !== 'none',
+    subs,
+    learn: false,
+    native,
+    subsAlways: !a.ifForeign,
+    forcedOnly: a.subs === 'forced',
+    noSubs: a.subs === 'none',
+  };
 }

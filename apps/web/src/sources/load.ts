@@ -333,8 +333,8 @@ export function audioLangsFor(lp: LangPrefs, remembered?: string, originalLang?:
 }
 
 /** Mode apprentissage : les sources en VO ou multi-audio ne sont pas pénalisées (elles portent l'audio de la langue apprise). */
-function alsoAccepted(): readonly Lang[] {
-  return getLangPrefs().learn ? ['original', 'multi'] : [];
+function alsoAccepted(lp: LangPrefs): readonly Lang[] {
+  return lp.learn ? ['original', 'multi'] : [];
 }
 
 /** Contexte de la règle de compatibilité web : navigateur seul, serveur de streaming présent ou non, hôtes refusés. */
@@ -342,8 +342,8 @@ export function webCompatContext(): WebCompatContext {
   return { web: !inShell(), serverUp: serverLikelyUp(), rangeDenied };
 }
 
-/** `originalLang` : langue d'origine du titre (code à deux lettres) quand elle est connue ; sinon omise. `maxHeight` : plafond de résolution (ODY-236), par défaut celui de l'appareil. */
-export function recommendFor(views: readonly SourceView[], bwKbps: number | null, originalLang?: string, maxHeight?: number | null): Recommendation | null {
+/** `originalLang` : langue d'origine du titre (code à deux lettres) quand elle est connue ; sinon omise. `maxHeight` : plafond de résolution (ODY-236), par défaut celui de l'appareil. `lp` : réglages de langue effectifs du titre (animes : voir `resolveLangPrefs`), les réglages généraux à défaut. */
+export function recommendFor(views: readonly SourceView[], bwKbps: number | null, originalLang?: string, maxHeight?: number | null, lp: LangPrefs = getLangPrefs()): Recommendation | null {
   // Hôte déjà refusé (CORS) par la sonde du moteur audio : son son ne peut plus être décodé par l'app.
   const checked = views.map((v) => (v.appAudio === 'app' && rangeDenied(v.stream?.url) ? { ...v, appAudio: 'unsupported' as const } : v));
   // Navigateur sans Dolby natif : le son AC-3 / E-AC-3 est décodé par l'app, une source AAC / Opus de résolution proche le vaut mieux.
@@ -351,7 +351,7 @@ export function recommendFor(views: readonly SourceView[], bwKbps: number | null
   // Dans le navigateur, seules les sources dont la vidéo et le son passent sont choisies d'office (ODY-189) ; sinon aucune.
   const ctx = webCompatContext();
   const eligible = web ? checked.filter((v) => webCompatOf(v, ctx).level === 'ok') : checked;
-  return recommend(eligible, bwKbps, sourceLangFor(getLangPrefs(), originalLang), { preferDirect: web, preferAac: web && browserCaps().dolbyNative !== true, alsoAccept: alsoAccepted(), maxHeight: maxHeight === undefined ? currentCapHeight() : maxHeight });
+  return recommend(eligible, bwKbps, sourceLangFor(lp, originalLang), { preferDirect: web, preferAac: web && browserCaps().dolbyNative !== true, alsoAccept: alsoAccepted(lp), maxHeight: maxHeight === undefined ? currentCapHeight() : maxHeight });
 }
 
 /** Débit connu sans mesurer (réglage fixe ou mesure récente), sinon null. */

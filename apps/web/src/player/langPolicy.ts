@@ -1,4 +1,4 @@
-import { LANG_MAIN, LANG_NONE, LANG_VO, type LangPrefs } from '../data/langPrefs';
+import { LANG_MAIN, LANG_NONE, LANG_VO, type EffectiveLangPrefs, type LangPrefs } from '../data/langPrefs';
 import { langName, normalizeLang, trackLang, type AudioTrack, type SubtitleTrack } from './tracks';
 
 /*
@@ -143,7 +143,7 @@ function secondaryOf(subTracks: readonly SubtitleTrack[], prefs: LangPrefs, firs
  *   dans la langue principale en second. « Jamais » : aucun sous-titre, l'audio reste dans la langue apprise. Un sous-titre
  *   mémorisé (choix manuel) remplace seulement le premier ; le second est recalculé.
  */
-export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readonly SubtitleTrack[], prefs: LangPrefs, ctx: TrackContext = {}): TrackPick {
+export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readonly SubtitleTrack[], prefs: EffectiveLangPrefs, ctx: TrackContext = {}): TrackPick {
   const main = mainOf(prefs);
   const learn = learnOn(prefs);
   const learned = normalizeLang(prefs.learnLang);
@@ -196,10 +196,19 @@ export function pickTracks(audioTracks: readonly AudioTrack[], subTracks: readon
     return out;
   }
 
-  const subLang = prefs.subs === LANG_MAIN ? main : normalizeLang(prefs.subs) || main;
-  if (audioLang && audioLang === main && !ctx.alwaysSubs) {
-    // Dans la langue principale : seulement les sous-titres forcés de cette langue.
-    take(bestSub(subTracks, main, true, none), 'sub');
+  // Anime (réglages propres, voir `resolveLangPrefs`) : « ma langue » est la langue audio principale générale, pas l'audio visé.
+  const anime = prefs.native !== undefined;
+  const mine = anime ? normalizeLang(prefs.native) || main : main;
+  if (prefs.noSubs) return out;
+  if (prefs.forcedOnly) {
+    take(bestSub(subTracks, mine, true, none), 'sub');
+    return out;
+  }
+  const subLang = prefs.subs === LANG_MAIN ? mine : normalizeLang(prefs.subs) || mine;
+  const always = ctx.alwaysSubs || prefs.subsAlways;
+  if (audioLang && (audioLang === mine || (anime && audioLang === subLang)) && !always) {
+    // Dans ma langue (ou dans celle des sous-titres demandés, pour un anime) : seulement les sous-titres forcés de cette langue.
+    take(bestSub(subTracks, audioLang, true, none), 'sub');
     return out;
   }
   if (!prefs.subsOn) return out;

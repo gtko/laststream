@@ -58,6 +58,10 @@ export function buildModel(type, id, raw, en, canon) {
     ...trailerFields(raw.videos && raw.videos.results),
     videos,
     genres: (raw.genres || []).map((g) => g.name),
+    // Identifiants et origine TMDB : reconnaissance d'un anime (data/anime.ts) pour les réglages de langue.
+    genreIds: (raw.genres || []).map((g) => g.id),
+    origLangCode: origLang,
+    originCountry: raw.origin_country || (raw.production_countries || []).map((c) => c.iso_3166_1),
     minutes: runtime,
     certRaw: certification(raw, type),
     cinemaSince: type === 'movie' ? availOf(raw).cinemaSince : null,

@@ -12,7 +12,7 @@ import {
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { capHeightOf, capLabel, screenShortSide } from '../sources/resolutionCap';
 import { getBufferLevel, setBufferLevel } from '../player/bufferLevel';
-import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
+import { ANIME_AUDIO_CHOICES, ANIME_SUBS_CHOICES, getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setAnimePrefs, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
 import { errorText, openLogin, openPicker } from './auth-ui.js';
@@ -141,6 +141,9 @@ function playbackPanel() {
 }
 
 const langOptions = (value, extra) => extra.map(([c, l]) => [c, l]).concat(LANG_CHOICES).map(([c, l]) => '<option value="' + c + '"' + (c === value ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
+/** L'option « seulement si l'audio n'est pas dans ma langue » n'a d'effet que section activée et sous-titres en langue (ni « Aucun » ni « Forcés »). */
+const animeIfForeignOff = (lp) => !lp.anime.on || lp.anime.subs === 'none' || lp.anime.subs === 'forced';
+const animeSelect = (pref, value, choices, disabled) => (id) => '<select class="set-input" id="' + id + '" data-set-pref="' + pref + '"' + (disabled ? ' disabled' : '') + '>' + choices.map(([c, l]) => '<option value="' + c + '"' + (c === value ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>';
 const langSelect = (pref, value, extra, disabled) => (id) => '<select class="set-input" id="' + id + '" data-set-pref="' + pref + '"' + (disabled ? ' disabled' : '') + '>' + langOptions(value, extra) + '</select>';
 
 /** Niveaux de la mémoire tampon : valeurs du contrat partagé (voir player/bufferLevel.ts). */
@@ -157,7 +160,12 @@ function audioPanel() {
       fieldRow('Langue des sous-titres', 'Pistes du fichier d’abord, puis sous-titres externes.', langSelect('lang-subtitles', lp.subs, [[LANG_MAIN, 'Identique à la langue principale']], !lp.subsOn)), { attrs: 'data-lang-subs-card' }) +
     card('Mode apprentissage de langue',
       switchRow('Apprendre une langue', 'Audio dans la langue apprise si elle existe, avec deux sous-titres : la langue apprise et ta langue principale.', lp.learn, 'data-set-pref="lang-learn"') +
-      fieldRow('Langue apprise', '', langSelect('lang-learnlang', lp.learnLang, [], !lp.learn)));
+      fieldRow('Langue apprise', '', langSelect('lang-learnlang', lp.learnLang, [], !lp.learn))) +
+    card('Anime',
+      switchRow('Réglages spécifiques aux animes', 'Les films et séries qui ne sont pas des animes gardent les réglages ci-dessus. Un anime est un titre classé Animation et d’origine japonaise.', lp.anime.on, 'data-set-pref="anime-on"') +
+      fieldRow('Langue audio', 'Si la piste manque, les réglages généraux s’appliquent.', animeSelect('anime-audio', lp.anime.audio, ANIME_AUDIO_CHOICES, !lp.anime.on)) +
+      fieldRow('Sous-titres', '', animeSelect('anime-subs', lp.anime.subs, ANIME_SUBS_CHOICES, !lp.anime.on)) +
+      switchRow('Seulement si l’audio n’est pas dans ma langue', 'Désactivé, les sous-titres restent affichés même quand l’audio est dans ta langue.', lp.anime.ifForeign, 'data-set-pref="anime-iflang"' + (animeIfForeignOff(lp) ? ' disabled' : '')));
 }
 
 /** Choix du serveur (Android et pages servies par lastAddon) : Laststream par défaut, ou un serveur perso. */
@@ -481,6 +489,9 @@ function applyToggle(pref, on) {
   else if (pref === 'lang-subs' || pref === 'lang-learn') {
     setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
     syncLangRows();
+  } else if (pref === 'anime-on' || pref === 'anime-iflang') {
+    setAnimePrefs(pref === 'anime-on' ? { on } : { ifForeign: on });
+    syncLangRows();
   }
 }
 
@@ -491,6 +502,12 @@ function syncLangRows() {
   const learn = detailEl.querySelector('[data-set-pref="lang-learnlang"]');
   if (subs) subs.disabled = !lp.subsOn;
   if (learn) learn.disabled = !lp.learn;
+  for (const k of ['anime-audio', 'anime-subs']) {
+    const el = detailEl.querySelector('[data-set-pref="' + k + '"]');
+    if (el) el.disabled = !lp.anime.on;
+  }
+  const ifForeign = detailEl.querySelector('[data-set-pref="anime-iflang"]');
+  if (ifForeign) ifForeign.disabled = animeIfForeignOff(lp);
 }
 
 // ---------- Événements (délégués, limités à la page) ----------
@@ -502,6 +519,7 @@ detailEl.addEventListener('click', async (e) => {
   const tg = t.closest('[data-set-toggle]');
   if (tg) {
     e.preventDefault();
+    if (tg.disabled) return;
     const on = flip(tg);
     if (tg.dataset.setPref) applyToggle(tg.dataset.setPref, on);
     return;
@@ -556,6 +574,8 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'lang-audio2') setLangPrefs({ audio2: t.value });
   else if (p === 'lang-subtitles') setLangPrefs({ subs: t.value });
   else if (p === 'lang-learnlang') setLangPrefs({ learnLang: t.value });
+  else if (p === 'anime-audio') setAnimePrefs({ audio: t.value });
+  else if (p === 'anime-subs') { setAnimePrefs({ subs: t.value }); syncLangRows(); }
   else if (p === 'buffer-level') setBufferLevel(t.value);
   else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
   else if (p === 'max-resolution') {

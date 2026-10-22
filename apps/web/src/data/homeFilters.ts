@@ -1,5 +1,6 @@
 import { isFullyWatched, type SeenStore } from './seen';
 import { userStore } from './userStore';
+import { isAnime } from './anime';
 
 /*
  * Filtres d'accueil propres à chaque profil : titres « Ne plus proposer », genres bannis, séries marquées vues en entier.
@@ -103,7 +104,7 @@ const yearOf = (date: string | undefined): number | null => {
  * manque n'est jamais exclu (pas de faux positif).
  */
 const DERIVED: Record<DerivedKey, (it: ItemFacts) => boolean> = {
-  anime: (it) => (it.genreIds ?? []).includes(16) && (it.originalLanguage === 'ja' || (it.originCountry ?? []).includes('JP')),
+  anime: isAnime,
   kdrama: (it) => it.originalLanguage === 'ko',
   bollywood: (it) => INDIAN_LANGUAGES.includes(it.originalLanguage ?? ''),
   chinese: (it) => CHINESE_LANGUAGES.includes(it.originalLanguage ?? ''),
