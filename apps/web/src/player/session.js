@@ -567,7 +567,7 @@ async function initSession(request, views, view, opts = {}) {
       style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
-    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', canonical: false, pickMine: false,
+    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', epSearchOpen: false, canonical: false, pickMine: false,
     aspect: 'contain', local: null, localFailed: false,
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
@@ -1914,7 +1914,14 @@ function onAction(act, data) {
     case 'autopip': { const on = storeGet(AUTOPIP_KEY) !== '1'; storeSet(AUTOPIP_KEY, on ? '1' : '0'); ui.video.autoPictureInPicture = on; ui.refreshPanel(); break; }
     case 'season': ensureEpisodes(Number(data.season)); break;
     case 'episode': playEpisode(Number(data.season), Number(data.episode)); break;
-    case 'epsearch': P.epQuery = data.q || ''; ui.refreshPanel(); break;
+    case 'epsearch': P.epQuery = data.q || ''; if (!P.epQuery) P.epSearchOpen = false; ui.refreshPanel(); if (!P.epSearchOpen) ui.focusEpSearch(false); break;
+    case 'ep-search': {
+      P.epSearchOpen = !(P.epSearchOpen || P.epQuery);
+      if (!P.epSearchOpen) P.epQuery = '';
+      ui.refreshPanel();
+      ui.focusEpSearch(P.epSearchOpen);
+      break;
+    }
     case 'ep-seen': {
       Promise.resolve(userStore.setWatched(P.req.key, [{ season: Number(data.season), episode: Number(data.episode) }], data.seen === '1')).then(() => ui.refreshPanel());
       break;
@@ -1930,6 +1937,7 @@ function onAction(act, data) {
       const from = firstUnseen(P.seasons, P.episodes, P.panelSeason ?? P.cur.season ?? 1, (sn, e) => userStore.isWatched(P.req.key, sn, e));
       if (!from) { ui.toast('Tous les épisodes diffusés sont vus'); break; }
       P.epQuery = '';
+      P.epSearchOpen = false;
       ensureEpisodes(from.season).then(() => ui.revealEpisode(from.episode));
       break;
     }
@@ -2005,7 +2013,7 @@ function panelData(name) {
       return { ...e, watched: userStore.isWatched(p.req.key, s, e.episode), progress: pr && pr.duration ? pr.position / pr.duration : 0 };
     });
     return {
-      seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, error: !!p.episodesError, current: p.cur, query: p.epQuery,
+      seasons: p.seasons, season: s, episodes: filterEpisodes(all, p.epQuery), loading: !!p.episodesLoading, error: !!p.episodesError, current: p.cur, query: p.epQuery, searchOpen: !!(p.epSearchOpen || p.epQuery),
       logo: p.meta.logo, backdrop: p.meta.backdrop ? IMG('w780', p.meta.backdrop) : '', poster: p.meta.poster ? IMG('w342', p.meta.poster) : '', title: p.meta.title, total: all.length, watchedCount: all.filter((e) => e.watched).length,
     };
   }
@@ -2049,6 +2057,8 @@ function onKey(e) {
   const modal = document.getElementById('modal');
   if (modal && !modal.hidden) return; // une fenêtre de l'application (note, etc.) gère ses propres touches
   const t = e.target instanceof Element ? e.target : null;
+  // Recherche d'épisode : Échap referme le champ (et vide le filtre) sans fermer le panneau (ODY-202).
+  if (e.key === 'Escape' && t && t.closest('.lp-search')) { e.preventDefault(); e.stopImmediatePropagation(); onAction('ep-search'); return; }
   // Mini-lecteur : aucun raccourci global, sauf « I » pour agrandir (jamais pendant une saisie).
   if (miniState.mini) {
     const field = !!(t && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]'));

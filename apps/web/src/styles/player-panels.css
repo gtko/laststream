@@ -91,6 +91,8 @@
 .lp-eps-title { margin: 0; font-family: var(--ff-title); font-weight: 800; font-size: 20px; }
 .lp-eps-bar { padding: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .lp-eps-sum { font-size: 13px; font-weight: 700; color: var(--dim); }
+.lp-eps-find { margin-left: auto; min-height: 36px; width: 36px; padding: 0; display: grid; place-items: center; flex: none; }
+.lp-eps-find svg { width: 16px; height: 16px; }
 .lp-eps-tools { display: flex; gap: 8px; align-items: center; }
 .lp-search { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.05); color: var(--text); font: inherit; font-size: 14px; }
 .lp-search:focus-visible { outline: var(--focus-ring-field); outline-offset: var(--focus-ring-offset); }

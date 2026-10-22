@@ -129,8 +129,11 @@ export function episodesHtml(d) {
     '<div class="lp-eps-head">' + (d.logo ? '<img class="lp-eps-logo" src="' + esc(d.logo) + '" alt="' + esc(d.title) + '">' : '<p class="lp-eps-title">' + esc(d.title) + '</p>') +
       '<div class="lp-eps-bar">' +
         (d.seasons.length ? '<label class="lp-sel"><span class="sr-only">Saison</span><select class="lp-select" aria-label="Saison">' + d.seasons.map((s) => '<option value="' + s.season + '"' + (s.season === d.season ? ' selected' : '') + '>Saison ' + s.season + '</option>').join('') + '</select></label>' : '') +
-        '<span class="lp-eps-sum">Saison ' + d.season + ' · ' + d.total + ' épisode' + (d.total > 1 ? 's' : '') + ' · ' + d.watchedCount + ' vu' + (d.watchedCount > 1 ? 's' : '') + '</span></div>' +
-      '<div class="lp-eps-tools"><input class="lp-search" type="text" inputmode="search" placeholder="Chercher un épisode" aria-label="Chercher un épisode" value="' + esc(d.query || '') + '" data-input="epsearch">' +
+        '<span class="lp-eps-sum">Saison ' + d.season + ' · ' + d.total + ' épisode' + (d.total > 1 ? 's' : '') + ' · ' + d.watchedCount + ' vu' + (d.watchedCount > 1 ? 's' : '') + '</span>' +
+        // Recherche derrière une loupe (ODY-202) : le champ n'apparaît qu'à l'ouverture (ou tant qu'un filtre est actif).
+        '<button type="button" class="lp-chip lp-chip-icon lp-eps-find' + (d.searchOpen ? ' is-on' : '') + '" data-act="ep-search" aria-expanded="' + !!d.searchOpen + '" title="' + (d.searchOpen ? 'Fermer la recherche' : 'Chercher un épisode') + '" aria-label="' + (d.searchOpen ? 'Fermer la recherche' : 'Chercher un épisode') + '">' + (d.searchOpen ? LI.close : LI.search) + '</button></div>' +
+      '<div class="lp-eps-tools">' +
+        (d.searchOpen ? '<input class="lp-search" type="text" inputmode="search" placeholder="Chercher un épisode" aria-label="Chercher un épisode" value="' + esc(d.query || '') + '" data-input="epsearch">' : '') +
         chip('ep-next-unseen', {}, 'Prochain non vu') + '</div></div>' +
     '<div class="lp-list lp-eps" role="menu">' + rows + '</div>' +
     '<div class="lp-eps-foot">' +

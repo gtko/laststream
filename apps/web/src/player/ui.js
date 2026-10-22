@@ -408,6 +408,11 @@ export function createPlayerUI(h) {
       q('.lp-cancel').hidden = !e.cancel;
       q('.lp-self').hidden = !e.slow;
     },
+    /** Recherche d'épisode : focus du champ à l'ouverture, de la loupe à la fermeture. */
+    focusEpSearch(open) {
+      const el = panel.querySelector(open ? '.lp-search' : '[data-act="ep-search"]');
+      if (el) el.focus({ preventScroll: true });
+    },
     /** Fait défiler la liste d'épisodes jusqu'à l'épisode donné (0 : aucun) et lui donne le focus. */
     revealEpisode(n) {
       const row = n ? panel.querySelector('.lp-ep-row[data-ep="' + n + '"] .lp-ep') : null;

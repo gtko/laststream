@@ -15,6 +15,7 @@ export const LI = {
   fullExit: svg('<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>'),
   info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
   gear: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'),
+  search: svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>'),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
   back: svg('<path d="M19 12H5M12 19l-7-7 7-7"/>'),
   next: svg('<path d="M5 5l9 7-9 7zM18 5v14"/>'),

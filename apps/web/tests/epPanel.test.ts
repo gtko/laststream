@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { episodesHtml } from '../src/player/panels';
 import { bindEpisodeFold } from '../src/player/epfold';
 
-const data = () => ({
+const data = (): Record<string, any> => ({
   title: 'Show', logo: '', season: 1, seasons: [{ season: 1, count: 3 }], total: 3, watchedCount: 1, query: '',
   loading: false, error: '', current: { season: 1, episode: 2 },
   episodes: [
@@ -130,3 +130,26 @@ describe('panneau Épisodes : dépliage du synopsis', () => {
   });
 });
 
+
+describe('panneau Épisodes : recherche derrière une loupe (ODY-202)', () => {
+  it('par défaut : aucun champ de recherche, une loupe dans la rangée de la saison, « Prochain non vu » visible', () => {
+    const host = mount();
+    expect(host.querySelector('input.lp-search')).toBeNull();
+    const find = host.querySelector('.lp-eps-bar [data-act="ep-search"]') as HTMLButtonElement;
+    expect(find).not.toBeNull();
+    expect(find.getAttribute('aria-expanded')).toBe('false');
+    expect(find.getAttribute('aria-label')).toBe('Chercher un épisode');
+    expect(host.querySelector('[data-act="ep-next-unseen"]')).not.toBeNull();
+  });
+
+  it('ouverte : le champ garde sa valeur et son data-input, la loupe devient « Fermer »', () => {
+    const host = mount({ ...data(), searchOpen: true, query: 'dép' });
+    const input = host.querySelector('input.lp-search') as HTMLInputElement;
+    expect(input.dataset.input).toBe('epsearch');
+    expect(input.value).toBe('dép');
+    const find = host.querySelector('[data-act="ep-search"]') as HTMLButtonElement;
+    expect(find.getAttribute('aria-expanded')).toBe('true');
+    expect(find.getAttribute('aria-label')).toBe('Fermer la recherche');
+    expect(host.querySelector('[data-act="ep-next-unseen"]')).not.toBeNull();
+  });
+});
