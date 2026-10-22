@@ -1,6 +1,7 @@
 import { appFetchBinary } from './crossFetch';
 import { requireBase } from './config';
-import { getSession } from './session';
+import { auth } from './auth';
+import { getSession, validProfileToken } from './session';
 import { call } from './userApi';
 import { capacitorHttp, nativeKind, shellHttp, type HttpFn } from '../sources/debrid/http';
 
@@ -262,9 +263,18 @@ function sessionHeaders(): Record<string, string> {
   return headers;
 }
 
+/**
+ * En-têtes de profil pour les routes de compte Molotov : le profil actif de l'app (`auth.profile`, même source que
+ * `socialHttp`), repli sur la session ; le jeton de profil (PIN) accompagne l'identifiant, comme ailleurs. Sans cet
+ * en-tête, le serveur refuse (`main_profile_required`) même depuis le profil principal.
+ */
 function profileHeaders(): Record<string, string> {
-  const profile = getSession()?.profileId;
-  return profile ? { 'x-profile-id': profile } : {};
+  const pid = auth.profile?.id ?? getSession()?.profileId;
+  if (!pid) return {};
+  const headers: Record<string, string> = { 'x-profile-id': pid };
+  const pt = validProfileToken(pid);
+  if (pt) headers['x-profile-token'] = pt;
+  return headers;
 }
 
 /**
