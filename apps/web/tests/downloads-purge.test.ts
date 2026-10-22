@@ -143,6 +143,46 @@ describe('marqueur de purge au démarrage', () => {
   });
 });
 
+describe('le marqueur ne part qu’après la purge de l’index (ODY-233)', () => {
+  it('plateforme indisponible + marqueur posé : le marqueur reste', async () => {
+    resetDownloadsForTests(); // plus de plateforme enregistrée : jsdom n'a pas de stockage
+    markPurgePending();
+    await purgeAll();
+    expect(isPurgePending()).toBe(true);
+    expect(await getDownloads()).toBeNull();
+    expect(isPurgePending()).toBe(true);
+  });
+
+  it('index qui refuse la suppression : le marqueur reste, rien ne reprend, puis la purge suivante aboutit', async () => {
+    state.views = [viewOf(httpStream({ filename: 'a.mkv', size: GB }))];
+    await requestDownload(MOVIE);
+    await vi.waitFor(() => expect(transfers).toHaveLength(1));
+    markPurgePending();
+    reload();
+    const del = vi.spyOn(createDownloadIndex(), 'delete').mockRejectedValue(new Error('index indisponible'));
+    expect(await getDownloads()).toBeNull();
+    expect(isPurgePending()).toBe(true);
+    await flush();
+    expect(transfers).toEqual([]);
+    expect(await createDownloadIndex().all()).toHaveLength(1);
+    // Interruption entre les deux : l'index se rétablit, le démarrage suivant le vide puis efface le marqueur.
+    del.mockRestore();
+    reload();
+    expect((await getDownloads())?.list()).toEqual([]);
+    expect(await createDownloadIndex().all()).toEqual([]);
+    expect(isPurgePending()).toBe(false);
+    await flush();
+    expect(transfers).toEqual([]);
+  });
+
+  it('index vidé mais marqueur resté (interruption) : le démarrage suivant efface le marqueur sans rien reprendre', async () => {
+    markPurgePending();
+    reload();
+    expect((await getDownloads())?.list()).toEqual([]);
+    expect(isPurgePending()).toBe(false);
+  });
+});
+
 describe('déconnexion et marqueur', () => {
   it('explicite : le marqueur est posé avant le premier await, puis la purge immédiate est tentée', async () => {
     const pending = signOut(false);

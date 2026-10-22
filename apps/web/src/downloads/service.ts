@@ -117,14 +117,16 @@ function publish(items: readonly DownloadItem[]): void {
 /**
  * Efface les téléchargements connus de l'index : fichier (magasin) puis entrée d'index, sans reprise. Ne lève jamais :
  * une entrée dont le fichier ne part pas sort quand même de l'index, sinon elle reprendrait au démarrage.
+ * Vrai seulement si l'index a été lu et que chaque entrée en est sortie : sinon le marqueur de purge doit rester (ODY-233).
  */
-async function wipeStored(idx: DownloadIndex, store: DownloadStore): Promise<void> {
-  let rows: DownloadItem[] = [];
+async function wipeStored(idx: DownloadIndex, store: DownloadStore): Promise<boolean> {
+  let rows: DownloadItem[];
   try {
     rows = await idx.all();
   } catch {
-    /* index illisible : rien à lister */
+    return false; /* index illisible : on ne sait pas ce qui reste */
   }
+  let emptied = true;
   for (const row of rows) {
     try {
       await store.remove(row.id);
@@ -134,9 +136,10 @@ async function wipeStored(idx: DownloadIndex, store: DownloadStore): Promise<voi
     try {
       await idx.delete(row.id);
     } catch {
-      /* index indisponible : l'entrée reste, et la purge reprend au démarrage suivant */
+      emptied = false; /* index indisponible : l'entrée reste, et la purge reprend au démarrage suivant */
     }
   }
+  return emptied;
 }
 
 /**
@@ -161,6 +164,11 @@ async function build(purge: boolean): Promise<DownloadManager | null> {
   }
   const idx = createDownloadIndex();
   index = idx;
+  if (purge || isPurgePending()) {
+    // Le marqueur n'est effacé qu'une fois l'index vidé ; sinon le gestionnaire ne démarre pas (rien ne reprend) et la purge est refaite.
+    if (!(await wipeStored(idx, store))) throw new Error('purge incomplète');
+    clearPurgePending();
+  }
   const created = new DownloadManager({
     resolver: createStreamResolver({ linkPolicy: linkPolicy() }),
     // Hors transfert de plateforme, les morceaux passent par ce transport : liens https publics des addons (voir linkHosts.ts).
@@ -173,10 +181,6 @@ async function build(purge: boolean): Promise<DownloadManager | null> {
   });
   unsubscribe = created.subscribe(publish);
   bindDownloadLimit((bytes) => created.setLimit(bytes));
-  if (purge || isPurgePending()) {
-    await wipeStored(idx, store);
-    clearPurgePending();
-  }
   // L'index est relu ici : les téléchargements inachevés reprennent d'eux-mêmes.
   await created.init();
   return created;
@@ -437,10 +441,11 @@ export async function purgeAll(): Promise<void> {
       m.pauseAll();
       for (const item of m.list()) await m.remove(item.id);
     }
-    if (index) {
+    // Le marqueur ne part qu'une fois l'index vidé : sans gestionnaire (plateforme indisponible, construction échouée) il reste.
+    if (m && index) {
       for (const row of await index.all()) await index.delete(row.id);
+      if ((await index.all()).length === 0) clearPurgePending();
     }
-    clearPurgePending();
   } catch {
     /* ne lève jamais : la déconnexion ne doit pas échouer ; le marqueur reste pour le démarrage suivant */
   } finally {
