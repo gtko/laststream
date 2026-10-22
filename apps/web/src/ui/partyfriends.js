@@ -7,6 +7,7 @@ import { UserApiError } from '../data/userApi';
 import { initialsOf } from '../party/lobbyModel';
 import { avatarAttrs } from './avatar-art.js';
 import { toast } from './dom.js';
+import { avatarHTML, nameOf, SEEN_LABEL } from './socialFmt.js';
 import { esc } from './util.js';
 
 /** Amis déjà invités dans le salon affiché (pid). */
@@ -30,6 +31,17 @@ export function friendsListHTML(attr) {
       '<span class="pl-friend-t"><b>' + esc(f.handle.full) + '</b><span>' + (f.status === 'offline' ? 'Hors ligne' : f.watching ? 'Regarde ' + esc(f.watching.title) : 'En ligne') + '</span></span>' +
       '<button type="button" class="pl-btn is-sec is-sm" data-' + attr + '="' + esc(f.pid) + '"' + (done ? ' disabled' : '') + '>' + (done ? 'Invité' : 'Inviter') + '</button></li>';
   }).join('') + '</ul>';
+}
+
+/** Amis à inviter dès la création (cartes à cocher, avatar avec présence) ; vide pour un profil enfant, hors compte ou sans ami. */
+export function friendPickerHTML() {
+  if (isKidProfile() || !isServerMode()) return '';
+  const friends = sortedFriends();
+  if (!friends.length) return '<p class="pl-empty">Aucun ami pour l’instant : tu pourras partager le lien une fois le salon créé.</p>';
+  return '<ul class="pld-friends">' + friends.map((f) =>
+    '<li><label class="pld-friend">' + avatarHTML(f, 'ss-av-m', f.status === 'offline' ? '' : f.status) +
+    '<span class="pld-friend-t"><b>' + esc(nameOf(f)) + '</b><span>' + (f.watching ? 'Regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || 'Hors ligne')) + '</span></span>' +
+    '<input type="checkbox" name="friend" value="' + esc(f.pid) + '" aria-label="Inviter ' + esc(nameOf(f)) + '"><span class="pld-check" aria-hidden="true"></span></label></li>').join('') + '</ul>';
 }
 
 /** Invite l'ami `pid` dans le salon `roomId` (message dans la discussion directe et alerte en direct) ; vrai si l'invitation est partie. */

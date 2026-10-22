@@ -208,6 +208,49 @@ describe('en-tête du salon et menu « … »', () => {
     expect(panelOf().querySelector('[data-wp-send] [type=submit]')!.getAttribute('aria-label')).toBe('Envoyer');
     (panelOf().querySelector('[data-wp-menu]') as HTMLElement).click();
   });
+
+  it('badge de visibilité sur sa ligne, « Inviter » à côté, fermeture dans l’en-tête (rien ne se chevauche)', () => {
+    partyBridge.client = fakeClient(true, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    const sub = panelOf().querySelector('.wp-subrow') as HTMLElement;
+    expect(sub.querySelector('.wp-vis')!.textContent).toBe('Privé');
+    expect(sub.querySelector('[data-wp-open-invite]')).not.toBeNull();
+    expect(sub.textContent).toContain('Chacun lit avec sa propre source');
+    expect(panelOf().querySelector('.wp-head [data-wp-close]')).not.toBeNull();
+    expect(panelOf().querySelector('#wp-menu .wp-vis')).toBeNull();
+  });
+
+  it('l’hôte termine pour tous, un invité ne voit pas « Terminer »', () => {
+    partyBridge.client = fakeClient(true, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('[data-wp-end]')!.textContent).toBe('Terminer pour tous');
+    partyBridge.client = fakeClient(false, hostParticipants()) as any;
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('[data-wp-end]')).toBeNull();
+  });
+
+  it('sans invité par lien ni partage : on dit seulement que chacun lit avec sa source (pas de « Partage inactif »)', () => {
+    partyBridge.client = fakeClient(true, [{ username: 'alice', host: true }, { username: 'bob' }]) as any;
+    panel.togglePartyPanel(true);
+    expect(panelOf().querySelector('[data-wp-relay]')!.textContent).toBe('Chacun lit avec sa propre source');
+  });
+});
+
+describe('création du salon', () => {
+  it('visibilité en choix visuel, bouton de création épinglé, fermeture dans l’en-tête, aucune promesse de flux partagé', () => {
+    partyBridge.client = null;
+    panel.togglePartyPanel(true);
+    const p = panelOf();
+    expect(p.querySelector('.wp-cbar [data-wp-close]')).not.toBeNull();
+    expect(p.querySelector('.wp-title')!.textContent).toBe('Watch party');
+    const radios = [...p.querySelectorAll<HTMLInputElement>('.wp-vopts input[name="vis"]')];
+    expect(radios[0].value).toBe('private');
+    expect(radios[0].checked).toBe(true);
+    const submit = p.querySelector('.wp-cfoot [type=submit]') as HTMLButtonElement;
+    expect(submit.textContent).toBe('Créer le salon');
+    expect(p.textContent).toContain('Chacun lit avec sa propre source');
+    expect(p.textContent).toContain('aucun flux vidéo n’est partagé');
+  });
 });
 
 /** Client de salon avec bus d’événements : les écouteurs du panneau reçoivent ce que `emit` envoie, comme le vrai client. */

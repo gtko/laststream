@@ -11,7 +11,8 @@ import { LI } from '../player/icons.js';
 import { shareBase } from './invites.js';
 import { esc } from './util.js';
 import { avatarAttrs } from './avatar-art.js';
-import { friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { friendPickerHTML, friendsListHTML, invitedPids, inviteInto } from './partyfriends.js';
+import { safeTmdbImage } from './safeImg.js';
 import { handlePartyCreateError } from './partyerrors.js';
 
 let rootEl = null;
@@ -45,7 +46,8 @@ let eventEl = null;
 let eventTimer = 0;
 let sysLines = [];
 
-const fmtRate = (bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
+const CLOSE_BTN = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">' + LI.close + '</button>';
+const fmtRate =(bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
 const guestCount = (c) => c.participants.filter((p) => p.guest).length;
 
 /** Ligne compacte du partage : débit montant et nombre d’invités (secondaire). Texte seulement, jamais d’URL. */
@@ -60,6 +62,8 @@ function rateHTML() {
     return '<span class="wp-rate-warn" title="Cette source (torrent ou lien protégé) ne peut pas être envoyée aux invités par lien : choisis une source débridée ou un lien direct.">Partage impossible avec cette source</span> · ' + guests;
   }
   const s = partyBridge.relayStats();
+  // Rien n'est envoyé et personne n'est invité par lien : on dit seulement ce qu'est la watch party (pas de flux partagé).
+  if (!s && n === 0) return 'Chacun lit avec sa propre source';
   return (s ? '↑ ' + fmtRate(s.rateBps) : 'Partage inactif') + ' · ' + guests;
 }
 
@@ -75,11 +79,11 @@ function compatHTML() {
 function inviteHTML() {
   const compat = compatHTML();
   compatShown = compat;
-  return '<section class="wp-invite">' +
+  return '<section class="wp-invite wp-card"><h4 class="wp-sub">Lien d’invitation</h4>' +
     (lastInviteUrl ? '<input type="text" class="wp-invite-link" data-wp-invite-link readonly value="' + esc(lastInviteUrl) + '" aria-label="Lien d’invitation">' : '') +
-    '<div class="wp-invite-btns"><button type="button" class="btn btn-ghost btn-sm' + (inviteCopied ? ' is-done' : '') + '" data-wp-invite>' +
+    '<div class="wp-invite-btns"><button type="button" class="wp-btn is-pri' + (inviteCopied ? ' is-done' : '') + '" data-wp-invite>' +
     (inviteCopied ? 'Copié' : 'Copier le lien d’invitation') + '</button>' +
-    '<button type="button" class="btn btn-ghost btn-sm" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button></div>' +
+    '<button type="button" class="wp-btn" data-wp-newlink title="L’ancien lien cesse de fonctionner ; les invités déjà dans le salon restent">Nouveau lien</button></div>' +
     '<p class="wp-rate" data-wp-relay title="Chaque invité consomme ~ le débit du fichier en envoi depuis votre connexion.">' + rateHTML() + '</p>' +
     '<div class="wp-compat" data-wp-compatbox>' + compat + '</div></section>';
 }
@@ -203,7 +207,7 @@ function chatHeadHTML() {
 /** Invitation ciblée d'un ami (réservée aux comptes : ni profil enfant, ni invité). */
 function friendsHTML(c) {
   if (isKidProfile() || !c.room || (c.you && c.you.guest)) return '';
-  return '<details class="wp-more-box" data-wp-friends><summary>Inviter des amis</summary>' + friendsListHTML('wp-friend') + '</details>';
+  return '<section class="wp-sec" data-wp-friends><h4 class="wp-sub">Inviter des amis</h4>' + friendsListHTML('wp-friend') + '</section>';
 }
 
 /** Réglages du salon (hôte) : trois groupes de choix, comme le salon d’attente. */
@@ -220,15 +224,23 @@ function createHTML() {
   const choices = partyVisibilityChoices(kid);
   const a = getAdapter();
   const ready = !!(a && a.ready);
-  return '<h3 class="wp-title">Watch party</h3>' +
-    '<p class="wp-note">Regarde en même temps que tes amis. Chacun lit avec sa propre source : aucun lien de lecture n’est partagé.</p>' +
-    '<form class="wp-form" data-wp-create><fieldset class="wp-fs"><legend>Type de salon</legend>' +
-    '<label class="wp-opt"><input type="radio" name="vis" value="private" checked><span><b>Privé</b> Accessible seulement avec le lien.</span></label>' +
-    (choices.includes('public') ? '<label class="wp-opt"><input type="radio" name="vis" value="public"><span><b>Public</b> Listé dans « Watch parties ».</span></label>' : '') +
-    '</fieldset>' +
-    (kid ? '<p class="wp-note">Profil enfant : salon privé uniquement.</p>' : '') +
+  const name = a && a.req && a.req.name ? String(a.req.name) : 'Ce titre';
+  const poster = a ? safeTmdbImage(a.poster, 'w185') : null;
+  const kind = a && a.req && a.req.type === 'tv' ? 'Série' : 'Film';
+  const opt = (value, label, hint, on) => '<label class="wp-vopt"><input type="radio" name="vis" value="' + value + '"' + (on ? ' checked' : '') + '><span><b>' + esc(label) + '</b><i>' + esc(hint) + '</i></span></label>';
+  const friends = friendPickerHTML();
+  return '<div class="wp-cbar"><h3 class="wp-title">Watch party</h3>' + CLOSE_BTN + '</div>' +
+    '<form class="wp-cform" data-wp-create><div class="wp-cbody">' +
+    '<div class="wp-card wp-title-card">' + (poster ? '<span class="wp-poster-sm"><img src="' + esc(poster) + '" alt=""></span>' : '<span class="wp-poster-sm is-empty" aria-hidden="true"></span>') +
+    '<span class="wp-title-t"><span class="wp-lb">En cours de lecture</span><b>' + esc(name) + '</b><span class="wp-sub-t">' + kind + ' · chacun lit avec sa propre source</span></span></div>' +
+    '<fieldset class="wp-fs"><legend class="wp-lb">Qui peut rejoindre</legend><div class="wp-vopts">' +
+    opt('private', 'Privé', kid ? 'Profil enfant : salon privé uniquement' : 'Amis invités', true) +
+    (choices.includes('public') ? opt('public', 'Public', 'Listé dans « Watch parties »', false) : '') + '</div></fieldset>' +
+    (friends ? '<div class="wp-sec"><div class="wp-lb">Inviter des amis</div>' + friends + '</div>' : '') +
+    '</div><div class="wp-cfoot">' +
     '<p class="wp-msg" data-wp-msg role="status">' + (ready ? '' : 'Attends que la lecture démarre pour créer le salon.') + '</p>' +
-    '<button type="submit" class="btn btn-primary"' + (ready ? '' : ' disabled') + '>Créer le salon</button></form>';
+    '<button type="submit" class="wp-btn is-pri is-lg"' + (ready ? '' : ' disabled') + '>Créer le salon</button>' +
+    '<p class="wp-fine">Un lien d’invitation est copié à la création. Chacun lit avec sa propre source : aucun flux vidéo n’est partagé.</p></div></form>';
 }
 
 function roomHTML(c) {
@@ -241,20 +253,22 @@ function roomHTML(c) {
   const hostName = (c.participants.find((p) => p.host) || {}).username;
   const menu =
     '<section class="wp-menu" id="wp-menu" data-wp-menubox aria-label="Réglages du salon"' + (menuOpen ? '' : ' hidden') + '>' +
-    '<div class="wp-actions"><span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span>' +
-    (inviter ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-wp-copy>Copier le lien</button>') +
-    '<button type="button" class="btn btn-ghost btn-sm" data-wp-leave>Quitter</button>' +
-    (host ? '<button type="button" class="btn btn-ghost btn-sm wp-danger" data-wp-end>Terminer</button>' : '') + '</div>' +
-    '<h4 class="wp-sub">Participants (' + c.participants.length + ')</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul>' +
+    '<div class="wp-sec"><h4 class="wp-sub">Participants · ' + c.participants.length + '</h4><ul class="wp-users" data-wp-users>' + participantsHTML(c.participants, you, host, partyBridge.guestVerdicts(), wait ? wait.who : []) + '</ul></div>' +
     (inviter ? inviteHTML() : '') + friendsHTML(c) + (host ? settingsHTML(c) : '') +
     (host ? '' : '<p class="wp-note">La lecture est partagée : pause, reprise et sauts valent pour tout le salon. Seul l’hôte change d’épisode.</p>') +
+    '<div class="wp-actions">' + (inviter ? '' : '<button type="button" class="wp-btn" data-wp-copy>Copier le lien</button>') +
+    '<button type="button" class="wp-btn" data-wp-leave>Quitter</button>' +
+    (host ? '<button type="button" class="wp-btn is-danger" data-wp-end>Terminer pour tous</button>' : '') + '</div>' +
     '</section>';
   const muted = !!(you && you.muted);
-  return '<div class="wp-head"><div class="wp-head-t"><h3 class="wp-title">' + esc(hostName ? 'Salon de ' + hostName : 'Salon') + '</h3>' +
+  const hostPerson = c.participants.find((p) => p.host);
+  return '<div class="wp-head">' + (hostPerson ? avatarHTML(hostPerson).replace('class="wp-av', 'class="wp-av wp-head-av') : '') +
+    '<div class="wp-head-t"><h3 class="wp-title">' + esc(hostName ? 'Salon de ' + hostName : 'Salon') + '</h3>' +
     '<p class="wp-film">' + esc(room ? room.title : '') + '</p></div>' +
-    (inviter ? '<button type="button" class="wp-head-btn wp-head-invite" data-wp-open-invite>Inviter</button>' : '') +
     '<button type="button" class="wp-head-btn wp-head-menu" data-wp-menu aria-label="Réglages du salon" aria-expanded="' + (menuOpen ? 'true' : 'false') + '" aria-controls="wp-menu">' +
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>' + status +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>' + CLOSE_BTN + '</div>' +
+    '<div class="wp-subrow"><span class="wp-vis">' + (room && room.visibility === 'public' ? 'Public' : 'Privé') + '</span><span class="wp-hint">Chacun lit avec sa propre source</span>' +
+    (inviter ? '<button type="button" class="wp-head-btn wp-head-invite" data-wp-open-invite>Inviter</button>' : '') + '</div>' + status +
     menu +
     '<div class="wp-wait" data-wp-wait' + (wait ? '' : ' hidden') + '>' + waitInnerHTML(wait) + '</div>' +
     '<div class="wp-chatsec">' + chatHeadHTML() +
@@ -280,7 +294,7 @@ function render() {
   const chatBox = panel.querySelector('[data-wp-chat]');
   const keepScroll = stickBottom || (chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true);
   stickBottom = false;
-  panel.innerHTML = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">' + LI.close + '</button>' + (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
+  panel.innerHTML = (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
     (partyBridge.endReason ? '<p class="wp-msg" role="alert">' + esc(endText(partyBridge.endReason)) + '</p>' : '') +
     (partyBridge.lastError ? '<p class="wp-msg" role="alert">' + esc(partyBridge.lastError) + '</p>' : '');
   const box = panel.querySelector('[data-wp-chat]');
@@ -549,15 +563,29 @@ async function onSubmit(e) {
     const msg = f.querySelector('[data-wp-msg]');
     if (!a || !a.ready) return;
     const vis = (f.querySelector('input[name="vis"]:checked') || {}).value === 'public' ? 'public' : 'private';
+    const pids = isKidProfile() ? [] : [...f.querySelectorAll('input[name="friend"]:checked')].map((i) => i.value);
     f.querySelector('[type=submit]').disabled = true;
     try {
-      await partyBridge.create(a, vis);
+      const room = await partyBridge.create(a, vis);
       await inviteAfterCreate();
+      if (pids.length && room) void inviteChosen(room.id, pids);
     } catch (err) {
       f.querySelector('[type=submit]').disabled = false;
       void handlePartyCreateError(err, { retry: () => { const cur = document.querySelector('[data-wp-create]'); if (cur instanceof HTMLFormElement) cur.requestSubmit(); }, say: (t) => { if (msg) msg.textContent = t; } });
     }
   }
+}
+
+/** Amis cochés à la création : invités dans le salon (un seul toast pour le lot). */
+async function inviteChosen(roomId, pids) {
+  // À la suite et arrêt au premier échec : un refus (trop d'invitations, etc.) ne donne qu'un seul message.
+  let n = 0;
+  for (const pid of pids) {
+    if (!(await inviteInto(roomId, pid))) break;
+    n += 1;
+  }
+  if (n) toast(n === 1 ? 'Invitation envoyée' : n + ' invitations envoyées');
+  render();
 }
 
 async function copyText(url, okText) {

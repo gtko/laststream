@@ -243,8 +243,7 @@ body.has-party-lobby { overflow: hidden; }
 .wp-menu { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #24212e; max-height: 55%; overflow-y: auto; background: #12101a; }
 @media (min-width: 768px) {
   .lp-party { padding: 0; gap: 0; overflow: hidden; background: #17151f; border-left: 1px solid #24212e; backdrop-filter: none; }
-  .lp-party .wp-close { top: 14px; right: 12px; width: 34px; height: 34px; z-index: 1; }
-  .lp-party .wp-head { flex: none; gap: 8px; padding: 14px 52px 14px 16px; border-bottom: 1px solid #24212e; }
+  .lp-party .wp-head { flex: none; gap: 8px; padding: 12px 10px 8px 16px; }
   .lp-party .wp-title { font-weight: 700; font-size: 15px; padding-right: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lp-party .wp-status, .lp-party .wp-wait { margin: 8px 16px 0; }
   .lp-party .wp-chatsec { flex: 1 1 0; min-height: 0; gap: 0; display: flex; flex-direction: column; }
@@ -289,7 +288,7 @@ body.has-party-lobby { overflow: hidden; }
   .lp-party .wp-send .btn { width: 48px; height: 48px; border-radius: 24px; padding: 0; font-size: 0; }
   .lp-party .wp-send .btn::before { content: '→'; font-size: 20px; font-weight: 800; }
   .lp-party .wp-chars { display: none; }
-  .lp-party .wp-head, .lp-party .wp-menu, .lp-party .wp-actions, .lp-party .wp-wait, .lp-party .wp-sub, .lp-party .wp-users, .lp-party .wp-invite, .lp-party .wp-more-box, .lp-party .wp-note, .lp-party .wp-status { display: none; }
+  .lp-party .wp-head, .lp-party .wp-subrow, .lp-party .wp-menu, .lp-party .wp-actions, .lp-party .wp-wait, .lp-party .wp-sub, .lp-party .wp-users, .lp-party .wp-invite, .lp-party .wp-more-box, .lp-party .wp-note, .lp-party .wp-status { display: none; }
   .lp.is-ui .ps-band, .ps-band { position: fixed; top: 56.25vw; left: 0; right: 0; height: 64px; padding: 0 14px; border-radius: 0; border: 0; border-bottom: 1px solid var(--line); background: var(--bg); backdrop-filter: none; z-index: 8; }
   .ps-info { flex: 1; }
   .ps-btn { width: 40px; height: 40px; border-radius: 12px; background: var(--surface); }
@@ -353,3 +352,51 @@ body.has-party-lobby { overflow: hidden; }
 }
 @keyframes pld-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .modal.pld-modal { animation: none; } }
+
+/* ---------- Panneau du lecteur : création et salon actif (ODY-184), cartes, avatars et boutons du social v3 ---------- */
+.wp-lb { display: block; margin: 0 0 8px; padding: 0; font-family: var(--ff-title); font-weight: 700; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.wp-card { border-radius: 14px; background: #1d1a26; border: 1px solid var(--line); }
+.wp-sec { display: flex; flex-direction: column; gap: 6px; }
+.wp-cbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 16px; border-bottom: 1px solid var(--line); }
+.wp-cbar .wp-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; }
+.wp-cform { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.wp-cbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.wp-cbody .pld-friends { max-height: none; overflow: visible; }
+.wp-cfoot { flex: none; padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.wp-cfoot .wp-msg:empty { display: none; }
+.wp-fine { margin: 0; font-size: 12px; line-height: 1.45; color: var(--dim); text-align: center; }
+.wp-title-card { display: flex; align-items: center; gap: 12px; padding: 10px; }
+.wp-poster-sm { flex: none; width: 48px; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--line-2); }
+.wp-poster-sm img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wp-title-t { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.wp-title-t .wp-lb { margin: 0; }
+.wp-title-t b { font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.wp-sub-t { font-size: 12px; color: var(--dim); }
+.wp-fs { border: 0; margin: 0; padding: 0; min-width: 0; }
+.wp-fs .wp-lb { margin-bottom: 8px; }
+.wp-vopts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.wp-vopt { position: relative; display: block; cursor: pointer; }
+.wp-vopt input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.wp-vopt span { display: flex; flex-direction: column; gap: 2px; height: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--line-2); background: var(--surface); }
+.wp-vopt b { font-size: 14px; color: var(--text); }
+.wp-vopt i { font-style: normal; font-size: 12px; color: var(--dim); }
+.wp-vopt input:checked + span { border-color: var(--accent); background: #1d1a26; }
+.wp-vopt input:focus-visible + span { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.wp-btn { min-height: 36px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 10px; background: transparent; color: var(--soft); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.wp-btn:hover { border-color: #3a3647; color: var(--text); }
+.wp-btn.is-pri { border-color: transparent; background: var(--accent); color: var(--on-accent); font-weight: 800; }
+.wp-btn.is-pri:hover { background: var(--accent-hover); color: var(--on-accent); }
+.wp-btn.is-lg { min-height: 46px; border-radius: 12px; font-size: 15px; }
+.wp-btn.is-danger { border-color: #5b2a2a; color: #ff7a7a; }
+.wp-btn.is-done { background: #19c3a6; border-color: #19c3a6; color: var(--on-accent); }
+.wp-btn:disabled { opacity: 0.5; cursor: default; }
+.wp-btn:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.wp-close:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.wp-invite.wp-card { padding: 10px; }
+.wp-invite-btns .wp-btn:first-child { flex: 1; }
+.wp-actions .wp-btn { flex: 1; }
+.wp-head-av { width: 36px; height: 36px; font-size: 14px; }
+.wp-subrow { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px 12px; border-bottom: 1px solid var(--line); }
+.wp-subrow .wp-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--dim); }
+.wp-head-invite { height: 32px; background: var(--accent); color: var(--on-accent); }
+.wp-head-invite:hover { background: var(--accent-hover); }
