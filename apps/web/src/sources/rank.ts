@@ -1,6 +1,7 @@
 import { BANDWIDTH_HEADROOM, matchesLanguage, pickAutoplay, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
 import type { Lang } from '../data/stream';
 import { fileCodecsOf } from '../party/compat';
+import { capLabel, capViews, GROUP_HEIGHT } from './resolutionCap';
 import type { SourceView } from './info';
 
 /* Filtres, tri, regroupement et recommandation des sources. Fonctions pures, testées. */
@@ -84,6 +85,8 @@ export interface Recommendation {
   view: SourceView;
   languageFallback: boolean;
   reason: string;
+  /** Le plafond de résolution a écarté de meilleures sources : celle-ci est la meilleure permise (inutile d'attendre mieux). */
+  atCap?: boolean;
 }
 
 const LANG_NAME: Record<string, string> = { original: 'VO', multi: 'multi-audio', fr: 'VF', en: 'VO anglaise', es: 'VO espagnole', de: 'VO allemande', it: 'VO italienne' };
@@ -110,9 +113,12 @@ export interface RecommendOptions {
    * AAC / Opus de résolution proche (un cran plus bas au plus, 720p au moins). La langue et la VF restent prioritaires.
    */
   preferAac?: boolean;
+  /** Plafond de résolution en pixels (ODY-236) : une source plus haute n'est choisie qu'à défaut de toute autre ; null ou absent : aucun. */
+  maxHeight?: number | null;
 }
 
-const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1080p': 2, '720p': 1, SD: 0, other: 0 };
+// 1440p entre le 4K et le 1080p sans changer l'écart d'un cran entre 4K et 1080p (conversion, son AAC de remplacement).
+const TIER: Record<QualityGroupKey, number> = { '2160p': 3, '1440p': 2.5, '1080p': 2, '720p': 1, SD: 0, other: 0 };
 
 /** Codec audio connu d'après le nom de la source (parseur de `party/compat`), ou null. */
 const soundOf = (v: SourceView): string | null => fileCodecsOf(v).audio;
@@ -144,7 +150,25 @@ export function webRank(v: SourceView): number {
  * l'emporte pas sur un 1080p lisible directement. Si aucune ne tient, la moins lourde est proposée avec un avertissement.
  */
 export function recommend(views: readonly SourceView[], bwKbps: number | null, preferred: Lang = 'fr', opts: RecommendOptions = {}): Recommendation | null {
+  const maxHeight = opts.maxHeight ?? null;
   const playable = views.filter((v) => v.playable);
+  if (maxHeight === null) return recommendPool(playable, bwKbps, preferred, opts);
+  // Plafond de résolution. Dans la langue préférée d'abord : si seule une source au-dessus du plafond la parle, le plafond cède
+  // (mieux vaut une VF un peu plus lourde qu'une VO) plutôt que d'annoncer à tort « pas de VF ».
+  const langOk = (v: SourceView): boolean => !!v.info && matchesLanguage(v.info, preferred, opts.alsoAccept);
+  let capped = capViews(playable, maxHeight);
+  if (!capped.pool.some(langOk) && playable.some(langOk)) capped = capViews(playable.filter(langOk), maxHeight);
+  const rec = recommendPool(capped.pool, bwKbps, preferred, opts);
+  if (!rec) return null;
+  const label = capLabel(maxHeight);
+  if (capped.above) return { ...rec, reason: rec.reason + ' · aucune source en ' + label + ' ou moins, la plus proche est proposée' };
+  // `atCap` : la source atteint le plafond lui-même (aucune source à venir ne peut mieux faire), jamais selon les sources déjà reçues.
+  const atCap = GROUP_HEIGHT[rec.view.group] >= maxHeight;
+  return { ...rec, ...(atCap ? { atCap } : {}), ...(capped.hidden === 0 ? {} : { reason: rec.reason + ' · plafond ' + label }) };
+}
+
+/** Choix parmi des sources lisibles déjà filtrées par le plafond de résolution. */
+function recommendPool(playable: readonly SourceView[], bwKbps: number | null, preferred: Lang, opts: RecommendOptions): Recommendation | null {
   if (!playable.length) return null;
   const budget = bwKbps === null || !Number.isFinite(bwKbps) ? Infinity : Math.max(0, bwKbps) * BANDWIDTH_HEADROOM;
   const fits = (v: SourceView): boolean => v.bitrateKbps === null || v.bitrateKbps <= budget;
@@ -183,7 +207,7 @@ export function recommend(views: readonly SourceView[], bwKbps: number | null, p
  * Sinon on attend le reste de la recherche.
  */
 export function isGoodMatch(rec: Recommendation | null): boolean {
-  return !!rec && !rec.languageFallback && rec.view.status === 'cached' && (rec.view.group === '2160p' || rec.view.group === '1080p');
+  return !!rec && !rec.languageFallback && rec.view.status === 'cached' && (rec.atCap === true || rec.view.group === '2160p' || rec.view.group === '1440p' || rec.view.group === '1080p');
 }
 
 /** « C411, YGG et 2 autres » */

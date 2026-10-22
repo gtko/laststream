@@ -143,7 +143,7 @@ export async function nativeFetch(url: string, init: RequestInit = {}, timeoutMs
   return new Response(text, { status: r.status, headers: { 'content-type': 'application/json' } });
 }
 
-const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+const GROUP_LABEL: Record<string, string> = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
 
 interface SourceLike {
   index: number; group: string; playable?: boolean; sizeLabel?: string; bitrateLabel?: string;

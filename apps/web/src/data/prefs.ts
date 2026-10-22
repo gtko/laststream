@@ -36,6 +36,18 @@ export function getBandwidthSetting(): BandwidthSetting {
 export const setBandwidthSetting = (value: BandwidthSetting): void =>
   write(BANDWIDTH_SETTING_KEY, value === 'auto' ? 'auto' : String(value));
 
+// ---- Résolution maximale (ODY-236) ----
+const RESOLUTION_CAP_KEY = 'laststream.maxResolution';
+/** Plafond de résolution de la source choisie d'office (lecture et téléchargement) ; `auto` : déduit de l'écran. */
+export type ResolutionCap = 'auto' | '720p' | '1080p' | '1440p' | '2160p';
+export const RESOLUTION_CAPS: readonly ResolutionCap[] = ['auto', '720p', '1080p', '1440p', '2160p'];
+/** Par appareil : l'écran et la connexion changent d'un appareil à l'autre. */
+export function getResolutionCap(): ResolutionCap {
+  const raw = read(RESOLUTION_CAP_KEY);
+  return RESOLUTION_CAPS.find((c) => c === raw) ?? 'auto';
+}
+export const setResolutionCap = (value: ResolutionCap): void => write(RESOLUTION_CAP_KEY, value);
+
 // ---- Sauts automatiques (intro, récap, épisode suivant) ----
 export type SkipPrefName = 'intro' | 'recap' | 'nextEpisode';
 const SKIP_PREF_DEFAULTS: Readonly<Record<SkipPrefName, boolean>> = { intro: false, recap: false, nextEpisode: true };

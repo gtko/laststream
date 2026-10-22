@@ -1,5 +1,5 @@
 import { parseLanguages } from '@laststream/protocol/language';
-import type { DeviceTarget } from '../data/sources';
+import { is1440Text, type DeviceTarget } from '../data/sources';
 import type { Resolution, Stream } from '../data/stream';
 import { browserFetchHttp, capacitorHttp, capacitorNative, nativeKind, NATIVE_ADDON_COMMAND, shellHttp, type HttpFn } from './debrid/http';
 
@@ -59,10 +59,11 @@ export function deviceAddonName(target: DeviceTarget): string {
 
 // ---------- Normalisation ----------
 
-const RES_SCORE: Record<Resolution, number> = { '2160p': 400, '1080p': 300, '720p': 200, '480p': 100, SD: 50, unknown: 0 };
+const RES_SCORE: Record<Resolution, number> = { '2160p': 400, '1440p': 350, '1080p': 300, '720p': 200, '480p': 100, SD: 50, unknown: 0 };
 
 function resolutionOf(t: string): Resolution {
   if (/2160p?|\b4k\b|\buhd\b/i.test(t)) return '2160p';
+  if (is1440Text(t)) return '1440p';
   if (/1080p?|\bfhd\b/i.test(t)) return '1080p';
   if (/720p?/i.test(t)) return '720p';
   if (/480p?/i.test(t)) return '480p';

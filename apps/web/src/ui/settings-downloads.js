@@ -11,7 +11,7 @@ import { detailEl, toast } from './dom.js';
 import { card, fieldRow, rowHTML, switchRow } from './settings-ui.js';
 import { esc } from './util.js';
 
-const QUALITIES = [['', 'Recommandée'], ['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
+const QUALITIES = [['', 'Recommandée'], ['2160p', '4K'], ['1440p', '2K'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
 const limitLabel = (b) => (b == null ? 'Sans limite' : formatBytes(b));
 const isWeb = () => !isAndroidApp() && !isShellEnvironment();
 

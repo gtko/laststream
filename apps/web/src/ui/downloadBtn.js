@@ -427,7 +427,7 @@ export async function openSpaceFullSheet(opener) {
 
 const QUALITY_HINT = (i, n) => (i === 0 ? 'Recommandé' : i === n - 1 ? 'Pour économiser l’espace' : 'Plus léger');
 /** Libellés lisibles des groupes de qualité : `previewChoices` renvoie la clé de groupe (2160p, 1080p…). */
-const QUALITY_NAME = { '2160p': '4K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
+const QUALITY_NAME = { '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', SD: 'SD', other: 'Autres' };
 const langName = (code) => {
   const n = names('language', code);
   return n ? n.charAt(0).toLowerCase() + n.slice(1) : code;

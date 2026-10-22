@@ -7,9 +7,10 @@ import { laststreamBase, PUBLIC_PROBE_MS, probeHealth, serverChoiceVisible, swit
 import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
-  setAutoplay, setBandwidthSetting, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
+  setAutoplay, setBandwidthSetting, getResolutionCap, setResolutionCap, RESOLUTION_CAPS, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
+import { capHeightOf, capLabel, screenShortSide } from '../sources/resolutionCap';
 import { getBufferLevel, setBufferLevel } from '../player/bufferLevel';
 import { getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
@@ -103,6 +104,15 @@ function regionPanel() {
       VIDEO_LANGS.map(([c, l]) => '<option value="' + c + '"' + (vl === c ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'));
 }
 
+/** Libellés du plafond de résolution (ODY-236). */
+const CAP_LABELS = { auto: 'Automatique (selon l’écran)', '720p': '720p', '1080p': '1080p · Full HD', '1440p': '1440p · 2K', '2160p': '2160p · 4K' };
+/** Ligne d'état sous le réglage : plafond en vigueur (écran détecté en automatique). */
+function capStatus(cap) {
+  const h = capHeightOf(cap, screenShortSide());
+  if (cap !== 'auto') return 'Plafond : ' + capLabel(h) + '.';
+  return h === null ? 'Écran non détecté : aucun plafond.' : 'Écran détecté : ' + screenShortSide() + ' px de hauteur → plafond ' + capLabel(h) + '.';
+}
+
 function playbackPanel() {
   const bw = getBandwidthSetting();
   const stored = readStoredBandwidth();
@@ -110,6 +120,10 @@ function playbackPanel() {
   return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"') +
     switchRow('Lancer automatiquement après la bande-annonce', 'Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.',
       getTrailerAutoplay(isKidProfile()), 'data-set-pref="trailer-autoplay"')) +
+    card('Résolution',
+      fieldRow('Résolution maximale', 'La source choisie d’office, en lecture comme en téléchargement, ne dépasse pas ce plafond tant qu’une source plus légère existe (moins de données). Tu peux toujours choisir une autre source à la main.', (id) =>
+        '<select class="set-input" id="' + id + '" data-set-pref="max-resolution">' + RESOLUTION_CAPS.map((c) => '<option value="' + c + '"' + (c === getResolutionCap() ? ' selected' : '') + '>' + esc(CAP_LABELS[c]) + '</option>').join('') + '</select>') +
+      msgP('set-cap-msg', capStatus(getResolutionCap()))) +
     card('Connexion',
       fieldRow('Débit de ma connexion', 'Sert à choisir une source que ta connexion peut lire.', (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="bandwidth"><option value="auto"' + (bw === 'auto' ? ' selected' : '') + '>Automatique (mesure)</option>' +
@@ -544,6 +558,11 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'lang-learnlang') setLangPrefs({ learnLang: t.value });
   else if (p === 'buffer-level') setBufferLevel(t.value);
   else if (p === 'bandwidth') setBandwidthSetting(t.value === 'auto' ? 'auto' : Number(t.value));
+  else if (p === 'max-resolution') {
+    setResolutionCap(t.value);
+    const msg = document.getElementById('set-cap-msg');
+    if (msg) msg.textContent = capStatus(getResolutionCap());
+  }
   else if (p === 'videolang') {
     setVideoLang(t.value);
     clearCache();

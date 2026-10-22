@@ -77,7 +77,7 @@ export interface SourceView {
 }
 
 const QUALITY_BADGE: Record<Resolution, string> = {
-  '2160p': '4K', '1080p': '1080p', '720p': '720p', '480p': '480p', SD: 'SD', unknown: '?',
+  '2160p': '4K', '1440p': '2K', '1080p': '1080p', '720p': '720p', '480p': '480p', SD: 'SD', unknown: '?',
 };
 
 const SOURCE_TYPES: Array<[RegExp, string]> = [
@@ -310,7 +310,9 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
   const info = getLaststream(stream);
   const hints = stream.behaviorHints ?? {};
   const text = [stream.name, stream.title, stream.description, hints.filename].filter((x): x is string => typeof x === 'string').join(' ');
-  const resolution: Resolution = info?.resolution ?? (/2160|4k|uhd/i.test(text) ? '2160p' : /1080/.test(text) ? '1080p' : /720/.test(text) ? '720p' : 'unknown');
+  const group = getQualityGroupKey(stream);
+  // lastAddon ne connaît pas encore 1440p (« unknown ») : le groupe le détecte dans le nom de la release.
+  const resolution: Resolution = group === '1440p' ? '1440p' : info?.resolution ?? (/2160|4k|uhd/i.test(text) ? '2160p' : /1080/.test(text) ? '1080p' : /720/.test(text) ? '720p' : 'unknown');
   const client = isClientStream(stream);
   const debrid = isDebridLink(stream, info);
   // « Débridé » seulement pour un lien de débrideur : un lien HTTP direct reste « Lien direct », jamais « en cache ».
@@ -329,7 +331,7 @@ export function toSourceView(stream: Stream, index: number, all: readonly Stream
     index,
     stream,
     info,
-    group: getQualityGroupKey(stream),
+    group,
     resolution,
     quality: QUALITY_BADGE[resolution],
     sourceType: sourceTypeLabel(info?.source ?? ''),

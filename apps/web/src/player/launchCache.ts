@@ -1,5 +1,6 @@
 import type { Stream } from '../data/stream';
 import type { SourceView } from '../sources/info';
+import { overCap } from '../sources/resolutionCap';
 import { webCompatOf, type WebCompatContext } from '../sources/webCompat';
 
 /* Relance d'un épisode déjà lancé (ODY-206) : la source qui a démarré est mémorisée sur cet appareil, la relance la reprend sans
@@ -107,6 +108,8 @@ export interface LaunchCheck {
   /** Sources mémorisées comme lentes ou en échec pour cet épisode (voir `badSources`). */
   bad: ReadonlySet<string>;
   keyOf: (v: SourceView) => string;
+  /** Plafond de résolution de l'appareil (ODY-236) : une source mémorisée au-dessus n'est plus relancée telle quelle. */
+  maxHeight?: number | null;
 }
 
 /**
@@ -118,5 +121,6 @@ export function launchUsable(view: SourceView, c: LaunchCheck): boolean {
   if (!view.playable) return false;
   if (view.client && !c.hasDebrid) return false;
   if (c.bad.has(c.keyOf(view))) return false;
+  if (overCap(view.group, c.maxHeight ?? null)) return false;
   return webCompatOf(view, c.compat).level === 'ok';
 }

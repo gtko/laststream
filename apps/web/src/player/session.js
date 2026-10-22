@@ -17,6 +17,7 @@ import { emitDataEvent } from '../data/events';
 import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, requestKey, sourceLangFor, viewFromStream, webCompatContext } from '../sources/load';
 import { failoverCandidates, webCompatOf } from '../sources/webCompat';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
+import { currentCapHeight } from '../sources/resolutionCap';
 import { openSourcePicker } from '../sources/picker.js';
 import { IMG } from '../ui/constants.js';
 import { showRatePrompt } from '../ui/rate.js';
@@ -2593,7 +2594,7 @@ async function playRemembered(p, request) {
   try {
     view = { ...viewFromStream(entry.stream), index: MEMORY_INDEX };
     const ok = sourceKey(view) === entry.source
-      && launchUsable(view, { compat: webCompatContext(), hasDebrid: debrid().hasAny(), bad: new Set(badSources(badKey(p)).keys()), keyOf: sourceKey });
+      && launchUsable(view, { compat: webCompatContext(), hasDebrid: debrid().hasAny(), bad: new Set(badSources(badKey(p)).keys()), keyOf: sourceKey, maxHeight: currentCapHeight() });
     if (!ok) { forgetLaunch(episode); return false; }
   } catch (_) { forgetLaunch(episode); return false; } // entrée illisible : recherche complète
   // Progression distante rattrapée (1,5 s au plus) pour reprendre là où l'on s'était arrêté.

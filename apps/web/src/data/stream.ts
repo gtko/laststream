@@ -1,5 +1,5 @@
 /** Objet `laststream` joint à chaque stream par lastAddon (voir lastaddon/src/engine/format.ts). */
-export type Resolution = '2160p' | '1080p' | '720p' | '480p' | 'SD' | 'unknown';
+export type Resolution = '2160p' | '1440p' | '1080p' | '720p' | '480p' | 'SD' | 'unknown';
 export type Lang = 'fr' | 'en' | 'es' | 'de' | 'it' | 'multi' | 'original';
 
 export interface LastStreamInfo {
@@ -43,7 +43,7 @@ export interface Stream {
   [key: string]: unknown;
 }
 
-const RESOLUTIONS = ['2160p', '1080p', '720p', '480p', 'SD', 'unknown'];
+const RESOLUTIONS = ['2160p', '1440p', '1080p', '720p', '480p', 'SD', 'unknown'];
 const LANGS = ['fr', 'en', 'es', 'de', 'it', 'multi', 'original'];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

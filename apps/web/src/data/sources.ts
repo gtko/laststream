@@ -7,10 +7,10 @@ import { requestJson } from './transport';
 /* Sources de lecture : récupération des streams lastAddon, tri par score, regroupement par qualité,
  * mesure du débit et choix de la source automatique. Fonctions pures testées dans tests/sources.test.ts. */
 
-export type QualityGroupKey = '2160p' | '1080p' | '720p' | 'SD' | 'other';
-export const QUALITY_GROUP_ORDER: readonly QualityGroupKey[] = ['2160p', '1080p', '720p', 'SD', 'other'];
+export type QualityGroupKey = '2160p' | '1440p' | '1080p' | '720p' | 'SD' | 'other';
+export const QUALITY_GROUP_ORDER: readonly QualityGroupKey[] = ['2160p', '1440p', '1080p', '720p', 'SD', 'other'];
 export const QUALITY_LABEL: Record<QualityGroupKey, string> = {
-  '2160p': '4K · 2160p', '1080p': 'Full HD · 1080p', '720p': 'HD · 720p', SD: 'SD', other: 'Autres',
+  '2160p': '4K · 2160p', '1440p': '2K · 1440p', '1080p': 'Full HD · 1080p', '720p': 'HD · 720p', SD: 'SD', other: 'Autres',
 };
 
 export interface QualityGroup<T> {
@@ -137,14 +137,30 @@ export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, se
 // ---------- Tri, regroupement ----------
 
 
+/** 1440p (« 2K ») dans le nom d'une release : lastAddon ne connaît pas encore cette résolution (elle arrive en `unknown`). */
+const RE_1440 = /\b1440[pi]\b|\b2560\s*[x×]\s*1440\b/i;
+/** « 2K » et « QHD » sont ambigus (« 2K Remaster 1080p ») : retenus seulement sans autre résolution dans le nom. */
+const RE_1440_LOOSE = /\b(?:2k|qhd)\b/i;
+const RE_OTHER_RES = /\b(?:2160|1080|720|480)[pi]\b|\b4k\b|\buhd\b/i;
+
+/** Le texte (nom de release) annonce-t-il du 1440p ? */
+export const is1440Text = (text: string): boolean => RE_1440.test(text) || (RE_1440_LOOSE.test(text) && !RE_OTHER_RES.test(text));
+
 export function getQualityGroupKey(stream: object): QualityGroupKey {
-  switch (getLaststream(stream)?.resolution) {
+  const info = getLaststream(stream);
+  switch (info?.resolution) {
     case '2160p': return '2160p';
+    case '1440p': return '1440p';
     case '1080p': return '1080p';
     case '720p': return '720p';
     case '480p':
     case 'SD': return 'SD';
-    default: return 'other';
+    default: {
+      if (info && info.height >= 1300 && info.height < 1900) return '1440p';
+      const s = stream as { name?: unknown; title?: unknown; description?: unknown; behaviorHints?: { filename?: unknown } };
+      const text = [s.name, s.title, s.description, s.behaviorHints?.filename].filter((x): x is string => typeof x === 'string').join(' ');
+      return is1440Text(text) ? '1440p' : 'other';
+    }
   }
 }
 

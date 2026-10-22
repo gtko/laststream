@@ -11,12 +11,13 @@ import { appOffer, currentOs } from '../player/appDownload';
 import { bitDepthOf, codecBadges, fitBadge } from './badges';
 import { describePending } from './rank';
 import { isShellEnvironment } from '../player/shell';
+import { capLabel, currentCapHeight, overCap } from './resolutionCap';
 import { rangeDenied } from './hostRange';
 
 // Apps Windows (mpv) et Android (libVLC) : tous les formats sont lus tels quels, jamais de transcodage.
 const nativePlayer = () => isShellEnvironment() || !!globalThis.Capacitor?.isNativePlatform?.();
 
-const RES_CHIPS = [['2160p', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
+const RES_CHIPS = [['2160p', '4K'], ['1440p', '2K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD']];
 const LANG_CHIPS = [['fr', 'VF'], ['vo', 'VO'], ['multi', 'Multi']];
 
 let session = null;
@@ -41,7 +42,7 @@ const badgeInput = (v) => ({ source: v.sourceType, codec: v.codec, hdr: v.hdr, a
 
 function itemHtml(v, opts) {
   const badges = badgeInput(v);
-  const l1 = ['<span class="q q-' + v.group + '">' + esc(v.quality) + '</span>', codecBadges(badges, 'video')];
+  const l1 = ['<span class="q q-' + v.group + '">' + esc(v.quality) + '</span>', v.sizeLabel ? '<span class="s-size">' + esc(v.sizeLabel) + '</span>' : '', codecBadges(badges, 'video')];
   const st = '<span class="s-status st-' + v.status + '">' + esc(v.statusLabel) + '</span>';
   // Pastille d'adéquation : débit de la source contre débit de la connexion (mesuré ou réglé), à chaque rendu.
   const fit = fitBadge(v.bitrateKbps, session ? session.bw : null);
@@ -56,7 +57,6 @@ function itemHtml(v, opts) {
   const l2 = codecBadges(badges, 'audio') + langs;
 
   const l3 = [];
-  if (v.sizeLabel) l3.push(esc(v.sizeLabel));
   if (v.bitrateLabel) l3.push(esc(v.bitrateLabel));
   if (v.durationLabel) l3.push('≈ ' + esc(v.durationLabel));
   if (v.seeders != null) l3.push(v.seeders + ' seeders' + (v.peers != null ? ' / ' + v.peers + ' peers' : ''));
@@ -72,7 +72,9 @@ function itemHtml(v, opts) {
   // Navigateur seul : une source dont la vidéo ou le son ne passe pas reste visible, grisée et non sélectionnable, avec son motif.
   const compat = webCompatOf(v, compatCtx || webCompatContext());
   const blocked = compat.level === 'blocked';
-  const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '') + (blocked ? ' is-incompatible' : '');
+  // Plafond de résolution (ODY-236) : la source reste choisissable à la main, signalée comme plus lourde que voulu.
+  const over = overCap(v.group, capHeight);
+  const cls = 'src2' + (opts.rec ? ' is-rec' : '') + (opts.current ? ' is-current' : '') + (blocked ? ' is-incompatible' : '') + (over ? ' is-over-cap' : '');
   return '<li><button type="button" class="' + cls + '" data-nav data-row="i-' + v.index + '" data-src="' + v.index + '"' + (v.playable && !blocked ? '' : ' disabled') + '>' +
     (opts.rec ? '<span class="s-rec"><b>Recommandé</b><span class="s-why">' + esc(opts.reason) + '</span></span>' : '') +
     (opts.current ? '<span class="s-cur">En cours de lecture</span>' : '') +
@@ -80,12 +82,15 @@ function itemHtml(v, opts) {
     (l2 ? '<span class="s-l2">' + l2 + '</span>' : '') +
     (l3.length ? '<span class="s-l3">' + l3.join('<i aria-hidden="true">·</i>') + '</span>' : '') +
     (l4 ? '<span class="s-l4">' + l4 + '</span>' : '') +
+    (over ? '<span class="s-l4 s-cap-tag">Au-dessus du plafond (' + esc(capLabel(capHeight)) + ')</span>' : '') +
     (compat.level === 'ok' ? '' : '<span class="s-l4 s-compat is-' + compat.level + '">' + esc(compat.reason) + '</span>') +
     (v.playable ? '' : '<span class="s-l4">Aucun lien lisible.</span>') + '</button></li>';
 }
 
 /** Contexte de compatibilité web, calculé une fois par rendu. */
 let compatCtx = null;
+/** Plafond de résolution de l'appareil (pixels), ou null, calculé une fois par rendu. */
+let capHeight = null;
 
 /** Navigateur seul, recherche terminée, sources lisibles mais aucune ne passe : explique et propose l'app de l'OS détecté. */
 function noCompatibleHtml(views, s) {
@@ -105,6 +110,7 @@ function render() {
   const s = session;
   if (!s) return;
   compatCtx = webCompatContext();
+  capHeight = currentCapHeight();
   const { views, filters, sort } = s;
   const counts = countByGroup(views);
   const origins = countOrigins(views);
@@ -133,6 +139,8 @@ function render() {
   if (s.pending.length) body += '<p class="s-pending" role="status"><i class="s-spin" aria-hidden="true"></i>' + esc(describePending(s.pending)) + '</p>';
   else if (s.added > 0) body += '<p class="s-pending is-done" role="status">+' + s.added + ' source' + (s.added > 1 ? 's' : '') + ' trouvée' + (s.added > 1 ? 's' : '') + '</p>';
   body += noCompatibleHtml(views, s);
+  const aboveCap = capHeight !== null && views.some((v) => overCap(v.group, capHeight));
+  if (aboveCap) body += '<p class="s-cap">Plafond de résolution : ' + esc(capLabel(capHeight)) + ' · les sources au-dessus restent disponibles. À régler dans Réglages › Lecture.</p>';
   if (rec) body +='<ul class="src-list s-rec-list">' + itemHtml(rec.view, { rec: true, reason: rec.reason, current: s.currentIndex === rec.view.index }) + '</ul>';
   else if (s.bwPending) body += '<p class="s-note">Mesure de ta connexion pour choisir la meilleure source…</p>';
   const groups = groupViews(rest);
