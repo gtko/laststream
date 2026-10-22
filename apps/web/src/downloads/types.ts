@@ -36,9 +36,29 @@ export class DownloadError extends Error {
   }
 }
 
+/**
+ * Référence d'un flux HTTP pour le retrouver plus tard (ODY-204) : le titre et les indices du flux, jamais son URL
+ * (les liens d'addon portent souvent la clé du débrideur de l'utilisateur).
+ */
+export interface DownloadRef {
+  type: 'movie' | 'tv';
+  /** Identifiant TMDB du titre. */
+  id: string;
+  name: string;
+  /** Clé de titre : `movie:550` / `tv:1399`. */
+  key: string;
+  season?: number;
+  episode?: number;
+  /** Indices permettant de reconnaître le flux parmi ceux que renvoie le titre à nouveau. */
+  match: { infoHash?: string; fileIdx?: number; filename?: string; size?: number; addon?: string };
+}
+
 /** Ce qu'il faut pour obtenir un lien : des hashs et un épisode, jamais d'URL. */
 export interface DownloadSource {
+  /** Vide quand `ref` suffit à retrouver le flux (lien HTTP d'addon). */
   copies: ClientCopy[];
+  /** Flux HTTP à re-chercher au moment de télécharger (ODY-204) : le lien n'est jamais stocké. */
+  ref?: DownloadRef;
   episode?: { season?: number; episode?: number };
   /** Choix de l'utilisateur, mémorisés (ex. « 1080p », ['fr']). */
   quality?: string;

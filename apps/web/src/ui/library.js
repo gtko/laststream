@@ -10,6 +10,8 @@ import { compareWatched, isWatchedComplete, watchedProgressLabel } from '../data
 import { register, toItem } from './catalog.js';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
+import { libraryDownloadsCardHTML } from './downloadBtn.js';
+import { socialAvailable } from './socialButton.js';
 import { row, topBar } from './fragments.js';
 import { keepRowState } from './rows.js';
 import { state } from './state.js';
@@ -205,6 +207,7 @@ export function showLibrary() {
     '<article class="svc-page" aria-labelledby="svc-title"><header class="svc-head svc-head-plain"><div class="svc-head-t">' +
     '<h1 class="svc-title" id="svc-title" tabindex="-1">Bibliothèque</h1><p class="svc-eyebrow">' + (seen ? '' : 'Tes films et séries Laststream') + '</p>' +
     '<div class="lib-controls">' + controlsHTML() + '</div></div></header>' +
+    (socialAvailable() ? '' : libraryDownloadsCardHTML()) + // sans compte social : accès aux téléchargements (la barre mobile est pleine)
     '<div class="lib-grid" id="lib-grid" data-nav></div></article>';
   syncPills();
   const h1 = detailEl.querySelector('#svc-title');

@@ -18,6 +18,7 @@ import { showAiBrowse } from './recs-ui.js';
 import { showSearch } from './search.js';
 import { app, detailEl } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
+import { showDownloads, teardownDownloads } from './downloads.js';
 import { ficheHash, parseFicheHash } from './ficheRoute.js';
 import { closeHover } from './hover.js';
 import { renderContinue } from './home.js';
@@ -73,6 +74,7 @@ export function showView(r) {
   else if (r.kind === 'tvlive') showTvLive();
   else if (r.kind === 'shows') showShowsPage();
   else if (r.kind === 'show') showShow(r.id);
+  else if (r.kind === 'downloads') showDownloads();
   else showFiche(r.type, r.id, r.season != null ? { s: r.season, e: r.episode } : null);
 }
 export function applyRestore() {
@@ -90,7 +92,7 @@ export function parseRoute() {
     return null;
   }
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
-  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover')) return null;
+  if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
   return r;
 }
@@ -128,6 +130,7 @@ function parseRouteRaw() {
   const join = parseJoinHash(h);
   if (join) return { kind: 'partyjoin', id: join.roomId, token: join.token };
   if (h === '#/settings') return { kind: 'settings' };
+  if (h === '#/downloads') return { kind: 'downloads' };
   if (h === '#/admin') return { kind: 'admin' };
   r = /^#\/browse\/([a-z-]{1,20})$/.exec(h);
   if (r) return { kind: 'browse', id: r[1] };
@@ -154,6 +157,7 @@ export function route() {
     openSidebar();
     return;
   }
+  teardownDownloads(); // téléchargements : abonnement de la vue quittée libéré (la vue suivante se réabonne)
   if (r) {
     if (!state.inDetail) {
       state.homeScroll = window.scrollY;

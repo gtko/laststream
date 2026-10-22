@@ -6,6 +6,7 @@ import { avatarAttrs } from './avatar-art.js';
 import { leaveKidProfile, openPicker } from './auth-ui.js';
 import { ICON } from './icons.js';
 import { friendsButtonHTML } from './socialButton.js';
+import { downloadsNavHTML } from './downloadBtn.js';
 import { esc } from './util.js';
 
 const TOP_DROP = '.topbar [data-drop]';
@@ -52,6 +53,7 @@ export function topActionsHTML({ kid = false, social = false, server = false, ow
   ].join('');
   return '<div class="top-actions">' +
     (search || '<button type="button" class="icon-btn" data-search aria-label="Rechercher">' + ICON.search + '</button>') +
+    (kid ? '' : downloadsNavHTML()) +
     (social ? friendsButtonHTML('icon-btn') : '') +
     (social ? partyLinkHTML() : '') +
     '<div class="nav-drop nav-drop-profile" data-drop>' +

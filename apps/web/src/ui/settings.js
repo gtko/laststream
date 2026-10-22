@@ -30,6 +30,7 @@ import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
 import { teardownFiche } from './fiche.js';
 import { topBar } from './fragments.js';
+import { applyDownloadToggle, downloadsStorageCard } from './settings-downloads.js';
 import { state } from './state.js';
 
 const SERVICE_FALLBACK = {
@@ -117,7 +118,8 @@ function playbackPanel() {
     card('Séries et épisodes',
       switchRow('Passer l’intro', 'Saute le générique d’ouverture quand il est repéré.', getSkipPref('intro'), 'data-set-pref="skip-intro"') +
       switchRow('Passer le récapitulatif', 'Saute le « précédemment » quand il est repéré.', getSkipPref('recap'), 'data-set-pref="skip-recap"') +
-      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"'));
+      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"')) +
+    downloadsStorageCard();
 }
 
 const langOptions = (value, extra) => extra.map(([c, l]) => [c, l]).concat(LANG_CHOICES).map(([c, l]) => '<option value="' + c + '"' + (c === value ? ' selected' : '') + '>' + esc(l) + '</option>').join('');
@@ -454,6 +456,7 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-recap') setSkipPref('recap', on);
   else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
   else if (pref === 'trailer-autoplay') setTrailerAutoplay(on);
+  else if (pref === 'dl-wifi') applyDownloadToggle(pref, on);
   else if (pref === 'lang-subs' || pref === 'lang-learn') {
     setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
     syncLangRows();

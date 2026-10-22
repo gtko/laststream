@@ -6,6 +6,7 @@
  * Aucune requête réseau, aucun lien débridé : seul l'index local et le magasin de la plateforme sont lus. */
 import { androidLocalFile } from './androidStore';
 import { createDownloadIndex } from './index';
+import { isPurgePending } from './settings';
 import { getShellDownloadPath } from './shellStore';
 import { createWebDownloadStore } from './webStore';
 import { downloadId, type DownloadIndex, type DownloadItem } from './types';
@@ -124,6 +125,8 @@ function sharedDownloadIndex(): DownloadIndex {
 
 /** Source locale du titre sur cette plateforme, avec les adaptateurs réels. */
 export function offlineSourceFor(platform: OfflinePlatform, ref: OfflineRef, index: DownloadIndex = sharedDownloadIndex()): Promise<OfflineSource | null> {
+  // Déconnexion explicite : les fichiers du compte précédent attendent leur purge (au démarrage), jamais lus par le suivant.
+  if (isPurgePending()) return Promise.resolve(null);
   return findOfflineSource(
     {
       index,

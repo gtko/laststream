@@ -39,6 +39,7 @@ import './styles/scrollbars.css';
 import './styles/avatar-studio.css';
 import './styles/profile-editor.css';
 import './styles/credits.css';
+import './styles/downloads.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
@@ -76,12 +77,15 @@ import { announceShellReady } from './player/shell';
 import { servedByLastAddon } from './data/configSync';
 import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
+import { isPurgePending } from './downloads/settings';
 import { initUpdateBanner } from './ui/update-banner.js';
 import { initAnnouncementBanner } from './ui/announcement-banner.js';
 import { isDemo, setDemoFlags, startDemo } from './data/demo';
 
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
+// Déconnexion explicite suivie d'un rechargement : la purge des téléchargements du compte précédent se termine ici.
+if (isPurgePending()) void import('./downloads/service').then((m) => m.purgeAll()).catch(() => undefined);
 
 // App Windows (ou toute page servie par lastAddon lui-même) : serveur = origine de la page, quel que soit le port
 // choisi au démarrage, sauf si l'utilisateur a choisi un serveur perso. Déclaré avant la résolution du serveur.

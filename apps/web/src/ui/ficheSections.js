@@ -9,6 +9,7 @@ import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } fr
 import { detailEl } from './dom.js';
 import { markNext, nextToWatch, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
+import { episodeDownloadHTML, hydrateDownloads } from './downloadBtn.js';
 import { episodeParts, partLabel } from '../data/episodeParts';
 import './epStill.js';
 import { state } from './state.js';
@@ -148,10 +149,12 @@ export async function loadSeason(m, n, token, wantEp) {
       (e.overview ? '<span class="ep-ov">' + esc(e.overview) + '</span>' : '') + '</button>' +
       (future ? ''
         : '<button type="button" class="ep-upto" data-upto="' + n + ':' + e.episode_number + '" aria-label="' + esc('Marquer comme vu jusqu’à ' + code) + '">Vu jusqu’ici</button>' +
-          '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? 'Marquer comme non vu : ' : 'Marquer comme vu : ') + code) + '">' + ICON.check + '</button>') +
+          '<button type="button" class="ep-seen" data-seen="' + esc(sk) + '" aria-pressed="' + done + '" aria-label="' + esc((done ? 'Marquer comme non vu : ' : 'Marquer comme vu : ') + code) + '">' + ICON.check + '</button>' +
+          episodeDownloadHTML(m, n, e.episode_number, isPlaceholderTitle(e.name) ? '' : e.name)) +
       '</li>';
   }).join('');
   state.seasonEps = { n, eps };
+  hydrateDownloads(list);
   refreshWatchedUI();
   markNext(m);
   // Saison de l’épisode à regarder : la carte (en cours, sinon prochain non vu, sinon dernier diffusé) est centrée, sans animation.

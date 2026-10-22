@@ -16,6 +16,7 @@ import { fillCollection, fillNext, fillRatings, loadSeason } from './ficheSectio
 import { topBar } from './fragments.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
+import { ficheDownloadHTML, hydrateDownloads } from './downloadBtn.js';
 import { autoPlayOn, createTrailerPlay } from './trailerPlay.js';
 import { inLib } from './library.js';
 import { fillProviders } from './providers.js';
@@ -185,6 +186,7 @@ function ficheHTML(m) {
     (m.overview.length > 150 ? '<button type="button" class="link-btn" data-more>Plus</button>' : '') + '</div>' +
     '<div class="f-actions" id="f-actions" data-nav>' +
     primaryBtn(m) +
+    ficheDownloadHTML(m, nextToWatch(m), m.cinemaSince ? 'Pas encore disponible en streaming' : isUnreleased(m) ? 'Pas encore sorti' : '') +
     (m.trailer
       ? '<button type="button" class="btn-round" data-vid="' + esc(m.trailer) + '"' + (m.trailerVO ? ' data-vo="1"' : '') + ' data-vtitle="Bande-annonce" data-tip="Bande-annonce" aria-label="Bande-annonce">' + ICON.film + '</button>'
       : '') +
@@ -358,6 +360,7 @@ export async function showFiche(type, id, target = null) {
   const h1 = detailEl.querySelector('#f-title');
   if (h1) h1.focus({ preventScroll: true });
   state.model = m;
+  hydrateDownloads(detailEl);
   observeTiles(detailEl);
   applyRestore();
   setupSticky();

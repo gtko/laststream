@@ -18,6 +18,7 @@ import { isPlayerOpen } from '../player/session.js';
 import { fillRow, ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
 import { getDetail, listOf, register, toItem } from './catalog.js';
 import { TABS } from './constants.js';
+import { downloadsTabBadgeHTML } from './downloadBtn.js';
 import { addDays, isFuture, todayStr } from './dates.js';
 import { app } from './dom.js';
 import { brand, row, section } from './fragments.js';
@@ -317,7 +318,8 @@ export function tabbar() {
       tab(' is-current', { href: true, html: ' href="#/" data-noop aria-current="page"' }, 'home', 'Accueil') +
       tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
       tab('', { html: ' data-soc-open aria-controls="social-sidebar" aria-expanded="false" aria-label="Amis"' }, 'users', 'Amis', badge) +
-      tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') + '</nav>';
+      tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +
+      tab('', { href: true, html: ' href="#/downloads" data-go data-dl-nav' }, 'download', 'Téléchargés', downloadsTabBadgeHTML()) + '</nav>';
   }
   const items = TABS.map(([label, icon, current]) =>
     '<a href="' + tabHref(label) + '"' + tabData(label) + ' class="tab' + (current ? ' is-current' : '') + '"' + (current ? ' aria-current="page"' : '') + '>' +

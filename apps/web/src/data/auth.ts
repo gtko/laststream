@@ -16,6 +16,7 @@ import { dropSyncedLists, pushTvSources, reconcileTvSources, refreshAll, setTvSo
 import * as api from './userApi';
 import { authEvents, UserApiError, type ProfileDto, type ProfileInput } from './userApi';
 import { LocalUserStore, setUserStore, type Profile } from './userStore';
+import { markPurgePending } from '../downloads/settings';
 
 /*
  * Orchestration des comptes : détection de l'API /user, connexion, choix du profil, bascule du `userStore`
@@ -347,11 +348,17 @@ export async function adoptSession(s: { token: string; expiresAt: string; profil
 }
 
 export async function signOut(silent = false): Promise<void> {
+  // Déconnexion explicite seulement : le marqueur est posé avant tout `await` et survit au rechargement qui suit.
+  // Une 401 silencieuse (`onUnauthorized`) ne purge pas les téléchargements.
+  if (!silent) markPurgePending();
   if (!silent) await api.logout().catch(() => undefined);
   clearSession();
   clearElevation();
   clearLocalAccountData();
   dropSyncedLists();
+  // Tentative immédiate ; import dynamique : rien de Capacitor ni d'OPFS n'entre dans auth. Si la page se recharge avant,
+  // le marqueur fait effacer au prochain démarrage (service.ts).
+  if (!silent) void import('../downloads/service').then((m) => m.purgeAll()).catch(() => undefined);
   managerId = null;
   auth.isOwner = false;
   auth.locked = false;
