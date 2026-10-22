@@ -37,7 +37,7 @@ vi.mock('../src/ui/state.js', () => ({ state: { depth: 0 } }));
 import { UserApiError } from '../src/data/userApi';
 import { mountProfileEditor } from '../src/ui/socialProfile.js';
 import {
-  addFavorite, diffDraft, makeDraft, mediaOf, moveItem, tagCooldown, validateDraft,
+  addFavorite, bannerPosCss, bannerPosY, diffDraft, makeDraft, mediaOf, moveItem, panBannerY, tagCooldown, validateDraft,
 } from '../src/ui/socialProfileModel.js';
 
 const DAY = 86_400_000;
@@ -121,6 +121,34 @@ describe('modèle du profil social', () => {
     expect(addFavorite([...l, fav(4)], fav(5))).toHaveLength(4);
     expect(mediaOf({ media_type: 'person', id: 1 })).toBeNull();
     expect(mediaOf({ media_type: 'tv', id: 9, name: 'Série', poster_path: '/a.jpg', backdrop_path: '/b.jpg' })).toMatchObject({ type: 'series', tmdbId: 9, title: 'Série' });
+  });
+});
+
+describe('cadrage de la bannière (modèle)', () => {
+  it('lit le cadrage, 50 par défaut, borné de 0 à 100', () => {
+    expect(bannerPosY(null)).toBe(50);
+    expect(bannerPosY({ posY: 20 })).toBe(20);
+    expect(bannerPosY({ posY: -5 })).toBe(0);
+    expect(bannerPosY({ posY: 250 })).toBe(100);
+    expect(bannerPosY({ posY: 'x' })).toBe(50);
+    expect(bannerPosCss({ posY: 30 })).toBe('center 30%');
+    expect(bannerPosCss(undefined)).toBe('center 50%');
+  });
+  it('convertit un glissé en cadrage selon la hauteur d’image visible (16/9)', () => {
+    // zone 640×96 : image affichée 360 px de haut, 264 px de course.
+    expect(panBannerY(50, -66, 640, 96)).toBe(75);
+    expect(panBannerY(50, 66, 640, 96)).toBe(25);
+    expect(panBannerY(90, -500, 640, 96)).toBe(100);
+    expect(panBannerY(10, 500, 640, 96)).toBe(0);
+    // zone plus haute que large en 16/9 : rien à cadrer.
+    expect(panBannerY(40, 30, 160, 200)).toBe(40);
+    expect(panBannerY(40, 30, 0, 0)).toBe(40);
+  });
+  it('envoie le cadrage avec la bannière et ignore le centre', () => {
+    const base = makeDraft(profile({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark' } }) as never, PREFS as never, 'online', null);
+    const moved = { ...base, banner: { ...base.banner!, posY: 20 } };
+    expect(diffDraft(base, moved).profile).toEqual({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark', posY: 20 } });
+    expect(diffDraft(base, { ...base, banner: { ...base.banner! } })).toEqual({});
   });
 });
 
@@ -294,6 +322,65 @@ describe('formulaire du profil social', () => {
     (results[0] as HTMLElement).click();
     await ed.save();
     expect(h.store.saveProfile).toHaveBeenCalledWith({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark' } });
+  });
+
+  describe('cadrage de la bannière', () => {
+    const withBanner = (posY?: number) => profile({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark', ...(posY === undefined ? {} : { posY }) } });
+    const range = () => q<HTMLInputElement>('.spf-range');
+    const slide = (v: number) => { range().value = String(v); range().dispatchEvent(new Event('input', { bubbles: true })); };
+
+    it('cache le réglage sans bannière', () => {
+      mount();
+      expect(q('.spf-pos').hidden).toBe(true);
+      expect(q('.spf-bn').classList.contains('spf-pan')).toBe(false);
+    });
+
+    it('règle la position au curseur : image, aperçu, enregistrement', async () => {
+      const ed = mount(withBanner());
+      expect(q('.spf-pos').hidden).toBe(false);
+      expect(range().value).toBe('50');
+      expect(q('.spf-bn').style.backgroundPosition).toBe('center 50%');
+      slide(20);
+      expect(q('.spf-bn').style.backgroundPosition).toBe('center 20%');
+      expect(q('.spf-prev-bn').style.backgroundPosition).toBe('center 20%');
+      expect(q('.spf-pos-v').textContent).toBe('20 %');
+      expect(ed.isDirty()).toBe(true);
+      await ed.save();
+      expect(h.store.saveProfile).toHaveBeenCalledWith({ banner: { tmdbId: 5, type: 'series', backdrop: '/d.jpg', title: 'Dark', posY: 20 } });
+    });
+
+    it('Recentrer revient au centre sans rien changer au profil enregistré', () => {
+      const ed = mount(withBanner());
+      slide(80);
+      expect(ed.isDirty()).toBe(true);
+      (Array.from(root.querySelectorAll('button')).find((b) => b.textContent === 'Recentrer') as HTMLElement).click();
+      expect(range().value).toBe('50');
+      expect(q('.spf-bn').style.backgroundPosition).toBe('center 50%');
+      expect(ed.isDirty()).toBe(false);
+    });
+
+    it('glisser l’image règle la position, un clic sur un bouton non', () => {
+      const ed = mount(withBanner(50));
+      const bn = q('.spf-bn');
+      bn.getBoundingClientRect = () => ({ width: 640, height: 96 }) as DOMRect;
+      const ev = (type: string, y: number, target: Element = bn) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, clientY: y }));
+      ev('pointerdown', 200, bn.querySelector('button')!);
+      ev('pointermove', 134);
+      expect(ed.isDirty()).toBe(false);
+      ev('pointerdown', 200);
+      ev('pointermove', 134);
+      expect(range().value).toBe('75');
+      expect(bn.style.backgroundPosition).toBe('center 75%');
+      ev('pointerup', 134);
+      ev('pointermove', 0);
+      expect(range().value).toBe('75');
+    });
+
+    it('reprend le cadrage enregistré', () => {
+      mount(withBanner(30));
+      expect(range().value).toBe('30');
+      expect(q('.spf-prev-bn').style.backgroundPosition).toBe('center 30%');
+    });
   });
 
   it("n'écrit jamais le texte « null » (favoris, puces du statut personnalisé)", () => {

@@ -15,7 +15,7 @@ import { detailEl, toast } from './dom.js';
 import { ICON } from './icons.js';
 import {
   BIO_MAX, COLORS, EMOJIS, EXPIRIES, FAVORITES_MAX, PREF_CHOICES, PRESENCE, addFavorite, charCount,
-  cloneDraft, diffDraft, makeDraft, mediaOf, moveItem, tagCooldown, validateDraft,
+  bannerPosCss, bannerPosY, cloneDraft, diffDraft, makeDraft, mediaOf, moveItem, panBannerY, tagCooldown, validateDraft,
 } from './socialProfileModel.js';
 import { registerSocialHook } from './socialHooks.js';
 import { state as uiState } from './state.js';
@@ -359,9 +359,14 @@ export function mountProfileEditor(root, deps) {
 
   // ---------- Bannière et favoris ----------
   const bannerEl0 = h('div', { class: 'spf-bn' });
+  const posRow = h('div', { class: 'spf-pos', hidden: true });
   const bannerBox = zone('banner', bannerEl0, () => {
     const b = draft.banner;
     bannerEl0.style.backgroundImage = b && b.backdrop ? bgOf('w780', b.backdrop, 'linear-gradient(90deg,rgba(12,11,17,.75),rgba(12,11,17,.2)),') : '';
+    bannerEl0.style.backgroundPosition = bannerPosCss(b);
+    bannerEl0.classList.toggle('spf-pan', Boolean(b && b.backdrop));
+    posRow.hidden = !(b && b.backdrop);
+    posRow.replaceChildren(...(posRow.hidden ? [] : posControls()));
     return [
       h('span', { class: 'spf-bn-t', text: b ? b.title : 'Aucune bannière' }),
       h('span', { class: 'spf-row' },
@@ -369,6 +374,54 @@ export function mountProfileEditor(root, deps) {
         b ? btn('spf-btn spf-sec spf-sm', 'Retirer', () => { draft.banner = null; touched(); }, { 'aria-label': 'Retirer la bannière' }) : null),
     ];
   });
+  enablePan(bannerEl0);
+
+  /** Cadrage de la bannière : curseur vertical + « Recentrer » (le glissé sur l'image passe par enablePan). */
+  function posControls() {
+    const rng = h('input', { type: 'range', class: 'spf-range', min: 0, max: 100, step: 1, value: bannerPosY(draft.banner), 'aria-label': 'Position verticale de la bannière' });
+    rng.addEventListener('input', () => setPosY(Number(rng.value)));
+    return [h('span', { class: 'spf-pos-l', text: 'Cadrage' }), rng, h('span', { class: 'spf-pos-v', text: bannerPosY(draft.banner) + ' %' }),
+      btn('spf-chip', 'Recentrer', () => setPosY(50), { 'aria-label': 'Recentrer la bannière' })];
+  }
+  /**
+   * Règle le cadrage sans repeindre la zone (sinon le curseur ou le glissé en cours seraient coupés) : le brouillon, les
+   * éléments visibles et l'aperçu suivent. 50 (centre) n'est pas stocké.
+   */
+  function setPosY(y) {
+    if (!draft.banner) return;
+    const v = bannerPosY({ posY: y });
+    if (v === bannerPosY(draft.banner)) return;
+    const next = { ...draft.banner };
+    delete next.posY;
+    draft.banner = v === 50 ? next : { ...next, posY: v };
+    const css = bannerPosCss(draft.banner);
+    bannerEl0.style.backgroundPosition = css;
+    const hero = page.querySelector('.spf-hero-bn');
+    if (hero) hero.style.backgroundPosition = css;
+    posRow.querySelectorAll('.spf-range').forEach((r) => { r.value = String(v); });
+    posRow.querySelectorAll('.spf-pos-v').forEach((s) => { s.textContent = v + ' %'; });
+    formError = '';
+    paint('head', 'preview');
+  }
+  /** Glisser l'image pour la cadrer (souris ou doigt) ; les boutons posés sur l'image gardent leur clic. */
+  function enablePan(el) {
+    el.addEventListener('pointerdown', (e) => {
+      if (!draft.banner || !draft.banner.backdrop || (e.button && e.button !== 0) || (e.target.closest && e.target.closest('button'))) return;
+      const r = el.getBoundingClientRect();
+      const y0 = e.clientY;
+      const p0 = bannerPosY(draft.banner);
+      try { el.setPointerCapture(e.pointerId); } catch { /* pas de capture : le glissé suit tant que le pointeur reste dessus */ }
+      el.classList.add('is-pan');
+      const end = () => { el.classList.remove('is-pan'); for (const t of ['pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) el.removeEventListener(t, t === 'pointermove' ? move : end); };
+      const move = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        if (ev.buttons === 0 && ev.pointerType === 'mouse') { end(); return; }
+        setPosY(panBannerY(p0, ev.clientY - y0, r.width, r.height));
+      };
+      el.addEventListener('pointermove', move);
+      for (const t of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(t, end);
+    });
+  }
   function pickBanner() {
     openTitlePicker('Choisir une bannière', (m) => { draft.banner = { tmdbId: m.tmdbId, type: m.type, backdrop: m.backdrop, title: m.title }; touched(); }, true);
   }
@@ -422,7 +475,7 @@ export function mountProfileEditor(root, deps) {
     const name = draft.name.trim() || profile.handle.name;
     const stText = draft.statusText.trim();
     const bannerEl = h('div', { class: 'spf-prev-bn' });
-    if (draft.banner && draft.banner.backdrop) bannerEl.style.backgroundImage = bgOf('w780', draft.banner.backdrop);
+    if (draft.banner && draft.banner.backdrop) { bannerEl.style.backgroundImage = bgOf('w780', draft.banner.backdrop); bannerEl.style.backgroundPosition = bannerPosCss(draft.banner); }
     const av = avatarEl('spf-av spf-av--md', name, draft.avatar, draft.avatarColor);
     if (draft.presence !== 'invisible') av.append(h('i', { class: 'spf-pdot', style: 'background:' + pres[2] }));
     const stats = profile.stats;
@@ -579,24 +632,30 @@ export function mountProfileEditor(root, deps) {
         h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: 'Identité' }),
           h('div', { class: 'spf-idrow' }, avatarBox, h('div', { class: 'spf-col' }, swatches, avatarBtns)), ...identityRows),
         h('section', { class: 'spf-card' }, h('h2', { class: 'spf-h2', text: 'Statut et vitrine' }), ...statusRows,
-          h('div', {}, h('span', { class: 'spf-lb', text: 'Bannière (une image de film)' }), bannerBox), favBlock),
+          h('div', {}, h('span', { class: 'spf-lb', text: 'Bannière (une image de film)' }), bannerBox, posRow), favBlock),
         h('section', { class: 'spf-card' }, notesBlock),
         prefsZone),
       previewBox));
   } else {
+    const heroBn = h('div', { class: 'spf-hero-bn' }, btn('spf-chip spf-chip--float', 'Bannière', pickBanner, {}));
+    enablePan(heroBn);
     const bannerHero = h('div', { class: 'spf-hero' },
-      h('div', { class: 'spf-hero-bn' }, btn('spf-chip spf-chip--float', 'Bannière', pickBanner, {})),
+      heroBn,
       h('button', { type: 'button', class: 'spf-hero-av', 'aria-label': 'Changer l’avatar', on: { click: pickAvatar } }, avatarBox, h('span', { class: 'spf-pen' }, icon('pencil'))),
       zone('herocap', h('div', { class: 'spf-hero-cap' }), () => {
         const b = draft.banner;
         const bn = page.querySelector('.spf-hero-bn');
-        if (bn) bn.style.backgroundImage = b && b.backdrop ? bgOf('w780', b.backdrop) : '';
+        if (bn) {
+          bn.style.backgroundImage = b && b.backdrop ? bgOf('w780', b.backdrop) : '';
+          bn.style.backgroundPosition = bannerPosCss(b);
+          bn.classList.toggle('spf-pan', Boolean(b && b.backdrop));
+        }
         return b ? ['Bannière : ' + b.title, ' ', btn('spf-chip spf-chip--sm', 'Retirer', () => { draft.banner = null; touched(); })] : 'Aucune bannière';
       }));
     // La bannière du héros se repeint avec la zone 'banner' (même source).
     const baseBanner = dyn.banner;
     dyn.banner = () => { baseBanner(); paint('herocap'); };
-    page.append(head, bannerHero,
+    page.append(head, bannerHero, posRow,
       h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Avatar' }), swatches, avatarBtns),
       h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Identité' }), ...identityRows),
       h('section', { class: 'spf-sec' }, h('div', { class: 'spf-lbu', text: 'Statut' }), ...statusRows),

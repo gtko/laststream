@@ -12,6 +12,7 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { register, toItem } from './catalog.js';
 import { cssUrl, safeTmdbImage } from './safeImg.js';
+import { bannerPosCss } from './socialProfileModel.js';
 import { SI } from './socialIcons.js';
 import { joinErrorMessage, reportErrorMessage } from './socialChat.js';
 import { inviteToParty, openShareDialog } from './socialHooks.js';
@@ -200,7 +201,10 @@ export function createFriendCard(deps) {
     if (p && p.banner && p.banner.backdrop) {
       const url = safeTmdbImage(p.banner.backdrop, 'w780') || '';
       const el = box.querySelector('[data-banner]');
-      if (el && url) el.style.backgroundImage = 'linear-gradient(0deg, rgba(23,21,31,.55), rgba(23,21,31,0)), ' + cssUrl(url);
+      if (el && url) {
+        el.style.backgroundImage = 'linear-gradient(0deg, rgba(23,21,31,.55), rgba(23,21,31,0)), ' + cssUrl(url);
+        el.style.backgroundPosition = bannerPosCss(p.banner);
+      }
     }
     if (c.tab === 'lib') observeTiles(box);
     if (c.tab === 'notes') mountNotes();

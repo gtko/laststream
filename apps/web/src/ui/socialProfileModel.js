@@ -152,6 +152,22 @@ export function addFavorite(list, fav) {
   return [...list, fav];
 }
 
+/** Cadrage vertical de la bannière en % (0 = haut de l'image, 100 = bas) ; 50 quand il n'est pas réglé. */
+export function bannerPosY(banner) {
+  const y = banner && Number(banner.posY);
+  return Number.isFinite(y) ? Math.min(100, Math.max(0, Math.round(y))) : 50;
+}
+
+/** Valeur CSS de `background-position` pour une bannière. */
+export const bannerPosCss = (banner) => 'center ' + bannerPosY(banner) + '%';
+
+/** Nouveau cadrage après un glissé de `dy` px (l'image suit le doigt) sur une zone `w`×`h` ; les backdrops TMDB sont en 16/9. */
+export function panBannerY(startY, dy, w, h) {
+  const range = Math.max(h, w * 9 / 16) - h;
+  if (!(range > 0)) return startY;
+  return Math.min(100, Math.max(0, Math.round(startY - (dy / range) * 100)));
+}
+
 /** Titre TMDB (search/multi) -> { type, tmdbId, title, poster, backdrop } ; null pour une personne ou un résultat sans id. */
 export function mediaOf(r) {
   if (!r || (r.media_type !== 'movie' && r.media_type !== 'tv') || !r.id) return null;

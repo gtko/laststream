@@ -10,7 +10,8 @@ import type { Conversation, FriendView, Handle, Message, Note } from './socialV2
 
 // ---- S1 : profil ----
 type CustomStatus = { emoji?: string; text?: string; expiresAt?: number };
-type ProfileBanner = { tmdbId: number; type: MediaKind; backdrop: string; title: string };
+/** `posY` : cadrage vertical en % (0 haut, 100 bas) ; absent = centré. */
+type ProfileBanner = { tmdbId: number; type: MediaKind; backdrop: string; title: string; posY?: number };
 type ProfileFavorite = { tmdbId: number; type: MediaKind; title: string; poster?: string };
 type ProfileStats = { hoursWatched: number; notes: number; friends: number };
 /** Profil social étendu. `friendSince`, `commonTitles`, `mutualFriends` ne sont vus que par un autre profil ; `tagChangeableAt` que par moi. */
