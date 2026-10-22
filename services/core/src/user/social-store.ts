@@ -16,6 +16,8 @@ export const TICKET_PICKS_MAX = 3;
 const TICKET_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 /** Une présence plus ancienne que ce délai est « hors ligne » (le client envoie un battement toutes les 30 à 60 s). */
 export const PRESENCE_TTL_MS = 90_000;
+/** Une lecture dont la position n'avance plus depuis ce délai (pause ou image figée) n'est plus « en train de regarder ». */
+export const WATCHING_IDLE_MS = 10 * 60_000;
 export const MAX_FRIENDS = 200;
 export const MAX_OUTGOING_REQUESTS = 50;
 /** Titres masqués par profil. */

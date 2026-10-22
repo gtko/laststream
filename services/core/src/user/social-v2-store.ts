@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { consumeRate } from './rate-hits.js';
 import { drawNewHandleTag, revokeLegacyFriendship, settleGroupAfterLeave, syncProfileIdentity } from './social-handles.js';
-import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS } from './social-store.js';
+import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS, WATCHING_IDLE_MS } from './social-store.js';
 import {
   type ActivityItem,
   type ActivityKind,
@@ -47,6 +47,8 @@ export interface Watching {
   duration?: number;
   paused: boolean;
   at: number;
+  /** Dernier instant (ms, horloge serveur) où la lecture a avancé ; posé par le serveur, jamais par le client. */
+  movedAt?: number;
 }
 
 /** Statut personnalisé (contrat S1) : emoji d'un graphème, texte ≤ 60, échéance facultative (ms). Expiré = absent. */
@@ -359,6 +361,7 @@ export function normalizeWatching(input: WatchingView): WatchingView {
   if (series && input.season !== undefined) out.season = input.season;
   if (series && input.episode !== undefined) out.episode = input.episode;
   if (input.duration !== undefined) out.duration = input.duration;
+  if (input.movedAt !== undefined) out.movedAt = input.movedAt;
   return out;
 }
 
@@ -369,6 +372,29 @@ function parseStoredWatching(raw: string | null | undefined): Watching | undefin
   } catch {
     return undefined;
   }
+}
+
+/**
+ * La lecture a-t-elle avancé depuis le relevé précédent ? Oui pour un autre titre, une autre position (lecture, saut) ou
+ * une reprise après pause. Sinon (pause, image figée) l'ancien `movedAt` est conservé ; sans lui (ligne d'avant ce
+ * champ), l'horloge repart de `now`.
+ */
+function movedAtOf(prev: Watching | undefined, next: WatchingView, now: number): number {
+  if (prev === undefined) return now;
+  const sameMedia = prev.type === next.type && prev.tmdbId === next.tmdbId && prev.season === next.season && prev.episode === next.episode;
+  const advanced = !sameMedia || prev.pos !== next.pos || (prev.paused && !next.paused);
+  return advanced ? now : (prev.movedAt ?? now);
+}
+
+/** Titre figé depuis plus de WATCHING_IDLE_MS à `at` (repli : dernier battement pour une ligne sans `movedAt`). */
+function watchingIdle(w: Watching | undefined, updatedAt: number, at: number): boolean {
+  return w !== undefined && at - (w.movedAt ?? updatedAt) > WATCHING_IDLE_MS;
+}
+
+/** Titre en cours stocké, tel que les autres le voient à `at` : `null` s'il n'y en a pas ou s'il est figé. */
+function visibleWatching(row: PresenceRow | undefined, at: number): string | null {
+  if (row?.watching === null || row?.watching === undefined) return null;
+  return watchingIdle(parseStoredWatching(row.watching), row.updated_at, at) ? null : row.watching;
 }
 
 /** Relation stockée (profile_relations) : entiers 0/1, surnom nul si absent. */
@@ -403,7 +429,7 @@ function viewOf(row: ViewRow, now: number): SubjectView {
   const customStatus = activeCustomStatus(row.custom_status, now);
   if (customStatus !== undefined) view.customStatus = customStatus;
   if (seen !== 'offline') {
-    const watching = parseStoredWatching(presence?.watching);
+    const watching = parseStoredWatching(visibleWatching(presence, now));
     if (watching !== undefined) view.watching = watching;
   }
   if (presence !== undefined && presence.status !== 'invisible' && presence.updated_at > 0) view.lastSeen = presence.updated_at;
@@ -1100,7 +1126,10 @@ export class SocialV2Store {
   heartbeat(pid: string, watching: Watching | null, now: number): PresenceChange | undefined {
     return this.db.transaction(() => {
       const before = this.presenceRow(pid);
-      const stored = watching === null ? null : JSON.stringify(normalizeWatching(watching));
+      const stored =
+        watching === null
+          ? null
+          : JSON.stringify(normalizeWatching({ ...watching, movedAt: movedAtOf(parseStoredWatching(before?.watching), watching, now) }));
       this.db
         .prepare(
           `INSERT INTO profile_presence (profile_pid, status, watching, updated_at) VALUES (?, 'online', ?, ?)
@@ -1135,7 +1164,8 @@ export class SocialV2Store {
   private changeSince(pid: string, before: PresenceRow | undefined, now: number): PresenceChange | undefined {
     const after = this.presenceRow(pid);
     const seenChanged = seenStatusOf(before, now) !== seenStatusOf(after, now);
-    const watchingChanged = (before?.watching ?? null) !== (after?.watching ?? null);
+    // Le « avant » est jugé à l'instant de son dernier battement (ce que les autres voyaient alors), l'« après » à `now`.
+    const watchingChanged = visibleWatching(before, before?.updated_at ?? 0) !== visibleWatching(after, now);
     if (!seenChanged && !watchingChanged) return undefined;
     const row = this.viewRow(pid);
     if (row === undefined || row.handle_name === null) return undefined;

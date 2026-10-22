@@ -138,6 +138,70 @@ describe('présence vue par les amis', () => {
   });
 });
 
+describe('lecture figée : plus « en train de regarder » après 10 minutes', () => {
+  const IDLE = 10 * 60_000;
+  /** Battements toutes les 25 s jusqu'à `until` (ms après START), position et pause donnés. */
+  const beatsUntil = async (until: number, over: Record<string, unknown>): Promise<void> => {
+    for (let t = Date.now() - START + 25_000; t <= until; t += 25_000) {
+      vi.setSystemTime(START + t);
+      await beat(cast.bob, watchingNow(over));
+    }
+  };
+
+  it('pause prolongée : titre retiré à plus de 10 min, l’ami reste en ligne ; la reprise le fait revenir', async () => {
+    await beat(cast.bob, watchingNow({ paused: true }));
+    await beatsUntil(IDLE, { paused: true });
+    const edge = await viewOfFriend(cast.alice, cast.bob.pid);
+    expect(edge?.status).toBe('online');
+    expect(edge?.watching?.title).toBe('Game of Thrones');
+    vi.setSystemTime(START + IDLE + 1);
+    await beat(cast.bob, watchingNow({ paused: true }));
+    const idle = await viewOfFriend(cast.alice, cast.bob.pid);
+    expect(idle?.status).toBe('online');
+    expect(idle?.watching).toBeUndefined();
+    await beat(cast.bob, watchingNow({ paused: false }));
+    expect((await viewOfFriend(cast.alice, cast.bob.pid))?.watching?.title).toBe('Game of Thrones');
+  });
+
+  it('lecture figée (même position sans pause) : retirée aussi ; une position qui avance réarme le délai', async () => {
+    await beat(cast.bob, watchingNow());
+    await beatsUntil(IDLE - 25_000, {});
+    await beat(cast.bob, watchingNow({ pos: 9000 }));
+    await beatsUntil(2 * IDLE - 25_000, { pos: 9000 });
+    expect((await viewOfFriend(cast.alice, cast.bob.pid))?.watching?.title).toBe('Game of Thrones');
+    await beatsUntil(2 * IDLE + 60_000, { pos: 9000 });
+    expect((await viewOfFriend(cast.alice, cast.bob.pid))?.watching).toBeUndefined();
+  });
+
+  it('un saut de position ou un autre épisode réarme le délai', async () => {
+    await beat(cast.bob, watchingNow({ paused: true }));
+    await beatsUntil(IDLE - 25_000, { paused: true });
+    await beat(cast.bob, watchingNow({ paused: true, pos: 1 }));
+    vi.setSystemTime(START + IDLE + 60_000);
+    expect((await viewOfFriend(cast.alice, cast.bob.pid))?.watching?.pos).toBe(1);
+    await beat(cast.bob, watchingNow({ paused: true, pos: 1, episode: 5 }));
+    await beatsUntil(IDLE + 60_000 + IDLE, { paused: true, pos: 1, episode: 5 });
+    expect((await viewOfFriend(cast.alice, cast.bob.pid))?.watching?.episode).toBe(5);
+  });
+
+  it('événements : le retrait est annoncé une fois, les battements figés suivants ne sont pas rediffusés, la reprise l’est', async () => {
+    await beat(cast.bob, watchingNow({ paused: true }));
+    await beatsUntil(IDLE, { paused: true });
+    emitted.length = 0;
+    vi.setSystemTime(START + IDLE + 1);
+    await beat(cast.bob, watchingNow({ paused: true }));
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.event).toMatchObject({ t: 'presence', friend: { pid: cast.bob.pid, status: 'online' } });
+    expect((emitted[0]?.event as { friend: ViewBody }).friend.watching).toBeUndefined();
+    vi.setSystemTime(START + IDLE + 26_000);
+    await beat(cast.bob, watchingNow({ paused: true }));
+    expect(emitted).toHaveLength(1);
+    await beat(cast.bob, watchingNow({ paused: false }));
+    expect(emitted).toHaveLength(2);
+    expect((emitted[1]?.event as { friend: ViewBody }).friend.watching?.title).toBe('Game of Thrones');
+  });
+});
+
 describe('événements temps réel (gestionnaire injecté)', () => {
   it('présence : un événement par changement visible, aucun pour un battement identique', async () => {
     const fixed = watchingNow({ at: START });
