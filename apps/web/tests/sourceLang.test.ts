@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_LANG_PREFS, LANG_PREFS_KEY, LANG_VO, type LangPrefs } from '../src/data/langPrefs';
 import type { Stream } from '../src/data/stream';
 import { toSourceViews } from '../src/sources/info';
-import { recommendFor, sourceLangFor } from '../src/sources/load';
+import { audioLangsFor, recommendFor, sourceLangFor } from '../src/sources/load';
 
 const mk = (over: Record<string, unknown> = {}): Stream => ({
   url: 'https://x/play/abc',
@@ -45,6 +45,30 @@ describe('langue de classement des sources (sourceLangFor)', () => {
 
   it('langue principale gérée : elle-même', () => {
     expect(sourceLangFor({ ...DEFAULT_LANG_PREFS, audio: 'de' })).toBe('de');
+  });
+});
+
+describe('langues audio visées sur les pistes (audioLangsFor)', () => {
+  it('mode apprentissage : le code de la langue apprise, jamais « original » ni « multi »', () => {
+    expect(audioLangsFor(learn('ja'), undefined, 'ja')).toEqual(['ja']);
+    expect(audioLangsFor(learn('ko'), undefined, 'en')).toEqual(['ko']);
+    expect(audioLangsFor(learn('zh'))).toEqual(['zh']);
+    expect(audioLangsFor(learn('en'), undefined, 'ja')).toEqual(['en']);
+  });
+
+  it('le choix mémorisé pour le titre passe devant', () => {
+    expect(audioLangsFor(learn('ja'), 'fr')).toEqual(['fr', 'ja']);
+  });
+
+  it('hors apprentissage : inchangé (langue gérée, sinon original)', () => {
+    expect(audioLangsFor({ ...DEFAULT_LANG_PREFS, audio: 'de' })).toEqual(['de']);
+    expect(audioLangsFor({ ...DEFAULT_LANG_PREFS, audio: 'ja' }, undefined, 'ja')).toEqual(['original']);
+    expect(audioLangsFor({ ...DEFAULT_LANG_PREFS, audio: LANG_VO })).toEqual(['original']);
+    expect(audioLangsFor({ ...DEFAULT_LANG_PREFS, learn: false, learnLang: 'ja' })).toEqual(['fr']);
+  });
+
+  it('langue apprise = langue principale : classement habituel', () => {
+    expect(audioLangsFor(learn('fr', 'fr'))).toEqual(['fr']);
   });
 });
 

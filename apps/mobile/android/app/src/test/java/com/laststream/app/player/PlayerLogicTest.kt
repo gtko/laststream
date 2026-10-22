@@ -46,6 +46,15 @@ class PlayerLogicTest {
         assertNull(PlayerLogic.pickAudio(audio, null))
     }
 
+    @Test fun pickAudioLangueApprise() {
+        val tracks = audio + TrackInfo(3, "Track 3 - [Japanese]", "ja")
+        assertEquals(3, PlayerLogic.pickAudio(tracks, "ja")?.id)
+        assertEquals(3, PlayerLogic.pickAudio(tracks, "jpn")?.id)
+        // Les libellés de classement des sources ne sont pas des langues : aucune piste choisie.
+        assertNull(PlayerLogic.pickAudio(tracks, "original"))
+        assertNull(PlayerLogic.pickAudio(tracks, "multi"))
+    }
+
     @Test fun pickSubtitlePrefersFullOverForced() {
         val subs = listOf(
             TrackInfo(-1, "Désactiver", ""),

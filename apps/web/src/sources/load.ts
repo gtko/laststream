@@ -316,6 +316,16 @@ export function sourceLangFor(lp: LangPrefs, originalLang?: string): Lang {
   return originalLang?.trim().toLowerCase() === want ? 'original' : 'multi';
 }
 
+/**
+ * Langues audio à viser sur les pistes (codes de langue, jamais le libellé de classement des sources `original` / `multi`) :
+ * le choix mémorisé pour le titre d'abord, puis, en mode apprentissage, la langue apprise (`ja`, `ko`…) ; hors apprentissage,
+ * la langue du classement des sources, comme avant.
+ */
+export function audioLangsFor(lp: LangPrefs, remembered?: string, originalLang?: string): string[] {
+  const learning = lp.learn && lp.learnLang !== lp.audio;
+  return [remembered, learning ? lp.learnLang : sourceLangFor(lp, originalLang)].filter((l): l is string => !!l);
+}
+
 /** Mode apprentissage : les sources en VO ou multi-audio ne sont pas pénalisées (elles portent l'audio de la langue apprise). */
 function alsoAccepted(): readonly Lang[] {
   return getLangPrefs().learn ? ['original', 'multi'] : [];

@@ -14,7 +14,7 @@ import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
 import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
-import { POLL_EVERY_MS, awaitLaunchable, loadSources, pollSources, recommendFor, sourceLangFor, webCompatContext } from '../sources/load';
+import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, webCompatContext } from '../sources/load';
 import { failoverCandidates, webCompatOf } from '../sources/webCompat';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
 import { openSourcePicker } from '../sources/picker.js';
@@ -124,10 +124,7 @@ const miniState = new MiniState({
 /** Langues audio à essayer : choix mémorisé pour ce titre, puis langue préférée des réglages. */
 function audioPreference() {
   const mem = P ? getMemory(P.req.key) : {};
-  const origin = P ? originalLangOf(P) : '';
-  const want = sourceLangFor(getLangPrefs(), origin);
-  // Origine inconnue : comme avant, une langue apprise que les sources n'annoncent pas vise « original » (pas « multi »).
-  return [mem.audio, want === 'multi' && !origin ? 'original' : want].filter(Boolean);
+  return audioLangsFor(getLangPrefs(), mem.audio, P ? originalLangOf(P) : '');
 }
 
 /** Langue d'origine du titre (code à deux lettres), '' si inconnue. */
