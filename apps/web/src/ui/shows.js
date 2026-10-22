@@ -69,31 +69,34 @@ async function renderShowsRow() {
 }
 
 /**
- * Carte « Ce soir à la TV » : paysage 16:9 (même gabarit que « Reprendre la lecture »). Image : fond TMDB de l'émission
- * si elle est connue, sinon image du guide, sinon fond typographique. Chaîne en haut à gauche, heure et durée en grand,
- * titre et genre en bas ; « En direct » et progression si l'émission est en cours à `now` (secondes).
+ * Carte « Ce soir à la TV » : paysage 16:9 (même gabarit que « Reprendre la lecture »), texte sous l'image. Zone image au ratio
+ * fixe : fond TMDB de l'émission (16:9, rempli), sinon image du guide de ratio inconnu (affichée entière sur une copie floutée,
+ * jamais étirée ni rognée), sinon logo de la chaîne sur plaque blanche (repli typographique si le logo ne charge pas), sinon fond typographique. Seuls « En direct » et la progression
+ * (émission en cours à `now`, en secondes) restent sur l'image ; chaîne, heure, durée, titre et genre sont dans le bloc dessous.
  */
 export function tonightTile(a, known, now, epgIds = new Set()) {
   const live = isLiveNow(a, now);
   // Émission du guide sans fiche TMDB (genre d'émission, entrée présente) : sa fiche ; les autres programmes gardent le direct.
   const epgId = !known && isShowCategory(a.category) ? epgIdOf(showKey(a.title)) : '';
   const onGuide = !!epgId && epgIds.has(epgId);
-  const img = known && known.backdrop ? IMG('w780', known.backdrop) : a.icon || '';
+  const backdrop = known && known.backdrop ? IMG('w780', known.backdrop) : '';
+  const img = backdrop || a.icon || '';
   const ch = a.channel;
   const dur = fmtMin(Math.round((a.stop - a.start) / 60));
   const attrs = known ? ' data-showopen="' + esc(known.id) + '"' : onGuide ? ' data-showopen="' + esc(epgId) + '"' : ch.playId ? ' data-showwatch="' + esc(ch.playId) + '"' : ' data-showsnav';
   const label = [a.title, ch.name, hhmm(a.start)].join(', ') + (live ? ', en direct' : '');
   const chan = '<span class="tn-chan">' + (ch.num ? '<b class="ch-num">' + esc(String(ch.num)) + '</b>' : '') +
     (ch.logo ? '<img class="tn-logo" src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async">' : '<span class="tn-name">' + esc(ch.name) + '</span>') + '</span>';
+  // Visuel du guide (ratio inconnu) : copie floutée en fond + image entière ; fond TMDB : plein cadre.
+  const media = backdrop ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async">'
+    : img ? '<img class="tn-blur" src="' + esc(img) + '" alt="" loading="lazy" decoding="async"><img class="tn-fit" src="' + esc(img) + '" alt="" loading="lazy" decoding="async">' : '';
+  const plate = !img && ch.logo ? '<span class="tn-plate"><img src="' + esc(ch.logo) + '" alt="" loading="lazy" decoding="async"></span>' : '';
   return '<button type="button" class="card tile tile-land show-card tonight-card' + (live ? ' is-live' : '') + (known ? '' : ' is-epg') + '"' + attrs + ' aria-label="' + esc(label) + '">' +
-    '<span class="card-media' + (img ? '' : ' no-img') + '">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" decoding="async">' : '') +
-    fallbackHTML({ name: a.title, type: 'tv' }) +
-    '<span class="t-shade" aria-hidden="true"></span>' + chan +
-    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span>' : '') +
-    '<span class="tn-info" aria-hidden="true"><span class="tn-when"><strong class="tn-time">' + hhmm(a.start) + '</strong>' +
+    '<span class="card-media' + (img ? '' : ' no-img') + '">' + media + plate + fallbackHTML({ name: a.title, type: 'tv' }) +
+    (live ? '<span class="t-badge show-live" aria-hidden="true">En direct</span><span class="progress" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') + '</span>' +
+    '<span class="tn-body" aria-hidden="true"><span class="tn-when">' + chan + '<strong class="tn-time">' + hhmm(a.start) + '</strong>' +
     (dur ? '<span class="tn-dur">' + esc(dur) + '</span>' : '') + '</span>' +
-    '<span class="tn-title">' + esc(a.title) + '</span>' + (a.category ? '<span class="tn-sub">' + esc(a.category) + '</span>' : '') + '</span>' +
-    (live ? '<span class="progress" aria-hidden="true"><span style="width:' + progressPct(a, now) + '%"></span></span>' : '') + '</span></button>';
+    '<span class="tn-title">' + esc(a.title) + '</span>' + (a.category ? '<span class="tn-sub">' + esc(a.category) + '</span>' : '') + '</span></button>';
 }
 
 async function renderTonightRow() {

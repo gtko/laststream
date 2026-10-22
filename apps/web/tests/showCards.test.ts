@@ -152,6 +152,34 @@ describe('« Ce soir à la TV » : carte paysage', () => {
     expect(none.querySelector('.card-fallback.tp')).not.toBeNull();
   });
 
+  it('aucun texte sur l’image : chaîne, heure, durée, titre et genre sont dans le bloc sous l’image', () => {
+    const card = mount(tonightTile(airing(TF1, 'Journal', at(20, 50), at(21, 0), 'Information', 'https://guide.example/affiche.jpg'), null, at(20, 0)));
+    const media = card.querySelector('.card-media')!;
+    for (const sel of ['.tn-time', '.tn-dur', '.tn-title', '.tn-sub', '.tn-chan']) {
+      expect(media.querySelector(sel)).toBeNull();
+      expect(card.querySelector('.tn-body ' + sel)).not.toBeNull();
+    }
+  });
+
+  it('visuel du guide (ratio inconnu) : entier sur une copie floutée ; fond TMDB : plein cadre sans copie', () => {
+    const guide = mount(tonightTile(airing(TF1, 'Tracker', at(21, 15), at(23, 11), 'Série TV', 'https://guide.example/affiche.jpg'), null, at(20, 0)));
+    expect(guide.querySelector('img.tn-blur')!.getAttribute('src')).toBe('https://guide.example/affiche.jpg');
+    expect(guide.querySelector('img.tn-fit')!.getAttribute('src')).toBe('https://guide.example/affiche.jpg');
+    const known: Known = { id: 1003, name: 'Top Chef', poster: '/tc.jpg', backdrop: '/tcb.jpg', aliases: [] };
+    const tmdb = mount(tonightTile(airing(M6, 'Top Chef', at(21, 0), at(22, 0), 'Divertissement', 'https://guide.example/icon.jpg'), known, at(20, 0)));
+    expect(tmdb.querySelectorAll('.card-media img').length).toBe(1);
+    expect(tmdb.querySelector('img.tn-blur, img.tn-fit')).toBeNull();
+  });
+
+  it('sans image : le logo de la chaîne en plaque centrée (repli typographique en secours) ; sans logo, repli typographique', () => {
+    const logo = mount(tonightTile(airing(TF1, 'Journal', at(20, 50), at(21, 0), ''), null, at(20, 0)));
+    expect(logo.querySelector('.card-media')!.classList.contains('no-img')).toBe(true);
+    expect(logo.querySelector('.card-media .tn-plate img')!.getAttribute('src')).toBe('https://logo.example/tf1.png');
+    expect(logo.querySelector('.card-fallback')).not.toBeNull(); // repli gardé : visible si le logo ne charge pas, masqué par le CSS sinon
+    const none = mount(tonightTile(airing(M6, 'Zone interdite', at(21, 10), at(22, 45)), null, at(20, 0)));
+    expect(none.querySelector('.tn-plate')).toBeNull();
+  });
+
   it('échappe les textes issus du guide (titre, chaîne, genre)', () => {
     const evil = '<img src=x onerror="alert(1)"> & Co';
     const chan: GuideChannel = { epgId: 'x', playId: null, name: 'A&B <b>', logo: '', num: null };
