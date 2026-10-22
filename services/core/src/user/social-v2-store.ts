@@ -624,6 +624,10 @@ export type AddNoteOutcome =
   | { result: 'limit_reached'; retryAfterSec: number }
   | { result: 'ok'; note: NoteView; audience: string[]; activity?: ActivityItem };
 
+export type UpdateNoteOutcome =
+  | { result: 'not_found' }
+  | { result: 'ok'; note: NoteView; media: MediaRef; audience: string[] };
+
 /** Résumé de ce qui a été manqué (`GET /user/social/missed`). */
 export interface MissedSummary {
   messages: number;
@@ -789,6 +793,24 @@ function noteOf(row: NoteRow): NoteView {
     body: row.body,
     createdAt: Number(row.created_at),
   };
+}
+
+/** Clés d'une ligne de notes (voir mediaKey). */
+interface NoteKeyRow {
+  type: 'movie' | 'series';
+  tmdb_id: number;
+  season: number;
+  episode: number;
+}
+
+/** Titre d'une ligne de notes : inverse de mediaKey. Saison et épisode omis quand ils valent 0 (film, ou série sans précision). */
+function mediaOfNote(row: NoteKeyRow): MediaRef {
+  const media: MediaRef = { type: row.type, tmdbId: Number(row.tmdb_id) };
+  if (row.type === 'series') {
+    if (Number(row.season) !== 0) media.season = Number(row.season);
+    if (Number(row.episode) !== 0) media.episode = Number(row.episode);
+  }
+  return media;
 }
 
 // Activité
@@ -2203,9 +2225,43 @@ export class SocialV2Store {
     });
   }
 
-  /** Supprime une note de son auteur. `false` si la note n'existe pas ou n'est pas à ce profil. */
-  deleteNote(authorPid: string, noteId: string): boolean {
-    return Number(this.db.prepare('DELETE FROM notes WHERE id = ? AND author_pid = ?').run(noteId, authorPid).changes) === 1;
+  /**
+   * Modifie le contenu (texte ou emoji) d'une note de son auteur. La position, la date et le titre ne changent pas ; ce n'est
+   * pas une création, donc pas de quota. `not_found` si la note n'existe pas ou n'est pas à ce profil. `media` et `audience`
+   * (amis puis foyer de l'auteur) servent à diffuser la note modifiée.
+   */
+  updateNote(authorPid: string, noteId: string, kind: 'text' | 'emoji', body: string): UpdateNoteOutcome {
+    return this.db.transaction((): UpdateNoteOutcome => {
+      const changed = Number(
+        this.db.prepare('UPDATE notes SET kind = ?, body = ? WHERE id = ? AND author_pid = ?').run(kind, body, noteId, authorPid).changes,
+      );
+      if (changed !== 1) return { result: 'not_found' };
+      const row = this.db
+        .prepare(
+          `SELECT n.id, n.pos, n.kind, n.body, n.created_at, n.type, n.tmdb_id, n.season, n.episode, p.pid, p.handle_name, p.handle_tag, p.avatar_color, p.avatar
+             FROM notes n JOIN profiles p ON p.pid = n.author_pid
+            WHERE n.id = ?`,
+        )
+        .get(noteId) as unknown as NoteRow & NoteKeyRow;
+      const { friends, household } = this.audience(authorPid);
+      return { result: 'ok', note: noteOf(row), media: mediaOfNote(row), audience: [...friends, ...household] };
+    });
+  }
+
+  /**
+   * Supprime une note de son auteur. `undefined` si la note n'existe pas ou n'est pas à ce profil ; sinon son titre et
+   * l'audience (amis puis foyer de l'auteur), lus avant la suppression pour diffuser `note_removed`.
+   */
+  removeNote(authorPid: string, noteId: string): { media: MediaRef; audience: string[] } | undefined {
+    return this.db.transaction((): { media: MediaRef; audience: string[] } | undefined => {
+      const row = this.db
+        .prepare('SELECT type, tmdb_id, season, episode FROM notes WHERE id = ? AND author_pid = ?')
+        .get(noteId, authorPid) as unknown as NoteKeyRow | undefined;
+      if (row === undefined) return undefined;
+      this.db.prepare('DELETE FROM notes WHERE id = ? AND author_pid = ?').run(noteId, authorPid);
+      const { friends, household } = this.audience(authorPid);
+      return { media: mediaOfNote(row), audience: [...friends, ...household] };
+    });
   }
 
   // Activité, carte de chaleur, résumé

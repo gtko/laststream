@@ -9,7 +9,7 @@ import type { FriendRequestView, FriendView, Handle, MediaRef, MessageView, Note
  * Chaque événement vise une liste de profils destinataires (pid), passée en premier argument du gestionnaire :
  * - `message` : le destinataire seul (DM), ou les membres sauf l'auteur (groupe) ;
  * - `read` : l'expéditeur des messages lus (`pid` = le lecteur, `at` = instant de lecture, en ms) ;
- * - `note` : les amis et le foyer de l'auteur ;
+ * - `note` (pose, modification) et `note_removed` (suppression) : les amis et le foyer de l'auteur ;
  * - `reaction`, `poll`, `typing` : les autres membres de la conversation ;
  * - `join_request` : l'hôte (ami visé) seul, avec la vue du demandeur ;
  * - `join_answer` : le demandeur seul (`pid` = l'hôte qui répond).
@@ -24,6 +24,8 @@ export type SocialEvent =
   | { t: 'message'; message: MessageView }
   | { t: 'read'; pid: string; at: number }
   | { t: 'note'; media: MediaRef; note: NoteView }
+  /** Note supprimée par son auteur : `id` de la note, titre où elle était posée. */
+  | { t: 'note_removed'; media: MediaRef; id: string }
   /** Liste partagée modifiée (contenu, membres, suppression) : chaque membre la relit. */
   | { t: 'list'; listId: string }
   | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }

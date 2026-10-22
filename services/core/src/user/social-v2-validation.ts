@@ -116,6 +116,12 @@ export const noteSchema = z.strictObject({
   body: z.string().max(1000),
 });
 
+/** Corps de `PATCH /notes/:id` : nouveau genre et nouveau contenu (vérifié par `cleanNoteBody`). Titre et position ne changent pas. */
+export const noteEditSchema = z.strictObject({
+  kind: z.enum(['text', 'emoji']),
+  body: z.string().max(1000),
+});
+
 /** `?before=<createdAt ms>&limit=` : page de messages, 50 au plus (50 par défaut). */
 export const messagesQuery = z.strictObject({
   before: z

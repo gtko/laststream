@@ -74,6 +74,7 @@ Réponses : JSON. Erreurs : `{ "error": "<code>" }` (+ `issues` pour `invalid_bo
 | PUT | `/messages/:pid/read` | Marque lus les messages reçus de `:pid` | 204 ; mêmes erreurs que le fil |
 | GET | `/notes?type&tmdbId&season&episode` | Notes d'un titre : les miennes, celles des amis et du foyer | `{ notes }` |
 | POST | `/notes` `{ type, tmdbId, season?, episode?, pos, kind, body }` | Pose une note à une position | 201 `{ note }` ; 400 `invalid_body`, 429 `rate_limited` |
+| PATCH | `/notes/:id` `{ kind, body }` | Modifie le texte ou l'emoji d'une note (auteur seulement ; position, date et titre inchangés, hors quota) | 200 `{ note }` ; 400 `invalid_body`, 404 `note_not_found` |
 | DELETE | `/notes/:id` | Supprime une note (auteur seulement) | 204 ; 404 `note_not_found` |
 
 ### Temps réel (WebSocket)
@@ -92,7 +93,8 @@ Réponses : JSON. Erreurs : `{ "error": "<code>" }` (+ `issues` pour `invalid_bo
 | `request` | `request` (le demandeur) | le destinataire de la demande |
 | `friend` | `friend` | les deux, à l'acceptation ou à la demande croisée |
 | `unfriend` | `pid` | les deux |
-| `note` | `media`, `note` | amis et foyer de l'auteur |
+| `note` | `media`, `note` | amis et foyer de l'auteur, à la pose et à la modification (le client remplace la note par son `id`) |
+| `note_removed` | `media`, `id` | amis et foyer de l'auteur, à la suppression |
 
 - **Émission** : après chaque écriture, `deps.socialEvents` appelle `UserStoreDO.liveBroadcast` en tâche d'arrière-plan. Une trame n'est remise qu'aux sockets ouvertes : rien n'est stocké ni rejoué. Après une coupure, relire `GET /social/friends` et `GET /social/conversations` (le contrat prévoit un repli en polling de 20 s).
 - **Relais** : d'après le contrat, la connexion passe par `laststream-edge`, comme celle des salons. Cette configuration n'est pas dans ce dépôt.

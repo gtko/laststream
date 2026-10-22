@@ -61,6 +61,7 @@ const at = (ms: number): void => {
 const post = (who: Acting, body: unknown) => as<{ note: NoteBody } & ErrorBodyV2>(app, who, 'POST', '/user/social/notes', { body });
 const notesOf = (who: Acting, query = EPISODE_QUERY) => as<{ notes: NoteBody[] } & ErrorBodyV2>(app, who, 'GET', `/user/social/notes${query}`);
 const remove = (who: Acting, id: string) => as<ErrorBodyV2>(app, who, 'DELETE', `/user/social/notes/${id}`);
+const edit = (who: Acting, id: string, body: unknown) => as<{ note: NoteBody } & ErrorBodyV2>(app, who, 'PATCH', `/user/social/notes/${id}`, { body });
 const episodeNote = (over: Record<string, unknown> = {}) => ({
   type: 'series',
   tmdbId: 1399,
@@ -209,6 +210,64 @@ describe('suppression (DELETE /user/social/notes/:id)', () => {
   });
 });
 
+describe('modification (PATCH /user/social/notes/:id)', () => {
+  it('auteur seulement : 200 avec la note modifiée ; position, date et identifiant inchangés', async () => {
+    const created = await post(cast.alice, episodeNote({ pos: 754, body: 'Quel twist' }));
+    const id = created.body.note.id;
+    at(5_000);
+    const res = await edit(cast.alice, id, { kind: 'text', body: '  Quel dénouement  ' });
+    expect(res.status).toBe(200);
+    expect(res.body.note).toEqual({ ...created.body.note, body: 'Quel dénouement' });
+    expect((await notesOf(cast.bob)).body.notes).toEqual([{ ...created.body.note, body: 'Quel dénouement' }]);
+  });
+
+  it('texte vers emoji : le genre suit le contenu ; un emoji composé est accepté', async () => {
+    const id = (await post(cast.alice, episodeNote())).body.note.id;
+    const res = await edit(cast.alice, id, { kind: 'emoji', body: FAMILY });
+    expect(res.status).toBe(200);
+    expect(res.body.note).toMatchObject({ id, kind: 'emoji', body: FAMILY, pos: 754 });
+  });
+
+  it('un autre profil, un ami ou le foyer : 404 note_not_found et la note reste intacte ; note inconnue : même réponse', async () => {
+    const id = (await post(cast.alice, episodeNote({ body: 'original' }))).body.note.id;
+    const bobTry = await edit(cast.bob, id, { kind: 'text', body: 'modifiée' });
+    expect(bobTry.status).toBe(404);
+    expect(bobTry.body.error).toBe('note_not_found');
+    const aliceTwin = await edit(cast.alice2, id, { kind: 'text', body: 'modifiée' });
+    expect(aliceTwin.status).toBe(404);
+    expect(aliceTwin.body.error).toBe('note_not_found');
+    const unknown = await edit(cast.alice, '00000000-0000-4000-8000-000000000000', { kind: 'text', body: 'modifiée' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toBe('note_not_found');
+    expect((await notesOf(cast.bob)).body.notes.map((n) => n.body)).toEqual(['original']);
+  });
+
+  it('corps invalide : 400 invalid_body (emoji attendu, texte vide ou trop long, genre inconnu, clé en trop) ; la note ne change pas', async () => {
+    const id = (await post(cast.alice, episodeNote({ body: 'Quel twist' }))).body.note.id;
+    for (const body of [
+      { kind: 'emoji', body: 'ok' },
+      { kind: 'emoji', body: '' },
+      { kind: 'text', body: '   ' },
+      { kind: 'text', body: 'x'.repeat(141) },
+      { kind: 'gif', body: 'x' },
+      { kind: 'text', body: 'ok', pos: 3 },
+      { kind: 'text' },
+    ]) {
+      const res = await edit(cast.alice, id, body);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('invalid_body');
+    }
+    expect((await notesOf(cast.alice)).body.notes.map((n) => n.body)).toEqual(['Quel twist']);
+  });
+
+  it('pas de quota : éditer reste permis après 20 publications dans la minute, et la pose reste bloquée', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i++) ids.push((await post(cast.bob, episodeNote({ body: `n${i}` }))).body.note.id);
+    expect((await edit(cast.bob, ids[0] ?? '', { kind: 'text', body: 'corrigée' })).status).toBe(200);
+    expect((await post(cast.bob, episodeNote({ body: 'trop' }))).status).toBe(429);
+  });
+});
+
 describe('événements temps réel (gestionnaire injecté)', () => {
   it('note : vers les amis et le foyer de l’auteur, pas vers les autres', async () => {
     await post(cast.alice, episodeNote());
@@ -234,5 +293,43 @@ describe('événements temps réel (gestionnaire injecté)', () => {
     emitted.length = 0;
     expect((await post(cast.bob, episodeNote({ body: 'refusée' }))).status).toBe(429);
     expect(emitted).toHaveLength(0);
+  });
+
+  it('modification : note vers les amis et le foyer de l’auteur, comme à la pose ; refus (404) : aucun événement', async () => {
+    const id = (await post(cast.alice, episodeNote())).body.note.id;
+    emitted.length = 0;
+    expect((await edit(cast.bob, id, { kind: 'text', body: 'refusée' })).status).toBe(404);
+    expect(emitted).toHaveLength(0);
+    expect((await edit(cast.alice, id, { kind: 'text', body: 'Corrigé' })).status).toBe(200);
+    expect(emitted).toHaveLength(1);
+    expect([...(emitted[0]?.pids ?? [])].sort()).toEqual([cast.bob.pid, cast.alice2.pid].sort());
+    expect(emitted[0]?.event).toMatchObject({
+      t: 'note',
+      media: { type: 'series', tmdbId: 1399, season: 2, episode: 4 },
+      note: { id, body: 'Corrigé', author: { pid: cast.alice.pid } },
+    });
+  });
+
+  it('suppression : note_removed (titre et identifiant) vers les amis et le foyer ; refus (404) : aucun événement', async () => {
+    const id = (await post(cast.alice, episodeNote())).body.note.id;
+    emitted.length = 0;
+    expect((await remove(cast.bob, id)).status).toBe(404);
+    expect(emitted).toHaveLength(0);
+    expect((await remove(cast.alice, id)).status).toBe(204);
+    expect(emitted).toHaveLength(1);
+    expect([...(emitted[0]?.pids ?? [])].sort()).toEqual([cast.bob.pid, cast.alice2.pid].sort());
+    expect(emitted[0]?.event).toEqual({ t: 'note_removed', media: { type: 'series', tmdbId: 1399, season: 2, episode: 4 }, id });
+  });
+
+  it('suppression : media d’un film, ou d’une série sans précision, sans saison ni épisode', async () => {
+    const movieId = (await post(cast.bob, { type: 'movie', tmdbId: 438631, season: 1, pos: 5, kind: 'emoji', body: EMOJI })).body.note.id;
+    emitted.length = 0;
+    expect((await remove(cast.bob, movieId)).status).toBe(204);
+    expect(emitted[0]?.event).toEqual({ t: 'note_removed', media: { type: 'movie', tmdbId: 438631 }, id: movieId });
+
+    const seriesId = (await post(cast.bob, { type: 'series', tmdbId: 1399, pos: 1, kind: 'text', body: 'sans précision' })).body.note.id;
+    emitted.length = 0;
+    expect((await remove(cast.bob, seriesId)).status).toBe(204);
+    expect(emitted[0]?.event).toEqual({ t: 'note_removed', media: { type: 'series', tmdbId: 1399 }, id: seriesId });
   });
 });

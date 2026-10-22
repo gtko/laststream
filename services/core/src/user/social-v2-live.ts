@@ -62,6 +62,7 @@ export type LiveFrame =
   | { t: 'friend'; friend: FriendView }
   | { t: 'unfriend'; pid: string }
   | { t: 'note'; media: MediaRef; note: NoteView }
+  | { t: 'note_removed'; media: MediaRef; id: string }
   | { t: 'list'; listId: string }
   | { t: 'reaction'; conv: string; id: string; reactions: ReactionView[] }
   | { t: 'poll'; conv: string; poll: PollView }
@@ -178,6 +179,8 @@ export function liveFrame(event: SocialEvent): LiveFrame {
       return { t: 'unfriend', pid: event.pid };
     case 'note':
       return { t: 'note', media: normalizeMedia(event.media), note: noteOut(event.note) };
+    case 'note_removed':
+      return { t: 'note_removed', media: normalizeMedia(event.media), id: event.id };
     case 'reaction':
       return { t: 'reaction', conv: event.conv, id: event.id, reactions: event.reactions.map(reactionOut) };
     case 'poll':

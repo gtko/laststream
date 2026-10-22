@@ -120,6 +120,13 @@ describe('formes JSON du contrat', () => {
     const movie = frameFor(BOB_PID, { t: 'note', media: { type: 'movie', tmdbId: 603, season: 2, episode: 4 } as never, note });
     expect(movie.media).toEqual({ type: 'movie', tmdbId: 603 });
   });
+
+  it('suppression de note : { t, media, id } ; saison et épisode gardés pour une série seulement', () => {
+    const series = frameFor(BOB_PID, { t: 'note_removed', media: { type: 'series', tmdbId: 1399, season: 2, episode: 4 }, id: 'note-1' });
+    expect(series).toEqual({ t: 'note_removed', media: { type: 'series', tmdbId: 1399, season: 2, episode: 4 }, id: 'note-1' });
+    const movie = frameFor(BOB_PID, { t: 'note_removed', media: { type: 'movie', tmdbId: 603, season: 2, episode: 4 } as never, id: 'note-1' });
+    expect(movie).toEqual({ t: 'note_removed', media: { type: 'movie', tmdbId: 603 }, id: 'note-1' });
+  });
 });
 
 describe('confidentialité', () => {
