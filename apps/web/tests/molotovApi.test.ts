@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  connectMolotov, disconnectMolotov, getMolotovChannels, getMolotovCredentials, getMolotovPlay, getMolotovStatus, postMolotovLicense,
+  connectMolotov, disconnectMolotov, getMolotovChannels, getMolotovCredentials, getMolotovEpg, getMolotovPlay, getMolotovStatus, postMolotovLicense,
   resendMolotovMfa, signinMolotov, verifyMolotovMfa,
 } from '../src/data/molotovApi';
-import type { MolotovChannelDto, MolotovCredentials, MolotovDrm, MolotovPlay, MolotovStatus } from '../src/data/molotovApi';
+import type { MolotovChannelDto, MolotovCredentials, MolotovDrm, MolotovEpgChannel, MolotovEpgProgram, MolotovPlay, MolotovStatus } from '../src/data/molotovApi';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { reloadSession, setActiveProfile, setSession } from '../src/data/session';
 
@@ -94,6 +94,51 @@ describe('catalogue', () => {
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('France 2');
     expect(calls[0].url).toBe('/user/account/molotov/channels');
+  });
+});
+
+describe('guide TV', () => {
+  it('GET /user/account/molotov/epg : guide compact du serveur, profil principal', async () => {
+    const program: MolotovEpgProgram = {
+      id: 'p1',
+      title: 'Journal',
+      start: '2026-10-23T14:00:00Z',
+      end: '2026-10-23T15:00:00Z',
+      type: 'episode',
+      desc: 'Les infos',
+      image: 'https://img.example/p1.jpg',
+    };
+    replies = [{ body: { channels: [{ id: '600046', name: 'TF1', logo: 'https://img.example/tf1.png', callSign: 'tf1', programs: [program] }], fetchedAt: 1 } }];
+    const list: MolotovEpgChannel[] = await getMolotovEpg(true);
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('TF1');
+    expect(list[0].programs).toEqual([program]);
+    const c = calls[0];
+    expect(c.method).toBe('GET');
+    expect(c.url).toBe('/user/account/molotov/epg');
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('mémoisé dix minutes, rechargé ensuite', async () => {
+    const base = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(base);
+    try {
+      replies = [
+        { body: { channels: [{ id: '600046', name: 'TF1', programs: [] }] } },
+        { body: { channels: [{ id: '600047', name: 'France 2', programs: [] }] } },
+      ];
+      const first = await getMolotovEpg(true);
+      const again = await getMolotovEpg();
+      expect(again).toBe(first);
+      expect(calls).toHaveLength(1);
+      spy.mockReturnValue(base + 11 * 60 * 1000);
+      const fresh = await getMolotovEpg();
+      expect(fresh[0].id).toBe('600047');
+      expect(calls).toHaveLength(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

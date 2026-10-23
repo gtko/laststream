@@ -82,6 +82,30 @@ export interface MolotovChannelDto {
   program?: string | null;
 }
 
+/** Programme du guide TV (horaires ISO 8601, compactés par le serveur). */
+export interface MolotovEpgProgram {
+  id: string;
+  title: string;
+  /** Début du programme (ISO 8601). */
+  start: string;
+  /** Fin du programme (ISO 8601). */
+  end: string;
+  type?: string | null;
+  /** Description courte (déjà tronquée par le serveur). */
+  desc?: string | null;
+  /** Illustration horizontale du programme. */
+  image?: string | null;
+}
+
+/** Chaîne du guide TV, avec ses programmes (grille multi-heures). */
+export interface MolotovEpgChannel {
+  id: string;
+  name: string;
+  logo?: string | null;
+  callSign?: string | null;
+  programs: MolotovEpgProgram[];
+}
+
 export interface MolotovCredentials {
   idToken: string;
   refreshToken: string;
@@ -451,6 +475,24 @@ export async function getMolotovChannels(force = false): Promise<MolotovChannelD
   }
   channelCache = { at: Date.now(), channels: list };
   return list;
+}
+
+// ---------- Guide TV ----------
+
+/** Mémo du guide (le guide complet fait plusieurs mégaoctets). */
+const EPG_TTL_MS = 10 * 60 * 1000;
+let epgCache: { at: number; channels: MolotovEpgChannel[] } | null = null;
+
+/**
+ * Guide TV complet des chaînes Molotov : le serveur renvoie la forme compacte (chaînes et programmes de la grille,
+ * environ 24 h). Mémoïsé dix minutes.
+ */
+export async function getMolotovEpg(force = false): Promise<MolotovEpgChannel[]> {
+  if (!force && epgCache && Date.now() - epgCache.at < EPG_TTL_MS) return epgCache.channels;
+  const res = await call<{ channels?: MolotovEpgChannel[] }>('/account/molotov/epg', { headers: profileHeaders() });
+  const channels = Array.isArray(res.channels) ? res.channels : [];
+  epgCache = { at: Date.now(), channels };
+  return channels;
 }
 
 // ---------- Lecture ----------

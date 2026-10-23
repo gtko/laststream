@@ -2,7 +2,7 @@
 import { infiniteList } from './infinite.js';
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
 import { boxAccess, boxCat, boxGroups, boxOnlyChannels, getBoxQuality, getBoxReach, mergeBox } from '../data/tvBox';
-import { getMolotovChannels, getMolotovStatus } from '../data/molotovApi';
+import { getMolotovChannels, getMolotovEpg, getMolotovStatus } from '../data/molotovApi';
 import { activeBoxChannels, BOX_CHANGED, refreshAll } from '../data/tvSources';
 import { hasLocalGuide, localProgs } from '../data/tvXmltv';
 import { auth, isKidProfile, kidSection } from '../data/auth';
@@ -106,7 +106,7 @@ function molotovChannel(c) {
     cat: MOLOTOV_CAT,
     source: 'molotov',
     molotovId: c.id,
-    /** Programme en cours (catalogue Molotov) : faute de guide complet, il sert de programme « maintenant ». */
+    /** Programme annoncé par le catalogue : repli de `nowNext` quand la chaîne n'a pas de guide. */
     program: c.program || '',
     num: null,
     sig: null,
@@ -119,14 +119,16 @@ function molotovChannel(c) {
   };
 }
 
-/** Catalogue Molotov du compte connecté (absent : pas de compte, pas de chaînes). */
-async function loadMolotovChannels() {
+/** Catalogue Molotov du compte connecté (absent : pas de compte, pas de chaînes), puis son guide TV. */
+export async function loadMolotovChannels() {
   if (tv.molotovLoading) return;
   tv.molotovLoading = true;
   try {
     const status = await getMolotovStatus();
     const list = status.connected ? await getMolotovChannels() : [];
     tv.molotov = list.map(molotovChannel);
+    // Guide TV des chaînes Molotov (grille multi-heures) : rempli dans `tv.epg` juste après le catalogue.
+    if (tv.molotov.length) await ensureMolotovEpg();
   } catch (_) {
     tv.molotov = [];
   } finally {
@@ -137,6 +139,44 @@ async function loadMolotovChannels() {
       renderEpgGrid();
     }
   }
+}
+
+/**
+ * Programmes d'une chaîne du guide Molotov, à la forme de `tv.epg` : `start`/`stop` en secondes (les horaires du
+ * guide sont des ISO 8601), `desc`/`icon` pour le détail du programme. Les programmes sans horaire exploitable
+ * sont ignorés.
+ */
+function molotovProgs(channel) {
+  const out = [];
+  for (const p of channel.programs || []) {
+    const start = Date.parse(p.start);
+    const stop = Date.parse(p.end);
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
+    out.push({ start: Math.floor(start / 1000), stop: Math.floor(stop / 1000), title: p.title || '', desc: p.desc || '', icon: p.image || '' });
+  }
+  return out;
+}
+
+/** Chargement du guide Molotov en cours (un seul à la fois). */
+let molotovEpgJob = null;
+
+/**
+ * Guide TV Molotov dans `tv.epg`, une entrée par chaîne du catalogue (clé = id de la chaîne, voir `epgKey`).
+ * Réappliqué à chaque appel, indispensable après un changement de fenêtre de grille : `tvWindow()` vide `tv.epg`,
+ * sans quoi la grille se vide au-delà d'une heure. Le guide lui-même est mémoisé par `getMolotovEpg` (dix minutes).
+ * Sans guide (compte absent, erreur), le repli « Programme indisponible » / titre du catalogue reste en place.
+ */
+export function ensureMolotovEpg() {
+  if (!molotovEpgJob) {
+    molotovEpgJob = getMolotovEpg()
+      .then((list) => {
+        const progs = new Map(list.map((g) => [String(g.id), molotovProgs(g)]));
+        for (const c of tv.molotov) tv.epg.set(epgKey(c), progs.get(String(c.molotovId)) || []);
+      })
+      .catch(() => { /* le repli (« Programme indisponible ») reste en place */ })
+      .finally(() => { molotovEpgJob = null; });
+  }
+  return molotovEpgJob;
 }
 
 /**
@@ -217,7 +257,8 @@ export function matchesFilters(c, f, cat) {
   return true;
 }
 // Chaîne de playlist : guide local (XMLTV de l'utilisateur, clé = id de la chaîne) sinon identifiant de guide du catalogue.
-export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.source === 'molotov' ? '' : c.id);
+// Chaîne Molotov (et catalogue) : guide du serveur, clé = id de la chaîne (voir `ensureMolotovEpg` pour Molotov).
+export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.id);
 export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 export function tvWindow() {
@@ -319,7 +360,9 @@ export async function loadFacets() {
 
 export async function ensureEpg(chs) {
   const w0 = tvWindow();
-  const wanted = Array.from(new Set(chs.map(epgKey).filter(Boolean)));
+  // Guide Molotov : route dédiée, jamais demandée au serveur EPG ; rechargé si la fenêtre de grille a changé.
+  const hasMolotov = chs.some((c) => c.source === 'molotov');
+  const wanted = Array.from(new Set(chs.filter((c) => c.source !== 'molotov').map(epgKey).filter(Boolean)));
   const all = wanted.filter((k) => !tv.epgReq.has(k));
   all.forEach((k) => tv.epgReq.add(k));
   // Guide XMLTV de l'utilisateur : lu sur l'appareil, jamais demandé au serveur.
@@ -342,6 +385,7 @@ export async function ensureEpg(chs) {
   }
   // Les chaînes déjà demandées par un autre appel (accueil, grille) : on attend aussi leur réponse, sans la redemander.
   wanted.forEach((k) => { const p = tv.epgPending.get(k); if (p && !jobs.includes(p)) jobs.push(p); });
+  if (hasMolotov) jobs.push(ensureMolotovEpg());
   await Promise.all(jobs);
 }
 
