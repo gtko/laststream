@@ -1,6 +1,7 @@
 /* Sélecteur de sources détaillé : tiroir du prototype (qualité, audio, langues, taille, débit, copies, fichier),
  * filtres, tri, regroupement par résolution, source recommandée en tête. Navigable au clavier et à la télécommande. */
 import { measureBandwidthKbps, notYetDigitalText, QUALITY_LABEL } from '../data/sources';
+import { noImdbMessage } from '../data/imdbResolve';
 import { modalBody } from '../ui/dom.js';
 import { closeModal, openModal } from '../ui/modal.js';
 import { esc } from '../ui/util.js';
@@ -194,7 +195,7 @@ export async function openSourcePicker(request, opener, opts) {
       session.notYet = loaded.notYetDigital ? notYetDigitalText(loaded.digitalDate) : '';
     }
   } catch (e) {
-    if (alive()) showMessage(e && e.message === 'no-imdb' ? 'Aucun identifiant IMDb pour ce titre : impossible de chercher des sources.' : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
+    if (alive()) showMessage(e && e.message === 'no-imdb' ? noImdbMessage(e.tried || []) : 'Les sources n’ont pas pu être chargées. Vérifie que lastAddon répond, puis réessaie.');
     return;
   }
   if (!session.views.length && !session.pending.length) { showMessage(session.notYet || session.serverNotice || 'Aucune source trouvée pour le moment.'); return; }

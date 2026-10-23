@@ -12,7 +12,8 @@ import { toast } from '../ui/dom.js';
 import { getLangPrefs, resolveLangPrefs, setLangPrefs, wantedSubLang } from '../data/langPrefs';
 import { isAnime } from '../data/anime';
 import { getAutoplay, getSkipPref, getVideoLang } from '../data/prefs';
-import { episodeStreamId, imdbIdOf, measureBandwidthKbps } from '../data/sources';
+import { resolveImdbId } from '../data/imdbResolve';
+import { episodeStreamId, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
 import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, requestKey, sourceLangFor, viewFromStream, webCompatContext } from '../sources/load';
@@ -704,7 +705,7 @@ function loadSideData(token) {
   const alive = () => P && P.token === token;
   (async () => {
     try {
-      if (!p.imdb) p.imdb = (await imdbIdOf(p.req.type, p.req.id)) || '';
+      if (!p.imdb) p.imdb = (await resolveImdbId(p.req.type, p.req.id)).imdb || '';
       if (alive()) ui.setMarkAvailable(markAllowed(p));
       if (p.imdb && isConfigured()) {
         const r = await skipSegments(p.req.type === 'tv' ? 'series' : 'movie', p.imdb, p.req.type === 'tv' ? p.req.season ?? 1 : 0, p.req.type === 'tv' ? p.req.episode ?? 1 : 0);

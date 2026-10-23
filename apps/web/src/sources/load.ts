@@ -1,6 +1,7 @@
 import { getLangPrefs, LANG_VO, type LangPrefs } from '../data/langPrefs';
+import { NoImdbError, resolveImdbId } from '../data/imdbResolve';
 import { getBandwidthSetting } from '../data/prefs';
-import { fetchStreamsResult, fetchStreamStatus, imdbIdOf, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
+import { fetchStreamsResult, fetchStreamStatus, planBandwidth, readStoredBandwidth, sortStreams } from '../data/sources';
 import type { DeviceTarget } from '../data/sources';
 import type { Lang, Stream } from '../data/stream';
 import { deviceAddonName, fetchDeviceStreams, mergeDeviceStreams } from './deviceFetch';
@@ -132,8 +133,14 @@ export function viewFromStream(stream: Stream): SourceView {
 }
 
 async function fetchSources(req: SourceRequest, retry: boolean): Promise<LoadedSources> {
-  const imdb = req.imdb ?? (await imdbIdOf(req.type, req.id));
-  if (!imdb) throw new Error('no-imdb');
+  let imdb = req.imdb;
+  if (!imdb) {
+    const found = await resolveImdbId(req.type, req.id);
+    // Étape en erreur (réseau, 5xx) : absence non établie, le sélecteur affiche l'erreur de chargement générique.
+    if (!found.imdb && found.failed) throw new Error('imdb-lookup-failed');
+    if (!found.imdb) throw new NoImdbError(found.tried);
+    imdb = found.imdb;
+  }
   // Les torrents sans lien ne sont demandés au serveur que si l'appareil a un débrideur (option avancée).
   const clientOk = debrid().hasAny();
   const res = await fetchStreamsResult(req.type, imdb, req.season, req.episode, { torrents: clientOk, streamId: req.streamId });

@@ -1,5 +1,4 @@
 import { addonUrl, ltUrl } from './config';
-import { tmdb } from './lt';
 import { getBandwidthSetting, type BandwidthSetting } from './prefs';
 import { getLaststream, type Lang, type LastStreamInfo, type Stream } from './stream';
 import { requestJson } from './transport';
@@ -31,12 +30,6 @@ export function stremioId(imdbId: string, season?: number | null, episode?: numb
  */
 export function episodeStreamId(imdbId: string, season?: number | null, episode?: number | null, streamId?: string | null): string {
   return streamId || stremioId(imdbId, season ?? 1, episode ?? 1);
-}
-
-/** Correspondance TMDB → IMDb via `external_ids` (le titre doit avoir un identifiant IMDb). */
-export async function imdbIdOf(type: 'movie' | 'tv', tmdbId: string | number): Promise<string | null> {
-  const data = await tmdb<{ imdb_id?: string | null }>(`${type}/${tmdbId}/external_ids`);
-  return typeof data?.imdb_id === 'string' && data.imdb_id !== '' ? data.imdb_id : null;
 }
 
 
