@@ -7,6 +7,7 @@ import { isAndroidApp } from '../data/config';
 import { isShellEnvironment } from '../player/shell';
 import { closeSheet, confirmRemove, DL_ICON, itemLabel, itemName, openDoneSheet, openErrorSheet, openSpaceFullSheet, openSheet, pauseItem, paintDlBadges,
   playOffline, resumeItem, retryItem, RING, teardownDownloadControls, visibleItems } from './downloadBtn.js';
+import { isTvDevice } from './device.js';
 import { detailEl, toast } from './dom.js';
 import { focusStorageSettings } from './settings-downloads.js';
 import { teardownFiche } from './fiche.js';
@@ -23,6 +24,8 @@ const attr = (s) => String(s).replace(/["\\]/g, '\\$&');
 const v = { unsub: null, items: [], sig: '', loaded: false, spaceAt: 0, spaceTimer: 0, space: null, token: 0, persisted: null };
 
 const online = () => (typeof navigator === 'undefined' || navigator.onLine !== false);
+/** Vue TV (ODY-234) : mêmes données, rangées navigables à la télécommande (groupes data-nav) et indication des touches. */
+const tvNav = () => (isTvDevice() ? ' data-nav' : '');
 const isWeb = () => !isAndroidApp() && !isShellEnvironment();
 const isSafariLike = () => {
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
@@ -81,7 +84,7 @@ function bannersHTML(items) {
   }
   const errs = items.filter((it) => it.state === 'error');
   if (errs.length) {
-    out.push('<div class="dl-banner is-err" role="alert">' + DL_ICON.alert + '<p>' + esc(errs.length === 1 ? '1 téléchargement a échoué.' : errs.length + ' téléchargements ont échoué.') +
+    out.push('<div class="dl-banner is-err" role="alert"' + tvNav() + '>' + DL_ICON.alert + '<p>' + esc(errs.length === 1 ? '1 téléchargement a échoué.' : errs.length + ' téléchargements ont échoué.') +
       ' Les fichiers déjà reçus sont conservés.</p><button type="button" class="btn btn-sm dl-btn-d" data-dl-act="retry-all">Tout réessayer</button></div>');
   }
   if (isWeb() && items.some((it) => it.state === 'running' || it.state === 'pending')) {
@@ -104,7 +107,7 @@ function webCardsHTML() {
 
 function spaceCardHTML() {
   return '<section class="dl-card dl-space" aria-label="Espace de stockage" data-dl-space>' +
-    '<div class="dl-space-h"><p class="dl-space-l" data-dl-space-l>Espace utilisé…</p><a class="dl-link" href="#/settings" data-dl-act="storage-settings">Réglages de stockage</a></div>' +
+    '<div class="dl-space-h"' + tvNav() + '><p class="dl-space-l" data-dl-space-l>Espace utilisé…</p><a class="dl-link" href="#/settings" data-dl-act="storage-settings">Réglages de stockage</a></div>' +
     '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="Espace utilisé" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-dl-space-bar><i style="width:0%"></i></div>' +
     '<p class="dl-space-n" data-dl-space-n hidden></p></section>';
 }
@@ -119,7 +122,7 @@ function headActionsHTML(items) {
 
 const shell = (inner, actions = '') => topBar(false) +
   '<article class="svc-page dl-page" aria-labelledby="svc-title"><header class="dl-head"><h1 class="dl-h1" id="svc-title" tabindex="-1">Téléchargements</h1>' +
-  '<div class="dl-head-acts" data-nav data-dl-head>' + actions + '</div></header><div class="dl-body" data-dl-body>' + inner + '</div></article>';
+  '<div class="dl-head-acts" data-nav data-dl-head>' + actions + '</div></header><div class="dl-body" data-dl-body>' + inner + '</div>' + (isTvDevice() ? '<p class="dl-tv-hint" aria-hidden="true">OK : choisir · Retour : fermer</p>' : '') + '</article>';
 
 const emptyHTML = () => '<div class="dl-state"><span class="dl-state-ic" aria-hidden="true">' + DL_ICON.dl + '</span><h2>Rien de téléchargé</h2>' +
   '<p>Télécharge un film ou un épisode depuis sa fiche pour le regarder sans connexion.</p><div data-nav><a class="btn btn-primary" href="#/">Parcourir le catalogue</a></div></div>';
@@ -144,6 +147,7 @@ function renderList() {
   // Le focus est rendu au même geste de la même ligne après redessin (clavier, télécommande).
   const a = document.activeElement;
   const keep = a && body.contains(a) ? { row: a.closest('[data-dl-row]')?.dataset.dlRow, act: a.dataset.dlAct } : null;
+  const keepHead = a && head && head.contains(a) ? a.dataset.dlAct : null; // l'en-tête est redessiné aussi : son focus est rendu
   const off = !online();
   const running = items.filter((it) => it.state !== 'done');
   const done = items.filter((it) => it.state === 'done');
@@ -151,6 +155,15 @@ function renderList() {
     (items.length ? section('dl-s-run', 'En cours', running, off) + section('dl-s-done', off ? 'Disponibles hors connexion' : 'Terminés', done, off) : emptyHTML());
   if (head) head.innerHTML = headActionsHTML(items);
   paintSpace();
+  if (isTvDevice() && !body.contains(document.activeElement)) {
+    // Télécommande : le focus arrive sur la première action, sinon les flèches n'ont aucun point de départ.
+    const first = body.querySelector('[data-dl-row] [data-dl-act]') || body.querySelector('[data-nav] button, [data-nav] a[href]');
+    if (first) first.focus({ preventScroll: true });
+  }
+  if (keepHead && head) {
+    const t = head.querySelector('[data-dl-act="' + keepHead + '"]') || head.querySelector('button');
+    if (t) t.focus({ preventScroll: true });
+  }
   if (keep && keep.row) {
     const row = body.querySelector('[data-dl-row="' + attr(keep.row) + '"]');
     const t = row && (row.querySelector('[data-dl-act="' + keep.act + '"]') || row.querySelector('button'));

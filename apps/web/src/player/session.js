@@ -26,6 +26,7 @@ import { showRatePrompt } from '../ui/rate.js';
 import { state as appState } from '../ui/state.js';
 import { clientCopiesOf, isClientStream, originSummary } from '../sources/info';
 import { offlineSourceFor } from '../downloads/offline';
+import { onWatched, watchedPlan } from '../downloads/afterWatch';
 import { createLevelProbe, levelProbeSupported } from './audiolevel.js';
 import { APP_DOWNLOAD_URL, currentOs } from './appDownload';
 import { browserCaps } from './caps';
@@ -1749,6 +1750,10 @@ function markWatched() {
   p.watchedMarked = true;
   const refs = p.req.type === 'tv' && p.cur.season != null ? [{ season: p.cur.season, episode: p.cur.episode }] : null;
   Promise.resolve(userStore.setWatched(p.req.key, refs, true)).catch(() => {});
+  // Fichier téléchargé : le supprimer pendant qu'on le lit casserait la lecture, on attend la fermeture (teardown).
+  const plan = watchedPlan(isOfflineView(p.view), p.req.key, refs?.[0].season, refs?.[0].episode);
+  if (plan.later) p.deleteAfterWatch = plan.later;
+  else void onWatched(p.req.key, refs?.[0].season, refs?.[0].episode).catch(() => {});
 }
 
 // ---------- Actions ----------
@@ -2526,6 +2531,7 @@ async function teardown(silent) {
   stopWebAudio(p);
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   releaseLocal(p);
+  if (p.deleteAfterWatch) { const d = p.deleteAfterWatch; p.deleteAfterWatch = null; void onWatched(d.key, d.season, d.episode).catch(() => {}); }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (_) { /* ignoré */ } }
   P = null;
   emitDataEvent({ kind: 'player' }); // l'accueil rattrape les changements faits pendant la lecture

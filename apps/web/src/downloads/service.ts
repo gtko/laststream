@@ -101,6 +101,8 @@ function linkPolicy(): LinkPolicy {
 
 /** Purge d'un changement de compte en cours : la liste reste vide et le gestionnaire n'est servi qu'une fois la purge finie. */
 let ownerGate: Promise<void> | null = null;
+/** Incrémenté au début de chaque purge : un plan de saison préparé avant ne sert plus après (ODY-234). */
+let ownerEpoch = 0;
 
 /** Diffuse la liste courante aux abonnés et la garde en cache synchrone. */
 function publish(items: readonly DownloadItem[]): void {
@@ -339,6 +341,15 @@ export function recommendedChoice(choices: readonly SourceChoice[], freeBytes: n
   return (kept ? pool.find((c) => c.group === kept) : undefined) ?? pool[0] ?? null;
 }
 
+/** Source d'un téléchargement : le flux choisi, avec la qualité et les langues qui le décrivent. */
+function sourceOf(pick: SourceView, t: DownloadTarget, quality: string | undefined, langs: readonly string[] | undefined): DownloadSource {
+  return {
+    ...streamToSource(pick, t),
+    ...(quality ? { quality } : {}),
+    ...(langs && langs.length > 0 ? { langs: [...langs] } : {}),
+  };
+}
+
 /**
  * Ajoute le titre à la file. Choix : une source de la feuille (`source`) ; ou une qualité et des langues ; ou les réglages
  * mémorisés, la source la mieux classée étant alors prise. Le choix devient le choix mémorisé. Lève `DownloadError('network')`
@@ -364,11 +375,7 @@ export async function requestDownload(t: DownloadTarget, choice?: { quality?: st
     if (pool.length === 0) throw new DownloadError('content', false);
     pick = pool[0];
   }
-  const source: DownloadSource = {
-    ...streamToSource(pick, t),
-    ...(quality ? { quality } : {}),
-    ...(langs && langs.length > 0 ? { langs: [...langs] } : {}),
-  };
+  const source = sourceOf(pick, t, quality, langs);
   const item = await manager.enqueue({
     metaId: t.key,
     title: t.name,
@@ -380,6 +387,132 @@ export async function requestDownload(t: DownloadTarget, choice?: { quality?: st
   // Le choix fait sur la feuille devient le choix mémorisé.
   if (choice) setDownloadSettings({ quality: quality ?? '', langs: langs ?? [] });
   return item;
+}
+
+/** Au-delà de ce nombre d'épisodes, les épisodes restants d'une saison sont indisponibles (ODY-234). */
+const SEASON_MAX_EPISODES = 50;
+/** Sources chargées en parallèle pendant la préparation d'une saison. */
+const SEASON_CONCURRENCY = 4;
+
+/** Saison préparée : une source par épisode, prête à être mise en file (`requestSeasonDownload`). */
+export interface SeasonPlan {
+  entries: { target: DownloadTarget; choice: SourceChoice }[];
+  /** Épisodes sans source, en erreur, ou au-delà du plafond : signalés, sans échec global. */
+  unavailable: DownloadTarget[];
+  /** Somme des tailles connues. */
+  totalBytes: number;
+  /** Entrées dont la taille est inconnue. */
+  unknownCount: number;
+  /** Parmi `unavailable`, épisodes laissés de côté pour dépasser le plafond (absent quand aucun). */
+  capped?: number;
+}
+
+/** Époque de chaque plan, au moment de sa préparation. */
+const planEpochs = new WeakMap<SeasonPlan, number>();
+
+const emptyPlan = (): SeasonPlan => ({ entries: [], unavailable: [], totalBytes: 0, unknownCount: 0 });
+
+/** Source d'un épisode : classée comme la feuille, puis la recommandée sans limite d'espace. Null si rien ne sort. */
+async function seasonChoice(t: DownloadTarget): Promise<SourceChoice | null> {
+  try {
+    const views = await downloadableViews(t, true);
+    return recommendedChoice(rankViews(views).map(choiceOf), null);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Prépare une saison (ODY-234) : une source par épisode, sans rien mettre en file. Les épisodes déjà présents dans la file
+ * sont exclus ; les doublons ne comptent qu'une fois ; au-delà de 50 épisodes, les suivants sont indisponibles. Quatre
+ * chargements au plus en parallèle ; un épisode sans source ou en erreur devient indisponible. `onProgress` reçoit
+ * (épisodes traités, épisodes à traiter). Lève `DownloadError('store_failed')` sans gestionnaire ; renvoie un plan vide si la
+ * purge ou un changement de propriétaire commence pendant la préparation.
+ */
+export async function planSeasonDownload(
+  targets: DownloadTarget[],
+  opts: { onProgress?(done: number, total: number): void; signal?: AbortSignal } = {},
+): Promise<SeasonPlan> {
+  const m = await getDownloads();
+  if (!m) throw new DownloadError('store_failed', false);
+  const epoch = ownerEpoch;
+  const stale = (): boolean => epoch !== ownerEpoch || ownerGate !== null || isPurgePending();
+
+  const present = new Set(m.list().map((item) => item.id));
+  const seen = new Set<string>();
+  const candidates: DownloadTarget[] = [];
+  for (const t of targets) {
+    const id = downloadIdFor(t);
+    if (present.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    candidates.push(t);
+  }
+
+  const planned = Math.min(candidates.length, SEASON_MAX_EPISODES);
+  const choices: (SourceChoice | null)[] = candidates.map(() => null);
+  let next = 0;
+  let done = 0;
+  const report = (): void => {
+    try {
+      opts.onProgress?.(done, planned);
+    } catch {
+      /* un suivi défaillant n'interrompt pas la préparation */
+    }
+  };
+  const worker = async (): Promise<void> => {
+    while (next < planned && !stale() && !opts.signal?.aborted) {
+      const i = next;
+      next += 1;
+      choices[i] = await seasonChoice(candidates[i]);
+      done += 1;
+      report();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(SEASON_CONCURRENCY, planned) }, () => worker()));
+  if (stale() || opts.signal?.aborted) return emptyPlan();
+
+  const entries: SeasonPlan['entries'] = [];
+  const unavailable: DownloadTarget[] = [];
+  let totalBytes = 0;
+  let unknownCount = 0;
+  candidates.forEach((target, i) => {
+    const choice = choices[i];
+    if (!choice) {
+      unavailable.push(target);
+      return;
+    }
+    entries.push({ target, choice });
+    if (choice.sizeBytes > 0) totalBytes += choice.sizeBytes;
+    else unknownCount += 1;
+  });
+  const capped = candidates.length - planned;
+  const plan: SeasonPlan = { entries, unavailable, totalBytes, unknownCount, ...(capped > 0 ? { capped } : {}) };
+  planEpochs.set(plan, epoch);
+  return plan;
+}
+
+/**
+ * Met une saison préparée en file, avec un seul contrôle de quota sur la somme des tailles (`enqueueMany`). Mêmes gardes que
+ * `requestDownload` : Wi-Fi seul (`DownloadError('network')`), gestionnaire absent (`store_failed`), quota dépassé
+ * (`quota_exceeded`). Renvoie [] pour un plan vide, ou devenu caduc depuis sa préparation (purge, changement de propriétaire).
+ */
+export async function requestSeasonDownload(plan: SeasonPlan): Promise<DownloadItem[]> {
+  if (getDownloadSettings().wifiOnly && isCellular()) throw new DownloadError('network', true);
+  if (plan.entries.length === 0) return [];
+  const epoch = planEpochs.get(plan);
+  const caduc = (): boolean => epoch !== ownerEpoch || ownerGate !== null || isPurgePending();
+  if (caduc()) return [];
+  const m = await getDownloads();
+  if (!m) throw new DownloadError('store_failed', false);
+  if (caduc()) return [];
+  return m.enqueueMany(plan.entries.map(({ target: t, choice }) => ({
+    metaId: t.key,
+    title: t.name,
+    ...(t.season !== undefined ? { season: t.season } : {}),
+    ...(t.episode !== undefined ? { episode: t.episode } : {}),
+    source: sourceOf(choice.view, t, choice.group, choice.langs),
+    ...(choice.sizeBytes > 0 ? { estimatedSize: choice.sizeBytes } : {}),
+  })));
 }
 
 /** Abonnement à la liste : appelle `fn` aussitôt avec la liste courante. No-op si les téléchargements sont indisponibles. */
@@ -435,6 +568,7 @@ function dropManager(): void {
  * est effacé quand la purge est allée au bout ; sinon il reste pour le prochain démarrage. Ne lève jamais.
  */
 export async function purgeAll(): Promise<void> {
+  ownerEpoch += 1;
   try {
     const m = await startManager(true);
     if (m) {

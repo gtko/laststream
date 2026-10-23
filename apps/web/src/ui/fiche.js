@@ -15,7 +15,7 @@ import { fillCollection, fillNext, fillRatings, loadSeason } from './ficheSectio
 import { topBar } from './fragments.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
-import { ficheDownloadHTML, hydrateDownloads } from './downloadBtn.js';
+import { ficheDownloadHTML, hydrateDownloads, seasonDownloadHTML } from './downloadBtn.js';
 import { autoPlayOn, createTrailerPlay } from './trailerPlay.js';
 import { inLib } from './library.js';
 import { fillProviders } from './providers.js';
@@ -199,6 +199,7 @@ function ficheHTML(m) {
       '<div class="f-eps-head"><div class="pills" data-nav role="group" aria-label="Saison">' + m.seasons.map((s) =>
         '<button type="button" class="pill" data-season="' + s.season_number + '" aria-pressed="' + (s.season_number === seasonN) + '">' +
         esc(s.season_number === 0 ? 'Bonus' : 'Saison ' + s.season_number) + '</button>').join('') + '</div>' +
+      seasonDownloadHTML() +
       '<button type="button" class="btn btn-ghost btn-sm" data-season-watch>Marquer la saison comme vue</button>' +
       '<span class="ep-menu-wrap"><button type="button" class="btn btn-ghost btn-sm ep-more" data-eps-menu aria-haspopup="menu" aria-expanded="false" aria-label="Plus d’actions sur la série">…</button>' +
       '<span class="ep-menu glass" role="menu" hidden><button type="button" role="menuitem" data-series-watch="1">Marquer toute la série comme vue</button>' +

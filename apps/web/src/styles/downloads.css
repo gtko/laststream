@@ -242,3 +242,14 @@
 .set-row-c .dl-bar-lg { width: 100%; }
 .set-row-c .dl-btn-d svg { width: 18px; height: 18px; }
 .dl-page .btn-sm, .dl-sheet .btn-sm, #set-dl .btn-sm { min-height: 44px; }
+
+/* ---------- « Télécharger la saison » (en-tête des épisodes, ODY-234) ---------- */
+.dl-season-wrap { display: contents; }
+/* Maquettes : 44 px sur bureau (desktop-fiche), 48 px sur mobile (mobile-fiche-serie), texte 14 px. */
+.dl-season { gap: 8px; min-height: 44px; padding: 0 16px; font-size: 14px; }
+@media (max-width: 760px) { .dl-season { min-height: 48px; padding: 0 14px; } }
+.dl-season[hidden] { display: none; }
+.dl-season svg { width: 18px; height: 18px; flex: none; }
+.dl-season:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--focus-ring-offset); }
+.dl-season.is-done, .dl-season.is-done:disabled { color: var(--ok); opacity: 1; cursor: default; }
+.dl-season-sum { font-size: 18px; font-weight: 700; color: var(--text); }

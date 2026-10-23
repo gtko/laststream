@@ -19,6 +19,8 @@ const KEY = {
   purge: `${PREFIX}purge`,
   /** Compte propriétaire des téléchargements de l'appareil (serveur + pseudo), voir `claimDownloads` (service.ts). */
   owner: `${PREFIX}owner`,
+  /** Supprimer un téléchargement terminé quand son titre est marqué vu (voir afterWatch.ts). Réglage à part. */
+  deleteAfterWatch: `${PREFIX}deleteAfterWatch`,
 } as const;
 /** Valeur écrite pour « sans limite ». */
 const NO_LIMIT = 'none';
@@ -103,6 +105,16 @@ export function setDownloadSettings(p: Partial<DownloadSettings>): void {
   if (p.quality !== undefined) write(KEY.quality, p.quality ? p.quality : null);
   if (p.langs !== undefined) write(KEY.langs, p.langs.length > 0 ? JSON.stringify(p.langs) : null);
   if (p.asked !== undefined) write(KEY.asked, p.asked ? '1' : null);
+}
+
+/** Supprimer après visionnage : désactivé par défaut. Réglage à part, hors de `getDownloadSettings`. */
+export function getDeleteAfterWatch(): boolean {
+  return read(KEY.deleteAfterWatch) === '1';
+}
+
+/** Écrit le réglage « supprimer après visionnage ». */
+export function setDeleteAfterWatch(on: boolean): void {
+  write(KEY.deleteAfterWatch, on ? '1' : '0');
 }
 
 /**

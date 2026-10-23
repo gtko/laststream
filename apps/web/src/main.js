@@ -41,10 +41,12 @@ import './styles/avatar-studio.css';
 import './styles/profile-editor.css';
 import './styles/credits.css';
 import './styles/downloads.css';
+import './styles/downloads-tv.css';
 import { initAuth, isKidProfile, kidSection } from './data/auth';
 import { userStore } from './data/userStore';
 import { renderLibrary, renderLibraryPage } from './ui/library.js';
 import { applyTheme, readTheme } from './data/theme';
+import { applyDeviceMode } from './ui/device.js';
 import { runAuthFlow } from './ui/auth-ui.js';
 import { resetToken, runResetFlow } from './ui/reset-ui.js';
 import { ensureServerSetup } from './ui/server-setup.js';
@@ -53,6 +55,7 @@ import { state } from './ui/state.js';
 import { load } from './ui/home.js';
 import { parseRoute, showView } from './ui/router.js';
 import { mountSocialSidebar, setConversationRenderer, setWatchWithHandler } from './ui/socialSidebar.js';
+import { startDlBadgeWatch } from './ui/dlBadgeWatch.js';
 import { createConversationRenderer } from './ui/socialChat.js';
 import { configureSocialConv } from './ui/socialConv.js';
 import './ui/socialProfile.js'; // enregistre openProfileEditor (F2) et la page #/social/profile
@@ -129,6 +132,7 @@ if (isKidProfile()) {
   document.body.classList.add('kid-mode');
   if (kidSection('tv')) document.body.classList.add('kid-tv');
 }
+applyDeviceMode(); // mode TV (ODY-234) : data-device sur <html>
 applyTheme(readTheme()); // après la synchronisation des préférences du profil
 // Discussion et « Regarder avec lui » : la lecture passe par le flux normal du lecteur (source de l'utilisateur).
 const socialLaunch = (request, opener, opts) => playBest(request, opener, opts);
@@ -138,6 +142,8 @@ registerSocialHook('launchPlayback', socialLaunch); // notes d'un ami (ODY-221) 
 configureSocialConv({ launch: socialLaunch, toast }); // fenêtres de discussion Social v3 (hooks openConversation / renderConversationList)
 configureShareDialog({ toast }); // fenêtre « Partager » Social v3 (hook openShareDialog)
 mountSocialSidebar(); // barre des amis, branchée au profil actif ; #/friends l'ouvre
+// Pastille des téléchargements en cours (ODY-234) : abonnement permanent, qui démarre le gestionnaire dès le lancement (hors profil enfant).
+startDlBadgeWatch();
 state.curHash = location.hash || '';
 const first = parseRoute();
 if (first && first.kind !== 'friends') {

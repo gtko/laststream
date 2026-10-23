@@ -9,7 +9,7 @@ import { episodeImage, focusEpisode, hasResume, inProgressRef, scrollToCard } fr
 import { detailEl } from './dom.js';
 import { markNext, nextToWatch, ratingsHTML } from './fiche.js';
 import { ICON } from './icons.js';
-import { episodeDownloadHTML, hydrateDownloads } from './downloadBtn.js';
+import { airedSeasonTargets, episodeDownloadHTML, hydrateDownloads, setSeasonDownload } from './downloadBtn.js';
 import { episodeParts, partLabel } from '../data/episodeParts';
 import './epStill.js';
 import { state } from './state.js';
@@ -93,6 +93,7 @@ export async function loadSeason(m, n, token, wantEp) {
   if (!list) return;
   detailEl.querySelectorAll('[data-season]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.season) === n)));
   list.setAttribute('aria-busy', 'true');
+  setSeasonDownload([]);
   list.innerHTML = '<li class="sk sk-ep"></li><li class="sk sk-ep"></li><li class="sk sk-ep"></li>';
   let data;
   try {
@@ -155,6 +156,7 @@ export async function loadSeason(m, n, token, wantEp) {
   }).join('');
   state.seasonEps = { n, eps };
   hydrateDownloads(list);
+  setSeasonDownload(airedSeasonTargets(m, n, eps, today));
   refreshWatchedUI();
   markNext(m);
   // Saison de l’épisode à regarder : la carte (en cours, sinon prochain non vu, sinon dernier diffusé) est centrée, sans animation.

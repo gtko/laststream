@@ -2,7 +2,7 @@
  * qualité et de langues, titre téléchargé, suppression, espace plein, détail d'une erreur), entrées de navigation.
  * Aucune URL n'est jamais affichée : seuls des libellés traduits (viewModel) et des tailles. Tout texte passe par esc(). */
 import { isKidProfile } from '../data/auth';
-import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, platformAvailability, recommendedChoice, requestDownload, subscribeDownloads } from '../downloads/service';
+import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, planSeasonDownload, platformAvailability, recommendedChoice, requestDownload, requestSeasonDownload, subscribeDownloads } from '../downloads/service';
 import { getDownloadSettings, isCellular, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
 import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/viewModel';
 import { playBest } from '../player/session.js';
@@ -103,6 +103,47 @@ export function episodeDownloadHTML(m, season, episode, epName) {
     '" aria-label="' + esc('Télécharger : ' + epCode(season, episode)) + '">' + ringSVG() + '<span class="dl-ic">' + DL_ICON.dl + '</span></button>';
 }
 
+// ---------- Bouton « Télécharger la saison » (en-tête de la saison affichée, ODY-234) ----------
+/** Cibles de la saison affichée, par bouton (renseignées à chaque chargement de saison). */
+const seasonTargets = new WeakMap();
+
+/** Bouton de l'en-tête des épisodes, masqué tant que la saison n'est pas chargée. Chaîne vide : profil enfant ou plateforme indisponible. */
+export function seasonDownloadHTML() {
+  if (!downloadsAllowed() || !avail().ok) return '';
+  return '<span class="dl-season-wrap" data-nav><button type="button" class="btn btn-ghost btn-sm dl-season" data-dl-season hidden>' + DL_ICON.dl + '<span class="dl-season-l">Télécharger la saison</span></button></span>';
+}
+
+/** Une cible par épisode déjà diffusé de la saison (les épisodes à date future sont exclus). */
+export function airedSeasonTargets(m, season, eps, today) {
+  return (eps || []).filter((e) => !(e.air_date && e.air_date > today))
+    .map((e) => ({ key: m.key, type: 'tv', id: String(m.id), name: m.name, season, episode: e.episode_number }));
+}
+
+/** Peint le bouton d'après la liste : « Saison téléchargée » (désactivé) quand tous les épisodes sont terminés, « Saison en file » (désactivé) quand le reste est en file ou en cours ; un épisode en erreur ou absent laisse le bouton actif. */
+function paintSeasonButton(btn, items) {
+  const targets = seasonTargets.get(btn) || [];
+  btn.hidden = targets.length === 0;
+  const byId = new Map(visibleItems(items).map((it) => [it.id, it]));
+  const found = targets.map((t) => byId.get(downloadIdFor(t)));
+  const covered = targets.length > 0 && found.every((it) => it && it.state !== 'error');
+  const all = covered && found.every((it) => it.state === 'done');
+  const queued = covered && !all;
+  btn.disabled = covered;
+  btn.classList.toggle('is-done', all);
+  const label = btn.querySelector('.dl-season-l');
+  const text = all ? 'Saison téléchargée' : queued ? 'Saison en file' : 'Télécharger la saison';
+  if (label && label.textContent !== text) label.textContent = text;
+}
+
+/** À appeler quand une saison est affichée : mémorise ses cibles (vides : bouton masqué) et peint le bouton. */
+export function setSeasonDownload(targets, root = detailEl) {
+  root.querySelectorAll('[data-dl-season]').forEach((btn) => {
+    seasonTargets.set(btn, targets);
+    paintSeasonButton(btn, listDownloads());
+  });
+  if (targets.length && avail().ok && !ctlUnsub && root.querySelector('[data-dl-season]')) ctlUnsub = subscribeDownloads((items) => paintControls(items));
+}
+
 const STATE_ICON = { available: 'dl', pending: 'clock', running: 'pause', paused: 'play', done: 'check', error: 'alert', unavailable: 'block' };
 
 /** Libellés des maquettes (« 62 % · Pause », « Reprendre · 62 % », « Réessayer ») sur la base de buttonState. */
@@ -172,6 +213,7 @@ export function paintControls(items, root = detailEl) {
   const av = avail();
   const byId = new Map(visibleItems(items).map((it) => [it.id, it]));
   root.querySelectorAll('[data-dl-ctl]').forEach((el) => paintControl(el, byId.get(el.dataset.dlId), av));
+  root.querySelectorAll('[data-dl-season]').forEach((btn) => paintSeasonButton(btn, items));
   paintDlBadges(items);
 }
 
@@ -189,7 +231,7 @@ export function teardownDownloadControls() {
 }
 
 // ---------- Pastilles de navigation (barre du haut, onglet, carte de la Bibliothèque) ----------
-const activeCount = (items) => visibleItems(items).filter((it) => it.state === 'running' || it.state === 'pending').length;
+export const activeCount = (items) => visibleItems(items).filter((it) => it.state === 'running' || it.state === 'pending').length;
 const badgeText = (n) => (n > 99 ? '99+' : String(n));
 const navLabel = (n) => 'Téléchargements' + (n > 0 ? ', ' + n + ' en cours' : '');
 
@@ -596,6 +638,92 @@ async function enqueueChoice(t, choice, opener) {
 }
 
 /**
+ * Feuille « Télécharger la saison » (ODY-234) : prépare toute la saison (avec progression), affiche « N épisodes · ~X Go » et
+ * demande UNE confirmation. Rien n'est mis en file avant « Télécharger · taille » ; fermer la feuille pendant la préparation
+ * abandonne en silence. Résout le plan confirmé, ou null (annulée, abandonnée, ou rien à télécharger).
+ */
+function openSeasonSheet(targets, label, opener) {
+  return new Promise((resolve) => {
+    let confirmed = null;
+    let gone = false;
+    const ctl = new AbortController(); // fermer la feuille arrête la résolution des sources restantes
+    openSheet({
+      title: 'Télécharger la saison',
+      sub: label,
+      opener,
+      onClose: () => { gone = true; if (!confirmed) ctl.abort(); resolve(confirmed); },
+      render: (body, close) => {
+        const fail = (msg) => {
+          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(msg) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
+          body.querySelector('button').focus({ preventScroll: true });
+        };
+        // Gabarit posé une fois, puis mis à jour en place : le bouton Annuler garde son nœud et son focus (D-pad).
+        body.innerHTML = '<p class="dl-sheet-load" role="status"><span class="dl-spin" aria-hidden="true"></span><span data-dl-load-t></span></p>' +
+          '<div class="dl-bar dl-bar-lg" role="progressbar" aria-label="Préparation de la saison" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:0%"></i></div>' +
+          cancelHTML();
+        const progress = (done, total) => {
+          if (gone || !body.isConnected) return;
+          const txt = body.querySelector('[data-dl-load-t]');
+          const bar = body.querySelector('.dl-bar');
+          if (!txt || !bar) return;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          txt.textContent = 'Recherche des sources…' + (total > 0 ? ' ' + done + ' / ' + total : '');
+          bar.setAttribute('aria-valuenow', String(pct));
+          bar.firstElementChild.style.width = pct + '%';
+        };
+        progress(0, targets.length);
+        planSeasonDownload(targets, { onProgress: progress, signal: ctl.signal }).then((plan) => {
+          if (gone || !body.isConnected) return;
+          if (!plan.entries.length) { fail('Aucune source n’est disponible pour cette saison.'); return; }
+          if (!(plan.totalBytes > 0)) { fail('La taille de cette saison est introuvable : le téléchargement n’est pas lancé.'); return; }
+          const n = plan.entries.length;
+          const size = (plan.unknownCount > 0 ? 'au moins ' : '~') + formatBytes(plan.totalBytes);
+          const capped = plan.capped || 0;
+          const off = plan.unavailable.length - capped;
+          body.innerHTML = '<p class="dl-sheet-p dl-season-sum" role="status">' + esc(n + (n > 1 ? ' épisodes' : ' épisode') + ' · ' + size) + '</p>' +
+            (off ? '<p class="dl-sheet-note">' + esc(off + (off > 1 ? ' épisodes indisponibles' : ' épisode indisponible') + ' (aucune source)') + '</p>' : '') +
+            (capped ? '<p class="dl-sheet-note">' + esc(capped + (capped > 1 ? ' épisodes au-delà de la limite de 50' : ' épisode au-delà de la limite de 50')) + '</p>' : '') +
+            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus>' + DL_ICON.dl + '<span>' + esc('Télécharger · ' + formatBytes(plan.totalBytes)) + '</span></button>' +
+            btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
+          const go = body.querySelector('[data-dl-go]');
+          go.addEventListener('click', () => {
+            go.disabled = true; // une seule confirmation
+            confirmed = plan;
+            close(true);
+          });
+          go.focus({ preventScroll: true });
+        }).catch((err) => {
+          if (gone || !body.isConnected) return;
+          fail(errorMessage((err && err.code) || 'resolve_failed'));
+        });
+      },
+    });
+  });
+}
+
+/** Télécharger la saison : une feuille, une confirmation, une mise en file. Limite d'espace et réseau traduits comme pour un titre. */
+export async function startSeasonDownload(targets, label, opener) {
+  if (!targets.length) return;
+  const s = getDownloadSettings();
+  if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+  const space = await getSpace();
+  if (space && space.full) { await openSpaceFullSheet(opener); return; }
+  const plan = await openSeasonSheet(targets, label, opener);
+  if (!plan) return;
+  setDownloadSettings({ asked: true });
+  try {
+    const added = await requestSeasonDownload(plan);
+    if (!added.length) { toast('Opération annulée, réessaie'); return; } // plan caduc (purge, changement de profil)
+    if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+  } catch (err) {
+    const code = err && err.code;
+    if (code === 'quota_exceeded') { await openSpaceFullSheet(opener); return; }
+    if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
+    toast(errorMessage(code || 'resolve_failed'));
+  }
+}
+
+/**
  * Source en échec : propose les autres sources du titre (même liste, sans nouvelle recherche), sans la source en échec.
  * Le téléchargement en erreur est remplacé seulement une fois la nouvelle source choisie.
  */
@@ -644,4 +772,15 @@ detailEl.addEventListener('click', (e) => {
   e.stopPropagation();
   // Un seul geste à la fois par bouton (ODY-237) : le verrou couvre aussi la feuille de choix, qui peut rester ouverte longtemps.
   void runOnce(el.dataset.dlId ? 'dl:' + el.dataset.dlId : elKey('dl', el), () => onControl(el), { el, cooldown: TOGGLE_COOLDOWN_MS, maxMs: 120000 });
+});
+
+// « Télécharger la saison » : mêmes règles que les autres contrôles (avant le gestionnaire global de la page).
+detailEl.addEventListener('click', (e) => {
+  const el = e.target instanceof Element ? e.target.closest('[data-dl-season]') : null;
+  if (!el || el.disabled) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const targets = seasonTargets.get(el) || [];
+  const first = targets[0];
+  void runOnce(elKey('dl-season', el), () => startSeasonDownload(targets, first ? first.name + (first.season != null ? ' · Saison ' + first.season : '') : '', el), { el, maxMs: 120000 });
 });

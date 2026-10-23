@@ -497,7 +497,7 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-recap') setSkipPref('recap', on);
   else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
   else if (pref === 'trailer-autoplay') setTrailerAutoplay(on);
-  else if (pref === 'dl-wifi') applyDownloadToggle(pref, on);
+  else if (pref === 'dl-wifi' || pref === 'dl-after') applyDownloadToggle(pref, on);
   else if (pref === 'lang-subs' || pref === 'lang-learn') {
     setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
     syncLangRows();

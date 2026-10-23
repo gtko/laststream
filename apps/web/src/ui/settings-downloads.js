@@ -1,7 +1,7 @@
 /* Réglages > Lecture > Stockage (ODY-204) : espace utilisé, limite d'espace, Wi-Fi seulement, qualité et langue mémorisées,
  * stockage persistant (web) et suppression de tous les téléchargements. Les gestes sont délégués sur #detail (page Réglages). */
 import { getDownloads, getSpace, persistStorage, platformAvailability } from '../downloads/service';
-import { getDownloadSettings, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
+import { getDeleteAfterWatch, getDownloadSettings, LIMIT_CHOICES, setDeleteAfterWatch, setDownloadSettings } from '../downloads/settings';
 import { formatBytes, gauge } from '../downloads/viewModel';
 import { LANG_CHOICES } from '../data/langPrefs';
 import { isAndroidApp } from '../data/config';
@@ -34,6 +34,7 @@ export function downloadsStorageCard() {
     '<div class="set-row-c"><div class="dl-bar dl-bar-lg" role="progressbar" aria-label="Espace utilisé" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-dl-set-bar><i style="width:0%"></i></div></div></div>' +
     rowHTML('Limite d’espace', 'Au-delà, les téléchargements s’arrêtent. Avertissement à 90 %.', () => seg, { stack: true }) +
     switchRow('Télécharger en Wi-Fi seulement', 'Pas de téléchargement sur une connexion mobile.', s.wifiOnly, 'data-set-pref="dl-wifi"') +
+    switchRow('Supprimer après visionnage', 'Libère l’espace dès qu’un titre est terminé.', getDeleteAfterWatch(), 'data-set-pref="dl-after"') +
     fieldRow('Qualité par défaut', 'Utilisée pour les prochains téléchargements.', (id) => '<select class="set-input" id="' + id + '" data-dl-pref="quality">' +
       QUALITIES.map(([v, l]) => '<option value="' + v + '"' + ((s.quality || '') === v ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>') +
     fieldRow('Langue par défaut', 'Langue audio cherchée en priorité.', (id) => '<select class="set-input" id="' + id + '" data-dl-pref="langs">' +
@@ -69,6 +70,7 @@ async function fillSpace() {
 /** Interrupteurs de la carte (settings.js les bascule puis appelle ceci). */
 export function applyDownloadToggle(pref, on) {
   if (pref === 'dl-wifi') setDownloadSettings({ wifiOnly: on });
+  else if (pref === 'dl-after') setDeleteAfterWatch(on);
 }
 
 detailEl.addEventListener('click', async (e) => {
