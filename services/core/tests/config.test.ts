@@ -9,10 +9,23 @@ const SAMPLE = {
 };
 
 describe('parseConfig (schéma)', () => {
+  it('ajoute le 1440p aux listes enregistrées avant son apparition (2160p et 1080p sans 1440p)', () => {
+    expect(parseConfig({ resolutions: { allowed: ['2160p', '1080p'] } }).resolutions.allowed).toEqual(['2160p', '1440p', '1080p']);
+    expect(parseConfig({ resolutions: { allowed: ['2160p', '1080p', '720p', '480p', 'SD'] } }).resolutions.allowed).toEqual([
+      '2160p', '1440p', '1080p', '720p', '480p', 'SD',
+    ]);
+  });
+
+  it('laisse intactes les listes qui ne couvrent pas 2160p et 1080p, ou qui nomment déjà le 1440p', () => {
+    expect(parseConfig({ resolutions: { allowed: ['1080p', '720p'] } }).resolutions.allowed).toEqual(['1080p', '720p']);
+    expect(parseConfig({ resolutions: { allowed: ['2160p'] } }).resolutions.allowed).toEqual(['2160p']);
+    expect(parseConfig({ resolutions: { allowed: ['2160p', '1080p', '1440p'] } }).resolutions.allowed).toEqual(['2160p', '1080p', '1440p']);
+  });
+
   it('applique les défauts sur une configuration vide', () => {
     const config = parseConfig({});
     expect(config.languages).toEqual({ preferred: ['fr', 'multi'], acceptVostfr: true, fallbackToOthers: true });
-    expect(config.resolutions.allowed).toEqual(['2160p', '1080p', '720p', '480p', 'SD']);
+    expect(config.resolutions.allowed).toEqual(['2160p', '1440p', '1080p', '720p', '480p', 'SD']);
     expect(config.resolutions.max).toBeUndefined();
     expect(config.excludedTags).toEqual(['CAM', 'TS', 'SCR']);
     expect(config.maxResults).toBe(60);

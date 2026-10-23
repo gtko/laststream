@@ -270,7 +270,7 @@ Tous les champs ci-dessous sont facultatifs. Les valeurs entre parenthèses sont
 | `languages.preferred` | tableau de `fr`, `en`, `es`, `de`, `it`, `multi`, `original` (`["fr","multi"]`) | Langues préférées, de la plus à la moins souhaitée |
 | `languages.acceptVostfr` | booléen (`true`) | Accepter les VOSTFR (sous-titres français seuls) |
 | `languages.fallbackToOthers` | booléen (`true`) | Afficher les autres langues s'il n'y a rien dans ma langue. Si aucun stream ne correspond aux langues préférées, les streams des autres langues sont renvoyés (mêmes filtres de qualité, taille et tags exclus), avec le préfixe « Autre langue · » sur la première ligne de description et `laststream.languageFallback: true`. Si au moins un stream est dans une langue préférée, le comportement est strict. |
-| `resolutions.allowed` | tableau de `2160p`, `1080p`, `720p`, `480p`, `SD` (toutes) | Résolutions autorisées (les streams de résolution inconnue sont gardés) |
+| `resolutions.allowed` | tableau de `2160p`, `1440p`, `1080p`, `720p`, `480p`, `SD` (toutes) | Résolutions autorisées (les streams de résolution inconnue sont gardés) |
 | `resolutions.max` | résolution (aucun) | Résolution maximale |
 | `excludedTags` | tableau de chaînes (`["CAM","TS","SCR"]`) | Tags exclus, par mot entier dans le nom du flux ou par source |
 

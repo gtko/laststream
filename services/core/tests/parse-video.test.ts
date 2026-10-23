@@ -8,6 +8,16 @@ describe('parseVideo : résolution', () => {
     expect(info.height).toBe(1080);
   });
 
+  it('reconnaît 1440p, 2560x1440, QHD et 2K comme 1440p', () => {
+    expect(parseVideo('Movie.2019.1440p.WEB-DL')).toMatchObject({ resolution: '1440p', height: 1440 });
+    expect(parseVideo('Movie.2019.2560x1440.WEB')).toMatchObject({ resolution: '1440p', height: 1440 });
+    expect(parseVideo('Movie.2019.QHD.WEB')).toMatchObject({ resolution: '1440p', height: 1440 });
+    expect(parseVideo('Movie.2019.2K.WEB')).toMatchObject({ resolution: '1440p', height: 1440 });
+    expect(parseVideo('[1440p] Movie 2019')).toMatchObject({ resolution: '1440p' });
+    expect(parseVideo('Movie.2K.Remaster.1080p.WEB').resolution).toBe('1080p');
+    expect(parseVideo('Movie.12K.14400.WEB').resolution).toBe('unknown');
+  });
+
   it('traite 4K, UHD et 2160p comme 2160p', () => {
     expect(parseVideo('Movie.2019.4K.WEB.x265')).toMatchObject({ resolution: '2160p', height: 2160 });
     expect(parseVideo('Movie.2019.UHD.BluRay.HEVC')).toMatchObject({ resolution: '2160p', height: 2160 });

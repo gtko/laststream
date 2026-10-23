@@ -37,8 +37,8 @@ const W_HDR = W_CACHED * 2; // radix 2 : 0..1
 const W_WORD = W_HDR * 2; // radix 2 : mot préféré, 0..1
 const W_AUDIO = W_WORD * 2; // radix 3 : canaux préférés (+1) et Atmos préféré (+1), 0..2
 const W_SOURCE = W_AUDIO * 3; // radix 11 : rang de source, 0..10
-const W_RESOLUTION = W_SOURCE * 11; // radix 6 : rang de résolution, 0..5
-const W_LANGUAGE = W_RESOLUTION * 6; // radix 64 : niveau de langue, 0..63
+const W_RESOLUTION = W_SOURCE * 11; // radix 7 : rang de résolution, 0..6
+const W_LANGUAGE = W_RESOLUTION * 7; // radix 64 : niveau de langue, 0..63
 const W_KEPT = W_LANGUAGE * (LANGUAGE_MAX + 1); // radix 2 : 1 si non déclassé, 0 sinon
 
 /** Champs du score et du tri, précalculés pour chaque candidat. */

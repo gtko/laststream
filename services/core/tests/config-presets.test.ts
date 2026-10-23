@@ -30,9 +30,9 @@ describe('préréglages : configurations valides', () => {
 });
 
 describe('préréglages : valeurs attendues', () => {
-  it('Essentiel : 1080p et 2160p, fr + multi, 60 résultats, tri par défaut', () => {
+  it('Essentiel : 1080p, 1440p et 2160p, fr + multi, 60 résultats, tri par défaut', () => {
     const config = parseConfig({ preset: 'essentiel' });
-    expect(config.resolutions.allowed).toEqual(['2160p', '1080p']);
+    expect(config.resolutions.allowed).toEqual(['2160p', '1440p', '1080p']);
     expect(config.resolutions.max).toBeUndefined();
     expect(config.languages).toEqual({ preferred: ['fr', 'multi'], acceptVostfr: true, fallbackToOthers: true });
     expect(config.maxResults).toBe(60);
@@ -125,7 +125,7 @@ describe('préréglages : absence ou identifiant inconnu', () => {
   it('sans préréglage, les défauts et valeurs de l’entrée sont inchangés', () => {
     const defaults = parseConfig({});
     expect(defaults.maxResults).toBe(60);
-    expect(defaults.resolutions.allowed).toEqual(['2160p', '1080p', '720p', '480p', 'SD']);
+    expect(defaults.resolutions.allowed).toEqual(['2160p', '1440p', '1080p', '720p', '480p', 'SD']);
     expect(defaults.languages).toEqual({ preferred: ['fr', 'multi'], acceptVostfr: true, fallbackToOthers: true });
     expect(defaults.onlyCached).toBe(false);
     expect(defaults.display.template).toBe('detaille');

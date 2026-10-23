@@ -23,7 +23,7 @@ const NON_GROUP_SUFFIXES = new Set([
   'X264', 'X265', 'H264', 'H265', 'HEVC', 'AVC', 'AV1',
 ]);
 const TECHNICAL_BRACKET =
-  /^(?:\d{3,4}[pi]|4K|UHD|FHD|HD|SD|x26[45]|HEVC|AVC|AV1|WEB(?:[- ]?DL|[- ]?RIP)?|BLU[- ]?RAY|BD|DVD(?:[- ]?RIP)?|HDR\S*|MULTI|VOSTFR|VF[FQ2]?|TRUEFRENCH|FRENCH|SUBFRENCH)$/i;
+  /^(?:\d{3,4}[pi]|2560x1440|4K|2K|QHD|UHD|FHD|HD|SD|x26[45]|HEVC|AVC|AV1|WEB(?:[- ]?DL|[- ]?RIP)?|BLU[- ]?RAY|BD|DVD(?:[- ]?RIP)?|HDR\S*|MULTI|VOSTFR|VF[FQ2]?|TRUEFRENCH|FRENCH|SUBFRENCH)$/i;
 
 /**
  * Regex de token : le motif doit être isolé par des espaces ou par les bords du texte normalisé.
@@ -34,6 +34,9 @@ function tok(pattern: string, caseSensitive = false): RegExp {
 }
 
 const RE_RES_2160 = tok('2160[pi]|4K|UHD');
+const RE_RES_1440 = tok('1440[pi]|2560x1440');
+/** « 2K » / « QHD » : ambigus (« 2K Remaster 1080p »), retenus seulement quand aucune autre résolution n'est annoncée. */
+const RE_RES_1440_LOOSE = tok('QHD|2K');
 const RE_RES_1080 = tok('1080[pi]|FHD');
 const RE_RES_720 = tok('720[pi]');
 const RE_RES_480 = tok('480[pi]');
@@ -164,11 +167,13 @@ function normalize(core: string): string {
 
 function detectResolution(norm: string): { resolution: Resolution; height: number } {
   if (RE_RES_2160.test(norm)) return { resolution: '2160p', height: 2160 };
+  if (RE_RES_1440.test(norm)) return { resolution: '1440p', height: 1440 };
   if (RE_RES_1080.test(norm)) return { resolution: '1080p', height: 1080 };
   if (RE_RES_720.test(norm)) return { resolution: '720p', height: 720 };
   if (RE_RES_480.test(norm)) return { resolution: '480p', height: 480 };
   if (RE_RES_576.test(norm)) return { resolution: 'SD', height: 576 };
   if (RE_SD_CAPS.test(norm) || RE_SD_LABEL.test(norm)) return { resolution: 'SD', height: 480 };
+  if (RE_RES_1440_LOOSE.test(norm)) return { resolution: '1440p', height: 1440 };
   return { resolution: 'unknown', height: 0 };
 }
 

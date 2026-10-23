@@ -71,6 +71,7 @@ const UPSTREAM_HINT_KEYS = ['proxyHeaders', 'headers'] as const;
 const NOT_WEB_READY_AUDIO = /dts|truehd/i;
 const RESOLUTION_LABEL: Record<ParsedRelease['resolution'], string> = {
   '2160p': '4K',
+  '1440p': '1440p',
   '1080p': '1080p',
   '720p': '720p',
   '480p': '480p',

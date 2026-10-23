@@ -17,9 +17,9 @@ export interface PresetDefinition {
 export const PRESETS: Record<Preset, PresetDefinition> = {
   essentiel: {
     label: 'Essentiel',
-    description: 'Réglages équilibrés : 1080p et 2160p, VF ou multi en priorité, 30 résultats, tri par défaut.',
+    description: 'Réglages équilibrés : 1080p, 1440p et 2160p, VF ou multi en priorité, 30 résultats, tri par défaut.',
     values: {
-      resolutions: { allowed: ['2160p', '1080p'] },
+      resolutions: { allowed: ['2160p', '1440p', '1080p'] },
       languages: { preferred: ['fr', 'multi'] },
       maxResults: 60,
       sort: 'default',
@@ -41,10 +41,10 @@ export const PRESETS: Record<Preset, PresetDefinition> = {
   cinephile: {
     label: 'Cinéphile',
     description:
-      'Qualité maximale : REMUX, BluRay et WEB-DL en 2160p ou 1080p, Dolby Atmos et 7.1 préférés, tri du plus lourd, 20 résultats.',
+      'Qualité maximale : REMUX, BluRay et WEB-DL en 2160p, 1440p ou 1080p, Dolby Atmos et 7.1 préférés, tri du plus lourd, 20 résultats.',
     values: {
       filters: { qualities: ['REMUX', 'BluRay', 'WEB-DL'], preferredWords: ['Dolby Vision', 'DV', 'HDR'] },
-      resolutions: { allowed: ['2160p', '1080p'] },
+      resolutions: { allowed: ['2160p', '1440p', '1080p'] },
       audio: { atmos: 'prefer', multichannel: 'prefer7_1', unsupportedFormats: [] },
       sort: 'heaviest',
       display: { template: 'detaille' },

@@ -107,10 +107,23 @@ describe('rankCandidates : ordre lexicographique', () => {
   it('renvoie tier = rang de résolution et un score numérique, sans modifier les entrées', () => {
     const input = [cand({ parsed: { resolution: '2160p' }, raw: { title: 'uhd' } }), cand({ parsed: { resolution: 'unknown' }, raw: { title: 'unk' } })];
     const result = rankCandidates(input, config);
-    expect(result[0]?.tier).toBe(5);
+    expect(result[0]?.tier).toBe(6);
     expect(result[1]?.tier).toBe(0);
     expect(typeof result[0]?.score).toBe('number');
     expect(input[0]).not.toHaveProperty('score');
+  });
+
+  it('classe le 1440p entre le 2160p et le 1080p, sans que la source ne déborde sur la résolution', () => {
+    const result = rankCandidates(
+      [
+        cand({ parsed: { resolution: '1080p', source: 'REMUX' }, raw: { title: 'fhd-remux' } }),
+        cand({ parsed: { resolution: '1440p', source: 'WEBRip' }, raw: { title: 'qhd-webrip' } }),
+        cand({ parsed: { resolution: '2160p', source: 'HDTV' }, raw: { title: 'uhd-hdtv' } }),
+      ],
+      config,
+    );
+    expect(titles(result)).toEqual(['uhd-hdtv', 'qhd-webrip', 'fhd-remux']);
+    expect(result.map((r) => r.tier)).toEqual([6, 5, 4]);
   });
 });
 

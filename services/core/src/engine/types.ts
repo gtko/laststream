@@ -61,7 +61,8 @@ export interface ContentMeta {
 
 /** Rang des résolutions (plus grand = meilleur). `unknown` est le plus bas. */
 export const RESOLUTION_RANK: Record<Resolution, number> = {
-  '2160p': 5,
+  '2160p': 6,
+  '1440p': 5,
   '1080p': 4,
   '720p': 3,
   '480p': 2,

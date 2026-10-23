@@ -4,7 +4,17 @@ import { applyPreset } from './presets.js';
 
 // Valeurs autorisées pour les langues et résolutions configurables.
 const LangSchema = z.enum(['fr', 'en', 'es', 'de', 'it', 'multi', 'original'] as const satisfies readonly Lang[]);
-const ResolutionSchema = z.enum(['2160p', '1080p', '720p', '480p', 'SD'] as const satisfies readonly Resolution[]);
+/**
+ * Les configurations enregistrées avant l'ajout du 1440p listent leurs résolutions sans lui, alors que leurs releases 1440p
+ * passaient en `unknown` (donc gardées). Une liste qui autorise 2160p et 1080p sans 1440p reçoit donc le 1440p.
+ */
+function withLegacy1440p(allowed: Resolution[]): Resolution[] {
+  if (allowed.includes('1440p') || !allowed.includes('2160p') || !allowed.includes('1080p')) return allowed;
+  const at = allowed.indexOf('2160p') + 1;
+  return [...allowed.slice(0, at), '1440p', ...allowed.slice(at)];
+}
+
+const ResolutionSchema = z.enum(['2160p', '1440p', '1080p', '720p', '480p', 'SD'] as const satisfies readonly Resolution[]);
 
 const SizeRangeSchema = z
   .object({
@@ -323,7 +333,7 @@ const ConfigSchema = z.object({
     .prefault({}),
   resolutions: z
     .object({
-      allowed: z.array(ResolutionSchema).default(['2160p', '1080p', '720p', '480p', 'SD']),
+      allowed: z.array(ResolutionSchema).transform(withLegacy1440p).default(['2160p', '1440p', '1080p', '720p', '480p', 'SD']),
       max: ResolutionSchema.optional(),
     })
     .prefault({}),
