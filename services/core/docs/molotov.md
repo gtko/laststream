@@ -88,13 +88,16 @@ Refresh : `POST https://api-eu.fubo.tv/refresh` (avec le `refreshToken`).
 ```
 GET /papi/v1/config                       (public)
 GET /papi/v1/page/live-tv                 (2 Mo : catalogue « En direct »)
+GET /papi/v1/page/replay-vod              (catalogue replay/VOD : rubriques `components`/`items`, `program` + `assets`, action `on_play`)
+GET /papi/v1/program-details/series/<id>  (fiche d'émission : `program` + saisons/épisodes avec `assets`) ; `program/<id>` en voisin
 GET /epg                                  (public, ~6 Mo : guide TV complet)
 GET /papi/v1/main-navigation
 GET /v3/location                          (géo/postal)
 GET /rights/v2/location                   ({purchasable,watchable})
 GET /user , /social , /profile , /users/tier
-GET /vapi/v1/playback?channelId=<id>&type=live      (template d'écran du lecteur)
+GET /vapi/v1/playback?channelId=<id>&type=live      (template d'écran du lecteur ; actions `playAsset`/`playChannel`)
 GET /vapi/asset/v1?channelId=<id>&type=live         (manifeste + DRM + heartbeat)
+GET /vapi/asset/v1?assetId=<id>&type=<vod|scrub|startOver>   (idem pour un asset replay/VOD)
 POST /vapi/heartbeat/v2?channelId=..&id=..&type=live
 ```
 
@@ -167,6 +170,9 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 | `GET` | `/user/account/molotov/channels` | `{ channels: [{ id, name, callSign, logo, group, live, program }], fetchedAt, rawChannelCount }` (compact, cache ~5 min) |
 | `GET` | `/user/account/molotov/epg` | `{ channels: [{ id, name, logo, callSign, programs: [{ id, title, start, end, type, desc, image }] }], fetchedAt }` (guide TV complet, grille multi-heures : `start`/`end` en ISO 8601 depuis `assets[].accessRights`, `desc` tronqué à 200 car., fenêtre 30 min / +24 h, cache ~10 min ; amont `GET /epg` **public**, sans `Authorization`) |
 | `POST` | `/user/account/molotov/play` | `{ channelId }` → `{ channelId, manifestUrl, drm: { scheme, licenseUrl, licenseToken }, heartbeatUrl, heartbeatPayload, assetId, expiresAt }` |
+| `GET` | `/user/account/molotov/replay` | `{ items: [{ id, title, subtitle, image, kind, assetId, channelId, programId, playUrl }], fetchedAt }` (catalogue replay/VOD compact, ~200 tuiles, cache ~10 min ; amont `GET /papi/v1/page/replay-vod`, extraction défensive dans l'ordre de la page). `id` = `programId` sinon `assetId` ; `playUrl` est l'URL `on_play` de la page **quand elle porte la config de lecture** (`/vapi/asset/v1`), null pour un gabarit `/vapi/v1/playback` (l'appel asset est alors construit). |
+| `GET` | `/user/account/molotov/program?id=…&kind=…` | `{ id, title, subtitle, description, image, episodes: [{ id, title, subtitle, image, assetId }] }` (fiche d'émission compacte ; `kind` = `series` par défaut, `program` selon ce que la page renvoie, hors de cette liste : `400 invalid_body` — aucun chemin n'est construit à partir d'une saisie libre). Amont `GET /papi/v1/program-details/<kind>/<id>` ; sur 404, l'autre gabarit de la liste est essayé avant `404 not_found`. |
+| `POST` | `/user/account/molotov/play-asset` | `{ assetId, type?, playUrl? }` (`type` = `vod` par défaut, accepté : `vod`/`scrub`/`startOver`/`resume`) → même corps que `play`. Amont `GET /vapi/asset/v1?assetId=<id>&type=<type>`, ou l'URL `on_play` fournie en `playUrl` quand elle existe (allow-listée : `https://api-eu.fubo.tv` + `/vapi/asset/v1` ou `/vapi/v1/playback`, sinon `400 invalid_body`). |
 | `POST` | `/user/account/molotov/license` | `{ licenseUrl, token, challenge (base64) }` → octets de licence (`application/octet-stream`, **jamais** du texte) |
 | `POST` | `/user/account/molotov/heartbeat` | `{ channelId, assetId?, progress, payload? }` → `{ ok: true }` (`payload` = charge utile amont ; `pdt`/`progress` sont remplacés) |
 | `GET` | `/user/account/molotov/relay?path=…&query=…` | relais JSON vers `api-eu.fubo.tv` (usage web ; allow-list de chemins, `query` encodée à part) |
@@ -174,7 +180,7 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 Erreurs notables : `400 google_token_rejected` (l'API Molotov refuse le client id Google), `400 unsupported_path`,
 `400 invalid_body`, `401 invalid_credentials` (signin : identifiants refusés), `401 invalid_code` (verify/resend : code
 ou défi incorrect, expiré), `429 rate_limited` (verify/resend : trop d'essais), `403 main_profile_required`,
-`403 relay_disabled`, `401 invalid_session`, `502 molotov_unavailable`.
+`403 relay_disabled`, `401 invalid_session`, `404 not_found` (fiche ou asset absent de l'amont), `502 molotov_unavailable`.
 
 ## 9. Configuration
 
@@ -187,6 +193,7 @@ Secrets : aucun nouveau secret fort requis (les tokens Molotov sont chiffrés av
 ## 10. Hors périmètre
 
 * Multi-compte / multi-profile Molotov (une session par compte Laststream).
-* Replay/VOD Molotov, sous-titres, chat, recommandations.
+* Sous-titres, chat, recommandations Molotov.
+* Reprise de lecture (« reprendre ») et navigation dans un asset : seuls les types `vod`/`scrub`/`startOver`/`resume` de `/vapi/asset/v1` sont relayés.
 * Support de la lecture Molotov dans le shell Windows (pas de CDM Widevine).
 * Redistribution du CDM Widevine (licence).

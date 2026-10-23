@@ -110,6 +110,20 @@ const EPG_PAST_MS = 30 * 60_000;
 const EPG_FUTURE_MS = 24 * 60 * 60_000;
 /** Longueur maximale d'une description de programme. */
 const EPG_DESC_MAX = 200;
+/** Nombre maximal d'éléments replay/VOD renvoyés par le catalogue compacté. */
+const MAX_REPLAY_ITEMS = 200;
+/** Durée de vie du catalogue replay compacté en mémoire (par instance). */
+const REPLAY_TTL_MS = 10 * 60_000;
+/** Nombre maximal de catalogues replay gardés en mémoire (les plus anciens sont écartés). */
+const MAX_CACHED_REPLAYS = 64;
+/** Gabarits amont d'une fiche d'émission : liste stricte, aucun autre chemin n'est visé. */
+const PROGRAM_DETAIL_KINDS: readonly string[] = ['series', 'program'];
+/** Chemins amont de lecture d'un asset : liste stricte du `playUrl` accepté (pas d'open proxy). */
+const PLAY_PATHS: ReadonlySet<string> = new Set(['/vapi/asset/v1', '/vapi/v1/playback']);
+/** Types de lecture d'un asset replay/VOD (le défaut est `vod`). */
+const PLAY_TYPES = ['vod', 'scrub', 'startOver', 'resume'] as const;
+/** Chemin amont qui livre directement la config de lecture d'un asset (manifeste, DRM, battement de cœur). */
+const ASSET_PLAY_PATH = '/vapi/asset/v1';
 
 /** Jetons Molotov d'un compte. */
 interface MolotovTokens {
@@ -194,6 +208,13 @@ const heartbeatSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 });
 
+/** Lecture d'un asset replay/VOD : l'asset, son type de lecture et, en option, l'URL `on_play` de la page. */
+const playAssetSchema = z.object({
+  assetId: z.string().trim().min(1).max(128),
+  type: z.enum(PLAY_TYPES).optional(),
+  playUrl: z.string().min(1).max(2048).optional(),
+});
+
 /** Session Molotov en cours : jetons courants, profil connu, et moyen de réécrire la ligne (chiffrée). */
 interface MolotovState {
   accountId: string;
@@ -245,8 +266,48 @@ interface CachedEpg {
   fetchedAt: number;
 }
 
+/** Élément replay/VOD compacté (une tuile de l'app) : programme, asset de lecture et chaîne d'origine. */
+interface MolotovReplayItem {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  image: string | null;
+  kind: string | null;
+  assetId: string | null;
+  channelId: string | null;
+  programId: string | null;
+  /** URL de lecture livrée par la page (`actions.on_play`), quand elle porte la config de lecture. */
+  playUrl: string | null;
+}
+
+/** Épisode compacté d'une fiche d'émission (seuls les épisodes porteurs d'un asset sont rendus). */
+interface MolotovEpisode {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  image: string | null;
+  assetId: string | null;
+}
+
+/** Fiche d'émission compactée : identité, description et épisodes. */
+interface MolotovProgramSheet {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  image: string | null;
+  episodes: MolotovEpisode[];
+}
+
+/** Catalogue replay compacté, gardé en mémoire le temps de sa validité. */
+interface CachedReplay {
+  items: MolotovReplayItem[];
+  fetchedAt: number;
+}
+
 const catalogues = new Map<string, CachedCatalogue>();
 const epgs = new Map<string, CachedEpg>();
+const replays = new Map<string, CachedReplay>();
 
 /** JSON décodé, ou null si le corps n'est pas du JSON. */
 function parseJsonBytes(bytes: Uint8Array): unknown {
@@ -267,17 +328,27 @@ function pickString(source: unknown, keys: readonly string[]): string | null {
   return null;
 }
 
-/** Identifiant de l'asset en cours de lecture : payload du cœur, sinon paramètre `id` de l'URL de progression. */
-function assetIdOf(heartbeat: unknown, heartbeatUrl: string | null): string | null {
-  const fromPayload = pickString(heartbeat, ['assetId', 'asset_id', 'id']);
-  if (fromPayload !== null) return fromPayload;
-  if (heartbeatUrl === null) return null;
+/** Paramètre d'une URL amont (asset, chaîne) ; null si l'URL est illisible ou le paramètre absent ou hors bornes. */
+function urlParamOf(url: string | null, name: string): string | null {
+  if (url === null) return null;
   try {
-    const id = new URL(heartbeatUrl).searchParams.get('id');
-    return id !== null && id.length > 0 && id.length <= 256 ? id : null;
+    const value = new URL(url, MOLOTOV_API).searchParams.get(name);
+    return value !== null && value.length > 0 && value.length <= 256 ? value : null;
   } catch {
     return null;
   }
+}
+
+/** URL du battement de cœur annoncée par une réponse asset ; null si absente. */
+function heartbeatUrlOf(document: Record<string, unknown>): string | null {
+  const heartbeat = isRecord(document.heartbeat) ? document.heartbeat : undefined;
+  return heartbeat === undefined ? null : pickString(heartbeat, ['url']);
+}
+
+/** Identifiant de l'asset en cours de lecture : payload du cœur, sinon paramètre `id` de l'URL de progression. */
+function assetIdOf(heartbeat: unknown, heartbeatUrl: string | null): string | null {
+  const fromPayload = pickString(heartbeat, ['assetId', 'asset_id', 'id']);
+  return fromPayload ?? urlParamOf(heartbeatUrl, 'id');
 }
 
 /** Usage de chiffrement des jetons d'un compte. */
@@ -431,6 +502,16 @@ async function apiCall(
     timeoutMs: options.timeoutMs,
     maxBytes: options.maxBytes,
   });
+}
+
+/** Panne d'un appel amont (réseau) : `502 molotov_unavailable`, sans masquer les refus métier. */
+async function asUnavailable<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof UserApiError) throw err;
+    throw new UserApiError(502, 'molotov_unavailable');
+  }
 }
 
 /** Échange du jeton Google contre une session Molotov (`PUT /oauth/google`). */
@@ -762,6 +843,137 @@ function extractEpg(document: unknown, now: number): MolotovEpgChannel[] {
   return [...found.values()].slice(0, MAX_CHANNELS);
 }
 
+/**
+ * Extraction du replay/VOD : parcours défensif de la page PAPI (ses rubriques portent des `items` avec un
+ * `program`, des `assets` et une action `on_play`). Un objet devient une tuile s'il porte un titre et un
+ * identifiant exploitable (programme ou asset) ; le reste est ignoré. L'ordre du document est conservé
+ * (ordre éditorial de la page), les doublons écartés par identifiant.
+ */
+const REPLAY_TITLE_KEYS = ['title', 'name', 'label'] as const;
+const REPLAY_SUBTITLE_KEYS = ['subtitle', 'shortDescription', 'tagline'] as const;
+const REPLAY_IMAGE_KEYS = ['horizontalImage', 'image', 'imageUrl', 'cover', 'poster', 'thumbnail'] as const;
+const REPLAY_KIND_KEYS = ['kind', 'type', 'contentType'] as const;
+
+/** URL de lecture livrée par la page (`actions.on_play`, `playAsset`, `playChannel`) ; null si absente. */
+function onPlayUrl(node: Record<string, unknown>): string | null {
+  const actions = node['actions'];
+  if (!isRecord(actions)) return null;
+  for (const key of ['on_play', 'playAsset', 'playChannel']) {
+    const action = actions[key];
+    const raw = isRecord(action) ? (action['url'] ?? action['href']) : action;
+    if (typeof raw === 'string' && raw.trim().length > 0 && raw.length <= 2048) return raw.trim();
+  }
+  return null;
+}
+
+/** Identifiant d'asset porté par un nœud `assets[]` ou par le nœud lui-même ; null si absent. */
+function assetIdIn(node: Record<string, unknown>): string | null {
+  const assets = Array.isArray(node['assets']) ? node['assets'].filter(isRecord) : [];
+  for (const asset of assets) {
+    const id = pickString(asset, ['assetId', 'asset_id', 'id']);
+    if (id !== null) return id;
+  }
+  return pickString(node, ['assetId', 'asset_id']);
+}
+
+/** Tuile replay/VOD d'un nœud de page ; null si le nœud n'est pas un élément exploitable. */
+function replayItemOf(node: Record<string, unknown>): MolotovReplayItem | null {
+  const program = isRecord(node['program']) ? node['program'] : undefined;
+  const actionUrl = onPlayUrl(node);
+  const assetId = assetIdIn(node);
+  if (program === undefined && assetId === null && actionUrl === null) return null;
+  const programId = (program === undefined ? null : pickString(program, ['programId', 'program_id', 'id'])) ?? pickString(node, ['programId', 'program_id']);
+  const title = (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS)) ?? pickString(node, REPLAY_TITLE_KEYS);
+  const id = programId ?? assetId;
+  if (title === null || id === null) return null;
+  const channel = isRecord(node['channel']) ? node['channel'] : undefined;
+  // L'URL `on_play` n'est gardée que si elle porte la config de lecture elle-même (sinon l'appel asset est construit).
+  const playUrl = actionUrl !== null && isPlayTarget(actionUrl) && new URL(actionUrl, MOLOTOV_API).pathname === ASSET_PLAY_PATH ? new URL(actionUrl, MOLOTOV_API).href : null;
+  return {
+    id,
+    title,
+    subtitle: (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS)) ?? pickString(node, REPLAY_SUBTITLE_KEYS),
+    image: (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)) ?? pickString(node, REPLAY_IMAGE_KEYS),
+    kind: pickString(node, REPLAY_KIND_KEYS) ?? (program === undefined ? null : pickString(program, REPLAY_KIND_KEYS)),
+    assetId,
+    channelId: pickString(node, ['channelId', 'channel_id']) ?? (channel === undefined ? null : pickString(channel, ['id', 'channelId', 'channel_id'])),
+    programId,
+    playUrl,
+  };
+}
+
+/** Élément replay/VOD compacté d'un nœud ; null si le nœud n'est pas un épisode exploitable (asset + titre). */
+function episodeOf(node: Record<string, unknown>): MolotovEpisode | null {
+  const program = isRecord(node['program']) ? node['program'] : undefined;
+  const assetId = assetIdIn(node);
+  if (assetId === null) return null;
+  const title = (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS)) ?? pickString(node, REPLAY_TITLE_KEYS);
+  if (title === null) return null;
+  return {
+    id: (program === undefined ? null : pickString(program, ['programId', 'program_id', 'id'])) ?? pickString(node, ['programId', 'program_id', 'id']) ?? assetId,
+    title,
+    subtitle: (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS)) ?? pickString(node, REPLAY_SUBTITLE_KEYS),
+    image: (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)) ?? pickString(node, REPLAY_IMAGE_KEYS),
+    assetId,
+  };
+}
+
+/**
+ * Parcours défensif d'un document, dans l'ordre, en retenant les nœuds qui satisfont `keep` (dédoublonnés par
+ * identifiant, plafonnés). La racine est écartée : un épisode, c'est un sous-élément de la fiche.
+ */
+function collectNodes<T extends { id: string }>(document: unknown, keep: (node: Record<string, unknown>) => T | null, limit: number, includeRoot: boolean): T[] {
+  const found = new Map<string, T>();
+  const roots = includeRoot ? [document] : isRecord(document) ? Object.values(document).filter((value) => typeof value === 'object' && value !== null) : [];
+  const stack: unknown[] = [];
+  for (let i = roots.length - 1; i >= 0; i -= 1) stack.push(roots[i]);
+  let visited = 0;
+  while (stack.length > 0 && visited < MAX_VISITED_NODES) {
+    const node = stack.pop();
+    visited += 1;
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i -= 1) stack.push(node[i]);
+      continue;
+    }
+    if (!isRecord(node)) continue;
+    const item = keep(node);
+    if (item !== null && !found.has(item.id)) found.set(item.id, item);
+    const values = Object.values(node);
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+      if (typeof values[i] === 'object' && values[i] !== null) stack.push(values[i]);
+    }
+  }
+  return [...found.values()].slice(0, limit);
+}
+
+/** Catalogue replay/VOD compacté : les tuiles de la page, dans leur ordre d'origine. */
+function extractReplay(document: unknown): MolotovReplayItem[] {
+  return collectNodes(document, replayItemOf, MAX_REPLAY_ITEMS, true);
+}
+
+/** Épisodes d'une fiche : les sous-éléments porteurs d'un asset et d'un titre. */
+function extractEpisodes(document: unknown): MolotovEpisode[] {
+  return collectNodes(document, episodeOf, MAX_REPLAY_ITEMS, false);
+}
+
+/** Fiche d'émission compactée ; null si le document amont n'est pas exploitable. */
+function programSheetOf(document: unknown, fallbackId: string): MolotovProgramSheet | null {
+  if (!isRecord(document)) return null;
+  const program = isRecord(document['program']) ? document['program'] : document;
+  const title = pickString(program, REPLAY_TITLE_KEYS) ?? pickString(document, REPLAY_TITLE_KEYS);
+  if (title === null) return null;
+  return {
+    id: pickString(program, ['programId', 'program_id', 'id']) ?? pickString(document, ['programId', 'program_id', 'id']) ?? fallbackId,
+    title,
+    subtitle: pickString(program, ['subtitle', 'tagline']) ?? pickString(document, ['subtitle', 'tagline']),
+    description:
+      pickString(program, ['description', 'longDescription', 'fullDescription', 'shortDescription']) ??
+      pickString(document, ['description', 'longDescription', 'fullDescription', 'shortDescription']),
+    image: pickString(program, REPLAY_IMAGE_KEYS) ?? pickString(document, REPLAY_IMAGE_KEYS),
+    episodes: extractEpisodes(document),
+  };
+}
+
 /** Profil lu dans les réponses « profil » et « rang » de l'API (formes non figées : lecture défensive). */
 function profileFrom(profileDoc: unknown, tierDoc: unknown): MolotovProfile {
   const nested = isRecord(profileDoc) && isRecord(profileDoc.profile) ? profileDoc.profile : profileDoc;
@@ -826,6 +1038,80 @@ function licenseTarget(raw: string): string {
     throw new UserApiError(400, 'invalid_body', ['licenseUrl:cible_non_autorisee']);
   }
   return url.href;
+}
+
+/** URL de lecture d'un asset : hôte et chemin dans la liste stricte, sinon null. */
+function isPlayTarget(raw: string): boolean {
+  try {
+    const url = new URL(raw, MOLOTOV_API);
+    return url.protocol === 'https:' && url.host === 'api-eu.fubo.tv' && PLAY_PATHS.has(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/** URL de lecture d'un asset : hôte et chemin imposés par l'API, sinon refus. */
+function playTarget(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw, MOLOTOV_API);
+  } catch {
+    throw new UserApiError(400, 'invalid_body', ['playUrl:url_invalide']);
+  }
+  if (url.protocol !== 'https:' || url.host !== 'api-eu.fubo.tv' || !PLAY_PATHS.has(url.pathname)) {
+    throw new UserApiError(400, 'invalid_body', ['playUrl:cible_non_autorisee']);
+  }
+  return url.href;
+}
+
+/** Identifiant de fiche d'émission : caractères stricts, aucun chemin n'est construit à partir d'une saisie libre. */
+function programIdOf(raw: unknown): string {
+  if (typeof raw !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(raw)) throw new UserApiError(400, 'invalid_body', ['id:invalide']);
+  return raw;
+}
+
+/** Gabarit de fiche d'émission (`series` par défaut), hors de la liste stricte : refus. */
+function programKindOf(raw: unknown): string {
+  if (raw === undefined || raw === '') return PROGRAM_DETAIL_KINDS[0];
+  if (typeof raw === 'string' && PROGRAM_DETAIL_KINDS.includes(raw)) return raw;
+  throw new UserApiError(400, 'invalid_body', ['kind:invalide']);
+}
+
+/**
+ * Corps de lecture (manifeste, DRM, battement de cœur) lu dans une réponse d'asset ; null sans manifeste.
+ * Même forme pour le direct et pour un asset replay/VOD (le corps de `POST /account/molotov/play`).
+ */
+function playBodyOf(
+  document: Record<string, unknown>,
+  channelId: string,
+): {
+  channelId: string;
+  manifestUrl: string;
+  drm: { scheme: string | null; licenseUrl: string | null; licenseToken: string | null };
+  heartbeatUrl: string | null;
+  heartbeatPayload: unknown;
+  assetId: string | null;
+  expiresAt: number;
+} | null {
+  const stream = isRecord(document.stream) ? document.stream : undefined;
+  const manifestUrl = pickString(stream, ['url']);
+  if (manifestUrl === null) return null;
+  const drm = isRecord(document.drm) ? document.drm : undefined;
+  const heartbeat = isRecord(document.heartbeat) ? document.heartbeat : undefined;
+  const heartbeatUrl = heartbeatUrlOf(document);
+  return {
+    channelId,
+    manifestUrl,
+    drm: {
+      scheme: drm === undefined ? null : pickString(drm, ['scheme']),
+      licenseUrl: drm === undefined ? null : pickString(drm, ['licenseUrl', 'license_url']),
+      licenseToken: drm === undefined ? null : pickString(drm, ['token']),
+    },
+    heartbeatUrl,
+    heartbeatPayload: heartbeat === undefined || heartbeat.payload === undefined ? null : heartbeat.payload,
+    assetId: assetIdOf(heartbeat, heartbeatUrl),
+    expiresAt: Date.now() + ASSET_TTL_MS,
+  };
 }
 
 /** Requête relayée : paramètres validés, jamais d'URL absolue. */
@@ -926,6 +1212,25 @@ function storeEpg(accountId: string, channels: MolotovEpgChannel[], fetchedAt: n
     if (oldest !== undefined) epgs.delete(oldest[0]);
   }
   epgs.set(accountId, { channels, fetchedAt });
+}
+
+/** Catalogue replay compacté, servi depuis le cache mémoire tant qu'il est valide. */
+function cachedReplay(accountId: string): CachedReplay | undefined {
+  const entry = replays.get(accountId);
+  if (entry === undefined) return undefined;
+  if (Date.now() - entry.fetchedAt >= REPLAY_TTL_MS) {
+    replays.delete(accountId);
+    return undefined;
+  }
+  return entry;
+}
+
+function storeReplay(accountId: string, items: MolotovReplayItem[], fetchedAt: number): void {
+  if (replays.size >= MAX_CACHED_REPLAYS) {
+    const oldest = [...replays.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+    if (oldest !== undefined) replays.delete(oldest[0]);
+  }
+  replays.set(accountId, { items, fetchedAt });
 }
 
 /** État de la connexion (jamais les jetons) : même corps pour `GET /account/molotov` et `POST /account/molotov/signin`. */
@@ -1151,6 +1456,105 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     return sendJson(c, { channels, fetchedAt });
   });
 
+  /**
+   * GET /user/account/molotov/replay : catalogue replay/VOD compacté (tuiles de l'app), cache mémoire dix minutes.
+   *
+   * L'amont `GET /papi/v1/page/replay-vod` est la page PAPI du replay : la forme exacte n'est pas figée, l'extraction
+   * est donc défensive (comme le catalogue « En direct ») et conserve l'ordre éditorial de la page. Seuls les éléments
+   * porteurs d'un programme ou d'un asset de lecture sont rendus.
+   */
+  router.get('/account/molotov/replay', async (c) => {
+    assertRelayEnabled();
+    const session = await principalSession(users(), c, deps, backend);
+    const cached = cachedReplay(session.account.id);
+    if (cached !== undefined) {
+      c.header('Cache-Control', 'no-store');
+      return sendJson(c, { items: cached.items, fetchedAt: cached.fetchedAt });
+    }
+    const state = await molotovState(users(), deps.secret, session.account.id);
+    const result = await asUnavailable(() =>
+      apiCall(fetchFn(), state, { method: 'GET', path: '/papi/v1/page/replay-vod', timeoutMs: CATALOG_TIMEOUT_MS }),
+    );
+    if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
+    const items = extractReplay(parseJsonBytes(result.bytes));
+    if (items.length === 0) console.warn('[molotov] catalogue replay sans élément exploitable');
+    const fetchedAt = Date.now();
+    storeReplay(session.account.id, items, fetchedAt);
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { items, fetchedAt });
+  });
+
+  /**
+   * GET /user/account/molotov/program : fiche d'émission compactée (description, épisodes).
+   *
+   * Chemin amont `program-details/<kind>/<id>` : `kind` (`series` par défaut, `program` selon ce que la page renvoie)
+   * et `id` sont validés avant toute construction d'URL, et le second gabarit est essayé quand l'API répond 404 sur le
+   * premier (la page ne distingue pas toujours les deux). Aucun autre chemin n'est visé.
+   */
+  router.get('/account/molotov/program', async (c) => {
+    assertRelayEnabled();
+    const session = await principalSession(users(), c, deps, backend);
+    const params = queryParams(c);
+    const id = programIdOf(params.id);
+    const kind = programKindOf(params.kind);
+    const state = await molotovState(users(), deps.secret, session.account.id);
+    const kinds = kind === 'series' ? ['series', 'program'] : ['program', 'series'];
+    let document: Record<string, unknown> | null = null;
+    let notFound = false;
+    for (const candidate of kinds) {
+      const result = await asUnavailable(() =>
+        apiCall(fetchFn(), state, { method: 'GET', path: `/papi/v1/program-details/${candidate}/${id}` }),
+      );
+      if (result.ok) {
+        const parsed = parseJsonBytes(result.bytes);
+        if (!isRecord(parsed)) throw new UserApiError(502, 'molotov_unavailable');
+        document = parsed;
+        break;
+      }
+      if (result.status === 404) {
+        notFound = true;
+        continue;
+      }
+      throw new UserApiError(502, 'molotov_unavailable');
+    }
+    if (document === null) throw new UserApiError(notFound ? 404 : 502, notFound ? 'not_found' : 'molotov_unavailable');
+    const sheet = programSheetOf(document, id);
+    if (sheet === null) throw new UserApiError(502, 'molotov_unavailable');
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, sheet);
+  });
+
+  /**
+   * POST /user/account/molotov/play-asset : manifeste, DRM et battement de cœur d'un asset replay/VOD.
+   *
+   * La lecture passe par `GET /vapi/asset/v1?assetId=<id>&type=<type>` (type `vod` par défaut), ou par l'URL `on_play`
+   * fournie en `playUrl` quand la page l'a livrée (allow-listée, sinon refus). Même corps que `POST /account/molotov/play`.
+   */
+  router.post('/account/molotov/play-asset', async (c) => {
+    assertRelayEnabled();
+    const session = await principalSession(users(), c, deps, backend);
+    const body = parseWith(playAssetSchema, c.get('body'));
+    const state = await molotovState(users(), deps.secret, session.account.id);
+    const target =
+      body.playUrl === undefined
+        ? { path: ASSET_PLAY_PATH, query: new URLSearchParams({ assetId: body.assetId, type: body.type ?? 'vod' }).toString() }
+        : (() => {
+            const url = new URL(playTarget(body.playUrl));
+            return { path: url.pathname, query: url.search.slice(1) };
+          })();
+    const result = await asUnavailable(() => apiCall(fetchFn(), state, { method: 'GET', path: target.path, query: target.query }));
+    if (result.status === 404) throw new UserApiError(404, 'not_found');
+    if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
+    const document = parseJsonBytes(result.bytes);
+    if (!isRecord(document)) throw new UserApiError(502, 'molotov_unavailable');
+    // Chaîne jouée : celle de la réponse ou du battement de cœur, sinon l'asset lui-même (le cœur s'y rattache).
+    const channelId = pickString(document, ['channelId', 'channel_id']) ?? urlParamOf(heartbeatUrlOf(document), 'channelId') ?? body.assetId;
+    const playBody = playBodyOf(document, channelId);
+    if (playBody === null) throw new UserApiError(502, 'molotov_unavailable');
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, playBody);
+  });
+
   /** POST /user/account/molotov/play : manifeste, DRM et battement de cœur d'une chaîne. */
   router.post('/account/molotov/play', async (c) => {
     assertRelayEnabled();
@@ -1165,26 +1569,10 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
     const document = parseJsonBytes(result.bytes);
     if (!isRecord(document)) throw new UserApiError(502, 'molotov_unavailable');
-    const stream = isRecord(document.stream) ? document.stream : undefined;
-    const manifestUrl = pickString(stream, ['url']);
-    if (manifestUrl === null) throw new UserApiError(502, 'molotov_unavailable');
-    const drm = isRecord(document.drm) ? document.drm : undefined;
-    const heartbeat = isRecord(document.heartbeat) ? document.heartbeat : undefined;
-    const heartbeatUrl = heartbeat === undefined ? null : pickString(heartbeat, ['url']);
+    const playBody = playBodyOf(document, body.channelId);
+    if (playBody === null) throw new UserApiError(502, 'molotov_unavailable');
     c.header('Cache-Control', 'no-store');
-    return sendJson(c, {
-      channelId: body.channelId,
-      manifestUrl,
-      drm: {
-        scheme: drm === undefined ? null : pickString(drm, ['scheme']),
-        licenseUrl: drm === undefined ? null : pickString(drm, ['licenseUrl', 'license_url']),
-        licenseToken: drm === undefined ? null : pickString(drm, ['token']),
-      },
-      heartbeatUrl,
-      heartbeatPayload: heartbeat === undefined || heartbeat.payload === undefined ? null : heartbeat.payload,
-      assetId: assetIdOf(heartbeat, heartbeatUrl),
-      expiresAt: Date.now() + ASSET_TTL_MS,
-    });
+    return sendJson(c, playBody);
   });
 
   /**

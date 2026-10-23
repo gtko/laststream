@@ -45,6 +45,86 @@ const ASSET = {
   heartbeat: { method: 'POST', url: `${MOLOTOV_API}/vapi/heartbeat/v2?channelId=ch-1&id=LIVE_1&type=live`, payload: { passback: { a: 1 }, pdt: '@', progress: '@' } },
 };
 
+/**
+ * Page PAPI du replay/VOD (`GET /papi/v1/page/replay-vod`) : rubriques et items avec `program`, `assets` et action
+ * `on_play` — la forme n'est pas figée, l'extraction est défensive. Deux `on_play` volontairement différents :
+ * un gabarit de lecture (`/vapi/v1/playback`) et l'URL de l'asset (`/vapi/asset/v1`).
+ */
+const REPLAY_PAGE = {
+  content: { title: 'Replay & VOD' },
+  components: [
+    {
+      title: 'Nouveautés',
+      items: [
+        {
+          kind: 'series',
+          program: { programId: 's-1', title: 'Série une', shortDescription: 'Sous-titre', horizontalImage: 'https://img.example/s1.jpg' },
+          assets: [{ id: 'LIVE_100', type: 'vod' }],
+          channel: { id: 'ch-1', name: 'Canal A' },
+          actions: { on_play: { url: '/vapi/v1/playback?assetId=LIVE_100&type=resume' } },
+        },
+        {
+          kind: 'program',
+          program: { programId: 'p-2', title: 'Émission deux', horizontalImage: 'https://img.example/p2.jpg' },
+          assets: [{ id: 'LIVE_200', type: 'vod' }],
+          channelId: 'ch-2',
+          actions: { on_play: { url: '/vapi/asset/v1?assetId=LIVE_200&type=vod' } },
+        },
+        // Ni programme ni asset : jamais une tuile.
+        { title: 'Sans identifiant', assets: [] },
+        // Asset seul : lecture directe, sans fiche.
+        { kind: 'program', program: { title: 'Asset seul' }, assets: [{ id: 'LIVE_300', type: 'vod' }] },
+        {
+          kind: 'program',
+          title: 'Documentaire seul',
+          assets: [{ id: 'LIVE_400', type: 'vod' }],
+          channelId: 'ch-4',
+          actions: { on_play: { url: '/vapi/asset/v1?assetId=LIVE_400&type=scrub' } },
+        },
+      ],
+    },
+  ],
+};
+
+/** Fiche d'émission amont : programme, saisons et épisodes (`program` + `assets`), forme non figée. */
+const PROGRAM_SHEET = {
+  program: {
+    programId: 's-1',
+    title: 'Série une',
+    tagline: 'La série',
+    description: 'Une longue description.',
+    horizontalImage: 'https://img.example/s1.jpg',
+  },
+  seasons: [
+    {
+      name: 'Saison 1',
+      episodes: [
+        {
+          program: { programId: 'e-1', title: 'Épisode 1', shortDescription: 'S1E1', horizontalImage: 'https://img.example/e1.jpg' },
+          assets: [{ id: 'LIVE_201', type: 'vod' }],
+        },
+        { program: { programId: 'e-2', title: 'Épisode 2' }, assets: [{ id: 'LIVE_202', type: 'vod' }] },
+      ],
+    },
+  ],
+};
+
+/** Config de lecture d'un asset replay : même forme que l'asset du direct, l'identifiant suivant la requête. */
+function replayAssetReply(search: URLSearchParams): Response {
+  const assetId = search.get('assetId') ?? 'LIVE_1';
+  if (assetId === 'absent') return json({ error: 'gone' }, 404);
+  const type = search.get('type') ?? 'vod';
+  return json({
+    stream: { url: 'https://cdn.example/replay.mpd', packagingProtocol: 'dash', drmProtected: true },
+    drm: { provider: 'irdeto', scheme: 'widevine', licenseUrl: `${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license?drmId=x`, token: DRM_TOKEN },
+    heartbeat: {
+      method: 'POST',
+      url: `${MOLOTOV_API}/vapi/heartbeat/v2?channelId=ch-9&id=${assetId}&type=${type}`,
+      payload: { passback: { a: 2 }, pdt: '@', progress: '@' },
+    },
+  });
+}
+
 /** Horaires ISO du guide amont. */
 const iso = (at: number) => new Date(at).toISOString();
 
@@ -56,6 +136,9 @@ const epgDoc = (entries: Array<{ channel: Record<string, unknown>; programs: Rec
 
 /** Instant de référence des tests du guide : chaque test avance l'horloge au-delà du cache (10 min). */
 const EPG_BASE = Date.now();
+
+/** Instant de référence des tests du replay : chaque test avance l'horloge au-delà de son cache (10 min). */
+const REPLAY_BASE = Date.now();
 
 interface StatusBody {
   connected: boolean;
@@ -94,6 +177,32 @@ interface EpgBody {
   fetchedAt: number;
 }
 
+interface ReplayItemBody {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  image: string | null;
+  kind: string | null;
+  assetId: string | null;
+  channelId: string | null;
+  programId: string | null;
+  playUrl: string | null;
+}
+
+interface ReplayBody {
+  items: ReplayItemBody[];
+  fetchedAt: number;
+}
+
+interface ProgramBody {
+  id: string;
+  title: string;
+  subtitle: string | null;
+  description: string | null;
+  image: string | null;
+  episodes: Array<{ id: string; title: string; subtitle: string | null; image: string | null; assetId: string | null }>;
+}
+
 describe('compte Molotov', () => {
   let rig: AdminRig;
   let upstream: MockUpstream;
@@ -109,6 +218,8 @@ describe('compte Molotov', () => {
   let resendReply: () => Response = () => json({ payload: { token: NEW_MFA_TOKEN } });
   /** Réponse de `GET /epg`, pilotée par les tests (guide public, sans Authorization). */
   let epgReply: () => Response = () => json(epgDoc([]));
+  /** Réponse de `GET /papi/v1/page/replay-vod`, pilotée par les tests (catalogue replay/VOD). */
+  let replayReply: () => Response = () => json(REPLAY_PAGE);
 
   beforeAll(async () => {
     upstream = mockUpstream({
@@ -116,7 +227,14 @@ describe('compte Molotov', () => {
       [`${MOLOTOV_API}/users/tier`]: () => json({ tier: 'premium' }),
       [`${MOLOTOV_API}/papi/v1/page/live-tv`]: () => json(CATALOGUE),
       [`${MOLOTOV_API}/papi/v1/main-navigation`]: () => json({ ok: true }),
-      [`${MOLOTOV_API}/vapi/asset/v1`]: () => json(ASSET),
+      // Direct (channelId) : l'asset historique ; replay (assetId) : la config suit la demande.
+      [`${MOLOTOV_API}/vapi/asset/v1`]: (call) => (call.url.searchParams.get('assetId') === null ? json(ASSET) : replayAssetReply(call.url.searchParams)),
+      [`${MOLOTOV_API}/papi/v1/page/replay-vod`]: () => replayReply(),
+      [`${MOLOTOV_API}/papi/v1/program-details/series/s-1`]: () => json(PROGRAM_SHEET),
+      [`${MOLOTOV_API}/papi/v1/program-details/series/p-1`]: () => json({ error: 'gone' }, 404),
+      [`${MOLOTOV_API}/papi/v1/program-details/program/p-1`]: () => json(PROGRAM_SHEET),
+      [`${MOLOTOV_API}/papi/v1/program-details/series/absent`]: () => json({ error: 'gone' }, 404),
+      [`${MOLOTOV_API}/papi/v1/program-details/program/absent`]: () => json({ error: 'gone' }, 404),
       [`${MOLOTOV_API}/vapi/heartbeat/v2`]: () => json({ ok: true }),
       [`${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license`]: () => new Response(LICENSE_BYTES, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
       [`${MOLOTOV_API}/refresh`]: () => json({ id_token: NEW_ID_TOKEN, refresh_token: NEW_REFRESH_TOKEN }),
@@ -756,7 +874,10 @@ describe('compte Molotov', () => {
       for (const [method, path] of [
         ['GET', '/user/account/molotov/relay?path=/papi/v1/config'],
         ['GET', '/user/account/molotov/channels'],
+        ['GET', '/user/account/molotov/replay'],
+        ['GET', '/user/account/molotov/program?id=s-1'],
         ['POST', '/user/account/molotov/play'],
+        ['POST', '/user/account/molotov/play-asset'],
         ['POST', '/user/account/molotov/heartbeat'],
         ['POST', '/user/account/molotov/license'],
       ] as const) {
@@ -787,5 +908,238 @@ describe('compte Molotov', () => {
     });
     expect(status.body.connected).toBe(false);
     expect(status.body.updatedAt).toBeNull();
+  });
+
+  it('replay : extraction défensive des tuiles (ordre du document, identifiants programme ou asset)', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE);
+    try {
+      replayReply = () => json(REPLAY_PAGE);
+      await connect();
+      const res = await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.body.fetchedAt).toBe(REPLAY_BASE);
+      expect(res.body.items).toEqual([
+        {
+          id: 's-1',
+          title: 'Série une',
+          subtitle: 'Sous-titre',
+          image: 'https://img.example/s1.jpg',
+          kind: 'series',
+          assetId: 'LIVE_100',
+          channelId: 'ch-1',
+          programId: 's-1',
+          // L'`on_play` de la page est un gabarit de lecture : sans config de lecture, l'appel asset sera construit.
+          playUrl: null,
+        },
+        {
+          id: 'p-2',
+          title: 'Émission deux',
+          subtitle: null,
+          image: 'https://img.example/p2.jpg',
+          kind: 'program',
+          assetId: 'LIVE_200',
+          channelId: 'ch-2',
+          programId: 'p-2',
+          playUrl: `${MOLOTOV_API}/vapi/asset/v1?assetId=LIVE_200&type=vod`,
+        },
+        {
+          id: 'LIVE_300',
+          title: 'Asset seul',
+          subtitle: null,
+          image: null,
+          kind: 'program',
+          assetId: 'LIVE_300',
+          channelId: null,
+          programId: null,
+          playUrl: null,
+        },
+        {
+          id: 'LIVE_400',
+          title: 'Documentaire seul',
+          subtitle: null,
+          image: null,
+          kind: 'program',
+          assetId: 'LIVE_400',
+          channelId: 'ch-4',
+          programId: null,
+          playUrl: `${MOLOTOV_API}/vapi/asset/v1?assetId=LIVE_400&type=scrub`,
+        },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("replay : deux appels ne font qu'un appel amont (cache dix minutes)", async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 11 * 60_000);
+    try {
+      replayReply = () => json(REPLAY_PAGE);
+      await connect();
+      const before = upstream.callsTo(`${MOLOTOV_API}/papi/v1/page/replay-vod`).length;
+      const first = await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      const second = await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(upstream.callsTo(`${MOLOTOV_API}/papi/v1/page/replay-vod`).length).toBe(before + 1);
+      expect(second.body.items).toEqual(first.body.items);
+      expect(second.body.fetchedAt).toBe(first.body.fetchedAt);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('replay : amont en panne, 502 molotov_unavailable', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 22 * 60_000);
+    try {
+      replayReply = () => json({ error: 'boom' }, 500);
+      const res = await request<ErrorBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe('molotov_unavailable');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('program : fiche compactée (description, épisodes) sur le gabarit series', async () => {
+    await connect();
+    const res = await request<ProgramBody>(rig.app, 'GET', '/user/account/molotov/program?id=s-1&kind=series', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.body).toEqual({
+      id: 's-1',
+      title: 'Série une',
+      subtitle: 'La série',
+      description: 'Une longue description.',
+      image: 'https://img.example/s1.jpg',
+      episodes: [
+        { id: 'e-1', title: 'Épisode 1', subtitle: 'S1E1', image: 'https://img.example/e1.jpg', assetId: 'LIVE_201' },
+        { id: 'e-2', title: 'Épisode 2', subtitle: null, image: null, assetId: 'LIVE_202' },
+      ],
+    });
+    const call = upstream.callsTo(`${MOLOTOV_API}/papi/v1/program-details/series/s-1`).at(-1);
+    expect(call?.headers['authorization']).toBe(`Bearer ${ID_TOKEN}`);
+    expect(call?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
+  });
+
+  it('program : 404 sur series bascule sur program, identifiant hors allow-list refusé, absent en 404', async () => {
+    await connect();
+    // `p-1` : le gabarit `series` répond 404, le gabarit `program` livre la fiche (chemins de la seule liste autorisée).
+    const fallback = await request<ProgramBody>(rig.app, 'GET', '/user/account/molotov/program?id=p-1', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    expect(fallback.status).toBe(200);
+    expect(fallback.body.id).toBe('s-1');
+    expect(upstream.callsTo(`${MOLOTOV_API}/papi/v1/program-details/series/p-1`).length).toBeGreaterThan(0);
+    expect(upstream.callsTo(`${MOLOTOV_API}/papi/v1/program-details/program/p-1`).length).toBeGreaterThan(0);
+    // Identifiant ou gabarit hors liste : aucun chemin amont n'est construit.
+    for (const path of [
+      '/user/account/molotov/program?id=../profile',
+      '/user/account/molotov/program?id=s-1/../../user',
+      '/user/account/molotov/program?id=s-1&kind=movie',
+    ]) {
+      const refused = await request<ErrorBody>(rig.app, 'GET', path, {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error).toBe('invalid_body');
+    }
+    // Absent des deux gabarits : l'élément n'existe pas.
+    const missing = await request<ErrorBody>(rig.app, 'GET', '/user/account/molotov/program?id=absent', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe('not_found');
+  });
+
+  it('play-asset : URL amont construite (assetId, type) et même corps que la lecture du direct', async () => {
+    await connect();
+    const res = await request<PlayBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { assetId: 'LIVE_200' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    const call = upstream.callsTo(`${MOLOTOV_API}/vapi/asset/v1`).at(-1);
+    expect(call?.url.searchParams.get('assetId')).toBe('LIVE_200');
+    expect(call?.url.searchParams.get('type')).toBe('vod');
+    expect(res.body.manifestUrl).toBe('https://cdn.example/replay.mpd');
+    expect(res.body.drm.licenseToken).toBe(DRM_TOKEN);
+    expect(res.body.heartbeatUrl).toBe(`${MOLOTOV_API}/vapi/heartbeat/v2?channelId=ch-9&id=LIVE_200&type=vod`);
+    expect(res.body.assetId).toBe('LIVE_200');
+    expect(res.body.channelId).toBe('ch-9');
+    expect(res.body.expiresAt).toBeGreaterThan(Date.now());
+    // Le type de lecture est repris tel quel (reprise, redémarrage, navigation).
+    const scrub = await request<PlayBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { assetId: 'LIVE_200', type: 'scrub' },
+    });
+    expect(scrub.status).toBe(200);
+    expect(upstream.callsTo(`${MOLOTOV_API}/vapi/asset/v1`).at(-1)?.url.searchParams.get('type')).toBe('scrub');
+  });
+
+  it('play-asset : la fournie en playUrl est utilisée telle quelle (allow-listée)', async () => {
+    await connect();
+    const playUrl = `${MOLOTOV_API}/vapi/asset/v1?assetId=LIVE_400&type=scrub`;
+    const res = await request<PlayBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { assetId: 'LIVE_400', playUrl },
+    });
+    expect(res.status).toBe(200);
+    const call = upstream.callsTo(`${MOLOTOV_API}/vapi/asset/v1`).at(-1);
+    expect(call?.url.pathname + '?' + call?.url.searchParams.toString()).toBe('/vapi/asset/v1?assetId=LIVE_400&type=scrub');
+    expect(res.body.assetId).toBe('LIVE_400');
+    // Un asset absent de l'amont : 404 not_found.
+    const missing = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { assetId: 'absent' },
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe('not_found');
+  });
+
+  it('play-asset : playUrl hors allow-list refusé (400 invalid_body)', async () => {
+    await connect();
+    for (const playUrl of [
+      'https://evil.example/vapi/asset/v1?assetId=LIVE_400',
+      `${MOLOTOV_API}/v2/signin`,
+      'file:///etc/passwd',
+    ]) {
+      const refused = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+        body: { assetId: 'LIVE_400', playUrl },
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.body.error).toBe('invalid_body');
+    }
+    // Type de lecture hors liste : refusé aussi.
+    const badType = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/play-asset', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { assetId: 'LIVE_400', type: 'live' },
+    });
+    expect(badType.status).toBe(400);
+    expect(badType.body.error).toBe('invalid_body');
   });
 });
