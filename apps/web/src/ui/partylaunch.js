@@ -18,6 +18,8 @@ import { state } from './state.js';
 import { esc } from './util.js';
 
 let opener = null;
+/** Titre de la boîte quand ce n'est pas celui de la fiche ouverte (menu contextuel d'une affiche) ; null : la fiche. */
+let partyModel = null;
 
 /** Le salon d'attente demande un compte Laststream et un profil adulte. */
 const canUseLobby = () => isServerMode() && auth.profile !== null && !isKidProfile();
@@ -61,9 +63,14 @@ export function partyDialogHTML(kid, lobby = false, model = state.model) {
       : '<button type="submit" class="pl-btn is-pri is-lg" data-wp-mode="direct">' + ICON_PLAY + esc('Lancer la watch party') + '</button>') + '</div></form>';
 }
 
-export function openPartyDialog(btn) {
+/**
+ * Fenêtre de lancement d'une watch party. `model` : titre de la fenêtre (menu contextuel d'une affiche) ; sans lui, c'est la fiche ouverte.
+ * @param {object | null} [model]
+ */
+export function openPartyDialog(btn, model = null) {
   opener = btn;
-  openModal(partyDialogHTML(isKidProfile(), canUseLobby()), btn, 'pld-modal');
+  partyModel = model;
+  openModal(partyDialogHTML(isKidProfile(), canUseLobby(), model || state.model), btn, 'pld-modal');
   const first = modalBody.querySelector('.pld input[type="radio"]:checked');
   if (first instanceof HTMLElement) first.focus();
 }
@@ -80,17 +87,18 @@ modalBody.addEventListener('submit', (e) => {
   const visibility = sel && sel.value === 'public' && !isKidProfile() ? 'public' : 'private';
   const invite = canUseLobby() ? [...f.querySelectorAll('input[name="friend"]:checked')].map((i) => i.value) : [];
   const btn = opener;
+  const model = partyModel;
   const mode = e.submitter instanceof HTMLElement ? e.submitter.dataset.wpMode : 'direct';
   closeModal(true);
   if (!btn) return;
-  const req = mode === 'lobby' && canUseLobby() ? requestFrom(btn) : null;
-  if (req && !btn.dataset.playKey) {
-    const m = state.model;
+  const req = mode === 'lobby' && canUseLobby() ? requestFrom(btn, model) : null;
+  if (req && (model || !btn.dataset.playKey)) {
+    const m = model || state.model;
     // Pas deux salons pour un même titre sur un double envoi.
     void runOnce('party-create:' + req.key, () => createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
     return;
   }
   partyBridge.pending = { visibility };
   partyBridge.pendingInvites = invite;
-  playFrom(btn);
+  playFrom(btn, model);
 });

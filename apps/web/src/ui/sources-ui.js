@@ -8,17 +8,18 @@ import { hv } from './hover.js';
 import { state } from './state.js';
 
 /** Cible de lecture d'après le bouton « Lecture » (fiche, épisode, aperçu au survol) ; null si le titre est inconnu. */
-export function requestFrom(btn) {
-  const hc = btn.closest('#hovercard');
+/** `model` : titre donné (menu contextuel d'une affiche) ; sans lui, le titre est celui de la fiche ouverte. */
+export function requestFrom(btn, model = null) {
+  const hc = !model && btn.closest('#hovercard');
   let type; let id; let name; let season = null; let episode = null;
-  const ep = btn.closest('.ep');
+  const ep = model ? null : btn.closest('.ep');
   if (hc) {
     const it = state.byKey.get(hv.key);
     if (!it) return null;
     ({ type, id, name } = it);
     if (type === 'tv') { season = 1; episode = 1; }
   } else {
-    const m = state.model;
+    const m = model || state.model;
     if (!m) return null;
     ({ type, name } = m);
     id = m.id;
@@ -35,13 +36,13 @@ export function requestFrom(btn) {
   return { type, id: String(id), name, season, episode, key: type + ':' + id };
 }
 
-export function playFrom(btn) {
-  if (btn.dataset.playKey) return playAiringEpisode(btn);
-  const request = requestFrom(btn);
+export function playFrom(btn, model = null) {
+  if (!model && btn.dataset.playKey) return playAiringEpisode(btn);
+  const request = requestFrom(btn, model);
   if (!request) return;
   // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).
   // Épisode diffusé dans les 14 prochains jours (data-air) : lisible, et « Pas encore disponible » si aucune source.
-  const air = btn.closest('.ep')?.dataset.air;
+  const air = model ? undefined : btn.closest('.ep')?.dataset.air;
   playBest(request, btn, air ? { notYetAired: air } : {});
 }
 

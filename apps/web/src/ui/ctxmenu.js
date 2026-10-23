@@ -3,12 +3,13 @@
  * Hors de nos éléments, le menu natif du navigateur reste disponible (sélection de texte, champs de saisie). */
 import { userStore } from '../data/userStore';
 import { isHiddenKey } from '../data/homeFilters';
-import { isKidProfile } from '../data/auth';
+import { isKidProfile, isServerMode } from '../data/auth';
 import { LastAddonError } from '../data/errors';
 import { UserApiError } from '../data/userApi';
 import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
+import { isFuture } from './dates.js';
 import { toast } from './dom.js';
 import { downloadsAllowed, startDownload } from './downloadBtn.js';
 import { platformAvailability } from '../downloads/service';
@@ -18,6 +19,9 @@ import { inLib, renderLibrary, toggleLib } from './library.js';
 import { openTrailer } from './modal.js';
 import { hv } from './hover.js';
 import { go } from './router.js';
+import { openPartyDialog } from './partylaunch.js';
+import { socialAvailable } from './socialButton.js';
+import { openShareDialog } from './socialHooks.js';
 import { openSources } from './sources-ui.js';
 import { state } from './state.js';
 import { getFavs } from './tv.js';
@@ -57,6 +61,9 @@ export function closeCtx(restoreFocus) {
 }
 
 // ---------- Cibles ----------
+/** Clé d'un titre : `movie:<id>` ou `tv:<id>`. */
+const TITLE_KEY = /^(movie|tv):\d+$/;
+
 export function ctxTarget(el) {
   if (!(el instanceof Element) || el.closest('.ctxmenu, input, textarea, select, [contenteditable="true"]')) return null;
   const ep = el.closest('.ep[data-ep]');
@@ -73,8 +80,18 @@ export function ctxTarget(el) {
   const t = el.closest('[data-tile], [data-open]');
   if (t) {
     const key = t.dataset.tile || t.dataset.open;
-    if (key && state.byKey.get(key)) return { kind: 'title', el: t, key, inContinue: !!t.closest('#cont-slot') };
+    // Clé de titre (movie:/tv:) hors catalogue chargé : résolue à l'action (minimalItem).
+    if (key && (state.byKey.get(key) || TITLE_KEY.test(key))) return { kind: 'title', el: t, key, inContinue: !!t.closest('#cont-slot') };
   }
+  // Bannière de la mise en avant (et ses boutons), rangée à venir, émission : titre résolu même hors catalogue chargé.
+  const slide = el.closest('[data-slide-key]');
+  if (slide && slide.dataset.slideKey) return { kind: 'title', el: slide, key: slide.dataset.slideKey, inContinue: false };
+  const soon = el.closest('[data-play-key]');
+  if (soon && soon.dataset.playKey) return { kind: 'title', el: soon, key: soon.dataset.playKey, inContinue: false };
+  const show = el.closest('[data-showopen]');
+  if (show && /^\d+$/.test(show.dataset.showopen)) return { kind: 'title', el: show, key: 'tv:' + show.dataset.showopen, inContinue: false };
+  // Affiche de fond et logo de la fiche ouverte.
+  if (state.kind === 'fiche' && state.model && el.matches('.f-bg img, img.f-logo')) return { kind: 'fiche', el, model: state.model };
   return null;
 }
 
@@ -104,7 +121,8 @@ export async function playTitle(key, opener, fromStart) {
     const p = resumeEntry(key);
     if (p) userStore.setProgress({ key: p.key, type: p.type, id: p.id, title: p.title, poster: p.poster, backdrop: p.backdrop, season: p.season, episode: p.episode, position: 0, duration: p.duration });
   }
-  openSources({ type, id, name: it ? it.name : '', season, episode, key }, opener);
+  const name = it ? it.name : await fetchFull(type, id).then((m) => m.name, () => '');
+  openSources({ type, id, name, season, episode, key }, opener);
 }
 
 /** Retire un titre de « Reprendre la lecture » (la progression est conservée), avec annulation possible. */
@@ -151,8 +169,44 @@ async function toggleSeriesWatched(key) {
   }
 }
 
+// ---------- Titres hors catalogue chargé ----------
+/** Titre dont la clé n'est pas dans state.byKey (émission, rangée à venir, mise en avant hors liste) : nom et affiche viennent de la fiche, à l'action. */
+function minimalItem(key) {
+  const [type, id] = key.split(':');
+  return { key, type, id: Number(id), name: '', posterPath: null };
+}
+const itemOf = (t) => state.byKey.get(t.key) || minimalItem(t.key);
+
+/** Nom et affiche : ceux du catalogue, ou ceux de la fiche chargée à la demande (mise en cache). */
+async function named(it) {
+  if (it.name) return it;
+  const m = await fetchFull(it.type, it.id);
+  return { ...it, name: m.name, posterPath: m.posterPath };
+}
+/** Lance `fn` avec nom et affiche : tout de suite quand le catalogue les connaît (action synchrone), sinon après la fiche. */
+const withNamed = (it, fn) => (it.name ? fn(it) : named(it).then(fn));
+
+const shareMedia = (m) => ({ type: m.type === 'tv' ? 'series' : 'movie', tmdbId: Number(m.id), title: m.name, poster: m.posterPath || undefined });
+
+/** Watch party : refusée pour un titre pas encore sorti ou au cinéma, comme le bouton de la fiche. */
+function partyFor(el, m) {
+  if (isFuture(m.releaseFR) || m.cinemaSince) { toast('Watch party indisponible pour ce titre'); return; }
+  openPartyDialog(el, m);
+}
+
+/** Suite de `v` : tout de suite quand la valeur est là (fiche ouverte), sinon après son chargement. */
+const whenLoaded = (v, fn) => (v && typeof v.then === 'function' ? v.then(fn) : fn(v));
+
+/** « Partager » (compte connecté, profil adulte) et « Proposer une watch party » (compte connecté). `load()` rend la fiche complète, ou une promesse de celle-ci ; l'action reste synchrone quand la fiche est déjà là. */
+function socialItems(el, load) {
+  const items = [];
+  if (socialAvailable()) items.push({ id: 'share', label: 'Partager', icon: ICON.share, run: () => whenLoaded(load(), (m) => openShareDialog({ media: shareMedia(m) })) });
+  if (isServerMode()) items.push({ id: 'party', label: 'Proposer une watch party', icon: ICON.users, run: () => whenLoaded(load(), (m) => partyFor(el, m)) });
+  return items;
+}
+
 function titleItems(t) {
-  const it = state.byKey.get(t.key);
+  const it = itemOf(t);
   const [type, id] = t.key.split(':');
   const resume = resumeEntry(t.key);
   const items = [];
@@ -160,16 +214,17 @@ function titleItems(t) {
   items.push({ id: 'info', label: 'Plus d’infos', icon: ICON.info, run: () => go('#/' + type + '/' + id, t.el) });
   items.push({
     id: 'trailer', label: 'Bande-annonce', icon: ICON.film,
-    run: async () => { const d = await getDetail(it); if (d && d.trailer) openTrailer(it, t.el); else toast('Pas de bande-annonce pour ce titre'); },
+    run: async () => { const x = await named(it); const d = await getDetail(x); if (d && d.trailer) openTrailer(x, t.el); else toast('Pas de bande-annonce pour ce titre'); },
   });
   const on = inLib(t.key);
   items.push({
     id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
-    run: () => { const now = toggleLib({ type, id: it.id, name: it.name, posterPath: it.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); },
+    run: () => withNamed(it, (x) => { const now = toggleLib({ type, id: x.id, name: x.name, posterPath: x.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); }),
   });
   if (type === 'movie' && !it.cinema && canDownload()) {
     items.push({ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: t.key, type: 'movie', id: String(id), name: it.name }, t.el) });
   }
+  socialItems(t.el, () => fetchFull(type, id)).forEach((x) => items.push(x));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (type === 'movie') {
     const seen = userStore.isWatched(t.key);
@@ -180,7 +235,7 @@ function titleItems(t) {
   }
   if (!isKidProfile()) { // profil enfant : pas de « Ne plus proposer » (accueil déjà filtré)
     const hidden = isHiddenKey(t.key);
-    items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: () => toggleHidden(t.key, it.name, it.posterPath) });
+    items.push({ id: 'hide', label: hidden ? 'Réafficher sur l’accueil' : 'Ne plus proposer', icon: ICON.close, run: async () => { const x = await named(it); return toggleHidden(t.key, x.name, x.posterPath); } });
   }
   if (t.inContinue || resume) {
     items.push({ id: 'restart', label: 'Recommencer depuis le début', icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
@@ -220,12 +275,16 @@ function personItems(t) {
   return items;
 }
 
-/** Menu « … » de la fiche : « Ne plus proposer sur l'accueil » (ou « Proposer à nouveau » quand le titre est masqué). Profil enfant : aucune entrée. */
+/** Menu de la fiche (« … » et affiche) : « Partager », « Proposer une watch party » et « Ne plus proposer sur l'accueil » (ou « Proposer à nouveau » quand le titre est masqué). Profil enfant : pas de « Partager » ni de « Ne plus proposer ». */
 function ficheItems(t) {
   const m = t.model;
-  if (!m || isKidProfile()) return [];
-  const hidden = isHiddenKey(m.key);
-  return [{ id: 'hide', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) }];
+  if (!m) return [];
+  const items = socialItems(t.el, () => m);
+  if (!isKidProfile()) {
+    const hidden = isHiddenKey(m.key);
+    items.push({ id: 'hide', label: hidden ? 'Proposer à nouveau sur l’accueil' : 'Ne plus proposer sur l’accueil', icon: ICON.close, run: () => toggleHidden(m.key, m.name, m.posterPath) });
+  }
+  return items;
 }
 
 export function ctxItems(t) {
@@ -290,9 +349,17 @@ const pointOf = (el, e) => {
   return [r.left + Math.min(40, r.width / 2), r.top + Math.min(40, r.height / 2)];
 };
 
+/** Visuels de l'app (affiches, bannières, images) : jamais de menu natif dessus, même quand l'app n'a pas de menu pour eux. */
+const VISUAL = 'img, picture, video, canvas, [data-media], .hero-slide, [data-tile], [data-open], [data-play-key], [data-showopen]';
+const FIELD = 'input, textarea, select, [contenteditable="true"]';
+
 document.addEventListener('contextmenu', (e) => {
   const t = ctxTarget(e.target);
-  if (!t) return; // menu natif
+  if (!t) { // menu natif, sauf sur un visuel
+    const el = e.target instanceof Element ? e.target : null;
+    if (el && el.closest(VISUAL) && !el.closest(FIELD)) e.preventDefault();
+    return;
+  }
   e.preventDefault();
   const [x, y] = pointOf(t.el, e);
   openCtx(t, x, y);
