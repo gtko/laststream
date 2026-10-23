@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BAR_HEIGHT, CORNER_KEY, MINI_MARGIN, MiniState, ZERO_MARGINS, clampBox, holeClipFor, holeClipPath, isBarLayout, marginProps, miniLayout,
-  miniWidth, mpvMargins, roundedRectPath, snapCorner,
+  MINI_ON_EXIT_KEY, exitMode, miniOnExitEnabled, miniWidth, mpvMargins, roundedRectPath, snapCorner,
 } from '../src/player/mini';
 import { keyToAction } from '../src/player/keys';
 import { MpvEngine } from '../src/player/engines.js';
@@ -124,6 +124,32 @@ describe('touche I', () => {
     expect(keyToAction('I', ctx)).toEqual({ type: 'mini' });
     expect(keyToAction('i', { ...ctx, typing: true })).toBeNull();
     expect(keyToAction('i', ctx, { ctrl: true })).toBeNull();
+  });
+});
+
+describe('retour pendant une lecture (ODY-247)', () => {
+  const playing = { canMinimize: true, enabled: true, paused: false, ended: false };
+
+  it('lecture en cours : le retour réduit en miniature sans clic préalable sur « Réduire »', () => {
+    expect(exitMode(playing)).toBe('minimize');
+  });
+
+  it('en pause, terminée ou sans source réductible : le lecteur se ferme', () => {
+    expect(exitMode({ ...playing, paused: true })).toBe('close');
+    expect(exitMode({ ...playing, ended: true })).toBe('close');
+    expect(exitMode({ ...playing, canMinimize: false })).toBe('close');
+  });
+
+  it('réglage désactivé : le retour ferme toujours', () => {
+    expect(exitMode({ ...playing, enabled: false })).toBe('close');
+  });
+
+  it('réglage « Réduire en miniature en quittant » : activé par défaut, seul « 0 » le coupe', () => {
+    expect(MINI_ON_EXIT_KEY).toBe('laststream.player.miniOnExit');
+    expect(miniOnExitEnabled(null)).toBe(true);
+    expect(miniOnExitEnabled(undefined)).toBe(true);
+    expect(miniOnExitEnabled('1')).toBe(true);
+    expect(miniOnExitEnabled('0')).toBe(false);
   });
 });
 

@@ -40,7 +40,7 @@ import { TrackApplier } from './trackApply';
 import { StallWatch, failoverOrder, pickRaceCandidate } from './failover';
 import { raceCandidates } from './race';
 import { keyToAction, stepVolume } from './keys';
-import { MiniState, minimizeExits } from './mini';
+import { MINI_ON_EXIT_KEY, MiniState, exitMode, minimizeExits, miniOnExitEnabled } from './mini';
 import { isOfflineView, offlineFailureView, offlineView } from './offlinePlay';
 import { MEMORY_INDEX, forgetLaunch, launchUsable, reconcileLaunch, recallLaunch, rememberLaunch } from './launchCache';
 import { badSources, fileKey, getMemory, getSubSync, markBad, remember, setSubSync, sourceKey } from './memory';
@@ -368,8 +368,8 @@ function ensureUI() {
   document.addEventListener('fullscreenchange', () => { if (P) refreshUI(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && P) saveProgress(true); });
   window.addEventListener('pagehide', () => { if (P) saveProgress(true); });
-  // Retour du navigateur pendant la lecture : le lecteur se réduit (la page derrière a déjà navigué) au lieu de se fermer.
-  window.addEventListener('popstate', () => { if (P && P.view && !miniState.mini) minimizePlayer(); });
+  // Retour du navigateur pendant la lecture : même règle que la flèche (lecture en cours réduite, sinon fermée) ; la page derrière a déjà navigué.
+  window.addEventListener('popstate', () => { if (P && P.view && !miniState.mini) leavePlayer(); });
 }
 
 // ---------- Mini-lecteur ----------
@@ -389,6 +389,23 @@ function minimizePlayer() {
   // Lecteur natif Android : la vignette est une vue native ; si elle n'est pas disponible (télévision), on revient au plein écran.
   if (ok && native) P.engine.minimize().then((on) => { if (!on && nativeMini) { nativeMini = false; miniState.expand(); } });
   return ok;
+}
+
+/**
+ * Retour (flèche, Échap, retour du navigateur ou du téléphone) : une lecture en cours se réduit en miniature, sans clic
+ * préalable sur « Réduire » ; en pause, terminée, sans source ou réglage désactivé, le lecteur se ferme.
+ */
+function leavePlayer() {
+  if (!P) return;
+  const st = P.view && P.engine ? P.engine.state() : null;
+  const mode = exitMode({
+    canMinimize: canMinimize(),
+    enabled: miniOnExitEnabled(storeGet(MINI_ON_EXIT_KEY)),
+    paused: !!(st && st.paused),
+    ended: !!(st && st.ended) || !!P.finished,
+  });
+  if (mode === 'minimize' && minimizePlayer()) return;
+  closePlayer();
 }
 
 function expandPlayer() {
@@ -1859,6 +1876,7 @@ function onAction(act, data) {
   if (!P) return;
   if (act === 'close') { closePlayer(); return; }
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
+  if (act === 'leave') { leavePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
   if (act === 'party') { togglePartyPanel(); return; }
   if (act === 'react') { toggleOpen(ui.isReactOpen, openReactHere, () => ui.closeReact(true)); return; }
@@ -1942,6 +1960,7 @@ function onAction(act, data) {
     case 'rate': P.engine.setRate(Number(data.rate)); setTimeout(() => ui.refreshPanel(), 50); break;
     case 'thumbs': storeSet(THUMBS_KEY, storeGet(THUMBS_KEY) === '0' ? '1' : '0'); thumbs.cancel(); cancelAddonThumb(); ui.refreshPanel(); break;
     case 'aspect': P.aspect = data.val; ui.video.style.objectFit = data.val; ui.refreshPanel(); break;
+    case 'miniexit': storeSet(MINI_ON_EXIT_KEY, miniOnExitEnabled(storeGet(MINI_ON_EXIT_KEY)) ? '0' : '1'); ui.refreshPanel(); break;
     case 'autopip': { const on = storeGet(AUTOPIP_KEY) !== '1'; storeSet(AUTOPIP_KEY, on ? '1' : '0'); ui.video.autoPictureInPicture = on; ui.refreshPanel(); break; }
     case 'season': ensureEpisodes(Number(data.season)); break;
     case 'episode': playEpisode(Number(data.season), Number(data.episode)); break;
@@ -2034,6 +2053,7 @@ function panelData(name) {
     if (p.audioMode) rows.push(['Son', { html: '<b class="lp-tag ' + (p.audioMode === 'app' ? 'is-sync' : 'is-warn') + '">' + (p.audioMode === 'app' ? 'Décodé par l’app' : 'Sans son') + '</b>' }]);
     return {
       rate: st.rate, source: rows, aspect: p.aspect, thumbs: storeGet(THUMBS_KEY) !== '0', thumbsAvailable: thumbSourceOf(p).mode !== 'none', autoPip: storeGet(AUTOPIP_KEY) === '1', pipAvailable: p.engine.supportsPip(), autoPipAvailable: p.engine.kind !== 'mpv' && p.engine.supportsPip(),
+      miniAvailable: canMinimize(), miniOnExit: miniOnExitEnabled(storeGet(MINI_ON_EXIT_KEY)),
       canMark: markAllowed(p),
     };
   }
@@ -2128,7 +2148,7 @@ function onKey(e) {
         case 'shell-pip': togglePip(); break;
         case 'shell-fullscreen': toggleFullscreen(); break;
         case 'doc-fullscreen': document.exitFullscreen().catch(() => {}); break;
-        default: closePlayer();
+        default: leavePlayer();
       }
       break;
     default: break;

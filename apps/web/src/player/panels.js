@@ -153,6 +153,7 @@ export function settingsHtml(d) {
     '<section class="lp-sec"><h3>Image</h3>' + seg('aspect', 'mode', [['contain', 'Ajuster'], ['cover', 'Remplir'], ['fill', '16:9']], d.aspect) +
       (d.thumbsAvailable === false ? '' : field('Aperçu sur la barre', chip('thumbs', {}, d.thumbs ? 'Activé' : 'Désactivé', d.thumbs))) +
       (d.autoPipAvailable ? field('Image dans l’image automatique', chip('autopip', {}, d.autoPip ? 'Activée' : 'Désactivée', d.autoPip)) : '') + '</section>' +
+    (d.miniAvailable ? '<section class="lp-sec"><h3>Quitter le lecteur</h3><p class="lp-hint">Le retour réduit la lecture en cours en miniature ; en pause, il ferme le lecteur.</p>' + field('Réduire en miniature en quittant', chip('miniexit', {}, d.miniOnExit ? 'Activé' : 'Désactivé', d.miniOnExit)) + '</section>' : '') +
     (d.canMark ? '<section class="lp-sec"><h3>Marquer un segment</h3><p class="lp-hint">Aide la communauté : signale où commencent et finissent l’intro, le récap ou le générique de cet épisode. Les poignées se règlent directement sur la barre de progression.</p>' + chip('mark-open', {}, 'Marquer sur la barre') + '</section>' : '') +
     '</div>';
 }

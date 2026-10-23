@@ -176,6 +176,19 @@ export class MiniState {
   }
 }
 
+/** Réglage « Réduire en miniature en quittant le lecteur » : activé par défaut, seul « 0 » le désactive. */
+export const MINI_ON_EXIT_KEY = 'laststream.player.miniOnExit';
+export const miniOnExitEnabled = (stored: string | null | undefined): boolean => stored !== '0';
+
+/**
+ * Sortie du lecteur par un retour (flèche, Échap, retour du navigateur ou du téléphone) : la lecture en cours passe en
+ * miniature, sans avoir à cliquer sur « Réduire » ; en pause, terminée, sans source ou réglage désactivé, le lecteur se ferme.
+ * La croix de la miniature et la fin de lecture, elles, arrêtent toujours la vidéo.
+ */
+export function exitMode(s: { canMinimize: boolean; enabled: boolean; paused: boolean; ended: boolean }): 'minimize' | 'close' {
+  return s.canMinimize && s.enabled && !s.paused && !s.ended ? 'minimize' : 'close';
+}
+
 /** Plein écrans à quitter avant de réduire : celui du document et celui de la fenêtre de la coque. */
 export function minimizeExits(s: { docFullscreen: boolean; shell: boolean; shellFullscreen: boolean }): { exitDoc: boolean; exitShell: boolean } {
   return { exitDoc: s.docFullscreen, exitShell: s.shell && s.shellFullscreen };

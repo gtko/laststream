@@ -380,10 +380,10 @@ export function createPlayerUI(h) {
     setMiniAvailable(ok) {
       q('[data-role="mini"]').hidden = !ok;
       const back = q('[data-role="back"]');
-      back.dataset.act = ok ? 'minimize' : 'close';
-      const label = ok ? 'Réduire le lecteur' : 'Retour (Échap)';
-      back.setAttribute('aria-label', label);
-      back.dataset.tip = label;
+      // Retour : le lecteur décide (lecture en cours réduite, sinon fermée) ; sans réduction possible, il ferme.
+      back.dataset.act = ok ? 'leave' : 'close';
+      back.setAttribute('aria-label', 'Retour (Échap)');
+      back.dataset.tip = 'Retour (Échap)';
     },
     /**
      * Chargeur. `extra` : { logo, backdrop, episode, source, steps, step, cancel }. Avec `steps`, l'anneau se remplit à chaque
