@@ -1,7 +1,7 @@
 // Émissions TV : rapprochement titres/guide (unitaire), puis page, fiche, rangées d'accueil et calendrier (jsdom, fetch simulé).
 import fs from 'node:fs';
 import path from 'node:path';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { airingsFor, dayLabel, hhmm, isShowCategory, localDate, matchKnown, primeTime, programKeys, SEED_SHOWS, showKey, showName, titleKey, titleMatches, type EpgProgram, type GuideChannel } from '../src/data/shows';
 import { guideShows, type Guide, resetShowsCache, resolveSeed } from '../src/data/showsApi';
 import { clearCache } from '../src/data/transport';
@@ -92,7 +92,9 @@ describe('rapprochement des titres du guide', () => {
 });
 
 // ---- Interface ----
-const now = Math.floor(Date.now() / 1000);
+/** Horloge figée de la suite « émissions TV (interface) » : midi local, 20 octobre 2026 (jour des diffusions de `primeAt`). */
+const FROZEN_AT = new Date(2026, 9, 20, 12);
+const now = Math.floor(FROZEN_AT.getTime() / 1000);
 const fra = [{ code: 'fra', name: 'français' }];
 const ch = (id: string, name: string) => ({
   id, name, logo: '', group: 'France', cat: 'Généraliste', source: 'freetv', fast: false, url: 'https://up.example/' + id + '.m3u8', epgId: id.replace(/^fr:/, ''), flaky: false,
@@ -272,6 +274,10 @@ describe('émissions du guide sans fiche TMDB', () => {
 
 describe('émissions TV (interface)', () => {
   beforeAll(async () => {
+    // Seule Date est figée (settle() attend par setTimeout) : sans cela, le direct de TF1 (now - 20 min) tombe la veille
+    // entre 00 h et 00 h 20 et n'apparaît pas au calendrier du jour.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FROZEN_AT);
     const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
     document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
     localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_sh-1' }));
@@ -286,6 +292,7 @@ describe('émissions TV (interface)', () => {
     await import('../src/main.js');
     await settle(1800);
   });
+  afterAll(() => { vi.useRealTimers(); });
 
   it('requêtes de découverte : source par type (pays, popularité, pages 1 à 3) et requête par genres', () => {
     const disc = calls.filter((c) => c.includes('/lt/tmdb/discover/tv')).map((c) => new URL(c).searchParams);
@@ -553,6 +560,7 @@ describe('émissions TV (interface)', () => {
       { channelId: 'fr:TF1.fr', start: now + 4 * 3600, stop: now + 5 * 3600, title: 'Un Film Quelconque', desc: '', icon: '', category: 'Film' },
       { channelId: 'fr:M6.fr', start: now - 2 * 3600, stop: now - 3600, title: 'Émission terminée', desc: '', icon: '', category: 'Divertissement' },
     );
+    clearCache(); // le guide est en cache client par URL, expiré selon Date : l'horloge figée ne l'expire pas, il faut repartir sur le réseau
     resetShowsCache();
     location.hash = '#/';
     await settle(100);
