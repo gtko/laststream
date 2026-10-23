@@ -42,7 +42,7 @@ function avail() {
 }
 
 /** Les téléchargements sont masqués sur un profil enfant (comme Statistiques et Réglages). */
-const downloadsAllowed = () => !isKidProfile();
+export const downloadsAllowed = () => !isKidProfile();
 
 const epCode = (s, e) => 'S' + s + ' É' + e;
 
@@ -114,6 +114,7 @@ function viewOf(el, item, av) {
   if (vm.state === 'running') label = p == null ? 'Téléchargement… · Pause' : p + ' % · Pause';
   else if (vm.state === 'paused') label = 'Reprendre' + (p == null ? '' : ' · ' + p + ' %');
   else if (vm.state === 'error') label = 'Réessayer';
+  else if (vm.state === 'available' && el.dataset.dlBusy) label = 'Recherche…';
   else if (vm.state === 'available' && el.dataset.dlS) label = 'Télécharger ' + epCode(el.dataset.dlS, el.dataset.dlE);
   return { ...vm, label };
 }
@@ -543,13 +544,35 @@ function openChoiceSheet(t, opener, { exclude = null } = {}) {
   });
 }
 
+/**
+ * Retour visuel immédiat (ODY-238) : le contrôle affiche un chargeur et « Recherche… » dès le clic, avant toute attente réseau
+ * ou disque. Le verrou et aria-busy / is-busy viennent de runOnce (busy.js, ODY-237). `done()` le rend ; sans effet si `el` a disparu.
+ */
+function setBusy(el) {
+  if (!el || !el.classList) return () => {};
+  el.dataset.dlBusy = '1';
+  const txt = el.querySelector('.dl-txt');
+  if (txt) txt.textContent = 'Recherche…';
+  return () => {
+    delete el.dataset.dlBusy;
+    if (txt && txt.textContent === 'Recherche…') txt.textContent = el.dataset.dlS ? 'Télécharger ' + epCode(el.dataset.dlS, el.dataset.dlE) : 'Télécharger';
+  };
+}
+
 /** Lance un téléchargement : la feuille liste les sources trouvées et l'utilisateur choisit. Erreurs traduites en toast. */
 export async function startDownload(t, opener) {
   const s = getDownloadSettings();
   if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
-  const space = await getSpace();
-  if (space && space.full) { await openSpaceFullSheet(opener); return; }
-  const choice = await openChoiceSheet(t, opener);
+  const idle = setBusy(opener);
+  let choice;
+  try {
+    const space = await getSpace();
+    if (space && space.full) { idle(); await openSpaceFullSheet(opener); return; }
+    // La feuille (et son « Recherche des sources… ») s'ouvre de façon synchrone : le contrôle redevient normal derrière elle.
+    const sheet = openChoiceSheet(t, opener);
+    idle();
+    choice = await sheet;
+  } finally { idle(); }
   if (!choice) return;
   setDownloadSettings({ asked: true });
   await enqueueChoice(t, choice, opener);
@@ -558,6 +581,9 @@ export async function startDownload(t, opener) {
 /** Ajoute la source choisie à la file ; limite d'espace et réseau traduits en feuille ou en toast. */
 async function enqueueChoice(t, choice, opener) {
   const s = getDownloadSettings();
+  // Confirmation tout de suite : la résolution de la source peut durer avant que le titre apparaisse dans la file.
+  toast('Téléchargement lancé · ' + (t.name || 'titre') + (t.season != null ? ' ' + epCode(t.season, t.episode) : ''), { action: { label: 'Voir', run: () => { location.hash = '#/downloads'; } }, ms: 3500 });
+  const idle = setBusy(opener);
   try {
     await requestDownload(t, choice);
     if (opener && opener.isConnected) opener.focus({ preventScroll: true });
@@ -566,7 +592,7 @@ async function enqueueChoice(t, choice, opener) {
     if (code === 'quota_exceeded') { await openSpaceFullSheet(opener); return; }
     if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
     toast(errorMessage(code || 'resolve_failed'));
-  }
+  } finally { idle(); }
 }
 
 /**
@@ -590,6 +616,7 @@ async function chooseAnotherSource(item, opener) {
 async function onControl(el) {
   const st = el.dataset.dlState || 'available';
   const id = el.dataset.dlId;
+  if (el.dataset.dlBusy) return; // déjà en préparation : un second clic ne relance rien
   const item = visibleItems(listDownloads()).find((it) => it.id === id);
   if (st === 'unavailable') { toast(el.dataset.dlOff || (avail().ok ? 'Indisponible' : avail().reason)); return; }
   if (!item || st === 'available') {

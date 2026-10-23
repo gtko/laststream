@@ -220,6 +220,10 @@
 .dl-spin { display: inline-block; width: 18px; height: 18px; margin-right: 10px; vertical-align: -4px; border-radius: 50%; border: 2.5px solid var(--line-2); border-top-color: var(--accent); animation: dl-spin 0.8s linear infinite; }
 @keyframes dl-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .dl-spin { animation: none; } }
+/* Retour immédiat au clic (ODY-238) : le bouton ou la pastille affiche un chargeur pendant la préparation. */
+.dl-btn[data-dl-busy] .dl-ic svg, .dl-pill[data-dl-busy] .dl-ic svg { display: none; }
+.dl-btn[data-dl-busy] .dl-ic::before, .dl-pill[data-dl-busy] .dl-ic::before { content: ''; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid var(--line-2); border-top-color: var(--accent); animation: dl-spin 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .dl-btn[data-dl-busy] .dl-ic::before, .dl-pill[data-dl-busy] .dl-ic::before { animation: none; } }
 @keyframes dl-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .dl-sheet { animation: none; } }
 @media (min-width: 761px) {

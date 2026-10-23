@@ -10,6 +10,8 @@ import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
 import { toast } from './dom.js';
+import { downloadsAllowed, startDownload } from './downloadBtn.js';
+import { platformAvailability } from '../downloads/service';
 import { nextToWatch } from './fiche.js';
 import { ICON } from './icons.js';
 import { inLib, renderLibrary, toggleLib } from './library.js';
@@ -24,6 +26,21 @@ import { esc } from './util.js';
 import { setOpenState } from './disclosure.js';
 
 const LONG_PRESS_MS = 500;
+const HINT_KEY = 'ls.ctxHintSeen';
+
+/** Téléchargement proposé dans le menu (ODY-238) : profil adulte et appareil compatible seulement. */
+function canDownload() {
+  try { return downloadsAllowed() && platformAvailability().ok; } catch (_) { return false; }
+}
+
+/** Astuce du premier usage : une seule fois par appareil, jamais bloquante si le stockage est refusé. */
+function takeHint() {
+  try {
+    if (localStorage.getItem(HINT_KEY)) return false;
+    localStorage.setItem(HINT_KEY, '1');
+    return true;
+  } catch (_) { return false; }
+}
 let pressTimer = null;
 
 /** Autres modules (suivis, notes…) ajoutent leurs entrées : (cible) => [{ id, label, icon, run }]. */
@@ -150,6 +167,9 @@ function titleItems(t) {
     id: 'lib', label: on ? 'Retirer de ma bibliothèque' : 'Ajouter à ma bibliothèque', icon: on ? ICON.check : ICON.list,
     run: () => { const now = toggleLib({ type, id: it.id, name: it.name, posterPath: it.posterPath }); toast(now ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque'); renderLibrary(); },
   });
+  if (type === 'movie' && !it.cinema && canDownload()) {
+    items.push({ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: t.key, type: 'movie', id: String(id), name: it.name }, t.el) });
+  }
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (type === 'movie') {
     const seen = userStore.isWatched(t.key);
@@ -172,8 +192,12 @@ function titleItems(t) {
 function episodeItems(t) {
   const m = t.model;
   const seen = userStore.isWatched(m.key, t.season, t.episode);
+  const dl = canDownload()
+    ? [{ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: m.key, type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode }, t.el) }]
+    : [];
   return [
     { id: 'play', label: 'Lire', icon: ICON.play, run: () => openSources({ type: 'tv', id: String(m.id), name: m.name, season: t.season, episode: t.episode, key: m.key }, t.el) },
+    ...dl,
     { id: 'seen', label: seen ? 'Marquer comme non vu' : 'Marquer comme vu', icon: ICON.check, run: () => mark(m.key, [{ season: t.season, episode: t.episode }], !seen) },
     { id: 'upto', label: 'Vu jusqu’ici', icon: ICON.check, run: () => { const b = t.el.querySelector('[data-upto]'); if (b) b.click(); } },
   ];
@@ -223,6 +247,9 @@ export function openCtx(t, x, y) {
   menu.dataset.kind = t.kind;
   if (t.key) menu.dataset.key = t.key;
   menu.innerHTML = items.map((it) => '<button type="button" role="menuitem" data-ctx="' + esc(it.id) + '">' + (it.icon || '') + '<span>' + esc(it.label) + '</span></button>').join('');
+  if ((t.kind === 'title' || t.kind === 'episode') && takeHint()) {
+    menu.insertAdjacentHTML('beforeend', '<p class="ctx-hint" aria-hidden="true">Astuce : clic droit, appui long ou « … » sur une affiche ouvre ce menu.</p>');
+  }
   menu._opener = t.el;
   document.body.appendChild(menu);
   state.ctxMenu = menu;

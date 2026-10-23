@@ -183,6 +183,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .ctxmenu { min-width: 280px; max-width: min(360px, calc(100vw - 16px)); }
 .ctxmenu button { min-height: 44px; }
 .ctxmenu button svg { flex: none; width: 20px; height: 20px; color: var(--muted); }
+.ctxmenu .ctx-hint { margin: 4px 8px 6px; padding-top: 8px; border-top: 1px solid var(--line-2); font-size: 12px; line-height: 1.4; color: var(--dim); }
 .t-more { position: absolute; top: 8px; right: 8px; z-index: 3; min-width: 34px; height: 24px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; background: rgba(12, 11, 17, 0.78); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; color: var(--text); opacity: 0; transition: opacity 0.15s; cursor: pointer; }
 .card:hover .t-more, .card:focus-visible .t-more, .top-item:hover .t-more { opacity: 1; }
 .t-more.is-open { opacity: 1; }

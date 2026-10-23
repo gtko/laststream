@@ -443,3 +443,84 @@ describe('route', () => {
     location.hash = '';
   });
 });
+
+describe('retour immédiat au clic (ODY-238)', () => {
+  // Les valeurs « une fois » laissées par un autre test ne doivent pas fuir ici.
+  beforeEach(async () => {
+    const svc = await import('../src/downloads/service');
+    (await import('../src/ui/busy.js')).resetBusy(); // verrous runOnce laissés par un test précédent
+    vi.mocked(svc.getSpace).mockReset().mockImplementation(() => Promise.resolve(h.s.space) as never);
+    vi.mocked(svc.listSourceChoices).mockReset().mockImplementation(() => Promise.resolve([]) as never);
+    vi.mocked(svc.requestDownload).mockReset().mockImplementation(() => Promise.resolve({}) as never);
+    // Un « hashchange » laissé par un test précédent (lien « Gérer l’espace ») fermerait la feuille ouverte ici.
+    await new Promise((r) => setTimeout(r, 20));
+  });
+  const movie = { key: 'movie:1', type: 'movie', id: 1, name: 'Le Phare' };
+  const mount = async () => {
+    const ui = await import('../src/ui/downloadBtn.js');
+    detail().innerHTML = '<div class="f-actions">' + ui.ficheDownloadHTML(movie, null, '') + '</div>';
+    ui.paintControls([]);
+    return { ui, btn: detail().querySelector('[data-dl-ctl]') as HTMLButtonElement };
+  };
+
+  it('le bouton passe en « Recherche… » (aria-busy) synchroniquement, avant même la mesure de l’espace', async () => {
+    const svc = await import('../src/downloads/service');
+    let release: (v: unknown) => void = () => undefined;
+    vi.mocked(svc.getSpace).mockReturnValueOnce(new Promise((r) => { release = r; }) as never);
+    vi.mocked(svc.listSourceChoices).mockReturnValueOnce(new Promise(() => undefined) as never);
+    const { btn } = await mount();
+    btn.click();
+    expect(btn.classList.contains('is-busy')).toBe(true);
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    expect(btn.textContent).toContain('Recherche…');
+    release({ used: 0, limit: null, ratio: 0, warn: false, full: false });
+    await flush();
+    await flush();
+    // La feuille « Recherche des sources… » a pris le relais : le bouton redevient normal derrière elle.
+    expect(document.querySelector('.dl-sheet [role="status"]')!.textContent).toContain('Recherche des sources…');
+    expect(btn.dataset.dlBusy).toBeUndefined();
+    expect(btn.textContent).toContain('Télécharger');
+  });
+
+  it('un second clic pendant la préparation ne relance rien', async () => {
+    const svc = await import('../src/downloads/service');
+    vi.mocked(svc.getSpace).mockReturnValueOnce(new Promise(() => undefined) as never);
+    const { btn } = await mount();
+    btn.click();
+    btn.click();
+    await flush();
+    expect(svc.getSpace).toHaveBeenCalledTimes(1);
+  });
+
+  it('un repeint pendant l’attente garde le libellé « Recherche… »', async () => {
+    const svc = await import('../src/downloads/service');
+    vi.mocked(svc.getSpace).mockReturnValueOnce(new Promise(() => undefined) as never);
+    const { ui, btn } = await mount();
+    btn.click();
+    ui.paintControls([]);
+    expect(btn.textContent).toContain('Recherche…');
+  });
+
+  it('confirmer une source affiche tout de suite « Téléchargement lancé » avec un lien vers la file', async () => {
+    const svc = await import('../src/downloads/service');
+    h.s.space = { used: 0, limit: null, ratio: 0, warn: false, full: false };
+    let done: (v?: unknown) => void = () => undefined;
+    vi.mocked(svc.requestDownload).mockReturnValueOnce(new Promise((r) => { done = r; }) as never);
+    vi.mocked(svc.listSourceChoices).mockResolvedValueOnce([
+      { key: '0', group: '1080p', quality: '1080p', sourceType: 'WEB-DL', codec: '', audio: 'AAC', langs: ['fr'], origin: 'X', sizeBytes: 1000, view: { index: 0 } },
+    ] as never);
+    const { btn } = await mount();
+    btn.click();
+    await flush();
+    await flush();
+    (document.querySelector('[data-dl-go]') as HTMLButtonElement).click();
+    await flush();
+    const toastEl = document.getElementById('toast')!;
+    expect(toastEl.classList.contains('is-on')).toBe(true);
+    expect(toastEl.textContent).toContain('Téléchargement lancé · Le Phare');
+    expect(toastEl.querySelector('.toast-action')!.textContent).toBe('Voir');
+    done();
+    await flush();
+    expect(btn.dataset.dlBusy).toBeUndefined();
+  });
+});
