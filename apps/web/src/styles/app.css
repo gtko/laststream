@@ -463,6 +463,18 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .upd-go:disabled { opacity: 0.6; }
 .upd-x { width: 36px; height: 36px; border-radius: 50%; font-size: 22px; line-height: 1; color: var(--muted); }
 .upd-x:hover { color: var(--text); }
+/* Mise à jour de l'interface (Windows et web) : même bloc, en bas de l'écran. */
+.uiupd-banner {
+  position: fixed; z-index: 400; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); width: min(560px, calc(100vw - 24px));
+  display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 16px; border-radius: 14px;
+  background: rgba(23, 21, 31, 0.98); border: 1px solid var(--line-2); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.uiupd-banner[hidden] { display: none; }
+.upd-later { min-height: 40px; padding: 0 12px; border-radius: 10px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.upd-later:hover { color: var(--text); }
+/* Sous 760 px la barre basse (72 px) est affichée : le bandeau se place au-dessus. */
+@media (max-width: 760px) { .uiupd-banner { bottom: calc(env(safe-area-inset-bottom, 0px) + 72px + 10px); } }
 
 /* Avatars illustrés (DiceBear) : l'illustration entière (contain) remplace l'initiale ; la couleur du profil reste le repli. */
 [data-avatar][data-art] { background-size: contain; background-position: center; background-repeat: no-repeat; font-size: 0; color: transparent; text-shadow: none; }

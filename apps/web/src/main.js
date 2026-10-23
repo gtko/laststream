@@ -60,7 +60,7 @@ import { registerSocialHook } from './ui/socialHooks.js';
 import { configureShareDialog } from './ui/shareDialog.js';
 import { shareCodeFrom } from './ui/shareModel.js';
 import { createWatchWithHandler } from './data/watchWith';
-import { playBest } from './player/session.js';
+import { isPlayerOpen, playBest } from './player/session.js';
 import { parseJoinHash } from './party/join';
 import { parseFoyerToken } from './data/foyerLink';
 import './ui/events.js';
@@ -81,9 +81,12 @@ import { setServedOrigin } from './data/serverMode';
 import { wipeDeviceDebrid } from './sources/debridWipe';
 import { isPurgePending } from './downloads/settings';
 import { initUpdateBanner } from './ui/update-banner.js';
+import { initUiUpdateBanner } from './ui/ui-update-banner.js';
+import { stripReloadParam } from './data/uiUpdate';
 import { initAnnouncementBanner } from './ui/announcement-banner.js';
 import { isDemo, setDemoFlags, startDemo } from './data/demo';
 
+stripReloadParam(); // retire le paramètre `_ls` laissé par un rechargement de mise à jour (la route #/… reste)
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
 initNativeScreen(); // Android : résolution réelle de la sortie vidéo pour le plafond automatique (ODY-251)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
@@ -157,5 +160,7 @@ Promise.resolve(joinPage ? undefined : load()).catch(() => undefined).finally(()
 setTimeout(() => { announceShellReady(); }, 8000);
 // Application Android : bannière « Mise à jour disponible » (sans effet ailleurs).
 initUpdateBanner();
+// Windows et web : bannière « Une nouvelle version est disponible » quand le serveur publie un autre build de l'interface.
+initUiUpdateBanner({ isPlayerOpen });
 // Annonces publiques : bannière refermable, appel réseau sans bloquer l'affichage (jamais sur #/admin).
 initAnnouncementBanner();

@@ -6,7 +6,7 @@ import { DEFAULT_BASE, getBase, getConfig, getCustom, getMode, isAndroidApp, isC
 import { laststreamBase, PUBLIC_PROBE_MS, probeHealth, serverChoiceVisible, switchServer } from '../data/serverMode';
 import { clearCache } from '../data/transport';
 import {
-  BANDWIDTH_PRESETS_MBPS, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
+  BANDWIDTH_PRESETS_MBPS, getUiUpdateAuto, getUiUpdateNotify, setUiUpdateAuto, setUiUpdateNotify, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
   setAutoplay, setBandwidthSetting, getResolutionCap, setResolutionCap, RESOLUTION_CAPS, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
@@ -19,6 +19,7 @@ import { errorText, openLogin, openPicker } from './auth-ui.js';
 import { creditsLinkHTML } from './credits.js';
 import { modelComboHTML } from './model-combobox.js';
 import { homePanelHTML } from './homeprefs.js';
+import { updateSupported } from '../data/appUpdate';
 import { tvPanelHTML } from './settings-tv.js';
 import { appearancePanel } from './settings-appearance.js';
 import { invitesCard, refreshInvites } from './invites.js';
@@ -111,6 +112,14 @@ function capStatus(cap) {
   const h = capHeightOf(cap, screenShortSide());
   if (cap !== 'auto') return 'Plafond : ' + capLabel(h) + '.';
   return h === null ? 'Écran non détecté : aucun plafond.' : 'Écran détecté : ' + screenShortSide() + ' px de hauteur → plafond ' + capLabel(h) + '.';
+}
+
+/** Mises à jour de l'interface (Windows et web) : réglages locaux à l'appareil. Absents sur Android, qui a sa propre bannière. */
+function uiUpdateCard() {
+  if (updateSupported()) return '';
+  return card('Mises à jour de l’interface',
+    switchRow('Prévenir des mises à jour de l’interface', 'Affiche une bannière en bas quand une nouvelle version est disponible.', getUiUpdateNotify(), 'data-set-pref="uiupdate-notify"') +
+    switchRow('Mettre à jour automatiquement quand l’app est inactive', 'Recharge l’interface après 5 minutes sans interaction, hors lecture et plein écran.', getUiUpdateAuto(), 'data-set-pref="uiupdate-auto"'));
 }
 
 function playbackPanel() {
@@ -251,7 +260,7 @@ function pageHTML() {
   const cat = (id) => cats.find((c) => c.id === id);
   if (!cat(activeCat)) activeCat = cats[0].id;
   const panels = [
-    panelHTML(cat('account'), PANEL_DESC.account, accountPanel()),
+    panelHTML(cat('account'), PANEL_DESC.account, accountPanel() + uiUpdateCard()),
     panelHTML(cat('appearance'), PANEL_DESC.appearance, appearancePanel()),
     panelHTML(cat('region'), PANEL_DESC.region, regionPanel()),
     panelHTML(cat('playback'), PANEL_DESC.playback, playbackPanel()),
@@ -479,6 +488,9 @@ async function save(form) {
 
 /** Effet d'un interrupteur de lecture : même écriture qu'avant (préférences locales), puis synchronisation du compte. */
 function applyToggle(pref, on) {
+  // Mises à jour de l'interface : réglages propres à l'appareil, jamais envoyés au compte.
+  if (pref === 'uiupdate-notify') { setUiUpdateNotify(on); return; }
+  if (pref === 'uiupdate-auto') { setUiUpdateAuto(on); return; }
   setTimeout(pushPrefs, 0);
   if (pref === 'autoplay') setAutoplay(on);
   else if (pref === 'skip-intro') setSkipPref('intro', on);

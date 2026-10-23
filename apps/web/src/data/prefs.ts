@@ -22,6 +22,16 @@ const AUTOPLAY_STORAGE_KEY = 'laststream.autoplay';
 export const getAutoplay = (): boolean => read(AUTOPLAY_STORAGE_KEY) !== '0';
 export const setAutoplay = (enabled: boolean): void => write(AUTOPLAY_STORAGE_KEY, enabled ? '1' : '0');
 
+// ---- Mise à jour de l'interface (locale à l'appareil, hors synchronisation du compte) ----
+const UI_UPDATE_NOTIFY_KEY = 'laststream.uiupdate.notify';
+const UI_UPDATE_AUTO_KEY = 'laststream.uiupdate.auto';
+/** Prévenir d'une nouvelle version : activé par défaut, seule la valeur '0' le désactive. */
+export const getUiUpdateNotify = (): boolean => read(UI_UPDATE_NOTIFY_KEY) !== '0';
+export const setUiUpdateNotify = (enabled: boolean): void => write(UI_UPDATE_NOTIFY_KEY, enabled ? '1' : '0');
+/** Mise à jour automatique quand l'application est inactive : désactivée par défaut, seule la valeur '1' l'active. */
+export const getUiUpdateAuto = (): boolean => read(UI_UPDATE_AUTO_KEY) === '1';
+export const setUiUpdateAuto = (enabled: boolean): void => write(UI_UPDATE_AUTO_KEY, enabled ? '1' : '0');
+
 // ---- Débit ----
 const BANDWIDTH_SETTING_KEY = 'laststream.bandwidth.setting';
 export const BANDWIDTH_PRESETS_MBPS: readonly number[] = [2, 5, 10, 20, 50, 100];

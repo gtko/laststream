@@ -3,6 +3,8 @@ declare module "*/collections/focale.json" { const data: unknown; export default
 interface ImportMetaEnv { readonly VITE_SENTRY_DSN?: string; }
 /** Version de l'application (package.json), injectée par Vite (`define`). */
 declare const __APP_VERSION__: string;
+/** Identité du build (sha git court + horodatage), injectée par Vite ; 'dev' hors build. Comparée à /version.json. */
+declare const __BUILD_ID__: string;
 
 /* Shaka Player (module compilé) : types minimaux, ceux qu'utilise le lecteur Molotov (src/player/molotov.ts). */
 declare module "shaka-player/dist/shaka-player.compiled.js" {
