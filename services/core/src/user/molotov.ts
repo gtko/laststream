@@ -858,18 +858,6 @@ const PAPI_COMPONENT_TYPES = new Set([
   'button', 'button-icon', 'tag', 'picture', 'progress_bar', 'text',
 ]);
 
-/** URL de lecture livrée par la page (`actions.on_play`, `playAsset`, `playChannel`) ; null si absente. */
-function onPlayUrl(node: Record<string, unknown>): string | null {
-  const actions = node['actions'];
-  if (!isRecord(actions)) return null;
-  for (const key of ['on_play', 'playAsset', 'playChannel']) {
-    const action = actions[key];
-    const raw = isRecord(action) ? (action['url'] ?? action['href']) : action;
-    if (typeof raw === 'string' && raw.trim().length > 0 && raw.length <= 2048) return raw.trim();
-  }
-  return null;
-}
-
 /** Composant texte PAPI (`{ text }`, `{ label }`…) ou chaîne directe ; null sinon. */
 function papiText(value: unknown): string | null {
   if (typeof value === 'string' && value.trim().length > 0 && value.length <= 512) return value.trim();
