@@ -467,7 +467,9 @@ async function signinMolotov(fetchFn: FetchFn, email: string, password: string):
           Referer: `${MOLOTOV_ORIGIN}/`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        // `/v2/signin` identifie le compte par `username` (le client officiel y envoie l'email) : avec `email` seul,
+        // l'API répond 401 comme pour un mot de passe faux.
+        body: JSON.stringify({ username: email, password }),
       },
       UPSTREAM_TIMEOUT_MS,
       { maxBytes: 256 * 1024 },
@@ -478,6 +480,7 @@ async function signinMolotov(fetchFn: FetchFn, email: string, password: string):
   } catch {
     throw new UserApiError(502, 'molotov_unavailable');
   }
+  if (status === 429) throw new UserApiError(429, 'rate_limited');
   if (status >= 400 && status < 500) throw new UserApiError(401, 'invalid_credentials');
   if (!ok) throw new UserApiError(502, 'molotov_unavailable');
   const document = parseJsonBytes(bytes);

@@ -302,7 +302,7 @@ describe('compte Molotov', () => {
     expect(JSON.stringify(res.body)).not.toContain(ID_TOKEN);
     const signin = upstream.callsTo(`${MOLOTOV_API}/v2/signin`).at(-1);
     expect(signin?.method).toBe('PUT');
-    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ username: 'alice@example.test', password: 'mot-de-passe' });
     expect(signin?.headers['content-type']).toBe('application/json');
     expect(signin?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
     expect(signin?.headers['origin']).toBe('https://app.molotov.tv');
@@ -327,6 +327,17 @@ describe('compte Molotov', () => {
     expect(await storedRow()).toBeNull();
   });
 
+  it('limite de débit amont : 429 rate_limited', async () => {
+    signinReply = () => json({ code: 'CHILL_PLZ' }, 429);
+    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { email: 'alice@example.test', password: 'mot-de-passe' },
+    });
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe('rate_limited');
+  });
+
   it('connexion avec vérification en deux étapes : 200 mfa_required, jeton de défi, aucune ligne de compte', async () => {
     await request(rig.app, 'DELETE', '/user/account/molotov', {
       token: rig.owner.token,
@@ -344,7 +355,7 @@ describe('compte Molotov', () => {
     expect(await storedRow()).toBeNull();
     const signin = upstream.callsTo(`${MOLOTOV_API}/v2/signin`).at(-1);
     expect(signin?.method).toBe('PUT');
-    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ username: 'alice@example.test', password: 'mot-de-passe' });
     expect(signin?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
     expect(signin?.headers['origin']).toBe('https://app.molotov.tv');
     expect(signin?.headers['authorization']).toBeUndefined();
