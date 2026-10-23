@@ -97,6 +97,19 @@ const MAX_UPSTREAM_BYTES = 8 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 12_000;
 /** Délai de la lecture du catalogue (réponse volumineuse). */
 const CATALOG_TIMEOUT_MS = 30_000;
+/** Durée de vie du guide compacté en mémoire (par instance). */
+const EPG_TTL_MS = 10 * 60_000;
+/** Nombre maximal de guides gardés en mémoire (les plus anciens sont écartés). */
+const MAX_CACHED_EPGS = 64;
+/** Plafond de lecture de la réponse du guide (le guide complet pèse environ 6 Mo). */
+const MAX_EPG_BYTES = 12 * 1024 * 1024;
+/** Délai de la lecture du guide (réponse volumineuse). */
+const EPG_TIMEOUT_MS = 30_000;
+/** Fenêtre du guide : 30 minutes dans le passé, 24 heures devant. */
+const EPG_PAST_MS = 30 * 60_000;
+const EPG_FUTURE_MS = 24 * 60 * 60_000;
+/** Longueur maximale d'une description de programme. */
+const EPG_DESC_MAX = 200;
 
 /** Jetons Molotov d'un compte. */
 interface MolotovTokens {
@@ -206,7 +219,34 @@ interface CachedCatalogue {
   fetchedAt: number;
 }
 
+/** Programme du guide compacté (les horaires sont des ISO 8601). */
+interface MolotovEpgProgram {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  type: string | null;
+  desc: string | null;
+  image: string | null;
+}
+
+/** Chaîne du guide compacté, avec ses programmes triés par horaire de début. */
+interface MolotovEpgChannel {
+  id: string;
+  name: string;
+  logo: string | null;
+  callSign: string | null;
+  programs: MolotovEpgProgram[];
+}
+
+/** Guide compacté, gardé en mémoire le temps de sa validité. */
+interface CachedEpg {
+  channels: MolotovEpgChannel[];
+  fetchedAt: number;
+}
+
 const catalogues = new Map<string, CachedCatalogue>();
+const epgs = new Map<string, CachedEpg>();
 
 /** JSON décodé, ou null si le corps n'est pas du JSON. */
 function parseJsonBytes(bytes: Uint8Array): unknown {
@@ -635,6 +675,93 @@ function extractChannels(document: unknown): { channels: MolotovChannel[]; rawCh
   return { channels, rawChannelCount };
 }
 
+/** Date ISO 8601 exploitable, normalisée en UTC ; null sinon. */
+function isoOf(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 64) return null;
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? new Date(at).toISOString() : null;
+}
+
+/**
+ * Horaires d'un programme (ISO 8601), lus dans `accessRights` de son asset : l'asset « stream » s'il y en a un, sinon
+ * le premier asset (un programme peut en porter plusieurs).
+ */
+function epgTimesOf(assets: unknown): { start: string; end: string } | null {
+  if (!Array.isArray(assets)) return null;
+  const records = assets.filter(isRecord);
+  const picked = records.find((asset) => asset['type'] === 'stream') ?? records[0];
+  if (picked === undefined) return null;
+  const rights = picked['accessRights'];
+  if (!isRecord(rights)) return null;
+  const start = isoOf(rights['startTime']);
+  const end = isoOf(rights['endTime']);
+  return start === null || end === null ? null : { start, end };
+}
+
+/** Programme compacté, s'il porte des horaires exploitables dans la fenêtre du guide ; null sinon. */
+function epgProgramOf(node: unknown, now: number): MolotovEpgProgram | null {
+  if (!isRecord(node)) return null;
+  const program = node['program'];
+  const times = epgTimesOf(node['assets']);
+  if (!isRecord(program) || times === null) return null;
+  const start = Date.parse(times.start);
+  const end = Date.parse(times.end);
+  if (end <= now - EPG_PAST_MS || start >= now + EPG_FUTURE_MS) return null;
+  const shortDescription = program['shortDescription'];
+  return {
+    id: pickString(program, ['programId', 'id']) ?? '',
+    title: pickString(program, CHANNEL_PROGRAM_TITLE_KEYS) ?? '',
+    start: times.start,
+    end: times.end,
+    type: pickString(program, ['type']),
+    desc: typeof shortDescription === 'string' && shortDescription.trim().length > 0 ? shortDescription.trim().slice(0, EPG_DESC_MAX) : null,
+    image: pickString(program, ['horizontalImage']),
+  };
+}
+
+/**
+ * Extraction du guide complet (`GET /epg`) : parcours défensif du document, les objets porteurs d'une chaîne et de ses
+ * programmes deviennent une chaîne du guide compacté. Les programmes sans horaire exploitable ou hors fenêtre
+ * (30 min dans le passé, 24 h devant) sont écartés, les autres triés par horaire de début.
+ */
+function extractEpg(document: unknown, now: number): MolotovEpgChannel[] {
+  const found = new Map<string, MolotovEpgChannel>();
+  const stack: unknown[] = [document];
+  let visited = 0;
+  while (stack.length > 0 && visited < MAX_VISITED_NODES) {
+    const node = stack.pop();
+    visited += 1;
+    if (Array.isArray(node)) {
+      for (const item of node) stack.push(item);
+      continue;
+    }
+    if (!isRecord(node)) continue;
+    const channel = node['channel'];
+    const programsWithAssets = node['programsWithAssets'];
+    if (isRecord(channel) && Array.isArray(programsWithAssets)) {
+      const id = pickString(channel, ['id', 'channelId', 'channel_id']);
+      const name = pickString(channel, CHANNEL_NAME_KEYS);
+      if (id !== null && name !== null && !found.has(id)) {
+        const programs = programsWithAssets
+          .map((item) => epgProgramOf(item, now))
+          .filter((program): program is MolotovEpgProgram => program !== null)
+          .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+        found.set(id, {
+          id,
+          name,
+          logo: pickString(channel, CHANNEL_LOGO_KEYS),
+          callSign: pickString(channel, CHANNEL_CALLSIGN_KEYS),
+          programs,
+        });
+      }
+    }
+    for (const value of Object.values(node)) {
+      if (typeof value === 'object' && value !== null) stack.push(value);
+    }
+  }
+  return [...found.values()].slice(0, MAX_CHANNELS);
+}
+
 /** Profil lu dans les réponses « profil » et « rang » de l'API (formes non figées : lecture défensive). */
 function profileFrom(profileDoc: unknown, tierDoc: unknown): MolotovProfile {
   const nested = isRecord(profileDoc) && isRecord(profileDoc.profile) ? profileDoc.profile : profileDoc;
@@ -780,6 +907,25 @@ function storeCatalogue(accountId: string, channels: MolotovChannel[], fetchedAt
     if (oldest !== undefined) catalogues.delete(oldest[0]);
   }
   catalogues.set(accountId, { channels, fetchedAt });
+}
+
+/** Guide compacté, servi depuis le cache mémoire tant qu'il est valide. */
+function cachedEpg(accountId: string): CachedEpg | undefined {
+  const entry = epgs.get(accountId);
+  if (entry === undefined) return undefined;
+  if (Date.now() - entry.fetchedAt >= EPG_TTL_MS) {
+    epgs.delete(accountId);
+    return undefined;
+  }
+  return entry;
+}
+
+function storeEpg(accountId: string, channels: MolotovEpgChannel[], fetchedAt: number): void {
+  if (epgs.size >= MAX_CACHED_EPGS) {
+    const oldest = [...epgs.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+    if (oldest !== undefined) epgs.delete(oldest[0]);
+  }
+  epgs.set(accountId, { channels, fetchedAt });
 }
 
 /** État de la connexion (jamais les jetons) : même corps pour `GET /account/molotov` et `POST /account/molotov/signin`. */
@@ -958,6 +1104,51 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     await state.saveProfile({ ...(state.profile ?? profileFrom(null, null)), channelCount: extracted.channels.length });
     c.header('Cache-Control', 'no-store');
     return sendJson(c, { channels: extracted.channels, fetchedAt, rawChannelCount: extracted.rawChannelCount });
+  });
+
+  /**
+   * GET /user/account/molotov/epg : guide TV complet (grille multi-heures), compacté pour l'app.
+   *
+   * L'amont `GET /epg` est public : l'appel ne porte **pas** de `Authorization` (identité client usuelle seule). Les
+   * horaires vivent dans `assets[].accessRights` ; la réponse est réduite aux chaînes et aux programmes de la fenêtre
+   * du guide (30 min dans le passé, 24 h devant), mémoire gardée dix minutes comme le catalogue.
+   */
+  router.get('/account/molotov/epg', async (c) => {
+    const session = await principalSession(users(), c, deps, backend);
+    const cached = cachedEpg(session.account.id);
+    if (cached !== undefined) {
+      c.header('Cache-Control', 'no-store');
+      return sendJson(c, { channels: cached.channels, fetchedAt: cached.fetchedAt });
+    }
+    let bytes: Uint8Array;
+    try {
+      const result = await fetchBytes(
+        fetchFn(),
+        `${MOLOTOV_API}/epg`,
+        {
+          method: 'GET',
+          headers: {
+            ...clientHeaders(),
+            'User-Agent': MOLOTOV_UA,
+            Origin: MOLOTOV_ORIGIN,
+            Referer: `${MOLOTOV_ORIGIN}/`,
+          },
+        },
+        EPG_TIMEOUT_MS,
+        { maxBytes: MAX_EPG_BYTES },
+      );
+      if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
+      bytes = result.bytes;
+    } catch {
+      throw new UserApiError(502, 'molotov_unavailable');
+    }
+    const document = parseJsonBytes(bytes);
+    if (!isRecord(document)) throw new UserApiError(502, 'molotov_unavailable');
+    const fetchedAt = Date.now();
+    const channels = extractEpg(document, fetchedAt);
+    storeEpg(session.account.id, channels, fetchedAt);
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { channels, fetchedAt });
   });
 
   /** POST /user/account/molotov/play : manifeste, DRM et battement de cœur d'une chaîne. */

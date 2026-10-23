@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decryptJson } from '../src/config/codec.js';
 import { MOLOTOV_API, MOLOTOV_HEADERS, MOLOTOV_UA } from '../src/user/molotov.js';
-import { json, mockUpstream, SECRET, type MockUpstream } from './harness-core.js';
+import { json, mockUpstream, SECRET, text, type MockUpstream } from './harness-core.js';
 import { addKidProfile, request, startAdmin, type AdminRig } from './admin-harness.js';
 import { createProfileVia, type ErrorBody } from './user-harness.js';
 
@@ -45,6 +45,18 @@ const ASSET = {
   heartbeat: { method: 'POST', url: `${MOLOTOV_API}/vapi/heartbeat/v2?channelId=ch-1&id=LIVE_1&type=live`, payload: { passback: { a: 1 }, pdt: '@', progress: '@' } },
 };
 
+/** Horaires ISO du guide amont. */
+const iso = (at: number) => new Date(at).toISOString();
+
+/** Corps de `GET /epg` : chaînes et programmes, horaires dans `assets[].accessRights`. */
+const epgDoc = (entries: Array<{ channel: Record<string, unknown>; programs: Record<string, unknown>[] }>) => ({
+  paginationState: { hasNextPage: false },
+  response: entries.map((entry) => ({ type: 'channelWithProgramAssets', data: { channel: entry.channel, programsWithAssets: entry.programs } })),
+});
+
+/** Instant de référence des tests du guide : chaque test avance l'horloge au-delà du cache (10 min). */
+const EPG_BASE = Date.now();
+
 interface StatusBody {
   connected: boolean;
   tier: string | null;
@@ -71,6 +83,17 @@ interface PlayBody {
   expiresAt: number;
 }
 
+interface EpgBody {
+  channels: Array<{
+    id: string;
+    name: string;
+    logo: string | null;
+    callSign: string | null;
+    programs: Array<{ id: string; title: string; start: string; end: string; type: string | null; desc: string | null; image: string | null }>;
+  }>;
+  fetchedAt: number;
+}
+
 describe('compte Molotov', () => {
   let rig: AdminRig;
   let upstream: MockUpstream;
@@ -84,6 +107,8 @@ describe('compte Molotov', () => {
   let verifyReply: () => Response = () => json({ id_token: ID_TOKEN, refresh_token: REFRESH_TOKEN });
   /** Réponse de `PUT /mfa/email/resend`, pilotée par les tests (le jeton de défi peut changer). */
   let resendReply: () => Response = () => json({ payload: { token: NEW_MFA_TOKEN } });
+  /** Réponse de `GET /epg`, pilotée par les tests (guide public, sans Authorization). */
+  let epgReply: () => Response = () => json(epgDoc([]));
 
   beforeAll(async () => {
     upstream = mockUpstream({
@@ -99,6 +124,7 @@ describe('compte Molotov', () => {
       [`${MOLOTOV_API}/v2/signin`]: () => signinReply(),
       [`${MOLOTOV_API}/mfa/verify`]: () => verifyReply(),
       [`${MOLOTOV_API}/mfa/email/resend`]: () => resendReply(),
+      [`${MOLOTOV_API}/epg`]: () => epgReply(),
       [`${MOLOTOV_API}/papi/v1/config`]: () => {
         configCalls += 1;
         return configCalls === 1 ? json({ error: 'expired' }, 401) : json({ ok: true });
@@ -201,6 +227,174 @@ describe('compte Molotov', () => {
     expect(res.body.channels[0]?.live).toBe(true);
     expect(res.body.rawChannelCount).toBe(3);
     expect(res.body.fetchedAt).toBeGreaterThan(0);
+  });
+
+  it('guide TV : réponse compactée, programmes et horaires ISO', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(EPG_BASE);
+    try {
+      epgReply = () =>
+        json(
+          epgDoc([
+            {
+              channel: { id: '600046', name: 'TF1', displayName: 'TF1', logoOnDarkUrl: 'https://img.example/tf1.png', callSign: 'tf1' },
+              programs: [
+                {
+                  program: {
+                    programId: '6545672_46',
+                    title: 'Journal',
+                    type: 'episode',
+                    shortDescription: 'x'.repeat(250),
+                    horizontalImage: 'https://img.example/journal.jpg',
+                  },
+                  assets: [{ type: 'stream', accessRights: { startTime: iso(EPG_BASE - 600_000), endTime: iso(EPG_BASE + 600_000) } }],
+                },
+              ],
+            },
+          ]),
+        );
+      await connect();
+      const res = await request<EpgBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(res.body.fetchedAt).toBe(EPG_BASE);
+      expect(res.body.channels).toHaveLength(1);
+      const channel = res.body.channels[0];
+      expect(channel?.id).toBe('600046');
+      expect(channel?.name).toBe('TF1');
+      expect(channel?.logo).toBe('https://img.example/tf1.png');
+      expect(channel?.callSign).toBe('tf1');
+      expect(channel?.programs).toEqual([
+        {
+          id: '6545672_46',
+          title: 'Journal',
+          start: iso(EPG_BASE - 600_000),
+          end: iso(EPG_BASE + 600_000),
+          type: 'episode',
+          desc: 'x'.repeat(200),
+          image: 'https://img.example/journal.jpg',
+        },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('guide TV : les programmes hors fenêtre ou sans horaire sont écartés, les autres triés', async () => {
+    const now = EPG_BASE + 11 * 60_000;
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      epgReply = () =>
+        json(
+          epgDoc([
+            {
+              channel: { id: '600046', name: 'TF1', displayName: 'TF1' },
+              programs: [
+                // Terminé depuis deux heures : hors fenêtre.
+                {
+                  program: { programId: 'vieux', title: 'Vieux programme' },
+                  assets: [{ type: 'stream', accessRights: { startTime: iso(now - 3 * 3600_000), endTime: iso(now - 2 * 3600_000) } }],
+                },
+                // Déclaré avant le courant mais commence après : la liste reste triée par horaire de début.
+                {
+                  program: { programId: 'suivant', title: 'Programme suivant' },
+                  assets: [{ type: 'stream', accessRights: { startTime: iso(now + 600_000), endTime: iso(now + 1200_000) } }],
+                },
+                // Premier asset hors « stream » : les horaires viennent de l'asset stream.
+                {
+                  program: { programId: 'courant', title: 'Programme courant' },
+                  assets: [
+                    { type: 'vod', accessRights: { startTime: iso(now - 3 * 3600_000), endTime: iso(now - 2 * 3600_000) } },
+                    { type: 'stream', accessRights: { startTime: iso(now - 600_000), endTime: iso(now + 600_000) } },
+                  ],
+                },
+                // Dans plus de 24 h : hors fenêtre.
+                {
+                  program: { programId: 'lointain', title: 'Programme lointain' },
+                  assets: [{ type: 'stream', accessRights: { startTime: iso(now + 25 * 3600_000), endTime: iso(now + 26 * 3600_000) } }],
+                },
+                // Sans horaire exploitable.
+                { program: { programId: 'sans-horaire', title: 'Sans horaire' }, assets: [{ type: 'stream' }] },
+              ],
+            },
+          ]),
+        );
+      const res = await request<EpgBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(200);
+      const programs = res.body.channels[0]?.programs ?? [];
+      expect(programs.map((p) => p.id)).toEqual(['courant', 'suivant']);
+      expect(programs[0]?.start).toBe(iso(now - 600_000));
+      expect(programs[0]?.end).toBe(iso(now + 600_000));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("guide TV : deux appels ne font qu'un appel amont (cache dix minutes)", async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(EPG_BASE + 22 * 60_000);
+    try {
+      epgReply = () => json(epgDoc([{ channel: { id: '600046', name: 'TF1' }, programs: [] }]));
+      const before = upstream.callsTo(`${MOLOTOV_API}/epg`).length;
+      const first = await request<EpgBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      const second = await request<EpgBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(upstream.callsTo(`${MOLOTOV_API}/epg`).length).toBe(before + 1);
+      expect(second.body.channels).toEqual(first.body.channels);
+      expect(second.body.fetchedAt).toBe(first.body.fetchedAt);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("guide TV : l'appel amont ne porte pas de Authorization", async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(EPG_BASE + 33 * 60_000);
+    try {
+      epgReply = () => json(epgDoc([{ channel: { id: '600046', name: 'TF1' }, programs: [] }]));
+      const res = await request(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(200);
+      const call = upstream.callsTo(`${MOLOTOV_API}/epg`).at(-1);
+      expect(call?.headers['authorization']).toBeUndefined();
+      expect(call?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
+      expect(call?.headers['user-agent']).toBe(MOLOTOV_UA);
+      expect(call?.headers['origin']).toBe('https://app.molotov.tv');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('guide TV : amont en panne ou corps illisible, 502 molotov_unavailable', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(EPG_BASE + 44 * 60_000);
+    try {
+      epgReply = () => json({ error: 'boom' }, 500);
+      const down = await request<ErrorBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(down.status).toBe(502);
+      expect(down.body.error).toBe('molotov_unavailable');
+      epgReply = () => text('pas du json');
+      const unreadable = await request<ErrorBody>(rig.app, 'GET', '/user/account/molotov/epg', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(unreadable.status).toBe(502);
+      expect(unreadable.body.error).toBe('molotov_unavailable');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('lecture : manifeste, DRM et battement de cœur', async () => {

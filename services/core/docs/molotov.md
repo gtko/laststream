@@ -88,6 +88,7 @@ Refresh : `POST https://api-eu.fubo.tv/refresh` (avec le `refreshToken`).
 ```
 GET /papi/v1/config                       (public)
 GET /papi/v1/page/live-tv                 (2 Mo : catalogue « En direct »)
+GET /epg                                  (public, ~6 Mo : guide TV complet)
 GET /papi/v1/main-navigation
 GET /v3/location                          (géo/postal)
 GET /rights/v2/location                   ({purchasable,watchable})
@@ -164,6 +165,7 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 | `DELETE` | `/user/account/molotov` | `{ ok: true }` (déconnexion) |
 | `GET` | `/user/account/molotov/credentials` | `{ idToken, refreshToken, expiresAt }` (usage appareil direct ; chiffré en transit par le TLS du worker) |
 | `GET` | `/user/account/molotov/channels` | `{ channels: [{ id, name, callSign, logo, group, live, program }], fetchedAt, rawChannelCount }` (compact, cache ~5 min) |
+| `GET` | `/user/account/molotov/epg` | `{ channels: [{ id, name, logo, callSign, programs: [{ id, title, start, end, type, desc, image }] }], fetchedAt }` (guide TV complet, grille multi-heures : `start`/`end` en ISO 8601 depuis `assets[].accessRights`, `desc` tronqué à 200 car., fenêtre 30 min / +24 h, cache ~10 min ; amont `GET /epg` **public**, sans `Authorization`) |
 | `POST` | `/user/account/molotov/play` | `{ channelId }` → `{ channelId, manifestUrl, drm: { scheme, licenseUrl, licenseToken }, heartbeatUrl, heartbeatPayload, assetId, expiresAt }` |
 | `POST` | `/user/account/molotov/license` | `{ licenseUrl, token, challenge (base64) }` → octets de licence (`application/octet-stream`, **jamais** du texte) |
 | `POST` | `/user/account/molotov/heartbeat` | `{ channelId, assetId?, progress, payload? }` → `{ ok: true }` (`payload` = charge utile amont ; `pdt`/`progress` sont remplacés) |
