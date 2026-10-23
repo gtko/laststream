@@ -363,11 +363,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .src-cfg { flex: none; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-2); display: inline-grid; place-items: center; color: var(--muted); }
 .src-cfg svg { width: 18px; height: 18px; }
 .src-cfg:hover, .src-cfg:focus-visible { border-color: var(--accent); color: var(--text); }
-.src-cfg-help { margin: 0 14px 14px 52px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 8px; }
-.src-cfg-help[hidden] { display: none; }
-.src-cfg-help .src-cfg-steps { margin: 0; padding-left: 20px; }
 .src-cfg-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.src-cfg-status { margin: 0; }
 .src-safety { margin: 0 14px 0 52px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border-left: 3px solid #fb923c; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
 .src-safety[hidden] { display: none; }
 .src-safety p { margin: 0; }
@@ -376,9 +372,33 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
   .src-meta { flex-basis: 50%; }
   .src-toggle span { display: none; }
   .src-edit { padding-left: 14px; }
-  .src-cfg-help, .src-safety { margin-left: 14px; margin-right: 14px; }
+  .src-safety { margin-left: 14px; margin-right: 14px; }
 }
 @media (prefers-reduced-motion: reduce) { .src-dot.is-load { animation: none; } }
+
+/* ---------- Configuration d'un addon dans l'app ---------- */
+.modal.addon-cfg-warn { width: min(480px, 100%); }
+.addon-cfg-pane { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.addon-cfg-pane h2, .addon-cfg-head h2 { margin: 0; font-size: 18px; padding-right: 48px; }
+.addon-cfg-pane p { margin: 0; }
+.addon-cfg-pane summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--muted); }
+.addon-cfg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.addon-cfg-actions .btn, .addon-cfg-head .btn, .addon-cfg-row .btn { min-height: 44px; }
+.modal.addon-cfg { width: min(980px, 100%); height: min(860px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; }
+#modal-body:has(.addon-cfg-head) { display: contents; }
+.addon-cfg-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; padding: 14px 64px 4px 18px; }
+.addon-cfg-empty { margin: 0; padding: 0 18px 8px; }
+.addon-cfg-view { flex: 1; min-height: 0; display: flex; background: #fff; }
+.addon-cfg-view iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.addon-cfg-noembed { margin: 0; padding: 24px; color: #222; }
+.addon-cfg-foot { padding: 12px 18px 16px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line-2); }
+.addon-cfg-foot p { margin: 0; }
+.addon-cfg-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.addon-cfg-row input { flex: 1 1 220px; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); }
+@media (max-width: 640px) {
+  .modal-backdrop:has(.addon-cfg) { padding: 0; }
+  .modal.addon-cfg { width: 100%; height: 100dvh; max-height: none; border-radius: 0; border: 0; }
+}
 
 /* ---------- Défilement infini ---------- */
 .inf { padding: 8px var(--gutter) 40px; text-align: center; min-height: 24px; }

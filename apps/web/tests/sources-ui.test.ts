@@ -187,32 +187,45 @@ describe('configuration de l’addon', () => {
     expect(url.value).toBe('https://configurable.example/cfg123/manifest.json'); // stremio:// converti dans le champ
   });
 
-  it('ouvre la configuration dans un nouvel onglet (web) et affiche l’aide ; le menu propose ouvrir et copier', () => {
+  it('l’engrenage ouvre l’avertissement (aucune page chargée) ; le menu propose ouvrir et copier', () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     const card = cards()[3];
     (card.querySelector('.src-cfg') as HTMLElement).click();
-    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
-    expect((card.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
-    expect(card.querySelector('.src-cfg-steps')!.textContent).toContain('Configure l’addon dans la page ouverte');
+    expect(document.querySelector('#modal .addon-cfg-warn')).not.toBeNull();
+    expect(document.querySelector('#modal iframe')).toBeNull();
+    expect(open).not.toHaveBeenCalled();
+    (document.querySelector('[data-acw-cancel]') as HTMLElement).click();
+    expect((document.getElementById('modal') as HTMLElement).hidden).toBe(true);
     (card.querySelector('[data-src-menu]') as HTMLElement).click();
     expect(card.querySelector('[data-src-open-config]')).not.toBeNull();
     expect(card.querySelector('[data-src-copy]')).not.toBeNull();
     open.mockRestore();
   });
 
-  it('« Coller » remplit le champ avec le lien d’installation, relit le manifest ; sans lien, le dit', async () => {
+  it('« Coller » dans la fenêtre remplit le champ de la carte, relit le manifest et ferme ; sans lien, le dit', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clip });
     const card = cards()[3];
-    (card.querySelector('[data-src-paste]') as HTMLElement).click();
+    (card.querySelector('.src-cfg') as HTMLElement).click();
+    (document.querySelector('[data-acw-go]') as HTMLElement).click();
+    clip.readText.mockResolvedValueOnce('bonjour');
+    (document.querySelector('[data-acw-paste]') as HTMLElement).click();
+    await settle(50);
+    expect(document.querySelector('.addon-cfg-status')!.textContent).toContain('Pas de lien d’installation');
+    (document.querySelector('[data-acw-paste]') as HTMLElement).click();
     await settle(200);
     const url = card.querySelector('[data-sf="url"]') as HTMLInputElement;
     expect(url.value).toBe('https://configurable.example/cfg456/manifest.json');
-    expect(card.querySelector('.src-cfg-status')!.textContent).toContain('Addon lu');
-    clip.readText.mockResolvedValueOnce('bonjour');
-    (card.querySelector('[data-src-paste]') as HTMLElement).click();
-    await settle(50);
-    expect(url.value).toBe('https://configurable.example/cfg456/manifest.json');
-    expect(card.querySelector('.src-cfg-status')!.textContent).toContain('Pas de lien');
+    expect((document.getElementById('modal') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('un clic sur le fond ne ferme pas la fenêtre de configuration', () => {
+    (cards()[3].querySelector('.src-cfg') as HTMLElement).click();
+    (document.querySelector('[data-acw-go]') as HTMLElement).click();
+    const m = document.getElementById('modal') as HTMLElement;
+    m.click();
+    expect(m.hidden).toBe(false);
+    (document.getElementById('modal-close') as HTMLElement).click();
+    expect(m.hidden).toBe(true);
   });
 
   it('« Copier l’URL » copie l’adresse du manifest ; retirer ramène à trois sources', async () => {
@@ -269,12 +282,14 @@ describe('avertissement « torrents seulement » (diagnostic quotidien)', () => 
     expect(readable.querySelector('[data-safe-config]')).toBeNull();
   });
 
-  it('« Configurer » ouvre la page de l’addon hors de l’app et affiche l’aide de collage', async () => {
+  it('« Configurer » ouvre l’avertissement de configuration, pas le navigateur', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     const torrents = cards()[0];
     (torrents.querySelector('[data-safe-config]') as HTMLElement).click();
-    expect(open).toHaveBeenCalledWith('https://configurable.example/cfg123/configure', '_blank', 'noopener');
-    expect((torrents.querySelector('.src-cfg-help') as HTMLElement).hidden).toBe(false);
+    expect(document.querySelector('#modal .addon-cfg-warn')).not.toBeNull();
+    expect(document.querySelector('#modal iframe')).toBeNull();
+    expect(open).not.toHaveBeenCalled();
+    (document.querySelector('[data-acw-cancel]') as HTMLElement).click();
     open.mockRestore();
   });
 

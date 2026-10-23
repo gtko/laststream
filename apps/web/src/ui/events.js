@@ -467,7 +467,7 @@ document.addEventListener('submit', (e) => {
 });
 modalClose.addEventListener('click', () => closeModal());
 modal.addEventListener('click', (e) => {
-  if (e.target === modal) closeModal();
+  if (e.target === modal && !modal.querySelector('.addon-cfg')) closeModal(); // pas de fermeture par clic sur le fond pendant la configuration d'un addon
 });
 window.addEventListener('popstate', () => { state.popping = true; });
 window.addEventListener('hashchange', route);

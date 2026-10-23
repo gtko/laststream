@@ -5,6 +5,7 @@ import { isMask, testSource } from '../data/configApi';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { checkKey, classifyStreams, isDue, readCheck, writeCheck } from '../data/addonSafety';
 import { rememberAddonName } from '../sources/deviceFetch';
+import { openAddonConfig } from './addonConfig.js';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
 import { esc } from './util.js';
@@ -208,14 +209,6 @@ function headHTML(s, pos) {
     '<button type="button" role="menuitem" data-src-remove>Retirer</button></span></span>';
 }
 
-/** Aide affichée sous la ligne après « Configurer » : l’utilisateur revient coller le lien d’installation. */
-function cfgHelpHTML() {
-  return '<div class="src-cfg-help" hidden>' +
-    '<ol class="set-hint src-cfg-steps"><li>Configure l’addon dans la page ouverte.</li><li>Copie le lien d’installation.</li><li>Colle-le ici.</li></ol>' +
-    '<div class="src-cfg-actions"><button type="button" class="btn btn-ghost btn-sm" data-src-paste>Coller</button></div>' +
-    '<p class="set-hint src-cfg-status" aria-live="polite"></p></div>';
-}
-
 function editHTML(s) {
   const f = (label, inner, hint) => '<label class="tv-field">' + esc(label) + inner + (hint ? '<span class="set-hint">' + esc(hint) + '</span>' : '') + '</label>';
   const mask = isMask(s.apiKey) ? (s.apiKey.last4 ? 'Enregistrée (' + s.apiKey.last4 + ')' : 'Enregistrée') : 'Non définie';
@@ -230,7 +223,7 @@ function cardHTML(s, pos) {
   const status = (info.get(s.id) || {}).status || 'unk';
   return '<div class="src-card' + (s.enabled ? '' : ' is-off') + (s.open ? ' is-open' : '') + '" data-srcid="' + s.id + '" data-status="' + status + '">' +
     '<div class="src-head">' + headHTML(s, pos) + '</div>' +
-    (s.type === 'torznab' ? '' : safetyRow(s.id) + cfgHelpHTML()) +
+    (s.type === 'torznab' ? '' : safetyRow(s.id)) +
     '<div class="src-edit"' + (s.open ? '' : ' hidden') + '>' + editHTML(s) + '</div></div>';
 }
 
@@ -328,35 +321,29 @@ function openOutside(url) {
   return connectShell().then((t) => { if (t) openExternal(t, url); else openWeb(url); }, () => openWeb(url));
 }
 
-/** Le lien d’installation collé remplit le champ URL, relit le manifest ; l’enregistrement reste celui de la page. */
-async function pasteInstallLink(card, s) {
-  const status = card.querySelector('.src-cfg-status');
+/** Le lien d’installation remplit le champ URL (panneau d’édition ouvert), relit le manifest ; l’enregistrement reste celui de la page. */
+async function applyInstallLink(card, s, link) {
   const input = card.querySelector('[data-sf="url"]');
-  const say = (msg) => { if (status) status.textContent = msg; };
-  let text = '';
-  try { text = navigator.clipboard && navigator.clipboard.readText ? await navigator.clipboard.readText() : ''; } catch (_) { text = ''; }
-  const link = toHttpsUrl(text);
-  if (!/^https?:\/\//i.test(link)) {
-    say('Pas de lien dans le presse-papiers : copie le lien d’installation, puis colle-le dans le champ URL ci-dessous.');
-    if (input) input.focus();
-    return;
-  }
-  if (input) input.value = link;
+  if (input) input.value = toHttpsUrl(link);
+  s.url = toHttpsUrl(link);
   syncFromDom();
-  say('Lecture de l’addon…');
   await loadInfo(s);
+  const n = card.querySelector('[data-sf="name"]');
+  if (n && s.name) n.value = s.name;
   const i = info.get(s.id) || {};
-  say(i.status === 'ok' ? 'Addon lu : ' + s.name + '. Enregistre la page pour valider.'
-    : i.status === 'warn' ? 'Addon lu, mais sans ressource « stream ». Enregistre la page pour valider.'
-      : 'Lien collé, mais l’addon ne répond pas : ' + (i.error || 'vérifie le lien.'));
+  return { status: i.status === 'ok' || i.status === 'warn' ? i.status : 'ko', error: i.error || '' };
 }
 
-/** « Configurer » : ouvre la page /configure de l’addon et affiche l’aide de collage sous la ligne. */
-function openConfigure(card, s) {
+/** « Configurer » : avertissement sur la clé du débrideur, puis la page /configure de l’addon dans une fenêtre de l’app. */
+function openConfigure(card, s, opener) {
   const page = configureUrl(s.url);
-  const help = card.querySelector('.src-cfg-help');
-  if (help) help.hidden = false;
-  if (page) void openOutside(page);
+  if (!page) return;
+  openAddonConfig({
+    name: s.name || (info.get(s.id) || {}).name || '',
+    page,
+    openOutside,
+    onApply: (link) => applyInstallLink(card, s, link),
+  }, opener);
 }
 
 // ---------- Addons « torrents seulement » ----------
@@ -462,7 +449,7 @@ detailEl.addEventListener('click', (e) => {
     closeMenus();
     syncFromDom();
     const s = list.find((x) => x.id === id);
-    if (s) openConfigure(card, s);
+    if (s) openConfigure(card, s, t.closest('[data-src-config], [data-src-open-config], [data-safe-config]'));
     return;
   }
   if (t.closest('[data-src-copy]')) {
@@ -474,12 +461,6 @@ detailEl.addEventListener('click', (e) => {
     if (!text) return;
     if (!navigator.clipboard || !navigator.clipboard.writeText) { toast('Copie impossible'); return; }
     navigator.clipboard.writeText(text).then(() => toast('URL copiée'), () => toast('Copie impossible'));
-    return;
-  }
-  if (t.closest('[data-src-paste]')) {
-    e.preventDefault();
-    const s = list.find((x) => x.id === id);
-    if (s) void pasteInstallLink(card, s);
     return;
   }
   if (t.closest('[data-src-edit]')) {
