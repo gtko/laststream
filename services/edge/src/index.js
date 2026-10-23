@@ -305,6 +305,10 @@ function appFile(pathname) {
   if (/^\/app\/windows\/Laststream-Setup-\d+\.\d+\.\d+\.exe$/.test(pathname)) {
     return { key: 'windows/' + name, type: 'application/vnd.microsoft.portable-executable', attachment: true, name };
   }
+  // Flux de version Windows (voir laststream-shell-ng/upload.ps1) : réécrit à chaque release, donc cache court.
+  if (pathname === '/app/windows/latest.json') {
+    return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300' };
+  }
   return null;
 }
 
@@ -324,7 +328,7 @@ export default {
       if (file.attachment) headers.set('content-disposition', `attachment; filename="${file.name}"`);
       headers.set('etag', obj.httpEtag);
       headers.set('accept-ranges', 'bytes');
-      headers.set('cache-control', 'public, max-age=86400, immutable');
+      headers.set('cache-control', file.cache ?? 'public, max-age=86400, immutable');
       if (obj.range && request.headers.has('range')) {
         const r = obj.range;
         const start = 'offset' in r ? r.offset : obj.size - r.suffix;
