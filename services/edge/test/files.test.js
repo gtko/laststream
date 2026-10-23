@@ -6,7 +6,7 @@ const BYTES = new Uint8Array(100).map((_, i) => i);
 const fakeR2 = (seen) => ({
   async get(key, opts) {
     seen.push(key);
-    if (key !== 'windows/Laststream-Setup-1.0.0.exe' && key !== 'android/laststream-1700000000.apk') return null;
+    if (!['windows/Laststream-Setup-1.0.0.exe', 'android/laststream-1700000000.apk', 'windows/latest.json'].includes(key)) return null;
     const rh = opts?.range?.get?.('range');
     const m = rh && /^bytes=(\d+)-(\d+)$/.exec(rh);
     const body = m ? BYTES.slice(+m[1], +m[2] + 1) : BYTES;
@@ -50,5 +50,35 @@ describe('installateur Windows depuis R2', () => {
     const a = await get('/app/android/laststream-1700000000.apk');
     assert.equal(a.headers.get('content-type'), 'application/vnd.android.package-archive');
     assert.equal(a.headers.get('content-disposition'), null);
+  });
+});
+
+describe('flux de version Windows depuis R2', () => {
+  const F = '/app/windows/latest.json';
+  it('GET : 200, JSON, cache court, sans attachment', async () => {
+    const r = await get(F);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'application/json');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+    assert.equal(r.headers.get('content-disposition'), null);
+  });
+  it('HEAD sans corps, plage -> 206', async () => {
+    const h = await get(F, { method: 'HEAD' });
+    assert.equal(h.status, 200);
+    assert.equal(await h.text(), '');
+    const r = await get(F, { headers: { range: 'bytes=10-19' } });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers.get('content-range'), 'bytes 10-19/100');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+  });
+  it('l\'installeur garde son cache immuable ; POST refusé ; autres JSON refusés', async () => {
+    const exe = await get('/app/windows/Laststream-Setup-1.0.0.exe');
+    assert.equal(exe.headers.get('cache-control'), 'public, max-age=86400, immutable');
+    assert.equal((await get(F, { method: 'POST' })).status, 405);
+    const seen = [];
+    for (const p of ['/app/windows/other.json', '/app/windows/latest.json.bak', '/app/android/latest.json']) {
+      assert.notEqual((await get(p, {}, seen)).status, 200, p);
+    }
+    assert.deepEqual(seen, []);
   });
 });
