@@ -13,6 +13,9 @@ import { emitDataEvent, type DataKind } from './events';
  * écritures optimistes envoyées en arrière-plan. Le stockage local reste le repli hors ligne (voir auth). */
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w342';
+/** Vrai si le serveur a répondu et refusé l'écriture (et non : réseau coupé, où l'affichage optimiste reste en place). */
+const refused = (err: unknown): boolean => err instanceof UserApiError && err.code !== 'network' && err.status > 0;
+
 const kindOf = (t: 'movie' | 'tv'): MediaKind => (t === 'tv' ? 'series' : 'movie');
 const typeOf = (k: MediaKind): 'movie' | 'tv' => (k === 'series' ? 'tv' : 'movie');
 /** Nombre vu d'après la réponse d'un titre : 1 pour un film vu, épisodes terminés hors saison 0 pour une série. */
@@ -389,8 +392,17 @@ export class ServerUserStore implements UserStore {
   addToLibrary(entry: Omit<LibraryEntry, 'addedAt'> & { addedAt?: number }): void {
     if (this.inLibrary(`${entry.type}:${entry.id}`)) return;
     this.library.push({ ...entry, addedAt: entry.addedAt ?? Date.now() });
-    this.send(putLibrary(this.active.id, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }).catch(() => undefined));
-    this.changed('library', `${entry.type}:${entry.id}`);
+    const added = this.library[this.library.length - 1];
+    const key = `${entry.type}:${entry.id}`;
+    const pid = this.active.id;
+    this.send(putLibrary(pid, kindOf(entry.type), entry.id, { title: entry.title || String(entry.id), poster: posterUrlOf(entry.poster) }).catch((err) => {
+      // Le serveur refuse : l'ajout est annulé à l'écran. Hors ligne, l'ajout reste affiché (comme avant).
+      if (refused(err) && this.active.id === pid && this.library.includes(added)) {
+        this.library = this.library.filter((x) => x !== added);
+        this.changed('library', key);
+      }
+    }));
+    this.changed('library', key);
   }
   /** Ajout attendu (migration) : le cache n'est mis à jour qu'après la réponse du serveur. */
   async addToLibraryNow(entry: LibraryEntry, profileId: string): Promise<void> {
@@ -402,7 +414,14 @@ export class ServerUserStore implements UserStore {
     const e = this.library.find((x) => `${x.type}:${x.id}` === key);
     if (!e) return;
     this.library = this.library.filter((x) => x !== e);
-    this.send(deleteLibrary(this.active.id, kindOf(e.type), e.id).catch(() => undefined));
+    const pid = this.active.id;
+    this.send(deleteLibrary(pid, kindOf(e.type), e.id).catch((err) => {
+      // Le serveur refuse : le titre revient dans la bibliothèque. Hors ligne, le retrait reste affiché.
+      if (refused(err) && this.active.id === pid && !this.inLibrary(key)) {
+        this.library = [...this.library, e];
+        this.changed('library', key);
+      }
+    }));
     this.changed('library', key);
   }
   toggleLibrary(entry: Omit<LibraryEntry, 'addedAt'>): boolean {

@@ -125,6 +125,9 @@ function closeMenu() {
 /** Un clic répété pendant l'enregistrement (ou juste après) est ignoré : la bascule ne s'annule pas toute seule (ODY-237). */
 const once = (key, el, fn) => runOnce(key, fn, { el, cooldown: TOGGLE_COOLDOWN_MS });
 
+/** Verrou « saison » : une clé par saison, pour que marquer la saison 2 juste après la 1 ne soit pas ignoré (ODY-257). */
+export const seasonLockKey = (key, season) => 'season:' + key + ':' + season;
+
 document.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
@@ -145,7 +148,7 @@ document.addEventListener('click', async (e) => {
   const seasonBtn = t.closest('[data-season-watch]');
   if (seasonBtn) {
     e.preventDefault();
-    await once('season:' + m.key, seasonBtn, () => {
+    await once(seasonLockKey(m.key, state.seasonEps && state.seasonEps.n), seasonBtn, () => {
       const refs = seasonAired();
       return mark(m.key, refs, !allWatched(m.key, refs));
     });

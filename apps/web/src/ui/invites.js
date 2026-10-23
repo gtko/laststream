@@ -3,6 +3,7 @@
  * le nom du filleul. Un billet révoqué par l'administrateur n'offre aucune action. Le propriétaire du serveur règle le quota d'un compte. */
 import '../styles/tickets.css';
 import { auth } from '../data/auth';
+import { runOnce } from './busy.js';
 import { shareBase } from '../data/shareBase';
 import { safeImageUrl } from '../data/imageUrl';
 import { inviteLink } from '../data/invite';
@@ -702,13 +703,13 @@ detailEl.addEventListener('click', async (e) => {
   const sel = t.closest('[data-tk-sel]');
   if (sel) { selectTicket(sel.dataset.tkSel); return; }
   const pick = t.closest('[data-tk-pick]');
-  if (pick) { await togglePick(pick.dataset.tkPick); return; }
+  if (pick) { await runOnce('tk-pick:' + pick.dataset.tkPick, () => togglePick(pick.dataset.tkPick)); return; }
   if (busy) return;
-  const run = async (fn) => { busy = true; try { await fn(); } finally { busy = false; } };
+  const run = async (fn, el = null) => { busy = true; try { await runOnce('tk-act', fn, { el }); } finally { busy = false; } };
   const copy = t.closest('[data-tk-copy]');
-  if (copy) { e.preventDefault(); await run(() => copyTicket(copy.dataset.tkCopy)); return; }
+  if (copy) { e.preventDefault(); await run(() => copyTicket(copy.dataset.tkCopy), copy); return; }
   const share = t.closest('[data-tk-share]');
-  if (share) { e.preventDefault(); await run(() => shareTicket(share.dataset.tkShare)); return; }
+  if (share) { e.preventDefault(); await run(() => shareTicket(share.dataset.tkShare), share); return; }
   const rev = t.closest('[data-tk-revoke]');
   if (rev) {
     e.preventDefault();

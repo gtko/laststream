@@ -7,6 +7,7 @@ let ctx: typeof import('../src/ui/ctxmenu.js');
 let stateMod: typeof import('../src/ui/state.js');
 let homeFilters: typeof import('../src/data/homeFilters');
 let icons: typeof import('../src/ui/icons.js');
+let busy: typeof import('../src/ui/busy.js');
 
 const MODEL = { key: 'movie:77', name: 'Alien', posterPath: '/a.jpg' };
 
@@ -18,11 +19,13 @@ beforeAll(async () => {
   stateMod = await import('../src/ui/state.js');
   homeFilters = await import('../src/data/homeFilters');
   icons = await import('../src/ui/icons.js');
+  busy = await import('../src/ui/busy.js');
   await import('../src/ui/events.js');
 });
 
 afterEach(() => {
   ctx.closeCtx(false);
+  busy.resetBusy(); // le verrou des actions du menu (ODY-257) ne doit pas passer d'un test à l'autre
   document.getElementById('fiche-test')?.remove();
   homeFilters.unhideTitles(['movie:77']);
   (stateMod.state as any).model = null;

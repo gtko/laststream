@@ -10,6 +10,7 @@ import { toggleHidden } from './homeprefs.js';
 import { fetchFull } from './ficheModel.js';
 import { getDetail } from './catalog.js';
 import { isFuture } from './dates.js';
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { toast } from './dom.js';
 import { downloadsAllowed, startDownload } from './downloadBtn.js';
 import { platformAvailability } from '../downloads/service';
@@ -169,6 +170,12 @@ async function toggleSeriesWatched(key) {
   }
 }
 
+// ---------- Verrou des actions du menu (ODY-257) ----------
+/** Bascules (bibliothèque, vu, favori, masquer) : un second choix dans le délai de redéclenchement ne les annule pas. */
+const LOCKED_ITEMS = new Set(['lib', 'seen', 'upto', 'fav', 'hide', 'remove']);
+/** Une clé par cible et par action : l'action tourne une fois à la fois, même si le menu est rouvert aussitôt. */
+export const ctxLockKey = (t, id) => 'ctx:' + t.kind + ':' + (t.key || (t.model && t.model.key) || t.id || '') + (t.season != null ? ':' + t.season + ':' + t.episode : '') + ':' + id;
+
 // ---------- Titres hors catalogue chargé ----------
 /** Titre dont la clé n'est pas dans state.byKey (émission, rangée à venir, mise en avant hors liste) : nom et affiche viennent de la fiche, à l'action. */
 function minimalItem(key) {
@@ -324,7 +331,7 @@ export function openCtx(t, x, y) {
     e.stopPropagation();
     const item = items.find((i) => i.id === b.dataset.ctx);
     closeCtx(false);
-    if (item) Promise.resolve(item.run()).catch((err) => {
+    if (item) Promise.resolve(runOnce(ctxLockKey(t, item.id), () => item.run(), { cooldown: LOCKED_ITEMS.has(item.id) ? TOGGLE_COOLDOWN_MS : 0 })).catch((err) => {
       console.error('[laststream] menu contextuel : « ' + item.id + ' » impossible', err);
       toast('Action impossible : ' + reasonOf(err));
     });

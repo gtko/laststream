@@ -13,10 +13,10 @@ let seq = 0;
 /** Délai de redéclenchement par défaut pour une bascule (bibliothèque, vu, rappel, favori) : un double clic ne revient pas en arrière. */
 export const TOGGLE_COOLDOWN_MS = 350;
 /**
- * Après le lancement d'une lecture ou de l'ouverture des sources : un second appui (double clic) ne relance pas la session qui démarre.
+ * Après le lancement d'une lecture ou de l'ouverture des sources : un second appui (double clic, ou triple clic lent à ~190 ms d'écart) ne relance pas la session qui démarre.
  * Seul le lancement est verrouillé, pas la recherche de sources : fermer le lecteur puis réappuyer relance bien la lecture.
  */
-export const PLAY_COOLDOWN_MS = 300;
+export const PLAY_COOLDOWN_MS = 400;
 /** Filet de sécurité : un verrou ne dépasse jamais cette durée, même si l'action ne rend jamais la main. */
 export const MAX_LOCK_MS = 20000;
 

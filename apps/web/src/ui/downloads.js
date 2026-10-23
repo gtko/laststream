@@ -4,6 +4,7 @@
 import { getDownloads, getSpace, persistStorage, platformAvailability, subscribeDownloads } from '../downloads/service';
 import { errorMessage, gauge, itemPercent, itemSubtitle } from '../downloads/viewModel';
 import { isAndroidApp } from '../data/config';
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { isShellEnvironment } from '../player/shell';
 import { closeSheet, confirmRemove, DL_ICON, itemLabel, itemName, openDoneSheet, openErrorSheet, openSpaceFullSheet, openSheet, pauseItem, paintDlBadges,
   playOffline, resumeItem, retryItem, RING, teardownDownloadControls, visibleItems } from './downloadBtn.js';
@@ -338,16 +339,15 @@ detailEl.addEventListener('click', async (e) => {
     return;
   }
   if (act === 'space-full') { void openSpaceFullSheet(t); return; }
-  if (act === 'retry-all') { visibleItems(v.items).filter((it) => it.state === 'error').forEach((it) => void retryItem(it.id)); return; }
+  if (act === 'retry-all') { runOnce('dl-retry-all', () => visibleItems(v.items).filter((it) => it.state === 'error').forEach((it) => void retryItem(it.id)), { el: t, cooldown: TOGGLE_COOLDOWN_MS }); return; }
   if (act === 'pause-all' || act === 'resume-all') {
     const m = await getDownloads();
-    if (m) { if (act === 'pause-all') m.pauseAll(); else m.resumeAll(); }
+    if (m) await runOnce('dl-all', () => { if (act === 'pause-all') m.pauseAll(); else m.resumeAll(); }, { el: t, cooldown: TOGGLE_COOLDOWN_MS });
     return;
   }
   if (act === 'remove-all') { confirmAll(t); return; }
   if (!item) return;
-  if (act === 'pause') void pauseItem(item.id);
-  else if (act === 'resume') void resumeItem(item.id);
+  if (act === 'pause' || act === 'resume') void runOnce('dl-row:' + item.id, () => (act === 'pause' ? pauseItem(item.id) : resumeItem(item.id)), { el: t, cooldown: TOGGLE_COOLDOWN_MS });
   else if (act === 'error') openErrorSheet(item, t, renderList);
   else if (act === 'remove') confirmRemove(item, t, renderList);
   else if (act === 'play') void playOffline(item, t);

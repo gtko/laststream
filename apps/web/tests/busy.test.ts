@@ -90,6 +90,16 @@ describe('runOnce (ODY-237)', () => {
     expect(launch).toHaveBeenCalledTimes(2);
   });
 
+  it('lecture : un triple clic lent (190 ms entre chaque) ne lance qu’une session (ODY-257)', () => {
+    const btn = document.createElement('button');
+    const launch = vi.fn(() => undefined);
+    for (let i = 0; i < 3; i++) {
+      runOnce('play', launch, { el: btn, cooldown: PLAY_COOLDOWN_MS });
+      vi.advanceTimersByTime(190);
+    }
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
   it('elKey donne une clé stable par élément et distincte entre éléments', () => {
     const x = document.createElement('button');
     const y = document.createElement('button');
