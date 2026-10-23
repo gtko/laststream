@@ -7,8 +7,7 @@ const MAX_PAGES = 60; // 20 000 titres au plus, par pages de 500 : garde-fou con
 
 function toEntry(i: HiddenItemDto): HiddenEntry | null {
   if (!/^(movie|tv):\d+$/.test(i.key)) return null;
-  const at = typeof i.addedAt === 'number' ? i.addedAt : Date.parse(i.addedAt);
-  return { key: i.key, title: i.title ?? '', poster: i.poster ?? '', addedAt: Number.isFinite(at) ? at : 0 };
+  return { key: i.key, title: i.title ?? '', poster: i.poster ?? '', addedAt: Number.isFinite(i.addedAt) ? i.addedAt : 0 };
 }
 
 export const apiHiddenBackend: HiddenBackend = {

@@ -3,7 +3,7 @@ import { requireBase } from '../data/config';
 import { getLangPrefs } from '../data/langPrefs';
 import { getSession } from '../data/session';
 import {
-  createParty, createPartyInviteLink, endParty, joinParty, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
+  createParty, createPartyInviteLink, endParty, joinParty, type CreatePartyMedia, type Fingerprint, type JoinTicket, type PartyMedia, type PartyRoom, type PartyVisibility,
 } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
@@ -87,7 +87,7 @@ export function requestOfRoom(room: PartyRoom, media: PartyMedia = room.media): 
 /** Corps de création d'un salon pour la lecture en cours. */
 export function roomBodyOf(a: SessionAdapter, visibility: PartyVisibility, profileId: string, language: string) {
   const type = a.req.type === 'tv' ? 'series' : 'movie';
-  const media: PartyMedia = { type, tmdbId: Number(a.req.id), ...(type === 'series' ? { season: a.cur.season ?? a.req.season ?? 1, episode: a.cur.episode ?? a.req.episode ?? 1 } : {}) };
+  const media: CreatePartyMedia = { type, tmdbId: Number(a.req.id), ...(type === 'series' ? { season: a.cur.season ?? a.req.season ?? 1, episode: a.cur.episode ?? a.req.episode ?? 1 } : {}) };
   const fp = fingerprintOf(a.view);
   return {
     profileId, visibility, title: a.req.name, poster: a.poster || null, language, media, ...(fp ? { fingerprint: fp } : {}),
@@ -97,7 +97,7 @@ export function roomBodyOf(a: SessionAdapter, visibility: PartyVisibility, profi
 /** Corps de création d'un salon d'attente : le titre est connu, mais aucune lecture n'a démarré (donc pas d'empreinte de version). */
 export function lobbyBodyOf(req: { type: 'movie' | 'tv'; id: string; name: string; season?: number | null; episode?: number | null }, poster: string | null, visibility: PartyVisibility, profileId: string, language: string) {
   const type = req.type === 'tv' ? 'series' : 'movie';
-  const media: PartyMedia = { type, tmdbId: Number(req.id), ...(type === 'series' ? { season: req.season ?? 1, episode: req.episode ?? 1 } : {}) };
+  const media: CreatePartyMedia = { type, tmdbId: Number(req.id), ...(type === 'series' ? { season: req.season ?? 1, episode: req.episode ?? 1 } : {}) };
   return { profileId, visibility, title: req.name, poster, language, media };
 }
 

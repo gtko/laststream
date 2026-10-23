@@ -400,7 +400,7 @@ describe('pont salon <-> lecteur', () => {
     expect(partyBridge.isHost()).toBe(true);
     expect(partyBridge.guestLocked()).toBe(false);
     partyBridge.viewReady(adapter(1, 2));
-    expect(sentOf(ws).filter((m) => m.t === 'episode')).toEqual([{ t: 'episode', season: 1, episode: 2, fingerprint: { fileName: 'E02.mkv', size: 102 } }]);
+    expect(sentOf(ws).filter((m) => m.t === 'episode')).toEqual([{ t: 'episode', season: 1, episode: 2, fingerprint: { fileName: 'E02.mkv', size: 102, hash: null } }]);
     partyBridge.viewReady(adapter(1, 2)); // pas de doublon
     expect(sentOf(ws).filter((m) => m.t === 'episode')).toHaveLength(1);
     partyBridge.leave();

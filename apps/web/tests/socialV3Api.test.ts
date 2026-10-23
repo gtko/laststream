@@ -170,7 +170,7 @@ describe('S3 — conversations, messages, réactions, sondages, saisie', () => {
   it('groupes : POST /groups, PUT /groups/:id, DELETE /groups/:id/me', async () => {
     reply = (s) => json({ pid: 'g1', conv: 'g:G1', handle: { name: 'Soirée', tag: 'A7K2', full: 'Soirée#A7K2' }, avatarColor: '#0a0', unread: 0, group: { id: 'G1', name: 'Soirée', members: [] } }, 201);
     const g = await v3.createGroup({ name: 'Soirée', members: ['p2', 'p3'] });
-    expect(g.group?.id).toBe('G1');
+    expect(g).toMatchObject({ group: { id: 'G1' } });
     expect(last()).toMatchObject({ method: 'POST', path: '/user/social/groups', body: { name: 'Soirée', members: ['p2', 'p3'] } });
 
     reply = () => new Response(null, { status: 204 });

@@ -1,12 +1,8 @@
 import { MAX_FRAME_BYTES } from '@laststream/protocol/party';
-import type { ChatLine, ControlMode, EventKind, PartySettings, PrepStatus, ReactionMode, VoteInput, VoteView, WaitLateMode } from '@laststream/protocol/party';
-import type { Fingerprint, PartyMedia, PartyParticipant, PartyRoom } from '../data/socialApi';
-import type { PlaybackState } from './sync';
+import type { ClientMessage, Fingerprint, ServerMessage } from '@laststream/protocol/party';
 
 /* Messages JSON du salon (WebSocket /party/:id/ws), une trame = un message de 4 Ko au plus.
- * Constantes et objets échangés : source unique dans @laststream/protocol (partagée avec lastaddon). Les unions ServerMsg /
- * ClientMsg restent propres à l'application : tolérantes (champs optionnels d'un serveur ancien) et typées avec les
- * modèles de l'interface (socialApi). */
+ * Constantes, objets échangés et unions ServerMsg / ClientMsg : source unique dans @laststream/protocol (partagée avec lastaddon). */
 
 export {
   COUNTDOWN_DEFAULT_SEC,
@@ -33,62 +29,17 @@ export type {
 /** Avance de tampon acceptée par le serveur (secondes) ; au-delà, le client la ramène à cette valeur. */
 export const PARTY_BUF_AHEAD_MAX_SEC = 600;
 
-export interface You {
-  username: string;
-  host: boolean;
-  muted: boolean;
-  /** Identifiant de connexion (cible de la signalisation WebRTC) ; absent des serveurs anciens. */
-  peerId?: string;
-}
+/** Joueur local tel que le serveur l'annonce dans `welcome`. */
+export type You = Extract<ServerMessage, { t: 'welcome' }>['you'];
 
-export type ServerMsg =
-  | { t: 'welcome'; you: You; room: PartyRoom; state: PlaybackState; serverTime: number; participants: PartyParticipant[]; chat: ChatLine[]; settings?: PartySettings; countdownAt?: number | null; vote?: VoteView[] | null }
-  | { t: 'pong'; c: number; s: number }
-  | { t: 'state'; state: PlaybackState; serverTime: number; by?: string }
-  | { t: 'media'; media: PartyMedia; fingerprint?: Fingerprint | null; state: PlaybackState; serverTime: number }
-  | { t: 'join'; participant: PartyParticipant }
-  | { t: 'leave'; user: string }
-  | { t: 'chat'; line: ChatLine }
-  /** Réaction signée (Social v3) : `by` = auteur, `pos` = position du film ; les serveurs antérieurs n'envoient que `user`. */
-  | { t: 'react'; user: string; by?: string; emoji: string; at: number; pos?: number | null }
-  | { t: 'settings'; settings: PartySettings; by?: string }
-  | { t: 'prep'; user: string; ready: boolean; quality: string | null; status: PrepStatus }
-  /** Compte à rebours : `at` = instant serveur (ms) où la lecture reprend ; null = annulé. */
-  | { t: 'countdown'; at: number | null; by?: string }
-  | { t: 'vote'; options: VoteView[]; open: boolean }
-  | { t: 'event'; kind: EventKind; by: string; pos: number; delta?: number }
-  | { t: 'muted'; user: string; muted: boolean }
-  | { t: 'host'; user: string }
-  | { t: 'reported'; messageId?: string; by?: string; against?: string; text?: string }
-  | { t: 'removed'; messageId: string }
-  /** Attente de tampon : pseudos des retardataires, début (ms serveur), délai maximal et avance de reprise (s) ; `who` vide = fin. */
-  | { t: 'wait'; who: string[]; since: number; maxMs: number; resumeAhead?: number }
-  /** À l'hôte seulement : le lien partagé a été renouvelé après l'exclusion d'un invité ; il en redemande la valeur. */
-  | { t: 'link_renewed' }
-  | { t: 'error'; code: string }
-  | { t: 'ended'; reason: string };
-
-export type ClientMsg =
-  | { t: 'ping'; c: number }
-  | { t: 'sync' }
-  | { t: 'ctl'; action: 'play' | 'pause' | 'seek' | 'sync'; pos: number }
-  | { t: 'episode'; season: number; episode: number; fingerprint?: Fingerprint }
-  | { t: 'chat'; text: string; pos?: number }
-  | { t: 'react'; emoji: string; pos?: number | null }
-  | { t: 'settings'; control?: ControlMode; waitLate?: WaitLateMode; reactions?: ReactionMode }
-  | { t: 'ready'; ready: boolean; quality: string | null }
-  | { t: 'status'; status: PrepStatus }
-  | { t: 'start'; countdown: number }
-  | { t: 'vote_open'; options: VoteInput[] }
-  | { t: 'vote'; optionId: string }
-  | { t: 'vote_close' }
-  | { t: 'report'; messageId: string; reason?: string | null }
-  | { t: 'mute'; user: string; muted: boolean }
-  | { t: 'kick'; user: string }
-  | { t: 'transfer'; user: string }
-  | { t: 'end' }
-  /** Tampon : `ready` = assez d'avance pour lire ; `ahead` = secondes de tampon devant la position (0 à 600). */
-  | { t: 'buf'; ready: boolean; ahead: number };
+/** Messages du serveur et du client : unions de @laststream/protocol (sans la signalisation WebRTC, relayée à part) ; `pos`, `fingerprint` et `reason` restent omis de la trame quand ils sont inconnus (un serveur antérieur ne les lit pas). */
+export type ServerMsg = ServerMessage;
+export type ClientMsg = Exclude<ClientMessage, { t: 'rtc' }> extends infer M
+  ? M extends { t: 'chat' | 'react' } ? Omit<M, 'pos'> & { pos?: number | null }
+    : M extends { t: 'episode' } ? Omit<M, 'fingerprint'> & { fingerprint?: Fingerprint | null }
+    : M extends { t: 'report' } ? Omit<M, 'reason'> & { reason?: string | null }
+    : M
+  : never;
 
 const SERVER_TYPES = new Set(['welcome', 'pong', 'state', 'media', 'join', 'leave', 'chat', 'react', 'settings', 'prep', 'countdown', 'vote', 'event', 'muted', 'host', 'reported', 'removed', 'wait', 'link_renewed', 'error', 'ended']);
 

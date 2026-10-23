@@ -9,9 +9,11 @@ import type { Handle, Message, SocialMe } from '../src/data/socialV2Api';
 
 const H = (name: string, tag: string): Handle => ({ name, tag, full: `${name}#${tag}` });
 const ME: SocialMe = { pid: 'me', handle: H('Greg', 'A7K2'), status: 'online', avatarColor: '#111111' };
-const AMY = { pid: 'amy', handle: H('Amy', 'B2C3'), avatarColor: '#aa0000', household: false, status: 'online' as const };
+const AMY = { pid: 'amy', handle: H('Amy', 'B2C3'), avatarColor: '#aa0000', household: false, favorite: false, muted: false, status: 'online' as const };
 const NOW = 1_000_000;
-const msg = (id: string, from: string, to: string, body: string, createdAt = NOW): Message => ({ id, from, to, body, createdAt });
+const msg = (id: string, from: string, to: string, body: string, createdAt = NOW): Message => ({
+  id, from, to, body, createdAt, conv: 'dm:' + (from === 'me' ? to : from), kind: 'text', reactions: [],
+});
 
 describe('décision', () => {
   it('affiche un message reçu d’un autre profil, hors « Ne pas déranger »', () => {
@@ -52,7 +54,7 @@ describe('décision', () => {
     const m2 = msg('2', 'amy', 'me', 'deux');
     const s: SocialState = {
       ...initialSocialState(), me: ME,
-      conversations: [{ pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: m2, unread: 1 }],
+      conversations: [{ conv: 'dm:amy', pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: m2, unread: 1 }],
       messages: { amy: [m1, m2] },
     };
     expect(knownMessages(s).map((m) => m.id).sort()).toEqual(['1', '2']);
@@ -83,7 +85,7 @@ function makeDeps(over: Partial<BubbleDeps> = {}): BubbleDeps & { send: ReturnTy
 }
 /** Un message de l'amie arrive : conversation et messages mis à jour comme le store les réduit. */
 const incoming = (m: Message): Partial<SocialState> => ({
-  conversations: [{ pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: m, unread: 1 }],
+  conversations: [{ conv: 'dm:amy', pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: m, unread: 1 }],
   messages: { amy: [m] },
 });
 const $ = <T extends Element = HTMLElement>(sel: string): T | null => host.querySelector(sel) as T | null;
@@ -169,7 +171,7 @@ describe('bulle dans le lecteur', () => {
 
   it('une seule bulle à la fois : le plus récent remplace', () => {
     push({
-      conversations: [{ pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('b', 'amy', 'me', 'deux', NOW + 5), unread: 2 }],
+      conversations: [{ conv: 'dm:amy', pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('b', 'amy', 'me', 'deux', NOW + 5), unread: 2 }],
       messages: { amy: [msg('a', 'amy', 'me', 'un', NOW), msg('b', 'amy', 'me', 'deux', NOW + 5)] },
     });
     expect($('.lp-bubble-txt')!.textContent).toBe('deux');
@@ -277,7 +279,7 @@ describe('bulle dans le lecteur', () => {
     push(incoming(msg('m13', 'amy', 'me', 'Premier')));
     keyOnDocument('r');
     push({
-      conversations: [{ pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('m14', 'amy', 'me', 'Second', NOW + 1), unread: 2 }],
+      conversations: [{ conv: 'dm:amy', pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('m14', 'amy', 'me', 'Second', NOW + 1), unread: 2 }],
       messages: { amy: [msg('m13', 'amy', 'me', 'Premier'), msg('m14', 'amy', 'me', 'Second', NOW + 1)] },
     });
     expect($('.lp-bubble-txt')!.textContent).toBe('Premier');
@@ -340,7 +342,7 @@ describe('bulle Social v3', () => {
     vi.useFakeTimers();
     push(incoming(msg('s1', 'amy', 'me', 'Premier', NOW)));
     push({
-      conversations: [{ pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('s2', 'amy', 'me', 'Deuxième', NOW + 1), unread: 2 }],
+      conversations: [{ conv: 'dm:amy', pid: 'amy', handle: AMY.handle, avatarColor: AMY.avatarColor, last: msg('s2', 'amy', 'me', 'Deuxième', NOW + 1), unread: 2 }],
       messages: { amy: [msg('s1', 'amy', 'me', 'Premier', NOW), msg('s2', 'amy', 'me', 'Deuxième', NOW + 1)] },
     });
     expect($('.lp-bubble-txt')!.textContent).toBe('Premier');

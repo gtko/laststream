@@ -8,7 +8,7 @@ import type {
 } from './socialV2Api';
 import * as v3 from './socialV3Api';
 import type {
-  ActivityItem, BlockedPerson, ConversationV3, FriendV3, JoinAnswer, ListDetail, ListItemInput, ListSummary, MediaQuery,
+  ActivityItem, BlockedPerson, ConversationV3, FriendV3, GroupConversation, JoinAnswer, ListDetail, ListItemInput, ListSummary, MediaQuery,
   MessageV3, NewMessage, PrefsPatch, ProfilePatch, Reaction, RelationPatch, ReportInput, ShareInput, SocialPrefs,
   SocialProfile, Poll, TagResult,
 } from './socialV3Api';
@@ -157,13 +157,16 @@ export function expireIdleWatching(s: SocialState, now: number = Date.now()): So
   return { ...s, friends: s.friends.map(strip), household: s.household.map(strip) };
 }
 
-const byLastDesc = (a: Conversation, b: Conversation): number => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
+const byLastDesc = (a: { last?: Message }, b: { last?: Message }): number => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0);
+
+/** Entrée de groupe (`group` présent) ; une conversation directe n'a pas ce champ. */
+const isGroupEntry = (c: ConversationV3): c is GroupConversation => 'group' in c && c.group !== undefined;
 
 /** Sépare, dans une même réponse, conversations directes et groupes. */
 function splitConversations(list: ConversationV3[]): { conversations: Conversation[]; groups: ConversationV3[] } {
   return {
-    conversations: list.filter((c) => !c.group).sort(byLastDesc),
-    groups: list.filter((c) => c.group !== undefined).sort(byLastDesc),
+    conversations: list.filter((c): c is Conversation => !isGroupEntry(c)).sort(byLastDesc),
+    groups: list.filter(isGroupEntry).sort(byLastDesc),
   };
 }
 
@@ -189,7 +192,7 @@ const isGroupConv = (conv: string): boolean => conv.startsWith('g:');
 export function convOf(m: Message, me: string): string {
   const c = (m as Partial<MessageV3>).conv;
   if (typeof c === 'string' && c !== '') return c;
-  return dmConv(m.from === me ? m.to : m.from);
+  return dmConv((m.from === me ? m.to : m.from) ?? '');
 }
 
 /** Forme v3 d'un message : conversation, type `text` et réactions vides par défaut. */
@@ -233,7 +236,7 @@ function applyMessage(b: Base, m: Message, now: number): Base {
   const me = b.me?.pid ?? '';
   const conv = convOf(m, me);
   if (isGroupConv(conv)) return applyGroupMessage(b, m, me, now);
-  const peer = m.from === me ? m.to : m.from;
+  const peer = (m.from === me ? m.to : m.from) ?? '';
   const cached = b.messages[peer];
   const duplicate = cached?.some((x) => x.id === m.id) ?? false;
   const messages = cached ? { ...b.messages, [peer]: mergeMessages(cached, [m]) } : b.messages;
@@ -245,7 +248,7 @@ function applyMessage(b: Base, m: Message, now: number): Base {
   } else {
     const who = findPerson(b, peer);
     conversations = who
-      ? [...b.conversations, { pid: peer, handle: who.handle, avatarColor: who.avatarColor, ...(who.avatar ? { avatar: who.avatar } : {}), last: m, unread: incoming ? 1 : 0 }]
+      ? [...b.conversations, { conv: dmConv(peer), pid: peer, handle: who.handle, avatarColor: who.avatarColor, ...(who.avatar ? { avatar: who.avatar } : {}), last: m, unread: incoming ? 1 : 0 }]
       : b.conversations;
   }
   const v = toV3(m, me);

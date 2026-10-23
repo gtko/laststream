@@ -13,10 +13,12 @@ import type { FriendRequest, FriendView, Handle, Message, Note, SocialMe } from 
 const H = (name: string, tag: string): Handle => ({ name, tag, full: `${name}#${tag}` });
 const ME: SocialMe = { pid: 'me', handle: H('Greg', 'A7K2'), status: 'online', avatarColor: '#111' };
 const friend = (pid: string, over: Partial<FriendView> = {}): FriendView => ({
-  pid, handle: H(pid, 'B2C3'), avatarColor: '#a00', household: false, status: 'online', ...over,
+  pid, handle: H(pid, 'B2C3'), avatarColor: '#a00', household: false, favorite: false, muted: false, status: 'online', ...over,
 });
 const request = (pid: string): FriendRequest => ({ pid, handle: H(pid, 'D4E5'), avatarColor: '#0a0', createdAt: 1 });
-const msg = (id: string, from: string, to: string, createdAt: number): Message => ({ id, from, to, body: 'texte ' + id, createdAt });
+const msg = (id: string, from: string, to: string, createdAt: number): Message => ({
+  id, from, to, body: 'texte ' + id, createdAt, conv: 'dm:' + (from === 'me' ? to : from), kind: 'text', reactions: [],
+});
 const note = (id: string): Note => ({ id, author: { pid: 'p1', handle: H('Alice', 'B2C3'), avatarColor: '#a00' }, pos: 12, kind: 'emoji', body: '😀', createdAt: 1 });
 
 const withMe = (): SocialState => ({ ...initialSocialState(), me: ME });
@@ -59,14 +61,14 @@ describe('reduceLiveEvent', () => {
     const s: SocialState = { ...withMe(), friends: [friend('p1')] };
     const r = reduceLiveEvent(s, { t: 'message', message: msg('m1', 'p1', 'me', 500) });
     expect(r.conversations).toHaveLength(1);
-    expect(r.conversations[0]).toMatchObject({ pid: 'p1', unread: 1, last: { id: 'm1' } });
+    expect(r.conversations[0]).toMatchObject({ conv: 'dm:p1', pid: 'p1', unread: 1, last: { id: 'm1' } });
     expect(r.unread).toBe(1);
     expect(r.badge).toBe(1);
   });
 
   it('message envoyé par moi depuis un autre appareil : pas de non-lu', () => {
     const s: SocialState = {
-      ...withMe(), friends: [friend('p1')], conversations: [{ pid: 'p1', handle: H('p1', 'B2C3'), avatarColor: '#a00', unread: 0 }],
+      ...withMe(), friends: [friend('p1')], conversations: [{ conv: 'dm:p1', pid: 'p1', handle: H('p1', 'B2C3'), avatarColor: '#a00', unread: 0 }],
     };
     const r = reduceLiveEvent(s, { t: 'message', message: msg('m2', 'me', 'p1', 600) });
     expect(r.conversations[0]).toMatchObject({ unread: 0, last: { id: 'm2' } });
@@ -76,7 +78,7 @@ describe('reduceLiveEvent', () => {
   it('un même message reçu deux fois n’ajoute qu’un non-lu quand la conversation est chargée', () => {
     const s: SocialState = {
       ...withMe(), friends: [friend('p1')], messages: { p1: [] },
-      conversations: [{ pid: 'p1', handle: H('p1', 'B2C3'), avatarColor: '#a00', unread: 0 }],
+      conversations: [{ conv: 'dm:p1', pid: 'p1', handle: H('p1', 'B2C3'), avatarColor: '#a00', unread: 0 }],
     };
     const once = reduceLiveEvent(s, { t: 'message', message: msg('m3', 'p1', 'me', 700) });
     const twice = reduceLiveEvent(once, { t: 'message', message: msg('m3', 'p1', 'me', 700) });

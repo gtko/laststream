@@ -1,59 +1,21 @@
 import { social, withQuery } from './socialHttp';
-import { UserApiError, type MediaKind } from './userApi';
+import { UserApiError } from './userApi';
+import type {
+  Conversation, FriendLibrary, FriendNote, FriendsResponse, FriendView, Handle, HistoryItem, MediaRef, Message,
+  MessageContext, Note, RequestOutcome, SocialMe, Status, Watching,
+} from '@laststream/protocol/social';
 
 /* Client typé de l'API sociale v2 (`/user/social/*`, contrat docs/social-v2-contract.md) : profils, amis et demandes,
  * présence, messages, notes, ticket du canal temps réel. Le profil agissant est le profil actif : son identifiant part en
  * X-Profile-Id (exigé par le serveur sur toutes les routes sociales) et son jeton de profil en X-Profile-Token, comme le
- * reste de /user. Aucun texte n'est affiché ici. */
+ * reste de /user. Aucun texte n'est affiché ici. Les formes de réponse viennent de @laststream/protocol/social (source
+ * unique) ; seuls les corps de requête et les helpers runtime restent ici. */
 
-export type Status = 'online' | 'away' | 'dnd' | 'invisible';
-type SeenStatus = 'online' | 'away' | 'dnd' | 'offline';
-export type Handle = { name: string; tag: string; full: string };
-export type Watching = {
-  type: 'movie' | 'series'; tmdbId: number; imdbId?: string; title: string;
-  season?: number; episode?: number; poster?: string;
-  pos: number; duration?: number; paused: boolean; at: number;
-  /** Dernier instant (ms, horloge serveur) où la lecture a avancé ; absent d'un ancien serveur. */
-  movedAt?: number;
-};
-export type FriendView = {
-  pid: string; handle: Handle; avatarColor: string; avatar?: string; household: boolean;
-  status: SeenStatus; watching?: Watching; lastSeen?: number;
-};
-export type FriendRequest = { pid: string; handle: Handle; avatarColor: string; avatar?: string; createdAt: number };
-export type MessageContext = { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number; pos?: number };
-export type Message = {
-  id: string; from: string; to: string;
-  body: string;
-  context?: MessageContext;
-  createdAt: number; readAt?: number;
-};
-export type Conversation = { pid: string; handle: Handle; avatarColor: string; avatar?: string; last?: Message; unread: number };
-export type MediaRef = { type: 'movie' | 'series'; tmdbId: number; season?: number; episode?: number };
-export type Note = {
-  id: string;
-  author: { pid: string; handle: Handle; avatarColor: string; avatar?: string };
-  pos: number; kind: 'text' | 'emoji'; body: string;
-  createdAt: number;
-};
-/** Note d'un ami avec son média ; `hidden` : contenu masqué par l'anti-spoiler (corps vide). */
-type FriendNote = Note & { media: MediaRef; hidden?: true };
-export type HistoryItem = {
-  type: 'movie' | 'series'; tmdbId: number; title?: string; poster?: string;
-  season?: number; episode?: number; pos: number; duration?: number; watched: boolean; updatedAt: number;
-};
+export type {
+  Conversation, FriendLibrary, FriendRequest, FriendView, FriendsResponse, Handle, HistoryItem, LibraryItem, MediaRef, Message,
+  MessageContext, Note, RequestOutcome, SocialMe, Status, Watching,
+} from '@laststream/protocol/social';
 
-/** Profil connecté tel que le serveur le décrit (`GET /me`). */
-export type SocialMe = { pid: string; handle: Handle; status: Status; avatarColor: string; avatar?: string };
-export type FriendsResponse = { friends: FriendView[]; household: FriendView[]; incoming: FriendRequest[]; outgoing: FriendRequest[] };
-/** `POST /requests` : 201 `{ request }`, ou 200 `{ friend }` si l'autre m'avait déjà demandé. */
-export type RequestOutcome = { request: FriendRequest } | { friend: FriendView };
-/** Élément de bibliothèque d'un ami : même forme que l'ancienne route `/user/friends/:username/library`. */
-export type LibraryItem = {
-  type: MediaKind; tmdbId: number | null; imdbId: string | null;
-  title: string; poster: string | null; addedAt: string;
-};
-export type FriendLibrary = { items: LibraryItem[]; total?: number; limit?: number; offset?: number };
 export type NewNote = MediaRef & { pos: number; kind: 'text' | 'emoji'; body: string };
 
 const enc = encodeURIComponent;

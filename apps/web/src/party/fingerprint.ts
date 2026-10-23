@@ -11,17 +11,14 @@ export interface FingerprintSource {
   playable?: boolean;
 }
 
-/** Empreinte de la source lue (champs absents omis). Null si rien n'est connu. */
+/** Empreinte de la source lue (champs inconnus à null). Null si rien n'est connu. */
 export function fingerprintOf(view: FingerprintSource | null | undefined): Fingerprint | null {
   if (!view) return null;
   const fileName = (view.filename || view.stream?.behaviorHints?.filename || '').trim();
   const size = view.sizeBytes || view.stream?.behaviorHints?.videoSize || 0;
   const hash = (view.stream?.infoHash || '').trim().toLowerCase();
-  const fp: Fingerprint = {};
-  if (fileName) fp.fileName = fileName.slice(0, 300);
-  if (size > 0) fp.size = Math.round(size);
-  if (hash) fp.hash = hash.slice(0, 64);
-  return Object.keys(fp).length ? fp : null;
+  if (!fileName && !(size > 0) && !hash) return null;
+  return { fileName: fileName ? fileName.slice(0, 300) : null, size: size > 0 ? Math.round(size) : null, hash: hash ? hash.slice(0, 64) : null };
 }
 
 /** Nom normalisé pour la comparaison : minuscules, sans extension, séparateurs unifiés. */
@@ -43,7 +40,7 @@ export function nameSimilarity(a: string, b: string): number {
 }
 
 /** Score d'une source par rapport à l'empreinte du salon : plus il est haut, plus la version est proche. 0 : aucun lien. */
-export function matchScore(view: FingerprintSource, fp: Fingerprint | null | undefined): number {
+export function matchScore(view: FingerprintSource, fp: Partial<Fingerprint> | null | undefined): number {
   if (!fp) return 0;
   const mine = fingerprintOf(view);
   if (!mine) return 0;
@@ -69,7 +66,7 @@ const MATCH_MIN = 50;
  * Version à lire pour suivre l'hôte : la source jouable qui correspond le mieux à l'empreinte (hash, puis nom et taille),
  * ou null si aucune ne correspond assez (on prend alors la meilleure source habituelle). Égalité : la première (la mieux classée).
  */
-export function pickByFingerprint<V extends FingerprintSource>(views: readonly V[], fp: Fingerprint | null | undefined): V | null {
+export function pickByFingerprint<V extends FingerprintSource>(views: readonly V[], fp: Partial<Fingerprint> | null | undefined): V | null {
   if (!fp) return null;
   let best: V | null = null;
   let bestScore = 0;

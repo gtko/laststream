@@ -15,7 +15,7 @@ import type { FriendView, Handle, Message, SocialMe } from '../src/data/socialV2
 const H = (name: string, tag: string): Handle => ({ name, tag, full: `${name}#${tag}` });
 const ME: SocialMe = { pid: 'me', handle: H('Greg', 'A7K2'), status: 'online', avatarColor: '#111' };
 const friend = (pid: string, over: Partial<FriendV3> = {}): FriendV3 => ({
-  pid, handle: H(pid, 'B2C3'), avatarColor: '#a00', household: false, status: 'online', ...over,
+  pid, handle: H(pid, 'B2C3'), avatarColor: '#a00', household: false, favorite: false, muted: false, status: 'online', ...over,
 });
 const request = (pid: string) => ({ pid, handle: H(pid, 'D4E5'), avatarColor: '#0a0', createdAt: 1 });
 const msg = (id: string, from: string, to: string, createdAt: number, extra: Partial<MessageV3> = {}): Message =>
@@ -23,8 +23,8 @@ const msg = (id: string, from: string, to: string, createdAt: number, extra: Par
 const groupMsg = (id: string, from: string, createdAt: number): Message =>
   msg(id, from, 'g:G1', createdAt, { conv: 'g:G1', kind: 'text', reactions: [] } as Partial<MessageV3>);
 const group = (unread = 0): ConversationV3 => ({
-  pid: 'g:G1', conv: 'g:G1', handle: H('Soirée', '0000'), avatarColor: '#0a0', unread,
-  group: { id: 'G1', name: 'Soirée', members: [] },
+  conv: 'g:G1', unread,
+  group: { id: 'G1', name: 'Soirée', ownerPid: 'me', members: [] },
 });
 const poll = (id: string): Poll => ({ id, question: 'Ce soir ?', options: [{ id: 'o1', label: 'Film', votes: 1, mine: false }, { id: 'o2', label: 'Série', votes: 0, mine: false }], closed: false });
 const act = (id: string, at: number): ActivityItem => ({

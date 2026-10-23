@@ -2,7 +2,7 @@
 // choix de la version par empreinte, profils enfants.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PartyClient, BACKOFF_MS, CHAT_MEMORY_LINES, PARTY_RESUME_AHEAD_SEC, PARTY_WAIT_MAX_MS, PONG_TIMEOUT_MS, type SocketLike } from '../src/party/client';
-import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, playerOf, requestOfRoom, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
+import { canBrowsePublicParties, canJoinRoom, partyVisibilityChoices, playerOf, requestOfRoom, lobbyBodyOf, roomBodyOf, socketUrl, type SessionAdapter } from '../src/party/bridge';
 import { PartyController, HOST_SYNC_EVERY_MS, type PlayerLike } from '../src/party/controller';
 import { fingerprintOf, matchScore, nameSimilarity, pickByFingerprint } from '../src/party/fingerprint';
 import { encodeClientMessage, parseServerMessage } from '../src/party/protocol';
@@ -86,8 +86,8 @@ class FakeSocket implements SocketLike {
 }
 
 const ROOM = (over: Partial<PartyRoom> = {}): PartyRoom => ({
-  id: 'r1', visibility: 'private', title: 'Severance', poster: '/s.jpg', language: 'fr', media: { type: 'series', tmdbId: 95396, season: 1, episode: 1 },
-  fingerprint: { fileName: 'Severance.S01E01.1080p.mkv', size: 3_000_000_000 }, host: 'alice', participants: 2, maxParticipants: 20, createdAt: '2026-01-01T00:00:00Z', ...over,
+  id: 'r1', visibility: 'private', title: 'Severance', poster: '/s.jpg', language: 'fr', media: { type: 'series', tmdbId: 95396, imdbId: null, season: 1, episode: 1 },
+  fingerprint: { fileName: 'Severance.S01E01.1080p.mkv', size: 3_000_000_000, hash: null }, host: 'alice', participants: 2, maxParticipants: 20, createdAt: 1767225600000, ...over,
 });
 const welcome = (me: string, host: boolean, over: Record<string, unknown> = {}) => ({
   t: 'welcome', you: { username: me, host, muted: false }, room: ROOM(), state: { playing: false, pos: 0, at: 1000, rev: 1 }, serverTime: 1000,
@@ -190,9 +190,9 @@ describe('client du salon', () => {
     expect(sockets[0].sent.slice(before)).toEqual([{ t: 'ctl', action: 'play', pos: 10 }, { t: 'chat', text: 'salut' }, { t: 'react', emoji: '👍' }, { t: 'report', messageId: 'm1', reason: 'spam' }]);
     sockets[0].recv({ t: 'host', user: 'bob' });
     expect(client.control('sync', 61.23456)).toBe(true);
-    expect(client.changeEpisode(1, 3, { fileName: 'x.mkv' })).toBe(true);
+    expect(client.changeEpisode(1, 3, { fileName: 'x.mkv', size: null, hash: null })).toBe(true);
     expect(client.kick('alice')).toBe(true);
-    expect(sockets[0].sent.slice(-3)).toEqual([{ t: 'ctl', action: 'sync', pos: 61.235 }, { t: 'episode', season: 1, episode: 3, fingerprint: { fileName: 'x.mkv' } }, { t: 'kick', user: 'alice' }]);
+    expect(sockets[0].sent.slice(-3)).toEqual([{ t: 'ctl', action: 'sync', pos: 61.235 }, { t: 'episode', season: 1, episode: 3, fingerprint: { fileName: 'x.mkv', size: null, hash: null } }, { t: 'kick', user: 'alice' }]);
   });
 
   it('reconnexion automatique avec reprise : nouveau ticket, welcome, état et chat refaits', async () => {
@@ -601,8 +601,8 @@ describe('profil enfant et lien du salon', () => {
 
   it('salon -> cible de lecture ; lecture en cours -> corps de création (sans lien de lecture)', () => {
     expect(requestOfRoom(ROOM())).toEqual({ type: 'tv', id: '95396', name: 'Severance', season: 1, episode: 1, key: 'tv:95396' });
-    expect(requestOfRoom(ROOM({ media: { type: 'movie', tmdbId: 550 } }))).toMatchObject({ type: 'movie', season: null, episode: null, key: 'movie:550' });
-    expect(requestOfRoom(ROOM({ media: { type: 'movie', imdbId: 'tt1' } }))).toBeNull();
+    expect(requestOfRoom(ROOM({ media: { type: 'movie', tmdbId: 550, imdbId: null, season: null, episode: null } }))).toMatchObject({ type: 'movie', season: null, episode: null, key: 'movie:550' });
+    expect(requestOfRoom(ROOM({ media: { type: 'movie', tmdbId: null, imdbId: 'tt1', season: null, episode: null } }))).toBeNull();
     const a = {
       req: { type: 'tv', id: '95396', name: 'Severance', season: 1, episode: 2, key: 'tv:95396' }, cur: { season: 1, episode: 2 },
       view: { filename: 'S01E02.mkv', sizeBytes: 123, playable: true, stream: { url: 'https://debrid.example/secret' } }, poster: '/s.jpg', engine: null, ready: true,
@@ -610,6 +610,12 @@ describe('profil enfant et lien du salon', () => {
     const body = roomBodyOf(a, 'public', 'p1', 'fr');
     expect(body).toMatchObject({ profileId: 'p1', visibility: 'public', title: 'Severance', poster: '/s.jpg', language: 'fr', media: { type: 'series', tmdbId: 95396, season: 1, episode: 2 }, fingerprint: { fileName: 'S01E02.mkv', size: 123 } });
     expect(JSON.stringify(body)).not.toContain('debrid.example');
+    // le serveur refuse `null` sur imdbId, season et episode : champs inconnus omis
+    expect(body.media).toEqual({ type: 'series', tmdbId: 95396, season: 1, episode: 2 });
+    expect(JSON.stringify(body)).not.toMatch(/"(imdbId|season|episode)":null/);
+    expect(roomBodyOf({ ...a, req: { ...a.req, type: 'movie' }, cur: {} } as unknown as SessionAdapter, 'private', 'p1', 'fr').media).toEqual({ type: 'movie', tmdbId: 95396 });
+    expect(lobbyBodyOf({ type: 'movie', id: '550', name: 'Fight Club' }, null, 'private', 'p1', 'fr').media).toEqual({ type: 'movie', tmdbId: 550 });
+    expect(lobbyBodyOf({ type: 'tv', id: '1', name: 'X', season: 2, episode: 3 }, null, 'private', 'p1', 'fr').media).toEqual({ type: 'series', tmdbId: 1, season: 2, episode: 3 });
   });
 });
 

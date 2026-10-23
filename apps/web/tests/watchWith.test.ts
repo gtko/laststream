@@ -12,7 +12,7 @@ const watching = (over: Partial<Watching> = {}): Watching => ({
 
 const friend = (over: Partial<FriendView> = {}): FriendView => ({
   pid: 'p1', handle: { name: 'Greg', tag: 'A7K2', full: 'Greg#A7K2' }, avatarColor: '#3b82f6', household: false,
-  status: 'online', ...over,
+  favorite: false, muted: false, status: 'online', ...over,
 });
 
 const flush = () => new Promise((r) => setTimeout(r, 0));

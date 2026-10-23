@@ -10,7 +10,7 @@ import { createCinemaMenu, createCinemaSummary } from '../src/player/cinemaView'
 import { fadeFutureMarkers, renderNoteMarkers } from '../src/player/notesView';
 import type { Message, Note } from '../src/data/socialV2Api';
 
-const m = (id: string): Message => ({ id, from: 'a', to: 'me', body: id, createdAt: 1 });
+const m = (id: string): Message => ({ id, from: 'a', to: 'me', body: id, createdAt: 1, conv: 'dm:a', kind: 'text', reactions: [] });
 const cinema = (over: Partial<CinemaState> = {}): CinemaState => ({ ...initialCinemaState(), active: true, until: 'film', since: 1, ...over });
 
 describe('mode cinéma', () => {

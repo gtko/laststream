@@ -1,44 +1,34 @@
 import { SOCIAL, social, withQuery } from './socialHttp';
 import { call, type MediaKind } from './userApi';
-import type { Conversation, FriendView, Handle, Message, Note } from './socialV2Api';
+import type {
+  ActivityItem, ConversationV3, CustomStatus, FriendView, GroupConversation, Handle, ListDetail, ListSummary, MessageKind,
+  MessageV3, MissedSummary, MomentRef, MyShareLink, NotifyPrefs, Poll, PartyRef, ProfileBanner, ProfileFavorite,
+  Reaction, ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile, TitleRef,
+} from '@laststream/protocol/social';
 
 /* Client typé de l'API sociale v3 (`/user/social/*`, contrat docs/social-v3-contract.md, sections S1 à S5) : profil étendu,
  * préférences, relations, blocages, signalements, demandes de rejoindre, messages riches par conversation (DM `dm:<pid>` et
  * groupes `g:<id>`), réactions, sondages, saisie, groupes, partage, liens publics, listes partagées, activité, heatmap et
  * résumé de fin de mode cinéma. Les en-têtes sont ceux de la v2 (X-Profile-Id, X-Profile-Token via `call`) ; la lecture
- * publique d'un lien partagé part sans session. Aucun texte n'est affiché ici. */
+ * publique d'un lien partagé part sans session. Aucun texte n'est affiché ici. Les formes de réponse viennent de
+ * @laststream/protocol/social ; seuls les corps de requête, les helpers et les champs que le protocole ne décrit pas
+ * restent ici. */
+
+export type {
+  ActivityItem, ConversationV3, GroupConversation, ListDetail, ListSummary, MessageV3, MissedSummary, MyShareLink, Poll, PlaybackSocial, Reaction,
+  ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile,
+} from '@laststream/protocol/social';
 
 // ---- S1 : profil ----
-type CustomStatus = { emoji?: string; text?: string; expiresAt?: number };
-/** `posY` : cadrage vertical en % (0 haut, 100 bas) ; absent = centré. */
-type ProfileBanner = { tmdbId: number; type: MediaKind; backdrop: string; title: string; posY?: number };
-type ProfileFavorite = { tmdbId: number; type: MediaKind; title: string; poster?: string };
-type ProfileStats = { hoursWatched: number; notes: number; friends: number };
-/** Profil social étendu. `friendSince`, `commonTitles`, `mutualFriends` ne sont vus que par un autre profil ; `tagChangeableAt` que par moi. */
-export type SocialProfile = {
-  pid: string; handle: Handle; avatarColor: string; avatar?: string;
-  bio?: string; customStatus?: CustomStatus; banner?: ProfileBanner; favorites: ProfileFavorite[];
-  stats?: ProfileStats; friendSince?: number; commonTitles?: number; mutualFriends?: number; tagChangeableAt?: number;
-};
 /** `PUT /profile` : corps partiel ; `null` efface la bio, le statut ou la bannière. */
 export type ProfilePatch = {
   name?: string; avatarColor?: string; bio?: string | null; customStatus?: CustomStatus | null;
   banner?: ProfileBanner | null; favorites?: ProfileFavorite[];
 };
-/** `POST /profile/tag` : le contrat ne décrit pas la réponse ; on lit `handle` et l'échéance facultative. */
+/** Ce que l'app lit de la réponse de `POST /profile/tag` (un `SocialProfile`) : le handle et l'échéance de changement de tag. */
 export type TagResult = { handle: Handle; tagChangeableAt?: number };
 
 // ---- S2 : préférences, relations, blocages, signalements, demandes de rejoindre ----
-type ActivityVisibility = 'friends' | 'favorites' | 'nobody';
-type WatchWith = 'open' | 'ask' | 'never';
-type LibraryVisibility = 'friends' | 'household' | 'private';
-type MessagesFrom = 'friends' | 'favorites' | 'household';
-export type PlaybackSocial = 'all' | 'messages' | 'cinema';
-type NotifyPrefs = { messages: boolean; requests: boolean; parties: boolean; friendStarts: boolean; vibrate: boolean; sound: boolean };
-export type SocialPrefs = {
-  activityVisibility: ActivityVisibility; watchWith: WatchWith; libraryVisibility: LibraryVisibility; messagesFrom: MessagesFrom;
-  historyVisible: boolean; antiSpoiler: boolean; playbackSocial: PlaybackSocial; notify: NotifyPrefs;
-};
 export type PrefsPatch = Partial<Omit<SocialPrefs, 'notify'>> & { notify?: Partial<NotifyPrefs> };
 /** Défauts serveur (contrat S2), pour les écrans qui s'affichent avant la première réponse. */
 export const DEFAULT_PREFS: SocialPrefs = {
@@ -47,8 +37,8 @@ export const DEFAULT_PREFS: SocialPrefs = {
   notify: { messages: true, requests: true, parties: true, friendStarts: false, vibrate: false, sound: false },
 };
 
-/** Fiche ami v3 : `FriendView` plus les réglages de relation. Optionnels au type, car une réponse ou une fixture v2 ne les porte pas. */
-export type FriendV3 = FriendView & { customStatus?: CustomStatus; favorite?: boolean; nickname?: string; muted?: boolean; hideActivity?: boolean; avatar?: string };
+/** Fiche ami v3 : `FriendView` plus `hideActivity`, lu par l'interface et absent du protocole (voir la note de la réponse). */
+export type FriendV3 = FriendView & { hideActivity?: boolean };
 /** `PUT /friends/:pid/relation` : `nickname` ≤ 32 caractères, `null` pour l'effacer. */
 export type RelationPatch = { favorite?: boolean; nickname?: string | null; muted?: boolean; hideActivity?: boolean };
 export type BlockedPerson = { pid: string; handle: Handle };
@@ -57,23 +47,6 @@ export type ReportInput = { pid: string; reason: ReportReason; details?: string 
 export type JoinAnswer = { accept: boolean; partyId?: string };
 
 // ---- S3 : messages riches, réactions, sondages, groupes, partage, listes ----
-type MessageKind = 'text' | 'title' | 'moment' | 'party' | 'poll';
-type TitleRef = { type: MediaKind; tmdbId: number; title: string; poster?: string; year?: number; rating?: number };
-type MomentRef = { type: MediaKind; tmdbId: number; season?: number; episode?: number; title: string; pos: number; end?: number; still?: string };
-type PartyRef = { partyId: string; title: string };
-type PollOption = { id: string; label: string; votes: number; mine: boolean };
-export type Poll = { id: string; question: string; options: PollOption[]; closed: boolean };
-export type Reaction = { emoji: string; count: number; mine: boolean };
-/** Message v3 : `conv` est `dm:<pid>` ou `g:<id>`. Le `Message` v2 reste valable comme sous-ensemble. */
-export type MessageV3 = Message & {
-  conv: string; kind: MessageKind;
-  title?: TitleRef; moment?: MomentRef; party?: PartyRef; poll?: Poll;
-  reactions: Reaction[]; replyTo?: string;
-};
-/** `ownerPid` : le propriétaire (seul à renommer et à changer les membres). Absent d'un serveur plus ancien : personne n'est alors propriétaire côté client. */
-type GroupInfo = { id: string; name: string; members: FriendV3[]; ownerPid?: string };
-/** Conversation v3 : une conversation directe ou un groupe (`group` présent). */
-export type ConversationV3 = Conversation & { conv: string; group?: GroupInfo };
 /** Corps de `POST /conv/:conv/messages`. `party` n'est plus envoyable par là : l'invitation passe par `POST /party/:id/invite {pid}`. */
 export type NewMessage = {
   kind: Exclude<MessageKind, 'party'>; body?: string;
@@ -83,31 +56,11 @@ export type NewMessage = {
 type ShareTarget = { pid: string } | { group: string };
 export type ShareInput = { to: ShareTarget[]; kind: 'title' | 'moment'; title?: TitleRef; moment?: MomentRef; body?: string };
 export type ShareLinkInput = { type: MediaKind; tmdbId: number; pos?: number; end?: number; withInvite: boolean; note?: string };
-export type ShareLinkCreated = { url: string; code: string; inviteCode?: string };
-export type ShareLinkView = {
-  type: MediaKind; tmdbId: number; title: string; poster: string; pos?: number; end?: number;
-  from: { handle: Handle; avatarColor: string }; note?: string; inviteCode?: string;
-};
-/** Un de mes liens publics (`GET /share-links`) ; `expired` vaut true après 30 jours. */
-export type MyShareLink = {
-  code: string; url: string; type: MediaKind; tmdbId: number; title: string; poster?: string; pos?: number; end?: number; note?: string;
-  inviteCode?: string; createdAt: number; expiresAt: number; expired: boolean;
-};
-export type ListSummary = { id: string; name: string; members: FriendV3[]; count: number };
-type ListItem = { type: MediaKind; tmdbId: number; title: string; poster?: string; addedBy: string; addedAt: number };
-export type ListDetail = { id: string; name: string; members: FriendV3[]; items: ListItem[] };
 export type ListItemInput = { type: MediaKind; tmdbId: number; title: string; poster?: string };
 
 // ---- S5 : activité et agrégats ----
-type ActivityKind = 'started' | 'finished' | 'rated' | 'noted' | 'favorited' | 'listed';
-type ActivityMedia = { type: MediaKind; tmdbId: number; title: string; poster?: string; season?: number; episode?: number };
-export type ActivityItem = {
-  id: string; pid: string; handle: Handle; avatarColor: string; avatar?: string; kind: ActivityKind;
-  media: ActivityMedia; rating?: number; at: number;
-};
 /** Média visé par une requête d'agrégat : un film, ou un épisode d'une série. */
 export type MediaQuery = { type: MediaKind; tmdbId: number; season?: number; episode?: number };
-export type MissedSummary = { messages: number; byFriend: Array<{ pid: string; handle: Handle; count: number }>; notes: Note[] };
 
 // ---- Appels ----
 const enc = encodeURIComponent;
@@ -118,7 +71,7 @@ const mediaParams = (q: MediaQuery) => ({ type: q.type, tmdbId: q.tmdbId, season
 export const getProfile = () => social<SocialProfile>('GET', '/profile');
 export const updateProfile = (patch: ProfilePatch) => social<SocialProfile>('PUT', '/profile', patch);
 /** Tire un nouveau tag ; 429 `tag_cooldown` si le dernier date de moins de 30 jours. */
-export const rerollTag = () => social<TagResult>('POST', '/profile/tag');
+export const rerollTag = () => social<SocialProfile>('POST', '/profile/tag');
 export const getFriendProfile = (pid: string) => social<SocialProfile>('GET', `/friends/${enc(pid)}/profile`);
 
 // ---- S2 : préférences, relations, blocages, signalements, demandes de rejoindre ----
@@ -152,7 +105,7 @@ export const sendTyping = (conv: string) => social<void>('POST', `/conv/${enc(co
 // ---- S3 : groupes ----
 export const createGroup = (input: { name: string; members: string[] }) => social<ConversationV3>('POST', '/groups', input);
 export const updateGroup = (id: string, patch: { name?: string; add?: string[]; remove?: string[] }) =>
-  social<void>('PUT', `/groups/${enc(id)}`, patch);
+  social<GroupConversation>('PUT', `/groups/${enc(id)}`, patch);
 /** Quitter un groupe. */
 export const leaveGroup = (id: string) => social<void>('DELETE', `/groups/${enc(id)}/me`);
 
@@ -174,7 +127,7 @@ export const addListItem = (id: string, item: ListItemInput) => social<void>('PO
 export const removeListItem = (id: string, type: MediaKind, tmdbId: number) =>
   social<void>('DELETE', `/lists/${enc(id)}/items/${type}/${tmdbId}`);
 export const updateList = (id: string, patch: { name?: string; add?: string[]; remove?: string[] }) =>
-  social<void>('PUT', `/lists/${enc(id)}`, patch);
+  social<ListDetail>('PUT', `/lists/${enc(id)}`, patch);
 
 // ---- S5 : activité, heatmap, résumé ----
 export const getActivity = (o: { before?: number; limit?: number } = {}) =>

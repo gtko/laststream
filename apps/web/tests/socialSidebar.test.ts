@@ -147,7 +147,7 @@ beforeEach(() => {
   vi.mocked(store.sendRequest).mockReset().mockResolvedValue({ request: request('x', 'Eve') } as never);
   vi.mocked(store.refresh).mockResolvedValue(undefined);
   vi.mocked(store.loadActivity).mockResolvedValue([]);
-  vi.mocked(v2.getFriendLibrary).mockReset().mockResolvedValue({ items: [] });
+  vi.mocked(v2.getFriendLibrary).mockReset().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
   vi.mocked(v2.getFriendHistory).mockReset().mockResolvedValue({ items: [] });
   vi.mocked(v3.getFriendProfile).mockReset().mockResolvedValue({ pid: 'f2', handle: handle('Amy'), avatarColor: '#3b82f6', favorites: [] } as never);
   vi.mocked(invites.refreshInvites).mockResolvedValue(null as never);
@@ -531,6 +531,7 @@ describe('fiche ami', () => {
         { type: 'movie', tmdbId: 603, imdbId: null, title: 'Matrix', poster: null, addedAt: '2026-01-01' },
         { type: 'series', tmdbId: null, imdbId: 'tt1', title: 'Sans TMDB', poster: null, addedAt: '2026-01-01' },
       ],
+      total: 2, limit: 50, offset: 0,
     });
     vi.mocked(v2.getFriendHistory).mockResolvedValue({
       items: [{ type: 'series', tmdbId: 95396, title: 'Severance', season: 2, episode: 3, pos: 2052, watched: false, updatedAt: Date.now() - 2 * 3600_000 }],
@@ -655,7 +656,7 @@ describe('fiche ami', () => {
   });
 
   it('bibliothèque non visible pour moi (aucun titre) : ni onglet ni entrée de menu, sans erreur', async () => {
-    vi.mocked(v2.getFriendLibrary).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(v2.getFriendLibrary).mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     await openCard();
     const tabs = Array.from(document.querySelectorAll('#ss-friend [role="tab"]')).map((t) => t.textContent);
     expect(tabs).toEqual(['Récemment', 'Ses notes · 38']);

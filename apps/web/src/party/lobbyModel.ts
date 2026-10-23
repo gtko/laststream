@@ -30,7 +30,9 @@ function knownQuality(q: unknown): string {
  * État de préparation d'un participant. Un invité (lien partagé) ne déclare rien : il est « Prêt · via le lien ». Un
  * serveur antérieur n'envoie aucun état : tout le monde est prêt.
  */
-export function prepView(p: Pick<PartyParticipant, 'ready' | 'quality' | 'status' | 'guest'>): PrepView {
+export type PrepSource = Partial<Pick<PartyParticipant, 'ready' | 'quality' | 'status'>> & { guest?: boolean };
+
+export function prepView(p: PrepSource): PrepView {
   const quality = knownQuality(p.quality);
   if (p.status === 'buffering') return { state: 'buffering', label: 'Tampon en cours…' };
   if (p.status === 'searching') return { state: 'searching', label: 'Cherche une source…' };
@@ -54,7 +56,7 @@ export interface ReadySummary {
   waiting: string[];
 }
 
-export function readySummary(list: readonly PartyParticipant[]): ReadySummary {
+export function readySummary(list: readonly (PrepSource & Pick<PartyParticipant, 'username'>)[]): ReadySummary {
   const waiting = list.filter((p) => prepView(p).state !== 'ready').map((p) => p.username);
   return { ready: list.length - waiting.length, total: list.length, waiting };
 }

@@ -55,8 +55,9 @@ export const NOT_OPENABLE = 'Ce passage ne peut pas être ouvert : numéro d’�
  * Bornée à [0, durée − 5 s] quand la durée est connue. Un relevé daté du futur n'avance pas la position.
  */
 export function resumePosition(w: Pick<Watching, 'pos' | 'duration' | 'paused' | 'at'>, nowMs: number): number {
-  const base = Number.isFinite(w.pos) ? w.pos : 0;
-  const elapsed = !w.paused && Number.isFinite(w.at) && Number.isFinite(nowMs) ? Math.max(0, nowMs - w.at) / 1000 : 0;
+  const base = typeof w.pos === 'number' && Number.isFinite(w.pos) ? w.pos : 0;
+  const at = w.at;
+  const elapsed = !w.paused && typeof at === 'number' && Number.isFinite(at) && Number.isFinite(nowMs) ? Math.max(0, nowMs - at) / 1000 : 0;
   let pos = Math.max(0, base + elapsed);
   const duration = w.duration;
   if (duration !== undefined && Number.isFinite(duration) && duration > 0) pos = Math.min(pos, Math.max(0, duration - 5));
