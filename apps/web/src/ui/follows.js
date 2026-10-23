@@ -65,7 +65,7 @@ document.addEventListener('click', (e) => {
 
 // Menu contextuel : titres et personnes.
 registerCtxItems((t) => {
-  if (t.kind !== 'title' && t.kind !== 'person') return [];
+  if (t.kind !== 'title' && t.kind !== 'show' && t.kind !== 'person') return [];
   const key = t.kind === 'person' ? 'person:' + t.id : t.key;
   const on = userStore.isFollowing(key);
   return [{ id: 'follow', label: on ? 'Ne plus suivre' : 'Suivre', icon: on ? ICON.bellOn : ICON.bell, run: () => toggleFollow(key, t.el) }];

@@ -121,7 +121,7 @@ document.addEventListener('click', (e) => {
 
 // Menu contextuel : « Noter… » sur les titres.
 registerCtxItems((t) => {
-  if (t.kind !== 'title') return [];
+  if (t.kind !== 'title' && t.kind !== 'show') return [];
   const v = userStore.getRating(t.key);
   return [{
     id: 'rate', label: v ? 'Modifier ma note (' + fmtNum(v, 1) + ' ★)' : 'Noter…', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/></svg>',

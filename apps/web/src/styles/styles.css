@@ -798,8 +798,15 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
 .row, .cast-row, .vid-row { scroll-snap-type: none; cursor: grab; }
 .row.is-dragging, .cast-row.is-dragging, .vid-row.is-dragging { cursor: grabbing; user-select: none; }
 .row img, .cast-row img, .vid-row img { -webkit-user-drag: none; user-select: none; }
-/* Affiches, bannières et images : pas de glisser ni d'aperçu natif, le menu contextuel de l'app prend le relais (ODY-180). */
-img { -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none; }
+/* Affiches, bannières et visuels des cibles du menu contextuel : pas de glisser ni d'aperçu natif, le menu de l'app prend le relais (ODY-180).
+ * Avatars et images du chat ne sont pas concernés. */
+[data-tile] img, [data-open^="movie:"] img, [data-open^="tv:"] img, [data-play-key] img, [data-showopen] img, [data-slide-key] img, [data-media] img,
+[data-tvplay] img, [data-person] img, .epg-row img, .ep[data-ep] img, .card img, .tile img, .hero-slide img, .f-bg img, .f-title img, #hovercard img, .svc img,
+.ep-still img, .vid-th img, .cast-ph img, .pp-photo img, .pp-th img {
+  -webkit-user-drag: none; -webkit-touch-callout: none; user-select: none;
+}
+/* Image dans un parent glissable (réglages des sources, favoris du profil) : seul le glisser du parent reste actif. */
+[draggable="true"] img { -webkit-user-drag: none; }
 .row-wrap { position: relative; min-width: 0; }
 .row-arrow {
   position: absolute; top: calc(50% - 22px); z-index: 8; width: 44px; height: 44px; border-radius: 50%;

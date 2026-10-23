@@ -90,7 +90,7 @@ export function ctxTarget(el) {
   const soon = el.closest('[data-play-key]');
   if (soon && soon.dataset.playKey) return { kind: 'title', el: soon, key: soon.dataset.playKey, inContinue: false };
   const show = el.closest('[data-showopen]');
-  if (show && /^\d+$/.test(show.dataset.showopen)) return { kind: 'title', el: show, key: 'tv:' + show.dataset.showopen, inContinue: false };
+  if (show && /^\d+$/.test(show.dataset.showopen)) return { kind: 'show', el: show, key: 'tv:' + show.dataset.showopen, inContinue: false };
   // Affiche de fond et logo de la fiche ouverte.
   if (state.kind === 'fiche' && state.model && el.matches('.f-bg img, img.f-logo')) return { kind: 'fiche', el, model: state.model };
   return null;
@@ -195,20 +195,22 @@ const withNamed = (it, fn) => (it.name ? fn(it) : named(it).then(fn));
 
 const shareMedia = (m) => ({ type: m.type === 'tv' ? 'series' : 'movie', tmdbId: Number(m.id), title: m.name, poster: m.posterPath || undefined });
 
-/** Watch party : refusée pour un titre pas encore sorti ou au cinéma, comme le bouton de la fiche. */
-function partyFor(el, m) {
-  if (isFuture(m.releaseFR) || m.cinemaSince) { toast('Watch party indisponible pour ce titre'); return; }
-  openPartyDialog(el, m);
-}
-
 /** Suite de `v` : tout de suite quand la valeur est là (fiche ouverte), sinon après son chargement. */
 const whenLoaded = (v, fn) => (v && typeof v.then === 'function' ? v.then(fn) : fn(v));
 
+/** Watch party : refusée pour un titre pas encore sorti ou au cinéma, comme le bouton de la fiche. `key` : titre du menu d'une affiche
+ * ou d'une émission (sans fiche ouverte) ; sa série est « vue » chargée avant la fenêtre, sans quoi l'épisode proposé serait le premier. */
+function partyFor(el, m, key = null) {
+  if (isFuture(m.releaseFR) || m.cinemaSince) { toast('Watch party indisponible pour ce titre'); return; }
+  const seen = key && key.startsWith('tv:') && userStore.loadWatched ? Promise.resolve(userStore.loadWatched(key)).catch(() => undefined) : null;
+  whenLoaded(seen, () => openPartyDialog(el, m));
+}
+
 /** « Partager » (compte connecté, profil adulte) et « Proposer une watch party » (compte connecté). `load()` rend la fiche complète, ou une promesse de celle-ci ; l'action reste synchrone quand la fiche est déjà là. */
-function socialItems(el, load) {
+function socialItems(el, load, key = null) {
   const items = [];
   if (socialAvailable()) items.push({ id: 'share', label: 'Partager', icon: ICON.share, run: () => whenLoaded(load(), (m) => openShareDialog({ media: shareMedia(m) })) });
-  if (isServerMode()) items.push({ id: 'party', label: 'Proposer une watch party', icon: ICON.users, run: () => whenLoaded(load(), (m) => partyFor(el, m)) });
+  if (isServerMode()) items.push({ id: 'party', label: 'Proposer une watch party', icon: ICON.users, run: () => whenLoaded(load(), (m) => partyFor(el, m, key)) });
   return items;
 }
 
@@ -231,7 +233,7 @@ function titleItems(t) {
   if (type === 'movie' && !it.cinema && canDownload()) {
     items.push({ id: 'download', label: 'Télécharger', icon: ICON.download, run: () => startDownload({ key: t.key, type: 'movie', id: String(id), name: it.name }, t.el) });
   }
-  socialItems(t.el, () => fetchFull(type, id)).forEach((x) => items.push(x));
+  socialItems(t.el, () => fetchFull(type, id), t.key).forEach((x) => items.push(x));
   extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   if (type === 'movie') {
     const seen = userStore.isWatched(t.key);
@@ -248,6 +250,15 @@ function titleItems(t) {
     items.push({ id: 'restart', label: 'Recommencer depuis le début', icon: ICON.back, run: () => playTitle(t.key, t.el, true) });
     items.push({ id: 'remove', label: 'Retirer de « Reprendre la lecture »', icon: ICON.close, run: () => removeFromContinue(t.key) });
   }
+  return items;
+}
+
+/** Émission (guide, « Émissions ») : « Plus d’infos » vers sa page, partage et watch party, suivre et noter. Pas de « vu » ni de bibliothèque : une émission n’est pas une série du catalogue. */
+function showItems(t) {
+  const id = t.key.split(':')[1];
+  const items = [{ id: 'info', label: 'Plus d’infos', icon: ICON.info, run: () => go('#/emission/' + id, t.el) }];
+  socialItems(t.el, () => fetchFull('tv', id), t.key).forEach((x) => items.push(x));
+  extrasOf().forEach((fn) => fn(t).forEach((x) => items.push(x)));
   return items;
 }
 
@@ -297,13 +308,20 @@ function ficheItems(t) {
 export function ctxItems(t) {
   if (t.kind === 'fiche') return ficheItems(t);
   if (t.kind === 'title') return titleItems(t);
+  if (t.kind === 'show') return showItems(t);
   if (t.kind === 'episode') return episodeItems(t);
   if (t.kind === 'channel') return channelItems(t);
   return personItems(t);
 }
 
 // ---------- Rendu ----------
+/** Tactile : l'appui long ouvre ce menu, et le navigateur envoie aussi « contextmenu » (dans un ordre ou dans l'autre) sur la même cible. */
+const DUP_MS = 1000;
+const DUP_PX = 24;
+
 export function openCtx(t, x, y) {
+  const open = state.ctxMenu;
+  if (open && open._opener === t.el && Date.now() - open._at < DUP_MS && Math.abs(open._x - x) < DUP_PX && Math.abs(open._y - y) < DUP_PX) return;
   closeCtx();
   const items = ctxItems(t);
   if (!items.length) return;
@@ -312,6 +330,9 @@ export function openCtx(t, x, y) {
   menu.setAttribute('role', 'menu');
   menu.dataset.kind = t.kind;
   if (t.key) menu.dataset.key = t.key;
+  menu._at = Date.now();
+  menu._x = x;
+  menu._y = y;
   menu.innerHTML = items.map((it) => '<button type="button" role="menuitem" data-ctx="' + esc(it.id) + '">' + (it.icon || '') + '<span>' + esc(it.label) + '</span></button>').join('');
   if ((t.kind === 'title' || t.kind === 'episode') && takeHint()) {
     menu.insertAdjacentHTML('beforeend', '<p class="ctx-hint" aria-hidden="true">Astuce : clic droit, appui long ou « … » sur une affiche ouvre ce menu.</p>');
@@ -356,15 +377,18 @@ const pointOf = (el, e) => {
   return [r.left + Math.min(40, r.width / 2), r.top + Math.min(40, r.height / 2)];
 };
 
-/** Visuels de l'app (affiches, bannières, images) : jamais de menu natif dessus, même quand l'app n'a pas de menu pour eux. */
-const VISUAL = 'img, picture, video, canvas, [data-media], .hero-slide, [data-tile], [data-open], [data-play-key], [data-showopen]';
+/** Visuels de l'app (affiches, bannières, images) : jamais de menu natif dessus, même quand l'app n'a pas de menu pour eux.
+ * Les cartes d'import Stremio (`data-open="true"`) ne sont pas des titres : menu natif. */
+const VISUAL = 'img, picture, video, canvas, [data-media], .hero-slide, [data-tile], [data-open^="movie:"], [data-open^="tv:"], [data-play-key], [data-showopen]';
 const FIELD = 'input, textarea, select, [contenteditable="true"]';
+/** Carte du guide (`epg:…`) : pas de titre TMDB, donc pas de menu de l'app ; le menu natif reste disponible. */
+const GUIDE_CARD = '[data-showopen^="epg:"]';
 
 document.addEventListener('contextmenu', (e) => {
   const t = ctxTarget(e.target);
   if (!t) { // menu natif, sauf sur un visuel
     const el = e.target instanceof Element ? e.target : null;
-    if (el && el.closest(VISUAL) && !el.closest(FIELD)) e.preventDefault();
+    if (el && el.closest(VISUAL) && !el.closest(FIELD) && !el.closest(GUIDE_CARD)) e.preventDefault();
     return;
   }
   e.preventDefault();

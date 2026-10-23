@@ -77,7 +77,7 @@ describe('cibles du menu contextuel (ODY-180)', () => {
   });
 
   it('émission (data-showopen) : identifiant numérique seulement', () => {
-    expect(ctx.ctxTarget(mount('<button type="button" data-showopen="123">Émission</button>'))).toMatchObject({ kind: 'title', key: 'tv:123' });
+    expect(ctx.ctxTarget(mount('<button type="button" data-showopen="123">Émission</button>'))).toMatchObject({ kind: 'show', key: 'tv:123' });
     expect(ctx.ctxTarget(mount('<button type="button" data-showopen="epg:x">Guide</button>'))).toBeNull();
   });
 
