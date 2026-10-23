@@ -62,6 +62,15 @@ describe('flux de version Windows depuis R2', () => {
     assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
     assert.equal(r.headers.get('content-disposition'), null);
   });
+  it('HEAD sans corps, plage -> 206', async () => {
+    const h = await get(F, { method: 'HEAD' });
+    assert.equal(h.status, 200);
+    assert.equal(await h.text(), '');
+    const r = await get(F, { headers: { range: 'bytes=10-19' } });
+    assert.equal(r.status, 206);
+    assert.equal(r.headers.get('content-range'), 'bytes 10-19/100');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+  });
   it('l\'installeur garde son cache immuable ; POST refusé ; autres JSON refusés', async () => {
     const exe = await get('/app/windows/Laststream-Setup-1.0.0.exe');
     assert.equal(exe.headers.get('cache-control'), 'public, max-age=86400, immutable');
