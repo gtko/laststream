@@ -9,10 +9,17 @@ on:
 permissions:
   contents: read
 
+# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
+# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
+defaults:
+  run:
+    shell: cmd
+
 jobs:
   check:
     name: Typecheck, lint, tests, knip
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, laststream-local]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
