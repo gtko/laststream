@@ -16,6 +16,10 @@ import { resolveImdbId } from '../data/imdbResolve';
 import { episodeStreamId, measureBandwidthKbps } from '../data/sources';
 import { userStore } from '../data/userStore';
 import { emitDataEvent } from '../data/events';
+import { addonNextEpisode, addonProgressKey, addonOf, addonResumeSource, addonStreamIdOf, addonVideoOf } from './addonRequest';
+import { addonKeyOf, readAddonCatalogs } from '../data/addonCatalog';
+import { getAddonProgress, saveAddonProgress } from '../data/addonUserStore';
+import { loadAddonSources } from '../sources/addonSources';
 import { POLL_EVERY_MS, audioLangsFor, awaitLaunchable, loadSources, pollSources, recommendFor, requestKey, sourceLangFor, viewFromStream, webCompatContext } from '../sources/load';
 import { failoverCandidates, webCompatOf } from '../sources/webCompat';
 import { describeLaunch, describePending, isGoodMatch } from '../sources/rank';
@@ -270,7 +274,7 @@ function refreshAddonThumbs() {
 
 /** Titre en cours de lecture, tel que le salon (watch party) le voit : identité, source choisie, moteur. Jamais de lien. */
 function partyAdapter(p = P) {
-  if (!p) return null;
+  if (!p || p.addon) return null; // ODY-252 : le salon identifie les titres par id TMDB, pas ceux d'un addon
   return {
     req: p.req, cur: p.cur, view: p.view, poster: p.meta ? p.meta.poster : '', engine: p.engine,
     // Pas prêt pendant un rechargement (bascule de source) : l'ancien moteur, détruit, n'est pas une mesure.
@@ -600,7 +604,7 @@ async function initSession(request, views, view, opts = {}) {
       style: readSubStyle(), native: false, nativeCues: [], styleOpen: false, sync: { state: 'idle', message: '' }, syncKey: '',
     },
     defaultsDone: false, applier: new TrackApplier(), autoToast: false, autoAppliedAt: 0, seasons: [], episodes: new Map(), opener: opts.opener || document.activeElement, failing: false,
-    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: request.imdb || '', epQuery: '', epSearchOpen: false, canonical: false, pickMine: false,
+    notice: opts.notice || '', forceHls: false, startedAt: 0, resumeTimer: null, imdb: addonOf(request) ? '' : request.imdb || '', addon: addonOf(request), epQuery: '', epSearchOpen: false, canonical: false, pickMine: false,
     aspect: 'contain', local: null, localFailed: false,
     skipPoll: { analyzing: false, polls: 0, lastAt: 0 }, analyzed: false,
   };
@@ -613,7 +617,7 @@ async function initSession(request, views, view, opts = {}) {
   };
   startNotes(P);
   // Présence (titre regardé) et bulle des messages : ni l'une ni l'autre pour un profil enfant ou hors mode serveur.
-  const social = notesAllowed();
+  const social = notesAllowed() && !P.addon; // titre d'addon : ni présence, ni bulles, ni salon (ils exigent un id TMDB)
   setPresenceMedia(social ? presenceMediaOf(P) : null);
   if (social && bubble) bubble.start();
   startSocialPlayback(P, social);
@@ -626,7 +630,7 @@ async function initSession(request, views, view, opts = {}) {
   ui.video.hidden = false;
   ui.video.style.objectFit = 'contain';
   ui.setHeading(...headingFor(P));
-  ui.setSeries(request.type === 'tv', false);
+  ui.setSeries(hasEpisodesPanel(P), false);
   ui.setError(null);
   ui.setResume(null);
   ui.setSkip(null);
@@ -635,7 +639,7 @@ async function initSession(request, views, view, opts = {}) {
   ui.setCue('', P.subs.style);
   ui.show();
   ui.focusFirst();
-  ui.setPartyAvailable(partyBridge.available());
+  ui.setPartyAvailable(partyBridge.available() && !P.addon);
   clearInterval(tickTimer);
   memoryWatch.reset();
   tickTimer = setInterval(tick, 100);
@@ -662,13 +666,19 @@ function seekPositionOf(start) {
   return start && typeof start === 'object' ? resumePosition(start, Date.now()) : null;
 }
 
+/** Progression enregistrée du titre en cours : stockage des addons (`addonUserStore`) pour un titre d'addon, `userStore` sinon. */
+function savedProgressOf(p) {
+  if (p.addon) return addonResumeSource(getAddonProgress(addonProgressKey(p.addon)), p.cur);
+  return userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
+}
+
 /** Poursuit la session avec la source choisie : reprise éventuelle puis lecture. */
 function continueWith(view, opts = {}) {
   const p = P;
   p.view = view;
   p.notice = opts.notice || p.notice;
   ui.root.classList.remove('is-searching');
-  const saved = userStore.getProgress(p.req.key, p.req.season ?? undefined, p.req.episode ?? undefined);
+  const saved = savedProgressOf(p);
   const rd = resumeDecision(saved);
   const mode = opts.resume || 'ask';
   const at = seekPositionOf(typeof opts.startAt === 'number' ? opts.startAt : p.seekStart);
@@ -694,7 +704,7 @@ function chooseResume(resume) {
   if (!P || !P.resumeTimer) return;
   clearTimeout(P.resumeTimer);
   P.resumeTimer = null;
-  const saved = userStore.getProgress(P.req.key, P.req.season ?? undefined, P.req.episode ?? undefined);
+  const saved = savedProgressOf(P);
   const rd = resumeDecision(saved);
   ui.setResume(null);
   playView(P.view, resume ? rd.position : 0);
@@ -704,6 +714,8 @@ function chooseResume(resume) {
 function loadSideData(token) {
   const p = P;
   const alive = () => P && P.token === token;
+  // Titre d'addon : ni IMDb ni segments de saut (lastAddon les indexe par IMDb) ; les épisodes viennent de la fiche de l'addon.
+  if (p.addon) { ui.setSeries(hasEpisodesPanel(p), !!nextRef()); return; }
   (async () => {
     try {
       if (!p.imdb) p.imdb = (await resolveImdbId(p.req.type, p.req.id)).imdb || '';
@@ -724,7 +736,7 @@ function loadSideData(token) {
 /** Saisons : réponse canonique de lastAddon (TVDB / groupes TMDB), sinon saisons TMDB. */
 async function loadSeasons() {
   const p = P;
-  if (!p || p.seasons.length) return;
+  if (!p || p.addon || p.seasons.length) return;
   try {
     const c = normalizeCanonical(await api('series/' + p.req.id + '/episodes', { language: getVideoLang().tag }));
     if (c && P === p) { p.seasons = c.seasons; p.episodes = c.episodes; p.canonical = true; return; }
@@ -740,7 +752,7 @@ async function loadSeasons() {
 
 async function ensureEpisodes(season, reveal) {
   const p = P;
-  if (!p || p.req.type !== 'tv') return;
+  if (!p || p.addon || p.req.type !== 'tv') return; // titre d'addon : pas de TMDB, pas de liste d'épisodes
   // « Chargement… » dès l'ouverture, y compris pendant la liste canonique des saisons.
   if (!p.seasons.length) { p.episodesLoading = true; p.episodesError = false; ui.refreshPanel(); }
   await loadSeasons();
@@ -786,7 +798,10 @@ function continuesPart(p, nx) {
   return !!next && next.episode === nx.episode;
 }
 
-const nextRef = () => (P && P.req.type === 'tv' && P.cur.season != null ? nextEpisode(P.seasons, { season: P.cur.season, episode: P.cur.episode }) : null);
+const nextRef = () => (P && P.addon ? addonNextEpisode(P.addon.videos, P.cur) : P && P.req.type === 'tv' && P.cur.season != null ? nextEpisode(P.seasons, { season: P.cur.season, episode: P.cur.episode }) : null);
+
+/** Bouton et panneau Épisodes : séries TMDB seulement. Un titre d'addon n'a pas de saisons TMDB ; son épisode suivant reste donné par `nextRef`. */
+const hasEpisodesPanel = (p) => p.req.type === 'tv' && !p.addon;
 
 // ---------- Chargement d'une source ----------
 
@@ -1102,11 +1117,11 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.reloading = false;
   p.memStart = false;
   // Relance (ODY-206) : la source qui vient de démarrer est mémorisée pour la prochaine fois (choix manuel compris), sauf en salon.
-  if (!isOfflineView(p.view) && !p.noLaunchCache && !p.partySwitch) {
+  if (!isOfflineView(p.view) && !p.noLaunchCache && !p.partySwitch && !p.addon) {
     rememberLaunch(requestKey(p.req), { source: sourceKey(p.view), stream: p.view.stream, imdb: p.imdb || p.req.imdb || '', lang: launchLang(p) });
   }
   ui.setPipAvailable(p.engine.supportsPip());
-  ui.setSeries(p.req.type === 'tv', !!nextRef());
+  ui.setSeries(hasEpisodesPanel(p), !!nextRef());
   ui.setMarkAvailable(markAllowed(p));
   if (cand && cand.direct) toastBusy(p, 'Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);
   if (p.notice) { toastBusy(p, p.notice, 6000); p.notice = ''; }
@@ -1581,7 +1596,8 @@ function onEnded() {
   p.finished = true;
   const key = p.req.key;
   closePlayer();
-  setTimeout(() => showRatePrompt(key), 600);
+  // Titre d'addon : pas de demande de note (sa clé « addon:<type>:<id> » n'est pas un id TMDB, rate.js ne sait pas la lire).
+  if (!p.addon) setTimeout(() => showRatePrompt(key), 600);
 }
 
 // ---------- Boucle périodique ----------
@@ -1691,7 +1707,7 @@ function tick() {
 /** Une fois par épisode, lastAddon reçoit le lien lu pour analyser l'épisode (intro, générique). Les erreurs sont ignorées. */
 function maybeAnalyze(st) {
   const p = P;
-  if (p.analyzed || isOfflineView(p.view) || !p.imdb || !isConfigured() || st.time < 3 || !validAnalyzeDuration(st.duration)) return;
+  if (p.analyzed || p.addon || isOfflineView(p.view) || !p.imdb || !isConfigured() || st.time < 3 || !validAnalyzeDuration(st.duration)) return;
   const played = typeof p.view.stream.url === 'string' && /^https?:/i.test(p.view.stream.url) ? p.view.stream.url : p.mediaUrl;
   const url = analyzeUrl(played, serverBase()) || analyzeUrl(p.mediaUrl, serverBase());
   p.analyzed = true;
@@ -1736,6 +1752,12 @@ function saveProgress(force, st) {
   const s = st || p.engine.state();
   if (!shouldSave(Date.now(), p.lastSave, force, s.duration) || s.time <= 1) return;
   p.lastSave = Date.now();
+  if (p.addon) {
+    // Titre d'addon : stockage séparé, jamais dans PROGRESS_KEY (clé numérique TMDB, découpée sur « : » par ui/continue.js).
+    const episode = p.cur.season != null && p.cur.episode != null ? { season: p.cur.season, episode: p.cur.episode } : undefined;
+    saveAddonProgress(addonProgressKey(p.addon), { t: s.time, d: s.duration, at: Date.now(), ...(episode ? { episode } : {}) });
+    return;
+  }
   const it = appState.byKey.get(p.req.key) || {};
   userStore.setProgress({
     key: p.req.key, type: p.req.type, id: Number(p.req.id), title: p.meta.title || it.name || '', poster: p.meta.poster || it.posterPath || '',
@@ -1748,6 +1770,7 @@ function markWatched() {
   const p = P;
   if (!p || p.watchedMarked) return;
   p.watchedMarked = true;
+  if (p.addon) return; // le « vu » du serveur est indexé par id TMDB ; la progression de l'addon suffit
   const refs = p.req.type === 'tv' && p.cur.season != null ? [{ season: p.cur.season, episode: p.cur.episode }] : null;
   Promise.resolve(userStore.setWatched(p.req.key, refs, true)).catch(() => {});
   // Fichier téléchargé : le supprimer pendant qu'on le lit casserait la lecture, on attend la fermeture (teardown).
@@ -1808,6 +1831,7 @@ function showSourcesPanel(reasons = []) {
   const p = P;
   if (!p) return;
   if (nativeEng && p.engine === nativeEng) nativeEng.closeNow(); // le panneau web passe par-dessus : l'activité native se ferme
+  if (p.addon && !p.views.length) { ui.toast('Aucune source trouvée pour ce titre', 3500); closePlayer(); return; } // le sélecteur chercherait via IMDb
   expandPlayer();
   ui.setLoading(null);
   ui.root.classList.remove('is-searching');
@@ -1839,6 +1863,11 @@ function playEpisode(season, episode) {
   if (!p || guestBlocked()) return Promise.resolve();
   ui.closePanel(true);
   ui.closeMark(false); // le segment en cours de marquage appartient à l'épisode qu'on quitte
+  if (p.addon) {
+    // Titre d'addon : l'identifiant de flux de l'épisode est celui de la fiche de l'addon (`videos[].id`), sans TMDB.
+    const video = addonVideoOf(p.addon.videos, season, episode);
+    return playBest({ ...p.req, season, episode, streamId: video ? video.id : null }, p.opener, { resume: 'none' });
+  }
   const info = (p.episodes.get(season) || []).find((e) => e.episode === episode);
   // Identifiant de flux de la structure canonique : même numérotation que l'épisode affiché (progression « vu » inchangée).
   const streamId = (info && info.streamId) || null;
@@ -2168,6 +2197,7 @@ const notesAllowed = () => isServerMode() && !isKidProfile();
 
 /** Média lu au format de la présence : film, ou série avec saison et épisode en cours. Null si le média n'est pas identifiable. */
 function presenceMediaOf(p) {
+  if (p.addon) return null; // id d'addon : la présence exige un id TMDB
   const id = Number(p.req.id);
   if (!p.req.id || !Number.isFinite(id)) return null;
   const series = p.req.type === 'tv';
@@ -2181,6 +2211,7 @@ function presenceMediaOf(p) {
 
 /** Média lu au format des notes (film, ou série avec saison et épisode). Null si le média n'est pas identifiable. */
 function noteMediaOf(p) {
+  if (p.addon) return null;
   const id = Number(p.req.id);
   if (!p.req.id || !Number.isFinite(id)) return null;
   if (p.req.type !== 'tv') return { type: 'movie', tmdbId: id };
@@ -2555,7 +2586,7 @@ export function closePlayer() {
   const opener = p.opener;
   teardown(false).then(() => {
     if (opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
-    if (watched && !p.finished) setTimeout(() => showRatePrompt(key), 600);
+    if (watched && !p.finished && !p.addon) setTimeout(() => showRatePrompt(key), 600); // titre d'addon : pas de note
   });
 }
 
@@ -2581,7 +2612,7 @@ export async function playBest(request, opener, opts = {}) {
   p.noLaunchCache = !!opts.prefer; // salon : chacun suit la version de l'hôte, sans toucher à la source mémorisée
   ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   // Titre téléchargé : lu depuis l'appareil, sans recherche de source ni serveur de streaming (sauf salon : chacun suit la version de l'hôte).
-  if (!opts.prefer && !opts.picker && (await playDownloaded(p, request))) return;
+  if (!opts.prefer && !opts.picker && !p.addon && (await playDownloaded(p, request))) return;
   await searchAndPlay(p, request, opts);
 }
 
@@ -2699,16 +2730,28 @@ function searchInstead(p, startAt) {
   return searchAndPlay(p, p.req, { ...p.launchOpts, noCache: true });
 }
 
+/** Sources d'un titre d'addon : directement chez l'addon (appareil), au format de `loadSources`. Aucune étape TMDB / IMDb. */
+async function loadAddonLoaded(p, request) {
+  const a = p.addon;
+  // Repli hors registre : nom générique, jamais l'adresse de l'addon (elle peut porter un jeton).
+  const entry = readAddonCatalogs()[addonKeyOf(a.base)] || { manifestUrl: a.base + '/manifest.json', name: 'Addon' };
+  const views = await loadAddonSources(entry, a.type, addonStreamIdOf(request));
+  return { imdb: '', views, pending: [] };
+}
+
 /** Recherche des sources, choix de la meilleure et lancement (écran de chargement du lecteur). */
 async function searchAndPlay(p, request, opts) {
   const token = p.token;
   const alive = () => P && P.token === token;
-  if (!opts.noCache && !p.noLaunchCache && !opts.picker && (getAutoplay() || opts.force) && (await playRemembered(p, request))) return;
+  if (!p.addon && !opts.noCache && !p.noLaunchCache && !opts.picker && (getAutoplay() || opts.force) && (await playRemembered(p, request))) return;
   if (!alive()) return;
   let loaded = null;
   try {
-    if (userStore.loadProgress) await userStore.loadProgress(request.key);
-    loaded = await loadSources(request);
+    if (p.addon) loaded = await loadAddonLoaded(p, request);
+    else {
+      if (userStore.loadProgress) await userStore.loadProgress(request.key);
+      loaded = await loadSources(request);
+    }
   } catch (_) { loaded = null; }
   if (!alive()) return;
   // Liste vide sans recherche en cours : le panneau explique pourquoi ; vide mais encore en cours : on attend la suite.

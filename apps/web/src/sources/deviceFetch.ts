@@ -23,7 +23,7 @@ const knownAddonNames = new Map<string, string>();
 const isGenericAddonName = (name: string): boolean => GENERIC_ADDON_NAMES.includes(name.trim().toLowerCase());
 
 /** Adresse de l'addon sans `manifest.json` ni `/stream/…` (le préfixe de configuration est gardé). Vide si invalide. */
-function addonKey(raw: string): string {
+export function addonKey(raw: string): string {
   try {
     const url = new URL(raw.replace(/^stremio:\/\//i, 'https://'));
     url.search = '';

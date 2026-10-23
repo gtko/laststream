@@ -5,6 +5,8 @@ import { isMask, testSource } from '../data/configApi';
 import { connectShell, isShellEnvironment, openExternal } from '../player/shell';
 import { checkKey, classifyStreams, isDue, readCheck, writeCheck } from '../data/addonSafety';
 import { rememberAddonName } from '../sources/deviceFetch';
+import { parseManifestCatalogs } from '../data/addonCatalog';
+import { catalogBoxHTML, refreshCatalogs, setCatalogHome, toggleCatalogs } from './addonCatalogSettings.js';
 import { openAddonConfig } from './addonConfig.js';
 import { ICON } from './icons.js';
 import { detailEl, toast } from './dom.js';
@@ -58,6 +60,7 @@ export function manifestInfo(m) {
     types: Array.isArray(m && m.types) ? m.types : [],
     hasStream: resources.includes('stream'),
     configurable: !!(hints.configurable || hints.configurationRequired),
+    manifestCatalogs: parseManifestCatalogs(m),
   };
 }
 
@@ -92,6 +95,7 @@ async function loadInfo(src) {
     }
   }
   info.set(src.id, result);
+  refreshCatalogs(url, result);
   // Nom du manifest retenu pour les flux que l'appareil récupère lui-même (« via ton appareil »).
   if (result.name) rememberAddonName(url, result.name);
   // Le nom du manifest remplit le champ « Nom » tant que l'utilisateur ne l'a pas modifié.
@@ -216,7 +220,7 @@ function editHTML(s) {
     (s.type === 'torznab'
       ? f('URL Torznab (baseUrl)', '<input type="url" data-sf="baseUrl" value="' + esc(s.baseUrl || '') + '" placeholder="https://indexeur.exemple/api">') +
         f('Clé API', '<input type="password" autocomplete="off" data-sf="apiKey" placeholder="' + esc(mask) + '">', 'Laisse vide pour garder la clé enregistrée.')
-      : f('URL de l’addon amont', '<input type="text" inputmode="url" data-sf="url" value="' + esc(s.url || '') + '" placeholder="https://addon.exemple/manifest.json ou stremio://…">', 'Le manifest est lu à la saisie : nom, logo et état s’affichent.'));
+      : f('URL de l’addon amont', '<input type="text" inputmode="url" data-sf="url" value="' + esc(s.url || '') + '" placeholder="https://addon.exemple/manifest.json ou stremio://…">', 'Le manifest est lu à la saisie : nom, logo et état s’affichent.') + catalogBoxHTML(normalizeManifestUrl(s.url), info.get(s.id)));
 }
 
 function cardHTML(s, pos) {
@@ -250,6 +254,8 @@ function paintCard(id) {
   head.innerHTML = headHTML(s, pos);
   if (open) { head.querySelector('.ep-menu').hidden = false; }
   card.dataset.status = (info.get(id) || {}).status || 'unk';
+  const cats = card.querySelector('.src-cats');
+  if (cats) cats.outerHTML = catalogBoxHTML(normalizeManifestUrl(s.url), info.get(id));
   const nameInput = card.querySelector('[data-sf="name"]');
   if (nameInput && document.activeElement !== nameInput) nameInput.value = s.name || '';
 }
@@ -463,6 +469,7 @@ detailEl.addEventListener('click', (e) => {
     navigator.clipboard.writeText(text).then(() => toast('URL copiée'), () => toast('Copie impossible'));
     return;
   }
+  if (t.closest('[data-addon-cat]')) { e.preventDefault(); const s = list.find((x) => x.id === id); if (s) toggleCatalogs(t.closest('[data-addon-cat]'), normalizeManifestUrl(s.url), info.get(id)); return; }
   if (t.closest('[data-src-edit]')) {
     e.preventDefault();
     closeMenus();
@@ -501,6 +508,7 @@ detailEl.addEventListener('change', (e) => {
   if (!t || !t.closest('.src-card')) return;
   const card = t.closest('.src-card');
   if (t.matches('[data-src-enabled]')) { toggleEnabled(card.dataset.srcid, t.checked); return; }
+  if (t.matches('[data-addon-cat-home]')) { const s = list.find((x) => x.id === card.dataset.srcid); setCatalogHome(t, s ? normalizeManifestUrl(s.url) : ''); return; }
   if (t.matches('[data-sf="url"]')) {
     const s = list.find((x) => x.id === card.dataset.srcid);
     const https = toHttpsUrl(t.value);

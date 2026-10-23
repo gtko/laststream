@@ -30,12 +30,26 @@ import { closePlayer } from './player.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { showCollection, showCollections } from './collections.js';
 import { showDiscover } from './discover.js';
+import { showAddonCatalog } from './addonCatalogPage.js';
+import { showAddonFiche } from './addonFiche.js';
+import { parseAddonHash, resolveAddonSlug } from './addonRoutes.js';
 import { showHub } from './hubs.js';
 import { showService, showServices } from './services.js';
 import { showSettings } from './settings.js';
 import { state } from './state.js';
 import { showShow, showShowsPage, renderTvRows } from './shows.js';
 import { renderLive, showTvLive } from './tv.js';
+
+/** Page d'addon ouverte (catalogue ou fiche) : son `destroy()` est appelé en la quittant (voir teardownAddonView). */
+let addonView = null;
+
+/** Page d'addon quittée : arrêt de son défilement ou de ses chargements, puis remise à zéro de l'état de fiche. */
+function teardownAddonView() {
+  if (!addonView) return;
+  addonView.destroy();
+  addonView = null;
+  teardownFiche();
+}
 
 export function go(url, opener) {
   closeHover();
@@ -77,6 +91,8 @@ export function showView(r) {
   else if (r.kind === 'show') showShow(r.id);
   else if (r.kind === 'hub') showHub(r.id);
   else if (r.kind === 'downloads') showDownloads();
+  else if (r.kind === 'addonCatalog') addonView = showAddonCatalog(detailEl, { addonKey: r.addonKey, type: r.type, catId: r.catId });
+  else if (r.kind === 'addonFiche') addonView = showAddonFiche(detailEl, { addonKey: r.addonKey, type: r.type, id: r.id });
   else showFiche(r.type, r.id, r.season != null ? { s: r.season, e: r.episode } : null);
 }
 export function applyRestore() {
@@ -96,6 +112,8 @@ export function parseRoute() {
   // Profil enfant : ni réglages ni TV en direct, ni amis ni salons publics (un salon privé s'ouvre par son lien).
   if (r && isKidProfile() && (r.kind === 'settings' || r.kind === 'hidden' || r.kind === 'stats' || r.kind === 'friends' || r.kind === 'friend' || r.kind === 'socialprofile' || r.kind === 'list' || r.kind === 'parties' || (r.kind === 'tvlive' && !kidSection('tv')) || r.kind === 'calendar' || r.kind === 'shows' || r.kind === 'show' || r.kind === 'collections' || r.kind === 'collection' || r.kind === 'discover' || r.kind === 'downloads' || r.kind === 'hub')) return null;
   if (r && r.kind === 'browse' && !(r.id === 'ai' ? !isKidProfile() : browseAllowed(r.id))) return null;
+  // Pages d'addon (catalogue, fiche) : refusées sur le profil enfant, comme le navigateur.
+  if (r && (r.kind === 'addonCatalog' || r.kind === 'addonFiche') && isKidProfile()) return null;
   return r;
 }
 
@@ -103,6 +121,14 @@ function parseRouteRaw() {
   const h = location.hash || '';
   const fiche = parseFicheHash(h);
   if (fiche) return { kind: 'fiche', ...fiche };
+  // Adresse d'un addon (#/addon/<slug>/…) : le slug donne la clé du registre, null si l'addon n'est plus activé (la page le dit).
+  const addon = parseAddonHash(h);
+  if (addon) {
+    const addonKey = resolveAddonSlug(addon.addonSlug);
+    return addon.kind === 'catalog'
+      ? { kind: 'addonCatalog', addonKey, type: addon.type, catId: addon.catId }
+      : { kind: 'addonFiche', addonKey, type: addon.type, id: addon.id };
+  }
   let r = /^#\/service\/([a-z0-9-]{1,40})$/.exec(h);
   if (r) return { kind: 'service', slug: r[1] };
   r = /^#\/person\/(\d{1,9})$/.exec(h);
@@ -162,6 +188,7 @@ export function route() {
     return;
   }
   teardownDownloads(); // téléchargements : abonnement de la vue quittée libéré (la vue suivante se réabonne)
+  teardownAddonView(); // page d'addon quittée : défilement et chargements arrêtés
   if (r) {
     if (!state.inDetail) {
       state.homeScroll = window.scrollY;

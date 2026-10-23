@@ -19,6 +19,8 @@ import { loadServices } from './services.js';
 import { state } from './state.js';
 import { observeTiles, posterCard, tileCard, topCard } from './tiles.js';
 import { esc } from './util.js';
+import { addonCardHTML } from './addonCatalogPage.js';
+import { addonHomeRows, resolveAddonRow } from './addonRows.js';
 
 const AHEAD_PX = 700; // environ deux rangées d'avance
 
@@ -171,6 +173,7 @@ export async function resolveRow(def, page = 1, ctx = makeCtx(getRegion().code, 
       .filter((c) => (c.release_date || c.first_air_date || '9999') <= todayStr()).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 40).map((c) => register(listOf({ results: [c] }, c.media_type)[0]));
     return { title: 'Avec ' + (p.name || 'ta personnalité suivie'), items };
   }
+  if (f.k === 'addon') return resolveAddonRow(def, page);
   return null;
 }
 
@@ -219,9 +222,13 @@ const near = () => {
 };
 
 function renderDef(def, title, items) {
-  const link = def.noBrowse ? '' : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">Tout voir</a>';
+  const addon = def.fetch.k === 'addon';
+  const link = def.noBrowse ? '' : addon
+    ? ' <a class="row-link" href="' + esc(def.browseHref) + '" data-go>Tout voir</a>'
+    : ' <a class="row-link" href="#/browse/' + esc(def.id) + '" data-browse="' + esc(def.id) + '">Tout voir</a>';
   let html;
   if (def.kind === 'top10') html = row(rankTop(items).map(({ item, rank }) => topCard(item, rank)).join(''));
+  else if (addon) html = row(items.map((it, i) => addonCardHTML(it, i)).join(''));
   else if (def.kind === 'landscape') html = row(items.map((it) => tileCard(it, { variant: 'land' })).join(''));
   else if (def.kind === 'logoCard') html = row(items.map((it) => tileCard(it, { variant: 'logo' })).join(''));
   else html = row(items.map((it) => posterCard(it)).join(''));
@@ -240,8 +247,8 @@ async function loadNext() {
       def.kind === 'top10' ? TOP_COUNT : ROW_MAX,
       async (fresh) => {
         const open = fresh.filter((it) => reg.appear.canShow(it.key) && !reg.prevKeys.has(it.key));
-        // Top 10 : la disponibilité est décidée côté serveur (une page déjà filtrée), jamais par tuile.
-        return def.fetch.k === 'top10' ? open : filterAvailable(open, { cinema: def.cinema });
+        // Top 10 et catalogues d'addon : pas de contrôle de disponibilité TMDB (déjà filtré côté serveur, ou identifiants propres à l'addon).
+        return def.fetch.k === 'top10' || def.fetch.k === 'addon' ? open : filterAvailable(open, { cinema: def.cinema });
       },
     );
     if (token !== reg.token || !res) return;
@@ -284,6 +291,8 @@ export function startRegistry(opts = {}) {
   const kid = isKidProfile();
   reg.ctx = makeCtx(getRegion().code, kidMaxAge());
   reg.queue = activeRows(reg.ctx, kid, kidSection).slice();
+  // Catalogues d'addon activés pour l'accueil : après les rangées existantes ; jamais sur un profil enfant.
+  if (!kid) reg.queue.push(...addonHomeRows());
   reg.prevKeys = new Set();
   reg.loaded = 0;
   reg.lastRow = null;

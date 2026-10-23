@@ -1,5 +1,6 @@
 /* Page #/settings : lastAddon (schéma, clés, addons Stremio), lecture, apparence, région. */
 import { applyTestResults, initSources, serializeSources, sourcesHTML } from './settings-sources.js';
+import { pruneCatalogsFor } from './addonCatalogSettings.js';
 import { decodeConfig, encodeConfig, getSchema, isMask, testConfig } from '../data/configApi';
 import { testServer } from '../data/serverTest';
 import { DEFAULT_BASE, getBase, getConfig, getCustom, getMode, isAndroidApp, isConfigured, normalizeBase, saveSettings } from '../data/config';
@@ -473,6 +474,7 @@ async function save(form) {
     }
     pushConfig(config);
     clearCache();
+    pruneCatalogsFor(serializeSources());
     ed.cfg = (await decodeConfig(config, base)) || ed.cfg;
     initSources(ed.cfg.sources);
     ed.loaded = true;
