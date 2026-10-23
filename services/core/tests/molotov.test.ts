@@ -996,8 +996,65 @@ describe('compte Molotov', () => {
     }
   });
 
+  it('replay : forme réelle des cartes PAPI (title.text, body.main_button, footer)', async () => {
+    // 21 min plus tard : hors du cache de 10 min, l'amont de ce test est bien appelé.
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 21 * 60_000);
+    try {
+      replayReply = () => json({
+        title: { text: 'Replay & VOD' },
+        id: 'replay-vod',
+        content: {
+          template: 'grid',
+          sections: [{
+            type: 'grid',
+            slug: 'replay-vod-grid',
+            components: [
+              {
+                type: 'card-wide',
+                id: 'replay-card-1',
+                channel_id: '600046',
+                title: { text: 'Tracker' },
+                subtitle: { text: 'S3 E5' },
+                body: {
+                  picture: { url: 'https://img.example/t.jpg', type: 'picture' },
+                  station_logo: { url: 'https://img.example/logo.png', type: 'picture' },
+                  main_button: { actions: { on_play: [{ endpoint: { method: 'GET', url: `${MOLOTOV_API}/vapi/v1/playback?assetId=LIVE_200&type=vod` }, type: 'play' }] } },
+                },
+                footer: { actions: { on_click: [{ endpoint: { method: 'GET', url: `${MOLOTOV_API}/papi/v1/program-details/series/100007238` }, type: 'open' }] } },
+              },
+              // Entrée de navigation sans programme ni lecture : écartée.
+              { type: 'chip-filter', id: 'chip-1', title: { text: 'Tout' } },
+            ],
+          }],
+        },
+      });
+      await connect();
+      const res = await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.items).toEqual([
+        {
+          id: '100007238',
+          title: 'Tracker',
+          subtitle: 'S3 E5',
+          image: 'https://img.example/t.jpg',
+          kind: null,
+          assetId: 'LIVE_200',
+          channelId: '600046',
+          programId: '100007238',
+          playUrl: null,
+        },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('replay : amont en panne, 502 molotov_unavailable', async () => {
-    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 22 * 60_000);
+    // 33 min après la base : hors du cache de 10 min des tests précédents.
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 33 * 60_000);
     try {
       replayReply = () => json({ error: 'boom' }, 500);
       const res = await request<ErrorBody>(rig.app, 'GET', '/user/account/molotov/replay', {

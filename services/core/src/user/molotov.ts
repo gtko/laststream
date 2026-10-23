@@ -852,7 +852,11 @@ function extractEpg(document: unknown, now: number): MolotovEpgChannel[] {
 const REPLAY_TITLE_KEYS = ['title', 'name', 'label'] as const;
 const REPLAY_SUBTITLE_KEYS = ['subtitle', 'shortDescription', 'tagline'] as const;
 const REPLAY_IMAGE_KEYS = ['horizontalImage', 'image', 'imageUrl', 'cover', 'poster', 'thumbnail'] as const;
-const REPLAY_KIND_KEYS = ['kind', 'type', 'contentType'] as const;
+/** Types de composants PAPI : ce sont des formes d'interface, jamais un genre de contenu. */
+const PAPI_COMPONENT_TYPES = new Set([
+  'card', 'card-wide', 'chip-filter', 'carousel', 'grid', 'tile', 'hero', 'list', 'row', 'section',
+  'button', 'button-icon', 'tag', 'picture', 'progress_bar', 'text',
+]);
 
 /** URL de lecture livrée par la page (`actions.on_play`, `playAsset`, `playChannel`) ; null si absente. */
 function onPlayUrl(node: Record<string, unknown>): string | null {
@@ -864,6 +868,96 @@ function onPlayUrl(node: Record<string, unknown>): string | null {
     if (typeof raw === 'string' && raw.trim().length > 0 && raw.length <= 2048) return raw.trim();
   }
   return null;
+}
+
+/** Composant texte PAPI (`{ text }`, `{ label }`…) ou chaîne directe ; null sinon. */
+function papiText(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim().length > 0 && value.length <= 512) return value.trim();
+  if (isRecord(value)) return pickString(value, ['text', 'title', 'name', 'label']);
+  return null;
+}
+
+/** Genre de contenu d'un nœud (`kind`, `contentType`, `type`), en écartant les types de composants PAPI. */
+function contentKindOf(source: Record<string, unknown>): string | null {
+  for (const key of ['kind', 'contentType', 'type']) {
+    const value = source[key];
+    if (typeof value === 'string' && value.trim().length > 0 && value.length <= 64 && !PAPI_COMPONENT_TYPES.has(value.trim())) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * URL de lecture d'une carte PAPI : la vraie forme est `body.main_button.actions.on_play[].endpoint.url` (tableau
+ * d'actions `{endpoint:{url}}`), l'ancienne forme reste `actions.on_play` = `{url}`.
+ */
+function playUrlOf(node: Record<string, unknown>): string | null {
+  const body = isRecord(node['body']) ? node['body'] : undefined;
+  const button = isRecord(body) && isRecord(body['main_button']) ? body['main_button'] : undefined;
+  for (const source of [button, body, node]) {
+    if (!isRecord(source)) continue;
+    const actions = source['actions'];
+    if (!isRecord(actions)) continue;
+    for (const key of ['on_play', 'playAsset', 'playChannel']) {
+      const action = actions[key];
+      for (const entry of Array.isArray(action) ? action : [action]) {
+        const endpoint = isRecord(entry) ? entry['endpoint'] : undefined;
+        const raw = isRecord(endpoint) ? (endpoint['url'] ?? endpoint['href'])
+          : isRecord(entry) ? (entry['url'] ?? entry['href']) : entry;
+        if (typeof raw === 'string' && raw.trim().length > 0 && raw.length <= 2048) return raw.trim();
+      }
+    }
+  }
+  return null;
+}
+
+/** URL de fiche d'une carte PAPI (`footer.actions.on_click[].endpoint.url`) ; null sinon. */
+function detailsUrlOf(node: Record<string, unknown>): string | null {
+  const footer = node['footer'];
+  const actions = isRecord(footer) ? footer['actions'] : undefined;
+  const clicks = isRecord(actions) ? actions['on_click'] : undefined;
+  for (const entry of Array.isArray(clicks) ? clicks : [clicks]) {
+    const endpoint = isRecord(entry) ? entry['endpoint'] : undefined;
+    const raw = isRecord(endpoint) ? (endpoint['url'] ?? endpoint['href'])
+      : isRecord(entry) ? (entry['url'] ?? entry['href']) : entry;
+    if (typeof raw === 'string' && raw.includes('/program-details/')) return raw.trim();
+  }
+  return null;
+}
+
+/** Identifiant de programme porté par une URL de fiche (`/program-details/(series|program)/<id>`) ; null sinon. */
+function programIdInUrl(url: string | null): string | null {
+  if (url === null) return null;
+  const matched = /\/program-details\/(?:series|program)\/([A-Za-z0-9_.:-]{1,128})/.exec(url);
+  return matched === null ? null : matched[1];
+}
+
+/** Identifiant porté par les paramètres d'une URL amont (`assetId`, `id`…) ; null sinon. */
+function queryIdInUrl(url: string | null, keys: readonly string[]): string | null {
+  if (url === null) return null;
+  try {
+    const params = new URL(url, MOLOTOV_API).searchParams;
+    for (const key of keys) {
+      const value = params.get(key);
+      if (value !== null && value.length > 0 && value.length <= 128) return value;
+    }
+  } catch { /* URL illisible : ignorée */ }
+  return null;
+}
+
+/** Image d'une carte PAPI (`body.picture.url`, `body.station_logo.url`…) ou champ plat ; null sinon. */
+function imageUrlOf(node: Record<string, unknown>): string | null {
+  const body = isRecord(node['body']) ? node['body'] : undefined;
+  for (const source of [node, body]) {
+    if (!isRecord(source)) continue;
+    for (const key of ['picture', 'poster', 'thumbnail', 'station_logo', 'logo']) {
+      const nested = source[key];
+      const url = isRecord(nested) ? pickString(nested, ['url', 'href']) : null;
+      if (url !== null) return url;
+    }
+  }
+  return pickString(node, REPLAY_IMAGE_KEYS);
 }
 
 /** Identifiant d'asset porté par un nœud `assets[]` ou par le nœud lui-même ; null si absent. */
@@ -879,22 +973,37 @@ function assetIdIn(node: Record<string, unknown>): string | null {
 /** Tuile replay/VOD d'un nœud de page ; null si le nœud n'est pas un élément exploitable. */
 function replayItemOf(node: Record<string, unknown>): MolotovReplayItem | null {
   const program = isRecord(node['program']) ? node['program'] : undefined;
-  const actionUrl = onPlayUrl(node);
-  const assetId = assetIdIn(node);
-  if (program === undefined && assetId === null && actionUrl === null) return null;
-  const programId = (program === undefined ? null : pickString(program, ['programId', 'program_id', 'id'])) ?? pickString(node, ['programId', 'program_id']);
-  const title = (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS)) ?? pickString(node, REPLAY_TITLE_KEYS);
-  const id = programId ?? assetId;
+  const actionUrl = playUrlOf(node);
+  const assetId = assetIdIn(node) ?? queryIdInUrl(actionUrl, ['assetId', 'asset_id', 'id']);
+  const detailsUrl = detailsUrlOf(node);
+  const programId = (program === undefined ? null : pickString(program, ['programId', 'program_id', 'id']))
+    ?? pickString(node, ['programId', 'program_id'])
+    ?? programIdInUrl(detailsUrl);
+  const title = papiText(node['title'])
+    ?? (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS))
+    ?? pickString(node, REPLAY_TITLE_KEYS);
+  const id = programId ?? assetId ?? pickString(node, ['id']);
   if (title === null || id === null) return null;
   const channel = isRecord(node['channel']) ? node['channel'] : undefined;
-  // L'URL `on_play` n'est gardée que si elle porte la config de lecture elle-même (sinon l'appel asset est construit).
-  const playUrl = actionUrl !== null && isPlayTarget(actionUrl) && new URL(actionUrl, MOLOTOV_API).pathname === ASSET_PLAY_PATH ? new URL(actionUrl, MOLOTOV_API).href : null;
+  // L'URL `on_play` n'est gardée que si elle porte la config de lecture elle-même (sinon l'appel asset est construit
+  // à partir de `assetId`/`type`, ou depuis le gabarit `/vapi/v1/playback`).
+  let playUrl: string | null = null;
+  if (actionUrl !== null && isPlayTarget(actionUrl)) {
+    try {
+      const target = new URL(actionUrl, MOLOTOV_API);
+      if (target.pathname === ASSET_PLAY_PATH) playUrl = target.href;
+    } catch { /* URL illisible : ignorée */ }
+  }
+  // Une tuile sans programme, sans asset et sans lecture n'est pas exploitable (une entrée de navigation, un canal nu).
+  if (programId === null && assetId === null && playUrl === null) return null;
   return {
     id,
     title,
-    subtitle: (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS)) ?? pickString(node, REPLAY_SUBTITLE_KEYS),
-    image: (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)) ?? pickString(node, REPLAY_IMAGE_KEYS),
-    kind: pickString(node, REPLAY_KIND_KEYS) ?? (program === undefined ? null : pickString(program, REPLAY_KIND_KEYS)),
+    subtitle: papiText(node['subtitle'])
+      ?? (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS))
+      ?? pickString(node, REPLAY_SUBTITLE_KEYS),
+    image: imageUrlOf(node) ?? (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)),
+    kind: contentKindOf(node) ?? (program === undefined ? null : contentKindOf(program)),
     assetId,
     channelId: pickString(node, ['channelId', 'channel_id']) ?? (channel === undefined ? null : pickString(channel, ['id', 'channelId', 'channel_id'])),
     programId,
@@ -905,15 +1014,20 @@ function replayItemOf(node: Record<string, unknown>): MolotovReplayItem | null {
 /** Élément replay/VOD compacté d'un nœud ; null si le nœud n'est pas un épisode exploitable (asset + titre). */
 function episodeOf(node: Record<string, unknown>): MolotovEpisode | null {
   const program = isRecord(node['program']) ? node['program'] : undefined;
-  const assetId = assetIdIn(node);
+  const actionUrl = playUrlOf(node);
+  const assetId = assetIdIn(node) ?? queryIdInUrl(actionUrl, ['assetId', 'asset_id', 'id']);
   if (assetId === null) return null;
-  const title = (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS)) ?? pickString(node, REPLAY_TITLE_KEYS);
+  const title = papiText(node['title'])
+    ?? (program === undefined ? null : pickString(program, REPLAY_TITLE_KEYS))
+    ?? pickString(node, REPLAY_TITLE_KEYS);
   if (title === null) return null;
   return {
     id: (program === undefined ? null : pickString(program, ['programId', 'program_id', 'id'])) ?? pickString(node, ['programId', 'program_id', 'id']) ?? assetId,
     title,
-    subtitle: (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS)) ?? pickString(node, REPLAY_SUBTITLE_KEYS),
-    image: (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)) ?? pickString(node, REPLAY_IMAGE_KEYS),
+    subtitle: papiText(node['subtitle'])
+      ?? (program === undefined ? null : pickString(program, REPLAY_SUBTITLE_KEYS))
+      ?? pickString(node, REPLAY_SUBTITLE_KEYS),
+    image: imageUrlOf(node) ?? (program === undefined ? null : pickString(program, REPLAY_IMAGE_KEYS)),
     assetId,
   };
 }
