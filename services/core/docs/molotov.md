@@ -44,10 +44,38 @@ La voie retenue pour connecter un compte est **l'email + mot de passe** (formula
 sans client id Google) :
 
 ```
-PUT https://api-eu.fubo.tv/signin
+PUT https://api-eu.fubo.tv/v2/signin
 Content-Type: application/json
 { "email": "<email Molotov>", "password": "<mot de passe Molotov>" }
-→ 200 { "idToken": "<JWT Molotov>", "refreshToken": "<JWT Molotov>" }
+→ 200 { "type": "…", "payload": { "idToken": "<JWT Molotov>", "refreshToken": "<JWT Molotov>", … } }
+   (jetons dans `payload`, ou à plat par sécurité)
+```
+
+Si le compte exige une **vérification en deux étapes**, la réponse est un défi plutôt que des jetons
+(`type` insensible à la casse) :
+
+```
+→ 200 { "type": "MFA", "payload": { "token": "<mfaToken>" } }
+```
+
+Le code reçu par email se vérifie avec le jeton de défi porté par l'en-tête `X-Mfa-Token` :
+
+```
+PUT https://api-eu.fubo.tv/mfa/verify
+X-Mfa-Token: <mfaToken>
+Content-Type: application/json
+{ "code": "123456" }
+→ 200 { …jetons (à plat ou dans `payload`)… }
+   4xx → code incorrect ou expiré ; code métier `CHILL_PLZ` → 429 (trop d'essais)
+```
+
+Le code peut être renvoyé ; le jeton de défi **peut changer** :
+
+```
+PUT https://api-eu.fubo.tv/mfa/email/resend
+X-Mfa-Token: <mfaToken>
+(corps vide)
+→ 200 { "payload": { "token": "<nouveauMfaToken>" } }
 ```
 
 Le `idToken` Molotov est le `Authorization: Bearer …` de **toutes** les requêtes API.
@@ -130,7 +158,9 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 |---|---|---|
 | `GET` | `/user/account/molotov` | `{ connected, tier, userId, profileId, email, channelCount, updatedAt }` (`updatedAt` en ms epoch) |
 | `PUT` | `/user/account/molotov` | `{ idToken, refreshToken }` **ou** `{ googleToken }` (le serveur fait alors l'échange) → `{ ok: true }` (tokens chiffrés au repos) |
-| `POST` | `/user/account/molotov/signin` | `{ email, password }` → même état que `GET` (le serveur fait l'amont `PUT /signin`, corps `{email, password}`, **sans** `Authorization`) |
+| `POST` | `/user/account/molotov/signin` | `{ email, password }` → même état que `GET` (le serveur fait l'amont `PUT /v2/signin`, corps `{email, password}`, **sans** `Authorization`) ; si l'amont exige un code : `{ status: "mfa_required", mfaToken }` (aucune ligne de compte créée) |
+| `POST` | `/user/account/molotov/signin/verify` | `{ mfaToken, code }` → même état que `GET` (le serveur fait l'amont `PUT /mfa/verify`, corps `{code}`, en-tête `X-Mfa-Token` ; jetons chiffrés au repos) |
+| `POST` | `/user/account/molotov/signin/resend` | `{ mfaToken }` → `{ mfaToken }` (le serveur fait l'amont `PUT /mfa/email/resend` avec `X-Mfa-Token` ; le jeton de défi peut changer) |
 | `DELETE` | `/user/account/molotov` | `{ ok: true }` (déconnexion) |
 | `GET` | `/user/account/molotov/credentials` | `{ idToken, refreshToken, expiresAt }` (usage appareil direct ; chiffré en transit par le TLS du worker) |
 | `GET` | `/user/account/molotov/channels` | `{ channels: [{ id, name, callSign, logo, group, live, program }], fetchedAt, rawChannelCount }` (compact, cache ~5 min) |
@@ -140,8 +170,9 @@ Toutes sous `/user/account/molotov`, profil principal requis, comme `/user/accou
 | `GET` | `/user/account/molotov/relay?path=…&query=…` | relais JSON vers `api-eu.fubo.tv` (usage web ; allow-list de chemins, `query` encodée à part) |
 
 Erreurs notables : `400 google_token_rejected` (l'API Molotov refuse le client id Google), `400 unsupported_path`,
-`400 invalid_body`, `401 invalid_credentials` et `401 mfa_required` (signin : identifiants refusés, ou vérification en
-deux étapes non gérée), `403 main_profile_required`, `403 relay_disabled`, `401 invalid_session`, `502 molotov_unavailable`.
+`400 invalid_body`, `401 invalid_credentials` (signin : identifiants refusés), `401 invalid_code` (verify/resend : code
+ou défi incorrect, expiré), `429 rate_limited` (verify/resend : trop d'essais), `403 main_profile_required`,
+`403 relay_disabled`, `401 invalid_session`, `502 molotov_unavailable`.
 
 ## 9. Configuration
 

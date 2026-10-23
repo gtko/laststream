@@ -11,6 +11,9 @@ const ID_TOKEN = 'jeton-molotov-id-token';
 const REFRESH_TOKEN = 'jeton-molotov-refresh';
 const NEW_ID_TOKEN = 'jeton-molotov-id-token-neuf';
 const NEW_REFRESH_TOKEN = 'jeton-molotov-refresh-neuf';
+const MFA_TOKEN = 'jeton-mfa';
+const NEW_MFA_TOKEN = 'jeton-mfa-neuf';
+const MFA_CODE = '123456';
 const DRM_TOKEN = 'jeton-drm';
 const CHALLENGE = Buffer.from('challenge-widevine-binaire', 'utf8');
 const LICENSE_BYTES = new Uint8Array([0, 1, 2, 3, 250, 251, 252]);
@@ -75,8 +78,12 @@ describe('compte Molotov', () => {
   let binaryBodies: Uint8Array[] = [];
   /** Nombre d'appels à `/papi/v1/config` : le premier renvoie 401 (session expirée). */
   let configCalls = 0;
-  /** Réponse de `PUT /signin`, pilotée par les tests (identifiants acceptés, refusés, ou vérification en deux étapes). */
+  /** Réponse de `PUT /v2/signin`, pilotée par les tests (identifiants acceptés, refusés, ou vérification en deux étapes). */
   let signinReply: () => Response = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+  /** Réponse de `PUT /mfa/verify`, pilotée par les tests (code accepté ou refusé). */
+  let verifyReply: () => Response = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+  /** Réponse de `PUT /mfa/email/resend`, pilotée par les tests (le jeton de défi peut changer). */
+  let resendReply: () => Response = () => json({ payload: { token: NEW_MFA_TOKEN } });
 
   beforeAll(async () => {
     upstream = mockUpstream({
@@ -89,7 +96,9 @@ describe('compte Molotov', () => {
       [`${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license`]: () => new Response(LICENSE_BYTES, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
       [`${MOLOTOV_API}/refresh`]: () => json({ idToken: NEW_ID_TOKEN, refreshToken: NEW_REFRESH_TOKEN }),
       [`${MOLOTOV_API}/oauth/google`]: () => json({ error: 'invalid_google_client' }, 400),
-      [`${MOLOTOV_API}/signin`]: () => signinReply(),
+      [`${MOLOTOV_API}/v2/signin`]: () => signinReply(),
+      [`${MOLOTOV_API}/mfa/verify`]: () => verifyReply(),
+      [`${MOLOTOV_API}/mfa/email/resend`]: () => resendReply(),
       [`${MOLOTOV_API}/papi/v1/config`]: () => {
         configCalls += 1;
         return configCalls === 1 ? json({ error: 'expired' }, 401) : json({ ok: true });
@@ -277,7 +286,7 @@ describe('compte Molotov', () => {
   });
 
   it('connexion par email/mot de passe : session enregistrée, profil amont récupéré', async () => {
-    signinReply = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+    signinReply = () => json({ type: 'SUCCESS', payload: { idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN } });
     const res = await request<StatusBody>(rig.app, 'POST', '/user/account/molotov/signin', {
       token: rig.owner.token,
       headers: asProfile(rig.owner.profile),
@@ -291,7 +300,7 @@ describe('compte Molotov', () => {
     expect(res.body.userId).toBe('user-1');
     expect(res.body.updatedAt).toBeGreaterThan(0);
     expect(JSON.stringify(res.body)).not.toContain(ID_TOKEN);
-    const signin = upstream.callsTo(`${MOLOTOV_API}/signin`).at(-1);
+    const signin = upstream.callsTo(`${MOLOTOV_API}/v2/signin`).at(-1);
     expect(signin?.method).toBe('PUT');
     expect(JSON.parse(signin?.body ?? '{}')).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
     expect(signin?.headers['content-type']).toBe('application/json');
@@ -318,16 +327,108 @@ describe('compte Molotov', () => {
     expect(await storedRow()).toBeNull();
   });
 
-  it('réponse sans jeton (vérification en deux étapes) : 401 mfa_required', async () => {
-    signinReply = () => json({ type: 'MFA' });
-    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin', {
+  it('connexion avec vérification en deux étapes : 200 mfa_required, jeton de défi, aucune ligne de compte', async () => {
+    await request(rig.app, 'DELETE', '/user/account/molotov', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    signinReply = () => json({ type: 'MFA', payload: { token: MFA_TOKEN } });
+    const res = await request<{ status: string; mfaToken: string }>(rig.app, 'POST', '/user/account/molotov/signin', {
       token: rig.owner.token,
       headers: asProfile(rig.owner.profile),
       body: { email: 'alice@example.test', password: 'mot-de-passe' },
     });
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe('mfa_required');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.body).toEqual({ status: 'mfa_required', mfaToken: MFA_TOKEN });
     expect(await storedRow()).toBeNull();
+    const signin = upstream.callsTo(`${MOLOTOV_API}/v2/signin`).at(-1);
+    expect(signin?.method).toBe('PUT');
+    expect(JSON.parse(signin?.body ?? '{}')).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(signin?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
+    expect(signin?.headers['origin']).toBe('https://app.molotov.tv');
+    expect(signin?.headers['authorization']).toBeUndefined();
+  });
+
+  it('vérification du code : 200 connecté, jetons chiffrés au repos', async () => {
+    verifyReply = () => json({ payload: { idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN } });
+    const res = await request<StatusBody>(rig.app, 'POST', '/user/account/molotov/signin/verify', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { mfaToken: MFA_TOKEN, code: MFA_CODE },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.body.connected).toBe(true);
+    expect(res.body.email).toBe('alice@example.test');
+    expect(res.body.tier).toBe('premium');
+    expect(JSON.stringify(res.body)).not.toContain(ID_TOKEN);
+    const verify = upstream.callsTo(`${MOLOTOV_API}/mfa/verify`).at(-1);
+    expect(verify?.method).toBe('PUT');
+    expect(JSON.parse(verify?.body ?? '{}')).toEqual({ code: MFA_CODE });
+    expect(verify?.headers['x-mfa-token']).toBe(MFA_TOKEN);
+    expect(verify?.headers['x-application-id']).toBe(MOLOTOV_HEADERS['x-application-id']);
+    expect(verify?.headers['authorization']).toBeUndefined();
+    const row = await storedRow();
+    expect(row).not.toBeNull();
+    expect(row?.tokens).not.toContain(ID_TOKEN);
+    expect(row?.tokens).not.toContain(REFRESH_TOKEN);
+    const plain = decryptJson(row?.tokens ?? '', SECRET, `molotov:${row?.accountId}`) as { idToken: string; refreshToken: string };
+    expect(plain.idToken).toBe(ID_TOKEN);
+    expect(plain.refreshToken).toBe(REFRESH_TOKEN);
+  });
+
+  it('code refusé par l\'API (4xx) : 401 invalid_code, aucune ligne de compte', async () => {
+    await request(rig.app, 'DELETE', '/user/account/molotov', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    verifyReply = () => json({ code: 'INVALID_CODE' }, 401);
+    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin/verify', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { mfaToken: MFA_TOKEN, code: '000000' },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('invalid_code');
+    expect(JSON.stringify(res.body)).not.toContain(MFA_TOKEN);
+    expect(await storedRow()).toBeNull();
+  });
+
+  it('trop d\'essais (CHILL_PLZ) : 429 rate_limited', async () => {
+    verifyReply = () => json({ code: 'CHILL_PLZ' }, 429);
+    const res = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/signin/verify', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { mfaToken: MFA_TOKEN, code: MFA_CODE },
+    });
+    expect(res.status).toBe(429);
+    expect(res.body.error).toBe('rate_limited');
+  });
+
+  it('renvoi du code : 200 avec le jeton renvoyé (changement ou conservation)', async () => {
+    resendReply = () => json({ payload: { token: NEW_MFA_TOKEN } });
+    const res = await request<{ mfaToken: string }>(rig.app, 'POST', '/user/account/molotov/signin/resend', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { mfaToken: MFA_TOKEN },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.body).toEqual({ mfaToken: NEW_MFA_TOKEN });
+    const call = upstream.callsTo(`${MOLOTOV_API}/mfa/email/resend`).at(-1);
+    expect(call?.method).toBe('PUT');
+    expect(call?.body).toBe('');
+    expect(call?.headers['x-mfa-token']).toBe(MFA_TOKEN);
+    expect(call?.headers['authorization']).toBeUndefined();
+    resendReply = () => json({ ok: true });
+    const kept = await request<{ mfaToken: string }>(rig.app, 'POST', '/user/account/molotov/signin/resend', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { mfaToken: NEW_MFA_TOKEN },
+    });
+    expect(kept.status).toBe(200);
+    expect(kept.body).toEqual({ mfaToken: NEW_MFA_TOKEN });
   });
 
   it('relais : chemin hors liste refusé, URL absolue refusée, en-têtes x-* et Authorization relayés', async () => {

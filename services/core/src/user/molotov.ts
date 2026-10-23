@@ -153,6 +153,12 @@ const connectSchema = z
 
 const signinSchema = z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(256) });
 
+/** Vérification en deux étapes : le jeton de défi et le code reçu par email (jamais journalisés). */
+const mfaVerifySchema = z.object({ mfaToken: z.string().min(1).max(4096), code: z.string().min(1).max(32) });
+
+/** Renvoi du code : le jeton de défi en cours (jamais journalisé). */
+const mfaResendSchema = z.object({ mfaToken: z.string().min(1).max(4096) });
+
 const playSchema = z.object({ channelId: z.string().trim().min(1).max(128) });
 
 const licenseSchema = z.object({
@@ -410,19 +416,48 @@ async function exchangeGoogleToken(fetchFn: FetchFn, googleToken: string): Promi
   return parsed.data;
 }
 
+/** Résultat d'une connexion : session obtenue, ou défi de vérification en deux étapes. */
+type SigninResult = { kind: 'tokens'; tokens: MolotovTokens } | { kind: 'mfa'; mfaToken: string };
+
+/** Jetons d'une réponse amont : sous `payload` (forme observée sur `/v2/signin`) ou à plat. */
+function tokensFromDocument(document: unknown): MolotovTokens | undefined {
+  if (isRecord(document) && isRecord(document.payload)) {
+    const nested = tokensSchema.safeParse(document.payload);
+    if (nested.success) return nested.data;
+  }
+  const flat = tokensSchema.safeParse(document);
+  return flat.success ? flat.data : undefined;
+}
+
+/** Jeton de défi (`payload.token`, 1..4096) ; null si absent ou hors bornes. */
+function payloadTokenOf(document: unknown): string | null {
+  const payload = isRecord(document) && isRecord(document.payload) ? document.payload : {};
+  const token = payload['token'];
+  return typeof token === 'string' && token.length >= 1 && token.length <= 4096 ? token : null;
+}
+
+/** Défi de vérification en deux étapes (`type: MFA`, insensible à la casse) ; null sinon. */
+function mfaChallengeOf(document: unknown): string | null {
+  if (!isRecord(document)) return null;
+  const type = document['type'];
+  if (typeof type !== 'string' || type.toUpperCase() !== 'MFA') return null;
+  return payloadTokenOf(document);
+}
+
 /**
- * Connexion par email et mot de passe (`PUT /signin`) : même identité client que les autres appels, sans `Authorization`
- * (aucune session encore). Un refus amont (identifiants incorrects) devient `401 invalid_credentials` ; une réponse sans
- * jeton (flux de vérification en deux étapes, `401 mfa_required`) est signalée telle quelle ; panne ou 5xx : `502`.
+ * Connexion par email et mot de passe (`PUT /v2/signin`) : même identité client que les autres appels, sans `Authorization`
+ * (aucune session encore). Un refus amont (identifiants incorrects) devient `401 invalid_credentials` ; une demande de
+ * vérification en deux étapes (`type: MFA`) devient `kind: 'mfa'` avec le jeton de défi ; panne, 5xx ou réponse sans
+ * jeton : `502 molotov_unavailable`.
  */
-async function signinMolotov(fetchFn: FetchFn, email: string, password: string): Promise<MolotovTokens> {
+async function signinMolotov(fetchFn: FetchFn, email: string, password: string): Promise<SigninResult> {
   let status: number;
   let ok: boolean;
   let bytes: Uint8Array;
   try {
     const result = await fetchBytes(
       fetchFn,
-      `${MOLOTOV_API}/signin`,
+      `${MOLOTOV_API}/v2/signin`,
       {
         method: 'PUT',
         headers: {
@@ -445,9 +480,74 @@ async function signinMolotov(fetchFn: FetchFn, email: string, password: string):
   }
   if (status >= 400 && status < 500) throw new UserApiError(401, 'invalid_credentials');
   if (!ok) throw new UserApiError(502, 'molotov_unavailable');
-  const parsed = tokensSchema.safeParse(parseJsonBytes(bytes));
-  if (!parsed.success) throw new UserApiError(401, 'mfa_required');
-  return parsed.data;
+  const document = parseJsonBytes(bytes);
+  const mfaToken = mfaChallengeOf(document);
+  if (mfaToken !== null) return { kind: 'mfa', mfaToken };
+  const tokens = tokensFromDocument(document);
+  if (tokens === undefined) throw new UserApiError(502, 'molotov_unavailable');
+  return { kind: 'tokens', tokens };
+}
+
+/**
+ * Requête de vérification en deux étapes (`PUT <path>`) : le jeton de défi voyage dans `X-Mfa-Token`, toujours sans
+ * `Authorization`. Ni le jeton ni le code ne sont journalisés.
+ */
+async function mfaUpstream(fetchFn: FetchFn, path: string, mfaToken: string, body: string): Promise<UpstreamResult> {
+  try {
+    const result = await fetchBytes(
+      fetchFn,
+      `${MOLOTOV_API}${path}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...clientHeaders(),
+          'User-Agent': MOLOTOV_UA,
+          Origin: MOLOTOV_ORIGIN,
+          Referer: `${MOLOTOV_ORIGIN}/`,
+          'content-type': 'application/json',
+          'X-Mfa-Token': mfaToken,
+        },
+        body,
+      },
+      UPSTREAM_TIMEOUT_MS,
+      { maxBytes: 256 * 1024 },
+    );
+    return {
+      status: result.status,
+      ok: result.ok,
+      bytes: result.bytes,
+      contentType: result.headers.get('content-type') ?? 'application/json',
+    };
+  } catch {
+    throw new UserApiError(502, 'molotov_unavailable');
+  }
+}
+
+/** Refus d'un appel de vérification : 4xx devient `401 invalid_code` (ou `429 rate_limited` sur `CHILL_PLZ`), le reste `502`. */
+function mfaFailure(result: UpstreamResult): UserApiError {
+  if (result.status >= 400 && result.status < 500) {
+    const document = parseJsonBytes(result.bytes);
+    const code = isRecord(document) ? document['code'] ?? document['error'] : undefined;
+    if (code === 'CHILL_PLZ') return new UserApiError(429, 'rate_limited');
+    return new UserApiError(401, 'invalid_code');
+  }
+  return new UserApiError(502, 'molotov_unavailable');
+}
+
+/** Vérification du code (`PUT /mfa/verify`) : les jetons obtenus sont chiffrés au repos par la route appelante. */
+async function verifyMolotovMfa(fetchFn: FetchFn, mfaToken: string, code: string): Promise<MolotovTokens> {
+  const result = await mfaUpstream(fetchFn, '/mfa/verify', mfaToken, JSON.stringify({ code }));
+  if (!result.ok) throw mfaFailure(result);
+  const tokens = tokensFromDocument(parseJsonBytes(result.bytes));
+  if (tokens === undefined) throw new UserApiError(502, 'molotov_unavailable');
+  return tokens;
+}
+
+/** Renvoi du code (`PUT /mfa/email/resend`) : le jeton de défi peut changer, sinon l'ancien reste valable. */
+async function resendMolotovMfa(fetchFn: FetchFn, mfaToken: string): Promise<string> {
+  const result = await mfaUpstream(fetchFn, '/mfa/email/resend', mfaToken, '');
+  if (!result.ok) throw mfaFailure(result);
+  return payloadTokenOf(parseJsonBytes(result.bytes)) ?? mfaToken;
 }
 
 /**
@@ -731,13 +831,34 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
 
   /**
    * POST /user/account/molotov/signin : connexion par email et mot de passe (aucun client id Google). Le serveur échange
-   * les identifiants contre une session Molotov (`PUT /signin`), la stocke chiffrée et répond avec le même état que
-   * `GET /account/molotov`. Ni le mot de passe ni les jetons ne sont journalisés ni renvoyés.
+   * les identifiants contre une session Molotov (`PUT /v2/signin`), la stocke chiffrée et répond avec le même état que
+   * `GET /account/molotov`. Si l'API exige une vérification en deux étapes, la route répond `mfa_required` avec le jeton
+   * de défi : aucune ligne de compte n'est créée tant que le code n'est pas vérifié. Ni le mot de passe, ni les jetons,
+   * ni le code ne sont journalisés ni renvoyés.
    */
   router.post('/account/molotov/signin', async (c) => {
     const session = await principalSession(users(), c, deps, backend);
     const body = parseWith(signinSchema, c.get('body'));
-    const tokens = await signinMolotov(fetchFn(), body.email, body.password);
+    const result = await signinMolotov(fetchFn(), body.email, body.password);
+    c.header('Cache-Control', 'no-store');
+    if (result.kind === 'mfa') return sendJson(c, { status: 'mfa_required', mfaToken: result.mfaToken });
+    await saveAccount(users(), deps.secret, session.account.id, result.tokens, null);
+    const state = await molotovState(users(), deps.secret, session.account.id);
+    const profile = await fetchProfile(fetchFn(), state);
+    if (profile !== null) await state.saveProfile(profile);
+    const row = await users().getMolotovAccount(session.account.id);
+    return sendJson(c, statusBody({ profile: state.profile }, row?.updatedAt ?? null));
+  });
+
+  /**
+   * POST /user/account/molotov/signin/verify : vérification du code reçu par email (`PUT /mfa/verify`, le jeton de défi
+   * voyage dans `X-Mfa-Token`). Réussie, elle enregistre la session chiffrée et répond comme une connexion réussie ;
+   * refus amont : `401 invalid_code`, ou `429 rate_limited` quand l'API répond `CHILL_PLZ` (trop d'essais).
+   */
+  router.post('/account/molotov/signin/verify', async (c) => {
+    const session = await principalSession(users(), c, deps, backend);
+    const body = parseWith(mfaVerifySchema, c.get('body'));
+    const tokens = await verifyMolotovMfa(fetchFn(), body.mfaToken, body.code);
     await saveAccount(users(), deps.secret, session.account.id, tokens, null);
     const state = await molotovState(users(), deps.secret, session.account.id);
     const profile = await fetchProfile(fetchFn(), state);
@@ -745,6 +866,18 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
     const row = await users().getMolotovAccount(session.account.id);
     c.header('Cache-Control', 'no-store');
     return sendJson(c, statusBody({ profile: state.profile }, row?.updatedAt ?? null));
+  });
+
+  /**
+   * POST /user/account/molotov/signin/resend : renvoi du code par email (`PUT /mfa/email/resend`). L'API peut changer
+   * le jeton de défi : la route renvoie toujours celui à utiliser ensuite.
+   */
+  router.post('/account/molotov/signin/resend', async (c) => {
+    await principalSession(users(), c, deps, backend);
+    const body = parseWith(mfaResendSchema, c.get('body'));
+    const mfaToken = await resendMolotovMfa(fetchFn(), body.mfaToken);
+    c.header('Cache-Control', 'no-store');
+    return sendJson(c, { mfaToken });
   });
 
   /** DELETE /user/account/molotov : déconnexion (la ligne disparaît, vérifié après écriture). */
