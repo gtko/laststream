@@ -175,7 +175,8 @@ export async function renderFollowRow() {
   const seen = new Set();
   const items = sorted.filter((e) => !seen.has(e.key) && seen.add(e.key)).slice(0, 20).map((e) => {
     const it = state.byKey.get(e.key);
-    if (e.kind === 'episode' && e.date >= today && e.season) return soonOf(e);
+    // Tout épisode (à venir ou déjà sorti) a la même carte : pastille de date, badge, affiche au même emplacement.
+    if (e.kind === 'episode' && e.season) return soonOf(e);
     return it ? tileCard(it, { variant: 'land', alwaysMeta: true, sub: e.label + ' · ' + (e.date < today ? 'sorti' : countdown(e.date) || fmtShort(e.date)) }) : '';
   }).filter(Boolean);
   if (!items.length) return;

@@ -14,11 +14,18 @@ export const isPlaceholderTitle = (t) => !t || /^\s*(é|e)pisode\s*\d+\s*$/i.tes
 
 export function countdownText(iso, time) {
   const n = dayDiff(iso);
-  if (n < 0) return '';
+  if (!Number.isFinite(n) || n < 0) return '';
   if (n === 0) return time || 'Ce soir';
   if (n === 1) return 'Demain';
   if (n < 61) return 'Dans ' + n + ' jours';
   return 'Dans ' + Math.round(n / 30) + ' mois';
+}
+
+/** Pastille de la carte : compte à rebours, ou « Sorti » une fois la date passée (vide sans date valide). */
+export function soonBadgeText(iso, time) {
+  const t = countdownText(iso, time);
+  if (t) return t;
+  return dayDiff(iso) < 0 ? 'Sorti' : '';
 }
 
 /** Diffusion dans les 14 prochains jours : l'épisode peut déjà être en ligne (lisible). Sans date ou plus loin : false. */
@@ -40,17 +47,19 @@ export function soonInnerHTML(o) {
   const blurred = !sharp && !!o.poster;
   const bg = sharp || (blurred ? IMG('w500', o.poster) : '');
   const inset = !blurred && o.poster ? IMG('w342', o.poster) : '';
+  // Repli d'une vignette d'épisode qui ne charge pas : le fond de la série (voir epStill.js), sinon le dégradé seul.
+  const fb = o.still && o.backdrop ? IMG('w780', o.backdrop) : '';
   const real = !isPlaceholderTitle(o.epTitle);
   const avail = isSoonPlayable(o.airDate);
   const mark = o.logo && !inset
     ? '<img class="logo-img soon-logo is-big" src="' + esc(o.logo) + '" alt="' + esc(o.name || '') + '" data-logo="' + esc(o.name || '') + '" loading="lazy">'
     : '<span class="soon-series">' + esc(o.name || '') + '</span>';
   return '<span class="soon' + (o.still ? ' has-still' : '') + (blurred ? ' is-blur' : '') + (inset ? ' has-poster' : '') + '">' +
-    '<span class="soon-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy" decoding="async" data-still>' : '') + '</span>' +
+    '<span class="soon-bg">' + (bg ? '<img src="' + esc(bg) + '" alt="" loading="lazy" decoding="async" data-still' + (fb ? ' data-fb="' + esc(fb) + '"' : '') + '>' : '') + '</span>' +
     '<span class="soon-grad" aria-hidden="true"></span>' +
     (inset ? '<img class="soon-poster" src="' + esc(inset) + '" alt="" loading="lazy" decoding="async" data-still>' : '') +
     '<span class="soon-date" aria-hidden="true"><b>' + day + '</b><i>' + esc(mon) + '</i></span>' +
-    '<span class="soon-count' + (avail ? ' is-avail' : '') + '">' + esc(avail ? playableBadge(o.airDate) : countdownText(o.airDate, o.time)) + '</span>' +
+    '<span class="soon-count' + (avail ? ' is-avail' : '') + '">' + esc(avail ? playableBadge(o.airDate) : soonBadgeText(o.airDate, o.time)) + '</span>' +
     '<span class="soon-body">' + mark +
     '<span class="soon-code">S' + o.season + ' · É' + o.episode + '</span>' +
     (real ? '<span class="soon-title">' + esc(o.epTitle) + '</span>' : '') + '</span>' +
@@ -71,7 +80,7 @@ export function soonBell(tvKey) {
 export function soonItemHTML(o, tvKey) {
   const base = (o.name || '') + ', S' + o.season + ' épisode ' + o.episode + ', ';
   if (!isSoonPlayable(o.airDate)) {
-    return '<div class="soon-item"><button type="button" class="soon-card" data-open="' + esc(tvKey) + '" data-open-season="' + esc(o.season) + '" data-open-episode="' + esc(o.episode) + '" aria-label="' + esc(base + countdownText(o.airDate)) + '">' + soonInnerHTML(o) + '</button>' + soonBell(tvKey) + '</div>';
+    return '<div class="soon-item"><button type="button" class="soon-card" data-open="' + esc(tvKey) + '" data-open-season="' + esc(o.season) + '" data-open-episode="' + esc(o.episode) + '" aria-label="' + esc(base + soonBadgeText(o.airDate)) + '">' + soonInnerHTML(o) + '</button>' + soonBell(tvKey) + '</div>';
   }
   return '<div class="soon-item"><button type="button" class="soon-card" data-play data-play-key="' + esc(tvKey) + '" data-name="' + esc(o.name || '') +
     '" data-play-season="' + esc(o.season) + '" data-play-episode="' + esc(o.episode) + '" data-air="' + esc(o.airDate) + '" aria-label="' + esc(base + playableBadge(o.airDate)) + '">' +
