@@ -106,6 +106,8 @@ function molotovChannel(c) {
     cat: MOLOTOV_CAT,
     source: 'molotov',
     molotovId: c.id,
+    /** Programme en cours (catalogue Molotov) : faute de guide complet, il sert de programme « maintenant ». */
+    program: c.program || '',
     num: null,
     sig: null,
     url: '',
@@ -347,7 +349,10 @@ export function nowNext(c, now) {
   const arr = tv.epg.get(epgKey(c)) || [];
   const cur = arr.find((p) => p.start <= now && now < p.stop) || null;
   const next = arr.find((p) => p.start >= (cur ? cur.stop : now)) || null;
-  return { cur, next };
+  if (cur || !c.program) return { cur, next };
+  // Pas de guide pour cette chaîne (Molotov) : le programme annoncé par le catalogue tient lieu de programme en cours.
+  const slot = Math.floor(now / 1800) * 1800;
+  return { cur: { title: c.program, start: slot, stop: slot + 1800 }, next: null };
 }
 
 // Rangée d'accueil « En direct maintenant »
@@ -538,7 +543,8 @@ export function fillEpgRow(c) {
       '" aria-label="' + esc(p.title + ', ' + fmtHM(p.start) + ' à ' + fmtHM(p.stop) + (isNow ? ', en cours' : '')) + '"><span class="ec-t">' + esc(p.title) + '</span><span class="ec-h">' + fmtHM(p.start) + '</span></button>';
   });
   line.innerHTML = cells.length ? cells.join('') :
-    '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
+    '<button type="button" class="epg-cell epg-none' + (c.program ? ' is-now' : '') + '" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
+    esc(c.program || 'Programme indisponible') + '</span><span class="ec-h">' + (c.program ? 'En cours · Regarder en direct' : 'Regarder en direct') + '</span></button>';
 }
 
 export function renderEpgGrid() {

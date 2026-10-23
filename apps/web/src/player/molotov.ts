@@ -137,7 +137,9 @@ export async function startMolotovPlayback(opts: MolotovPlaybackOptions): Promis
       streaming: { lowLatencyMode: false, bufferingGoal: 20, rebufferingGoal: 10 },
     });
     const net = p.getNetworkingEngine();
-    net.registerRequestFilter('LICENSE', (_type, request) => {
+    // Seule la requête de licence part vers notre transport : le manifeste et les segments restent sur leur URL.
+    net.registerRequestFilter('LICENSE', (type, request) => {
+      if (String(type).toUpperCase() !== 'LICENSE') return;
       request.uris = [LICENSE_SCHEME + '://license'];
     });
     net.registerScheme(LICENSE_SCHEME, async (uri, request) => {
