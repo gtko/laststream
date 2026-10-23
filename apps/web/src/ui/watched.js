@@ -1,4 +1,5 @@
 /* « Vu » : épisodes, saisons, série entière et films. Affichage optimiste, retour arrière si le serveur refuse. */
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { seasonEpisodes } from './seasons.js';
 import { newEpisodeCount } from '../data/episodes';
 import { refreshRatingUI, showRatePrompt } from './rate.js';
@@ -121,6 +122,9 @@ function closeMenu() {
   detailEl.querySelectorAll('[data-eps-menu]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
 }
 
+/** Un clic répété pendant l'enregistrement (ou juste après) est ignoré : la bascule ne s'annule pas toute seule (ODY-237). */
+const once = (key, el, fn) => runOnce(key, fn, { el, cooldown: TOGGLE_COOLDOWN_MS });
+
 document.addEventListener('click', async (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t) return;
@@ -138,33 +142,41 @@ document.addEventListener('click', async (e) => {
   }
   if (!t.closest('.f-eps-head .ep-menu')) closeMenu();
   if (!m) return;
-  if (t.closest('[data-season-watch]')) {
+  const seasonBtn = t.closest('[data-season-watch]');
+  if (seasonBtn) {
     e.preventDefault();
-    const refs = seasonAired();
-    await mark(m.key, refs, !allWatched(m.key, refs));
+    await once('season:' + m.key, seasonBtn, () => {
+      const refs = seasonAired();
+      return mark(m.key, refs, !allWatched(m.key, refs));
+    });
     return;
   }
   const series = t.closest('[data-series-watch]');
   if (series) {
     e.preventDefault();
     closeMenu();
-    toast('Marquage de la série…');
-    const refs = await seriesAired(m);
-    if (state.model !== m) return;
-    await mark(m.key, refs, series.dataset.seriesWatch === '1');
+    await once('series:' + m.key + ':' + series.dataset.seriesWatch, series, async () => {
+      toast('Marquage de la série…');
+      const refs = await seriesAired(m);
+      if (state.model !== m) return;
+      await mark(m.key, refs, series.dataset.seriesWatch === '1');
+    });
     return;
   }
   const upto = t.closest('[data-upto]');
   if (upto) {
     e.preventDefault();
     const [s, ep] = upto.dataset.upto.split(':').map(Number);
-    await mark(m.key, untilHere(m, s, ep), true);
-    toast('Marqué comme vu jusqu’à É' + ep);
+    await once('upto:' + m.key + ':' + s + ':' + ep, upto, async () => {
+      await mark(m.key, untilHere(m, s, ep), true);
+      toast('Marqué comme vu jusqu’à É' + ep);
+    });
     return;
   }
-  if (t.closest('[data-watch-movie]')) {
+  const movieBtn = t.closest('[data-watch-movie]');
+  if (movieBtn) {
     e.preventDefault();
-    await mark(m.key, null, !userStore.isWatched(m.key));
+    await once('movie:' + m.key, movieBtn, () => mark(m.key, null, !userStore.isWatched(m.key)));
   }
 });
 

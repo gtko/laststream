@@ -36,7 +36,7 @@ export function requestFrom(btn) {
 }
 
 export function playFrom(btn) {
-  if (btn.dataset.playKey) { playAiringEpisode(btn); return; }
+  if (btn.dataset.playKey) return playAiringEpisode(btn);
   const request = requestFrom(btn);
   if (!request) return;
   // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).

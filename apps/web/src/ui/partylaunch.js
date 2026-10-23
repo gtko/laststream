@@ -7,6 +7,7 @@ import { auth, isKidProfile, isServerMode } from '../data/auth';
 import { partyBridge, partyVisibilityChoices } from '../party/bridge';
 import { modalBody } from './dom.js';
 import { closeModal, openModal } from './modal.js';
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { createLobbyFor, inviteMany } from './partylobby.js';
 import { handlePartyCreateError } from './partyerrors.js';
 import { sortedFriends } from './partyfriends.js';
@@ -85,7 +86,8 @@ modalBody.addEventListener('submit', (e) => {
   const req = mode === 'lobby' && canUseLobby() ? requestFrom(btn) : null;
   if (req && !btn.dataset.playKey) {
     const m = state.model;
-    void createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite);
+    // Pas deux salons pour un même titre sur un double envoi.
+    void runOnce('party-create:' + req.key, () => createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
     return;
   }
   partyBridge.pending = { visibility };

@@ -3,6 +3,7 @@ import { toggleEpisode } from './watched.js';
 import { isKidProfile } from '../data/auth';
 import { leaveKidProfile } from './auth-ui.js';
 import { IMG, REDUCE } from './constants.js';
+import { elKey, PLAY_COOLDOWN_MS, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { closeCtx } from './ctxmenu.js';
 import { detailEl, modal, modalClose, toast } from './dom.js';
 import { getRemind, scrollToSection, showFiche } from './fiche.js';
@@ -26,6 +27,10 @@ import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
+
+/** Un seul déclenchement par bouton : un clic répété pendant l'action (ou juste après, pour une bascule) est ignoré (ODY-237). */
+const once = (kind, el, fn, opts = {}) => runOnce(elKey(kind, el), fn, opts);
+const toggleOnce = (kind, el, fn) => once(kind, el, fn, { cooldown: TOGGLE_COOLDOWN_MS });
 
 document.addEventListener('click', (e) => {
   const t = e.target;
@@ -73,11 +78,13 @@ document.addEventListener('click', (e) => {
   const tfav = t.closest('[data-tvfav]');
   if (tfav) {
     e.preventDefault();
-    const on = toggleFav(tfav.dataset.tvfav);
-    tfav.setAttribute('aria-pressed', String(on));
-    tfav.innerHTML = on ? ICON.starOn : ICON.star;
-    refreshCats();
-    if (tv.cat === 'Favoris') renderEpgGrid();
+    toggleOnce('tvfav', tfav, () => {
+      const on = toggleFav(tfav.dataset.tvfav);
+      tfav.setAttribute('aria-pressed', String(on));
+      tfav.innerHTML = on ? ICON.starOn : ICON.star;
+      refreshCats();
+      if (tv.cat === 'Favoris') renderEpgGrid();
+    });
     return;
   }
   const tcat = t.closest('[data-tvcat]');
@@ -107,14 +114,16 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const hit = state.byKey.get(hcl.dataset.hclib);
     if (!hit) return;
-    const on = toggleLib({ type: hit.type, id: hit.id, name: hit.name, posterPath: hit.posterPath });
-    hcl.setAttribute('aria-pressed', String(on));
-    hcl.classList.toggle('is-on', on);
-    hcl.innerHTML = on ? ICON.check : ICON.list;
-    hcl.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
-    hcl.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
-    toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
-    renderLibrary();
+    toggleOnce('lib', hcl, () => {
+      const on = toggleLib({ type: hit.type, id: hit.id, name: hit.name, posterPath: hit.posterPath });
+      hcl.setAttribute('aria-pressed', String(on));
+      hcl.classList.toggle('is-on', on);
+      hcl.innerHTML = on ? ICON.check : ICON.list;
+      hcl.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
+      hcl.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
+      toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
+      renderLibrary();
+    });
     return;
   }
   const pers = t.closest('[data-person]');
@@ -163,29 +172,31 @@ document.addEventListener('click', (e) => {
   const rem = t.closest('[data-remind]');
   if (rem) {
     e.preventDefault();
-    const list = getRemind();
-    const i = list.indexOf(state.ficheKey);
-    if (i >= 0) list.splice(i, 1); else list.push(state.ficheKey);
-    store('ls_remind', list);
-    const on = i < 0;
-    detailEl.querySelectorAll('[data-remind]').forEach((b) => {
-      b.setAttribute('aria-pressed', String(on));
-      b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span>';
+    toggleOnce('remind', rem, () => {
+      const list = getRemind();
+      const i = list.indexOf(state.ficheKey);
+      if (i >= 0) list.splice(i, 1); else list.push(state.ficheKey);
+      store('ls_remind', list);
+      const on = i < 0;
+      detailEl.querySelectorAll('[data-remind]').forEach((b) => {
+        b.setAttribute('aria-pressed', String(on));
+        b.innerHTML = (on ? ICON.check : ICON.bell) + '<span class="f-play-label">' + (on ? 'Rappel activé' : 'Me rappeler') + '</span>';
+      });
+      toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     });
-    toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
     return;
   }
   const srcOpen = t.closest('[data-sources-open]');
   if (srcOpen && state.model) {
     e.preventDefault();
     const m = state.model;
-    openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen);
+    once('sources', srcOpen, () => { openSources({ type: m.type, id: String(m.id), name: m.name, season: null, episode: null, key: m.key }, srcOpen); }, { el: srcOpen, cooldown: PLAY_COOLDOWN_MS });
     return;
   }
   const wparty = t.closest('[data-wparty]');
   if (wparty) { e.preventDefault(); openPartyDialog(wparty); return; }
   const play = t.closest('[data-play]');
-  if (play) { e.preventDefault(); playFrom(play); return; }
+  if (play) { e.preventDefault(); once('play', play, () => playFrom(play), { el: play, cooldown: PLAY_COOLDOWN_MS }); return; }
   const vid = t.closest('[data-vid]');
   if (vid) {
     e.preventDefault();
@@ -199,28 +210,32 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const m = state.model;
     if (!m) return;
-    const on = toggleLib({ type: m.type, id: Number(m.id), name: m.name, posterPath: m.posterPath });
-    lb.setAttribute('aria-pressed', String(on));
-    lb.classList.toggle('is-on', on);
-    lb.innerHTML = on ? ICON.check : ICON.list;
-    lb.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
-    lb.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
-    toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
+    toggleOnce('lib', lb, () => {
+      const on = toggleLib({ type: m.type, id: Number(m.id), name: m.name, posterPath: m.posterPath });
+      lb.setAttribute('aria-pressed', String(on));
+      lb.classList.toggle('is-on', on);
+      lb.innerHTML = on ? ICON.check : ICON.list;
+      lb.dataset.tip = on ? 'Dans ta bibliothèque' : 'Ajouter à ma bibliothèque Laststream';
+      lb.setAttribute('aria-label', on ? 'Dans ta bibliothèque (retirer)' : 'Ajouter à ma bibliothèque Laststream');
+      toast(on ? 'Ajouté à ta bibliothèque' : 'Retiré de ta bibliothèque');
+    });
     return;
   }
   const rk = t.closest('[data-remindkey]');
   if (rk) {
     e.preventDefault();
-    const list = getRemind();
-    const k = rk.dataset.remindkey;
-    const i = list.indexOf(k);
-    if (i >= 0) list.splice(i, 1); else list.push(k);
-    store('ls_remind', list);
-    const on = i < 0;
-    rk.setAttribute('aria-pressed', String(on));
-    rk.innerHTML = on ? ICON.check : ICON.bell;
-    rk.dataset.tip = on ? 'Rappel activé' : 'Me rappeler';
-    toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
+    toggleOnce('remindkey', rk, () => {
+      const list = getRemind();
+      const k = rk.dataset.remindkey;
+      const i = list.indexOf(k);
+      if (i >= 0) list.splice(i, 1); else list.push(k);
+      store('ls_remind', list);
+      const on = i < 0;
+      rk.setAttribute('aria-pressed', String(on));
+      rk.innerHTML = on ? ICON.check : ICON.bell;
+      rk.dataset.tip = on ? 'Rappel activé' : 'Me rappeler';
+      toast(on ? 'On te rappellera la sortie' : 'Rappel retiré');
+    });
     return;
   }
   if (state.ctxMenu) closeCtx();
@@ -284,7 +299,7 @@ document.addEventListener('click', (e) => {
   const sn = t.closest('[data-seen]');
   if (sn) {
     e.preventDefault();
-      toggleEpisode(sn);
+    once('seen', sn, () => toggleEpisode(sn), { el: sn, cooldown: TOGGLE_COOLDOWN_MS });
     return;
   }
   const sr = t.closest('[data-season-retry]');

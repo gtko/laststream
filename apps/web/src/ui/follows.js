@@ -1,4 +1,5 @@
 /* Suivre un film, une série ou une personne (indépendant de la bibliothèque). */
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { esc } from './util.js';
 import { userStore } from '../data/userStore';
 import { toast } from './dom.js';
@@ -59,7 +60,7 @@ document.addEventListener('click', (e) => {
   if (!b) return;
   e.preventDefault();
   e.stopPropagation();
-  toggleFollow(b.dataset.follow, b);
+  runOnce('follow:' + b.dataset.follow, () => toggleFollow(b.dataset.follow, b), { el: b, cooldown: TOGGLE_COOLDOWN_MS });
 }, true);
 
 // Menu contextuel : titres et personnes.

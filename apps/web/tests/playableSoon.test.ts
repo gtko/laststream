@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { autoNextEpisode, firstUnseen, isPlayable, normalizeCanonical, playableSoon, type EpisodeInfo } from '../src/player/episodes';
 import { episodesHtml } from '../src/player/panels';
 import { toNativeEpisodes } from '../src/player/native';
@@ -117,6 +117,10 @@ const mountPanel = (): HTMLElement => {
 };
 
 describe('panneau Épisodes : rangée cliquable', () => {
+  // La pastille compare à la date du jour : on fige l'horloge sur TODAY (sinon l'épisode « dans 5 jours » devient « Aujourd’hui » le 23).
+  beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(TODAY + 'T12:00:00')); });
+  afterAll(() => { vi.useRealTimers(); });
+
   it('épisode dans les 14 jours : bouton actif, pastille « À venir · date », « déjà en ligne ? » dans l’infobulle', () => {
     const host = mountPanel();
     const btn = host.querySelector('.lp-ep-row[data-ep="1"] button.lp-ep') as HTMLButtonElement;

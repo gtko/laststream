@@ -348,6 +348,9 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .src-dot.is-ko { background: #ff6b6b; }
 .src-dot.is-load { background: var(--accent); animation: srcPulse 1s ease-in-out infinite; }
 @keyframes srcPulse { 50% { opacity: 0.35; } }
+/* Action en cours (busy.js) : retour immédiat, le bouton reste focusable et ne se relance pas. */
+.is-busy { cursor: progress; animation: srcPulse 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .is-busy { animation: none; opacity: 0.6; } }
 .src-toggle { flex: none; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .src-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 .src-move { flex: none; display: inline-flex; gap: 4px; }

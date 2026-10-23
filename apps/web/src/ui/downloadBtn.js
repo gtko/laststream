@@ -6,6 +6,7 @@ import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices
 import { getDownloadSettings, isCellular, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
 import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/viewModel';
 import { playBest } from '../player/session.js';
+import { elKey, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { detailEl, toast } from './dom.js';
 import { esc, names } from './util.js';
 
@@ -614,5 +615,6 @@ detailEl.addEventListener('click', (e) => {
   if (!el) return;
   e.preventDefault();
   e.stopPropagation();
-  void onControl(el);
+  // Un seul geste à la fois par bouton (ODY-237) : le verrou couvre aussi la feuille de choix, qui peut rester ouverte longtemps.
+  void runOnce(el.dataset.dlId ? 'dl:' + el.dataset.dlId : elKey('dl', el), () => onControl(el), { el, cooldown: TOGGLE_COOLDOWN_MS, maxMs: 120000 });
 });

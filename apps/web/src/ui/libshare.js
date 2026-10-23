@@ -5,6 +5,7 @@ import { setAllVisibility, setItemVisibility } from '../data/socialApi';
 import { socialErrorText } from '../data/socialText';
 import { getLibrary } from '../data/userApi';
 import { userStore } from '../data/userStore';
+import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { detailEl, toast } from './dom.js';
 import { SET_ICON } from './settings-ui.js';
 import { state } from './state.js';
@@ -109,8 +110,8 @@ detailEl.addEventListener('click', (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || state.kind !== 'library') return;
   const one = t.closest('[data-libvis]');
-  if (one) { e.preventDefault(); e.stopPropagation(); toggleVisibility(one.dataset.libvis); return; }
+  if (one) { e.preventDefault(); e.stopPropagation(); runOnce('libvis:' + one.dataset.libvis, () => toggleVisibility(one.dataset.libvis), { el: one, cooldown: TOGGLE_COOLDOWN_MS }); return; }
   const all = t.closest('[data-libshare]');
-  if (all) { e.preventDefault(); setAll(all.dataset.libshare); }
+  if (all) { e.preventDefault(); runOnce('libshare-all', () => setAll(all.dataset.libshare), { el: all, cooldown: TOGGLE_COOLDOWN_MS }); }
 }, true);
 
