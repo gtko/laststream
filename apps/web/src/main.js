@@ -3,6 +3,7 @@
  * ?still désactive les aperçus vidéo. */
 import './demoBoot'; // premier module : en démo, stockage du navigateur remplacé par la mémoire avant toute lecture
 import { initSentry } from './observability/sentry';
+import { initNativeScreen } from './sources/nativeScreen';
 import './styles/styles.css';
 import './styles/app.css';
 import './styles/calendar.css';
@@ -84,6 +85,7 @@ import { initAnnouncementBanner } from './ui/announcement-banner.js';
 import { isDemo, setDemoFlags, startDemo } from './data/demo';
 
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)
+initNativeScreen(); // Android : résolution réelle de la sortie vidéo pour le plafond automatique (ODY-251)
 wipeDeviceDebrid(); // plus aucune clé de débrideur sur l'appareil
 // Déconnexion explicite suivie d'un rechargement : la purge des téléchargements du compte précédent se termine ici.
 if (isPurgePending()) void import('./downloads/service').then((m) => m.purgeForOwnerChange()).catch(() => undefined);

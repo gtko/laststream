@@ -137,7 +137,7 @@ export async function fetchStreamStatus(type: 'movie' | 'tv', imdbId: string, se
 // ---------- Tri, regroupement ----------
 
 
-/** 1440p (« 2K ») dans le nom d'une release : lastAddon ne connaît pas encore cette résolution (elle arrive en `unknown`). */
+/** 1440p (« 2K ») dans le nom d'une release : lastAddon la renvoie en `1440p` ; le nom reste lu pour les serveurs plus anciens (réponse `unknown`). */
 const RE_1440 = /\b1440[pi]\b|\b2560\s*[x×]\s*1440\b/i;
 /** « 2K » et « QHD » sont ambigus (« 2K Remaster 1080p ») : retenus seulement sans autre résolution dans le nom. */
 const RE_1440_LOOSE = /\b(?:2k|qhd)\b/i;

@@ -1,5 +1,6 @@
 import type { QualityGroupKey } from '../data/sources';
 import { getResolutionCap, type ResolutionCap } from '../data/prefs';
+import { nativeScreenShortSide } from './nativeScreen';
 
 /* Plafond de résolution (ODY-236) : la source choisie d'office, en lecture comme en téléchargement, ne dépasse pas la résolution
  * réglée (ou celle de l'écran en mode automatique) tant qu'une source plus légère existe. Fonctions pures, testées. */
@@ -25,8 +26,13 @@ export function capHeightOf(setting: ResolutionCap, screenShortSidePx: number | 
   return 2160;
 }
 
-/** Côté court de l'écran en pixels physiques (null si le moteur ne le dit pas). */
+/**
+ * Côté court de l'écran en pixels physiques (null si le moteur ne le dit pas). Sur Android, la sortie vidéo réelle lue par le
+ * plugin natif prime (la WebView d'une TV 4K déclare souvent 1080p) ; ailleurs, `screen` × `devicePixelRatio`.
+ */
 export function screenShortSide(): number | null {
+  const native = nativeScreenShortSide();
+  if (native !== null) return native;
   const s = globalThis.screen;
   if (!s || !(s.width > 0) || !(s.height > 0)) return null;
   const ratio = globalThis.devicePixelRatio > 0 ? globalThis.devicePixelRatio : 1;
