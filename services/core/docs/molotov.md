@@ -195,5 +195,7 @@ Secrets : aucun nouveau secret fort requis (les tokens Molotov sont chiffrés av
 * Multi-compte / multi-profile Molotov (une session par compte Laststream).
 * Sous-titres, chat, recommandations Molotov.
 * Reprise de lecture (« reprendre ») et navigation dans un asset : seuls les types `vod`/`scrub`/`startOver`/`resume` de `/vapi/asset/v1` sont relayés.
-* Support de la lecture Molotov dans le shell Windows (pas de CDM Widevine).
+* Favoris Molotov (`/action/v1/add-my-stuff`), rappels d'émissions (`add-recording`, `record-new-episodes`) et recherche Molotov : actions PAPI observées dans les cartes, pas encore relayées.
 * Redistribution du CDM Widevine (licence).
+
+> La lecture Molotov **est** possible sur le shell Windows : WebView2 embarque le CDM Widevine (`laststream.exe.WebView2\EBWebView\WidevineCdm`). L'ancienne limite « pas de CDM Widevine » ne s'applique plus.
