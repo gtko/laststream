@@ -15,6 +15,7 @@ import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
 import { externalKind } from './tvExternal.js';
 import { ICON } from './icons.js';
+import { loadMolotovReplay, MOLOTOV_REPLAY_CAT, renderReplayGrid, replayCount } from './molotovReplay.js';
 import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
@@ -463,6 +464,7 @@ export function catCount(cat) {
   if (cat === 'Ma playlist') return tv.user.length;
   if (cat === 'Ma box') return activeBoxChannels().length;
   if (cat === MOLOTOV_CAT) return tv.molotov.length;
+  if (cat === MOLOTOV_REPLAY_CAT) return replayCount();
   if (tv.boxCats.includes(cat)) return tv.boxOnly.filter((c) => c.cat === cat).length;
   const fx = tv.catFacets && tv.catFacets.categories.find((k) => k.id === cat || k.label === cat);
   if (fx) return fx.count;
@@ -477,6 +479,7 @@ export function catsHTML() {
     .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
     .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: 'Ma box' }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
     .concat(kid || !tv.molotov.length ? [] : [{ id: MOLOTOV_CAT, label: MOLOTOV_CAT }])
+    .concat(kid || !replayCount() ? [] : [{ id: MOLOTOV_REPLAY_CAT, label: MOLOTOV_REPLAY_CAT }])
     .concat(kid ? [] : [{ id: 'Ma playlist', label: 'Ma playlist' }]);
   return list.map((c) => {
     const n = catCount(c.id);
@@ -594,6 +597,11 @@ export function fillEpgRow(c) {
 export function renderEpgGrid() {
   const epg = detailEl.querySelector('#epg');
   if (!epg) return;
+  // Replay Molotov : des tuiles (image, titre), pas la grille du guide.
+  if (tv.cat === MOLOTOV_REPLAY_CAT) {
+    renderReplayGrid(epg);
+    return;
+  }
   tv.list = tvFilter();
   tv.shown = 0;
   if (!tv.list.length) {
@@ -639,6 +647,7 @@ export async function showTvLive() {
     await Promise.all([loadChannelsPage(true), loadFacets().catch(() => {}), loadUserPlaylist()]);
     refreshAll(); // playlists de l'utilisateur : test de la box, actualisation du jour (évènement BOX_CHANGED ensuite)
     loadMolotovChannels(); // catalogue Molotov du compte connecté (lecture DASH, pas un flux HLS)
+    loadMolotovReplay(); // replay/VOD du compte connecté (même lecture DASH, catégorie à part)
   } catch (_) {
     if (token === state.token) detailEl.innerHTML = svcError('La TV en direct n’a pas pu être chargée.');
     return;
@@ -694,7 +703,13 @@ export async function tvTest(save) {
 /** Choix d'une catégorie (navigation latérale ou liste déroulante) : nouvelle requête au serveur. */
 export async function setCategory(cat) {
   tv.cat = cat || 'Toutes';
-  await reloadList();
+  // Replay Molotov : sa liste est déjà chargée, le catalogue des chaînes n'est pas demandé.
+  if (tv.cat === MOLOTOV_REPLAY_CAT) {
+    refreshCats();
+    renderEpgGrid();
+  } else {
+    await reloadList();
+  }
   const nb = detailEl.querySelector('[data-tvcat="' + tv.cat.replace(/"/g, '\\"') + '"]');
   if (nb) nb.focus({ preventScroll: true });
 }

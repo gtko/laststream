@@ -25,6 +25,11 @@ export interface MolotovPlaybackOptions {
   channelId: string;
   /** Élément média de la page (le lecteur de la TV). */
   mediaElement: HTMLMediaElement;
+  /**
+   * Config de lecture déjà obtenue (asset replay/VOD) : fournie par `getMolotovPlayAsset`. Absente : la lecture
+   * demande la config de la chaîne (`getMolotovPlay`), comme pour le direct.
+   */
+  play?: MolotovPlay;
   /** Échec : raison courte pour l'interface. */
   onError: (reason: string) => void;
   /** Fin normale de la préparation (la lecture démarre). */
@@ -95,12 +100,16 @@ export async function startMolotovPlayback(opts: MolotovPlaybackOptions): Promis
     return;
   }
   let play: MolotovPlay;
-  try {
-    play = await getMolotovPlay(opts.channelId);
-  } catch {
-    if (stale()) return;
-    opts.onError('network');
-    return;
+  if (opts.play !== undefined) {
+    play = opts.play;
+  } else {
+    try {
+      play = await getMolotovPlay(opts.channelId);
+    } catch {
+      if (stale()) return;
+      opts.onError('network');
+      return;
+    }
   }
   if (stale()) return;
   current = play;

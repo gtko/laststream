@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  connectMolotov, disconnectMolotov, getMolotovChannels, getMolotovCredentials, getMolotovEpg, getMolotovPlay, getMolotovStatus, postMolotovLicense,
+  connectMolotov, disconnectMolotov, getMolotovChannels, getMolotovCredentials, getMolotovEpg, getMolotovPlay, getMolotovPlayAsset,
+  getMolotovProgram, getMolotovReplay, getMolotovStatus, postMolotovLicense,
   resendMolotovMfa, signinMolotov, verifyMolotovMfa,
 } from '../src/data/molotovApi';
-import type { MolotovChannelDto, MolotovCredentials, MolotovDrm, MolotovEpgChannel, MolotovEpgProgram, MolotovPlay, MolotovStatus } from '../src/data/molotovApi';
+import type {
+  MolotovChannelDto, MolotovCredentials, MolotovDrm, MolotovEpgChannel, MolotovEpgProgram, MolotovEpisode, MolotovPlay, MolotovProgram, MolotovReplayItem, MolotovStatus,
+} from '../src/data/molotovApi';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
 import { reloadSession, setActiveProfile, setSession } from '../src/data/session';
 
@@ -139,6 +142,61 @@ describe('guide TV', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('replay et fiches', () => {
+  it('GET /user/account/molotov/replay : catalogue replay compact du serveur, profil principal', async () => {
+    replies = [{
+      body: {
+        items: [
+          { id: 's-1', title: 'Série une', subtitle: 'Sous-titre', image: 'https://img.example/s1.jpg', kind: 'series', assetId: 'LIVE_100', channelId: 'ch-1', programId: 's-1', playUrl: null },
+          { id: 'LIVE_400', title: 'Documentaire seul', subtitle: null, image: null, kind: 'program', assetId: 'LIVE_400', channelId: 'ch-4', programId: null, playUrl: 'https://api-eu.fubo.tv/vapi/asset/v1?assetId=LIVE_400&type=scrub' },
+        ],
+        fetchedAt: 1,
+      },
+    }];
+    const items: MolotovReplayItem[] = await getMolotovReplay();
+    expect(items).toHaveLength(2);
+    expect(items[0].title).toBe('Série une');
+    expect(items[1].playUrl).toContain('/vapi/asset/v1');
+    const c = calls[0];
+    expect(c.method).toBe('GET');
+    expect(c.url).toBe('/user/account/molotov/replay');
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('GET /user/account/molotov/program : fiche (id demandé, kind de la page quand il existe)', async () => {
+    const episode: MolotovEpisode = { id: 'e-1', title: 'Épisode 1', subtitle: null, image: null, assetId: 'LIVE_201' };
+    replies = [{ body: { id: 's-1', title: 'Série une', description: 'Description', episodes: [episode] } }];
+    const sheet: MolotovProgram = await getMolotovProgram('s-1', 'series');
+    expect(sheet.episodes).toEqual([episode]);
+    expect(calls[0].url).toBe('/user/account/molotov/program?id=s-1&kind=series');
+    expect(calls[0].headers['x-profile-id']).toBe('main-m');
+    // Sans kind : le serveur choisit le gabarit amont.
+    replies = [{ body: { id: 'p-2', title: 'Émission deux', episodes: [] } }];
+    await getMolotovProgram('p-2');
+    expect(calls[1].url).toBe('/user/account/molotov/program?id=p-2');
+  });
+
+  it('POST /user/account/molotov/play-asset : corps { assetId, type, playUrl }, config de lecture renvoyée', async () => {
+    const play: MolotovPlay = { manifestUrl: 'https://cdn.example/replay.mpd', drm: null, heartbeatUrl: null, channelId: 'ch-9', assetId: 'LIVE_200' };
+    replies = [{ body: play }];
+    const got: MolotovPlay = await getMolotovPlayAsset({ assetId: 'LIVE_200' });
+    expect(got.manifestUrl).toBe('https://cdn.example/replay.mpd');
+    const first = calls[0];
+    expect(first.method).toBe('POST');
+    expect(first.url).toBe('/user/account/molotov/play-asset');
+    expect(JSON.parse(first.body)).toEqual({ assetId: 'LIVE_200', type: 'vod' });
+    // Type explicite et URL `on_play` quand la page l'a livrée.
+    replies = [{ body: play }];
+    await getMolotovPlayAsset({ assetId: 'LIVE_400', type: 'scrub', playUrl: 'https://api-eu.fubo.tv/vapi/asset/v1?assetId=LIVE_400&type=scrub' });
+    expect(JSON.parse(calls[1].body)).toEqual({
+      assetId: 'LIVE_400',
+      type: 'scrub',
+      playUrl: 'https://api-eu.fubo.tv/vapi/asset/v1?assetId=LIVE_400&type=scrub',
+    });
   });
 });
 

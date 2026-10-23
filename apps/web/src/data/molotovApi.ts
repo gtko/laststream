@@ -134,6 +134,42 @@ export interface MolotovPlay {
   expiresAt?: number | null;
 }
 
+/** Type de lecture d'un asset replay/VOD (le défaut est `vod`). */
+export type MolotovPlayType = 'vod' | 'scrub' | 'startOver' | 'resume';
+
+/** Élément replay/VOD (une tuile) : programme, asset de lecture et chaîne d'origine. */
+export interface MolotovReplayItem {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  image?: string | null;
+  kind?: string | null;
+  assetId?: string | null;
+  channelId?: string | null;
+  programId?: string | null;
+  /** URL de lecture livrée par la page (`actions.on_play`), quand elle porte la config de lecture. */
+  playUrl?: string | null;
+}
+
+/** Épisode d'une fiche d'émission (seuls les épisodes jouables sont renvoyés). */
+export interface MolotovEpisode {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  image?: string | null;
+  assetId?: string | null;
+}
+
+/** Fiche d'émission : identité, description et épisodes. */
+export interface MolotovProgram {
+  id: string;
+  title: string;
+  subtitle?: string | null;
+  description?: string | null;
+  image?: string | null;
+  episodes?: MolotovEpisode[];
+}
+
 /** Erreur HTTP de l'API Molotov (amont direct ou relais serveur). */
 class MolotovError extends Error {
   constructor(readonly status: number, readonly code: string, message?: string) {
@@ -493,6 +529,41 @@ export async function getMolotovEpg(force = false): Promise<MolotovEpgChannel[]>
   const channels = Array.isArray(res.channels) ? res.channels : [];
   epgCache = { at: Date.now(), channels };
   return channels;
+}
+
+// ---------- Replay/VOD ----------
+
+/**
+ * Catalogue replay/VOD du compte connecté : le serveur le compacte (tuiles avec image, titre, identifiants de
+ * programme et d'asset). Absent sans compte connecté : la route répond alors `invalid_session`.
+ */
+export async function getMolotovReplay(): Promise<MolotovReplayItem[]> {
+  const res = await call<{ items?: MolotovReplayItem[] }>('/account/molotov/replay', { headers: profileHeaders() });
+  return Array.isArray(res.items) ? res.items : [];
+}
+
+/**
+ * Fiche d'émission (description et épisodes). `kind` vient de la page replay (`series` ou `program`) : le serveur
+ * choisit le gabarit amont correspondant, et refuse tout chemin hors de sa liste.
+ */
+export const getMolotovProgram = (id: string, kind?: string) =>
+  call<MolotovProgram>('/account/molotov/program?id=' + enc(id) + (kind === undefined ? '' : '&kind=' + enc(kind)), { headers: profileHeaders() });
+
+/** Lecture d'un asset replay/VOD : manifeste, licence et heartbeat (le défaut est `vod`). */
+export async function getMolotovPlayAsset(req: { assetId: string; type?: MolotovPlayType; playUrl?: string }): Promise<MolotovPlay> {
+  const type = req.type ?? 'vod';
+  if (directHttp()) {
+    // L'URL de l'action `on_play` quand la page l'a livrée, sinon l'appel asset construit (contrat §8).
+    const target = req.playUrl ? splitUpstreamUrl(req.playUrl) : { path: '/vapi/asset/v1', query: { assetId: req.assetId, type } };
+    const reply = await upstreamAuthed(target.path, { query: target.query });
+    if (reply.status < 400) return playFromAsset(reply.json, req.assetId);
+    fail(reply, 'Lecture replay indisponible.');
+  }
+  return call<MolotovPlay>('/account/molotov/play-asset', {
+    method: 'POST',
+    body: { assetId: req.assetId, type, ...(req.playUrl === undefined ? {} : { playUrl: req.playUrl }) },
+    headers: profileHeaders(),
+  });
 }
 
 // ---------- Lecture ----------

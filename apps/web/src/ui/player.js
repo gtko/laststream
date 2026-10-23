@@ -237,7 +237,8 @@ export function startStream() {
   if (!c) return;
   const token = ++tv.playToken;
   tv.attempt = 0;
-  store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [], box: c.box, boxOnly: !!c.boxOnly, num: c.num, molotovId: c.molotovId });
+  // Un replay/VOD n'est pas une chaîne à reprendre : il ne remplace pas la dernière chaîne.
+  if (!c.molotovPlay) store('ls_tv_last', { id: c.id, name: c.name, logo: c.logo, group: c.group, cat: c.cat, source: c.source, fast: c.fast, url: c.url, epgId: c.epgId, flaky: !!c.flaky, sig: c.sig, alternatives: c.alternatives || [], box: c.box, boxOnly: !!c.boxOnly, num: c.num, molotovId: c.molotovId });
   updateBanner();
   wakeUi();
   if (tv.info) renderInfo();
@@ -382,6 +383,8 @@ function startMolotov(c, token) {
   tv.stallTimer = setTimeout(() => molotovFail(token, c, 'network'), 30000);
   startMolotovPlayback({
     channelId: c.molotovId,
+    // Config déjà obtenue (replay/VOD) : la lecture ne redemande pas la chaîne.
+    play: c.molotovPlay || undefined,
     mediaElement: videoEl,
     onError: (reason) => {
       if (reason === 'unsupported') molotovFail(token, c, 'molotov');
