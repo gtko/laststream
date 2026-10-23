@@ -22,7 +22,7 @@ interface LangBadge {
 }
 
 export interface SourceView {
-  /** Position dans la liste d'origine (stable, sert d'identifiant). */
+  /** Position dans la liste reçue (change à chaque réponse d'addon : identifiant stable = `sourceKeyOf`). */
   index: number;
   stream: Stream;
   info: LastStreamInfo | null;
@@ -199,6 +199,28 @@ export function originsOf(info: LastStreamInfo | null, stream: Stream): Origin[]
   }
   const seen = new Set<string>();
   return list.filter((o) => { const k = o.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/**
+ * Clé stable d'une source, indépendante de sa position (`index` change à chaque réponse d'addon) : torrent `h:<infoHash>:<fileIdx>`,
+ * lien débridé lastAddon `r:<fichier>|<taille>` (le jeton change avec les copies), sinon lien `u:<origine+chemin>` (jamais la requête : elle porte les clés du débrideur) avec le nom du fichier et l'addon,
+ * qui distinguent les sources d'un même lien.
+ */
+export function sourceKeyOf(v: SourceView): string {
+  const hash = (v.stream.infoHash ?? '').toLowerCase();
+  if (hash) return 'h:' + hash + ':' + (v.stream.fileIdx ?? '');
+  // Lien débridé lastAddon : le jeton signé encode la liste des copies (il change quand un addon en ajoute une) ; la release se
+  // reconnaît à son fichier et sa taille.
+  if (isDebridUrl(v.stream.url) && v.filename) return 'r:' + v.filename.toLowerCase() + '|' + v.sizeBytes;
+  const addon = (v.origins[0]?.name ?? '').toLowerCase();
+  let link = '';
+  try {
+    const u = new URL(typeof v.stream.url === 'string' ? v.stream.url : '');
+    link = u.origin + u.pathname;
+  } catch {
+    /* sans lien lisible */
+  }
+  return (link ? 'u:' + link : 'x:') + '|' + v.filename + '|' + addon;
 }
 
 /** « C411 » ; « C411 +2 » quand il y en a davantage que `max`. */

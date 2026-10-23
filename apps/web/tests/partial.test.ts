@@ -89,6 +89,37 @@ describe('réponse partielle de lastAddon', () => {
     stop();
   });
 
+  it('surveillance : onEnd est appelé une fois, à la fin de la recherche, avec la liste finale', async () => {
+    vi.useFakeTimers();
+    fakeAddon([{ streams: [stream(1)], pending: ['C411'] }, { streams: [stream(1), stream(2)], pending: ['C411'] }, { streams: [stream(1), stream(2), stream(3)] }]);
+    const first = await loadSources(REQ);
+    const ends: number[] = [];
+    watchSources(REQ, first, () => undefined, { onEnd: (last) => ends.push(last.views.length) });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ends).toEqual([3]);
+  });
+
+  it('surveillance : onEnd est appelé au délai maximal si une source reste en attente', async () => {
+    vi.useFakeTimers();
+    fakeAddon([{ streams: [stream(1)], pending: ['C411'] }]);
+    const first = await loadSources(REQ);
+    const ends: string[][] = [];
+    watchSources(REQ, first, () => undefined, { maxMs: 5_000, onEnd: (last) => ends.push(last.pending) });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(ends).toEqual([['C411']]);
+  });
+
+  it('surveillance : arrêt demandé, onEnd n’est pas appelé', async () => {
+    vi.useFakeTimers();
+    fakeAddon([{ streams: [stream(1)], pending: ['C411'] }, { streams: [stream(1), stream(2)] }]);
+    const first = await loadSources(REQ);
+    const onEnd = vi.fn();
+    const stop = watchSources(REQ, first, () => undefined, { onEnd });
+    stop();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
   it('surveillance : arrêt demandé, plus aucun appel', async () => {
     vi.useFakeTimers();
     const calls = fakeAddon([{ streams: [stream(1)], pending: ['C411'] }, { streams: [stream(1), stream(2)], pending: ['C411'] }]);

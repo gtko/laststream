@@ -320,6 +320,134 @@ describe('pastille ronde d’un épisode', () => {
     await vi.waitFor(() => expect(h.mgr.remove).toHaveBeenCalledWith('movie:1'));
     await vi.waitFor(() => expect(svc.requestDownload).toHaveBeenCalledTimes(1));
   });
+
+  /** Feuille progressive : `got.update` joue les réponses des addons, `finish` la fin de la recherche. */
+  const openProgressive = async (pump: () => Promise<unknown> = flush) => {
+    const svc = await import('../src/downloads/service');
+    h.s.space = { used: 0, limit: null, ratio: 0, warn: false, full: false };
+    const got: { update?: (c: unknown[], pending: boolean) => void; signal?: AbortSignal } = {};
+    let finish: (v: unknown[]) => void = () => undefined;
+    vi.mocked(svc.listSourceChoices).mockImplementationOnce((_t, opts) => {
+      got.update = opts?.onUpdate as never;
+      got.signal = opts?.signal;
+      return new Promise((r) => { finish = r as never; }) as never;
+    });
+    const ui = await import('../src/ui/downloadBtn.js');
+    detail().innerHTML = '<button id="opener">x</button>';
+    const done = ui.startDownload(target, document.getElementById('opener') as HTMLElement);
+    await pump();
+    return { got, finish: (v: unknown[]) => finish(v), done };
+  };
+
+  it('feuille progressive : la première source s’affiche avant la fin de la recherche, puis la liste se complète sur place', async () => {
+    const { got, finish, done } = await openProgressive();
+    const c0 = choice('0', '1080p', '1080p', 4 * GB);
+    const c1 = choice('1', '720p', '720p', GB);
+    const c4k = choice('2', '2160p', '4K', 20 * GB);
+    got.update!([c0], true);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const row0 = sheet.querySelector('[data-dl-src="0"]');
+    expect(row0).not.toBeNull();
+    expect(sheet.querySelector('[role="status"]')!.textContent).toContain('recherche en cours');
+    expect((sheet.querySelector('[data-dl-go]') as HTMLButtonElement).disabled).toBe(false);
+    got.update!([c0, c1], true);
+    await flush();
+    expect(sheet.querySelector('[data-dl-src="0"]')).toBe(row0); // même ligne : rien n’est redessiné
+    expect(sheet.querySelector('[data-dl-src="1"]')).not.toBeNull();
+    got.update!([c4k, c0, c1], true);
+    await flush();
+    expect(Array.from(sheet.querySelectorAll('.dl-sheet-h')).map((n) => n.textContent)).toEqual(['4K', '1080p', '720p']);
+    expect(sheet.querySelector('[data-dl-src="0"]')).toBe(row0);
+    expect(sheet.querySelector('[data-dl-src="2"]')!.getAttribute('aria-checked')).toBe('true'); // la meilleure reste présélectionnée
+    finish([c4k, c0, c1]);
+    await flush();
+    expect(sheet.querySelector('[role="status"]')!.textContent).toContain('à toi de choisir');
+    expect((sheet.querySelector('[data-dl-slow]') as HTMLElement).hidden).toBe(true);
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : la ligne choisie disparaît à la liste finale, la sélection repart de la recommandation', async () => {
+    const { got, finish, done } = await openProgressive();
+    const c0 = choice('0', '1080p', '1080p', 4 * GB);
+    const c1 = choice('1', '720p', '720p', GB);
+    got.update!([c0, c1], true);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    (sheet.querySelector('[data-dl-src="1"]') as HTMLElement).click(); // choix explicite de la ligne 720p
+    expect(sheet.querySelector('[data-dl-src="1"]')!.getAttribute('aria-checked')).toBe('true');
+    got.update!([c0], false); // la liste finale n'a plus cette ligne
+    await flush();
+    expect(sheet.querySelector('[data-dl-src="1"]')).toBeNull();
+    expect(sheet.querySelector('[data-dl-src="0"]')!.getAttribute('aria-checked')).toBe('true');
+    expect((sheet.querySelector('[data-dl-go]') as HTMLButtonElement).disabled).toBe(false);
+    finish([c0]);
+    await flush();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : fermer pendant la recherche annule le suivi ; une réponse tardive ne s’affiche pas', async () => {
+    const { got, done } = await openProgressive();
+    got.update!([choice('0', '1080p', '1080p', GB)], true);
+    await flush();
+    expect(got.signal!.aborted).toBe(false);
+    escape();
+    expect(got.signal!.aborted).toBe(true);
+    got.update!([choice('0', '1080p', '1080p', GB), choice('1', '720p', '720p', GB)], false);
+    await flush();
+    expect(document.querySelector('.dl-sheet')).toBeNull();
+    await done;
+  });
+
+  it('feuille progressive : après 6 s sans fin, « Certaines sources répondent lentement » ; la fin de la recherche le retire', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pump = () => vi.advanceTimersByTimeAsync(0);
+    const { got, finish, done } = await openProgressive(pump);
+    got.update!([choice('0', '1080p', '1080p', GB)], true);
+    await pump();
+    const slow = document.querySelector('[data-dl-slow]') as HTMLElement;
+    expect(slow.hidden).toBe(true);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(slow.hidden).toBe(false);
+    expect(slow.textContent).toContain('répondent lentement');
+    finish([choice('0', '1080p', '1080p', GB)]);
+    await pump();
+    expect(slow.hidden).toBe(true);
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : la note « lentement » est dans la zone role=status (annoncée par les lecteurs d’écran)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pump = () => vi.advanceTimersByTimeAsync(0);
+    const { got, finish, done } = await openProgressive(pump);
+    got.update!([choice('0', '1080p', '1080p', GB)], true);
+    await pump();
+    await vi.advanceTimersByTimeAsync(6000);
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const slow = sheet.querySelector('[data-dl-slow]') as HTMLElement;
+    expect(slow.hidden).toBe(false);
+    expect(sheet.querySelector('[role="status"]')!.contains(slow)).toBe(true);
+    finish([choice('0', '1080p', '1080p', GB)]);
+    await pump();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : fermée avant les 6 s, le délai « lentement » ne s’affiche plus', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pump = () => vi.advanceTimersByTimeAsync(0);
+    const { got, done } = await openProgressive(pump);
+    got.update!([choice('0', '1080p', '1080p', GB)], true);
+    await pump();
+    const slow = document.querySelector('[data-dl-slow]') as HTMLElement;
+    escape();
+    await done;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(slow.hidden).toBe(true);
+  });
 });
 
 describe('écran #/downloads', () => {

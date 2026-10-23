@@ -231,16 +231,22 @@ export async function pollSources(req: SourceRequest, current: LoadedSources): P
 
 /**
  * Surveille une recherche partielle : toutes les 2 s (20 s au plus) tant que des sources sont en attente, rappelle `onUpdate`
- * avec la liste complétée et le nombre de sources ajoutées. Renvoie la fonction d'arrêt.
+ * avec la liste complétée et le nombre de sources ajoutées. Renvoie la fonction d'arrêt. `onEnd` est appelé une fois quand la
+ * surveillance s'arrête d'elle-même (recherche finie ou délai atteint) avec la dernière liste ; jamais après l'arrêt demandé.
  */
-export function watchSources(req: SourceRequest, start: LoadedSources, onUpdate: (next: LoadedSources, added: number) => void, opts: { every?: number; maxMs?: number } = {}): () => void {
+export function watchSources(req: SourceRequest, start: LoadedSources, onUpdate: (next: LoadedSources, added: number) => void, opts: { every?: number; maxMs?: number; onEnd?: (last: LoadedSources) => void } = {}): () => void {
   let stopped = false;
   let current = start;
   const t0 = Date.now();
   const every = opts.every ?? POLL_EVERY_MS;
   const maxMs = opts.maxMs ?? POLL_MAX_MS;
   const step = async (): Promise<void> => {
-    if (stopped || !current.pending.length || Date.now() - t0 >= maxMs) return;
+    if (stopped) return;
+    if (!current.pending.length || Date.now() - t0 >= maxMs) {
+      stopped = true;
+      opts.onEnd?.(current);
+      return;
+    }
     const next = await pollSources(req, current);
     if (stopped) return;
     if (next !== current) {

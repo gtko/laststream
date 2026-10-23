@@ -9,7 +9,7 @@ import {
 import { setResolutionCap } from '../src/data/prefs';
 import { getDownloadSettings, setDownloadSettings } from '../src/downloads/settings';
 import { DownloadError, type DownloadStore, type SpaceInfo } from '../src/downloads/types';
-import type { SourceView } from '../src/sources/info';
+import { sourceKeyOf, type SourceView } from '../src/sources/info';
 import { HLS_URL, HTTP_URL, httpStream, viewOf } from './downloads-fixtures';
 
 const GB = 1024 ** 3;
@@ -190,10 +190,10 @@ describe('feuille des choix', () => {
       viewOf(httpStream({ resolution: '2160p', languages: ['fr'], url: HLS_URL, filename: 'd' }), 3),
     ];
     const choices = await listSourceChoices(MOVIE);
-    expect(choices.map((c) => [c.key, c.group, c.sizeBytes])).toEqual([
-      ['2', '1080p', 3 * GB], // le français passe avant la version anglaise, à résolution égale
-      ['1', '1080p', 2 * GB],
-      ['0', '720p', GB],
+    expect(choices.map((c) => [c.view.filename, c.group, c.sizeBytes])).toEqual([
+      ['c', '1080p', 3 * GB], // le français passe avant la version anglaise, à résolution égale
+      ['b', '1080p', 2 * GB],
+      ['a', '720p', GB],
     ]);
   });
 
@@ -206,7 +206,8 @@ describe('feuille des choix', () => {
     expect(first).toHaveLength(2);
     expect(state.loadCalls).toBe(1);
     const next = await listSourceChoices(MOVIE, { exclude: { filename: 'a.mkv', size: GB, addon: 'Lumio' } });
-    expect(next.map((c) => c.key)).toEqual(['1']);
+    expect(next.map((c) => c.view.filename)).toEqual(['b.mkv']);
+    expect(next[0].key).toBe(sourceKeyOf(state.views[1]));
     expect(state.loadCalls).toBe(1);
   });
 

@@ -7,8 +7,8 @@
 import { Capacitor } from '@capacitor/core';
 import { matchesLanguage, QUALITY_GROUP_ORDER, type QualityGroupKey } from '../data/sources';
 import type { Lang } from '../data/stream';
-import type { SourceView } from '../sources/info';
-import { loadSources, type SourceRequest } from '../sources/load';
+import { sourceKeyOf, type SourceView } from '../sources/info';
+import { loadSources, watchSources, type LoadedSources, type SourceRequest } from '../sources/load';
 import { currentCapHeight, overCap } from '../sources/resolutionCap';
 import { isShellEnvironment } from '../player/shell';
 import { createAndroidDownloads } from './android';
@@ -238,13 +238,40 @@ async function downloadableViews(t: DownloadTarget, reuse = false): Promise<read
   if (reuse && kept && Date.now() - kept.at < VIEWS_TTL_MS) return kept.views;
   try {
     const loaded = await loadSources(requestOf(t));
-    const policy = linkPolicy();
-    const views = loaded.views.filter((v) => isDownloadable(v, policy));
-    loadedViews.set(id, { at: Date.now(), views });
-    return views;
+    return remember(id, downloadable(loaded.views));
   } catch (err) {
     throw new DownloadError('network', true, err);
   }
+}
+
+/** Sources qu'on peut télécharger : politique des liens de la plateforme appliquée. */
+function downloadable(views: readonly SourceView[]): SourceView[] {
+  const policy = linkPolicy();
+  const seen = new Set<string>();
+  return views.filter((v) => {
+    if (!isDownloadable(v, policy)) return false;
+    const key = sourceKeyOf(v);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Garde la liste du titre (10 min) : « Choisir une autre source » et l'affichage immédiat la reprennent sans recherche. */
+function remember(id: string, views: SourceView[]): SourceView[] {
+  loadedViews.set(id, { at: Date.now(), views });
+  return views;
+}
+
+/**
+ * Fusion par clé stable (`sourceKeyOf`, pas la position : elle change d'une réponse à l'autre) : chaque source de `kept` reste, remplacée par sa version de `incoming` si elle y
+ * figure, et les nouvelles s'ajoutent. Pendant une recherche partielle, une source n'en sort pas avant la fin de la recherche.
+ */
+function mergeByKey(kept: readonly SourceView[], incoming: readonly SourceView[]): SourceView[] {
+  const merged = new Map<string, SourceView>();
+  for (const v of kept) merged.set(sourceKeyOf(v), v);
+  for (const v of incoming) merged.set(sourceKeyOf(v), v);
+  return [...merged.values()];
 }
 
 const matchesAny = (v: SourceView, langs: readonly string[]): boolean => {
@@ -287,7 +314,7 @@ function rankViews(views: readonly SourceView[]): SourceView[] {
 
 /** Une source proposée sur la feuille « Télécharger » : de quoi l'afficher, et la source elle-même pour la lancer. */
 export interface SourceChoice {
-  /** Identifiant stable dans la liste (position d'origine de la source). */
+  /** Identifiant stable de la source (`sourceKeyOf`), le même d'une réponse d'addon à l'autre. */
   key: string;
   group: QualityGroupKey;
   /** Badge de qualité : 4K, 1080p… */
@@ -305,7 +332,7 @@ export interface SourceChoice {
 }
 
 const choiceOf = (v: SourceView): SourceChoice => ({
-  key: String(v.index),
+  key: sourceKeyOf(v),
   group: v.group,
   quality: v.quality,
   sourceType: v.sourceType,
@@ -317,14 +344,97 @@ const choiceOf = (v: SourceView): SourceChoice => ({
   view: v,
 });
 
+/** Options de `listSourceChoices`. Sans `onUpdate` : une seule réponse, « autre source » repart de la liste gardée. */
+interface SourceChoicesOptions {
+  /** Source qui vient d'échouer : retirée de la liste. */
+  exclude?: DownloadRef['match'];
+  /** Chemin progressif (feuille « Télécharger ») : appelé avec la liste classée à chaque changement ; `pending` tant que des addons répondent. */
+  onUpdate?: (choices: SourceChoice[], pending: boolean) => void;
+  /** Arrêt du suivi (feuille fermée) : plus aucun `onUpdate`, la surveillance de la recherche s'arrête. */
+  signal?: AbortSignal;
+}
+
 /**
- * Sources proposées sur la feuille, classées simplement (`rankViews`). `exclude` retire la source qui vient d'échouer et
- * repart de la liste gardée du titre : pas de nouvelle recherche.
+ * Sources proposées sur la feuille, classées simplement (`rankViews`). Sans `onUpdate`, une réponse complète ; avec `onUpdate`,
+ * la liste s'affiche dès qu'elle existe et se complète au fil des addons (voir `listProgressive`).
  */
-export async function listSourceChoices(t: DownloadTarget, opts: { exclude?: DownloadRef['match'] } = {}): Promise<SourceChoice[]> {
+export async function listSourceChoices(t: DownloadTarget, opts: SourceChoicesOptions = {}): Promise<SourceChoice[]> {
+  if (opts.onUpdate) return listProgressive(t, { ...opts, onUpdate: opts.onUpdate });
   const views = await downloadableViews(t, opts.exclude !== undefined);
   const failed = opts.exclude ? findMatch(views, opts.exclude) : undefined;
   return rankViews(failed ? views.filter((v) => v !== failed) : views).map(choiceOf);
+}
+
+/**
+ * Chemin progressif : la liste gardée du titre s'affiche tout de suite si elle est récente, puis chaque réponse des addons la
+ * complète sans attendre les plus lents. Le résultat arrive quand la recherche est finie, ou à l'annulation. Aucune sonde : la
+ * recherche des addons et sa surveillance (`watchSources`) sont les seules requêtes. Une erreur sans rien à montrer devient
+ * une erreur réseau réessayable ; sinon la liste gardée reste affichée.
+ */
+async function listProgressive(t: DownloadTarget, opts: Required<Pick<SourceChoicesOptions, 'onUpdate'>> & Pick<SourceChoicesOptions, 'exclude' | 'signal'>): Promise<SourceChoice[]> {
+  const { onUpdate, signal, exclude } = opts;
+  const id = downloadIdFor(t);
+  const req = requestOf(t);
+  const started = Date.now();
+  let shownFirst = false;
+  const show = (views: readonly SourceView[], pending: boolean): SourceChoice[] => {
+    const failed = exclude ? findMatch(views, exclude) : undefined;
+    const list = rankViews(failed ? views.filter((v) => v !== failed) : views).map(choiceOf);
+    if (list.length > 0 && !shownFirst) {
+      shownFirst = true;
+      console.debug('[téléchargement] premier résultat des sources en ' + (Date.now() - started) + ' ms, ' + list.length + ' trouvée(s)');
+    }
+    if (!signal?.aborted) onUpdate(list, pending);
+    return list;
+  };
+  const kept = loadedViews.get(id);
+  const cached = kept && Date.now() - kept.at < VIEWS_TTL_MS ? kept.views : null;
+  // Liste affichée et gardée : tant que des addons répondent, une réponse partielle se fusionne par clé à ce qui est déjà là ;
+  // la liste finale (recherche terminée) remplace tout.
+  let displayed: readonly SourceView[] = cached ?? [];
+  const take = (incoming: SourceView[], partial: boolean): SourceView[] => {
+    displayed = partial ? mergeByKey(displayed, incoming) : incoming;
+    return remember(id, [...displayed]);
+  };
+  if (cached) show(cached, true);
+  let loaded: LoadedSources;
+  try {
+    loaded = await loadSources(req);
+  } catch (err) {
+    if (cached) return show(cached, false);
+    throw new DownloadError('network', true, err);
+  }
+  const partial = loaded.pending.length > 0 && !signal?.aborted;
+  let latest = take(downloadable(loaded.views), partial);
+  if (!partial) return show(latest, false);
+  show(latest, true);
+  return new Promise<SourceChoice[]>((resolve) => {
+    let stop = (): void => undefined;
+    let ended = false;
+    const end = (): void => {
+      if (ended) return;
+      ended = true;
+      signal?.removeEventListener('abort', onAbort);
+      console.debug('[téléchargement] sources terminées en ' + (Date.now() - started) + ' ms, ' + latest.length + ' source(s) gardée(s)');
+      resolve(show(latest, false));
+    };
+    const onAbort = (): void => {
+      stop();
+      end();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    stop = watchSources(req, loaded, (next) => {
+      const still = next.pending.length > 0;
+      latest = take(downloadable(next.views), still);
+      show(latest, still);
+    }, {
+      onEnd: (last) => {
+        // Délai atteint avec des addons encore en attente : la liste est partielle, rien de ce qui est affiché n'en sort.
+        latest = take(downloadable(last.views), last.pending.length > 0);
+        end();
+      },
+    });
+  });
 }
 
 /**

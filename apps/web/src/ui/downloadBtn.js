@@ -491,96 +491,281 @@ const choiceSub = (c) => {
   return [langs ? langs.charAt(0).toUpperCase() + langs.slice(1) : '', c.audio, c.origin ? 'via ' + c.origin : ''].filter(Boolean).join(' · ');
 };
 
-const SEARCHING = '<p class="dl-sheet-load" role="status"><span class="dl-spin" aria-hidden="true"></span>Recherche des sources…</p>';
+const SEARCHING = 'Recherche des sources…';
+/** Bouton « Annuler » seul (feuille de préparation de la saison). */
 const cancelHTML = () => '<div class="dl-sheet-acts">' + btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', 'Annuler') + '</div>';
+/** Au-delà de ce délai sans fin de recherche, la feuille le dit et laisse choisir sans attendre. */
+const SLOW_MS = 6000;
+const SLOW_TEXT = 'Certaines sources répondent lentement, tu peux choisir maintenant.';
+
+/** Une source sur la feuille : nom, langue, origine, taille. Trop grande pour l'espace libre : grisée, avec le motif. */
+function choiceRow(c, free) {
+  const off = free !== null && c.sizeBytes > free;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = '<button type="button" class="dl-opt dl-src' + (off ? ' is-off' : '') + '" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false"' +
+    (off ? ' disabled aria-disabled="true"' : '') + '>' +
+    '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(choiceTitle(c)) +
+    ' <span class="dl-tag" data-dl-tag hidden>Recommandé</span></span>' +
+    '<span class="dl-opt-s">' + esc(off ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c)) + '</span></span>' +
+    '<span class="dl-opt-v">' + esc(c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue') + '</span></button>';
+  return tpl.content.firstElementChild;
+}
 
 /**
- * Feuille « Télécharger » : état de recherche visible (avec « Annuler »), puis la liste des sources par résolution, avec
- * taille, langue, audio et origine. Une source est présélectionnée (qualité mémorisée, espace libre), le choix reste libre ;
- * celles qui dépassent l'espace libre sont grisées avec le motif. `exclude` : source à ne pas reproposer (elle vient d'échouer).
+ * Contenu de la feuille « Télécharger ». Le squelette (recherche, Annuler) est posé tout de suite ; `paint` le complète sur
+ * place à chaque liste reçue. Les lignes sont gardées par clé : une mise à jour n'en redessine ni n'en déplace aucune, et ne
+ * fait pas sauter le défilement ni la ligne survolée. `paint` est idempotent : une même liste ne change rien.
+ */
+function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
+  // La zone role=status englobe la ligne de recherche et la note « lente » : les deux sont annoncées par les lecteurs d’écran.
+  body.innerHTML = '<div role="status" data-dl-status>' +
+    '<p class="dl-sheet-load" data-dl-line><span class="dl-spin" aria-hidden="true"></span><span data-dl-status-t>' + SEARCHING + '</span></p>' +
+    '<p class="dl-sheet-note" data-dl-slow hidden>' + SLOW_TEXT + '</p>' +
+    '</div>' +
+    '<div class="dl-groups" data-dl-groups></div>' +
+    '<p class="dl-sheet-note" data-dl-free hidden></p>' +
+    '<p class="dl-sheet-p" role="alert" data-dl-alert hidden></p>' +
+    '<div class="dl-sheet-acts">' +
+    '<button type="button" class="btn btn-primary" data-dl-go disabled hidden>' + DL_ICON.dl + '<span data-dl-go-l></span></button>' +
+    btnHTML('dl-btn-link', ' data-dl-close data-dl-autofocus', 'Annuler') + '</div>';
+  const q = (s) => body.querySelector(s);
+  const status = q('[data-dl-status]');
+  const line = q('[data-dl-line]');
+  const statusText = q('[data-dl-status-t]');
+  const spin = q('.dl-spin');
+  const slow = q('[data-dl-slow]');
+  const groupsEl = q('[data-dl-groups]');
+  const freeEl = q('[data-dl-free]');
+  const alertEl = q('[data-dl-alert]');
+  const go = q('[data-dl-go]');
+  const goLabel = q('[data-dl-go-l]');
+  const cancel = q('[data-dl-autofocus]');
+  const sections = new Map(); // groupe de qualité -> { el, list }
+  const rows = new Map(); // clé -> bouton de la source
+  const shown = new Set(); // lignes affichées : une fois affichée, une ligne le reste
+  const opened = new Set(); // groupes dépliés (« Voir N autres »)
+  let byKey = new Map();
+  let selected = null;
+  let chosen = false; // l'utilisateur a choisi : la présélection ne bouge plus
+  let count = 0;
+  let pending = true;
+  let slowDue = false;
+  let ready = false; // la première liste est affichée
+  const refreshSlow = () => { slow.hidden = !(slowDue && pending && count > 0); };
+  const slowTimer = setTimeout(() => {
+    slowDue = true;
+    refreshSlow();
+  }, SLOW_MS);
+  // Feuille fermée (ou choix fait) : le délai ne doit plus rien afficher.
+  const stopSlow = () => clearTimeout(slowTimer);
+  if (signal?.aborted) stopSlow();
+  else signal?.addEventListener('abort', stopSlow, { once: true });
+
+  const syncGo = () => {
+    rows.forEach((el, key) => el.setAttribute('aria-checked', String(key === selected)));
+    const c = selected != null ? byKey.get(selected) : undefined;
+    go.disabled = !c;
+    goLabel.textContent = 'Télécharger' + (c && c.sizeBytes ? ' · ' + formatBytes(c.sizeBytes) : '');
+  };
+
+  /** Insertion de lignes sans saut : la ligne survolée ou focalisée garde sa place à l'écran (le défilement suit). */
+  const keepInPlace = (mutate) => {
+    const sheet = body.parentElement;
+    let anchor = null;
+    try {
+      anchor = body.querySelector('[data-dl-src]:hover');
+    } catch (_) {
+      anchor = null;
+    }
+    const focused = document.activeElement;
+    if (!anchor && focused && body.contains(focused) && focused.hasAttribute('data-dl-src')) anchor = focused;
+    const before = anchor ? anchor.getBoundingClientRect().top : 0;
+    mutate();
+    if (anchor && anchor.isConnected && sheet) sheet.scrollTop += anchor.getBoundingClientRect().top - before;
+  };
+
+  const fail = (message) => {
+    if (!body.isConnected) return;
+    pending = false;
+    clearTimeout(slowTimer);
+    status.hidden = true;
+    slow.hidden = true;
+    groupsEl.hidden = true;
+    freeEl.hidden = true;
+    go.hidden = true;
+    alertEl.textContent = message;
+    alertEl.hidden = false;
+    cancel.querySelector('span').textContent = 'Fermer';
+    cancel.focus({ preventScroll: true });
+  };
+
+  const paint = (choices, isPending, space) => {
+    if (!body.isConnected) return;
+    pending = isPending;
+    count = choices.length;
+    if (!pending) clearTimeout(slowTimer);
+    if (!count) {
+      if (!pending) fail(emptyText);
+      return;
+    }
+    const free = space && space.limit != null ? Math.max(0, space.limit - space.used) : null;
+    const tooBig = (c) => free !== null && c.sizeBytes > free;
+    const first = recommendedChoice(choices, free);
+    const recommendedKey = first ? first.key : null;
+    byKey = new Map(choices.map((c) => [c.key, c]));
+    // La ligne choisie n'existe plus (liste finale) : le choix est abandonné, la recommandation reprend la main.
+    if (chosen && selected != null && !byKey.has(selected)) chosen = false;
+    if (!chosen) selected = recommendedKey;
+    const order = [];
+    for (const c of choices) if (!order.includes(c.group)) order.push(c.group);
+    keepInPlace(() => {
+      for (const [key, el] of rows) {
+        if (!byKey.has(key)) {
+          el.remove();
+          rows.delete(key);
+        }
+      }
+      order.forEach((g, i) => {
+        if (sections.has(g)) return;
+        const el = document.createElement('div');
+        el.className = 'dl-group';
+        el.innerHTML = '<p class="dl-sheet-h" id="dl-g-' + esc(g) + '">' + esc(QUALITY_NAME[g] || g) + '</p>' +
+          '<div class="dl-opts" role="radiogroup" aria-labelledby="dl-g-' + esc(g) + '"></div>';
+        // Une section nouvelle prend sa place dans l'ordre de qualité, avant la suivante déjà affichée.
+        const next = order.slice(i + 1).map((k) => sections.get(k)).find(Boolean);
+        groupsEl.insertBefore(el, next ? next.el : null);
+        sections.set(g, { el, list: el.querySelector('.dl-opts') });
+      });
+      const prevIn = new Map();
+      for (const c of choices) {
+        let el = rows.get(c.key);
+        if (!el) {
+          el = choiceRow(c, free);
+          rows.set(c.key, el);
+        }
+        const list = sections.get(c.group).list;
+        const prev = prevIn.get(c.group);
+        if (prev) {
+          if (prev.nextElementSibling !== el) prev.after(el);
+        } else if (list.firstElementChild !== el) {
+          list.prepend(el);
+        }
+        prevIn.set(c.group, el);
+        el.querySelector('[data-dl-tag]').hidden = c.key !== recommendedKey;
+      }
+      for (const [g, sec] of sections) {
+        const items = choices.filter((c) => c.group === g);
+        const rec = items.findIndex((c) => c.key === recommendedKey);
+        const limit = Math.max(SHOWN_PER_GROUP, rec + 1);
+        items.forEach((c, j) => {
+          if (opened.has(g) || j < limit) shown.add(c.key);
+          rows.get(c.key).hidden = !shown.has(c.key);
+        });
+        const rest = items.filter((c) => !shown.has(c.key)).length;
+        let more = sec.el.querySelector('[data-dl-more]');
+        if (rest > 0) {
+          if (!more) {
+            more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'dl-more';
+            more.dataset.dlMore = g;
+            more.setAttribute('aria-expanded', 'false');
+            sec.el.appendChild(more);
+          }
+          more.textContent = 'Voir ' + rest + (rest > 1 ? ' autres sources' : ' autre source');
+        } else if (more) {
+          more.remove();
+        }
+      }
+    });
+    const found = count + (count > 1 ? ' sources trouvées' : ' source trouvée');
+    line.className = 'dl-sheet-note';
+    statusText.textContent = found + (pending ? ' · recherche en cours…' : ' · à toi de choisir');
+    spin.hidden = !pending;
+    groupsEl.hidden = false;
+    refreshSlow();
+    const freeLine = space && space.limit != null ? 'Espace libre : ' + formatBytes(free) + ' sur ta limite de ' + formatBytes(space.limit)
+      : space ? formatBytes(space.used) + ' utilisés · sans limite' : '';
+    freeEl.textContent = freeLine;
+    freeEl.hidden = !freeLine;
+    const allOff = choices.every(tooBig);
+    alertEl.innerHTML = allOff ? esc('Aucune source ne tient dans ton espace libre.') + ' <a href="#/downloads" data-dl-manage data-dl-close>Gérer l’espace</a>' : '';
+    alertEl.hidden = !allOff;
+    go.hidden = false;
+    syncGo();
+    if (!ready) {
+      ready = true;
+      // Le focus est sur « Annuler » (ouverture) : il passe au choix dès qu'il existe. Ensuite il ne bouge plus.
+      if (!go.disabled && document.activeElement === cancel) go.focus({ preventScroll: true });
+    }
+  };
+
+  body.addEventListener('click', (e) => {
+    const b = e.target instanceof Element ? e.target.closest('[data-dl-src], [data-dl-more], [data-dl-go]') : null;
+    if (!b || b.disabled) return;
+    if (b.dataset.dlSrc != null) {
+      chosen = true;
+      selected = b.dataset.dlSrc;
+      syncGo();
+    } else if (b.dataset.dlMore != null) {
+      const g = b.dataset.dlMore;
+      opened.add(g);
+      const revealed = Array.from(sections.get(g).list.children).filter((r) => r.hidden);
+      revealed.forEach((r) => {
+        r.hidden = false;
+        shown.add(r.dataset.dlSrc);
+      });
+      b.remove();
+      // Le bouton qui avait le focus disparaît : le focus passe à la première source dévoilée (clavier, télécommande).
+      const next = revealed.find((r) => !r.disabled) || revealed[0];
+      if (next) next.focus({ preventScroll: true });
+    } else {
+      onPick(byKey.get(selected));
+    }
+  });
+
+  return { paint, fail };
+}
+
+/**
+ * Feuille « Télécharger » : la recherche est visible tout de suite, avec « Annuler », puis les sources par résolution arrivent au
+ * fil des addons. Une source est présélectionnée (qualité mémorisée, espace libre), le choix reste libre ; celles qui dépassent
+ * l'espace libre sont grisées avec le motif. `exclude` : source à ne pas reproposer (elle vient d'échouer), sans suivi.
  * Résout `{ source }` pour la source choisie, ou null si la feuille est fermée.
  */
 function openChoiceSheet(t, opener, { exclude = null } = {}) {
   return new Promise((resolve) => {
     let picked = null;
+    const search = new AbortController();
     openSheet({
       title: exclude ? 'Choisir une autre source' : 'Télécharger',
       sub: t.name + (t.season != null ? ' · ' + epCode(t.season, t.episode) : ''),
       opener,
-      onClose: () => resolve(picked),
+      onClose: () => {
+        search.abort();
+        resolve(picked);
+      },
       render: (body, close) => {
-        body.innerHTML = SEARCHING + cancelHTML();
-        Promise.all([listSourceChoices(t, exclude ? { exclude } : {}), getSpace()]).then(([choices, space]) => {
-          if (!body.isConnected) return;
-          if (!choices.length) {
-            body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(exclude ? 'Aucune autre source n’est disponible pour ce titre.' : errorMessage('content')) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
-            body.querySelector('button').focus();
-            return;
-          }
-          const free = space && space.limit != null ? Math.max(0, space.limit - space.used) : null;
-          const tooBig = (c) => free !== null && c.sizeBytes > free;
-          const byKey = new Map(choices.map((c) => [c.key, c]));
-          const first = recommendedChoice(choices, free);
-          const recommendedKey = first ? first.key : null;
-          let selected = recommendedKey;
-          const groups = [];
-          for (const c of choices) {
-            const g = groups.find((x) => x.key === c.group);
-            if (g) g.items.push(c); else groups.push({ key: c.group, items: [c] });
-          }
-          const rowHTML = (c, hidden) => '<button type="button" class="dl-opt dl-src' + (tooBig(c) ? ' is-off' : '') + '" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false"' +
-            (tooBig(c) ? ' disabled aria-disabled="true"' : '') + (hidden ? ' hidden' : '') + '>' +
-            '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(choiceTitle(c)) +
-            (c.key === recommendedKey ? ' <span class="dl-tag">Recommandé</span>' : '') + '</span>' +
-            '<span class="dl-opt-s">' + esc(tooBig(c) ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c)) + '</span></span>' +
-            '<span class="dl-opt-v">' + esc(c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue') + '</span></button>';
-          const groupHTML = (g) => {
-            // La source présélectionnée reste toujours visible, même au-delà des premières.
-            const shown = Math.max(SHOWN_PER_GROUP, g.items.findIndex((c) => c.key === recommendedKey) + 1);
-            return '<p class="dl-sheet-h" id="dl-g-' + esc(g.key) + '">' + esc(QUALITY_NAME[g.key] || g.key) + '</p>' +
-              '<div class="dl-opts" role="radiogroup" aria-labelledby="dl-g-' + esc(g.key) + '">' +
-              g.items.map((c, j) => rowHTML(c, j >= shown)).join('') + '</div>' +
-              (g.items.length > shown ? '<button type="button" class="dl-more" data-dl-more="' + esc(g.key) + '" aria-expanded="false">Voir ' + (g.items.length - shown) + (g.items.length - shown > 1 ? ' autres sources' : ' autre source') + '</button>' : '');
-          };
-          const freeLine = space && space.limit != null ? 'Espace libre : ' + formatBytes(free) + ' sur ta limite de ' + formatBytes(space.limit)
-            : space ? formatBytes(space.used) + ' utilisés · sans limite' : '';
-          const allOff = choices.every(tooBig);
-          body.innerHTML = '<p class="dl-sheet-note" role="status">' + esc(choices.length + (choices.length > 1 ? ' sources trouvées' : ' source trouvée') + ' · à toi de choisir') + '</p>' +
-            groups.map(groupHTML).join('') +
-            (freeLine ? '<p class="dl-sheet-note">' + esc(freeLine) + '</p>' : '') +
-            (allOff ? '<p class="dl-sheet-p" role="alert">' + esc('Aucune source ne tient dans ton espace libre.') + ' <a href="#/downloads" data-dl-manage data-dl-close>Gérer l’espace</a></p>' : '') +
-            '<div class="dl-sheet-acts"><button type="button" class="btn btn-primary" data-dl-go data-dl-autofocus' + (selected ? '' : ' disabled') + '>' + DL_ICON.dl + '<span data-dl-go-l></span></button>' +
-            btnHTML('dl-btn-link', ' data-dl-close', 'Annuler') + '</div>';
-          const sync = () => {
-            body.querySelectorAll('[data-dl-src]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.dlSrc === selected)));
-            const c = selected ? byKey.get(selected) : null;
-            const go = body.querySelector('[data-dl-go]');
-            go.disabled = !c;
-            body.querySelector('[data-dl-go-l]').textContent = 'Télécharger' + (c && c.sizeBytes ? ' · ' + formatBytes(c.sizeBytes) : '');
-          };
-          body.addEventListener('click', (e) => {
-            const b = e.target instanceof Element ? e.target.closest('[data-dl-src], [data-dl-more], [data-dl-go]') : null;
-            if (!b || b.disabled) return;
-            if (b.dataset.dlSrc != null) selected = b.dataset.dlSrc;
-            else if (b.dataset.dlMore != null) {
-              const revealed = Array.from(b.previousElementSibling.querySelectorAll('[hidden]'));
-              revealed.forEach((r) => { r.hidden = false; });
-              b.remove();
-              // Le bouton qui avait le focus disparaît : le focus passe à la première source dévoilée (clavier, télécommande).
-              const next = revealed.find((r) => !r.disabled) || revealed[0];
-              if (next) next.focus({ preventScroll: true });
-              return;
-            } else { picked = { source: byKey.get(selected) }; close(true); return; }
-            sync();
-          });
-          sync();
-          (body.querySelector('[data-dl-go]:not([disabled])') || body.querySelector('[data-dl-close]')).focus({ preventScroll: true });
-        }).catch((err) => {
-          if (!body.isConnected) return;
-          const code = err && err.code ? err.code : 'network';
-          body.innerHTML = '<p class="dl-sheet-p" role="alert">' + esc(errorMessage(code)) + '</p><div class="dl-sheet-acts">' + btnHTML('btn-ghost', ' data-dl-close data-dl-autofocus', 'Fermer') + '</div>';
-          body.querySelector('button').focus();
+        const ui = choiceSheetBody(body, {
+          emptyText: exclude ? 'Aucune autre source n’est disponible pour ce titre.' : errorMessage('content'),
+          onPick: (source) => {
+            picked = { source };
+            close(true);
+          },
+          signal: search.signal,
         });
+        const space = getSpace();
+        const list = exclude
+          ? listSourceChoices(t, { exclude })
+          : listSourceChoices(t, {
+            onUpdate: (choices, pending) => {
+              void space.then((sp) => ui.paint(choices, pending, sp), () => undefined);
+            },
+            signal: search.signal,
+          });
+        Promise.all([list, space])
+          .then(([choices, sp]) => ui.paint(choices, false, sp))
+          .catch((err) => ui.fail(errorMessage(err && err.code ? err.code : 'network')));
       },
     });
   });
