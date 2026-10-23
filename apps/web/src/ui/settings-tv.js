@@ -7,7 +7,7 @@ import {
 } from '../data/tvBox';
 import { addList, BOX_CHANGED, getLists, refreshAll, removeList, updateList } from '../data/tvSources';
 import { getMolotovStatus, molotovWay } from '../data/molotovApi';
-import { connectMolotovWithPassword, disconnectMolotovAccount, MolotovAuthError } from '../data/molotovAuth';
+import { connectMolotovWithPassword, disconnectMolotovAccount, MolotovAuthError, resendMolotovMfa, verifyMolotovMfa } from '../data/molotovAuth';
 import { auth, isMainProfile, isServerMode } from '../data/auth';
 import { card, fieldRow, rowHTML } from './settings-ui.js';
 import { detailEl } from './dom.js';
@@ -82,13 +82,16 @@ const rerender = () => {
 
 // ---------- Molotov (TV française) ----------
 
-/** État de la connexion Molotov, redessiné à chaque changement. `draft` garde la saisie du formulaire entre les rendus. */
-const molotov = { status: null, loading: false, msg: '', form: false, draft: { email: '', password: '' } };
+/**
+ * État de la connexion Molotov, redessiné à chaque changement. `draft` garde la saisie du formulaire entre les rendus :
+ * étape `creds` (email + mot de passe), puis étape `code` quand Molotov exige une vérification en deux étapes
+ * (le jeton de défi reçu du serveur y vit aussi).
+ */
+const molotov = { status: null, loading: false, msg: '', form: false, draft: { email: '', password: '', code: '', step: 'creds', mfaToken: '' } };
 
 const molotovErrorText = (err) => {
   if (err instanceof MolotovAuthError) {
     if (err.code === 'invalid_credentials') return 'Email ou mot de passe Molotov incorrect.';
-    if (err.code === 'mfa_required') return 'La connexion Molotov demande une vérification en deux étapes : non gérée pour l’instant.';
     return err.message;
   }
   if (err && err.status === 404) return 'Ce serveur ne gère pas encore Molotov.';
@@ -96,8 +99,17 @@ const molotovErrorText = (err) => {
   return err instanceof Error ? err.message : 'Connexion Molotov impossible.';
 };
 
-/** Mini-formulaire de connexion par email et mot de passe : la saisie vit dans `molotov.draft` (les rendus la reprennent). */
+/** Mini-formulaire en deux étapes : la saisie vit dans `molotov.draft` (les rendus la reprennent). */
 function molotovFormHTML() {
+  if (molotov.draft.step === 'code') {
+    return '<div class="set-actions">' +
+      '<p class="set-msg">Un code vient d\'être envoyé à l\'adresse email du compte Molotov.</p>' +
+      '<input class="set-input" type="text" placeholder="Code de vérification" aria-label="Code de vérification" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" value="' + esc(molotov.draft.code) + '" data-molotov-code>' +
+      '<button type="button" class="btn btn-primary btn-sm" data-molotov-verify>Vérifier</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-molotov-resend>Renvoyer le code</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-molotov-back>Retour</button>' +
+      '</div>';
+  }
   return '<div class="set-actions">' +
     '<input class="set-input" type="email" placeholder="Email Molotov" aria-label="Email Molotov" autocomplete="username" spellcheck="false" value="' + esc(molotov.draft.email) + '" data-molotov-email>' +
     '<input class="set-input" type="password" placeholder="Mot de passe Molotov" aria-label="Mot de passe Molotov" autocomplete="current-password" value="' + esc(molotov.draft.password) + '" data-molotov-password>' +
@@ -162,7 +174,7 @@ async function loadMolotovStatus() {
   }
 }
 
-/** Connexion par email et mot de passe (formulaire de la carte). */
+/** Connexion par email et mot de passe : passe à l'étape `code` quand Molotov exige une vérification en deux étapes. */
 async function molotovSignin() {
   const email = molotov.draft.email.trim();
   const password = molotov.draft.password;
@@ -175,9 +187,41 @@ async function molotovSignin() {
   molotov.msg = 'Connexion à Molotov.';
   rerender();
   try {
-    molotov.status = await connectMolotovWithPassword(email, password);
+    const result = await connectMolotovWithPassword(email, password);
+    if ('mfaToken' in result) {
+      molotov.draft.mfaToken = result.mfaToken;
+      molotov.draft.code = '';
+      molotov.draft.step = 'code';
+      molotov.msg = '';
+    } else {
+      molotov.status = result.status;
+      molotov.form = false;
+      molotov.draft = { email: '', password: '', code: '', step: 'creds', mfaToken: '' };
+      molotov.msg = 'Compte Molotov connecté.';
+    }
+  } catch (err) {
+    molotov.msg = molotovErrorText(err);
+  } finally {
+    molotov.loading = false;
+    rerender();
+  }
+}
+
+/** Vérification du code reçu par email : réussie, la connexion est établie et la saisie est effacée. */
+async function molotovVerify() {
+  const code = molotov.draft.code.trim();
+  if (!code) {
+    molotov.msg = 'Renseigne le code reçu par email.';
+    rerender();
+    return;
+  }
+  molotov.loading = true;
+  molotov.msg = 'Vérification du code.';
+  rerender();
+  try {
+    molotov.status = await verifyMolotovMfa(molotov.draft.mfaToken, code);
     molotov.form = false;
-    molotov.draft = { email: '', password: '' };
+    molotov.draft = { email: '', password: '', code: '', step: 'creds', mfaToken: '' };
     molotov.msg = 'Compte Molotov connecté.';
   } catch (err) {
     molotov.msg = molotovErrorText(err);
@@ -185,6 +229,31 @@ async function molotovSignin() {
     molotov.loading = false;
     rerender();
   }
+}
+
+/** Renvoi du code par email : le jeton de défi peut changer, la saisie du code est alors réinitialisée. */
+async function molotovResend() {
+  molotov.loading = true;
+  molotov.msg = 'Renvoi du code.';
+  rerender();
+  try {
+    molotov.draft.mfaToken = await resendMolotovMfa(molotov.draft.mfaToken);
+    molotov.draft.code = '';
+    molotov.msg = 'Un nouveau code vient d\'être envoyé.';
+  } catch (err) {
+    molotov.msg = molotovErrorText(err);
+  } finally {
+    molotov.loading = false;
+    rerender();
+  }
+}
+
+/** Retour à l'étape `creds` : email et mot de passe sont conservés. */
+function molotovBack() {
+  molotov.draft.step = 'creds';
+  molotov.draft.code = '';
+  molotov.msg = '';
+  rerender();
 }
 
 async function molotovDisconnect() {
@@ -252,6 +321,9 @@ detailEl.addEventListener('click', (e) => {
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
   if (t.closest('[data-molotov-connect]')) { e.preventDefault(); molotov.form = true; molotov.msg = ''; rerender(); return; }
   if (t.closest('[data-molotov-signin]')) { e.preventDefault(); molotovSignin(); return; }
+  if (t.closest('[data-molotov-verify]')) { e.preventDefault(); molotovVerify(); return; }
+  if (t.closest('[data-molotov-resend]')) { e.preventDefault(); molotovResend(); return; }
+  if (t.closest('[data-molotov-back]')) { e.preventDefault(); molotovBack(); return; }
   if (t.closest('[data-molotov-disconnect]')) { e.preventDefault(); molotovDisconnect(); return; }
   if (t.closest('[data-box-detect]')) { e.preventDefault(); detect(); return; }
   if (t.closest('[data-box-add]')) { e.preventDefault(); add(); return; }
@@ -268,6 +340,7 @@ detailEl.addEventListener('input', (e) => {
   if (!(t instanceof HTMLInputElement) || !t.closest('.set-page')) return;
   if (t.dataset.molotovEmail !== undefined) { molotov.draft.email = t.value; return; }
   if (t.dataset.molotovPassword !== undefined) { molotov.draft.password = t.value; return; }
+  if (t.dataset.molotovCode !== undefined) { molotov.draft.code = t.value; return; }
 });
 
 detailEl.addEventListener('change', (e) => {

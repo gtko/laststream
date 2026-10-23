@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectMolotov, disconnectMolotov, getMolotovChannels, getMolotovCredentials, getMolotovPlay, getMolotovStatus, postMolotovLicense,
+  resendMolotovMfa, signinMolotov, verifyMolotovMfa,
 } from '../src/data/molotovApi';
 import type { MolotovChannelDto, MolotovCredentials, MolotovDrm, MolotovPlay, MolotovStatus } from '../src/data/molotovApi';
 import { reloadSettings, SETTINGS_STORAGE_KEY } from '../src/data/config';
@@ -134,5 +135,49 @@ describe('licence Widevine', () => {
     replies = [{ status: 502, body: { error: 'license_failed' } }];
     await expect(postMolotovLicense({ licenseUrl: 'https://api-eu.fubo.tv/lic', token: 'tok', challenge: 'x' })).rejects.toThrow();
     expect(calls[0].url).toBe('/user/account/molotov/license');
+  });
+});
+
+describe('vérification en deux étapes', () => {
+  it('POST /account/molotov/signin : défi mfa_required ramené tel quel', async () => {
+    replies = [{ body: { status: 'mfa_required', mfaToken: 'jeton-mfa' } }];
+    const res = await signinMolotov({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(res).toEqual({ mfaRequired: true, mfaToken: 'jeton-mfa' });
+    const c = calls[0];
+    expect(c.method).toBe('POST');
+    expect(c.url).toBe('/user/account/molotov/signin');
+    expect(JSON.parse(c.body)).toEqual({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('POST /account/molotov/signin : état du compte sans défi', async () => {
+    replies = [{ body: { connected: true, tier: 'premium', channelCount: 3 } }];
+    const res = await signinMolotov({ email: 'alice@example.test', password: 'mot-de-passe' });
+    expect(res).toEqual({ status: { connected: true, tier: 'premium', channelCount: 3 } });
+  });
+
+  it('POST /account/molotov/signin/verify : corps { mfaToken, code }, état renvoyé', async () => {
+    replies = [{ body: { connected: true, tier: 'premium', email: 'alice@example.test' } }];
+    const st: MolotovStatus = await verifyMolotovMfa({ mfaToken: 'jeton-mfa', code: '123456' });
+    expect(st.connected).toBe(true);
+    const c = calls[0];
+    expect(c.method).toBe('POST');
+    expect(c.url).toBe('/user/account/molotov/signin/verify');
+    expect(JSON.parse(c.body)).toEqual({ mfaToken: 'jeton-mfa', code: '123456' });
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
+  });
+
+  it('POST /account/molotov/signin/resend : corps { mfaToken }, jeton renvoyé', async () => {
+    replies = [{ body: { mfaToken: 'jeton-mfa-neuf' } }];
+    const res = await resendMolotovMfa({ mfaToken: 'jeton-mfa' });
+    expect(res).toEqual({ mfaToken: 'jeton-mfa-neuf' });
+    const c = calls[0];
+    expect(c.method).toBe('POST');
+    expect(c.url).toBe('/user/account/molotov/signin/resend');
+    expect(JSON.parse(c.body)).toEqual({ mfaToken: 'jeton-mfa' });
+    expect(c.headers['x-profile-id']).toBe('main-m');
+    expect(c.headers.authorization).toBe('Bearer ' + SESSION_TOKEN);
   });
 });

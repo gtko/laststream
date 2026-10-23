@@ -331,9 +331,31 @@ export const getMolotovStatus = () => call<MolotovStatus>('/account/molotov', { 
 export const connectMolotov = (tokens: { idToken: string; refreshToken: string }) =>
   call<{ ok: boolean }>('/account/molotov', { method: 'PUT', body: tokens, headers: profileHeaders() });
 
-/** Connexion par email et mot de passe : le serveur échange les identifiants contre une session Molotov. */
-export const signinMolotov = (body: { email: string; password: string }) =>
-  call<MolotovStatus>('/account/molotov/signin', { method: 'POST', body, headers: profileHeaders() });
+/**
+ * Connexion par email et mot de passe : le serveur échange les identifiants contre une session Molotov, ou répond
+ * `mfa_required` avec le jeton de défi quand l'API exige une vérification en deux étapes (contrat §8).
+ */
+export async function signinMolotov(body: { email: string; password: string }): Promise<
+  { status: MolotovStatus } | { mfaRequired: true; mfaToken: string }
+> {
+  const reply = await call<MolotovStatus & { status?: string; mfaToken?: string }>('/account/molotov/signin', {
+    method: 'POST',
+    body,
+    headers: profileHeaders(),
+  });
+  if (reply.status === 'mfa_required' && typeof reply.mfaToken === 'string' && reply.mfaToken.length > 0) {
+    return { mfaRequired: true, mfaToken: reply.mfaToken };
+  }
+  return { status: reply };
+}
+
+/** Vérification du code reçu par email : réussie, le serveur enregistre la session et répond avec l'état du compte. */
+export const verifyMolotovMfa = (body: { mfaToken: string; code: string }) =>
+  call<MolotovStatus>('/account/molotov/signin/verify', { method: 'POST', body, headers: profileHeaders() });
+
+/** Renvoi du code par email : le serveur renvoie le jeton de défi à utiliser ensuite (il peut changer). */
+export const resendMolotovMfa = (body: { mfaToken: string }) =>
+  call<{ mfaToken: string }>('/account/molotov/signin/resend', { method: 'POST', body, headers: profileHeaders() });
 
 /** Déconnexion : le serveur oublie les jetons. */
 export const disconnectMolotov = () => call<{ ok: boolean }>('/account/molotov', { method: 'DELETE', headers: profileHeaders() });
