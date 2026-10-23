@@ -166,4 +166,33 @@ describe('sources progressives (feuille « Télécharger »)', () => {
     h.watches[0].onEnd?.(full([second], ['Lent'])); // 20 s écoulées, addon encore en attente
     expect(await done).toHaveLength(1);
   });
+
+  it('fermeture pendant la recherche : la liste partielle n’est pas gardée, la recherche suivante repart du réseau (ODY-260)', async () => {
+    h.load = () => Promise.resolve(full([a], ['Lent']));
+    const ctrl = new AbortController();
+    void listSourceChoices(target(10), { onUpdate: () => undefined, signal: ctrl.signal });
+    await flush();
+    ctrl.abort(); // feuille d'épisode fermée alors qu'un addon répond encore
+    h.load = () => Promise.resolve(full([a, b]));
+    const next = await listSourceChoices(target(10), { exclude: { filename: 'inconnu.mkv' } }); // « autre source » ou saison : reprise de la liste gardée
+    expect(next.map((x) => x.key).sort()).toEqual([kA, kB].sort());
+    expect(h.calls).toBe(2);
+  });
+});
+
+describe('clé stable sans taille connue (ODY-260)', () => {
+  it('deux fichiers débridés de même nom, taille inconnue : deux sources distinctes, pas de fusion', () => {
+    const play = (tok: string): SourceView => viewOf(httpStream({ filename: 'Film.2024.1080p.mkv', url: 'https://lastaddon.example.test/cfg/play/c/' + tok + '?k=1' }), 0);
+    const x = play('jetonA');
+    const y = play('jetonB');
+    expect(x.sizeBytes).toBe(0);
+    expect(sourceKeyOf(x).startsWith('u:')).toBe(true);
+    expect(sourceKeyOf(x)).not.toBe(sourceKeyOf(y));
+  });
+
+  it('taille connue : la clé de release r: reste la même d’un jeton à l’autre', () => {
+    const play = (tok: string): SourceView => viewOf(httpStream({ filename: 'Film.2024.1080p.mkv', size: 4 * GB, url: 'https://lastaddon.example.test/cfg/play/c/' + tok + '?k=1' }), 0);
+    expect(sourceKeyOf(play('jetonA'))).toBe(sourceKeyOf(play('jetonB')));
+    expect(sourceKeyOf(play('jetonA')).startsWith('r:')).toBe(true);
+  });
 });

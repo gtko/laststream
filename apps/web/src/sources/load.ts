@@ -181,6 +181,23 @@ export function prefetchSources(req: SourceRequest): void {
   loadSources(req).catch(() => undefined);
 }
 
+/** Clé du préchargement en cours (un seul à la fois) ; null quand aucun ne tourne. */
+let preloading: string | null = null;
+
+/**
+ * Préchargement de l'épisode le plus probable (ODY-260) : seulement si rien ne tourne déjà et si la recherche n'est pas déjà en
+ * cache (`inflight`, même clé que `loadSources`, donc la feuille « Télécharger » la reprend sans nouvelle requête). Ne rejette jamais.
+ */
+export function preloadSources(req: SourceRequest, now = Date.now()): boolean {
+  if (preloading !== null) return false;
+  const key = requestKey(req);
+  const hit = inflight.get(key);
+  if (hit && now - hit.at < CACHE_MS) return false;
+  preloading = key;
+  void loadSources(req, now).catch(() => undefined).finally(() => { if (preloading === key) preloading = null; });
+  return true;
+}
+
 export function clearSourceCache(): void { inflight.clear(); deviceStates.clear(); }
 
 /** Recharge la liste sans passer par le cache (et la met en cache pour les appels suivants). */

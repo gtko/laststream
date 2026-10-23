@@ -392,9 +392,12 @@ async function listProgressive(t: DownloadTarget, opts: Required<Pick<SourceChoi
   // Liste affichée et gardée : tant que des addons répondent, une réponse partielle se fusionne par clé à ce qui est déjà là ;
   // la liste finale (recherche terminée) remplace tout.
   let displayed: readonly SourceView[] = cached ?? [];
-  const take = (incoming: SourceView[], partial: boolean): SourceView[] => {
-    displayed = partial ? mergeByKey(displayed, incoming) : incoming;
-    return remember(id, [...displayed]);
+  // Seule une liste complète (recherche terminée) est gardée : une liste partielle (feuille fermée, délai atteint) ne doit pas
+  // être reprise par une saison ou une « autre source » lancée peu après (ODY-260).
+  const take = (incoming: SourceView[], pending: boolean): SourceView[] => {
+    displayed = pending ? mergeByKey(displayed, incoming) : incoming;
+    if (!pending) remember(id, [...displayed]);
+    return [...displayed];
   };
   if (cached) show(cached, true);
   let loaded: LoadedSources;
@@ -405,7 +408,7 @@ async function listProgressive(t: DownloadTarget, opts: Required<Pick<SourceChoi
     throw new DownloadError('network', true, err);
   }
   const partial = loaded.pending.length > 0 && !signal?.aborted;
-  let latest = take(downloadable(loaded.views), partial);
+  let latest = take(downloadable(loaded.views), loaded.pending.length > 0);
   if (!partial) return show(latest, false);
   show(latest, true);
   return new Promise<SourceChoice[]>((resolve) => {

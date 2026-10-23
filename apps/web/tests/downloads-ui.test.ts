@@ -322,9 +322,9 @@ describe('pastille ronde d’un épisode', () => {
   });
 
   /** Feuille progressive : `got.update` joue les réponses des addons, `finish` la fin de la recherche. */
-  const openProgressive = async (pump: () => Promise<unknown> = flush) => {
+  const openProgressive = async (pump: () => Promise<unknown> = flush, space: unknown = { used: 0, limit: null, ratio: 0, warn: false, full: false }) => {
     const svc = await import('../src/downloads/service');
-    h.s.space = { used: 0, limit: null, ratio: 0, warn: false, full: false };
+    h.s.space = space;
     const got: { update?: (c: unknown[], pending: boolean) => void; signal?: AbortSignal } = {};
     let finish: (v: unknown[]) => void = () => undefined;
     vi.mocked(svc.listSourceChoices).mockImplementationOnce((_t, opts) => {
@@ -383,6 +383,101 @@ describe('pastille ronde d’un épisode', () => {
     expect(sheet.querySelector('[data-dl-src="0"]')!.getAttribute('aria-checked')).toBe('true');
     expect((sheet.querySelector('[data-dl-go]') as HTMLButtonElement).disabled).toBe(false);
     finish([c0]);
+    await flush();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : une ligne déjà affichée reprend son libellé et son état « trop grand » sur le même élément (ODY-260)', async () => {
+    const { got, finish, done } = await openProgressive(flush, { used: 0, limit: 2 * GB, ratio: 0, warn: false, full: false });
+    const c1 = choice('1', '720p', '720p', GB);
+    got.update!([choice('0', '1080p', '1080p', 0), c1], true); // taille encore inconnue : la source 0 est présélectionnée
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const row0 = sheet.querySelector('[data-dl-src="0"]') as HTMLButtonElement;
+    expect(row0.getAttribute('aria-checked')).toBe('true');
+    // Nouvelle réponse du même addon : même clé, mais libellé changé et taille (4 Go) au-dessus de l'espace libre (2 Go).
+    got.update!([choice('0', '1080p', '1080p', 4 * GB, { sourceType: 'REMUX' }), c1], true);
+    await flush();
+    expect(sheet.querySelector('[data-dl-src="0"]')).toBe(row0); // même élément : rien n’est redessiné
+    expect(row0.querySelector('.dl-opt-l')!.textContent).toContain('REMUX');
+    expect(row0.classList.contains('is-off')).toBe(true);
+    expect(row0.disabled).toBe(true);
+    expect(row0.querySelector('.dl-opt-s')!.textContent).toContain('Trop grand');
+    expect(row0.querySelector('.dl-opt-v')!.textContent).toBe('4 Go');
+    expect(sheet.querySelector('[data-dl-src="1"]')!.getAttribute('aria-checked')).toBe('true'); // la recommandation passe à la source qui tient
+    finish([choice('0', '1080p', '1080p', 4 * GB, { sourceType: 'REMUX' }), c1]);
+    await flush();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : une sélection explicite disparue passe à la recommandation, et un mot discret le dit (ODY-260)', async () => {
+    const { got, finish, done } = await openProgressive();
+    const c0 = choice('0', '1080p', '1080p', 4 * GB);
+    const c1 = choice('1', '720p', '720p', GB);
+    got.update!([c0, c1], true);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const notice = sheet.querySelector('[data-dl-notice]') as HTMLElement;
+    expect(notice.hidden).toBe(true);
+    (sheet.querySelector('[data-dl-src="1"]') as HTMLElement).click(); // choix explicite de la 720p
+    got.update!([c0], false); // la liste finale n'a plus la 720p
+    await flush();
+    expect(sheet.querySelector('[data-dl-src="0"]')!.getAttribute('aria-checked')).toBe('true');
+    expect(notice.hidden).toBe(false);
+    expect(notice.textContent).toContain('présélectionnée');
+    (sheet.querySelector('[data-dl-src="0"]') as HTMLElement).click(); // un nouveau choix explicite efface le mot
+    expect(notice.hidden).toBe(true);
+    finish([c0]);
+    await flush();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : un choix explicite devenu trop grand (taille connue après fusion) est abandonné, la recommandée reprend la main (ODY-260)', async () => {
+    const { got, finish, done } = await openProgressive(flush, { used: 0, limit: 2 * GB, ratio: 0, warn: false, full: false });
+    const c0 = choice('0', '1080p', '1080p', 0); // taille inconnue : recommandée présélectionnée
+    got.update!([c0, choice('1', '720p', '720p', GB)], true);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const row1 = sheet.querySelector('[data-dl-src="1"]') as HTMLButtonElement;
+    const go = sheet.querySelector('[data-dl-go]') as HTMLButtonElement;
+    const notice = sheet.querySelector('[data-dl-notice]') as HTMLElement;
+    row1.click(); // choix explicite de la 720p, qui tient dans l'espace libre
+    row1.focus({ preventScroll: true });
+    expect(row1.getAttribute('aria-checked')).toBe('true');
+    // Nouvelle réponse : la 720p annonce 3 Go, au-dessus de l'espace libre (2 Go).
+    got.update!([c0, choice('1', '720p', '720p', 3 * GB)], true);
+    await flush();
+    expect(row1.disabled).toBe(true);
+    expect(row1.getAttribute('aria-checked')).toBe('false');
+    expect(sheet.querySelector('[data-dl-src="0"]')!.getAttribute('aria-checked')).toBe('true');
+    expect(notice.hidden).toBe(false);
+    expect(go.disabled).toBe(false);
+    expect(document.activeElement).toBe(go);
+    finish([c0, choice('1', '720p', '720p', 3 * GB)]);
+    await flush();
+    escape();
+    await done;
+  });
+
+  it('feuille progressive : sans source qui tienne, la ligne choisie devenue trop grande rend le focus à « Annuler » (ODY-260)', async () => {
+    const { got, finish, done } = await openProgressive(flush, { used: 0, limit: 2 * GB, ratio: 0, warn: false, full: false });
+    got.update!([choice('0', '1080p', '1080p', GB)], true);
+    await flush();
+    const sheet = document.querySelector('.dl-sheet') as HTMLElement;
+    const row0 = sheet.querySelector('[data-dl-src="0"]') as HTMLButtonElement;
+    const go = sheet.querySelector('[data-dl-go]') as HTMLButtonElement;
+    row0.click(); // choix explicite de la seule source
+    row0.focus({ preventScroll: true });
+    got.update!([choice('0', '1080p', '1080p', 3 * GB)], true); // elle annonce 3 Go : plus rien ne tient
+    await flush();
+    expect(row0.disabled).toBe(true);
+    expect(row0.getAttribute('aria-checked')).toBe('false');
+    expect(go.disabled).toBe(true);
+    expect(document.activeElement).toBe(sheet.querySelector('[data-dl-autofocus]'));
+    finish([choice('0', '1080p', '1080p', 3 * GB)]);
     await flush();
     escape();
     await done;

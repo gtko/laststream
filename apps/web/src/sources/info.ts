@@ -210,8 +210,8 @@ export function sourceKeyOf(v: SourceView): string {
   const hash = (v.stream.infoHash ?? '').toLowerCase();
   if (hash) return 'h:' + hash + ':' + (v.stream.fileIdx ?? '');
   // Lien débridé lastAddon : le jeton signé encode la liste des copies (il change quand un addon en ajoute une) ; la release se
-  // reconnaît à son fichier et sa taille.
-  if (isDebridUrl(v.stream.url) && v.filename) return 'r:' + v.filename.toLowerCase() + '|' + v.sizeBytes;
+  // reconnaît à son fichier et sa taille. Sans taille connue (absente ou 0), deux fichiers de même nom se confondraient : clé `u:`.
+  if (isDebridUrl(v.stream.url) && v.filename && v.sizeBytes > 0) return 'r:' + v.filename.toLowerCase() + '|' + v.sizeBytes;
   const addon = (v.origins[0]?.name ?? '').toLowerCase();
   let link = '';
   try {

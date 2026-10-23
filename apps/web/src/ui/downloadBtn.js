@@ -500,15 +500,30 @@ const SLOW_TEXT = 'Certaines sources répondent lentement, tu peux choisir maint
 
 /** Une source sur la feuille : nom, langue, origine, taille. Trop grande pour l'espace libre : grisée, avec le motif. */
 function choiceRow(c, free) {
-  const off = free !== null && c.sizeBytes > free;
   const tpl = document.createElement('template');
-  tpl.innerHTML = '<button type="button" class="dl-opt dl-src' + (off ? ' is-off' : '') + '" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false"' +
-    (off ? ' disabled aria-disabled="true"' : '') + '>' +
-    '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(choiceTitle(c)) +
+  tpl.innerHTML = '<button type="button" class="dl-opt dl-src" role="radio" data-dl-src="' + esc(c.key) + '" aria-checked="false">' +
+    '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l"><span data-dl-title></span>' +
     ' <span class="dl-tag" data-dl-tag hidden>Recommandé</span></span>' +
-    '<span class="dl-opt-s">' + esc(off ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c)) + '</span></span>' +
-    '<span class="dl-opt-v">' + esc(c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue') + '</span></button>';
-  return tpl.content.firstElementChild;
+    '<span class="dl-opt-s" data-dl-sub></span></span>' +
+    '<span class="dl-opt-v" data-dl-size></span></button>';
+  const el = tpl.content.firstElementChild;
+  updateChoiceRow(el, c, free);
+  return el;
+}
+
+/**
+ * Reprend sur place une ligne déjà affichée (libellé, taille, état « trop grand ») : l'élément, sa sélection et son focus restent.
+ * Le motif « trop grand » grise la ligne ; la recommandation et la pastille « Recommandé » sont mises à jour par `paint`.
+ */
+function updateChoiceRow(el, c, free) {
+  const off = free !== null && c.sizeBytes > free;
+  el.classList.toggle('is-off', off);
+  el.disabled = off;
+  if (off) el.setAttribute('aria-disabled', 'true');
+  else el.removeAttribute('aria-disabled');
+  el.querySelector('[data-dl-title]').textContent = choiceTitle(c);
+  el.querySelector('[data-dl-sub]').textContent = off ? 'Trop grand pour ton espace libre (' + formatBytes(free) + ')' : choiceSub(c);
+  el.querySelector('[data-dl-size]').textContent = c.sizeBytes ? formatBytes(c.sizeBytes) : 'Taille inconnue';
 }
 
 /**
@@ -523,6 +538,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     '<p class="dl-sheet-note" data-dl-slow hidden>' + SLOW_TEXT + '</p>' +
     '</div>' +
     '<div class="dl-groups" data-dl-groups></div>' +
+    '<p class="dl-sheet-note" data-dl-notice hidden>Ta source n’est plus proposée : la recommandée est présélectionnée.</p>' +
     '<p class="dl-sheet-note" data-dl-free hidden></p>' +
     '<p class="dl-sheet-p" role="alert" data-dl-alert hidden></p>' +
     '<div class="dl-sheet-acts">' +
@@ -536,6 +552,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
   const slow = q('[data-dl-slow]');
   const groupsEl = q('[data-dl-groups]');
   const freeEl = q('[data-dl-free]');
+  const notice = q('[data-dl-notice]');
   const alertEl = q('[data-dl-alert]');
   const go = q('[data-dl-go]');
   const goLabel = q('[data-dl-go-l]');
@@ -613,11 +630,16 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     const first = recommendedChoice(choices, free);
     const recommendedKey = first ? first.key : null;
     byKey = new Map(choices.map((c) => [c.key, c]));
-    // La ligne choisie n'existe plus (liste finale) : le choix est abandonné, la recommandation reprend la main.
-    if (chosen && selected != null && !byKey.has(selected)) chosen = false;
+    // La ligne choisie n'existe plus (liste finale) ou ne tient plus dans l'espace libre (taille fusionnée) : le choix est abandonné,
+    // la recommandation reprend la main, et la feuille le dit.
+    if (chosen && selected != null && (!byKey.has(selected) || tooBig(byKey.get(selected)))) {
+      chosen = false;
+      if (recommendedKey !== null) notice.hidden = false;
+    }
     if (!chosen) selected = recommendedKey;
     const order = [];
     for (const c of choices) if (!order.includes(c.group)) order.push(c.group);
+    let lostFocus = false; // une ligne focalisée vient d'être désactivée : le focus est rendu après `syncGo` (go.disabled à jour)
     keepInPlace(() => {
       for (const [key, el] of rows) {
         if (!byKey.has(key)) {
@@ -642,6 +664,11 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
         if (!el) {
           el = choiceRow(c, free);
           rows.set(c.key, el);
+        } else {
+          // Ligne déjà affichée : son contenu suit la dernière liste ; le focus quitte une ligne qui vient d'être désactivée.
+          const focused = document.activeElement === el;
+          updateChoiceRow(el, c, free);
+          if (focused && el.disabled) lostFocus = true;
         }
         const list = sections.get(c.group).list;
         const prev = prevIn.get(c.group);
@@ -693,6 +720,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     alertEl.hidden = !allOff;
     go.hidden = false;
     syncGo();
+    if (lostFocus) (go.disabled ? cancel : go).focus({ preventScroll: true });
     if (!ready) {
       ready = true;
       // Le focus est sur « Annuler » (ouverture) : il passe au choix dès qu'il existe. Ensuite il ne bouge plus.
@@ -706,6 +734,7 @@ function choiceSheetBody(body, { emptyText, onPick, signal = null }) {
     if (b.dataset.dlSrc != null) {
       chosen = true;
       selected = b.dataset.dlSrc;
+      notice.hidden = true;
       syncGo();
     } else if (b.dataset.dlMore != null) {
       const g = b.dataset.dlMore;

@@ -13,6 +13,7 @@ import { airedSeasonTargets, episodeDownloadHTML, hydrateDownloads, setSeasonDow
 import { episodeParts, partLabel } from '../data/episodeParts';
 import './epStill.js';
 import { state } from './state.js';
+import { preloadSources } from '../sources/load';
 import { observeTiles, posterCard } from './tiles.js';
 import { progressResume, resumePillHTML } from './resume.js';
 import { esc, fmtDate, fmtMin } from './util.js';
@@ -88,6 +89,19 @@ export async function fillNext(m, token) {
   slot.innerHTML = 'Prochain épisode : ' + (label ? '<strong>' + esc(label) + '</strong> ' : '') + 'le ' + esc(fmtDate(date));
 }
 
+/**
+ * Préchargement (ODY-260) : à l'ouverture d'une saison qui contient l'épisode à regarder, s'il est diffusé, ses sources sont cherchées
+ * en arrière-plan (feuille « Télécharger », lecture). Un seul à la fois, ignoré si déjà en cache ou en cours (`preloadSources`).
+ */
+export function preloadNextEpisode(m, n, eps, today) {
+  const next = nextToWatch(m);
+  if (!next || next.s !== n) return;
+  if (userStore.isWatched(m.key, n, next.e)) return; // déjà vu : rien à précharger
+  const ep = eps.find((e) => e.episode_number === next.e);
+  if (!ep || (ep.air_date && ep.air_date > today)) return;
+  preloadSources({ type: 'tv', id: String(m.id), name: m.name || '', season: n, episode: next.e, key: 'tv:' + m.id });
+}
+
 export async function loadSeason(m, n, token, wantEp) {
   const list = detailEl.querySelector('#f-eplist');
   if (!list) return;
@@ -159,6 +173,7 @@ export async function loadSeason(m, n, token, wantEp) {
   setSeasonDownload(airedSeasonTargets(m, n, eps, today));
   refreshWatchedUI();
   markNext(m);
+  preloadNextEpisode(m, n, eps, today);
   // Saison de l’épisode à regarder : la carte (en cours, sinon prochain non vu, sinon dernier diffusé) est centrée, sans animation.
   const at = inProgressRef(m.key) || nextToWatch(m);
   const target = at && at.s === n ? focusEpisode(eps, { today, isSeen: (ep) => userStore.isWatched(m.key, n, ep), inProgress: (ep) => hasResume(m.key, n, ep) }) : null;
