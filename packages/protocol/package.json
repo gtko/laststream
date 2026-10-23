@@ -1,6 +1,6 @@
 {
   "name": "@laststream/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Contrat partagé entre lastaddon (serveur) et laststream-app : watch party, synchro, épuration d'URL, langue des releases.",
   "private": true,
   "type": "module",
@@ -16,6 +16,7 @@
     "./sync": { "types": "./dist/sync.d.ts", "default": "./dist/sync.js" },
     "./scrub": { "types": "./dist/scrub.d.ts", "default": "./dist/scrub.js" },
     "./language": { "types": "./dist/language.d.ts", "default": "./dist/language.js" },
+    "./social": { "types": "./dist/social.d.ts", "default": "./dist/social.js" },
     "./package.json": "./package.json"
   },
   "files": ["dist", "README.md"],
