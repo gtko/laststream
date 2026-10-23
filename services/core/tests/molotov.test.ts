@@ -823,6 +823,9 @@ describe('compte Molotov', () => {
     const call = upstream.callsTo(`${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license`).at(-1);
     expect(call?.headers['authorization']).toBe(`Bearer ${DRM_TOKEN}`);
     expect(call?.headers['content-type']).toBe('application/octet-stream');
+    // Sans identité de profil, l'API refuse la licence alors que la connexion a réussi : les deux en-têtes doivent partir.
+    expect(call?.headers['x-profile-id']).toBe('prof-1');
+    expect(call?.headers['x-user-id']).toBe('user-1');
     const refused = await request<ErrorBody>(rig.app, 'POST', '/user/account/molotov/license', {
       token: rig.owner.token,
       headers: asProfile(rig.owner.profile),

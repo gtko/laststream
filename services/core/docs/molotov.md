@@ -38,6 +38,12 @@ Origin: https://app.molotov.tv
 Referer: https://app.molotov.tv/
 ```
 
+> **`X-Profile-Id` et `X-User-Id` sont obligatoires sur *toutes* les requêtes authentifiées**, pas seulement sur le
+> profil : le client officiel les construit avec chaque en-tête `X-*`. Sans eux, la connexion et le catalogue passent,
+> mais l'API refuse la lecture (`/vapi/asset/v1` → `401 UNAUTHORIZED`) et la licence DRM : le lecteur affiche
+> « Chaîne indisponible — Erreur de lecture ». Le relais les lit dans la session Molotov stockée côté serveur
+> (`GET /profile` après connexion), jamais dans la requête du client.
+
 ## 3. Authentification
 
 La voie retenue pour connecter un compte est **l'email + mot de passe** (formulaire de la carte « Molotov » de l'app,

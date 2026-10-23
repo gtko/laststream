@@ -361,14 +361,30 @@ function profilePurpose(accountId: string): string {
   return `${PROFILE_PURPOSE}:${accountId}`;
 }
 
+/**
+ * En-têtes du profil Molotov (`X-Profile-Id`, `X-User-Id`), connus après un `GET /profile` réussi.
+ *
+ * Le client officiel envoie ces deux en-têtes sur **chaque** requête authentifiée : sans eux, l'API ne sait pas quel
+ * profil agit et refuse la lecture (`/vapi/asset/v1` répond `UNAUTHORIZED`), alors que la connexion et le catalogue,
+ * eux, passent. Le profil vient de la session stockée côté serveur, jamais de la requête du client.
+ */
+function profileHeadersOf(profile: MolotovProfile | null): Record<string, string> {
+  if (profile === null) return {};
+  const headers: Record<string, string> = {};
+  if (profile.profileId !== null) headers['X-Profile-Id'] = profile.profileId;
+  if (profile.userId !== null) headers['X-User-Id'] = profile.userId;
+  return headers;
+}
+
 /** En-têtes d'un appel authentifié : identité client, origine de l'app web et jeton de session. */
-function molotovHeaders(tokens: MolotovTokens, extra: Record<string, string> = {}): Record<string, string> {
+function molotovHeaders(tokens: MolotovTokens, extra: Record<string, string> = {}, profile: MolotovProfile | null = null): Record<string, string> {
   return {
     ...clientHeaders(),
     'User-Agent': MOLOTOV_UA,
     Origin: MOLOTOV_ORIGIN,
     Referer: `${MOLOTOV_ORIGIN}/`,
     Authorization: `Bearer ${tokens.idToken}`,
+    ...profileHeadersOf(profile),
     ...extra,
   };
 }
@@ -426,6 +442,8 @@ async function upstream(
     body?: string | Uint8Array;
     timeoutMs?: number;
     maxBytes?: number;
+    /** Profil Molotov connu : ses identifiants partent en `X-Profile-Id`/`X-User-Id`. */
+    profile?: MolotovProfile | null;
   },
 ): Promise<UpstreamResult> {
   const result = await fetchBytes(
@@ -433,7 +451,7 @@ async function upstream(
     options.url,
     {
       method: options.method,
-      headers: molotovHeaders(tokens, options.headers ?? {}),
+      headers: molotovHeaders(tokens, options.headers ?? {}, options.profile ?? null),
       ...(options.body === undefined ? {} : { body: options.body }),
     },
     options.timeoutMs ?? UPSTREAM_TIMEOUT_MS,
@@ -490,6 +508,7 @@ async function apiCall(
     body: options.body,
     timeoutMs: options.timeoutMs,
     maxBytes: options.maxBytes,
+    profile: state.profile,
   });
   if (first.status !== 401) return first;
   const refreshed = await refreshTokens(fetchFn, state);
@@ -501,6 +520,7 @@ async function apiCall(
     body: options.body,
     timeoutMs: options.timeoutMs,
     maxBytes: options.maxBytes,
+    profile: state.profile,
   });
 }
 
@@ -1694,6 +1714,8 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
       url: target,
       headers: { Authorization: `Bearer ${body.token}`, 'content-type': 'application/octet-stream' },
       body: challenge,
+      // Le profil part aussi sur la licence : c'est l'appel qui décide de décrypter le flux.
+      profile: state.profile,
     });
     if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
     c.header('Cache-Control', 'no-store');
