@@ -132,6 +132,12 @@ const partialTokensSchema = z.object({
   refreshToken: z.string().min(1).max(8192).optional(),
 });
 
+/** Forme réelle des jetons côté API (le client officiel lit `id_token`/`refresh_token`) ; `refresh_token` peut manquer. */
+const snakePartialTokensSchema = z.object({
+  id_token: z.string().min(1).max(8192),
+  refresh_token: z.string().min(1).max(8192).optional(),
+});
+
 const profileSchema = z.object({
   userId: z.string().nullable(),
   profileId: z.string().nullable(),
@@ -336,12 +342,12 @@ async function refreshTokens(fetchFn: FetchFn, state: MolotovState): Promise<Mol
     headers: { Authorization: `Bearer ${state.tokens.refreshToken}` },
   });
   if (!result.ok) return undefined;
-  const parsed = partialTokensSchema.safeParse(parseJsonBytes(result.bytes));
-  if (!parsed.success) return undefined;
+  const parsed = partialTokensFromDocument(parseJsonBytes(result.bytes));
+  if (parsed === undefined) return undefined;
   // L'API peut ne renvoyer que le nouvel id_token : le refresh_token court est alors conservé.
   const merged: MolotovTokens = {
-    idToken: parsed.data.idToken,
-    refreshToken: parsed.data.refreshToken ?? state.tokens.refreshToken,
+    idToken: parsed.idToken,
+    refreshToken: parsed.refreshToken ?? state.tokens.refreshToken,
   };
   await state.save(merged);
   return merged;
@@ -419,14 +425,32 @@ async function exchangeGoogleToken(fetchFn: FetchFn, googleToken: string): Promi
 /** Résultat d'une connexion : session obtenue, ou défi de vérification en deux étapes. */
 type SigninResult = { kind: 'tokens'; tokens: MolotovTokens } | { kind: 'mfa'; mfaToken: string };
 
-/** Jetons d'une réponse amont : sous `payload` (forme observée sur `/v2/signin`) ou à plat. */
-function tokensFromDocument(document: unknown): MolotovTokens | undefined {
-  if (isRecord(document) && isRecord(document.payload)) {
-    const nested = tokensSchema.safeParse(document.payload);
-    if (nested.success) return nested.data;
+/**
+ * Jetons d'une réponse amont, sous `payload` ou à plat. L'API renvoie `id_token`/`refresh_token` (forme réelle, lue
+ * telle quelle par le client officiel) ; la forme `idToken`/`refreshToken` est acceptée en repli. `refreshToken` peut
+ * être absent (rafraîchissement qui ne renvoie que le nouvel id_token).
+ */
+function partialTokensFromDocument(document: unknown): { idToken: string; refreshToken?: string } | undefined {
+  const sources: unknown[] = [];
+  if (isRecord(document)) {
+    if (isRecord(document.payload)) sources.push(document.payload);
+    sources.push(document);
   }
-  const flat = tokensSchema.safeParse(document);
-  return flat.success ? flat.data : undefined;
+  for (const source of sources) {
+    const snake = snakePartialTokensSchema.safeParse(source);
+    if (snake.success) return { idToken: snake.data.id_token, refreshToken: snake.data.refresh_token };
+    const camel = partialTokensSchema.safeParse(source);
+    if (camel.success) return camel.data;
+  }
+  return undefined;
+}
+
+/** Jetons complets d'une réponse amont (les deux présents), sinon undefined. */
+function tokensFromDocument(document: unknown): MolotovTokens | undefined {
+  const partial = partialTokensFromDocument(document);
+  return partial !== undefined && partial.refreshToken !== undefined
+    ? { idToken: partial.idToken, refreshToken: partial.refreshToken }
+    : undefined;
 }
 
 /** Jeton de défi (`payload.token`, 1..4096) ; null si absent ou hors bornes. */

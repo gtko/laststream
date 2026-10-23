@@ -79,9 +79,9 @@ describe('compte Molotov', () => {
   /** Nombre d'appels à `/papi/v1/config` : le premier renvoie 401 (session expirée). */
   let configCalls = 0;
   /** Réponse de `PUT /v2/signin`, pilotée par les tests (identifiants acceptés, refusés, ou vérification en deux étapes). */
-  let signinReply: () => Response = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+  let signinReply: () => Response = () => json({ id_token: ID_TOKEN, refresh_token: REFRESH_TOKEN });
   /** Réponse de `PUT /mfa/verify`, pilotée par les tests (code accepté ou refusé). */
-  let verifyReply: () => Response = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+  let verifyReply: () => Response = () => json({ id_token: ID_TOKEN, refresh_token: REFRESH_TOKEN });
   /** Réponse de `PUT /mfa/email/resend`, pilotée par les tests (le jeton de défi peut changer). */
   let resendReply: () => Response = () => json({ payload: { token: NEW_MFA_TOKEN } });
 
@@ -94,7 +94,7 @@ describe('compte Molotov', () => {
       [`${MOLOTOV_API}/vapi/asset/v1`]: () => json(ASSET),
       [`${MOLOTOV_API}/vapi/heartbeat/v2`]: () => json({ ok: true }),
       [`${MOLOTOV_API}/vapi/v1/drm/irdeto-proxy/license`]: () => new Response(LICENSE_BYTES, { status: 200, headers: { 'content-type': 'application/octet-stream' } }),
-      [`${MOLOTOV_API}/refresh`]: () => json({ idToken: NEW_ID_TOKEN, refreshToken: NEW_REFRESH_TOKEN }),
+      [`${MOLOTOV_API}/refresh`]: () => json({ id_token: NEW_ID_TOKEN, refresh_token: NEW_REFRESH_TOKEN }),
       [`${MOLOTOV_API}/oauth/google`]: () => json({ error: 'invalid_google_client' }, 400),
       [`${MOLOTOV_API}/v2/signin`]: () => signinReply(),
       [`${MOLOTOV_API}/mfa/verify`]: () => verifyReply(),
@@ -286,7 +286,7 @@ describe('compte Molotov', () => {
   });
 
   it('connexion par email/mot de passe : session enregistrée, profil amont récupéré', async () => {
-    signinReply = () => json({ type: 'SUCCESS', payload: { idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN } });
+    signinReply = () => json({ type: 'SUCCESS', payload: { id_token: ID_TOKEN, refresh_token: REFRESH_TOKEN } });
     const res = await request<StatusBody>(rig.app, 'POST', '/user/account/molotov/signin', {
       token: rig.owner.token,
       headers: asProfile(rig.owner.profile),
@@ -338,6 +338,21 @@ describe('compte Molotov', () => {
     expect(res.body.error).toBe('rate_limited');
   });
 
+  it('repli : les jetons en camelCase restent acceptés', async () => {
+    await request(rig.app, 'DELETE', '/user/account/molotov', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+    });
+    signinReply = () => json({ idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN });
+    const res = await request(rig.app, 'POST', '/user/account/molotov/signin', {
+      token: rig.owner.token,
+      headers: asProfile(rig.owner.profile),
+      body: { email: 'alice@example.test', password: 'mot-de-passe' },
+    });
+    expect(res.status).toBe(200);
+    expect((await storedRow()) !== null).toBe(true);
+  });
+
   it('connexion avec vérification en deux étapes : 200 mfa_required, jeton de défi, aucune ligne de compte', async () => {
     await request(rig.app, 'DELETE', '/user/account/molotov', {
       token: rig.owner.token,
@@ -362,7 +377,7 @@ describe('compte Molotov', () => {
   });
 
   it('vérification du code : 200 connecté, jetons chiffrés au repos', async () => {
-    verifyReply = () => json({ payload: { idToken: ID_TOKEN, refreshToken: REFRESH_TOKEN } });
+    verifyReply = () => json({ payload: { id_token: ID_TOKEN, refresh_token: REFRESH_TOKEN } });
     const res = await request<StatusBody>(rig.app, 'POST', '/user/account/molotov/signin/verify', {
       token: rig.owner.token,
       headers: asProfile(rig.owner.profile),
