@@ -59,7 +59,7 @@ interface MetaCast {
 }
 
 /** Fiche normalisée : forme servie au client (inchangée par le stockage en couches). */
-export interface MetaFiche {
+interface MetaFiche {
   v: 1;
   type: MetaType;
   tmdbId: number;
