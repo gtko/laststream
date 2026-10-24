@@ -999,6 +999,49 @@ describe('compte Molotov', () => {
     }
   });
 
+  it('replay : page sans élément exploitable, journal de la forme sans aucune valeur de chaîne', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 70 * 60_000);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      replayReply = () => json({ data: { sections: [{ title: 'SENTINELLE_TITRE', token: 'SENTINELLE_JETON' }, {}] }, label: 'SENTINELLE_LABEL' });
+      await connect();
+      const res = await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      expect(res.body.items).toEqual([]);
+      const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(logged).toContain('sans élément exploitable');
+      expect(logged).toContain('sections');
+      expect(logged).toContain('array(2)');
+      expect(logged).not.toContain('SENTINELLE');
+      expect(logged.length).toBeLessThan(1700);
+    } finally {
+      warn.mockRestore();
+      spy.mockRestore();
+    }
+  });
+
+  it("replay : une page vide n'est pas mise en cache (deux appels, deux appels amont)", async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 90 * 60_000);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      replayReply = () => json({ sections: [] });
+      await connect();
+      const before = upstream.callsTo(`${MOLOTOV_API}/papi/v1/page/replay-vod`).length;
+      for (let i = 0; i < 2; i += 1) {
+        await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+          token: rig.owner.token,
+          headers: asProfile(rig.owner.profile),
+        });
+      }
+      expect(upstream.callsTo(`${MOLOTOV_API}/papi/v1/page/replay-vod`).length).toBe(before + 2);
+    } finally {
+      warn.mockRestore();
+      spy.mockRestore();
+    }
+  });
+
   it('replay : forme réelle des cartes PAPI (title.text, body.main_button, footer)', async () => {
     // 21 min plus tard : hors du cache de 10 min, l'amont de ce test est bien appelé.
     const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 21 * 60_000);
