@@ -2026,8 +2026,16 @@ function onAction(act, data) {
       break;
     }
     case 'ep-next-unseen': {
-      const from = firstUnseen(P.seasons, P.episodes, P.panelSeason ?? P.cur.season ?? 1, (sn, e) => userStore.isWatched(P.req.key, sn, e), getSkipPref('filler'));
-      if (!from) { ui.toast('Tous les épisodes diffusés sont vus'); break; }
+      const start = P.panelSeason ?? P.cur.season ?? 1;
+      const seen = (sn, e) => userStore.isWatched(P.req.key, sn, e);
+      const skipFillers = getSkipPref('filler');
+      const from = firstUnseen(P.seasons, P.episodes, start, seen, skipFillers);
+      if (!from) {
+        // Réglage filler actif : il peut rester des épisodes non vus, mais seulement des fillers ou des récaps.
+        const onlyFillers = skipFillers && !!firstUnseen(P.seasons, P.episodes, start, seen);
+        ui.toast(onlyFillers ? 'Il ne reste que des épisodes filler' : 'Tous les épisodes diffusés sont vus');
+        break;
+      }
       P.epQuery = '';
       P.epSearchOpen = false;
       ensureEpisodes(from.season).then(() => ui.revealEpisode(from.episode));

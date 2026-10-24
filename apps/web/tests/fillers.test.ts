@@ -67,6 +67,11 @@ describe('firstUnseen avec skipFillers', () => {
     expect(firstUnseen(seasons, series(), 1, seen, true)).toEqual({ season: 1, episode: 4 });
     expect(firstUnseen(seasons, series(), 2, () => false, true)).toEqual({ season: 2, episode: 2 });
   });
+  it('ne restent que des fillers non vus : null avec le réglage, le filler sans (message « Il ne reste que des épisodes filler »)', () => {
+    const canonSeen = (s: number, e: number): boolean => (s === 1 && (e === 1 || e === 4)) || (s === 2 && e === 2);
+    expect(firstUnseen(seasons, series(), 1, canonSeen, true)).toBeNull();
+    expect(firstUnseen(seasons, series(), 1, canonSeen)).toEqual({ season: 1, episode: 2 });
+  });
 });
 
 describe('badge du panneau Épisodes', () => {
