@@ -1,5 +1,7 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
+import type { MetaAdmin } from '../../admin/cache-types.js';
 import type { MetaBlob, MetaBlobStore } from '../../lt/meta.js';
+import { fichePrefix } from '../../lt/meta-policy.js';
 import type { RowBlob, RowBlobStore } from '../../lt/rows.js';
 
 /**
@@ -47,6 +49,33 @@ export function createR2RowBlobs(bucket: R2Bucket): RowBlobStore {
         httpMetadata: { contentType: 'application/json; charset=utf-8' },
         customMetadata: { etag: blob.etag, generatedAt: String(blob.generatedAt) },
       });
+    },
+  };
+}
+
+/** Pages de listage R2 (et taille maximale d'un lot de suppression) : 1000 clés. */
+const LIST_PAGE = 1000;
+
+/**
+ * Purge d'une fiche (DELETE /admin/meta/:type/:id) : supprime tous les objets sous son préfixe (meta/v2/<type>/<id>/, voir
+ * meta-policy.ts), listés page à page. Le préfixe finit par `/` : une autre fiche (autre identifiant) n'est jamais touchée.
+ */
+export function createR2MetaAdmin(bucket: R2Bucket): MetaAdmin {
+  return {
+    async deleteFiche(kind, tmdbId) {
+      const prefix = fichePrefix(kind, tmdbId);
+      let deleted = 0;
+      let cursor: string | undefined;
+      do {
+        const page = await bucket.list({ prefix, limit: LIST_PAGE, ...(cursor === undefined ? {} : { cursor }) });
+        const keys = page.objects.map((object) => object.key);
+        if (keys.length > 0) {
+          await bucket.delete(keys);
+          deleted += keys.length;
+        }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor !== undefined);
+      return deleted;
     },
   };
 }

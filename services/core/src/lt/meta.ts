@@ -745,6 +745,77 @@ export async function serveMetaFiche(rt: MetaRuntime, svc: MetaServices, type: M
   };
 }
 
+/** Budget d'un passage de préchauffage : décrémenté à chaque reconstruction TMDB ou appel MDBList engagé. */
+export interface PrewarmBudget {
+  /** Reconstructions des couches base et traduction (une par fiche). */
+  tmdb: number;
+  /** Appels MDBList pour les notes. */
+  mdblist: number;
+}
+
+/** Couches reconstruites pour une fiche par le préchauffage. */
+export interface PrewarmOutcome {
+  core: boolean;
+  ratings: boolean;
+}
+
+/**
+ * Couche à reconstruire : R2 ne renouvelle l'échéance d'une couche saine que si son contenu change. Marquée expirée, elle
+ * est réécrite avec une échéance neuve, contenu identique ou non (les notes reprises en cas d'échec restent).
+ */
+function renewing<T>(layer: Layer<T> | undefined, rebuild: boolean): Layer<T> | undefined {
+  if (layer === undefined || !rebuild) return layer;
+  return { ...layer, blob: { ...layer.blob, expiresAt: 0 } };
+}
+
+/**
+ * Préchauffage d'une fiche (cron) : reconstruit les couches absentes ou dont l'échéance tombe dans `horizonMs` (expirées
+ * comprises). Une couche fraîche au-delà de l'horizon n'est ni lue en amont ni réécrite. Chaque reconstruction engagée
+ * décrémente `budget` ; sans budget restant, la couche attend le passage suivant. Les erreurs remontent à l'appelant.
+ */
+export async function prewarmFiche(
+  rt: MetaRuntime,
+  svc: MetaServices,
+  type: MetaType,
+  tmdbId: number,
+  horizonMs: number,
+  budget: PrewarmBudget,
+  lang: Lang = 'fr-FR',
+): Promise<PrewarmOutcome> {
+  const outcome: PrewarmOutcome = { core: false, ratings: false };
+  const blobs = rt.blobs;
+  if (blobs === undefined) return outcome;
+  const kind = kindOf(type);
+  const now = rt.now();
+  const horizon = now + horizonMs;
+  const due = (layer: Layer<unknown> | undefined): boolean => layer === undefined || layer.blob.expiresAt <= horizon;
+  const [storedBase, storedL10n, storedRatings] = await Promise.all([
+    readLayer<BaseLayer>(blobs, baseKey(kind, tmdbId), now, isBase),
+    readLayer<L10nLayer>(blobs, l10nKey(kind, tmdbId, lang), now, isL10n),
+    readLayer<RatingsLayer>(blobs, ratingsKey(kind, tmdbId), now, isRatings),
+  ]);
+
+  let base = storedBase;
+  const targets = { base: due(storedBase), l10n: due(storedL10n) };
+  if ((targets.base || targets.l10n) && svc.tmdbToken !== undefined && budget.tmdb > 0) {
+    budget.tmdb -= 1;
+    const label = `core:${fichePrefix(kind, tmdbId)}${lang}:${targets.base ? 'b' : ''}${targets.l10n ? 'l' : ''}`;
+    const core = await once(rt, label, () =>
+      rebuildCore(rt, svc, type, tmdbId, lang, targets, { base: renewing(storedBase, targets.base), l10n: renewing(storedL10n, targets.l10n) }),
+    );
+    base = core.base;
+    outcome.core = true;
+  }
+
+  if (base !== undefined && svc.mdblistApiKey !== undefined && budget.mdblist > 0 && due(storedRatings) && ttlMs('ratings', subjectOf(base.value, false), now) > 0) {
+    budget.mdblist -= 1;
+    const current = base.value;
+    await once(rt, `ratings:${fichePrefix(kind, tmdbId)}`, () => rebuildRatings(rt, svc, current, renewing(storedRatings, true)));
+    outcome.ratings = true;
+  }
+  return outcome;
+}
+
 /** Vrai si l'en-tête If-None-Match contient l'empreinte (ou « * »). */
 export function ifNoneMatchHits(header: string | undefined, etag: string): boolean {
   if (header === undefined || header.trim() === '') return false;

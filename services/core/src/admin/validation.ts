@@ -100,3 +100,9 @@ export const reportListQuery = z.object({ status: z.enum(['open', 'deleted', 'su
 export const reportActionBody = z.object({ action: z.enum(['delete', 'suspend', 'ignore']) });
 
 export const purgeIdParam = z.string().uuid();
+
+/** Fiche partagée (R2) : type `movie` ou `series`, identifiant TMDB (entier positif). */
+export const fichePathParams = z.object({
+  type: z.enum(['movie', 'series']),
+  id: z.string().regex(/^[1-9]\d{0,8}$/).transform(Number),
+});

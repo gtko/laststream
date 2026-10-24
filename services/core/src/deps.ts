@@ -1,6 +1,6 @@
 import type { AutoDetectOptions } from './lt/detect/index.js';
 import type { ThumbOptions } from './lt/thumbs/index.js';
-import type { CacheAdmin, TvAdmin } from './admin/cache-types.js';
+import type { CacheAdmin, MetaAdmin, TvAdmin } from './admin/cache-types.js';
 import type { OpsPorts } from './admin/ops-stats.js';
 import type { MetricsService } from './metrics/core.js';
 import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
@@ -29,6 +29,8 @@ export interface AppDeps {
   metrics?: MetricsService;
   /** Statistiques et purge des caches KV (tests). Par défaut : celles de la plateforme (Workers). */
   cacheAdmin?: CacheAdmin;
+  /** Suppression d'une fiche partagée (tests ; Workers : R2 par la plateforme). Absente : 501. */
+  metaAdmin?: MetaAdmin;
   /** Limites /admin/* par minute et par IP (lectures, écritures, ré-authentifications par 10 min). */
   adminRateLimits?: Partial<{ read: number; write: number; elevate: number }>;
   /** API TV d'administration (dernier cron, relance). Absente : les routes /admin/tv répondent 501. */

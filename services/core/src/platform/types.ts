@@ -6,7 +6,7 @@
 
 import type { AutoDetectOptions, AutoDetector } from '../lt/detect/index.js';
 import type { ThumbOptions, ThumbService } from '../lt/thumbs/index.js';
-import type { CacheAdmin } from '../admin/cache-types.js';
+import type { CacheAdmin, MetaAdmin } from '../admin/cache-types.js';
 import type { MetricsService } from '../metrics/core.js';
 import type { PartyBackend } from '../party/backend.js';
 import type { TvBlobStore } from '../lt/tv-build.js';
@@ -172,6 +172,8 @@ export interface Platform {
   tvStore?: { blobs: TvBlobStore; requestRefresh(): void };
   /** Stockage des fiches partagées (Workers : bucket R2 lastaddon-meta). Absent : chaque fiche est construite à la demande. */
   metaBlobs?: MetaBlobStore;
+  /** Suppression d'une fiche partagée (Workers : bucket R2 lastaddon-meta, route DELETE /admin/meta). Absent : 501. */
+  readonly metaAdmin?: MetaAdmin;
   /** Stockage des rangées d'accueil communes (Workers : même bucket, clés rows/). Absent : rangées calculées à la demande. */
   rowBlobs?: RowBlobStore;
   /**

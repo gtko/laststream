@@ -16,7 +16,7 @@ import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { handleSocialLiveWs } from './user/social-v2-live-ws.js';
 import { SOCIAL_LIVE_PATH } from './user/social-v2-live.js';
 import { countryCode } from './user/title-starts.js';
-import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
+import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, prewarmMetaFromEnv, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 import { createWorkersOpsPorts } from './platform/workers/ops.js';
 import { workersQuotaGate } from './platform/workers/metrics.js';
 
@@ -78,6 +78,11 @@ setUnhandledErrorReporter((error) => {
   if (!(error instanceof DebridEgressBlockedError)) Sentry.captureException(error);
 });
 
+/** Échec du préchauffage des fiches (cron) : journalisé sans message brut ; les autres tâches du cron ne sont pas concernées. */
+function logPrewarmFailure(err: unknown): void {
+  console.error('[worker] préchauffage des fiches échoué', err instanceof Error ? err.name : 'inconnue');
+}
+
 /** Traite une requête (hors contexte de sortie : voir `worker.fetch`). */
 async function handleFetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
   // Origine du Worker pour la supervision : ses propres URL gardent leur chemin épuré, les autres sont réduites à l'hôte.
@@ -123,13 +128,19 @@ const worker = {
 
   /**
    * Cron Trigger (wrangler.jsonc, « triggers », toutes les 6 h) : reconstruit le catalogue TV et l'EPG réduit dans R2, en
-   * flux ; précalcule les rangées d'accueil communes dans R2 (lt/rows.ts).
+   * flux ; précalcule les rangées d'accueil communes dans R2 (lt/rows.ts) ; préchauffe les fiches des rangées et du Top 10
+   * (lt/meta-prewarm.ts), en dernier : une erreur de ce préchauffage est journalisée sans toucher aux tâches précédentes.
    */
   scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
     runWithEgressContext({ trigger: 'cron', requestId: `cron-${crypto.randomUUID()}` }, () => {
       ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
       ensureWorkersPlatform(env);
       ctx.waitUntil(runInRequest(ctx, () => refreshRowsFromEnv(env)));
+      try {
+        ctx.waitUntil(runInRequest(ctx, () => prewarmMetaFromEnv(env)).catch(logPrewarmFailure));
+      } catch (err) {
+        logPrewarmFailure(err);
+      }
     });
   },
 };

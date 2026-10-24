@@ -30,6 +30,7 @@ import {
   inviteListQuery,
   inviteQuotaBody,
   metricsQuery,
+  fichePathParams,
   purgeIdParam,
   reportActionBody,
   reportIdParam,
@@ -69,6 +70,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   };
   const metricsOf = () => deps.metrics ?? metricsService();
   const cachesOf = () => deps.cacheAdmin ?? platform().cacheAdmin;
+  const metaAdminOf = () => deps.metaAdmin ?? platform().metaAdmin;
 
   const router = newApp();
   router.use('*', async (c, next) => {
@@ -435,6 +437,17 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (!isCachePrefix(prefix)) throw new UserApiError(404, 'unknown_cache');
     await audit(session, 'cache.purge', prefix);
     return sendJson(c, await caches.startPurge(prefix), 202);
+  });
+
+  /** Supprime toutes les couches R2 d'une fiche : elle est reconstruite à la prochaine lecture. */
+  router.delete('/meta/:type/:id', async (c) => {
+    const session = await owner(c);
+    elevated(c, session);
+    const metaAdmin = metaAdminOf();
+    if (metaAdmin === undefined) throw new UserApiError(501, 'meta_admin_unavailable');
+    const { type, id } = parseWith(fichePathParams, { type: c.req.param('type'), id: c.req.param('id') });
+    await audit(session, 'meta.delete', `${type}/${id}`);
+    return sendJson(c, { deleted: await metaAdmin.deleteFiche(type === 'movie' ? 'movie' : 'tv', id) });
   });
 
   // TV (API de l'autre chantier : 501 tant qu'elle n'est pas branchée)
