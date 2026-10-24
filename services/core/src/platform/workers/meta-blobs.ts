@@ -1,7 +1,7 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { MetaAdmin } from '../../admin/cache-types.js';
 import type { MetaBlob, MetaBlobStore } from '../../lt/meta.js';
-import { fichePrefix } from '../../lt/meta-policy.js';
+import { fichePrefix, legacyKey } from '../../lt/meta-policy.js';
 import type { RowBlob, RowBlobStore } from '../../lt/rows.js';
 
 /**
@@ -58,7 +58,8 @@ const LIST_PAGE = 1000;
 
 /**
  * Purge d'une fiche (DELETE /admin/meta/:type/:id) : supprime tous les objets sous son préfixe (meta/v2/<type>/<id>/, voir
- * meta-policy.ts), listés page à page. Le préfixe finit par `/` : une autre fiche (autre identifiant) n'est jamais touchée.
+ * meta-policy.ts), listés page à page, et l'ancien objet v1 (meta/<type>/<id>.json) s'il existe, compté dans le total. Le préfixe
+ * finit par `/` : une autre fiche (autre identifiant) n'est jamais touchée.
  */
 export function createR2MetaAdmin(bucket: R2Bucket): MetaAdmin {
   return {
@@ -75,6 +76,13 @@ export function createR2MetaAdmin(bucket: R2Bucket): MetaAdmin {
         }
         cursor = page.truncated ? page.cursor : undefined;
       } while (cursor !== undefined);
+      // Ancien objet v1 : sans cela, la purge laisserait les notes reprises renaître à la prochaine lecture.
+      const legacy = legacyKey(kind, tmdbId);
+      const found = await bucket.list({ prefix: legacy, limit: 1 });
+      if (found.objects.some((object) => object.key === legacy)) {
+        await bucket.delete([legacy]);
+        deleted += 1;
+      }
       return deleted;
     },
   };

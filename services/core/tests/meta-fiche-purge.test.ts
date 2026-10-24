@@ -40,14 +40,15 @@ class FakeBucket {
 }
 
 const FICHE_MOVIE_123 = ['meta/v2/movie/123/base.json', 'meta/v2/movie/123/l10n/fr-FR.json', 'meta/v2/movie/123/l10n/en-US.json', 'meta/v2/movie/123/ratings.json'];
-/** Objets voisins : identifiants qui commencent par 123 ou par 12, autre type, ancienne clé v1 : jamais supprimés. */
+/** Objets voisins : identifiants qui commencent par 123 ou par 12, autre type, ancienne clé v1 d'une autre fiche : jamais supprimés. */
 const NEIGHBOURS = [
   'meta/v2/movie/1234/base.json',
   'meta/v2/movie/1230/ratings.json',
   'meta/v2/movie/12/base.json',
   'meta/v2/tv/123/base.json',
   'meta/v2/tv/123/s1/fr-FR.json',
-  'meta/movie/123.json',
+  'meta/movie/1234.json',
+  'meta/tv/123.json',
   'rows/lastaddon-trending.json',
 ];
 
@@ -59,6 +60,16 @@ describe('purge d une fiche partagée (préfixe exact)', () => {
     const deleted = await createR2MetaAdmin(bucket.asBucket()).deleteFiche('movie', 123);
 
     expect(deleted).toBe(FICHE_MOVIE_123.length);
+    expect([...bucket.keys].sort()).toEqual([...NEIGHBOURS].sort());
+  });
+
+  it('supprime aussi l ancien objet v1 de la fiche et le compte', async () => {
+    const bucket = new FakeBucket();
+    bucket.add(...FICHE_MOVIE_123, 'meta/movie/123.json', ...NEIGHBOURS);
+
+    const deleted = await createR2MetaAdmin(bucket.asBucket()).deleteFiche('movie', 123);
+
+    expect(deleted).toBe(FICHE_MOVIE_123.length + 1);
     expect([...bucket.keys].sort()).toEqual([...NEIGHBOURS].sort());
   });
 
