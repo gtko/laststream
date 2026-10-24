@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppDeps } from '../src/deps.js';
-import { createLtContext, type LtContext } from '../src/lt/context.js';
+import { createLtContext, LtError, type LtContext } from '../src/lt/context.js';
 import { mdblistCached } from '../src/lt/mdblist.js';
+import { mdblistRatings } from '../src/lt/providers.js';
 import { MDBLIST_DAILY_BUDGET_DEFAULT, memoryQuotaGate, msUntilNextUtcDay, parseDailyBudget, type QuotaGate, utcDay } from '../src/lt/quota.js';
 import { workersQuotaGate } from '../src/platform/workers/metrics.js';
 import type { KvCache } from '../src/platform/types.js';
@@ -182,5 +183,29 @@ describe('quota MDBList : budget quotidien global', () => {
     expect((await mdblistCached(ctx, 'k', 'movie', 'tt0133093')).ratings.imdb).toBe(8.7);
     expect((await mdblistCached(ctx, 'k', 'movie', 'tt0000002')).unavailable).toBe(true);
     expect(upstream.callsTo(T2).length).toBe(0);
+  });
+});
+
+describe('quota MDBList : notes des fiches (mdblistRatings) soumises à la même garde', () => {
+  it('budget 0 : refus levé en LtError, aucun appel amont', async () => {
+    const upstream = mockUpstream({ [T1]: ok });
+    await expect(mdblistRatings(ctxFor(upstream, { budget: 0 }), 'k', 'movie', 'tt0133093')).rejects.toBeInstanceOf(LtError);
+    expect(upstream.callsTo(T1)).toHaveLength(0);
+  });
+
+  it('disjoncteur ouvert : refus levé en LtError, aucun appel amont, même avec du budget', async () => {
+    const upstream = mockUpstream({ [T1]: ok });
+    const ctx = ctxFor(upstream, { budget: 10 });
+    ctx.state.mdbBreakerUntil = Date.now() + 60e3;
+    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).rejects.toBeInstanceOf(LtError);
+    expect(upstream.callsTo(T1)).toHaveLength(0);
+  });
+
+  it('budget consommé par une fiche : la fiche suivante est refusée sans appel', async () => {
+    const upstream = mockUpstream({ [T1]: ok, [T2]: ok });
+    const ctx = ctxFor(upstream, { budget: 1 });
+    expect((await mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).ratings.imdb).toBe(8.7);
+    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0000002')).rejects.toBeInstanceOf(LtError);
+    expect(upstream.callsTo(T2)).toHaveLength(0);
   });
 });

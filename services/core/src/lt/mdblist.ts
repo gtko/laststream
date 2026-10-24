@@ -1,6 +1,6 @@
 import { LtError, type LtContext } from './context.js';
+import { mdblistAdmission, mdblistOpenBreaker } from './mdblist-guard.js';
 import { MdbRateLimited, mdblistFetch, mdblistTarget, type MdbRatings } from './providers.js';
-import { msUntilNextUtcDay } from './quota.js';
 
 /**
  * Notes MDBList derrière la clé de serveur partagée par tous les comptes (quota quotidien limité). Couches, dans l'ordre :
@@ -18,12 +18,6 @@ const KV_FRESH_SECONDS = 24 * 3600;
 const FRESH_RELEASE_DAYS = 30;
 const NEGATIVE_SECONDS = 120;
 const NEGATIVE_NOT_FOUND_SECONDS = 600;
-const BREAKER_DEFAULT_MS = 3600e3;
-const BREAKER_MIN_MS = 60e3;
-const BREAKER_MAX_MS = 24 * 3600e3;
-/** Durée de garde en mémoire d'une réponse dégradée (plafonnée par la fin de la coupure). */
-const DEGRADED_MEMORY_MS = 30e3;
-const BREAKER_KEY = 'breaker';
 
 export interface MdbResponse extends MdbRatings {
   /** Vrai quand les notes sont momentanément indisponibles (quota ou limite de débit) : les notes sont alors nulles. */
@@ -51,27 +45,6 @@ function isRatings(value: unknown): value is MdbRatings {
   return typeof value === 'object' && value !== null && 'ratings' in value && 'score' in value;
 }
 
-async function breakerRemainingMs(ctx: LtContext): Promise<number> {
-  const now = Date.now();
-  if (ctx.state.mdbBreakerUntil > now) return ctx.state.mdbBreakerUntil - now;
-  const raw = await ctx.state.mdbKv.get(BREAKER_KEY).catch(() => undefined);
-  const until = raw === undefined ? 0 : Number(raw);
-  if (Number.isFinite(until) && until > now) {
-    ctx.state.mdbBreakerUntil = until;
-    return until - now;
-  }
-  return 0;
-}
-
-async function openBreaker(ctx: LtContext, retryAfterMs: number | undefined): Promise<number> {
-  const wait = Math.min(BREAKER_MAX_MS, Math.max(BREAKER_MIN_MS, retryAfterMs ?? BREAKER_DEFAULT_MS));
-  const until = Date.now() + wait;
-  ctx.state.mdbBreakerUntil = until;
-  await ctx.state.mdbKv.set(BREAKER_KEY, String(until), Math.ceil(wait / 1000)).catch(() => undefined);
-  console.warn(`[lt][mdblist] quota épuisé : appels coupés ${Math.round(wait / 60e3)} min`);
-  return wait;
-}
-
 interface Loaded {
   body: MdbResponse;
   memoryMs: number;
@@ -90,13 +63,8 @@ async function load(ctx: LtContext, apiKey: string, type: string, id: string, kv
   }
   const failed = await kv.get(`n:${kvKey}`).catch(() => undefined);
   if (failed !== undefined) throw new LtError(502, failed, 'mdblist');
-  const remaining = await breakerRemainingMs(ctx);
-  if (remaining > 0) return { body: degraded(remaining), memoryMs: Math.min(DEGRADED_MEMORY_MS, remaining) };
-  // Budget du jour UTC : refus sans appel amont, jusqu'à la remise à zéro de minuit.
-  if (!(await ctx.mdbQuota.take('mdblist', ctx.mdbDailyBudget))) {
-    return { body: degraded(msUntilNextUtcDay(Date.now())), memoryMs: DEGRADED_MEMORY_MS };
-  }
-  if (!(await ctx.mdbLimiter())) return { body: degraded(60e3), memoryMs: 10e3 };
+  const refusal = await mdblistAdmission(ctx);
+  if (refusal !== undefined) return { body: degraded(refusal.waitMs), memoryMs: refusal.memoryMs };
   try {
     const { ratings, released } = await mdblistFetch(ctx, apiKey, type, id);
     const seconds = ratingsTtlSeconds(released);
@@ -104,8 +72,8 @@ async function load(ctx: LtContext, apiKey: string, type: string, id: string, kv
     return { body: ratings, memoryMs: 5 * 60e3 };
   } catch (err) {
     if (err instanceof MdbRateLimited) {
-      const wait = await openBreaker(ctx, err.retryAfterMs);
-      return { body: degraded(wait), memoryMs: Math.min(DEGRADED_MEMORY_MS, wait) };
+      const opened = await mdblistOpenBreaker(ctx, err.retryAfterMs);
+      return { body: degraded(opened.waitMs), memoryMs: opened.memoryMs };
     }
     if (err instanceof LtError && err.status !== 404 && err.code !== 'upstream_401' && err.code !== 'upstream_403') {
       await kv.set(`n:${kvKey}`, err.code, err.code === 'upstream_404' ? NEGATIVE_NOT_FOUND_SECONDS : NEGATIVE_SECONDS).catch(() => undefined);

@@ -16,7 +16,10 @@ import { top10Page } from './top10.js';
 export const PREWARM_HORIZON_MS = 24 * 3600e3;
 /** Reconstructions TMDB (une par fiche engagée) au plus par passage. */
 export const PREWARM_MAX_TMDB = 300;
-/** Appels MDBList au plus par passage. Le budget quotidien global (quota.ts) reste appliqué par le chemin normal. */
+/**
+ * Appels MDBList au plus par passage. Le budget quotidien global (quota.ts), le limiteur et le disjoncteur s'appliquent à
+ * chaque appel, préchauffage compris (garde commune de mdblist-guard.ts).
+ */
 export const PREWARM_MAX_MDBLIST = 100;
 /** Région du Top 10 préchauffé (valeur par défaut de la route /top10). */
 const PREWARM_REGION = 'FR';

@@ -2,6 +2,7 @@ import { recordProviderEvent } from '../metrics/index.js';
 import { isRecord } from '../sources/http.js';
 import { cachedInBlobs } from './blob-cache.js';
 import { getJson, keyDigest, LtError, type LtContext, ltRequest, recordAt, TTL, type TvdbVersion } from './context.js';
+import { mdblistAdmission, mdblistOpenBreaker } from './mdblist-guard.js';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/';
 /** Chemins TMDB autorisés (liste blanche du prototype). */
@@ -245,10 +246,22 @@ export async function mdblistFetch(
   };
 }
 
-/** Notes MDBList sans cache persistant (vérification d'une clé). Seules les notes et le score sont renvoyés. */
+/**
+ * Notes MDBList (cache mémoire de l'instance, sans cache persistant) : vérification d'une clé et notes des fiches partagées.
+ * Même garde que le cache des notes de la route (disjoncteur, budget quotidien, limiteur) : un refus lève une LtError sans
+ * appel amont, et un 429 ouvre le disjoncteur.
+ */
 export async function mdblistRatings(ctx: LtContext, apiKey: string, type: string, id: string): Promise<MdbRatings> {
   mdblistTarget(type, id);
-  return ctx.state.cache.get(`mdb:${type}:${id}`, TTL.mdb, async () => (await mdblistFetch(ctx, apiKey, type, id)).ratings);
+  return ctx.state.cache.get(`mdb:${type}:${id}`, TTL.mdb, async () => {
+    if ((await mdblistAdmission(ctx)) !== undefined) throw new LtError(503, 'mdblist_unavailable', 'mdblist');
+    try {
+      return (await mdblistFetch(ctx, apiKey, type, id)).ratings;
+    } catch (err) {
+      if (err instanceof MdbRateLimited) await mdblistOpenBreaker(ctx, err.retryAfterMs);
+      throw err;
+    }
+  });
 }
 
 export interface TvdbSeries {

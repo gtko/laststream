@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createLtContext } from '../src/lt/context.js';
 import { collectPrewarmTargets, PREWARM_HORIZON_MS, PREWARM_MAX_MDBLIST, PREWARM_MAX_TMDB, type PrewarmTarget, prewarmMetaFiches, targetsOf } from '../src/lt/meta-prewarm.js';
-import { type MetaBlob, type MetaBlobStore, type MetaRuntime, type MetaServices, etagOf, prewarmFiche } from '../src/lt/meta.js';
+import { type MetaBlob, type MetaBlobStore, type MetaRuntime, type MetaServices, etagOf, prewarmFiche, serveMetaFiche } from '../src/lt/meta.js';
 import { baseKey, l10nKey, ratingsKey } from '../src/lt/meta-policy.js';
 import type { MetaRepo } from '../src/user/repo.js';
 import { fakeLookup, json, KEYS, mockUpstream, type MockUpstream, SECRET } from './lt-harness.js';
@@ -131,7 +131,7 @@ function bulkUpstream(failing: ReadonlySet<number> = new Set()): { fetch: typeof
   return { fetch: fetchImpl as typeof fetch, calls };
 }
 
-function runtime(fetchImpl: typeof fetch, blobs: MemoryBlobs): MetaRuntime {
+function runtime(fetchImpl: typeof fetch, blobs: MemoryBlobs, mdblistDailyBudget = 1_000_000): MetaRuntime {
   return {
     ctx: createLtContext({
       secret: SECRET,
@@ -139,7 +139,7 @@ function runtime(fetchImpl: typeof fetch, blobs: MemoryBlobs): MetaRuntime {
       fetch: fetchImpl,
       lookupHost: fakeLookup(),
       mdblistLimiter: () => Promise.resolve(true),
-      mdblistDailyBudget: 1_000_000,
+      mdblistDailyBudget,
     }),
     blobs,
     index: () => INDEX,
@@ -249,6 +249,32 @@ describe('préchauffage : une couche fraîche n est jamais touchée', () => {
 
     expect(outcome).toEqual({ core: false, ratings: false });
     expect(upstream.calls).toHaveLength(0);
+  });
+});
+
+describe('budget MDBList quotidien épuisé : notes de la fiche refusées sans appel', () => {
+  it('service de la fiche : aucun appel MDBList, fiche servie avec notes null et partielle', async () => {
+    const blobs = new MemoryBlobs();
+    const upstream = matrixUpstream();
+
+    const served = await serveMetaFiche(runtime(upstream.fetch, blobs, 0), SERVICES, 'movie', 603);
+
+    expect(JSON.parse(served.body)).toMatchObject({ title: 'Matrix', ratings: null, partial: true });
+    expect(mdbCalls(upstream.calls.map((c) => c.url.pathname))).toBe(0);
+    expect(JSON.parse((blobs.items.get(MATRIX.ratings) as MetaBlob).body)).toMatchObject({ ratings: null, partial: true });
+  });
+
+  it('préchauffage : aucun appel MDBList, couche des notes stockée partielle', async () => {
+    const blobs = new MemoryBlobs();
+    seed(blobs, MATRIX.base, BASE_BODY, NOW + 10 * DAY);
+    seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 10 * DAY);
+    const upstream = matrixUpstream();
+
+    const outcome = await prewarmFiche(runtime(upstream.fetch, blobs, 0), SERVICES, 'movie', 603, PREWARM_HORIZON_MS, { tmdb: 10, mdblist: 10 });
+
+    expect(outcome).toEqual({ core: false, ratings: true });
+    expect(mdbCalls(upstream.calls.map((c) => c.url.pathname))).toBe(0);
+    expect(JSON.parse((blobs.items.get(MATRIX.ratings) as MetaBlob).body)).toMatchObject({ ratings: null, partial: true });
   });
 });
 
