@@ -268,12 +268,6 @@ function splitEpisodes(full: SeriesEpisodes | null): { base: BaseEpisodes | null
   };
 }
 
-/** Langues d'images demandées à TMDB : la langue de la requête (code ISO 639-1), l'anglais, puis les images sans langue. */
-function imageLanguages(lang: Lang): string {
-  const short = lang.slice(0, 2);
-  return short === 'en' ? 'en,null' : `${short},en,null`;
-}
-
 /**
  * Construit les couches base et traduction à partir de TMDB (un appel dans la langue demandée, plus un appel en en-US
  * seulement si le titre, le synopsis ou les genres sont vides), de TVDB et des épisodes. Erreur TMDB : propagée.
@@ -282,7 +276,7 @@ async function buildCore(ctx: LtContext, svc: MetaServices, type: MetaType, tmdb
   const tmdbToken = requireTmdb(svc);
   const path = `${type === 'movie' ? 'movie' : 'tv'}/${tmdbId}`;
   const json = recordAt(
-    await tmdbGet(ctx, tmdbToken, path, { append_to_response: 'external_ids,credits', language: lang, include_image_language: imageLanguages(lang) }),
+    await tmdbGet(ctx, tmdbToken, path, { append_to_response: 'external_ids,credits', language: lang }),
   );
   const externalIds = recordAt(json, 'external_ids');
   const titleOf = (data: Record<string, unknown>): string | null => (type === 'movie' ? str(data.title) : str(data.name));
@@ -297,7 +291,7 @@ async function buildCore(ctx: LtContext, svc: MetaServices, type: MetaType, tmdb
   let english: Record<string, unknown> | undefined;
   if (lang !== 'en-US' && (localTitle === null || str(json.overview) === null || localGenres.length === 0)) {
     try {
-      english = recordAt(await tmdbGet(ctx, tmdbToken, path, { language: 'en-US', include_image_language: 'en,null' }));
+      english = recordAt(await tmdbGet(ctx, tmdbToken, path, { language: 'en-US' }));
     } catch (err) {
       if (!(err instanceof LtError)) throw err;
       console.warn(`[lt][meta] repli en-US indisponible (statut amont : ${err.code})`);
@@ -475,7 +469,13 @@ function coolingDown(label: string, now: number): boolean {
  */
 function once<T>(rt: MetaRuntime, label: string, run: () => Promise<T>): Promise<T> {
   const running = building.get(label) as Promise<T> | undefined;
-  if (running !== undefined) return running.catch(() => once(rt, label, run));
+  if (running !== undefined) {
+    // Seule une erreur propre au jeton (401/403) fait relancer le travail par celui qui l'a rejoint ; une panne amont lui est transmise.
+    return running.catch((err: unknown) => {
+      if (err instanceof LtError && (err.code === 'upstream_401' || err.code === 'upstream_403')) return once(rt, label, run);
+      throw err;
+    });
+  }
   const work = run()
     .then((result) => {
       failures.delete(label);
@@ -605,6 +605,15 @@ async function legacyRatings(blobs: MetaBlobStore, type: MetaType, tmdbId: numbe
   }
 }
 
+/** Reprise des notes de l'ancienne fiche v1 dans la couche v2 (sans appel MDBList). Aucun ancien objet : undefined. */
+async function adoptLegacyRatings(rt: MetaRuntime, base: BaseLayer, now: number): Promise<Layer<RatingsLayer> | undefined> {
+  const legacy = rt.blobs === undefined ? undefined : await legacyRatings(rt.blobs, base.type, base.tmdbId);
+  if (legacy === undefined) return undefined;
+  const value: RatingsLayer = { schema: SCHEMA_VERSION, ratings: legacy, partial: false };
+  const result = await persistLayer(rt, ratingsKey(kindOf(base.type), base.tmdbId), value, LEGACY_RATINGS_TTL_MS, undefined, now);
+  return { value, blob: result.blob, state: 'fresh' };
+}
+
 /**
  * Construit (et stocke) la couche des notes. Sans clé MDBList : une couche vide `partial` si rien n'existe encore, sinon
  * undefined (on ne remplace pas des notes connues par du vide). Lecture en échec : notes connues conservées, `partial`.
@@ -647,12 +656,8 @@ async function resolveRatings(
   const rebuild = (previous: Layer<RatingsLayer> | undefined) => once(rt, label, () => rebuildRatings(rt, svc, base, previous));
   if (loaded === undefined) {
     // Absente : reprise des notes de l'ancienne fiche (sans appel MDBList), sinon lecture chez MDBList.
-    const legacy = rt.blobs === undefined ? undefined : await legacyRatings(rt.blobs, base.type, base.tmdbId);
-    if (legacy !== undefined) {
-      const value: RatingsLayer = { schema: SCHEMA_VERSION, ratings: legacy, partial: false };
-      const result = await persistLayer(rt, ratingsKey(kindOf(base.type), base.tmdbId), value, LEGACY_RATINGS_TTL_MS, undefined, now);
-      return { layer: { value, blob: result.blob, state: 'fresh' }, stale: false };
-    }
+    const adopted = await adoptLegacyRatings(rt, base, now);
+    if (adopted !== undefined) return { layer: adopted, stale: false };
     return { layer: await rebuild(undefined), stale: false };
   }
   // Couche sans notes faute de clé : relue dès qu'un compte avec clé passe, même si elle n'a pas expiré.
@@ -771,8 +776,8 @@ function renewing<T>(layer: Layer<T> | undefined, rebuild: boolean): Layer<T> | 
 }
 
 /**
- * Préchauffage d'une fiche (cron) : reconstruit les couches absentes ou dont l'échéance tombe dans `horizonMs` (expirées
- * comprises). Une couche fraîche au-delà de l'horizon n'est ni lue en amont ni réécrite. Chaque reconstruction engagée
+ * Préchauffage d'une fiche (cron) : reconstruit les couches absentes ou dont l'échéance tombe dans min(`horizonMs`, quart de leur
+ * durée de vie enregistrée) (expirées comprises). Une couche fraîche au-delà de ce délai n'est ni lue en amont ni réécrite. Chaque reconstruction engagée
  * décrémente `budget` ; sans budget restant, la couche attend le passage suivant. Les erreurs remontent à l'appelant.
  */
 export async function prewarmFiche(
@@ -789,8 +794,9 @@ export async function prewarmFiche(
   if (blobs === undefined) return outcome;
   const kind = kindOf(type);
   const now = rt.now();
-  const horizon = now + horizonMs;
-  const due = (layer: Layer<unknown> | undefined): boolean => layer === undefined || layer.blob.expiresAt <= horizon;
+  // Due : absente, ou échéance dans min(horizon, quart de sa durée de vie) : une couche de 1 j fraîche n'est pas refaite à chaque passe.
+  const due = (layer: Layer<unknown> | undefined): boolean =>
+    layer === undefined || layer.blob.expiresAt <= now + (layer.blob.ttl > 0 ? Math.min(horizonMs, layer.blob.ttl / 4) : horizonMs);
   const [storedBase, storedL10n, storedRatings] = await Promise.all([
     readLayer<BaseLayer>(blobs, baseKey(kind, tmdbId), now, isBase),
     readLayer<L10nLayer>(blobs, l10nKey(kind, tmdbId, lang), now, isL10n),
@@ -809,6 +815,9 @@ export async function prewarmFiche(
     outcome.core = true;
   }
 
+  if (base !== undefined && storedRatings === undefined && ttlMs('ratings', subjectOf(base.value, false), now) > 0 && (await adoptLegacyRatings(rt, base.value, now)) !== undefined) {
+    return outcome;
+  }
   if (base !== undefined && svc.mdblistApiKey !== undefined && budget.mdblist > 0 && due(storedRatings) && ttlMs('ratings', subjectOf(base.value, false), now) > 0) {
     budget.mdblist -= 1;
     const current = base.value;

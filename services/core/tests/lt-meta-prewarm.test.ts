@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createLtContext } from '../src/lt/context.js';
 import { collectPrewarmTargets, PREWARM_HORIZON_MS, PREWARM_MAX_MDBLIST, PREWARM_MAX_TMDB, type PrewarmTarget, prewarmMetaFiches, targetsOf } from '../src/lt/meta-prewarm.js';
 import { type MetaBlob, type MetaBlobStore, type MetaRuntime, type MetaServices, etagOf, prewarmFiche, serveMetaFiche } from '../src/lt/meta.js';
-import { baseKey, l10nKey, ratingsKey } from '../src/lt/meta-policy.js';
+import { baseKey, l10nKey, legacyKey, ratingsKey } from '../src/lt/meta-policy.js';
 import type { MetaRepo } from '../src/user/repo.js';
 import { fakeLookup, json, KEYS, mockUpstream, type MockUpstream, SECRET } from './lt-harness.js';
 
-/** Préchauffage des fiches (cron, lt/meta-prewarm.ts) : budgets par passage, couches fraîches intactes, horizon de 24 h. */
+/** Préchauffage des fiches (cron, lt/meta-prewarm.ts) : budgets par passage, couches fraîches intactes, horizon de 7 h (et au plus le quart de la durée de vie). */
 
 const TMDB = 'https://api.themoviedb.org/3';
 const MDB = 'https://api.mdblist.com';
@@ -170,7 +170,7 @@ describe('préchauffage : une couche fraîche n est jamais touchée', () => {
     expect([...blobs.items.entries()]).toEqual([...before.entries()]);
   });
 
-  it('une couche qui expire dans moins de 24 h est reconstruite ; les couches fraîches restent les mêmes objets', async () => {
+  it('une couche qui expire dans moins de 7 h est reconstruite ; les couches fraîches restent les mêmes objets', async () => {
     const blobs = new MemoryBlobs();
     seed(blobs, MATRIX.base, BASE_BODY, NOW + 1 * HOUR);
     seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 10 * DAY);
@@ -209,7 +209,7 @@ describe('préchauffage : une couche fraîche n est jamais touchée', () => {
     expect(blobs.items.get(MATRIX.base)?.expiresAt).toBeGreaterThan(NOW + 24 * HOUR);
   });
 
-  it('notes qui expirent dans moins de 24 h : un seul appel MDBList, base et traduction fraîches intactes', async () => {
+  it('notes qui expirent dans moins de 7 h : un seul appel MDBList, base et traduction fraîches intactes', async () => {
     const blobs = new MemoryBlobs();
     seed(blobs, MATRIX.base, BASE_BODY, NOW + 10 * DAY);
     seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 10 * DAY);
@@ -278,11 +278,72 @@ describe('budget MDBList quotidien épuisé : notes de la fiche refusées sans a
   });
 });
 
+describe('préchauffage : reprise des notes v1 avant le budget MDBList', () => {
+  it('notes absentes et ancien objet v1 présent : reprises sans appel MDBList, budget mdblist inchangé', async () => {
+    const blobs = new MemoryBlobs();
+    seed(blobs, MATRIX.base, BASE_BODY, NOW + 10 * DAY);
+    seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 10 * DAY);
+    blobs.items.set(legacyKey('movie', 603), {
+      body: JSON.stringify({ v: 1, type: 'movie', tmdbId: 603, ratings: { ratings: { imdb: 7.7 }, score: 70 } }),
+      etag: '"ancien"',
+      expiresAt: NOW - DAY,
+      ttl: 0,
+    });
+    const upstream = matrixUpstream();
+    const budget = { tmdb: 10, mdblist: 5 };
+
+    await prewarmFiche(runtime(upstream.fetch, blobs), SERVICES, 'movie', 603, PREWARM_HORIZON_MS, budget);
+
+    expect(mdbCalls(upstream.calls.map((c) => c.url.pathname))).toBe(0);
+    expect(budget.mdblist).toBe(5);
+    expect(JSON.parse((blobs.items.get(MATRIX.ratings) as MetaBlob).body)).toMatchObject({ ratings: { ratings: { imdb: 7.7 } }, partial: false });
+    expect(blobs.items.has(legacyKey('movie', 603))).toBe(true);
+  });
+});
+
+describe('préchauffage : seuil = min(horizon, quart de la durée de vie)', () => {
+  it('couche de 1 j créée il y a 6 h (18 h restantes) : ni lue en amont ni réécrite', async () => {
+    const blobs = new MemoryBlobs();
+    seed(blobs, MATRIX.base, BASE_BODY, NOW + 18 * HOUR);
+    seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 18 * HOUR);
+    seed(blobs, MATRIX.ratings, RATINGS_BODY, NOW + 18 * HOUR);
+    const upstream = matrixUpstream();
+
+    const outcome = await prewarmFiche(runtime(upstream.fetch, blobs), SERVICES, 'movie', 603, PREWARM_HORIZON_MS, { tmdb: 10, mdblist: 10 });
+
+    expect(outcome).toEqual({ core: false, ratings: false });
+    expect(upstream.calls).toHaveLength(0);
+    expect(blobs.puts).toBe(0);
+  });
+
+  it('couche de 1 j à 5 h de l échéance (moins du quart) : reconstruite', async () => {
+    const blobs = new MemoryBlobs();
+    seed(blobs, MATRIX.base, BASE_BODY, NOW + 5 * HOUR);
+    seed(blobs, MATRIX.l10n, L10N_BODY, NOW + 18 * HOUR);
+    seed(blobs, MATRIX.ratings, RATINGS_BODY, NOW + 18 * HOUR);
+    const upstream = matrixUpstream();
+
+    const outcome = await prewarmFiche(runtime(upstream.fetch, blobs), SERVICES, 'movie', 603, PREWARM_HORIZON_MS, { tmdb: 10, mdblist: 10 });
+
+    expect(outcome).toEqual({ core: true, ratings: false });
+    expect(blobs.items.get(MATRIX.base)?.expiresAt).toBeGreaterThan(NOW + 24 * HOUR);
+  });
+
+  it('couche absente : reconstruite', async () => {
+    const blobs = new MemoryBlobs();
+    const upstream = matrixUpstream();
+
+    const outcome = await prewarmFiche(runtime(upstream.fetch, blobs), SERVICES, 'movie', 603, PREWARM_HORIZON_MS, { tmdb: 10, mdblist: 10 });
+
+    expect(outcome).toEqual({ core: true, ratings: true });
+  });
+});
+
 describe('préchauffage : budgets par passage', () => {
   it('plafonds : 300 reconstructions TMDB et 100 appels MDBList par passage', async () => {
     expect(PREWARM_MAX_TMDB).toBe(300);
     expect(PREWARM_MAX_MDBLIST).toBe(100);
-    expect(PREWARM_HORIZON_MS).toBe(24 * HOUR);
+    expect(PREWARM_HORIZON_MS).toBe(7 * HOUR);
     const blobs = new MemoryBlobs();
     const upstream = bulkUpstream();
     const targets: PrewarmTarget[] = Array.from({ length: 320 }, (_, i) => ({ type: 'movie', tmdbId: i + 1 }));

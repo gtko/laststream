@@ -8,12 +8,16 @@ import { top10Page } from './top10.js';
 /**
  * Préchauffage des fiches partagées (ODY-297, lot E) : au cron, les fiches des rangées d'accueil et du Top 10 sont
  * reconstruites dans R2 avant que les comptes les demandent. Une fiche n'est reconstruite que si une de ses couches est
- * absente ou expire dans moins de `PREWARM_HORIZON_MS` ; une couche fraîche n'est jamais touchée. Chaque passage est
+ * absente ou expire dans moins de `PREWARM_HORIZON_MS` (ou du quart de sa durée de vie) ; une couche fraîche n'est jamais touchée. Chaque passage est
  * borné : `PREWARM_MAX_TMDB` reconstructions TMDB et `PREWARM_MAX_MDBLIST` appels MDBList ; le reste attend le passage suivant.
  */
 
-/** Une couche qui expire dans moins de ce délai est reconstruite par le passage (une heure de marge sur le cron de 6 h). */
-export const PREWARM_HORIZON_MS = 24 * 3600e3;
+/**
+ * Une couche qui expire dans moins de ce délai (au plus le quart de sa durée de vie enregistrée) est reconstruite par le
+ * passage : 7 h = cron de 6 h plus une heure de marge, et inférieur aux plus courtes durées de vie (1 j), pour qu'une couche
+ * fraîche ne soit pas refaite à chaque passe.
+ */
+export const PREWARM_HORIZON_MS = 7 * 3600e3;
 /** Reconstructions TMDB (une par fiche engagée) au plus par passage. */
 export const PREWARM_MAX_TMDB = 300;
 /**
