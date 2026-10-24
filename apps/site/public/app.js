@@ -1,9 +1,7 @@
 (function () {
   'use strict';
-  // Installateur Windows : seul endroit à modifier pour une nouvelle version (le HTML garde des valeurs de secours)
-  var WIN_VERSION = '1.0.3';
-  var WIN_SIZE = '91';
-  var WIN = 'https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-' + WIN_VERSION + '.exe';
+  // Versions et liens : lus dans latest.json (/api/windows, /api/android) ; le HTML garde des valeurs de secours
+  var APP = 'https://laststream.gtux-prog.workers.dev/app/';
 
   // Textes dynamiques selon la langue de la page (<html lang>), fr par défaut
   var I18N = {
@@ -62,30 +60,29 @@
   var cta = document.getElementById('hero-cta');
   if (cta) {
     cta.textContent = LABEL[os][0];
-    if (os === 'windows') { cta.href = WIN; cta.setAttribute('download', ''); }
+    if (os === 'windows') { cta.href = document.getElementById('win-link').href; cta.setAttribute('download', ''); }
     else if (os === 'android') cta.href = '#telecharger';
   }
   var line = document.getElementById('dl-os');
   if (line) line.textContent = LABEL[os][1] + '. ' + T.others;
 
-  // Carte Windows : version, taille et lien de téléchargement
-  var winMeta = document.getElementById('win-meta');
-  if (winMeta) winMeta.textContent = WIN_VERSION + ' · ' + WIN_SIZE + ' ' + T.mb;
-  var winBtn = document.querySelector('.dl[data-os="windows"] .btn');
-  if (winBtn) winBtn.href = WIN;
-
-  // Android : version et lien APK à jour (route même origine)
+  // Cartes Windows et Android : version, taille et lien à jour (routes même origine)
   function mb(n) { return Math.round(n / 1048576) + ' ' + T.mb; }
-  fetch('/api/android', { headers: { accept: 'application/json' } })
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-    .then(function (j) {
-      if (!j || typeof j.url !== 'string' || j.url.indexOf('https://laststream.gtux-prog.workers.dev/app/android/') !== 0) return;
-      var a = document.getElementById('apk-link');
-      var m = document.getElementById('apk-meta');
-      if (a) a.href = j.url;
-      if (m && j.versionName) m.textContent = j.versionName + (j.size ? ' · ' + mb(j.size) : '');
-    })
-    .catch(function () { /* valeurs par défaut conservées */ });
+  function latest(platform, linkId, metaId) {
+    fetch('/api/' + platform, { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (j) {
+        if (!j || typeof j.url !== 'string' || j.url.indexOf(APP + platform + '/') !== 0) return;
+        var a = document.getElementById(linkId);
+        var m = document.getElementById(metaId);
+        if (a) a.href = j.url;
+        if (m && j.versionName) m.textContent = j.versionName + (j.size ? ' · ' + mb(j.size) : '');
+        if (platform === 'windows' && os === 'windows' && cta) cta.href = j.url;
+      })
+      .catch(function () { /* valeurs par défaut conservées */ });
+  }
+  latest('windows', 'win-link', 'win-meta');
+  latest('android', 'apk-link', 'apk-meta');
 })();
 
 // Apparition douce des sections au défilement (désactivée si l'utilisateur réduit les animations)
