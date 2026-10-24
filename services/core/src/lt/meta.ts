@@ -737,9 +737,11 @@ export async function serveMetaFiche(rt: MetaRuntime, svc: MetaServices, type: M
   stale ||= notes.stale;
   const ratingsDueAt = notes.layer?.blob.expiresAt ?? base.blob.expiresAt;
   const fiche = assemble(base.value, l10n.value, notes.layer?.value ?? null, ratingsDueAt);
+  const body = JSON.stringify(fiche);
   return {
-    body: JSON.stringify(fiche),
-    etag: etagOf([base.blob.etag, l10n.blob.etag, notes.layer?.blob.etag ?? '-'].join('|')),
+    body,
+    // Empreinte du contenu servi : une couche réécrite au contenu identique (nouvelle échéance des notes) change l'ETag.
+    etag: etagOf(body),
     expiresAt: Math.min(base.blob.expiresAt, l10n.blob.expiresAt, notes.layer?.blob.expiresAt ?? Infinity),
     stale,
   };

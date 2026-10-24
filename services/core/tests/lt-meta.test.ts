@@ -361,6 +361,23 @@ describe('fiche partagée : construction et stockage', () => {
     expect((await meta('movie', '603', accountB())).headers.get('etag')).toBe(etag);
   });
 
+  it('notes réécrites au contenu identique : nouvelle échéance, donc autre empreinte (pas de 304 avec une échéance périmée)', async () => {
+    const first = await meta('movie', '603', accountA());
+    const etag = first.headers.get('etag') as string;
+    const dueBefore = (JSON.parse(await first.text()) as { ratingsDueAt: number }).ratingsDueAt;
+    expire(MATRIX_KEYS.ratings);
+    const puts = blobs.puts;
+    await (await meta('movie', '603', accountB())).text();
+    await until(() => (blobs.items.get(MATRIX_KEYS.ratings)?.expiresAt ?? 0) > Date.now(), 'notes renouvelées');
+    expect(blobs.puts).toBe(puts + 1);
+    expect(layerOf(MATRIX_KEYS.ratings)).toMatchObject({ ratings: { ratings: { imdb: 8.7 } } });
+    const again = await meta('movie', '603', accountB(), { 'if-none-match': etag });
+    expect(again.status).toBe(200);
+    const fiche = (await again.json()) as { ratingsDueAt: number };
+    expect(fiche.ratingsDueAt).toBeGreaterThan(dueBefore);
+    expect(again.headers.get('etag')).not.toBe(etag);
+  });
+
   it('notes périmées seules : lues à nouveau et réécrites seules, base et traduction ne sont pas réécrites', async () => {
     await (await meta('movie', '603', accountA())).text();
     const baseBefore = blobs.items.get(MATRIX_KEYS.base);
@@ -427,10 +444,11 @@ describe('fiche partagée : langue et reprise des anciennes fiches', () => {
     expect(blobs.puts).toBe(puts + 1);
     expect(layerOf(l10nKey('movie', 603, 'en-US'))).toMatchObject({ lang: 'en-US' });
     expect(blobs.items.get(MATRIX_KEYS.base)).toBe(base);
-    // Les deux langues ont des ETag distincts mais restent stables d'une demande à l'autre.
+    // L'empreinte suit le contenu servi : une demande rejouée dans la même langue garde son ETag.
     const fr = await meta('movie', '603', accountA());
     const en2 = await meta('movie', '603', accountA(), {}, '?language=EN-us');
-    expect(fr.headers.get('etag')).not.toBe(en2.headers.get('etag'));
+    expect(en2.headers.get('etag')).toBe(english.headers.get('etag'));
+    expect(fr.status).toBe(200);
     expect(blobs.puts).toBe(puts + 1);
   });
 
@@ -564,7 +582,8 @@ describe('fiche partagée : entrées et repli', () => {
       expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
       expect(blobs.items.size).toBe(0);
       const again = await fetch(`${plain.baseUrl}/${accountB()}/lt/meta/movie/603`, { headers: { 'if-none-match': etag as string } });
-      expect(again.status).toBe(304);
+      // Sans R2 l'échéance des notes est recalculée à chaque demande : le contenu servi change, donc pas de 304.
+      expect(again.status).toBe(200);
     } finally {
       await plain.close();
     }
