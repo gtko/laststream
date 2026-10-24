@@ -31,6 +31,7 @@ let movieTitle = 'Matrix';
 let tmdbDown = false;
 /** Barrière de la réponse TMDB pour le film 605 : le test la lève pour tenir une construction en vol. */
 let gate605: Promise<void> = Promise.resolve();
+let gate604: Promise<void> = Promise.resolve();
 
 const movieDetails = () => ({
   id: 603,
@@ -98,7 +99,10 @@ beforeAll(async () => {
   upstream = mockUpstream({
     [MATRIX_ID]: () => json(movieDetails()),
     [GOT_ID]: () => json(seriesDetails('2026-10-21', 'Returning Series')),
-    [`${TMDB}/movie/604`]: () => (tmdbDown ? new Response('panne', { status: 503 }) : json({ ...movieDetails(), id: 604, title: 'Film 604', imdb_id: null })),
+    [`${TMDB}/movie/604`]: async () => {
+      await gate604;
+      return tmdbDown ? new Response('panne', { status: 503 }) : json({ ...movieDetails(), id: 604, title: 'Film 604', imdb_id: null });
+    },
     // Film 605 : jeton TMDB refusé (401) pour tout autre jeton que celui du compte A.
     [`${TMDB}/movie/605`]: async (call) => {
       await gate605;
@@ -114,6 +118,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   movieTitle = 'Matrix';
   tmdbDown = false;
+  gate604 = Promise.resolve();
   upstream.calls.length = 0;
   blobs = new MemoryBlobs();
   backend = createNodeUserBackend({ path: ':memory:' });
@@ -179,7 +184,7 @@ describe('fiche partagée : construction et stockage', () => {
     expect(upstream.callsTo(MATRIX_ID)).toHaveLength(1);
     const tmdbCall = upstream.callsTo(MATRIX_ID)[0]?.url.searchParams;
     expect(tmdbCall?.get('language')).toBe('fr-FR');
-    expect(tmdbCall?.get('include_image_language')).toBe('fr,en,null');
+    expect(tmdbCall?.has('include_image_language')).toBe(false);
     expect(await backend.meta().find('movie', 603)).toMatchObject({ type: 'movie', tmdbId: 603, imdbId: 'tt0133093', title: 'Matrix', year: 1999 });
   });
 
@@ -269,6 +274,23 @@ describe('fiche partagée : construction et stockage', () => {
     const ok = await accepted;
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ title: 'Film 605' });
+  });
+
+  it('construction partagée : TMDB en panne, N requêtes concurrentes ne font qu un seul appel amont', async () => {
+    let release = (): void => undefined;
+    gate604 = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    tmdbDown = true;
+    const first = meta('movie', '604', accountA());
+    await until(() => upstream.callsTo(`${TMDB}/movie/604`).length > 0, 'construction en vol');
+    const others = [meta('movie', '604', accountA()), meta('movie', '604', accountA()), meta('movie', '604', accountA())];
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+
+    const statuses = (await Promise.all([first, ...others])).map((res) => res.status);
+    expect(statuses.every((status) => status !== 200)).toBe(true);
+    expect(upstream.callsTo(`${TMDB}/movie/604`)).toHaveLength(1);
   });
 
   it('index en panne : la fiche reste stockée et servie, et l échec est signalé comme un échec d index', async () => {
@@ -439,7 +461,7 @@ describe('fiche partagée : langue et reprise des anciennes fiches', () => {
     expect(await english.json()).toMatchObject({ title: 'Matrix', ratings: { score: 85 } });
     const en = upstream.callsTo(MATRIX_ID).at(-1)?.url.searchParams;
     expect(en?.get('language')).toBe('en-US');
-    expect(en?.get('include_image_language')).toBe('en,null');
+    expect(en?.has('include_image_language')).toBe(false);
     // Une seule couche de plus (en-US) ; la base saine n'est pas réécrite.
     expect(blobs.puts).toBe(puts + 1);
     expect(layerOf(l10nKey('movie', 603, 'en-US'))).toMatchObject({ lang: 'en-US' });
