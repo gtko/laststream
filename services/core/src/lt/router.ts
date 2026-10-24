@@ -10,6 +10,7 @@ import { type RowRuntime, serveRow } from './rows.js';
 import { personWhy, recommend } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
+import { seriesFillers } from './filler.js';
 import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
 import { mdblistCached } from './mdblist.js';
 import { tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
@@ -174,6 +175,19 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   lt.get('/series/:tmdbId/episodes', async (c) => {
     const config = configOf(c);
     const body = await seriesEpisodes(
+      ctx,
+      { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
+      c.req.param('tmdbId'),
+      queryOf(c).language,
+    );
+    cacheable(c);
+    return sendJson(c, body);
+  });
+
+  // Épisodes filler et récap d'un anime (ARM puis Jikan), même numérotation que /episodes ; liste vide sinon.
+  lt.get('/series/:tmdbId/fillers', async (c) => {
+    const config = configOf(c);
+    const body = await seriesFillers(
       ctx,
       { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
       c.req.param('tmdbId'),
