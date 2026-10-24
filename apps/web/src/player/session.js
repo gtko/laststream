@@ -36,7 +36,7 @@ import { APP_DOWNLOAD_URL, currentOs } from './appDownload';
 import { browserCaps } from './caps';
 import { CONVERSION_LABEL, chooseEngine, directVideoOk, probeConversion } from './engine';
 import { HtmlEngine, MpvEngine, NativeEngine } from './engines.js';
-import { autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, markParts, nextCardLabels, nextPart, normalizeCanonical } from './episodes';
+import { applyFillers, autoNextEpisode, filterEpisodes, firstUnseen, isAired, isPlayable, localDay, markParts, nextCardLabels, nextPart, normalizeCanonical } from './episodes';
 import { partLabel } from '../data/episodeParts';
 import { fetchExternalSubtitles } from './extsubs';
 import { beginSubsLoad, endSubsLoad, isCurrentSubsLoad, resetSubsLoad } from './subsLoad';
@@ -739,7 +739,7 @@ async function loadSeasons() {
   if (!p || p.addon || p.seasons.length) return;
   try {
     const c = normalizeCanonical(await api('series/' + p.req.id + '/episodes', { language: getVideoLang().tag }));
-    if (c && P === p) { p.seasons = c.seasons; p.episodes = c.episodes; p.canonical = true; return; }
+    if (c && P === p) { p.seasons = c.seasons; p.episodes = c.episodes; p.canonical = true; loadFillers(p); return; }
   } catch (_) { /* repli TMDB */ }
   const m = p.model;
   let list = m && Array.isArray(m.seasons) ? m.seasons : null;
@@ -748,6 +748,13 @@ async function loadSeasons() {
   }
   if (P !== p) return;
   p.seasons = (list || []).map((s) => ({ season: s.season_number, count: s.episode_count || 0 })).filter((s) => s.season > 0 && s.count > 0);
+}
+
+/** Épisodes filler et récap d'un anime (lastAddon, d'après MyAnimeList), en arrière-plan : badge et saut optionnel. */
+function loadFillers(p) {
+  api('series/' + p.req.id + '/fillers', { language: getVideoLang().tag })
+    .then((r) => { if (P === p) { applyFillers(p.episodes, r); ui.refreshPanel(); } })
+    .catch(() => { /* pas de données filler : aucun badge */ });
 }
 
 async function ensureEpisodes(season, reveal) {
@@ -1589,7 +1596,7 @@ function onEnded() {
   saveProgress(true);
   markWatched();
   if (partyBridge.guestLocked()) return; // en salon, c'est l'hôte qui passe à l'épisode suivant
-  const nx = autoNextEpisode(nextRef(), p.episodes); // jamais vers un épisode pas encore diffusé : lancement manuel
+  const nx = autoNextEpisode(nextRef(), p.episodes, getSkipPref('filler')); // jamais vers un épisode pas encore diffusé : lancement manuel
   // Fin d'une partie d'émission : la suite enchaîne même sans le réglage « épisode suivant », sauf si la carte a été refusée.
   const part = nx && !miniState.mini && continuesPart(p, nx) && !p.nextDismissed;
   if (nx && (getSkipPref('nextEpisode') || part)) { playEpisode(nx.season, nx.episode); return; }
@@ -1678,7 +1685,7 @@ function tick() {
     // Mini-lecteur : ni pastille de saut ni carte (le saut automatique, s'il est activé, reste actif plus haut).
     const mini = miniState.mini;
     ui.setSkip(!mini && seg && p.skipped !== seg.start ? seg : null);
-    const nx = autoNextEpisode(nextRef(), p.episodes); // épisode non diffusé : ni carte ni enchaînement automatique
+    const nx = autoNextEpisode(nextRef(), p.episodes, getSkipPref('filler')); // épisode non diffusé : ni carte ni enchaînement automatique
     const part = !!nx && continuesPart(p, nx);
     const card = nextEpisodeCard(p.segments, st.time, st.duration, !!nx, getSkipPref('nextEpisode') || (part && !mini));
     if (card.show && !p.nextDismissed && nx) {
@@ -2019,7 +2026,7 @@ function onAction(act, data) {
       break;
     }
     case 'ep-next-unseen': {
-      const from = firstUnseen(P.seasons, P.episodes, P.panelSeason ?? P.cur.season ?? 1, (sn, e) => userStore.isWatched(P.req.key, sn, e));
+      const from = firstUnseen(P.seasons, P.episodes, P.panelSeason ?? P.cur.season ?? 1, (sn, e) => userStore.isWatched(P.req.key, sn, e), getSkipPref('filler'));
       if (!from) { ui.toast('Tous les épisodes diffusés sont vus'); break; }
       P.epQuery = '';
       P.epSearchOpen = false;

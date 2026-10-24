@@ -118,7 +118,7 @@ export function episodesHtml(d) {
     const more = ep.overview ? '<button type="button" class="lp-ep-more" data-season="' + d.season + '" data-episode="' + ep.episode + '" aria-expanded="' + (folded ? 'true' : 'false') + '" aria-label="Afficher le synopsis complet" title="Plus">' + LI.mini + '</button>' : '';
     return '<div class="lp-ep-row' + (on ? ' is-on' : '') + (open ? '' : ' is-soon') + (ep.overview ? ' has-more' : '') + (folded ? ' is-open' : '') + '" data-ep="' + ep.episode + '">' +
       '<button type="button" class="lp-ep" role="menuitem" data-act="episode" data-season="' + d.season + '" data-episode="' + ep.episode + '"' + (open ? '' : ' disabled') + '>' + still +
-        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + (ep.part ? '<span class="lp-ep-part">' + esc(partLabel(ep.part)) + '</span> · ' : '') + esc((ep.part ? ep.part.title : ep.name) || 'Épisode ' + ep.episode) + '</span>' +
+        '<span class="lp-ep-text"><span class="lp-ep-name"><b>É' + ep.episode + '</b> · ' + (ep.part ? '<span class="lp-ep-part">' + esc(partLabel(ep.part)) + '</span> · ' : '') + (ep.filler ? '<span class="lp-ep-part lp-ep-filler">' + (ep.filler === 'recap' ? 'Récap' : 'Filler') + '</span> · ' : '') + esc((ep.part ? ep.part.title : ep.name) || 'Épisode ' + ep.episode) + '</span>' +
         '<span class="lp-ep-meta">' + esc(meta) + '</span>' + (ep.overview ? '<span class="lp-ep-syn">' + esc(ep.overview) + '</span>' : '') + '</span></button>' +
       seen + more +
       '</div>';

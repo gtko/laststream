@@ -16,7 +16,11 @@ export interface EpisodeInfo {
   streamId?: string;
   /** Partie d'une émission diffusée en plusieurs épisodes (« Partie 1/2 »), d'après le titre. */
   part?: EpisodePart;
+  /** Épisode filler ou récapitulatif d'un anime (lastAddon, d'après MyAnimeList). */
+  filler?: EpisodeFiller;
 }
+
+export type EpisodeFiller = 'filler' | 'recap';
 
 export interface SeasonInfo {
   season: number;
@@ -68,11 +72,42 @@ export function isPlayable(airDate: string, today: string = localDay(new Date())
  * automatiquement (lancement manuel seulement). Épisode non chargé : inchangé, la recherche de sources décide.
  */
 export function autoNextEpisode(
-  next: { season: number; episode: number } | null, episodes: ReadonlyMap<number, readonly EpisodeInfo[]>,
+  next: { season: number; episode: number } | null, episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, skipFillers = false,
 ): { season: number; episode: number } | null {
   if (!next) return null;
   const info = (episodes.get(next.season) ?? []).find((e) => e.episode === next.episode);
+  if (info && skipFillers && info.filler) return nextCanon(next, episodes);
   return !info || info.aired ? next : null;
+}
+
+/**
+ * Premier épisode qui n'est ni filler ni récap à partir de `from` (inclus), dans l'ordre des saisons chargées.
+ * S'arrête sur un épisode pas encore diffusé (aucun lancement automatique) ; null au bout de la liste chargée.
+ */
+function nextCanon(
+  from: { season: number; episode: number }, episodes: ReadonlyMap<number, readonly EpisodeInfo[]>,
+): { season: number; episode: number } | null {
+  for (const season of [...episodes.keys()].sort((a, b) => a - b)) {
+    if (season < from.season) continue;
+    for (const e of episodes.get(season) ?? []) {
+      if (season === from.season && e.episode < from.episode) continue;
+      if (e.filler) continue;
+      return e.aired ? { season, episode: e.episode } : null;
+    }
+  }
+  return null;
+}
+
+/** Marque les épisodes filler et récap d'après la réponse `{ fillers: [{ season, episode, kind }] }` de lastAddon. */
+export function applyFillers(episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, resp: unknown): void {
+  const list = (resp as { fillers?: unknown } | null)?.fillers;
+  if (!Array.isArray(list)) return;
+  for (const raw of list) {
+    const f = raw as { season?: unknown; episode?: unknown; kind?: unknown } | null;
+    if (!f || typeof f.season !== 'number' || typeof f.episode !== 'number' || (f.kind !== 'filler' && f.kind !== 'recap')) continue;
+    const info = episodes.get(f.season)?.find((e) => e.episode === f.episode);
+    if (info) info.filler = f.kind;
+  }
 }
 
 /** Marque les épisodes qui sont les parties d'une même émission (la liste est celle d'une saison, triée). */
@@ -141,10 +176,13 @@ export function filterEpisodes(list: readonly EpisodeInfo[], query: string): Epi
 /** Premier épisode lisible (diffusé ou bientôt disponible) et non vu, en partant de la saison donnée puis les suivantes. */
 export function firstUnseen(
   seasons: readonly SeasonInfo[], episodes: ReadonlyMap<number, readonly EpisodeInfo[]>, fromSeason: number, seen: (season: number, episode: number) => boolean,
+  skipFillers = false,
 ): { season: number; episode: number } | null {
   for (const s of [...seasons].sort((a, b) => a.season - b.season)) {
     if (s.season < fromSeason) continue;
-    for (const e of episodes.get(s.season) ?? []) if (e.playable && !seen(s.season, e.episode)) return { season: s.season, episode: e.episode };
+    for (const e of episodes.get(s.season) ?? []) {
+      if (e.playable && !(skipFillers && e.filler) && !seen(s.season, e.episode)) return { season: s.season, episode: e.episode };
+    }
   }
   return null;
 }
