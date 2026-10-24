@@ -20,6 +20,7 @@ import {
 import { UnsafeTargetError, createPublicGuard } from './guard.js';
 import { createUrlSigner, type UrlSigner } from './signing.js';
 import { memoryQuotaGate, parseDailyBudget, type QuotaGate } from './quota.js';
+import type { MetaBlobStore } from './meta.js';
 
 /**
  * Durées de vie du cache. Les métadonnées publiques sont partagées entre tous les utilisateurs (économie de
@@ -123,6 +124,11 @@ export interface LtContext {
   guard: UrlGuard;
   dispatcher: OutboundDispatcher | undefined;
   signer: UrlSigner;
+  /**
+   * Stockage à écriture rare (R2 sous Workers) des valeurs amont gardées longtemps (saisons, TVDB). Absent (Node) : la
+   * mémoire de l'isolat seule.
+   */
+  blobs?: MetaBlobStore;
   /** Limite de débit globale des appels MDBList sortants (true = autorisé). */
   mdbLimiter: () => Promise<boolean>;
   /** Budget quotidien global des appels MDBList (true = appel autorisé, et compté pour le jour UTC). */
@@ -164,6 +170,7 @@ function buildLtContext(deps: AppDeps): LtContext {
     guard: createPublicGuard(),
     dispatcher: platform().http.pinnedDispatcher(deps.lookupHost),
     signer: createUrlSigner(deps.secret),
+    blobs: deps.metaBlobs ?? platform().metaBlobs,
     mdbLimiter: deps.mdblistLimiter ?? mdblistLocalLimiter(),
     mdbQuota: deps.mdblistQuota ?? memoryQuotaGate(),
     mdbDailyBudget: deps.mdblistDailyBudget ?? parseDailyBudget(runtimeEnv().get('MDBLIST_DAILY_BUDGET')),

@@ -31,6 +31,11 @@ export interface CacheGetOptions {
   /** Niveau 2 : espace KV du fournisseur. La valeur doit être sérialisable en JSON (les `Map` sont admises). */
   provider?: CacheProvider;
   /**
+   * `false` : entrée de mémoire de l'isolat seule, même avec un fournisseur (ni lecture ni écriture KV ; le fournisseur
+   * sert alors aux compteurs). Défaut : le niveau 2 existe dès qu'un fournisseur est donné.
+   */
+  l2?: boolean;
+  /**
    * Stale-while-revalidate : une fois la fraîcheur passée, la valeur reste servie tout de suite pendant une durée égale
    * au TTL, et un rafraîchissement part en arrière-plan (un seul à la fois par clé).
    */
@@ -227,7 +232,7 @@ export class TtlCache {
     options: CacheGetOptions,
     mode: 'read' | 'refresh',
   ): Promise<T> {
-    const kv = this.kvFor(options.provider);
+    const kv = options.l2 === false ? undefined : this.kvFor(options.provider);
     const stored = kv === undefined ? undefined : await readRecord(kv, key);
     if (stored !== undefined) {
       const now = Date.now();

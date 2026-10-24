@@ -1,5 +1,6 @@
 import { recordProviderEvent } from '../metrics/index.js';
 import { isRecord } from '../sources/http.js';
+import { cachedInBlobs } from './blob-cache.js';
 import { getJson, keyDigest, LtError, type LtContext, ltRequest, recordAt, TTL, type TvdbVersion } from './context.js';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3/';
@@ -89,9 +90,30 @@ export function tmdbTtl(sub: string): number {
   return TTL.tmdb;
 }
 
+/** URL d'un chemin TMDB : langue fr-FR et région FR par défaut, paramètres de l'appelant par-dessus. */
+function tmdbUrl(sub: string, params: Record<string, string>): URL {
+  const url = new URL(TMDB_BASE + sub);
+  const query = new URLSearchParams(params);
+  if (!query.has('language')) query.set('language', 'fr-FR');
+  if (!query.has('region')) query.set('region', 'FR');
+  query.forEach((value, key) => url.searchParams.set(key, value));
+  return url;
+}
+
+/**
+ * GET TMDB sans cache (API v4, jeton Bearer), réponse allégée. Pour les appelants qui gardent eux-mêmes la valeur (couche
+ * saison R2, cf. episodes.ts) ; tmdbGet l'enveloppe d'un cache.
+ */
+export async function tmdbFetch(ctx: LtContext, token: string, sub: string, params: Record<string, string> = {}): Promise<unknown> {
+  if (!TMDB_PATH.test(sub)) throw new LtError(404, 'not_found');
+  const url = tmdbUrl(sub, params);
+  return slimTmdb(await getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }, undefined, { maxBytes: TMDB_MAX_BYTES }));
+}
+
 /**
  * GET TMDB (API v4, jeton Bearer). Langue fr-FR et région FR par défaut. Cache partagé entre utilisateurs
- * (métadonnées publiques) : ni le jeton ni son empreinte n'entrent dans la clé.
+ * (métadonnées publiques) : ni le jeton ni son empreinte n'entrent dans la clé. Les recherches (`search/*`) restent en
+ * mémoire de l'isolat : requêtes libres, peu répétées, sans écriture KV.
  */
 export async function tmdbGet(
   ctx: LtContext,
@@ -100,15 +122,13 @@ export async function tmdbGet(
   params: Record<string, string> = {},
 ): Promise<unknown> {
   if (!TMDB_PATH.test(sub)) throw new LtError(404, 'not_found');
-  const url = new URL(TMDB_BASE + sub);
-  const query = new URLSearchParams(params);
-  if (!query.has('language')) query.set('language', 'fr-FR');
-  if (!query.has('region')) query.set('region', 'FR');
-  query.forEach((value, key) => url.searchParams.set(key, value));
-  return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), async () =>
-    slimTmdb(await getJson(ctx, url.toString(), { headers: { Authorization: 'Bearer ' + token, accept: 'application/json' } }, undefined, { maxBytes: TMDB_MAX_BYTES })),
-    { provider: 'tmdb', swr: true },
-  );
+  const url = tmdbUrl(sub, params);
+  const search = sub.split('/')[0] === 'search';
+  return ctx.state.cache.get(`tmdb:${url.pathname}${url.search}`, tmdbTtl(sub), () => tmdbFetch(ctx, token, sub, params), {
+    provider: 'tmdb',
+    swr: true,
+    l2: !search,
+  });
 }
 
 /** Saisons longues (anime : 40+ épisodes) : la réponse TMDB dépasse plusieurs Mo, surtout à cause des génériques par épisode. */
@@ -239,6 +259,8 @@ export interface TvdbSeries {
   lastAired: string;
 }
 
+/** Préfixe R2 des valeurs TVDB (store de blobs, pas le KV) : séries et épisodes, par langue. */
+const TVDB_BLOB = 'cache/v2/tvdb';
 const TVDB_V4_BASE = 'https://api4.thetvdb.com/v4';
 /** API v3 : seule à accepter les clés legacy (32 caractères hexadécimaux). Jeton valable 24 h. */
 const TVDB_V3_BASE = 'https://api.thetvdb.com';
@@ -424,11 +446,15 @@ async function tvdbV3Series(ctx: LtContext, token: string, id: string): Promise<
  */
 export async function tvdbSeries(ctx: LtContext, apiKey: string, id: string, pin?: string): Promise<TvdbSeries> {
   if (!/^\d{1,9}$/.test(id)) throw new LtError(404, 'not_found');
-  return ctx.state.cache.get(`tvdb:${id}`, TTL.tvdb, () =>
-    withTvdbToken(ctx, apiKey, pin, (version, token) =>
-      version === 'v4' ? tvdbV4Series(ctx, token, id) : tvdbV3Series(ctx, token, id),
-    ),
-    { provider: 'tvdb', swr: true },
+  return cachedInBlobs(
+    ctx,
+    `${TVDB_BLOB}/series/${id}.json`,
+    TTL.tvdb,
+    () =>
+      withTvdbToken(ctx, apiKey, pin, (version, token) =>
+        version === 'v4' ? tvdbV4Series(ctx, token, id) : tvdbV3Series(ctx, token, id),
+      ),
+    'tvdb',
   );
 }
 
@@ -546,12 +572,16 @@ export async function tvdbAiredEpisodes(
   pin?: string,
 ): Promise<TvdbAiredEpisode[]> {
   if (!/^\d{1,9}$/.test(id)) throw new LtError(404, 'not_found');
-  return ctx.state.cache.get(`tvdb:aired:v2:${id}:${lang}`, TTL.tvdb, () =>
-    withTvdbToken(ctx, apiKey, pin, async (version, token) => {
-      const rows = await tvdbAired(ctx, token, id, lang, version, 'default');
-      if (rows.length > 0 || version !== 'v4') return rows;
-      return tvdbAired(ctx, token, id, lang, version, 'official');
-    }),
-    { provider: 'tvdb', swr: true },
+  return cachedInBlobs(
+    ctx,
+    `${TVDB_BLOB}/aired-v2/${id}/${lang}.json`,
+    TTL.tvdb,
+    () =>
+      withTvdbToken(ctx, apiKey, pin, async (version, token) => {
+        const rows = await tvdbAired(ctx, token, id, lang, version, 'default');
+        if (rows.length > 0 || version !== 'v4') return rows;
+        return tvdbAired(ctx, token, id, lang, version, 'official');
+      }),
+    'tvdb',
   );
 }
