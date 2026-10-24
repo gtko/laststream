@@ -9,6 +9,7 @@ import {
   type MetricsService,
 } from '../../metrics/core.js';
 import type { ProviderHourRow } from '../../metrics/providers.js';
+import { type QuotaGate, utcDay } from '../../lt/quota.js';
 import type { Metrics } from './metrics-do.js';
 
 /** Nom du Durable Object global des métriques. */
@@ -22,9 +23,26 @@ interface MetricsRpc {
   startPurge(prefix: string): Promise<PurgeJob>;
   purgeJob(id: string): Promise<PurgeJob | undefined>;
   purgeJobs(): Promise<PurgeJob[]>;
+  quotaTake(provider: string, day: string, budget: number): Promise<boolean>;
 }
 
 const rpc = (namespace: DurableObjectNamespace<Metrics>): MetricsRpc => namespace.getByName(METRICS_NAME) as unknown as MetricsRpc;
+
+/**
+ * Budget quotidien global (Workers) : compteur par fournisseur et par jour UTC dans le Durable Object global, donc partagé
+ * par toutes les instances. Échec fermé : si le Durable Object ne répond pas, l'appel est refusé (jamais un appel non compté).
+ */
+export function workersQuotaGate(namespace: DurableObjectNamespace<Metrics>, now: () => number = Date.now): QuotaGate {
+  return {
+    async take(provider, budget) {
+      try {
+        return await rpc(namespace).quotaTake(provider, utcDay(now()), budget);
+      } catch {
+        return false;
+      }
+    },
+  };
+}
 
 /**
  * Métriques d'un isolat Workers : les mesures s'additionnent en mémoire et partent en un seul lot vers le Durable Object

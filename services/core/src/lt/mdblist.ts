@@ -1,5 +1,6 @@
 import { LtError, type LtContext } from './context.js';
 import { MdbRateLimited, mdblistFetch, mdblistTarget, type MdbRatings } from './providers.js';
+import { msUntilNextUtcDay } from './quota.js';
 
 /**
  * Notes MDBList derrière la clé de serveur partagée par tous les comptes (quota quotidien limité). Couches, dans l'ordre :
@@ -8,7 +9,8 @@ import { MdbRateLimited, mdblistFetch, mdblistTarget, type MdbRatings } from './
  * 3. cache négatif court d'un échec amont (2 min, 10 min pour un titre inconnu) ;
  * 4. disjoncteur global (KV) après un 429 : plus aucun appel amont jusqu'à la remise à zéro annoncée par MDBList
  *    (1 h par défaut, bornée à 24 h), la réponse reste un 200 « indisponible temporairement » ;
- * 5. limite de débit globale des appels sortants (binding partagé), même réponse dégradée quand elle est atteinte.
+ * 5. budget quotidien global (jour UTC, remise à zéro à 00:00 UTC) : au-delà, même réponse dégradée, jusqu'à minuit ;
+ * 6. limite de débit globale des appels sortants (binding partagé), même réponse dégradée quand elle est atteinte.
  */
 
 const KV_RATING_SECONDS = 7 * 24 * 3600;
@@ -90,6 +92,10 @@ async function load(ctx: LtContext, apiKey: string, type: string, id: string, kv
   if (failed !== undefined) throw new LtError(502, failed, 'mdblist');
   const remaining = await breakerRemainingMs(ctx);
   if (remaining > 0) return { body: degraded(remaining), memoryMs: Math.min(DEGRADED_MEMORY_MS, remaining) };
+  // Budget du jour UTC : refus sans appel amont, jusqu'à la remise à zéro de minuit.
+  if (!(await ctx.mdbQuota.take('mdblist', ctx.mdbDailyBudget))) {
+    return { body: degraded(msUntilNextUtcDay(Date.now())), memoryMs: DEGRADED_MEMORY_MS };
+  }
   if (!(await ctx.mdbLimiter())) return { body: degraded(60e3), memoryMs: 10e3 };
   try {
     const { ratings, released } = await mdblistFetch(ctx, apiKey, type, id);

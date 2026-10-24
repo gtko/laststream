@@ -31,6 +31,8 @@ export interface WorkerEnv {
   AUTH_LIMITER_USER?: RateLimitBinding;
   /** Limite globale des appels sortants vers MDBList. */
   MDBLIST_LIMITER?: RateLimitBinding;
+  /** Budget quotidien global des appels MDBList (variable, entier) : absente, 800 (lt/quota.ts). */
+  MDBLIST_DAILY_BUDGET?: string;
   /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */
   TV?: R2Bucket;
   /** Bucket R2 des fiches partagées (meta/<type>/<tmdbId>.json) : absent, fiches construites à chaque demande. */

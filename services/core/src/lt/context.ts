@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Ctx } from '../http/app-env.js';
-import { platform, type KvCache, type OutboundDispatcher } from '../platform/index.js';
+import { platform, runtimeEnv, type KvCache, type OutboundDispatcher } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
 import { withServerServices } from '../config/server-services.js';
@@ -19,6 +19,7 @@ import {
 } from '../sources/http.js';
 import { UnsafeTargetError, createPublicGuard } from './guard.js';
 import { createUrlSigner, type UrlSigner } from './signing.js';
+import { memoryQuotaGate, parseDailyBudget, type QuotaGate } from './quota.js';
 
 /**
  * Durées de vie du cache. Les métadonnées publiques sont partagées entre tous les utilisateurs (économie de
@@ -124,6 +125,10 @@ export interface LtContext {
   signer: UrlSigner;
   /** Limite de débit globale des appels MDBList sortants (true = autorisé). */
   mdbLimiter: () => Promise<boolean>;
+  /** Budget quotidien global des appels MDBList (true = appel autorisé, et compté pour le jour UTC). */
+  mdbQuota: QuotaGate;
+  /** Nombre maximal d'appels MDBList par jour UTC. */
+  mdbDailyBudget: number;
 }
 
 /** Appels MDBList sortants par minute (par instance sans limiteur partagé). */
@@ -160,6 +165,8 @@ function buildLtContext(deps: AppDeps): LtContext {
     dispatcher: platform().http.pinnedDispatcher(deps.lookupHost),
     signer: createUrlSigner(deps.secret),
     mdbLimiter: deps.mdblistLimiter ?? mdblistLocalLimiter(),
+    mdbQuota: deps.mdblistQuota ?? memoryQuotaGate(),
+    mdbDailyBudget: deps.mdblistDailyBudget ?? parseDailyBudget(runtimeEnv().get('MDBLIST_DAILY_BUDGET')),
   };
 }
 

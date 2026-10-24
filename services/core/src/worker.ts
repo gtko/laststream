@@ -18,6 +18,7 @@ import { SOCIAL_LIVE_PATH } from './user/social-v2-live.js';
 import { countryCode } from './user/title-starts.js';
 import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 import { createWorkersOpsPorts } from './platform/workers/ops.js';
+import { workersQuotaGate } from './platform/workers/metrics.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
@@ -38,6 +39,8 @@ function appFor(env: WorkerEnv): App {
     ui: platform.uiAssets,
     authLimiter: authLimiterFrom(env),
     mdblistLimiter: mdbLimit === undefined ? undefined : async () => (await mdbLimit.limit({ key: 'mdblist' })).success,
+    // Budget quotidien global (jour UTC) partagé par toutes les instances : Durable Object Metrics. Absent : compteur en mémoire.
+    ...(env.METRICS === undefined ? {} : { mdblistQuota: workersQuotaGate(env.METRICS) }),
     ops: createWorkersOpsPorts(env),
     // Flux temps réel : chaque écriture sociale est diffusée par le Durable Object des données (travail d'arrière-plan).
     socialEvents: (pids, event) => platform.scheduler.background(env.USER_STORE.getByName(USER_STORE_NAME).liveBroadcast([...pids], event)),
