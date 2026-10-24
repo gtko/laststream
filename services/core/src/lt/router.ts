@@ -187,14 +187,16 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   // Épisodes filler et récap d'un anime (ARM puis Jikan), même numérotation que /episodes ; liste vide sinon.
   lt.get('/series/:tmdbId/fillers', async (c) => {
     const config = configOf(c);
-    const body = await seriesFillers(
+    const { fillers, degraded } = await seriesFillers(
       ctx,
       { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
       c.req.param('tmdbId'),
       queryOf(c).language,
     );
-    cacheable(c);
-    return sendJson(c, body);
+    // Liste peut-être incomplète après une panne : le client la relira au prochain chargement.
+    if (degraded) c.header('Cache-Control', NO_STORE);
+    else cacheable(c);
+    return sendJson(c, { fillers });
   });
 
   // Fiche partagée d'un film ou d'une série (TMDB, TVDB, notes, casting, saisons et épisodes) : construite une fois,

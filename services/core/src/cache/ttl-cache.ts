@@ -16,7 +16,7 @@ export const REFRESH_RETRY_MS = 60e3;
  * Fournisseurs dont les réponses publiques passent aussi par le niveau 2 (KV partagé), un espace de noms par
  * fournisseur. Sans fournisseur, l'entrée reste en mémoire.
  */
-export type CacheProvider = 'tmdb' | 'tvdb' | 'openrouter' | 'cinemeta';
+export type CacheProvider = 'tmdb' | 'tvdb' | 'openrouter' | 'cinemeta' | 'jikan';
 
 /**
  * Événements pour les compteurs : `l1hit` (mémoire), `l2hit` (KV), `miss` (appel amont), `stale` (valeur périmée servie

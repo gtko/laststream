@@ -1,7 +1,7 @@
 import { isRecord } from '../sources/http.js';
-import { getJson, LtError, type LtContext, recordAt, TTL } from './context.js';
+import { LtError, type LtContext, ltRequest, recordAt, TTL } from './context.js';
 import { type SeriesEpisode, type SeriesServices, seriesEpisodes } from './episodes.js';
-import { armEntries } from './skip.js';
+import { armEntries, type ArmEntry } from './skip.js';
 
 /** Nature d'un épisode hors trame principale : filler (épisode bouche-trou) ou récap (résumé des épisodes précédents). */
 type FillerKind = 'filler' | 'recap';
@@ -16,6 +16,11 @@ export interface FillersResponse {
   fillers: FillerEpisode[];
 }
 
+/** Résultat interne : `degraded` (un service en panne, liste peut-être incomplète) n'est jamais renvoyé au client. */
+export interface FillersResult extends FillersResponse {
+  degraded: boolean;
+}
+
 /** Numéros d'épisodes MAL marqués filler ou récap par Jikan. */
 interface MalFillers {
   filler: number[];
@@ -27,9 +32,38 @@ const JIKAN_BASE = 'https://api.jikan.moe/v4';
 const MAX_PAGES = 20;
 const IMDB_PREFIX = /^(tt\d{5,12}):/;
 
-const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isInteger(value) ? value : undefined);
+/**
+ * Débit Jikan (3 requêtes/s, 60/min) : pause entre deux pages, puis un seul nouvel essai sur 429 après Retry-After
+ * (1 s sans en-tête, 3 s au plus). Modifiable par les tests pour ne pas attendre en temps réel.
+ */
+export const jikanTiming = { pageGapMs: 400, retryDefaultMs: 1000, retryMaxMs: 3000 };
 
-/** Épisodes filler et récap d'une fiche MAL (Jikan v4, pages lues à la suite). Cache 7 jours, 6 h si aucun. */
+const num = (value: unknown): number | undefined => (typeof value === 'number' && Number.isInteger(value) ? value : undefined);
+const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Attente avant le nouvel essai d'un 429 : Retry-After en secondes, sinon le délai par défaut, plafonnée. */
+function retryDelay(headers: Headers): number {
+  const seconds = Number(headers.get('retry-after'));
+  const ms = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : jikanTiming.retryDefaultMs;
+  return Math.min(ms, jikanTiming.retryMaxMs);
+}
+
+/** Page Jikan en JSON ; un 429 est retenté une fois. Autre statut non 2xx ou JSON invalide : LtError. */
+async function jikanPage(ctx: LtContext, url: string): Promise<unknown> {
+  let res = await ltRequest(ctx, url);
+  if (res.status === 429) {
+    await pause(retryDelay(res.headers));
+    res = await ltRequest(ctx, url);
+  }
+  if (!res.ok) throw new LtError(502, `upstream_${res.status}`);
+  try {
+    return JSON.parse(Buffer.from(res.bytes).toString('utf8')) as unknown;
+  } catch {
+    throw new LtError(502, 'upstream_bad_json');
+  }
+}
+
+/** Épisodes filler et récap d'une fiche MAL (Jikan v4, pages lues à la suite). Cache KV 7 jours, 6 h si aucun. */
 async function malFillers(ctx: LtContext, malId: number): Promise<MalFillers> {
   return ctx.state.cache.get<MalFillers>(
     `jikan:fillers:${malId}`,
@@ -37,7 +71,8 @@ async function malFillers(ctx: LtContext, malId: number): Promise<MalFillers> {
     async () => {
       const result: MalFillers = { filler: [], recap: [] };
       for (let page = 1; page <= MAX_PAGES; page++) {
-        const json = await getJson(ctx, `${JIKAN_BASE}/anime/${malId}/episodes?page=${page}`);
+        if (page > 1) await pause(jikanTiming.pageGapMs);
+        const json = await jikanPage(ctx, `${JIKAN_BASE}/anime/${malId}/episodes?page=${page}`);
         const data = isRecord(json) && Array.isArray(json.data) ? json.data.filter(isRecord) : [];
         for (const entry of data) {
           const n = num(entry.mal_id);
@@ -50,6 +85,7 @@ async function malFillers(ctx: LtContext, malId: number): Promise<MalFillers> {
       }
       return result;
     },
+    { provider: 'jikan' },
   );
 }
 
@@ -62,46 +98,71 @@ function imdbOf(episodes: readonly SeriesEpisode[]): string | undefined {
   return undefined;
 }
 
+/** Fiche MAL et recherche de l'épisode canonique correspondant à un numéro d'épisode MAL. */
+interface MalTarget {
+  mal: number;
+  find: (n: number) => SeriesEpisode | undefined;
+}
+
+/**
+ * Fiches MAL à lire : une fiche unique sans saison (séries longues, numéro absolu), sinon une par saison TMDB (numéro
+ * d'épisode TMDB). Une saison TMDB couverte par plusieurs fiches (anime en deux cours) est ignorée : la numérotation
+ * MAL de chaque cours repart de 1 et ne se rattache pas sans ambiguïté aux épisodes TMDB.
+ */
+function malTargets(entries: readonly ArmEntry[], episodes: readonly SeriesEpisode[]): MalTarget[] {
+  const withMal = entries.filter((entry) => entry.mal !== undefined);
+  const single = withMal.length === 1 && withMal[0]?.tmdbSeason === undefined ? withMal[0] : undefined;
+  if (single?.mal !== undefined) return [{ mal: single.mal, find: (n) => episodes.find((e) => e.absolute === n) }];
+  const perSeason = new Map<number, number>();
+  for (const entry of withMal) {
+    if (entry.tmdbSeason !== undefined) perSeason.set(entry.tmdbSeason, (perSeason.get(entry.tmdbSeason) ?? 0) + 1);
+  }
+  return withMal.flatMap((entry): MalTarget[] => {
+    const season = entry.tmdbSeason;
+    if (entry.mal === undefined || season === undefined || perSeason.get(season) !== 1) return [];
+    return [{ mal: entry.mal, find: (n) => episodes.find((e) => e.tmdbSeason === season && e.tmdbEpisode === n) }];
+  });
+}
+
 /**
  * Épisodes filler et récap d'une série, dans la numérotation canonique de /series/:tmdbId/episodes. Correspondance
- * IMDb → MAL par ARM : une fiche MAL par saison TMDB (numéro d'épisode TMDB), ou une fiche unique pour toute la série
- * (numéro absolu, séries longues). Série inconnue de MAL ou panne d'un service : liste vide.
+ * IMDb → MAL par ARM. Série inconnue de MAL : liste vide. Panne d'ARM ou d'une fiche Jikan : les autres fiches sont
+ * gardées et le résultat est marqué `degraded`.
  */
 export async function seriesFillers(
   ctx: LtContext,
   svc: SeriesServices,
   tmdbId: string,
   language: string | undefined,
-): Promise<FillersResponse> {
+): Promise<FillersResult> {
   const structure = await seriesEpisodes(ctx, svc, tmdbId, language);
   const imdbId = imdbOf(structure.episodes);
-  if (imdbId === undefined) return { fillers: [] };
+  if (imdbId === undefined) return { fillers: [], degraded: false };
+  let entries: ArmEntry[];
   try {
-    const entries = (await armEntries(ctx, imdbId)).filter((entry) => entry.mal !== undefined);
-    const fillers: FillerEpisode[] = [];
-    const mark = (marks: MalFillers, find: (n: number) => SeriesEpisode | undefined): void => {
-      for (const [kind, list] of [['recap', marks.recap], ['filler', marks.filler]] as const) {
-        for (const n of list) {
-          const hit = find(n);
-          if (hit !== undefined) fillers.push({ season: hit.season, episode: hit.episode, kind });
-        }
-      }
-    };
-    const single = entries.length === 1 && entries[0]?.tmdbSeason === undefined ? entries[0] : undefined;
-    if (single?.mal !== undefined) {
-      const marks = await malFillers(ctx, single.mal);
-      mark(marks, (n) => structure.episodes.find((e) => e.absolute === n));
-    } else {
-      for (const entry of entries) {
-        if (entry.mal === undefined || entry.tmdbSeason === undefined) continue;
-        const marks = await malFillers(ctx, entry.mal);
-        mark(marks, (n) => structure.episodes.find((e) => e.tmdbSeason === entry.tmdbSeason && e.tmdbEpisode === n));
+    entries = await armEntries(ctx, imdbId);
+  } catch (err) {
+    console.warn(`[lt][fillers] ARM indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
+    return { fillers: [], degraded: true };
+  }
+  const fillers: FillerEpisode[] = [];
+  let degraded = false;
+  for (const target of malTargets(entries, structure.episodes)) {
+    let marks: MalFillers;
+    try {
+      marks = await malFillers(ctx, target.mal);
+    } catch (err) {
+      console.warn(`[lt][fillers] Jikan indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
+      degraded = true;
+      continue;
+    }
+    for (const [kind, list] of [['recap', marks.recap], ['filler', marks.filler]] as const) {
+      for (const n of list) {
+        const hit = target.find(n);
+        if (hit !== undefined) fillers.push({ season: hit.season, episode: hit.episode, kind });
       }
     }
-    fillers.sort((a, b) => a.season - b.season || a.episode - b.episode);
-    return { fillers };
-  } catch (err) {
-    console.warn(`[lt][fillers] indisponible (statut amont : ${err instanceof LtError ? err.code : 'inconnu'})`);
-    return { fillers: [] };
   }
+  fillers.sort((a, b) => a.season - b.season || a.episode - b.episode);
+  return { fillers, degraded };
 }
