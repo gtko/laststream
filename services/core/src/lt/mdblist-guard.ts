@@ -3,7 +3,8 @@ import { msUntilNextUtcDay } from './quota.js';
 
 /**
  * Garde des appels sortants MDBList (clé de serveur partagée par tous les comptes), commune au cache des notes de la
- * route (mdblist.ts) et aux notes des fiches partagées (mdblistRatings, providers.ts). Dans l'ordre : disjoncteur global
+ * route (mdblist.ts) et aux notes des fiches partagées (mdblistRatings avec `guarded`, providers.ts ; le test d'une clé saisie par un compte, checks.ts,
+ * n'y est pas soumis). Dans l'ordre : disjoncteur global
  * ouvert après un 429, budget quotidien (jour UTC), limiteur de débit. Un refus n'émet aucun appel amont, et le budget
  * n'est décompté que pour un appel permis.
  */

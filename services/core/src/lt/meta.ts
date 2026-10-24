@@ -464,8 +464,9 @@ function coolingDown(label: string, now: number): boolean {
 }
 
 /**
- * Travail dédoublonné : un seul en vol par clé dans l'isolat. Les clés de service sont celles du demandeur : l'échec d'un
- * travail en vol (jeton refusé d'un autre compte, par exemple) ne lui est pas transmis, celui qui le rejoint relance le sien.
+ * Travail dédoublonné : un seul en vol par clé dans l'isolat. Les clés de service sont celles du demandeur : celui qui rejoint
+ * un travail en vol relance le sien seulement si ce travail a échoué sur un refus de jeton (401/403, propre au compte qui l'a
+ * lancé). Toute autre erreur (panne amont) lui est transmise : un seul appel amont pour N requêtes concurrentes.
  */
 function once<T>(rt: MetaRuntime, label: string, run: () => Promise<T>): Promise<T> {
   const running = building.get(label) as Promise<T> | undefined;
@@ -630,7 +631,7 @@ async function rebuildRatings(
     value = { schema: SCHEMA_VERSION, ratings: null, partial: true };
   } else {
     try {
-      const ratings = await mdblistRatings(rt.ctx, svc.mdblistApiKey, base.type === 'movie' ? 'movie' : 'tv', base.imdbId ?? String(base.tmdbId));
+      const ratings = await mdblistRatings(rt.ctx, svc.mdblistApiKey, base.type === 'movie' ? 'movie' : 'tv', base.imdbId ?? String(base.tmdbId), true);
       value = { schema: SCHEMA_VERSION, ratings, partial: false };
     } catch (err) {
       console.warn(`[lt][meta] notes indisponibles (${err instanceof LtError ? `statut amont : ${err.code}` : err instanceof Error ? err.name : 'inconnue'})`);

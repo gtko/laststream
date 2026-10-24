@@ -247,18 +247,19 @@ export async function mdblistFetch(
 }
 
 /**
- * Notes MDBList (cache mémoire de l'instance, sans cache persistant) : vérification d'une clé et notes des fiches partagées.
- * Même garde que le cache des notes de la route (disjoncteur, budget quotidien, limiteur) : un refus lève une LtError sans
- * appel amont, et un 429 ouvre le disjoncteur.
+ * Notes MDBList (cache mémoire de l'instance, sans cache persistant). `guarded` (notes des fiches partagées, clé de serveur) :
+ * même garde que le cache des notes de la route (disjoncteur, budget quotidien, limiteur), un refus lève une LtError sans appel
+ * amont et un 429 ouvre le disjoncteur global. Sans `guarded` (test d'une clé saisie par un compte) : appel direct, ni budget
+ * décompté ni disjoncteur touché, y compris sur 429 (le quota d'une clé personnelle ne doit pas couper les notes de tous).
  */
-export async function mdblistRatings(ctx: LtContext, apiKey: string, type: string, id: string): Promise<MdbRatings> {
+export async function mdblistRatings(ctx: LtContext, apiKey: string, type: string, id: string, guarded = false): Promise<MdbRatings> {
   mdblistTarget(type, id);
   return ctx.state.cache.get(`mdb:${type}:${id}`, TTL.mdb, async () => {
-    if ((await mdblistAdmission(ctx)) !== undefined) throw new LtError(503, 'mdblist_unavailable', 'mdblist');
+    if (guarded && (await mdblistAdmission(ctx)) !== undefined) throw new LtError(503, 'mdblist_unavailable', 'mdblist');
     try {
       return (await mdblistFetch(ctx, apiKey, type, id)).ratings;
     } catch (err) {
-      if (err instanceof MdbRateLimited) await mdblistOpenBreaker(ctx, err.retryAfterMs);
+      if (guarded && err instanceof MdbRateLimited) await mdblistOpenBreaker(ctx, err.retryAfterMs);
       throw err;
     }
   });

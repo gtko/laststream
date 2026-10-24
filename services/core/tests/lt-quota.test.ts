@@ -189,7 +189,7 @@ describe('quota MDBList : budget quotidien global', () => {
 describe('quota MDBList : notes des fiches (mdblistRatings) soumises à la même garde', () => {
   it('budget 0 : refus levé en LtError, aucun appel amont', async () => {
     const upstream = mockUpstream({ [T1]: ok });
-    await expect(mdblistRatings(ctxFor(upstream, { budget: 0 }), 'k', 'movie', 'tt0133093')).rejects.toBeInstanceOf(LtError);
+    await expect(mdblistRatings(ctxFor(upstream, { budget: 0 }), 'k', 'movie', 'tt0133093', true)).rejects.toBeInstanceOf(LtError);
     expect(upstream.callsTo(T1)).toHaveLength(0);
   });
 
@@ -197,15 +197,36 @@ describe('quota MDBList : notes des fiches (mdblistRatings) soumises à la même
     const upstream = mockUpstream({ [T1]: ok });
     const ctx = ctxFor(upstream, { budget: 10 });
     ctx.state.mdbBreakerUntil = Date.now() + 60e3;
-    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).rejects.toBeInstanceOf(LtError);
+    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0133093', true)).rejects.toBeInstanceOf(LtError);
     expect(upstream.callsTo(T1)).toHaveLength(0);
   });
 
   it('budget consommé par une fiche : la fiche suivante est refusée sans appel', async () => {
     const upstream = mockUpstream({ [T1]: ok, [T2]: ok });
     const ctx = ctxFor(upstream, { budget: 1 });
-    expect((await mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).ratings.imdb).toBe(8.7);
-    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0000002')).rejects.toBeInstanceOf(LtError);
+    expect((await mdblistRatings(ctx, 'k', 'movie', 'tt0133093', true)).ratings.imdb).toBe(8.7);
+    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0000002', true)).rejects.toBeInstanceOf(LtError);
     expect(upstream.callsTo(T2)).toHaveLength(0);
+  });
+
+  it('test de clé (sans garde) : disjoncteur ouvert ou budget à 0, l appel amont est émis', async () => {
+    const upstream = mockUpstream({ [T1]: ok });
+    const ctx = ctxFor(upstream, { budget: 0 });
+    ctx.state.mdbBreakerUntil = Date.now() + 60e3;
+    expect((await mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).ratings.imdb).toBe(8.7);
+    expect(upstream.callsTo(T1)).toHaveLength(1);
+  });
+
+  it('test de clé (sans garde) : 429 transmis, disjoncteur non ouvert, budget inchangé', async () => {
+    const upstream = mockUpstream({ [T1]: () => new Response('quota', { status: 429, headers: { 'retry-after': '86400' } }) });
+    const quota = memoryQuotaGate();
+    const ctx = ctxFor(upstream, { quota, budget: 5 });
+
+    await expect(mdblistRatings(ctx, 'k', 'movie', 'tt0133093')).rejects.toBeInstanceOf(LtError);
+
+    expect(upstream.callsTo(T1)).toHaveLength(1);
+    expect(ctx.state.mdbBreakerUntil).toBe(0);
+    // Budget intact : les 5 prises du jour restent disponibles.
+    for (let i = 0; i < 5; i += 1) expect(await ctx.mdbQuota.take('mdblist', 5)).toBe(true);
   });
 });
