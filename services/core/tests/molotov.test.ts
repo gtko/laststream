@@ -1022,6 +1022,34 @@ describe('compte Molotov', () => {
     }
   });
 
+  it('replay : le journal de forme masque les clés dynamiques (uuid, hexadécimal, numérique)', async () => {
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 80 * 60_000);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const uuid = '123e4567-e89b-12d3-a456-426614174000';
+    const hex = 'deadbeefcafebabe0123456789abcdef0123';
+    try {
+      replayReply = () => json({
+        [uuid]: { items: [{ program: {}, assets: [], title: 1 }] },
+        sections: { [hex]: { [987654321]: { items: [] } } },
+        123456: 1,
+      });
+      await connect();
+      await request<ReplayBody>(rig.app, 'GET', '/user/account/molotov/replay', {
+        token: rig.owner.token,
+        headers: asProfile(rig.owner.profile),
+      });
+      const logged = warn.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(logged).not.toContain(uuid);
+      expect(logged).not.toContain(hex);
+      expect(logged).not.toContain('987654321');
+      expect(logged).not.toContain('123456');
+      for (const name of ['sections', 'items', 'program', 'assets', 'title']) expect(logged).toContain(name);
+    } finally {
+      warn.mockRestore();
+      spy.mockRestore();
+    }
+  });
+
   it("replay : une page vide n'est pas mise en cache (deux appels, deux appels amont)", async () => {
     const spy = vi.spyOn(Date, 'now').mockReturnValue(REPLAY_BASE + 90 * 60_000);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

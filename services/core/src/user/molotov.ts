@@ -1077,6 +1077,12 @@ const SHAPE_MAX_DEPTH = 3;
 const SHAPE_MAX_KEYS = 8;
 const SHAPE_MAX_CHARS = 1500;
 
+/** Nom de clé journalisable : une clé dynamique (longue, numérique, de type identifiant) est réduite à sa longueur. */
+function safeKey(key: string): string {
+  if (key.length > 24 || /^[0-9]+$/.test(key) || /^[0-9a-f-]{16,}$/i.test(key)) return `<clé:${key.length}>`;
+  return key;
+}
+
 function shapeType(value: unknown): string {
   if (Array.isArray(value)) return `array(${value.length})`;
   if (value === null) return 'null';
@@ -1092,7 +1098,7 @@ function shapeTree(value: unknown, depth: number): string {
   }
   if (!isRecord(value)) return shapeType(value);
   const keys = Object.keys(value);
-  const parts = keys.slice(0, SHAPE_MAX_KEYS).map((key) => `${key}:${shapeTree(value[key], depth + 1)}`);
+  const parts = keys.slice(0, SHAPE_MAX_KEYS).map((key) => `${safeKey(key)}:${shapeTree(value[key], depth + 1)}`);
   if (keys.length > SHAPE_MAX_KEYS) parts.push(`+${keys.length - SHAPE_MAX_KEYS}`);
   return `{${parts.join(',')}}`;
 }
@@ -1104,7 +1110,7 @@ function shapeTree(value: unknown, depth: number): string {
  */
 function describeShape(document: unknown): string {
   const top = isRecord(document)
-    ? Object.keys(document).slice(0, SHAPE_MAX_KEYS).map((key) => `${key}=${shapeType(document[key])}`).join(',')
+    ? Object.keys(document).slice(0, SHAPE_MAX_KEYS).map((key) => `${safeKey(key)}=${shapeType(document[key])}`).join(',')
     : shapeType(document);
   const carriers: string[] = [];
   const stack: unknown[] = [document];
@@ -1118,7 +1124,7 @@ function describeShape(document: unknown): string {
     }
     if (!isRecord(node)) continue;
     if (carriers.length < 3 && ('program' in node || 'assets' in node || 'title' in node)) {
-      carriers.push(`[${Object.keys(node).slice(0, SHAPE_MAX_KEYS * 2).join(',')}]`);
+      carriers.push(`[${Object.keys(node).slice(0, SHAPE_MAX_KEYS * 2).map(safeKey).join(',')}]`);
     }
     const values = Object.values(node);
     for (let i = values.length - 1; i >= 0; i -= 1) {
