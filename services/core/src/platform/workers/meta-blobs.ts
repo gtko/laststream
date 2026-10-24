@@ -3,8 +3,9 @@ import type { MetaBlob, MetaBlobStore } from '../../lt/meta.js';
 import type { RowBlob, RowBlobStore } from '../../lt/rows.js';
 
 /**
- * Fiches partagées dans R2 (bucket lastaddon-meta, clés meta/<type>/<tmdbId>.json). Le contenu JSON est le corps de
- * l'objet ; l'empreinte (etag) et l'échéance (expiresAt, ms epoch) sont ses métadonnées personnalisées.
+ * Couches des fiches partagées dans R2 (bucket lastaddon-meta, clés meta/v2/..., voir src/lt/meta-policy.ts). Le contenu
+ * JSON est le corps de l'objet ; l'empreinte (etag), l'échéance (expiresAt, ms epoch), la durée de vie (ttl, ms) et la
+ * version du schéma sont ses métadonnées personnalisées.
  */
 export function createR2MetaBlobs(bucket: R2Bucket): MetaBlobStore {
   return {
@@ -14,12 +15,14 @@ export function createR2MetaBlobs(bucket: R2Bucket): MetaBlobStore {
       const etag = object.customMetadata?.etag;
       const expiresAt = Number(object.customMetadata?.expiresAt);
       if (etag === undefined || !Number.isFinite(expiresAt)) return undefined;
-      return { body: await object.text(), etag, expiresAt };
+      // Objet écrit avant le schéma 2 : pas de durée de vie enregistrée (0).
+      const ttl = Number(object.customMetadata?.ttl);
+      return { body: await object.text(), etag, expiresAt, ttl: Number.isFinite(ttl) ? ttl : 0 };
     },
     async put(key, blob: MetaBlob) {
       await bucket.put(key, blob.body, {
         httpMetadata: { contentType: 'application/json; charset=utf-8' },
-        customMetadata: { etag: blob.etag, expiresAt: String(blob.expiresAt) },
+        customMetadata: { etag: blob.etag, expiresAt: String(blob.expiresAt), ttl: String(blob.ttl), schema: '2' },
       });
     },
   };
