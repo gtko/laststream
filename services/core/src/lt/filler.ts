@@ -6,13 +6,13 @@ import { armEntries, type ArmEntry } from './skip.js';
 /** Nature d'un épisode hors trame principale : filler (épisode bouche-trou) ou récap (résumé des épisodes précédents). */
 type FillerKind = 'filler' | 'recap';
 
-export interface FillerEpisode {
+interface FillerEpisode {
   season: number;
   episode: number;
   kind: FillerKind;
 }
 
-export interface FillersResponse {
+interface FillersResponse {
   fillers: FillerEpisode[];
 }
 
