@@ -387,7 +387,8 @@ export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnap
     };
     await Promise.all(Array.from({ length: 8 }, () => worker()));
     probed = Math.min(next, todo.length);
-    pending = all.length - probed;
+    // Seules les URL jamais tentées restent dues : les échecs ne sont retentés qu'à la passe complète.
+    pending = Math.max(0, untried.length - probed);
   }
   const known = (url: string): boolean | undefined => {
     if (!url.startsWith('https://')) return false;
@@ -440,7 +441,8 @@ export async function refreshTv(store: TvBlobStore, options: TvBuildOptions = {}
   const direct = await probeDirectStreams(catalog, previous, { ...options, probe: plan.probes });
   const probes = direct.snapshot;
   const health = await applyHealth(catalog, previous?.health, { ...options.health, fetch: options.fetch, now: options.now, check: plan.health });
-  if (options.trace !== undefined) {
+  // Trace des sondes seulement quand ce passage sondait (absent sinon, voir TvPassTrace.probes).
+  if (options.trace !== undefined && plan.probes) {
     options.trace.probes = direct.probed;
     options.trace.probesPending = direct.pending > 0;
   }

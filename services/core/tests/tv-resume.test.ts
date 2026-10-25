@@ -114,6 +114,14 @@ describe('planification de la reprise (fonctions pures)', () => {
   it('sondages restants : repris, sans rien d\'autre', () => {
     expect(planResume(allOk, EPG_URLS, true)).toEqual({ kind: 'resume', catalog: false, epg: [], probes: true, health: false });
   });
+
+  it('au-delà de deux échecs d\'affilée, la reprise abandonne la source : seule la passe complète la retente', () => {
+    const fail = { [epgSourceId(EPG_FRANCE)]: ko, pluto: ko };
+    const twice = applyOutcomes(applyOutcomes(allOk, fail, 'B'), fail, 'C');
+    expect(planResume(twice, EPG_URLS, false)).toEqual({ kind: 'resume', catalog: true, epg: [EPG_FRANCE], probes: false, health: false });
+    const thrice = applyOutcomes(twice, fail, 'D');
+    expect(planResume(thrice, EPG_URLS, false)).toBeUndefined();
+  });
 });
 
 describe('états et seuil d\'alerte (fonctions pures)', () => {
@@ -226,6 +234,39 @@ describe('passes du cron TV (stockage et sources simulés)', () => {
     expect(w.calls.filter((url) => url === TF1 || url === M6)).toEqual([missing]);
     expect((await readTvCron(blobs))?.probesPending).toBe(false);
   });
+
+  it('reprise sans sondage : la trace ne donne pas de nombre de sondes (absent si le passage ne sondait pas)', async () => {
+    const blobs = memory();
+    await pass(blobs, world({ failing: [EPG_FRANCE] }));
+    later(30);
+    await pass(blobs, world(), { resume: true });
+    const state = await readTvCron(blobs);
+    expect(state?.sources?.[epgSourceId(EPG_FRANCE)]?.consecutiveFailures).toBe(0);
+    expect(state).not.toHaveProperty('probes');
+  });
+
+  it('construction levée avant les sondes : les sondages restants du passage précédent restent dus', async () => {
+    const blobs = memory();
+    await pass(blobs, world({ m6: true }), { maxProbes: 1 });
+    expect(await readTvCron(blobs)).toMatchObject({ probesPending: true });
+    const probed = JSON.parse(blobs.data.get(TV_KEYS.probe) ?? '{}') as { results: Record<string, unknown> };
+    const missing = [TF1, M6].find((url) => probed.results[url] === undefined);
+
+    // Le catalogue n'est pas lisible : la passe lève avant d'arriver aux sondes.
+    const unavailable: TvBlobStore = {
+      get: (key) => (key === TV_KEYS.catalog ? Promise.reject(new Error('r2_indisponible')) : blobs.get(key)),
+      put: blobs.put,
+    };
+    later(30);
+    await pass(unavailable, world({ m6: true }), { resume: true });
+    expect(await readTvCron(blobs)).toMatchObject({ ok: false, probesPending: true });
+
+    later(30);
+    const w = world({ m6: true });
+    await pass(blobs, w, { resume: true });
+    expect(w.calls.filter((url) => url === TF1 || url === M6)).toEqual([missing]);
+    expect((await readTvCron(blobs))?.probesPending).toBe(false);
+  });
 });
 
 describe('sondages des flux en reprise : un flux en échec ne bloque pas la file (LAST-137)', () => {
@@ -271,5 +312,21 @@ describe('sondages des flux en reprise : un flux en échec ne bloque pas la file
     const pass2 = await probeDirectStreams(catalog, pass1.snapshot, { ...options, fetch: probeFetch([], failing) });
     expect(pass2.snapshot.results[DEAD]).toEqual([1, T0 / 1000]);
     expect(pass2.snapshot.failed).toBeUndefined();
+  });
+
+  it('deux flux qui échouent toujours, une sonde par passe : la deuxième passe ne laisse aucun sondage en attente', async () => {
+    const SECOND_DEAD = 'https://dead.example/d.m3u8';
+    const twoDead = {
+      v: 1,
+      channels: [DEAD, SECOND_DEAD].map((url, index) => ({ id: `d${index}`, name: `d${index}`, url, country: 'FR', alternatives: [] })),
+    } as unknown as TvCatalog;
+    const failing = new Set([DEAD, SECOND_DEAD]);
+    const options = { probe: true, maxProbes: 1, now: () => T0 };
+    const pass1 = await probeDirectStreams(twoDead, undefined, { ...options, fetch: probeFetch([], failing) });
+    expect(pass1.pending).toBe(1);
+    const second: string[] = [];
+    const pass2 = await probeDirectStreams(twoDead, pass1.snapshot, { ...options, fetch: probeFetch(second, failing) });
+    expect(second).toEqual([SECOND_DEAD]);
+    expect(pass2.pending).toBe(0);
   });
 });

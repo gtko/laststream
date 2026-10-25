@@ -61,13 +61,18 @@ export async function recordTvRun(
   const finishedMs = now();
   const finishedAt = new Date(finishedMs).toISOString();
   const durationMs = Math.max(0, finishedMs - startedMs);
-  // L'état par source n'existe que pour les passes qui tracent les sources : sans trace, la forme v1 reste inchangée.
-  let fields: Partial<StoredCron> = {};
   // Une reprise qui ne fait que finir les sondages n'exécute aucune source : la trace porte alors les sondes seules.
-  if (Object.keys(trace.sources).length > 0 || trace.probes !== undefined) {
-    const previous = await readTvCron(blobs).catch(() => null);
-    const sources = applyOutcomes(previous?.sources, trace.sources, finishedAt);
-    fields = { sources, ...(trace.probes === undefined ? {} : { probes: trace.probes }), ...(trace.probesPending === undefined ? {} : { probesPending: trace.probesPending }) };
+  // Sans source tracée (construction levée avant), l'état précédent est reporté : sources et sondages restants restent dus.
+  const previous = await readTvCron(blobs).catch(() => null);
+  const traced = Object.keys(trace.sources).length > 0 || trace.probes !== undefined;
+  const sources = traced || previous?.sources !== undefined ? applyOutcomes(previous?.sources, trace.sources, finishedAt) : undefined;
+  const probesPending = trace.probesPending ?? previous?.probesPending;
+  const fields: Partial<StoredCron> = {
+    ...(sources === undefined ? {} : { sources }),
+    ...(trace.probes === undefined ? {} : { probes: trace.probes }),
+    ...(probesPending === undefined ? {} : { probesPending }),
+  };
+  if (sources !== undefined) {
     for (const id of alertsOf(sources, trace.sources)) {
       reportWarning('tv_source_consecutive_failures', { source: id, consecutiveFailures: sources[id]?.consecutiveFailures ?? 0, kind });
     }

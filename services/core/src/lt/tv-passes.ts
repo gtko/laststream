@@ -56,12 +56,19 @@ export interface PassPlan {
   health: boolean;
 }
 
-const failing = (state: SourceState | undefined): boolean => (state?.consecutiveFailures ?? 0) > 0;
+/**
+ * Source à reprendre : en échec, sans dépasser le seuil d'alerte. Au-delà, la reprise l'abandonne et seule la passe
+ * complète de 6 h la retente (sinon une source morte relancerait la reprise toutes les 30 min).
+ */
+const failing = (state: SourceState | undefined): boolean => {
+  const failures = state?.consecutiveFailures ?? 0;
+  return failures > 0 && failures <= ALERT_AFTER_FAILURES;
+};
 
 /**
- * Plan de la reprise : seules les sources en échec, et les sondages restants. Rien (undefined) si tout est à jour, ou
- * si aucun état n'existe encore (la passe complète de 6 h l'établit). Les contrôles de santé ne tournent jamais en
- * reprise : ils ont leur propre cadence (ttl).
+ * Plan de la reprise : seules les sources en échec (au plus ALERT_AFTER_FAILURES échecs d'affilée), et les sondages
+ * restants. Rien (undefined) si tout est à jour, ou si aucun état n'existe encore (la passe complète de 6 h l'établit).
+ * Les contrôles de santé ne tournent jamais en reprise : ils ont leur propre cadence (ttl).
  */
 export function planResume(states: SourceStates | undefined, epgUrls: readonly string[], probesPending: boolean): PassPlan | undefined {
   if (states === undefined) return undefined;
