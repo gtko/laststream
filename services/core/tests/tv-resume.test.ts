@@ -1,7 +1,8 @@
 import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TvBlobStore } from '../src/lt/tv-build.js';
-import { TV_KEYS } from '../src/lt/tv-build.js';
+import { probeDirectStreams, TV_KEYS } from '../src/lt/tv-build.js';
+import type { TvCatalog } from '../src/lt/tv-catalog.js';
 import { alertsOf, applyOutcomes, epgSourceId, isFullPassWindow, planResume, type SourceOutcome } from '../src/lt/tv-passes.js';
 import { setWarningReporter } from '../src/observability/report.js';
 import { readTvCron, runTvPass } from '../src/platform/workers/tv-store.js';
@@ -224,5 +225,51 @@ describe('passes du cron TV (stockage et sources simulés)', () => {
     await pass(blobs, w, { resume: true });
     expect(w.calls.filter((url) => url === TF1 || url === M6)).toEqual([missing]);
     expect((await readTvCron(blobs))?.probesPending).toBe(false);
+  });
+});
+
+describe('sondages des flux en reprise : un flux en échec ne bloque pas la file (LAST-137)', () => {
+  const DEAD = 'https://dead.example/a.m3u8';
+  const LIVE_B = 'https://live.example/b.m3u8';
+  const LIVE_C = 'https://live.example/c.m3u8';
+  const catalog = {
+    v: 1,
+    channels: [DEAD, LIVE_B, LIVE_C].map((url, index) => ({ id: `c${index}`, name: `c${index}`, url, country: 'FR', alternatives: [] })),
+  } as unknown as TvCatalog;
+
+  /** Sondes simulées : les URL de `failing` répondent 500, les autres avec CORS. `calls` garde l'ordre des requêtes. */
+  const probeFetch = (calls: string[], failing: ReadonlySet<string>): typeof fetch =>
+    ((input: Parameters<typeof fetch>[0]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (failing.has(url)) return Promise.resolve(new Response('erreur', { status: 500 }));
+      return Promise.resolve(new Response('ok', { headers: { 'access-control-allow-origin': '*' } }));
+    }) as typeof fetch;
+
+  it('la passe suivante sonde les URL jamais sondées avant celle qui échoue, puis tourne sur les échecs', async () => {
+    const failing = new Set([DEAD]);
+    const options = { probe: true, maxProbes: 1, now: () => T0 };
+    const first: string[] = [];
+    const pass1 = await probeDirectStreams(catalog, undefined, { ...options, fetch: probeFetch(first, failing) });
+    expect(first).toEqual([DEAD]);
+    expect(pass1.snapshot.failed).toEqual({ [DEAD]: T0 / 1000 });
+
+    const second: string[] = [];
+    const pass2 = await probeDirectStreams(catalog, pass1.snapshot, { ...options, fetch: probeFetch(second, failing) });
+    expect(second).toEqual([LIVE_B]);
+
+    const third: string[] = [];
+    await probeDirectStreams(catalog, pass2.snapshot, { ...options, fetch: probeFetch(third, failing) });
+    expect(third).toEqual([LIVE_C]);
+  });
+
+  it('un flux qui répond après un échec n\'a plus d\'échec enregistré', async () => {
+    const failing = new Set([DEAD]);
+    const options = { probe: true, maxProbes: 3, now: () => T0 };
+    const pass1 = await probeDirectStreams(catalog, undefined, { ...options, fetch: probeFetch([], failing) });
+    failing.clear();
+    const pass2 = await probeDirectStreams(catalog, pass1.snapshot, { ...options, fetch: probeFetch([], failing) });
+    expect(pass2.snapshot.results[DEAD]).toEqual([1, T0 / 1000]);
+    expect(pass2.snapshot.failed).toBeUndefined();
   });
 });

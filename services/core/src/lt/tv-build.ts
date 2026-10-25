@@ -92,6 +92,8 @@ export interface EpgSnapshot {
 export interface ProbeSnapshot {
   v: 1;
   results: Record<string, [0 | 1, number]>;
+  /** Sondes en échec (LAST-137) : url → date de la dernière tentative en s. En reprise, les URL jamais tentées passent avant. */
+  failed?: Record<string, number>;
   /** Test de santé des flux (tv-health.ts) : url → [échecs consécutifs, date du dernier contrôle en s]. */
   health?: HealthMap;
 }
@@ -355,11 +357,18 @@ export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnap
     urls.add(channel.url);
     for (const alt of channel.alternatives.slice(0, 2)) urls.add(alt.url);
   }
+  // Échecs de sondage (LAST-137) : url → date de la dernière tentative. Ils ne vont pas dans `results` (inconnu ≠ non).
+  const attempts = new Map<string, number>();
+  for (const [url, at] of Object.entries(previous?.failed ?? {})) if (urls.has(url) && results[url] === undefined) attempts.set(url, at);
   let probed = 0;
   let pending = 0;
   if (options.probe === true) {
     const all = [...urls].filter((url) => url.startsWith('https://') && results[url] === undefined);
-    const todo = all.slice(0, options.maxProbes ?? 800);
+    // Les URL jamais sondées passent avant les échecs, et ceux-ci du plus anciennement tentés au plus récent : un flux
+    // en échec en tête de liste ne doit pas occuper le budget à chaque passe et priver le reste du catalogue de sondes.
+    const untried = all.filter((url) => !attempts.has(url));
+    const retry = all.filter((url) => attempts.has(url)).sort((a, b) => (attempts.get(a) ?? 0) - (attempts.get(b) ?? 0));
+    const todo = [...untried, ...retry].slice(0, options.maxProbes ?? 800);
     const origin = options.probeOrigin ?? 'https://laststream.gtux-prog.workers.dev';
     const deadline = Date.now() + (options.probeBudgetMs ?? 5 * 60_000);
     let next = 0;
@@ -368,7 +377,12 @@ export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnap
         const url = todo[next++];
         if (url === undefined) break;
         const direct = await probeDirect(fetcher, url, origin);
-        if (direct !== undefined) results[url] = [direct ? 1 : 0, nowSec];
+        if (direct === undefined) {
+          attempts.set(url, nowSec);
+        } else {
+          results[url] = [direct ? 1 : 0, nowSec];
+          attempts.delete(url);
+        }
       }
     };
     await Promise.all(Array.from({ length: 8 }, () => worker()));
@@ -381,7 +395,8 @@ export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnap
     return entry === undefined ? undefined : entry[0] === 1;
   };
   for (const channel of catalog.channels) tagDirect(channel, known);
-  return { snapshot: { v: 1, results }, probed, pending };
+  const failed = Object.fromEntries(attempts);
+  return { snapshot: attempts.size > 0 ? { v: 1, results, failed } : { v: 1, results }, probed, pending };
 }
 
 function tagDirect(channel: TvChannel, known: (url: string) => boolean | undefined): void {
