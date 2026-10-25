@@ -32,6 +32,7 @@ export const SHARED_LIMITS = {
   typing: { binding: 'RL_TYPING', periodSec: 10 },
   socialUpgrade: { binding: 'RL_30_PER_MIN', periodSec: 60 },
   partyUpgrade: { binding: 'RL_60_PER_MIN', periodSec: 60 },
+  partyAccountUpgrade: { binding: 'RL_30_PER_MIN', periodSec: 60 },
 } as const;
 
 export type SharedLimitName = keyof typeof SHARED_LIMITS;

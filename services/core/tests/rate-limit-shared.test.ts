@@ -147,18 +147,25 @@ describe('mises à niveau WebSocket', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const now = Date.now();
     const keys: string[] = [];
-    const shared: SharedLimits = {
-      partyUpgrade: {
-        limit: ({ key }) => {
-          keys.push(key);
-          return Promise.resolve({ success: !key.includes(':account:') });
-        },
+    const record = (success: (key: string) => boolean): LimitBinding => ({
+      limit: ({ key }) => {
+        keys.push(key);
+        return Promise.resolve({ success: success(key) });
       },
+    });
+    const shared: SharedLimits = {
+      partyUpgrade: record(() => true),
+      partyAccountUpgrade: record((key) => !key.includes(':account:')),
     };
     const { ticket } = signTicket(ROOM, identity, now, SECRET);
     const res = await handlePartyWs(upgrade(`https://worker.test/party/${ROOM}/ws?ticket=${ticket}`), { party, secret: SECRET, ip: '10.1.0.2', now, shared });
     expect(res.status).toBe(429);
-    expect(keys).toEqual(['partyUpgrade:ip:10.1.0.2', 'partyUpgrade:account:compte-1']);
+    expect(keys).toEqual(['partyUpgrade:ip:10.1.0.2', 'partyAccountUpgrade:account:compte-1']);
+  });
+
+  it('salon : le plafond par compte est relié à la liaison à 30 par minute', () => {
+    expect(SHARED_LIMITS.partyAccountUpgrade.binding).toBe('RL_30_PER_MIN');
+    expect(SHARED_LIMITS.partyUpgrade.binding).toBe('RL_60_PER_MIN');
   });
 
   it('salon sans liaison : la Map locale refuse au-delà de 60 mises à niveau par minute et par IP', async () => {

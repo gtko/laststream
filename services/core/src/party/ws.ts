@@ -22,7 +22,7 @@ const rateLimited = (retryAfterSec: number): Response =>
 
 /** Mises à niveau par minute : par IP (avant toute vérification) puis par compte ou invité (après) ; au-delà : 429. */
 const ipUpgrades = sharedLimiterFor('partyUpgrade', 60, 60_000);
-const accountUpgrades = sharedLimiterFor('partyUpgrade', 30, 60_000);
+const accountUpgrades = sharedLimiterFor('partyAccountUpgrade', 30, 60_000);
 
 /**
  * Connexion WebSocket d'un salon. Deux formes, traitées avant l'application Hono (une réponse 101 ne doit passer par
