@@ -1,4 +1,4 @@
-Polices incluses : Sora et Plus Jakarta Sans (sous-ensembles latins auto-hébergés
+Polices incluses : Sora, Plus Jakarta Sans et Inter (sous-ensembles latins auto-hébergés
 dans ce dossier, fichiers *.woff2).
 
 Sora
@@ -6,6 +6,9 @@ Copyright 2019 The Sora Project Authors (https://github.com/sora-xor/sora-font)
 
 Plus Jakarta Sans
 Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)
+
+Inter (variable, axes opsz et wght)
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 
 Ces polices sont distribuées sous la licence SIL Open Font License, version 1.1,
 reproduite ci-dessous (texte d'origine en anglais, qui fait foi).

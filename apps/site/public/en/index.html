@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Laststream - Your cinema, everywhere</title>
-<meta name="description" content="Laststream brings together your catalog, live TV, a built-in player, profiles and watch party in a single app. Windows, Android and web. Invitation only.">
+<meta name="description" content="Laststream brings together your catalog, live TV, a built-in player, profiles, friends and watch party in a single app. Windows, Android and web. Invitation only.">
 <meta name="theme-color" content="#0c0b11">
+<meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://laststream-www.gtux-prog.workers.dev/en/">
 <link rel="alternate" hreflang="fr" href="https://laststream-www.gtux-prog.workers.dev/">
 <link rel="alternate" hreflang="en" href="https://laststream-www.gtux-prog.workers.dev/en/">
@@ -18,7 +19,7 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:locale:alternate" content="fr_FR">
 <meta property="og:title" content="Laststream - Your cinema, everywhere">
-<meta property="og:description" content="Catalog, live TV, built-in player, profiles, watch party. On Windows, Android and in your browser.">
+<meta property="og:description" content="Catalog, live TV, built-in player, profiles, friends and watch party. On Windows, Android and in your browser.">
 <meta property="og:url" content="https://laststream-www.gtux-prog.workers.dev/en/">
 <meta property="og:image" content="https://laststream-www.gtux-prog.workers.dev/assets/og.png">
 <meta property="og:image:width" content="1200">
@@ -26,12 +27,12 @@
 <meta property="og:image:alt" content="Laststream logo and the tagline Your cinema, everywhere">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Laststream - Your cinema, everywhere">
-<meta name="twitter:description" content="Catalog, live TV, built-in player, profiles, watch party.">
+<meta name="twitter:description" content="Catalog, live TV, built-in player, profiles, friends and watch party.">
 <meta name="twitter:image" content="https://laststream-www.gtux-prog.workers.dev/assets/og.png">
 <meta name="twitter:image:alt" content="Laststream logo and the tagline Your cinema, everywhere">
-<link rel="preload" href="/assets/fonts/sora-latin-800.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/assets/fonts/jakarta-latin-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/style.css">
+<link rel="preload" href="/assets/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/home.css">
+<script>document.documentElement.classList.add('js');</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -39,7 +40,7 @@
     {
       "@type": "SoftwareApplication",
       "name": "Laststream",
-      "description": "Catalog, live TV, built-in player, profiles and watch party in a single app. Windows, Android and browser.",
+      "description": "Catalog, live TV, built-in player, profiles, friends and watch party in a single app. Windows, Android and browser.",
       "url": "https://laststream-www.gtux-prog.workers.dev/en/",
       "image": "https://laststream-www.gtux-prog.workers.dev/assets/og.png",
       "operatingSystem": "Windows, Android, Web",
@@ -69,166 +70,192 @@
 <body>
 <a class="skip" href="#contenu">Skip to content</a>
 
-<header class="top">
-  <div class="wrap top-in">
-    <a class="brand" href="#top" aria-label="Laststream, home">
-      <img src="/assets/logo.svg" width="36" height="36" alt="">
+<header class="site-header" id="top">
+  <div class="header-inner">
+    <a class="brand" href="#top" aria-label="Laststream, back to top">
+      <img src="/assets/logo.svg" alt="" width="28" height="28">
       <span>Laststream</span>
     </a>
-    <nav class="nav" aria-label="Main navigation">
-      <a href="#fonctions">Features</a>
-      <a href="#comment">How it works</a>
-      <a href="#apercu">Preview</a>
-      <a href="#ensemble">Together</a>
-      <a href="#telecharger">Download</a>
-      <a href="#faq">FAQ</a>
-      <a href="/guides/">Guides</a>
+    <nav class="nav" id="nav" aria-label="Main navigation">
+      <ul>
+        <li><a href="#fonctions">Features</a></li>
+        <li><a href="#etapes">How it works</a></li>
+        <li><a href="#apercu">Preview</a></li>
+        <li><a href="#ensemble">Together</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="/guides/">Guides</a></li>
+      </ul>
+      <a class="btn btn-primary btn-sm nav-cta" href="#telecharger">Download</a>
     </nav>
-    <a class="btn btn-sm" href="#telecharger">Download</a>
-    <nav class="lang" aria-label="Language">
-      <a href="/" hreflang="fr">FR</a>
-      <a href="/en/" hreflang="en" aria-current="page">EN</a>
-    </nav>
+    <div class="header-end">
+      <nav class="lang" aria-label="Language">
+        <a href="/" hreflang="fr" lang="fr">FR</a>
+        <a href="/en/" hreflang="en" lang="en" aria-current="page">EN</a>
+      </nav>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="nav" data-open="Open menu" data-close="Close menu">
+        <span class="sr-only">Open menu</span>
+        <span class="menu-bars" aria-hidden="true"><i></i><i></i></span>
+      </button>
+    </div>
   </div>
 </header>
 
 <main id="contenu">
-  <section class="hero" id="top">
-    <div class="glow" aria-hidden="true"></div>
-    <div class="wrap hero-in">
-      <div class="hero-text">
-        <p class="eyebrow">Invitation only</p>
-        <h1>Your cinema,<br><span class="accent">everywhere.</span></h1>
-        <p class="lead">A cinema-style home screen, sources sorted for you, and playback that starts on its own. Profiles for the whole family, and your progress follows you from one screen to the next.</p>
-        <div class="cta">
-          <a class="btn btn-lg" id="hero-cta" href="#telecharger">Download Laststream</a>
-          <a class="btn btn-ghost btn-lg" href="#comment">How it works</a>
-        </div>
-        <p class="hero-note">Windows, Android and browser. Laststream hosts no content: it reads the extensions you configure.</p>
-        <p class="compat-pill">Works with Stremio add-ons</p>
+
+  <!-- HERO -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-copy">
+      <p class="eyebrow hero-in" style="--d:0"><span class="dot" aria-hidden="true"></span>Invitation only</p>
+      <h1 id="hero-title" class="hero-title">
+        <span class="hero-line"><span class="hero-word" style="--d:1">Your</span> <span class="hero-word" style="--d:2">cinema,</span></span>
+        <span class="hero-line"><span class="hero-word grad" style="--d:3">everywhere.</span></span>
+      </h1>
+      <p class="lead hero-in" style="--d:5">A cinema-style home screen, sources sorted for you, and playback that starts on its own. Profiles for the whole family, your friends close at hand, and your progress follows you from one screen to the next.</p>
+      <div class="actions hero-in" style="--d:6">
+        <a class="btn btn-primary" id="hero-cta" href="#telecharger">Download Laststream</a>
+        <a class="btn btn-ghost" href="#etapes">How it works <span aria-hidden="true">→</span></a>
       </div>
-      <div class="hero-visual">
-        <div class="hero-window">
-          <picture>
-            <source srcset="/assets/shots/home-600.webp 600w, /assets/shots/home-1200.webp 1200w, /assets/shots/home.webp 2400w" sizes="(min-width: 960px) 560px, calc(100vw - 32px)">
-            <img src="/assets/shots/home-1200.webp" width="1200" height="750" alt="Laststream home screen, with a large featured poster" loading="eager" fetchpriority="high" decoding="async">
-          </picture>
-        </div>
-        <div class="hero-phone">
-          <picture>
-            <source srcset="/assets/shots/mobile-home-600.webp 600w, /assets/shots/mobile-home.webp 1170w" sizes="(min-width: 960px) 180px, 120px">
-            <img src="/assets/shots/mobile-home-600.webp" width="600" height="1298" alt="Laststream home screen on a phone" loading="lazy" decoding="async">
-          </picture>
-        </div>
+      <p class="fineprint hero-in" style="--d:7">Windows, Android and browser. Laststream hosts no content: it reads the extensions you configure. Works with Stremio add-ons.</p>
+    </div>
+    <div class="hero-shot-wrap hero-in" style="--d:8">
+      <div class="hero-shot" data-tilt>
+        <img src="/assets/shots/home-rows-1200.webp" srcset="/assets/shots/home-rows-600.webp 600w, /assets/shots/home-rows-1200.webp 1200w, /assets/shots/home-rows.webp 2400w" sizes="(min-width: 1200px) 1100px, 92vw" width="1200" height="750" alt="Laststream home screen: rows of movie and series posters, with the Top 10 of the day." fetchpriority="high" decoding="async">
       </div>
     </div>
   </section>
 
-  <section class="band" aria-label="In brief">
+  <!-- NUMBERS -->
+  <section class="stats" aria-label="Laststream in numbers">
+    <ul class="wrap stats-grid">
+      <li data-reveal><span class="stat-num"><span class="count" data-to="15">15</span></span><span class="stat-label">features, nothing you don't need</span></li>
+      <li data-reveal style="--d:1"><span class="stat-num"><span class="count" data-to="3">3</span></span><span class="stat-label">screens: Windows, Android, browser</span></li>
+      <li data-reveal style="--d:2"><span class="stat-num"><span class="count" data-to="4">4</span></span><span class="stat-label">invitation links per account</span></li>
+      <li data-reveal style="--d:3"><span class="stat-num"><span class="count" data-to="0" data-from="100">0</span></span><span class="stat-label">content hosted, ever</span></li>
+    </ul>
+  </section>
+
+  <!-- STORY (signature) -->
+  <section class="story" id="experience" aria-labelledby="story-title">
+    <div class="wrap story-head">
+      <p class="eyebrow">The experience</p>
+      <h2 id="story-title" class="display fill">Made for the couch. And for your pocket.</h2>
+    </div>
+    <div class="story-grid" data-story>
+      <div class="story-stage" aria-hidden="true">
+        <div class="stage-inner">
+          <div class="laptop" data-laptop>
+            <div class="laptop-lid">
+              <div class="laptop-display">
+                <img class="screen is-active" data-screen="0" src="/assets/shots/home-1200.webp" width="1200" height="750" alt="">
+                <img class="screen" data-screen="1" src="/assets/shots/title-1200.webp" width="1200" height="750" alt="" loading="lazy">
+                <img class="screen" data-screen="2" src="/assets/shots/kids-1200.webp" width="1200" height="750" alt="" loading="lazy">
+                <span class="glare"></span>
+              </div>
+            </div>
+            <div class="laptop-base"><span></span></div>
+          </div>
+          <div class="phone" data-phone>
+            <div class="phone-display">
+              <img src="/assets/shots/mobile-home-600.webp" width="600" height="1298" alt="" loading="lazy">
+              <span class="island"></span>
+            </div>
+          </div>
+        </div>
+        <ol class="story-dots"><li class="is-active"></li><li></li><li></li><li></li></ol>
+      </div>
+
+      <div class="story-steps">
+        <article class="story-step is-active" data-step="0">
+          <div class="step-copy">
+            <p class="step-kicker">01 · Home</p>
+            <h3>A cinema-style home screen.</h3>
+            <p>A large featured poster, rows to browse, trailers, collections. Open the app, pick something.</p>
+            <img class="step-shot" src="/assets/shots/home-600.webp" width="600" height="375" alt="Laststream home screen with a large featured poster." loading="lazy">
+          </div>
+        </article>
+        <article class="story-step" data-step="1">
+          <div class="step-copy">
+            <p class="step-kicker">02 · Title page and sources</p>
+            <h3>A clear title page. The best source, on its own.</h3>
+            <p>Synopsis, ratings, availability. Sources are sorted by language, quality then size, and Laststream starts the one that plays best on your connection.</p>
+            <img class="step-shot" src="/assets/shots/title-600.webp" width="600" height="375" alt="A title page with synopsis, ratings and the Play button." loading="lazy">
+          </div>
+        </article>
+        <article class="story-step" data-step="2">
+          <div class="step-copy">
+            <p class="step-kicker">03 · Family</p>
+            <h3>A profile for everyone. Even the youngest.</h3>
+            <p>A kids profile protected by a code, content filtered by age and its own recommendations.</p>
+            <img class="step-shot" src="/assets/shots/kids-600.webp" width="600" height="375" alt="Léo's kids profile with its recommendations." loading="lazy">
+          </div>
+        </article>
+        <article class="story-step" data-step="3">
+          <div class="step-copy">
+            <p class="step-kicker">04 · Everywhere</p>
+            <h3>Your progress follows you, from PC to phone.</h3>
+            <p>Playback progress, lists and settings are synced across Windows, Android and the browser. And for the train, download your titles for offline viewing.</p>
+            <img class="step-shot step-shot-phone" src="/assets/shots/mobile-home-600.webp" width="600" height="1298" alt="Laststream home screen on a phone." loading="lazy">
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section" id="fonctions" aria-labelledby="fonctions-title">
     <div class="wrap">
-      <ul class="band-in">
-        <li><strong>3 screens</strong> Windows, Android, browser</li>
-        <li><strong>Sorted sources</strong> language, quality, size</li>
-        <li><strong>Auto playback</strong> the best source for your connection</li>
-        <li><strong>For the family</strong> profiles and kids mode</li>
+      <div class="section-head">
+        <p class="eyebrow">Features</p>
+        <h2 id="fonctions-title" class="display fill">Everything you need. Nothing you don't.</h2>
+        <p class="lead">An interface built for the couch as much as for your phone, fast from the moment you open it.</p>
+      </div>
+      <ul class="bento">
+        <li class="card card-hero" data-reveal>
+          <div class="card-text">
+            <span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>
+            <h3>A cinema-style home screen</h3>
+            <p>A large featured poster, rows to browse, trailers, collections and a clear page for each title.</p>
+          </div>
+          <img src="/assets/shots/movies-600.webp" srcset="/assets/shots/movies-600.webp 600w, /assets/shots/movies-1200.webp 1200w" sizes="(min-width: 1000px) 560px, 90vw" width="1200" height="750" alt="Rows of movies in Laststream." loading="lazy">
+        </li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h11M4 18h6"/></svg></span><h3>Sources, sorted for you</h3><p>Sorted by language, then quality, then size. You can see them all and pick one by hand.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span><h3>Automatic playback</h3><p>Laststream measures your connection and starts the best source that works, on its own.</p></li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 2l4 4 4-4"/></svg></span><h3>Live TV and guide</h3><p>Switch between your channels and check the program guide, in one tap.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/></svg></span><h3>A real built-in player</h3><p>mpv or libVLC: audio tracks, subtitles, picture-in-picture and a mini player.</p></li>
+        <li class="card card-wide" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 20c1-3 3.5-5 6-5 1.6 0 3 .7 4 1.8 1-1.1 2.4-1.8 4-1.8 2.5 0 5 2 6 5"/></svg></span><h3>Friends, messages and watch party</h3><p>Add your friends, chat with them, follow their activity feed, share your library and watch together with synchronized playback. <a class="card-link" href="#ensemble">See Together <span aria-hidden="true">→</span></a></p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 19c1-3 3.5-5 6-5s5 2 6 5M15 19c.5-2 1.5-3.5 3-3.5S20.5 17 21 19"/></svg></span><h3>Profiles and kids mode</h3><p>One profile per person, and a kids profile protected by a code.</p></li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9l-4.7 1.8L12 15.5l-1.8-4.7L5.5 9l4.7-1.3z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg></span><h3>AI recommendations</h3><p>A daily list for each profile, based on what you've watched and liked.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h3v3H8z"/></svg></span><h3>Release calendar</h3><p>Upcoming releases and TV shows, day by day, so you don't miss a thing.</p></li>
+        <li class="card card-wide" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M4 19h16"/></svg></span><h3>Offline downloads</h3><p>Download your titles before you leave and watch them without a connection, on the train or on vacation.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span><h3>Viewing statistics</h3><p>Time watched, favorite genres, monthly trends. Everything stays on your account.</p></li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z"/></svg></span><h3>Themes that fit you</h3><p>Several ready-made themes and a customizable accent color.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3"/><path d="M18 3v4h-4M6 21v-4h4"/></svg></span><h3>Sync</h3><p>Progress, lists and settings follow you across PC, phone and browser.</p></li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/></svg></span><h3>Your extensions, your rules</h3><p>Laststream hosts nothing: you add your extensions, and the app reads them with built-in protections.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg></span><h3>Works with Stremio</h3><p>Paste an add-on's URL: its catalogs and sources get added.</p></li>
       </ul>
     </div>
   </section>
 
-  <section class="sec" id="fonctions" aria-labelledby="h-fonctions">
+  <!-- STEPS -->
+  <section class="section section-alt" id="etapes" aria-labelledby="etapes-title">
     <div class="wrap">
-      <p class="kicker rv">Features</p>
-      <h2 id="h-fonctions" class="rv">Everything you need, nothing you don't</h2>
-      <p class="sec-lead rv">An interface built for the couch as much as for your phone, fast from the moment you open it.</p>
-      <ul class="cards">
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg>
-          <h3>A cinema-style home screen</h3>
-          <p>A large featured poster, rows to browse, trailers, collections and a clear page for each title.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h11M4 17h7"/><path d="M18 14l3 3-3 3"/></svg>
-          <h3>Sources, sorted for you</h3>
-          <p>Sources are sorted by language, then quality, then size. You can see them all and pick one by hand if you prefer.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>
-          <h3>Automatic playback</h3>
-          <p>Laststream measures your connection and starts the first source that works. No manual testing, no interruptions.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-          <h3>Live TV and guide</h3>
-          <p>Switch between your channels, check the program guide and find what's on right now, in one tap.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M7 21h10M9 8l6 3-6 3z"/></svg>
-          <h3>A real built-in player</h3>
-          <p>Native mpv or libVLC player: choose audio tracks and subtitles, picture-in-picture and a mini player so you can browse without stopping playback.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M17 14.2c2.4.2 4 2 4 4.3"/></svg>
-          <h3>Profiles and kids mode</h3>
-          <p>One profile per person and a kids profile protected by a code, with content filtered by age.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>
-          <h3>AI recommendations</h3>
-          <p>A daily list for each profile, based on what you've watched and liked, so you know what to watch tonight.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-          <h3>Viewing statistics</h3>
-          <p>A dedicated page per profile: time watched, favorite genres, monthly trends. Everything stays on your account.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8.5" cy="10" r="1.2"/><circle cx="12" cy="7.5" r="1.2"/><circle cx="15.5" cy="10" r="1.2"/><path d="M12 21c-1.5 0-2-1.2-1.3-2.3.8-1.2 2.3-1.2 3.3-.7 1.2.6 3 .3 3-1.5"/></svg>
-          <h3>Themes that fit you</h3>
-          <p>Several ready-made themes and a customizable accent color, for an app that feels like yours.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="9" rx="1.5"/><rect x="17" y="9" width="4.5" height="9" rx="1.2"/><path d="M6 19h6"/></svg>
-          <h3>Multi-device sync</h3>
-          <p>Your playback progress, lists and settings follow you across PC, phone and browser.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>
-          <h3>Your extensions, your rules</h3>
-          <p>Laststream hosts nothing: you add the extensions you choose, and the app reads them with built-in protections.</p>
-        </li>
-        <li class="card rv">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/></svg>
-          <h3>Works with Stremio add-ons</h3>
-          <p>Your Stremio add-ons work: paste an add-on's URL, and its catalogs and sources get added.</p>
-        </li>
-        <li class="card rv">
-          <span class="soon">Soon</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v10H9l-5 4z"/><path d="M8 10h8M8 13h5"/></svg>
-          <h3>Watch party and friends</h3>
-          <p>Watch at the same time as your friends: synchronized playback, public rooms and shared libraries.</p>
-        </li>
-      </ul>
-    </div>
-  </section>
-
-  <section class="sec alt" id="comment" aria-labelledby="h-comment">
-    <div class="wrap">
-      <p class="kicker rv">Getting started</p>
-      <h2 id="h-comment" class="rv">How it works</h2>
-      <p class="sec-lead rv">Three steps, a few minutes.</p>
+      <div class="section-head">
+        <p class="eyebrow">Getting started</p>
+        <h2 id="etapes-title" class="display fill">Three steps. A few minutes.</h2>
+      </div>
       <ol class="steps">
-        <li class="step rv">
-          <span class="step-n" aria-hidden="true">1</span>
+        <li class="step" data-reveal>
+          <span class="step-num" aria-hidden="true">1</span>
           <h3>Get an invitation</h3>
           <p>A friend who is already a member sends you their referral link. Open it, pick a username, and your account is created.</p>
         </li>
-        <li class="step rv">
-          <span class="step-n" aria-hidden="true">2</span>
+        <li class="step" data-reveal style="--d:1">
+          <span class="step-num" aria-hidden="true">2</span>
           <h3>Install and add your sources</h3>
           <p>Download the app, then add the extensions you choose. Laststream provides no content: it reads whatever you configure.</p>
         </li>
-        <li class="step rv">
-          <span class="step-n" aria-hidden="true">3</span>
+        <li class="step" data-reveal style="--d:2">
+          <span class="step-num" aria-hidden="true">3</span>
           <h3>Hit play</h3>
           <p>Pick a title: sources are sorted for you and the best one starts automatically, based on your connection.</p>
         </li>
@@ -236,235 +263,213 @@
     </div>
   </section>
 
-  <section class="sec" id="apercu" aria-labelledby="h-apercu">
+  <!-- PREVIEW -->
+  <section class="section" id="apercu" aria-labelledby="apercu-title">
     <div class="wrap">
-      <p class="kicker rv">Preview</p>
-      <h2 id="h-apercu" class="rv">A look at the interface</h2>
-      <p class="sec-lead rv">Real screenshots of the app: dark, readable, focused on the image. Click to enlarge.</p>
-      <div class="shots">
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/title.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/title-600.webp 600w, /assets/shots/title-1200.webp 1200w, /assets/shots/title.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/title-1200.webp" width="1200" height="750" alt="A movie page in Laststream: synopsis, ratings and the Play button" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>A clear page for each title</strong> Synopsis, ratings, availability and the Play button, all in one place.</figcaption>
-        </figure>
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/home-rows.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/home-rows-600.webp 600w, /assets/shots/home-rows-1200.webp 1200w, /assets/shots/home-rows.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/home-rows-1200.webp" width="1200" height="750" alt="Poster rows and Top 10 on the Laststream home screen" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>A cinema-style home screen</strong> Poster rows to browse, with the Top 10 of the day.</figcaption>
-        </figure>
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/series.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/series-600.webp 600w, /assets/shots/series-1200.webp 1200w, /assets/shots/series.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/series-1200.webp" width="1200" height="750" alt="Popular series in Laststream, with new-season badges and a Top 10" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>Popular series</strong> New-season badges and the weekly top 10, row by row.</figcaption>
-        </figure>
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/explore.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/explore-600.webp 600w, /assets/shots/explore-1200.webp 1200w, /assets/shots/explore.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/explore-1200.webp" width="1200" height="750" alt="Discover page: themed picks and filters by genre, decade or country" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>Discover</strong> Themed picks and filters by genre, decade, country or streaming service.</figcaption>
-        </figure>
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/settings.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/settings-600.webp 600w, /assets/shots/settings-1200.webp 1200w, /assets/shots/settings.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/settings-1200.webp" width="1200" height="750" alt="Settings, Appearance section: theme palettes and accent color" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>Themes</strong> Ready-made themes and a customizable accent color.</figcaption>
-        </figure>
-        <figure class="shot rv">
-          <a class="shot-frame" href="/assets/shots/kids.webp" data-lightbox>
-            <picture>
-              <source srcset="/assets/shots/kids-600.webp 600w, /assets/shots/kids-1200.webp 1200w, /assets/shots/kids.webp 2400w" sizes="(min-width: 900px) 360px, (min-width: 600px) 45vw, calc(100vw - 32px)">
-              <img src="/assets/shots/kids-1200.webp" width="1200" height="750" alt="Léo's kids profile in Laststream: filtered home screen titled « Pour toi, Léo »" loading="lazy" decoding="async">
-            </picture>
-          </a>
-          <figcaption><strong>Profiles and kids mode</strong> A kids profile for Léo, with its own recommendations.</figcaption>
-        </figure>
+      <div class="section-head">
+        <p class="eyebrow">Preview</p>
+        <h2 id="apercu-title" class="display fill">Focused on the picture.</h2>
+        <p class="lead">Real screenshots of the app: dark and readable. Click to enlarge.</p>
       </div>
     </div>
+    <ul class="gallery" data-gallery>
+      <li data-reveal><button type="button" class="shot" data-full="/assets/shots/title-1200.webp"><img src="/assets/shots/title-600.webp" width="600" height="375" alt="A title page: synopsis, ratings, availability and the Play button." loading="lazy"></button><p><strong>A clear title page</strong> Everything is there before you hit play.</p></li>
+      <li data-reveal style="--d:1"><button type="button" class="shot" data-full="/assets/shots/home-rows-1200.webp"><img src="/assets/shots/home-rows-600.webp" width="600" height="375" alt="Poster rows with the Top 10 of the day." loading="lazy"></button><p><strong>A cinema-style home screen</strong> Poster rows and the Top 10 of the day.</p></li>
+      <li data-reveal style="--d:2"><button type="button" class="shot" data-full="/assets/shots/series-1200.webp"><img src="/assets/shots/series-600.webp" width="600" height="375" alt="Popular series with new-season badges." loading="lazy"></button><p><strong>Popular series</strong> New-season badges and the weekly top 10.</p></li>
+      <li data-reveal style="--d:3"><button type="button" class="shot" data-full="/assets/shots/explore-1200.webp"><img src="/assets/shots/explore-600.webp" width="600" height="375" alt="Discover page with filters by genre, decade and country." loading="lazy"></button><p><strong>Discover</strong> Filters by genre, decade, country or service.</p></li>
+      <li data-reveal style="--d:4"><button type="button" class="shot" data-full="/assets/shots/settings-1200.webp"><img src="/assets/shots/settings-600.webp" width="600" height="375" alt="Theme and accent color settings." loading="lazy"></button><p><strong>Themes</strong> A customizable accent color.</p></li>
+    </ul>
+    <dialog class="lightbox" id="lightbox" aria-label="Enlarged screenshot">
+      <form method="dialog"><button class="lightbox-close" type="submit" aria-label="Close">×</button></form>
+      <img alt="">
+    </dialog>
   </section>
 
-  <section class="sec alt" id="famille" aria-labelledby="h-famille">
+  <!-- FAMILY -->
+  <section class="section section-alt" id="famille" aria-labelledby="famille-title">
     <div class="wrap split">
-      <div class="split-text">
-        <p class="kicker rv">For the family</p>
-        <h2 id="h-famille" class="rv">For the whole family</h2>
-        <p class="sec-lead rv">Everyone has their own profile. The youngest ones have theirs, well protected.</p>
-        <ul class="ticks rv">
-          <li><strong>One profile per person.</strong> Library, playback progress and settings are separate; extensions are shared.</li>
-          <li><strong>A kids profile.</strong> Content is filtered by age, based on age ratings when they are available.</li>
-          <li><strong>A code to get out.</strong> The kids profile opens neither extensions nor settings, and you can only leave it with the code.</li>
-          <li><strong>Recommendations for everyone.</strong> A daily list for each profile.</li>
+      <div class="split-copy">
+        <p class="eyebrow">For the family</p>
+        <h2 id="famille-title" class="display fill">For the whole family.</h2>
+        <p class="lead">Everyone has their own profile. The youngest ones have theirs, well protected.</p>
+        <ul class="checklist">
+          <li data-reveal><strong>One profile per person.</strong> Library, playback progress and settings are separate; extensions are shared.</li>
+          <li data-reveal style="--d:1"><strong>A kids profile.</strong> Content is filtered by age, based on age ratings when they are available.</li>
+          <li data-reveal style="--d:2"><strong>A code to get out.</strong> The kids profile opens neither extensions nor settings, and you can only leave it with the code.</li>
+          <li data-reveal style="--d:3"><strong>Recommendations for everyone.</strong> A daily list for each profile.</li>
         </ul>
       </div>
-      <div class="split-visual rv">
-        <div class="shot-frame">
-          <picture>
-            <source srcset="/assets/shots/kids-600.webp 600w, /assets/shots/kids-1200.webp 1200w, /assets/shots/kids.webp 2400w" sizes="(min-width: 900px) 540px, calc(100vw - 32px)">
-            <img src="/assets/shots/kids-1200.webp" width="1200" height="750" alt="Léo's kids profile in Laststream: filtered home screen titled « Pour toi, Léo »" loading="lazy" decoding="async">
-          </picture>
-        </div>
+      <figure class="split-media" data-reveal>
+        <img src="/assets/shots/kids-1200.webp" srcset="/assets/shots/kids-600.webp 600w, /assets/shots/kids-1200.webp 1200w" sizes="(min-width: 1000px) 600px, 92vw" width="1200" height="750" alt="Léo's kids profile, with its own recommendations." loading="lazy">
+        <figcaption>A kids profile for Léo, with its own recommendations.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- INVITATIONS -->
+  <section class="section" id="invitations" aria-labelledby="invit-title">
+    <div class="wrap split split-rev">
+      <div class="split-copy">
+        <p class="eyebrow">By invitation</p>
+        <h2 id="invit-title" class="display fill">A circle that grows by word of mouth.</h2>
+        <p class="lead">You can't sign up freely: each account has 4 referral links to give away.</p>
+        <ul class="checklist">
+          <li data-reveal><strong>4 links per account.</strong> You'll find them in Settings, under "My invitations".</li>
+          <li data-reveal style="--d:1"><strong>Clear tracking.</strong> Each link is free, sent or used. You can copy it, share it or revoke it.</li>
+          <li data-reveal style="--d:2"><strong>No link yet?</strong> Ask the person who told you about Laststream.</li>
+        </ul>
+      </div>
+      <div class="invites" data-reveal aria-hidden="true">
+        <p class="invites-title">My invitations</p>
+        <ul>
+          <li><span class="inv-n">Link 1</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Free</span></li>
+          <li><span class="inv-n">Link 2</span><code>laststream…/?invite=••••</code><span class="pill pill-sent">Sent</span></li>
+          <li><span class="inv-n">Link 3</span><code>Link used</code><span class="pill pill-used">Used</span></li>
+          <li><span class="inv-n">Link 4</span><code>laststream…/?invite=••••</code><span class="pill pill-free">Free</span></li>
+        </ul>
       </div>
     </div>
   </section>
 
-  <section class="sec" id="invitation" aria-labelledby="h-invit">
-    <div class="wrap split rev">
-      <div class="split-text">
-        <p class="kicker rv">By invitation</p>
-        <h2 id="h-invit" class="rv">A circle that grows by word of mouth</h2>
-        <p class="sec-lead rv">You can't sign up freely: each account has 4 referral links to give away.</p>
-        <ul class="ticks rv">
-          <li><strong>4 links per account.</strong> You'll find them in Settings, under "My invitations".</li>
-          <li><strong>Clear tracking.</strong> Each link is free, sent or used. You can copy it, share it or revoke it.</li>
-          <li><strong>No link yet?</strong> Ask the person who told you about Laststream.</li>
-        </ul>
-      </div>
-      <div class="split-visual rv" aria-hidden="true">
-        <div class="mock inv">
-          <div class="inv-h">My invitations</div>
-          <div class="inv-row"><span class="inv-n">Link 1</span><span class="inv-link">laststream…/?invite=••••</span><em class="free">Free</em></div>
-          <div class="inv-row"><span class="inv-n">Link 2</span><span class="inv-link">laststream…/?invite=••••</span><em class="sent">Sent</em></div>
-          <div class="inv-row"><span class="inv-n">Link 3</span><span class="inv-link used">Link used</span><em class="used">Used</em></div>
-          <div class="inv-row"><span class="inv-n">Link 4</span><span class="inv-link">laststream…/?invite=••••</span><em class="free">Free</em></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="sec alt" id="ensemble" aria-labelledby="h-ensemble">
+  <!-- TOGETHER -->
+  <section class="section section-alt" id="ensemble" aria-labelledby="ensemble-title">
     <div class="wrap">
-      <p class="kicker rv">Together</p>
-      <h2 id="h-ensemble" class="rv">Watch with the people you love</h2>
-      <p class="sec-lead rv">Social features are on their way. They're designed to stay simple and under your control.</p>
-      <ul class="cards trio">
-        <li class="card rv">
-          <span class="soon">Soon</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M18 8v6M15 11h6"/></svg>
-          <h3>Friends</h3>
-          <p>Send and accept requests, see who's online and find your friends in one place.</p>
+      <div class="section-head">
+        <p class="eyebrow">Together</p>
+        <h2 id="ensemble-title" class="display fill">Watch with the people you love.</h2>
+        <p class="lead">Friends, messages, shared libraries and watch party: available now. Simple, and under your control.</p>
+      </div>
+      <ul class="social">
+        <li class="card card-party" data-reveal>
+          <div class="party-copy">
+            <span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M10 8.5l4 2-4 2z"/></svg></span>
+            <h3>Watch party</h3>
+            <p>Play, pause and seek are mirrored for everyone. Rooms for friends or public, with a link to join.</p>
+            <p class="party-guest"><strong>No account?</strong> A guest can join without an account, through an invitation link.</p>
+          </div>
+          <div class="party-visual" aria-hidden="true">
+            <img src="/assets/shots/movies-600.webp" width="600" height="375" alt="" loading="lazy">
+            <span class="party-sync"><i></i>Synchronized playback</span>
+          </div>
         </li>
-        <li class="card rv">
-          <span class="soon">Soon</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="12" y="4" width="4" height="16" rx="1.5"/><path d="M18.5 6l2.5 14"/></svg>
-          <h3>Shared libraries</h3>
-          <p>Your library is private by default. You choose which titles your friends can see, one by one or all at once. Nothing is shared with a kids profile.</p>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M18 8v6M15 11h6"/></svg></span><h3>Friends</h3><p>Send and accept requests, see who's online and find your friends in one place.</p></li>
+        <li class="card" data-reveal><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h12v8H8l-4 3z"/><path d="M19 9h1v9l-3-2.5h-6V16"/></svg></span><h3>Messages and chats</h3><p>Chat with your friends right in the app and plan your next movie night.</p></li>
+        <li class="card" data-reveal style="--d:1"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></span><h3>Activity feed</h3><p>Follow what your friends are watching, and find your next idea.</p></li>
+        <li class="card" data-reveal style="--d:2"><span class="card-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="12" y="4" width="4" height="16" rx="1.5"/><path d="M18.5 6l2.5 14"/></svg></span><h3>Shared libraries</h3><p>You choose which titles your friends can see, one by one or all at once.</p></li>
+      </ul>
+      <ul class="checklist rules" aria-label="The ground rules">
+        <li data-reveal><strong>With an account.</strong> Social features require a Laststream account; only a watch party guest can do without one.</li>
+        <li data-reveal style="--d:1"><strong>Not from a kids profile.</strong> Friends, messages and watch party are not available from a kids profile.</li>
+        <li data-reveal style="--d:2"><strong>Your own sources.</strong> Each participant watches with their own sources: nothing is shared between accounts.</li>
+        <li data-reveal style="--d:3"><strong>Private by default.</strong> Your library stays private until you choose to share it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section class="section" id="telecharger" aria-labelledby="dl-title">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Download</p>
+        <h2 id="dl-title" class="display fill">Choose your platform.</h2>
+        <p class="lead"><strong>Invitation only.</strong> You need an invitation code to create your account. Laststream hosts no content: it reads the extensions you configure.</p>
+        <p class="dl-os" id="dl-os" aria-live="polite">Windows, Android, browser, iPhone, Mac and Linux.</p>
+      </div>
+      <ul class="downloads">
+        <li class="card dl" data-os="windows" data-reveal>
+          <h3>Windows</h3>
+          <p class="dl-meta">64-bit installer · <span id="win-meta">1.0.24 · 93 MB</span></p>
+          <p>Full native player (mpv), mini player and automatic updates.</p>
+          <a class="btn btn-primary" id="win-link" href="https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-1.0.24.exe" download>Download for Windows</a>
+          <p class="dl-note">If Windows SmartScreen appears: More info, then Run anyway.</p>
         </li>
-        <li class="card rv">
-          <span class="soon">Soon</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v10H9l-5 4z"/><path d="M10 9.5l4 2-4 2z"/></svg>
-          <h3>Watch party</h3>
-          <p>Synchronized playback: play, pause and seek are mirrored for everyone. Rooms for friends or public, with a link to join. Each person watches with their own sources.</p>
+        <li class="card dl" data-os="android" data-reveal style="--d:1">
+          <h3>Android</h3>
+          <p class="dl-meta">APK file · <span id="apk-meta">2026.10.25.1 · 46 MB</span></p>
+          <p>Native libVLC player, mini player and one-tap updates.</p>
+          <a class="btn btn-primary" id="apk-link" href="https://laststream.gtux-prog.workers.dev/app/android/laststream-2026102501.apk">Download the APK</a>
+          <details class="howto"><summary>How to install it</summary>
+            <ol><li>Download the APK file to your phone or tablet.</li><li>Open it. Android will ask you to allow installation from this source: choose "Allow from unknown sources" (or "Allow from this source") for your browser.</li><li>Confirm the installation, then open Laststream.</li></ol>
+          </details>
+        </li>
+        <li class="card dl" data-os="web" data-reveal style="--d:2">
+          <h3>Browser</h3>
+          <p class="dl-meta">No installation · All devices</p>
+          <p>The whole app in a tab, with the same sync. Great for trying it out.</p>
+          <a class="btn btn-ghost-solid" href="https://laststream.gtux-prog.workers.dev" rel="noopener">Open in browser</a>
+        </li>
+        <li class="card dl" data-os="ios mac linux" data-reveal style="--d:3">
+          <h3>iPhone, iPad, Mac and Linux</h3>
+          <p class="dl-meta">Installable web version · Native app coming soon</p>
+          <p>Install the web version: it opens like a real app, full screen.</p>
+          <a class="btn btn-ghost-solid" href="https://laststream.gtux-prog.workers.dev" rel="noopener">Install the web version</a>
+          <details class="howto"><summary>How to install it</summary>
+            <ul><li><strong>iPhone and iPad (Safari):</strong> tap Share, then "Add to Home Screen".</li><li><strong>Chrome or Edge (Windows, macOS, Linux):</strong> click the install icon in the address bar, then Install.</li><li><strong>Safari on macOS:</strong> File menu, then "Add to Dock".</li></ul>
+          </details>
         </li>
       </ul>
-      <div class="party-demo rv">
-        <div class="shot-frame">
-          <picture>
-            <source srcset="/assets/shots/movies-600.webp 600w, /assets/shots/movies-1200.webp 1200w, /assets/shots/movies.webp 2400w" sizes="(min-width: 600px) 520px, calc(100vw - 32px)">
-            <img src="/assets/shots/movies-1200.webp" width="1200" height="750" alt="Popular movies in Laststream" loading="lazy" decoding="async">
-          </picture>
-        </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section section-alt" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq-wrap">
+      <div class="section-head">
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title" class="display fill">Frequently asked questions.</h2>
+        <p class="faq-guides">Need a walkthrough? <a href="/guides/">Read the guides (in French) <span aria-hidden="true">→</span></a></p>
+      </div>
+      <div class="faq">
+        <details><summary>How do I get an account?</summary><p>Sign-up is by invitation. Ask the person who told you about Laststream for a referral link: each account has 4.</p></details>
+        <details><summary>Does Laststream provide movies and TV shows?</summary><p>No. Laststream hosts no content: it is a player and catalog that read the extensions you configure yourself. You are responsible for what you add and for respecting copyright laws in your country.</p></details>
+        <details><summary>Does my data follow me from one device to another?</summary><p>Yes: playback progress, lists and settings are synced with your account.</p></details>
+        <details><summary>Is there an app for iPhone, Mac or Linux?</summary><p>A native app is planned. In the meantime, the web version installs like an app and works very well.</p></details>
+        <details><summary>How are sources chosen?</summary><p>The sources from your extensions are sorted by language, then by quality, then by size. Laststream automatically starts the best one that suits your current connection speed, and you can always pick another one from the list.</p></details>
+        <details><summary>Do my Stremio add-ons work?</summary><p>Yes. Laststream reads add-ons in the Stremio format: paste the URL of the add-on's manifest, and its catalogs and sources are added to the app.</p></details>
+        <details><summary>Do I need an extra service to watch?</summary><p>It depends on the extensions you configure. Laststream does not provide any such service: it's up to you to choose your sources and, if they require them, the accounts that go with them.</p></details>
+        <details><summary>How does the kids profile work?</summary><p>You create a kids profile alongside yours. It only shows content suited to its age, based on the age ratings available, it doesn't open extensions or settings, and you can only leave it with a code.</p></details>
+        <details><summary>Are friends and watch party available?</summary><p>Yes. Friends, messages, activity feed, shared libraries and watch party are available with an account, but not from a kids profile. Your library stays private by default and each participant watches with their own sources: nothing is shared between accounts.</p></details>
+        <details><summary>Do I need an account to join a watch party?</summary><p>No. A guest can join a watch party without an account, through the invitation link you send them. They watch with their own sources.</p></details>
+        <details><summary>How are the apps updated?</summary><p>On Windows, updates are automatic. On Android, the app offers you the new version and installs it in one tap. The web version is always up to date.</p></details>
       </div>
     </div>
   </section>
 
-  <section class="sec" id="telecharger" aria-labelledby="h-dl">
-    <div class="wrap">
-      <h2 id="h-dl">Download Laststream</h2>
-      <p class="sec-lead" id="dl-os" aria-live="polite">Choose your platform.</p>
-      <div class="notice" role="note">
-        <strong>Invitation only.</strong> You need an invitation code to create your account. Laststream hosts no content: it reads the extensions you configure.
+  <!-- FINAL CTA -->
+  <section class="final" aria-labelledby="final-title">
+    <div class="wrap center">
+      <h2 id="final-title" class="display huge fill">Your cinema, everywhere.</h2>
+      <div class="actions center-actions">
+        <a class="btn btn-primary" href="#telecharger">Download Laststream</a>
+        <a class="btn btn-ghost" href="https://laststream.gtux-prog.workers.dev" rel="noopener">Open in browser <span aria-hidden="true">→</span></a>
       </div>
-      <div class="dl-grid">
-        <article class="dl" data-os="windows">
-          <h3>Windows</h3>
-          <p class="meta">64-bit installer <span id="win-meta">1.0.21 · 93 MB</span></p>
-          <p>Full native player (mpv), mini player and automatic updates.</p>
-          <a class="btn" id="win-link" href="https://laststream.gtux-prog.workers.dev/app/windows/Laststream-Setup-1.0.21.exe" download>Download for Windows</a>
-          <p class="hint">If Windows SmartScreen appears: More info, then Run anyway.</p>
-        </article>
-        <article class="dl" data-os="android">
-          <h3>Android</h3>
-          <p class="meta">APK file <span id="apk-meta">2026.10.20.1 · 46 MB</span></p>
-          <p>Native libVLC player, mini player and one-tap updates.</p>
-          <a class="btn" id="apk-link" href="https://laststream.gtux-prog.workers.dev/app/android/laststream-2026102001.apk">Download the APK</a>
-          <details class="how">
-            <summary>How to install it</summary>
-            <ol>
-              <li>Download the APK file to your phone or tablet.</li>
-              <li>Open it. Android will ask you to allow installation from this source: choose "Allow from unknown sources" (or "Allow from this source") for your browser.</li>
-              <li>Confirm the installation, then open Laststream.</li>
-            </ol>
-          </details>
-        </article>
-        <article class="dl" data-os="web">
-          <h3>Browser</h3>
-          <p class="meta">No installation <span>All devices</span></p>
-          <p>The whole app in a tab, with the same sync. Great for trying it out.</p>
-          <a class="btn" href="https://laststream.gtux-prog.workers.dev" rel="noopener">Open in browser</a>
-        </article>
-        <article class="dl" data-os="ios mac linux">
-          <h3>iPhone, iPad, Mac and Linux</h3>
-          <p class="meta">Installable web version <span>Native app coming soon</span></p>
-          <p>Install the web version: it opens like a real app, full screen.</p>
-          <a class="btn btn-ghost" href="https://laststream.gtux-prog.workers.dev" rel="noopener">Install the web version</a>
-          <details class="how">
-            <summary>How to install it</summary>
-            <ul>
-              <li><strong>iPhone and iPad (Safari)</strong> Tap Share, then "Add to Home Screen".</li>
-              <li><strong>Chrome or Edge (Windows, macOS, Linux)</strong> Click the install icon in the address bar, then Install.</li>
-              <li><strong>Safari on macOS</strong> File menu, then "Add to Dock".</li>
-            </ul>
-          </details>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <section class="sec alt" id="faq" aria-labelledby="h-faq">
-    <div class="wrap narrow">
-      <h2 id="h-faq" class="rv">Frequently asked questions</h2>
-      <details class="faq"><summary>How do I get an account?</summary><p>Sign-up is by invitation. Ask the person who told you about Laststream for a referral link: each account has 4.</p></details>
-      <details class="faq"><summary>Does Laststream provide movies and TV shows?</summary><p>No. Laststream hosts no content: it is a player and catalog that read the extensions you configure yourself. You are responsible for what you add and for respecting copyright laws in your country.</p></details>
-      <details class="faq"><summary>Does my data follow me from one device to another?</summary><p>Yes: playback progress, lists and settings are synced with your account.</p></details>
-      <details class="faq"><summary>Is there an app for iPhone, Mac or Linux?</summary><p>A native app is planned. In the meantime, the web version installs like an app and works very well.</p></details>
-      <details class="faq"><summary>How are sources chosen?</summary><p>The sources from your extensions are sorted by language, then by quality, then by size. Laststream automatically starts the best one that suits your current connection speed, and you can always pick another one from the list.</p></details>
-      <details class="faq"><summary>Do my Stremio add-ons work?</summary><p>Yes. Laststream reads add-ons in the Stremio format: paste the URL of the add-on's manifest, and its catalogs and sources are added to the app.</p></details>
-      <details class="faq"><summary>Do I need an extra service to watch?</summary><p>It depends on the extensions you configure. Laststream does not provide any such service: it's up to you to choose your sources and, if they require them, the accounts that go with them.</p></details>
-      <details class="faq"><summary>How does the kids profile work?</summary><p>You create a kids profile alongside yours. It only shows content suited to its age, based on the age ratings available, it doesn't open extensions or settings, and you can only leave it with a code.</p></details>
-      <details class="faq"><summary>Are friends and watch party available?</summary><p>They are being rolled out and are marked "Soon" on this page. When they open, your library will stay private by default and each participant will watch with their own sources: nothing is shared between accounts.</p></details>
-      <details class="faq"><summary>How are the apps updated?</summary><p>On Windows, updates are automatic. On Android, the app offers you the new version and installs it in one tap. The web version is always up to date.</p></details>
     </div>
   </section>
 </main>
 
-<footer class="foot">
-  <div class="wrap foot-in">
-    <a class="brand" href="#top"><img src="/assets/logo.svg" width="28" height="28" alt=""><span>Laststream</span></a>
-    <div class="foot-txt">
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div>
+      <a class="brand" href="#top"><img src="/assets/logo.svg" alt="" width="24" height="24"><span>Laststream</span></a>
       <p>Laststream hosts no content: it reads the extensions you configure. Invitation only.</p>
-      <p><a href="/guides/">Guides</a></p>
-      <p class="legal">Laststream is not affiliated with Stremio.</p>
-      <p class="legal">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
     </div>
+    <nav aria-label="Footer links">
+      <ul>
+        <li><a href="#fonctions">Features</a></li>
+        <li><a href="#telecharger">Download</a></li>
+        <li><a href="#faq">FAQ</a></li>
+        <li><a href="/guides/">Guides</a></li>
+        <li><a href="/" hreflang="fr" lang="fr">Français</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap footer-legal">
+    <p>Laststream is not affiliated with Stremio.</p>
+    <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
   </div>
 </footer>
+
 <script src="/app.js" defer></script>
+<script src="/home.js" defer></script>
 </body>
 </html>
