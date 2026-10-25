@@ -2,7 +2,7 @@ import type { CacheEvent, CacheProvider } from '../cache/ttl-cache.js';
 import { setCacheListener } from '../cache/ttl-cache.js';
 import { platform } from '../platform/index.js';
 import { type MetricsSink, type MetricsService, type OutboundOutcome, noopSink } from './core.js';
-import type { ProviderEvent, ProviderName } from './providers.js';
+import { isProvider, type ProviderEvent, type ProviderName } from './providers.js';
 
 export * from './core.js';
 
@@ -56,10 +56,10 @@ const CACHE_EVENT: Readonly<Record<CacheEvent, ProviderEvent>> = {
 
 /**
  * Écouteur des compteurs du cache à deux niveaux (`setCacheListener`). Sans fournisseur (entrée de mémoire seule), rien :
- * ces lectures ne sont pas attribuables à un fournisseur.
+ * ces lectures ne sont pas attribuables à un fournisseur. Fournisseur de cache hors de la liste suivie (Jikan) : rien.
  */
 export function recordCacheEvent(event: CacheEvent, provider: CacheProvider | undefined): void {
-  if (provider === undefined) return;
+  if (!isProvider(provider)) return;
   recordProviderEvent(provider, CACHE_EVENT[event]);
 }
 

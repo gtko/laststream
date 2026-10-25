@@ -10,6 +10,7 @@ import { type RowRuntime, serveRow } from './rows.js';
 import { personWhy, recommend } from './ai.js';
 import { bodyOf, createLtContext, decodeFor, LtError, type LtContext, queryOf, serviceKey } from './context.js';
 import { seriesEpisodes } from './episodes.js';
+import { seriesFillers } from './filler.js';
 import { ifNoneMatchHits, metaTargetOf, type MetaRuntime, type MetaServices, serveMetaFiche } from './meta.js';
 import { mdblistCached } from './mdblist.js';
 import { tmdbGet, tmdbPublicParams, tvdbSeries } from './providers.js';
@@ -181,6 +182,21 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     );
     cacheable(c);
     return sendJson(c, body);
+  });
+
+  // Épisodes filler et récap d'un anime (ARM puis Jikan), même numérotation que /episodes ; liste vide sinon.
+  lt.get('/series/:tmdbId/fillers', async (c) => {
+    const config = configOf(c);
+    const { fillers, degraded } = await seriesFillers(
+      ctx,
+      { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
+      c.req.param('tmdbId'),
+      queryOf(c).language,
+    );
+    // Liste peut-être incomplète après une panne : le client la relira au prochain chargement.
+    if (degraded) c.header('Cache-Control', NO_STORE);
+    else cacheable(c);
+    return sendJson(c, { fillers });
   });
 
   // Fiche partagée d'un film ou d'une série (TMDB, TVDB, notes, casting, saisons et épisodes) : construite une fois,

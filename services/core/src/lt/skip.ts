@@ -193,13 +193,13 @@ async function skipdbSegments(ctx: LtContext, target: SkipTarget, durationSecond
 }
 
 /** Correspondances ARM d'un identifiant IMDb : une entrée par saison TMDB pour les séries d'animation. */
-interface ArmEntry {
+export interface ArmEntry {
   anilist?: number;
   mal?: number;
   tmdbSeason?: number;
 }
 
-async function armEntries(ctx: LtContext, imdbId: string): Promise<ArmEntry[]> {
+export async function armEntries(ctx: LtContext, imdbId: string): Promise<ArmEntry[]> {
   return ctx.state.cache.get<ArmEntry[]>(
     `arm:${imdbId}`,
     (entries) => (entries.length > 0 ? TTL.skip : TTL.skipEmpty),
