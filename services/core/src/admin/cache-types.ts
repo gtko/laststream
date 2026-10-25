@@ -1,5 +1,7 @@
+import type { MetaKind } from '../lt/meta-policy.js';
+
 /** Préfixes (espaces de noms) des caches KV partagés : seuls ceux-là sont comptés et purgeables. */
-export const CACHE_PREFIXES = ['issued', 'packs', 'hosts', 'torrents'] as const;
+export const CACHE_PREFIXES = ['issued', 'packs', 'hosts', 'torrents', 'tmdb', 'mdb', 'tvdb'] as const;
 export type CachePrefix = (typeof CACHE_PREFIXES)[number];
 export const isCachePrefix = (value: unknown): value is CachePrefix => (CACHE_PREFIXES as readonly unknown[]).includes(value);
 
@@ -55,4 +57,10 @@ export interface TvAdmin {
   lastCron(): Promise<TvCronState | null>;
   /** Relance la collecte en arrière-plan. */
   rerun(): Promise<unknown>;
+}
+
+/** Fiches partagées (R2) : suppression des couches d'une fiche. Absente hors Workers (réponse 501). */
+export interface MetaAdmin {
+  /** Supprime tous les objets de la fiche (préfixe de fichePrefix) ; renvoie leur nombre. Une fiche absente : 0. */
+  deleteFiche(kind: MetaKind, tmdbId: number): Promise<number>;
 }

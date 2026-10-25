@@ -75,6 +75,7 @@ export class Metrics extends DurableObject {
       CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, route TEXT NOT NULL, status INTEGER NOT NULL, message TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS provider_daily (day INTEGER NOT NULL, provider TEXT NOT NULL, event TEXT NOT NULL, value INTEGER NOT NULL, PRIMARY KEY (day, provider, event)) WITHOUT ROWID;
       ${HEALTH_TABLE}
+      CREATE TABLE IF NOT EXISTS quota_daily (provider TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL, PRIMARY KEY (provider, day)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS purge_jobs (
         id TEXT PRIMARY KEY, prefix TEXT NOT NULL, status TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, cursor TEXT,
         started_at TEXT NOT NULL, updated_at TEXT NOT NULL, error TEXT
@@ -141,6 +142,23 @@ export class Metrics extends DurableObject {
       lastFailAt: Number(row.last_fail) > 0 ? Number(row.last_fail) : null,
       latency: LATENCY_COLUMNS.map((column) => Number(row[column])),
     }));
+  }
+
+  /**
+   * Budget quotidien global d'un fournisseur (jour UTC `day`, AAAA-MM-JJ) : consomme une unité si le budget le permet
+   * (true), sinon refuse sans rien consommer (false). Les jours antérieurs, tous fournisseurs confondus, sont purgés.
+   */
+  quotaTake(provider: string, day: string, budget: number): boolean {
+    return this.db.transaction(() => {
+      this.db.prepare('DELETE FROM quota_daily WHERE day < ?').run(day);
+      const row = this.db.prepare('SELECT used FROM quota_daily WHERE provider = ? AND day = ?').get(provider, day);
+      const used = row === undefined ? 0 : Number(row.used);
+      if (used + 1 > budget) return false;
+      this.db
+        .prepare('INSERT INTO quota_daily (provider, day, used) VALUES (?, ?, 1) ON CONFLICT (provider, day) DO UPDATE SET used = used + 1')
+        .run(provider, day);
+      return true;
+    });
   }
 
   report(range: MetricsRange, now: number = Date.now()): MetricsReport {

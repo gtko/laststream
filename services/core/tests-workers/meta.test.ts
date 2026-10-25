@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { fakeLookup, json, KEYS, mockUpstream, tokenFor } from '../tests/harness-core.js';
 import { startApp } from './harness.js';
+import { baseKey, l10nKey, ratingsKey } from '../src/lt/meta-policy.js';
 import { createR2MetaBlobs } from '../src/platform/workers/meta-blobs.js';
 import { createDurableObjectUserBackend } from '../src/platform/workers/user-backend.js';
 import type { WorkerEnv } from '../src/platform/workers/env.js';
@@ -36,8 +37,8 @@ describe('fiches partagées sous Workers', () => {
     const key = `meta/test/${crypto.randomUUID()}.json`;
     expect(await blobs.get(key)).toBeUndefined();
     const expiresAt = Date.now() + 86_400_000;
-    await blobs.put(key, { body: '{"v":1}', etag: '"0123"', expiresAt });
-    expect(await blobs.get(key)).toEqual({ body: '{"v":1}', etag: '"0123"', expiresAt });
+    await blobs.put(key, { body: '{"v":1}', etag: '"0123"', expiresAt, ttl: 3_600_000 });
+    expect(await blobs.get(key)).toEqual({ body: '{"v":1}', etag: '"0123"', expiresAt, ttl: 3_600_000 });
   });
 
   it('route /lt/meta : construite une fois, servie depuis R2 à un autre compte sans appel amont, 304 sur If-None-Match', async () => {
@@ -58,7 +59,11 @@ describe('fiches partagées sous Workers', () => {
       expect(JSON.parse(body)).toMatchObject({ title: 'Film de test', year: 2001 });
       const calls = upstream.calls.length;
       expect(calls).toBeGreaterThan(0);
-      expect(await workerEnv.META?.head(`meta/movie/${id}.json`)).not.toBeNull();
+      for (const key of [baseKey('movie', Number(id)), l10nKey('movie', Number(id), 'fr-FR'), ratingsKey('movie', Number(id))]) {
+        const stored = await workerEnv.META?.head(key);
+        expect(stored?.customMetadata).toMatchObject({ schema: '2', ttl: expect.any(String), expiresAt: expect.any(String), etag: expect.any(String) });
+      }
+      expect(await workerEnv.META?.head(`meta/movie/${id}.json`)).toBeNull();
 
       const second = await fetch(`${running.baseUrl}/${accountB}/lt/meta/movie/${id}`);
       expect(second.status).toBe(200);

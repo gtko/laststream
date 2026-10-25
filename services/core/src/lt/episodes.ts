@@ -1,7 +1,9 @@
 import { isRecord } from '../sources/http.js';
+import { cachedInBlobs } from './blob-cache.js';
 import { LtError, type LtContext, recordAt, TTL } from './context.js';
 import { type CinemetaThumb, cinemetaThumbs, pickThumb } from './cinemeta-thumbs.js';
-import { tmdbGet, tvdbAiredEpisodes, type TvdbAiredEpisode, type TvdbLang } from './providers.js';
+import { type Lang, seasonKey, SUPPORTED_LANGS, ttlMs } from './meta-policy.js';
+import { tmdbFetch, tmdbGet, tvdbAiredEpisodes, type TvdbAiredEpisode, type TvdbLang } from './providers.js';
 
 /**
  * Structure canonique des saisons et épisodes d'une série. Source : TVDB (ordre de diffusion), groupe d'épisodes TMDB,
@@ -105,13 +107,19 @@ interface TmdbGroupInfo {
   groupCount: number;
 }
 
-/** Fiche TMDB de la série (avec external_ids et episode_groups en append_to_response). */
+/**
+ * Fiche TMDB de la série (avec external_ids et episode_groups en append_to_response). Statut et dates servent à la durée
+ * de vie des couches saison (meta-policy).
+ */
 interface SeriesDetails {
   seasons: SeasonInfo[];
   numberOfSeasons: number;
   tvdbId: number | null;
   imdbId: string | null;
   groups: TmdbGroupInfo[];
+  status: string | undefined;
+  lastAirDate: string | null;
+  nextAirDate: string | null;
 }
 
 function seriesDetails(json: unknown): SeriesDetails {
@@ -147,6 +155,9 @@ function seriesDetails(json: unknown): SeriesDetails {
     tvdbId: tvdbId !== null && tvdbId > 0 ? tvdbId : null,
     imdbId: imdbRaw !== null && /^tt\d{5,12}$/.test(imdbRaw) ? imdbRaw : null,
     groups,
+    status: textOf(details.status) ?? undefined,
+    lastAirDate: dateOf(details.last_air_date),
+    nextAirDate: dateOf(recordAt(details, 'next_episode_to_air').air_date),
   };
 }
 
@@ -175,6 +186,21 @@ function tmdbEpisodeOf(raw: Record<string, unknown>, fallbackSeason: number): Tm
   };
 }
 
+/**
+ * Réponse TMDB d'une saison. Langue prise en charge : couche « saison » R2 (ODY-297), à la clé `seasonKey` et à la durée
+ * de vie de la politique (fin de saison, série en cours…) ; autre langue : cache TMDB habituel.
+ */
+async function seasonJson(ctx: LtContext, token: string, tmdbId: string, number: number, language: string, details: SeriesDetails): Promise<unknown> {
+  const path = `tv/${tmdbId}/season/${number}`;
+  if (!(SUPPORTED_LANGS as readonly string[]).includes(language)) return tmdbGet(ctx, token, path, { language });
+  const ttl = ttlMs(
+    'season',
+    { kind: 'tv', status: details.status, lastAirDate: details.lastAirDate, nextAirDate: details.nextAirDate },
+    Date.now(),
+  );
+  return cachedInBlobs(ctx, seasonKey(tmdbId, number, language as Lang), ttl, () => tmdbFetch(ctx, token, path, { language }), 'tmdb');
+}
+
 /** Épisodes d'une liste de saisons TMDB, en un seul tableau (chaque épisode porte sa saison). */
 async function loadSeasons(
   ctx: LtContext,
@@ -182,10 +208,11 @@ async function loadSeasons(
   tmdbId: string,
   language: string,
   numbers: number[],
+  details: SeriesDetails,
 ): Promise<TmdbEpisode[]> {
   const lists = await Promise.all(
     numbers.map(async (number) => {
-      const json = await tmdbGet(ctx, token, `tv/${tmdbId}/season/${number}`, { language });
+      const json = await seasonJson(ctx, token, tmdbId, number, language, details);
       return arrayOf(recordAt(json).episodes)
         .filter(isRecord)
         .map((raw) => tmdbEpisodeOf(raw, number))
@@ -447,7 +474,7 @@ async function groupStructure(
   const drafts: Draft[] = groups.flatMap((g, index) =>
     g.episodes.map((e, i) => ({ ...fromTmdb(e), season: index + 1, episode: i + 1 })),
   );
-  const specials = details.seasons.some((s) => s.number === 0) ? await loadSeasons(ctx, token, tmdbId, language, [0]) : [];
+  const specials = details.seasons.some((s) => s.number === 0) ? await loadSeasons(ctx, token, tmdbId, language, [0], details) : [];
   drafts.push(...specials.map(fromTmdb));
   return assemble('tmdb-group', drafts, (number) => {
     if (number === 0) {
@@ -530,7 +557,7 @@ async function loadStructure(
       degraded = true;
     }
     if (aired !== undefined) {
-      const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons);
+      const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons, details);
       return { loaded: { body: tvdbStructure(details, tmdb, aired), degraded: false }, details };
     }
   }
@@ -539,7 +566,7 @@ async function loadStructure(
     const body = await groupStructure(ctx, token, details, group, language, tmdbId);
     if (body !== undefined) return { loaded: { body, degraded }, details };
   }
-  const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons);
+  const tmdb = await loadSeasons(ctx, token, tmdbId, language, allSeasons, details);
   return { loaded: { body: plainStructure(details, tmdb), degraded }, details };
 }
 

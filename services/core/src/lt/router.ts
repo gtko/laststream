@@ -218,7 +218,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
       tvdbApiKey: config.services.tvdbApiKey,
       tvdbPin: config.services.tvdbPin,
     };
-    const result = await serveMetaFiche(metaRuntime(), services, target.type, target.tmdbId);
+    const result = await serveMetaFiche(metaRuntime(), services, target.type, target.tmdbId, queryOf(c).language);
     const remaining = Math.floor((result.expiresAt - Date.now()) / 1000);
     c.header('ETag', result.etag);
     c.header('Access-Control-Expose-Headers', 'ETag');

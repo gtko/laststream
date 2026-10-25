@@ -7,7 +7,7 @@ import { createWorkersKvCache } from './kv-cache.js';
 import { createKvCacheAdmin, createRemoteMetrics } from './metrics.js';
 import { workersScheduler } from './scheduler.js';
 import { createR2TvBlobs, refreshTvFromEnv } from './tv-store.js';
-import { createR2MetaBlobs, createR2RowBlobs } from './meta-blobs.js';
+import { createR2MetaAdmin, createR2MetaBlobs, createR2RowBlobs } from './meta-blobs.js';
 import { createR2AvatarAssets } from './avatar-assets.js';
 import { platformInstalled, setPlatform } from '../index.js';
 import { createWorkersUiAssets } from './ui-assets.js';
@@ -18,6 +18,7 @@ export { runInRequest } from './scheduler.js';
 export { type WorkerEnv } from './env.js';
 export { createWorkersTvAdmin, refreshTvFromEnv } from './tv-store.js';
 export { refreshRowsFromEnv } from './rows-refresh.js';
+export { prewarmMetaFromEnv } from './meta-prewarm-refresh.js';
 export { UserStoreDO } from './user-store-do.js';
 export { PartyRoom } from './party-room.js';
 export { Metrics } from './metrics-do.js';
@@ -46,6 +47,7 @@ export function createWorkersPlatform(env: WorkerEnv): Platform {
     createPartyBackend: () => createDurableObjectPartyBackend(env.PARTY_ROOM),
     uiAssets: createWorkersUiAssets(env.ASSETS),
     metaBlobs: env.META === undefined ? undefined : createR2MetaBlobs(env.META),
+    metaAdmin: env.META === undefined ? undefined : createR2MetaAdmin(env.META),
     avatarAssets: env.AVATARS === undefined ? undefined : createR2AvatarAssets(env.AVATARS),
     rowBlobs: env.META === undefined ? undefined : createR2RowBlobs(env.META),
     tvStore:
