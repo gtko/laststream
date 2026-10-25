@@ -49,6 +49,23 @@ export interface TvCronState {
   epgOk: boolean;
   /** Code d'erreur (jamais de message brut). */
   error: string | null;
+  /**
+   * Reprise (LAST-137) : état de chaque source d'après ses passages (dernier succès, échecs d'affilée, durée, code
+   * d'erreur). Absent tant qu'aucun passage ne l'a tracé.
+   */
+  sources?: Record<string, TvCronSourceState>;
+  /** Sondes faites pendant le passage (absent si le passage ne sondait pas). */
+  probes?: number;
+  /** Sondages restants faute de budget : repris à la passe suivante. */
+  probesPending?: boolean;
+}
+
+/** État d'une source du cron TV (voir TvCronState.sources). */
+export interface TvCronSourceState {
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  durationMs: number;
+  error: string | null;
 }
 
 /** TV : état du dernier cron et relance de la collecte. Absente hors Workers (réponse 501). */

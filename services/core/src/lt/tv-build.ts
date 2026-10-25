@@ -11,6 +11,7 @@ import {
 } from './tv-catalog.js';
 import { fastEntry, M3uAccumulator, type Programme, XmltvIngest } from './tv-feed.js';
 import { applyHealth, type HealthMap, type HealthOptions } from './tv-health.js';
+import { epgSourceId, type PassPlan, type TvPassTrace } from './tv-passes.js';
 
 /**
  * Construction du catalogue TV et de l'EPG sur Cloudflare Workers (Cron Trigger), en flux : aucune source n'est lue en
@@ -37,6 +38,36 @@ export const DEFAULT_TV_COUNTRIES: readonly string[] = ['FR', 'BE', 'CH', 'LU', 
 
 /** Clés R2. */
 export const TV_KEYS = { catalog: 'catalog.json', epg: 'epg.json', probe: 'probe.json' } as const;
+
+/** URL XMLTV lues pour l'EPG, dans l'ordre de priorité (la première source gagne pour une chaîne). */
+export const TV_EPG_URLS: readonly string[] = TV_SOURCES.epg;
+
+/** Plan d'une passe complète ; `probe` active les sondages et le contrôle de santé des flux. */
+export function fullPlan(probe: boolean): PassPlan {
+  return { kind: 'full', catalog: true, epg: TV_EPG_URLS, probes: probe, health: probe };
+}
+
+/** Code court d'une erreur de source (jamais de message brut : une URL ou une clé pourrait y figurer). */
+function errorCode(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') return 'delai_depasse';
+    if (/^(upstream_\d{3}|source_too_large|epg_too_large)$/.test(error.message)) return error.message;
+  }
+  return 'erreur_reseau';
+}
+
+/** Exécute le travail d'une source et range son résultat dans la trace (échec compris ; l'erreur est relancée). */
+async function timedSource<T>(trace: TvPassTrace | undefined, id: string, work: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    const value = await work();
+    if (trace !== undefined) trace.sources[id] = { ok: true, durationMs: Date.now() - started };
+    return value;
+  } catch (error) {
+    if (trace !== undefined) trace.sources[id] = { ok: false, durationMs: Date.now() - started, error: errorCode(error) };
+    throw error;
+  }
+}
 
 /** Stockage d'objets (R2 sous Workers). Le contenu est du JSON texte. */
 export interface TvBlobStore {
@@ -80,6 +111,14 @@ export interface TvBuildOptions {
   probeTtlSec?: number;
   /** Réglages du test de santé des flux (seuil, budget…). Les contrôles ne tournent qu'avec `probe`. */
   health?: Omit<HealthOptions, 'fetch' | 'now' | 'check'>;
+  /** Plan de la passe (reprise du cron, LAST-137). Absent : passe complète, selon `probe`. */
+  plan?: PassPlan;
+  /** Trace du passage : résultat de chaque source et sondes. Remplie même si la construction échoue. */
+  trace?: TvPassTrace;
+  /** EPG : seules ces URL sont lues. Absent : toutes. */
+  epgOnly?: readonly string[];
+  /** EPG : snapshot précédent à compléter (reprise d'une source EPG en échec). */
+  epgSeed?: EpgSnapshot;
 }
 
 const HEADERS = { 'user-agent': 'Mozilla/5.0 Laststream', accept: '*/*' };
@@ -188,11 +227,12 @@ async function loadFast(fetcher: typeof fetch, url: string, source: 'pluto' | 's
 export async function buildCatalogStreaming(options: TvBuildOptions = {}): Promise<TvCatalog> {
   const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const countries = new Set((options.countries ?? DEFAULT_TV_COUNTRIES).map((code) => code.toUpperCase()));
+  const trace = options.trace;
   const [iptv, freetv, pluto, samsung] = await Promise.allSettled([
-    loadIptvOrg(fetcher, countries),
-    loadFreeTv(fetcher, countries),
-    loadFast(fetcher, TV_SOURCES.pluto, 'pluto', 'plu', 'https://jmp2.uk/plu-{id}.m3u8'),
-    loadFast(fetcher, TV_SOURCES.samsung, 'samsung', 'stv', 'https://jmp2.uk/stvp-{id}'),
+    timedSource(trace, 'iptv', () => loadIptvOrg(fetcher, countries)),
+    timedSource(trace, 'freetv', () => loadFreeTv(fetcher, countries)),
+    timedSource(trace, 'pluto', () => loadFast(fetcher, TV_SOURCES.pluto, 'pluto', 'plu', 'https://jmp2.uk/plu-{id}.m3u8')),
+    timedSource(trace, 'samsung', () => loadFast(fetcher, TV_SOURCES.samsung, 'samsung', 'stv', 'https://jmp2.uk/stvp-{id}')),
   ]);
   const input: CatalogInput = {
     iptv: iptv.status === 'fulfilled' ? iptv.value : null,
@@ -241,19 +281,32 @@ export async function buildEpgStreaming(wanted: ReadonlySet<string>, options: Tv
   const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const nowMs = (options.now ?? Date.now)();
   const now = Math.floor(nowMs / 1000);
+  const from = now - EPG_BEHIND_SECONDS;
+  const to = now + EPG_AHEAD_SECONDS;
   const store = new Map<string, Programme[]>();
-  const epgStats: EpgSnapshot['epgStats'] = [];
-  for (const url of TV_SOURCES.epg) {
+  // Reprise : on repart des programmes du passage précédent, dans la fenêtre courante. Une chaîne déjà présente n'est
+  // pas remplacée par une source relue : la priorité exacte revient à la passe complète suivante.
+  for (const [id, list] of Object.entries(options.epgSeed?.programmes ?? {})) {
+    const kept = list.filter((programme) => programme.stop >= from && programme.start <= to);
+    if (kept.length > 0) store.set(id, kept);
+  }
+  const stats = new Map<string, EpgSnapshot['epgStats'][number]>();
+  for (const stat of options.epgSeed?.epgStats ?? []) stats.set(stat.url, stat);
+  let okCount = 0;
+  for (const url of options.epgOnly ?? TV_EPG_URLS) {
     const label = url.replace(/^https:\/\//, '');
-    const ingest = new XmltvIngest(store, now - EPG_BEHIND_SECONDS, now + EPG_AHEAD_SECONDS, wanted);
+    const ingest = new XmltvIngest(store, from, to, wanted);
     try {
-      await ingestEpgSource(fetcher, url, ingest);
-      epgStats.push({ url: label, programmes: ingest.count, ok: true });
+      await timedSource(options.trace, epgSourceId(url), () => ingestEpgSource(fetcher, url, ingest));
+      okCount += 1;
+      stats.set(label, { url: label, programmes: ingest.count, ok: true });
     } catch {
-      epgStats.push({ url: label, programmes: ingest.count, ok: false });
+      stats.set(label, { url: label, programmes: ingest.count, ok: false });
     }
   }
-  if (epgStats.every((source) => !source.ok)) throw new Error('tv_unavailable');
+  if (okCount === 0) throw new Error('tv_unavailable');
+  const labels = new Set(TV_EPG_URLS.map((url) => url.replace(/^https:\/\//, '')));
+  const epgStats = [...stats.values()].filter((stat) => labels.has(stat.url));
   const programmes: Record<string, Programme[]> = {};
   for (const [id, list] of store) programmes[id] = list.sort((a, b) => a.start - b.start);
   return { v: 1, builtAt: nowMs, epgStats, programmes };
@@ -277,11 +330,19 @@ async function probeDirect(fetcher: typeof fetch, url: string, origin: string): 
  * Renseigne `direct` sur chaque flux : http → false ; https sondé → résultat du sondage ; sinon inconnu (absent).
  * Les sondages récents de `previous` sont réutilisés ; les nouveaux sont ajoutés à `results`.
  */
-export async function applyDirect(
-  catalog: TvCatalog,
-  previous: ProbeSnapshot | undefined,
-  options: TvBuildOptions,
-): Promise<ProbeSnapshot> {
+/** Bilan d'un passage de sondages : sondes faites, sondages restants faute de budget (reprise à la passe suivante). */
+export interface DirectRun {
+  snapshot: ProbeSnapshot;
+  probed: number;
+  pending: number;
+}
+
+export async function applyDirect(catalog: TvCatalog, previous: ProbeSnapshot | undefined, options: TvBuildOptions): Promise<ProbeSnapshot> {
+  return (await probeDirectStreams(catalog, previous, options)).snapshot;
+}
+
+/** Sondages de `applyDirect`, avec leur bilan. */
+export async function probeDirectStreams(catalog: TvCatalog, previous: ProbeSnapshot | undefined, options: TvBuildOptions): Promise<DirectRun> {
   const fetcher = guardedFetch(options.fetch ?? fetch, 'tv-build');
   const nowSec = Math.floor((options.now ?? Date.now)() / 1000);
   const ttl = options.probeTtlSec ?? 24 * 3600;
@@ -294,8 +355,11 @@ export async function applyDirect(
     urls.add(channel.url);
     for (const alt of channel.alternatives.slice(0, 2)) urls.add(alt.url);
   }
+  let probed = 0;
+  let pending = 0;
   if (options.probe === true) {
-    const todo = [...urls].filter((url) => url.startsWith('https://') && results[url] === undefined).slice(0, options.maxProbes ?? 800);
+    const all = [...urls].filter((url) => url.startsWith('https://') && results[url] === undefined);
+    const todo = all.slice(0, options.maxProbes ?? 800);
     const origin = options.probeOrigin ?? 'https://laststream.gtux-prog.workers.dev';
     const deadline = Date.now() + (options.probeBudgetMs ?? 5 * 60_000);
     let next = 0;
@@ -308,6 +372,8 @@ export async function applyDirect(
       }
     };
     await Promise.all(Array.from({ length: 8 }, () => worker()));
+    probed = Math.min(next, todo.length);
+    pending = all.length - probed;
   }
   const known = (url: string): boolean | undefined => {
     if (!url.startsWith('https://')) return false;
@@ -315,7 +381,7 @@ export async function applyDirect(
     return entry === undefined ? undefined : entry[0] === 1;
   };
   for (const channel of catalog.channels) tagDirect(channel, known);
-  return { v: 1, results };
+  return { snapshot: { v: 1, results }, probed, pending };
 }
 
 function tagDirect(channel: TvChannel, known: (url: string) => boolean | undefined): void {
@@ -350,25 +416,42 @@ export interface RefreshResult {
  * EPG en place (les chaînes restent servies) ; une erreur de catalogue laisse l'ancien catalogue.
  */
 export async function refreshTv(store: TvBlobStore, options: TvBuildOptions = {}): Promise<RefreshResult> {
-  const catalog = await buildCatalogStreaming(options);
+  const plan = options.plan ?? fullPlan(options.probe === true);
+  const cached = parse<CatalogSnapshot>(await store.get(TV_KEYS.catalog));
+  // Reprise sans échec de catalogue : le catalogue déjà écrit sert, il n'est pas reconstruit.
+  const reused = cached !== undefined && !plan.catalog;
+  const catalog = cached !== undefined && reused ? cached.catalog : await buildCatalogStreaming(options);
   const previous = parse<ProbeSnapshot>(await store.get(TV_KEYS.probe));
-  const probes = await applyDirect(catalog, previous, options);
-  const health = await applyHealth(catalog, previous?.health, { ...options.health, fetch: options.fetch, now: options.now, check: options.probe === true });
+  const direct = await probeDirectStreams(catalog, previous, { ...options, probe: plan.probes });
+  const probes = direct.snapshot;
+  const health = await applyHealth(catalog, previous?.health, { ...options.health, fetch: options.fetch, now: options.now, check: plan.health });
+  if (options.trace !== undefined) {
+    options.trace.probes = direct.probed;
+    options.trace.probesPending = direct.pending > 0;
+  }
   probes.health = health.health;
   console.log(`[tv] santé des flux : ${health.checked} contrôlés, ${health.dead} flux écartés, ${health.removed} chaînes retirées${health.tripped ? ' (disjoncteur : pannes de ce passage ignorées)' : ''}`);
   const builtAt = (options.now ?? Date.now)();
-  const snapshot: CatalogSnapshot = { v: 1, builtAt, catalog };
+  const snapshot: CatalogSnapshot = cached !== undefined && reused ? { ...cached, catalog } : { v: 1, builtAt, catalog };
   await store.put(TV_KEYS.catalog, JSON.stringify(snapshot));
   await store.put(TV_KEYS.probe, JSON.stringify(probes));
+  // EPG : en reprise, seules les sources en échec sont relues, sur le snapshot précédent. Sans source EPG à relire,
+  // le snapshot précédent reste servi tel quel.
+  const previousEpg = plan.kind === 'resume' || plan.epg.length === 0 ? parse<EpgSnapshot>(await store.get(TV_KEYS.epg)) : undefined;
   let programmes = 0;
   let epgOk = false;
-  try {
-    const epg = await buildEpgStreaming(epgIdsOf(catalog), options);
-    programmes = Object.values(epg.programmes).reduce((sum, list) => sum + list.length, 0);
-    await store.put(TV_KEYS.epg, JSON.stringify(epg));
-    epgOk = true;
-  } catch {
-    // ancien EPG conservé
+  if (plan.epg.length === 0) {
+    epgOk = previousEpg !== undefined;
+    programmes = previousEpg === undefined ? 0 : Object.values(previousEpg.programmes).reduce((sum, list) => sum + list.length, 0);
+  } else {
+    try {
+      const epg = await buildEpgStreaming(epgIdsOf(catalog), { ...options, epgOnly: plan.epg, epgSeed: plan.kind === 'resume' ? previousEpg : undefined });
+      programmes = Object.values(epg.programmes).reduce((sum, list) => sum + list.length, 0);
+      await store.put(TV_KEYS.epg, JSON.stringify(epg));
+      epgOk = true;
+    } catch {
+      // ancien EPG conservé
+    }
   }
   return { channels: catalog.channels.length, programmes, epgOk, removed: health.removed };
 }
