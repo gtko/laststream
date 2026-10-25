@@ -146,7 +146,8 @@ function playbackPanel() {
     card('Séries et épisodes',
       switchRow('Passer l’intro', 'Saute le générique d’ouverture quand il est repéré.', getSkipPref('intro'), 'data-set-pref="skip-intro"') +
       switchRow('Passer le récapitulatif', 'Saute le « précédemment » quand il est repéré.', getSkipPref('recap'), 'data-set-pref="skip-recap"') +
-      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"')) +
+      switchRow('Enchaîner l’épisode suivant', 'Lance l’épisode suivant à la fin du générique.', getSkipPref('nextEpisode'), 'data-set-pref="skip-next"') +
+      switchRow('Passer les épisodes filler (anime)', 'L’enchaînement et « prochain non vu » sautent les épisodes filler et récap repérés. Ils restent lançables à la main.', getSkipPref('filler'), 'data-set-pref="skip-filler"')) +
     downloadsStorageCard();
 }
 
@@ -498,6 +499,7 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-intro') setSkipPref('intro', on);
   else if (pref === 'skip-recap') setSkipPref('recap', on);
   else if (pref === 'skip-next') setSkipPref('nextEpisode', on);
+  else if (pref === 'skip-filler') setSkipPref('filler', on);
   else if (pref === 'trailer-autoplay') setTrailerAutoplay(on);
   else if (pref === 'dl-wifi' || pref === 'dl-after') applyDownloadToggle(pref, on);
   else if (pref === 'lang-subs' || pref === 'lang-learn') {

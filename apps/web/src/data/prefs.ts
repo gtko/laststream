@@ -58,9 +58,9 @@ export function getResolutionCap(): ResolutionCap {
 }
 export const setResolutionCap = (value: ResolutionCap): void => write(RESOLUTION_CAP_KEY, value);
 
-// ---- Sauts automatiques (intro, récap, épisode suivant) ----
-export type SkipPrefName = 'intro' | 'recap' | 'nextEpisode';
-const SKIP_PREF_DEFAULTS: Readonly<Record<SkipPrefName, boolean>> = { intro: false, recap: false, nextEpisode: true };
+// ---- Sauts automatiques (intro, récap, épisode suivant, épisodes filler d'anime) ----
+export type SkipPrefName = 'intro' | 'recap' | 'nextEpisode' | 'filler';
+const SKIP_PREF_DEFAULTS: Readonly<Record<SkipPrefName, boolean>> = { intro: false, recap: false, nextEpisode: true, filler: false };
 const skipPrefKey = (name: SkipPrefName): string => `laststream.skip.${name}`;
 export function getSkipPref(name: SkipPrefName): boolean {
   const raw = read(skipPrefKey(name));
