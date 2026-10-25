@@ -2,7 +2,8 @@ import type { DurableObjectState, WebSocket as CfWebSocket } from '@cloudflare/w
 import { DurableObject } from 'cloudflare:workers';
 import { type AdminOperation, runAdminOperation } from '../../admin/routes.js';
 import { type SqlStats, sqlStatsOf } from '../../admin/ops-stats.js';
-import { createRateLimiter } from '../../rate-limit.js';
+import { logRefusal } from '../../rate-limit-shared.js';
+import { connectionsToEvict, createSlidingWindow } from '../../ws-limits.js';
 import { AdminStore } from '../../user/admin-store.js';
 import { migrate } from '../../user/migrations.js';
 import { MetaStore } from '../../user/meta-store.js';
@@ -33,9 +34,9 @@ import { durableObjectSql } from './sql.js';
 /** Constructeur de paires WebSocket de l'exécution Workers (non déclaré par les types retenus ici). */
 declare const WebSocketPair: new () => { 0: CfWebSocket; 1: CfWebSocket };
 
-/** Trames client par profil et par minute : au-delà, la connexion est fermée (4008). Le ping n'en consomme qu'une. */
+/** Trames client par profil sur une minute glissante : au-delà, la connexion est fermée (4008). Le ping n'en consomme qu'une. */
 const LIVE_FRAMES_PER_MINUTE = 30;
-const liveFrameLimit = createRateLimiter(LIVE_FRAMES_PER_MINUTE, 60_000);
+const liveFrameLimit = createSlidingWindow(LIVE_FRAMES_PER_MINUTE, 60_000);
 
 /**
  * Données attachées à chaque socket du flux social (survivent à l'hibernation). Ordre d'ouverture : `openedAt` (ms) puis
@@ -211,7 +212,9 @@ export class UserStoreDO extends DurableObject {
       .map((ws) => ({ ws, attachment: ws.deserializeAttachment() as LiveAttachment | null }))
       .filter((entry): entry is { ws: CfWebSocket; attachment: LiveAttachment } => entry.attachment !== null && entry.attachment.evicted !== true)
       .sort((a, b) => a.attachment.openedAt - b.attachment.openedAt || a.attachment.seq - b.attachment.seq);
-    for (const { ws, attachment } of kept.slice(0, Math.max(0, kept.length - (SOCIAL_LIVE_MAX_PER_PID - 1)))) evictLive(ws, attachment);
+    const evicted = connectionsToEvict(kept.map((entry) => ({ ...entry, ...entry.attachment })), SOCIAL_LIVE_MAX_PER_PID);
+    if (evicted.length > 0) logRefusal('socialLiveConnections', 'evicted');
+    for (const { ws, attachment } of evicted) evictLive(ws, attachment);
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -238,7 +241,8 @@ export class UserStoreDO extends DurableObject {
   webSocketMessage(ws: CfWebSocket, message: string | ArrayBuffer): void {
     const attachment = ws.deserializeAttachment() as LiveAttachment | null;
     if (attachment === null) return;
-    if (!liveFrameLimit(attachment.pid).allowed) {
+    if (!liveFrameLimit(attachment.pid)) {
+      logRefusal('socialLiveFrames', 'close');
       closeQuietly(ws, SOCIAL_LIVE_RATE_LIMITED, 'rate_limited');
       return;
     }

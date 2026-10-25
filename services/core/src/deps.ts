@@ -7,6 +7,7 @@ import type { PartyBackend, UiAssets, UserBackend } from './platform/index.js';
 import type { MetaBlobStore } from './lt/meta.js';
 import type { QuotaGate } from './lt/quota.js';
 import type { RowBlobStore } from './lt/rows.js';
+import type { SharedLimits } from './rate-limit-shared.js';
 import type { SocialEventHandler } from './user/social-v2-events.js';
 
 /** Dépendances injectées dans l'application. Ne jamais logger ces valeurs. */
@@ -49,6 +50,12 @@ export interface AppDeps {
    * en mémoire de /user/login et /user/register. `true` = tentative autorisée.
    */
   authLimiter?: { byIp(ip: string): Promise<boolean>; byUsername(username: string): Promise<boolean>; retryAfterSec: number };
+  /**
+   * Liaisons de limite de débit partagées entre instances (Workers : Rate Limiting, voir rate-limit-shared.ts) pour les routes
+   * sensibles : /config, /lt, /user, /admin, /party, tickets live, frappe. S'ajoutent à la Map locale, qui reste le repli
+   * (liaison absente : tests, Node, dev).
+   */
+  sharedLimits?: SharedLimits;
   /** Détection automatique des segments de saut (binaires ffmpeg, URL locales autorisées, budget) : réglages de test. */
   skipDetect?: AutoDetectOptions;
   /** Miniatures de la barre (ffmpeg, cache, origines locales autorisées en plus) : réglages de test. */

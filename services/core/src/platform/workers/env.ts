@@ -31,6 +31,18 @@ export interface WorkerEnv {
   AUTH_LIMITER_USER?: RateLimitBinding;
   /** Limite globale des appels sortants vers MDBList. */
   MDBLIST_LIMITER?: RateLimitBinding;
+  /**
+   * Limites de débit partagées des routes sensibles et des mises à niveau WebSocket (absentes : Map locale seule). Nom = limite
+   * par minute (RL_TYPING : par 10 s) ; voir rate-limit-shared.ts et wrangler.jsonc.
+   */
+  RL_10_PER_MIN?: RateLimitBinding;
+  RL_20_PER_MIN?: RateLimitBinding;
+  RL_30_PER_MIN?: RateLimitBinding;
+  RL_60_PER_MIN?: RateLimitBinding;
+  RL_120_PER_MIN?: RateLimitBinding;
+  RL_300_PER_MIN?: RateLimitBinding;
+  RL_1200_PER_MIN?: RateLimitBinding;
+  RL_TYPING?: RateLimitBinding;
   /** Budget quotidien global des appels MDBList (variable, entier) : absente, 800 (lt/quota.ts). */
   MDBLIST_DAILY_BUDGET?: string;
   /** Bucket R2 du catalogue TV et de l'EPG (alimenté par le Cron Trigger). */

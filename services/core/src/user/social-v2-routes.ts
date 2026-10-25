@@ -3,6 +3,7 @@ import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
 import { signLiveTicket } from '../party/ticket.js';
 import { createRateLimiter } from '../rate-limit.js';
+import { createSharedLimiter } from '../rate-limit-shared.js';
 import { parseHandle } from './social-handles.js';
 import type { SocialV2Repo, UserBackend, UserRepo } from './repo.js';
 import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
@@ -75,7 +76,7 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
   const users = () => backend.users();
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, users(), social(), deps.secret);
-  const liveTickets = createRateLimiter(LIVE_TICKETS_PER_MINUTE, 60_000);
+  const liveTickets = createSharedLimiter(deps.sharedLimits, 'liveTicket', LIVE_TICKETS_PER_MINUTE, 60_000);
   const friendRequests = createRateLimiter(FRIEND_REQUESTS_PER_HOUR, 3_600_000);
 
   /** Diffuse un changement de présence : une trame par vue distincte (préférences du profil vu appliquées par le store). */
@@ -232,7 +233,7 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
    */
   router.post('/social/live-ticket', async (c) => {
     const me = await actor(c);
-    const verdict = liveTickets(me.pid);
+    const verdict = await liveTickets(me.pid);
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     const { ticket } = signLiveTicket(me.pid, me.accountId, Date.now(), deps.secret);
     return sendJson(c, { wsPath: `${SOCIAL_LIVE_PATH}?ticket=${ticket}` });
