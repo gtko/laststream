@@ -7,7 +7,7 @@ import type { CloudflareOptions } from '@sentry/cloudflare';
 import { beforeBreadcrumbFilter, beforeSendFilter, beforeSendTransactionFilter } from './scrub.js';
 
 /** Valeur tag `platform` : le Worker s'exécute sur Cloudflare Workers. */
-export const WORKER_PLATFORM = 'cloudflare-workers';
+const WORKER_PLATFORM = 'cloudflare-workers';
 
 export function workerSentryOptions(dsn: string | undefined, release: string): CloudflareOptions {
   return {

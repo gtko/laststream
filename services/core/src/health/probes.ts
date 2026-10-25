@@ -32,7 +32,7 @@ async function probeOne(probe: HealthProbe, timeoutMs: number): Promise<Dependen
   const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
     timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
   });
-  let ok = false;
+  let ok: boolean;
   try {
     // `Promise.resolve().then` transforme aussi une sonde qui lève de façon synchrone en rejet.
     const outcome = await Promise.race([Promise.resolve().then(probe), timeout]);
