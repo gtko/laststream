@@ -21,7 +21,7 @@
     "tv:health": "tsx scripts/tv-health-check.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "lint": "eslint .",
-    "knip": "npx -y knip",
+    "knip": "knip",
     "bundle": "node scripts/bundle.mjs"
   },
   "dependencies": {
