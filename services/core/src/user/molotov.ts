@@ -1073,6 +1073,68 @@ function extractReplay(document: unknown): MolotovReplayItem[] {
   return collectNodes(document, replayItemOf, MAX_REPLAY_ITEMS, true);
 }
 
+const SHAPE_MAX_DEPTH = 3;
+const SHAPE_MAX_KEYS = 8;
+const SHAPE_MAX_CHARS = 1500;
+
+/** Nom de clé journalisable : une clé dynamique (longue, numérique, de type identifiant) est réduite à sa longueur. */
+function safeKey(key: string): string {
+  if (key.length > 24 || /^[0-9]+$/.test(key) || /^[0-9a-f-]{16,}$/i.test(key)) return `<clé:${key.length}>`;
+  return key;
+}
+
+function shapeType(value: unknown): string {
+  if (Array.isArray(value)) return `array(${value.length})`;
+  if (value === null) return 'null';
+  return typeof value === 'object' ? 'object' : typeof value;
+}
+
+/** Arbre de types borné (profondeur et clés par niveau) ; jamais de valeur de chaîne. */
+function shapeTree(value: unknown, depth: number): string {
+  if (depth >= SHAPE_MAX_DEPTH) return shapeType(value);
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => typeof entry === 'object' && entry !== null);
+    return first === undefined ? shapeType(value) : `${shapeType(value)}<${shapeTree(first, depth + 1)}>`;
+  }
+  if (!isRecord(value)) return shapeType(value);
+  const keys = Object.keys(value);
+  const parts = keys.slice(0, SHAPE_MAX_KEYS).map((key) => `${safeKey(key)}:${shapeTree(value[key], depth + 1)}`);
+  if (keys.length > SHAPE_MAX_KEYS) parts.push(`+${keys.length - SHAPE_MAX_KEYS}`);
+  return `{${parts.join(',')}}`;
+}
+
+/**
+ * Résumé de la FORME d'une page amont, pour le diagnostic d'un catalogue vide : clés et types, tailles, nombre de
+ * nœuds visités et clés des premiers nœuds porteurs de `program`, `assets` ou `title`. Aucune valeur de chaîne
+ * (titres, URL, jetons, identifiants) n'y figure ; sortie bornée.
+ */
+function describeShape(document: unknown): string {
+  const top = isRecord(document)
+    ? Object.keys(document).slice(0, SHAPE_MAX_KEYS).map((key) => `${safeKey(key)}=${shapeType(document[key])}`).join(',')
+    : shapeType(document);
+  const carriers: string[] = [];
+  const stack: unknown[] = [document];
+  let visited = 0;
+  while (stack.length > 0 && visited < MAX_VISITED_NODES) {
+    const node = stack.pop();
+    visited += 1;
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i -= 1) stack.push(node[i]);
+      continue;
+    }
+    if (!isRecord(node)) continue;
+    if (carriers.length < 3 && ('program' in node || 'assets' in node || 'title' in node)) {
+      carriers.push(`[${Object.keys(node).slice(0, SHAPE_MAX_KEYS * 2).map(safeKey).join(',')}]`);
+    }
+    const values = Object.values(node);
+    for (let i = values.length - 1; i >= 0; i -= 1) {
+      if (typeof values[i] === 'object' && values[i] !== null) stack.push(values[i]);
+    }
+  }
+  const summary = `top={${top}} noeuds=${visited} arbre=${shapeTree(document, 0)} porteurs=${carriers.join('')}`;
+  return summary.length > SHAPE_MAX_CHARS ? `${summary.slice(0, SHAPE_MAX_CHARS)}...` : summary;
+}
+
 /** Épisodes d'une fiche : les sous-éléments porteurs d'un asset et d'un titre. */
 function extractEpisodes(document: unknown): MolotovEpisode[] {
   return collectNodes(document, episodeOf, MAX_REPLAY_ITEMS, false);
@@ -1598,10 +1660,15 @@ export function registerMolotovRoutes(router: App, deps: AppDeps, backend: UserB
       apiCall(fetchFn(), state, { method: 'GET', path: '/papi/v1/page/replay-vod', timeoutMs: CATALOG_TIMEOUT_MS }),
     );
     if (!result.ok) throw new UserApiError(502, 'molotov_unavailable');
-    const items = extractReplay(parseJsonBytes(result.bytes));
-    if (items.length === 0) console.warn('[molotov] catalogue replay sans élément exploitable');
+    const page = parseJsonBytes(result.bytes);
+    const items = extractReplay(page);
     const fetchedAt = Date.now();
-    storeReplay(session.account.id, items, fetchedAt);
+    if (items.length === 0) {
+      // Liste vide : forme de la page journalisée, et pas de cache (l'appel suivant relance l'amont).
+      console.warn(`[molotov] catalogue replay sans élément exploitable ${describeShape(page)}`);
+    } else {
+      storeReplay(session.account.id, items, fetchedAt);
+    }
     c.header('Cache-Control', 'no-store');
     return sendJson(c, { items, fetchedAt });
   });
