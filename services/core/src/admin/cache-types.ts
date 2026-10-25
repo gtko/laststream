@@ -61,7 +61,7 @@ export interface TvCronState {
 }
 
 /** État d'une source du cron TV (voir TvCronState.sources). */
-export interface TvCronSourceState {
+interface TvCronSourceState {
   lastSuccessAt: string | null;
   consecutiveFailures: number;
   durationMs: number;

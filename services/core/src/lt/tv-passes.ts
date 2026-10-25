@@ -4,15 +4,13 @@
  * (iptv-org, Free-TV, Pluto, Samsung) et chaque fichier EPG XMLTV (clé « epg:<hôte et chemin> »).
  */
 
-/** Passe complète (Cron de 6 h). */
-export const TV_FULL_CRON = '0 */6 * * *';
 /** Reprise : ne relance que les sources en échec et les sondages restants. */
 export const TV_RESUME_CRON = '*/30 * * * *';
 /** Échecs d'affilée qui déclenchent l'alerte, une seule fois, au franchissement du seuil. */
-export const ALERT_AFTER_FAILURES = 2;
+const ALERT_AFTER_FAILURES = 2;
 
 /** Sources du catalogue : c'est une jointure, une source en échec relance l'étage catalogue entier. */
-export const CATALOG_SOURCE_IDS = ['iptv', 'freetv', 'pluto', 'samsung'] as const;
+const CATALOG_SOURCE_IDS = ['iptv', 'freetv', 'pluto', 'samsung'] as const;
 
 /** Clé d'une source EPG (une URL XMLTV), la même que l'étiquette de `epgStats`. */
 export const epgSourceId = (url: string): string => 'epg:' + url.replace(/^https:\/\//, '');
@@ -34,7 +32,7 @@ export interface TvPassTrace {
 }
 
 /** État d'une source après son dernier passage. */
-export interface SourceState {
+interface SourceState {
   /** Dernier succès (ISO), null si la source n'a jamais réussi. */
   lastSuccessAt: string | null;
   /** Échecs d'affilée (0 après un succès). */
