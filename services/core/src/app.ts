@@ -15,6 +15,7 @@ import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
 import { platform, runtimeEnv } from './platform/index.js';
+import { healthReport } from './health/probes.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
@@ -224,7 +225,8 @@ export function createApp(deps: AppDeps): App {
   app.use('*', rateLimit((c) => c.req.method === 'GET' && c.req.path === '/announcements', createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
   app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
-  app.get('/health', (c) => sendJson(c, { ok: true }));
+  // Sonde de disponibilité : version et état de chaque dépendance (délai borné, lecture seule). Toujours HTTP 200.
+  app.get('/health', async (c) => sendJson(c, await healthReport(MANIFEST.version, deps.healthProbes ?? {})));
 
   app.get('/manifest.json', (c) => sendJson(c, MANIFEST));
 

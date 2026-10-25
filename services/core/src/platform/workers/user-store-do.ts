@@ -183,6 +183,12 @@ export class UserStoreDO extends DurableObject {
     return sqlStatsOf(this.db, sizeBytes);
   }
 
+  /** Sonde de /health (lecture seule) : la base du Durable Object répond. */
+  healthPing(): boolean {
+    this.db.prepare('SELECT 1').get();
+    return true;
+  }
+
   // Flux temps réel social (GET /user/social/live)
 
   /**

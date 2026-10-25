@@ -8,6 +8,7 @@ import type { MetaBlobStore } from './lt/meta.js';
 import type { QuotaGate } from './lt/quota.js';
 import type { RowBlobStore } from './lt/rows.js';
 import type { SocialEventHandler } from './user/social-v2-events.js';
+import type { HealthProbe } from './health/probes.js';
 
 /** Dépendances injectées dans l'application. Ne jamais logger ces valeurs. */
 export interface AppDeps {
@@ -71,4 +72,6 @@ export interface AppDeps {
   uiOrigins?: readonly string[];
   /** Origine du serveur de streaming relayé sous /_ss (LASTADDON_STREAMING_SERVER). Par défaut : la variable, ou 127.0.0.1:11470. */
   streamingServer?: string;
+  /** Sondes des dépendances de /health (lecture seule, délai borné) : Workers → KV, R2, base du Durable Object. Absentes : aucune dépendance listée. */
+  healthProbes?: Readonly<Record<string, HealthProbe>>;
 }

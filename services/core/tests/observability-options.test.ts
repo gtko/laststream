@@ -25,6 +25,12 @@ describe('options Sentry du Worker', () => {
     expect(typeof opts.beforeBreadcrumb).toBe('function');
   });
 
+  it('tags release et platform posés pour tous les événements (portée initiale)', () => {
+    expect(opts.initialScope).toEqual({
+      tags: { release: 'lastaddon-core@1.0.0', platform: 'cloudflare-workers' },
+    });
+  });
+
   it('DSN et version transmis, environnement de production', () => {
     expect(opts.dsn).toBe('https://key@o1.ingest.sentry.io/1');
     expect(opts.release).toBe('lastaddon-core@1.0.0');
