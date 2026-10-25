@@ -15,6 +15,11 @@ defaults:
   run:
     shell: cmd
 
+# PR : un nouveau push annule le run en cours. main : le run en cours va au bout, seul le plus récent en attente est conservé.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: [self-hosted, laststream-local]
@@ -30,7 +35,7 @@ jobs:
           cache: npm
 
       - name: Installer les dépendances
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
