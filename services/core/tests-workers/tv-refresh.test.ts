@@ -85,7 +85,9 @@ describe('Workers : lecture en flux et R2', () => {
     if (bucket === undefined) throw new Error('binding TV absent');
     const blobs = createR2TvBlobs(bucket);
     const result = await refreshTv(blobs, { fetch: fake, countries: ['FR'], probe: true, now: () => now });
-    expect(result).toEqual({ channels: 1, programmes: 1, epgOk: true });
+    // `removed` fait partie du contrat (RefreshResult, src/lt/tv-build.ts) : 0 au premier passage, sans historique de santé
+    // le retrait exige HEALTH_THRESHOLD (3) échecs consécutifs.
+    expect(result).toEqual({ channels: 1, programmes: 1, epgOk: true, removed: 0 });
 
     const catalog = JSON.parse((await blobs.get(TV_KEYS.catalog)) ?? '{}') as { catalog: { channels: { name: string; direct?: boolean }[] } };
     expect(catalog.catalog.channels.map((c) => [c.name, c.direct])).toEqual([['TF1', true]]);
