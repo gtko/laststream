@@ -83,7 +83,7 @@ export class StallWatch {
 }
 
 /** Lecture stable depuis ce délai : les essais déjà faits ne comptent plus (des micro-coupures espacées n'épuisent pas MAX_ATTEMPTS). */
-export const STABLE_RESET_MS = 120_000;
+const STABLE_RESET_MS = 120_000;
 
 /**
  * Remise à zéro des essais après une lecture stable. Renvoie null s'il n'y a rien à remettre. Seule la vue courante reste
