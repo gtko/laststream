@@ -157,7 +157,8 @@ describe('rapport de /health mis en cache (un isolat)', () => {
     expect(second).toEqual(first);
   });
 
-  it('appels simultanés : une seule exécution des sondes', async () => {
+  it('appels simultanés sans cache valide : chacun lance ses sondes ; un appel après résolution, dans les 15 s, réutilise le rapport résolu', async () => {
+    let clock = 0;
     let runs = 0;
     const report = createHealthReporter({
       release: 'lastaddon-core@0.1.0',
@@ -166,10 +167,18 @@ describe('rapport de /health mis en cache (un isolat)', () => {
           runs += 1;
         },
       },
-      now: () => 0,
+      now: () => clock,
     });
-    await Promise.all([report(), report(), report()]);
-    expect(runs).toBe(1);
+    const simultaneous = await Promise.all([report(), report(), report()]);
+    expect(runs).toBe(3);
+    expect(simultaneous.every((rapport) => rapport.ok && !rapport.degraded)).toBe(true);
+    clock = 1_000;
+    const after = await report();
+    expect(runs).toBe(3);
+    expect(simultaneous).toContain(after);
+    clock = HEALTH_CACHE_MS;
+    await report();
+    expect(runs).toBe(4);
   });
 
   it('après 15 s : nouvelle exécution des sondes (et rien avant)', async () => {

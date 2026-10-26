@@ -83,17 +83,18 @@ export interface HealthReporterOptions {
 }
 
 /**
- * Rapport /health mis en cache : un seul rapport par fenêtre de `cacheMs`, partagé par les appels simultanés (la promesse
- * est gardée, pas seulement la valeur). Les sondes ne tournent donc qu'une fois par fenêtre et par isolat.
+ * Rapport /health mis en cache : seul le rapport résolu est gardé, pendant `cacheMs`, par isolat. Un appel après résolution
+ * réutilise ce rapport ; des appels simultanés sans cache valide lancent chacun leurs sondes. La promesse n'est jamais
+ * partagée entre requêtes : si la requête qui l'a lancée est annulée, les autres n'attendent pas une promesse orpheline.
  */
 export function createHealthReporter(options: HealthReporterOptions): () => Promise<HealthReport> {
   const { release, probes, timeoutMs = HEALTH_TIMEOUT_MS, cacheMs = HEALTH_CACHE_MS, now = Date.now } = options;
-  let cached: { at: number; report: Promise<HealthReport> } | undefined;
-  return () => {
+  let cached: { at: number; report: HealthReport } | undefined;
+  return async () => {
     const at = now();
-    if (cached === undefined || at - cached.at >= cacheMs) {
-      cached = { at, report: healthReport(release, probes, timeoutMs) };
-    }
-    return cached.report;
+    if (cached !== undefined && at - cached.at < cacheMs) return cached.report;
+    const report = await healthReport(release, probes, timeoutMs);
+    cached = { at, report };
+    return report;
   };
 }
