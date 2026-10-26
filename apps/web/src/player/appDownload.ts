@@ -21,7 +21,7 @@ export function currentOs(): Os {
 }
 
 /** Page de téléchargement de l'app (Windows, Android). */
-export const APP_DOWNLOAD_URL = 'https://laststream-www.gtux-prog.workers.dev/';
+export const APP_DOWNLOAD_URL = 'https://laststream.app/';
 
 export interface AppOffer { text: string; link: { label: string; href: string } | null }
 

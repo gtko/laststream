@@ -34,7 +34,7 @@ describe('comparaison de versions', () => {
 });
 
 describe('manifeste latest.json', () => {
-  const ok = { versionCode: 2026101801, versionName: '2026.10.18.1', url: 'https://laststream.gtux-prog.workers.dev/app/android/laststream-2026101801.apk', sha256: SHA, size: 48_000_000, notes: 'Mini-lecteur' };
+  const ok = { versionCode: 2026101801, versionName: '2026.10.18.1', url: 'https://app.laststream.app/app/android/laststream-2026101801.apk', sha256: SHA, size: 48_000_000, notes: 'Mini-lecteur' };
 
   it('accepte un manifeste complet', () => {
     expect(parseManifest(ok)).toEqual(ok);

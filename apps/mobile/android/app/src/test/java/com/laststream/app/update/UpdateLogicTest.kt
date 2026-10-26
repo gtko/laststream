@@ -31,8 +31,8 @@ class UpdateLogicTest {
     }
 
     @Test fun onlyHttpsDownloads() {
-        assertTrue(UpdateLogic.isDownloadUrl("https://laststream.gtux-prog.workers.dev/app/android/laststream-2026101801.apk"))
-        assertFalse(UpdateLogic.isDownloadUrl("http://laststream.gtux-prog.workers.dev/a.apk"))
+        assertTrue(UpdateLogic.isDownloadUrl("https://app.laststream.app/app/android/laststream-2026101801.apk"))
+        assertFalse(UpdateLogic.isDownloadUrl("http://app.laststream.app/a.apk"))
         assertFalse(UpdateLogic.isDownloadUrl("file:///sdcard/a.apk"))
         assertFalse(UpdateLogic.isDownloadUrl(null))
     }
