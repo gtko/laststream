@@ -6,18 +6,22 @@ import { createDurableObjectUserBackend, USER_STORE_NAME } from '../src/platform
 import { durableObjectSql } from '../src/platform/workers/sql.js';
 import type { WorkerEnv } from '../src/platform/workers/env.js';
 import type { UserStoreDO } from '../src/platform/workers/user-store-do.js';
-import { migrate } from '../src/user/migrations.js';
+import { migrate, MIGRATIONS } from '../src/user/migrations.js';
 import { nowIso } from '../src/user/session.js';
 
 const workerEnv = env as unknown as WorkerEnv;
 const worker = (workerExports as unknown as { default: { fetch(input: string, init?: RequestInit): Promise<Response> } }).default;
 const PASSWORD = 'mot-de-passe-test-1';
 const JSON_HEADERS = { 'content-type': 'application/json' };
+/** Tables créées par la migration 30 (session TV du compte), retirées pour revenir à la version 23. */
+const TABLES_OF_MIGRATION_30 = MIGRATIONS.filter((m) => m.version === 30).flatMap((m) =>
+  [...m.sql.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1] as string),
+);
 
 /**
  * Base de production : schéma des migrations 1 à 23 (social v3), puis code actuel au démarrage du Durable Object. Les
  * objets des migrations 24 à 31 (annonces, boîte écartée, invitations révoquées, sessions UA, invitations du foyer,
- * billets de parrainage, marquage « vu » manuel, compte Molotov, fin d'extrait des liens publics) sont retirés, la table
+ * billets de parrainage, marquage « vu » manuel, session TV du compte, fin d'extrait des liens publics) sont retirés, la table
  * des versions est ramenée à 23, puis `migrate` est rejoué comme au constructeur du Durable Object.
  */
 function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
@@ -36,7 +40,7 @@ function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
     sql.exec('ALTER TABLE invites DROP COLUMN picks');
     sql.exec('ALTER TABLE invites DROP COLUMN message');
     sql.exec('ALTER TABLE progress DROP COLUMN manual');
-    sql.exec('DROP TABLE IF EXISTS molotov_accounts');
+    for (const table of TABLES_OF_MIGRATION_30) sql.exec(`DROP TABLE IF EXISTS ${table}`);
     sql.exec('ALTER TABLE share_links DROP COLUMN end_pos');
     sql.exec('DELETE FROM schema_migrations WHERE version >= 24');
   });
