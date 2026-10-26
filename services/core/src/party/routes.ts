@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { AppDeps } from '../deps.js';
 import { type App, type Ctx, newApp } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
-import { createRateLimiter } from '../rate-limit.js';
+import { createSharedLimiter } from '../rate-limit-shared.js';
 import type { UserBackend } from '../user/repo.js';
 import { guestAvatarOf } from '../user/avatar.js';
 import { userErrorHandler } from '../user/routes.js';
@@ -106,14 +106,14 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
   const users = () => backend.users();
   const social = () => backend.social();
   const socialV2 = () => backend.socialV2();
-  const reads = createRateLimiter(READ_LIMIT, WINDOW_MS);
-  const writes = createRateLimiter(WRITE_LIMIT, WINDOW_MS);
+  const reads = createSharedLimiter(deps.sharedLimits, 'partyRead', READ_LIMIT, WINDOW_MS);
+  const writes = createSharedLimiter(deps.sharedLimits, 'partyWrite', WRITE_LIMIT, WINDOW_MS);
 
   const router = newApp();
   router.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
     if (c.req.method !== 'OPTIONS') {
-      const verdict = (c.req.method === 'GET' ? reads : writes)(c.get('ip') ?? 'inconnu');
+      const verdict = await (c.req.method === 'GET' ? reads : writes)(c.get('ip') ?? 'inconnu');
       if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     }
     await next();

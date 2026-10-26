@@ -18,6 +18,7 @@ import { handleSocialLiveWs } from './user/social-v2-live-ws.js';
 import { SOCIAL_LIVE_PATH } from './user/social-v2-live.js';
 import { countryCode } from './user/title-starts.js';
 import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, prewarmMetaFromEnv, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
+import { type SharedLimits, sharedLimitsFromEnv } from './rate-limit-shared.js';
 import { createWorkersOpsPorts } from './platform/workers/ops.js';
 import { workersQuotaGate } from './platform/workers/metrics.js';
 
@@ -25,6 +26,13 @@ export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
 /** Application construite au premier appel de l'isolat : les liaisons `env` sont les mêmes pour toutes les requêtes. */
 let app: App | undefined;
+/** Liaisons de limite partagées (voir rate-limit-shared.ts), construites une fois par isolat : l'objet sert de clé aux limiteurs des portes WebSocket. */
+let sharedLimits: SharedLimits | undefined;
+
+function sharedLimitsFor(env: WorkerEnv): SharedLimits {
+  sharedLimits ??= sharedLimitsFromEnv(env);
+  return sharedLimits;
+}
 
 function appFor(env: WorkerEnv): App {
   if (app !== undefined) return app;
@@ -39,6 +47,7 @@ function appFor(env: WorkerEnv): App {
     allowPlain: isPlainAllowed(),
     ui: platform.uiAssets,
     authLimiter: authLimiterFrom(env),
+    sharedLimits: sharedLimitsFor(env),
     mdblistLimiter: mdbLimit === undefined ? undefined : async () => (await mdbLimit.limit({ key: 'mdblist' })).success,
     // Budget quotidien global (jour UTC) partagé par toutes les instances : Durable Object Metrics. Absent : compteur en mémoire.
     ...(env.METRICS === undefined ? {} : { mdblistQuota: workersQuotaGate(env.METRICS) }),
@@ -104,7 +113,7 @@ async function handleFetch(request: Request, env: WorkerEnv, ctx: ExecutionConte
     if (PARTY_WS_PATH.test(new URL(request.url).pathname)) {
       const secret = secretFromEnv();
       if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
-      return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp });
+      return await handlePartyWs(request, { party: platform().createPartyBackend?.(), secret, ip: clientIp, shared: sharedLimitsFor(env) });
     }
     // Flux temps réel social : ticket vérifié ici, connexion acceptée par le Durable Object des données.
     if (new URL(request.url).pathname === SOCIAL_LIVE_PATH) {
@@ -112,7 +121,7 @@ async function handleFetch(request: Request, env: WorkerEnv, ctx: ExecutionConte
       if (secret === undefined) throw new Error('LASTADDON_SECRET manquant');
       // Types des requêtes Workers (même pont que party-backend.ts) : le stub accepte la mise à niveau de UserStoreDO.fetch.
       const users = env.USER_STORE.getByName(USER_STORE_NAME) as unknown as { fetch(forwarded: Request): Promise<Response> };
-      return await handleSocialLiveWs(request, { secret, ip: clientIp, forward: (forwarded) => users.fetch(forwarded) });
+      return await handleSocialLiveWs(request, { secret, ip: clientIp, forward: (forwarded) => users.fetch(forwarded), shared: sharedLimitsFor(env) });
     }
     // Pays Cloudflare (request.cf, absent des types DOM) : « XX » si inconnu.
     const country = countryCode((request as { cf?: { country?: unknown } }).cf?.country);

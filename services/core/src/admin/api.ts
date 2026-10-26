@@ -5,6 +5,7 @@ import { metricsService } from '../metrics/index.js';
 import type { PartyBackend } from '../party/backend.js';
 import { platform, runtimeEnv } from '../platform/index.js';
 import { createRateLimiter } from '../rate-limit.js';
+import { createSharedLimiter } from '../rate-limit-shared.js';
 import { generateSessionToken, hashSessionToken, verifySecret } from '../user/crypto.js';
 import type { AdminRepo, UserBackend, UserRepo } from '../user/repo.js';
 import { assertNotLocked, assertUnlocked, nowIso, type Session, sessionOf } from '../user/session.js';
@@ -64,8 +65,9 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   const admin = (): AdminRepo => backend.admin();
   const limits = { ...LIMITS, ...deps.adminRateLimits };
   const limiters = {
-    read: createRateLimiter(limits.read, WINDOW_MS),
-    write: createRateLimiter(limits.write, WINDOW_MS),
+    read: createSharedLimiter(deps.sharedLimits, 'adminRead', limits.read, WINDOW_MS),
+    write: createSharedLimiter(deps.sharedLimits, 'adminWrite', limits.write, WINDOW_MS),
+    // Fenêtre de 10 minutes : hors des périodes de la liaison partagée (10 ou 60 s), Map locale seule.
     elevate: createRateLimiter(limits.elevate, ELEVATE_WINDOW_MS),
   };
   const metricsOf = () => deps.metrics ?? metricsService();
@@ -81,7 +83,7 @@ export function registerAdminRoutes(app: App, deps: AppDeps, backend: UserBacken
   router.use('*', async (c, next) => {
     if (c.req.method !== 'OPTIONS') {
       const kind = c.req.method === 'GET' || c.req.method === 'HEAD' ? 'read' : 'write';
-      const verdict = limiters[kind](c.get('ip') ?? 'inconnu');
+      const verdict = await limiters[kind](c.get('ip') ?? 'inconnu');
       if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     }
     await next();
