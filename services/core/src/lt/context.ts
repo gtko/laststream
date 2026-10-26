@@ -29,6 +29,7 @@ import type { MetaBlobStore } from './meta.js';
 export const TTL = {
   tmdb: 6 * 3600e3, // détails et listes
   tmdbFast: 3 * 3600e3, // tendances et populaires
+  tmdbImdbId: 30 * 24 * 3600e3, // correspondance TMDB vers IMDb (identifiant définitif, LAST-138)
   tmdbDay: 3600e3, // tendances du jour (Top 10 d'aujourd'hui) : une heure
   tmdbWatch: 12 * 3600e3, // fournisseurs de streaming
   mdb: 24 * 3600e3, // notes MDBList

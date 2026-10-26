@@ -1,6 +1,6 @@
 import { isRecord } from '../sources/http.js';
-import { recordAt, type LtContext } from './context.js';
-import { tmdbGet, tmdbTtl } from './providers.js';
+import { recordAt, TTL, type LtContext } from './context.js';
+import { tmdbFetch, tmdbGet, tmdbTtl } from './providers.js';
 
 /**
  * Catalogues Stremio alimentés par TMDB. Chaque entrée renvoie des métas identifiées par l'id IMDb (tt…),
@@ -72,12 +72,26 @@ function itemsOf(def: CatalogDef, results: Record<string, unknown>[]): TmdbItem[
   return items;
 }
 
-/** Id IMDb d'un élément TMDB, ou null (élément ignoré). Un échec ne fait pas échouer le catalogue. */
+/**
+ * Id IMDb d'un élément TMDB, ou null (élément ignoré). Un échec ne fait pas échouer le catalogue.
+ *
+ * LAST-138 : l'appel `/{movie|tv}/{id}/external_ids`, répété pour chaque élément d'une page (20 par page, TMDB n'a pas de
+ * route groupée), forme le motif « N+1 API Call » de Sentry. L'identifiant IMDb d'un titre ne change plus : la
+ * correspondance est gardée 30 jours (une absence d'id IMDb, souvent provisoire pour une sortie récente, seulement 6 h).
+ * Une page reconstruite ne rappelle TMDB que pour les titres nouveaux, au lieu de 20 appels toutes les 3 h.
+ */
 async function imdbIdOf(ctx: LtContext, token: string, item: TmdbItem): Promise<string | null> {
   try {
-    const ids = await tmdbGet(ctx, token, `${item.kind}/${item.id}/external_ids`);
-    const imdb = recordAt(ids).imdb_id;
-    return typeof imdb === 'string' && IMDB_ID.test(imdb) ? imdb : null;
+    return await ctx.state.cache.get<string | null>(
+      `tmdb:imdbid:${item.kind}:${item.id}`,
+      (imdb) => (imdb === null ? TTL.tmdb : TTL.tmdbImdbId),
+      async () => {
+        const ids = await tmdbFetch(ctx, token, `${item.kind}/${item.id}/external_ids`);
+        const imdb = recordAt(ids).imdb_id;
+        return typeof imdb === 'string' && IMDB_ID.test(imdb) ? imdb : null;
+      },
+      { provider: 'tmdb', swr: true },
+    );
   } catch {
     return null;
   }
