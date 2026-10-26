@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+# Runner Windows uniquement : pwsh charge le profil PowerShell de l'utilisateur, qui bloque quand la sortie est redirigée.
+# Retirer ce bloc si runs-on repasse sur ubuntu-latest (pas de cmd sous Linux).
+defaults:
+  run:
+    shell: cmd
+
+# PR : un nouveau push annule le run en cours. master : le run en cours va au bout, seul le plus récent en attente est conservé.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Tests et compilation Wrangler à blanc
+    runs-on: [self-hosted, laststream-local]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Node 22, comme la CI de lastaddon (le code de production tourne sur workerd).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm test
+
+      # Compilation à blanc : --dry-run ne téléverse rien vers Cloudflare (aucun déploiement dans ce workflow).
+      # Version épinglée comme celle de lastaddon (package-lock.json) ; pas de secret nécessaire.
+      - run: npx --yes wrangler@4.151.1 deploy --dry-run --outdir dist-dryrun
+        env:
+          WRANGLER_SEND_METRICS: "false"
