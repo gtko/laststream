@@ -27,7 +27,6 @@ const SERVICE_DEFS = [
   { slug: 'arte', label: 'Arte', re: /^arte/, color: '#17151f' },
   { slug: 'mubi', label: 'MUBI', re: /^mubi/, color: '#17151f' },
   { slug: 'pluto-tv', label: 'Pluto TV', re: /^pluto/, color: '#17151f' },
-  { slug: 'molotov', label: 'Molotov', re: /^molotov/, color: '#17151f' },
 ];
 const SERVICE_CANON = {
   netflix: /^netflix$/, 'prime-video': /^amazon prime video$/, 'disney-plus': /^disney plus$/, 'canal-plus': /^canal\+$/,

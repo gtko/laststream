@@ -17,6 +17,7 @@ const NO_HTML_SINK = [
 ];
 
 export default [
+  { ignores: ['archive/**'] },
   {
     files: ['src/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.browser } },

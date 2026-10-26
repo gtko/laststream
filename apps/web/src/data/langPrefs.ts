@@ -88,7 +88,9 @@ export function normalizeLangPrefs(x: unknown, base: LangPrefs = DEFAULT_LANG_PR
     audio2: code(o.audio2, base.audio2, [LANG_VO, LANG_NONE]),
     subsOn: typeof o.subsOn === 'boolean' ? o.subsOn : base.subsOn,
     subs: code(o.subs, base.subs, [LANG_MAIN]),
-    learn: typeof o.learn === 'boolean' ? o.learn : base.learn,
+    // Mode apprentissage retiré de l'interface (LAST-184) : toujours coupé à la lecture, quelle que soit la valeur stockée.
+    // Le moteur (player/langPolicy.ts) le lit encore pour les réglages qu'on lui passe explicitement.
+    learn: false,
     learnLang: code(o.learnLang, base.learnLang),
     anime: normalizeAnime(o.anime, base.anime),
   };

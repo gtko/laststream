@@ -17,6 +17,7 @@
     "ffmpeg"
   ],
   "ignore": [
-    ".claude/**"
+    ".claude/**",
+    "archive/**"
   ]
 }

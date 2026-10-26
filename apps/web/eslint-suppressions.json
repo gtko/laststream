@@ -214,11 +214,6 @@
       "count": 2
     }
   },
-  "src/ui/molotovReplay.js": {
-    "no-restricted-syntax": {
-      "count": 2
-    }
-  },
   "src/ui/parties.js": {
     "no-restricted-syntax": {
       "count": 8

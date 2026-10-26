@@ -2,11 +2,10 @@
 import { infiniteList } from './infinite.js';
 import { tvChannels, tvEpg, tvFacets, tvImport } from '../data/lt';
 import { boxAccess, boxCat, boxGroups, boxOnlyChannels, getBoxQuality, getBoxReach, mergeBox } from '../data/tvBox';
-import { getMolotovChannels, getMolotovEpg, getMolotovStatus } from '../data/molotovApi';
 import { activeBoxChannels, BOX_CHANGED, refreshAll } from '../data/tvSources';
 import { hasLocalGuide, localProgs } from '../data/tvXmltv';
 import { auth, isKidProfile, kidSection } from '../data/auth';
-import { favStorageKey, toggleId } from '../data/tvChannelList';
+import { favStorageKey, isPlayableSnapshot, toggleId } from '../data/tvChannelList';
 import { badgeOf, buildLogoIndex, findLogo } from '../data/tvLogos';
 import { getRegion, getVideoLang } from '../data/prefs';
 import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank';
@@ -15,7 +14,6 @@ import { teardownFiche } from './fiche.js';
 import { row, svcError, topBar } from './fragments.js';
 import { externalKind } from './tvExternal.js';
 import { ICON } from './icons.js';
-import { loadMolotovReplay, MOLOTOV_REPLAY_CAT, renderReplayGrid, replayCount } from './molotovReplay.js';
 import { initialStatus } from './tvStatus.js';
 import { state } from './state.js';
 import { esc, names, store } from './util.js';
@@ -31,11 +29,8 @@ export const tv = {
   facets: null, catFacets: null, filters: null, qTimer: null,
   // Playlists de l'utilisateur (box, IPTV) : chaînes absentes du catalogue chargé, et leurs catégories.
   boxOnly: [], boxCats: [],
-  // Chaînes Molotov (compte connecté) : catalogue à part, lu par la lecture DASH (pas un flux HLS).
-  molotov: [], molotovLoading: false,
 };
 export const TV_CATS = ['Toutes', 'Favoris', 'Info', 'Sport', 'Cinéma', 'Jeunesse', 'Musique', 'Divertissement', 'Documentaires', 'FAST', 'Ma playlist'];
-export const MOLOTOV_CAT = 'Molotov';
 export const PX_MIN = 160 / 30; // 30 min = 160 px
 export const EPG_H = 6;
 export const EPG_CH_W = 220;
@@ -49,7 +44,7 @@ export const getFavs = () => {
   const key = favStorageKey(auth.profile && auth.profile.id);
   return store(key) || (key !== favStorageKey() ? store(favStorageKey()) : null) || [];
 };
-export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user, tv.boxOnly, tv.molotov);
+export const allChannels = () => Array.from(tv.byId.values()).concat(tv.user, tv.boxOnly);
 
 // ---------- Logos : celui de la chaîne, sinon celui du catalogue (nom, guide, numéro), sinon une pastille ----------
 const logoIdx = { n: -1, map: null };
@@ -91,93 +86,7 @@ document.addEventListener('error', (e) => {
 export function playableChannels() {
   const f = initFilters();
   const cat = Array.from(tv.byId.values()).filter((c) => matchesFilters(c, f, 'Toutes'));
-  return rankChannels(cat, f.country).concat(tv.boxOnly.filter((c) => matchesFilters(c, f, 'Toutes')), tv.user, tv.molotov);
-}
-
-/**
- * Chaîne Molotov sous la forme d'une chaîne de la TV : elle porte son identifiant Molotov (`molotovId`), qui route la
- * lecture vers le lecteur DASH (et non vers un flux HLS comme les chaînes de playlist).
- */
-function molotovChannel(c) {
-  return {
-    id: 'molotov:' + c.id,
-    name: c.name,
-    logo: c.logo || '',
-    group: c.group || MOLOTOV_CAT,
-    cat: MOLOTOV_CAT,
-    source: 'molotov',
-    molotovId: c.id,
-    /** Programme annoncé par le catalogue : repli de `nowNext` quand la chaîne n'a pas de guide. */
-    program: c.program || '',
-    num: null,
-    sig: null,
-    url: '',
-    epgId: '',
-    fast: false,
-    flaky: false,
-    lowRel: false,
-    alternatives: [],
-  };
-}
-
-/** Catalogue Molotov du compte connecté (absent : pas de compte, pas de chaînes), puis son guide TV. */
-export async function loadMolotovChannels() {
-  if (tv.molotovLoading) return;
-  tv.molotovLoading = true;
-  try {
-    const status = await getMolotovStatus();
-    const list = status.connected ? await getMolotovChannels() : [];
-    tv.molotov = list.map(molotovChannel);
-    // Guide TV des chaînes Molotov (grille multi-heures) : rempli dans `tv.epg` juste après le catalogue.
-    if (tv.molotov.length) await ensureMolotovEpg();
-  } catch (_) {
-    tv.molotov = [];
-  } finally {
-    tv.molotovLoading = false;
-    syncBox();
-    if (state.kind === 'tvlive') {
-      refreshCats();
-      renderEpgGrid();
-    }
-  }
-}
-
-/**
- * Programmes d'une chaîne du guide Molotov, à la forme de `tv.epg` : `start`/`stop` en secondes (les horaires du
- * guide sont des ISO 8601), `desc`/`icon` pour le détail du programme. Les programmes sans horaire exploitable
- * sont ignorés.
- */
-function molotovProgs(channel) {
-  const out = [];
-  for (const p of channel.programs || []) {
-    const start = Date.parse(p.start);
-    const stop = Date.parse(p.end);
-    if (!Number.isFinite(start) || !Number.isFinite(stop) || stop <= start) continue;
-    out.push({ start: Math.floor(start / 1000), stop: Math.floor(stop / 1000), title: p.title || '', desc: p.desc || '', icon: p.image || '' });
-  }
-  return out;
-}
-
-/** Chargement du guide Molotov en cours (un seul à la fois). */
-let molotovEpgJob = null;
-
-/**
- * Guide TV Molotov dans `tv.epg`, une entrée par chaîne du catalogue (clé = id de la chaîne, voir `epgKey`).
- * Réappliqué à chaque appel, indispensable après un changement de fenêtre de grille : `tvWindow()` vide `tv.epg`,
- * sans quoi la grille se vide au-delà d'une heure. Le guide lui-même est mémoisé par `getMolotovEpg` (dix minutes).
- * Sans guide (compte absent, erreur), le repli « Programme indisponible » / titre du catalogue reste en place.
- */
-export function ensureMolotovEpg() {
-  if (!molotovEpgJob) {
-    molotovEpgJob = getMolotovEpg()
-      .then((list) => {
-        const progs = new Map(list.map((g) => [String(g.id), molotovProgs(g)]));
-        for (const c of tv.molotov) tv.epg.set(epgKey(c), progs.get(String(c.molotovId)) || []);
-      })
-      .catch(() => { /* le repli (« Programme indisponible ») reste en place */ })
-      .finally(() => { molotovEpgJob = null; });
-  }
-  return molotovEpgJob;
+  return rankChannels(cat, f.country).concat(tv.boxOnly.filter((c) => matchesFilters(c, f, 'Toutes')), tv.user);
 }
 
 /**
@@ -195,7 +104,6 @@ export function syncBox() {
   tv.boxCats = boxGroups(box).map(boxCat);
   SPECIAL_CATS.length = BASE_CATS.length;
   if (box.length) SPECIAL_CATS.push('Ma box', ...tv.boxCats);
-  if (tv.molotov.length) SPECIAL_CATS.push(MOLOTOV_CAT);
 }
 
 /** Chaîne uniquement présente dans une playlist et illisible ici (navigateur, hors du réseau de la box) : { ok, note }. */
@@ -212,6 +120,8 @@ const BASE_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
 const SPECIAL_CATS = BASE_CATS.slice();
 export const favSnaps = () => store(FAV_SNAP_KEY) || {};
 export { FAV_SNAP_KEY };
+/** Chaîne reconstruite depuis un instantané (favori, dernière chaîne) ; null s'il n'a ni URL, ni source de rechange, ni box. */
+export const snapChannel = (s) => (isPlayableSnapshot(s) ? normChannel(s) : null);
 
 /** Filtres par défaut : pays de la région choisie, français, chaînes fiables. */
 export const defaultFilters = () => ({ country: getRegion().code, language: langCode3(getVideoLang().lang) || 'fra', source: '', q: '', reliable: true });
@@ -258,7 +168,7 @@ export function matchesFilters(c, f, cat) {
   return true;
 }
 // Chaîne de playlist : guide local (XMLTV de l'utilisateur, clé = id de la chaîne) sinon identifiant de guide du catalogue.
-// Chaîne Molotov (et catalogue) : guide du serveur, clé = id de la chaîne (voir `ensureMolotovEpg` pour Molotov).
+// Chaîne du catalogue : guide du serveur, clé = id de la chaîne.
 export const epgKey = (c) => (c.source === 'box' ? (hasLocalGuide(c.id) ? c.id : c.epgId || '') : c.source === 'user' ? c.epgId || '' : c.id);
 export const fmtHM = (sec) => new Date(sec * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
@@ -361,9 +271,7 @@ export async function loadFacets() {
 
 export async function ensureEpg(chs) {
   const w0 = tvWindow();
-  // Guide Molotov : route dédiée, jamais demandée au serveur EPG ; rechargé si la fenêtre de grille a changé.
-  const hasMolotov = chs.some((c) => c.source === 'molotov');
-  const wanted = Array.from(new Set(chs.filter((c) => c.source !== 'molotov').map(epgKey).filter(Boolean)));
+  const wanted = Array.from(new Set(chs.map(epgKey).filter(Boolean)));
   const all = wanted.filter((k) => !tv.epgReq.has(k));
   all.forEach((k) => tv.epgReq.add(k));
   // Guide XMLTV de l'utilisateur : lu sur l'appareil, jamais demandé au serveur.
@@ -386,7 +294,6 @@ export async function ensureEpg(chs) {
   }
   // Les chaînes déjà demandées par un autre appel (accueil, grille) : on attend aussi leur réponse, sans la redemander.
   wanted.forEach((k) => { const p = tv.epgPending.get(k); if (p && !jobs.includes(p)) jobs.push(p); });
-  if (hasMolotov) jobs.push(ensureMolotovEpg());
   await Promise.all(jobs);
 }
 
@@ -394,10 +301,7 @@ export function nowNext(c, now) {
   const arr = tv.epg.get(epgKey(c)) || [];
   const cur = arr.find((p) => p.start <= now && now < p.stop) || null;
   const next = arr.find((p) => p.start >= (cur ? cur.stop : now)) || null;
-  if (cur || !c.program) return { cur, next };
-  // Pas de guide pour cette chaîne (Molotov) : le programme annoncé par le catalogue tient lieu de programme en cours.
-  const slot = Math.floor(now / 1800) * 1800;
-  return { cur: { title: c.program, start: slot, stop: slot + 1800 }, next: null };
+  return { cur, next };
 }
 
 // Rangée d'accueil « En direct maintenant »
@@ -437,11 +341,9 @@ export function tvFilter() {
   let l;
   if (cat === 'Favoris') {
     const snaps = favSnaps();
-    l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.molotov.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]))).filter(Boolean);
+    l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || snapChannel(snaps[id])).filter(Boolean);
   } else if (cat === 'Ma playlist') {
     l = tv.user.slice();
-  } else if (cat === MOLOTOV_CAT) {
-    l = tv.molotov.slice();
   } else if (cat === 'Ma box' || tv.boxCats.includes(cat)) {
     // Toutes les chaînes des playlists : celles rapprochées du catalogue (une seule fois par chaîne de la box), puis les autres.
     const seen = new Set();
@@ -452,19 +354,18 @@ export function tvFilter() {
     l = tv.pageList.filter((c) => matchesFilters(c, initFilters(), cat));
     // Chaînes des playlists absentes du catalogue : après la dernière page du catalogue.
     if (cat === 'Toutes' && !tv.hasMore && !tv.fetching) l = l.concat(tv.boxOnly.filter((c) => matchesFilters(c, initFilters(), cat)));
-    // Chaînes Molotov : après les playlists.
-    if (cat === 'Toutes' && !tv.hasMore && !tv.fetching) l = l.concat(tv.molotov);
   }
   // Favoris d'abord, sans changer l'ordre du catalogue ensuite.
   return l.map((c, i) => ({ c, i })).sort((a, b) => (favs.includes(b.c.id) ? 1 : 0) - (favs.includes(a.c.id) ? 1 : 0) || a.i - b.i).map((x) => x.c);
 }
 
 export function catCount(cat) {
-  if (cat === 'Favoris') return getFavs().length;
+  if (cat === 'Favoris') {
+    const snaps = favSnaps();
+    return getFavs().filter((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || snapChannel(snaps[id])).length;
+  }
   if (cat === 'Ma playlist') return tv.user.length;
   if (cat === 'Ma box') return activeBoxChannels().length;
-  if (cat === MOLOTOV_CAT) return tv.molotov.length;
-  if (cat === MOLOTOV_REPLAY_CAT) return replayCount();
   if (tv.boxCats.includes(cat)) return tv.boxOnly.filter((c) => c.cat === cat).length;
   const fx = tv.catFacets && tv.catFacets.categories.find((k) => k.id === cat || k.label === cat);
   if (fx) return fx.count;
@@ -478,8 +379,6 @@ export function catsHTML() {
   const list = ['Toutes', 'Favoris'].map((c) => ({ id: c, label: c }))
     .concat(server || TV_CATS.filter((c) => !SPECIAL_CATS.includes(c) && (!kid || /jeunesse/i.test(c))).map((c) => ({ id: c, label: c })))
     .concat(kid || !tv.boxOnly.length && !activeBoxChannels().length ? [] : [{ id: 'Ma box', label: 'Ma box' }].concat(tv.boxCats.map((g) => ({ id: g, label: g }))))
-    .concat(kid || !tv.molotov.length ? [] : [{ id: MOLOTOV_CAT, label: MOLOTOV_CAT }])
-    .concat(kid || !replayCount() ? [] : [{ id: MOLOTOV_REPLAY_CAT, label: MOLOTOV_REPLAY_CAT }])
     .concat(kid ? [] : [{ id: 'Ma playlist', label: 'Ma playlist' }]);
   return list.map((c) => {
     const n = catCount(c.id);
@@ -531,7 +430,7 @@ export function settingsHTML() {
 }
 
 export function tvPageHTML() {
-  const last = store('ls_tv_last');
+  const last = snapChannel(store('ls_tv_last'));
   return topBar(false) +
     '<article class="tv-page" aria-labelledby="tv-title"><header class="tv-head"><div><p class="svc-eyebrow">Chaînes gratuites, FAST et ta playlist</p>' +
     '<h1 class="svc-title" id="tv-title" tabindex="-1">TV en direct</h1></div><div class="tv-head-actions" data-nav>' +
@@ -568,7 +467,7 @@ export function epgRowHTML(c) {
   return '<div class="epg-row' + (tv.failed.has(c.id) ? ' is-down' : '') + (boxLocked(c) ? ' is-box-off' : '') + '" data-nav data-chid="' + esc(c.id) + '"><div class="epg-chcol">' +
     '<button type="button" class="epg-ch" data-tvplay="' + esc(c.id) + '" data-tvctx="page" aria-label="Regarder ' + esc(c.name) + '">' +
     logoHTML(c, 'epg-logo') +
-    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">Box</em>' : '') + (c.source === 'molotov' ? ' <em class="box-badge">Molotov</em>' : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
+    '<span class="epg-name">' + numHTML(c) + esc(c.name) + (c.flaky ? ' <em>instable</em>' : '') + (c.box ? ' <em class="box-badge">Box</em>' : '') + (boxLocked(c) ? '<small class="box-note">' + esc(boxStatus(c).note) + '</small>' : '') + '</span></button>' +
     '<button type="button" class="epg-fav" data-tvfav="' + esc(c.id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Retirer des favoris : ' : 'Ajouter aux favoris : ') + esc(c.name) + '">' + (fav ? ICON.starOn : ICON.star) + '</button></div>' +
     '<div class="epg-line" style="width:' + EPG_H * 60 * PX_MIN + 'px"><span class="epg-load">Chargement…</span></div></div>';
 }
@@ -590,18 +489,13 @@ export function fillEpgRow(c) {
       '" aria-label="' + esc(p.title + ', ' + fmtHM(p.start) + ' à ' + fmtHM(p.stop) + (isNow ? ', en cours' : '')) + '"><span class="ec-t">' + esc(p.title) + '</span><span class="ec-h">' + fmtHM(p.start) + '</span></button>';
   });
   line.innerHTML = cells.length ? cells.join('') :
-    '<button type="button" class="epg-cell epg-none' + (c.program ? ' is-now' : '') + '" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
-    esc(c.program || 'Programme indisponible') + '</span><span class="ec-h">' + (c.program ? 'En cours · Regarder en direct' : 'Regarder en direct') + '</span></button>';
+    '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
+    'Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
 }
 
 export function renderEpgGrid() {
   const epg = detailEl.querySelector('#epg');
   if (!epg) return;
-  // Replay Molotov : des tuiles (image, titre), pas la grille du guide.
-  if (tv.cat === MOLOTOV_REPLAY_CAT) {
-    renderReplayGrid(epg);
-    return;
-  }
   tv.list = tvFilter();
   tv.shown = 0;
   if (!tv.list.length) {
@@ -646,8 +540,6 @@ export async function showTvLive() {
     initFilters();
     await Promise.all([loadChannelsPage(true), loadFacets().catch(() => {}), loadUserPlaylist()]);
     refreshAll(); // playlists de l'utilisateur : test de la box, actualisation du jour (évènement BOX_CHANGED ensuite)
-    loadMolotovChannels(); // catalogue Molotov du compte connecté (lecture DASH, pas un flux HLS)
-    loadMolotovReplay(); // replay/VOD du compte connecté (même lecture DASH, catégorie à part)
   } catch (_) {
     if (token === state.token) detailEl.innerHTML = svcError('La TV en direct n’a pas pu être chargée.');
     return;
@@ -703,13 +595,7 @@ export async function tvTest(save) {
 /** Choix d'une catégorie (navigation latérale ou liste déroulante) : nouvelle requête au serveur. */
 export async function setCategory(cat) {
   tv.cat = cat || 'Toutes';
-  // Replay Molotov : sa liste est déjà chargée, le catalogue des chaînes n'est pas demandé.
-  if (tv.cat === MOLOTOV_REPLAY_CAT) {
-    refreshCats();
-    renderEpgGrid();
-  } else {
-    await reloadList();
-  }
+  await reloadList();
   const nb = detailEl.querySelector('[data-tvcat="' + tv.cat.replace(/"/g, '\\"') + '"]');
   if (nb) nb.focus({ preventScroll: true });
 }
@@ -719,7 +605,7 @@ export function toggleFav(id) {
   const { list, on } = toggleId(getFavs(), id);
   const snaps = favSnaps();
   if (on) {
-    const c = tv.byId.get(id) || tv.user.find((x) => x.id === id) || tv.boxOnly.find((x) => x.id === id) || tv.molotov.find((x) => x.id === id);
+    const c = tv.byId.get(id) || tv.user.find((x) => x.id === id) || tv.boxOnly.find((x) => x.id === id);
     if (c) snaps[id] = c;
   } else delete snaps[id];
   store(favStorageKey(auth.profile && auth.profile.id), list);

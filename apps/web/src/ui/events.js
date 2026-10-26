@@ -14,7 +14,6 @@ import { closeHover, hv } from './hover.js';
 import { ICON } from './icons.js';
 import { renderLibrary, renderLibraryPage, setLibMode, toggleLib } from './library.js';
 import { closeModal, focusables, openModal, openTrailer, openVideo } from './modal.js';
-import { openReplayEntry, openReplayTile } from './molotovReplay.js';
 import { renderFilmography } from './person.js';
 import { openPlayer, playerKey } from './player.js';
 import { cancelDwell, paintSound, setPreviewSound, stopPreview } from './preview.js';
@@ -25,7 +24,7 @@ import { openPartyDialog } from './partylaunch.js';
 import { openShareDialog } from './socialHooks.js';
 import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
-import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
+import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, snapChannel, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 /** Un seul déclenchement par bouton : un clic répété pendant l'action (ou juste après, pour une bascule) est ignoré (ODY-237). */
@@ -66,7 +65,7 @@ document.addEventListener('click', (e) => {
   if (tp) {
     e.preventDefault();
     const id = tp.dataset.tvplay;
-    const last = store('ls_tv_last');
+    const last = snapChannel(store('ls_tv_last'));
     const c = allChannels().find((x) => x.id === id) || tv.favHome.find((x) => x.id === id) || (last && last.id === id ? last : null);
     if (!c) return;
     // Chaîne d'une playlist illisible ici (navigateur, ou box hors du réseau local) : on explique pourquoi.
@@ -109,18 +108,6 @@ document.addEventListener('click', (e) => {
   }
   const tprog = t.closest('[data-tvprog]');
   if (tprog) { e.preventDefault(); const [cid, st] = tprog.dataset.tvprog.split('|'); showProg(cid, st); return; }
-  const treplay = t.closest('[data-tvreplay]');
-  if (treplay) {
-    e.preventDefault();
-    void openReplayTile(treplay.dataset.tvreplay, treplay);
-    return;
-  }
-  const treplayplay = t.closest('[data-tvreplayplay]');
-  if (treplayplay) {
-    e.preventDefault();
-    void openReplayEntry(treplayplay.dataset.tvreplayplay, treplayplay);
-    return;
-  }
   const hcl = t.closest('[data-hclib]');
   if (hcl) {
     e.preventDefault();

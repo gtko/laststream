@@ -239,7 +239,6 @@ describe('panneau « Audio et sous-titres »', () => {
     expect(sel('lang-audio2').value).toBe('vo');
     expect(sel('lang-subtitles').value).toBe('main');
     expect(sel('lang-subtitles').disabled).toBe(false);
-    expect(sel('lang-learnlang').disabled).toBe(true);
     expect(Array.from(sel('lang-audio2').options).map((o) => o.textContent)).toEqual(expect.arrayContaining(['Version originale', 'Aucune', 'Anglais', 'Japonais', 'Espagnol', 'Allemand', 'Italien', 'Coréen']));
   });
 
@@ -251,16 +250,12 @@ describe('panneau « Audio et sous-titres »', () => {
     change(sel('lang-audio2'), 'vo');
   });
 
-  it('l’interrupteur du mode apprentissage active la liste de la langue apprise', () => {
-    const sw = page().querySelector('#set-p-audio [data-set-pref="lang-learn"]') as HTMLElement;
-    click(sw);
-    expect(stored().learn).toBe(true);
-    expect(sel('lang-learnlang').disabled).toBe(false);
-    change(sel('lang-learnlang'), 'ja');
-    expect(stored().learnLang).toBe('ja');
-    click(sw);
+  it('le mode apprentissage n’est plus proposé : aucune carte, et un réglage stocké à true reste à false', () => {
+    expect(page().querySelector('#set-p-audio [data-set-pref="lang-learn"]')).toBeNull();
+    expect(page().querySelector('#set-p-audio [data-set-pref="lang-learnlang"]')).toBeNull();
+    localStorage.setItem('laststream.langprefs', JSON.stringify({ audio: 'fr', learn: true, learnLang: 'ja' }));
+    change(sel('lang-audio'), 'fr');
     expect(stored().learn).toBe(false);
-    expect(sel('lang-learnlang').disabled).toBe(true);
   });
 
   it('l’interrupteur des sous-titres grise leur langue', () => {

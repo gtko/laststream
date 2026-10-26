@@ -6,9 +6,7 @@ import {
   maskUrl, newListId, QUALITY_KEYS, QUALITY_LABELS, setBoxQuality, setBoxReach,
 } from '../data/tvBox';
 import { addList, BOX_CHANGED, getLists, refreshAll, removeList, updateList } from '../data/tvSources';
-import { getMolotovStatus, molotovWay } from '../data/molotovApi';
-import { connectMolotovWithPassword, disconnectMolotovAccount, MolotovAuthError, resendMolotovMfa, verifyMolotovMfa } from '../data/molotovAuth';
-import { auth, isMainProfile, isServerMode } from '../data/auth';
+import { isMainProfile, isServerMode } from '../data/auth';
 import { card, fieldRow, rowHTML } from './settings-ui.js';
 import { detailEl } from './dom.js';
 import { esc } from './util.js';
@@ -48,8 +46,7 @@ function dynamicHTML() {
     { desc: 'Les chaînes de ta box s’ajoutent à la TV en direct avec le badge « Box » et sont lues par l’app sur le réseau de ta box.' }) +
     card('Playlists M3U', (lists.filter((l) => l.id !== FREEBOX_LIST_ID).map((l) => listRow(l, edit)).join('') || '<p class="set-msg">Aucune playlist ajoutée.</p>') +
       (edit ? '' : '<p class="set-msg">Les playlists du compte sont gérées par le profil principal.</p>'),
-    { desc: 'Playlists que tu as choisies toi-même. Lues par cet appareil, jamais par le serveur.' }) +
-    molotovCardHTML();
+    { desc: 'Playlists que tu as choisies toi-même. Lues par cet appareil, jamais par le serveur.' });
 }
 
 /** Formulaire d'ajout : statique (il garde ce que l'on tape pendant les actualisations). */
@@ -68,7 +65,6 @@ function addHTML() {
 
 export function tvPanelHTML() {
   const web = typeof window !== 'undefined' && !window.chrome?.webview && !(globalThis.Capacitor && globalThis.Capacitor.isNativePlatform && globalThis.Capacitor.isNativePlatform());
-  loadMolotovStatusSoon();
   return '<div id="tv-box-dyn">' + dynamicHTML() + '</div>' + addHTML() +
     (web ? '<p class="set-msg">Un navigateur ne peut pas joindre ta box ni la plupart des playlists : disponible dans les apps Windows et Android.</p>' : '');
 }
@@ -79,197 +75,6 @@ const rerender = () => {
   const el = detailEl.querySelector('#tv-box-dyn');
   if (el) el.innerHTML = dynamicHTML();
 };
-
-// ---------- Molotov (TV française) ----------
-
-/**
- * État de la connexion Molotov, redessiné à chaque changement. `draft` garde la saisie du formulaire entre les rendus :
- * étape `creds` (email + mot de passe), puis étape `code` quand Molotov exige une vérification en deux étapes
- * (le jeton de défi reçu du serveur y vit aussi).
- */
-const molotov = { status: null, loading: false, msg: '', form: false, draft: { email: '', password: '', code: '', step: 'creds', mfaToken: '' } };
-
-const molotovErrorText = (err) => {
-  if (err instanceof MolotovAuthError) {
-    if (err.code === 'invalid_credentials') return 'Email ou mot de passe Molotov incorrect.';
-    return err.message;
-  }
-  if (err && err.status === 404) return 'Ce serveur ne gère pas encore Molotov.';
-  if (err && err.code === 'network') return 'Serveur injoignable.';
-  return err instanceof Error ? err.message : 'Connexion Molotov impossible.';
-};
-
-/** Mini-formulaire en deux étapes : la saisie vit dans `molotov.draft` (les rendus la reprennent). */
-function molotovFormHTML() {
-  if (molotov.draft.step === 'code') {
-    return '<div class="set-actions">' +
-      '<p class="set-msg">Un code vient d\'être envoyé à l\'adresse email du compte Molotov.</p>' +
-      '<input class="set-input" type="text" placeholder="Code de vérification" aria-label="Code de vérification" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" value="' + esc(molotov.draft.code) + '" data-molotov-code>' +
-      '<button type="button" class="btn btn-primary btn-sm" data-molotov-verify>Vérifier</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-molotov-resend>Renvoyer le code</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-molotov-back>Retour</button>' +
-      '</div>';
-  }
-  return '<div class="set-actions">' +
-    '<input class="set-input" type="email" placeholder="Email Molotov" aria-label="Email Molotov" autocomplete="username" spellcheck="false" value="' + esc(molotov.draft.email) + '" data-molotov-email>' +
-    '<input class="set-input" type="password" placeholder="Mot de passe Molotov" aria-label="Mot de passe Molotov" autocomplete="current-password" value="' + esc(molotov.draft.password) + '" data-molotov-password>' +
-    '<button type="button" class="btn btn-primary btn-sm" data-molotov-signin>Se connecter</button>' +
-    '</div>';
-}
-
-/**
- * La gestion du compte Molotov est réservée au profil principal (le serveur refuse les autres, `main_profile_required`).
- * Message vide = le formulaire est permis ; sinon le message nomme le profil à utiliser. `canEdit()` seul ne suffit pas :
- * sans profil actif, il renvoie `true` alors que la requête partira sans `x-profile-id`.
- */
-function molotovProfileNote() {
-  if (!isServerMode()) return '';
-  if (auth.profile?.isMainProfile === true) return '';
-  const main = auth.profiles.find((p) => p.isMainProfile === true);
-  const here = auth.profile ? 'Tu es sur « ' + auth.profile.name + ' ».' : 'Aucun profil actif.';
-  return 'La connexion Molotov est gérée par le profil principal' + (main ? ' (« ' + main.name + ' »)' : '') + '. ' + here;
-}
-
-/** Carte « Molotov » : état de la connexion, connexion par email et mot de passe, déconnexion. */
-function molotovCardHTML() {
-  const st = molotov.status;
-  const connected = !!(st && st.connected);
-  const state = molotov.loading ? 'Lecture du compte.'
-    : !st ? 'État inconnu'
-      : connected ? 'Connecté' + (st.tier ? ' — ' + st.tier : '') + (st.channelCount != null ? ' — ' + st.channelCount + ' chaînes' : '')
-        : 'Déconnecté';
-  const note = molotovProfileNote();
-  const edit = canEdit() && note === '';
-  const actions = !edit
-    ? '<p class="set-msg">' + esc(note || 'La connexion Molotov est gérée par le profil principal.') + '</p>'
-    : connected
-      ? '<button type="button" class="btn btn-ghost btn-sm" data-molotov-disconnect>Déconnecter</button>'
-      : molotov.form ? molotovFormHTML()
-        : '<button type="button" class="btn btn-primary btn-sm" data-molotov-connect>Connecter un compte Molotov</button>';
-  return card('Molotov - TV française',
-    rowHTML('Compte Molotov', state, () => actions, { stack: !edit || (!connected && molotov.form) }) +
-    rowHTML('Appels vers Molotov', molotovWay() === 'direct' ? 'Direct depuis cet appareil : les jetons ne quittent pas l\'appareil.' : 'Via le relais du serveur : un navigateur ne peut pas appeler l\'API Molotov (CORS).', () => '') +
-    '<p class="set-msg" id="molotov-msg" role="status">' + esc(molotov.msg) + '</p>',
-    { desc: 'Connecte un compte Molotov : ses chaînes s\'ajoutent à la TV en direct. La lecture DASH (Widevine) marche là où un module Widevine est disponible : navigateurs, Android et Windows (WebView).' });
-}
-
-let molotovTimer = 0;
-
-/** Charge l'état de la connexion (à l'ouverture du panneau). */
-function loadMolotovStatusSoon() {
-  if (molotovTimer || molotov.status || molotov.loading) return;
-  molotovTimer = setTimeout(() => { molotovTimer = 0; loadMolotovStatus(); }, 0);
-}
-
-async function loadMolotovStatus() {
-  molotov.loading = true;
-  try {
-    molotov.status = await getMolotovStatus();
-  } catch (err) {
-    molotov.status = { connected: false };
-    molotov.msg = molotovErrorText(err);
-  } finally {
-    molotov.loading = false;
-    rerender();
-  }
-}
-
-/** Connexion par email et mot de passe : passe à l'étape `code` quand Molotov exige une vérification en deux étapes. */
-async function molotovSignin() {
-  const email = molotov.draft.email.trim();
-  const password = molotov.draft.password;
-  if (!email || !password) {
-    molotov.msg = 'Renseigne ton email et ton mot de passe Molotov.';
-    rerender();
-    return;
-  }
-  molotov.loading = true;
-  molotov.msg = 'Connexion à Molotov.';
-  rerender();
-  try {
-    const result = await connectMolotovWithPassword(email, password);
-    if ('mfaToken' in result) {
-      molotov.draft.mfaToken = result.mfaToken;
-      molotov.draft.code = '';
-      molotov.draft.step = 'code';
-      molotov.msg = '';
-    } else {
-      molotov.status = result.status;
-      molotov.form = false;
-      molotov.draft = { email: '', password: '', code: '', step: 'creds', mfaToken: '' };
-      molotov.msg = 'Compte Molotov connecté.';
-    }
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-  } finally {
-    molotov.loading = false;
-    rerender();
-  }
-}
-
-/** Vérification du code reçu par email : réussie, la connexion est établie et la saisie est effacée. */
-async function molotovVerify() {
-  const code = molotov.draft.code.trim();
-  if (!code) {
-    molotov.msg = 'Renseigne le code reçu par email.';
-    rerender();
-    return;
-  }
-  molotov.loading = true;
-  molotov.msg = 'Vérification du code.';
-  rerender();
-  try {
-    molotov.status = await verifyMolotovMfa(molotov.draft.mfaToken, code);
-    molotov.form = false;
-    molotov.draft = { email: '', password: '', code: '', step: 'creds', mfaToken: '' };
-    molotov.msg = 'Compte Molotov connecté.';
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-  } finally {
-    molotov.loading = false;
-    rerender();
-  }
-}
-
-/** Renvoi du code par email : le jeton de défi peut changer, la saisie du code est alors réinitialisée. */
-async function molotovResend() {
-  molotov.loading = true;
-  molotov.msg = 'Renvoi du code.';
-  rerender();
-  try {
-    molotov.draft.mfaToken = await resendMolotovMfa(molotov.draft.mfaToken);
-    molotov.draft.code = '';
-    molotov.msg = 'Un nouveau code vient d\'être envoyé.';
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-  } finally {
-    molotov.loading = false;
-    rerender();
-  }
-}
-
-/** Retour à l'étape `creds` : email et mot de passe sont conservés. */
-function molotovBack() {
-  molotov.draft.step = 'creds';
-  molotov.draft.code = '';
-  molotov.msg = '';
-  rerender();
-}
-
-async function molotovDisconnect() {
-  molotov.loading = true;
-  rerender();
-  try {
-    await disconnectMolotovAccount();
-    molotov.status = { connected: false };
-    molotov.msg = 'Compte Molotov déconnecté.';
-  } catch (err) {
-    molotov.msg = molotovErrorText(err);
-  } finally {
-    molotov.loading = false;
-    rerender();
-  }
-}
 
 window.addEventListener(BOX_CHANGED, rerender);
 
@@ -319,12 +124,6 @@ async function importFile(file) {
 detailEl.addEventListener('click', (e) => {
   const t = e.target;
   if (!(t instanceof Element) || !t.closest('.set-page')) return;
-  if (t.closest('[data-molotov-connect]')) { e.preventDefault(); molotov.form = true; molotov.msg = ''; rerender(); return; }
-  if (t.closest('[data-molotov-signin]')) { e.preventDefault(); molotovSignin(); return; }
-  if (t.closest('[data-molotov-verify]')) { e.preventDefault(); molotovVerify(); return; }
-  if (t.closest('[data-molotov-resend]')) { e.preventDefault(); molotovResend(); return; }
-  if (t.closest('[data-molotov-back]')) { e.preventDefault(); molotovBack(); return; }
-  if (t.closest('[data-molotov-disconnect]')) { e.preventDefault(); molotovDisconnect(); return; }
   if (t.closest('[data-box-detect]')) { e.preventDefault(); detect(); return; }
   if (t.closest('[data-box-add]')) { e.preventDefault(); add(); return; }
   const tog = t.closest('[data-box-toggle]');
@@ -333,14 +132,6 @@ detailEl.addEventListener('click', (e) => {
   if (ref) { e.preventDefault(); say('Actualisation…'); refreshAll(true).then(() => say('Playlists actualisées.')); return; }
   const rm = t.closest('[data-box-remove]');
   if (rm) { e.preventDefault(); removeList(rm.dataset.boxRemove); say('Playlist retirée.'); }
-});
-
-detailEl.addEventListener('input', (e) => {
-  const t = e.target;
-  if (!(t instanceof HTMLInputElement) || !t.closest('.set-page')) return;
-  if (t.dataset.molotovEmail !== undefined) { molotov.draft.email = t.value; return; }
-  if (t.dataset.molotovPassword !== undefined) { molotov.draft.password = t.value; return; }
-  if (t.dataset.molotovCode !== undefined) { molotov.draft.code = t.value; return; }
 });
 
 detailEl.addEventListener('change', (e) => {
