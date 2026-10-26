@@ -6,6 +6,7 @@
   "description": "Worker Cloudflare à adresse fixe qui relaie vers lastaddon-core (Service Binding), repli tunnel optionnel",
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "deploy": "wrangler deploy"
+    "deploy": "node scripts/deploy.mjs",
+    "release": "node scripts/release.mjs"
   }
 }
