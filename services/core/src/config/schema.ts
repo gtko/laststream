@@ -275,7 +275,7 @@ const ServicesSchema = z
       'Jeton TMDB (lecture v4)',
       'Jeton de lecture TMDB (API v4, en-tête Bearer). Requis pour les catalogues, /lt/tmdb et les recommandations.',
     ),
-    tmdbApiKey: serviceKey('Clé API TMDB (v3)', 'Clé API TMDB v3 facultative, testée par POST /config/test.'),
+    tmdbApiKey: serviceKey('Clé API TMDB (v3)', 'Clé API TMDB v3 facultative.'),
     mdblistApiKey: serviceKey('Clé MDBList', 'Clé API MDBList : notes IMDb, Rotten Tomatoes, Metacritic, Letterboxd.'),
     tvdbApiKey: serviceKey(
       'Clé TheTVDB',
@@ -299,14 +299,14 @@ const ServicesSchema = z
         title: 'Modèle OpenRouter',
         description: 'Identifiant du modèle OpenRouter utilisé pour les recommandations et les textes.',
       }),
-    fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative, testée par POST /config/test.'),
+    fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative.'),
     introdbApiKey: serviceKey(
       'Clé IntroDB (introdb.app)',
-      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible). Si une clé est disponible (la vôtre, sinon celle du serveur), les propositions de segments (hors votes négatifs) sont aussi envoyées à IntroDB ; le contenu envoyé ne contient aucun identifiant de profil.',
+      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible). Si une clé est configurée (sur le serveur ou dans votre compte), les propositions de segments (hors votes négatifs) sont aussi envoyées à IntroDB ; le contenu envoyé ne contient aucun identifiant de profil.',
     ),
     skipdbApiKey: serviceKey(
       'Clé SkipDB (skipdb.tv)',
-      'Clé API SkipDB facultative : sans clé, les segments se lisent. Si une clé est disponible (la vôtre, sinon celle du serveur), les propositions de segments (hors votes négatifs) sont aussi envoyées à SkipDB (données sous licence ODbL 1.0 + réciprocité) ; le contenu envoyé ne contient aucun identifiant de profil.',
+      'Clé API SkipDB facultative : sans clé, les segments se lisent. Si une clé est configurée (sur le serveur ou dans votre compte), les propositions de segments (hors votes négatifs) sont aussi envoyées à SkipDB (données sous licence ODbL 1.0 + réciprocité) ; le contenu envoyé ne contient aucun identifiant de profil.',
     ),
     animeskipClientId: serviceKey(
       'Client ID Anime Skip (anime-skip.com)',
