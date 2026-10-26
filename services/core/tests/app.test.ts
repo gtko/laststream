@@ -26,7 +26,7 @@ describe('routes générales', () => {
   it('GET /health répond ok', async () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, degraded: false, release: 'lastaddon-core@0.1.0', deps: {} });
   });
 
   it('GET /manifest.json renvoie le manifest', async () => {

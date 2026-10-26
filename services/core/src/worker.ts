@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/cloudflare';
 import type { ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import { ADMIN_PREFIX, handleAdmin } from './admin/routes.js';
 import { USER_STORE_NAME } from './platform/workers/user-backend.js';
-import { createApp, MANIFEST } from './app.js';
+import { createApp, serverRelease } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
@@ -19,7 +19,7 @@ import { SOCIAL_LIVE_PATH } from './user/social-v2-live.js';
 import { countryCode } from './user/title-starts.js';
 import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, prewarmMetaFromEnv, refreshRowsFromEnv, refreshTvFromEnv, runInRequest, type WorkerEnv } from './platform/workers/index.js';
 import { type SharedLimits, sharedLimitsFromEnv } from './rate-limit-shared.js';
-import { createWorkersOpsPorts } from './platform/workers/ops.js';
+import { createWorkersHealthProbes, createWorkersOpsPorts } from './platform/workers/ops.js';
 import { workersQuotaGate } from './platform/workers/metrics.js';
 import { countedEnv, withStorageOps } from './platform/workers/storage-ops.js';
 import { routeLabel } from './metrics/core.js';
@@ -54,6 +54,7 @@ function appFor(env: WorkerEnv): App {
     // Budget quotidien global (jour UTC) partagé par toutes les instances : Durable Object Metrics. Absent : compteur en mémoire.
     ...(env.METRICS === undefined ? {} : { mdblistQuota: workersQuotaGate(env.METRICS) }),
     ops: createWorkersOpsPorts(env),
+    healthProbes: createWorkersHealthProbes(env),
     // Flux temps réel : chaque écriture sociale est diffusée par le Durable Object des données (travail d'arrière-plan).
     socialEvents: (pids, event) => platform.scheduler.background(env.USER_STORE.getByName(USER_STORE_NAME).liveBroadcast([...pids], event)),
     ...(tvAdmin === undefined ? {} : { tvAdmin }),
@@ -179,6 +180,6 @@ const worker = {
  * Sentry (`@sentry/cloudflare`) : actif seulement si le secret SENTRY_DSN est posé ; données épurées (observability/scrub.ts).
  */
 export default Sentry.withSentry(
-  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, `lastaddon-core@${MANIFEST.version}`),
+  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, serverRelease()),
   worker,
 );

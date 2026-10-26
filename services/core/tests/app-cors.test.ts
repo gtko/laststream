@@ -130,7 +130,7 @@ describe('CORS : sonde /health', () => {
     const res = await fetch(`${custom}/health`, { headers: { Origin: 'capacitor://localhost' } });
     expect(res.status).toBe(200);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, degraded: false, release: 'lastaddon-core@0.1.0', deps: {} });
   });
 });
 

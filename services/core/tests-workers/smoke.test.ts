@@ -7,7 +7,17 @@ describe('Worker lastaddon-core (entrée src/worker.ts)', () => {
   it('/health répond', async () => {
     const res = await worker.fetch('https://core.test/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    // KV, R2 (TV) et base du Durable Object répondent dans Miniflare : toutes OK.
+    expect(await res.json()).toEqual({
+      ok: true,
+      degraded: false,
+      release: 'lastaddon-core@0.1.0',
+      deps: {
+        kv: { ok: true, ms: expect.any(Number) },
+        r2: { ok: true, ms: expect.any(Number) },
+        base: { ok: true, ms: expect.any(Number) },
+      },
+    });
     expect(env).toBeDefined();
   });
 });
