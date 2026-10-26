@@ -37,7 +37,7 @@ describe('points de mesure (plateforme Node)', () => {
     const before = (await metrics().report('1h')).caches.find((entry) => entry.prefix === 'packs');
     const cache = platform().createKvCache('packs');
     await cache.get('absent');
-    await cache.set('present', '1');
+    await cache.set('present', '1', 3600);
     await cache.get('present');
     await cache.get('present');
     const after = (await metrics().report('1h')).caches.find((entry) => entry.prefix === 'packs');

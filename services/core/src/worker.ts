@@ -21,6 +21,8 @@ import { createWorkersPlatform, createWorkersTvAdmin, ensureWorkersPlatform, pre
 import { type SharedLimits, sharedLimitsFromEnv } from './rate-limit-shared.js';
 import { createWorkersHealthProbes, createWorkersOpsPorts } from './platform/workers/ops.js';
 import { workersQuotaGate } from './platform/workers/metrics.js';
+import { countedEnv, withStorageOps } from './platform/workers/storage-ops.js';
+import { routeLabel } from './metrics/core.js';
 
 export { Metrics, PartyRoom, UserStoreDO } from './platform/workers/index.js';
 
@@ -140,7 +142,10 @@ async function handleFetch(request: Request, env: WorkerEnv, ctx: ExecutionConte
 const worker = {
   fetch: (request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> =>
     // Garde de sortie : un appel bloqué pendant la requête est rattaché à son identifiant (cf-ray).
-    runWithEgressContext({ trigger: 'request', requestId: request.headers.get('cf-ray') ?? crypto.randomUUID() }, () => handleFetch(request, env, ctx)),
+    runWithEgressContext({ trigger: 'request', requestId: request.headers.get('cf-ray') ?? crypto.randomUUID() }, () =>
+      // LAST-138 : opérations KV / R2 de la requête, une ligne JSON « storage_ops » en fin de requête (voir docs/storage-cost.md).
+      withStorageOps(routeLabel(new URL(request.url).pathname), () => handleFetch(request, countedEnv(env), ctx)),
+    ),
 
   /**
    * Cron Trigger (wrangler.jsonc, « triggers ») : toutes les 6 h, reconstruit le catalogue TV et l'EPG réduit dans R2, en
@@ -149,7 +154,9 @@ const worker = {
    * Toutes les 30 min : reprise TV seulement (sources en échec et sondages restants), voir lt/tv-passes.ts. À l'heure de la
    * passe complète, la reprise s'efface pour ne pas prendre le verrou de cette passe.
    */
-  scheduled(controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
+  scheduled(controller: ScheduledController, rawEnv: WorkerEnv, ctx: ExecutionContext): void {
+    // Mêmes liaisons enveloppées que pour les requêtes : la plateforme d'un isolat neuf démarré par le Cron les réutilise.
+    const env = countedEnv(rawEnv);
     runWithEgressContext({ trigger: 'cron', requestId: `cron-${crypto.randomUUID()}` }, () => {
       if (controller.cron === TV_RESUME_CRON) {
         if (!isFullPassWindow(controller.scheduledTime)) ctx.waitUntil(refreshTvFromEnv(env, { probe: true, resume: true }));

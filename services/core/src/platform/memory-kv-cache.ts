@@ -19,7 +19,7 @@ export function createMemoryKvCache(now: () => number = Date.now, maxEntries: nu
       }
       return Promise.resolve(entry.value);
     },
-    set(key, value, ttlSeconds) {
+    set(key, value, ttlSeconds?: number) {
       // Réinsertion : la clé devient la plus récente.
       entries.delete(key);
       entries.set(key, { value, expiresAt: ttlSeconds === undefined ? undefined : now() + ttlSeconds * 1000 });
