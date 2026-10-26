@@ -28,6 +28,7 @@ import {
   type RoomMeta,
 } from './protocol.js';
 import { cleanGuestName, newGuestId, signGuestToken, signRoomInviteToken, verifyRoomInviteToken } from './guest.js';
+import { displayName, memberKey } from './keys.js';
 import { signTicket } from './ticket.js';
 import { ROOM_ID } from './ws.js';
 
@@ -138,6 +139,17 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     return { account: session.account, profile };
   }
 
+  /**
+   * Clé et pseudo de participant d'un profil dans un salon. Salon `memberKeys: 'profile'` : clé `<compte>:<profil>`, pseudo = nom
+   * du compte pour le profil principal (admin().mainProfileId), `<compte> · <profil>` pour les autres. Salon ancien : clé = compte et
+   * pseudo = nom du compte, comme avant.
+   */
+  async function participantOf(account: { id: string; username: string }, profile: ProfileRecord, mode: 'profile' | 'account'): Promise<{ key: string; name: string }> {
+    if (mode !== 'profile') return { key: account.id, name: account.username };
+    const mainId = await backend.admin().mainProfileId(account.id);
+    return { key: memberKey(account.id, profile.id, 'profile'), name: displayName(account.username, profile.name, mainId === null || mainId === profile.id) };
+  }
+
   const roomId = (c: Ctx): string => {
     const id = c.req.param('id') ?? '';
     if (!ROOM_ID.test(id)) throw new UserApiError(404, 'room_not_found');
@@ -215,11 +227,13 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (open >= MAX_ROOMS_PER_HOST) throw new UserApiError(429, 'too_many_rooms');
     const fingerprint: Fingerprint | null = parseFingerprint(body.fingerprint);
     const series = body.media.type === 'series';
+    // Salon récent : participants identifiés par profil, pour que les profils d'un même compte coexistent.
+    const host = await participantOf(account, profile, 'profile');
     const meta: RoomMeta = {
       id: randomBytes(12).toString('base64url'),
       visibility: body.visibility,
-      hostId: account.id,
-      hostName: account.username,
+      hostId: host.key,
+      hostName: host.name,
       title: body.title,
       poster: body.poster ?? null,
       language: body.language ?? null,
@@ -233,6 +247,7 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
       fingerprint,
       maxParticipants: body.maxParticipants,
       createdAt: Date.now(),
+      memberKeys: 'profile',
     };
     if ((await party.room(meta.id).init(meta)) !== 'ok') throw new UserApiError(409, 'room_exists');
     await social().addPartyRoom({
@@ -278,11 +293,15 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     const info = await stub.info();
     if (info === null) throw new UserApiError(404, 'room_not_found');
     if (info.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
-    const check = await stub.check(account.id);
+    const mode = (await stub.keyMode()) ?? 'account';
+    const me = await participantOf(account, profile, mode);
+    // Contrôle de pseudo seulement en mode profil : les clients déployés ne connaissent pas name_taken sur /join (salons anciens).
+    const check = await stub.check(me.key, mode === 'profile' ? me.name : undefined);
     if (check === 'closed') throw new UserApiError(404, 'room_not_found');
     if (check === 'banned') throw new UserApiError(403, 'banned');
     if (check === 'room_full') throw new UserApiError(409, 'room_full');
-    const { ticket, expiresAt } = signTicket(id, { accountId: account.id, username: account.username, avatarColor: profile.avatarColor, ...(profile.avatar ? { avatar: profile.avatar } : {}) }, Date.now(), deps.secret);
+    if (check === 'name_taken') throw new UserApiError(409, 'name_taken');
+    const { ticket, expiresAt } = signTicket(id, { accountId: me.key, username: me.name, avatarColor: profile.avatarColor, ...(profile.avatar ? { avatar: profile.avatar } : {}) }, Date.now(), deps.secret);
     return sendJson(c, { ticket, expiresAt, wsPath: `${PARTY_MOUNT}/${id}/ws?ticket=${ticket}`, room: info });
   });
 

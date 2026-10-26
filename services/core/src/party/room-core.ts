@@ -39,6 +39,7 @@ import {
   WAIT_LATE_MS,
 } from './protocol.js';
 import { GUEST_KEY_PREFIX } from './guest.js';
+import { accountOf } from './keys.js';
 import { canonicalName } from './names.js';
 import { expectedPosition } from './sync.js';
 
@@ -194,11 +195,33 @@ export class RoomCore {
     return view;
   }
 
-  /** Un compte déjà connecté peut se reconnecter même si le salon est plein (sa connexion est remplacée). */
-  canJoin(accountId: string): JoinCheck {
-    if (this.data.banned.includes(accountId)) return 'banned';
-    if (!this.members.has(accountId) && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
+  /**
+   * Un participant déjà connecté (même clé) peut se reconnecter même si le salon est plein (sa connexion est remplacée).
+   * L'exclusion vise le compte (tous ses profils). Avec `username`, un pseudo déjà porté par un autre participant est refusé
+   * (sur la forme canonique, comme pour un invité) : exclusion, silence et transfert ciblent un pseudo.
+   */
+  canJoin(key: string, username?: string): JoinCheck {
+    if (this.data.banned.includes(accountOf(key))) return 'banned';
+    // Pseudo : seulement en mode profil (les salons anciens gardent leur comportement) et face aux comptes (un invité de même pseudo ne bloque pas).
+    if (username !== undefined && this.keyMode() === 'profile') {
+      const wanted = canonicalName(username);
+      if (wanted === canonicalName(this.data.meta.hostName) && key !== this.hostId) return 'name_taken';
+      for (const member of this.members.values()) {
+        if (member.guest !== true && member.accountId !== key && canonicalName(member.username) === wanted) return 'name_taken';
+      }
+    }
+    if (!this.members.has(key) && this.members.size >= this.data.meta.maxParticipants) return 'room_full';
     return 'ok';
+  }
+
+  /** Mode d'identification des participants : par profil (salons récents) ou par compte (salons anciens, sans drapeau). */
+  keyMode(): 'profile' | 'account' {
+    return this.data.meta.memberKeys === 'profile' ? 'profile' : 'account';
+  }
+
+  /** Le compte est-il celui de l'hôte (droits d'hôte hors socket : invitations, fin du salon, signalements) ? */
+  isHostAccount(accountId: string): boolean {
+    return accountOf(this.hostId) === accountOf(accountId);
   }
 
   /** Nombre d'invités sans compte connectés. */
@@ -304,10 +327,10 @@ export class RoomCore {
     };
   }
 
-  /** Vrai si un compte (et non un invité) est connecté au salon. */
+  /** Vrai si un compte (et non un invité) est connecté au salon, par l'un quelconque de ses profils. */
   isConnected(accountId: string): boolean {
-    const member = this.members.get(accountId);
-    return member !== undefined && member.guest !== true;
+    for (const member of this.members.values()) if (member.guest !== true && accountOf(member.accountId) === accountId) return true;
+    return false;
   }
 
   /**
@@ -438,7 +461,7 @@ export class RoomCore {
    * jetons par INVITE_WINDOW_MS pour le salon. Un jeton accordé est compté tout de suite.
    */
   inviteVerdict(requesterId: string): InviteVerdict {
-    if (requesterId !== this.hostId || !this.members.has(requesterId)) return 'forbidden';
+    if (!this.isHostAccount(requesterId) || !this.members.has(this.hostId)) return 'forbidden';
     if (this.guestCount() >= MAX_GUESTS) return 'guests_full';
     const now = this.clock();
     const recent = this.inviteHits.filter((at) => now - at < INVITE_WINDOW_MS);
@@ -459,7 +482,7 @@ export class RoomCore {
    * dans le débit d'invitations du salon.
    */
   inviteLink(requesterId: string, rotate: boolean): LinkVerdict {
-    if (requesterId !== this.hostId || !this.members.has(requesterId)) return { ok: false, reason: 'forbidden' };
+    if (!this.isHostAccount(requesterId) || !this.members.has(this.hostId)) return { ok: false, reason: 'forbidden' };
     if (rotate) {
       const now = this.clock();
       const recent = this.inviteHits.filter((at) => now - at < INVITE_WINDOW_MS);
@@ -822,7 +845,8 @@ export class RoomCore {
             at: now,
           };
           this.reports.push(entry);
-          this.fresh.push({ entry, againstId: line.fromId });
+          // La file d'administration connaît des comptes : la clé de profil est ramenée à son compte.
+          this.fresh.push({ entry, againstId: accountOf(line.fromId) });
           if (this.reports.length > MAX_REPORTS) this.reports.splice(0, this.reports.length - MAX_REPORTS);
           this.dirty.add('reports');
         }
@@ -837,18 +861,27 @@ export class RoomCore {
         const target = this.findByName(message.user);
         if (target === undefined) return this.err(accountId, 'user_not_found');
         if (target.accountId === accountId) return this.err(accountId, 'cannot_target_self');
-        if (!this.data.banned.includes(target.accountId)) this.data.banned.push(target.accountId);
-        this.members.delete(target.accountId);
-        this.forgetTimedOut(target.accountId);
+        // L'exclusion vise le compte : tous ses profils présents sortent et aucun ne peut revenir. Exception : l'hôte qui exclut
+        // un autre profil de son propre compte ferme seulement cette connexion, sans bannir son compte (il se bannirait lui-même).
+        const ownAccount = accountOf(target.accountId) === accountOf(accountId);
+        const victims = ownAccount
+          ? [target]
+          : [...this.members.values()].filter((m) => m.accountId === target.accountId || (m.guest !== true && target.guest !== true && accountOf(m.accountId) === accountOf(target.accountId)));
+        if (!ownAccount && !this.data.banned.includes(accountOf(target.accountId))) this.data.banned.push(accountOf(target.accountId));
         this.dirty.add('room');
-        const effects: Effect[] = [
-          { kind: 'close', to: target.accountId, code: CLOSE.kicked, reason: 'kicked' },
-          { kind: 'broadcast', msg: { t: 'leave', user: target.username } },
-          { kind: 'broadcast', msg: { t: 'event', kind: 'leave', by: target.username, pos: this.positionNow(now) } },
-          ...this.forgetParticipant(target.accountId),
-          // Un retardataire exclu ne retient plus la lecture.
-          ...this.setBuffering(target.accountId, false, member.username),
-        ];
+        const effects: Effect[] = [];
+        for (const victim of victims) {
+          this.members.delete(victim.accountId);
+          this.forgetTimedOut(victim.accountId);
+          effects.push(
+            { kind: 'close', to: victim.accountId, code: CLOSE.kicked, reason: 'kicked' },
+            { kind: 'broadcast', msg: { t: 'leave', user: victim.username } },
+            { kind: 'broadcast', msg: { t: 'event', kind: 'leave', by: victim.username, pos: this.positionNow(now) } },
+            ...this.forgetParticipant(victim.accountId),
+            // Un retardataire exclu ne retient plus la lecture.
+            ...this.setBuffering(victim.accountId, false, member.username),
+          );
+        }
         // Invité entré par le lien partagé : il pourrait revenir sous un nouvel identifiant avec le même lien. Le lien est donc
         // renouvelé (l'ancien meurt, les invités déjà connectés restent) et le pseudo canonique est banni du salon.
         if (target.guest === true && this.data.linkGuests?.includes(target.accountId)) {

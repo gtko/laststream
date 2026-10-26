@@ -48,6 +48,8 @@ export interface RoomMeta {
   fingerprint: Fingerprint | null;
   maxParticipants: number;
   createdAt: number;
+  /** `profile` : participants identifiés par profil (`<compte>:<profil>`, voir keys.ts) ; absent : par compte (salons anciens). */
+  memberKeys?: 'profile';
 }
 
 /** Ligne conservée par le salon : porte aussi l'identifiant du compte (signalements, jamais diffusé). */
