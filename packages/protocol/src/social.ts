@@ -71,6 +71,78 @@ export interface FriendView {
 /** Fiche ami (contrat v3) : même forme que `FriendView`, qui porte déjà les réglages de relation côté serveur. */
 export type FriendV3 = FriendView;
 
+// ---- Accueil social (`/user/social/home/*`) ----
+
+/** Ami tel qu'affiché sur l'accueil : identité minimale. */
+export type HomeFriend = Pick<FriendView, 'pid' | 'handle' | 'avatarColor' | 'avatar' | 'nickname'>;
+
+/** Titre d'une carte de l'accueil social ; titre et affiche peuvent manquer (l'app les complète via TMDB). */
+export interface HomeMedia {
+  type: MediaKind;
+  tmdbId: number;
+  title?: string;
+  poster?: string;
+  season?: number;
+  episode?: number;
+}
+
+/** GET /user/social/home/watching : une entrée par ami, sa dernière progression des 30 derniers jours. `live` : la lecture est en cours et visible. */
+export interface HomeWatchingItem {
+  friend: HomeFriend;
+  media: HomeMedia;
+  pos: number;
+  duration?: number;
+  finished: boolean;
+  live: boolean;
+  updatedAt: number;
+}
+
+/** GET /user/social/home/watching. */
+export interface HomeWatchingResponse {
+  items: HomeWatchingItem[];
+}
+
+/** GET /user/social/home/progress?titles=series:123,movie:456 : progression la plus avancée de chaque ami par titre. */
+export interface HomeTitleProgress {
+  friend: HomeFriend;
+  type: MediaKind;
+  tmdbId: number;
+  season?: number;
+  episode?: number;
+  pos: number;
+  duration?: number;
+  finished: boolean;
+  updatedAt: number;
+}
+
+/** GET /user/social/home/progress. */
+export interface HomeProgressResponse {
+  items: HomeTitleProgress[];
+}
+
+/** GET /user/social/home/recommendations?before=<createdAt>&limit=20 : coups de cœur d'amis. `next` : valeur de `before` de la page suivante. */
+export interface HomeRecommendation {
+  friend: HomeFriend;
+  media: HomeMedia;
+  word: string;
+  createdAt: number;
+}
+
+/** GET /user/social/home/recommendations. */
+export interface HomeRecommendationsResponse {
+  items: HomeRecommendation[];
+  next?: number;
+}
+
+/** PUT /user/social/recommendations : corps du coup de cœur du profil agissant (un par titre). `word` : 1 à 140 caractères. */
+export interface RecommendationInput {
+  type: MediaKind;
+  tmdbId: number;
+  title: string;
+  poster?: string;
+  word: string;
+}
+
 /** Demande d'ami reçue (`incoming`) ou envoyée (`outgoing`). */
 export interface FriendRequest {
   pid: string;

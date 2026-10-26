@@ -8,12 +8,21 @@ import type {
   GroupConversation,
   GuestEntry,
   HiddenItemDto,
+  HomeFriend,
+  HomeMedia,
+  HomeProgressResponse,
+  HomeRecommendation,
+  HomeRecommendationsResponse,
+  HomeTitleProgress,
+  HomeWatchingItem,
+  HomeWatchingResponse,
   InviteDto,
   JoinTicket,
   ListDetail,
   Message,
   MessageV3,
   ProfileStats,
+  RecommendationInput,
   ShareLinkView,
   SocialPrefs,
   SocialProfile,
@@ -193,6 +202,39 @@ const guest: GuestEntry = {
   name: 'Invité 2',
 };
 
+const homeFriend: HomeFriend = { pid: 'p-ana', handle, avatarColor: '#e11d48' };
+
+const homeWatching: HomeWatchingItem = {
+  friend: homeFriend,
+  media: { type: 'series', tmdbId: 1399, title: 'Game of Thrones', season: 1, episode: 2 },
+  pos: 120,
+  duration: 3300,
+  finished: false,
+  live: true,
+  updatedAt: 1_000,
+};
+const homeWatchingPage: HomeWatchingResponse = { items: [homeWatching] };
+
+const homeProgress: HomeTitleProgress = {
+  friend: homeFriend,
+  type: 'movie',
+  tmdbId: 603,
+  pos: 3600,
+  finished: true,
+  updatedAt: 1_700_000_000_400,
+};
+const homeProgressPage: HomeProgressResponse = { items: [homeProgress] };
+
+const homeRecommendation: HomeRecommendation = {
+  friend: homeFriend,
+  media: { type: 'movie', tmdbId: 603, title: 'Matrix', poster: '/poster.jpg' },
+  word: 'à voir',
+  createdAt: 1_700_000_000_500,
+};
+const homeRecommendations: HomeRecommendationsResponse = { items: [homeRecommendation], next: 1_700_000_000_500 };
+
+const recommendationInput: RecommendationInput = { type: 'movie', tmdbId: 603, title: 'Matrix', word: 'à voir' };
+
 describe('formes de réponse (compilation et contrat)', () => {
   it('chaque DTO principal se construit avec ses champs requis', () => {
     expect(watching.paused).toBe(false);
@@ -233,6 +275,39 @@ describe('écarts de forme refusés à la compilation', () => {
     // @ts-expect-error un groupe porte ses membres, pas un pid
     const badGroup: GroupConversation = { conv: 'g:grp1', unread: 0, group: group.group, pid: 'p-ana' };
     expect(badGroup.conv).toBe('g:grp1');
+  });
+});
+
+describe('accueil social (formes de réponse et écarts refusés)', () => {
+  it('chaque réponse de l\'accueil se construit avec ses champs', () => {
+    expect(homeWatchingPage.items[0].live).toBe(true);
+    expect(homeProgressPage.items[0].finished).toBe(true);
+    expect(homeRecommendations.next).toBe(1_700_000_000_500);
+    expect(recommendationInput.word).toBe('à voir');
+  });
+
+  it('HomeFriend ne porte que l\'identité minimale, sans statut', () => {
+    // @ts-expect-error status n'appartient pas à HomeFriend
+    const withStatus: HomeFriend = { pid: 'p-ana', handle, avatarColor: '#e11d48', status: 'online' };
+    expect(withStatus.pid).toBe('p-ana');
+  });
+
+  it('HomeWatchingItem exige `live`', () => {
+    // @ts-expect-error live est requis
+    const noLive: HomeWatchingItem = { friend: homeFriend, media: homeWatching.media, pos: 0, finished: false, updatedAt: 1 };
+    expect(noLive.pos).toBe(0);
+  });
+
+  it('RecommendationInput exige `word`', () => {
+    // @ts-expect-error word est requis
+    const noWord: RecommendationInput = { type: 'movie', tmdbId: 603, title: 'Matrix' };
+    expect(noWord.tmdbId).toBe(603);
+  });
+
+  it('HomeMedia.type reste un genre connu', () => {
+    // @ts-expect-error genre inconnu
+    const badMedia: HomeMedia = { type: 'anime', tmdbId: 1 };
+    expect(badMedia.tmdbId).toBe(1);
   });
 });
 
