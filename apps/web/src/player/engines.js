@@ -159,8 +159,12 @@ export class HtmlEngine extends Emitter {
     const wait = !!(a && a.holding);
     const ranges = [];
     for (let i = 0; i < v.buffered.length; i++) ranges.push([v.buffered.start(i), v.buffered.end(i)]);
+    const at = v.currentTime || 0;
+    // Fin de la plage tamponnée qui contient la position (0 : rien autour) : progression des données pour le chien de garde.
+    const hold = ranges.find(([s, e]) => at >= s - 0.3 && at <= e);
     return {
-      time: v.currentTime || 0,
+      time: at,
+      cacheTime: hold ? hold[1] : 0,
       duration: Number.isFinite(v.duration) ? v.duration : 0,
       // En attente du son, la vidéo est en pause par nous : pour l'utilisateur, la lecture est en cours (et en train de charger).
       paused: v.paused && !wait,
@@ -401,6 +405,7 @@ export class MpvEngine extends Emitter {
       seeking: !!p.seeking,
       buffering: !!p['paused-for-cache'],
       buffered: cache ? [[0, cache]] : [],
+      cacheTime: cache,
       volume: (p.volume || 0) / 100,
       muted: p.mute === true || p.mute === 'yes' || p.mute === 1,
       rate: p.speed || 1,
@@ -501,7 +506,7 @@ export class NativeEngine extends Emitter {
 
   state() {
     const p = this.p;
-    return { time: p.time, duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], volume: 1, muted: false, rate: p.rate, pip: false };
+    return { time: p.time, duration: p.duration, paused: p.paused, ended: false, seeking: false, buffering: p.buffering, buffered: [], cacheTime: null, volume: 1, muted: false, rate: p.rate, pip: false };
   }
 
   audioTracks() { return nativeAudioTracks(this.audio); }

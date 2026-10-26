@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canPlayProbe, chooseEngine, detectCaps, guessWebPlayable } from '../src/player/engine';
-import { failoverOrder, StallWatch } from '../src/player/failover';
+import { attemptsAfterStable, failoverOrder, StallWatch } from '../src/player/failover';
 import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
 import { hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl } from '../src/player/server';
@@ -359,6 +359,57 @@ describe('failover', () => {
     w.tick(1000, 100, false);
     expect(w.tick(2000, 40, false)).toBe('ok');
     expect(w.tick(10_000, 45, false)).toBe('ok');
+  });
+
+  it('un cache qui progresse repousse le blocage (tampon mpv ou HTML5 qui se remplit)', () => {
+    const w = new StallWatch(0);
+    w.tick(1000, 10, false, 10);
+    expect(w.tick(5000, 10, false, 20)).toBe('ok');
+    expect(w.tick(20_000, 10, false, 40)).toBe('ok'); // position figée depuis 19 s, mais le cache avance
+    expect(w.tick(40_000, 10, false, 40)).toBe('stalled'); // cache figé depuis 20 s
+  });
+
+  it('cache connu mais figé : blocage à 15 s, comme sans cache', () => {
+    const w = new StallWatch(0);
+    w.tick(1000, 10, false, 50);
+    expect(w.tick(16_000, 10, false, 50)).toBe('ok');
+    expect(w.tick(16_500, 10, false, 50)).toBe('stalled');
+  });
+
+  it('plafond dur : position figée plus de 60 s bascule, même si le cache avance', () => {
+    const w = new StallWatch(0);
+    w.tick(1000, 10, false, 10);
+    for (let t = 6000; t <= 60_000; t += 6000) expect(w.tick(t, 10, false, t)).toBe('ok');
+    expect(w.tick(61_100, 10, false, 99_999)).toBe('stalled');
+  });
+
+  it('reset remet aussi le suivi du cache à zéro', () => {
+    const w = new StallWatch(0);
+    w.tick(1000, 10, false, 10);
+    w.reset(40_000);
+    expect(w.tick(54_000, 10, false, 10)).toBe('ok');
+    expect(w.tick(55_100, 10, false, 10)).toBe('stalled');
+  });
+
+  it('lecture stable : durée depuis la dernière interruption du progrès ; une pause ne l’interrompt pas', () => {
+    const w = new StallWatch(0);
+    expect(w.stableFor(5000)).toBe(0);
+    w.tick(1000, 1, false);
+    w.tick(2000, 2, false);
+    expect(w.stableFor(5000)).toBe(4000);
+    w.tick(3000, 2, false); // position figée à ce relevé : interruption
+    expect(w.stableFor(3000)).toBe(0);
+    w.tick(4000, 3, false);
+    expect(w.tick(10_000, 3, true)).toBe('ok'); // pause
+    expect(w.stableFor(10_000)).toBe(6000);
+  });
+});
+
+describe('essais après une lecture stable', () => {
+  it('remis à zéro seulement après 2 min de lecture stable, avec un essai et la vue courante seule essayée', () => {
+    expect(attemptsAfterStable(3, 4, 119_999)).toBeNull();
+    expect(attemptsAfterStable(0, 4, 500_000)).toBeNull();
+    expect(attemptsAfterStable(3, 4, 120_000)).toEqual({ attempts: 0, tried: new Set([4]) });
   });
 });
 
