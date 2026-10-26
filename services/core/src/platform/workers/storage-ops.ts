@@ -11,8 +11,8 @@ import type { WorkerEnv } from './env.js';
  * route épurée (segments variables remplacés, voir `routeLabel`) et des nombres : ni clé, ni préfixe, ni identité.
  */
 
-export type KvOperation = 'get' | 'put' | 'delete' | 'list';
-export type R2Operation = 'get' | 'put' | 'head' | 'delete' | 'list';
+type KvOperation = 'get' | 'put' | 'delete' | 'list';
+type R2Operation = 'get' | 'put' | 'head' | 'delete' | 'list';
 
 export interface StorageOps {
   kv: Partial<Record<KvOperation, number>>;
