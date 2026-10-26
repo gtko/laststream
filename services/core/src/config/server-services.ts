@@ -52,6 +52,9 @@ const CACHE_TTL_MS = 60_000;
 /** Durée de vie du « rien en base » après une panne de lecture : réessai au bout de 5 s. */
 const FAILURE_TTL_MS = 5_000;
 
+/** Délai maximal d'une lecture du dépôt : au-delà, la lecture échoue et le repli sur les variables s'applique. */
+const READ_TIMEOUT_MS = 3_000;
+
 /** Dépôt utilisé pour lire et écrire les clés serveur (sous-ensemble du dépôt des données utilisateur). */
 export type ServerServicesRepo = Pick<UserRepo, 'listServerServiceRows' | 'writeServerServices'>;
 
@@ -118,12 +121,21 @@ function openRows(rows: readonly { field: string; sealed: string }[], secret: st
 }
 
 /**
- * Lit et déchiffre les clés en base. Une panne de lecture donne « rien en base », journalisé sans détail. Quand la
- * lecture se termine, l'entrée du cache reçoit sa fin de validité : 60 s si elle a réussi, 5 s si elle a échoué.
+ * Lit et déchiffre les clés en base, lecture bornée par READ_TIMEOUT_MS. Une panne ou un délai dépassé donne « rien en
+ * base », journalisé sans détail. Quand la lecture se termine, l'entrée du cache reçoit sa fin de validité : 60 s si
+ * elle a réussi, 5 s si elle a échoué. Le délai armé est toujours nettoyé.
  */
 async function loadStored(env: ServerServicesEnv, entry: CacheEntry): Promise<Stored> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('délai de lecture dépassé');
+      err.name = 'TimeoutError';
+      reject(err);
+    }, READ_TIMEOUT_MS);
+  });
   try {
-    const rows = await env.users.listServerServiceRows();
+    const rows = await Promise.race([env.users.listServerServiceRows(), deadline]);
     const stored = openRows(rows, env.secret);
     entry.expires = Date.now() + CACHE_TTL_MS;
     return stored;
@@ -133,6 +145,8 @@ async function loadStored(env: ServerServicesEnv, entry: CacheEntry): Promise<St
     );
     entry.expires = Date.now() + FAILURE_TTL_MS;
     return {};
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -143,20 +157,49 @@ async function loadStored(env: ServerServicesEnv, entry: CacheEntry): Promise<St
 function storedKeys(env: ServerServicesEnv): Promise<Stored> {
   const hit = cache.get(env.users);
   if (hit !== undefined && Date.now() < hit.expires) return hit.stored;
-  // Pendant la lecture, l'entrée n'expire pas : les appels concurrents attendent la même promesse.
-  const entry: CacheEntry = { expires: Number.POSITIVE_INFINITY, stored: Promise.resolve({}) };
+  // Pendant la lecture, l'entrée expire au bout de 5 s (jamais de fin de validité infinie) : les appels concurrents
+  // attendent la même promesse, et une lecture qui ne répond pas ne reste pas en cache.
+  const entry: CacheEntry = { expires: Date.now() + FAILURE_TTL_MS, stored: Promise.resolve({}) };
   entry.stored = loadStored(env, entry);
   cache.set(env.users, entry);
   return entry.stored;
 }
 
-/** Clés serveur effectives : la base d'abord, puis la variable d'exécution. OpenRouter ne vient que de la variable. */
+/** Paire TheTVDB effective (clé et PIN) et sa source. Le PIN peut être absent. */
+interface TvdbPair {
+  origin: 'db' | 'env';
+  key: string;
+  pin: string | undefined;
+}
+
+/**
+ * TheTVDB : clé et PIN forment une paire d'une seule source. Si la base a une clé, la paire est celle de la base (sans
+ * PIN si la base n'en a pas, sans reprendre celui des variables). Sinon, si les variables ont une clé, la paire est
+ * celle des variables. Sans clé, rien : un PIN seul, en base ou en variable, est ignoré.
+ */
+function tvdbPair(env: ServerServicesEnv, stored: Stored): TvdbPair | undefined {
+  if (stored.tvdbApiKey !== undefined) return { origin: 'db', key: stored.tvdbApiKey, pin: stored.tvdbPin };
+  const key = runtimeValue(env, 'tvdbApiKey');
+  if (key === undefined) return undefined;
+  return { origin: 'env', key, pin: runtimeValue(env, 'tvdbPin') };
+}
+
+/**
+ * Clés serveur effectives : la base d'abord, puis la variable d'exécution (TheTVDB en paire, voir tvdbPair).
+ * OpenRouter ne vient que de la variable.
+ */
 export async function getServerServices(env: ServerServicesEnv): Promise<ServerServices> {
   const stored = await storedKeys(env);
   const services: ServerServices = {};
   for (const field of SERVER_SERVICE_FIELDS) {
+    if (field === 'tvdbApiKey' || field === 'tvdbPin') continue;
     const value = stored[field] ?? runtimeValue(env, field);
     if (value !== undefined) services[field] = value;
+  }
+  const pair = tvdbPair(env, stored);
+  if (pair !== undefined) {
+    services.tvdbApiKey = pair.key;
+    if (pair.pin !== undefined) services.tvdbPin = pair.pin;
   }
   const openrouter = runtimeValue(env, 'openrouterApiKey');
   if (openrouter !== undefined) services.openrouterApiKey = openrouter;
@@ -192,21 +235,29 @@ export async function withServerServices(config: Config, env: ServerServicesEnv)
   return services === undefined ? config : { ...config, services };
 }
 
-/** État masqué des clés serveur : présence, origine et quatre derniers caractères. Aucune valeur complète. */
+/** État d'une clé serveur : présence, quatre derniers caractères si la clé est assez longue, origine. */
+function stateOf(value: string | undefined, source: ServerServiceSource): ServerServiceState {
+  if (value === undefined) return { set: false, source: 'none' };
+  const last4 = last4Label(value);
+  return last4 === undefined ? { set: true, source } : { set: true, last4, source };
+}
+
+/**
+ * État masqué des clés serveur : présence, origine et quatre derniers caractères. Aucune valeur complète. TheTVDB suit
+ * la paire effective : un PIN ignoré n'est pas signalé comme posé.
+ */
 export async function serverServicesState(env: ServerServicesEnv): Promise<ServerServicesState> {
   const stored = await storedKeys(env);
   const state = {} as ServerServicesState;
   for (const field of SERVER_SERVICE_FIELDS) {
+    if (field === 'tvdbApiKey' || field === 'tvdbPin') continue;
     const fromDb = stored[field];
-    const value = fromDb ?? runtimeValue(env, field);
-    if (value === undefined) {
-      state[field] = { set: false, source: 'none' };
-      continue;
-    }
-    const source: ServerServiceSource = fromDb === undefined ? 'env' : 'db';
-    const last4 = last4Label(value);
-    state[field] = last4 === undefined ? { set: true, source } : { set: true, last4, source };
+    state[field] = stateOf(fromDb ?? runtimeValue(env, field), fromDb === undefined ? 'env' : 'db');
   }
+  const pair = tvdbPair(env, stored);
+  const source = pair?.origin ?? 'none';
+  state.tvdbApiKey = stateOf(pair?.key, source);
+  state.tvdbPin = stateOf(pair?.pin, source);
   return state;
 }
 

@@ -40,11 +40,20 @@ const OWNER_FIELDS = [
   ['animeskipClientId', 'ANIMESKIP_CLIENT_ID'],
 ] as const satisfies readonly (readonly [ServerServiceField, string])[];
 
+/** Comportement des lectures du dépôt : compteur, panne, blocage (jamais de réponse), retenue d'une lecture. */
+interface Reads {
+  count: number;
+  fail: boolean;
+  hang: boolean;
+  /** Retient la prochaine lecture : elle renvoie le contenu observé au départ, une fois `hold` résolu. */
+  hold?: Promise<void>;
+}
+
 interface Harness {
   env: ServerServicesEnv;
   store: UserStore;
   vars: Record<string, string | undefined>;
-  reads: { count: number; fail: boolean };
+  reads: Reads;
 }
 
 /** Environnement de test : base SQLite en mémoire migrée, variables d'exécution réglables, compteur de lectures. */
@@ -53,12 +62,17 @@ function harness(vars: Record<string, string | undefined> = {}): Harness {
   migrate(db);
   const store = new UserStore(db);
   const repo = asyncRepo(store);
-  const reads = { count: 0, fail: false };
+  const reads: Reads = { count: 0, fail: false, hang: false };
   const users = {
-    listServerServiceRows: () => {
+    listServerServiceRows: async () => {
       reads.count += 1;
-      if (reads.fail) return Promise.reject(new Error('base indisponible'));
-      return repo.listServerServiceRows();
+      if (reads.fail) throw new Error('base indisponible');
+      if (reads.hang) return new Promise<never>(() => {});
+      const hold = reads.hold;
+      reads.hold = undefined;
+      const rows = await repo.listServerServiceRows();
+      if (hold !== undefined) await hold;
+      return rows;
     },
     writeServerServices: (writes: Parameters<typeof repo.writeServerServices>[0]) => repo.writeServerServices(writes),
   };
@@ -157,6 +171,37 @@ describe('TVDB : clé et PIN forment une paire, résolue d\'une seule source', (
     const config = await withServerServices(compte(), h.env);
     expect(config.services.tvdbApiKey).toBe(COMPTE_CLE);
     expect(config.services.tvdbPin).toBe(COMPTE_PIN);
+  });
+
+  it('(e) clé en base, TVDB_PIN en variable : le PIN de la variable est ignoré, la paire vient de la base', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789', TVDB_PIN: 'pin-env-0123' });
+    await setServerServices(h.env, { tvdbApiKey: 'tvdb-cle-serveur-0123456789' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-serveur-0123456789');
+    expect(config.services.tvdbPin).toBeUndefined();
+  });
+
+  it('(f) PIN en base, clé en variable : le PIN de la base est ignoré, la paire vient de la variable', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789' });
+    await setServerServices(h.env, { tvdbPin: 'pin-serveur-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-env-0123456789');
+    expect(config.services.tvdbPin).toBeUndefined();
+  });
+
+  it('(g) clé et PIN en variables seulement : la paire des variables', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789', TVDB_PIN: 'pin-env-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-env-0123456789');
+    expect(config.services.tvdbPin).toBe('pin-env-0123');
+  });
+
+  it('(h) clé et PIN en base : la paire de la base, la paire des variables n\'est pas reprise', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789', TVDB_PIN: 'pin-env-0123' });
+    await setServerServices(h.env, { tvdbApiKey: 'tvdb-cle-serveur-0123456789', tvdbPin: 'pin-serveur-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-serveur-0123456789');
+    expect(config.services.tvdbPin).toBe('pin-serveur-0123');
   });
 });
 
@@ -290,10 +335,58 @@ describe('cache de 60 s par isolat et invalidation à l\'écriture', () => {
 
   it('une écriture pendant une lecture en cours abandonne sa promesse', async () => {
     const h = harness();
+    let release = (): void => {};
+    h.reads.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // La lecture retenue a vu la base vide. L'écriture a lieu pendant qu'elle est en cours.
     const pending = getServerServices(h.env);
-    await setServerServices(h.env, { tmdbToken: 'base-jeton-0123456789' });
-    await pending;
+    const write = setServerServices(h.env, { tmdbToken: 'base-jeton-0123456789' });
+    release();
+    await write;
+    // L'ancienne lecture se termine sur l'ancienne valeur, sans repeupler le cache.
+    expect(await pending).toEqual({});
     expect((await getServerServices(h.env)).tmdbToken).toBe('base-jeton-0123456789');
+  });
+});
+
+describe('lecture bornée par un délai, horloge simulée', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(new Date('2026-10-26T10:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('un dépôt qui ne répond jamais : repli sur les variables après 3 s, puis nouvelle lecture 5 s après la panne', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const h = harness({ TMDB_TOKEN: 'env-jeton-0123456789' });
+    h.reads.hang = true;
+    const first = getServerServices(h.env);
+    const second = getServerServices(h.env);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await first).tmdbToken).toBe('env-jeton-0123456789');
+    expect((await second).tmdbToken).toBe('env-jeton-0123456789');
+    expect(h.reads.count).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('server_services indisponible'));
+
+    h.reads.hang = false;
+    h.store.writeServerServices([{ field: 'tmdbToken', sealed: encryptJson('jeton-apres-blocage-0123', SECRET, 'server-services') }]);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect((await getServerServices(h.env)).tmdbToken).toBe('env-jeton-0123456789');
+    expect(h.reads.count).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await getServerServices(h.env)).tmdbToken).toBe('jeton-apres-blocage-0123');
+    expect(h.reads.count).toBe(2);
+  });
+
+  it('une lecture qui répond à temps ne laisse aucun délai armé', async () => {
+    const h = harness();
+    await getServerServices(h.env);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -332,7 +425,8 @@ describe('état masqué', () => {
 
   it('pas de quatre derniers caractères sous 12 caractères', async () => {
     const h = harness();
-    const state = await setServerServices(h.env, { tvdbPin: 'pin-9876' });
+    // Un PIN n'est effectif qu'avec une clé TheTVDB de la même source : la clé est posée avec lui.
+    const state = await setServerServices(h.env, { ...cleTvdbSiPin('tvdbPin'), tvdbPin: 'pin-9876' });
     expect(state.tvdbPin).toEqual({ set: true, source: 'db' });
     expect(state.tvdbPin).not.toHaveProperty('last4');
   });
@@ -354,6 +448,14 @@ describe('état masqué', () => {
     await setServerServices(h.env, { tmdbToken: 'base-jeton-abcdef0123' });
     const state = await serverServicesState(h.env);
     expect(state.tmdbToken).toEqual({ set: true, last4: '…0123', source: 'db' });
+  });
+
+  it('état TVDB : la paire suit son origine, un PIN ignoré n\'est pas signalé comme posé', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789', TVDB_PIN: 'pin-env-0123' });
+    await setServerServices(h.env, { tvdbApiKey: 'tvdb-cle-serveur-0123456789' });
+    const state = await serverServicesState(h.env);
+    expect(state.tvdbApiKey).toEqual({ set: true, last4: '…6789', source: 'db' });
+    expect(state.tvdbPin).toEqual({ set: false, source: 'none' });
   });
 
   it('la valeur est chiffrée en base : le texte clair n\'y figure pas', async () => {
