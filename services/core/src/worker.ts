@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/cloudflare';
 import type { ExecutionContext, ScheduledController } from '@cloudflare/workers-types';
 import { ADMIN_PREFIX, handleAdmin } from './admin/routes.js';
 import { USER_STORE_NAME } from './platform/workers/user-backend.js';
-import { createApp, MANIFEST } from './app.js';
+import { createApp, serverRelease } from './app.js';
 import { isPlainAllowed, secretFromEnv } from './config/secret.js';
 import type { AppDeps } from './deps.js';
 import type { App } from './http/app-env.js';
@@ -152,6 +152,6 @@ const worker = {
  * Sentry (`@sentry/cloudflare`) : actif seulement si le secret SENTRY_DSN est posé ; données épurées (observability/scrub.ts).
  */
 export default Sentry.withSentry(
-  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, `lastaddon-core@${MANIFEST.version}`),
+  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, serverRelease()),
   worker,
 );

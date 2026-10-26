@@ -192,4 +192,12 @@ describe('scripts/sentry-alerts.mjs : création et mise à jour idempotentes', (
       { id: 'sentry.mail.actions.NotifyEmailAction', targetType: 'IssueOwners', fallthroughType: 'AllMembers' },
     ]);
   });
+
+  it('règle DebridEgressBlockedError : filtre sur l’attribut exception.type (pas sur un champ « type » inexistant)', async () => {
+    await run([], { ...CONFIG, SENTRY_API_URL: apiUrl, SENTRY_AUTH_TOKEN: TOKEN });
+    const debrid = recorded.find((r) => r.method === 'POST' && (r.body?.name as string).includes('DebridEgressBlockedError'));
+    expect(debrid?.body?.filters).toEqual([
+      { id: 'sentry.rules.filters.event_attribute.EventAttributeFilter', attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' },
+    ]);
+  });
 });

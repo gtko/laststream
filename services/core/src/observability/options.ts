@@ -14,8 +14,9 @@ export function workerSentryOptions(dsn: string | undefined, release: string): C
     dsn,
     environment: 'production',
     release,
-    // Tags posés sur tous les événements (erreurs, traces) : version et plateforme d'exécution du Worker.
-    initialScope: { tags: { release, platform: WORKER_PLATFORM } },
+    // Tag posé sur tous les événements (erreurs, traces) : plateforme d'exécution du Worker. La version est déjà portée
+    // par `release` (option ci-dessus, recopiée par le SDK sur chaque événement) : pas de tag en double.
+    initialScope: { tags: { platform: WORKER_PLATFORM } },
     tracesSampleRate: 0.05,
     // Ni compte, ni cookies, ni en-têtes, ni paramètres d'URL, ni variables locales (comme l'application).
     dataCollection: {

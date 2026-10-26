@@ -1,7 +1,8 @@
 /**
  * Sondes de dépendances de /health. Chaque dépendance est testée en parallèle, avec un délai d'attente : une dépendance
- * en panne (erreur, sonde qui lève, délai dépassé) met `ok` global à false, mais la réponse reste HTTP 200 et n'échoue
- * jamais. Aucun message d'erreur n'est renvoyé (il peut contenir une URL ou un identifiant) : seuls l'état et la durée.
+ * en panne (erreur, sonde qui lève, délai dépassé) met `degraded` à true ; `ok` reste true tant que le Worker répond
+ * (les apps testent `ok` pour choisir leur serveur : il ne doit jamais passer à false pour une dépendance). Aucun message
+ * d'erreur n'est renvoyé (il peut contenir une URL ou un identifiant) : seuls l'état et la durée.
  * Les sondes sont en lecture seule (voir platform/workers/ops.ts).
  */
 
@@ -18,7 +19,10 @@ export interface DependencyHealth {
 }
 
 export interface HealthReport {
-  ok: boolean;
+  /** Toujours true tant que le Worker répond. */
+  ok: true;
+  /** true si une dépendance est en panne ou hors délai. */
+  degraded: boolean;
   release: string;
   deps: Record<string, DependencyHealth>;
 }
@@ -56,12 +60,40 @@ export async function checkDependencies(
   return Object.fromEntries(entries);
 }
 
-/** Corps de /health : `ok` global (toutes les dépendances OK ; vrai sans dépendance), la version et l'état par dépendance. */
+/** Corps de /health : `ok` (true tant que le Worker répond), `degraded` (une dépendance en panne ou hors délai), la version et l'état par dépendance. */
 export async function healthReport(
   release: string,
   probes: Readonly<Record<string, HealthProbe>>,
   timeoutMs: number = HEALTH_TIMEOUT_MS,
 ): Promise<HealthReport> {
   const deps = await checkDependencies(probes, timeoutMs);
-  return { ok: Object.values(deps).every((dep) => dep.ok), release, deps };
+  return { ok: true, degraded: !Object.values(deps).every((dep) => dep.ok), release, deps };
+}
+
+/** Durée de validité d'un rapport /health : /health est public, les sondes touchent KV, R2 et le Durable Object. */
+export const HEALTH_CACHE_MS = 15_000;
+
+export interface HealthReporterOptions {
+  release: string;
+  probes: Readonly<Record<string, HealthProbe>>;
+  timeoutMs?: number;
+  cacheMs?: number;
+  /** Horloge (ms) : injectable pour les tests. */
+  now?: () => number;
+}
+
+/**
+ * Rapport /health mis en cache : un seul rapport par fenêtre de `cacheMs`, partagé par les appels simultanés (la promesse
+ * est gardée, pas seulement la valeur). Les sondes ne tournent donc qu'une fois par fenêtre et par isolat.
+ */
+export function createHealthReporter(options: HealthReporterOptions): () => Promise<HealthReport> {
+  const { release, probes, timeoutMs = HEALTH_TIMEOUT_MS, cacheMs = HEALTH_CACHE_MS, now = Date.now } = options;
+  let cached: { at: number; report: Promise<HealthReport> } | undefined;
+  return () => {
+    const at = now();
+    if (cached === undefined || at - cached.at >= cacheMs) {
+      cached = { at, report: healthReport(release, probes, timeoutMs) };
+    }
+    return cached.report;
+  };
 }

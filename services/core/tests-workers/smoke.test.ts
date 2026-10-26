@@ -10,7 +10,8 @@ describe('Worker lastaddon-core (entrée src/worker.ts)', () => {
     // KV, R2 (TV) et base du Durable Object répondent dans Miniflare : toutes OK.
     expect(await res.json()).toEqual({
       ok: true,
-      release: '0.1.0',
+      degraded: false,
+      release: 'lastaddon-core@0.1.0',
       deps: {
         kv: { ok: true, ms: expect.any(Number) },
         r2: { ok: true, ms: expect.any(Number) },

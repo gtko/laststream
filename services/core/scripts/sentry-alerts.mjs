@@ -49,7 +49,7 @@ const ALERT_RULES = [
     name: 'Laststream : DebridEgressBlockedError',
     conditions: [{ id: 'sentry.rules.conditions.every_event.EveryEventCondition' }],
     filters: [
-      { id: 'sentry.rules.filters.event_attribute.EventAttributeFilter', attribute: 'type', match: 'eq', value: 'DebridEgressBlockedError' },
+      { id: 'sentry.rules.filters.event_attribute.EventAttributeFilter', attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' },
     ],
     actions: [NOTIFY_OWNERS],
     actionMatch: 'all',

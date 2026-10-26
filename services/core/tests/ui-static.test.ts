@@ -84,7 +84,7 @@ describe('interface statique (LASTADDON_UI_DIR / --ui)', () => {
 
   it('les routes API gardent la priorité sur le repli, même pour une navigation', async () => {
     const health = await fetch(`${withUi.baseUrl}/health`, { headers: { accept: 'text/html' } });
-    expect(await health.json()).toEqual({ ok: true, release: '0.1.0', deps: {} });
+    expect(await health.json()).toEqual({ ok: true, degraded: false, release: 'lastaddon-core@0.1.0', deps: {} });
     const manifest = await fetch(`${withUi.baseUrl}/manifest.json`, { headers: { accept: 'text/html' } });
     expect((await manifest.json()) as { id: string }).toMatchObject({ id: 'com.laststream.lastaddon' });
     const config = await fetch(`${withUi.baseUrl}/config/inconnu`, { headers: { accept: 'text/html' } });

@@ -8,7 +8,7 @@
 |---|---|
 | Laststream : nouvelle issue | Première occurrence d'une issue (`FirstSeenEventCondition`) |
 | Laststream : pic d’événements | Plus de 100 événements en 1 h (`EventFrequencyCondition`) |
-| Laststream : DebridEgressBlockedError | `type` = `DebridEgressBlockedError` (`EveryEventCondition` + `EventAttributeFilter`) |
+| Laststream : DebridEgressBlockedError | `exception.type` = `DebridEgressBlockedError` (`EveryEventCondition` + `EventAttributeFilter`) |
 
 Notification aux propriétaires (repli : tous les membres), au plus toutes les 5 min (30 min pour le pic).
 

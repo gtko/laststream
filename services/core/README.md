@@ -117,7 +117,7 @@ Les clés API (debrid, services) sont contenues dans la configuration. Le serveu
 
 | Méthode | Chemin | Description |
 | --- | --- | --- |
-| GET | `/health` | Santé du serveur : `{"ok":true}` |
+| GET | `/health` | Santé du serveur : `{"ok":true,"degraded":false,"release","deps"}`. `ok` reste `true` tant que le Worker répond ; `degraded` passe à `true` si une dépendance (KV, R2, base) est en panne ou ne répond pas dans 1,5 s. `deps` donne l'état et la durée de chaque sonde. Rapport mis en cache 15 s par instance ; toujours HTTP 200. |
 | GET | `/manifest.json` | Manifest Stremio générique (non bloquant, sans configuration) |
 | GET | `/:config/manifest.json` | Manifest Stremio pour une configuration chiffrée. Avec `services.tmdbToken`, annonce aussi des catalogues. |
 | GET | `/:config/stream/:type/:id.json` | Liste de streams Stremio pour un film ou un épisode |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
-import { checkDependencies, HEALTH_TIMEOUT_MS, healthReport } from '../src/health/probes.js';
+import { checkDependencies, createHealthReporter, HEALTH_CACHE_MS, HEALTH_TIMEOUT_MS, healthReport } from '../src/health/probes.js';
 
 /** Sonde qui ne répond jamais (dépendance bloquée). */
 const never = (): Promise<never> => new Promise<never>(() => {});
@@ -18,6 +18,7 @@ describe('sondes de dépendances de /health', () => {
     });
     expect(report).toEqual({
       ok: true,
+      degraded: false,
       release: '0.1.0',
       deps: {
         kv: { ok: true, ms: expect.any(Number) },
@@ -27,7 +28,7 @@ describe('sondes de dépendances de /health', () => {
     });
   });
 
-  it('une dépendance en panne : ok global à false, les autres restent OK, aucun message d’erreur renvoyé', async () => {
+  it('une dépendance en panne : ok reste true, degraded à true, les autres restent OK, aucun message d’erreur renvoyé', async () => {
     const report = await healthReport('0.1.0', {
       kv: async () => null,
       r2: async () => {
@@ -35,7 +36,8 @@ describe('sondes de dépendances de /health', () => {
       },
       base: async () => true,
     });
-    expect(report.ok).toBe(false);
+    expect(report.ok).toBe(true);
+    expect(report.degraded).toBe(true);
     expect(report.deps.r2.ok).toBe(false);
     expect(report.deps.kv.ok).toBe(true);
     expect(report.deps.base.ok).toBe(true);
@@ -70,15 +72,15 @@ describe('sondes de dépendances de /health', () => {
     expect(Date.now() - started).toBeLessThan(250);
   });
 
-  it('sans sonde : ok, aucune dépendance', async () => {
-    expect(await healthReport('0.1.0', {})).toEqual({ ok: true, release: '0.1.0', deps: {} });
+  it('sans sonde : ok, degraded à false, aucune dépendance', async () => {
+    expect(await healthReport('0.1.0', {})).toEqual({ ok: true, degraded: false, release: '0.1.0', deps: {} });
   });
 });
 
 describe('route /health avec sondes', () => {
   const deps = { secret: 'health-route-secret-with-32-chars-min', allowPlain: false };
 
-  it('une dépendance en panne : HTTP 200, ok global à false, état par dépendance', async () => {
+  it('une dépendance en panne : HTTP 200, ok reste true, degraded à true, état par dépendance', async () => {
     const app = createApp({
       ...deps,
       healthProbes: {
@@ -91,8 +93,9 @@ describe('route /health avec sondes', () => {
     const res = await app.request('/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      ok: false,
-      release: '0.1.0',
+      ok: true,
+      degraded: true,
+      release: 'lastaddon-core@0.1.0',
       deps: {
         kv: { ok: true, ms: expect.any(Number) },
         r2: { ok: false, ms: expect.any(Number) },
@@ -105,9 +108,88 @@ describe('route /health avec sondes', () => {
     const started = Date.now();
     const res = await app.request('/health');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; deps: { base: { ok: boolean } } };
-    expect(body.ok).toBe(false);
+    const body = (await res.json()) as { ok: boolean; degraded: boolean; deps: { base: { ok: boolean } } };
+    expect(body.ok).toBe(true);
+    expect(body.degraded).toBe(true);
     expect(body.deps.base.ok).toBe(false);
     expect(Date.now() - started).toBeLessThan(HEALTH_TIMEOUT_MS + 1000);
+  });
+
+  it('deux appels rapprochés : les sondes ne tournent qu’une fois (rapport gardé 15 s par isolat)', async () => {
+    let runs = 0;
+    const app = createApp({
+      ...deps,
+      healthProbes: {
+        kv: async () => {
+          runs += 1;
+          return null;
+        },
+      },
+    });
+    await app.request('/health');
+    await app.request('/health');
+    expect(runs).toBe(1);
+  });
+});
+
+describe('rapport de /health mis en cache (un isolat)', () => {
+  it('délai de validité de 15 000 ms', () => {
+    expect(HEALTH_CACHE_MS).toBe(15_000);
+  });
+
+  it('deux appels rapprochés : une seule exécution des sondes, même rapport', async () => {
+    let clock = 0;
+    let runs = 0;
+    const report = createHealthReporter({
+      release: 'lastaddon-core@0.1.0',
+      probes: {
+        kv: async () => {
+          runs += 1;
+          return null;
+        },
+      },
+      now: () => clock,
+    });
+    const first = await report();
+    clock = 1_000;
+    const second = await report();
+    expect(runs).toBe(1);
+    expect(second).toEqual(first);
+  });
+
+  it('appels simultanés : une seule exécution des sondes', async () => {
+    let runs = 0;
+    const report = createHealthReporter({
+      release: 'lastaddon-core@0.1.0',
+      probes: {
+        kv: async () => {
+          runs += 1;
+        },
+      },
+      now: () => 0,
+    });
+    await Promise.all([report(), report(), report()]);
+    expect(runs).toBe(1);
+  });
+
+  it('après 15 s : nouvelle exécution des sondes (et rien avant)', async () => {
+    let clock = 0;
+    let runs = 0;
+    const report = createHealthReporter({
+      release: 'lastaddon-core@0.1.0',
+      probes: {
+        kv: async () => {
+          runs += 1;
+        },
+      },
+      now: () => clock,
+    });
+    await report();
+    clock = HEALTH_CACHE_MS - 1;
+    await report();
+    expect(runs).toBe(1);
+    clock = HEALTH_CACHE_MS;
+    await report();
+    expect(runs).toBe(2);
   });
 });

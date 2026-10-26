@@ -25,9 +25,9 @@ describe('options Sentry du Worker', () => {
     expect(typeof opts.beforeBreadcrumb).toBe('function');
   });
 
-  it('tags release et platform posés pour tous les événements (portée initiale)', () => {
+  it('tag platform posé pour tous les événements ; la version passe par `release` seul (pas de tag en double)', () => {
     expect(opts.initialScope).toEqual({
-      tags: { release: 'lastaddon-core@1.0.0', platform: 'cloudflare-workers' },
+      tags: { platform: 'cloudflare-workers' },
     });
   });
 
