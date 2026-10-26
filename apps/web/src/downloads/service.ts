@@ -18,7 +18,7 @@ import { bindDownloadLimit, clearPurgePending, getDownloadSettings, isCellular, 
 import { isAddonLinkUrl } from './linkHosts';
 import { createStreamResolver, findMatch, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
 import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadRef, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
-import { createWebDownloadHttp } from './webHttp';
+import { createDownloadHttp } from './httpSelect';
 import { reportDownloadEvent } from './report';
 import { createShellDownloadStore } from './shellStore';
 import { createWebDownloadStore, type WebDownloadStore } from './webStore';
@@ -173,8 +173,8 @@ async function build(purge: boolean): Promise<DownloadManager | null> {
   }
   const created = new DownloadManager({
     resolver: createStreamResolver({ linkPolicy: linkPolicy() }),
-    // Hors transfert de plateforme, les morceaux passent par ce transport : liens https publics des addons (voir linkHosts.ts).
-    http: createWebDownloadHttp({ allowHost: isAddonLinkUrl }),
+    // Hors transfert de plateforme, les morceaux passent par ce transport : pont natif de la coque pour les débrideurs (coque), fetch pour les addons (voir httpSelect.ts).
+    http: createDownloadHttp(transfer === undefined ? platformKind() : 'web'),
     store,
     index: idx,
     transfer,

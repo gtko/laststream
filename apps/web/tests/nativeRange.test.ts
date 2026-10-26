@@ -217,6 +217,17 @@ describe('native-range : erreurs de la coque', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it('bad_status : le statut HTTP refusé reste lisible sur l’erreur (lien périmé, voir httpSelect.ts)', async () => {
+    const fw = fakeWebview((s, reply) => {
+      if (s.event === 'native-range-caps') reply('native-range-caps', CAPS);
+      else if (s.event === 'native-range') reply('native-range-response', { id: s.args.id, error: 'bad_status', status: 403 });
+    });
+    const err = await shellRangeHttp(makeFallback(), { getShell: async () => shellOf(fw.webview) })(rangeReq(0, 9)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DebridError);
+    expect((err as DebridError).code).toBe('bad_status');
+    expect((err as DebridError).status).toBe(403);
+  });
+
   it('erreur après des morceaux : aucun résultat partiel', async () => {
     const fw = fakeWebview((s, reply) => {
       if (s.event === 'native-range-caps') reply('native-range-caps', CAPS);

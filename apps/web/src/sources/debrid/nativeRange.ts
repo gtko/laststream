@@ -130,15 +130,16 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 /** Code d'erreur de la coque → erreur de transport (même nature que `native-http`). */
-function rangeError(code: string): DebridError {
+function rangeError(code: string, status?: number): DebridError {
   if (code === 'timeout' || code === 'network') return new DebridError(code, 'transient');
   if (code === 'cancelled') return new DebridError('network', 'transient');
-  return new DebridError(code, 'unsupported');
+  // Le statut d'un `bad_status` est gardé sur l'erreur (lecture inchangée : le lecteur ne le lit pas).
+  return new DebridError(code, 'unsupported', status === undefined ? {} : { status });
 }
 
 /** Réponse finale : morceaux rangés par `seq` ; jette (sans résultat partiel) si le décompte ou la taille ne concordent pas. */
 function assemble(f: FinalReply, parts: Map<number, Uint8Array>): HttpResponse {
-  if (typeof f.error === 'string') throw rangeError(f.error);
+  if (typeof f.error === 'string') throw rangeError(f.error, typeof f.status === 'number' ? f.status : undefined);
   const count = f.chunks;
   if (!isSeq(count) || count !== parts.size) throw new DebridError('bad_chunk', 'unsupported');
   const ordered: Uint8Array[] = [];
