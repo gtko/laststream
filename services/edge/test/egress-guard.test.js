@@ -3,12 +3,11 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, it } from 'node:test';
-import worker, { parseTunnelUrl } from '../src/index.js';
+import worker from '../src/index.js';
 import { DebridEgressBlockedError, guardedFetch, isDebridHost, reportBlockedDebrid } from '../src/egress-guard.js';
 
 // Clé fictive : elle ne doit jamais apparaître dans les journaux ni dans l'événement Sentry.
 const DEBRID_KEY = 'cle-api-de-test-7f3a9c';
-const SECRET = 'secret-de-test-registre-0123456789';
 const SENTRY_PUBLIC_KEY = 'cle-publique-de-test';
 const SENTRY_DSN = `https://${SENTRY_PUBLIC_KEY}@o0.ingest.sentry.io/4500000000001`;
 const SENTRY_ENVELOPE_URL = 'https://o0.ingest.sentry.io/api/4500000000001/envelope/';
@@ -93,12 +92,11 @@ describe('garde : reconnaissance des hôtes debrid', () => {
   it('ne confond pas avec des hôtes voisins ni des valeurs vides', () => {
     const hosts = [
       'https://example.com',
-      'https://tunnel.example.org',
+      'https://relais.example.org',
       'https://notalldebrid.com',
       'https://debrid.item.example',
       'https://debrid.it.evil.example',
       'https://evil.example/alldebrid.com',
-      'https://abc.trycloudflare.com',
       '',
       null,
       undefined,
@@ -122,7 +120,7 @@ describe('guardedFetch : refus avant envoi', () => {
     const logs = captureLogs();
     const spy = spyFetchFn();
     for (const [target, host] of cases) {
-      await assert.rejects(guardedFetch(spy.fn, target, { trigger: 'tunnel-fallback', env: {}, requestId: 'r1' }), (error) => {
+      await assert.rejects(guardedFetch(spy.fn, target, { trigger: 'sortie', env: {}, requestId: 'r1' }), (error) => {
         assert.ok(error instanceof DebridEgressBlockedError);
         assert.equal(error.name, 'DebridEgressBlockedError');
         assert.equal(error.code, 'server_side_disabled');
@@ -143,15 +141,15 @@ describe('guardedFetch : refus avant envoi', () => {
   it('hôte légitime : fetchFn appelé avec la cible et les options inchangées', async () => {
     const spy = spyFetchFn();
     const init = { method: 'GET', redirect: 'manual' };
-    const response = await guardedFetch(spy.fn, 'https://tunnel.example.org/torrents?a=1', { init, trigger: 't', env: {}, requestId: 'r' });
+    const response = await guardedFetch(spy.fn, 'https://relais.example.org/torrents?a=1', { init, trigger: 't', env: {}, requestId: 'r' });
     assert.equal(response.status, 200);
     assert.equal(spy.calls.length, 1);
-    assert.equal(spy.calls[0].input, 'https://tunnel.example.org/torrents?a=1');
+    assert.equal(spy.calls[0].input, 'https://relais.example.org/torrents?a=1');
     assert.equal(spy.calls[0].init, init);
   });
 
   it('hôtes voisins légitimes : jamais bloqués', async () => {
-    for (const target of ['https://example.com/', 'https://notalldebrid.com/', 'https://debrid.item.example/', 'https://abc.trycloudflare.com/x']) {
+    for (const target of ['https://example.com/', 'https://notalldebrid.com/', 'https://debrid.item.example/', 'https://relais.example.org/x']) {
       const spy = spyFetchFn();
       assert.equal((await guardedFetch(spy.fn, target, { trigger: 't', env: {}, requestId: 'r' })).status, 200, target);
       assert.equal(spy.calls.length, 1, target);
@@ -162,7 +160,7 @@ describe('guardedFetch : refus avant envoi', () => {
     const spy = spyFetchFn(() => {
       throw new TypeError('connexion refusée');
     });
-    await assert.rejects(guardedFetch(spy.fn, 'https://tunnel.example.org/', { trigger: 't', env: {}, requestId: 'r' }), (error) => {
+    await assert.rejects(guardedFetch(spy.fn, 'https://relais.example.org/', { trigger: 't', env: {}, requestId: 'r' }), (error) => {
       assert.ok(!(error instanceof DebridEgressBlockedError));
       assert.equal(error.message, 'connexion refusée');
       return true;
@@ -174,7 +172,7 @@ describe('guardedFetch : redirections', () => {
   it('redirection absolue vers un hôte debrid : non suivie, erreur de blocage avec l’hôte', async () => {
     const logs = captureLogs();
     const spy = spyFetchFn(() => new Response(null, { status: 302, headers: { location: `https://api.alldebrid.com/v4/user?apikey=${DEBRID_KEY}` } }));
-    await assert.rejects(guardedFetch(spy.fn, 'https://tunnel.example.org/a', { trigger: 'tunnel-fallback', env: {}, requestId: 'r' }), (error) => {
+    await assert.rejects(guardedFetch(spy.fn, 'https://relais.example.org/a', { trigger: 'sortie', env: {}, requestId: 'r' }), (error) => {
       assert.ok(error instanceof DebridEgressBlockedError);
       assert.equal(error.host, 'api.alldebrid.com');
       return true;
@@ -186,7 +184,7 @@ describe('guardedFetch : redirections', () => {
 
   it('redirection protocole-relative vers debrid.it : refusée', async () => {
     const spy = spyFetchFn(() => new Response(null, { status: 307, headers: { location: '//x.debrid.it/y' } }));
-    await assert.rejects(guardedFetch(spy.fn, 'https://tunnel.example.org/a', { trigger: 't', env: {}, requestId: 'r' }), (error) => {
+    await assert.rejects(guardedFetch(spy.fn, 'https://relais.example.org/a', { trigger: 't', env: {}, requestId: 'r' }), (error) => {
       assert.equal(error.host, 'x.debrid.it');
       return true;
     });
@@ -194,21 +192,21 @@ describe('guardedFetch : redirections', () => {
 
   it('redirection relative sur le même hôte : réponse renvoyée telle quelle', async () => {
     const spy = spyFetchFn(() => new Response(null, { status: 301, headers: { location: '/nouveau' } }));
-    const response = await guardedFetch(spy.fn, 'https://tunnel.example.org/a', { trigger: 't', env: {}, requestId: 'r' });
+    const response = await guardedFetch(spy.fn, 'https://relais.example.org/a', { trigger: 't', env: {}, requestId: 'r' });
     assert.equal(response.status, 301);
     assert.equal(response.headers.get('location'), '/nouveau');
   });
 });
 
-describe('guardedFetch : redirections en mode manual (repli tunnel) et follow', () => {
+describe('guardedFetch : redirections en mode manual et follow', () => {
   it('302 vers un débrideur, redirect manual : rendu tel quel, sans erreur, sans rapport ni Sentry', async () => {
     const logs = captureLogs();
     const ctx = fakeCtx();
     const sent = fakeGlobalFetch();
     const spy = spyFetchFn(() => new Response(null, { status: 302, headers: { location: 'https://x.debrid.it/y' } }));
-    const response = await guardedFetch(spy.fn, 'https://tunnel.example.org/a', {
+    const response = await guardedFetch(spy.fn, 'https://relais.example.org/a', {
       init: { method: 'GET', redirect: 'manual' },
-      trigger: 'tunnel-fallback',
+      trigger: 'sortie',
       env: { SENTRY_DSN },
       ctx,
       requestId: 'r',
@@ -224,7 +222,7 @@ describe('guardedFetch : redirections en mode manual (repli tunnel) et follow', 
   it('Request en mode manual (redirect de la requête) : rendu tel quel', async () => {
     const logs = captureLogs();
     const spy = spyFetchFn(() => new Response(null, { status: 301, headers: { location: 'https://api.alldebrid.com/v4/user' } }));
-    const response = await guardedFetch(spy.fn, new Request('https://tunnel.example.org/a', { redirect: 'manual' }), { trigger: 't', env: {}, requestId: 'r' });
+    const response = await guardedFetch(spy.fn, new Request('https://relais.example.org/a', { redirect: 'manual' }), { trigger: 't', env: {}, requestId: 'r' });
     assert.equal(response.status, 301);
     assert.equal(logs.length, 0);
   });
@@ -232,7 +230,7 @@ describe('guardedFetch : redirections en mode manual (repli tunnel) et follow', 
   it('mode follow explicite : 302 vers un débrideur refusé avec l’hôte', async () => {
     captureLogs();
     const spy = spyFetchFn(() => new Response(null, { status: 302, headers: { location: 'https://x.debrid.it/y' } }));
-    await assert.rejects(guardedFetch(spy.fn, 'https://tunnel.example.org/a', { init: { redirect: 'follow' }, trigger: 't', env: {}, requestId: 'r' }), (error) => {
+    await assert.rejects(guardedFetch(spy.fn, 'https://relais.example.org/a', { init: { redirect: 'follow' }, trigger: 't', env: {}, requestId: 'r' }), (error) => {
       assert.ok(error instanceof DebridEgressBlockedError);
       assert.equal(error.host, 'x.debrid.it');
       return true;
@@ -243,13 +241,13 @@ describe('guardedFetch : redirections en mode manual (repli tunnel) et follow', 
 describe('rapport de blocage : journal et Sentry', () => {
   it('journal : une ligne JSON {level, event, host, trigger, requestId}, sans URL, chemin ni clé', async () => {
     const logs = captureLogs();
-    await assert.rejects(guardedFetch(spyFetchFn().fn, `https://api.alldebrid.com/v4/user?apikey=${DEBRID_KEY}`, { trigger: 'tunnel-fallback', env: {}, requestId: 'req-1' }), DebridEgressBlockedError);
+    await assert.rejects(guardedFetch(spyFetchFn().fn, `https://api.alldebrid.com/v4/user?apikey=${DEBRID_KEY}`, { trigger: 'sortie', env: {}, requestId: 'req-1' }), DebridEgressBlockedError);
     assert.equal(logs.length, 1);
     assert.deepEqual(JSON.parse(logs[0]), {
       level: 'error',
       event: 'server_side_debrid_call_blocked',
       host: 'api.alldebrid.com',
-      trigger: 'tunnel-fallback',
+      trigger: 'sortie',
       requestId: 'req-1',
     });
     assert.equal(logs[0].includes(DEBRID_KEY), false);
@@ -262,7 +260,7 @@ describe('rapport de blocage : journal et Sentry', () => {
     const sent = fakeGlobalFetch();
     const env = { SENTRY_DSN: SENTRY_DSN };
     await assert.rejects(
-      guardedFetch(spyFetchFn().fn, `https://api.alldebrid.com/v4/user?apikey=${DEBRID_KEY}`, { trigger: 'tunnel-fallback', env, ctx, requestId: 'req-test-1' }),
+      guardedFetch(spyFetchFn().fn, `https://api.alldebrid.com/v4/user?apikey=${DEBRID_KEY}`, { trigger: 'sortie', env, ctx, requestId: 'req-test-1' }),
       DebridEgressBlockedError,
     );
     await ctx.settle();
@@ -279,7 +277,7 @@ describe('rapport de blocage : journal et Sentry', () => {
     assert.equal(event.level, 'error');
     assert.equal(event.message, 'server_side_debrid_call_blocked');
     assert.deepEqual(event.fingerprint, ['server_side_debrid_call']);
-    assert.deepEqual(event.tags, { platform: 'edge', release: 'unknown', blocked_host: 'api.alldebrid.com', trigger: 'tunnel-fallback', request_id: 'req-test-1' });
+    assert.deepEqual(event.tags, { platform: 'edge', release: 'unknown', blocked_host: 'api.alldebrid.com', trigger: 'sortie', request_id: 'req-test-1' });
     assert.equal(event.environment, 'production');
     assert.equal(event.platform, 'javascript');
     assert.equal(event.server_name, 'laststream-edge');
@@ -320,81 +318,17 @@ describe('rapport de blocage : journal et Sentry', () => {
 });
 
 describe('intégration Worker : aucun appel vers un débrideur depuis le Worker', () => {
-  const coreReturning = (status, text) => ({ fetch: async () => new Response(text, { status }) });
-  const makeEnv = (core, routeValue) => {
-    const store = new Map(routeValue === undefined ? [] : [['tunnel', JSON.stringify(routeValue)]]);
-    return {
-      REGISTER_SECRET: SECRET,
-      RETRY_DELAY_MS: 1,
-      CORE: core,
-      LASTSTREAM_ROUTE: {
-        get: async (key) => (store.has(key) ? JSON.parse(store.get(key)) : null),
-        put: async (key, value) => {
-          store.set(key, value);
-        },
-      },
-      store,
-    };
-  };
-
-  it('tunnel enregistré en KV vers un hôte debrid : jamais contacté, le 5xx de core est restitué', async () => {
-    const calls = fakeGlobalFetch();
-    const env = makeEnv(coreReturning(500, 'oups'), { url: 'https://api.alldebrid.com' });
-    const res = await worker.fetch(new Request('https://laststream.example/torrents'), env, fakeCtx());
-    assert.equal(res.status, 500);
-    assert.equal(await res.text(), 'oups');
-    assert.deepEqual(calls, []);
-  });
-
-  it('tunnel qui répond 302 vers un débrideur (repli en mode manual) : le 302 est rendu au client, rien n’est suivi ni signalé', async () => {
+  it('core répond 302 vers un débrideur : rendu tel quel au client, rien n’est suivi ni signalé', async () => {
     const logs = captureLogs();
     const ctx = fakeCtx();
-    const env = { ...makeEnv(coreReturning(500, 'oups'), { url: 'https://abc.trycloudflare.com' }), SENTRY_DSN };
-    const calls = [];
-    globalThis.fetch = async (input, init) => {
-      calls.push({ input: String(input), init });
-      if (String(input).startsWith('https://abc.trycloudflare.com/')) {
-        return new Response(null, { status: 302, headers: { location: 'https://x.debrid.it/dl/abc' } });
-      }
-      return new Response('ok');
-    };
-    const res = await worker.fetch(new Request('https://laststream.example/torrents'), env, ctx);
+    const sent = fakeGlobalFetch();
+    const core = { fetch: async () => new Response(null, { status: 302, headers: { location: 'https://x.debrid.it/dl/abc' } }) };
+    const res = await worker.fetch(new Request('https://laststream.example/torrents'), { RETRY_DELAY_MS: 1, CORE: core, SENTRY_DSN }, ctx);
     await ctx.settle();
     assert.equal(res.status, 302);
     assert.equal(res.headers.get('location'), 'https://x.debrid.it/dl/abc');
-    const tunnelCalls = calls.filter((c) => c.input.startsWith('https://abc.trycloudflare.com/'));
-    assert.deepEqual(tunnelCalls.map((c) => c.input), ['https://abc.trycloudflare.com/torrents']);
-    assert.equal(calls.some((c) => c.input.includes('debrid.it')), false);
+    assert.deepEqual(sent, []);
     assert.equal(logs.length, 0);
-    assert.equal(calls.some((c) => c.input === SENTRY_ENVELOPE_URL), false);
-  });
-
-  it('enregistrement d’un tunnel debrid : 400, rien écrit en KV, rapport tunnel-register', async () => {
-    const logs = captureLogs();
-    const ctx = fakeCtx();
-    const env = { ...makeEnv(coreReturning(200, 'ok')), SENTRY_DSN };
-    const calls = fakeGlobalFetch();
-    const res = await worker.fetch(
-      new Request('https://laststream.example/__laststream/register', {
-        method: 'POST',
-        headers: { 'x-register-secret': SECRET },
-        body: JSON.stringify({ url: 'https://api.alldebrid.com' }),
-      }),
-      env,
-      ctx,
-    );
-    await ctx.settle();
-    assert.equal(res.status, 400);
-    assert.equal(env.store.size, 0);
-    assert.equal(JSON.parse(logs[0]).trigger, 'tunnel-register');
-    assert.equal(JSON.parse(logs[0]).host, 'api.alldebrid.com');
-    const sentry = calls.find((c) => c.input === SENTRY_ENVELOPE_URL);
-    assert.equal(parseEnvelope(sentry.init.body).event.tags.trigger, 'tunnel-register');
-  });
-
-  it('parseTunnelUrl refuse les hôtes debrid', () => {
-    assert.equal(parseTunnelUrl('https://api.alldebrid.com'), null);
-    assert.equal(parseTunnelUrl('https://x.debrid.it'), null);
   });
 });
 
