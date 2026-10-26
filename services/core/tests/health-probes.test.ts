@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { checkDependencies, createHealthReporter, HEALTH_CACHE_MS, HEALTH_TIMEOUT_MS, healthReport } from '../src/health/probes.js';
 
@@ -65,11 +65,22 @@ describe('sondes de dépendances de /health', () => {
   });
 
   it('les sondes tournent en parallèle : durée bornée par un seul délai, pas par leur somme', async () => {
-    const started = Date.now();
-    const deps = await checkDependencies({ a: never, b: never, c: never }, 100);
-    expect(Object.values(deps).every((dep) => dep.ok === false)).toBe(true);
-    // Séquentiel : 3 × 100 ms ; parallèle : environ 100 ms.
-    expect(Date.now() - started).toBeLessThan(250);
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const pending = checkDependencies({ a: never, b: never, c: never }, 100).then((deps) => {
+        settled = true;
+        return deps;
+      });
+      // Minuteries simulées : chaque sonde expire à 100 ms. Parallèle : le rapport est résolu à 100 ms.
+      // Séquentiel : la 2e sonde ne démarrerait qu'à 100 ms et le rapport ne serait résolu qu'à 300 ms.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(settled).toBe(true);
+      const deps = await pending;
+      expect(Object.values(deps).every((dep) => dep.ok === false)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sans sonde : ok, degraded à false, aucune dépendance', async () => {
