@@ -19,7 +19,7 @@ import { fetchProviders, providersHTML } from './providers.js';
 import { go } from './router.js';
 import { state } from './state.js';
 import { fallbackHTML } from './typo.js';
-import { ensureEpg, epgKey, favSnaps, getFavs, logoOf, normChannel, tv } from './tv.js';
+import { ensureEpg, epgKey, favSnaps, getFavs, logoOf, normChannel, snapChannel, tv } from './tv.js';
 import { esc, fmtMin } from './util.js';
 
 const shortDate = (iso) => new Date(iso + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
@@ -104,7 +104,7 @@ export function tonightTile(a, known, now, epgIds = new Set(), play = false) {
 /** Chaînes favorites du profil actif (les plus récentes d'abord) : chaîne du catalogue chargé, sinon son instantané. */
 function favoriteChannels() {
   const snaps = favSnaps();
-  const find = (id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.boxOnly.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]));
+  const find = (id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.boxOnly.find((c) => c.id === id) || snapChannel(snaps[id]);
   return getFavs().slice().reverse().map(find).filter(Boolean);
 }
 

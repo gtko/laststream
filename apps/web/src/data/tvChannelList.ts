@@ -107,6 +107,17 @@ export function toggleId(list: readonly string[], id: string): { list: string[];
   return { list: list.concat(id), on: true };
 }
 
+/**
+ * Un instantané de chaîne (favori, dernière chaîne) est jouable s'il porte une URL, une source de
+ * rechange avec URL, ou une box. Sinon la chaîne n'existe plus (source retirée) et ne doit être
+ * ni affichée ni comptée.
+ */
+export function isPlayableSnapshot(c: unknown): boolean {
+  if (!c || typeof c !== 'object') return false;
+  const { url, box, alternatives } = c as { url?: unknown; box?: unknown; alternatives?: unknown };
+  return !!url || !!box || (Array.isArray(alternatives) && alternatives.some((a) => !!a && !!(a as { url?: unknown }).url));
+}
+
 // ---------- Rendu fenêtré ----------
 
 /**

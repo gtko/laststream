@@ -24,7 +24,7 @@ import { openPartyDialog } from './partylaunch.js';
 import { openShareDialog } from './socialHooks.js';
 import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
-import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, toggleFav, tv, tvTest } from './tv.js';
+import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, snapChannel, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
 
 /** Un seul déclenchement par bouton : un clic répété pendant l'action (ou juste après, pour une bascule) est ignoré (ODY-237). */
@@ -65,7 +65,7 @@ document.addEventListener('click', (e) => {
   if (tp) {
     e.preventDefault();
     const id = tp.dataset.tvplay;
-    const last = store('ls_tv_last');
+    const last = snapChannel(store('ls_tv_last'));
     const c = allChannels().find((x) => x.id === id) || tv.favHome.find((x) => x.id === id) || (last && last.id === id ? last : null);
     if (!c) return;
     // Chaîne d'une playlist illisible ici (navigateur, ou box hors du réseau local) : on explique pourquoi.

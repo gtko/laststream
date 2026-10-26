@@ -5,6 +5,8 @@ Archivée par LAST-184 : elle n’est plus proposée dans l’app (réglages, TV
 
 Le code n’est pas supprimé. Il sort du périmètre de build, de test, de lint et d’analyse : archive/ est exclu de tsconfig, eslint, vitest et knip.
 
+shaka-player 4.15.0 est conservé dans package.json pour la réactivation; types dans src/env.d.ts.
+
 ## Contenu
 
 Les chemins gardent la structure du dépôt : pour réactiver, chaque fichier retourne à son emplacement d’origine.

@@ -5,7 +5,7 @@ import { boxAccess, boxCat, boxGroups, boxOnlyChannels, getBoxQuality, getBoxRea
 import { activeBoxChannels, BOX_CHANGED, refreshAll } from '../data/tvSources';
 import { hasLocalGuide, localProgs } from '../data/tvXmltv';
 import { auth, isKidProfile, kidSection } from '../data/auth';
-import { favStorageKey, toggleId } from '../data/tvChannelList';
+import { favStorageKey, isPlayableSnapshot, toggleId } from '../data/tvChannelList';
 import { badgeOf, buildLogoIndex, findLogo } from '../data/tvLogos';
 import { getRegion, getVideoLang } from '../data/prefs';
 import { channelNumber, langCode3, rankChannels, sameLang } from '../data/tvRank';
@@ -120,6 +120,8 @@ const BASE_CATS = ['Toutes', 'Favoris', 'Ma playlist'];
 const SPECIAL_CATS = BASE_CATS.slice();
 export const favSnaps = () => store(FAV_SNAP_KEY) || {};
 export { FAV_SNAP_KEY };
+/** Chaîne reconstruite depuis un instantané (favori, dernière chaîne) ; null s'il n'a ni URL, ni source de rechange, ni box. */
+export const snapChannel = (s) => (isPlayableSnapshot(s) ? normChannel(s) : null);
 
 /** Filtres par défaut : pays de la région choisie, français, chaînes fiables. */
 export const defaultFilters = () => ({ country: getRegion().code, language: langCode3(getVideoLang().lang) || 'fra', source: '', q: '', reliable: true });
@@ -339,7 +341,7 @@ export function tvFilter() {
   let l;
   if (cat === 'Favoris') {
     const snaps = favSnaps();
-    l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]))).filter(Boolean);
+    l = favs.map((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || snapChannel(snaps[id])).filter(Boolean);
   } else if (cat === 'Ma playlist') {
     l = tv.user.slice();
   } else if (cat === 'Ma box' || tv.boxCats.includes(cat)) {
@@ -358,7 +360,10 @@ export function tvFilter() {
 }
 
 export function catCount(cat) {
-  if (cat === 'Favoris') return getFavs().length;
+  if (cat === 'Favoris') {
+    const snaps = favSnaps();
+    return getFavs().filter((id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || snapChannel(snaps[id])).length;
+  }
   if (cat === 'Ma playlist') return tv.user.length;
   if (cat === 'Ma box') return activeBoxChannels().length;
   if (tv.boxCats.includes(cat)) return tv.boxOnly.filter((c) => c.cat === cat).length;
@@ -425,7 +430,7 @@ export function settingsHTML() {
 }
 
 export function tvPageHTML() {
-  const last = store('ls_tv_last');
+  const last = snapChannel(store('ls_tv_last'));
   return topBar(false) +
     '<article class="tv-page" aria-labelledby="tv-title"><header class="tv-head"><div><p class="svc-eyebrow">Chaînes gratuites, FAST et ta playlist</p>' +
     '<h1 class="svc-title" id="tv-title" tabindex="-1">TV en direct</h1></div><div class="tv-head-actions" data-nav>' +
@@ -484,8 +489,8 @@ export function fillEpgRow(c) {
       '" aria-label="' + esc(p.title + ', ' + fmtHM(p.start) + ' à ' + fmtHM(p.stop) + (isNow ? ', en cours' : '')) + '"><span class="ec-t">' + esc(p.title) + '</span><span class="ec-h">' + fmtHM(p.start) + '</span></button>';
   });
   line.innerHTML = cells.length ? cells.join('') :
-    '<button type="button" class="epg-cell epg-none' + '' + '" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
-    esc('Programme indisponible') + '</span><span class="ec-h">' + 'Regarder en direct' + '</span></button>';
+    '<button type="button" class="epg-cell epg-none" style="left:0;width:' + (EPG_H * 60 * PX_MIN - 3) + 'px" data-tvplay="' + esc(c.id) + '" data-tvctx="page"><span class="ec-t">' +
+    'Programme indisponible</span><span class="ec-h">Regarder en direct</span></button>';
 }
 
 export function renderEpgGrid() {
