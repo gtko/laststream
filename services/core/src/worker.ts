@@ -173,6 +173,6 @@ const worker = {
  * Sentry (`@sentry/cloudflare`) : actif seulement si le secret SENTRY_DSN est posé ; données épurées (observability/scrub.ts).
  */
 export default Sentry.withSentry(
-  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, serverRelease()),
+  (env: WorkerEnv) => workerSentryOptions(env.SENTRY_DSN, serverRelease(env.LASTADDON_RELEASE)),
   worker,
 );

@@ -50,9 +50,14 @@ const MANIFEST = {
   },
 } as const;
 
-/** Version du serveur : une seule source, celle de /health et celle de la release Sentry (src/worker.ts). */
-export function serverRelease(): string {
-  return `lastaddon-core@${MANIFEST.version}`;
+/**
+ * Version du serveur : une seule source, celle de /health et celle de la release Sentry (src/worker.ts).
+ * `deployed` : tag vX.Y.Z injecté au déploiement (LASTADDON_RELEASE, scripts/deploy-worker.mjs). Absent ou invalide :
+ * version du manifeste (Node, dev, déploiement manuel).
+ */
+export function serverRelease(deployed?: unknown): string {
+  const tag = typeof deployed === 'string' ? deployed.trim() : '';
+  return `lastaddon-core@${/^v\d+\.\d+\.\d+$/.test(tag) ? tag : MANIFEST.version}`;
 }
 
 /** Routes publiques lues par Stremio : CORS ouvert (`*`). */
@@ -237,7 +242,7 @@ export function createApp(deps: AppDeps): App {
   app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
   // Sonde de disponibilité : version et état de chaque dépendance (délai borné, lecture seule, rapport gardé 15 s). Toujours HTTP 200.
-  const health = createHealthReporter({ release: serverRelease(), probes: deps.healthProbes ?? {} });
+  const health = createHealthReporter({ release: serverRelease(runtimeEnv().get('LASTADDON_RELEASE')), probes: deps.healthProbes ?? {} });
   app.get('/health', async (c) => sendJson(c, await health()));
 
   app.get('/manifest.json', (c) => sendJson(c, MANIFEST));
