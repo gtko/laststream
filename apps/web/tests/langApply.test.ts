@@ -223,11 +223,18 @@ describe('réglages de langue du profil', () => {
   });
 
   it('sérialise, relit et normalise (codes à trois lettres, valeurs inconnues ignorées)', () => {
-    setLangPrefs({ audio: 'fre', audio2: 'jpn', learn: true, learnLang: 'eng', subs: 'ger' });
-    expect(JSON.parse(localStorage.getItem(LANG_PREFS_KEY)!)).toEqual({ audio: 'fr', audio2: 'ja', subsOn: true, subs: 'de', learn: true, learnLang: 'en', anime: { on: false, audio: 'ja', subs: 'fr', ifForeign: true } });
+    setLangPrefs({ audio: 'fre', audio2: 'jpn', subs: 'ger', learnLang: 'eng' });
+    expect(JSON.parse(localStorage.getItem(LANG_PREFS_KEY)!)).toEqual({ audio: 'fr', audio2: 'ja', subsOn: true, subs: 'de', learn: false, learnLang: 'en', anime: { on: false, audio: 'ja', subs: 'fr', ifForeign: true } });
     expect(normalizeLangPrefs({ audio: 'klingon', audio2: 42, subsOn: 'oui', learn: null })).toEqual(DEFAULT_LANG_PREFS);
     expect(normalizeLangPrefs('n’importe quoi')).toEqual(DEFAULT_LANG_PREFS);
     expect(setLangPrefs({ audio2: 'none' }).audio2).toBe('none');
+  });
+
+  it('learn stocké à true est ramené à false : le mode apprentissage n’est plus proposé ni appliqué', () => {
+    localStorage.setItem(LANG_PREFS_KEY, JSON.stringify({ audio: 'fr', learn: true, learnLang: 'ja' }));
+    expect(getLangPrefs()).toMatchObject({ audio: 'fr', learn: false, learnLang: 'ja' });
+    expect(normalizeLangPrefs({ learn: true }, { ...DEFAULT_LANG_PREFS, learn: true }).learn).toBe(false);
+    expect(setLangPrefs({ learn: true }).learn).toBe(false);
   });
 
   it('JSON illisible : défauts', () => {
@@ -246,9 +253,9 @@ describe('réglages de langue du profil', () => {
   });
 
   it('synchronisation avec le compte : instantané, sous la limite de 4 Ko, et rechargement', () => {
-    setLangPrefs({ audio: 'ja', learn: true, learnLang: 'ko', subs: 'en', subsOn: false });
+    setLangPrefs({ audio: 'ja', learnLang: 'ko', subs: 'en', subsOn: false });
     const snap = snapshotPrefs();
-    expect(snap.langPrefs).toEqual({ audio: 'ja', audio2: 'vo', subsOn: false, subs: 'en', learn: true, learnLang: 'ko', anime: { on: false, audio: 'ja', subs: 'fr', ifForeign: true } });
+    expect(snap.langPrefs).toEqual({ audio: 'ja', audio2: 'vo', subsOn: false, subs: 'en', learn: false, learnLang: 'ko', anime: { on: false, audio: 'ja', subs: 'fr', ifForeign: true } });
     expect(new TextEncoder().encode(JSON.stringify(snap.langPrefs)).length).toBeLessThan(4096);
     localStorage.clear();
     expect(applyPrefs({ langPrefs: snap.langPrefs })).toBe(true);

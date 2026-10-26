@@ -75,11 +75,11 @@ describe('langues audio visées sur les pistes (audioLangsFor)', () => {
 describe('recommandation : la langue d\'origine du titre est transmise au classement', () => {
   afterEach(() => localStorage.clear());
 
+  // Le mode apprentissage n'est plus lu depuis le stockage (LAST-184) : le moteur reçoit ses réglages explicitement.
   it('langue apprise non gérée : la source en VO est visée si le titre est dans cette langue, sinon le multi-audio', () => {
-    localStorage.setItem(LANG_PREFS_KEY, JSON.stringify({ audio: 'fr', learn: true, learnLang: 'ko' }));
     const views = toSourceViews([mk({ languages: ['multi'] })]);
-    expect(recommendFor(views, null, 'ko')!.reason).toMatch(/^Meilleure VO/);
-    expect(recommendFor(views, null, 'en')!.reason).toMatch(/^Meilleure multi-audio/);
+    expect(recommendFor(views, null, 'ko', undefined, learn('ko'))!.reason).toMatch(/^Meilleure VO/);
+    expect(recommendFor(views, null, 'en', undefined, learn('ko'))!.reason).toMatch(/^Meilleure multi-audio/);
   });
 
   it('hors apprentissage, une langue principale non gérée reste visée en VO', () => {

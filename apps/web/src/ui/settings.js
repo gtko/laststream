@@ -169,9 +169,6 @@ function audioPanel() {
     card('Sous-titres',
       switchRow('Sous-titres hors langue principale', 'Les active quand l’audio n’est pas dans la langue principale.', lp.subsOn, 'data-set-pref="lang-subs"') +
       fieldRow('Langue des sous-titres', 'Pistes du fichier d’abord, puis sous-titres externes.', langSelect('lang-subtitles', lp.subs, [[LANG_MAIN, 'Identique à la langue principale']], !lp.subsOn)), { attrs: 'data-lang-subs-card' }) +
-    card('Mode apprentissage de langue',
-      switchRow('Apprendre une langue', 'Audio dans la langue apprise si elle existe, avec deux sous-titres : la langue apprise et ta langue principale.', lp.learn, 'data-set-pref="lang-learn"') +
-      fieldRow('Langue apprise', '', langSelect('lang-learnlang', lp.learnLang, [], !lp.learn))) +
     card('Anime',
       switchRow('Réglages spécifiques aux animes', 'Les films et séries qui ne sont pas des animes gardent les réglages ci-dessus. Un anime est un titre classé Animation et d’origine japonaise.', lp.anime.on, 'data-set-pref="anime-on"') +
       fieldRow('Langue audio', 'Si la piste manque, les réglages généraux s’appliquent.', animeSelect('anime-audio', lp.anime.audio, ANIME_AUDIO_CHOICES, !lp.anime.on)) +
@@ -502,8 +499,8 @@ function applyToggle(pref, on) {
   else if (pref === 'skip-filler') setSkipPref('filler', on);
   else if (pref === 'trailer-autoplay') setTrailerAutoplay(on);
   else if (pref === 'dl-wifi' || pref === 'dl-after') applyDownloadToggle(pref, on);
-  else if (pref === 'lang-subs' || pref === 'lang-learn') {
-    setLangPrefs(pref === 'lang-subs' ? { subsOn: on } : { learn: on });
+  else if (pref === 'lang-subs') {
+    setLangPrefs({ subsOn: on });
     syncLangRows();
   } else if (pref === 'anime-on' || pref === 'anime-iflang') {
     setAnimePrefs(pref === 'anime-on' ? { on } : { ifForeign: on });
@@ -511,13 +508,11 @@ function applyToggle(pref, on) {
   }
 }
 
-/** Les listes de langue des sous-titres et de la langue apprise se grisent avec leur interrupteur. */
+/** La liste de la langue des sous-titres se grise avec son interrupteur. */
 function syncLangRows() {
   const lp = getLangPrefs();
   const subs = detailEl.querySelector('[data-set-pref="lang-subtitles"]');
-  const learn = detailEl.querySelector('[data-set-pref="lang-learnlang"]');
   if (subs) subs.disabled = !lp.subsOn;
-  if (learn) learn.disabled = !lp.learn;
   for (const k of ['anime-audio', 'anime-subs']) {
     const el = detailEl.querySelector('[data-set-pref="' + k + '"]');
     if (el) el.disabled = !lp.anime.on;
@@ -589,7 +584,6 @@ detailEl.addEventListener('change', (e) => {
   if (p === 'lang-audio') setLangPrefs({ audio: t.value });
   else if (p === 'lang-audio2') setLangPrefs({ audio2: t.value });
   else if (p === 'lang-subtitles') setLangPrefs({ subs: t.value });
-  else if (p === 'lang-learnlang') setLangPrefs({ learnLang: t.value });
   else if (p === 'anime-audio') setAnimePrefs({ audio: t.value });
   else if (p === 'anime-subs') { setAnimePrefs({ subs: t.value }); syncLangRows(); }
   else if (p === 'buffer-level') setBufferLevel(t.value);
