@@ -3,6 +3,13 @@
 /* ---------- Lecteur ---------- */
 .lp { position: fixed; inset: 0; z-index: 600; background: #000; color: var(--text); overflow: hidden; font-family: var(--ff-body); user-select: none; -webkit-user-select: none; }
 .lp[hidden] { display: none; }
+/* Ouverture / fermeture plein écran : fondu + léger zoom. Les classes sont retirées en fin d'animation (un transform résiduel fausserait
+   holeClipFor et les rectangles de la miniature) ; jamais en miniature. */
+.lp.is-entering:not(.is-mini) { animation: lp-in 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.lp.is-closing:not(.is-mini) { animation: lp-out 0.2s ease-in both; pointer-events: none; }
+@keyframes lp-in { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: none; } }
+@keyframes lp-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .lp.is-entering:not(.is-mini), .lp.is-closing:not(.is-mini) { animation-duration: 1ms; } }
 .lp.is-mpv.is-video { background: transparent; }
 .lp-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .lp-video[hidden] { display: none; }
@@ -161,6 +168,10 @@
 /* Au-dessus du lecteur : sélecteur de sources et notes ouverts pendant la lecture. */
 body.lp-open .modal-backdrop { z-index: 800; }
 body.lp-open .toast { z-index: 900; }
+
+/* Lecteur plein écran : tout le reste de la page est masqué (le backdrop le rend aussi inerte, voir player/backdrop.ts). Jamais sur
+   lp-open seul : en miniature la page reste visible et interactive. lp-covered arrive une fois le lecteur opaque. */
+body.lp-covered > :not(#lsplayer, #modal, #toast, .toast, .ss, .cvw-root, .cvd-veil, .ctxmenu, .shd-veil, [data-over-player]) { visibility: hidden !important; }
 
 /* ---------- Sélecteur de sources ---------- */
 @media (min-width: 641px) { .modal.is-sources { width: min(640px, 100%); } }

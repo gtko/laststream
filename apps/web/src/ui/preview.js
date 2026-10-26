@@ -6,6 +6,7 @@ import { ICON } from './icons.js';
 import { app } from './dom.js';
 import { textFade } from './playback.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
+import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { esc } from './util.js';
 
@@ -137,11 +138,11 @@ export function stopPreview() {
 }
 
 export async function startPreview(media) {
-  if (REDUCE || STILL || !media.isConnected || state.inDetail) return;
+  if (REDUCE || STILL || !media.isConnected || state.inDetail || !trailersAllowed()) return;
   const item = state.byKey.get(media.dataset.media);
   if (!item) return;
   const d = await getDetail(item);
-  if (!d || !d.trailer || !media.isConnected || media._visible === false || state.inDetail) return;
+  if (!d || !d.trailer || !media.isConnected || media._visible === false || state.inDetail || !trailersAllowed()) return;
   stopPreview();
   // Carrousel de l'accueil : la bande-annonce ne boucle pas, sa fin fait passer au titre suivant (évènement « trailerend »).
   const carousel = !!media.closest('[data-hero]');
@@ -205,6 +206,7 @@ export function cancelDwell() {
 
 export function scheduleDwell(el) {
   cancelDwell();
+  if (!trailersAllowed()) return; // lecteur plein écran : aucun aperçu ne démarre
   state.dwell.el = el;
   state.dwell.timer = setTimeout(() => {
     state.dwell.timer = null;

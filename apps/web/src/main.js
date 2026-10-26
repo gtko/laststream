@@ -68,10 +68,14 @@ import { wipeDeviceDebrid } from './sources/debridWipe';
 import { isPurgePending } from './downloads/settings';
 import { initUiUpdateBanner, initUpdateBanner } from './ui/update-banner.js';
 import { installPreloadReload } from './ui/preloadReload.js';
+import { initBackdrop } from './player/backdrop';
+import { initTrailersGate } from './ui/trailersGate.js';
 import { stripReloadParam } from './data/uiUpdate';
 import { initAnnouncementBanner } from './ui/announcement-banner.js';
 import { isDemo, setDemoFlags, startDemo } from './data/demo';
 
+initBackdrop(); // lecteur plein écran : fond inerte et masqué (LAST-173)
+initTrailersGate(); // …et bandes-annonces coupées pendant la lecture
 installPreloadReload(); // fichier d'un chargement à la demande introuvable : un rechargement, pas de boucle
 stripReloadParam(); // retire le paramètre `_ls` laissé par un rechargement de mise à jour (la route #/… reste)
 initSentry(); // supervision des erreurs (no-op sans VITE_SENTRY_DSN, en dev et en tests)

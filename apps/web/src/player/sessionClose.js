@@ -11,6 +11,7 @@ import { S } from './sessionState.js';
 import { saveProgress, stopTicks } from './sessionTick.js';
 import { stopAutoSync } from './sessionTracks.js';
 import { resetMini } from './sessionUi.js';
+import * as playerState from './playerState';
 
 
 // ---------- Fermeture ----------
@@ -18,6 +19,7 @@ import { resetMini } from './sessionUi.js';
 export async function teardown(silent) {
   const p = S.P;
   if (!p) return;
+  const fromMini = S.ui.isMini(); // fermeture depuis la vignette : pas d'animation plein écran
   stopNotes(p);
   if (S.bubble) S.bubble.stop();
   stopSocialPlayback(silent);
@@ -42,8 +44,12 @@ export async function teardown(silent) {
   if (!silent) {
     setPresenceMedia(null);
     if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (_) { /* ignoré */ } }
-    S.ui.hide();
-    document.body.classList.remove('modal-open', 'lp-open');
+    // Fondu de fermeture : la page réapparaît sous le lecteur, qui s'efface. Une réouverture pendant ce temps reprend la main
+    // (hide résout false) : on ne défait alors rien de la nouvelle session.
+    if (await S.ui.hide(fromMini)) {
+      document.body.classList.remove('modal-open', 'lp-open');
+      playerState.set({ open: false, mini: false });
+    }
   }
 }
 
@@ -57,8 +63,8 @@ export function closePlayer() {
   const key = p.req.key;
   const opener = p.opener;
   teardown(false).then(() => {
-    if (opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
-    if (watched && !p.finished && !p.addon) setTimeout(() => showRatePrompt(key), 600); // titre d'addon : pas de note
+    if (!S.P && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
+    if (!S.P && watched && !p.finished && !p.addon) setTimeout(() => showRatePrompt(key), 600); // titre d'addon : pas de note
   });
 }
 

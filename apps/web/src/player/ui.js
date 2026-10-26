@@ -15,6 +15,7 @@ import { createNoteMenu, createReactPanel, fadeFutureMarkers, nearestMarker, not
 import { createCinemaIndicator, createCinemaMenu, createCinemaSummary } from './cinemaView';
 import { bucketAt } from './playbackSocial';
 import { createMarkBar } from './markbar';
+import { markCovered } from './backdrop';
 
 const btn = (act, icon, label, extra = '', cls = '') => '<button type="button" class="lp-btn' + (cls ? ' ' + cls : '') + '" data-act="' + act + '" aria-label="' + esc(label) + '" data-tip="' + esc(label) + '"' + extra + '>' + icon + '</button>';
 const tbtn = (act, icon, label, extra = '') => '<button type="button" class="lp-tbtn" data-act="' + act + '"' + extra + '>' + icon + '<span>' + esc(label) + '</span></button>';
@@ -253,6 +254,35 @@ export function createPlayerUI(h) {
   const hoverS = q('.lp-hover-s');
   let previewTimer = null;
   let loadTimer = null;
+  // Animations d'ouverture / de fermeture (player.css : lp-in, lp-out). Chaque fin repose sur animationend, avec un repli minuté.
+  const ENTER_MS = 320;
+  const CLOSE_MS = 260;
+  let closeDone = null; // résolution de la promesse de hide() en cours
+  const reduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  /** Appelle `done` une seule fois, à la fin de l'animation en cours sur le lecteur ou au repli. Renvoie l'annulation. */
+  function afterAnim(ms, done) {
+    let fin = false;
+    let t = null;
+    const end = (e) => {
+      if (fin || (e && e.target !== root)) return;
+      fin = true;
+      clearTimeout(t);
+      root.removeEventListener('animationend', end);
+      done();
+    };
+    t = setTimeout(end, ms);
+    root.addEventListener('animationend', end);
+    return () => { fin = true; clearTimeout(t); root.removeEventListener('animationend', end); };
+  }
+  let cancelEnter = null;
+  let cancelClose = null;
+  function settleClose(ok) {
+    if (cancelClose) { cancelClose(); cancelClose = null; }
+    root.classList.remove('is-closing');
+    const d = closeDone;
+    closeDone = null;
+    if (d) d(ok);
+  }
   /** Cadre d'aperçu au-dessus de la barre, à la fraction `f` : image (si disponible), heure et nom du segment. */
   function showHover(f, time) {
     if (!last || !last.duration) return;
@@ -361,8 +391,38 @@ export function createPlayerUI(h) {
       previewTimer = setTimeout(hideHover, ms);
     },
     get panel() { return panelName; },
-    show() { root.hidden = false; root.classList.add('is-ui'); wake(); },
-    hide() { root.hidden = true; api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); api.closeNoteMenu(false); flash.replaceChildren(); },
+    /** Ouverture : fondu + léger zoom depuis la page ; la page n'est masquée (body.lp-covered) qu'une fois le lecteur opaque. */
+    show() {
+      const wasHidden = root.hidden;
+      settleClose(false); // réouverture pendant la fermeture : la fermeture est abandonnée
+      root.hidden = false;
+      root.classList.add('is-ui');
+      if (wasHidden && !mini.active) {
+        root.classList.add('is-entering');
+        if (cancelEnter) cancelEnter();
+        cancelEnter = afterAnim(ENTER_MS, () => { cancelEnter = null; root.classList.remove('is-entering'); markCovered(); });
+      } else if (!root.classList.contains('is-entering')) markCovered();
+      wake();
+    },
+    /**
+     * Fermeture : le lecteur redevient opaque (#000), la page réapparaît dessous et il s'efface en fondu. Résout `true` une fois
+     * masqué (`instant` : fermeture depuis la miniature, sans animation), `false` si un show() a repris la main entre-temps (l'appelant ne doit alors rien défaire).
+     */
+    hide(instant = false) {
+      const finish = () => { root.hidden = true; root.classList.remove('is-closing'); };
+      api.closeMark(false); api.closePanel(true); api.setPauseScreen(null); api.closeReact(false); api.closeNoteMenu(false); flash.replaceChildren();
+      if (cancelEnter) { cancelEnter(); cancelEnter = null; root.classList.remove('is-entering'); }
+      if (root.hidden) return Promise.resolve(true);
+      root.classList.remove('is-mpv', 'is-video');
+      document.body.classList.remove('lp-covered');
+      if (instant || mini.active || reduced()) { finish(); return Promise.resolve(true); }
+      settleClose(false);
+      root.classList.add('is-closing');
+      return new Promise((resolve) => {
+        closeDone = resolve;
+        cancelClose = afterAnim(CLOSE_MS, () => { cancelClose = null; finish(); closeDone = null; resolve(true); });
+      });
+    },
     isOpen: () => !root.hidden,
     wake,
     focusFirst() { const c = q('[data-role="play"]'); if (c) c.focus({ preventScroll: true }); },

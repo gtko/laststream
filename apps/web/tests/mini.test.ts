@@ -207,10 +207,10 @@ describe('perçage de la page avec mpv', () => {
   }
   const mini = { left: 1474, top: 819, width: 422, height: 237 };
 
-  it('plein lecteur : la page est masquée, aucune marge', () => {
+  it('plein lecteur : aucune marge, et le moteur ne pose plus visibility (body.lp-covered masque la page en CSS)', () => {
     const { e, margins } = engine();
     e.setTransparent(true);
-    expect(document.getElementById('app')!.style.visibility).toBe('hidden');
+    expect(document.getElementById('app')!.style.visibility).toBe('');
     expect(document.getElementById('lsplayer')!.style.visibility).toBe('');
     expect(margins()).toHaveLength(0);
   });
@@ -250,7 +250,7 @@ describe('perçage de la page avec mpv', () => {
     expect(document.getElementById('app')!.style.clipPath).toContain('M36 24'); // coin arrondi : left + rayon
   });
 
-  it('retour au plein lecteur : marges à 0, clip retiré, page masquée comme avant', () => {
+  it('retour au plein lecteur : marges à 0, clip retiré, aucun instantané visibility', () => {
     const { e, margins } = engine();
     e.setTransparent(true);
     e.setMini(mini);
@@ -258,7 +258,7 @@ describe('perçage de la page avec mpv', () => {
     const app = document.getElementById('app')!;
     expect(app.style.clipPath).toBe('');
     expect(app.style.background).toBe('');
-    expect(app.style.visibility).toBe('hidden');
+    expect(app.style.visibility).toBe('');
     expect(margins().slice(-4).map(([, a]) => a[1])).toEqual([0, 0, 0, 0]);
   });
 
@@ -359,7 +359,7 @@ describe('cycle réduire → naviguer → agrandir → fermer', () => {
     expect(root.getAttribute('aria-modal')).toBe('true');
     expect(root.style.left).toBe('');
     expect(lastMargins()).toEqual([0, 0, 0, 0]);
-    expect(document.getElementById('app')!.style.visibility).toBe('hidden');
+    expect(document.getElementById('app')!.style.visibility).toBe('');
     expect(mpv.p['time-pos']).toBe(1234);
 
     // Réduire à nouveau : le coin choisi est retrouvé.

@@ -9,6 +9,7 @@ import { ambientSrc, postYT, whenPlaying } from './preview.js';
 import { textFade } from './playback.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
 import { compactRates } from './ratings.js';
+import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { playerEl } from './tv.js';
 import { esc, plural } from './util.js';
@@ -68,7 +69,7 @@ export function placeHover(el, anchor) {
 }
 
 export function openHover(tile) {
-  if (!tile.isConnected || !modal.hidden || !playerEl.hidden || state.ctxMenu) return;
+  if (!tile.isConnected || !modal.hidden || !playerEl.hidden || state.ctxMenu || !trailersAllowed()) return;
   const key = tile.dataset.tile;
   const it = state.byKey.get(key);
   if (!it) return;

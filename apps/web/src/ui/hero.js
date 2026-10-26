@@ -10,6 +10,7 @@ import { heroEmpty, infoBtn, titleEl, trailerBtn } from './fragments.js';
 import { ICON } from './icons.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { metaHTML, ratingList } from './ratings.js';
+import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { esc } from './util.js';
 import { intentTimer } from './intent.js';
@@ -78,7 +79,7 @@ const hero = { el: null, items: [], i: 0, timer: null, hover: false, focus: fals
 const slides = () => (hero.el ? Array.from(hero.el.querySelectorAll('.hero-slide')) : []);
 
 function paused() {
-  return hero.hover || hero.focus || document.hidden || !!state.preview || !modal.hidden || state.inDetail || REDUCE;
+  return hero.hover || hero.focus || document.hidden || !!state.preview || !modal.hidden || state.inDetail || REDUCE || !trailersAllowed();
 }
 
 function schedule(ms) {
@@ -182,6 +183,11 @@ export function refreshSlide(key) {
   if (!s || !it) return;
   if (detailOf(it).released === false) { dropSlide(key); return; }
   s.querySelector('.hero-content').innerHTML = heroContentHTML(it, rankLabel(it));
+}
+
+/** Le lecteur plein écran se ferme : la minuterie du carrousel reprend. */
+export function resumeHero() {
+  if (hero.el) schedule();
 }
 
 export function stopHero() {

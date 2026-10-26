@@ -6,6 +6,7 @@ import { audioTrackLabel, langName, trackLang } from './tracks';
 import { nativeAudioTracks, nativeSubtitleTracks } from './native';
 import { loadfileArgs, mpvAudioTracks, mpvSubtitleTracks, mpvVersionAtLeast } from './shell';
 import { marginProps, mpvMargins, sameMargins, ZERO_MARGINS } from './mini';
+import { isFull } from './playerState';
 import { PageHole } from './minihole.js';
 import { getBufferLevel, hlsBuffer, mpvBufferProps } from './bufferLevel';
 
@@ -257,8 +258,8 @@ export class MpvEngine extends Emitter {
     this.p = { 'time-pos': 0, duration: 0, pause: false, volume: 100, mute: false, speed: 1, 'paused-for-cache': false, seeking: false, 'demuxer-cache-time': 0, 'track-list': [], aid: null, sid: null };
     this.loaded = false;
     this.version = '';
-    this.hidden = [];
     this.transparent = false;
+    this.coverWait = null; // attente de body.lp-covered avant la première image (showVideo)
     this.miniRect = null; // vignette du mini-lecteur (px de la fenêtre) ; null : plein lecteur
     this.margins = { ...ZERO_MARGINS }; // dernières marges envoyées à mpv
     this.hole = new PageHole();
@@ -303,8 +304,26 @@ export class MpvEngine extends Emitter {
    */
   showVideo() {
     if (!this.live || this.transparent) return;
+    // Plein écran : la page ne devient transparente qu'une fois le lecteur opaque sur elle (fin du fondu d'ouverture, body.lp-covered),
+    // sinon on verrait la fenêtre derrière la page pendant l'animation. En miniature, la page reste là : pas d'attente.
+    if (isFull() && !document.body.classList.contains('lp-covered')) {
+      if (!this.coverWait) {
+        // Réévalué à la fin du fondu, ou si le lecteur passe en miniature entre-temps (lsplayer:state).
+        this.coverWait = () => { this.clearCoverWait(); this.showVideo(); };
+        window.addEventListener('lsplayer:covered', this.coverWait);
+        window.addEventListener('lsplayer:state', this.coverWait);
+      }
+      return;
+    }
     this.container.classList.add('is-video');
     this.setTransparent(true);
+  }
+
+  clearCoverWait() {
+    if (!this.coverWait) return;
+    window.removeEventListener('lsplayer:covered', this.coverWait);
+    window.removeEventListener('lsplayer:state', this.coverWait);
+    this.coverWait = null;
   }
 
   setTransparent(on) {
@@ -328,16 +347,7 @@ export class MpvEngine extends Emitter {
 
   syncPage() {
     const mini = this.transparent && this.miniRect;
-    if (this.transparent && !mini) {
-      // Le reste de la page (accueil, fiche…) masquerait la vidéo mpv, qui est sous la fenêtre web.
-      if (!this.hidden.length) {
-        this.hidden = [...document.body.children].filter((el) => !this.hole.keep.includes(el) && el.style.visibility !== 'hidden');
-        this.hidden.forEach((el) => { el.style.visibility = 'hidden'; });
-      }
-    } else {
-      this.hidden.forEach((el) => { el.style.visibility = ''; });
-      this.hidden = [];
-    }
+    // Le reste de la page (accueil, fiche…) masquerait la vidéo mpv, qui est sous la fenêtre web : body.lp-covered le masque (player.css).
     this.hole.apply(mini ? this.miniRect : null);
     this.sendMargins(mini ? mpvMargins(this.miniRect, { width: window.innerWidth, height: window.innerHeight }) : { ...ZERO_MARGINS });
   }
@@ -366,6 +376,7 @@ export class MpvEngine extends Emitter {
 
   destroy() {
     this.live = false;
+    this.clearCoverWait();
     this.ipc.send('mpv-command', ['stop']);
     this.container.classList.remove('is-video');
     this.setTransparent(false);

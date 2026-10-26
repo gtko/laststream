@@ -27,6 +27,7 @@ import { presenceMediaOf, startNotes, startSocialPlayback } from './sessionSocia
 import { S, hasEpisodesPanel, headingFor, nextRef, notesAllowed } from './sessionState.js';
 import { memoryWatch, stopTicks, syncTicks } from './sessionTick.js';
 import { ensureUI, resetMini } from './sessionUi.js';
+import * as playerState from './playerState';
 
 
 // ---------- Ouverture ----------
@@ -82,6 +83,7 @@ export async function initSession(request, views, view, opts = {}) {
   S.ui.setEndRow(false);
   S.ui.setCue('', S.P.subs.style);
   S.ui.show();
+  playerState.set({ open: true, mini: false }); // après show() : le fondu d'ouverture retarde lp-covered
   S.ui.focusFirst();
   S.ui.setPartyAvailable(partyBridge.available() && !S.P.addon);
   stopTicks();

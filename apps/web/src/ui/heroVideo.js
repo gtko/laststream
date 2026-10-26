@@ -4,6 +4,7 @@ import { detailEl, modal } from './dom.js';
 import { ambientSrc, fitPreview, paintSound, postYT, setPreviewSound } from './preview.js';
 import { textFade } from './playback.js';
 import { guardAmbient, hideTrailerButtons } from './trailerFallback.js';
+import { fullTrailerAllowed } from '../player/playerState';
 import { esc } from './util.js';
 
 let fv = null;
@@ -103,7 +104,7 @@ export function heroVideoSetup(m, auto = null) {
 
 export function heroVideoSync() {
   if (!fv || !fv.ready) return;
-  const shouldPlay = fv.inView && !document.hidden && modal.hidden;
+  const shouldPlay = fv.inView && !document.hidden && modal.hidden && fullTrailerAllowed();
   postYT(fv.iframe, shouldPlay ? 'playVideo' : 'pauseVideo');
 }
 

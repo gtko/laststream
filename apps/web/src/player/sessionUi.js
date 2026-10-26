@@ -18,6 +18,7 @@ import { ensureEpisodes } from './sessionOpen.js';
 import { deleteReaction, editReaction, onCinema, partyAdapter, postReact, socialHidden } from './sessionSocial.js';
 import { S, AUTOPIP_KEY, getCaps, miniState, storeGet, storeSet } from './sessionState.js';
 import { addonThumb, cancelAddonThumb, rangeThumb, thumbsAllowedNow, thumbSourceOf } from './sessionThumbs.js';
+import * as playerState from './playerState';
 import { nudgeTick, onEnded, refreshUI, saveProgress, syncTicks, ticksAsleep } from './sessionTick.js';
 import { ensureExternalSubs, onReady, onTracks } from './sessionTracks.js';
 
@@ -156,6 +157,7 @@ function applyMini(on) {
   S.nativeMini = on && !!S.P && !!S.P.engine && S.P.engine.kind === 'native';
   S.ui.root.classList.toggle('is-native-mini', S.nativeMini);
   S.ui.setMini(on);
+  playerState.set({ mini: on });
   document.body.classList.toggle('modal-open', !on && !!S.P);
   if (on) {
     const a = document.activeElement;
