@@ -1,6 +1,6 @@
 {
   "name": "@laststream/protocol",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Contrat partagé entre lastaddon (serveur) et laststream-app : watch party, synchro, épuration d'URL, langue des releases.",
   "private": true,
   "type": "module",
