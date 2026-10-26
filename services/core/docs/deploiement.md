@@ -51,6 +51,10 @@ Deux déploiements simultanés (deux sessions, deux machines) sont refusés par 
   Sentry (`lastaddon-core@vX.Y.Z`). Sans la variable (serveur Node, `wrangler dev`, déploiement manuel) ou si elle n'a pas la forme `vX.Y.Z`,
   repli sur `MANIFEST.version`. La variable n'est pas dans `wrangler.jsonc` : un déploiement manuel retombe sur le manifeste au lieu d'un tag périmé.
 
+## Retour arrière
+
+Retour arrière : `npx wrangler rollback` (ou `wrangler rollback <version-id>`) ; on ne redéploie pas un ancien tag (HEAD doit égaler origin/main).
+
 ## Ordre de déploiement
 
 1. **lastaddon-core** d'abord (le Worker appelé), avec l'interface de laststream-app qu'il sert (`--ui`, copiée dans `worker-ui/` puis téléversée

@@ -32,14 +32,15 @@ if (source === undefined) {
   process.exit(1);
 }
 
-// wrangler est une devDependency du dépôt : npx utilise la copie locale.
-const WRANGLER = 'wrangler';
+// wrangler est une devDependency du dépôt, épinglée sur sa version exacte de package-lock.json (test : tests/deploy-worker-pin.test.ts) :
+// npx ne doit jamais en télécharger une autre.
+const WRANGLER = 'wrangler@4.151.1';
 const files = (dir) => readdirSync(dir).flatMap((name) => (statSync(join(dir, name)).isDirectory() ? files(join(dir, name)) : [name]));
 
 // Dépôt de l'interface : le dossier parent du build (dist/ → laststream-app). Les commandes git y sont lancées avec -C.
 const uiRepo = realGit(['rev-parse', '--show-toplevel'], resolve(source, '..')).stdout.trim() || resolve(source, '..');
 
-const kv = realKv({ binding: 'CACHE', wranglerSpec: 'wrangler', cwd: root });
+const kv = realKv({ binding: 'CACHE', wranglerSpec: WRANGLER, cwd: root });
 let code;
 try {
   code = await runDeploy(
