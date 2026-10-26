@@ -46,5 +46,16 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Build
+        run: npm run build
+
+      # Chromium de Playwright, headless ; no-op quand il est déjà en cache sur le runner.
+      - name: Navigateur de test e2e
+        run: npx playwright install chromium
+
+      - name: Test de fumée e2e
+        run: npm run smoke:e2e
+
+      # knip : version exacte épinglée en devDependencies, exécutée depuis node_modules par npm run knip.
       - name: Code mort (knip)
         run: npm run knip

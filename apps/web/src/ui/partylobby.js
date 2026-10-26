@@ -47,7 +47,6 @@ let root = null;
 let client = null;
 let offs = [];
 let tab = 'chat';
-let chatDraft = '';
 let linkCopied = false;
 let copiedTimer = 0;
 let linkBusy = false;
@@ -393,7 +392,6 @@ function mount() {
   root.addEventListener('click', onClick);
   root.addEventListener('submit', onSubmit);
   root.addEventListener('keydown', onKey);
-  root.addEventListener('input', onInput);
   socialOff = socialSubscribe(() => { if (tab === 'friends') paintSide(); });
 }
 
@@ -419,7 +417,6 @@ export async function openLobby(partyId, from) {
   if (root) closeLobby(true);
   launched = false;
   tab = 'chat';
-  chatDraft = '';
   myVote = '';
   lastVoteOptions = [];
   invitedPids.clear();
@@ -570,11 +567,6 @@ async function pickerSearch(query) {
 }
 
 // ---------- Événements ----------
-function onInput(e) {
-  const f = e.target;
-  if (f instanceof HTMLInputElement && f.name === 'text') chatDraft = f.value;
-}
-
 async function copyInvite() {
   if (linkBusy || !isHost()) return;
   linkBusy = true;
@@ -657,7 +649,7 @@ function onSubmit(e) {
   e.preventDefault();
   if (f.matches('[data-pl-send]')) {
     const input = f.elements.text;
-    if (client.sendChat(input.value, partyBridge.position())) { chatDraft = ''; input.value = ''; }
+    if (client.sendChat(input.value, partyBridge.position())) input.value = '';
     return;
   }
   if (f.matches('[data-pl-pick-form]')) void pickerSearch(f.querySelector('input').value);

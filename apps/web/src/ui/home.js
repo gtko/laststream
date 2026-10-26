@@ -8,7 +8,7 @@ import { RECS_COUNT, HOME_ROW_COUNT, compactItems, excludeList, rawOf, readRecs,
 import { HERO_MAX, heroCarousel, initHero, prepareSingle, stopHero } from './hero.js';
 import { loadKidsHome, viewKids } from './kids.js';
 import { startRegistry, stopRegistry } from './registry.js';
-import { auth, canAdmin, isKidProfile, isServerMode, refreshRemote } from '../data/auth';
+import { canAdmin, isKidProfile, isServerMode, refreshRemote } from '../data/auth';
 import { isConfigured, subscribe } from '../data/config';
 import { onDataEvent } from '../data/events';
 import { recommend, tmdb, top10 } from '../data/lt';

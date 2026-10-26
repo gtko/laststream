@@ -15,5 +15,8 @@
   ],
   "ignoreBinaries": [
     "ffmpeg"
+  ],
+  "ignore": [
+    ".claude/**"
   ]
 }

@@ -93,7 +93,6 @@ function avatarEl(cls, name, avatar, color) {
 }
 
 const IMG = (size, p) => safeTmdbImage(p, size) || '';
-const backdropUrl = (p) => IMG('w780', p);
 /** `background-image` sûr : seule une image TMDB validée y entre (jamais une URL brute du serveur). */
 const bgOf = (size, p, pre = '') => { const u = cssUrl(IMG(size, p)); return u ? pre + u : ''; };
 const posterBg = (f) => POSTER_BGS[Math.abs(Number(f.tmdbId) || 0) % POSTER_BGS.length];
