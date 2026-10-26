@@ -59,6 +59,7 @@
   font-size: 16px;
 }
 
+.adm-pal-head:focus-within { box-shadow: inset 0 -3px 0 var(--accent); }
 .adm-pal-input::placeholder { color: var(--adm-pal-faint); }
 
 .adm-pal-kbd {

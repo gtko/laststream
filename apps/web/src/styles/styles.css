@@ -292,6 +292,12 @@ body.modal-open { overflow: hidden; }
 .s-a .card-meta { display: none; }
 .s-a .card-title { font-size: 14px; }
 
+/* Mouvement réduit : toutes les animations et transitions deviennent quasi instantanées. 0.01 ms (pas 0) pour que
+ * animationend / transitionend se déclenchent encore. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
 /* ---------- Navigation mobile ---------- */
 .tabbar {
   position: fixed; z-index: 60; display: none; align-items: center; justify-content: space-around; gap: 0;
@@ -531,7 +537,8 @@ a.prov:focus-visible { outline: var(--focus-ring-key); outline-offset: var(--foc
 /* Bords de rangée : le zoom part du bord intérieur, la carte n'est plus rognée par la marge ni collée au bord. */
 .row > .card:first-child, .row > :first-child > .card { transform-origin: left center; }
 .row > .card:last-child, .row > :last-child > .card { transform-origin: right center; }
-.card:focus-visible { outline: none; z-index: 2; }
+.card:focus-visible, .card:focus-within { z-index: 2; }
+.card:focus-visible { outline: none; }
 /* Survol souris : liseré léger, sans orange. Focus clavier : anneau des jetons, en dedans (la rangée rogne l'extérieur). */
 .card:hover .card-media { outline: 2px solid var(--dim); outline-offset: -2px; }
 .card:focus-visible .card-media { outline: var(--focus-ring-key); outline-offset: -2px; }

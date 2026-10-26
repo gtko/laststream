@@ -385,7 +385,8 @@ document.addEventListener('error', (e) => {
 }, true);
 
 // Navigation spatiale simple (télécommande / clavier) dans la fiche.
-export const NAV_SEL = 'button:not([disabled]):not([tabindex="-1"]), a[href]:not([tabindex="-1"]), [tabindex="0"]';
+// Les ••• et ✕ des cartes ne sont pas des cibles de navigation : la carte (role=button) reste l'unique cible.
+export const NAV_SEL = 'button:not([disabled]):not([tabindex="-1"]):not(.t-more):not(.t-remove), a[href]:not([tabindex="-1"]), [tabindex="0"]';
 export const navItems = (g) => Array.from(g.querySelectorAll(NAV_SEL)).filter((el) => el.getClientRects().length > 0);
 export const cx = (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2; };
 

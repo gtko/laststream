@@ -184,16 +184,24 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .ctxmenu button { min-height: 44px; }
 .ctxmenu button svg { flex: none; width: 20px; height: 20px; color: var(--muted); }
 .ctxmenu .ctx-hint { margin: 4px 8px 6px; padding-top: 8px; border-top: 1px solid var(--line-2); font-size: 12px; line-height: 1.4; color: var(--dim); }
-.t-more { position: absolute; top: 8px; right: 8px; z-index: 3; min-width: 34px; height: 24px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; background: rgba(12, 11, 17, 0.78); border: 1px solid rgba(255, 255, 255, 0.25); font-size: 11px; letter-spacing: 0.1em; color: var(--text); opacity: 0; transition: opacity 0.15s; cursor: pointer; }
-.card:hover .t-more, .card:focus-visible .t-more, .top-item:hover .t-more { opacity: 1; }
-.t-more.is-open { opacity: 1; }
-.f-more.is-open { background: rgba(60, 56, 78, 0.75); border-color: var(--accent); }
-@media (hover: none) { .t-more { display: none; } }
-.t-remove { position: absolute; top: 8px; left: 8px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(12, 11, 17, 0.82); border: 1px solid rgba(255, 255, 255, 0.3); opacity: 0; transition: opacity 0.15s, background-color 0.15s; cursor: pointer; }
+/* LAST-162 : ••• et ✕ sont de vrais <button> à zone cliquable de 44 px ; le disque visible (28 px) et la pastille (34 x 24 px) sont dessinés par ::before, la mise en page ne bouge pas. */
+.card[role="button"] { cursor: pointer; color: inherit; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.t-more, .t-remove { position: absolute; z-index: 3; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: none; display: grid; place-items: center; color: var(--text); opacity: 0; transition: opacity 0.15s; cursor: pointer; }
+.t-more { top: 0; right: 3px; font-size: 11px; letter-spacing: 0.1em; }
+.t-remove { top: 0; left: 0; }
+.t-more::before, .t-remove::before { content: ""; position: absolute; z-index: -1; background: rgba(12, 11, 17, 0.8); border: 1px solid rgba(255, 255, 255, 0.28); transition: background-color 0.15s; }
+.t-more::before { top: 8px; bottom: 12px; left: 5px; right: 5px; border-radius: 999px; }
+.t-remove::before { top: 8px; left: 8px; width: 28px; height: 28px; border-radius: 50%; }
 .t-remove svg { width: 14px; height: 14px; }
-.t-remove:hover { background: var(--accent); color: var(--on-accent); }
-.card:hover .t-remove, .card:focus-visible .t-remove { opacity: 1; }
-@media (hover: none) { .t-remove { opacity: 1; } }
+.t-remove:hover::before { background: var(--accent); }
+.t-remove:hover { color: var(--on-accent); }
+/* Visibles à la souris au survol de la carte, au focus de la carte ou d'un de ses boutons ; toujours visibles au toucher. */
+.card:hover .t-more, .card:focus-visible .t-more, .card:focus-within .t-more, .top-item:hover .t-more, .t-more:focus-visible, .t-more.is-open,
+.card:hover .t-remove, .card:focus-visible .t-remove, .card:focus-within .t-remove, .t-remove:focus-visible { opacity: 1; }
+.t-more:focus-visible, .t-remove:focus-visible { outline: none; }
+.t-more:focus-visible::before, .t-remove:focus-visible::before { outline: 3px solid var(--accent); outline-offset: 2px; }
+.f-more.is-open { background: rgba(60, 56, 78, 0.75); border-color: var(--accent); }
+@media (hover: none) and (pointer: coarse) { .t-more, .t-remove { opacity: 1; } }
 .cont-card .cont-new { left: 44px; } /* à droite du bouton fermer, en haut à gauche */
 /* ODY-177 : la souris sur ✕ ou ••• ne déclenche pas le survol de la carte (zoom, liseré, ▶ central, classe posée par hover.js) ; les icônes restent visibles et cliquables. */
 .card.is-icon-hover:not(:focus-visible) { transform: none; }

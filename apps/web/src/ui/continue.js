@@ -9,6 +9,7 @@ import { ICON } from './icons.js';
 import { progressResume } from './resume.js';
 import { isSoonPlayable, playableBadge } from './soon.js';
 import { playDirect } from './sources-ui.js';
+import { moreButtonHTML, removeButtonHTML } from './tileActions.js';
 import { esc, fmtMin } from './util.js';
 
 const placeholder = (t) => !t || /^\s*(é|e)pisode\s*\d+\s*$/i.test(t);
@@ -35,7 +36,7 @@ export function continueCardHTML(p) {
   const code = p.type === 'tv' && p.season != null ? 'S' + p.season + ' · É' + p.episode : '';
   const src = IMG('w780', p.backdrop) || IMG('w500', p.poster);
   const info = next ? 'À suivre' + (code ? ' : ' + code : '') : (code || (left ? '' : 'Film'));
-  return '<button type="button" class="card tile tile-land cont-card" data-tile="' + esc(it.key) + '" data-resume="' + esc(it.key) + '" data-next="' + next + '"' +
+  return '<div role="button" tabindex="0" class="card tile tile-land cont-card" data-tile="' + esc(it.key) + '" data-resume="' + esc(it.key) + '" data-next="' + next + '"' +
     ' data-season="' + (p.season != null ? p.season : '') + '" data-episode="' + (p.episode != null ? p.episode : '') + '" data-variant="logo" data-sig="' + esc(sig) + '"' +
     ' aria-label="' + esc('Reprendre ' + p.title + (code ? ', ' + code : '') + (rs ? ', reprise à ' + rs.label : '') + (left ? ', reste ' + left + ' min' : '')) + '">' +
     '<span class="card-media' + (src ? '' : ' no-img') + '">' +
@@ -47,9 +48,8 @@ export function continueCardHTML(p) {
     '<span class="cont-info"><span class="cont-name">' + esc(p.title) + '</span>' +
     '<span class="cont-code">' + esc(info) + '</span>' +
     '<span class="cont-left">' + esc([rs ? rs.label : '', restTxt].filter(Boolean).join(' · ')) + '</span></span>' +
-    '<span class="t-more" aria-hidden="true" title="Plus d’options">•••</span>' +
-    '<span class="t-remove" data-continue-remove="' + esc(it.key) + '" aria-hidden="true" title="Retirer de Reprendre la lecture">' + ICON.close + '</span>' +
-    '<span class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></span></span></button>';
+    moreButtonHTML(p.title) + removeButtonHTML(it.key, p.title) +
+    '<span class="progress" aria-hidden="true"><span style="width:' + pct + '%"></span></span></span></div>';
 }
 
 async function episodeAfter(id, season, episode) {
