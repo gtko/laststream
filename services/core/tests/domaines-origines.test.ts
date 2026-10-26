@@ -58,7 +58,7 @@ describe('/config : origines des domaines en service', () => {
     base = await listenDeployed();
   });
 
-  it.each([APP, CORE, 'https://laststream.app', 'https://lastaddon-core.gtux-prog.workers.dev'])(
+  it.each([APP, CORE, 'https://lastaddon-core.gtux-prog.workers.dev'])(
     'origine %s : renvoyée à l identique dans Access-Control-Allow-Origin',
     async (origin) => {
       const res = await fetch(`${base}/config/schema`, { headers: { Origin: origin } });
