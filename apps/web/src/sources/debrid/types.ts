@@ -47,7 +47,7 @@ export class DebridError extends Error {
   constructor(
     readonly code: string,
     readonly kind: ErrorKind,
-    readonly opts: { state?: AccountState; retryAfterMs?: number; until?: number } = {},
+    readonly opts: { state?: AccountState; retryAfterMs?: number; until?: number; status?: number } = {},
   ) {
     super(code);
     this.name = 'DebridError';
@@ -55,6 +55,8 @@ export class DebridError extends Error {
   get state(): AccountState | undefined { return this.opts.state; }
   get retryAfterMs(): number | undefined { return this.opts.retryAfterMs; }
   get until(): number | undefined { return this.opts.until; }
+  /** Statut HTTP refusé par la coque (`bad_status`) : absent pour les autres erreurs. */
+  get status(): number | undefined { return this.opts.status; }
 }
 
 export interface DebridProvider {
