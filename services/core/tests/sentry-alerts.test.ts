@@ -66,8 +66,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (match === null || match[1] !== 'laststream-test') return reply(res, 404, { detail: 'introuvable' });
   const project = url.searchParams.get('project') ?? '';
   const id = match[3];
-  if (match[2] === 'detectors' && method === 'GET') return reply(res, 200, detectors.get(project) ?? []);
+  if (match[2] === 'detectors' && method === 'GET') {
+    const type = url.searchParams.get('type');
+    return reply(res, 200, (detectors.get(project) ?? []).filter((d) => type === null || d.type === type));
+  }
   if (match[2] === 'workflows') {
+    if (method === 'GET' && id !== undefined) {
+      const found = workflows.get(id);
+      if (found === undefined) return reply(res, 404, { detail: 'introuvable' });
+      return reply(res, 200, { id, name: found.name, actionFilters: found.body.action_filters });
+    }
     if (method === 'GET' && id === undefined) {
       const list = [...workflows.entries()].filter(([, w]) => w.project === project);
       return reply(res, 200, list.map(([wid, w]) => ({ id: wid, name: w.name, enabled: true, detectorIds: w.body.detector_ids })));
@@ -109,8 +117,20 @@ beforeEach(() => {
   failWrites = null;
   failAll = null;
   detectors = new Map([
-    ['lastaddon-core', [{ id: '101', type: 'error', name: 'Error Monitor' }]],
-    ['laststream-web', [{ id: '202', type: 'error', name: 'Error Monitor' }]],
+    [
+      'lastaddon-core',
+      [
+        { id: '100', type: 'error', name: 'Error Monitor' },
+        { id: '101', type: 'issue_stream', name: 'Issue Stream' },
+      ],
+    ],
+    [
+      'laststream-web',
+      [
+        { id: '200', type: 'error', name: 'Error Monitor' },
+        { id: '202', type: 'issue_stream', name: 'Issue Stream' },
+      ],
+    ],
   ]);
 });
 
@@ -147,7 +167,7 @@ describe('scripts/sentry-alerts.mjs : --dry-run', () => {
     expect(result.stdout).toContain(`POST ${apiUrl}/api/0/organizations/laststream-test/workflows/`);
     expect(result.stdout).toContain('/workflows/<id>/');
     for (const name of ALERT_NAMES) expect(result.stdout).toContain(name);
-    for (const token of ['first_seen_event', 'event_frequency_count', 'exception.type', 'DebridEgressBlockedError']) {
+    for (const token of ['first_seen_event', 'every_event', 'event_frequency_count', 'exception.type', 'DebridEgressBlockedError']) {
       expect(result.stdout).toContain(token);
     }
     expect(result.stdout).not.toContain('/rules/');
@@ -206,7 +226,7 @@ describe('scripts/sentry-alerts.mjs : création et mise à jour idempotentes', (
       expect(mine.map((r) => r.body?.name).sort()).toEqual([...ALERT_NAMES].sort());
       expect(mine.every((r) => (r.body?.detector_ids as number[]).length === 1)).toBe(true);
       const detectorCall = recorded.find((r) => r.path.endsWith('/detectors/') && r.query.get('project') === project);
-      expect(detectorCall?.query.get('type')).toBe('error');
+      expect(detectorCall?.query.get('type')).toBe('issue_stream');
     }
   });
 
@@ -266,9 +286,13 @@ describe('scripts/sentry-alerts.mjs : création et mise à jour idempotentes', (
     });
   });
 
-  it('alerte DebridEgressBlockedError : filtre sur l’attribut exception.type', async () => {
+  it('alerte DebridEgressBlockedError : chaque événement (every_event) filtré sur exception.type', async () => {
     await run([], live());
     const debrid = recorded.find((r) => r.method === 'POST' && (r.body?.name as string).includes('DebridEgressBlockedError'));
+    expect(debrid?.body?.triggers).toEqual({
+      logicType: 'any-short',
+      conditions: [{ type: 'every_event', comparison: true, conditionResult: true }],
+    });
     const filters = debrid?.body?.action_filters as Array<{ conditions: unknown[] }>;
     expect(filters[0]?.conditions).toEqual([
       { type: 'event_attribute', comparison: { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' }, conditionResult: true },
@@ -276,9 +300,58 @@ describe('scripts/sentry-alerts.mjs : création et mise à jour idempotentes', (
   });
 });
 
+describe('scripts/sentry-alerts.mjs : doublon DebridEgressBlockedError', () => {
+  const coveringFilters = [
+    {
+      logicType: 'all',
+      conditions: [{ type: 'event_attribute', comparison: { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' } }],
+      actions: [],
+    },
+  ];
+
+  it('alerte existante du projet qui filtre déjà ce type : la nôtre n’est pas créée, « couverte par » indiqué', async () => {
+    workflows.set('900', {
+      name: 'ODY-227 : appel serveur vers AllDebrid / débrideur bloqué',
+      project: 'lastaddon-core',
+      body: { name: 'ODY-227', detector_ids: [101], action_filters: coveringFilters },
+    });
+    nextId = 1000;
+    const result = await run([], live());
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('couverte par « ODY-227 : appel serveur vers AllDebrid / débrideur bloqué »');
+    const detail = recorded.find((r) => r.method === 'GET' && r.path.endsWith('/workflows/900/'));
+    expect(detail).toBeDefined();
+    const posts = recorded.filter((r) => r.method === 'POST').map((r) => r.body?.name);
+    // serveur : 2 créations ; web (sans alerte existante) : 3.
+    expect(posts.filter((n) => n === ALERT_NAMES[2])).toHaveLength(1);
+    expect(posts).toHaveLength(5);
+  });
+
+  it('alerte existante sans ce filtre : la nôtre est créée', async () => {
+    workflows.set('900', {
+      name: 'Autre alerte',
+      project: 'lastaddon-core',
+      body: { name: 'Autre alerte', detector_ids: [101], action_filters: [{ logicType: 'all', conditions: [], actions: [] }] },
+    });
+    nextId = 1000;
+    const result = await run([], live());
+    expect(result.code).toBe(0);
+    expect(result.stdout).not.toContain('couverte par');
+    expect(recorded.filter((r) => r.method === 'POST')).toHaveLength(6);
+  });
+
+  it('notre propre alerte déjà présente est mise à jour, même si elle filtre ce type', async () => {
+    await run([], live());
+    recorded = [];
+    const result = await run([], live());
+    expect(result.stdout).not.toContain('couverte par');
+    expect(recorded.filter((r) => r.method === 'PUT')).toHaveLength(6);
+  });
+});
+
 describe('scripts/sentry-alerts.mjs : erreurs', () => {
   it('detector d’erreurs introuvable : erreur claire, aucune écriture', async () => {
-    detectors.set('laststream-web', [{ id: '303', type: 'metric_issue', name: 'Latence' }]);
+    detectors.set('laststream-web', [{ id: '303', type: 'error', name: 'Error Monitor' }]);
     const result = await run([], live());
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('detector');

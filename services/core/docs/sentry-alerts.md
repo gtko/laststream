@@ -8,7 +8,7 @@ Idempotent : pour chaque projet, le script trouve le detector d'erreurs, puis me
 
 | Usage | Appel |
 |---|---|
-| Detector d'erreurs du projet | `GET /api/0/organizations/{org}/detectors/?project={slug}&type=error` |
+| Detector « Issue Stream » du projet (celui des alertes d'issue par défaut ; l'autre detector, `error`, n'est pas utilisé) | `GET /api/0/organizations/{org}/detectors/?project={slug}&type=issue_stream` |
 | Alertes existantes du projet | `GET /api/0/organizations/{org}/workflows/?project={slug}` |
 | Création | `POST /api/0/organizations/{org}/workflows/` |
 | Mise à jour | `PUT /api/0/organizations/{org}/workflows/{id}/` |
@@ -21,7 +21,9 @@ Scopes du jeton : `alerts:read` pour `--check`, `alerts:write` pour appliquer (`
 |---|---|---|
 | Laststream : nouvelle issue | `first_seen_event` | 5 min |
 | Laststream : pic d’événements | `event_frequency_count` > 100 en `1h` | 30 min |
-| Laststream : DebridEgressBlockedError | `first_seen_event`, `reappeared_event`, `regression_event` + filtre `event_attribute` `exception.type` = `DebridEgressBlockedError` | 5 min |
+| Laststream : DebridEgressBlockedError | `every_event` + filtre `event_attribute` `exception.type` = `DebridEgressBlockedError` | 5 min |
+
+Si une autre alerte du projet filtre déjà `exception.type` = `DebridEgressBlockedError` (ex. « ODY-227 : appel serveur vers AllDebrid / débrideur bloqué »), le script ne crée pas la sienne et affiche « couverte par … » (il lit le détail `GET /workflows/{id}/` si la liste n'a pas les filtres).
 
 Action : e-mail aux propriétaires de l'issue (`email`, `targetType: issue_owners`, repli `AllMembers`).
 
@@ -45,7 +47,7 @@ Sortie : une ligne `créée :` ou `mise à jour :` par alerte et par projet. Sur
 
 ## Points à vérifier avec `--check` puis au premier lancement
 
-- Le detector `type: error` existe pour chaque projet (sinon erreur explicite).
+- Le detector `issue_stream` existe pour chaque projet (sinon erreur explicite).
 - `event_frequency_count` est documenté parmi les filtres, pas parmi les déclencheurs : s'il est refusé (400), le déplacer dans `action_filters[0].conditions` en gardant `reappeared_event` en déclencheur (`ALERTS` dans le script).
-- Le moteur n'a plus de déclencheur « chaque événement » : DebridEgressBlockedError alerte une fois par issue (nouvelle, réapparue, régression), pas par événement.
+- `every_event` (vu dans une alerte réelle) sert de déclencheur à DebridEgressBlockedError.
 - Le PUT envoie le corps complet (la doc ne dit pas si la mise à jour est partielle).

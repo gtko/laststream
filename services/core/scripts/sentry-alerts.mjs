@@ -5,7 +5,7 @@
  *
  * L'ancien endpoint `/api/0/projects/{org}/{project}/rules/` répond 404 sur de.sentry.io : les alertes sont désormais
  * des workflows d'organisation rattachés à des detectors (« monitors »). Endpoints utilisés :
- *   GET  /api/0/organizations/{org}/detectors/?project={slug}&type=error   detector d'erreurs (issue stream) du projet
+ *   GET  /api/0/organizations/{org}/detectors/?project={slug}&type=issue_stream   detector « Issue Stream » du projet
  *   GET  /api/0/organizations/{org}/workflows/?project={slug}              alertes existantes (recherche par nom)
  *   POST /api/0/organizations/{org}/workflows/                             création
  *   PUT  /api/0/organizations/{org}/workflows/{id}/                        mise à jour
@@ -35,8 +35,8 @@ const DEFAULT_API_URL = 'https://sentry.io';
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/i;
 /** Hôtes autorisés en http (tests locaux uniquement) ; tout autre hôte exige https. */
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost']);
-/** Type de detector portant les issues d'erreurs d'un projet (valeurs vues dans la doc : error, metric_issue, uptime_domain_failure). */
-const ERROR_DETECTOR_TYPE = 'error';
+/** Type de detector auquel Sentry rattache les alertes d'issue par défaut (« Issue Stream »), vérifié avec --check ; l'autre detector du projet est de type error. */
+const DETECTOR_TYPE = 'issue_stream';
 const MAX_ERROR_BODY = 500;
 
 /**
@@ -67,9 +67,10 @@ const notifyWhen = (conditions) => [{ logicType: 'all', conditions, actions: [NO
  *    liste pas ce type parmi les déclencheurs. On le place en déclencheur (sémantique « plus de 100 événements en 1 h »,
  *    comme les règles migrées). Si l'API répond 400, le corps de l'erreur est affiché : déplacer la condition dans
  *    `action_filters[0].conditions` en gardant `reappeared_event` en déclencheur.
- *  - « tout événement » (every_event) n'existe plus : le moteur déclenche sur les changements d'état d'issue. DebridEgress
- *    utilise donc first_seen/reappeared/regression + filtre exception.type : une alerte par issue, pas par événement.
+ *  - every_event (comparison: true) en déclencheur : vu dans une alerte réelle ; DebridEgress alerte donc à chaque événement,
+ *    filtré par exception.type.
  */
+const DEBRID_ATTRIBUTE = { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' };
 const ALERTS = [
   {
     name: 'Laststream : nouvelle issue',
@@ -94,9 +95,11 @@ const ALERTS = [
     config: { frequency: 5 },
     triggers: {
       logicType: 'any-short',
-      conditions: [condition('first_seen_event', true), condition('reappeared_event', true), condition('regression_event', true)],
+      conditions: [condition('every_event', true)],
     },
-    action_filters: notifyWhen([condition('event_attribute', { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' })]),
+    action_filters: notifyWhen([condition('event_attribute', DEBRID_ATTRIBUTE)]),
+    /** Ne pas créer si une autre alerte du projet filtre déjà exactement ce type d'exception (évite les doublons). */
+    skipIfCovered: true,
   },
 ];
 
@@ -133,7 +136,7 @@ function readConfig(env, dryRun) {
 
 const orgBase = (config) => `${config.origin}/api/0/organizations/${encodeURIComponent(config.org)}`;
 const detectorsUrl = (config, project) =>
-  `${orgBase(config)}/detectors/?project=${encodeURIComponent(project)}&type=${ERROR_DETECTOR_TYPE}&per_page=100`;
+  `${orgBase(config)}/detectors/?project=${encodeURIComponent(project)}&type=${DETECTOR_TYPE}&per_page=100`;
 const workflowsUrl = (config, project) => `${orgBase(config)}/workflows/?project=${encodeURIComponent(project)}&per_page=100`;
 const workflowCollection = (config) => `${orgBase(config)}/workflows/`;
 const workflowItem = (config, id) => `${orgBase(config)}/workflows/${encodeURIComponent(String(id))}/`;
@@ -196,23 +199,52 @@ async function listAll(config, url) {
   return items;
 }
 
-/** Detector d'erreurs (issue stream) d'un projet ; erreur claire s'il n'existe pas. */
+/** Detector « Issue Stream » d'un projet ; erreur claire s'il n'existe pas. */
 async function findErrorDetector(config, project) {
   const detectors = await listAll(config, detectorsUrl(config, project));
-  const detector = detectors.find((candidate) => candidate.type === ERROR_DETECTOR_TYPE);
+  const detector = detectors.find((candidate) => candidate.type === DETECTOR_TYPE);
   if (detector === undefined) {
     throw new ApiError(
-      `Aucun detector de type « ${ERROR_DETECTOR_TYPE} » trouvé pour le projet ${project} (organisation ${config.org}) : ` +
+      `Aucun detector de type « ${DETECTOR_TYPE} » trouvé pour le projet ${project} (organisation ${config.org}) : ` +
         'vérifier le slug du projet et que le projet existe, puis lancer --check.',
     );
   }
   return detector;
 }
 
+/** Vrai si un groupe de filtres contient event_attribute exception.type == DebridEgressBlockedError. */
+function filtersCoverDebrid(actionFilters) {
+  if (!Array.isArray(actionFilters)) return false;
+  return actionFilters.some(
+    (group) =>
+      Array.isArray(group?.conditions) &&
+      group.conditions.some(
+        (c) =>
+          c?.type === 'event_attribute' &&
+          c.comparison?.attribute === DEBRID_ATTRIBUTE.attribute &&
+          c.comparison?.match === DEBRID_ATTRIBUTE.match &&
+          c.comparison?.value === DEBRID_ATTRIBUTE.value,
+      ),
+  );
+}
+
+/** Première alerte du projet qui filtre déjà DebridEgressBlockedError (détail lu par GET si la liste n'a pas les filtres). */
+async function findCoveringAlert(config, workflows) {
+  for (const workflow of workflows) {
+    let filters = workflow.actionFilters;
+    if (!Array.isArray(filters)) {
+      const { body } = await api('GET', workflowItem(config, workflow.id), config.token);
+      filters = body?.actionFilters;
+    }
+    if (filtersCoverDebrid(filters)) return workflow;
+  }
+  return undefined;
+}
+
 async function check(config) {
   for (const project of config.projects) {
     const detectors = await listAll(config, detectorsUrl(config, project));
-    console.log(`${project} : ${detectors.length} detector(s) d'erreurs`);
+    console.log(`${project} : ${detectors.length} detector(s) issue_stream`);
     for (const detector of detectors) console.log(`  detector ${detector.id} « ${detector.name} » (${detector.type})`);
     const workflows = await listAll(config, workflowsUrl(config, project));
     console.log(`${project} : ${workflows.length} alerte(s)`);
@@ -229,8 +261,16 @@ async function apply(config) {
     const detector = await findErrorDetector(config, project);
     const existing = await listAll(config, workflowsUrl(config, project));
     for (const alert of ALERTS) {
-      const payload = { ...alert, detector_ids: [Number(detector.id)] };
+      const { skipIfCovered, ...definition } = alert;
+      const payload = { ...definition, detector_ids: [Number(detector.id)] };
       const match = existing.find((candidate) => candidate.name === alert.name);
+      if (match === undefined && skipIfCovered) {
+        const coveredBy = await findCoveringAlert(config, existing);
+        if (coveredBy !== undefined) {
+          console.log(`couverte par « ${coveredBy.name} » : ${project} — ${alert.name} (non créée)`);
+          continue;
+        }
+      }
       if (match === undefined) {
         await api('POST', workflowCollection(config), config.token, payload);
         console.log(`créée : ${project} — ${alert.name}`);
@@ -247,7 +287,8 @@ function dryRun(config) {
     console.log(`[dry-run] GET ${detectorsUrl(config, project)}`);
     console.log(`[dry-run] GET ${workflowsUrl(config, project)}`);
     for (const alert of ALERTS) {
-      const payload = { ...alert, detector_ids: [`<id du detector « ${ERROR_DETECTOR_TYPE} » de ${project}>`] };
+      const { skipIfCovered: _skip, ...definition } = alert;
+      const payload = { ...definition, detector_ids: [`<id du detector « ${DETECTOR_TYPE} » de ${project}>`] };
       console.log(`[dry-run] POST ${workflowCollection(config)} si « ${alert.name} » est absente, sinon PUT ${workflowCollection(config)}<id>/`);
       console.log(JSON.stringify(payload));
     }
