@@ -302,11 +302,11 @@ const ServicesSchema = z
     fanartApiKey: serviceKey('Clé Fanart.tv', 'Clé API Fanart.tv facultative, testée par POST /config/test.'),
     introdbApiKey: serviceKey(
       'Clé IntroDB (introdb.app)',
-      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible).',
+      'Clé API IntroDB facultative : segments intro, reprise et générique (sans clé, la lecture reste possible). Si une clé est disponible (la vôtre, sinon celle du serveur), les propositions de segments (hors votes négatifs) sont aussi envoyées à IntroDB ; le contenu envoyé ne contient aucun identifiant de profil.',
     ),
     skipdbApiKey: serviceKey(
       'Clé SkipDB (skipdb.tv)',
-      'Clé API SkipDB facultative : sans clé, les segments se lisent. Avec clé, vos propositions de segments sont aussi envoyées à SkipDB (données sous licence ODbL 1.0 + réciprocité).',
+      'Clé API SkipDB facultative : sans clé, les segments se lisent. Si une clé est disponible (la vôtre, sinon celle du serveur), les propositions de segments (hors votes négatifs) sont aussi envoyées à SkipDB (données sous licence ODbL 1.0 + réciprocité) ; le contenu envoyé ne contient aucun identifiant de profil.',
     ),
     animeskipClientId: serviceKey(
       'Client ID Anime Skip (anime-skip.com)',
