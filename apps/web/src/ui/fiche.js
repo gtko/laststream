@@ -13,6 +13,7 @@ import { fetchFull } from './ficheModel.js';
 import { inProgressRef } from './epFocus.js';
 import { fillCollection, fillNext, fillRatings, loadSeason } from './ficheSections.js';
 import { topBar } from './fragments.js';
+import { ficheQuietSetup, ficheQuietStop } from './ficheQuiet.js';
 import { heroVideoSetup, heroVideoStop } from './heroVideo.js';
 import { ICON } from './icons.js';
 import { ficheDownloadHTML, hydrateDownloads, seasonDownloadHTML } from './downloadBtn.js';
@@ -285,6 +286,7 @@ export function teardownFiche() {
   state.model = null;
   state.token++;
   heroVideoStop();
+  ficheQuietStop();
   if (ficheIO) ficheIO.disconnect();
   ficheIO = null;
 }
@@ -360,6 +362,7 @@ export async function showFiche(type, id, target = null) {
   applyRestore();
   setupSticky();
   heroVideoSetup(m, trailerPlayFor(m, token));
+  ficheQuietSetup(detailEl);
   fillRatings(m, token);
   fillProviders(m, token);
   if (m.collection) fillCollection(m, token);

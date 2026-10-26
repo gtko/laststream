@@ -440,19 +440,23 @@ body.modal-open { overflow: hidden; }
 /* Premier écran : bloc d'infos en bas à gauche */
 .f-first { position: relative; z-index: 2; height: calc(100vh - var(--tabs-h)); height: calc(100svh - var(--tabs-h)); min-height: 520px; display: flex; align-items: flex-end; padding: 0 var(--gutter) 8vh; }
 .f-info { width: min(44vw, 640px); display: flex; flex-direction: column; align-items: flex-start; gap: 14px; transition: opacity 0.9s ease; }
-/* Fondu des textes pendant la bande-annonce (playback.js) : synopsis, métadonnées et boutons secondaires s'estompent,
-   le titre se réduit, Lecture et Son restent atténués. Sur téléphone, la fiche ne s'estompe pas. */
+/* Bande-annonce en grand (`is-quiet`, posée par playback.js) : synopsis, métadonnées et boutons secondaires s'estompent
+   (400 ms) ; le logo (ou le titre texte) se réduit à 60 % et descend au-dessus de Lecture, qui reste pleinement lisible.
+   Le décalage (--f-qx, --f-qy) est calculé en FLIP par ficheQuiet.js : seul `transform` s'anime. Sur téléphone, la fiche
+   ne s'estompe pas. */
 @media (min-width: 641px) {
-  #detail .f-info > :not(.f-title):not(.f-actions) { transition: opacity 0.6s ease; }
+  #detail .f-info > :not(.f-title):not(.f-actions) { transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
   #detail.is-quiet .f-info > :not(.f-title):not(.f-actions) { opacity: 0; }
-  #detail .f-title { transform-origin: left bottom; transition: transform 0.6s ease; }
-  #detail.is-quiet .f-title { transform: scale(0.72); }
-  #detail .f-actions > * { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
+  #detail .f-title { transform-origin: left bottom; transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+  #detail.is-quiet .f-title { transform: translate(var(--f-qx, 0px), var(--f-qy, 0px)) scale(0.6); }
+  #detail .f-actions > * { transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, transform 0.15s, border-color 0.2s; }
   #detail.is-quiet .f-actions > :not(.btn-primary) { opacity: 0; }
-  #detail.is-quiet .f-actions > .btn-primary { opacity: 0.6; }
   #detail .f-top .f-round { transition: opacity 0.6s ease, background-color 0.2s, transform 0.15s, border-color 0.2s; }
   #detail.is-quiet .f-top .f-round:not([data-fsound]) { opacity: 0; }
   #detail.is-quiet .f-top [data-fsound] { opacity: 0.6; }
+}
+@media (min-width: 641px) and (prefers-reduced-motion: reduce) {
+  #detail .f-title, #detail .f-info > *, #detail .f-actions > *, #detail .f-top .f-round { transition: none !important; }
 }
 /* Enchaînement bande-annonce → lecture (trailerPlay.js) : compte à rebours discret, fondu vers le lecteur. */
 .f-next-up {
