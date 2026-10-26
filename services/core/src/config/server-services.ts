@@ -12,7 +12,7 @@ import { last4Label } from './secrets.js';
  */
 
 /** Champs gérés par le propriétaire, stockés en base. OpenRouter n'y est jamais stocké. */
-export const SERVER_SERVICE_FIELDS = [
+const SERVER_SERVICE_FIELDS = [
   'tmdbToken',
   'tmdbApiKey',
   'mdblistApiKey',
@@ -63,10 +63,10 @@ export interface ServerServicesEnv {
 export type ServerServices = Partial<Record<ServerServiceField | 'openrouterApiKey', string>>;
 
 /** Origine d'une clé serveur : la base, une variable d'exécution, ou aucune. */
-export type ServerServiceSource = 'db' | 'env' | 'none';
+type ServerServiceSource ='db' | 'env' | 'none';
 
 /** État masqué d'une clé serveur : présence, quatre derniers caractères si la clé est assez longue, origine. */
-export interface ServerServiceState {
+interface ServerServiceState {
   set: boolean;
   last4?: string;
   source: ServerServiceSource;
