@@ -1,5 +1,5 @@
 import { allowedOrigins } from '../config/runtime-env.js';
-import { createRateLimiter } from '../rate-limit.js';
+import { type SharedLimits, sharedLimiterFor } from '../rate-limit-shared.js';
 import { IDENTITY_HEADER, type PartyBackend } from './backend.js';
 import { cleanGuestName, guestIdentity, verifyGuestToken } from './guest.js';
 import { CLOSE, type Identity } from './protocol.js';
@@ -14,7 +14,15 @@ export const PARTY_WS_PATH = /^\/party\/([A-Za-z0-9_-]{16,32})\/ws$/;
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 
-const limiter = createRateLimiter(60, 60_000);
+const rateLimited = (retryAfterSec: number): Response =>
+  new Response(JSON.stringify({ error: 'rate_limited' }), {
+    status: 429,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store', 'retry-after': String(retryAfterSec) },
+  });
+
+/** Mises à niveau par minute : par IP (avant toute vérification) puis par compte ou invité (après) ; au-delà : 429. */
+const ipUpgrades = sharedLimiterFor('partyUpgrade', 60, 60_000);
+const accountUpgrades = sharedLimiterFor('partyAccountUpgrade', 30, 60_000);
 
 /**
  * Connexion WebSocket d'un salon. Deux formes, traitées avant l'application Hono (une réponse 101 ne doit passer par
@@ -26,7 +34,7 @@ const limiter = createRateLimiter(60, 60_000);
  */
 export async function handlePartyWs(
   request: Request,
-  options: { party: PartyBackend | undefined; secret: string; ip: string | undefined; now?: number },
+  options: { party: PartyBackend | undefined; secret: string; ip: string | undefined; now?: number; shared?: SharedLimits },
 ): Promise<Response> {
   const url = new URL(request.url);
   const match = PARTY_WS_PATH.exec(url.pathname);
@@ -36,8 +44,8 @@ export async function handlePartyWs(
   if (request.method !== 'GET' || request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(426, { error: 'upgrade_required' });
   const origin = request.headers.get('origin');
   if (origin !== null && !allowedOrigins().includes(origin) && origin !== url.origin) return json(403, { error: 'origin_forbidden' });
-  const verdict = limiter(options.ip ?? 'inconnu');
-  if (!verdict.allowed) return json(429, { error: 'rate_limited' });
+  const verdict = await ipUpgrades(options.shared, `ip:${options.ip ?? 'inconnu'}`);
+  if (!verdict.allowed) return rateLimited(verdict.retryAfterSec);
   const now = options.now ?? Date.now();
   let identity: Identity | undefined;
   const guestToken = url.searchParams.get('t');
@@ -52,6 +60,9 @@ export async function handlePartyWs(
     identity = guestIdentity(verified.guestId, name, verified.avatar);
   }
   if (identity === undefined) return json(401, { error: 'invalid_ticket' });
+  // Plafond par compte (ou invité), indépendant de l'IP : une session ne multiplie pas ses connexions en changeant d'adresse.
+  const perAccount = await accountUpgrades(options.shared, `account:${identity.accountId}`);
+  if (!perAccount.allowed) return rateLimited(perAccount.retryAfterSec);
   const headers = new Headers(request.headers);
   headers.set(IDENTITY_HEADER, Buffer.from(JSON.stringify(identity), 'utf8').toString('base64url'));
   // Ticket, jeton et pseudo n'ont pas à atteindre le Durable Object.

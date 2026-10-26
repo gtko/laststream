@@ -658,6 +658,8 @@ de lignes et SHA-256 par table (`GET /__admin/counts`). La route répond 404 san
 Connexion et inscription : binding Rate Limiting (`AUTH_LIMITER_IP`, `AUTH_LIMITER_USER`), 10 tentatives par minute (la période d'un binding vaut 10 ou
 60 s, pas 15 minutes ; le comptage est par emplacement Cloudflare et approximatif).
 
+Routes sensibles (`/config`, `/lt`, `/user`, `/admin`, `/party`, tickets du flux social, frappe) et mises à niveau WebSocket : la Map en mémoire de `src/rate-limit.ts` est par isolat (la limite réelle croît avec le nombre d'instances), donc chaque limite ajoute une seconde barrière, les bindings `RL_*` de `wrangler.jsonc` (`src/rate-limit-shared.ts` ; sans binding, la Map locale reste seule). Chaque refus partagé journalise un identifiant d'isolat aléatoire (`wrangler tail`, filtre `[rate-limit] refus`) : le nombre d'identifiants distincts estime le nombre d'instances actives. Dans les Durable Objects (singletons, donc réellement globaux), le flux social plafonne les trames (30 par minute glissante et par profil, fermeture 4008) et les connexions (5 par profil, les plus anciennes évincées) ; un salon ferme 4008 une connexion au-delà de 500 trames par 10 s (`src/ws-limits.ts`).
+
 ## Sécurité
 
 **Risque SSRF.** Les URL des sources (addons amont) sont saisies par l'utilisateur et appelées par le serveur. Sans précaution, une URL peut viser le réseau interne (ex. `http://192.168.1.1`, `http://169.254.169.254` sur un cloud). Protections appliquées à chaque requête :

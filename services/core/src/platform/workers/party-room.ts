@@ -19,6 +19,8 @@ import {
 import { type Effect, type EntryVerdict, type InviteVerdict, type JoinCheck, type LinkVerdict, type Member, RoomCore, guestRefusal } from '../../party/room-core.js';
 import { refusedSocket } from '../../party/refuse.js';
 import { type TurnEnv, fetchTurnIce } from '../../party/turn.js';
+import { logRefusal } from '../../rate-limit-shared.js';
+import { createSlidingWindow } from '../../ws-limits.js';
 import { USER_STORE_NAME } from './user-backend.js';
 import type { UserStoreDO } from './user-store-do.js';
 
@@ -30,6 +32,14 @@ interface Attachment extends Identity {
   connId: string;
   joinedAt: number;
 }
+
+/**
+ * Trames reçues par connexion sur une fenêtre glissante de 10 s, tous types confondus (invalides comprises) : au-delà, la
+ * connexion est fermée (4008). Filet large, au-dessus du total des plafonds par type de RoomCore (le maillage invité en
+ * est le plus gros consommateur) ; ceux-ci restent la limite fine.
+ */
+const FRAMES_PER_WINDOW = 500;
+const FRAME_WINDOW_MS = 10_000;
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -57,6 +67,8 @@ function decodeIdentity(header: string | null): Identity | undefined {
  */
 export class PartyRoom extends DurableObject {
   private core: RoomCore | undefined;
+  /** Débit des trames par identifiant de connexion (en mémoire : remis à zéro par une hibernation, sans conséquence). */
+  private readonly frames = createSlidingWindow(FRAMES_PER_WINDOW, FRAME_WINDOW_MS);
 
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env as never);
@@ -202,6 +214,11 @@ export class PartyRoom extends DurableObject {
     const attachment = ws.deserializeAttachment() as Attachment | null;
     if (core === undefined || attachment === null) {
       ws.close(1011, 'room_closed');
+      return;
+    }
+    if (!this.frames(attachment.connId)) {
+      logRefusal('partyFrames', 'close');
+      ws.close(CLOSE.rateLimited, 'rate_limited');
       return;
     }
     if (typeof message !== 'string' || message.length > RTC_MAX_FRAME_CHARS) {

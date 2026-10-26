@@ -11,6 +11,7 @@ import { ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { createLtContext, type LtContext } from '../lt/context.js';
 import { createRateLimiter } from '../rate-limit.js';
+import { createSharedLimiter } from '../rate-limit-shared.js';
 import { isRecord } from '../sources/http.js';
 import {
   generateSessionToken,
@@ -168,9 +169,9 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
   const ctx: LtContext = createLtContext(deps);
   const limits = { ...DEFAULT_LIMITS, ...deps.userRateLimits };
   const limiters = {
-    read: createRateLimiter(limits.read, LIMIT_WINDOW_MS),
-    write: createRateLimiter(limits.write, LIMIT_WINDOW_MS),
-    sensitive: createRateLimiter(limits.sensitive, LIMIT_WINDOW_MS),
+    read: createSharedLimiter(deps.sharedLimits, 'userRead', limits.read, LIMIT_WINDOW_MS),
+    write: createSharedLimiter(deps.sharedLimits, 'userWrite', limits.write, LIMIT_WINDOW_MS),
+    sensitive: createSharedLimiter(deps.sharedLimits, 'userSensitive', limits.sensitive, LIMIT_WINDOW_MS),
   };
   const loginByUsername = createRateLimiter(limits.loginPerUsername, LIMIT_WINDOW_MS);
   const authByIp = createRateLimiter(limits.authPerIp, AUTH_WINDOW_MS);
@@ -192,7 +193,7 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const sensitive = SENSITIVE_ROUTES.some((route) => route.method === c.req.method && route.path.test(path));
     const kind = sensitive ? 'sensitive' : c.req.method === 'GET' || c.req.method === 'HEAD' ? 'read' : 'write';
     const ip = c.get('ip') ?? 'inconnu';
-    const verdict = limiters[kind](ip);
+    const verdict = await limiters[kind](ip);
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     if (c.req.method === 'POST' && (path === '/login' || path === '/register' || path === '/password-reset')) {
       if (deps.authLimiter === undefined) {

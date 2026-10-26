@@ -30,6 +30,7 @@ import { registerStreamingProxy } from './streaming-proxy.js';
 import { registerAvatarRoutes } from './routes/avatars.js';
 import { registerUiRoutes } from './ui.js';
 import { createRateLimiter } from './rate-limit.js';
+import { createSharedLimiter, type SharedLimitName } from './rate-limit-shared.js';
 import { isRecord } from './sources/http.js';
 
 export { createRateLimiter };
@@ -132,13 +133,13 @@ function corsMiddleware(origins: readonly string[]): MiddlewareHandler<AppEnv> {
 }
 
 /** Limite les requêtes qui satisfont `applies` à CONFIG_RATE_LIMIT par minute et par IP (préflights OPTIONS exclus). */
-function rateLimit(applies: (c: Ctx) => boolean, limiter: ReturnType<typeof createRateLimiter>): MiddlewareHandler<AppEnv> {
+function rateLimit(applies: (c: Ctx) => boolean, limiter: ReturnType<typeof createSharedLimiter>): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     if (!applies(c) || c.req.method === 'OPTIONS') {
       await next();
       return;
     }
-    const verdict = limiter(c.get('ip') ?? 'inconnu');
+    const verdict = await limiter(c.get('ip') ?? 'inconnu');
     if (!verdict.allowed) {
       c.header('Retry-After', String(verdict.retryAfterSec));
       c.header('Cache-Control', 'no-store');
@@ -224,10 +225,15 @@ export function createApp(deps: AppDeps): App {
   // Mode maintenance (réglage global lu à travers un cache de quelques secondes) : tout répond 503 sauf /admin, /health, connexion.
   const maintenance = createMaintenanceGate(async () => (backend.hasData?.() === false ? { enabled: false, message: '' } : (await backend.admin().getSettings()).maintenance));
   app.use('*', maintenanceMiddleware(maintenance));
-  app.use('*', rateLimit((c) => CONFIG_PATH.test(c.req.path), createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
-  app.use('*', rateLimit((c) => LT_WRITE_PATH.test(c.req.path) && c.req.method === 'POST', createRateLimiter(CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
-  app.use('*', rateLimit((c) => c.req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(c.req.path)), createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
-  app.use('*', rateLimit((c) => c.req.method === 'GET' && c.req.path === '/announcements', createRateLimiter(readRateLimit(), READ_RATE_WINDOW_MS)));
+  // Chaque limite cumule la Map locale et la liaison partagée entre instances (deps.sharedLimits, voir rate-limit-shared.ts).
+  const limiter = (name: SharedLimitName, limit: number, windowMs: number) => createSharedLimiter(deps.sharedLimits, name, limit, windowMs);
+  // La liaison de lecture a une limite fixe : un réglage LASTADDON_READ_RATE_LIMIT ne passe que par la Map locale.
+  const readShared = (): typeof deps.sharedLimits => (runtimeEnv().get('LASTADDON_READ_RATE_LIMIT') === undefined ? deps.sharedLimits : undefined);
+  const readLimiter = (name: SharedLimitName) => createSharedLimiter(readShared(), name, readRateLimit(), READ_RATE_WINDOW_MS);
+  app.use('*', rateLimit((c) => CONFIG_PATH.test(c.req.path), limiter('config', CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use('*', rateLimit((c) => LT_WRITE_PATH.test(c.req.path) && c.req.method === 'POST', limiter('ltWrite', CONFIG_RATE_LIMIT, CONFIG_RATE_WINDOW_MS)));
+  app.use('*', rateLimit((c) => c.req.method === 'GET' && OPEN_LT_PATHS.some((pattern) => pattern.test(c.req.path)), readLimiter('ltRead')));
+  app.use('*', rateLimit((c) => c.req.method === 'GET' && c.req.path === '/announcements', readLimiter('ltRead')));
   app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
   // Sonde de disponibilité : version et état de chaque dépendance (délai borné, lecture seule, rapport gardé 15 s). Toujours HTTP 200.

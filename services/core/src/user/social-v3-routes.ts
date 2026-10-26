@@ -3,7 +3,7 @@ import { cleanShareNote, LIST_ID, listCreateSchema, listItemKeySchema, listItemS
 import type { App, Ctx } from '../http/app-env.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import type { AppDeps } from '../deps.js';
-import { createRateLimiter } from '../rate-limit.js';
+import { createSharedLimiter } from '../rate-limit-shared.js';
 import type { UserBackend } from './repo.js';
 import { recordActivityOf } from './social-v2-activity-routes.js';
 import { emitSocialEvent } from './social-v2-events.js';
@@ -158,7 +158,7 @@ const TYPING_INTERVAL_MS = 333;
 function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): void {
   const social = () => backend.socialV2();
   const actor = (c: Ctx) => actorOf(c, backend.users(), backend.socialV2(), deps.secret);
-  const typingLimit = createRateLimiter(1, TYPING_INTERVAL_MS);
+  const typingLimit = createSharedLimiter(deps.sharedLimits, 'typing', 1, TYPING_INTERVAL_MS);
 
   /** Conversation de l'URL ; forme inconnue : 404 `conv_not_found`. */
   const scopeOf = (c: Ctx): ConvScope => {
@@ -274,7 +274,7 @@ function registerConvRoutes(router: App, deps: AppDeps, backend: UserBackend): v
   router.post('/social/conv/:conv/typing', async (c) => {
     const me = await actor(c);
     const scope = scopeOf(c);
-    const verdict = typingLimit(`${me.pid}|${convKey(scope)}`);
+    const verdict = await typingLimit(`${me.pid}|${convKey(scope)}`);
     if (!verdict.allowed) throw new UserApiError(429, 'rate_limited', undefined, verdict.retryAfterSec);
     const outcome = await social().typingNotices(me.pid, scope);
     if (outcome.result !== 'ok') throw convError(scope, outcome.result);
