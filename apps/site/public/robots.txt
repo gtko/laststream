@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://laststream-www.gtux-prog.workers.dev/sitemap.xml
+Sitemap: https://laststream.app/sitemap.xml

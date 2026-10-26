@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   // Versions et liens : lus dans latest.json (/api/windows, /api/android) ; le HTML garde des valeurs de secours
-  var APP = 'https://laststream.gtux-prog.workers.dev/app/';
+  var APP = 'https://app.laststream.app/app/';
 
   // Textes dynamiques selon la langue de la page (<html lang>), fr par défaut
   var I18N = {
