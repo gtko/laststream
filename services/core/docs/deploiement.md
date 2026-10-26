@@ -53,7 +53,7 @@ Deux déploiements simultanés (deux sessions, deux machines) sont refusés par 
 
 ## Retour arrière
 
-Retour arrière : `npx wrangler rollback` (ou `wrangler rollback <version-id>`) ; on ne redéploie pas un ancien tag (HEAD doit égaler origin/main).
+Retour arrière : `npx wrangler@4.151.1 rollback` (ou `wrangler rollback <version-id>`) ; on ne redéploie pas un ancien tag (HEAD doit égaler origin/main).
 
 ## Ordre de déploiement
 
