@@ -51,18 +51,18 @@ export function refusedText(): string {
   return 'Le salon n’a pas accepté la connexion : lien expiré ou remplacé, salon complet, ou pseudo déjà pris.';
 }
 
-/** Message de fin de salon, selon le motif reçu du client de salon. */
-export function endText(reason: string): string {
+/** Message de fin de salon, selon le motif reçu du client de salon (invité, panneau et salon d’attente). */
+export function endReasonText(reason: string): string {
   switch (reason) {
-    case 'ended': return 'Le salon est terminé.';
-    case 'kicked': return 'Tu as été exclu du salon.';
     case 'replaced': return 'Connexion reprise depuis un autre appareil.';
+    case 'expired': return 'Invitation expirée.';
+    case 'banned':
+    case 'kicked': return 'Tu as été exclu du salon.';
+    case 'name_taken': return 'Ce pseudo est déjà utilisé dans le salon.';
+    case 'name_changed': return 'Le pseudo de cette invitation ne peut pas changer.';
     case 'full': return 'Le salon est complet.';
-    case 'expired': return 'Lien expiré ou invalide : demande une nouvelle invitation à l’hôte.';
-    case 'banned': return 'Tu ne peux pas rejoindre ce salon.';
-    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
-    case 'name_changed': return 'Cette invitation est liée à un autre pseudo : rejoins avec le pseudo d’origine.';
-    default: return 'Salon fermé.';
+    case 'ended': return 'Le salon est terminé.';
+    default: return 'Connexion au salon perdue.';
   }
 }
 

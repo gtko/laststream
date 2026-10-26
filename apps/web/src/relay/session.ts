@@ -10,7 +10,7 @@
 
 import { PartyClient, type ClientStatus, type PartyWait, type SocketLike } from '../party/client';
 import type { PartyParticipant } from '../data/socialApi';
-import { directLinkText, endText, hostLostText, hostNotSharingText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
+import { directLinkText, endReasonText, hostLostText, hostNotSharingText, leftText, refusedText, relayErrorText, waitingHostText } from '../party/join';
 import { RangeClient } from './guest';
 import { MeshGuest, type MeshGuestOptions } from './mesh/guest';
 import { MeshHostState } from './mesh/hostState';
@@ -376,7 +376,7 @@ export class GuestRelaySession {
     client.on('host', () => this.onRoom());
     client.on('state', () => this.syncRoom());
     client.on('media', () => this.fail('ended', 'Le salon a changé de titre : demande un nouveau lien à l’hôte.'));
-    client.on('end', (reason) => this.fail('ended', endText(reason)));
+    client.on('end', (reason) => this.fail('ended', endReasonText(reason)));
     client.start();
   }
 

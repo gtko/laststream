@@ -10,7 +10,7 @@ import { UserApiError } from '../data/userApi';
 import { userStore } from '../data/userStore';
 import { partyBridge } from '../party/bridge';
 import { pickByFingerprint } from '../party/fingerprint';
-import { joinLinkOf } from '../party/join';
+import { endReasonText, joinLinkOf } from '../party/join';
 import {
   CONTROL_OPTIONS, countdownLeft, eventText, initialsOf, launchText, LOBBY_EMOJIS, prepView, qualityLabel, REACTION_OPTIONS, readySummary, readyText,
   startWithoutText, voteShare, WAIT_LATE_OPTIONS,
@@ -355,7 +355,7 @@ function bind(c) {
   on('status', () => renderSoon());
   on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
   on('end', (reason) => {
-    toast(reason === 'kicked' ? 'Tu as été exclu du salon.' : reason === 'ended' ? 'Le salon est terminé.' : 'Salon fermé.');
+    toast(endReasonText(reason));
     closeLobby(false);
   });
 }

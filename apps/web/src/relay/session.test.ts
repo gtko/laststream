@@ -2,7 +2,7 @@
 // simulé (WebSocket factices reliés en mémoire, signalisation `rtc` relayée) et des connexions WebRTC factices.
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../party/client';
-import { directLinkText, endText, hostNotSharingText, leftText, refusedText, waitingHostText } from '../party/join';
+import { directLinkText, endReasonText, hostNotSharingText, leftText, refusedText, waitingHostText } from '../party/join';
 import { PIECE_SHIFT } from './mesh/pieces';
 import type { RangeSource } from './host';
 import { memoryChannelPair, type MemoryChannel } from './memory';
@@ -502,7 +502,7 @@ describe('session invité', () => {
     await flush();
     room.get('p1')!.recv(welcome('bob', false));
     room.get('p1')!.drop(4003);
-    expect(guest.tick()).toMatchObject({ phase: 'ended', message: endText('kicked') });
+    expect(guest.tick()).toMatchObject({ phase: 'ended', message: endReasonText('kicked') });
     hostRelay.close();
     hostClient.close();
   });

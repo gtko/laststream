@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { PartyClient, type SocketLike } from '../src/party/client';
 import {
-  cleanPseudo, clearGuestSession, endText, entryErrorText, guestWsPath, joinLinkOf, loadGuestSession, parseJoinHash, refusedText, relayErrorText, saveGuestSession,
+  cleanPseudo, clearGuestSession, endReasonText, entryErrorText, guestWsPath, joinLinkOf, loadGuestSession, parseJoinHash, refusedText, relayErrorText, saveGuestSession,
 } from '../src/party/join';
 import { parseRtcFrame } from '../src/party/protocol';
 
@@ -63,11 +63,11 @@ describe('pseudo et chemin WebSocket invité', () => {
 
 describe('messages', () => {
   it('ne contiennent jamais d’adresse ni de contenu de la source', () => {
-    const all = [refusedText(), endText('kicked'), endText('ended'), endText('full'), endText('replaced'), endText('x'),
+    const all = [refusedText(), endReasonText('kicked'), endReasonText('ended'), endReasonText('full'), endReasonText('replaced'), endReasonText('x'),
       relayErrorText('timeout'), relayErrorText('source'), relayErrorText('busy'), relayErrorText('unknown')];
     for (const m of all) expect(m).not.toMatch(/https?:|\/\//);
     expect(refusedText()).toContain('lien expiré');
-    expect(endText('full')).toBe('Le salon est complet.');
+    expect(endReasonText('full')).toBe('Le salon est complet.');
   });
 });
 

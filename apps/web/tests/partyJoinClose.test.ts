@@ -1,6 +1,6 @@
 // Invité : codes de fermeture 4xxx du salon (expiré, exclu, pseudo) affichés comme motifs distincts, et jeton retiré de l’adresse.
 import { describe, expect, it } from 'vitest';
-import { endText, hashWithoutToken } from '../src/party/join';
+import { endReasonText, hashWithoutToken } from '../src/party/join';
 import { FINAL_CLOSE_CODES } from '../src/party/protocol';
 
 describe('codes de fermeture du salon (invité)', () => {
@@ -14,11 +14,11 @@ describe('codes de fermeture du salon (invité)', () => {
 
   it('chaque motif affiche un message propre (jamais le message générique « Salon fermé »)', () => {
     const reasons = ['expired', 'banned', 'full', 'name_taken', 'name_changed'];
-    const texts = reasons.map((r) => endText(r));
+    const texts = reasons.map((r) => endReasonText(r));
     expect(new Set(texts).size).toBe(reasons.length);
-    for (const text of texts) expect(text).not.toBe(endText('unknown-reason'));
-    expect(endText('expired')).toMatch(/expir|invalide/);
-    expect(endText('name_taken')).toMatch(/pseudo/);
+    for (const text of texts) expect(text).not.toBe(endReasonText('unknown-reason'));
+    expect(endReasonText('expired')).toMatch(/expir|invalide/);
+    expect(endReasonText('name_taken')).toMatch(/pseudo/);
   });
 });
 

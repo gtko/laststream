@@ -2,7 +2,7 @@
  * La synchronisation de la lecture est dans src/party (contrôleur) ; ici, seulement l'interface. */
 import { isKidProfile } from '../data/auth';
 import { partyVisibilityChoices, partyBridge } from '../party/bridge';
-import { joinLinkOf } from '../party/join';
+import { endReasonText, joinLinkOf } from '../party/join';
 import { CONTROL_OPTIONS, eventText, formatTimecode, initialsOf, isPlaybackEvent, REACTION_OPTIONS, STAGE_EMOJIS, syncText, WAIT_LATE_OPTIONS } from '../party/lobbyModel';
 import { CHAT_MAX_CHARS, DEFAULT_SETTINGS, PARTY_WAIT_MAX_MS, partyErrorText } from '../party/protocol';
 import { UserApiError } from '../data/userApi';
@@ -299,7 +299,7 @@ function render() {
   const keepScroll = stickBottom || (chatBox ? chatBox.scrollHeight - chatBox.scrollTop - chatBox.clientHeight < 40 : true);
   stickBottom = false;
   panel.innerHTML = (c && c.status !== 'idle' ? roomHTML(c) : createHTML()) +
-    (partyBridge.endReason ? '<p class="wp-msg" role="alert">' + esc(endText(partyBridge.endReason)) + '</p>' : '') +
+    (partyBridge.endReason ? '<p class="wp-msg" role="alert">' + esc(endReasonText(partyBridge.endReason)) + '</p>' : '') +
     (partyBridge.lastError ? '<p class="wp-msg" role="alert">' + esc(partyBridge.lastError) + '</p>' : '');
   const box = panel.querySelector('[data-wp-chat]');
   if (box && keepScroll) box.scrollTop = box.scrollHeight;
@@ -308,8 +308,6 @@ function render() {
     if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
   }
 }
-
-const endText = (r) => (r === 'kicked' ? 'Tu as été exclu du salon.' : r === 'ended' ? 'Le salon est terminé.' : r === 'replaced' ? 'Connexion reprise depuis un autre appareil.' : r === 'full' ? 'Le salon est complet.' : 'Salon fermé.');
 
 /**
  * Rendu différé à la trame suivante : une rafale (historique de 50 lignes à la connexion, attente) ne reconstruit le
@@ -505,7 +503,7 @@ function attach() {
   c.on('muted', () => render());
   c.on('reported', (r) => { if (r.against) toast('Signalement reçu : ' + r.against); else toast('Message signalé, merci'); });
   c.on('error', (code) => { const t = partyErrorText(code); if (t) toast(t); });
-  c.on('end', (reason) => { toast(endText(reason)); render(); });
+  c.on('end', (reason) => { toast(endReasonText(reason)); render(); });
 }
 
 /** Crée le panneau dans la racine du lecteur (une seule fois). `opts.adapter` : titre en cours de lecture. */
