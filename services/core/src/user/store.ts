@@ -1358,4 +1358,31 @@ export class UserStore {
   deleteMolotovAccount(accountId: string): void {
     this.db.prepare('DELETE FROM molotov_accounts WHERE account_id = ?').run(accountId);
   }
+
+  /** Clés de services serveur enregistrées : champ et valeur chiffrée (jamais en clair). */
+  listServerServiceRows(): { field: string; sealed: string }[] {
+    return this.db
+      .prepare('SELECT field, sealed FROM server_services ORDER BY field')
+      .all()
+      .map((row) => ({ field: String(row.field), sealed: String(row.sealed) }));
+  }
+
+  /** Enregistre (valeur chiffrée) ou efface (null) des clés serveur, en une seule transaction. */
+  writeServerServices(writes: readonly { field: string; sealed: string | null }[]): void {
+    const now = Date.now();
+    this.transaction(() => {
+      for (const { field, sealed } of writes) {
+        if (sealed === null) {
+          this.db.prepare('DELETE FROM server_services WHERE field = ?').run(field);
+        } else {
+          this.db
+            .prepare(
+              `INSERT INTO server_services (field, sealed, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(field) DO UPDATE SET sealed = excluded.sealed, updated_at = excluded.updated_at`,
+            )
+            .run(field, sealed, now);
+        }
+      }
+    });
+  }
 }

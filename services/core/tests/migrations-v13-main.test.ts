@@ -7,14 +7,14 @@ import type { SqlDb } from '../src/user/sql.js';
 const tables = (db: SqlDb): string[] =>
   (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
 
-/** Versions présentes : 1 à 31, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, compte Molotov en 30, fin d'extrait des liens publics en 31). */
-const EXPECTED_VERSIONS = Array.from({ length: 31 }, (_, i) => i + 1);
+/** Versions présentes : 1 à 32, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, compte Molotov en 30, fin d'extrait des liens publics en 31, clés de services serveur en 32). */
+const EXPECTED_VERSIONS = Array.from({ length: 32 }, (_, i) => i + 1);
 
 describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), social v3 (18 à 23), administration (24 à 26)', () => {
   it('numérotation continue, v13 = title_starts, social v2 en 14 à 17, social v3 en 18 à 23, annonces en 24, révocation d invitations en 25, sessions (user-agent, dernière activité) en 26', () => {
     expect(MIGRATIONS.map((m) => m.version)).toEqual(EXPECTED_VERSIONS);
     expect(MIGRATIONS[12]?.name).toMatch(/^lancements de titres par pays/);
-    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+    expect(MIGRATIONS.slice(13).map((m) => m.version)).toEqual([14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]);
   });
 
   it('base déjà en v13 (déployée depuis main) : applique 14 à 30 sans toucher à title_starts', () => {
@@ -33,7 +33,7 @@ describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), soc
     expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((r) => (r as { version: number }).version)).toEqual(
       MIGRATIONS.map((m) => m.version),
     );
-    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(31);
+    expect(db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get()?.v).toBe(32);
     expect(tables(db)).toEqual(
       expect.arrayContaining(['title_starts', 'profile_friendships', 'profile_presence', 'messages', 'notes', 'note_creations', 'live_ticket_nonces', 'share_links', 'shared_lists', 'announcements', 'inbox_dismissed']),
     );
