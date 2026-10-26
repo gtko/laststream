@@ -2,7 +2,11 @@
 
 `scripts/sentry-alerts.mjs` crée ou met à jour trois alertes sur les projets Sentry serveur et web, avec le moteur « workflows » de Sentry. L'ancien endpoint `/api/0/projects/{org}/{project}/rules/` répond 404 sur de.sentry.io (organisation `odykit`).
 
-Idempotent : pour chaque projet, le script trouve le detector d'erreurs, puis met à jour (PUT) le workflow de même nom du projet, sinon le crée (POST).
+Idempotent : pour chaque projet, le script trouve le detector `issue_stream`, puis met à jour (PUT) le workflow de même nom rattaché à ce detector, sinon le crée (POST). Les alertes sont au niveau de l'organisation : leur nom est suffixé par le projet, par exemple « Laststream : nouvelle issue (laststream-server) ».
+
+Les filtres `project` et `type` de l'API ne sont pas fiables (filtres non appliqués constatés) : le script refiltre côté client sur `type === issue_stream` et sur `projectId` (lu par `GET /api/0/projects/{org}/{project}/` si le jeton le permet ; sinon, si plusieurs detectors restent, il s'arrête sans rien écrire). Une alerte n'est reconnue que si son nom ET ses `detectorIds` correspondent au detector du projet.
+
+Toutes les lectures (detectors des deux projets, alertes existantes, couverture) sont faites et validées avant la première écriture. Un échec partiel en phase d'écriture se répare en relançant le script : il met à jour ce qui existe et crée le reste.
 
 ## Endpoints (API d'organisation)
 
@@ -19,11 +23,11 @@ Scopes du jeton : `alerts:read` pour `--check`, `alerts:write` pour appliquer (`
 
 | Nom | Déclencheur | Fréquence |
 |---|---|---|
-| Laststream : nouvelle issue | `first_seen_event` | 5 min |
-| Laststream : pic d’événements | `event_frequency_count` > 100 en `1h` | 30 min |
-| Laststream : DebridEgressBlockedError | `every_event` + filtre `event_attribute` `exception.type` = `DebridEgressBlockedError` | 5 min |
+| Laststream : nouvelle issue (projet) | `first_seen_event` | 5 min |
+| Laststream : pic d’événements (projet) | `every_event` + filtre `event_frequency_count` > 100 en `1h` | 30 min |
+| Laststream : DebridEgressBlockedError (projet) | `every_event` + filtre `event_attribute` `exception.type` = `DebridEgressBlockedError` | 5 min |
 
-Si une autre alerte du projet filtre déjà `exception.type` = `DebridEgressBlockedError` (ex. « ODY-227 : appel serveur vers AllDebrid / débrideur bloqué »), le script ne crée pas la sienne et affiche « couverte par … » (il lit le détail `GET /workflows/{id}/` si la liste n'a pas les filtres).
+Si une autre alerte rattachée au même detector filtre déjà `exception.type` = `DebridEgressBlockedError` (ex. « ODY-227 : appel serveur vers AllDebrid / débrideur bloqué »), le script ne crée pas la sienne et affiche « couverte par … » (il lit le détail `GET /workflows/{id}/` si la liste n'a pas les filtres).
 
 Action : e-mail aux propriétaires de l'issue (`email`, `targetType: issue_owners`, repli `AllMembers`).
 
@@ -48,6 +52,6 @@ Sortie : une ligne `créée :` ou `mise à jour :` par alerte et par projet. Sur
 ## Points à vérifier avec `--check` puis au premier lancement
 
 - Le detector `issue_stream` existe pour chaque projet (sinon erreur explicite).
-- `event_frequency_count` est documenté parmi les filtres, pas parmi les déclencheurs : s'il est refusé (400), le déplacer dans `action_filters[0].conditions` en gardant `reappeared_event` en déclencheur (`ALERTS` dans le script).
+- `event_frequency_count` est une condition de filtre (`action_filters[0].conditions`), avec `every_event` en déclencheur, comme l'alerte réelle ODY-227. Un refus (400) affiche le corps de la réponse.
 - `every_event` (vu dans une alerte réelle) sert de déclencheur à DebridEgressBlockedError.
 - Le PUT envoie le corps complet (la doc ne dit pas si la mise à jour est partielle).

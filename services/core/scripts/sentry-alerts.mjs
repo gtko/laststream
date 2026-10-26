@@ -10,7 +10,9 @@
  *   POST /api/0/organizations/{org}/workflows/                             création
  *   PUT  /api/0/organizations/{org}/workflows/{id}/                        mise à jour
  *
- * Idempotent : un workflow du projet portant déjà le même nom est mis à jour (PUT), sinon créé (POST).
+ * Idempotent : un workflow de même nom rattaché au detector du projet est mis à jour (PUT), sinon créé (POST). Les noms
+ * sont suffixés par le projet (alertes au niveau organisation). Les lectures de tous les projets sont faites et validées
+ * avant la première écriture ; après un échec partiel, relancer le script répare (met à jour l'existant, crée le reste).
  * `--dry-run` affiche les requêtes (méthode, URL, corps) sans rien envoyer, sans jeton et sans réseau.
  * `--check` lit seulement (GET detectors + workflows) et affiche l'existant : valide le jeton et les droits.
  *
@@ -58,47 +60,38 @@ const notifyWhen = (conditions) => [{ logicType: 'all', conditions, actions: [NO
 
 /**
  * Alertes (corps de l'API des workflows, `detector_ids` ajouté à l'envoi). Aucune donnée personnelle.
+ * Les alertes sont au niveau de l'organisation : le nom est suffixé par le projet.
  *
  * Certitude par champ :
  *  - name, enabled, detector_ids, config.frequency, triggers.logicType, action_filters[].logicType/actions : documentés.
  *  - first_seen_event (comparison: true) en déclencheur, event_attribute { attribute: 'exception.type', match: 'eq', value }
- *    en filtre : documentés.
- *  - event_frequency_count { value, interval } : documenté comme condition, mais seulement parmi les FILTRES ; la doc ne
- *    liste pas ce type parmi les déclencheurs. On le place en déclencheur (sémantique « plus de 100 événements en 1 h »,
- *    comme les règles migrées). Si l'API répond 400, le corps de l'erreur est affiché : déplacer la condition dans
- *    `action_filters[0].conditions` en gardant `reappeared_event` en déclencheur.
- *  - every_event (comparison: true) en déclencheur : vu dans une alerte réelle ; DebridEgress alerte donc à chaque événement,
- *    filtré par exception.type.
+ *    et event_frequency_count { value, interval } en filtres : documentés.
+ *  - every_event (comparison: true) en déclencheur : vu dans une alerte réelle (ODY-227). Le pic d'événements et
+ *    DebridEgress l'utilisent avec une condition de filtre ; si l'API répond 400, le corps de l'erreur est affiché.
  */
 const DEBRID_ATTRIBUTE = { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' };
-const ALERTS = [
+const buildAlerts = (project) => [
   {
-    name: 'Laststream : nouvelle issue',
+    name: `Laststream : nouvelle issue (${project})`,
     enabled: true,
     config: { frequency: 5 },
     triggers: { logicType: 'any-short', conditions: [condition('first_seen_event', true)] },
     action_filters: notifyWhen([]),
   },
   {
-    name: 'Laststream : pic d’événements',
+    name: `Laststream : pic d’événements (${project})`,
     enabled: true,
     config: { frequency: 30 },
-    triggers: {
-      logicType: 'any-short',
-      conditions: [condition('event_frequency_count', { value: 100, interval: '1h' })],
-    },
-    action_filters: notifyWhen([]),
+    triggers: { logicType: 'any-short', conditions: [condition('every_event', true)] },
+    action_filters: notifyWhen([condition('event_frequency_count', { value: 100, interval: '1h' })]),
   },
   {
-    name: 'Laststream : DebridEgressBlockedError',
+    name: `Laststream : DebridEgressBlockedError (${project})`,
     enabled: true,
     config: { frequency: 5 },
-    triggers: {
-      logicType: 'any-short',
-      conditions: [condition('every_event', true)],
-    },
+    triggers: { logicType: 'any-short', conditions: [condition('every_event', true)] },
     action_filters: notifyWhen([condition('event_attribute', DEBRID_ATTRIBUTE)]),
-    /** Ne pas créer si une autre alerte du projet filtre déjà exactement ce type d'exception (évite les doublons). */
+    /** Ne pas créer si une autre alerte du même detector filtre déjà exactement ce type d'exception (évite les doublons). */
     skipIfCovered: true,
   },
 ];
@@ -199,17 +192,49 @@ async function listAll(config, url) {
   return items;
 }
 
-/** Detector « Issue Stream » d'un projet ; erreur claire s'il n'existe pas. */
-async function findErrorDetector(config, project) {
-  const detectors = await listAll(config, detectorsUrl(config, project));
-  const detector = detectors.find((candidate) => candidate.type === DETECTOR_TYPE);
-  if (detector === undefined) {
+const detectorIdsOf = (workflow) => (Array.isArray(workflow.detectorIds) ? workflow.detectorIds.map(String) : []);
+const attachedTo = (workflow, detector) => detectorIdsOf(workflow).includes(String(detector.id));
+
+/**
+ * Identifiant numérique du projet (pour départager les detectors si le filtre `project` du serveur est ignoré).
+ * Au mieux : nécessite la lecture du projet ; null si indisponible.
+ */
+async function resolveProjectId(config, project) {
+  try {
+    const { body } = await api('GET', `${config.origin}/api/0/projects/${encodeURIComponent(config.org)}/${encodeURIComponent(project)}/`, config.token);
+    return body?.id === undefined ? null : String(body.id);
+  } catch (error) {
+    if (error instanceof ApiError) return null;
+    throw error;
+  }
+}
+
+/**
+ * Detectors « issue_stream » d'un projet. Les filtres `project` et `type` de l'API ne sont pas fiables : on refiltre côté
+ * client sur le type, puis sur projectId si l'identifiant du projet est lisible.
+ */
+async function listProjectDetectors(config, project) {
+  const detectors = (await listAll(config, detectorsUrl(config, project))).filter((candidate) => candidate.type === DETECTOR_TYPE);
+  const projectId = await resolveProjectId(config, project);
+  return projectId === null ? detectors : detectors.filter((candidate) => candidate.projectId === undefined || String(candidate.projectId) === projectId);
+}
+
+/** Detector « Issue Stream » d'un projet ; erreur claire s'il n'existe pas ou s'il est ambigu. */
+async function findDetector(config, project) {
+  const detectors = await listProjectDetectors(config, project);
+  if (detectors.length === 0) {
     throw new ApiError(
       `Aucun detector de type « ${DETECTOR_TYPE} » trouvé pour le projet ${project} (organisation ${config.org}) : ` +
         'vérifier le slug du projet et que le projet existe, puis lancer --check.',
     );
   }
-  return detector;
+  if (detectors.length > 1) {
+    throw new ApiError(
+      `Plusieurs detectors « ${DETECTOR_TYPE} » (${detectors.map((d) => d.id).join(', ')}) pour le projet ${project} : ` +
+        'le filtre de projet de l’API n’est pas appliqué et l’identifiant du projet est illisible avec ce jeton ; abandon (rien n’est écrit).',
+    );
+  }
+  return detectors[0];
 }
 
 /** Vrai si un groupe de filtres contient event_attribute exception.type == DebridEgressBlockedError. */
@@ -228,9 +253,9 @@ function filtersCoverDebrid(actionFilters) {
   );
 }
 
-/** Première alerte du projet qui filtre déjà DebridEgressBlockedError (détail lu par GET si la liste n'a pas les filtres). */
-async function findCoveringAlert(config, workflows) {
-  for (const workflow of workflows) {
+/** Première alerte rattachée au detector qui filtre déjà DebridEgressBlockedError (détail lu par GET si la liste n'a pas les filtres). */
+async function findCoveringAlert(config, workflows, detector) {
+  for (const workflow of workflows.filter((candidate) => attachedTo(candidate, detector))) {
     let filters = workflow.actionFilters;
     if (!Array.isArray(filters)) {
       const { body } = await api('GET', workflowItem(config, workflow.id), config.token);
@@ -243,41 +268,52 @@ async function findCoveringAlert(config, workflows) {
 
 async function check(config) {
   for (const project of config.projects) {
-    const detectors = await listAll(config, detectorsUrl(config, project));
-    console.log(`${project} : ${detectors.length} detector(s) issue_stream`);
+    const detectors = await listProjectDetectors(config, project);
+    console.log(`${project} : ${detectors.length} detector(s) ${DETECTOR_TYPE}`);
     for (const detector of detectors) console.log(`  detector ${detector.id} « ${detector.name} » (${detector.type})`);
-    const workflows = await listAll(config, workflowsUrl(config, project));
-    console.log(`${project} : ${workflows.length} alerte(s)`);
+    const workflows = (await listAll(config, workflowsUrl(config, project))).filter((workflow) =>
+      detectors.some((detector) => attachedTo(workflow, detector)),
+    );
+    console.log(`${project} : ${workflows.length} alerte(s) rattachée(s) à ce detector`);
     for (const workflow of workflows) {
-      console.log(`  workflow ${workflow.id} « ${workflow.name} » (activée : ${workflow.enabled}, detectors : ${JSON.stringify(workflow.detectorIds ?? [])})`);
+      console.log(`  workflow ${workflow.id} « ${workflow.name} » (activée : ${workflow.enabled}, detectors : ${JSON.stringify(detectorIdsOf(workflow))})`);
     }
     const known = new Set(workflows.map((workflow) => workflow.name));
-    for (const alert of ALERTS) console.log(`  ${known.has(alert.name) ? 'présente' : 'absente '} : ${alert.name}`);
+    for (const alert of buildAlerts(project)) console.log(`  ${known.has(alert.name) ? 'présente' : 'absente '} : ${alert.name}`);
   }
 }
 
+/**
+ * Applique en deux phases : 1) lectures et validation pour tous les projets (detectors, alertes existantes, couverture) ;
+ * 2) écritures. Une erreur en phase 1 n'écrit rien ; un échec en phase 2 est réparé en relançant le script (idempotent).
+ */
 async function apply(config) {
+  const plan = [];
   for (const project of config.projects) {
-    const detector = await findErrorDetector(config, project);
+    const detector = await findDetector(config, project);
     const existing = await listAll(config, workflowsUrl(config, project));
-    for (const alert of ALERTS) {
+    for (const alert of buildAlerts(project)) {
       const { skipIfCovered, ...definition } = alert;
-      const payload = { ...definition, detector_ids: [Number(detector.id)] };
-      const match = existing.find((candidate) => candidate.name === alert.name);
+      const match = existing.find((candidate) => candidate.name === alert.name && attachedTo(candidate, detector));
       if (match === undefined && skipIfCovered) {
-        const coveredBy = await findCoveringAlert(config, existing);
+        const coveredBy = await findCoveringAlert(config, existing, detector);
         if (coveredBy !== undefined) {
-          console.log(`couverte par « ${coveredBy.name} » : ${project} — ${alert.name} (non créée)`);
+          plan.push({ project, alert, covered: coveredBy });
           continue;
         }
       }
-      if (match === undefined) {
-        await api('POST', workflowCollection(config), config.token, payload);
-        console.log(`créée : ${project} — ${alert.name}`);
-      } else {
-        await api('PUT', workflowItem(config, match.id), config.token, { ...payload, id: String(match.id) });
-        console.log(`mise à jour : ${project} — ${alert.name}`);
-      }
+      plan.push({ project, alert, match, payload: { ...definition, detector_ids: [Number(detector.id)] } });
+    }
+  }
+  for (const { project, alert, match, payload, covered } of plan) {
+    if (covered !== undefined) {
+      console.log(`couverte par « ${covered.name} » : ${project} — ${alert.name} (non créée)`);
+    } else if (match === undefined) {
+      await api('POST', workflowCollection(config), config.token, payload);
+      console.log(`créée : ${project} — ${alert.name}`);
+    } else {
+      await api('PUT', workflowItem(config, match.id), config.token, { ...payload, id: String(match.id) });
+      console.log(`mise à jour : ${project} — ${alert.name}`);
     }
   }
 }
@@ -286,7 +322,7 @@ function dryRun(config) {
   for (const project of config.projects) {
     console.log(`[dry-run] GET ${detectorsUrl(config, project)}`);
     console.log(`[dry-run] GET ${workflowsUrl(config, project)}`);
-    for (const alert of ALERTS) {
+    for (const alert of buildAlerts(project)) {
       const { skipIfCovered: _skip, ...definition } = alert;
       const payload = { ...definition, detector_ids: [`<id du detector « ${DETECTOR_TYPE} » de ${project}>`] };
       console.log(`[dry-run] POST ${workflowCollection(config)} si « ${alert.name} » est absente, sinon PUT ${workflowCollection(config)}<id>/`);
