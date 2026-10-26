@@ -1,17 +1,32 @@
 #!/usr/bin/env node
 /**
- * Alertes Sentry versionnées (LAST-124) : crée ou met à jour, pour le projet serveur et le projet web, trois règles
- * d'alerte (nouvelle issue, pic d'événements, événement DebridEgressBlockedError).
+ * Alertes Sentry versionnées (LAST-124) : crée ou met à jour, pour le projet serveur et le projet web, trois alertes
+ * (nouvelle issue, pic d'événements, événement DebridEgressBlockedError) avec le moteur « workflows » de Sentry.
  *
- * Idempotent : une règle portant déjà le même nom est mise à jour (PUT), sinon elle est créée (POST).
+ * L'ancien endpoint `/api/0/projects/{org}/{project}/rules/` répond 404 sur de.sentry.io : les alertes sont désormais
+ * des workflows d'organisation rattachés à des detectors (« monitors »). Endpoints utilisés :
+ *   GET  /api/0/organizations/{org}/detectors/?project={slug}&type=error   detector d'erreurs (issue stream) du projet
+ *   GET  /api/0/organizations/{org}/workflows/?project={slug}              alertes existantes (recherche par nom)
+ *   POST /api/0/organizations/{org}/workflows/                             création
+ *   PUT  /api/0/organizations/{org}/workflows/{id}/                        mise à jour
+ *
+ * Idempotent : un workflow du projet portant déjà le même nom est mis à jour (PUT), sinon créé (POST).
  * `--dry-run` affiche les requêtes (méthode, URL, corps) sans rien envoyer, sans jeton et sans réseau.
+ * `--check` lit seulement (GET detectors + workflows) et affiche l'existant : valide le jeton et les droits.
+ *
+ * Scopes du jeton : `alerts:read` suffit pour --check ; `alerts:write` est requis pour appliquer.
+ * (org:read / org:write / org:admin sont aussi acceptés par l'API.)
  *
  * Variables d'environnement :
  *   SENTRY_AUTH_TOKEN      jeton d'API Sentry (requis hors --dry-run) ; jamais affiché
- *   SENTRY_ORG             slug de l'organisation
- *   SENTRY_PROJECT_SERVER  slug du projet serveur (lastaddon-core)
- *   SENTRY_PROJECT_WEB     slug du projet web (laststream-app)
+ *   SENTRY_ORG             slug de l'organisation (ex. odykit)
+ *   SENTRY_PROJECT_SERVER  slug du projet serveur (ex. laststream-server)
+ *   SENTRY_PROJECT_WEB     slug du projet web (ex. laststream-web)
  *   SENTRY_API_URL         facultatif : https://sentry.io par défaut (ex. https://de.sentry.io)
+ *
+ * Exemple :
+ *   SENTRY_AUTH_TOKEN=… SENTRY_ORG=odykit SENTRY_PROJECT_SERVER=laststream-server SENTRY_PROJECT_WEB=laststream-web \
+ *   SENTRY_API_URL=https://de.sentry.io node scripts/sentry-alerts.mjs --check
  *
  * Documentation : docs/sentry-alerts.md.
  */
@@ -20,45 +35,75 @@ const DEFAULT_API_URL = 'https://sentry.io';
 const SLUG = /^[a-z0-9][a-z0-9_-]*$/i;
 /** Hôtes autorisés en http (tests locaux uniquement) ; tout autre hôte exige https. */
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost']);
+/** Type de detector portant les issues d'erreurs d'un projet (valeurs vues dans la doc : error, metric_issue, uptime_domain_failure). */
+const ERROR_DETECTOR_TYPE = 'error';
+const MAX_ERROR_BODY = 500;
 
-const NOTIFY_OWNERS = { id: 'sentry.mail.actions.NotifyEmailAction', targetType: 'IssueOwners', fallthroughType: 'AllMembers' };
+/**
+ * Action e-mail : propriétaires de l'issue (« Suggested Assignees »), repli sur tous les membres.
+ * Forme documentée (Create an Alert for an Organization) : type `email`, config.targetType `issue_owners`,
+ * data.fallthroughType `AllMembers`, targetIdentifier vide, integrationId nul.
+ */
+const NOTIFY_OWNERS = {
+  type: 'email',
+  integrationId: null,
+  data: { fallthroughType: 'AllMembers' },
+  config: { targetType: 'issue_owners', targetDisplay: null, targetIdentifier: '' },
+  status: 'active',
+};
 
-/** Règles d'alerte de projet (corps de l'API des règles). Aucune donnée personnelle, aucun secret. */
-const ALERT_RULES = [
+const condition = (type, comparison) => ({ type, comparison, conditionResult: true });
+/** Groupe de filtres unique : toutes les conditions doivent être vraies, puis notification. */
+const notifyWhen = (conditions) => [{ logicType: 'all', conditions, actions: [NOTIFY_OWNERS] }];
+
+/**
+ * Alertes (corps de l'API des workflows, `detector_ids` ajouté à l'envoi). Aucune donnée personnelle.
+ *
+ * Certitude par champ :
+ *  - name, enabled, detector_ids, config.frequency, triggers.logicType, action_filters[].logicType/actions : documentés.
+ *  - first_seen_event (comparison: true) en déclencheur, event_attribute { attribute: 'exception.type', match: 'eq', value }
+ *    en filtre : documentés.
+ *  - event_frequency_count { value, interval } : documenté comme condition, mais seulement parmi les FILTRES ; la doc ne
+ *    liste pas ce type parmi les déclencheurs. On le place en déclencheur (sémantique « plus de 100 événements en 1 h »,
+ *    comme les règles migrées). Si l'API répond 400, le corps de l'erreur est affiché : déplacer la condition dans
+ *    `action_filters[0].conditions` en gardant `reappeared_event` en déclencheur.
+ *  - « tout événement » (every_event) n'existe plus : le moteur déclenche sur les changements d'état d'issue. DebridEgress
+ *    utilise donc first_seen/reappeared/regression + filtre exception.type : une alerte par issue, pas par événement.
+ */
+const ALERTS = [
   {
     name: 'Laststream : nouvelle issue',
-    conditions: [{ id: 'sentry.rules.conditions.first_seen_event.FirstSeenEventCondition' }],
-    filters: [],
-    actions: [NOTIFY_OWNERS],
-    actionMatch: 'all',
-    filterMatch: 'all',
-    frequency: 5,
+    enabled: true,
+    config: { frequency: 5 },
+    triggers: { logicType: 'any-short', conditions: [condition('first_seen_event', true)] },
+    action_filters: notifyWhen([]),
   },
   {
     name: 'Laststream : pic d’événements',
-    conditions: [
-      { id: 'sentry.rules.conditions.event_frequency.EventFrequencyCondition', value: 100, comparisonType: 'count', interval: '1h' },
-    ],
-    filters: [],
-    actions: [NOTIFY_OWNERS],
-    actionMatch: 'all',
-    filterMatch: 'all',
-    frequency: 30,
+    enabled: true,
+    config: { frequency: 30 },
+    triggers: {
+      logicType: 'any-short',
+      conditions: [condition('event_frequency_count', { value: 100, interval: '1h' })],
+    },
+    action_filters: notifyWhen([]),
   },
   {
     name: 'Laststream : DebridEgressBlockedError',
-    conditions: [{ id: 'sentry.rules.conditions.every_event.EveryEventCondition' }],
-    filters: [
-      { id: 'sentry.rules.filters.event_attribute.EventAttributeFilter', attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' },
-    ],
-    actions: [NOTIFY_OWNERS],
-    actionMatch: 'all',
-    filterMatch: 'all',
-    frequency: 5,
+    enabled: true,
+    config: { frequency: 5 },
+    triggers: {
+      logicType: 'any-short',
+      conditions: [condition('first_seen_event', true), condition('reappeared_event', true), condition('regression_event', true)],
+    },
+    action_filters: notifyWhen([condition('event_attribute', { attribute: 'exception.type', match: 'eq', value: 'DebridEgressBlockedError' })]),
   },
 ];
 
 class ConfigError extends Error {}
+
+/** Erreur d'API : message déjà prêt à afficher (statut, indice de scope, corps expurgé du jeton). */
+class ApiError extends Error {}
 
 /** Lit et valide la configuration. Le jeton n'est exigé que hors --dry-run. */
 function readConfig(env, dryRun) {
@@ -86,10 +131,12 @@ function readConfig(env, dryRun) {
   };
 }
 
-/** URL de la collection des règles d'un projet. */
-function rulesUrl(origin, org, project) {
-  return `${origin}/api/0/projects/${encodeURIComponent(org)}/${encodeURIComponent(project)}/rules/`;
-}
+const orgBase = (config) => `${config.origin}/api/0/organizations/${encodeURIComponent(config.org)}`;
+const detectorsUrl = (config, project) =>
+  `${orgBase(config)}/detectors/?project=${encodeURIComponent(project)}&type=${ERROR_DETECTOR_TYPE}&per_page=100`;
+const workflowsUrl = (config, project) => `${orgBase(config)}/workflows/?project=${encodeURIComponent(project)}&per_page=100`;
+const workflowCollection = (config) => `${orgBase(config)}/workflows/`;
+const workflowItem = (config, id) => `${orgBase(config)}/workflows/${encodeURIComponent(String(id))}/`;
 
 /** Page suivante de l'en-tête Link, seulement si elle reste sur l'origine configurée (le jeton ne suit pas ailleurs). */
 function nextPageUrl(linkHeader, origin) {
@@ -103,7 +150,19 @@ function nextPageUrl(linkHeader, origin) {
   return null;
 }
 
-/** Appel à l'API : renvoie { body, link }. Le corps d'erreur n'est jamais affiché (il peut contenir des détails internes). */
+/** Message d'erreur d'API : statut, indice de scope sur 401/403, corps tronqué et expurgé du jeton pour diagnostic. */
+function describeFailure(method, url, status, bodyText, token) {
+  let message = `${method} ${url} : statut ${status}`;
+  if (status === 401 || status === 403) {
+    message += ' — jeton refusé ou droits insuffisants : le scope alerts:write est requis pour créer ou modifier (alerts:read pour --check).';
+  } else if (status === 404) {
+    message += ' — introuvable : vérifier SENTRY_ORG, SENTRY_API_URL (région, ex. https://de.sentry.io) et le slug du projet.';
+  }
+  const body = (token ? bodyText.split(token).join('[jeton]') : bodyText).trim().slice(0, MAX_ERROR_BODY);
+  return body === '' ? message : `${message}\nRéponse : ${body}`;
+}
+
+/** Appel à l'API : renvoie { body, link }. */
 async function api(method, url, token, payload) {
   const res = await fetch(url, {
     method,
@@ -116,54 +175,97 @@ async function api(method, url, token, payload) {
     redirect: 'error',
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`${method} ${url} : statut ${res.status}`);
-  return { body: text === '' ? null : JSON.parse(text), link: res.headers.get('link') };
+  if (!res.ok) throw new ApiError(describeFailure(method, url, res.status, text, token));
+  try {
+    return { body: text === '' ? null : JSON.parse(text), link: res.headers.get('link') };
+  } catch {
+    throw new ApiError(`${method} ${url} : réponse non JSON`);
+  }
 }
 
-/** Toutes les règles d'un projet (pages suivies par l'en-tête Link). */
-async function listRules(config, url) {
-  const rules = [];
+/** Tous les éléments d'une collection (pages suivies par l'en-tête Link). */
+async function listAll(config, url) {
+  const items = [];
   let next = url;
   while (next !== null) {
     const { body, link } = await api('GET', next, config.token);
-    if (!Array.isArray(body)) throw new Error(`GET ${next} : réponse inattendue`);
-    rules.push(...body);
+    if (!Array.isArray(body)) throw new ApiError(`GET ${next} : réponse inattendue (liste attendue)`);
+    items.push(...body);
     next = nextPageUrl(link, config.origin);
   }
-  return rules;
+  return items;
+}
+
+/** Detector d'erreurs (issue stream) d'un projet ; erreur claire s'il n'existe pas. */
+async function findErrorDetector(config, project) {
+  const detectors = await listAll(config, detectorsUrl(config, project));
+  const detector = detectors.find((candidate) => candidate.type === ERROR_DETECTOR_TYPE);
+  if (detector === undefined) {
+    throw new ApiError(
+      `Aucun detector de type « ${ERROR_DETECTOR_TYPE} » trouvé pour le projet ${project} (organisation ${config.org}) : ` +
+        'vérifier le slug du projet et que le projet existe, puis lancer --check.',
+    );
+  }
+  return detector;
+}
+
+async function check(config) {
+  for (const project of config.projects) {
+    const detectors = await listAll(config, detectorsUrl(config, project));
+    console.log(`${project} : ${detectors.length} detector(s) d'erreurs`);
+    for (const detector of detectors) console.log(`  detector ${detector.id} « ${detector.name} » (${detector.type})`);
+    const workflows = await listAll(config, workflowsUrl(config, project));
+    console.log(`${project} : ${workflows.length} alerte(s)`);
+    for (const workflow of workflows) {
+      console.log(`  workflow ${workflow.id} « ${workflow.name} » (activée : ${workflow.enabled}, detectors : ${JSON.stringify(workflow.detectorIds ?? [])})`);
+    }
+    const known = new Set(workflows.map((workflow) => workflow.name));
+    for (const alert of ALERTS) console.log(`  ${known.has(alert.name) ? 'présente' : 'absente '} : ${alert.name}`);
+  }
+}
+
+async function apply(config) {
+  for (const project of config.projects) {
+    const detector = await findErrorDetector(config, project);
+    const existing = await listAll(config, workflowsUrl(config, project));
+    for (const alert of ALERTS) {
+      const payload = { ...alert, detector_ids: [Number(detector.id)] };
+      const match = existing.find((candidate) => candidate.name === alert.name);
+      if (match === undefined) {
+        await api('POST', workflowCollection(config), config.token, payload);
+        console.log(`créée : ${project} — ${alert.name}`);
+      } else {
+        await api('PUT', workflowItem(config, match.id), config.token, { ...payload, id: String(match.id) });
+        console.log(`mise à jour : ${project} — ${alert.name}`);
+      }
+    }
+  }
+}
+
+function dryRun(config) {
+  for (const project of config.projects) {
+    console.log(`[dry-run] GET ${detectorsUrl(config, project)}`);
+    console.log(`[dry-run] GET ${workflowsUrl(config, project)}`);
+    for (const alert of ALERTS) {
+      const payload = { ...alert, detector_ids: [`<id du detector « ${ERROR_DETECTOR_TYPE} » de ${project}>`] };
+      console.log(`[dry-run] POST ${workflowCollection(config)} si « ${alert.name} » est absente, sinon PUT ${workflowCollection(config)}<id>/`);
+      console.log(JSON.stringify(payload));
+    }
+  }
 }
 
 async function main(argv, env) {
-  const dryRun = argv.includes('--dry-run');
-  const unknown = argv.filter((arg) => arg !== '--dry-run');
-  if (unknown.length > 0) throw new ConfigError(`Option inconnue : ${unknown.join(' ')}. Usage : [--dry-run].`);
-  const config = readConfig(env, dryRun);
-
-  for (const project of config.projects) {
-    const url = rulesUrl(config.origin, config.org, project);
-    if (dryRun) {
-      console.log(`[dry-run] GET ${url}`);
-      for (const rule of ALERT_RULES) {
-        console.log(`[dry-run] POST ${url} si « ${rule.name} » est absente, sinon PUT ${url}<id>/`);
-        console.log(JSON.stringify(rule));
-      }
-      continue;
-    }
-    const existing = await listRules(config, url);
-    for (const rule of ALERT_RULES) {
-      const match = existing.find((candidate) => candidate.name === rule.name);
-      if (match === undefined) {
-        await api('POST', url, config.token, rule);
-        console.log(`créée : ${project} — ${rule.name}`);
-      } else {
-        await api('PUT', `${url}${encodeURIComponent(String(match.id))}/`, config.token, rule);
-        console.log(`mise à jour : ${project} — ${rule.name}`);
-      }
-    }
-  }
+  const flags = new Set(argv);
+  const unknown = argv.filter((arg) => arg !== '--dry-run' && arg !== '--check');
+  if (unknown.length > 0) throw new ConfigError(`Option inconnue : ${unknown.join(' ')}. Usage : [--dry-run | --check].`);
+  if (flags.has('--dry-run') && flags.has('--check')) throw new ConfigError('--dry-run et --check s’excluent.');
+  const config = readConfig(env, flags.has('--dry-run'));
+  if (flags.has('--dry-run')) dryRun(config);
+  else if (flags.has('--check')) await check(config);
+  else await apply(config);
 }
 
 main(process.argv.slice(2), process.env).catch((error) => {
-  console.error(error instanceof ConfigError ? error.message : `Échec : ${error.message}`);
+  console.error(error instanceof ConfigError || error instanceof ApiError ? error.message : `Échec : ${error.message}`);
   process.exitCode = 1;
 });
