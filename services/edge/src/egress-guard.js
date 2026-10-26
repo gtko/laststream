@@ -89,7 +89,7 @@ function refuse(host, options) {
 /**
  * Envoie `target` via `fetchFn(target, init)` sauf si l'hôte est un débrideur : dans ce cas fetchFn n'est jamais appelé.
  * En mode de redirection « follow » (défaut), une redirection (301/302/303/307/308) dont le Location vise un débrideur
- * n'est pas suivie : erreur de blocage. En mode « manual » (repli tunnel), la redirection est rendue telle quelle au client,
+ * n'est pas suivie : erreur de blocage. En mode « manual », la redirection est rendue telle quelle au client,
  * qui l'ouvre lui-même : ni erreur ni rapport.
  * Options : { init, trigger, env, ctx, requestId }.
  */

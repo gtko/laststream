@@ -192,7 +192,7 @@ describe('release au premier niveau de l’événement Sentry', () => {
     captureLogs();
     const sent = fakeGlobalFetch();
     await reportBlockedDebrid(
-      { host: 'alldebrid.example', trigger: 'tunnel', requestId: 'ray-test-4' },
+      { host: 'alldebrid.example', trigger: 'test', requestId: 'ray-test-4' },
       { SENTRY_DSN, CF_VERSION_METADATA: { id: 'abc-123', tag: '', timestamp: '' } },
       fakeCtx(),
     );
