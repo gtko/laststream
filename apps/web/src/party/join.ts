@@ -55,11 +55,11 @@ export function refusedText(): string {
 export function endReasonText(reason: string): string {
   switch (reason) {
     case 'replaced': return 'Connexion reprise depuis un autre appareil.';
-    case 'expired': return 'Invitation expirée.';
-    case 'banned':
+    case 'expired': return 'Lien expiré ou invalide : demande une nouvelle invitation à l’hôte.';
+    case 'banned': return 'Tu ne peux pas rejoindre ce salon.';
     case 'kicked': return 'Tu as été exclu du salon.';
-    case 'name_taken': return 'Ce pseudo est déjà utilisé dans le salon.';
-    case 'name_changed': return 'Le pseudo de cette invitation ne peut pas changer.';
+    case 'name_taken': return 'Ce pseudo est déjà pris dans le salon : choisis-en un autre.';
+    case 'name_changed': return 'Cette invitation est liée à un autre pseudo : rejoins avec le pseudo d’origine.';
     case 'full': return 'Le salon est complet.';
     case 'ended': return 'Le salon est terminé.';
     default: return 'Connexion au salon perdue.';
