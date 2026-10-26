@@ -592,7 +592,7 @@ class PartyBridge {
     c.sendStatus('ready');
   }
 
-  /** Appelé à chaque pas de la boucle du lecteur (~100 ms). */
+  /** Appelé à chaque pas de la boucle du lecteur (250 ms, ou 1 s boucle d'interface arrêtée). */
   tick(a: SessionAdapter): void {
     this.lastAdapter = a;
     if (!this.controller) return;

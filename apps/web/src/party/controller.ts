@@ -6,7 +6,7 @@ import { driftAction, expectedPosition } from './sync';
  * `PlayerLike` est utilisée. Seul l'hôte envoie son rapport de position (`sync`), référence de l'horloge du salon.
  * Anti-écho : un changement appliqué depuis le salon n'est jamais renvoyé (fenêtre d'application, fermée quand le lecteur
  * l'a pris), et une commande locale n'est pas défaite par un état périmé avant l'écho du serveur.
- * Appelé toutes les ~100 ms par le lecteur (`tick`). */
+ * Appelé toutes les 250 ms par le lecteur (1 s si la boucle d'interface dort) (`tick`). */
 
 export interface PlayerLike {
   /** Un média est chargé et la position est mesurable. */
