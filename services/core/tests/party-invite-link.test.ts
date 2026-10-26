@@ -314,6 +314,7 @@ function coreParty(cores: Map<string, RoomCore>): PartyBackend {
         },
         info: () => Promise.resolve(get()?.info() ?? null),
         check: () => Promise.resolve('ok'),
+        keyMode: () => Promise.resolve('account'),
         connected: (accountId) => Promise.resolve(get()?.isConnected(accountId) ?? false),
         invite: (requester) => Promise.resolve(get()?.inviteVerdict(requester) ?? 'not_found'),
         inviteLink: (requester, rotate) => Promise.resolve(get()?.inviteLink(requester, rotate) ?? ({ ok: false, reason: 'not_found' } as const)),

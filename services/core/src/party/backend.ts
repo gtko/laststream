@@ -10,11 +10,13 @@ export interface PartyRoomStub {
   init(meta: RoomMeta): Promise<'ok' | 'exists'>;
   /** Description du salon, ou null s'il n'existe pas / plus. */
   info(): Promise<RoomInfo | null>;
-  /** Un compte peut-il se connecter (salon plein, exclu) ? `closed` : le salon n'existe plus. */
-  check(accountId: string): Promise<JoinCheck | 'closed'>;
+  /** Un participant (clé du salon, voir keys.ts) peut-il se connecter (salon plein, compte exclu, pseudo pris) ? `closed` : le salon n'existe plus. */
+  check(key: string, username?: string): Promise<JoinCheck | 'closed'>;
+  /** Mode d'identification des participants (`profile` : par profil ; `account` : salon ancien) ; null : salon inexistant. */
+  keyMode(): Promise<'profile' | 'account' | null>;
   /** Droit d'émettre une invitation (hôte connecté, moins de quatre invités, débit du salon) ; compté si `ok`. */
   invite(requesterId: string): Promise<InviteVerdict>;
-  /** Vrai si ce compte (et non un invité) est connecté au salon : seul un membre peut inviter un ami à le rejoindre. */
+  /** Vrai si ce compte, par l'un quelconque de ses profils (et non un invité), est connecté au salon : seul un membre peut inviter un ami à le rejoindre. */
   connected(accountId: string): Promise<boolean>;
   /** Lien d'invitation partagé : génération courante et échéance (hôte connecté) ; `rotate` invalide les liens précédents. */
   inviteLink(requesterId: string, rotate: boolean): Promise<LinkVerdict>;

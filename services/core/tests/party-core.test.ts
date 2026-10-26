@@ -953,3 +953,118 @@ describe('watch party enrichie (S4)', () => {
     expect(parseClientMessage(JSON.stringify({ t: 'settings', waitLate: '10s' }))).toEqual({ t: 'settings', waitLate: '10s' });
   });
 });
+
+describe('clés de participant par profil (LAST-183)', () => {
+  /** Salon récent : l'hôte est le profil `p1` du compte `acc` ; le sous-profil `p2` du même compte et un autre compte participent. */
+  function profileRoom() {
+    const fx = makeRoom();
+    fx.data.meta.hostId = 'acc:p1';
+    fx.data.meta.hostName = 'alice';
+    fx.data.meta.memberKeys = 'profile';
+    return fx;
+  }
+  const named = (fx: Fixture, key: string, name: string): Member => ({ ...fx.member(key), username: name });
+
+  it('accountOf : compte d’une clé de profil ; clé de compte et clé d’invité inchangées', async () => {
+    const { accountOf, memberKey } = await import('../src/party/keys.js');
+    expect(accountOf('acc:p1')).toBe('acc');
+    expect(accountOf('acc')).toBe('acc');
+    expect(accountOf('guest:abc')).toBe('guest:abc');
+    expect(memberKey('acc', 'p1', 'profile')).toBe('acc:p1');
+    expect(memberKey('acc', 'p1', undefined)).toBe('acc');
+  });
+
+  it('l’hôte et un sous-profil de son compte sont connectés en même temps, chacun sous sa propre clé', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    fx.core.join(named(fx, 'acc:p2', 'alice · petit'));
+    expect([...fx.core.members.keys()].sort()).toEqual(['acc:p1', 'acc:p2']);
+    const welcome = sent(fx.core.join(named(fx, 'acc:p2', 'alice · petit')), 'acc:p2').find((m) => m.t === 'welcome');
+    expect(welcome).toMatchObject({ you: { username: 'alice · petit', host: false } });
+    expect(fx.core.members.get('acc:p1')).toBeDefined();
+    // Seule la clé de l’hôte est hôte : le sous-profil ne modère pas.
+    expect(errors(fx.core.handle('acc:p2', msg({ t: 'kick', user: 'alice' })))).toEqual(['not_host']);
+  });
+
+  it('salon ancien sans drapeau : la clé reste l’identifiant du compte', () => {
+    const fx = makeRoom();
+    expect(fx.core.keyMode()).toBe('account');
+    expect(profileRoom().core.keyMode()).toBe('profile');
+    joined(fx, 'a-host', 'a-bob');
+    expect(fx.core.canJoin('a-bob')).toBe('ok');
+    fx.core.handle('a-host', msg({ t: 'kick', user: 'bob' }));
+    expect(fx.data.banned).toEqual(['a-bob']);
+    expect(fx.core.canJoin('a-bob')).toBe('banned');
+  });
+
+  it('exclure un sous-profil bannit le compte : l’autre profil de ce compte est refusé et sort du salon', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    fx.core.join(named(fx, 'bob:p1', 'bob'));
+    fx.core.join(named(fx, 'bob:p2', 'bob · petit'));
+    const effects = fx.core.handle('acc:p1', msg({ t: 'kick', user: 'bob · petit' }));
+    expect(effects).toContainEqual({ kind: 'close', to: 'bob:p2', code: CLOSE.kicked, reason: 'kicked' });
+    expect(effects).toContainEqual({ kind: 'close', to: 'bob:p1', code: CLOSE.kicked, reason: 'kicked' });
+    expect(fx.data.banned).toEqual(['bob']);
+    expect(fx.core.members.has('bob:p1')).toBe(false);
+    expect(fx.core.canJoin('bob:p1', 'bob')).toBe('banned');
+    expect(fx.core.canJoin('bob:p3', 'bob · autre')).toBe('banned');
+    expect(fx.core.canJoin('acc:p2', 'alice · petit')).toBe('ok');
+  });
+
+  it('l’hôte qui exclut son propre sous-profil ferme sa connexion sans bannir son compte', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    fx.core.join(named(fx, 'acc:p2', 'alice · petit'));
+    const effects = fx.core.handle('acc:p1', msg({ t: 'kick', user: 'alice · petit' }));
+    expect(effects).toContainEqual({ kind: 'close', to: 'acc:p2', code: CLOSE.kicked, reason: 'kicked' });
+    expect(fx.data.banned).toEqual([]);
+    expect(fx.core.members.has('acc:p2')).toBe(false);
+    expect(fx.core.members.has('acc:p1')).toBe(true);
+    expect(fx.core.canJoin('acc:p1', 'alice')).toBe('ok');
+    expect(fx.core.canJoin('acc:p2', 'alice · petit')).toBe('ok');
+  });
+
+  it('deux profils de même pseudo : le second est refusé (name_taken, forme canonique)', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    fx.core.join(named(fx, 'bob:p1', 'Léa'));
+    expect(fx.core.canJoin('cat:p1', 'lea')).toBe('name_taken');
+    expect(fx.core.canJoin('cat:p1', 'ALICE')).toBe('name_taken');
+    expect(fx.core.canJoin('cat:p1', 'cat')).toBe('ok');
+    // Le même profil se reconnecte sous son pseudo sans conflit.
+    expect(fx.core.canJoin('bob:p1', 'Léa')).toBe('ok');
+  });
+
+  it('isConnected reconnaît un compte connecté par n’importe quelle clé de profil, jamais un invité', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'bob:p2', 'bob · petit'));
+    expect(fx.core.isConnected('bob')).toBe(true);
+    expect(fx.core.isConnected('carl')).toBe(false);
+    fx.core.leave('bob:p2', fx.core.members.get('bob:p2')?.connId ?? '');
+    expect(fx.core.isConnected('bob')).toBe(false);
+    fx.core.join({ ...fx.member('guest:g1', 'visiteur'), guest: true });
+    expect(fx.core.isConnected('guest:g1')).toBe(false);
+  });
+
+  it('droits d’hôte par compte : invitations, lien et fin accessibles depuis le compte de l’hôte connecté', () => {
+    const fx = profileRoom();
+    expect(fx.core.inviteVerdict('acc')).toBe('forbidden');
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    expect(fx.core.isHostAccount('acc')).toBe(true);
+    expect(fx.core.isHostAccount('bob')).toBe(false);
+    expect(fx.core.inviteVerdict('bob')).toBe('forbidden');
+    expect(fx.core.inviteVerdict('acc')).toBe('ok');
+    expect(fx.core.inviteLink('acc', false)).toMatchObject({ ok: true });
+  });
+
+  it('signalement : la file d’administration reçoit le compte de l’auteur, pas la clé de profil', () => {
+    const fx = profileRoom();
+    fx.core.join(named(fx, 'acc:p1', 'alice'));
+    fx.core.join(named(fx, 'bob:p2', 'bob · petit'));
+    fx.core.handle('bob:p2', msg({ t: 'chat', text: 'bonjour' }));
+    const lineId = fx.core.chat[0]?.id ?? '';
+    fx.core.handle('acc:p1', msg({ t: 'report', messageId: lineId, reason: null }));
+    expect(fx.core.fresh).toEqual([expect.objectContaining({ againstId: 'bob' })]);
+  });
+});
