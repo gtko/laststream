@@ -4,13 +4,9 @@
  * ni configuration d'addon (segment de chemin encodé), ni lien débridé, ni lien magnet, ni clé d'API.
  * Module pur (aucun import du SDK à l'exécution) : testé sous Node.
  */
-import { isIpLiteral, isLocalName, reduceHost, scrubPath } from '@laststream/protocol/scrub';
+import { scrubText as scrubTextWith, scrubUrl as scrubUrlWith } from '@laststream/protocol/scrub';
 import type { Breadcrumb, ErrorEvent, Event as SentryEvent, EventHint, Exception, RequestEventData, Stacktrace } from '@sentry/cloudflare';
 
-const REDACTED = '[redacted]';
-const CONFIG = '[config]';
-const DEBRID_URL = '[debrid-url]';
-const MAGNET = '[magnet]';
 /** Profondeur maximale parcourue dans les contextes et données libres (protection contre les cycles). */
 const MAX_DEPTH = 8;
 /** Origine publique du Worker, posée à chaque requête (worker.ts) : ses propres URL gardent leur chemin épuré. */
@@ -26,15 +22,6 @@ const SECRET_HEADER_NAME = /token|key|secret/i;
  */
 const DROPPED_KEY =
   /body|cookie|query|token|secret|authorization|x-profile-id|connecting-ip|forwarded-for|real-ip|true-client-ip|api[_-]?key|ip_address|^ip$|^email$|^env$|^vars$/i;
-const DEBRID_HOST = /alldebrid|real-?debrid|torbox|premiumize/i;
-
-const URL_IN_TEXT = /https?:\/\/[^\s"'<>]+/gi;
-const MAGNET_IN_TEXT = /magnet:[^\s"'<>]*/gi;
-const CREDENTIAL_PARAM = /(apikey|api[_-]?key|access[_-]?token|token|secret|password)=[^&\s"'<>;,]*/gi;
-/** Jeton d'invité des salons en paramètre de requête court (`?t=` / `&t=`) dans un texte libre hors URL absolue. */
-const SHORT_TOKEN_PARAM = /([?&])t=[^&\s"'<>;,]*/g;
-const BEARER = /\bBearer\s+[^\s"'<>,;]+/gi;
-const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
 
 /** Enregistre l'origine du Worker qui traite la requête courante (undefined : aucune requête). */
 export function setWorkerOrigin(origin: string | undefined): void {
@@ -43,34 +30,12 @@ export function setWorkerOrigin(origin: string | undefined): void {
 
 /** URL réduite à origine + chemin : sans identifiant, sans chaîne de requête, sans fragment, segments de config masqués. */
 export function scrubUrl(raw: string): string {
-  if (DEBRID_HOST.test(raw)) return DEBRID_URL;
-  let url: URL;
-  try {
-    // « //hôte/chemin » (relative au schéma) est lue comme une URL https.
-    url = new URL(raw.startsWith('//') ? `https:${raw}` : raw);
-  } catch {
-    // Chemin relatif ou valeur non analysable : on coupe la requête et le fragment.
-    return scrubPath(raw.split(/[?#]/, 1)[0] ?? '');
-  }
-  if (url.protocol === 'magnet:') return MAGNET;
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return REDACTED;
-  const host = url.hostname.toLowerCase();
-  // Le Worker lui-même (hors adresse locale) : chemin épuré. Toute autre origine : hôte seul.
-  if (url.origin === workerOrigin && !isIpLiteral(host) && !isLocalName(host)) {
-    return `${url.origin}${scrubPath(url.pathname)}`;
-  }
-  return reduceHost(url);
+  return scrubUrlWith(raw, { origin: workerOrigin });
 }
 
 /** Texte libre (message, description, valeur) : URL réduites, magnet, clés d'API, jetons, chemins de configuration. */
 export function scrubText(text: string): string {
-  return text
-    .replace(URL_IN_TEXT, (url) => scrubUrl(url))
-    .replace(MAGNET_IN_TEXT, MAGNET)
-    .replace(CREDENTIAL_PARAM, (_match, name: string) => `${name}=${REDACTED}`)
-    .replace(SHORT_TOKEN_PARAM, (_match, sep: string) => `${sep}t=${REDACTED}`)
-    .replace(BEARER, `Bearer ${REDACTED}`)
-    .replace(LONG_SEGMENT_IN_TEXT, `/${CONFIG}`);
+  return scrubTextWith(text, { origin: workerOrigin });
 }
 
 /** En-têtes filtrés : les identifiants, cookies, profils et adresses IP disparaissent ; les autres valeurs sont épurées. */
