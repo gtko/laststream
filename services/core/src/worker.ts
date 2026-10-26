@@ -10,7 +10,8 @@ import type { App } from './http/app-env.js';
 import { DebridEgressBlockedError, runWithEgressContext, SERVER_SIDE_DISABLED, setDebridBlockReporter } from './egress/debrid-guard.js';
 import { workerSentryOptions } from './observability/options.js';
 import { setWorkerOrigin } from './observability/scrub.js';
-import { setUnhandledErrorReporter } from './observability/report.js';
+import { setUnhandledErrorReporter, setWarningReporter } from './observability/report.js';
+import { isFullPassWindow, TV_RESUME_CRON } from './lt/tv-passes.js';
 import { platform, setPlatform } from './platform/index.js';
 import { handlePartyWs, PARTY_WS_PATH } from './party/ws.js';
 import { handleSocialLiveWs } from './user/social-v2-live-ws.js';
@@ -78,6 +79,11 @@ setUnhandledErrorReporter((error) => {
   if (!(error instanceof DebridEgressBlockedError)) Sentry.captureException(error);
 });
 
+// Alerte d'exploitation sans erreur : une source TV en échec depuis deux passes (lt/tv-passes.ts), en niveau warning.
+setWarningReporter((message, context) => {
+  Sentry.captureMessage(message, { level: 'warning', extra: context });
+});
+
 /** Échec du préchauffage des fiches (cron) : journalisé sans message brut ; les autres tâches du cron ne sont pas concernées. */
 function logPrewarmFailure(err: unknown): void {
   console.error('[worker] préchauffage des fiches échoué', err instanceof Error ? err.name : 'inconnue');
@@ -127,12 +133,18 @@ const worker = {
     runWithEgressContext({ trigger: 'request', requestId: request.headers.get('cf-ray') ?? crypto.randomUUID() }, () => handleFetch(request, env, ctx)),
 
   /**
-   * Cron Trigger (wrangler.jsonc, « triggers », toutes les 6 h) : reconstruit le catalogue TV et l'EPG réduit dans R2, en
+   * Cron Trigger (wrangler.jsonc, « triggers ») : toutes les 6 h, reconstruit le catalogue TV et l'EPG réduit dans R2, en
    * flux ; précalcule les rangées d'accueil communes dans R2 (lt/rows.ts) ; préchauffe les fiches des rangées et du Top 10
    * (lt/meta-prewarm.ts), en dernier : une erreur de ce préchauffage est journalisée sans toucher aux tâches précédentes.
+   * Toutes les 30 min : reprise TV seulement (sources en échec et sondages restants), voir lt/tv-passes.ts. À l'heure de la
+   * passe complète, la reprise s'efface pour ne pas prendre le verrou de cette passe.
    */
-  scheduled(_controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
+  scheduled(controller: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): void {
     runWithEgressContext({ trigger: 'cron', requestId: `cron-${crypto.randomUUID()}` }, () => {
+      if (controller.cron === TV_RESUME_CRON) {
+        if (!isFullPassWindow(controller.scheduledTime)) ctx.waitUntil(refreshTvFromEnv(env, { probe: true, resume: true }));
+        return;
+      }
       ctx.waitUntil(refreshTvFromEnv(env, { probe: true }));
       ensureWorkersPlatform(env);
       ctx.waitUntil(runInRequest(ctx, () => refreshRowsFromEnv(env)));

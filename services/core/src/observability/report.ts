@@ -19,3 +19,25 @@ export function reportUnhandledError(error: unknown): void {
     // Sans effet sur la réponse.
   }
 }
+
+/**
+ * Alerte d'exploitation sans erreur (ex. une source TV en échec depuis deux passages) : message court et contexte sans
+ * donnée personnelle ni URL. Même principe que ci-dessus : aucun récepteur par défaut, le Worker installe Sentry.
+ */
+export type WarningReporter = (message: string, context: Record<string, unknown>) => void;
+
+let warningReporter: WarningReporter | undefined;
+
+export function setWarningReporter(next: WarningReporter | undefined): void {
+  warningReporter = next;
+}
+
+/** Ne lève jamais. */
+export function reportWarning(message: string, context: Record<string, unknown>): void {
+  if (warningReporter === undefined) return;
+  try {
+    warningReporter(message, context);
+  } catch {
+    // Sans effet sur le passage qui l'a émise.
+  }
+}

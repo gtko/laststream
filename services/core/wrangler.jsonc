@@ -54,7 +54,9 @@
     // Bucket à créer une fois : npx wrangler r2 bucket create lastaddon-avatars
     { "binding": "AVATARS", "bucket_name": "lastaddon-avatars" }
   ],
-  "triggers": { "crons": ["0 */6 * * *"] },
+  // TV : passe complète toutes les 6 h ; reprise toutes les 30 min (seules les sources en échec et les sondages restants,
+  // voir src/lt/tv-passes.ts). Les deux déclencheurs coïncident à 00:00, 06:00… : la reprise s'efface alors.
+  "triggers": { "crons": ["0 */6 * * *", "*/30 * * * *"] },
 
   // Interface web : build de laststream-app copié dans worker-ui/ par `npm run deploy:worker`.
   // Le Worker passe en premier (en-têtes de cache, routes API) ; html_handling « none » garde les chemins exacts.

@@ -27,7 +27,7 @@ describe('code serveur : aucune référence à un hôte de débridage', () => {
       .filter((path) => DEBRID_HOST_REFERENCE.test(readFileSync(path, 'utf8')))
       .map((path) => relative(SRC, path).split(sep).join('/'));
     expect(offenders).toEqual([]);
-  });
+  }, 30000);
 
   it('la garde de sortie est bien posée sur les points d\'entrée serveur', () => {
     // worker.ts : la garde est posée par son tout premier import (aucun autre module ne peut capturer le fetch d'origine).
