@@ -152,7 +152,7 @@ function slowTick() {
   if (!loop.running().fast) partyBridge.tick(partyAdapter(p)); // boucle d'interface arrêtée (pause, salon) : c'est la lente qui suit le salon
   const s = p.subs;
   if (p.choice && !p.failing && !p.resumeTimer) {
-    const verdict = p.watch.tick(Date.now(), st.time, st.paused || st.ended || st.seeking);
+    const verdict = p.watch.tick(Date.now(), st.time, st.paused || st.ended || st.seeking, st.cacheTime ?? null);
     if (verdict === 'stalled') failover('La lecture est bloquée depuis plus de 15 s');
     else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
   }
