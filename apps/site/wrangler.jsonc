@@ -6,7 +6,8 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": false },
-  "services": [{ "binding": "APP", "service": "laststream" }],
+  // Worker edge (renommé « laststream-edge » dans Cloudflare) : relais /api/*.
+  "services": [{ "binding": "APP", "service": "laststream-edge" }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
