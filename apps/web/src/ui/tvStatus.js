@@ -12,8 +12,6 @@ const REASONS = {
   format: 'Format non pris en charge',
   read: 'Erreur de lecture',
   box: 'Chaîne de ta box : disponible sur le réseau de la box',
-  molotov: 'Lecture Molotov indisponible sur cette plateforme',
-  molotov_drm: 'Molotov : DRM Widevine indisponible ici',
 };
 
 export const LABELS = {

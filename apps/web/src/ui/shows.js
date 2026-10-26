@@ -104,7 +104,7 @@ export function tonightTile(a, known, now, epgIds = new Set(), play = false) {
 /** Chaînes favorites du profil actif (les plus récentes d'abord) : chaîne du catalogue chargé, sinon son instantané. */
 function favoriteChannels() {
   const snaps = favSnaps();
-  const find = (id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.boxOnly.find((c) => c.id === id) || tv.molotov.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]));
+  const find = (id) => tv.byId.get(id) || tv.user.find((c) => c.id === id) || tv.boxOnly.find((c) => c.id === id) || (snaps[id] && normChannel(snaps[id]));
   return getFavs().slice().reverse().map(find).filter(Boolean);
 }
 

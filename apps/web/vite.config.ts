@@ -46,6 +46,7 @@ export default defineConfig(({ command }) => {
       testTimeout: 120000,
       hookTimeout: 120000,
       include: ['tests/**/*.test.ts', 'src/relay/*.test.ts', 'src/relay/mesh/*.test.ts', 'src/relay/player/**/*.test.ts'],
+      exclude: ['**/node_modules/**', '**/dist/**', 'archive/**'],
     },
   };
 });

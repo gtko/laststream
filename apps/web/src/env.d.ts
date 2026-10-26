@@ -5,7 +5,7 @@ declare const __APP_VERSION__: string;
 /** Identité du build (sha git court + horodatage), injectée par Vite ; 'dev' hors build. Comparée à /version.json. */
 declare const __BUILD_ID__: string;
 
-/* Shaka Player (module compilé) : types minimaux, ceux qu'utilise le lecteur Molotov (src/player/molotov.ts). */
+/* Shaka Player (module compilé) : types minimaux. */
 declare module "shaka-player/dist/shaka-player.compiled.js" {
   export interface ShakaRequest {
     uris: string[];
