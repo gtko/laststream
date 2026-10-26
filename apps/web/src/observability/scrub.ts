@@ -10,20 +10,9 @@
  *  - Fil d'Ariane fetch/xhr vers un hôte tiers : seulement l'hôte et le statut. Clics, saisies et console écartés.
  *  - Écartés : bruit du navigateur (ResizeObserver), annulations (AbortError), lecture média attendue (source absente,
  *    lecture interrompue ou bloquée par le navigateur), erreurs venant d'extensions navigateur. */
-import { isIpLiteral, isLocalName, reduceHost, scrubPath } from '@laststream/protocol/scrub';
+import { reduceHost, scrubPath, scrubText as scrubTextWith, tryScrubUrl, type ScrubOptions } from '@laststream/protocol/scrub';
 import type { Breadcrumb, ErrorEvent, Exception } from '@sentry/browser';
 
-const DEBRID = /alldebrid|real-?debrid|torbox|premiumize/i;
-const MEDIA_FILE = /\.(m3u8|mkv|mp4)$/i;
-const MAGNET = /magnet:\?[^\s"'<>]*/gi;
-/** URL (et stremio:) jusqu'au premier espace ou guillemet : une clé après « | » ne doit pas fuir. */
-const URL_IN_TEXT = /(?:(?:https?|wss?):\/\/|stremio:)[^\s"'<>]+/gi;
-/** Jeton d'invité d'un salon en paramètre court (`?t=` / `&t=`) dans un texte libre, hors d'une URL absolue. */
-const SHORT_TOKEN_PARAM = /([?&])t=[^&\s"'<>;,]*/g;
-/** Clés de débrideur en texte libre (hors d'une URL) : valeur masquée jusqu'au séparateur (&, /, |, espace). */
-const DEBRID_PARAM = /\b((?:all|real)-?debrid\w*|torbox|premiumize|debridoptions)(\s*=\s*)[^\s&"',;}|/]+/gi;
-const LONG_SEGMENT_IN_TEXT = /\/[^\s/]{41,}/g;
-const SECRET = /(["']?\b(?:apikey|api_key|token|password|passwd|secret)\b["']?\s*[=:]\s*["']?)[^\s&"',;}]+/gi;
 const EXTENSION = /^(?:chrome|moz|safari|safari-web|ms-browser|edge)-extension:\/\//i;
 /** Catégories de fil d'Ariane écartées : clics, saisies et console. */
 const NO_BREADCRUMB: ReadonlySet<string> = new Set(['ui.click', 'ui.input', 'console']);
@@ -37,6 +26,7 @@ const NOISE: readonly RegExp[] = [
 ];
 
 const MAX_DEPTH = 20;
+const URL_REMOVED = '[url retirée]';
 
 const currentOrigin = (): string => (typeof location === 'undefined' ? '' : location.origin);
 
@@ -48,40 +38,28 @@ function scrubHash(hash: string): string {
   return scrubPath(hash.replace(/\?.*$/, ''));
 }
 
+/** Réglages du nettoyage partagé (@laststream/protocol/scrub) : l'application, ses routes #/… et ses libellés français. */
+const options = (appOrigin: string): ScrubOptions => ({
+  origin: appOrigin,
+  resolveRelative: true,
+  hash: scrubHash,
+  placeholders: {
+    redacted: '[retiré]',
+    debridUrl: URL_REMOVED,
+    magnetUrl: URL_REMOVED,
+    magnetText: '[magnet retiré]',
+    removedUrl: URL_REMOVED,
+  },
+});
+
 /** Adresse absolue ou relative à l'application → forme sûre ; null si elle ne doit jamais être envoyée. */
 export function scrubUrl(raw: string, appOrigin: string = currentOrigin()): string | null {
-  const value = raw.trim();
-  if (!value || /^magnet:/i.test(value) || DEBRID.test(value)) return null;
-  let url: URL;
-  try {
-    url = new URL(value, appOrigin);
-  } catch (_) {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'stremio:') return null;
-  if (MEDIA_FILE.test(url.pathname)) return null;
-  const host = url.hostname.toLowerCase();
-  // Application elle-même (hors adresse locale) : chemin et route gardés, segments de configuration masqués.
-  if (url.origin === appOrigin && !isIpLiteral(host) && !isLocalName(host)) {
-    return `${url.origin}${scrubPath(url.pathname)}${scrubHash(url.hash)}`;
-  }
-  // Hors de l'application (addon, TMDB, serveur perso) : hôte seul, et seulement s'il est autorisé.
-  return reduceHost(url);
+  return tryScrubUrl(raw, options(appOrigin));
 }
 
 /** Texte libre (message, valeur de donnée) : URL réécrites, magnets retirés, clés secrètes et de débrideur masquées. */
 export function scrubText(text: string, appOrigin: string = currentOrigin()): string {
-  return text
-    .replace(MAGNET, '[magnet retiré]')
-    .replace(URL_IN_TEXT, (match) => {
-      const trailing = /[.,;:!?)\]}]*$/.exec(match)?.[0] ?? '';
-      const core = match.slice(0, match.length - trailing.length);
-      return (scrubUrl(core, appOrigin) ?? '[url retirée]') + trailing;
-    })
-    .replace(SHORT_TOKEN_PARAM, '$1t=[retiré]')
-    .replace(DEBRID_PARAM, '$1$2[retiré]')
-    .replace(LONG_SEGMENT_IN_TEXT, '/[config]')
-    .replace(SECRET, '$1[retiré]');
+  return scrubTextWith(text, options(appOrigin));
 }
 
 /** Applique `fn` à chaque chaîne d'une structure, en place. Au-delà de la profondeur maximale, rien n'est gardé. */
@@ -143,12 +121,12 @@ export function scrubBreadcrumb(crumb: Breadcrumb, appOrigin: string = currentOr
     // Hôte tiers : seulement l'hôte (ou [host]) et le statut de la réponse. Sinon : URL réduite, le reste gardé.
     crumb.data = url.origin !== appOrigin
       ? { host: reduceHost(url), status_code: data.status_code }
-      : { ...data, url: scrubUrl(url.href, appOrigin) ?? '[url retirée]' };
+      : { ...data, url: scrubUrl(url.href, appOrigin) ?? URL_REMOVED };
   }
   if (crumb.category === 'navigation' && crumb.data) {
     for (const key of ['from', 'to']) {
       const value = crumb.data[key];
-      if (typeof value === 'string') crumb.data[key] = scrubUrl(value, appOrigin) ?? '[url retirée]';
+      if (typeof value === 'string') crumb.data[key] = scrubUrl(value, appOrigin) ?? URL_REMOVED;
     }
   }
   if (crumb.message) crumb.message = scrub(crumb.message);

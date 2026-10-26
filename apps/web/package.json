@@ -24,7 +24,7 @@
     "@capacitor/core": "7.6.9",
     "@dicebear/collection": "9.4.3",
     "@dicebear/core": "9.4.3",
-    "@laststream/protocol": "github:gtko/laststream-protocol#v0.1.1",
+    "@laststream/protocol": "github:gtko/laststream-protocol#v0.2.0",
     "@mediabunny/ac3": "^1.61.6",
     "@sentry/browser": "11.4.0",
     "hls.js": "1.7.3",
