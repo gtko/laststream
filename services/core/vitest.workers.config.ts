@@ -35,7 +35,10 @@ export default defineConfig({
     ],
     setupFiles: ['tests-workers/setup.ts'],
     // Runner CI auto-hébergé partagé et souvent chargé : workerd démarre lentement, les délais par défaut (5 s) ne suffisent pas.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // Les tests créent des comptes (hachage scrypt) : à 11 fichiers en parallèle sur ce runner, des tests de ~1 s
+    // dépassent 30 s. Parallélisme borné, délais larges.
+    maxWorkers: 4,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
   },
 });
