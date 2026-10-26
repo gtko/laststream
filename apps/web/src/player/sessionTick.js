@@ -158,7 +158,7 @@ function slowTick() {
     // Lecture stable depuis 2 min : les essais repartent, sinon des micro-coupures espacées épuisent MAX_ATTEMPTS (LAST-186).
     const forgiven = attemptsAfterStable(p.attempts, p.view.index, p.watch.stableFor(now));
     if (forgiven) Object.assign(p, forgiven);
-    if (verdict === 'stalled') failover('La lecture est bloquée depuis plus de 15 s');
+    if (verdict === 'stalled') failover('La lecture est bloquée');
     else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
   }
   if (s.sync.state === 'collecting') {
