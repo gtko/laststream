@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 const harness = fileURLToPath(new URL('./tests-workers/harness.ts', import.meta.url));
 const adminBackend = fileURLToPath(new URL('./tests-workers/admin-backend.ts', import.meta.url));
@@ -34,6 +34,8 @@ export default defineConfig({
       'tests/admin-*.test.ts',
     ],
     setupFiles: ['tests-workers/setup.ts'],
+    // Code Molotov mis de côté (archive/molotov/) : jamais testé.
+    exclude: [...configDefaults.exclude, 'archive/**'],
     // Runner CI auto-hébergé partagé et souvent chargé : workerd démarre lentement, les délais par défaut (5 s) ne suffisent pas.
     // Les tests créent des comptes (hachage scrypt) : à 11 fichiers en parallèle sur ce runner, des tests de ~1 s
     // dépassent 30 s. Parallélisme borné, délais larges.

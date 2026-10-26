@@ -528,6 +528,81 @@ async function waitForParticipants(roomId: string, token: string, expected: numb
   throw new Error(`participants attendus : ${expected}`);
 }
 
+/** Ajoute un profil adulte au compte et renvoie son identifiant. */
+async function extraProfile(member: Account, name: string): Promise<string> {
+  // Le profil principal est le plus ancien (created_at à la milliseconde) : un délai garde l'ordre de création déterministe.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const res = await api<{ id: string }>('POST', '/user/profiles', { token: member.token, headers: { 'x-profile-id': member.profile }, body: { name, avatarColor: '#0055aa' } });
+  expect(res.status).toBe(201);
+  return res.body.id;
+}
+
+describe('profils d’un même compte dans un salon (LAST-183)', () => {
+  it('l’hôte et son sous-profil sont connectés ensemble sans 4009 ; le même profil sur un second appareil remplace le premier', async () => {
+    const host = await account('host');
+    const small = await extraProfile(host, 'petit');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    expect(h.welcome.you).toMatchObject({ username: host.name, host: true });
+    const s = await join(host, room.id, small);
+    expect(s.welcome.you).toMatchObject({ username: `${host.name} · petit`, host: false });
+    expect(s.welcome.participants.map((p: any) => p.username).sort()).toEqual([host.name, `${host.name} · petit`].sort());
+    expect((await h.peer.type('join')).participant.username).toBe(`${host.name} · petit`);
+    // Aucune des deux connexions n'a été remplacée.
+    expect(h.peer.closed).toBeUndefined();
+    expect(s.peer.closed).toBeUndefined();
+    // Le même profil sur un second appareil : la première connexion reçoit 4009.
+    const s2 = await join(host, room.id, small);
+    expect(await s.peer.whenClosed()).toMatchObject({ code: 4009, reason: 'replaced' });
+    expect(h.peer.closed).toBeUndefined();
+    expect(s2.peer.closed).toBeUndefined();
+    h.peer.close();
+    s2.peer.close();
+  });
+
+  it('exclure un sous-profil bannit le compte ; l’hôte qui exclut son propre sous-profil ne se bannit pas', async () => {
+    const host = await account('host');
+    const hostSmall = await extraProfile(host, 'petit');
+    const other = await account('other');
+    const otherSmall = await extraProfile(other, 'ado');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const o = await join(other, room.id);
+    const os = await join(other, room.id, otherSmall);
+    const hs = await join(host, room.id, hostSmall);
+
+    // Son propre sous-profil : connexion fermée, aucun bannissement.
+    h.peer.send({ t: 'kick', user: `${host.name} · petit` });
+    expect(await hs.peer.whenClosed()).toMatchObject({ code: 4003 });
+    expect((await ticketFor(host, room.id, hostSmall)).status).toBe(200);
+    expect((await ticketFor(host, room.id)).status).toBe(200);
+
+    // Sous-profil d'un autre compte : tout le compte est exclu, quel que soit le profil.
+    h.peer.send({ t: 'kick', user: `${other.name} · ado` });
+    expect(await os.peer.whenClosed()).toMatchObject({ code: 4003 });
+    expect(await o.peer.whenClosed()).toMatchObject({ code: 4003 });
+    const again = await ticketFor(other, room.id);
+    expect(again.status).toBe(403);
+    expect(again.body.error).toBe('banned');
+    expect((await ticketFor(other, room.id, otherSmall)).status).toBe(403);
+    h.peer.close();
+  });
+
+  it('un salon refuse (name_taken) un profil dont le pseudo affiché est déjà porté', async () => {
+    const host = await account('host');
+    const small = await extraProfile(host, 'petit');
+    const twin = await extraProfile(host, 'petit');
+    const room = (await createRoom(host)).body.room;
+    const h = await join(host, room.id);
+    const s = await join(host, room.id, small);
+    const refused = await ticketFor(host, room.id, twin);
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('name_taken');
+    h.peer.close();
+    s.peer.close();
+  });
+});
+
 describe('invités sans compte sur Workers', () => {
   it('invitation réservée à l’hôte connecté (401 sans session, 403 hors hôte, 404 salon inconnu) ; jeton signé avec échéance', async () => {
     const host = await account('host');

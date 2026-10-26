@@ -112,8 +112,13 @@ export class PartyRoom extends DurableObject {
     return this.core?.info() ?? null;
   }
 
-  check(accountId: string): JoinCheck | 'closed' {
-    return this.core === undefined ? 'closed' : this.core.canJoin(accountId);
+  check(key: string, username?: string): JoinCheck | 'closed' {
+    return this.core === undefined ? 'closed' : this.core.canJoin(key, username);
+  }
+
+  /** Mode d'identification des participants (voir RoomCore.keyMode) ; null : salon inexistant. */
+  keyMode(): 'profile' | 'account' | null {
+    return this.core?.keyMode() ?? null;
   }
 
   /** Droit d'émettre une invitation (voir RoomCore.inviteVerdict) ; compté dans le débit du salon si `ok`. */
@@ -121,7 +126,7 @@ export class PartyRoom extends DurableObject {
     return this.core === undefined ? 'not_found' : this.core.inviteVerdict(requesterId);
   }
 
-  /** Vrai si ce compte (non invité) est connecté au salon (voir RoomCore.isConnected). */
+  /** Vrai si ce compte (non invité) est connecté au salon par l'un de ses profils (voir RoomCore.isConnected). */
   connected(accountId: string): boolean {
     return this.core?.isConnected(accountId) ?? false;
   }
@@ -147,7 +152,7 @@ export class PartyRoom extends DurableObject {
   async close(requesterId: string | null): Promise<'ok' | 'forbidden' | 'not_found'> {
     const core = this.core;
     if (core === undefined) return 'not_found';
-    if (requesterId !== null && requesterId !== core.hostId) return 'forbidden';
+    if (requesterId !== null && !core.isHostAccount(requesterId)) return 'forbidden';
     await this.apply(core.end('closed'));
     return 'ok';
   }
@@ -155,7 +160,7 @@ export class PartyRoom extends DurableObject {
   reports(requesterId: string | null): ReportEntry[] | 'forbidden' | 'not_found' {
     const core = this.core;
     if (core === undefined) return 'not_found';
-    if (requesterId !== null && requesterId !== core.hostId) return 'forbidden';
+    if (requesterId !== null && !core.isHostAccount(requesterId)) return 'forbidden';
     return core.reports;
   }
 
@@ -183,19 +188,19 @@ export class PartyRoom extends DurableObject {
     if (core === undefined) return json(404, { error: 'room_not_found' });
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(426, { error: 'upgrade_required' });
     if (identity === undefined) return json(400, { error: 'identity_required' });
-    const check = core.canJoin(identity.accountId);
+    const check = core.canJoin(identity.accountId, identity.username); // pseudo contrôlé seulement en mode profil (voir canJoin)
     if (check === 'banned') return json(403, { error: 'banned' });
     if (check !== 'ok') return json(409, { error: check });
     return this.accept(core, identity);
   }
 
-  /** Mise à niveau acceptée : entre dans le salon, en remplaçant l'éventuelle connexion précédente du même identifiant. */
+  /** Mise à niveau acceptée : entre dans le salon, en remplaçant l'éventuelle connexion précédente de la même clé (même profil sur un autre appareil, pas les autres profils du compte). */
   private async accept(core: RoomCore, identity: Identity): Promise<Response> {
     // Identifiants TURN (appel réseau borné, mis en cache) obtenus avant toute modification du salon.
     const turn = await fetchTurnIce(this.env as TurnEnv);
     // Le salon a pu prendre fin pendant cet appel : pas de connexion vers un état effacé.
     if (this.core === undefined) return refusedSocket(CLOSE.ended, 'ended');
-    // Une nouvelle connexion remplace l'ancienne du même compte.
+    // Une nouvelle connexion remplace l'ancienne de la même clé de participant.
     for (const old of this.socketsOf(identity.accountId)) old.close(CLOSE.replaced, 'replaced');
 
     const pair = new WebSocketPair();

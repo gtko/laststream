@@ -107,6 +107,7 @@ export function fakeParty(): PartyBackend & { rooms: Map<string, FakeRoom>; clos
       return Promise.resolve(info);
     },
     check: () => Promise.resolve(rooms.has(id) ? 'ok' : 'closed'),
+    keyMode: () => Promise.resolve(rooms.has(id) ? 'profile' : null),
     invite: () => Promise.resolve('forbidden' as const),
     inviteLink: () => Promise.resolve({ ok: false, reason: 'forbidden' } as const),
     enterGuest: () => Promise.resolve({ ok: false, reason: 'not_found' } as const),

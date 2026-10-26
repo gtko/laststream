@@ -7,7 +7,7 @@ import type { SqlDb } from '../src/user/sql.js';
 const tables = (db: SqlDb): string[] =>
   (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((row) => row.name);
 
-/** Versions présentes : 1 à 32, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, compte Molotov en 30, fin d'extrait des liens publics en 31, clés de services serveur en 32). */
+/** Versions présentes : 1 à 32, contiguës (social v2 en 14 à 17, social v3 en 18 à 23, administration en 24 à 26, invitations du foyer en 27, billets de parrainage en 28, marquage « vu » manuel en 29, session TV du compte en 30, fin d'extrait des liens publics en 31, clés de services serveur en 32). */
 const EXPECTED_VERSIONS = Array.from({ length: 32 }, (_, i) => i + 1);
 
 describe('migrations : v13 de main (title_starts) puis social v2 (14 à 17), social v3 (18 à 23), administration (24 à 26)', () => {
