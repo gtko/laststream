@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono';
 import { ConfigDecodeError, decodeConfig, encodeConfig } from './config/codec.js';
-import { withServerServices } from './config/server-services.js';
+import { serverServicesEnv, withServerServices } from './config/server-services.js';
 import { presetCatalog } from './config/presets.js';
 import { ConfigValidationError, configJsonSchema } from './config/schema.js';
 import { edgeTrust } from './config/edge.js';
@@ -14,7 +14,7 @@ import { DEFAULT_JSON_LIMIT, jsonBody } from './http/json-body.js';
 import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
-import { platform, runtimeEnv } from './platform/index.js';
+import { platform, runtimeEnv, type UserBackend } from './platform/index.js';
 import { createHealthReporter } from './health/probes.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
@@ -158,16 +158,18 @@ function rateLimit(applies: (c: Ctx) => boolean, limiter: ReturnType<typeof crea
  * Manifest d'une configuration. Les catalogues Stremio ne sont annoncés que si le jeton TMDB est configuré ;
  * une configuration illisible renvoie le manifest de base (comportement inchangé).
  */
-function hasTmdbToken(deps: AppDeps, encoded: string): boolean {
+async function hasTmdbToken(deps: AppDeps, backend: UserBackend, encoded: string): Promise<boolean> {
   try {
-    return withServerServices(decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain })).services.tmdbToken !== undefined;
+    const decoded = decodeConfig(encoded, deps.secret, { allowPlain: deps.allowPlain });
+    const config = await withServerServices(decoded, serverServicesEnv(deps.secret, backend.users()));
+    return config.services.tmdbToken !== undefined;
   } catch {
     return false;
   }
 }
 
-function manifestFor(deps: AppDeps, encoded: string) {
-  if (!hasTmdbToken(deps, encoded)) return MANIFEST;
+async function manifestFor(deps: AppDeps, backend: UserBackend, encoded: string) {
+  if (!(await hasTmdbToken(deps, backend, encoded))) return MANIFEST;
   return { ...MANIFEST, resources: ['stream', 'catalog'], catalogs: catalogEntries() };
 }
 
@@ -247,7 +249,7 @@ export function createApp(deps: AppDeps): App {
 
   app.get('/manifest.json', (c) => sendJson(c, MANIFEST));
 
-  app.get('/:config/manifest.json', (c) => sendJson(c, manifestFor(deps, c.req.param('config'))));
+  app.get('/:config/manifest.json', async (c) => sendJson(c, await manifestFor(deps, backend, c.req.param('config'))));
 
   app.get('/config/schema', (c) => sendJson(c, { ...configJsonSchema(), presets: presetCatalog() }));
 
@@ -277,7 +279,7 @@ export function createApp(deps: AppDeps): App {
     }
   });
 
-  registerStreamRoutes(app, deps);
+  registerStreamRoutes(app, deps, backend);
   registerTestRoutes(app, deps);
   registerPlayRoutes(app, deps);
   registerLtRoutes(app, deps, backend);

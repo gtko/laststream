@@ -102,7 +102,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   const thumbs: ThumbPort = capabilities.thumbs ? (platform().localMedia?.createThumbs(deps.thumbs) ?? DISABLED_THUMBS) : DISABLED_THUMBS;
   // Segment de configuration de l'URL (jeton base64url), présent sur toutes les routes lt et catalogue.
   const tokenOf = (c: Ctx): string => c.req.param('config') ?? '';
-  const configOf = (c: Ctx) => decodeFor(deps, tokenOf(c));
+  const configOf = (c: Ctx) => decodeFor(deps, backend, tokenOf(c));
 
   const lt = newApp();
   lt.use('*', async (c, next) => {
@@ -110,8 +110,8 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     await next();
   });
 
-  lt.get('/health', (c) => {
-    const { services } = configOf(c);
+  lt.get('/health', async (c) => {
+    const { services } = await configOf(c);
     cacheable(c);
     return sendJson(c, {
       ok: true,
@@ -128,7 +128,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
 
   // TMDB : chemin en liste blanche (validé dans tmdbGet), paramètres en liste blanche (tmdbPublicParams).
   lt.get('/tmdb/:rest{.+}', async (c) => {
-    const token = serviceKey(configOf(c), 'tmdb');
+    const token = serviceKey(await configOf(c), 'tmdb');
     const body = await tmdbGet(ctx, token, c.req.param('rest'), tmdbPublicParams(queryOf(c)));
     cacheable(c);
     return sendJson(c, body);
@@ -142,7 +142,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     if (!isTopType(type)) throw new LtError(404, 'not_found');
     const query = queryOf(c);
     if (topWindowOf(type, query.window) === null) throw new LtError(400, 'bad_request');
-    const token = serviceKey(configOf(c), 'tmdb');
+    const token = serviceKey(await configOf(c), 'tmdb');
     const region = /^[A-Z]{2}$/.test(query.region ?? '') ? (query.region ?? 'FR') : 'FR';
     const requested = Number(query.page ?? '1');
     const page = Number.isInteger(requested) && requested >= 1 && requested <= 500 ? requested : 1;
@@ -152,7 +152,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.get('/mdblist/:type/:id', async (c) => {
-    const apiKey = serviceKey(configOf(c), 'mdblist');
+    const apiKey = serviceKey(await configOf(c), 'mdblist');
     const body = await mdblistCached(ctx, apiKey, c.req.param('type'), c.req.param('id'));
     // Réponse dégradée (quota) : jamais mise en cache par le navigateur.
     if (body.unavailable !== true) cacheable(c);
@@ -160,7 +160,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.get('/tvdb/series/:id', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     const apiKey = serviceKey(config, 'tvdb');
     const body = await tvdbSeries(ctx, apiKey, c.req.param('id'), config.services.tvdbPin).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
@@ -173,7 +173,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
 
   // Saisons et épisodes canoniques d'une série (TVDB, groupe TMDB ou TMDB). Langue : fr-FR par défaut.
   lt.get('/series/:tmdbId/episodes', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     const body = await seriesEpisodes(
       ctx,
       { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
@@ -186,7 +186,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
 
   // Épisodes filler et récap d'un anime (ARM puis Jikan), même numérotation que /episodes ; liste vide sinon.
   lt.get('/series/:tmdbId/fillers', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     const { fillers, degraded } = await seriesFillers(
       ctx,
       { tmdbToken: serviceKey(config, 'tmdb'), tvdbApiKey: config.services.tvdbApiKey, tvdbPin: config.services.tvdbPin },
@@ -210,7 +210,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     background: (work) => platform().scheduler.background(work),
   });
   lt.get('/meta/:type/:tmdbId', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     const target = metaTargetOf(c.req.param('type'), c.req.param('tmdbId'));
     const services: MetaServices = {
       tmdbToken: config.services.tmdbToken,
@@ -230,7 +230,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   // Segments de saut (intro, reprise, générique) : services externes, puis communauté, puis déduction de saison.
   // Cible validée ; clés IntroDB, SkipDB et Anime Skip facultatives.
   lt.get('/skip/:type/:imdbId/:season/:episode', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     const target = parseSkipTarget(c.req.param('type'), c.req.param('imdbId'), c.req.param('season'), c.req.param('episode'));
     const body = await community.resolve(config.services, target).catch((err: unknown): never => {
       if (err instanceof LtError && err.status === 404) throw err;
@@ -245,7 +245,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   // Le lecteur rapporte l'URL réellement lue pour un épisode : la détection locale l'analyse en arrière-plan.
   // Corps : { type, imdbId, season, episode, mediaUrl, duration }. L'URL n'est jamais journalisée ni stockée.
   lt.post('/skip/analyze', async (c) => {
-    configOf(c);
+    await configOf(c);
     const body = bodyOf(c);
     const { type, imdbId, season, episode, mediaUrl, duration } = body;
     const invalid = (): never => {
@@ -267,12 +267,12 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   // Proposition de segment (ou vote négatif). Débit limité comme les autres POST lt ; clés IntroDB et SkipDB facultatives.
-  lt.post('/skip/submit', async (c) => sendJson(c, await community.submit(configOf(c).services, bodyOf(c))));
+  lt.post('/skip/submit', async (c) => sendJson(c, await community.submit((await configOf(c)).services, bodyOf(c))));
 
   // Miniatures de la barre : on enregistre une source autorisée (serveur de streaming local ou lien émis par lastAddon),
   // puis on lit les images par tranche de 30 s. 501 si ffmpeg est absent ; 400 si la source est refusée.
   lt.post('/thumbs', async (c) => {
-    configOf(c);
+    await configOf(c);
     if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
     const body = bodyOf(c);
     const registration = await thumbs.register(body.url, body.duration, body.start);
@@ -281,7 +281,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.get('/thumbs/:key/:indexwebp{[^/]+\\.webp}', async (c) => {
-    configOf(c);
+    await configOf(c);
     if (!thumbs.enabled) throw new LtError(501, 'thumbs_disabled');
     const key = c.req.param('key');
     const raw = c.req.param('indexwebp').replace(/\.webp$/, '');
@@ -294,15 +294,15 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
     return sendBody(c, frame.data, 200, 'image/webp');
   });
 
-  lt.post('/recommend', async (c) => sendJson(c, await recommend(ctx, configOf(c), bodyOf(c))));
+  lt.post('/recommend', async (c) => sendJson(c, await recommend(ctx, await configOf(c), bodyOf(c))));
 
-  lt.post('/person-why', async (c) => sendJson(c, await personWhy(ctx, configOf(c), bodyOf(c))));
+  lt.post('/person-why', async (c) => sendJson(c, await personWhy(ctx, await configOf(c), bodyOf(c))));
 
   // TV : valide la configuration de l'URL ; aucune clé de service requise.
   // Filtres : country, language, category, source, q. Pagination : page, limit (sans les deux : tout le catalogue).
   // Sans limit ni page : tableau. Sinon : enveloppe { total, page, limit, channels }.
   lt.get('/tv/channels', async (c) => {
-    configOf(c);
+    await configOf(c);
     const scope = tokenOf(c);
     const query = parseTvQuery(queryOf(c));
     const page = await tvChannels(ctx, query);
@@ -313,21 +313,21 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.get('/tv/facets', async (c) => {
-    configOf(c);
+    await configOf(c);
     const body = await tvFacets(ctx);
     cacheable(c);
     return sendJson(c, body);
   });
 
   lt.get('/tv/epg', async (c) => {
-    configOf(c);
+    await configOf(c);
     const body = await tvEpg(ctx, queryOf(c));
     cacheable(c);
     return sendJson(c, body);
   });
 
   lt.get('/tv/hls', async (c) => {
-    configOf(c);
+    await configOf(c);
     if (!capabilities.tvHls) throw new LtError(501, 'tv_hls_disabled');
     const query = queryOf(c);
     const text = await tvHls(ctx, tokenOf(c), query.u ?? null, query.s ?? null);
@@ -336,14 +336,14 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   lt.get('/tv/stats', async (c) => {
-    configOf(c);
+    await configOf(c);
     const body = await tvStats(ctx);
     cacheable(c);
     return sendJson(c, body);
   });
 
   lt.post('/tv/import', async (c) => {
-    configOf(c);
+    await configOf(c);
     const imported = await tvImport(ctx, bodyOf(c));
     return sendJson(c, { count: imported.count, channels: imported.channels.map((channel) => signChannel(ctx, tokenOf(c), channel, capabilities.tvHls)) });
   });
@@ -369,7 +369,7 @@ export function registerLtRoutes(app: App, deps: AppDeps, backend: UserBackend):
   });
 
   const sendCatalog = async (c: Ctx, extra: string | undefined): Promise<Response> => {
-    const token = serviceKey(configOf(c), 'tmdb');
+    const token = serviceKey(await configOf(c), 'tmdb');
     const def = findCatalog(c.req.param('type') ?? '', (c.req.param('idjson') ?? '').replace(/\.json$/, ''));
     const skip = parseSkip(extra);
     if (def !== undefined && skip === 0) {

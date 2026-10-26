@@ -1,11 +1,11 @@
 import type { App, Ctx } from '../http/app-env.js';
 import { sendJson, queryParams } from '../http/respond.js';
 import { ConfigDecodeError, decodeConfig } from '../config/codec.js';
-import { withServerServices } from '../config/server-services.js';
+import { serverServicesEnv, withServerServices } from '../config/server-services.js';
 import { type Config, ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { isEdgeRequest } from '../config/edge.js';
-import { platform } from '../platform/index.js';
+import { platform, type UserBackend } from '../platform/index.js';
 import { configuredPublicUrl, isPublicMode, isTrustProxy } from '../config/runtime-env.js';
 import { getStreams, getStreamsStatus, type PipelineContext } from '../pipeline.js';
 import type { DeviceFetchEntry } from '../sources/device-fetch.js';
@@ -96,11 +96,12 @@ const notYetDigitalOf = (result: { notYetDigital?: boolean; digitalDate?: string
  * Route Stremio : GET /:config/stream/:type/:id.json.
  * Configuration invalide : 400 sans détail. Type ou identifiant hors format : liste vide.
  */
-export function registerStreamRoutes(app: App, deps: AppDeps): void {
-  /** Configuration de l'URL, ou la réponse 400 à renvoyer. */
-  const configOf = (c: Ctx): Config | Response => {
+export function registerStreamRoutes(app: App, deps: AppDeps, backend: UserBackend): void {
+  /** Configuration de l'URL, complétée par les clés serveur, ou la réponse 400 à renvoyer. */
+  const configOf = async (c: Ctx): Promise<Config | Response> => {
     try {
-      return withServerServices(decodeConfig(c.req.param('config') as string, deps.secret, { allowPlain: deps.allowPlain }));
+      const decoded = decodeConfig(c.req.param('config') as string, deps.secret, { allowPlain: deps.allowPlain });
+      return await withServerServices(decoded, serverServicesEnv(deps.secret, backend.users()));
     } catch (err) {
       if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) {
         return sendJson(c, { error: 'invalid_config' }, 400);
@@ -129,7 +130,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
    * tous les indexeurs (dans le budget dur).
    */
   app.get('/:config/stream/:type/:idjson{[^/]+\\.json}', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     if (config instanceof Response) return config;
 
     c.header('Cache-Control', CACHE_CONTROL);
@@ -152,7 +153,7 @@ export function registerStreamRoutes(app: App, deps: AppDeps): void {
 
   /** GET /:config/lt/streams/status/:type/:id : `{ pending, count }`, sans lancer de recherche. */
   app.get('/:config/lt/streams/status/:type/:id', async (c) => {
-    const config = configOf(c);
+    const config = await configOf(c);
     if (config instanceof Response) return config;
     c.header('Cache-Control', PARTIAL_CACHE_CONTROL);
     const ref = parseContentRef(c.req.param('type'), c.req.param('id').replace(/\.json$/, ''));

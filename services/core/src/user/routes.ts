@@ -6,7 +6,7 @@ import { errorHandler } from '../http/common.js';
 import { queryParams, sendEmpty, sendJson } from '../http/respond.js';
 import { bootstrapToken, isSignupAllowed } from '../config/runtime-env.js';
 import { ConfigDecodeError, decodeConfig, decryptJson, encryptJson } from '../config/codec.js';
-import { withServerServices } from '../config/server-services.js';
+import { serverServicesEnv, withServerServices, type ServerServicesEnv } from '../config/server-services.js';
 import { ConfigValidationError } from '../config/schema.js';
 import type { AppDeps } from '../deps.js';
 import { createLtContext, type LtContext } from '../lt/context.js';
@@ -140,10 +140,10 @@ function settingsEntries(body: unknown): [string, unknown][] {
   return entries;
 }
 
-/** Jeton TMDB d'une configuration encodée (import Stremio : résolution des identifiants). */
-function tmdbTokenOf(encoded: string, secret: string, allowPlain: boolean): string | undefined {
+/** Jeton TMDB d'une configuration encodée, clés serveur comprises (import Stremio : résolution des identifiants). */
+async function tmdbTokenOf(encoded: string, secret: string, allowPlain: boolean, env: ServerServicesEnv): Promise<string | undefined> {
   try {
-    return withServerServices(decodeConfig(encoded, secret, { allowPlain })).services.tmdbToken;
+    return (await withServerServices(decodeConfig(encoded, secret, { allowPlain }), env)).services.tmdbToken;
   } catch (err) {
     if (err instanceof ConfigDecodeError || err instanceof ConfigValidationError) throw new UserApiError(400, 'invalid_config');
     throw err;
@@ -828,7 +828,10 @@ export function registerUserRoutes(app: App, deps: AppDeps, backend: UserBackend
     const users = db();
     const { profile } = await scopeOf(users, c, deps.secret, true);
     const body = parseWith(stremioImportSchema, c.get('body'));
-    const tmdbToken = body.config === undefined ? undefined : tmdbTokenOf(body.config, deps.secret, deps.allowPlain);
+    const tmdbToken =
+      body.config === undefined
+        ? undefined
+        : await tmdbTokenOf(body.config, deps.secret, deps.allowPlain, serverServicesEnv(deps.secret, backend.users()));
     try {
       const result = await importStremioLibrary({
         store: users,

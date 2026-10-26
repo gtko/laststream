@@ -25,7 +25,7 @@ interface SecretMask {
 }
 
 /** Libellé des quatre derniers caractères, ou undefined si la clé est trop courte pour en montrer une partie. */
-function last4Label(value: string): string | undefined {
+export function last4Label(value: string): string | undefined {
   return value.length >= LAST4_MIN_LENGTH ? `…${value.slice(-4)}` : undefined;
 }
 
