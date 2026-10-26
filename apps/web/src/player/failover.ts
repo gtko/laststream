@@ -35,6 +35,8 @@ export class StallWatch {
   private lastCache = -1;
   private lastCacheProgressAt: number;
   private started = false;
+  /** Début de la lecture continue en cours (null : la position n'avance pas). Une pause ne l'interrompt pas. */
+  private stableSince: number | null = null;
 
   constructor(private readonly begunAt: number, private readonly stallMs = STALL_LIMIT_MS, private readonly startupMs = STARTUP_LIMIT_MS) {
     this.lastProgressAt = begunAt;
@@ -56,8 +58,10 @@ export class StallWatch {
       this.lastTime = time;
       this.lastProgressAt = now;
       this.started = true;
+      if (this.stableSince === null) this.stableSince = now;
       return 'ok';
     }
+    this.stableSince = null; // position figée hors pause : la lecture continue est interrompue
     if (!this.started) return now - this.begunAt > this.startupMs ? 'startup-timeout' : 'ok';
     const sincePosition = now - this.lastProgressAt;
     if (sincePosition <= this.stallMs) return 'ok';
@@ -71,6 +75,23 @@ export class StallWatch {
     this.lastProgressAt = now;
     this.lastCacheProgressAt = now;
   }
+
+  /** Durée (ms) de lecture continue depuis `stableSince` ; 0 si la position n'avance pas. Fonction pure de `now`. */
+  stableFor(now: number): number {
+    return this.stableSince === null ? 0 : now - this.stableSince;
+  }
+}
+
+/** Lecture stable depuis ce délai : les essais déjà faits ne comptent plus (des micro-coupures espacées n'épuisent pas MAX_ATTEMPTS). */
+export const STABLE_RESET_MS = 120_000;
+
+/**
+ * Remise à zéro des essais après une lecture stable. Renvoie null s'il n'y a rien à remettre. Seule la vue courante reste
+ * marquée « essayée » : les autres sources redeviennent candidates au failover suivant.
+ */
+export function attemptsAfterStable(attempts: number, currentIndex: number, stableMs: number): { attempts: number; tried: Set<number> } | null {
+  if (attempts <= 0 || stableMs < STABLE_RESET_MS) return null;
+  return { attempts: 0, tried: new Set([currentIndex]) };
 }
 
 /**

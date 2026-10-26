@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canPlayProbe, chooseEngine, detectCaps, guessWebPlayable } from '../src/player/engine';
-import { failoverOrder, StallWatch } from '../src/player/failover';
+import { attemptsAfterStable, failoverOrder, StallWatch } from '../src/player/failover';
 import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
 import { hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl } from '../src/player/server';
@@ -389,6 +389,27 @@ describe('failover', () => {
     w.reset(40_000);
     expect(w.tick(54_000, 10, false, 10)).toBe('ok');
     expect(w.tick(55_100, 10, false, 10)).toBe('stalled');
+  });
+
+  it('lecture stable : durée depuis la dernière interruption du progrès ; une pause ne l’interrompt pas', () => {
+    const w = new StallWatch(0);
+    expect(w.stableFor(5000)).toBe(0);
+    w.tick(1000, 1, false);
+    w.tick(2000, 2, false);
+    expect(w.stableFor(5000)).toBe(4000);
+    w.tick(3000, 2, false); // position figée à ce relevé : interruption
+    expect(w.stableFor(3000)).toBe(0);
+    w.tick(4000, 3, false);
+    expect(w.tick(10_000, 3, true)).toBe('ok'); // pause
+    expect(w.stableFor(10_000)).toBe(6000);
+  });
+});
+
+describe('essais après une lecture stable', () => {
+  it('remis à zéro seulement après 2 min de lecture stable, avec un essai et la vue courante seule essayée', () => {
+    expect(attemptsAfterStable(3, 4, 119_999)).toBeNull();
+    expect(attemptsAfterStable(0, 4, 500_000)).toBeNull();
+    expect(attemptsAfterStable(3, 4, 120_000)).toEqual({ attempts: 0, tried: new Set([4]) });
   });
 });
 
