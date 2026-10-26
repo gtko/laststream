@@ -142,8 +142,25 @@ function sentryEnvelope(eventId, event) {
   ].join('\n') + '\n';
 }
 
-/** Envoie l'événement à Sentry (enveloppe). Ne contient que l'hôte bloqué, jamais l'URL, le chemin, la requête ni les en-têtes. */
-async function sendSentryEvent({ host, trigger, requestId }, env) {
+/** Version publiée : variable RELEASE, sinon identifiant de version Cloudflare (CF_VERSION_METADATA), sinon « unknown ». */
+export function releaseOf(env) {
+  const explicit = typeof env?.RELEASE === 'string' ? env.RELEASE.trim() : '';
+  if (explicit !== '') return explicit.slice(0, 64);
+  const versionId = typeof env?.CF_VERSION_METADATA?.id === 'string' ? env.CF_VERSION_METADATA.id.trim() : '';
+  return versionId !== '' ? versionId.slice(0, 64) : 'unknown';
+}
+
+/** Texte sûr pour Sentry : URL masquées, valeurs de paramètres sensibles masquées, 200 caractères au plus. */
+function safeText(text) {
+  return String(text)
+    .replace(/[a-z][a-z\d+.-]*:\/\/\S+/gi, '[url]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [masqué]')
+    .replace(/([\w-]*(?:token|key|secret|pass(?:word)?|auth|sig(?:nature)?)[\w-]*)("?\s*[=:]\s*"?)[^\s&"',;]+/gi, '$1$2[masqué]')
+    .slice(0, 200);
+}
+
+/** Envoie un événement à Sentry (enveloppe) si SENTRY_DSN est valide. Tags platform « edge » et release sur tous les événements. */
+async function postSentryEvent({ tags = {}, ...fields }, env) {
   const dsn = parseSentryDsn(env?.SENTRY_DSN);
   if (dsn === null) return;
   const eventId = crypto.randomUUID().replaceAll('-', '');
@@ -152,11 +169,11 @@ async function sendSentryEvent({ host, trigger, requestId }, env) {
     timestamp: new Date().toISOString(),
     platform: 'javascript',
     level: 'error',
-    message: EVENT,
-    fingerprint: ['server_side_debrid_call'],
-    tags: { blocked_host: String(host ?? ''), trigger: String(trigger ?? ''), request_id: String(requestId ?? '') },
     environment: 'production',
     server_name: 'laststream-edge',
+    release: releaseOf(env),
+    ...fields,
+    tags: { platform: 'edge', release: releaseOf(env), ...tags },
   };
   await fetch(dsn.endpoint, {
     method: 'POST',
@@ -166,6 +183,32 @@ async function sendSentryEvent({ host, trigger, requestId }, env) {
     },
     body: sentryEnvelope(eventId, event),
   });
+}
+
+/** Événement de blocage : ne contient que l'hôte bloqué, jamais l'URL, le chemin, la requête ni les en-têtes. */
+function sendSentryEvent({ host, trigger, requestId }, env) {
+  return postSentryEvent(
+    {
+      message: EVENT,
+      fingerprint: ['server_side_debrid_call'],
+      tags: { blocked_host: String(host ?? ''), trigger: String(trigger ?? ''), request_id: String(requestId ?? '') },
+    },
+    env,
+  );
+}
+
+const UNHANDLED_EVENT = 'unhandled_exception';
+
+/** Type et message assaini d'une valeur levée ; accepte les valeurs qui ne sont pas des Error. Ne lève jamais. */
+function describeError(error) {
+  try {
+    const isError = error instanceof Error;
+    const type = isError && typeof error.name === 'string' ? error.name : 'Error';
+    const raw = isError ? error.message : error;
+    return { type: type.slice(0, 64), message: safeText(raw ?? '') };
+  } catch {
+    return { type: 'Error', message: '' };
+  }
 }
 
 /**
@@ -180,6 +223,33 @@ export function reportBlockedDebrid(info, env, ctx) {
     // Journalisation best-effort.
   }
   const sending = sendSentryEvent({ host, trigger, requestId }, env).catch(() => {});
+  try {
+    ctx?.waitUntil?.(sending);
+  } catch {
+    // Pas de contexte d'exécution : l'envoi reste lancé.
+  }
+  return sending;
+}
+
+/**
+ * Exception non gérée du handler : journal JSON (type et identifiant de requête, jamais le message brut) puis, si SENTRY_DSN
+ * est posé, envoi à Sentry via ctx.waitUntil avec un message assaini. Ne lève jamais. Renvoie la promesse d'envoi (toujours résolue).
+ */
+export function reportUnhandledError(error, env, ctx, requestId) {
+  const { type, message } = describeError(error);
+  try {
+    console.error(JSON.stringify({ level: 'error', event: UNHANDLED_EVENT, errorName: type, requestId }));
+  } catch {
+    // Journalisation best-effort.
+  }
+  const sending = postSentryEvent(
+    {
+      exception: { values: [{ type, value: message }] },
+      fingerprint: [UNHANDLED_EVENT, type],
+      tags: { trigger: 'unhandled', request_id: String(requestId ?? '') },
+    },
+    env,
+  ).catch(() => {});
   try {
     ctx?.waitUntil?.(sending);
   } catch {

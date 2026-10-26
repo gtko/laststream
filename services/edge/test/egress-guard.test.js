@@ -279,7 +279,7 @@ describe('rapport de blocage : journal et Sentry', () => {
     assert.equal(event.level, 'error');
     assert.equal(event.message, 'server_side_debrid_call_blocked');
     assert.deepEqual(event.fingerprint, ['server_side_debrid_call']);
-    assert.deepEqual(event.tags, { blocked_host: 'api.alldebrid.com', trigger: 'tunnel-fallback', request_id: 'req-test-1' });
+    assert.deepEqual(event.tags, { platform: 'edge', release: 'unknown', blocked_host: 'api.alldebrid.com', trigger: 'tunnel-fallback', request_id: 'req-test-1' });
     assert.equal(event.environment, 'production');
     assert.equal(event.platform, 'javascript');
     assert.equal(event.server_name, 'laststream-edge');

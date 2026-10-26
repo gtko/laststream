@@ -3,7 +3,7 @@
 // et qu'un tunnel est enregistré (POST /__laststream/register, secret partagé, KV LASTSTREAM_ROUTE). Désactivable : TUNNEL_FALLBACK=0.
 // Garde de sortie (egress-guard.js) : aucun appel vers un hôte interdit depuis ce Worker, rapport journal et Sentry.
 
-import { DebridEgressBlockedError, guardedFetch, hostOf, isDebridHost, reportBlockedDebrid } from './egress-guard.js';
+import { DebridEgressBlockedError, guardedFetch, hostOf, isDebridHost, reportBlockedDebrid, reportUnhandledError } from './egress-guard.js';
 
 const ROUTE_KEY = 'tunnel';
 const REGISTER_PATH = '/__laststream/register';
@@ -312,34 +312,48 @@ function appFile(pathname) {
   return null;
 }
 
+/** Exception non gérée : journal et envoi Sentry (si SENTRY_DSN), puis 500 JSON sans détail. */
+function internalError(error, request, env, ctx) {
+  reportUnhandledError(error, env, ctx, requestIdOf(request));
+  return json(500, { error: 'internal' });
+}
+
+async function route(request, env, ctx) {
+  const { pathname } = new URL(request.url);
+  if (pathname === REGISTER_PATH) return register(request, env, ctx);
+  // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
+  const file = env.APP_FILES && appFile(pathname);
+  if (file) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
+    const obj = await env.APP_FILES.get(file.key, { range: request.headers });
+    if (!obj) return json(404, { error: 'not_found' });
+    const headers = new Headers();
+    obj.writeHttpMetadata(headers);
+    headers.set('content-type', file.type);
+    if (file.attachment) headers.set('content-disposition', `attachment; filename="${file.name}"`);
+    headers.set('etag', obj.httpEtag);
+    headers.set('accept-ranges', 'bytes');
+    headers.set('cache-control', file.cache ?? 'public, max-age=86400, immutable');
+    if (obj.range && request.headers.has('range')) {
+      const r = obj.range;
+      const start = 'offset' in r ? r.offset : obj.size - r.suffix;
+      const len = 'length' in r && r.length !== undefined ? r.length : obj.size - start;
+      headers.set('content-range', `bytes ${start}-${start + len - 1}/${obj.size}`);
+      return new Response(request.method === 'HEAD' ? null : obj.body, { status: 206, headers });
+    }
+    headers.set('content-length', String(obj.size));
+    return new Response(request.method === 'HEAD' ? null : obj.body, { status: 200, headers });
+  }
+  if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
+  return relay(request, env, ctx);
+}
+
 export default {
   async fetch(request, env, ctx) {
-    const { pathname } = new URL(request.url);
-    if (pathname === REGISTER_PATH) return register(request, env, ctx);
-    // Fichiers d'application (trop gros pour les Workers Assets) : servis depuis R2, nom strict, en lecture seule.
-    const file = env.APP_FILES && appFile(pathname);
-    if (file) {
-      if (request.method !== 'GET' && request.method !== 'HEAD') return json(405, { error: 'method_not_allowed' });
-      const obj = await env.APP_FILES.get(file.key, { range: request.headers });
-      if (!obj) return json(404, { error: 'not_found' });
-      const headers = new Headers();
-      obj.writeHttpMetadata(headers);
-      headers.set('content-type', file.type);
-      if (file.attachment) headers.set('content-disposition', `attachment; filename="${file.name}"`);
-      headers.set('etag', obj.httpEtag);
-      headers.set('accept-ranges', 'bytes');
-      headers.set('cache-control', file.cache ?? 'public, max-age=86400, immutable');
-      if (obj.range && request.headers.has('range')) {
-        const r = obj.range;
-        const start = 'offset' in r ? r.offset : obj.size - r.suffix;
-        const len = 'length' in r && r.length !== undefined ? r.length : obj.size - start;
-        headers.set('content-range', `bytes ${start}-${start + len - 1}/${obj.size}`);
-        return new Response(request.method === 'HEAD' ? null : obj.body, { status: 206, headers });
-      }
-      headers.set('content-length', String(obj.size));
-      return new Response(request.method === 'HEAD' ? null : obj.body, { status: 200, headers });
+    try {
+      return await route(request, env, ctx);
+    } catch (error) {
+      return internalError(error, request, env, ctx);
     }
-    if (pathname.startsWith('/__laststream/')) return json(404, { error: 'not_found' });
-    return relay(request, env, ctx);
   },
 };
