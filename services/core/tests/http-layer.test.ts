@@ -191,7 +191,7 @@ describe('createApp : contrats HTTP conservés', () => {
     expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('etag')).toMatch(/^W\//);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toEqual({ ok: true, degraded: false, release: 'lastaddon-core@0.1.0', deps: {} });
     expect((await app.request('/health/')).status).toBe(200);
     const head = await app.request('/health', { method: 'HEAD' });
     expect(head.status).toBe(200);

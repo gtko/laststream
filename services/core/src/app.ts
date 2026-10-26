@@ -15,6 +15,7 @@ import { sendJson } from './http/respond.js';
 import { catalogEntries } from './lt/catalog.js';
 import { closeLtRoutes, registerLtRoutes } from './lt/router.js';
 import { platform, runtimeEnv } from './platform/index.js';
+import { createHealthReporter } from './health/probes.js';
 import { registerPlayRoutes } from './routes/play.js';
 import { registerStreamRoutes } from './routes/stream.js';
 import { registerTestRoutes } from './routes/test.js';
@@ -34,7 +35,7 @@ import { isRecord } from './sources/http.js';
 
 export { createRateLimiter };
 
-export const MANIFEST = {
+const MANIFEST = {
   id: 'com.laststream.lastaddon',
   version: '0.1.0',
   name: 'lastAddon',
@@ -48,6 +49,11 @@ export const MANIFEST = {
     configurationRequired: false,
   },
 } as const;
+
+/** Version du serveur : une seule source, celle de /health et celle de la release Sentry (src/worker.ts). */
+export function serverRelease(): string {
+  return `lastaddon-core@${MANIFEST.version}`;
+}
 
 /** Routes publiques lues par Stremio : CORS ouvert (`*`). */
 const OPEN_CORS_PATHS: readonly RegExp[] = [
@@ -230,7 +236,9 @@ export function createApp(deps: AppDeps): App {
   app.use('*', rateLimit((c) => c.req.method === 'GET' && c.req.path === '/announcements', readLimiter('ltRead')));
   app.use('*', jsonBody(DEFAULT_JSON_LIMIT));
 
-  app.get('/health', (c) => sendJson(c, { ok: true }));
+  // Sonde de disponibilité : version et état de chaque dépendance (délai borné, lecture seule, rapport gardé 15 s). Toujours HTTP 200.
+  const health = createHealthReporter({ release: serverRelease(), probes: deps.healthProbes ?? {} });
+  app.get('/health', async (c) => sendJson(c, await health()));
 
   app.get('/manifest.json', (c) => sendJson(c, MANIFEST));
 
