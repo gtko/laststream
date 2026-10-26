@@ -72,16 +72,20 @@ const account = (services: Record<string, string>): Config => parseConfig({ serv
 /** Patch d'écriture pour un seul champ (les champs sont passés dynamiquement dans les tests paramétrés). */
 const patchOf = (field: string, value: string | null): ServerServicesPatch => ({ [field]: value }) as ServerServicesPatch;
 
+/** Clé TheTVDB serveur de test. Le PIN serveur ne s'applique qu'avec une clé serveur (la paire vient d'une seule source). */
+const CLE_TVDB_SERVEUR = 'tvdb-cle-serveur-0123456789';
+const cleTvdbSiPin = (field: string): ServerServicesPatch => (field === 'tvdbPin' ? { tvdbApiKey: CLE_TVDB_SERVEUR } : {});
+
 describe('priorité : base serveur, puis variable d\'environnement, puis clé du compte', () => {
   it.each(OWNER_FIELDS)('%s : la base prime sur la variable d\'environnement et sur le compte', async (field, name) => {
     const h = harness({ [name]: 'env-valeur-0123456789' });
-    await setServerServices(h.env, patchOf(field, 'base-valeur-0123456789'));
+    await setServerServices(h.env, { ...cleTvdbSiPin(field), ...patchOf(field, 'base-valeur-0123456789') });
     const config = await withServerServices(account({ [field]: 'compte-valeur-01234' }), h.env);
     expect(config.services[field]).toBe('base-valeur-0123456789');
   });
 
   it.each(OWNER_FIELDS)('%s : la variable d\'environnement prime sur le compte quand la base est vide', async (field, name) => {
-    const h = harness({ [name]: 'env-valeur-0123456789' });
+    const h = harness({ [name]: 'env-valeur-0123456789', ...(field === 'tvdbPin' ? { TVDB_API_KEY: CLE_TVDB_SERVEUR } : {}) });
     const config = await withServerServices(account({ [field]: 'compte-valeur-01234' }), h.env);
     expect(config.services[field]).toBe('env-valeur-0123456789');
   });
@@ -102,6 +106,57 @@ describe('priorité : base serveur, puis variable d\'environnement, puis clé du
     const h = harness();
     await setServerServices(h.env, { tmdbToken: '  base-valeur-0123456789  ' });
     expect((await getServerServices(h.env)).tmdbToken).toBe('base-valeur-0123456789');
+  });
+});
+
+describe('TVDB : clé et PIN forment une paire, résolue d\'une seule source', () => {
+  const COMPTE_CLE = 'tvdb-cle-compte-0123456789';
+  const COMPTE_PIN = 'pin-compte-0123';
+  const compte = () => account({ tvdbApiKey: COMPTE_CLE, tvdbPin: COMPTE_PIN });
+
+  it('(a) clé serveur sans PIN : la clé serveur prime et le PIN du compte n\'est pas repris', async () => {
+    const h = harness();
+    await setServerServices(h.env, { tvdbApiKey: 'tvdb-cle-serveur-0123456789' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-serveur-0123456789');
+    expect(config.services.tvdbPin).toBeUndefined();
+  });
+
+  it('(a bis) clé de variable d\'environnement sans PIN : même règle', async () => {
+    const h = harness({ TVDB_API_KEY: 'tvdb-cle-env-0123456789' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-env-0123456789');
+    expect(config.services.tvdbPin).toBeUndefined();
+  });
+
+  it('(b) PIN serveur seul : la paire du compte est gardée', async () => {
+    const h = harness();
+    await setServerServices(h.env, { tvdbPin: 'pin-serveur-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe(COMPTE_CLE);
+    expect(config.services.tvdbPin).toBe(COMPTE_PIN);
+  });
+
+  it('(b bis) PIN de variable d\'environnement seul : la paire du compte est gardée', async () => {
+    const h = harness({ TVDB_PIN: 'pin-env-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe(COMPTE_CLE);
+    expect(config.services.tvdbPin).toBe(COMPTE_PIN);
+  });
+
+  it('(c) clé et PIN serveur : la paire serveur remplace celle du compte', async () => {
+    const h = harness();
+    await setServerServices(h.env, { tvdbApiKey: 'tvdb-cle-serveur-0123456789', tvdbPin: 'pin-serveur-0123' });
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe('tvdb-cle-serveur-0123456789');
+    expect(config.services.tvdbPin).toBe('pin-serveur-0123');
+  });
+
+  it('(d) rien côté serveur : la paire du compte est gardée telle quelle', async () => {
+    const h = harness();
+    const config = await withServerServices(compte(), h.env);
+    expect(config.services.tvdbApiKey).toBe(COMPTE_CLE);
+    expect(config.services.tvdbPin).toBe(COMPTE_PIN);
   });
 });
 
@@ -202,15 +257,68 @@ describe('cache de 60 s par isolat et invalidation à l\'écriture', () => {
     expect((await getServerServices(h.env)).tmdbToken).toBe('jeton-autre-isolat-0123');
   });
 
-  it('une panne de lecture repli sur les variables, sans mettre le repli en cache', async () => {
+  it('une panne de lecture repli sur les variables, et le repli n\'est gardé que 5 s', async () => {
     const h = harness({ TMDB_TOKEN: 'env-jeton-0123456789' });
     h.reads.fail = true;
     expect((await getServerServices(h.env)).tmdbToken).toBe('env-jeton-0123456789');
     expect((await getServerServices(h.env)).tmdbToken).toBe('env-jeton-0123456789');
-    expect(h.reads.count).toBe(2);
+    expect(h.reads.count).toBe(1);
     h.reads.fail = false;
     await setServerServices(h.env, { tmdbToken: 'base-jeton-0123456789' });
     expect((await getServerServices(h.env)).tmdbToken).toBe('base-jeton-0123456789');
+  });
+
+  it('après une panne, aucune relecture pendant 5 s, puis réessai', async () => {
+    const h = harness();
+    h.reads.fail = true;
+    await getServerServices(h.env);
+    h.store.writeServerServices([{ field: 'tmdbToken', sealed: encryptJson('jeton-apres-panne-0123', SECRET, 'server-services') }]);
+    h.reads.fail = false;
+    vi.advanceTimersByTime(4_999);
+    expect((await getServerServices(h.env)).tmdbToken).toBeUndefined();
+    expect(h.reads.count).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect((await getServerServices(h.env)).tmdbToken).toBe('jeton-apres-panne-0123');
+    expect(h.reads.count).toBe(2);
+  });
+
+  it('des lectures simultanées sur cache vide ne lancent qu\'un seul appel au dépôt', async () => {
+    const h = harness();
+    await Promise.all([getServerServices(h.env), getServerServices(h.env), serverServicesState(h.env)]);
+    expect(h.reads.count).toBe(1);
+  });
+
+  it('une écriture pendant une lecture en cours abandonne sa promesse', async () => {
+    const h = harness();
+    const pending = getServerServices(h.env);
+    await setServerServices(h.env, { tmdbToken: 'base-jeton-0123456789' });
+    await pending;
+    expect((await getServerServices(h.env)).tmdbToken).toBe('base-jeton-0123456789');
+  });
+});
+
+describe('journalisation des pannes : ligne générique, jamais de valeur', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('une panne de lecture journalise la ligne générique', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const h = harness();
+    h.reads.fail = true;
+    await getServerServices(h.env);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('server_services indisponible'));
+  });
+
+  it('une ligne illisible journalise le nom du champ, jamais sa valeur', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const h = harness();
+    h.store.writeServerServices([
+      { field: 'tmdbToken', sealed: encryptJson('valeur-secrete-illisible-0123', 'autre-secret-de-test-0123456789', 'server-services') },
+    ]);
+    expect(await getServerServices(h.env)).toEqual({});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('tmdbToken'));
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('valeur-secrete-illisible');
   });
 });
 

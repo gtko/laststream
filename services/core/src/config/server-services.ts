@@ -49,6 +49,9 @@ const MAX_KEY_LENGTH = 500;
 /** Durée de vie du cache des clés stockées, par isolat. */
 const CACHE_TTL_MS = 60_000;
 
+/** Durée de vie du « rien en base » après une panne de lecture : réessai au bout de 5 s. */
+const FAILURE_TTL_MS = 5_000;
+
 /** Dépôt utilisé pour lire et écrire les clés serveur (sous-ensemble du dépôt des données utilisateur). */
 export type ServerServicesRepo = Pick<UserRepo, 'listServerServiceRows' | 'writeServerServices'>;
 
@@ -80,8 +83,14 @@ export type ServerServicesPatch = Partial<Record<ServerServiceField, string | nu
 /** Clés stockées en base, déjà déchiffrées. */
 type Stored = Partial<Record<ServerServiceField, string>>;
 
+/** Entrée du cache : valable jusqu'à `expires`. `stored` est la lecture en cours ou terminée, partagée. */
+interface CacheEntry {
+  expires: number;
+  stored: Promise<Stored>;
+}
+
 /** Cache des clés stockées, par dépôt (un dépôt par isolat en production). */
-const cache = new WeakMap<ServerServicesRepo, { at: number; stored: Stored }>();
+const cache = new WeakMap<ServerServicesRepo, CacheEntry>();
 
 function isServerServiceField(name: string): name is ServerServiceField {
   return (SERVER_SERVICE_FIELDS as readonly string[]).includes(name);
@@ -101,24 +110,44 @@ function openRows(rows: readonly { field: string; sealed: string }[], secret: st
       const value = decryptJson(sealed, secret, SEAL_PURPOSE);
       if (typeof value === 'string' && value !== '') stored[field] = value;
     } catch {
-      // Message générique : aucune valeur ni contenu n'est journalisé.
+      // Seul le nom du champ est journalisé, jamais la valeur ni le contenu chiffré.
+      console.warn(`[server-services] server_services indisponible (champ illisible : ${field})`);
     }
   }
   return stored;
 }
 
 /**
- * Clés stockées en base, mises en cache 60 s. Une panne de lecture donne « rien en base » sans mise en cache : la
- * résolution se replie sur les variables d'exécution et réessaie à la demande suivante.
+ * Lit et déchiffre les clés en base. Une panne de lecture donne « rien en base », journalisé sans détail. Quand la
+ * lecture se termine, l'entrée du cache reçoit sa fin de validité : 60 s si elle a réussi, 5 s si elle a échoué.
  */
-async function storedKeys(env: ServerServicesEnv): Promise<Stored> {
+async function loadStored(env: ServerServicesEnv, entry: CacheEntry): Promise<Stored> {
+  try {
+    const rows = await env.users.listServerServiceRows();
+    const stored = openRows(rows, env.secret);
+    entry.expires = Date.now() + CACHE_TTL_MS;
+    return stored;
+  } catch (err) {
+    console.warn(
+      `[server-services] server_services indisponible (lecture échouée : ${err instanceof Error ? err.name : 'inconnue'})`,
+    );
+    entry.expires = Date.now() + FAILURE_TTL_MS;
+    return {};
+  }
+}
+
+/**
+ * Clés stockées en base, mises en cache 60 s. Les lectures simultanées partagent la même promesse : un cache vide ne
+ * déclenche qu'un appel au dépôt. Une panne de lecture est mise en cache 5 s seulement.
+ */
+function storedKeys(env: ServerServicesEnv): Promise<Stored> {
   const hit = cache.get(env.users);
-  if (hit !== undefined && Date.now() - hit.at < CACHE_TTL_MS) return hit.stored;
-  const rows = await env.users.listServerServiceRows().catch(() => undefined);
-  if (rows === undefined) return {};
-  const stored = openRows(rows, env.secret);
-  cache.set(env.users, { at: Date.now(), stored });
-  return stored;
+  if (hit !== undefined && Date.now() < hit.expires) return hit.stored;
+  // Pendant la lecture, l'entrée n'expire pas : les appels concurrents attendent la même promesse.
+  const entry: CacheEntry = { expires: Number.POSITIVE_INFINITY, stored: Promise.resolve({}) };
+  entry.stored = loadStored(env, entry);
+  cache.set(env.users, entry);
+  return entry.stored;
 }
 
 /** Clés serveur effectives : la base d'abord, puis la variable d'exécution. OpenRouter ne vient que de la variable. */
@@ -136,16 +165,25 @@ export async function getServerServices(env: ServerServicesEnv): Promise<ServerS
 
 /**
  * Configuration dont les clés sont complétées par celles du serveur. Pour les champs du propriétaire : base, puis
- * variable d'exécution, puis clé du compte. OpenRouter : clé du compte, puis OPENROUTER_API_KEY.
+ * variable d'exécution, puis clé du compte. TheTVDB : clé et PIN forment une paire d'une seule source. Si le serveur
+ * fournit la clé, la paire est celle du serveur (sans PIN si le serveur n'en a pas, sans reprendre celui du compte) ;
+ * sinon la paire du compte est gardée telle quelle. OpenRouter : clé du compte, puis OPENROUTER_API_KEY.
  */
 export async function withServerServices(config: Config, env: ServerServicesEnv): Promise<Config> {
   const server = await getServerServices(env);
   let services: Config['services'] | undefined;
   for (const field of SERVER_SERVICE_FIELDS) {
+    if (field === 'tvdbApiKey' || field === 'tvdbPin') continue;
     const value = server[field];
     if (value === undefined) continue;
     services ??= { ...config.services };
     services[field] = value;
+  }
+  if (server.tvdbApiKey !== undefined) {
+    services ??= { ...config.services };
+    services.tvdbApiKey = server.tvdbApiKey;
+    if (server.tvdbPin !== undefined) services.tvdbPin = server.tvdbPin;
+    else delete services.tvdbPin;
   }
   if (config.services.openrouterApiKey === undefined && server.openrouterApiKey !== undefined) {
     services ??= { ...config.services };
@@ -190,8 +228,12 @@ export async function setServerServices(env: ServerServicesEnv, patch: ServerSer
     if (trimmed.length > MAX_KEY_LENGTH) throw new RangeError(`clé serveur trop longue : ${field}`);
     writes.push({ field, sealed: encryptJson(trimmed, env.secret, SEAL_PURPOSE) });
   }
-  if (writes.length > 0) await env.users.writeServerServices(writes);
-  cache.delete(env.users);
+  try {
+    if (writes.length > 0) await env.users.writeServerServices(writes);
+  } finally {
+    // Abandonne le cache et la lecture en cours : la lecture suivante relit la base.
+    cache.delete(env.users);
+  }
   return serverServicesState(env);
 }
 
