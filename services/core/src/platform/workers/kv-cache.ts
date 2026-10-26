@@ -4,7 +4,7 @@ import type { KvCache } from '../types.js';
 /** Durée de vie minimale d'une clé KV (limite de Cloudflare). */
 const KV_MIN_TTL_SECONDS = 60;
 /** Durée de repli d'une écriture sans durée valide : 24 h. */
-export const KV_DEFAULT_TTL_SECONDS = 24 * 3600;
+const KV_DEFAULT_TTL_SECONDS = 24 * 3600;
 /** Longueur maximale d'une clé KV (octets). */
 const KV_MAX_KEY_BYTES = 512;
 
