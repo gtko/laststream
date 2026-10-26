@@ -502,16 +502,31 @@ async function refreshHome(force = false) {
   }
 }
 
-let liveOn = false;
-/** Resynchronisation toutes les ~60 s quand l'accueil est affiché. Mise en place une seule fois. */
-function startHomeLive() {
-  if (liveOn) return;
-  liveOn = true;
-  setInterval(() => { void refreshHome(); }, REMOTE_EVERY_MS);
+let liveTimer = 0;
+/** Écouteurs de retour dans l'app, groupés sous un AbortController : défaits en quittant l'accueil (stopHomeLive). */
+let liveAc = null;
+
+function attachLive() {
+  liveAc = new AbortController();
+  const { signal } = liveAc;
+  // Retour dans l'app : l'accueil relit le compte aussitôt. Capacitor émet « resume » sur le document quand la WebView reprend
+  // (p. ex. après le lecteur natif Android) ; « visibilitychange » et « focus » couvrent le navigateur et la coque Windows.
+  document.addEventListener('resume', () => { void refreshHome(true); }, { signal });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshHome(); }, { signal });
+  window.addEventListener('focus', () => { void refreshHome(); }, { signal });
+}
+attachLive();
+
+/** Accueil affiché : resynchronisation toutes les ~60 s et retour dans l'app. Idempotent (renderHome, retour de la fiche). */
+export function startHomeLive() {
+  if (!liveAc) attachLive();
+  if (!liveTimer) liveTimer = setInterval(() => { void refreshHome(); }, REMOTE_EVERY_MS);
 }
 
-// Retour dans l'app : l'accueil relit le compte aussitôt. Capacitor émet « resume » sur le document quand la WebView reprend
-// (p. ex. après le lecteur natif Android) ; « visibilitychange » et « focus » couvrent le navigateur et la coque Windows.
-document.addEventListener('resume', () => { void refreshHome(true); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshHome(); });
-window.addEventListener('focus', () => { void refreshHome(); });
+/** Accueil quitté (fiche, page de compte, lecteur) : arrête la resynchronisation et retire les écouteurs. */
+export function stopHomeLive() {
+  clearInterval(liveTimer);
+  liveTimer = 0;
+  liveAc?.abort();
+  liveAc = null;
+}

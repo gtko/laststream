@@ -6,7 +6,7 @@ import {
   snoozeBuild, stripReloadParam,
 } from '../src/data/uiUpdate';
 import { getUiUpdateAuto, getUiUpdateNotify, setUiUpdateAuto, setUiUpdateNotify } from '../src/data/prefs';
-import { initUiUpdateBanner } from '../src/ui/ui-update-banner.js';
+import { initUiUpdateBanner } from '../src/ui/update-banner.js';
 
 const json = (body: unknown, init: { ok?: boolean; status?: number } = {}) =>
   (async () => ({ ok: init.ok ?? true, status: init.status ?? 200, json: async () => body })) as unknown as typeof fetch;

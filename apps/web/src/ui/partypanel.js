@@ -45,6 +45,10 @@ let band = null;
 let eventEl = null;
 let eventTimer = 0;
 let sysLines = [];
+/** Compte à rebours, débit et synchro (1 s), abonnement au bridge et écouteurs du panneau : défaits par unmountPartyPanel. */
+let tickTimer = 0;
+let offBridge = null;
+let listenersAc = null;
 
 const CLOSE_BTN = '<button type="button" class="wp-close" data-wp-close aria-label="Fermer le panneau">' + LI.close + '</button>';
 const fmtRate =(bps) => (bps / 1048576).toFixed(1).replace('.', ',') + ' Mo/s';
@@ -527,14 +531,43 @@ export function mountPartyPanel(root, opts) {
   root.appendChild(eventEl);
   root.appendChild(floats);
   root.appendChild(panel);
-  partyBridge.onChange(() => { attach(); render(); });
+  listenersAc = new AbortController();
+  const { signal } = listenersAc;
+  offBridge = partyBridge.onChange(() => { attach(); render(); });
   partyBridge.onCreated = () => { togglePartyPanel(true); void inviteAfterCreate(); };
-  panel.addEventListener('click', onClick);
-  panel.addEventListener('submit', onSubmit);
-  panel.addEventListener('input', onInput);
-  panel.addEventListener('keydown', onKeyDown);
-  band.addEventListener('click', onBandClick);
-  setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);
+  panel.addEventListener('click', onClick, { signal });
+  panel.addEventListener('submit', onSubmit, { signal });
+  panel.addEventListener('input', onInput, { signal });
+  panel.addEventListener('keydown', onKeyDown, { signal });
+  band.addEventListener('click', onBandClick, { signal });
+  tickTimer = setInterval(() => { updateRelayLine(); updateCountdown(); updateSync(); }, 1000);
+}
+
+/**
+ * Démontage du panneau : arrête le compte à rebours et les minuteries d'affichage, retire les écouteurs, l'abonnement au
+ * bridge et les éléments du DOM. Sans effet si rien n'est monté ; un nouveau `mountPartyPanel` repart de zéro.
+ */
+export function unmountPartyPanel() {
+  if (!rootEl) return;
+  clearInterval(tickTimer);
+  tickTimer = 0;
+  clearTimeout(copiedTimer);
+  copiedTimer = 0;
+  clearTimeout(eventTimer);
+  eventTimer = 0;
+  listenersAc.abort();
+  listenersAc = null;
+  offBridge();
+  offBridge = null;
+  partyBridge.onCreated = null;
+  for (const el of [band, eventEl, floats, panel]) el.remove();
+  rootEl.classList.remove('has-party-panel');
+  rootEl = null;
+  panel = null;
+  floats = null;
+  band = null;
+  eventEl = null;
+  open = false;
 }
 
 export function togglePartyPanel(force) {

@@ -21,7 +21,7 @@ import { showFiche, teardownFiche } from './fiche.js';
 import { showDownloads, teardownDownloads } from './downloads.js';
 import { ficheHash, parseFicheHash } from './ficheRoute.js';
 import { closeHover } from './hover.js';
-import { renderContinue } from './home.js';
+import { renderContinue, startHomeLive, stopHomeLive } from './home.js';
 import { notifyHomeChange } from '../data/homeFilters';
 import { renderLibrary, showLibrary } from './library.js';
 import { closeModal } from './modal.js';
@@ -190,6 +190,7 @@ export function route() {
   teardownDownloads(); // téléchargements : abonnement de la vue quittée libéré (la vue suivante se réabonne)
   teardownAddonView(); // page d'addon quittée : défilement et chargements arrêtés
   if (r) {
+    stopHomeLive(); // accueil masqué par la vue ouverte : pas de resynchronisation ni d'écouteurs d'accueil pendant ce temps
     if (!state.inDetail) {
       state.homeScroll = window.scrollY;
       state.inDetail = true;
@@ -204,6 +205,7 @@ export function route() {
   } else {
     closeModal(true);
     if (!state.inDetail) return;
+    startHomeLive(); // accueil de nouveau affiché : resynchronisation et écouteurs repris
     teardownFiche();
     state.inDetail = false;
     state.depth = 0;
