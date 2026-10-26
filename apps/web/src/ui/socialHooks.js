@@ -27,10 +27,38 @@ export function registerSocialHook(name, fn) {
   impl[name] = fn;
 }
 
-export const openProfileEditor = (...a) => impl.openProfileEditor(...a);
-export const openConversation = (...a) => impl.openConversation(...a);
-export const renderConversationList = (...a) => impl.renderConversationList(...a);
-export const openShareDialog = (...a) => impl.openShareDialog(...a);
-export const inviteToParty = (...a) => impl.inviteToParty(...a);
-export const openPartyLobby = (...a) => impl.openPartyLobby(...a);
-export const launchPlayback = (...a) => impl.launchPlayback(...a);
+// Chargement différé du Social (LAST-129) : tant que ses modules ne sont pas arrivés, un appel de hook est mis en file
+// et rejoué dès l'enregistrement. Sans chargeur (tests, ou Social déjà chargé), l'appel est direct.
+let loader = null;
+let ready = true;
+
+/** Déclare le chargeur du Social ; les hooks appelés avant `markSocialReady` attendent ce chargement. */
+export function setSocialLoader(fn) { loader = fn; ready = false; }
+/** Les modules Social sont chargés et leurs hooks enregistrés. */
+export function markSocialReady() { ready = true; }
+/** Charge le Social si besoin. */
+export const ensureSocial = () => (loader && !ready ? loader() : Promise.resolve());
+
+/** Message court affiché quand le Social n'a pas pu être chargé (branché sur le toast de l'application par main.js). */
+let notify = () => undefined;
+export function setSocialNotifier(fn) { notify = fn; }
+const SOCIAL_FAIL = 'Impossible de charger cette fonction, vérifiez la connexion.';
+const call = (name, a) => {
+  if (ready) return impl[name](...a);
+  void ensureSocial().then(() => impl[name](...a)).catch(() => notify(SOCIAL_FAIL));
+  return undefined;
+};
+
+export const openProfileEditor = (...a) => call('openProfileEditor', a);
+export const openConversation = (...a) => call('openConversation', a);
+export const renderConversationList = (...a) => {
+  if (ready) return impl.renderConversationList(...a);
+  let cleanup;
+  let closed = false;
+  void ensureSocial().then(() => { if (!closed) cleanup = impl.renderConversationList(...a); }).catch(() => notify(SOCIAL_FAIL));
+  return () => { closed = true; if (typeof cleanup === 'function') cleanup(); };
+};
+export const openShareDialog = (...a) => call('openShareDialog', a);
+export const inviteToParty = (...a) => call('inviteToParty', a);
+export const openPartyLobby = (...a) => call('openPartyLobby', a);
+export const launchPlayback = (...a) => call('launchPlayback', a);

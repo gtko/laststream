@@ -2,6 +2,7 @@
  * Le registre ./admin/sections.js décrit chaque section (rendu, liaison, chargement) ; ce fichier gère le routage entre sections,
  * le rafraîchissement global (compteurs, état du serveur, compte à rebours d’élévation) et le contexte passé aux sections.
  * Les données restent chargées à la demande, par section. */
+import '../styles/admin.css';
 import { canAdmin } from '../data/auth';
 import * as api from '../data/adminApi';
 import { elevationExpiresAt, obtainElevation, setElevationPrompt } from '../data/adminApi';

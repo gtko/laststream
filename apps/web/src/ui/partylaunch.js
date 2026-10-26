@@ -5,10 +5,9 @@
  * Un profil enfant ou hors compte garde la lecture immédiate, en salon privé, sans invitations. Mobile : panneau du bas. */
 import { auth, isKidProfile, isServerMode } from '../data/auth';
 import { partyBridge, partyVisibilityChoices } from '../party/bridge';
-import { modalBody } from './dom.js';
+import { modalBody, toast } from './dom.js';
 import { closeModal, openModal } from './modal.js';
 import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
-import { createLobbyFor, inviteMany } from './partylobby.js';
 import { handlePartyCreateError } from './partyerrors.js';
 import { sortedFriends } from './partyfriends.js';
 import { safeTmdbImage } from './safeImg.js';
@@ -76,7 +75,7 @@ export function openPartyDialog(btn, model = null) {
 }
 
 // Salon créé à la volée (« Lancer tout de suite ») : amis choisis invités, échec expliqué (PIN redemandé si besoin).
-partyBridge.onInvites = (room, pids) => { void partyBridge.waitForHost().then((ok) => { if (ok) return inviteMany(room.id, pids); }); };
+partyBridge.onInvites = (room, pids) => { void partyBridge.waitForHost().then((ok) => { if (ok) return import('./partylobby.js').then((m) => m.inviteMany(room.id, pids), () => toast('Impossible de charger cet écran, vérifiez la connexion.')); }); };
 partyBridge.onCreateError = (err, retry, cancel) => { void handlePartyCreateError(err, { retry, cancel }); };
 
 modalBody.addEventListener('submit', (e) => {
@@ -95,7 +94,7 @@ modalBody.addEventListener('submit', (e) => {
   if (req && (model || !btn.dataset.playKey)) {
     const m = model || state.model;
     // Pas deux salons pour un même titre sur un double envoi.
-    void runOnce('party-create:' + req.key, () => createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
+    void runOnce('party-create:' + req.key, () => import('./partylobby.js').then((l) => l.createLobbyFor(req, (m && m.posterPath) || null, visibility, btn, invite), () => toast('Impossible de charger cet écran, vérifiez la connexion.')), { cooldown: TOGGLE_COOLDOWN_MS, maxMs: 60000 });
     return;
   }
   partyBridge.pending = { visibility };

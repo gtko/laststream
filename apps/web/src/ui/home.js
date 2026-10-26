@@ -14,7 +14,7 @@ import { onDataEvent } from '../data/events';
 import { recommend, tmdb, top10 } from '../data/lt';
 import { userStore } from '../data/userStore';
 import { keepVisible, onHomeChange } from '../data/homeFilters';
-import { isPlayerOpen } from '../player/session.js';
+import { isPlayerOpen } from '../player/sessionLoader.js';
 import { fillRow, ROW_PAGES_MAX, TOP_COUNT } from '../data/rows';
 import { getDetail, listOf, register, toItem } from './catalog.js';
 import { TABS } from './constants.js';

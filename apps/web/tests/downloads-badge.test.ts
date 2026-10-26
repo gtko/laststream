@@ -36,7 +36,7 @@ vi.mock('../src/downloads/service', () => ({
   purgeAll: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../src/data/auth', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/data/auth')>()), isKidProfile: () => h.s.kid }));
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
 
 type Item = { id: string; metaId: string; title: string; state: string; bytesDone: number; bytesTotal?: number; season?: number; episode?: number; error?: { code: string }; source: { copies: never[] } };
 const item = (id: string, state: string, extra: Partial<Item> = {}): Item => ({ id, metaId: id.split(':').slice(0, 2).join(':'), title: 'Titre ' + id, state, bytesDone: 620, bytesTotal: 1000, source: { copies: [] }, ...extra });

@@ -5,7 +5,7 @@ import { isKidProfile } from '../data/auth';
 import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, planSeasonDownload, platformAvailability, recommendedChoice, requestDownload, requestSeasonDownload, subscribeDownloads } from '../downloads/service';
 import { getDownloadSettings, isCellular, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
 import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/viewModel';
-import { playBest } from '../player/session.js';
+import { playBest } from '../player/sessionLoader.js';
 import { elKey, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { detailEl, toast } from './dom.js';
 import { esc, names } from './util.js';
@@ -350,7 +350,7 @@ export async function retryItem(id) { const m = await manager(); if (m) m.retry(
 /** Lecture d'un titre téléchargé : chemin normal du lecteur (la copie locale est choisie par ODY-203). */
 export function playOffline(item, opener) {
   closeSheet();
-  return playBest(requestOfItem(item), opener);
+  return Promise.resolve(playBest(requestOfItem(item), opener)).catch(() => undefined); // l'échec de chargement du lecteur est déjà signalé
 }
 
 /** Annule une suppression en attente : le titre revient tel quel (reprise s'il était en cours). Vrai si quelque chose était en attente. */

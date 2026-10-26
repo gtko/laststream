@@ -502,3 +502,7 @@ body.kid-mode .btn, body.kid-mode .pill { border-radius: 999px; }
 .av-credits-more summary { cursor: pointer; }
 .av-credits { font-size: 12px; color: var(--muted); line-height: 1.5; }
 .av-credits li { margin: 2px 0; }
+
+/* Page qui n'a pas pu être chargée (chargement à la demande en échec) : message et bouton « Réessayer » (LAST-129). */
+.load-error { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 72px 20px; text-align: center; }
+.load-error p { margin: 0; color: var(--muted, inherit); }

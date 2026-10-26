@@ -34,7 +34,7 @@ vi.mock('../src/downloads/service', () => ({
   persistStorage: vi.fn(() => Promise.resolve(true)),
   purgeAll: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
 
 type Item = { id: string; metaId: string; title: string; state: string; bytesDone: number; bytesTotal?: number; season?: number; episode?: number; error?: { code: string }; source: { copies: never[] } };
 const item = (id: string, state: string, extra: Partial<Item> = {}): Item => ({ id, metaId: id.split(':').slice(0, 2).join(':'), title: 'Titre ' + id, state, bytesDone: 620, bytesTotal: 1000, source: { copies: [] }, ...extra });
@@ -164,7 +164,7 @@ describe('pastille ronde d’un épisode', () => {
     const sheet = document.querySelector('.dl-sheet') as HTMLElement;
     expect(sheet.getAttribute('role')).toBe('dialog');
     expect(sheet.textContent).toContain('Lire hors ligne');
-    const { playBest } = await import('../src/player/session.js');
+    const { playBest } = await import('../src/player/sessionLoader.js');
     (sheet.querySelector('[data-dl-play]') as HTMLButtonElement).click();
     expect(playBest).toHaveBeenCalledWith(expect.objectContaining({ type: 'tv', id: '9', season: 1, episode: 1, key: 'tv:9' }), pill);
     expect(document.querySelector('.dl-layer')).toBeNull();
@@ -583,7 +583,7 @@ describe('écran #/downloads', () => {
     expect(h.mgr.resume).toHaveBeenCalledWith('movie:2');
     expect(h.mgr.retry).toHaveBeenCalledWith('movie:3');
     expect(detail().textContent).toContain('1 téléchargement a échoué');
-    const { playBest } = await import('../src/player/session.js');
+    const { playBest } = await import('../src/player/sessionLoader.js');
     (detail().querySelector('[data-dl-row="movie:4"] [data-dl-act="play"]') as HTMLElement).click();
     expect(playBest).toHaveBeenCalledWith(expect.objectContaining({ type: 'movie', id: '4', key: 'movie:4' }), expect.anything());
   });

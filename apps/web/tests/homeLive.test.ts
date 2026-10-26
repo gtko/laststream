@@ -6,8 +6,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 const player = vi.hoisted(() => ({ open: false }));
 vi.mock('hls.js', () => ({ default: class { static isSupported = () => false; } }));
-vi.mock('../src/player/session.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/player/session.js')>()),
+vi.mock('../src/player/sessionLoader.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/player/sessionLoader.js')>()),
   isPlayerOpen: () => player.open,
 }));
 

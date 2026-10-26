@@ -6,7 +6,7 @@ import { addonBaseOf, mappedIds, readAddonCatalogs } from '../data/addonCatalog'
 import { isKidProfile } from '../data/auth';
 import { addonTitleKey, isInAddonLibrary, toggleAddonLibrary } from '../data/addonUserStore';
 import { numberedVideos } from '../player/addonRequest';
-import { playBest, playSource } from '../player/session.js';
+import { playBest, playSource } from '../player/sessionLoader.js';
 import { fetchAddonMeta, loadAddonSources } from '../sources/addonSources';
 import { openSourcePicker } from '../sources/picker.js';
 import { addonPreviewKey, addonTypeLabel, previewOf } from './addonRows.js';
@@ -169,7 +169,7 @@ export function showAddonFiche(root, { addonKey, type, id }) {
     setMsg('');
     const request = requestOf(m, null);
     // Sélecteur avec les sources déjà chargées : il ne cherche rien de plus (pas de voie TMDB / IMDb).
-    openSourcePicker(request, btn, { views, onPick: (view) => { playSource(request, views, view, btn); } });
+    openSourcePicker(request, btn, { views, onPick: (view) => { void Promise.resolve(playSource(request, views, view, btn)).catch(() => undefined); } });
   };
 
   const toggleLib = (m, btn) => {
@@ -189,13 +189,13 @@ export function showAddonFiche(root, { addonKey, type, id }) {
       article.addEventListener('click', (e) => {
         const btn = e.target instanceof Element ? e.target.closest('button') : null;
         if (!btn) return;
-        if (btn.hasAttribute('data-play')) playBest(requestOf(m, null), btn);
+        if (btn.hasAttribute('data-play')) void Promise.resolve(playBest(requestOf(m, null), btn)).catch(() => undefined);
         else if (btn.hasAttribute('data-sources')) sourcesOf(m, btn);
         else if (btn.hasAttribute('data-lib')) toggleLib(m, btn);
         else if (btn.dataset.ep) {
           const [s, ep] = btn.dataset.ep.split(':').map(Number);
           const video = m.videos.find((v) => v.season === s && v.episode === ep);
-          if (video) playBest(requestOf(m, video), btn);
+          if (video) void Promise.resolve(playBest(requestOf(m, video), btn)).catch(() => undefined);
         }
       });
     }

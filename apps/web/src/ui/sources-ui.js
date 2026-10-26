@@ -1,7 +1,7 @@
 /* « Lecture » : branche les boutons de l'interface sur le sélecteur de sources (src/sources) et le lecteur (src/player). */
 import { getAutoplay } from '../data/prefs';
 import { canonAiredOn } from '../data/series';
-import { closePlayer, playBest } from '../player/session.js';
+import { closePlayer, playBest } from '../player/sessionLoader.js';
 import { prefetchSources } from '../sources/load';
 import { nextToWatch } from './fiche.js';
 import { hv } from './hover.js';
@@ -43,7 +43,7 @@ export function playFrom(btn, model = null) {
   // Le lecteur s'ouvre tout de suite ; la meilleure source est choisie dedans (ou le sélecteur, réglage désactivé).
   // Épisode diffusé dans les 14 prochains jours (data-air) : lisible, et « Pas encore disponible » si aucune source.
   const air = model ? undefined : btn.closest('.ep')?.dataset.air;
-  playBest(request, btn, air ? { notYetAired: air } : {});
+  void Promise.resolve(playBest(request, btn, air ? { notYetAired: air } : {})).catch(() => undefined);
 }
 
 /**
@@ -64,7 +64,7 @@ async function playAiringEpisode(btn) {
     episode: canon ? canon.episode : Number(btn.dataset.playEpisode),
     streamId: canon && canon.streamId ? canon.streamId : null,
   };
-  playBest(request, btn, air ? { notYetAired: air } : {});
+  void Promise.resolve(playBest(request, btn, air ? { notYetAired: air } : {})).catch(() => undefined);
 }
 
 /** Sélecteur de sources, ouvert dans le lecteur : choisir une source lance la lecture. */

@@ -3,7 +3,7 @@
  *   node tools/compact-collections.mjs <nuvio-collections-fr.json> [sortie]
  * Ne garde que les sources TMDB (les sources `trakt` et `addon` sont ignorées : pas de clé Trakt, aucun addon tiers),
  * retire les champs inutiles (identifiants de sources, valeurs nulles) et masque les dossiers sans source TMDB.
- * La sortie (src/data/collections/focale.json) est chargée à la demande par import dynamique. */
+ * La sortie (src/data/collections/focale.json) est servie comme asset et chargée à la demande (fetch). */
 import fs from 'node:fs';
 import path from 'node:path';
 

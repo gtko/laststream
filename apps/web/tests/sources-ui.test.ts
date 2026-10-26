@@ -83,7 +83,13 @@ describe('cartes de sources', () => {
     expect(document.querySelector('#set-h-sources')!.textContent).toBe('Sources');
   });
 
-  it('affiche des cartes compactes avec logo, nom du manifest, version, types et état', () => {
+  it('affiche des cartes compactes avec logo, nom du manifest, version, types et état', async () => {
+    // Le test serveur (/config/test) enrichit la 3e carte de façon asynchrone : on attend la condition, pas un délai fixe.
+    await vi.waitFor(() => {
+      const all = document.querySelectorAll('#detail .src-card');
+      expect(all).toHaveLength(3);
+      expect(all[2].querySelector('.src-logo img')?.getAttribute('src')).toBe('https://x.example/l.png');
+    }, { timeout: 5000 });
     const cards = Array.from(document.querySelectorAll('#detail .src-card')) as HTMLElement[];
     expect(cards).toHaveLength(3);
     expect(cards[0].querySelector('.src-pos')!.textContent).toBe('1');

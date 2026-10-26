@@ -7,7 +7,7 @@ vi.mock('../src/data/auth', async (importOriginal) => {
   const real = await importOriginal<typeof import('../src/data/auth')>();
   return { ...real, isKidProfile: () => true };
 });
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
 
 beforeAll(() => {
   const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');

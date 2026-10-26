@@ -37,7 +37,8 @@ export default defineConfig(({ command }) => {
   return {
     server: { host: '0.0.0.0', port: 8080, strictPort: true, proxy: { ...streamingServer, ...demoConfigRelay } },
     preview: { host: '0.0.0.0', port: 8080, strictPort: true, proxy: streamingServer },
-    build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 700 },
+    // manifest : dist/.vite/manifest.json, lu par scripts/startup-budget.mjs (budget des chunks chargés au démarrage).
+    build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 700, manifest: true },
     define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_ID__: JSON.stringify(build) },
     plugins: [versionFile(build)],
     test: {

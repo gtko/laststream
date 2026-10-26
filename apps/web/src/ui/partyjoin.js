@@ -1,6 +1,7 @@
 /* Page invitée d'une watch party : #/party/join/<id>?t=<jeton>. Accessible sans compte (main.js ne lance pas l'écran de connexion
  * pour cette adresse). L'invité choisit un pseudo, rejoint le salon, reçoit la lecture de l'hôte par WebRTC et la décode ici.
  * Le lien débridé ne quitte jamais l'appareil de l'hôte : seules les plages de fichier arrivent. Aucune URL n'est affichée. */
+import '../styles/partyjoin.css';
 import { requireBase } from '../data/config';
 import { enterPartyAsGuest } from '../data/socialApi';
 import { UserApiError } from '../data/userApi';

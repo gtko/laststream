@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isAc3Codec, sampleToAudioData } from './ac3';
+import { isAc3Codec, loadAc3Decoder, sampleToAudioData } from './ac3';
+
+// Compteur d'imports de @mediabunny/ac3 : la factory ne tourne qu'à la première importation du module.
+const ac3 = vi.hoisted(() => ({ imports: 0, register: vi.fn() }));
+vi.mock('@mediabunny/ac3', () => {
+  ac3.imports += 1;
+  return { registerAc3Decoder: ac3.register };
+});
 
 describe('sampleToAudioData', () => {
   it('convertit via toAudioData (secondes -> µs) et ferme l’échantillon', () => {
@@ -30,5 +37,14 @@ describe('isAc3Codec', () => {
     expect(isAc3Codec('eac3')).toBe(true);
     expect(isAc3Codec('aac')).toBe(false);
     expect(isAc3Codec('')).toBe(false);
+  });
+});
+
+describe('chargement du décodeur AC-3', () => {
+  it('n’importe @mediabunny/ac3 qu’à la demande, pas à l’import du module', async () => {
+    expect(ac3.imports).toBe(0);
+    await loadAc3Decoder();
+    expect(ac3.imports).toBe(1);
+    expect(ac3.register).toHaveBeenCalledTimes(1);
   });
 });

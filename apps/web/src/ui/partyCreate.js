@@ -1,6 +1,7 @@
 /* « Proposer une watch party » (Social v3, ODY-173) : fenêtre de création quand aucun titre n'est en lecture. On cherche un film ou
  * une série (TMDB), on règle saison / épisode d'une série et la visibilité, puis le salon d'attente est créé et l'ami de la
  * conversation (ou les amis cochés dans un partage) est invité. La watch party synchronise des comptes : chacun lit avec sa propre source. */
+import '../styles/convwin.css';
 import { isKidProfile } from '../data/auth';
 import { tmdb } from '../data/lt';
 import { partyVisibilityChoices } from '../party/bridge';

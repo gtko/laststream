@@ -4,6 +4,7 @@
  * 720 px (CSS). Variante enfant : seulement les collections `kid`, en sections. Données : data/avatar-catalog.ts ; vignettes :
  * avatar-art.js. L'ancien sélecteur DiceBear / Héros reste dans « Illustrés » > « Générés » (avatar-picker.js).
  */
+import '../styles/avatar-studio.css';
 import {
   avatarImageUrl, groupCollections, isKidAllowed, kidCollections, loadCatalog, loadCollection, normalizeText,
   pushRecentAvatar, recentAvatars, searchCatalog, searchCharacters, suggestFromWatching, watchingTitles,

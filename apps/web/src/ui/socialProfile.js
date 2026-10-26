@@ -3,6 +3,7 @@
  * du store (socialStore : loadProfile, saveProfile, rerollTag, loadPrefs, savePrefs, setStatus) ; l'avatar passe par le studio
  * d'avatars existant et par la route des profils (auth.saveProfile). Tout texte venu de l'utilisateur ou du serveur est posé
  * avec textContent. Le brouillon et ses différences sont dans socialProfileModel.js. */
+import '../styles/socialProfile.css';
 import { auth, isKidProfile, isServerMode, saveProfile as saveAuthProfile } from '../data/auth';
 import { tmdb } from '../data/lt';
 import * as store from '../data/socialStore';

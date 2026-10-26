@@ -422,10 +422,13 @@ describe('interface portée', () => {
     expect(by('movie:100').querySelector('.t-remove')).not.toBeNull();
     // Un clic reprend la lecture directement (source choisie automatiquement), à la position enregistrée.
     by('movie:100').click();
-    await settle(400);
+    // Le lecteur est chargé à la demande (import()) puis la source est résolue : on attend la condition, pas un délai (CI plus lente).
+    await vi.waitFor(() => {
+      const el = document.getElementById('lsplayer') as HTMLElement | null;
+      expect(el?.hidden).toBe(false);
+      expect(el!.querySelector('video')?.getAttribute('src')).toBe('https://cdn.example/film.mp4');
+    }, { timeout: 5000 });
     const player = document.getElementById('lsplayer') as HTMLElement;
-    expect(player.hidden).toBe(false);
-    expect((player.querySelector('video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
     (player.querySelector('[data-act="close"]') as HTMLElement).click();
     await settle(50);
     expect(player.hidden).toBe(true);
@@ -503,18 +506,26 @@ describe('interface portée', () => {
 
   it('Lecture ouvre le lecteur et lance la meilleure source ; lecture automatique désactivée : sélecteur dans le lecteur', async () => {
     (document.querySelector('#detail [data-play]') as HTMLElement).click();
-    await settle(400);
+    // Le lecteur est chargé à la demande (import()) puis la source est résolue : on attend la condition, pas un délai (CI plus lente).
+    await vi.waitFor(() => {
+      const el = document.getElementById('lsplayer') as HTMLElement | null;
+      expect(el?.hidden).toBe(false);
+      expect(el!.querySelector('video')?.getAttribute('src')).toBe('https://cdn.example/film.mp4');
+    }, { timeout: 5000 });
     const player = document.getElementById('lsplayer') as HTMLElement;
-    expect(player.hidden).toBe(false);
-    expect((player.querySelector('video') as HTMLVideoElement).getAttribute('src')).toBe('https://cdn.example/film.mp4');
     (player.querySelector('[data-act="close"]') as HTMLElement).click();
     await settle(50);
     expect(player.hidden).toBe(true);
     localStorage.setItem('laststream.autoplay', '0');
+    // Anti-multi-clic (ODY-237) : un second clic sur le même bouton Lecture est ignoré pendant PLAY_COOLDOWN_MS.
+    const { PLAY_COOLDOWN_MS } = await import('../src/ui/busy.js');
+    await settle(PLAY_COOLDOWN_MS + 100);
     (document.querySelector('#detail [data-play]') as HTMLElement).click();
-    await settle(300);
     // Le lecteur est ouvert et le sélecteur détaillé est un panneau du lecteur, pas un tiroir de la fiche.
-    expect(player.hidden).toBe(false);
+    await vi.waitFor(() => {
+      expect(player.hidden).toBe(false);
+      expect(player.querySelector('.lp-panel .src2')).not.toBeNull();
+    }, { timeout: 5000 });
     expect(document.getElementById('modal')!.hidden).toBe(true);
     const item = player.querySelector('.lp-panel .src2') as HTMLElement;
     expect(item.querySelector('.q')!.textContent).toBe('1080p');

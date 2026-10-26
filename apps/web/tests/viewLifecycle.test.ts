@@ -8,8 +8,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 const CYCLES = 30;
 
 vi.mock('hls.js', () => ({ default: class { static isSupported = () => false; } }));
-vi.mock('../src/player/session.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/player/session.js')>()),
+vi.mock('../src/player/sessionLoader.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/player/sessionLoader.js')>()),
   isPlayerOpen: () => false,
 }));
 vi.mock('../src/data/appUpdate', async (importOriginal) => ({

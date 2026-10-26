@@ -1,6 +1,7 @@
 /* Social v3 (lot F4) : page publique d'un lien de partage (#/t/<code>, ou /t/<code> servi par le Worker), sans session :
  * la fiche recommandée, le mot de l'ami, « Ouvrir dans Laststream » et, si le lien porte une invitation, « Créer un compte avec
  * l'invitation » (inscription existante, ?invite=<code>). Jamais la position ni la bibliothèque de l'ami, sauf « ce moment ». */
+import '../styles/share.css';
 import { getShareLink } from '../data/socialV3Api';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';

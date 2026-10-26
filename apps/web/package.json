@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8080",
     "build": "tsc --noEmit && eslint src/ui src/player src/sources src/main.js && vite build",
+    "budget": "node scripts/startup-budget.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

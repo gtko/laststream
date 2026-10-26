@@ -2,6 +2,7 @@
  * tri, vues « en commun » et « pas encore vus par moi », badges, « Ajouter à ma bibliothèque » et « Envoyer ». Ouverte depuis le
  * menu ⋯ de la fiche de l'ami et son onglet Bibliothèque. Le serveur ne renvoie que les titres que l'ami rend visibles
  * (réglage « Ma bibliothèque ») ; recherche, tri et filtres se font ici sur la liste chargée. */
+import '../styles/friendLibrary.css';
 import { isKidProfile, isServerMode } from '../data/auth';
 import { applyView, countsOf, DEFAULT_VIEW, usable } from '../data/friendLibraryView';
 import * as store from '../data/socialStore';

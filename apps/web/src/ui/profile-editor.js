@@ -4,6 +4,7 @@
  * code parental, PIN) et, en modification, une zone de danger qui demande de saisir le nom avant de supprimer.
  * Le studio d'avatars garde sa vue plein écran par-dessus la page (son retour ramène ici).
  */
+import '../styles/profile-editor.css';
 import { auth, isProfileLocked, parentalProfile, removeProfile, saveProfile, unlock } from '../data/auth';
 import { KID_SECTIONS, sectionAllowed } from '../data/kid';
 import { KID_AGES } from '../data/userApi';

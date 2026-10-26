@@ -7,11 +7,11 @@ import { guideShows, type Guide, resetShowsCache, resolveSeed } from '../src/dat
 import { clearCache } from '../src/data/transport';
 // lastAddon se lit une fois, à l'import de config.ts : réglé avant les imports, comme au premier chargement de l'application.
 vi.hoisted(() => localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_sh-1' })));
-import { playBest } from '../src/player/session.js';
+import { playBest } from '../src/player/sessionLoader.js';
 import { state } from '../src/ui/state.js';
 // Lecture d'un épisode : on vérifie l'appel (sources, auto-lecture) sans lancer de vrai lecteur. Stubs complets (pas de
 // importOriginal) : le vrai module tire les rangées et la fiche dans un cycle d'imports qui garde le vrai playBest.
-vi.mock('../src/player/session.js', () => ({
+vi.mock('../src/player/sessionLoader.js', () => ({
   playBest: vi.fn(async () => undefined),
   closePlayer: () => undefined,
   isPlayerOpen: () => false,

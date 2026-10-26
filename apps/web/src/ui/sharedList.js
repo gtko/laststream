@@ -1,5 +1,6 @@
 /* Social v3 (lot F4) : page d'une liste partagée (#/list/<id>) : nom, membres, titres ajoutés (qui, quand), ouverture de la
  * fiche, retrait d'un titre, renommage, ajout d'amis, sortie de la liste. Tout texte du serveur passe par textContent. */
+import '../styles/share.css';
 import * as store from '../data/socialStore';
 import { isKidProfile, isServerMode } from '../data/auth';
 import { detailEl, toast } from './dom.js';

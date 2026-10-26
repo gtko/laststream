@@ -4,14 +4,14 @@ import { isInAddonLibrary } from '../src/data/addonUserStore';
 import { fetchAddonMeta, loadAddonSources } from '../src/sources/addonSources';
 import type { SourceView } from '../src/sources/info';
 import { openSourcePicker } from '../src/sources/picker.js';
-import { playBest, playSource } from '../src/player/session.js';
+import { playBest, playSource } from '../src/player/sessionLoader.js';
 import { addonPreviewKey } from '../src/ui/addonRows.js';
 import { addonSlug } from '../src/ui/addonRoutes.js';
 import { showAddonFiche } from '../src/ui/addonFiche.js';
 
 vi.mock('../src/sources/addonSources', () => ({ fetchAddonMeta: vi.fn(), loadAddonSources: vi.fn() }));
 vi.mock('../src/sources/picker.js', () => ({ openSourcePicker: vi.fn(async () => undefined) }));
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(async () => undefined), playSource: vi.fn(async () => undefined) }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(async () => undefined), playSource: vi.fn(async () => undefined) }));
 
 const KEY = 'https://addon.example.test/cfg-abc';
 const ENTRY: AddonCatalogEntry = {

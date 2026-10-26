@@ -1,6 +1,7 @@
 /* Social v3 (lot F4) : fenêtre « Partager » (maquette Partage / MobilePartage). Bureau : boîte centrée de 760 px, amis et groupes
  * à gauche, « Hors de Laststream » à droite. Mobile (< 768 px) : panneau du bas. Le module enregistre openShareDialog dans
  * socialHooks ; main.js appelle configureShareDialog({ toast }). Tout texte venant du serveur passe par textContent. */
+import '../styles/share.css';
 import { Capacitor } from '@capacitor/core';
 import * as store from '../data/socialStore';
 import { createShareLink, getMyShareLinks, revokeShareLink } from '../data/socialV3Api';

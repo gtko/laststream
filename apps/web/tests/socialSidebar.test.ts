@@ -835,7 +835,8 @@ describe('barre, clavier et adresse', () => {
     const detail = document.getElementById('detail')!;
     detail.hidden = true;
     router.route();
-    expect(sb.isSidebarOpen()).toBe(true);
+    // La barre est chargée à la demande (LAST-129) : elle s'ouvre dès que le Social est arrivé.
+    await vi.waitFor(() => expect(sb.isSidebarOpen()).toBe(true));
     expect(detail.hidden).toBe(true);
     sb.closeSidebar();
     location.hash = '';

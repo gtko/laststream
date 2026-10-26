@@ -41,7 +41,7 @@ vi.mock('../src/downloads/service', () => ({
   listDownloads: () => h.s.items,
   getSpace: vi.fn(() => Promise.resolve(h.s.space)),
 }));
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
 
 const GO = 1024 ** 3;
 const show = { key: 'tv:9', type: 'tv', id: 9, name: 'Nuits' };

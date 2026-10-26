@@ -1,7 +1,6 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { toggleEpisode } from './watched.js';
 import { isKidProfile } from '../data/auth';
-import { leaveKidProfile } from './auth-ui.js';
 import { IMG, REDUCE } from './constants.js';
 import { elKey, PLAY_COOLDOWN_MS, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { closeCtx } from './ctxmenu.js';
@@ -265,7 +264,7 @@ document.addEventListener('click', (e) => {
   const calB = t.closest('[data-calnav]');
   if (calB) { e.preventDefault(); go('#/calendar', calB); return; }
   const setB = t.closest('[data-settings]');
-    if (setB) { e.preventDefault(); if (isKidProfile()) leaveKidProfile(); else go('#/settings', setB); return; }
+    if (setB) { e.preventDefault(); if (isKidProfile()) void import('./auth-ui.js').then((m) => m.leaveKidProfile(), () => toast('Impossible de charger cet écran, vérifiez la connexion.')); else go('#/settings', setB); return; }
     const libNav = t.closest('[data-libnav]');
   if (libNav) { e.preventDefault(); go('#/library', libNav); return; }
   const hidNav = t.closest('[data-hidden-nav]');

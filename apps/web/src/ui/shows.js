@@ -5,7 +5,7 @@ import { loadGuide, loadMoreShows, loadShows, pastEpisodes, showDetail } from '.
 import { airingsFor, dayLabel, epgIdOf, foldText, hhmm, isLiveNow, isShowCategory, localDate, matchKnown, primeTime, progressPct, seedFor, showKey } from '../data/shows';
 import { episodeParts, partLabel } from '../data/episodeParts';
 import { favAirings } from '../data/tvFavRow';
-import { playBest } from '../player/session.js';
+import { playBest } from '../player/sessionLoader.js';
 import { register, toItem } from './catalog.js';
 import { GENRE_FR, IMG } from './constants.js';
 import { detailEl } from './dom.js';
@@ -504,7 +504,7 @@ function playEpisode(btn) {
   const key = art ? art.dataset.key || '' : '';
   const name = art && art.dataset.name !== undefined ? art.dataset.name : state.ficheName || '';
   const [season, episode] = String(btn.dataset.showep).split(':').map(Number);
-  playBest({ type: 'tv', id: key.split(':')[1] || '', name, season, episode, key }, btn);
+  void Promise.resolve(playBest({ type: 'tv', id: key.split(':')[1] || '', name, season, episode, key }, btn)).catch(() => undefined);
 }
 
 /**

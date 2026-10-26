@@ -1,9 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { playBest } from '../src/player/session.js';
+import { playBest } from '../src/player/sessionLoader.js';
 import { loadSources, prefetchSources } from '../src/sources/load';
 
 // Le héros de l'accueil ne lance jamais la lecture ni la recherche de sources : seul le fondu des textes s'y applique.
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(() => Promise.resolve()), isPlayerOpen: vi.fn(() => false) }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(() => Promise.resolve()), isPlayerOpen: vi.fn(() => false) }));
 vi.mock('../src/sources/load', () => ({ loadSources: vi.fn(), prefetchSources: vi.fn() }));
 vi.mock('../src/ui/catalog.js', () => ({ getDetail: vi.fn(async () => ({ trailer: 'abc', trailerVO: false })) }));
 

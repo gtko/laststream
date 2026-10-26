@@ -1,44 +1,70 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { showCalendar } from './calendar.js';
-import { showHidden } from './hidden.js';
-import { showStats } from './stats.js';
-import { showFriendLibrary } from './friendLibrary.js';
-import { openSidebar } from './socialSidebar.js';
-import { showSharedList } from './sharedList.js';
-import { showShareLink } from './publicTitle.js';
+import { ensureSocial } from './socialHooks.js';
 import { listIdFrom, shareCodeFrom } from './shareModel.js';
-import { showParties, showParty } from './parties.js';
-import { showSocialProfile } from './socialProfile.js';
-import { showPartyJoin, teardownPartyJoin } from './partyjoin.js';
 import { parseJoinHash } from '../party/join';
 import { canAdmin, isKidProfile, kidSection } from '../data/auth';
-import { showAdmin } from './admin.js';
 import { browseAllowed, showBrowse } from './registry.js';
-import { showAiBrowse } from './recs-ui.js';
-import { showSearch } from './search.js';
-import { app, detailEl } from './dom.js';
+import { app, detailEl, toast } from './dom.js';
 import { showFiche, teardownFiche } from './fiche.js';
-import { showDownloads, teardownDownloads } from './downloads.js';
 import { ficheHash, parseFicheHash } from './ficheRoute.js';
 import { closeHover } from './hover.js';
 import { renderContinue, startHomeLive, stopHomeLive } from './home.js';
 import { notifyHomeChange } from '../data/homeFilters';
 import { renderLibrary, showLibrary } from './library.js';
 import { closeModal } from './modal.js';
-import { showPerson } from './person.js';
 import { closePlayer } from './player.js';
 import { cancelDwell, setupPreviews, stopPreview } from './preview.js';
 import { showCollection, showCollections } from './collections.js';
-import { showDiscover } from './discover.js';
-import { showAddonCatalog } from './addonCatalogPage.js';
-import { showAddonFiche } from './addonFiche.js';
 import { parseAddonHash, resolveAddonSlug } from './addonRoutes.js';
-import { showHub } from './hubs.js';
 import { showService, showServices } from './services.js';
-import { showSettings } from './settings.js';
 import { state } from './state.js';
 import { showShow, showShowsPage, renderTvRows } from './shows.js';
 import { renderLive, showTvLive } from './tv.js';
+
+// Vues chargées à la première ouverture (import dynamique) : hors du premier chargement de l'application (LAST-129).
+const loaded = {}; // modules déjà chargés : leurs fonctions de démontage ne s'appellent que s'ils le sont
+const lazyView = (name, loader) => () => loader().then((m) => { loaded[name] = m; return m; });
+const lazy = {
+  hidden: lazyView('hidden', () => import('./hidden.js')),
+  stats: lazyView('stats', () => import('./stats.js')),
+  friendLibrary: lazyView('friendLibrary', () => import('./friendLibrary.js')),
+  sharedList: lazyView('sharedList', () => import('./sharedList.js')),
+  publicTitle: lazyView('publicTitle', () => import('./publicTitle.js')),
+  parties: lazyView('parties', () => import('./parties.js')),
+  socialProfile: lazyView('socialProfile', () => import('./socialProfile.js')),
+  partyjoin: lazyView('partyjoin', () => import('./partyjoin.js')),
+  admin: lazyView('admin', () => import('./admin.js')),
+  recs: lazyView('recs', () => import('./recs-ui.js')),
+  search: lazyView('search', () => import('./search.js')),
+  downloads: lazyView('downloads', () => import('./downloads.js')),
+  person: lazyView('person', () => import('./person.js')),
+  discover: lazyView('discover', () => import('./discover.js')),
+  addonCatalog: lazyView('addonCatalog', () => import('./addonCatalogPage.js')),
+  addonFiche: lazyView('addonFiche', () => import('./addonFiche.js')),
+  hubs: lazyView('hubs', () => import('./hubs.js')),
+  settings: lazyView('settings', () => import('./settings.js')),
+};
+/** Navigation en cours : un module qui arrive après une autre navigation n'affiche plus rien. */
+let navToken = 0;
+/** Abandonne la vue chargée à la demande encore en route (navigation ailleurs ou retour à l'accueil). */
+function cancelPendingView() { navToken++; }
+/** Page qui n'a pas pu être chargée (réseau, module introuvable) : message et bouton pour réessayer. */
+function showLoadError() {
+  detailEl.innerHTML = '<div class="load-error" role="alert"><p>Impossible de charger cette page.</p><button type="button" class="btn" data-load-retry>Réessayer</button></div>';
+  const b = detailEl.querySelector('[data-load-retry]');
+  if (b) { b.addEventListener('click', () => route()); b.focus({ preventScroll: true }); }
+}
+/** Charge la vue puis l'ouvre, sauf si l'utilisateur a navigué ailleurs entre-temps ; un échec de chargement s'affiche. */
+function open(load, run) {
+  cancelPendingView();
+  const token = navToken;
+  load().then((m) => { if (token === navToken && m) run(m); }, () => { if (token === navToken) showLoadError(); });
+}
+/** Barre des amis par-dessus la page en cours : le Social est chargé au besoin. */
+const openSidebar = () => { void ensureSocial().then(() => import('./socialSidebar.js')).then((m) => m.openSidebar()).catch(() => toast('Impossible de charger les amis.')); };
+const teardownDownloads = () => loaded.downloads?.teardownDownloads();
+const teardownPartyJoin = () => loaded.partyjoin?.teardownPartyJoin();
 
 /** Page d'addon ouverte (catalogue ou fiche) : son `destroy()` est appelé en la quittant (voir teardownAddonView). */
 let addonView = null;
@@ -64,35 +90,36 @@ export function go(url, opener) {
 }
 
 export function showView(r) {
+  cancelPendingView(); // une vue chargée à la demande encore en route est abandonnée
   if (r.kind === 'service') showService(r.slug);
   else if (r.kind === 'services') showServices();
   else if (r.kind === 'collections') showCollections(r.cat);
   else if (r.kind === 'collection') showCollection(r.id);
-  else if (r.kind === 'discover') showDiscover();
+  else if (r.kind === 'discover') open(lazy.discover, (m) => m.showDiscover());
   else if (r.kind === 'library') showLibrary();
-  else if (r.kind === 'hidden') showHidden();
-  else if (r.kind === 'stats') showStats();
+  else if (r.kind === 'hidden') open(lazy.hidden, (m) => m.showHidden());
+  else if (r.kind === 'stats') open(lazy.stats, (m) => m.showStats());
   else if (r.kind === 'friends') openSidebar();
-  else if (r.kind === 'friend') showFriendLibrary(r.id);
-  else if (r.kind === 'socialprofile') showSocialProfile();
-  else if (r.kind === 'parties') showParties();
-  else if (r.kind === 'list') showSharedList(r.id);
-  else if (r.kind === 'sharelink') showShareLink(r.code);
-  else if (r.kind === 'party') showParty(r.id);
-  else if (r.kind === 'partyjoin') showPartyJoin(r.id, r.token);
-  else if (r.kind === 'settings') showSettings();
-  else if (r.kind === 'admin') showAdmin();
-  else if (r.kind === 'browse') (r.id === 'ai' ? showAiBrowse() : showBrowse(r.id));
-  else if (r.kind === 'search') showSearch();
+  else if (r.kind === 'friend') open(lazy.friendLibrary, (m) => m.showFriendLibrary(r.id));
+  else if (r.kind === 'socialprofile') open(lazy.socialProfile, (m) => m.showSocialProfile());
+  else if (r.kind === 'parties') open(lazy.parties, (m) => m.showParties());
+  else if (r.kind === 'list') open(lazy.sharedList, (m) => m.showSharedList(r.id));
+  else if (r.kind === 'sharelink') open(lazy.publicTitle, (m) => m.showShareLink(r.code));
+  else if (r.kind === 'party') open(lazy.parties, (m) => m.showParty(r.id));
+  else if (r.kind === 'partyjoin') open(lazy.partyjoin, (m) => m.showPartyJoin(r.id, r.token));
+  else if (r.kind === 'settings') open(lazy.settings, (m) => m.showSettings());
+  else if (r.kind === 'admin') open(lazy.admin, (m) => m.showAdmin());
+  else if (r.kind === 'browse') { if (r.id === 'ai') open(lazy.recs, (m) => m.showAiBrowse()); else showBrowse(r.id); }
+  else if (r.kind === 'search') open(lazy.search, (m) => m.showSearch());
   else if (r.kind === 'calendar') showCalendar();
-  else if (r.kind === 'person') showPerson(r.id);
+  else if (r.kind === 'person') open(lazy.person, (m) => m.showPerson(r.id));
   else if (r.kind === 'tvlive') showTvLive();
   else if (r.kind === 'shows') showShowsPage();
   else if (r.kind === 'show') showShow(r.id);
-  else if (r.kind === 'hub') showHub(r.id);
-  else if (r.kind === 'downloads') showDownloads();
-  else if (r.kind === 'addonCatalog') addonView = showAddonCatalog(detailEl, { addonKey: r.addonKey, type: r.type, catId: r.catId });
-  else if (r.kind === 'addonFiche') addonView = showAddonFiche(detailEl, { addonKey: r.addonKey, type: r.type, id: r.id });
+  else if (r.kind === 'hub') open(lazy.hubs, (m) => m.showHub(r.id));
+  else if (r.kind === 'downloads') open(lazy.downloads, (m) => m.showDownloads());
+  else if (r.kind === 'addonCatalog') open(lazy.addonCatalog, (m) => { addonView = m.showAddonCatalog(detailEl, { addonKey: r.addonKey, type: r.type, catId: r.catId }); });
+  else if (r.kind === 'addonFiche') open(lazy.addonFiche, (m) => { addonView = m.showAddonFiche(detailEl, { addonKey: r.addonKey, type: r.type, id: r.id }); });
   else showFiche(r.type, r.id, r.season != null ? { s: r.season, e: r.episode } : null);
 }
 export function applyRestore() {
@@ -203,6 +230,7 @@ export function route() {
     window.scrollTo(0, 0);
     showView(r);
   } else {
+    cancelPendingView(); // retour à l'accueil : une vue encore en chargement ne doit pas s'afficher dessus
     closeModal(true);
     if (!state.inDetail) return;
     startHomeLive(); // accueil de nouveau affiché : resynchronisation et écouteurs repris

@@ -3,7 +3,7 @@
 import { isKidProfile } from '../data/auth';
 import { getTrailerAutoplay } from '../data/prefs';
 import { prefetchSources } from '../sources/load';
-import { isPlayerOpen, playBest } from '../player/session.js';
+import { isPlayerOpen, playBest } from '../player/sessionLoader.js';
 import { detailEl, modal } from './dom.js';
 import { watchPlayback } from './playback.js';
 import { postYT } from './preview.js';

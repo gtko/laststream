@@ -22,7 +22,7 @@ vi.mock('../src/downloads/service', () => ({
   persistStorage: vi.fn(() => Promise.resolve(true)),
   purgeAll: vi.fn(() => Promise.resolve()),
 }));
-vi.mock('../src/player/session.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
+vi.mock('../src/player/sessionLoader.js', () => ({ playBest: vi.fn(), closePlayer: vi.fn() }));
 
 type Item = { id: string; metaId: string; title: string; state: string; bytesDone: number; bytesTotal: number; source: { copies: never[] } };
 const item = (id: string, state: string): Item => ({ id, metaId: id, title: 'Titre ' + id, state, bytesDone: 620, bytesTotal: 1000, source: { copies: [] } });

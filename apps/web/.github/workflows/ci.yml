@@ -49,6 +49,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Budget du premier chargement (chunks du démarrage, manifeste Vite, LAST-129) : aucun chunk au-dessus de 500 Ko brut,
+      # et total gzip plafonné à 450 Ko (bloquant, ratchet : ~419 Ko aujourd'hui ; un lecteur rechargé au démarrage le pousse à ~637 Ko).
+      # Objectif web : 350 Ko gzip, à atteindre en abaissant ce plafond.
+      - name: Budget du premier chargement
+        run: npm run budget -- --max-kb 500 --max-total-gzip-kb 450 --strict-gzip
+
       # Chromium de Playwright, headless ; no-op quand il est déjà en cache sur le runner.
       - name: Navigateur de test e2e
         run: npx playwright install chromium

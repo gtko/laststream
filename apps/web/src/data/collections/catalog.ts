@@ -1,9 +1,10 @@
 /*
- * Catalogue de collections : chargement à la demande (import dynamique du JSON, ~900 Ko), recherche du hub,
+ * Catalogue de collections : chargement à la demande (JSON ~900 Ko servi comme asset, hors des chunks JS), recherche du hub,
  * rotation quotidienne des rangées d'accueil et de l'ordre « En vedette » (les visuels sont versionnés tous les 14 jours).
  * Collections inspirées de Focale (MIT, © 2026 Shika34, voir LICENSE-FOCALE.txt) et Kaptain.
  */
 import type { Folder, Source } from './engine';
+import focaleUrl from './focale.json?url';
 
 export interface Category {
   id: string;
@@ -76,10 +77,15 @@ export function buildCatalog(raw: unknown): Catalog {
 }
 
 let memo: Promise<Catalog> | null = null;
-/** Charge (une fois) le JSON de collections, à la demande : il n'alourdit pas le premier chargement. */
+/** Charge (une fois) le JSON de collections, à la demande : servi comme asset (fetch), il n'alourdit ni le premier chargement ni un chunk JS. */
 export function loadCatalog(): Promise<Catalog> {
   if (!memo) {
-    memo = import('./focale.json').then((m) => buildCatalog((m as { default: unknown }).default));
+    memo = fetch(focaleUrl)
+      .then((r) => {
+        if (!r.ok) throw new Error(`catalogue de collections : HTTP ${r.status}`);
+        return r.json() as Promise<unknown>;
+      })
+      .then((json) => buildCatalog(json));
     memo.catch(() => { memo = null; });
   }
   return memo;

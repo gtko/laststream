@@ -3,11 +3,11 @@
 import { isKidProfile, isProfileLocked, signOut } from '../data/auth';
 import { userStore } from '../data/userStore';
 import { avatarAttrs } from './avatar-art.js';
-import { leaveKidProfile, openPicker } from './auth-ui.js';
 import { ICON } from './icons.js';
 import { friendsButtonHTML } from './socialButton.js';
 import { downloadsNavHTML } from './downloadBtn.js';
 import { esc } from './util.js';
+import { toast } from './dom.js';
 
 const TOP_DROP = '.topbar [data-drop]';
 
@@ -139,7 +139,7 @@ async function onClick(e) {
   if (sw) {
     e.preventDefault();
     closeAll();
-    if (isKidProfile()) leaveKidProfile(); else openPicker();
+    void import('./auth-ui.js').then((m) => (isKidProfile() ? m.leaveKidProfile() : m.openPicker()), () => toast('Impossible de charger cet écran, vérifiez la connexion.'));
     return;
   }
   const lo = t.closest('[data-nav-logout]');

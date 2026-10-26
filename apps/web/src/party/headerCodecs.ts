@@ -1,5 +1,5 @@
 import type { DecodeCap } from '../relay/protocol';
-import { openMedia, type OpenedMedia } from '../relay/player/demux';
+import type { OpenedMedia } from '../relay/player/demux';
 import type { MediaInfo, RangeReader } from '../relay/player/types';
 import { urlRangeSource } from '../relay/sources';
 import type { FileCodecs, SourceLike } from './compat';
@@ -45,6 +45,8 @@ export function fileCodecsFromMedia(info: Pick<MediaInfo, 'video' | 'audio'>): F
  * et le nom de la source reprend la main.
  */
 export async function probeSource(reader: RangeReader): Promise<FileCodecs | null> {
+  // mediabunny est chargé à la première sonde seulement : hors du premier chargement (LAST-129).
+  const { openMedia } = await import('../relay/player/demux');
   const media: OpenedMedia = await openMedia(reader);
   try {
     const codecs = fileCodecsFromMedia(media.info);

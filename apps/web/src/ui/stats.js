@@ -2,6 +2,7 @@
  * repères. Calcul côté client : l'historique « vu » (userStore) et, pour au plus DETAIL_LIMIT titres (les plus récents et les
  * plus vus), la fiche TMDB avec crédits, gardée dans le navigateur. Le rendu part du cache puis se complète ; le reste est estimé.
  * Profil enfant : page absente (le routeur refuse la route). */
+import '../styles/stats.css';
 import { isKidProfile } from '../data/auth';
 import { onDataEvent } from '../data/events';
 import { tmdb } from '../data/lt';

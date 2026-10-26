@@ -1,6 +1,7 @@
 /* Page « Titres masqués » (#/hidden) : la vue dédiée aux titres « Ne plus proposer » (réglages : « Gérer »).
  * Filtre, tri et compteurs en mémoire sur toute la liste ; la grille est rendue par pages (infiniteList, 60 tuiles).
  * Sélection par clic, puis « Réafficher » traite tout le lot en un seul enregistrement. Profil enfant : page absente. */
+import '../styles/hidden.css';
 import { infiniteList, stopInfinite } from './infinite.js';
 import { hiddenTitles, onHomeChange, restoreHidden, unhideTitles } from '../data/homeFilters';
 import { hiddenCounts, hiddenView } from '../data/hiddenView';
