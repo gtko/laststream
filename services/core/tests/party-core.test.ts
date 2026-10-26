@@ -1025,6 +1025,18 @@ describe('clés de participant par profil (LAST-183)', () => {
     expect(fx.core.canJoin('acc:p2', 'alice · petit')).toBe('ok');
   });
 
+  it('un invité de même pseudo ne fait pas refuser le compte, en salon ancien comme en salon par profil', () => {
+    for (const fx of [makeRoom(), profileRoom()]) {
+      fx.data.meta.hostName = 'zed';
+      fx.core.join({ ...fx.member('guest:g1', 'alice'), guest: true });
+      expect(fx.core.canJoin('alice-id', 'alice')).toBe('ok');
+    }
+    // Salon ancien : le pseudo d'un autre compte n'est pas contrôlé (comportement inchangé).
+    const old = makeRoom();
+    old.core.join(old.member('a-bob', 'alice'));
+    expect(old.core.canJoin('alice-id', 'alice')).toBe('ok');
+  });
+
   it('deux profils de même pseudo : le second est refusé (name_taken, forme canonique)', () => {
     const fx = profileRoom();
     fx.core.join(named(fx, 'acc:p1', 'alice'));

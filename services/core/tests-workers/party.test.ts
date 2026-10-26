@@ -530,6 +530,8 @@ async function waitForParticipants(roomId: string, token: string, expected: numb
 
 /** Ajoute un profil adulte au compte et renvoie son identifiant. */
 async function extraProfile(member: Account, name: string): Promise<string> {
+  // Le profil principal est le plus ancien (created_at à la milliseconde) : un délai garde l'ordre de création déterministe.
+  await new Promise((resolve) => setTimeout(resolve, 5));
   const res = await api<{ id: string }>('POST', '/user/profiles', { token: member.token, headers: { 'x-profile-id': member.profile }, body: { name, avatarColor: '#0055aa' } });
   expect(res.status).toBe(201);
   return res.body.id;

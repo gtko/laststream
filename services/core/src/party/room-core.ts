@@ -202,11 +202,12 @@ export class RoomCore {
    */
   canJoin(key: string, username?: string): JoinCheck {
     if (this.data.banned.includes(accountOf(key))) return 'banned';
-    if (username !== undefined) {
+    // Pseudo : seulement en mode profil (les salons anciens gardent leur comportement) et face aux comptes (un invité de même pseudo ne bloque pas).
+    if (username !== undefined && this.keyMode() === 'profile') {
       const wanted = canonicalName(username);
       if (wanted === canonicalName(this.data.meta.hostName) && key !== this.hostId) return 'name_taken';
       for (const member of this.members.values()) {
-        if (member.accountId !== key && canonicalName(member.username) === wanted) return 'name_taken';
+        if (member.guest !== true && member.accountId !== key && canonicalName(member.username) === wanted) return 'name_taken';
       }
     }
     if (!this.members.has(key) && this.members.size >= this.data.meta.maxParticipants) return 'room_full';

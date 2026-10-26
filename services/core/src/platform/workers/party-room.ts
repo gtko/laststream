@@ -188,7 +188,7 @@ export class PartyRoom extends DurableObject {
     if (core === undefined) return json(404, { error: 'room_not_found' });
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json(426, { error: 'upgrade_required' });
     if (identity === undefined) return json(400, { error: 'identity_required' });
-    const check = core.canJoin(identity.accountId, identity.username);
+    const check = core.canJoin(identity.accountId, identity.username); // pseudo contrôlé seulement en mode profil (voir canJoin)
     if (check === 'banned') return json(403, { error: 'banned' });
     if (check !== 'ok') return json(409, { error: check });
     return this.accept(core, identity);

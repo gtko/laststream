@@ -141,13 +141,13 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
 
   /**
    * Clé et pseudo de participant d'un profil dans un salon. Salon `memberKeys: 'profile'` : clé `<compte>:<profil>`, pseudo = nom
-   * du compte pour le profil principal (le plus ancien), `<compte> · <profil>` pour les autres. Salon ancien : clé = compte et
+   * du compte pour le profil principal (admin().mainProfileId), `<compte> · <profil>` pour les autres. Salon ancien : clé = compte et
    * pseudo = nom du compte, comme avant.
    */
   async function participantOf(account: { id: string; username: string }, profile: ProfileRecord, mode: 'profile' | 'account'): Promise<{ key: string; name: string }> {
     if (mode !== 'profile') return { key: account.id, name: account.username };
-    const primary = (await users().listProfiles(account.id))[0];
-    return { key: memberKey(account.id, profile.id, 'profile'), name: displayName(account.username, profile.name, primary === undefined || primary.id === profile.id) };
+    const mainId = await backend.admin().mainProfileId(account.id);
+    return { key: memberKey(account.id, profile.id, 'profile'), name: displayName(account.username, profile.name, mainId === null || mainId === profile.id) };
   }
 
   const roomId = (c: Ctx): string => {
@@ -295,7 +295,8 @@ export function registerPartyRoutes(app: App, deps: AppDeps, backend: UserBacken
     if (info.visibility === 'public' && profile.isKid) throw new UserApiError(403, 'kid_profile');
     const mode = (await stub.keyMode()) ?? 'account';
     const me = await participantOf(account, profile, mode);
-    const check = await stub.check(me.key, me.name);
+    // Contrôle de pseudo seulement en mode profil : les clients déployés ne connaissent pas name_taken sur /join (salons anciens).
+    const check = await stub.check(me.key, mode === 'profile' ? me.name : undefined);
     if (check === 'closed') throw new UserApiError(404, 'room_not_found');
     if (check === 'banned') throw new UserApiError(403, 'banned');
     if (check === 'room_full') throw new UserApiError(409, 'room_full');
