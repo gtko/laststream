@@ -159,6 +159,15 @@ describe('salon d’attente : départ', () => {
     expect(launch).toHaveBeenCalledTimes(1);
     expect(lobby()).toBeNull();
   });
+
+  it('fin du salon pour une connexion reprise ailleurs : le motif s’affiche, jamais « Salon fermé »', async () => {
+    const c = fakeClient(true, { close: vi.fn() });
+    await open(c);
+    c.emit('end', 'replaced');
+    await tick();
+    expect(document.getElementById('toast')!.textContent).toBe('Connexion reprise depuis un autre appareil.');
+    expect(lobby()).toBeNull();
+  });
 });
 
 describe('salon d’attente : réglages, vote, discussion', () => {
