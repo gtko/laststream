@@ -7,6 +7,14 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 // jsdom n'annonce aucun codec : on se fait passer pour Chromium (H.264 lu), sans quoi toute source AVC est jugée illisible (ODY-189).
 vi.stubGlobal('chrome', {});
 
+// Jour calendaire local (AAAA-MM-JJ), `days` jours d'aujourd'hui, comme l'application (todayStr) : ni UTC (il décale d'un jour
+// entre minuit et deux heures à Paris), ni 24 h en absolu (un jour de changement d'heure dure 23 ou 25 h). LAST-170.
+const dayIn = (days: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+
 const ITEMS = Array.from({ length: 40 }, (_, i) => ({
   id: 100 + i, media_type: i % 2 ? 'tv' : 'movie', title: 'Film ' + i, name: 'Série ' + i,
   poster_path: '/p' + i + '.jpg', backdrop_path: '/b' + i + '.jpg', release_date: '2025-01-01', first_air_date: '2025-01-01',
@@ -22,7 +30,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const u = new URL(url);
   if (u.pathname === '/config/schema') return json({ properties: { services: { properties: { tmdbToken: { title: 'Jeton TMDB', description: 'd' } } } } });
   if (u.pathname === '/config/decode') return json({ services: { tmdbToken: { set: true, last4: '…abcd' }, openrouterModel: 'openai/gpt-4o-mini' }, languages: { preferred: ['fr'] }, sources: [], maxResults: 30 });
-  const cin = new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10);
+  const cin = dayIn(-20);
   if (u.pathname.endsWith('/lt/tmdb/movie/now_playing')) {
     return json({ results: Array.from({ length: 12 }, (_, i) => ({ id: 500 + i, title: 'Salle ' + i, poster_path: '/c' + i + '.jpg', backdrop_path: '/cb.jpg', release_date: cin, vote_average: 7, genre_ids: [28] })) });
   }
@@ -40,7 +48,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
   const canon = /\/lt\/series\/(\d+)\/episodes$/.exec(u.pathname);
   if (canon) {
     if (canon[1] !== '102') return json({ error: 'not_found' }, 404); // les autres séries : repli sur les saisons TMDB
-    const future = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+    const future = dayIn;
     return json({ source: 'tvdb-aired', seasons: [
       { number: 1, name: 'Saison 1', episodes: [
         { number: 1, absolute: 1, name: 'Début', airDate: '2021-01-01', runtime: 24, still: 'https://img.example/s1e1.jpg' },
@@ -57,7 +65,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
   if (trend) return json({ results: ITEMS.map((i) => ({ ...i, media_type: trend[1] })) });
   const season = /\/lt\/tmdb\/tv\/\d+\/season\/(\d+)$/.exec(u.pathname);
   if (season) {
-    const future = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+    const future = dayIn;
     return json({ poster_path: '/sp.jpg', episodes: [
       { episode_number: 1, name: 'Pilote', air_date: '2020-01-01', still_path: '/s1.jpg', runtime: 42, overview: 'Début.' },
       { episode_number: 4, name: 'Épisode 4', air_date: future(6), still_path: null, overview: '' },
@@ -71,7 +79,7 @@ function mockFetch(url: string, init?: RequestInit): Response {
     return json({ page, raw: results.length, results });
   }
   if (u.pathname.includes('/lt/tmdb/')) {
-    return json({ imdb_id: 'tt0100', next_episode_to_air: /\/tv\/\d+$/.test(u.pathname) ? { air_date: new Date(Date.now() + 10 * 864e5).toISOString().slice(0, 10), season_number: 1, episode_number: 5 } : null, seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
+    return json({ imdb_id: 'tt0100', next_episode_to_air: /\/tv\/\d+$/.test(u.pathname) ? { air_date: dayIn(10), season_number: 1, episode_number: 5 } : null, seasons: /\/tv\/\d+$/.test(u.pathname) ? [{ season_number: 1, episode_count: 5, air_date: '2020-01-01' }] : [], number_of_seasons: 1,
       results: ITEMS, id: 100, title: 'Film 0', name: 'Série 0', overview: 'Un synopsis assez long pour la fiche.', tagline: 'Slogan',
       poster_path: '/p.jpg', backdrop_path: '/b.jpg', release_date: '2025-01-01', first_air_date: '2025-01-01', runtime: 120, vote_average: 7.4, genres: [{ id: 28, name: 'Action' }],
       images: { logos: [] }, videos: { results: [] }, credits: { cast: [], crew: [] }, external_ids: { imdb_id: 'tt0100' },
@@ -105,6 +113,10 @@ async function settle(ms = 60): Promise<void> {
 }
 
 beforeAll(async () => {
+  // Horloge fixée (LAST-170) avant l'import de l'app : les dates de l'interface et des fixtures ne dépendent pas de l'heure réelle.
+  // Elle avance avec le temps réel (sans quoi la lecture ne s'ouvre pas : un garde sur Date.now() reste bloqué à l'horloge gelée).
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+  vi.setSystemTime(new Date('2026-10-25T23:30:00+01:00'));
   const html = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
   document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
   localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));

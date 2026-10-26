@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ByteSource, avcCodecString, av1CodecString, canDecode, decodeKeyframe, hashText, hevcCodecString, makeLocalFeed, MemoryThumbStore, openVideoIndex,
   directFetchRange, readId, readSize, thumbKey, THUMB_QUALITY, totalFromContentRange, webCodecsAvailable,
   type CodecEnv, type FetchFn, type FetchRange, type VideoIndex } from '../src/thumbs';
@@ -353,28 +353,34 @@ describe('pont ThumbFeed et lecture par plages', () => {
   });
 
   it('ThumbFeed : au plus 2 demandes en vol, tranches de 30 s autour du curseur', async () => {
-    let inFlight = 0;
-    let peak = 0;
-    const asked: string[] = [];
-    const feed = new ThumbFeed({
-      register: async () => 'k',
-      imageUrl: (_k, i) => `local:${i}`,
-      maxParallel: 2,
-      fetchFn: async (url) => {
-        asked.push(url);
-        inFlight += 1;
-        peak = Math.max(peak, inFlight);
-        await new Promise((r) => setTimeout(r, 5));
-        inFlight -= 1;
-        return { status: 200, blob: async () => new Blob(['x']), json: async () => ({}) };
-      },
-      makeUrl: () => 'blob:x', revokeUrl: () => undefined, wait: async () => undefined, onReady: () => undefined,
-    });
-    feed.request(150, 600); // tranche 5
-    await new Promise((r) => setTimeout(r, 60));
-    expect(peak).toBe(2);
-    expect(asked[0]).toBe('local:5');
-    expect(new Set(asked)).toEqual(new Set(['local:5', 'local:6', 'local:4', 'local:7', 'local:3']));
+    // Minuteries simulées : chaque téléchargement factice dure 5 ms de temps simulé, sans attente réelle (indépendant de la charge CPU).
+    vi.useFakeTimers();
+    try {
+      let inFlight = 0;
+      let peak = 0;
+      const asked: string[] = [];
+      const feed = new ThumbFeed({
+        register: async () => 'k',
+        imageUrl: (_k, i) => `local:${i}`,
+        maxParallel: 2,
+        fetchFn: async (url) => {
+          asked.push(url);
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((r) => setTimeout(r, 5));
+          inFlight -= 1;
+          return { status: 200, blob: async () => new Blob(['x']), json: async () => ({}) };
+        },
+        makeUrl: () => 'blob:x', revokeUrl: () => undefined, wait: async () => undefined, onReady: () => undefined,
+      });
+      feed.request(150, 600); // tranche 5
+      await vi.advanceTimersByTimeAsync(60);
+      expect(peak).toBe(2);
+      expect(asked[0]).toBe('local:5');
+      expect(new Set(asked)).toEqual(new Set(['local:5', 'local:6', 'local:4', 'local:7', 'local:3']));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('thumbSource : la voie par plages passe avant les autres, sur tous les moteurs', () => {

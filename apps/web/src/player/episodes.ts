@@ -20,7 +20,7 @@ export interface EpisodeInfo {
   filler?: EpisodeFiller;
 }
 
-export type EpisodeFiller = 'filler' | 'recap';
+type EpisodeFiller = 'filler' | 'recap';
 
 export interface SeasonInfo {
   season: number;

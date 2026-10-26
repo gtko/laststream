@@ -1,5 +1,5 @@
 // Lien de l'hôte : délai d'inactivité, coupure après 20 erreurs consécutives, plafond de débit montant partagé, codes d'erreur.
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RangeClient } from './guest';
 import { DEFAULT_UPLOAD_MBPS, RangeServer, UploadBudget, mbpsToBytesPerSec, type RangeSource } from './host';
 import { memoryChannelPair } from './memory';
@@ -13,22 +13,29 @@ const src: RangeSource = {
 };
 
 describe('lien hôte : délai d’inactivité', () => {
-  it('sans message de l’invité pendant le délai : onIdle une fois', async () => {
+  // Minuteries simulées (LAST-170) : le délai et les messages avancent de millisecondes exactes, sans course avec le temps réel.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-25T23:30:00+01:00'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('sans message de l’invité pendant le délai : onIdle une fois', () => {
     const [hostCh] = memoryChannelPair(0);
     let idle = 0;
     const server = new RangeServer(src, hostCh, { idleTimeoutMs: 30, onIdle: () => (idle += 1) });
-    await wait(80);
+    vi.advanceTimersByTime(80);
     expect(idle).toBe(1);
     server.close();
   });
 
-  it('chaque message de l’invité repousse le délai', async () => {
+  it('chaque message de l’invité repousse le délai', () => {
     const [hostCh, guestCh] = memoryChannelPair(0);
     let idle = 0;
     const server = new RangeServer(src, hostCh, { idleTimeoutMs: 40, onIdle: () => (idle += 1) });
     for (let i = 0; i < 5; i += 1) {
       guestCh.send(encodeInfoReq(i + 1));
-      await wait(15);
+      vi.advanceTimersByTime(15);
     }
     expect(idle).toBe(0);
     server.close();

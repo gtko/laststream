@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Horloge figée (LAST-170) : les cas sont calculés par rapport à ce jour, jamais à l'heure réelle.
+beforeAll(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-25T23:30:00+01:00')); });
+afterAll(() => vi.useRealTimers());
 
 describe('carte Bientôt', () => {
   it('reconnaît les titres génériques et formate le compte à rebours', async () => {
@@ -15,7 +19,8 @@ describe('carte Bientôt', () => {
     expect(countdownText(local(-2))).toBe('');
   });
 
-  const local = (n: number) => { const d = new Date(Date.now() + n * 864e5); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  // Jour calendaire local, n jours d'aujourd'hui : setDate, pas 864e5 ms (le jour du changement d'heure dure 25 h).
+  const local = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
   it('affiche « Sorti » sur la pastille d’un épisode déjà diffusé (ODY-253)', async () => {
     const { soonBadgeText } = await import('../src/ui/soon.js');
