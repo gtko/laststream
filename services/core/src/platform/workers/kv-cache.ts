@@ -3,6 +3,8 @@ import type { KvCache } from '../types.js';
 
 /** Durée de vie minimale d'une clé KV (limite de Cloudflare). */
 const KV_MIN_TTL_SECONDS = 60;
+/** Durée de repli d'une écriture sans durée valide : 24 h. */
+export const KV_DEFAULT_TTL_SECONDS = 24 * 3600;
 /** Longueur maximale d'une clé KV (octets). */
 const KV_MAX_KEY_BYTES = 512;
 
@@ -25,7 +27,9 @@ export function createWorkersKvCache(kv: KVNamespace, namespace: string): KvCach
     async set(key, value, ttlSeconds) {
       const full = keyOf(key);
       if (full === undefined) return;
-      await kv.put(full, value, ttlSeconds === undefined ? undefined : { expirationTtl: Math.max(KV_MIN_TTL_SECONDS, Math.ceil(ttlSeconds)) });
+      // Toute clé expire (LAST-138) : une durée absente ou invalide (appel non typé) retombe sur le plafond, jamais sur « permanent ».
+      const seconds = Number.isFinite(ttlSeconds) ? ttlSeconds : KV_DEFAULT_TTL_SECONDS;
+      await kv.put(full, value, { expirationTtl: Math.max(KV_MIN_TTL_SECONDS, Math.ceil(seconds)) });
     },
     async delete(key) {
       const full = keyOf(key);

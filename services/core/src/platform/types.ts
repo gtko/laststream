@@ -33,8 +33,8 @@ export interface RuntimeEnv {
 /** Cache clé-valeur avec expiration (Node : mémoire ; Workers : KV). Les valeurs sont des chaînes. */
 export interface KvCache {
   get(key: string): Promise<string | undefined>;
-  /** `ttlSeconds` : durée de vie ; absent = jusqu'à éviction. */
-  set(key: string, value: string, ttlSeconds?: number): Promise<void>;
+  /** `ttlSeconds` : durée de vie, obligatoire (LAST-138) : aucune clé KV ne doit rester sans expiration. */
+  set(key: string, value: string, ttlSeconds: number): Promise<void>;
   delete(key: string): Promise<void>;
 }
 

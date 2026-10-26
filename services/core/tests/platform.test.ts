@@ -41,7 +41,7 @@ describe('KvCache mémoire', () => {
     let now = 1_000;
     const cache = createMemoryKvCache(() => now);
     await cache.set('k', 'v', 10);
-    await cache.set('forever', 'x');
+    await cache.set('forever', 'x', 31_536_000);
     expect(await cache.get('k')).toBe('v');
     now += 9_999;
     expect(await cache.get('k')).toBe('v');
@@ -56,7 +56,7 @@ describe('KvCache mémoire', () => {
   it('createKvCache de la plateforme renvoie des caches indépendants', async () => {
     const a = platform().createKvCache('a');
     const b = platform().createKvCache('b');
-    await a.set('k', '1');
+    await a.set('k', '1', 3600);
     expect(await b.get('k')).toBeUndefined();
   });
 });
