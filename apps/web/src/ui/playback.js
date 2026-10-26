@@ -1,5 +1,5 @@
 /* Lecture réelle des bandes-annonces (API IFrame de YouTube) : suivi de l'état et fondu des textes pendant la lecture. */
-import { REDUCE } from './constants.js';
+import { REDUCE, YT_ORIGIN } from './constants.js';
 
 /** Délai de lecture effective avant le fondu des textes. */
 export const FADE_AFTER_MS = 4000;
@@ -14,14 +14,14 @@ const ACTIVITY = ['pointermove', 'pointerdown', 'touchstart', 'keydown', 'focusi
 export function watchPlayback(iframe, onInfo) {
   let off = false;
   const onMsg = (e) => {
-    if (off || !iframe || !iframe.contentWindow || e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
+    if (off || !iframe || !iframe.contentWindow || e.origin !== YT_ORIGIN || e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
     let d;
     try { d = JSON.parse(e.data); } catch (_) { return; }
     const info = d && d.info;
     if (info && typeof info === 'object' && typeof info.playerState === 'number') onInfo(info);
   };
   window.addEventListener('message', onMsg);
-  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), YT_ORIGIN); } catch (_) { /* iframe fermée */ }
   return () => { off = true; window.removeEventListener('message', onMsg); };
 }
 

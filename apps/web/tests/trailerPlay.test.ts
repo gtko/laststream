@@ -25,7 +25,7 @@ function trailer() {
 }
 
 function emit(info: Record<string, unknown>, source: unknown) {
-  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }) });
+  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }), origin: 'https://www.youtube-nocookie.com' });
   Object.defineProperty(ev, 'source', { value: source });
   window.dispatchEvent(ev);
 }
@@ -121,7 +121,7 @@ describe('fiche : compte à rebours puis lecture', () => {
     vi.advanceTimersByTime(5000);
     expect(playBest).not.toHaveBeenCalled();
     // Annulée : la bande-annonce reboucle au lieu de rester figée.
-    expect(win.postMessage).toHaveBeenCalledWith(expect.stringContaining('seekTo'), '*');
+    expect(win.postMessage).toHaveBeenCalledWith(expect.stringContaining('seekTo'), 'https://www.youtube-nocookie.com');
     p.stop();
   });
 

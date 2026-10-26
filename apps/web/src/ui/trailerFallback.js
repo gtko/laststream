@@ -1,5 +1,6 @@
 /* Repli des bandes-annonces : quand YouTube refuse la vidéo (bloquée dans le pays, intégration interdite, supprimée), on
    passe à la candidate suivante au lieu d'afficher « Vidéo non disponible ». Mémoire des échecs : data/trailerHealth.ts. */
+import { YT_ORIGIN } from './constants.js';
 import { isTrailerFailed, isUnplayableError, markTrailerFailed, parseYoutubeError } from '../data/trailerHealth';
 
 /** Délai sans erreur après lequel l'iframe est considérée saine (si elle n'envoie aucun état de lecture). */
@@ -47,7 +48,7 @@ export function guardEmbed(iframe, o = {}) {
     if (onPlaying) onPlaying();
   };
   function onMsg(e) {
-    if (off || !iframe || !iframe.contentWindow || e.source !== iframe.contentWindow) return;
+    if (off || !iframe || !iframe.contentWindow || e.origin !== YT_ORIGIN || e.source !== iframe.contentWindow) return;
     const code = parseYoutubeError(e.data);
     if (isUnplayableError(code)) {
       cancel();
@@ -62,7 +63,7 @@ export function guardEmbed(iframe, o = {}) {
   }
   window.addEventListener('message', onMsg);
   timer = setTimeout(reveal, revealMs);
-  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), YT_ORIGIN); } catch (_) { /* iframe fermée */ }
   return cancel;
 }
 

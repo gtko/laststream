@@ -19,7 +19,7 @@ function fakeIframe() {
 
 /** Message infoDelivery de l'API IFrame, émis par `source` (la fenêtre de l'iframe, sauf mention contraire). */
 function emit(info: Record<string, unknown>, source: unknown) {
-  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }) });
+  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }), origin: 'https://www.youtube-nocookie.com' });
   Object.defineProperty(ev, 'source', { value: source });
   window.dispatchEvent(ev);
 }
@@ -135,7 +135,7 @@ describe('fondu des textes pendant la bande-annonce', () => {
 
   it('s’abonne à l’API IFrame (« listening ») dès l’écoute', () => {
     const stop = textFade(zone, iframe);
-    expect(win.postMessage).toHaveBeenCalledWith(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+    expect(win.postMessage).toHaveBeenCalledWith(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), 'https://www.youtube-nocookie.com');
     stop();
   });
 });

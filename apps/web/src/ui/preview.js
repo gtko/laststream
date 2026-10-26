@@ -1,7 +1,7 @@
 /* Port du prototype (voir tools/port-prototype.mjs). */
 import { trailerLang } from '../data/trailers';
 import { getDetail } from './catalog.js';
-import { DWELL_MS, REDUCE, STILL } from './constants.js';
+import { DWELL_MS, REDUCE, STILL, YT_ORIGIN } from './constants.js';
 import { ICON } from './icons.js';
 import { app } from './dom.js';
 import { textFade } from './playback.js';
@@ -13,7 +13,7 @@ let dwellIO = null;
 // ---------- Aperçu vidéo muet (mise en avant de l'accueil) ----------
 export function postYT(iframe, func, args) {
   if (iframe && iframe.contentWindow) {
-    iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
+    iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), YT_ORIGIN);
   }
 }
 
@@ -27,7 +27,7 @@ export function whenPlaying(iframe, cb, delayMs = 2600, fallbackMs = 6000) {
   let timer = 0;
   const fire = () => { if (!done) { done = true; cleanup(); cb(); } };
   const onMsg = (e) => {
-    if (e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
+    if (e.origin !== YT_ORIGIN || e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
     let d;
     try { d = JSON.parse(e.data); } catch (_) { return; }
     const st = d && d.info && d.info.playerState;
@@ -38,20 +38,20 @@ export function whenPlaying(iframe, cb, delayMs = 2600, fallbackMs = 6000) {
   const cleanup = () => { window.removeEventListener('message', onMsg); clearTimeout(timer); clearTimeout(fallback); };
   window.addEventListener('message', onMsg);
   // Abonnement aux événements de l'API IFrame (infoDelivery.playerState).
-  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), YT_ORIGIN); } catch (_) { /* iframe fermée */ }
   return () => { done = true; cleanup(); };
 }
 
 /** Appelle `cb` une seule fois quand la vidéo YouTube se termine (état 0 de l'API IFrame). Renvoie une fonction d'annulation. */
 export function whenEnded(iframe, cb) {
   const onMsg = (e) => {
-    if (e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
+    if (e.origin !== YT_ORIGIN || e.source !== iframe.contentWindow || typeof e.data !== 'string') return;
     let d;
     try { d = JSON.parse(e.data); } catch (_) { return; }
     if (d && d.info && d.info.playerState === 0) { window.removeEventListener('message', onMsg); cb(); }
   };
   window.addEventListener('message', onMsg);
-  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*'); } catch (_) { /* iframe fermée */ }
+  try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), YT_ORIGIN); } catch (_) { /* iframe fermée */ }
   return () => window.removeEventListener('message', onMsg);
 }
 
@@ -64,7 +64,7 @@ export function paintSound(btn, muted) {
 }
 
 export function ytSrc(key, extra) {
-  return 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(key) + '?' + extra;
+  return YT_ORIGIN + '/embed/' + encodeURIComponent(key) + '?' + extra;
 }
 /** Aperçu muet en boucle. Jamais de sous-titres à l'arrivée : ils ne s'affichent qu'avec le son (voir setPreviewSound). */
 export const ambientSrc = (key, loop = true) =>

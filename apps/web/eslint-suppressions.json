@@ -1,0 +1,407 @@
+{
+  "src/player/miniview.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/player/ui.js": {
+    "no-restricted-syntax": {
+      "count": 15
+    }
+  },
+  "src/sources/picker.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/addonCatalogPage.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/addonFiche.js": {
+    "no-restricted-syntax": {
+      "count": 7
+    }
+  },
+  "src/ui/admin-dialog.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/admin-palette.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/admin.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/auth-ui.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/avatar-picker.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/avatar-studio.js": {
+    "no-restricted-syntax": {
+      "count": 8
+    }
+  },
+  "src/ui/calendar.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/collections.js": {
+    "no-restricted-syntax": {
+      "count": 16
+    }
+  },
+  "src/ui/continue.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/credits.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/ctxmenu.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/discover.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/downloadBtn.js": {
+    "no-restricted-syntax": {
+      "count": 13
+    }
+  },
+  "src/ui/downloads.js": {
+    "no-restricted-syntax": {
+      "count": 7
+    }
+  },
+  "src/ui/events.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/fiche.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/ficheSections.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/follows.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/foyer-join.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/friendLibrary.js": {
+    "no-restricted-syntax": {
+      "count": 7
+    }
+  },
+  "src/ui/friendNotes.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/guestchat.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/guestplayer.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/guestsubs.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/hero.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/heroVideo.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/hidden.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/home.js": {
+    "no-restricted-syntax": {
+      "count": 9
+    }
+  },
+  "src/ui/homeprefs.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/household.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/hover.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/hubs.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/infinite.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/invites.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/library.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/libshare.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/modal.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/model-combobox.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/molotovReplay.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/parties.js": {
+    "no-restricted-syntax": {
+      "count": 8
+    }
+  },
+  "src/ui/partyjoin.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/partylobby.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/partypanel.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/person.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/player.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/posters.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/preview.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/profile-editor.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/providers.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/rate.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/recs-ui.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/referral-join.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/registry.js": {
+    "no-restricted-syntax": {
+      "count": 3
+    }
+  },
+  "src/ui/reset-ui.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/rows.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/search.js": {
+    "no-restricted-syntax": {
+      "count": 10
+    }
+  },
+  "src/ui/server-setup.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/services.js": {
+    "no-restricted-syntax": {
+      "count": 10
+    }
+  },
+  "src/ui/settings-downloads.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/settings-nav.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/settings-sources.js": {
+    "no-restricted-syntax": {
+      "count": 5
+    }
+  },
+  "src/ui/settings-tv.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/settings.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/shareDialog.js": {
+    "no-restricted-syntax": {
+      "count": 6
+    }
+  },
+  "src/ui/sharedList.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/shows.js": {
+    "no-restricted-syntax": {
+      "count": 18
+    }
+  },
+  "src/ui/socialCard.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/socialConvDom.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/socialConvThread.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/socialProfile.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  },
+  "src/ui/socialSidebar.js": {
+    "no-restricted-syntax": {
+      "count": 12
+    }
+  },
+  "src/ui/stats.js": {
+    "no-restricted-syntax": {
+      "count": 2
+    }
+  },
+  "src/ui/tiles.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/tv.js": {
+    "no-restricted-syntax": {
+      "count": 10
+    }
+  },
+  "src/ui/tvPanels.js": {
+    "no-restricted-syntax": {
+      "count": 4
+    }
+  },
+  "src/ui/watched.js": {
+    "no-restricted-syntax": {
+      "count": 1
+    }
+  }
+}

@@ -44,7 +44,7 @@ describe('mise en avant de l’accueil', () => {
     vi.useFakeTimers();
     iframe.dispatchEvent(new Event('load'));
     const info = { playerState: 1, currentTime: 2, duration: 90 };
-    const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }) });
+    const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info }), origin: 'https://www.youtube-nocookie.com' });
     Object.defineProperty(ev, 'source', { value: iframe.contentWindow });
     window.dispatchEvent(ev);
     vi.advanceTimersByTime(3999);
@@ -63,7 +63,7 @@ describe('mise en avant de l’accueil', () => {
     const iframe = media.querySelector('iframe') as HTMLIFrameElement;
     vi.useFakeTimers();
     iframe.dispatchEvent(new Event('load'));
-    const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info: { playerState: 1 } }) });
+    const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'infoDelivery', info: { playerState: 1 } }), origin: 'https://www.youtube-nocookie.com' });
     Object.defineProperty(ev, 'source', { value: iframe.contentWindow });
     window.dispatchEvent(ev);
     vi.advanceTimersByTime(4000);

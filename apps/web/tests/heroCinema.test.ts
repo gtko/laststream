@@ -131,7 +131,7 @@ describe('héros de l’accueil : fin de la bande-annonce', () => {
     expect(p.iframe.src).toContain('loop=0');
     p.iframe.dispatchEvent(new Event('load'));
     const before = shownKey();
-    window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ info: { playerState: 0 } }), source: p.iframe.contentWindow }));
+    window.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ info: { playerState: 0 } }), origin: 'https://www.youtube-nocookie.com', source: p.iframe.contentWindow }));
     expect(shownKey()).not.toBe(before);
     expect(state.preview).toBeNull();
   });

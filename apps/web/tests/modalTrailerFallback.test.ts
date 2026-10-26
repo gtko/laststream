@@ -20,7 +20,7 @@ function fail(iframe: HTMLIFrameElement, code: number) {
   const win = { postMessage: vi.fn() };
   Object.defineProperty(iframe, 'contentWindow', { value: win, configurable: true });
   iframe.dispatchEvent(new Event('load'));
-  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'onError', info: code }) });
+  const ev = new MessageEvent('message', { data: JSON.stringify({ event: 'onError', info: code }), origin: 'https://www.youtube-nocookie.com' });
   Object.defineProperty(ev, 'source', { value: win });
   window.dispatchEvent(ev);
 }

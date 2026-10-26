@@ -61,7 +61,7 @@ export function soonInnerHTML(o) {
     '<span class="soon-date" aria-hidden="true"><b>' + day + '</b><i>' + esc(mon) + '</i></span>' +
     '<span class="soon-count' + (avail ? ' is-avail' : '') + '">' + esc(avail ? playableBadge(o.airDate) : soonBadgeText(o.airDate, o.time)) + '</span>' +
     '<span class="soon-body">' + mark +
-    '<span class="soon-code">S' + o.season + ' · É' + o.episode + '</span>' +
+    '<span class="soon-code">S' + esc(o.season) + ' · É' + esc(o.episode) + '</span>' +
     (real ? '<span class="soon-title">' + esc(o.epTitle) + '</span>' : '') + '</span>' +
     '<span class="soon-dash" aria-hidden="true"></span></span>';
 }

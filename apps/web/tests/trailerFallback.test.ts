@@ -14,7 +14,7 @@ function fakeIframe() {
   return { iframe, win };
 }
 function emit(data: unknown, source: unknown) {
-  const ev = new MessageEvent('message', { data: typeof data === 'string' ? data : JSON.stringify(data) });
+  const ev = new MessageEvent('message', { data: typeof data === 'string' ? data : JSON.stringify(data), origin: 'https://www.youtube-nocookie.com' });
   Object.defineProperty(ev, 'source', { value: source });
   window.dispatchEvent(ev);
 }
@@ -42,7 +42,7 @@ describe('guardEmbed', () => {
     const { iframe, win } = fakeIframe();
     const onFail = vi.fn(); const onPlaying = vi.fn();
     guardEmbed(iframe, { onFail, onPlaying });
-    expect(win.postMessage).toHaveBeenCalledWith(expect.stringContaining('"listening"'), '*');
+    expect(win.postMessage).toHaveBeenCalledWith(expect.stringContaining('"listening"'), 'https://www.youtube-nocookie.com');
     emit(err(101), win);
     emit(err(150), win);
     expect(onFail).toHaveBeenCalledTimes(1);

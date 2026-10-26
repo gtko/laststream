@@ -2,6 +2,7 @@
 
 
 export const IMG = (size, p) => (p ? (/^https?:\/\//.test(p) ? p : 'https://image.tmdb.org/t/p/' + size + p) : '');
+export const YT_ORIGIN = 'https://www.youtube-nocookie.com'; // origine du lecteur YouTube (API IFrame) : cible de postMessage
 export const DWELL_MS = 4000; // accueil : aperçu après 4 s sur la mise en avant
 export const FICHE_IDLE_MS = 3000; // fiche : bande-annonce après 3 s
 export const REDUCE = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
