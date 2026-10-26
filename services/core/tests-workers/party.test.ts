@@ -192,7 +192,7 @@ describe('watch party sur Workers', () => {
     expect(en.body.rooms.some((r) => r.id === pub.body.room.id)).toBe(false);
     // Premier test du fichier : deux inscriptions (scrypt) et connexions à froid ; sous charge (suite complète, 47 workers
     // sur 12 cœurs) il a dépassé les 5 s par défaut alors qu'il passe seul. Délai propre à ce test seulement.
-  }, 20_000);
+  }, 60_000);
 
   it('comptes Laststream seulement : aucune route sans session', async () => {
     expect((await api('GET', '/party')).status).toBe(401);

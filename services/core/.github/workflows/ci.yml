@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   check:
-    name: Typecheck, lint, tests, knip
+    name: Typecheck, lint, tests, tests Workers, knip
     runs-on: [self-hosted, laststream-local]
     timeout-minutes: 30
     steps:
@@ -42,5 +42,7 @@ jobs:
       - run: npm run lint
 
       - run: npm test
+
+      - run: npm run test:workers
 
       - run: npm run knip

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MetaAdmin } from '../src/admin/cache-types.js';
 import type { MetaKind } from '../src/lt/meta-policy.js';
+import { platform, platformInstalled } from '../src/platform/index.js';
 import { inviteAndRegister, request, startAdmin, type AdminRig } from './admin-harness.js';
 
 let rig: AdminRig | undefined;
@@ -22,11 +23,21 @@ function fakeMetaAdmin(deleted = 3): MetaAdmin & { calls: { kind: MetaKind; tmdb
 }
 
 describe('DELETE /admin/meta/:type/:id', () => {
-  it('501 meta_admin_unavailable hors Workers (pas de R2 fournie)', async () => {
+  // La plateforme décide de la présence de R2 : sous Node elle n'en fournit pas (501), sous Workers elle lie META (200).
+  const platformHasMeta = platformInstalled() && platform().metaAdmin !== undefined;
+
+  it.skipIf(platformHasMeta)('501 meta_admin_unavailable hors Workers (pas de R2 fournie)', async () => {
     rig = await startAdmin();
     const res = await rig.call<{ error: string }>('DELETE', '/admin/meta/movie/7', { elevation: await rig.elevate() });
     expect(res.status).toBe(501);
     expect(res.body.error).toBe('meta_admin_unavailable');
+  });
+
+  it.runIf(platformHasMeta)('sur Workers, R2 META fournie par la plateforme : 200 et nombre de couches supprimées (0 pour une fiche absente)', async () => {
+    rig = await startAdmin();
+    const res = await rig.call<{ deleted: number }>('DELETE', '/admin/meta/movie/7', { elevation: await rig.elevate() });
+    expect(res.status).toBe(200);
+    expect(res.body.deleted).toBe(0);
   });
 
   it('type ou identifiant invalide : erreur de validation, aucune suppression', async () => {
