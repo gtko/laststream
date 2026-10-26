@@ -139,7 +139,7 @@ async function upgrade(path: string, headers: Record<string, string> = {}): Prom
 }
 
 /** Chaque test crée plusieurs comptes (hachage scrypt à l'inscription) : délai élargi. */
-const TEST_TIMEOUT_MS = 30_000;
+const TEST_TIMEOUT_MS = 60_000;
 
 const WATCHING = { type: 'movie', tmdbId: 603, title: 'Matrix', pos: 120, paused: false, at: Date.now() };
 

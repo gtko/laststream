@@ -2,6 +2,7 @@
 import { env, exports as workerExports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
+import { CACHE_PREFIXES } from '../src/admin/cache-types.js';
 import { STATS_MAX_PAGES, createKvCacheAdmin, createRemoteMetrics } from '../src/platform/workers/metrics.js';
 import { BUCKET_MS, DAY_MS, FLUSH_INTERVAL_MS, MetricsAccumulator, RETENTION_MS, bucketOf, dayOf, type MetricsBatch } from '../src/metrics/core.js';
 import { recordProviderEvent } from '../src/metrics/index.js';
@@ -217,7 +218,7 @@ describe('statistiques KV', () => {
     const tag = crypto.randomUUID().slice(0, 8);
     for (let i = 0; i < 7; i += 1) await workerEnv.CACHE.put(`torrents:${tag}:${i}`, '1');
     const stats = await admin.stats();
-    expect(stats.map((stat) => stat.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents']);
+    expect(stats.map((stat) => stat.prefix)).toEqual([...CACHE_PREFIXES]);
     const torrents = stats.find((stat) => stat.prefix === 'torrents');
     expect(torrents?.exact).toBe(true);
     expect(torrents?.keys).toBeGreaterThanOrEqual(7);
@@ -236,7 +237,7 @@ describe('statistiques KV', () => {
     if (namespace === undefined) throw new Error('liaison METRICS absente');
     const stats = await createKvCacheAdmin(kv as never, namespace).stats();
     expect(stats.every((stat) => !stat.exact && stat.keys === STATS_MAX_PAGES * 1000)).toBe(true);
-    expect(calls).toBe(4 * STATS_MAX_PAGES);
+    expect(calls).toBe(CACHE_PREFIXES.length * STATS_MAX_PAGES);
   });
 });
 
@@ -287,7 +288,7 @@ describe('administration contre le vrai Worker', () => {
 
     const caches = await api<any>('GET', '/admin/caches', { token });
     expect(caches.status).toBe(200);
-    expect(caches.body.caches.map((c: any) => c.prefix)).toEqual(['issued', 'packs', 'hosts', 'torrents']);
+    expect(caches.body.caches.map((c: any) => c.prefix)).toEqual([...CACHE_PREFIXES]);
 
     // Maintenance de bout en bout : active, puis rouverte par le propriétaire.
     const elevation = (await api<{ token: string }>('POST', '/admin/elevate', { token, body: { password: PASSWORD } })).body.token;
