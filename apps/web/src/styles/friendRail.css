@@ -1,0 +1,37 @@
+/* Accueil social (LAST-193) : rail d'amis permanent (bureau) et ligne sociale du héros. */
+
+/* ---------- Ligne sociale du héros ---------- */
+.hero-social { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 14px; line-height: 1.4; color: var(--soft); }
+.hero-social:empty { display: none; }
+.hs-stack { display: inline-flex; flex: none; }
+.hs-av { width: 32px; height: 32px; margin-left: -8px; border-radius: 50%; border: 2px solid var(--bg); box-sizing: border-box; display: inline-grid; place-items: center; font-family: var(--ff-body); font-size: 12px; font-weight: 600; color: #fff; }
+.hs-av:first-child { margin-left: 0; }
+.hs-text b { color: var(--text); font-weight: 700; }
+.hs-evening { display: contents; }
+
+/* ---------- Rail d'amis ---------- */
+.friend-rail { display: none; }
+@media (min-width: 768px) {
+  .page-a.has-rail { padding-right: 76px; }
+  .page-a.has-rail .topbar { right: 76px; }
+  body.ss-open .page-a.has-rail .topbar { right: 456px; } /* barre des amis (380 px) + rail */
+  .friend-rail {
+    position: fixed; top: var(--ann-h, 0px); right: 0; bottom: 0; z-index: 45; width: 76px; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 20px 0;
+    background: var(--bg); border-left: 1px solid var(--line); overflow-y: auto; scrollbar-width: none;
+  }
+  .friend-rail::-webkit-scrollbar { display: none; }
+  body.ss-open .friend-rail { right: 380px; } /* la barre des amis s'ouvre à côté du rail, qui reste utilisable */
+}
+.fr-group { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.fr-sep { width: 32px; margin: 0; border: 0; border-top: 1px solid var(--line); flex: none; }
+.fr-item, .fr-add { flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 28%; background: none; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+.fr-add { border-radius: 50%; border: 1px dashed var(--input-border); }
+.fr-add:hover { color: var(--text); border-color: var(--muted); }
+.fr-add svg { width: 20px; height: 20px; }
+.fr-item:focus-visible, .fr-add:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
+.fr-av.ss-av { width: 44px; height: 44px; font-size: 16px; }
+.fr-av .ss-pdot { border-color: var(--bg); }
+.fr-av .ss-pdot.is-watch { background: var(--accent); }
+.fr-item.is-offline .fr-av { opacity: 0.55; }
+.fr-item:hover .fr-av, .fr-item:focus-visible .fr-av { filter: brightness(1.12); }

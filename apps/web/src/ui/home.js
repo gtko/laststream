@@ -31,6 +31,8 @@ import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { mainNavHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
+import { mountRail, railSlotHTML } from './friendRailSlot.js';
+import { watchHeroSocial } from './heroSocial.js';
 import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -282,7 +284,7 @@ export function headerA() {
 
 export function viewA(d) {
   const r = d.rows;
-  return '<main id="main" class="page-a">' + headerA() + heroCarousel(d.heroes) +
+  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
     '<div id="follow-slot"></div>' +
@@ -297,7 +299,7 @@ export function viewA(d) {
     '<div id="svc-slot"></div>' +
     '<div id="col-slot"></div>' +
     '<div id="lib-slot"></div>' +
-    '</div></main>';
+    '</div>' + railSlotHTML() + '</main>';
 }
 
 /**
@@ -378,6 +380,7 @@ export function renderHome() {
   if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
   setupPreviews();
+  if (!state.data.kids) { mountRail(); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
   if (state.data.kids) {
     prepareSingle(d.hero); // mise en avant simple (profil enfant) : détail à l'affichage, notes MDBList au survol
     renderLibrary();

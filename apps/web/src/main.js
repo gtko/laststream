@@ -14,6 +14,7 @@ import './styles/settings-nav.css';
 import './styles/settings-appearance.css';
 import './styles/homeprefs.css';
 import './styles/social.css';
+import './styles/friendRail.css';
 import './styles/friendLibrary.css';
 import './styles/chat.css';
 import './styles/convwin.css';
