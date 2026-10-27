@@ -6,7 +6,7 @@ import { clientCopiesOf, isClientStream } from '../sources/info';
 import { chooseEngine, directVideoOk, probeConversion } from './engine';
 import { MpvEngine, NativeEngine } from './engines.js';
 import { resetSubsLoad } from './subsLoad';
-import { StallWatch } from './failover';
+import { SlowLinkWatch, StallWatch } from './failover';
 import { raceCandidates } from './race';
 import { isOfflineView } from './offlinePlay';
 import { rememberLaunch } from './launchCache';
@@ -268,6 +268,10 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.conversion = plan.conversion;
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
+  // Lien débrideur lent (LAST-507) : suivi repris à chaque lecture chargée ; une réouverture en cours s'achève ici.
+  p.slowLink = new SlowLinkWatch();
+  p.slowLink.reset(p.startedAt);
+  p.reopening = false;
   S.ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
   // Lecteur natif : transparent dès le départ (comme avant). mpv : transparent seulement à la première image (MpvEngine.showVideo).
   S.ui.root.classList.toggle('is-video', choice.engine === 'native' || (choice.engine === 'mpv' && !!S.mpv && S.mpv.transparent));

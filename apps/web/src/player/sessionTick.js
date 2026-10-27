@@ -26,6 +26,7 @@ import { playEpisode, submitTarget } from './sessionActions.js';
 import { closePlayer } from './sessionClose.js';
 import { failover } from './sessionFailover.js';
 import { continuesPart, ensureEpisodes } from './sessionOpen.js';
+import { reopenTick } from './sessionReopen.js';
 import { friendChipTick, notesTick, partyAdapter, refreshNoteMarkers, socialTick } from './sessionSocial.js';
 import { S, AUTOSYNC_TARGET, miniState, nextRef } from './sessionState.js';
 import { finishAutoSync } from './sessionTracks.js';
@@ -152,7 +153,8 @@ function slowTick() {
   presenceTick(st);
   if (!loop.running().fast) partyBridge.tick(partyAdapter(p)); // boucle d'interface arrêtée (pause, salon) : c'est la lente qui suit le salon
   const s = p.subs;
-  if (p.choice && !p.failing && !p.resumeTimer) {
+  // Pendant une réouverture (LAST-507), le blocage n'est pas évalué : la pause de rechargement n'est pas une panne.
+  if (p.choice && !p.failing && !p.resumeTimer && !p.reopening) {
     const now = Date.now();
     const verdict = p.watch.tick(now, st.time, st.paused || st.ended || st.seeking, st.cacheTime ?? null);
     // Lecture stable depuis 2 min : les essais repartent, sinon des micro-coupures espacées épuisent MAX_ATTEMPTS (LAST-186).
@@ -161,6 +163,7 @@ function slowTick() {
     if (verdict === 'stalled') failover('La lecture est bloquée');
     else if (verdict === 'startup-timeout') failover('La source met trop de temps à démarrer');
   }
+  reopenTick(p, st); // lien débrideur lent : réouverture de la connexion (LAST-507)
   if (s.sync.state === 'collecting') {
     const secs = s.sync.probe.seconds();
     if (secs >= AUTOSYNC_TARGET) finishAutoSync(); else S.ui.refreshPanel();
