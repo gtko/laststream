@@ -51,14 +51,15 @@ async function rate(key, value) {
 }
 
 /** Zone de note de la fiche. */
+/** « Ta note » et sa valeur à gauche, les étoiles à droite, sur une ligne (LAST-500). Avant visionnage : étoiles éteintes, non cliquables. */
 export function ficheRateHTML(m) {
   const v = userStore.getRating(m.key);
-  if (canRate(m.key)) {
-    return '<span class="f-rate-label">Ta note</span>' + starsHTML(v, m.key) +
-      '<span class="f-rate-value">' + (v ? fmtNum(v, 1) + ' / 5' : 'Pas encore noté') + '</span>';
-  }
-  return '<button type="button" class="btn btn-ghost btn-sm" disabled title="Regarde au moins la moitié pour pouvoir noter">Noter</button>' +
-    '<span class="set-hint">Disponible une fois le titre vu (ou à moitié).</span>';
+  const can = canRate(m.key);
+  return '<span class="f-rate-l"><span class="f-rate-label">Ta note</span><span class="f-rate-value">' +
+    (can ? (v ? fmtNum(v, 1) + ' / 5' : 'Pas encore noté') : 'Après visionnage') + '</span></span>' +
+    (can ? starsHTML(v, m.key)
+      : '<span class="stars is-locked" role="img" aria-label="Note possible une fois le titre vu, ou à moitié">' +
+        ('<span class="star"><span class="star-bg">' + STAR + '</span></span>').repeat(5) + '</span>');
 }
 
 export function refreshRatingUI() {
