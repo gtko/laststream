@@ -1,7 +1,9 @@
 /* Transport HTTP des téléchargements selon la plateforme (LAST-182).
  * Coque Windows : `fetch` du WebView2 est soumis à CORS, et les hôtes des débrideurs ne l'autorisent pas (BLOCKED_STATUS).
  * Leurs liens passent donc par le pont natif de la coque (plages bornées, comme la lecture : relay/sources.ts).
- * Les liens des addons restent sur `fetch` (linkHosts.ts). Android et web : `fetch`, inchangé.
+ * Les liens directs d'addon aussi (LAST-501) : ils redirigent souvent vers un débrideur, ce que `fetch` refuse (CORS). Seuls ceux
+ * qu'accepte le transfert natif (`isNativeLinkUrl` : https:443, sans identifiants, hôte public) partent au pont, qui revalide chaque
+ * redirection ; les autres restent sur `fetch`, qui les refuse. Android et web : `fetch`, inchangé.
  * Réponses du pont : un statut HTTP refusé (`bad_status`, 4xx/5xx) est rendu tel quel à transfer.ts (lien périmé, réseau) ; un refus
  * définitif (hôte, redirection, plage, taille, méthode) est un blocage (BLOCKED_STATUS, classé `content`) ; le reste (délai, réseau,
  * occupé, morceau invalide) reste une exception transitoire. Aucun lien dans les erreurs ni dans les journaux. */
@@ -9,7 +11,7 @@ import { parseDebridUrl } from '../sources/debrid/hosts';
 import { shellHttp, type HttpFn, type HttpResponse } from '../sources/debrid/http';
 import { shellRangeHttp } from '../sources/debrid/nativeRange';
 import { DebridError } from '../sources/debrid/types';
-import { isAddonLinkUrl } from './linkHosts';
+import { isAddonLinkUrl, isNativeLinkUrl } from './linkHosts';
 import { BLOCKED_STATUS, createWebDownloadHttp } from './webHttp';
 
 /** Plateforme qui choisit le transport. `shell` seulement sans transfert de plateforme enregistré (voir service.ts). */
@@ -42,20 +44,39 @@ function bridgeOutcome(err: unknown): HttpResponse {
   throw err;
 }
 
-/** Pont natif : délai total par requête (60 s par défaut, `req.timeoutMs` s'il est donné), erreurs définitives rendues en réponse. */
-function bridgeTransport(bridge: HttpFn): HttpFn {
+/**
+ * Pont natif : délai total par requête (60 s par défaut, `req.timeoutMs` s'il est donné), erreurs définitives rendues en réponse.
+ * `fallback` : transport repris quand le pont refuse l'hôte (`host_not_allowed`), pour les liens d'addon seulement : une coque sans
+ * lecture des liens d'addon (ou sans `native-range`) les refuse, et `fetch` les lisait avant LAST-501 (hôtes ouverts en CORS).
+ */
+function bridgeTransport(bridge: HttpFn, fallback?: HttpFn): HttpFn {
   return async (req) => {
     try {
       return await bridge({ ...req, timeoutMs: req.timeoutMs ?? BRIDGE_TIMEOUT_MS });
     } catch (err) {
+      if (fallback && err instanceof DebridError && err.code === 'host_not_allowed') return fallback(req);
       return bridgeOutcome(err);
     }
   };
 }
 
+/** Lien direct d'addon accepté par le transfert natif (https:443, sans identifiants, hôte public), hors débrideurs. */
+function isNativeAddonLink(raw: string): boolean {
+  try {
+    return isNativeLinkUrl(new URL(raw));
+  } catch {
+    return false;
+  }
+}
+
 export function createDownloadHttp(kind: DownloadHttpKind, deps: DownloadHttpDeps = {}): HttpFn {
   const web = createWebDownloadHttp({ allowHost: isAddonLinkUrl, fetchImpl: deps.fetchImpl });
   if (kind !== 'shell') return web;
-  const bridge = bridgeTransport(deps.shell ?? shellRangeHttp(shellHttp()));
-  return (req) => (parseDebridUrl(req.url) !== null ? bridge(req) : web(req));
+  const shell = deps.shell ?? shellRangeHttp(shellHttp());
+  const debridBridge = bridgeTransport(shell);
+  const addonBridge = bridgeTransport(shell, web);
+  return (req) => {
+    if (parseDebridUrl(req.url) !== null) return debridBridge(req);
+    return isNativeAddonLink(req.url) ? addonBridge(req) : web(req);
+  };
 }
