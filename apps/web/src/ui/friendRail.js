@@ -1,4 +1,4 @@
-/* Rail d'amis permanent de l'accueil (bureau) : avatars groupés en train de regarder / en ligne / hors ligne, pastille de présence,
+/* Rail d'amis permanent de l'accueil (bureau) : avatars des amis et du foyer groupés en train de regarder / en ligne / hors ligne, pastille de présence,
  * bouton d'ajout. Un clic ouvre la barre des amis (la fiche de l'ami pour un avatar). Suit la présence en direct par l'abonnement
  * au store social (aucune requête en plus). Tout texte venant du serveur passe par esc(). */
 import { getState, subscribe } from '../data/socialStore';
@@ -13,10 +13,15 @@ export const RAIL_MAX = 40;
 
 const GROUPS = [['watching', 'En train de regarder'], ['online', 'En ligne'], ['offline', 'Hors ligne']];
 
-/** Répartit les amis acceptés (le foyer a ses propres profils) comme la barre latérale : regarde, en ligne, hors ligne. */
+/** Répartit les amis acceptés et les profils du foyer, rangés comme des amis : regarde, en ligne, hors ligne (un profil une seule fois). */
 export function railGroups(s) {
   const out = { watching: [], online: [], offline: [] };
-  s.friends.forEach((f) => out[f.watching ? 'watching' : f.status === 'offline' ? 'offline' : 'online'].push(f));
+  const seen = new Set();
+  [...s.friends, ...(s.household || [])].forEach((f) => {
+    if (seen.has(f.pid)) return;
+    seen.add(f.pid);
+    out[f.watching ? 'watching' : f.status === 'offline' ? 'offline' : 'online'].push(f);
+  });
   Object.values(out).forEach((l) => l.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0) || byName(a, b)));
   return out;
 }
@@ -24,7 +29,7 @@ export function railGroups(s) {
 function itemHTML(f, group) {
   const state = group === 'watching' ? 'regarde ' + f.watching.title : (SEEN_LABEL[f.status] || '').toLowerCase();
   return '<li><button type="button" class="fr-item is-' + group + '" data-fr-pid="' + esc(f.pid) + '" title="' + esc(shortName(f)) + '"' +
-    ' aria-label="' + esc(shortName(f) + (state ? ', ' + state : '')) + '">' +
+    ' aria-label="' + esc(shortName(f) + (f.household ? ' (foyer)' : '') + (state ? ', ' + state : '')) + '">' +
     avatarHTML(f, 'fr-av', group === 'watching' ? 'watch' : f.status) + '</button></li>';
 }
 
