@@ -4,9 +4,9 @@
   "webDir": "dist",
   "backgroundColor": "#0c0b11",
   "server": {
-    "url": "https://laststream.gtux-prog.workers.dev",
+    "url": "https://app.laststream.app",
     "androidScheme": "https",
-    "allowNavigation": ["laststream.gtux-prog.workers.dev"],
+    "allowNavigation": ["app.laststream.app"],
     "errorPath": "offline.html",
     "cleartext": true
   },

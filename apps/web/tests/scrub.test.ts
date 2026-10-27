@@ -76,7 +76,7 @@ describe('scrubUrl : adresses', () => {
   it('hôte hors liste blanche : [host] ; hôte autorisé ou workers.dev du projet : hôte seul', () => {
     expect(scrubUrl('https://torrentio.strem.fun/providers=yts/manifest.json', APP)).toBe('[host]');
     expect(scrubUrl('https://api.mdblist.com/x', APP)).toBe('https://api.mdblist.com');
-    expect(scrubUrl('https://laststream.gtux-prog.workers.dev/api/x?k=1', APP)).toBe('https://laststream.gtux-prog.workers.dev');
+    expect(scrubUrl('https://lastaddon-core.gtux-prog.workers.dev/api/x?k=1', APP)).toBe('https://lastaddon-core.gtux-prog.workers.dev');
   });
 
   it('stremio:// et stremio: réduits à l’hôte', () => {
