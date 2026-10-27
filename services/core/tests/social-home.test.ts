@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HomeProgressResponse, HomeWatchingResponse } from '../src/user/social-home-types.js';
+import type { HomeProgressResponse, HomeWatchingResponse } from '@laststream/protocol/social';
 import { type RunningApp, startApp } from './lt-harness.js';
 import { as, type Acting, befriend, type Cast, castOf, type ErrorBodyV2, HOOK_TIMEOUT_MS } from './social-v2-harness.js';
 import { request } from './user-harness.js';

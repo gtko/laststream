@@ -10,7 +10,7 @@ import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
-import type { HomeProgressResponse, HomeWatchingResponse } from './social-home-types.js';
+import type { HomeProgressResponse, HomeWatchingResponse } from '@laststream/protocol/social';
 import type { FriendView, PresenceChange } from './social-v2-store.js';
 import { historyQuerySchema, homeProgressQuery, homeWatchingQuery, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { consumeRate } from './rate-hits.js';
 import { drawNewHandleTag, revokeLegacyFriendship, settleGroupAfterLeave, syncProfileIdentity } from './social-handles.js';
-import type { HomeFriend, HomeMedia, HomeTitleProgress, HomeWatchingItem } from './social-home-types.js';
+import type { HomeFriend, HomeMedia, HomeTitleProgress, HomeWatchingItem } from '@laststream/protocol/social';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS, WATCHING_IDLE_MS } from './social-store.js';
 import {
   type ActivityItem,
@@ -340,9 +340,13 @@ interface HomeProgressRow {
   poster?: string | null;
 }
 
-/** Ami tel que l'accueil le montre : identité publique et surnom posé par le lecteur, rien d'autre. */
+/** Ami tel que l'accueil le montre : identité publique et surnom posé par le lecteur, rien d'autre (champ par champ). */
 function homeFriendOf(view: FriendView): HomeFriend {
-  const friend: HomeFriend = { pid: view.pid, handle: view.handle, avatarColor: view.avatarColor };
+  const friend: HomeFriend = {
+    pid: view.pid,
+    handle: { name: view.handle.name, tag: view.handle.tag, full: view.handle.full },
+    avatarColor: view.avatarColor,
+  };
   if (view.avatar !== undefined) friend.avatar = view.avatar;
   if (view.nickname !== undefined) friend.nickname = view.nickname;
   return friend;

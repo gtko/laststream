@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
-    "@laststream/protocol": "github:gtko/laststream-protocol#v0.2.0",
+    "@laststream/protocol": "github:gtko/laststream-protocol#v0.3.0",
     "@sentry/cloudflare": "^11.4.0",
     "hono": "^4.13.13",
     "undici": "^7.30.1",
