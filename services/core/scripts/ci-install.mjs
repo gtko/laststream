@@ -1,6 +1,6 @@
 // Installation des dépendances pour la CI (runner auto-hébergé persistant : node_modules est conservé entre les runs).
-// `npm ci` supprime node_modules : il ne tourne que si package-lock.json, la version de Node ou la plateforme ont changé.
-// L'empreinte est écrite dans node_modules/.ci-install-hash après un npm ci réussi.
+// `npm ci` supprime node_modules : il ne tourne que si package-lock.json, package.json (et .npmrc s'il existe) ou la
+// version de Node / la plateforme ont changé. L'empreinte est écrite dans node_modules/.ci-install-hash après un npm ci réussi.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,10 +11,14 @@ const racine = fileURLToPath(new URL('..', import.meta.url));
 const nodeModules = join(racine, 'node_modules');
 const marqueur = join(nodeModules, '.ci-install-hash');
 
-const empreinte = createHash('sha256')
-  .update(readFileSync(join(racine, 'package-lock.json')))
-  .update(`\n${process.version}\n${process.platform}`)
-  .digest('hex');
+// Fichiers qui déterminent les dépendances installées ; .npmrc seulement s'il existe.
+const fichiers = ['package-lock.json', 'package.json', '.npmrc'].filter((nom) => existsSync(join(racine, nom)));
+
+const hash = createHash('sha256');
+for (const nom of fichiers) {
+  hash.update(`${nom}\0`).update(readFileSync(join(racine, nom))).update('\0');
+}
+const empreinte = hash.update(`${process.version}\n${process.platform}`).digest('hex');
 
 function empreinteInstallee() {
   try {
