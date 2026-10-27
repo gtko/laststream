@@ -108,7 +108,8 @@ const fillersBySeries = new Map();
 function seriesFillers(id) {
   let p = fillersBySeries.get(id);
   if (!p) {
-    p = api('series/' + id + '/fillers', { language: getVideoLang().tag })
+    // api() lève tout de suite sans lastAddon configuré : passé par une promesse, l'échec reste silencieux.
+    p = Promise.resolve().then(() => api('series/' + id + '/fillers', { language: getVideoLang().tag }))
       .then(fillerKinds, () => { fillersBySeries.delete(id); return new Map(); });
     fillersBySeries.set(id, p);
   }
