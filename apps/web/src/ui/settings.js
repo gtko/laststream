@@ -9,12 +9,13 @@ import { clearCache } from '../data/transport';
 import {
   BANDWIDTH_PRESETS_MBPS, getUiUpdateAuto, getUiUpdateNotify, setUiUpdateAuto, setUiUpdateNotify, getAutoplay, getBandwidthSetting, getRegion, getSkipPref, getVideoLangSetting, REGIONS, VIDEO_LANGS, setVideoLang,
   setAutoplay, setBandwidthSetting, getResolutionCap, setResolutionCap, RESOLUTION_CAPS, setRegion, setSkipPref, getTrailerAutoplay, setTrailerAutoplay,
-  getPreferredExternal, setExternalPlayer, setPreferredExternal,
+  getPreferredExternal, setExternalPlayer, setPreferredExternal, getDesktopEngine, setDesktopEngine,
 } from '../data/prefs';
 import { testBandwidthKbps, readStoredBandwidth } from '../data/sources';
 import { capHeightOf, capLabel, screenShortSide } from '../sources/resolutionCap';
 import { getBufferLevel, setBufferLevel } from '../player/bufferLevel';
 import { currentPlayer, detectPlatform, isExternalChoice, playerOptions } from '../player/external';
+import { shellHasLibvlc } from '../player/shell';
 import { ANIME_AUDIO_CHOICES, ANIME_SUBS_CHOICES, getLangPrefs, LANG_CHOICES, LANG_MAIN, LANG_NONE, LANG_VO, setAnimePrefs, setLangPrefs } from '../data/langPrefs';
 import { userStore } from '../data/userStore';
 import { auth, canAdmin, isKidProfile, isMainProfile, isProfileLocked, isServerMode, parentalCodeMissing, pushConfig, pushPrefs, saveProfile, signOut } from '../data/auth';
@@ -145,6 +146,18 @@ function playerCardHTML(platform) {
     '<select class="set-input" id="' + id + '" data-set-pref="external-player">' + opts + '</select>'), { attrs: 'data-player-card' });
 }
 
+/** Moteurs de lecture de la coque Windows : libellés des choix (réglage « laststream.desktopEngine »). */
+const ENGINE_CHOICES = [['auto', 'Automatique'], ['mpv', 'mpv'], ['libvlc', 'VLC intégré']];
+
+/** Carte « Moteur de lecture » : seulement dans la coque Windows, et seulement si elle annonce libVLC (ancienne coque : mpv seul). */
+function engineCardHTML(platform) {
+  if (platform !== 'shell' || !shellHasLibvlc()) return '';
+  const cur = getDesktopEngine();
+  return card('Moteur de lecture', fieldRow('Moteur', 'Automatique : mpv, puis VLC si la vidéo ne démarre pas. Appliqué à la prochaine lecture.', (id) =>
+    '<select class="set-input" id="' + id + '" data-set-pref="desktop-engine">' +
+    ENGINE_CHOICES.map(([c, l]) => '<option value="' + c + '"' + (c === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>'), { attrs: 'data-engine-card' });
+}
+
 /** Lecteur externe préféré, proposé sur iPhone et iPad quand le lecteur est « auto » : les schémas d'applis, sans « intégré ». */
 function preferredCardHTML() {
   const pref = getPreferredExternal();
@@ -175,7 +188,7 @@ function playbackPanel() {
   return card('Lancement', switchRow('Lancer la meilleure source', 'Démarre la lecture sans passer par la liste des sources.', getAutoplay(), 'data-set-pref="autoplay"') +
     switchRow('Lancer automatiquement après la bande-annonce', 'Sur la fiche d’un titre, la bande-annonce se lance puis enchaîne sur la lecture.',
       getTrailerAutoplay(isKidProfile()), 'data-set-pref="trailer-autoplay"')) +
-    playerCardHTML(platform) + (showPreferredPlayer(platform) ? preferredCardHTML() : '') +
+    playerCardHTML(platform) + (showPreferredPlayer(platform) ? preferredCardHTML() : '') + engineCardHTML(platform) +
     card('Résolution',
       fieldRow('Résolution maximale', 'La source choisie d’office, en lecture comme en téléchargement, ne dépasse pas ce plafond tant qu’une source plus légère existe (moins de données). Tu peux toujours choisir une autre source à la main.', (id) =>
         '<select class="set-input" id="' + id + '" data-set-pref="max-resolution">' + RESOLUTION_CAPS.map((c) => '<option value="' + c + '"' + (c === getResolutionCap() ? ' selected' : '') + '>' + esc(CAP_LABELS[c]) + '</option>').join('') + '</select>') +
@@ -642,6 +655,8 @@ detailEl.addEventListener('change', (e) => {
   else if (p === 'external-player') {
     if (playerOptions(detectPlatform()).some((o) => o.id === t.value && !o.disabled)) setExternalPlayer(t.value);
     syncPreferredPlayer();
+  } else if (p === 'desktop-engine') {
+    if (ENGINE_CHOICES.some(([c]) => c === t.value)) setDesktopEngine(t.value);
   } else if (p === 'external-preferred') {
     if (playerOptions('ios').some((o) => o.id === t.value && isExternalChoice(o.id))) setPreferredExternal(t.value);
   }

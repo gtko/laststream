@@ -151,3 +151,13 @@ export const setExternalPlayer = (id: string): void => write(EXTERNAL_PLAYER_KEY
 /** Lecteur externe préféré de cet appareil : VLC par défaut. */
 export const getPreferredExternal = (): string => read(PREFERRED_EXTERNAL_KEY) || 'vlc';
 export const setPreferredExternal = (id: string): void => write(PREFERRED_EXTERNAL_KEY, id);
+
+// ---- Moteur de lecture de la coque Windows (par appareil) : mpv, libVLC intégré, ou automatique (mpv, puis libVLC si mpv échoue) ----
+const DESKTOP_ENGINE_KEY = 'laststream.desktopEngine';
+export type DesktopEngine = 'auto' | 'mpv' | 'libvlc';
+/** Moteur choisi sur cet appareil ; « auto » tant qu'il n'a jamais été réglé. */
+export const getDesktopEngine = (): DesktopEngine => {
+  const v = read(DESKTOP_ENGINE_KEY);
+  return v === 'mpv' || v === 'libvlc' ? v : 'auto';
+};
+export const setDesktopEngine = (engine: DesktopEngine): void => write(DESKTOP_ENGINE_KEY, engine === 'mpv' || engine === 'libvlc' ? engine : 'auto');

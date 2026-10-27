@@ -1,4 +1,6 @@
+import type { DesktopEngine } from '../data/prefs';
 import type { MediaCaps, Probe } from './server';
+import type { ShellBackend } from './shell';
 import { trackLang } from './tracks';
 
 /* Toute lecture passe par un lien HTTPS (débrideur ou lien direct d'un addon) : aucun moteur torrent.
@@ -16,6 +18,8 @@ export interface EngineChoice {
   reason: string;
   /** Lecture hors ligne que le navigateur ne peut pas assurer (conteneur) : la session affiche ce message au lieu de lancer la lecture. */
   unsupported?: string;
+  /** Coque Windows (engine « mpv ») : moteur effectivement demandé à la coque, mpv ou libVLC intégré. */
+  backend?: ShellBackend;
 }
 
 export interface EngineInput {
@@ -36,6 +40,10 @@ export interface EngineInput {
   audioTracksSupported?: boolean;
   /** Fichier téléchargé lu depuis cet appareil (ODY-203) : aucun serveur de streaming, aucun transcodage. */
   local?: { name: string; container?: string };
+  /** Réglage « Moteur de lecture » de la coque Windows (auto par défaut). */
+  desktopEngine?: DesktopEngine;
+  /** La coque annonce libVLC intégré (`player-capabilities`). */
+  libvlcAvailable?: boolean;
 }
 
 export interface PlayOptions {
@@ -98,12 +106,40 @@ export function localWebVerdict(container: string, caps: MediaCaps): { ok: true 
   return { ok: false, reason: 'Ce navigateur ne lit pas les fichiers ' + c.toUpperCase() + '.' };
 }
 
+/**
+ * Moteur de la coque retenu pour une lecture : libVLC seulement s'il est demandé et annoncé. « auto » part sur mpv ;
+ * la bascule vers libVLC, après un échec de mpv, est décidée par `shouldRetryOnLibvlc`.
+ */
+export function pickShellBackend(pref: DesktopEngine, libvlcAvailable: boolean): ShellBackend {
+  return pref === 'libvlc' && libvlcAvailable ? 'libvlc' : 'mpv';
+}
+
+interface LibvlcRetryInput {
+  /** Réglage de l'appareil : seul « auto » permet la bascule. */
+  mode: DesktopEngine;
+  /** Moteur de la coque qui vient d'échouer. */
+  backend?: ShellBackend;
+  /** La vidéo est prête (durée connue, événement `ready`) : l'échec n'est plus un démarrage. */
+  videoReady: boolean;
+  libvlcAvailable: boolean;
+  /** Cette source a déjà été relancée avec libVLC : jamais deux fois (pas de boucle). */
+  alreadyRetried: boolean;
+}
+
+/** Mode auto : un échec de mpv avant que la vidéo soit prête (`ready`) relance la même source une seule fois avec libVLC. */
+export function shouldRetryOnLibvlc(i: LibvlcRetryInput): boolean {
+  return i.mode === 'auto' && i.backend === 'mpv' && !i.videoReady && i.libvlcAvailable && !i.alreadyRetried;
+}
+
 export function chooseEngine(i: EngineInput): EngineChoice {
   if (i.native) {
     return { engine: 'native', viaServer: false, label: 'libVLC (lecteur natif Android)', reason: 'Application Android : le lecteur natif lit tous les formats (HEVC, AV1, DTS, TrueHD, AC3, EAC3).' };
   }
   if (i.shell) {
-    return { engine: 'mpv', viaServer: false, label: 'mpv (application Windows)', reason: 'Coque Windows détectée : mpv lit tous les formats.' };
+    const backend = pickShellBackend(i.desktopEngine ?? 'auto', !!i.libvlcAvailable);
+    return backend === 'libvlc'
+      ? { engine: 'mpv', backend, viaServer: false, label: 'libVLC (application Windows)', reason: 'Coque Windows : moteur libVLC choisi dans les réglages.' }
+      : { engine: 'mpv', backend, viaServer: false, label: 'mpv (application Windows)', reason: 'Coque Windows détectée : mpv lit tous les formats.' };
   }
   if (i.local) {
     const v = localWebVerdict(i.local.container || (/\.([a-z0-9]{2,5})$/i.exec(i.local.name)?.[1] ?? ''), i.caps);

@@ -6,7 +6,10 @@ import { failoverOrder, pickRaceCandidate } from './failover';
 import { isOfflineView, offlineFailureView } from './offlinePlay';
 import { forgetLaunch } from './launchCache';
 import { badSources, markBad, sourceKey } from './memory';
+import { getDesktopEngine } from '../data/prefs';
+import { shouldRetryOnLibvlc } from './engine';
 import { isNativePlayer } from './native';
+import { shellHasLibvlc } from './shell';
 import { searchAndPlay, searchInstead } from './session.js';
 import { loaderExtra } from './sessionOpen.js';
 import { playView, releaseLocal } from './sessionPlay.js';
@@ -65,6 +68,27 @@ export function streamInstead(opts = { force: true }) {
   S.ui.root.classList.add('is-searching');
   S.ui.setLoading(p.meta.title || 'Lecture', 'Recherche de la meilleure source…', loaderExtra(0));
   searchAndPlay(p, p.req, opts).catch(() => undefined);
+}
+
+/**
+ * Mode auto : un échec de mpv avant que la vidéo soit prête (`ready`) relance la même source une seule fois avec libVLC, à la même position.
+ * Vrai si la relance a eu lieu (l'échec ne passe alors pas par le repli).
+ */
+export function retryOnLibvlc(p, engine) {
+  if (!p || !p.view || isOfflineView(p.view)) return false;
+  p.libvlcTried = p.libvlcTried || new Set();
+  const key = sourceKey(p.view);
+  const retry = shouldRetryOnLibvlc({
+    mode: getDesktopEngine(), backend: p.choice && p.choice.backend, videoReady: !!p.videoReady,
+    libvlcAvailable: shellHasLibvlc(), alreadyRetried: p.libvlcTried.has(key),
+  });
+  if (!retry) return false;
+  p.libvlcTried.add(key);
+  // La relance libVLC n'est pas un nouvel essai de source : playView va compter une tentative, on la rend ici.
+  p.attempts = Math.max(0, (p.attempts || 0) - 1);
+  const time = engine.state().time;
+  playView(p.view, time > 5 ? time : p.startAt || 0, { shellBackend: 'libvlc' });
+  return true;
 }
 
 /** Repli automatique : copie équivalente d'abord, puis source suivante. */

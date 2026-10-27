@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MpvEngine } from '../src/player/engines.js';
 import {
-  announceShellReady, backStep, connectShell, createWebviewTransport, decodeMessage, encodeInvoke, isShellEnvironment, resetShell, setShellFullscreen, setShellPip, startShellDrag,
+  announceShellReady, backStep, connectShell, createWebviewTransport, decodeMessage, encodeInvoke, isShellEnvironment, recordInfoCapabilities, resetShell, shellHasLibvlc, setShellFullscreen, setShellPip, startShellDrag,
   type ShellWindow,
 } from '../src/player/shell';
 import { analyzeUrl, isPrivateHost, REPOLL_EVERY_MS, REPOLL_MAX, shouldRepoll, validAnalyzeDuration } from '../src/player/skip';
@@ -27,6 +27,39 @@ const HANDSHAKE = {
 const signal = (...args: unknown[]) => ({ id: 1, object: 'transport', type: 1, args });
 
 afterEach(() => { resetShell(); setShellServerAddress(''); });
+
+describe('capacités dans la réponse init (playerBackends)', () => {
+  const withBackends = (v: unknown) => ({ ...HANDSHAKE, data: { transport: { ...HANDSHAKE.data.transport, properties: [...HANDSHAKE.data.transport.properties, ['', 'playerBackends', '', v]] } } });
+
+  it('WebView2 : playerBackends (JSON) annonce libVLC, moteurs inconnus ignorés', async () => {
+    const { webview, receive } = mockWebview();
+    const p = createWebviewTransport({ chrome: { webview } } as unknown as ShellWindow, 500);
+    receive(withBackends(JSON.stringify(['mpv', 'libvlc', 'autre'])));
+    const t = await p;
+    expect(t).not.toBeNull();
+    expect(shellHasLibvlc()).toBe(true);
+  });
+
+  it('playerBackends invalide (JSON illisible ou pas un tableau) : rien n’est annoncé', async () => {
+    const { webview, receive } = mockWebview();
+    const p = createWebviewTransport({ chrome: { webview } } as unknown as ShellWindow, 500);
+    receive(withBackends('libvlc'));
+    await p;
+    expect(shellHasLibvlc()).toBe(false);
+    resetShell();
+    recordInfoCapabilities({ playerBackends: '"libvlc"' });
+    expect(shellHasLibvlc()).toBe(false);
+  });
+
+  it('recordInfoCapabilities (aussi utilisée par le transport Qt) valide comme player-capabilities', () => {
+    recordInfoCapabilities({ playerBackends: '["libvlc"]' });
+    expect(shellHasLibvlc()).toBe(true);
+    resetShell();
+    recordInfoCapabilities({});
+    recordInfoCapabilities(undefined);
+    expect(shellHasLibvlc()).toBe(false);
+  });
+});
 
 describe('coque WebView2 : messages', () => {
   it('appel d’une méthode : { id: 0, type: 6, args: [événement, charge] }', () => {
