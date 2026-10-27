@@ -10,9 +10,20 @@ import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
-import type { HomeProgressResponse, HomeWatchingResponse } from '@laststream/protocol/social';
+import type { HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse } from '@laststream/protocol/social';
 import type { FriendView, PresenceChange } from './social-v2-store.js';
-import { historyQuerySchema, homeProgressQuery, homeWatchingQuery, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
+import {
+  historyQuerySchema,
+  homeProgressQuery,
+  homeRecommendationsQuery,
+  homeWatchingQuery,
+  isPid,
+  presenceSchema,
+  recommendationKeySchema,
+  recommendationSchema,
+  requestSchema,
+  statusSchema,
+} from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
 
 /**
@@ -228,6 +239,39 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     const query = parseWith(homeProgressQuery, queryParams(c));
     const items = await social().friendsProgressFor(me.pid, query.titles, Date.now());
     return sendJson(c, { items } satisfies HomeProgressResponse);
+  });
+
+  /**
+   * Mon coup de cœur sur un titre : crée ou remplace (mot, titre, affiche, date). 204. 400 `invalid_body` si le corps est invalide
+   * (mot vide ou de plus de 140 caractères, genre ou identifiant TMDB incorrect). Profil enfant : 403.
+   */
+  router.put('/social/recommendations', async (c) => {
+    const me = await actor(c);
+    const input = parseWith(recommendationSchema, c.get('body'));
+    await social().setRecommendation(me.pid, input, Date.now());
+    return sendEmpty(c, 204);
+  });
+
+  /** Retire mon coup de cœur sur ce titre. 204, y compris s'il n'y en avait pas : celui d'un autre profil n'est jamais touché. */
+  router.delete('/social/recommendations/:type/:tmdbId', async (c) => {
+    const me = await actor(c);
+    const key = parseWith(recommendationKeySchema, { type: String(c.req.param('type')), tmdbId: String(c.req.param('tmdbId')) });
+    await social().deleteRecommendation(me.pid, key.type, key.tmdbId);
+    return sendEmpty(c, 204);
+  });
+
+  /**
+   * Coups de cœur des amis, du plus récent au plus ancien : `{ items, next? }`. `?limit=` (20 par défaut, 50 au plus) et
+   * `?before=<ms>` (strictement plus ancien). `next` (date du dernier) seulement si la page est pleine. Profil enfant : 403.
+   */
+  router.get('/social/home/recommendations', async (c) => {
+    const me = await actor(c);
+    const query = parseWith(homeRecommendationsQuery, queryParams(c));
+    const items = await social().homeRecommendations(me.pid, query.before, query.limit, Date.now());
+    const body: HomeRecommendationsResponse = { items };
+    const last = items[items.length - 1];
+    if (items.length === query.limit && last !== undefined) body.next = last.createdAt;
+    return sendJson(c, body);
   });
 
   // Présence

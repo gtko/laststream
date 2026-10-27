@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { consumeRate } from './rate-hits.js';
 import { drawNewHandleTag, revokeLegacyFriendship, settleGroupAfterLeave, syncProfileIdentity } from './social-handles.js';
-import type { HomeFriend, HomeMedia, HomeTitleProgress, HomeWatchingItem } from '@laststream/protocol/social';
+import type { HomeFriend, HomeMedia, HomeRecommendation, HomeTitleProgress, HomeWatchingItem, MediaKind, RecommendationInput } from '@laststream/protocol/social';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS, WATCHING_IDLE_MS } from './social-store.js';
 import {
   type ActivityItem,
@@ -317,6 +317,9 @@ export interface HomeTitleRef {
 /** Résultat du garde-fou de l'accueil (voir friendGate). */
 type FriendGate = 'ok' | 'hidden' | 'unknown';
 
+/** Ce que le garde-fou vérifie. `volunteer` (coup de cœur, geste volontaire) : `feed` sans exclure les amis invisibles. */
+type GateNeed = { history?: boolean; activity?: boolean; feed?: boolean; volunteer?: boolean };
+
 /** Fenêtre de l'accueil : une progression plus ancienne que 30 jours n'y figure plus. */
 const HOME_WINDOW_MS = 30 * 24 * 3_600_000;
 
@@ -367,6 +370,27 @@ function homeMediaOf(row: HomeProgressRow): HomeMedia {
     media.season = Number(row.season);
     media.episode = Number(row.episode);
   }
+  return media;
+}
+
+/** Ligne de `recommendations` lue pour l'accueil. */
+interface RecommendationRow {
+  pid: string;
+  type: MediaKind;
+  tmdb_id: number;
+  title: string;
+  poster: string | null;
+  word: string;
+  created_at: number;
+}
+
+/** Garde-fou des coups de cœur : seuls la sourdine et le masquage posés par le lecteur comptent (un ami invisible reste visible). */
+const RECOMMENDATION_NEED: GateNeed = { feed: true, volunteer: true };
+
+/** Titre d'un coup de cœur : toujours un titre ; affiche seulement si elle est connue. */
+function recommendationMediaOf(row: RecommendationRow): HomeMedia {
+  const media: HomeMedia = { type: row.type, tmdbId: Number(row.tmdb_id), title: row.title };
+  if (row.poster !== null && row.poster !== '') media.poster = row.poster;
   return media;
 }
 
@@ -1787,11 +1811,11 @@ export class SocialV2Store {
    * enfant, un blocage (dans un sens ou l'autre), un non-ami et une demande en attente donnent `unknown`. Selon les options :
    * `history` exige `historyVisible` chez la cible ; `activity` respecte `activityVisibility` chez la cible ; `feed` respecte
    * la sourdine et le masquage d'activité posés par le lecteur. Une cible en statut « invisible » donne `hidden` dès qu'une
-   * option est demandée.
+   * option est demandée, sauf `volunteer` (coup de cœur : un ami invisible reste visible).
    */
-  private friendGate(viewerPid: string, targetPid: string, need: { history?: boolean; activity?: boolean; feed?: boolean }): FriendGate {
+  private friendGate(viewerPid: string, targetPid: string, need: GateNeed): FriendGate {
     if (this.isBlockedEither(viewerPid, targetPid) || this.relationOf(viewerPid, targetPid) !== 'friend') return 'unknown';
-    if (need.history === true || need.activity === true || need.feed === true) {
+    if (need.history === true || need.activity === true || (need.feed === true && need.volunteer !== true)) {
       const presence = this.db.prepare('SELECT status FROM profile_presence WHERE profile_pid = ?').get(targetPid) as { status: string } | undefined;
       if (presence?.status === 'invisible') return 'hidden';
     }
@@ -1905,6 +1929,54 @@ export class SocialV2Store {
       }
     }
     items.sort((a, b) => b.updatedAt - a.updatedAt || a.friend.pid.localeCompare(b.friend.pid));
+    return items;
+  }
+
+  // Coups de cœur (LAST-191, lot 2)
+
+  /** Crée ou remplace mon coup de cœur sur un titre (mot, titre, affiche, date) : un nouveau mot remonte en tête de l'accueil. */
+  setRecommendation(pid: string, input: RecommendationInput, now: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO recommendations (pid, type, tmdb_id, title, poster, word, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(pid, type, tmdb_id) DO UPDATE SET title = excluded.title, poster = excluded.poster, word = excluded.word, created_at = excluded.created_at`,
+      )
+      .run(pid, input.type, input.tmdbId, input.title, input.poster ?? null, input.word, now);
+  }
+
+  /** Retire mon coup de cœur sur ce titre. Ne touche jamais celui d'un autre profil ; sans effet s'il n'y en a pas. */
+  deleteRecommendation(pid: string, type: MediaKind, tmdbId: number): void {
+    this.db.prepare('DELETE FROM recommendations WHERE pid = ? AND type = ? AND tmdb_id = ?').run(pid, type, tmdbId);
+  }
+
+  /**
+   * Coups de cœur des amis (accueil), du plus récent au plus ancien, `limit` au plus, strictement plus anciens que `before`.
+   * Garde-fou `volunteer` : un ami invisible reste visible ; sourdine et masquage posés par le lecteur s'appliquent. Foyer,
+   * enfants, blocages et non-amis exclus ; 200 amis au plus examinés.
+   */
+  homeRecommendations(viewerPid: string, before: number | undefined, limit: number, now: number): HomeRecommendation[] {
+    const visible = this.homeFriendPids(viewerPid).filter((friendPid) => this.friendGate(viewerPid, friendPid, RECOMMENDATION_NEED) === 'ok');
+    if (visible.length === 0) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT pid, type, tmdb_id, title, poster, word, created_at FROM recommendations
+          WHERE pid IN (${visible.map(() => '?').join(', ')}) AND created_at < ?
+          ORDER BY created_at DESC, pid
+          LIMIT ?`,
+      )
+      .all(...visible, before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as RecommendationRow[];
+    const friends = new Map<string, HomeFriend>();
+    const items: HomeRecommendation[] = [];
+    for (const row of rows) {
+      let friend = friends.get(row.pid);
+      if (friend === undefined) {
+        const viewRow = this.viewRow(row.pid);
+        if (viewRow === undefined) continue;
+        friend = homeFriendOf(this.presentView(viewerPid, viewRow, false, now));
+        friends.set(row.pid, friend);
+      }
+      items.push({ friend, media: recommendationMediaOf(row), word: row.word, createdAt: Number(row.created_at) });
+    }
     return items;
   }
 

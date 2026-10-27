@@ -122,6 +122,47 @@ export const homeProgressQuery = z.strictObject({
     .transform((titles) => [...new Map(titles.map((title) => [`${title.type}:${title.tmdbId}`, title])).values()]),
 });
 
+/** Accueil « coups de cœur » : `?before=<ms>` (strictement plus ancien) et `?limit=` de 1 à 50, 20 par défaut. */
+export const homeRecommendationsQuery = z.strictObject({
+  before: z
+    .string()
+    .regex(/^\d{1,13}$/)
+    .transform(Number)
+    .optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(50))
+    .optional()
+    .transform((value) => value ?? 20),
+});
+
+/** Coup de cœur du profil agissant (`PUT /social/recommendations`). Mot de 1 à 140 caractères après rognage des espaces de bord. */
+export const recommendationSchema = z.strictObject({
+  type: z.enum(['movie', 'series']),
+  tmdbId: TMDB_ID,
+  title: z.string().trim().min(1).max(200),
+  poster: z
+    .string()
+    .optional()
+    .transform((value) => cleanPoster(value)),
+  word: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => [...value].length <= 140, 'word:too_long'),
+});
+
+/** Titre visé par `DELETE /social/recommendations/:type/:tmdbId` (paramètres de chemin). */
+export const recommendationKeySchema = z.strictObject({
+  type: z.enum(['movie', 'series']),
+  tmdbId: z
+    .string()
+    .regex(/^[1-9]\d{0,8}$/)
+    .transform(Number),
+});
+
 // Messages et notes
 
 /** Titre (contrat `MediaRef`) : saison et épisode facultatifs. */
