@@ -14,6 +14,7 @@ import {
   htmlTextList, htmlTextOptions, infoModel, liveBadge, tvKeyAction,
 } from './tvControls.js';
 import { esc, store } from './util.js';
+import { pushLayer } from './backStack.js';
 
 // ---------- Lecteur plein écran ----------
 export function loadHls() {
@@ -553,6 +554,9 @@ function togglePip() {
 
 // ---------- Ouverture, fermeture, zapping ----------
 
+/** Entrée d'historique du lecteur ouvert (voir backStack.js). */
+let releaseBack = null;
+
 export function openPlayer(c, list, opener) {
   if (isDemo()) { toast(DEMO_BLOCKED_MSG); return; } // mode démo : pas de lecture TV
   const l = list && list.some((x) => x.id === c.id) ? list : [c];
@@ -562,6 +566,7 @@ export function openPlayer(c, list, opener) {
   tv.info = false;
   dropPanel();
   infoEl.hidden = true;
+  if (playerEl.hidden) releaseBack = pushLayer(() => closePlayer()); // retour du téléphone : ferme le lecteur (LAST-499)
   playerEl.hidden = false;
   document.body.classList.add('modal-open');
   startStream();
@@ -571,6 +576,7 @@ export function openPlayer(c, list, opener) {
 
 export function closePlayer(silent) {
   if (playerEl.hidden) return;
+  if (releaseBack) { releaseBack(); releaseBack = null; }
   leaveFullscreen();
   tv.playToken++;
   destroyStream();

@@ -29,6 +29,7 @@ import { getFavs } from './tv.js';
 import { mark } from './watched.js';
 import { esc } from './util.js';
 import { setOpenState } from './disclosure.js';
+import { pushLayer } from './backStack.js';
 
 const LONG_PRESS_MS = 500;
 const HINT_KEY = 'ls.ctxHintSeen';
@@ -56,6 +57,7 @@ export function closeCtx(restoreFocus) {
   if (!m) return;
   const opener = m._opener;
   if (m._more) setOpenState(m._more, false);
+  if (m._releaseBack) m._releaseBack();
   m.remove();
   state.ctxMenu = null;
   if (restoreFocus && opener && opener.isConnected && opener.focus) opener.focus({ preventScroll: true });
@@ -360,6 +362,7 @@ export function openCtx(t, x, y) {
   menu._opener = t.el;
   document.body.appendChild(menu);
   state.ctxMenu = menu;
+  menu._releaseBack = pushLayer(() => closeCtx(true)); // retour du téléphone : ferme le menu (LAST-499)
   const w = menu.offsetWidth;
   const h = menu.offsetHeight;
   menu.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + 'px';

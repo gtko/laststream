@@ -10,6 +10,7 @@ import { elKey, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { saveSeasonToDevice, saveToDevice } from './deviceSave.js';
 import { detailEl, toast } from './dom.js';
 import { esc, names } from './util.js';
+import { pushLayer } from './backStack.js';
 
 const svg = (d, extra = '') => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + extra + '>' + d + '</svg>';
 
@@ -294,12 +295,15 @@ export function openSheet({ title, sub = '', cls = '', opener = document.activeE
   const sheet = el.querySelector('.dl-sheet');
   const body = el.querySelector('.dl-sheet-b');
   let closed = false;
+  // Retour du téléphone : ferme la feuille (LAST-499).
+  const releaseBack = pushLayer(() => layer.close());
   const layer = {
     el,
     body,
     close(silent) {
       if (closed) return;
       closed = true;
+      releaseBack();
       el.remove();
       if (openLayer === layer) openLayer = null;
       if (!document.querySelector('.dl-layer') && !document.querySelector('.adm-layer')) document.body.classList.remove('modal-open');

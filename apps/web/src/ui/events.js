@@ -25,6 +25,7 @@ import { socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { allChannels, boxLocked, boxStatus, playerEl, refreshCats, renderEpgGrid, setCategory, showProg, snapChannel, toggleFav, tv, tvTest } from './tv.js';
 import { esc, store } from './util.js';
+import { handlePopState } from './backStack.js';
 
 /** Un seul déclenchement par bouton : un clic répété pendant l'action (ou juste après, pour une bascule) est ignoré (ODY-237). */
 const once = (kind, el, fn, opts = {}) => runOnce(elKey(kind, el), fn, opts);
@@ -459,5 +460,6 @@ modalClose.addEventListener('click', () => closeModal());
 modal.addEventListener('click', (e) => {
   if (e.target === modal && !modal.querySelector('.addon-cfg')) closeModal(); // pas de fermeture par clic sur le fond pendant la configuration d'un addon
 });
-window.addEventListener('popstate', () => { state.popping = true; });
+// Retour avec une modale, une feuille ou un menu ouvert : la couche se ferme, la page reste (LAST-499).
+window.addEventListener('popstate', () => { if (!handlePopState()) state.popping = true; });
 window.addEventListener('hashchange', route);

@@ -30,6 +30,7 @@ import { S, badKey, langPrefsOf, originalLangOf, sourceLine } from './sessionSta
 
 // API publique du lecteur : `startSession`, `playBest` et `playSource` ci-dessous, la fermeture dans sessionClose.js.
 export { closePlayer, isPlayerOpen } from './sessionClose.js';
+export { isPlayerFull, leavePlayer } from './sessionUi.js';
 
 /** Lance le lecteur sur `view` (sources déjà connues, par exemple choisies dans un tiroir). */
 export async function startSession(request, views, view, opts = {}) {

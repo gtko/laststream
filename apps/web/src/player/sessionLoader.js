@@ -26,6 +26,14 @@ function loadSession() {
 /** Vrai si un lecteur est ouvert ; faux tant que le module n'est pas chargé (aucune lecture n'a pu démarrer). */
 export const isPlayerOpen = () => !!mod && mod.isPlayerOpen();
 
+/** Lecteur affiché en grand (pas en miniature) ; faux tant que le module n'est pas chargé. */
+export const isPlayerFull = () => !!mod && mod.isPlayerFull();
+
+/** Retour du téléphone pendant la lecture : la lecture se réduit en miniature, ou le lecteur se ferme (voir sessionUi.js). */
+export function leavePlayer() {
+  if (mod) mod.leavePlayer();
+}
+
 /** Ferme le lecteur (appelé aussi par le retour du navigateur) ; une lecture en cours de chargement du module est annulée (rien ne démarre à l'arrivée du module). */
 export function closePlayer() {
   if (mod) mod.closePlayer();
