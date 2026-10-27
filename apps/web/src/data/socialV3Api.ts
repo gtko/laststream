@@ -18,8 +18,7 @@ import type {
 export type {
   ActivityItem, ConversationV3, GroupConversation, ListDetail, ListSummary, MessageV3, MissedSummary, MyShareLink, Poll, PlaybackSocial, Reaction,
   ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile,
-  HomeFriend, HomeMedia, HomeProgressResponse, HomeRecommendation, HomeRecommendationsResponse, HomeTitleProgress,
-  HomeWatchingItem, HomeWatchingResponse, RecommendationInput,
+  HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse, RecommendationInput,
 } from '@laststream/protocol/social';
 
 // ---- S1 : profil ----
