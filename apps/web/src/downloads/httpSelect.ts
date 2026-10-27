@@ -44,20 +44,24 @@ function bridgeOutcome(err: unknown): HttpResponse {
   throw err;
 }
 
-/** Pont natif : délai total par requête (60 s par défaut, `req.timeoutMs` s'il est donné), erreurs définitives rendues en réponse. */
-function bridgeTransport(bridge: HttpFn): HttpFn {
+/**
+ * Pont natif : délai total par requête (60 s par défaut, `req.timeoutMs` s'il est donné), erreurs définitives rendues en réponse.
+ * `fallback` : transport repris quand le pont refuse l'hôte (`host_not_allowed`), pour les liens d'addon seulement : une coque sans
+ * lecture des liens d'addon (ou sans `native-range`) les refuse, et `fetch` les lisait avant LAST-501 (hôtes ouverts en CORS).
+ */
+function bridgeTransport(bridge: HttpFn, fallback?: HttpFn): HttpFn {
   return async (req) => {
     try {
       return await bridge({ ...req, timeoutMs: req.timeoutMs ?? BRIDGE_TIMEOUT_MS });
     } catch (err) {
+      if (fallback && err instanceof DebridError && err.code === 'host_not_allowed') return fallback(req);
       return bridgeOutcome(err);
     }
   };
 }
 
-/** Lien lu par le pont de la coque : hôte de débrideur, ou lien direct d'addon accepté par le transfert natif. */
-function viaBridge(raw: string): boolean {
-  if (parseDebridUrl(raw) !== null) return true;
+/** Lien direct d'addon accepté par le transfert natif (https:443, sans identifiants, hôte public), hors débrideurs. */
+function isNativeAddonLink(raw: string): boolean {
   try {
     return isNativeLinkUrl(new URL(raw));
   } catch {
@@ -68,6 +72,11 @@ function viaBridge(raw: string): boolean {
 export function createDownloadHttp(kind: DownloadHttpKind, deps: DownloadHttpDeps = {}): HttpFn {
   const web = createWebDownloadHttp({ allowHost: isAddonLinkUrl, fetchImpl: deps.fetchImpl });
   if (kind !== 'shell') return web;
-  const bridge = bridgeTransport(deps.shell ?? shellRangeHttp(shellHttp()));
-  return (req) => (viaBridge(req.url) ? bridge(req) : web(req));
+  const shell = deps.shell ?? shellRangeHttp(shellHttp());
+  const debridBridge = bridgeTransport(shell);
+  const addonBridge = bridgeTransport(shell, web);
+  return (req) => {
+    if (parseDebridUrl(req.url) !== null) return debridBridge(req);
+    return isNativeAddonLink(req.url) ? addonBridge(req) : web(req);
+  };
 }

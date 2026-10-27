@@ -67,7 +67,29 @@ describe('createDownloadHttp : transport selon la plateforme (LAST-182)', () => 
       const bridge = fakeBridge();
       await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(url));
       expect(bridge).not.toHaveBeenCalled();
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it('coque + lien d’addon, hôte refusé par le pont (coque ancienne) : repli sur fetch', async () => {
+    const fetchSpy = fakeFetch();
+    const bridge = vi.fn<HttpFn>(async () => {
+      throw new DebridError('host_not_allowed', 'unsupported');
+    });
+    const res = await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(ADDON_LINK));
+    expect(bridge).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(206);
+  });
+
+  it('coque + lien débrideur, hôte refusé par le pont : blocage, jamais fetch', async () => {
+    const fetchSpy = fakeFetch();
+    const bridge = vi.fn<HttpFn>(async () => {
+      throw new DebridError('host_not_allowed', 'unsupported');
+    });
+    const res = await createDownloadHttp('shell', { fetchImpl: fetchSpy, shell: bridge })(req(DEBRID_LINK));
+    expect(res.status).toBe(BLOCKED_STATUS);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('coque + lien d’addon refusé par le pont (redirection) : blocage, sans exception', async () => {
