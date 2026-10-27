@@ -14,6 +14,7 @@ vi.mock('@capacitor/core', async (importOriginal) => {
   return { ...mod, Capacitor: { ...mod.Capacitor, isNativePlatform: () => h.native } };
 });
 vi.mock('../src/downloads/service', () => ({
+  downloadDestination: () => 'app',
   platformAvailability: () => ({ ok: true }),
   getDownloads: vi.fn(() => Promise.resolve(h.mgr)),
   subscribeDownloads: vi.fn((fn: (items: unknown[]) => void) => { fn(h.items); return vi.fn(); }),

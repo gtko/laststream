@@ -18,6 +18,7 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('../src/downloads/service', () => ({
+  downloadDestination: () => 'app',
   platformAvailability: () => h.s.avail,
   getDownloads: vi.fn(() => Promise.resolve(h.s.manager)),
   downloadIdFor: (t: { key: string; season?: number; episode?: number }) => (t.season !== undefined && t.episode !== undefined ? `${t.key}:${t.season}:${t.episode}` : t.key),

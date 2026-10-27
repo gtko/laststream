@@ -21,6 +21,8 @@ const KEY = {
   owner: `${PREFIX}owner`,
   /** Supprimer un téléchargement terminé quand son titre est marqué vu (voir afterWatch.ts). Réglage à part. */
   deleteAfterWatch: `${PREFIX}deleteAfterWatch`,
+  /** Navigateur web : où vont les téléchargements (voir webSave.ts, LAST-498). */
+  webDestination: `${PREFIX}webDestination`,
 } as const;
 /** Valeur écrite pour « sans limite ». */
 const NO_LIMIT = 'none';
@@ -115,6 +117,20 @@ export function getDeleteAfterWatch(): boolean {
 /** Écrit le réglage « supprimer après visionnage ». */
 export function setDeleteAfterWatch(on: boolean): void {
   write(KEY.deleteAfterWatch, on ? '1' : '0');
+}
+
+/**
+ * Destination des téléchargements dans le navigateur web (LAST-498) : `device` (par défaut) enregistre le fichier sur l'appareil,
+ * dans le dossier choisi ou celui du navigateur ; `app` le garde dans l'app pour la lecture hors ligne (hébergeurs compatibles CORS).
+ */
+export type WebDestination = 'device' | 'app';
+
+export function getWebDestination(): WebDestination {
+  return read(KEY.webDestination) === 'app' ? 'app' : 'device';
+}
+
+export function setWebDestination(d: WebDestination): void {
+  write(KEY.webDestination, d === 'app' ? 'app' : null);
 }
 
 /**

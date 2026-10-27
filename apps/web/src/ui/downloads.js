@@ -1,8 +1,10 @@
 /* Écran #/downloads (ODY-204) : jauge d'espace, téléchargements en cours et terminés, bandeaux hors ligne, erreur et web.
  * Un seul abonnement par visite (libéré par teardownDownloads, appelé par le routeur) ; la liste n'est redessinée que si
  * l'ensemble des identifiants ou des états change, sinon l'avancement est mis à jour en place (largeur, aria-valuenow). */
-import { getDownloads, getSpace, persistStorage, platformAvailability, subscribeDownloads } from '../downloads/service';
+import { downloadDestination, getDownloads, getSpace, persistStorage, platformAvailability, subscribeDownloads } from '../downloads/service';
+import { getWebDestination, setWebDestination } from '../downloads/settings';
 import { errorMessage, gauge, itemPercent, itemSubtitle } from '../downloads/viewModel';
+import { folderPickerSupported, forgetSaveFolder, pickSaveFolder, saveFolderName } from '../downloads/webSave';
 import { isAndroidApp } from '../data/config';
 import { runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
 import { isShellEnvironment } from '../player/shell';
@@ -22,7 +24,7 @@ const SPACE_EVERY_MS = 2000;
 const attr = (s) => String(s).replace(/["\\]/g, '\\$&');
 
 /** État de la visite en cours ; remis à zéro par teardownDownloads. */
-const v = { unsub: null, items: [], sig: '', loaded: false, spaceAt: 0, spaceTimer: 0, space: null, token: 0, persisted: null };
+const v = { unsub: null, items: [], sig: '', loaded: false, spaceAt: 0, spaceTimer: 0, space: null, token: 0, persisted: null, folder: null };
 
 const online = () => (typeof navigator === 'undefined' || navigator.onLine !== false);
 /** Vue TV (ODY-234) : mêmes données, rangées navigables à la télécommande (groupes data-nav) et indication des touches. */
@@ -94,8 +96,34 @@ function bannersHTML(items) {
   return out.join('');
 }
 
+/** Navigateur web : où vont les téléchargements (LAST-498). « Sur cet appareil » par défaut, dossier choisi sur Chrome/Edge. */
+function destinationCardHTML() {
+  const dest = getWebDestination();
+  const opt = (value, title, sub) => '<button type="button" class="dl-opt" role="radio" aria-checked="' + (dest === value) + '" data-dl-act="dest-' + value + '">' +
+    '<span class="dl-rad" aria-hidden="true"></span><span class="dl-opt-t"><span class="dl-opt-l">' + esc(title) + '</span><span class="dl-opt-s">' + esc(sub) + '</span></span></button>';
+  let detail = '';
+  if (dest === 'device') {
+    if (!folderPickerSupported()) {
+      detail = '<p class="dl-card-p">Les fichiers vont dans le dossier de téléchargements du navigateur. Choisir un dossier n’est possible qu’avec Chrome ou Edge sur ordinateur.</p>';
+    } else if (v.folder) {
+      detail = '<p class="dl-card-p">Dossier : <b>' + esc(v.folder) + '</b></p><div class="dl-card-acts" data-nav>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-pick">Changer de dossier</button>' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-dl-act="folder-forget">Utiliser le dossier du navigateur</button></div>';
+    } else {
+      detail = '<p class="dl-card-p">Aucun dossier choisi : les fichiers vont dans le dossier de téléchargements du navigateur.</p><div class="dl-card-acts" data-nav>' +
+        '<button type="button" class="btn btn-primary btn-sm" data-dl-act="folder-pick">Choisir un dossier</button></div>';
+    }
+    detail += '<p class="dl-card-p dl-card-note">Les hébergeurs qui interdisent la lecture par la page (AllDebrid) passent toujours par les téléchargements du navigateur.</p>';
+  }
+  return '<section class="dl-card dl-dest" aria-labelledby="dl-dest-t"><p class="dl-card-h" id="dl-dest-t">' + DL_ICON.disk + 'Où enregistrer</p>' +
+    '<div class="dl-dest-opts" role="radiogroup" aria-labelledby="dl-dest-t" data-nav>' +
+    opt('device', 'Sur cet appareil', 'Un fichier vidéo, lisible avec ton lecteur habituel') +
+    opt('app', 'Dans l’app, hors connexion', 'Seuls les hébergeurs qui l’autorisent fonctionnent (pas AllDebrid)') + '</div>' + detail + '</section>';
+}
+
 function webCardsHTML() {
   if (!isWeb()) return '';
+  if (downloadDestination() === 'device') return destinationCardHTML();
   const persist = v.persisted === true ? ''
     : '<section class="dl-card dl-persist" aria-labelledby="dl-persist-t"><p class="dl-card-h" id="dl-persist-t">' + DL_ICON.lock + 'Stockage persistant</p>' +
       '<p class="dl-card-p">Sans lui, le navigateur peut effacer les vidéos téléchargées quand l’espace manque. Active-le pour les garder.</p>' +
@@ -103,7 +131,7 @@ function webCardsHTML() {
   const safari = isSafariLike()
     ? '<div class="dl-banner is-info">' + DL_ICON.info + '<p><b>Safari et iOS.</b> Sur iPhone et iPad, Safari peut supprimer les fichiers après 7 jours sans visite. Ouvre l’app de temps en temps, ou installe-la sur l’écran d’accueil.</p></div>'
     : '';
-  return persist + safari;
+  return destinationCardHTML() + persist + safari;
 }
 
 function spaceCardHTML() {
@@ -126,7 +154,8 @@ const shell = (inner, actions = '') => topBar(false) +
   '<div class="dl-head-acts" data-nav data-dl-head>' + actions + '</div></header><div class="dl-body" data-dl-body>' + inner + '</div>' + (isTvDevice() ? '<p class="dl-tv-hint" aria-hidden="true">OK : choisir · Retour : fermer</p>' : '') + '</article>';
 
 const emptyHTML = () => '<div class="dl-state"><span class="dl-state-ic" aria-hidden="true">' + DL_ICON.dl + '</span><h2>Rien de téléchargé</h2>' +
-  '<p>Télécharge un film ou un épisode depuis sa fiche pour le regarder sans connexion.</p><div data-nav><a class="btn btn-primary" href="#/">Parcourir le catalogue</a></div></div>';
+  '<p>' + (isWeb() && downloadDestination() === 'device' ? 'Télécharge un film ou un épisode depuis sa fiche : le fichier est enregistré sur cet appareil.'
+    : 'Télécharge un film ou un épisode depuis sa fiche pour le regarder sans connexion.') + '</p><div data-nav><a class="btn btn-primary" href="#/">Parcourir le catalogue</a></div></div>';
 
 const loadingHTML = () => '<p class="sr-only" role="status">Chargement des téléchargements…</p><div class="dl-sk" aria-hidden="true"><span class="sk sk-line"></span>' +
   '<span class="sk dl-sk-row"></span><span class="sk dl-sk-row"></span><span class="sk dl-sk-row"></span></div>';
@@ -137,7 +166,7 @@ function stateHTML(icon, title, text, action = '') {
 }
 
 /** Signature de la liste : redessin complet seulement si elle change. */
-const signature = (items) => items.map((it) => it.id + ':' + it.state).join('|') + '|' + online() + '|' + v.persisted;
+const signature = (items) => items.map((it) => it.id + ':' + it.state).join('|') + '|' + online() + '|' + v.persisted + '|' + v.folder + '|' + downloadDestination();
 
 function renderList() {
   const body = detailEl.querySelector('[data-dl-body]');
@@ -152,7 +181,9 @@ function renderList() {
   const off = !online();
   const running = items.filter((it) => it.state !== 'done');
   const done = items.filter((it) => it.state === 'done');
-  body.innerHTML = bannersHTML(items) + spaceCardHTML() + webCardsHTML() +
+  // Web « Sur cet appareil » sans téléchargement dans l'app : la jauge de l'espace de l'app ne dit rien d'utile.
+  const space = isWeb() && downloadDestination() === 'device' && !items.length ? '' : spaceCardHTML();
+  body.innerHTML = bannersHTML(items) + space + webCardsHTML() +
     (items.length ? section('dl-s-run', 'En cours', running, off) + section('dl-s-done', off ? 'Disponibles hors connexion' : 'Terminés', done, off) : emptyHTML());
   if (head) head.innerHTML = headActionsHTML(items);
   paintSpace();
@@ -284,6 +315,9 @@ export async function showDownloads() {
       '<button type="button" class="btn btn-primary" data-dl-act="reload">Réessayer</button>');
     return;
   }
+  if (isWeb() && folderPickerSupported()) {
+    saveFolderName().then((name) => { if (token === v.token && name !== v.folder) { v.folder = name; if (v.loaded) renderList(); } }).catch(() => undefined);
+  }
   if (isWeb() && navigator.storage && navigator.storage.persisted) {
     navigator.storage.persisted().then((p) => { if (token === v.token) { v.persisted = p; if (v.loaded) renderList(); } }).catch(() => undefined);
   }
@@ -336,6 +370,25 @@ detailEl.addEventListener('click', async (e) => {
     v.persisted = ok;
     toast(ok ? 'Stockage persistant activé' : 'Le navigateur a refusé le stockage persistant');
     if (ok) renderList();
+    return;
+  }
+  if (act === 'dest-device' || act === 'dest-app') {
+    setWebDestination(act === 'dest-device' ? 'device' : 'app');
+    renderList();
+    const sel = detailEl.querySelector('[data-dl-act="' + act + '"]');
+    if (sel) sel.focus({ preventScroll: true });
+    return;
+  }
+  if (act === 'folder-pick') {
+    const h = await pickSaveFolder();
+    if (h) { v.folder = h.name; toast('Les téléchargements iront dans « ' + h.name + ' »'); renderList(); }
+    return;
+  }
+  if (act === 'folder-forget') {
+    await forgetSaveFolder();
+    v.folder = null;
+    toast('Les téléchargements iront dans le dossier du navigateur');
+    renderList();
     return;
   }
   if (act === 'space-full') { void openSpaceFullSheet(t); return; }
