@@ -903,6 +903,24 @@ export const MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 33,
+    name: 'coups de cœur des amis : un mot par profil et par titre (140 caractères au plus), lus par l accueil',
+    sql: `
+      -- Coup de cœur d'un profil sur un titre : une ligne par (profil, genre, identifiant TMDB). Supprimée avec le profil.
+      CREATE TABLE recommendations (
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        type TEXT NOT NULL CHECK (type IN ('movie', 'series')),
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        poster TEXT,
+        word TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (pid, type, tmdb_id)
+      );
+      CREATE INDEX recommendations_created ON recommendations (pid, created_at DESC);
+    `,
+  },
 ];
 
 /**
