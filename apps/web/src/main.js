@@ -15,6 +15,7 @@ import './styles/settings-appearance.css';
 import './styles/homeprefs.css';
 import './styles/social.css';
 import './styles/friendRail.css';
+import './styles/ensemble.css';
 import './styles/homeSocial.css';
 import './styles/friendLibrary.css';
 import './styles/chat.css';

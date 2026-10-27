@@ -173,7 +173,7 @@ describe('page Ensemble', () => {
     expect(detail().querySelector('[data-wp-lang=""]')).not.toBeNull();
   });
 
-  it.each([['ce-soir', 'Ce soir'], ['a-venir', 'À venir'], ['salons-publics', 'Salons publics'], ['passees', 'Passées']])('onglet %s : état vide, aucune donnée inventée', async (id, label) => {
+  it.each([['ce-soir', 'Ce soir'], ['a-venir', 'À venir'], ['passees', 'Passées']])('onglet %s : état vide, aucune donnée inventée', async (id, label) => {
     await mountPage(id);
     const d = detail();
     expect(d.querySelector('.ens-empty')).not.toBeNull();

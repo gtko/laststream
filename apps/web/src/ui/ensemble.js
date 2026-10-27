@@ -1,10 +1,12 @@
 /* Page Ensemble (#/ensemble[/<onglet>]) : tout ce qui se regarde à plusieurs. Remplace l'ancienne page Watch parties (#/parties redirige ici).
  * Coque : en-tête (titre, sous-titre, Amis, « Rejoindre avec un code », « Créer un salon »), onglets Maintenant / Ce soir / À venir / Salons publics / Passées.
- * « Maintenant » affiche la liste des salons ouverts (parties.js) ; les autres onglets sont des états vides en attendant LAST-197 et LAST-199.
+ * « Maintenant » : salons en direct chez les amis puis salons publics ; « Salons publics » : la liste complète (parties.js). Colonne latérale
+ * (ensembleSide.js) : amis disponibles, activité, billets. « Ce soir », « À venir » et « Passées » restent des états vides en attendant LAST-199.
  * Compte connecté hors profil enfant seulement (le routeur renvoie un profil enfant à l'accueil). */
 import { canAdmin, isKidProfile, isServerMode } from '../data/auth';
 import { parseJoinHash } from '../party/join';
 import { detailEl } from './dom.js';
+import { mountEnsembleSide } from './ensembleSide.js';
 import { ENSEMBLE_TABS, ensembleHash, ensembleTabOf } from './ensembleTabs.js';
 import { teardownFiche } from './fiche.js';
 import { brand } from './fragments.js';
@@ -25,7 +27,6 @@ const SUBTITLE = 'Tout ce qui se regarde à plusieurs : salons ouverts, soirées
 const EMPTY = {
   'ce-soir': ['Rien de prévu ce soir', 'Les soirées planifiées pour ce soir apparaîtront ici, avec les réponses de tes amis.'],
   'a-venir': ['Aucune soirée à venir', 'Les prochaines soirées et les invitations en attente apparaîtront ici.'],
-  'salons-publics': ['Les salons publics arrivent ici', 'En attendant, les salons ouverts à tous restent listés dans l’onglet Maintenant.'],
   passees: ['Aucune soirée passée', 'Les soirées terminées resteront ici pour que tu puisses les retrouver.'],
 };
 
@@ -57,6 +58,9 @@ function emptyHTML(tab) {
   return '<div class="wp-empty-box ens-empty"><span class="wp-empty-ico">' + ICON.party + '</span><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p></div>';
 }
 
+/** Onglets servis par la liste des salons (parties.js) : identifiant -> mode du panneau. */
+const PANES = { maintenant: 'now', 'salons-publics': 'public' };
+
 const JOIN_MSG_ID = 'ens-join-msg';
 
 const headHTML = () =>
@@ -84,10 +88,12 @@ export function showEnsemble(tab = 'maintenant') {
   } else {
     // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(true) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' + headHTML() + tabsHTML(current) +
-      '<section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
-      (current === 'maintenant' ? '' : emptyHTML(current)) + '</section></article>' + tabbar('ensemble') + '</div>';
+      '<div class="ens-grid"><section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
+      (PANES[current] ? '' : emptyHTML(current)) + '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
     const panel = detailEl.querySelector('#ens-panel');
-    if (current === 'maintenant' && panel) mountPartiesPane(panel);
+    if (PANES[current] && panel) mountPartiesPane(panel, PANES[current]);
+    const side = detailEl.querySelector('#ens-side');
+    if (side) mountEnsembleSide(side);
   }
   const h1 = detailEl.querySelector('#ens-title');
   if (h1) h1.focus({ preventScroll: true });
