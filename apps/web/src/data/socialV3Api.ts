@@ -4,19 +4,22 @@ import type {
   ActivityItem, ConversationV3, CustomStatus, FriendView, GroupConversation, Handle, ListDetail, ListSummary, MessageKind,
   MessageV3, MissedSummary, MomentRef, MyShareLink, NotifyPrefs, Poll, PartyRef, ProfileBanner, ProfileFavorite,
   Reaction, ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile, TitleRef,
+  HomeProgressResponse, HomeRecommendationsResponse, HomeWatchingResponse, RecommendationInput,
 } from '@laststream/protocol/social';
 
-/* Client typé de l'API sociale v3 (`/user/social/*`, contrat docs/social-v3-contract.md, sections S1 à S5) : profil étendu,
+/* Client typé de l'API sociale v3 (`/user/social/*`, contrat docs/social-v3-contract.md, sections S1 à S6) : profil étendu,
  * préférences, relations, blocages, signalements, demandes de rejoindre, messages riches par conversation (DM `dm:<pid>` et
- * groupes `g:<id>`), réactions, sondages, saisie, groupes, partage, liens publics, listes partagées, activité, heatmap et
- * résumé de fin de mode cinéma. Les en-têtes sont ceux de la v2 (X-Profile-Id, X-Profile-Token via `call`) ; la lecture
- * publique d'un lien partagé part sans session. Aucun texte n'est affiché ici. Les formes de réponse viennent de
+ * groupes `g:<id>`), réactions, sondages, saisie, groupes, partage, liens publics, listes partagées, activité, heatmap,
+ * résumé de fin de mode cinéma et accueil social (watching, progression par titre, coups de cœur). Les en-têtes sont ceux de la v2
+ * (X-Profile-Id, X-Profile-Token via `call`) ; la lecture publique d'un lien partagé part sans session. Aucun texte n'est affiché ici. Les formes de réponse viennent de
  * @laststream/protocol/social ; seuls les corps de requête, les helpers et les champs que le protocole ne décrit pas
  * restent ici. */
 
 export type {
   ActivityItem, ConversationV3, GroupConversation, ListDetail, ListSummary, MessageV3, MissedSummary, MyShareLink, Poll, PlaybackSocial, Reaction,
   ShareLinkCreated, ShareLinkView, SocialPrefs, SocialProfile,
+  HomeFriend, HomeMedia, HomeProgressResponse, HomeRecommendation, HomeRecommendationsResponse, HomeTitleProgress,
+  HomeWatchingItem, HomeWatchingResponse, RecommendationInput,
 } from '@laststream/protocol/social';
 
 // ---- S1 : profil ----
@@ -138,3 +141,33 @@ export const getHeatmap = (q: MediaQuery & { buckets?: number }) =>
 /** Résumé de ce qui a été manqué depuis `since` (epoch ms), pour la fin du mode cinéma. */
 export const getMissed = (q: MediaQuery & { since: number }) =>
   social<MissedSummary>('GET', withQuery('/missed', { since: q.since, ...mediaParams(q) }));
+
+// ---- S6 : accueil social (`/user/social/home/*` et `/user/social/recommendations`) ----
+/** Taille maximale d'une requête `/home/progress` : au-delà, le client envoie plusieurs requêtes. */
+const HOME_PROGRESS_BATCH = 20;
+/** Titre interrogé par `/home/progress`. */
+export type HomeTitleRef = { type: MediaKind; tmdbId: number };
+
+/** `GET /home/watching` : une entrée par ami, sa dernière progression des 30 derniers jours. */
+export const homeWatching = (limit?: number) => social<HomeWatchingResponse>('GET', withQuery('/home/watching', { limit }));
+
+/**
+ * `GET /home/progress?titles=series:123,movie:456` : progression la plus avancée de chaque ami par titre. Le serveur accepte au
+ * plus 20 titres par requête : les titres partent par lots de 20 (en parallèle) et les items sont fusionnés dans l'ordre des lots.
+ * Aucun titre, aucune requête.
+ */
+export const homeProgress = async (titles: HomeTitleRef[]): Promise<HomeProgressResponse> => {
+  const batches: HomeTitleRef[][] = [];
+  for (let i = 0; i < titles.length; i += HOME_PROGRESS_BATCH) batches.push(titles.slice(i, i + HOME_PROGRESS_BATCH));
+  const pages = await Promise.all(batches.map((b) =>
+    social<HomeProgressResponse>('GET', withQuery('/home/progress', { titles: b.map((t) => `${t.type}:${t.tmdbId}`).join(',') }))));
+  return { items: pages.flatMap((p) => p.items) };
+};
+
+/** `GET /home/recommendations` : coups de cœur d'amis, par pages ; `next` est la valeur de `before` de la page suivante. */
+export const homeRecommendations = (o: { before?: number; limit?: number } = {}) =>
+  social<HomeRecommendationsResponse>('GET', withQuery('/home/recommendations', { before: o.before, limit: o.limit }));
+/** `PUT /recommendations` : mon coup de cœur sur un titre (un par titre ; `word` de 1 à 140 caractères). */
+export const recommend = (input: RecommendationInput) => social<void>('PUT', '/recommendations', input);
+/** `DELETE /recommendations/:type/:tmdbId` : retire mon coup de cœur sur ce titre. */
+export const unrecommend = (type: MediaKind, tmdbId: number) => social<void>('DELETE', `/recommendations/${type}/${tmdbId}`);
