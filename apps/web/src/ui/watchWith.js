@@ -3,6 +3,7 @@
  * l'ouverture d'un salon pour ce titre (boîte « Watch party »). Présence : socialStore ; salons d'amis : mêmes règles que la page
  * Ensemble (hostFriend, friendRooms). Réservée à un compte connecté, profil adulte. Feuille basse sur mobile. */
 import { auth } from '../data/auth';
+import { friendName } from '../data/homeSocial';
 import { eveningsAvailable } from '../data/eveningsStore';
 import { listParties } from '../data/socialApi';
 import { subscribe } from '../data/socialStore';
@@ -13,7 +14,7 @@ import { hostFriend } from './parties.js';
 import { sortedFriends } from './partyfriends.js';
 import { openPartyDialog } from './partylaunch.js';
 import { openSheet } from './sheet.js';
-import { avatarHTML, nameOf, SEEN_LABEL } from './socialFmt.js';
+import { avatarHTML, SEEN_LABEL } from './socialFmt.js';
 import { inviteToParty } from './socialHooks.js';
 import { esc, rewriteKeepingFocus } from './util.js';
 
@@ -37,7 +38,7 @@ function watchWithRows(friends, rooms) {
 }
 
 function rowHTML([f, room]) {
-  const name = nameOf(f);
+  const name = friendName(f);
   const sub = room ? 'Dans un salon : ' + esc(room.title) : f.watching ? 'Regarde ' + esc(f.watching.title) : esc(SEEN_LABEL[f.status] || 'En ligne');
   const act = room
     ? '<a class="btn btn-primary ww-btn" href="#/party/' + encodeURIComponent(room.id) + '" data-go data-ww-go aria-label="Rejoindre le salon de ' + esc(name) + '">Rejoindre</a>'
