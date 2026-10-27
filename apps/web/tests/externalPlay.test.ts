@@ -51,6 +51,8 @@ const { saveProgress, stopTicks } = await import('../src/player/sessionTick.js')
 const { fetchProbe } = await import('../src/player/server');
 const { chooseEngine } = await import('../src/player/engine');
 const { closePlayer } = await import('../src/player/session.js');
+const { onKey, seekTo, togglePlay } = await import('../src/player/sessionActions.js');
+const { NOTE_NOT_EXTERNAL } = await import('../src/player/externalScreen.js');
 
 const STREAM_URL = 'https://addon.test/stream/anime/fk%3A123.json';
 const CDN = 'https://cdn.test/ep1';
@@ -107,6 +109,25 @@ function click(sel: string) {
   if (!el) throw new Error('bouton absent : ' + sel);
   el.click();
 }
+/** Erreurs d’un appel : levées directement, ou par un écouteur (jsdom les rapporte à window sans les renvoyer à l’appelant). */
+function errorsIn(run: () => void): unknown[] {
+  const caught: unknown[] = [];
+  const onError = (e: ErrorEvent) => { caught.push(e.error ?? e.message); };
+  window.addEventListener('error', onError);
+  try { run(); } catch (err) { caught.push(err); } finally { window.removeEventListener('error', onError); }
+  return caught;
+}
+/** Touche clavier telle que la lit onKey. */
+const keyEvent = (key: string) => ({
+  key, target: document.body, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false,
+  preventDefault: () => undefined, stopImmediatePropagation: () => undefined,
+}) as unknown as KeyboardEvent;
+/** Vue de la session courante, avec les champs que le test lit ou modifie. */
+const currentView = () => (S.P as unknown as { view: { local?: boolean } }).view;
+/** Vrai une fois le repli (failover) passé sur la session courante. */
+const failingOf = () => (S.P as unknown as { failing?: boolean }).failing === true;
+/** Options de l’aperçu des vignettes (S.thumbs) : la durée qu’elles lisent, sans son type. */
+const thumbsOpts = () => (S as unknown as { thumbs: { opts: { duration(): number } } }).thumbs.opts;
 
 beforeEach(() => {
   localStorage.clear();
@@ -172,10 +193,10 @@ describe('court-circuit avant la sonde et le moteur (LAST-495 L3)', () => {
     expect(ext.launch).not.toHaveBeenCalled();
   });
 
-  it('lien proxifié + lecteur externe sur iPhone : message d’erreur, aucun lancement', async () => {
+  it('lien proxifié MKV + lecteur externe sur iPhone : message d’erreur, aucun lancement', async () => {
     useAgent('iphone');
     setExternalPlayer('vlc');
-    await start({ url: `${CDN}.mp4` }, REQUEST, PROXY_HINTS);
+    await start({ url: `${CDN}.mkv` }, REQUEST, PROXY_HINTS);
     await vi.waitFor(() => expect(errorMsg()).toContain('passe par notre serveur'));
     expect(ext.launch).not.toHaveBeenCalled();
     expect(chooseEngine).not.toHaveBeenCalled();
@@ -233,5 +254,68 @@ describe('écran externe', () => {
     expect(hrefs()[1]).toMatch(/^infuse:\/\/x-callback-url\/play\?url=/);
     expect(S.ui.root.querySelector('.lp-err-msg')?.textContent).toBe('Lecture dans Infuse…');
     expect(getExternalPlayer()).toBe('vlc');
+  });
+});
+
+describe('lecture externe sans moteur (S.P.engine null) : contrôles sans erreur (LAST-495)', () => {
+  it('touches et transport ignorés sans erreur, Échap ferme l’écran', async () => {
+    useAgent('iphone');
+    setExternalPlayer('vlc');
+    await start({ url: `${CDN}.mp4` });
+    await vi.waitFor(() => expect(ext.launch).toHaveBeenCalledTimes(1));
+    expect(S.P.engine).toBeNull();
+    for (const key of ['ArrowRight', 'ArrowLeft', ' ', 'm', 'f']) {
+      expect(errorsIn(() => onKey(keyEvent(key)))).toEqual([]);
+    }
+    expect(errorsIn(() => seekTo(30))).toEqual([]);
+    expect(errorsIn(() => togglePlay())).toEqual([]);
+    expect(errorsIn(() => onKey(keyEvent('Escape')))).toEqual([]);
+    await vi.waitFor(() => expect(S.P).toBeNull());
+  });
+
+  it('volume et aperçu des vignettes sans erreur', async () => {
+    useAgent('iphone');
+    setExternalPlayer('vlc');
+    await start({ url: `${CDN}.mp4` });
+    await vi.waitFor(() => expect(ext.launch).toHaveBeenCalledTimes(1));
+    const vs = S.ui.root.querySelector<HTMLInputElement>('.lp-vslider');
+    if (!vs) throw new Error('curseur de volume absent');
+    expect(errorsIn(() => vs.dispatchEvent(new Event('input')))).toEqual([]);
+    let duration: number | null = null;
+    expect(errorsIn(() => { duration = thumbsOpts().duration(); })).toEqual([]);
+    expect(duration).toBe(0);
+  });
+});
+
+describe('repli iPhone : source proxifiée ou hors ligne (LAST-495)', () => {
+  it('source proxifiée, media-error:4 sur iPhone « auto » : failover, pas d’écran externe', async () => {
+    useAgent('iphone');
+    await start({ url: `${CDN}.mp4` }, REQUEST, PROXY_HINTS);
+    await vi.waitFor(() => expect(videoSrc()).toContain('/proxy/'));
+    S.html.emit('error', new Error('media-error:4'));
+    // Le repli (failover) marque la session en échec avant tout autre effet : pas de lancement externe.
+    expect(failingOf()).toBe(true);
+    expect(ext.launch).not.toHaveBeenCalled();
+  });
+
+  it('vue hors ligne (fichier téléchargé), media-error:4 sur iPhone « auto » : failover, pas d’écran externe', async () => {
+    useAgent('iphone');
+    await start({ url: `${CDN}.mp4` });
+    await vi.waitFor(() => expect(videoSrc()).toBe(`${CDN}.mp4`));
+    currentView().local = true;
+    S.html.emit('error', new Error('media-error:4'));
+    expect(failingOf()).toBe(true);
+    expect(ext.launch).not.toHaveBeenCalled();
+  });
+});
+
+describe('choix externe explicite sur iPhone, source proxifiée (LAST-495)', () => {
+  it('source lisible (mp4) : lecture intégrée avec l’avis, aucun lancement', async () => {
+    useAgent('iphone');
+    setExternalPlayer('vlc');
+    await start({ url: `${CDN}.mp4` }, REQUEST, PROXY_HINTS);
+    await vi.waitFor(() => expect(videoSrc()).toContain('/proxy/'));
+    expect(ext.launch).not.toHaveBeenCalled();
+    expect(S.ui.root.querySelector('.lp-toast-t')?.textContent).toBe(NOTE_NOT_EXTERNAL);
   });
 });

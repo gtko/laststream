@@ -5,6 +5,7 @@ import { onWatched } from '../downloads/afterWatch';
 import { setShellFullscreen, setShellPip } from './shell';
 import { partyBridge } from '../party/bridge';
 import { setPresenceMedia } from './presenceV2';
+import { forgetExternal } from './externalScreen.js';
 import { releaseLocal, stopWebAudio } from './sessionPlay.js';
 import { stopNotes, stopSocialPlayback } from './sessionSocial.js';
 import { S } from './sessionState.js';
@@ -34,6 +35,7 @@ export async function teardown(silent) {
   if (S.feed) S.feed.reset();
   if (S.rangeFeed) S.rangeFeed.reset();
   stopWebAudio(p);
+  forgetExternal();
   try { if (silent && p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ }
   releaseLocal(p);
   if (p.deleteAfterWatch) { const d = p.deleteAfterWatch; p.deleteAfterWatch = null; void onWatched(d.key, d.season, d.episode).catch(() => {}); }

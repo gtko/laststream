@@ -102,7 +102,7 @@ export const isExternalChoice = (id: string): boolean => id !== 'builtin' && id 
 
 /** Playlist M3U d'une seule entrée. Le titre ne garde pas de retour à la ligne. */
 export function buildM3u(url: string, title: string): string {
-  return `#EXTM3U\n#EXTINF:-1,${title.replace(/[\r\n]+/g, ' ')}\n${url}\n`;
+  return `#EXTM3U\n#EXTINF:-1,${title.replace(/[\r\n]+/g, ' ')}\n${url.replace(/[\r\n]+/g, '')}\n`;
 }
 
 /** Nom de fichier sans caractères interdits (Windows, Android, iOS), 120 caractères au plus. */
@@ -117,9 +117,11 @@ const m3uDataUri = (m3u: string): string =>
 
 /** Intent Android : garde le schéma réel (http ou https) de l'URL. */
 function intentHref(url: string, title: string): string {
-  const m = /^(https?):\/\//i.exec(url);
+  // Le fragment (#…) de l'URL est retiré : un « # » avant « #Intent » tronquerait l'intent.
+  const bare = url.split('#')[0];
+  const m = /^(https?):\/\//i.exec(bare);
   const scheme = m ? m[1].toLowerCase() : 'https';
-  const rest = m ? url.slice(m[0].length) : url;
+  const rest = m ? bare.slice(m[0].length) : bare;
   return `intent://${rest}#Intent;scheme=${scheme};type=video/*;S.title=${encodeURIComponent(title)};end`;
 }
 

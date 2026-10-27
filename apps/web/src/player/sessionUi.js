@@ -29,7 +29,7 @@ export function ensureUI() {
   S.ui = createPlayerUI({
     action: (act, data) => { onAction(act, data); nudgeTick(); },
     seekTo: (t) => seekTo(t),
-    setVolume: (v) => { if (S.P) { S.P.engine.setMuted(false); S.P.engine.setVolume(v); rememberVolume(v); } },
+    setVolume: (v) => { if (S.P && S.P.engine) { S.P.engine.setMuted(false); S.P.engine.setVolume(v); rememberVolume(v); } },
     panelData,
     panelOpened: (name) => {
       if (name === 'tracks') ensureExternalSubs();
@@ -60,7 +60,7 @@ export function ensureUI() {
   mountPartyPanel(S.ui.root, { adapter: () => partyAdapter() });
   S.thumbs = new Thumbs(S.ui.thumbCanvas, {
     allowed: () => thumbsAllowedNow(),
-    duration: () => (S.P ? S.P.engine.state().duration : 0),
+    duration: () => (S.P && S.P.engine ? S.P.engine.state().duration : 0),
     // Vidéo d'aperçu : lien direct, ou seconde session HLS basse résolution du serveur (jamais celle de la lecture).
     source: async () => {
       const p = S.P;

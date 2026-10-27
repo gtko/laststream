@@ -174,6 +174,10 @@ describe('playlist M3U (buildM3u)', () => {
   it('une entrée, titre sans retour à la ligne', () => {
     expect(buildM3u('https://exemple.test/a.mp4', 'Film\r\nTitre')).toBe('#EXTM3U\n#EXTINF:-1,Film Titre\nhttps://exemple.test/a.mp4\n');
   });
+  it('URL avec retour à la ligne : une seule ligne d’entrée, aucune ligne injectée', () => {
+    expect(buildM3u('https://exemple.test/a.mp4\r\n#EXTINF:-1,pirate\nhttps://evil.test/b.mp4', 'T'))
+      .toBe('#EXTM3U\n#EXTINF:-1,T\nhttps://exemple.test/a.mp4#EXTINF:-1,piratehttps://evil.test/b.mp4\n');
+  });
 });
 
 describe('plan de lancement (planLaunch)', () => {
@@ -187,6 +191,11 @@ describe('plan de lancement (planLaunch)', () => {
   it('intent : garde http', () => {
     const plan = planLaunch('intent', 'http://exemple.test/a.mp4', 'T', 'web-android');
     expect(plan).toEqual({ kind: 'href', href: 'intent://exemple.test/a.mp4#Intent;scheme=http;type=video/*;S.title=T;end' });
+  });
+  it('intent : fragment de l’URL retiré (sinon #Intent est tronqué)', () => {
+    expect(planLaunch('intent', 'https://exemple.test/a.mp4?x=1#x', 'T', 'web-android')).toEqual({
+      kind: 'href', href: 'intent://exemple.test/a.mp4?x=1#Intent;scheme=https;type=video/*;S.title=T;end',
+    });
   });
   it('coque, VLC : vlc:// suivi de l’URL', () => {
     expect(planLaunch('vlc', URL_TEST, 'T', 'shell')).toEqual({ kind: 'shell', method: 'play-external', params: `vlc://${URL_TEST}` });

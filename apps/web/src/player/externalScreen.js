@@ -5,6 +5,7 @@ import { stopWebAudio } from './sessionPlay.js';
 import { currentPlayer, detectPlatform, isExternalChoice, launch, looksUnplayableOnIOS, planLaunch, playerOptions } from './external';
 import { getPreferredExternal } from '../data/prefs';
 import { mark } from '../ui/watched.js';
+import { isOfflineView } from './offlinePlay';
 
 /** Source passant par le serveur (proxy) : son adresse locale n’est pas joignable depuis une autre application. */
 const NOTE_PROXY = 'Cette source passe par notre serveur et ne peut pas s’ouvrir dans un lecteur externe. Essaie une autre source.';
@@ -23,7 +24,7 @@ let cur = null;
 const labelOf = (id, platform) => SHORT[id] || (playerOptions(platform).find((o) => o.id === id) || { label: id }).label;
 
 /** Titre de l’écran : le film, ou « S1 · E1 — titre » pour un épisode. */
-export function screenTitle(p) {
+function screenTitle(p) {
   if (p.req.type === 'tv' && p.cur && p.cur.season != null) {
     const eps = p.episodes && p.episodes.get ? p.episodes.get(p.cur.season) : null;
     const info = eps && eps.find ? eps.find((e) => e.episode === p.cur.episode) : null;
@@ -75,6 +76,8 @@ export function openExternal(p, choice, url) {
 export function externalAfterError(p, message) {
   const platform = detectPlatform();
   if (platform !== 'ios' || currentPlayer(platform) !== 'auto' || !/media-error:[34]\b/.test(message)) return false;
+  // Source proxifiée (adresse locale du serveur, inutilisable ailleurs) ou fichier téléchargé : pas d’écran externe, le repli habituel prend la main.
+  if (p.mediaProxied === true || isOfflineView(p.view)) return false;
   if (p.engine) { try { if (p.engine.kind === 'native') p.engine.detach(); else p.engine.destroy(); } catch (_) { /* ignoré */ } }
   stopWebAudio(p);
   openExternal(p, choiceFor(getPreferredExternal(), platform, p.mediaProxied === true), p.mediaUrl);
@@ -142,6 +145,11 @@ async function markSeen() {
   if (p.addon) return;
   const refs = p.req.type === 'tv' && p.cur.season != null ? [{ season: p.cur.season, episode: p.cur.episode }] : null;
   if (await mark(p.req.key, refs, true)) S.ui.toast('Marqué comme vu');
+}
+
+/** Fermeture de la session : l’écran externe ne retient plus la session fermée. */
+export function forgetExternal() {
+  cur = null;
 }
 
 /** Boutons de l’écran externe, routés par onAction (sessionActions). */
