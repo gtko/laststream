@@ -431,8 +431,7 @@ describe('interface portée', () => {
       }, { timeout: 15000 });
       const player = document.getElementById('lsplayer') as HTMLElement;
       (player.querySelector('[data-act="close"]') as HTMLElement).click();
-      await settle(50);
-      expect(player.hidden).toBe(true);
+      await vi.waitFor(() => expect(player.hidden).toBe(true), { timeout: 15000 });
     } finally {
       // Nettoyage même si l'attente échoue : sinon les tests suivants héritent de l'état (#reprendre).
       localStorage.clear();
