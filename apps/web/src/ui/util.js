@@ -3,12 +3,12 @@ import { userStore } from '../data/userStore';
 
 export { escapeHtml as esc } from '../data/format';
 
-/** Réécrit `el.innerHTML` en rendant le focus clavier au contrôle qui l'avait (retrouvé par data-ens-knock, data-ens-invite, data-wp-more ou href). */
+/** Réécrit `el.innerHTML` en rendant le focus clavier au contrôle qui l'avait (retrouvé par data-ens-knock, data-ens-invite, data-wp-more, data-evening-act ou href). */
 export function rewriteKeepingFocus(el, html) {
   const a = document.activeElement;
   let sel = '';
   if (a && a !== el && el.contains(a)) {
-    for (const attr of ['data-ens-knock', 'data-ens-invite', 'data-wp-more', 'href']) {
+    for (const attr of ['data-ens-knock', 'data-ens-invite', 'data-wp-more', 'data-evening-act', 'href']) {
       const v = a.getAttribute(attr);
       if (v !== null) { sel = '[' + attr + (v ? '="' + v.replace(/["\\]/g, '\\$&') + '"' : '') + ']'; break; }
     }

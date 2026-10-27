@@ -1,5 +1,5 @@
 import type { FriendRequest, FriendView, MediaRef, Message, Note } from './socialV2Api';
-import type { ActivityItem, Poll, Reaction } from './socialV3Api';
+import type { ActivityItem, EveningEvent, Poll, Reaction } from './socialV3Api';
 
 /* Canal temps réel du Social v2 et v3 : une WebSocket par profil actif (ticket à 60 s, même mécanisme que les salons).
  * Ping toutes les 25 s, attente de pong (10 s), reconnexion avec backoff exponentiel plafonné à 60 s, avec gigue. Tant que
@@ -42,7 +42,9 @@ export type LiveEvent =
   | { t: 'join_request'; from: FriendView }
   | { t: 'join_answer'; pid: string; accept: boolean; partyId?: string }
   | { t: 'party_invite'; from: FriendView; partyId: string; title: string }
-  | { t: 'activity'; item: ActivityItem };
+  | { t: 'activity'; item: ActivityItem }
+  /** Trame d'une soirée planifiée (LAST-198) : l'évènement est discriminé par son propre `type`. */
+  | { t: 'evening'; event: EveningEvent };
 
 /** Sous-ensemble de WebSocket utilisé ici (le vrai objet, ou un faux en test). */
 export interface LiveSocket {
@@ -120,6 +122,27 @@ export function socketUrl(base: string, wsPath: string): string {
 const isRec = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 const hasPid = (x: unknown): boolean => isRec(x) && typeof x.pid === 'string';
 
+const RESPONSES: readonly unknown[] = ['yes', 'maybe', 'no'];
+
+/** Trame de soirée bien formée : `type` connu et champs requis par ce type ; tout le reste est écarté. */
+function isEveningEvent(e: Record<string, unknown>): e is EveningEvent {
+  if (typeof e.eveningId !== 'string' || e.eveningId === '') return false;
+  switch (e.type) {
+    case 'evening_invite':
+      return typeof e.title === 'string' && typeof e.startsAt === 'number' && typeof e.tz === 'string' && hasPid(e.host);
+    case 'evening_update':
+      return e.change === 'updated' || e.change === 'cancelled';
+    case 'evening_response':
+      return typeof e.pid === 'string' && RESPONSES.includes(e.response);
+    case 'evening_reminder':
+      return typeof e.title === 'string' && typeof e.startsAt === 'number' && typeof e.tz === 'string';
+    case 'evening_open':
+      return isRec(e.party) && typeof e.party.partyId === 'string';
+    default:
+      return false;
+  }
+}
+
 /** Lit un message serveur ; renvoie null pour tout ce qui n'est pas un événement connu ou bien formé. */
 export function parseLiveEvent(data: unknown): LiveEvent | null {
   let v: unknown = data;
@@ -170,6 +193,8 @@ export function parseLiveEvent(data: unknown): LiveEvent | null {
         ? { t: 'party_invite', from: v.from as unknown as FriendView, partyId: v.partyId, title: v.title } : null;
     case 'activity':
       return isRec(v.item) && typeof v.item.id === 'string' ? { t: 'activity', item: v.item as unknown as ActivityItem } : null;
+    case 'evening':
+      return isRec(v.event) && isEveningEvent(v.event) ? { t: 'evening', event: v.event } : null;
     default:
       return null;
   }

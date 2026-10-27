@@ -3,20 +3,22 @@ import type { SocialState } from './socialStore';
 import type { FriendV3 } from './socialV3Api';
 
 /* Accueil social : amis qui veulent voir un titre et soirée proposée (ligne du héros). Aucun appel réseau : tout vient de l'état du
- * store social (activité reçue en direct, listes partagées déjà chargées). Les soirées planifiées n'existent pas encore côté serveur
- * (LAST-198) : leur source est vide ; le futur client l'enregistre avec setEveningSource sans toucher à l'interface. */
+ * store social (activité reçue en direct, listes partagées déjà chargées). Les soirées planifiées (LAST-198) viennent de
+ * eveningsHome.ts, qui enregistre setEveningSource et setEveningJoin ; sans elles la source reste vide et aucun bouton n'est proposé. */
 
 /** Fenêtre d'une envie : un ajout à une liste ou un favori plus ancien n'en est plus une. */
 export const WANT_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const WANT_KINDS: readonly string[] = ['listed', 'favorited'];
 
-/** Soirée proposée sur un titre ; `going` : pid des amis déjà inscrits. */
+/** Soirée proposée ; `going` : pid des amis déjà inscrits. `type` et `tmdbId` lient la soirée à un titre (héros) : une soirée planifiée, au titre libre, n'en a pas. */
 export interface Evening {
   id: string;
-  type: MediaKind;
-  tmdbId: number;
+  type?: MediaKind;
+  tmdbId?: number;
   startsAt: number;
   going?: readonly string[];
+  /** Faux : rien à rejoindre (je viens déjà, ou j'en suis l'hôte) ; le bouton « Je viens » n'est pas proposé. */
+  joinable?: boolean;
   /** Habillage de la carte « Ensemble, ce soir » ; absents, la carte reste neutre. */
   title?: string;
   poster?: string;

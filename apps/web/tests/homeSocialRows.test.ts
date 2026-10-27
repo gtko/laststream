@@ -120,6 +120,14 @@ describe('sections sociales de l’accueil', () => {
     expect(join).toHaveBeenCalledWith('e1');
   });
 
+  it('soirée planifiée sans titre de film, déjà acceptée ou organisée par moi (joinable faux) : la carte reste, sans bouton « Je viens »', async () => {
+    setEveningJoin(vi.fn().mockResolvedValue(true));
+    setEveningSource(() => [{ id: 'e9', startsAt: Date.now() + 3600_000, title: 'Soirée Dune 2', joinable: false }]);
+    const slot = await mountWith();
+    expect(slot.textContent).toContain('Soirée Dune 2');
+    expect(slot.querySelector('[data-hsr-evening]')).toBeNull();
+  });
+
   it('soirée proposée sans action « Je viens » branchée : aucun bouton, la carte reste', async () => {
     setEveningJoin(null);
     setEveningSource(() => [{ id: 'e1', type: 'movie', tmdbId: 5, startsAt: Date.now() + 3600_000, title: 'Dune 2', host: 'Tom', going: [] }]);

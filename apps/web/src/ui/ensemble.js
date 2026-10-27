@@ -1,13 +1,14 @@
 /* Page Ensemble (#/ensemble[/<onglet>]) : tout ce qui se regarde à plusieurs. Remplace l'ancienne page Watch parties (#/parties redirige ici).
  * Coque : en-tête (titre, sous-titre, Amis, « Rejoindre avec un code », « Créer un salon »), onglets Maintenant / Ce soir / À venir / Salons publics / Passées.
  * « Maintenant » : salons en direct chez les amis puis salons publics ; « Salons publics » : la liste complète (parties.js). Colonne latérale
- * (ensembleSide.js) : amis disponibles, activité, billets. « Ce soir », « À venir » et « Passées » restent des états vides en attendant LAST-199.
+ * (ensembleSide.js) : amis disponibles, activité, billets. « Ce soir », « À venir » et « Passées » (eveningsPane.js) : soirées planifiées.
  * Compte connecté hors profil enfant seulement (le routeur renvoie un profil enfant à l'accueil). */
 import { canAdmin, isKidProfile, isServerMode } from '../data/auth';
 import { parseJoinHash } from '../party/join';
 import { detailEl } from './dom.js';
 import { mountEnsembleSide } from './ensembleSide.js';
 import { ENSEMBLE_TABS, ensembleHash, ensembleTabOf } from './ensembleTabs.js';
+import { EVENING_TABS, mountEveningsPane } from './eveningsPane.js';
 import { teardownFiche } from './fiche.js';
 import { brand } from './fragments.js';
 import { tabbar } from './home.js';
@@ -22,13 +23,6 @@ import { esc } from './util.js';
 const BAR_ID = '-ens';
 
 const SUBTITLE = 'Tout ce qui se regarde à plusieurs : salons ouverts, soirées planifiées, amis disponibles.';
-
-/** État vide d'un onglet encore sans données : [titre, texte]. Aucune donnée inventée. */
-const EMPTY = {
-  'ce-soir': ['Rien de prévu ce soir', 'Les soirées planifiées pour ce soir apparaîtront ici, avec les réponses de tes amis.'],
-  'a-venir': ['Aucune soirée à venir', 'Les prochaines soirées et les invitations en attente apparaîtront ici.'],
-  passees: ['Aucune soirée passée', 'Les soirées terminées resteront ici pour que tu puisses les retrouver.'],
-};
 
 /**
  * Adresse du salon désigné par la saisie de « Rejoindre avec un code » : lien d'invitation complet (avec ou sans jeton d'invité),
@@ -52,11 +46,6 @@ const tabsHTML = (tab) =>
   '<nav class="ens-tabs" aria-label="Sections d’Ensemble">' +
   ENSEMBLE_TABS.map(([id, label]) =>
     '<a class="ens-tab' + (id === tab ? ' is-on' : '') + '" href="' + ensembleHash(id) + '" data-go' + (id === tab ? ' aria-current="page"' : '') + '>' + esc(label) + '</a>').join('') + '</nav>';
-
-function emptyHTML(tab) {
-  const [title, text] = EMPTY[tab];
-  return '<div class="wp-empty-box ens-empty"><span class="wp-empty-ico">' + ICON.party + '</span><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p></div>';
-}
 
 /** Onglets servis par la liste des salons (parties.js) : identifiant -> mode du panneau. */
 const PANES = { maintenant: 'now', 'salons-publics': 'public' };
@@ -89,9 +78,10 @@ export function showEnsemble(tab = 'maintenant') {
     // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(true) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' + headHTML() + tabsHTML(current) +
       '<div class="ens-grid"><section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
-      (PANES[current] ? '' : emptyHTML(current)) + '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
+      '' + '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
     const panel = detailEl.querySelector('#ens-panel');
     if (PANES[current] && panel) mountPartiesPane(panel, PANES[current]);
+    else if (EVENING_TABS.includes(current) && panel) mountEveningsPane(panel, current);
     const side = detailEl.querySelector('#ens-side');
     if (side) mountEnsembleSide(side);
   }

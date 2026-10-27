@@ -4,6 +4,9 @@ import path from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { auth } from '../src/data/auth';
 
+// Les onglets de soirées lisent le client REST (voir evenings.test.ts) : ici, aucune soirée.
+vi.mock('../src/data/socialV3Api', async (orig) => ({ ...(await orig<typeof import('../src/data/socialV3Api')>()), listEvenings: vi.fn(async () => ({ items: [], nextCursor: null })) }));
+
 let parseRoute: () => any;
 let route: () => void;
 let tabbar: (current?: string) => string;
@@ -43,7 +46,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   setAccount(ADULT);
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rooms: [], nextCursor: null }), { status: 200 })));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ rooms: [], items: [], nextCursor: null }), { status: 200 })));
 });
 
 afterEach(() => {

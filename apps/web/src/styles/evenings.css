@@ -1,0 +1,48 @@
+/* Soirées planifiées (LAST-199) : cartes des onglets Ce soir / À venir / Passées de la page Ensemble. Jetons de styles.css :root. */
+.ev-sec { display: flex; flex-direction: column; gap: 12px; }
+.ev-sec + .ev-sec { margin-top: 28px; }
+.ev-h { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 700; }
+.ev-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+
+.ev-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 16px 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.ev-card.is-invite { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--surface)), var(--surface) 70%); }
+.ev-card.is-cancelled { border-style: dashed; }
+.ev-card.is-cancelled .ev-title, .ev-card.is-cancelled .ev-when { opacity: 0.65; }
+.ev-card.is-cancelled .ev-title { text-decoration: line-through; }
+
+.ev-when { display: flex; flex-direction: column; align-items: center; min-width: 64px; text-align: center; }
+.ev-day { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); }
+.ev-time { font-family: var(--ff-title); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.ev-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ev-title { margin: 0; font-family: var(--ff-title); font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+.ev-sub { margin: 0; font-size: 13px; line-height: 1.45; color: var(--dim); }
+.ev-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--soft); background: rgba(255, 255, 255, 0.1); }
+.ev-chip.is-invite { color: var(--text); background: var(--accent); }
+.ev-chip.is-cancelled { color: var(--danger-text); background: var(--danger-bg); }
+
+.ev-guests { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ev-av { position: relative; display: inline-flex; }
+.ev-resp { position: absolute; right: -3px; bottom: -3px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-style: normal; font-weight: 700; line-height: 1; color: var(--text); background: var(--surface-2); border: 1.5px solid var(--surface); box-sizing: border-box; }
+.ev-resp.is-yes { background: var(--accent); }
+.ev-resp.is-maybe { border-color: var(--accent); }
+.ev-resp.is-no { color: var(--danger-text); background: var(--danger-bg); }
+.ev-resp.is-pending { color: var(--dim); }
+.ev-more { font-size: 13px; font-weight: 700; color: var(--dim); }
+
+.ev-acts, .ev-answers { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.ev-btn { min-height: 44px; min-width: 44px; padding-inline: 16px; font-size: 14px; }
+.ev-btn[aria-pressed="true"] { background: var(--accent); color: var(--text); }
+.ev-btn[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
+.ev-more-btn { align-self: flex-start; margin-top: 12px; }
+
+@media (max-width: 720px) {
+  .ev-card { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .ev-acts { grid-column: 1 / -1; justify-content: stretch; }
+  .ev-answers { flex: 1 1 100%; }
+  .ev-answers .ev-btn { flex: 1 1 0; padding-inline: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ev-btn { transition: none; }
+}

@@ -6,6 +6,8 @@ import { getState, subscribe } from '../data/socialStore';
 import { homeRecommendations, homeWatching } from '../data/socialV3Api';
 import { listParties } from '../data/socialApi';
 import { userStore } from '../data/userStore';
+import { connectHomeEvenings, loadHomeEvenings } from '../data/eveningsHome';
+import { subscribeEvenings } from '../data/eveningsStore';
 import { friendName, eveningDay, eveningTime, hasEveningJoin, joinEvening, upcomingEvenings } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
@@ -73,7 +75,7 @@ function eveningCard(e, friends) {
     '<h3 class="hsr-t">' + esc(e.title || 'Soirée proposée') + '</h3>' +
     '<p class="hsr-sub">' + (e.host ? 'Proposée par ' + esc(e.host) + '. ' : '') + (going.length ? going.length + ' confirmé' + (going.length > 1 ? 's' : '') + '.' : '') + '</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-stack" aria-hidden="true">' + going.slice(0, 3).map(avatar).join('') + '</span>' +
-    (hasEveningJoin() ? '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">Je viens</button>' : '') + '</div></article>';
+    (hasEveningJoin() && e.joinable !== false ? '<button type="button" class="btn btn-ghost hsr-btn" data-hsr-evening="' + esc(e.id) + '">Je viens</button>' : '') + '</div></article>';
 }
 
 const proposeCard = () => '<article class="hsr-card hsr-card-add"><h3 class="hsr-t">Rien de prévu ?</h3>' +
@@ -129,6 +131,8 @@ export function recommendationsHTML(items) {
 }
 
 // ---------- Montage ----------
+// Les soirées planifiées (LAST-199) alimentent la source et l'action « Je viens » dès le chargement du module.
+connectHomeEvenings();
 const quiet = (p) => p.then((r) => r, () => null); // échec réseau silencieux : la section n'apparaît pas
 let seq = 0;
 let model = { rooms: [], watching: [], recos: [] };
@@ -163,11 +167,12 @@ export function renderSlot(s = getState(), now = Date.now()) {
 export async function paintHomeSocial() {
   if (!socialAvailable()) return;
   const mine = ++seq;
-  if (!subscribed) { subscribed = true; subscribe((s) => renderSlot(s)); }
+  if (!subscribed) { subscribed = true; subscribe((s) => renderSlot(s)); subscribeEvenings(() => renderSlot()); }
   // Rien du montage précédent (ni d'un autre profil) pendant le chargement : une émission du store ne peut pas le redessiner.
   model = { rooms: [], watching: [], recos: [] };
   renderSlot();
-  const [rooms, watching, recos] = await Promise.all([
+  const [, rooms, watching, recos] = await Promise.all([
+    quiet(loadHomeEvenings()),
     quiet(listParties(userStore.currentProfile().id, { limit: 20 })),
     quiet(homeWatching(WATCH_MAX)),
     quiet(homeRecommendations({ limit: RECO_MAX })),
