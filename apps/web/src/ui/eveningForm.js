@@ -46,7 +46,8 @@ function formHTML({ edit, title, start, picked, list }) {
   const scope = edit && (edit.recurrence || edit.seriesId)
     ? '<fieldset class="evf-scope"><legend class="evf-lb">Appliquer à</legend>' +
       '<label><input type="radio" name="scope" value="occurrence" checked> Cette soirée seulement</label>' +
-      '<label><input type="radio" name="scope" value="series"> Toute la série</label></fieldset>' : '';
+      '<label><input type="radio" name="scope" value="series"> Toute la série</label>' +
+      '<p class="evf-hint">Le titre et l’horaire suivent ce choix ; les invités ajoutés ou retirés ne concernent que cette soirée.</p></fieldset>' : '';
   const repeat = edit ? '' :
     field('repeat', 'Répéter', '<select class="evf-input" id="evf-repeat" name="repeat">' + REPEATS.map(([v, l]) => '<option value="' + v + '">' + l + '</option>').join('') + '</select>') +
     '<div data-evf-until hidden>' + field('until', 'Fin de la série (facultatif)', '<input class="evf-input" id="evf-until" name="until" type="date" min="' + esc(start.date) + '">') + '</div>';
@@ -123,7 +124,9 @@ export function openEveningForm(o = {}) {
     busy = on;
     const b = $('[data-evf-submit]');
     if (b instanceof HTMLButtonElement) { b.disabled = on; b.setAttribute('aria-busy', String(on)); }
-    form.querySelectorAll('input, select').forEach((el) => { if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.readOnly = on; });
+    form.querySelectorAll('input, select').forEach((el) => { if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.disabled = on; });
+    if (on) sheet.el.focus({ preventScroll: true });
+    else count();
   };
   count();
 
@@ -159,6 +162,8 @@ export function openEveningForm(o = {}) {
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (busy || sheet.closed) return;
+    // Le profil a changé depuis l'ouverture : les amis proposés sont ceux de l'ancien, rien ne part.
+    if ((auth.profile ? auth.profile.id : '') !== pid0) { sheet.close(true); return; }
     const input = readInput();
     const whenChanged = !edit || input.date !== start.date || input.time !== start.time;
     const problems = validateEvening(input, Date.now(), { when: whenChanged });

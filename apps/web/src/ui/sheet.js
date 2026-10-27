@@ -1,6 +1,7 @@
 /* Feuille de dialogue (LAST-199, lot B) : feuille basse sur mobile (< 768 px), modale centrée sur ordinateur. Sert la planification
  * d'une soirée, ses confirmations et la feuille « Regarder avec… ». `role="dialog"` + `aria-modal`, focus piégé, Échap et clic
  * sur le voile ferment (sauf pendant un appel : `locked()`), le focus revient au déclencheur. Une seule feuille à la fois. */
+import { onEveningsReset } from '../data/eveningsStore';
 import { esc } from './util.js';
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -33,6 +34,12 @@ export function openSheet(o) {
   veil.append(box);
   document.body.append(veil);
   let closed = false;
+  // Changer de page (retour Android, lien) ou de profil ferme la feuille : elle ne doit ni survivre à son contexte ni écrire pour un autre profil.
+  const onHash = () => close(true);
+  window.addEventListener('hashchange', onHash);
+  const offReset = onEveningsReset(() => close(true));
+  const scrollWas = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
   const locked = () => !!(o.locked && o.locked());
 
   /** @param {boolean} [silent] sans rendre le focus (navigation en cours ou autre feuille qui s'ouvre) */
@@ -41,6 +48,9 @@ export function openSheet(o) {
     closed = true;
     if (current === handle) current = null;
     document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('hashchange', onHash);
+    offReset();
+    document.body.style.overflow = scrollWas;
     veil.remove();
     if (!silent) {
       const back = opener && opener.isConnected ? opener : document.querySelector('#ens-title');

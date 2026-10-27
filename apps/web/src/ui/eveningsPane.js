@@ -2,6 +2,7 @@
  * des soirées (eveningsStore.ts) et tenues à jour par les trames temps réel. Les réponses (Je viens / Peut-être / Refuser) et
  * l'ouverture du salon passent par des boutons `data-evening-act="<id>:<action>"`. Un compteur de montage protège toute réponse
  * asynchrone : changer d'onglet, de page ou de profil rend caduque une action en vol. */
+import { EVENING_FALLBACK, eveningErrorText } from '../data/eveningForm';
 import { answerEvening, findEvening, getEveningList, loadEvenings, putEvening, subscribeEvenings } from '../data/eveningsStore';
 import { openEvening } from '../data/socialV3Api';
 import { UserApiError } from '../data/userApi';
@@ -129,10 +130,11 @@ function failure(err, fallback) {
 function answer(id, response, g) {
   busy.add(id);
   paint();
-  void answerEvening(id, response).then((ok) => {
+  let reason = '';
+  void answerEvening(id, response, (err) => { reason = eveningErrorText(err); }).then((ok) => {
     if (g !== mountGen) return;
     busy.delete(id);
-    if (!ok) toast('Ta réponse n’a pas pu être enregistrée.');
+    if (!ok) toast(reason && reason !== EVENING_FALLBACK ? reason : 'Ta réponse n’a pas pu être enregistrée.');
     paint();
   });
 }

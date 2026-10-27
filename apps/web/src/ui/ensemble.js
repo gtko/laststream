@@ -80,7 +80,7 @@ export function showEnsemble(tab = 'maintenant') {
     // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(true) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' + headHTML() + tabsHTML(current) +
       '<div class="ens-grid"><section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
-      '' + '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
+      '</section><aside class="ens-side" id="ens-side" aria-label="Amis, activité et billets"></aside></div></article>' + tabbar('ensemble') + '</div>';
     const panel = detailEl.querySelector('#ens-panel');
     if (PANES[current] && panel) mountPartiesPane(panel, PANES[current]);
     else if (EVENING_TABS.includes(current) && panel) mountEveningsPane(panel, current);

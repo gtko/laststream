@@ -484,3 +484,119 @@ describe('feuille « Regarder avec… »', () => {
     expect(dialog()).toBeNull();
   });
 });
+
+describe('revue : contexte de la feuille', () => {
+  it('hashchange ferme la feuille sans rendre le focus et libère le défilement', () => {
+    document.body.style.overflow = 'auto';
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    ui.openEveningForm({ opener });
+    expect(document.body.style.overflow).toBe('hidden');
+    opener.blur();
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).not.toBe(opener);
+    expect(document.body.style.overflow).toBe('auto');
+    document.body.style.overflow = '';
+    opener.remove();
+  });
+  it('changement de profil ou déconnexion (reset) : la feuille se ferme', () => {
+    ui.openEveningForm({ title: 'Dune' });
+    store.resetEvenings();
+    expect(dialog()).toBeNull();
+    expect(document.body.style.overflow).toBe('');
+  });
+  it('profil changé avant l’envoi : rien ne part et la feuille se ferme', () => {
+    ui.openEveningForm({ title: 'Dune' });
+    setAccount({ ...ADULT, id: 'p7' });
+    submit();
+    expect(api.createEvening).not.toHaveBeenCalled();
+    expect(dialog()).toBeNull();
+  });
+  it('pendant l’envoi, les champs et les cases sont désactivés puis rendus', async () => {
+    let fail!: (e: any) => void;
+    api.createEvening.mockImplementation(() => new Promise((_, r) => { fail = r; }));
+    ui.openEveningForm({ title: 'Dune' });
+    submit();
+    expect(q<HTMLInputElement>('input[name="guest"]').disabled).toBe(true);
+    expect(q<HTMLInputElement>('#evf-title').disabled).toBe(true);
+    fail(new UserApiError(400, 'invalid_body'));
+    await tick();
+    expect(q<HTMLInputElement>('input[name="guest"]').disabled).toBe(false);
+    expect(q<HTMLInputElement>('#evf-title').disabled).toBe(false);
+  });
+  it('« Toute la série » précise que les invités ne concernent que la soirée', () => {
+    ui.openEveningForm({ evening: series() });
+    expect(dialog()!.textContent).toMatch(/invités ajoutés ou retirés ne concernent que cette soirée/);
+  });
+  it('heure inexistante (passage à l’heure d’été) : message dédié', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'Europe/Paris';
+    try {
+      const base = { title: 'x', date: '2026-03-29', time: '02:30', guests: [] as string[], repeat: 'once' as const, until: '' };
+      const probe = new Date(2026, 2, 29, 2, 30);
+      if (probe.getHours() === 2) return; // fuseau non appliqué par cet environnement : cas non observable
+      const p = form.validateEvening(base, new Date(2026, 2, 1).getTime());
+      expect(p[0].text).toMatch(/n’existe pas ce jour-là/);
+      expect(form.validateEvening({ ...base, date: '2026-02-30' }, 0)[0].text).toBe('Choisis une date et une heure.');
+    } finally {
+      if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+    }
+  });
+});
+
+describe('revue : magasin', () => {
+  const E = (id: string) => ev({ id });
+  it('page suivante en vol puis première page relue : la page périmée est jetée, loading cohérent, lecture 1re page conservée', async () => {
+    api.listEvenings.mockResolvedValueOnce({ items: [E('a')], nextCursor: 'c1' });
+    await store.loadEvenings('upcoming');
+    let page2!: (v: any) => void;
+    api.listEvenings.mockImplementationOnce(() => new Promise((r) => { page2 = r; }));
+    const more = store.loadEvenings('upcoming', { more: true });
+    expect(store.getEveningList('upcoming').loading).toBe(true);
+    let page1b!: (v: any) => void;
+    api.listEvenings.mockImplementationOnce(() => new Promise((r) => { page1b = r; }));
+    const again = store.loadEvenings('upcoming', { force: true });
+    page2({ items: [E('b')], nextCursor: null });
+    await more;
+    expect(store.getEveningList('upcoming').items.map((e) => e.id)).toEqual(['a']);
+    expect(store.getEveningList('upcoming').loading).toBe(true); // la relecture de la première page court encore
+    page1b({ items: [E('z'), E('a')], nextCursor: 'c9' });
+    await again;
+    const l = store.getEveningList('upcoming');
+    expect(l.items.map((e) => e.id)).toEqual(['z', 'a']);
+    expect(l.nextCursor).toBe('c9');
+    expect(l.loading).toBe(false);
+  });
+  it('répondre à une soirée disparue (404) retire la carte ; close (409) relit la soirée ; l’erreur est transmise', async () => {
+    api.listEvenings.mockResolvedValue({ items: [E('a'), E('b')], nextCursor: null });
+    await store.loadEvenings('upcoming');
+    const respond = vi.fn().mockRejectedValueOnce(new UserApiError(404, 'evening_not_found')).mockRejectedValueOnce(new UserApiError(409, 'evening_closed'));
+    const sv3 = await import('../src/data/socialV3Api');
+    const spy = vi.spyOn(sv3, 'respondToEvening').mockImplementation(respond as any);
+    api.getEvening.mockResolvedValue(E('b'));
+    const seen: unknown[] = [];
+    expect(await store.answerEvening('a', 'yes', (e) => seen.push(e))).toBe(false);
+    expect(store.getEveningList('upcoming').items.map((e) => e.id)).toEqual(['b']);
+    expect(await store.answerEvening('b', 'yes', (e) => seen.push(e))).toBe(false);
+    await tick();
+    expect(api.getEvening).toHaveBeenCalledWith('b');
+    expect(seen).toHaveLength(2);
+    expect(form.eveningErrorText(seen[1])).toMatch(/annulée ou a déjà commencé/);
+    spy.mockRestore();
+  });
+});
+
+describe('revue : bouton de la fiche', () => {
+  it('adulte connecté : « Regarder avec… » ; enfant ou hors compte : boîte « Watch party »', async () => {
+    const { partyBtn } = await import('../src/ui/fiche.js');
+    const m = { key: 'movie:1', type: 'movie', name: 'Alien' };
+    expect(partyBtn(m)).toContain('data-watch-with');
+    expect(partyBtn(m)).not.toContain('data-wparty');
+    setAccount(KID);
+    expect(partyBtn(m)).toContain('data-wparty');
+    expect(partyBtn(m)).not.toContain('data-watch-with');
+    setAccount(null);
+    expect(partyBtn(m)).not.toContain('data-watch-with');
+  });
+});

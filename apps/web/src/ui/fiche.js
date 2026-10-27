@@ -144,7 +144,7 @@ const fsec = (name, title, inner) =>
   '<section class="f-sec" id="f-p-' + name + '" aria-labelledby="f-p-' + name + '-h"><h2 class="f-sec-title" id="f-p-' + name + '-h">' + title + '</h2>' + inner + '</section>';
 
 /** « Watch party » : compte connecté, titre sorti (les profils enfants ne créent que des salons privés, dans la boîte de dialogue). */
-const partyBtn = (m) => {
+export const partyBtn = (m) => {
   if (!isServerMode() || isUnreleased(m) || m.cinemaSince) return '';
   // Compte connecté, profil adulte : la feuille « Regarder avec… » (amis en salon, amis à inviter, soirée, salon). Sinon la boîte « Watch party ».
   if (eveningsAvailable()) return '<button type="button" class="btn-round" data-watch-with aria-haspopup="dialog" data-tip="Regarder avec…" aria-label="Regarder avec…">' + ICON.users + '</button>';

@@ -32,6 +32,17 @@ let gen = 0;
 const flights = new Map<EveningScope, Promise<void>>();
 const stamps: Record<EveningScope, number> = { upcoming: 0, past: 0, invites: 0 };
 const subs = new Set<() => void>();
+/** Lectures en cours par portée (page suivante comprise) : `loading` ne retombe que quand la dernière se termine. */
+const active: Record<EveningScope, number> = { upcoming: 0, past: 0, invites: 0 };
+/** Numéro de la dernière lecture de première page : une page suivante démarrée avant elle est périmée (curseur d'une ancienne liste). */
+const firstReads: Record<EveningScope, number> = { upcoming: 0, past: 0, invites: 0 };
+const resetSubs = new Set<() => void>();
+
+/** Appelé quand le profil change ou à la déconnexion (`resetEvenings`) : les feuilles ouvertes se ferment. */
+export function onEveningsReset(fn: () => void): () => void {
+  resetSubs.add(fn);
+  return () => { resetSubs.delete(fn); };
+}
 
 const emit = (): void => {
   subs.forEach((fn) => {
@@ -53,7 +64,9 @@ export function subscribeEvenings(fn: () => void): () => void {
 export function resetEvenings(): void {
   gen++;
   flights.clear();
+  for (const s of SCOPES) { active[s] = 0; firstReads[s] = 0; }
   lists = freshAll();
+  [...resetSubs].forEach((fn) => { try { fn(); } catch { /* un écouteur ne casse pas la remise à zéro */ } });
   emit();
 }
 
@@ -73,23 +86,31 @@ export function loadEvenings(scope: EveningScope, o: { more?: boolean; force?: b
   }
   const g = gen;
   const stamp = stamps[scope];
+  const read = o.more ? firstReads[scope] : ++firstReads[scope];
+  active[scope]++;
   const cursor = o.more ? cur.nextCursor ?? undefined : undefined;
   lists[scope] = { ...cur, loading: true, error: false };
   emit();
-  const run = (async () => {
+  let run: Promise<void> | undefined;
+  run = (async () => {
     try {
       const page = await listEvenings(scope, { cursor, limit: scope === 'invites' ? INVITES_PAGE : PAGE });
       if (g !== gen) return;
       if (!Array.isArray(page?.items)) throw new Error('page');
-      const prev = lists[scope];
-      const seen = new Set(prev.items.map((e) => e.id));
-      const items = o.more ? [...prev.items, ...page.items.filter((e) => !seen.has(e.id))] : page.items;
-      lists[scope] = { items, nextCursor: page.nextCursor ?? null, loaded: true, loading: false, error: false, at: o.more ? prev.at : Date.now() };
+      // Une première page relue entre-temps a remplacé la liste : cette page suivante appartient à l'ancienne, elle est jetée.
+      if (!(o.more && read !== firstReads[scope])) {
+        const prev = lists[scope];
+        const seen = new Set(prev.items.map((e) => e.id));
+        const items = o.more ? [...prev.items, ...page.items.filter((e) => !seen.has(e.id))] : page.items;
+        lists[scope] = { items, nextCursor: page.nextCursor ?? null, loaded: true, loading: false, error: false, at: o.more ? prev.at : Date.now() };
+      }
     } catch {
       if (g !== gen) return;
-      lists[scope] = { ...lists[scope], loading: false, error: true };
+      if (!(o.more && read !== firstReads[scope])) lists[scope] = { ...lists[scope], error: true };
     }
-    flights.delete(scope);
+    active[scope]--;
+    lists[scope] = { ...lists[scope], loading: active[scope] > 0 };
+    if (flights.get(scope) === run) flights.delete(scope);
     emit();
     if (stamps[scope] !== stamp && !o.more) void loadEvenings(scope, { force: true });
   })();
@@ -165,12 +186,18 @@ export function handleEveningEvent(ev: EveningEvent): void {
 }
 
 /** Ma réponse à une soirée, puis relecture de la soirée ; rend vrai si le serveur l'a acceptée. */
-export async function answerEvening(id: string, response: 'yes' | 'maybe' | 'no'): Promise<boolean> {
+export async function answerEvening(id: string, response: 'yes' | 'maybe' | 'no', onError?: (err: unknown) => void): Promise<boolean> {
   if (!eveningsAvailable()) return false;
   const g = gen;
   try {
     await respondToEvening(id, response);
-  } catch {
+  } catch (err) {
+    if (g === gen) {
+      // La soirée n'existe plus (404) ou est close (409) : la carte disparaît ou se met à jour, sans attendre la trame.
+      if (err instanceof UserApiError && err.status === 404) removeEvening(id);
+      else if (err instanceof UserApiError && err.code === 'evening_closed') void refreshEvening(id);
+      if (onError) onError(err);
+    }
     return false;
   }
   if (g === gen) await refreshEvening(id);

@@ -87,7 +87,7 @@ export function validateEvening(input: EveningFormInput, now: number, o: { when?
   else if (len > TITLE_MAX) out.push({ field: 'title', text: 'Le titre fait ' + len + ' caractères : ' + TITLE_MAX + ' au maximum.' });
   const at = parseLocal(input.date, input.time);
   if (o.when !== false) {
-    if (Number.isNaN(at)) out.push({ field: 'when', text: 'Choisis une date et une heure.' });
+    if (Number.isNaN(at)) out.push({ field: 'when', text: Number.isNaN(parseLocal(input.date, '12:00')) || !/^\d{2}:\d{2}$/.test(input.time) ? 'Choisis une date et une heure.' : 'Cette heure n’existe pas ce jour-là (changement d’heure) : choisis-en une autre.' });
     else if (at < now + MIN_LEAD_MS) out.push({ field: 'when', text: 'La soirée doit commencer dans au moins une minute.' });
     else if (at > now + MAX_LEAD_MS) out.push({ field: 'when', text: 'La soirée doit avoir lieu dans les 90 prochains jours.' });
   }
@@ -119,9 +119,9 @@ const ERRORS: Record<string, string> = {
   rate_limited: 'Trop de demandes : réessaie dans un instant.',
   network: 'Serveur injoignable : vérifie ta connexion.',
 };
-const FALLBACK = 'Cette action est impossible pour le moment.';
+export const EVENING_FALLBACK = 'Cette action est impossible pour le moment.';
 
 /** Texte humain d'une erreur du serveur des soirées ; un code inconnu donne le texte générique. */
 export function eveningErrorText(err: unknown): string {
-  return err instanceof UserApiError && ERRORS[err.code] ? ERRORS[err.code] : FALLBACK;
+  return err instanceof UserApiError && ERRORS[err.code] ? ERRORS[err.code] : EVENING_FALLBACK;
 }

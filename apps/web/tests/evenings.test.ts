@@ -210,7 +210,7 @@ describe('onglets de la page Ensemble', () => {
     await mount('ce-soir');
     detail().querySelector<HTMLElement>('[data-evening-act="e1:no"]')!.click();
     await tick();
-    expect(document.getElementById('toast')?.textContent).toContain('réponse');
+    expect(document.getElementById('toast')?.textContent).toContain('annulée ou a déjà commencé');
     expect(detail().querySelector('[data-evening-act="e1:no"]')!.getAttribute('aria-disabled')).toBeNull();
   });
 
