@@ -741,9 +741,20 @@ export class EveningStore {
     return this.viewOf(row, viewer);
   }
 
+  /**
+   * Vue d'un participant : ses invités, sauf ceux bloqués avec lui dans un sens ou dans l'autre (lui-même reste). Un blocage
+   * avec l'hôte retire déjà l'invité (`detach`) : l'hôte voit donc tous les invités restants.
+   */
   private viewOf(row: EveningRow, viewer: string): EveningView {
     const guests = (
-      this.db.prepare('SELECT pid, response, responded_at FROM evening_guests WHERE evening_id = ? ORDER BY pid').all(row.id) as unknown as GuestRow[]
+      this.db
+        .prepare(
+          `SELECT g.pid, g.response, g.responded_at FROM evening_guests g
+           WHERE g.evening_id = ? AND (g.pid = ? OR NOT EXISTS (
+             SELECT 1 FROM blocks b WHERE (b.blocker_pid = ? AND b.blocked_pid = g.pid) OR (b.blocker_pid = g.pid AND b.blocked_pid = ?)))
+           ORDER BY g.pid`,
+        )
+        .all(row.id, viewer, viewer, viewer) as unknown as GuestRow[]
     ).map((guest) => ({ pid: guest.pid, response: guest.response as EveningResponse, respondedAt: guest.responded_at }));
     const mine = guests.find((guest) => guest.pid === viewer);
     const series: EveningSeriesView | null =
