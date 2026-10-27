@@ -1,7 +1,7 @@
 // Accueil social (LAST-193) : amis qui veulent voir un titre, soirée proposée, formats de la ligne du héros.
 import { afterEach, describe, expect, it } from 'vitest';
 import { initialSocialState, type SocialState } from '../src/data/socialStore';
-import { eveningFor, eveningTime, friendName, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
+import { eveningDay, eveningFor, eveningTime, friendName, joinEvening, setEveningJoin, setEveningSource, wantNames, wantVerb, wantersOf, WANT_WINDOW_MS } from '../src/data/homeSocial';
 
 const NOW = 1_800_000_000_000;
 const friend = (pid: string, name: string, extra: Record<string, unknown> = {}) => ({
@@ -92,5 +92,13 @@ describe('formats', () => {
     expect(eveningTime(new Date(2026, 9, 27, 21, 0).getTime())).toBe('21 h');
     expect(eveningTime(new Date(2026, 9, 27, 21, 30).getTime())).toBe('21 h 30');
     expect(eveningTime(new Date(2026, 9, 27, 9, 5).getTime())).toBe('9 h 05');
+  });
+
+  it('étiquette du jour d’une soirée : Ce soir, Demain, jour de la semaine', () => {
+    const now = new Date(2026, 9, 27, 18, 0).getTime();
+    expect(eveningDay(new Date(2026, 9, 27, 21, 0).getTime(), now)).toBe('Ce soir');
+    expect(eveningDay(new Date(2026, 9, 28, 20, 0).getTime(), now)).toBe('Demain');
+    expect(eveningDay(new Date(2026, 9, 30, 20, 0).getTime(), now)).toBe('vendredi');
+    expect(eveningDay(new Date(2026, 10, 10, 20, 0).getTime(), now)).toBe('10/11');
   });
 });

@@ -88,6 +88,19 @@ export function eveningTime(ts: number): string {
   return `${d.getHours()} h${m ? ' ' + String(m).padStart(2, '0') : ''}`;
 }
 
+const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+const dayStart = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** Jour d'une soirée pour son étiquette : « Ce soir » le jour même, « Demain », puis le jour de la semaine (ou la date au-delà d'une semaine). */
+export function eveningDay(ts: number, now: number = Date.now()): string {
+  const d = new Date(ts);
+  const days = Math.round((dayStart(d) - dayStart(new Date(now))) / 86_400_000);
+  if (days <= 0) return 'Ce soir';
+  if (days === 1) return 'Demain';
+  if (days < 7) return WEEKDAYS[d.getDay()];
+  return d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
 /** Ma progression sur un titre de « Reprendre la lecture » (`suggested` : épisode proposé, pas encore commencé). */
 export interface MineProgress {
   kind: MediaKind;

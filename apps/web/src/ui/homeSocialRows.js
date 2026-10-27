@@ -6,7 +6,7 @@ import { getState, subscribe } from '../data/socialStore';
 import { homeRecommendations, homeWatching } from '../data/socialV3Api';
 import { listParties } from '../data/socialApi';
 import { userStore } from '../data/userStore';
-import { friendName, eveningTime, joinEvening, upcomingEvenings } from '../data/homeSocial';
+import { friendName, eveningDay, eveningTime, joinEvening, upcomingEvenings } from '../data/homeSocial';
 import { toast } from './dom.js';
 import { socialAvailable } from './socialButton.js';
 import { posterSrc } from './socialFmt.js';

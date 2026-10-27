@@ -47,3 +47,12 @@
   .hero-social { flex-wrap: wrap; }
   .hero-actions [data-hero-evening] { min-height: 44px; }
 }
+
+/* Accueil mobile : la barre du haut est fixe, la rangée d'avatars et les cartes « regarde en ce moment » passent sous elle, puis le
+ * héros remonte de la hauteur qu'il réserve pour cette barre (sinon : un vide entre les cartes et son visuel). */
+@media (max-width: 767px) {
+  .friend-strip, .hsr-mobile { position: relative; z-index: 2; }
+  .friend-strip:not(:empty) { padding-top: calc(var(--topbar-h) + 8px); }
+  .friend-strip:empty + .hsr-mobile:not(:empty) { padding-top: calc(var(--topbar-h) + 8px); }
+  .friend-strip:not(:empty) ~ .hero, .hsr-mobile:not(:empty) ~ .hero { margin-top: calc(var(--topbar-h) * -1); }
+}
