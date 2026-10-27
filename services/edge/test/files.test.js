@@ -6,7 +6,7 @@ const BYTES = new Uint8Array(100).map((_, i) => i);
 const fakeR2 = (seen) => ({
   async get(key, opts) {
     seen.push(key);
-    if (!['windows/Laststream-Setup-1.0.0.exe', 'android/laststream-1700000000.apk', 'windows/latest.json'].includes(key)) return null;
+    if (!['windows/Laststream-Setup-1.0.0.exe', 'android/laststream-1700000000.apk', 'windows/latest.json', 'windows/latest.json.sig'].includes(key)) return null;
     const rh = opts?.range?.get?.('range');
     const m = rh && /^bytes=(\d+)-(\d+)$/.exec(rh);
     const body = m ? BYTES.slice(+m[1], +m[2] + 1) : BYTES;
@@ -77,6 +77,18 @@ describe('flux de version Windows depuis R2', () => {
     assert.equal((await get(F, { method: 'POST' })).status, 405);
     const seen = [];
     for (const p of ['/app/windows/other.json', '/app/windows/latest.json.bak', '/app/android/latest.json']) {
+      assert.notEqual((await get(p, {}, seen)).status, 200, p);
+    }
+    assert.deepEqual(seen, []);
+  });
+  it('signature du flux : 200, texte, cache court ; autres .sig refusés', async () => {
+    const r = await get(`${F}.sig`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'text/plain; charset=utf-8');
+    assert.equal(r.headers.get('cache-control'), 'public, max-age=300');
+    assert.equal(r.headers.get('content-disposition'), null);
+    const seen = [];
+    for (const p of ['/app/windows/other.json.sig', '/app/windows/latest.json.sig.bak', '/app/android/latest.json.sig']) {
       assert.notEqual((await get(p, {}, seen)).status, 200, p);
     }
     assert.deepEqual(seen, []);
