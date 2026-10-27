@@ -26,6 +26,8 @@ export default defineConfig({
       // Suites de tests/ (user, social, admin) : mêmes fichiers que sous Node, liste partagée dans vitest.suites.ts.
       ...SUITES_WORKERS,
     ],
+    // --changed (CI sur PR) relance toute la suite si la config, package.json ou la liste des suites change.
+    forceRerunTriggers: ['**/package.json/**', '**/vite.config.*/**', '**/vitest.config.*/**', '**/vitest.workers.config.*/**', '**/vitest.suites.*/**'],
     setupFiles: ['tests-workers/setup.ts'],
     // Code Molotov mis de côté (archive/molotov/) : jamais testé.
     exclude: [...configDefaults.exclude, 'archive/**'],

@@ -1,7 +1,7 @@
 /**
- * Suites de tests/ exécutées dans le runtime Workers (vitest.workers.config.ts) : mêmes fichiers que sous Node, contre
- * l'application câblée sur le Durable Object. Liste unique : la config Node (vitest.config.ts) les exclut pour qu'elles ne
- * tournent pas deux fois (npm test), la config Workers les inclut.
+ * Suites de tests/ exécutées aussi dans le runtime Workers (vitest.workers.config.ts), contre l'application câblée sur le
+ * Durable Object. La config Node les exécute aussi : tests/setup.ts teste la plateforme Node, tests-workers/setup.ts le
+ * Durable Object, donc deux passages distincts et volontaires.
  */
 export const SUITES_WORKERS = [
   // Routes /user.
