@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { cloudflareTest } from '@cloudflare/vitest-plugin';
 import { configDefaults, defineConfig } from 'vitest/config';
+import { SUITES_WORKERS } from './vitest.suites.ts';
 
 const harness = fileURLToPath(new URL('./tests-workers/harness.ts', import.meta.url));
 const adminBackend = fileURLToPath(new URL('./tests-workers/admin-backend.ts', import.meta.url));
@@ -22,16 +23,8 @@ export default defineConfig({
   test: {
     include: [
       'tests-workers/**/*.test.ts',
-      'tests/user-profiles.test.ts',
-      'tests/user-library.test.ts',
-      'tests/user-pin.test.ts',
-      'tests/user-settings.test.ts',
-      'tests/user-watched.test.ts',
-      'tests/user-cors.test.ts',
-      // Fonctions sociales : mêmes fichiers que sous Node, contre l'application câblée sur le Durable Object.
-      'tests/social-*.test.ts',
-      // Administration : mêmes fichiers que sous Node, contre l'application câblée sur le Durable Object.
-      'tests/admin-*.test.ts',
+      // Suites de tests/ (user, social, admin) : mêmes fichiers que sous Node, liste partagée dans vitest.suites.ts.
+      ...SUITES_WORKERS,
     ],
     setupFiles: ['tests-workers/setup.ts'],
     // Code Molotov mis de côté (archive/molotov/) : jamais testé.
