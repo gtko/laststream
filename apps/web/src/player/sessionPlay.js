@@ -6,7 +6,7 @@ import { clientCopiesOf, isClientStream } from '../sources/info';
 import { chooseEngine, directVideoOk, probeConversion } from './engine';
 import { MpvEngine, NativeEngine } from './engines.js';
 import { resetSubsLoad } from './subsLoad';
-import { StallWatch } from './failover';
+import { SlowLinkWatch, StallWatch } from './failover';
 import { raceCandidates } from './race';
 import { isOfflineView } from './offlinePlay';
 import { rememberLaunch } from './launchCache';
@@ -48,7 +48,8 @@ function clientError(e) {
   return 'Débridage impossible' + (code ? ' (' + code + ')' : '') + '.';
 }
 
-export async function resolveMedia(view, signal, local = false) {
+/** `fresh` : redemande le lien au débrideur de l'appareil (mémo et lien partagé ignorés), pour la reconnexion pendant la lecture. */
+export async function resolveMedia(view, signal, local = false, { fresh = false } = {}) {
   const s = view.stream;
   const up = await serverAlive();
   const base = serverBase();
@@ -63,7 +64,7 @@ export async function resolveMedia(view, signal, local = false) {
     const { copies, season, episode } = clientCopiesOf(s);
     try {
       // `local` : le lien partagé a échoué, il est invalidé sur le serveur puis débloqué ici.
-      const r = local ? await debrid().recoverShared(copies, { season, episode }, signal) : await debrid().resolve(copies, { season, episode }, signal);
+      const r = local ? await debrid().recoverShared(copies, { season, episode }, signal) : await debrid().resolve(copies, { season, episode }, signal, fresh ? { skipShared: true } : {});
       // Sans fournisseur, le lien vient d'un autre appareil du compte (partage serveur).
       if (S.P) S.P.debridVia = (r.provider && PROVIDER_LABEL[r.provider]) || 'Appareil du compte';
       return { url: r.url, up, base, provider: r.provider, shared: r.provider === undefined };
@@ -80,7 +81,7 @@ export async function resolveMedia(view, signal, local = false) {
  * transcodage, création de la session HLS (premier appel de la playlist, qui démarre le travail du serveur).
  * `direct` : même source mais en lecture directe, pour démarrer vite quand seule la piste audio demande le transcodage.
  */
-async function prepareView(p, cand, signal, local = false) {
+async function prepareView(p, cand, signal, local = false, opts = {}) {
   const { view, direct } = cand;
   const shell = await connectShell();
   const native = !shell && isNativePlayer();
@@ -89,7 +90,7 @@ async function prepareView(p, cand, signal, local = false) {
   if (signal.aborted) throw abortError();
   // Drapeau propre à cette tentative : une préparation qui échoue avant la résolution ne doit pas hériter d'un ancien partage.
   view.fromShare = false;
-  const media = await resolveMedia(view, signal, local);
+  const media = await resolveMedia(view, signal, local, opts);
   view.fromShare = media.shared === true;
   if (signal.aborted) throw abortError();
   // Lecteur externe : décidé ici, avant la sonde et le moteur, qui ne servent pas à une lecture externe (voir externalPlan).
@@ -131,16 +132,17 @@ async function prepareView(p, cand, signal, local = false) {
  * Préparation d'un candidat, avec repli sur le déblocage local : un lien partagé qui échoue à la préparation (session refusée,
  * lien mort) est invalidé sur le serveur, débloqué sur cet appareil et republié ; la préparation reprend une fois.
  */
-async function prepareWithLocalFallback(p, cand, signal) {
+async function prepareWithLocalFallback(p, cand, signal, opts = {}) {
   try {
-    return await prepareView(p, cand, signal);
+    return await prepareView(p, cand, signal, false, opts);
   } catch (err) {
     if (signal.aborted || cand.view.fromShare !== true) throw err;
-    return prepareView(p, cand, signal, true);
+    return prepareView(p, cand, signal, true, opts);
   }
 }
 
-/** `opts.shellBackend` : relance de cette source avec ce moteur de la coque (bascule automatique vers libVLC). */
+/** `opts.shellBackend` : relance de cette source avec ce moteur de la coque (bascule automatique vers libVLC).
+ *  `opts.fresh` : la reconnexion redemande le lien au débrideur pour chaque candidat (voir resolveMedia). */
 export async function playView(view, startAt, opts = {}) {
   const p = S.P;
   if (!p) return;
@@ -191,7 +193,7 @@ export async function playView(view, startAt, opts = {}) {
   const race = raceCandidates({
     first: { view, direct: false, shellBackend: opts.shellBackend },
     next: (tried) => nextCandidate(p, tried),
-    run: (cand, signal) => prepareWithLocalFallback(p, cand, signal),
+    run: (cand, signal) => prepareWithLocalFallback(p, cand, signal, { fresh: opts.fresh === true }),
     onProgress: ({ attempt, max, slow, candidate }) => {
       if (stale() || !slow) return;
       p.view = listed(p, candidate.view);
@@ -271,6 +273,10 @@ async function startPlan(p, plan, startAt, stale, cand) {
   p.conversion = plan.conversion;
   p.startedAt = Date.now();
   p.watch = new StallWatch(p.startedAt);
+  // Lien débrideur lent (LAST-507) : suivi repris à chaque lecture chargée ; une réouverture en cours s'achève ici.
+  p.slowLink = new SlowLinkWatch();
+  p.slowLink.reset(p.startedAt);
+  p.reopening = false;
   S.ui.root.classList.toggle('is-mpv', choice.engine === 'mpv' || choice.engine === 'native');
   // Lecteur natif : transparent dès le départ (comme avant). mpv : transparent seulement à la première image (MpvEngine.showVideo).
   S.ui.root.classList.toggle('is-video', choice.engine === 'native' || (choice.engine === 'mpv' && !!S.mpv && S.mpv.transparent));
@@ -287,6 +293,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
   } else if (choice.engine === 'mpv') {
     if (!S.mpv) { S.mpv = new MpvEngine(shell, S.ui.root); bindEngine(S.mpv); }
     p.engine = S.mpv;
+    p.mpvBackend = choice.backend; // la réouverture (sessionReopen) recharge avec le même moteur de la coque
     S.ui.video.hidden = true;
     await S.mpv.load({ url: media.url, startAt, backend: choice.backend });
     if (miniState.mini && S.lastMiniRect) S.mpv.setMini(S.lastMiniRect);

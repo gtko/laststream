@@ -82,6 +82,105 @@ export class StallWatch {
   }
 }
 
+/** Délai (ms) après un démarrage ou une réouverture pendant lequel rien ne compte. */
+const SLOW_GRACE_MS = 60_000;
+/** Délai (ms) après une recherche pendant lequel rien ne compte. */
+const SLOW_SEEK_GRACE_MS = 10_000;
+/** Fenêtre glissante des épisodes de tampon. */
+const SLOW_WINDOW_MS = 300_000;
+/** Épisodes de tampon dans la fenêtre au-delà desquels le lien est tenu pour lent. */
+const SLOW_EPISODES_MAX = 3;
+/** Tampon cumulé dans la fenêtre (ms) au-delà duquel le lien est tenu pour lent. */
+const SLOW_BUFFER_MAX_MS = 20_000;
+/** Critère préventif : réserve de cache (s de média) sous laquelle le lien est suspect. */
+const SLOW_RESERVE_S = 3;
+/** Critère préventif : remplissage du cache (s de média par s réelle) sous lequel le lien est suspect. */
+const SLOW_FILL_RATE = 0.7;
+/** Critère préventif : durée (ms) pendant laquelle la condition doit tenir sans interruption. */
+const SLOW_PREVENTIVE_MS = 60_000;
+/** Délai (ms) minimal entre deux réouvertures. */
+const SLOW_QUIET_MS = 90_000;
+
+/** Épisode de tampon : au moins deux relevés consécutifs en tampon, de `start` à `end` (ms). */
+interface BufferEpisode {
+  start: number;
+  end: number;
+}
+
+/**
+ * Détecte un lien HTTP lu par mpv qui ralentit durablement (mises en tampon courtes répétées, ou cache qui se remplit trop
+ * lentement) pour rouvrir la connexion. Horloge injectée : `tick(now, …)`, `now` en ms. `time` et `cacheTime` en secondes de
+ * média ; `cacheTime` : demuxer-cache-time, null si inconnu. Rien ne compte pendant le délai qui suit `reset` ou `seeked`,
+ * ni quand le lecteur est `idle` (pause, recherche, fin).
+ */
+export class SlowLinkWatch {
+  private graceUntil = 0;
+  private quietUntil = 0;
+  private episodes: BufferEpisode[] = [];
+  /** Relevés consécutifs en tampon dans l'épisode en cours, et heure du premier. */
+  private runTicks = 0;
+  private runStart = 0;
+  /** Dernier relevé compté : sert à mesurer la vitesse de remplissage du cache. */
+  private prev: { now: number; cache: number | null } | null = null;
+  /** Début de la période où le critère préventif est rempli (null : pas en cours). */
+  private slowSince: number | null = null;
+
+  /** (Re)démarre : rien ne compte pendant SLOW_GRACE_MS (démarrage ou après une réouverture). Le délai entre réouvertures est gardé. */
+  reset(now: number): void {
+    this.graceUntil = now + SLOW_GRACE_MS;
+    this.episodes = [];
+    this.breakRun();
+  }
+
+  /** Recherche : rien ne compte pendant SLOW_SEEK_GRACE_MS. L'historique des épisodes est gardé. */
+  seeked(now: number): void {
+    this.graceUntil = Math.max(this.graceUntil, now + SLOW_SEEK_GRACE_MS);
+    this.breakRun();
+  }
+
+  /** À appeler environ une fois par seconde. Renvoie 'reopen' quand le lien est tenu pour lent, pas plus d'une fois par SLOW_QUIET_MS. */
+  tick(now: number, time: number, buffering: boolean, idle: boolean, cacheTime: number | null): 'ok' | 'reopen' {
+    if (idle || now < this.graceUntil) {
+      this.breakRun();
+      return 'ok';
+    }
+    const p = this.prev;
+    const dt = p ? now - p.now : 0;
+    if (buffering) {
+      this.runTicks++;
+      if (this.runTicks === 1) this.runStart = now;
+      else if (this.runTicks === 2) this.episodes.push({ start: this.runStart, end: now });
+      else this.episodes[this.episodes.length - 1].end = now;
+    } else {
+      this.runTicks = 0;
+    }
+    let suspect = false;
+    if (cacheTime !== null && p && p.cache !== null && dt > 0) {
+      const fill = (cacheTime - p.cache) / (dt / 1000);
+      suspect = cacheTime - time < SLOW_RESERVE_S && fill < SLOW_FILL_RATE;
+    }
+    this.slowSince = suspect ? (this.slowSince ?? now) : null;
+    this.prev = { now, cache: cacheTime };
+
+    this.episodes = this.episodes.filter((e) => e.end >= now - SLOW_WINDOW_MS);
+    const bufferedMs = this.episodes.reduce((sum, e) => sum + (e.end - e.start), 0);
+    const slow = this.episodes.length >= SLOW_EPISODES_MAX || bufferedMs >= SLOW_BUFFER_MAX_MS
+      || (this.slowSince !== null && now - this.slowSince >= SLOW_PREVENTIVE_MS);
+    if (!slow || now < this.quietUntil) return 'ok';
+    this.quietUntil = now + SLOW_QUIET_MS;
+    this.episodes = [];
+    this.breakRun();
+    return 'reopen';
+  }
+
+  /** Interrompt la continuité des relevés : épisode en cours, mesure de remplissage et critère préventif repartent de zéro. */
+  private breakRun(): void {
+    this.runTicks = 0;
+    this.prev = null;
+    this.slowSince = null;
+  }
+}
+
 /** Lecture stable depuis ce délai : les essais déjà faits ne comptent plus (des micro-coupures espacées n'épuisent pas MAX_ATTEMPTS). */
 const STABLE_RESET_MS = 120_000;
 
