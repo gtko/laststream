@@ -14,6 +14,7 @@ import { trailersAllowed } from '../player/playerState';
 import { state } from './state.js';
 import { esc } from './util.js';
 import { intentTimer } from './intent.js';
+import { heroEveningHTML, heroSocialHTML } from './heroSocial.js';
 
 export const HERO_MS = 10000;
 export const HERO_MAX = 8;
@@ -40,7 +41,8 @@ export function heroContentHTML(it, eyebrow) {
       ? '<div class="prov-mini" aria-label="Disponible en streaming ' + getRegion().where + '">' + d.providers.map((l) =>
         '<img src="' + esc(l.logo) + '" alt="' + esc(l.name) + '" title="' + esc(l.name) + '" width="32" height="32">').join('') + '</div>' : '') +
     '<p class="clamp-3 hero-desc">' + esc(overview) + '</p>' +
-    '<div class="hero-actions">' + playBtn(it) + trailerBtn(it, d).replace('btn btn-primary', 'btn btn-ghost') + infoBtn(it) + '</div>';
+    heroSocialHTML(it) +
+    '<div class="hero-actions">' + playBtn(it) + heroEveningHTML(it) + trailerBtn(it, d).replace('btn btn-primary', 'btn btn-ghost') + infoBtn(it) + '</div>';
 }
 
 const rankLabel = (it) => (it.heroRank ? 'Tendance n°' + it.heroRank + (it.heroKind ? ' · ' + it.heroKind : ' cette semaine') : 'Tendance cette semaine');
