@@ -14,6 +14,7 @@ import { esc } from './util.js';
 
 const WATCH_MAX = 12;
 const RECO_MAX = 12;
+const MOBILE_LIVE_MAX = 3;
 const colorOf = (c) => (typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c) ? c : '#3b3750');
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
 const initials = (name) => esc(Array.from(String(name || '?')).slice(0, 2).join('').toUpperCase());
@@ -47,12 +48,23 @@ export function friendRooms(rooms, friends) {
 
 function roomCard(r) {
   const nb = Number(r.participants) || 0;
-  return '<article class="hsr-card"><div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body">' +
+  return '<article class="hsr-card hsr-room"><div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body">' +
     '<span class="hsr-live"><i aria-hidden="true"></i>En direct · ' + nb + ' spectateur' + (nb > 1 ? 's' : '') + '</span>' +
     '<h3 class="hsr-t">' + esc(r.title) + '</h3><p class="hsr-sub">Salon de ' + esc(r.host) + '.</p></div></div>' +
     '<div class="hsr-foot"><span class="hsr-who" aria-hidden="true">' + initials(r.host) + '</span>' +
     '<a class="btn btn-primary hsr-btn" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="Rejoindre le salon de ' + esc(r.host) + ' : ' + esc(r.title) + '">Rejoindre</a></div></article>';
 }
+
+/** Accueil mobile : « Léa regarde en ce moment » en haut de page, avec Rejoindre (les salons ne sont alors plus répétés plus bas). */
+function liveCard(r) {
+  const nb = Number(r.participants) || 0;
+  return '<article class="hsr-mlive"><span class="hsr-live"><i aria-hidden="true"></i>' + esc(r.host) + ' regarde en ce moment</span>' +
+    '<div class="hsr-top">' + posterHTML(r.poster, r.title) + '<div class="hsr-body"><h3 class="hsr-t">' + esc(r.title) + '</h3>' +
+    '<p class="hsr-sub">' + nb + ' spectateur' + (nb > 1 ? 's' : '') + '</p></div></div>' +
+    '<a class="btn btn-primary hsr-btn hsr-mjoin" href="#/party/' + encodeURIComponent(r.id) + '" data-go aria-label="Rejoindre le salon de ' + esc(r.host) + ' : ' + esc(r.title) + '">Rejoindre le salon</a></article>';
+}
+
+export const mobileLiveHTML = (rooms) => rooms.slice(0, MOBILE_LIVE_MAX).map(liveCard).join('');
 
 function eveningCard(e, friends) {
   const going = (e.going || []).map((pid) => friends.find((f) => f.pid === pid)).filter(Boolean);
@@ -122,21 +134,29 @@ let seq = 0;
 let model = { rooms: [], watching: [], recos: [] };
 let lastEl = null;
 let lastHtml = '';
+let lastTop = null;
+let lastMobile = '';
 let subscribed = false;
 
 /** Écrit les sections à partir du modèle chargé et de l'état du store ; sans effet si rien n'a changé. */
 export function renderSlot(s = getState(), now = Date.now()) {
   const el = document.getElementById('social-slot');
-  if (!el) return;
+  const top = document.getElementById('social-mobile');
+  if (!el && !top) return;
   const friends = s.friends || [];
-  const html = socialAvailable()
-    ? tonightHTML(friendRooms(model.rooms, friends), upcomingEvenings(now), friends) + watchingHTML(model.watching) + recommendationsHTML(model.recos)
-    : '';
-  if (el === lastEl && html === lastHtml) return;
+  const rooms = friendRooms(model.rooms, friends);
+  const on = socialAvailable();
+  const html = on ? tonightHTML(rooms, upcomingEvenings(now), friends) + watchingHTML(model.watching) + recommendationsHTML(model.recos) : '';
+  const mobile = on ? mobileLiveHTML(rooms) : '';
+  if (el === lastEl && top === lastTop && html === lastHtml && mobile === lastMobile) return;
   lastEl = el;
+  lastTop = top;
   lastHtml = html;
+  lastMobile = mobile;
   // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc (tonightHTML, watchingHTML, recommendationsHTML)
-  el.innerHTML = html;
+  if (el) el.innerHTML = html;
+  // eslint-disable-next-line no-restricted-syntax -- données serveur échappées par esc (mobileLiveHTML)
+  if (top) top.innerHTML = mobile;
 }
 
 /** Charge les trois sources en parallèle puis dessine ; les amis qui arrivent plus tard redessinent sans nouvelle requête. */

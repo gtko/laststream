@@ -54,21 +54,15 @@ function onClick(e) {
 }
 
 let watching = false;
-let lastEl = null;
-let lastHtml = '';
+/** Dernier contenu écrit dans chaque conteneur (rail du bureau, rangée d'avatars du mobile) : rien n'est réécrit s'il n'a pas changé. */
+const written = new WeakMap();
 
-/** Redessine le rail affiché ; sans effet si rien n'a changé (l'avatar ne clignote pas à chaque message reçu). */
-export function paintRail(s = getState()) {
-  const el = document.getElementById('friend-rail');
-  if (!watching) { watching = true; subscribe((next) => paintRail(next)); }
-  if (!el) return;
-  const html = socialAvailable() ? railHTML(s) : '';
-  if (el === lastEl && html === lastHtml) return;
+function paintInto(el, html) {
+  if (written.get(el) === html) return;
   const cur = document.activeElement;
   const focused = cur instanceof HTMLElement && el.contains(cur) ? cur : null;
   const pid = focused ? focused.dataset.frPid : undefined;
-  lastEl = el;
-  lastHtml = html;
+  written.set(el, html);
   // eslint-disable-next-line no-restricted-syntax -- noms, pid et titres échappés par esc (railHTML)
   el.innerHTML = html;
   if (!el.dataset.wired) { el.dataset.wired = '1'; el.addEventListener('click', onClick); }
@@ -76,4 +70,11 @@ export function paintRail(s = getState()) {
     const same = Array.from(el.querySelectorAll('button')).find((b) => (pid ? b.dataset.frPid === pid : 'frAdd' in b.dataset));
     if (same) same.focus({ preventScroll: true });
   }
+}
+
+/** Redessine le rail (bureau) et la rangée d'avatars (mobile) affichés ; sans effet si rien n'a changé (l'avatar ne clignote pas à chaque message reçu). */
+export function paintRail(s = getState()) {
+  if (!watching) { watching = true; subscribe((next) => paintRail(next)); }
+  const html = socialAvailable() ? railHTML(s) : '';
+  ['friend-rail', 'friend-strip'].forEach((id) => { const el = document.getElementById(id); if (el) paintInto(el, html); });
 }

@@ -1,4 +1,4 @@
-import type { MediaKind } from '@laststream/protocol/social';
+import type { HomeTitleProgress, MediaKind } from '@laststream/protocol/social';
 import type { SocialState } from './socialStore';
 import type { FriendV3 } from './socialV3Api';
 
@@ -87,3 +87,62 @@ export function eveningTime(ts: number): string {
   const m = d.getMinutes();
   return `${d.getHours()} h${m ? ' ' + String(m).padStart(2, '0') : ''}`;
 }
+
+/** Ma progression sur un titre de « Reprendre la lecture » (`suggested` : épisode proposé, pas encore commencé). */
+export interface MineProgress {
+  kind: MediaKind;
+  season?: number | null;
+  episode?: number | null;
+  position: number;
+  duration?: number;
+  finished?: boolean;
+  suggested?: boolean;
+}
+
+/** Avance d'un ami sur un titre : repère sur la barre (0 à 100, absent hors du même épisode ou plus loin) et mention. */
+export interface FriendAhead {
+  friend: HomeTitleProgress['friend'];
+  marker: number | null;
+  text: string;
+}
+
+const fraction = (pos: number, duration: number | undefined, finished: boolean | undefined): number =>
+  finished ? 1 : duration && duration > 0 ? Math.max(0, Math.min(1, pos / duration)) : 0;
+
+/**
+ * Où en est l'ami le plus avancé sur ce titre, par rapport à moi. `items` : réponses de /home/progress pour ce titre (un ami en
+ * sourdine ne compte pas). Rend null si aucun ami n'a ce titre. Série : écart en numéros d'épisode dans la même saison
+ * (« Léa a 2 épisodes d'avance »), repère à sa position si c'est le même épisode, en fin de barre s'il est plus loin ; film :
+ * repère à sa position, sans mention. Un ami en retard n'a ni repère ni mention.
+ */
+export function friendAhead(mine: MineProgress, items: readonly HomeTitleProgress[], muted: ReadonlySet<string> = new Set()): FriendAhead | null {
+  const list = items.filter((i) => i.type === mine.kind && !muted.has(i.friend.pid));
+  if (!list.length) return null;
+  const mSeason = mine.season ?? 0;
+  const mEp = mine.episode ?? 1;
+  // Épisode « en cours » et fraction vue : un épisode terminé compte comme le suivant, pas commencé.
+  const here = (ep: number, pos: number, duration: number | undefined, finished: boolean | undefined): [number, number] =>
+    finished ? [ep + 1, 0] : [ep, fraction(pos, duration, false)];
+  const [mEpisode] = mine.suggested ? [mEp] : here(mEp, mine.position, mine.duration, mine.finished);
+  const rank = (i: HomeTitleProgress): [number, number, number] => {
+    if (mine.kind !== 'series') return [0, 0, fraction(i.pos, i.duration, i.finished)];
+    const [ep, frac] = here(i.episode ?? mEp, i.pos, i.duration, i.finished);
+    return [i.season ?? mSeason, ep, frac];
+  };
+  const best = list.reduce((a, b) => {
+    const [as, ae, af] = rank(a);
+    const [bs, be, bf] = rank(b);
+    return bs !== as ? (bs > as ? b : a) : be !== ae ? (be > ae ? b : a) : bf > af ? b : a;
+  });
+  const [fSeason, fEpisode, fFrac] = rank(best);
+  if (mine.kind !== 'series') return { friend: best.friend, marker: Math.round(fFrac * 100), text: '' };
+  const name = friendName(best.friend);
+  if (fSeason < mSeason) return { friend: best.friend, marker: null, text: '' };
+  if (fSeason > mSeason) return { friend: best.friend, marker: 100, text: `${name} est à S${fSeason} · É${fEpisode}` };
+  const gap = fEpisode - mEpisode;
+  const marker = gap === 0 ? Math.round(fFrac * 100) : gap > 0 ? 100 : null;
+  return { friend: best.friend, marker, text: gap >= 1 ? `${name} a ${gap} épisode${gap > 1 ? 's' : ''} d'avance` : '' };
+}
+
+/** Mention d'un titre que personne d'autre n'a commencé. */
+export const NOBODY_ELSE = "Personne d'autre ne l'a commencé";

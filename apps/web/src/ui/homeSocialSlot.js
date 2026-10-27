@@ -6,8 +6,11 @@ import { socialAvailable } from './socialButton.js';
 /** Emplacement des trois sections ; chaîne vide si le social n'est pas disponible. */
 export const homeSocialSlotHTML = () => (socialAvailable() ? '<div id="social-slot" class="hsr-slot"></div>' : '');
 
+/** Emplacement de la carte « regarde en ce moment » en haut de l'accueil mobile (masqué dès 768 px). */
+export const homeSocialMobileSlotHTML = () => (socialAvailable() ? '<div id="social-mobile" class="hsr-mobile"></div>' : '');
+
 /** Remplit l'emplacement affiché ; un échec de chargement laisse l'accueil sans ces sections. */
 export function mountHomeSocial() {
-  if (!document.getElementById('social-slot') || !socialAvailable()) return;
+  if (!(document.getElementById('social-slot') || document.getElementById('social-mobile')) || !socialAvailable()) return;
   void import('./homeSocialRows.js').then((m) => m.paintHomeSocial()).catch(() => undefined);
 }

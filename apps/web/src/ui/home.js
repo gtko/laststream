@@ -31,9 +31,9 @@ import { renderFeatured, renderHomeCollections } from './collections.js';
 import { renderServices } from './services.js';
 import { mainNavHTML, syncTopbar, topActionsHTML } from './topnav.js';
 import { socialAvailable } from './socialButton.js';
-import { mountRail, railSlotHTML } from './friendRailSlot.js';
+import { mountRail, railSlotHTML, stripSlotHTML } from './friendRailSlot.js';
 import { watchHeroSocial } from './heroSocial.js';
-import { homeSocialSlotHTML, mountHomeSocial } from './homeSocialSlot.js';
+import { homeSocialMobileSlotHTML, homeSocialSlotHTML, mountHomeSocial } from './homeSocialSlot.js';
 import { getState as socialState } from '../data/socialStore';
 import { state } from './state.js';
 import { observeTiles, posterCard, topCard, upCard } from './tiles.js';
@@ -285,7 +285,7 @@ export function headerA() {
 
 export function viewA(d) {
   const r = d.rows;
-  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + heroCarousel(d.heroes) +
+  return '<main id="main" class="page-a' + (socialEnabled() ? ' has-rail' : '') + '">' + headerA() + stripSlotHTML() + homeSocialMobileSlotHTML() + heroCarousel(d.heroes) +
     '<div class="rows">' +
     '<div id="cont-slot">' + continueSection() + '</div>' +
     homeSocialSlotHTML() +
@@ -382,7 +382,7 @@ export function renderHome() {
   if (!state.data.kids) { renderFollowRow(); renderTvRows(); }
   observeTiles(app);
   setupPreviews();
-  if (!state.data.kids) { mountRail(); mountHomeSocial(); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
+  if (!state.data.kids) { mountRail(); mountHomeSocial(); syncContinueSocial(true); watchHeroSocial(() => (state.data && state.data.heroes) || []); } // social : rail d'amis et ligne du héros
   if (state.data.kids) {
     prepareSingle(d.hero); // mise en avant simple (profil enfant) : détail à l'affichage, notes MDBList au survol
     renderLibrary();
@@ -443,6 +443,12 @@ const cardOf = (html) => {
  * Rafraîchit « Reprendre la lecture » sans rechargement : les cartes inchangées sont gardées (image, logo, focus), les
  * autres sont refaites, et l'ordre (récent d'abord) suit la progression. Sans effet si rien n'a changé.
  */
+/** Avance des amis sur les cartes de « Reprendre » : module chargé à la demande, un appel groupé au plus, échec silencieux. */
+function syncContinueSocial(fresh) {
+  if (!socialAvailable()) return;
+  void import('./continueSocial.js').then((m) => (fresh ? m.mountContinueSocial() : m.loadContinueSocial())).catch(() => undefined);
+}
+
 export function renderContinue() {
   const slot = document.getElementById('cont-slot');
   if (!slot) return;
@@ -453,6 +459,7 @@ export function renderContinue() {
     slot.innerHTML = continueSection();
     observeTiles(slot);
     hydrateContinue(slot);
+    syncContinueSocial(false);
     return;
   }
   const have = new Map(Array.from(rowEl.querySelectorAll('.cont-card')).map((c) => [c.dataset.resume, c]));
@@ -465,6 +472,7 @@ export function renderContinue() {
   keepRowState(slot, () => rowEl.replaceChildren(...nodes), 'data-resume');
   observeTiles(slot);
   hydrateContinue(slot);
+  syncContinueSocial(false);
 }
 
 // ---------- Mise à jour à chaud (sans rechargement) ----------
