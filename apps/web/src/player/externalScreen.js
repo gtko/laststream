@@ -67,6 +67,7 @@ export function openExternal(p, choice, url) {
   S.ui.video.hidden = true;
   S.ui.root.classList.remove('is-mpv', 'is-video');
   S.ui.setPipAvailable(false);
+  S.ui.setCastAvailable(false);
   S.ui.setMarkAvailable(false);
   if (choice.blocked) { showBlocked(p); return; }
   showExternal(p, url, choice.playerId);

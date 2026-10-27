@@ -7,6 +7,7 @@ import { userStore } from '../data/userStore';
 import { onDataEvent } from '../data/events';
 import { tmdb } from '../data/lt';
 import { compareWatched, isWatchedComplete, watchedProgressLabel } from '../data/watchedHistory';
+import { animeKeys, effectiveWatchedAt } from '../data/migration/profileMarks';
 import { register, toItem } from './catalog.js';
 import { detailEl } from './dom.js';
 import { teardownFiche } from './fiche.js';
@@ -67,12 +68,23 @@ function syncPills() {
   detailEl.querySelectorAll('[data-libs]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.libs === state.libView.sort)));
 }
 
+/** Filtre par type : « Anime » suit la catégorie gardée à l'import (Simkl, Nuvio). */
+function byType(type, anime) {
+  if (type === 'anime') return (it) => anime.has(it.key || it.type + ':' + it.id);
+  return type === 'all' ? () => true : (it) => it.type === type;
+}
+
+/** Le filtre « Anime » n'apparaît que si un titre du profil porte cette catégorie. */
+const hasAnime = () => animeKeys().size > 0;
+
 function controlsHTML() {
   const seen = state.libMode === 'watched';
+  if (state.libView.type === 'anime' && !hasAnime()) state.libView.type = 'all';
   const modes = '<div class="pills" data-nav role="group" aria-label="Affichage">' +
     '<button type="button" class="pill" data-libm="library">Ma bibliothèque</button><button type="button" class="pill" data-libm="watched">Vus</button></div>';
   const types = '<div class="pills" data-nav role="group" aria-label="Filtrer">' +
-    '<button type="button" class="pill" data-libf="all">Tout</button><button type="button" class="pill" data-libf="movie">Films</button><button type="button" class="pill" data-libf="tv">Séries</button></div>';
+    '<button type="button" class="pill" data-libf="all">Tout</button><button type="button" class="pill" data-libf="movie">Films</button><button type="button" class="pill" data-libf="tv">Séries</button>' +
+    (hasAnime() ? '<button type="button" class="pill" data-libf="anime">Anime</button>' : '') + '</div>';
   const sorts = seen
     ? '<div class="pills" data-nav role="group" aria-label="Trier">' +
       '<button type="button" class="pill" data-libs="recent">Récemment vus</button><button type="button" class="pill" data-libs="title">Titre A→Z</button><button type="button" class="pill" data-libs="year">Année</button></div>'
@@ -87,7 +99,7 @@ export function renderLibraryPage(restore) {
   if (!box) return;
   const v = state.libView;
   let items = libItems();
-  if (v.type !== 'all') items = items.filter((it) => it.type === v.type);
+  items = items.filter(byType(v.type, animeKeys()));
   items.sort(v.sort === 'title' ? (a, b) => a.name.localeCompare(b.name, 'fr') : (a, b) => b.added - a.added);
   syncPills();
   box.innerHTML = '';
@@ -158,8 +170,9 @@ export async function renderSeenPage(restore) {
   const box = detailEl.querySelector('#lib-grid');
   if (!box) return;
   const v = state.libView;
-  const all = userStore.watchedTitles();
-  const entries = v.type === 'all' ? all : all.filter((t) => t.type === (v.type === 'tv' ? 'tv' : 'movie'));
+  // Date réelle d'un visionnage importé (Plex, Simkl…) tant que le titre n'a pas été revu depuis.
+  const all = userStore.watchedTitles().map((t) => ({ ...t, lastWatchedAt: effectiveWatchedAt(t.key, t.lastWatchedAt) }));
+  const entries = all.filter(byType(v.type, animeKeys()));
   syncPills();
   const eyebrow = detailEl.querySelector('.svc-eyebrow');
   if (eyebrow) eyebrow.textContent = seenCountLabel(entries.length, v.type);

@@ -24,5 +24,7 @@ export const LI = {
   mini: svg('<path d="M6 9l6 6 6-6"/>'),
   expand: svg('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>'),
   people: svg('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.3 3-5 6-5s5.400 1.700 6 5"/><circle cx="17" cy="9" r="2.500"/><path d="M16.500 14.200c2.600.1 4.100 1.600 4.500 4.300"/>'),
+  // Chromecast : écran et ondes dans le coin bas gauche.
+  cast: svg('<path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><path d="M2 12a9 9 0 0 1 8 8M2 16a5 5 0 0 1 4 4M2 20h.01"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
 };

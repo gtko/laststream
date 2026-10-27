@@ -248,7 +248,8 @@ export function refreshUI(st) {
 export function saveProgress(force, st) {
   const p = S.P;
   if (!p || !p.engine || !p.view) return;
-  const s = st || p.engine.state();
+  // Diffusion Chromecast : la position est celle du téléviseur, la lecture locale est en pause (sessionCast).
+  const s = st || (p.casting && p.casting.progress.last()) || p.engine.state();
   if (!shouldSave(Date.now(), p.lastSave, force, s.duration) || s.time <= 1) return;
   p.lastSave = Date.now();
   if (p.addon) {
@@ -265,7 +266,7 @@ export function saveProgress(force, st) {
   });
 }
 
-function markWatched() {
+export function markWatched() {
   const p = S.P;
   if (!p || p.watchedMarked) return;
   p.watchedMarked = true;

@@ -41,11 +41,13 @@ function skeleton() {
       '<div class="lp-load-logo"></div><p class="lp-load-ep"></p><p class="lp-load-msg"></p><p class="lp-load-src"></p><ol class="lp-steps"></ol>' +
       '<button type="button" class="btn btn-primary lp-self" data-act="choose-myself" hidden>Choisir moi-même</button>' +
       '<button type="button" class="btn btn-ghost lp-cancel" data-act="close">Annuler</button></div></div>' +
+    '<div class="lp-cast" role="status" hidden><div class="lp-cast-in">' + LI.cast + '<p class="lp-cast-t"></p><p class="lp-cast-time"></p><div class="lp-cast-actions">' +
+      '<button type="button" class="btn btn-ghost" data-act="cast-toggle">Pause</button><button type="button" class="btn btn-primary" data-act="cast-here">Reprendre ici</button></div></div></div>' +
     '<div class="lp-error" role="alert" hidden><p class="lp-err-title"></p><p class="lp-err-msg"></p><div class="lp-err-actions"></div></div>' +
     '<div class="lp-top">' +
       btn('close', LI.back, 'Retour (Échap)', ' data-role="back"', 'lp-close') +
       '<div class="lp-heading"><p class="lp-title"></p><p class="lp-sub"></p></div>' +
-      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
+      '<div class="lp-top-r">' + btn('party', LI.people, 'Watch party', ' data-role="party" hidden') + btn('minimize', LI.mini, 'Réduire le lecteur (I)', ' data-role="mini" hidden') + btn('info', LI.info, 'Infos') + btn('pip', LI.pip, 'Image dans l’image (P)', ' data-role="pip"') + btn('cast', LI.cast, 'Caster', ' data-role="cast" hidden') + btn('panel:settings', LI.gear, 'Réglages (vitesse, options)', ' data-role="speed"') + '</div>' +
     '</div>' +
     '<div class="lp-center">' +
       btn('back10', LI.back10, 'Reculer de 10 s', '', 'lp-big') + btn('toggle-play', LI.play, 'Lecture / pause (Espace)', ' data-role="bigplay"', 'lp-big lp-huge') + btn('fwd10', LI.fwd10, 'Avancer de 10 s', '', 'lp-big') +
@@ -710,6 +712,23 @@ export function createPlayerUI(h) {
       q('[data-role="next"]').hidden = !hasNext;
     },
     setPipAvailable(ok) { q('[data-role="pip"]').hidden = !ok; },
+    /** Bouton « Caster » : un appareil Chromecast est visible et la source est lue dans la page. */
+    setCastAvailable(ok) { q('[data-role="cast"]').hidden = !ok; },
+    /** Écran de diffusion : { label, time, duration, paused, backdrop } pendant la lecture sur le téléviseur, null sinon. */
+    setCasting(c) {
+      const el = q('.lp-cast');
+      const was = !el.hidden;
+      root.classList.toggle('is-casting', !!c);
+      q('[data-role="cast"]').classList.toggle('is-active', !!c);
+      el.hidden = !c;
+      if (!c) return;
+      q('.lp-cast-t').textContent = c.label;
+      q('.lp-cast-time').textContent = c.duration > 0 ? formatClock(c.time) + ' / ' + formatClock(c.duration) : formatClock(c.time);
+      q('[data-act="cast-toggle"]').textContent = c.paused ? 'Lecture' : 'Pause';
+      el.style.backgroundImage = c.backdrop ? 'linear-gradient(rgba(0,0,0,.78), rgba(0,0,0,.78)), url("' + c.backdrop + '")' : '';
+      // Focus prêt pour la télécommande et le clavier à l'ouverture de l'écran.
+      if (!was && !panelName) q('[data-act="cast-here"]').focus({ preventScroll: true });
+    },
     setSkip(seg) {
       const b = q('.lp-skip');
       if (!seg) { b.hidden = true; q('.lp-skipno').hidden = true; return; }

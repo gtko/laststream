@@ -34,6 +34,8 @@ export interface AddonCatalogEntry {
   resources: { meta: boolean; stream: boolean };
   /** Moment de la lecture du manifest (ms). */
   at: number;
+  /** Ajouté par l'import d'addons (Stremio, Nuvio) : propre à cet appareil, absent des sources du serveur. */
+  imported?: boolean;
 }
 
 /** Fiche d'un catalogue : identifiant et nom obligatoires, autres champs de l'addon conservés tels quels. */
@@ -279,11 +281,11 @@ export function setAddonCatalog(key: string, entry: AddonCatalogEntry | null): v
   writeAddonCatalogs(addons);
 }
 
-/** Retire du registre les addons absents de `keys` (désinstallés ou retirés des réglages). */
+/** Retire du registre les addons absents de `keys` (désinstallés ou retirés des réglages). Les addons importés restent. */
 export function pruneAddonCatalogs(keys: readonly string[]): void {
   const addons = readAddonCatalogs();
   const known = new Set(keys);
-  const stale = Object.keys(addons).filter((k) => !known.has(k));
+  const stale = Object.keys(addons).filter((k) => !known.has(k) && addons[k].imported !== true);
   if (!stale.length) return;
   for (const k of stale) delete addons[k];
   writeAddonCatalogs(addons);

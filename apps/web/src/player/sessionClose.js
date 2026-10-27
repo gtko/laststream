@@ -6,6 +6,7 @@ import { setShellFullscreen, setShellPip } from './shell';
 import { partyBridge } from '../party/bridge';
 import { setPresenceMedia } from './presenceV2';
 import { forgetExternal } from './externalScreen.js';
+import { endCasting } from './sessionCast.js';
 import { releaseLocal, stopWebAudio } from './sessionPlay.js';
 import { stopNotes, stopSocialPlayback } from './sessionSocial.js';
 import { S } from './sessionState.js';
@@ -27,6 +28,7 @@ export async function teardown(silent) {
   if (!silent) S.nativeMini = false;
   resetMini();
   saveProgress(true);
+  endCasting(p, 'close'); // fermeture du lecteur : le Chromecast s'arrête aussi (la progression vient d'être écrite)
   stopTicks();
   clearTimeout(p.resumeTimer);
   if (p.race) { p.race.cancel(); p.race = null; } // fermeture pendant « Préparation du lien » : les candidats ne courent plus
