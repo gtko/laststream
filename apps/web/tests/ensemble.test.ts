@@ -71,6 +71,22 @@ describe('route #/ensemble', () => {
     expect(location.hash).toBe('#/ensemble');
   });
 
+  it('route() sur #/parties : location.replace(#/ensemble), aucune affectation de hash (pas d’entrée d’historique)', () => {
+    const assigned: string[] = [];
+    const replace = vi.fn();
+    vi.stubGlobal('location', {
+      pathname: '/',
+      search: '',
+      replace,
+      get hash() { return '#/parties'; },
+      set hash(v: string) { assigned.push(v); },
+    });
+    route();
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('#/ensemble');
+    expect(assigned).toEqual([]);
+  });
+
   it('#/party/<id> et le lien d’invitation ne changent pas', () => {
     expect(hash('#/party/abc_123')).toEqual({ kind: 'party', id: 'abc_123' });
     expect(hash('#/party/join/room1?t=abcdefghijkl')).toMatchObject({ kind: 'partyjoin', id: 'room1' });
@@ -114,6 +130,19 @@ describe('barre du bas (mobile)', () => {
     setAccount(null);
     scratch(tabbar());
     expect($('.tabbar a[href="#/ensemble"]')).toBeNull();
+  });
+
+  it('onglet Accueil : lien ordinaire (#/) hors de l’accueil, inerte sur l’accueil', () => {
+    scratch(tabbar('ensemble'));
+    const homeFromEnsemble = $('.tabbar a[href="#/"]');
+    expect(homeFromEnsemble.hasAttribute('data-noop')).toBe(false);
+    expect(homeFromEnsemble.hasAttribute('data-go')).toBe(true);
+    expect(homeFromEnsemble.hasAttribute('aria-current')).toBe(false);
+    scratch(tabbar('home'));
+    const homeOnHome = $('.tabbar a[href="#/"]');
+    expect(homeOnHome.hasAttribute('data-noop')).toBe(true);
+    expect(homeOnHome.hasAttribute('data-go')).toBe(false);
+    expect(homeOnHome.getAttribute('aria-current')).toBe('page');
   });
 });
 
@@ -168,6 +197,40 @@ describe('page Ensemble', () => {
     input.value = 'room_42';
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     expect(location.hash).toBe('#/party/room_42');
+  });
+
+  it('code non reconnu : champ invalide, décrit par le message, focus rendu ; saisie corrigée, la marque tombe', async () => {
+    detail().hidden = false; // zone de détail affichée, comme le fait route() (index.html la masque au départ)
+    await mountPage();
+    const d = detail();
+    const form = d.querySelector<HTMLFormElement>('[data-ens-join-form]')!;
+    d.querySelector<HTMLButtonElement>('[data-ens-join]')!.click();
+    const input = form.querySelector<HTMLInputElement>('input')!;
+    input.value = '???';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const msgId = input.getAttribute('aria-describedby')!;
+    expect(msgId).toBeTruthy();
+    expect(document.querySelectorAll(`[id="${msgId}"]`)).toHaveLength(1);
+    expect(document.getElementById(msgId)!.textContent).toContain('non reconnu');
+    expect(document.activeElement).toBe(input);
+    input.value = 'room_42';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(input.hasAttribute('aria-invalid')).toBe(false);
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
+    expect(document.getElementById(msgId)!.textContent).toBe('');
+  });
+
+  it('pastille « Amis » de l’en-tête : suit le compte du store, comme celle de l’onglet Ensemble', async () => {
+    await mountPage();
+    const friendsBadge = detail().querySelector<HTMLElement>('.ens-acts a[href="#/friends"] [data-ens-badge]')!;
+    expect(friendsBadge).not.toBeNull();
+    expect(friendsBadge.hidden).toBe(true);
+    paintSocialBadges({ badge: 2 });
+    expect(friendsBadge.hidden).toBe(false);
+    expect(friendsBadge.textContent).toBe('2');
+    paintSocialBadges({ badge: 0 });
+    expect(friendsBadge.hidden).toBe(true);
   });
 
   it('roomHashOfCode : identifiant, lien d’invitation (avec ou sans jeton), refus du reste', () => {

@@ -11,7 +11,7 @@ import { brand } from './fragments.js';
 import { tabbar } from './home.js';
 import { ICON } from './icons.js';
 import { mountPartiesPane, openCreateParty } from './parties.js';
-import { socialAvailable } from './socialButton.js';
+import { ensFriendsBadgeHTML, socialAvailable } from './socialButton.js';
 import { state } from './state.js';
 import { mainNavHTML, topActionsHTML } from './topnav.js';
 import { esc } from './util.js';
@@ -57,16 +57,18 @@ function emptyHTML(tab) {
   return '<div class="wp-empty-box ens-empty"><span class="wp-empty-ico">' + ICON.party + '</span><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p></div>';
 }
 
+const JOIN_MSG_ID = 'ens-join-msg';
+
 const headHTML = () =>
   '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">Ensemble</h1><p class="ens-sub">' + SUBTITLE + '</p></div>' +
-  '<div class="ens-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + 'Amis</a>' +
+  '<div class="ens-acts"><a class="btn btn-ghost" href="#/friends" data-go>' + ICON.users + 'Amis' + ensFriendsBadgeHTML() + '</a>' +
   '<button type="button" class="btn btn-ghost" data-ens-join aria-expanded="false" aria-controls="ens-join">Rejoindre avec un code</button>' +
   '<button type="button" class="btn btn-primary" data-ens-create>' + ICON.plus + 'Créer un salon</button></div></header>' +
   '<form class="ens-join" id="ens-join" data-ens-join-form hidden novalidate>' +
   '<label class="sr-only" for="ens-join-input">Code ou lien d’invitation du salon</label>' +
   '<input id="ens-join-input" class="ens-join-input" type="text" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Code ou lien d’invitation du salon">' +
   '<button type="submit" class="btn btn-primary">Rejoindre</button>' +
-  '<p class="ens-join-msg" data-ens-join-msg role="status"></p></form>';
+  '<p class="ens-join-msg" id="' + JOIN_MSG_ID + '" data-ens-join-msg role="status"></p></form>';
 
 /** Affiche la page `tab` (identifiant d'onglet ; défaut : Maintenant). */
 export function showEnsemble(tab = 'maintenant') {
@@ -75,12 +77,12 @@ export function showEnsemble(tab = 'maintenant') {
   const current = ensembleTabOf(tab) || 'maintenant';
   document.title = 'Ensemble · Laststream';
   if (!socialAvailable()) {
-    // eslint-disable-next-line no-restricted-syntax -- gabarit statique, aucune donnée externe
+    // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(false) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' +
       '<header class="ens-head"><div class="ens-head-t"><h1 class="ens-title" id="ens-title" tabindex="-1">Ensemble</h1></div></header>' +
       '<p class="row-msg" role="status">' + (isKidProfile() ? 'Les salons ne sont pas disponibles sur un profil enfant.' : 'Connecte-toi à un compte Laststream pour regarder à plusieurs.') + '</p></article>' + tabbar() + '</div>';
   } else {
-    // eslint-disable-next-line no-restricted-syntax -- libellés d'onglets constants échappés par esc, reste statique
+    // eslint-disable-next-line no-restricted-syntax -- contenu dynamique échappé par esc (nom du profil, libellés)
     detailEl.innerHTML = '<div class="s-a ens-root">' + barHTML(true) + '<article class="svc-page ens-page" aria-labelledby="ens-title">' + headHTML() + tabsHTML(current) +
       '<section class="ens-panel" id="ens-panel" aria-label="' + esc(ENSEMBLE_TABS.find(([id]) => id === current)[1]) + '">' +
       (current === 'maintenant' ? '' : emptyHTML(current)) + '</section></article>' + tabbar('ensemble') + '</div>';
@@ -109,6 +111,17 @@ detailEl.addEventListener('click', (e) => {
   }
 });
 
+/** Marque (ou démarque) le champ de code : invalide, et décrit par le message d'erreur (JOIN_MSG_ID). */
+function markJoinInvalid(input, invalid) {
+  if (invalid) {
+    input.setAttribute('aria-invalid', 'true');
+    input.setAttribute('aria-describedby', JOIN_MSG_ID);
+  } else {
+    input.removeAttribute('aria-invalid');
+    input.removeAttribute('aria-describedby');
+  }
+}
+
 detailEl.addEventListener('submit', (e) => {
   const form = e.target instanceof Element ? e.target.closest('[data-ens-join-form]') : null;
   if (!form || state.kind !== 'ensemble') return;
@@ -118,8 +131,22 @@ detailEl.addEventListener('submit', (e) => {
   const hash = roomHashOfCode(input ? input.value : '');
   if (hash) {
     if (msg) msg.textContent = '';
+    if (input) markJoinInvalid(input, false);
     location.hash = hash;
-  } else if (msg) {
-    msg.textContent = 'Code non reconnu : colle le lien d’invitation ou l’identifiant du salon.';
+  } else {
+    if (msg) msg.textContent = 'Code non reconnu : colle le lien d’invitation ou l’identifiant du salon.';
+    if (input) {
+      markJoinInvalid(input, true);
+      input.focus({ preventScroll: true });
+    }
   }
+});
+
+/** Saisie corrigée : la marque d'erreur et le message tombent. */
+detailEl.addEventListener('input', (e) => {
+  const input = e.target instanceof HTMLInputElement && e.target.closest('[data-ens-join-form]') ? e.target : null;
+  if (!input || state.kind !== 'ensemble' || !input.hasAttribute('aria-invalid') || !roomHashOfCode(input.value)) return;
+  markJoinInvalid(input, false);
+  const msg = input.closest('[data-ens-join-form]').querySelector('[data-ens-join-msg]');
+  if (msg) msg.textContent = '';
 });

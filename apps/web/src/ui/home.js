@@ -316,7 +316,8 @@ export function tabbar(current = 'home') {
     const here = (id) => (current === id ? ' is-current' : '');
     const curAttr = (id) => (current === id ? ' aria-current="page"' : '');
     return '<nav class="tabbar" aria-label="Navigation principale">' +
-      tab(here('home'), { href: true, html: ' href="#/" data-noop' + curAttr('home') }, 'home', 'Accueil') +
+      // Accueil : inerte sur l'accueil, lien ordinaire (data-go) depuis les autres pages (Ensemble...).
+      tab(here('home'), { href: true, html: ' href="#/"' + (current === 'home' ? ' data-noop' : ' data-go') + curAttr('home') }, 'home', 'Accueil') +
       tab('', { html: ' data-search aria-label="Rechercher"' }, 'search', 'Rechercher') +
       tab(here('ensemble'), { href: true, html: ' href="#/ensemble" data-go' + curAttr('ensemble') }, 'users', 'Ensemble', badge) +
       tab('', { href: true, html: ' href="#/library" data-libnav' }, 'list', 'Ma liste') +

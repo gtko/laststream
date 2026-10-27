@@ -28,6 +28,15 @@ export function friendsButtonHTML(cls = 'icon-btn') {
     ' aria-label="' + labelOf(n) + '"' + tip + '>' + ICON.users + badgeHTML(n) + '</button>';
 }
 
+/**
+ * Pastille du lien « Amis » de la page Ensemble : même rendu que celle de friendsButtonHTML, mise à jour par paintSocialBadges
+ * (attribut data-ens-badge). Sans notification, elle est masquée et vide : le libellé du lien reste « Amis ».
+ */
+export function ensFriendsBadgeHTML() {
+  const n = getState().badge;
+  return '<span class="soc-badge" data-ens-badge' + (n > 0 ? '' : ' hidden') + '>' + (n > 0 ? countText(n) : '') + '</span>';
+}
+
 /** Met la pastille et le libellé de tous les boutons « Amis » affichés à jour. */
 export function paintSocialBadges(s = getState()) {
   document.querySelectorAll('[data-soc-open]').forEach((b) => {
@@ -39,9 +48,9 @@ export function paintSocialBadges(s = getState()) {
     }
     b.setAttribute('aria-label', labelOf(n));
   });
-  // Pastille de l'onglet « Ensemble » de la barre du bas : même compte que le bouton Amis.
+  // Pastilles data-ens-badge : onglet « Ensemble » de la barre du bas et lien « Amis » de la page Ensemble (même compte).
   document.querySelectorAll('[data-ens-badge]').forEach((p) => {
-    p.textContent = countText(s.badge);
+    p.textContent = s.badge > 0 ? countText(s.badge) : '';
     p.hidden = s.badge <= 0;
   });
 }

@@ -549,7 +549,7 @@ button.tab { background: none; border: 0; }
 .ens-title { margin: 0; font-family: var(--ff-title); font-size: clamp(28px, 3.4vw, 44px); font-weight: 800; letter-spacing: -0.02em; outline: none; }
 .ens-sub { margin: 8px 0 0; max-width: 560px; font-size: 15px; line-height: 1.5; color: var(--dim); }
 .ens-acts { display: flex; flex-wrap: wrap; gap: 10px; }
-.ens-acts .btn { min-height: 44px; }
+.ens-acts .btn { min-height: 44px; position: relative; } /* position : ancre de la pastille « Amis » */
 .ens-join { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 24px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .ens-join[hidden] { display: none; }
 .ens-join-input { flex: 1 1 260px; min-width: 0; min-height: 44px; padding: 0 16px; border: 1.5px solid #3a3646; border-radius: 999px; background: var(--bg); color: var(--text); font: inherit; }
