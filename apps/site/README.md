@@ -14,6 +14,7 @@ toutes les autres requêtes sont servies depuis `public/` (binding `ASSETS`).
 - `src/worker.js` : le Worker (relais `/api/android` et `/api/windows`, sinon repli sur les assets).
 - `public/` : tout ce qui est publié tel quel.
   - `index.html` (FR) et `en/index.html` (EN) : accueil, avec `home.css`, `home.js` et `app.js` (liens de téléchargement).
+  - `beta-migrants/` : programme bêta des personnes venues de Stremio ou Nuvio, avec le journal daté des retours et corrections (à tenir à jour à la main, du plus récent au plus ancien).
   - `guides/` : guides illustrés, un dossier par guide (`index.html`, `img/`, `clip.mp4`), styles `style.css` et `guides/guides.css`.
   - `assets/` : logos, icônes, polices, captures (`shots/`), image de partage (`og.png`).
   - `robots.txt` et `sitemap.xml` : indexation.
