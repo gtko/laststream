@@ -10,7 +10,7 @@ vi.mock('../src/data/sources', async (importOriginal) => {
   return { ...actual, measureBandwidthKbps: () => measure() };
 });
 
-// Même squelette que sources-ui.test.ts : le corps de index.html (sans scripts) avant de charger le sélecteur.
+// Le corps de index.html (sans scripts) avant de charger le sélecteur.
 const indexHtml = fs.readFileSync(path.resolve(__dirname, '../index.html'), 'utf8');
 document.body.innerHTML = indexHtml.slice(indexHtml.indexOf('<body>') + 6, indexHtml.indexOf('</body>')).replace(/<script[\s\S]*?<\/script>/g, '');
 const { openSourcePicker } = await import('../src/sources/picker.js');
