@@ -72,11 +72,11 @@ describe('route et ouverture', () => {
     reset();
     hf.hideTitle({ key: 'movie:9', title: 'Neuf', poster: '' });
     location.hash = '#/settings';
-    await settle(300);
+    // Attentes sur condition : le rendu des réglages et de la page est asynchrone et lent sous charge.
+    await vi.waitFor(() => expect($('#set-p-home [data-hidden-nav]')).not.toBeNull(), { timeout: 10_000 });
     click($('#set-p-home [data-hidden-nav]'));
-    await settle(300);
+    await vi.waitFor(() => expect($('.hid-page')).not.toBeNull(), { timeout: 10_000 });
     expect(location.hash).toBe('#/hidden');
-    expect($('.hid-page')).not.toBeNull();
     expect(tiles()).toHaveLength(1);
   });
 
