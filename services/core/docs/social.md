@@ -65,6 +65,8 @@ Réponses : JSON. Erreurs : `{ "error": "<code>" }` (+ `issues` pour `invalid_bo
 | DELETE | `/friends/:pid` | Retire un ami (le foyer ne se retire pas) | 204 ; 404 `friend_not_found` |
 | GET | `/friends/:pid/library?type&limit&offset` | Bibliothèque : ami = titres en `friends` ; foyer = tout | `{ items, total, limit, offset }` ; 404 `friend_not_found` |
 | GET | `/friends/:pid/history?limit` | Historique récent (titres avec identifiant TMDB), du plus récent au plus ancien | `{ items }` ; 404 `friend_not_found` |
+| GET | `/home/watching?limit=` | Accueil « ce que regardent tes amis » : une entrée par ami accepté (ni foyer, ni enfant, ni bloqué), sa progression la plus récente des 30 derniers jours (hors vu manuel), réglages et sourdine du lecteur appliqués ; `limit` de 1 à 50, 20 par défaut. `live` : titre en cours visible. Champs `friend` (pid, handle, avatarColor, avatar?, nickname?), `media`, `pos`, `duration?`, `finished`, `live`, `updatedAt` | `{ items }` ; 403 `kid_profile` |
+| GET | `/home/progress?titles=movie:603,series:1399` | Progression des amis sur ces titres (20 au plus, `type:tmdbId`) : pour chaque ami qui passe le même garde-fou, sa progression la plus avancée (saison, épisode, position) des 30 derniers jours | `{ items }` ; 400 `invalid_body` (titres absents, mal formés ou plus de 20) ; 403 `kid_profile` |
 | PUT | `/presence` `{ watching? }` | Battement (≈ 30 s, et à chaque lecture, pause, seek ou changement de média) ; `watching` absent ou `null` = en ligne | 204 ; 400 `invalid_body` |
 | DELETE | `/presence` | Hors ligne immédiatement | 204 |
 | POST | `/live-ticket` | Ticket de 60 s pour le flux temps réel | `{ wsPath }` ; 403 `kid_profile`, 429 `rate_limited` |

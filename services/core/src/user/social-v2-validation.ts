@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isValidHandleName, parseHandle } from './social-handles.js';
-import { type CustomStatus, type FavoriteView, MAX_MESSAGE_PAGE, MAX_PROFILE_FAVORITES, type ProfilePatch } from './social-v2-store.js';
+import { type CustomStatus, type FavoriteView, type HomeTitleRef, MAX_MESSAGE_PAGE, MAX_PROFILE_FAVORITES, type ProfilePatch } from './social-v2-store.js';
 
 /** Schémas des routes sociales v2 (`/user/social/*`). Objets stricts : une clé inconnue est refusée. */
 
@@ -88,6 +88,38 @@ export const historyQuerySchema = z.object({
     .pipe(z.number().int().min(1).max(50))
     .optional()
     .transform((value) => value ?? 20),
+});
+
+/** Accueil « ce que regardent tes amis » : `?limit=` de 1 à 50, 20 par défaut. */
+export const homeWatchingQuery = z.strictObject({
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(50))
+    .optional()
+    .transform((value) => value ?? 20),
+});
+
+/** Titre demandé à l'accueil (`movie:603` ou `series:1399`). */
+const HOME_TITLE = z
+  .string()
+  .regex(/^(movie|series):[1-9]\d{0,8}$/)
+  .transform((ref): HomeTitleRef => {
+    const [type, tmdbId] = ref.split(':');
+    return { type: type === 'series' ? 'series' : 'movie', tmdbId: Number(tmdbId) };
+  });
+
+/** Titres au plus par requête de progression de l'accueil. */
+const MAX_HOME_TITLES = 20;
+
+/** `?titles=movie:603,series:1399` : 1 à 20 titres, sans doublon. Absent ou mal formé : 400. */
+export const homeProgressQuery = z.strictObject({
+  titles: z
+    .string()
+    .transform((raw) => raw.split(','))
+    .pipe(z.array(HOME_TITLE).min(1).max(MAX_HOME_TITLES))
+    .transform((titles) => [...new Map(titles.map((title) => [`${title.type}:${title.tmdbId}`, title])).values()]),
 });
 
 // Messages et notes

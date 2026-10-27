@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { consumeRate } from './rate-hits.js';
 import { drawNewHandleTag, revokeLegacyFriendship, settleGroupAfterLeave, syncProfileIdentity } from './social-handles.js';
+import type { HomeFriend, HomeMedia, HomeTitleProgress, HomeWatchingItem } from './social-home-types.js';
 import { MAX_FRIENDS, MAX_OUTGOING_REQUESTS, PRESENCE_TTL_MS, WATCHING_IDLE_MS } from './social-store.js';
 import {
   type ActivityItem,
@@ -307,8 +308,66 @@ interface ProfileRow {
   tag_changed_at: number | null;
 }
 
+/** Titre demandé à l'accueil (route de progression) : type et identifiant TMDB. */
+export interface HomeTitleRef {
+  type: 'movie' | 'series';
+  tmdbId: number;
+}
+
+/** Résultat du garde-fou de l'accueil (voir friendGate). */
+type FriendGate = 'ok' | 'hidden' | 'unknown';
+
+/** Fenêtre de l'accueil : une progression plus ancienne que 30 jours n'y figure plus. */
+const HOME_WINDOW_MS = 30 * 24 * 3_600_000;
+
+/**
+ * Filtres de progression visible sur l'accueil, communs aux deux requêtes : pas de marquage à la main (`manual`, ODY-207), et
+ * pas de « terminé » sans durée (voir friendHistory). La requête doit avoir `progress AS pg`.
+ */
+const HOME_PROGRESS_FILTER = 'pg.manual = 0 AND NOT (pg.finished = 1 AND pg.duration_sec = 0)';
+
+/** Ligne de progression lue pour l'accueil (colonnes communes ; titre et affiche seulement pour « ce que regardent tes amis »). */
+interface HomeProgressRow {
+  type: 'movie' | 'series';
+  tmdb_id: number;
+  season: number;
+  episode: number;
+  position_sec: number;
+  duration_sec: number;
+  updated_at: string;
+  finished: number;
+  title?: string | null;
+  poster?: string | null;
+}
+
+/** Ami tel que l'accueil le montre : identité publique et surnom posé par le lecteur, rien d'autre. */
+function homeFriendOf(view: FriendView): HomeFriend {
+  const friend: HomeFriend = { pid: view.pid, handle: view.handle, avatarColor: view.avatarColor };
+  if (view.avatar !== undefined) friend.avatar = view.avatar;
+  if (view.nickname !== undefined) friend.nickname = view.nickname;
+  return friend;
+}
+
+/** Instant d'une date SQL ISO (ms) ; 0 si elle est illisible. */
+function isoMs(raw: string): number {
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/** Titre d'une progression de l'accueil : saison et épisode seulement pour une série, durée seulement si connue. */
+function homeMediaOf(row: HomeProgressRow): HomeMedia {
+  const media: HomeMedia = { type: row.type, tmdbId: Number(row.tmdb_id) };
+  if (row.title !== undefined && row.title !== null) media.title = row.title;
+  if (row.poster !== undefined && row.poster !== null && row.poster !== '') media.poster = row.poster;
+  if (row.type === 'series') {
+    media.season = Number(row.season);
+    media.episode = Number(row.episode);
+  }
+  return media;
+}
+
 /** Pids des amis acceptés d'un profil (`other`). Trois paramètres : le pid, répété trois fois. */
-const FRIENDS_OF_SQL = `SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END AS other FROM profile_friendships f WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?)`;
+const FRIENDS_OF_SQL =`SELECT CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END AS other FROM profile_friendships f WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?)`;
 
 /** JSON stocké d'un champ de profil. Une valeur illisible est ignorée (le champ est absent), jamais une erreur. */
 function parseStoredJson<T>(raw: string | null | undefined): T | undefined {
@@ -1715,6 +1774,134 @@ export class SocialV2Store {
       return item;
     });
     return { result: 'ok', items };
+  }
+
+  // Accueil : « ce que regardent tes amis » et progression des amis sur « Reprendre » (LAST-191)
+
+  /**
+   * Garde-fou de visibilité de l'accueil, la seule règle de ces routes. `ok` seulement pour un ami accepté : le foyer, un profil
+   * enfant, un blocage (dans un sens ou l'autre), un non-ami et une demande en attente donnent `unknown`. Selon les options :
+   * `history` exige `historyVisible` chez la cible ; `activity` respecte `activityVisibility` chez la cible ; `feed` respecte
+   * la sourdine et le masquage d'activité posés par le lecteur. Une cible en statut « invisible » donne `hidden` dès qu'une
+   * option est demandée.
+   */
+  private friendGate(viewerPid: string, targetPid: string, need: { history?: boolean; activity?: boolean; feed?: boolean }): FriendGate {
+    if (this.isBlockedEither(viewerPid, targetPid) || this.relationOf(viewerPid, targetPid) !== 'friend') return 'unknown';
+    if (need.history === true || need.activity === true || need.feed === true) {
+      const presence = this.db.prepare('SELECT status FROM profile_presence WHERE profile_pid = ?').get(targetPid) as { status: string } | undefined;
+      if (presence?.status === 'invisible') return 'hidden';
+    }
+    if (need.history === true && !this.prefsOf(targetPid).historyVisible) return 'hidden';
+    if (need.activity === true && !this.activityVisibleTo(targetPid, viewerPid)) return 'hidden';
+    if (need.feed === true) {
+      const relation = this.relationRow(viewerPid, targetPid);
+      if (relation !== undefined && (Number(relation.muted) === 1 || Number(relation.hide_activity) === 1)) return 'hidden';
+    }
+    return 'ok';
+  }
+
+  /** Pids des amis acceptés d'un profil non enfant, dans l'ordre des noms, 200 au plus (MAX_FRIENDS). */
+  private homeFriendPids(viewerPid: string): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.pid FROM profile_friendships f
+           JOIN profiles p ON p.pid = CASE WHEN f.low_pid = ? THEN f.high_pid ELSE f.low_pid END
+          WHERE f.status = 'accepted' AND (f.low_pid = ? OR f.high_pid = ?) AND p.is_kid = 0
+          ORDER BY p.handle_name COLLATE NOCASE, p.handle_tag
+          LIMIT ?`,
+      )
+      .all(viewerPid, viewerPid, viewerPid, MAX_FRIENDS) as unknown as { pid: string }[];
+    return rows.map((row) => row.pid);
+  }
+
+  /**
+   * « Ce que regardent tes amis » : une entrée par ami qui passe le garde-fou (history, activity, feed), avec sa progression la
+   * plus récente des 30 derniers jours. Du plus récent au plus ancien, `limit` au plus. `live` : le titre en cours de l'ami est
+   * visible pour le lecteur (même règle que la présence, voir presentView). Foyer et enfants exclus.
+   */
+  homeWatching(viewerPid: string, limit: number, now: number): HomeWatchingItem[] {
+    const since = new Date(now - HOME_WINDOW_MS).toISOString();
+    const items: HomeWatchingItem[] = [];
+    for (const friendPid of this.homeFriendPids(viewerPid)) {
+      const row = this.db
+        .prepare(
+          `SELECT pg.type, pg.tmdb_id, pg.season, pg.episode, pg.position_sec, pg.duration_sec, pg.updated_at, pg.finished, li.title, li.poster
+             FROM progress pg
+             JOIN profiles p ON p.id = pg.profile_id
+             LEFT JOIN library_items li ON li.profile_id = pg.profile_id AND li.type = pg.type AND li.title_ref = pg.title_ref
+            WHERE p.pid = ? AND p.is_kid = 0 AND pg.tmdb_id IS NOT NULL AND pg.updated_at >= ? AND ${HOME_PROGRESS_FILTER}
+            ORDER BY pg.updated_at DESC, pg.season DESC, pg.episode DESC
+            LIMIT 1`,
+        )
+        .get(friendPid, since) as unknown as HomeProgressRow | undefined;
+      if (row === undefined || this.friendGate(viewerPid, friendPid, { history: true, activity: true, feed: true }) !== 'ok') continue;
+      const viewRow = this.viewRow(friendPid);
+      if (viewRow === undefined) continue;
+      const view = this.presentView(viewerPid, viewRow, false, now);
+      const item: HomeWatchingItem = {
+        friend: homeFriendOf(view),
+        media: homeMediaOf(row),
+        pos: Number(row.position_sec),
+        finished: Number(row.finished) === 1,
+        live: view.watching !== undefined,
+        updatedAt: isoMs(row.updated_at),
+      };
+      if (Number(row.duration_sec) > 0) item.duration = Number(row.duration_sec);
+      items.push(item);
+    }
+    items.sort((a, b) => b.updatedAt - a.updatedAt || a.friend.pid.localeCompare(b.friend.pid));
+    return items.slice(0, limit);
+  }
+
+  /**
+   * Progression des amis sur les titres demandés (« Reprendre ») : pour chaque ami qui passe le garde-fou, sa progression la plus
+   * avancée de chaque titre (saison, puis épisode, puis position), des 30 derniers jours. Les titres sont validés par la route.
+   */
+  friendsProgressFor(viewerPid: string, titles: readonly HomeTitleRef[], now: number): HomeTitleProgress[] {
+    if (titles.length === 0) return [];
+    const since = new Date(now - HOME_WINDOW_MS).toISOString();
+    const titleClause = titles.map(() => '(pg.type = ? AND pg.tmdb_id = ?)').join(' OR ');
+    const titleParams = titles.flatMap((title) => [title.type, title.tmdbId]);
+    const items: HomeTitleProgress[] = [];
+    for (const friendPid of this.homeFriendPids(viewerPid)) {
+      const rows = this.db
+        .prepare(
+          `SELECT pg.type, pg.tmdb_id, pg.season, pg.episode, pg.position_sec, pg.duration_sec, pg.updated_at, pg.finished
+             FROM progress pg
+             JOIN profiles p ON p.id = pg.profile_id
+            WHERE p.pid = ? AND p.is_kid = 0 AND pg.updated_at >= ? AND ${HOME_PROGRESS_FILTER} AND (${titleClause})
+            ORDER BY pg.season DESC, pg.episode DESC, pg.position_sec DESC`,
+        )
+        .all(friendPid, since, ...titleParams) as unknown as HomeProgressRow[];
+      // Le premier relevé d'un titre est le plus avancé (tri ci-dessus).
+      const best = new Map<string, HomeProgressRow>();
+      for (const row of rows) {
+        const key = `${row.type}:${row.tmdb_id}`;
+        if (!best.has(key)) best.set(key, row);
+      }
+      if (best.size === 0 || this.friendGate(viewerPid, friendPid, { history: true, activity: true, feed: true }) !== 'ok') continue;
+      const viewRow = this.viewRow(friendPid);
+      if (viewRow === undefined) continue;
+      const friend = homeFriendOf(this.presentView(viewerPid, viewRow, false, now));
+      for (const row of best.values()) {
+        const item: HomeTitleProgress = {
+          friend,
+          type: row.type,
+          tmdbId: Number(row.tmdb_id),
+          pos: Number(row.position_sec),
+          finished: Number(row.finished) === 1,
+          updatedAt: isoMs(row.updated_at),
+        };
+        if (row.type === 'series') {
+          item.season = Number(row.season);
+          item.episode = Number(row.episode);
+        }
+        if (Number(row.duration_sec) > 0) item.duration = Number(row.duration_sec);
+        items.push(item);
+      }
+    }
+    items.sort((a, b) => b.updatedAt - a.updatedAt || a.friend.pid.localeCompare(b.friend.pid));
+    return items;
   }
 
   // Conversations : accès, lecture des messages et des réactions

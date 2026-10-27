@@ -10,8 +10,9 @@ import { assertProfileAccess, assertUnlocked, sessionOf } from './session.js';
 import { friendLibraryQuery } from './social-validation.js';
 import { emitSocialEvent } from './social-v2-events.js';
 import { SOCIAL_LIVE_PATH } from './social-v2-live.js';
+import type { HomeProgressResponse, HomeWatchingResponse } from './social-home-types.js';
 import type { FriendView, PresenceChange } from './social-v2-store.js';
-import { historyQuerySchema, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
+import { historyQuerySchema, homeProgressQuery, homeWatchingQuery, isPid, presenceSchema, requestSchema, statusSchema } from './social-v2-validation.js';
 import { parseWith, UserApiError } from './validation.js';
 
 /**
@@ -203,6 +204,30 @@ export function registerSocialV2Routes(router: App, deps: AppDeps, backend: User
     if (outcome.result === 'unknown') throw new UserApiError(404, 'friend_not_found');
     if (outcome.result === 'hidden') throw new UserApiError(403, 'hidden');
     return sendJson(c, { items: outcome.items });
+  });
+
+  // Accueil (LAST-191)
+
+  /**
+   * « Ce que regardent tes amis » : `{ items }`, une entrée par ami (sa progression la plus récente des 30 derniers jours), du
+   * plus récent au plus ancien (`?limit=`, 20 par défaut, 50 au plus). Foyer et profils enfants exclus. Profil enfant : 403.
+   */
+  router.get('/social/home/watching', async (c) => {
+    const me = await actor(c);
+    const query = parseWith(homeWatchingQuery, queryParams(c));
+    const items = await social().homeWatching(me.pid, query.limit, Date.now());
+    return sendJson(c, { items } satisfies HomeWatchingResponse);
+  });
+
+  /**
+   * Progression des amis sur les titres `?titles=movie:603,series:1399` (20 au plus) : `{ items }`, pour chaque ami et chaque
+   * titre, sa progression la plus avancée des 30 derniers jours. 400 `invalid_body` si la liste manque, est mal formée ou trop longue.
+   */
+  router.get('/social/home/progress', async (c) => {
+    const me = await actor(c);
+    const query = parseWith(homeProgressQuery, queryParams(c));
+    const items = await social().friendsProgressFor(me.pid, query.titles, Date.now());
+    return sendJson(c, { items } satisfies HomeProgressResponse);
   });
 
   // Présence
