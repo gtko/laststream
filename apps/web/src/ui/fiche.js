@@ -122,8 +122,13 @@ export function updatePlayLabel(m) {
   if (!actions || m.cinemaSince) return;
   const old = actions.querySelector('.f-resume');
   const html = resumeBarHTML(m);
-  if (old) { if (html) old.outerHTML = html; else old.remove(); return; }
+  if (old) {
+    // eslint-disable-next-line no-restricted-syntax -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
+    if (html) old.outerHTML = html; else old.remove();
+    return;
+  }
   const primary = actions.querySelector(':scope > .btn-pill');
+  // eslint-disable-next-line no-restricted-syntax -- resumeBarHTML : pourcentage borné, temps restant passé par esc()
   if (html && primary) primary.insertAdjacentHTML('afterend', html);
 }
 

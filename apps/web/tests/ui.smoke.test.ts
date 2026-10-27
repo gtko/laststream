@@ -405,10 +405,10 @@ describe('interface portée', () => {
     const resume = () => document.querySelector('#detail .f-actions .f-resume');
     expect(resume()!.textContent).toMatch(/^reste 1 h 20/);
     userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 5400, duration: 6000 });
-    updatePlayLabel(state.model);
+    updatePlayLabel((state as any).model);
     expect(resume()!.textContent).toBe('reste 10 min');
     userStore.setProgress({ key: 'movie:100', type: 'movie', id: 100, title: 'Film', poster: '', position: 6000, duration: 6000, finished: true });
-    updatePlayLabel(state.model);
+    updatePlayLabel((state as any).model);
     expect(resume()).toBeNull();
     location.hash = '#/';
     await settle(50);
