@@ -6,6 +6,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 const h = vi.hoisted(() => ({ avail: { ok: true } as { ok: boolean }, kid: false }));
 
 vi.mock('../src/downloads/service', () => ({
+  downloadDestination: () => 'app',
   platformAvailability: () => h.avail,
   downloadIdFor: (t: { key: string }) => t.key,
   getDownloads: vi.fn(() => Promise.resolve(null)),

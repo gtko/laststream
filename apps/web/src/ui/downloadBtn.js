@@ -2,11 +2,12 @@
  * qualité et de langues, titre téléchargé, suppression, espace plein, détail d'une erreur), entrées de navigation.
  * Aucune URL n'est jamais affichée : seuls des libellés traduits (viewModel) et des tailles. Tout texte passe par esc(). */
 import { isKidProfile } from '../data/auth';
-import { downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, planSeasonDownload, platformAvailability, recommendedChoice, requestDownload, requestSeasonDownload, subscribeDownloads } from '../downloads/service';
+import { downloadDestination, downloadIdFor, getDownloads, getSpace, listDownloads, listSourceChoices, planSeasonDownload, platformAvailability, recommendedChoice, requestDownload, requestSeasonDownload, subscribeDownloads } from '../downloads/service';
 import { getDownloadSettings, isCellular, LIMIT_CHOICES, setDownloadSettings } from '../downloads/settings';
 import { buttonState, errorMessage, formatBytes, gauge } from '../downloads/viewModel';
 import { playBest } from '../player/sessionLoader.js';
 import { elKey, runOnce, TOGGLE_COOLDOWN_MS } from './busy.js';
+import { saveSeasonToDevice, saveToDevice } from './deviceSave.js';
 import { detailEl, toast } from './dom.js';
 import { esc, names } from './util.js';
 
@@ -783,7 +784,8 @@ function openChoiceSheet(t, opener, { exclude = null } = {}) {
           },
           signal: search.signal,
         });
-        const space = getSpace();
+        // « Sur cet appareil » (web) : l'espace de l'app ne limite rien, aucune source n'est grisée.
+        const space = downloadDestination() === 'device' ? Promise.resolve(null) : getSpace();
         const list = exclude
           ? listSourceChoices(t, { exclude })
           : listSourceChoices(t, {
@@ -822,7 +824,7 @@ export async function startDownload(t, opener) {
   const idle = setBusy(opener);
   let choice;
   try {
-    const space = await getSpace();
+    const space = downloadDestination() === 'device' ? null : await getSpace();
     if (space && space.full) { idle(); await openSpaceFullSheet(opener); return; }
     // La feuille (et son « Recherche des sources… ») s'ouvre de façon synchrone : le contrôle redevient normal derrière elle.
     const sheet = openChoiceSheet(t, opener);
@@ -836,6 +838,7 @@ export async function startDownload(t, opener) {
 
 /** Ajoute la source choisie à la file ; limite d'espace et réseau traduits en feuille ou en toast. */
 async function enqueueChoice(t, choice, opener) {
+  if (downloadDestination() === 'device' && choice && choice.source) { await saveChoiceToDevice(t, choice.source, opener); return; }
   const s = getDownloadSettings();
   // Confirmation tout de suite : la résolution de la source peut durer avant que le titre apparaisse dans la file.
   toast('Téléchargement lancé · ' + (t.name || 'titre') + (t.season != null ? ' ' + epCode(t.season, t.episode) : ''), { action: { label: 'Voir', run: () => { location.hash = '#/downloads'; } }, ms: 3500 });
@@ -849,6 +852,20 @@ async function enqueueChoice(t, choice, opener) {
     if (code === 'network' && s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
     toast(errorMessage(code || 'resolve_failed'));
   } finally { idle(); }
+}
+
+/** Texte du contrôle pendant un enregistrement sur l'appareil (null : rendu normal). */
+function progressLabel(el) {
+  const txt = el && el.querySelector ? el.querySelector('.dl-txt') : null;
+  const base = txt ? txt.textContent : '';
+  return (p) => { if (txt && txt.isConnected) txt.textContent = p == null ? base : 'Enregistrement… ' + p; };
+}
+
+/** Web « Sur cet appareil » (LAST-498) : dossier choisi ou téléchargement du navigateur, hors de la file de l'app. */
+async function saveChoiceToDevice(t, source, opener) {
+  const label = (t.name || 'titre') + (t.season != null ? ' ' + epCode(t.season, t.episode) : '');
+  await saveToDevice(t, source, label, progressLabel(opener));
+  if (opener && opener.isConnected) opener.focus({ preventScroll: true });
 }
 
 /**
@@ -920,11 +937,13 @@ export async function startSeasonDownload(targets, label, opener) {
   if (!targets.length) return;
   const s = getDownloadSettings();
   if (s.wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
-  const space = await getSpace();
+  const device = downloadDestination() === 'device';
+  const space = device ? null : await getSpace();
   if (space && space.full) { await openSpaceFullSheet(opener); return; }
   const plan = await openSeasonSheet(targets, label, opener);
   if (!plan) return;
   setDownloadSettings({ asked: true });
+  if (device) { await saveSeasonToDevice(plan, progressLabel(opener)); return; }
   try {
     const added = await requestSeasonDownload(plan);
     if (!added.length) { toast('Opération annulée, réessaie'); return; } // plan caduc (purge, changement de profil)

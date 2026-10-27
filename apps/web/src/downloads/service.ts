@@ -14,10 +14,10 @@ import { isShellEnvironment } from '../player/shell';
 import { createAndroidDownloads } from './android';
 import { createDownloadIndex } from './index';
 import { DownloadManager, type TransferFn } from './manager';
-import { bindDownloadLimit, clearPurgePending, getDownloadSettings, isCellular, isPurgePending, setDownloadSettings } from './settings';
+import { bindDownloadLimit, clearPurgePending, getDownloadSettings, getWebDestination, isCellular, isPurgePending, setDownloadSettings } from './settings';
 import { isAddonLinkUrl } from './linkHosts';
 import { createStreamResolver, findMatch, nativeLinkPolicy, isDownloadable, langsOfView, streamToSource, type LinkPolicy } from './streamResolver';
-import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadRef, type DownloadSource, type DownloadStore, type SpaceInfo } from './types';
+import { DownloadError, downloadId, type DownloadIndex, type DownloadItem, type DownloadRef, type DownloadSource, type DownloadStore, type ResolvedFile, type SpaceInfo } from './types';
 import { createDownloadHttp } from './httpSelect';
 import { reportDownloadEvent } from './report';
 import { createShellDownloadStore } from './shellStore';
@@ -76,6 +76,14 @@ export function platformAvailability(): Availability {
   return webStorageAvailable()
     ? { ok: true }
     : { ok: false, reason: 'Ton navigateur ne peut pas conserver les téléchargements hors ligne.' };
+}
+
+/**
+ * Où va un téléchargement : `device` (navigateur web, réglage par défaut) l'enregistre sur l'appareil hors du gestionnaire
+ * (webSave.ts, LAST-498) ; `app` le met dans la file du gestionnaire (Android, coque, ou web avec la destination « Dans l'app »).
+ */
+export function downloadDestination(): 'device' | 'app' {
+  return !registered && platformKind() === 'web' && getWebDestination() === 'device' ? 'device' : 'app';
 }
 
 /**
@@ -500,6 +508,23 @@ export async function requestDownload(t: DownloadTarget, choice?: { quality?: st
   // Le choix fait sur la feuille devient le choix mémorisé.
   if (choice) setDownloadSettings({ quality: quality ?? '', langs: langs ?? [] });
   return item;
+}
+
+/**
+ * Lien du fichier à enregistrer sur l'appareil (destination `device`), obtenu depuis l'appareil : lien direct de l'addon, ou torrent
+ * débridé par le débrideur de l'appareil. Jamais par le serveur. Le lien n'est ni mémorisé ni journalisé.
+ */
+export async function resolveDeviceLink(t: DownloadTarget, choice: SourceChoice, signal: AbortSignal): Promise<ResolvedFile> {
+  const view = choice.view;
+  const settings = getDownloadSettings();
+  if (settings.wifiOnly && isCellular()) throw new DownloadError('network', true);
+  // Le choix fait sur la feuille devient le choix mémorisé, comme pour la file du gestionnaire.
+  setDownloadSettings({ quality: view.group, langs: choice.langs });
+  const url = view.stream.url;
+  if (!view.client && typeof url === 'string' && isDownloadable(view, linkPolicy())) {
+    return { url, ...(view.sizeBytes > 0 ? { size: view.sizeBytes } : {}), ...(view.filename ? { filename: view.filename } : {}) };
+  }
+  return createStreamResolver({ linkPolicy: linkPolicy() }).resolve(sourceOf(view, t, view.group, choice.langs), signal);
 }
 
 /** Au-delà de ce nombre d'épisodes, les épisodes restants d'une saison sont indisponibles (ODY-234). */

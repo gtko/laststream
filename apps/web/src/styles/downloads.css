@@ -86,6 +86,10 @@
 .dl-card-h { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
 .dl-card-h svg { width: 20px; height: 20px; color: var(--muted); }
 .dl-card-p { font-size: 14px; line-height: 1.5; color: var(--muted); }
+.dl-card-p b { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.dl-card-note { font-size: 13px; }
+.dl-card-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dl-dest-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .dl-persist { align-items: flex-start; }
 .dl-space-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .dl-space-l { font-weight: 700; font-size: 16px; }
