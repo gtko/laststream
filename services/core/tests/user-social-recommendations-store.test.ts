@@ -97,7 +97,7 @@ describe('coups de cœur : au plus 200 amis examinés', () => {
 describe('coups de cœur : migration 33', () => {
   it('crée recommendations (clé composite, index sur la date) ; supprime les coups de cœur avec le profil, et seulement les siens', () => {
     const { db, store } = seeded();
-    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(33);
+    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(34);
 
     const columns = (db.prepare('PRAGMA table_info(recommendations)').all() as { name: string }[]).map((column) => column.name);
     expect(columns).toEqual(['pid', 'type', 'tmdb_id', 'title', 'poster', 'word', 'created_at']);

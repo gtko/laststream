@@ -19,14 +19,14 @@ function tablesOfMigration(version: number): string[] {
     [...m.sql.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1] as string),
   );
 }
-/** Tables des migrations 30 (session TV du compte), 32 (clés de services) et 33 (coups de cœur), retirées pour revenir à la version 23. */
-const TABLES_OF_MIGRATIONS_30_32_33 = [30, 32, 33].flatMap((version) => tablesOfMigration(version));
+/** Tables des migrations 30 (session TV du compte), 32 (clés de services), 33 (coups de cœur) et 34 (soirées planifiées), retirées pour revenir à la version 23. */
+const TABLES_OF_MIGRATIONS_30_32_33_34 = [30, 32, 33, 34].flatMap((version) => tablesOfMigration(version));
 
 /**
  * Base de production : schéma des migrations 1 à 23 (social v3), puis code actuel au démarrage du Durable Object. Les
- * objets des migrations 24 à 33 (annonces, boîte écartée, invitations révoquées, sessions UA, invitations du foyer,
+ * objets des migrations 24 à 34 (annonces, boîte écartée, invitations révoquées, sessions UA, invitations du foyer,
  * billets de parrainage, marquage « vu » manuel, session TV du compte, fin d'extrait des liens publics, clés de services,
- * coups de cœur des amis) sont retirés, la table des versions est ramenée à 23, puis `migrate` est rejoué comme au
+ * coups de cœur des amis, soirées planifiées) sont retirés, la table des versions est ramenée à 23, puis `migrate` est rejoué comme au
  * constructeur du Durable Object.
  */
 function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
@@ -45,7 +45,8 @@ function rollBackTo23(stub: DurableObjectStub<UserStoreDO>): Promise<void> {
     sql.exec('ALTER TABLE invites DROP COLUMN picks');
     sql.exec('ALTER TABLE invites DROP COLUMN message');
     sql.exec('ALTER TABLE progress DROP COLUMN manual');
-    for (const table of TABLES_OF_MIGRATIONS_30_32_33) sql.exec(`DROP TABLE IF EXISTS ${table}`);
+    // Enfants avant parents : les tables de la migration 34 référencent d'autres tables de la même migration.
+    for (const table of [...TABLES_OF_MIGRATIONS_30_32_33_34].reverse()) sql.exec(`DROP TABLE IF EXISTS ${table}`);
     sql.exec('ALTER TABLE share_links DROP COLUMN end_pos');
     sql.exec('DELETE FROM schema_migrations WHERE version >= 24');
   });
@@ -85,7 +86,7 @@ describe('base migrée jusqu’à 23 (social v3), puis code actuel : annonces so
     const stub = workerEnv.USER_STORE.getByName(USER_STORE_NAME);
     await rollBackTo23(stub);
     await restartWithCurrentCode(stub);
-    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 33 }, (_, i) => i + 1));
+    expect(await versionsApplied(stub)).toEqual(Array.from({ length: 34 }, (_, i) => i + 1));
 
     // Diagnostic direct de la méthode RPC : son erreur réelle (message) apparaît ici si elle échoue.
     const backend = createDurableObjectUserBackend(workerEnv.USER_STORE, USER_STORE_NAME);

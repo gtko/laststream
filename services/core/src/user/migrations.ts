@@ -921,6 +921,67 @@ export const MIGRATIONS: readonly Migration[] = [
       CREATE INDEX recommendations_created ON recommendations (pid, created_at DESC);
     `,
   },
+  {
+    version: 34,
+    name: 'soirées planifiées : séries récurrentes, occurrences, invités et réponses',
+    sql: `
+      -- Série de soirées : une règle (fuseau, jour, heure locale, cadence) et des occurrences matérialisées dans evenings.
+      -- anchor_at : première occurrence, qui fixe la parité des semaines pour une cadence de 2 semaines.
+      -- Supprimée avec l'hôte.
+      CREATE TABLE evening_series (
+        id TEXT PRIMARY KEY,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        tz TEXT NOT NULL,
+        weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+        local_time TEXT NOT NULL CHECK (local_time GLOB '[0-2][0-9]:[0-5][0-9]'),
+        interval INTEGER NOT NULL CHECK (interval IN (1, 2)),
+        until_at INTEGER,
+        status TEXT NOT NULL CHECK (status IN ('active', 'stopped')),
+        anchor_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX evening_series_host ON evening_series (host_pid, status);
+
+      -- Invités d'une série (hors occurrences déjà posées) ; left_at renseigné quand l'invité quitte la série.
+      CREATE TABLE evening_series_guests (
+        series_id TEXT NOT NULL REFERENCES evening_series (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        left_at INTEGER,
+        PRIMARY KEY (series_id, pid)
+      );
+
+      -- Soirée (ou occurrence d'une série). starts_at en ms UTC. overridden = 1 : occurrence modifiée à la main, que la série
+      -- ne réécrit plus. reminded_at : rappel T-15 min envoyé (un seul par soirée).
+      CREATE TABLE evenings (
+        id TEXT PRIMARY KEY,
+        series_id TEXT REFERENCES evening_series (id) ON DELETE CASCADE,
+        host_pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        starts_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('scheduled', 'cancelled')),
+        overridden INTEGER NOT NULL DEFAULT 0 CHECK (overridden IN (0, 1)),
+        party_id TEXT,
+        reminded_at INTEGER,
+        opened_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (series_id, starts_at)
+      );
+      CREATE INDEX evenings_status_starts ON evenings (status, starts_at);
+      CREATE INDEX evenings_host ON evenings (host_pid, status);
+
+      -- Invités d'une soirée. L'hôte y figure aussi, avec la réponse « yes ».
+      CREATE TABLE evening_guests (
+        evening_id TEXT NOT NULL REFERENCES evenings (id) ON DELETE CASCADE,
+        pid TEXT NOT NULL REFERENCES profiles (pid) ON DELETE CASCADE,
+        response TEXT NOT NULL CHECK (response IN ('pending', 'yes', 'maybe', 'no')),
+        responded_at INTEGER,
+        PRIMARY KEY (evening_id, pid)
+      );
+      CREATE INDEX evening_guests_pid ON evening_guests (pid);
+    `,
+  },
 ];
 
 /**
