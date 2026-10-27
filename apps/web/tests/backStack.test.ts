@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/ui/router.js', () => ({ goBack: vi.fn() }));
 vi.mock('../src/ui/state.js', () => ({ state: { inDetail: false } }));
+vi.mock('../src/player/sessionLoader.js', () => ({ isPlayerFull: () => false, leavePlayer: vi.fn() }));
 
 const { handlePopState, hasLayers, pushLayer, resetBackStack } = await import('../src/ui/backStack.js');
 const { androidBackAction } = await import('../src/ui/androidBack.js');
@@ -71,6 +72,13 @@ describe('pile des couches', () => {
     expect(location.hash).toBe('#/a');
   });
 
+  it('deux couches fermées par la croix : un seul retour change de page', async () => {
+    pushLayer(vi.fn())();
+    pushLayer(vi.fn())();
+    await back();
+    expect(location.hash).toBe('#/a');
+  });
+
   it('lien suivi depuis un menu : le retour revient à la page du menu, puis à la précédente', async () => {
     const release = pushLayer(vi.fn());
     release(); // le menu se ferme, puis le lien navigue
@@ -91,13 +99,17 @@ describe('pile des couches', () => {
 
 describe('bouton retour Android', () => {
   it('couche ouverte : retour de l\'historique', () => {
-    expect(androidBackAction({ layers: true, inDetail: false, canGoBack: true })).toBe('back');
+    expect(androidBackAction({ layers: true, player: false, inDetail: false, canGoBack: true })).toBe('back');
   });
   it('page intérieure : page précédente de l\'app', () => {
-    expect(androidBackAction({ layers: false, inDetail: true, canGoBack: false })).toBe('page');
-    expect(androidBackAction({ layers: false, inDetail: true, canGoBack: true })).toBe('page');
+    expect(androidBackAction({ layers: false, player: false, inDetail: true, canGoBack: false })).toBe('page');
+    expect(androidBackAction({ layers: false, player: false, inDetail: true, canGoBack: true })).toBe('page');
+  });
+  it('lecteur affiché en grand : il est quitté, sans toucher à l\'historique', () => {
+    expect(androidBackAction({ layers: false, player: true, inDetail: false, canGoBack: false })).toBe('player');
+    expect(androidBackAction({ layers: false, player: true, inDetail: true, canGoBack: true })).toBe('player');
   });
   it('accueil sans couche : comportement système', () => {
-    expect(androidBackAction({ layers: false, inDetail: false, canGoBack: true })).toBe('exit');
+    expect(androidBackAction({ layers: false, player: false, inDetail: false, canGoBack: true })).toBe('exit');
   });
 });

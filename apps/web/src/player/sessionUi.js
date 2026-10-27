@@ -96,7 +96,7 @@ export function ensureUI() {
   });
   window.addEventListener('pagehide', () => { if (S.P) saveProgress(true); });
   // Retour du navigateur pendant la lecture : même règle que la flèche (lecture en cours réduite, sinon fermée) ; la page derrière a déjà navigué.
-  window.addEventListener('popstate', () => { if (S.P && S.P.view && !miniState.mini) leavePlayer(); });
+  window.addEventListener('popstate', () => { if (isPlayerFull()) leavePlayer(); });
 }
 
 // ---------- Mini-lecteur ----------
@@ -117,6 +117,9 @@ export function minimizePlayer() {
   if (ok && native) S.P.engine.minimize().then((on) => { if (!on && S.nativeMini) { S.nativeMini = false; miniState.expand(); } });
   return ok;
 }
+
+/** Lecteur affiché en grand (ni fermé ni réduit en miniature) : le retour le quitte. */
+export const isPlayerFull = () => !!(S.P && S.P.view && !miniState.mini);
 
 /**
  * Retour (flèche, Échap, retour du navigateur ou du téléphone) : une lecture en cours se réduit en miniature, sans clic

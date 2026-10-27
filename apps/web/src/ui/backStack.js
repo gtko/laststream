@@ -13,6 +13,8 @@ const SKIP_MS = 1500;
 const stack = [];
 let seq = 0;
 let skipAt = 0;
+/** Adresse où la pression de retour en cours a commencé : les sauts continuent tant que rien de visible n'a changé. */
+let pressHref = '';
 
 /** @returns {string | null} couche de l'entrée d'historique courante */
 function layerOfState() {
@@ -64,18 +66,20 @@ export function handlePopState() {
   const sameHref = cur.href === prev.href;
   const skipping = Date.now() - skipAt < SKIP_MS;
   skipAt = 0;
+  if (!skipping) pressHref = prev.href;
   let closed = false;
   while (stack.length && stack[stack.length - 1].id !== cur.layer) {
     const top = /** @type {{ close: () => void }} */ (stack.pop());
     closed = true;
     try { top.close(); } catch (_) { /* la couche suivante se ferme quand même */ }
   }
-  if (closed || skipping) return sameHref;
+  if (closed) return sameHref;
   // Entrée d'une couche déjà fermée (lien suivi depuis un menu, couche fermée par la croix) : un pas de plus.
   if (cur.layer && !live(cur.layer)) { skip(); return sameHref; }
-  // Retour depuis l'entrée périmée d'une couche fermée par la croix ou Échap : la pression n'a rien changé, un pas de plus.
-  if (sameHref && prev.layer && !live(prev.layer)) { skip(); return true; }
-  return false;
+  // Retour depuis l'entrée périmée d'une couche fermée par la croix ou Échap, toujours sur la page où la pression a commencé :
+  // rien de visible n'a changé, un pas de plus (autant de fois qu'il y a d'entrées périmées).
+  if (cur.href === pressHref && prev.layer && !live(prev.layer)) { skip(); return sameHref; }
+  return skipping ? sameHref : false;
 }
 
 // Navigation (lien, `location.hash`) : la nouvelle entrée devient la dernière connue.
@@ -85,5 +89,6 @@ window.addEventListener('hashchange', () => { last = here(); });
 export function resetBackStack() {
   stack.length = 0;
   skipAt = 0;
+  pressHref = '';
   last = here();
 }
