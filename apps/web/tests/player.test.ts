@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canPlayProbe, chooseEngine, detectCaps, guessWebPlayable } from '../src/player/engine';
-import { attemptsAfterStable, failoverOrder, StallWatch } from '../src/player/failover';
+import { attemptsAfterStable, failoverOrder, SlowLinkWatch, StallWatch } from '../src/player/failover';
 import { keyToAction, SEEK_STEP, stepVolume } from '../src/player/keys';
 import { bufferedEnd, formatClock, isWatched, nextEpisode, resumeDecision, shouldSave } from '../src/player/progress';
 import { hlsMasterUrl, probeUrl, proxyUrl, setShellServerAddress, serverBase, subtitlesVttUrl } from '../src/player/server';
@@ -402,6 +402,127 @@ describe('failover', () => {
     w.tick(4000, 3, false);
     expect(w.tick(10_000, 3, true)).toBe('ok'); // pause
     expect(w.stableFor(10_000)).toBe(6000);
+  });
+});
+
+describe('lien lent : réouverture (SlowLinkWatch)', () => {
+  /** Relevés à 1 Hz de `from` à `to` (secondes), tampon actif ou non, cache inconnu, lecture à 10 s. */
+  const feed = (w: SlowLinkWatch, from: number, to: number, buffering: boolean): ('ok' | 'reopen')[] => {
+    const out: ('ok' | 'reopen')[] = [];
+    for (let s = from; s <= to; s++) out.push(w.tick(s * 1000, 10, buffering, false, null));
+    return out;
+  };
+
+  it('3 épisodes de tampon (au moins 2 relevés chacun) dans la fenêtre : réouverture', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    expect(feed(w, 61, 62, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 63, 69, false)).not.toContain('reopen');
+    expect(feed(w, 70, 71, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 72, 79, false)).not.toContain('reopen');
+    expect(feed(w, 80, 81, true)).toEqual(['ok', 'reopen']);
+  });
+
+  it('20 s de tampon cumulés dans la fenêtre : réouverture, même en un seul épisode', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    expect(feed(w, 61, 80, true)).not.toContain('reopen'); // 19 s
+    expect(feed(w, 81, 81, true)).toEqual(['reopen']); // 20 s
+  });
+
+  it('un relevé de tampon isolé ne compte pas, ni comme épisode ni comme durée', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    for (let s = 61; s <= 120; s++) expect(w.tick(s * 1000, 10, s % 2 === 1, false, null)).toBe('ok');
+  });
+
+  it('démarrage : 60 s ignorées, le tampon de cette période ne compte pas', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    expect(feed(w, 1, 59, true)).not.toContain('reopen'); // tampon continu, mais ignoré
+    expect(feed(w, 60, 62, true)).toEqual(['ok', 'ok', 'ok']);
+  });
+
+  it('recherche : 10 s ignorées, les épisodes de cette période ne comptent pas', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    w.seeked(100_000);
+    expect(feed(w, 100, 101, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 102, 102, false)).toEqual(['ok']);
+    expect(feed(w, 103, 104, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 105, 105, false)).toEqual(['ok']);
+    expect(feed(w, 106, 107, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 108, 109, false)).toEqual(['ok', 'ok']);
+    expect(feed(w, 110, 111, true)).toEqual(['ok', 'ok']); // 1er épisode compté
+    expect(feed(w, 112, 119, false)).not.toContain('reopen');
+    expect(feed(w, 120, 121, true)).toEqual(['ok', 'ok']); // 2e
+    expect(feed(w, 122, 129, false)).not.toContain('reopen');
+    expect(feed(w, 130, 131, true)).toEqual(['ok', 'reopen']); // 3e
+  });
+
+  it('pause ou fin (idle) : rien ne compte, même avec du tampon', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    for (let s = 61; s <= 120; s++) expect(w.tick(s * 1000, 10, true, true, null)).toBe('ok');
+    expect(feed(w, 121, 122, true)).toEqual(['ok', 'ok']); // un seul épisode depuis la reprise
+  });
+
+  it('deux réouvertures séparées d’au moins 90 s', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    expect(feed(w, 61, 62, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 63, 69, false)).not.toContain('reopen');
+    expect(feed(w, 70, 71, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 72, 79, false)).not.toContain('reopen');
+    expect(feed(w, 80, 81, true)).toEqual(['ok', 'reopen']); // 1re à 81 s, sur 3 épisodes
+    w.reset(81_000);
+    expect(feed(w, 142, 143, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 144, 149, false)).not.toContain('reopen');
+    expect(feed(w, 150, 151, true)).toEqual(['ok', 'ok']);
+    expect(feed(w, 152, 157, false)).not.toContain('reopen');
+    expect(feed(w, 158, 159, true)).toEqual(['ok', 'ok']); // 3 épisodes, mais délai de 90 s
+    expect(feed(w, 160, 171, false)).toEqual([...Array(11).fill('ok'), 'reopen']); // 2e à 171 s = 81 s + 90 s
+  });
+
+  describe('critère préventif (réserve courte et cache qui n’avance pas)', () => {
+    it('réserve de 1 s, cache figé : réouverture 60 s après la première mesure (à 61 s)', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      for (let s = 60; s <= 120; s++) expect(w.tick(s * 1000, 10, false, false, 11)).toBe('ok');
+      expect(w.tick(121_000, 10, false, false, 11)).toBe('reopen');
+    });
+
+    it('réserve de 3 s pile : pas suspect', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      for (let s = 60; s <= 200; s++) expect(w.tick(s * 1000, 10, false, false, 13)).toBe('ok');
+    });
+
+    it('réserve courte mais cache qui avance au rythme normal : pas suspect', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      for (let s = 60; s <= 200; s++) expect(w.tick(s * 1000, s, false, false, s + 2)).toBe('ok');
+    });
+
+    it('cache inconnu (null) : critère ignoré', () => {
+      const w = new SlowLinkWatch();
+      w.reset(0);
+      for (let s = 60; s <= 200; s++) expect(w.tick(s * 1000, 10, false, false, null)).toBe('ok');
+    });
+  });
+
+  it('épisodes plus vieux que 5 min oubliés', () => {
+    const w = new SlowLinkWatch();
+    w.reset(0);
+    expect(feed(w, 61, 62, true)).toEqual(['ok', 'ok']); // A
+    expect(feed(w, 63, 69, false)).not.toContain('reopen');
+    expect(feed(w, 70, 71, true)).toEqual(['ok', 'ok']); // B
+    expect(feed(w, 72, 72, false)).toEqual(['ok']);
+    expect(feed(w, 400, 401, true)).toEqual(['ok', 'ok']); // A et B ont plus de 5 min : oubliés, C seul
+    expect(feed(w, 402, 409, false)).not.toContain('reopen');
+    expect(feed(w, 410, 411, true)).toEqual(['ok', 'ok']); // C et D
+    expect(feed(w, 412, 419, false)).not.toContain('reopen');
+    expect(feed(w, 420, 421, true)).toEqual(['ok', 'reopen']); // C, D et E
   });
 });
 
