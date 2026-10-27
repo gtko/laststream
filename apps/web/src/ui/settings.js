@@ -26,7 +26,7 @@ import { updateSupported } from '../data/appUpdate';
 import { tvPanelHTML } from './settings-tv.js';
 import { appearancePanel } from './settings-appearance.js';
 import { invitesCard, refreshInvites } from './invites.js';
-import { stremioImportCard } from './stremio-import.js';
+import { migrationCard } from './migration.js';
 import { householdInvitesCard, refreshHouseholdInvites, resetHouseholdList } from './household.js';
 import {
   CATEGORIES, card, fieldRow, flip, isOn, navHTML, panelHTML, rowHTML, switchRow,
@@ -86,7 +86,7 @@ function accountPanel() {
     return card('Compte', '<p class="set-hint">' + (auth.status === 'offline'
       ? 'lastAddon est injoignable : la bibliothèque et la progression restent dans ce navigateur.'
       : 'La bibliothèque et la progression restent dans ce navigateur. Un compte lastAddon les garde sur ton serveur, avec des profils.') + '</p>' +
-      actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data;
+      actions('<button type="button" class="btn btn-primary" data-set-login>Se connecter ou créer un compte</button>')) + data + migrationCard();
   }
   const pr = auth.profile;
   return card('Compte et profils',
@@ -95,7 +95,7 @@ function accountPanel() {
       (isProfileLocked() ? '' : '<button type="button" class="btn btn-ghost btn-sm" data-set-switch>Changer de profil</button>')) +
     rowHTML('Session', '', () => '<button type="button" class="btn btn-ghost btn-sm" data-set-logout>Se déconnecter</button>')) + parentalCard() + adminCard() +
     (isProfileLocked() ? '' : invitesCard()) + householdInvitesCard() + data +
-    stremioImportCard();
+    migrationCard();
 }
 
 function regionPanel() {

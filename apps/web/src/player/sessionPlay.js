@@ -32,6 +32,7 @@ import { refreshAddonThumbs } from './sessionThumbs.js';
 import { refreshUI, syncTicks } from './sessionTick.js';
 import { stopAutoSync, toastBusy } from './sessionTracks.js';
 import { bindEngine } from './sessionUi.js';
+import { castSourceChanged } from './sessionCast.js';
 import { NOTE_NOT_EXTERNAL, externalPlan, openExternal } from './externalScreen.js';
 import { looksUnplayableOnIOS } from './external';
 
@@ -302,6 +303,7 @@ async function startPlan(p, plan, startAt, stale, cand) {
     rememberLaunch(requestKey(p.req), { source: sourceKey(p.view), stream: p.view.stream, imdb: p.imdb || p.req.imdb || '', lang: launchLang(p) });
   }
   S.ui.setPipAvailable(p.engine.supportsPip());
+  castSourceChanged(p);
   S.ui.setSeries(hasEpisodesPanel(p), !!nextRef());
   S.ui.setMarkAvailable(markAllowed(p));
   if (cand && cand.direct) toastBusy(p, 'Lecture directe : piste audio par défaut. Pour une autre langue, choisis-la dans Audio (transcodage).', 7000);

@@ -31,6 +31,7 @@ import { closePlayer } from './sessionClose.js';
 import { streamInstead } from './sessionFailover.js';
 import { chooseResume, continueWith, ensureEpisodes } from './sessionOpen.js';
 import { externalAction } from './externalScreen.js';
+import { castAction, castSeekBy, castTogglePlay, endCasting, isCasting } from './sessionCast.js';
 import { AUDIO_MODE_LABEL, playView } from './sessionPlay.js';
 import { catchUp, openReactHere, shareHere, toggleCinemaMenu } from './sessionSocial.js';
 import { S, activeLangPrefs, audioPreference, AUTOPIP_KEY, AUTOSYNC_MIN, AUTOSYNC_TARGET, headingFor, langPrefsOf, miniState, nextRef, originalLangOf, storeGet, storeSet, THUMBS_KEY } from './sessionState.js';
@@ -42,6 +43,9 @@ import { canMinimize, expandPlayer, leavePlayer, minimizePlayer, rememberVolume 
 
 // ---------- Actions ----------
 
+/** Actions qui changent ce qui est lu : elles mettent fin à la diffusion Chromecast. */
+const CAST_ENDS = new Set(['choose-myself', 'stream', 'next', 'episode', 'retry', 'force-hls', 'audio', 'resume', 'restart']);
+
 /** Salon : seul l'hôte change d'épisode ; un invité qui essaie est prévenu. La lecture (pause, reprise, saut) est partagée. */
 function guestBlocked() {
   if (!partyBridge.guestLocked()) return false;
@@ -50,7 +54,7 @@ function guestBlocked() {
 }
 
 export function seekTo(t) {
-  if (!S.P || !S.P.view || !S.P.engine) return;
+  if (!S.P || !S.P.view || !S.P.engine || isCasting()) return;
   S.P.engine.seek(t);
   S.P.watch.reset(Date.now());
   S.P.skipped = null;
@@ -58,6 +62,7 @@ export function seekTo(t) {
 
 function seekBy(d) {
   if (!S.P || !S.P.view || !S.P.engine) return;
+  if (isCasting()) { castSeekBy(d); return; } // diffusion : le saut se fait sur le téléviseur
   const st = S.P.engine.state();
   const to = Math.min(st.duration || Infinity, Math.max(0, st.time + d));
   seekTo(to);
@@ -67,6 +72,7 @@ function seekBy(d) {
 
 export function togglePlay() {
   if (!S.P || !S.P.view || !S.P.engine) return;
+  if (isCasting()) { castTogglePlay(); return; } // diffusion : lecture / pause sur le téléviseur
   const st = S.P.engine.state();
   if (st.paused) S.P.engine.play(); else { S.P.engine.pause(); saveProgress(true); }
 }
@@ -108,6 +114,7 @@ export function showSourcesPanel(reasons = []) {
       p.ranked = [...views];
       if (!p.view) { p.req.imdb = p.req.imdb || p.imdb; continueWith(view, { resume: p.resumeMode || 'ask' }); return; }
       if (view.index === p.view.index) { S.ui.focusFirst(); return; }
+      if (p.casting) endCasting(p, 'pause'); // la nouvelle source part de la position du téléviseur
       const st = p.engine.state();
       p.attempts = 0;
       p.tried = new Set();
@@ -171,6 +178,8 @@ export async function sendSegment(kind, start, end, negative) {
 export function onAction(act, data) {
   if (!S.P) return;
   if (act === 'close') { closePlayer(); return; }
+  // Diffusion en cours : changer de source ou d'épisode ramène d'abord la lecture ici, à la position du téléviseur.
+  if (isCasting() && CAST_ENDS.has(act)) endCasting(S.P, 'pause');
   if (act === 'minimize') { if (!minimizePlayer()) closePlayer(); return; }
   if (act === 'leave') { leavePlayer(); return; }
   if (act === 'expand') { expandPlayer(); return; }
@@ -190,6 +199,7 @@ export function onAction(act, data) {
     return;
   }
   if (act.startsWith('ext-')) { externalAction(act); return; }
+  if (act === 'cast' || act.startsWith('cast-')) { castAction(act); return; }
   // Recherche en cours : seuls « Annuler » et le choix de source sont possibles. Lecteur externe : pas de moteur, pas de commande de lecture.
   if (!S.P.view || !S.P.engine) return;
   const st = S.P.engine.state();

@@ -1,5 +1,5 @@
 declare module "*.css";
-interface ImportMetaEnv { readonly VITE_SENTRY_DSN?: string; }
+interface ImportMetaEnv { readonly VITE_SENTRY_DSN?: string; readonly VITE_DISTRIBUTION?: string; }
 /** Version de l'application (package.json), injectée par Vite (`define`). */
 declare const __APP_VERSION__: string;
 /** Identité du build (sha git court + horodatage), injectée par Vite ; 'dev' hors build. Comparée à /version.json. */

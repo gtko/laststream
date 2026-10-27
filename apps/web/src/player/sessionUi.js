@@ -128,7 +128,8 @@ export function leavePlayer() {
   const mode = exitMode({
     canMinimize: canMinimize(),
     enabled: miniOnExitEnabled(storeGet(MINI_ON_EXIT_KEY)),
-    paused: !!(st && st.paused),
+    // Diffusion Chromecast : la lecture locale est en pause mais le téléviseur lit ; on réduit plutôt que de tout arrêter.
+    paused: !!(st && st.paused) && !S.P.casting,
     ended: !!(st && st.ended) || !!S.P.finished,
   });
   if (mode === 'minimize' && minimizePlayer()) return;

@@ -431,14 +431,6 @@ export async function removeProfile(id: string): Promise<void> {
 /** Code parental : le PIN du profil principal (vérifié par le serveur, 5 essais puis blocage de 5 minutes). */
 export const adultsWithPin = (): Profile[] => { const m = parentalProfile(); return m && m.hasPin ? [m] : []; };
 
-export async function importFromStremio(email: string, password: string, config: string): Promise<Record<string, unknown>> {
-  if (!auth.profile) throw new UserApiError(0, 'no_profile');
-  const res = await api.importStremio(auth.profile.id, email, password, config || undefined);
-  // L'import serveur a réussi : un échec de relecture (réseau) ne doit pas passer pour un échec d'import.
-  await store?.hydrate().catch(() => undefined);
-  return res;
-}
-
 /**
  * Relit le compte (bibliothèque et « Reprendre la lecture » du profil actif) : changements faits sur un autre appareil ou
  * profil. Sans effet hors mode serveur. Les erreurs réseau remontent à l'appelant.

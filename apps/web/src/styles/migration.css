@@ -1,4 +1,4 @@
-/* Carte « Importer ma bibliothèque Stremio » : repliable, confidentialité, étapes, résultat, erreurs. Jetons de styles.css. */
+/* Carte « Importer depuis une autre app » : repliable, confidentialité, étapes, résultat, erreurs. Jetons de styles.css. */
 .si-card { padding: 0 20px; }
 .si-h { margin: 0; }
 .si-toggle { width: 100%; min-height: 56px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "t c" "s c"; column-gap: 12px; align-items: center; padding: 12px 0; text-align: left; color: var(--text); }
@@ -47,3 +47,48 @@
   .si-steps li[data-state="active"]::before, .si-bar i { animation: none; }
   .si-bar i { left: 0; width: 100%; opacity: 0.5; }
 }
+/* Migration (Stremio, Nuvio, Simkl, Plex) : sources, avertissement, aperçu, progression, rapport, journal des addons. */
+.mg-srcs { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; gap: 8px; }
+.mg-src { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); color: var(--text); text-align: left; min-height: 56px; }
+.mg-src:hover, .mg-src:focus-visible { border-color: var(--accent); outline: none; }
+.mg-src-t { font-weight: 700; font-size: 15px; }
+.mg-src-d { font-size: 13px; color: var(--dim); }
+.mg-warn { padding: 12px 14px; margin: 4px 0 12px; border-radius: 12px; border: 1px solid var(--accent); background: var(--bg); font-size: 14px; line-height: 1.5; color: var(--muted); }
+.mg-warn p { margin: 0 0 8px; }
+.mg-warn p:last-child { margin-bottom: 0; }
+.mg-warn strong, .mg-warn-t { color: var(--text); font-weight: 700; }
+.mg-lead { margin: 8px 0; font-size: 15px; font-weight: 600; color: var(--text); outline: none; }
+.mg-fs { border: 0; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.mg-chk { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 14px; color: var(--text); }
+.mg-chk input { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.mg-cat b { margin-left: auto; color: var(--dim); font-weight: 700; }
+.mg-off { color: var(--dim); font-size: 13px; }
+.mg-addon-step { padding-top: 8px; border-top: 1px solid var(--line-2); }
+.mg-addons { list-style: none; margin: 0; padding: 0 0 0 28px; }
+.mg-step { margin: 12px 0 8px; font-size: 14px; color: var(--text); font-weight: 600; }
+.mg-bar { height: 6px; border-radius: 6px; overflow: hidden; background: var(--line-2); margin-bottom: 8px; }
+.mg-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s ease; }
+.mg-resume { padding: 12px 14px; margin: 8px 0; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bg); font-size: 14px; }
+.mg-resume p { margin: 0 0 8px; }
+.mg-stats { display: flex; gap: 10px; margin: 8px 0; }
+.mg-stat { flex: 1; margin: 0; padding: 10px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line-2); display: flex; flex-direction: column; align-items: center; }
+.mg-stat b { font-family: var(--ff-title); font-size: 22px; color: var(--text); }
+.mg-stat span { font-size: 13px; color: var(--dim); }
+.mg-stat[data-k="failed"] b { color: #e5484d; }
+.mg-details { margin: 8px 0; font-size: 14px; }
+.mg-details summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; color: var(--text); font-weight: 600; }
+.mg-pbs, .mg-alog-l, .mg-imp-l { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mg-pb-r { margin: 0; color: var(--text); }
+.mg-pb-n { color: var(--dim); }
+.mg-pb-t { margin: 2px 0 0; color: var(--dim); font-size: 13px; line-height: 1.45; }
+.mg-tag { display: inline-block; margin-right: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--line-2); color: var(--text); }
+.mg-tag[data-status="ok"] { background: var(--accent); color: #fff; }
+.mg-tag[data-status="failed"] { background: rgba(229, 72, 77, 0.2); color: #ff8a8d; }
+.mg-sub { margin: 16px 0 8px; font-size: 14px; color: var(--text); }
+.mg-alog-l li, .mg-imp-l li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; }
+.mg-alog-n { font-weight: 700; color: var(--text); }
+.mg-alog-r { flex-basis: 100%; color: var(--dim); font-size: 13px; }
+.mg-imp-l .mg-chk { margin-left: auto; min-height: 44px; }
+.mg-link { color: var(--accent); text-decoration: underline; font: inherit; padding: 0; }
+.mg-beta a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .mg-bar i { transition: none; } }

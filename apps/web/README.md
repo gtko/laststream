@@ -51,13 +51,28 @@ tests/                  vitest
 
 ### Comptes, profils et mode enfant
 
-Au démarrage, `src/data/auth.ts` détecte l'API `/user` de lastAddon (`GET {base}/user/me`). Sans session : écran de connexion / création de compte (jeton d'amorçage facultatif pour le premier compte). La connexion est obligatoire : sans serveur joignable, l'écran de connexion le signale. Avec session : choix du profil façon Netflix (avatars colorés, badge « Enfant », clavier PIN, « Gérer les profils »). Le jeton de profil (30 jours) part en `X-Profile-Token`. La bibliothèque locale rejoint le premier profil ouvert, une seule fois par compte ; les préférences (thème, région, lecture, sauts) suivent le profil via `/settings`. L'import Stremio est dans Réglages.
+Au démarrage, `src/data/auth.ts` détecte l'API `/user` de lastAddon (`GET {base}/user/me`). Sans session : écran de connexion / création de compte (jeton d'amorçage facultatif pour le premier compte). La connexion est obligatoire : sans serveur joignable, l'écran de connexion le signale. Avec session : choix du profil façon Netflix (avatars colorés, badge « Enfant », clavier PIN, « Gérer les profils »). Le jeton de profil (30 jours) part en `X-Profile-Token`. La bibliothèque locale rejoint le premier profil ouvert, une seule fois par compte ; les préférences (thème, région, lecture, sauts) suivent le profil via `/settings`. L'import depuis Stremio, Nuvio, Simkl et Plex est dans Réglages (voir « Migration »).
 
 Profil enfant : accueil et « Tout voir » dédiés (`src/ui/kids.js`) alimentés par `discover` avec `certification_country` (région), `certification.lte` (âge du profil, table par pays dans `kid.ts`) et les genres jeunesse (Animation, Famille, Kids) ; héros jeunesse avec bande-annonce ; recherche et personnalités limitées aux genres jeunesse ; rubriques activables par le parent dans « Gérer les profils » (TV jeunesse désactivée par défaut). Ces paramètres TMDB (`certification_country`, `certification.lte`, `with_companies`) doivent être dans la liste blanche du proxy lastAddon ; sinon le contrôle titre par titre ci-dessous reste le filet de sécurité. Pas de Réglages, pas d'IA ; chaque tuile est vérifiée avec la classification TMDB de la région (`src/data/kid.ts`) et retirée si elle dépasse l'âge du profil ou si elle est inconnue ; quitter le profil demande le PIN d'un profil adulte. Si le serveur est absent ou injoignable, l'adaptateur local (localStorage) prend le relais.
 
 ### Données utilisateur
 
 Toute lecture et écriture de la bibliothèque, de la progression, de « Reprendre la lecture » et des épisodes vus passe par `src/data/userStore.ts`. Deux adaptateurs : `LocalUserStore` (localStorage, repli hors ligne) et `ServerUserStore` (API utilisateur de lastAddon, cache hydraté à l'ouverture du profil, écritures optimistes), installé par `auth.ts` avec `setUserStore()`. Le « vu » par épisode reste local.
+
+### Migration depuis Stremio, Nuvio, Simkl et Plex
+
+Carte « Importer depuis une autre app » (Réglages > Compte, `src/ui/migration.js`), couche données dans `src/data/migration/` :
+
+- **Sources** : compte Stremio (lu depuis l'appareil sur `api.strem.io`, routes de lecture seulement, session fermée aussitôt : les identifiants ne passent jamais par lastAddon), fichier d'export Stremio, sauvegarde Nuvio, export Simkl (JSON ou CSV), historique d'un serveur Plex (autorisation par code PIN plex.tv, jeton gardé en mémoire). Les fichiers sont lus sur l'appareil, sans envoi réseau.
+- **Aperçu** avant toute écriture : catégories à cocher (bibliothèque, « À voir », favoris, vus, progression) ; pas d'import silencieux. Avant la saisie Stremio, un avertissement explique que le compte Stremio n'est jamais modifié.
+- **Écriture** (`runner.ts`) : un élément à la fois, titres résolus sur TMDB (`find` IMDb ou TVDB), routes idempotentes ; journal par profil dans `localStorage['laststream.migration.job:<profil>']`. Une coupure réseau met l'import en pause ; il reprend (bouton ou retour du réseau) sans doublon. Épisodes vus Stremio : champ « watched » décodé avec la liste d'épisodes Cinemeta. Les favoris et la liste à voir deviennent des listes Laststream modifiables (« À voir · Stremio »…), ou la bibliothèque sans compte.
+- **Rapport** : réussis, ignorés, échoués, et la raison de chacun ; copiable ou téléchargeable.
+- **Marques du profil** (`profileMarks.ts`) : catégorie « anime » de Simkl et Nuvio (filtre « Anime » de la bibliothèque et de « Vus ») et date réelle des visionnages importés.
+- **Addons** (`addons.ts`) : étape séparée, désactivée par défaut, rien de coché d'avance ; jamais dans les versions App Store et Google Play (`src/data/distribution.ts` : `VITE_DISTRIBUTION=play|appstore`, `LaststreamStore/<canal>` dans l'agent utilisateur de la coque, ou iOS natif). Les addons choisis rejoignent le registre local des catalogues (marqués `imported`, jamais envoyés au serveur) ; journal lisible par addon.
+
+### Chromecast
+
+Bouton « Caster » du lecteur (navigateurs Chromium, hors coque Windows et app Android) : SDK Google Cast chargé à la demande (`src/player/cast.ts`), récepteur par défaut, lecture reprise sur le téléviseur à la position exacte de l'appareil ; la progression continue de s'écrire pendant la diffusion, « Reprendre ici » revient à la position du téléviseur. Les sources injoignables par le Chromecast (adresse locale, serveur de lecture de l'appareil, fichier téléchargé) sont refusées avec un message (`src/player/castLogic.ts`).
 
 ### Accueil, suivis et notes
 
