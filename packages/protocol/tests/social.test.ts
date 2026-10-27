@@ -4,6 +4,14 @@ import * as social from '../src/social.js';
 import type {
   ActivityItem,
   ConversationV3,
+  CreateEveningBody,
+  Evening,
+  EveningEvent,
+  EveningGuest,
+  EveningPage,
+  EveningRecurrence,
+  EveningResponse,
+  EveningResponseBody,
   FriendView,
   GroupConversation,
   GuestEntry,
@@ -26,6 +34,7 @@ import type {
   ShareLinkView,
   SocialPrefs,
   SocialProfile,
+  UpdateEveningBody,
   Watching,
 } from '../src/social.js';
 
@@ -235,6 +244,73 @@ const homeRecommendations: HomeRecommendationsResponse = { items: [homeRecommend
 
 const recommendationInput: RecommendationInput = { type: 'movie', tmdbId: 603, title: 'Matrix', word: 'à voir' };
 
+const eveningGuest: EveningGuest = { profile: homeFriend, response: 'yes', respondedAt: 1_700_000_000_100 };
+const evening: Evening = {
+  id: 'e1',
+  title: 'Soirée Dune',
+  startsAt: 1_700_000_000_000,
+  tz: 'Europe/Paris',
+  host: homeFriend,
+  isHost: false,
+  myResponse: 'pending',
+  guests: [eveningGuest],
+  status: 'scheduled',
+  overridden: false,
+};
+const seriesEvening: Evening = {
+  id: 'e2',
+  seriesId: 's1',
+  title: 'Soirée Dune',
+  startsAt: 1_700_000_000_000,
+  tz: 'Europe/Paris',
+  host: homeFriend,
+  isHost: true,
+  guests: [],
+  recurrence: { freq: 'weekly', interval: 2, until: 1_710_000_000_000 },
+  status: 'scheduled',
+  overridden: true,
+  party: { partyId: 'p1', title: 'Soirée Dune' },
+};
+const eveningPage: EveningPage = { items: [evening, seriesEvening], nextCursor: 'c2' };
+const lastEveningPage: EveningPage = { items: [seriesEvening], nextCursor: null };
+
+const createBody: CreateEveningBody = {
+  title: 'Soirée Dune',
+  startsAt: 1_700_000_000_000,
+  tz: 'Europe/Paris',
+  guests: ['p-ana'],
+  recurrence: { freq: 'weekly', interval: 1 },
+};
+const updateBody: UpdateEveningBody = { startsAt: 1_700_003_600_000, scope: 'occurrence' };
+const responseBody: EveningResponseBody = { response: 'maybe' };
+
+const eveningEvents: EveningEvent[] = [
+  { type: 'evening_invite', eveningId: 'e1', title: 'Soirée Dune', startsAt: 1_700_000_000_000, tz: 'Europe/Paris', host: homeFriend },
+  { type: 'evening_update', eveningId: 'e1', change: 'cancelled' },
+  { type: 'evening_response', eveningId: 'e1', pid: 'p-ana', response: 'yes' },
+  { type: 'evening_reminder', eveningId: 'e1', title: 'Soirée Dune', startsAt: 1_700_000_000_000, tz: 'Europe/Paris' },
+  { type: 'evening_open', eveningId: 'e1', party: { partyId: 'p1', title: 'Soirée Dune' } },
+];
+
+/**
+ * Identifiant de la soirée d'une trame. Compile seulement si chaque trame est traitée : une trame ajoutée ou retirée de
+ * `EveningEvent` casse la compilation ici.
+ */
+function eveningIdOf(event: EveningEvent): string {
+  switch (event.type) {
+    case 'evening_invite':
+    case 'evening_update':
+    case 'evening_response':
+    case 'evening_reminder':
+    case 'evening_open':
+      return event.eveningId;
+    default: {
+      const exhaustive: never = event;
+      return exhaustive;
+    }
+  }
+}
+
 describe('formes de réponse (compilation et contrat)', () => {
   it('chaque DTO principal se construit avec ses champs requis', () => {
     expect(watching.paused).toBe(false);
@@ -308,6 +384,116 @@ describe('accueil social (formes de réponse et écarts refusés)', () => {
     // @ts-expect-error genre inconnu
     const badMedia: HomeMedia = { type: 'anime', tmdbId: 1 };
     expect(badMedia.tmdbId).toBe(1);
+  });
+});
+
+describe('soirées planifiées (formes de réponse et trames)', () => {
+  it('chaque forme de soirée se construit avec ses champs', () => {
+    expect(evening.guests[0].response).toBe('yes');
+    expect(seriesEvening.recurrence?.interval).toBe(2);
+    expect(seriesEvening.party?.partyId).toBe('p1');
+    expect(eveningPage.nextCursor).toBe('c2');
+    expect(lastEveningPage.nextCursor).toBeNull();
+    expect(createBody.guests).toEqual(['p-ana']);
+    expect(updateBody.scope).toBe('occurrence');
+    expect(responseBody.response).toBe('maybe');
+  });
+
+  it('chaque trame temps réel s\'identifie par son `type` et porte l\'identifiant de sa soirée', () => {
+    expect(eveningEvents.map((event) => event.type)).toEqual([
+      'evening_invite',
+      'evening_update',
+      'evening_response',
+      'evening_reminder',
+      'evening_open',
+    ]);
+    expect(eveningEvents.map(eveningIdOf)).toEqual(['e1', 'e1', 'e1', 'e1', 'e1']);
+  });
+});
+
+describe('soirées planifiées : écarts de forme refusés à la compilation', () => {
+  it('EveningResponseBody n\'accepte pas `pending`', () => {
+    // @ts-expect-error `pending` n'est pas une réponse envoyable
+    const badBody: EveningResponseBody = { response: 'pending' };
+    expect(badBody.response).toBe('pending');
+  });
+
+  it('EveningResponse se limite aux valeurs connues', () => {
+    // @ts-expect-error « later » n'est pas une réponse
+    const badResponse: EveningResponse = 'later';
+    expect(badResponse).toBe('later');
+  });
+
+  it('EveningRecurrence ne prend un intervalle que de 1 ou 2', () => {
+    // @ts-expect-error interval ne peut pas valoir 3
+    const badRecurrence: EveningRecurrence = { freq: 'weekly', interval: 3 };
+    expect(badRecurrence.freq).toBe('weekly');
+  });
+
+  it('Evening.startsAt est un nombre (ms UTC), pas une chaîne', () => {
+    // @ts-expect-error startsAt doit être un nombre
+    const bad: Evening = { ...evening, startsAt: '2026-10-27T20:00:00Z' };
+    expect(bad.id).toBe('e1');
+  });
+
+  it('Evening exige `tz` (fuseau IANA)', () => {
+    // @ts-expect-error tz est requis
+    const noTz: Evening = { id: 'e3', title: 'Soirée', startsAt: 1, host: homeFriend, isHost: false, guests: [], status: 'scheduled', overridden: false };
+    expect(noTz.id).toBe('e3');
+  });
+
+  it('Evening.status ne prend que `scheduled` ou `cancelled`', () => {
+    // @ts-expect-error statut inconnu
+    const badStatus: Evening = { ...evening, status: 'draft' };
+    expect(badStatus.status).toBe('draft');
+  });
+
+  it('UpdateEveningBody exige `scope`', () => {
+    // @ts-expect-error scope est requis
+    const noScope: UpdateEveningBody = { title: 'Autre titre' };
+    expect(noScope.title).toBe('Autre titre');
+  });
+
+  it('une trame evening_update ne porte que `updated` ou `cancelled`', () => {
+    // @ts-expect-error change inconnu
+    const badChange: EveningEvent = { type: 'evening_update', eveningId: 'e1', change: 'moved' };
+    expect(badChange.type).toBe('evening_update');
+  });
+
+  it('EveningPage exige `nextCursor` (`null` en fin de liste)', () => {
+    // @ts-expect-error nextCursor est requis
+    const noCursor: EveningPage = { items: [] };
+    expect(noCursor.items).toEqual([]);
+  });
+
+  it('EveningPage.nextCursor n\'accepte pas `undefined`', () => {
+    // @ts-expect-error undefined n'est pas une valeur de curseur : utiliser null
+    const undefinedCursor: EveningPage = { items: [], nextCursor: undefined };
+    expect(undefinedCursor.items).toEqual([]);
+  });
+
+  it('une trame evening_response n\'accepte pas `pending`', () => {
+    // @ts-expect-error `pending` n'est pas une réponse à une invitation
+    const pendingFrame: EveningEvent = { type: 'evening_response', eveningId: 'e1', pid: 'p-ana', response: 'pending' };
+    expect(pendingFrame.type).toBe('evening_response');
+  });
+
+  it('evening_invite exige `tz`', () => {
+    // @ts-expect-error tz est requis
+    const noTzInvite: EveningEvent = { type: 'evening_invite', eveningId: 'e1', title: 'Soirée Dune', startsAt: 1, host: homeFriend };
+    expect(noTzInvite.type).toBe('evening_invite');
+  });
+
+  it('evening_reminder exige `tz`', () => {
+    // @ts-expect-error tz est requis
+    const noTzReminder: EveningEvent = { type: 'evening_reminder', eveningId: 'e1', title: 'Soirée Dune', startsAt: 1 };
+    expect(noTzReminder.type).toBe('evening_reminder');
+  });
+
+  it('une trame de type inconnu est refusée', () => {
+    // @ts-expect-error type de trame inconnu
+    const unknownFrame: EveningEvent = { type: 'evening_started', eveningId: 'e1' };
+    expect(unknownFrame.type).toBe('evening_started');
   });
 });
 

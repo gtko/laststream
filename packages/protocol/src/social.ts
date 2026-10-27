@@ -622,3 +622,84 @@ export interface GuestEntry {
   /** Avatar retenu par le serveur ; absent : la lettre sur la couleur des invités. */
   avatar?: string;
 }
+
+// ---- Soirées planifiées (`/user/social/evenings*`) ----
+
+/** Réponse d'un invité à une soirée ; `pending` tant qu'il n'a pas répondu. */
+export type EveningResponse = 'pending' | 'yes' | 'maybe' | 'no';
+
+/** Récurrence d'une soirée : chaque semaine (`interval` 1) ou une semaine sur deux (2). `until` : fin de la série (ms UTC). */
+export interface EveningRecurrence {
+  freq: 'weekly';
+  interval: 1 | 2;
+  until?: number;
+}
+
+/** Invité d'une soirée : son profil, sa réponse, et l'instant (ms) où il l'a donnée. */
+export interface EveningGuest {
+  profile: HomeFriend;
+  response: EveningResponse;
+  respondedAt?: number;
+}
+
+/**
+ * Soirée planifiée, vue par un profil. `startsAt` : début (ms UTC) ; `tz` : fuseau IANA. `isHost` : le profil qui regarde
+ * en est l'hôte. `myResponse` : sa propre réponse, absente quand `isHost` vaut vrai. `overridden` : occurrence modifiée à
+ * part dans sa série. `party` : salon de visionnage lié.
+ */
+export interface Evening {
+  id: string;
+  seriesId?: string;
+  title: string;
+  startsAt: number;
+  tz: string;
+  host: HomeFriend;
+  isHost: boolean;
+  myResponse?: EveningResponse;
+  guests: EveningGuest[];
+  recurrence?: EveningRecurrence;
+  status: 'scheduled' | 'cancelled';
+  overridden: boolean;
+  party?: PartyRef;
+}
+
+/** Page de soirées. `nextCursor` : curseur de la page suivante, `null` en fin de liste (convention de `HiddenPageDto`). */
+export interface EveningPage {
+  items: Evening[];
+  nextCursor: string | null;
+}
+
+/** Corps de création d'une soirée. `guests` : pid des amis invités, qui ont accepté. */
+export interface CreateEveningBody {
+  title: string;
+  startsAt: number;
+  tz: string;
+  guests: string[];
+  recurrence?: EveningRecurrence;
+}
+
+/**
+ * Corps de modification d'une soirée. `scope` : l'occurrence seule, ou toute la série. Sans `title` ni `startsAt`, le
+ * serveur refuse le corps (400).
+ */
+export interface UpdateEveningBody {
+  title?: string;
+  startsAt?: number;
+  scope: 'occurrence' | 'series';
+}
+
+/** Réponse envoyée par un invité ; `pending` n'en est pas une (c'est l'absence de réponse). */
+export interface EveningResponseBody {
+  response: Exclude<EveningResponse, 'pending'>;
+}
+
+/**
+ * Trames temps réel des soirées, discriminées par `type`. `evening_update` : soirée modifiée ou annulée. `evening_response` :
+ * réponse d'un invité (`pid`). `evening_reminder` : rappel de la soirée. `evening_open` : salon de visionnage ouvert.
+ */
+export type EveningEvent =
+  | { type: 'evening_invite'; eveningId: string; title: string; startsAt: number; tz: string; host: HomeFriend }
+  | { type: 'evening_update'; eveningId: string; change: 'updated' | 'cancelled' }
+  | { type: 'evening_response'; eveningId: string; pid: string; response: EveningResponseBody['response'] }
+  | { type: 'evening_reminder'; eveningId: string; title: string; startsAt: number; tz: string }
+  | { type: 'evening_open'; eveningId: string; party: PartyRef };
