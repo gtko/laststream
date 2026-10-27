@@ -188,6 +188,10 @@ function appFile(pathname) {
   if (pathname === '/app/windows/latest.json') {
     return { key: 'windows/latest.json', type: 'application/json', cache: 'public, max-age=300' };
   }
+  // Signature ed25519 du flux : l'updater natif la télécharge à côté de latest.json et refuse la mise à jour sans elle.
+  if (pathname === '/app/windows/latest.json.sig') {
+    return { key: 'windows/latest.json.sig', type: 'text/plain; charset=utf-8', cache: 'public, max-age=300' };
+  }
   return null;
 }
 
