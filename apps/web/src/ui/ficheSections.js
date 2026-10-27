@@ -17,7 +17,8 @@ import { preloadSources } from '../sources/load';
 import { observeTiles, posterCard } from './tiles.js';
 import { progressResume, resumePillHTML } from './resume.js';
 import { esc, fmtDate, fmtMin } from './util.js';
-import { playableSoon } from '../player/episodes';
+import { fillerKinds, playableSoon } from '../player/episodes';
+import { getVideoLang } from '../data/prefs';
 
 // ---------- Fiche : sections chargées après coup ----------
 /** Notes de la fiche serveur (même forme que la route MDBList), ou null si elle n'en donne pas. */
@@ -102,9 +103,38 @@ export function preloadNextEpisode(m, n, eps, today) {
   preloadSources({ type: 'tv', id: String(m.id), name: m.name || '', season: n, episode: next.e, key: 'tv:' + m.id });
 }
 
+// Épisodes filler et récap d'un anime (lastAddon, d'après MyAnimeList) : une requête par série, rejouée après un échec.
+const fillersBySeries = new Map();
+function seriesFillers(id) {
+  let p = fillersBySeries.get(id);
+  if (!p) {
+    p = api('series/' + id + '/fillers', { language: getVideoLang().tag })
+      .then(fillerKinds, () => { fillersBySeries.delete(id); return new Map(); });
+    fillersBySeries.set(id, p);
+  }
+  return p;
+}
+
+/** Pastille « Filler » / « Récap » dans la ligne de détails des épisodes de la saison affichée (comme le panneau du lecteur). */
+function markFillers(list, n, kinds) {
+  for (const [key, kind] of kinds) {
+    if (!key.startsWith(n + ':')) continue;
+    const li = list.querySelector('.ep[data-ep="' + key + '"]');
+    const meta = li && li.querySelector('.ep-meta');
+    if (!meta || meta.querySelector('.ep-filler')) continue;
+    const badge = document.createElement('span');
+    badge.className = 'ep-filler';
+    badge.textContent = kind === 'recap' ? 'Récap' : 'Filler';
+    meta.prepend(badge, meta.textContent ? ' · ' : '');
+    const play = li.querySelector('[data-play]');
+    if (play) play.setAttribute('aria-label', play.getAttribute('aria-label') + ', ' + (kind === 'recap' ? 'récap' : 'épisode filler'));
+  }
+}
+
 export async function loadSeason(m, n, token, wantEp) {
   const list = detailEl.querySelector('#f-eplist');
   if (!list) return;
+  const fillers = seriesFillers(m.id);
   detailEl.querySelectorAll('[data-season]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.season) === n)));
   list.setAttribute('aria-busy', 'true');
   setSeasonDownload([]);
@@ -169,6 +199,7 @@ export async function loadSeason(m, n, token, wantEp) {
       '</li>';
   }).join('');
   state.seasonEps = { n, eps };
+  fillers.then((kinds) => { if (token === state.token) markFillers(list, n, kinds); });
   hydrateDownloads(list);
   setSeasonDownload(airedSeasonTargets(m, n, eps, today));
   refreshWatchedUI();
