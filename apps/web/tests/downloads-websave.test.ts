@@ -10,8 +10,8 @@ import {
 import { HTTP_URL, httpStream, viewOf } from './downloads-fixtures';
 
 /** Dossier en mémoire : fichiers écrits, fichiers supprimés, permission réglable. */
-function fakeFolder(opts: { permission?: 'granted' | 'prompt' | 'denied'; grant?: 'granted' | 'denied'; writeFails?: boolean } = {}) {
-  const files = new Map<string, number[]>();
+function fakeFolder(opts: { permission?: 'granted' | 'prompt' | 'denied'; grant?: 'granted' | 'denied'; writeFails?: boolean; existing?: string[] } = {}) {
+  const files = new Map<string, number[]>((opts.existing ?? []).map((n) => [n, [9, 9]]));
   const removed: string[] = [];
   let asked = 0;
   const folder: FolderHandle = {
@@ -22,7 +22,9 @@ function fakeFolder(opts: { permission?: 'granted' | 'prompt' | 'denied'; grant?
       asked++;
       return opts.grant ?? 'granted';
     },
-    getFileHandle: async (name) => ({
+    getFileHandle: async (name, o) => {
+      if (!o?.create && !files.has(name)) throw Object.assign(new Error('absent'), { name: 'NotFoundError' });
+      return {
       createWritable: async () => {
         const bytes: number[] = [];
         return {
@@ -36,7 +38,8 @@ function fakeFolder(opts: { permission?: 'granted' | 'prompt' | 'denied'; grant?
           abort: async () => undefined,
         };
       },
-    }),
+      };
+    },
     removeEntry: async (name) => {
       removed.push(name);
     },
@@ -149,7 +152,7 @@ describe('writeToFolder', () => {
     const f = fakeFolder();
     const progress: Array<[number, number | null]> = [];
     const n = await writeToFolder(f.folder, 'Dune.mkv', HTTP_URL, { fetchImpl: fetchOk(200, [[1, 2, 3], [4, 5]], 5), onProgress: (d, t) => progress.push([d, t]) });
-    expect(n).toBe(5);
+    expect(n).toEqual({ name: 'Dune.mkv', bytes: 5 });
     expect(f.files.get('Dune.mkv')).toEqual([1, 2, 3, 4, 5]);
     expect(progress).toEqual([[3, 5], [5, 5]]);
   });
@@ -169,6 +172,20 @@ describe('writeToFolder', () => {
     const f = fakeFolder({ writeFails: true });
     await expect(writeToFolder(f.folder, 'Dune.mkv', HTTP_URL, { fetchImpl: fetchOk() })).rejects.toMatchObject({ code: 'store_failed' });
     expect(f.removed).toEqual(['Dune.mkv']);
+  });
+
+  it('nom déjà pris : nouveau nom, le fichier existant n’est pas écrasé', async () => {
+    const f = fakeFolder({ existing: ['Dune.mkv', 'Dune (2).mkv'] });
+    const n = await writeToFolder(f.folder, 'Dune.mkv', HTTP_URL, { fetchImpl: fetchOk() });
+    expect(n.name).toBe('Dune (3).mkv');
+    expect(f.files.get('Dune.mkv')).toEqual([9, 9]);
+  });
+
+  it('échec en cours : seul le fichier créé est supprimé, l’existant est conservé', async () => {
+    const f = fakeFolder({ existing: ['Dune.mkv'], writeFails: true });
+    await expect(writeToFolder(f.folder, 'Dune.mkv', HTTP_URL, { fetchImpl: fetchOk() })).rejects.toMatchObject({ code: 'store_failed' });
+    expect(f.removed).toEqual(['Dune (2).mkv']);
+    expect(f.files.get('Dune.mkv')).toEqual([9, 9]);
   });
 
   it('les requêtes partent sans cookie ni référent', async () => {

@@ -968,8 +968,11 @@ async function chooseAnotherSource(item, opener) {
   if (getDownloadSettings().wifiOnly && isCellular()) { toast('Wi-Fi seulement : connecte-toi à un réseau Wi-Fi pour télécharger'); return; }
   const choice = await openChoiceSheet(t, opener, { exclude: ref.match });
   if (!choice) return;
-  const m = await manager();
-  if (m) await m.remove(item.id);
+  // « Sur cet appareil » : l'enregistrement peut échouer, l'item en erreur reste dans la liste jusqu'à ce que l'utilisateur le supprime.
+  if (downloadDestination() !== 'device') {
+    const m = await manager();
+    if (m) await m.remove(item.id);
+  }
   await enqueueChoice(t, choice, opener);
 }
 

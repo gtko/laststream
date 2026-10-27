@@ -199,11 +199,30 @@ export interface FolderWriteOptions {
 }
 
 /**
- * Lit `url` en flux et l'écrit dans `folder` sous `name`. `CorsBlockedError` si la lecture est refusée par le navigateur avant tout
- * octet (le fichier n'est alors pas créé). Une erreur HTTP lève `DownloadError('link_expired')` ; un échec d'écriture
- * `DownloadError('store_failed')`. Un fichier partiel est supprimé.
+ * Premier nom libre du dossier : `name`, puis « nom (2).ext »… Un fichier déjà là n'est jamais écrasé ni supprimé.
+ * Seule l'absence (`NotFoundError`) libère un nom ; toute autre réponse (dossier du même nom, accès refusé) le compte pris.
  */
-export async function writeToFolder(folder: FolderHandle, name: string, url: string, opts: FolderWriteOptions = {}): Promise<number> {
+export async function freeFileName(folder: FolderHandle, name: string): Promise<string> {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 1; i <= 99; i++) {
+    const candidate = i === 1 ? name : `${base} (${i})${ext}`;
+    try {
+      await folder.getFileHandle(candidate);
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name === 'NotFoundError') return candidate;
+    }
+  }
+  throw new DownloadError('store_failed', false);
+}
+
+/**
+ * Lit `url` en flux et l'écrit dans `folder` sous un nom libre dérivé de `name` (rendu avec la taille). `CorsBlockedError` si la lecture est refusée par le navigateur avant tout
+ * octet (le fichier n'est alors pas créé). Une erreur HTTP lève `DownloadError('link_expired')` ; un échec d'écriture
+ * `DownloadError('store_failed')`. Le fichier partiel créé par cet appel est supprimé ; un fichier déjà présent n'est jamais touché.
+ */
+export async function writeToFolder(folder: FolderHandle, wanted: string, url: string, opts: FolderWriteOptions = {}): Promise<{ name: string; bytes: number }> {
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
   let res: Response;
   try {
@@ -217,7 +236,9 @@ export async function writeToFolder(folder: FolderHandle, name: string, url: str
   if (!res.ok || !res.body) throw new DownloadError(res.status === 401 || res.status === 403 || res.status === 404 || res.status === 410 ? 'link_expired' : 'network', false);
   const total = Number(res.headers.get('content-length')) || null;
   let writable: WritableLike;
+  let name: string;
   try {
+    name = await freeFileName(folder, wanted);
     writable = await (await folder.getFileHandle(name, { create: true })).createWritable();
   } catch (err) {
     void res.body.cancel().catch(() => undefined);
@@ -238,7 +259,7 @@ export async function writeToFolder(folder: FolderHandle, name: string, url: str
       opts.onProgress?.(done, total);
     }
     await writable.close();
-    return done;
+    return { name, bytes: done };
   } catch (err) {
     void reader.cancel().catch(() => undefined);
     try {

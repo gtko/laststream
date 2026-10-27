@@ -62,11 +62,11 @@ export async function saveToDevice(t, choice, label, onProgress = () => undefine
   if (!folder) { handToBrowser(tab, file, name, label); return true; }
   toast('Enregistrement dans « ' + folder.name + ' » · ' + label, { ms: 3500 });
   try {
-    await writeToFolder(folder, name, file.url, {
+    const saved = await writeToFolder(folder, name, file.url, {
       signal: ctl.signal,
       onProgress: (done, total) => onProgress(total ? Math.min(99, Math.floor((done / total) * 100)) + ' %' : Math.round(done / 1048576) + ' Mo'),
     });
-    toast('Enregistré dans « ' + folder.name + ' » : ' + name, { ms: 5000 });
+    toast('Enregistré dans « ' + folder.name + ' » : ' + saved.name, { ms: 5000 });
     return true;
   } catch (err) {
     if (err instanceof CorsBlockedError) {
