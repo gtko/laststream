@@ -52,7 +52,7 @@ beforeAll(async () => {
   Element.prototype.scrollIntoView = () => undefined;
   location.hash = '#/settings';
   await import('../src/main.js');
-  await settle(900);
+  await vi.waitFor(() => expect(document.querySelector('[data-set-addsrc="upstream"]')).not.toBeNull(), { timeout: 10000 });
 });
 
 describe('manifest', () => {

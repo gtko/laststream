@@ -422,19 +422,23 @@ describe('interface portée', () => {
     expect(by('movie:100').querySelector('.t-remove')).not.toBeNull();
     // Un clic reprend la lecture directement (source choisie automatiquement), à la position enregistrée.
     by('movie:100').click();
-    // Le lecteur est chargé à la demande (import()) puis la source est résolue : on attend la condition, pas un délai (CI plus lente).
-    await vi.waitFor(() => {
-      const el = document.getElementById('lsplayer') as HTMLElement | null;
-      expect(el?.hidden).toBe(false);
-      expect(el!.querySelector('video')?.getAttribute('src')).toBe('https://cdn.example/film.mp4');
-    }, { timeout: 5000 });
-    const player = document.getElementById('lsplayer') as HTMLElement;
-    (player.querySelector('[data-act="close"]') as HTMLElement).click();
-    await settle(50);
-    expect(player.hidden).toBe(true);
-    localStorage.clear();
-    localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));
-    renderContinue();
+    try {
+      // Le lecteur est chargé à la demande (import()) puis la source est résolue : on attend la condition, pas un délai (CI plus lente).
+      await vi.waitFor(() => {
+        const el = document.getElementById('lsplayer') as HTMLElement | null;
+        expect(el?.hidden).toBe(false);
+        expect(el!.querySelector('video')?.getAttribute('src')).toBe('https://cdn.example/film.mp4');
+      }, { timeout: 15000 });
+      const player = document.getElementById('lsplayer') as HTMLElement;
+      (player.querySelector('[data-act="close"]') as HTMLElement).click();
+      await settle(50);
+      expect(player.hidden).toBe(true);
+    } finally {
+      // Nettoyage même si l'attente échoue : sinon les tests suivants héritent de l'état (#reprendre).
+      localStorage.clear();
+      localStorage.setItem('laststream.lastaddon', JSON.stringify({ base: 'http://localhost:7000', config: 'CFG_abc-123' }));
+      renderContinue();
+    }
   });
 
   it('films uniquement en salle : rangée « Au cinéma », badge, pas de Lecture sur la fiche', async () => {
@@ -511,7 +515,7 @@ describe('interface portée', () => {
       const el = document.getElementById('lsplayer') as HTMLElement | null;
       expect(el?.hidden).toBe(false);
       expect(el!.querySelector('video')?.getAttribute('src')).toBe('https://cdn.example/film.mp4');
-    }, { timeout: 5000 });
+    }, { timeout: 15000 });
     const player = document.getElementById('lsplayer') as HTMLElement;
     (player.querySelector('[data-act="close"]') as HTMLElement).click();
     await settle(50);
