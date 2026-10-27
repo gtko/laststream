@@ -13,7 +13,7 @@ import { restoreStorage, substituteStorage } from '../src/demoBoot';
 import { LEGACY_LOCAL_MODE_KEY, SESSION_KEY } from '../src/data/session';
 import { userStore } from '../src/data/userStore';
 
-const BASE = 'https://laststream.gtux-prog.workers.dev';
+const BASE = 'https://app.laststream.app';
 const OFF = { on: false, clean: false, profile: '' };
 const realStorage = globalThis.localStorage;
 const realSessionStorage = globalThis.sessionStorage;
@@ -172,7 +172,7 @@ describe('mode démo démarré', () => {
     expect(() => x.open('POST', `${BASE}/CFG/lt/tmdb/x`)).toThrow();
     expect(() => x.open('GET', `${BASE}/CFG/lt/tmdb/trending/movie/week`)).not.toThrow();
     expect((navigator as unknown as { sendBeacon: (u: string) => boolean }).sendBeacon(`${BASE}/user/x`)).toBe(false);
-    expect(() => new WebSocket('wss://laststream.gtux-prog.workers.dev/party/ws')).toThrow();
+    expect(() => new WebSocket('wss://app.laststream.app/party/ws')).toThrow();
   });
 
   it('la lecture est désactivée : playBest, startSession et playSource ne cherchent aucune source', async () => {

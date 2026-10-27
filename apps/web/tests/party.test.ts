@@ -595,7 +595,7 @@ describe('profil enfant et lien du salon', () => {
   });
 
   it('adresse WebSocket : relative au serveur (https -> wss, http -> ws)', () => {
-    expect(socketUrl('https://laststream.gtux-prog.workers.dev', '/party/r1/ws?ticket=T')).toBe('wss://laststream.gtux-prog.workers.dev/party/r1/ws?ticket=T');
+    expect(socketUrl('https://app.laststream.app', '/party/r1/ws?ticket=T')).toBe('wss://app.laststream.app/party/r1/ws?ticket=T');
     expect(socketUrl('http://localhost:7000/', '/party/r1/ws?ticket=T')).toBe('ws://localhost:7000/party/r1/ws?ticket=T');
   });
 
